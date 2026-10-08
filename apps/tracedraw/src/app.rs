@@ -266,6 +266,8 @@ pub struct App {
     /// Selected nodes: (shape, element index).
     pub node_selection: Vec<(ShapeId, usize)>,
     pub snap: crate::snap::SnapSettings,
+    pub dialog: crate::ui::dialogs::Dialog,
+    pub show_welcome: bool,
     pub show_guides: bool,
     pub selected_guide: Option<usize>,
     pub transform_values: [f64; 4],
@@ -277,6 +279,7 @@ pub enum DockerTab {
     Objects,
     Hints,
     Transformations,
+    Undo,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -345,6 +348,8 @@ impl App {
             transform_tab: TransformTab::Position,
             node_selection: Vec::new(),
             snap: crate::snap::SnapSettings::default(),
+            dialog: crate::ui::dialogs::Dialog::None,
+            show_welcome: false,
             show_guides: true,
             selected_guide: None,
             transform_values: [0.0, 0.0, 100.0, 100.0],

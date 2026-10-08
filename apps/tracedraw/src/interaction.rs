@@ -857,6 +857,12 @@ impl App {
         if pressed(Key::L, cmd) {
             self.combine();
         }
+        if pressed(Key::J, cmd) {
+            self.dialog = crate::ui::dialogs::Dialog::Options;
+        }
+        if pressed(Key::Tab, Modifiers::NONE) || pressed(Key::Tab, Modifiers::SHIFT) {
+            self.cycle_selection(!input.modifiers.shift);
+        }
         if pressed(Key::K, cmd) {
             self.break_apart();
         }

@@ -3,6 +3,7 @@
 //! document tabs, rulers and canvas in the middle, navigator and colour
 //! palette under the canvas, status bar at the bottom.
 
+pub mod dialogs;
 pub mod dockers;
 pub mod icons;
 pub mod menus;
@@ -102,15 +103,31 @@ pub fn root(app: &mut App, ui: &mut Ui) {
         .show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 2.0;
-                let _ = ui.add(
-                    egui::Button::new(egui::RichText::new("Welcome Screen").size(12.0))
-                        .frame(false),
-                );
-                let _ = ui.add(
-                    egui::Button::new(egui::RichText::new(doc_name.clone()).size(12.0))
-                        .fill(Tokens::PANEL)
-                        .stroke(egui::Stroke::new(1.0, Tokens::BORDER)),
-                );
+                let tab = |ui: &mut Ui, label: &str, active: bool| -> bool {
+                    ui.add(
+                        egui::Button::new(egui::RichText::new(label).size(12.0))
+                            .fill(if active {
+                                Tokens::PANEL
+                            } else {
+                                Tokens::PANEL_DARK
+                            })
+                            .stroke(egui::Stroke::new(
+                                1.0,
+                                if active {
+                                    Tokens::BORDER
+                                } else {
+                                    Tokens::PANEL_DARK
+                                },
+                            )),
+                    )
+                    .clicked()
+                };
+                if tab(ui, "Welcome Screen", app.show_welcome) {
+                    app.show_welcome = true;
+                }
+                if tab(ui, &doc_name, !app.show_welcome) {
+                    app.show_welcome = false;
+                }
                 if ui
                     .add(egui::Button::new(egui::RichText::new("+").size(12.0)).frame(false))
                     .on_hover_text("New document")
@@ -120,6 +137,14 @@ pub fn root(app: &mut App, ui: &mut Ui) {
                 }
             });
         });
+
+    if app.show_welcome {
+        egui::CentralPanel::default()
+            .frame(Frame::new().fill(Tokens::PANEL))
+            .show(ui, |ui| welcome_screen(app, ui));
+        dialogs::show(app, &ctx);
+        return;
+    }
 
     egui::CentralPanel::default()
         .frame(Frame::NONE)
@@ -237,6 +262,8 @@ pub fn root(app: &mut App, ui: &mut Ui) {
             }
         });
 
+    dialogs::show(app, &ctx);
+
     if app.about_open {
         egui::Window::new("About TraceDraw")
             .collapsible(false)
@@ -338,4 +365,43 @@ fn scrollbars(
         let d = rv.drag_delta().y / vbar.height() * ext_h as f32;
         app.view.pan(egui::vec2(0.0, -d * view.zoom));
     }
+}
+
+fn welcome_screen(app: &mut App, ui: &mut Ui) {
+    ui.add_space(30.0);
+    ui.vertical_centered(|ui| {
+        ui.heading(egui::RichText::new("TraceDraw").size(32.0));
+        ui.label(egui::RichText::new("Open-source vector illustration").color(Tokens::TEXT_DIM));
+        ui.add_space(24.0);
+        ui.horizontal(|ui| {
+            ui.add_space(ui.available_width() / 2.0 - 220.0);
+            if ui.add_sized([200.0, 60.0], egui::Button::new("New Document\nCtrl+N")).clicked() {
+                app.new_document();
+                app.show_welcome = false;
+            }
+            ui.add_space(20.0);
+            if ui.add_sized([200.0, 60.0], egui::Button::new("Open Document...\nCtrl+O")).clicked() {
+                app.open_dialog();
+                app.show_welcome = false;
+            }
+        });
+        ui.add_space(24.0);
+        ui.label(egui::RichText::new("Page sizes").strong());
+        ui.horizontal(|ui| {
+            ui.add_space(ui.available_width() / 2.0 - 160.0);
+            use tracedraw_core::document::paper;
+            for (n, size) in [("A4 portrait", paper::A4), ("A4 landscape", tracedraw_core::geometry::Size::new(paper::A4.height, paper::A4.width)), ("A3", paper::A3), ("Letter", paper::LETTER)] {
+                if ui.button(n).clicked() {
+                    let doc = tracedraw_core::Document::new("Untitled-1", size);
+                    app.page = doc.pages[0].id;
+                    app.engine.replace(doc);
+                    app.file = None;
+                    app.fit_pending = true;
+                    app.show_welcome = false;
+                }
+            }
+        });
+        ui.add_space(40.0);
+        ui.label(egui::RichText::new("Shortcuts: F6 rectangle, F7 ellipse, F8 text, F5 freehand, F10 shape, Space pick, Shift+F4 zoom to page").color(Tokens::TEXT_DIM).size(11.0));
+    });
 }

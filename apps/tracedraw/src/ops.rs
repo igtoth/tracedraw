@@ -415,3 +415,44 @@ impl App {
         self.run(Command::SetShadow { shapes, shadow });
     }
 }
+
+impl App {
+    /// Tab / Shift+Tab: select the next or previous object in z-order.
+    pub fn cycle_selection(&mut self, forward: bool) {
+        let Ok(page) = self.doc().page(self.page) else {
+            return;
+        };
+        let ids: Vec<tracedraw_core::ShapeId> = page
+            .layers
+            .iter()
+            .filter(|l| !l.locked)
+            .flat_map(|l| &l.shapes)
+            .filter(|s| !s.locked)
+            .map(|s| s.id)
+            .collect();
+        if ids.is_empty() {
+            return;
+        }
+        let current = self
+            .selection
+            .first()
+            .and_then(|id| ids.iter().position(|i| i == id));
+        let next = match current {
+            None => {
+                if forward {
+                    ids.len() - 1
+                } else {
+                    0
+                }
+            }
+            Some(i) => {
+                if forward {
+                    (i + ids.len() - 1) % ids.len()
+                } else {
+                    (i + 1) % ids.len()
+                }
+            }
+        };
+        self.select(vec![ids[next]]);
+    }
+}

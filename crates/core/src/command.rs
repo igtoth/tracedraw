@@ -111,6 +111,23 @@ pub enum Command {
         shapes: Vec<ShapeId>,
         shadow: Option<Shadow>,
     },
+    RenamePage {
+        page: PageId,
+        name: String,
+    },
+    /// Copy a page (layers, shapes with fresh ids, guides) right after it.
+    DuplicatePage {
+        page: PageId,
+    },
+    RenameLayer {
+        layer: LayerId,
+        name: String,
+    },
+    /// Move a layer to another index within its page (z-order).
+    ReorderLayer {
+        layer: LayerId,
+        index: usize,
+    },
     AddGuide {
         page: PageId,
         guide: Guide,
@@ -153,6 +170,10 @@ impl Command {
             Command::SetLocked { .. } => "Unlock Object",
             Command::Combine { .. } => "Combine",
             Command::BreakApart { .. } => "Break Apart",
+            Command::RenamePage { .. } => "Rename Page",
+            Command::DuplicatePage { .. } => "Duplicate Page",
+            Command::RenameLayer { .. } => "Rename Layer",
+            Command::ReorderLayer { .. } => "Reorder Layer",
             Command::SetShadow {
                 shadow: Some(_), ..
             } => "Drop Shadow",
@@ -389,6 +410,52 @@ impl Command {
                     layer.shapes.insert(idx + k, piece);
                 }
             }
+            Command::RenamePage { page, name } => doc.page_mut(*page)?.name = name.clone(),
+            Command::DuplicatePage { page } => {
+                let idx = doc
+                    .pages
+                    .iter()
+                    .position(|p| p.id == *page)
+                    .ok_or(Error::PageNotFound(*page))?;
+                let src = doc.pages[idx].clone();
+                let new_id = doc.ids_mut().page();
+                let mut layers = Vec::with_capacity(src.layers.len());
+                for l in &src.layers {
+                    let lid = doc.ids_mut().layer();
+                    let mut nl = Layer::new(lid, l.name.clone());
+                    nl.visible = l.visible;
+                    nl.printable = l.printable;
+                    nl.locked = l.locked;
+                    for s in &l.shapes {
+                        nl.shapes.push(reid_shape(s, doc));
+                    }
+                    layers.push(nl);
+                }
+                let copy = Page {
+                    id: new_id,
+                    name: format!("{} (copy)", src.name),
+                    size: src.size,
+                    layers,
+                    guides: src.guides.clone(),
+                };
+                doc.pages.insert(idx + 1, copy);
+            }
+            Command::RenameLayer { layer, name } => doc.layer_mut(*layer)?.name = name.clone(),
+            Command::ReorderLayer { layer, index } => {
+                let page = doc
+                    .pages
+                    .iter_mut()
+                    .find(|p| p.layers.iter().any(|l| l.id == *layer))
+                    .ok_or(Error::LayerNotFound(*layer))?;
+                let i = page
+                    .layers
+                    .iter()
+                    .position(|l| l.id == *layer)
+                    .ok_or(Error::LayerNotFound(*layer))?;
+                let l = page.layers.remove(i);
+                let index = (*index).min(page.layers.len());
+                page.layers.insert(index, l);
+            }
             Command::SetShadow { shapes, shadow } => {
                 for id in shapes {
                     doc.shape(*id)?;
@@ -430,6 +497,17 @@ impl Command {
         }
         Ok(())
     }
+}
+
+/// Deep copy of a shape with fresh ids (groups included).
+fn reid_shape(s: &Shape, doc: &mut Document) -> Shape {
+    let mut c = s.clone();
+    c.id = doc.ids_mut().shape();
+    if let ShapeKind::Group { children } = &mut c.kind {
+        let copies: Vec<Shape> = children.iter().map(|ch| reid_shape(ch, doc)).collect();
+        *children = copies;
+    }
+    c
 }
 
 #[cfg(test)]
@@ -506,6 +584,24 @@ mod tests {
             .apply(&mut doc)
             .unwrap();
         assert_eq!(doc.layer(layer).unwrap().shapes.len(), 2);
+    }
+
+    #[test]
+    fn duplicate_page_copies_shapes_with_new_ids() {
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        let page = doc.pages[0].id;
+        let a = rect(&mut doc, 0.0);
+        let ia = a.id;
+        Command::AddShape { layer, shape: a }
+            .apply(&mut doc)
+            .unwrap();
+        Command::DuplicatePage { page }.apply(&mut doc).unwrap();
+        assert_eq!(doc.pages.len(), 2);
+        let copy = &doc.pages[1];
+        assert_eq!(copy.layers[0].shapes.len(), 1);
+        assert_ne!(copy.layers[0].shapes[0].id, ia);
+        assert_ne!(copy.layers[0].id, layer);
     }
 
     #[test]

@@ -15,6 +15,7 @@ pub fn tab_strip(app: &mut App, ui: &mut Ui) {
         (DockerTab::Properties, "Properties"),
         (DockerTab::Objects, "Objects"),
         (DockerTab::Transformations, "Transformations"),
+        (DockerTab::Undo, "Undo"),
     ] {
         let active = app.show_dockers && app.docker_tab == tab;
         let h = 14.0 + name.len() as f32 * 7.0;
@@ -62,6 +63,7 @@ pub fn dockers(app: &mut App, ui: &mut Ui) {
             DockerTab::Objects => "Objects",
             DockerTab::Hints => "Hints",
             DockerTab::Transformations => "Transformations",
+            DockerTab::Undo => "Undo",
         };
         ui.label(egui::RichText::new(name).size(12.0));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -83,6 +85,7 @@ pub fn dockers(app: &mut App, ui: &mut Ui) {
         DockerTab::Objects => objects(app, ui),
         DockerTab::Hints => hints(app, ui),
         DockerTab::Transformations => transformations(app, ui),
+        DockerTab::Undo => undo_docker(app, ui),
     });
 }
 
@@ -361,7 +364,11 @@ fn objects(app: &mut App, ui: &mut Ui) {
             }
         });
     });
-    for layer in page.layers.iter().rev() {
+    let mut rename: Option<(tracedraw_core::LayerId, String)> = None;
+    let mut delete: Option<tracedraw_core::LayerId> = None;
+    let mut reorder: Option<(tracedraw_core::LayerId, usize)> = None;
+    let nlayers = page.layers.len();
+    for (li, layer) in page.layers.iter().enumerate().rev() {
         let mut vis = layer.visible;
         let mut locked = layer.locked;
         ui.horizontal(|ui| {
@@ -373,14 +380,44 @@ fn objects(app: &mut App, ui: &mut Ui) {
                 toggles.push((layer.id, vis, locked));
             }
             if ui
-                .selectable_label(locked, "🔒")
-                .on_hover_text("Lock")
+                .selectable_label(locked, "L")
+                .on_hover_text("Lock layer")
                 .clicked()
             {
                 locked = !locked;
                 toggles.push((layer.id, vis, locked));
             }
-            ui.strong(&layer.name);
+            let r = ui.strong(&layer.name);
+            if r.double_clicked() {
+                rename = Some((layer.id, layer.name.clone()));
+            }
+            r.context_menu(|ui| {
+                if ui.button("Rename...").clicked() {
+                    rename = Some((layer.id, layer.name.clone()));
+                    ui.close();
+                }
+                if ui
+                    .add_enabled(li + 1 < nlayers, egui::Button::new("Move up"))
+                    .clicked()
+                {
+                    reorder = Some((layer.id, li + 1));
+                    ui.close();
+                }
+                if ui
+                    .add_enabled(li > 0, egui::Button::new("Move down"))
+                    .clicked()
+                {
+                    reorder = Some((layer.id, li - 1));
+                    ui.close();
+                }
+                if ui
+                    .add_enabled(nlayers > 1, egui::Button::new("Delete layer"))
+                    .clicked()
+                {
+                    delete = Some(layer.id);
+                    ui.close();
+                }
+            });
         });
         for s in layer.shapes.iter().rev() {
             let sel = app.selection.contains(&s.id);
@@ -410,6 +447,16 @@ fn objects(app: &mut App, ui: &mut Ui) {
     for (layer, visible, locked) in toggles {
         app.run(Command::SetLayerVisible { layer, visible });
         app.run(Command::SetLayerLocked { layer, locked });
+    }
+    if let Some((layer, name)) = rename {
+        app.dialog = crate::ui::dialogs::Dialog::RenameLayer { layer, name };
+    }
+    if let Some(layer) = delete {
+        app.selection.clear();
+        app.run(Command::DeleteLayer { layer });
+    }
+    if let Some((layer, index)) = reorder {
+        app.run(Command::ReorderLayer { layer, index });
     }
     if add_layer {
         let page = app.page;
@@ -651,6 +698,47 @@ fn transformations(app: &mut App, ui: &mut Ui) {
             .clicked()
         {
             apply(app, true);
+        }
+    });
+}
+
+fn undo_docker(app: &mut App, ui: &mut Ui) {
+    let (undo, redo) = app.engine.history_labels();
+    ui.label(
+        egui::RichText::new("Click a step to go back to it")
+            .color(Tokens::TEXT_DIM)
+            .size(11.0),
+    );
+    ui.add_space(4.0);
+    let n = undo.len();
+    let mut goto: Option<usize> = None;
+    for (i, l) in undo.iter().enumerate() {
+        let is_last = i + 1 == n;
+        if ui.selectable_label(is_last, format!("{}", l)).clicked() && !is_last {
+            goto = Some(n - 1 - i);
+        }
+    }
+    if let Some(steps) = goto {
+        for _ in 0..steps {
+            app.undo();
+        }
+    }
+    for l in redo.iter().rev() {
+        let _ = ui.selectable_label(
+            false,
+            egui::RichText::new(l.to_string()).color(Tokens::TEXT_DIM),
+        );
+    }
+    ui.add_space(6.0);
+    ui.horizontal(|ui| {
+        if ui.add_enabled(n > 0, egui::Button::new("Undo")).clicked() {
+            app.undo();
+        }
+        if ui
+            .add_enabled(!redo.is_empty(), egui::Button::new("Redo"))
+            .clicked()
+        {
+            app.redo();
         }
     });
 }

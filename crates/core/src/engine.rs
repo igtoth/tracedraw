@@ -140,6 +140,14 @@ impl Engine {
         Ok(label)
     }
 
+    /// Labels of the undo stack (oldest first) and the redo stack.
+    pub fn history_labels(&self) -> (Vec<&'static str>, Vec<&'static str>) {
+        (
+            self.undo.iter().map(|e| e.label).collect(),
+            self.redo.iter().map(|e| e.label).collect(),
+        )
+    }
+
     pub fn undo_label(&self) -> Option<&'static str> {
         self.undo.last().map(|e| e.label)
     }

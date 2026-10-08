@@ -74,7 +74,9 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
             todo(ui, "Print...", "Ctrl+P");
             todo(ui, "Print Preview...", "");
             ui.separator();
-            todo(ui, "Document Properties...", "");
+            if item(ui, "Document Properties...", "", true) {
+                app.dialog = crate::ui::dialogs::Dialog::DocumentProperties;
+            }
             ui.separator();
             if item(ui, "Exit", "Alt+F4", true) {
                 ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
@@ -178,27 +180,35 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
             if item(ui, "Insert Page...", "", true) {
                 app.add_page();
             }
-            todo(ui, "Duplicate Page...", "");
-            todo(ui, "Rename Page...", "");
+            if item(ui, "Duplicate Page...", "", true) {
+                let page = app.page;
+                app.run(tracedraw_core::Command::DuplicatePage { page });
+            }
+            if item(ui, "Rename Page...", "", true) {
+                let name = app
+                    .doc()
+                    .page(app.page)
+                    .map(|p| p.name.clone())
+                    .unwrap_or_default();
+                app.dialog = crate::ui::dialogs::Dialog::RenamePage { name };
+            }
             if item(ui, "Delete Page...", "", app.doc().pages.len() > 1) {
                 app.delete_page();
             }
-            todo(ui, "Go To Page...", "");
+            if item(ui, "Go To Page...", "", true) {
+                app.dialog = crate::ui::dialogs::Dialog::GoToPage {
+                    page: app.page_index() + 1,
+                };
+            }
             ui.separator();
-            ui.menu_button("Page Size", |ui| {
-                use tracedraw_core::document::paper;
-                for (name, size) in [
-                    ("A4", paper::A4),
-                    ("A3", paper::A3),
-                    ("Letter", paper::LETTER),
-                ] {
-                    if item(ui, name, "", true) {
-                        let page = app.page;
-                        app.run(tracedraw_core::Command::ResizePage { page, size });
-                        app.fit_pending = true;
-                    }
-                }
-            });
+            if item(ui, "Page Size...", "", true) {
+                let s = app.page_size();
+                app.dialog = crate::ui::dialogs::Dialog::PageSize {
+                    width: s.width,
+                    height: s.height,
+                    all_pages: true,
+                };
+            }
             if item(ui, "Switch Page Orientation", "", true) {
                 let s = app.page_size();
                 let page = app.page;
@@ -433,7 +443,9 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
             todo(ui, "Split", "");
         });
         ui.menu_button("Tools", |ui| {
-            todo(ui, "Options", "Ctrl+J");
+            if item(ui, "Options", "Ctrl+J", true) {
+                app.dialog = crate::ui::dialogs::Dialog::Options;
+            }
             todo(ui, "Customization...", "");
             todo(ui, "Save Settings As Default", "");
             ui.separator();
@@ -467,6 +479,10 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
             if item(ui, "Transformations", "", true) {
                 app.show_dockers = true;
                 app.docker_tab = DockerTab::Transformations;
+            }
+            if item(ui, "Undo", "", true) {
+                app.show_dockers = true;
+                app.docker_tab = DockerTab::Undo;
             }
             ui.separator();
             let mut sb = app.show_status_bar;
