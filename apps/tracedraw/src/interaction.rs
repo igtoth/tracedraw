@@ -5,7 +5,7 @@ use crate::tools::Tool;
 use egui::{Key, Modifiers, PointerButton, Response};
 use tracedraw_core::{
     document::ShapeKind,
-    geometry::{Affine, PathEl, Point, Rect, Vec2},
+    geometry::{Affine, Point, Rect, Vec2},
     Color, Command, Fill, ShapeId,
 };
 
@@ -65,29 +65,6 @@ impl App {
             .map(|(h, _)| *h)
     }
 
-    fn node_at(&self, p: Point) -> Option<(ShapeId, usize)> {
-        let tol = 4.0 / self.view.zoom as f64;
-        for s in self.selected_shapes() {
-            if let ShapeKind::Path { path, .. } = &s.kind {
-                let inv = s.transform.inverse();
-                let lp = inv * p;
-                for (i, el) in path.elements().iter().enumerate() {
-                    let end = match el {
-                        PathEl::MoveTo(q) | PathEl::LineTo(q) => Some(*q),
-                        PathEl::QuadTo(_, q) | PathEl::CurveTo(_, _, q) => Some(*q),
-                        PathEl::ClosePath => None,
-                    };
-                    if let Some(q) = end {
-                        if (q - lp).hypot() <= tol {
-                            return Some((s.id, i));
-                        }
-                    }
-                }
-            }
-        }
-        None
-    }
-
     pub fn canvas_input(&mut self, response: &Response, mods: Modifiers) {
         let hover = response.hover_pos();
         let pointer = hover.map(|h| self.view.to_page(h));
@@ -98,7 +75,16 @@ impl App {
             }
             return;
         };
-        let screen = hover.unwrap_or_default();
+        let mut screen = hover.unwrap_or_default();
+        // A drag starts after the pointer moved a few pixels; hit-test at the
+        // press position so small targets like nodes and handles are caught.
+        let mut p = p;
+        if response.drag_started() {
+            if let Some(origin) = response.ctx.input(|i| i.pointer.press_origin()) {
+                screen = origin;
+                p = self.view.to_page(origin);
+            }
+        }
 
         // Middle button always pans.
         if response.dragged_by(PointerButton::Middle) {
@@ -330,111 +316,7 @@ impl App {
     }
 
     fn shape_input(&mut self, response: &Response, p: Point, mods: Modifiers) {
-        if response.drag_started_by(PointerButton::Primary) {
-            if let Some((shape, index)) = self.node_at(p) {
-                self.drag = Drag::Node {
-                    shape,
-                    index,
-                    last: p,
-                };
-                return;
-            }
-            match self.hit_test(p) {
-                Some(id) => {
-                    if !self.selection.contains(&id) {
-                        self.select(vec![id]);
-                    }
-                    self.drag = Drag::Move {
-                        last: p,
-                        total: Vec2::ZERO,
-                    };
-                }
-                None => {
-                    self.drag = Drag::Marquee {
-                        start: p,
-                        current: p,
-                    }
-                }
-            }
-        }
-        if response.dragged_by(PointerButton::Primary) {
-            if let Drag::Node { shape, index, last } = self.drag.clone() {
-                let d = p - last;
-                if let Ok((_, s)) = self.doc().shape(shape) {
-                    if let ShapeKind::Path { path, closed } = &s.kind {
-                        let inv = s.transform.inverse();
-                        let local_d = (inv * (Point::ZERO + d)) - (inv * Point::ZERO);
-                        let mut els: Vec<PathEl> = path.elements().to_vec();
-                        if let Some(el) = els.get_mut(index) {
-                            *el = match *el {
-                                PathEl::MoveTo(q) => PathEl::MoveTo(q + local_d),
-                                PathEl::LineTo(q) => PathEl::LineTo(q + local_d),
-                                PathEl::QuadTo(c, q) => PathEl::QuadTo(c + local_d, q + local_d),
-                                PathEl::CurveTo(c1, c2, q) => {
-                                    PathEl::CurveTo(c1, c2 + local_d, q + local_d)
-                                }
-                                PathEl::ClosePath => PathEl::ClosePath,
-                            };
-                            // Keep the incoming handle of the next segment attached.
-                            if let Some(PathEl::CurveTo(c1, _, _)) = els.get_mut(index + 1) {
-                                *c1 += local_d;
-                            }
-                        }
-                        let new_path = tracedraw_core::BezPath::from_vec(els);
-                        let closed = *closed;
-                        if self.engine.undo_label() == Some("Edit Node") {
-                            let _ = self.engine.undo();
-                        }
-                        let _ = self.engine.run_with_label(
-                            &Command::SetShapeKind {
-                                shape,
-                                kind: ShapeKind::Path {
-                                    path: new_path,
-                                    closed,
-                                },
-                            },
-                            "Edit Node",
-                        );
-                    }
-                }
-                self.drag = Drag::Node {
-                    shape,
-                    index,
-                    last: p,
-                };
-            } else {
-                match &mut self.drag {
-                    Drag::Move { last, total } => {
-                        let d = p - *last;
-                        *last = p;
-                        *total += d;
-                    }
-                    Drag::Marquee { current, .. } => *current = p,
-                    _ => {}
-                }
-            }
-        }
-        if response.clicked_by(PointerButton::Primary) {
-            if self.node_at(p).is_none() {
-                match self.hit_test(p) {
-                    Some(id) => {
-                        if mods.shift {
-                            self.selection.push(id);
-                        } else {
-                            self.select(vec![id]);
-                        }
-                    }
-                    None => self.select(Vec::new()),
-                }
-            }
-        }
-        if response.double_clicked_by(PointerButton::Primary) {
-            // Double-click on a non-curve object converts it to curves (the editor asks; we just do it).
-            if let Some(id) = self.hit_test(p) {
-                self.select(vec![id]);
-                self.convert_to_curves();
-            }
-        }
+        self.shape_tool_input(response, p, mods);
     }
 
     fn zoom_input(&mut self, response: &Response, p: Point, screen: egui::Pos2, mods: Modifiers) {
@@ -635,7 +517,8 @@ impl App {
                     self.view.fit(r, self.canvas_rect);
                 }
             }
-            Drag::Node { .. } | Drag::None => {}
+            Drag::NodeMarquee { start, current } => self.finish_node_marquee(start, current),
+            Drag::Node { .. } | Drag::Handle { .. } | Drag::None => {}
         }
     }
 
@@ -801,7 +684,11 @@ impl App {
             self.convert_to_curves();
         }
         if pressed(Key::A, cmd) {
-            self.select_all();
+            if self.tool == Tool::Shape && !self.selection.is_empty() {
+                self.select_all_nodes();
+            } else {
+                self.select_all();
+            }
         }
         if pressed(Key::L, cmd) {
             self.combine();
@@ -834,7 +721,11 @@ impl App {
             self.order(2);
         }
         if pressed(Key::Delete, Modifiers::NONE) || pressed(Key::Backspace, Modifiers::NONE) {
-            self.delete_selection();
+            if self.tool == Tool::Shape && !self.node_selection.is_empty() {
+                self.delete_selected_nodes();
+            } else {
+                self.delete_selection();
+            }
         }
         if pressed(Key::F4, Modifiers::SHIFT) {
             self.zoom_to_page();

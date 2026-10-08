@@ -228,68 +228,7 @@ fn draw_selection(app: &App, painter: &Painter, preview: Option<Affine>) {
     let r = view.rect_to_screen(bounds);
 
     if app.tool == Tool::Shape {
-        // Nodes of the selected curves.
-        for s in &shapes {
-            if let ShapeKind::Path { path, .. } = &s.kind {
-                let mut prev: Option<Point> = None;
-                for el in path.elements() {
-                    match el {
-                        PathEl::MoveTo(q) | PathEl::LineTo(q) => {
-                            let p = view.to_screen(s.transform * *q);
-                            painter.rect_stroke(
-                                ERect::from_center_size(p, egui::vec2(6.0, 6.0)),
-                                0.0,
-                                EStroke::new(1.0, Tokens::TEXT),
-                                epaint::StrokeKind::Middle,
-                            );
-                            prev = Some(*q);
-                        }
-                        PathEl::CurveTo(c1, c2, q) => {
-                            let p = view.to_screen(s.transform * *q);
-                            // Control handles as thin lines.
-                            if let Some(pp) = prev {
-                                painter.line_segment(
-                                    [
-                                        view.to_screen(s.transform * pp),
-                                        view.to_screen(s.transform * *c1),
-                                    ],
-                                    EStroke::new(0.5, Tokens::SELECTION),
-                                );
-                            }
-                            painter.line_segment(
-                                [p, view.to_screen(s.transform * *c2)],
-                                EStroke::new(0.5, Tokens::SELECTION),
-                            );
-                            painter.rect_stroke(
-                                ERect::from_center_size(p, egui::vec2(6.0, 6.0)),
-                                0.0,
-                                EStroke::new(1.0, Tokens::TEXT),
-                                epaint::StrokeKind::Middle,
-                            );
-                            prev = Some(*q);
-                        }
-                        PathEl::QuadTo(_, q) => {
-                            let p = view.to_screen(s.transform * *q);
-                            painter.rect_stroke(
-                                ERect::from_center_size(p, egui::vec2(6.0, 6.0)),
-                                0.0,
-                                EStroke::new(1.0, Tokens::TEXT),
-                                epaint::StrokeKind::Middle,
-                            );
-                            prev = Some(*q);
-                        }
-                        PathEl::ClosePath => {}
-                    }
-                }
-            } else {
-                painter.rect_stroke(
-                    view.rect_to_screen(s.bounds()),
-                    0.0,
-                    EStroke::new(1.0, Tokens::SELECTION),
-                    epaint::StrokeKind::Outside,
-                );
-            }
-        }
+        draw_nodes(app, painter);
         return;
     }
 
@@ -509,5 +448,57 @@ fn fmt_tick(v: f64) -> String {
         format!("{}", v.round() as i64)
     } else {
         format!("{v:.1}")
+    }
+}
+
+/// Shape tool overlay: nodes as squares (selected filled), handles of the
+/// selected nodes as lines with round ends, start node larger.
+fn draw_nodes(app: &App, painter: &Painter) {
+    use tracedraw_core::nodes;
+    let view = &app.view;
+    for s in app.selected_shapes() {
+        let ShapeKind::Path { path, .. } = &s.kind else {
+            painter.rect_stroke(
+                view.rect_to_screen(s.bounds()),
+                0.0,
+                EStroke::new(1.0, Tokens::SELECTION),
+                epaint::StrokeKind::Outside,
+            );
+            continue;
+        };
+        for n in nodes::nodes(path) {
+            let selected = app.node_selection.contains(&(s.id, n.index));
+            let p = view.to_screen(s.transform * n.pos);
+            if selected {
+                for c in [n.ctrl_in, n.ctrl_out].into_iter().flatten() {
+                    let cp = view.to_screen(s.transform * c);
+                    painter.line_segment([p, cp], EStroke::new(1.0, Tokens::SELECTION));
+                    painter.circle_filled(cp, 3.0, Color32::WHITE);
+                    painter.circle_stroke(cp, 3.0, EStroke::new(1.0, Tokens::SELECTION));
+                }
+            }
+            let size = if n.is_start { 8.0 } else { 6.0 };
+            let r = ERect::from_center_size(p, egui::vec2(size, size));
+            if selected {
+                painter.rect_filled(r, 0.0, Tokens::HANDLE);
+            } else {
+                painter.rect_filled(r, 0.0, Color32::WHITE);
+                painter.rect_stroke(
+                    r,
+                    0.0,
+                    EStroke::new(1.0, Tokens::HANDLE),
+                    epaint::StrokeKind::Middle,
+                );
+            }
+        }
+    }
+    if let Drag::NodeMarquee { start, current } = &app.drag {
+        let r = view.rect_to_screen(Rect::from_points(*start, *current));
+        painter.rect_stroke(
+            r,
+            0.0,
+            EStroke::new(1.0, Tokens::SELECTION),
+            epaint::StrokeKind::Outside,
+        );
     }
 }

@@ -8,6 +8,7 @@ mod canvas;
 mod interaction;
 mod ops;
 mod raster;
+mod shape_tool;
 mod theme;
 mod tools;
 mod ui;

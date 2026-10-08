@@ -120,11 +120,20 @@ pub enum Drag {
     Freehand {
         points: Vec<Point>,
     },
-    /// Dragging a node of a path (Shape tool).
+    /// Dragging the selected nodes (Shape tool).
     Node {
+        last: Point,
+    },
+    /// Dragging a control handle (Shape tool).
+    Handle {
         shape: ShapeId,
         index: usize,
-        last: Point,
+        which: tracedraw_core::nodes::Which,
+    },
+    /// Rubber-band selection of nodes (Shape tool).
+    NodeMarquee {
+        start: Point,
+        current: Point,
     },
     /// Interactive fill: linear gradient from start to current.
     FillGradient {
@@ -202,6 +211,8 @@ pub struct App {
     pub wireframe: bool,
     pub font_families: Vec<String>,
     pub transform_tab: TransformTab,
+    /// Selected nodes: (shape, element index).
+    pub node_selection: Vec<(ShapeId, usize)>,
     pub transform_values: [f64; 4],
 }
 
@@ -274,6 +285,7 @@ impl App {
             wireframe: false,
             font_families: tracedraw_text::fonts().families().to_vec(),
             transform_tab: TransformTab::Position,
+            node_selection: Vec::new(),
             transform_values: [0.0, 0.0, 100.0, 100.0],
         };
         if let Some(p) = open {
@@ -345,6 +357,7 @@ impl App {
     pub fn select(&mut self, ids: Vec<ShapeId>) {
         self.selection = ids;
         self.rotate_mode = false;
+        self.node_selection.clear();
     }
 
     // ----- object creation ---------------------------------------------------

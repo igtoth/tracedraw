@@ -14,6 +14,7 @@ pub mod document;
 pub mod engine;
 pub mod geometry;
 pub mod id;
+pub mod nodes;
 pub mod style;
 
 pub use color::Color;

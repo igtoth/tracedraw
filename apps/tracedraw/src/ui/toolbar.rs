@@ -161,8 +161,9 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
         ui.spacing_mut().item_spacing.x = 4.0;
         let shapes = app.selected_shapes();
         match app.tool {
-            Tool::Pick | Tool::FreeformPick | Tool::Shape if shapes.is_empty() => page_properties(app, ui),
-            Tool::Pick | Tool::FreeformPick | Tool::Shape => object_properties(app, ui),
+            Tool::Shape => shape_tool_bar(app, ui),
+            Tool::Pick | Tool::FreeformPick if shapes.is_empty() => page_properties(app, ui),
+            Tool::Pick | Tool::FreeformPick => object_properties(app, ui),
             Tool::Zoom | Tool::Pan => {
                 ui.label(egui::RichText::new("Zoom levels").color(Tokens::TEXT_DIM).size(11.0));
                 for (l, pct) in [("25%", 25.0), ("50%", 50.0), ("100%", 100.0), ("200%", 200.0), ("400%", 400.0)] {
@@ -569,5 +570,97 @@ fn text_properties(app: &mut App, ui: &mut Ui) {
         if !cmds.is_empty() {
             let _ = app.engine.run_batch("Text Properties", &cmds);
         }
+    }
+}
+
+fn shape_tool_bar(app: &mut App, ui: &mut Ui) {
+    use tracedraw_core::nodes::NodeType;
+    let has_nodes = !app.node_selection.is_empty();
+    let has_curve = app
+        .selected_shapes()
+        .iter()
+        .any(|s| matches!(s.kind, ShapeKind::Path { .. }));
+    let b = |ui: &mut Ui, label: &str, tip: &str, enabled: bool| -> bool {
+        ui.add_enabled(
+            enabled,
+            egui::Button::new(egui::RichText::new(label).size(11.0)),
+        )
+        .on_hover_text(tip)
+        .clicked()
+    };
+    if b(
+        ui,
+        "+ Node",
+        "Add nodes (double-click a segment)",
+        has_nodes,
+    ) {
+        app.add_node_midpoints();
+    }
+    if b(ui, "- Node", "Delete nodes (Delete)", has_nodes) {
+        app.delete_selected_nodes();
+    }
+    vsep(ui);
+    if b(ui, "Break", "Break curve at nodes", has_nodes) {
+        app.break_selected_nodes();
+    }
+    if b(ui, "Close", "Close curve", has_curve) {
+        app.close_selected_curves();
+    }
+    vsep(ui);
+    if b(ui, "To line", "Convert segment to line", has_nodes) {
+        app.selected_segments_to_line();
+    }
+    if b(ui, "To curve", "Convert segment to curve", has_nodes) {
+        app.selected_segments_to_curve();
+    }
+    vsep(ui);
+    let current = app.current_node_type();
+    for (ty, name, tip) in [
+        (
+            NodeType::Cusp,
+            "Cusp",
+            "Cusp node: handles move independently",
+        ),
+        (
+            NodeType::Smooth,
+            "Smooth",
+            "Smooth node: handles stay in line",
+        ),
+        (
+            NodeType::Symmetrical,
+            "Symm.",
+            "Symmetrical node: handles equal and in line",
+        ),
+    ] {
+        if ui
+            .add_enabled(
+                has_nodes,
+                egui::Button::selectable(current == Some(ty), name),
+            )
+            .on_hover_text(tip)
+            .clicked()
+        {
+            app.set_selected_node_type(ty);
+        }
+    }
+    vsep(ui);
+    if b(ui, "Reverse", "Reverse direction", has_curve) {
+        app.reverse_selected_curves();
+    }
+    if b(ui, "Select all", "Select all nodes (Ctrl+A)", has_curve) {
+        app.select_all_nodes();
+    }
+    vsep(ui);
+    if b(ui, "Convert to curves", "Ctrl+Q", !app.selection.is_empty()) {
+        app.convert_to_curves();
+    }
+    if !has_curve && !app.selection.is_empty() {
+        ui.label(
+            egui::RichText::new(
+                "Double-click an object to convert it to curves and edit its nodes",
+            )
+            .color(Tokens::TEXT_DIM)
+            .size(11.0),
+        );
     }
 }
