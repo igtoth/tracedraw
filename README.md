@@ -70,3 +70,9 @@ with, sponsored by or endorsed by the vendor.
 ## License
 
 MIT or Apache-2.0, at your option.
+
+## Prebuilt binaries
+
+Every push to `main` builds Windows, macOS (Intel and Apple Silicon) and
+Linux binaries as workflow artifacts (Actions tab, pick the run, scroll to
+Artifacts). Tagging `vX.Y.Z` publishes them on the Releases page.

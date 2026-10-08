@@ -1,0 +1,104 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --workspace --exclude traco
+
+  build:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            name: windows-x86_64
+            ext: .exe
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            name: macos-arm64
+            ext: ""
+          - os: macos-13
+            target: x86_64-apple-darwin
+            name: macos-x86_64
+            ext: ""
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            name: linux-x86_64
+            ext: ""
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Linux system libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libxkbcommon-dev libwayland-dev libgl1-mesa-dev \
+            libx11-dev libxcursor-dev libxrandr-dev libxi-dev libgtk-3-dev
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }} -p traco -p traco-cli
+
+      - name: Package
+        shell: bash
+        run: |
+          set -e
+          out=dist/traco-${{ matrix.name }}
+          mkdir -p "$out"
+          cp target/${{ matrix.target }}/release/traco${{ matrix.ext }} "$out/"
+          cp target/${{ matrix.target }}/release/traco-cli${{ matrix.ext }} "$out/"
+          cp README.md LICENSE-MIT LICENSE-APACHE "$out/"
+          cd dist
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            7z a -tzip traco-${{ matrix.name }}.zip traco-${{ matrix.name }}
+          else
+            tar -czf traco-${{ matrix.name }}.tar.gz traco-${{ matrix.name }}
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: traco-${{ matrix.name }}
+          path: |
+            dist/*.zip
+            dist/*.tar.gz
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/*.zip
+            artifacts/*.tar.gz
+          generate_release_notes: true
