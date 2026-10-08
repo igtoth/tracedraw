@@ -276,3 +276,129 @@ impl App {
         let _ = Point::ZERO;
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Shaping {
+    Weld,
+    Trim,
+    Intersect,
+    Simplify,
+    FrontMinusBack,
+    BackMinusFront,
+    Boundary,
+}
+
+impl App {
+    /// the editor convention: the last selected object is the target and
+    /// keeps its attributes; the other selected objects act on it.
+    pub fn shaping(&mut self, op: Shaping) {
+        use tracedraw_core::shaping::{overlay, simplify, Op};
+        let shapes = self.selected_shapes();
+        if shapes.is_empty()
+            || (shapes.len() < 2 && !matches!(op, Shaping::Simplify | Shaping::Boundary))
+        {
+            return;
+        }
+        let doc = self.doc();
+        // Z-order: lowest index first within the layer.
+        let mut ordered = shapes.clone();
+        ordered.sort_by_key(|s| doc.locate(s.id).map(|(_, i)| i).unwrap_or(0));
+        let target = shapes.last().cloned().unwrap_or_else(|| ordered[0].clone());
+        let paths: Vec<tracedraw_core::BezPath> = ordered.iter().map(Shape::page_path).collect();
+        let result = match op {
+            Shaping::Weld | Shaping::Boundary => paths
+                .iter()
+                .skip(1)
+                .fold(paths[0].clone(), |acc, p| overlay(&acc, p, Op::Weld)),
+            Shaping::Intersect => paths
+                .iter()
+                .skip(1)
+                .fold(paths[0].clone(), |acc, p| overlay(&acc, p, Op::Intersect)),
+            Shaping::Simplify => {
+                // Each object loses what is covered by objects above it.
+                let mut cmds = Vec::new();
+                for (i, s) in ordered.iter().enumerate() {
+                    let mut p = s.page_path();
+                    for above in &paths[i + 1..] {
+                        p = overlay(&p, above, Op::Trim);
+                    }
+                    let p = simplify(&p);
+                    let local = s.transform.inverse() * p;
+                    cmds.push(Command::SetShapeKind {
+                        shape: s.id,
+                        kind: ShapeKind::Path {
+                            path: local,
+                            closed: true,
+                        },
+                    });
+                }
+                let _ = self.engine.run_batch("Simplify", &cmds);
+                return;
+            }
+            Shaping::Trim => {
+                let mut p = target.page_path();
+                for s in &ordered {
+                    if s.id != target.id {
+                        p = overlay(&p, &s.page_path(), Op::Trim);
+                    }
+                }
+                p
+            }
+            Shaping::FrontMinusBack => {
+                let front = paths.last().cloned().unwrap_or_default();
+                paths
+                    .iter()
+                    .take(paths.len() - 1)
+                    .fold(front, |acc, p| overlay(&acc, p, Op::Trim))
+            }
+            Shaping::BackMinusFront => paths
+                .iter()
+                .skip(1)
+                .fold(paths[0].clone(), |acc, p| overlay(&acc, p, Op::Trim)),
+        };
+        if result.elements().is_empty() {
+            self.status = "Shaping produced an empty result".into();
+            return;
+        }
+        let keep_sources = op == Shaping::Boundary;
+        let attrs = match op {
+            Shaping::FrontMinusBack => ordered.last().cloned().unwrap_or(target.clone()),
+            Shaping::BackMinusFront => ordered[0].clone(),
+            _ => target.clone(),
+        };
+        let Some(layer) = self.active_layer() else {
+            return;
+        };
+        let id = self.engine.new_shape_id();
+        let mut shape = Shape::new(
+            id,
+            ShapeKind::Path {
+                path: result,
+                closed: true,
+            },
+        );
+        shape.fill = attrs.fill.clone();
+        shape.stroke = attrs.stroke.clone();
+        shape.opacity = attrs.opacity;
+        let mut cmds = vec![Command::AddShape { layer, shape }];
+        if !keep_sources {
+            cmds.push(Command::DeleteShapes {
+                shapes: shapes.iter().map(|s| s.id).collect(),
+            });
+        }
+        let label = match op {
+            Shaping::Weld => "Weld",
+            Shaping::Trim => "Trim",
+            Shaping::Intersect => "Intersect",
+            Shaping::FrontMinusBack => "Front Minus Back",
+            Shaping::BackMinusFront => "Back Minus Front",
+            Shaping::Boundary => "Boundary",
+            Shaping::Simplify => "Simplify",
+        };
+        if let Err(e) = self.engine.run_batch(label, &cmds) {
+            self.status = e.to_string();
+            return;
+        }
+        self.select(vec![id]);
+    }
+}

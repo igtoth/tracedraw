@@ -237,6 +237,13 @@ impl App {
                 }
                 return;
             }
+            if self.hit_test(p).is_none() {
+                if let Some(gi) = self.guide_at(p) {
+                    self.selected_guide = Some(gi);
+                    self.drag = Drag::MoveGuide { index: gi };
+                    return;
+                }
+            }
             match self.hit_test(p) {
                 Some(id) => {
                     if mods.shift {
@@ -249,12 +256,14 @@ impl App {
                     self.drag = Drag::Move {
                         last: p,
                         total: Vec2::ZERO,
+                        start_bounds: self.selection_bounds().unwrap_or(Rect::ZERO),
                     };
                 }
                 None => {
                     if !mods.shift {
                         self.select(Vec::new());
                     }
+                    self.selected_guide = None;
                     self.drag = Drag::Marquee {
                         start: p,
                         current: p,
@@ -263,11 +272,41 @@ impl App {
             }
         }
         if response.dragged_by(PointerButton::Primary) {
+            if let Drag::MoveGuide { index } = self.drag {
+                let guide = match self
+                    .doc()
+                    .page(self.page)
+                    .ok()
+                    .and_then(|pg| pg.guides.get(index).copied())
+                {
+                    Some(tracedraw_core::document::Guide::Horizontal { .. }) => {
+                        tracedraw_core::document::Guide::Horizontal { y: p.y }
+                    }
+                    Some(tracedraw_core::document::Guide::Vertical { .. }) => {
+                        tracedraw_core::document::Guide::Vertical { x: p.x }
+                    }
+                    None => return,
+                };
+                self.move_guide(index, guide);
+                return;
+            }
+            let snapped_move = match &self.drag {
+                Drag::Move {
+                    last,
+                    total,
+                    start_bounds,
+                } => {
+                    let raw = *total + (p - *last);
+                    Some((p, self.snap_move(*start_bounds, raw)))
+                }
+                _ => None,
+            };
             match &mut self.drag {
-                Drag::Move { last, total } => {
-                    let d = p - *last;
-                    *last = p;
-                    *total += d;
+                Drag::Move { last, total, .. } => {
+                    if let Some((np, nt)) = snapped_move {
+                        *last = np;
+                        *total = nt;
+                    }
                 }
                 Drag::Marquee { current, .. } | Drag::Scale { current, .. } => *current = p,
                 Drag::Rotate {
@@ -282,6 +321,14 @@ impl App {
             if self.handle_at(screen).is_some() {
                 return;
             }
+            if self.hit_test(p).is_none() {
+                if let Some(gi) = self.guide_at(p) {
+                    self.selected_guide = Some(gi);
+                    self.select(Vec::new());
+                    return;
+                }
+            }
+            self.selected_guide = None;
             match self.hit_test(p) {
                 Some(id) if mods.shift => {
                     if let Some(i) = self.selection.iter().position(|s| *s == id) {
@@ -341,6 +388,7 @@ impl App {
     }
 
     fn box_input(&mut self, response: &Response, p: Point, mods: Modifiers) {
+        let p = self.snap_point(p);
         if response.drag_started_by(PointerButton::Primary) {
             self.drag = Drag::Box {
                 start: p,
@@ -395,6 +443,7 @@ impl App {
     }
 
     fn curve_input(&mut self, response: &Response, p: Point, _mods: Modifiers) {
+        let p = self.snap_point(p);
         let smooth = matches!(self.tool, Tool::Bezier | Tool::Pen | Tool::BSpline);
         if response.double_clicked_by(PointerButton::Primary) {
             self.finish_curve();
@@ -518,7 +567,8 @@ impl App {
                 }
             }
             Drag::NodeMarquee { start, current } => self.finish_node_marquee(start, current),
-            Drag::Node { .. } | Drag::Handle { .. } | Drag::None => {}
+            Drag::NewGuide { .. } => self.finish_guide_drag(),
+            Drag::MoveGuide { .. } | Drag::Node { .. } | Drag::Handle { .. } | Drag::None => {}
         }
     }
 
@@ -723,6 +773,8 @@ impl App {
         if pressed(Key::Delete, Modifiers::NONE) || pressed(Key::Backspace, Modifiers::NONE) {
             if self.tool == Tool::Shape && !self.node_selection.is_empty() {
                 self.delete_selected_nodes();
+            } else if let Some(gi) = self.selected_guide {
+                self.delete_guide(gi);
             } else {
                 self.delete_selection();
             }

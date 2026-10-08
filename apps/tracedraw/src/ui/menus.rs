@@ -161,10 +161,18 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
             if ui.checkbox(&mut grid, "Grid").changed() {
                 app.show_grid = grid;
             }
-            todo(ui, "Guidelines", "");
+            let mut guides = app.show_guides;
+            if ui.checkbox(&mut guides, "Guidelines").changed() {
+                app.show_guides = guides;
+            }
             todo(ui, "Page", "");
             ui.separator();
-            todo(ui, "Snap To", "");
+            ui.menu_button("Snap To", |ui| {
+                ui.checkbox(&mut app.snap.grid, "Document Grid");
+                ui.checkbox(&mut app.snap.guides, "Guidelines");
+                ui.checkbox(&mut app.snap.objects, "Objects");
+                ui.checkbox(&mut app.snap.page, "Page");
+            });
         });
         ui.menu_button("Layout", |ui| {
             if item(ui, "Insert Page...", "", true) {
@@ -310,13 +318,21 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
             }
             ui.separator();
             ui.menu_button("Shaping", |ui| {
-                todo(ui, "Weld", "");
-                todo(ui, "Trim", "");
-                todo(ui, "Intersect", "");
-                todo(ui, "Simplify", "");
-                todo(ui, "Front Minus Back", "");
-                todo(ui, "Back Minus Front", "");
-                todo(ui, "Boundary", "");
+                use crate::ops::Shaping;
+                let two = app.selection.len() >= 2;
+                for (name, op, need_two) in [
+                    ("Weld", Shaping::Weld, true),
+                    ("Trim", Shaping::Trim, true),
+                    ("Intersect", Shaping::Intersect, true),
+                    ("Simplify", Shaping::Simplify, false),
+                    ("Front Minus Back", Shaping::FrontMinusBack, true),
+                    ("Back Minus Front", Shaping::BackMinusFront, true),
+                    ("Boundary", Shaping::Boundary, false),
+                ] {
+                    if item(ui, name, "", if need_two { two } else { has }) {
+                        app.shaping(op);
+                    }
+                }
             });
             if item(ui, "Convert To Curves", "Ctrl+Q", has) {
                 app.convert_to_curves();

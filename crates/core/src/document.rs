@@ -196,6 +196,14 @@ impl Layer {
     }
 }
 
+/// A guideline on a page, in mm.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "dir", rename_all = "lowercase")]
+pub enum Guide {
+    Horizontal { y: f64 },
+    Vertical { x: f64 },
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Page {
     pub id: PageId,
@@ -204,6 +212,8 @@ pub struct Page {
     pub size: crate::geometry::Size,
     /// Bottom to top drawing order.
     pub layers: Vec<Layer>,
+    #[serde(default)]
+    pub guides: Vec<Guide>,
 }
 
 impl Page {
@@ -234,6 +244,7 @@ impl Document {
             name: "Page 1".into(),
             size,
             layers: vec![Layer::new(ids.layer(), "Layer 1")],
+            guides: Vec::new(),
         };
         Document {
             title: title.into(),

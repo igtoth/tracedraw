@@ -2,7 +2,7 @@
 //! and the control channel all build commands and hand them to the
 //! [`crate::Engine`], which applies them and records history.
 
-use crate::document::{Layer, Page, Shape, ShapeKind};
+use crate::document::{Guide, Layer, Page, Shape, ShapeKind};
 use crate::geometry::{Affine, BezPath, PathEl, Size};
 use crate::id::{LayerId, PageId, ShapeId};
 use crate::style::{Fill, Stroke};
@@ -107,6 +107,19 @@ pub enum Command {
     BreakApart {
         shape: ShapeId,
     },
+    AddGuide {
+        page: PageId,
+        guide: Guide,
+    },
+    MoveGuide {
+        page: PageId,
+        index: usize,
+        guide: Guide,
+    },
+    DeleteGuide {
+        page: PageId,
+        index: usize,
+    },
 }
 
 impl Command {
@@ -136,6 +149,9 @@ impl Command {
             Command::SetLocked { .. } => "Unlock Object",
             Command::Combine { .. } => "Combine",
             Command::BreakApart { .. } => "Break Apart",
+            Command::AddGuide { .. } => "Add Guideline",
+            Command::MoveGuide { .. } => "Move Guideline",
+            Command::DeleteGuide { .. } => "Delete Guideline",
         }
     }
 
@@ -154,6 +170,7 @@ impl Command {
                     name: name.clone().unwrap_or_else(|| format!("Page {n}")),
                     size: *size,
                     layers: vec![Layer::new(layer_id, "Layer 1")],
+                    guides: Vec::new(),
                 });
             }
             Command::DeletePage { page } => {
@@ -362,6 +379,19 @@ impl Command {
                     piece.stroke = s.stroke.clone();
                     piece.opacity = s.opacity;
                     layer.shapes.insert(idx + k, piece);
+                }
+            }
+            Command::AddGuide { page, guide } => doc.page_mut(*page)?.guides.push(*guide),
+            Command::MoveGuide { page, index, guide } => {
+                let p = doc.page_mut(*page)?;
+                if let Some(g) = p.guides.get_mut(*index) {
+                    *g = *guide;
+                }
+            }
+            Command::DeleteGuide { page, index } => {
+                let p = doc.page_mut(*page)?;
+                if *index < p.guides.len() {
+                    p.guides.remove(*index);
                 }
             }
             Command::Ungroup { group } => {

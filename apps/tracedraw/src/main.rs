@@ -9,6 +9,7 @@ mod interaction;
 mod ops;
 mod raster;
 mod shape_tool;
+mod snap;
 mod theme;
 mod tools;
 mod ui;

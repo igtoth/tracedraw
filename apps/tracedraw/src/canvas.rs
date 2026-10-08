@@ -502,3 +502,72 @@ fn draw_nodes(app: &App, painter: &Painter) {
         );
     }
 }
+
+/// Guidelines: dashed lines across the window; the selected one in red,
+/// a guide being dragged in blue.
+pub fn draw_guides(app: &App, painter: &Painter, rect: ERect) {
+    if !app.show_guides {
+        return;
+    }
+    let view = &app.view;
+    let Ok(page) = app.doc().page(app.page) else {
+        return;
+    };
+    let dash = |painter: &Painter, a: Pos2, b: Pos2, color: Color32| {
+        let len = a.distance(b);
+        let n = (len / 6.0).ceil() as usize;
+        for i in (0..n).step_by(2) {
+            let t0 = i as f32 / n as f32;
+            let t1 = ((i + 1) as f32 / n as f32).min(1.0);
+            painter.line_segment(
+                [a + (b - a) * t0, a + (b - a) * t1],
+                EStroke::new(1.0, color),
+            );
+        }
+    };
+    for (i, g) in page.guides.iter().enumerate() {
+        let color = if app.selected_guide == Some(i) {
+            Color32::from_rgb(220, 30, 30)
+        } else {
+            Color32::from_rgb(0, 120, 215)
+        };
+        match g {
+            tracedraw_core::document::Guide::Horizontal { y } => {
+                let sy = view.to_screen(Point::new(0.0, *y)).y;
+                dash(
+                    painter,
+                    Pos2::new(rect.left(), sy),
+                    Pos2::new(rect.right(), sy),
+                    color,
+                );
+            }
+            tracedraw_core::document::Guide::Vertical { x } => {
+                let sx = view.to_screen(Point::new(*x, 0.0)).x;
+                dash(
+                    painter,
+                    Pos2::new(sx, rect.top()),
+                    Pos2::new(sx, rect.bottom()),
+                    color,
+                );
+            }
+        }
+    }
+    if let Drag::NewGuide { horizontal, pos } = &app.drag {
+        let s = view.to_screen(*pos);
+        if *horizontal {
+            dash(
+                painter,
+                Pos2::new(rect.left(), s.y),
+                Pos2::new(rect.right(), s.y),
+                Color32::from_rgb(0, 120, 215),
+            );
+        } else {
+            dash(
+                painter,
+                Pos2::new(s.x, rect.top()),
+                Pos2::new(s.x, rect.bottom()),
+                Color32::from_rgb(0, 120, 215),
+            );
+        }
+    }
+}

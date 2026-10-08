@@ -97,6 +97,7 @@ pub enum Drag {
     Move {
         last: Point,
         total: Vec2,
+        start_bounds: Rect,
     },
     /// Scaling the selection with a handle; `anchor` stays fixed.
     Scale {
@@ -145,6 +146,15 @@ pub enum Drag {
     ZoomBox {
         start: Point,
         current: Point,
+    },
+    /// Dragging a new guideline out of a ruler.
+    NewGuide {
+        horizontal: bool,
+        pos: Point,
+    },
+    /// Dragging an existing guideline.
+    MoveGuide {
+        index: usize,
     },
 }
 
@@ -213,6 +223,9 @@ pub struct App {
     pub transform_tab: TransformTab,
     /// Selected nodes: (shape, element index).
     pub node_selection: Vec<(ShapeId, usize)>,
+    pub snap: crate::snap::SnapSettings,
+    pub show_guides: bool,
+    pub selected_guide: Option<usize>,
     pub transform_values: [f64; 4],
 }
 
@@ -286,6 +299,9 @@ impl App {
             font_families: tracedraw_text::fonts().families().to_vec(),
             transform_tab: TransformTab::Position,
             node_selection: Vec::new(),
+            snap: crate::snap::SnapSettings::default(),
+            show_guides: true,
+            selected_guide: None,
             transform_values: [0.0, 0.0, 100.0, 100.0],
         };
         if let Some(p) = open {

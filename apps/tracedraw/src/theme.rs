@@ -27,6 +27,7 @@ impl Tokens {
     pub const TOOLBOX_WIDTH: f32 = 36.0;
     pub const TOOL_BUTTON: f32 = 30.0;
     pub const RULER: f32 = 18.0;
+    pub const SCROLLBAR: f32 = 14.0;
     pub const SWATCH: f32 = 16.0;
 }
 

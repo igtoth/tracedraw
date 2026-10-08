@@ -168,6 +168,7 @@ pub fn parse_document(tree: &Tree, main: &[u8], version: Version) -> (Document, 
             name: format!("Page {}", i + 1),
             size: page_size,
             layers: Vec::new(),
+            guides: Vec::new(),
         };
         let mut layer_chunks: Vec<&Chunk> = Vec::new();
         pc.walk(&mut |c, _| {
@@ -216,6 +217,7 @@ pub fn parse_document(tree: &Tree, main: &[u8], version: Version) -> (Document, 
             name: "Page 1".into(),
             size: page_size,
             layers: vec![Layer::new(lid, "Layer 1")],
+            guides: Vec::new(),
         });
     }
 
