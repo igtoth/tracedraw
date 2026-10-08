@@ -111,6 +111,44 @@ impl Renderer<'_> {
             return;
         }
 
+        // Drop shadow: blurred silhouette behind the object.
+        if let Some(sh) = &shape.shadow {
+            if !self.wireframe && sh.opacity > 0.0 {
+                let (w, h) = (self.pixmap.width(), self.pixmap.height());
+                if let Some(mut layer) = Pixmap::new(w, h) {
+                    let shifted = Affine::translate(sh.offset) * page_path.clone();
+                    if let Some(sk_sh) = to_sk_path(&(self.screen * shifted)) {
+                        let mut paint = Paint::default();
+                        paint.anti_alias = true;
+                        paint.set_color(sk_color(sh.color));
+                        layer.fill_path(
+                            &sk_sh,
+                            &paint,
+                            FillRule::Winding,
+                            Transform::identity(),
+                            None,
+                        );
+                        let radius = (sh.blur * self.zoom).round() as i32;
+                        if radius > 0 {
+                            box_blur(&mut layer, radius.min(64));
+                        }
+                        let pp = tiny_skia::PixmapPaint {
+                            opacity: sh.opacity.clamp(0.0, 1.0) as f32,
+                            ..Default::default()
+                        };
+                        self.pixmap.draw_pixmap(
+                            0,
+                            0,
+                            layer.as_ref(),
+                            &pp,
+                            Transform::identity(),
+                            None,
+                        );
+                    }
+                }
+            }
+        }
+
         // Semi-transparent objects render into a scratch layer first so fill
         // and outline do not double up where they overlap.
         if opacity < 1.0 {
@@ -321,6 +359,58 @@ impl Renderer<'_> {
     }
 }
 
+/// Three-pass box blur (approximates a Gaussian) on premultiplied RGBA.
+pub fn box_blur(pm: &mut Pixmap, radius: i32) {
+    let w = pm.width() as usize;
+    let h = pm.height() as usize;
+    let r = radius.max(1) as usize;
+    let data = pm.data_mut();
+    let mut tmp = vec![0u8; data.len()];
+    for _ in 0..3 {
+        blur_pass(data, &mut tmp, w, h, r, true);
+        blur_pass(&tmp, data, w, h, r, false);
+    }
+}
+
+fn blur_pass(src: &[u8], dst: &mut [u8], w: usize, h: usize, r: usize, horizontal: bool) {
+    let (outer, inner) = if horizontal { (h, w) } else { (w, h) };
+    let idx = |o: usize, i: usize| -> usize {
+        if horizontal {
+            (o * w + i) * 4
+        } else {
+            (i * w + o) * 4
+        }
+    };
+    let span = (2 * r + 1) as u32;
+    for o in 0..outer {
+        let mut acc = [0u32; 4];
+        // Prime the window with the first pixel repeated, like edge clamping.
+        for i in 0..=r {
+            let p = idx(o, i.min(inner - 1));
+            for c in 0..4 {
+                acc[c] += src[p + c] as u32;
+            }
+        }
+        for _ in 0..r {
+            let p = idx(o, 0);
+            for c in 0..4 {
+                acc[c] += src[p + c] as u32;
+            }
+        }
+        for i in 0..inner {
+            let d = idx(o, i);
+            for c in 0..4 {
+                dst[d + c] = (acc[c] / span) as u8;
+            }
+            let add = idx(o, (i + r + 1).min(inner - 1));
+            let sub = idx(o, i.saturating_sub(r));
+            for c in 0..4 {
+                acc[c] = acc[c] + src[add + c] as u32 - src[sub + c] as u32;
+            }
+        }
+    }
+}
+
 fn bbox(p: &BezPath) -> Rect {
     use tracedraw_core::geometry::Shape as _;
     p.bounding_box()
@@ -439,6 +529,36 @@ mod tests {
         let p = img.pixel(10, 10).unwrap();
         assert_eq!(p.red(), 255);
         assert!((120..=136).contains(&p.green()), "green was {}", p.green());
+    }
+
+    #[test]
+    fn shadow_darkens_pixels_beside_the_object() {
+        let mut doc = Document::new("t", tracedraw_core::geometry::Size::new(40.0, 40.0));
+        let layer = doc.pages[0].layers[0].id;
+        let id = doc.ids_mut().shape();
+        let mut s = Shape::new(
+            id,
+            ShapeKind::Rect {
+                rect: Rect::new(10.0, 10.0, 25.0, 25.0),
+                radius: 0.0,
+            },
+        );
+        s.fill = Fill::Solid(Color::rgb8(0, 0, 255));
+        s.stroke = None;
+        s.shadow = Some(tracedraw_core::Shadow {
+            offset: tracedraw_core::geometry::Vec2::new(5.0, -5.0),
+            opacity: 0.8,
+            blur: 0.0,
+            color: Color::BLACK,
+        });
+        doc.layer_mut(layer).unwrap().shapes.push(s);
+        let page = doc.pages[0].id;
+        let img = render_page_image(&doc, page, 25.4).unwrap();
+        // Just right of the rect and below: shadow only (y down in the image).
+        let p = img.pixel(28, 32).unwrap();
+        assert!(p.red() < 100, "red was {}", p.red());
+        let far = img.pixel(2, 2).unwrap();
+        assert_eq!(far.red(), 255);
     }
 
     #[test]

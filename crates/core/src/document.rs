@@ -43,8 +43,12 @@ pub mod paper {
 pub enum ShapeKind {
     /// Rectangle in local space; `radius` rounds the corners (mm).
     Rect { rect: Rect, radius: f64 },
-    /// Ellipse inscribed in `rect`, in local space.
-    Ellipse { rect: Rect },
+    /// Ellipse inscribed in `rect`, in local space; optionally a pie or arc.
+    Ellipse {
+        rect: Rect,
+        #[serde(default)]
+        arc: Option<EllipseArc>,
+    },
     /// Polygon or star inscribed in `rect`.
     Polygon {
         rect: Rect,
@@ -90,6 +94,37 @@ mod png_bytes {
     }
 }
 
+/// Pie or arc section of an ellipse, angles in degrees counter-clockwise from +x.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct EllipseArc {
+    pub start_deg: f64,
+    pub end_deg: f64,
+    /// Pie (wedge closed through the centre) or open arc.
+    pub pie: bool,
+}
+
+/// Drop shadow attached to an object (the Drop Shadow tool).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Shadow {
+    pub offset: crate::geometry::Vec2,
+    /// 0..1
+    pub opacity: f64,
+    /// Feathering radius in mm.
+    pub blur: f64,
+    pub color: crate::color::Color,
+}
+
+impl Default for Shadow {
+    fn default() -> Self {
+        Shadow {
+            offset: crate::geometry::Vec2::new(2.0, -2.0),
+            opacity: 0.5,
+            blur: 1.5,
+            color: crate::color::Color::BLACK,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum TextAlign {
@@ -124,6 +159,8 @@ pub struct Shape {
     /// 1.0 = opaque, 0.0 = invisible (the uniform transparency).
     #[serde(default = "one")]
     pub opacity: f64,
+    #[serde(default)]
+    pub shadow: Option<Shadow>,
 }
 
 fn one() -> f64 {
@@ -142,6 +179,7 @@ impl Shape {
             visible: true,
             locked: false,
             opacity: 1.0,
+            shadow: None,
         }
     }
 
@@ -150,7 +188,10 @@ impl Shape {
     pub fn local_path(&self) -> BezPath {
         match &self.kind {
             ShapeKind::Rect { rect, radius } => geometry::rect_path(*rect, *radius),
-            ShapeKind::Ellipse { rect } => geometry::ellipse_path(*rect),
+            ShapeKind::Ellipse { rect, arc } => match arc {
+                None => geometry::ellipse_path(*rect),
+                Some(a) => geometry::ellipse_arc_path(*rect, a.start_deg, a.end_deg, a.pie),
+            },
             ShapeKind::Polygon {
                 rect,
                 points,

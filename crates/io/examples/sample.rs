@@ -37,6 +37,7 @@ fn main() {
         &mut doc,
         ShapeKind::Ellipse {
             rect: Rect::new(110.0, 180.0, 190.0, 240.0),
+            arc: None,
         },
         Fill::Linear {
             from: Color::cmyk_pct(0.0, 100.0, 100.0, 0.0),

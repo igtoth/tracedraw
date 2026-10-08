@@ -2,7 +2,7 @@
 //! and the control channel all build commands and hand them to the
 //! [`crate::Engine`], which applies them and records history.
 
-use crate::document::{Guide, Layer, Page, Shape, ShapeKind};
+use crate::document::{Guide, Layer, Page, Shadow, Shape, ShapeKind};
 use crate::geometry::{Affine, BezPath, PathEl, Size};
 use crate::id::{LayerId, PageId, ShapeId};
 use crate::style::{Fill, Stroke};
@@ -107,6 +107,10 @@ pub enum Command {
     BreakApart {
         shape: ShapeId,
     },
+    SetShadow {
+        shapes: Vec<ShapeId>,
+        shadow: Option<Shadow>,
+    },
     AddGuide {
         page: PageId,
         guide: Guide,
@@ -149,6 +153,10 @@ impl Command {
             Command::SetLocked { .. } => "Unlock Object",
             Command::Combine { .. } => "Combine",
             Command::BreakApart { .. } => "Break Apart",
+            Command::SetShadow {
+                shadow: Some(_), ..
+            } => "Drop Shadow",
+            Command::SetShadow { .. } => "Clear Drop Shadow",
             Command::AddGuide { .. } => "Add Guideline",
             Command::MoveGuide { .. } => "Move Guideline",
             Command::DeleteGuide { .. } => "Delete Guideline",
@@ -379,6 +387,14 @@ impl Command {
                     piece.stroke = s.stroke.clone();
                     piece.opacity = s.opacity;
                     layer.shapes.insert(idx + k, piece);
+                }
+            }
+            Command::SetShadow { shapes, shadow } => {
+                for id in shapes {
+                    doc.shape(*id)?;
+                }
+                for id in shapes {
+                    doc.shape_mut(*id)?.shadow = *shadow;
                 }
             }
             Command::AddGuide { page, guide } => doc.page_mut(*page)?.guides.push(*guide),

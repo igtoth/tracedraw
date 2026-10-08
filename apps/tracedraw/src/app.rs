@@ -147,6 +147,11 @@ pub enum Drag {
         start: Point,
         current: Point,
     },
+    /// Dragging a drop shadow offset (Drop Shadow tool).
+    Shadow {
+        shape: ShapeId,
+        start: Point,
+    },
     /// Dragging a paragraph text frame (Text tool).
     TextFrame {
         start: Point,
@@ -166,8 +171,37 @@ pub enum Drag {
 /// Bezier / polyline tool in progress.
 #[derive(Debug, Clone, Default)]
 pub struct CurveInProgress {
-    pub points: Vec<Point>,
+    /// Nodes placed so far with their outgoing handle (dragged with the
+    /// Bezier/Pen tool); the incoming handle mirrors the previous node's.
+    pub nodes: Vec<(Point, Option<Point>)>,
+    /// Polyline tools make straight segments; curve tools make curves.
     pub smooth: bool,
+    /// Pointer is being dragged to set the handle of the last node.
+    pub dragging_handle: bool,
+}
+
+impl CurveInProgress {
+    /// Path through the nodes, optionally extended to a preview point.
+    pub fn path(&self, preview: Option<Point>) -> tracedraw_core::BezPath {
+        let mut path = tracedraw_core::BezPath::new();
+        let mut nodes: Vec<(Point, Option<Point>)> = self.nodes.clone();
+        if let Some(p) = preview {
+            nodes.push((p, None));
+        }
+        for (i, (p, _)) in nodes.iter().enumerate() {
+            if i == 0 {
+                path.move_to(*p);
+                continue;
+            }
+            let (prev, prev_out) = nodes[i - 1];
+            let cur_in = nodes[i].1.map(|out| *p - (out - *p));
+            match (self.smooth, prev_out, cur_in) {
+                (false, _, _) | (true, None, None) => path.line_to(*p),
+                (true, po, ci) => path.curve_to(po.unwrap_or(prev), ci.unwrap_or(*p), *p),
+            }
+        }
+        path
+    }
 }
 
 /// Artistic text being typed.
@@ -213,6 +247,8 @@ pub struct App {
     pub polygon_points: u32,
     pub star_sharpness: f64,
     pub rect_radius: f64,
+    pub ellipse_arc: Option<tracedraw_core::EllipseArc>,
+    pub shadow_default: tracedraw_core::Shadow,
     pub text_font: String,
     pub text_size_pt: f64,
     pub text_bold: bool,
@@ -291,6 +327,8 @@ impl App {
             polygon_points: 5,
             star_sharpness: 0.5,
             rect_radius: 0.0,
+            ellipse_arc: None,
+            shadow_default: tracedraw_core::Shadow::default(),
             text_font: "Arial".into(),
             text_size_pt: 24.0,
             text_bold: false,
@@ -410,7 +448,10 @@ impl App {
                 rect,
                 radius: self.rect_radius,
             },
-            Tool::Ellipse | Tool::ThreePointEllipse => ShapeKind::Ellipse { rect },
+            Tool::Ellipse | Tool::ThreePointEllipse => ShapeKind::Ellipse {
+                rect,
+                arc: self.ellipse_arc,
+            },
             Tool::Polygon => ShapeKind::Polygon {
                 rect,
                 points: self.polygon_points,
@@ -430,14 +471,10 @@ impl App {
 
     pub fn finish_curve(&mut self) {
         let Some(c) = self.curve.take() else { return };
-        if c.points.len() < 2 {
+        if c.nodes.len() < 2 {
             return;
         }
-        let path = if c.smooth {
-            tracedraw_core::geometry::smooth_path(&c.points, false)
-        } else {
-            tracedraw_core::geometry::polyline_path(&c.points, false)
-        };
+        let path = c.path(None);
         if let Some(id) = self.new_shape(ShapeKind::Path {
             path,
             closed: false,

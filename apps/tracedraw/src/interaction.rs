@@ -146,6 +146,38 @@ impl App {
                 }
             }
             Tool::InteractiveFill | Tool::AreaFill => self.fill_input(response, p),
+            Tool::DropShadow => {
+                if response.drag_started_by(PointerButton::Primary) {
+                    if let Some(id) = self.hit_test(p) {
+                        self.select(vec![id]);
+                        self.drag = Drag::Shadow {
+                            shape: id,
+                            start: p,
+                        };
+                    }
+                }
+                if response.dragged_by(PointerButton::Primary) {
+                    if let Drag::Shadow { shape, start } = self.drag.clone() {
+                        let offset = p - start;
+                        let mut sh = self
+                            .doc()
+                            .shape(shape)
+                            .ok()
+                            .and_then(|(_, s)| s.shadow)
+                            .unwrap_or(self.shadow_default);
+                        sh.offset = offset;
+                        self.select(vec![shape]);
+                        self.set_shadow(Some(sh), true);
+                        self.drag = Drag::Shadow { shape, start };
+                    }
+                }
+                if response.clicked_by(PointerButton::Primary) {
+                    match self.hit_test(p) {
+                        Some(id) => self.select(vec![id]),
+                        None => self.select(Vec::new()),
+                    }
+                }
+            }
             Tool::Transparency => {
                 if response.clicked() {
                     match self.hit_test(p) {
@@ -461,6 +493,9 @@ impl App {
         }
     }
 
+    /// Bezier/Pen: click places a cusp node, click-and-drag pulls out a
+    /// smooth handle. Polyline and 2-point line place straight segments.
+    /// Double-click or Enter finishes; clicking the start node closes.
     fn curve_input(&mut self, response: &Response, p: Point, _mods: Modifiers) {
         let p = self.snap_point(p);
         let smooth = matches!(self.tool, Tool::Bezier | Tool::Pen | Tool::BSpline);
@@ -468,15 +503,62 @@ impl App {
             self.finish_curve();
             return;
         }
-        if response.clicked_by(PointerButton::Primary) {
+        let start_close = self
+            .curve
+            .as_ref()
+            .and_then(|c| c.nodes.first().map(|n| n.0))
+            .map(|s| {
+                (s - p).hypot() <= 5.0 / self.view.zoom as f64
+                    && self
+                        .curve
+                        .as_ref()
+                        .map(|c| c.nodes.len() >= 3)
+                        .unwrap_or(false)
+            })
+            .unwrap_or(false);
+        if response.drag_started_by(PointerButton::Primary)
+            || response.clicked_by(PointerButton::Primary)
+        {
+            if start_close {
+                // Close the curve onto its start node.
+                if let Some(c) = self.curve.take() {
+                    let mut path = c.path(None);
+                    path.close_path();
+                    if let Some(id) = self.new_shape(ShapeKind::Path { path, closed: true }) {
+                        self.select(vec![id]);
+                    }
+                }
+                return;
+            }
             let c = self.curve.get_or_insert_with(|| CurveInProgress {
-                points: Vec::new(),
+                nodes: Vec::new(),
                 smooth,
+                dragging_handle: false,
             });
             c.smooth = smooth;
-            c.points.push(p);
-            if self.tool == Tool::TwoPointLine && c.points.len() == 2 {
+            if response.drag_started_by(PointerButton::Primary) {
+                c.nodes.push((p, None));
+                c.dragging_handle = true;
+            } else if !c.dragging_handle {
+                c.nodes.push((p, None));
+            }
+            c.dragging_handle = response.drag_started_by(PointerButton::Primary);
+            if self.tool == Tool::TwoPointLine && c.nodes.len() == 2 {
                 self.finish_curve();
+            }
+        }
+        if response.dragged_by(PointerButton::Primary) {
+            if let Some(c) = &mut self.curve {
+                if c.dragging_handle && smooth {
+                    if let Some(last) = c.nodes.last_mut() {
+                        last.1 = Some(p);
+                    }
+                }
+            }
+        }
+        if response.drag_stopped_by(PointerButton::Primary) {
+            if let Some(c) = &mut self.curve {
+                c.dragging_handle = false;
             }
         }
     }
@@ -596,7 +678,11 @@ impl App {
             }
             Drag::NodeMarquee { start, current } => self.finish_node_marquee(start, current),
             Drag::NewGuide { .. } => self.finish_guide_drag(),
-            Drag::MoveGuide { .. } | Drag::Node { .. } | Drag::Handle { .. } | Drag::None => {}
+            Drag::Shadow { .. }
+            | Drag::MoveGuide { .. }
+            | Drag::Node { .. }
+            | Drag::Handle { .. }
+            | Drag::None => {}
         }
     }
 

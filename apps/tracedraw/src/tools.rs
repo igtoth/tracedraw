@@ -265,6 +265,7 @@ impl Tool {
                 | Tool::InteractiveFill
                 | Tool::Eraser
                 | Tool::Transparency
+                | Tool::DropShadow
         )
     }
 }

@@ -555,7 +555,7 @@ impl<'a> Ctx<'a> {
                     0.0_f64.max(w),
                     0.0_f64.max(h),
                 );
-                Some(ShapeKind::Ellipse { rect })
+                Some(ShapeKind::Ellipse { rect, arc: None })
             }
             // Curve: point list followed by one type byte per point.
             0x03 => {

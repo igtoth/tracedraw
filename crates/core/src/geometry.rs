@@ -24,6 +24,33 @@ pub fn ellipse_path(rect: Rect) -> BezPath {
     .to_path(0.01)
 }
 
+/// Arc or pie of the ellipse inscribed in `rect`, angles in degrees CCW from +x.
+pub fn ellipse_arc_path(rect: Rect, start_deg: f64, end_deg: f64, pie: bool) -> BezPath {
+    let c = rect.center();
+    let radii = kurbo::Vec2::new(rect.width() / 2.0, rect.height() / 2.0);
+    let mut sweep = (end_deg - start_deg).rem_euclid(360.0);
+    if sweep == 0.0 {
+        sweep = 360.0;
+    }
+    let arc = kurbo::Arc::new(c, radii, start_deg.to_radians(), sweep.to_radians(), 0.0);
+    let mut path = BezPath::new();
+    let start = Point::new(
+        c.x + radii.x * start_deg.to_radians().cos(),
+        c.y + radii.y * start_deg.to_radians().sin(),
+    );
+    if pie {
+        path.move_to(c);
+        path.line_to(start);
+    } else {
+        path.move_to(start);
+    }
+    arc.append_iter(0.1).for_each(|el| path.push(el));
+    if pie {
+        path.close_path();
+    }
+    path
+}
+
 /// Build a regular polygon or star inscribed in `rect`.
 ///
 /// `points` is the number of vertices; `sharpness` in `0.0..1.0` pulls every

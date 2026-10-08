@@ -201,6 +201,46 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                     }
                 }
             }
+            Tool::Ellipse | Tool::ThreePointEllipse => {
+                object_properties(app, ui);
+                vsep(ui);
+                let mode = match app.ellipse_arc {
+                    None => 0,
+                    Some(a) if a.pie => 1,
+                    Some(_) => 2,
+                };
+                let mut new_mode = mode;
+                for (i, n, tip) in [(0, "Ellipse", "Whole ellipse"), (1, "Pie", "Pie wedge"), (2, "Arc", "Open arc")] {
+                    if ui.selectable_label(mode == i, n).on_hover_text(tip).clicked() {
+                        new_mode = i;
+                    }
+                }
+                let mut arc = app.ellipse_arc.unwrap_or(tracedraw_core::EllipseArc { start_deg: 0.0, end_deg: 270.0, pie: true });
+                let mut changed = new_mode != mode;
+                if new_mode == 0 {
+                    app.ellipse_arc = None;
+                } else {
+                    arc.pie = new_mode == 1;
+                    ui.label(egui::RichText::new("Start").color(Tokens::TEXT_DIM).size(11.0));
+                    changed |= ui.add(egui::DragValue::new(&mut arc.start_deg).speed(1.0).suffix("°")).changed();
+                    ui.label(egui::RichText::new("End").color(Tokens::TEXT_DIM).size(11.0));
+                    changed |= ui.add(egui::DragValue::new(&mut arc.end_deg).speed(1.0).suffix("°")).changed();
+                    app.ellipse_arc = Some(arc);
+                }
+                if changed {
+                    let new_arc = app.ellipse_arc;
+                    let cmds: Vec<Command> = shapes
+                        .iter()
+                        .filter_map(|s| match &s.kind {
+                            ShapeKind::Ellipse { rect, .. } => Some(Command::SetShapeKind { shape: s.id, kind: ShapeKind::Ellipse { rect: *rect, arc: new_arc } }),
+                            _ => None,
+                        })
+                        .collect();
+                    if !cmds.is_empty() {
+                        let _ = app.engine.run_batch("Ellipse", &cmds);
+                    }
+                }
+            }
             Tool::Polygon | Tool::Star => {
                 object_properties(app, ui);
                 vsep(ui);
@@ -236,6 +276,52 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 object_properties(app, ui);
                 vsep(ui);
                 ui.label(egui::RichText::new("Enter or double-click finishes the curve, Esc cancels").color(Tokens::TEXT_DIM).size(11.0));
+            }
+            Tool::DropShadow => {
+                let first = shapes.first().and_then(|s| s.shadow);
+                let mut sh = first.unwrap_or(app.shadow_default);
+                let mut changed = false;
+                ui.label(egui::RichText::new("Drop shadow").color(Tokens::TEXT_DIM).size(11.0));
+                if ui.add_enabled(!shapes.is_empty() && first.is_none(), egui::Button::new("Apply")).clicked() {
+                    app.set_shadow(Some(sh), false);
+                }
+                let mut opacity = (sh.opacity * 100.0).round();
+                ui.label(egui::RichText::new("Opacity").color(Tokens::TEXT_DIM).size(11.0));
+                if ui.add(egui::DragValue::new(&mut opacity).range(0.0..=100.0).suffix(" %")).changed() {
+                    sh.opacity = opacity / 100.0;
+                    changed = true;
+                }
+                ui.label(egui::RichText::new("Feathering").color(Tokens::TEXT_DIM).size(11.0));
+                let mut blur = sh.blur;
+                if ui.add(egui::DragValue::new(&mut blur).speed(0.1).range(0.0..=50.0).suffix(" mm")).changed() {
+                    sh.blur = blur;
+                    changed = true;
+                }
+                let mut dx = sh.offset.x;
+                let mut dy = sh.offset.y;
+                ui.label(egui::RichText::new("Offset").color(Tokens::TEXT_DIM).size(11.0));
+                changed |= ui.add(egui::DragValue::new(&mut dx).speed(0.1).suffix(" mm")).changed();
+                changed |= ui.add(egui::DragValue::new(&mut dy).speed(0.1).suffix(" mm")).changed();
+                sh.offset = tracedraw_core::geometry::Vec2::new(dx, dy);
+                let [r, g, b] = sh.color.to_rgb8();
+                let mut rgb = [r, g, b];
+                if ui.color_edit_button_srgb(&mut rgb).changed() {
+                    sh.color = tracedraw_core::Color::rgb8(rgb[0], rgb[1], rgb[2]);
+                    changed = true;
+                }
+                if changed {
+                    app.shadow_default = sh;
+                    if first.is_some() {
+                        app.set_shadow(Some(sh), true);
+                    }
+                }
+                vsep(ui);
+                if ui.add_enabled(first.is_some(), egui::Button::new("Clear shadow")).clicked() {
+                    app.set_shadow(None, false);
+                }
+                if shapes.is_empty() {
+                    ui.label(egui::RichText::new("Drag from an object to set the shadow offset").color(Tokens::TEXT_DIM).size(11.0));
+                }
             }
             Tool::Transparency => {
                 let first = shapes.first().map(|s| s.opacity).unwrap_or(1.0);

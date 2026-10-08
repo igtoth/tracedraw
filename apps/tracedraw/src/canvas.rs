@@ -185,19 +185,33 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
         _ => {}
     }
     if let Some(c) = &app.curve {
-        let mut pts: Vec<Pos2> = c.points.iter().map(|p| view.to_screen(*p)).collect();
-        if let Some(h) = app.pointer_page {
-            pts.push(view.to_screen(h));
+        let preview = if c.dragging_handle {
+            None
+        } else {
+            app.pointer_page
+        };
+        let path = c.path(preview);
+        for (pts, _) in flatten(&path, view) {
+            if pts.len() > 1 {
+                painter.add(epaint::PathShape::line(
+                    pts,
+                    EStroke::new(1.0, Tokens::SELECTION),
+                ));
+            }
         }
-        if pts.len() > 1 {
-            painter.add(epaint::PathShape::line(
-                pts.clone(),
-                EStroke::new(1.0, Tokens::SELECTION),
-            ));
-        }
-        for p in pts {
+        for (p, out) in &c.nodes {
+            let sp = view.to_screen(*p);
+            if let Some(o) = out {
+                let so = view.to_screen(*o);
+                let mirrored = sp - (so - sp);
+                painter.line_segment([mirrored, so], EStroke::new(1.0, Tokens::SELECTION));
+                painter.circle_filled(so, 3.0, Color32::WHITE);
+                painter.circle_stroke(so, 3.0, EStroke::new(1.0, Tokens::SELECTION));
+                painter.circle_filled(mirrored, 3.0, Color32::WHITE);
+                painter.circle_stroke(mirrored, 3.0, EStroke::new(1.0, Tokens::SELECTION));
+            }
             painter.rect_stroke(
-                ERect::from_center_size(p, egui::vec2(6.0, 6.0)),
+                ERect::from_center_size(sp, egui::vec2(6.0, 6.0)),
                 0.0,
                 EStroke::new(1.0, Tokens::TEXT),
                 epaint::StrokeKind::Middle,

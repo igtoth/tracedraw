@@ -402,3 +402,16 @@ impl App {
         self.select(vec![id]);
     }
 }
+
+impl App {
+    pub fn set_shadow(&mut self, shadow: Option<tracedraw_core::Shadow>, collapse: bool) {
+        if self.selection.is_empty() {
+            return;
+        }
+        let shapes = self.selection.clone();
+        if collapse && matches!(self.engine.undo_label(), Some("Drop Shadow")) {
+            let _ = self.engine.undo();
+        }
+        self.run(Command::SetShadow { shapes, shadow });
+    }
+}
