@@ -38,6 +38,20 @@ crates/io     svg.rs, lib.rs (native format)
 apps/tracedraw    main.rs, app.rs (UI + input), canvas.rs (render), view.rs
 ```
 
+## Visual checks
+
+The app can be driven headlessly: start `Xvfb :99`, run the debug binary
+with `DISPLAY=:99 LIBGL_ALWAYS_SOFTWARE=1`, send pointer and key events
+with python-xlib (XTest) and capture with ImageMagick `import`. See
+`scripts/visual/` for the driver and example scripts. Look at the PNGs
+before claiming a UI change works.
+
+## Parity
+
+`docs/parity.md` is the measure of progress: every the editor tool and menu
+item with its status. Move a row to "works" only with a test or a checked
+file behind it, and never add a feature without updating the row.
+
 ## Workflow
 
 - `cargo test --workspace` before every commit.

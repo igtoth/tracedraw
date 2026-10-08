@@ -23,11 +23,18 @@ pub enum ShapeKind {
     /// Ellipse inscribed in `rect`, in local space.
     Ellipse { rect: Rect },
     /// Polygon or star inscribed in `rect`.
-    Polygon { rect: Rect, points: u32, sharpness: f64 },
+    Polygon {
+        rect: Rect,
+        points: u32,
+        sharpness: f64,
+    },
     /// Free path (lines and cubic Beziers) in local space.
     Path { path: BezPath, closed: bool },
     /// Artistic text (the single-line text object).
-    Text { spans: Vec<TextSpan>, origin: crate::geometry::Point },
+    Text {
+        spans: Vec<TextSpan>,
+        origin: crate::geometry::Point,
+    },
     /// A group of child shapes.
     Group { children: Vec<Shape> },
 }
@@ -75,11 +82,16 @@ impl Shape {
         match &self.kind {
             ShapeKind::Rect { rect, radius } => geometry::rect_path(*rect, *radius),
             ShapeKind::Ellipse { rect } => geometry::ellipse_path(*rect),
-            ShapeKind::Polygon { rect, points, sharpness } => geometry::polygon_path(*rect, *points, *sharpness),
+            ShapeKind::Polygon {
+                rect,
+                points,
+                sharpness,
+            } => geometry::polygon_path(*rect, *points, *sharpness),
             ShapeKind::Path { path, .. } => path.clone(),
             ShapeKind::Text { spans, origin } => {
                 // Rough advance: 0.5 em per character, 1 em tall. Replaced by real shaping later.
-                let size_mm: f64 = spans.iter().map(|s| s.size_pt).fold(0.0, f64::max) * 25.4 / 72.0;
+                let size_mm: f64 =
+                    spans.iter().map(|s| s.size_pt).fold(0.0, f64::max) * 25.4 / 72.0;
                 let chars: usize = spans.iter().map(|s| s.text.chars().count()).sum();
                 let w = chars as f64 * size_mm * 0.5;
                 Rect::new(origin.x, origin.y, origin.x + w, origin.y + size_mm).to_path(0.01)
@@ -118,7 +130,14 @@ pub struct Layer {
 
 impl Layer {
     pub fn new(id: LayerId, name: impl Into<String>) -> Self {
-        Layer { id, name: name.into(), visible: true, printable: true, locked: false, shapes: Vec::new() }
+        Layer {
+            id,
+            name: name.into(),
+            visible: true,
+            printable: true,
+            locked: false,
+            shapes: Vec::new(),
+        }
     }
 }
 
@@ -155,8 +174,17 @@ impl Document {
     /// A document with one page and one layer.
     pub fn new(title: impl Into<String>, size: crate::geometry::Size) -> Self {
         let mut ids = IdSource::default();
-        let page = Page { id: ids.page(), name: "Page 1".into(), size, layers: vec![Layer::new(ids.layer(), "Layer 1")] };
-        Document { title: title.into(), pages: vec![page], ids }
+        let page = Page {
+            id: ids.page(),
+            name: "Page 1".into(),
+            size,
+            layers: vec![Layer::new(ids.layer(), "Layer 1")],
+        };
+        Document {
+            title: title.into(),
+            pages: vec![page],
+            ids,
+        }
     }
 
     pub fn ids_mut(&mut self) -> &mut IdSource {
@@ -174,19 +202,33 @@ impl Document {
     }
 
     pub fn page(&self, id: PageId) -> Result<&Page> {
-        self.pages.iter().find(|p| p.id == id).ok_or(Error::PageNotFound(id))
+        self.pages
+            .iter()
+            .find(|p| p.id == id)
+            .ok_or(Error::PageNotFound(id))
     }
 
     pub fn page_mut(&mut self, id: PageId) -> Result<&mut Page> {
-        self.pages.iter_mut().find(|p| p.id == id).ok_or(Error::PageNotFound(id))
+        self.pages
+            .iter_mut()
+            .find(|p| p.id == id)
+            .ok_or(Error::PageNotFound(id))
     }
 
     pub fn layer(&self, id: LayerId) -> Result<&Layer> {
-        self.pages.iter().flat_map(|p| &p.layers).find(|l| l.id == id).ok_or(Error::LayerNotFound(id))
+        self.pages
+            .iter()
+            .flat_map(|p| &p.layers)
+            .find(|l| l.id == id)
+            .ok_or(Error::LayerNotFound(id))
     }
 
     pub fn layer_mut(&mut self, id: LayerId) -> Result<&mut Layer> {
-        self.pages.iter_mut().flat_map(|p| &mut p.layers).find(|l| l.id == id).ok_or(Error::LayerNotFound(id))
+        self.pages
+            .iter_mut()
+            .flat_map(|p| &mut p.layers)
+            .find(|l| l.id == id)
+            .ok_or(Error::LayerNotFound(id))
     }
 
     /// Find a top-level shape and the layer holding it.
@@ -221,7 +263,11 @@ impl Document {
     /// Union of all shape bounds on a page, or None when the page is empty.
     pub fn content_bounds(&self, page: PageId) -> Result<Option<Rect>> {
         let p = self.page(page)?;
-        Ok(p.layers.iter().flat_map(|l| &l.shapes).map(Shape::bounds).reduce(|a, b| a.union(b)))
+        Ok(p.layers
+            .iter()
+            .flat_map(|l| &l.shapes)
+            .map(Shape::bounds)
+            .reduce(|a, b| a.union(b)))
     }
 
     /// Serialize to the native `.tdraw` JSON format.
@@ -245,7 +291,13 @@ mod tests {
         let id = doc.ids_mut().shape();
         let page = doc.pages[0].id;
         let layer = doc.pages[0].layers[0].id;
-        let mut s = Shape::new(id, ShapeKind::Rect { rect: Rect::new(10.0, 10.0, 50.0, 30.0), radius: 2.0 });
+        let mut s = Shape::new(
+            id,
+            ShapeKind::Rect {
+                rect: Rect::new(10.0, 10.0, 50.0, 30.0),
+                radius: 2.0,
+            },
+        );
         s.transform = Affine::translate((5.0, 5.0));
         doc.layer_mut(layer).unwrap().shapes.push(s);
         let json = doc.to_json().unwrap();

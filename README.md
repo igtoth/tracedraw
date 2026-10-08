@@ -19,9 +19,13 @@ does not exist yet. See `docs/roadmap.md`.
   streams, version detection, and best-effort parsing of pages, layers,
   rectangles, ellipses, curves, solid and fountain fills and outlines.
   **Not yet validated against real files**, see `docs/cdr-format.md`.
-- Desktop app (egui): toolbox (pick, rectangle, ellipse, polygon, pan),
-  canvas with zoom/pan, selection with handles, move, marquee, nudge,
-  object properties docker (fill, outline), objects list, pages bar.
+- Desktop app (egui) laid out like the editor: menu bar, standard toolbar,
+  context-sensitive property bar, toolbox with flyouts and the vendor shortcuts,
+  rulers, colour palette, dockers (Properties, Objects, Hints), page
+  navigator and status bar. Working tools: Pick (move, scale, rotate),
+  Shape (node drag), Zoom, Pan, Freehand, Bezier/Polyline, Rectangle,
+  Ellipse, Polygon/Star, Text, Eyedropper, Interactive Fill, Eraser.
+  Status per tool and menu in `docs/parity.md`.
 
 ## Build and run
 
@@ -51,11 +55,15 @@ depend only on `core`; only `apps/` may depend on egui/eframe/rfd.
 
 | Action | Keys |
 |---|---|
-| Pick / Rectangle / Ellipse / Polygon / Pan | Space, F6, F7, Y, H |
-| Zoom to page | Shift+F4 |
+| Pick / Shape / Zoom / Pan | Space, F10, Z, H |
+| Freehand / Bezier / Rectangle / Ellipse / Polygon / Text | F5, B, F6, F7, Y, F8 |
+| Interactive Fill / Eyedropper (next click applies) | G, flyout |
+| Zoom to page / fit / selected | Shift+F4 / F4 / Shift+F2 |
 | Zoom | Ctrl+wheel, pinch |
 | Undo / Redo | Ctrl+Z / Ctrl+Shift+Z |
-| Group / Ungroup | Ctrl+G / Ctrl+U |
+| Group / Ungroup / Convert to curves | Ctrl+G / Ctrl+U / Ctrl+Q |
+| Cut / Copy / Paste / Duplicate | Ctrl+X / Ctrl+C / Ctrl+V / Ctrl+D |
+| Order: front / back / forward / back one | Shift+Home / Shift+End / Ctrl+PgUp / Ctrl+PgDn |
 | Select all / Delete | Ctrl+A / Del |
 | Nudge | Arrows (Shift = 10x) |
 | Open / Save / Export SVG | Ctrl+O / Ctrl+S / Ctrl+E |

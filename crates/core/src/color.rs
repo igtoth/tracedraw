@@ -16,20 +16,42 @@ pub enum Color {
 }
 
 impl Color {
-    pub const BLACK: Color = Color::Rgb { r: 0.0, g: 0.0, b: 0.0 };
-    pub const WHITE: Color = Color::Rgb { r: 1.0, g: 1.0, b: 1.0 };
+    pub const BLACK: Color = Color::Rgb {
+        r: 0.0,
+        g: 0.0,
+        b: 0.0,
+    };
+    pub const WHITE: Color = Color::Rgb {
+        r: 1.0,
+        g: 1.0,
+        b: 1.0,
+    };
 
     pub fn rgb8(r: u8, g: u8, b: u8) -> Self {
-        Color::Rgb { r: r as f32 / 255.0, g: g as f32 / 255.0, b: b as f32 / 255.0 }
+        Color::Rgb {
+            r: r as f32 / 255.0,
+            g: g as f32 / 255.0,
+            b: b as f32 / 255.0,
+        }
     }
 
     pub fn cmyk8(c: u8, m: u8, y: u8, k: u8) -> Self {
-        Color::Cmyk { c: c as f32 / 255.0, m: m as f32 / 255.0, y: y as f32 / 255.0, k: k as f32 / 255.0 }
+        Color::Cmyk {
+            c: c as f32 / 255.0,
+            m: m as f32 / 255.0,
+            y: y as f32 / 255.0,
+            k: k as f32 / 255.0,
+        }
     }
 
     /// CMYK given in percent, the way the editor shows it.
     pub fn cmyk_pct(c: f32, m: f32, y: f32, k: f32) -> Self {
-        Color::Cmyk { c: c / 100.0, m: m / 100.0, y: y / 100.0, k: k / 100.0 }
+        Color::Cmyk {
+            c: c / 100.0,
+            m: m / 100.0,
+            y: y / 100.0,
+            k: k / 100.0,
+        }
     }
 
     /// Screen colour as 8-bit sRGB. CMYK uses the simple multiplicative
@@ -38,7 +60,11 @@ impl Color {
         let f = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
         match self {
             Color::Rgb { r, g, b } => [f(r), f(g), f(b)],
-            Color::Cmyk { c, m, y, k } => [f((1.0 - c) * (1.0 - k)), f((1.0 - m) * (1.0 - k)), f((1.0 - y) * (1.0 - k))],
+            Color::Cmyk { c, m, y, k } => [
+                f((1.0 - c) * (1.0 - k)),
+                f((1.0 - m) * (1.0 - k)),
+                f((1.0 - y) * (1.0 - k)),
+            ],
             Color::Gray { v } => [f(v), f(v), f(v)],
         }
     }
@@ -57,7 +83,10 @@ mod tests {
     #[test]
     fn cmyk_to_rgb() {
         assert_eq!(Color::cmyk_pct(0.0, 0.0, 0.0, 100.0).to_rgb8(), [0, 0, 0]);
-        assert_eq!(Color::cmyk_pct(100.0, 0.0, 0.0, 0.0).to_rgb8(), [0, 255, 255]);
+        assert_eq!(
+            Color::cmyk_pct(100.0, 0.0, 0.0, 0.0).to_rgb8(),
+            [0, 255, 255]
+        );
         assert_eq!(Color::rgb8(255, 128, 0).to_hex(), "#ff8000");
     }
 }

@@ -1,20 +1,47 @@
 // No console window in release builds on Windows.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-//! Traco desktop app: a thin egui shell over the engine.
+//! TraceDraw desktop app: a thin egui shell over the engine.
 
 mod app;
 mod canvas;
+mod interaction;
+mod theme;
+mod tools;
+mod ui;
 mod view;
 
 fn main() -> eframe::Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
-
     let open_path = std::env::args().nth(1).map(std::path::PathBuf::from);
-
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([1400.0, 900.0]).with_title("Traco"),
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([1600.0, 950.0])
+            .with_min_inner_size([1000.0, 600.0])
+            .with_title("TraceDraw"),
         ..Default::default()
     };
-    eframe::run_native("Traco", options, Box::new(move |cc| Ok(Box::new(app::App::new(cc, open_path)))))
+    eframe::run_native(
+        "TraceDraw",
+        options,
+        Box::new(move |cc| Ok(Box::new(Shell::new(cc, open_path)))),
+    )
+}
+
+struct Shell {
+    app: app::App,
+}
+
+impl Shell {
+    fn new(cc: &eframe::CreationContext<'_>, open: Option<std::path::PathBuf>) -> Self {
+        Shell {
+            app: app::App::new(cc, open),
+        }
+    }
+}
+
+impl eframe::App for Shell {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        ui::root(&mut self.app, ui);
+    }
 }

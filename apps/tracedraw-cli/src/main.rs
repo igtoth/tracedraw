@@ -13,11 +13,17 @@ fn usage() -> ExitCode {
     ExitCode::from(2)
 }
 
-fn load(path: &str) -> Result<(tracedraw_core::Document, Option<tracedraw_cdr::ParseReport>), String> {
+fn load(
+    path: &str,
+) -> Result<(tracedraw_core::Document, Option<tracedraw_cdr::ParseReport>), String> {
     if path.to_ascii_lowercase().ends_with(".cdr") {
-        tracedraw_cdr::open(path).map(|(d, r)| (d, Some(r))).map_err(|e| e.to_string())
+        tracedraw_cdr::open(path)
+            .map(|(d, r)| (d, Some(r)))
+            .map_err(|e| e.to_string())
     } else {
-        tracedraw_io::load_native(path).map(|d| (d, None)).map_err(|e| e.to_string())
+        tracedraw_io::load_native(path)
+            .map(|d| (d, None))
+            .map_err(|e| e.to_string())
     }
 }
 
@@ -26,7 +32,9 @@ fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
     match args.get(1).map(String::as_str) {
         Some("inspect") => {
-            let Some(path) = args.get(2) else { return usage() };
+            let Some(path) = args.get(2) else {
+                return usage();
+            };
             let bytes = match std::fs::read(path) {
                 Ok(b) => b,
                 Err(e) => {
@@ -41,7 +49,11 @@ fn main() -> ExitCode {
                     return ExitCode::FAILURE;
                 }
             };
-            println!("container: {:?}, {}", container.kind, container.version.name());
+            println!(
+                "container: {:?}, {}",
+                container.kind,
+                container.version.name()
+            );
             let riff = match tracedraw_cdr::container::riff_stream(&bytes, &container) {
                 Ok(r) => r,
                 Err(e) => {
@@ -59,16 +71,28 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Some("info") => {
-            let Some(path) = args.get(2) else { return usage() };
+            let Some(path) = args.get(2) else {
+                return usage();
+            };
             match load(path) {
                 Ok((doc, report)) => {
                     println!("title: {}", doc.title);
                     for p in &doc.pages {
                         let n: usize = p.layers.iter().map(|l| l.shapes.len()).sum();
-                        println!("{}: {:.1} x {:.1} mm, {} layer(s), {} object(s)", p.name, p.size.width, p.size.height, p.layers.len(), n);
+                        println!(
+                            "{}: {:.1} x {:.1} mm, {} layer(s), {} object(s)",
+                            p.name,
+                            p.size.width,
+                            p.size.height,
+                            p.layers.len(),
+                            n
+                        );
                     }
                     if let Some(r) = report {
-                        println!("version: {}", r.version.map(|v| v.name()).unwrap_or_default());
+                        println!(
+                            "version: {}",
+                            r.version.map(|v| v.name()).unwrap_or_default()
+                        );
                         println!("skipped objects: {}", r.skipped_objects);
                         for w in &r.warnings {
                             println!("warning: {w}");
@@ -83,7 +107,9 @@ fn main() -> ExitCode {
             }
         }
         Some("convert") => {
-            let (Some(input), Some(output)) = (args.get(2), args.get(3)) else { return usage() };
+            let (Some(input), Some(output)) = (args.get(2), args.get(3)) else {
+                return usage();
+            };
             let (doc, _) = match load(input) {
                 Ok(v) => v,
                 Err(e) => {

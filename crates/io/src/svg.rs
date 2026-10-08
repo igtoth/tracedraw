@@ -29,9 +29,21 @@ pub fn page_to_svg(doc: &Document, page_index: usize) -> String {
         if !layer.visible {
             continue;
         }
-        let _ = writeln!(body, "  <g id=\"{}\" data-name=\"{}\">", layer.id.raw(), escape(&layer.name));
+        let _ = writeln!(
+            body,
+            "  <g id=\"{}\" data-name=\"{}\">",
+            layer.id.raw(),
+            escape(&layer.name)
+        );
         for shape in &layer.shapes {
-            write_shape(shape, flip, &mut body, &mut gradient_defs, &mut next_grad, 2);
+            write_shape(
+                shape,
+                flip,
+                &mut body,
+                &mut gradient_defs,
+                &mut next_grad,
+                2,
+            );
         }
         let _ = writeln!(body, "  </g>");
     }
@@ -43,7 +55,14 @@ pub fn page_to_svg(doc: &Document, page_index: usize) -> String {
     out
 }
 
-fn write_shape(shape: &Shape, parent: Affine, out: &mut String, defs: &mut String, next_grad: &mut usize, indent: usize) {
+fn write_shape(
+    shape: &Shape,
+    parent: Affine,
+    out: &mut String,
+    defs: &mut String,
+    next_grad: &mut usize,
+    indent: usize,
+) {
     if !shape.visible {
         return;
     }
@@ -125,8 +144,16 @@ fn write_shape(shape: &Shape, parent: Affine, out: &mut String, defs: &mut Strin
         }
     };
 
-    let name = shape.name.as_deref().map(|n| format!(" data-name=\"{}\"", escape(n))).unwrap_or_default();
-    let _ = writeln!(out, "{pad}<path id=\"{}\"{name} d=\"{d}\" {fill_attr} {stroke_attr}/>", shape.id.raw());
+    let name = shape
+        .name
+        .as_deref()
+        .map(|n| format!(" data-name=\"{}\"", escape(n)))
+        .unwrap_or_default();
+    let _ = writeln!(
+        out,
+        "{pad}<path id=\"{}\"{name} d=\"{d}\" {fill_attr} {stroke_attr}/>",
+        shape.id.raw()
+    );
 }
 
 fn fmt(v: f64) -> String {
@@ -153,7 +180,16 @@ pub fn path_data(path: &tracedraw_core::BezPath) -> String {
                 let _ = write!(d, "Q{} {} {} {}", fmt(c.x), fmt(c.y), fmt(p.x), fmt(p.y));
             }
             PathEl::CurveTo(c1, c2, p) => {
-                let _ = write!(d, "C{} {} {} {} {} {}", fmt(c1.x), fmt(c1.y), fmt(c2.x), fmt(c2.y), fmt(p.x), fmt(p.y));
+                let _ = write!(
+                    d,
+                    "C{} {} {} {} {} {}",
+                    fmt(c1.x),
+                    fmt(c1.y),
+                    fmt(c2.x),
+                    fmt(c2.y),
+                    fmt(p.x),
+                    fmt(p.y)
+                );
             }
             PathEl::ClosePath => d.push('Z'),
         }
@@ -162,7 +198,10 @@ pub fn path_data(path: &tracedraw_core::BezPath) -> String {
 }
 
 fn escape(s: &str) -> String {
-    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 #[cfg(test)]
@@ -175,7 +214,13 @@ mod tests {
         let mut doc = Document::default();
         let layer = doc.pages[0].layers[0].id;
         let id = doc.ids_mut().shape();
-        let mut s = Shape::new(id, ShapeKind::Rect { rect: Rect::new(10.0, 10.0, 60.0, 40.0), radius: 0.0 });
+        let mut s = Shape::new(
+            id,
+            ShapeKind::Rect {
+                rect: Rect::new(10.0, 10.0, 60.0, 40.0),
+                radius: 0.0,
+            },
+        );
         s.fill = Fill::Solid(Color::rgb8(255, 0, 0));
         s.stroke = Some(Stroke::new(Color::BLACK, 0.5));
         doc.layer_mut(layer).unwrap().shapes.push(s);

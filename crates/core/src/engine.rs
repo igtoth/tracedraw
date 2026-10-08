@@ -36,7 +36,14 @@ impl Default for Engine {
 
 impl Engine {
     pub fn new(doc: Document) -> Self {
-        Engine { doc, undo: Vec::new(), redo: Vec::new(), revision: 0, saved_revision: 0, max_history: 200 }
+        Engine {
+            doc,
+            undo: Vec::new(),
+            redo: Vec::new(),
+            revision: 0,
+            saved_revision: 0,
+            max_history: 200,
+        }
     }
 
     pub fn document(&self) -> &Document {
@@ -67,9 +74,18 @@ impl Engine {
     /// Apply a command and record it. A failing command leaves the document
     /// and history untouched.
     pub fn run(&mut self, cmd: &Command) -> Result<()> {
+        self.run_with_label(cmd, cmd.label())
+    }
+
+    /// Like [`run`](Self::run) with a custom history label.
+    pub fn run_with_label(&mut self, cmd: &Command, label: &'static str) -> Result<()> {
         let before = self.doc.clone();
         cmd.apply(&mut self.doc)?;
-        self.undo.push(HistoryEntry { label: cmd.label(), before, after: self.doc.clone() });
+        self.undo.push(HistoryEntry {
+            label,
+            before,
+            after: self.doc.clone(),
+        });
         if self.undo.len() > self.max_history {
             self.undo.remove(0);
         }
@@ -86,7 +102,11 @@ impl Engine {
             c.apply(&mut doc)?;
         }
         self.doc = doc;
-        self.undo.push(HistoryEntry { label, before, after: self.doc.clone() });
+        self.undo.push(HistoryEntry {
+            label,
+            before,
+            after: self.doc.clone(),
+        });
         self.redo.clear();
         self.revision += 1;
         Ok(())
@@ -140,7 +160,12 @@ mod tests {
         let mut eng = Engine::default();
         let layer = eng.document().pages[0].layers[0].id;
         let id = eng.new_shape_id();
-        let shape = Shape::new(id, ShapeKind::Ellipse { rect: Rect::new(0.0, 0.0, 10.0, 10.0) });
+        let shape = Shape::new(
+            id,
+            ShapeKind::Ellipse {
+                rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+            },
+        );
         eng.run(&Command::AddShape { layer, shape }).unwrap();
         assert_eq!(eng.document().layer(layer).unwrap().shapes.len(), 1);
         assert!(eng.is_dirty());
@@ -155,7 +180,11 @@ mod tests {
     fn failed_command_leaves_history_alone() {
         let mut eng = Engine::default();
         let rev = eng.revision();
-        assert!(eng.run(&Command::DeleteShapes { shapes: vec![crate::ShapeId(42)] }).is_err());
+        assert!(eng
+            .run(&Command::DeleteShapes {
+                shapes: vec![crate::ShapeId(42)]
+            })
+            .is_err());
         assert_eq!(eng.revision(), rev);
         assert!(eng.undo_label().is_none());
     }

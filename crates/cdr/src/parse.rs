@@ -111,7 +111,14 @@ struct Ctx<'a> {
 }
 
 pub fn parse_document(tree: &Tree, main: &[u8], version: Version) -> (Document, ParseReport) {
-    let mut ctx = Ctx { main, tree, version, fills: HashMap::new(), outlines: HashMap::new(), report: ParseReport::default() };
+    let mut ctx = Ctx {
+        main,
+        tree,
+        version,
+        fills: HashMap::new(),
+        outlines: HashMap::new(),
+        report: ParseReport::default(),
+    };
     ctx.report.version = Some(version);
 
     // Pass 1: style tables, wherever they are in the tree.
@@ -156,7 +163,12 @@ pub fn parse_document(tree: &Tree, main: &[u8], version: Version) -> (Document, 
 
     for (i, pc) in pages.iter().enumerate() {
         let page_id = doc.ids_mut().page();
-        let mut page = Page { id: page_id, name: format!("Page {}", i + 1), size: page_size, layers: Vec::new() };
+        let mut page = Page {
+            id: page_id,
+            name: format!("Page {}", i + 1),
+            size: page_size,
+            layers: Vec::new(),
+        };
         let mut layer_chunks: Vec<&Chunk> = Vec::new();
         pc.walk(&mut |c, _| {
             if c.is(b"layr") {
@@ -183,7 +195,8 @@ pub fn parse_document(tree: &Tree, main: &[u8], version: Version) -> (Document, 
             page.layers.push(layer);
         }
         if page.layers.is_empty() {
-            page.layers.push(Layer::new(doc.ids_mut().layer(), "Layer 1"));
+            page.layers
+                .push(Layer::new(doc.ids_mut().layer(), "Layer 1"));
         }
         doc.pages.push(page);
     }
@@ -198,12 +211,22 @@ pub fn parse_document(tree: &Tree, main: &[u8], version: Version) -> (Document, 
     if doc.pages.is_empty() {
         let pid = doc.ids_mut().page();
         let lid = doc.ids_mut().layer();
-        doc.pages.push(Page { id: pid, name: "Page 1".into(), size: page_size, layers: vec![Layer::new(lid, "Layer 1")] });
+        doc.pages.push(Page {
+            id: pid,
+            name: "Page 1".into(),
+            size: page_size,
+            layers: vec![Layer::new(lid, "Layer 1")],
+        });
     }
 
     ctx.report.pages = doc.pages.len();
     ctx.report.layers = doc.pages.iter().map(|p| p.layers.len()).sum();
-    ctx.report.shapes = doc.pages.iter().flat_map(|p| &p.layers).map(|l| l.shapes.len()).sum();
+    ctx.report.shapes = doc
+        .pages
+        .iter()
+        .flat_map(|p| &p.layers)
+        .map(|l| l.shapes.len())
+        .sum();
     (doc, ctx.report)
 }
 
@@ -229,7 +252,9 @@ impl<'a> Ctx<'a> {
         if w > 1.0 && h > 1.0 && w < 10_000.0 && h < 10_000.0 {
             Some(Size::new(w, h))
         } else {
-            self.report.warn(format!("mcfg page size {w:.2}x{h:.2} mm looks wrong; ignored"));
+            self.report.warn(format!(
+                "mcfg page size {w:.2}x{h:.2} mm looks wrong; ignored"
+            ));
             None
         }
     }
@@ -249,10 +274,13 @@ impl<'a> Ctx<'a> {
             // BGR
             0x05 | 0x0a => Color::rgb8(b[2], b[1], b[0]),
             // Grayscale 0..255
-            0x09 => Color::Gray { v: b[0] as f32 / 255.0 },
+            0x09 => Color::Gray {
+                v: b[0] as f32 / 255.0,
+            },
             // Registration / unknown models: fall back to black and note it.
             other => {
-                self.report.warn(format!("unknown colour model 0x{other:02x}; using black"));
+                self.report
+                    .warn(format!("unknown colour model 0x{other:02x}; using black"));
                 Color::BLACK
             }
         })
@@ -300,12 +328,17 @@ impl<'a> Ctx<'a> {
                     r.skip(if v >= 13 { 6 } else { 4 });
                 }
                 match (colors.first(), colors.last()) {
-                    (Some(a), Some(b)) => Fill::Linear { from: *a, to: *b, angle },
+                    (Some(a), Some(b)) => Fill::Linear {
+                        from: *a,
+                        to: *b,
+                        angle,
+                    },
                     _ => Fill::None,
                 }
             }
             other => {
-                self.report.warn(format!("fill type {other} not modelled yet (fill id {id})"));
+                self.report
+                    .warn(format!("fill type {other} not modelled yet (fill id {id})"));
                 Fill::None
             }
         };
@@ -341,7 +374,14 @@ impl<'a> Ctx<'a> {
             // Bit 0: no outline.
             None
         } else {
-            let mut s = Stroke::new(color.unwrap_or(Color::BLACK), if width <= 0.0 { Stroke::HAIRLINE } else { width });
+            let mut s = Stroke::new(
+                color.unwrap_or(Color::BLACK),
+                if width <= 0.0 {
+                    Stroke::HAIRLINE
+                } else {
+                    width
+                },
+            );
             s.cap = match caps {
                 1 => LineCap::Round,
                 2 => LineCap::Square,
@@ -373,7 +413,9 @@ impl<'a> Ctx<'a> {
             return Affine::IDENTITY;
         }
         let mut ar = Reader::at(d, start_args);
-        let Some(first) = ar.u32() else { return Affine::IDENTITY };
+        let Some(first) = ar.u32() else {
+            return Affine::IDENTITY;
+        };
         let mut tr = Reader::at(d, first as usize);
         let _tmp = tr.u32();
         if v >= 13 {
@@ -383,7 +425,9 @@ impl<'a> Ctx<'a> {
         if v >= 13 {
             tr.skip(2);
         }
-        let (Some(a), Some(c_), Some(e), Some(b), Some(d_), Some(f)) = (tr.f64(), tr.f64(), tr.f64(), tr.f64(), tr.f64(), tr.f64()) else {
+        let (Some(a), Some(c_), Some(e), Some(b), Some(d_), Some(f)) =
+            (tr.f64(), tr.f64(), tr.f64(), tr.f64(), tr.f64(), tr.f64())
+        else {
             self.report.warn("trfd too short; identity used");
             return Affine::IDENTITY;
         };
@@ -395,7 +439,12 @@ impl<'a> Ctx<'a> {
     }
 
     /// `obj `: one object, built from its `loda` (attributes) and `trfd`.
-    fn read_object(&mut self, oc: &Chunk, id: tracedraw_core::ShapeId, page_size: Size) -> Option<Shape> {
+    fn read_object(
+        &mut self,
+        oc: &Chunk,
+        id: tracedraw_core::ShapeId,
+        page_size: Size,
+    ) -> Option<Shape> {
         let mut loda = None;
         let mut trfd = None;
         oc.walk(&mut |c, _| {
@@ -406,7 +455,9 @@ impl<'a> Ctx<'a> {
             }
         });
         let loda = loda?;
-        let transform = trfd.map(|t| self.read_transform(t)).unwrap_or(Affine::IDENTITY);
+        let transform = trfd
+            .map(|t| self.read_transform(t))
+            .unwrap_or(Affine::IDENTITY);
 
         let d = self.data(loda);
         let mut r = Reader::new(d);
@@ -453,7 +504,8 @@ impl<'a> Ctx<'a> {
         let kind = match kind {
             Some(k) => k,
             None => {
-                self.report.warn(format!("object type 0x{kind_code:02x} not modelled yet"));
+                self.report
+                    .warn(format!("object type 0x{kind_code:02x} not modelled yet"));
                 return None;
             }
         };
@@ -475,20 +527,41 @@ impl<'a> Ctx<'a> {
             0x01 => {
                 let w = r.coord()?;
                 let h = r.coord()?;
-                let radius = if v < 15 { r.coord().unwrap_or(0.0) } else { 0.0 };
-                let rect = Rect::new(0.0_f64.min(w), 0.0_f64.min(h), 0.0_f64.max(w), 0.0_f64.max(h));
-                Some(ShapeKind::Rect { rect, radius: radius.max(0.0) })
+                let radius = if v < 15 {
+                    r.coord().unwrap_or(0.0)
+                } else {
+                    0.0
+                };
+                let rect = Rect::new(
+                    0.0_f64.min(w),
+                    0.0_f64.min(h),
+                    0.0_f64.max(w),
+                    0.0_f64.max(h),
+                );
+                Some(ShapeKind::Rect {
+                    rect,
+                    radius: radius.max(0.0),
+                })
             }
             // Ellipse: width, height, then start/end angle and pie flag.
             0x02 => {
                 let w = r.coord()?;
                 let h = r.coord()?;
-                let rect = Rect::new(0.0_f64.min(w), 0.0_f64.min(h), 0.0_f64.max(w), 0.0_f64.max(h));
+                let rect = Rect::new(
+                    0.0_f64.min(w),
+                    0.0_f64.min(h),
+                    0.0_f64.max(w),
+                    0.0_f64.max(h),
+                );
                 Some(ShapeKind::Ellipse { rect })
             }
             // Curve: point list followed by one type byte per point.
             0x03 => {
-                let n = if v >= 16 { r.u32()? as usize } else { r.u16()? as usize };
+                let n = if v >= 16 {
+                    r.u32()? as usize
+                } else {
+                    r.u16()? as usize
+                };
                 if n == 0 || n > 1_000_000 || r.remaining() < n * 9 {
                     return None;
                 }
@@ -510,8 +583,17 @@ impl<'a> Ctx<'a> {
             0x14 => {
                 let w = r.coord()?;
                 let h = r.coord()?;
-                let rect = Rect::new(0.0_f64.min(w), 0.0_f64.min(h), 0.0_f64.max(w), 0.0_f64.max(h));
-                Some(ShapeKind::Polygon { rect, points: 5, sharpness: 0.0 })
+                let rect = Rect::new(
+                    0.0_f64.min(w),
+                    0.0_f64.min(h),
+                    0.0_f64.max(w),
+                    0.0_f64.max(h),
+                );
+                Some(ShapeKind::Polygon {
+                    rect,
+                    points: 5,
+                    sharpness: 0.0,
+                })
             }
             _ => None,
         }

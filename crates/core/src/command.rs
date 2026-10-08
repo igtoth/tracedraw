@@ -13,35 +13,84 @@ use serde::{Deserialize, Serialize};
 #[serde(tag = "cmd", rename_all = "snake_case")]
 pub enum Command {
     // Document
-    SetTitle { title: String },
+    SetTitle {
+        title: String,
+    },
 
     // Pages
-    AddPage { name: Option<String>, size: Size },
-    DeletePage { page: PageId },
-    ResizePage { page: PageId, size: Size },
+    AddPage {
+        name: Option<String>,
+        size: Size,
+    },
+    DeletePage {
+        page: PageId,
+    },
+    ResizePage {
+        page: PageId,
+        size: Size,
+    },
 
     // Layers
-    AddLayer { page: PageId, name: String },
-    DeleteLayer { layer: LayerId },
-    SetLayerVisible { layer: LayerId, visible: bool },
-    SetLayerLocked { layer: LayerId, locked: bool },
+    AddLayer {
+        page: PageId,
+        name: String,
+    },
+    DeleteLayer {
+        layer: LayerId,
+    },
+    SetLayerVisible {
+        layer: LayerId,
+        visible: bool,
+    },
+    SetLayerLocked {
+        layer: LayerId,
+        locked: bool,
+    },
 
     // Shapes
     /// Insert a shape at the top of a layer. The shape's id must come from
     /// `Document::ids_mut().shape()` so it stays unique.
-    AddShape { layer: LayerId, shape: Shape },
-    DeleteShapes { shapes: Vec<ShapeId> },
+    AddShape {
+        layer: LayerId,
+        shape: Shape,
+    },
+    DeleteShapes {
+        shapes: Vec<ShapeId>,
+    },
     /// Pre-multiply the given transform onto each shape's transform
     /// (i.e. apply it in page space).
-    TransformShapes { shapes: Vec<ShapeId>, transform: Affine },
-    SetFill { shapes: Vec<ShapeId>, fill: Fill },
-    SetStroke { shapes: Vec<ShapeId>, stroke: Option<Stroke> },
-    SetShapeKind { shape: ShapeId, kind: ShapeKind },
-    SetShapeName { shape: ShapeId, name: Option<String> },
+    TransformShapes {
+        shapes: Vec<ShapeId>,
+        transform: Affine,
+    },
+    SetFill {
+        shapes: Vec<ShapeId>,
+        fill: Fill,
+    },
+    SetStroke {
+        shapes: Vec<ShapeId>,
+        stroke: Option<Stroke>,
+    },
+    SetShapeKind {
+        shape: ShapeId,
+        kind: ShapeKind,
+    },
+    SetShapeName {
+        shape: ShapeId,
+        name: Option<String>,
+    },
     /// Move a shape to another layer and position (z-order).
-    Reorder { shape: ShapeId, layer: LayerId, index: usize },
-    Group { shapes: Vec<ShapeId> },
-    Ungroup { group: ShapeId },
+    Reorder {
+        shape: ShapeId,
+        layer: LayerId,
+        index: usize,
+    },
+    Group {
+        shapes: Vec<ShapeId>,
+    },
+    Ungroup {
+        group: ShapeId,
+    },
 }
 
 impl Command {
@@ -90,14 +139,20 @@ impl Command {
                 if doc.pages.len() <= 1 {
                     return Err(Error::LastPage);
                 }
-                let i = doc.pages.iter().position(|p| p.id == *page).ok_or(Error::PageNotFound(*page))?;
+                let i = doc
+                    .pages
+                    .iter()
+                    .position(|p| p.id == *page)
+                    .ok_or(Error::PageNotFound(*page))?;
                 doc.pages.remove(i);
             }
             Command::ResizePage { page, size } => doc.page_mut(*page)?.size = *size,
 
             Command::AddLayer { page, name } => {
                 let id = doc.ids_mut().layer();
-                doc.page_mut(*page)?.layers.push(Layer::new(id, name.clone()));
+                doc.page_mut(*page)?
+                    .layers
+                    .push(Layer::new(id, name.clone()));
             }
             Command::DeleteLayer { layer } => {
                 let page = doc
@@ -110,7 +165,9 @@ impl Command {
                 }
                 page.layers.retain(|l| l.id != *layer);
             }
-            Command::SetLayerVisible { layer, visible } => doc.layer_mut(*layer)?.visible = *visible,
+            Command::SetLayerVisible { layer, visible } => {
+                doc.layer_mut(*layer)?.visible = *visible
+            }
             Command::SetLayerLocked { layer, locked } => doc.layer_mut(*layer)?.locked = *locked,
 
             Command::AddShape { layer, shape } => doc.layer_mut(*layer)?.shapes.push(shape.clone()),
@@ -150,7 +207,11 @@ impl Command {
             Command::SetShapeKind { shape, kind } => doc.shape_mut(*shape)?.kind = kind.clone(),
             Command::SetShapeName { shape, name } => doc.shape_mut(*shape)?.name = name.clone(),
 
-            Command::Reorder { shape, layer, index } => {
+            Command::Reorder {
+                shape,
+                layer,
+                index,
+            } => {
                 let (from_layer, from_idx) = doc.locate(*shape)?;
                 doc.layer(*layer)?;
                 let s = doc.layer_mut(from_layer)?.shapes.remove(from_idx);
@@ -165,15 +226,21 @@ impl Command {
                 }
                 // The group lives in the layer of the topmost member, at the
                 // position of the lowest member.
-                let mut located: Vec<(ShapeId, LayerId, usize)> =
-                    shapes.iter().map(|id| doc.locate(*id).map(|(l, i)| (*id, l, i))).collect::<Result<_>>()?;
+                let mut located: Vec<(ShapeId, LayerId, usize)> = shapes
+                    .iter()
+                    .map(|id| doc.locate(*id).map(|(l, i)| (*id, l, i)))
+                    .collect::<Result<_>>()?;
                 located.sort_by_key(|(_, _, i)| *i);
                 let layer_id = located[0].1;
                 let insert_at = located[0].2;
                 let mut children = Vec::with_capacity(shapes.len());
                 for (id, l, _) in &located {
                     let layer = doc.layer_mut(*l)?;
-                    let i = layer.shapes.iter().position(|s| s.id == *id).ok_or(Error::ShapeNotFound(*id))?;
+                    let i = layer
+                        .shapes
+                        .iter()
+                        .position(|s| s.id == *id)
+                        .ok_or(Error::ShapeNotFound(*id))?;
                     children.push(layer.shapes.remove(i));
                 }
                 let gid = doc.ids_mut().shape();
@@ -211,7 +278,13 @@ mod tests {
 
     fn rect(doc: &mut Document, x: f64) -> Shape {
         let id = doc.ids_mut().shape();
-        Shape::new(id, ShapeKind::Rect { rect: Rect::new(x, 0.0, x + 10.0, 10.0), radius: 0.0 })
+        Shape::new(
+            id,
+            ShapeKind::Rect {
+                rect: Rect::new(x, 0.0, x + 10.0, 10.0),
+                radius: 0.0,
+            },
+        )
     }
 
     #[test]
@@ -221,14 +294,25 @@ mod tests {
         let a = rect(&mut doc, 0.0);
         let b = rect(&mut doc, 20.0);
         let (ia, ib) = (a.id, b.id);
-        Command::AddShape { layer, shape: a }.apply(&mut doc).unwrap();
-        Command::AddShape { layer, shape: b }.apply(&mut doc).unwrap();
-        Command::Group { shapes: vec![ia, ib] }.apply(&mut doc).unwrap();
-        assert_eq!(doc.layer(layer).unwrap().shapes.len(), 1);
-        let gid = doc.layer(layer).unwrap().shapes[0].id;
-        Command::TransformShapes { shapes: vec![gid], transform: Affine::translate((5.0, 5.0)) }
+        Command::AddShape { layer, shape: a }
             .apply(&mut doc)
             .unwrap();
+        Command::AddShape { layer, shape: b }
+            .apply(&mut doc)
+            .unwrap();
+        Command::Group {
+            shapes: vec![ia, ib],
+        }
+        .apply(&mut doc)
+        .unwrap();
+        assert_eq!(doc.layer(layer).unwrap().shapes.len(), 1);
+        let gid = doc.layer(layer).unwrap().shapes[0].id;
+        Command::TransformShapes {
+            shapes: vec![gid],
+            transform: Affine::translate((5.0, 5.0)),
+        }
+        .apply(&mut doc)
+        .unwrap();
         Command::Ungroup { group: gid }.apply(&mut doc).unwrap();
         let shapes = &doc.layer(layer).unwrap().shapes;
         assert_eq!(shapes.len(), 2);
@@ -239,7 +323,11 @@ mod tests {
     #[test]
     fn delete_unknown_shape_fails_cleanly() {
         let mut doc = Document::default();
-        let err = Command::DeleteShapes { shapes: vec![ShapeId(999)] }.apply(&mut doc).unwrap_err();
+        let err = Command::DeleteShapes {
+            shapes: vec![ShapeId(999)],
+        }
+        .apply(&mut doc)
+        .unwrap_err();
         assert!(matches!(err, Error::ShapeNotFound(_)));
     }
 }

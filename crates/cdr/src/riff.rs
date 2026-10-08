@@ -30,7 +30,8 @@ impl Chunk {
     }
 
     pub fn list_type_str(&self) -> Option<String> {
-        self.list_type.map(|t| String::from_utf8_lossy(&t).into_owned())
+        self.list_type
+            .map(|t| String::from_utf8_lossy(&t).into_owned())
     }
 
     /// Does this chunk match `id`, or for lists, the list type?
@@ -68,7 +69,11 @@ pub struct Tree {
 impl Tree {
     /// Payload bytes of a chunk.
     pub fn data<'a>(&'a self, main: &'a [u8], c: &Chunk) -> &'a [u8] {
-        let buf: &[u8] = if c.stream == 0 { main } else { &self.streams[c.stream - 1] };
+        let buf: &[u8] = if c.stream == 0 {
+            main
+        } else {
+            &self.streams[c.stream - 1]
+        };
         let end = c.end.min(buf.len());
         let start = c.start.min(end);
         &buf[start..end]
@@ -82,14 +87,27 @@ impl Tree {
                 Some(t) => format!("{} {}", c.id_str(), t),
                 None => c.id_str(),
             };
-            out.push_str(&format!("{:indent$}{} [{}..{}]{}\n", "", name, c.start, c.end, if c.stream > 0 { format!(" s{}", c.stream) } else { String::new() }, indent = depth * 2));
+            out.push_str(&format!(
+                "{:indent$}{} [{}..{}]{}\n",
+                "",
+                name,
+                c.start,
+                c.end,
+                if c.stream > 0 {
+                    format!(" s{}", c.stream)
+                } else {
+                    String::new()
+                },
+                indent = depth * 2
+            ));
         });
         out
     }
 }
 
 fn u32le(b: &[u8], at: usize) -> Option<u32> {
-    b.get(at..at + 4).map(|s| u32::from_le_bytes([s[0], s[1], s[2], s[3]]))
+    b.get(at..at + 4)
+        .map(|s| u32::from_le_bytes([s[0], s[1], s[2], s[3]]))
 }
 
 pub fn parse(main: &[u8]) -> Result<Tree> {
@@ -103,19 +121,37 @@ pub fn parse(main: &[u8]) -> Result<Tree> {
     let end = main.len();
     let list_type: [u8; 4] = main[8..12].try_into().map_err(|_| Error::Truncated(8))?;
     let children = parse_children(main, 0, 12, end, &mut streams);
-    Ok(Tree { root: Chunk { id: *b"RIFF", list_type: Some(list_type), start: 12, end, stream: 0, children }, streams })
+    Ok(Tree {
+        root: Chunk {
+            id: *b"RIFF",
+            list_type: Some(list_type),
+            start: 12,
+            end,
+            stream: 0,
+            children,
+        },
+        streams,
+    })
 }
 
 /// Parse sibling chunks in `buf[pos..end]`. Malformed data ends the list
 /// quietly; whatever was parsed before is kept.
-fn parse_children(buf: &[u8], stream: usize, mut pos: usize, end: usize, streams: &mut Vec<Vec<u8>>) -> Vec<Chunk> {
+fn parse_children(
+    buf: &[u8],
+    stream: usize,
+    mut pos: usize,
+    end: usize,
+    streams: &mut Vec<Vec<u8>>,
+) -> Vec<Chunk> {
     let mut out = Vec::new();
     while pos + 8 <= end {
         let id: [u8; 4] = match buf.get(pos..pos + 4) {
             Some(s) => [s[0], s[1], s[2], s[3]],
             None => break,
         };
-        let Some(raw) = u32le(buf, pos + 4) else { break };
+        let Some(raw) = u32le(buf, pos + 4) else {
+            break;
+        };
         // Newer versions are reported to align chunks to 4 bytes instead of
         // 2; we handle that when we have corpus files showing it.
         let size = raw as usize;
@@ -126,15 +162,31 @@ fn parse_children(buf: &[u8], stream: usize, mut pos: usize, end: usize, streams
         }
         let is_list = &id == b"LIST";
         if is_list {
-            let lt: Option<[u8; 4]> = buf.get(payload..payload + 4).map(|s| [s[0], s[1], s[2], s[3]]);
+            let lt: Option<[u8; 4]> = buf
+                .get(payload..payload + 4)
+                .map(|s| [s[0], s[1], s[2], s[3]]);
             let children = match lt {
                 Some(t) if &t == b"cmpr" => inflate_cmpr(buf, payload + 4, payload_end, streams),
                 Some(_) => parse_children(buf, stream, payload + 4, payload_end, streams),
                 None => Vec::new(),
             };
-            out.push(Chunk { id, list_type: lt, start: payload + 4, end: payload_end, stream, children });
+            out.push(Chunk {
+                id,
+                list_type: lt,
+                start: payload + 4,
+                end: payload_end,
+                stream,
+                children,
+            });
         } else {
-            out.push(Chunk { id, list_type: None, start: payload, end: payload_end, stream, children: Vec::new() });
+            out.push(Chunk {
+                id,
+                list_type: None,
+                start: payload,
+                end: payload_end,
+                stream,
+                children: Vec::new(),
+            });
         }
         // Chunks are word-aligned.
         pos = payload + size + (size & 1);
@@ -163,7 +215,9 @@ fn inflate_cmpr(buf: &[u8], pos: usize, end: usize, streams: &mut Vec<Vec<u8>>) 
             if data.len() > 4 {
                 let mut inflated = Vec::new();
                 let mut dec = flate2::read::ZlibDecoder::new(&data[4..]);
-                if std::io::Read::read_to_end(&mut dec, &mut inflated).is_ok() && !inflated.is_empty() {
+                if std::io::Read::read_to_end(&mut dec, &mut inflated).is_ok()
+                    && !inflated.is_empty()
+                {
                     streams.push(inflated);
                     let idx = streams.len();
                     let len = streams[idx - 1].len();
@@ -171,7 +225,14 @@ fn inflate_cmpr(buf: &[u8], pos: usize, end: usize, streams: &mut Vec<Vec<u8>>) 
                     let inflated_ref = std::mem::take(&mut streams[idx - 1]);
                     let children = parse_children(&inflated_ref, idx, 0, len, streams);
                     streams[idx - 1] = inflated_ref;
-                    siblings.push(Chunk { id: *b"cmpr", list_type: Some(*b"cmpr"), start: 0, end: len, stream: idx, children });
+                    siblings.push(Chunk {
+                        id: *b"cmpr",
+                        list_type: Some(*b"cmpr"),
+                        start: 0,
+                        end: len,
+                        stream: idx,
+                        children,
+                    });
                 } else {
                     log::warn!("cmpr block at {payload} could not be inflated");
                 }
@@ -204,7 +265,14 @@ mod tests {
 
     #[test]
     fn parses_nested_lists() {
-        let page = list(b"page", &[chunk(b"vrsn", &[0x84, 0x03]), list(b"layr", &chunk(b"obj ", &[1, 2, 3]))].concat());
+        let page = list(
+            b"page",
+            &[
+                chunk(b"vrsn", &[0x84, 0x03]),
+                list(b"layr", &chunk(b"obj ", &[1, 2, 3])),
+            ]
+            .concat(),
+        );
         let mut body = b"CDR9".to_vec();
         body.extend_from_slice(&page);
         let file = chunk(b"RIFF", &body);

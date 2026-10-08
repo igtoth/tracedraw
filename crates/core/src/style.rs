@@ -11,10 +11,18 @@ pub enum Fill {
     Solid(Color),
     /// Two-stop linear gradient; `angle` in degrees, the editor convention
     /// (0 = left to right, counter-clockwise positive).
-    Linear { from: Color, to: Color, angle: f64 },
+    Linear {
+        from: Color,
+        to: Color,
+        angle: f64,
+    },
     /// Two-stop radial gradient centred on the shape bounds; `offset` moves
     /// the centre in bounds-relative units (-1..1).
-    Radial { from: Color, to: Color, offset: Point },
+    Radial {
+        from: Color,
+        to: Color,
+        offset: Point,
+    },
 }
 
 impl Default for Fill {
@@ -62,11 +70,19 @@ impl Stroke {
     pub const HAIRLINE: f64 = 0.0762;
 
     pub fn hairline(color: Color) -> Self {
-        Stroke { color, width: Self::HAIRLINE, ..Default::default() }
+        Stroke {
+            color,
+            width: Self::HAIRLINE,
+            ..Default::default()
+        }
     }
 
     pub fn new(color: Color, width: f64) -> Self {
-        Stroke { color, width, ..Default::default() }
+        Stroke {
+            color,
+            width,
+            ..Default::default()
+        }
     }
 }
 

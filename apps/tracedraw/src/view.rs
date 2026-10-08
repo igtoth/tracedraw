@@ -14,17 +14,26 @@ pub struct View {
 
 impl Default for View {
     fn default() -> Self {
-        View { zoom: 3.0, origin: Pos2::new(100.0, 800.0) }
+        View {
+            zoom: 3.0,
+            origin: Pos2::new(100.0, 800.0),
+        }
     }
 }
 
 impl View {
     pub fn to_screen(&self, p: Point) -> Pos2 {
-        Pos2::new(self.origin.x + p.x as f32 * self.zoom, self.origin.y - p.y as f32 * self.zoom)
+        Pos2::new(
+            self.origin.x + p.x as f32 * self.zoom,
+            self.origin.y - p.y as f32 * self.zoom,
+        )
     }
 
     pub fn to_page(&self, s: Pos2) -> Point {
-        Point::new(((s.x - self.origin.x) / self.zoom) as f64, ((self.origin.y - s.y) / self.zoom) as f64)
+        Point::new(
+            ((s.x - self.origin.x) / self.zoom) as f64,
+            ((self.origin.y - s.y) / self.zoom) as f64,
+        )
     }
 
     pub fn rect_to_screen(&self, r: Rect) -> ERect {

@@ -1,0 +1,897 @@
+//! Pointer and keyboard handling on the canvas, per tool.
+
+use crate::app::{App, CurveInProgress, Drag, Handle};
+use crate::tools::Tool;
+use egui::{Key, Modifiers, PointerButton, Response};
+use tracedraw_core::{
+    document::ShapeKind,
+    geometry::{Affine, PathEl, Point, Rect, Vec2},
+    Color, Command, Fill, ShapeId,
+};
+
+const HANDLE_PX: f32 = 7.0;
+
+impl App {
+    pub fn hit_test(&self, p: Point) -> Option<ShapeId> {
+        let doc = self.doc();
+        let page = doc.page(self.page).ok()?;
+        let tol = 3.0 / self.view.zoom as f64;
+        for layer in page.layers.iter().rev() {
+            if !layer.visible || layer.locked {
+                continue;
+            }
+            for s in layer.shapes.iter().rev() {
+                if s.locked || !s.visible {
+                    continue;
+                }
+                let b = s.bounds().inflate(tol, tol);
+                if !b.contains(p) {
+                    continue;
+                }
+                // Filled objects hit anywhere inside; unfilled ones only near the outline.
+                if !matches!(s.fill, Fill::None)
+                    || matches!(s.kind, ShapeKind::Text { .. } | ShapeKind::Group { .. })
+                {
+                    return Some(s.id);
+                }
+                if crate::canvas::distance_to_path(&s.page_path(), p) <= tol * 1.5 {
+                    return Some(s.id);
+                }
+            }
+        }
+        None
+    }
+
+    /// Screen-space handle positions for the selection box.
+    pub fn handle_positions(&self, b: Rect) -> [(Handle, egui::Pos2); 8] {
+        let r = self.view.rect_to_screen(b);
+        [
+            (Handle::NW, r.left_top()),
+            (Handle::N, r.center_top()),
+            (Handle::NE, r.right_top()),
+            (Handle::W, r.left_center()),
+            (Handle::E, r.right_center()),
+            (Handle::SW, r.left_bottom()),
+            (Handle::S, r.center_bottom()),
+            (Handle::SE, r.right_bottom()),
+        ]
+    }
+
+    fn handle_at(&self, screen: egui::Pos2) -> Option<Handle> {
+        let b = self.selection_bounds()?;
+        self.handle_positions(b)
+            .iter()
+            .find(|(_, p)| p.distance(screen) <= HANDLE_PX)
+            .map(|(h, _)| *h)
+    }
+
+    fn node_at(&self, p: Point) -> Option<(ShapeId, usize)> {
+        let tol = 4.0 / self.view.zoom as f64;
+        for s in self.selected_shapes() {
+            if let ShapeKind::Path { path, .. } = &s.kind {
+                let inv = s.transform.inverse();
+                let lp = inv * p;
+                for (i, el) in path.elements().iter().enumerate() {
+                    let end = match el {
+                        PathEl::MoveTo(q) | PathEl::LineTo(q) => Some(*q),
+                        PathEl::QuadTo(_, q) | PathEl::CurveTo(_, _, q) => Some(*q),
+                        PathEl::ClosePath => None,
+                    };
+                    if let Some(q) = end {
+                        if (q - lp).hypot() <= tol {
+                            return Some((s.id, i));
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    pub fn canvas_input(&mut self, response: &Response, mods: Modifiers) {
+        let hover = response.hover_pos();
+        let pointer = hover.map(|h| self.view.to_page(h));
+        self.pointer_page = pointer;
+        let Some(p) = pointer else {
+            if response.drag_stopped() {
+                self.end_drag();
+            }
+            return;
+        };
+        let screen = hover.unwrap_or_default();
+
+        // Middle button always pans.
+        if response.dragged_by(PointerButton::Middle) {
+            self.view.pan(response.drag_delta());
+            return;
+        }
+
+        // Right click: context menu equivalent (minimal for now).
+        if response.secondary_clicked() {
+            if self.tool == Tool::Pick {
+                if let Some(id) = self.hit_test(p) {
+                    if !self.selection.contains(&id) {
+                        self.select(vec![id]);
+                    }
+                }
+            }
+        }
+
+        match self.tool {
+            Tool::Pick | Tool::FreeformPick => self.pick_input(response, p, screen, mods),
+            Tool::Shape => self.shape_input(response, p, mods),
+            Tool::Zoom => self.zoom_input(response, p, screen, mods),
+            Tool::Pan => {
+                if response.dragged() {
+                    self.view.pan(response.drag_delta());
+                }
+            }
+            t if t.is_box_tool() => self.box_input(response, p, mods),
+            Tool::Freehand => self.freehand_input(response, p),
+            Tool::Bezier | Tool::Pen | Tool::Polyline | Tool::TwoPointLine | Tool::BSpline => {
+                self.curve_input(response, p, mods)
+            }
+            Tool::Text => {
+                if response.clicked() {
+                    match self.hit_test(p) {
+                        Some(id)
+                            if matches!(
+                                self.doc()
+                                    .shape(id)
+                                    .map(|(_, s)| matches!(s.kind, ShapeKind::Text { .. })),
+                                Ok(true)
+                            ) =>
+                        {
+                            // Edit existing text.
+                            let text = match &self.doc().shape(id).map(|(_, s)| s.kind.clone()) {
+                                Ok(ShapeKind::Text { spans, .. }) => {
+                                    spans.iter().map(|s| s.text.as_str()).collect::<String>()
+                                }
+                                _ => String::new(),
+                            };
+                            self.finish_text();
+                            self.text_edit = Some(crate::app::TextEdit { shape: id, text });
+                            self.select(vec![id]);
+                        }
+                        _ => self.start_text(p),
+                    }
+                }
+            }
+            Tool::ColorEyedropper | Tool::AttributesEyedropper => {
+                if response.clicked() {
+                    match self.eyedropper_color {
+                        None => {
+                            if let Some(id) = self.hit_test(p) {
+                                if let Ok((_, s)) = self.doc().shape(id) {
+                                    if let Fill::Solid(c) = s.fill {
+                                        self.eyedropper_color = Some(c);
+                                        self.status = format!(
+                                            "Sampled {}. Click an object to apply, Esc to cancel.",
+                                            crate::app::color_description(c)
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                        Some(c) => {
+                            if let Some(id) = self.hit_test(p) {
+                                self.run(Command::SetFill {
+                                    shapes: vec![id],
+                                    fill: Fill::Solid(c),
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+            Tool::InteractiveFill | Tool::AreaFill => self.fill_input(response, p),
+            Tool::Eraser => {
+                if response.clicked() {
+                    if let Some(id) = self.hit_test(p) {
+                        self.run(Command::DeleteShapes { shapes: vec![id] });
+                        self.selection.retain(|s| *s != id);
+                    }
+                }
+            }
+            _ => {
+                if response.clicked() {
+                    self.status = format!("{} tool is not implemented yet", self.tool.name());
+                }
+            }
+        }
+
+        if response.drag_stopped_by(PointerButton::Primary) {
+            self.end_drag();
+        }
+    }
+
+    fn pick_input(&mut self, response: &Response, p: Point, screen: egui::Pos2, mods: Modifiers) {
+        if response.drag_started_by(PointerButton::Primary) {
+            if let Some(h) = self.handle_at(screen) {
+                let b = self.selection_bounds().unwrap_or(Rect::ZERO);
+                if self.rotate_mode {
+                    if h.is_corner() {
+                        let c = b.center();
+                        let a = (p - c).atan2();
+                        self.drag = Drag::Rotate {
+                            center: c,
+                            start_angle: a,
+                            current_angle: a,
+                        };
+                    }
+                } else {
+                    let anchor = match h {
+                        Handle::N => Point::new(b.center().x, b.y0),
+                        Handle::S => Point::new(b.center().x, b.y1),
+                        Handle::E => Point::new(b.x0, b.center().y),
+                        Handle::W => Point::new(b.x1, b.center().y),
+                        Handle::NE => Point::new(b.x0, b.y0),
+                        Handle::NW => Point::new(b.x1, b.y0),
+                        Handle::SE => Point::new(b.x0, b.y1),
+                        Handle::SW => Point::new(b.x1, b.y1),
+                    };
+                    self.drag = Drag::Scale {
+                        handle: h,
+                        anchor,
+                        start_bounds: b,
+                        current: p,
+                    };
+                }
+                return;
+            }
+            match self.hit_test(p) {
+                Some(id) => {
+                    if mods.shift {
+                        if !self.selection.contains(&id) {
+                            self.selection.push(id);
+                        }
+                    } else if !self.selection.contains(&id) {
+                        self.select(vec![id]);
+                    }
+                    self.drag = Drag::Move {
+                        last: p,
+                        total: Vec2::ZERO,
+                    };
+                }
+                None => {
+                    if !mods.shift {
+                        self.select(Vec::new());
+                    }
+                    self.drag = Drag::Marquee {
+                        start: p,
+                        current: p,
+                    };
+                }
+            }
+        }
+        if response.dragged_by(PointerButton::Primary) {
+            match &mut self.drag {
+                Drag::Move { last, total } => {
+                    let d = p - *last;
+                    *last = p;
+                    *total += d;
+                }
+                Drag::Marquee { current, .. } | Drag::Scale { current, .. } => *current = p,
+                Drag::Rotate {
+                    center,
+                    current_angle,
+                    ..
+                } => *current_angle = (p - *center).atan2(),
+                _ => {}
+            }
+        }
+        if response.clicked_by(PointerButton::Primary) {
+            if self.handle_at(screen).is_some() {
+                return;
+            }
+            match self.hit_test(p) {
+                Some(id) if mods.shift => {
+                    if let Some(i) = self.selection.iter().position(|s| *s == id) {
+                        self.selection.remove(i);
+                    } else {
+                        self.selection.push(id);
+                    }
+                }
+                Some(id) => {
+                    if self.selection == vec![id] {
+                        // Second click: toggle rotate/skew handles, as the editor does.
+                        self.rotate_mode = !self.rotate_mode;
+                    } else {
+                        self.select(vec![id]);
+                    }
+                }
+                None => self.select(Vec::new()),
+            }
+        }
+        if response.double_clicked_by(PointerButton::Primary) {
+            if let Some(id) = self.hit_test(p) {
+                if let Ok((_, s)) = self.doc().shape(id) {
+                    if matches!(s.kind, ShapeKind::Text { .. }) {
+                        self.set_tool(Tool::Text);
+                    } else {
+                        self.select(vec![id]);
+                        self.set_tool(Tool::Shape);
+                    }
+                }
+            }
+        }
+    }
+
+    fn shape_input(&mut self, response: &Response, p: Point, mods: Modifiers) {
+        if response.drag_started_by(PointerButton::Primary) {
+            if let Some((shape, index)) = self.node_at(p) {
+                self.drag = Drag::Node {
+                    shape,
+                    index,
+                    last: p,
+                };
+                return;
+            }
+            match self.hit_test(p) {
+                Some(id) => {
+                    if !self.selection.contains(&id) {
+                        self.select(vec![id]);
+                    }
+                    self.drag = Drag::Move {
+                        last: p,
+                        total: Vec2::ZERO,
+                    };
+                }
+                None => {
+                    self.drag = Drag::Marquee {
+                        start: p,
+                        current: p,
+                    }
+                }
+            }
+        }
+        if response.dragged_by(PointerButton::Primary) {
+            if let Drag::Node { shape, index, last } = self.drag.clone() {
+                let d = p - last;
+                if let Ok((_, s)) = self.doc().shape(shape) {
+                    if let ShapeKind::Path { path, closed } = &s.kind {
+                        let inv = s.transform.inverse();
+                        let local_d = (inv * (Point::ZERO + d)) - (inv * Point::ZERO);
+                        let mut els: Vec<PathEl> = path.elements().to_vec();
+                        if let Some(el) = els.get_mut(index) {
+                            *el = match *el {
+                                PathEl::MoveTo(q) => PathEl::MoveTo(q + local_d),
+                                PathEl::LineTo(q) => PathEl::LineTo(q + local_d),
+                                PathEl::QuadTo(c, q) => PathEl::QuadTo(c + local_d, q + local_d),
+                                PathEl::CurveTo(c1, c2, q) => {
+                                    PathEl::CurveTo(c1, c2 + local_d, q + local_d)
+                                }
+                                PathEl::ClosePath => PathEl::ClosePath,
+                            };
+                            // Keep the incoming handle of the next segment attached.
+                            if let Some(PathEl::CurveTo(c1, _, _)) = els.get_mut(index + 1) {
+                                *c1 += local_d;
+                            }
+                        }
+                        let new_path = tracedraw_core::BezPath::from_vec(els);
+                        let closed = *closed;
+                        if self.engine.undo_label() == Some("Edit Node") {
+                            let _ = self.engine.undo();
+                        }
+                        let _ = self.engine.run_with_label(
+                            &Command::SetShapeKind {
+                                shape,
+                                kind: ShapeKind::Path {
+                                    path: new_path,
+                                    closed,
+                                },
+                            },
+                            "Edit Node",
+                        );
+                    }
+                }
+                self.drag = Drag::Node {
+                    shape,
+                    index,
+                    last: p,
+                };
+            } else {
+                match &mut self.drag {
+                    Drag::Move { last, total } => {
+                        let d = p - *last;
+                        *last = p;
+                        *total += d;
+                    }
+                    Drag::Marquee { current, .. } => *current = p,
+                    _ => {}
+                }
+            }
+        }
+        if response.clicked_by(PointerButton::Primary) {
+            if self.node_at(p).is_none() {
+                match self.hit_test(p) {
+                    Some(id) => {
+                        if mods.shift {
+                            self.selection.push(id);
+                        } else {
+                            self.select(vec![id]);
+                        }
+                    }
+                    None => self.select(Vec::new()),
+                }
+            }
+        }
+        if response.double_clicked_by(PointerButton::Primary) {
+            // Double-click on a non-curve object converts it to curves (the editor asks; we just do it).
+            if let Some(id) = self.hit_test(p) {
+                self.select(vec![id]);
+                self.convert_to_curves();
+            }
+        }
+    }
+
+    fn zoom_input(&mut self, response: &Response, p: Point, screen: egui::Pos2, mods: Modifiers) {
+        if response.drag_started_by(PointerButton::Primary) {
+            self.drag = Drag::ZoomBox {
+                start: p,
+                current: p,
+            };
+        }
+        if response.dragged_by(PointerButton::Primary) {
+            if let Drag::ZoomBox { current, .. } = &mut self.drag {
+                *current = p;
+            }
+        }
+        if response.clicked_by(PointerButton::Primary) {
+            self.view
+                .zoom_at(screen, if mods.shift { 0.5 } else { 2.0 });
+        }
+        if response.secondary_clicked() {
+            self.view.zoom_at(screen, 0.5);
+        }
+    }
+
+    fn box_input(&mut self, response: &Response, p: Point, mods: Modifiers) {
+        if response.drag_started_by(PointerButton::Primary) {
+            self.drag = Drag::Box {
+                start: p,
+                current: p,
+            };
+        }
+        if response.dragged_by(PointerButton::Primary) {
+            if let Drag::Box { start, current } = &mut self.drag {
+                let mut q = p;
+                if mods.ctrl {
+                    // Constrain to a square/circle.
+                    let d = q - *start;
+                    let m = d.x.abs().max(d.y.abs());
+                    q = *start + Vec2::new(m * d.x.signum(), m * d.y.signum());
+                }
+                if mods.shift {
+                    // Draw from the centre.
+                    let d = q - *start;
+                    *current = *start + d;
+                    return;
+                }
+                *current = q;
+            }
+        }
+        if response.double_clicked_by(PointerButton::Primary) && self.tool == Tool::Rectangle {
+            // the editor: double-click the rectangle tool draws a page frame.
+            let r = self.page_rect();
+            if let Some(id) = self.new_shape(ShapeKind::Rect {
+                rect: r,
+                radius: 0.0,
+            }) {
+                self.select(vec![id]);
+            }
+        }
+    }
+
+    fn freehand_input(&mut self, response: &Response, p: Point) {
+        if response.drag_started_by(PointerButton::Primary) {
+            self.drag = Drag::Freehand { points: vec![p] };
+        }
+        if response.dragged_by(PointerButton::Primary) {
+            if let Drag::Freehand { points } = &mut self.drag {
+                if points
+                    .last()
+                    .map(|l| (*l - p).hypot() > 0.2)
+                    .unwrap_or(true)
+                {
+                    points.push(p);
+                }
+            }
+        }
+    }
+
+    fn curve_input(&mut self, response: &Response, p: Point, _mods: Modifiers) {
+        let smooth = matches!(self.tool, Tool::Bezier | Tool::Pen | Tool::BSpline);
+        if response.double_clicked_by(PointerButton::Primary) {
+            self.finish_curve();
+            return;
+        }
+        if response.clicked_by(PointerButton::Primary) {
+            let c = self.curve.get_or_insert_with(|| CurveInProgress {
+                points: Vec::new(),
+                smooth,
+            });
+            c.smooth = smooth;
+            c.points.push(p);
+            if self.tool == Tool::TwoPointLine && c.points.len() == 2 {
+                self.finish_curve();
+            }
+        }
+    }
+
+    fn fill_input(&mut self, response: &Response, p: Point) {
+        if response.drag_started_by(PointerButton::Primary) {
+            if let Some(id) = self.hit_test(p) {
+                self.select(vec![id]);
+                self.drag = Drag::FillGradient {
+                    shape: id,
+                    start: p,
+                    current: p,
+                };
+            }
+        }
+        if response.dragged_by(PointerButton::Primary) {
+            if let Drag::FillGradient { current, .. } = &mut self.drag {
+                *current = p;
+            }
+        }
+        if response.clicked_by(PointerButton::Primary) {
+            if let Some(id) = self.hit_test(p) {
+                self.select(vec![id]);
+                let fill = match &self.default_fill {
+                    Fill::None => Fill::Solid(Color::cmyk_pct(0.0, 0.0, 0.0, 20.0)),
+                    f => f.clone(),
+                };
+                self.run(Command::SetFill {
+                    shapes: vec![id],
+                    fill,
+                });
+            }
+        }
+    }
+
+    pub fn end_drag(&mut self) {
+        let drag = std::mem::replace(&mut self.drag, Drag::None);
+        match drag {
+            Drag::Box { start, current } => self.create_box_shape(start, current),
+            Drag::Move { total, .. } => {
+                if total.hypot() > 1e-6 {
+                    self.transform_selection(Affine::translate(total));
+                }
+            }
+            Drag::Scale { .. } | Drag::Rotate { .. } => {
+                if let Some(t) = self.preview_transform_of(&drag) {
+                    self.transform_selection(t);
+                }
+            }
+            Drag::Marquee { start, current } => {
+                let r = Rect::from_points(start, current);
+                if r.width() > 0.1 || r.height() > 0.1 {
+                    if let Ok(page) = self.doc().page(self.page) {
+                        let mut ids = self.selection.clone();
+                        for s in page
+                            .layers
+                            .iter()
+                            .filter(|l| l.visible && !l.locked)
+                            .flat_map(|l| &l.shapes)
+                        {
+                            if r.contains_rect(s.bounds()) && !ids.contains(&s.id) {
+                                ids.push(s.id);
+                            }
+                        }
+                        self.select(ids);
+                    }
+                }
+            }
+            Drag::Freehand { points } => {
+                let tol = 0.6 / self.view.zoom as f64 * 2.0;
+                let pts = tracedraw_core::geometry::simplify(&points, tol.max(0.15));
+                if pts.len() >= 2 {
+                    let path = tracedraw_core::geometry::smooth_path(&pts, false);
+                    if let Some(id) = self.new_shape(ShapeKind::Path {
+                        path,
+                        closed: false,
+                    }) {
+                        self.select(vec![id]);
+                    }
+                }
+            }
+            Drag::FillGradient {
+                shape,
+                start,
+                current,
+            } => {
+                if (current - start).hypot() > 0.5 {
+                    let from = match &self.default_fill {
+                        Fill::Solid(c) => *c,
+                        _ => Color::cmyk_pct(0.0, 0.0, 0.0, 100.0),
+                    };
+                    let angle = (current - start).atan2().to_degrees();
+                    self.run(Command::SetFill {
+                        shapes: vec![shape],
+                        fill: Fill::Linear {
+                            from,
+                            to: Color::WHITE,
+                            angle,
+                        },
+                    });
+                }
+            }
+            Drag::ZoomBox { start, current } => {
+                let r = Rect::from_points(start, current);
+                if r.width() > 0.5 && r.height() > 0.5 {
+                    self.view.fit(r, self.canvas_rect);
+                }
+            }
+            Drag::Node { .. } | Drag::None => {}
+        }
+    }
+
+    /// Transform the selection would get if the drag ended now (for preview
+    /// and for commit). Translation is handled separately by `Drag::Move`.
+    pub fn preview_transform_of(&self, drag: &Drag) -> Option<Affine> {
+        match drag {
+            Drag::Scale {
+                handle,
+                anchor,
+                start_bounds,
+                current,
+            } => {
+                let b = *start_bounds;
+                let (w, h) = (b.width().max(1e-6), b.height().max(1e-6));
+                let (mut sx, mut sy) = (1.0, 1.0);
+                match handle {
+                    Handle::E | Handle::W => {
+                        sx = (current.x - anchor.x) / (if *handle == Handle::E { w } else { -w })
+                    }
+                    Handle::N | Handle::S => {
+                        sy = (current.y - anchor.y) / (if *handle == Handle::N { h } else { -h })
+                    }
+                    Handle::NE => {
+                        sx = (current.x - anchor.x) / w;
+                        sy = (current.y - anchor.y) / h;
+                    }
+                    Handle::NW => {
+                        sx = (anchor.x - current.x) / w;
+                        sy = (current.y - anchor.y) / h;
+                    }
+                    Handle::SE => {
+                        sx = (current.x - anchor.x) / w;
+                        sy = (anchor.y - current.y) / h;
+                    }
+                    Handle::SW => {
+                        sx = (anchor.x - current.x) / w;
+                        sy = (anchor.y - current.y) / h;
+                    }
+                }
+                if handle.is_corner() && !self.rotate_mode {
+                    // Corners scale proportionally, like the editor.
+                    let s = if sx.abs() > sy.abs() {
+                        sx.abs()
+                    } else {
+                        sy.abs()
+                    };
+                    sx = s * sx.signum();
+                    sy = s * sy.signum();
+                }
+                if sx.abs() < 1e-3 || sy.abs() < 1e-3 {
+                    return None;
+                }
+                Some(
+                    Affine::translate(anchor.to_vec2())
+                        * Affine::scale_non_uniform(sx, sy)
+                        * Affine::translate(-anchor.to_vec2()),
+                )
+            }
+            Drag::Rotate {
+                center,
+                start_angle,
+                current_angle,
+            } => {
+                let a = current_angle - start_angle;
+                Some(
+                    Affine::translate(center.to_vec2())
+                        * Affine::rotate(a)
+                        * Affine::translate(-center.to_vec2()),
+                )
+            }
+            _ => None,
+        }
+    }
+
+    pub fn keyboard(&mut self, ctx: &egui::Context) {
+        // Text typing has priority.
+        if let Some(mut te) = self.text_edit.clone() {
+            let mut changed = false;
+            let mut finish = false;
+            ctx.input(|i| {
+                for ev in &i.events {
+                    match ev {
+                        egui::Event::Text(t) => {
+                            te.text.push_str(t);
+                            changed = true;
+                        }
+                        egui::Event::Key {
+                            key: Key::Backspace,
+                            pressed: true,
+                            ..
+                        } => {
+                            te.text.pop();
+                            changed = true;
+                        }
+                        egui::Event::Key {
+                            key: Key::Enter,
+                            pressed: true,
+                            modifiers,
+                            ..
+                        } if !modifiers.shift => {
+                            te.text.push('\n');
+                            changed = true;
+                        }
+                        egui::Event::Key {
+                            key: Key::Escape,
+                            pressed: true,
+                            ..
+                        } => finish = true,
+                        _ => {}
+                    }
+                }
+            });
+            if changed {
+                self.text_edit = Some(te);
+                self.update_text();
+            }
+            if finish {
+                self.finish_text();
+                self.set_tool(Tool::Pick);
+            }
+            return;
+        }
+        if ctx.egui_wants_keyboard_input() {
+            return;
+        }
+        let input = ctx.input(|i| i.clone());
+        let pressed =
+            |k: Key, m: Modifiers| input.key_pressed(k) && input.modifiers.matches_logically(m);
+        let cmd = Modifiers::COMMAND;
+
+        if pressed(Key::Z, cmd) {
+            self.undo();
+        }
+        if pressed(Key::Z, cmd | Modifiers::SHIFT) {
+            self.redo();
+        }
+        if pressed(Key::S, cmd) {
+            self.save(false);
+        }
+        if pressed(Key::S, cmd | Modifiers::SHIFT) {
+            self.save(true);
+        }
+        if pressed(Key::O, cmd) {
+            self.open_dialog();
+        }
+        if pressed(Key::N, cmd) {
+            self.new_document();
+        }
+        if pressed(Key::E, cmd) {
+            self.export();
+        }
+        if pressed(Key::I, cmd) {
+            self.import();
+        }
+        if pressed(Key::G, cmd) {
+            self.group_selection();
+        }
+        if pressed(Key::U, cmd) {
+            self.ungroup_selection();
+        }
+        if pressed(Key::Q, cmd) {
+            self.convert_to_curves();
+        }
+        if pressed(Key::A, cmd) {
+            self.select_all();
+        }
+        if pressed(Key::C, cmd) {
+            self.copy();
+        }
+        if pressed(Key::X, cmd) {
+            self.cut();
+        }
+        if pressed(Key::V, cmd) {
+            self.paste();
+        }
+        if pressed(Key::D, cmd) {
+            self.duplicate();
+        }
+        if pressed(Key::Home, cmd | Modifiers::SHIFT) {
+            self.order(0);
+        }
+        if pressed(Key::End, cmd | Modifiers::SHIFT) {
+            self.order(3);
+        }
+        if pressed(Key::PageUp, cmd) {
+            self.order(1);
+        }
+        if pressed(Key::PageDown, cmd) {
+            self.order(2);
+        }
+        if pressed(Key::Delete, Modifiers::NONE) || pressed(Key::Backspace, Modifiers::NONE) {
+            self.delete_selection();
+        }
+        if pressed(Key::F4, Modifiers::SHIFT) {
+            self.zoom_to_page();
+        }
+        if pressed(Key::F4, Modifiers::NONE) {
+            self.zoom_to_fit();
+        }
+        if pressed(Key::F2, Modifiers::SHIFT) {
+            self.zoom_to_selection();
+        }
+        if pressed(Key::F2, Modifiers::NONE) {
+            self.set_tool(Tool::Zoom);
+        }
+        if pressed(Key::Plus, Modifiers::NONE) || pressed(Key::Equals, Modifiers::NONE) {
+            let c = self.canvas_rect.center();
+            self.view.zoom_at(c, 1.25);
+        }
+        if pressed(Key::Minus, Modifiers::NONE) {
+            let c = self.canvas_rect.center();
+            self.view.zoom_at(c, 0.8);
+        }
+        if pressed(Key::Enter, Modifiers::NONE) {
+            self.finish_curve();
+        }
+        if pressed(Key::Escape, Modifiers::NONE) {
+            self.curve = None;
+            self.eyedropper_color = None;
+            self.select(Vec::new());
+            if self.tool != Tool::Pick {
+                self.set_tool(Tool::Pick);
+            }
+        }
+        if pressed(Key::PageDown, Modifiers::NONE) {
+            let i = self.page_index();
+            self.goto_page(i + 1);
+        }
+        if pressed(Key::PageUp, Modifiers::NONE) {
+            let i = self.page_index();
+            if i > 0 {
+                self.goto_page(i - 1);
+            }
+        }
+        // Tool shortcuts (no modifiers).
+        if input.modifiers.is_none() {
+            for group in crate::tools::GROUPS {
+                for t in group.tools {
+                    if let Some((k, _)) = t.shortcut() {
+                        if input.key_pressed(k) {
+                            self.set_tool(*t);
+                        }
+                    }
+                }
+            }
+            // Arrow nudge.
+            let step = if input.modifiers.shift {
+                self.nudge_mm * 10.0
+            } else {
+                self.nudge_mm
+            };
+            let mut d = Vec2::ZERO;
+            if input.key_pressed(Key::ArrowLeft) {
+                d.x -= step;
+            }
+            if input.key_pressed(Key::ArrowRight) {
+                d.x += step;
+            }
+            if input.key_pressed(Key::ArrowUp) {
+                d.y += step;
+            }
+            if input.key_pressed(Key::ArrowDown) {
+                d.y -= step;
+            }
+            if d.hypot() > 0.0 {
+                self.nudge(d);
+            }
+        }
+    }
+}

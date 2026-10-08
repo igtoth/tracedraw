@@ -8,6 +8,11 @@ versions best effort.
 Workspace, document model, commands + undo, SVG export, native format,
 `.cdr` reader skeleton, egui app with pick/rect/ellipse/polygon tools.
 
+## M0.5 the editor shell (done)
+The full workspace layout: menus, standard toolbar, property bar,
+toolbox with flyouts, rulers, palette, dockers, navigator, status bar.
+Parity tracked in `docs/parity.md`.
+
 ## M1 Real files
 - `tracedraw-cli inspect` to dump chunk trees
 - Corpus of small `.cdr` files per version (one object each) in `corpus/`

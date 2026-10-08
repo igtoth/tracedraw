@@ -46,7 +46,12 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// Read a `.cdr` file into a document. The report lists what was skipped.
 pub fn open(path: impl AsRef<Path>) -> Result<(tracedraw_core::Document, ParseReport)> {
     let bytes = std::fs::read(path.as_ref())?;
-    let title = path.as_ref().file_stem().and_then(|s| s.to_str()).unwrap_or("Untitled").to_string();
+    let title = path
+        .as_ref()
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("Untitled")
+        .to_string();
     open_bytes(&bytes, &title)
 }
 
