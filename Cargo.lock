@@ -2668,6 +2668,7 @@ dependencies = [
  "eframe",
  "egui",
  "env_logger",
+ "i_overlay",
  "image",
  "kurbo",
  "log",

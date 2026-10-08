@@ -148,6 +148,17 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
                 }
             }
         }
+        Drag::Connector { from, current } => {
+            if let Ok((_, s)) = doc.shape(*from) {
+                painter.line_segment(
+                    [
+                        view.to_screen(s.bounds().center()),
+                        view.to_screen(*current),
+                    ],
+                    EStroke::new(1.0, Tokens::SELECTION),
+                );
+            }
+        }
         Drag::TextFrame { start, current } => {
             let r = view.rect_to_screen(Rect::from_points(*start, *current));
             painter.rect_stroke(
@@ -217,6 +228,10 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
                 epaint::StrokeKind::Middle,
             );
         }
+    }
+    for p in &app.dimension_points {
+        let sp = view.to_screen(*p);
+        painter.circle_stroke(sp, 4.0, EStroke::new(1.0, Tokens::SELECTION));
     }
     // Text caret.
     if let Some(te) = &app.text_edit {

@@ -12,6 +12,7 @@ mod shape_tool;
 mod snap;
 mod theme;
 mod tools;
+mod tools2;
 mod ui;
 mod view;
 

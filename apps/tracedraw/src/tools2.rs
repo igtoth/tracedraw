@@ -1,0 +1,873 @@
+//! Second wave of tools: Contour, Crop, Knife, Spiral, Common Shapes,
+//! Brush Strokes (calligraphic), Parallel Dimension, Connector, Table,
+//! and Convert Outline To Object. These produce static results (the editor
+//! keeps some of them live); see docs/parity.md.
+
+use crate::app::{App, Drag};
+use crate::tools::Tool;
+use egui::{Modifiers, PointerButton, Response};
+use tracedraw_core::{
+    document::{Shape, ShapeKind, TextSpan},
+    geometry::{Affine, BezPath, Point, Rect, Shape as _, Vec2},
+    shaping, Color, Command, Fill, ShapeId, Stroke,
+};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContourDirection {
+    Inside,
+    Outside,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommonShape {
+    RightArrow,
+    Heart,
+    Diamond,
+    Banner,
+    Callout,
+    Cross,
+    Lightning,
+    Triangle,
+}
+
+impl CommonShape {
+    pub const ALL: [CommonShape; 8] = [
+        CommonShape::RightArrow,
+        CommonShape::Heart,
+        CommonShape::Diamond,
+        CommonShape::Banner,
+        CommonShape::Callout,
+        CommonShape::Cross,
+        CommonShape::Lightning,
+        CommonShape::Triangle,
+    ];
+    pub fn name(self) -> &'static str {
+        match self {
+            CommonShape::RightArrow => "Arrow",
+            CommonShape::Heart => "Heart",
+            CommonShape::Diamond => "Diamond",
+            CommonShape::Banner => "Banner",
+            CommonShape::Callout => "Callout",
+            CommonShape::Cross => "Cross",
+            CommonShape::Lightning => "Lightning",
+            CommonShape::Triangle => "Triangle",
+        }
+    }
+
+    /// Unit-square outline (0..1), y up.
+    pub fn unit_path(self) -> BezPath {
+        let mut p = BezPath::new();
+        let poly = |p: &mut BezPath, pts: &[(f64, f64)]| {
+            for (i, (x, y)) in pts.iter().enumerate() {
+                if i == 0 {
+                    p.move_to((*x, *y));
+                } else {
+                    p.line_to((*x, *y));
+                }
+            }
+            p.close_path();
+        };
+        match self {
+            CommonShape::RightArrow => poly(
+                &mut p,
+                &[
+                    (0.0, 0.3),
+                    (0.6, 0.3),
+                    (0.6, 0.0),
+                    (1.0, 0.5),
+                    (0.6, 1.0),
+                    (0.6, 0.7),
+                    (0.0, 0.7),
+                ],
+            ),
+            CommonShape::Heart => {
+                p.move_to((0.5, 0.0));
+                p.curve_to((0.1, 0.35), (0.0, 0.55), (0.0, 0.72));
+                p.curve_to((0.0, 0.95), (0.25, 1.05), (0.5, 0.78));
+                p.curve_to((0.75, 1.05), (1.0, 0.95), (1.0, 0.72));
+                p.curve_to((1.0, 0.55), (0.9, 0.35), (0.5, 0.0));
+                p.close_path();
+            }
+            CommonShape::Diamond => poly(&mut p, &[(0.5, 0.0), (1.0, 0.5), (0.5, 1.0), (0.0, 0.5)]),
+            CommonShape::Banner => poly(
+                &mut p,
+                &[
+                    (0.0, 0.1),
+                    (0.15, 0.5),
+                    (0.0, 0.9),
+                    (1.0, 0.9),
+                    (0.85, 0.5),
+                    (1.0, 0.1),
+                ],
+            ),
+            CommonShape::Callout => {
+                p.move_to((0.0, 0.25));
+                p.line_to((0.0, 0.9));
+                p.curve_to((0.0, 0.97), (0.03, 1.0), (0.1, 1.0));
+                p.line_to((0.9, 1.0));
+                p.curve_to((0.97, 1.0), (1.0, 0.97), (1.0, 0.9));
+                p.line_to((1.0, 0.35));
+                p.curve_to((1.0, 0.28), (0.97, 0.25), (0.9, 0.25));
+                p.line_to((0.35, 0.25));
+                p.line_to((0.15, 0.0));
+                p.line_to((0.2, 0.25));
+                p.line_to((0.1, 0.25));
+                p.curve_to((0.03, 0.25), (0.0, 0.28), (0.0, 0.35));
+                p.close_path();
+            }
+            CommonShape::Cross => poly(
+                &mut p,
+                &[
+                    (0.35, 0.0),
+                    (0.65, 0.0),
+                    (0.65, 0.35),
+                    (1.0, 0.35),
+                    (1.0, 0.65),
+                    (0.65, 0.65),
+                    (0.65, 1.0),
+                    (0.35, 1.0),
+                    (0.35, 0.65),
+                    (0.0, 0.65),
+                    (0.0, 0.35),
+                    (0.35, 0.35),
+                ],
+            ),
+            CommonShape::Lightning => poly(
+                &mut p,
+                &[
+                    (0.55, 1.0),
+                    (0.15, 0.45),
+                    (0.45, 0.45),
+                    (0.3, 0.0),
+                    (0.85, 0.6),
+                    (0.55, 0.6),
+                    (0.7, 1.0),
+                ],
+            ),
+            CommonShape::Triangle => poly(&mut p, &[(0.5, 1.0), (1.0, 0.0), (0.0, 0.0)]),
+        }
+        p
+    }
+}
+
+/// Archimedean or logarithmic spiral inscribed in `rect`.
+pub fn spiral_path(rect: Rect, revolutions: u32, logarithmic: bool) -> BezPath {
+    let c = rect.center();
+    let (rx, ry) = (rect.width() / 2.0, rect.height() / 2.0);
+    let turns = revolutions.max(1) as f64;
+    let steps = (turns * 48.0) as usize;
+    let mut pts = Vec::with_capacity(steps + 1);
+    for i in 0..=steps {
+        let t = i as f64 / steps as f64;
+        let a = t * turns * std::f64::consts::TAU;
+        let r = if logarithmic {
+            (t * 4.0).exp() / 4.0f64.exp()
+        } else {
+            t
+        };
+        pts.push(Point::new(c.x + rx * r * a.cos(), c.y + ry * r * a.sin()));
+    }
+    tracedraw_core::geometry::smooth_path(&pts, false)
+}
+
+/// Calligraphic stroke: the outline swept by a flat nib along the points.
+pub fn calligraphic_path(points: &[Point], width: f64, angle_deg: f64) -> BezPath {
+    if points.len() < 2 {
+        return BezPath::new();
+    }
+    let a = angle_deg.to_radians();
+    let nib = Vec2::new(a.cos(), a.sin()) * (width / 2.0);
+    let mut left: Vec<Point> = points.iter().map(|p| *p + nib).collect();
+    let mut right: Vec<Point> = points.iter().map(|p| *p - nib).collect();
+    right.reverse();
+    left.append(&mut right);
+    let p = tracedraw_core::geometry::smooth_path(&left, true);
+    shaping::simplify(&p)
+}
+
+impl App {
+    pub fn tools2_input(&mut self, response: &Response, p: Point, mods: Modifiers) {
+        match self.tool {
+            Tool::Contour => {
+                if response.drag_started_by(PointerButton::Primary) {
+                    if let Some(id) = self.hit_test(p) {
+                        self.select(vec![id]);
+                        self.drag = Drag::ContourDrag { start: p };
+                    }
+                }
+                if response.dragged_by(PointerButton::Primary) {
+                    if let Drag::ContourDrag { start, .. } = self.drag {
+                        let d = (p - start).hypot();
+                        self.contour_offset = (d / self.contour_steps.max(1) as f64).max(0.1);
+                        self.contour_direction = if self
+                            .selection_bounds()
+                            .map(|b| b.contains(p))
+                            .unwrap_or(false)
+                        {
+                            ContourDirection::Inside
+                        } else {
+                            ContourDirection::Outside
+                        };
+                    }
+                }
+                if response.clicked_by(PointerButton::Primary) {
+                    match self.hit_test(p) {
+                        Some(id) => self.select(vec![id]),
+                        None => self.select(Vec::new()),
+                    }
+                }
+            }
+            Tool::Crop | Tool::Knife => {
+                let p = self.snap_point(p);
+                if response.drag_started_by(PointerButton::Primary) {
+                    self.drag = Drag::Box {
+                        start: p,
+                        current: p,
+                    };
+                }
+                if response.dragged_by(PointerButton::Primary) {
+                    if let Drag::Box { current, .. } = &mut self.drag {
+                        *current = p;
+                    }
+                }
+            }
+            Tool::Spiral | Tool::CommonShapes | Tool::Table => {
+                self.box_like_input(response, p, mods)
+            }
+            Tool::BrushStrokes => {
+                if response.drag_started_by(PointerButton::Primary) {
+                    self.drag = Drag::Freehand { points: vec![p] };
+                }
+                if response.dragged_by(PointerButton::Primary) {
+                    if let Drag::Freehand { points } = &mut self.drag {
+                        if points
+                            .last()
+                            .map(|l| (*l - p).hypot() > 0.3)
+                            .unwrap_or(true)
+                        {
+                            points.push(p);
+                        }
+                    }
+                }
+            }
+            Tool::ParallelDimension => {
+                let p = self.snap_point(p);
+                if response.clicked_by(PointerButton::Primary) {
+                    self.dimension_points.push(p);
+                    if self.dimension_points.len() == 3 {
+                        let pts = std::mem::take(&mut self.dimension_points);
+                        self.create_dimension(pts[0], pts[1], pts[2]);
+                    }
+                }
+            }
+            Tool::Connector => {
+                if response.drag_started_by(PointerButton::Primary) {
+                    if let Some(id) = self.hit_test(p) {
+                        self.drag = Drag::Connector {
+                            from: id,
+                            current: p,
+                        };
+                    }
+                }
+                if response.dragged_by(PointerButton::Primary) {
+                    if let Drag::Connector { current, .. } = &mut self.drag {
+                        *current = p;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn box_like_input(&mut self, response: &Response, p: Point, mods: Modifiers) {
+        let p = self.snap_point(p);
+        if response.drag_started_by(PointerButton::Primary) {
+            self.drag = Drag::Box {
+                start: p,
+                current: p,
+            };
+        }
+        if response.dragged_by(PointerButton::Primary) {
+            if let Drag::Box { start, current } = &mut self.drag {
+                let mut q = p;
+                if mods.ctrl {
+                    let d = q - *start;
+                    let m = d.x.abs().max(d.y.abs());
+                    q = *start + Vec2::new(m * d.x.signum(), m * d.y.signum());
+                }
+                *current = q;
+            }
+        }
+    }
+
+    /// Box drags for the second-wave tools, called from `end_drag`.
+    pub fn finish_tools2_box(&mut self, start: Point, current: Point) -> bool {
+        let rect = Rect::from_points(start, current);
+        match self.tool {
+            Tool::Spiral => {
+                if rect.width() > 0.1 && rect.height() > 0.1 {
+                    let path = spiral_path(rect, self.spiral_revolutions, self.spiral_logarithmic);
+                    if let Some(id) = self.new_shape(ShapeKind::Path {
+                        path,
+                        closed: false,
+                    }) {
+                        self.select(vec![id]);
+                    }
+                }
+                true
+            }
+            Tool::CommonShapes => {
+                if rect.width() > 0.1 && rect.height() > 0.1 {
+                    let unit = self.common_shape.unit_path();
+                    let path =
+                        Affine::new([rect.width(), 0.0, 0.0, rect.height(), rect.x0, rect.y0])
+                            * unit;
+                    if let Some(id) = self.new_shape(ShapeKind::Path { path, closed: true }) {
+                        self.select(vec![id]);
+                    }
+                }
+                true
+            }
+            Tool::Table => {
+                if rect.width() > 1.0 && rect.height() > 1.0 {
+                    self.create_table(rect);
+                }
+                true
+            }
+            Tool::Crop => {
+                if rect.width() > 0.1 && rect.height() > 0.1 {
+                    self.crop_to(rect);
+                }
+                true
+            }
+            Tool::Knife => {
+                if (current - start).hypot() > 0.5 {
+                    self.knife(start, current);
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Clip every object (or the selection) to a rectangle.
+    pub fn crop_to(&mut self, rect: Rect) {
+        let page = self.page;
+        let targets: Vec<Shape> = if self.selection.is_empty() {
+            self.doc()
+                .page(page)
+                .map(|p| {
+                    p.layers
+                        .iter()
+                        .filter(|l| !l.locked)
+                        .flat_map(|l| l.shapes.clone())
+                        .collect()
+                })
+                .unwrap_or_default()
+        } else {
+            self.selected_shapes()
+        };
+        let clip = rect.to_path(0.01);
+        let mut cmds = Vec::new();
+        let mut removed = Vec::new();
+        for s in targets {
+            if matches!(s.kind, ShapeKind::Bitmap { .. }) {
+                continue;
+            }
+            let b = s.bounds();
+            if rect.contains_rect(b) {
+                continue;
+            }
+            let pp = s.page_path();
+            let clipped = shaping::overlay(&pp, &clip, shaping::Op::Intersect);
+            if clipped.elements().is_empty() {
+                removed.push(s.id);
+            } else {
+                let local = s.transform.inverse() * clipped;
+                cmds.push(Command::SetShapeKind {
+                    shape: s.id,
+                    kind: ShapeKind::Path {
+                        path: local,
+                        closed: true,
+                    },
+                });
+            }
+        }
+        if !removed.is_empty() {
+            cmds.push(Command::DeleteShapes { shapes: removed });
+        }
+        if !cmds.is_empty() {
+            let _ = self.engine.run_batch("Crop", &cmds);
+        }
+        let doc = self.engine.document();
+        let keep: Vec<ShapeId> = self
+            .selection
+            .iter()
+            .copied()
+            .filter(|id| doc.shape(*id).is_ok())
+            .collect();
+        self.selection = keep;
+    }
+
+    /// Cut objects along a line into two pieces each.
+    pub fn knife(&mut self, a: Point, b: Point) {
+        let targets: Vec<Shape> = if self.selection.is_empty() {
+            self.doc()
+                .page(self.page)
+                .map(|p| {
+                    p.layers
+                        .iter()
+                        .filter(|l| !l.locked)
+                        .flat_map(|l| l.shapes.clone())
+                        .collect()
+                })
+                .unwrap_or_default()
+        } else {
+            self.selected_shapes()
+        };
+        let dir = (b - a).normalize();
+        let n = Vec2::new(-dir.y, dir.x);
+        let big = 10_000.0;
+        let half = |sign: f64| -> BezPath {
+            let o = a - dir * big;
+            let e = a + dir * big;
+            let mut p = BezPath::new();
+            p.move_to(o);
+            p.line_to(e);
+            p.line_to(e + n * big * sign);
+            p.line_to(o + n * big * sign);
+            p.close_path();
+            p
+        };
+        let (left, right) = (half(1.0), half(-1.0));
+        let mut cmds = Vec::new();
+        let mut new_ids = Vec::new();
+        let Some(layer) = self.active_layer() else {
+            return;
+        };
+        for s in targets {
+            if matches!(s.kind, ShapeKind::Bitmap { .. } | ShapeKind::Group { .. }) {
+                continue;
+            }
+            let bb = s.bounds();
+            if !crosses(bb, a, b) {
+                continue;
+            }
+            let pp = s.page_path();
+            let p1 = shaping::overlay(&pp, &left, shaping::Op::Intersect);
+            let p2 = shaping::overlay(&pp, &right, shaping::Op::Intersect);
+            if p1.elements().is_empty() || p2.elements().is_empty() {
+                continue;
+            }
+            cmds.push(Command::SetShapeKind {
+                shape: s.id,
+                kind: ShapeKind::Path {
+                    path: s.transform.inverse() * p1,
+                    closed: true,
+                },
+            });
+            let id = self.engine.new_shape_id();
+            let mut piece = Shape::new(
+                id,
+                ShapeKind::Path {
+                    path: s.transform.inverse() * p2,
+                    closed: true,
+                },
+            );
+            piece.transform = s.transform;
+            piece.fill = s.fill.clone();
+            piece.stroke = s.stroke.clone();
+            piece.opacity = s.opacity;
+            cmds.push(Command::AddShape {
+                layer,
+                shape: piece,
+            });
+            new_ids.push(s.id);
+            new_ids.push(id);
+        }
+        if !cmds.is_empty() {
+            let _ = self.engine.run_batch("Knife", &cmds);
+            self.select(new_ids);
+        }
+    }
+
+    pub fn apply_contour(&mut self) {
+        let shapes = self.selected_shapes();
+        let Some(layer) = self.active_layer() else {
+            return;
+        };
+        let steps = self.contour_steps.max(1);
+        let mut cmds = Vec::new();
+        let mut groups = Vec::new();
+        for s in shapes {
+            if matches!(s.kind, ShapeKind::Bitmap { .. } | ShapeKind::Group { .. }) {
+                continue;
+            }
+            let base = s.page_path();
+            let from = match &s.fill {
+                Fill::Solid(c) => *c,
+                _ => Color::WHITE,
+            };
+            let to = self.contour_color;
+            let sign = if self.contour_direction == ContourDirection::Outside {
+                1.0
+            } else {
+                -1.0
+            };
+            let mut ids = vec![s.id];
+            let (_, idx) = self.doc().locate(s.id).unwrap_or((layer, 0));
+            let mut new_shapes = Vec::new();
+            for i in 1..=steps {
+                let d = sign * self.contour_offset * i as f64;
+                let path = shaping::offset(&base, d);
+                if path.elements().is_empty() {
+                    break;
+                }
+                let t = i as f32 / steps as f32;
+                let color = lerp_color(from, to, t);
+                let id = self.engine.new_shape_id();
+                let mut c = Shape::new(id, ShapeKind::Path { path, closed: true });
+                c.fill = Fill::Solid(color);
+                c.stroke = s.stroke.clone().map(|mut st| {
+                    st.color = color;
+                    st
+                });
+                c.opacity = s.opacity;
+                ids.push(id);
+                new_shapes.push(c);
+            }
+            // Outside contours go behind the object (outermost first); inside ones on top.
+            let outside = self.contour_direction == ContourDirection::Outside;
+            for (k, c) in new_shapes.into_iter().enumerate() {
+                let cid = c.id;
+                cmds.push(Command::AddShape { layer, shape: c });
+                let index = if outside {
+                    idx.saturating_sub(0)
+                } else {
+                    idx + 1 + k
+                };
+                cmds.push(Command::Reorder {
+                    shape: cid,
+                    layer,
+                    index,
+                });
+            }
+            groups.push(ids);
+        }
+        if cmds.is_empty() {
+            return;
+        }
+        for g in &groups {
+            cmds.push(Command::Group { shapes: g.clone() });
+        }
+        if let Err(e) = self.engine.run_batch("Contour", &cmds) {
+            self.status = e.to_string();
+        }
+        // Select the resulting groups.
+        let doc = self.doc();
+        if let Ok(p) = doc.page(self.page) {
+            let gids: Vec<ShapeId> = p
+                .layers
+                .iter()
+                .flat_map(|l| &l.shapes)
+                .filter(|s| matches!(s.kind, ShapeKind::Group { .. }))
+                .map(|s| s.id)
+                .collect();
+            let n = groups.len();
+            self.selection = gids.into_iter().rev().take(n).collect();
+        }
+    }
+
+    pub fn create_dimension(&mut self, a: Point, b: Point, offset_at: Point) {
+        let dir = (b - a).normalize();
+        let n = Vec2::new(-dir.y, dir.x);
+        let off = (offset_at - a).dot(n);
+        let (a2, b2) = (a + n * off, b + n * off);
+        let len = (b - a).hypot();
+        let Some(layer) = self.active_layer() else {
+            return;
+        };
+        let mut path = BezPath::new();
+        // Extension lines, dimension line and arrowheads.
+        for (p, q) in [(a, a2 + n * 2.0), (b, b2 + n * 2.0)] {
+            path.move_to(p);
+            path.line_to(q);
+        }
+        path.move_to(a2);
+        path.line_to(b2);
+        let arrow = |path: &mut BezPath, tip: Point, d: Vec2| {
+            let back = tip - d * 3.0;
+            path.move_to(tip);
+            path.line_to(back + n * 1.0);
+            path.line_to(back - n * 1.0);
+            path.close_path();
+        };
+        arrow(&mut path, a2, -dir);
+        arrow(&mut path, b2, dir);
+        let line_id = self.engine.new_shape_id();
+        let mut line = Shape::new(
+            line_id,
+            ShapeKind::Path {
+                path,
+                closed: false,
+            },
+        );
+        line.fill = Fill::Solid(Color::BLACK);
+        line.stroke = Some(Stroke::hairline(Color::BLACK));
+        let text_id = self.engine.new_shape_id();
+        let label = format!("{:.2} {}", self.units.from_mm(len), self.units.short());
+        let mid = a2.midpoint(b2) + n * 1.5;
+        let mut text = Shape::new(
+            text_id,
+            ShapeKind::Text {
+                spans: vec![TextSpan {
+                    text: label,
+                    font_family: self.text_font.clone(),
+                    size_pt: 10.0,
+                    bold: false,
+                    italic: false,
+                }],
+                origin: Point::ZERO,
+                frame: None,
+                align: tracedraw_core::TextAlign::Left,
+            },
+        );
+        let angle = dir.atan2();
+        text.transform = Affine::translate(mid.to_vec2())
+            * Affine::rotate(angle)
+            * Affine::translate((-len / 4.0, 0.0));
+        text.fill = Fill::Solid(Color::BLACK);
+        text.stroke = None;
+        let cmds = vec![
+            Command::AddShape { layer, shape: line },
+            Command::AddShape { layer, shape: text },
+            Command::Group {
+                shapes: vec![line_id, text_id],
+            },
+        ];
+        let _ = self.engine.run_batch("Dimension", &cmds);
+    }
+
+    pub fn finish_connector(&mut self, from: ShapeId, at: Point) {
+        let Some(to) = self.hit_test(at).filter(|id| *id != from) else {
+            return;
+        };
+        let (Ok((_, a)), Ok((_, b))) = (self.doc().shape(from), self.doc().shape(to)) else {
+            return;
+        };
+        let (ba, bb) = (a.bounds(), b.bounds());
+        // Leave from the side facing the other object.
+        let (pa, pb) =
+            if (bb.center().x - ba.center().x).abs() > (bb.center().y - ba.center().y).abs() {
+                if bb.center().x > ba.center().x {
+                    (
+                        Point::new(ba.x1, ba.center().y),
+                        Point::new(bb.x0, bb.center().y),
+                    )
+                } else {
+                    (
+                        Point::new(ba.x0, ba.center().y),
+                        Point::new(bb.x1, bb.center().y),
+                    )
+                }
+            } else if bb.center().y > ba.center().y {
+                (
+                    Point::new(ba.center().x, ba.y1),
+                    Point::new(bb.center().x, bb.y0),
+                )
+            } else {
+                (
+                    Point::new(ba.center().x, ba.y0),
+                    Point::new(bb.center().x, bb.y1),
+                )
+            };
+        let mut path = BezPath::new();
+        path.move_to(pa);
+        path.line_to(pb);
+        if let Some(id) = self.new_shape(ShapeKind::Path {
+            path,
+            closed: false,
+        }) {
+            let _ = self.engine.run(&Command::SetShapeName {
+                shape: id,
+                name: Some("Connector".into()),
+            });
+            self.select(vec![id]);
+        }
+    }
+
+    pub fn create_table(&mut self, rect: Rect) {
+        let (rows, cols) = (self.table_rows.max(1), self.table_cols.max(1));
+        let Some(layer) = self.active_layer() else {
+            return;
+        };
+        let cw = rect.width() / cols as f64;
+        let ch = rect.height() / rows as f64;
+        let mut cmds = Vec::new();
+        let mut ids = Vec::new();
+        for r in 0..rows {
+            for c in 0..cols {
+                let cell = Rect::new(
+                    rect.x0 + cw * c as f64,
+                    rect.y0 + ch * r as f64,
+                    rect.x0 + cw * (c + 1) as f64,
+                    rect.y0 + ch * (r + 1) as f64,
+                );
+                let id = self.engine.new_shape_id();
+                let mut s = Shape::new(
+                    id,
+                    ShapeKind::Rect {
+                        rect: cell,
+                        radius: 0.0,
+                    },
+                );
+                s.fill = self.default_fill.clone();
+                s.stroke = Some(Stroke::hairline(Color::BLACK));
+                ids.push(id);
+                cmds.push(Command::AddShape { layer, shape: s });
+            }
+        }
+        cmds.push(Command::Group { shapes: ids });
+        let _ = self.engine.run_batch("Table", &cmds);
+    }
+
+    pub fn finish_brush_strokes(&mut self, points: Vec<Point>) {
+        let pts = tracedraw_core::geometry::simplify(&points, 0.2);
+        let path = calligraphic_path(&pts, self.media_width, self.media_angle);
+        if path.elements().is_empty() {
+            return;
+        }
+        let Some(layer) = self.active_layer() else {
+            return;
+        };
+        let id = self.engine.new_shape_id();
+        let mut s = Shape::new(id, ShapeKind::Path { path, closed: true });
+        s.fill = match &self.default_stroke {
+            Some(st) => Fill::Solid(st.color),
+            None => Fill::Solid(Color::BLACK),
+        };
+        s.stroke = None;
+        s.name = Some("Brush Strokes".into());
+        self.run(Command::AddShape { layer, shape: s });
+        self.select(vec![id]);
+    }
+
+    /// Ctrl+Shift+Q: replace an outline by a filled object of its shape.
+    pub fn convert_outline_to_object(&mut self) {
+        use i_overlay::mesh::float::stroke::offset::StrokeOffset;
+        use i_overlay::mesh::float::style::{LineCap as ICap, LineJoin as IJoin, StrokeStyle};
+        let shapes = self.selected_shapes();
+        let Some(layer) = self.active_layer() else {
+            return;
+        };
+        let mut cmds = Vec::new();
+        let mut ids = Vec::new();
+        for s in shapes {
+            let Some(st) = &s.stroke else { continue };
+            let width = if st.width <= Stroke::HAIRLINE + 1e-9 {
+                0.25
+            } else {
+                st.width
+            };
+            let pp = s.page_path();
+            let mut out = BezPath::new();
+            for contour in polylines(&pp) {
+                let closed = contour.1;
+                let pts = contour.0;
+                let style = StrokeStyle::new(width)
+                    .line_join(match st.join {
+                        tracedraw_core::LineJoin::Round => IJoin::Round(0.05),
+                        tracedraw_core::LineJoin::Bevel => IJoin::Bevel,
+                        tracedraw_core::LineJoin::Miter => IJoin::Miter(4.0),
+                    })
+                    .start_cap(match st.cap {
+                        tracedraw_core::LineCap::Round => ICap::Round(0.05),
+                        tracedraw_core::LineCap::Square => ICap::Square,
+                        tracedraw_core::LineCap::Butt => ICap::Butt,
+                    })
+                    .end_cap(match st.cap {
+                        tracedraw_core::LineCap::Round => ICap::Round(0.05),
+                        tracedraw_core::LineCap::Square => ICap::Square,
+                        tracedraw_core::LineCap::Butt => ICap::Butt,
+                    });
+                let shapes_out = pts.stroke(style, closed);
+                for shape in shapes_out {
+                    for c in shape {
+                        for (i, p) in c.iter().enumerate() {
+                            let pt = Point::new(p[0], p[1]);
+                            if i == 0 {
+                                out.move_to(pt);
+                            } else {
+                                out.line_to(pt);
+                            }
+                        }
+                        out.close_path();
+                    }
+                }
+            }
+            if out.elements().is_empty() {
+                continue;
+            }
+            let id = self.engine.new_shape_id();
+            let mut o = Shape::new(
+                id,
+                ShapeKind::Path {
+                    path: out,
+                    closed: true,
+                },
+            );
+            o.fill = Fill::Solid(st.color);
+            o.stroke = None;
+            o.name = Some("Outline".into());
+            cmds.push(Command::AddShape { layer, shape: o });
+            cmds.push(Command::SetStroke {
+                shapes: vec![s.id],
+                stroke: None,
+            });
+            ids.push(id);
+        }
+        if !cmds.is_empty() {
+            let _ = self.engine.run_batch("Convert Outline To Object", &cmds);
+            self.select(ids);
+        }
+    }
+}
+
+fn crosses(bb: Rect, a: Point, b: Point) -> bool {
+    // Conservative: the segment's bounding box overlaps the object bounds.
+    !bb.intersect(Rect::from_points(a, b).inflate(0.01, 0.01))
+        .is_zero_area()
+}
+
+fn lerp_color(a: Color, b: Color, t: f32) -> Color {
+    let [r1, g1, b1] = a.to_rgb8();
+    let [r2, g2, b2] = b.to_rgb8();
+    let l = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t).round() as u8;
+    Color::rgb8(l(r1, r2), l(g1, g2), l(b1, b2))
+}
+
+/// Flattened subpaths of a page path as point lists with a closed flag.
+fn polylines(path: &BezPath) -> Vec<(Vec<[f64; 2]>, bool)> {
+    use tracedraw_core::geometry::PathEl;
+    let mut out: Vec<(Vec<[f64; 2]>, bool)> = Vec::new();
+    let mut cur: Vec<[f64; 2]> = Vec::new();
+    let mut closed = false;
+    kurbo::flatten(path.elements().iter().copied(), 0.05, &mut |el| match el {
+        PathEl::MoveTo(p) => {
+            if cur.len() >= 2 {
+                out.push((std::mem::take(&mut cur), closed));
+            } else {
+                cur.clear();
+            }
+            closed = false;
+            cur.push([p.x, p.y]);
+        }
+        PathEl::LineTo(p) => cur.push([p.x, p.y]),
+        PathEl::ClosePath => closed = true,
+        _ => {}
+    });
+    if cur.len() >= 2 {
+        out.push((cur, closed));
+    }
+    out
+}

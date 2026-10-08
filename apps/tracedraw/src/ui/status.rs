@@ -139,6 +139,17 @@ fn tool_hint(tool: Tool) -> &'static str {
         Tool::InteractiveFill | Tool::AreaFill => "Click an object to apply the default fill; drag across it for a fountain fill",
         Tool::ColorEyedropper | Tool::AttributesEyedropper => "Click an object to sample its fill; click other objects to apply",
         Tool::Eraser => "Click an object to delete it",
+        Tool::Contour => "Select an object and drag to set the contour offset; Apply on the property bar",
+        Tool::Crop => "Drag a rectangle; objects are cropped when you release",
+        Tool::Knife => "Drag a line across objects to cut them",
+        Tool::Spiral => "Drag to draw a spiral",
+        Tool::CommonShapes => "Drag to draw the shape chosen on the property bar",
+        Tool::Table => "Drag to draw a table",
+        Tool::BrushStrokes => "Drag to paint a calligraphic stroke",
+        Tool::ParallelDimension => "Click two points, then click to place the dimension line",
+        Tool::Connector => "Drag from one object to another",
+        Tool::DropShadow => "Drag from an object to set the shadow offset",
+        Tool::Transparency => "Click an object, then set the transparency on the property bar",
         _ => "This tool is not implemented yet",
     }
 }

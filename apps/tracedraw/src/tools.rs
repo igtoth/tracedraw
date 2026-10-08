@@ -266,6 +266,15 @@ impl Tool {
                 | Tool::Eraser
                 | Tool::Transparency
                 | Tool::DropShadow
+                | Tool::Contour
+                | Tool::Crop
+                | Tool::Knife
+                | Tool::Spiral
+                | Tool::CommonShapes
+                | Tool::Table
+                | Tool::BrushStrokes
+                | Tool::ParallelDimension
+                | Tool::Connector
         )
     }
 }

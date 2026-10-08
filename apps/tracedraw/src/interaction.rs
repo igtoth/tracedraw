@@ -146,6 +146,15 @@ impl App {
                 }
             }
             Tool::InteractiveFill | Tool::AreaFill => self.fill_input(response, p),
+            Tool::Contour
+            | Tool::Crop
+            | Tool::Knife
+            | Tool::Spiral
+            | Tool::CommonShapes
+            | Tool::Table
+            | Tool::BrushStrokes
+            | Tool::ParallelDimension
+            | Tool::Connector => self.tools2_input(response, p, mods),
             Tool::DropShadow => {
                 if response.drag_started_by(PointerButton::Primary) {
                     if let Some(id) = self.hit_test(p) {
@@ -597,7 +606,12 @@ impl App {
     pub fn end_drag(&mut self) {
         let drag = std::mem::replace(&mut self.drag, Drag::None);
         match drag {
-            Drag::Box { start, current } => self.create_box_shape(start, current),
+            Drag::Box { start, current } => {
+                if !self.finish_tools2_box(start, current) {
+                    self.create_box_shape(start, current);
+                }
+            }
+            Drag::Connector { from, current } => self.finish_connector(from, current),
             Drag::TextFrame { start, current } => {
                 let r = Rect::from_points(start, current);
                 if r.width() > 2.0 && r.height() > 2.0 {
@@ -635,6 +649,9 @@ impl App {
                         self.select(ids);
                     }
                 }
+            }
+            Drag::Freehand { points } if self.tool == Tool::BrushStrokes => {
+                self.finish_brush_strokes(points)
             }
             Drag::Freehand { points } => {
                 let tol = 0.6 / self.view.zoom as f64 * 2.0;
@@ -678,7 +695,8 @@ impl App {
             }
             Drag::NodeMarquee { start, current } => self.finish_node_marquee(start, current),
             Drag::NewGuide { .. } => self.finish_guide_drag(),
-            Drag::Shadow { .. }
+            Drag::ContourDrag { .. }
+            | Drag::Shadow { .. }
             | Drag::MoveGuide { .. }
             | Drag::Node { .. }
             | Drag::Handle { .. }
@@ -844,7 +862,9 @@ impl App {
         if pressed(Key::U, cmd) {
             self.ungroup_selection();
         }
-        if pressed(Key::Q, cmd) {
+        if pressed(Key::Q, cmd | Modifiers::SHIFT) {
+            self.convert_outline_to_object();
+        } else if pressed(Key::Q, cmd) {
             self.convert_to_curves();
         }
         if pressed(Key::A, cmd) {
@@ -924,6 +944,7 @@ impl App {
         }
         if pressed(Key::Escape, Modifiers::NONE) {
             self.curve = None;
+            self.dimension_points.clear();
             self.eyedropper_color = None;
             self.select(Vec::new());
             if self.tool != Tool::Pick {

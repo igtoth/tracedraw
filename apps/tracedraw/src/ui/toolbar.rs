@@ -277,6 +277,84 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 vsep(ui);
                 ui.label(egui::RichText::new("Enter or double-click finishes the curve, Esc cancels").color(Tokens::TEXT_DIM).size(11.0));
             }
+            Tool::Contour => {
+                use crate::tools2::ContourDirection;
+                ui.label(egui::RichText::new("Contour").color(Tokens::TEXT_DIM).size(11.0));
+                for (d, n) in [(ContourDirection::Inside, "Inside"), (ContourDirection::Outside, "Outside")] {
+                    if ui.selectable_label(app.contour_direction == d, n).clicked() {
+                        app.contour_direction = d;
+                    }
+                }
+                ui.label(egui::RichText::new("Steps").color(Tokens::TEXT_DIM).size(11.0));
+                ui.add(egui::DragValue::new(&mut app.contour_steps).range(1..=50));
+                ui.label(egui::RichText::new("Offset").color(Tokens::TEXT_DIM).size(11.0));
+                ui.add(egui::DragValue::new(&mut app.contour_offset).speed(0.1).range(0.05..=200.0).suffix(" mm"));
+                let [r, g, b] = app.contour_color.to_rgb8();
+                let mut rgb = [r, g, b];
+                if ui.color_edit_button_srgb(&mut rgb).on_hover_text("Outermost contour colour").changed() {
+                    app.contour_color = tracedraw_core::Color::rgb8(rgb[0], rgb[1], rgb[2]);
+                }
+                vsep(ui);
+                if ui.add_enabled(!shapes.is_empty(), egui::Button::new("Apply")).clicked() {
+                    app.apply_contour();
+                }
+                if shapes.is_empty() {
+                    ui.label(egui::RichText::new("Select an object, drag to set the offset, then Apply").color(Tokens::TEXT_DIM).size(11.0));
+                }
+            }
+            Tool::Crop => {
+                ui.label(egui::RichText::new("Drag a rectangle to crop the selection (or everything) to it").color(Tokens::TEXT_DIM).size(11.0));
+            }
+            Tool::Knife => {
+                ui.label(egui::RichText::new("Drag a line across objects to cut them in two").color(Tokens::TEXT_DIM).size(11.0));
+            }
+            Tool::Spiral => {
+                ui.label(egui::RichText::new("Revolutions").color(Tokens::TEXT_DIM).size(11.0));
+                ui.add(egui::DragValue::new(&mut app.spiral_revolutions).range(1..=100));
+                if ui.selectable_label(!app.spiral_logarithmic, "Symmetrical").clicked() {
+                    app.spiral_logarithmic = false;
+                }
+                if ui.selectable_label(app.spiral_logarithmic, "Logarithmic").clicked() {
+                    app.spiral_logarithmic = true;
+                }
+            }
+            Tool::CommonShapes => {
+                ui.label(egui::RichText::new("Shape").color(Tokens::TEXT_DIM).size(11.0));
+                egui::ComboBox::from_id_salt("common_shape").selected_text(app.common_shape.name()).show_ui(ui, |ui| {
+                    for cs in crate::tools2::CommonShape::ALL {
+                        if ui.selectable_label(app.common_shape == cs, cs.name()).clicked() {
+                            app.common_shape = cs;
+                        }
+                    }
+                });
+                ui.label(egui::RichText::new("Drag to draw").color(Tokens::TEXT_DIM).size(11.0));
+            }
+            Tool::Table => {
+                ui.label(egui::RichText::new("Rows").color(Tokens::TEXT_DIM).size(11.0));
+                ui.add(egui::DragValue::new(&mut app.table_rows).range(1..=100));
+                ui.label(egui::RichText::new("Columns").color(Tokens::TEXT_DIM).size(11.0));
+                ui.add(egui::DragValue::new(&mut app.table_cols).range(1..=100));
+                ui.label(egui::RichText::new("Drag to draw the table").color(Tokens::TEXT_DIM).size(11.0));
+            }
+            Tool::BrushStrokes => {
+                ui.label(egui::RichText::new("Calligraphic").color(Tokens::TEXT_DIM).size(11.0));
+                ui.label(egui::RichText::new("Width").color(Tokens::TEXT_DIM).size(11.0));
+                ui.add(egui::DragValue::new(&mut app.media_width).speed(0.1).range(0.2..=50.0).suffix(" mm"));
+                ui.label(egui::RichText::new("Nib angle").color(Tokens::TEXT_DIM).size(11.0));
+                ui.add(egui::DragValue::new(&mut app.media_angle).speed(1.0).range(0.0..=180.0).suffix("°"));
+            }
+            Tool::ParallelDimension => {
+                let n = app.dimension_points.len();
+                let msg = match n {
+                    0 => "Click the first point",
+                    1 => "Click the second point",
+                    _ => "Click where the dimension line should sit",
+                };
+                ui.label(egui::RichText::new(msg).color(Tokens::TEXT_DIM).size(11.0));
+            }
+            Tool::Connector => {
+                ui.label(egui::RichText::new("Drag from one object to another").color(Tokens::TEXT_DIM).size(11.0));
+            }
             Tool::DropShadow => {
                 let first = shapes.first().and_then(|s| s.shadow);
                 let mut sh = first.unwrap_or(app.shadow_default);

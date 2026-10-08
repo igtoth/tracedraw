@@ -78,6 +78,20 @@ pub fn overlay(subject: &BezPath, clip: &BezPath, op: Op) -> BezPath {
     from_shapes(result)
 }
 
+/// Offset a closed path outward (positive) or inward (negative) by `d` mm,
+/// with round corners. Used by Contour and outline-to-object.
+pub fn offset(path: &BezPath, d: f64) -> BezPath {
+    use i_overlay::float::simplify::SimplifyShape;
+    use i_overlay::mesh::float::outline::offset::OutlineOffset;
+    use i_overlay::mesh::float::style::{LineJoin, OutlineStyle};
+    let subj = contours(path);
+    // Simplify guarantees orientation (outer CCW, holes CW) and no self-intersections.
+    let clean = subj.simplify_shape(IFill::EvenOdd);
+    let style = OutlineStyle::new(d).line_join(LineJoin::Round(0.05));
+    let out = clean.outline(&style);
+    from_shapes(out)
+}
+
 /// Union of one path with itself: removes self-overlaps (Simplify).
 pub fn simplify(path: &BezPath) -> BezPath {
     let subj = contours(path);
@@ -101,6 +115,22 @@ mod tests {
         let b = w.bounding_box();
         assert!((b.x0 - 0.0).abs() < 1e-6 && (b.x1 - 15.0).abs() < 1e-6);
         assert!((w.area().abs() - 150.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn offset_grows_and_shrinks() {
+        let grown = offset(&square(0.0), 2.0);
+        let b = grown.bounding_box();
+        assert!(
+            (b.x0 + 2.0).abs() < 0.05 && (b.x1 - 12.0).abs() < 0.05,
+            "{b:?}"
+        );
+        let shrunk = offset(&square(0.0), -2.0);
+        let b = shrunk.bounding_box();
+        assert!(
+            (b.x0 - 2.0).abs() < 0.05 && (b.x1 - 8.0).abs() < 0.05,
+            "{b:?}"
+        );
     }
 
     #[test]

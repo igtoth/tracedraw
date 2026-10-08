@@ -347,7 +347,9 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
             if item(ui, "Convert To Curves", "Ctrl+Q", has) {
                 app.convert_to_curves();
             }
-            todo(ui, "Convert Outline To Object", "Ctrl+Shift+Q");
+            if item(ui, "Convert Outline To Object", "Ctrl+Shift+Q", has) {
+                app.convert_outline_to_object();
+            }
             todo(ui, "Join Curves", "");
             ui.separator();
             if item(ui, "Properties", "Alt+Enter", true) {
