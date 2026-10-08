@@ -27,7 +27,7 @@ pub struct Fountain {
     pub kind: FountainKind,
     /// At least two stops, sorted by position.
     pub stops: Vec<Stop>,
-    /// Degrees, the editor convention (0 = left to right, CCW positive).
+    /// Degrees, the target design's convention (0 = left to right, CCW positive).
     pub angle: f64,
     /// Centre offset in bounds-relative units (-1..1), for radial/conical/square.
     pub offset: Point,
@@ -104,7 +104,7 @@ pub fn lerp_color(a: Color, b: Color, t: f32) -> Color {
     Color::rgb8(l(r1, r2), l(g1, g2), l(b1, b2))
 }
 
-/// Built-in two-colour pattern tiles (the two-colour pattern fill).
+/// Built-in two-colour pattern tiles (the target design's two-colour pattern fill).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum PatternTile {
@@ -184,7 +184,7 @@ pub enum Pattern {
     },
 }
 
-/// Procedural textures (the texture fill, a small subset).
+/// Procedural textures (the target design's texture fill, a small subset).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum TextureKind {
@@ -318,14 +318,14 @@ impl Arrowhead {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Stroke {
     pub color: Color,
-    /// Width in millimetres. the "hairline" is 0.0762 mm (0.216 pt).
+    /// Width in millimetres. the target design's "hairline" is 0.0762 mm (0.216 pt).
     pub width: f64,
     pub cap: LineCap,
     pub join: LineJoin,
     /// Dash pattern as alternating on/off lengths, in multiples of the width
-    /// (the editor convention). Empty = solid.
+    /// (the target design's convention). Empty = solid.
     pub dash: Vec<f64>,
-    /// When true, the outline scales with the object (the editor's
+    /// When true, the outline scales with the object (the target design's
     /// "Scale with object"). When false, width stays fixed under transforms.
     pub scale_with_object: bool,
     /// Draw the outline behind the fill.
@@ -334,7 +334,7 @@ pub struct Stroke {
     pub start_arrow: Arrowhead,
     #[serde(default)]
     pub end_arrow: Arrowhead,
-    /// Calligraphic nib stretch 0..1 and angle (1.0 = round nib, like the vendor).
+    /// Calligraphic nib stretch 0..1 and angle (1.0 = round nib).
     #[serde(default = "one")]
     pub stretch: f64,
     #[serde(default)]

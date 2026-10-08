@@ -28,7 +28,7 @@ pub enum Distribute {
 }
 
 impl App {
-    /// the editor aligns to the last-selected object; with one object, to the page.
+    /// the target design aligns to the last-selected object; with one object, to the page.
     pub fn align(&mut self, how: Align) {
         let shapes = self.selected_shapes();
         if shapes.is_empty() {
@@ -289,7 +289,7 @@ pub enum Shaping {
 }
 
 impl App {
-    /// the editor convention: the last selected object is the target and
+    /// the target design's convention: the last selected object is the target and
     /// keeps its attributes; the other selected objects act on it.
     pub fn shaping(&mut self, op: Shaping) {
         use tracedraw_core::shaping::{overlay, simplify, Op};

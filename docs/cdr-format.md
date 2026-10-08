@@ -38,8 +38,8 @@ history).
 
 ## How to confirm an item
 
-1. Draw one object in the editor, save as `.cdr` (and once with "compressed"
+1. Draw one object in the target design, save as `.cdr` (and once with "compressed"
    off, if the version offers it). Note the version.
 2. `cargo run -p tracedraw-cli -- inspect file.cdr` dumps the chunk tree.
-3. Compare the parsed values with what the editor shows (position in mm,
+3. Compare the parsed values with what the target design shows (position in mm,
    size, colour values) and update the table with the file name.

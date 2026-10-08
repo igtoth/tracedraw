@@ -1,12 +1,13 @@
-# the editor parity
+# Feature parity
 
-The 92 capabilities of the editor, grouped as the vendor groups them, each with a
-status. "works" means it does what the vendor does, with a test or a checked file
+The 92 capabilities of the target design, grouped the way its own
+feature list groups them, each with a
+status. "works" means it does what the target design does, with a test or a checked file
 behind it. "partial" names what is missing. "baked" means the result is
 applied once instead of staying live and editable. The goal is every row
 at "works".
 
-Counts: works 31, partial 19, missing 42.
+Counts: works 33, partial 18, missing 41.
 
 ## 1. Selection and navigation
 
@@ -28,7 +29,7 @@ Counts: works 31, partial 19, missing 42.
 
 | Capability | Status |
 |---|---|
-| Rectangle | partial: one corner radius for all corners (the vendor: per corner, round/scalloped/chamfered) |
+| Rectangle | partial: one corner radius for all corners (reference: per corner, round/scalloped/chamfered) |
 | Ellipse | works: ellipse, pie, arc |
 | Polygon, Star | works |
 | Spiral | works: symmetrical, logarithmic |
@@ -75,11 +76,11 @@ Counts: works 31, partial 19, missing 42.
 | Capability | Status |
 |---|---|
 | Uniform fill | works |
-| Fountain: linear, radial, conical, square | partial: two-stop linear and radial |
-| Pattern (bitmap, two-colour, full-colour), texture, PostScript | missing |
+| Fountain: linear, radial, conical, square | works: any number of stops, edge pad, centre offset |
+| Pattern (bitmap, two-colour, full-colour), texture, PostScript | partial: two-colour (8 tiles), bitmap, 4 procedural textures; full-colour vector pattern and PostScript missing |
 | Mesh fill | missing |
 | Area fill | missing |
-| Outline: width, colour, dashes, caps, corners, arrowheads, pen styles | partial: arrowheads and pen styles missing |
+| Outline: width, colour, dashes, caps, corners, arrowheads, pen styles | works: 7 arrowhead shapes, dash presets, calligraphic nib |
 
 ## 6. Interactive effects
 
@@ -167,11 +168,31 @@ Counts: works 31, partial 19, missing 42.
 | Imposition, RIP options | missing |
 | PDF/X-1a, X-3, X-4 | missing |
 
-## Workspace look (the editor 2019)
+## Workspace look
 
 | Element | Status |
 |---|---|
 | Menu bar, standard toolbar, property bar, toolbox with flyouts, rulers, document tabs, bottom palette, docker tab strip, navigator, status bar | works |
 | Icons | painted vector icons, close in style; not pixel-identical |
 | Dockers: Properties, Objects, Hints, Transformations, Undo | works |
-| Welcome Screen | partial: new/open/presets |
+| Welcome Screen | partial: new/open/presets; recent documents, templates and news missing |
+
+## Workspace elements (checklist)
+
+| Element | Status |
+|---|---|
+| Welcome screen: recent documents, templates, news | partial |
+| Title bar with document name and dirty marker | works |
+| Menu bar: File, Edit, View, Layout, Object, Effects, Bitmaps, Text, Table, Tools, Window, Help with submenus and shortcuts | partial: structure present, many items disabled |
+| Standard toolbar | works |
+| Property bar per tool and object | works |
+| Toolbox with expandable groups | works |
+| Rulers, guides, scrollbars | works |
+| Dockers: Objects, Properties | works |
+| Dockers: Colour, Styles, Text, Lens, Transform | partial: Transform only |
+| Colour palette: left click fill, right click outline | works |
+| Page tabs | works |
+| Status bar: object info, layer, colour, resolution | works |
+| Right-click context menus per object | missing |
+| Dialogs: Options, Preferences, Export, Print, Colour management, Font manager, Print merge | partial: Options |
+| User interface in the 12 most spoken languages (`docs/i18n.md`) | missing |

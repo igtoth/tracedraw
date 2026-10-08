@@ -14,13 +14,17 @@ The product name is **TraceDraw** in prose; machine names are `tracedraw`
    `panic!`, `todo!` or raw indexing on data that came from a file or the
    user. Return `Result`, log a warning, skip the object. Opening any file
    must always yield a document.
-3. **Clean-room.** Study the editor for behaviour and look only. The `.cdr`
+3. **Clean-room.** Study the target design for behaviour and look only.
+   Never name it, or any other vendor or product, anywhere in the repo:
+   not in code, comments, docs, commit messages or packaging. Write
+   "the target design". The `.cdr`
    reader comes from public notes and observed files; never port code from
    libcdr or any other implementation, only use their documentation to
    confirm layouts. Record what was confirmed, and with which file, in
    `docs/cdr-format.md`.
-4. **Layering is enforced by review.** `core` has no workspace deps; `cdr`
-   and `io` depend on `core` only; egui stays in `apps/`.
+4. **Layering is enforced by review.** `core` has no workspace deps; `cdr`,
+   `text` and `render` depend on `core` only; `io` depends on `core` and
+   `render` (rasterised fills in exports); egui stays in `apps/`.
 5. **Tests are the gate.** Every change comes with tests. Format code
    gets round-trip and malformed-input tests.
 6. **Units.** Millimetres everywhere in the model. CDR files use
@@ -31,11 +35,16 @@ The product name is **TraceDraw** in prose; machine names are `tracedraw`
 ## Workspace map
 
 ```text
-crates/core   geometry.rs (kurbo re-exports + helpers), document.rs,
-              command.rs, engine.rs, style.rs, color.rs, id.rs
+crates/core   geometry.rs, document.rs, command.rs, engine.rs, style.rs,
+              color.rs, nodes.rs, shaping.rs, effects.rs, id.rs
 crates/cdr    container.rs (RIFF/ZIP), riff.rs (chunk tree), parse.rs
-crates/io     svg.rs, lib.rs (native format)
-apps/tracedraw    main.rs, app.rs (UI + input), canvas.rs (render), view.rs
+crates/text   font database, shaping, outlines
+crates/render CPU rasteriser
+crates/io     svg.rs, pdf.rs, lib.rs (native format)
+apps/tracedraw    main.rs, app.rs, interaction.rs, canvas.rs, ops.rs,
+                  tools.rs, tools2.rs, ui/ (menus, toolbar, toolbox,
+                  dockers, palette, status, dialogs, icons)
+apps/tracedraw-cli
 ```
 
 ## Visual checks
@@ -48,8 +57,8 @@ before claiming a UI change works.
 
 ## Parity
 
-`docs/parity.md` is the measure of progress: every the editor tool and menu
-item with its status. Move a row to "works" only with a test or a checked
+`docs/parity.md` is the measure of progress: every tool and menu item of
+the target design with its status. Move a row to "works" only with a test or a checked
 file behind it, and never add a feature without updating the row.
 
 ## Workflow
@@ -58,3 +67,12 @@ file behind it, and never add a feature without updating the row.
 - `cargo build -p tracedraw` must stay warning-free.
 - Keep `docs/roadmap.md` honest: a feature is "done" when it has tests
   and works on a real file, not when the menu item exists.
+
+## Documentation duties
+
+- A new tool or effect gets a page in `docs/behavior/` with its defaults,
+  shortcuts and the formulas it uses, before the parity row moves.
+- User-visible strings go through the i18n table (`docs/i18n.md`), never
+  as bare literals in the UI.
+- Acceptance criteria in `docs/acceptance.md` are tests; when one changes,
+  change the test.

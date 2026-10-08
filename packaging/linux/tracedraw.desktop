@@ -6,5 +6,5 @@ Exec=tracedraw %f
 Icon=tracedraw
 Terminal=false
 Categories=Graphics;2DGraphics;VectorGraphics;
-MimeType=application/x-tdraw;application/vnd.vector-editor;
+MimeType=application/x-tdraw;application/x-cdr;
 StartupWMClass=tracedraw

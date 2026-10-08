@@ -1,6 +1,6 @@
 //! Second wave of tools: Contour, Crop, Knife, Spiral, Common Shapes,
 //! Brush Strokes (calligraphic), Parallel Dimension, Connector, Table,
-//! and Convert Outline To Object. These produce static results (the editor
+//! and Convert Outline To Object. These produce static results (the target design
 //! keeps some of them live); see docs/parity.md.
 
 use crate::app::{App, Drag};

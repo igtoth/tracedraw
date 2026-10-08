@@ -1,4 +1,4 @@
-//! The menu bar, with the menu structure. Items without an
+//! The menu bar, with the target design's menu structure. Items without an
 //! implementation are shown disabled so the layout is complete from day one.
 
 use crate::app::{App, DockerTab};
@@ -484,7 +484,7 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
             todo(ui, "Scripts", "");
             todo(ui, "Macros", "");
             ui.separator();
-            todo(ui, "the vendor CONNECT", "");
+            todo(ui, "Content hub", "");
             todo(ui, "Create", "");
         });
         ui.menu_button("Window", |ui| {

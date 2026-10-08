@@ -1,5 +1,5 @@
-//! The toolbox, laid out the way the editor lays it out: one button per
-//! group, each group a flyout of related tools. Shortcuts follow the editor.
+//! The toolbox, laid out the way the target design lays it out: one button per
+//! group, each group a flyout of related tools. Shortcuts follow the target design.
 
 use egui::Key;
 
@@ -70,7 +70,7 @@ pub struct ToolGroup {
     pub tools: &'static [Tool],
 }
 
-/// Toolbox order, top to bottom, exactly as in the editor.
+/// Toolbox order, top to bottom, exactly.
 pub const GROUPS: &[ToolGroup] = &[
     ToolGroup {
         tools: &[Tool::Pick, Tool::FreeformPick],
@@ -186,7 +186,7 @@ impl Tool {
         }
     }
 
-    /// the default shortcut, if any.
+    /// the target design's default shortcut, if any.
     pub fn shortcut(self) -> Option<(Key, bool)> {
         // (key, needs_shift)
         Some(match self {

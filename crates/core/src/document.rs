@@ -57,7 +57,7 @@ pub enum ShapeKind {
     },
     /// Free path (lines and cubic Beziers) in local space.
     Path { path: BezPath, closed: bool },
-    /// Artistic text (the single-line text object).
+    /// Artistic text (the target design's single-line text object).
     Text {
         spans: Vec<TextSpan>,
         origin: crate::geometry::Point,
@@ -108,7 +108,7 @@ pub struct EllipseArc {
     pub pie: bool,
 }
 
-/// Drop shadow attached to an object (the Drop Shadow tool).
+/// Drop shadow attached to an object (the target design's Drop Shadow tool).
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Shadow {
     pub offset: crate::geometry::Vec2,
@@ -161,7 +161,7 @@ pub struct Shape {
     pub stroke: Option<Stroke>,
     pub visible: bool,
     pub locked: bool,
-    /// 1.0 = opaque, 0.0 = invisible (the uniform transparency).
+    /// 1.0 = opaque, 0.0 = invisible (the target design's uniform transparency).
     #[serde(default = "one")]
     pub opacity: f64,
     #[serde(default)]

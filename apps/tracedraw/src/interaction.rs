@@ -388,7 +388,7 @@ impl App {
                 }
                 Some(id) => {
                     if self.selection == vec![id] {
-                        // Second click: toggle rotate/skew handles, as the editor does.
+                        // Second click: toggle rotate/skew handles.
                         self.rotate_mode = !self.rotate_mode;
                     } else {
                         self.select(vec![id]);
@@ -507,7 +507,7 @@ impl App {
             }
         }
         if response.double_clicked_by(PointerButton::Primary) && self.tool == Tool::Rectangle {
-            // the editor: double-click the rectangle tool draws a page frame.
+            // the target design: double-click the rectangle tool draws a page frame.
             let r = self.page_rect();
             if let Some(id) = self.new_shape(ShapeKind::Rect {
                 rect: r,
@@ -777,7 +777,7 @@ impl App {
                     }
                 }
                 if handle.is_corner() && !self.rotate_mode {
-                    // Corners scale proportionally, like the editor.
+                    // Corners scale proportionally.
                     let s = if sx.abs() > sy.abs() {
                         sx.abs()
                     } else {
@@ -996,7 +996,7 @@ impl App {
                 self.goto_page(i - 1);
             }
         }
-        // Align shortcuts (the editor: plain letters with a selection).
+        // Align shortcuts (the target design: plain letters with a selection).
         if input.modifiers.is_none() && !self.selection.is_empty() {
             use crate::ops::Align;
             for (k, a) in [

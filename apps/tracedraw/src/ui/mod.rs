@@ -1,4 +1,4 @@
-//! UI composition, laid out like the editor 2019: menu bar, standard toolbar,
+//! UI composition, laid out: menu bar, standard toolbar,
 //! property bar, toolbox on the left, docker tab strip on the right edge,
 //! document tabs, rulers and canvas in the middle, navigator and colour
 //! palette under the canvas, status bar at the bottom.
@@ -272,7 +272,7 @@ pub fn root(app: &mut App, ui: &mut Ui) {
             .show(&ctx, |ui| {
                 ui.label("TraceDraw 0.1 (pre-alpha)");
                 ui.label("An open-source vector illustration editor in Rust.");
-                ui.label("MIT or Apache-2.0. Not affiliated with the vendor.");
+                ui.label("MIT or Apache-2.0. Not affiliated with any other vendor.");
             });
     }
 }

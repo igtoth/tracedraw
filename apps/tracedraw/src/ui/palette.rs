@@ -1,4 +1,4 @@
-//! The colour palette docked at the bottom, as in the editor 2019: a row
+//! The colour palette docked at the bottom: a row
 //! of swatches with scroll arrows, and the document palette row under it.
 //! Left click sets the fill, right click sets the outline, the X removes it.
 

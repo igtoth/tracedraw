@@ -1,0 +1,98 @@
+# Decisions
+
+Architecture and product decisions, each with the reason and what would
+make us revisit it. Newest at the bottom.
+
+## D1. Language and UI toolkit: Rust, egui/eframe
+
+Single native binary per platform, no runtime, no webview. egui is
+immediate mode, which keeps the UI a pure function of the document and
+removes a whole class of state bugs. Revisit if egui cannot reach the
+text-editing quality needed for paragraph text in place; the fallback is
+a custom text widget on top of our own shaping, not a toolkit change.
+
+## D2. Rendering: CPU first (tiny-skia), GPU later (wgpu)
+
+The scene model and the rasteriser are separate. tiny-skia gives exact,
+deterministic pixels on every platform, which the visual regression
+tests need. A wgpu path with the same `render_page` contract is planned
+for large documents; the trigger is the performance budget in
+`docs/acceptance.md` being missed at 5000 objects.
+
+## D3. Text: fontdb + rustybuzz + ttf-parser, own layout
+
+Shaping is OpenType-complete through rustybuzz (HarfBuzz port). Line
+breaking, justification and hyphenation are ours; hyphenation uses the
+TeX pattern dictionaries (LGPL/MIT hyph files) per language. Type 1
+fonts are out of scope; convert them to OpenType.
+
+## D4. PDF and PostScript: hand-written PDF writer, EPS from the same core
+
+No PDF crate dependency: the writer is small, auditable and emits only
+what we need (shadings, images, ExtGState, CMYK). PDF/X conformance is
+a validation layer on top (output intent, no transparency for X-1a).
+PostScript output is a Level 3 subset generated from the same path and
+fill primitives.
+
+## D5. Colour management: ICC through `lcms2` behind a trait
+
+The `ColorEngine` trait (RGB, CMYK, Lab conversions, soft proof) has a
+naive implementation today (the formulas in `core/color.rs`) and will
+get an `lcms2`-backed one. Default profiles ship with the app (sRGB,
+and an open CMYK profile); the user can load others. Pure-Rust `qcms`
+is the alternative if the `lcms2` C dependency becomes a packaging
+problem on a platform.
+
+## D6. Licensed content is not included
+
+Spot colour libraries (Pantone, TOYO, DIC, Trumatch, FOCOLTONE, HKS)
+and third-party clipart, font and photo libraries are licensed and do
+not ship. Replacements:
+
+- Default palettes: RGB, CMYK, Grayscale, a process palette named by
+  CMYK values, and a web-safe palette, all generated.
+- User palettes: import `.ase`, `.gpl`, `.aco` and our own `.tdpal`
+  (JSON). A licensed library a user owns can be loaded that way and
+  stays on their machine.
+- Content: only system fonts and user folders; an optional index of
+  OFL fonts and CC0 clipart sources can be added later as links, not
+  as bundled content.
+
+## D7. Everything is a command
+
+See `AGENTS.md`. The reason is undo, scripting (macros are command
+scripts, see D9), the CLI and tests all sharing one code path.
+
+## D8. Effects are baked today, live tomorrow
+
+Blend, contour, distort, extrude and envelope currently produce static
+geometry. The model will gain an `effects: Vec<Effect>` on `Shape`,
+evaluated at render time, with the source geometry kept. Baked results
+remain available as "Break Effect Apart". This is tracked in
+`docs/parity.md` as "baked".
+
+## D9. Macros: command scripts, not VBA
+
+A macro is a JSON list of commands with parameters, recorded from the
+Undo history and replayed through the engine. A small expression layer
+(selection, loop over selected objects) comes later. No VBA, no
+embedded interpreter in the first versions.
+
+## D10. User interface languages
+
+Twelve languages from day one of the i18n layer: English, Mandarin
+Chinese, Hindi, Spanish, French, Modern Standard Arabic, Bengali,
+Russian, Brazilian Portuguese, Indonesian, German, Japanese. Strings
+live in per-language TOML files; see `docs/i18n.md`.
+
+## D11. Behaviour documentation precedes implementation of complex tools
+
+Extrude, Blend, Area Fill, Mesh Fill, Lens, Bitmap tracing and colour
+management each get a page in `docs/behavior/` with defaults, shortcuts
+and the formulas we use, written from the target design's public
+help and from observation, before the code lands.
+
+## D12. Acceptance is measurable
+
+Visual regression with a tolerance, round trips and performance numbers
+are tests that run in CI; see `docs/acceptance.md`.

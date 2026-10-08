@@ -315,7 +315,7 @@ fn draw_selection(app: &App, painter: &Painter, preview: Option<Affine>) {
             );
         }
     }
-    // Hint "x" in the centre, the the editor move marker.
+    // Hint "x" in the centre, the target design's move marker.
     let c = r.center();
     painter.line_segment(
         [c - egui::vec2(4.0, 4.0), c + egui::vec2(4.0, 4.0)],

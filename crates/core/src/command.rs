@@ -353,7 +353,7 @@ impl Command {
                     .map(|id| doc.locate(*id).map(|(l, i)| (*id, l, i)))
                     .collect::<Result<_>>()?;
                 located.sort_by_key(|(_, _, i)| *i);
-                // Result takes the attributes of the topmost shape, like the editor.
+                // Result takes the attributes of the topmost shape.
                 let top_id = located
                     .last()
                     .map(|(id, _, _)| *id)

@@ -1,11 +1,11 @@
 //! RIFF chunk walker. Builds a tree of chunks referencing the source bytes by
 //! offset, so nothing is copied until a parser asks for a payload.
 //!
-//! the RIFF is standard: `fourcc u32(size) payload [pad]`, with
-//! `LIST` chunks carrying a list type and nested chunks. Two the vendor quirks:
+//! the target design's RIFF is standard: `fourcc u32(size) payload [pad]`, with
+//! `LIST` chunks carrying a list type and nested chunks. Two format quirks:
 //! - Since X4 (v14) chunk sizes are stored in a slightly different way in
 //!   some files (the low bits can carry flags); we mask them off.
-//! - `cmpr` lists hold zlib-compressed sub-streams (the editor 7 to X3 with
+//! - `cmpr` lists hold zlib-compressed sub-streams (CDR 7 to X3 with
 //!   compression on). We inflate them into an owned buffer and parse that.
 
 use crate::{Error, Result};

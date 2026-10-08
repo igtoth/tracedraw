@@ -1,5 +1,5 @@
 //! Page navigator (left of the palette) and status bar (bottom): tool hint,
-//! object information, fill and outline swatches, as in the editor 2019.
+//! object information, fill and outline swatches.
 
 use crate::app::App;
 use crate::theme::Tokens;

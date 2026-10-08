@@ -1,5 +1,5 @@
 //! Colour values. Traco keeps the colour model the user chose (RGB or CMYK),
-//! since print work in classic documents is CMYK-first. Conversion to
+//! since print work in reference-style documents is CMYK-first. Conversion to
 //! screen RGB is a naive formula for now; a proper ICC path comes later.
 
 use serde::{Deserialize, Serialize};
@@ -44,7 +44,7 @@ impl Color {
         }
     }
 
-    /// CMYK given in percent, the way the editor shows it.
+    /// CMYK given in percent, the way the target design shows it.
     pub fn cmyk_pct(c: f32, m: f32, y: f32, k: f32) -> Self {
         Color::Cmyk {
             c: c / 100.0,

@@ -250,7 +250,7 @@ pub struct App {
     pub flyout_open: Option<usize>,
     pub clipboard: Option<Clipboard>,
     pub duplicate_offset: Vec2,
-    // Defaults for new objects (the editor: no fill, black hairline).
+    // Defaults for new objects (the target design: no fill, black hairline).
     pub default_fill: Fill,
     pub default_stroke: Option<Stroke>,
     pub polygon_points: u32,
@@ -483,7 +483,7 @@ impl App {
         shape.fill = self.default_fill.clone();
         shape.stroke = self.default_stroke.clone();
         if matches!(shape.kind, ShapeKind::Text { .. }) {
-            // the editor: text defaults to black fill and no outline.
+            // the target design: text defaults to black fill and no outline.
             shape.fill = Fill::Solid(Color::BLACK);
             shape.stroke = None;
         }
@@ -915,7 +915,7 @@ impl App {
     pub fn open_dialog(&mut self) {
         let picked = rfd::FileDialog::new()
             .add_filter("All supported", &["cdr", "tdraw"])
-            .add_filter("the editor (*.cdr)", &["cdr"])
+            .add_filter("CDR files (*.cdr)", &["cdr"])
             .add_filter("TraceDraw (*.tdraw)", &["tdraw"])
             .pick_file();
         if let Some(p) = picked {
@@ -1015,7 +1015,7 @@ impl App {
                     "cdr", "png", "jpg", "jpeg", "bmp", "gif", "webp", "tif", "tiff",
                 ],
             )
-            .add_filter("the editor (*.cdr)", &["cdr"])
+            .add_filter("CDR files (*.cdr)", &["cdr"])
             .add_filter(
                 "Images",
                 &["png", "jpg", "jpeg", "bmp", "gif", "webp", "tif", "tiff"],
@@ -1121,7 +1121,7 @@ impl App {
     }
 
     pub fn zoom_percent(&self) -> f32 {
-        // 100% = 96 dpi, as the editor shows it.
+        // 100% = 96 dpi, as the target design shows it.
         self.view.zoom / (96.0 / 25.4) * 100.0
     }
 
@@ -1180,7 +1180,7 @@ fn reid(mut s: Shape, id: ShapeId, engine: &mut Engine) -> Shape {
     s
 }
 
-/// the default CMYK palette, top to bottom.
+/// the target design's default CMYK palette, top to bottom.
 pub fn default_palette() -> Vec<Color> {
     let mut v = vec![
         Color::cmyk_pct(0.0, 0.0, 0.0, 100.0),

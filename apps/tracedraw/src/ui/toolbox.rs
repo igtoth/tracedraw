@@ -10,7 +10,7 @@ pub fn toolbox(app: &mut App, ui: &mut Ui) {
     ui.spacing_mut().item_spacing = Vec2::new(0.0, 2.0);
     ui.add_space(2.0);
     for (gi, group) in GROUPS.iter().enumerate() {
-        // The button shows the tool last used in this group, as the editor does.
+        // The button shows the tool last used in this group.
         let shown = if group.tools.contains(&app.tool) {
             app.tool
         } else {

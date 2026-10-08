@@ -3,7 +3,7 @@ name = "tracedraw-cdr"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Clean-room reader for the editor (.cdr) files: RIFF and ZIP containers"
+description = "Clean-room reader for .cdr files: RIFF and ZIP containers"
 
 [dependencies]
 tracedraw-core.workspace = true

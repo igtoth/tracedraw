@@ -3,7 +3,7 @@
 use crate::{Error, Result};
 use std::io::Read;
 
-/// the editor major version, as encoded in the RIFF form type (`CDR9`,
+/// CDR major version, as encoded in the RIFF form type (`CDR9`,
 /// `CDRA` = 10, ... `CDRE` = X4 (14), `CDRH` = X7 (17), and so on).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Version(pub u16);
@@ -22,13 +22,13 @@ impl Version {
         }
     }
 
-    /// Human name: 9 → "the editor 9", 13 → "X3", 17 → "X7", 19 → "2017".
+    /// Human name: 9 → "CDR 9", 13 → "X3", 17 → "X7", 19 → "2017".
     pub fn name(self) -> String {
         match self.0 {
-            v @ 1..=12 => format!("the editor {v}"),
-            v @ 13..=18 => format!("the editor X{}", v - 10),
-            v @ 19.. => format!("the editor {}", 1998 + v as u32),
-            _ => "the editor (unknown)".into(),
+            v @ 1..=12 => format!("CDR {v}"),
+            v @ 13..=18 => format!("CDR X{}", v - 10),
+            v @ 19.. => format!("CDR {}", 1998 + v as u32),
+            _ => "CDR (unknown)".into(),
         }
     }
 }
@@ -149,9 +149,9 @@ mod tests {
         assert_eq!(Version::from_form_type(b"CDRH"), Some(Version(17)));
         assert_eq!(
             Version::from_form_type(b"CDRJ").map(|v| v.name()),
-            Some("the editor 2017".to_string())
+            Some("CDR 2017".to_string())
         );
-        assert_eq!(Version(13).name(), "the editor X3");
+        assert_eq!(Version(13).name(), "CDR X3");
         assert_eq!(Version::from_form_type(b"WAVE"), None);
     }
 

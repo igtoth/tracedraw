@@ -148,7 +148,7 @@ pub fn parse_document(tree: &Tree, main: &[u8], version: Version) -> (Document, 
     let mut doc = Document::new("Untitled", page_size);
     doc.pages.clear();
 
-    // Pass 2: pages. the editor stores a master page (page 0, desktop layers)
+    // Pass 2: pages. CDR files store a master page (page 0, desktop layers)
     // followed by the real pages. We keep every page that has visible
     // content, and always keep at least one.
     let mut pages: Vec<&Chunk> = Vec::new();

@@ -1,10 +1,10 @@
-//! tracedraw-cdr: a clean-room reader for the editor `.cdr` files.
+//! tracedraw-cdr: a clean-room reader for `.cdr` files.
 //!
 //! What we know about the format comes from public reverse-engineering notes
-//! and from observing real files, never from the vendor's code.
+//! and from observing real files, never from any vendor's code.
 //!
 //! Two containers exist:
-//! - **RIFF** (the editor 7 through X3, and the inner stream of newer files):
+//! - **RIFF** (CDR versions 7 through X3, and the inner stream of newer files):
 //!   `RIFF <size> CDR<v>` followed by nested `LIST` chunks.
 //! - **ZIP** (X4 and later): a ZIP archive whose `content/riffData.cdr`
 //!   holds the RIFF stream; large payloads live in `content/data/*.dat`
@@ -29,7 +29,7 @@ pub use parse::{parse_document, ParseReport};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("not a the editor file")]
+    #[error("not a CDR file")]
     NotCdr,
     #[error("unsupported container: {0}")]
     UnsupportedContainer(String),

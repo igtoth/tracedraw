@@ -49,7 +49,7 @@ pub struct RenderOptions {
     pub height: u32,
     pub view: ViewTransform,
     pub preview: Option<Preview>,
-    /// Draw outlines only (the Wireframe view).
+    /// Draw outlines only (the target design's Wireframe view).
     pub wireframe: bool,
 }
 

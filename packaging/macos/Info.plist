@@ -20,7 +20,7 @@
       <key>CFBundleTypeRole</key><string>Editor</string>
     </dict>
     <dict>
-      <key>CFBundleTypeName</key><string>the editor Document</string>
+      <key>CFBundleTypeName</key><string>CDR Document</string>
       <key>CFBundleTypeExtensions</key><array><string>cdr</string></array>
       <key>CFBundleTypeRole</key><string>Viewer</string>
     </dict>
