@@ -29,29 +29,36 @@ or a checked file behind it. The goal is every row at "works".
 | Tool | Status |
 |---|---|
 | Pick | works: select, shift-add, marquee, move, scale with handles (corners proportional), second click rotate mode, nudge |
-| Freehand Pick | same as Pick (no freehand marquee yet) |
+| Freehand Pick | works: lasso selects objects whose centre is inside |
 | Shape | works: select nodes (click, shift, marquee), drag nodes and handles, cusp/smooth/symmetrical, add (double-click segment), delete (double-click node or Delete), break, close, to line/curve, reverse, select all |
-| Smooth, Smear, Twirl | missing |
-| Crop, Knife | missing |
+| Smooth, Smear, Twirl | works as brushes on curves (nib size on the property bar); objects are converted to curves first |
+| Crop | works: drag a rectangle, vector objects are clipped (bitmaps not yet) |
+| Knife | works: drag a line, objects are cut in two (straight cuts only) |
 | Eraser | works: click deletes an object (the vendor erases regions) |
 | Zoom | works: click in, shift/right click out, drag box |
 | Pan | works |
 | Freehand | works: smoothed on release |
 | 2-Point Line, Polyline | works |
 | Bezier, Pen | works: click = cusp node, click-drag = handle, click start node closes, Enter/double-click finishes |
-| B-Spline, 3-Point Curve | missing (fall back to Bezier behaviour) |
-| Brush Strokes | missing |
+| B-Spline, 3-Point Curve | partial: behave like Bezier |
+| Brush Strokes | partial: calligraphic nib (width, angle); no presets, sprayer or brush strokes |
 | Rectangle | works, corner radius on property bar, Ctrl square, double-click page frame |
 | 3-Point Rectangle | draws like Rectangle |
 | Ellipse | works, Ctrl circle, pie and arc with start/end angles |
 | 3-Point Ellipse | draws like Ellipse |
 | Polygon, Star | works, points and sharpness on property bar |
-| Spiral, Common Shapes | missing |
+| Spiral | works: symmetrical and logarithmic, revolutions |
+| Common Shapes | works: arrow, heart, diamond, banner, callout, cross, lightning, triangle (no glyph editing) |
 | Text | works: artistic text (click) and paragraph text (drag a frame, word wrap), system fonts with bold/italic, size, alignment; no text on path, no kerning/spacing controls, single style per object |
-| Table | missing |
-| Parallel Dimension, Connector | missing |
+| Table | partial: rows x columns of cells grouped; no cell text editing, merging or borders |
+| Parallel Dimension | partial: three clicks produce a static dimension line with arrowheads and measured text |
+| Connector | partial: straight connector between two objects, static |
 | Drop Shadow | works: drag sets offset; opacity, feathering, colour on property bar |
-| Contour, Blend, Distort, Envelope, Extrude | missing |
+| Contour | partial: inside/outside, steps, offset, colour; baked into a group, not live |
+| Blend | partial: steps between two objects, colour and outline interpolation; baked |
+| Distort | partial: push/pull, zipper, twister; baked |
+| Envelope | missing (the Envelope tool offers the distortions) |
+| Extrude | partial: parallel extrusion with shaded faces; baked |
 | Transparency | works: uniform transparency per object (slider on property bar) |
 | Color Eyedropper | works (fill only) |
 | Attributes Eyedropper | same as Color Eyedropper |
@@ -60,13 +67,15 @@ or a checked file behind it. The goal is every row at "works".
 
 ## Menus that work
 
-File: New, Open, Save, Save As, Import (.cdr and bitmaps), Import Bitmap, Export (SVG), Export PDF, Exit.
+File: New, Open, Save, Save As, Import (.cdr and bitmaps), Import Bitmap, Export (SVG), Export PDF, Document Properties, Exit.
 Edit: Undo, Redo, Cut, Copy, Paste, Delete, Duplicate, Select All.
 View: Wireframe, Normal, Zoom To Page/Fit/Selected, Rulers, Grid, Guidelines, Snap To (grid, guides, objects, page).
-Layout: Insert Page, Delete Page, Page Size (A4/A3/Letter), Switch Orientation.
-Object: Transformations (Position, Rotate, Scale and Mirror, Size, Skew, Clear), Align and Distribute (all align modes with L/R/T/B/E/C/P keys, four distribute modes), Order (all six), Group, Ungroup, Combine, Break Apart, Lock, Unlock, Unlock All, Shaping (Weld, Trim, Intersect, Simplify, Front Minus Back, Back Minus Front, Boundary; on flattened curves), Convert To Curves, Properties, Objects.
+Layout: Insert Page, Duplicate Page, Rename Page, Delete Page, Go To Page, Page Size (dialog, presets, all pages), Switch Orientation.
+Object: ClipFrame (Place Inside Frame, Extract Contents), Transformations (Position, Rotate, Scale and Mirror, Size, Skew, Clear), Align and Distribute (all align modes with L/R/T/B/E/C/P keys, four distribute modes), Order (all six), Group, Ungroup, Combine, Break Apart, Lock, Unlock, Unlock All, Shaping (Weld, Trim, Intersect, Simplify, Front Minus Back, Back Minus Front, Boundary; on flattened curves), Convert To Curves, Convert Outline To Object, Properties, Objects.
 Text: Convert To Curves.
-Window: Dockers, Objects, Properties, Hints, Transformations, Status Bar.
+Tools: Options (Ctrl+J).
+Window: Dockers, Objects (layers: rename, reorder, delete, lock, hide), Properties, Hints, Transformations, Undo, Status Bar.
+Welcome Screen tab with new/open and page presets.
 Help: About.
 
 Everything else is listed and disabled.
@@ -80,6 +89,7 @@ Everything else is listed and disabled.
 | Outline width, hairline, caps, joins, dashes, scale with object | works |
 | Transparency (uniform) | works |
 | Drop shadow with feathering | works (box blur) |
+| ClipFrame | works: contents masked by the frame |
 | Bitmaps | works: import PNG/JPEG/BMP/GIF/WebP/TIFF, rotate/scale |
 | Text | real fonts via fontdb + rustybuzz, glyph outlines |
 | Anti-aliasing | works |
