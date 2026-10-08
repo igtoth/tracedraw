@@ -8,3 +8,6 @@ description = "Import/export between the TraceDraw document model and other form
 [dependencies]
 tracedraw-core.workspace = true
 thiserror.workspace = true
+base64 = "0.22"
+flate2 = "1"
+tiny-skia.workspace = true

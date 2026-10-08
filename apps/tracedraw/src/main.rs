@@ -6,6 +6,7 @@
 mod app;
 mod canvas;
 mod interaction;
+mod ops;
 mod raster;
 mod theme;
 mod tools;

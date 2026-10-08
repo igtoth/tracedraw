@@ -14,6 +14,7 @@ pub fn tab_strip(app: &mut App, ui: &mut Ui) {
         (DockerTab::Hints, "Hints"),
         (DockerTab::Properties, "Properties"),
         (DockerTab::Objects, "Objects"),
+        (DockerTab::Transformations, "Transformations"),
     ] {
         let active = app.show_dockers && app.docker_tab == tab;
         let h = 14.0 + name.len() as f32 * 7.0;
@@ -60,6 +61,7 @@ pub fn dockers(app: &mut App, ui: &mut Ui) {
             DockerTab::Properties => "Properties",
             DockerTab::Objects => "Objects",
             DockerTab::Hints => "Hints",
+            DockerTab::Transformations => "Transformations",
         };
         ui.label(egui::RichText::new(name).size(12.0));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -80,6 +82,7 @@ pub fn dockers(app: &mut App, ui: &mut Ui) {
         DockerTab::Properties => properties(app, ui),
         DockerTab::Objects => objects(app, ui),
         DockerTab::Hints => hints(app, ui),
+        DockerTab::Transformations => transformations(app, ui),
     });
 }
 
@@ -336,6 +339,11 @@ pub fn kind_name(k: &ShapeKind) -> String {
                 .collect::<String>()
         ),
         ShapeKind::Group { children } => format!("Group of {} objects", children.len()),
+        ShapeKind::Bitmap {
+            width_px,
+            height_px,
+            ..
+        } => format!("Bitmap {width_px} x {height_px} px"),
     }
 }
 
@@ -487,4 +495,162 @@ fn hints(app: &mut App, ui: &mut Ui) {
         .color(Tokens::TEXT_DIM)
         .size(11.0),
     );
+}
+
+fn transformations(app: &mut App, ui: &mut Ui) {
+    use crate::app::TransformTab;
+    ui.horizontal(|ui| {
+        for (tab, name) in [
+            (TransformTab::Position, "Position"),
+            (TransformTab::Rotate, "Rotate"),
+            (TransformTab::Scale, "Scale"),
+            (TransformTab::Size, "Size"),
+            (TransformTab::Skew, "Skew"),
+        ] {
+            if ui
+                .selectable_label(app.transform_tab == tab, name)
+                .clicked()
+            {
+                app.transform_tab = tab;
+                app.transform_values = match tab {
+                    TransformTab::Scale => [100.0, 100.0, 0.0, 0.0],
+                    TransformTab::Size => {
+                        let b = app.selection_bounds().unwrap_or_default();
+                        [b.width(), b.height(), 0.0, 0.0]
+                    }
+                    _ => [0.0; 4],
+                };
+            }
+        }
+    });
+    ui.separator();
+    let has = !app.selection.is_empty();
+    let u = app.units.short();
+    let mut v = app.transform_values;
+    let mut relative = true;
+    match app.transform_tab {
+        TransformTab::Position => {
+            ui.horizontal(|ui| {
+                ui.label("X:");
+                ui.add(
+                    egui::DragValue::new(&mut v[0])
+                        .speed(0.5)
+                        .suffix(format!(" {u}")),
+                );
+                ui.label("Y:");
+                ui.add(
+                    egui::DragValue::new(&mut v[1])
+                        .speed(0.5)
+                        .suffix(format!(" {u}")),
+                );
+            });
+            ui.checkbox(&mut relative, "Relative position");
+        }
+        TransformTab::Rotate => {
+            ui.horizontal(|ui| {
+                ui.label("Angle:");
+                ui.add(egui::DragValue::new(&mut v[0]).speed(1.0).suffix("°"));
+            });
+            ui.label(
+                egui::RichText::new("Rotates about the selection centre")
+                    .color(Tokens::TEXT_DIM)
+                    .size(11.0),
+            );
+        }
+        TransformTab::Scale => {
+            ui.horizontal(|ui| {
+                ui.label("X:");
+                ui.add(egui::DragValue::new(&mut v[0]).speed(1.0).suffix(" %"));
+                ui.label("Y:");
+                ui.add(egui::DragValue::new(&mut v[1]).speed(1.0).suffix(" %"));
+            });
+            ui.horizontal(|ui| {
+                if ui.button("Mirror horizontally").clicked() && has {
+                    app.mirror(true);
+                }
+                if ui.button("Mirror vertically").clicked() && has {
+                    app.mirror(false);
+                }
+            });
+        }
+        TransformTab::Size => {
+            ui.horizontal(|ui| {
+                ui.label("W:");
+                ui.add(
+                    egui::DragValue::new(&mut v[0])
+                        .speed(0.5)
+                        .suffix(format!(" {u}")),
+                );
+                ui.label("H:");
+                ui.add(
+                    egui::DragValue::new(&mut v[1])
+                        .speed(0.5)
+                        .suffix(format!(" {u}")),
+                );
+            });
+        }
+        TransformTab::Skew => {
+            ui.horizontal(|ui| {
+                ui.label("X:");
+                ui.add(egui::DragValue::new(&mut v[0]).speed(1.0).suffix("°"));
+                ui.label("Y:");
+                ui.add(egui::DragValue::new(&mut v[1]).speed(1.0).suffix("°"));
+            });
+        }
+    }
+    app.transform_values = v;
+    ui.add_space(6.0);
+    let apply = |app: &mut App, dup: bool| {
+        let t = match app.transform_tab {
+            TransformTab::Position => {
+                let d = tracedraw_core::geometry::Vec2::new(
+                    app.units.to_mm(v[0]),
+                    app.units.to_mm(v[1]),
+                );
+                if relative {
+                    tracedraw_core::geometry::Affine::translate(d)
+                } else {
+                    let b = app.selection_bounds().unwrap_or_default();
+                    tracedraw_core::geometry::Affine::translate(d - b.center().to_vec2())
+                }
+            }
+            TransformTab::Rotate => tracedraw_core::geometry::Affine::rotate(v[0].to_radians()),
+            TransformTab::Scale => {
+                tracedraw_core::geometry::Affine::scale_non_uniform(v[0] / 100.0, v[1] / 100.0)
+            }
+            TransformTab::Size => {
+                let b = app.selection_bounds().unwrap_or_default();
+                tracedraw_core::geometry::Affine::scale_non_uniform(
+                    app.units.to_mm(v[0]) / b.width().max(1e-9),
+                    app.units.to_mm(v[1]) / b.height().max(1e-9),
+                )
+            }
+            TransformTab::Skew => tracedraw_core::geometry::Affine::skew(
+                v[0].to_radians().tan(),
+                v[1].to_radians().tan(),
+            ),
+        };
+        if matches!(app.transform_tab, TransformTab::Position) {
+            if dup {
+                let saved = app.duplicate_offset;
+                app.duplicate_offset = tracedraw_core::geometry::Vec2::ZERO;
+                app.duplicate();
+                app.duplicate_offset = saved;
+            }
+            app.transform_selection(t);
+        } else {
+            app.transform_about_center(t, dup);
+        }
+    };
+    ui.horizontal(|ui| {
+        if ui.add_enabled(has, egui::Button::new("Apply")).clicked() {
+            apply(app, false);
+        }
+        if ui
+            .add_enabled(has, egui::Button::new("Apply to duplicate"))
+            .clicked()
+        {
+            apply(app, true);
+        }
+    });
 }

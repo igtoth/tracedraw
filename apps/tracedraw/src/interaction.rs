@@ -185,6 +185,18 @@ impl App {
                 }
             }
             Tool::InteractiveFill | Tool::AreaFill => self.fill_input(response, p),
+            Tool::Transparency => {
+                if response.clicked() {
+                    match self.hit_test(p) {
+                        Some(id) => {
+                            if !self.selection.contains(&id) {
+                                self.select(vec![id]);
+                            }
+                        }
+                        None => self.select(Vec::new()),
+                    }
+                }
+            }
             Tool::Eraser => {
                 if response.clicked() {
                     if let Some(id) = self.hit_test(p) {
@@ -791,6 +803,12 @@ impl App {
         if pressed(Key::A, cmd) {
             self.select_all();
         }
+        if pressed(Key::L, cmd) {
+            self.combine();
+        }
+        if pressed(Key::K, cmd) {
+            self.break_apart();
+        }
         if pressed(Key::C, cmd) {
             self.copy();
         }
@@ -857,6 +875,24 @@ impl App {
             let i = self.page_index();
             if i > 0 {
                 self.goto_page(i - 1);
+            }
+        }
+        // Align shortcuts (the editor: plain letters with a selection).
+        if input.modifiers.is_none() && !self.selection.is_empty() {
+            use crate::ops::Align;
+            for (k, a) in [
+                (Key::L, Align::Left),
+                (Key::R, Align::Right),
+                (Key::T, Align::Top),
+                (Key::B, Align::Bottom),
+                (Key::E, Align::CenterH),
+                (Key::C, Align::CenterV),
+                (Key::P, Align::CenterPage),
+            ] {
+                if input.key_pressed(k) {
+                    self.align(a);
+                    return;
+                }
             }
         }
         // Tool shortcuts (no modifiers).

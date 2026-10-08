@@ -106,6 +106,91 @@ impl Renderer<'_> {
         let Some(sk) = to_sk_path(&(self.screen * page_path.clone())) else {
             return;
         };
+        let opacity = shape.opacity.clamp(0.0, 1.0) as f32;
+        if opacity <= 0.0 {
+            return;
+        }
+
+        // Semi-transparent objects render into a scratch layer first so fill
+        // and outline do not double up where they overlap.
+        if opacity < 1.0 {
+            let (w, h) = (self.pixmap.width(), self.pixmap.height());
+            if let Some(mut layer) = Pixmap::new(w, h) {
+                let mut sub = Renderer {
+                    pixmap: &mut layer,
+                    screen: self.screen,
+                    zoom: self.zoom,
+                    wireframe: self.wireframe,
+                };
+                let mut opaque = shape.clone();
+                opaque.opacity = 1.0;
+                sub.draw_shape(&opaque, parent);
+                let paint = tiny_skia::PixmapPaint {
+                    opacity,
+                    ..Default::default()
+                };
+                self.pixmap
+                    .draw_pixmap(0, 0, layer.as_ref(), &paint, Transform::identity(), None);
+            }
+            return;
+        }
+
+        if let ShapeKind::Bitmap {
+            rect,
+            width_px,
+            height_px,
+            png,
+        } = &shape.kind
+        {
+            if !self.wireframe {
+                if let Ok(img) = Pixmap::decode_png(png) {
+                    // Image pixel space (y down) to local rect (y up) to screen.
+                    let sx = rect.width() / (*width_px).max(1) as f64;
+                    let sy = rect.height() / (*height_px).max(1) as f64;
+                    let img_to_local = Affine::new([sx, 0.0, 0.0, -sy, rect.x0, rect.y1]);
+                    let m = (self.screen * transform * img_to_local).as_coeffs();
+                    let t = Transform::from_row(
+                        m[0] as f32,
+                        m[1] as f32,
+                        m[2] as f32,
+                        m[3] as f32,
+                        m[4] as f32,
+                        m[5] as f32,
+                    );
+                    let mut paint = Paint::default();
+                    paint.anti_alias = true;
+                    paint.shader = tiny_skia::Pattern::new(
+                        img.as_ref(),
+                        SpreadMode::Pad,
+                        tiny_skia::FilterQuality::Bilinear,
+                        1.0,
+                        t,
+                    );
+                    self.pixmap.fill_path(
+                        &sk,
+                        &paint,
+                        FillRule::Winding,
+                        Transform::identity(),
+                        None,
+                    );
+                }
+            }
+            if let Some(stroke) = &shape.stroke {
+                let (paint, sk_stroke) = self.stroke_paint(stroke, transform);
+                self.pixmap
+                    .stroke_path(&sk, &paint, &sk_stroke, Transform::identity(), None);
+            } else if self.wireframe {
+                let mut paint = Paint::default();
+                paint.set_color_rgba8(0, 0, 0, 255);
+                let s = SkStroke {
+                    width: 0.0,
+                    ..Default::default()
+                };
+                self.pixmap
+                    .stroke_path(&sk, &paint, &s, Transform::identity(), None);
+            }
+            return;
+        }
 
         if !self.wireframe {
             if let Some(paint) = self.fill_paint(&shape.fill, &page_path) {
@@ -331,6 +416,29 @@ mod tests {
         assert_eq!(px(50, 50).red(), 255);
         assert_eq!(px(50, 50).green(), 0);
         assert_eq!(px(2, 2).green(), 255);
+    }
+
+    #[test]
+    fn half_transparent_red_over_white_is_pink() {
+        let mut doc = Document::new("t", tracedraw_core::geometry::Size::new(20.0, 20.0));
+        let layer = doc.pages[0].layers[0].id;
+        let id = doc.ids_mut().shape();
+        let mut s = Shape::new(
+            id,
+            ShapeKind::Rect {
+                rect: Rect::new(0.0, 0.0, 20.0, 20.0),
+                radius: 0.0,
+            },
+        );
+        s.fill = Fill::Solid(Color::rgb8(255, 0, 0));
+        s.stroke = None;
+        s.opacity = 0.5;
+        doc.layer_mut(layer).unwrap().shapes.push(s);
+        let page = doc.pages[0].id;
+        let img = render_page_image(&doc, page, 25.4).unwrap();
+        let p = img.pixel(10, 10).unwrap();
+        assert_eq!(p.red(), 255);
+        assert!((120..=136).contains(&p.green()), "green was {}", p.green());
     }
 
     #[test]

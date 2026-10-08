@@ -236,6 +236,18 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 vsep(ui);
                 ui.label(egui::RichText::new("Enter or double-click finishes the curve, Esc cancels").color(Tokens::TEXT_DIM).size(11.0));
             }
+            Tool::Transparency => {
+                let first = shapes.first().map(|s| s.opacity).unwrap_or(1.0);
+                let mut transparency = ((1.0 - first) * 100.0).round();
+                ui.label(egui::RichText::new("Uniform transparency").color(Tokens::TEXT_DIM).size(11.0));
+                let r = ui.add_enabled(!shapes.is_empty(), egui::Slider::new(&mut transparency, 0.0..=100.0).suffix(" %"));
+                if r.changed() {
+                    app.set_opacity(1.0 - transparency / 100.0);
+                }
+                if shapes.is_empty() {
+                    ui.label(egui::RichText::new("Click an object first").color(Tokens::TEXT_DIM).size(11.0));
+                }
+            }
             Tool::InteractiveFill | Tool::AreaFill | Tool::MeshFill => {
                 ui.label(egui::RichText::new("Click an object to fill it with the default fill; drag across it for a fountain fill").color(Tokens::TEXT_DIM).size(11.0));
             }

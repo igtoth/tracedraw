@@ -57,6 +57,29 @@ pub enum ShapeKind {
     },
     /// A group of child shapes.
     Group { children: Vec<Shape> },
+    /// A bitmap, PNG-encoded, placed in `rect` (local space).
+    Bitmap {
+        rect: Rect,
+        width_px: u32,
+        height_px: u32,
+        #[serde(with = "png_bytes")]
+        png: Vec<u8>,
+    },
+}
+
+/// PNG bytes as base64 in the JSON format.
+mod png_bytes {
+    use base64::Engine;
+    use serde::{Deserialize, Deserializer, Serializer};
+    pub fn serialize<S: Serializer>(v: &[u8], s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&base64::engine::general_purpose::STANDARD.encode(v))
+    }
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<u8>, D::Error> {
+        let s = String::deserialize(d)?;
+        base64::engine::general_purpose::STANDARD
+            .decode(s)
+            .map_err(serde::de::Error::custom)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -80,6 +103,13 @@ pub struct Shape {
     pub stroke: Option<Stroke>,
     pub visible: bool,
     pub locked: bool,
+    /// 1.0 = opaque, 0.0 = invisible (the uniform transparency).
+    #[serde(default = "one")]
+    pub opacity: f64,
+}
+
+fn one() -> f64 {
+    1.0
 }
 
 impl Shape {
@@ -93,6 +123,7 @@ impl Shape {
             stroke: Some(Stroke::default()),
             visible: true,
             locked: false,
+            opacity: 1.0,
         }
     }
 
@@ -126,6 +157,7 @@ impl Shape {
                 }
                 path
             }
+            ShapeKind::Bitmap { rect, .. } => rect.to_path(0.01),
         }
     }
 

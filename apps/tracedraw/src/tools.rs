@@ -264,6 +264,7 @@ impl Tool {
                 | Tool::ColorEyedropper
                 | Tool::InteractiveFill
                 | Tool::Eraser
+                | Tool::Transparency
         )
     }
 }

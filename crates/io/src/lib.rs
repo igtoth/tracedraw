@@ -1,6 +1,7 @@
 //! tracedraw-io: export the document model to interchange formats and read the
 //! native `.tdraw` file.
 
+pub mod pdf;
 pub mod svg;
 
 use std::path::Path;
@@ -25,6 +26,12 @@ pub fn save_native(doc: &Document, path: impl AsRef<Path>) -> Result<()> {
 pub fn load_native(path: impl AsRef<Path>) -> Result<Document> {
     let s = std::fs::read_to_string(path)?;
     Ok(Document::from_json(&s)?)
+}
+
+/// Write every page to a PDF file.
+pub fn save_pdf(doc: &Document, path: impl AsRef<Path>) -> Result<()> {
+    std::fs::write(path, pdf::document_to_pdf(doc))?;
+    Ok(())
 }
 
 /// Write the first page (or `page_index`) as an SVG file.

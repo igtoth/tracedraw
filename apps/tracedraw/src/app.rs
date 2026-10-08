@@ -201,6 +201,8 @@ pub struct App {
     pub raster: std::cell::RefCell<crate::raster::Raster>,
     pub wireframe: bool,
     pub font_families: Vec<String>,
+    pub transform_tab: TransformTab,
+    pub transform_values: [f64; 4],
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -208,6 +210,16 @@ pub enum DockerTab {
     Properties,
     Objects,
     Hints,
+    Transformations,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TransformTab {
+    Position,
+    Rotate,
+    Scale,
+    Size,
+    Skew,
 }
 
 impl App {
@@ -261,6 +273,8 @@ impl App {
             raster: std::cell::RefCell::new(crate::raster::Raster::default()),
             wireframe: false,
             font_families: tracedraw_text::fonts().families().to_vec(),
+            transform_tab: TransformTab::Position,
+            transform_values: [0.0, 0.0, 100.0, 100.0],
         };
         if let Some(p) = open {
             app.open_path(p);
@@ -842,11 +856,30 @@ impl App {
 
     pub fn import(&mut self) {
         let Some(path) = rfd::FileDialog::new()
+            .add_filter(
+                "All importable",
+                &[
+                    "cdr", "png", "jpg", "jpeg", "bmp", "gif", "webp", "tif", "tiff",
+                ],
+            )
             .add_filter("the editor (*.cdr)", &["cdr"])
+            .add_filter(
+                "Images",
+                &["png", "jpg", "jpeg", "bmp", "gif", "webp", "tif", "tiff"],
+            )
             .pick_file()
         else {
             return;
         };
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        if ext != "cdr" {
+            self.import_bitmap(&path);
+            return;
+        }
         match tracedraw_cdr::open(&path) {
             Ok((doc, _)) => {
                 let Some(layer) = self.active_layer() else {
@@ -871,6 +904,40 @@ impl App {
                 self.select(ids);
             }
             Err(e) => self.status = format!("Import failed: {e}"),
+        }
+    }
+
+    /// Reset rotation/skew/scale, keeping the object where it is.
+    pub fn clear_transformations(&mut self) {
+        let shapes = self.selected_shapes();
+        let cmds: Vec<Command> = shapes
+            .iter()
+            .map(|s| {
+                let c = s.bounds().center();
+                let local_c = s.transform.inverse() * c;
+                let t = Affine::translate(c - local_c);
+                Command::TransformShapes {
+                    shapes: vec![s.id],
+                    transform: t * s.transform.inverse(),
+                }
+            })
+            .collect();
+        if !cmds.is_empty() {
+            let _ = self.engine.run_batch("Clear Transformations", &cmds);
+        }
+    }
+
+    pub fn export_pdf(&mut self) {
+        let Some(path) = rfd::FileDialog::new()
+            .add_filter("PDF (*.pdf)", &["pdf"])
+            .set_file_name("Graphic1.pdf")
+            .save_file()
+        else {
+            return;
+        };
+        match tracedraw_io::save_pdf(self.engine.document(), &path) {
+            Ok(()) => self.status = format!("Exported {}", path.display()),
+            Err(e) => self.status = format!("Export failed: {e}"),
         }
     }
 

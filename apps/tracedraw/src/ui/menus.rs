@@ -51,8 +51,22 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
             if item(ui, "Import...", "Ctrl+I", true) {
                 app.import();
             }
+            if item(ui, "Import Bitmap...", "", true) {
+                if let Some(p) = rfd::FileDialog::new()
+                    .add_filter(
+                        "Images",
+                        &["png", "jpg", "jpeg", "bmp", "gif", "webp", "tif", "tiff"],
+                    )
+                    .pick_file()
+                {
+                    app.import_bitmap(&p);
+                }
+            }
             if item(ui, "Export...", "Ctrl+E", true) {
                 app.export();
+            }
+            if item(ui, "Export PDF...", "", true) {
+                app.export_pdf();
             }
             todo(ui, "Export For", "");
             todo(ui, "Publish to PDF...", "");
@@ -196,15 +210,56 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
             todo(ui, "Symbol", "");
             ui.separator();
             ui.menu_button("Transformations", |ui| {
-                todo(ui, "Position", "Alt+F7");
-                todo(ui, "Rotate", "Alt+F8");
-                todo(ui, "Scale and Mirror", "Alt+F9");
-                todo(ui, "Size", "Alt+F10");
-                todo(ui, "Skew", "");
+                for (name, key, tab) in [
+                    ("Position", "Alt+F7", crate::app::TransformTab::Position),
+                    ("Rotate", "Alt+F8", crate::app::TransformTab::Rotate),
+                    (
+                        "Scale and Mirror",
+                        "Alt+F9",
+                        crate::app::TransformTab::Scale,
+                    ),
+                    ("Size", "Alt+F10", crate::app::TransformTab::Size),
+                    ("Skew", "", crate::app::TransformTab::Skew),
+                ] {
+                    if item(ui, name, key, true) {
+                        app.show_dockers = true;
+                        app.docker_tab = DockerTab::Transformations;
+                        app.transform_tab = tab;
+                    }
+                }
                 ui.separator();
-                todo(ui, "Clear Transformations", "");
+                if item(ui, "Clear Transformations", "", has) {
+                    app.clear_transformations();
+                }
             });
-            todo(ui, "Align and Distribute", "");
+            ui.menu_button("Align and Distribute", |ui| {
+                use crate::ops::{Align, Distribute};
+                for (name, key, a) in [
+                    ("Align Left", "L", Align::Left),
+                    ("Align Right", "R", Align::Right),
+                    ("Align Top", "T", Align::Top),
+                    ("Align Bottom", "B", Align::Bottom),
+                    ("Align Centers Horizontally", "E", Align::CenterH),
+                    ("Align Centers Vertically", "C", Align::CenterV),
+                    ("Center to Page", "P", Align::CenterPage),
+                ] {
+                    if item(ui, name, key, has) {
+                        app.align(a);
+                    }
+                }
+                ui.separator();
+                let three = app.selection.len() >= 3;
+                for (name, d) in [
+                    ("Distribute Centers Horizontally", Distribute::CentersH),
+                    ("Distribute Centers Vertically", Distribute::CentersV),
+                    ("Distribute Spacing Horizontally", Distribute::SpacingH),
+                    ("Distribute Spacing Vertically", Distribute::SpacingV),
+                ] {
+                    if item(ui, name, "", three) {
+                        app.distribute(d);
+                    }
+                }
+            });
             ui.menu_button("Order", |ui| {
                 if item(ui, "To Front of Page", "Ctrl+Home", has) {
                     app.order(0);
@@ -237,12 +292,22 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
             }
             todo(ui, "Ungroup All", "");
             ui.separator();
-            todo(ui, "Combine", "Ctrl+L");
-            todo(ui, "Break Apart", "Ctrl+K");
+            if item(ui, "Combine", "Ctrl+L", app.selection.len() > 1) {
+                app.combine();
+            }
+            if item(ui, "Break Apart", "Ctrl+K", has) {
+                app.break_apart();
+            }
             ui.separator();
-            todo(ui, "Lock Object", "");
-            todo(ui, "Unlock Object", "");
-            todo(ui, "Unlock All Objects", "");
+            if item(ui, "Lock Object", "", has) {
+                app.set_locked(true);
+            }
+            if item(ui, "Unlock Object", "", has) {
+                app.set_locked(false);
+            }
+            if item(ui, "Unlock All Objects", "", true) {
+                app.unlock_all();
+            }
             ui.separator();
             ui.menu_button("Shaping", |ui| {
                 todo(ui, "Weld", "");
@@ -382,6 +447,10 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
             if item(ui, "Hints", "", true) {
                 app.show_dockers = true;
                 app.docker_tab = DockerTab::Hints;
+            }
+            if item(ui, "Transformations", "", true) {
+                app.show_dockers = true;
+                app.docker_tab = DockerTab::Transformations;
             }
             ui.separator();
             let mut sb = app.show_status_bar;

@@ -89,6 +89,40 @@ fn main() {
         None,
         Affine::IDENTITY,
     );
+    // A semi-transparent rounded square over the text, and a small bitmap.
+    add(
+        &mut doc,
+        ShapeKind::Rect {
+            rect: Rect::new(60.0, 25.0, 110.0, 60.0),
+            radius: 3.0,
+        },
+        Fill::Solid(Color::cmyk_pct(100.0, 0.0, 0.0, 0.0)),
+        None,
+        Affine::IDENTITY,
+    );
+    if let Some(last) = doc.layer_mut(layer).unwrap().shapes.last_mut() {
+        last.opacity = 0.5;
+    }
+    let mut pm = tiny_skia::Pixmap::new(64, 48).unwrap();
+    for y in 0..48 {
+        for x in 0..64 {
+            let p = pm.pixels_mut().get_mut((y * 64 + x) as usize).unwrap();
+            *p = tiny_skia::ColorU8::from_rgba(x as u8 * 4, y as u8 * 5, 128, 255).premultiply();
+        }
+    }
+    let png = pm.encode_png().unwrap();
+    add(
+        &mut doc,
+        ShapeKind::Bitmap {
+            rect: Rect::new(130.0, 20.0, 190.0, 65.0),
+            width_px: 64,
+            height_px: 48,
+            png,
+        },
+        Fill::None,
+        None,
+        Affine::rotate_about(-0.2, Point::new(160.0, 42.0)),
+    );
     tracedraw_io::save_native(&doc, &out).expect("write");
     println!("wrote {out}");
 }
