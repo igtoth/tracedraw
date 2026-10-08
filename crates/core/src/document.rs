@@ -15,15 +15,18 @@ pub mod text_outline {
     use crate::geometry::BezPath;
     use std::sync::OnceLock;
 
-    type Outliner = fn(&[TextSpan]) -> BezPath;
+    use super::TextAlign;
+
+    /// (spans, wrap width in mm for paragraph text, alignment) -> outline.
+    type Outliner = fn(&[TextSpan], Option<f64>, TextAlign) -> BezPath;
     static OUTLINER: OnceLock<Outliner> = OnceLock::new();
 
     pub fn set(f: Outliner) {
         let _ = OUTLINER.set(f);
     }
 
-    pub fn outline(spans: &[TextSpan]) -> Option<BezPath> {
-        OUTLINER.get().map(|f| f(spans))
+    pub fn outline(spans: &[TextSpan], width: Option<f64>, align: TextAlign) -> Option<BezPath> {
+        OUTLINER.get().map(|f| f(spans, width, align))
     }
 }
 
@@ -54,6 +57,11 @@ pub enum ShapeKind {
     Text {
         spans: Vec<TextSpan>,
         origin: crate::geometry::Point,
+        /// Paragraph text has a frame (width, height); artistic text has none.
+        #[serde(default)]
+        frame: Option<crate::geometry::Size>,
+        #[serde(default)]
+        align: TextAlign,
     },
     /// A group of child shapes.
     Group { children: Vec<Shape> },
@@ -80,6 +88,16 @@ mod png_bytes {
             .decode(s)
             .map_err(serde::de::Error::custom)
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum TextAlign {
+    #[default]
+    Left,
+    Center,
+    Right,
+    Justify,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -139,9 +157,27 @@ impl Shape {
                 sharpness,
             } => geometry::polygon_path(*rect, *points, *sharpness),
             ShapeKind::Path { path, .. } => path.clone(),
-            ShapeKind::Text { spans, origin } => {
-                if let Some(p) = text_outline::outline(spans) {
-                    return Affine::translate(origin.to_vec2()) * p;
+            ShapeKind::Text {
+                spans,
+                origin,
+                frame,
+                align,
+            } => {
+                let width = frame.map(|f| f.width);
+                if let Some(p) = text_outline::outline(spans, width, *align) {
+                    // Paragraph text hangs from the top of its frame; artistic text sits on its baseline.
+                    let shift = match frame {
+                        Some(f) => Affine::translate((
+                            origin.x,
+                            origin.y + f.height
+                                - spans
+                                    .first()
+                                    .map(|s| s.size_pt * 25.4 / 72.0)
+                                    .unwrap_or(0.0),
+                        )),
+                        None => Affine::translate(origin.to_vec2()),
+                    };
+                    return shift * p;
                 }
                 // No text engine registered: rough box, 0.5 em per character.
                 let size_mm: f64 =

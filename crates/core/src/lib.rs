@@ -20,7 +20,7 @@ pub mod style;
 
 pub use color::Color;
 pub use command::Command;
-pub use document::{Document, Layer, Page, Shape, ShapeKind, TextSpan};
+pub use document::{Document, Layer, Page, Shape, ShapeKind, TextAlign, TextSpan};
 pub use engine::Engine;
 pub use geometry::{Affine, BezPath, Point, Rect, Size, Vec2};
 pub use id::{LayerId, PageId, ShapeId};

@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 use tracedraw_core::{
-    document::TextSpan,
+    document::{TextAlign, TextSpan},
     geometry::{Affine, BezPath, Point, Rect},
 };
 
@@ -21,8 +21,8 @@ pub struct FontSystem {
 
 /// Register this engine as the core's text outliner (call once at startup).
 pub fn install() {
-    tracedraw_core::document::text_outline::set(|spans| {
-        fonts().outline_cached(spans).as_ref().clone()
+    tracedraw_core::document::text_outline::set(|spans, width, align| {
+        fonts().outline_cached(spans, width, align).as_ref().clone()
     });
 }
 
@@ -106,23 +106,31 @@ impl FontSystem {
 
     /// Cached outline; shaping is expensive and the same text is asked for
     /// every frame.
-    pub fn outline_cached(&self, spans: &[TextSpan]) -> Arc<BezPath> {
-        let key = spans
-            .iter()
-            .map(|s| {
-                format!(
+    pub fn outline_cached(
+        &self,
+        spans: &[TextSpan],
+        width: Option<f64>,
+        align: TextAlign,
+    ) -> Arc<BezPath> {
+        let key = format!(
+            "{:?}|{:?}|{}",
+            width,
+            align,
+            spans
+                .iter()
+                .map(|s| format!(
                     "{}|{}|{}|{}|{}",
                     s.font_family, s.size_pt, s.bold, s.italic, s.text
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("\u{1}");
+                ))
+                .collect::<Vec<_>>()
+                .join("\u{1}")
+        );
         if let Ok(c) = self.cache.lock() {
             if let Some(p) = c.get(&key) {
                 return p.clone();
             }
         }
-        let p = Arc::new(self.outline(spans).path);
+        let p = Arc::new(self.outline_wrapped(spans, width, align).path);
         if let Ok(mut c) = self.cache.lock() {
             if c.len() > 2000 {
                 c.clear();
@@ -130,6 +138,130 @@ impl FontSystem {
             c.insert(key, p.clone());
         }
         p
+    }
+
+    /// Paragraph layout: wrap at `width` (mm) by words, align lines.
+    pub fn outline_wrapped(
+        &self,
+        spans: &[TextSpan],
+        width: Option<f64>,
+        align: TextAlign,
+    ) -> TextLayout {
+        let Some(width) = width else {
+            return self.outline_aligned(spans, align, None);
+        };
+        // Wrap: measure words with the first span's style (mixed styles per
+        // paragraph come later).
+        let Some(style) = spans.first() else {
+            return self.outline(spans);
+        };
+        let text: String = spans.iter().map(|s| s.text.as_str()).collect();
+        let space_w = self.measure(style, " ");
+        let mut lines: Vec<String> = Vec::new();
+        for para in text.split('\n') {
+            let mut line = String::new();
+            let mut line_w = 0.0;
+            for word in para.split(' ') {
+                let w = self.measure(style, word);
+                let add = if line.is_empty() { w } else { space_w + w };
+                if !line.is_empty() && line_w + add > width {
+                    lines.push(std::mem::take(&mut line));
+                    line_w = 0.0;
+                }
+                if !line.is_empty() {
+                    line.push(' ');
+                    line_w += space_w;
+                }
+                line.push_str(word);
+                line_w += w;
+            }
+            lines.push(line);
+        }
+        let wrapped = TextSpan {
+            text: lines.join("\n"),
+            ..style.clone()
+        };
+        self.outline_aligned(&[wrapped], align, Some(width))
+    }
+
+    fn measure(&self, style: &TextSpan, text: &str) -> f64 {
+        if text.is_empty() {
+            return 0.0;
+        }
+        let span = TextSpan {
+            text: text.to_string(),
+            ..style.clone()
+        };
+        self.outline(&[span]).bounds.width()
+    }
+
+    /// Lay out each line separately so it can be aligned.
+    fn outline_aligned(
+        &self,
+        spans: &[TextSpan],
+        align: TextAlign,
+        width: Option<f64>,
+    ) -> TextLayout {
+        if align == TextAlign::Left {
+            return self.outline(spans);
+        }
+        let Some(style) = spans.first() else {
+            return self.outline(spans);
+        };
+        let text: String = spans.iter().map(|s| s.text.as_str()).collect();
+        let lines: Vec<&str> = text.split('\n').collect();
+        let widths: Vec<f64> = lines.iter().map(|l| self.measure(style, l)).collect();
+        let max_w = width.unwrap_or_else(|| widths.iter().cloned().fold(0.0, f64::max));
+        let full = self.outline(spans); // for line height and bounds
+        let line_h = if lines.len() > 1 {
+            (full.bounds.height() - (full.bounds.y1)) / (lines.len() as f64 - 1.0)
+        } else {
+            0.0
+        };
+        let _ = line_h;
+        let mut path = BezPath::new();
+        let mut y = 0.0;
+        let step = {
+            // Recover the line step from a two-line layout.
+            let two = TextSpan {
+                text: "x\nx".into(),
+                ..style.clone()
+            };
+            let l = self.outline(&[two]);
+            (l.bounds.y1 - l.bounds.y0)
+                - self
+                    .outline(&[TextSpan {
+                        text: "x".into(),
+                        ..style.clone()
+                    }])
+                    .bounds
+                    .height()
+        };
+        for (i, line) in lines.iter().enumerate() {
+            let w = widths[i];
+            let dx = match align {
+                TextAlign::Left | TextAlign::Justify => 0.0,
+                TextAlign::Center => (max_w - w) / 2.0,
+                TextAlign::Right => max_w - w,
+            };
+            let span = TextSpan {
+                text: line.to_string(),
+                ..style.clone()
+            };
+            let l = self.outline(&[span]);
+            path.extend(
+                (Affine::translate((dx, y)) * l.path)
+                    .elements()
+                    .iter()
+                    .copied(),
+            );
+            y -= step;
+        }
+        TextLayout {
+            bounds: Rect::new(0.0, y + step - full.bounds.height(), max_w, full.bounds.y1),
+            path,
+            glyphs: full.glyphs,
+        }
     }
 
     /// Outline of a text run as a path in mm, baseline at the origin, text

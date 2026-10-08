@@ -148,6 +148,15 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
                 }
             }
         }
+        Drag::TextFrame { start, current } => {
+            let r = view.rect_to_screen(Rect::from_points(*start, *current));
+            painter.rect_stroke(
+                r,
+                0.0,
+                EStroke::new(1.0, Tokens::TEXT),
+                epaint::StrokeKind::Outside,
+            );
+        }
         Drag::Freehand { points } => {
             let pts: Vec<Pos2> = points.iter().map(|p| view.to_screen(*p)).collect();
             if pts.len() > 1 {

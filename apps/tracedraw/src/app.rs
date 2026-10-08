@@ -147,6 +147,11 @@ pub enum Drag {
         start: Point,
         current: Point,
     },
+    /// Dragging a paragraph text frame (Text tool).
+    TextFrame {
+        start: Point,
+        current: Point,
+    },
     /// Dragging a new guideline out of a ruler.
     NewGuide {
         horizontal: bool,
@@ -212,6 +217,7 @@ pub struct App {
     pub text_size_pt: f64,
     pub text_bold: bool,
     pub text_italic: bool,
+    pub text_align: tracedraw_core::TextAlign,
     pub eyedropper_color: Option<Color>,
     pub canvas_rect: egui::Rect,
     pub pointer_page: Option<Point>,
@@ -289,6 +295,7 @@ impl App {
             text_size_pt: 24.0,
             text_bold: false,
             text_italic: false,
+            text_align: tracedraw_core::TextAlign::Left,
             eyedropper_color: None,
             canvas_rect: egui::Rect::NOTHING,
             pointer_page: None,
@@ -439,7 +446,8 @@ impl App {
         }
     }
 
-    pub fn start_text(&mut self, at: Point) {
+    /// Start artistic text at a point, or paragraph text in a frame.
+    pub fn start_text(&mut self, at: Point, frame: Option<Size>) {
         self.finish_text();
         let span = TextSpan {
             text: String::new(),
@@ -451,6 +459,8 @@ impl App {
         if let Some(id) = self.new_shape(ShapeKind::Text {
             spans: vec![span],
             origin: at,
+            frame,
+            align: self.text_align,
         }) {
             self.text_edit = Some(TextEdit {
                 shape: id,
@@ -460,12 +470,34 @@ impl App {
         }
     }
 
+    /// Property bar defaults follow the text object being edited.
+    pub fn sync_text_defaults_from(&mut self, id: ShapeId) {
+        let kind = self.doc().shape(id).map(|(_, s)| s.kind.clone());
+        if let Ok(kind) = kind {
+            if let ShapeKind::Text { spans, align, .. } = &kind {
+                if let Some(sp) = spans.first() {
+                    self.text_font = sp.font_family.clone();
+                    self.text_size_pt = sp.size_pt;
+                    self.text_bold = sp.bold;
+                    self.text_italic = sp.italic;
+                }
+                self.text_align = *align;
+            }
+        }
+    }
+
     pub fn update_text(&mut self) {
         let Some(te) = self.text_edit.clone() else {
             return;
         };
         if let Ok((_, s)) = self.doc().shape(te.shape) {
-            if let ShapeKind::Text { spans, origin } = &s.kind {
+            if let ShapeKind::Text {
+                spans,
+                origin,
+                frame,
+                align,
+            } = &s.kind
+            {
                 let mut spans = spans.clone();
                 if let Some(first) = spans.first_mut() {
                     first.text = te.text.clone();
@@ -473,6 +505,8 @@ impl App {
                 let kind = ShapeKind::Text {
                     spans,
                     origin: *origin,
+                    frame: *frame,
+                    align: *align,
                 };
                 // Typing is one undo step per text object; collapse by undoing the
                 // previous keystroke entry when it was also a SetShapeKind on this shape.

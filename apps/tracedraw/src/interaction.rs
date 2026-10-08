@@ -117,32 +117,7 @@ impl App {
             Tool::Bezier | Tool::Pen | Tool::Polyline | Tool::TwoPointLine | Tool::BSpline => {
                 self.curve_input(response, p, mods)
             }
-            Tool::Text => {
-                if response.clicked() {
-                    match self.hit_test(p) {
-                        Some(id)
-                            if matches!(
-                                self.doc()
-                                    .shape(id)
-                                    .map(|(_, s)| matches!(s.kind, ShapeKind::Text { .. })),
-                                Ok(true)
-                            ) =>
-                        {
-                            // Edit existing text.
-                            let text = match &self.doc().shape(id).map(|(_, s)| s.kind.clone()) {
-                                Ok(ShapeKind::Text { spans, .. }) => {
-                                    spans.iter().map(|s| s.text.as_str()).collect::<String>()
-                                }
-                                _ => String::new(),
-                            };
-                            self.finish_text();
-                            self.text_edit = Some(crate::app::TextEdit { shape: id, text });
-                            self.select(vec![id]);
-                        }
-                        _ => self.start_text(p),
-                    }
-                }
-            }
+            Tool::Text => self.text_input(response, p),
             Tool::ColorEyedropper | Tool::AttributesEyedropper => {
                 if response.clicked() {
                     match self.eyedropper_color {
@@ -366,6 +341,50 @@ impl App {
         self.shape_tool_input(response, p, mods);
     }
 
+    fn text_input(&mut self, response: &Response, p: Point) {
+        if response.drag_started_by(PointerButton::Primary) {
+            if self.text_edit.is_some() {
+                self.finish_text();
+            }
+            self.drag = Drag::TextFrame {
+                start: p,
+                current: p,
+            };
+        }
+        if response.dragged_by(PointerButton::Primary) {
+            if let Drag::TextFrame { current, .. } = &mut self.drag {
+                *current = p;
+            }
+        }
+        if response.clicked_by(PointerButton::Primary) {
+            match self.hit_test(p) {
+                Some(id)
+                    if matches!(
+                        self.doc()
+                            .shape(id)
+                            .map(|(_, s)| matches!(s.kind, ShapeKind::Text { .. })),
+                        Ok(true)
+                    ) =>
+                {
+                    let text = match self.doc().shape(id).map(|(_, s)| s.kind.clone()) {
+                        Ok(ShapeKind::Text { spans, .. }) => {
+                            spans.iter().map(|s| s.text.as_str()).collect::<String>()
+                        }
+                        _ => String::new(),
+                    };
+                    self.finish_text();
+                    self.text_edit = Some(crate::app::TextEdit { shape: id, text });
+                    self.select(vec![id]);
+                    self.sync_text_defaults_from(id);
+                }
+                _ => {
+                    let p = self.snap_point(p);
+                    self.start_text(p, None);
+                }
+            }
+        }
+    }
+
     fn zoom_input(&mut self, response: &Response, p: Point, screen: egui::Pos2, mods: Modifiers) {
         if response.drag_started_by(PointerButton::Primary) {
             self.drag = Drag::ZoomBox {
@@ -497,6 +516,15 @@ impl App {
         let drag = std::mem::replace(&mut self.drag, Drag::None);
         match drag {
             Drag::Box { start, current } => self.create_box_shape(start, current),
+            Drag::TextFrame { start, current } => {
+                let r = Rect::from_points(start, current);
+                if r.width() > 2.0 && r.height() > 2.0 {
+                    self.start_text(
+                        Point::new(r.x0, r.y0),
+                        Some(tracedraw_core::geometry::Size::new(r.width(), r.height())),
+                    );
+                }
+            }
             Drag::Move { total, .. } => {
                 if total.hypot() > 1e-6 {
                     self.transform_selection(Affine::translate(total));

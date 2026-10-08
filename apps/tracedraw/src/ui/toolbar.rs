@@ -540,15 +540,36 @@ fn text_properties(app: &mut App, ui: &mut Ui) {
         .then(|| app.text_italic = !app.text_italic)
         .is_some();
     vsep(ui);
-    let _ = ui.selectable_label(true, "≡").on_hover_text("Left");
-    let _ = ui.selectable_label(false, "☰").on_hover_text("Center");
-    let _ = ui.selectable_label(false, "≣").on_hover_text("Right");
+    for (a, label, tip) in [
+        (tracedraw_core::TextAlign::Left, "Left", "Align left"),
+        (tracedraw_core::TextAlign::Center, "Center", "Align center"),
+        (tracedraw_core::TextAlign::Right, "Right", "Align right"),
+        (
+            tracedraw_core::TextAlign::Justify,
+            "Justify",
+            "Full justify",
+        ),
+    ] {
+        if ui
+            .selectable_label(app.text_align == a, label)
+            .on_hover_text(tip)
+            .clicked()
+        {
+            app.text_align = a;
+            changed = true;
+        }
+    }
     if changed {
         let cmds: Vec<Command> = app
             .selected_shapes()
             .iter()
             .filter_map(|s| match &s.kind {
-                ShapeKind::Text { spans, origin } => {
+                ShapeKind::Text {
+                    spans,
+                    origin,
+                    frame,
+                    ..
+                } => {
                     let mut spans = spans.clone();
                     for sp in spans.iter_mut() {
                         sp.font_family = app.text_font.clone();
@@ -561,6 +582,8 @@ fn text_properties(app: &mut App, ui: &mut Ui) {
                         kind: ShapeKind::Text {
                             spans,
                             origin: *origin,
+                            frame: *frame,
+                            align: app.text_align,
                         },
                     })
                 }

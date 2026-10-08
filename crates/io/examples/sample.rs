@@ -84,6 +84,8 @@ fn main() {
                 italic: false,
             }],
             origin: Point::new(20.0, 40.0),
+            frame: None,
+            align: tracedraw_core::TextAlign::Left,
         },
         Fill::Solid(Color::BLACK),
         None,
