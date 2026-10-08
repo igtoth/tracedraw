@@ -40,6 +40,6 @@ history).
 
 1. Draw one object in the editor, save as `.cdr` (and once with "compressed"
    off, if the version offers it). Note the version.
-2. `cargo run -p traco-cli -- inspect file.cdr` dumps the chunk tree.
+2. `cargo run -p tracedraw-cli -- inspect file.cdr` dumps the chunk tree.
 3. Compare the parsed values with what the editor shows (position in mm,
    size, colour values) and update the table with the file name.

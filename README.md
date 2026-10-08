@@ -1,4 +1,4 @@
-# Traço
+# TraceDraw
 
 **An open-source vector illustration editor written in pure Rust, with a
 classic workflow and a clean-room `.cdr` reader.**
@@ -14,7 +14,7 @@ does not exist yet. See `docs/roadmap.md`.
   origin at the page's bottom-left, like the editor.
 - Command engine with undo/redo. Every mutation is a `Command`, so the UI,
   a CLI and an agent can drive the same engine.
-- Native `.traco` format (JSON) and SVG export.
+- Native `.tdraw` format (JSON) and SVG export.
 - `.cdr` reader: RIFF and ZIP (X4+) containers, compressed (`cmpr`)
   streams, version detection, and best-effort parsing of pages, layers,
   rectangles, ellipses, curves, solid and fountain fills and outlines.
@@ -26,8 +26,8 @@ does not exist yet. See `docs/roadmap.md`.
 ## Build and run
 
 ```sh
-cargo run --release -p traco                 # empty A4 document
-cargo run --release -p traco -- file.cdr     # open a the editor file
+cargo run --release -p tracedraw                 # empty A4 document
+cargo run --release -p tracedraw -- file.cdr     # open a the editor file
 cargo test --workspace
 ```
 
@@ -39,8 +39,8 @@ windowing libraries (X11 or Wayland, libxkbcommon, Mesa).
 ```text
 crates/core   document model, geometry (kurbo), commands, engine  (no UI deps)
 crates/cdr    the editor .cdr reader: container, RIFF walker, object parser
-crates/io     SVG export, native .traco load/save
-apps/traco    egui desktop app (thin shell over the engine)
+crates/io     SVG export, native .tdraw load/save
+apps/tracedraw    egui desktop app (thin shell over the engine)
 docs/         architecture notes, CDR format notes, roadmap
 ```
 
@@ -62,9 +62,9 @@ depend only on `core`; only `apps/` may depend on egui/eframe/rfd.
 
 ## Clean-room notice
 
-Traço is implemented from public documentation, reverse-engineering notes
+TraceDraw is implemented from public documentation, reverse-engineering notes
 and observation of real files only. It contains no the vendor code or assets.
-the editor is a trademark of its vendor; Traço is not affiliated
+the editor is a trademark of its vendor; TraceDraw is not affiliated
 with, sponsored by or endorsed by the vendor.
 
 ## License

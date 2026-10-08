@@ -1,5 +1,5 @@
 [package]
-name = "traco-core"
+name = "tracedraw-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

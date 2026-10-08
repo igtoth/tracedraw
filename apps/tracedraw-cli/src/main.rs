@@ -1,23 +1,23 @@
-//! traco-cli: headless tools.
+//! tracedraw-cli: headless tools.
 //!
 //! ```text
-//! traco-cli inspect file.cdr          dump the RIFF chunk tree
-//! traco-cli info file.cdr             version, pages, objects, warnings
-//! traco-cli convert in.cdr out.svg    export the first page (or .traco)
+//! tracedraw-cli inspect file.cdr          dump the RIFF chunk tree
+//! tracedraw-cli info file.cdr             version, pages, objects, warnings
+//! tracedraw-cli convert in.cdr out.svg    export the first page (or .tdraw)
 //! ```
 
 use std::process::ExitCode;
 
 fn usage() -> ExitCode {
-    eprintln!("usage:\n  traco-cli inspect <file.cdr>\n  traco-cli info <file.cdr|file.traco>\n  traco-cli convert <in.cdr|in.traco> <out.svg|out.traco>");
+    eprintln!("usage:\n  tracedraw-cli inspect <file.cdr>\n  tracedraw-cli info <file.cdr|file.tdraw>\n  tracedraw-cli convert <in.cdr|in.tdraw> <out.svg|out.tdraw>");
     ExitCode::from(2)
 }
 
-fn load(path: &str) -> Result<(traco_core::Document, Option<traco_cdr::ParseReport>), String> {
+fn load(path: &str) -> Result<(tracedraw_core::Document, Option<tracedraw_cdr::ParseReport>), String> {
     if path.to_ascii_lowercase().ends_with(".cdr") {
-        traco_cdr::open(path).map(|(d, r)| (d, Some(r))).map_err(|e| e.to_string())
+        tracedraw_cdr::open(path).map(|(d, r)| (d, Some(r))).map_err(|e| e.to_string())
     } else {
-        traco_io::load_native(path).map(|d| (d, None)).map_err(|e| e.to_string())
+        tracedraw_io::load_native(path).map(|d| (d, None)).map_err(|e| e.to_string())
     }
 }
 
@@ -34,7 +34,7 @@ fn main() -> ExitCode {
                     return ExitCode::FAILURE;
                 }
             };
-            let container = match traco_cdr::container::detect(&bytes) {
+            let container = match tracedraw_cdr::container::detect(&bytes) {
                 Ok(c) => c,
                 Err(e) => {
                     eprintln!("{path}: {e}");
@@ -42,14 +42,14 @@ fn main() -> ExitCode {
                 }
             };
             println!("container: {:?}, {}", container.kind, container.version.name());
-            let riff = match traco_cdr::container::riff_stream(&bytes, &container) {
+            let riff = match tracedraw_cdr::container::riff_stream(&bytes, &container) {
                 Ok(r) => r,
                 Err(e) => {
                     eprintln!("{path}: {e}");
                     return ExitCode::FAILURE;
                 }
             };
-            match traco_cdr::riff::parse(&riff) {
+            match tracedraw_cdr::riff::parse(&riff) {
                 Ok(tree) => print!("{}", tree.dump()),
                 Err(e) => {
                     eprintln!("{path}: {e}");
@@ -92,9 +92,9 @@ fn main() -> ExitCode {
                 }
             };
             let res = if output.to_ascii_lowercase().ends_with(".svg") {
-                traco_io::save_svg(&doc, 0, output)
+                tracedraw_io::save_svg(&doc, 0, output)
             } else {
-                traco_io::save_native(&doc, output)
+                tracedraw_io::save_native(&doc, output)
             };
             match res {
                 Ok(()) => ExitCode::SUCCESS,

@@ -1,22 +1,22 @@
-//! traco-io: export the document model to interchange formats and read the
-//! native `.traco` file.
+//! tracedraw-io: export the document model to interchange formats and read the
+//! native `.tdraw` file.
 
 pub mod svg;
 
 use std::path::Path;
-use traco_core::Document;
+use tracedraw_core::Document;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
     #[error("{0}")]
-    Core(#[from] traco_core::Error),
+    Core(#[from] tracedraw_core::Error),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-/// Native format: pretty JSON with a `.traco` extension.
+/// Native format: pretty JSON with a `.tdraw` extension.
 pub fn save_native(doc: &Document, path: impl AsRef<Path>) -> Result<()> {
     std::fs::write(path, doc.to_json()?)?;
     Ok(())

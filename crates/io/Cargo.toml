@@ -1,10 +1,10 @@
 [package]
-name = "traco-io"
+name = "tracedraw-io"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Import/export between the Traco document model and other formats (SVG, native .traco)"
+description = "Import/export between the TraceDraw document model and other formats (SVG, native .tdraw)"
 
 [dependencies]
-traco-core.workspace = true
+tracedraw-core.workspace = true
 thiserror.workspace = true

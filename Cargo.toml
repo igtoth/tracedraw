@@ -4,21 +4,21 @@ members = [
     "crates/core",
     "crates/cdr",
     "crates/io",
-    "apps/traco",
-    "apps/traco-cli",
+    "apps/tracedraw",
+    "apps/tracedraw-cli",
 ]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/igtoth/traco"
+repository = "https://github.com/igtoth/tracedraw"
 rust-version = "1.80"
 
 [workspace.dependencies]
-traco-core = { path = "crates/core" }
-traco-cdr = { path = "crates/cdr" }
-traco-io = { path = "crates/io" }
+tracedraw-core = { path = "crates/core" }
+tracedraw-cdr = { path = "crates/cdr" }
+tracedraw-io = { path = "crates/io" }
 
 kurbo = { version = "0.13", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }

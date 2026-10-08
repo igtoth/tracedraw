@@ -9,7 +9,7 @@ Workspace, document model, commands + undo, SVG export, native format,
 `.cdr` reader skeleton, egui app with pick/rect/ellipse/polygon tools.
 
 ## M1 Real files
-- `traco-cli inspect` to dump chunk trees
+- `tracedraw-cli inspect` to dump chunk trees
 - Corpus of small `.cdr` files per version (one object each) in `corpus/`
 - Confirm every "assumed" row in `docs/cdr-format.md`
 - Text objects (artistic text) read as text with font and size

@@ -6,7 +6,7 @@
 
 use crate::view::View;
 use egui::{epaint, Color32, Painter, Pos2, Stroke as EStroke};
-use traco_core::{
+use tracedraw_core::{
     document::{Shape, ShapeKind},
     geometry::{Affine, BezPath, PathEl},
     Color, Document, Fill, PageId, ShapeId,
@@ -122,7 +122,7 @@ pub fn draw_shape(painter: &Painter, shape: &Shape, parent: Affine, view: &View)
     };
     let stroke = shape.stroke.as_ref().map(|s| {
         // Hairlines stay one pixel wide at any zoom.
-        let px = if s.width <= traco_core::Stroke::HAIRLINE + 1e-9 { 1.0 } else { (s.width as f32 * view.zoom).max(0.75) };
+        let px = if s.width <= tracedraw_core::Stroke::HAIRLINE + 1e-9 { 1.0 } else { (s.width as f32 * view.zoom).max(0.75) };
         EStroke::new(px, to_color32(s.color))
     });
 

@@ -1,14 +1,14 @@
 # AGENTS.md: guide for AI agents and contributors
 
-Traço is an open-source vector editor in **Rust only**: native egui/eframe
+TraceDraw is an open-source vector editor in **Rust only**: native egui/eframe
 desktop app, later a WebAssembly build. No Electron, Tauri or webview.
-The product name is **Traço** in prose; machine names are `traco`
-(`traco-core`, `traco-cdr`, `.traco` files).
+The product name is **TraceDraw** in prose; machine names are `tracedraw`
+(`tracedraw-core`, `tracedraw-cdr`, `.tdraw` files).
 
 ## Golden rules
 
 1. **Everything is a command.** New user-visible behaviour is a variant of
-   `traco_core::Command`, applied through `Engine::run`. The UI only builds
+   `tracedraw_core::Command`, applied through `Engine::run`. The UI only builds
    commands and reads the document; it never mutates it directly.
 2. **Never panic on input.** Non-test code does not use `unwrap`, `expect`,
    `panic!`, `todo!` or raw indexing on data that came from a file or the
@@ -35,12 +35,12 @@ crates/core   geometry.rs (kurbo re-exports + helpers), document.rs,
               command.rs, engine.rs, style.rs, color.rs, id.rs
 crates/cdr    container.rs (RIFF/ZIP), riff.rs (chunk tree), parse.rs
 crates/io     svg.rs, lib.rs (native format)
-apps/traco    main.rs, app.rs (UI + input), canvas.rs (render), view.rs
+apps/tracedraw    main.rs, app.rs (UI + input), canvas.rs (render), view.rs
 ```
 
 ## Workflow
 
 - `cargo test --workspace` before every commit.
-- `cargo build -p traco` must stay warning-free.
+- `cargo build -p tracedraw` must stay warning-free.
 - Keep `docs/roadmap.md` honest: a feature is "done" when it has tests
   and works on a real file, not when the menu item exists.

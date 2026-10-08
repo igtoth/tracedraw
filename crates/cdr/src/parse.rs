@@ -13,7 +13,7 @@
 use crate::container::Version;
 use crate::riff::{Chunk, Tree};
 use std::collections::HashMap;
-use traco_core::{
+use tracedraw_core::{
     document::{Layer, Page, Shape, ShapeKind},
     geometry::{Affine, BezPath, Point, Rect, Size},
     Color, Document, Fill, LineCap, LineJoin, Stroke,
@@ -395,7 +395,7 @@ impl<'a> Ctx<'a> {
     }
 
     /// `obj `: one object, built from its `loda` (attributes) and `trfd`.
-    fn read_object(&mut self, oc: &Chunk, id: traco_core::ShapeId, page_size: Size) -> Option<Shape> {
+    fn read_object(&mut self, oc: &Chunk, id: tracedraw_core::ShapeId, page_size: Size) -> Option<Shape> {
         let mut loda = None;
         let mut trfd = None;
         oc.walk(&mut |c, _| {
@@ -569,7 +569,7 @@ fn build_path(pts: &[Point], types: &[u8]) -> (BezPath, bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use traco_core::geometry::Shape as _;
+    use tracedraw_core::geometry::Shape as _;
 
     #[test]
     fn path_builder_handles_moves_lines_and_curves() {

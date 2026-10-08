@@ -1,4 +1,4 @@
-//! traco-core: the pure-data heart of Traco.
+//! tracedraw-core: the pure-data heart of TraceDraw.
 //!
 //! Everything in this crate is independent of any UI or file format.
 //! The UI, the CLI and the importers all talk to the engine through

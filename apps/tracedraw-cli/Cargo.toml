@@ -1,0 +1,13 @@
+[package]
+name = "tracedraw-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Headless TraceDraw: inspect .cdr files and convert documents"
+
+[dependencies]
+tracedraw-core.workspace = true
+tracedraw-cdr.workspace = true
+tracedraw-io.workspace = true
+env_logger.workspace = true
+log.workspace = true

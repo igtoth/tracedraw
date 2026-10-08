@@ -2454,6 +2454,61 @@ dependencies = [
 ]
 
 [[package]]
+name = "tracedraw"
+version = "0.1.0"
+dependencies = [
+ "eframe",
+ "egui",
+ "env_logger",
+ "kurbo",
+ "log",
+ "rfd",
+ "tracedraw-cdr",
+ "tracedraw-core",
+ "tracedraw-io",
+]
+
+[[package]]
+name = "tracedraw-cdr"
+version = "0.1.0"
+dependencies = [
+ "flate2",
+ "log",
+ "thiserror 2.0.21",
+ "tracedraw-core",
+ "zip",
+]
+
+[[package]]
+name = "tracedraw-cli"
+version = "0.1.0"
+dependencies = [
+ "env_logger",
+ "log",
+ "tracedraw-cdr",
+ "tracedraw-core",
+ "tracedraw-io",
+]
+
+[[package]]
+name = "tracedraw-core"
+version = "0.1.0"
+dependencies = [
+ "kurbo",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "tracedraw-io"
+version = "0.1.0"
+dependencies = [
+ "thiserror 2.0.21",
+ "tracedraw-core",
+]
+
+[[package]]
 name = "tracing"
 version = "0.1.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2469,61 +2524,6 @@ name = "tracing-core"
 version = "0.1.36"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "db97caf9d906fbde555dd62fa95ddba9eecfd14cb388e4f491a66d74cd5fb79a"
-
-[[package]]
-name = "traco"
-version = "0.1.0"
-dependencies = [
- "eframe",
- "egui",
- "env_logger",
- "kurbo",
- "log",
- "rfd",
- "traco-cdr",
- "traco-core",
- "traco-io",
-]
-
-[[package]]
-name = "traco-cdr"
-version = "0.1.0"
-dependencies = [
- "flate2",
- "log",
- "thiserror 2.0.21",
- "traco-core",
- "zip",
-]
-
-[[package]]
-name = "traco-cli"
-version = "0.1.0"
-dependencies = [
- "env_logger",
- "log",
- "traco-cdr",
- "traco-core",
- "traco-io",
-]
-
-[[package]]
-name = "traco-core"
-version = "0.1.0"
-dependencies = [
- "kurbo",
- "serde",
- "serde_json",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "traco-io"
-version = "0.1.0"
-dependencies = [
- "thiserror 2.0.21",
- "traco-core",
-]
 
 [[package]]
 name = "type-map"

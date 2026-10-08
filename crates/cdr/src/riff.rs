@@ -74,7 +74,7 @@ impl Tree {
         &buf[start..end]
     }
 
-    /// Indented dump of the tree, for `traco-cli inspect` and for tests.
+    /// Indented dump of the tree, for `tracedraw-cli inspect` and for tests.
     pub fn dump(&self) -> String {
         let mut out = String::new();
         self.root.walk(&mut |c, depth| {

@@ -224,7 +224,7 @@ impl Document {
         Ok(p.layers.iter().flat_map(|l| &l.shapes).map(Shape::bounds).reduce(|a, b| a.union(b)))
     }
 
-    /// Serialize to the native `.traco` JSON format.
+    /// Serialize to the native `.tdraw` JSON format.
     pub fn to_json(&self) -> Result<String> {
         Ok(serde_json::to_string_pretty(self)?)
     }

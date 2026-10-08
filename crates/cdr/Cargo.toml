@@ -1,12 +1,12 @@
 [package]
-name = "traco-cdr"
+name = "tracedraw-cdr"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "Clean-room reader for the editor (.cdr) files: RIFF and ZIP containers"
 
 [dependencies]
-traco-core.workspace = true
+tracedraw-core.workspace = true
 thiserror.workspace = true
 log.workspace = true
 zip.workspace = true

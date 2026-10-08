@@ -2,7 +2,7 @@
 //! from our bottom-up page space to SVG's top-down space.
 
 use std::fmt::Write;
-use traco_core::{
+use tracedraw_core::{
     document::{Shape, ShapeKind},
     geometry::{Affine, PathEl, Shape as _},
     Document, Fill, LineCap, LineJoin,
@@ -139,7 +139,7 @@ fn fmt(v: f64) -> String {
     }
 }
 
-pub fn path_data(path: &traco_core::BezPath) -> String {
+pub fn path_data(path: &tracedraw_core::BezPath) -> String {
     let mut d = String::new();
     for el in path.elements() {
         match el {
@@ -168,7 +168,7 @@ fn escape(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use traco_core::{geometry::Rect, Color, Document, Stroke};
+    use tracedraw_core::{geometry::Rect, Color, Document, Stroke};
 
     #[test]
     fn exports_a_filled_rect() {

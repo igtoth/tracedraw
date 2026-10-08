@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test --workspace --exclude traco
+      - run: cargo test --workspace --exclude tracedraw
 
   build:
     needs: test
@@ -59,27 +59,27 @@ jobs:
             libx11-dev libxcursor-dev libxrandr-dev libxi-dev libgtk-3-dev
 
       - name: Build
-        run: cargo build --release --target ${{ matrix.target }} -p traco -p traco-cli
+        run: cargo build --release --target ${{ matrix.target }} -p tracedraw -p tracedraw-cli
 
       - name: Package
         shell: bash
         run: |
           set -e
-          out=dist/traco-${{ matrix.name }}
+          out=dist/tracedraw-${{ matrix.name }}
           mkdir -p "$out"
-          cp target/${{ matrix.target }}/release/traco${{ matrix.ext }} "$out/"
-          cp target/${{ matrix.target }}/release/traco-cli${{ matrix.ext }} "$out/"
+          cp target/${{ matrix.target }}/release/tracedraw${{ matrix.ext }} "$out/"
+          cp target/${{ matrix.target }}/release/tracedraw-cli${{ matrix.ext }} "$out/"
           cp README.md LICENSE-MIT LICENSE-APACHE "$out/"
           cd dist
           if [ "${{ runner.os }}" = "Windows" ]; then
-            7z a -tzip traco-${{ matrix.name }}.zip traco-${{ matrix.name }}
+            7z a -tzip tracedraw-${{ matrix.name }}.zip tracedraw-${{ matrix.name }}
           else
-            tar -czf traco-${{ matrix.name }}.tar.gz traco-${{ matrix.name }}
+            tar -czf tracedraw-${{ matrix.name }}.tar.gz tracedraw-${{ matrix.name }}
           fi
 
       - uses: actions/upload-artifact@v4
         with:
-          name: traco-${{ matrix.name }}
+          name: tracedraw-${{ matrix.name }}
           path: |
             dist/*.zip
             dist/*.tar.gz

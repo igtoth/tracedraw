@@ -5,7 +5,7 @@ use crate::canvas::{self, RenderOptions};
 use crate::view::View;
 use egui::{Color32, Key, Modifiers, Sense};
 use std::path::PathBuf;
-use traco_core::{
+use tracedraw_core::{
     document::{Shape, ShapeKind},
     geometry::{Affine, Point, Rect},
     Color, Command, Engine, Fill, PageId, ShapeId, Stroke,
@@ -47,7 +47,7 @@ enum Drag {
     /// Drawing a new shape from `start` (page space).
     Create { start: Point, current: Point },
     /// Moving the selection; `last` is the previous pointer position.
-    Move { last: Point, total: traco_core::geometry::Vec2 },
+    Move { last: Point, total: tracedraw_core::geometry::Vec2 },
     /// Rubber-band selection.
     Marquee { start: Point, current: Point },
 }
@@ -99,9 +99,9 @@ impl App {
 
     fn open_dialog(&mut self) {
         let picked = rfd::FileDialog::new()
-            .add_filter("All supported", &["cdr", "traco"])
+            .add_filter("All supported", &["cdr", "tdraw"])
             .add_filter("the editor", &["cdr"])
-            .add_filter("Traco", &["traco"])
+            .add_filter("TraceDraw", &["tdraw"])
             .pick_file();
         if let Some(p) = picked {
             self.open_path(p);
@@ -111,7 +111,7 @@ impl App {
     fn open_path(&mut self, path: PathBuf) {
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
         let result = if ext == "cdr" {
-            traco_cdr::open(&path).map(|(doc, report)| {
+            tracedraw_cdr::open(&path).map(|(doc, report)| {
                 let ver = report.version.map(|v| v.name()).unwrap_or_default();
                 let msg = format!(
                     "{ver}: {} page(s), {} shape(s), {} skipped, {} warning(s)",
@@ -127,7 +127,7 @@ impl App {
             })
             .map_err(|e| e.to_string())
         } else {
-            traco_io::load_native(&path).map(|d| (d, "Opened".to_string())).map_err(|e| e.to_string())
+            tracedraw_io::load_native(&path).map(|d| (d, "Opened".to_string())).map_err(|e| e.to_string())
         };
         match result {
             Ok((doc, msg)) => {
@@ -144,12 +144,12 @@ impl App {
 
     fn save(&mut self, save_as: bool) {
         let path = if save_as || self.file.is_none() {
-            rfd::FileDialog::new().add_filter("Traco", &["traco"]).set_file_name("drawing.traco").save_file()
+            rfd::FileDialog::new().add_filter("TraceDraw", &["tdraw"]).set_file_name("drawing.tdraw").save_file()
         } else {
             self.file.clone()
         };
         let Some(path) = path else { return };
-        match traco_io::save_native(self.engine.document(), &path) {
+        match tracedraw_io::save_native(self.engine.document(), &path) {
             Ok(()) => {
                 self.engine.mark_saved();
                 self.file = Some(path.clone());
@@ -164,14 +164,14 @@ impl App {
             return;
         };
         let idx = self.engine.document().pages.iter().position(|p| p.id == self.page).unwrap_or(0);
-        match traco_io::save_svg(self.engine.document(), idx, &path) {
+        match tracedraw_io::save_svg(self.engine.document(), idx, &path) {
             Ok(()) => self.status = format!("Exported {}", path.display()),
             Err(e) => self.status = format!("Export failed: {e}"),
         }
     }
 
     fn new_document(&mut self) {
-        let doc = traco_core::Document::default();
+        let doc = tracedraw_core::Document::default();
         self.page = doc.pages[0].id;
         self.engine.replace(doc);
         self.selection.clear();
@@ -188,7 +188,7 @@ impl App {
         }
     }
 
-    fn active_layer(&self) -> Option<traco_core::LayerId> {
+    fn active_layer(&self) -> Option<tracedraw_core::LayerId> {
         self.engine.document().page(self.page).ok().and_then(|p| p.layers.last()).map(|l| l.id)
     }
 
@@ -427,7 +427,7 @@ impl App {
         ui.heading("Objects");
         let doc = self.engine.document();
         let Ok(page) = doc.page(self.page) else { return };
-        let mut toggles: Vec<(traco_core::LayerId, bool)> = Vec::new();
+        let mut toggles: Vec<(tracedraw_core::LayerId, bool)> = Vec::new();
         let mut click: Option<ShapeId> = None;
         for layer in page.layers.iter().rev() {
             let mut vis = layer.visible;
@@ -477,7 +477,7 @@ impl App {
                 }
             }
             if ui.small_button("+").clicked() {
-                let size = self.engine.document().page(self.page).map(|p| p.size).unwrap_or(traco_core::document::paper::A4);
+                let size = self.engine.document().page(self.page).map(|p| p.size).unwrap_or(tracedraw_core::document::paper::A4);
                 self.run(Command::AddPage { name: None, size });
             }
             ui.separator();
@@ -530,7 +530,7 @@ impl App {
                                     } else if !self.selection.contains(&id) {
                                         self.selection = vec![id];
                                     }
-                                    self.drag = Drag::Move { last: p, total: traco_core::geometry::Vec2::ZERO };
+                                    self.drag = Drag::Move { last: p, total: tracedraw_core::geometry::Vec2::ZERO };
                                 }
                                 None => {
                                     if !mods.shift {
@@ -601,7 +601,7 @@ impl App {
         let doc = self.engine.document();
         let preview_offset = match &self.drag {
             Drag::Move { total, .. } => *total,
-            _ => traco_core::geometry::Vec2::ZERO,
+            _ => tracedraw_core::geometry::Vec2::ZERO,
         };
         if preview_offset.hypot() > 0.0 {
             let mut doc2 = doc.clone();
@@ -690,7 +690,7 @@ impl App {
             }
             // Nudge with arrows (the editor default 0.1 in = 2.54 mm; we use 1 mm).
             let nudge = if input.modifiers.shift { 10.0 } else { 1.0 };
-            let mut d = traco_core::geometry::Vec2::ZERO;
+            let mut d = tracedraw_core::geometry::Vec2::ZERO;
             if input.key_pressed(Key::ArrowLeft) {
                 d.x -= nudge;
             }
@@ -745,7 +745,7 @@ impl eframe::App for App {
         self.shortcuts(ctx);
 
         let title = format!(
-            "{}{} - Traco",
+            "{}{} - TraceDraw",
             if self.engine.is_dirty() { "*" } else { "" },
             self.file.as_ref().and_then(|p| p.file_name()).and_then(|n| n.to_str()).unwrap_or(&self.engine.document().title)
         );
