@@ -347,6 +347,9 @@ pub fn kind_name(k: &ShapeKind) -> String {
             height_px,
             ..
         } => format!("Bitmap {width_px} x {height_px} px"),
+        ShapeKind::ClipFrame { contents, .. } => {
+            format!("ClipFrame with {} object(s)", contents.len())
+        }
     }
 }
 

@@ -295,6 +295,8 @@ pub struct App {
     pub snap: crate::snap::SnapSettings,
     pub dialog: crate::ui::dialogs::Dialog,
     pub show_welcome: bool,
+    /// Object > ClipFrame > Place Inside Frame is waiting for a click on the frame.
+    pub pending_clip_frame: bool,
     pub show_guides: bool,
     pub selected_guide: Option<usize>,
     pub transform_values: [f64; 4],
@@ -395,6 +397,7 @@ impl App {
             snap: crate::snap::SnapSettings::default(),
             dialog: crate::ui::dialogs::Dialog::None,
             show_welcome: false,
+            pending_clip_frame: false,
             show_guides: true,
             selected_guide: None,
             transform_values: [0.0, 0.0, 100.0, 100.0],

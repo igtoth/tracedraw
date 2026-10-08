@@ -69,6 +69,11 @@ pub enum ShapeKind {
     },
     /// A group of child shapes.
     Group { children: Vec<Shape> },
+    /// ClipFrame: `contents` drawn clipped to the `frame` object's outline.
+    ClipFrame {
+        frame: Box<Shape>,
+        contents: Vec<Shape>,
+    },
     /// A bitmap, PNG-encoded, placed in `rect` (local space).
     Bitmap {
         rect: Rect,
@@ -235,6 +240,7 @@ impl Shape {
                 path
             }
             ShapeKind::Bitmap { rect, .. } => rect.to_path(0.01),
+            ShapeKind::ClipFrame { frame, .. } => frame.page_path(),
         }
     }
 

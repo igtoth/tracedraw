@@ -111,6 +111,16 @@ pub enum Command {
         shapes: Vec<ShapeId>,
         shadow: Option<Shadow>,
     },
+    /// Place objects inside a frame object (ClipFrame). The frame keeps its
+    /// id; the contents keep their page positions.
+    PlaceInside {
+        contents: Vec<ShapeId>,
+        frame: ShapeId,
+    },
+    /// Take the contents out of a ClipFrame, leaving the frame as a plain object.
+    ExtractContents {
+        clip: ShapeId,
+    },
     RenamePage {
         page: PageId,
         name: String,
@@ -170,6 +180,8 @@ impl Command {
             Command::SetLocked { .. } => "Unlock Object",
             Command::Combine { .. } => "Combine",
             Command::BreakApart { .. } => "Break Apart",
+            Command::PlaceInside { .. } => "ClipFrame",
+            Command::ExtractContents { .. } => "Extract Contents",
             Command::RenamePage { .. } => "Rename Page",
             Command::DuplicatePage { .. } => "Duplicate Page",
             Command::RenameLayer { .. } => "Rename Layer",
@@ -410,6 +422,52 @@ impl Command {
                     layer.shapes.insert(idx + k, piece);
                 }
             }
+            Command::PlaceInside { contents, frame } => {
+                if contents.contains(frame) {
+                    return Ok(());
+                }
+                doc.shape(*frame)?;
+                for id in contents {
+                    doc.shape(*id)?;
+                }
+                let mut inner = Vec::new();
+                for id in contents {
+                    let (lid, i) = doc.locate(*id)?;
+                    inner.push(doc.layer_mut(lid)?.shapes.remove(i));
+                }
+                let (flid, fi) = doc.locate(*frame)?;
+                let frame_shape = doc.layer_mut(flid)?.shapes.remove(fi);
+                let mut clip = Shape::new(
+                    *frame,
+                    ShapeKind::ClipFrame {
+                        frame: Box::new(frame_shape.clone()),
+                        contents: inner,
+                    },
+                );
+                clip.name = frame_shape.name.clone();
+                clip.opacity = frame_shape.opacity;
+                let target = &mut doc.layer_mut(flid)?.shapes;
+                target.insert(fi.min(target.len()), clip);
+            }
+            Command::ExtractContents { clip } => {
+                let (lid, i) = doc.locate(*clip)?;
+                let s = doc.layer_mut(lid)?.shapes.remove(i);
+                match s.kind {
+                    ShapeKind::ClipFrame { frame, contents } => {
+                        let layer = doc.layer_mut(lid)?;
+                        let mut f = *frame;
+                        f.id = *clip;
+                        layer.shapes.insert(i, f);
+                        for (k, c) in contents.into_iter().enumerate() {
+                            layer.shapes.insert(i + 1 + k, c);
+                        }
+                    }
+                    other => doc
+                        .layer_mut(lid)?
+                        .shapes
+                        .insert(i, Shape { kind: other, ..s }),
+                }
+            }
             Command::RenamePage { page, name } => doc.page_mut(*page)?.name = name.clone(),
             Command::DuplicatePage { page } => {
                 let idx = doc
@@ -602,6 +660,37 @@ mod tests {
         assert_eq!(copy.layers[0].shapes.len(), 1);
         assert_ne!(copy.layers[0].shapes[0].id, ia);
         assert_ne!(copy.layers[0].id, layer);
+    }
+
+    #[test]
+    fn clip_frame_place_and_extract() {
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        let a = rect(&mut doc, 0.0);
+        let b = rect(&mut doc, 5.0);
+        let (ia, ib) = (a.id, b.id);
+        Command::AddShape { layer, shape: a }
+            .apply(&mut doc)
+            .unwrap();
+        Command::AddShape { layer, shape: b }
+            .apply(&mut doc)
+            .unwrap();
+        Command::PlaceInside {
+            contents: vec![ia],
+            frame: ib,
+        }
+        .apply(&mut doc)
+        .unwrap();
+        assert_eq!(doc.layer(layer).unwrap().shapes.len(), 1);
+        assert!(matches!(
+            doc.shape(ib).unwrap().1.kind,
+            ShapeKind::ClipFrame { .. }
+        ));
+        Command::ExtractContents { clip: ib }
+            .apply(&mut doc)
+            .unwrap();
+        assert_eq!(doc.layer(layer).unwrap().shapes.len(), 2);
+        assert!(doc.shape(ia).is_ok());
     }
 
     #[test]

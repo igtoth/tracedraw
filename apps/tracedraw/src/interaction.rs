@@ -103,6 +103,31 @@ impl App {
             }
         }
 
+        if self.pending_clip_frame {
+            if response.clicked_by(PointerButton::Primary) {
+                self.pending_clip_frame = false;
+                if let Some(frame) = self.hit_test(p) {
+                    let contents: Vec<ShapeId> = self
+                        .selection
+                        .iter()
+                        .copied()
+                        .filter(|id| *id != frame)
+                        .collect();
+                    if contents.is_empty() {
+                        self.status = "Select the contents first, then choose the frame".into();
+                    } else {
+                        self.run(Command::PlaceInside { contents, frame });
+                        self.select(vec![frame]);
+                    }
+                } else {
+                    self.status = "ClipFrame cancelled".into();
+                }
+            }
+            if response.secondary_clicked() {
+                self.pending_clip_frame = false;
+            }
+            return;
+        }
         match self.tool {
             Tool::Pick => self.pick_input(response, p, screen, mods),
             Tool::FreeformPick => self.effects_input(response, p, mods),

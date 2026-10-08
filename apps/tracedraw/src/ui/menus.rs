@@ -224,7 +224,36 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
         ui.menu_button("Object", |ui| {
             let has = !app.selection.is_empty();
             todo(ui, "Insert", "");
-            todo(ui, "ClipFrame", "");
+            ui.menu_button("ClipFrame", |ui| {
+                let is_clip = app.selected_shapes().iter().any(|s| {
+                    matches!(
+                        s.kind,
+                        tracedraw_core::document::ShapeKind::ClipFrame { .. }
+                    )
+                });
+                if item(ui, "Place Inside Frame...", "", has) {
+                    app.pending_clip_frame = true;
+                    app.status = "Click the object to use as the frame".into();
+                }
+                if item(ui, "Extract Contents", "", is_clip) {
+                    let clips: Vec<_> = app
+                        .selected_shapes()
+                        .iter()
+                        .filter(|s| {
+                            matches!(
+                                s.kind,
+                                tracedraw_core::document::ShapeKind::ClipFrame { .. }
+                            )
+                        })
+                        .map(|s| s.id)
+                        .collect();
+                    for c in clips {
+                        app.run(tracedraw_core::Command::ExtractContents { clip: c });
+                    }
+                }
+                todo(ui, "Edit ClipFrame", "");
+                todo(ui, "Lock Contents To ClipFrame", "");
+            });
             todo(ui, "Symbol", "");
             ui.separator();
             ui.menu_button("Transformations", |ui| {

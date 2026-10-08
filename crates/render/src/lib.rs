@@ -98,6 +98,52 @@ impl Renderer<'_> {
             }
             return;
         }
+        if let ShapeKind::ClipFrame { frame, contents } = &shape.kind {
+            // Frame's fill first, contents clipped to the frame, then the frame's outline.
+            let mut frame_fill_only = (**frame).clone();
+            frame_fill_only.stroke = None;
+            frame_fill_only.opacity = shape.opacity;
+            self.draw_shape(&frame_fill_only, transform);
+            let frame_path = self.screen * (transform * frame.page_path());
+            if let Some(sk_frame) = to_sk_path(&frame_path) {
+                let (w, h) = (self.pixmap.width(), self.pixmap.height());
+                if let (Some(mut layer), Some(mut mask)) =
+                    (Pixmap::new(w, h), tiny_skia::Mask::new(w, h))
+                {
+                    mask.fill_path(&sk_frame, FillRule::EvenOdd, true, Transform::identity());
+                    {
+                        let mut sub = Renderer {
+                            pixmap: &mut layer,
+                            screen: self.screen,
+                            zoom: self.zoom,
+                            wireframe: self.wireframe,
+                        };
+                        for c in contents {
+                            sub.draw_shape(c, transform);
+                        }
+                    }
+                    let pp = tiny_skia::PixmapPaint {
+                        opacity: shape.opacity.clamp(0.0, 1.0) as f32,
+                        ..Default::default()
+                    };
+                    self.pixmap.draw_pixmap(
+                        0,
+                        0,
+                        layer.as_ref(),
+                        &pp,
+                        Transform::identity(),
+                        Some(&mask),
+                    );
+                }
+            }
+            if frame.stroke.is_some() {
+                let mut outline_only = (**frame).clone();
+                outline_only.fill = Fill::None;
+                outline_only.opacity = shape.opacity;
+                self.draw_shape(&outline_only, transform);
+            }
+            return;
+        }
         let local = shape.local_path();
         if local.elements().is_empty() {
             return;
