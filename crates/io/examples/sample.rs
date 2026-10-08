@@ -39,11 +39,7 @@ fn main() {
             rect: Rect::new(110.0, 180.0, 190.0, 240.0),
             arc: None,
         },
-        Fill::Linear {
-            from: Color::cmyk_pct(0.0, 100.0, 100.0, 0.0),
-            to: Color::WHITE,
-            angle: 45.0,
-        },
+        Fill::linear(Color::cmyk_pct(0.0, 100.0, 100.0, 0.0), Color::WHITE, 45.0),
         Some(Stroke::hairline(Color::BLACK)),
         Affine::IDENTITY,
     );

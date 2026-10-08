@@ -83,38 +83,94 @@ fn write_shape(
     let fill_attr = match &shape.fill {
         Fill::None => "fill=\"none\"".to_string(),
         Fill::Solid(c) => format!("fill=\"{}\"", c.to_hex()),
-        Fill::Linear { from, to, angle } => {
+        Fill::Fountain(f) => {
             *next_grad += 1;
             let id = format!("grad{}", *next_grad);
-            // Angle: 0 = left to right, CCW positive, in a Y-down space.
-            let a = angle.to_radians();
-            let (x1, y1, x2, y2) = (
-                bounds.x0 + bounds.width() * (0.5 - a.cos() / 2.0),
-                bounds.y0 + bounds.height() * (0.5 + a.sin() / 2.0),
-                bounds.x0 + bounds.width() * (0.5 + a.cos() / 2.0),
-                bounds.y0 + bounds.height() * (0.5 - a.sin() / 2.0),
-            );
-            let _ = writeln!(
-                defs,
-                "    <linearGradient id=\"{id}\" gradientUnits=\"userSpaceOnUse\" x1=\"{x1}\" y1=\"{y1}\" x2=\"{x2}\" y2=\"{y2}\">\n      <stop offset=\"0\" stop-color=\"{}\"/>\n      <stop offset=\"1\" stop-color=\"{}\"/>\n    </linearGradient>",
-                from.to_hex(),
-                to.to_hex()
-            );
+            let mut stops = f.stops.clone();
+            stops.sort_by(|a, b| {
+                a.pos
+                    .partial_cmp(&b.pos)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+            let stop_xml: String = stops
+                .iter()
+                .map(|st| {
+                    format!(
+                        "      <stop offset=\"{}\" stop-color=\"{}\"/>\n",
+                        fmt(st.pos),
+                        st.color.to_hex()
+                    )
+                })
+                .collect();
+            match f.kind {
+                tracedraw_core::FountainKind::Linear
+                | tracedraw_core::FountainKind::Conical
+                | tracedraw_core::FountainKind::Square => {
+                    // SVG has no conical/square gradients; they become linear.
+                    let a = f.angle.to_radians();
+                    let (x1, y1, x2, y2) = (
+                        bounds.x0 + bounds.width() * (0.5 - a.cos() / 2.0),
+                        bounds.y0 + bounds.height() * (0.5 + a.sin() / 2.0),
+                        bounds.x0 + bounds.width() * (0.5 + a.cos() / 2.0),
+                        bounds.y0 + bounds.height() * (0.5 - a.sin() / 2.0),
+                    );
+                    let _ = writeln!(defs, "    <linearGradient id=\"{id}\" gradientUnits=\"userSpaceOnUse\" x1=\"{x1}\" y1=\"{y1}\" x2=\"{x2}\" y2=\"{y2}\">\n{stop_xml}    </linearGradient>");
+                }
+                tracedraw_core::FountainKind::Radial => {
+                    let cx = bounds.center().x + f.offset.x * bounds.width() / 2.0;
+                    let cy = bounds.center().y - f.offset.y * bounds.height() / 2.0;
+                    let r = bounds.width().max(bounds.height()) / 2.0 * std::f64::consts::SQRT_2;
+                    let _ = writeln!(defs, "    <radialGradient id=\"{id}\" gradientUnits=\"userSpaceOnUse\" cx=\"{cx}\" cy=\"{cy}\" r=\"{r}\">\n{stop_xml}    </radialGradient>");
+                }
+            }
             format!("fill=\"url(#{id})\"")
         }
-        Fill::Radial { from, to, offset } => {
+        Fill::Pattern(tracedraw_core::Pattern::TwoColor {
+            tile,
+            front,
+            back,
+            size_mm,
+        }) => {
             *next_grad += 1;
-            let id = format!("grad{}", *next_grad);
-            let cx = bounds.center().x + offset.x * bounds.width() / 2.0;
-            let cy = bounds.center().y - offset.y * bounds.height() / 2.0;
-            let r = bounds.width().max(bounds.height()) / 2.0;
-            let _ = writeln!(
-                defs,
-                "    <radialGradient id=\"{id}\" gradientUnits=\"userSpaceOnUse\" cx=\"{cx}\" cy=\"{cy}\" r=\"{r}\">\n      <stop offset=\"0\" stop-color=\"{}\"/>\n      <stop offset=\"1\" stop-color=\"{}\"/>\n    </radialGradient>",
-                from.to_hex(),
-                to.to_hex()
-            );
+            let id = format!("pat{}", *next_grad);
+            // Rasterize the tile at 32 px into a data URI.
+            let n = 32u32;
+            let mut rgba = Vec::with_capacity((n * n * 4) as usize);
+            for y in 0..n {
+                for x in 0..n {
+                    let u = (x as f64 + 0.5) / n as f64;
+                    let v = 1.0 - (y as f64 + 0.5) / n as f64;
+                    let c = if tile.front(u, v) { *front } else { *back };
+                    let [r, g, b] = c.to_rgb8();
+                    rgba.extend_from_slice(&[r, g, b, 255]);
+                }
+            }
+            let png = encode_png(n, n, &rgba);
+            use base64::Engine;
+            let b64 = base64::engine::general_purpose::STANDARD.encode(png);
+            let _ = writeln!(defs, "    <pattern id=\"{id}\" patternUnits=\"userSpaceOnUse\" width=\"{s}\" height=\"{s}\"><image width=\"{s}\" height=\"{s}\" href=\"data:image/png;base64,{b64}\"/></pattern>", s = fmt(*size_mm));
             format!("fill=\"url(#{id})\"")
+        }
+        Fill::Pattern(tracedraw_core::Pattern::Bitmap {
+            png,
+            width_px,
+            height_px,
+            size_mm,
+        }) => {
+            *next_grad += 1;
+            let id = format!("pat{}", *next_grad);
+            use base64::Engine;
+            let b64 = base64::engine::general_purpose::STANDARD.encode(png);
+            let h = size_mm * *height_px as f64 / (*width_px).max(1) as f64;
+            let _ = writeln!(defs, "    <pattern id=\"{id}\" patternUnits=\"userSpaceOnUse\" width=\"{}\" height=\"{}\"><image width=\"{}\" height=\"{}\" href=\"data:image/png;base64,{b64}\"/></pattern>", fmt(*size_mm), fmt(h), fmt(*size_mm), fmt(h));
+            format!("fill=\"url(#{id})\"")
+        }
+        Fill::Texture(t) => {
+            // Approximate with the average of the two colours.
+            format!(
+                "fill=\"{}\"",
+                tracedraw_core::style::lerp_color(t.color_a, t.color_b, 0.5).to_hex()
+            )
         }
     };
 
@@ -195,6 +251,22 @@ pub fn path_data(path: &tracedraw_core::BezPath) -> String {
         }
     }
     d
+}
+
+/// Minimal PNG encoder (RGBA8) via tiny-skia.
+pub fn encode_png(w: u32, h: u32, rgba: &[u8]) -> Vec<u8> {
+    let mut pm = match tiny_skia::Pixmap::new(w, h) {
+        Some(p) => p,
+        None => return Vec::new(),
+    };
+    for (i, px) in pm.pixels_mut().iter_mut().enumerate() {
+        let o = i * 4;
+        if o + 3 < rgba.len() {
+            *px = tiny_skia::ColorU8::from_rgba(rgba[o], rgba[o + 1], rgba[o + 2], rgba[o + 3])
+                .premultiply();
+        }
+    }
+    pm.encode_png().unwrap_or_default()
 }
 
 fn escape(s: &str) -> String {

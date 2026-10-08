@@ -718,11 +718,7 @@ impl App {
                     let angle = (current - start).atan2().to_degrees();
                     self.run(Command::SetFill {
                         shapes: vec![shape],
-                        fill: Fill::Linear {
-                            from,
-                            to: Color::WHITE,
-                            angle,
-                        },
+                        fill: Fill::linear(from, Color::WHITE, angle),
                     });
                 }
             }

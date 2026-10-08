@@ -7,7 +7,7 @@ use std::fmt::Write as _;
 use tracedraw_core::{
     document::{Shape, ShapeKind},
     geometry::{Affine, PathEl},
-    Color, Document, Fill, LineCap, LineJoin,
+    Color, Document, Fill, FountainKind, LineCap, LineJoin,
 };
 
 const MM_PT: f64 = 72.0 / 25.4;
@@ -24,6 +24,14 @@ impl Pdf {
     fn add_str(&mut self, s: String) -> usize {
         self.add(s.into_bytes())
     }
+    fn add_image(&mut self, w: u32, h: u32, rgb: &[u8]) -> usize {
+        let data = flate(rgb);
+        self.stream(
+            &format!("/Type /XObject /Subtype /Image /Width {w} /Height {h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode"),
+            &data,
+        )
+    }
+
     fn stream(&mut self, dict: &str, data: &[u8]) -> usize {
         let mut v = format!("<< {dict} /Length {} >>\nstream\n", data.len()).into_bytes();
         v.extend_from_slice(data);
@@ -220,43 +228,78 @@ impl PageWriter<'_> {
                         "f*\n"
                     });
             }
-            Fill::Linear { from, to, angle } => {
-                let a = angle.to_radians();
-                let c = bounds.center();
-                let half = (bounds.width() * a.cos().abs() + bounds.height() * a.sin().abs()) / 2.0;
-                let (x0, y0) = (
-                    (c.x - half * a.cos()) * MM_PT,
-                    (c.y - half * a.sin()) * MM_PT,
-                );
-                let (x1, y1) = (
-                    (c.x + half * a.cos()) * MM_PT,
-                    (c.y + half * a.sin()) * MM_PT,
-                );
+            Fill::Fountain(ft) => {
+                let func = stitching_function(ft);
+                let shading = match ft.kind {
+                    FountainKind::Radial => {
+                        let c = bounds.center();
+                        let cx = (c.x + ft.offset.x * bounds.width() / 2.0) * MM_PT;
+                        let cy = (c.y + ft.offset.y * bounds.height() / 2.0) * MM_PT;
+                        let r = bounds.width().max(bounds.height()) / 2.0
+                            * std::f64::consts::SQRT_2
+                            * MM_PT;
+                        format!(
+                            "<< /ShadingType 3 /ColorSpace /DeviceRGB /Coords [{} {} 0 {} {} {}] /Function {} /Extend [true true] >>",
+                            f(cx), f(cy), f(cx), f(cy), f(r), func
+                        )
+                    }
+                    // Conical and square fountains have no PDF shading type;
+                    // they are approximated by a linear axis at the same angle.
+                    _ => {
+                        let a = ft.angle.to_radians();
+                        let c = bounds.center();
+                        let half = (bounds.width() * a.cos().abs()
+                            + bounds.height() * a.sin().abs())
+                            / 2.0;
+                        let (x0, y0) = (
+                            (c.x - half * a.cos()) * MM_PT,
+                            (c.y - half * a.sin()) * MM_PT,
+                        );
+                        let (x1, y1) = (
+                            (c.x + half * a.cos()) * MM_PT,
+                            (c.y + half * a.sin()) * MM_PT,
+                        );
+                        format!(
+                            "<< /ShadingType 2 /ColorSpace /DeviceRGB /Coords [{} {} {} {}] /Function {} /Extend [true true] >>",
+                            f(x0), f(y0), f(x1), f(y1), func
+                        )
+                    }
+                };
                 let name = format!("Sh{}", self.shadings.len());
-                let id = self.pdf.add_str(format!(
-                    "<< /ShadingType 2 /ColorSpace /DeviceRGB /Coords [{} {} {} {}] /Function << /FunctionType 2 /Domain [0 1] /C0 {} /C1 {} /N 1 >> /Extend [true true] >>",
-                    f(x0), f(y0), f(x1), f(y1), rgb_array(*from), rgb_array(*to)
-                ));
+                let id = self.pdf.add_str(shading);
                 self.shadings.push((name.clone(), id));
                 self.content.push_str("q\n");
                 self.path_ops(&path);
                 let _ = writeln!(self.content, "W* n /{name} sh\nQ");
             }
-            Fill::Radial { from, to, offset } => {
-                let c = bounds.center();
-                let cx = (c.x + offset.x * bounds.width() / 2.0) * MM_PT;
-                let cy = (c.y + offset.y * bounds.height() / 2.0) * MM_PT;
-                let r =
-                    bounds.width().max(bounds.height()) / 2.0 * std::f64::consts::SQRT_2 * MM_PT;
-                let name = format!("Sh{}", self.shadings.len());
-                let id = self.pdf.add_str(format!(
-                    "<< /ShadingType 3 /ColorSpace /DeviceRGB /Coords [{} {} 0 {} {} {}] /Function << /FunctionType 2 /Domain [0 1] /C0 {} /C1 {} /N 1 >> /Extend [true true] >>",
-                    f(cx), f(cy), f(cx), f(cy), f(r), rgb_array(*from), rgb_array(*to)
-                ));
-                self.shadings.push((name.clone(), id));
-                self.content.push_str("q\n");
-                self.path_ops(&path);
-                let _ = writeln!(self.content, "W* n /{name} sh\nQ");
+            // Patterns and textures are rasterised into an image clipped by
+            // the path; the renderer produces the same pixels as the screen.
+            Fill::Pattern(_) | Fill::Texture(_) => {
+                if let Some((png, w, h)) = rasterise_fill(shape, bounds) {
+                    if let Some(rgb) = decode_png_rgb(&png) {
+                        let name = format!("Im{}", self.images.len());
+                        let id = self.pdf.add_image(w, h, &rgb);
+                        self.images.push((name.clone(), id));
+                        self.content.push_str("q\n");
+                        self.path_ops(&path);
+                        let _ = writeln!(
+                            self.content,
+                            "W* n {} 0 0 {} {} {} cm /{name} Do\nQ",
+                            f(bounds.width() * MM_PT),
+                            f(bounds.height() * MM_PT),
+                            f(bounds.x0 * MM_PT),
+                            f(bounds.y0 * MM_PT)
+                        );
+                    }
+                } else {
+                    let _ = writeln!(
+                        self.content,
+                        "{}",
+                        color_op(shape.fill.preview_color().unwrap_or(Color::BLACK), true)
+                    );
+                    self.path_ops(&path);
+                    self.content.push_str("f*\n");
+                }
             }
         }
 
@@ -290,9 +333,75 @@ impl PageWriter<'_> {
             }
             self.path_ops(&path);
             self.content.push_str("S\n");
+            // Arrowheads are filled with the outline colour, in page space.
+            let local = shape.page_path();
+            for head in tracedraw_core::arrowhead_paths(&local, s) {
+                let _ = writeln!(self.content, "{}", color_op(s.color, true));
+                self.path_ops(&(transform * head));
+                self.content.push_str("f\n");
+            }
         }
         self.content.push_str("Q\n");
     }
+}
+
+/// PDF stitching function over the fountain's stops (type 3 wrapping type 2
+/// segments), or a single type 2 function for two stops.
+fn stitching_function(ft: &tracedraw_core::Fountain) -> String {
+    let mut stops: Vec<(f64, Color)> = ft
+        .stops
+        .iter()
+        .map(|s| (s.pos.clamp(0.0, 1.0), s.color))
+        .collect();
+    stops.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    if stops.is_empty() {
+        stops.push((0.0, Color::BLACK));
+    }
+    if stops.len() == 1 {
+        stops.push((1.0, stops[0].1));
+    }
+    if stops.len() == 2 {
+        return format!(
+            "<< /FunctionType 2 /Domain [0 1] /C0 {} /C1 {} /N 1 >>",
+            rgb_array(stops[0].1),
+            rgb_array(stops[1].1)
+        );
+    }
+    // Normalise to [0,1]: pad the first and last stop to the ends.
+    let first = stops[0].0;
+    let last = stops[stops.len() - 1].0;
+    let span = (last - first).max(1e-6);
+    let mut funcs = String::new();
+    let mut bounds = String::new();
+    let mut encode = String::new();
+    for w in stops.windows(2) {
+        let _ = write!(
+            funcs,
+            "<< /FunctionType 2 /Domain [0 1] /C0 {} /C1 {} /N 1 >> ",
+            rgb_array(w[0].1),
+            rgb_array(w[1].1)
+        );
+        encode.push_str("0 1 ");
+    }
+    for s in &stops[1..stops.len() - 1] {
+        let _ = write!(bounds, "{} ", f((s.0 - first) / span));
+    }
+    format!(
+        "<< /FunctionType 3 /Domain [0 1] /Functions [{}] /Bounds [{}] /Encode [{}] >>",
+        funcs.trim_end(),
+        bounds.trim_end(),
+        encode.trim_end()
+    )
+}
+
+/// Rasterise a pattern or texture fill over the shape bounds at 150 dpi.
+fn rasterise_fill(
+    shape: &Shape,
+    bounds: tracedraw_core::geometry::Rect,
+) -> Option<(Vec<u8>, u32, u32)> {
+    let pm = tracedraw_render::render_fill_image(&shape.fill, bounds, 150.0)?;
+    let (w, h) = (pm.width(), pm.height());
+    Some((pm.encode_png().ok()?, w, h))
 }
 
 fn decode_png_rgb(png: &[u8]) -> Option<Vec<u8>> {
@@ -390,6 +499,72 @@ mod tests {
     use tracedraw_core::geometry::Rect;
 
     #[test]
+    fn multi_stop_fountain_uses_stitching_function() {
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        let id = doc.ids_mut().shape();
+        let mut s = Shape::new(
+            id,
+            ShapeKind::Rect {
+                rect: Rect::new(10.0, 10.0, 60.0, 40.0),
+                radius: 0.0,
+            },
+        );
+        s.fill = Fill::Fountain(tracedraw_core::Fountain {
+            kind: FountainKind::Linear,
+            stops: vec![
+                tracedraw_core::Stop {
+                    pos: 0.0,
+                    color: Color::rgb8(255, 0, 0),
+                },
+                tracedraw_core::Stop {
+                    pos: 0.3,
+                    color: Color::rgb8(0, 255, 0),
+                },
+                tracedraw_core::Stop {
+                    pos: 1.0,
+                    color: Color::rgb8(0, 0, 255),
+                },
+            ],
+            angle: 90.0,
+            offset: tracedraw_core::geometry::Point::ZERO,
+            edge_pad: 0.0,
+        });
+        doc.layer_mut(layer).unwrap().shapes.push(s);
+        let text = String::from_utf8_lossy(&document_to_pdf(&doc)).to_string();
+        assert!(text.contains("/FunctionType 3"));
+        assert!(text.contains("/Bounds [0.3]"));
+    }
+
+    #[test]
+    fn pattern_fill_becomes_image() {
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        let id = doc.ids_mut().shape();
+        let mut s = Shape::new(
+            id,
+            ShapeKind::Ellipse {
+                rect: Rect::new(10.0, 10.0, 60.0, 40.0),
+                arc: None,
+            },
+        );
+        s.fill = Fill::Pattern(tracedraw_core::Pattern::TwoColor {
+            tile: tracedraw_core::PatternTile::Dots,
+            front: Color::BLACK,
+            back: Color::WHITE,
+            size_mm: 5.0,
+        });
+        s.stroke = Some(tracedraw_core::Stroke {
+            end_arrow: tracedraw_core::Arrowhead::Arrow,
+            ..tracedraw_core::Stroke::new(Color::BLACK, 1.0)
+        });
+        doc.layer_mut(layer).unwrap().shapes.push(s);
+        let text = String::from_utf8_lossy(&document_to_pdf(&doc)).to_string();
+        assert!(text.contains("/Subtype /Image"));
+        assert!(text.contains("/Im0 "));
+    }
+
+    #[test]
     fn writes_a_parseable_pdf() {
         let mut doc = Document::default();
         let layer = doc.pages[0].layers[0].id;
@@ -401,11 +576,7 @@ mod tests {
                 radius: 0.0,
             },
         );
-        s.fill = Fill::Linear {
-            from: Color::cmyk_pct(100.0, 0.0, 0.0, 0.0),
-            to: Color::WHITE,
-            angle: 0.0,
-        };
+        s.fill = Fill::linear(Color::cmyk_pct(100.0, 0.0, 0.0, 0.0), Color::WHITE, 0.0);
         s.opacity = 0.5;
         doc.layer_mut(layer).unwrap().shapes.push(s);
         let bytes = document_to_pdf(&doc);

@@ -85,7 +85,7 @@ pub enum ShapeKind {
 }
 
 /// PNG bytes as base64 in the JSON format.
-mod png_bytes {
+pub mod png_bytes {
     use base64::Engine;
     use serde::{Deserialize, Deserializer, Serializer};
     pub fn serialize<S: Serializer>(v: &[u8], s: S) -> Result<S::Ok, S::Error> {

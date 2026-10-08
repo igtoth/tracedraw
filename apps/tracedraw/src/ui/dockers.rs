@@ -4,7 +4,10 @@ use crate::app::{App, DockerTab};
 use crate::theme::Tokens;
 use crate::tools::Tool;
 use egui::Ui;
-use tracedraw_core::{document::ShapeKind, Color, Command, Fill, Stroke};
+use tracedraw_core::{
+    document::ShapeKind, Arrowhead, Color, Command, Fill, Fountain, FountainKind, Pattern,
+    PatternTile, Stop, Stroke, Texture, TextureKind,
+};
 
 /// The vertical strip of docker tabs on the right edge of the window.
 pub fn tab_strip(app: &mut App, ui: &mut Ui) {
@@ -200,11 +203,15 @@ fn fill_editor(ui: &mut Ui, fill: &mut Fill) -> bool {
     let mut kind = match fill {
         Fill::None => 0,
         Fill::Solid(_) => 1,
-        Fill::Linear { .. } => 2,
-        Fill::Radial { .. } => 3,
+        Fill::Fountain(_) => 2,
+        Fill::Pattern(_) => 3,
+        Fill::Texture(_) => 4,
     };
-    ui.horizontal(|ui| {
-        for (i, n) in ["None", "Uniform", "Linear", "Radial"].iter().enumerate() {
+    ui.horizontal_wrapped(|ui| {
+        for (i, n) in ["None", "Uniform", "Fountain", "Pattern", "Texture"]
+            .iter()
+            .enumerate()
+        {
             if ui.selectable_label(kind == i, *n).clicked() && kind != i {
                 kind = i;
                 changed = true;
@@ -212,45 +219,240 @@ fn fill_editor(ui: &mut Ui, fill: &mut Fill) -> bool {
         }
     });
     if changed {
-        let base = match fill {
-            Fill::Solid(c) => *c,
-            Fill::Linear { from, .. } | Fill::Radial { from, .. } => *from,
-            Fill::None => Color::cmyk_pct(0.0, 0.0, 0.0, 20.0),
-        };
+        let base = fill
+            .preview_color()
+            .unwrap_or(Color::cmyk_pct(0.0, 0.0, 0.0, 20.0));
         *fill = match kind {
             0 => Fill::None,
             1 => Fill::Solid(base),
-            2 => Fill::Linear {
-                from: base,
-                to: Color::WHITE,
-                angle: 0.0,
-            },
-            _ => Fill::Radial {
-                from: base,
-                to: Color::WHITE,
-                offset: tracedraw_core::geometry::Point::ZERO,
-            },
+            2 => Fill::linear(base, Color::WHITE, 0.0),
+            3 => Fill::Pattern(Pattern::TwoColor {
+                tile: PatternTile::Checker,
+                front: base,
+                back: Color::WHITE,
+                size_mm: 10.0,
+            }),
+            _ => Fill::Texture(Texture {
+                kind: TextureKind::Clouds,
+                color_a: base,
+                color_b: Color::WHITE,
+                scale: 20.0,
+                seed: 1,
+            }),
         };
     }
     match fill {
         Fill::None => {}
         Fill::Solid(c) => changed |= color_row(ui, "Colour", c),
-        Fill::Linear { from, to, angle } => {
-            changed |= color_row(ui, "From", from);
-            changed |= color_row(ui, "To", to);
+        Fill::Fountain(f) => changed |= fountain_editor(ui, f),
+        Fill::Pattern(p) => changed |= pattern_editor(ui, p),
+        Fill::Texture(t) => changed |= texture_editor(ui, t),
+    }
+    changed
+}
+
+fn fountain_editor(ui: &mut Ui, f: &mut Fountain) -> bool {
+    let mut changed = false;
+    ui.horizontal(|ui| {
+        ui.label("Type");
+        for (k, n) in [
+            (FountainKind::Linear, "Linear"),
+            (FountainKind::Radial, "Radial"),
+            (FountainKind::Conical, "Conical"),
+            (FountainKind::Square, "Square"),
+        ] {
+            if ui.selectable_label(f.kind == k, n).clicked() && f.kind != k {
+                f.kind = k;
+                changed = true;
+            }
+        }
+    });
+    // Stops: position and colour, add after, remove (keep at least two).
+    let mut remove = None;
+    let mut insert = None;
+    let n = f.stops.len();
+    for i in 0..n {
+        let stop = &mut f.stops[i];
+        ui.horizontal(|ui| {
+            let [r, g, b] = stop.color.to_rgb8();
+            let mut rgb = [r, g, b];
+            if ui.color_edit_button_srgb(&mut rgb).changed() {
+                stop.color = Color::rgb8(rgb[0], rgb[1], rgb[2]);
+                changed = true;
+            }
+            let mut pct = stop.pos * 100.0;
+            if ui
+                .add(
+                    egui::DragValue::new(&mut pct)
+                        .range(0.0..=100.0)
+                        .suffix("%")
+                        .speed(1.0),
+                )
+                .changed()
+            {
+                stop.pos = pct / 100.0;
+                changed = true;
+            }
+            if ui.small_button("+").on_hover_text("Add stop").clicked() {
+                insert = Some(i);
+            }
+            if n > 2 && ui.small_button("x").on_hover_text("Remove stop").clicked() {
+                remove = Some(i);
+            }
+        });
+    }
+    if let Some(i) = insert {
+        let next = f.stops.get(i + 1).map(|s| s.pos).unwrap_or(1.0);
+        let pos = (f.stops[i].pos + next) / 2.0;
+        let color = f.color_at(pos);
+        f.stops.insert(i + 1, Stop { pos, color });
+        changed = true;
+    }
+    if let Some(i) = remove {
+        f.stops.remove(i);
+        changed = true;
+    }
+    if matches!(
+        f.kind,
+        FountainKind::Linear | FountainKind::Conical | FountainKind::Square
+    ) {
+        changed |= ui
+            .add(
+                egui::Slider::new(&mut f.angle, -180.0..=180.0)
+                    .text("angle")
+                    .suffix("°"),
+            )
+            .drag_stopped();
+    }
+    if !matches!(f.kind, FountainKind::Linear) {
+        ui.horizontal(|ui| {
+            ui.label("Centre offset");
             changed |= ui
                 .add(
-                    egui::Slider::new(angle, -180.0..=180.0)
-                        .text("angle")
-                        .suffix("°"),
+                    egui::DragValue::new(&mut f.offset.x)
+                        .range(-1.0..=1.0)
+                        .speed(0.01),
+                )
+                .changed();
+            changed |= ui
+                .add(
+                    egui::DragValue::new(&mut f.offset.y)
+                        .range(-1.0..=1.0)
+                        .speed(0.01),
+                )
+                .changed();
+        });
+    }
+    let mut pad = f.edge_pad * 100.0;
+    if ui
+        .add(
+            egui::Slider::new(&mut pad, 0.0..=49.0)
+                .text("edge pad")
+                .suffix("%"),
+        )
+        .drag_stopped()
+    {
+        f.edge_pad = pad / 100.0;
+        changed = true;
+    }
+    changed
+}
+
+fn pattern_editor(ui: &mut Ui, p: &mut Pattern) -> bool {
+    let mut changed = false;
+    match p {
+        Pattern::TwoColor {
+            tile,
+            front,
+            back,
+            size_mm,
+        } => {
+            egui::ComboBox::from_label("Tile")
+                .selected_text(tile.name())
+                .show_ui(ui, |ui| {
+                    for t in PatternTile::ALL {
+                        if ui.selectable_label(*tile == t, t.name()).clicked() {
+                            *tile = t;
+                            changed = true;
+                        }
+                    }
+                });
+            changed |= color_row(ui, "Front", front);
+            changed |= color_row(ui, "Back", back);
+            changed |= ui
+                .add(
+                    egui::Slider::new(size_mm, 1.0..=100.0)
+                        .text("tile size mm")
+                        .logarithmic(true),
                 )
                 .drag_stopped();
         }
-        Fill::Radial { from, to, .. } => {
-            changed |= color_row(ui, "From", from);
-            changed |= color_row(ui, "To", to);
+        Pattern::Bitmap {
+            width_px,
+            height_px,
+            size_mm,
+            ..
+        } => {
+            ui.label(format!("Bitmap tile {width_px} x {height_px} px"));
+            changed |= ui
+                .add(
+                    egui::Slider::new(size_mm, 1.0..=200.0)
+                        .text("tile size mm")
+                        .logarithmic(true),
+                )
+                .drag_stopped();
         }
     }
+    changed
+}
+
+fn texture_editor(ui: &mut Ui, t: &mut Texture) -> bool {
+    let mut changed = false;
+    ui.horizontal(|ui| {
+        for (k, n) in [
+            (TextureKind::Clouds, "Clouds"),
+            (TextureKind::Marble, "Marble"),
+            (TextureKind::Noise, "Noise"),
+            (TextureKind::Wood, "Wood"),
+        ] {
+            if ui.selectable_label(t.kind == k, n).clicked() && t.kind != k {
+                t.kind = k;
+                changed = true;
+            }
+        }
+    });
+    changed |= color_row(ui, "Colour A", &mut t.color_a);
+    changed |= color_row(ui, "Colour B", &mut t.color_b);
+    changed |= ui
+        .add(
+            egui::Slider::new(&mut t.scale, 1.0..=200.0)
+                .text("scale mm")
+                .logarithmic(true),
+        )
+        .drag_stopped();
+    ui.horizontal(|ui| {
+        ui.label("Seed");
+        changed |= ui.add(egui::DragValue::new(&mut t.seed)).changed();
+        if ui.small_button("Regenerate").clicked() {
+            t.seed = t.seed.wrapping_add(1);
+            changed = true;
+        }
+    });
+    changed
+}
+
+fn arrow_combo(ui: &mut Ui, label: &str, a: &mut Arrowhead) -> bool {
+    let mut changed = false;
+    egui::ComboBox::from_id_salt(label)
+        .selected_text(format!("{label}: {}", a.name()))
+        .show_ui(ui, |ui| {
+            for k in Arrowhead::ALL {
+                if ui.selectable_label(*a == k, k.name()).clicked() {
+                    *a = k;
+                    changed = true;
+                }
+            }
+        });
     changed
 }
 
@@ -303,6 +505,34 @@ fn outline_editor(ui: &mut Ui, stroke: &mut Option<Stroke>) -> bool {
                 }
             }
         });
+        ui.horizontal(|ui| {
+            changed |= arrow_combo(ui, "Start", &mut s.start_arrow);
+            changed |= arrow_combo(ui, "End", &mut s.end_arrow);
+        });
+        ui.horizontal(|ui| {
+            ui.label("Dash");
+            for (d, n) in [
+                (vec![], "Solid"),
+                (vec![4.0, 2.0], "Dashed"),
+                (vec![1.0, 1.0], "Dotted"),
+                (vec![6.0, 2.0, 1.0, 2.0], "Dash dot"),
+            ] {
+                if ui.selectable_label(s.dash == d, n).clicked() {
+                    s.dash = d;
+                    changed = true;
+                }
+            }
+        });
+        changed |= ui
+            .add(egui::Slider::new(&mut s.stretch, 0.1..=1.0).text("nib stretch"))
+            .drag_stopped();
+        changed |= ui
+            .add(
+                egui::Slider::new(&mut s.nib_angle, -90.0..=90.0)
+                    .text("nib angle")
+                    .suffix("°"),
+            )
+            .drag_stopped();
         changed |= ui.checkbox(&mut s.behind_fill, "Behind fill").changed();
         changed |= ui
             .checkbox(&mut s.scale_with_object, "Scale with object")

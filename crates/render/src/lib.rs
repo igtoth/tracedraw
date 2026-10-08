@@ -277,19 +277,27 @@ impl Renderer<'_> {
         }
 
         if !self.wireframe {
-            if let Some(paint) = self.fill_paint(&shape.fill, &page_path) {
-                let rule = match &shape.kind {
-                    ShapeKind::Text { .. } => FillRule::Winding,
-                    _ => FillRule::EvenOdd,
-                };
-                self.pixmap
-                    .fill_path(&sk, &paint, rule, Transform::identity(), None);
-            }
+            let rule = match &shape.kind {
+                ShapeKind::Text { .. } => FillRule::Winding,
+                _ => FillRule::EvenOdd,
+            };
+            self.draw_fill(&shape.fill, &page_path, &sk, rule);
         }
         if let Some(stroke) = &shape.stroke {
             let (paint, sk_stroke) = self.stroke_paint(stroke, transform);
             self.pixmap
                 .stroke_path(&sk, &paint, &sk_stroke, Transform::identity(), None);
+            for head in tracedraw_core::style::arrowhead_paths(&page_path, stroke) {
+                if let Some(hp) = to_sk_path(&(self.screen * head)) {
+                    self.pixmap.fill_path(
+                        &hp,
+                        &paint,
+                        FillRule::Winding,
+                        Transform::identity(),
+                        None,
+                    );
+                }
+            }
         } else if self.wireframe {
             let mut paint = Paint::default();
             paint.set_color_rgba8(0, 0, 0, 255);
@@ -303,55 +311,202 @@ impl Renderer<'_> {
         }
     }
 
-    fn fill_paint(&self, fill: &Fill, page_path: &BezPath) -> Option<Paint<'static>> {
+    /// Fill a screen-space path with any fill type.
+    fn draw_fill(&mut self, fill: &Fill, page_path: &BezPath, sk: &SkPath, rule: FillRule) {
         let mut paint = Paint::default();
         paint.anti_alias = true;
         match fill {
-            Fill::None => return None,
-            Fill::Solid(c) => paint.set_color(sk_color(*c)),
-            Fill::Linear { from, to, angle } => {
-                let b = bbox(page_path);
-                let a = angle.to_radians();
-                let (cx, cy) = (b.center().x, b.center().y);
-                let half = (b.width() * a.cos().abs() + b.height() * a.sin().abs()) / 2.0;
-                let p0 = self.screen * Point::new(cx - half * a.cos(), cy - half * a.sin());
-                let p1 = self.screen * Point::new(cx + half * a.cos(), cy + half * a.sin());
-                let shader = LinearGradient::new(
-                    tiny_skia::Point::from_xy(p0.x as f32, p0.y as f32),
-                    tiny_skia::Point::from_xy(p1.x as f32, p1.y as f32),
-                    vec![
-                        GradientStop::new(0.0, sk_color(*from)),
-                        GradientStop::new(1.0, sk_color(*to)),
-                    ],
-                    SpreadMode::Pad,
-                    Transform::identity(),
-                )?;
-                paint.shader = shader;
+            Fill::None => {}
+            Fill::Solid(c) => {
+                paint.set_color(sk_color(*c));
+                self.pixmap
+                    .fill_path(sk, &paint, rule, Transform::identity(), None);
             }
-            Fill::Radial { from, to, offset } => {
+            Fill::Fountain(f) => {
                 let b = bbox(page_path);
-                let c = Point::new(
-                    b.center().x + offset.x * b.width() / 2.0,
-                    b.center().y + offset.y * b.height() / 2.0,
-                );
-                let radius = (b.width().max(b.height()) / 2.0) * std::f64::consts::SQRT_2;
-                let sc = self.screen * c;
-                let shader = RadialGradient::new(
-                    tiny_skia::Point::from_xy(sc.x as f32, sc.y as f32),
-                    0.0,
-                    tiny_skia::Point::from_xy(sc.x as f32, sc.y as f32),
-                    (radius * self.zoom) as f32,
-                    vec![
-                        GradientStop::new(0.0, sk_color(*from)),
-                        GradientStop::new(1.0, sk_color(*to)),
-                    ],
-                    SpreadMode::Pad,
-                    Transform::identity(),
-                )?;
-                paint.shader = shader;
+                let stops: Vec<GradientStop> = sorted_stops(f)
+                    .iter()
+                    .map(|s| GradientStop::new(pad_pos(f, s.pos) as f32, sk_color(s.color)))
+                    .collect();
+                match f.kind {
+                    tracedraw_core::FountainKind::Linear => {
+                        let a = f.angle.to_radians();
+                        let (cx, cy) = (b.center().x, b.center().y);
+                        let half = (b.width() * a.cos().abs() + b.height() * a.sin().abs()) / 2.0;
+                        let p0 = self.screen * Point::new(cx - half * a.cos(), cy - half * a.sin());
+                        let p1 = self.screen * Point::new(cx + half * a.cos(), cy + half * a.sin());
+                        if let Some(sh) = LinearGradient::new(
+                            tiny_skia::Point::from_xy(p0.x as f32, p0.y as f32),
+                            tiny_skia::Point::from_xy(p1.x as f32, p1.y as f32),
+                            stops,
+                            SpreadMode::Pad,
+                            Transform::identity(),
+                        ) {
+                            paint.shader = sh;
+                            self.pixmap
+                                .fill_path(sk, &paint, rule, Transform::identity(), None);
+                        }
+                    }
+                    tracedraw_core::FountainKind::Radial => {
+                        let c = Point::new(
+                            b.center().x + f.offset.x * b.width() / 2.0,
+                            b.center().y + f.offset.y * b.height() / 2.0,
+                        );
+                        let radius = (b.width().max(b.height()) / 2.0) * std::f64::consts::SQRT_2;
+                        let sc = self.screen * c;
+                        if let Some(sh) = RadialGradient::new(
+                            tiny_skia::Point::from_xy(sc.x as f32, sc.y as f32),
+                            0.0,
+                            tiny_skia::Point::from_xy(sc.x as f32, sc.y as f32),
+                            (radius * self.zoom) as f32,
+                            stops,
+                            SpreadMode::Pad,
+                            Transform::identity(),
+                        ) {
+                            paint.shader = sh;
+                            self.pixmap
+                                .fill_path(sk, &paint, rule, Transform::identity(), None);
+                        }
+                    }
+                    tracedraw_core::FountainKind::Conical
+                    | tracedraw_core::FountainKind::Square => {
+                        let f2 = f.clone();
+                        self.fill_procedural(page_path, sk, rule, move |u, v| {
+                            let dx = u - 0.5 - f2.offset.x / 2.0;
+                            let dy = v - 0.5 - f2.offset.y / 2.0;
+                            let t = match f2.kind {
+                                tracedraw_core::FountainKind::Conical => {
+                                    let a = dy.atan2(dx) - f2.angle.to_radians();
+                                    let a =
+                                        a.rem_euclid(std::f64::consts::TAU) / std::f64::consts::TAU;
+                                    if a < 0.5 {
+                                        a * 2.0
+                                    } else {
+                                        2.0 - a * 2.0
+                                    }
+                                }
+                                _ => (dx.abs().max(dy.abs()) * 2.0).min(1.0),
+                            };
+                            f2.color_at(t)
+                        });
+                    }
+                }
+            }
+            Fill::Pattern(p) => self.fill_pattern(p, sk, rule),
+            Fill::Texture(t) => {
+                let b = bbox(page_path);
+                let t2 = t.clone();
+                self.fill_procedural(page_path, sk, rule, move |u, v| {
+                    let x = u * b.width() / t2.scale.max(0.1);
+                    let y = v * b.height() / t2.scale.max(0.1);
+                    let n = texture_value(t2.kind, x, y, t2.seed);
+                    tracedraw_core::style::lerp_color(t2.color_a, t2.color_b, n as f32)
+                });
             }
         }
-        Some(paint)
+    }
+
+    /// Fill with a per-pixel function over the path's bounding box
+    /// (u, v in 0..1, v up).
+    fn fill_procedural(
+        &mut self,
+        page_path: &BezPath,
+        sk: &SkPath,
+        rule: FillRule,
+        f: impl Fn(f64, f64) -> Color,
+    ) {
+        use tracedraw_core::geometry::Shape as _;
+        let b = bbox(page_path);
+        let sb = (self.screen * b.to_path(0.01)).bounding_box();
+        let w = (sb.width().ceil() as u32).clamp(1, 4096);
+        let h = (sb.height().ceil() as u32).clamp(1, 4096);
+        let Some(mut pm) = Pixmap::new(w, h) else {
+            return;
+        };
+        let px = pm.pixels_mut();
+        for y in 0..h {
+            for x in 0..w {
+                let u = (x as f64 + 0.5) / w as f64;
+                let v = 1.0 - (y as f64 + 0.5) / h as f64;
+                let [r, g, bb] = f(u, v).to_rgb8();
+                px[(y * w + x) as usize] =
+                    tiny_skia::ColorU8::from_rgba(r, g, bb, 255).premultiply();
+            }
+        }
+        let mut paint = Paint::default();
+        paint.anti_alias = true;
+        paint.shader = tiny_skia::Pattern::new(
+            pm.as_ref(),
+            SpreadMode::Pad,
+            tiny_skia::FilterQuality::Bilinear,
+            1.0,
+            Transform::from_translate(sb.x0 as f32, sb.y0 as f32),
+        );
+        self.pixmap
+            .fill_path(sk, &paint, rule, Transform::identity(), None);
+    }
+
+    fn fill_pattern(&mut self, p: &tracedraw_core::Pattern, sk: &SkPath, rule: FillRule) {
+        let mut paint = Paint::default();
+        paint.anti_alias = true;
+        match p {
+            tracedraw_core::Pattern::TwoColor {
+                tile,
+                front,
+                back,
+                size_mm,
+            } => {
+                let px = ((size_mm * self.zoom).round() as u32).clamp(2, 1024);
+                let Some(mut pm) = Pixmap::new(px, px) else {
+                    return;
+                };
+                let [fr, fg, fb] = front.to_rgb8();
+                let [br, bg, bb] = back.to_rgb8();
+                let data = pm.pixels_mut();
+                for y in 0..px {
+                    for x in 0..px {
+                        let u = (x as f64 + 0.5) / px as f64;
+                        let v = 1.0 - (y as f64 + 0.5) / px as f64;
+                        let c = if tile.front(u, v) {
+                            (fr, fg, fb)
+                        } else {
+                            (br, bg, bb)
+                        };
+                        data[(y * px + x) as usize] =
+                            tiny_skia::ColorU8::from_rgba(c.0, c.1, c.2, 255).premultiply();
+                    }
+                }
+                paint.shader = tiny_skia::Pattern::new(
+                    pm.as_ref(),
+                    SpreadMode::Repeat,
+                    tiny_skia::FilterQuality::Nearest,
+                    1.0,
+                    Transform::identity(),
+                );
+                self.pixmap
+                    .fill_path(sk, &paint, rule, Transform::identity(), None);
+            }
+            tracedraw_core::Pattern::Bitmap {
+                png,
+                width_px,
+                size_mm,
+                ..
+            } => {
+                let Ok(img) = Pixmap::decode_png(png) else {
+                    return;
+                };
+                let scale = (size_mm * self.zoom) as f32 / (*width_px).max(1) as f32;
+                paint.shader = tiny_skia::Pattern::new(
+                    img.as_ref(),
+                    SpreadMode::Repeat,
+                    tiny_skia::FilterQuality::Bilinear,
+                    1.0,
+                    Transform::from_scale(scale, scale),
+                );
+                self.pixmap
+                    .fill_path(sk, &paint, rule, Transform::identity(), None);
+            }
+        }
     }
 
     fn stroke_paint(&self, stroke: &Stroke, transform: Affine) -> (Paint<'static>, SkStroke) {
@@ -457,6 +612,74 @@ fn blur_pass(src: &[u8], dst: &mut [u8], w: usize, h: usize, r: usize, horizonta
     }
 }
 
+fn sorted_stops(f: &tracedraw_core::Fountain) -> Vec<tracedraw_core::Stop> {
+    let mut v = f.stops.clone();
+    v.sort_by(|a, b| {
+        a.pos
+            .partial_cmp(&b.pos)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    if v.len() < 2 {
+        let c = v.first().map(|s| s.color).unwrap_or(Color::BLACK);
+        v = vec![
+            tracedraw_core::Stop { pos: 0.0, color: c },
+            tracedraw_core::Stop { pos: 1.0, color: c },
+        ];
+    }
+    v
+}
+
+fn pad_pos(f: &tracedraw_core::Fountain, pos: f64) -> f64 {
+    (f.edge_pad + pos * (1.0 - 2.0 * f.edge_pad)).clamp(0.0, 1.0)
+}
+
+/// Cheap value noise in 0..1 for texture fills.
+fn noise(x: f64, y: f64, seed: u32) -> f64 {
+    fn hash(ix: i64, iy: i64, seed: u32) -> f64 {
+        let mut h = (ix as u64).wrapping_mul(0x9E3779B97F4A7C15)
+            ^ (iy as u64).wrapping_mul(0xC2B2AE3D27D4EB4F)
+            ^ (seed as u64).wrapping_mul(0x165667B19E3779F9);
+        h ^= h >> 31;
+        h = h.wrapping_mul(0x9E3779B97F4A7C15);
+        h ^= h >> 29;
+        (h & 0xFFFF) as f64 / 65535.0
+    }
+    let (ix, iy) = (x.floor() as i64, y.floor() as i64);
+    let (fx, fy) = (x - x.floor(), y - y.floor());
+    let (sx, sy) = (fx * fx * (3.0 - 2.0 * fx), fy * fy * (3.0 - 2.0 * fy));
+    let a = hash(ix, iy, seed);
+    let b = hash(ix + 1, iy, seed);
+    let c = hash(ix, iy + 1, seed);
+    let d = hash(ix + 1, iy + 1, seed);
+    let top = a + (b - a) * sx;
+    let bot = c + (d - c) * sx;
+    top + (bot - top) * sy
+}
+
+fn fbm(x: f64, y: f64, seed: u32) -> f64 {
+    let mut v = 0.0;
+    let mut amp = 0.5;
+    let mut f = 1.0;
+    for _ in 0..5 {
+        v += amp * noise(x * f, y * f, seed);
+        amp *= 0.5;
+        f *= 2.0;
+    }
+    v
+}
+
+pub fn texture_value(kind: tracedraw_core::TextureKind, x: f64, y: f64, seed: u32) -> f64 {
+    match kind {
+        tracedraw_core::TextureKind::Clouds => fbm(x, y, seed).clamp(0.0, 1.0),
+        tracedraw_core::TextureKind::Marble => ((x + 4.0 * fbm(x, y, seed)) * 2.0).sin().abs(),
+        tracedraw_core::TextureKind::Noise => noise(x * 8.0, y * 8.0, seed),
+        tracedraw_core::TextureKind::Wood => {
+            let r = ((x - 0.5).powi(2) + (y * 0.2).powi(2)).sqrt() * 6.0 + fbm(x, y, seed) * 1.5;
+            r.fract()
+        }
+    }
+}
+
 fn bbox(p: &BezPath) -> Rect {
     use tracedraw_core::geometry::Shape as _;
     p.bounding_box()
@@ -486,6 +709,35 @@ pub fn to_sk_path(path: &BezPath) -> Option<SkPath> {
         }
     }
     pb.finish()
+}
+
+/// Rasterise a fill over `bounds` (page mm) at `dpi`, y up mapped to image
+/// rows top-down. Used by exporters that have no native pattern or
+/// texture support (PDF, SVG fallback).
+pub fn render_fill_image(fill: &Fill, bounds: Rect, dpi: f64) -> Option<Pixmap> {
+    let zoom = dpi / 25.4;
+    let w = (bounds.width() * zoom).ceil().max(1.0) as u32;
+    let h = (bounds.height() * zoom).ceil().max(1.0) as u32;
+    if w > 8192 || h > 8192 {
+        return None;
+    }
+    let mut pixmap = Pixmap::new(w, h)?;
+    let view = ViewTransform {
+        zoom,
+        origin_x: -bounds.x0 * zoom,
+        origin_y: bounds.y1 * zoom,
+    };
+    let screen = view.affine();
+    let page_path = tracedraw_core::geometry::rect_path(bounds, 0.0);
+    let sk = to_sk_path(&(screen * page_path.clone()))?;
+    let mut r = Renderer {
+        pixmap: &mut pixmap,
+        screen,
+        zoom,
+        wireframe: false,
+    };
+    r.draw_fill(fill, &page_path, &sk, FillRule::Winding);
+    Some(pixmap)
 }
 
 /// Render a whole page to an RGBA image at `dpi`, white background (exports, thumbnails, tests).
@@ -528,6 +780,91 @@ pub fn render_page_image(doc: &Document, page: PageId, dpi: f64) -> Option<Pixma
 mod tests {
     use super::*;
     use tracedraw_core::document::{Shape, ShapeKind};
+    use tracedraw_core::{
+        Fountain, FountainKind, Pattern, PatternTile, Stop, Texture, TextureKind,
+    };
+
+    fn px(pm: &Pixmap, x: u32, y: u32) -> (u8, u8, u8) {
+        let p = pm.pixel(x, y).unwrap().demultiply();
+        (p.red(), p.green(), p.blue())
+    }
+
+    #[test]
+    fn linear_fountain_three_stops_passes_through_middle_colour() {
+        let fill = Fill::Fountain(Fountain {
+            kind: FountainKind::Linear,
+            stops: vec![
+                Stop {
+                    pos: 0.0,
+                    color: Color::rgb8(0, 0, 0),
+                },
+                Stop {
+                    pos: 0.5,
+                    color: Color::rgb8(255, 0, 0),
+                },
+                Stop {
+                    pos: 1.0,
+                    color: Color::rgb8(255, 255, 255),
+                },
+            ],
+            angle: 0.0,
+            offset: Point::ZERO,
+            edge_pad: 0.0,
+        });
+        let pm = render_fill_image(&fill, Rect::new(0.0, 0.0, 100.0, 10.0), 25.4).unwrap();
+        assert_eq!(pm.width(), 100);
+        let (r, g, b) = px(&pm, 50, 5);
+        assert!(r > 240 && g < 20 && b < 20, "middle {r} {g} {b}");
+        let (r, _, _) = px(&pm, 2, 5);
+        assert!(r < 20);
+        let (_, g, _) = px(&pm, 97, 5);
+        assert!(g > 230);
+    }
+
+    #[test]
+    fn conical_fountain_differs_around_centre() {
+        let fill = Fill::Fountain(Fountain::two(
+            FountainKind::Conical,
+            Color::rgb8(0, 0, 255),
+            Color::rgb8(255, 255, 0),
+            0.0,
+        ));
+        let pm = render_fill_image(&fill, Rect::new(0.0, 0.0, 100.0, 100.0), 25.4).unwrap();
+        let a = px(&pm, 90, 50);
+        let b = px(&pm, 10, 50);
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn checker_pattern_alternates() {
+        let fill = Fill::Pattern(Pattern::TwoColor {
+            tile: PatternTile::Checker,
+            front: Color::rgb8(0, 0, 0),
+            back: Color::rgb8(255, 255, 255),
+            size_mm: 20.0,
+        });
+        let pm = render_fill_image(&fill, Rect::new(0.0, 0.0, 40.0, 40.0), 25.4).unwrap();
+        let a = px(&pm, 5, 5);
+        let b = px(&pm, 15, 5);
+        assert_ne!(a.0, b.0, "checker cells should differ");
+        assert!(a.0 == 0 || a.0 == 255);
+    }
+
+    #[test]
+    fn texture_is_deterministic_for_seed() {
+        let t = Fill::Texture(Texture {
+            kind: TextureKind::Clouds,
+            color_a: Color::rgb8(0, 0, 0),
+            color_b: Color::rgb8(255, 255, 255),
+            scale: 10.0,
+            seed: 7,
+        });
+        let a = render_fill_image(&t, Rect::new(0.0, 0.0, 30.0, 30.0), 25.4).unwrap();
+        let b = render_fill_image(&t, Rect::new(0.0, 0.0, 30.0, 30.0), 25.4).unwrap();
+        assert_eq!(a.data(), b.data());
+        let v: std::collections::HashSet<u8> = (0..30).map(|x| px(&a, x, 15).0).collect();
+        assert!(v.len() > 3, "texture should vary");
+    }
 
     #[test]
     fn star_fill_covers_center_and_not_corner() {

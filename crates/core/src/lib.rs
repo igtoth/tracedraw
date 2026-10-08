@@ -27,7 +27,10 @@ pub use document::{
 pub use engine::Engine;
 pub use geometry::{Affine, BezPath, Point, Rect, Size, Vec2};
 pub use id::{LayerId, PageId, ShapeId};
-pub use style::{Fill, LineCap, LineJoin, Stroke};
+pub use style::{
+    arrowhead_paths, Arrowhead, Fill, Fountain, FountainKind, LineCap, LineJoin, Pattern,
+    PatternTile, Stop, Stroke, Texture, TextureKind,
+};
 
 /// Convenience result type for the core crate.
 pub type Result<T> = std::result::Result<T, Error>;

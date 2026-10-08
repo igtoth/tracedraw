@@ -330,11 +330,7 @@ impl<'a> Ctx<'a> {
                     r.skip(if v >= 13 { 6 } else { 4 });
                 }
                 match (colors.first(), colors.last()) {
-                    (Some(a), Some(b)) => Fill::Linear {
-                        from: *a,
-                        to: *b,
-                        angle,
-                    },
+                    (Some(a), Some(b)) => Fill::linear(*a, *b, angle),
                     _ => Fill::None,
                 }
             }

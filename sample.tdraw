@@ -1,0 +1,416 @@
+{
+  "title": "Sample",
+  "pages": [
+    {
+      "id": 1,
+      "name": "Page 1",
+      "size": {
+        "width": 210.0,
+        "height": 297.0
+      },
+      "layers": [
+        {
+          "id": 2,
+          "name": "Layer 1",
+          "visible": true,
+          "printable": true,
+          "locked": false,
+          "shapes": [
+            {
+              "id": 3,
+              "name": null,
+              "kind": {
+                "type": "rect",
+                "rect": {
+                  "x0": 20.0,
+                  "y0": 180.0,
+                  "x1": 90.0,
+                  "y1": 240.0
+                },
+                "radius": 5.0
+              },
+              "transform": [
+                1.0,
+                0.0,
+                0.0,
+                1.0,
+                0.0,
+                0.0
+              ],
+              "fill": {
+                "fill": "solid",
+                "model": "cmyk",
+                "c": 1.0,
+                "m": 0.0,
+                "y": 0.0,
+                "k": 0.0
+              },
+              "stroke": {
+                "color": {
+                  "model": "rgb",
+                  "r": 0.0,
+                  "g": 0.0,
+                  "b": 0.0
+                },
+                "width": 0.5,
+                "cap": "butt",
+                "join": "miter",
+                "dash": [],
+                "scale_with_object": false,
+                "behind_fill": false,
+                "start_arrow": "none",
+                "end_arrow": "none",
+                "stretch": 1.0,
+                "nib_angle": 0.0
+              },
+              "visible": true,
+              "locked": false,
+              "opacity": 1.0,
+              "shadow": null
+            },
+            {
+              "id": 4,
+              "name": null,
+              "kind": {
+                "type": "ellipse",
+                "rect": {
+                  "x0": 110.0,
+                  "y0": 180.0,
+                  "x1": 190.0,
+                  "y1": 240.0
+                },
+                "arc": null
+              },
+              "transform": [
+                1.0,
+                0.0,
+                0.0,
+                1.0,
+                0.0,
+                0.0
+              ],
+              "fill": {
+                "fill": "fountain",
+                "kind": "linear",
+                "stops": [
+                  {
+                    "pos": 0.0,
+                    "color": {
+                      "model": "cmyk",
+                      "c": 0.0,
+                      "m": 1.0,
+                      "y": 1.0,
+                      "k": 0.0
+                    }
+                  },
+                  {
+                    "pos": 1.0,
+                    "color": {
+                      "model": "rgb",
+                      "r": 1.0,
+                      "g": 1.0,
+                      "b": 1.0
+                    }
+                  }
+                ],
+                "angle": 45.0,
+                "offset": {
+                  "x": 0.0,
+                  "y": 0.0
+                },
+                "edge_pad": 0.0
+              },
+              "stroke": {
+                "color": {
+                  "model": "rgb",
+                  "r": 0.0,
+                  "g": 0.0,
+                  "b": 0.0
+                },
+                "width": 0.0762,
+                "cap": "butt",
+                "join": "miter",
+                "dash": [],
+                "scale_with_object": false,
+                "behind_fill": false,
+                "start_arrow": "none",
+                "end_arrow": "none",
+                "stretch": 1.0,
+                "nib_angle": 0.0
+              },
+              "visible": true,
+              "locked": false,
+              "opacity": 1.0,
+              "shadow": null
+            },
+            {
+              "id": 5,
+              "name": null,
+              "kind": {
+                "type": "polygon",
+                "rect": {
+                  "x0": 20.0,
+                  "y0": 80.0,
+                  "x1": 90.0,
+                  "y1": 150.0
+                },
+                "points": 5,
+                "sharpness": 0.5
+              },
+              "transform": [
+                0.955336489125606,
+                0.29552020666133955,
+                -0.29552020666133955,
+                0.955336489125606,
+                36.44131686414572,
+                -11.117307615818362
+              ],
+              "fill": {
+                "fill": "solid",
+                "model": "cmyk",
+                "c": 0.0,
+                "m": 0.0,
+                "y": 1.0,
+                "k": 0.0
+              },
+              "stroke": {
+                "color": {
+                  "model": "cmyk",
+                  "c": 0.0,
+                  "m": 0.0,
+                  "y": 0.0,
+                  "k": 1.0
+                },
+                "width": 1.0,
+                "cap": "butt",
+                "join": "miter",
+                "dash": [],
+                "scale_with_object": false,
+                "behind_fill": false,
+                "start_arrow": "none",
+                "end_arrow": "none",
+                "stretch": 1.0,
+                "nib_angle": 0.0
+              },
+              "visible": true,
+              "locked": false,
+              "opacity": 1.0,
+              "shadow": null
+            },
+            {
+              "id": 6,
+              "name": null,
+              "kind": {
+                "type": "path",
+                "path": [
+                  {
+                    "MoveTo": {
+                      "x": 110.0,
+                      "y": 90.0
+                    }
+                  },
+                  {
+                    "CurveTo": [
+                      {
+                        "x": 113.33333333333333,
+                        "y": 100.0
+                      },
+                      {
+                        "x": 121.66666666666667,
+                        "y": 150.83333333333334
+                      },
+                      {
+                        "x": 130.0,
+                        "y": 150.0
+                      }
+                    ]
+                  },
+                  {
+                    "CurveTo": [
+                      {
+                        "x": 138.33333333333334,
+                        "y": 149.16666666666666
+                      },
+                      {
+                        "x": 150.0,
+                        "y": 86.66666666666667
+                      },
+                      {
+                        "x": 160.0,
+                        "y": 85.0
+                      }
+                    ]
+                  },
+                  {
+                    "CurveTo": [
+                      {
+                        "x": 170.0,
+                        "y": 83.33333333333333
+                      },
+                      {
+                        "x": 185.0,
+                        "y": 130.83333333333334
+                      },
+                      {
+                        "x": 190.0,
+                        "y": 140.0
+                      }
+                    ]
+                  }
+                ],
+                "closed": false
+              },
+              "transform": [
+                1.0,
+                0.0,
+                0.0,
+                1.0,
+                0.0,
+                0.0
+              ],
+              "fill": {
+                "fill": "none"
+              },
+              "stroke": {
+                "color": {
+                  "model": "cmyk",
+                  "c": 1.0,
+                  "m": 1.0,
+                  "y": 0.0,
+                  "k": 0.0
+                },
+                "width": 1.5,
+                "cap": "butt",
+                "join": "miter",
+                "dash": [],
+                "scale_with_object": false,
+                "behind_fill": false,
+                "start_arrow": "none",
+                "end_arrow": "none",
+                "stretch": 1.0,
+                "nib_angle": 0.0
+              },
+              "visible": true,
+              "locked": false,
+              "opacity": 1.0,
+              "shadow": null
+            },
+            {
+              "id": 7,
+              "name": null,
+              "kind": {
+                "type": "text",
+                "spans": [
+                  {
+                    "text": "TraceDraw",
+                    "font_family": "Arial",
+                    "size_pt": 36.0,
+                    "bold": true,
+                    "italic": false
+                  }
+                ],
+                "origin": {
+                  "x": 20.0,
+                  "y": 40.0
+                },
+                "frame": null,
+                "align": "left"
+              },
+              "transform": [
+                1.0,
+                0.0,
+                0.0,
+                1.0,
+                0.0,
+                0.0
+              ],
+              "fill": {
+                "fill": "solid",
+                "model": "rgb",
+                "r": 0.0,
+                "g": 0.0,
+                "b": 0.0
+              },
+              "stroke": null,
+              "visible": true,
+              "locked": false,
+              "opacity": 1.0,
+              "shadow": null
+            },
+            {
+              "id": 8,
+              "name": null,
+              "kind": {
+                "type": "rect",
+                "rect": {
+                  "x0": 60.0,
+                  "y0": 25.0,
+                  "x1": 110.0,
+                  "y1": 60.0
+                },
+                "radius": 3.0
+              },
+              "transform": [
+                1.0,
+                0.0,
+                0.0,
+                1.0,
+                0.0,
+                0.0
+              ],
+              "fill": {
+                "fill": "solid",
+                "model": "cmyk",
+                "c": 1.0,
+                "m": 0.0,
+                "y": 0.0,
+                "k": 0.0
+              },
+              "stroke": null,
+              "visible": true,
+              "locked": false,
+              "opacity": 0.5,
+              "shadow": null
+            },
+            {
+              "id": 9,
+              "name": null,
+              "kind": {
+                "type": "bitmap",
+                "rect": {
+                  "x0": 130.0,
+                  "y0": 20.0,
+                  "x1": 190.0,
+                  "y1": 65.0
+                },
+                "width_px": 64,
+                "height_px": 48,
+                "png": "iVBORw0KGgoAAAANSUhEUgAAAEAAAAAwCAYAAAChS3wfAAAAWklEQVR4nO3QQQ3AMADEsDw63mPeAjlHCgGf+u+pdv+aDgAAAE0HAACApgMAAEDTAQAAoOkAAADQdAAAAGg6AAAANB0AAACaDgAAAE0HAACApgMAAEDTAVgHeMqrBCcS62reAAAAAElFTkSuQmCC"
+              },
+              "transform": [
+                0.9800665778412416,
+                -0.19866933079506122,
+                0.19866933079506122,
+                0.9800665778412416,
+                -5.154764347991232,
+                32.62429665787765
+              ],
+              "fill": {
+                "fill": "none"
+              },
+              "stroke": null,
+              "visible": true,
+              "locked": false,
+              "opacity": 1.0,
+              "shadow": null
+            }
+          ]
+        }
+      ],
+      "guides": []
+    }
+  ],
+  "ids": {
+    "next": 9
+  }
+}

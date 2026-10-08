@@ -1234,9 +1234,7 @@ pub fn fill_preview_color(fill: &Fill) -> Option<egui::Color32> {
     match fill {
         Fill::None => None,
         Fill::Solid(c) => Some(crate::canvas::to_color32(*c)),
-        Fill::Linear { from, .. } | Fill::Radial { from, .. } => {
-            Some(crate::canvas::to_color32(*from))
-        }
+        other => other.preview_color().map(crate::canvas::to_color32),
     }
 }
 
@@ -1244,8 +1242,17 @@ pub fn fill_description(fill: &Fill) -> String {
     match fill {
         Fill::None => "None".into(),
         Fill::Solid(c) => color_description(*c),
-        Fill::Linear { .. } => "Linear fountain".into(),
-        Fill::Radial { .. } => "Radial fountain".into(),
+        Fill::Fountain(f) => match f.kind {
+            tracedraw_core::FountainKind::Linear => "Linear fountain".into(),
+            tracedraw_core::FountainKind::Radial => "Radial fountain".into(),
+            tracedraw_core::FountainKind::Conical => "Conical fountain".into(),
+            tracedraw_core::FountainKind::Square => "Square fountain".into(),
+        },
+        Fill::Pattern(tracedraw_core::Pattern::TwoColor { tile, .. }) => {
+            format!("Two-colour pattern ({})", tile.name())
+        }
+        Fill::Pattern(tracedraw_core::Pattern::Bitmap { .. }) => "Bitmap pattern".into(),
+        Fill::Texture(_) => "Texture fill".into(),
     }
 }
 
