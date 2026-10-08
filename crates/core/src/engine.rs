@@ -164,6 +164,7 @@ mod tests {
             id,
             ShapeKind::Ellipse {
                 rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+                arc: None,
             },
         );
         eng.run(&Command::AddShape { layer, shape }).unwrap();
