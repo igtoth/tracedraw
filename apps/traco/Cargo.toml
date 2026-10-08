@@ -1,0 +1,21 @@
+[package]
+name = "traco"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Traco: an open-source vector illustration editor"
+
+[[bin]]
+name = "traco"
+path = "src/main.rs"
+
+[dependencies]
+traco-core.workspace = true
+traco-cdr.workspace = true
+traco-io.workspace = true
+kurbo.workspace = true
+eframe.workspace = true
+egui.workspace = true
+rfd.workspace = true
+log.workspace = true
+env_logger.workspace = true

@@ -1,0 +1,13 @@
+[package]
+name = "traco-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Headless Traco: inspect .cdr files and convert documents"
+
+[dependencies]
+traco-core.workspace = true
+traco-cdr.workspace = true
+traco-io.workspace = true
+env_logger.workspace = true
+log.workspace = true
