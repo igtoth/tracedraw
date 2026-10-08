@@ -19,12 +19,20 @@ does not exist yet. See `docs/roadmap.md`.
   streams, version detection, and best-effort parsing of pages, layers,
   rectangles, ellipses, curves, solid and fountain fills and outlines.
   **Not yet validated against real files**, see `docs/cdr-format.md`.
-- Desktop app (egui) laid out like the editor: menu bar, standard toolbar,
-  context-sensitive property bar, toolbox with flyouts and the vendor shortcuts,
-  rulers, colour palette, dockers (Properties, Objects, Hints), page
-  navigator and status bar. Working tools: Pick (move, scale, rotate),
-  Shape (node drag), Zoom, Pan, Freehand, Bezier/Polyline, Rectangle,
-  Ellipse, Polygon/Star, Text, Eyedropper, Interactive Fill, Eraser.
+- Rendering: CPU rasterizer (tiny-skia) with correct fills, fountain
+  fills, outlines with caps/joins/dashes, uniform transparency, drop
+  shadows, bitmaps and anti-aliasing. Text uses the system's fonts
+  (fontdb + rustybuzz) and becomes real outlines.
+- Desktop app (egui) laid out like the editor 2019: menu bar, standard
+  toolbar, context-sensitive property bar, toolbox with flyouts and the vendor
+  shortcuts, rulers, guidelines, snapping, colour palette, dockers
+  (Properties, Objects, Hints, Transformations), page navigator, scrollbars
+  and status bar. Working tools: Pick (move, scale, rotate), Shape (full
+  node editing), Zoom, Pan, Freehand, Bezier/Pen, Polyline, Rectangle,
+  Ellipse (pie, arc), Polygon/Star, Text (artistic and paragraph),
+  Drop Shadow, Transparency, Eyedropper, Interactive Fill, Eraser.
+  Align and distribute, transformations, shaping (weld, trim,
+  intersect...), combine, break apart, lock, PDF and SVG export.
   Status per tool and menu in `docs/parity.md`.
 
 ## Build and run
