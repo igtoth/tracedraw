@@ -112,9 +112,13 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
         });
         ui.menu_button("View", |ui| {
             todo(ui, "Simple Wireframe", "");
-            todo(ui, "Wireframe", "");
+            if ui.radio(app.wireframe, "Wireframe").clicked() {
+                app.wireframe = true;
+            }
             todo(ui, "Draft", "");
-            todo(ui, "Normal", "");
+            if ui.radio(!app.wireframe, "Normal").clicked() {
+                app.wireframe = false;
+            }
             todo(ui, "Enhanced", "");
             todo(ui, "Pixels", "");
             ui.separator();

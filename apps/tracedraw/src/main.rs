@@ -6,6 +6,7 @@
 mod app;
 mod canvas;
 mod interaction;
+mod raster;
 mod theme;
 mod tools;
 mod ui;
@@ -13,6 +14,7 @@ mod view;
 
 fn main() -> eframe::Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    tracedraw_text::install();
     let open_path = std::env::args().nth(1).map(std::path::PathBuf::from);
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()

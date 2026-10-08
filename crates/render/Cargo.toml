@@ -1,0 +1,11 @@
+[package]
+name = "tracedraw-render"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "CPU rasterizer for TraceDraw documents (tiny-skia)"
+
+[dependencies]
+tracedraw-core.workspace = true
+tiny-skia.workspace = true
+log.workspace = true

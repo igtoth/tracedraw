@@ -7,9 +7,9 @@ use crate::tools::Tool;
 use crate::view::View;
 use egui::{epaint, Color32, Painter, Pos2, Rect as ERect, Stroke as EStroke};
 use tracedraw_core::{
-    document::{Shape, ShapeKind},
+    document::ShapeKind,
     geometry::{Affine, BezPath, PathEl, Point, Rect},
-    Color, Document, Fill,
+    Color, Document,
 };
 
 pub fn to_color32(c: Color) -> Color32 {
@@ -76,87 +76,6 @@ fn seg_dist(a: Point, b: Point, p: Point) -> f64 {
     (p - (a + ab * t)).hypot()
 }
 
-fn fill_color(fill: &Fill) -> Option<Color32> {
-    match fill {
-        Fill::None => None,
-        Fill::Solid(c) => Some(to_color32(*c)),
-        Fill::Linear { from, to, .. } | Fill::Radial { from, to, .. } => {
-            let a = to_color32(*from);
-            let b = to_color32(*to);
-            Some(Color32::from_rgb(
-                ((a.r() as u16 + b.r() as u16) / 2) as u8,
-                ((a.g() as u16 + b.g() as u16) / 2) as u8,
-                ((a.b() as u16 + b.b() as u16) / 2) as u8,
-            ))
-        }
-    }
-}
-
-pub fn draw_shape(painter: &Painter, shape: &Shape, parent: Affine, view: &View) {
-    if !shape.visible {
-        return;
-    }
-    let transform = parent * shape.transform;
-    match &shape.kind {
-        ShapeKind::Group { children } => {
-            for c in children {
-                draw_shape(painter, c, transform, view);
-            }
-        }
-        ShapeKind::Text { spans, origin } => {
-            let size_pt = spans.first().map(|s| s.size_pt).unwrap_or(24.0);
-            let px = (size_pt * 25.4 / 72.0 * view.zoom as f64) as f32;
-            let text: String = spans.iter().map(|s| s.text.as_str()).collect();
-            let color = fill_color(&shape.fill).unwrap_or(Color32::BLACK);
-            let origin_page = transform * *origin;
-            let pos = view.to_screen(origin_page);
-            // Angle from the transform's x axis.
-            let c = transform.as_coeffs();
-            let angle = (-c[1]).atan2(c[0]) as f32;
-            let galley =
-                painter.layout_no_wrap(text, egui::FontId::proportional(px.max(1.0)), color);
-            let h = galley.size().y;
-            let mut shape = epaint::TextShape::new(pos - egui::vec2(0.0, h), galley, color);
-            shape.angle = angle;
-            painter.add(shape);
-        }
-        _ => {
-            let path = transform * shape.local_path();
-            let polys = flatten(&path, view);
-            let fill = fill_color(&shape.fill);
-            let stroke = shape.stroke.as_ref().map(|s| {
-                let px = if s.width <= tracedraw_core::Stroke::HAIRLINE + 1e-9 {
-                    1.0
-                } else {
-                    (s.width as f32 * view.zoom).max(0.75)
-                };
-                EStroke::new(px, to_color32(s.color))
-            });
-            for (pts, closed) in polys {
-                if pts.len() < 2 {
-                    continue;
-                }
-                if let Some(c) = fill {
-                    if pts.len() >= 3 {
-                        painter.add(epaint::PathShape::convex_polygon(
-                            pts.clone(),
-                            c,
-                            EStroke::NONE,
-                        ));
-                    }
-                }
-                if let Some(st) = stroke {
-                    if closed {
-                        painter.add(epaint::PathShape::closed_line(pts, st));
-                    } else {
-                        painter.add(epaint::PathShape::line(pts, st));
-                    }
-                }
-            }
-        }
-    }
-}
-
 pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
     let view = &app.view;
     painter.rect_filled(rect, 0.0, Tokens::DESKTOP);
@@ -180,26 +99,30 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
         draw_grid(painter, rect, view);
     }
 
-    // Objects, with the live preview of the drag applied to the selection.
+    // Objects, rasterized with tiny-skia into a texture; the live drag preview
+    // is applied to the selection during the render.
     let doc: &Document = app.doc();
     let preview = match &app.drag {
         Drag::Move { total, .. } if total.hypot() > 0.0 => Some(Affine::translate(*total)),
         d @ (Drag::Scale { .. } | Drag::Rotate { .. }) => app.preview_transform_of(d),
         _ => None,
     };
-    if let Ok(page) = doc.page(app.page) {
-        for layer in &page.layers {
-            if !layer.visible {
-                continue;
-            }
-            for s in &layer.shapes {
-                let t = match preview {
-                    Some(t) if app.selection.contains(&s.id) => t,
-                    _ => Affine::IDENTITY,
-                };
-                draw_shape(painter, s, t, view);
-            }
-        }
+    if let Some(tex) = app.raster.borrow_mut().texture(
+        painter.ctx(),
+        doc,
+        app.page,
+        view,
+        rect,
+        preview.map(|t| (app.selection.clone(), t)),
+        app.engine.revision(),
+        app.wireframe,
+    ) {
+        painter.image(
+            tex,
+            rect,
+            ERect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)),
+            Color32::WHITE,
+        );
     }
 
     // Selection.

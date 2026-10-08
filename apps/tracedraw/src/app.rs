@@ -198,6 +198,9 @@ pub struct App {
     pub pointer_page: Option<Point>,
     pub about_open: bool,
     pub palette: Vec<Color>,
+    pub raster: std::cell::RefCell<crate::raster::Raster>,
+    pub wireframe: bool,
+    pub font_families: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -255,6 +258,9 @@ impl App {
             pointer_page: None,
             about_open: false,
             palette: default_palette(),
+            raster: std::cell::RefCell::new(crate::raster::Raster::default()),
+            wireframe: false,
+            font_families: tracedraw_text::fonts().families().to_vec(),
         };
         if let Some(p) = open {
             app.open_path(p);

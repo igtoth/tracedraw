@@ -7,6 +7,26 @@ use crate::style::{Fill, Stroke};
 use crate::{Error, Result};
 use serde::{Deserialize, Serialize};
 
+/// Hook for the text engine. The core cannot depend on fonts, so the app
+/// registers a function that turns spans into glyph outlines (baseline at
+/// the origin, mm). Without it text is drawn as a box.
+pub mod text_outline {
+    use super::TextSpan;
+    use crate::geometry::BezPath;
+    use std::sync::OnceLock;
+
+    type Outliner = fn(&[TextSpan]) -> BezPath;
+    static OUTLINER: OnceLock<Outliner> = OnceLock::new();
+
+    pub fn set(f: Outliner) {
+        let _ = OUTLINER.set(f);
+    }
+
+    pub fn outline(spans: &[TextSpan]) -> Option<BezPath> {
+        OUTLINER.get().map(|f| f(spans))
+    }
+}
+
 /// Paper sizes in millimetres.
 pub mod paper {
     use crate::geometry::Size;
@@ -89,7 +109,10 @@ impl Shape {
             } => geometry::polygon_path(*rect, *points, *sharpness),
             ShapeKind::Path { path, .. } => path.clone(),
             ShapeKind::Text { spans, origin } => {
-                // Rough advance: 0.5 em per character, 1 em tall. Replaced by real shaping later.
+                if let Some(p) = text_outline::outline(spans) {
+                    return Affine::translate(origin.to_vec2()) * p;
+                }
+                // No text engine registered: rough box, 0.5 em per character.
                 let size_mm: f64 =
                     spans.iter().map(|s| s.size_pt).fold(0.0, f64::max) * 25.4 / 72.0;
                 let chars: usize = spans.iter().map(|s| s.text.chars().count()).sum();

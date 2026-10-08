@@ -486,25 +486,22 @@ fn text_properties(app: &mut App, ui: &mut Ui) {
             .color(Tokens::TEXT_DIM)
             .size(11.0),
     );
-    let fonts = [
-        "Arial",
-        "Times New Roman",
-        "Verdana",
-        "Georgia",
-        "Courier New",
-        "Segoe UI",
-    ];
     let mut changed = false;
     egui::ComboBox::from_id_salt("font")
         .selected_text(app.text_font.clone())
         .width(140.0)
         .show_ui(ui, |ui| {
-            for f in fonts {
-                if ui.selectable_label(app.text_font == f, f).clicked() {
-                    app.text_font = f.into();
-                    changed = true;
-                }
-            }
+            let families = app.font_families.clone();
+            egui::ScrollArea::vertical()
+                .max_height(400.0)
+                .show(ui, |ui| {
+                    for f in &families {
+                        if ui.selectable_label(&app.text_font == f, f).clicked() {
+                            app.text_font = f.clone();
+                            changed = true;
+                        }
+                    }
+                });
         });
     let mut size = app.text_size_pt;
     if ui

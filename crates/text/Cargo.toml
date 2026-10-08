@@ -1,0 +1,13 @@
+[package]
+name = "tracedraw-text"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Font discovery, shaping and glyph outlines for TraceDraw"
+
+[dependencies]
+tracedraw-core.workspace = true
+fontdb.workspace = true
+ttf-parser.workspace = true
+rustybuzz.workspace = true
+log.workspace = true
