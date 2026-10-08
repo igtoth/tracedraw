@@ -2658,6 +2658,7 @@ dependencies = [
  "tracedraw-cdr",
  "tracedraw-core",
  "tracedraw-io",
+ "tracedraw-text",
 ]
 
 [[package]]

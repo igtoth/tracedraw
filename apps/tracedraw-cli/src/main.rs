@@ -29,6 +29,7 @@ fn load(
 
 fn main() -> ExitCode {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
+    tracedraw_text::install();
     let args: Vec<String> = std::env::args().collect();
     match args.get(1).map(String::as_str) {
         Some("inspect") => {
@@ -119,6 +120,8 @@ fn main() -> ExitCode {
             };
             let res = if output.to_ascii_lowercase().ends_with(".svg") {
                 tracedraw_io::save_svg(&doc, 0, output)
+            } else if output.to_ascii_lowercase().ends_with(".pdf") {
+                tracedraw_io::save_pdf(&doc, output)
             } else {
                 tracedraw_io::save_native(&doc, output)
             };

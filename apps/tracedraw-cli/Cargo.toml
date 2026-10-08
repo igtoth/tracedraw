@@ -9,5 +9,6 @@ description = "Headless TraceDraw: inspect .cdr files and convert documents"
 tracedraw-core.workspace = true
 tracedraw-cdr.workspace = true
 tracedraw-io.workspace = true
+tracedraw-text.workspace = true
 env_logger.workspace = true
 log.workspace = true
