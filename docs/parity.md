@@ -1,96 +1,177 @@
 # the editor parity
 
-Measured against the default workspace. "wired" means the menu item
-or tool exists in the UI; "works" means it does what the vendor does, with a test
-or a checked file behind it. The goal is every row at "works".
+The 92 capabilities of the editor, grouped as the vendor groups them, each with a
+status. "works" means it does what the vendor does, with a test or a checked file
+behind it. "partial" names what is missing. "baked" means the result is
+applied once instead of staying live and editable. The goal is every row
+at "works".
 
-## Workspace
+Counts: works 31, partial 19, missing 42.
+
+## 1. Selection and navigation
+
+| Capability | Status |
+|---|---|
+| Pick | works: select, shift-add, marquee, move, scale (corners proportional), second click rotate/skew handles, nudge, Tab cycling |
+| Freehand Pick | works: lasso |
+| Shape | works: node select/drag, handles, cusp/smooth/symmetrical, add, delete, break, close, to line/curve, reverse |
+| Free Transform | missing |
+| Zoom, Pan | works: click/shift-click/box, wheel, pinch, scrollbars, zoom levels |
+| Eyedropper (colour) | works for fills |
+| Eyedropper (attributes) | partial: same as colour eyedropper; outline, shadow and transparency not copied |
+| Rulers, guides, measurement | works: rulers in document units, pointer markers; guides from rulers |
+| Dimension (linear, angular, callout) | partial: linear only, static |
+| Connector (smart, interactive) | partial: straight, static |
+| Area Fill (paint bucket) | missing |
+
+## 2. Drawing
+
+| Capability | Status |
+|---|---|
+| Rectangle | partial: one corner radius for all corners (the vendor: per corner, round/scalloped/chamfered) |
+| Ellipse | works: ellipse, pie, arc |
+| Polygon, Star | works |
+| Spiral | works: symmetrical, logarithmic |
+| Graph Paper | missing |
+| Bezier, Pen | works: click = cusp, drag = handle, close on start |
+| B-Spline | partial: behaves like Bezier |
+| Freehand | works |
+| 2-Point Line | works |
+| Shape Recognition | missing |
+| Brush Strokes: brush, sprayer, calligraphic, pressure | partial: calligraphic only |
+| Table | partial: grid of cells; no text in cells, merging, borders |
+
+## 3. Shape and node editing
+
+| Capability | Status |
+|---|---|
+| Node types cusp/smooth/symmetrical | works |
+| Add, delete, reduce nodes; align nodes; extend curve; auto-close | partial: add/delete/close work; reduce, align, extend missing |
+| Line/curve conversion; outline to object | works |
+| Break, combine, join, break apart, group | partial: join curves missing |
+| Free distortion: Smear, Twirl, Attract, Repel, Smooth, Roughen | partial: Smear, Twirl, Smooth as brushes; Attract, Repel, Roughen missing |
+| Knife, Eraser | partial: knife straight cuts; eraser deletes whole objects |
+| Boolean: weld, trim, intersect, simplify, front minus back, back minus front, boundary | works (on flattened curves) |
+| Lock, hide, order (front, back, in front of, behind) | partial: lock and order front/back/one step; hide object and in-front-of/behind missing |
+
+## 4. Text
+
+| Capability | Status |
+|---|---|
+| Artistic and paragraph text (frame, columns) | partial: both exist; no columns |
+| Text on path, fit to shape | missing |
+| Indent, tabs, forced breaks, bullets, drop cap | missing |
+| Leading, paragraph spacing, kerning, tracking, baseline shift | missing |
+| Hyphenation, justification | partial: justify aligns left |
+| OpenType features | missing |
+| Character window, glyph browser | missing |
+| Text styles | missing |
+| Spell check, find and replace | missing |
+| Font manager, playground, missing-font substitution | partial: fallback to sans-serif |
+| TrueType, OpenType, Type 1 | partial: TrueType and OpenType via fontdb |
+
+## 5. Fills and outlines
+
+| Capability | Status |
+|---|---|
+| Uniform fill | works |
+| Fountain: linear, radial, conical, square | partial: two-stop linear and radial |
+| Pattern (bitmap, two-colour, full-colour), texture, PostScript | missing |
+| Mesh fill | missing |
+| Area fill | missing |
+| Outline: width, colour, dashes, caps, corners, arrowheads, pen styles | partial: arrowheads and pen styles missing |
+
+## 6. Interactive effects
+
+| Capability | Status |
+|---|---|
+| Blend (with path) | partial: baked, no path |
+| Contour | partial: baked |
+| Distort | partial: baked, push/pull, zipper, twister |
+| Envelope | missing |
+| Perspective | missing |
+| Extrude (lighting, rotation, surface colour) | partial: parallel, shaded faces, baked |
+| Drop Shadow | works |
+| Transparency: uniform, fountain, pattern, texture | partial: uniform only |
+| Lens (11 types) | missing |
+| ClipFrame, Fit to path | partial: ClipFrame works; fit to path missing |
+| Symbols, clones | missing |
+| Bevel, Glow, Relief | missing |
+
+## 7. Colour
+
+| Capability | Status |
+|---|---|
+| CMYK, RGB, HSB, HSL, LAB, grayscale, YIQ, registration | partial: CMYK, RGB, gray stored; others missing |
+| Spot colours and libraries | missing |
+| Custom palettes, palette manager | missing |
+| Colour styles, harmonies | missing |
+| Colour mixing, gamut alarm | missing |
+| ICC colour management | missing |
+| Proofing, separations | missing |
+| Overprint | missing |
+
+## 8. Bitmaps and images
+
+| Capability | Status |
+|---|---|
+| Bitmap tracing | missing |
+| Bitmap effects (blur, art strokes, camera, colour transform, creative, distort, noise, sharpen, texture, contour, relief) | missing |
+| Bitmap colour mask, recolour | missing |
+| Image adjustments | missing |
+| Crop image, import with resolution | partial: import at 96 dpi; crop vector only |
+| the photo editor | out of scope |
+
+## 9. Layout and document
+
+| Capability | Status |
+|---|---|
+| Multiple pages, page sorter, page setup, presets | partial: pages, dialog, presets; sorter missing |
+| Bleed, crop marks, registration marks | missing |
+| Rulers, guides, grid, dynamic guides, snapping (guides, objects, nodes, grid) | partial: dynamic guides and node snapping missing |
+| Layers and master layers | partial: layers; master missing |
+| Objects docker | works (basic) |
+| Document navigator, document properties | works |
+| Object, document and graphic styles | missing |
+| Templates and template manager | missing |
+| Hyperlinks and bookmarks | missing |
+| Object data | missing |
+
+## 10. Import and export
+
+| Capability | Status |
+|---|---|
+| Native CDR, CDT | partial: .cdr read untested on real files; no write; native format is .tdraw |
+| Import AI, EPS, PDF, SVG, DXF, PSD, CMX, WMF, JPEG, PNG, TIFF, BMP, GIF, TGA, PCX, DOC, DOCX, XLS | partial: bitmaps only |
+| Export CDR, CDT, AI, EPS, PDF (PDF/X), SVG, PSD, DXF, PNG, JPEG, TIFF, BMP, GIF, WMF, HTML5 | partial: SVG, PDF |
+| Export for Web | missing |
+
+## 11. Productivity and customisation
+
+| Capability | Status |
+|---|---|
+| Macros, VBA | missing |
+| Customise toolbars, dockers, shortcuts, workspace | missing |
+| CONNECT (clipart, fonts, photos) | out of scope |
+| CAPTURE | out of scope |
+| Context help, tutorials | partial: Hints docker |
+| OLE | out of scope |
+
+## 12. Print and prepress
+
+| Capability | Status |
+|---|---|
+| Print proofs, separations, composite | missing |
+| Scaled print, PostScript | missing |
+| Bleed and crop marks in print | missing |
+| Imposition, RIP options | missing |
+| PDF/X-1a, X-3, X-4 | missing |
+
+## Workspace look (the editor 2019)
 
 | Element | Status |
 |---|---|
-| Menu bar: File, Edit, View, Layout, Object, Effects, Bitmaps, Text, Table, Tools, Window, Help | wired, items listed with the vendor's names and shortcuts |
-| Standard toolbar | works: New, Open, Save, Cut, Copy, Paste, Undo, Redo, Import, Export, zoom combo |
-| Property bar (context-sensitive) | works: page, object (X Y W H, scale, angle, mirror, outline, order), rectangle, polygon/star, text, zoom |
-| Toolbox with flyouts and shortcuts | wired: all 16 groups; implemented tools below |
-| Rulers (document units) | works |
-| Colour palette (left fill, right outline, X none) | works |
-| Dockers: Properties, Objects, Hints | works (basic) |
-| Document navigator (page tabs, add page) | works |
-| Status bar (cursor, object info, fill/outline swatches) | works |
-| Grid | works (10 mm), snap to grid |
-| Guidelines | works: drag out of a ruler, drag to move, Delete removes, View > Guidelines toggles |
-| Snapping (page, guides, objects, grid) | works for move and drawing tools; View > Snap To |
-| Scrollbars | works |
-| View modes | Wireframe and Normal; Simple Wireframe, Draft, Enhanced, Pixels missing |
-| Full-screen preview | missing |
-
-## Tools
-
-| Tool | Status |
-|---|---|
-| Pick | works: select, shift-add, marquee, move, scale with handles (corners proportional), second click rotate mode, nudge |
-| Freehand Pick | works: lasso selects objects whose centre is inside |
-| Shape | works: select nodes (click, shift, marquee), drag nodes and handles, cusp/smooth/symmetrical, add (double-click segment), delete (double-click node or Delete), break, close, to line/curve, reverse, select all |
-| Smooth, Smear, Twirl | works as brushes on curves (nib size on the property bar); objects are converted to curves first |
-| Crop | works: drag a rectangle, vector objects are clipped (bitmaps not yet) |
-| Knife | works: drag a line, objects are cut in two (straight cuts only) |
-| Eraser | works: click deletes an object (the vendor erases regions) |
-| Zoom | works: click in, shift/right click out, drag box |
-| Pan | works |
-| Freehand | works: smoothed on release |
-| 2-Point Line, Polyline | works |
-| Bezier, Pen | works: click = cusp node, click-drag = handle, click start node closes, Enter/double-click finishes |
-| B-Spline, 3-Point Curve | partial: behave like Bezier |
-| Brush Strokes | partial: calligraphic nib (width, angle); no presets, sprayer or brush strokes |
-| Rectangle | works, corner radius on property bar, Ctrl square, double-click page frame |
-| 3-Point Rectangle | draws like Rectangle |
-| Ellipse | works, Ctrl circle, pie and arc with start/end angles |
-| 3-Point Ellipse | draws like Ellipse |
-| Polygon, Star | works, points and sharpness on property bar |
-| Spiral | works: symmetrical and logarithmic, revolutions |
-| Common Shapes | works: arrow, heart, diamond, banner, callout, cross, lightning, triangle (no glyph editing) |
-| Text | works: artistic text (click) and paragraph text (drag a frame, word wrap), system fonts with bold/italic, size, alignment; no text on path, no kerning/spacing controls, single style per object |
-| Table | partial: rows x columns of cells grouped; no cell text editing, merging or borders |
-| Parallel Dimension | partial: three clicks produce a static dimension line with arrowheads and measured text |
-| Connector | partial: straight connector between two objects, static |
-| Drop Shadow | works: drag sets offset; opacity, feathering, colour on property bar |
-| Contour | partial: inside/outside, steps, offset, colour; baked into a group, not live |
-| Blend | partial: steps between two objects, colour and outline interpolation; baked |
-| Distort | partial: push/pull, zipper, twister; baked |
-| Envelope | missing (the Envelope tool offers the distortions) |
-| Extrude | partial: parallel extrusion with shaded faces; baked |
-| Transparency | works: uniform transparency per object (slider on property bar) |
-| Color Eyedropper | works (fill only) |
-| Attributes Eyedropper | same as Color Eyedropper |
-| Interactive Fill | partial: click applies default fill, drag makes a 2-stop linear fountain fill; radial via Properties docker; no on-canvas handles, no multi-stop |
-| Mesh Fill, Area Fill | missing |
-
-## Menus that work
-
-File: New, Open, Save, Save As, Import (.cdr and bitmaps), Import Bitmap, Export (SVG), Export PDF, Document Properties, Exit.
-Edit: Undo, Redo, Cut, Copy, Paste, Delete, Duplicate, Select All.
-View: Wireframe, Normal, Zoom To Page/Fit/Selected, Rulers, Grid, Guidelines, Snap To (grid, guides, objects, page).
-Layout: Insert Page, Duplicate Page, Rename Page, Delete Page, Go To Page, Page Size (dialog, presets, all pages), Switch Orientation.
-Object: ClipFrame (Place Inside Frame, Extract Contents), Transformations (Position, Rotate, Scale and Mirror, Size, Skew, Clear), Align and Distribute (all align modes with L/R/T/B/E/C/P keys, four distribute modes), Order (all six), Group, Ungroup, Combine, Break Apart, Lock, Unlock, Unlock All, Shaping (Weld, Trim, Intersect, Simplify, Front Minus Back, Back Minus Front, Boundary; on flattened curves), Convert To Curves, Convert Outline To Object, Properties, Objects.
-Text: Convert To Curves.
-Tools: Options (Ctrl+J).
-Window: Dockers, Objects (layers: rename, reorder, delete, lock, hide), Properties, Hints, Transformations, Undo, Status Bar.
-Welcome Screen tab with new/open and page presets.
-Help: About.
-
-Everything else is listed and disabled.
-
-## Rendering
-
-| Feature | Status |
-|---|---|
-| Uniform fill | works (tiny-skia rasterizer, even-odd) |
-| Fountain fill | works: two-stop linear and radial; no multi-stop, no conical/square |
-| Outline width, hairline, caps, joins, dashes, scale with object | works |
-| Transparency (uniform) | works |
-| Drop shadow with feathering | works (box blur) |
-| ClipFrame | works: contents masked by the frame |
-| Bitmaps | works: import PNG/JPEG/BMP/GIF/WebP/TIFF, rotate/scale |
-| Text | real fonts via fontdb + rustybuzz, glyph outlines |
-| Anti-aliasing | works |
-| Export | SVG (gradients, opacity, bitmaps), PDF (vector, CMYK/RGB fills, axial/radial shadings, ExtGState opacity, images) |
+| Menu bar, standard toolbar, property bar, toolbox with flyouts, rulers, document tabs, bottom palette, docker tab strip, navigator, status bar | works |
+| Icons | painted vector icons, close in style; not pixel-identical |
+| Dockers: Properties, Objects, Hints, Transformations, Undo | works |
+| Welcome Screen | partial: new/open/presets |
