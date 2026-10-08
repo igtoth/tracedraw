@@ -1,3 +1,6 @@
+// No console window in release builds on Windows.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 //! Traco desktop app: a thin egui shell over the engine.
 
 mod app;

@@ -9,6 +9,9 @@ description = "TraceDraw: an open-source vector illustration editor"
 name = "tracedraw"
 path = "src/main.rs"
 
+[build-dependencies]
+winresource = "0.1"
+
 [dependencies]
 tracedraw-core.workspace = true
 tracedraw-cdr.workspace = true
@@ -19,3 +22,20 @@ egui.workspace = true
 rfd.workspace = true
 log.workspace = true
 env_logger.workspace = true
+
+[package.metadata.deb]
+name = "tracedraw"
+maintainer = "TraceDraw contributors <noreply@tracedraw.dev>"
+copyright = "2026, Ighor Toth and the TraceDraw contributors"
+license-file = ["../../LICENSE-MIT", "0"]
+extended-description = "Open-source vector illustration editor with a classic workflow and a .cdr reader."
+section = "graphics"
+priority = "optional"
+depends = "$auto"
+assets = [
+    ["target/release/tracedraw", "usr/bin/", "755"],
+    ["target/release/tracedraw-cli", "usr/bin/", "755"],
+    ["../../packaging/linux/tracedraw.desktop", "usr/share/applications/", "644"],
+    ["../../assets/icon/tracedraw-256.png", "usr/share/icons/hicolor/256x256/apps/tracedraw.png", "644"],
+    ["../../README.md", "usr/share/doc/tracedraw/README", "644"],
+]

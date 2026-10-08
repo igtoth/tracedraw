@@ -28,19 +28,15 @@ jobs:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             name: windows-x86_64
-            ext: .exe
           - os: macos-latest
             target: aarch64-apple-darwin
             name: macos-arm64
-            ext: ""
           - os: macos-13
             target: x86_64-apple-darwin
             name: macos-x86_64
-            ext: ""
-          - os: ubuntu-latest
+          - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             name: linux-x86_64
-            ext: ""
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -51,38 +47,57 @@ jobs:
         with:
           key: ${{ matrix.target }}
 
+      - name: Version
+        id: ver
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=0.1.0-dev.${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Linux system libraries
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y pkg-config libxkbcommon-dev libwayland-dev libgl1-mesa-dev \
-            libx11-dev libxcursor-dev libxrandr-dev libxi-dev libgtk-3-dev
+            libx11-dev libxcursor-dev libxrandr-dev libxi-dev libgtk-3-dev libfuse2
+          cargo install cargo-deb
 
       - name: Build
         run: cargo build --release --target ${{ matrix.target }} -p tracedraw -p tracedraw-cli
 
-      - name: Package
-        shell: bash
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
         run: |
-          set -e
-          out=dist/tracedraw-${{ matrix.name }}
-          mkdir -p "$out"
-          cp target/${{ matrix.target }}/release/tracedraw${{ matrix.ext }} "$out/"
-          cp target/${{ matrix.target }}/release/tracedraw-cli${{ matrix.ext }} "$out/"
-          cp README.md LICENSE-MIT LICENSE-APACHE "$out/"
-          cd dist
-          if [ "${{ runner.os }}" = "Windows" ]; then
-            7z a -tzip tracedraw-${{ matrix.name }}.zip tracedraw-${{ matrix.name }}
-          else
-            tar -czf tracedraw-${{ matrix.name }}.tar.gz tracedraw-${{ matrix.name }}
-          fi
+          New-Item -ItemType Directory -Force dist | Out-Null
+          $src = "target\${{ matrix.target }}\release"
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DVersion=${{ steps.ver.outputs.version }} /DSrcDir="$PWD\$src" packaging\windows\tracedraw.iss
+          Compress-Archive -Path "$src\tracedraw.exe","$src\tracedraw-cli.exe",README.md,LICENSE-MIT,LICENSE-APACHE -DestinationPath "dist\tracedraw-${{ steps.ver.outputs.version }}-windows-x86_64-portable.zip"
+
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p dist
+          arch=$([[ "${{ matrix.target }}" == aarch64* ]] && echo arm64 || echo x86_64)
+          packaging/macos/build-dmg.sh "${{ steps.ver.outputs.version }}" "target/${{ matrix.target }}/release" "$arch"
+          rm -rf dist/TraceDraw.app
+
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p dist
+          cargo deb -p tracedraw --target ${{ matrix.target }} --no-build --deb-version "${{ steps.ver.outputs.version }}" -o dist/
+          packaging/linux/build-appimage.sh "${{ steps.ver.outputs.version }}" "target/${{ matrix.target }}/release"
+          rm -f dist/linuxdeploy.AppImage
+          tar -C "target/${{ matrix.target }}/release" -czf "dist/tracedraw-${{ steps.ver.outputs.version }}-linux-x86_64.tar.gz" tracedraw tracedraw-cli
 
       - uses: actions/upload-artifact@v4
         with:
           name: tracedraw-${{ matrix.name }}
-          path: |
-            dist/*.zip
-            dist/*.tar.gz
+          path: dist/*
           if-no-files-found: error
 
   release:
@@ -98,7 +113,5 @@ jobs:
           merge-multiple: true
       - uses: softprops/action-gh-release@v2
         with:
-          files: |
-            artifacts/*.zip
-            artifacts/*.tar.gz
+          files: artifacts/*
           generate_release_notes: true

@@ -71,8 +71,16 @@ with, sponsored by or endorsed by the vendor.
 
 MIT or Apache-2.0, at your option.
 
-## Prebuilt binaries
+## Installers
 
-Every push to `main` builds Windows, macOS (Intel and Apple Silicon) and
-Linux binaries as workflow artifacts (Actions tab, pick the run, scroll to
-Artifacts). Tagging `vX.Y.Z` publishes them on the Releases page.
+Every push to `main` builds installers as workflow artifacts (Actions tab,
+pick the run, scroll to Artifacts); tagging `vX.Y.Z` publishes them on the
+Releases page:
+
+- Windows: `tracedraw-<version>-windows-x86_64-setup.exe` (Inno Setup;
+  Start menu entry, `.tdraw` association, optional PATH) and a portable zip
+- macOS: `tracedraw-<version>-macos-arm64.dmg` and `-macos-x86_64.dmg`
+  (unsigned for now: right-click the app and choose Open the first time)
+- Linux: `.deb`, `.AppImage` and a tarball
+
+Packaging sources live in `packaging/`.
