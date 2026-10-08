@@ -11,6 +11,7 @@
 pub mod color;
 pub mod command;
 pub mod document;
+pub mod effects;
 pub mod engine;
 pub mod geometry;
 pub mod id;

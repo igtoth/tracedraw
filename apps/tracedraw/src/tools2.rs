@@ -871,3 +871,361 @@ fn polylines(path: &BezPath) -> Vec<(Vec<[f64; 2]>, bool)> {
     }
     out
 }
+
+// ---------------------------------------------------------------------------
+// Effects tools: Blend, Extrude, Distort; brush tools: Smooth, Smear, Twirl;
+// Freehand Pick lasso.
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum DistortMode {
+    PushPull,
+    Zipper,
+    Twister,
+}
+
+impl App {
+    pub fn effects_input(&mut self, response: &Response, p: Point, _mods: Modifiers) {
+        match self.tool {
+            Tool::Blend => {
+                if response.drag_started_by(PointerButton::Primary) {
+                    if let Some(id) = self.hit_test(p) {
+                        self.drag = Drag::Connector {
+                            from: id,
+                            current: p,
+                        };
+                    }
+                }
+                if response.dragged_by(PointerButton::Primary) {
+                    if let Drag::Connector { current, .. } = &mut self.drag {
+                        *current = p;
+                    }
+                }
+            }
+            Tool::Extrude => {
+                if response.drag_started_by(PointerButton::Primary) {
+                    if let Some(id) = self.hit_test(p) {
+                        self.select(vec![id]);
+                        self.drag = Drag::ContourDrag { start: p };
+                    }
+                }
+                if response.dragged_by(PointerButton::Primary) {
+                    if let Drag::ContourDrag { start } = self.drag {
+                        self.extrude_depth = p - start;
+                    }
+                }
+                if response.clicked_by(PointerButton::Primary) {
+                    match self.hit_test(p) {
+                        Some(id) => self.select(vec![id]),
+                        None => self.select(Vec::new()),
+                    }
+                }
+            }
+            Tool::Distort | Tool::Envelope => {
+                if response.clicked_by(PointerButton::Primary) {
+                    match self.hit_test(p) {
+                        Some(id) => self.select(vec![id]),
+                        None => self.select(Vec::new()),
+                    }
+                }
+            }
+            Tool::Smooth | Tool::Smear | Tool::Twirl => self.brush_input(response, p),
+            Tool::FreeformPick => {
+                if response.drag_started_by(PointerButton::Primary) {
+                    if let Some(id) = self.hit_test(p) {
+                        if !self.selection.contains(&id) {
+                            self.select(vec![id]);
+                        }
+                        self.drag = Drag::Move {
+                            last: p,
+                            total: Vec2::ZERO,
+                            start_bounds: self.selection_bounds().unwrap_or(Rect::ZERO),
+                        };
+                    } else {
+                        self.drag = Drag::Freehand { points: vec![p] };
+                    }
+                }
+                if response.dragged_by(PointerButton::Primary) {
+                    match &mut self.drag {
+                        Drag::Freehand { points } => points.push(p),
+                        Drag::Move { last, total, .. } => {
+                            let d = p - *last;
+                            *last = p;
+                            *total += d;
+                        }
+                        _ => {}
+                    }
+                }
+                if response.clicked_by(PointerButton::Primary) {
+                    match self.hit_test(p) {
+                        Some(id) => self.select(vec![id]),
+                        None => self.select(Vec::new()),
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn brush_input(&mut self, response: &Response, p: Point) {
+        if response.drag_started_by(PointerButton::Primary) {
+            if self.selection.is_empty() {
+                if let Some(id) = self.hit_test(p) {
+                    self.select(vec![id]);
+                }
+            }
+            // Brushes work on curves; convert first.
+            self.convert_to_curves();
+            self.drag = Drag::Node { last: p };
+        }
+        if response.dragged_by(PointerButton::Primary) {
+            if let Drag::Node { last } = self.drag {
+                let delta = p - last;
+                let radius = self.brush_radius;
+                let shapes = self.selected_shapes();
+                let mut cmds = Vec::new();
+                for s in shapes {
+                    let ShapeKind::Path { path, closed } = &s.kind else {
+                        continue;
+                    };
+                    let inv = s.transform.inverse();
+                    let lp = inv * p;
+                    let ld = (inv * (Point::ZERO + delta)) - (inv * Point::ZERO);
+                    let new_path = match self.tool {
+                        Tool::Smear => tracedraw_core::effects::smear(path, lp, ld, radius),
+                        Tool::Twirl => {
+                            tracedraw_core::effects::twirl(path, lp, delta.hypot() * 0.05, radius)
+                        }
+                        _ => tracedraw_core::effects::smooth(path, lp, radius, 0.3),
+                    };
+                    cmds.push(Command::SetShapeKind {
+                        shape: s.id,
+                        kind: ShapeKind::Path {
+                            path: new_path,
+                            closed: *closed,
+                        },
+                    });
+                }
+                if !cmds.is_empty() {
+                    let label = match self.tool {
+                        Tool::Smear => "Smear",
+                        Tool::Twirl => "Twirl",
+                        _ => "Smooth",
+                    };
+                    if self.engine.undo_label() == Some(label) {
+                        let _ = self.engine.undo();
+                    }
+                    let _ = self.engine.run_batch(label, &cmds);
+                }
+                self.drag = Drag::Node { last: p };
+            }
+        }
+    }
+
+    /// Lasso finished (Freehand Pick): select objects whose bounds centre
+    /// lies inside the drawn polygon.
+    pub fn finish_lasso(&mut self, points: Vec<Point>) {
+        if points.len() < 3 {
+            return;
+        }
+        let poly = tracedraw_core::effects::polygon(&points);
+        let Ok(page) = self.doc().page(self.page) else {
+            return;
+        };
+        let mut ids = Vec::new();
+        for s in page
+            .layers
+            .iter()
+            .filter(|l| l.visible && !l.locked)
+            .flat_map(|l| &l.shapes)
+        {
+            if s.locked {
+                continue;
+            }
+            if point_in_path(&poly, s.bounds().center()) {
+                ids.push(s.id);
+            }
+        }
+        self.select(ids);
+    }
+
+    pub fn finish_blend(&mut self, from: ShapeId, at: Point) {
+        let Some(to) = self.hit_test(at).filter(|id| *id != from) else {
+            return;
+        };
+        let (Ok((_, a)), Ok((_, b))) = (self.doc().shape(from), self.doc().shape(to)) else {
+            return;
+        };
+        let (a, b) = (a.clone(), b.clone());
+        let steps = self.blend_steps.max(1) as usize;
+        let mids = tracedraw_core::effects::blend(&a.page_path(), &b.page_path(), steps, 96);
+        if mids.is_empty() {
+            self.status = "Blend needs two closed objects".into();
+            return;
+        }
+        let Some(layer) = self.active_layer() else {
+            return;
+        };
+        let fa = match &a.fill {
+            Fill::Solid(c) => Some(*c),
+            _ => None,
+        };
+        let fb = match &b.fill {
+            Fill::Solid(c) => Some(*c),
+            _ => None,
+        };
+        let mut cmds = Vec::new();
+        let mut ids = vec![from];
+        for (k, path) in mids.into_iter().enumerate() {
+            let t = (k + 1) as f32 / (steps + 1) as f32;
+            let id = self.engine.new_shape_id();
+            let mut s = Shape::new(id, ShapeKind::Path { path, closed: true });
+            s.fill = match (fa, fb) {
+                (Some(x), Some(y)) => Fill::Solid(lerp_color(x, y, t)),
+                _ => a.fill.clone(),
+            };
+            s.stroke = match (&a.stroke, &b.stroke) {
+                (Some(x), Some(y)) => {
+                    let mut st = x.clone();
+                    st.color = lerp_color(x.color, y.color, t);
+                    st.width = x.width + (y.width - x.width) * t as f64;
+                    Some(st)
+                }
+                (x, _) => x.clone(),
+            };
+            s.opacity = a.opacity + (b.opacity - a.opacity) * t as f64;
+            ids.push(id);
+            cmds.push(Command::AddShape { layer, shape: s });
+        }
+        ids.push(to);
+        cmds.push(Command::Group { shapes: ids });
+        let _ = self.engine.run_batch("Blend", &cmds);
+    }
+
+    pub fn apply_extrude(&mut self) {
+        let shapes = self.selected_shapes();
+        let Some(layer) = self.active_layer() else {
+            return;
+        };
+        let depth = self.extrude_depth;
+        if depth.hypot() < 0.1 {
+            self.status = "Drag on the object to set the extrusion depth".into();
+            return;
+        }
+        let mut cmds = Vec::new();
+        for s in shapes {
+            if matches!(s.kind, ShapeKind::Bitmap { .. } | ShapeKind::Group { .. }) {
+                continue;
+            }
+            let (sides, back) = tracedraw_core::effects::extrude(&s.page_path(), depth);
+            let base = match &s.fill {
+                Fill::Solid(c) => *c,
+                _ => Color::cmyk_pct(0.0, 0.0, 0.0, 30.0),
+            };
+            let (_, idx) = self.doc().locate(s.id).unwrap_or((layer, 0));
+            let mut ids = Vec::new();
+            let back_id = self.engine.new_shape_id();
+            let mut bs = Shape::new(
+                back_id,
+                ShapeKind::Path {
+                    path: back,
+                    closed: true,
+                },
+            );
+            bs.fill = Fill::Solid(lerp_color(base, Color::BLACK, 0.5));
+            bs.stroke = None;
+            cmds.push(Command::AddShape { layer, shape: bs });
+            cmds.push(Command::Reorder {
+                shape: back_id,
+                layer,
+                index: idx,
+            });
+            ids.push(back_id);
+            // Shade side faces by their direction relative to the light (top-left).
+            let light = Vec2::new(-0.6, 0.8);
+            for side in sides {
+                use tracedraw_core::geometry::Shape as _;
+                let c = side.bounding_box().center();
+                let dir = (c - s.bounds().center()).normalize();
+                let shade = 0.25 + 0.35 * (1.0 - dir.dot(light)).clamp(0.0, 1.0) / 2.0;
+                let id = self.engine.new_shape_id();
+                let mut f = Shape::new(
+                    id,
+                    ShapeKind::Path {
+                        path: side,
+                        closed: true,
+                    },
+                );
+                f.fill = Fill::Solid(lerp_color(base, Color::BLACK, shade as f32));
+                f.stroke = None;
+                cmds.push(Command::AddShape { layer, shape: f });
+                cmds.push(Command::Reorder {
+                    shape: id,
+                    layer,
+                    index: idx,
+                });
+                ids.push(id);
+            }
+            ids.push(s.id);
+            cmds.push(Command::Group { shapes: ids });
+        }
+        if !cmds.is_empty() {
+            let _ = self.engine.run_batch("Extrude", &cmds);
+        }
+    }
+
+    pub fn apply_distort(&mut self) {
+        use tracedraw_core::effects::{distort, Distort};
+        let how = match self.distort_mode {
+            DistortMode::PushPull => Distort::PushPull {
+                amount: self.distort_amount,
+            },
+            DistortMode::Zipper => Distort::Zipper {
+                amplitude: self.distort_amount.abs() / 10.0,
+                frequency: self.distort_frequency,
+            },
+            DistortMode::Twister => Distort::Twister {
+                angle_deg: self.distort_amount * 3.6,
+            },
+        };
+        let shapes = self.selected_shapes();
+        let cmds: Vec<Command> = shapes
+            .iter()
+            .filter(|s| !matches!(s.kind, ShapeKind::Bitmap { .. } | ShapeKind::Group { .. }))
+            .map(|s| {
+                let pp = s.page_path();
+                let d = distort(&pp, how);
+                Command::SetShapeKind {
+                    shape: s.id,
+                    kind: ShapeKind::Path {
+                        path: s.transform.inverse() * d,
+                        closed: true,
+                    },
+                }
+            })
+            .collect();
+        if !cmds.is_empty() {
+            let _ = self.engine.run_batch("Distort", &cmds);
+        }
+    }
+}
+
+/// Even-odd point-in-polygon on a flattened path.
+pub fn point_in_path(path: &BezPath, p: Point) -> bool {
+    let pts = tracedraw_core::effects::resample(path, 256);
+    let mut inside = false;
+    let n = pts.len();
+    if n < 3 {
+        return false;
+    }
+    let mut j = n - 1;
+    for i in 0..n {
+        let (a, b) = (pts[i], pts[j]);
+        if (a.y > p.y) != (b.y > p.y) && p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y + 1e-12) + a.x
+        {
+            inside = !inside;
+        }
+        j = i;
+    }
+    inside
+}

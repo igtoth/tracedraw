@@ -275,6 +275,17 @@ impl Tool {
                 | Tool::BrushStrokes
                 | Tool::ParallelDimension
                 | Tool::Connector
+                | Tool::Blend
+                | Tool::Extrude
+                | Tool::Distort
+                | Tool::Smooth
+                | Tool::Smear
+                | Tool::Twirl
+                | Tool::FreeformPick
+                | Tool::BSpline
+                | Tool::ThreePointRectangle
+                | Tool::ThreePointEllipse
+                | Tool::ThreePointCurve
         )
     }
 }

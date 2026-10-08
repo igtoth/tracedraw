@@ -277,6 +277,49 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 vsep(ui);
                 ui.label(egui::RichText::new("Enter or double-click finishes the curve, Esc cancels").color(Tokens::TEXT_DIM).size(11.0));
             }
+            Tool::Blend => {
+                ui.label(egui::RichText::new("Blend steps").color(Tokens::TEXT_DIM).size(11.0));
+                ui.add(egui::DragValue::new(&mut app.blend_steps).range(1..=200));
+                ui.label(egui::RichText::new("Drag from one object to another").color(Tokens::TEXT_DIM).size(11.0));
+            }
+            Tool::Extrude => {
+                ui.label(egui::RichText::new("Extrude depth").color(Tokens::TEXT_DIM).size(11.0));
+                let mut dx = app.extrude_depth.x;
+                let mut dy = app.extrude_depth.y;
+                ui.add(egui::DragValue::new(&mut dx).speed(0.2).suffix(" mm"));
+                ui.add(egui::DragValue::new(&mut dy).speed(0.2).suffix(" mm"));
+                app.extrude_depth = tracedraw_core::geometry::Vec2::new(dx, dy);
+                vsep(ui);
+                if ui.add_enabled(!shapes.is_empty(), egui::Button::new("Apply")).clicked() {
+                    app.apply_extrude();
+                }
+            }
+            Tool::Distort | Tool::Envelope => {
+                use crate::tools2::DistortMode;
+                for (m, n) in [(DistortMode::PushPull, "Push and Pull"), (DistortMode::Zipper, "Zipper"), (DistortMode::Twister, "Twister")] {
+                    if ui.selectable_label(app.distort_mode == m, n).clicked() {
+                        app.distort_mode = m;
+                    }
+                }
+                ui.label(egui::RichText::new("Amplitude").color(Tokens::TEXT_DIM).size(11.0));
+                ui.add(egui::DragValue::new(&mut app.distort_amount).speed(1.0).range(-200.0..=200.0));
+                if app.distort_mode == DistortMode::Zipper {
+                    ui.label(egui::RichText::new("Frequency").color(Tokens::TEXT_DIM).size(11.0));
+                    ui.add(egui::DragValue::new(&mut app.distort_frequency).range(1..=100));
+                }
+                vsep(ui);
+                if ui.add_enabled(!shapes.is_empty(), egui::Button::new("Apply")).clicked() {
+                    app.apply_distort();
+                }
+                if app.tool == Tool::Envelope {
+                    ui.label(egui::RichText::new("Envelope presets are not implemented yet; distortions are available here").color(Tokens::TEXT_DIM).size(11.0));
+                }
+            }
+            Tool::Smooth | Tool::Smear | Tool::Twirl => {
+                ui.label(egui::RichText::new("Nib size").color(Tokens::TEXT_DIM).size(11.0));
+                ui.add(egui::DragValue::new(&mut app.brush_radius).speed(0.5).range(1.0..=200.0).suffix(" mm"));
+                ui.label(egui::RichText::new("Drag over a selected object").color(Tokens::TEXT_DIM).size(11.0));
+            }
             Tool::Contour => {
                 use crate::tools2::ContourDirection;
                 ui.label(egui::RichText::new("Contour").color(Tokens::TEXT_DIM).size(11.0));

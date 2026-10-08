@@ -102,25 +102,21 @@ pub fn toolbox(app: &mut App, ui: &mut Ui) {
                         });
                     });
                 });
-            if close
-                || ui.input(|i| {
-                    i.pointer.any_click()
-                        && i.pointer
-                            .latest_pos()
-                            .map(|p| {
-                                !Rect::from_min_size(
-                                    pos,
-                                    Vec2::new(
-                                        size.x * group.tools.len() as f32 + 16.0,
-                                        size.y + 12.0,
-                                    ),
-                                )
-                                .contains(p)
-                                    && !rect.contains(p)
-                            })
-                            .unwrap_or(false)
-                })
-            {
+            // Close when the pointer wanders away from the flyout (no click
+            // needed, so the next press reaches the canvas untouched).
+            let zone = Rect::from_min_size(
+                pos,
+                Vec2::new(size.x * group.tools.len() as f32 + 16.0, size.y + 12.0),
+            )
+            .union(rect)
+            .expand(24.0);
+            let away = ui.input(|i| {
+                i.pointer
+                    .latest_pos()
+                    .map(|p| !zone.contains(p))
+                    .unwrap_or(false)
+            });
+            if close || away {
                 app.flyout_open = None;
             }
         }

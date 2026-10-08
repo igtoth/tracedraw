@@ -104,7 +104,8 @@ impl App {
         }
 
         match self.tool {
-            Tool::Pick | Tool::FreeformPick => self.pick_input(response, p, screen, mods),
+            Tool::Pick => self.pick_input(response, p, screen, mods),
+            Tool::FreeformPick => self.effects_input(response, p, mods),
             Tool::Shape => self.shape_input(response, p, mods),
             Tool::Zoom => self.zoom_input(response, p, screen, mods),
             Tool::Pan => {
@@ -155,6 +156,13 @@ impl App {
             | Tool::BrushStrokes
             | Tool::ParallelDimension
             | Tool::Connector => self.tools2_input(response, p, mods),
+            Tool::Blend
+            | Tool::Extrude
+            | Tool::Distort
+            | Tool::Envelope
+            | Tool::Smooth
+            | Tool::Smear
+            | Tool::Twirl => self.effects_input(response, p, mods),
             Tool::DropShadow => {
                 if response.drag_started_by(PointerButton::Primary) {
                     if let Some(id) = self.hit_test(p) {
@@ -611,6 +619,9 @@ impl App {
                     self.create_box_shape(start, current);
                 }
             }
+            Drag::Connector { from, current } if self.tool == Tool::Blend => {
+                self.finish_blend(from, current)
+            }
             Drag::Connector { from, current } => self.finish_connector(from, current),
             Drag::TextFrame { start, current } => {
                 let r = Rect::from_points(start, current);
@@ -652,6 +663,9 @@ impl App {
             }
             Drag::Freehand { points } if self.tool == Tool::BrushStrokes => {
                 self.finish_brush_strokes(points)
+            }
+            Drag::Freehand { points } if self.tool == Tool::FreeformPick => {
+                self.finish_lasso(points)
             }
             Drag::Freehand { points } => {
                 let tol = 0.6 / self.view.zoom as f64 * 2.0;
