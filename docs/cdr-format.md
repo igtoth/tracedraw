@@ -139,7 +139,7 @@ as hundreds (1300 = X3); `vrsn` stores the same number.
 
 | Item | Status | Note |
 |---|---|---|
-| image id (u32; u16 before 6), unknown 14 (before 6) / 46 (6) / 50, colour model u32, 4, width u32, height u32, 4, bits per pixel u32, 4, bitmap size u32, 32; palette when bpp < 24 and model not 5 or 6: 2 unknown, count u16, BGR triplets; then the pixel bytes | confirmed (public spec) | |
+| image id (u32; u16 before 6), unknown 14 (before 6) / 46 (6) / 50, colour model u32, 4, width u32, height u32, 4, bits per pixel u32, 4, bitmap size u32, 32; palette when bpp < 24 and model not 5 or 6: 2 unknown, count u16, BGR triplets; then the pixel bytes | confirmed (file) | Colour model 1 is 24-bit BGR (a 2019 file, 700 x 464, model 1, 24 bpp, size 974400 = 700 x 3 rounded to 4 x 464). Another public reader draws model 5 as greyscale, so the writer uses 1. |
 | Pixel rows padded to 4 bytes, stored bottom-up; 32 and 24 bpp are BGR(x), 8 and 1 bpp index the palette | assumed | Device-independent bitmap convention. |
 
 ## Text and styles
@@ -165,6 +165,26 @@ as hundreds (1300 = X3); `vrsn` stores the same number.
 | Style string: length u32 in UTF-16 units (bytes from X7), then the text | confirmed (public spec) | |
 | Style string content: a JSON object with `character` (font id, size, fill id, outline id) and `paragraph` (justify) sections | assumed | Not in the spec. We parse JSON leniently and also accept `key:value;` lists, matching key names loosely (size, weight/bold, italic, fill, outline, justify/align, font/family). Sizes above 1000 are taken as coordinate units, smaller ones as points. |
 | `ftil`: six f64 fill transform; `uidr`: colour id, user id, 36 unknown, colour; `DISP`: a preview bitmap header; `urls`: text | confirmed (public spec) | Not implemented. |
+
+## Writing
+
+`crates/cdr/src/write.rs` writes the version 12 layout (`CDRC`, 32-bit
+fields): `vrsn` 1200; `doc ` with `mcfg` (4 unknown bytes, width,
+height, padded to 48 bytes), `fntt`/`font`, `filt`/`fild` (types 0, 1 and
+the version 6 to 12 fountain body), `otlt`/`outl` (version 9 to 12 layout)
+and `bmpt`/`bmp ` (24-bit, model 1); then one `page` per page with `flgs`
+0x90, a `gobj` list and one `layr` per layer (`flgs` 0x98, the layer's
+`loda` with its name, then the objects front to back). Each object is an
+`obj ` list with its `loda` (type, coordinates, fill id, outline id,
+name, transparency), a `trfd` with one type 8 matrix (translation in
+coordinate units, page centre as origin) and, for text, a `txsm` in the
+7 to X5 layout with one style per run. Rectangles, ellipses and text
+keep their own types; every other object is a curve; groups are `grp `
+lists; ClipFrames become a group of the frame outline and the contents;
+effects are evaluated first. The file reads back in this crate (round
+trip tests in `write.rs`) and another public reader of the layout
+rendered the vector content, fills, outlines and plain bitmaps of the
+test files; text and transformed bitmaps are known not to show there.
 
 ## How to confirm an item on a file
 

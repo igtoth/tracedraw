@@ -70,3 +70,9 @@ than 20%.
   `ops::smoke_tests`. `scripts/visual/monkey.py` (MONKEY_SEED, MONKEY_STEPS)
   runs random clicks, drags, keys and chords; seeds 1 to 6 with 150 steps
   survive with no panic.
+- `.cdr` writing: a document with a rectangle (radius, dashed outline,
+  name, transparency), a radial fountain ellipse, a transformed curve with
+  a CMYK fill, bold text, a group, a 2 x 2 bitmap and a second page is
+  written and read back with every value within 0.05 mm (tests in
+  `crates/cdr/src/write.rs`); truncated and bit-flipped copies of a written
+  file never panic the reader.

@@ -22,6 +22,7 @@ pub mod container;
 pub mod parse;
 pub mod riff;
 mod text;
+pub mod write;
 
 use std::path::Path;
 

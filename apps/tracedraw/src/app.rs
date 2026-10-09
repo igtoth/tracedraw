@@ -2337,13 +2337,27 @@ impl App {
         let path = if save_as || self.file.is_none() {
             rfd::FileDialog::new()
                 .add_filter("TraceDraw (*.tdraw)", &["tdraw"])
+                .add_filter(crate::i18n::tr("file.cdr_files"), &["cdr"])
                 .set_file_name("Graphic1.tdraw")
                 .save_file()
         } else {
             self.file.clone()
         };
         let Some(path) = path else { return };
-        match tracedraw_io::save_native(self.engine.document(), &path) {
+        let is_cdr = path
+            .extension()
+            .map(|e| e.eq_ignore_ascii_case("cdr"))
+            .unwrap_or(false);
+        let result = if is_cdr {
+            std::fs::write(
+                &path,
+                tracedraw_cdr::write::document_to_cdr(self.engine.document()),
+            )
+            .map_err(tracedraw_io::Error::from)
+        } else {
+            tracedraw_io::save_native(self.engine.document(), &path)
+        };
+        match result {
             Ok(()) => {
                 self.engine.mark_saved();
                 self.file = Some(path.clone());

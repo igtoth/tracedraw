@@ -5,7 +5,7 @@ layers, curves, text with a full paragraph engine, tables, symbols, every
 fill type (uniform, fountain, pattern, texture, mesh), live effects
 (contour, blend, distort, envelope, perspective, extrude, bevel, block
 shadow, lens, transparency), ClipFrame, bitmap effects and tracing, a
-clean-room `.cdr` reader, SVG, PDF/AI, EPS, DXF, PSD and EMF/WMF import, SVG/PDF/EPS/DXF/EMF/WMF export, JavaScript
+clean-room `.cdr` reader and writer, SVG, PDF/AI, EPS, DXF, PSD and EMF/WMF import, SVG/PDF/EPS/DXF/EMF/WMF export, JavaScript
 automation, a user interface in twelve languages, and a desktop workspace
 built for people who already know how a professional vector editor is laid
 out: menu bar, property bar, toolbox with flyouts, thirty dockers, colour
@@ -59,7 +59,8 @@ measure of progress; `docs/blueprint-gaps.md` lists what is still open.
   bitmap; fifteen groups of bitmap effects; colour modes; colour mask;
   inflate; Bitmap tracing-style tracing (quick, centreline, outline, presets).
 - **Files**: native `.tdraw` (JSON), `.cdr` reader (RIFF and ZIP
-  containers, compressed streams, versions 7 through 2019), SVG, SVGZ,
+  containers, compressed streams, versions 7 through 2019) and writer
+  (version 12 layout), SVG, SVGZ,
   PDF, AI, EPS, DXF, PSD, EMF and WMF import, SVG, PDF, AI, EPS, DXF, EMF, WMF, HTML, PNG,
   JPEG, WebP, GIF, BMP and TIFF export,
   print to PDF, print merge from CSV, templates.

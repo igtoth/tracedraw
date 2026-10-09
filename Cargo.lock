@@ -3680,6 +3680,7 @@ dependencies = [
  "flate2",
  "log",
  "thiserror 2.0.21",
+ "tiny-skia",
  "tracedraw-core",
  "zip",
 ]

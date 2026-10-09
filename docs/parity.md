@@ -6,7 +6,7 @@ target design does, with a test or a checked screenshot behind it.
 "partial" names what is missing. "baked" means the result is applied once
 instead of staying live and editable. The goal is every row at "works".
 
-Counts: works 123, partial 1 (`.cdr` content coverage), missing 1 (CMX import), not applicable 4, icons close but not pixel-identical.
+Counts: works 124, partial 1 (`.cdr` content coverage), missing 1 (CMX import), not applicable 4, icons close but not pixel-identical.
 
 ## 1. Selection and navigation
 
@@ -158,6 +158,7 @@ Counts: works 123, partial 1 (`.cdr` content coverage), missing 1 (CMX import), 
 | Open `.cdr`: RIFF (v3 to X3), X4/X5 ZIP, X6+ ZIP with redirected chunks | works (layouts confirmed against the public format description; real-file corpus still being collected) |
 | `.cdr` content: shapes, curves, paths, polygons, groups, bitmaps (cropped ones as ClipFrames), text (artistic, paragraph, on a path), line spacing and indents, fills, outlines, preset and custom arrowheads, opacity | partial: splines, vector pattern and PostScript fills, tabs/bullets/drop caps from style tables, lenses and effects |
 | Native `.tdraw` save/load | works |
+| Save As `.cdr` (version 12 layout: pages, layers, rectangles, ellipses, curves, groups, text, bitmaps, solid and fountain fills, outlines, transparency) | works (round trip; see `cdr-format.md`, Writing) |
 | Import SVG and SVGZ (groups, clips, gradients, images); open SVG as a document | works |
 | Export SVG, PDF, AI (PDF-compatible), EPS, DXF, EMF, WMF, HTML (inline SVG, page tabs), PNG, JPEG, WebP, GIF, BMP, TIFF; Send To (Desktop, Documents, mail) as PDF; bitmaps, ClipFrames and bitmap transparency in SVG and PDF | works |
 | Export for Web and Office presets | works |

@@ -49,12 +49,12 @@ const UNIT_MM: f64 = 25.4 / 254000.0;
 const UNIT16_MM: f64 = 25.4 / 1000.0;
 
 /// Argument types of the `loda` argument table.
-const ARG_OUTLINE: u32 = 0x0a;
-const ARG_FILL: u32 = 0x14;
-const ARG_COORDS: u32 = 0x1e;
+pub(crate) const ARG_OUTLINE: u32 = 0x0a;
+pub(crate) const ARG_FILL: u32 = 0x14;
+pub(crate) const ARG_COORDS: u32 = 0x1e;
 const ARG_STYLE: u32 = 200;
-const ARG_NAME: u32 = 1000;
-const ARG_OPACITY: u32 = 8000;
+pub(crate) const ARG_NAME: u32 = 1000;
+pub(crate) const ARG_OPACITY: u32 = 8000;
 const ARG_POLYGON: u32 = 11000;
 const ARG_PAGE_SIZE: u32 = 19130;
 
@@ -63,11 +63,11 @@ const DEFAULT_FAMILY: &str = "Arial";
 const DEFAULT_SIZE_PT: f64 = 24.0;
 
 /// Object types stored in the `loda` header.
-const OBJ_RECT: u32 = 0x01;
-const OBJ_ELLIPSE: u32 = 0x02;
-const OBJ_CURVE: u32 = 0x03;
-const OBJ_ARTISTIC_TEXT: u32 = 0x04;
-const OBJ_BITMAP: u32 = 0x05;
+pub(crate) const OBJ_RECT: u32 = 0x01;
+pub(crate) const OBJ_ELLIPSE: u32 = 0x02;
+pub(crate) const OBJ_CURVE: u32 = 0x03;
+pub(crate) const OBJ_ARTISTIC_TEXT: u32 = 0x04;
+pub(crate) const OBJ_BITMAP: u32 = 0x05;
 const OBJ_PARAGRAPH_TEXT: u32 = 0x06;
 const OBJ_POLYGON: u32 = 0x14;
 const OBJ_PATH: u32 = 0x25;

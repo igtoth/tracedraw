@@ -31,11 +31,11 @@ Parity tracked in `docs/parity.md`.
 - Symmetry, ClipFrame editing, linked text frames, connector anchors,
   writing tools, clone effects, custom arrowheads
 
-## M3 Output (done except `.cdr` write)
+## M3 Output (done)
 - PDF export (vector, CMYK, separations), EPS, AI (PDF-based), bitmaps
 - Print to PDF, print preview, print merge
 - PDF/X-1a, X-3 and X-4 output (done)
-- Open: `.cdr` write (RIFF, targeting X3-compatible layout)
+- `.cdr` write (RIFF version 12 layout; reads back here and in another public reader) (done)
 
 ## M4 Platform (in progress)
 - CLI batch convert (done); installers for Windows, macOS, Linux (done)
