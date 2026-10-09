@@ -84,6 +84,7 @@ measure of progress; `docs/blueprint-gaps.md` lists what is still open.
 | ![Fills](docs/screenshots/fills.png) | ![ClipFrame](docs/screenshots/clip-frame.png) |
 | ![Shape tools](docs/screenshots/shape-tools.png) | ![SVG import](docs/screenshots/svg-import.png) |
 | ![Context menu, Portuguese](docs/screenshots/context-menu-pt-br.png) | ![Chinese interface](docs/screenshots/welcome-zh-cn.png) |
+| ![Document Options](docs/screenshots/document-options.png) | |
 
 Captured with the headless driver in `scripts/visual/`.
 

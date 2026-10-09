@@ -448,6 +448,10 @@ pub struct App {
     pub pending_copy_properties: bool,
     pub pending_copy_effect: Option<EffectKind>,
     pub pending_clone_effect: Option<EffectKind>,
+    /// Document Options > Page Size state.
+    pub options_labels: bool,
+    pub options_label_index: usize,
+    pub options_current_only: bool,
     /// Selected custom anchor index (Anchor Editing tool).
     pub anchor_sel: Option<usize>,
     /// Object > Order > In Front Of / Behind is waiting for a click: Some(in_front).
@@ -841,6 +845,9 @@ impl App {
             pending_copy_properties: false,
             pending_copy_effect: None,
             pending_clone_effect: None,
+            options_labels: false,
+            options_label_index: 0,
+            options_current_only: false,
             anchor_sel: None,
             pending_order: None,
             last_repeatable: None,
