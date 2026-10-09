@@ -177,6 +177,17 @@ pub struct QrState {
     pub error: String,
 }
 
+/// Paste Special: the system clipboard is read once when the dialog opens.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct PasteSpecialState {
+    pub loaded: bool,
+    pub has_text: bool,
+    pub is_svg: bool,
+    pub has_image: bool,
+    /// 0 objects, 1 svg, 2 text, 3 bitmap.
+    pub choice: u8,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct BarcodeState {
     pub symbology: crate::barcode::Symbology,
@@ -224,6 +235,31 @@ pub struct SpellState {
     pub replacement: String,
     pub checked: bool,
     pub dictionary_words: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ThesaurusState {
+    /// Word typed or taken from the selection.
+    pub word: String,
+    /// Word as it appears in the text (keeps its capitalisation on replace).
+    pub original: String,
+    pub target: Option<tracedraw_core::ShapeId>,
+    pub looked_up: Option<String>,
+    pub meanings: Vec<crate::thesaurus::Meaning>,
+    pub selected: Option<String>,
+    pub started: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct GrammarState {
+    pub findings: Vec<(tracedraw_core::ShapeId, crate::grammar::Finding)>,
+    pub checked: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct AutocorrectState {
+    pub new_from: String,
+    pub new_to: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -275,6 +311,7 @@ pub enum Dialog {
         cols: u32,
     },
     QrCode(QrState),
+    PasteSpecial(PasteSpecialState),
     Barcode(BarcodeState),
     ConvertToBitmap {
         dpi: f64,
@@ -300,6 +337,10 @@ pub enum Dialog {
     TextDropCap,
     TextStatistics,
     SpellCheck(SpellState),
+    Thesaurus(ThesaurusState),
+    Grammar(GrammarState),
+    Autocorrect(AutocorrectState),
+    BorderGrommet(crate::border_grommet::BorderGrommetState),
     ColorManagement,
     FontManager(FontManagerState),
     PaletteEditor(PaletteEditorState),
@@ -535,6 +576,65 @@ pub fn show(app: &mut App, ctx: &Context) {
                     );
                     if let Some(id) = app.new_shape(ShapeKind::Table(table)) {
                         app.select(vec![id]);
+                    }
+                }
+            });
+        }
+        Dialog::PasteSpecial(st) => {
+            if !st.loaded {
+                let c = crate::clipboard::read_system();
+                st.has_text = c.text.is_some();
+                st.is_svg = c.is_svg();
+                st.has_image = c.image.is_some();
+                st.choice = if app.clipboard.is_some() {
+                    0
+                } else if st.is_svg {
+                    1
+                } else if st.has_image {
+                    3
+                } else {
+                    2
+                };
+                st.loaded = true;
+            }
+            window(ctx, tr("dialog.paste_special")).show(ctx, |ui| {
+                ui.label(tr("dialog.paste_as"));
+                let options: [(u8, String, bool); 4] = [
+                    (0, tr("dialog.paste_objects"), app.clipboard.is_some()),
+                    (1, tr("dialog.paste_svg"), st.is_svg),
+                    (2, tr("dialog.paste_text"), st.has_text),
+                    (3, tr("dialog.paste_bitmap"), st.has_image),
+                ];
+                let any = options.iter().any(|(_, _, ok)| *ok);
+                for (v, label, ok) in &options {
+                    ui.add_enabled_ui(*ok, |ui| {
+                        ui.radio_value(&mut st.choice, *v, label);
+                    });
+                }
+                if !any {
+                    ui.label(
+                        egui::RichText::new(tr("dialog.clipboard_empty")).color(Tokens::TEXT_DIM),
+                    );
+                }
+                if ok_cancel(ui, &mut close) && any {
+                    let c = crate::clipboard::read_system();
+                    match st.choice {
+                        0 => app.paste(),
+                        1 => {
+                            if let Some(t) = c.text {
+                                app.paste_as_svg(&t);
+                            }
+                        }
+                        2 => {
+                            if let Some(t) = c.text {
+                                app.paste_as_text(&t);
+                            }
+                        }
+                        _ => {
+                            if let Some(img) = c.image {
+                                app.paste_as_bitmap(img);
+                            }
+                        }
                     }
                 }
             });
@@ -818,6 +918,10 @@ pub fn show(app: &mut App, ctx: &Context) {
             });
         }
         Dialog::SpellCheck(st) => spell_dialog(app, ctx, st, &mut close),
+        Dialog::Thesaurus(st) => thesaurus_dialog(app, ctx, st, &mut close),
+        Dialog::Grammar(st) => grammar_dialog(app, ctx, st, &mut close),
+        Dialog::Autocorrect(st) => autocorrect_dialog(app, ctx, st, &mut close),
+        Dialog::BorderGrommet(st) => border_grommet_dialog(app, ctx, st, &mut close),
         Dialog::ColorManagement => color_management_dialog(app, ctx, &mut close),
         Dialog::FontManager(st) => font_manager_dialog(app, ctx, st, &mut close),
         Dialog::PaletteEditor(st) => palette_editor_dialog(app, ctx, st, &mut close),
@@ -1366,6 +1470,21 @@ fn options_dialog(app: &mut App, ctx: &Context, close: &mut bool) {
                             });
                             ui.checkbox(&mut app.show_pixel_grid, tr("menu.view.pixel_grid"));
                             ui.checkbox(&mut app.show_baseline_grid, tr("menu.view.baseline_grid"));
+                            ui.horizontal(|ui| {
+                                ui.label(tr("options.baseline_spacing"));
+                                let mut b = u.from_mm(app.settings.baseline_grid_mm);
+                                if ui
+                                    .add(
+                                        egui::DragValue::new(&mut b)
+                                            .speed(0.1)
+                                            .suffix(format!(" {}", u.short())),
+                                    )
+                                    .changed()
+                                    && b > 0.0
+                                {
+                                    app.settings.baseline_grid_mm = u.to_mm(b);
+                                }
+                            });
                         }
                         OptionsPage::Rulers => {
                             ui.strong(tr("options.rulers"));
@@ -2106,6 +2225,436 @@ fn spell_dialog(app: &mut App, ctx: &Context, st: &mut SpellState, close: &mut b
             *close = true;
         }
     });
+}
+
+fn thesaurus_lookup(app: &App, st: &mut ThesaurusState) {
+    let th = crate::thesaurus::get(app.settings.thesaurus_file.as_deref());
+    st.meanings = th.lookup(&st.word).to_vec();
+    st.looked_up = Some(st.word.trim().to_string());
+    st.selected = None;
+}
+
+fn thesaurus_dialog(app: &mut App, ctx: &Context, st: &mut ThesaurusState, close: &mut bool) {
+    if !st.started {
+        st.started = true;
+        if let Some(s) = app.text_shapes().first() {
+            if let ShapeKind::Text { spans, .. } = &s.kind {
+                let text: String = spans.iter().map(|x| x.text.as_str()).collect();
+                if let Some(w) = crate::thesaurus::first_word(&text) {
+                    st.word = w.clone();
+                    st.original = w;
+                    st.target = Some(s.id);
+                }
+            }
+        }
+        if !st.word.is_empty() {
+            thesaurus_lookup(app, st);
+        }
+    }
+    let mut pick_file = false;
+    let mut relookup: Option<String> = None;
+    let mut replace: Option<(tracedraw_core::ShapeId, String)> = None;
+    window(ctx, tr("dialog.thesaurus")).show(ctx, |ui| {
+        ui.set_min_width(360.0);
+        let th = crate::thesaurus::get(app.settings.thesaurus_file.as_deref());
+        match &th.source {
+            crate::thesaurus::Source::BuiltIn => {
+                ui.colored_label(
+                    egui::Color32::from_rgb(180, 80, 0),
+                    tr("thesaurus.built_in_note"),
+                );
+            }
+            crate::thesaurus::Source::File(p) => {
+                ui.label(trf(
+                    "thesaurus.source_file",
+                    &[
+                        ("path", &p.display().to_string()),
+                        ("n", &th.len().to_string()),
+                    ],
+                ));
+            }
+        }
+        ui.horizontal(|ui| {
+            ui.label(tr("thesaurus.word"));
+            let r = ui.text_edit_singleline(&mut st.word);
+            let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+            if ui.button(tr("thesaurus.look_up")).clicked() || enter {
+                thesaurus_lookup(app, st);
+            }
+        });
+        ui.separator();
+        if let Some(w) = &st.looked_up {
+            if st.meanings.is_empty() {
+                ui.label(trf("thesaurus.no_entry", &[("w", w)]));
+            } else {
+                egui::ScrollArea::vertical()
+                    .max_height(260.0)
+                    .show(ui, |ui| {
+                        for m in &st.meanings {
+                            ui.label(
+                                egui::RichText::new(format!("({})", m.pos))
+                                    .italics()
+                                    .color(Tokens::TEXT_DIM),
+                            );
+                            ui.horizontal_wrapped(|ui| {
+                                for syn in &m.synonyms {
+                                    let on = st.selected.as_deref() == Some(syn.as_str());
+                                    let r = ui.selectable_label(on, syn);
+                                    if r.clicked() {
+                                        st.selected = Some(syn.clone());
+                                    }
+                                    if r.double_clicked() {
+                                        relookup = Some(syn.clone());
+                                    }
+                                }
+                            });
+                        }
+                    });
+            }
+        }
+        if st.target.is_none() {
+            ui.label(egui::RichText::new(tr("thesaurus.no_text_selected")).color(Tokens::TEXT_DIM));
+        }
+        ui.add_space(6.0);
+        ui.horizontal(|ui| {
+            let can_replace = st.target.is_some() && st.selected.is_some();
+            if ui
+                .add_enabled(can_replace, egui::Button::new(tr("dialog.replace")))
+                .clicked()
+            {
+                if let (Some(id), Some(sel)) = (st.target, st.selected.clone()) {
+                    replace = Some((id, sel));
+                }
+            }
+            if ui.button(tr("thesaurus.pick_file")).clicked() {
+                pick_file = true;
+            }
+            if ui.button(tr("dialog.close")).clicked() {
+                *close = true;
+            }
+        });
+    });
+    if let Some(w) = relookup {
+        st.word = w;
+        thesaurus_lookup(app, st);
+    }
+    if let Some((id, sel)) = replace {
+        let repl = crate::thesaurus::match_case(&st.original, &sel);
+        crate::spell::replace_word(app, id, &st.original, &repl);
+        app.status = trf("thesaurus.replaced", &[("a", &st.original), ("b", &repl)]);
+        st.original = repl.clone();
+        st.word = repl;
+        thesaurus_lookup(app, st);
+    }
+    if pick_file {
+        if let Some(p) = rfd::FileDialog::new()
+            .add_filter("MyThes", &["dat"])
+            .pick_file()
+        {
+            app.settings.thesaurus_file = Some(p);
+            app.settings.save();
+            thesaurus_lookup(app, st);
+        }
+    }
+}
+
+fn grammar_options() -> crate::grammar::Options {
+    crate::grammar::Options::for_language(&crate::i18n::language())
+}
+
+fn grammar_dialog(app: &mut App, ctx: &Context, st: &mut GrammarState, close: &mut bool) {
+    if !st.checked {
+        st.findings = crate::grammar::check_document(app, grammar_options());
+        st.checked = true;
+    }
+    let mut fix: Option<(tracedraw_core::ShapeId, crate::grammar::Fix)> = None;
+    let mut fix_all = false;
+    window(ctx, tr("dialog.grammar")).show(ctx, |ui| {
+        ui.set_min_width(420.0);
+        ui.label(egui::RichText::new(tr("grammar.scope_note")).color(Tokens::TEXT_DIM));
+        if st.findings.is_empty() {
+            ui.label(tr("grammar.no_issues"));
+        } else {
+            ui.label(trf(
+                "grammar.issues_found",
+                &[("n", &st.findings.len().to_string())],
+            ));
+            egui::ScrollArea::vertical()
+                .max_height(300.0)
+                .show(ui, |ui| {
+                    for (i, (id, f)) in st.findings.iter().enumerate() {
+                        ui.push_id(i, |ui| {
+                            ui.horizontal(|ui| {
+                                ui.vertical(|ui| {
+                                    let rule = if f.rule == crate::grammar::Rule::LongSentence {
+                                        trf(
+                                            f.rule.key(),
+                                            &[(
+                                                "n",
+                                                &crate::grammar::LONG_SENTENCE_WORDS.to_string(),
+                                            )],
+                                        )
+                                    } else {
+                                        tr(f.rule.key())
+                                    };
+                                    ui.label(egui::RichText::new(rule).strong());
+                                    let mut s: String = f.sentence.chars().take(90).collect();
+                                    if s.chars().count() < f.sentence.chars().count() {
+                                        s.push_str("...");
+                                    }
+                                    ui.label(egui::RichText::new(s).color(Tokens::TEXT_DIM));
+                                });
+                                if let Some(x) = &f.fix {
+                                    if ui.button(tr("grammar.fix")).clicked() {
+                                        fix = Some((*id, x.clone()));
+                                    }
+                                }
+                            });
+                            ui.separator();
+                        });
+                    }
+                });
+        }
+        ui.add_space(6.0);
+        ui.horizontal(|ui| {
+            if ui.button(tr("grammar.check_again")).clicked() {
+                st.checked = false;
+            }
+            let any_fix = st.findings.iter().any(|(_, f)| f.fix.is_some());
+            if ui
+                .add_enabled(any_fix, egui::Button::new(tr("grammar.fix_all")))
+                .clicked()
+            {
+                fix_all = true;
+            }
+            if ui.button(tr("dialog.close")).clicked() {
+                *close = true;
+            }
+        });
+    });
+    if let Some((id, x)) = fix {
+        crate::grammar::apply_fix_to_shape(app, id, &x);
+        st.checked = false;
+    }
+    if fix_all {
+        // One fix at a time, re-checking in between so offsets stay valid.
+        for _ in 0..500 {
+            let findings = crate::grammar::check_document(app, grammar_options());
+            let Some((id, f)) = findings.into_iter().find(|(_, f)| f.fix.is_some()) else {
+                break;
+            };
+            if let Some(x) = f.fix {
+                crate::grammar::apply_fix_to_shape(app, id, &x);
+            }
+        }
+        st.checked = false;
+    }
+}
+
+fn autocorrect_dialog(app: &mut App, ctx: &Context, st: &mut AutocorrectState, close: &mut bool) {
+    let mut changed = false;
+    let mut apply = false;
+    let style = crate::autocorrect::QuoteStyle::for_language(&crate::i18n::language());
+    window(ctx, tr("dialog.autocorrect")).show(ctx, |ui| {
+        ui.set_min_width(380.0);
+        let p = &mut app.settings.autocorrect;
+        changed |= ui
+            .checkbox(&mut p.enabled, tr("autocorrect.enabled"))
+            .changed();
+        ui.separator();
+        changed |= ui
+            .checkbox(&mut p.capitalize_sentences, tr("autocorrect.capitalize"))
+            .changed();
+        changed |= ui
+            .checkbox(
+                &mut p.fix_two_initial_capitals,
+                tr("autocorrect.two_capitals"),
+            )
+            .changed();
+        changed |= ui
+            .checkbox(&mut p.typographic_quotes, tr("autocorrect.quotes"))
+            .changed();
+        let (o, c) = style.double();
+        let (so, sc) = style.single();
+        ui.label(
+            egui::RichText::new(trf(
+                "autocorrect.quotes_example",
+                &[("q", &format!("{o}abc{c}  {so}abc{sc}"))],
+            ))
+            .color(Tokens::TEXT_DIM),
+        );
+        ui.separator();
+        ui.label(egui::RichText::new(tr("autocorrect.replacements")).strong());
+        let mut remove: Option<usize> = None;
+        egui::ScrollArea::vertical()
+            .max_height(180.0)
+            .show(ui, |ui| {
+                egui::Grid::new("qc_table")
+                    .num_columns(3)
+                    .striped(true)
+                    .show(ui, |ui| {
+                        ui.label(tr("autocorrect.replace_col"));
+                        ui.label(tr("autocorrect.with_col"));
+                        ui.label("");
+                        ui.end_row();
+                        for (i, (from, to)) in p.replacements.iter_mut().enumerate() {
+                            changed |= ui
+                                .add_sized([130.0, 20.0], egui::TextEdit::singleline(from))
+                                .changed();
+                            changed |= ui
+                                .add_sized([130.0, 20.0], egui::TextEdit::singleline(to))
+                                .changed();
+                            if ui.small_button(tr("autocorrect.remove")).clicked() {
+                                remove = Some(i);
+                            }
+                            ui.end_row();
+                        }
+                        ui.add_sized([130.0, 20.0], egui::TextEdit::singleline(&mut st.new_from));
+                        ui.add_sized([130.0, 20.0], egui::TextEdit::singleline(&mut st.new_to));
+                        let can_add = !st.new_from.trim().is_empty()
+                            && !st.new_from.contains(char::is_whitespace);
+                        if ui
+                            .add_enabled(can_add, egui::Button::new(tr("autocorrect.add")).small())
+                            .clicked()
+                        {
+                            p.replacements
+                                .push((st.new_from.trim().to_string(), st.new_to.clone()));
+                            st.new_from.clear();
+                            st.new_to.clear();
+                            changed = true;
+                        }
+                        ui.end_row();
+                    });
+            });
+        if let Some(i) = remove {
+            if i < p.replacements.len() {
+                p.replacements.remove(i);
+                changed = true;
+            }
+        }
+        ui.add_space(6.0);
+        ui.horizontal(|ui| {
+            if ui.button(tr("autocorrect.apply_selection")).clicked() {
+                apply = true;
+            }
+            if ui.button(tr("dialog.close")).clicked() {
+                *close = true;
+            }
+        });
+    });
+    if changed {
+        app.settings.save();
+    }
+    if apply {
+        if app.text_shapes().is_empty() {
+            app.status = tr("autocorrect.no_selection");
+        } else {
+            let n = crate::autocorrect::apply_to_selection(app);
+            app.status = trf("autocorrect.applied", &[("n", &n.to_string())]);
+        }
+    }
+}
+
+fn border_grommet_dialog(
+    app: &mut App,
+    ctx: &Context,
+    st: &mut crate::border_grommet::BorderGrommetState,
+    close: &mut bool,
+) {
+    use crate::border_grommet::BorderKind;
+    let units = app.units;
+    let page = app.page_size();
+    let mut ok = false;
+    window(ctx, tr("border_grommet.title")).show(ctx, |ui| {
+        ui.set_min_width(360.0);
+        ui.horizontal(|ui| {
+            ui.label(tr("border_grommet.border_type"));
+            egui::ComboBox::from_id_salt("bg_kind")
+                .selected_text(tr(st.border.key()))
+                .show_ui(ui, |ui| {
+                    for k in BorderKind::ALL {
+                        ui.selectable_value(&mut st.border, k, tr(k.key()));
+                    }
+                });
+        });
+        if st.border != BorderKind::None {
+            unit_value(
+                ui,
+                &tr("border_grommet.border_width"),
+                &mut st.width_mm,
+                units,
+            );
+            st.width_mm = st.width_mm.max(0.0);
+        }
+        if st.border == BorderKind::Solid {
+            ui.horizontal(|ui| {
+                ui.label(tr("border_grommet.border_color"));
+                let [r, g, b] = st.color.to_rgb8();
+                let mut rgb = [r, g, b];
+                if ui.color_edit_button_srgb(&mut rgb).changed() {
+                    st.color = Color::rgb8(rgb[0], rgb[1], rgb[2]);
+                }
+            });
+        }
+        ui.separator();
+        ui.checkbox(&mut st.grommets, tr("border_grommet.grommets"));
+        if st.grommets {
+            let g = &mut st.grommet;
+            unit_value(
+                ui,
+                &tr("border_grommet.diameter"),
+                &mut g.diameter_mm,
+                units,
+            );
+            unit_value(ui, &tr("border_grommet.margin"), &mut g.margin_mm, units);
+            g.diameter_mm = g.diameter_mm.max(0.1);
+            g.margin_mm = g.margin_mm.max(0.0);
+            ui.horizontal(|ui| {
+                ui.radio_value(&mut g.by_count, false, tr("border_grommet.by_spacing"));
+                ui.add_enabled_ui(!g.by_count, |ui| {
+                    let mut v = units.from_mm(g.spacing_mm);
+                    if ui
+                        .add(
+                            egui::DragValue::new(&mut v)
+                                .speed(1.0)
+                                .suffix(format!(" {}", units.short())),
+                        )
+                        .changed()
+                    {
+                        g.spacing_mm = units.to_mm(v).max(1.0);
+                    }
+                });
+            });
+            ui.horizontal(|ui| {
+                ui.radio_value(&mut g.by_count, true, tr("border_grommet.by_count"));
+                ui.add_enabled_ui(g.by_count, |ui| {
+                    ui.add(egui::DragValue::new(&mut g.count_per_edge).range(2..=200));
+                });
+            });
+            ui.checkbox(&mut g.corners_only, tr("border_grommet.corners_only"));
+        }
+        ui.separator();
+        let final_size = st.final_size(page);
+        let n = if st.grommets {
+            crate::border_grommet::grommet_centers(final_size, &st.grommet).len()
+        } else {
+            0
+        };
+        ui.label(trf(
+            "border_grommet.preview",
+            &[
+                ("n", &n.to_string()),
+                ("w", &format!("{:.1}", units.from_mm(final_size.width))),
+                ("h", &format!("{:.1}", units.from_mm(final_size.height))),
+                ("u", units.short()),
+            ],
+        ));
+        ok = ok_cancel(ui, close);
+    });
+    if ok {
+        let n = crate::border_grommet::apply(app, st);
+        app.status = trf("border_grommet.done", &[("n", &n.to_string())]);
+    }
 }
 
 fn color_management_dialog(app: &mut App, ctx: &Context, close: &mut bool) {

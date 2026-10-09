@@ -80,7 +80,7 @@ pub fn standard_toolbar(app: &mut App, ui: &mut Ui) {
             app.cut();
         }
         if tb_button(ui, icons::Action::Copy, &tr("toolbar.copy"), has) {
-            app.copy();
+            app.copy_with_system();
         }
         if tb_button(
             ui,
@@ -88,7 +88,7 @@ pub fn standard_toolbar(app: &mut App, ui: &mut Ui) {
             &tr("toolbar.paste"),
             app.clipboard.is_some(),
         ) {
-            app.paste();
+            app.paste_any();
         }
         vsep(ui);
         if tb_button(

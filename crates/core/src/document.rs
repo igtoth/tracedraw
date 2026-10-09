@@ -198,6 +198,62 @@ impl TextSpan {
             features: Vec::new(),
         }
     }
+
+    /// Number of characters (Unicode scalar values) in the span.
+    pub fn char_count(&self) -> usize {
+        self.text.chars().count()
+    }
+}
+
+/// Total character count of a span list (the index space of
+/// [`split_spans_at`] and of `TextLayout::fitted_chars`).
+pub fn spans_char_count(spans: &[TextSpan]) -> usize {
+    spans.iter().map(TextSpan::char_count).sum()
+}
+
+/// Split a span list at a character index of the concatenated text,
+/// keeping every span's style on both sides. A span cut in the middle
+/// becomes two spans with the same style; spans left empty by the cut are
+/// dropped. `at_chars` beyond the end puts everything in the first list.
+pub fn split_spans_at(spans: &[TextSpan], at_chars: usize) -> (Vec<TextSpan>, Vec<TextSpan>) {
+    let mut head = Vec::new();
+    let mut tail = Vec::new();
+    let mut seen = 0usize;
+    for span in spans {
+        let n = span.char_count();
+        if seen + n <= at_chars {
+            if n > 0 {
+                head.push(span.clone());
+            }
+        } else if seen >= at_chars {
+            if n > 0 {
+                tail.push(span.clone());
+            }
+        } else {
+            let cut = at_chars - seen;
+            let byte = span
+                .text
+                .char_indices()
+                .nth(cut)
+                .map(|(b, _)| b)
+                .unwrap_or(span.text.len());
+            let (a, b) = span.text.split_at(byte);
+            if !a.is_empty() {
+                head.push(TextSpan {
+                    text: a.to_string(),
+                    ..span.clone()
+                });
+            }
+            if !b.is_empty() {
+                tail.push(TextSpan {
+                    text: b.to_string(),
+                    ..span.clone()
+                });
+            }
+        }
+        seen += n;
+    }
+    (head, tail)
 }
 
 /// Paragraph formatting (Text > Tabs, Columns, Bullets, Drop Cap and the
@@ -225,6 +281,10 @@ pub struct ParagraphStyle {
     pub hyphenate: bool,
     /// Fit text to frame: scale the font so the text fills the frame height.
     pub fit_to_frame: bool,
+    /// Align baselines to a grid of this pitch in mm, measured down from the
+    /// top of the frame (Text > Align to Baseline Grid); 0 = off. Only
+    /// paragraph text snaps.
+    pub baseline_grid_mm: f64,
 }
 
 impl Default for ParagraphStyle {
@@ -245,6 +305,7 @@ impl Default for ParagraphStyle {
             tabs: Vec::new(),
             hyphenate: false,
             fit_to_frame: false,
+            baseline_grid_mm: 0.0,
         }
     }
 }
@@ -1002,5 +1063,58 @@ mod tests {
         assert!((b.x0 - 15.0).abs() < 1e-6 && (b.y1 - 35.0).abs() < 1e-6);
         assert_eq!(back.locate(id).unwrap(), (layer, 0));
         let _ = Point::ZERO;
+    }
+
+    #[test]
+    fn split_spans_in_the_middle_of_a_span_keeps_styles() {
+        let mut bold = TextSpan::new("Hello ", "Sans", 12.0);
+        bold.bold = true;
+        let mut italic = TextSpan::new("wörld!", "Serif", 10.0);
+        italic.italic = true;
+        italic.fill = Some(Fill::Solid(crate::Color::rgb8(255, 0, 0)));
+        let spans = vec![bold.clone(), italic.clone()];
+        assert_eq!(spans_char_count(&spans), 12);
+
+        // Cut inside the second span, after the multi-byte "ö".
+        let (head, tail) = split_spans_at(&spans, 8);
+        assert_eq!(head.len(), 2);
+        assert_eq!(head[0], bold);
+        assert_eq!(head[1].text, "wö");
+        assert!(head[1].italic && head[1].fill == italic.fill);
+        assert_eq!(tail.len(), 1);
+        assert_eq!(tail[0].text, "rld!");
+        assert!(tail[0].italic && tail[0].size_pt == 10.0);
+        assert_eq!(spans_char_count(&head) + spans_char_count(&tail), 12);
+    }
+
+    #[test]
+    fn split_spans_at_boundaries() {
+        let spans = vec![
+            TextSpan::new("ab", "Sans", 12.0),
+            TextSpan::new("cd", "Sans", 12.0),
+        ];
+        // Exactly on a span boundary: no span is cut.
+        let (head, tail) = split_spans_at(&spans, 2);
+        assert_eq!(head, vec![spans[0].clone()]);
+        assert_eq!(tail, vec![spans[1].clone()]);
+        // At zero: everything goes to the tail.
+        let (head, tail) = split_spans_at(&spans, 0);
+        assert!(head.is_empty());
+        assert_eq!(tail, spans);
+        // Past the end: everything stays in the head.
+        let (head, tail) = split_spans_at(&spans, 99);
+        assert_eq!(head, spans);
+        assert!(tail.is_empty());
+        // Empty input.
+        let (head, tail) = split_spans_at(&[], 3);
+        assert!(head.is_empty() && tail.is_empty());
+    }
+
+    #[test]
+    fn baseline_grid_defaults_to_off_and_loads_from_old_files() {
+        assert_eq!(ParagraphStyle::default().baseline_grid_mm, 0.0);
+        let p: ParagraphStyle = serde_json::from_str(r#"{"leading_pct":120.0}"#).unwrap();
+        assert_eq!(p.baseline_grid_mm, 0.0);
+        assert_eq!(p.leading_pct, 120.0);
     }
 }

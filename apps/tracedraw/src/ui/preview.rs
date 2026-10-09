@@ -38,6 +38,7 @@ pub fn fullscreen(app: &mut App, ui: &mut Ui) {
                 view,
                 preview: None,
                 wireframe: false,
+                ..tracedraw_render::RenderOptions::default()
             };
             let page_id = app.page;
             if let Some(mut pm) = tracedraw_render::render_page(&doc, page_id, &opts) {

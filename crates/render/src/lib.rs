@@ -52,6 +52,60 @@ pub struct RenderOptions {
     pub preview: Option<Preview>,
     /// Draw outlines only (the target design's Wireframe view).
     pub wireframe: bool,
+    /// Show overprints (View > Simulate Overprints): a fill marked
+    /// `overprint_fill` and an outline marked `overprint_outline` are
+    /// multiplied over what lies beneath instead of knocking it out.
+    pub simulate_overprints: bool,
+    /// Rasterise lenses and non-uniform transparency (the reference
+    /// editor's "Rasterize complex effects" in Enhanced view). When false
+    /// those objects are drawn plainly, which is much faster.
+    pub complex_effects: bool,
+}
+
+impl Default for RenderOptions {
+    fn default() -> Self {
+        RenderOptions {
+            width: 1,
+            height: 1,
+            view: ViewTransform {
+                zoom: 1.0,
+                origin_x: 0.0,
+                origin_y: 0.0,
+            },
+            preview: None,
+            wireframe: false,
+            simulate_overprints: false,
+            complex_effects: true,
+        }
+    }
+}
+
+/// Per-renderer behaviour flags, copied into every nested renderer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Flags {
+    wireframe: bool,
+    simulate_overprints: bool,
+    complex_effects: bool,
+}
+
+impl Flags {
+    fn from_options(opts: &RenderOptions) -> Self {
+        Flags {
+            wireframe: opts.wireframe,
+            simulate_overprints: opts.simulate_overprints,
+            complex_effects: opts.complex_effects,
+        }
+    }
+}
+
+impl Default for Flags {
+    fn default() -> Self {
+        Flags {
+            wireframe: false,
+            simulate_overprints: false,
+            complex_effects: true,
+        }
+    }
 }
 
 /// Render the objects of one page onto a transparent pixmap.
@@ -63,7 +117,7 @@ pub fn render_page(doc: &Document, page: PageId, opts: &RenderOptions) -> Option
         pixmap: &mut pixmap,
         screen,
         zoom: opts.view.zoom,
-        wireframe: opts.wireframe,
+        flags: Flags::from_options(opts),
         symbols: &doc.symbols,
     };
     if let Some(bg) = &page.background {
@@ -98,11 +152,35 @@ struct Renderer<'a> {
     pixmap: &'a mut Pixmap,
     screen: Affine,
     zoom: f64,
-    wireframe: bool,
+    flags: Flags,
     symbols: &'a [tracedraw_core::Symbol],
 }
 
 impl Renderer<'_> {
+    /// A renderer with the same settings drawing into another pixmap.
+    fn sub<'b>(&self, pixmap: &'b mut Pixmap) -> Renderer<'b>
+    where
+        Self: 'b,
+    {
+        Renderer {
+            pixmap,
+            screen: self.screen,
+            zoom: self.zoom,
+            flags: self.flags,
+            symbols: self.symbols,
+        }
+    }
+
+    /// Blend mode for a fill or outline: multiply when it overprints and
+    /// overprint simulation is on, otherwise ordinary source-over.
+    fn blend_for(&self, overprint: bool) -> tiny_skia::BlendMode {
+        if overprint && self.flags.simulate_overprints {
+            tiny_skia::BlendMode::Multiply
+        } else {
+            tiny_skia::BlendMode::SourceOver
+        }
+    }
+
     fn draw_shape(&mut self, shape: &Shape, parent: Affine) {
         if !shape.visible {
             return;
@@ -128,7 +206,11 @@ impl Renderer<'_> {
             });
             let mut main = ev.main.clone();
             main.effects.clear();
-            if let Some(l) = lens {
+            if !self.flags.complex_effects {
+                // Complex effects off: the object is drawn as it is, with
+                // no pixel work for lenses or transparency masks.
+                self.draw_shape(&main, parent);
+            } else if let Some(l) = lens {
                 self.draw_lens(&main, parent, &l);
             } else if let Some((mask, merge)) = transparency {
                 self.draw_with_mask(&main, parent, &mask, merge);
@@ -172,13 +254,7 @@ impl Renderer<'_> {
                 {
                     mask.fill_path(&sk_frame, FillRule::EvenOdd, true, Transform::identity());
                     {
-                        let mut sub = Renderer {
-                            pixmap: &mut layer,
-                            screen: self.screen,
-                            zoom: self.zoom,
-                            wireframe: self.wireframe,
-                            symbols: self.symbols,
-                        };
+                        let mut sub = self.sub(&mut layer);
                         for c in contents {
                             sub.draw_shape(c, transform);
                         }
@@ -220,7 +296,7 @@ impl Renderer<'_> {
 
         // Drop shadow: blurred silhouette behind the object.
         if let Some(sh) = &shape.shadow {
-            if !self.wireframe && sh.opacity > 0.0 {
+            if !self.flags.wireframe && sh.opacity > 0.0 {
                 let (w, h) = (self.pixmap.width(), self.pixmap.height());
                 if let Some(mut layer) = Pixmap::new(w, h) {
                     let shifted = Affine::translate(sh.offset) * page_path.clone();
@@ -261,13 +337,7 @@ impl Renderer<'_> {
         if opacity < 1.0 {
             let (w, h) = (self.pixmap.width(), self.pixmap.height());
             if let Some(mut layer) = Pixmap::new(w, h) {
-                let mut sub = Renderer {
-                    pixmap: &mut layer,
-                    screen: self.screen,
-                    zoom: self.zoom,
-                    wireframe: self.wireframe,
-                    symbols: self.symbols,
-                };
+                let mut sub = self.sub(&mut layer);
                 let mut opaque = shape.clone();
                 opaque.opacity = 1.0;
                 sub.draw_shape(&opaque, parent);
@@ -288,7 +358,7 @@ impl Renderer<'_> {
             png,
         } = &shape.kind
         {
-            if !self.wireframe {
+            if !self.flags.wireframe {
                 if let Ok(img) = Pixmap::decode_png(png) {
                     // Image pixel space (y down) to local rect (y up) to screen.
                     let sx = rect.width() / (*width_px).max(1) as f64;
@@ -322,10 +392,11 @@ impl Renderer<'_> {
                 }
             }
             if let Some(stroke) = &shape.stroke {
-                let (paint, sk_stroke) = self.stroke_paint(stroke, transform);
+                let (mut paint, sk_stroke) = self.stroke_paint(stroke, transform);
+                paint.blend_mode = self.blend_for(shape.overprint_outline);
                 self.pixmap
                     .stroke_path(&sk, &paint, &sk_stroke, Transform::identity(), None);
-            } else if self.wireframe {
+            } else if self.flags.wireframe {
                 let mut paint = Paint::default();
                 paint.set_color_rgba8(0, 0, 0, 255);
                 let s = SkStroke {
@@ -338,24 +409,26 @@ impl Renderer<'_> {
             return;
         }
 
-        if !self.wireframe {
+        if !self.flags.wireframe {
             let rule = match &shape.kind {
                 ShapeKind::Text { .. } => FillRule::Winding,
                 _ => FillRule::EvenOdd,
             };
+            let blend = self.blend_for(shape.overprint_fill);
             if let Fill::Mesh(m) = &shape.fill {
                 // Mesh nodes are local: bring them to page space first.
                 let mut pm = m.clone();
                 for n in pm.nodes.iter_mut() {
                     n.pos = transform * n.pos;
                 }
-                self.fill_mesh(&pm, &sk, rule);
+                self.fill_mesh(&pm, &sk, rule, blend);
             } else {
-                self.draw_fill(&shape.fill, &page_path, &sk, rule);
+                self.draw_fill_blended(&shape.fill, &page_path, &sk, rule, blend);
             }
         }
         if let Some(stroke) = &shape.stroke {
-            let (paint, sk_stroke) = self.stroke_paint(stroke, transform);
+            let (mut paint, sk_stroke) = self.stroke_paint(stroke, transform);
+            paint.blend_mode = self.blend_for(shape.overprint_outline);
             self.pixmap
                 .stroke_path(&sk, &paint, &sk_stroke, Transform::identity(), None);
             for head in tracedraw_core::style::arrowhead_paths(&page_path, stroke) {
@@ -369,7 +442,7 @@ impl Renderer<'_> {
                     );
                 }
             }
-        } else if self.wireframe {
+        } else if self.flags.wireframe {
             let mut paint = Paint::default();
             paint.set_color_rgba8(0, 0, 0, 255);
             paint.anti_alias = true;
@@ -497,13 +570,7 @@ impl Renderer<'_> {
             return;
         };
         {
-            let mut sub = Renderer {
-                pixmap: &mut layer,
-                screen: self.screen,
-                zoom: self.zoom,
-                wireframe: self.wireframe,
-                symbols: self.symbols,
-            };
+            let mut sub = self.sub(&mut layer);
             sub.draw_shape(shape, parent);
         }
         let transform = parent * shape.transform;
@@ -511,13 +578,8 @@ impl Renderer<'_> {
         let bounds = page_path.bounding_box();
         let rect_path = tracedraw_core::geometry::rect_path(bounds, 0.0);
         if let Some(sk) = to_sk_path(&(self.screen * rect_path.clone())) {
-            let mut sub = Renderer {
-                pixmap: &mut mask_pm,
-                screen: self.screen,
-                zoom: self.zoom,
-                wireframe: false,
-                symbols: self.symbols,
-            };
+            let mut sub = self.sub(&mut mask_pm);
+            sub.flags.wireframe = false;
             sub.draw_fill(mask_fill, &rect_path, &sk, FillRule::Winding);
         }
         let mdata: Vec<u8> = mask_pm
@@ -570,8 +632,40 @@ impl Renderer<'_> {
 
     /// Fill a screen-space path with any fill type.
     fn draw_fill(&mut self, fill: &Fill, page_path: &BezPath, sk: &SkPath, rule: FillRule) {
+        self.draw_fill_blended(fill, page_path, sk, rule, tiny_skia::BlendMode::SourceOver);
+    }
+
+    /// `draw_fill` with a blend mode. Solid fills blend directly; the other
+    /// fill types render into a scratch layer that is then composited with
+    /// the mode, so every fill type can overprint.
+    fn draw_fill_blended(
+        &mut self,
+        fill: &Fill,
+        page_path: &BezPath,
+        sk: &SkPath,
+        rule: FillRule,
+        blend: tiny_skia::BlendMode,
+    ) {
+        if blend != tiny_skia::BlendMode::SourceOver && !matches!(fill, Fill::Solid(_)) {
+            let (w, h) = (self.pixmap.width(), self.pixmap.height());
+            let Some(mut layer) = Pixmap::new(w, h) else {
+                return;
+            };
+            {
+                let mut sub = self.sub(&mut layer);
+                sub.draw_fill(fill, page_path, sk, rule);
+            }
+            let pp = tiny_skia::PixmapPaint {
+                blend_mode: blend,
+                ..Default::default()
+            };
+            self.pixmap
+                .draw_pixmap(0, 0, layer.as_ref(), &pp, Transform::identity(), None);
+            return;
+        }
         let mut paint = Paint::default();
         paint.anti_alias = true;
+        paint.blend_mode = blend;
         match fill {
             Fill::None => {}
             Fill::Solid(c) => {
@@ -650,7 +744,7 @@ impl Renderer<'_> {
                 }
             }
             Fill::Pattern(p) => self.fill_pattern(p, sk, rule),
-            Fill::Mesh(m) => self.fill_mesh(m, sk, rule),
+            Fill::Mesh(m) => self.fill_mesh(m, sk, rule, tiny_skia::BlendMode::SourceOver),
             Fill::Texture(t) => {
                 let b = bbox(page_path);
                 let t2 = t.clone();
@@ -666,7 +760,13 @@ impl Renderer<'_> {
 
     /// Mesh fill (nodes in page space): each cell is split into small
     /// flat-coloured triangles (Gouraud approximation), clipped by the path.
-    fn fill_mesh(&mut self, m: &tracedraw_core::Mesh, sk: &SkPath, rule: FillRule) {
+    fn fill_mesh(
+        &mut self,
+        m: &tracedraw_core::Mesh,
+        sk: &SkPath,
+        rule: FillRule,
+        blend: tiny_skia::BlendMode,
+    ) {
         let (w, h) = (self.pixmap.width(), self.pixmap.height());
         let (Some(mut layer), Some(mut mask)) = (Pixmap::new(w, h), tiny_skia::Mask::new(w, h))
         else {
@@ -741,11 +841,15 @@ impl Renderer<'_> {
                 }
             }
         }
+        let pp = tiny_skia::PixmapPaint {
+            blend_mode: blend,
+            ..Default::default()
+        };
         self.pixmap.draw_pixmap(
             0,
             0,
             layer.as_ref(),
-            &tiny_skia::PixmapPaint::default(),
+            &pp,
             Transform::identity(),
             Some(&mask),
         );
@@ -901,7 +1005,10 @@ impl Renderer<'_> {
             pixmap: &mut pm,
             screen,
             zoom: self.zoom,
-            wireframe: false,
+            flags: Flags {
+                wireframe: false,
+                ..self.flags
+            },
             symbols: self.symbols,
         };
         for s in shapes {
@@ -1135,7 +1242,7 @@ pub fn render_fill_image(fill: &Fill, bounds: Rect, dpi: f64) -> Option<Pixmap> 
         pixmap: &mut pixmap,
         screen,
         zoom,
-        wireframe: false,
+        flags: Flags::default(),
         symbols: &[],
     };
     r.draw_fill(fill, &page_path, &sk, FillRule::Winding);
@@ -1144,6 +1251,18 @@ pub fn render_fill_image(fill: &Fill, bounds: Rect, dpi: f64) -> Option<Pixmap> 
 
 /// Render a whole page to an RGBA image at `dpi`, white background (exports, thumbnails, tests).
 pub fn render_page_image(doc: &Document, page: PageId, dpi: f64) -> Option<Pixmap> {
+    render_page_image_with(doc, page, dpi, &RenderOptions::default())
+}
+
+/// `render_page_image` with the behaviour flags of `opts` (`wireframe`,
+/// `simulate_overprints`, `complex_effects`); its size, view and preview
+/// are replaced by the page's own.
+pub fn render_page_image_with(
+    doc: &Document,
+    page: PageId,
+    dpi: f64,
+    opts: &RenderOptions,
+) -> Option<Pixmap> {
     let p = doc.page(page).ok()?;
     let zoom = dpi / 25.4;
     let w = (p.size.width * zoom).ceil() as u32;
@@ -1161,7 +1280,9 @@ pub fn render_page_image(doc: &Document, page: PageId, dpi: f64) -> Option<Pixma
             height: h,
             view,
             preview: None,
-            wireframe: false,
+            wireframe: opts.wireframe,
+            simulate_overprints: opts.simulate_overprints,
+            complex_effects: opts.complex_effects,
         },
     )?;
     let mut out = Pixmap::new(w, h)?;
@@ -1225,6 +1346,177 @@ mod tests {
         let pm = render_page_image(&doc, page, 25.4).unwrap();
         assert_eq!(px(&pm, 50, 50), (0, 255, 255));
         assert_eq!(px(&pm, 5, 5), (255, 0, 0));
+    }
+
+    #[test]
+    fn simulated_overprint_multiplies_the_fill_over_what_is_beneath() {
+        let yellow = rect(
+            1,
+            Rect::new(0.0, 0.0, 100.0, 100.0),
+            Color::rgb8(255, 255, 0),
+        );
+        let mut grey = rect(
+            2,
+            Rect::new(25.0, 25.0, 75.0, 75.0),
+            Color::rgb8(128, 128, 128),
+        );
+        grey.overprint_fill = true;
+        let (doc, page) = doc_with(vec![yellow, grey]);
+        // Off (the default): the grey knocks the yellow out.
+        let pm = render_page_image(&doc, page, 25.4).unwrap();
+        assert_eq!(px(&pm, 50, 50), (128, 128, 128));
+        // On: multiply gives a darker yellow, and the surroundings stay yellow.
+        let opts = RenderOptions {
+            simulate_overprints: true,
+            ..RenderOptions::default()
+        };
+        let pm = render_page_image_with(&doc, page, 25.4, &opts).unwrap();
+        let (r, g, b) = px(&pm, 50, 50);
+        assert!((120..=136).contains(&r) && r == g && b == 0, "{r} {g} {b}");
+        assert_eq!(px(&pm, 5, 5), (255, 255, 0));
+    }
+
+    #[test]
+    fn simulated_overprint_applies_to_outlines_and_leaves_plain_objects_alone() {
+        let yellow = rect(
+            1,
+            Rect::new(0.0, 0.0, 100.0, 100.0),
+            Color::rgb8(255, 255, 0),
+        );
+        // A thick grey outline across the page, no fill.
+        let mut line = Shape::new(
+            tracedraw_core::ShapeId(2),
+            ShapeKind::Path {
+                path: {
+                    let mut p = tracedraw_core::geometry::BezPath::new();
+                    p.move_to((0.0, 50.0));
+                    p.line_to((100.0, 50.0));
+                    p
+                },
+                closed: false,
+            },
+        );
+        line.fill = Fill::None;
+        line.stroke = Some(Stroke::new(Color::rgb8(128, 128, 128), 10.0));
+        line.overprint_outline = true;
+        // A plain grey square that does not overprint.
+        let plain = rect(
+            3,
+            Rect::new(5.0, 5.0, 20.0, 20.0),
+            Color::rgb8(128, 128, 128),
+        );
+        let (doc, page) = doc_with(vec![yellow, line, plain]);
+        let opts = RenderOptions {
+            simulate_overprints: true,
+            ..RenderOptions::default()
+        };
+        let pm = render_page_image_with(&doc, page, 25.4, &opts).unwrap();
+        let (r, g, b) = px(&pm, 50, 50);
+        assert!(
+            (120..=136).contains(&r) && r == g && b == 0,
+            "outline {r} {g} {b}"
+        );
+        assert_eq!(px(&pm, 12, 87), (128, 128, 128), "plain fill knocks out");
+    }
+
+    #[test]
+    fn complex_effects_off_skips_the_lens() {
+        let base = rect(1, Rect::new(0.0, 0.0, 100.0, 100.0), Color::rgb8(255, 0, 0));
+        let mut lens = rect(2, Rect::new(25.0, 25.0, 75.0, 75.0), Color::WHITE);
+        lens.effects.push(tracedraw_core::live::Effect::Lens(
+            tracedraw_core::live::Lens::Invert,
+        ));
+        let (doc, page) = doc_with(vec![base, lens]);
+        let full = render_page_image(&doc, page, 25.4).unwrap();
+        assert_eq!(px(&full, 50, 50), (0, 255, 255), "lens inverts");
+        let opts = RenderOptions {
+            complex_effects: false,
+            ..RenderOptions::default()
+        };
+        let fast = render_page_image_with(&doc, page, 25.4, &opts).unwrap();
+        assert_eq!(
+            px(&fast, 50, 50),
+            (255, 255, 255),
+            "plain white fill instead"
+        );
+        assert_eq!(px(&fast, 5, 5), (255, 0, 0));
+        assert_ne!(full.data(), fast.data());
+    }
+
+    #[test]
+    fn complex_effects_off_skips_the_transparency_mask() {
+        let mut s = rect(1, Rect::new(0.0, 0.0, 100.0, 10.0), Color::rgb8(0, 0, 0));
+        s.effects.push(tracedraw_core::live::Effect::Transparency {
+            mask: Fill::linear(Color::WHITE, Color::BLACK, 0.0),
+            merge: tracedraw_core::live::MergeMode::Normal,
+            target: 2,
+        });
+        let (doc, page) = doc_with(vec![s]);
+        let opts = RenderOptions {
+            complex_effects: false,
+            ..RenderOptions::default()
+        };
+        let pm = render_page_image_with(&doc, page, 25.4, &opts).unwrap();
+        // Without the mask the bar is solid black from end to end.
+        assert_eq!(px(&pm, 3, 95), (0, 0, 0));
+        assert_eq!(px(&pm, 96, 95), (0, 0, 0));
+    }
+
+    #[test]
+    fn custom_arrowhead_paints_the_line_end() {
+        // A right-pointing triangle, 20 wide and 20 tall, as a custom head.
+        let mut tri = tracedraw_core::geometry::BezPath::new();
+        tri.move_to((0.0, 0.0));
+        tri.line_to((20.0, 10.0));
+        tri.line_to((0.0, 20.0));
+        tri.close_path();
+        let head = tracedraw_core::Arrowhead::from_shape_path(&tri, "Tri");
+        let mut line = Shape::new(
+            tracedraw_core::ShapeId(1),
+            ShapeKind::Path {
+                path: {
+                    let mut p = tracedraw_core::geometry::BezPath::new();
+                    p.move_to((10.0, 50.0));
+                    p.line_to((60.0, 50.0));
+                    p
+                },
+                closed: false,
+            },
+        );
+        line.fill = Fill::None;
+        line.stroke = Some(Stroke {
+            end_arrow: head,
+            ..Stroke::new(Color::rgb8(0, 0, 255), 2.0)
+        });
+        let (doc, page) = doc_with(vec![line]);
+        let pm = render_page_image(&doc, page, 25.4).unwrap();
+        // Size = 4 widths = 8 mm: the head spans x 52..60, y 46..54. Its
+        // base is 8 mm tall at x = 52, well outside the 2 mm line; its tip
+        // is at x = 60.
+        let blue = |x: u32, y: u32| {
+            let (r, g, b) = px(&pm, x, y);
+            assert!(
+                b == 255 && r < 40 && g < 40,
+                "({x}, {y}) should be blue: {r} {g} {b}"
+            );
+        };
+        blue(53, 48);
+        blue(53, 52);
+        blue(58, 50);
+        // Beside the line, before the head, there is nothing.
+        assert_eq!(px(&pm, 40, 47), (255, 255, 255));
+        // Beyond the tip, nothing either.
+        assert_eq!(px(&pm, 63, 50), (255, 255, 255));
+        // Without a head the same spots beside the line end stay white.
+        let mut plain = doc.clone();
+        if let Some(s) = plain.pages[0].layers[0].shapes.first_mut() {
+            if let Some(st) = s.stroke.as_mut() {
+                st.end_arrow = tracedraw_core::Arrowhead::None;
+            }
+        }
+        let pm2 = render_page_image(&plain, page, 25.4).unwrap();
+        assert_eq!(px(&pm2, 53, 48), (255, 255, 255));
+        assert_eq!(px(&pm2, 53, 52), (255, 255, 255));
     }
 
     #[test]

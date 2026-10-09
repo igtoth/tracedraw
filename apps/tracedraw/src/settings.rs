@@ -23,6 +23,22 @@ pub struct Settings {
     pub color: ColorPrefs,
     /// Show the Outline flyout in the toolbox (hidden by default).
     pub show_outline_flyout: bool,
+    /// Arrowheads created with Object > Create > Arrowhead.
+    #[serde(default)]
+    pub custom_arrowheads: Vec<tracedraw_core::Arrowhead>,
+    /// Baseline grid spacing in mm (the target design's default is 14 pt).
+    #[serde(default = "default_baseline_mm")]
+    pub baseline_grid_mm: f64,
+    /// Text > Writing Tools > Autocorrect options.
+    #[serde(default)]
+    pub autocorrect: crate::autocorrect::AutocorrectPrefs,
+    /// Thesaurus file picked by the user (Text > Writing Tools > Thesaurus).
+    #[serde(default)]
+    pub thesaurus_file: Option<PathBuf>,
+}
+
+fn default_baseline_mm() -> f64 {
+    14.0 * 25.4 / 72.0
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -92,6 +108,10 @@ impl Default for Settings {
             last_dir: None,
             color: ColorPrefs::default(),
             show_outline_flyout: false,
+            custom_arrowheads: Vec::new(),
+            baseline_grid_mm: default_baseline_mm(),
+            autocorrect: crate::autocorrect::AutocorrectPrefs::default(),
+            thesaurus_file: None,
         }
     }
 }

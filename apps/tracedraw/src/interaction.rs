@@ -1101,13 +1101,13 @@ impl App {
             self.break_apart();
         }
         if pressed(Key::C, cmd) {
-            self.copy();
+            self.copy_with_system();
         }
         if pressed(Key::X, cmd) {
             self.cut();
         }
         if pressed(Key::V, cmd) {
-            self.paste();
+            self.paste_any();
         }
         if pressed(Key::D, cmd) {
             self.duplicate();

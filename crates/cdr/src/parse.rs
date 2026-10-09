@@ -1346,7 +1346,7 @@ impl<'a> Ctx<'a> {
             return Arrowhead::None;
         }
         match self.arrows.get(&marker) {
-            Some(a) => *a,
+            Some(a) => a.clone(),
             None => {
                 self.report.warn(format!(
                     "outline {outline} uses arrowhead {marker} that has no definition; none drawn"

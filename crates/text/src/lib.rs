@@ -48,6 +48,8 @@ struct Glyph {
     y_offset: f64,
     /// The character this glyph (cluster) starts; used for spaces and tabs.
     ch: char,
+    /// Index of that character in the concatenated span text.
+    char_idx: usize,
     span: usize,
     /// Width of a trailing hyphen if the line breaks after this glyph.
     hyphen_after: Option<Arc<HyphenGlyph>>,
@@ -79,6 +81,9 @@ struct Line {
     last_in_para: bool,
     first_in_para: bool,
     para: usize,
+    /// Index in the concatenated span text of the line's first character
+    /// (the paragraph start for an empty line).
+    start_char: usize,
 }
 
 pub struct TextLayout {
@@ -88,6 +93,16 @@ pub struct TextLayout {
     pub glyphs: usize,
     /// True when paragraph text did not fit its frame.
     pub overflow: bool,
+    /// Number of characters of the concatenated span text (in order, line
+    /// breaks and tabs included) placed inside the frame before it
+    /// overflowed. Equals the total character count for artistic text and
+    /// for frames that hold all their text, so
+    /// `tracedraw_core::split_spans_at(spans, fitted_chars)` gives the
+    /// spans that stay in this frame and the spans that flow to the next.
+    pub fitted_chars: usize,
+    /// One entry per laid-out line: (x of the line start, baseline y), mm,
+    /// in layout space (frame top or first baseline at y = 0, Y up).
+    pub baselines: Vec<(f64, f64)>,
 }
 
 impl FontSystem {
@@ -306,6 +321,7 @@ impl FontSystem {
         span_idx: usize,
         text: &str,
         size_scale: f64,
+        char_base: usize,
     ) -> Vec<Glyph> {
         let mut out = Vec::new();
         if text.is_empty() {
@@ -380,9 +396,9 @@ impl FontSystem {
                 let g2 = Affine::translate((off, 0.0)) * gp.clone();
                 gp.extend(g2.elements().iter().copied());
             }
-            let ch = chars
-                .iter()
-                .find(|(i, _)| *i == info.cluster as usize)
+            let cluster = chars.iter().position(|(i, _)| *i == info.cluster as usize);
+            let ch = cluster
+                .and_then(|k| chars.get(k))
                 .map(|(_, c)| *c)
                 .unwrap_or(' ');
             out.push(Glyph {
@@ -391,6 +407,7 @@ impl FontSystem {
                 x_offset: pos.x_offset as f64 * scale,
                 y_offset: pos.y_offset as f64 * scale,
                 ch,
+                char_idx: char_base + cluster.unwrap_or(0),
                 span: span_idx,
                 hyphen_after: hyphen_glyph.clone(),
             });
@@ -429,6 +446,8 @@ impl FontSystem {
                 bounds: Rect::ZERO,
                 glyphs: 0,
                 overflow: false,
+                fitted_chars: 0,
+                baselines: Vec::new(),
             };
         }
         let para = req.para;
@@ -443,13 +462,20 @@ impl FontSystem {
             })
             .collect();
 
-        // 1. Split the spans into paragraphs of glyph runs.
+        // 1. Split the spans into paragraphs of glyph runs. `char_idx`
+        // counts characters of the concatenated span text, newlines and
+        // tabs included, so lines can report where they start.
         let mut paragraphs: Vec<Vec<Glyph>> = vec![Vec::new()];
+        let mut para_starts: Vec<usize> = vec![0];
+        let mut char_idx = 0usize;
         for (si, span) in spans.iter().enumerate() {
             let mut first = true;
             for piece in span.text.split('\n') {
                 if !first {
+                    // The newline itself.
+                    char_idx += 1;
                     paragraphs.push(Vec::new());
+                    para_starts.push(char_idx);
                 }
                 first = false;
                 // Tabs are kept as glyph-less markers so the line breaker can
@@ -463,18 +489,22 @@ impl FontSystem {
                                 x_offset: 0.0,
                                 y_offset: 0.0,
                                 ch: '\t',
+                                char_idx,
                                 span: si,
                                 hyphen_after: None,
                             })
                         }
+                        char_idx += 1;
                     }
-                    let run = self.shape_run(span, si, part, size_scale);
+                    let run = self.shape_run(span, si, part, size_scale, char_idx);
+                    char_idx += part.chars().count();
                     if let Some(p) = paragraphs.last_mut() {
                         p.extend(run);
                     }
                 }
             }
         }
+        let total_chars = char_idx;
 
         // 2. Break paragraphs into lines (paragraph text) or keep them whole.
         let columns = para.columns.max(1) as usize;
@@ -500,6 +530,7 @@ impl FontSystem {
                 } else {
                     0.0
                 };
+            let para_start = para_starts.get(pi).copied().unwrap_or(0);
             match col_width {
                 None => lines.push(Line {
                     glyphs: glyphs.clone(),
@@ -508,11 +539,20 @@ impl FontSystem {
                     last_in_para: true,
                     first_in_para: true,
                     para: pi,
+                    start_char: para_start,
                 }),
                 Some(w) => {
                     let avail_first = (w - indent_first - para.right_indent).max(1.0);
                     let avail_rest = (w - indent_rest - para.right_indent).max(1.0);
-                    let broken = break_lines(glyphs, avail_first, avail_rest, para, &metrics, pi);
+                    let broken = break_lines(
+                        glyphs,
+                        avail_first,
+                        avail_rest,
+                        para,
+                        &metrics,
+                        pi,
+                        para_start,
+                    );
                     lines.extend(broken);
                 }
             }
@@ -522,7 +562,21 @@ impl FontSystem {
         let mut path = BezPath::new();
         let mut glyph_count = 0usize;
         let mut overflow = false;
+        let mut fitted_chars = total_chars;
         let frame_h = req.frame.map(|f| f.height);
+        // Baseline grid: baselines snap to the next multiple of the pitch
+        // below their natural position (y is negative below the frame top).
+        let grid = if req.frame.is_some() && para.baseline_grid_mm > 1e-6 {
+            Some(para.baseline_grid_mm)
+        } else {
+            None
+        };
+        let snap = |y: f64| -> f64 {
+            match grid {
+                Some(g) => -(((-y / g) - 1e-9).ceil().max(0.0) * g),
+                None => y,
+            }
+        };
         let mut col = 0usize;
         let mut y = 0.0f64; // top of the frame or baseline of artistic text
         let mut min_y = 0.0f64;
@@ -556,17 +610,20 @@ impl FontSystem {
                 }
             }
             // Column overflow.
+            let mut next_y = snap(y - advance_y);
             if let Some(h) = frame_h {
-                if y - advance_y - m.descent < -h && (y != 0.0 || col > 0) {
+                if next_y - m.descent < -h && (y != 0.0 || col > 0) {
                     col += 1;
                     y = 0.0;
                     advance_y = m.ascent;
-                    if col >= columns {
+                    next_y = snap(y - advance_y);
+                    if col >= columns && !overflow {
                         overflow = true;
+                        fitted_chars = line.start_char.min(total_chars);
                     }
                 }
             }
-            y -= advance_y;
+            y = next_y;
             prev_para = Some(line.para);
 
             let col_x = col.min(columns - 1) as f64 * (col_width.unwrap_or(0.0) + para.gutter);
@@ -601,7 +658,7 @@ impl FontSystem {
             // Bullet.
             if para.bullets && line.first_in_para && !artistic {
                 if let Some(span) = spans.get(glyphs.first().map(|g| g.span).unwrap_or(0)) {
-                    let b = self.shape_run(span, 0, &para.bullet_char, size_scale);
+                    let b = self.shape_run(span, 0, &para.bullet_char, size_scale, 0);
                     for g in &b {
                         let gp = Affine::translate((col_x + para.left_indent, y))
                             * g.path.as_ref().clone();
@@ -719,6 +776,8 @@ impl FontSystem {
                 bounds,
                 glyphs: glyph_count,
                 overflow: false,
+                fitted_chars: total_chars,
+                baselines: line_baselines,
             };
         }
 
@@ -727,6 +786,8 @@ impl FontSystem {
             bounds,
             glyphs: glyph_count,
             overflow,
+            fitted_chars,
+            baselines: line_baselines,
         }
     }
 }
@@ -779,6 +840,7 @@ fn break_lines(
     para: &ParagraphStyle,
     metrics: &[Metrics],
     pi: usize,
+    para_start: usize,
 ) -> Vec<Line> {
     let mut lines = Vec::new();
     if glyphs.is_empty() {
@@ -789,9 +851,11 @@ fn break_lines(
             last_in_para: true,
             first_in_para: true,
             para: pi,
+            start_char: para_start,
         });
         return lines;
     }
+    let start_of = |gs: &[Glyph]| gs.first().map(|g| g.char_idx).unwrap_or(para_start);
     // Words: runs separated by spaces; the space belongs to the preceding word.
     let mut words: Vec<Vec<Glyph>> = Vec::new();
     let mut cur: Vec<Glyph> = Vec::new();
@@ -870,6 +934,7 @@ fn break_lines(
                 };
                 line.extend(head);
                 lines.push(Line {
+                    start_char: start_of(&line),
                     glyphs: std::mem::take(&mut line),
                     hyphen,
                     metrics: Metrics::default(),
@@ -896,6 +961,7 @@ fn break_lines(
             i += 1;
         }
         lines.push(Line {
+            start_char: start_of(&line),
             glyphs: std::mem::take(&mut line),
             hyphen: None,
             metrics: Metrics::default(),
@@ -905,14 +971,22 @@ fn break_lines(
         });
         first = false;
     }
-    lines.push(Line {
-        glyphs: line,
-        hyphen: None,
-        metrics: Metrics::default(),
-        last_in_para: true,
-        first_in_para: first,
-        para: pi,
-    });
+    if line.is_empty() && !lines.is_empty() {
+        // The last word went out as its own line: no empty line after it.
+        if let Some(l) = lines.last_mut() {
+            l.last_in_para = true;
+        }
+    } else {
+        lines.push(Line {
+            start_char: start_of(&line),
+            glyphs: line,
+            hyphen: None,
+            metrics: Metrics::default(),
+            last_in_para: true,
+            first_in_para: first,
+            para: pi,
+        });
+    }
     // Trailing spaces do not count toward alignment: strip them.
     for l in lines.iter_mut() {
         while l.glyphs.last().map(|g| g.ch == ' ').unwrap_or(false) {
@@ -1138,6 +1212,131 @@ mod tests {
             on_path: None,
         });
         assert!((l.bounds.width() - 30.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn baseline_grid_snaps_every_baseline_to_the_pitch() {
+        if !has_fonts() {
+            return;
+        }
+        let f = fonts();
+        let s = span("one\ntwo\nthree");
+        let para = ParagraphStyle {
+            baseline_grid_mm: 5.0,
+            ..ParagraphStyle::default()
+        };
+        let l = f.layout(&TextRequest {
+            spans: std::slice::from_ref(&s),
+            frame: Some(Size::new(100.0, 100.0)),
+            align: TextAlign::Left,
+            para: &para,
+            on_path: None,
+        });
+        assert_eq!(l.baselines.len(), 3);
+        let mut prev = 0.0;
+        for (_, y) in &l.baselines {
+            assert!(*y < prev, "baselines go down: {:?}", l.baselines);
+            let k = -y / 5.0;
+            assert!(
+                (k - k.round()).abs() < 1e-6 && k.round() >= 1.0,
+                "baseline {y} is not on the 5 mm grid: {:?}",
+                l.baselines
+            );
+            prev = *y;
+        }
+        assert!(!l.overflow);
+        assert_eq!(l.fitted_chars, 13);
+        // Without the grid the same text has baselines off the grid
+        // (12 pt lines are about 5.9 mm apart, the first one one ascent down).
+        let free = ParagraphStyle::default();
+        let l2 = f.layout(&TextRequest {
+            spans: std::slice::from_ref(&s),
+            frame: Some(Size::new(100.0, 100.0)),
+            align: TextAlign::Left,
+            para: &free,
+            on_path: None,
+        });
+        assert_eq!(l2.baselines.len(), 3);
+        assert!(l2.baselines.iter().any(|(_, y)| {
+            let k = -y / 5.0;
+            (k - k.round()).abs() > 1e-3
+        }));
+        // Snapping never moves a baseline up.
+        for (a, b) in l.baselines.iter().zip(&l2.baselines) {
+            assert!(a.1 <= b.1 + 1e-9, "{a:?} vs {b:?}");
+        }
+    }
+
+    #[test]
+    fn fitted_chars_counts_what_the_frame_holds() {
+        if !has_fonts() {
+            return;
+        }
+        let f = fonts();
+        let s = span("one\ntwo\nthree");
+        let para = ParagraphStyle::default();
+        // Artistic text: everything fits by definition.
+        assert_eq!(f.outline(&[s.clone()]).fitted_chars, 13);
+        // A frame tall enough for one 12 pt line only.
+        let l = f.layout(&TextRequest {
+            spans: std::slice::from_ref(&s),
+            frame: Some(Size::new(60.0, 6.0)),
+            align: TextAlign::Left,
+            para: &para,
+            on_path: None,
+        });
+        assert!(l.overflow);
+        assert_eq!(
+            l.fitted_chars, 4,
+            "\"one\\n\" fits, \"two\" starts the overflow"
+        );
+        let (head, tail) = tracedraw_core::split_spans_at(&[s.clone()], l.fitted_chars);
+        assert_eq!(head[0].text, "one\n");
+        assert_eq!(tail[0].text, "two\nthree");
+        // A frame that holds everything reports the full count.
+        let l = f.layout(&TextRequest {
+            spans: std::slice::from_ref(&s),
+            frame: Some(Size::new(60.0, 100.0)),
+            align: TextAlign::Left,
+            para: &para,
+            on_path: None,
+        });
+        assert!(!l.overflow);
+        assert_eq!(l.fitted_chars, 13);
+    }
+
+    #[test]
+    fn fitted_chars_splits_inside_a_wrapped_paragraph_and_across_spans() {
+        if !has_fonts() {
+            return;
+        }
+        let f = fonts();
+        let a = span("aaaa bbbb ");
+        let mut b = span("cccc dddd eeee");
+        b.underline = true;
+        let spans = vec![a, b];
+        let para = ParagraphStyle::default();
+        let one_line = f.outline(&[span("aaaa bbbb")]);
+        // Width for one word pair per line, height for two lines.
+        let l = f.layout(&TextRequest {
+            spans: &spans,
+            frame: Some(Size::new(one_line.bounds.width() + 1.0, 11.0)),
+            align: TextAlign::Left,
+            para: &para,
+            on_path: None,
+        });
+        assert!(l.overflow);
+        assert_eq!(
+            l.fitted_chars, 20,
+            "two lines of two words: 'aaaa bbbb ' + 'cccc dddd ' = 20 chars"
+        );
+        let (head, tail) = tracedraw_core::split_spans_at(&spans, l.fitted_chars);
+        assert_eq!(head.len(), 2);
+        assert_eq!(head[1].text, "cccc dddd ");
+        assert!(head[1].underline);
+        assert_eq!(tail.len(), 1);
+        assert_eq!(tail[0].text, "eeee");
+        assert!(tail[0].underline);
     }
 
     #[test]

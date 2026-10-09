@@ -463,6 +463,150 @@ impl App {
         let _ = self.engine.run_batch("Clear Transparency", &cmds);
     }
 
+    /// Object > ClipFrame > Edit ClipFrame: take the contents out so they can
+    /// be moved and edited; Finish Editing puts them back in the frame.
+    pub fn edit_clip_frame(&mut self) {
+        let Some(clip) = self
+            .selected_shapes()
+            .into_iter()
+            .find(|s| matches!(s.kind, ShapeKind::ClipFrame { .. }))
+        else {
+            return;
+        };
+        let ShapeKind::ClipFrame { contents, .. } = &clip.kind else {
+            return;
+        };
+        let ids: Vec<ShapeId> = contents.iter().map(|c| c.id).collect();
+        self.run(Command::ExtractContents { clip: clip.id });
+        self.clip_frame_edit = Some((clip.id, ids.clone()));
+        self.select(ids);
+        self.status = tr("status.editing_clip_frame");
+    }
+
+    /// Object > ClipFrame > Finish Editing: place the (surviving) contents
+    /// back inside the frame.
+    pub fn finish_clip_frame_edit(&mut self) {
+        let Some((frame, ids)) = self.clip_frame_edit.take() else {
+            return;
+        };
+        if self.doc().find_shape(frame).is_none() {
+            return;
+        }
+        let contents: Vec<ShapeId> = ids
+            .into_iter()
+            .filter(|id| self.doc().find_shape(*id).is_some())
+            .collect();
+        if contents.is_empty() {
+            return;
+        }
+        self.run(Command::PlaceInside { contents, frame });
+        self.select(vec![frame]);
+    }
+
+    /// Whether a ClipFrame's contents move with the frame (the default).
+    pub fn clip_frame_locked(&self, id: ShapeId) -> bool {
+        self.doc()
+            .find_shape(id)
+            .map(|s| {
+                !s.data
+                    .iter()
+                    .any(|(k, v)| k == "clip_frame.unlocked" && v == "1")
+            })
+            .unwrap_or(true)
+    }
+
+    /// Object > ClipFrame > Lock Contents: toggle for the selected clips.
+    pub fn toggle_clip_frame_lock(&mut self) {
+        for s in self.selected_shapes() {
+            if !matches!(s.kind, ShapeKind::ClipFrame { .. }) {
+                continue;
+            }
+            let locked = self.clip_frame_locked(s.id);
+            let mut data = s.data.clone();
+            data.retain(|(k, _)| k != "clip_frame.unlocked");
+            if locked {
+                data.push(("clip_frame.unlocked".into(), "1".into()));
+            }
+            self.run(Command::SetObjectData { shape: s.id, data });
+        }
+    }
+
+    /// After moving unlocked ClipFrames by `t`, keep their contents in place.
+    pub fn compensate_unlocked_clip_frames(&mut self, ids: &[ShapeId], t: Affine) {
+        let inv = t.inverse();
+        for id in ids {
+            if self.clip_frame_locked(*id) {
+                continue;
+            }
+            let Some(s) = self.doc().find_shape(*id).cloned() else {
+                continue;
+            };
+            let ShapeKind::ClipFrame { frame, contents } = s.kind else {
+                continue;
+            };
+            // The clip already carries t * T; contents need T^-1 t^-1 T applied.
+            let new_t = s.transform;
+            let old_t = inv * new_t;
+            let fix = new_t.inverse() * old_t;
+            let contents = contents
+                .into_iter()
+                .map(|mut c| {
+                    c.transform = fix * c.transform;
+                    c
+                })
+                .collect();
+            self.run(Command::SetShapeKind {
+                shape: *id,
+                kind: ShapeKind::ClipFrame { frame, contents },
+            });
+        }
+    }
+
+    /// Object > Create > Arrowhead: one selected closed curve becomes a custom
+    /// arrowhead, listed in the Outline editors and kept in the settings.
+    pub fn create_arrowhead_from_selection(&mut self) {
+        let shapes = self.selected_shapes();
+        let [s] = shapes.as_slice() else {
+            self.status = tr("status.arrowhead_needs_curve");
+            return;
+        };
+        let path = s.page_path();
+        if path.elements().len() < 3 {
+            self.status = tr("status.arrowhead_needs_curve");
+            return;
+        }
+        let n = self.settings.custom_arrowheads.len() + 1;
+        let name = s
+            .name
+            .clone()
+            .unwrap_or_else(|| trf("docker.custom_arrowhead_n", &[("n", &n.to_string())]));
+        let head = tracedraw_core::Arrowhead::from_shape_path(&path, name);
+        if matches!(head, tracedraw_core::Arrowhead::None) {
+            self.status = tr("status.arrowhead_needs_curve");
+            return;
+        }
+        self.settings.custom_arrowheads.push(head);
+        self.save_settings();
+        self.status = tr("status.arrowhead_created");
+    }
+
+    /// Text > Align to Baseline Grid: toggle for the selected paragraph frames.
+    pub fn toggle_baseline_grid(&mut self) {
+        let g = self.settings.baseline_grid_mm.max(0.1);
+        for s in self.text_shapes() {
+            if let ShapeKind::Text {
+                frame: Some(_),
+                para,
+                ..
+            } = &s.kind
+            {
+                let mut p = para.clone();
+                p.baseline_grid_mm = if p.baseline_grid_mm > 0.0 { 0.0 } else { g };
+                self.set_paragraph_style(s.id, p);
+            }
+        }
+    }
+
     /// Object > Create > Vector Pattern Fill: the selected objects become a
     /// vector tile, set as the default fill for new objects.
     pub fn create_vector_pattern_from_selection(&mut self) {
@@ -790,6 +934,7 @@ impl App {
                 view,
                 preview: None,
                 wireframe: false,
+                ..tracedraw_render::RenderOptions::default()
             },
         )?;
         if !transparent {
@@ -932,7 +1077,7 @@ impl App {
 
     // ----- text ------------------------------------------------------------------------
 
-    fn text_shapes(&self) -> Vec<Shape> {
+    pub fn text_shapes(&self) -> Vec<Shape> {
         self.selected_shapes()
             .into_iter()
             .filter(|s| matches!(s.kind, ShapeKind::Text { .. }))

@@ -413,9 +413,11 @@ impl Writer<'_> {
             }
             self.path_ops(&path);
             let _ = writeln!(self.out, "stroke");
+            // Arrowheads (presets and custom): the page-space path already
+            // carries the shape's own transform, so only the parent applies.
             for head in tracedraw_core::arrowhead_paths(&shape.page_path(), s) {
                 let _ = writeln!(self.out, "{}", color_op(s.color));
-                self.path_ops(&(transform * head));
+                self.path_ops(&(parent * head));
                 let _ = writeln!(self.out, "fill");
             }
         }
@@ -446,6 +448,53 @@ mod tests {
         assert!(eps.contains("%%BoundingBox: 0 0 596 842"));
         assert!(eps.contains("setcmykcolor"));
         assert!(eps.contains("eofill"));
+    }
+
+    #[test]
+    fn arrowhead_follows_the_shape_transform_once() {
+        // A line from (10, 50) to (60, 50) moved 100 mm up: the preset
+        // arrow's tip must land at (60, 150), not at (60, 250).
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        let mut line = Shape::new(
+            tracedraw_core::ShapeId(1),
+            ShapeKind::Path {
+                path: {
+                    let mut p = tracedraw_core::BezPath::new();
+                    p.move_to((10.0, 50.0));
+                    p.line_to((60.0, 50.0));
+                    p
+                },
+                closed: false,
+            },
+        );
+        line.fill = Fill::None;
+        line.stroke = Some(tracedraw_core::Stroke {
+            end_arrow: tracedraw_core::Arrowhead::Arrow,
+            ..tracedraw_core::Stroke::new(Color::BLACK, 2.0)
+        });
+        line.transform = tracedraw_core::Affine::translate((0.0, 100.0));
+        doc.layer_mut(layer).unwrap().shapes.push(line);
+        let eps = page_to_eps(&doc, 0);
+        let tip = format!("{} {} m\n", f(60.0 * MM_PT), f(150.0 * MM_PT));
+        assert!(eps.contains(&tip), "tip at (60, 150) pt-scaled: {eps}");
+        let wrong = format!("{} {} m\n", f(60.0 * MM_PT), f(250.0 * MM_PT));
+        assert!(!eps.contains(&wrong));
+        // A custom head goes through the same code path.
+        let mut tri = tracedraw_core::BezPath::new();
+        tri.move_to((0.0, 0.0));
+        tri.line_to((20.0, 10.0));
+        tri.line_to((0.0, 20.0));
+        tri.close_path();
+        if let Some(s) = doc.pages[0].layers[0].shapes.first_mut() {
+            if let Some(st) = s.stroke.as_mut() {
+                st.end_arrow = tracedraw_core::Arrowhead::from_shape_path(&tri, "Tri");
+            }
+        }
+        let eps = page_to_eps(&doc, 0);
+        let base = format!("{} {} m\n", f(52.0 * MM_PT), f(146.0 * MM_PT));
+        assert!(eps.contains(&base), "custom head base corner: {eps}");
+        assert!(eps.contains(&format!("{} {} l\n", f(60.0 * MM_PT), f(150.0 * MM_PT))));
     }
 
     #[test]

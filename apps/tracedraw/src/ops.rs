@@ -262,6 +262,23 @@ impl App {
                 return;
             }
         };
+        let name = path.file_name().and_then(|n| n.to_str()).map(String::from);
+        if let Some(id) = self.place_image(img, name) {
+            // Remember where it came from: Bitmaps > Update from Link re-reads it.
+            self.run(Command::SetObjectData {
+                shape: id,
+                data: vec![("bitmap.link".into(), path.display().to_string())],
+            });
+            self.select(vec![id]);
+        }
+    }
+
+    /// Place an RGBA image at the page centre at 96 dpi; returns the new shape.
+    pub fn place_image(
+        &mut self,
+        img: image::RgbaImage,
+        name: Option<String>,
+    ) -> Option<tracedraw_core::ShapeId> {
         let (w, h) = img.dimensions();
         let mut png = Vec::new();
         if let Err(e) = image::DynamicImage::ImageRgba8(img)
@@ -269,7 +286,7 @@ impl App {
         {
             self.status =
                 crate::i18n::trf("status.could_not_encode_image", &[("e", &e.to_string())]);
-            return;
+            return None;
         }
         let mm_w = w as f64 * 25.4 / 96.0;
         let mm_h = h as f64 * 25.4 / 96.0;
@@ -281,9 +298,7 @@ impl App {
             c.x + mm_w / 2.0,
             c.y + mm_h / 2.0,
         );
-        let Some(layer) = self.active_layer() else {
-            return;
-        };
+        let layer = self.active_layer()?;
         let id = self.engine.new_shape_id();
         let mut shape = Shape::new(
             id,
@@ -295,10 +310,11 @@ impl App {
             },
         );
         shape.stroke = None;
-        shape.name = path.file_name().and_then(|n| n.to_str()).map(String::from);
+        shape.name = name;
         self.run(Command::AddShape { layer, shape });
         self.select(vec![id]);
         let _ = Point::ZERO;
+        Some(id)
     }
 }
 

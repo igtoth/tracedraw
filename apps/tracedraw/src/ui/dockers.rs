@@ -143,7 +143,8 @@ fn properties(app: &mut App, ui: &mut Ui) {
         }
         ui.separator();
         let mut stroke = app.default_stroke.clone();
-        if outline_editor(ui, &mut stroke) {
+        let custom = app.settings.custom_arrowheads.clone();
+        if outline_editor(ui, &mut stroke, &custom) {
             app.default_stroke = stroke;
         }
         return;
@@ -184,7 +185,8 @@ fn properties(app: &mut App, ui: &mut Ui) {
     });
     ui.collapsing(tr("docker.outline"), |ui| {
         let mut stroke = first.stroke.clone();
-        if outline_editor(ui, &mut stroke) {
+        let custom = app.settings.custom_arrowheads.clone();
+        if outline_editor(ui, &mut stroke, &custom) {
             let shapes = app.selection.clone();
             app.run(Command::SetStroke { shapes, stroke });
         }
@@ -563,7 +565,13 @@ fn texture_editor(ui: &mut Ui, t: &mut Texture) -> bool {
     changed
 }
 
-fn arrow_combo(ui: &mut Ui, id: &str, label: &str, a: &mut Arrowhead) -> bool {
+fn arrow_combo(
+    ui: &mut Ui,
+    id: &str,
+    label: &str,
+    a: &mut Arrowhead,
+    custom: &[Arrowhead],
+) -> bool {
     let mut changed = false;
     egui::ComboBox::from_id_salt(id)
         .selected_text(format!("{label}: {}", a.name()))
@@ -574,11 +582,22 @@ fn arrow_combo(ui: &mut Ui, id: &str, label: &str, a: &mut Arrowhead) -> bool {
                     changed = true;
                 }
             }
+            for (i, k) in custom.iter().enumerate() {
+                let name = if k.name().is_empty() {
+                    trf("docker.custom_arrowhead_n", &[("n", &(i + 1).to_string())])
+                } else {
+                    k.name().to_string()
+                };
+                if ui.selectable_label(a == k, name).clicked() {
+                    *a = k.clone();
+                    changed = true;
+                }
+            }
         });
     changed
 }
 
-fn outline_editor(ui: &mut Ui, stroke: &mut Option<Stroke>) -> bool {
+fn outline_editor(ui: &mut Ui, stroke: &mut Option<Stroke>, custom: &[Arrowhead]) -> bool {
     let mut changed = false;
     let mut has = stroke.is_some();
     if ui.checkbox(&mut has, tr("docker.outline")).changed() {
@@ -628,8 +647,14 @@ fn outline_editor(ui: &mut Ui, stroke: &mut Option<Stroke>) -> bool {
             }
         });
         ui.horizontal(|ui| {
-            changed |= arrow_combo(ui, "Start", &tr("docker.arrow_start"), &mut s.start_arrow);
-            changed |= arrow_combo(ui, "End", &tr("docker.arrow_end"), &mut s.end_arrow);
+            changed |= arrow_combo(
+                ui,
+                "Start",
+                &tr("docker.arrow_start"),
+                &mut s.start_arrow,
+                custom,
+            );
+            changed |= arrow_combo(ui, "End", &tr("docker.arrow_end"), &mut s.end_arrow, custom);
         });
         ui.horizontal(|ui| {
             ui.label(tr("docker.dash"));

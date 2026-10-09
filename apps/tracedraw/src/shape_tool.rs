@@ -546,8 +546,17 @@ impl App {
     /// Object > Align with Pixel Grid: move the selection so its bounds
     /// sit on whole 96 dpi pixels.
     pub fn align_to_pixel_grid(&mut self) {
+        let ids: Vec<ShapeId> = self.selection.clone();
+        self.align_shapes_to_pixel_grid(&ids);
+    }
+
+    /// Snap the bottom-left corner of each object's bounds to the 96 dpi grid.
+    pub fn align_shapes_to_pixel_grid(&mut self, ids: &[ShapeId]) {
         let px = 25.4 / 96.0;
-        for s in self.selected_shapes() {
+        for id in ids {
+            let Some(s) = self.doc().find_shape(*id).cloned() else {
+                continue;
+            };
             let b = s.bounds();
             let dx = (b.x0 / px).round() * px - b.x0;
             let dy = (b.y0 / px).round() * px - b.y0;
@@ -557,6 +566,46 @@ impl App {
                     transform: tracedraw_core::Affine::translate((dx, dy)),
                 });
             }
+        }
+    }
+
+    /// Object > Object Hinting: objects flagged for hinting stay on the pixel
+    /// grid (they are re-aligned after every move).
+    pub fn object_hinted(&self, id: ShapeId) -> bool {
+        self.doc()
+            .find_shape(id)
+            .map(|s| s.data.iter().any(|(k, v)| k == "hinting" && v == "1"))
+            .unwrap_or(false)
+    }
+
+    pub fn toggle_object_hinting(&mut self) {
+        let ids = self.selection.clone();
+        let all_on = ids.iter().all(|id| self.object_hinted(*id));
+        for id in &ids {
+            let Some(s) = self.doc().find_shape(*id).cloned() else {
+                continue;
+            };
+            let mut data = s.data;
+            data.retain(|(k, _)| k != "hinting");
+            if !all_on {
+                data.push(("hinting".into(), "1".into()));
+            }
+            self.run(Command::SetObjectData { shape: *id, data });
+        }
+        if !all_on {
+            self.align_shapes_to_pixel_grid(&ids);
+        }
+    }
+
+    /// Re-align hinted objects among `ids` (after a transform).
+    pub fn apply_hinting(&mut self, ids: &[ShapeId]) {
+        let hinted: Vec<ShapeId> = ids
+            .iter()
+            .copied()
+            .filter(|id| self.object_hinted(*id))
+            .collect();
+        if !hinted.is_empty() {
+            self.align_shapes_to_pixel_grid(&hinted);
         }
     }
 }

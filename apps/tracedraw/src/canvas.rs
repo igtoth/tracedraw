@@ -134,6 +134,23 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
     if app.show_grid {
         draw_grid(painter, rect, view);
     }
+    if app.show_baseline_grid {
+        // Horizontal lines from the page top downwards, inside the page only.
+        let step = app.settings.baseline_grid_mm.max(0.1);
+        let page = app.page_rect();
+        let mut y = page.y1 - step;
+        while y > page.y0 {
+            let sy = view.to_screen(Point::new(0.0, y)).y;
+            if sy >= rect.top() && sy <= rect.bottom() {
+                painter.hline(
+                    paper.x_range(),
+                    sy,
+                    EStroke::new(0.5, Color32::from_rgb(170, 200, 230)),
+                );
+            }
+            y -= step;
+        }
+    }
 
     // Objects, rasterized with tiny-skia into a texture; the live drag preview
     // is applied to the selection during the render.
@@ -152,6 +169,8 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
         preview.map(|t| (app.selection.clone(), t)),
         app.engine.revision(),
         app.wireframe,
+        app.simulate_overprints,
+        app.rasterize_complex_effects,
     ) {
         painter.image(
             tex,
@@ -164,6 +183,7 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
     // Selection.
     draw_selection(app, painter, preview);
     draw_table_cells(app, painter);
+    draw_frame_links(app, painter);
 
     // 3-point tools: base segment waiting for the third click, previewed to the pointer.
     if let (Some((a, b)), Some(c)) = (app.three_point_base, app.pointer_page) {
@@ -373,6 +393,33 @@ fn three_point_preview(
                 tracedraw_core::geometry::rect_path(local, 0.0)
             };
             t * p
+        }
+    }
+}
+
+/// Linked paragraph frames: a blue connector from the bottom of a selected
+/// frame to the top of the next one, like the target design shows.
+fn draw_frame_links(app: &App, painter: &Painter) {
+    let view = &app.view;
+    let stroke = EStroke::new(1.0, Tokens::SELECTION);
+    for id in &app.selection {
+        for pair in app.chain_of(*id).windows(2) {
+            let (Some(a), Some(b)) = (app.doc().find_shape(pair[0]), app.doc().find_shape(pair[1]))
+            else {
+                continue;
+            };
+            let (ba, bb) = (a.bounds(), b.bounds());
+            let from = view.to_screen(Point::new(ba.x1, ba.y0));
+            let to = view.to_screen(Point::new(bb.x0, bb.y1));
+            painter.line_segment([from, to], stroke);
+            painter.circle_filled(from, 3.0, Tokens::SELECTION);
+            let d = (to - from).normalized();
+            let n = egui::vec2(-d.y, d.x);
+            painter.add(epaint::PathShape::convex_polygon(
+                vec![to, to - d * 8.0 + n * 4.0, to - d * 8.0 - n * 4.0],
+                Tokens::SELECTION,
+                EStroke::NONE,
+            ));
         }
     }
 }

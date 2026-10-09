@@ -310,6 +310,19 @@ fn write_shape(
         "{pad}<path id=\"{}\"{name} d=\"{d}\" {fill_attr} {stroke_attr}/>",
         shape.id.raw()
     );
+    // Arrowheads (presets and custom) are filled outlines in the stroke
+    // colour. They are built in page space, where the curve direction is
+    // unmirrored, and then taken through the parent transform and the flip.
+    if let Some(s) = &shape.stroke {
+        for head in tracedraw_core::arrowhead_paths(&shape.page_path(), s) {
+            let _ = writeln!(
+                out,
+                "{pad}<path d=\"{}\" fill=\"{}\" stroke=\"none\"/>",
+                path_data(&(parent * head)),
+                s.color.to_hex()
+            );
+        }
+    }
 }
 
 fn fmt(v: f64) -> String {
@@ -423,6 +436,65 @@ mod tests {
         // Bottom-left origin: y=10 in page space is y=287 in SVG space.
         assert!(svg.contains("M10 287"));
         assert!(svg.contains("stroke-width=\"0.5\""));
+    }
+
+    /// A line from (10, 50) to (60, 50), 2 mm wide, with a custom
+    /// triangular end head, moved 100 mm up by its transform.
+    fn arrow_line() -> Shape {
+        let mut tri = tracedraw_core::geometry::BezPath::new();
+        tri.move_to((0.0, 0.0));
+        tri.line_to((20.0, 10.0));
+        tri.line_to((0.0, 20.0));
+        tri.close_path();
+        let mut line = Shape::new(
+            tracedraw_core::ShapeId(1),
+            ShapeKind::Path {
+                path: {
+                    let mut p = tracedraw_core::geometry::BezPath::new();
+                    p.move_to((10.0, 50.0));
+                    p.line_to((60.0, 50.0));
+                    p
+                },
+                closed: false,
+            },
+        );
+        line.fill = Fill::None;
+        line.stroke = Some(Stroke {
+            end_arrow: tracedraw_core::Arrowhead::from_shape_path(&tri, "Tri"),
+            ..Stroke::new(Color::rgb8(0, 0, 255), 2.0)
+        });
+        line.transform = Affine::translate((0.0, 100.0));
+        line
+    }
+
+    #[test]
+    fn custom_arrowhead_is_written_as_a_filled_path_at_the_line_end() {
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        doc.layer_mut(layer).unwrap().shapes.push(arrow_line());
+        let svg = page_to_svg(&doc, 0);
+        // The head is 8 mm (four widths) long and tall: base corners at
+        // (52, 154) and (52, 146) in page space, tip at (60, 150); SVG
+        // flips y against the 297 mm page.
+        let head = svg
+            .lines()
+            .find(|l| l.contains("fill=\"#0000ff\" stroke=\"none\""))
+            .expect("head path");
+        assert!(head.contains("52 143"), "{head}");
+        assert!(head.contains("60 147"), "{head}");
+        assert!(head.contains("52 151"), "{head}");
+        assert!(
+            head.ends_with("Z\" fill=\"#0000ff\" stroke=\"none\"/>"),
+            "{head}"
+        );
+        // No head: no extra path.
+        if let Some(s) = doc.pages[0].layers[0].shapes.first_mut() {
+            if let Some(st) = s.stroke.as_mut() {
+                st.end_arrow = tracedraw_core::Arrowhead::None;
+            }
+        }
+        let svg = page_to_svg(&doc, 0);
+        assert!(!svg.contains("fill=\"#0000ff\" stroke=\"none\""));
     }
 
     #[test]

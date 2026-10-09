@@ -320,15 +320,15 @@ fn edit_menu(app: &mut App, ui: &mut Ui) {
         app.cut();
     }
     if item(ui, "menu.edit.copy", "Ctrl+C", has) {
-        app.copy();
+        app.copy_with_system();
     }
     if item(ui, "menu.edit.copy_properties_from", "", has) {
         app.pending_copy_properties = true;
         app.status = tr("status.click_source_object");
     }
     ui.separator();
-    if item(ui, "menu.edit.paste", "Ctrl+V", app.clipboard.is_some()) {
-        app.paste();
+    if item(ui, "menu.edit.paste", "Ctrl+V", true) {
+        app.paste_any();
     }
     if item(
         ui,
@@ -338,7 +338,9 @@ fn edit_menu(app: &mut App, ui: &mut Ui) {
     ) {
         app.paste_in_view();
     }
-    todo(ui, "menu.edit.paste_special", "");
+    if item(ui, "menu.edit.paste_special", "", true) {
+        app.dialog = Dialog::PasteSpecial(Default::default());
+    }
     ui.separator();
     if item(ui, "menu.edit.delete", "Delete", has) {
         app.delete_selection();
@@ -433,8 +435,24 @@ fn view_menu(app: &mut App, ui: &mut Ui) {
     if check(ui, "menu.view.proof_colors", "", app.proof_colors) {
         app.proof_colors = !app.proof_colors;
     }
-    todo(ui, "menu.view.simulate_overprints", "");
-    todo(ui, "menu.view.rasterize_complex_effects", "");
+    if check(
+        ui,
+        "menu.view.simulate_overprints",
+        "",
+        app.simulate_overprints,
+    ) {
+        app.simulate_overprints = !app.simulate_overprints;
+        app.raster.borrow_mut().invalidate();
+    }
+    if check(
+        ui,
+        "menu.view.rasterize_complex_effects",
+        "",
+        app.rasterize_complex_effects,
+    ) {
+        app.rasterize_complex_effects = !app.rasterize_complex_effects;
+        app.raster.borrow_mut().invalidate();
+    }
     ui.separator();
     sub(ui, "menu.view.page", |ui| {
         if check(ui, "menu.view.page_border", "", app.show_page_border) {
@@ -609,7 +627,14 @@ fn object_menu(app: &mut App, ui: &mut Ui) {
                 cols: app.table_cols,
             };
         }
-        todo(ui, "menu.object.create_arrowhead", "");
+        if item(
+            ui,
+            "menu.object.create_arrowhead",
+            "",
+            app.selection.len() == 1,
+        ) {
+            app.create_arrowhead_from_selection();
+        }
         if item(
             ui,
             "menu.object.create_pattern",
@@ -667,8 +692,21 @@ fn object_menu(app: &mut App, ui: &mut Ui) {
                 app.run(Command::ExtractContents { clip: c });
             }
         }
-        todo(ui, "menu.object.clip_frame_edit", "");
-        todo(ui, "menu.object.clip_frame_lock", "");
+        if app.clip_frame_edit.is_some() {
+            if item(ui, "menu.object.clip_frame_finish", "", true) {
+                app.finish_clip_frame_edit();
+            }
+        } else if item(ui, "menu.object.clip_frame_edit", "", is_clip) {
+            app.edit_clip_frame();
+        }
+        let locked = app
+            .selected_shapes()
+            .iter()
+            .filter(|s| matches!(s.kind, ShapeKind::ClipFrame { .. }))
+            .all(|s| app.clip_frame_locked(s.id));
+        if check(ui, "menu.object.clip_frame_lock", "", is_clip && locked) && is_clip {
+            app.toggle_clip_frame_lock();
+        }
     });
     todo_sub(ui, "menu.object.symmetry");
     todo_sub(ui, "menu.object.symbol");
@@ -892,7 +930,10 @@ fn object_menu(app: &mut App, ui: &mut Ui) {
     {
         app.toggle_overprint(true);
     }
-    todo(ui, "menu.object.object_hinting", "");
+    let hinted = has && app.selection.iter().all(|id| app.object_hinted(*id));
+    if check(ui, "menu.object.object_hinting", "", hinted) && has {
+        app.toggle_object_hinting();
+    }
     ui.separator();
     if check(
         ui,
@@ -983,7 +1024,14 @@ fn bitmaps_menu(app: &mut App, ui: &mut Ui) {
     if item(ui, "menu.bitmaps.straighten_image", "", has_bitmap) {
         app.dialog = Dialog::StraightenImage { angle: 0.0 };
     }
-    todo(ui, "menu.bitmaps.edit_bitmap", "");
+    if item(
+        ui,
+        "menu.bitmaps.edit_bitmap",
+        "",
+        app.selected_bitmap().is_some(),
+    ) {
+        app.edit_bitmap_externally();
+    }
     if item(ui, "menu.bitmaps.crop_bitmap", "", has_bitmap) {
         app.set_tool(crate::tools::Tool::Crop);
     }
@@ -1017,8 +1065,13 @@ fn bitmaps_menu(app: &mut App, ui: &mut Ui) {
         }
     });
     ui.separator();
-    todo(ui, "menu.bitmaps.break_link", "");
-    todo(ui, "menu.bitmaps.update_from_link", "");
+    let linked = app.selected_bitmap_is_linked();
+    if item(ui, "menu.bitmaps.break_link", "", linked) {
+        app.break_bitmap_link();
+    }
+    if item(ui, "menu.bitmaps.update_from_link", "", linked) {
+        app.update_bitmap_from_link();
+    }
     ui.separator();
     if item(ui, "menu.bitmaps.quick_trace", "", has_bitmap) {
         app.quick_trace();
@@ -1127,8 +1180,13 @@ fn text_menu(app: &mut App, ui: &mut Ui) {
         if item(ui, "menu.text.frame_fit_text", "", is_para) {
             app.fit_text_to_frame();
         }
-        todo(ui, "menu.text.frame_link", "");
-        todo(ui, "menu.text.frame_unlink", "");
+        if item(ui, "menu.text.frame_link", "", app.selection.len() == 2) {
+            app.link_text_frames();
+        }
+        let linked = app.selection.iter().any(|id| app.is_linked_frame(*id));
+        if item(ui, "menu.text.frame_unlink", "", linked) {
+            app.unlink_text_frames();
+        }
     });
     ui.separator();
     if item(
@@ -1145,7 +1203,13 @@ fn text_menu(app: &mut App, ui: &mut Ui) {
     if item(ui, "menu.text.align_to_baseline", "Alt+F12", is_text) {
         app.straighten_text();
     }
-    todo(ui, "menu.text.align_to_baseline_grid", "");
+    let on_grid = app
+        .text_shapes()
+        .iter()
+        .any(|s| matches!(&s.kind, ShapeKind::Text { para, .. } if para.baseline_grid_mm > 0.0));
+    if check(ui, "menu.text.align_to_baseline_grid", "", on_grid) {
+        app.toggle_baseline_grid();
+    }
     ui.separator();
     if check(ui, "menu.text.use_hyphenation", "", app.text_hyphenation) {
         app.text_hyphenation = !app.text_hyphenation;
@@ -1155,9 +1219,15 @@ fn text_menu(app: &mut App, ui: &mut Ui) {
         if item(ui, "menu.text.spell_check", "Ctrl+F12", true) {
             app.dialog = Dialog::SpellCheck(Default::default());
         }
-        todo(ui, "menu.text.grammatik", "");
-        todo(ui, "menu.text.thesaurus", "");
-        todo(ui, "menu.text.autocorrect", "");
+        if item(ui, "menu.text.grammatik", "", true) {
+            app.dialog = Dialog::Grammar(Default::default());
+        }
+        if item(ui, "menu.text.thesaurus", "", true) {
+            app.dialog = Dialog::Thesaurus(Default::default());
+        }
+        if item(ui, "menu.text.autocorrect", "", true) {
+            app.dialog = Dialog::Autocorrect(Default::default());
+        }
     });
     ui.separator();
     sub(ui, "menu.text.change_case", |ui| {
@@ -1339,7 +1409,9 @@ fn tools_menu(app: &mut App, ui: &mut Ui) {
     if item(ui, "menu.tools.font_manager", "", true) {
         app.dialog = Dialog::FontManager(Default::default());
     }
-    todo(ui, "menu.tools.border_and_grommet", "");
+    if item(ui, "menu.tools.border_and_grommet", "", true) {
+        app.dialog = Dialog::BorderGrommet(Default::default());
+    }
 }
 
 fn window_menu(app: &mut App, ui: &mut Ui) {

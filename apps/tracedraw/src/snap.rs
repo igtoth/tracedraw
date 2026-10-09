@@ -56,6 +56,14 @@ impl App {
             xs.extend([page.x0, page.x1, page.center().x]);
             ys.extend([page.y0, page.y1, page.center().y]);
         }
+        if s.baseline_grid {
+            let step = self.settings.baseline_grid_mm.max(0.1);
+            let mut y = page.y1;
+            while y > page.y0 {
+                ys.push(y);
+                y -= step;
+            }
+        }
         if s.guides {
             if let Ok(p) = self.doc().page(self.page) {
                 for g in &p.guides {

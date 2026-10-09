@@ -418,6 +418,8 @@ pub struct App {
     pub show_welcome: bool,
     /// Object > ClipFrame > Place Inside Frame is waiting for a click on the frame.
     pub pending_clip_frame: bool,
+    /// ClipFrame being edited in place: (frame id, content ids).
+    pub clip_frame_edit: Option<(ShapeId, Vec<ShapeId>)>,
     pub show_guides: bool,
     pub selected_guide: Option<usize>,
     pub transform_values: [f64; 4],
@@ -430,6 +432,8 @@ pub struct App {
     pub view_mode: ViewMode,
     pub proof_colors: bool,
     pub show_page_border: bool,
+    pub simulate_overprints: bool,
+    pub rasterize_complex_effects: bool,
     pub show_bleed: bool,
     pub show_printable_area: bool,
     pub show_pixel_grid: bool,
@@ -802,6 +806,7 @@ impl App {
             page_numbers: PageNumberSettings::default(),
             show_welcome: false,
             pending_clip_frame: false,
+            clip_frame_edit: None,
             show_guides: true,
             selected_guide: None,
             transform_values: [0.0, 0.0, 100.0, 100.0],
@@ -813,6 +818,8 @@ impl App {
             view_mode: ViewMode::Enhanced,
             proof_colors: false,
             show_page_border: true,
+            simulate_overprints: false,
+            rasterize_complex_effects: true,
             show_bleed: false,
             show_printable_area: false,
             show_pixel_grid: false,
@@ -1564,9 +1571,19 @@ impl App {
     }
 
     pub fn update_text(&mut self) {
-        let Some(te) = self.text_edit.clone() else {
+        let Some(mut te) = self.text_edit.clone() else {
             return;
         };
+        // Autocorrect acts once the word is finished (space or punctuation).
+        if self.settings.autocorrect.enabled {
+            let style = crate::autocorrect::QuoteStyle::for_language(&crate::i18n::language());
+            if let Some(fixed) =
+                crate::autocorrect::on_typed(&te.text, &self.settings.autocorrect, style)
+            {
+                te.text = fixed;
+                self.text_edit = Some(te.clone());
+            }
+        }
         if let Ok((_, s)) = self.doc().shape(te.shape) {
             if let ShapeKind::Text {
                 spans,
@@ -1608,6 +1625,9 @@ impl App {
                     },
                     "Edit Text",
                 );
+                if self.is_linked_frame(te.shape) {
+                    self.reflow_chain(te.shape);
+                }
             }
         }
     }
@@ -1658,7 +1678,7 @@ impl App {
     }
 
     pub fn cut(&mut self) {
-        self.copy();
+        self.copy_with_system();
         self.delete_selection();
     }
 
@@ -1856,9 +1876,12 @@ impl App {
         }
         let shapes = self.selection.clone();
         self.run(Command::TransformShapes {
-            shapes,
+            shapes: shapes.clone(),
             transform: t,
         });
+        self.compensate_unlocked_clip_frames(&shapes, t);
+        self.apply_hinting(&shapes);
+        self.reflow_chains_of(&shapes);
     }
 
     pub fn nudge(&mut self, d: Vec2) {
@@ -2272,6 +2295,11 @@ impl App {
 }
 
 /// Give a copied shape (and any children) fresh ids.
+/// Re-number a shape tree with fresh engine ids (for other modules).
+pub fn reid_pub(s: Shape, id: ShapeId, engine: &mut Engine) -> Shape {
+    reid(s, id, engine)
+}
+
 fn reid(mut s: Shape, id: ShapeId, engine: &mut Engine) -> Shape {
     s.id = id;
     match &mut s.kind {

@@ -127,7 +127,7 @@ fn object_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {
         app.cut();
     }
     if ci(ui, close, "menu.edit.copy", "Ctrl+C", true) {
-        app.copy();
+        app.copy_with_system();
     }
     if ci(ui, close, "menu.edit.duplicate", "Ctrl+D", true) {
         app.duplicate();
@@ -284,6 +284,13 @@ fn object_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {
     {
         app.toggle_overprint(false);
     }
+    let mut hint = shapes.iter().all(|s| app.object_hinted(s.id));
+    if ui
+        .checkbox(&mut hint, tr("menu.object.object_hinting"))
+        .changed()
+    {
+        app.toggle_object_hinting();
+    }
     if ci(ui, close, "context.align_pixel_grid", "", true) {
         app.align_to_pixel_grid();
     }
@@ -366,7 +373,7 @@ fn page_menu(app: &mut App, ui: &mut Ui, p: tracedraw_core::Point, close: &mut b
         "Ctrl+V",
         app.clipboard.is_some(),
     ) {
-        app.paste();
+        app.paste_any();
         if let Some(b) = app.selection_bounds() {
             let shapes = app.selection.clone();
             app.run(Command::TransformShapes {

@@ -448,7 +448,14 @@ pub enum LineJoin {
 }
 
 /// Arrowheads at the ends of open curves.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+///
+/// Presets are drawn by [`arrowhead_paths`]; a `Custom` head carries its own
+/// outline in a normalised head space: the bounding box is exactly one unit
+/// tall and centred on y = 0, the tip (largest x) sits at x = 0 and the
+/// shape extends towards negative x, i.e. back along the curve. At draw
+/// time the unit is the preset size (four outline widths, at least 1 mm),
+/// x follows the curve direction at the end point and y its left normal.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum Arrowhead {
     #[default]
@@ -459,9 +466,15 @@ pub enum Arrowhead {
     Square,
     Bar,
     Diamond,
+    /// User-drawn head (Object > Create > Arrowhead).
+    Custom {
+        path: crate::geometry::BezPath,
+        name: String,
+    },
 }
 
 impl Arrowhead {
+    /// The built-in presets, in menu order. Custom heads are not listed.
     pub const ALL: [Arrowhead; 7] = [
         Arrowhead::None,
         Arrowhead::Arrow,
@@ -471,7 +484,8 @@ impl Arrowhead {
         Arrowhead::Bar,
         Arrowhead::Diamond,
     ];
-    pub fn name(self) -> &'static str {
+
+    pub fn name(&self) -> &str {
         match self {
             Arrowhead::None => "None",
             Arrowhead::Arrow => "Arrow",
@@ -480,6 +494,43 @@ impl Arrowhead {
             Arrowhead::Square => "Square",
             Arrowhead::Bar => "Bar",
             Arrowhead::Diamond => "Diamond",
+            Arrowhead::Custom { name, .. } => name,
+        }
+    }
+
+    pub fn is_custom(&self) -> bool {
+        matches!(self, Arrowhead::Custom { .. })
+    }
+
+    /// Build a custom head from any closed outline (page or local space,
+    /// orientation: tip on the right, pointing towards +x). The outline is
+    /// moved and scaled into head space (see the enum docs). An empty or
+    /// degenerate outline (no height and no width) gives `Arrowhead::None`.
+    pub fn from_shape_path(path: &crate::geometry::BezPath, name: impl Into<String>) -> Arrowhead {
+        use crate::geometry::Shape as _;
+        if path.elements().is_empty() {
+            return Arrowhead::None;
+        }
+        let b = path.bounding_box();
+        if !(b.x0.is_finite() && b.y0.is_finite() && b.x1.is_finite() && b.y1.is_finite()) {
+            return Arrowhead::None;
+        }
+        // A flat outline (a bar seen edge on) still gets a height from its
+        // width so the head stays visible.
+        let height = if b.height() > 1e-9 {
+            b.height()
+        } else if b.width() > 1e-9 {
+            b.width()
+        } else {
+            return Arrowhead::None;
+        };
+        let scale = 1.0 / height;
+        let center_y = (b.y0 + b.y1) / 2.0;
+        let normalised =
+            Affine::scale(scale) * Affine::translate((-b.x1, -center_y)) * path.clone();
+        Arrowhead::Custom {
+            path: normalised,
+            name: name.into(),
         }
     }
 }
@@ -701,7 +752,7 @@ pub fn arrowhead_paths(
     if closed || pts.len() < 2 {
         return Vec::new();
     }
-    let head = |tip: Point, dir: Vec2, kind: Arrowhead| -> Option<BezPath> {
+    let head = |tip: Point, dir: Vec2, kind: &Arrowhead| -> Option<BezPath> {
         let dir = dir.normalize();
         if !dir.x.is_finite() {
             return None;
@@ -710,6 +761,14 @@ pub fn arrowhead_paths(
         let mut p = BezPath::new();
         match kind {
             Arrowhead::None => return None,
+            Arrowhead::Custom { path: outline, .. } => {
+                // Head space (unit tall, tip at the origin, body towards -x)
+                // to page space: x along the curve direction, y along its
+                // left normal, scaled to the preset size.
+                let place =
+                    Affine::new([dir.x, dir.y, n.x, n.y, tip.x, tip.y]) * Affine::scale(size);
+                p = place * outline.clone();
+            }
             Arrowhead::Arrow => {
                 p.move_to(tip);
                 p.line_to(tip - dir * size + n * (size * 0.4));
@@ -762,11 +821,126 @@ pub fn arrowhead_paths(
     use crate::geometry::Shape as _;
     let mut out = Vec::new();
     let n = pts.len();
-    if let Some(p) = head(pts[0], pts[0] - pts[1.min(n - 1)], stroke.start_arrow) {
+    if let Some(p) = head(pts[0], pts[0] - pts[1.min(n - 1)], &stroke.start_arrow) {
         out.push(p);
     }
-    if let Some(p) = head(pts[n - 1], pts[n - 1] - pts[n - 2], stroke.end_arrow) {
+    if let Some(p) = head(pts[n - 1], pts[n - 1] - pts[n - 2], &stroke.end_arrow) {
         out.push(p);
     }
     out
+}
+
+#[cfg(test)]
+mod arrowhead_tests {
+    use super::*;
+    use crate::geometry::{BezPath, Shape as _};
+
+    /// A triangle pointing right: tip at (30, 15), base from (10, 5) to (10, 25).
+    fn triangle() -> BezPath {
+        let mut p = BezPath::new();
+        p.move_to((10.0, 5.0));
+        p.line_to((30.0, 15.0));
+        p.line_to((10.0, 25.0));
+        p.close_path();
+        p
+    }
+
+    #[test]
+    fn custom_head_is_normalised_to_head_space() {
+        let head = Arrowhead::from_shape_path(&triangle(), "Tri");
+        let Arrowhead::Custom { path, name } = &head else {
+            panic!("expected a custom head");
+        };
+        assert_eq!(name, "Tri");
+        assert!(head.is_custom());
+        assert_eq!(head.name(), "Tri");
+        let b = path.bounding_box();
+        assert!((b.height() - 1.0).abs() < 1e-9, "{b:?}");
+        assert!(
+            (b.y0 + 0.5).abs() < 1e-9 && (b.y1 - 0.5).abs() < 1e-9,
+            "{b:?}"
+        );
+        assert!(b.x1.abs() < 1e-9, "tip must be at x = 0: {b:?}");
+        assert!((b.x0 + 1.0).abs() < 1e-9, "20 wide over 20 tall: {b:?}");
+    }
+
+    #[test]
+    fn degenerate_outlines_give_no_head() {
+        assert_eq!(
+            Arrowhead::from_shape_path(&BezPath::new(), "empty"),
+            Arrowhead::None
+        );
+        let mut dot = BezPath::new();
+        dot.move_to((3.0, 3.0));
+        dot.line_to((3.0, 3.0));
+        dot.close_path();
+        assert_eq!(Arrowhead::from_shape_path(&dot, "dot"), Arrowhead::None);
+        // A flat bar keeps a height taken from its width.
+        let mut bar = BezPath::new();
+        bar.move_to((0.0, 1.0));
+        bar.line_to((4.0, 1.0));
+        bar.close_path();
+        assert!(Arrowhead::from_shape_path(&bar, "bar").is_custom());
+    }
+
+    #[test]
+    fn presets_are_not_custom_and_all_lists_only_presets() {
+        for a in Arrowhead::ALL.iter() {
+            assert!(!a.is_custom(), "{a:?}");
+        }
+        assert_eq!(Arrowhead::ALL.len(), 7);
+        assert_eq!(Arrowhead::Arrow.name(), "Arrow");
+    }
+
+    #[test]
+    fn custom_head_round_trips_through_json_and_presets_stay_strings() {
+        let stroke = Stroke {
+            start_arrow: Arrowhead::Diamond,
+            end_arrow: Arrowhead::from_shape_path(&triangle(), "Tri"),
+            ..Stroke::new(Color::BLACK, 1.0)
+        };
+        let json = serde_json::to_string(&stroke).unwrap();
+        assert!(json.contains("\"start_arrow\":\"diamond\""));
+        assert!(json.contains("\"end_arrow\":{\"custom\":"));
+        let back: Stroke = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, stroke);
+        // Files written before custom heads existed still load.
+        let old = r#"{"color":{"model":"gray","v":0.0},"width":1.0,"cap":"butt","join":"miter","dash":[],"scale_with_object":false,"behind_fill":false,"start_arrow":"none","end_arrow":"arrow","stretch":1.0,"nib_angle":0.0}"#;
+        let back: Stroke = serde_json::from_str(old).unwrap();
+        assert_eq!(back.end_arrow, Arrowhead::Arrow);
+    }
+
+    #[test]
+    fn custom_head_is_placed_at_the_line_end_pointing_forward() {
+        // A horizontal line from (0, 0) to (50, 0) with a custom end head.
+        let mut line = BezPath::new();
+        line.move_to((0.0, 0.0));
+        line.line_to((50.0, 0.0));
+        let stroke = Stroke {
+            end_arrow: Arrowhead::from_shape_path(&triangle(), "Tri"),
+            ..Stroke::new(Color::BLACK, 1.0)
+        };
+        let heads = arrowhead_paths(&line, &stroke);
+        assert_eq!(heads.len(), 1);
+        let b = heads[0].bounding_box();
+        // Size is four widths = 4 mm: the head is 4 mm tall, centred on the
+        // line, with its tip at the end point and its body behind it.
+        assert!((b.x1 - 50.0).abs() < 1e-6, "{b:?}");
+        assert!((b.x0 - 46.0).abs() < 1e-6, "{b:?}");
+        assert!(
+            (b.y0 + 2.0).abs() < 1e-6 && (b.y1 - 2.0).abs() < 1e-6,
+            "{b:?}"
+        );
+
+        // The same head at the start points the other way.
+        let stroke = Stroke {
+            start_arrow: stroke.end_arrow.clone(),
+            end_arrow: Arrowhead::None,
+            ..Stroke::new(Color::BLACK, 1.0)
+        };
+        let heads = arrowhead_paths(&line, &stroke);
+        assert_eq!(heads.len(), 1);
+        let b = heads[0].bounding_box();
+        assert!(b.x0.abs() < 1e-6 && (b.x1 - 4.0).abs() < 1e-6, "{b:?}");
+    }
 }

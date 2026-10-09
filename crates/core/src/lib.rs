@@ -24,9 +24,9 @@ pub mod style;
 pub use color::Color;
 pub use command::Command;
 pub use document::{
-    ColorStyle, Document, EllipseArc, Layer, MasterScope, Metadata, ObjectStyle, Page,
-    ParagraphStyle, Shadow, Shape, ShapeKind, Symbol, Table, TableCell, TextAlign, TextOnPath,
-    TextSpan,
+    spans_char_count, split_spans_at, ColorStyle, Document, EllipseArc, Layer, MasterScope,
+    Metadata, ObjectStyle, Page, ParagraphStyle, Shadow, Shape, ShapeKind, Symbol, Table,
+    TableCell, TextAlign, TextOnPath, TextSpan,
 };
 pub use engine::Engine;
 pub use geometry::{Affine, BezPath, Point, Rect, Size, Vec2};

@@ -375,11 +375,12 @@ impl PageWriter<'_> {
             }
             self.path_ops(&path);
             self.content.push_str("S\n");
-            // Arrowheads are filled with the outline colour, in page space.
-            let local = shape.page_path();
-            for head in tracedraw_core::arrowhead_paths(&local, s) {
+            // Arrowheads (presets and custom) are filled with the outline
+            // colour. They are built on the page-space path, which already
+            // carries the shape's own transform, so only the parent applies.
+            for head in tracedraw_core::arrowhead_paths(&shape.page_path(), s) {
                 let _ = writeln!(self.content, "{}", color_op(s.color, true));
-                self.path_ops(&(transform * head));
+                self.path_ops(&(parent * head));
                 self.content.push_str("f\n");
             }
         }
@@ -651,6 +652,63 @@ mod tests {
         // The content stream is compressed; the image resource is not.
         assert!(text.contains("/Subtype /Image"));
         assert!(text.contains("/XObject << /Im0 "));
+    }
+
+    #[test]
+    fn custom_arrowhead_lands_at_the_line_end_in_the_content_stream() {
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        let mut tri = tracedraw_core::BezPath::new();
+        tri.move_to((0.0, 0.0));
+        tri.line_to((20.0, 10.0));
+        tri.line_to((0.0, 20.0));
+        tri.close_path();
+        let mut line = Shape::new(
+            tracedraw_core::ShapeId(1),
+            ShapeKind::Path {
+                path: {
+                    let mut p = tracedraw_core::BezPath::new();
+                    p.move_to((10.0, 50.0));
+                    p.line_to((60.0, 50.0));
+                    p
+                },
+                closed: false,
+            },
+        );
+        line.fill = Fill::None;
+        line.stroke = Some(tracedraw_core::Stroke {
+            end_arrow: tracedraw_core::Arrowhead::from_shape_path(&tri, "Tri"),
+            ..tracedraw_core::Stroke::new(Color::BLACK, 2.0)
+        });
+        line.transform = Affine::translate((0.0, 100.0));
+        doc.layer_mut(layer).unwrap().shapes.push(line);
+        let bytes = document_to_pdf(&doc);
+        // Inflate every zlib stream and look for the head's base corner and tip.
+        let mut content = String::new();
+        let mut rest: &[u8] = &bytes;
+        while let Some(i) = rest.windows(6).position(|w| w == b"stream") {
+            let after = &rest[i + 6..];
+            let start = after
+                .iter()
+                .position(|b| *b == b'\n')
+                .map(|n| n + 1)
+                .unwrap_or(0);
+            let data = &after[start..];
+            use std::io::Read;
+            let mut out = Vec::new();
+            if flate2::read::ZlibDecoder::new(data)
+                .read_to_end(&mut out)
+                .is_ok()
+            {
+                content.push_str(&String::from_utf8_lossy(&out));
+            }
+            rest = &after[start..];
+        }
+        let base = format!("{} {} m", f(52.0 * MM_PT), f(146.0 * MM_PT));
+        assert!(content.contains(&base), "head base corner: {content}");
+        let tip = format!("{} {} l", f(60.0 * MM_PT), f(150.0 * MM_PT));
+        assert!(content.contains(&tip), "head tip: {content}");
+        assert!(!content.contains(&format!("{} {} l", f(60.0 * MM_PT), f(250.0 * MM_PT))));
     }
 
     #[test]

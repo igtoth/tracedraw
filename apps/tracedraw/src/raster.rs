@@ -21,6 +21,8 @@ struct Key {
     size: (u32, u32),
     preview: Option<(Vec<ShapeId>, [f64; 6])>,
     wireframe: bool,
+    simulate_overprints: bool,
+    complex_effects: bool,
 }
 
 impl Raster {
@@ -40,6 +42,8 @@ impl Raster {
         preview: Option<(Vec<ShapeId>, Affine)>,
         revision: u64,
         wireframe: bool,
+        simulate_overprints: bool,
+        complex_effects: bool,
     ) -> Option<TextureId> {
         let ppp = ctx.pixels_per_point();
         let w = (rect.width() * ppp).round().max(1.0) as u32;
@@ -52,6 +56,8 @@ impl Raster {
             size: (w, h),
             preview: preview.as_ref().map(|(s, t)| (s.clone(), t.as_coeffs())),
             wireframe,
+            simulate_overprints,
+            complex_effects,
         };
         if self.key.as_ref() == Some(&key) {
             if let Some(t) = &self.texture {
@@ -69,6 +75,8 @@ impl Raster {
             view: vt,
             preview: preview.map(|(shapes, transform)| Preview { shapes, transform }),
             wireframe,
+            simulate_overprints,
+            complex_effects,
         };
         let pixmap = render_page(doc, page, &opts)?;
         let pixels: Vec<egui::Color32> = pixmap

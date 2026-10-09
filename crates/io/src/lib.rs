@@ -109,4 +109,44 @@ mod tests {
             Fill::Pattern(Pattern::Vector { shapes, .. }) if shapes.len() == 2
         ));
     }
+
+    #[test]
+    fn custom_arrowhead_round_trips_through_the_native_format() {
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        let mut tri = tracedraw_core::BezPath::new();
+        tri.move_to((0.0, 0.0));
+        tri.line_to((20.0, 10.0));
+        tri.line_to((0.0, 20.0));
+        tri.close_path();
+        let id = doc.ids_mut().shape();
+        let mut line = Shape::new(
+            id,
+            ShapeKind::Path {
+                path: {
+                    let mut p = tracedraw_core::BezPath::new();
+                    p.move_to((10.0, 50.0));
+                    p.line_to((60.0, 50.0));
+                    p
+                },
+                closed: false,
+            },
+        );
+        line.stroke = Some(Stroke {
+            start_arrow: tracedraw_core::Arrowhead::Circle,
+            end_arrow: tracedraw_core::Arrowhead::from_shape_path(&tri, "My head"),
+            ..Stroke::new(Color::BLACK, 1.0)
+        });
+        doc.layer_mut(layer).unwrap().shapes.push(line);
+        let json = doc.to_json().unwrap();
+        assert!(json.contains("\"custom\""));
+        assert!(json.contains("My head"));
+        let back = Document::from_json(&json).unwrap();
+        assert_eq!(back, doc);
+        let s = &back.pages[0].layers[0].shapes[0];
+        let st = s.stroke.as_ref().unwrap();
+        assert!(st.end_arrow.is_custom());
+        assert_eq!(st.end_arrow.name(), "My head");
+        assert_eq!(st.start_arrow, tracedraw_core::Arrowhead::Circle);
+    }
 }

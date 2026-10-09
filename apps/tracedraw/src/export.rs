@@ -80,6 +80,7 @@ pub fn export(app: &mut App, path: &Path, st: &ExportState) -> Result<String, St
                             },
                             preview: None,
                             wireframe: false,
+                            ..tracedraw_render::RenderOptions::default()
                         },
                     )
                     .ok_or("render failed")?;
