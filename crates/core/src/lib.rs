@@ -25,9 +25,10 @@ pub mod style;
 pub use color::Color;
 pub use command::Command;
 pub use document::{
-    spans_char_count, split_spans_at, ColorStyle, Document, EllipseArc, Layer, MasterScope,
-    Metadata, ObjectStyle, Page, ParagraphStyle, Shadow, Shape, ShapeKind, Symbol, Table,
-    TableCell, TextAlign, TextOnPath, TextSpan,
+    merge_equal_spans, spans_apply, spans_char_count, spans_delete, spans_insert, spans_text,
+    split_spans_at, ColorStyle, Document, EllipseArc, Layer, MasterScope, Metadata, ObjectStyle,
+    Page, ParagraphStyle, Shadow, Shape, ShapeKind, Symbol, Table, TableCell, TextAlign,
+    TextOnPath, TextSpan,
 };
 pub use engine::Engine;
 pub use geometry::{Affine, BezPath, Point, Rect, Size, Vec2};

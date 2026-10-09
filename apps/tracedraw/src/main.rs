@@ -41,6 +41,7 @@ mod shape_tool;
 mod snap;
 mod spell;
 mod table;
+mod text_editing;
 mod textflow;
 mod theme;
 mod thesaurus;

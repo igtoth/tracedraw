@@ -1194,9 +1194,8 @@ impl App {
 
     /// Insert a string at the caret of the text being edited.
     pub fn insert_text(&mut self, code: &str) {
-        if let Some(te) = &mut self.text_edit {
-            te.text.push_str(code);
-            self.update_text();
+        if self.text_edit.is_some() {
+            self.text_insert(code);
         }
     }
 
@@ -1409,6 +1408,24 @@ impl App {
     /// Apply the property bar text style (font, size, bold, italic, align)
     /// to every selected text object.
     pub fn apply_text_style(&mut self) {
+        // While editing with a selection, only the selected characters change.
+        if self.text_edit.as_ref().is_some_and(|te| te.has_selection()) {
+            let (font, size, bold, italic, underline) = (
+                self.text_font.clone(),
+                self.text_size_pt,
+                self.text_bold,
+                self.text_italic,
+                self.text_underline,
+            );
+            self.text_apply_style(move |sp| {
+                sp.font_family = font.clone();
+                sp.size_pt = size;
+                sp.bold = bold;
+                sp.italic = italic;
+                sp.underline = underline;
+            });
+            return;
+        }
         let cmds: Vec<Command> = self
             .selected_shapes()
             .iter()

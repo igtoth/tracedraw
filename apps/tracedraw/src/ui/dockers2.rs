@@ -488,10 +488,7 @@ fn glyphs(app: &mut App, ui: &mut Ui) {
         } else {
             let c = app.page_rect().center();
             app.start_text(c, None);
-            if let Some(te) = &mut app.text_edit {
-                te.text.push(ch);
-            }
-            app.update_text();
+            app.text_insert(&ch.to_string());
             app.finish_text();
         }
     }

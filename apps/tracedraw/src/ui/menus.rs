@@ -1334,7 +1334,9 @@ fn text_menu(app: &mut App, ui: &mut Ui) {
     ui.separator();
     if check(ui, "menu.text.use_hyphenation", "", app.text_hyphenation) {
         app.text_hyphenation = !app.text_hyphenation;
-        app.update_text();
+        if let Some(spans) = app.edit_spans() {
+            app.set_edit_spans(spans);
+        }
     }
     sub(ui, "menu.text.writing_tools", |ui| {
         if item(ui, "menu.text.spell_check", "Ctrl+F12", true) {

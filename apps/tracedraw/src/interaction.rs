@@ -183,7 +183,7 @@ impl App {
             Tool::Bezier | Tool::Pen | Tool::Polyline | Tool::TwoPointLine | Tool::BSpline => {
                 self.curve_input(response, p, mods)
             }
-            Tool::Text => self.text_input(response, p),
+            Tool::Text => self.text_input(response, p, mods),
             Tool::ColorEyedropper | Tool::AttributesEyedropper => {
                 if response.clicked() {
                     let attrs = self.tool == Tool::AttributesEyedropper;
@@ -461,22 +461,56 @@ impl App {
         self.shape_tool_input(response, p, mods);
     }
 
-    fn text_input(&mut self, response: &Response, p: Point) {
+    fn text_input(&mut self, response: &Response, p: Point, mods: Modifiers) {
+        // Inside the text being edited, the pointer places the caret and
+        // drags a selection; elsewhere it starts a new text or edits
+        // another one.
+        let on_edited = self
+            .text_edit
+            .as_ref()
+            .map(|te| te.shape)
+            .filter(|id| self.hit_test(p) == Some(*id))
+            .is_some();
         if response.drag_started_by(PointerButton::Primary) {
-            if self.text_edit.is_some() {
-                self.finish_text();
+            if on_edited {
+                if let Some(idx) = self.text_hit_char(p) {
+                    self.text_set_caret_at(idx, mods.shift);
+                }
+                self.drag = Drag::TextSelect;
+            } else {
+                if self.text_edit.is_some() {
+                    self.finish_text();
+                }
+                self.drag = Drag::TextFrame {
+                    start: p,
+                    current: p,
+                };
             }
-            self.drag = Drag::TextFrame {
-                start: p,
-                current: p,
-            };
         }
         if response.dragged_by(PointerButton::Primary) {
-            if let Drag::TextFrame { current, .. } = &mut self.drag {
-                *current = p;
+            match &mut self.drag {
+                Drag::TextFrame { current, .. } => *current = p,
+                Drag::TextSelect => {
+                    if let Some(idx) = self.text_hit_char(p) {
+                        self.text_set_caret_at(idx, true);
+                    }
+                }
+                _ => {}
             }
         }
+        if response.double_clicked_by(PointerButton::Primary) && on_edited {
+            if let Some(idx) = self.text_hit_char(p) {
+                self.text_select_word_at(idx);
+            }
+            return;
+        }
         if response.clicked_by(PointerButton::Primary) {
+            if on_edited {
+                if let Some(idx) = self.text_hit_char(p) {
+                    self.text_set_caret_at(idx, mods.shift);
+                }
+                return;
+            }
             match self.hit_test(p) {
                 Some(id)
                     if matches!(
@@ -486,16 +520,10 @@ impl App {
                         Ok(true)
                     ) =>
                 {
-                    let text = match self.doc().shape(id).map(|(_, s)| s.kind.clone()) {
-                        Ok(ShapeKind::Text { spans, .. }) => {
-                            spans.iter().map(|s| s.text.as_str()).collect::<String>()
-                        }
-                        _ => String::new(),
-                    };
-                    self.finish_text();
-                    self.text_edit = Some(crate::app::TextEdit { shape: id, text });
-                    self.select(vec![id]);
-                    self.sync_text_defaults_from(id);
+                    self.begin_text_edit(id);
+                    if let Some(idx) = self.text_hit_char(p) {
+                        self.text_set_caret_at(idx, false);
+                    }
                 }
                 _ => {
                     let p = self.snap_point(p);
@@ -774,6 +802,7 @@ impl App {
                     self.three_point_base = Some((start, current));
                 }
             }
+            Drag::TextSelect => {}
             Drag::TextFrame { start, current } => {
                 let r = Rect::from_points(start, current);
                 if r.width() > 2.0 && r.height() > 2.0 {
@@ -1029,50 +1058,8 @@ impl App {
             }
         }
         // Text typing has priority.
-        if let Some(mut te) = self.text_edit.clone() {
-            let mut changed = false;
-            let mut finish = false;
-            ctx.input(|i| {
-                for ev in &i.events {
-                    match ev {
-                        egui::Event::Text(t) => {
-                            te.text.push_str(t);
-                            changed = true;
-                        }
-                        egui::Event::Key {
-                            key: Key::Backspace,
-                            pressed: true,
-                            ..
-                        } => {
-                            te.text.pop();
-                            changed = true;
-                        }
-                        egui::Event::Key {
-                            key: Key::Enter,
-                            pressed: true,
-                            modifiers,
-                            ..
-                        } if !modifiers.shift => {
-                            te.text.push('\n');
-                            changed = true;
-                        }
-                        egui::Event::Key {
-                            key: Key::Escape,
-                            pressed: true,
-                            ..
-                        } => finish = true,
-                        _ => {}
-                    }
-                }
-            });
-            if changed {
-                self.text_edit = Some(te);
-                self.update_text();
-            }
-            if finish {
-                self.finish_text();
-                self.set_tool(Tool::Pick);
-            }
+        if self.text_edit.is_some() {
+            self.text_keyboard(ctx);
             return;
         }
         if ctx.egui_wants_keyboard_input() {

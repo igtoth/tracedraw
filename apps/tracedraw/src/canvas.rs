@@ -322,14 +322,20 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
         let sp = view.to_screen(*p);
         painter.circle_stroke(sp, 4.0, EStroke::new(1.0, Tokens::SELECTION));
     }
-    // Text caret.
-    if let Some(te) = &app.text_edit {
-        if let Ok((_, s)) = doc.shape(te.shape) {
-            let b = view.rect_to_screen(s.bounds());
-            let x = b.right();
+    // Text selection and caret.
+    if app.text_edit.is_some() {
+        if let Some((top, bottom, quads)) = app.text_caret_geometry() {
+            for q in quads {
+                let pts: Vec<Pos2> = q.iter().map(|p| view.to_screen(*p)).collect();
+                painter.add(egui::Shape::convex_polygon(
+                    pts,
+                    Color32::from_rgba_unmultiplied(0x00, 0x78, 0xD7, 70),
+                    EStroke::NONE,
+                ));
+            }
             painter.line_segment(
-                [Pos2::new(x, b.top()), Pos2::new(x, b.bottom())],
-                EStroke::new(1.0, Tokens::TEXT),
+                [view.to_screen(top), view.to_screen(bottom)],
+                EStroke::new(1.5, Tokens::TEXT),
             );
         }
     }

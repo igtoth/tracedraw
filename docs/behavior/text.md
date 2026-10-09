@@ -30,6 +30,32 @@ style; the object takes the alignment) as one "Text Style" undo step,
 and becomes the default for the next text. Double-clicking text with the
 Pick tool edits it in place.
 
+## Editing in place
+
+Clicking text with the Text tool (or double-clicking it with the Pick
+tool) edits it where it is. The caret is a character position in the
+concatenated spans; the layout's line boxes give its place on the page.
+
+| Input | Behaviour |
+|---|---|
+| Typing, paste | inserts at the caret, replacing the selection, with the style of the character before the caret |
+| Backspace / Delete | the selection, else the character before / after the caret |
+| Enter / Shift+Enter | paragraph break / line break (U+2028) |
+| Tab | a tab character |
+| Left / Right, Ctrl+Left / Right | one character, one word; Shift extends the selection |
+| Up / Down | the same x on the previous / next line (the x is remembered across moves) |
+| Home / End, Ctrl+Home / End | line start / end, text start / end |
+| Ctrl+A | select all |
+| Ctrl+B / I / U | toggle bold, italic, underline on the selection, or on the whole text without one |
+| Ctrl+C / X / V | copy, cut, paste the selected characters |
+| Click / Shift+click / drag | place the caret / extend / select |
+| Double-click | select the word |
+| Esc | finish editing and return to the Pick tool; an empty text is removed |
+
+The property bar's font, size and style buttons act on the selected
+characters while a selection exists, and show the style at the caret. All
+the keystrokes of one editing session are one "Edit Text" undo step.
+
 ## Formulas
 
 - Line height `= size * leading / 100 * (asc - desc + gap) / upm`.

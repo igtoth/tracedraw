@@ -256,6 +256,110 @@ pub fn split_spans_at(spans: &[TextSpan], at_chars: usize) -> (Vec<TextSpan>, Ve
     (head, tail)
 }
 
+/// The concatenated text of a span list.
+pub fn spans_text(spans: &[TextSpan]) -> String {
+    spans.iter().map(|s| s.text.as_str()).collect()
+}
+
+/// Insert `text` at character index `at`, with the style of the character
+/// before the insertion point (the first span's style at the start). An
+/// empty list gets nothing inserted; callers keep at least one span.
+pub fn spans_insert(spans: &mut [TextSpan], at: usize, text: &str) {
+    if text.is_empty() {
+        return;
+    }
+    let total = spans_char_count(spans);
+    let at = at.min(total);
+    // The span holding the character before `at`.
+    let mut seen = 0usize;
+    let mut target: Option<(usize, usize)> = None;
+    for (i, span) in spans.iter().enumerate() {
+        let n = span.char_count();
+        if at <= seen + n && (n > 0 || spans.len() == 1) && (at > seen || i == 0) {
+            target = Some((i, at - seen));
+            break;
+        }
+        seen += n;
+    }
+    let (i, cut) = match target {
+        Some(t) => t,
+        None => match spans.len() {
+            0 => return,
+            n => (n - 1, spans[n - 1].char_count()),
+        },
+    };
+    if let Some(span) = spans.get_mut(i) {
+        let byte = span
+            .text
+            .char_indices()
+            .nth(cut)
+            .map(|(b, _)| b)
+            .unwrap_or(span.text.len());
+        span.text.insert_str(byte, text);
+    }
+}
+
+/// Delete the characters `from..to`. The list keeps at least one span so
+/// the style survives when all the text is removed.
+pub fn spans_delete(spans: &mut Vec<TextSpan>, from: usize, to: usize) {
+    let total = spans_char_count(spans);
+    let (from, to) = (from.min(to).min(total), to.max(from).min(total));
+    if from == to {
+        return;
+    }
+    let keep = spans.first().cloned();
+    let (head, rest) = split_spans_at(spans, from);
+    let (_, tail) = split_spans_at(&rest, to - from);
+    let mut out = head;
+    out.extend(tail);
+    if out.is_empty() {
+        if let Some(mut k) = keep {
+            k.text.clear();
+            out.push(k);
+        }
+    }
+    *spans = merge_equal_spans(out);
+}
+
+/// Apply `f` to the style of the characters `from..to`, splitting spans at
+/// the range ends and merging neighbours that end up with the same style.
+pub fn spans_apply(spans: &mut Vec<TextSpan>, from: usize, to: usize, f: impl Fn(&mut TextSpan)) {
+    let total = spans_char_count(spans);
+    let (from, to) = (from.min(to).min(total), to.max(from).min(total));
+    if from == to {
+        return;
+    }
+    let (head, rest) = split_spans_at(spans, from);
+    let (mut mid, tail) = split_spans_at(&rest, to - from);
+    for span in &mut mid {
+        f(span);
+    }
+    let mut out = head;
+    out.extend(mid);
+    out.extend(tail);
+    *spans = merge_equal_spans(out);
+}
+
+/// Merge neighbouring spans whose style is identical.
+pub fn merge_equal_spans(spans: Vec<TextSpan>) -> Vec<TextSpan> {
+    let mut out: Vec<TextSpan> = Vec::new();
+    for span in spans {
+        match out.last_mut() {
+            Some(last) if same_style(last, &span) => last.text.push_str(&span.text),
+            _ => out.push(span),
+        }
+    }
+    out
+}
+
+fn same_style(a: &TextSpan, b: &TextSpan) -> bool {
+    let strip = |s: &TextSpan| TextSpan {
+        text: String::new(),
+        ..s.clone()
+    };
+    strip(a) == strip(b)
+}
+
 /// Paragraph formatting (Text > Tabs, Columns, Bullets, Drop Cap and the
 /// Text docker's paragraph section).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1085,6 +1189,47 @@ mod tests {
         assert_eq!(tail[0].text, "rld!");
         assert!(tail[0].italic && tail[0].size_pt == 10.0);
         assert_eq!(spans_char_count(&head) + spans_char_count(&tail), 12);
+    }
+
+    #[test]
+    fn span_editing_inserts_deletes_and_restyles_ranges() {
+        let mut bold = TextSpan::new("ab", "Sans", 12.0);
+        bold.bold = true;
+        let plain = TextSpan::new("cd", "Sans", 12.0);
+        let mut spans = vec![bold.clone(), plain.clone()];
+
+        // Insertion takes the style of the character before the caret.
+        spans_insert(&mut spans, 2, "X");
+        assert_eq!(spans_text(&spans), "abXcd");
+        assert_eq!(spans[0].text, "abX");
+        spans_insert(&mut spans, 0, "Y");
+        assert_eq!(spans[0].text, "YabX");
+        spans_insert(&mut spans, 99, "Z");
+        assert_eq!(spans_text(&spans), "YabXcdZ");
+        assert_eq!(spans[1].text, "cdZ");
+
+        // Deleting across the span boundary keeps both styles.
+        spans_delete(&mut spans, 3, 5);
+        assert_eq!(spans_text(&spans), "YabdZ");
+        assert_eq!(spans.len(), 2);
+        assert!(spans[0].bold && !spans[1].bold);
+
+        // Restyling a range splits and merges.
+        spans_apply(&mut spans, 1, 4, |s| s.bold = false);
+        assert_eq!(spans_text(&spans), "YabdZ");
+        assert_eq!(spans.len(), 2, "{spans:?}");
+        assert_eq!(spans[0].text, "Y");
+        assert_eq!(spans[1].text, "abdZ");
+        spans_apply(&mut spans, 0, 5, |s| s.bold = false);
+        assert_eq!(spans.len(), 1);
+
+        // Deleting everything keeps one empty span with the style.
+        spans_delete(&mut spans, 0, 5);
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].text, "");
+        assert_eq!(spans[0].font_family, "Sans");
+        spans_insert(&mut spans, 0, "new");
+        assert_eq!(spans_text(&spans), "new");
     }
 
     #[test]

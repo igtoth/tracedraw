@@ -312,6 +312,8 @@ pub enum Drag {
         shape: ShapeId,
         start: Point,
     },
+    /// Dragging a selection across the text being edited (Text tool).
+    TextSelect,
     /// Dragging a paragraph text frame (Text tool).
     TextFrame {
         start: Point,
@@ -365,11 +367,7 @@ impl CurveInProgress {
 }
 
 /// Artistic text being typed.
-#[derive(Debug, Clone)]
-pub struct TextEdit {
-    pub shape: ShapeId,
-    pub text: String,
-}
+pub use crate::text_editing::TextEdit;
 
 #[derive(Debug, Clone)]
 pub struct Clipboard {
@@ -1646,14 +1644,12 @@ impl App {
     /// Start artistic text at a point, or paragraph text in a frame.
     /// Start editing an existing text object in place.
     pub fn begin_text_edit(&mut self, id: ShapeId) {
-        let text = match self.doc().find_shape(id).map(|s| s.kind.clone()) {
-            Some(ShapeKind::Text { spans, .. }) => {
-                spans.iter().map(|s| s.text.as_str()).collect::<String>()
-            }
+        let len = match self.doc().find_shape(id).map(|s| &s.kind) {
+            Some(ShapeKind::Text { spans, .. }) => tracedraw_core::spans_char_count(spans),
             _ => return,
         };
         self.finish_text();
-        self.text_edit = Some(TextEdit { shape: id, text });
+        self.text_edit = Some(TextEdit::at_end(id, len));
         self.select(vec![id]);
         self.sync_text_defaults_from(id);
     }
@@ -1675,10 +1671,7 @@ impl App {
             para,
             on_path: None,
         }) {
-            self.text_edit = Some(TextEdit {
-                shape: id,
-                text: String::new(),
-            });
+            self.text_edit = Some(TextEdit::at_end(id, 0));
             self.select(vec![id]);
         }
     }
@@ -1687,7 +1680,22 @@ impl App {
     pub fn sync_text_defaults_from(&mut self, id: ShapeId) {
         let kind = self.doc().shape(id).map(|(_, s)| s.kind.clone());
         if let Ok(ShapeKind::Text { spans, align, .. }) = &kind {
-            if let Some(sp) = spans.first() {
+            // While editing, the style at the caret (of the character before it).
+            let at = self
+                .text_edit
+                .as_ref()
+                .filter(|te| te.shape == id)
+                .map(|te| te.caret.saturating_sub(1));
+            let span_at = at.and_then(|at| {
+                let mut seen = 0usize;
+                spans.iter().find(|sp| {
+                    let n = sp.char_count();
+                    let hit = at < seen + n;
+                    seen += n;
+                    hit
+                })
+            });
+            if let Some(sp) = span_at.or_else(|| spans.first()) {
                 self.text_font = sp.font_family.clone();
                 self.text_size_pt = sp.size_pt;
                 self.text_bold = sp.bold;
@@ -1698,71 +1706,10 @@ impl App {
         }
     }
 
-    pub fn update_text(&mut self) {
-        let Some(mut te) = self.text_edit.clone() else {
-            return;
-        };
-        // Autocorrect acts once the word is finished (space or punctuation).
-        if self.settings.autocorrect.enabled {
-            let style = crate::autocorrect::QuoteStyle::for_language(&crate::i18n::language());
-            if let Some(fixed) =
-                crate::autocorrect::on_typed(&te.text, &self.settings.autocorrect, style)
-            {
-                te.text = fixed;
-                self.text_edit = Some(te.clone());
-            }
-        }
-        if let Ok((_, s)) = self.doc().shape(te.shape) {
-            if let ShapeKind::Text {
-                spans,
-                origin,
-                frame,
-                align,
-                para,
-                on_path,
-            } = &s.kind
-            {
-                let mut spans = spans.clone();
-                // Typing edits the whole text as one run with the first span's style.
-                let style = spans.first().cloned().unwrap_or_else(|| {
-                    TextSpan::new("", self.text_font.clone(), self.text_size_pt)
-                });
-                spans = vec![TextSpan {
-                    text: te.text.clone(),
-                    ..style
-                }];
-                let mut para = para.clone();
-                para.hyphenate = self.text_hyphenation;
-                let kind = ShapeKind::Text {
-                    spans,
-                    origin: *origin,
-                    frame: *frame,
-                    align: *align,
-                    para,
-                    on_path: on_path.clone(),
-                };
-                // Typing is one undo step per text object; collapse by undoing the
-                // previous keystroke entry when it was also a SetShapeKind on this shape.
-                if self.engine.undo_label() == Some("Edit Text") {
-                    let _ = self.engine.undo();
-                }
-                let _ = self.engine.run_with_label(
-                    &Command::SetShapeKind {
-                        shape: te.shape,
-                        kind,
-                    },
-                    "Edit Text",
-                );
-                if self.is_linked_frame(te.shape) {
-                    self.reflow_chain(te.shape);
-                }
-            }
-        }
-    }
-
     pub fn finish_text(&mut self) {
+        let empty = self.edit_text().trim().is_empty();
         if let Some(te) = self.text_edit.take() {
-            if te.text.trim().is_empty() {
+            if empty {
                 let _ = self.engine.run(&Command::DeleteShapes {
                     shapes: vec![te.shape],
                 });

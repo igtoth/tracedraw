@@ -103,6 +103,75 @@ pub struct TextLayout {
     /// One entry per laid-out line: (x of the line start, baseline y), mm,
     /// in layout space (frame top or first baseline at y = 0, Y up).
     pub baselines: Vec<(f64, f64)>,
+    /// One entry per laid-out line, in order: the character range it holds
+    /// and the pen position before each of its characters (for carets).
+    pub lines: Vec<LineBox>,
+}
+
+/// Caret geometry of one laid-out line, mm, in layout space (Y up).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct LineBox {
+    /// Index of the line's first character in the concatenated span text.
+    pub start_char: usize,
+    /// One past the line's last character (the newline that ends a
+    /// paragraph is not part of the line).
+    pub end_char: usize,
+    pub baseline: f64,
+    pub ascent: f64,
+    pub descent: f64,
+    /// Pen x before each character from `start_char` to `end_char`, then
+    /// after the last one: `end_char - start_char + 1` entries.
+    pub edges: Vec<f64>,
+}
+
+impl TextLayout {
+    /// Caret position for the character index `idx`: (x, baseline, ascent,
+    /// descent) in layout space. Past the end of the text the caret sits
+    /// after the last character.
+    pub fn caret(&self, idx: usize) -> Option<(f64, f64, f64, f64)> {
+        let line = self
+            .lines
+            .iter()
+            .find(|l| idx >= l.start_char && idx < l.end_char)
+            .or_else(|| self.lines.iter().rev().find(|l| idx >= l.start_char))
+            .or_else(|| self.lines.first())?;
+        let i = idx
+            .saturating_sub(line.start_char)
+            .min(line.edges.len().saturating_sub(1));
+        let x = line.edges.get(i).copied()?;
+        Some((x, line.baseline, line.ascent, line.descent))
+    }
+
+    /// Character index nearest to the layout-space point `p`: the line
+    /// whose vertical band holds `p.y` (the nearest one outside all bands)
+    /// and the nearest character edge on that line.
+    pub fn hit_char(&self, p: Point) -> Option<usize> {
+        let line = self
+            .lines
+            .iter()
+            .find(|l| p.y <= l.baseline + l.ascent && p.y >= l.baseline - l.descent)
+            .or_else(|| {
+                self.lines.iter().min_by(|a, b| {
+                    let da = (a.baseline - p.y).abs();
+                    let db = (b.baseline - p.y).abs();
+                    da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+                })
+            })?;
+        let (i, _) = line.edges.iter().enumerate().min_by(|(_, a), (_, b)| {
+            let da = (*a - p.x).abs();
+            let db = (*b - p.x).abs();
+            da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+        })?;
+        Some(line.start_char + i)
+    }
+
+    /// Index of the line holding the character index `idx`.
+    pub fn line_of(&self, idx: usize) -> Option<usize> {
+        self.lines
+            .iter()
+            .position(|l| idx >= l.start_char && idx < l.end_char)
+            .or_else(|| self.lines.iter().rposition(|l| idx >= l.start_char))
+    }
 }
 
 impl FontSystem {
@@ -448,6 +517,7 @@ impl FontSystem {
                 overflow: false,
                 fitted_chars: 0,
                 baselines: Vec::new(),
+                lines: Vec::new(),
             };
         }
         let para = req.para;
@@ -585,8 +655,28 @@ impl FontSystem {
         let mut drop_cap_indent: (f64, usize) = (0.0, 0); // (width, lines remaining)
         let artistic = req.frame.is_none();
         let mut line_baselines: Vec<(f64, f64)> = Vec::new();
+        let mut line_boxes: Vec<LineBox> = Vec::new();
+        // Where each line's characters end: the next line's start, or the
+        // paragraph end (before its newline) for the last line of one.
+        let line_ends: Vec<usize> = lines
+            .iter()
+            .enumerate()
+            .map(|(li, line)| {
+                if line.last_in_para {
+                    para_starts
+                        .get(line.para + 1)
+                        .map(|s| s.saturating_sub(1))
+                        .unwrap_or(total_chars)
+                } else {
+                    lines
+                        .get(li + 1)
+                        .map(|n| n.start_char)
+                        .unwrap_or(total_chars)
+                }
+            })
+            .collect();
 
-        for line in lines.iter() {
+        for (li, line) in lines.iter().enumerate() {
             let m = line.metrics;
             let step = m.line_height * para.leading_pct / 100.0;
             // Paragraph spacing.
@@ -701,11 +791,39 @@ impl FontSystem {
             let mut pen = x0 + dx;
             let line_start = pen;
             let mut underline_runs: Vec<(usize, f64, f64)> = Vec::new();
-            for g in glyphs {
+            let end_char = line_ends.get(li).copied().unwrap_or(total_chars);
+            let n_chars = end_char.saturating_sub(line.start_char);
+            // Pen x before each character; clusters of several characters
+            // share their glyph's advance evenly.
+            let mut edges: Vec<f64> = vec![line_start; n_chars + 1];
+            let mut record = |from: usize, to: usize, x0: f64, x1: f64| {
+                let from = from.max(line.start_char);
+                let to = to.min(end_char);
+                if to <= from {
+                    return;
+                }
+                let n = (to - from) as f64;
+                for (k, c) in (from..to).enumerate() {
+                    if let Some(e) = edges.get_mut(c - line.start_char) {
+                        *e = x0 + (x1 - x0) * k as f64 / n;
+                    }
+                }
+                if let Some(e) = edges.get_mut(to - line.start_char) {
+                    *e = x1;
+                }
+            };
+            for (gi, g) in glyphs.iter().enumerate() {
+                let next_idx = glyphs
+                    .get(gi + 1)
+                    .map(|n| n.char_idx)
+                    .unwrap_or(end_char)
+                    .max(g.char_idx + 1);
                 if g.ch == '\t' {
                     let rel = pen - col_x;
                     let next = next_tab(rel, &para.tabs);
+                    let before = pen;
                     pen = col_x + next;
+                    record(g.char_idx, next_idx, before, pen);
                     continue;
                 }
                 let gp =
@@ -721,9 +839,18 @@ impl FontSystem {
                         _ => underline_runs.push((g.span, pen, pen + adv)),
                     }
                 }
+                record(g.char_idx, next_idx, pen, pen + adv);
                 pen += adv;
                 glyph_count += 1;
             }
+            line_boxes.push(LineBox {
+                start_char: line.start_char,
+                end_char,
+                baseline: y,
+                ascent: m.ascent,
+                descent: m.descent,
+                edges,
+            });
             if let Some(h) = &line.hyphen {
                 let gp = Affine::translate((pen, y)) * h.path.clone();
                 path.extend(gp.elements().iter().copied());
@@ -778,6 +905,7 @@ impl FontSystem {
                 overflow: false,
                 fitted_chars: total_chars,
                 baselines: line_baselines,
+                lines: line_boxes,
             };
         }
 
@@ -788,6 +916,7 @@ impl FontSystem {
             overflow,
             fitted_chars,
             baselines: line_baselines,
+            lines: line_boxes,
         }
     }
 }
@@ -1169,6 +1298,35 @@ mod tests {
         t.tracking_pct = 50.0;
         let b = f.outline(&[t]).bounds.width();
         assert!(b > a * 1.5);
+    }
+
+    #[test]
+    fn caret_geometry_follows_the_characters_and_lines() {
+        if !has_fonts() {
+            return;
+        }
+        let f = fonts();
+        let l = f.outline(&[span("ab\ncd")]);
+        assert_eq!(l.lines.len(), 2);
+        assert_eq!((l.lines[0].start_char, l.lines[0].end_char), (0, 2));
+        assert_eq!((l.lines[1].start_char, l.lines[1].end_char), (3, 5));
+        let c0 = l.caret(0).unwrap();
+        let c1 = l.caret(1).unwrap();
+        let c2 = l.caret(2).unwrap();
+        let c3 = l.caret(3).unwrap();
+        let c5 = l.caret(5).unwrap();
+        assert!(c1.0 > c0.0 && c2.0 > c1.0, "carets advance along the line");
+        assert!(c3.1 < c0.1, "the second line is below the first");
+        assert!((c3.0 - c0.0).abs() < 1e-6, "line starts share x");
+        assert!(c5.0 > c3.0);
+        assert_eq!(l.line_of(2), Some(0));
+        assert_eq!(l.line_of(3), Some(1));
+        // Clicking before the first character of the second line, and
+        // after the last of the first.
+        assert_eq!(l.hit_char(Point::new(c3.0 - 1.0, c3.1)), Some(3));
+        assert_eq!(l.hit_char(Point::new(c2.0 + 50.0, c0.1)), Some(2));
+        // A caret past the end sits after the last character.
+        assert_eq!(l.caret(99), Some(c5));
     }
 
     #[test]

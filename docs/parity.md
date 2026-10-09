@@ -6,7 +6,7 @@ target design does, with a test or a checked screenshot behind it.
 "partial" names what is missing. "baked" means the result is applied once
 instead of staying live and editable. The goal is every row at "works".
 
-Counts: works 125, partial 1 (`.cdr` content coverage), missing 1 (CMX import), not applicable 4, icons close but not pixel-identical.
+Counts: works 126, partial 1 (`.cdr` content coverage), missing 1 (CMX import), not applicable 4, icons close but not pixel-identical.
 
 ## 1. Selection and navigation
 
@@ -38,6 +38,7 @@ Counts: works 125, partial 1 (`.cdr` content coverage), missing 1 (CMX import), 
 | Dimensions: parallel, horizontal/vertical, angular, segment, 3-point callout | works |
 | Connectors: straight, right-angle, rounded right-angle; Anchor Editing tool (add, move, delete anchors; connectors snap to them) | works |
 | Text (artistic and paragraph), Table | works |
+| Text editing in place: caret, selection by keyboard and mouse, word selection, character-level bold/italic/underline, clipboard | works |
 | Crop, Knife, Segment delete, Eraser (band subtraction with thickness and nib shape) | works (see `behavior/crop-knife-eraser.md`) |
 | QR code, barcode (Code 128, EAN-13, EAN-8) and page number insertion | works |
 
