@@ -44,6 +44,6 @@ Parity tracked in `docs/parity.md`.
 - Open: JSON control channel, MCP server, WebAssembly build
 
 ## M5 Interchange
-- Import PDF, AI, EPS and DXF (done); PSD, CMX; export HTML and DXF (done), EMF/WMF
+- Import PDF, AI, EPS, DXF and PSD (done); CMX; export HTML and DXF (done), EMF/WMF
 - External ICC profiles (done: pure-Rust ICC engine, v2/v4), PDF/X intents (done)
 - The remaining items in `docs/blueprint-gaps.md`

@@ -9,7 +9,7 @@
 use std::process::ExitCode;
 
 fn usage() -> ExitCode {
-    eprintln!("usage:\n  tracedraw-cli inspect <file.cdr>\n  tracedraw-cli info <file.cdr|file.tdraw>\n  tracedraw-cli icc <profile.icc>\n  tracedraw-cli convert <in.cdr|in.tdraw|in.svg|in.pdf|in.ai|in.eps|in.dxf> <out.svg|out.pdf|out.eps|out.dxf|out.html|out.png|out.tdraw>");
+    eprintln!("usage:\n  tracedraw-cli inspect <file.cdr>\n  tracedraw-cli info <file.cdr|file.tdraw>\n  tracedraw-cli icc <profile.icc>\n  tracedraw-cli convert <in.cdr|in.tdraw|in.svg|in.pdf|in.ai|in.eps|in.dxf|in.psd> <out.svg|out.pdf|out.eps|out.dxf|out.html|out.png|out.tdraw>");
     ExitCode::from(2)
 }
 
@@ -44,6 +44,16 @@ fn load(
             eprintln!("warning: {w}");
         }
         let mut doc = tracedraw_core::Document::new("eps", imported.size);
+        doc.pages[0].layers[0].shapes = imported.shapes;
+        Ok((doc, None))
+    } else if lower.ends_with(".psd") || lower.ends_with(".psb") {
+        let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+        let imported =
+            tracedraw_io::psd::parse(&bytes, &mut tracedraw_core::id::IdSource::default())?;
+        for w in &imported.warnings {
+            eprintln!("warning: {w}");
+        }
+        let mut doc = tracedraw_core::Document::new("psd", imported.size);
         doc.pages[0].layers[0].shapes = imported.shapes;
         Ok((doc, None))
     } else if lower.ends_with(".dxf") {

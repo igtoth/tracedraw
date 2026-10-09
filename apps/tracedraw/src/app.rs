@@ -1970,13 +1970,14 @@ impl App {
             .add_filter(
                 crate::i18n::tr("file.all_supported"),
                 &[
-                    "cdr", "tdraw", "svg", "svgz", "pdf", "ai", "eps", "ps", "dxf",
+                    "cdr", "tdraw", "svg", "svgz", "pdf", "ai", "eps", "ps", "dxf", "psd", "psb",
                 ],
             )
             .add_filter("SVG (*.svg, *.svgz)", &["svg", "svgz"])
             .add_filter("PDF, AI (*.pdf, *.ai)", &["pdf", "ai"])
             .add_filter("EPS, PostScript (*.eps, *.ps)", &["eps", "ps"])
             .add_filter("DXF (*.dxf)", &["dxf"])
+            .add_filter("Photoshop (*.psd, *.psb)", &["psd", "psb"])
             .add_filter(crate::i18n::tr("file.cdr_files"), &["cdr"])
             .add_filter("TraceDraw (*.tdraw)", &["tdraw"])
             .pick_file();
@@ -2013,6 +2014,30 @@ impl App {
                     }
                     doc.set_ids(ids);
                     (doc, format!("SVG: {n} object(s)"))
+                })
+        } else if ext == "psd" || ext == "psb" {
+            std::fs::read(&path)
+                .map_err(|e| e.to_string())
+                .and_then(|bytes| {
+                    tracedraw_io::psd::parse(&bytes, &mut tracedraw_core::id::IdSource::default())
+                })
+                .map(|imported| {
+                    let title = path
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_else(App::untitled_name);
+                    for w in &imported.warnings {
+                        log::warn!("psd: {w}");
+                    }
+                    let mut doc = App::localized_document(title, imported.size);
+                    let mut ids = doc.ids().clone();
+                    let n = imported.shapes.len();
+                    for s in imported.shapes {
+                        let shape = reid_with(s, &mut ids);
+                        doc.pages[0].layers[0].shapes.push(shape);
+                    }
+                    doc.set_ids(ids);
+                    (doc, format!("PSD: {n} layer(s)"))
                 })
         } else if ext == "eps" || ext == "ps" {
             std::fs::read(&path)
@@ -2149,8 +2174,10 @@ impl App {
                 self.page = doc.pages[0].id;
                 self.engine.replace(doc);
                 self.selection.clear();
-                self.file = if matches!(ext.as_str(), "cdr" | "svg" | "svgz" | "pdf" | "ai" | "dxf")
-                {
+                self.file = if matches!(
+                    ext.as_str(),
+                    "cdr" | "svg" | "svgz" | "pdf" | "ai" | "eps" | "ps" | "dxf" | "psd" | "psb"
+                ) {
                     None
                 } else {
                     Some(path.clone())
@@ -2227,8 +2254,8 @@ impl App {
             .add_filter(
                 crate::i18n::tr("file.all_importable"),
                 &[
-                    "cdr", "svg", "svgz", "pdf", "ai", "eps", "ps", "dxf", "png", "jpg", "jpeg",
-                    "bmp", "gif", "webp", "tif", "tiff",
+                    "cdr", "svg", "svgz", "pdf", "ai", "eps", "ps", "dxf", "psd", "psb", "png",
+                    "jpg", "jpeg", "bmp", "gif", "webp", "tif", "tiff",
                 ],
             )
             .add_filter(crate::i18n::tr("file.cdr_files"), &["cdr"])
@@ -2236,6 +2263,7 @@ impl App {
             .add_filter("PDF, AI (*.pdf, *.ai)", &["pdf", "ai"])
             .add_filter("EPS, PostScript (*.eps, *.ps)", &["eps", "ps"])
             .add_filter("DXF (*.dxf)", &["dxf"])
+            .add_filter("Photoshop (*.psd, *.psb)", &["psd", "psb"])
             .add_filter(
                 crate::i18n::tr("file.images"),
                 &["png", "jpg", "jpeg", "bmp", "gif", "webp", "tif", "tiff"],
@@ -2263,6 +2291,10 @@ impl App {
         }
         if ext == "eps" || ext == "ps" {
             self.import_eps(&path);
+            return;
+        }
+        if ext == "psd" || ext == "psb" {
+            self.import_psd(&path);
             return;
         }
         if ext != "cdr" {
@@ -2373,6 +2405,43 @@ impl App {
                     log::warn!("pdf import: {}", imported.warnings.join("; "));
                 }
                 self.select(ids);
+            }
+            Err(e) => self.status = crate::i18n::trf("status.import_failed", &[("e", &e)]),
+        }
+    }
+
+    /// Import a Photoshop file: one bitmap per layer, grouped.
+    pub fn import_psd(&mut self, path: &std::path::Path) {
+        let Some(layer) = self.active_layer() else {
+            return;
+        };
+        let parsed = std::fs::read(path)
+            .map_err(|e| e.to_string())
+            .and_then(|bytes| {
+                tracedraw_io::psd::parse(&bytes, &mut tracedraw_core::id::IdSource::default())
+            });
+        match parsed {
+            Ok(imported) => {
+                let mut children = Vec::new();
+                for s in imported.shapes {
+                    let id = self.engine.new_shape_id();
+                    children.push(reid(s, id, &mut self.engine));
+                }
+                let shape = match children.len() {
+                    0 => return,
+                    1 => children.remove(0),
+                    _ => {
+                        let id = self.engine.new_shape_id();
+                        let mut g = Shape::new(id, ShapeKind::Group { children });
+                        g.fill = Fill::None;
+                        g.stroke = None;
+                        g.name = path.file_stem().map(|s| s.to_string_lossy().to_string());
+                        g
+                    }
+                };
+                let id = shape.id;
+                self.run(Command::AddShape { layer, shape });
+                self.select(vec![id]);
             }
             Err(e) => self.status = crate::i18n::trf("status.import_failed", &[("e", &e)]),
         }

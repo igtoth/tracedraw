@@ -7,6 +7,7 @@ pub mod eps_import;
 pub mod html;
 pub mod pdf;
 pub mod pdf_import;
+pub mod psd;
 pub mod svg;
 pub mod svg_import;
 
