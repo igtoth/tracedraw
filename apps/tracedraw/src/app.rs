@@ -455,6 +455,9 @@ pub struct App {
     pub pending_clone_effect: Option<EffectKind>,
     /// Document Options > Page Size state.
     pub options_labels: bool,
+    /// Navigator pop-up (corner of the scrollbars).
+    pub navigator_open: bool,
+    pub navigator_tex: Option<egui::TextureHandle>,
     pub options_label_index: usize,
     pub options_current_only: bool,
     /// Selected custom anchor index (Anchor Editing tool).
@@ -853,6 +856,8 @@ impl App {
             pending_copy_effect: None,
             pending_clone_effect: None,
             options_labels: false,
+            navigator_open: false,
+            navigator_tex: None,
             options_label_index: 0,
             options_current_only: false,
             anchor_sel: None,

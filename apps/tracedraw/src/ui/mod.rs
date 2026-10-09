@@ -353,11 +353,9 @@ fn scrollbars(
     let p = ui.painter_at(full);
     p.rect_filled(hbar, 0.0, Tokens::PANEL_DARK);
     p.rect_filled(vbar, 0.0, Tokens::PANEL_DARK);
-    p.rect_filled(
-        egui::Rect::from_min_max(egui::pos2(full.max.x - sb, full.max.y - sb), full.max),
-        0.0,
-        Tokens::PANEL_DARK,
-    );
+    let corner = egui::Rect::from_min_max(egui::pos2(full.max.x - sb, full.max.y - sb), full.max);
+    p.rect_filled(corner, 0.0, Tokens::PANEL_DARK);
+    view_navigator(app, ui, corner, canvas);
 
     // Horizontal thumb.
     let ext_w = (ext_x1 - ext_x0).max(1e-6);
@@ -409,4 +407,124 @@ fn scrollbars(
         let d = rv.drag_delta().y / vbar.height() * ext_h as f32;
         app.view.pan(egui::vec2(0.0, -d * view.zoom));
     }
+}
+
+/// The Navigator: the small button in the corner between the scrollbars
+/// opens a thumbnail of the page while the button is held; moving the
+/// pointer over the thumbnail pans the view to that spot, like the
+/// target design's navigator pop-up.
+fn view_navigator(app: &mut App, ui: &mut Ui, corner: egui::Rect, canvas: egui::Rect) {
+    let resp = ui.interact(
+        corner,
+        egui::Id::new("view_navigator"),
+        Sense::click_and_drag(),
+    );
+    let painter = ui.painter_at(corner);
+    let icon = corner.shrink(3.0);
+    painter.rect_stroke(
+        icon,
+        1.0,
+        egui::Stroke::new(1.0, Tokens::TEXT_DIM),
+        egui::StrokeKind::Inside,
+    );
+    painter.rect_filled(
+        egui::Rect::from_center_size(icon.center(), icon.size() * 0.45),
+        0.0,
+        Tokens::TEXT_DIM,
+    );
+    let down = ui.input(|i| i.pointer.primary_down());
+    if resp.drag_started() || resp.is_pointer_button_down_on() {
+        app.navigator_open = true;
+    }
+    if !down {
+        app.navigator_open = false;
+        app.navigator_tex = None;
+        return;
+    }
+    if !app.navigator_open {
+        return;
+    }
+    // Thumbnail of the page, rendered once per opening.
+    let page = app.page_rect();
+    // Fit the page in a 220 px square without changing its aspect.
+    let max_side = 220.0_f32;
+    let ratio = (page.height() / page.width().max(1e-6)) as f32;
+    let (thumb_w, thumb_h) = if ratio > 1.0 {
+        ((max_side / ratio).max(40.0), max_side)
+    } else {
+        (max_side, (max_side * ratio).max(40.0))
+    };
+    if app.navigator_tex.is_none() {
+        let dpi = thumb_w as f64 / page.width() * 25.4;
+        if let Some(pm) = tracedraw_render::render_page_image(app.doc(), app.page, dpi) {
+            let (w, h) = (pm.width() as usize, pm.height() as usize);
+            let mut rgba = Vec::with_capacity(w * h * 4);
+            for px in pm.pixels() {
+                let c = px.demultiply();
+                rgba.extend_from_slice(&[c.red(), c.green(), c.blue(), c.alpha()]);
+            }
+            let img = egui::ColorImage::from_rgba_unmultiplied([w, h], &rgba);
+            app.navigator_tex = Some(ui.ctx().load_texture(
+                "navigator",
+                img,
+                egui::TextureOptions::LINEAR,
+            ));
+        }
+    }
+    let area_rect = egui::Rect::from_min_max(
+        egui::pos2(corner.max.x - thumb_w - 8.0, corner.min.y - thumb_h - 8.0),
+        egui::pos2(corner.max.x, corner.min.y),
+    );
+    egui::Area::new(egui::Id::new("view_navigator_popup"))
+        .fixed_pos(area_rect.min)
+        .order(egui::Order::Foreground)
+        .show(ui.ctx(), |ui| {
+            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                let (rect, _) =
+                    ui.allocate_exact_size(egui::vec2(thumb_w, thumb_h), Sense::hover());
+                let pt = ui.painter();
+                pt.rect_filled(rect, 0.0, egui::Color32::WHITE);
+                if let Some(tex) = &app.navigator_tex {
+                    pt.image(
+                        tex.id(),
+                        rect,
+                        egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                        egui::Color32::WHITE,
+                    );
+                }
+                // Visible area as a rectangle on the thumbnail.
+                let vis = app.view.visible_page_rect(canvas);
+                let sx = rect.width() / page.width() as f32;
+                let sy = rect.height() / page.height() as f32;
+                let to_thumb = |x: f64, y: f64| {
+                    egui::pos2(
+                        rect.min.x + (x - page.x0) as f32 * sx,
+                        rect.max.y - (y - page.y0) as f32 * sy,
+                    )
+                };
+                let vr =
+                    egui::Rect::from_two_pos(to_thumb(vis.x0, vis.y1), to_thumb(vis.x1, vis.y0))
+                        .intersect(rect);
+                pt.rect_stroke(
+                    vr,
+                    0.0,
+                    egui::Stroke::new(1.5, Tokens::SELECTION),
+                    egui::StrokeKind::Inside,
+                );
+                // Pointer over the thumbnail: centre the view there.
+                if let Some(pos) = ui.input(|i| i.pointer.latest_pos()) {
+                    if rect.contains(pos) {
+                        let px = page.x0 + ((pos.x - rect.min.x) / sx) as f64;
+                        let py = page.y0 + ((rect.max.y - pos.y) / sy) as f64;
+                        let target = app.view.to_screen(Point::new(px, py));
+                        let delta = canvas.center() - target;
+                        if delta.length() > 0.01 {
+                            app.view.pan(delta);
+                            // The canvas was painted before this pan; redraw.
+                            ui.ctx().request_repaint();
+                        }
+                    }
+                }
+            });
+        });
 }

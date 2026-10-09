@@ -18,4 +18,4 @@ Pages: `fountain-fill.md`, `contour.md`, `blend.md`, `extrude.md`,
 `writing-tools.md`, `border-and-grommet.md`, `clip-frame.md`,
 `pdf-import.md`, `dxf.md`, `eps-import.md`, `psd-import.md`,
 `shape-tools.md`, `curve-tools.md`, `crop-knife-eraser.md`,
-`brush-strokes.md`, `dimensions.md`.
+`brush-strokes.md`, `dimensions.md`, `zoom-and-pan.md`, `brushes.md`.
