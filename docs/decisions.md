@@ -42,6 +42,12 @@ interpreter that turns operators into our objects is ours
 approximate (clips as ClipFrames, shadings as fountains) is under our
 control and documented in `behavior/pdf-import.md`.
 
+EPS import runs a PostScript interpreter of our own
+(`crates/io/src/eps_import.rs`): the language core is small, the files
+drawing programs write depend on their prologs running, and an
+interpreter is the only way to read them without a dependency on an
+external engine. Fonts are not rasterised; text stays text.
+
 ## D5. Colour management: a pure-Rust ICC engine
 
 `core/icc.rs` reads ICC v2 and v4 profiles (matrix/TRC, `mft1`, `mft2`,

@@ -3,6 +3,7 @@
 
 pub mod dxf;
 pub mod eps;
+pub mod eps_import;
 pub mod html;
 pub mod pdf;
 pub mod pdf_import;

@@ -1969,10 +1969,13 @@ impl App {
         let picked = rfd::FileDialog::new()
             .add_filter(
                 crate::i18n::tr("file.all_supported"),
-                &["cdr", "tdraw", "svg", "svgz", "pdf", "ai", "dxf"],
+                &[
+                    "cdr", "tdraw", "svg", "svgz", "pdf", "ai", "eps", "ps", "dxf",
+                ],
             )
             .add_filter("SVG (*.svg, *.svgz)", &["svg", "svgz"])
             .add_filter("PDF, AI (*.pdf, *.ai)", &["pdf", "ai"])
+            .add_filter("EPS, PostScript (*.eps, *.ps)", &["eps", "ps"])
             .add_filter("DXF (*.dxf)", &["dxf"])
             .add_filter(crate::i18n::tr("file.cdr_files"), &["cdr"])
             .add_filter("TraceDraw (*.tdraw)", &["tdraw"])
@@ -2010,6 +2013,33 @@ impl App {
                     }
                     doc.set_ids(ids);
                     (doc, format!("SVG: {n} object(s)"))
+                })
+        } else if ext == "eps" || ext == "ps" {
+            std::fs::read(&path)
+                .map_err(|e| e.to_string())
+                .and_then(|bytes| {
+                    tracedraw_io::eps_import::parse(
+                        &bytes,
+                        &mut tracedraw_core::id::IdSource::default(),
+                    )
+                })
+                .map(|imported| {
+                    let title = path
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_else(App::untitled_name);
+                    for w in &imported.warnings {
+                        log::warn!("eps: {w}");
+                    }
+                    let mut doc = App::localized_document(title, imported.size);
+                    let mut ids = doc.ids().clone();
+                    let n = imported.shapes.len();
+                    for s in imported.shapes {
+                        let shape = reid_with(s, &mut ids);
+                        doc.pages[0].layers[0].shapes.push(shape);
+                    }
+                    doc.set_ids(ids);
+                    (doc, format!("EPS: {n} object(s)"))
                 })
         } else if ext == "dxf" {
             std::fs::read(&path)
@@ -2197,13 +2227,14 @@ impl App {
             .add_filter(
                 crate::i18n::tr("file.all_importable"),
                 &[
-                    "cdr", "svg", "svgz", "pdf", "ai", "dxf", "png", "jpg", "jpeg", "bmp", "gif",
-                    "webp", "tif", "tiff",
+                    "cdr", "svg", "svgz", "pdf", "ai", "eps", "ps", "dxf", "png", "jpg", "jpeg",
+                    "bmp", "gif", "webp", "tif", "tiff",
                 ],
             )
             .add_filter(crate::i18n::tr("file.cdr_files"), &["cdr"])
             .add_filter("SVG (*.svg, *.svgz)", &["svg", "svgz"])
             .add_filter("PDF, AI (*.pdf, *.ai)", &["pdf", "ai"])
+            .add_filter("EPS, PostScript (*.eps, *.ps)", &["eps", "ps"])
             .add_filter("DXF (*.dxf)", &["dxf"])
             .add_filter(
                 crate::i18n::tr("file.images"),
@@ -2228,6 +2259,10 @@ impl App {
         }
         if ext == "dxf" {
             self.import_dxf(&path);
+            return;
+        }
+        if ext == "eps" || ext == "ps" {
+            self.import_eps(&path);
             return;
         }
         if ext != "cdr" {
@@ -2336,6 +2371,41 @@ impl App {
                 }
                 if !imported.warnings.is_empty() {
                     log::warn!("pdf import: {}", imported.warnings.join("; "));
+                }
+                self.select(ids);
+            }
+            Err(e) => self.status = crate::i18n::trf("status.import_failed", &[("e", &e)]),
+        }
+    }
+
+    /// Import an EPS file into the active layer.
+    pub fn import_eps(&mut self, path: &std::path::Path) {
+        let Some(layer) = self.active_layer() else {
+            return;
+        };
+        let parsed = std::fs::read(path)
+            .map_err(|e| e.to_string())
+            .and_then(|bytes| {
+                tracedraw_io::eps_import::parse(
+                    &bytes,
+                    &mut tracedraw_core::id::IdSource::default(),
+                )
+            });
+        match parsed {
+            Ok(imported) => {
+                let mut cmds = Vec::new();
+                let mut ids = Vec::new();
+                for s in imported.shapes {
+                    let id = self.engine.new_shape_id();
+                    let shape = reid(s, id, &mut self.engine);
+                    ids.push(id);
+                    cmds.push(Command::AddShape { layer, shape });
+                }
+                if let Err(e) = self.engine.run_batch("Import", &cmds) {
+                    self.status = e.to_string();
+                }
+                if !imported.warnings.is_empty() {
+                    log::warn!("eps import: {}", imported.warnings.join("; "));
                 }
                 self.select(ids);
             }
