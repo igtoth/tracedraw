@@ -77,7 +77,11 @@ than 20%.
   (submenus inlined through the `replay` hook) against a mixed document
   of rectangle, ellipse, text, bitmap and table, skipping only the rows
   that open a native file chooser, another program or close the window.
-  Both must pass with no panic and a page left in the document.
+  `ui::tests` draws the whole window with every docker tab, every tool
+  and each kind of selection, and drives every tool with pointer events
+  (drags across the page and from an object, clicks on an object, on
+  empty space and with the right button, then Esc). All must pass with
+  no panic and a page left in the document.
 - `.cdr` writing: a document with a rectangle (radius, dashed outline,
   name, transparency), a radial fountain ellipse, a transformed curve with
   a CMYK fill, bold text, a group, a 2 x 2 bitmap and a second page is

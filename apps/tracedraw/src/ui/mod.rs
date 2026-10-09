@@ -556,3 +556,202 @@ fn view_navigator(app: &mut App, ui: &mut Ui, corner: egui::Rect, canvas: egui::
             });
         });
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::DockerTab;
+    use crate::tools::Tool;
+    use tracedraw_core::geometry::{Point, Rect};
+    use tracedraw_core::ShapeKind;
+
+    fn mixed_app() -> App {
+        let mut app = App::headless();
+        app.settings.autocorrect.enabled = false;
+        let r = app
+            .new_shape(ShapeKind::Rect {
+                rect: Rect::new(10.0, 10.0, 60.0, 40.0),
+                radius: 2.0,
+            })
+            .expect("rect");
+        app.new_shape(ShapeKind::Ellipse {
+            rect: Rect::new(70.0, 10.0, 120.0, 40.0),
+            arc: None,
+        });
+        app.start_text(Point::new(20.0, 80.0), None);
+        app.text_insert("Docker test");
+        app.finish_text();
+        app.select(vec![r]);
+        app.duplicate();
+        app.convert_to_bitmap(50.0, true);
+        app.create_table(Rect::new(10.0, 120.0, 80.0, 160.0));
+        app.select_all();
+        app
+    }
+
+    fn frame(ctx: &egui::Context, app: &mut App) {
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1600.0, 1000.0),
+            )),
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(input, |ui| root(app, ui));
+        out.textures_delta.clear();
+    }
+
+    fn frame_with(ctx: &egui::Context, app: &mut App, events: Vec<egui::Event>) {
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1600.0, 1000.0),
+            )),
+            events,
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(input, |ui| root(app, ui));
+        out.textures_delta.clear();
+    }
+
+    fn button(pos: egui::Pos2, pressed: bool, button: egui::PointerButton) -> egui::Event {
+        egui::Event::PointerButton {
+            pos,
+            button,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        }
+    }
+
+    /// A primary-button drag in screen space, one frame per step.
+    fn drag(ctx: &egui::Context, app: &mut App, from: egui::Pos2, to: egui::Pos2) {
+        frame_with(ctx, app, vec![egui::Event::PointerMoved(from)]);
+        frame_with(
+            ctx,
+            app,
+            vec![button(from, true, egui::PointerButton::Primary)],
+        );
+        for i in 1..=3 {
+            let t = i as f32 / 3.0;
+            let p = from + (to - from) * t;
+            frame_with(ctx, app, vec![egui::Event::PointerMoved(p)]);
+        }
+        frame_with(
+            ctx,
+            app,
+            vec![button(to, false, egui::PointerButton::Primary)],
+        );
+        frame_with(ctx, app, Vec::new());
+    }
+
+    fn click(ctx: &egui::Context, app: &mut App, at: egui::Pos2, b: egui::PointerButton) {
+        frame_with(ctx, app, vec![egui::Event::PointerMoved(at)]);
+        frame_with(ctx, app, vec![button(at, true, b)]);
+        frame_with(ctx, app, vec![button(at, false, b)]);
+        frame_with(ctx, app, Vec::new());
+    }
+
+    /// Every tool gets a drag across the page, a drag starting on an
+    /// object, a click on an object, a click on empty space and a right
+    /// click, in the real window with pointer events; nothing panics and
+    /// the document keeps its page.
+    #[test]
+    fn every_tool_survives_pointer_input() {
+        let ctx = egui::Context::default();
+        let mut app = mixed_app();
+        app.show_welcome = false;
+        frame(&ctx, &mut app);
+        app.zoom_to_page();
+        frame(&ctx, &mut app);
+        // Where the first rectangle (10..60 x 10..40 mm) is on screen.
+        let on_rect = app
+            .view
+            .to_screen(tracedraw_core::geometry::Point::new(35.0, 25.0));
+        let empty = app
+            .view
+            .to_screen(tracedraw_core::geometry::Point::new(150.0, 250.0));
+        let far = app
+            .view
+            .to_screen(tracedraw_core::geometry::Point::new(190.0, 200.0));
+        for tool in Tool::ALL {
+            app.set_tool(tool);
+            app.select_all();
+            drag(&ctx, &mut app, empty, far);
+            drag(&ctx, &mut app, on_rect, far);
+            click(&ctx, &mut app, on_rect, egui::PointerButton::Primary);
+            click(&ctx, &mut app, empty, egui::PointerButton::Primary);
+            click(&ctx, &mut app, on_rect, egui::PointerButton::Secondary);
+            frame_with(
+                &ctx,
+                &mut app,
+                vec![egui::Event::Key {
+                    key: egui::Key::Escape,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::NONE,
+                }],
+            );
+            app.dialog = crate::ui::dialogs::Dialog::None;
+            app.finish_text();
+            assert!(!app.doc().pages.is_empty(), "{tool:?}");
+        }
+        // Undo everything that was drawn.
+        for _ in 0..200 {
+            if app.engine.undo_label().is_none() {
+                break;
+            }
+            app.undo();
+        }
+        frame(&ctx, &mut app);
+    }
+
+    /// The whole window draws with every docker tab, every tool and every
+    /// kind of selection, including while a text is being edited.
+    #[test]
+    fn window_draws_with_every_docker_tool_and_selection() {
+        let ctx = egui::Context::default();
+        let mut app = mixed_app();
+        app.show_welcome = true;
+        frame(&ctx, &mut app);
+        app.show_welcome = false;
+        app.show_dockers = true;
+        for tab in DockerTab::ALL {
+            app.docker_tab = tab;
+            frame(&ctx, &mut app);
+            frame(&ctx, &mut app);
+        }
+        app.docker_tab = DockerTab::Properties;
+        for tool in Tool::ALL {
+            app.set_tool(tool);
+            frame(&ctx, &mut app);
+        }
+        app.set_tool(Tool::Pick);
+        // One kind at a time: the property bar and dockers specialise.
+        let ids: Vec<_> = app.doc().pages[0]
+            .layers
+            .iter()
+            .flat_map(|l| l.shapes.iter().map(|s| s.id))
+            .collect();
+        for id in ids {
+            app.select(vec![id]);
+            frame(&ctx, &mut app);
+            app.docker_tab = DockerTab::Objects;
+            frame(&ctx, &mut app);
+            app.docker_tab = DockerTab::Properties;
+        }
+        app.select(Vec::new());
+        frame(&ctx, &mut app);
+        // Editing text, with a selection inside it.
+        app.edit_selected_text();
+        if let Some(s) = app.text_shapes().first() {
+            let id = s.id;
+            app.begin_text_edit(id);
+        }
+        app.text_select_all();
+        app.set_tool(Tool::Text);
+        frame(&ctx, &mut app);
+        app.finish_text();
+        assert!(!app.doc().pages.is_empty());
+    }
+}
