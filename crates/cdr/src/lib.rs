@@ -21,6 +21,7 @@
 pub mod container;
 pub mod parse;
 pub mod riff;
+mod text;
 
 use std::path::Path;
 
@@ -59,7 +60,8 @@ pub fn open(path: impl AsRef<Path>) -> Result<(tracedraw_core::Document, ParseRe
 pub fn open_bytes(bytes: &[u8], title: &str) -> Result<(tracedraw_core::Document, ParseReport)> {
     let container = container::detect(bytes)?;
     let riff = container::riff_stream(bytes, &container)?;
-    let root = riff::parse(&riff)?;
+    let externals = container::external_streams(bytes, &container);
+    let root = riff::parse_with_externals(&riff, externals, container.version.0)?;
     let mut doc_report = parse::parse_document(&root, &riff, container.version);
     doc_report.0.title = title.to_string();
     Ok(doc_report)

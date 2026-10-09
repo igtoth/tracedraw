@@ -6,7 +6,7 @@ target design does, with a test or a checked screenshot behind it.
 "partial" names what is missing. "baked" means the result is applied once
 instead of staying live and editable. The goal is every row at "works".
 
-Counts: works 78, partial 16, missing 6.
+Counts: works 78, partial 17, missing 5.
 
 ## 1. Selection and navigation
 
@@ -155,8 +155,8 @@ Counts: works 78, partial 16, missing 6.
 
 | Capability | Status |
 |---|---|
-| Open `.cdr` RIFF (v3 to X3) and X4/X5 ZIP | works for the supported generations |
-| Open `.cdr` X6 and later (`content/root.dat`) | missing (next reader milestone) |
+| Open `.cdr`: RIFF (v3 to X3), X4/X5 ZIP, X6+ ZIP with redirected chunks | works (layouts confirmed against the public format description; real-file corpus still being collected) |
+| `.cdr` content: shapes, curves, paths, polygons, bitmaps, text (artistic and paragraph), fills, outlines, arrowheads, opacity | partial: text on path, splines, vector pattern and PostScript fills, paragraph formatting from style tables |
 | Native `.tdraw` save/load | works |
 | Import SVG and SVGZ (groups, clips, gradients, images); open SVG as a document | works |
 | Export SVG, PDF, AI (PDF-compatible), EPS, PNG, JPEG, WebP, GIF, BMP, TIFF | works |

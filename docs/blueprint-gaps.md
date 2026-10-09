@@ -43,15 +43,32 @@ shortcut. The one that is not interactive yet:
 - `.cdr` generations: `WL` binary (v1, v2), RIFF (v3 to X3), ZIP with
   `content/riffData.cdr` (X4, X5), ZIP with `content/root.dat` and
   `content/data/*.dat` ordered by `content/dataFileList.dat` (X6 and
-  later, every release since 2012). TraceDraw reads RIFF and the X4/X5
-  ZIP; the X6+ layout is the next reader milestone, and writing `.cdr` is
-  not planned before the reader is complete.
+  later, every release since 2012). TraceDraw reads all three container
+  layouts (RIFF, the X4/X5 ZIP and the X6+ ZIP with redirected chunks);
+  the `WL` binary of v1 and v2 is not read. Writing `.cdr` is not planned
+  before the reader is complete.
 - Coordinates: 1/1000 inch (16-bit versions, `V < 600`), 1/254000 inch
   otherwise.
 - Compressed lists: two zlib parts; the second is a size table that the
   first one's chunk sizes index into.
+- Read: pages, layers, rectangles, ellipses, curves, paths, polygons,
+  bitmaps, artistic and paragraph text (`font`, `stlt`, both `txsm`
+  layouts from version 7 on; family, size, bold, italic, underline,
+  strike-through, run fill, frame size, alignment), uniform, fountain
+  (with the X6+ transformation), two-colour pattern (with the `bmpf`
+  tile), colour bitmap and texture fills (the latter from the stored
+  bitmap), outlines with dashes and arrowheads classified into our
+  presets, object opacity.
+- Still open in the reader: splines (0x26), vector pattern (10) and
+  PostScript (6) fills, text on a path (the path data is skipped), text
+  before version 7, single-byte code pages other than Windows-1252,
+  paragraph formatting (indents, tabs, bullets, drop caps, intervals from
+  `stlt`), custom arrowhead outlines (classified, not kept), the `ftil`
+  fill transform, lenses and other effects. Layouts marked "assumed" in
+  `cdr-format.md` (`bmpf`, `arrw`, the X6+ style string content, the
+  opacity direction, the alignment codes) have no file behind them yet.
 - Chunks with public descriptions: `vrsn`, `DISP`, `LIST cmpr`, `stlt`,
-  `font`, `mcfg`, `loda`, `sumi`.
+  `font`, `txsm`, `mcfg`, `loda`, `trfd`, `fild`, `outl`, `bmp `, `sumi`.
 
 ## Formats to add
 

@@ -4,7 +4,8 @@ use crate::{Error, Result};
 use std::io::Read;
 
 /// CDR major version, as encoded in the RIFF form type (`CDR9`,
-/// `CDRA` = 10, ... `CDRE` = X4 (14), `CDRH` = X7 (17), and so on).
+/// `CDRA` = 10, ... `CDRE` = X4 (14), `CDRH` = X7 (17), `CDRJ` = X8 (18),
+/// `CDRK` = 2017 (19), and so on; the letter `I` is not used).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Version(pub u16);
 
@@ -14,10 +15,12 @@ impl Version {
             return None;
         }
         let c = form[3];
+        // Digits are versions 1 to 9; letters continue from `A` = 10, but
+        // `I` is skipped: `H` = X7 (17), `J` = X8 (18), `K` = 2017 (19).
         match c {
             b'1'..=b'9' => Some(Version((c - b'0') as u16)),
-            b'A'..=b'Z' => Some(Version(10 + (c - b'A') as u16)),
-            b'a'..=b'z' => Some(Version(10 + (c - b'a') as u16)),
+            b'A'..=b'H' => Some(Version(10 + (c - b'A') as u16)),
+            b'J'..=b'Z' => Some(Version(9 + (c - b'A') as u16)),
             _ => None,
         }
     }
@@ -42,9 +45,12 @@ pub struct Container {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ContainerKind {
     Riff,
-    /// ZIP archive; the RIFF stream is the named member.
+    /// ZIP archive; the RIFF stream is the named member. X6 and later
+    /// store most chunk payloads outside the RIFF stream, in the members
+    /// listed by `content/dataFileList.dat` (`data_files`, in that order).
     Zip {
         riff_member: String,
+        data_files: Vec<String>,
     },
 }
 
@@ -52,7 +58,10 @@ const RIFF_MEMBERS: &[&str] = &[
     "content/riffData.cdr",
     "content/riffdata.cdr",
     "riffData.cdr",
+    "content/root.dat",
 ];
+
+const DATA_FILE_LIST: &str = "content/dataFileList.dat";
 
 pub fn detect(bytes: &[u8]) -> Result<Container> {
     if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" {
@@ -80,18 +89,33 @@ pub fn detect(bytes: &[u8]) -> Result<Container> {
                 Error::UnsupportedContainer("ZIP without a riffData.cdr member".into())
             })?;
         let mut head = [0u8; 12];
-        let mut f = archive.by_name(&member)?;
-        f.read_exact(&mut head).map_err(|_| Error::Truncated(0))?;
+        {
+            let mut f = archive.by_name(&member)?;
+            f.read_exact(&mut head).map_err(|_| Error::Truncated(0))?;
+        }
         if &head[0..4] != b"RIFF" {
-            return Err(Error::UnsupportedContainer(
-                "riffData.cdr is not RIFF".into(),
-            ));
+            return Err(Error::UnsupportedContainer(format!(
+                "{member} is not a RIFF stream"
+            )));
         }
         let form: [u8; 4] = head[8..12].try_into().map_err(|_| Error::NotCdr)?;
         let version = Version::from_form_type(&form).ok_or(Error::NotCdr)?;
+        // X6+: the order of external data streams.
+        let mut data_files = Vec::new();
+        if let Ok(mut list) = archive.by_name(DATA_FILE_LIST) {
+            let mut text = String::new();
+            if list.read_to_string(&mut text).is_ok() {
+                data_files = text
+                    .lines()
+                    .map(|l| l.trim().to_string())
+                    .filter(|l| !l.is_empty())
+                    .collect();
+            }
+        }
         return Ok(Container {
             kind: ContainerKind::Zip {
                 riff_member: member,
+                data_files,
             },
             version,
         });
@@ -103,7 +127,7 @@ pub fn detect(bytes: &[u8]) -> Result<Container> {
 pub fn riff_stream(bytes: &[u8], container: &Container) -> Result<Vec<u8>> {
     match &container.kind {
         ContainerKind::Riff => Ok(bytes.to_vec()),
-        ContainerKind::Zip { riff_member } => {
+        ContainerKind::Zip { riff_member, .. } => {
             let cursor = std::io::Cursor::new(bytes);
             let mut archive = zip::ZipArchive::new(cursor)?;
             let mut f = archive.by_name(riff_member)?;
@@ -112,6 +136,23 @@ pub fn riff_stream(bytes: &[u8], container: &Container) -> Result<Vec<u8>> {
             Ok(out)
         }
     }
+}
+
+/// The external data streams of an X6+ file, in `dataFileList.dat` order.
+/// A missing member yields an empty stream so indices stay aligned.
+pub fn external_streams(bytes: &[u8], container: &Container) -> Vec<Vec<u8>> {
+    let ContainerKind::Zip { data_files, .. } = &container.kind else {
+        return Vec::new();
+    };
+    data_files
+        .iter()
+        .map(|name| {
+            external_member(bytes, container, name).unwrap_or_else(|| {
+                log::warn!("data stream {name} listed but missing from the archive");
+                Vec::new()
+            })
+        })
+        .collect()
 }
 
 /// Read an external data member (`content/data/<name>`) from a ZIP file.
@@ -147,10 +188,14 @@ mod tests {
         assert_eq!(Version::from_form_type(b"CDR9"), Some(Version(9)));
         assert_eq!(Version::from_form_type(b"CDRD"), Some(Version(13)));
         assert_eq!(Version::from_form_type(b"CDRH"), Some(Version(17)));
+        // `I` is not used; `J` is X8 and `K` is 2017.
+        assert_eq!(Version::from_form_type(b"CDRI"), None);
+        assert_eq!(Version::from_form_type(b"CDRJ"), Some(Version(18)));
         assert_eq!(
-            Version::from_form_type(b"CDRJ").map(|v| v.name()),
+            Version::from_form_type(b"CDRK").map(|v| v.name()),
             Some("CDR 2017".to_string())
         );
+        assert_eq!(Version::from_form_type(b"cdr8"), Some(Version(8)));
         assert_eq!(Version(13).name(), "CDR X3");
         assert_eq!(Version::from_form_type(b"WAVE"), None);
     }

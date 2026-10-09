@@ -62,7 +62,8 @@ fn main() -> ExitCode {
                     return ExitCode::FAILURE;
                 }
             };
-            match tracedraw_cdr::riff::parse(&riff) {
+            let externals = tracedraw_cdr::container::external_streams(&bytes, &container);
+            match tracedraw_cdr::riff::parse_with_externals(&riff, externals, container.version.0) {
                 Ok(tree) => print!("{}", tree.dump()),
                 Err(e) => {
                     eprintln!("{path}: {e}");

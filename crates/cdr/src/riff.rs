@@ -6,7 +6,16 @@
 //! - Since X4 (v14) chunk sizes are stored in a slightly different way in
 //!   some files (the low bits can carry flags); we mask them off.
 //! - `cmpr` lists hold zlib-compressed sub-streams (CDR 7 to X3 with
-//!   compression on). We inflate them into an owned buffer and parse that.
+//!   compression on): two `CPng` blocks, the first with the chunk stream
+//!   and the second with a pool of chunk sizes. Inside the inflated stream
+//!   a chunk's size field is an index into that pool, not a byte count.
+//! - X6 (v16) and later keep most payloads outside the RIFF stream: a chunk
+//!   whose declared size is exactly 16 bytes is a redirect record
+//!   `stream u32, length u32, offset u32, reserved u32` pointing into one of
+//!   the external data streams (`content/data/*.dat`, in `dataFileList.dat`
+//!   order); stream `0xFFFF_FFFF` means the payload (at most 8 bytes) is
+//!   stored inline right after the length. Confirmed against the public
+//!   Kaitai Struct description of the format.
 
 use crate::{Error, Result};
 
@@ -62,9 +71,23 @@ impl Chunk {
 #[derive(Debug)]
 pub struct Tree {
     pub root: Chunk,
-    /// Inflated `cmpr` streams, indexed from 1 (0 is the main buffer).
+    /// Out-of-line buffers, indexed from 1 (0 is the main buffer): first the
+    /// external data streams of X6+ files, then inflated `cmpr` streams.
     pub streams: Vec<Vec<u8>>,
 }
+
+/// Parsing context shared down the chunk tree.
+struct Ctx {
+    /// Number of external data streams (X6+); 0 for older files.
+    externals: usize,
+    /// Whether 16-byte chunks are redirect records.
+    redirects: bool,
+    /// Major format version; 0 when unknown (treated as recent).
+    version: u16,
+}
+
+/// Size of a redirect record (X6+).
+const REDIRECT_LEN: usize = 16;
 
 impl Tree {
     /// Payload bytes of a chunk.
@@ -111,16 +134,28 @@ fn u32le(b: &[u8], at: usize) -> Option<u32> {
 }
 
 pub fn parse(main: &[u8]) -> Result<Tree> {
+    parse_with_externals(main, Vec::new(), 0)
+}
+
+/// Parse a RIFF stream whose chunks may redirect into `externals` (X6+).
+/// `version` is the major format version; redirects are only recognised
+/// from 16 on.
+pub fn parse_with_externals(main: &[u8], externals: Vec<Vec<u8>>, version: u16) -> Result<Tree> {
     if main.len() < 12 || &main[0..4] != b"RIFF" {
         return Err(Error::NotCdr);
     }
-    let mut streams = Vec::new();
+    let ctx = Ctx {
+        externals: externals.len(),
+        redirects: version >= 16,
+        version,
+    };
+    let mut streams = externals;
     // The header size is advisory: truncated or padded files are common
     // enough that trusting the buffer length is the safer choice.
     let _declared = u32le(main, 4).ok_or(Error::Truncated(4))?;
     let end = main.len();
     let list_type: [u8; 4] = main[8..12].try_into().map_err(|_| Error::Truncated(8))?;
-    let children = parse_children(main, 0, 12, end, &mut streams);
+    let children = parse_children(main, 0, 12, end, &mut streams, &ctx, None);
     Ok(Tree {
         root: Chunk {
             id: *b"RIFF",
@@ -135,13 +170,16 @@ pub fn parse(main: &[u8]) -> Result<Tree> {
 }
 
 /// Parse sibling chunks in `buf[pos..end]`. Malformed data ends the list
-/// quietly; whatever was parsed before is kept.
+/// quietly; whatever was parsed before is kept. Inside a compressed stream
+/// `sizes` is the pool of chunk sizes that the size fields index into.
 fn parse_children(
     buf: &[u8],
     stream: usize,
     mut pos: usize,
     end: usize,
     streams: &mut Vec<Vec<u8>>,
+    ctx: &Ctx,
+    sizes: Option<&[u32]>,
 ) -> Vec<Chunk> {
     let mut out = Vec::new();
     while pos + 8 <= end {
@@ -152,39 +190,82 @@ fn parse_children(
         let Some(raw) = u32le(buf, pos + 4) else {
             break;
         };
-        // Newer versions are reported to align chunks to 4 bytes instead of
-        // 2; we handle that when we have corpus files showing it.
-        let size = raw as usize;
+        // In a compressed stream the field is an index into the sizes pool.
+        let size = match sizes {
+            Some(pool) => match pool.get(raw as usize) {
+                Some(s) => *s as usize,
+                None => break,
+            },
+            None => raw as usize,
+        };
         let payload = pos + 8;
         let payload_end = payload.saturating_add(size).min(end);
         if payload > end {
             break;
         }
         let is_list = &id == b"LIST";
+        // X6+ redirect record: resolve where the payload really lives.
+        let mut body = (stream, payload, payload_end);
+        if ctx.redirects && size == REDIRECT_LEN && payload_end - payload == REDIRECT_LEN {
+            let s = u32le(buf, payload).unwrap_or(u32::MAX);
+            let len = u32le(buf, payload + 4).unwrap_or(0) as usize;
+            if s == u32::MAX {
+                // Inline payload of up to 8 bytes after the length field.
+                let start = payload + 8;
+                body = (stream, start, start.saturating_add(len).min(payload_end));
+            } else if (s as usize) < ctx.externals {
+                let ofs = u32le(buf, payload + 8).unwrap_or(0) as usize;
+                let ext_len = streams[s as usize].len();
+                let start = ofs.min(ext_len);
+                body = (s as usize + 1, start, ofs.saturating_add(len).min(ext_len));
+            } else {
+                log::warn!(
+                    "chunk {} redirects to missing stream {s}",
+                    String::from_utf8_lossy(&id)
+                );
+            }
+        }
+        let (bstream, bstart, bend) = body;
         if is_list {
-            let lt: Option<[u8; 4]> = buf
-                .get(payload..payload + 4)
+            // The list body may be in another buffer than the chunk header.
+            let taken = if bstream != stream && bstream > 0 {
+                Some(std::mem::take(&mut streams[bstream - 1]))
+            } else {
+                None
+            };
+            let bbuf: &[u8] = match &taken {
+                Some(t) => t,
+                None => buf,
+            };
+            let lt: Option<[u8; 4]> = bbuf
+                .get(bstart..bstart + 4)
                 .map(|s| [s[0], s[1], s[2], s[3]]);
             let children = match lt {
-                Some(t) if &t == b"cmpr" => inflate_cmpr(buf, payload + 4, payload_end, streams),
-                Some(_) => parse_children(buf, stream, payload + 4, payload_end, streams),
+                Some(t) if &t == b"cmpr" => inflate_cmpr(bbuf, bstart + 4, bend, streams, ctx),
+                // From version 7 the `stlt` list body is one record, not
+                // sub-chunks (the parser reads it from the list's data).
+                Some(t) if &t == b"stlt" && (ctx.version >= 7 || ctx.version == 0) => Vec::new(),
+                Some(_) => parse_children(bbuf, bstream, bstart + 4, bend, streams, ctx, sizes),
                 None => Vec::new(),
             };
+            if let Some(t) = taken {
+                streams[bstream - 1] = t;
+            }
             out.push(Chunk {
                 id,
                 list_type: lt,
-                start: payload + 4,
-                end: payload_end,
-                stream,
+                start: bstart + 4,
+                end: bend,
+                stream: bstream,
                 children,
             });
         } else {
             out.push(Chunk {
                 id,
                 list_type: None,
-                start: payload,
-                end: payload_end,
-                stream,
+                start: bstart,
+                end: bend,
+                stream: bstream,
                 children: Vec::new(),
             });
         }
@@ -194,53 +275,66 @@ fn parse_children(
     out
 }
 
-/// A `LIST cmpr` holds, in order: a `cmpr` chunk with the zlib-compressed
-/// chunk stream and a second `cmpr` chunk with the compressed table of
-/// original chunk sizes (which we do not need, since the inflated stream is
-/// a plain sequence of RIFF chunks). Some files carry extra chunks; only
-/// the first compressed block is the content stream.
-fn inflate_cmpr(buf: &[u8], pos: usize, end: usize, streams: &mut Vec<Vec<u8>>) -> Vec<Chunk> {
-    let mut siblings = Vec::new();
-    // Walk the raw sub-chunks ourselves to grab the first `cmpr` payload.
-    let mut p = pos;
-    while p + 8 <= end {
-        let id = &buf[p..p + 4];
-        let Some(size) = u32le(buf, p + 4) else { break };
-        let size = size as usize;
-        let payload = p + 8;
-        let payload_end = payload.saturating_add(size).min(end);
-        if id == b"cmpr" && siblings.is_empty() {
-            // The payload starts with the uncompressed size (u32), then zlib data.
-            let data = &buf[payload..payload_end];
-            if data.len() > 4 {
-                let mut inflated = Vec::new();
-                let mut dec = flate2::read::ZlibDecoder::new(&data[4..]);
-                if std::io::Read::read_to_end(&mut dec, &mut inflated).is_ok()
-                    && !inflated.is_empty()
-                {
-                    streams.push(inflated);
-                    let idx = streams.len();
-                    let len = streams[idx - 1].len();
-                    // Parse the inflated stream as a chunk sequence.
-                    let inflated_ref = std::mem::take(&mut streams[idx - 1]);
-                    let children = parse_children(&inflated_ref, idx, 0, len, streams);
-                    streams[idx - 1] = inflated_ref;
-                    siblings.push(Chunk {
-                        id: *b"cmpr",
-                        list_type: Some(*b"cmpr"),
-                        start: 0,
-                        end: len,
-                        stream: idx,
-                        children,
-                    });
-                } else {
-                    log::warn!("cmpr block at {payload} could not be inflated");
-                }
-            }
-        }
-        p = payload + size + (size & 1);
+/// A `LIST cmpr` body holds two size pairs (compressed, uncompressed; u32
+/// each), then two `CPng` blocks of those compressed sizes. Each block is
+/// `CPng`, the bytes `01 00 04 00`, and a zlib stream. The first block
+/// inflates to the chunk stream, the second to a pool of u32 chunk sizes
+/// that the size fields of the inflated chunks index into.
+fn inflate_cmpr(
+    buf: &[u8],
+    pos: usize,
+    end: usize,
+    streams: &mut Vec<Vec<u8>>,
+    ctx: &Ctx,
+) -> Vec<Chunk> {
+    let (Some(c0), Some(c1)) = (u32le(buf, pos), u32le(buf, pos + 8)) else {
+        return Vec::new();
+    };
+    let first = pos + 16;
+    let second = first.saturating_add(c0 as usize);
+    let Some(chunks) = inflate_cpng(buf, first, second.min(end)) else {
+        log::warn!("cmpr block at {first} could not be inflated");
+        return Vec::new();
+    };
+    let sizes: Vec<u32> = inflate_cpng(buf, second, second.saturating_add(c1 as usize).min(end))
+        .unwrap_or_default()
+        .chunks_exact(4)
+        .map(|s| u32::from_le_bytes([s[0], s[1], s[2], s[3]]))
+        .collect();
+    if sizes.is_empty() {
+        log::warn!("cmpr sizes pool at {second} missing; chunk stream skipped");
+        return Vec::new();
     }
-    siblings
+    streams.push(chunks);
+    let idx = streams.len();
+    let len = streams[idx - 1].len();
+    let inflated_ref = std::mem::take(&mut streams[idx - 1]);
+    let children = parse_children(&inflated_ref, idx, 0, len, streams, ctx, Some(&sizes));
+    streams[idx - 1] = inflated_ref;
+    vec![Chunk {
+        id: *b"cmpr",
+        list_type: Some(*b"cmpr"),
+        start: 0,
+        end: len,
+        stream: idx,
+        children,
+    }]
+}
+
+/// Inflate one `CPng` block in `buf[start..end]`.
+fn inflate_cpng(buf: &[u8], start: usize, end: usize) -> Option<Vec<u8>> {
+    let block = buf.get(start..end)?;
+    if block.len() < 9 || &block[0..4] != b"CPng" {
+        return None;
+    }
+    let mut inflated = Vec::new();
+    let mut dec = flate2::read::ZlibDecoder::new(&block[8..]);
+    std::io::Read::read_to_end(&mut dec, &mut inflated).ok()?;
+    if inflated.is_empty() {
+        None
+    } else {
+        Some(inflated)
+    }
 }
 
 #[cfg(test)]
@@ -285,11 +379,117 @@ mod tests {
         assert!(tree.dump().contains("LIST layr"));
     }
 
+    fn deflate(data: &[u8]) -> Vec<u8> {
+        use std::io::Write;
+        let mut enc = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+        enc.write_all(data).unwrap();
+        enc.finish().unwrap()
+    }
+
+    #[test]
+    fn cmpr_lists_use_cpng_blocks_and_a_sizes_pool() {
+        // Inflated chunk stream: size fields are indices into the pool.
+        let mut inner = Vec::new();
+        inner.extend_from_slice(b"LIST");
+        inner.extend_from_slice(&0u32.to_le_bytes()); // index 0: 4 + 2 + 8 = 14
+        inner.extend_from_slice(b"page");
+        inner.extend_from_slice(b"vrsn");
+        inner.extend_from_slice(&1u32.to_le_bytes()); // index 1: 2
+        inner.extend_from_slice(&[0x84, 0x03]);
+        let pool: Vec<u8> = [14u32, 2u32].iter().flat_map(|x| x.to_le_bytes()).collect();
+        let mut block1 = b"CPng\x01\x00\x04\x00".to_vec();
+        block1.extend_from_slice(&deflate(&inner));
+        let mut block2 = b"CPng\x01\x00\x04\x00".to_vec();
+        block2.extend_from_slice(&deflate(&pool));
+        let mut body = Vec::new();
+        for (c, u) in [(block1.len(), inner.len()), (block2.len(), pool.len())] {
+            body.extend_from_slice(&(c as u32).to_le_bytes());
+            body.extend_from_slice(&(u as u32).to_le_bytes());
+        }
+        body.extend_from_slice(&block1);
+        body.extend_from_slice(&block2);
+        let mut riff_body = b"CDR9".to_vec();
+        riff_body.extend_from_slice(&list(b"cmpr", &body));
+        let file = chunk(b"RIFF", &riff_body);
+        let tree = parse(&file).unwrap();
+        // The outer list wraps a node for the inflated stream (stream 1).
+        let outer = tree.root.find(b"cmpr").expect("cmpr list");
+        let inner = outer.find(b"cmpr").expect("inflated stream node");
+        assert_eq!(inner.stream, 1);
+        let page = inner.find(b"page").expect("page inside inflated stream");
+        let vrsn = page.find(b"vrsn").expect("vrsn inside page");
+        assert_eq!(tree.data(&file, vrsn), &[0x84, 0x03]);
+    }
+
     #[test]
     fn truncated_file_does_not_panic() {
         let mut file = chunk(b"RIFF", b"CDR9");
         file.extend_from_slice(b"LIST\xff\xff\xff\xffpage");
         let tree = parse(&file).unwrap();
         assert!(tree.root.find(b"page").is_some());
+    }
+}
+
+#[cfg(test)]
+mod redirect_tests {
+    use super::*;
+
+    fn chunk(id: &[u8; 4], payload: &[u8]) -> Vec<u8> {
+        let mut v = id.to_vec();
+        v.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+        v.extend_from_slice(payload);
+        if payload.len() % 2 == 1 {
+            v.push(0);
+        }
+        v
+    }
+
+    fn redirect(id: &[u8; 4], stream: u32, len: u32, ofs: u32) -> Vec<u8> {
+        let mut p = Vec::new();
+        p.extend_from_slice(&stream.to_le_bytes());
+        p.extend_from_slice(&len.to_le_bytes());
+        p.extend_from_slice(&ofs.to_le_bytes());
+        p.extend_from_slice(&0u32.to_le_bytes());
+        chunk(id, &p)
+    }
+
+    #[test]
+    fn x6_redirects_resolve_into_external_streams() {
+        // External stream 0: a `page` list body (form type + one chunk) and a `vrsn` payload.
+        let mut ext = Vec::new();
+        ext.extend_from_slice(b"page");
+        ext.extend_from_slice(&chunk(b"loda", &[1, 2, 3, 4, 5, 6]));
+        let page_len = ext.len() as u32;
+        let vrsn_ofs = ext.len() as u32;
+        ext.extend_from_slice(&[0x40, 0x06]);
+        // Main stream: RIFF CDRG with a redirected LIST, a redirected vrsn and an inline chunk.
+        let mut body = b"CDRG".to_vec();
+        body.extend_from_slice(&redirect(b"LIST", 0, page_len, 0));
+        body.extend_from_slice(&redirect(b"vrsn", 0, 2, vrsn_ofs));
+        let mut inline = Vec::new();
+        inline.extend_from_slice(&u32::MAX.to_le_bytes());
+        inline.extend_from_slice(&3u32.to_le_bytes());
+        inline.extend_from_slice(&[9, 8, 7, 0, 0, 0, 0, 0]);
+        body.extend_from_slice(&chunk(b"disp", &inline));
+        let mut main = b"RIFF".to_vec();
+        main.extend_from_slice(&(body.len() as u32).to_le_bytes());
+        main.extend_from_slice(&body);
+
+        let tree = parse_with_externals(&main, vec![ext.clone()], 16).unwrap();
+        let list = tree.root.find(b"page").expect("page list via redirect");
+        assert_eq!(list.stream, 1);
+        let loda = list.find(b"loda").expect("child inside external stream");
+        assert_eq!(tree.data(&main, loda), &[1, 2, 3, 4, 5, 6]);
+        let vrsn = tree.root.find(b"vrsn").unwrap();
+        assert_eq!(tree.data(&main, vrsn), &[0x40, 0x06]);
+        let disp = tree.root.find(b"disp").unwrap();
+        assert_eq!(tree.data(&main, disp), &[9, 8, 7]);
+
+        // Without the version gate the same bytes are plain 16-byte chunks.
+        let old = parse_with_externals(&main, vec![ext], 13).unwrap();
+        assert_eq!(
+            old.root.find(b"vrsn").unwrap().end - old.root.find(b"vrsn").unwrap().start,
+            16
+        );
     }
 }
