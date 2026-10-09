@@ -27,7 +27,6 @@ exceptions, shown disabled so the layout stays complete:
 ## Fills, colour and effects
 
 - PostScript fills (legacy; vector pattern fills are done).
-- PDF/X output intents embedding the loaded ICC profile.
 
 ## File format
 
@@ -67,9 +66,10 @@ exceptions, shown disabled so the layout stays complete:
 ## Formats to add
 
 Import: EPS, CMX, EMF, WMF, DWG, PSD, CGM, PLT, DOCX, RTF, TXT.
-Export: CMX, EMF, WMF, PSD, PDF/X-1a, X-3, X-4.
+Export: CMX, EMF, WMF, PSD.
 Done: SVG, SVGZ, PDF, AI (PDF-compatible) and DXF import; SVG, PDF, AI
-(PDF-compatible), EPS, DXF, HTML and the bitmap formats on export.
+(PDF-compatible), EPS, DXF, HTML, PDF/X-1a, X-3, X-4 and the bitmap
+formats on export.
 
 ## Automation
 

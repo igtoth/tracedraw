@@ -34,7 +34,8 @@ Parity tracked in `docs/parity.md`.
 ## M3 Output (done except `.cdr` write)
 - PDF export (vector, CMYK, separations), EPS, AI (PDF-based), bitmaps
 - Print to PDF, print preview, print merge
-- Open: `.cdr` write (RIFF, targeting X3-compatible layout), PDF/X
+- PDF/X-1a, X-3 and X-4 output (done)
+- Open: `.cdr` write (RIFF, targeting X3-compatible layout)
 
 ## M4 Platform (in progress)
 - CLI batch convert (done); installers for Windows, macOS, Linux (done)
@@ -44,5 +45,5 @@ Parity tracked in `docs/parity.md`.
 
 ## M5 Interchange
 - Import PDF, AI and DXF (done); EPS, PSD, CMX; export HTML and DXF (done), EMF/WMF
-- External ICC profiles (done: pure-Rust ICC engine, v2/v4), PDF/X intents
+- External ICC profiles (done: pure-Rust ICC engine, v2/v4), PDF/X intents (done)
 - The remaining items in `docs/blueprint-gaps.md`

@@ -48,7 +48,28 @@ pub fn export(app: &mut App, path: &Path, st: &ExportState) -> Result<String, St
             std::fs::write(path, svg).map_err(|e| e.to_string())?;
         }
         "pdf" | "ai" => {
-            let pdf = tracedraw_io::pdf::document_to_pdf(&doc);
+            use tracedraw_io::pdf::{PdfOptions, PdfStandard};
+            let standard = match (ext, st.pdf_standard) {
+                ("pdf", 1) => PdfStandard::X1a,
+                ("pdf", 2) => PdfStandard::X3,
+                ("pdf", 3) => PdfStandard::X4,
+                _ => PdfStandard::None,
+            };
+            let profile = if standard == PdfStandard::None {
+                None
+            } else {
+                let p = app.settings.color.cmyk_profile_path.trim().to_string();
+                (!p.is_empty()).then(|| std::fs::read(&p).ok()).flatten()
+            };
+            let opts = PdfOptions {
+                standard,
+                output_profile: profile,
+                output_condition: st.output_condition.clone(),
+                bleed_mm: if ext == "pdf" { st.bleed_mm } else { 0.0 },
+                title: Some(app.document_title().trim_end_matches('*').to_string()),
+                flatten_dpi: st.dpi.max(72.0),
+            };
+            let pdf = tracedraw_io::pdf::document_to_pdf_with(&doc, &opts);
             std::fs::write(path, pdf).map_err(|e| e.to_string())?;
         }
         "eps" => {

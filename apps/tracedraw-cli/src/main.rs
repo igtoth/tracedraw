@@ -222,7 +222,33 @@ fn main() -> ExitCode {
             let res = if output.to_ascii_lowercase().ends_with(".svg") {
                 tracedraw_io::save_svg(&doc, 0, output)
             } else if output.to_ascii_lowercase().ends_with(".pdf") {
-                tracedraw_io::save_pdf(&doc, output)
+                // TRACEDRAW_PDFX=x1a|x3|x4 selects a PDF/X level; TRACEDRAW_ICC
+                // names the output profile and TRACEDRAW_BLEED the bleed in mm.
+                let standard = match std::env::var("TRACEDRAW_PDFX")
+                    .unwrap_or_default()
+                    .to_ascii_lowercase()
+                    .as_str()
+                {
+                    "x1a" | "x-1a" => tracedraw_io::pdf::PdfStandard::X1a,
+                    "x3" | "x-3" => tracedraw_io::pdf::PdfStandard::X3,
+                    "x4" | "x-4" => tracedraw_io::pdf::PdfStandard::X4,
+                    _ => tracedraw_io::pdf::PdfStandard::None,
+                };
+                let opts = tracedraw_io::pdf::PdfOptions {
+                    standard,
+                    output_profile: std::env::var("TRACEDRAW_ICC")
+                        .ok()
+                        .and_then(|p| std::fs::read(p).ok()),
+                    output_condition: std::env::var("TRACEDRAW_CONDITION").unwrap_or_default(),
+                    bleed_mm: std::env::var("TRACEDRAW_BLEED")
+                        .ok()
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(0.0),
+                    title: None,
+                    flatten_dpi: 300.0,
+                };
+                std::fs::write(output, tracedraw_io::pdf::document_to_pdf_with(&doc, &opts))
+                    .map_err(tracedraw_io::Error::from)
             } else if output.to_ascii_lowercase().ends_with(".eps") {
                 std::fs::write(output, tracedraw_io::eps::page_to_eps(&doc, 0))
                     .map_err(tracedraw_io::Error::from)

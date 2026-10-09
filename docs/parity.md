@@ -121,7 +121,7 @@ Counts: works 122, partial 1 (`.cdr` content coverage), missing 1 (EPS/PSD/CMX i
 | Object styles | works |
 | Overprint fill, outline and bitmap; Simulate Overprints preview | works |
 | Proof colours (soft proofing with the built-in CMYK model) | works |
-| ICC colour management (v2/v4 profiles, matrix/TRC and LUT, four intents, black point compensation, gamut check) | works; PDF/X output intent embedding missing |
+| ICC colour management (v2/v4 profiles, matrix/TRC and LUT, four intents, black point compensation, gamut check); PDF/X output intent embedding | works |
 | Separations | works (PDF separations export) |
 
 ## 8. Bitmaps and images
@@ -161,7 +161,7 @@ Counts: works 122, partial 1 (`.cdr` content coverage), missing 1 (EPS/PSD/CMX i
 | Import SVG and SVGZ (groups, clips, gradients, images); open SVG as a document | works |
 | Export SVG, PDF, AI (PDF-compatible), EPS, DXF, HTML (inline SVG, page tabs), PNG, JPEG, WebP, GIF, BMP, TIFF; Send To (Desktop, Documents, mail) as PDF; bitmaps, ClipFrames and bitmap transparency in SVG and PDF | works |
 | Export for Web and Office presets | works |
-| PDF: fills rasterised when needed, arrowheads, separations | works; PDF/X profiles missing |
+| PDF: fills rasterised when needed, arrowheads, separations, PDF/X-1a, X-3 and X-4 with output intent, flattening and bleed | works |
 | Import PDF and AI (PDF-compatible): paths, images, text, clips, shadings, patterns, forms, annotations | works (see `behavior/pdf-import.md`) |
 | Import DXF (lines, polylines, arcs, ellipses, splines, hatches, text, blocks) | works (see `behavior/dxf.md`) |
 | Import EPS, PSD, CMX | missing |

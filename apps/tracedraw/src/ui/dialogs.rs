@@ -73,6 +73,10 @@ pub struct ExportState {
     pub transparent: bool,
     pub quality: u8,
     pub web: bool,
+    /// PDF only: 0 plain, 1 X-1a, 2 X-3, 3 X-4.
+    pub pdf_standard: usize,
+    pub bleed_mm: f64,
+    pub output_condition: String,
 }
 
 impl Default for ExportState {
@@ -85,9 +89,14 @@ impl Default for ExportState {
             transparent: true,
             quality: 90,
             web: false,
+            pdf_standard: 0,
+            bleed_mm: 0.0,
+            output_condition: "FOGRA39".into(),
         }
     }
 }
+
+pub const PDF_STANDARDS: [&str; 4] = ["PDF 1.4", "PDF/X-1a:2003", "PDF/X-3:2003", "PDF/X-4"];
 
 impl ExportState {
     pub fn web() -> Self {
@@ -1840,6 +1849,38 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
                 (b.width() / 25.4 * st.dpi).round(),
                 (b.height() / 25.4 * st.dpi).round()
             ));
+        }
+        if st.format == 1 {
+            ui.horizontal(|ui| {
+                ui.label(tr("dialog.pdf_standard"));
+                egui::ComboBox::from_id_salt("pdf_standard")
+                    .selected_text(PDF_STANDARDS[st.pdf_standard.min(3)])
+                    .show_ui(ui, |ui| {
+                        for (i, n) in PDF_STANDARDS.iter().enumerate() {
+                            ui.selectable_value(&mut st.pdf_standard, i, *n);
+                        }
+                    });
+            });
+            ui.horizontal(|ui| {
+                ui.label(tr("dialog.bleed"));
+                ui.add(
+                    egui::DragValue::new(&mut st.bleed_mm)
+                        .range(0.0..=50.0)
+                        .speed(0.5)
+                        .suffix(" mm"),
+                );
+            });
+            if st.pdf_standard > 0 {
+                ui.horizontal(|ui| {
+                    ui.label(tr("dialog.output_condition"));
+                    ui.text_edit_singleline(&mut st.output_condition);
+                });
+                ui.label(
+                    egui::RichText::new(tr("dialog.pdfx_profile_note"))
+                        .color(Tokens::TEXT_DIM)
+                        .size(11.0),
+                );
+            }
         }
         ui.checkbox(&mut st.selection_only, tr("dialog.selected_only"));
         if !st.selection_only && st.format != 1 && st.format != 11 {
