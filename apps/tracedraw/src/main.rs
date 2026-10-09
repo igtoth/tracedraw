@@ -3,13 +3,16 @@
 
 //! TraceDraw desktop app: a thin egui shell over the engine.
 
+mod anchors;
 mod app;
 mod barcode;
 mod bitmap_fx;
 mod border_grommet;
 mod canvas;
 mod clipboard;
+mod clone_effect;
 mod effects_ui;
+mod encode;
 mod export;
 mod grammar;
 mod i18n;

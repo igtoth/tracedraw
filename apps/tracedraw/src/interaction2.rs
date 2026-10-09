@@ -20,6 +20,7 @@ impl App {
         let waiting = self.pending_order.is_some()
             || self.pending_copy_properties
             || self.pending_copy_effect.is_some()
+            || self.pending_clone_effect.is_some()
             || self.pending_blend_path;
         if !waiting {
             return false;
@@ -28,6 +29,7 @@ impl App {
             self.pending_order = None;
             self.pending_copy_properties = false;
             self.pending_copy_effect = None;
+            self.pending_clone_effect = None;
             self.pending_blend_path = false;
             self.status = tr("status.cancelled");
             return true;
@@ -48,6 +50,11 @@ impl App {
         } else if let Some(kind) = self.pending_copy_effect.take() {
             if let Some(t) = target {
                 self.copy_effect_from(t, kind);
+            }
+        } else if let Some(kind) = self.pending_clone_effect.take() {
+            if let Some(t) = target {
+                self.clone_effect_from(t, kind);
+                return true;
             }
         } else if self.pending_blend_path {
             self.pending_blend_path = false;
@@ -127,11 +134,13 @@ impl App {
                     }
                 }
             }
-            Tool::RightAngleConnector | Tool::RoundedConnector | Tool::AnchorEditing => {
+            Tool::AnchorEditing => self.anchor_input(response, p),
+            Tool::RightAngleConnector | Tool::RoundedConnector => {
                 if response.drag_started_by(PointerButton::Primary) {
                     if let Some(id) = self.hit_test(p) {
                         self.drag = Drag::Connector {
                             from: id,
+                            start: p,
                             current: p,
                         };
                     }
@@ -696,39 +705,20 @@ impl App {
 
     /// Right-angle and rounded connectors: an elbow path between the
     /// facing sides of two objects.
-    pub fn finish_elbow_connector(&mut self, from: ShapeId, at: Point, rounded: bool) {
+    pub fn finish_elbow_connector(
+        &mut self,
+        from: ShapeId,
+        start: Point,
+        at: Point,
+        rounded: bool,
+    ) {
         let Some(to) = self.hit_test(at).filter(|id| *id != from) else {
             return;
         };
-        let (Ok((_, a)), Ok((_, b))) = (self.doc().shape(from), self.doc().shape(to)) else {
+        let Some((pa, pb)) = self.connector_anchors(from, start, to, at) else {
             return;
         };
-        let (ba, bb) = (a.bounds(), b.bounds());
-        let horizontal =
-            (bb.center().x - ba.center().x).abs() > (bb.center().y - ba.center().y).abs();
-        let (pa, pb) = if horizontal {
-            if bb.center().x > ba.center().x {
-                (
-                    Point::new(ba.x1, ba.center().y),
-                    Point::new(bb.x0, bb.center().y),
-                )
-            } else {
-                (
-                    Point::new(ba.x0, ba.center().y),
-                    Point::new(bb.x1, bb.center().y),
-                )
-            }
-        } else if bb.center().y > ba.center().y {
-            (
-                Point::new(ba.center().x, ba.y1),
-                Point::new(bb.center().x, bb.y0),
-            )
-        } else {
-            (
-                Point::new(ba.center().x, ba.y0),
-                Point::new(bb.center().x, bb.y1),
-            )
-        };
+        let horizontal = (pb.x - pa.x).abs() > (pb.y - pa.y).abs();
         let mid = if horizontal {
             Point::new((pa.x + pb.x) / 2.0, pa.y)
         } else {

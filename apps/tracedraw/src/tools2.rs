@@ -297,6 +297,7 @@ impl App {
                     if let Some(id) = self.hit_test(p) {
                         self.drag = Drag::Connector {
                             from: id,
+                            start: p,
                             current: p,
                         };
                     }
@@ -679,39 +680,15 @@ impl App {
         let _ = self.engine.run_batch("Dimension", &cmds);
     }
 
-    pub fn finish_connector(&mut self, from: ShapeId, at: Point) {
+    pub fn finish_connector(&mut self, from: ShapeId, start: Point, at: Point) {
         let Some(to) = self.hit_test(at).filter(|id| *id != from) else {
             return;
         };
-        let (Ok((_, a)), Ok((_, b))) = (self.doc().shape(from), self.doc().shape(to)) else {
+        // Leave from the anchor nearest the drag start, arrive at the one
+        // nearest the drop (custom anchors from the Anchor Editing tool).
+        let Some((pa, pb)) = self.connector_anchors(from, start, to, at) else {
             return;
         };
-        let (ba, bb) = (a.bounds(), b.bounds());
-        // Leave from the side facing the other object.
-        let (pa, pb) =
-            if (bb.center().x - ba.center().x).abs() > (bb.center().y - ba.center().y).abs() {
-                if bb.center().x > ba.center().x {
-                    (
-                        Point::new(ba.x1, ba.center().y),
-                        Point::new(bb.x0, bb.center().y),
-                    )
-                } else {
-                    (
-                        Point::new(ba.x0, ba.center().y),
-                        Point::new(bb.x1, bb.center().y),
-                    )
-                }
-            } else if bb.center().y > ba.center().y {
-                (
-                    Point::new(ba.center().x, ba.y1),
-                    Point::new(bb.center().x, bb.y0),
-                )
-            } else {
-                (
-                    Point::new(ba.center().x, ba.y0),
-                    Point::new(bb.center().x, bb.y1),
-                )
-            };
         let mut path = BezPath::new();
         path.move_to(pa);
         path.line_to(pb);
@@ -877,6 +854,7 @@ impl App {
                     if let Some(id) = self.hit_test(p) {
                         self.drag = Drag::Connector {
                             from: id,
+                            start: p,
                             current: p,
                         };
                     }

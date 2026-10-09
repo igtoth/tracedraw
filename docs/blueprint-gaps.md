@@ -8,34 +8,26 @@ Rows move to `parity.md` when done; this file keeps only what is open.
 ## Toolbox (17 groups, official list)
 
 All 62 tools exist with their own icon, flyout position, property bar and
-shortcut. The one that is not interactive yet:
+shortcut, and all of them are interactive (the Anchor Editing tool was the
+last one; see `behavior/connectors-and-anchors.md`).
 
-| Group | Tool | What is missing |
+## Menu items
+
+Every item of the twelve menus is wired, with these documented
+exceptions, shown disabled so the layout stays complete:
+
+| Menu | Item | Why |
 |---|---|---|
-| Connector | Anchor editing | dragging anchor points on an object; connectors attach to bounding-box sides |
-
-## Menu items still disabled
-
-| Menu | Item | Note |
-|---|---|---|
-| Edit | Paste Special | paste as text / as bitmap / with link |
-| View | Simulate Overprints, Rasterize Complex Effects | overprint preview compositing; effects are already rasterised |
-| Object | Create Arrowhead | custom arrowheads need a `Custom(path)` arrowhead variant |
-| Object | ClipFrame Edit in place / Lock contents | edit mode inside the frame; lock flag |
-| Object | Object Hinting | pixel hinting for web export |
-| Bitmaps | Edit Bitmap, Break Link, Update from Link | external editor round trip and linked bitmaps |
-| Text | Link / Unlink paragraph frames | flowing text across frames |
-| Text | Align to Baseline Grid | baseline grid exists for snapping only |
-| Text | Grammatik, Thesaurus, Autocorrect | writing tools beyond spell check |
-| Text | Make Text Web Compatible, Encode | legacy items |
-| Tools | Border and Grommet | large-format print helper |
+| File | Acquire Image | no scanner (TWAIN/WIA/SANE) stack in pure Rust; import the scanned file |
+| Object | Rollover | web-page interactivity with no HTML export target |
+| Bitmaps | Plug-ins | no third-party filter host; the built-in effects cover the stock filters |
 | Window | New Window, Cascade, Tile, Combine, Dock | single window with document tabs by design |
+| Help | Highlight What's New | no per-release highlight data yet |
 
 ## Fills, colour and effects
 
 - PostScript fills (legacy; vector pattern fills are done).
 - PDF/X output intents embedding the loaded ICC profile.
-- Rollover objects.
 
 ## File format
 

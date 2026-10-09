@@ -184,6 +184,8 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
     draw_selection(app, painter, preview);
     draw_table_cells(app, painter);
     draw_frame_links(app, painter);
+    draw_symmetry_lines(app, painter, rect);
+    draw_anchors(app, painter);
 
     // 3-point tools: base segment waiting for the third click, previewed to the pointer.
     if let (Some((a, b)), Some(c)) = (app.three_point_base, app.pointer_page) {
@@ -225,13 +227,19 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
                 EStroke::new(1.0, Tokens::SELECTION),
             );
         }
-        Drag::Connector { from, current } => {
-            if let Ok((_, s)) = doc.shape(*from) {
+        Drag::Connector {
+            from,
+            start,
+            current,
+        } => {
+            let origin = if app.tool == Tool::Blend {
+                doc.shape(*from).ok().map(|(_, s)| s.bounds().center())
+            } else {
+                app.nearest_anchor(*from, *start)
+            };
+            if let Some(o) = origin {
                 painter.line_segment(
-                    [
-                        view.to_screen(s.bounds().center()),
-                        view.to_screen(*current),
-                    ],
+                    [view.to_screen(o), view.to_screen(*current)],
                     EStroke::new(1.0, Tokens::SELECTION),
                 );
             }
@@ -393,6 +401,102 @@ fn three_point_preview(
                 tracedraw_core::geometry::rect_path(local, 0.0)
             };
             t * p
+        }
+    }
+}
+
+/// Dashed screen-space line (guides, mirror lines).
+fn dash(painter: &Painter, a: Pos2, b: Pos2, color: Color32) {
+    let len = a.distance(b);
+    let n = (len / 6.0).ceil().max(1.0) as usize;
+    for i in (0..n).step_by(2) {
+        let t0 = i as f32 / n as f32;
+        let t1 = ((i + 1) as f32 / n as f32).min(1.0);
+        painter.line_segment(
+            [a + (b - a) * t0, a + (b - a) * t1],
+            EStroke::new(1.0, color),
+        );
+    }
+}
+
+/// Mirror lines of selected objects with a Symmetry effect (dashed, with a
+/// centre handle), as the target design shows them in symmetry mode.
+fn draw_symmetry_lines(app: &App, painter: &Painter, rect: ERect) {
+    let view = &app.view;
+    for s in app.selected_shapes() {
+        for e in &s.effects {
+            let tracedraw_core::live::Effect::Symmetry {
+                center,
+                angle,
+                lines,
+            } = e
+            else {
+                continue;
+            };
+            let n = (*lines).clamp(1, 12) as usize;
+            let far = 100_000.0 / view.zoom.max(0.01) as f64;
+            for k in 0..n {
+                let a = (angle + 180.0 * k as f64 / n as f64).to_radians();
+                let d = tracedraw_core::geometry::Vec2::new(a.cos(), a.sin());
+                let s0 = view.to_screen(*center - d * far);
+                let s1 = view.to_screen(*center + d * far);
+                if let Some((c0, c1)) = clip_segment(s0, s1, rect) {
+                    dash(painter, c0, c1, Color32::from_rgb(40, 110, 220));
+                }
+            }
+            let c = view.to_screen(*center);
+            painter.circle_stroke(c, 5.0, EStroke::new(1.5, Color32::from_rgb(40, 110, 220)));
+        }
+    }
+}
+
+/// Connector anchors: small diamonds on the selected object with the
+/// Anchor Editing tool, and on both ends while a connector is dragged.
+fn draw_anchors(app: &App, painter: &Painter) {
+    let view = &app.view;
+    let mut shown: Vec<(tracedraw_core::ShapeId, bool)> = Vec::new();
+    match (&app.tool, &app.drag) {
+        (Tool::AnchorEditing, _) => {
+            if let Some(id) = app.selection.first() {
+                shown.push((*id, true));
+            }
+        }
+        (
+            Tool::Connector | Tool::RightAngleConnector | Tool::RoundedConnector,
+            Drag::Connector { from, current, .. },
+        ) => {
+            shown.push((*from, false));
+            if let Some(to) = app.hit_test(*current).filter(|t| t != from) {
+                shown.push((to, false));
+            }
+        }
+        _ => {}
+    }
+    for (id, editing) in shown {
+        let n_side = crate::anchors::SIDE_ANCHORS.len();
+        for (i, p) in app.anchors_of(id).into_iter().enumerate() {
+            let c = view.to_screen(p);
+            let custom = i >= n_side;
+            let r = if custom { 5.0 } else { 4.0 };
+            let pts = vec![
+                c + egui::vec2(0.0, -r),
+                c + egui::vec2(r, 0.0),
+                c + egui::vec2(0.0, r),
+                c + egui::vec2(-r, 0.0),
+            ];
+            let selected = editing && custom && app.anchor_sel == Some(i - n_side);
+            let fill = if selected {
+                Tokens::SELECTION
+            } else if custom {
+                Color32::WHITE
+            } else {
+                Color32::from_rgba_unmultiplied(255, 255, 255, 160)
+            };
+            painter.add(epaint::PathShape::convex_polygon(
+                pts,
+                fill,
+                EStroke::new(1.0, Tokens::SELECTION),
+            ));
         }
     }
 }
@@ -756,18 +860,6 @@ pub fn draw_guides(app: &App, painter: &Painter, rect: ERect) {
     let view = &app.view;
     let Ok(page) = app.doc().page(app.page) else {
         return;
-    };
-    let dash = |painter: &Painter, a: Pos2, b: Pos2, color: Color32| {
-        let len = a.distance(b);
-        let n = (len / 6.0).ceil() as usize;
-        for i in (0..n).step_by(2) {
-            let t0 = i as f32 / n as f32;
-            let t1 = ((i + 1) as f32 / n as f32).min(1.0);
-            painter.line_segment(
-                [a + (b - a) * t0, a + (b - a) * t1],
-                EStroke::new(1.0, color),
-            );
-        }
     };
     for (i, g) in page.guides.iter().enumerate() {
         let color = if app.selected_guide == Some(i) {

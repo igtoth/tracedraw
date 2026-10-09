@@ -450,6 +450,6 @@ impl Tool {
 
     /// Tools that are listed but not implemented yet (shown greyed).
     pub fn implemented(self) -> bool {
-        !matches!(self, Tool::AnchorEditing)
+        true
     }
 }

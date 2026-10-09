@@ -14,17 +14,22 @@ The full workspace layout: menus, standard toolbar, property bar,
 toolbox with flyouts, rulers, palette, dockers, navigator, status bar.
 Parity tracked in `docs/parity.md`.
 
-## M1 Real files (done for RIFF and X4/X5)
+## M1 Real files (done for all three containers)
 - `tracedraw-cli inspect` dumps chunk trees
 - Text objects read as text with font and size; bitmaps read and drawn
 - Layer names, page names, multi-page
-- Open: X6+ container (`content/root.dat`), corpus per version in `corpus/`
+- X6+ container (`content/root.dat`, redirected chunks); a 2019 file
+  opens correctly (text, cropped bitmaps, object order)
+- Open: corpus per version in `corpus/`, text on path, splines, paragraph
+  formatting from the style tables
 
 ## M2 Drawing (done)
 - All 62 tools, node editing, transform handles, snapping, rulers
 - tiny-skia renderer: fills of every kind, dashes, hairlines, effects
 - Text engine with shaping, paragraph layout, text on path, tables
 - Live effects, lenses, transparency, mesh fill, symbols, master layers
+- Symmetry, ClipFrame editing, linked text frames, connector anchors,
+  writing tools, clone effects, custom arrowheads
 
 ## M3 Output (done except `.cdr` write)
 - PDF export (vector, CMYK, separations), EPS, AI (PDF-based), bitmaps
@@ -39,5 +44,5 @@ Parity tracked in `docs/parity.md`.
 
 ## M5 Interchange
 - Import AI, EPS, PDF, DXF, PSD, CMX; export HTML, DXF, EMF/WMF
-- External ICC profiles
+- External ICC profiles (done: pure-Rust ICC engine, v2/v4), PDF/X intents
 - The remaining items in `docs/blueprint-gaps.md`

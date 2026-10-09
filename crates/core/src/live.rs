@@ -76,6 +76,14 @@ pub enum Effect {
         /// Keep a gap between the object and the shadow (overprint trick).
         gap: f64,
     },
+    /// Symmetry: mirrored copies of the object across `lines` mirror lines
+    /// through `center` (page space), the first at `angle` degrees and the
+    /// others spread evenly; the object itself stays where it is.
+    Symmetry {
+        center: Point,
+        angle: f64,
+        lines: u8,
+    },
     /// Lens over everything beneath (evaluated by the renderer).
     Lens(Lens),
     /// Non-uniform transparency: the fill's luminance is the opacity.
@@ -429,6 +437,13 @@ pub fn evaluate(shape: &Shape) -> Evaluated {
             Effect::BlockShadow { offset, color, gap } => {
                 below.extend(block_shadow(&main, *offset, *color, *gap));
             }
+            Effect::Symmetry {
+                center,
+                angle,
+                lines,
+            } => {
+                above.extend(symmetry(&main, *center, *angle, *lines));
+            }
             Effect::Lens(_) | Effect::Transparency { .. } => {}
         }
     }
@@ -769,6 +784,41 @@ fn bevel(
     out
 }
 
+/// Mirror copies for the Symmetry effect. With `n` lines through `center`
+/// the result is the dihedral orbit of the shape: reflections across each
+/// line and the rotations they generate (2n - 1 copies).
+fn symmetry(shape: &Shape, center: Point, angle: f64, lines: u8) -> Vec<Shape> {
+    let n = lines.clamp(1, 12) as usize;
+    let mut out = Vec::with_capacity(2 * n);
+    let base = shape.clone();
+    let to_center = Affine::translate(center.to_vec2());
+    let from_center = Affine::translate(-center.to_vec2());
+    let reflect = |theta: f64| -> Affine {
+        // Reflection across a line through the origin at angle theta.
+        let (s, c) = (2.0 * theta).sin_cos();
+        Affine::new([c, s, s, -c, 0.0, 0.0])
+    };
+    let a0 = angle.to_radians();
+    for k in 0..n {
+        let theta = a0 + std::f64::consts::PI * k as f64 / n as f64;
+        let m = to_center * reflect(theta) * from_center;
+        let mut s = base.clone();
+        s.effects.clear();
+        s.transform = m * s.transform;
+        out.push(s);
+    }
+    // Rotations (products of two reflections), skipping the identity.
+    for k in 1..n {
+        let rot = Affine::rotate(2.0 * std::f64::consts::PI * k as f64 / n as f64);
+        let m = to_center * rot * from_center;
+        let mut s = base.clone();
+        s.effects.clear();
+        s.transform = m * s.transform;
+        out.push(s);
+    }
+    out
+}
+
 fn block_shadow(shape: &Shape, offset: Vec2, color: Color, gap: f64) -> Vec<Shape> {
     let front = shape.page_path();
     let pts = crate::effects::resample(&front, 96);
@@ -1093,5 +1143,44 @@ mod tests {
         assert!(ev.below.len() > 4);
         let back = ev.below[0].bounds();
         assert!((back.x0 - 10.0).abs() < 0.5);
+    }
+}
+
+#[cfg(test)]
+mod symmetry_tests {
+    use super::*;
+    use crate::geometry::Rect;
+
+    #[test]
+    fn one_line_mirrors_the_object_across_it() {
+        let mut s = Shape::new(
+            crate::ShapeId(1),
+            ShapeKind::Rect {
+                rect: Rect::new(10.0, 0.0, 20.0, 10.0),
+                radius: 0.0,
+            },
+        );
+        s.effects.push(Effect::Symmetry {
+            center: Point::new(0.0, 0.0),
+            angle: 90.0,
+            lines: 1,
+        });
+        let ev = evaluate(&s);
+        assert_eq!(ev.above.len(), 1);
+        let b = ev.above[0].bounds();
+        assert!(
+            (b.x0 + 20.0).abs() < 1e-9 && (b.x1 + 10.0).abs() < 1e-9,
+            "{b:?}"
+        );
+        assert!((b.y0).abs() < 1e-9 && (b.y1 - 10.0).abs() < 1e-9);
+
+        // Two lines: three copies in the other quadrants.
+        s.effects[0] = Effect::Symmetry {
+            center: Point::new(0.0, 0.0),
+            angle: 0.0,
+            lines: 2,
+        };
+        let ev = evaluate(&s);
+        assert_eq!(ev.above.len(), 3);
     }
 }

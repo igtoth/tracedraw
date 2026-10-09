@@ -87,7 +87,9 @@ fn is_trigger(c: char) -> bool {
 fn opens_quote(chars: &[char], pos: usize) -> bool {
     match pos.checked_sub(1).and_then(|i| chars.get(i)) {
         None => true,
-        Some(p) => p.is_whitespace() || matches!(p, '(' | '[' | '{' | '-' | '\u{2013}' | '\u{2014}' | '/'),
+        Some(p) => {
+            p.is_whitespace() || matches!(p, '(' | '[' | '{' | '-' | '\u{2013}' | '\u{2014}' | '/')
+        }
     }
 }
 

@@ -6,7 +6,7 @@ target design does, with a test or a checked screenshot behind it.
 "partial" names what is missing. "baked" means the result is applied once
 instead of staying live and editable. The goal is every row at "works".
 
-Counts: works 79, partial 16, missing 5.
+Counts: works 122, partial 1 (`.cdr` content coverage), missing 1 (AI/EPS/PDF/DXF/PSD/CMX import), not applicable 4, icons close but not pixel-identical.
 
 ## 1. Selection and navigation
 
@@ -36,10 +36,10 @@ Counts: works 79, partial 16, missing 5.
 | Shape Recognition (shape recognition) and Sketch (stroke merging) | works |
 | Brush Strokes: Preset, Brush, Sprayer, Calligraphic, Expression | works |
 | Dimensions: parallel, horizontal/vertical, angular, segment, 3-point callout | works |
-| Connectors: straight, right-angle, rounded right-angle; anchors | partial: anchor editing tool not interactive |
+| Connectors: straight, right-angle, rounded right-angle; Anchor Editing tool (add, move, delete anchors; connectors snap to them) | works |
 | Text (artistic and paragraph), Table | works |
 | Crop, Knife, Segment delete, Eraser | works |
-| QR code and page number insertion | works; barcode (Code 128, EAN) missing |
+| QR code, barcode (Code 128, EAN-13, EAN-8) and page number insertion | works |
 
 ## 3. Shape and node editing
 
@@ -69,10 +69,10 @@ Counts: works 79, partial 16, missing 5.
 | Hyphenation (Liang patterns en/pt, heuristic elsewhere) | works |
 | Text on path (offset, distance, mirror), straighten text | works |
 | Fit text to frame, wrap paragraph text around objects | works |
-| Linked paragraph text frames | missing |
-| Change case, insert formatting codes, show non-printing characters | works |
+| Linked paragraph text frames (link, unlink, live re-flow) | works |
+| Change case, insert formatting codes, show non-printing characters, Encode, Make Text Web Compatible | works |
 | Text statistics, Find and Replace, Glyphs docker, font filter and sample | works |
-| Spell check (system Hunspell word lists) | works; grammar and thesaurus missing |
+| Writing tools: spell check (system Hunspell word lists), grammar, thesaurus (built-in or MyThes file), Autocorrect | works |
 | Missing-font substitution with report | works |
 | Convert text to table and table to text | works |
 | Table: cell typing, Tab navigation, insert/delete rows and columns, merge/split, distribute | works |
@@ -83,11 +83,11 @@ Counts: works 79, partial 16, missing 5.
 |---|---|
 | Uniform fill in RGB, CMYK, Gray, HSB, HSL, Lab, YIQ, registration | works |
 | Fountain fill: linear, radial, conical, square; multi-stop; angle, offset, edge pad; interactive drag | works |
-| Pattern fill: two-colour (8 tiles), bitmap, full-colour vector (tile from the selection); texture fill (clouds, marble, noise, wood) | works; PostScript fills missing (legacy) |
+| Pattern fill: two-colour (8 tiles), bitmap, full-colour vector (tile from the selection); texture fill (clouds, marble, noise, wood) | works; PostScript fills not planned (legacy) |
 | Mesh fill with node editing | works |
 | Area Fill (enclosed region) | works |
 | Interactive Fill tool | works |
-| Outline: width, colour, caps, joins, dashes, nib, behind fill, scale with object, arrowheads | works |
+| Outline: width, colour, caps, joins, dashes, nib, behind fill, scale with object, arrowheads (presets and custom from the selection) | works |
 | Outline Pen and Outline Color dialogs (hidden flyout, Options toggle) | works |
 | Eyedroppers: colour and attributes | works |
 
@@ -106,10 +106,10 @@ Counts: works 79, partial 16, missing 5.
 | Block shadow | works |
 | Transparency: uniform, fountain, pattern, texture; merge modes; fill/outline/all | works |
 | Lens (11 types, frozen, rate, palette rotation) | works |
-| ClipFrame (place inside, extract, empty frame, text frame) | works; edit in place and lock contents missing |
-| Symbols (create, instances, Symbols docker) | works |
-| Copy and clone effects, Clear effect, Clear transformations | works |
-| Rollover | missing |
+| ClipFrame (place inside, extract, empty frame, text frame, edit in place, lock contents) | works |
+| Symbols (Object > Symbol menu, create, insert, revert, Symbols docker, Ctrl+F3) | works |
+| Copy effect, Clone effect (shadow and transparency follow the source until edited), Clear effect, Clear transformations, Symmetry (live, 1 to 12 mirror lines) | works |
+| Rollover | not applicable: web-page interactivity with no HTML export target |
 
 ## 7. Colour
 
@@ -119,7 +119,7 @@ Counts: works 79, partial 16, missing 5.
 | Palettes: default, document palette, open/save, palette editor, palette manager, from document/selection | works |
 | Colour styles and harmonies | works |
 | Object styles | works |
-| Overprint fill and outline | works |
+| Overprint fill, outline and bitmap; Simulate Overprints preview | works |
 | Proof colours (soft proofing with the built-in CMYK model) | works |
 | ICC colour management (v2/v4 profiles, matrix/TRC and LUT, four intents, black point compensation, gamut check) | works; PDF/X output intent embedding missing |
 | Separations | works (PDF separations export) |
@@ -135,7 +135,7 @@ Counts: works 79, partial 16, missing 5.
 | Bitmap colour mask | works |
 | Inflate bitmap (auto and manual) | works |
 | Bitmap tracing: quick, centreline, outline; presets; smoothing, detail, colour count | works |
-| Edit bitmap in an external editor, linked bitmaps | missing |
+| Edit bitmap in the system editor, linked bitmaps (update from link, break link) | works |
 
 ## 9. Layout and document
 
@@ -146,7 +146,7 @@ Counts: works 79, partial 16, missing 5.
 | Page background: solid or bitmap | works |
 | Master layers (all, odd, even pages), layer visibility, lock, printable | works |
 | Objects docker (layers and objects tree, drag to reorder) | works |
-| Document properties and metadata, rendering resolution | works |
+| Document properties and metadata, rendering resolution, baseline grid | works |
 | Guidelines docker, presets, angled guides | works |
 | Insert page number (active layer, all, odd, even) | works |
 | Templates: save as template, new from template | works |
@@ -159,23 +159,26 @@ Counts: works 79, partial 16, missing 5.
 | `.cdr` content: shapes, curves, paths, polygons, bitmaps, text (artistic and paragraph), fills, outlines, arrowheads, opacity | partial: text on path, splines, vector pattern and PostScript fills, paragraph formatting from style tables |
 | Native `.tdraw` save/load | works |
 | Import SVG and SVGZ (groups, clips, gradients, images); open SVG as a document | works |
-| Export SVG, PDF, AI (PDF-compatible), EPS, PNG, JPEG, WebP, GIF, BMP, TIFF | works |
+| Export SVG, PDF, AI (PDF-compatible), EPS, PNG, JPEG, WebP, GIF, BMP, TIFF; Send To (Desktop, Documents, mail) as PDF | works |
 | Export for Web and Office presets | works |
 | PDF: fills rasterised when needed, arrowheads, separations | works; PDF/X profiles missing |
 | Import AI, EPS, PDF, DXF, PSD, CMX | missing |
+| Acquire image (scanner) | not applicable: no scanner stack in pure Rust; import the scanned file instead |
 
 ## 11. Productivity and customisation
 
 | Capability | Status |
 |---|---|
 | Undo/redo with history docker, repeat (Ctrl+R) | works |
-| Copy, paste, paste in view, duplicate, clone, copy properties from | works |
+| Copy, paste, paste in view, Paste Special (system clipboard as text, bitmap or objects), duplicate, clone, copy properties from | works |
 | Find and Replace (text and object attributes) | works |
 | Scripts docker: JavaScript object model, run, record macro, load/save | works |
 | Workspaces: Default, Lite, Classic, Illustration, Page Layout; toolbar toggles | works |
 | Options: general, workspace, document, snapping, text, tools, shortcuts (customisable) | works |
 | Save settings as default | works |
 | Hints docker with per-tool help; Welcome Screen (recent, templates, news, learn) | works |
+| Border and Grommet (large-format finishing) | works |
+| Bitmap plug-ins (third-party filters) | not applicable: no plug-in host; the built-in bitmap effects cover the stock filters |
 | User interface in 12 languages with system fallback fonts | works |
 | Keyboard shortcuts of the target design | works |
 
@@ -186,7 +189,7 @@ Counts: works 79, partial 16, missing 5.
 | Print (PDF to the system viewer), copies, range, bleed marks | works |
 | Print preview | works |
 | Print merge from CSV (create/load, edit, perform) | works |
-| Separations and overprint simulation | partial: separations export; overprint preview missing |
+| Separations and overprint simulation | works |
 
 ## Workspace look
 
@@ -197,5 +200,5 @@ Counts: works 79, partial 16, missing 5.
 | Dockers (30): Properties, Objects, Hints, Transformations, Undo, Align and Distribute, Shaping, Step and Repeat, Text, Glyphs, Colour, Colour Styles, Object Styles, Find and Replace, Scripts, Palettes, Lens, Blend, Contour, Envelope, Extrude, Bevel, Brush Strokes, Bitmap Mask, Object Data, Links, Symbols, Pages, Guidelines, Fonts | works |
 | Welcome Screen with tabs | works |
 | Right-click context menus (object, node, page, table) | works |
-| Dialogs: New Document, Options, Export, Print, Print Merge, Colour Management, Font Manager, Document Properties, Convert to Bitmap, Resample, Trace, QR Code, Change Case, Text Statistics, Tabs, Columns, Bullets, Drop Cap, Table create/split, Page Number Settings | works |
+| Dialogs: New Document, Options, Export, Print, Print Merge, Colour Management, Font Manager, Document Properties, Convert to Bitmap, Resample, Trace, QR Code, Barcode, Change Case, Text Statistics, Tabs, Columns, Bullets, Drop Cap, Table create/split, Page Number Settings, Paste Special, Symmetry, Thesaurus, Grammar, Autocorrect, Encode, Border and Grommet | works |
 | Window management (new window, cascade, tile) | not applicable: single document window with tabs |

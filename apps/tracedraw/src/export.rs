@@ -346,6 +346,91 @@ impl App {
             self.status = e;
         }
     }
+
+    /// File name for a PDF sent somewhere: the document title, cleaned.
+    fn send_to_file_name(&self) -> String {
+        let title = self.document_title();
+        let stem: String = title
+            .trim_end_matches('*')
+            .chars()
+            .map(|c| {
+                if c.is_alphanumeric() || c == '-' || c == '_' || c == ' ' {
+                    c
+                } else {
+                    '_'
+                }
+            })
+            .collect();
+        let stem = stem.trim();
+        let stem = if stem.is_empty() { "Graphic1" } else { stem };
+        format!("{stem}.pdf")
+    }
+
+    /// File > Send To: write the document as PDF into `target` and report
+    /// where it went.
+    pub fn send_to(&mut self, target: SendTarget) {
+        let Some(dir) = target.dir() else {
+            self.status = tr("status.send_to_no_folder");
+            return;
+        };
+        let path = dir.join(self.send_to_file_name());
+        match tracedraw_io::save_pdf(self.engine.document(), &path) {
+            Ok(()) => {
+                self.status = trf("status.sent_to", &[("path", &path.display().to_string())]);
+                if target == SendTarget::Mail {
+                    // The platform's mail client gets the PDF as an
+                    // attachment; without a mailto attachment standard,
+                    // open the file's folder so it can be dragged in.
+                    let _ = open_with_system(&dir);
+                }
+            }
+            Err(e) => self.status = trf("status.export_failed", &[("e", &e.to_string())]),
+        }
+    }
+}
+
+/// Destinations of File > Send To.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SendTarget {
+    Desktop,
+    Documents,
+    Mail,
+}
+
+impl SendTarget {
+    /// The folder the PDF is written to; the mail recipient gets it from
+    /// the system's temporary folder.
+    pub fn dir(self) -> Option<std::path::PathBuf> {
+        match self {
+            SendTarget::Desktop => user_dir("XDG_DESKTOP_DIR", "Desktop"),
+            SendTarget::Documents => user_dir("XDG_DOCUMENTS_DIR", "Documents"),
+            SendTarget::Mail => {
+                let d = std::env::temp_dir().join("tracedraw-send");
+                std::fs::create_dir_all(&d).ok()?;
+                Some(d)
+            }
+        }
+    }
+}
+
+/// `$XDG_*_DIR`, then `~/<name>` (created when missing), then the home
+/// folder itself.
+fn user_dir(env: &str, name: &str) -> Option<std::path::PathBuf> {
+    if let Some(p) = std::env::var_os(env) {
+        let p = std::path::PathBuf::from(p);
+        if p.is_dir() {
+            return Some(p);
+        }
+    }
+    let home = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(std::path::PathBuf::from)?;
+    let p = home.join(name);
+    if p.is_dir() || std::fs::create_dir_all(&p).is_ok() {
+        Some(p)
+    } else {
+        Some(home)
+    }
 }
 
 // ----- print merge ---------------------------------------------------------------

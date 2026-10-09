@@ -706,27 +706,38 @@ impl App {
     pub fn end_drag(&mut self) {
         let drag = std::mem::replace(&mut self.drag, Drag::None);
         match drag {
+            Drag::Anchor { .. } => {}
             Drag::Box { start, current } => {
                 if !self.finish_tools2_box(start, current) {
                     self.create_box_shape(start, current);
                 }
             }
-            Drag::Connector { from, current } if self.tool == Tool::Blend => {
+            Drag::Connector { from, current, .. } if self.tool == Tool::Blend => {
                 if let Some(to) = self.hit_test(current).filter(|id| *id != from) {
                     self.selection = vec![from, to];
                     let steps = self.blend_steps;
                     self.blend_selection(steps, 0.0, 0.0, 0.0);
                 }
             }
-            Drag::Connector { from, current }
-                if matches!(self.tool, Tool::RightAngleConnector | Tool::AnchorEditing) =>
-            {
-                self.finish_elbow_connector(from, current, false)
+            Drag::Connector {
+                from,
+                start,
+                current,
+            } if self.tool == Tool::RightAngleConnector => {
+                self.finish_elbow_connector(from, start, current, false)
             }
-            Drag::Connector { from, current } if self.tool == Tool::RoundedConnector => {
-                self.finish_elbow_connector(from, current, true)
+            Drag::Connector {
+                from,
+                start,
+                current,
+            } if self.tool == Tool::RoundedConnector => {
+                self.finish_elbow_connector(from, start, current, true)
             }
-            Drag::Connector { from, current } => self.finish_connector(from, current),
+            Drag::Connector {
+                from,
+                start,
+                current,
+            } => self.finish_connector(from, start, current),
             Drag::Freehand { points } if self.tool == Tool::ShapeRecognition => {
                 self.finish_shape_recognition(points)
             }
@@ -1058,6 +1069,32 @@ impl App {
         if pressed(Key::S, cmd | Modifiers::SHIFT) {
             self.save(true);
         }
+        if pressed(Key::S, Modifiers::ALT) && !self.selection.is_empty() {
+            self.create_symmetry();
+        }
+        // Docker shortcuts (Ctrl+F9 Contour, Alt+F3 Lens, ...): toggle.
+        for tab in crate::app::DockerTab::ALL {
+            let label = tab.shortcut();
+            if label.is_empty() || !label.contains("F") || label == "Ctrl+F" {
+                continue;
+            }
+            let Some((k, shift)) = Tool::parse_shortcut(label) else {
+                continue;
+            };
+            let mut m = Modifiers::NONE;
+            if label.contains("Ctrl+") {
+                m |= cmd;
+            }
+            if label.contains("Alt+") {
+                m |= Modifiers::ALT;
+            }
+            if shift {
+                m |= Modifiers::SHIFT;
+            }
+            if pressed(k, m) {
+                self.toggle_docker(tab);
+            }
+        }
         if pressed(Key::O, cmd) {
             self.open_dialog();
         }
@@ -1127,6 +1164,8 @@ impl App {
         if pressed(Key::Delete, Modifiers::NONE) || pressed(Key::Backspace, Modifiers::NONE) {
             if self.tool == Tool::Shape && !self.node_selection.is_empty() {
                 self.delete_selected_nodes();
+            } else if self.tool == Tool::AnchorEditing && self.delete_selected_anchor() {
+                // The anchor went, the object stays.
             } else if let Some(gi) = self.selected_guide {
                 self.delete_guide(gi);
             } else {

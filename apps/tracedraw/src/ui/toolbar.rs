@@ -826,6 +826,40 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                         .size(11.0),
                 );
             }
+            Tool::AnchorEditing => {
+                let id = app.selection.first().copied();
+                let n = id
+                    .and_then(|id| app.doc().find_shape(id))
+                    .map(|s| crate::anchors::custom_anchors(&s.data).len())
+                    .unwrap_or(0);
+                ui.label(
+                    egui::RichText::new(trf("toolbar.anchors_n", &[("n", &n.to_string())]))
+                        .color(Tokens::TEXT_DIM)
+                        .size(11.0),
+                );
+                if ui
+                    .add_enabled(
+                        app.anchor_sel.is_some(),
+                        egui::Button::new(tr("toolbar.anchor_delete")),
+                    )
+                    .clicked()
+                {
+                    app.delete_selected_anchor();
+                }
+                if ui
+                    .add_enabled(n > 0, egui::Button::new(tr("toolbar.anchor_clear")))
+                    .clicked()
+                {
+                    if let Some(id) = id {
+                        app.clear_anchors(id);
+                    }
+                }
+                ui.label(
+                    egui::RichText::new(tr("status.anchor_hint"))
+                        .color(Tokens::TEXT_DIM)
+                        .size(11.0),
+                );
+            }
             Tool::DropShadow => {
                 let first = shapes.first().and_then(|s| s.shadow);
                 let mut sh = first.unwrap_or(app.shadow_default);

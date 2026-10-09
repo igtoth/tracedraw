@@ -265,7 +265,13 @@ pub enum Drag {
     /// Connector tool drag from one object to another.
     Connector {
         from: ShapeId,
+        start: Point,
         current: Point,
+    },
+    /// Moving a custom connector anchor (Anchor Editing tool).
+    Anchor {
+        shape: ShapeId,
+        index: usize,
     },
     /// Dragging a drop shadow offset (Drop Shadow tool).
     Shadow {
@@ -441,6 +447,9 @@ pub struct App {
     pub options_page: crate::ui::dialogs::OptionsPage,
     pub pending_copy_properties: bool,
     pub pending_copy_effect: Option<EffectKind>,
+    pub pending_clone_effect: Option<EffectKind>,
+    /// Selected custom anchor index (Anchor Editing tool).
+    pub anchor_sel: Option<usize>,
     /// Object > Order > In Front Of / Behind is waiting for a click: Some(in_front).
     pub pending_order: Option<bool>,
     pub last_repeatable: Option<Command>,
@@ -676,6 +685,10 @@ impl DockerTab {
             DockerTab::Contour => "Ctrl+F9",
             DockerTab::Envelope => "Ctrl+F7",
             DockerTab::Lens => "Alt+F3",
+            DockerTab::Symbols => "Ctrl+F3",
+            DockerTab::Blend => "Ctrl+F8",
+            DockerTab::Extrude => "Ctrl+F10",
+            DockerTab::Fonts => "Ctrl+F12",
             DockerTab::FindReplace => "Ctrl+F",
             DockerTab::StepAndRepeat => "Ctrl+Shift+D",
             DockerTab::Transformations => "Alt+F7",
@@ -827,6 +840,8 @@ impl App {
             options_page: crate::ui::dialogs::OptionsPage::General,
             pending_copy_properties: false,
             pending_copy_effect: None,
+            pending_clone_effect: None,
+            anchor_sel: None,
             pending_order: None,
             last_repeatable: None,
             show_non_printing: false,
@@ -1234,10 +1249,12 @@ impl App {
     }
 
     pub fn run(&mut self, cmd: Command) {
+        self.break_clone_links_for(&cmd);
         if let Err(e) = self.engine.run(&cmd) {
             self.status = format!("{}: {e}", cmd.label());
             return;
         }
+        self.sync_effect_clones_for(&cmd);
         if matches!(
             cmd,
             Command::TransformShapes { .. }
@@ -1249,6 +1266,17 @@ impl App {
         }
         if let Some(rec) = &mut self.recording {
             rec.push(cmd);
+        }
+    }
+
+    /// Open the docker (or hide the column when it is already the active
+    /// tab), as the docker shortcuts do.
+    pub fn toggle_docker(&mut self, tab: DockerTab) {
+        if self.show_dockers && self.docker_tab == tab {
+            self.show_dockers = false;
+        } else {
+            self.show_dockers = true;
+            self.docker_tab = tab;
         }
     }
 

@@ -321,6 +321,105 @@ impl App {
         }
     }
 
+    /// Object > Symmetry > Create New Symmetry (Alt+S): one vertical mirror
+    /// line at the right edge of the selection.
+    pub fn create_symmetry(&mut self) {
+        let shapes = self.selected_shapes();
+        if shapes.is_empty() {
+            return;
+        }
+        let Some(b) = self.selection_bounds() else {
+            return;
+        };
+        let center = Point::new(b.x1, b.center().y);
+        for s in shapes {
+            let mut effects = s.effects.clone();
+            effects.retain(|e| !matches!(e, Effect::Symmetry { .. }));
+            effects.push(Effect::Symmetry {
+                center,
+                angle: 90.0,
+                lines: 1,
+            });
+            self.run(Command::SetEffects {
+                shape: s.id,
+                effects,
+            });
+        }
+        self.dialog = crate::ui::dialogs::Dialog::Symmetry;
+    }
+
+    /// The symmetry effect of the first selected object.
+    pub fn selected_symmetry(&self) -> Option<(ShapeId, Point, f64, u8)> {
+        self.selected_shapes().iter().find_map(|s| {
+            s.effects.iter().find_map(|e| match e {
+                Effect::Symmetry {
+                    center,
+                    angle,
+                    lines,
+                } => Some((s.id, *center, *angle, *lines)),
+                _ => None,
+            })
+        })
+    }
+
+    /// Update the symmetry parameters of every selected object that has one.
+    pub fn set_symmetry(&mut self, center: Point, angle: f64, lines: u8) {
+        for s in self.selected_shapes() {
+            if !s
+                .effects
+                .iter()
+                .any(|e| matches!(e, Effect::Symmetry { .. }))
+            {
+                continue;
+            }
+            let effects = s
+                .effects
+                .iter()
+                .map(|e| match e {
+                    Effect::Symmetry { .. } => Effect::Symmetry {
+                        center,
+                        angle,
+                        lines,
+                    },
+                    other => other.clone(),
+                })
+                .collect();
+            if self.engine.undo_label() == Some("Symmetry") {
+                let _ = self.engine.undo();
+            }
+            let _ = self.engine.run_with_label(
+                &Command::SetEffects {
+                    shape: s.id,
+                    effects,
+                },
+                "Symmetry",
+            );
+        }
+    }
+
+    /// Object > Symmetry > Remove Symmetry: the copies disappear.
+    pub fn remove_symmetry(&mut self) {
+        for s in self.selected_shapes() {
+            if !s
+                .effects
+                .iter()
+                .any(|e| matches!(e, Effect::Symmetry { .. }))
+            {
+                continue;
+            }
+            let effects = s
+                .effects
+                .iter()
+                .filter(|e| !matches!(e, Effect::Symmetry { .. }))
+                .cloned()
+                .collect();
+            self.run(Command::SetEffects {
+                shape: s.id,
+                effects,
+            });
+        }
+    }
+
     /// Object > Add Perspective: a perspective effect with the corners at
     /// the bounding box (edit them with the Shape tool).
     pub fn add_perspective(&mut self) {

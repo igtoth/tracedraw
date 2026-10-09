@@ -241,7 +241,18 @@ fn file_menu(app: &mut App, ui: &mut Ui) {
             app.dialog = Dialog::Export(crate::ui::dialogs::ExportState::office());
         }
     });
-    todo_sub(ui, "menu.file.send_to");
+    sub(ui, "menu.file.send_to", |ui| {
+        use crate::export::SendTarget;
+        for (key, t) in [
+            ("menu.file.send_to_desktop", SendTarget::Desktop),
+            ("menu.file.send_to_documents", SendTarget::Documents),
+            ("menu.file.send_to_mail", SendTarget::Mail),
+        ] {
+            if item(ui, key, "", true) {
+                app.send_to(t);
+            }
+        }
+    });
     if item(ui, "menu.file.publish_to_pdf", "", true) {
         app.export_pdf();
     }
@@ -708,8 +719,39 @@ fn object_menu(app: &mut App, ui: &mut Ui) {
             app.toggle_clip_frame_lock();
         }
     });
-    todo_sub(ui, "menu.object.symmetry");
-    todo_sub(ui, "menu.object.symbol");
+    sub(ui, "menu.object.symmetry", |ui| {
+        let has_sym = app.selected_symmetry().is_some();
+        if item(ui, "menu.object.symmetry_create", "Alt+S", has && !has_sym) {
+            app.create_symmetry();
+        }
+        if item(ui, "menu.object.symmetry_edit", "", has_sym) {
+            app.dialog = Dialog::Symmetry;
+        }
+        if item(ui, "menu.object.symmetry_remove", "", has_sym) {
+            app.remove_symmetry();
+        }
+    });
+    sub(ui, "menu.object.symbol", |ui| {
+        let has_symbols = !app.doc().symbols.is_empty();
+        let has_instance = app
+            .selected_shapes()
+            .iter()
+            .any(|s| matches!(s.kind, ShapeKind::SymbolInstance { .. }));
+        if item(ui, "menu.object.symbol_new", "", has) {
+            app.create_symbol_from_selection();
+        }
+        if item(ui, "menu.object.symbol_insert", "", has_symbols) {
+            let last = app.doc().symbols.len().saturating_sub(1);
+            app.insert_symbol_instance(last);
+        }
+        if item(ui, "menu.object.symbol_revert", "", has_instance) {
+            app.revert_symbol_instances();
+        }
+        if item(ui, "menu.object.symbol_manager", "Ctrl+F3", true) {
+            app.show_dockers = true;
+            app.docker_tab = DockerTab::Symbols;
+        }
+    });
     todo_sub(ui, "menu.object.rollover");
     ui.separator();
     if item(ui, "menu.object.clear_transformations", "", has) {
@@ -726,7 +768,16 @@ fn object_menu(app: &mut App, ui: &mut Ui) {
             app.status = tr("status.click_source_object");
         }
     });
-    todo_sub(ui, "menu.object.clone_effect");
+    sub(ui, "menu.object.clone_effect", |ui| {
+        if item(ui, "menu.object.clone_shadow_from", "", has) {
+            app.pending_clone_effect = Some(crate::app::EffectKind::Shadow);
+            app.status = tr("status.click_source_object");
+        }
+        if item(ui, "menu.object.clone_transparency_from", "", has) {
+            app.pending_clone_effect = Some(crate::app::EffectKind::Transparency);
+            app.status = tr("status.click_source_object");
+        }
+    });
     if item(ui, "menu.object.clear_effect", "", has) {
         app.clear_effects();
     }
@@ -1243,9 +1294,13 @@ fn text_menu(app: &mut App, ui: &mut Ui) {
             }
         }
     });
-    todo(ui, "menu.text.make_web_compatible", "");
+    if item(ui, "menu.text.make_web_compatible", "", is_text) {
+        app.make_text_web_compatible();
+    }
     ui.separator();
-    todo(ui, "menu.text.encode", "");
+    if item(ui, "menu.text.encode", "", is_text) {
+        app.dialog = Dialog::Encode(Default::default());
+    }
     ui.separator();
     if item(ui, "menu.text.text_docker", "Ctrl+T", true) {
         app.show_dockers = true;

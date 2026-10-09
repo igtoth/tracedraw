@@ -237,6 +237,13 @@ pub struct SpellState {
     pub dictionary_words: usize,
 }
 
+/// Text > Encode.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct EncodeState {
+    pub from: crate::encode::Encoding,
+    pub to: crate::encode::Encoding,
+}
+
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct ThesaurusState {
     /// Word typed or taken from the selection.
@@ -296,6 +303,7 @@ pub enum Dialog {
     },
     Options,
     PageNumberSettings,
+    Symmetry,
     RenameLayer {
         layer: tracedraw_core::LayerId,
         name: String,
@@ -338,6 +346,7 @@ pub enum Dialog {
     TextStatistics,
     SpellCheck(SpellState),
     Thesaurus(ThesaurusState),
+    Encode(EncodeState),
     Grammar(GrammarState),
     Autocorrect(AutocorrectState),
     BorderGrommet(crate::border_grommet::BorderGrommetState),
@@ -919,6 +928,7 @@ pub fn show(app: &mut App, ctx: &Context) {
         }
         Dialog::SpellCheck(st) => spell_dialog(app, ctx, st, &mut close),
         Dialog::Thesaurus(st) => thesaurus_dialog(app, ctx, st, &mut close),
+        Dialog::Encode(st) => encode_dialog(app, ctx, st, &mut close),
         Dialog::Grammar(st) => grammar_dialog(app, ctx, st, &mut close),
         Dialog::Autocorrect(st) => autocorrect_dialog(app, ctx, st, &mut close),
         Dialog::BorderGrommet(st) => border_grommet_dialog(app, ctx, st, &mut close),
@@ -978,6 +988,67 @@ pub fn show(app: &mut App, ctx: &Context) {
                     app.file = None;
                     app.fit_pending = true;
                     app.show_welcome = false;
+                }
+            });
+        }
+        Dialog::Symmetry => {
+            window(ctx, tr("dialog.symmetry")).show(ctx, |ui| match app.selected_symmetry() {
+                Some((_, center, angle, lines)) => {
+                    let (mut c, mut a, mut n) = (center, angle, lines);
+                    let u = app.units;
+                    let mut changed = false;
+                    egui::Grid::new("symmetry").num_columns(2).show(ui, |ui| {
+                        ui.label(tr("dialog.mirror_lines"));
+                        changed |= ui.add(egui::DragValue::new(&mut n).range(1..=12)).changed();
+                        ui.end_row();
+                        ui.label(tr("dialog.mirror_angle"));
+                        changed |= ui
+                            .add(egui::DragValue::new(&mut a).speed(1.0).suffix("°"))
+                            .changed();
+                        ui.end_row();
+                        ui.label(tr("dialog.mirror_center"));
+                        ui.horizontal(|ui| {
+                            let (mut x, mut y) = (u.from_mm(c.x), u.from_mm(c.y));
+                            let cx = ui
+                                .add(egui::DragValue::new(&mut x).speed(0.5).prefix("x "))
+                                .changed();
+                            let cy = ui
+                                .add(egui::DragValue::new(&mut y).speed(0.5).prefix("y "))
+                                .changed();
+                            if cx || cy {
+                                c = tracedraw_core::geometry::Point::new(u.to_mm(x), u.to_mm(y));
+                                changed = true;
+                            }
+                        });
+                        ui.end_row();
+                    });
+                    if changed {
+                        app.set_symmetry(c, a, n);
+                    }
+                    ui.label(
+                        egui::RichText::new(tr("dialog.symmetry_hint"))
+                            .color(Tokens::TEXT_DIM)
+                            .size(11.0),
+                    );
+                    ui.horizontal(|ui| {
+                        if ui.button(tr("dialog.symmetry_bake")).clicked() {
+                            app.flatten_effects();
+                            close = true;
+                        }
+                        if ui.button(tr("menu.object.symmetry_remove")).clicked() {
+                            app.remove_symmetry();
+                            close = true;
+                        }
+                        if ui.button(tr("dialog.close")).clicked() {
+                            close = true;
+                        }
+                    });
+                }
+                None => {
+                    ui.label(tr("docker.no_objects_selected"));
+                    if ui.button(tr("dialog.close")).clicked() {
+                        close = true;
+                    }
                 }
             });
         }
@@ -2232,6 +2303,60 @@ fn thesaurus_lookup(app: &App, st: &mut ThesaurusState) {
     st.meanings = th.lookup(&st.word).to_vec();
     st.looked_up = Some(st.word.trim().to_string());
     st.selected = None;
+}
+
+fn encode_dialog(app: &mut App, ctx: &Context, st: &mut EncodeState, close: &mut bool) {
+    use crate::encode::Encoding;
+    let original = app.selected_text_content();
+    let mut apply = false;
+    window(ctx, tr("dialog.encode")).show(ctx, |ui| {
+        ui.set_min_width(420.0);
+        ui.label(egui::RichText::new(tr("dialog.encode_hint")).color(Tokens::TEXT_DIM));
+        ui.add_space(4.0);
+        let combo = |ui: &mut Ui, id: &str, label: &str, v: &mut Encoding| {
+            ui.horizontal(|ui| {
+                ui.label(label);
+                egui::ComboBox::from_id_salt(id)
+                    .selected_text(v.name())
+                    .show_ui(ui, |ui| {
+                        for e in Encoding::ALL {
+                            ui.selectable_value(v, e, e.name());
+                        }
+                    });
+            });
+        };
+        combo(ui, "encode_from", &tr("dialog.encode_from"), &mut st.from);
+        combo(ui, "encode_to", &tr("dialog.encode_to"), &mut st.to);
+        ui.separator();
+        ui.label(tr("dialog.preview"));
+        let preview = crate::encode::reinterpret(&original, st.from, st.to);
+        egui::ScrollArea::vertical()
+            .max_height(160.0)
+            .show(ui, |ui| {
+                ui.add(
+                    egui::TextEdit::multiline(&mut preview.clone())
+                        .desired_width(f32::INFINITY)
+                        .interactive(false),
+                );
+            });
+        ui.add_space(6.0);
+        ui.horizontal(|ui| {
+            let can = !original.is_empty() && st.from != st.to;
+            if ui
+                .add_enabled(can, egui::Button::new(tr("dialog.ok")))
+                .clicked()
+            {
+                apply = true;
+                *close = true;
+            }
+            if ui.button(tr("dialog.cancel")).clicked() {
+                *close = true;
+            }
+        });
+    });
+    if apply {
+        app.reencode_selected_text(st.from, st.to);
+    }
 }
 
 fn thesaurus_dialog(app: &mut App, ctx: &Context, st: &mut ThesaurusState, close: &mut bool) {

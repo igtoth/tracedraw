@@ -190,10 +190,11 @@ pub fn status_bar(app: &mut App, ui: &mut Ui) {
                 .shape(shapes[0].id)
                 .map(|(l, _)| l.name.clone())
                 .unwrap_or_default();
-            trf(
-                "status.object_on_layer",
-                &[("k", &kind_name(&shapes[0].kind)), ("l", &layer)],
-            )
+            let mut kind = kind_name(&shapes[0].kind);
+            if app.is_effect_clone(shapes[0].id) {
+                kind = format!("{kind} ({})", tr("status.effect_clone"));
+            }
+            trf("status.object_on_layer", &[("k", &kind), ("l", &layer)])
         } else {
             trf(
                 "status.n_objects_selected",

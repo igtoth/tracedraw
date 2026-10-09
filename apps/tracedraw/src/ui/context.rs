@@ -218,6 +218,9 @@ fn object_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {
         }
     });
     ui.separator();
+    if ci(ui, close, "menu.object.symmetry_create", "Alt+S", true) {
+        app.create_symmetry();
+    }
     if ci(ui, close, "context.create_symbol", "", true) {
         app.create_symbol_from_selection();
     }
