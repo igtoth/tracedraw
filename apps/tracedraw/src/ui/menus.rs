@@ -98,15 +98,82 @@ fn sub_label(label: &str) -> egui::RichText {
     egui::RichText::new(format!("        {label}")).size(FONT)
 }
 
-/// A menu item; `key` is an i18n key. Returns true when clicked.
+/// A menu item; `key` is an i18n key. Returns true when clicked. Items
+/// with a toolbar counterpart show its icon in the gutter.
 fn item(ui: &mut Ui, key: &str, shortcut: &str, enabled: bool) -> bool {
     let r = menu_row(ui, &tr(key), shortcut, enabled, None);
+    if let Some(a) = menu_icon(key) {
+        let rect = r.rect;
+        let ir = egui::Rect::from_center_size(
+            egui::pos2(rect.left() + GUTTER / 2.0, rect.center().y),
+            egui::vec2(16.0, 16.0),
+        );
+        let color = if enabled {
+            Tokens::TEXT
+        } else {
+            Tokens::TEXT_DIM
+        };
+        crate::ui::icons::draw_action(ui.painter(), ir, a, color);
+    }
     if r.clicked() {
         ui.close();
         true
     } else {
         false
     }
+}
+
+/// A menu item with a ready label and an optional icon.
+fn item_text(
+    ui: &mut Ui,
+    label: &str,
+    shortcut: &str,
+    enabled: bool,
+    icon: Option<crate::ui::icons::Action>,
+) -> bool {
+    let r = menu_row(ui, label, shortcut, enabled, None);
+    if let Some(a) = icon {
+        let rect = r.rect;
+        let ir = egui::Rect::from_center_size(
+            egui::pos2(rect.left() + GUTTER / 2.0, rect.center().y),
+            egui::vec2(16.0, 16.0),
+        );
+        let color = if enabled {
+            Tokens::TEXT
+        } else {
+            Tokens::TEXT_DIM
+        };
+        crate::ui::icons::draw_action(ui.painter(), ir, a, color);
+    }
+    if r.clicked() {
+        ui.close();
+        true
+    } else {
+        false
+    }
+}
+
+/// Toolbar icon for a menu item, when it has one.
+fn menu_icon(key: &str) -> Option<crate::ui::icons::Action> {
+    use crate::ui::icons::Action;
+    Some(match key {
+        "menu.file.new" => Action::New,
+        "menu.file.open" => Action::Open,
+        "menu.file.save" => Action::Save,
+        "menu.file.print" => Action::Print,
+        "menu.file.import" => Action::Import,
+        "menu.file.export" => Action::Export,
+        "menu.file.publish_to_pdf" => Action::Pdf,
+        "menu.edit.cut" => Action::Cut,
+        "menu.edit.copy" => Action::Copy,
+        "menu.edit.paste" => Action::Paste,
+        "menu.edit.undo" => Action::Undo,
+        "menu.edit.redo" => Action::Redo,
+        "menu.tools.options_app" => Action::Options,
+        "menu.view.fullscreen_preview" => Action::Fullscreen,
+        "menu.help.welcome_screen" => Action::Welcome,
+        _ => return None,
+    })
 }
 
 /// A checkable item (check mark on the left when `on`).
@@ -302,20 +369,22 @@ fn edit_menu(app: &mut App, ui: &mut Ui) {
         .redo_label()
         .map(|l| format!("{} {l}", tr("menu.edit.redo")))
         .unwrap_or_else(|| tr("menu.edit.redo"));
-    if menu_row(ui, &undo, "Ctrl+Z", app.engine.undo_label().is_some(), None).clicked() {
-        ui.close();
+    if item_text(
+        ui,
+        &undo,
+        "Ctrl+Z",
+        app.engine.undo_label().is_some(),
+        Some(crate::ui::icons::Action::Undo),
+    ) {
         app.undo();
     }
-    if menu_row(
+    if item_text(
         ui,
         &redo,
         "Ctrl+Shift+Z",
         app.engine.redo_label().is_some(),
-        None,
-    )
-    .clicked()
-    {
-        ui.close();
+        Some(crate::ui::icons::Action::Redo),
+    ) {
         app.redo();
     }
     if item(
