@@ -13,10 +13,26 @@
 | Mirror, repeat, reverse | off | |
 
 Shortcut: F11 opens the fill editor; G is the Interactive Fill tool.
-Dragging with Interactive Fill on an object sets a linear fill from the
-press point to the release point; Ctrl constrains the angle to 15 degree
+Dragging with Interactive Fill on an object (anywhere inside it, filled
+or not) sets a linear fill from the press point to the release point; a
+click gives the default fill; Ctrl constrains the angle to 15 degree
 steps; dragging a palette colour onto a stop recolours it; dragging a
 colour onto the fill line adds a stop.
+
+Property bar (Interactive Fill): the fill type (None, Uniform, Fountain,
+Pattern, Texture, Mesh), then the type's fields: the colour for a
+uniform fill; for a fountain the kind (Linear, Radial, Conical, Square),
+the start and end colours, the angle and the edge pad. With a selection
+the fields edit it; with nothing selected they set the default fill for
+the next object.
+
+Handles on the canvas (Interactive Fill, fountain-filled selection): a
+linear fill shows its axis as a dashed line between a start node and an
+end node (squares in the two colours) at `c -/+ h (cos a, sin a)` with
+`h = (w |cos a| + h |sin a|) / 2`; dragging either node turns the axis
+about the centre and sets the angle. Radial, conical and square fills
+show one node at `c + offset * (w, h) / 2`; dragging it sets the centre
+offset, clamped to the bounds.
 
 ## Formulas
 
@@ -44,3 +60,8 @@ Bounding box `b` of the object in page space, centre `c`.
   then the colours differ.
 - Given a PDF export of a 3-stop fill, then the shading uses a
   stitching function with one bound at 0.3.
+- Given a 40 x 20 mm rectangle with a 0 degree linear fill, then the
+  handles are at (0, 10) and (40, 10); dragging the end node to (20, 30)
+  makes the angle 90 degrees.
+- Given a radial fill, dragging the centre node to (30, 15) on that
+  rectangle sets the offset to (0.5, 0.5); beyond the edge it clamps to 1.

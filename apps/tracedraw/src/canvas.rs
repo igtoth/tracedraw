@@ -186,6 +186,7 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
     draw_frame_links(app, painter);
     draw_symmetry_lines(app, painter, rect);
     draw_anchors(app, painter);
+    draw_fountain_handles(app, painter);
 
     // 3-point tools: base segment waiting for the third click, previewed to the pointer.
     if let (Some((a, b)), Some(c)) = (app.three_point_base, app.pointer_page) {
@@ -455,6 +456,57 @@ fn draw_symmetry_lines(app: &App, painter: &Painter, rect: ERect) {
 
 /// Connector anchors: small diamonds on the selected object with the
 /// Anchor Editing tool, and on both ends while a connector is dragged.
+/// Interactive Fill: the fountain axis (dashed, between two square
+/// nodes) or the centre node of a radial, conical or square fountain.
+fn draw_fountain_handles(app: &App, painter: &Painter) {
+    if app.tool != Tool::InteractiveFill {
+        return;
+    }
+    let Some((_, f, b)) = app.selected_fountain() else {
+        return;
+    };
+    let view = &app.view;
+    let handles = crate::fill_tool::fountain_handles(&f, b);
+    if handles.len() == 2 {
+        let a = view.to_screen(handles[0].1);
+        let z = view.to_screen(handles[1].1);
+        // Dashed axis.
+        let d = z - a;
+        let len = d.length().max(1e-6);
+        let step = 6.0;
+        let mut t = 0.0;
+        while t < len {
+            let t1 = (t + step * 0.6).min(len);
+            painter.line_segment(
+                [a + d * (t / len), a + d * (t1 / len)],
+                EStroke::new(1.0, Tokens::SELECTION),
+            );
+            t += step;
+        }
+    }
+    for (h, p) in handles {
+        let sp = view.to_screen(p);
+        let color = match h {
+            crate::fill_tool::FountainHandle::Start | crate::fill_tool::FountainHandle::Center => {
+                f.first_color()
+            }
+            crate::fill_tool::FountainHandle::End => f.last_color(),
+        };
+        let [r, g, bl] = color.to_rgb8();
+        painter.rect_filled(
+            ERect::from_center_size(sp, egui::vec2(9.0, 9.0)),
+            0.0,
+            Color32::from_rgb(r, g, bl),
+        );
+        painter.rect_stroke(
+            ERect::from_center_size(sp, egui::vec2(9.0, 9.0)),
+            0.0,
+            EStroke::new(1.0, Tokens::SELECTION),
+            egui::StrokeKind::Outside,
+        );
+    }
+}
+
 fn draw_anchors(app: &App, painter: &Painter) {
     let view = &app.view;
     let mut shown: Vec<(tracedraw_core::ShapeId, bool)> = Vec::new();

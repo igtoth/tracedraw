@@ -1443,7 +1443,8 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                     );
                 }
             }
-            Tool::InteractiveFill | Tool::AreaFill | Tool::MeshFill => {
+            Tool::InteractiveFill => interactive_fill_bar(app, ui, &shapes),
+            Tool::AreaFill | Tool::MeshFill => {
                 ui.label(
                     egui::RichText::new(tr("toolbar.fill_hint"))
                         .color(Tokens::TEXT_DIM)
@@ -1927,4 +1928,151 @@ fn shape_tool_bar(app: &mut App, ui: &mut Ui) {
                 .size(11.0),
         );
     }
+}
+
+/// Interactive Fill property bar: fill type, then the fields of that type
+/// (colour; fountain kind, start and end colours, angle, edge pad). With a
+/// selection the fields edit it; otherwise they set the default fill.
+fn interactive_fill_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::document::Shape]) {
+    use tracedraw_core::style::FountainKind;
+    let mut fill = shapes
+        .first()
+        .map(|s| s.fill.clone())
+        .unwrap_or_else(|| app.default_fill.clone());
+    let kind = match &fill {
+        Fill::None => 0,
+        Fill::Solid(_) => 1,
+        Fill::Fountain(_) => 2,
+        Fill::Pattern(_) => 3,
+        Fill::Texture(_) => 4,
+        Fill::Mesh(_) => 5,
+    };
+    let mut changed = false;
+    for (i, key) in [
+        "docker.fill_none",
+        "docker.fill_uniform",
+        "docker.fill_fountain",
+        "docker.fill_pattern",
+        "docker.fill_texture",
+        "docker.fill_mesh",
+    ]
+    .iter()
+    .enumerate()
+    {
+        if ui.selectable_label(kind == i, tr(key)).clicked() && kind != i {
+            let base = fill
+                .preview_color()
+                .unwrap_or(tracedraw_core::Color::cmyk_pct(0.0, 0.0, 0.0, 20.0));
+            fill = match i {
+                0 => Fill::None,
+                1 => Fill::Solid(base),
+                2 => Fill::linear(base, tracedraw_core::Color::WHITE, 0.0),
+                3 => Fill::Pattern(tracedraw_core::Pattern::TwoColor {
+                    tile: tracedraw_core::style::PatternTile::Checker,
+                    front: base,
+                    back: tracedraw_core::Color::WHITE,
+                    size_mm: 10.0,
+                }),
+                4 => Fill::Texture(tracedraw_core::style::Texture {
+                    kind: tracedraw_core::style::TextureKind::Clouds,
+                    color_a: base,
+                    color_b: tracedraw_core::Color::WHITE,
+                    scale: 20.0,
+                    seed: 1,
+                }),
+                _ => Fill::Mesh(tracedraw_core::Mesh::new(
+                    shapes
+                        .first()
+                        .map(|s| s.bounds())
+                        .unwrap_or(Rect::new(0.0, 0.0, 100.0, 100.0)),
+                    2,
+                    2,
+                    base,
+                )),
+            };
+            changed = true;
+        }
+    }
+    vsep(ui);
+    let color_button = |ui: &mut Ui, c: &mut tracedraw_core::Color| -> bool {
+        let mut rgb = c.to_rgb8();
+        if ui.color_edit_button_srgb(&mut rgb).changed() {
+            *c = tracedraw_core::Color::rgb8(rgb[0], rgb[1], rgb[2]);
+            true
+        } else {
+            false
+        }
+    };
+    match &mut fill {
+        Fill::Solid(c) => {
+            ui.label(
+                egui::RichText::new(tr("docker.colour"))
+                    .color(Tokens::TEXT_DIM)
+                    .size(11.0),
+            );
+            changed |= color_button(ui, c);
+        }
+        Fill::Fountain(f) => {
+            for (k, key) in [
+                (FountainKind::Linear, "fill.linear"),
+                (FountainKind::Radial, "fill.radial"),
+                (FountainKind::Conical, "fill.conical"),
+                (FountainKind::Square, "fill.square"),
+            ] {
+                if ui.selectable_label(f.kind == k, tr(key)).clicked() && f.kind != k {
+                    f.kind = k;
+                    changed = true;
+                }
+            }
+            vsep(ui);
+            if let Some(first) = f.stops.first_mut() {
+                changed |= color_button(ui, &mut first.color);
+            }
+            if let Some(last) = f.stops.last_mut() {
+                changed |= color_button(ui, &mut last.color);
+            }
+            ui.label(
+                egui::RichText::new(tr("toolbar.angle"))
+                    .color(Tokens::TEXT_DIM)
+                    .size(11.0),
+            );
+            changed |= ui
+                .add(
+                    egui::DragValue::new(&mut f.angle)
+                        .speed(1.0)
+                        .range(-360.0..=360.0)
+                        .fixed_decimals(1)
+                        .suffix("°"),
+                )
+                .changed();
+            ui.label(
+                egui::RichText::new(tr("docker.edge_pad"))
+                    .color(Tokens::TEXT_DIM)
+                    .size(11.0),
+            );
+            let mut pad = f.edge_pad * 100.0;
+            if ui
+                .add(
+                    egui::DragValue::new(&mut pad)
+                        .speed(1.0)
+                        .range(0.0..=49.0)
+                        .suffix(" %"),
+                )
+                .changed()
+            {
+                f.edge_pad = pad / 100.0;
+                changed = true;
+            }
+        }
+        _ => {}
+    }
+    if changed {
+        app.apply_fill_or_default(fill);
+    }
+    vsep(ui);
+    ui.label(
+        egui::RichText::new(tr("toolbar.fill_hint"))
+            .color(Tokens::TEXT_DIM)
+            .size(11.0),
+    );
 }

@@ -86,7 +86,7 @@ Counts: works 125, partial 1 (`.cdr` content coverage), missing 1 (CMX import), 
 | Pattern fill: two-colour (8 tiles), bitmap, full-colour vector (tile from the selection); texture fill (clouds, marble, noise, wood) | works; PostScript fills not planned (legacy) |
 | Mesh fill with node editing | works |
 | Area Fill (enclosed region) | works |
-| Interactive Fill tool | works |
+| Interactive Fill tool: property bar with fill type and fountain fields, axis and centre handles on the canvas | works |
 | Outline: width, colour, caps, joins, dashes, nib, behind fill, scale with object, arrowheads (presets and custom from the selection) | works |
 | Outline Pen and Outline Color (hidden flyout, Options toggle); calligraphic nib rendered and exported | works |
 | Eyedroppers: colour (bitmap sampling, fill or outline) and attributes (properties, transformations, effects groups) | works |

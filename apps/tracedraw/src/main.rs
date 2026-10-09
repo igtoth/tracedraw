@@ -22,6 +22,7 @@ mod effects_ui;
 mod encode;
 mod export;
 mod eyedropper;
+mod fill_tool;
 mod grammar;
 mod i18n;
 mod interaction;

@@ -681,7 +681,11 @@ impl App {
 
     fn fill_input(&mut self, response: &Response, p: Point) {
         if response.drag_started_by(PointerButton::Primary) {
-            if let Some(id) = self.hit_test(p) {
+            if let Some(h) = self.fountain_handle_at(p) {
+                self.drag = Drag::FountainHandle { handle: h };
+                return;
+            }
+            if let Some(id) = self.hit_test_inside(p) {
                 self.select(vec![id]);
                 self.drag = Drag::FillGradient {
                     shape: id,
@@ -691,12 +695,19 @@ impl App {
             }
         }
         if response.dragged_by(PointerButton::Primary) {
+            if let Drag::FountainHandle { handle } = self.drag {
+                self.drag_fountain_handle(handle, p);
+                return;
+            }
             if let Drag::FillGradient { current, .. } = &mut self.drag {
                 *current = p;
             }
         }
         if response.clicked_by(PointerButton::Primary) {
-            if let Some(id) = self.hit_test(p) {
+            if self.fountain_handle_at(p).is_some() {
+                return;
+            }
+            if let Some(id) = self.hit_test_inside(p) {
                 self.select(vec![id]);
                 let fill = match &self.default_fill {
                     Fill::None => Fill::Solid(Color::cmyk_pct(0.0, 0.0, 0.0, 20.0)),
@@ -871,7 +882,8 @@ impl App {
             }
             Drag::NodeMarquee { start, current } => self.finish_node_marquee(start, current),
             Drag::NewGuide { .. } => self.finish_guide_drag(),
-            Drag::ContourDrag { .. }
+            Drag::FountainHandle { .. }
+            | Drag::ContourDrag { .. }
             | Drag::Shadow { .. }
             | Drag::MoveGuide { .. }
             | Drag::Node { .. }

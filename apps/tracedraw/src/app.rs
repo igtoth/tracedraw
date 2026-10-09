@@ -283,6 +283,10 @@ pub enum Drag {
         start: Point,
         current: Point,
     },
+    /// Moving a fountain handle of the selected object (Interactive Fill).
+    FountainHandle {
+        handle: crate::fill_tool::FountainHandle,
+    },
     /// Zoom tool rubber band.
     ZoomBox {
         start: Point,
