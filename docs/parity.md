@@ -29,7 +29,7 @@ Counts: works 122, partial 1 (`.cdr` content coverage), missing 1 (CMX import), 
 
 | Capability | Status |
 |---|---|
-| Rectangle, 3-point rectangle, corner radius, page frame on double-click | works |
+| Rectangle, 3-point rectangle, corner radius, page frame on double-click; Ctrl square, Shift from centre | works (see `behavior/shape-tools.md`) |
 | Ellipse, 3-point ellipse, pie and arc | works |
 | Polygon, Star, Complex star, Spiral (symmetric, logarithmic), Graph paper, Common shapes, Impact | works |
 | Freehand, 2-point line, Bezier, Pen, B-spline, Polyline, 3-point curve | works |
@@ -38,7 +38,7 @@ Counts: works 122, partial 1 (`.cdr` content coverage), missing 1 (CMX import), 
 | Dimensions: parallel, horizontal/vertical, angular, segment, 3-point callout | works |
 | Connectors: straight, right-angle, rounded right-angle; Anchor Editing tool (add, move, delete anchors; connectors snap to them) | works |
 | Text (artistic and paragraph), Table | works |
-| Crop, Knife, Segment delete, Eraser | works |
+| Crop, Knife, Segment delete, Eraser (band subtraction with thickness and nib shape) | works (see `behavior/crop-knife-eraser.md`) |
 | QR code, barcode (Code 128, EAN-13, EAN-8) and page number insertion | works |
 
 ## 3. Shape and node editing

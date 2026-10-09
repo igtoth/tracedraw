@@ -596,6 +596,44 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                     );
                 }
             }
+            Tool::Eraser => {
+                ui.label(
+                    egui::RichText::new(tr("toolbar.eraser_thickness"))
+                        .color(Tokens::TEXT_DIM)
+                        .size(11.0),
+                );
+                let mut w = app.units.from_mm(app.eraser_width);
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut w)
+                            .speed(0.1)
+                            .range(0.01..=1000.0)
+                            .suffix(format!(" {}", app.units.short())),
+                    )
+                    .changed()
+                {
+                    app.eraser_width = app.units.to_mm(w).max(0.01);
+                }
+                if ui
+                    .add(egui::Button::new("\u{25cf}").selected(!app.eraser_square))
+                    .on_hover_text(tr("toolbar.eraser_round"))
+                    .clicked()
+                {
+                    app.eraser_square = false;
+                }
+                if ui
+                    .add(egui::Button::new("\u{25a0}").selected(app.eraser_square))
+                    .on_hover_text(tr("toolbar.eraser_square"))
+                    .clicked()
+                {
+                    app.eraser_square = true;
+                }
+                ui.label(
+                    egui::RichText::new(tr("hint.bar_eraser"))
+                        .color(Tokens::TEXT_DIM)
+                        .size(11.0),
+                );
+            }
             Tool::Smooth | Tool::Smear | Tool::Twirl => {
                 ui.label(
                     egui::RichText::new(tr("toolbar.nib_size"))

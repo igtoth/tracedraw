@@ -92,6 +92,39 @@ pub fn offset(path: &BezPath, d: f64) -> BezPath {
     from_shapes(out)
 }
 
+/// The area swept by a round or square nib of width `width` along a
+/// polyline (the Eraser's band). A single point gives a dot.
+pub fn stroke_band(points: &[Point], width: f64, square: bool) -> BezPath {
+    use crate::geometry::Shape as _;
+    use i_overlay::mesh::float::stroke::offset::StrokeOffset;
+    use i_overlay::mesh::float::style::{LineCap, LineJoin, StrokeStyle};
+    if points.is_empty() || width <= 0.0 {
+        return BezPath::new();
+    }
+    let r = width / 2.0;
+    if points.len() == 1 || points.iter().all(|p| (*p - points[0]).hypot() < 1e-9) {
+        let c = points[0];
+        return if square {
+            crate::geometry::Rect::new(c.x - r, c.y - r, c.x + r, c.y + r).to_path(0.01)
+        } else {
+            crate::geometry::Circle::new(c, r).to_path(0.01)
+        };
+    }
+    let pts: Vec<[f64; 2]> = points.iter().map(|p| [p.x, p.y]).collect();
+    let style = if square {
+        StrokeStyle::new(width)
+            .line_join(LineJoin::Miter(4.0))
+            .start_cap(LineCap::Square)
+            .end_cap(LineCap::Square)
+    } else {
+        StrokeStyle::new(width)
+            .line_join(LineJoin::Round(0.05))
+            .start_cap(LineCap::Round(0.05))
+            .end_cap(LineCap::Round(0.05))
+    };
+    from_shapes(pts.stroke(style, false))
+}
+
 /// Union of one path with itself: removes self-overlaps (Simplify).
 pub fn simplify(path: &BezPath) -> BezPath {
     let subj = contours(path);

@@ -194,10 +194,12 @@ impl Handle {
 #[derive(Debug, Clone)]
 pub enum Drag {
     None,
-    /// Drawing a new box shape from `start` (page space).
+    /// Drawing a new box shape from `start` (page space); with Shift the
+    /// box grows from `start` as its centre.
     Box {
         start: Point,
         current: Point,
+        from_center: bool,
     },
     /// Base segment of a 3-point rectangle, ellipse or curve.
     ThreePointBase {
@@ -398,6 +400,9 @@ pub struct App {
     pub distort_amount: f64,
     pub distort_frequency: u32,
     pub brush_radius: f64,
+    /// Eraser nib: thickness in mm and shape.
+    pub eraser_width: f64,
+    pub eraser_square: bool,
     pub shadow_default: tracedraw_core::Shadow,
     pub text_font: String,
     pub text_size_pt: f64,
@@ -801,6 +806,8 @@ impl App {
             distort_amount: 20.0,
             distort_frequency: 12,
             brush_radius: 10.0,
+            eraser_width: 6.35,
+            eraser_square: false,
             shadow_default: tracedraw_core::Shadow::default(),
             text_font: "Arial".into(),
             text_size_pt: 24.0,
@@ -1328,6 +1335,17 @@ impl App {
         }
         self.run(Command::AddShape { layer, shape });
         Some(id)
+    }
+
+    /// The rectangle of a box drag: corner to corner, or centred on the
+    /// start point when drawn with Shift.
+    pub fn box_rect(start: Point, current: Point, from_center: bool) -> Rect {
+        if from_center {
+            let d = current - start;
+            Rect::from_points(start - d, start + d)
+        } else {
+            Rect::from_points(start, current)
+        }
     }
 
     pub fn create_box_shape(&mut self, a: Point, b: Point) {

@@ -224,6 +224,7 @@ impl App {
                     self.drag = Drag::Box {
                         start: p,
                         current: p,
+                        from_center: false,
                     };
                 }
                 if response.dragged_by(PointerButton::Primary) {
@@ -318,16 +319,23 @@ impl App {
             self.drag = Drag::Box {
                 start: p,
                 current: p,
+                from_center: mods.shift,
             };
         }
         if response.dragged_by(PointerButton::Primary) {
-            if let Drag::Box { start, current } = &mut self.drag {
+            if let Drag::Box {
+                start,
+                current,
+                from_center,
+            } = &mut self.drag
+            {
                 let mut q = p;
                 if mods.ctrl {
                     let d = q - *start;
                     let m = d.x.abs().max(d.y.abs());
                     q = *start + Vec2::new(m * d.x.signum(), m * d.y.signum());
                 }
+                *from_center = mods.shift;
                 *current = q;
             }
         }

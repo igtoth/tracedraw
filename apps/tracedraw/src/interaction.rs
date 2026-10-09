@@ -277,11 +277,27 @@ impl App {
                 }
             }
             Tool::Eraser => {
-                if response.clicked() {
+                // Drag erases a band; a click erases a dot (double-click
+                // on an object deletes it whole).
+                if response.double_clicked_by(PointerButton::Primary) {
                     if let Some(id) = self.hit_test(p) {
                         self.run(Command::DeleteShapes { shapes: vec![id] });
                         self.selection.retain(|s| *s != id);
                     }
+                } else if response.drag_started_by(PointerButton::Primary) {
+                    self.drag = Drag::Freehand { points: vec![p] };
+                } else if response.dragged_by(PointerButton::Primary) {
+                    if let Drag::Freehand { points } = &mut self.drag {
+                        if points
+                            .last()
+                            .map(|l| (*l - p).hypot() > 0.3)
+                            .unwrap_or(true)
+                        {
+                            points.push(p);
+                        }
+                    }
+                } else if response.clicked_by(PointerButton::Primary) {
+                    self.erase_along(&[p]);
                 }
             }
             _ => {
@@ -528,10 +544,16 @@ impl App {
             self.drag = Drag::Box {
                 start: p,
                 current: p,
+                from_center: mods.shift,
             };
         }
         if response.dragged_by(PointerButton::Primary) {
-            if let Drag::Box { start, current } = &mut self.drag {
+            if let Drag::Box {
+                start,
+                current,
+                from_center,
+            } = &mut self.drag
+            {
                 let mut q = p;
                 if mods.ctrl {
                     // Constrain to a square/circle.
@@ -539,12 +561,9 @@ impl App {
                     let m = d.x.abs().max(d.y.abs());
                     q = *start + Vec2::new(m * d.x.signum(), m * d.y.signum());
                 }
-                if mods.shift {
-                    // Draw from the centre.
-                    let d = q - *start;
-                    *current = *start + d;
-                    return;
-                }
+                // Shift draws from the centre (checked while dragging, as
+                // in the target design).
+                *from_center = mods.shift;
                 *current = q;
             }
         }
@@ -707,9 +726,15 @@ impl App {
         let drag = std::mem::replace(&mut self.drag, Drag::None);
         match drag {
             Drag::Anchor { .. } => {}
-            Drag::Box { start, current } => {
-                if !self.finish_tools2_box(start, current) {
-                    self.create_box_shape(start, current);
+            Drag::Box {
+                start,
+                current,
+                from_center,
+            } => {
+                let r = App::box_rect(start, current, from_center);
+                let (a, b) = (Point::new(r.x0, r.y0), Point::new(r.x1, r.y1));
+                if !self.finish_tools2_box(a, b) {
+                    self.create_box_shape(a, b);
                 }
             }
             Drag::Connector { from, current, .. } if self.tool == Tool::Blend => {
@@ -738,6 +763,7 @@ impl App {
                 start,
                 current,
             } => self.finish_connector(from, start, current),
+            Drag::Freehand { points } if self.tool == Tool::Eraser => self.erase_along(&points),
             Drag::Freehand { points } if self.tool == Tool::ShapeRecognition => {
                 self.finish_shape_recognition(points)
             }

@@ -609,3 +609,120 @@ impl App {
         }
     }
 }
+
+// ----- Eraser ----------------------------------------------------------------------
+
+impl App {
+    /// Eraser: subtract the nib's band along `points` (page space) from
+    /// the selected objects, or from the object under the first point.
+    /// Objects become curves; what vanishes entirely is deleted.
+    pub fn erase_along(&mut self, points: &[Point]) {
+        use tracedraw_core::document::Shape;
+        use tracedraw_core::geometry::Shape as _;
+        let Some(first) = points.first().copied() else {
+            return;
+        };
+        let band =
+            tracedraw_core::shaping::stroke_band(points, self.eraser_width, self.eraser_square);
+        if band.elements().is_empty() {
+            return;
+        }
+        let targets: Vec<Shape> = if self.selection.is_empty() {
+            self.hit_test(first)
+                .and_then(|id| self.doc().find_shape(id).cloned())
+                .into_iter()
+                .collect()
+        } else {
+            self.selected_shapes()
+        };
+        let mut cmds = Vec::new();
+        let mut deleted = Vec::new();
+        for s in targets {
+            if matches!(
+                s.kind,
+                ShapeKind::Bitmap { .. } | ShapeKind::Group { .. } | ShapeKind::ClipFrame { .. }
+            ) {
+                continue;
+            }
+            let page_path = s.page_path();
+            // Quick reject: the band must touch the object's bounds.
+            if page_path
+                .bounding_box()
+                .intersect(band.bounding_box())
+                .area()
+                <= 0.0
+            {
+                continue;
+            }
+            let remaining = tracedraw_core::shaping::overlay(
+                &page_path,
+                &band,
+                tracedraw_core::shaping::Op::Trim,
+            );
+            if remaining.elements().is_empty() {
+                deleted.push(s.id);
+                continue;
+            }
+            let local = s.transform.inverse() * remaining;
+            cmds.push(Command::SetShapeKind {
+                shape: s.id,
+                kind: ShapeKind::Path {
+                    path: local,
+                    closed: true,
+                },
+            });
+        }
+        if !deleted.is_empty() {
+            cmds.push(Command::DeleteShapes {
+                shapes: deleted.clone(),
+            });
+            self.selection.retain(|id| !deleted.contains(id));
+        }
+        if !cmds.is_empty() {
+            let _ = self.engine.run_batch("Eraser", &cmds);
+        }
+    }
+}
+
+#[cfg(test)]
+mod eraser_tests {
+    use super::*;
+    use tracedraw_core::geometry::Rect;
+
+    #[test]
+    fn a_band_through_a_rectangle_splits_it_and_a_dot_outside_does_nothing() {
+        let mut app = App::headless();
+        let id = app
+            .new_shape(ShapeKind::Rect {
+                rect: Rect::new(0.0, 0.0, 40.0, 20.0),
+                radius: 0.0,
+            })
+            .unwrap();
+        app.select(vec![id]);
+        app.eraser_width = 4.0;
+        // Vertical band down the middle: two pieces remain.
+        app.erase_along(&[Point::new(20.0, -5.0), Point::new(20.0, 25.0)]);
+        let s = app.doc().find_shape(id).unwrap();
+        let ShapeKind::Path { path, .. } = &s.kind else {
+            panic!("{:?}", s.kind);
+        };
+        let subpaths = path
+            .elements()
+            .iter()
+            .filter(|e| matches!(e, tracedraw_core::geometry::PathEl::MoveTo(_)))
+            .count();
+        assert_eq!(subpaths, 2);
+        let b = s.bounds();
+        assert!(
+            (b.width() - 40.0).abs() < 0.1 && (b.height() - 20.0).abs() < 0.1,
+            "{b:?}"
+        );
+        // A dot far away leaves it alone.
+        app.erase_along(&[Point::new(100.0, 100.0)]);
+        assert!(app.doc().find_shape(id).is_some());
+        // Erasing everything deletes the object.
+        app.eraser_width = 100.0;
+        app.erase_along(&[Point::new(0.0, 10.0), Point::new(40.0, 10.0)]);
+        assert!(app.doc().find_shape(id).is_none());
+    }
+}

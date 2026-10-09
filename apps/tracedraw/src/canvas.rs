@@ -203,23 +203,26 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
 
     // Rubber bands and in-progress tools.
     match &app.drag {
-        Drag::Box { start, current }
-        | Drag::Marquee { start, current }
-        | Drag::ZoomBox { start, current } => {
-            let r = view.rect_to_screen(Rect::from_points(*start, *current));
+        Drag::Box {
+            start,
+            current,
+            from_center,
+        } => {
+            let page_rect = App::box_rect(*start, *current, *from_center);
+            let r = view.rect_to_screen(page_rect);
             let stroke = EStroke::new(1.0, Tokens::SELECTION);
             painter.rect_stroke(r, 0.0, stroke, epaint::StrokeKind::Outside);
-            if matches!(app.drag, Drag::Box { .. })
-                && matches!(app.tool, Tool::Ellipse | Tool::ThreePointEllipse)
-            {
-                let pts = flatten(
-                    &tracedraw_core::geometry::ellipse_path(Rect::from_points(*start, *current)),
-                    view,
-                );
+            if matches!(app.tool, Tool::Ellipse | Tool::ThreePointEllipse) {
+                let pts = flatten(&tracedraw_core::geometry::ellipse_path(page_rect), view);
                 for (p, _) in pts {
                     painter.add(epaint::PathShape::closed_line(p, stroke));
                 }
             }
+        }
+        Drag::Marquee { start, current } | Drag::ZoomBox { start, current } => {
+            let r = view.rect_to_screen(Rect::from_points(*start, *current));
+            let stroke = EStroke::new(1.0, Tokens::SELECTION);
+            painter.rect_stroke(r, 0.0, stroke, epaint::StrokeKind::Outside);
         }
         Drag::ThreePointBase { start, current } => {
             painter.line_segment(
