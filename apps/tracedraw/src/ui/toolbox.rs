@@ -53,14 +53,25 @@ pub fn toolbox(app: &mut App, ui: &mut Ui) {
             format!("{} ({})", shown.name(), shown.shortcut_label())
         };
         let resp = resp.on_hover_text(tip);
-        if resp.clicked() {
+        // A plain click picks the shown tool. Releasing after a hold that
+        // opened the flyout leaves it open so an item can be chosen.
+        if resp.clicked() && app.flyout_open != Some(gi) {
             app.set_tool(shown);
-            app.flyout_open = None;
         }
-        if group.tools.len() > 1
-            && (resp.secondary_clicked() || resp.drag_started() || resp.long_touched())
-        {
-            app.flyout_open = Some(gi);
+        if group.tools.len() > 1 {
+            // Right click, a drag, or press-and-hold for 0.4 s opens the flyout.
+            let held = resp.is_pointer_button_down_on()
+                && ui.input(|i| {
+                    let started = i.pointer.press_start_time().unwrap_or(i.time);
+                    i.time - started >= 0.4
+                });
+            if resp.is_pointer_button_down_on() && !held {
+                ui.ctx()
+                    .request_repaint_after(std::time::Duration::from_millis(100));
+            }
+            if resp.secondary_clicked() || resp.drag_started() || resp.long_touched() || held {
+                app.flyout_open = Some(gi);
+            }
         }
         if app.flyout_open == Some(gi) {
             let pos = rect.right_top() + Vec2::new(4.0, 0.0);
@@ -68,6 +79,7 @@ pub fn toolbox(app: &mut App, ui: &mut Ui) {
             egui::Area::new(egui::Id::new(("flyout", gi)))
                 .fixed_pos(pos)
                 .order(egui::Order::Foreground)
+                .fade_in(false)
                 .show(ui.ctx(), |ui| {
                     egui::Frame::popup(ui.style()).show(ui, |ui| {
                         ui.horizontal(|ui| {

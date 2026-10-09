@@ -42,6 +42,7 @@ pub fn context_menu(app: &mut App, ui: &mut Ui, response: &Response) {
     let mut close = false;
     egui::Area::new(id)
         .order(egui::Order::Foreground)
+        .fade_in(false)
         .fixed_pos(pos)
         .show(ui.ctx(), |ui| {
             egui::Frame::popup(ui.style()).show(ui, |ui| {

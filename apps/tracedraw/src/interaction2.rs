@@ -295,6 +295,7 @@ impl App {
     }
 
     fn free_transform_input(&mut self, response: &Response, p: Point, mods: Modifiers) {
+        use crate::app::FreeTransformMode as M;
         if response.drag_started_by(PointerButton::Primary) {
             if let Some(id) = self.hit_test(p) {
                 if !self.selection.contains(&id) {
@@ -302,46 +303,40 @@ impl App {
                 }
             }
             if !self.selection.is_empty() {
+                if self.free_transform_duplicate {
+                    // Transform a copy, leave the original where it is.
+                    let offset = self.duplicate_offset;
+                    self.duplicate_offset = Vec2::ZERO;
+                    self.duplicate();
+                    self.duplicate_offset = offset;
+                }
                 self.drag = Drag::Rotate {
                     center: p,
                     start_angle: 0.0,
                     current_angle: 0.0,
                 };
                 self.free_transform_last = p;
+                self.free_transform_reflected = false;
             }
         }
         if response.dragged_by(PointerButton::Primary) {
             if let Drag::Rotate { center, .. } = self.drag {
                 let last = self.free_transform_last;
                 self.free_transform_last = p;
-                let t = if mods.alt {
-                    // Scale about the press point.
-                    let d0 = (last - center).hypot().max(1e-6);
-                    let d1 = (p - center).hypot().max(1e-6);
-                    Affine::translate(center.to_vec2())
-                        * Affine::scale(d1 / d0)
-                        * Affine::translate(-center.to_vec2())
+                let mode = if mods.alt {
+                    M::Scale
                 } else if mods.ctrl {
-                    // Skew along x.
-                    let k = (p.x - last.x) / 50.0;
-                    Affine::translate(center.to_vec2())
-                        * Affine::skew(k, 0.0)
-                        * Affine::translate(-center.to_vec2())
+                    M::Skew
                 } else if mods.shift {
-                    // Reflect about the line from the press point: flip horizontally.
-                    let d = p - last;
-                    if d.x.abs() > 20.0 {
-                        Affine::translate(center.to_vec2())
-                            * Affine::new([-1.0, 0.0, 0.0, 1.0, 0.0, 0.0])
-                            * Affine::translate(-center.to_vec2())
-                    } else {
-                        Affine::IDENTITY
-                    }
+                    M::Reflection
                 } else {
-                    let a0 = (last - center).atan2();
-                    let a1 = (p - center).atan2();
-                    Affine::rotate_about(a1 - a0, center)
+                    self.free_transform_mode
                 };
+                let first = !self.free_transform_reflected;
+                if mode == M::Reflection {
+                    self.free_transform_reflected = true;
+                }
+                let t = free_transform_step(mode, center, last, p, first);
                 if t != Affine::IDENTITY {
                     self.transform_selection(t);
                 }
@@ -1138,3 +1133,109 @@ fn roughen(path: &BezPath, at: Point, radius: f64, amount: f64) -> BezPath {
 }
 
 pub fn _unused(_: Rect) {}
+
+/// One drag step of the Free Transform tool: the affine that takes the
+/// selection from the pointer at `last` to the pointer at `p`, about the
+/// press point `center`. `first` is true for the first step of a drag.
+pub fn free_transform_step(
+    mode: crate::app::FreeTransformMode,
+    center: Point,
+    last: Point,
+    p: Point,
+    first: bool,
+) -> Affine {
+    use crate::app::FreeTransformMode as M;
+    let about =
+        |t: Affine| Affine::translate(center.to_vec2()) * t * Affine::translate(-center.to_vec2());
+    match mode {
+        M::Scale => {
+            // Scale about the press point by the ratio of distances.
+            let d0 = (last - center).hypot().max(1e-6);
+            let d1 = (p - center).hypot().max(1e-6);
+            about(Affine::scale(d1 / d0))
+        }
+        M::Skew => {
+            // Horizontal motion skews along x, vertical along y.
+            let d = p - last;
+            about(Affine::skew(d.x / 50.0, d.y / 50.0))
+        }
+        M::Reflection => {
+            // Mirror across the line from the press point through the
+            // pointer. The first step reflects; later steps turn the mirror
+            // line, which is a rotation by twice the angle change.
+            let a1 = (p - center).atan2();
+            if first {
+                let (sn, cs) = (2.0 * a1).sin_cos();
+                about(Affine::new([cs, sn, sn, -cs, 0.0, 0.0]))
+            } else {
+                let a0 = (last - center).atan2();
+                Affine::rotate_about(2.0 * (a1 - a0), center)
+            }
+        }
+        M::Rotation => {
+            let a0 = (last - center).atan2();
+            let a1 = (p - center).atan2();
+            Affine::rotate_about(a1 - a0, center)
+        }
+    }
+}
+
+#[cfg(test)]
+mod free_transform_tests {
+    use super::free_transform_step;
+    use crate::app::FreeTransformMode as M;
+    use tracedraw_core::geometry::Point;
+
+    fn close(a: Point, b: Point) -> bool {
+        (a - b).hypot() < 1e-6
+    }
+
+    #[test]
+    fn reflection_mirrors_across_the_pointer_line_and_follows_it() {
+        let c = Point::new(10.0, 10.0);
+        // Mirror line along x: (20, 15) lands on (20, 5).
+        let t = free_transform_step(M::Reflection, c, c, Point::new(30.0, 10.0), true);
+        assert!(close(t * Point::new(20.0, 15.0), Point::new(20.0, 5.0)));
+        // Turning the line by 45 degrees rotates the already mirrored
+        // object by 90 degrees: (20, 5) goes to (15, 20).
+        let t2 = free_transform_step(
+            M::Reflection,
+            c,
+            Point::new(30.0, 10.0),
+            Point::new(30.0, 30.0),
+            false,
+        );
+        assert!(close(t2 * Point::new(20.0, 5.0), Point::new(15.0, 20.0)));
+        // The composite equals a direct reflection across the 45 degree line.
+        let direct = free_transform_step(M::Reflection, c, c, Point::new(30.0, 30.0), true);
+        assert!(close(
+            (t2 * t) * Point::new(20.0, 15.0),
+            direct * Point::new(20.0, 15.0)
+        ));
+    }
+
+    #[test]
+    fn scale_rotation_and_skew_keep_the_press_point_fixed() {
+        let c = Point::new(5.0, 5.0);
+        for m in [M::Scale, M::Rotation, M::Skew] {
+            let t = free_transform_step(m, c, Point::new(15.0, 5.0), Point::new(15.0, 15.0), true);
+            assert!(close(t * c, c), "{m:?}");
+        }
+        let t = free_transform_step(
+            M::Scale,
+            c,
+            Point::new(15.0, 5.0),
+            Point::new(25.0, 5.0),
+            true,
+        );
+        assert!(close(t * Point::new(15.0, 5.0), Point::new(25.0, 5.0)));
+        let t = free_transform_step(
+            M::Rotation,
+            c,
+            Point::new(15.0, 5.0),
+            Point::new(5.0, 15.0),
+            true,
+        );
+        assert!(close(t * Point::new(15.0, 5.0), Point::new(5.0, 15.0)));
+    }
+}

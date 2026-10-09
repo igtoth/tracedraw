@@ -179,29 +179,8 @@ impl App {
             Tool::Text => self.text_input(response, p),
             Tool::ColorEyedropper | Tool::AttributesEyedropper => {
                 if response.clicked() {
-                    match self.eyedropper_color {
-                        None => {
-                            if let Some(id) = self.hit_test(p) {
-                                if let Ok((_, s)) = self.doc().shape(id) {
-                                    if let Fill::Solid(c) = s.fill {
-                                        self.eyedropper_color = Some(c);
-                                        self.status = crate::i18n::trf(
-                                            "status.sampled_color",
-                                            &[("c", &crate::app::color_description(c))],
-                                        );
-                                    }
-                                }
-                            }
-                        }
-                        Some(c) => {
-                            if let Some(id) = self.hit_test(p) {
-                                self.run(Command::SetFill {
-                                    shapes: vec![id],
-                                    fill: Fill::Solid(c),
-                                });
-                            }
-                        }
-                    }
+                    let attrs = self.tool == Tool::AttributesEyedropper;
+                    self.eyedropper_click(p, attrs, mods.shift);
                 }
             }
             Tool::InteractiveFill => self.fill_input(response, p),
@@ -1224,7 +1203,7 @@ impl App {
         if pressed(Key::Escape, Modifiers::NONE) {
             self.curve = None;
             self.dimension_points.clear();
-            self.eyedropper_color = None;
+            self.eyedropper_reset();
             self.select(Vec::new());
             if self.tool != Tool::Pick {
                 self.set_tool(Tool::Pick);

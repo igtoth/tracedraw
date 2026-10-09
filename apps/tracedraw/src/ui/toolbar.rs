@@ -1139,6 +1139,129 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                     );
                 }
             }
+            Tool::FreeTransform => {
+                for m in crate::app::FreeTransformMode::ALL {
+                    if ui
+                        .selectable_label(app.free_transform_mode == m, tr(m.label_key()))
+                        .clicked()
+                    {
+                        app.free_transform_mode = m;
+                    }
+                }
+                vsep(ui);
+                ui.checkbox(
+                    &mut app.free_transform_duplicate,
+                    tr("toolbar.apply_to_duplicate"),
+                );
+                vsep(ui);
+                if !shapes.is_empty() {
+                    object_properties(app, ui);
+                } else {
+                    ui.label(
+                        egui::RichText::new(tr("hint.bar_free_transform"))
+                            .color(Tokens::TEXT_DIM)
+                            .size(11.0),
+                    );
+                }
+            }
+            Tool::ColorEyedropper => {
+                let has = app.eyedropper_color.is_some();
+                if ui
+                    .selectable_label(!app.eyedropper_apply, tr("toolbar.select_color"))
+                    .clicked()
+                {
+                    app.eyedropper_apply = false;
+                }
+                if ui
+                    .add_enabled(
+                        has,
+                        egui::Button::selectable(app.eyedropper_apply, tr("toolbar.apply_color")),
+                    )
+                    .clicked()
+                {
+                    app.eyedropper_apply = true;
+                }
+                vsep(ui);
+                ui.label(
+                    egui::RichText::new(tr("toolbar.sample_size"))
+                        .color(Tokens::TEXT_DIM)
+                        .size(11.0),
+                );
+                for n in [1u32, 2, 5] {
+                    if ui
+                        .selectable_label(app.eyedropper_sample == n, format!("{n}x{n}"))
+                        .clicked()
+                    {
+                        app.eyedropper_sample = n;
+                    }
+                }
+                vsep(ui);
+                if let Some(c) = app.eyedropper_color {
+                    let (r, _) =
+                        ui.allocate_exact_size(egui::vec2(18.0, 18.0), egui::Sense::hover());
+                    let [cr, cg, cb] = c.to_rgb8();
+                    ui.painter()
+                        .rect_filled(r, 2.0, egui::Color32::from_rgb(cr, cg, cb));
+                    ui.painter().rect_stroke(
+                        r,
+                        2.0,
+                        egui::Stroke::new(1.0, Tokens::BORDER),
+                        egui::StrokeKind::Inside,
+                    );
+                    ui.label(
+                        egui::RichText::new(crate::app::color_description(c))
+                            .color(Tokens::TEXT_DIM)
+                            .size(11.0),
+                    );
+                } else {
+                    ui.label(
+                        egui::RichText::new(tr("hint.bar_eyedropper"))
+                            .color(Tokens::TEXT_DIM)
+                            .size(11.0),
+                    );
+                }
+            }
+            Tool::AttributesEyedropper => {
+                let has = app.eyedropper_attrs.is_some();
+                if ui
+                    .selectable_label(!app.eyedropper_apply, tr("toolbar.select_attrs"))
+                    .clicked()
+                {
+                    app.eyedropper_apply = false;
+                }
+                if ui
+                    .add_enabled(
+                        has,
+                        egui::Button::selectable(app.eyedropper_apply, tr("toolbar.apply_attrs")),
+                    )
+                    .clicked()
+                {
+                    app.eyedropper_apply = true;
+                }
+                vsep(ui);
+                let g = &mut app.eyedropper_groups;
+                ui.menu_button(tr("toolbar.attr_properties"), |ui| {
+                    ui.checkbox(&mut g.outline, tr("toolbar.attr_outline"));
+                    ui.checkbox(&mut g.fill, tr("toolbar.attr_fill"));
+                    ui.checkbox(&mut g.text, tr("toolbar.attr_text"));
+                });
+                ui.menu_button(tr("toolbar.attr_transformations"), |ui| {
+                    ui.checkbox(&mut g.size, tr("toolbar.attr_size"));
+                    ui.checkbox(&mut g.rotation, tr("toolbar.attr_rotation"));
+                    ui.checkbox(&mut g.position, tr("toolbar.attr_position"));
+                });
+                ui.checkbox(&mut g.effects, tr("toolbar.attr_effects"));
+                vsep(ui);
+                ui.label(
+                    egui::RichText::new(if has {
+                        tr("hint.bar_attrs_apply")
+                    } else {
+                        tr("hint.bar_attrs")
+                    })
+                    .color(Tokens::TEXT_DIM)
+                    .size(11.0),
+                );
+            }
             Tool::InteractiveFill | Tool::AreaFill | Tool::MeshFill => {
                 ui.label(
                     egui::RichText::new(tr("toolbar.fill_hint"))

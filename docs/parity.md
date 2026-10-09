@@ -15,7 +15,7 @@ Counts: works 122, partial 1 (`.cdr` content coverage), missing 1 (CMX import), 
 | Pick: click, shift-click, marquee, Alt-marquee (touch), Alt-click dig, Tab cycling | works |
 | Second click rotate/skew handles, centre-of-rotation drag | works |
 | Freehand Pick (lasso) | works |
-| Free Transform (rotate, reflect, scale, skew about a point) | works |
+| Free Transform (rotation, angle reflection, scale, skew modes, Apply to Duplicate) | works |
 | Zoom tool, zoom levels, zoom to page/fit/selected, marquee zoom, Shift+F4 | works |
 | Pan, mouse wheel, Ctrl and Shift wheel | works |
 | Rulers with draggable origin, guidelines from rulers, Guidelines docker | works |
@@ -89,7 +89,7 @@ Counts: works 122, partial 1 (`.cdr` content coverage), missing 1 (CMX import), 
 | Interactive Fill tool | works |
 | Outline: width, colour, caps, joins, dashes, nib, behind fill, scale with object, arrowheads (presets and custom from the selection) | works |
 | Outline Pen and Outline Color dialogs (hidden flyout, Options toggle) | works |
-| Eyedroppers: colour and attributes | works |
+| Eyedroppers: colour (bitmap sampling, fill or outline) and attributes (properties, transformations, effects groups) | works |
 
 ## 6. Interactive effects
 

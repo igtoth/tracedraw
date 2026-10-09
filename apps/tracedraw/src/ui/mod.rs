@@ -478,6 +478,7 @@ fn view_navigator(app: &mut App, ui: &mut Ui, corner: egui::Rect, canvas: egui::
     egui::Area::new(egui::Id::new("view_navigator_popup"))
         .fixed_pos(area_rect.min)
         .order(egui::Order::Foreground)
+        .fade_in(false)
         .show(ui.ctx(), |ui| {
             egui::Frame::popup(ui.style()).show(ui, |ui| {
                 let (rect, _) =

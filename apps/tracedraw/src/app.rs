@@ -13,6 +13,34 @@ use tracedraw_core::{
     Color, Command, Engine, Fill, LayerId, PageId, ShapeId, Stroke,
 };
 
+/// What a drag with the Free Transform tool does. Modifier keys override
+/// the mode: Alt scales, Ctrl skews, Shift reflects.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FreeTransformMode {
+    Rotation,
+    Reflection,
+    Scale,
+    Skew,
+}
+
+impl FreeTransformMode {
+    pub const ALL: [FreeTransformMode; 4] = [
+        FreeTransformMode::Rotation,
+        FreeTransformMode::Reflection,
+        FreeTransformMode::Scale,
+        FreeTransformMode::Skew,
+    ];
+
+    pub fn label_key(self) -> &'static str {
+        match self {
+            FreeTransformMode::Rotation => "toolbar.ft_rotation",
+            FreeTransformMode::Reflection => "toolbar.ft_reflection",
+            FreeTransformMode::Scale => "toolbar.ft_scale",
+            FreeTransformMode::Skew => "toolbar.ft_skew",
+        }
+    }
+}
+
 /// How inserted page numbers look and where they go.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PageNumberSettings {
@@ -410,6 +438,12 @@ pub struct App {
     pub text_italic: bool,
     pub text_align: tracedraw_core::TextAlign,
     pub eyedropper_color: Option<Color>,
+    pub eyedropper_attrs: Option<crate::eyedropper::SampledAttrs>,
+    pub eyedropper_groups: crate::eyedropper::AttrGroups,
+    /// Apply mode (after a sample) versus Select mode.
+    pub eyedropper_apply: bool,
+    /// Bitmap sample box side in pixels: 1, 2 or 5.
+    pub eyedropper_sample: u32,
     pub canvas_rect: egui::Rect,
     pub pointer_page: Option<Point>,
     pub about_open: bool,
@@ -516,6 +550,9 @@ pub struct App {
     /// Dockers added to the tab strip beyond the defaults.
     pub open_dockers: Vec<DockerTab>,
     pub free_transform_last: Point,
+    pub free_transform_mode: FreeTransformMode,
+    pub free_transform_duplicate: bool,
+    pub free_transform_reflected: bool,
     pub roughen_amount: f64,
     /// Properties docker section to expand: 0 fill, 1 outline.
     pub properties_section: usize,
@@ -818,6 +855,10 @@ impl App {
             text_italic: false,
             text_align: tracedraw_core::TextAlign::Left,
             eyedropper_color: None,
+            eyedropper_attrs: None,
+            eyedropper_groups: Default::default(),
+            eyedropper_apply: false,
+            eyedropper_sample: 1,
             canvas_rect: egui::Rect::NOTHING,
             pointer_page: None,
             about_open: false,
@@ -910,6 +951,9 @@ impl App {
             effect_node_drag: None,
             open_dockers: Vec::new(),
             free_transform_last: Point::ZERO,
+            free_transform_mode: FreeTransformMode::Rotation,
+            free_transform_duplicate: false,
+            free_transform_reflected: false,
             roughen_amount: 2.0,
             properties_section: 0,
             area_fill_color: Color::cmyk_pct(0.0, 0.0, 100.0, 0.0),
