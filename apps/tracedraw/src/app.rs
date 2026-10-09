@@ -1372,10 +1372,7 @@ impl App {
         if self.tool != tool {
             self.finish_curve();
             self.finish_text();
-            if self.table_edit.is_some() {
-                self.table_commit_text();
-                self.table_edit = None;
-            }
+            self.table_edit = None;
             self.three_point_base = None;
             self.previous_tool = self.tool;
             self.tool = tool;

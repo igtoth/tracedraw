@@ -615,6 +615,21 @@ fn draw_table_cells(app: &App, painter: &Painter) {
             epaint::StrokeKind::Inside,
         );
     }
+    // Caret and selection inside the active cell.
+    if let Some((top, bottom, quads)) = app.cell_caret_geometry() {
+        for q in quads {
+            let pts: Vec<Pos2> = q.iter().map(|p| view.to_screen(*p)).collect();
+            painter.add(egui::Shape::convex_polygon(
+                pts,
+                Color32::from_rgba_unmultiplied(0x00, 0x78, 0xD7, 70),
+                EStroke::NONE,
+            ));
+        }
+        painter.line_segment(
+            [view.to_screen(top), view.to_screen(bottom)],
+            EStroke::new(1.5, Tokens::TEXT),
+        );
+    }
 }
 
 fn draw_selection(app: &App, painter: &Painter, preview: Option<Affine>) {

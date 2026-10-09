@@ -30,13 +30,35 @@ pub enum TableOp {
 }
 
 /// Cell editing state: which table and which cells are selected, plus the
-/// text being typed into the active cell.
+/// caret inside the active cell's text.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TableEdit {
     pub shape: ShapeId,
     /// Selected (row, col) pairs; the first one is the active cell.
     pub cells: Vec<(u32, u32)>,
-    pub text: String,
+    /// Caret as a character index of the active cell's spans.
+    pub caret: usize,
+    /// Other end of the selection inside the cell.
+    pub anchor: usize,
+}
+
+impl TableEdit {
+    pub fn new(shape: ShapeId, cells: Vec<(u32, u32)>, caret: usize) -> Self {
+        TableEdit {
+            shape,
+            cells,
+            caret,
+            anchor: caret,
+        }
+    }
+
+    pub fn selection(&self) -> (usize, usize) {
+        (self.caret.min(self.anchor), self.caret.max(self.anchor))
+    }
+
+    pub fn has_selection(&self) -> bool {
+        self.caret != self.anchor
+    }
 }
 
 impl App {
@@ -73,7 +95,7 @@ impl App {
             return;
         };
         let rc = (t.cells[ci].row, t.cells[ci].col);
-        let text: String = t.cells[ci].text.iter().map(|s| s.text.as_str()).collect();
+        let len = tracedraw_core::spans_char_count(&t.cells[ci].text);
         match &mut self.table_edit {
             Some(e) if e.shape == id && extend => {
                 if !e.cells.contains(&rc) {
@@ -81,11 +103,14 @@ impl App {
                 }
             }
             _ => {
-                self.table_edit = Some(TableEdit {
-                    shape: id,
-                    cells: vec![rc],
-                    text,
-                });
+                self.table_edit = Some(TableEdit::new(id, vec![rc], len));
+                // The caret goes to the character under the pointer.
+                if let Some(idx) = self.cell_hit_char(local) {
+                    if let Some(e) = self.table_edit.as_mut() {
+                        e.caret = idx;
+                        e.anchor = idx;
+                    }
+                }
             }
         }
     }
@@ -95,7 +120,6 @@ impl App {
         let Some(e) = self.table_edit.clone() else {
             return;
         };
-        self.table_commit_text();
         let Some((_, s)) = self.doc().shape(e.shape).ok() else {
             return;
         };
@@ -126,16 +150,86 @@ impl App {
                 break;
             }
         }
-        let text = cell_text(t, nr, nc);
-        self.table_edit = Some(TableEdit {
-            shape: e.shape,
-            cells: vec![(nr, nc)],
-            text,
-        });
+        let len = cell_text(t, nr, nc).chars().count();
+        self.table_edit = Some(TableEdit::new(e.shape, vec![(nr, nc)], len));
     }
 
-    /// Commit typed text into the active cell.
-    pub fn table_commit_text(&mut self) {
+    /// Move to the cell `dr` rows and `dc` columns away (arrow keys at a
+    /// cell edge); the caret goes to the start or the end of its text.
+    pub fn table_step_cell(&mut self, dr: i64, dc: i64, caret_at_end: bool) {
+        let Some(e) = self.table_edit.clone() else {
+            return;
+        };
+        let Some((_, s)) = self.doc().shape(e.shape).ok() else {
+            return;
+        };
+        let ShapeKind::Table(t) = &s.kind else {
+            return;
+        };
+        let Some((r, c)) = e.cells.first().copied() else {
+            return;
+        };
+        let nr = r as i64 + dr;
+        let nc = c as i64 + dc;
+        if nr < 0 || nc < 0 || nr >= t.rows() as i64 || nc >= t.cols() as i64 {
+            return;
+        }
+        let (mut nr, mut nc) = (nr as u32, nc as u32);
+        // A covered cell belongs to a merged one: go to its anchor.
+        if t.covered(nr, nc) {
+            if let Some(anchor) = t.cells.iter().find(|cell| {
+                cell.row <= nr
+                    && nr < cell.row + cell.row_span
+                    && cell.col <= nc
+                    && nc < cell.col + cell.col_span
+            }) {
+                nr = anchor.row;
+                nc = anchor.col;
+            }
+        }
+        let len = cell_text(t, nr, nc).chars().count();
+        let caret = if caret_at_end { len } else { 0 };
+        self.table_edit = Some(TableEdit::new(e.shape, vec![(nr, nc)], caret));
+    }
+
+    /// Spans of the active cell.
+    pub fn cell_spans(&self) -> Option<Vec<TextSpan>> {
+        let e = self.table_edit.as_ref()?;
+        let (_, s) = self.doc().shape(e.shape).ok()?;
+        let ShapeKind::Table(t) = &s.kind else {
+            return None;
+        };
+        let (r, c) = e.cells.first().copied()?;
+        t.cells
+            .iter()
+            .find(|cell| cell.row == r && cell.col == c)
+            .map(|cell| cell.text.clone())
+    }
+
+    /// Text of the active cell.
+    pub fn cell_text(&self) -> String {
+        self.cell_spans()
+            .map(|s| tracedraw_core::spans_text(&s))
+            .unwrap_or_default()
+    }
+
+    /// Spans of the active cell with one span guaranteed (the default
+    /// style when the cell is empty), for editing.
+    fn cell_spans_for_edit(&self) -> Option<Vec<TextSpan>> {
+        let mut spans = self.cell_spans()?;
+        if spans.is_empty() {
+            spans.push(TextSpan::new(
+                "",
+                self.text_font.clone(),
+                (self.text_size_pt / 2.0).max(8.0),
+            ));
+        }
+        Some(spans)
+    }
+
+    /// Replace the active cell's spans; keystrokes collapse into one undo
+    /// step per cell.
+    fn set_cell_spans(&mut self, spans: Vec<TextSpan>) {
         let Some(e) = self.table_edit.clone() else {
             return;
         };
@@ -154,22 +248,314 @@ impl App {
             .iter_mut()
             .find(|cell| cell.row == r && cell.col == c)
         {
-            let existing = cell.text.first().cloned();
-            let mut span = existing.unwrap_or_else(|| {
-                TextSpan::new(
-                    "",
-                    self.text_font.clone(),
-                    (self.text_size_pt / 2.0).max(8.0),
-                )
-            });
-            span.text = e.text.clone();
-            cell.text = if e.text.is_empty() {
+            cell.text = if tracedraw_core::spans_text(&spans).is_empty() {
                 Vec::new()
             } else {
-                vec![span]
+                spans
             };
         }
-        self.set_table(e.shape, t);
+        t.refit();
+        if self.engine.undo_label() == Some("Edit Cell") {
+            let _ = self.engine.undo();
+        }
+        let _ = self.engine.run_with_label(
+            &Command::SetShapeKind {
+                shape: e.shape,
+                kind: ShapeKind::Table(t),
+            },
+            "Edit Cell",
+        );
+    }
+
+    fn set_cell_caret(&mut self, caret: usize, extend: bool) {
+        let len = self.cell_text().chars().count();
+        if let Some(e) = self.table_edit.as_mut() {
+            e.caret = caret.min(len);
+            if !extend {
+                e.anchor = e.caret;
+            }
+        }
+    }
+
+    /// Type into the active cell at the caret, replacing the selection.
+    pub fn cell_insert(&mut self, text: &str) {
+        let Some(e) = self.table_edit.clone() else {
+            return;
+        };
+        let Some(mut spans) = self.cell_spans_for_edit() else {
+            return;
+        };
+        let (a, b) = e.selection();
+        tracedraw_core::spans_delete(&mut spans, a, b);
+        tracedraw_core::spans_insert(&mut spans, a, text);
+        self.set_cell_spans(spans);
+        self.set_cell_caret(a + text.chars().count(), false);
+    }
+
+    pub fn cell_delete_backward(&mut self) {
+        let Some(e) = self.table_edit.clone() else {
+            return;
+        };
+        let Some(mut spans) = self.cell_spans_for_edit() else {
+            return;
+        };
+        let (a, b) = if e.has_selection() {
+            e.selection()
+        } else if e.caret > 0 {
+            (e.caret - 1, e.caret)
+        } else {
+            return;
+        };
+        tracedraw_core::spans_delete(&mut spans, a, b);
+        self.set_cell_spans(spans);
+        self.set_cell_caret(a, false);
+    }
+
+    pub fn cell_delete_forward(&mut self) {
+        let Some(e) = self.table_edit.clone() else {
+            return;
+        };
+        let Some(mut spans) = self.cell_spans_for_edit() else {
+            return;
+        };
+        let len = tracedraw_core::spans_char_count(&spans);
+        let (a, b) = if e.has_selection() {
+            e.selection()
+        } else if e.caret < len {
+            (e.caret, e.caret + 1)
+        } else {
+            return;
+        };
+        tracedraw_core::spans_delete(&mut spans, a, b);
+        self.set_cell_spans(spans);
+        self.set_cell_caret(a, false);
+    }
+
+    /// Move the caret inside the cell; at the cell's edges the arrow keys
+    /// step to the neighbouring cell.
+    pub fn cell_move(&mut self, m: crate::text_editing::CaretMove, extend: bool) {
+        use crate::text_editing::CaretMove;
+        let Some(e) = self.table_edit.clone() else {
+            return;
+        };
+        let text: Vec<char> = self.cell_text().chars().collect();
+        let len = text.len();
+        let caret = match m {
+            CaretMove::Left if e.caret == 0 && !extend => {
+                self.table_step_cell(0, -1, true);
+                return;
+            }
+            CaretMove::Right if e.caret >= len && !extend => {
+                self.table_step_cell(0, 1, false);
+                return;
+            }
+            CaretMove::Left => e.caret.saturating_sub(1),
+            CaretMove::Right => (e.caret + 1).min(len),
+            CaretMove::Up | CaretMove::Down => {
+                let line_of = |i: usize| text.iter().take(i).filter(|c| **c == '\n').count();
+                let lines = line_of(len);
+                let cur = line_of(e.caret);
+                if (m == CaretMove::Up && cur == 0) || (m == CaretMove::Down && cur == lines) {
+                    if !extend {
+                        let dr = if m == CaretMove::Up { -1 } else { 1 };
+                        self.table_step_cell(dr, 0, m == CaretMove::Up);
+                    }
+                    return;
+                }
+                // The same column on the neighbouring line of the cell.
+                let line_start = |line: usize| {
+                    let mut seen = 0usize;
+                    for (i, c) in text.iter().enumerate() {
+                        if seen == line {
+                            return i;
+                        }
+                        if *c == '\n' {
+                            seen += 1;
+                        }
+                    }
+                    len
+                };
+                let col = e.caret - line_start(cur);
+                let target = if m == CaretMove::Up { cur - 1 } else { cur + 1 };
+                let start = line_start(target);
+                let end = text[start..]
+                    .iter()
+                    .position(|c| *c == '\n')
+                    .map(|p| start + p)
+                    .unwrap_or(len);
+                (start + col).min(end)
+            }
+            CaretMove::LineStart | CaretMove::WordLeft => text[..e.caret.min(len)]
+                .iter()
+                .rposition(|c| *c == '\n')
+                .map(|p| p + 1)
+                .unwrap_or(0),
+            CaretMove::LineEnd | CaretMove::WordRight => text[e.caret.min(len)..]
+                .iter()
+                .position(|c| *c == '\n')
+                .map(|p| e.caret + p)
+                .unwrap_or(len),
+            CaretMove::TextStart => 0,
+            CaretMove::TextEnd => len,
+        };
+        self.set_cell_caret(caret, extend);
+    }
+
+    pub fn cell_select_all(&mut self) {
+        let len = self.cell_text().chars().count();
+        if let Some(e) = self.table_edit.as_mut() {
+            e.anchor = 0;
+            e.caret = len;
+        }
+    }
+
+    /// Restyle the selected characters of the cell, or the whole cell.
+    pub fn cell_apply_style(&mut self, f: impl Fn(&mut TextSpan)) {
+        let Some(e) = self.table_edit.clone() else {
+            return;
+        };
+        let Some(mut spans) = self.cell_spans_for_edit() else {
+            return;
+        };
+        if e.has_selection() {
+            let (a, b) = e.selection();
+            tracedraw_core::spans_apply(&mut spans, a, b, f);
+        } else {
+            for sp in spans.iter_mut() {
+                f(sp);
+            }
+        }
+        self.set_cell_spans(spans);
+    }
+
+    /// The selected text of the cell.
+    pub fn cell_selected_text(&self) -> String {
+        let Some(e) = self.table_edit.as_ref() else {
+            return String::new();
+        };
+        let (a, b) = e.selection();
+        self.cell_text().chars().skip(a).take(b - a).collect()
+    }
+
+    /// The active cell's text as the shape `Table::expand` draws it, in
+    /// table-local space.
+    fn cell_text_shape(&self) -> Option<tracedraw_core::Shape> {
+        let e = self.table_edit.as_ref()?;
+        let (_, s) = self.doc().shape(e.shape).ok()?;
+        let ShapeKind::Table(t) = &s.kind else {
+            return None;
+        };
+        let (r, c) = e.cells.first().copied()?;
+        let cell = t.cells.iter().find(|cell| cell.row == r && cell.col == c)?;
+        let inner = t.cell_rect(cell).inset(-t.padding);
+        let spans = if cell.text.is_empty() {
+            self.cell_spans_for_edit()?
+        } else {
+            cell.text.clone()
+        };
+        Some(tracedraw_core::Shape::new(
+            ShapeId(0),
+            ShapeKind::Text {
+                spans,
+                origin: Point::new(inner.x0, inner.y0),
+                frame: Some(tracedraw_core::geometry::Size::new(
+                    inner.width().max(0.1),
+                    inner.height().max(0.1),
+                )),
+                align: cell.align,
+                para: tracedraw_core::ParagraphStyle::default(),
+                on_path: None,
+            },
+        ))
+    }
+
+    /// Character index under a table-local point in the active cell.
+    pub fn cell_hit_char(&self, local: Point) -> Option<usize> {
+        let tx = self.cell_text_shape()?;
+        let (layout, to_local) = crate::text_editing::layout_of_text_shape(
+            &tx,
+            tracedraw_core::geometry::Affine::IDENTITY,
+        )?;
+        layout.hit_char(to_local.inverse() * local)
+    }
+
+    /// Caret segment and selection quads of the active cell, on the page.
+    pub fn cell_caret_geometry(&self) -> Option<(Point, Point, Vec<[Point; 4]>)> {
+        let e = self.table_edit.as_ref()?;
+        let (_, s) = self.doc().shape(e.shape).ok()?;
+        let tx = self.cell_text_shape()?;
+        let (layout, to_page) = crate::text_editing::layout_of_text_shape(&tx, s.transform)?;
+        crate::text_editing::caret_geometry(&layout, &to_page, e.caret, e.selection())
+    }
+
+    /// Keyboard input while a cell is active (Table tool).
+    pub fn table_keyboard(&mut self, ctx: &egui::Context) -> bool {
+        use crate::text_editing::CaretMove;
+        use egui::{Event, Key};
+        let events = ctx.input(|i| i.events.clone());
+        let mut handled = false;
+        for ev in &events {
+            handled = true;
+            match ev {
+                Event::Text(t) | Event::Paste(t) => self.cell_insert(t),
+                Event::Copy => {
+                    let sel = self.cell_selected_text();
+                    if !sel.is_empty() {
+                        ctx.copy_text(sel);
+                    }
+                }
+                Event::Cut => {
+                    let sel = self.cell_selected_text();
+                    if !sel.is_empty() {
+                        ctx.copy_text(sel);
+                        self.cell_delete_backward();
+                    }
+                }
+                Event::Key {
+                    key,
+                    pressed: true,
+                    modifiers,
+                    ..
+                } => {
+                    let shift = modifiers.shift;
+                    let ctrl = modifiers.command;
+                    match key {
+                        Key::Backspace => self.cell_delete_backward(),
+                        Key::Delete => self.cell_delete_forward(),
+                        Key::Enter => self.cell_insert("\n"),
+                        Key::Tab => self.table_next_cell(shift),
+                        Key::ArrowLeft => self.cell_move(CaretMove::Left, shift),
+                        Key::ArrowRight => self.cell_move(CaretMove::Right, shift),
+                        Key::ArrowUp => self.cell_move(CaretMove::Up, shift),
+                        Key::ArrowDown => self.cell_move(CaretMove::Down, shift),
+                        Key::Home if ctrl => self.cell_move(CaretMove::TextStart, shift),
+                        Key::End if ctrl => self.cell_move(CaretMove::TextEnd, shift),
+                        Key::Home => self.cell_move(CaretMove::LineStart, shift),
+                        Key::End => self.cell_move(CaretMove::LineEnd, shift),
+                        Key::A if ctrl => self.cell_select_all(),
+                        Key::B if ctrl => {
+                            let on = !self.text_bold;
+                            self.text_bold = on;
+                            self.cell_apply_style(move |s| s.bold = on);
+                        }
+                        Key::I if ctrl => {
+                            let on = !self.text_italic;
+                            self.text_italic = on;
+                            self.cell_apply_style(move |s| s.italic = on);
+                        }
+                        Key::U if ctrl => {
+                            let on = !self.text_underline;
+                            self.text_underline = on;
+                            self.cell_apply_style(move |s| s.underline = on);
+                        }
+                        Key::Escape => self.table_edit = None,
+                        _ => handled = false,
+                    }
+                }
+                _ => handled = false,
+            }
+        }
+        handled
     }
 
     pub fn table_op(&mut self, op: TableOp) {
@@ -219,29 +605,20 @@ impl App {
                 }
             }
             TableOp::SelectCell => {
-                self.table_edit = Some(TableEdit {
-                    shape: id,
-                    cells: vec![(ar, ac)],
-                    text: cell_text(&t, ar, ac),
-                });
+                let len = cell_text(&t, ar, ac).chars().count();
+                self.table_edit = Some(TableEdit::new(id, vec![(ar, ac)], len));
                 return;
             }
             TableOp::SelectRow => {
                 let cells: Vec<(u32, u32)> = (0..t.cols()).map(|c| (ar, c)).collect();
-                self.table_edit = Some(TableEdit {
-                    shape: id,
-                    cells,
-                    text: cell_text(&t, ar, ac),
-                });
+                let len = cell_text(&t, ar, ac).chars().count();
+                self.table_edit = Some(TableEdit::new(id, cells, len));
                 return;
             }
             TableOp::SelectCol => {
                 let cells: Vec<(u32, u32)> = (0..t.rows()).map(|r| (r, ac)).collect();
-                self.table_edit = Some(TableEdit {
-                    shape: id,
-                    cells,
-                    text: cell_text(&t, ar, ac),
-                });
+                let len = cell_text(&t, ar, ac).chars().count();
+                self.table_edit = Some(TableEdit::new(id, cells, len));
                 return;
             }
             TableOp::SelectTable => {
@@ -323,11 +700,7 @@ impl App {
                 merged.col_span = c1 - c0 + 1;
                 merged.text = text;
                 t.cells.push(merged);
-                self.table_edit = Some(TableEdit {
-                    shape: id,
-                    cells: vec![(r0, c0)],
-                    text: String::new(),
-                });
+                self.table_edit = Some(TableEdit::new(id, vec![(r0, c0)], 0));
             }
             TableOp::Unmerge => {
                 let Some(pos) = t.cells.iter().position(|c| c.row == ar && c.col == ac) else {
@@ -540,19 +913,77 @@ mod tests {
         // Top-left cell: x in [10,20), y in [30,40].
         app.table_click(id, Point::new(12.0, 38.0), false);
         assert_eq!(app.table_edit.as_ref().unwrap().cells, vec![(0, 0)]);
-        app.table_edit.as_mut().unwrap().text = "Hello".into();
-        app.table_commit_text();
+        app.cell_insert("Hello");
         app.table_next_cell(false);
         assert_eq!(app.table_edit.as_ref().unwrap().cells, vec![(0, 1)]);
-        app.table_edit.as_mut().unwrap().text = "World".into();
-        app.table_commit_text();
+        app.cell_insert("World");
         let (_, t) = app.selected_table().unwrap();
         assert_eq!(cell_text(&t, 0, 0), "Hello");
         assert_eq!(cell_text(&t, 0, 1), "World");
+        // Caret editing inside the cell: Home, Delete, End, Backspace,
+        // Shift+Left selection replaced by typing, Enter for a new line.
+        use crate::text_editing::CaretMove;
+        app.cell_move(CaretMove::LineStart, false);
+        app.cell_delete_forward();
+        app.cell_move(CaretMove::LineEnd, false);
+        app.cell_delete_backward();
+        assert_eq!(app.cell_text(), "orl");
+        app.cell_move(CaretMove::Left, true);
+        app.cell_move(CaretMove::Left, true);
+        assert_eq!(app.cell_selected_text(), "rl");
+        app.cell_insert("k\nsecond");
+        assert_eq!(app.cell_text(), "ok\nsecond");
+        app.cell_move(CaretMove::Up, false);
+        assert_eq!(app.table_edit.as_ref().unwrap().caret, 2);
+        // Left at the start of the cell steps to the previous cell's end.
+        app.cell_move(CaretMove::LineStart, false);
+        app.cell_move(CaretMove::Left, false);
+        assert_eq!(app.table_edit.as_ref().unwrap().cells, vec![(0, 0)]);
+        assert_eq!(app.table_edit.as_ref().unwrap().caret, 5);
+        // Bold on a selection splits the cell's spans.
+        app.cell_select_all();
+        app.cell_move(CaretMove::Left, true);
+        app.cell_apply_style(|s| s.bold = true);
+        let spans = app.cell_spans().unwrap();
+        assert_eq!(spans.len(), 2);
+        assert!(spans[0].bold && !spans[1].bold);
+        assert_eq!(spans[0].text, "Hell");
+        // Down from the last line goes to the cell below.
+        app.cell_move(CaretMove::Down, false);
+        assert_eq!(app.table_edit.as_ref().unwrap().cells, vec![(1, 0)]);
+        // The caret has geometry even in an empty cell.
+        assert!(app.cell_caret_geometry().is_some());
         let c00 = t.cells.iter().find(|c| c.row == 0 && c.col == 0).unwrap();
         let r = t.cell_rect(c00);
         assert!((r.x0 - 10.0).abs() < 1e-9 && (r.x1 - 20.0).abs() < 1e-9);
         assert!((r.y0 - 30.0).abs() < 1e-9 && (r.y1 - 40.0).abs() < 1e-9);
         assert_eq!(t.rect, Rect::new(10.0, 10.0, 50.0, 40.0));
+    }
+}
+
+#[cfg(test)]
+mod render_probe {
+    use super::*;
+    use tracedraw_core::geometry::Rect;
+
+    #[test]
+    fn probe_cell_render() {
+        let mut app = App::headless();
+        let t = Table::new(Rect::new(10.0, 10.0, 130.0, 40.0), 3, 4, None);
+        let id = app.new_shape(ShapeKind::Table(t)).unwrap();
+        app.select(vec![id]);
+        app.table_click(id, Point::new(12.0, 38.0), false);
+        app.cell_insert("Cell one");
+        let (_, t) = app.selected_table().unwrap();
+        eprintln!(
+            "{:?}",
+            t.cells
+                .iter()
+                .find(|c| c.row == 0 && c.col == 0)
+                .unwrap()
+                .text
+        );
+        let pm = tracedraw_render::render_page_image(app.doc(), app.page, 300.0).unwrap();
+        pm.save_png("/tmp/claude-0/probe_cell.png").unwrap();
     }
 }

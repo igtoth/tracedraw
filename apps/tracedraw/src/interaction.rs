@@ -995,67 +995,8 @@ impl App {
 
     pub fn keyboard(&mut self, ctx: &egui::Context) {
         // Table cell typing has priority while a cell is active.
-        if self.table_edit.is_some() && self.tool == Tool::Table {
-            let mut text = self
-                .table_edit
-                .as_ref()
-                .map(|e| e.text.clone())
-                .unwrap_or_default();
-            let mut changed = false;
-            let mut finish = false;
-            let mut tab: Option<bool> = None;
-            ctx.input(|i| {
-                for ev in &i.events {
-                    match ev {
-                        egui::Event::Text(t) => {
-                            text.push_str(t);
-                            changed = true;
-                        }
-                        egui::Event::Key {
-                            key: Key::Backspace,
-                            pressed: true,
-                            ..
-                        } => {
-                            text.pop();
-                            changed = true;
-                        }
-                        egui::Event::Key {
-                            key: Key::Tab,
-                            pressed: true,
-                            modifiers,
-                            ..
-                        } => tab = Some(modifiers.shift),
-                        egui::Event::Key {
-                            key: Key::Enter,
-                            pressed: true,
-                            modifiers,
-                            ..
-                        } if !modifiers.shift => tab = Some(false),
-                        egui::Event::Key {
-                            key: Key::Escape,
-                            pressed: true,
-                            ..
-                        } => finish = true,
-                        _ => {}
-                    }
-                }
-            });
-            if changed {
-                if let Some(e) = self.table_edit.as_mut() {
-                    e.text = text;
-                }
-                self.table_commit_text();
-            }
-            if let Some(back) = tab {
-                self.table_next_cell(back);
-            }
-            if finish {
-                self.table_commit_text();
-                self.table_edit = None;
-            }
-            if changed || tab.is_some() || finish {
-                return;
-            }
+        if self.table_edit.is_some() && self.tool == Tool::Table && self.table_keyboard(ctx) {
+            return;
         }
         // Text typing has priority.
         if self.text_edit.is_some() {

@@ -82,29 +82,7 @@ impl App {
     /// page (the shape's transform after the origin or frame shift).
     pub fn text_layout_of(&self, id: ShapeId) -> Option<(TextLayout, Affine)> {
         let s = self.doc().find_shape(id)?;
-        let ShapeKind::Text {
-            spans,
-            origin,
-            frame,
-            align,
-            para,
-            on_path,
-        } = &s.kind
-        else {
-            return None;
-        };
-        let layout = tracedraw_text::fonts().layout(&TextRequest {
-            spans,
-            frame: *frame,
-            align: *align,
-            para,
-            on_path: on_path.as_ref(),
-        });
-        let shift = match frame {
-            Some(f) if on_path.is_none() => Affine::translate((origin.x, origin.y + f.height)),
-            _ => Affine::translate(origin.to_vec2()),
-        };
-        Some((layout, s.transform * shift))
+        layout_of_text_shape(s, Affine::IDENTITY)
     }
 
     /// Replace the spans of the text being edited. Keystrokes collapse
@@ -482,40 +460,95 @@ impl App {
     pub fn text_caret_geometry(&self) -> Option<(Point, Point, Vec<[Point; 4]>)> {
         let te = self.text_edit.as_ref()?;
         let (layout, to_page) = self.text_layout_of(te.shape)?;
-        let (x, base, asc, desc) = layout.caret(te.caret).or_else(|| {
-            // Empty text: a caret of the first span's size at the origin.
-            let size_mm = self.edit_spans()?.first()?.size_pt * 25.4 / 72.0;
-            Some((0.0, 0.0, size_mm * 0.8, size_mm * 0.2))
-        })?;
-        let top = to_page * Point::new(x, base + asc);
-        let bottom = to_page * Point::new(x, base - desc);
-        let mut quads = Vec::new();
-        if te.has_selection() {
-            let (a, b) = te.selection();
-            for line in &layout.lines {
-                let s = a.max(line.start_char);
-                let e = b.min(line.end_char);
-                if s > e || (s == e && !(a < line.start_char && b > line.end_char)) {
-                    continue;
-                }
-                let x0 = line.edges.get(s - line.start_char).copied().unwrap_or(0.0);
-                let x1 = line.edges.get(e - line.start_char).copied().unwrap_or(x0);
-                let r = Rect::new(
-                    x0,
-                    line.baseline - line.descent,
-                    x1.max(x0 + 0.3),
-                    line.baseline + line.ascent,
-                );
-                quads.push([
-                    to_page * Point::new(r.x0, r.y0),
-                    to_page * Point::new(r.x1, r.y0),
-                    to_page * Point::new(r.x1, r.y1),
-                    to_page * Point::new(r.x0, r.y1),
-                ]);
-            }
-        }
-        Some((top, bottom, quads))
+        let size_pt = self
+            .edit_spans()?
+            .first()
+            .map(|s| s.size_pt)
+            .unwrap_or(12.0);
+        caret_geometry_sized(&layout, &to_page, te.caret, te.selection(), size_pt)
     }
+}
+
+/// Layout of a text shape (any `ShapeKind::Text`, placed under `parent`)
+/// and the transform from layout space to the page.
+pub fn layout_of_text_shape(
+    s: &tracedraw_core::Shape,
+    parent: Affine,
+) -> Option<(TextLayout, Affine)> {
+    let ShapeKind::Text {
+        spans,
+        origin,
+        frame,
+        align,
+        para,
+        on_path,
+    } = &s.kind
+    else {
+        return None;
+    };
+    let layout = tracedraw_text::fonts().layout(&TextRequest {
+        spans,
+        frame: *frame,
+        align: *align,
+        para,
+        on_path: on_path.as_ref(),
+    });
+    let shift = match frame {
+        Some(f) if on_path.is_none() => Affine::translate((origin.x, origin.y + f.height)),
+        _ => Affine::translate(origin.to_vec2()),
+    };
+    Some((layout, parent * s.transform * shift))
+}
+
+/// Caret segment (top, bottom) and one quad per selected line, on the page.
+pub fn caret_geometry(
+    layout: &TextLayout,
+    to_page: &Affine,
+    caret: usize,
+    selection: (usize, usize),
+) -> Option<(Point, Point, Vec<[Point; 4]>)> {
+    caret_geometry_sized(layout, to_page, caret, selection, 12.0)
+}
+
+fn caret_geometry_sized(
+    layout: &TextLayout,
+    to_page: &Affine,
+    caret: usize,
+    (a, b): (usize, usize),
+    size_pt: f64,
+) -> Option<(Point, Point, Vec<[Point; 4]>)> {
+    let (x, base, asc, desc) = layout.caret(caret).unwrap_or_else(|| {
+        // Empty text: a caret of the text size at the origin.
+        let size_mm = size_pt * 25.4 / 72.0;
+        (0.0, 0.0, size_mm * 0.8, size_mm * 0.2)
+    });
+    let top = *to_page * Point::new(x, base + asc);
+    let bottom = *to_page * Point::new(x, base - desc);
+    let mut quads = Vec::new();
+    if a != b {
+        for line in &layout.lines {
+            let s = a.max(line.start_char);
+            let e = b.min(line.end_char);
+            if s > e || (s == e && !(a < line.start_char && b > line.end_char)) {
+                continue;
+            }
+            let x0 = line.edges.get(s - line.start_char).copied().unwrap_or(0.0);
+            let x1 = line.edges.get(e - line.start_char).copied().unwrap_or(x0);
+            let r = Rect::new(
+                x0,
+                line.baseline - line.descent,
+                x1.max(x0 + 0.3),
+                line.baseline + line.ascent,
+            );
+            quads.push([
+                *to_page * Point::new(r.x0, r.y0),
+                *to_page * Point::new(r.x1, r.y0),
+                *to_page * Point::new(r.x1, r.y1),
+                *to_page * Point::new(r.x0, r.y1),
+            ]);
+        }
+    }
+    Some((top, bottom, quads))
 }
 
 fn word_start_before(text: &[char], from: usize) -> usize {

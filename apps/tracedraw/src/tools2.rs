@@ -242,24 +242,13 @@ impl App {
                 });
                 if response.clicked_by(PointerButton::Primary) {
                     if let Some((id, t)) = over_table {
-                        if self
-                            .table_edit
-                            .as_ref()
-                            .map(|e| e.shape != id)
-                            .unwrap_or(false)
-                        {
-                            self.table_commit_text();
-                        }
                         let local = t.inverse() * p;
                         self.table_click(id, local, mods.shift);
                         self.select(vec![id]);
                         self.status = tr("table.type_hint");
                         return;
                     }
-                    if self.table_edit.is_some() {
-                        self.table_commit_text();
-                        self.table_edit = None;
-                    }
+                    self.table_edit = None;
                 }
                 if response.drag_started_by(PointerButton::Primary) && over_table.is_some() {
                     return;
