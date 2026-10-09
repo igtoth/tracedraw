@@ -2025,9 +2025,24 @@ fn options_dialog(app: &mut App, ctx: &Context, close: &mut bool) {
                                         &mut app.settings.show_outline_flyout,
                                         tr("options.show_outline_flyout"),
                                     );
+                                    ui.label(tr("options.wheel_action"));
                                     ui.horizontal(|ui| {
-                                        ui.label(tr("options.zoom_wheel_hint"));
+                                        ui.radio_value(
+                                            &mut app.settings.wheel_zooms,
+                                            true,
+                                            tr("options.wheel_zoom"),
+                                        );
+                                        ui.radio_value(
+                                            &mut app.settings.wheel_zooms,
+                                            false,
+                                            tr("options.wheel_scroll"),
+                                        );
                                     });
+                                    ui.label(tr(if app.settings.wheel_zooms {
+                                        "options.zoom_wheel_hint_zoom"
+                                    } else {
+                                        "options.zoom_wheel_hint"
+                                    }));
                                 }
                                 OptionsPage::Text => {
                                     ui.strong(tr("options.text"));

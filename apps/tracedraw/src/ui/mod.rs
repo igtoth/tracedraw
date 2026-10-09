@@ -215,16 +215,43 @@ pub fn root(app: &mut App, ui: &mut Ui) {
             let response = ui.allocate_rect(canvas_rect, Sense::click_and_drag());
             let painter = ui.painter_at(canvas_rect);
 
-            // Wheel: zoom with Ctrl, otherwise scroll. Pinch zooms.
+            // Wheel: with the default setting the wheel zooms about the
+            // pointer, Ctrl+wheel scrolls vertically and Alt+wheel
+            // horizontally; with the scroll setting the wheel scrolls,
+            // Shift+wheel horizontally and Ctrl+wheel zooms. Pinch zooms.
             if response.hovered() {
-                let (scroll, zoom_delta, mods) =
-                    ui.input(|i| (i.smooth_scroll_delta, i.zoom_delta(), i.modifiers));
+                let (scroll, notches, zoom_delta, mods) = ui.input(|i| {
+                    // Wheel notches this frame (the smoothed delta is spread
+                    // over several frames, so the zoom steps come from the
+                    // raw events: one notch is one line or 50 points).
+                    let notches: f32 = i
+                        .events
+                        .iter()
+                        .map(|e| match e {
+                            egui::Event::MouseWheel { unit, delta, .. } => match unit {
+                                egui::MouseWheelUnit::Line => delta.y,
+                                egui::MouseWheelUnit::Point => delta.y / 50.0,
+                                egui::MouseWheelUnit::Page => delta.y * 10.0,
+                            },
+                            _ => 0.0,
+                        })
+                        .sum();
+                    (i.smooth_scroll_delta, notches, i.zoom_delta(), i.modifiers)
+                });
                 if let Some(h) = response.hover_pos() {
+                    let zoom_factor = 1.15f32.powf(notches);
                     if zoom_delta != 1.0 {
                         app.view.zoom_at(h, zoom_delta);
-                    } else if mods.ctrl && scroll.y != 0.0 {
-                        app.view
-                            .zoom_at(h, if scroll.y > 0.0 { 1.15 } else { 1.0 / 1.15 });
+                    } else if app.settings.wheel_zooms {
+                        if mods.alt && scroll != egui::Vec2::ZERO {
+                            app.view.pan(egui::vec2(scroll.y, scroll.x));
+                        } else if mods.ctrl && scroll != egui::Vec2::ZERO {
+                            app.view.pan(scroll);
+                        } else if notches != 0.0 {
+                            app.view.zoom_at(h, zoom_factor);
+                        }
+                    } else if mods.ctrl && notches != 0.0 {
+                        app.view.zoom_at(h, zoom_factor);
                     } else if scroll != egui::Vec2::ZERO {
                         app.view.pan(if mods.shift {
                             egui::vec2(scroll.y, scroll.x)

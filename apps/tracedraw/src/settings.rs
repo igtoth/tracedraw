@@ -23,6 +23,10 @@ pub struct Settings {
     pub color: ColorPrefs,
     /// Show the Outline flyout in the toolbox (hidden by default).
     pub show_outline_flyout: bool,
+    /// Default action of the mouse wheel: zoom (the target design's
+    /// default) or scroll.
+    #[serde(default = "default_true")]
+    pub wheel_zooms: bool,
     /// Arrowheads created with Object > Create > Arrowhead.
     #[serde(default)]
     pub custom_arrowheads: Vec<tracedraw_core::Arrowhead>,
@@ -35,6 +39,10 @@ pub struct Settings {
     /// Thesaurus file picked by the user (Text > Writing Tools > Thesaurus).
     #[serde(default)]
     pub thesaurus_file: Option<PathBuf>,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn default_baseline_mm() -> f64 {
@@ -108,6 +116,7 @@ impl Default for Settings {
             last_dir: None,
             color: ColorPrefs::default(),
             show_outline_flyout: false,
+            wheel_zooms: true,
             custom_arrowheads: Vec::new(),
             baseline_grid_mm: default_baseline_mm(),
             autocorrect: crate::autocorrect::AutocorrectPrefs::default(),
@@ -204,6 +213,10 @@ mod tests {
         assert_eq!(back.nudge_mm, s.nudge_mm);
         let partial: Settings = serde_json::from_str("{\"language\":\"de\"}").unwrap();
         assert_eq!(partial.language, "de");
+        assert!(
+            partial.wheel_zooms,
+            "old settings files keep the zoom default"
+        );
         assert!(partial.snap.guides);
     }
 }

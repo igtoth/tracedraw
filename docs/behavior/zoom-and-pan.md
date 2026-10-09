@@ -12,9 +12,12 @@
 
 ## Mouse wheel
 
-- Wheel scrolls the view vertically; Shift+wheel scrolls horizontally;
-  Ctrl+wheel zooms by 1.15 per notch about the pointer; a trackpad
-  pinch zooms by the gesture's factor.
+- Default (Options > Tools > Default action for mouse wheel: Zoom): the
+  wheel zooms by 1.15 per notch about the pointer; Ctrl+wheel scrolls
+  vertically; Alt+wheel scrolls horizontally.
+- With the Scroll setting: the wheel scrolls vertically; Shift+wheel
+  scrolls horizontally; Ctrl+wheel zooms.
+- A trackpad pinch zooms by the gesture's factor with either setting.
 
 ## Pan (H)
 
