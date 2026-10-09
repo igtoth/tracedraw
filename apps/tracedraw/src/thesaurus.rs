@@ -259,7 +259,7 @@ pub fn candidate_files(user_file: Option<&Path>) -> Vec<PathBuf> {
 }
 
 fn load_file(path: &Path) -> Option<Thesaurus> {
-    let bytes = std::fs::read(path).ok()?;
+    let bytes = crate::files::read(path).ok()?;
     let entries = parse(&decode(&bytes));
     if entries.is_empty() {
         log::warn!("thesaurus {} has no entries", path.display());

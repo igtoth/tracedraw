@@ -6,7 +6,7 @@ target design does, with a test or a checked screenshot behind it.
 "partial" names what is missing. "baked" means the result is applied once
 instead of staying live and editable. The goal is every row at "works".
 
-Counts: works 129, partial 1 (`.cdr` content coverage), missing 1 (CMX import), not applicable 4, icons close but not pixel-identical.
+Counts: works 130, partial 1 (`.cdr` content coverage), missing 1 (CMX import), not applicable 4, icons close but not pixel-identical.
 
 ## 1. Selection and navigation
 
@@ -38,6 +38,7 @@ Counts: works 129, partial 1 (`.cdr` content coverage), missing 1 (CMX import), 
 | Dimensions: parallel, horizontal/vertical, angular, segment, 3-point callout | works |
 | Connectors: straight, right-angle, rounded right-angle; Anchor Editing tool (add, move, delete anchors; connectors snap to them) | works |
 | Text (artistic and paragraph), Table | works |
+| Browser version (WebAssembly, WebGL 2): opens, edits and exports documents with uploads and downloads | works |
 | Import of HPGL plotter files (PLT) and export of pages as pen strokes | works |
 | Import of TXT, RTF and DOCX as paragraph text with run formatting | works |
 | Export to PSD with one raster layer per document layer | works |

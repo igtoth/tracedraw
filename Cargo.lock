@@ -318,6 +318,7 @@ dependencies = [
  "thin-vec",
  "thiserror 2.0.21",
  "time",
+ "web-time",
 ]
 
 [[package]]
@@ -1280,8 +1281,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ff2abc00be7fca6ebc474524697ae276ad847ad0a6b3faa4bcb027e9a4614ad0"
 dependencies = [
  "cfg-if",
+ "js-sys",
  "libc",
  "wasi",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -1291,9 +1294,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "899def5c37c4fd7b2664648c28120ecec138e4d395b459e5ca34f9cce2dd77fd"
 dependencies = [
  "cfg-if",
+ "js-sys",
  "libc",
  "r-efi 5.3.0",
  "wasip2",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -3656,8 +3661,11 @@ dependencies = [
  "egui",
  "env_logger",
  "flate2",
+ "getrandom 0.2.17",
+ "getrandom 0.3.4",
  "i_overlay",
  "image",
+ "js-sys",
  "kurbo",
  "log",
  "qrcode",
@@ -3670,6 +3678,10 @@ dependencies = [
  "tracedraw-io",
  "tracedraw-render",
  "tracedraw-text",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "web-time",
  "winresource",
 ]
 
@@ -3717,6 +3729,7 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "flate2",
+ "getrandom 0.3.4",
  "image",
  "lopdf",
  "roxmltree 0.21.1",
@@ -3725,6 +3738,7 @@ dependencies = [
  "tracedraw-core",
  "tracedraw-render",
  "usvg",
+ "web-time",
  "zip",
 ]
 

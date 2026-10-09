@@ -1591,84 +1591,376 @@ fn options_dialog(app: &mut App, ctx: &Context, close: &mut bool) {
                                 .auto_shrink([false, false])
                                 .show(ui, |ui| {
                                     ui.vertical(|ui| match app.options_page {
-                                OptionsPage::General => {
-                                    ui.strong(tr("options.general"));
-                                    ui.checkbox(
-                                        &mut app.settings.show_welcome_on_start,
-                                        tr("options.show_welcome"),
-                                    );
-                                    let u = app.units;
-                                    let mut nudge = u.from_mm(app.nudge_mm);
-                                    ui.horizontal(|ui| {
-                                        ui.label(tr("options.nudge"));
-                                        if ui
-                                            .add(
-                                                egui::DragValue::new(&mut nudge)
-                                                    .speed(0.1)
-                                                    .suffix(format!(" {}", u.short())),
-                                            )
-                                            .changed()
-                                            && nudge > 0.0
-                                        {
-                                            app.nudge_mm = u.to_mm(nudge);
+                                        OptionsPage::General => {
+                                            ui.strong(tr("options.general"));
+                                            ui.checkbox(
+                                                &mut app.settings.show_welcome_on_start,
+                                                tr("options.show_welcome"),
+                                            );
+                                            let u = app.units;
+                                            let mut nudge = u.from_mm(app.nudge_mm);
+                                            ui.horizontal(|ui| {
+                                                ui.label(tr("options.nudge"));
+                                                if ui
+                                                    .add(
+                                                        egui::DragValue::new(&mut nudge)
+                                                            .speed(0.1)
+                                                            .suffix(format!(" {}", u.short())),
+                                                    )
+                                                    .changed()
+                                                    && nudge > 0.0
+                                                {
+                                                    app.nudge_mm = u.to_mm(nudge);
+                                                }
+                                            });
+                                            let mut dx = u.from_mm(app.duplicate_offset.x);
+                                            let mut dy = u.from_mm(app.duplicate_offset.y);
+                                            ui.horizontal(|ui| {
+                                                ui.label(tr("options.duplicate_offset"));
+                                                ui.add(
+                                                    egui::DragValue::new(&mut dx)
+                                                        .speed(0.1)
+                                                        .suffix(format!(" {}", u.short())),
+                                                );
+                                                ui.add(
+                                                    egui::DragValue::new(&mut dy)
+                                                        .speed(0.1)
+                                                        .suffix(format!(" {}", u.short())),
+                                                );
+                                            });
+                                            app.duplicate_offset =
+                                                tracedraw_core::geometry::Vec2::new(
+                                                    u.to_mm(dx),
+                                                    u.to_mm(dy),
+                                                );
+                                            ui.horizontal(|ui| {
+                                                ui.label(tr("options.default_dpi"));
+                                                ui.add(
+                                                    egui::DragValue::new(
+                                                        &mut app.settings.default_dpi,
+                                                    )
+                                                    .range(36.0..=2400.0),
+                                                );
+                                            });
                                         }
-                                    });
-                                    let mut dx = u.from_mm(app.duplicate_offset.x);
-                                    let mut dy = u.from_mm(app.duplicate_offset.y);
-                                    ui.horizontal(|ui| {
-                                        ui.label(tr("options.duplicate_offset"));
-                                        ui.add(
-                                            egui::DragValue::new(&mut dx)
-                                                .speed(0.1)
-                                                .suffix(format!(" {}", u.short())),
-                                        );
-                                        ui.add(
-                                            egui::DragValue::new(&mut dy)
-                                                .speed(0.1)
-                                                .suffix(format!(" {}", u.short())),
-                                        );
-                                    });
-                                    app.duplicate_offset = tracedraw_core::geometry::Vec2::new(
-                                        u.to_mm(dx),
-                                        u.to_mm(dy),
-                                    );
-                                    ui.horizontal(|ui| {
-                                        ui.label(tr("options.default_dpi"));
-                                        ui.add(
-                                            egui::DragValue::new(&mut app.settings.default_dpi)
-                                                .range(36.0..=2400.0),
-                                        );
-                                    });
-                                }
-                                OptionsPage::Workspace => {
-                                    ui.strong(tr("options.workspace"));
-                                    ui.horizontal(|ui| {
-                                        ui.label(tr("options.language"));
-                                        let current = crate::i18n::language();
-                                        let name = crate::i18n::LANGUAGES
-                                            .iter()
-                                            .find(|(c, _)| *c == current)
-                                            .map(|(_, n)| *n)
-                                            .unwrap_or("English");
-                                        egui::ComboBox::from_id_salt("opt_lang")
-                                            .selected_text(name)
-                                            .show_ui(ui, |ui| {
-                                                for (code, n) in crate::i18n::LANGUAGES {
+                                        OptionsPage::Workspace => {
+                                            ui.strong(tr("options.workspace"));
+                                            ui.horizontal(|ui| {
+                                                ui.label(tr("options.language"));
+                                                let current = crate::i18n::language();
+                                                let name = crate::i18n::LANGUAGES
+                                                    .iter()
+                                                    .find(|(c, _)| *c == current)
+                                                    .map(|(_, n)| *n)
+                                                    .unwrap_or("English");
+                                                egui::ComboBox::from_id_salt("opt_lang")
+                                                    .selected_text(name)
+                                                    .show_ui(ui, |ui| {
+                                                        for (code, n) in crate::i18n::LANGUAGES {
+                                                            if ui
+                                                                .selectable_label(
+                                                                    current == code,
+                                                                    n,
+                                                                )
+                                                                .clicked()
+                                                            {
+                                                                crate::i18n::set_language(code);
+                                                                app.settings.language =
+                                                                    code.to_string();
+                                                            }
+                                                        }
+                                                    });
+                                            });
+                                            ui.horizontal(|ui| {
+                                                ui.label(tr("options.units"));
+                                                egui::ComboBox::from_id_salt("opt_units")
+                                                    .selected_text(app.units.label())
+                                                    .show_ui(ui, |ui| {
+                                                        for u in Units::ALL {
+                                                            if ui
+                                                                .selectable_label(
+                                                                    app.units == u,
+                                                                    u.label(),
+                                                                )
+                                                                .clicked()
+                                                            {
+                                                                app.units = u;
+                                                            }
+                                                        }
+                                                    });
+                                            });
+                                            ui.horizontal(|ui| {
+                                                ui.label(tr("options.workspace_layout"));
+                                                for ws in [
+                                                    crate::app::Workspace::Default,
+                                                    crate::app::Workspace::Lite,
+                                                    crate::app::Workspace::Classic,
+                                                    crate::app::Workspace::Illustration,
+                                                    crate::app::Workspace::PageLayout,
+                                                ] {
                                                     if ui
-                                                        .selectable_label(current == code, n)
+                                                        .selectable_label(
+                                                            app.workspace == ws,
+                                                            tr(&format!(
+                                                                "menu.window.workspace_{}",
+                                                                ws.id()
+                                                            )),
+                                                        )
                                                         .clicked()
                                                     {
-                                                        crate::i18n::set_language(code);
-                                                        app.settings.language = code.to_string();
+                                                        app.set_workspace(ws);
                                                     }
                                                 }
                                             });
-                                    });
-                                    ui.horizontal(|ui| {
-                                        ui.label(tr("options.units"));
-                                        egui::ComboBox::from_id_salt("opt_units")
-                                            .selected_text(app.units.label())
-                                            .show_ui(ui, |ui| {
+                                            ui.separator();
+                                            ui.strong(tr("options.display"));
+                                            ui.checkbox(
+                                                &mut app.show_rulers,
+                                                tr("menu.view.rulers"),
+                                            );
+                                            ui.checkbox(
+                                                &mut app.show_grid,
+                                                tr("menu.view.document_grid"),
+                                            );
+                                            ui.checkbox(
+                                                &mut app.show_guides,
+                                                tr("menu.view.guidelines"),
+                                            );
+                                            ui.checkbox(
+                                                &mut app.show_status_bar,
+                                                tr("menu.window.toolbar_status_bar"),
+                                            );
+                                            ui.checkbox(
+                                                &mut app.show_page_border,
+                                                tr("menu.view.page_border"),
+                                            );
+                                        }
+                                        OptionsPage::PageSize => page_size_page(app, ui),
+                                        OptionsPage::Layout => {
+                                            ui.strong(tr("options.layout"));
+                                            let n = app.doc().pages.len();
+                                            ui.label(trf(
+                                                "options.pages_count",
+                                                &[("n", &n.to_string())],
+                                            ));
+                                            ui.checkbox(
+                                                &mut app.page_sorter,
+                                                tr("menu.view.page_sorter"),
+                                            );
+                                            if ui
+                                                .button(tr("menu.layout.switch_orientation"))
+                                                .clicked()
+                                            {
+                                                let s = app.page_size();
+                                                let page = app.page;
+                                                app.run(Command::ResizePage {
+                                                    page,
+                                                    size: Size::new(s.height, s.width),
+                                                });
+                                                app.fit_pending = true;
+                                            }
+                                            ui.separator();
+                                            ui.strong(tr("options.master_layers"));
+                                            let masters: Vec<(
+                                                tracedraw_core::LayerId,
+                                                String,
+                                                tracedraw_core::MasterScope,
+                                            )> = app
+                                                .doc()
+                                                .master
+                                                .iter()
+                                                .map(|l| (l.id, l.name.clone(), l.scope))
+                                                .collect();
+                                            for (id, name, scope) in masters {
+                                                ui.horizontal(|ui| {
+                                                    ui.label(&name);
+                                                    for (s, k) in [
+                                                        (
+                                                            tracedraw_core::MasterScope::All,
+                                                            "options.scope_all",
+                                                        ),
+                                                        (
+                                                            tracedraw_core::MasterScope::Odd,
+                                                            "options.scope_odd",
+                                                        ),
+                                                        (
+                                                            tracedraw_core::MasterScope::Even,
+                                                            "options.scope_even",
+                                                        ),
+                                                    ] {
+                                                        if ui
+                                                            .selectable_label(scope == s, tr(k))
+                                                            .clicked()
+                                                        {
+                                                            app.run(Command::SetLayerScope {
+                                                                layer: id,
+                                                                scope: s,
+                                                            });
+                                                        }
+                                                    }
+                                                });
+                                            }
+                                            ui.horizontal(|ui| {
+                                                for (s, k) in [
+                                                    (
+                                                        tracedraw_core::MasterScope::All,
+                                                        "options.new_master_all",
+                                                    ),
+                                                    (
+                                                        tracedraw_core::MasterScope::Odd,
+                                                        "options.new_master_odd",
+                                                    ),
+                                                    (
+                                                        tracedraw_core::MasterScope::Even,
+                                                        "options.new_master_even",
+                                                    ),
+                                                ] {
+                                                    if ui.button(tr(k)).clicked() {
+                                                        let n = app.doc().master.len() + 1;
+                                                        app.run(Command::AddMasterLayer {
+                                                            name: format!("Master {n}"),
+                                                            scope: s,
+                                                        });
+                                                    }
+                                                }
+                                            });
+                                        }
+                                        OptionsPage::Background => {
+                                            ui.strong(tr("options.background"));
+                                            let page = app.page;
+                                            let current = app
+                                                .doc()
+                                                .page(page)
+                                                .ok()
+                                                .and_then(|p| p.background.clone());
+                                            let mut kind = match &current {
+                                                None => 0,
+                                                Some(Fill::Solid(_)) => 1,
+                                                Some(_) => 2,
+                                            };
+                                            ui.horizontal(|ui| {
+                                                ui.radio_value(
+                                                    &mut kind,
+                                                    0,
+                                                    tr("options.no_background"),
+                                                );
+                                                ui.radio_value(&mut kind, 1, tr("options.solid"));
+                                                ui.radio_value(&mut kind, 2, tr("options.bitmap"));
+                                            });
+                                            match kind {
+                                                0 => {
+                                                    if current.is_some() {
+                                                        app.run(Command::SetPageBackground {
+                                                            page,
+                                                            background: None,
+                                                        });
+                                                    }
+                                                }
+                                                1 => {
+                                                    let mut c = match &current {
+                                                        Some(Fill::Solid(c)) => *c,
+                                                        _ => Color::WHITE,
+                                                    };
+                                                    let [r, g, b] = c.to_rgb8();
+                                                    let mut rgb = [r, g, b];
+                                                    let changed = ui
+                                                        .color_edit_button_srgb(&mut rgb)
+                                                        .changed();
+                                                    if changed
+                                                        || !matches!(current, Some(Fill::Solid(_)))
+                                                    {
+                                                        c = Color::rgb8(rgb[0], rgb[1], rgb[2]);
+                                                        app.run(Command::SetPageBackground {
+                                                            page,
+                                                            background: Some(Fill::Solid(c)),
+                                                        });
+                                                    }
+                                                }
+                                                _ => {
+                                                    if ui
+                                                        .button(tr("options.choose_bitmap"))
+                                                        .clicked()
+                                                    {
+                                                        crate::files::Dialog::new()
+                                                            .add_filter(
+                                                                "Images",
+                                                                &[
+                                                                    "png", "jpg", "jpeg", "bmp",
+                                                                    "gif", "webp", "tif", "tiff",
+                                                                ],
+                                                            )
+                                                            .pick_file(app, move |app, p| {
+                                                                app.set_page_background_image(
+                                                                    page, &p,
+                                                                )
+                                                            });
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        OptionsPage::Guidelines => {
+                                            ui.strong(tr("options.guidelines"));
+                                            crate::ui::dockers2::guidelines_editor(app, ui);
+                                        }
+                                        OptionsPage::Grid => {
+                                            ui.strong(tr("options.grid"));
+                                            ui.checkbox(
+                                                &mut app.show_grid,
+                                                tr("options.show_grid"),
+                                            );
+                                            ui.checkbox(
+                                                &mut app.snap.grid,
+                                                tr("options.snap_to_grid"),
+                                            );
+                                            let u = app.units;
+                                            let mut g = u.from_mm(app.snap.grid_mm);
+                                            ui.horizontal(|ui| {
+                                                ui.label(tr("options.grid_spacing"));
+                                                if ui
+                                                    .add(
+                                                        egui::DragValue::new(&mut g)
+                                                            .speed(0.5)
+                                                            .suffix(format!(" {}", u.short())),
+                                                    )
+                                                    .changed()
+                                                    && g > 0.0
+                                                {
+                                                    app.snap.grid_mm = u.to_mm(g);
+                                                }
+                                            });
+                                            ui.checkbox(
+                                                &mut app.show_pixel_grid,
+                                                tr("menu.view.pixel_grid"),
+                                            );
+                                            ui.checkbox(
+                                                &mut app.show_baseline_grid,
+                                                tr("menu.view.baseline_grid"),
+                                            );
+                                            ui.horizontal(|ui| {
+                                                ui.label(tr("options.baseline_spacing"));
+                                                let mut b =
+                                                    u.from_mm(app.settings.baseline_grid_mm);
+                                                if ui
+                                                    .add(
+                                                        egui::DragValue::new(&mut b)
+                                                            .speed(0.1)
+                                                            .suffix(format!(" {}", u.short())),
+                                                    )
+                                                    .changed()
+                                                    && b > 0.0
+                                                {
+                                                    app.settings.baseline_grid_mm = u.to_mm(b);
+                                                }
+                                            });
+                                        }
+                                        OptionsPage::Rulers => {
+                                            ui.strong(tr("options.rulers"));
+                                            ui.checkbox(
+                                                &mut app.show_rulers,
+                                                tr("options.show_rulers"),
+                                            );
+                                            ui.horizontal(|ui| {
+                                                ui.label(tr("options.units"));
                                                 for u in Units::ALL {
                                                     if ui
                                                         .selectable_label(app.units == u, u.label())
@@ -1678,409 +1970,160 @@ fn options_dialog(app: &mut App, ctx: &Context, close: &mut bool) {
                                                     }
                                                 }
                                             });
-                                    });
-                                    ui.horizontal(|ui| {
-                                        ui.label(tr("options.workspace_layout"));
-                                        for ws in [
-                                            crate::app::Workspace::Default,
-                                            crate::app::Workspace::Lite,
-                                            crate::app::Workspace::Classic,
-                                            crate::app::Workspace::Illustration,
-                                            crate::app::Workspace::PageLayout,
-                                        ] {
-                                            if ui
-                                                .selectable_label(
-                                                    app.workspace == ws,
-                                                    tr(&format!(
-                                                        "menu.window.workspace_{}",
-                                                        ws.id()
-                                                    )),
-                                                )
-                                                .clicked()
-                                            {
-                                                app.set_workspace(ws);
+                                            ui.label(
+                                                egui::RichText::new(tr(
+                                                    "options.rulers_origin_hint",
+                                                ))
+                                                .color(Tokens::TEXT_DIM),
+                                            );
+                                        }
+                                        OptionsPage::Save => {
+                                            ui.strong(tr("options.save"));
+                                            ui.label(tr("options.save_hint"));
+                                            if let Some(p) = crate::settings::Settings::path() {
+                                                ui.label(
+                                                    egui::RichText::new(p.display().to_string())
+                                                        .color(Tokens::TEXT_DIM)
+                                                        .size(11.0),
+                                                );
                                             }
                                         }
-                                    });
-                                    ui.separator();
-                                    ui.strong(tr("options.display"));
-                                    ui.checkbox(&mut app.show_rulers, tr("menu.view.rulers"));
-                                    ui.checkbox(&mut app.show_grid, tr("menu.view.document_grid"));
-                                    ui.checkbox(&mut app.show_guides, tr("menu.view.guidelines"));
-                                    ui.checkbox(
-                                        &mut app.show_status_bar,
-                                        tr("menu.window.toolbar_status_bar"),
-                                    );
-                                    ui.checkbox(
-                                        &mut app.show_page_border,
-                                        tr("menu.view.page_border"),
-                                    );
-                                }
-                                OptionsPage::PageSize => page_size_page(app, ui),
-                                OptionsPage::Layout => {
-                                    ui.strong(tr("options.layout"));
-                                    let n = app.doc().pages.len();
-                                    ui.label(trf("options.pages_count", &[("n", &n.to_string())]));
-                                    ui.checkbox(&mut app.page_sorter, tr("menu.view.page_sorter"));
-                                    if ui.button(tr("menu.layout.switch_orientation")).clicked() {
-                                        let s = app.page_size();
-                                        let page = app.page;
-                                        app.run(Command::ResizePage {
-                                            page,
-                                            size: Size::new(s.height, s.width),
-                                        });
-                                        app.fit_pending = true;
-                                    }
-                                    ui.separator();
-                                    ui.strong(tr("options.master_layers"));
-                                    let masters: Vec<(
-                                        tracedraw_core::LayerId,
-                                        String,
-                                        tracedraw_core::MasterScope,
-                                    )> = app
-                                        .doc()
-                                        .master
-                                        .iter()
-                                        .map(|l| (l.id, l.name.clone(), l.scope))
-                                        .collect();
-                                    for (id, name, scope) in masters {
-                                        ui.horizontal(|ui| {
-                                            ui.label(&name);
-                                            for (s, k) in [
-                                                (
-                                                    tracedraw_core::MasterScope::All,
-                                                    "options.scope_all",
-                                                ),
-                                                (
-                                                    tracedraw_core::MasterScope::Odd,
-                                                    "options.scope_odd",
-                                                ),
-                                                (
-                                                    tracedraw_core::MasterScope::Even,
-                                                    "options.scope_even",
-                                                ),
-                                            ] {
-                                                if ui.selectable_label(scope == s, tr(k)).clicked()
-                                                {
-                                                    app.run(Command::SetLayerScope {
-                                                        layer: id,
-                                                        scope: s,
-                                                    });
-                                                }
-                                            }
-                                        });
-                                    }
-                                    ui.horizontal(|ui| {
-                                        for (s, k) in [
-                                            (
-                                                tracedraw_core::MasterScope::All,
-                                                "options.new_master_all",
-                                            ),
-                                            (
-                                                tracedraw_core::MasterScope::Odd,
-                                                "options.new_master_odd",
-                                            ),
-                                            (
-                                                tracedraw_core::MasterScope::Even,
-                                                "options.new_master_even",
-                                            ),
-                                        ] {
-                                            if ui.button(tr(k)).clicked() {
-                                                let n = app.doc().master.len() + 1;
-                                                app.run(Command::AddMasterLayer {
-                                                    name: format!("Master {n}"),
-                                                    scope: s,
-                                                });
-                                            }
-                                        }
-                                    });
-                                }
-                                OptionsPage::Background => {
-                                    ui.strong(tr("options.background"));
-                                    let page = app.page;
-                                    let current = app
-                                        .doc()
-                                        .page(page)
-                                        .ok()
-                                        .and_then(|p| p.background.clone());
-                                    let mut kind = match &current {
-                                        None => 0,
-                                        Some(Fill::Solid(_)) => 1,
-                                        Some(_) => 2,
-                                    };
-                                    ui.horizontal(|ui| {
-                                        ui.radio_value(&mut kind, 0, tr("options.no_background"));
-                                        ui.radio_value(&mut kind, 1, tr("options.solid"));
-                                        ui.radio_value(&mut kind, 2, tr("options.bitmap"));
-                                    });
-                                    match kind {
-                                        0 => {
-                                            if current.is_some() {
-                                                app.run(Command::SetPageBackground {
-                                                    page,
-                                                    background: None,
-                                                });
-                                            }
-                                        }
-                                        1 => {
-                                            let mut c = match &current {
-                                                Some(Fill::Solid(c)) => *c,
-                                                _ => Color::WHITE,
-                                            };
-                                            let [r, g, b] = c.to_rgb8();
-                                            let mut rgb = [r, g, b];
-                                            let changed =
-                                                ui.color_edit_button_srgb(&mut rgb).changed();
-                                            if changed || !matches!(current, Some(Fill::Solid(_))) {
-                                                c = Color::rgb8(rgb[0], rgb[1], rgb[2]);
-                                                app.run(Command::SetPageBackground {
-                                                    page,
-                                                    background: Some(Fill::Solid(c)),
-                                                });
-                                            }
-                                        }
-                                        _ => {
-                                            if ui.button(tr("options.choose_bitmap")).clicked() {
-                                                if let Some(p) = rfd::FileDialog::new()
-                                                    .add_filter(
-                                                        "Images",
-                                                        &[
-                                                            "png", "jpg", "jpeg", "bmp", "gif",
-                                                            "webp", "tif", "tiff",
-                                                        ],
-                                                    )
-                                                    .pick_file()
-                                                {
-                                                    if let Ok(img) = image::open(&p) {
-                                                        let img = img.to_rgba8();
-                                                        if let Some(png) =
-                                                            crate::bitmap_fx::encode(&img)
-                                                        {
-                                                            let size = app.page_size();
-                                                            app.run(Command::SetPageBackground {
-                                                        page,
-                                                        background: Some(Fill::Pattern(
-                                                            tracedraw_core::Pattern::Bitmap {
-                                                                png,
-                                                                width_px: img.width(),
-                                                                height_px: img.height(),
-                                                                size_mm: size
-                                                                    .width
-                                                                    .max(size.height),
-                                                            },
-                                                        )),
-                                                    });
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                OptionsPage::Guidelines => {
-                                    ui.strong(tr("options.guidelines"));
-                                    crate::ui::dockers2::guidelines_editor(app, ui);
-                                }
-                                OptionsPage::Grid => {
-                                    ui.strong(tr("options.grid"));
-                                    ui.checkbox(&mut app.show_grid, tr("options.show_grid"));
-                                    ui.checkbox(&mut app.snap.grid, tr("options.snap_to_grid"));
-                                    let u = app.units;
-                                    let mut g = u.from_mm(app.snap.grid_mm);
-                                    ui.horizontal(|ui| {
-                                        ui.label(tr("options.grid_spacing"));
-                                        if ui
-                                            .add(
-                                                egui::DragValue::new(&mut g)
-                                                    .speed(0.5)
-                                                    .suffix(format!(" {}", u.short())),
-                                            )
-                                            .changed()
-                                            && g > 0.0
-                                        {
-                                            app.snap.grid_mm = u.to_mm(g);
-                                        }
-                                    });
-                                    ui.checkbox(
-                                        &mut app.show_pixel_grid,
-                                        tr("menu.view.pixel_grid"),
-                                    );
-                                    ui.checkbox(
-                                        &mut app.show_baseline_grid,
-                                        tr("menu.view.baseline_grid"),
-                                    );
-                                    ui.horizontal(|ui| {
-                                        ui.label(tr("options.baseline_spacing"));
-                                        let mut b = u.from_mm(app.settings.baseline_grid_mm);
-                                        if ui
-                                            .add(
-                                                egui::DragValue::new(&mut b)
-                                                    .speed(0.1)
-                                                    .suffix(format!(" {}", u.short())),
-                                            )
-                                            .changed()
-                                            && b > 0.0
-                                        {
-                                            app.settings.baseline_grid_mm = u.to_mm(b);
-                                        }
-                                    });
-                                }
-                                OptionsPage::Rulers => {
-                                    ui.strong(tr("options.rulers"));
-                                    ui.checkbox(&mut app.show_rulers, tr("options.show_rulers"));
-                                    ui.horizontal(|ui| {
-                                        ui.label(tr("options.units"));
-                                        for u in Units::ALL {
-                                            if ui
-                                                .selectable_label(app.units == u, u.label())
-                                                .clicked()
-                                            {
-                                                app.units = u;
-                                            }
-                                        }
-                                    });
-                                    ui.label(
-                                        egui::RichText::new(tr("options.rulers_origin_hint"))
-                                            .color(Tokens::TEXT_DIM),
-                                    );
-                                }
-                                OptionsPage::Save => {
-                                    ui.strong(tr("options.save"));
-                                    ui.label(tr("options.save_hint"));
-                                    if let Some(p) = crate::settings::Settings::path() {
-                                        ui.label(
-                                            egui::RichText::new(p.display().to_string())
-                                                .color(Tokens::TEXT_DIM)
-                                                .size(11.0),
-                                        );
-                                    }
-                                }
-                                OptionsPage::Shortcuts => {
-                                    ui.strong(tr("options.shortcuts"));
-                                    ui.label(
-                                        egui::RichText::new(tr("options.shortcuts_hint"))
-                                            .color(Tokens::TEXT_DIM),
-                                    );
-                                    egui::ScrollArea::vertical()
-                                        .max_height(300.0)
-                                        .show(ui, |ui| {
-                                            egui::Grid::new("shortcuts").striped(true).show(
+                                        OptionsPage::Shortcuts => {
+                                            ui.strong(tr("options.shortcuts"));
+                                            ui.label(
+                                                egui::RichText::new(tr("options.shortcuts_hint"))
+                                                    .color(Tokens::TEXT_DIM),
+                                            );
+                                            egui::ScrollArea::vertical().max_height(300.0).show(
                                                 ui,
                                                 |ui| {
-                                                    for t in crate::tools::Tool::ALL {
-                                                        ui.label(t.name());
-                                                        let current = app
-                                                            .settings
-                                                            .shortcuts
-                                                            .iter()
-                                                            .find(|(k, _)| k == t.id())
-                                                            .map(|(_, v)| v.clone())
-                                                            .unwrap_or_else(|| {
-                                                                t.shortcut()
-                                                                    .unwrap_or("")
-                                                                    .to_string()
-                                                            });
-                                                        let mut v = current.clone();
-                                                        if ui
-                                                            .add(
-                                                                egui::TextEdit::singleline(&mut v)
-                                                                    .desired_width(100.0),
-                                                            )
-                                                            .lost_focus()
-                                                            && v != current
-                                                        {
-                                                            app.settings
-                                                                .shortcuts
-                                                                .retain(|(k, _)| k != t.id());
-                                                            if !v.is_empty() {
-                                                                app.settings
+                                                    egui::Grid::new("shortcuts")
+                                                        .striped(true)
+                                                        .show(ui, |ui| {
+                                                            for t in crate::tools::Tool::ALL {
+                                                                ui.label(t.name());
+                                                                let current = app
+                                                                    .settings
                                                                     .shortcuts
-                                                                    .push((t.id().to_string(), v));
+                                                                    .iter()
+                                                                    .find(|(k, _)| k == t.id())
+                                                                    .map(|(_, v)| v.clone())
+                                                                    .unwrap_or_else(|| {
+                                                                        t.shortcut()
+                                                                            .unwrap_or("")
+                                                                            .to_string()
+                                                                    });
+                                                                let mut v = current.clone();
+                                                                if ui
+                                                                    .add(
+                                                                        egui::TextEdit::singleline(
+                                                                            &mut v,
+                                                                        )
+                                                                        .desired_width(100.0),
+                                                                    )
+                                                                    .lost_focus()
+                                                                    && v != current
+                                                                {
+                                                                    app.settings.shortcuts.retain(
+                                                                        |(k, _)| k != t.id(),
+                                                                    );
+                                                                    if !v.is_empty() {
+                                                                        app.settings
+                                                                            .shortcuts
+                                                                            .push((
+                                                                                t.id().to_string(),
+                                                                                v,
+                                                                            ));
+                                                                    }
+                                                                }
+                                                                ui.end_row();
                                                             }
-                                                        }
-                                                        ui.end_row();
-                                                    }
+                                                        });
                                                 },
                                             );
-                                        });
-                                    if ui.button(tr("options.reset_shortcuts")).clicked() {
-                                        app.settings.shortcuts.clear();
-                                    }
-                                }
-                                OptionsPage::Tools => {
-                                    ui.strong(tr("options.tools"));
-                                    ui.horizontal(|ui| {
-                                        ui.label(tr("tool.polygon"));
-                                        ui.add(
-                                            egui::DragValue::new(&mut app.polygon_points)
-                                                .range(3..=500),
-                                        );
-                                    });
-                                    ui.horizontal(|ui| {
-                                        ui.label(tr("tool.spiral"));
-                                        ui.add(
-                                            egui::DragValue::new(&mut app.spiral_revolutions)
-                                                .range(1..=100),
-                                        );
-                                    });
-                                    ui.checkbox(
-                                        &mut app.settings.show_outline_flyout,
-                                        tr("options.show_outline_flyout"),
-                                    );
-                                    ui.label(tr("options.wheel_action"));
-                                    ui.horizontal(|ui| {
-                                        ui.radio_value(
-                                            &mut app.settings.wheel_zooms,
-                                            true,
-                                            tr("options.wheel_zoom"),
-                                        );
-                                        ui.radio_value(
-                                            &mut app.settings.wheel_zooms,
-                                            false,
-                                            tr("options.wheel_scroll"),
-                                        );
-                                    });
-                                    ui.label(tr(if app.settings.wheel_zooms {
-                                        "options.zoom_wheel_hint_zoom"
-                                    } else {
-                                        "options.zoom_wheel_hint"
-                                    }));
-                                }
-                                OptionsPage::Text => {
-                                    ui.strong(tr("options.text"));
-                                    ui.horizontal(|ui| {
-                                        ui.label(tr("options.default_font"));
-                                        egui::ComboBox::from_id_salt("opt_font")
-                                            .selected_text(app.text_font.clone())
-                                            .show_ui(ui, |ui| {
-                                                for f in app.font_families.clone() {
-                                                    if ui
-                                                        .selectable_label(app.text_font == f, &f)
-                                                        .clicked()
-                                                    {
-                                                        app.text_font = f;
-                                                    }
-                                                }
+                                            if ui.button(tr("options.reset_shortcuts")).clicked() {
+                                                app.settings.shortcuts.clear();
+                                            }
+                                        }
+                                        OptionsPage::Tools => {
+                                            ui.strong(tr("options.tools"));
+                                            ui.horizontal(|ui| {
+                                                ui.label(tr("tool.polygon"));
+                                                ui.add(
+                                                    egui::DragValue::new(&mut app.polygon_points)
+                                                        .range(3..=500),
+                                                );
                                             });
+                                            ui.horizontal(|ui| {
+                                                ui.label(tr("tool.spiral"));
+                                                ui.add(
+                                                    egui::DragValue::new(
+                                                        &mut app.spiral_revolutions,
+                                                    )
+                                                    .range(1..=100),
+                                                );
+                                            });
+                                            ui.checkbox(
+                                                &mut app.settings.show_outline_flyout,
+                                                tr("options.show_outline_flyout"),
+                                            );
+                                            ui.label(tr("options.wheel_action"));
+                                            ui.horizontal(|ui| {
+                                                ui.radio_value(
+                                                    &mut app.settings.wheel_zooms,
+                                                    true,
+                                                    tr("options.wheel_zoom"),
+                                                );
+                                                ui.radio_value(
+                                                    &mut app.settings.wheel_zooms,
+                                                    false,
+                                                    tr("options.wheel_scroll"),
+                                                );
+                                            });
+                                            ui.label(tr(if app.settings.wheel_zooms {
+                                                "options.zoom_wheel_hint_zoom"
+                                            } else {
+                                                "options.zoom_wheel_hint"
+                                            }));
+                                        }
+                                        OptionsPage::Text => {
+                                            ui.strong(tr("options.text"));
+                                            ui.horizontal(|ui| {
+                                                ui.label(tr("options.default_font"));
+                                                egui::ComboBox::from_id_salt("opt_font")
+                                                    .selected_text(app.text_font.clone())
+                                                    .show_ui(ui, |ui| {
+                                                        for f in app.font_families.clone() {
+                                                            if ui
+                                                                .selectable_label(
+                                                                    app.text_font == f,
+                                                                    &f,
+                                                                )
+                                                                .clicked()
+                                                            {
+                                                                app.text_font = f;
+                                                            }
+                                                        }
+                                                    });
+                                            });
+                                            ui.horizontal(|ui| {
+                                                ui.label(tr("options.default_size"));
+                                                ui.add(
+                                                    egui::DragValue::new(&mut app.text_size_pt)
+                                                        .range(1.0..=999.0)
+                                                        .suffix(" pt"),
+                                                );
+                                            });
+                                            ui.checkbox(
+                                                &mut app.text_hyphenation,
+                                                tr("menu.text.use_hyphenation"),
+                                            );
+                                            ui.checkbox(
+                                                &mut app.show_non_printing,
+                                                tr("menu.text.show_non_printing"),
+                                            );
+                                        }
                                     });
-                                    ui.horizontal(|ui| {
-                                        ui.label(tr("options.default_size"));
-                                        ui.add(
-                                            egui::DragValue::new(&mut app.text_size_pt)
-                                                .range(1.0..=999.0)
-                                                .suffix(" pt"),
-                                        );
-                                    });
-                                    ui.checkbox(
-                                        &mut app.text_hyphenation,
-                                        tr("menu.text.use_hyphenation"),
-                                    );
-                                    ui.checkbox(
-                                        &mut app.show_non_printing,
-                                        tr("menu.text.show_non_printing"),
-                                    );
-                                }
-                            });
                                 });
                         });
                     },
@@ -2305,16 +2348,15 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
                 .as_ref()
                 .and_then(|p| p.file_stem().map(|s| s.to_string_lossy().to_string()))
                 .unwrap_or_else(|| "Graphic1".into());
-            if let Some(path) = rfd::FileDialog::new()
+            crate::files::Dialog::new()
                 .add_filter(name, &[ext])
                 .set_file_name(format!("{stem}.{ext}"))
-                .save_file()
-            {
-                match crate::export::export(app, &path, st) {
-                    Ok(msg) => app.status = msg,
-                    Err(e) => app.status = format!("{}: {e}", tr("dialog.export_failed")),
-                }
-            }
+                .save_file(app, |app, path| {
+                    match crate::export::export(app, &path, st) {
+                        Ok(msg) => app.status = msg,
+                        Err(e) => app.status = format!("{}: {e}", tr("dialog.export_failed")),
+                    }
+                });
         }
     });
 }
@@ -2370,16 +2412,16 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
         ui.label(tr("dialog.print_merge_hint"));
         ui.horizontal(|ui| {
             if ui.button(tr("dialog.load_csv")).clicked() {
-                if let Some(p) = rfd::FileDialog::new()
+                crate::files::Dialog::new()
                     .add_filter("CSV", &["csv", "txt"])
-                    .pick_file()
-                {
-                    if let Ok(text) = std::fs::read_to_string(&p) {
-                        let (h, r) = crate::export::parse_csv(&text);
-                        st.headers = h;
-                        st.rows = r;
-                        st.path = Some(p);
-                    }
+                    .pick_into("print_merge_csv");
+            }
+            if let Some(p) = crate::files::take_picked("print_merge_csv") {
+                if let Ok(text) = crate::files::read_to_string(&p) {
+                    let (h, r) = crate::export::parse_csv(&text);
+                    st.headers = h;
+                    st.rows = r;
+                    st.path = Some(p);
                 }
             }
             if let Some(p) = &st.path {
@@ -2840,14 +2882,14 @@ fn thesaurus_dialog(app: &mut App, ctx: &Context, st: &mut ThesaurusState, close
         thesaurus_lookup(app, st);
     }
     if pick_file {
-        if let Some(p) = rfd::FileDialog::new()
+        crate::files::Dialog::new()
             .add_filter("MyThes", &["dat"])
-            .pick_file()
-        {
-            app.settings.thesaurus_file = Some(p);
-            app.settings.save();
-            thesaurus_lookup(app, st);
-        }
+            .pick_into("thesaurus_file");
+    }
+    if let Some(p) = crate::files::take_picked("thesaurus_file") {
+        app.settings.thesaurus_file = Some(p);
+        app.settings.save();
+        thesaurus_lookup(app, st);
     }
 }
 
@@ -3430,10 +3472,10 @@ fn palette_editor_dialog(
                     }
                 }
                 if ui.button(tr("dialog.save_palette")).clicked() {
-                    if let Some(p) = rfd::FileDialog::new()
+                    if let Some(p) = crate::files::Dialog::new()
                         .add_filter("Palette", &["tdpal", "gpl"])
                         .set_file_name(format!("{}.tdpal", pal.name))
-                        .save_file()
+                        .save_path()
                     {
                         if let Err(e) = crate::palette::save_palette(pal, &p) {
                             log::warn!("{e}");

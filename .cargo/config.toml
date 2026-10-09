@@ -1,0 +1,4 @@
+# The WebAssembly build (wasm32-unknown-unknown) takes its randomness from
+# the browser: getrandom 0.3 picks that backend through this cfg.
+[target.wasm32-unknown-unknown]
+rustflags = ["--cfg", 'getrandom_backend="wasm_js"']

@@ -33,6 +33,26 @@ pub fn install() {
 
 static SYSTEM: OnceLock<FontSystem> = OnceLock::new();
 
+/// Font files registered before the font system starts (the browser build
+/// has no system fonts and registers bundled ones here).
+static EXTRA_FONTS: Mutex<Vec<Arc<Vec<u8>>>> = Mutex::new(Vec::new());
+
+/// Register a font file (TTF, OTF or a collection). Takes effect when the
+/// font system starts, so call it before the first `fonts()`; returns
+/// false when the system has already started and the data was ignored.
+pub fn add_font_data(data: Vec<u8>) -> bool {
+    if SYSTEM.get().is_some() {
+        return false;
+    }
+    match EXTRA_FONTS.lock() {
+        Ok(mut v) => {
+            v.push(Arc::new(data));
+            true
+        }
+        Err(_) => false,
+    }
+}
+
 /// The process-wide font system; loads system fonts on first use.
 pub fn fonts() -> &'static FontSystem {
     SYSTEM.get_or_init(FontSystem::load)
@@ -177,7 +197,14 @@ impl TextLayout {
 impl FontSystem {
     fn load() -> Self {
         let mut db = fontdb::Database::new();
+        #[cfg(not(target_arch = "wasm32"))]
         db.load_system_fonts();
+        if let Ok(extra) = EXTRA_FONTS.lock() {
+            for data in extra.iter() {
+                let source: Arc<dyn AsRef<[u8]> + Sync + Send> = data.clone();
+                db.load_font_source(fontdb::Source::Binary(source));
+            }
+        }
         let mut families: Vec<String> = db
             .faces()
             .flat_map(|f| f.families.iter().map(|(n, _)| n.clone()))

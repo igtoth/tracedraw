@@ -1504,16 +1504,14 @@ impl App {
     // ----- scripts -----------------------------------------------------------------------
 
     pub fn run_script_file(&mut self) {
-        let Some(path) = rfd::FileDialog::new()
+        crate::files::Dialog::new()
             .add_filter("JavaScript (*.js)", &["js"])
-            .pick_file()
-        else {
-            return;
-        };
-        match std::fs::read_to_string(&path) {
-            Ok(src) => self.run_script(&src),
-            Err(e) => self.status = format!("{}: {e}", path.display()),
-        }
+            .pick_file(self, |app, path| {
+                match crate::files::read_to_string(&path) {
+                    Ok(src) => app.run_script(&src),
+                    Err(e) => app.status = format!("{}: {e}", path.display()),
+                }
+            });
     }
 
     pub fn run_script(&mut self, src: &str) {
@@ -1569,21 +1567,19 @@ impl App {
     }
 
     pub fn open_palette_file(&mut self) {
-        let Some(path) = rfd::FileDialog::new()
+        crate::files::Dialog::new()
             .add_filter(tr("file.palettes"), &["tdpal", "gpl", "ase", "aco", "json"])
-            .pick_file()
-        else {
-            return;
-        };
-        match crate::palette::load_palette(&path) {
-            Ok(p) => {
-                self.palettes.push(p);
-                let i = self.palettes.len() - 1;
-                self.visible_palettes.insert(0, i);
-                self.rebuild_palette();
-            }
-            Err(e) => self.status = format!("{}: {e}", path.display()),
-        }
+            .pick_file(self, |app, path| {
+                match crate::palette::load_palette(&path) {
+                    Ok(p) => {
+                        app.palettes.push(p);
+                        let i = app.palettes.len() - 1;
+                        app.visible_palettes.insert(0, i);
+                        app.rebuild_palette();
+                    }
+                    Err(e) => app.status = format!("{}: {e}", path.display()),
+                }
+            });
     }
 
     fn colors_of(shapes: &[Shape], out: &mut Vec<Color>) {

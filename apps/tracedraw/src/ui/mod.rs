@@ -29,14 +29,25 @@ fn bar() -> Frame {
         .inner_margin(egui::Margin::symmetric(4, 2))
 }
 
+/// Set the window title (the page title in a browser) when it changes.
+fn set_window_title(ctx: &egui::Context, title: String) {
+    let id = egui::Id::new("tracedraw_window_title");
+    if ctx.data(|d| d.get_temp::<String>(id)).as_deref() == Some(title.as_str()) {
+        return;
+    }
+    ctx.data_mut(|d| d.insert_temp(id, title.clone()));
+    #[cfg(not(target_arch = "wasm32"))]
+    ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
+    #[cfg(target_arch = "wasm32")]
+    crate::web::set_title(&title);
+}
+
 pub fn root(app: &mut App, ui: &mut Ui) {
     let ctx = ui.ctx().clone();
     app.keyboard(&ctx);
 
     let doc_name = app.document_title();
-    ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!(
-        "TraceDraw - {doc_name}"
-    )));
+    set_window_title(&ctx, format!("TraceDraw - {doc_name}"));
 
     if app.fullscreen_preview {
         preview::fullscreen(app, ui);
@@ -704,6 +715,83 @@ mod tests {
             app.undo();
         }
         frame(&ctx, &mut app);
+    }
+
+    fn key(ctx: &egui::Context, app: &mut App, key: egui::Key, modifiers: egui::Modifiers) {
+        // Press and release inside one frame, with the modifiers released
+        // too: what a fast typist or a test driver produces.
+        frame_with(
+            ctx,
+            app,
+            vec![
+                egui::Event::Key {
+                    key,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers,
+                },
+                egui::Event::Key {
+                    key,
+                    physical_key: None,
+                    pressed: false,
+                    repeat: false,
+                    modifiers: egui::Modifiers::NONE,
+                },
+            ],
+        );
+    }
+
+    fn shape_count(app: &App) -> usize {
+        app.doc().pages[0]
+            .layers
+            .iter()
+            .map(|l| l.shapes.len())
+            .sum()
+    }
+
+    /// Shortcuts take the modifiers of each key press: Ctrl+Shift+Z redoes
+    /// without also undoing, and a Ctrl+E released within the frame is the
+    /// Export shortcut, not the plain E (align centres).
+    #[test]
+    fn shortcuts_use_the_modifiers_of_each_key_press() {
+        use egui::{Key, Modifiers};
+        let ctx = egui::Context::default();
+        let mut app = mixed_app();
+        app.show_welcome = false;
+        frame(&ctx, &mut app);
+        let first = app.doc().pages[0].layers[0].shapes[0].id;
+        app.select(vec![first]);
+        let n0 = shape_count(&app);
+        key(&ctx, &mut app, Key::D, Modifiers::COMMAND);
+        assert_eq!(shape_count(&app), n0 + 1, "Ctrl+D duplicates");
+        key(&ctx, &mut app, Key::Z, Modifiers::COMMAND);
+        assert_eq!(shape_count(&app), n0, "Ctrl+Z undoes");
+        key(
+            &ctx,
+            &mut app,
+            Key::Z,
+            Modifiers::COMMAND | Modifiers::SHIFT,
+        );
+        assert_eq!(shape_count(&app), n0 + 1, "Ctrl+Shift+Z redoes only");
+        app.select(vec![first]);
+        let before = app.selection_bounds();
+        key(&ctx, &mut app, Key::E, Modifiers::COMMAND);
+        assert!(
+            matches!(app.dialog, crate::ui::dialogs::Dialog::Export(_)),
+            "Ctrl+E opens Export"
+        );
+        assert_eq!(app.selection_bounds(), before, "and does not align");
+        app.dialog = crate::ui::dialogs::Dialog::None;
+        // Arrows nudge by the nudge distance, x10 with Shift, x0.1 with Ctrl.
+        let b0 = app.selection_bounds().unwrap_or_default();
+        key(&ctx, &mut app, Key::ArrowRight, Modifiers::NONE);
+        key(&ctx, &mut app, Key::ArrowRight, Modifiers::SHIFT);
+        key(&ctx, &mut app, Key::ArrowRight, Modifiers::COMMAND);
+        let b1 = app.selection_bounds().unwrap_or_default();
+        let moved = b1.x0 - b0.x0;
+        let want = app.nudge_mm * (1.0 + 10.0 + 0.1);
+        assert!((moved - want).abs() < 1e-6, "moved {moved}, want {want}");
     }
 
     /// The whole window draws with every docker tab, every tool and every

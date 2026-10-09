@@ -45,7 +45,7 @@ pub fn export(app: &mut App, path: &Path, st: &ExportState) -> Result<String, St
     match ext {
         "svg" => {
             let svg = tracedraw_io::svg::page_to_svg(&doc, 0);
-            std::fs::write(path, svg).map_err(|e| e.to_string())?;
+            crate::files::write(path, svg).map_err(|e| e.to_string())?;
         }
         "pdf" | "ai" => {
             use tracedraw_io::pdf::{PdfOptions, PdfStandard};
@@ -59,7 +59,9 @@ pub fn export(app: &mut App, path: &Path, st: &ExportState) -> Result<String, St
                 None
             } else {
                 let p = app.settings.color.cmyk_profile_path.trim().to_string();
-                (!p.is_empty()).then(|| std::fs::read(&p).ok()).flatten()
+                (!p.is_empty())
+                    .then(|| crate::files::read(&p).ok())
+                    .flatten()
             };
             let opts = PdfOptions {
                 standard,
@@ -70,36 +72,36 @@ pub fn export(app: &mut App, path: &Path, st: &ExportState) -> Result<String, St
                 flatten_dpi: st.dpi.max(72.0),
             };
             let pdf = tracedraw_io::pdf::document_to_pdf_with(&doc, &opts);
-            std::fs::write(path, pdf).map_err(|e| e.to_string())?;
+            crate::files::write(path, pdf).map_err(|e| e.to_string())?;
         }
         "eps" => {
             let eps = tracedraw_io::eps::page_to_eps(&doc, 0);
-            std::fs::write(path, eps).map_err(|e| e.to_string())?;
+            crate::files::write(path, eps).map_err(|e| e.to_string())?;
         }
         "dxf" => {
             let dxf = tracedraw_io::dxf::page_to_dxf(&doc, 0);
-            std::fs::write(path, dxf).map_err(|e| e.to_string())?;
+            crate::files::write(path, dxf).map_err(|e| e.to_string())?;
         }
         "emf" => {
             let emf = tracedraw_io::emf::page_to_emf(&doc, 0);
-            std::fs::write(path, emf).map_err(|e| e.to_string())?;
+            crate::files::write(path, emf).map_err(|e| e.to_string())?;
         }
         "wmf" => {
             let wmf = tracedraw_io::emf::page_to_wmf(&doc, 0);
-            std::fs::write(path, wmf).map_err(|e| e.to_string())?;
+            crate::files::write(path, wmf).map_err(|e| e.to_string())?;
         }
         "plt" => {
             let plt = tracedraw_io::plt::page_to_plt(&doc, 0);
-            std::fs::write(path, plt).map_err(|e| e.to_string())?;
+            crate::files::write(path, plt).map_err(|e| e.to_string())?;
         }
         "psd" => {
             let psd =
                 tracedraw_io::psd::page_to_psd(&doc, 0, st.dpi.max(36.0)).ok_or("render failed")?;
-            std::fs::write(path, psd).map_err(|e| e.to_string())?;
+            crate::files::write(path, psd).map_err(|e| e.to_string())?;
         }
         "html" => {
             let html = tracedraw_io::html::document_to_html(&doc);
-            std::fs::write(path, html).map_err(|e| e.to_string())?;
+            crate::files::write(path, html).map_err(|e| e.to_string())?;
         }
         _ => {
             // Raster: every page when all_pages, numbered files.
@@ -186,7 +188,7 @@ fn write_raster(pm: &tiny_skia::Pixmap, path: &Path, ext: &str, quality: u8) -> 
             .write_to(&mut out, format)
             .map_err(|e| e.to_string())?,
     }
-    std::fs::write(path, out.into_inner()).map_err(|e| e.to_string())
+    crate::files::write(path, out.into_inner()).map_err(|e| e.to_string())
 }
 
 /// Print: build a PDF with the print options and open it in the system
@@ -254,13 +256,17 @@ pub fn print(app: &mut App, st: &PrintState) -> Result<String, String> {
     } else {
         tracedraw_io::pdf::document_to_pdf(&doc)
     };
+    let name = format!("{}.pdf", app.document_title().trim_end_matches('*'));
+    if crate::files::WEB {
+        // In a browser the PDF is downloaded; its viewer prints it.
+        let path = std::path::PathBuf::from("/download").join(&name);
+        crate::files::write(&path, pdf).map_err(|e| e.to_string())?;
+        return Ok(trf("status.print_sent", &[("path", &name)]));
+    }
     let dir = std::env::temp_dir().join("tracedraw-print");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let path = dir.join(format!(
-        "{}.pdf",
-        app.document_title().trim_end_matches('*')
-    ));
-    std::fs::write(&path, pdf).map_err(|e| e.to_string())?;
+    let path = dir.join(name);
+    crate::files::write(&path, pdf).map_err(|e| e.to_string())?;
     // The system viewer handles the copy count; open it once.
     open_with_system(&path)?;
     Ok(trf(
@@ -386,8 +392,15 @@ pub fn open_with_system(path: &Path) -> Result<(), String> {
 }
 
 impl App {
-    /// Open a web page in the system browser.
+    /// Open a web page in the system browser (a new tab in the browser
+    /// build).
     pub fn open_url(&mut self, url: &str) {
+        #[cfg(target_arch = "wasm32")]
+        {
+            crate::web::open_url(url);
+            return;
+        }
+        #[allow(unreachable_code)]
         if let Err(e) = open_with_system(Path::new(url)) {
             self.status = e;
         }
@@ -415,6 +428,18 @@ impl App {
     /// File > Send To: write the document as PDF into `target` and report
     /// where it went.
     pub fn send_to(&mut self, target: SendTarget) {
+        if crate::files::WEB {
+            // No folders in a browser: every target is a PDF download.
+            let name = self.send_to_file_name();
+            let pdf = tracedraw_io::pdf::document_to_pdf(self.engine.document());
+            let path = std::path::PathBuf::from("/download").join(&name);
+            self.status = match crate::files::write(&path, pdf) {
+                Ok(()) => trf("status.sent_to", &[("path", &name)]),
+                Err(e) => trf("status.export_failed", &[("e", &e.to_string())]),
+            };
+            let _ = target;
+            return;
+        }
         let Some(dir) = target.dir() else {
             self.status = tr("status.send_to_no_folder");
             return;

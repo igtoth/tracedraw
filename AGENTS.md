@@ -1,7 +1,8 @@
 # AGENTS.md: guide for AI agents and contributors
 
 TraceDraw is an open-source vector editor in **Rust only**: native egui/eframe
-desktop app, later a WebAssembly build. No Electron, Tauri or webview.
+desktop app and the same app compiled to WebAssembly for the browser. No
+Electron, Tauri or webview.
 The product name is **TraceDraw** in prose; machine names are `tracedraw`
 (`tracedraw-core`, `tracedraw-cdr`, `.tdraw` files).
 
@@ -56,6 +57,16 @@ with python-xlib (XTest) and capture with ImageMagick `import`. See
 before claiming a UI change works. `scripts/visual/smoke_edit.py` and
 `scripts/visual/monkey.py` (random actions, `MONKEY_SEED`) must leave the
 application running with no panic in the log after any interaction change.
+
+## Browser build
+
+The app must keep compiling for `wasm32-unknown-unknown`. File dialogs and
+file access go through `apps/tracedraw/src/files.rs` (never `rfd` or
+`std::fs` directly in UI code); anything that needs a desktop (processes,
+temporary folders, system clipboard images) checks `files::WEB` or is
+`#[cfg(not(target_arch = "wasm32"))]`. `std::time::Instant`,
+`SystemTime::now`, `std::env::temp_dir` and `std::process::id` panic in a
+browser: use `web_time` or avoid them. See `docs/behavior/web.md`.
 
 ## Parity
 

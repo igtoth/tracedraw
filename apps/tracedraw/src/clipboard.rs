@@ -30,8 +30,16 @@ impl ClipboardContent {
     }
 }
 
+/// The system clipboard as seen by the browser build: empty, because
+/// browsers only hand clipboard contents to paste events.
+#[cfg(target_arch = "wasm32")]
+pub fn read_system() -> ClipboardContent {
+    ClipboardContent::default()
+}
+
 /// Read text and image from the system clipboard; failures yield `None`
 /// fields (headless sessions have no clipboard).
+#[cfg(not(target_arch = "wasm32"))]
 pub fn read_system() -> ClipboardContent {
     let Ok(mut cb) = arboard::Clipboard::new() else {
         return ClipboardContent::default();
@@ -44,10 +52,17 @@ pub fn read_system() -> ClipboardContent {
 }
 
 /// Put text on the system clipboard (best effort).
+#[cfg(not(target_arch = "wasm32"))]
 pub fn write_text(text: &str) {
     if let Ok(mut cb) = arboard::Clipboard::new() {
         let _ = cb.set_text(text.to_string());
     }
+}
+
+/// Put text on the system clipboard through egui (browser build).
+#[cfg(target_arch = "wasm32")]
+pub fn write_text(text: &str) {
+    crate::web::copy_text(text);
 }
 
 impl App {
@@ -180,6 +195,11 @@ impl App {
     /// Bitmaps > Edit Bitmap: write the pixels to a PNG next to the system's
     /// temporary files, link the object to it and open the system editor.
     pub fn edit_bitmap_externally(&mut self) {
+        if crate::files::WEB {
+            // A browser cannot hand a file to another program.
+            self.status = tr("status.not_in_browser");
+            return;
+        }
         let Some(id) = self.selected_bitmap() else {
             return;
         };
@@ -217,7 +237,7 @@ impl App {
         let Some(path) = self.bitmap_link(id) else {
             return;
         };
-        let img = match image::open(&path) {
+        let img = match crate::files::open_image(&path) {
             Ok(i) => i.to_rgba8(),
             Err(e) => {
                 self.status = trf(

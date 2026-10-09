@@ -185,8 +185,9 @@ fn rgb_to_cmyk_bytes(rgb: &[u8]) -> Vec<u8> {
 
 /// PDF date string for now (UTC).
 fn pdf_date() -> String {
-    let secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    // web_time is std's clock natively and the JavaScript clock in a browser.
+    let secs = web_time::SystemTime::now()
+        .duration_since(web_time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
     let days = secs / 86_400;

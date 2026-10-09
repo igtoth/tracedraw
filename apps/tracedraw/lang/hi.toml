@@ -1219,6 +1219,7 @@ status.missing_fonts = "अनुपलब्ध फ़ॉन्ट प्रत
 status.n_objects_selected = "{n} ऑब्जेक्ट चयनित"
 status.next_page = "अगला पृष्ठ"
 status.none = "कोई नहीं"
+status.not_in_browser = "ब्राउज़र संस्करण में उपलब्ध नहीं"
 status.object_on_layer = "{l} पर {k}"
 status.objects_copied = "{n} ऑब्जेक्ट कॉपी किए गए"
 status.page_n_of_m = "{m} में से {n}"

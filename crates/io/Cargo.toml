@@ -15,5 +15,11 @@ tiny-skia.workspace = true
 usvg = { version = "0.48", default-features = false }
 lopdf = { version = "0.36", default-features = false }
 roxmltree = "0.21"
+web-time = "1"
 zip.workspace = true
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+
+# lopdf draws random numbers (getrandom 0.3); in a browser they come from
+# JavaScript (see .cargo/config.toml for the matching cfg).
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.3", features = ["wasm_js"] }

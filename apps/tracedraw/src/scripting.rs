@@ -935,7 +935,9 @@ impl HostInner {
                     .get("path")
                     .and_then(|p| p.as_str())
                     .ok_or("missing path")?;
-                let img = image::open(path).map_err(|e| e.to_string())?.to_rgba8();
+                let img = crate::files::open_image(path)
+                    .map_err(|e| e.to_string())?
+                    .to_rgba8();
                 let (w, h) = img.dimensions();
                 let png = crate::bitmap_fx::encode(&img).ok_or("encode failed")?;
                 let mm_w = w as f64 * 25.4 / 96.0;
@@ -979,7 +981,7 @@ impl HostInner {
                     }
                     other => return Err(format!("unsupported export format: {other}")),
                 };
-                std::fs::write(p, data).map_err(|e| e.to_string())?;
+                crate::files::write(p, data).map_err(|e| e.to_string())?;
                 json!({})
             }
             other => return Err(format!("unknown method {other}")),

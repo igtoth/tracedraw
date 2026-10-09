@@ -44,5 +44,12 @@ opt-level = 3
 lto = "thin"
 codegen-units = 4
 
+# The browser build (wasm32): size matters more than the last percent of speed.
+[profile.web]
+inherits = "release"
+opt-level = "s"
+lto = true
+codegen-units = 1
+
 [profile.dev.package."*"]
 opt-level = 2

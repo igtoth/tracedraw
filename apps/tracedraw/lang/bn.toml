@@ -1219,6 +1219,7 @@ status.missing_fonts = "অনুপস্থিত ফন্ট প্রতি
 status.n_objects_selected = "{n}টি অবজেক্ট নির্বাচিত"
 status.next_page = "পরবর্তী পৃষ্ঠা"
 status.none = "কোনোটি নয়"
+status.not_in_browser = "ব্রাউজার সংস্করণে উপলব্ধ নয়"
 status.object_on_layer = "{l}-এ {k}"
 status.objects_copied = "{n}টি অবজেক্ট কপি হয়েছে"
 status.page_n_of_m = "{m}টির মধ্যে {n}"

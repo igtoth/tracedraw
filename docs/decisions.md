@@ -123,3 +123,13 @@ help and from observation, before the code lands.
 
 Visual regression with a tolerance, round trips and performance numbers
 are tests that run in CI; see `docs/acceptance.md`.
+
+## D13. The browser build is the same code
+
+The web version is the desktop app compiled to `wasm32-unknown-unknown`,
+not a second front end. Platform differences sit behind two small
+modules: `files.rs` (file dialogs and file access: the system file
+system natively; uploads kept in memory and downloads in a browser) and
+`web.rs` (start-up on a canvas, downloads, local storage, the shortcut
+guard). Fonts are bundled at build time because browsers expose no
+system fonts; only freely redistributable fonts are bundled (`web/FONTS.md`).

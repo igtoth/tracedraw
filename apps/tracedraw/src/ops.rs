@@ -273,7 +273,7 @@ impl App {
 
     /// Import a raster image as a bitmap object at the page centre (96 dpi).
     pub fn import_bitmap(&mut self, path: &std::path::Path) {
-        let img = match image::open(path) {
+        let img = match crate::files::open_image(path) {
             Ok(i) => i.to_rgba8(),
             Err(e) => {
                 self.status = crate::i18n::trf(
@@ -292,6 +292,40 @@ impl App {
             });
             self.select(vec![id]);
         }
+    }
+
+    /// Layout > Page Background > Bitmap: an image file as the page's
+    /// background, scaled to cover the page.
+    pub fn set_page_background_image(
+        &mut self,
+        page: tracedraw_core::PageId,
+        path: &std::path::Path,
+    ) {
+        let img = match crate::files::open_image(path) {
+            Ok(i) => i.to_rgba8(),
+            Err(e) => {
+                self.status = crate::i18n::trf(
+                    "status.could_not_read",
+                    &[("p", &path.display().to_string()), ("e", &e)],
+                );
+                return;
+            }
+        };
+        let Some(png) = crate::bitmap_fx::encode(&img) else {
+            return;
+        };
+        let size = self.page_size();
+        self.run(Command::SetPageBackground {
+            page,
+            background: Some(tracedraw_core::Fill::Pattern(
+                tracedraw_core::Pattern::Bitmap {
+                    png,
+                    width_px: img.width(),
+                    height_px: img.height(),
+                    size_mm: size.width.max(size.height),
+                },
+            )),
+        });
     }
 
     /// Place an RGBA image at the page centre at 96 dpi; returns the new shape.

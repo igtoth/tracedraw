@@ -147,12 +147,24 @@ pub fn config_dir() -> Option<PathBuf> {
     }
 }
 
+/// Local storage key of the settings in the browser build.
+#[cfg(target_arch = "wasm32")]
+const WEB_KEY: &str = "tracedraw.settings";
+
 impl Settings {
     pub fn path() -> Option<PathBuf> {
         config_dir().map(|d| d.join("settings.json"))
     }
 
     pub fn load() -> Settings {
+        #[cfg(target_arch = "wasm32")]
+        {
+            // The browser build keeps settings in local storage.
+            return crate::web::storage_get(WEB_KEY)
+                .and_then(|s| serde_json::from_str(&s).ok())
+                .unwrap_or_default();
+        }
+        #[allow(unreachable_code)]
         let Some(p) = Self::path() else {
             return Settings::default();
         };
@@ -166,6 +178,14 @@ impl Settings {
     }
 
     pub fn save(&self) {
+        #[cfg(target_arch = "wasm32")]
+        {
+            if let Ok(s) = serde_json::to_string(self) {
+                crate::web::storage_set(WEB_KEY, &s);
+            }
+            return;
+        }
+        #[allow(unreachable_code)]
         let Some(p) = Self::path() else {
             return;
         };
@@ -184,6 +204,10 @@ impl Settings {
 
     /// Move or insert `path` at the front of the recent list (max 10).
     pub fn touch_recent(&mut self, path: &std::path::Path) {
+        // Browser uploads and downloads have no path to reopen.
+        if crate::files::WEB {
+            return;
+        }
         self.recent_files.retain(|p| p != path);
         self.recent_files.insert(0, path.to_path_buf());
         self.recent_files.truncate(10);

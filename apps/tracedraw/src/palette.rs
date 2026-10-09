@@ -166,11 +166,11 @@ pub fn load_palette(path: &std::path::Path) -> Result<Palette, String> {
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_else(|| "Palette".into());
     let colors = match ext.as_str() {
-        "gpl" => parse_gpl(&std::fs::read_to_string(path).map_err(|e| e.to_string())?),
-        "ase" => parse_ase(&std::fs::read(path).map_err(|e| e.to_string())?),
-        "aco" => parse_aco(&std::fs::read(path).map_err(|e| e.to_string())?),
+        "gpl" => parse_gpl(&crate::files::read_to_string(path).map_err(|e| e.to_string())?),
+        "ase" => parse_ase(&crate::files::read(path).map_err(|e| e.to_string())?),
+        "aco" => parse_aco(&crate::files::read(path).map_err(|e| e.to_string())?),
         "tdpal" | "json" => {
-            parse_tdpal(&std::fs::read_to_string(path).map_err(|e| e.to_string())?)?
+            parse_tdpal(&crate::files::read_to_string(path).map_err(|e| e.to_string())?)?
         }
         other => return Err(format!("unsupported palette format: {other}")),
     };
@@ -208,7 +208,7 @@ pub fn save_palette(p: &Palette, path: &std::path::Path) -> Result<(), String> {
                 .map_err(|e| e.to_string())?
         }
     };
-    std::fs::write(path, data).map_err(|e| e.to_string())
+    crate::files::write(path, data).map_err(|e| e.to_string())
 }
 
 fn parse_tdpal(src: &str) -> Result<Vec<(String, Color)>, String> {

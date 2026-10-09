@@ -12,11 +12,12 @@ out: menu bar, property bar, toolbox with flyouts, thirty dockers, colour
 palette, rulers and a page navigator.
 
 No Electron, no webview, no runtime: a single native binary (egui/eframe)
-for Windows, macOS and Linux, plus a command-line tool for batch
-conversion.
+for Windows, macOS and Linux, a command-line tool for batch conversion,
+and the same editor compiled to WebAssembly for the browser
+(https://igtoth.github.io/tracedraw/).
 
 Status: **beta**. `docs/parity.md` lists every capability of the reference
-editor and its state (129 working, 1 partial, 1 missing) and is the
+editor and its state (130 working, 1 partial, 1 missing) and is the
 measure of progress; `docs/blueprint-gaps.md` lists what is still open.
 
 ## Highlights
@@ -105,7 +106,10 @@ release:
 | macOS | `tracedraw-<version>-macos-arm64.dmg`, `-macos-x86_64.dmg` (unsigned: right-click, Open) |
 | Linux | `.deb`, `.AppImage`, tarball |
 
-Packaging sources live in `packaging/`.
+Packaging sources live in `packaging/`. The browser version needs no
+install: https://igtoth.github.io/tracedraw/ (or serve
+`tracedraw-<version>-web.zip` from any web server; see
+`docs/behavior/web.md`).
 
 ## Build from source
 
@@ -147,7 +151,7 @@ the choices behind it.
 | `docs/architecture.md` | crates, data flow, units, rendering, text |
 | `docs/decisions.md` | stack, rendering, text, PDF, colour, licensing |
 | `docs/parity.md` | every capability of the target design and its status |
-| `docs/behavior/` | exact behaviour, defaults and formulas per tool |
+| `docs/behavior/` | exact behaviour, defaults and formulas per tool; `web.md` for the browser version |
 | `docs/acceptance.md` | measurable acceptance criteria and performance targets |
 | `docs/i18n.md` | user interface languages |
 | `docs/blueprint-gaps.md` | what is still open against the reference feature inventory |

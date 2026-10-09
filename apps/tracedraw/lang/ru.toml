@@ -1219,6 +1219,7 @@ status.missing_fonts = "Заменены отсутствующие шрифты
 status.n_objects_selected = "Выбрано объектов: {n}"
 status.next_page = "Следующая страница"
 status.none = "Нет"
+status.not_in_browser = "Недоступно в браузерной версии"
 status.object_on_layer = "{k} на слое {l}"
 status.objects_copied = "Скопировано объектов: {n}"
 status.page_n_of_m = "{n} из {m}"

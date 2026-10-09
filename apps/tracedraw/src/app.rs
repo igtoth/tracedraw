@@ -793,6 +793,7 @@ impl App {
     }
 
     /// An app without a window, for tests, scripts and the MCP server.
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     pub fn headless() -> Self {
         if std::env::var_os("TRACEDRAW_CONFIG_DIR").is_none() {
             std::env::set_var(
@@ -1044,7 +1045,7 @@ impl App {
             if path.is_empty() {
                 return None;
             }
-            match std::fs::read(path).map_err(|e| e.to_string()) {
+            match crate::files::read(std::path::Path::new(path)).map_err(|e| e.to_string()) {
                 Ok(bytes) => Profile::parse(&bytes).map_err(|e| e.to_string()).ok(),
                 Err(_) => None,
             }
@@ -1067,13 +1068,16 @@ impl App {
 
     /// Pick an `.icc`/`.icm` file for the RGB or CMYK slot.
     pub fn load_icc_profile(&mut self, cmyk: bool) {
-        let Some(path) = rfd::FileDialog::new()
+        crate::files::Dialog::new()
             .add_filter("ICC", &["icc", "icm"])
-            .pick_file()
-        else {
-            return;
-        };
-        let bytes = match std::fs::read(&path) {
+            .pick_file(self, move |app, path| {
+                let path = crate::files::keep(&path);
+                app.use_icc_profile(cmyk, path);
+            });
+    }
+
+    fn use_icc_profile(&mut self, cmyk: bool, path: PathBuf) {
+        let bytes = match crate::files::read(&path) {
             Ok(b) => b,
             Err(e) => {
                 self.status = crate::i18n::trf("status.icc_failed", &[("e", &e.to_string())]);
@@ -1196,14 +1200,20 @@ impl App {
     }
 
     pub fn save_as_template(&mut self) {
-        let Some(path) = rfd::FileDialog::new()
+        crate::files::Dialog::new()
             .add_filter(crate::i18n::tr("file.template"), &["tdt"])
             .set_file_name("Template1.tdt")
-            .save_file()
-        else {
-            return;
-        };
-        match tracedraw_io::save_native(self.engine.document(), &path) {
+            .save_file(self, |app, path| app.save_template_to(path));
+    }
+
+    fn save_template_to(&mut self, path: PathBuf) {
+        let written = self
+            .engine
+            .document()
+            .to_json()
+            .map_err(|e| e.to_string())
+            .and_then(|json| crate::files::write(&path, json).map_err(|e| e.to_string()));
+        match written {
             Ok(()) => {
                 self.status = crate::i18n::trf(
                     "status.saved_template",
@@ -2020,7 +2030,7 @@ impl App {
     }
 
     pub fn open_dialog(&mut self) {
-        let picked = rfd::FileDialog::new()
+        crate::files::Dialog::new()
             .add_filter(
                 crate::i18n::tr("file.all_supported"),
                 &[
@@ -2038,10 +2048,7 @@ impl App {
             .add_filter("Photoshop (*.psd, *.psb)", &["psd", "psb"])
             .add_filter(crate::i18n::tr("file.cdr_files"), &["cdr"])
             .add_filter("TraceDraw (*.tdraw)", &["tdraw"])
-            .pick_file();
-        if let Some(p) = picked {
-            self.open_path(p);
-        }
+            .pick_file(self, |app, p| app.open_path(p));
     }
 
     pub fn open_path(&mut self, path: PathBuf) {
@@ -2074,7 +2081,7 @@ impl App {
                     (doc, format!("SVG: {n} object(s)"))
                 })
         } else if ext == "psd" || ext == "psb" {
-            std::fs::read(&path)
+            crate::files::read(&path)
                 .map_err(|e| e.to_string())
                 .and_then(|bytes| {
                     tracedraw_io::psd::parse(&bytes, &mut tracedraw_core::id::IdSource::default())
@@ -2098,7 +2105,7 @@ impl App {
                     (doc, format!("PSD: {n} layer(s)"))
                 })
         } else if ext == "emf" || ext == "wmf" {
-            std::fs::read(&path)
+            crate::files::read(&path)
                 .map_err(|e| e.to_string())
                 .and_then(|bytes| {
                     tracedraw_io::emf::parse(&bytes, &mut tracedraw_core::id::IdSource::default())
@@ -2122,7 +2129,7 @@ impl App {
                     (doc, format!("{}: {n} object(s)", ext.to_ascii_uppercase()))
                 })
         } else if ext == "eps" || ext == "ps" {
-            std::fs::read(&path)
+            crate::files::read(&path)
                 .map_err(|e| e.to_string())
                 .and_then(|bytes| {
                     tracedraw_io::eps_import::parse(
@@ -2149,7 +2156,7 @@ impl App {
                     (doc, format!("EPS: {n} object(s)"))
                 })
         } else if matches!(ext.as_str(), "plt" | "hpgl" | "hgl") {
-            std::fs::read(&path)
+            crate::files::read(&path)
                 .map_err(|e| e.to_string())
                 .and_then(|bytes| {
                     tracedraw_io::plt::parse(&bytes, &mut tracedraw_core::id::IdSource::default())
@@ -2194,7 +2201,7 @@ impl App {
                 (doc, format!("Text: {n} character(s)"))
             })
         } else if ext == "dxf" {
-            std::fs::read(&path)
+            crate::files::read(&path)
                 .map_err(|e| e.to_string())
                 .and_then(|bytes| {
                     let text = String::from_utf8_lossy(&bytes).into_owned();
@@ -2227,7 +2234,7 @@ impl App {
                     (doc2, format!("DXF: {n} object(s)"))
                 })
         } else if ext == "pdf" || ext == "ai" {
-            std::fs::read(&path)
+            crate::files::read(&path)
                 .map_err(|e| e.to_string())
                 .and_then(|bytes| {
                     tracedraw_io::pdf_import::parse(
@@ -2276,7 +2283,7 @@ impl App {
                     (doc2, format!("PDF: {pages} page(s), {n} object(s)"))
                 })
         } else if ext == "cdr" {
-            tracedraw_cdr::open(&path)
+            Self::open_cdr(&path)
                 .map(|(doc, report)| {
                     let ver = report.version.map(|v| v.name()).unwrap_or_default();
                     for w in &report.warnings {
@@ -2292,9 +2299,12 @@ impl App {
                 })
                 .map_err(|e| e.to_string())
         } else {
-            tracedraw_io::load_native(&path)
-                .map(|d| (d, "Opened".to_string()))
+            crate::files::read_to_string(&path)
                 .map_err(|e| e.to_string())
+                .and_then(|json| {
+                    tracedraw_core::Document::from_json(&json).map_err(|e| e.to_string())
+                })
+                .map(|d| (d, "Opened".to_string()))
         };
         match result {
             Ok((doc, msg)) => {
@@ -2344,29 +2354,53 @@ impl App {
     }
 
     pub fn save(&mut self, save_as: bool) {
-        let path = if save_as || self.file.is_none() {
-            rfd::FileDialog::new()
-                .add_filter("TraceDraw (*.tdraw)", &["tdraw"])
-                .add_filter(crate::i18n::tr("file.cdr_files"), &["cdr"])
-                .set_file_name("Graphic1.tdraw")
-                .save_file()
+        // In a browser every save is a download, so there is no path to
+        // write back to.
+        if !save_as && !crate::files::WEB {
+            if let Some(path) = self.file.clone() {
+                self.save_to(path);
+                return;
+            }
+        }
+        let name = self.default_save_name();
+        crate::files::Dialog::new()
+            .add_filter("TraceDraw (*.tdraw)", &["tdraw"])
+            .add_filter(crate::i18n::tr("file.cdr_files"), &["cdr"])
+            .set_file_name(name)
+            .save_file(self, |app, path| app.save_to(path));
+    }
+
+    /// File name offered by Save: the open file's, else the document
+    /// title with the native extension.
+    fn default_save_name(&self) -> String {
+        if let Some(name) = self.file.as_ref().and_then(|p| p.file_name()) {
+            return name.to_string_lossy().to_string();
+        }
+        let title = self.doc().title.trim().to_string();
+        if title.is_empty() {
+            "Graphic1.tdraw".into()
         } else {
-            self.file.clone()
-        };
-        let Some(path) = path else { return };
+            format!("{title}.tdraw")
+        }
+    }
+
+    fn save_to(&mut self, path: PathBuf) {
         let is_cdr = path
             .extension()
             .map(|e| e.eq_ignore_ascii_case("cdr"))
             .unwrap_or(false);
-        let result = if is_cdr {
-            std::fs::write(
-                &path,
-                tracedraw_cdr::write::document_to_cdr(self.engine.document()),
-            )
-            .map_err(tracedraw_io::Error::from)
+        let bytes = if is_cdr {
+            Ok(tracedraw_cdr::write::document_to_cdr(
+                self.engine.document(),
+            ))
         } else {
-            tracedraw_io::save_native(self.engine.document(), &path)
+            self.engine
+                .document()
+                .to_json()
+                .map(String::into_bytes)
+                .map_err(|e| e.to_string())
         };
+        let result = bytes.and_then(|b| crate::files::write(&path, b).map_err(|e| e.to_string()));
         match result {
             Ok(()) => {
                 self.engine.mark_saved();
@@ -2382,33 +2416,15 @@ impl App {
         }
     }
 
+    /// File > Export (Ctrl+E, the toolbar button): the Export dialog with
+    /// every format.
     pub fn export(&mut self) {
-        let Some(path) = rfd::FileDialog::new()
-            .add_filter("SVG (*.svg)", &["svg"])
-            .set_file_name("Graphic1.svg")
-            .save_file()
-        else {
-            return;
-        };
-        let idx = self
-            .doc()
-            .pages
-            .iter()
-            .position(|p| p.id == self.page)
-            .unwrap_or(0);
-        match tracedraw_io::save_svg(self.engine.document(), idx, &path) {
-            Ok(()) => {
-                self.status =
-                    crate::i18n::trf("status.exported", &[("path", &path.display().to_string())])
-            }
-            Err(e) => {
-                self.status = crate::i18n::trf("status.export_failed", &[("e", &e.to_string())])
-            }
-        }
+        self.dialog =
+            crate::ui::dialogs::Dialog::Export(crate::ui::dialogs::ExportState::default());
     }
 
     pub fn import(&mut self) {
-        let Some(path) = rfd::FileDialog::new()
+        crate::files::Dialog::new()
             .add_filter(
                 crate::i18n::tr("file.all_importable"),
                 &[
@@ -2430,10 +2446,12 @@ impl App {
                 crate::i18n::tr("file.images"),
                 &["png", "jpg", "jpeg", "bmp", "gif", "webp", "tif", "tiff"],
             )
-            .pick_file()
-        else {
-            return;
-        };
+            .pick_file(self, |app, path| app.import_path(&path));
+    }
+
+    /// Import a file into the active layer, by extension.
+    pub fn import_path(&mut self, path: &std::path::Path) {
+        let path = path.to_path_buf();
         let ext = path
             .extension()
             .and_then(|e| e.to_str())
@@ -2475,7 +2493,7 @@ impl App {
             self.import_bitmap(&path);
             return;
         }
-        match tracedraw_cdr::open(&path) {
+        match Self::open_cdr(&path) {
             Ok((doc, _)) => {
                 let Some(layer) = self.active_layer() else {
                     return;
@@ -2504,9 +2522,22 @@ impl App {
         }
     }
 
+    /// Read a `.cdr` file through the file layer (uploads in a browser).
+    fn open_cdr(
+        path: &std::path::Path,
+    ) -> std::result::Result<(tracedraw_core::Document, tracedraw_cdr::ParseReport), String> {
+        let bytes = crate::files::read(path).map_err(|e| e.to_string())?;
+        let title = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("Untitled")
+            .to_string();
+        tracedraw_cdr::open_bytes(&bytes, &title).map_err(|e| e.to_string())
+    }
+
     /// Read an SVG file (plain or gzip-compressed) as text.
     fn read_svg_text(path: &std::path::Path) -> std::result::Result<String, String> {
-        let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+        let bytes = crate::files::read(path).map_err(|e| e.to_string())?;
         if bytes.len() > 2 && bytes[0] == 0x1f && bytes[1] == 0x8b {
             use std::io::Read;
             let mut out = String::new();
@@ -2551,7 +2582,7 @@ impl App {
         let Some(layer) = self.active_layer() else {
             return;
         };
-        let parsed = std::fs::read(path)
+        let parsed = crate::files::read(path)
             .map_err(|e| e.to_string())
             .and_then(|bytes| {
                 tracedraw_io::pdf_import::parse(
@@ -2589,7 +2620,7 @@ impl App {
         let Some(layer) = self.active_layer() else {
             return;
         };
-        let parsed = std::fs::read(path)
+        let parsed = crate::files::read(path)
             .map_err(|e| e.to_string())
             .and_then(|bytes| {
                 tracedraw_io::psd::parse(&bytes, &mut tracedraw_core::id::IdSource::default())
@@ -2626,7 +2657,7 @@ impl App {
         let Some(layer) = self.active_layer() else {
             return;
         };
-        let parsed = std::fs::read(path)
+        let parsed = crate::files::read(path)
             .map_err(|e| e.to_string())
             .and_then(|bytes| {
                 tracedraw_io::plt::parse(&bytes, &mut tracedraw_core::id::IdSource::default())
@@ -2662,7 +2693,7 @@ impl App {
             .and_then(|e| e.to_str())
             .unwrap_or("")
             .to_ascii_lowercase();
-        let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+        let bytes = crate::files::read(path).map_err(|e| e.to_string())?;
         match ext.as_str() {
             "rtf" => tracedraw_io::text_import::parse_rtf(&bytes),
             "docx" => tracedraw_io::text_import::parse_docx(&bytes),
@@ -2707,7 +2738,7 @@ impl App {
         let Some(layer) = self.active_layer() else {
             return;
         };
-        let parsed = std::fs::read(path)
+        let parsed = crate::files::read(path)
             .map_err(|e| e.to_string())
             .and_then(|bytes| {
                 tracedraw_io::eps_import::parse(
@@ -2742,7 +2773,7 @@ impl App {
         let Some(layer) = self.active_layer() else {
             return;
         };
-        let parsed = std::fs::read(path)
+        let parsed = crate::files::read(path)
             .map_err(|e| e.to_string())
             .and_then(|bytes| {
                 tracedraw_io::emf::parse(&bytes, &mut tracedraw_core::id::IdSource::default())
@@ -2774,7 +2805,7 @@ impl App {
         let Some(layer) = self.active_layer() else {
             return;
         };
-        let parsed = std::fs::read(path)
+        let parsed = crate::files::read(path)
             .map_err(|e| e.to_string())
             .and_then(|bytes| {
                 let text = String::from_utf8_lossy(&bytes).into_owned();
@@ -2820,14 +2851,15 @@ impl App {
     }
 
     pub fn export_pdf(&mut self) {
-        let Some(path) = rfd::FileDialog::new()
+        crate::files::Dialog::new()
             .add_filter("PDF (*.pdf)", &["pdf"])
             .set_file_name("Graphic1.pdf")
-            .save_file()
-        else {
-            return;
-        };
-        match tracedraw_io::save_pdf(self.engine.document(), &path) {
+            .save_file(self, |app, path| app.export_pdf_to(path));
+    }
+
+    fn export_pdf_to(&mut self, path: PathBuf) {
+        let pdf = tracedraw_io::pdf::document_to_pdf(self.engine.document());
+        match crate::files::write(&path, pdf) {
             Ok(()) => {
                 self.status =
                     crate::i18n::trf("status.exported", &[("path", &path.display().to_string())])

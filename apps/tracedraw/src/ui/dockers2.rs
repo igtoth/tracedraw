@@ -872,22 +872,21 @@ fn scripts(app: &mut App, ui: &mut Ui) {
             app.toggle_recording();
         }
         if ui.button(tr("docker.load")).clicked() {
-            if let Some(p) = rfd::FileDialog::new()
+            crate::files::Dialog::new()
                 .add_filter("JavaScript", &["js"])
-                .pick_file()
-            {
-                if let Ok(s) = std::fs::read_to_string(p) {
-                    app.script_source = s;
-                }
-            }
+                .pick_file(app, |app, p| {
+                    if let Ok(s) = crate::files::read_to_string(p) {
+                        app.script_source = s;
+                    }
+                });
         }
         if ui.button(tr("docker.save")).clicked() {
-            if let Some(p) = rfd::FileDialog::new()
+            if let Some(p) = crate::files::Dialog::new()
                 .add_filter("JavaScript", &["js"])
                 .set_file_name("macro.js")
-                .save_file()
+                .save_path()
             {
-                let _ = std::fs::write(p, &app.script_source);
+                let _ = crate::files::write(p, &app.script_source);
             }
         }
         if ui.button(tr("docker.clear")).clicked() {

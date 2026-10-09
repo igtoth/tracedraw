@@ -37,12 +37,12 @@ Parity tracked in `docs/parity.md`.
 - PDF/X-1a, X-3 and X-4 output (done)
 - `.cdr` write (RIFF version 12 layout; reads back here and in another public reader) (done)
 
-## M4 Platform (in progress)
+## M4 Platform (done)
 - CLI batch convert (done); installers for Windows, macOS, Linux (done)
 - JavaScript automation with macro recording (done)
 - User interface in 12 languages (done)
 - JSON control channel and MCP server (`tracedraw --mcp`, see `behavior/mcp.md`) (done)
-- Open: WebAssembly build
+- WebAssembly build: the same editor in the browser (WebGL 2), published to GitHub Pages and attached to releases (done; see `behavior/web.md`)
 
 ## M5 Interchange
 - Import PDF, AI, EPS, DXF, PSD, EMF and WMF (done); export HTML, DXF, EMF and WMF (done); CMX

@@ -1015,8 +1015,33 @@ impl App {
             return;
         }
         let input = ctx.input(|i| i.clone());
-        let pressed =
-            |k: Key, m: Modifiers| input.key_pressed(k) && input.modifiers.matches_logically(m);
+        // Each key press with the modifiers held when it happened (a quick
+        // Ctrl+E can be released before the frame that sees it). Shortcuts
+        // match the modifiers exactly, so Ctrl+Shift+Z is not also Ctrl+Z;
+        // only + and - ignore Shift, which some layouts need to type them.
+        let presses: Vec<(Key, Modifiers)> = input
+            .events
+            .iter()
+            .filter_map(|e| match e {
+                egui::Event::Key {
+                    key,
+                    pressed: true,
+                    modifiers,
+                    ..
+                } => Some((*key, *modifiers)),
+                _ => None,
+            })
+            .collect();
+        let pressed = |k: Key, m: Modifiers| {
+            presses.iter().any(|(key, mods)| {
+                *key == k
+                    && if matches!(k, Key::Plus | Key::Equals | Key::Minus) {
+                        mods.matches_logically(m)
+                    } else {
+                        mods.matches_exact(m)
+                    }
+            })
+        };
         let cmd = Modifiers::COMMAND;
 
         if pressed(Key::Z, cmd) {
@@ -1094,8 +1119,11 @@ impl App {
         if pressed(Key::J, cmd) {
             self.dialog = crate::ui::dialogs::Dialog::Options;
         }
-        if pressed(Key::Tab, Modifiers::NONE) || pressed(Key::Tab, Modifiers::SHIFT) {
-            self.cycle_selection(!input.modifiers.shift);
+        if pressed(Key::Tab, Modifiers::NONE) {
+            self.cycle_selection(true);
+        }
+        if pressed(Key::Tab, Modifiers::SHIFT) {
+            self.cycle_selection(false);
         }
         if pressed(Key::K, cmd) {
             self.break_apart();
@@ -1235,7 +1263,7 @@ impl App {
             }
         }
         // Align shortcuts (the target design: plain letters with a selection).
-        if input.modifiers.is_none() && !self.selection.is_empty() {
+        if !self.selection.is_empty() {
             use crate::ops::Align;
             for (k, a) in [
                 (Key::L, Align::Left),
@@ -1246,53 +1274,57 @@ impl App {
                 (Key::C, Align::CenterV),
                 (Key::P, Align::CenterPage),
             ] {
-                if input.key_pressed(k) {
+                if pressed(k, Modifiers::NONE) {
                     self.align(a);
                     return;
                 }
             }
         }
         // Tool shortcuts: user overrides from Options, then the defaults.
-        if input.modifiers.is_none() || input.modifiers.shift_only() {
-            for group in crate::tools::GROUPS {
-                for t in group.tools {
-                    let label = self
-                        .settings
-                        .shortcuts
-                        .iter()
-                        .find(|(id, _)| id == t.id())
-                        .map(|(_, v)| v.clone())
-                        .or_else(|| t.shortcut().map(|s| s.to_string()));
-                    let Some(label) = label else { continue };
-                    if let Some((k, shift)) = Tool::parse_shortcut(&label) {
-                        if shift == input.modifiers.shift && input.key_pressed(k) {
-                            self.set_tool(*t);
-                        }
+        for group in crate::tools::GROUPS {
+            for t in group.tools {
+                let label = self
+                    .settings
+                    .shortcuts
+                    .iter()
+                    .find(|(id, _)| id == t.id())
+                    .map(|(_, v)| v.clone())
+                    .or_else(|| t.shortcut().map(|s| s.to_string()));
+                let Some(label) = label else { continue };
+                if let Some((k, shift)) = Tool::parse_shortcut(&label) {
+                    let mods = if shift {
+                        Modifiers::SHIFT
+                    } else {
+                        Modifiers::NONE
+                    };
+                    if pressed(k, mods) {
+                        self.set_tool(*t);
                     }
                 }
             }
-            // Arrow nudge.
-            let step = if input.modifiers.shift {
-                self.nudge_mm * 10.0
-            } else {
+        }
+        // Arrow nudge: plain, Shift x10 (super nudge), Ctrl x0.1 (micro).
+        let mut d = Vec2::ZERO;
+        for (key, mods) in &presses {
+            let step = if mods.matches_exact(Modifiers::NONE) {
                 self.nudge_mm
+            } else if mods.matches_exact(Modifiers::SHIFT) {
+                self.nudge_mm * 10.0
+            } else if mods.matches_exact(Modifiers::COMMAND) {
+                self.nudge_mm * 0.1
+            } else {
+                continue;
             };
-            let mut d = Vec2::ZERO;
-            if input.key_pressed(Key::ArrowLeft) {
-                d.x -= step;
+            match key {
+                Key::ArrowLeft => d.x -= step,
+                Key::ArrowRight => d.x += step,
+                Key::ArrowUp => d.y += step,
+                Key::ArrowDown => d.y -= step,
+                _ => {}
             }
-            if input.key_pressed(Key::ArrowRight) {
-                d.x += step;
-            }
-            if input.key_pressed(Key::ArrowUp) {
-                d.y += step;
-            }
-            if input.key_pressed(Key::ArrowDown) {
-                d.y -= step;
-            }
-            if d.hypot() > 0.0 {
-                self.nudge(d);
-            }
+        }
+        if d.hypot() > 0.0 {
+            self.nudge(d);
         }
     }
 }

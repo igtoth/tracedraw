@@ -105,11 +105,87 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
+  # The browser build: WebAssembly and WebGL 2, published to GitHub Pages
+  # and attached to the releases as tracedraw-<version>-web.zip.
+  web:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@1.97.0
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: wasm32
+
+      - name: Version
+        id: ver
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=0.1.0-dev.${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          fi
+
+      # build.rs bundles these into the module (the browser has no system
+      # fonts): Liberation, DejaVu Sans and Noto for Devanagari and Bengali.
+      - name: Fonts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fonts-liberation fonts-dejavu-core fonts-noto-core
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@0.2.129
+
+      - name: Build
+        run: cargo build --target wasm32-unknown-unknown --profile web -p tracedraw
+
+      - name: Page
+        run: |
+          mkdir -p site dist
+          wasm-bindgen --target web --no-typescript --out-dir site target/wasm32-unknown-unknown/web/tracedraw.wasm
+          cp web/index.html web/FONTS.md site/
+          cp assets/icon/tracedraw-256.png site/icon-256.png
+          (cd site && zip -r "../dist/tracedraw-${{ steps.ver.outputs.version }}-web.zip" .)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tracedraw-web
+          path: dist/*
+          if-no-files-found: error
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  # GitHub Pages must be set to "GitHub Actions" (Settings > Pages); the
+  # job tries to enable it and does not fail the build when it cannot.
+  pages:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: web
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+      - id: deploy
+        uses: actions/deploy-pages@v4
+
   # Version tags publish a release; every push to main refreshes the
   # "nightly" pre-release with the installers of that commit.
   release:
     if: github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main')
-    needs: build
+    needs: [build, web]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -117,6 +193,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
+          pattern: tracedraw-*
           merge-multiple: true
       - name: Drop the previous nightly
         if: github.ref == 'refs/heads/main'

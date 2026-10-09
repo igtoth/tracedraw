@@ -22,12 +22,14 @@ mod effects_ui;
 mod encode;
 mod export;
 mod eyedropper;
+mod files;
 mod fill_tool;
 mod grammar;
 mod i18n;
 mod interaction;
 mod interaction2;
 mod lens;
+#[cfg(not(target_arch = "wasm32"))]
 mod mcp;
 mod media;
 mod ops;
@@ -50,7 +52,10 @@ mod tools2;
 mod trace;
 mod ui;
 mod view;
+#[cfg(target_arch = "wasm32")]
+mod web;
 
+#[cfg(not(target_arch = "wasm32"))]
 fn main() -> eframe::Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     tracedraw_text::install();
@@ -75,6 +80,13 @@ fn main() -> eframe::Result<()> {
     )
 }
 
+/// The browser build starts from `web::start` (the page loads the module,
+/// which runs `main`).
+#[cfg(target_arch = "wasm32")]
+fn main() {
+    web::start();
+}
+
 struct Shell {
     app: app::App,
 }
@@ -89,6 +101,8 @@ impl Shell {
 
 impl eframe::App for Shell {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        // File dialogs that finished in the background (browser build).
+        files::run_finished(&mut self.app);
         ui::root(&mut self.app, ui);
     }
 }

@@ -344,14 +344,13 @@ fn templates(app: &mut App, ui: &mut Ui) {
             ui.add_space(12.0);
             ui.strong(tr("welcome.my_templates"));
             if ui.button(tr("welcome.open_template")).clicked() {
-                if let Some(p) = rfd::FileDialog::new()
+                crate::files::Dialog::new()
                     .add_filter("TraceDraw template", &["tdt", "tdraw"])
-                    .pick_file()
-                {
-                    app.open_path(p);
-                    app.file = None;
-                    app.show_welcome = false;
-                }
+                    .pick_file(app, |app, p| {
+                        app.open_path(p);
+                        app.file = None;
+                        app.show_welcome = false;
+                    });
             }
             let dir = crate::settings::config_dir().map(|d| d.join("templates"));
             if let Some(dir) = dir {
