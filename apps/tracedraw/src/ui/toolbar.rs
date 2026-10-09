@@ -313,6 +313,21 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
         match app.tool {
             Tool::Shape => shape_tool_bar(app, ui),
             Tool::Pick | Tool::FreeformPick if shapes.is_empty() => page_properties(app, ui),
+            Tool::Pick | Tool::FreeformPick
+                if shapes
+                    .iter()
+                    .all(|s| matches!(s.kind, ShapeKind::Text { .. })) =>
+            {
+                // Text selected with the Pick tool: the object fields, then
+                // the text fields, as the target design shows them.
+                object_properties(app, ui);
+                vsep(ui);
+                if let Some(first) = shapes.first() {
+                    let id = first.id;
+                    app.sync_text_defaults_from(id);
+                }
+                text_properties(app, ui);
+            }
             Tool::Pick | Tool::FreeformPick => object_properties(app, ui),
             Tool::Zoom | Tool::Pan => {
                 ui.label(
@@ -1746,6 +1761,11 @@ fn text_properties(app: &mut App, ui: &mut Ui) {
         .selectable_label(app.text_italic, egui::RichText::new("I").italics())
         .clicked()
         .then(|| app.text_italic = !app.text_italic)
+        .is_some();
+    changed |= ui
+        .selectable_label(app.text_underline, egui::RichText::new("U").underline())
+        .clicked()
+        .then(|| app.text_underline = !app.text_underline)
         .is_some();
     vsep(ui);
     for (a, label, tip) in [

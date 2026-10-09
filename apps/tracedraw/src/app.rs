@@ -446,6 +446,7 @@ pub struct App {
     pub text_size_pt: f64,
     pub text_bold: bool,
     pub text_italic: bool,
+    pub text_underline: bool,
     pub text_align: tracedraw_core::TextAlign,
     pub eyedropper_color: Option<Color>,
     pub eyedropper_attrs: Option<crate::eyedropper::SampledAttrs>,
@@ -873,6 +874,7 @@ impl App {
             text_size_pt: 24.0,
             text_bold: false,
             text_italic: false,
+            text_underline: false,
             text_align: tracedraw_core::TextAlign::Left,
             eyedropper_color: None,
             eyedropper_attrs: None,
@@ -1690,6 +1692,7 @@ impl App {
                 self.text_size_pt = sp.size_pt;
                 self.text_bold = sp.bold;
                 self.text_italic = sp.italic;
+                self.text_underline = sp.underline;
             }
             self.text_align = *align;
         }

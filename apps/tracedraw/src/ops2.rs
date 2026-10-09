@@ -1427,6 +1427,7 @@ impl App {
                         sp.size_pt = self.text_size_pt;
                         sp.bold = self.text_bold;
                         sp.italic = self.text_italic;
+                        sp.underline = self.text_underline;
                     }
                     Some(Command::SetShapeKind {
                         shape: s.id,

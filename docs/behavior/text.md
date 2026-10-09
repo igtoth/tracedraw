@@ -20,6 +20,16 @@ baseline point; paragraph text: a frame with wrapping. Shortcut F8.
 | Tabs | every 12.7 mm (0.5 in) |
 | Text on path | distance 0, offset 0, orientation "rotate letters" |
 
+## Property bar
+
+Text tool, and the Pick tool with only text selected (after the object
+fields): font family, size in points, Bold, Italic, Underline, and the
+alignment (Left, Center, Right, Justify). Each change applies to the
+selected text objects at once (every span takes the font, size and
+style; the object takes the alignment) as one "Text Style" undo step,
+and becomes the default for the next text. Double-clicking text with the
+Pick tool edits it in place.
+
 ## Formulas
 
 - Line height `= size * leading / 100 * (asc - desc + gap) / upm`.
