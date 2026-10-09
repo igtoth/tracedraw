@@ -717,7 +717,7 @@ impl App {
                 }
             }
             Drag::Connector { from, current, .. } if self.tool == Tool::Blend => {
-                if let Some(to) = self.hit_test(current).filter(|id| *id != from) {
+                if let Some(to) = self.hit_test_inside(current).filter(|id| *id != from) {
                     self.selection = vec![from, to];
                     let steps = self.blend_steps;
                     self.blend_selection(steps, 0.0, 0.0, 0.0);

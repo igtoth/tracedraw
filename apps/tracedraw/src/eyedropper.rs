@@ -67,10 +67,10 @@ pub fn rotation_of(t: Affine) -> f64 {
 }
 
 impl App {
-    /// The object to paint: the usual hit test, else the topmost unfilled
-    /// closed object whose interior contains `p` (the paint bucket fills
-    /// what it is dropped into).
-    pub fn hit_for_apply(&self, p: Point) -> Option<ShapeId> {
+    /// The usual hit test, else the topmost unfilled closed object whose
+    /// interior contains `p`: what the paint bucket fills, and what a
+    /// connector or blend drag starts from and ends on.
+    pub fn hit_test_inside(&self, p: Point) -> Option<ShapeId> {
         if let Some(id) = self.hit_test(p) {
             return Some(id);
         }
@@ -150,7 +150,7 @@ impl App {
     /// Apply a sampled colour to the object under `p`, to its outline when
     /// `outline` (a hairline is created when the object has none).
     pub fn apply_color_at(&mut self, p: Point, c: Color, outline: bool) -> bool {
-        let Some(id) = self.hit_for_apply(p) else {
+        let Some(id) = self.hit_test_inside(p) else {
             return false;
         };
         if outline {
@@ -197,7 +197,7 @@ impl App {
 
     /// Write the ticked groups of the sample to the object under `p`.
     pub fn apply_attrs_at(&mut self, p: Point, a: &SampledAttrs, g: AttrGroups) -> bool {
-        let Some(id) = self.hit_for_apply(p) else {
+        let Some(id) = self.hit_test_inside(p) else {
             return false;
         };
         let Ok((_, s)) = self.doc().shape(id) else {

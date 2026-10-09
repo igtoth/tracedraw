@@ -76,12 +76,35 @@ pub fn blend(a: &BezPath, b: &BezPath, steps: usize, samples: usize) -> Vec<BezP
     if pa.len() != pb.len() || pa.is_empty() {
         return Vec::new();
     }
-    // Rotate b's start to the point nearest a's start to avoid twisting.
+    // Match the two outlines by shape, not by position: wind b the way a
+    // is wound, then start b at the point whose direction from b's centre
+    // is nearest the direction of a's start from a's centre. Otherwise the
+    // intermediate steps twist through the middle.
+    let centroid = |pts: &[Point]| {
+        let n = pts.len().max(1) as f64;
+        Point::new(
+            pts.iter().map(|p| p.x).sum::<f64>() / n,
+            pts.iter().map(|p| p.y).sum::<f64>() / n,
+        )
+    };
+    let area = |pts: &[Point]| -> f64 {
+        pts.iter()
+            .zip(pts.iter().cycle().skip(1))
+            .map(|(p, q)| p.x * q.y - q.x * p.y)
+            .sum()
+    };
+    let mut pb = pb;
+    if area(&pa) * area(&pb) < 0.0 {
+        pb.reverse();
+    }
+    let (ca, cb) = (centroid(&pa), centroid(&pb));
+    let da = pa[0] - ca;
     let start = (0..pb.len())
         .min_by(|i, j| {
-            (pb[*i] - pa[0])
-                .hypot()
-                .partial_cmp(&(pb[*j] - pa[0]).hypot())
+            let di = (pb[*i] - cb) - da;
+            let dj = (pb[*j] - cb) - da;
+            di.hypot()
+                .partial_cmp(&dj.hypot())
                 .unwrap_or(std::cmp::Ordering::Equal)
         })
         .unwrap_or(0);
@@ -272,6 +295,31 @@ mod tests {
         assert_eq!(mid.len(), 1);
         let c = mid[0].bounding_box().center();
         assert!((c.x - 15.0).abs() < 0.5, "{c:?}");
+    }
+
+    #[test]
+    fn blend_between_offset_ellipses_keeps_their_size_midway() {
+        // Two equal ellipses, one down and to the right of the other: the
+        // middle step must be the same size, not collapsed by a twisted
+        // point correspondence.
+        let a = crate::geometry::Ellipse::from_rect(Rect::new(0.0, 40.0, 30.0, 60.0)).to_path(0.01);
+        let b = crate::geometry::Ellipse::from_rect(Rect::new(100.0, 0.0, 130.0, 20.0)).to_path(0.01);
+        let steps = blend(&a, &b, 5, 64);
+        assert_eq!(steps.len(), 5);
+        for s in &steps {
+            let bb = s.bounding_box();
+            assert!((bb.width() - 30.0).abs() < 1.0, "{bb:?}");
+            assert!((bb.height() - 20.0).abs() < 1.0, "{bb:?}");
+        }
+        // A reversed second outline is matched the same way.
+        let mut rb = crate::nodes::reverse(&b);
+        if rb.elements().is_empty() {
+            rb = b.clone();
+        }
+        for s in blend(&a, &rb, 3, 64) {
+            let bb = s.bounding_box();
+            assert!((bb.width() - 30.0).abs() < 1.0, "{bb:?}");
+        }
     }
 
     #[test]

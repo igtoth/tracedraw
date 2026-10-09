@@ -295,7 +295,7 @@ impl App {
             }
             Tool::Connector => {
                 if response.drag_started_by(PointerButton::Primary) {
-                    if let Some(id) = self.hit_test(p) {
+                    if let Some(id) = self.hit_test_inside(p) {
                         self.drag = Drag::Connector {
                             from: id,
                             start: p,
@@ -689,7 +689,7 @@ impl App {
     }
 
     pub fn finish_connector(&mut self, from: ShapeId, start: Point, at: Point) {
-        let Some(to) = self.hit_test(at).filter(|id| *id != from) else {
+        let Some(to) = self.hit_test_inside(at).filter(|id| *id != from) else {
             return;
         };
         // Leave from the anchor nearest the drag start, arrive at the one
@@ -858,7 +858,7 @@ impl App {
         match self.tool {
             Tool::Blend => {
                 if response.drag_started_by(PointerButton::Primary) {
-                    if let Some(id) = self.hit_test(p) {
+                    if let Some(id) = self.hit_test_inside(p) {
                         self.drag = Drag::Connector {
                             from: id,
                             start: p,

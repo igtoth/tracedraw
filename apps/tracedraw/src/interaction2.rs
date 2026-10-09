@@ -137,7 +137,7 @@ impl App {
             Tool::AnchorEditing => self.anchor_input(response, p),
             Tool::RightAngleConnector | Tool::RoundedConnector => {
                 if response.drag_started_by(PointerButton::Primary) {
-                    if let Some(id) = self.hit_test(p) {
+                    if let Some(id) = self.hit_test_inside(p) {
                         self.drag = Drag::Connector {
                             from: id,
                             start: p,
@@ -701,7 +701,7 @@ impl App {
         at: Point,
         rounded: bool,
     ) {
-        let Some(to) = self.hit_test(at).filter(|id| *id != from) else {
+        let Some(to) = self.hit_test_inside(at).filter(|id| *id != from) else {
             return;
         };
         let Some((pa, pb)) = self.connector_anchors(from, start, to, at) else {
