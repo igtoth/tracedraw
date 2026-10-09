@@ -156,7 +156,7 @@ Counts: works 122, partial 1 (`.cdr` content coverage), missing 1 (AI/EPS/PDF/DX
 | Capability | Status |
 |---|---|
 | Open `.cdr`: RIFF (v3 to X3), X4/X5 ZIP, X6+ ZIP with redirected chunks | works (layouts confirmed against the public format description; real-file corpus still being collected) |
-| `.cdr` content: shapes, curves, paths, polygons, bitmaps, text (artistic and paragraph), fills, outlines, arrowheads, opacity | partial: text on path, splines, vector pattern and PostScript fills, paragraph formatting from style tables |
+| `.cdr` content: shapes, curves, paths, polygons, groups, bitmaps (cropped ones as ClipFrames), text (artistic, paragraph, on a path), line spacing and indents, fills, outlines, preset and custom arrowheads, opacity | partial: splines, vector pattern and PostScript fills, tabs/bullets/drop caps from style tables, lenses and effects |
 | Native `.tdraw` save/load | works |
 | Import SVG and SVGZ (groups, clips, gradients, images); open SVG as a document | works |
 | Export SVG, PDF, AI (PDF-compatible), EPS, PNG, JPEG, WebP, GIF, BMP, TIFF; Send To (Desktop, Documents, mail) as PDF | works |

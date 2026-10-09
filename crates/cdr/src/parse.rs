@@ -219,6 +219,9 @@ struct Ctx<'a> {
     arrows: HashMap<u32, Arrowhead>,
     /// Crop outline of the bitmap object being read (local coordinates).
     pending_crop: Option<BezPath>,
+    /// The text object being read is fitted to a path (a sibling in its
+    /// group supplies the path).
+    pending_on_path: bool,
     report: ParseReport,
 }
 
@@ -245,6 +248,7 @@ impl<'a> Ctx<'a> {
             styles: HashMap::new(),
             arrows: HashMap::new(),
             pending_crop: None,
+            pending_on_path: false,
             report: ParseReport::default(),
         }
     }
@@ -366,47 +370,9 @@ pub fn parse_document(tree: &Tree, main: &[u8], version: Version) -> (Document, 
                 }
                 _ => layer.visible = true,
             }
-            let mut objects: Vec<&Chunk> = Vec::new();
-            lc.walk(&mut |c, _| {
-                if c.is(b"obj ") {
-                    objects.push(c);
-                }
-            });
-            // Objects are stored front to back within a layer (confirmed with
-            // a 2019 file: text, then a patch, then the full-page picture
-            // underneath); our layers are bottom to top.
-            objects.reverse();
-            for oc in objects {
-                let id = doc.ids_mut().shape();
-                match ctx.read_object(oc, id, size) {
-                    Some(mut shape) => {
-                        // A bitmap with a crop outline becomes a ClipFrame
-                        // whose frame is that outline.
-                        if let Some(crop) = ctx.pending_crop.take() {
-                            let mut frame = Shape::new(
-                                doc.ids_mut().shape(),
-                                ShapeKind::Path {
-                                    path: crop,
-                                    closed: true,
-                                },
-                            );
-                            frame.fill = Fill::None;
-                            frame.stroke = None;
-                            let mut inner = Shape::new(doc.ids_mut().shape(), shape.kind.clone());
-                            inner.fill = shape.fill.clone();
-                            inner.stroke = shape.stroke.clone();
-                            shape.kind = ShapeKind::ClipFrame {
-                                frame: Box::new(frame),
-                                contents: vec![inner],
-                            };
-                            shape.fill = Fill::None;
-                            shape.stroke = None;
-                        }
-                        layer.shapes.push(shape)
-                    }
-                    None => ctx.report.skipped_objects += 1,
-                }
-            }
+            let mut ids = std::mem::take(doc.ids_mut());
+            layer.shapes = ctx.read_objects(lc, &mut ids, size, 0);
+            doc.set_ids(ids);
             page.layers.push(layer);
         }
         if page.layers.is_empty() {
@@ -1031,13 +997,21 @@ impl<'a> Ctx<'a> {
             return;
         };
         let (path, _) = build_path(&pts, &types);
-        let preset = classify_arrowhead(&path, &pts, &types);
-        if preset == Arrowhead::None {
-            self.report.warn(format!(
-                "arrowhead {id}: shape not recognised; drawn without arrowhead"
-            ));
+        let mut head = classify_arrowhead(&path, &pts, &types);
+        if head == Arrowhead::None {
+            // Not one of our presets: keep the outline itself as a custom
+            // arrowhead (assumed: the file draws the tip towards +x on a
+            // line running left to right, like our custom heads).
+            let unit = if self.v16() { UNIT16_MM } else { UNIT_MM };
+            let mm = Affine::scale(unit) * path;
+            head = Arrowhead::from_shape_path(&mm, format!("Arrowhead {id}"));
+            if head == Arrowhead::None {
+                self.report.warn(format!(
+                    "arrowhead {id}: unreadable outline; drawn without arrowhead"
+                ));
+            }
         }
-        self.arrows.insert(id, preset);
+        self.arrows.insert(id, head);
     }
 
     /// `font`: id and family name.
@@ -1113,6 +1087,11 @@ impl<'a> Ctx<'a> {
         if let Some(i) = style.italic {
             span.italic = i;
         }
+        if let Some(cs) = style.char_spacing {
+            if cs != 0.0 {
+                span.tracking_pct = cs * 100.0;
+            }
+        }
         if let Some(fid) = style.fill_id {
             match self.fills.get(&fid) {
                 Some(f) if f.fill != *object_fill => span.fill = Some(f.fill.clone()),
@@ -1171,6 +1150,7 @@ impl<'a> Ctx<'a> {
             self.report.warn(w);
         }
         let parsed = parsed?;
+        self.pending_on_path = parsed.on_path;
         if frame.is_none() && (parsed.frame || kind_code == OBJ_PARAGRAPH_TEXT) {
             // A frame without readable size: lay the text out unframed.
             self.report
@@ -1181,6 +1161,7 @@ impl<'a> Ctx<'a> {
             .unwrap_or_default();
         let mut spans: Vec<TextSpan> = Vec::new();
         let mut align: Option<u32> = object_style.align;
+        let mut para_fmt = ParagraphStyle::default();
         let n = parsed.paragraphs.len();
         for (i, para) in parsed.paragraphs.iter().enumerate() {
             let para_style = if para.style_id != 0 {
@@ -1191,6 +1172,19 @@ impl<'a> Ctx<'a> {
             let base = para.base.over(&para_style);
             if align.is_none() {
                 align = base.align;
+            }
+            if i == 0 {
+                // Paragraph formatting from the style table: the first
+                // paragraph sets the object's (one ParagraphStyle per object).
+                if let Some(ls) = base.line_spacing {
+                    para_fmt.leading_pct = (ls * 100.0).clamp(10.0, 1000.0);
+                }
+                if let Some((left, first, right)) = base.indent_pt {
+                    const PT_MM: f64 = 25.4 / 72.0;
+                    para_fmt.left_indent = left * PT_MM;
+                    para_fmt.first_line_indent = first * PT_MM;
+                    para_fmt.right_indent = right * PT_MM;
+                }
             }
             for (k, run) in para.runs.iter().enumerate() {
                 let style = run.style.over(&base);
@@ -1230,7 +1224,7 @@ impl<'a> Ctx<'a> {
             origin,
             frame,
             align,
-            para: ParagraphStyle::default(),
+            para: para_fmt,
             on_path: None,
         })
     }
@@ -1574,7 +1568,63 @@ impl<'a> Ctx<'a> {
         shape.stroke = stroke;
         shape.name = name;
         shape.opacity = opacity;
+        if std::mem::take(&mut self.pending_on_path) {
+            shape.data.push((ON_PATH_KEY.into(), "1".into()));
+        }
         Some(shape)
+    }
+
+    /// The objects of a layer or group list, bottom to top. Files store
+    /// them front to back (confirmed with a 2019 file: text, then a patch,
+    /// then the full-page picture underneath). `grp ` lists become groups;
+    /// a group holding a text fitted to a path and the path itself gets
+    /// the text placed on that path.
+    fn read_objects(
+        &mut self,
+        list: &Chunk,
+        ids: &mut tracedraw_core::id::IdSource,
+        page_size: Size,
+        depth: usize,
+    ) -> Vec<Shape> {
+        let mut out: Vec<Shape> = Vec::new();
+        if depth > 64 {
+            self.report
+                .warn("group nesting deeper than 64; inner objects skipped");
+            return out;
+        }
+        for c in &list.children {
+            if c.is(b"obj ") {
+                let id = ids.shape();
+                match self.read_object(c, id, page_size) {
+                    Some(mut shape) => {
+                        if let Some(crop) = self.pending_crop.take() {
+                            shape = crop_to_clip_frame(shape, crop, ids);
+                        }
+                        out.push(shape);
+                    }
+                    None => self.report.skipped_objects += 1,
+                }
+            } else if c.is(b"grp ") {
+                let mut children = self.read_objects(c, ids, page_size, depth + 1);
+                attach_text_to_path(&mut children);
+                match children.len() {
+                    0 => {}
+                    1 => out.extend(children),
+                    _ => {
+                        let mut g = Shape::new(ids.shape(), ShapeKind::Group { children });
+                        g.fill = Fill::None;
+                        g.stroke = None;
+                        out.push(g);
+                    }
+                }
+            } else if c.list_type.is_some() {
+                // Other lists (`lgob`, `spnd`, ...) are not objects, but
+                // older files nest the object lists one level down.
+                out.extend(self.read_objects(c, ids, page_size, depth + 1));
+            }
+        }
+        out.reverse();
+        out
     }
 
     /// Opacity argument (8000): 10 unknown bytes (14 from X3), then a u16
@@ -1921,6 +1971,103 @@ impl<'a> Ctx<'a> {
     }
 }
 
+/// Object data key marking a text that the file fits to a path.
+const ON_PATH_KEY: &str = "cdr.text_on_path";
+
+/// A bitmap with a crop outline becomes a ClipFrame whose frame is that
+/// outline.
+fn crop_to_clip_frame(
+    mut shape: Shape,
+    crop: BezPath,
+    ids: &mut tracedraw_core::id::IdSource,
+) -> Shape {
+    let mut frame = Shape::new(
+        ids.shape(),
+        ShapeKind::Path {
+            path: crop,
+            closed: true,
+        },
+    );
+    frame.fill = Fill::None;
+    frame.stroke = None;
+    let mut inner = Shape::new(ids.shape(), shape.kind.clone());
+    inner.fill = shape.fill.clone();
+    inner.stroke = shape.stroke.clone();
+    shape.kind = ShapeKind::ClipFrame {
+        frame: Box::new(frame),
+        contents: vec![inner],
+    };
+    shape.fill = Fill::None;
+    shape.stroke = None;
+    shape
+}
+
+/// In a group that holds a text flagged "fitted to path" and exactly one
+/// curve, place the text on that curve (the target design keeps the
+/// curve as a separate, usually invisible, object; so do we).
+fn attach_text_to_path(children: &mut [Shape]) {
+    let text_idx: Vec<usize> = children
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| {
+            matches!(s.kind, ShapeKind::Text { .. }) && s.data.iter().any(|(k, _)| k == ON_PATH_KEY)
+        })
+        .map(|(i, _)| i)
+        .collect();
+    for s in children.iter_mut() {
+        s.data.retain(|(k, _)| k != ON_PATH_KEY);
+    }
+    if text_idx.is_empty() {
+        return;
+    }
+    let curves: Vec<usize> = children
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| {
+            matches!(
+                s.kind,
+                ShapeKind::Path { .. }
+                    | ShapeKind::Ellipse { .. }
+                    | ShapeKind::Rect { .. }
+                    | ShapeKind::Polygon { .. }
+            )
+        })
+        .map(|(i, _)| i)
+        .collect();
+    let [curve] = curves.as_slice() else {
+        return;
+    };
+    let page_path = children[*curve].page_path();
+    for ti in text_idx {
+        let t = &mut children[ti];
+        let ShapeKind::Text {
+            spans,
+            origin,
+            align,
+            para,
+            ..
+        } = t.kind.clone()
+        else {
+            continue;
+        };
+        let local =
+            Affine::translate(-origin.to_vec2()) * t.transform.inverse() * page_path.clone();
+        t.kind = ShapeKind::Text {
+            spans,
+            origin,
+            frame: None,
+            align,
+            para,
+            on_path: Some(tracedraw_core::TextOnPath {
+                path: local,
+                offset: 0.0,
+                distance: 0.0,
+                mirror: false,
+            }),
+        };
+    }
+}
+
 fn bounds_of(pts: &[Point]) -> Option<Rect> {
     let first = pts.first()?;
     let mut r = Rect::new(first.x, first.y, first.x, first.y);
@@ -1969,8 +2116,8 @@ fn classify_arrowhead(path: &BezPath, pts: &[Point], types: &[u8]) -> Arrowhead 
         if all_curves && closed {
             return Arrowhead::Circle;
         }
-        // Curved arrowheads with straight parts: treat as a filled arrow.
-        return Arrowhead::Arrow;
+        // Curved arrowheads with straight parts keep their own outline.
+        return Arrowhead::None;
     }
     match corners.len() {
         3 => {
@@ -3050,6 +3197,10 @@ mod tests {
     }
 
     fn txsm7(v: u16, frame: bool, styles: &[Style7], text: &str) -> Vec<u8> {
+        txsm7_opt(v, frame, styles, text, false)
+    }
+
+    fn txsm7_opt(v: u16, frame: bool, styles: &[Style7], text: &str, on_path: bool) -> Vec<u8> {
         let mut t = u32s(&[frame as u32]);
         t.extend_from_slice(&[0; 32]);
         if v >= 15 {
@@ -3058,9 +3209,21 @@ mod tests {
         t.extend_from_slice(&u32s(&[1])); // frames
         t.extend_from_slice(&u32s(&[1])); // frame id
         t.extend_from_slice(&[0; 48]);
-        t.extend_from_slice(&u32s(&[0])); // not on a path
-        if v >= 15 {
-            t.extend_from_slice(&[0; 8]);
+        if on_path {
+            t.extend_from_slice(&u32s(&[1]));
+            let mut n = 4 + 28;
+            if v >= 13 {
+                n += 8;
+            }
+            if v >= 15 {
+                n += 8;
+            }
+            t.extend_from_slice(&vec![0u8; n]);
+        } else {
+            t.extend_from_slice(&u32s(&[0])); // not on a path
+            if v >= 15 {
+                t.extend_from_slice(&[0; 8]);
+            }
         }
         if !frame {
             t.extend_from_slice(&vec![
@@ -3214,6 +3377,72 @@ mod tests {
             }
             other => panic!("{other:?}"),
         }
+    }
+
+    #[test]
+    fn group_lists_become_groups_and_text_on_path_follows_the_curve() {
+        let styles = [Style7 {
+            chars: 5,
+            font: None,
+            flags: None,
+            size_units: Some(127_000),
+            fill: None,
+        }];
+        // A curve from (0,0) to (50.8,0) mm and a text flagged "on path",
+        // together in a group; a plain rectangle outside the group.
+        let mut coords = u32s(&[2]);
+        coords.extend_from_slice(&i32s(&[0, 0, 508_000, 0]));
+        coords.extend_from_slice(&[0x08, 0x40]);
+        let curve = list(
+            b"obj ",
+            &chunk(b"loda", &loda(OBJ_CURVE, &[(ARG_COORDS, coords)])),
+        );
+        let text = list(
+            b"obj ",
+            &[
+                chunk(
+                    b"loda",
+                    &loda(OBJ_ARTISTIC_TEXT, &[(ARG_COORDS, i32s(&[0, 0]))]),
+                ),
+                chunk(b"txsm", &txsm7_opt(12, false, &styles, "Hello", true)),
+            ]
+            .concat(),
+        );
+        // Front to back in the file: text, curve.
+        let grp = list(b"grp ", &[text, curve].concat());
+        let rect = list(
+            b"obj ",
+            &chunk(
+                b"loda",
+                &loda(OBJ_RECT, &[(ARG_COORDS, i32s(&[254_000, 254_000, 0]))]),
+            ),
+        );
+        let body = [
+            chunk(b"mcfg", &mcfg(12, 2_540_000, 2_540_000)),
+            list(b"page", &list(b"layr", &[grp, rect].concat())),
+        ]
+        .concat();
+        let (doc, rep) = parse(&riff(b"CDRC", &body), 12);
+        let layer = &doc.pages[0].layers[0];
+        // File order front to back, ours bottom to top: rect, then group.
+        assert_eq!(layer.shapes.len(), 2, "{:?}", rep.warnings);
+        assert!(matches!(layer.shapes[0].kind, ShapeKind::Rect { .. }));
+        let ShapeKind::Group { children } = &layer.shapes[1].kind else {
+            panic!("{:?}", layer.shapes[1].kind);
+        };
+        assert_eq!(children.len(), 2);
+        assert!(matches!(children[0].kind, ShapeKind::Path { .. }));
+        match &children[1].kind {
+            ShapeKind::Text { on_path, spans, .. } => {
+                assert_eq!(spans[0].text, "Hello");
+                let p = on_path.as_ref().expect("text on path");
+                let b = p.path.bounding_box();
+                assert!((b.width() - 50.8).abs() < 1e-6, "{b:?}");
+                assert!(!children[1].data.iter().any(|(k, _)| k == ON_PATH_KEY));
+            }
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(rep.shapes, 2);
     }
 
     #[test]
@@ -3398,18 +3627,25 @@ mod tests {
         st.extend_from_slice(&u32s(&[0x80])); // italic
         st.extend_from_slice(&[0; 8]);
         st.extend_from_slice(&u32s(&[1, 200, 0, 2])); // one align entry: right
-        for _ in 0..3 {
-            st.extend_from_slice(&u32s(&[0])); // intervals, set5, tabs
+                                                      // One interval entry, id 300: char spacing 5 %, line spacing 150 %.
+        st.extend_from_slice(&u32s(&[1, 300, 0, 0, 50_000, 0, 0, 1_500_000]));
+        st.extend_from_slice(&[0; 24]);
+        for _ in 0..2 {
+            st.extend_from_slice(&u32s(&[0])); // set5, tabs
         }
         st.extend_from_slice(&u32s(&[0])); // bullets
-        for _ in 0..4 {
-            st.extend_from_slice(&u32s(&[0])); // indents, hyphens, drop caps, set11
+                                           // One indent entry, id 400: right 36 pt, first 18 pt, left 72 pt.
+        st.extend_from_slice(&u32s(&[1, 400, 0, 0, 0]));
+        st.extend_from_slice(&i32s(&[127_000, 63_500, 254_000]));
+        for _ in 0..3 {
+            st.extend_from_slice(&u32s(&[0])); // hyphens, drop caps, set11
         }
-        // Record: num 2, style 77, parent 0, 8 unknown, name "Std".
-        st.extend_from_slice(&u32s(&[2, 77, 0, 0, 0, 3]));
+        // Record: num 3, style 77, parent 0, 8 unknown, name "Std".
+        st.extend_from_slice(&u32s(&[3, 77, 0, 0, 0, 3]));
         st.extend_from_slice(&utf16("Std"));
         st.extend_from_slice(&u32s(&[0, 0])); // fill, outline refs
-        st.extend_from_slice(&u32s(&[100, 200, 0, 0, 0])); // font, align, interval, set5, set11
+        st.extend_from_slice(&u32s(&[100, 200, 300, 0, 0])); // font, align, interval, set5, set11
+        st.extend_from_slice(&u32s(&[0, 0, 400, 0, 0])); // tab, bullet, indent, hyphen, drop cap
         let styles = [Style7 {
             chars: 2,
             font: None,
@@ -3432,11 +3668,18 @@ mod tests {
         );
         assert_eq!(rep.shapes, 1, "{:?}", rep.warnings);
         match &first_shape(&doc).kind {
-            ShapeKind::Text { spans, align, .. } => {
+            ShapeKind::Text {
+                spans, align, para, ..
+            } => {
                 assert_eq!(*align, TextAlign::Right);
                 assert_eq!(spans[0].font_family, "Verdana");
                 assert!((spans[0].size_pt - 36.0).abs() < 1e-9);
                 assert!(spans[0].italic && !spans[0].bold);
+                assert!((spans[0].tracking_pct - 5.0).abs() < 1e-9);
+                assert!((para.leading_pct - 150.0).abs() < 1e-9);
+                assert!((para.left_indent - 25.4).abs() < 1e-9, "{para:?}");
+                assert!((para.first_line_indent - 6.35).abs() < 1e-9);
+                assert!((para.right_indent - 12.7).abs() < 1e-9);
             }
             other => panic!("{other:?}"),
         }
@@ -3734,6 +3977,12 @@ mod tests {
             ],
         );
         let open = arrw(10, &[(0, 0), (100, 50), (0, 100)], &[0x00, 0x40, 0x40]);
+        // A five-cornered head is no preset: it is kept as a custom outline.
+        let pentagon = arrw(
+            11,
+            &[(0, 0), (60, 0), (100, 50), (60, 100), (0, 100), (0, 0)],
+            &[0x08, 0x40, 0x40, 0x40, 0x40, 0x48],
+        );
         let main = riff(
             b"CDRD",
             &[
@@ -3743,10 +3992,12 @@ mod tests {
                 chunk(b"arrw", &bar),
                 chunk(b"arrw", &circle),
                 chunk(b"arrw", &open),
+                chunk(b"arrw", &pentagon),
                 chunk(b"outl", &outl_x3(1, 5, 6)),
                 chunk(b"outl", &outl_x3(2, 7, 8)),
                 chunk(b"outl", &outl_x3(3, 9, 10)),
                 chunk(b"outl", &outl_x3(4, 99, 0)),
+                chunk(b"outl", &outl_x3(5, 11, 0)),
             ]
             .concat(),
         );
@@ -3766,6 +4017,17 @@ mod tests {
         assert_eq!(arrows(2), (Arrowhead::Square, Arrowhead::Bar));
         assert_eq!(arrows(3), (Arrowhead::Circle, Arrowhead::OpenArrow));
         assert_eq!(arrows(4), (Arrowhead::None, Arrowhead::None));
+        match arrows(5).0 {
+            Arrowhead::Custom { path, name } => {
+                use tracedraw_core::geometry::Shape as _;
+                assert_eq!(name, "Arrowhead 11");
+                let b = path.bounding_box();
+                // Normalised: one unit tall, tip at x = 0, body towards -x.
+                assert!((b.height() - 1.0).abs() < 1e-9, "{b:?}");
+                assert!(b.x1.abs() < 1e-9 && (b.x0 + 1.0).abs() < 1e-9, "{b:?}");
+            }
+            other => panic!("{other:?}"),
+        }
         assert!(ctx
             .report
             .warnings

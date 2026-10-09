@@ -124,6 +124,12 @@ pub(crate) struct RunStyle {
     pub outl_id: Option<u32>,
     /// Alignment code (0 none, 1 left, 2 right, 3 centre, 4 and 5 justify).
     pub align: Option<u32>,
+    /// Line spacing as a factor of the character height (1.0 = 100 %).
+    pub line_spacing: Option<f64>,
+    /// Extra character spacing as a fraction of the em (0 = none).
+    pub char_spacing: Option<f64>,
+    /// Paragraph indents in points: (left, first line, right).
+    pub indent_pt: Option<(f64, f64, f64)>,
 }
 
 impl RunStyle {
@@ -139,6 +145,9 @@ impl RunStyle {
             fill_id: self.fill_id.or(base.fill_id),
             outl_id: self.outl_id.or(base.outl_id),
             align: self.align.or(base.align),
+            line_spacing: self.line_spacing.or(base.line_spacing),
+            char_spacing: self.char_spacing.or(base.char_spacing),
+            indent_pt: self.indent_pt.or(base.indent_pt),
         }
     }
 }
@@ -223,10 +232,23 @@ pub(crate) fn read_stlt(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Vec<(
         r.skip(n * size);
         Some(())
     };
-    if skip_table(&mut r, 52).is_none()
-        || skip_table(&mut r, 152).is_none()
-        || skip_table(&mut r, 784).is_none()
-    {
+    // Intervals: id, 8 unknown, character spacing u32, 8 unknown, line
+    // spacing u32, 24 unknown; both spacings in millionths.
+    let Some(ni) = r.u32() else {
+        return Vec::new();
+    };
+    let ni = (ni as usize).min(r.remaining() / 52);
+    let mut intervals: std::collections::HashMap<u32, (f64, f64)> =
+        std::collections::HashMap::with_capacity(ni);
+    for _ in 0..ni {
+        let (Some(id), _, Some(ch), _, Some(ln), _) =
+            (r.u32(), r.skip(8), r.u32(), r.skip(8), r.u32(), r.skip(24))
+        else {
+            return Vec::new();
+        };
+        intervals.insert(id, (ch as f64 / 1_000_000.0, ln as f64 / 1_000_000.0));
+    }
+    if skip_table(&mut r, 152).is_none() || skip_table(&mut r, 784).is_none() {
         return Vec::new();
     }
     // Bullets have a variable size.
@@ -256,9 +278,31 @@ pub(crate) fn read_stlt(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Vec<(
             r.skip(8);
         }
     }
+    // Indents: id, 12 unknown, right, first line, left (coordinates).
     let indent_size = 4 + 12 + 3 * coord_size;
-    if skip_table(&mut r, indent_size).is_none()
-        || skip_table(&mut r, 32 + if v >= 13 { 4 } else { 0 }).is_none()
+    let Some(nind) = r.u32() else {
+        return Vec::new();
+    };
+    let nind = (nind as usize).min(r.remaining() / indent_size);
+    let mut indents: std::collections::HashMap<u32, (f64, f64, f64)> =
+        std::collections::HashMap::with_capacity(nind);
+    let unit_pt = if v16 { PT_PER_UNIT16 } else { PT_PER_UNIT };
+    for _ in 0..nind {
+        let (Some(id), _, Some(right), Some(first), Some(left)) =
+            (r.u32(), r.skip(12), r.sint(), r.sint(), r.sint())
+        else {
+            return Vec::new();
+        };
+        indents.insert(
+            id,
+            (
+                left as f64 * unit_pt,
+                first as f64 * unit_pt,
+                right as f64 * unit_pt,
+            ),
+        );
+    }
+    if skip_table(&mut r, 32 + if v >= 13 { 4 } else { 0 }).is_none()
         || skip_table(&mut r, 28).is_none()
     {
         return Vec::new();
@@ -294,11 +338,19 @@ pub(crate) fn read_stlt(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Vec<(
             ..RunStyle::default()
         };
         if num > 1 {
-            let (Some(font_ref), Some(align_ref), Some(_interval), Some(_set5)) =
+            let (Some(font_ref), Some(align_ref), Some(interval_ref), Some(_set5)) =
                 (r.u32(), r.u32(), r.u32(), r.u32())
             else {
                 break;
             };
+            if let Some((ch, ln)) = intervals.get(&interval_ref) {
+                if *ln > 0.0 && ln.is_finite() {
+                    style.line_spacing = Some(*ln);
+                }
+                if ch.is_finite() && ch.abs() <= 20.0 {
+                    style.char_spacing = Some(*ch);
+                }
+            }
             if has_set11 {
                 r.skip(4);
             }
@@ -312,7 +364,17 @@ pub(crate) fn read_stlt(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Vec<(
             style.align = aligns.get(&align_ref).copied();
         }
         if num > 2 {
-            r.skip(20);
+            // tab, bullet, indent, hyphen and drop cap ids.
+            let (Some(_tab), Some(_bullet), Some(indent_ref), Some(_hyphen), Some(_drop)) =
+                (r.u32(), r.u32(), r.u32(), r.u32(), r.u32())
+            else {
+                break;
+            };
+            if let Some(ind) = indents.get(&indent_ref) {
+                if ind.0.is_finite() && ind.1.is_finite() && ind.2.is_finite() {
+                    style.indent_pt = Some(*ind);
+                }
+            }
         }
         out.push((style_id, StyleRec { parent, style }));
     }
@@ -338,6 +400,9 @@ pub(crate) struct TextParagraph {
 pub(crate) struct Txsm {
     /// Paragraph text (frame) rather than artistic text.
     pub frame: bool,
+    /// At least one frame is fitted to a path (the path itself is a
+    /// sibling object in the same group).
+    pub on_path: bool,
     pub paragraphs: Vec<TextParagraph>,
 }
 
@@ -368,9 +433,11 @@ fn read_txsm_7(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Option<Txsm> {
     if v >= 15 {
         r.skip(1);
     }
+    let mut any_on_path = false;
     if v < 8 {
         let on_path = r.u32()?;
         if on_path != 0 {
+            any_on_path = true;
             r.skip(32);
         }
     }
@@ -384,6 +451,7 @@ fn read_txsm_7(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Option<Txsm> {
         if v >= 8 {
             let on_path = r.u32()?;
             if on_path != 0 {
+                any_on_path = true;
                 r.skip(4);
                 if v >= 13 {
                     r.skip(8);
@@ -420,6 +488,7 @@ fn read_txsm_7(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Option<Txsm> {
     }
     let mut out = Txsm {
         frame,
+        on_path: any_on_path,
         paragraphs: Vec::new(),
     };
     for _ in 0..np {
@@ -581,11 +650,13 @@ fn read_txsm_16(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Option<Txsm> 
     if nf > MAX_FRAMES {
         return None;
     }
+    let mut any_on_path = false;
     for _ in 0..nf {
         let _frame_id = r.u32()?;
         r.skip(48);
         let on_path = r.u32()?;
         if on_path != 0 {
+            any_on_path = true;
             r.skip(40);
         }
         r.skip(8);
@@ -601,6 +672,7 @@ fn read_txsm_16(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Option<Txsm> 
     }
     let mut out = Txsm {
         frame,
+        on_path: any_on_path,
         paragraphs: Vec::new(),
     };
     for _ in 0..np {

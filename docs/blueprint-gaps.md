@@ -50,12 +50,15 @@ exceptions, shown disabled so the layout stays complete:
   tile), colour bitmap and texture fills (the latter from the stored
   bitmap), outlines with dashes and arrowheads classified into our
   presets, object opacity.
-- Still open in the reader: splines (0x26), vector pattern (10) and
-  PostScript (6) fills, text on a path (the path data is skipped), text
-  before version 7, single-byte code pages other than Windows-1252,
-  paragraph formatting (indents, tabs, bullets, drop caps, intervals from
-  `stlt`), custom arrowhead outlines (classified, not kept), the `ftil`
-  fill transform, lenses and other effects. Layouts marked "assumed" in
+- Done since: groups (`grp ` lists, nested), text fitted to a path
+  (from the frame flag and the sibling curve), line spacing, character
+  spacing and indents from `stlt`, custom arrowhead outlines kept as
+  custom arrowheads.
+- Still open in the reader: splines (0x26, layout not public), vector
+  pattern (10) and PostScript (6) fills, text before version 7,
+  single-byte code pages other than Windows-1252, tabs, bullets and drop
+  caps from `stlt` (tables skipped by size), the `ftil` fill transform,
+  lenses and other effects. Layouts marked "assumed" in
   `cdr-format.md` (`bmpf`, `arrw`, the X6+ style string content, the
   opacity direction, the alignment codes) have no file behind them yet.
 - Chunks with public descriptions: `vrsn`, `DISP`, `LIST cmpr`, `stlt`,
