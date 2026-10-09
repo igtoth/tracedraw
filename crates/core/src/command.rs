@@ -2,10 +2,14 @@
 //! and the control channel all build commands and hand them to the
 //! [`crate::Engine`], which applies them and records history.
 
-use crate::document::{Guide, Layer, Page, Shadow, Shape, ShapeKind};
+use crate::document::{
+    ColorStyle, Guide, Layer, MasterScope, Metadata, ObjectStyle, Page, Shadow, Shape, ShapeKind,
+    Symbol,
+};
 use crate::geometry::{Affine, BezPath, PathEl, Size};
 use crate::id::{LayerId, PageId, ShapeId};
 use crate::style::{Fill, Stroke};
+use crate::Color;
 use crate::{Document, Error, Result};
 use serde::{Deserialize, Serialize};
 
@@ -34,6 +38,42 @@ pub enum Command {
     AddLayer {
         page: PageId,
         name: String,
+    },
+    AddMasterLayer {
+        name: String,
+        scope: MasterScope,
+    },
+    SetLayerScope {
+        layer: LayerId,
+        scope: MasterScope,
+    },
+    SetLayerPrintable {
+        layer: LayerId,
+        printable: bool,
+    },
+    SetPageBackground {
+        page: PageId,
+        background: Option<Fill>,
+    },
+    SetMetadata {
+        metadata: Metadata,
+    },
+    SetObjectStyles {
+        styles: Vec<ObjectStyle>,
+    },
+    SetColorStyles {
+        styles: Vec<ColorStyle>,
+    },
+    SetDocumentPalette {
+        colors: Vec<Color>,
+    },
+    AddSymbol {
+        symbol: Symbol,
+    },
+    /// Move a page to another index (Page Sorter drag).
+    MovePage {
+        page: PageId,
+        to: usize,
     },
     DeleteLayer {
         layer: LayerId,
@@ -99,6 +139,44 @@ pub enum Command {
         shapes: Vec<ShapeId>,
         locked: bool,
     },
+    /// Hide or show objects (Object > Hide); hidden objects are not drawn
+    /// and cannot be selected on the canvas, only in the Objects docker.
+    SetVisible {
+        shapes: Vec<ShapeId>,
+        visible: bool,
+    },
+    /// Replace the live effect stack of a shape.
+    SetEffects {
+        shape: ShapeId,
+        effects: Vec<crate::live::Effect>,
+    },
+    SetOverprint {
+        shapes: Vec<ShapeId>,
+        fill: Option<bool>,
+        outline: Option<bool>,
+    },
+    SetLink {
+        shapes: Vec<ShapeId>,
+        link: Option<String>,
+    },
+    SetWrapText {
+        shapes: Vec<ShapeId>,
+        wrap: bool,
+    },
+    SetObjectData {
+        shape: ShapeId,
+        data: Vec<(String, String)>,
+    },
+    /// Move `shapes` directly in front of (or behind) `reference` in its layer.
+    OrderRelative {
+        shapes: Vec<ShapeId>,
+        reference: ShapeId,
+        in_front: bool,
+    },
+    /// Reverse the stacking order of the given shapes among themselves.
+    ReverseOrder {
+        shapes: Vec<ShapeId>,
+    },
     /// Merge several shapes into one curve (even-odd fill), like Ctrl+L.
     Combine {
         shapes: Vec<ShapeId>,
@@ -162,6 +240,16 @@ impl Command {
             Command::DeletePage { .. } => "Delete Page",
             Command::ResizePage { .. } => "Resize Page",
             Command::AddLayer { .. } => "New Layer",
+            Command::AddMasterLayer { .. } => "New Master Layer",
+            Command::SetLayerScope { .. } => "Master Layer Scope",
+            Command::SetLayerPrintable { .. } => "Layer Printable",
+            Command::SetPageBackground { .. } => "Page Background",
+            Command::SetMetadata { .. } => "Document Properties",
+            Command::SetObjectStyles { .. } => "Object Styles",
+            Command::SetColorStyles { .. } => "Color Styles",
+            Command::SetDocumentPalette { .. } => "Document Palette",
+            Command::AddSymbol { .. } => "New Symbol",
+            Command::MovePage { .. } => "Move Page",
             Command::DeleteLayer { .. } => "Delete Layer",
             Command::SetLayerVisible { .. } => "Layer Visibility",
             Command::SetLayerLocked { .. } => "Lock Layer",
@@ -178,6 +266,17 @@ impl Command {
             Command::SetOpacity { .. } => "Transparency",
             Command::SetLocked { locked: true, .. } => "Lock Object",
             Command::SetLocked { .. } => "Unlock Object",
+            Command::SetVisible { visible: false, .. } => "Hide Object",
+            Command::SetVisible { .. } => "Show Object",
+            Command::SetEffects { effects, .. } if effects.is_empty() => "Clear Effects",
+            Command::SetEffects { .. } => "Effect",
+            Command::SetOverprint { .. } => "Overprint",
+            Command::SetLink { .. } => "Hyperlink",
+            Command::SetWrapText { .. } => "Wrap Paragraph Text",
+            Command::SetObjectData { .. } => "Object Data",
+            Command::OrderRelative { in_front: true, .. } => "In Front Of",
+            Command::OrderRelative { .. } => "Behind",
+            Command::ReverseOrder { .. } => "Reverse Order",
             Command::Combine { .. } => "Combine",
             Command::BreakApart { .. } => "Break Apart",
             Command::PlaceInside { .. } => "ClipFrame",
@@ -212,6 +311,7 @@ impl Command {
                     size: *size,
                     layers: vec![Layer::new(layer_id, "Layer 1")],
                     guides: Vec::new(),
+                    background: None,
                 });
             }
             Command::DeletePage { page } => {
@@ -232,6 +332,44 @@ impl Command {
                 doc.page_mut(*page)?
                     .layers
                     .push(Layer::new(id, name.clone()));
+            }
+            Command::AddMasterLayer { name, scope } => {
+                let id = doc.ids_mut().layer();
+                doc.master.push(Layer::master(id, name.clone(), *scope));
+            }
+            Command::SetLayerScope { layer, scope } => {
+                doc.layer_mut(*layer)?.scope = *scope;
+            }
+            Command::SetLayerPrintable { layer, printable } => {
+                doc.layer_mut(*layer)?.printable = *printable;
+            }
+            Command::SetPageBackground { page, background } => {
+                doc.page_mut(*page)?.background = background.clone();
+            }
+            Command::SetMetadata { metadata } => {
+                doc.metadata = metadata.clone();
+            }
+            Command::SetObjectStyles { styles } => {
+                doc.object_styles = styles.clone();
+            }
+            Command::SetColorStyles { styles } => {
+                doc.color_styles = styles.clone();
+            }
+            Command::SetDocumentPalette { colors } => {
+                doc.palette = colors.clone();
+            }
+            Command::AddSymbol { symbol } => {
+                doc.symbols.push(symbol.clone());
+            }
+            Command::MovePage { page, to } => {
+                let from = doc
+                    .pages
+                    .iter()
+                    .position(|p| p.id == *page)
+                    .ok_or(Error::PageNotFound(*page))?;
+                let p = doc.pages.remove(from);
+                let to = (*to).min(doc.pages.len());
+                doc.pages.insert(to, p);
             }
             Command::DeleteLayer { layer } => {
                 let page = doc
@@ -342,6 +480,101 @@ impl Command {
                 }
                 for id in shapes {
                     doc.shape_mut(*id)?.locked = *locked;
+                }
+            }
+            Command::SetVisible { shapes, visible } => {
+                for id in shapes {
+                    doc.shape(*id)?;
+                }
+                for id in shapes {
+                    doc.shape_mut(*id)?.visible = *visible;
+                }
+            }
+            Command::SetEffects { shape, effects } => {
+                let s = doc
+                    .shape_mut(*shape)
+                    .map_err(|_| Error::ShapeNotFound(*shape))?;
+                s.effects = effects.clone();
+            }
+            Command::SetOverprint {
+                shapes,
+                fill,
+                outline,
+            } => {
+                for id in shapes {
+                    doc.shape(*id)?;
+                }
+                for id in shapes {
+                    let s = doc.shape_mut(*id)?;
+                    if let Some(f) = fill {
+                        s.overprint_fill = *f;
+                    }
+                    if let Some(o) = outline {
+                        s.overprint_outline = *o;
+                    }
+                }
+            }
+            Command::SetWrapText { shapes, wrap } => {
+                for id in shapes {
+                    doc.shape(*id)?;
+                }
+                for id in shapes {
+                    doc.shape_mut(*id)?.wrap_text = *wrap;
+                }
+            }
+            Command::SetLink { shapes, link } => {
+                for id in shapes {
+                    doc.shape(*id)?;
+                }
+                for id in shapes {
+                    doc.shape_mut(*id)?.link = link.clone();
+                }
+            }
+            Command::SetObjectData { shape, data } => {
+                doc.shape_mut(*shape)?.data = data.clone();
+            }
+            Command::OrderRelative {
+                shapes,
+                reference,
+                in_front,
+            } => {
+                let (layer, _) = doc.locate(*reference)?;
+                let mut moved = Vec::new();
+                for id in shapes {
+                    if *id == *reference {
+                        continue;
+                    }
+                    let (l, i) = doc.locate(*id)?;
+                    if l != layer {
+                        continue;
+                    }
+                    moved.push(doc.layer_mut(l)?.shapes.remove(i));
+                }
+                let (_, ri) = doc.locate(*reference)?;
+                let at = if *in_front { ri + 1 } else { ri };
+                let target = doc.layer_mut(layer)?;
+                for (k, s) in moved.into_iter().enumerate() {
+                    target.shapes.insert(at + k, s);
+                }
+            }
+            Command::ReverseOrder { shapes } => {
+                let mut slots: Vec<(LayerId, usize)> = Vec::new();
+                for id in shapes {
+                    slots.push(doc.locate(*id)?);
+                }
+                // Per layer, swap the shapes at the chosen indices in reverse.
+                let mut by_layer: std::collections::BTreeMap<LayerId, Vec<usize>> =
+                    Default::default();
+                for (l, i) in slots {
+                    by_layer.entry(l).or_default().push(i);
+                }
+                for (l, mut idx) in by_layer {
+                    idx.sort_unstable();
+                    let layer = doc.layer_mut(l)?;
+                    let n = idx.len();
+                    for k in 0..n / 2 {
+                        layer.shapes.swap(idx[k], idx[n - 1 - k]);
+                    }
                 }
             }
             Command::Combine { shapes } => {
@@ -495,6 +728,7 @@ impl Command {
                     size: src.size,
                     layers,
                     guides: src.guides.clone(),
+                    background: src.background.clone(),
                 };
                 doc.pages.insert(idx + 1, copy);
             }

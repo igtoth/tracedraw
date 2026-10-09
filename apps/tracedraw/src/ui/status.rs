@@ -2,6 +2,7 @@
 //! object information, fill and outline swatches.
 
 use crate::app::App;
+use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
 use crate::tools::Tool;
 use crate::ui::dockers::kind_name;
@@ -80,23 +81,29 @@ pub fn navigator(app: &mut App, ui: &mut Ui) {
             }
             resp.on_hover_text(tip).clicked()
         };
-        if nav(ui, "⊞", "Insert page before") {
+        if nav(ui, "⊞", &tr("status.insert_page_before")) {
             app.add_page();
         }
-        if nav(ui, "⏮", "First page") {
+        if nav(ui, "⏮", &tr("status.first_page")) {
             app.goto_page(0);
         }
-        if nav(ui, "◀", "Previous page") && idx > 0 {
+        if nav(ui, "◀", &tr("status.previous_page")) && idx > 0 {
             app.goto_page(idx - 1);
         }
-        ui.label(egui::RichText::new(format!("{} of {}", idx + 1, n)).size(11.0));
-        if nav(ui, "▶", "Next page") {
+        ui.label(
+            egui::RichText::new(trf(
+                "status.page_n_of_m",
+                &[("n", &(idx + 1).to_string()), ("m", &n.to_string())],
+            ))
+            .size(11.0),
+        );
+        if nav(ui, "▶", &tr("status.next_page")) {
             app.goto_page(idx + 1);
         }
-        if nav(ui, "⏭", "Last page") {
+        if nav(ui, "⏭", &tr("status.last_page")) {
             app.goto_page(n.saturating_sub(1));
         }
-        if nav(ui, "⊞", "Insert page after") {
+        if nav(ui, "⊞", &tr("status.insert_page_after")) {
             app.add_page();
         }
         let names: Vec<(usize, String)> = app
@@ -124,34 +131,37 @@ pub fn navigator(app: &mut App, ui: &mut Ui) {
     });
 }
 
-fn tool_hint(tool: Tool) -> &'static str {
-    match tool {
-        Tool::Pick | Tool::FreeformPick => "Next click for Drag/Scale; Second click for Rotate/Skew; Dbl-clicking tool selects all objects; Shift+click multi-selects; Alt+click digs",
-        Tool::Shape => "Click or drag nodes; Dbl-click an object to convert it to curves",
-        Tool::Zoom => "Click to zoom in; Shift+click or right-click to zoom out; drag to zoom to an area",
-        Tool::Pan => "Drag to pan the view",
-        Tool::Rectangle | Tool::ThreePointRectangle => "Drag to draw; Ctrl constrains to a square; Dbl-click the tool for a page frame",
-        Tool::Ellipse | Tool::ThreePointEllipse => "Drag to draw; Ctrl constrains to a circle",
-        Tool::Polygon | Tool::Star => "Drag to draw; set points on the property bar",
-        Tool::Text => "Click for artistic text, then type; Esc finishes",
-        Tool::Freehand => "Drag to draw a freehand curve",
-        Tool::Bezier | Tool::Pen | Tool::Polyline | Tool::TwoPointLine | Tool::BSpline => "Click to add nodes; Dbl-click or Enter finishes; Esc cancels",
-        Tool::InteractiveFill | Tool::AreaFill => "Click an object to apply the default fill; drag across it for a fountain fill",
-        Tool::ColorEyedropper | Tool::AttributesEyedropper => "Click an object to sample its fill; click other objects to apply",
-        Tool::Eraser => "Click an object to delete it",
-        Tool::Contour => "Select an object and drag to set the contour offset; Apply on the property bar",
-        Tool::Crop => "Drag a rectangle; objects are cropped when you release",
-        Tool::Knife => "Drag a line across objects to cut them",
-        Tool::Spiral => "Drag to draw a spiral",
-        Tool::CommonShapes => "Drag to draw the shape chosen on the property bar",
-        Tool::Table => "Drag to draw a table",
-        Tool::BrushStrokes => "Drag to paint a calligraphic stroke",
-        Tool::ParallelDimension => "Click two points, then click to place the dimension line",
-        Tool::Connector => "Drag from one object to another",
-        Tool::DropShadow => "Drag from an object to set the shadow offset",
-        Tool::Transparency => "Click an object, then set the transparency on the property bar",
-        _ => "This tool is not implemented yet",
-    }
+fn tool_hint(tool: Tool) -> String {
+    let key = match tool {
+        Tool::Pick | Tool::FreeformPick => "hint.bar_pick",
+        Tool::Shape => "hint.bar_shape",
+        Tool::Zoom => "hint.bar_zoom",
+        Tool::Pan => "hint.bar_pan",
+        Tool::Rectangle | Tool::ThreePointRectangle => "hint.bar_rectangle",
+        Tool::Ellipse | Tool::ThreePointEllipse => "hint.bar_ellipse",
+        Tool::Polygon | Tool::Star => "hint.bar_polygon",
+        Tool::Text => "hint.bar_text",
+        Tool::Freehand => "hint.bar_freehand",
+        Tool::Bezier | Tool::Pen | Tool::Polyline | Tool::TwoPointLine | Tool::BSpline => {
+            "hint.bar_bezier"
+        }
+        Tool::InteractiveFill | Tool::AreaFill => "hint.bar_fill",
+        Tool::ColorEyedropper | Tool::AttributesEyedropper => "hint.bar_eyedropper",
+        Tool::Eraser => "hint.bar_eraser",
+        Tool::Contour => "hint.bar_contour",
+        Tool::Crop => "hint.bar_crop",
+        Tool::Knife => "hint.bar_knife",
+        Tool::Spiral => "hint.bar_spiral",
+        Tool::CommonShapes => "hint.bar_common_shapes",
+        Tool::Table => "hint.bar_table",
+        Tool::BrushStrokes => "hint.bar_brush_strokes",
+        Tool::ParallelDimension => "hint.bar_dimension",
+        Tool::Connector => "hint.bar_connector",
+        Tool::DropShadow => "hint.bar_drop_shadow",
+        Tool::Transparency => "hint.bar_transparency",
+        _ => "hint.bar_not_implemented",
+    };
+    tr(key)
 }
 
 pub fn status_bar(app: &mut App, ui: &mut Ui) {
@@ -164,13 +174,13 @@ pub fn status_bar(app: &mut App, ui: &mut Ui) {
             crate::ui::icons::Action::Options,
             Tokens::ICON,
         );
-        let _ = resp.on_hover_text("Status bar options");
+        let _ = resp.on_hover_text(tr("status.bar_options"));
         let shapes = app.selected_shapes();
         let info = if app.text_edit.is_some() {
-            "Editing text".to_string()
+            tr("status.editing_text")
         } else if shapes.is_empty() {
             if app.status.is_empty() {
-                tool_hint(app.tool).to_string()
+                tool_hint(app.tool)
             } else {
                 format!("{}    {}", app.status, tool_hint(app.tool))
             }
@@ -180,9 +190,15 @@ pub fn status_bar(app: &mut App, ui: &mut Ui) {
                 .shape(shapes[0].id)
                 .map(|(l, _)| l.name.clone())
                 .unwrap_or_default();
-            format!("{} on {}", kind_name(&shapes[0].kind), layer)
+            trf(
+                "status.object_on_layer",
+                &[("k", &kind_name(&shapes[0].kind)), ("l", &layer)],
+            )
         } else {
-            format!("{} objects selected", shapes.len())
+            trf(
+                "status.n_objects_selected",
+                &[("n", &shapes.len().to_string())],
+            )
         };
         ui.label(egui::RichText::new(info).size(11.0));
 
@@ -194,12 +210,12 @@ pub fn status_bar(app: &mut App, ui: &mut Ui) {
             let width_label = match &stroke {
                 None => String::new(),
                 Some(s) if s.width <= tracedraw_core::Stroke::HAIRLINE + 1e-9 => {
-                    "Hairline".to_string()
+                    tr("status.hairline")
                 }
                 Some(s) => format!("{:.2} {}", app.units.from_mm(s.width), app.units.short()),
             };
             let outline_text = match &stroke {
-                None => "None".to_string(),
+                None => tr("status.none"),
                 Some(s) => format!(
                     "{}  {}",
                     crate::app::color_description(s.color),
@@ -211,7 +227,7 @@ pub fn status_bar(app: &mut App, ui: &mut Ui) {
             swatch(
                 ui,
                 stroke.as_ref().map(|s| crate::canvas::to_color32(s.color)),
-                "Outline",
+                &tr("status.swatch_outline"),
             );
             let (r, _) = ui.allocate_exact_size(Vec2::new(16.0, 16.0), Sense::hover());
             crate::ui::icons::draw(
@@ -222,7 +238,11 @@ pub fn status_bar(app: &mut App, ui: &mut Ui) {
             );
             ui.add_space(24.0);
             ui.label(egui::RichText::new(crate::app::fill_description(&fill)).size(11.0));
-            swatch(ui, crate::app::fill_preview_color(&fill), "Fill");
+            swatch(
+                ui,
+                crate::app::fill_preview_color(&fill),
+                &tr("status.swatch_fill"),
+            );
             let (r, _) = ui.allocate_exact_size(Vec2::new(16.0, 16.0), Sense::hover());
             crate::ui::icons::draw(
                 ui.painter(),

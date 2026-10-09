@@ -1,6 +1,7 @@
 //! Dockers: Properties, Objects (layer manager) and Hints.
 
 use crate::app::{App, DockerTab};
+use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
 use crate::tools::Tool;
 use egui::Ui;
@@ -13,15 +14,19 @@ use tracedraw_core::{
 pub fn tab_strip(app: &mut App, ui: &mut Ui) {
     ui.spacing_mut().item_spacing = egui::vec2(0.0, 4.0);
     ui.add_space(4.0);
-    for (tab, name) in [
-        (DockerTab::Hints, "Hints"),
-        (DockerTab::Properties, "Properties"),
-        (DockerTab::Objects, "Objects"),
-        (DockerTab::Transformations, "Transformations"),
-        (DockerTab::Undo, "Undo"),
-    ] {
+    let mut tabs = DockerTab::default_strip();
+    for t in &app.open_dockers {
+        if !tabs.contains(t) {
+            tabs.push(*t);
+        }
+    }
+    if !tabs.contains(&app.docker_tab) {
+        tabs.push(app.docker_tab);
+    }
+    for tab in tabs {
+        let name = tr(tab.key());
         let active = app.show_dockers && app.docker_tab == tab;
-        let h = 14.0 + name.len() as f32 * 7.0;
+        let h = 14.0 + name.chars().count() as f32 * 7.0;
         let (r, resp) = ui.allocate_exact_size(egui::vec2(26.0, h), egui::Sense::click());
         if active {
             ui.painter().rect_filled(r, 2.0, Tokens::TOOL_ACTIVE);
@@ -29,7 +34,7 @@ pub fn tab_strip(app: &mut App, ui: &mut Ui) {
             ui.painter().rect_filled(r, 2.0, Tokens::TOOL_HOVER);
         }
         let galley = ui.painter().layout_no_wrap(
-            name.to_string(),
+            name.clone(),
             egui::FontId::proportional(11.0),
             Tokens::TEXT,
         );
@@ -50,36 +55,48 @@ pub fn tab_strip(app: &mut App, ui: &mut Ui) {
                 app.docker_tab = tab;
             }
         }
+        resp.context_menu(|ui| {
+            if ui.button(tr("docker.close_docker")).clicked() {
+                app.open_dockers.retain(|t| *t != tab);
+                if app.docker_tab == tab {
+                    app.show_dockers = false;
+                }
+                ui.close();
+            }
+        });
     }
-    let _ = ui
-        .add(
-            egui::Button::new(egui::RichText::new("+").size(14.0).color(Tokens::TEXT_DIM))
-                .frame(false),
-        )
-        .on_hover_text("Add docker");
+    ui.menu_button(
+        egui::RichText::new("+").size(14.0).color(Tokens::TEXT_DIM),
+        |ui| {
+            for tab in DockerTab::ALL {
+                if ui.button(tr(tab.key())).clicked() {
+                    if !app.open_dockers.contains(&tab) {
+                        app.open_dockers.push(tab);
+                    }
+                    app.show_dockers = true;
+                    app.docker_tab = tab;
+                    ui.close();
+                }
+            }
+        },
+    );
 }
 
 pub fn dockers(app: &mut App, ui: &mut Ui) {
     ui.horizontal(|ui| {
-        let name = match app.docker_tab {
-            DockerTab::Properties => "Properties",
-            DockerTab::Objects => "Objects",
-            DockerTab::Hints => "Hints",
-            DockerTab::Transformations => "Transformations",
-            DockerTab::Undo => "Undo",
-        };
+        let name = tr(app.docker_tab.key());
         ui.label(egui::RichText::new(name).size(12.0));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if ui
                 .add(egui::Button::new("✕").frame(false))
-                .on_hover_text("Close docker")
+                .on_hover_text(tr("docker.close_docker"))
                 .clicked()
             {
                 app.show_dockers = false;
             }
             let _ = ui
                 .add(egui::Button::new("»").frame(false))
-                .on_hover_text("Collapse");
+                .on_hover_text(tr("docker.collapse"));
         });
     });
     ui.separator();
@@ -89,6 +106,7 @@ pub fn dockers(app: &mut App, ui: &mut Ui) {
         DockerTab::Hints => hints(app, ui),
         DockerTab::Transformations => transformations(app, ui),
         DockerTab::Undo => undo_docker(app, ui),
+        other => crate::ui::dockers2::show(app, ui, other),
     });
 }
 
@@ -116,9 +134,9 @@ fn color_row(ui: &mut Ui, label: &str, c: &mut Color) -> bool {
 fn properties(app: &mut App, ui: &mut Ui) {
     let shapes = app.selected_shapes();
     if shapes.is_empty() {
-        ui.label(egui::RichText::new("No objects selected").color(Tokens::TEXT_DIM));
+        ui.label(egui::RichText::new(tr("docker.no_objects_selected")).color(Tokens::TEXT_DIM));
         ui.add_space(6.0);
-        ui.strong("Default properties for new objects");
+        ui.strong(tr("docker.default_properties"));
         let mut fill = app.default_fill.clone();
         if fill_editor(ui, &mut fill) {
             app.default_fill = fill;
@@ -135,7 +153,10 @@ fn properties(app: &mut App, ui: &mut Ui) {
         "{}{}",
         kind_name(&first.kind),
         if shapes.len() > 1 {
-            format!(" and {} more", shapes.len() - 1)
+            trf(
+                "docker.and_n_more",
+                &[("n", &(shapes.len() - 1).to_string())],
+            )
         } else {
             String::new()
         }
@@ -155,13 +176,13 @@ fn properties(app: &mut App, ui: &mut Ui) {
     );
 
     ui.separator();
-    ui.collapsing("Fill", |ui| {
+    ui.collapsing(tr("docker.fill"), |ui| {
         let mut fill = first.fill.clone();
         if fill_editor(ui, &mut fill) {
             app.apply_fill(fill);
         }
     });
-    ui.collapsing("Outline", |ui| {
+    ui.collapsing(tr("docker.outline"), |ui| {
         let mut stroke = first.stroke.clone();
         if outline_editor(ui, &mut stroke) {
             let shapes = app.selection.clone();
@@ -169,24 +190,32 @@ fn properties(app: &mut App, ui: &mut Ui) {
         }
     });
     if let ShapeKind::Text { spans, .. } = &first.kind {
-        ui.collapsing("Character", |ui| {
+        ui.collapsing(tr("docker.character"), |ui| {
             if let Some(sp) = spans.first() {
                 ui.label(format!(
                     "{} {} pt{}{}",
                     sp.font_family,
                     sp.size_pt,
-                    if sp.bold { " Bold" } else { "" },
-                    if sp.italic { " Italic" } else { "" }
+                    if sp.bold {
+                        format!(" {}", tr("docker.bold"))
+                    } else {
+                        String::new()
+                    },
+                    if sp.italic {
+                        format!(" {}", tr("docker.italic"))
+                    } else {
+                        String::new()
+                    }
                 ));
             }
             ui.label(
-                egui::RichText::new("Edit with the Text tool (F8)")
+                egui::RichText::new(tr("docker.edit_with_text_tool"))
                     .color(Tokens::TEXT_DIM)
                     .size(11.0),
             );
         });
     }
-    ui.collapsing("Summary", |ui| {
+    ui.collapsing(tr("docker.summary"), |ui| {
         for s in &shapes {
             ui.label(format!(
                 "{}  id {}  {}",
@@ -206,13 +235,21 @@ fn fill_editor(ui: &mut Ui, fill: &mut Fill) -> bool {
         Fill::Fountain(_) => 2,
         Fill::Pattern(_) => 3,
         Fill::Texture(_) => 4,
+        Fill::Mesh(_) => 5,
     };
     ui.horizontal_wrapped(|ui| {
-        for (i, n) in ["None", "Uniform", "Fountain", "Pattern", "Texture"]
-            .iter()
-            .enumerate()
+        for (i, n) in [
+            "docker.fill_none",
+            "docker.fill_uniform",
+            "docker.fill_fountain",
+            "docker.fill_pattern",
+            "docker.fill_texture",
+            "docker.fill_mesh",
+        ]
+        .iter()
+        .enumerate()
         {
-            if ui.selectable_label(kind == i, *n).clicked() && kind != i {
+            if ui.selectable_label(kind == i, tr(n)).clicked() && kind != i {
                 kind = i;
                 changed = true;
             }
@@ -232,21 +269,62 @@ fn fill_editor(ui: &mut Ui, fill: &mut Fill) -> bool {
                 back: Color::WHITE,
                 size_mm: 10.0,
             }),
-            _ => Fill::Texture(Texture {
+            4 => Fill::Texture(Texture {
                 kind: TextureKind::Clouds,
                 color_a: base,
                 color_b: Color::WHITE,
                 scale: 20.0,
                 seed: 1,
             }),
+            _ => Fill::Mesh(tracedraw_core::Mesh::new(
+                tracedraw_core::geometry::Rect::new(0.0, 0.0, 100.0, 100.0),
+                2,
+                2,
+                base,
+            )),
         };
     }
     match fill {
         Fill::None => {}
-        Fill::Solid(c) => changed |= color_row(ui, "Colour", c),
+        Fill::Solid(c) => changed |= color_row(ui, &tr("docker.colour"), c),
         Fill::Fountain(f) => changed |= fountain_editor(ui, f),
         Fill::Pattern(p) => changed |= pattern_editor(ui, p),
         Fill::Texture(t) => changed |= texture_editor(ui, t),
+        Fill::Mesh(m) => {
+            ui.label(trf(
+                "docker.mesh_n",
+                &[("r", &m.rows.to_string()), ("c", &m.cols.to_string())],
+            ));
+            ui.horizontal(|ui| {
+                ui.label(tr("docker.grid"));
+                let (mut r, mut c) = (m.rows, m.cols);
+                if ui.add(egui::DragValue::new(&mut r).range(1..=50)).changed()
+                    || ui.add(egui::DragValue::new(&mut c).range(1..=50)).changed()
+                {
+                    let b = m
+                        .nodes
+                        .iter()
+                        .fold(None::<tracedraw_core::geometry::Rect>, |acc, n| {
+                            Some(match acc {
+                                None => tracedraw_core::geometry::Rect::from_points(n.pos, n.pos),
+                                Some(r) => r.union_pt(n.pos),
+                            })
+                        })
+                        .unwrap_or_default();
+                    let base = m.nodes.first().map(|n| n.color).unwrap_or(Color::WHITE);
+                    *m = tracedraw_core::Mesh::new(b, r, c, base);
+                    changed = true;
+                }
+            });
+            changed |= ui
+                .checkbox(&mut m.smooth, tr("docker.smooth_colour"))
+                .changed();
+            ui.label(
+                egui::RichText::new(tr("docker.mesh_hint"))
+                    .color(Tokens::TEXT_DIM)
+                    .size(11.0),
+            );
+        }
     }
     changed
 }
@@ -254,14 +332,14 @@ fn fill_editor(ui: &mut Ui, fill: &mut Fill) -> bool {
 fn fountain_editor(ui: &mut Ui, f: &mut Fountain) -> bool {
     let mut changed = false;
     ui.horizontal(|ui| {
-        ui.label("Type");
+        ui.label(tr("docker.type"));
         for (k, n) in [
-            (FountainKind::Linear, "Linear"),
-            (FountainKind::Radial, "Radial"),
-            (FountainKind::Conical, "Conical"),
-            (FountainKind::Square, "Square"),
+            (FountainKind::Linear, "fill.linear"),
+            (FountainKind::Radial, "fill.radial"),
+            (FountainKind::Conical, "fill.conical"),
+            (FountainKind::Square, "fill.square"),
         ] {
-            if ui.selectable_label(f.kind == k, n).clicked() && f.kind != k {
+            if ui.selectable_label(f.kind == k, tr(n)).clicked() && f.kind != k {
                 f.kind = k;
                 changed = true;
             }
@@ -293,10 +371,19 @@ fn fountain_editor(ui: &mut Ui, f: &mut Fountain) -> bool {
                 stop.pos = pct / 100.0;
                 changed = true;
             }
-            if ui.small_button("+").on_hover_text("Add stop").clicked() {
+            if ui
+                .small_button("+")
+                .on_hover_text(tr("docker.add_stop"))
+                .clicked()
+            {
                 insert = Some(i);
             }
-            if n > 2 && ui.small_button("x").on_hover_text("Remove stop").clicked() {
+            if n > 2
+                && ui
+                    .small_button("x")
+                    .on_hover_text(tr("docker.remove_stop"))
+                    .clicked()
+            {
                 remove = Some(i);
             }
         });
@@ -319,14 +406,14 @@ fn fountain_editor(ui: &mut Ui, f: &mut Fountain) -> bool {
         changed |= ui
             .add(
                 egui::Slider::new(&mut f.angle, -180.0..=180.0)
-                    .text("angle")
+                    .text(tr("docker.angle_lc"))
                     .suffix("°"),
             )
             .drag_stopped();
     }
     if !matches!(f.kind, FountainKind::Linear) {
         ui.horizontal(|ui| {
-            ui.label("Centre offset");
+            ui.label(tr("docker.centre_offset"));
             changed |= ui
                 .add(
                     egui::DragValue::new(&mut f.offset.x)
@@ -347,7 +434,7 @@ fn fountain_editor(ui: &mut Ui, f: &mut Fountain) -> bool {
     if ui
         .add(
             egui::Slider::new(&mut pad, 0.0..=49.0)
-                .text("edge pad")
+                .text(tr("docker.edge_pad"))
                 .suffix("%"),
         )
         .drag_stopped()
@@ -367,7 +454,7 @@ fn pattern_editor(ui: &mut Ui, p: &mut Pattern) -> bool {
             back,
             size_mm,
         } => {
-            egui::ComboBox::from_label("Tile")
+            egui::ComboBox::from_label(tr("docker.tile"))
                 .selected_text(tile.name())
                 .show_ui(ui, |ui| {
                     for t in PatternTile::ALL {
@@ -377,12 +464,12 @@ fn pattern_editor(ui: &mut Ui, p: &mut Pattern) -> bool {
                         }
                     }
                 });
-            changed |= color_row(ui, "Front", front);
-            changed |= color_row(ui, "Back", back);
+            changed |= color_row(ui, &tr("docker.front"), front);
+            changed |= color_row(ui, &tr("docker.back"), back);
             changed |= ui
                 .add(
                     egui::Slider::new(size_mm, 1.0..=100.0)
-                        .text("tile size mm")
+                        .text(tr("docker.tile_size_mm"))
                         .logarithmic(true),
                 )
                 .drag_stopped();
@@ -393,11 +480,14 @@ fn pattern_editor(ui: &mut Ui, p: &mut Pattern) -> bool {
             size_mm,
             ..
         } => {
-            ui.label(format!("Bitmap tile {width_px} x {height_px} px"));
+            ui.label(trf(
+                "docker.bitmap_tile_n",
+                &[("w", &width_px.to_string()), ("h", &height_px.to_string())],
+            ));
             changed |= ui
                 .add(
                     egui::Slider::new(size_mm, 1.0..=200.0)
-                        .text("tile size mm")
+                        .text(tr("docker.tile_size_mm"))
                         .logarithmic(true),
                 )
                 .drag_stopped();
@@ -410,30 +500,30 @@ fn texture_editor(ui: &mut Ui, t: &mut Texture) -> bool {
     let mut changed = false;
     ui.horizontal(|ui| {
         for (k, n) in [
-            (TextureKind::Clouds, "Clouds"),
-            (TextureKind::Marble, "Marble"),
-            (TextureKind::Noise, "Noise"),
-            (TextureKind::Wood, "Wood"),
+            (TextureKind::Clouds, "texture.clouds"),
+            (TextureKind::Marble, "texture.marble"),
+            (TextureKind::Noise, "texture.noise"),
+            (TextureKind::Wood, "texture.wood"),
         ] {
-            if ui.selectable_label(t.kind == k, n).clicked() && t.kind != k {
+            if ui.selectable_label(t.kind == k, tr(n)).clicked() && t.kind != k {
                 t.kind = k;
                 changed = true;
             }
         }
     });
-    changed |= color_row(ui, "Colour A", &mut t.color_a);
-    changed |= color_row(ui, "Colour B", &mut t.color_b);
+    changed |= color_row(ui, &tr("docker.colour_a"), &mut t.color_a);
+    changed |= color_row(ui, &tr("docker.colour_b"), &mut t.color_b);
     changed |= ui
         .add(
             egui::Slider::new(&mut t.scale, 1.0..=200.0)
-                .text("scale mm")
+                .text(tr("docker.scale_mm"))
                 .logarithmic(true),
         )
         .drag_stopped();
     ui.horizontal(|ui| {
-        ui.label("Seed");
+        ui.label(tr("docker.seed"));
         changed |= ui.add(egui::DragValue::new(&mut t.seed)).changed();
-        if ui.small_button("Regenerate").clicked() {
+        if ui.small_button(tr("docker.regenerate")).clicked() {
             t.seed = t.seed.wrapping_add(1);
             changed = true;
         }
@@ -441,9 +531,9 @@ fn texture_editor(ui: &mut Ui, t: &mut Texture) -> bool {
     changed
 }
 
-fn arrow_combo(ui: &mut Ui, label: &str, a: &mut Arrowhead) -> bool {
+fn arrow_combo(ui: &mut Ui, id: &str, label: &str, a: &mut Arrowhead) -> bool {
     let mut changed = false;
-    egui::ComboBox::from_id_salt(label)
+    egui::ComboBox::from_id_salt(id)
         .selected_text(format!("{label}: {}", a.name()))
         .show_ui(ui, |ui| {
             for k in Arrowhead::ALL {
@@ -459,14 +549,14 @@ fn arrow_combo(ui: &mut Ui, label: &str, a: &mut Arrowhead) -> bool {
 fn outline_editor(ui: &mut Ui, stroke: &mut Option<Stroke>) -> bool {
     let mut changed = false;
     let mut has = stroke.is_some();
-    if ui.checkbox(&mut has, "Outline").changed() {
+    if ui.checkbox(&mut has, tr("docker.outline")).changed() {
         *stroke = if has { Some(Stroke::default()) } else { None };
         changed = true;
     }
     if let Some(s) = stroke {
-        changed |= color_row(ui, "Colour", &mut s.color);
+        changed |= color_row(ui, &tr("docker.colour"), &mut s.color);
         let mut hair = s.width <= Stroke::HAIRLINE + 1e-9;
-        if ui.checkbox(&mut hair, "Hairline").changed() {
+        if ui.checkbox(&mut hair, tr("docker.hairline")).changed() {
             s.width = if hair { Stroke::HAIRLINE } else { 0.5 };
             changed = true;
         }
@@ -474,111 +564,142 @@ fn outline_editor(ui: &mut Ui, stroke: &mut Option<Stroke>) -> bool {
             changed |= ui
                 .add(
                     egui::Slider::new(&mut s.width, 0.1..=25.0)
-                        .text("width mm")
+                        .text(tr("docker.width_mm"))
                         .logarithmic(true),
                 )
                 .drag_stopped();
         }
         ui.horizontal(|ui| {
-            ui.label("Caps");
+            ui.label(tr("docker.caps"));
             for (c, n) in [
-                (tracedraw_core::LineCap::Butt, "Butt"),
-                (tracedraw_core::LineCap::Round, "Round"),
-                (tracedraw_core::LineCap::Square, "Square"),
+                (tracedraw_core::LineCap::Butt, "docker.cap_butt"),
+                (tracedraw_core::LineCap::Round, "docker.cap_round"),
+                (tracedraw_core::LineCap::Square, "docker.cap_square"),
             ] {
-                if ui.selectable_label(s.cap == c, n).clicked() {
+                if ui.selectable_label(s.cap == c, tr(n)).clicked() {
                     s.cap = c;
                     changed = true;
                 }
             }
         });
         ui.horizontal(|ui| {
-            ui.label("Corners");
+            ui.label(tr("docker.corners"));
             for (j, n) in [
-                (tracedraw_core::LineJoin::Miter, "Miter"),
-                (tracedraw_core::LineJoin::Round, "Round"),
-                (tracedraw_core::LineJoin::Bevel, "Bevel"),
+                (tracedraw_core::LineJoin::Miter, "docker.join_miter"),
+                (tracedraw_core::LineJoin::Round, "docker.join_round"),
+                (tracedraw_core::LineJoin::Bevel, "docker.join_bevel"),
             ] {
-                if ui.selectable_label(s.join == j, n).clicked() {
+                if ui.selectable_label(s.join == j, tr(n)).clicked() {
                     s.join = j;
                     changed = true;
                 }
             }
         });
         ui.horizontal(|ui| {
-            changed |= arrow_combo(ui, "Start", &mut s.start_arrow);
-            changed |= arrow_combo(ui, "End", &mut s.end_arrow);
+            changed |= arrow_combo(ui, "Start", &tr("docker.arrow_start"), &mut s.start_arrow);
+            changed |= arrow_combo(ui, "End", &tr("docker.arrow_end"), &mut s.end_arrow);
         });
         ui.horizontal(|ui| {
-            ui.label("Dash");
+            ui.label(tr("docker.dash"));
             for (d, n) in [
-                (vec![], "Solid"),
-                (vec![4.0, 2.0], "Dashed"),
-                (vec![1.0, 1.0], "Dotted"),
-                (vec![6.0, 2.0, 1.0, 2.0], "Dash dot"),
+                (vec![], "docker.dash_solid"),
+                (vec![4.0, 2.0], "docker.dash_dashed"),
+                (vec![1.0, 1.0], "docker.dash_dotted"),
+                (vec![6.0, 2.0, 1.0, 2.0], "docker.dash_dash_dot"),
             ] {
-                if ui.selectable_label(s.dash == d, n).clicked() {
+                if ui.selectable_label(s.dash == d, tr(n)).clicked() {
                     s.dash = d;
                     changed = true;
                 }
             }
         });
         changed |= ui
-            .add(egui::Slider::new(&mut s.stretch, 0.1..=1.0).text("nib stretch"))
+            .add(egui::Slider::new(&mut s.stretch, 0.1..=1.0).text(tr("docker.nib_stretch")))
             .drag_stopped();
         changed |= ui
             .add(
                 egui::Slider::new(&mut s.nib_angle, -90.0..=90.0)
-                    .text("nib angle")
+                    .text(tr("docker.nib_angle_lc"))
                     .suffix("°"),
             )
             .drag_stopped();
-        changed |= ui.checkbox(&mut s.behind_fill, "Behind fill").changed();
         changed |= ui
-            .checkbox(&mut s.scale_with_object, "Scale with object")
+            .checkbox(&mut s.behind_fill, tr("docker.behind_fill"))
+            .changed();
+        changed |= ui
+            .checkbox(&mut s.scale_with_object, tr("docker.scale_with_object"))
             .changed();
     }
     changed
 }
 
+/// Stable, language-independent object type for scripts (`Shape.Type`).
+pub fn kind_id(k: &ShapeKind) -> &'static str {
+    match k {
+        ShapeKind::Rect { .. } => "Rectangle",
+        ShapeKind::Ellipse { .. } => "Ellipse",
+        ShapeKind::Polygon { sharpness, .. } if *sharpness > 0.0 => "Star",
+        ShapeKind::Polygon { .. } => "Polygon",
+        ShapeKind::Path { .. } => "Curve",
+        ShapeKind::Text { .. } => "Text",
+        ShapeKind::Group { .. } => "Group",
+        ShapeKind::Bitmap { .. } => "Bitmap",
+        ShapeKind::ClipFrame { .. } => "ClipFrame",
+        ShapeKind::Table(_) => "Table",
+        ShapeKind::SymbolInstance { .. } => "Symbol",
+    }
+}
+
 pub fn kind_name(k: &ShapeKind) -> String {
     match k {
-        ShapeKind::Rect { .. } => "Rectangle".into(),
-        ShapeKind::Ellipse { .. } => "Ellipse".into(),
+        ShapeKind::Rect { .. } => tr("kind.rectangle"),
+        ShapeKind::Ellipse { .. } => tr("kind.ellipse"),
         ShapeKind::Polygon {
             sharpness, points, ..
         } => {
+            let n = points.to_string();
             if *sharpness > 0.0 {
-                format!("Star with {points} points")
+                trf("kind.star_n", &[("n", &n)])
             } else {
-                format!("Polygon with {points} sides")
+                trf("kind.polygon_n", &[("n", &n)])
             }
         }
-        ShapeKind::Path { path, .. } => format!(
-            "Curve with {} nodes",
-            path.elements()
+        ShapeKind::Path { path, .. } => {
+            let n = path
+                .elements()
                 .iter()
                 .filter(|e| !matches!(e, tracedraw_core::geometry::PathEl::ClosePath))
-                .count()
-        ),
-        ShapeKind::Text { spans, .. } => format!(
-            "Artistic Text: {}",
-            spans
+                .count();
+            trf("kind.curve_n", &[("n", &n.to_string())])
+        }
+        ShapeKind::Text { spans, .. } => {
+            let t: String = spans
                 .iter()
                 .map(|s| s.text.as_str())
                 .collect::<String>()
                 .chars()
                 .take(20)
-                .collect::<String>()
-        ),
-        ShapeKind::Group { children } => format!("Group of {} objects", children.len()),
+                .collect();
+            trf("kind.artistic_text", &[("t", &t)])
+        }
+        ShapeKind::Group { children } => trf("kind.group_n", &[("n", &children.len().to_string())]),
         ShapeKind::Bitmap {
             width_px,
             height_px,
             ..
-        } => format!("Bitmap {width_px} x {height_px} px"),
+        } => trf(
+            "kind.bitmap_n",
+            &[("w", &width_px.to_string()), ("h", &height_px.to_string())],
+        ),
         ShapeKind::ClipFrame { contents, .. } => {
-            format!("ClipFrame with {} object(s)", contents.len())
+            trf("kind.clip_frame_n", &[("n", &contents.len().to_string())])
+        }
+        ShapeKind::Table(t) => trf(
+            "kind.table_n",
+            &[("r", &t.rows().to_string()), ("c", &t.cols().to_string())],
+        ),
+        ShapeKind::SymbolInstance { index } => {
+            trf("kind.symbol_n", &[("n", &(index + 1).to_string())])
         }
     }
 }
@@ -592,7 +713,7 @@ fn objects(app: &mut App, ui: &mut Ui) {
     ui.horizontal(|ui| {
         ui.strong(&page.name);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui.small_button("+ Layer").clicked() {
+            if ui.small_button(tr("docker.add_layer")).clicked() {
                 add_layer = true;
             }
         });
@@ -607,14 +728,14 @@ fn objects(app: &mut App, ui: &mut Ui) {
         ui.horizontal(|ui| {
             if ui
                 .checkbox(&mut vis, "")
-                .on_hover_text("Show/hide")
+                .on_hover_text(tr("docker.show_hide"))
                 .changed()
             {
                 toggles.push((layer.id, vis, locked));
             }
             if ui
                 .selectable_label(locked, "L")
-                .on_hover_text("Lock layer")
+                .on_hover_text(tr("docker.lock_layer"))
                 .clicked()
             {
                 locked = !locked;
@@ -625,26 +746,26 @@ fn objects(app: &mut App, ui: &mut Ui) {
                 rename = Some((layer.id, layer.name.clone()));
             }
             r.context_menu(|ui| {
-                if ui.button("Rename...").clicked() {
+                if ui.button(tr("docker.rename")).clicked() {
                     rename = Some((layer.id, layer.name.clone()));
                     ui.close();
                 }
                 if ui
-                    .add_enabled(li + 1 < nlayers, egui::Button::new("Move up"))
+                    .add_enabled(li + 1 < nlayers, egui::Button::new(tr("docker.move_up")))
                     .clicked()
                 {
                     reorder = Some((layer.id, li + 1));
                     ui.close();
                 }
                 if ui
-                    .add_enabled(li > 0, egui::Button::new("Move down"))
+                    .add_enabled(li > 0, egui::Button::new(tr("docker.move_down")))
                     .clicked()
                 {
                     reorder = Some((layer.id, li - 1));
                     ui.close();
                 }
                 if ui
-                    .add_enabled(nlayers > 1, egui::Button::new("Delete layer"))
+                    .add_enabled(nlayers > 1, egui::Button::new(tr("docker.delete_layer")))
                     .clicked()
                 {
                     delete = Some(layer.id);
@@ -700,7 +821,7 @@ fn objects(app: &mut App, ui: &mut Ui) {
             .unwrap_or(1);
         app.run(Command::AddLayer {
             page,
-            name: format!("Layer {n}"),
+            name: trf("docker.layer_n", &[("n", &n.to_string())]),
         });
     }
     if let Some(id) = click {
@@ -716,64 +837,62 @@ fn objects(app: &mut App, ui: &mut Ui) {
 
 fn hints(app: &mut App, ui: &mut Ui) {
     if app.tool == Tool::Pick && app.selection.is_empty() {
-        ui.heading("Home");
+        ui.heading(tr("hint.home"));
         ui.add_space(4.0);
-        ui.label("To display topics, perform an action with a tool or choose a topic from the following list.");
+        ui.label(tr("hint.home_intro"));
         ui.add_space(4.0);
         for t in [
-            "Lines",
-            "Connector lines",
-            "Dimension lines",
-            "Shapes",
-            "Select objects",
-            "Move, scale, and stretch objects",
-            "Rotate and skew objects",
-            "Shape objects",
-            "Special effects",
-            "Outline objects",
-            "Fill objects",
-            "Add text",
-            "Get help",
+            "hint.topic_lines",
+            "hint.topic_connector_lines",
+            "hint.topic_dimension_lines",
+            "hint.topic_shapes",
+            "hint.topic_select",
+            "hint.topic_move_scale",
+            "hint.topic_rotate_skew",
+            "hint.topic_shape_objects",
+            "hint.topic_effects",
+            "hint.topic_outline",
+            "hint.topic_fill",
+            "hint.topic_text",
+            "hint.topic_help",
         ] {
             ui.horizontal(|ui| {
                 ui.label("•");
-                let _ = ui.link(egui::RichText::new(t).color(Tokens::ACCENT));
+                let _ = ui.link(egui::RichText::new(tr(t)).color(Tokens::ACCENT));
             });
         }
         ui.add_space(12.0);
         ui.separator();
-        ui.heading("Learn more");
-        ui.label(egui::RichText::new("Help topic").strong());
-        let _ = ui.link(egui::RichText::new("TraceDraw Help").color(Tokens::ACCENT));
+        ui.heading(tr("hint.learn_more"));
+        ui.label(egui::RichText::new(tr("hint.help_topic")).strong());
+        let _ = ui.link(egui::RichText::new(tr("hint.app_help")).color(Tokens::ACCENT));
         return;
     }
     ui.heading(app.tool.name());
     ui.add_space(4.0);
-    let text = match app.tool {
-        Tool::Pick => "Click an object to select it. Click again for rotate and skew handles. Drag the handles to size; Shift+click adds to the selection; drag on empty space for a marquee. Double-click a curve to switch to the Shape tool.",
-        Tool::Shape => "Drag the nodes of a curve. Double-click a rectangle, ellipse or polygon to convert it to curves first.",
-        Tool::Zoom => "Click to zoom in, Shift+click or right-click to zoom out, drag a box to zoom into it. F4 fits the drawing, Shift+F4 fits the page.",
-        Tool::Pan => "Drag to move the view. The middle mouse button pans in any tool.",
-        Tool::Freehand => "Drag to draw a freehand curve; it is smoothed when you release.",
-        Tool::Bezier | Tool::Pen => "Click to place nodes. Double-click or press Enter to finish, Esc to cancel.",
-        Tool::Polyline | Tool::TwoPointLine => "Click to place points. Double-click or Enter finishes.",
-        Tool::Rectangle => "Drag to draw a rectangle. Ctrl constrains to a square. Double-click the tool for a page-sized rectangle.",
-        Tool::Ellipse => "Drag to draw an ellipse. Ctrl constrains to a circle.",
-        Tool::Polygon | Tool::Star => "Drag to draw. Set the number of points on the property bar.",
-        Tool::Text => "Click on the page and type. Esc finishes. Click existing text to edit it.",
-        Tool::InteractiveFill => "Click an object to apply the default fill; drag across it for a linear fountain fill.",
-        Tool::ColorEyedropper => "Click an object to sample its fill, then click other objects to apply it. Esc cancels.",
-        Tool::Eraser => "Click an object to delete it.",
-        _ => "This tool is on the roadmap and not implemented yet.",
+    let key = match app.tool {
+        Tool::Pick => "hint.pick",
+        Tool::Shape => "hint.shape",
+        Tool::Zoom => "hint.zoom",
+        Tool::Pan => "hint.pan",
+        Tool::Freehand => "hint.freehand",
+        Tool::Bezier | Tool::Pen => "hint.bezier",
+        Tool::Polyline | Tool::TwoPointLine => "hint.polyline",
+        Tool::Rectangle => "hint.rectangle",
+        Tool::Ellipse => "hint.ellipse",
+        Tool::Polygon | Tool::Star => "hint.polygon",
+        Tool::Text => "hint.text",
+        Tool::InteractiveFill => "hint.interactive_fill",
+        Tool::ColorEyedropper => "hint.eyedropper",
+        Tool::Eraser => "hint.eraser",
+        _ => "hint.roadmap",
     };
-    ui.label(text);
+    ui.label(tr(key));
     ui.add_space(8.0);
     ui.label(
-        egui::RichText::new(
-            "Palette: left click fills, right click outlines. Arrow keys nudge the selection.",
-        )
-        .color(Tokens::TEXT_DIM)
-        .size(11.0),
+        egui::RichText::new(tr("hint.palette_footer"))
+            .color(Tokens::TEXT_DIM)
+            .size(11.0),
     );
 }
 
@@ -781,14 +900,14 @@ fn transformations(app: &mut App, ui: &mut Ui) {
     use crate::app::TransformTab;
     ui.horizontal(|ui| {
         for (tab, name) in [
-            (TransformTab::Position, "Position"),
-            (TransformTab::Rotate, "Rotate"),
-            (TransformTab::Scale, "Scale"),
-            (TransformTab::Size, "Size"),
-            (TransformTab::Skew, "Skew"),
+            (TransformTab::Position, "docker.position"),
+            (TransformTab::Rotate, "docker.rotate"),
+            (TransformTab::Scale, "docker.scale"),
+            (TransformTab::Size, "docker.size"),
+            (TransformTab::Skew, "docker.skew"),
         ] {
             if ui
-                .selectable_label(app.transform_tab == tab, name)
+                .selectable_label(app.transform_tab == tab, tr(name))
                 .clicked()
             {
                 app.transform_tab = tab;
@@ -811,57 +930,57 @@ fn transformations(app: &mut App, ui: &mut Ui) {
     match app.transform_tab {
         TransformTab::Position => {
             ui.horizontal(|ui| {
-                ui.label("X:");
+                ui.label(tr("docker.x"));
                 ui.add(
                     egui::DragValue::new(&mut v[0])
                         .speed(0.5)
                         .suffix(format!(" {u}")),
                 );
-                ui.label("Y:");
+                ui.label(tr("docker.y"));
                 ui.add(
                     egui::DragValue::new(&mut v[1])
                         .speed(0.5)
                         .suffix(format!(" {u}")),
                 );
             });
-            ui.checkbox(&mut relative, "Relative position");
+            ui.checkbox(&mut relative, tr("docker.relative_position"));
         }
         TransformTab::Rotate => {
             ui.horizontal(|ui| {
-                ui.label("Angle:");
+                ui.label(tr("docker.angle_colon"));
                 ui.add(egui::DragValue::new(&mut v[0]).speed(1.0).suffix("°"));
             });
             ui.label(
-                egui::RichText::new("Rotates about the selection centre")
+                egui::RichText::new(tr("docker.rotates_about_centre"))
                     .color(Tokens::TEXT_DIM)
                     .size(11.0),
             );
         }
         TransformTab::Scale => {
             ui.horizontal(|ui| {
-                ui.label("X:");
+                ui.label(tr("docker.x"));
                 ui.add(egui::DragValue::new(&mut v[0]).speed(1.0).suffix(" %"));
-                ui.label("Y:");
+                ui.label(tr("docker.y"));
                 ui.add(egui::DragValue::new(&mut v[1]).speed(1.0).suffix(" %"));
             });
             ui.horizontal(|ui| {
-                if ui.button("Mirror horizontally").clicked() && has {
+                if ui.button(tr("toolbar.mirror_h")).clicked() && has {
                     app.mirror(true);
                 }
-                if ui.button("Mirror vertically").clicked() && has {
+                if ui.button(tr("toolbar.mirror_v")).clicked() && has {
                     app.mirror(false);
                 }
             });
         }
         TransformTab::Size => {
             ui.horizontal(|ui| {
-                ui.label("W:");
+                ui.label(tr("docker.w"));
                 ui.add(
                     egui::DragValue::new(&mut v[0])
                         .speed(0.5)
                         .suffix(format!(" {u}")),
                 );
-                ui.label("H:");
+                ui.label(tr("docker.h"));
                 ui.add(
                     egui::DragValue::new(&mut v[1])
                         .speed(0.5)
@@ -871,9 +990,9 @@ fn transformations(app: &mut App, ui: &mut Ui) {
         }
         TransformTab::Skew => {
             ui.horizontal(|ui| {
-                ui.label("X:");
+                ui.label(tr("docker.x"));
                 ui.add(egui::DragValue::new(&mut v[0]).speed(1.0).suffix("°"));
-                ui.label("Y:");
+                ui.label(tr("docker.y"));
                 ui.add(egui::DragValue::new(&mut v[1]).speed(1.0).suffix("°"));
             });
         }
@@ -923,11 +1042,14 @@ fn transformations(app: &mut App, ui: &mut Ui) {
         }
     };
     ui.horizontal(|ui| {
-        if ui.add_enabled(has, egui::Button::new("Apply")).clicked() {
+        if ui
+            .add_enabled(has, egui::Button::new(tr("docker.apply")))
+            .clicked()
+        {
             apply(app, false);
         }
         if ui
-            .add_enabled(has, egui::Button::new("Apply to duplicate"))
+            .add_enabled(has, egui::Button::new(tr("docker.apply_to_duplicate")))
             .clicked()
         {
             apply(app, true);
@@ -938,7 +1060,7 @@ fn transformations(app: &mut App, ui: &mut Ui) {
 fn undo_docker(app: &mut App, ui: &mut Ui) {
     let (undo, redo) = app.engine.history_labels();
     ui.label(
-        egui::RichText::new("Click a step to go back to it")
+        egui::RichText::new(tr("docker.undo_hint"))
             .color(Tokens::TEXT_DIM)
             .size(11.0),
     );
@@ -947,7 +1069,7 @@ fn undo_docker(app: &mut App, ui: &mut Ui) {
     let mut goto: Option<usize> = None;
     for (i, l) in undo.iter().enumerate() {
         let is_last = i + 1 == n;
-        if ui.selectable_label(is_last, format!("{}", l)).clicked() && !is_last {
+        if ui.selectable_label(is_last, l.to_string()).clicked() && !is_last {
             goto = Some(n - 1 - i);
         }
     }
@@ -964,11 +1086,14 @@ fn undo_docker(app: &mut App, ui: &mut Ui) {
     }
     ui.add_space(6.0);
     ui.horizontal(|ui| {
-        if ui.add_enabled(n > 0, egui::Button::new("Undo")).clicked() {
+        if ui
+            .add_enabled(n > 0, egui::Button::new(tr("docker.undo")))
+            .clicked()
+        {
             app.undo();
         }
         if ui
-            .add_enabled(!redo.is_empty(), egui::Button::new("Redo"))
+            .add_enabled(!redo.is_empty(), egui::Button::new(tr("docker.redo")))
             .clicked()
         {
             app.redo();

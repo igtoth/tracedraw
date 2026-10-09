@@ -12,3 +12,4 @@ thiserror.workspace = true
 base64 = "0.22"
 flate2 = "1"
 tiny-skia.workspace = true
+usvg = { version = "0.48", default-features = false }

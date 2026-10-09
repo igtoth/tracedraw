@@ -1,8 +1,10 @@
 //! tracedraw-io: export the document model to interchange formats and read the
 //! native `.tdraw` file.
 
+pub mod eps;
 pub mod pdf;
 pub mod svg;
+pub mod svg_import;
 
 use std::path::Path;
 use tracedraw_core::Document;

@@ -1,13 +1,20 @@
-//! Text engine: finds system fonts, shapes a run with rustybuzz and returns
-//! glyph outlines as paths in millimetres, so text is just vectors for the
-//! renderer and for "convert to curves".
+//! Text engine: finds system fonts, shapes runs with rustybuzz (OpenType
+//! features, kerning) and lays paragraphs out with wrapping, alignment,
+//! justification, leading, indents, tabs, bullets, drop caps, columns,
+//! hyphenation and text on a path. The result is a path in millimetres,
+//! so text is plain vectors for the renderer and for "convert to curves".
+//!
+//! Coordinates: baseline of the first line at y = 0 for artistic text; the
+//! top of the frame at y = 0 for paragraph text. Y is up, as everywhere.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 use tracedraw_core::{
-    document::{TextAlign, TextSpan},
-    geometry::{Affine, BezPath, Point, Rect},
+    document::{text_outline::TextRequest, ParagraphStyle, TextAlign, TextOnPath, TextSpan},
+    geometry::{Affine, BezPath, Point, Rect, Shape as _, Vec2},
 };
+
+pub mod hyphen;
 
 /// Points to millimetres.
 pub const PT_MM: f64 = 25.4 / 72.0;
@@ -21,9 +28,7 @@ pub struct FontSystem {
 
 /// Register this engine as the core's text outliner (call once at startup).
 pub fn install() {
-    tracedraw_core::document::text_outline::set(|spans, width, align| {
-        fonts().outline_cached(spans, width, align).as_ref().clone()
-    });
+    tracedraw_core::document::text_outline::set(|req| fonts().outline_cached(req).as_ref().clone());
 }
 
 static SYSTEM: OnceLock<FontSystem> = OnceLock::new();
@@ -31,6 +36,58 @@ static SYSTEM: OnceLock<FontSystem> = OnceLock::new();
 /// The process-wide font system; loads system fonts on first use.
 pub fn fonts() -> &'static FontSystem {
     SYSTEM.get_or_init(FontSystem::load)
+}
+
+/// One shaped glyph, positioned relative to the pen of its line.
+#[derive(Clone)]
+struct Glyph {
+    /// Outline at the pen origin (x = 0, baseline y = 0), mm.
+    path: Arc<BezPath>,
+    advance: f64,
+    x_offset: f64,
+    y_offset: f64,
+    /// The character this glyph (cluster) starts; used for spaces and tabs.
+    ch: char,
+    span: usize,
+    /// Width of a trailing hyphen if the line breaks after this glyph.
+    hyphen_after: Option<Arc<HyphenGlyph>>,
+}
+
+#[derive(Clone)]
+struct HyphenGlyph {
+    path: BezPath,
+    advance: f64,
+}
+
+/// Vertical metrics of a span's face at its size, mm.
+#[derive(Clone, Copy, Default)]
+struct Metrics {
+    ascent: f64,
+    descent: f64,
+    line_height: f64,
+    underline_pos: f64,
+    underline_thick: f64,
+    strike_pos: f64,
+}
+
+struct Line {
+    glyphs: Vec<Glyph>,
+    /// Trailing hyphen to draw when the line was broken inside a word.
+    hyphen: Option<Arc<HyphenGlyph>>,
+    metrics: Metrics,
+    /// Last line of its paragraph (not justified).
+    last_in_para: bool,
+    first_in_para: bool,
+    para: usize,
+}
+
+pub struct TextLayout {
+    pub path: BezPath,
+    /// Logical bounds, mm.
+    pub bounds: Rect,
+    pub glyphs: usize,
+    /// True when paragraph text did not fit its frame.
+    pub overflow: bool,
 }
 
 impl FontSystem {
@@ -56,9 +113,35 @@ impl FontSystem {
         }
     }
 
+    /// Raw file data and face index of the first installed family in
+    /// `candidates`, for registering UI fallback fonts (scripts the bundled
+    /// UI font lacks: CJK, Arabic, Devanagari, Bengali...).
+    pub fn first_face_data(&self, candidates: &[&str]) -> Option<(String, Arc<Vec<u8>>, u32)> {
+        for name in candidates {
+            let Some(id) = self.db.query(&fontdb::Query {
+                families: &[fontdb::Family::Name(name)],
+                weight: fontdb::Weight::NORMAL,
+                stretch: fontdb::Stretch::Normal,
+                style: fontdb::Style::Normal,
+            }) else {
+                continue;
+            };
+            let got = self.db.with_face_data(id, |d, i| (Arc::new(d.to_vec()), i));
+            if let Some((data, index)) = got {
+                return Some((name.to_string(), data, index));
+            }
+        }
+        None
+    }
+
     /// Sorted list of family names available on this machine.
     pub fn families(&self) -> &[String] {
         &self.families
+    }
+
+    /// Whether a family exists (missing fonts are substituted and reported).
+    pub fn has_family(&self, family: &str) -> bool {
+        self.families.iter().any(|f| f == family)
     }
 
     /// Pick a face for a span; falls back to a sans-serif, then to anything.
@@ -106,21 +189,35 @@ impl FontSystem {
 
     /// Cached outline; shaping is expensive and the same text is asked for
     /// every frame.
-    pub fn outline_cached(
-        &self,
-        spans: &[TextSpan],
-        width: Option<f64>,
-        align: TextAlign,
-    ) -> Arc<BezPath> {
+    pub fn outline_cached(&self, req: &TextRequest) -> Arc<BezPath> {
         let key = format!(
-            "{:?}|{:?}|{}",
-            width,
-            align,
-            spans
+            "{:?}|{:?}|{:?}|{}|{}",
+            req.frame,
+            req.align,
+            req.para,
+            req.on_path
+                .map(|p| format!(
+                    "{:?}|{}|{}|{}",
+                    p.path.elements().len(),
+                    p.offset,
+                    p.distance,
+                    p.mirror
+                ))
+                .unwrap_or_default(),
+            req.spans
                 .iter()
                 .map(|s| format!(
-                    "{}|{}|{}|{}|{}",
-                    s.font_family, s.size_pt, s.bold, s.italic, s.text
+                    "{}|{}|{}|{}|{}|{}|{}|{}|{:?}|{}",
+                    s.font_family,
+                    s.size_pt,
+                    s.bold,
+                    s.italic,
+                    s.tracking_pct,
+                    s.baseline_shift_pt,
+                    s.underline,
+                    s.strikethrough,
+                    s.features,
+                    s.text
                 ))
                 .collect::<Vec<_>>()
                 .join("\u{1}")
@@ -130,7 +227,7 @@ impl FontSystem {
                 return p.clone();
             }
         }
-        let p = Arc::new(self.outline_wrapped(spans, width, align).path);
+        let p = Arc::new(self.layout(req).path);
         if let Ok(mut c) = self.cache.lock() {
             if c.len() > 2000 {
                 c.clear();
@@ -140,51 +237,20 @@ impl FontSystem {
         p
     }
 
-    /// Paragraph layout: wrap at `width` (mm) by words, align lines.
-    pub fn outline_wrapped(
-        &self,
-        spans: &[TextSpan],
-        width: Option<f64>,
-        align: TextAlign,
-    ) -> TextLayout {
-        let Some(width) = width else {
-            return self.outline_aligned(spans, align, None);
-        };
-        // Wrap: measure words with the first span's style (mixed styles per
-        // paragraph come later).
-        let Some(style) = spans.first() else {
-            return self.outline(spans);
-        };
-        let text: String = spans.iter().map(|s| s.text.as_str()).collect();
-        let space_w = self.measure(style, " ");
-        let mut lines: Vec<String> = Vec::new();
-        for para in text.split('\n') {
-            let mut line = String::new();
-            let mut line_w = 0.0;
-            for word in para.split(' ') {
-                let w = self.measure(style, word);
-                let add = if line.is_empty() { w } else { space_w + w };
-                if !line.is_empty() && line_w + add > width {
-                    lines.push(std::mem::take(&mut line));
-                    line_w = 0.0;
-                }
-                if !line.is_empty() {
-                    line.push(' ');
-                    line_w += space_w;
-                }
-                line.push_str(word);
-                line_w += w;
-            }
-            lines.push(line);
-        }
-        let wrapped = TextSpan {
-            text: lines.join("\n"),
-            ..style.clone()
-        };
-        self.outline_aligned(&[wrapped], align, Some(width))
+    /// Simple entry point: artistic text, left aligned.
+    pub fn outline(&self, spans: &[TextSpan]) -> TextLayout {
+        let para = ParagraphStyle::default();
+        self.layout(&TextRequest {
+            spans,
+            frame: None,
+            align: TextAlign::Left,
+            para: &para,
+            on_path: None,
+        })
     }
 
-    fn measure(&self, style: &TextSpan, text: &str) -> f64 {
+    /// Measure the advance width of a string in a span's style, mm.
+    pub fn measure(&self, style: &TextSpan, text: &str) -> f64 {
         if text.is_empty() {
             return 0.0;
         }
@@ -195,164 +261,734 @@ impl FontSystem {
         self.outline(&[span]).bounds.width()
     }
 
-    /// Lay out each line separately so it can be aligned.
-    fn outline_aligned(
-        &self,
-        spans: &[TextSpan],
-        align: TextAlign,
-        width: Option<f64>,
-    ) -> TextLayout {
-        if align == TextAlign::Left {
-            return self.outline(spans);
-        }
-        let Some(style) = spans.first() else {
-            return self.outline(spans);
-        };
-        let text: String = spans.iter().map(|s| s.text.as_str()).collect();
-        let lines: Vec<&str> = text.split('\n').collect();
-        let widths: Vec<f64> = lines.iter().map(|l| self.measure(style, l)).collect();
-        let max_w = width.unwrap_or_else(|| widths.iter().cloned().fold(0.0, f64::max));
-        let full = self.outline(spans); // for line height and bounds
-        let line_h = if lines.len() > 1 {
-            (full.bounds.height() - (full.bounds.y1)) / (lines.len() as f64 - 1.0)
-        } else {
-            0.0
-        };
-        let _ = line_h;
-        let mut path = BezPath::new();
-        let mut y = 0.0;
-        let step = {
-            // Recover the line step from a two-line layout.
-            let two = TextSpan {
-                text: "x\nx".into(),
-                ..style.clone()
+    // ----- shaping -----------------------------------------------------------
+
+    fn metrics(&self, span: &TextSpan) -> Metrics {
+        let Some(id) = self.face_for(&span.font_family, span.bold, span.italic) else {
+            let s = span.size_pt * PT_MM;
+            return Metrics {
+                ascent: s * 0.8,
+                descent: s * 0.2,
+                line_height: s * 1.2,
+                underline_pos: -s * 0.1,
+                underline_thick: s * 0.05,
+                strike_pos: s * 0.3,
             };
-            let l = self.outline(&[two]);
-            (l.bounds.y1 - l.bounds.y0)
-                - self
-                    .outline(&[TextSpan {
-                        text: "x".into(),
-                        ..style.clone()
-                    }])
-                    .bounds
-                    .height()
         };
-        for (i, line) in lines.iter().enumerate() {
-            let w = widths[i];
-            let dx = match align {
-                TextAlign::Left | TextAlign::Justify => 0.0,
-                TextAlign::Center => (max_w - w) / 2.0,
-                TextAlign::Right => max_w - w,
-            };
-            let span = TextSpan {
-                text: line.to_string(),
-                ..style.clone()
-            };
-            let l = self.outline(&[span]);
-            path.extend(
-                (Affine::translate((dx, y)) * l.path)
-                    .elements()
-                    .iter()
-                    .copied(),
-            );
-            y -= step;
-        }
-        TextLayout {
-            bounds: Rect::new(0.0, y + step - full.bounds.height(), max_w, full.bounds.y1),
-            path,
-            glyphs: full.glyphs,
+        let Some((data, index)) = self.face_data(id) else {
+            return Metrics::default();
+        };
+        let Ok(face) = ttf_parser::Face::parse(&data, index) else {
+            return Metrics::default();
+        };
+        let scale = span.size_pt * PT_MM / face.units_per_em() as f64;
+        let asc = face.ascender() as f64 * scale;
+        let desc = -(face.descender() as f64) * scale;
+        let gap = face.line_gap() as f64 * scale;
+        let ul = face.underline_metrics();
+        let st = face.strikeout_metrics();
+        Metrics {
+            ascent: asc,
+            descent: desc,
+            line_height: asc + desc + gap,
+            underline_pos: ul.map(|u| u.position as f64 * scale).unwrap_or(-desc * 0.5),
+            underline_thick: ul
+                .map(|u| u.thickness as f64 * scale)
+                .unwrap_or(span.size_pt * PT_MM * 0.05),
+            strike_pos: st.map(|s| s.position as f64 * scale).unwrap_or(asc * 0.35),
         }
     }
 
-    /// Outline of a text run as a path in mm, baseline at the origin, text
-    /// advancing along +x and glyphs extending toward +y (page space, Y up).
-    pub fn outline(&self, spans: &[TextSpan]) -> TextLayout {
-        let mut path = BezPath::new();
-        let mut pen_x = 0.0f64;
-        let mut line_y = 0.0f64;
-        let mut ascent_mm = 0.0f64;
-        let mut descent_mm = 0.0f64;
-        let mut max_x = 0.0f64;
-        let mut line_height = 0.0f64;
-        let mut glyph_count = 0usize;
+    /// Shape one run of text in one span's style into glyphs.
+    fn shape_run(
+        &self,
+        span: &TextSpan,
+        span_idx: usize,
+        text: &str,
+        size_scale: f64,
+    ) -> Vec<Glyph> {
+        let mut out = Vec::new();
+        if text.is_empty() {
+            return out;
+        }
+        let Some(id) = self.face_for(&span.font_family, span.bold, span.italic) else {
+            return out;
+        };
+        let Some((data, index)) = self.face_data(id) else {
+            return out;
+        };
+        let Ok(face) = ttf_parser::Face::parse(&data, index) else {
+            return out;
+        };
+        let Some(hb) = rustybuzz::Face::from_slice(&data, index) else {
+            return out;
+        };
+        let size_pt = span.size_pt * size_scale;
+        let upem = face.units_per_em() as f64;
+        let scale = size_pt * PT_MM / upem;
+        let synth_bold = span.bold && face.weight().to_number() < 600;
+        let synth_italic = span.italic && !face.is_italic();
+        let tracking = span.tracking_pct / 100.0 * size_pt * PT_MM;
+        let baseline = span.baseline_shift_pt * PT_MM;
 
-        for span in spans {
-            let Some(id) = self.face_for(&span.font_family, span.bold, span.italic) else {
-                continue;
+        let features: Vec<rustybuzz::Feature> = span
+            .features
+            .iter()
+            .filter_map(|f| {
+                let tag = rustybuzz::ttf_parser::Tag::from_bytes_lossy(f.as_bytes());
+                Some(rustybuzz::Feature::new(tag, 1, ..))
+            })
+            .collect();
+        let mut buffer = rustybuzz::UnicodeBuffer::new();
+        buffer.push_str(text);
+        buffer.guess_segment_properties();
+        let glyphs = rustybuzz::shape(&hb, &features, buffer);
+        let infos = glyphs.glyph_infos();
+        let positions = glyphs.glyph_positions();
+        let chars: Vec<(usize, char)> = text.char_indices().collect();
+        let hyphen_glyph = {
+            let gid = face.glyph_index('-');
+            gid.map(|g| {
+                let mut sink = OutlineSink {
+                    path: BezPath::new(),
+                    scale,
+                    x: 0.0,
+                    y: baseline,
+                };
+                face.outline_glyph(g, &mut sink);
+                Arc::new(HyphenGlyph {
+                    path: sink.path,
+                    advance: face.glyph_hor_advance(g).unwrap_or(0) as f64 * scale,
+                })
+            })
+        };
+        for (info, pos) in infos.iter().zip(positions) {
+            let gid = ttf_parser::GlyphId(info.glyph_id as u16);
+            let mut sink = OutlineSink {
+                path: BezPath::new(),
+                scale,
+                x: 0.0,
+                y: baseline,
             };
-            let Some((data, index)) = self.face_data(id) else {
-                continue;
-            };
-            let Ok(face) = ttf_parser::Face::parse(&data, index) else {
-                continue;
-            };
-            let Some(hb) = rustybuzz::Face::from_slice(&data, index) else {
-                continue;
-            };
-            let upem = face.units_per_em() as f64;
-            let scale = span.size_pt * PT_MM / upem;
-            let synth_bold = span.bold && face.weight().to_number() < 600;
-            let synth_italic = span.italic && !face.is_italic();
-            ascent_mm = ascent_mm.max(face.ascender() as f64 * scale);
-            descent_mm = descent_mm.max(-(face.descender() as f64) * scale);
-            line_height = line_height.max(
-                (face.ascender() as f64 - face.descender() as f64 + face.line_gap() as f64) * scale,
-            );
+            face.outline_glyph(gid, &mut sink);
+            let mut gp = sink.path;
+            if synth_italic {
+                gp = Affine::new([1.0, 0.0, 0.2, 1.0, 0.0, 0.0]) * gp;
+            }
+            if synth_bold {
+                let off = size_pt * PT_MM * 0.02;
+                let g2 = Affine::translate((off, 0.0)) * gp.clone();
+                gp.extend(g2.elements().iter().copied());
+            }
+            let ch = chars
+                .iter()
+                .find(|(i, _)| *i == info.cluster as usize)
+                .map(|(_, c)| *c)
+                .unwrap_or(' ');
+            out.push(Glyph {
+                path: Arc::new(gp),
+                advance: pos.x_advance as f64 * scale + tracking,
+                x_offset: pos.x_offset as f64 * scale,
+                y_offset: pos.y_offset as f64 * scale,
+                ch,
+                span: span_idx,
+                hyphen_after: hyphen_glyph.clone(),
+            });
+        }
+        out
+    }
 
-            for (li, line) in span.text.split('\n').enumerate() {
-                if li > 0 {
-                    line_y -= line_height.max(span.size_pt * PT_MM * 1.2);
-                    pen_x = 0.0;
+    // ----- layout ------------------------------------------------------------
+
+    /// Full layout of a text object.
+    pub fn layout(&self, req: &TextRequest) -> TextLayout {
+        if req.para.fit_to_frame && req.frame.is_some() {
+            // Scale the font size so the text fills the frame height.
+            let (mut lo, mut hi) = (0.1, 20.0);
+            let mut best = 1.0;
+            for _ in 0..14 {
+                let mid = (lo + hi) / 2.0;
+                let l = self.layout_scaled(req, mid);
+                if l.overflow {
+                    hi = mid;
+                } else {
+                    best = mid;
+                    lo = mid;
                 }
-                let mut buffer = rustybuzz::UnicodeBuffer::new();
-                buffer.push_str(line);
-                let glyphs = rustybuzz::shape(&hb, &[], buffer);
-                let infos = glyphs.glyph_infos();
-                let positions = glyphs.glyph_positions();
-                for (info, pos) in infos.iter().zip(positions) {
-                    let gid = ttf_parser::GlyphId(info.glyph_id as u16);
-                    let x = pen_x + pos.x_offset as f64 * scale;
-                    let y = line_y + pos.y_offset as f64 * scale;
-                    let mut sink = OutlineSink {
-                        path: BezPath::new(),
-                        scale,
-                        x,
-                        y,
-                    };
-                    face.outline_glyph(gid, &mut sink);
-                    let mut gp = sink.path;
-                    if synth_italic {
-                        gp = Affine::new([1.0, 0.0, 0.2, 1.0, -0.2 * y, 0.0]) * gp;
-                    }
-                    if synth_bold {
-                        // Cheap faux bold: draw twice slightly offset.
-                        let off = span.size_pt * PT_MM * 0.02;
-                        let mut g2 = Affine::translate((off, 0.0)) * gp.clone();
-                        gp.extend(g2.elements().iter().copied());
-                        g2 = BezPath::new();
-                        let _ = g2;
-                    }
-                    path.extend(gp.elements().iter().copied());
-                    pen_x += pos.x_advance as f64 * scale;
-                    glyph_count += 1;
+            }
+            return self.layout_scaled(req, best);
+        }
+        self.layout_scaled(req, 1.0)
+    }
+
+    fn layout_scaled(&self, req: &TextRequest, size_scale: f64) -> TextLayout {
+        let spans = req.spans;
+        if spans.is_empty() {
+            return TextLayout {
+                path: BezPath::new(),
+                bounds: Rect::ZERO,
+                glyphs: 0,
+                overflow: false,
+            };
+        }
+        let para = req.para;
+        let metrics: Vec<Metrics> = spans
+            .iter()
+            .map(|s| {
+                let scaled = TextSpan {
+                    size_pt: s.size_pt * size_scale,
+                    ..s.clone()
+                };
+                self.metrics(&scaled)
+            })
+            .collect();
+
+        // 1. Split the spans into paragraphs of glyph runs.
+        let mut paragraphs: Vec<Vec<Glyph>> = vec![Vec::new()];
+        for (si, span) in spans.iter().enumerate() {
+            let mut first = true;
+            for piece in span.text.split('\n') {
+                if !first {
+                    paragraphs.push(Vec::new());
                 }
-                max_x = max_x.max(pen_x);
+                first = false;
+                // Tabs are kept as glyph-less markers so the line breaker can
+                // expand them to the next tab stop.
+                for (ti, part) in piece.split('\t').enumerate() {
+                    if ti > 0 {
+                        if let Some(p) = paragraphs.last_mut() {
+                            p.push(Glyph {
+                                path: Arc::new(BezPath::new()),
+                                advance: 0.0,
+                                x_offset: 0.0,
+                                y_offset: 0.0,
+                                ch: '\t',
+                                span: si,
+                                hyphen_after: None,
+                            })
+                        }
+                    }
+                    let run = self.shape_run(span, si, part, size_scale);
+                    if let Some(p) = paragraphs.last_mut() {
+                        p.extend(run);
+                    }
+                }
             }
         }
-        let bounds = Rect::new(0.0, line_y - descent_mm, max_x, ascent_mm);
+
+        // 2. Break paragraphs into lines (paragraph text) or keep them whole.
+        let columns = para.columns.max(1) as usize;
+        let col_width = req
+            .frame
+            .map(|f| ((f.width - para.gutter * (columns as f64 - 1.0)) / columns as f64).max(1.0));
+        let mut lines: Vec<Line> = Vec::new();
+        for (pi, glyphs) in paragraphs.iter().enumerate() {
+            let m = glyphs
+                .first()
+                .map(|g| metrics[g.span])
+                .unwrap_or_else(|| metrics[0]);
+            let indent_first = para.left_indent
+                + para.first_line_indent
+                + if para.bullets {
+                    para.bullet_indent
+                } else {
+                    0.0
+                };
+            let indent_rest = para.left_indent
+                + if para.bullets {
+                    para.bullet_indent
+                } else {
+                    0.0
+                };
+            match col_width {
+                None => lines.push(Line {
+                    glyphs: glyphs.clone(),
+                    hyphen: None,
+                    metrics: line_metrics(glyphs, &metrics, m),
+                    last_in_para: true,
+                    first_in_para: true,
+                    para: pi,
+                }),
+                Some(w) => {
+                    let avail_first = (w - indent_first - para.right_indent).max(1.0);
+                    let avail_rest = (w - indent_rest - para.right_indent).max(1.0);
+                    let broken = break_lines(glyphs, avail_first, avail_rest, para, &metrics, pi);
+                    lines.extend(broken);
+                }
+            }
+        }
+
+        // 3. Place lines: columns, leading, spacing, indents, alignment.
+        let mut path = BezPath::new();
+        let mut glyph_count = 0usize;
+        let mut overflow = false;
+        let frame_h = req.frame.map(|f| f.height);
+        let mut col = 0usize;
+        let mut y = 0.0f64; // top of the frame or baseline of artistic text
+        let mut min_y = 0.0f64;
+        let mut max_x = 0.0f64;
+        let mut prev_para: Option<usize> = None;
+        let mut drop_cap_indent: (f64, usize) = (0.0, 0); // (width, lines remaining)
+        let artistic = req.frame.is_none();
+        let mut line_baselines: Vec<(f64, f64)> = Vec::new();
+
+        for line in lines.iter() {
+            let m = line.metrics;
+            let step = m.line_height * para.leading_pct / 100.0;
+            // Paragraph spacing.
+            let mut advance_y = if artistic {
+                if line.para == 0 && line.first_in_para {
+                    0.0
+                } else {
+                    step
+                }
+            } else if prev_para.is_none() {
+                m.ascent
+            } else {
+                step
+            };
+            if !artistic && line.first_in_para && prev_para.is_some() {
+                advance_y += para.space_before;
+                if let Some(pp) = prev_para {
+                    if pp != line.para {
+                        advance_y += para.space_after;
+                    }
+                }
+            }
+            // Column overflow.
+            if let Some(h) = frame_h {
+                if y - advance_y - m.descent < -h && (y != 0.0 || col > 0) {
+                    col += 1;
+                    y = 0.0;
+                    advance_y = m.ascent;
+                    if col >= columns {
+                        overflow = true;
+                    }
+                }
+            }
+            y -= advance_y;
+            prev_para = Some(line.para);
+
+            let col_x = col.min(columns - 1) as f64 * (col_width.unwrap_or(0.0) + para.gutter);
+            let indent = if line.first_in_para {
+                para.left_indent + para.first_line_indent
+            } else {
+                para.left_indent
+            } + if para.bullets {
+                para.bullet_indent
+            } else {
+                0.0
+            };
+
+            // Drop cap: the first glyph of a paragraph, scaled over N lines.
+            let mut glyphs: &[Glyph] = &line.glyphs;
+            let mut x0 = col_x + indent;
+            if para.drop_cap_lines > 1 && line.first_in_para && !glyphs.is_empty() && !artistic {
+                let n = para.drop_cap_lines as f64;
+                let g = &glyphs[0];
+                let scale = n * step / m.line_height;
+                let gp =
+                    Affine::translate((x0, y)) * Affine::scale(scale) * g.path.as_ref().clone();
+                path.extend(gp.elements().iter().copied());
+                drop_cap_indent = (g.advance * scale + 1.0, para.drop_cap_lines as usize);
+                glyphs = &glyphs[1..];
+                glyph_count += 1;
+            }
+            if drop_cap_indent.1 > 0 {
+                x0 += drop_cap_indent.0;
+                drop_cap_indent.1 -= 1;
+            }
+            // Bullet.
+            if para.bullets && line.first_in_para && !artistic {
+                if let Some(span) = spans.get(glyphs.first().map(|g| g.span).unwrap_or(0)) {
+                    let b = self.shape_run(span, 0, &para.bullet_char, size_scale);
+                    for g in &b {
+                        let gp = Affine::translate((col_x + para.left_indent, y))
+                            * g.path.as_ref().clone();
+                        path.extend(gp.elements().iter().copied());
+                    }
+                }
+            }
+
+            let avail = col_width
+                .map(|w| w - indent - para.right_indent - (x0 - col_x - indent))
+                .unwrap_or(f64::INFINITY);
+            let (content_w, n_spaces) = line_width(glyphs, para, x0 - col_x);
+            let hyphen_w = line.hyphen.as_ref().map(|h| h.advance).unwrap_or(0.0);
+            let total_w = content_w + hyphen_w;
+            let (dx, space_extra) = match req.align {
+                TextAlign::Left => (0.0, 0.0),
+                TextAlign::Center => (((avail.min(1e9)) - total_w).max(0.0) / 2.0, 0.0),
+                TextAlign::Right => ((avail.min(1e9) - total_w).max(0.0), 0.0),
+                TextAlign::Justify => {
+                    if line.last_in_para || n_spaces == 0 || !avail.is_finite() {
+                        (0.0, 0.0)
+                    } else {
+                        (0.0, (avail - total_w).max(0.0) / n_spaces as f64)
+                    }
+                }
+            };
+            let avail_for_center = if avail.is_finite() { avail } else { total_w };
+            let dx = if artistic {
+                match req.align {
+                    TextAlign::Center => -total_w / 2.0 + 0.0,
+                    TextAlign::Right => -total_w,
+                    _ => 0.0,
+                }
+            } else {
+                dx
+            };
+            let _ = avail_for_center;
+
+            // Emit glyphs.
+            let mut pen = x0 + dx;
+            let line_start = pen;
+            let mut underline_runs: Vec<(usize, f64, f64)> = Vec::new();
+            for g in glyphs {
+                if g.ch == '\t' {
+                    let rel = pen - col_x;
+                    let next = next_tab(rel, &para.tabs);
+                    pen = col_x + next;
+                    continue;
+                }
+                let gp =
+                    Affine::translate((pen + g.x_offset, y + g.y_offset)) * g.path.as_ref().clone();
+                path.extend(gp.elements().iter().copied());
+                let adv = g.advance + if g.ch == ' ' { space_extra } else { 0.0 };
+                let span = &spans[g.span];
+                if span.underline || span.strikethrough {
+                    match underline_runs.last_mut() {
+                        Some((s, _, end)) if *s == g.span && (*end - pen).abs() < 1e-6 => {
+                            *end = pen + adv
+                        }
+                        _ => underline_runs.push((g.span, pen, pen + adv)),
+                    }
+                }
+                pen += adv;
+                glyph_count += 1;
+            }
+            if let Some(h) = &line.hyphen {
+                let gp = Affine::translate((pen, y)) * h.path.clone();
+                path.extend(gp.elements().iter().copied());
+                pen += h.advance;
+            }
+            for (si, a, b) in underline_runs {
+                let span = &spans[si];
+                let sm = metrics[si];
+                if span.underline {
+                    let r = Rect::new(
+                        a,
+                        y + sm.underline_pos - sm.underline_thick,
+                        b,
+                        y + sm.underline_pos,
+                    );
+                    path.extend(r.to_path(0.01).elements().iter().copied());
+                }
+                if span.strikethrough {
+                    let r = Rect::new(
+                        a,
+                        y + sm.strike_pos - sm.underline_thick / 2.0,
+                        b,
+                        y + sm.strike_pos + sm.underline_thick / 2.0,
+                    );
+                    path.extend(r.to_path(0.01).elements().iter().copied());
+                }
+            }
+            line_baselines.push((line_start, y));
+            max_x = max_x.max(pen);
+            min_y = min_y.min(y - m.descent);
+        }
+
+        let top = if artistic {
+            lines.first().map(|l| l.metrics.ascent).unwrap_or(0.0)
+        } else {
+            0.0
+        };
+        let bounds = Rect::new(
+            0.0,
+            min_y,
+            max_x.max(req.frame.map(|f| f.width).unwrap_or(0.0)),
+            top,
+        );
+
+        // 4. Text on a path: re-place the glyphs of artistic text along the curve.
+        if let (Some(tp), true) = (req.on_path, artistic) {
+            let placed = place_on_path(&lines, tp, req.align, spans);
+            return TextLayout {
+                path: placed,
+                bounds,
+                glyphs: glyph_count,
+                overflow: false,
+            };
+        }
+
         TextLayout {
             path,
             bounds,
             glyphs: glyph_count,
+            overflow,
         }
     }
 }
 
-pub struct TextLayout {
-    pub path: BezPath,
-    /// Logical bounds (advance width x ascent/descent), baseline at y = 0.
-    pub bounds: Rect,
-    pub glyphs: usize,
+fn line_metrics(glyphs: &[Glyph], metrics: &[Metrics], fallback: Metrics) -> Metrics {
+    let mut m = fallback;
+    for g in glyphs {
+        let gm = metrics[g.span];
+        m.ascent = m.ascent.max(gm.ascent);
+        m.descent = m.descent.max(gm.descent);
+        m.line_height = m.line_height.max(gm.line_height);
+    }
+    m
+}
+
+/// Width of a line's glyphs with tab expansion; returns (width, spaces).
+fn line_width(glyphs: &[Glyph], para: &ParagraphStyle, start: f64) -> (f64, usize) {
+    let mut x = start;
+    let mut spaces = 0;
+    for g in glyphs {
+        if g.ch == '\t' {
+            x = next_tab(x, &para.tabs);
+        } else {
+            if g.ch == ' ' {
+                spaces += 1;
+            }
+            x += g.advance;
+        }
+    }
+    (x - start, spaces)
+}
+
+fn next_tab(x: f64, tabs: &[f64]) -> f64 {
+    if tabs.is_empty() {
+        let step = 12.7;
+        return (x / step).floor() * step + step;
+    }
+    tabs.iter()
+        .cloned()
+        .find(|t| *t > x + 1e-6)
+        .unwrap_or(x + 12.7)
+}
+
+/// Greedy line breaking at spaces, with optional hyphenation and a fallback
+/// to breaking inside words that do not fit alone.
+fn break_lines(
+    glyphs: &[Glyph],
+    avail_first: f64,
+    avail_rest: f64,
+    para: &ParagraphStyle,
+    metrics: &[Metrics],
+    pi: usize,
+) -> Vec<Line> {
+    let mut lines = Vec::new();
+    if glyphs.is_empty() {
+        lines.push(Line {
+            glyphs: Vec::new(),
+            hyphen: None,
+            metrics: metrics[0],
+            last_in_para: true,
+            first_in_para: true,
+            para: pi,
+        });
+        return lines;
+    }
+    // Words: runs separated by spaces; the space belongs to the preceding word.
+    let mut words: Vec<Vec<Glyph>> = Vec::new();
+    let mut cur: Vec<Glyph> = Vec::new();
+    for g in glyphs {
+        let is_sep = g.ch == ' ' || g.ch == '\t';
+        cur.push(g.clone());
+        if is_sep {
+            words.push(std::mem::take(&mut cur));
+        }
+    }
+    if !cur.is_empty() {
+        words.push(cur);
+    }
+    let width_of = |gs: &[Glyph]| -> f64 {
+        gs.iter()
+            .map(|g| if g.ch == '\t' { 12.7 } else { g.advance })
+            .sum()
+    };
+    let trimmed = |gs: &[Glyph]| -> f64 {
+        let mut w = width_of(gs);
+        if let Some(l) = gs.last() {
+            if l.ch == ' ' {
+                w -= l.advance;
+            }
+        }
+        w
+    };
+
+    let mut line: Vec<Glyph> = Vec::new();
+    let mut first = true;
+    let mut i = 0;
+    while i < words.len() {
+        let avail = if first { avail_first } else { avail_rest };
+        let word = words[i].clone();
+        let fits = trimmed(&[line.as_slice(), word.as_slice()].concat()) <= avail;
+        if fits {
+            line.extend(word.iter().cloned());
+            i += 1;
+            continue;
+        }
+        // Try hyphenating the word.
+        let mut placed = false;
+        if para.hyphenate || line.is_empty() {
+            let text: String = word.iter().map(|g| g.ch).collect();
+            let points = if para.hyphenate {
+                hyphen::break_points(text.trim_end())
+            } else {
+                // Forced break inside an over-long word: any position.
+                (1..word.len()).collect()
+            };
+            let mut best: Option<usize> = None;
+            for p in points {
+                if p == 0 || p >= word.len() {
+                    continue;
+                }
+                let head = &word[..p];
+                let hy = head
+                    .last()
+                    .and_then(|g| g.hyphen_after.as_ref())
+                    .map(|h| h.advance)
+                    .unwrap_or(0.0);
+                let w = trimmed(&[line.as_slice(), head].concat())
+                    + if para.hyphenate { hy } else { 0.0 };
+                if w <= avail {
+                    best = Some(p);
+                } else {
+                    break;
+                }
+            }
+            if let Some(p) = best {
+                let head = word[..p].to_vec();
+                let hyphen = if para.hyphenate {
+                    head.last().and_then(|g| g.hyphen_after.clone())
+                } else {
+                    None
+                };
+                line.extend(head);
+                lines.push(Line {
+                    glyphs: std::mem::take(&mut line),
+                    hyphen,
+                    metrics: Metrics::default(),
+                    last_in_para: false,
+                    first_in_para: first,
+                    para: pi,
+                });
+                first = false;
+                let tail = word[p..].to_vec();
+                // Replace the word with its tail and retry.
+                let mut rest = vec![tail];
+                rest.extend(words[i + 1..].iter().cloned());
+                words.truncate(i);
+                words.extend(rest);
+                placed = true;
+            }
+        }
+        if placed {
+            continue;
+        }
+        if line.is_empty() {
+            // Nothing fits at all; put the word anyway to make progress.
+            line.extend(word.iter().cloned());
+            i += 1;
+        }
+        lines.push(Line {
+            glyphs: std::mem::take(&mut line),
+            hyphen: None,
+            metrics: Metrics::default(),
+            last_in_para: false,
+            first_in_para: first,
+            para: pi,
+        });
+        first = false;
+    }
+    lines.push(Line {
+        glyphs: line,
+        hyphen: None,
+        metrics: Metrics::default(),
+        last_in_para: true,
+        first_in_para: first,
+        para: pi,
+    });
+    // Trailing spaces do not count toward alignment: strip them.
+    for l in lines.iter_mut() {
+        while l.glyphs.last().map(|g| g.ch == ' ').unwrap_or(false) {
+            l.glyphs.pop();
+        }
+        l.metrics = line_metrics(&l.glyphs, metrics, metrics[0]);
+    }
+    lines
+}
+
+/// Place artistic text along a path: each glyph is centred on its arc
+/// length position and rotated to the tangent.
+fn place_on_path(
+    lines: &[Line],
+    tp: &TextOnPath,
+    align: TextAlign,
+    _spans: &[TextSpan],
+) -> BezPath {
+    let mut out = BezPath::new();
+    let Some(line) = lines.first() else {
+        return out;
+    };
+    // Flatten the path into a polyline with cumulative lengths.
+    let mut pts: Vec<Point> = Vec::new();
+    kurbo::flatten(tp.path.elements().iter().copied(), 0.05, |el| match el {
+        tracedraw_core::geometry::PathEl::MoveTo(p) => pts.push(p),
+        tracedraw_core::geometry::PathEl::LineTo(p) => pts.push(p),
+        _ => {}
+    });
+    if pts.len() < 2 {
+        return out;
+    }
+    let mut cum = vec![0.0f64];
+    for w in pts.windows(2) {
+        cum.push(cum.last().copied().unwrap_or(0.0) + (w[1] - w[0]).hypot());
+    }
+    let total = *cum.last().unwrap_or(&0.0);
+    let text_w: f64 = line.glyphs.iter().map(|g| g.advance).sum();
+    let start = tp.offset
+        + match align {
+            TextAlign::Center => (total - text_w) / 2.0,
+            TextAlign::Right => total - text_w,
+            _ => 0.0,
+        };
+    let sample = |s: f64| -> (Point, Vec2) {
+        let s = s.clamp(0.0, total);
+        let i = cum
+            .partition_point(|c| *c <= s)
+            .saturating_sub(1)
+            .min(pts.len() - 2);
+        let seg = pts[i + 1] - pts[i];
+        let len = seg.hypot().max(1e-9);
+        let t = ((s - cum[i]) / len).clamp(0.0, 1.0);
+        (pts[i] + seg * t, seg / len)
+    };
+    let mut pen = start;
+    for g in &line.glyphs {
+        let mid = pen + g.advance / 2.0;
+        let (p, tan) = sample(mid);
+        let mut normal = Vec2::new(-tan.y, tan.x);
+        let mut angle = tan.y.atan2(tan.x);
+        let mut dist = tp.distance;
+        if tp.mirror {
+            normal = -normal;
+            angle += std::f64::consts::PI;
+            dist = -dist;
+        }
+        let _ = dist;
+        let place = Affine::translate(p.to_vec2() + normal * tp.distance)
+            * Affine::rotate(angle)
+            * Affine::translate((-g.advance / 2.0 + g.x_offset, g.y_offset));
+        let gp = place * g.path.as_ref().clone();
+        out.extend(gp.elements().iter().copied());
+        pen += g.advance;
+    }
+    out
 }
 
 struct OutlineSink {
@@ -393,24 +1029,145 @@ impl ttf_parser::OutlineBuilder for OutlineSink {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tracedraw_core::geometry::Size;
+
+    fn span(text: &str) -> TextSpan {
+        TextSpan {
+            text: text.into(),
+            font_family: "DejaVu Sans".into(),
+            size_pt: 12.0,
+            bold: false,
+            italic: false,
+            tracking_pct: 0.0,
+            baseline_shift_pt: 0.0,
+            underline: false,
+            strikethrough: false,
+            fill: None,
+            features: Vec::new(),
+        }
+    }
+
+    fn has_fonts() -> bool {
+        !fonts().families().is_empty()
+    }
 
     #[test]
     fn shapes_some_text_if_any_font_exists() {
         let f = fonts();
-        let spans = vec![TextSpan {
-            text: "Ab".into(),
-            font_family: "Nonexistent".into(),
-            size_pt: 24.0,
-            bold: false,
-            italic: false,
-        }];
-        let layout = f.outline(&spans);
-        if f.families().is_empty() {
+        let layout = f.outline(&[span("Ab")]);
+        if !has_fonts() {
             assert_eq!(layout.glyphs, 0);
         } else {
             assert_eq!(layout.glyphs, 2);
             assert!(layout.bounds.width() > 1.0);
             assert!(!layout.path.elements().is_empty());
         }
+    }
+
+    #[test]
+    fn paragraph_wraps_to_frame_width() {
+        if !has_fonts() {
+            return;
+        }
+        let f = fonts();
+        let s = span("one two three four five six seven eight nine ten");
+        let para = ParagraphStyle::default();
+        let one_line = f.outline(&[s.clone()]);
+        let wrapped = f.layout(&TextRequest {
+            spans: &[s],
+            frame: Some(Size::new(one_line.bounds.width() / 2.5, 100.0)),
+            align: TextAlign::Left,
+            para: &para,
+            on_path: None,
+        });
+        assert!(wrapped.bounds.height() > one_line.bounds.height() * 2.0);
+        assert!(!wrapped.overflow);
+    }
+
+    #[test]
+    fn tracking_widens_text() {
+        if !has_fonts() {
+            return;
+        }
+        let f = fonts();
+        let a = f.outline(&[span("Hello")]).bounds.width();
+        let mut t = span("Hello");
+        t.tracking_pct = 50.0;
+        let b = f.outline(&[t]).bounds.width();
+        assert!(b > a * 1.5);
+    }
+
+    #[test]
+    fn overflow_is_reported_and_fit_to_frame_fixes_it() {
+        if !has_fonts() {
+            return;
+        }
+        let f = fonts();
+        let s = span("a lot of text that will not fit in a tiny frame at all");
+        let para = ParagraphStyle::default();
+        let fit = ParagraphStyle {
+            fit_to_frame: true,
+            ..ParagraphStyle::default()
+        };
+        fn req<'a>(s: &'a TextSpan, p: &'a ParagraphStyle) -> TextRequest<'a> {
+            TextRequest {
+                spans: std::slice::from_ref(s),
+                frame: Some(Size::new(20.0, 5.0)),
+                align: TextAlign::Left,
+                para: p,
+                on_path: None,
+            }
+        }
+        assert!(f.layout(&req(&s, &para)).overflow);
+        assert!(!f.layout(&req(&s, &fit)).overflow);
+    }
+
+    #[test]
+    fn justify_fills_the_width() {
+        if !has_fonts() {
+            return;
+        }
+        let f = fonts();
+        let s = span("aa bb cc dd ee ff gg hh ii jj kk ll mm nn oo pp");
+        let para = ParagraphStyle::default();
+        let l = f.layout(&TextRequest {
+            spans: &[s],
+            frame: Some(Size::new(30.0, 100.0)),
+            align: TextAlign::Justify,
+            para: &para,
+            on_path: None,
+        });
+        assert!((l.bounds.width() - 30.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn text_on_path_follows_the_curve() {
+        if !has_fonts() {
+            return;
+        }
+        let f = fonts();
+        let s = span("curve");
+        let para = ParagraphStyle::default();
+        let mut p = BezPath::new();
+        p.move_to((0.0, 0.0));
+        p.line_to((0.0, 50.0));
+        let tp = TextOnPath {
+            path: p,
+            offset: 0.0,
+            distance: 0.0,
+            mirror: false,
+        };
+        let l = f.layout(&TextRequest {
+            spans: &[s],
+            frame: None,
+            align: TextAlign::Left,
+            para: &para,
+            on_path: Some(&tp),
+        });
+        let b = l.path.bounding_box();
+        assert!(
+            b.height() > b.width(),
+            "vertical path should give tall text: {b:?}"
+        );
     }
 }

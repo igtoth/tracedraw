@@ -39,6 +39,11 @@ pub struct IdSource {
 }
 
 impl IdSource {
+    /// The id the next allocation will return, without allocating.
+    pub fn peek_next(&self) -> u64 {
+        self.next + 1
+    }
+
     pub fn next(&mut self) -> u64 {
         self.next += 1;
         self.next

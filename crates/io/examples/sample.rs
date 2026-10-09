@@ -74,14 +74,13 @@ fn main() {
         &mut doc,
         ShapeKind::Text {
             spans: vec![TextSpan {
-                text: "TraceDraw".into(),
-                font_family: "Arial".into(),
-                size_pt: 36.0,
                 bold: true,
-                italic: false,
+                ..TextSpan::new("TraceDraw", "Arial", 36.0)
             }],
             origin: Point::new(20.0, 40.0),
             frame: None,
+            para: Default::default(),
+            on_path: None,
             align: tracedraw_core::TextAlign::Left,
         },
         Fill::Solid(Color::BLACK),

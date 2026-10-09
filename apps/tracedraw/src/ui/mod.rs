@@ -3,17 +3,22 @@
 //! document tabs, rulers and canvas in the middle, navigator and colour
 //! palette under the canvas, status bar at the bottom.
 
+pub mod context;
 pub mod dialogs;
 pub mod dockers;
+pub mod dockers2;
 pub mod icons;
 pub mod menus;
 pub mod palette;
+pub mod preview;
 pub mod status;
 pub mod toolbar;
 pub mod toolbox;
+pub mod welcome;
 
 use crate::app::App;
 use crate::canvas;
+use crate::i18n::tr;
 use crate::theme::Tokens;
 use egui::{Frame, Panel, Sense, Ui};
 use tracedraw_core::geometry::Point;
@@ -28,27 +33,44 @@ pub fn root(app: &mut App, ui: &mut Ui) {
     let ctx = ui.ctx().clone();
     app.keyboard(&ctx);
 
-    let doc_name = app
-        .file
-        .as_ref()
-        .and_then(|p| p.file_stem())
-        .and_then(|n| n.to_str())
-        .map(String::from)
-        .unwrap_or_else(|| "Untitled-1".into());
+    let doc_name = app.document_title();
     ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!(
-        "TraceDraw - {doc_name}{}",
-        if app.engine.is_dirty() { "*" } else { "" }
+        "TraceDraw - {doc_name}"
     )));
+
+    if app.fullscreen_preview {
+        preview::fullscreen(app, ui);
+        return;
+    }
 
     Panel::top("menu_bar")
         .frame(bar())
         .show(ui, |ui| menus::menu_bar(app, ui));
-    Panel::top("standard_toolbar")
-        .frame(bar())
-        .show(ui, |ui| toolbar::standard_toolbar(app, ui));
-    Panel::top("property_bar")
-        .frame(bar())
-        .show(ui, |ui| toolbar::property_bar(app, ui));
+    if app.show_standard_toolbar {
+        Panel::top("standard_toolbar")
+            .frame(bar())
+            .show(ui, |ui| toolbar::standard_toolbar(app, ui));
+    }
+    if app.show_property_bar {
+        Panel::top("property_bar")
+            .frame(bar())
+            .show(ui, |ui| toolbar::property_bar(app, ui));
+    }
+    if app.show_text_toolbar {
+        Panel::top("text_toolbar")
+            .frame(bar())
+            .show(ui, |ui| toolbar::text_toolbar(app, ui));
+    }
+    if app.show_zoom_toolbar {
+        Panel::top("zoom_toolbar")
+            .frame(bar())
+            .show(ui, |ui| toolbar::zoom_toolbar(app, ui));
+    }
+    if app.show_transform_toolbar {
+        Panel::top("transform_toolbar")
+            .frame(bar())
+            .show(ui, |ui| toolbar::transform_toolbar(app, ui));
+    }
 
     if app.show_status_bar {
         Panel::bottom("status_bar")
@@ -56,16 +78,25 @@ pub fn root(app: &mut App, ui: &mut Ui) {
             .show(ui, |ui| status::status_bar(app, ui));
     }
 
-    Panel::left("toolbox")
-        .exact_size(Tokens::TOOLBOX_WIDTH)
-        .frame(
-            Frame::new()
-                .fill(Tokens::PANEL)
-                .inner_margin(egui::Margin::symmetric(3, 0)),
-        )
-        .show(ui, |ui| toolbox::toolbox(app, ui));
+    if app.show_toolbox {
+        Panel::left("toolbox")
+            .exact_size(Tokens::TOOLBOX_WIDTH)
+            .frame(
+                Frame::new()
+                    .fill(Tokens::PANEL)
+                    .inner_margin(egui::Margin::symmetric(3, 0)),
+            )
+            .show(ui, |ui| toolbox::toolbox(app, ui));
+    }
 
-    Panel::right("docker_tabs")
+    // Right-to-left languages mirror the workspace: dockers sit on the left.
+    let rtl = crate::i18n::is_rtl();
+    let docker_tabs = if rtl {
+        Panel::left("docker_tabs")
+    } else {
+        Panel::right("docker_tabs")
+    };
+    docker_tabs
         .exact_size(30.0)
         .frame(
             Frame::new()
@@ -74,7 +105,12 @@ pub fn root(app: &mut App, ui: &mut Ui) {
         )
         .show(ui, |ui| dockers::tab_strip(app, ui));
     if app.show_dockers {
-        Panel::right("dockers")
+        let dockers_panel = if rtl {
+            Panel::left("dockers")
+        } else {
+            Panel::right("dockers")
+        };
+        dockers_panel
             .default_size(300.0)
             .resizable(true)
             .frame(Frame::new().fill(Tokens::PANEL).inner_margin(6))
@@ -122,7 +158,7 @@ pub fn root(app: &mut App, ui: &mut Ui) {
                     )
                     .clicked()
                 };
-                if tab(ui, "Welcome Screen", app.show_welcome) {
+                if tab(ui, &tr("welcome.title"), app.show_welcome) {
                     app.show_welcome = true;
                 }
                 if tab(ui, &doc_name, !app.show_welcome) {
@@ -130,10 +166,16 @@ pub fn root(app: &mut App, ui: &mut Ui) {
                 }
                 if ui
                     .add(egui::Button::new(egui::RichText::new("+").size(12.0)).frame(false))
-                    .on_hover_text("New document")
+                    .on_hover_text(tr("menu.file.new"))
                     .clicked()
                 {
-                    app.new_document();
+                    let s = app.page_size();
+                    app.dialog = dialogs::Dialog::NewDocument {
+                        width: s.width,
+                        height: s.height,
+                        preset: 0,
+                        name: App::untitled_name(),
+                    };
                 }
             });
         });
@@ -141,7 +183,14 @@ pub fn root(app: &mut App, ui: &mut Ui) {
     if app.show_welcome {
         egui::CentralPanel::default()
             .frame(Frame::new().fill(Tokens::PANEL))
-            .show(ui, |ui| welcome_screen(app, ui));
+            .show(ui, |ui| welcome::welcome_screen(app, ui));
+        dialogs::show(app, &ctx);
+        return;
+    }
+    if app.page_sorter {
+        egui::CentralPanel::default()
+            .frame(Frame::new().fill(Tokens::PANEL))
+            .show(ui, |ui| preview::page_sorter(app, ui));
         dialogs::show(app, &ctx);
         return;
     }
@@ -204,6 +253,8 @@ pub fn root(app: &mut App, ui: &mut Ui) {
 
             canvas::draw_canvas(app, &painter, canvas_rect);
             canvas::draw_guides(app, &painter, canvas_rect);
+            canvas::draw_effect_nodes(app, &painter);
+            context::context_menu(app, ui, &response);
 
             // Scrollbars: the desktop extends one page size around the page.
             scrollbars(app, ui, full, canvas_rect, ruler, sb);
@@ -265,15 +316,8 @@ pub fn root(app: &mut App, ui: &mut Ui) {
     dialogs::show(app, &ctx);
 
     if app.about_open {
-        egui::Window::new("About TraceDraw")
-            .collapsible(false)
-            .resizable(false)
-            .open(&mut app.about_open)
-            .show(&ctx, |ui| {
-                ui.label("TraceDraw 0.1 (pre-alpha)");
-                ui.label("An open-source vector illustration editor in Rust.");
-                ui.label("MIT or Apache-2.0. Not affiliated with any other vendor.");
-            });
+        app.about_open = false;
+        app.dialog = dialogs::Dialog::About;
     }
 }
 
@@ -365,43 +409,4 @@ fn scrollbars(
         let d = rv.drag_delta().y / vbar.height() * ext_h as f32;
         app.view.pan(egui::vec2(0.0, -d * view.zoom));
     }
-}
-
-fn welcome_screen(app: &mut App, ui: &mut Ui) {
-    ui.add_space(30.0);
-    ui.vertical_centered(|ui| {
-        ui.heading(egui::RichText::new("TraceDraw").size(32.0));
-        ui.label(egui::RichText::new("Open-source vector illustration").color(Tokens::TEXT_DIM));
-        ui.add_space(24.0);
-        ui.horizontal(|ui| {
-            ui.add_space(ui.available_width() / 2.0 - 220.0);
-            if ui.add_sized([200.0, 60.0], egui::Button::new("New Document\nCtrl+N")).clicked() {
-                app.new_document();
-                app.show_welcome = false;
-            }
-            ui.add_space(20.0);
-            if ui.add_sized([200.0, 60.0], egui::Button::new("Open Document...\nCtrl+O")).clicked() {
-                app.open_dialog();
-                app.show_welcome = false;
-            }
-        });
-        ui.add_space(24.0);
-        ui.label(egui::RichText::new("Page sizes").strong());
-        ui.horizontal(|ui| {
-            ui.add_space(ui.available_width() / 2.0 - 160.0);
-            use tracedraw_core::document::paper;
-            for (n, size) in [("A4 portrait", paper::A4), ("A4 landscape", tracedraw_core::geometry::Size::new(paper::A4.height, paper::A4.width)), ("A3", paper::A3), ("Letter", paper::LETTER)] {
-                if ui.button(n).clicked() {
-                    let doc = tracedraw_core::Document::new("Untitled-1", size);
-                    app.page = doc.pages[0].id;
-                    app.engine.replace(doc);
-                    app.file = None;
-                    app.fit_pending = true;
-                    app.show_welcome = false;
-                }
-            }
-        });
-        ui.add_space(40.0);
-        ui.label(egui::RichText::new("Shortcuts: F6 rectangle, F7 ellipse, F8 text, F5 freehand, F10 shape, Space pick, Shift+F4 zoom to page").color(Tokens::TEXT_DIM).size(11.0));
-    });
 }

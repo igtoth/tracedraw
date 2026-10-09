@@ -7,6 +7,7 @@ description = "Font discovery, shaping and glyph outlines for TraceDraw"
 
 [dependencies]
 tracedraw-core.workspace = true
+kurbo.workspace = true
 fontdb.workspace = true
 ttf-parser.workspace = true
 rustybuzz.workspace = true

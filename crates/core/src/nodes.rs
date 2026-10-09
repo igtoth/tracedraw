@@ -349,6 +349,70 @@ pub fn break_at(path: &BezPath, index: usize) -> BezPath {
 }
 
 /// Reverse the direction of the whole path.
+/// Reduce nodes: drop every node whose removal moves the curve by less
+/// than `tolerance` (sampled at the removed node's position). Subpath
+/// starts and ends are kept.
+pub fn reduce_nodes(path: &BezPath, tolerance: f64) -> BezPath {
+    use kurbo::{ParamCurveNearest, PathSeg};
+    let mut cur = normalize(path);
+    loop {
+        let ns = nodes(&cur);
+        let mut removed = false;
+        // Walk from the end so indices stay valid.
+        for n in ns.iter().rev() {
+            if n.is_start {
+                continue;
+            }
+            let next_is_end = match cur.elements().get(n.index + 1) {
+                None | Some(PathEl::MoveTo(_)) => true,
+                Some(PathEl::ClosePath) => false,
+                _ => false,
+            };
+            if next_is_end {
+                continue;
+            }
+            let candidate = delete_node(&cur, n.index);
+            if candidate.elements().len() == cur.elements().len() {
+                continue;
+            }
+            // Distance from the dropped node to the new curve.
+            let d = candidate
+                .segments()
+                .map(|seg: PathSeg| seg.nearest(n.pos, 1e-3).distance_sq.sqrt())
+                .fold(f64::INFINITY, f64::min);
+            if d <= tolerance {
+                cur = candidate;
+                removed = true;
+                break;
+            }
+        }
+        if !removed {
+            break;
+        }
+    }
+    cur
+}
+
+/// Align the given nodes on a common x and/or y (their average).
+pub fn align_nodes(path: &BezPath, indices: &[usize], horizontal: bool, vertical: bool) -> BezPath {
+    let ns = nodes(path);
+    let sel: Vec<&Node> = ns.iter().filter(|n| indices.contains(&n.index)).collect();
+    if sel.len() < 2 {
+        return path.clone();
+    }
+    let cx = sel.iter().map(|n| n.pos.x).sum::<f64>() / sel.len() as f64;
+    let cy = sel.iter().map(|n| n.pos.y).sum::<f64>() / sel.len() as f64;
+    let mut out = path.clone();
+    for n in sel {
+        let target = Point::new(
+            if vertical { cx } else { n.pos.x },
+            if horizontal { cy } else { n.pos.y },
+        );
+        out = move_node(&out, n.index, target - n.pos);
+    }
+    out
+}
+
 pub fn reverse(path: &BezPath) -> BezPath {
     let n = normalize(path);
     let mut out = BezPath::new();
@@ -439,18 +503,16 @@ pub fn nearest_segment(path: &BezPath, p: Point) -> Option<(usize, f64, f64)> {
 }
 
 fn prev_point(els: &[PathEl], index: usize) -> Point {
-    let mut i = index;
-    while i > 0 {
-        i -= 1;
-        match els[i] {
-            PathEl::MoveTo(p)
-            | PathEl::LineTo(p)
-            | PathEl::CurveTo(_, _, p)
-            | PathEl::QuadTo(_, p) => return p,
-            PathEl::ClosePath => return subpath_start(els, i),
-        }
+    if index == 0 {
+        return Point::ZERO;
     }
-    Point::ZERO
+    let i = index - 1;
+    match els[i] {
+        PathEl::MoveTo(p) | PathEl::LineTo(p) | PathEl::CurveTo(_, _, p) | PathEl::QuadTo(_, p) => {
+            p
+        }
+        PathEl::ClosePath => subpath_start(els, i),
+    }
 }
 
 fn subpath_start(els: &[PathEl], index: usize) -> Point {
@@ -546,5 +608,25 @@ mod tests {
         let n = nodes(&r);
         assert_eq!(n[0].pos, Point::new(20.0, 10.0));
         assert_eq!(n.last().unwrap().pos, Point::new(0.0, 0.0));
+    }
+}
+
+#[cfg(test)]
+mod reduce_tests {
+    use super::*;
+
+    #[test]
+    fn reduce_drops_collinear_nodes_and_align_levels_them() {
+        let mut p = BezPath::new();
+        p.move_to((0.0, 0.0));
+        p.line_to((5.0, 0.01));
+        p.line_to((10.0, 0.0));
+        p.line_to((10.0, 10.0));
+        let r = reduce_nodes(&p, 0.1);
+        assert_eq!(nodes(&r).len(), 3, "{r:?}");
+
+        let a = align_nodes(&p, &[1, 2], true, false);
+        let ns = nodes(&a);
+        assert!((ns[1].pos.y - ns[2].pos.y).abs() < 1e-9);
     }
 }

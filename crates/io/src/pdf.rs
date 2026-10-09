@@ -55,7 +55,7 @@ impl Pdf {
             self.objects.len() + 1
         );
         for o in offsets {
-            let _ = write!(out, "{o:010} 00000 n \n");
+            let _ = writeln!(out, "{o:010} 00000 n ");
         }
         let _ = write!(
             out,
@@ -110,6 +110,7 @@ struct PageWriter<'a> {
     shadings: Vec<(String, usize)>,
     gstates: Vec<(String, usize)>,
     images: Vec<(String, usize)>,
+    symbols: &'a [tracedraw_core::Symbol],
 }
 
 impl PageWriter<'_> {
@@ -156,10 +157,51 @@ impl PageWriter<'_> {
         if !shape.visible {
             return;
         }
+        if !shape.effects.is_empty() {
+            let ev = tracedraw_core::live::evaluate(shape);
+            for b in &ev.below {
+                let mut b = b.clone();
+                b.effects.clear();
+                self.shape(&b, parent);
+            }
+            let mut main = ev.main.clone();
+            main.effects.clear();
+            for e in &shape.effects {
+                match e {
+                    tracedraw_core::live::Effect::Transparency { mask, .. } => {
+                        main.opacity *= crate::svg::average_luminance(mask) as f64;
+                    }
+                    tracedraw_core::live::Effect::Lens(
+                        tracedraw_core::live::Lens::Transparency { rate, color },
+                    ) => {
+                        main.fill = Fill::Solid(*color);
+                        main.opacity *= rate / 100.0;
+                    }
+                    tracedraw_core::live::Effect::Lens(_) => main.opacity *= 0.5,
+                    _ => {}
+                }
+            }
+            self.shape(&main, parent);
+            for a in &ev.above {
+                let mut a = a.clone();
+                a.effects.clear();
+                self.shape(&a, parent);
+            }
+            return;
+        }
         let transform = parent * shape.transform;
         if let ShapeKind::Group { children } = &shape.kind {
             for c in children {
                 self.shape(c, transform);
+            }
+            return;
+        }
+        if matches!(
+            shape.kind,
+            ShapeKind::Table(_) | ShapeKind::SymbolInstance { .. }
+        ) {
+            for c in shape.expand(self.symbols) {
+                self.shape(&c, transform);
             }
             return;
         }
@@ -274,7 +316,7 @@ impl PageWriter<'_> {
             }
             // Patterns and textures are rasterised into an image clipped by
             // the path; the renderer produces the same pixels as the screen.
-            Fill::Pattern(_) | Fill::Texture(_) => {
+            Fill::Pattern(_) | Fill::Texture(_) | Fill::Mesh(_) => {
                 if let Some((png, w, h)) = rasterise_fill(shape, bounds) {
                     if let Some(rgb) = decode_png_rgb(&png) {
                         let name = format!("Im{}", self.images.len());
@@ -435,8 +477,22 @@ pub fn document_to_pdf(doc: &Document) -> Vec<u8> {
             shadings: Vec::new(),
             gstates: Vec::new(),
             images: Vec::new(),
+            symbols: &doc.symbols,
         };
-        for layer in page.layers.iter().filter(|l| l.visible && l.printable) {
+        if let Some(bg) = &page.background {
+            let mut bg_shape = Shape::new(
+                tracedraw_core::ShapeId(0),
+                ShapeKind::Rect {
+                    rect: page.rect(),
+                    radius: 0.0,
+                },
+            );
+            bg_shape.fill = bg.clone();
+            bg_shape.stroke = None;
+            w.shape(&bg_shape, Affine::IDENTITY);
+        }
+        let layers = doc.layers_for_page(page.id).unwrap_or_default();
+        for layer in layers.iter().filter(|l| l.visible && l.printable) {
             for s in &layer.shapes {
                 w.shape(s, Affine::IDENTITY);
             }

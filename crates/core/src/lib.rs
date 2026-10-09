@@ -15,6 +15,7 @@ pub mod effects;
 pub mod engine;
 pub mod geometry;
 pub mod id;
+pub mod live;
 pub mod nodes;
 pub mod shaping;
 pub mod style;
@@ -22,14 +23,16 @@ pub mod style;
 pub use color::Color;
 pub use command::Command;
 pub use document::{
-    Document, EllipseArc, Layer, Page, Shadow, Shape, ShapeKind, TextAlign, TextSpan,
+    ColorStyle, Document, EllipseArc, Layer, MasterScope, Metadata, ObjectStyle, Page,
+    ParagraphStyle, Shadow, Shape, ShapeKind, Symbol, Table, TableCell, TextAlign, TextOnPath,
+    TextSpan,
 };
 pub use engine::Engine;
 pub use geometry::{Affine, BezPath, Point, Rect, Size, Vec2};
 pub use id::{LayerId, PageId, ShapeId};
 pub use style::{
-    arrowhead_paths, Arrowhead, Fill, Fountain, FountainKind, LineCap, LineJoin, Pattern,
-    PatternTile, Stop, Stroke, Texture, TextureKind,
+    arrowhead_paths, Arrowhead, Fill, Fountain, FountainKind, LineCap, LineJoin, Mesh, MeshNode,
+    Pattern, PatternTile, Stop, Stroke, Texture, TextureKind,
 };
 
 /// Convenience result type for the core crate.

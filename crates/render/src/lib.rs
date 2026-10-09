@@ -8,6 +8,7 @@ use tiny_skia::{
     Path as SkPath, PathBuilder, Pixmap, RadialGradient, SpreadMode, Stroke as SkStroke,
     StrokeDash, Transform,
 };
+use tracedraw_core::geometry::Shape as _;
 use tracedraw_core::{
     document::{Shape, ShapeKind},
     geometry::{Affine, BezPath, PathEl, Point, Rect},
@@ -63,8 +64,22 @@ pub fn render_page(doc: &Document, page: PageId, opts: &RenderOptions) -> Option
         screen,
         zoom: opts.view.zoom,
         wireframe: opts.wireframe,
+        symbols: &doc.symbols,
     };
-    for layer in &page.layers {
+    if let Some(bg) = &page.background {
+        let mut bg_shape = Shape::new(
+            tracedraw_core::ShapeId(0),
+            ShapeKind::Rect {
+                rect: page.rect(),
+                radius: 0.0,
+            },
+        );
+        bg_shape.fill = bg.clone();
+        bg_shape.stroke = None;
+        r.draw_shape(&bg_shape, Affine::IDENTITY);
+    }
+    let layers = doc.layers_for_page(page.id).ok()?;
+    for layer in layers {
         if !layer.visible {
             continue;
         }
@@ -84,6 +99,7 @@ struct Renderer<'a> {
     screen: Affine,
     zoom: f64,
     wireframe: bool,
+    symbols: &'a [tracedraw_core::Symbol],
 }
 
 impl Renderer<'_> {
@@ -91,10 +107,54 @@ impl Renderer<'_> {
         if !shape.visible {
             return;
         }
+        // Live effects: geometry warps, extra objects below and above, and
+        // the pixel effects (lens, non-uniform transparency).
+        if !shape.effects.is_empty() {
+            let ev = tracedraw_core::live::evaluate(shape);
+            for b in &ev.below {
+                let mut b = b.clone();
+                b.effects.clear();
+                self.draw_shape(&b, parent);
+            }
+            let lens = shape.effects.iter().find_map(|e| match e {
+                tracedraw_core::live::Effect::Lens(l) => Some(l.clone()),
+                _ => None,
+            });
+            let transparency = shape.effects.iter().find_map(|e| match e {
+                tracedraw_core::live::Effect::Transparency { mask, merge, .. } => {
+                    Some((mask.clone(), *merge))
+                }
+                _ => None,
+            });
+            let mut main = ev.main.clone();
+            main.effects.clear();
+            if let Some(l) = lens {
+                self.draw_lens(&main, parent, &l);
+            } else if let Some((mask, merge)) = transparency {
+                self.draw_with_mask(&main, parent, &mask, merge);
+            } else {
+                self.draw_shape(&main, parent);
+            }
+            for a in &ev.above {
+                let mut a = a.clone();
+                a.effects.clear();
+                self.draw_shape(&a, parent);
+            }
+            return;
+        }
         let transform = parent * shape.transform;
         if let ShapeKind::Group { children } = &shape.kind {
             for c in children {
                 self.draw_shape(c, transform);
+            }
+            return;
+        }
+        if matches!(
+            shape.kind,
+            ShapeKind::Table(_) | ShapeKind::SymbolInstance { .. }
+        ) {
+            for c in shape.expand(self.symbols) {
+                self.draw_shape(&c, transform);
             }
             return;
         }
@@ -117,6 +177,7 @@ impl Renderer<'_> {
                             screen: self.screen,
                             zoom: self.zoom,
                             wireframe: self.wireframe,
+                            symbols: self.symbols,
                         };
                         for c in contents {
                             sub.draw_shape(c, transform);
@@ -205,6 +266,7 @@ impl Renderer<'_> {
                     screen: self.screen,
                     zoom: self.zoom,
                     wireframe: self.wireframe,
+                    symbols: self.symbols,
                 };
                 let mut opaque = shape.clone();
                 opaque.opacity = 1.0;
@@ -281,7 +343,16 @@ impl Renderer<'_> {
                 ShapeKind::Text { .. } => FillRule::Winding,
                 _ => FillRule::EvenOdd,
             };
-            self.draw_fill(&shape.fill, &page_path, &sk, rule);
+            if let Fill::Mesh(m) = &shape.fill {
+                // Mesh nodes are local: bring them to page space first.
+                let mut pm = m.clone();
+                for n in pm.nodes.iter_mut() {
+                    n.pos = transform * n.pos;
+                }
+                self.fill_mesh(&pm, &sk, rule);
+            } else {
+                self.draw_fill(&shape.fill, &page_path, &sk, rule);
+            }
         }
         if let Some(stroke) = &shape.stroke {
             let (paint, sk_stroke) = self.stroke_paint(stroke, transform);
@@ -309,6 +380,192 @@ impl Renderer<'_> {
             self.pixmap
                 .stroke_path(&sk, &paint, &s, Transform::identity(), None);
         }
+    }
+
+    /// Lens: transform the pixels already drawn beneath the shape's area.
+    fn draw_lens(&mut self, shape: &Shape, parent: Affine, lens: &tracedraw_core::live::Lens) {
+        use tracedraw_core::live::Lens;
+        let transform = parent * shape.transform;
+        let path = self.screen * (transform * shape.local_path());
+        let Some(sk) = to_sk_path(&path) else {
+            return;
+        };
+        let (w, h) = (self.pixmap.width(), self.pixmap.height());
+        let Some(mut mask) = tiny_skia::Mask::new(w, h) else {
+            return;
+        };
+        mask.fill_path(&sk, FillRule::EvenOdd, true, Transform::identity());
+        let source = self.pixmap.clone();
+        let b = path.bounding_box();
+        let center = b.center();
+        let (x0, y0) = (b.x0.max(0.0) as u32, b.y0.max(0.0) as u32);
+        let (x1, y1) = ((b.x1.ceil() as u32).min(w), (b.y1.ceil() as u32).min(h));
+        let mdata = mask.data();
+        let src_px = |x: i64, y: i64| -> [f32; 3] {
+            if x < 0 || y < 0 || x >= w as i64 || y >= h as i64 {
+                return [1.0, 1.0, 1.0];
+            }
+            let p = source.pixel(x as u32, y as u32).map(|p| p.demultiply());
+            match p {
+                Some(p) if p.alpha() > 0 => {
+                    let a = p.alpha() as f32 / 255.0;
+                    // Composite over white (the page).
+                    [
+                        p.red() as f32 / 255.0 * a + (1.0 - a),
+                        p.green() as f32 / 255.0 * a + (1.0 - a),
+                        p.blue() as f32 / 255.0 * a + (1.0 - a),
+                    ]
+                }
+                _ => [1.0, 1.0, 1.0],
+            }
+        };
+        let pixels = self.pixmap.pixels_mut();
+        for y in y0..y1 {
+            for x in x0..x1 {
+                let m = mdata[(y * w + x) as usize];
+                if m == 0 {
+                    continue;
+                }
+                let c = match lens {
+                    Lens::FishEye { rate } => {
+                        let r = (*rate / 1000.0).clamp(-0.95, 10.0);
+                        let dx = x as f64 - center.x;
+                        let dy = y as f64 - center.y;
+                        let radius = (b.width().min(b.height()) / 2.0).max(1.0);
+                        let d = (dx * dx + dy * dy).sqrt() / radius;
+                        let k = if d > 0.0 { d.powf(1.0 + r) / d } else { 1.0 };
+                        src_px(
+                            (center.x + dx * k).round() as i64,
+                            (center.y + dy * k).round() as i64,
+                        )
+                    }
+                    Lens::Magnify { amount } => {
+                        let a = amount.max(1.0);
+                        let dx = (x as f64 - center.x) / a;
+                        let dy = (y as f64 - center.y) / a;
+                        src_px(
+                            (center.x + dx).round() as i64,
+                            (center.y + dy).round() as i64,
+                        )
+                    }
+                    Lens::Wireframe { fill, .. } => {
+                        let [r, g, bl] = fill.to_rgb8();
+                        [r as f32 / 255.0, g as f32 / 255.0, bl as f32 / 255.0]
+                    }
+                    other => other.map_color(src_px(x as i64, y as i64)),
+                };
+                let mf = m as f32 / 255.0;
+                let old = src_px(x as i64, y as i64);
+                let out = [
+                    old[0] + (c[0] - old[0]) * mf,
+                    old[1] + (c[1] - old[1]) * mf,
+                    old[2] + (c[2] - old[2]) * mf,
+                ];
+                if let Some(px) = tiny_skia::ColorU8::from_rgba(
+                    (out[0].clamp(0.0, 1.0) * 255.0).round() as u8,
+                    (out[1].clamp(0.0, 1.0) * 255.0).round() as u8,
+                    (out[2].clamp(0.0, 1.0) * 255.0).round() as u8,
+                    255,
+                )
+                .premultiply()
+                .into()
+                {
+                    pixels[(y * w + x) as usize] = px;
+                }
+            }
+        }
+        // The lens object's own outline.
+        if let Some(stroke) = &shape.stroke {
+            let mut outline = shape.clone();
+            outline.fill = Fill::None;
+            outline.stroke = Some(stroke.clone());
+            self.draw_shape(&outline, parent);
+        }
+    }
+
+    /// Non-uniform transparency: render the shape to a layer, multiply its
+    /// alpha by the luminance of the mask fill, composite with a blend mode.
+    fn draw_with_mask(
+        &mut self,
+        shape: &Shape,
+        parent: Affine,
+        mask_fill: &Fill,
+        merge: tracedraw_core::live::MergeMode,
+    ) {
+        let (w, h) = (self.pixmap.width(), self.pixmap.height());
+        let (Some(mut layer), Some(mut mask_pm)) = (Pixmap::new(w, h), Pixmap::new(w, h)) else {
+            return;
+        };
+        {
+            let mut sub = Renderer {
+                pixmap: &mut layer,
+                screen: self.screen,
+                zoom: self.zoom,
+                wireframe: self.wireframe,
+                symbols: self.symbols,
+            };
+            sub.draw_shape(shape, parent);
+        }
+        let transform = parent * shape.transform;
+        let page_path = transform * shape.local_path();
+        let bounds = page_path.bounding_box();
+        let rect_path = tracedraw_core::geometry::rect_path(bounds, 0.0);
+        if let Some(sk) = to_sk_path(&(self.screen * rect_path.clone())) {
+            let mut sub = Renderer {
+                pixmap: &mut mask_pm,
+                screen: self.screen,
+                zoom: self.zoom,
+                wireframe: false,
+                symbols: self.symbols,
+            };
+            sub.draw_fill(mask_fill, &rect_path, &sk, FillRule::Winding);
+        }
+        let mdata: Vec<u8> = mask_pm
+            .pixels()
+            .iter()
+            .map(|p| {
+                let d = p.demultiply();
+                if d.alpha() == 0 {
+                    255
+                } else {
+                    ((d.red() as u32 * 54 + d.green() as u32 * 183 + d.blue() as u32 * 19) / 256)
+                        as u8
+                }
+            })
+            .collect();
+        for (px, m) in layer.pixels_mut().iter_mut().zip(mdata) {
+            let d = px.demultiply();
+            let a = (d.alpha() as u32 * m as u32 / 255) as u8;
+            if let Some(np) = tiny_skia::ColorU8::from_rgba(d.red(), d.green(), d.blue(), a)
+                .premultiply()
+                .into()
+            {
+                *px = np;
+            }
+        }
+        use tiny_skia::BlendMode as B;
+        use tracedraw_core::live::MergeMode as M;
+        let blend = match merge {
+            M::Normal | M::Red | M::Green | M::Blue => B::SourceOver,
+            M::Add => B::Plus,
+            M::Subtract => B::Difference,
+            M::Difference => B::Difference,
+            M::Multiply => B::Multiply,
+            M::Divide => B::Screen,
+            M::IfLighter => B::Lighten,
+            M::IfDarker => B::Darken,
+            M::Hue => B::Hue,
+            M::Saturation => B::Saturation,
+            M::Color => B::Color,
+            M::Invert => B::Exclusion,
+            M::And | M::Or | M::Xor => B::Xor,
+        };
+        let paint = tiny_skia::PixmapPaint {
+            blend_mode: blend,
+            ..Default::default()
+        };
+        self.pixmap
+            .draw_pixmap(0, 0, layer.as_ref(), &paint, Transform::identity(), None);
     }
 
     /// Fill a screen-space path with any fill type.
@@ -393,6 +650,7 @@ impl Renderer<'_> {
                 }
             }
             Fill::Pattern(p) => self.fill_pattern(p, sk, rule),
+            Fill::Mesh(m) => self.fill_mesh(m, sk, rule),
             Fill::Texture(t) => {
                 let b = bbox(page_path);
                 let t2 = t.clone();
@@ -404,6 +662,93 @@ impl Renderer<'_> {
                 });
             }
         }
+    }
+
+    /// Mesh fill (nodes in page space): each cell is split into small
+    /// flat-coloured triangles (Gouraud approximation), clipped by the path.
+    fn fill_mesh(&mut self, m: &tracedraw_core::Mesh, sk: &SkPath, rule: FillRule) {
+        let (w, h) = (self.pixmap.width(), self.pixmap.height());
+        let (Some(mut layer), Some(mut mask)) = (Pixmap::new(w, h), tiny_skia::Mask::new(w, h))
+        else {
+            return;
+        };
+        mask.fill_path(sk, rule, true, Transform::identity());
+        let cols = m.cols as usize + 1;
+        let node = |r: usize, c: usize| m.nodes.get(r * cols + c).copied();
+        let lerp = |a: tracedraw_core::MeshNode, b: tracedraw_core::MeshNode, t: f64| {
+            tracedraw_core::MeshNode {
+                pos: a.pos + (b.pos - a.pos) * t,
+                color: tracedraw_core::style::lerp_color(a.color, b.color, t as f32),
+                alpha: a.alpha + (b.alpha - a.alpha) * t as f32,
+            }
+        };
+        let mut paint = Paint::default();
+        paint.anti_alias = false;
+        for r in 0..m.rows as usize {
+            for c in 0..m.cols as usize {
+                let (Some(n00), Some(n10), Some(n01), Some(n11)) = (
+                    node(r, c),
+                    node(r, c + 1),
+                    node(r + 1, c),
+                    node(r + 1, c + 1),
+                ) else {
+                    continue;
+                };
+                // Subdivisions from the cell's screen size.
+                let p00 = self.screen * n00.pos;
+                let p11 = self.screen * n11.pos;
+                let size = (p11 - p00).hypot();
+                let k = ((size / 6.0).ceil() as usize).clamp(2, 24);
+                for i in 0..k {
+                    for j in 0..k {
+                        let (u0, u1) = (i as f64 / k as f64, (i + 1) as f64 / k as f64);
+                        let (v0, v1) = (j as f64 / k as f64, (j + 1) as f64 / k as f64);
+                        let at = |u: f64, v: f64| lerp(lerp(n00, n10, u), lerp(n01, n11, u), v);
+                        let q = [at(u0, v0), at(u1, v0), at(u1, v1), at(u0, v1)];
+                        let mid = at((u0 + u1) / 2.0, (v0 + v1) / 2.0);
+                        let mut pb = tiny_skia::PathBuilder::new();
+                        for (idx, n) in q.iter().enumerate() {
+                            let sp = self.screen * n.pos;
+                            if idx == 0 {
+                                pb.move_to(sp.x as f32, sp.y as f32);
+                            } else {
+                                pb.line_to(sp.x as f32, sp.y as f32);
+                            }
+                        }
+                        pb.close();
+                        let Some(path) = pb.finish() else { continue };
+                        let [cr, cg, cb] = mid.color.to_rgb8();
+                        paint.set_color_rgba8(
+                            cr,
+                            cg,
+                            cb,
+                            (mid.alpha.clamp(0.0, 1.0) * 255.0) as u8,
+                        );
+                        // Slightly overdraw to hide seams between quads.
+                        layer.fill_path(
+                            &path,
+                            &paint,
+                            FillRule::Winding,
+                            Transform::identity(),
+                            None,
+                        );
+                        let s = tiny_skia::Stroke {
+                            width: 0.7,
+                            ..Default::default()
+                        };
+                        layer.stroke_path(&path, &paint, &s, Transform::identity(), None);
+                    }
+                }
+            }
+        }
+        self.pixmap.draw_pixmap(
+            0,
+            0,
+            layer.as_ref(),
+            &tiny_skia::PixmapPaint::default(),
+            Transform::identity(),
+            Some(&mask),
+        );
     }
 
     /// Fill with a per-pixel function over the path's bounding box
@@ -735,6 +1080,7 @@ pub fn render_fill_image(fill: &Fill, bounds: Rect, dpi: f64) -> Option<Pixmap> 
         screen,
         zoom,
         wireframe: false,
+        symbols: &[],
     };
     r.draw_fill(fill, &page_path, &sk, FillRule::Winding);
     Some(pixmap)
@@ -787,6 +1133,105 @@ mod tests {
     fn px(pm: &Pixmap, x: u32, y: u32) -> (u8, u8, u8) {
         let p = pm.pixel(x, y).unwrap().demultiply();
         (p.red(), p.green(), p.blue())
+    }
+
+    fn doc_with(shapes: Vec<Shape>) -> (Document, PageId) {
+        let mut doc = Document::new("t", tracedraw_core::geometry::Size::new(100.0, 100.0));
+        let page = doc.pages[0].id;
+        let layer = doc.pages[0].layers[0].id;
+        for s in shapes {
+            doc.layer_mut(layer).unwrap().shapes.push(s);
+        }
+        (doc, page)
+    }
+
+    fn rect(id: u64, r: Rect, fill: Color) -> Shape {
+        let mut s = Shape::new(
+            tracedraw_core::ShapeId(id),
+            ShapeKind::Rect {
+                rect: r,
+                radius: 0.0,
+            },
+        );
+        s.fill = Fill::Solid(fill);
+        s.stroke = None;
+        s
+    }
+
+    #[test]
+    fn invert_lens_inverts_what_is_beneath() {
+        let base = rect(1, Rect::new(0.0, 0.0, 100.0, 100.0), Color::rgb8(255, 0, 0));
+        let mut lens = rect(2, Rect::new(25.0, 25.0, 75.0, 75.0), Color::WHITE);
+        lens.effects.push(tracedraw_core::live::Effect::Lens(
+            tracedraw_core::live::Lens::Invert,
+        ));
+        let (doc, page) = doc_with(vec![base, lens]);
+        let pm = render_page_image(&doc, page, 25.4).unwrap();
+        assert_eq!(px(&pm, 50, 50), (0, 255, 255));
+        assert_eq!(px(&pm, 5, 5), (255, 0, 0));
+    }
+
+    #[test]
+    fn fountain_transparency_fades_the_object() {
+        let mut s = rect(1, Rect::new(0.0, 0.0, 100.0, 10.0), Color::rgb8(0, 0, 0));
+        s.effects.push(tracedraw_core::live::Effect::Transparency {
+            mask: Fill::linear(Color::WHITE, Color::BLACK, 0.0),
+            merge: tracedraw_core::live::MergeMode::Normal,
+            target: 2,
+        });
+        let (doc, page) = doc_with(vec![s]);
+        let pm = render_page_image(&doc, page, 25.4).unwrap();
+        let left = px(&pm, 3, 95).0;
+        let right = px(&pm, 96, 95).0;
+        assert!(left < 40, "left should be opaque black: {left}");
+        assert!(
+            right > 215,
+            "right should be transparent (white page): {right}"
+        );
+    }
+
+    #[test]
+    fn contour_effect_draws_outside_steps() {
+        let mut s = rect(1, Rect::new(40.0, 40.0, 60.0, 60.0), Color::rgb8(255, 0, 0));
+        s.effects.push(tracedraw_core::live::Effect::Contour {
+            steps: 2,
+            offset: 5.0,
+            outside: true,
+            to_center: false,
+            fill_to: Color::rgb8(0, 0, 255),
+            outline_to: None,
+            color_blend: 0,
+        });
+        let (doc, page) = doc_with(vec![s]);
+        let pm = render_page_image(&doc, page, 25.4).unwrap();
+        // y is flipped in the image: page y 50 is image row 50 either way (100 tall).
+        assert_eq!(px(&pm, 50, 50), (255, 0, 0));
+        let (r, _, b) = px(&pm, 32, 50);
+        assert!(b > r, "outer contour step should be bluish");
+        assert_eq!(px(&pm, 5, 5), (255, 255, 255));
+    }
+
+    #[test]
+    fn mesh_fill_blends_corner_colours() {
+        let mut s = rect(1, Rect::new(0.0, 0.0, 100.0, 100.0), Color::WHITE);
+        let mut m =
+            tracedraw_core::Mesh::new(Rect::new(0.0, 0.0, 100.0, 100.0), 1, 1, Color::WHITE);
+        m.nodes[0].color = Color::rgb8(255, 0, 0); // bottom-left
+        m.nodes[1].color = Color::rgb8(0, 0, 255); // bottom-right
+        m.nodes[2].color = Color::rgb8(255, 0, 0);
+        m.nodes[3].color = Color::rgb8(0, 0, 255);
+        s.fill = Fill::Mesh(m);
+        let (doc, page) = doc_with(vec![s]);
+        let pm = render_page_image(&doc, page, 25.4).unwrap();
+        let (r, _, b) = px(&pm, 5, 50);
+        assert!(r > 200 && b < 60, "left should be red: {r} {b}");
+        let (r, _, b) = px(&pm, 95, 50);
+        assert!(b > 200 && r < 60, "right should be blue: {r} {b}");
+        let (r, _, b) = px(&pm, 50, 50);
+        assert!(
+            (r as i32 - b as i32).abs() < 40,
+            "middle should be purple: {r} {b}"
+        );
     }
 
     #[test]

@@ -30,7 +30,10 @@ impl App {
                 }
                 // Filled objects hit anywhere inside; unfilled ones only near the outline.
                 if !matches!(s.fill, Fill::None)
-                    || matches!(s.kind, ShapeKind::Text { .. } | ShapeKind::Group { .. })
+                    || matches!(
+                        s.kind,
+                        ShapeKind::Text { .. } | ShapeKind::Group { .. } | ShapeKind::Table(_)
+                    )
                 {
                     return Some(s.id);
                 }
@@ -92,15 +95,16 @@ impl App {
             return;
         }
 
-        // Right click: context menu equivalent (minimal for now).
-        if response.secondary_clicked() {
-            if self.tool == Tool::Pick {
-                if let Some(id) = self.hit_test(p) {
-                    if !self.selection.contains(&id) {
-                        self.select(vec![id]);
-                    }
-                }
+        // Right click: context menu (drawn by the UI at this position).
+        if response.secondary_clicked() && !self.pending_clip_frame {
+            if self.pending_click(response, p) {
+                return;
             }
+            self.open_context_menu(screen, p);
+            return;
+        }
+        if self.pending_click(response, p) {
+            return;
         }
 
         if self.pending_clip_frame {
@@ -114,13 +118,13 @@ impl App {
                         .filter(|id| *id != frame)
                         .collect();
                     if contents.is_empty() {
-                        self.status = "Select the contents first, then choose the frame".into();
+                        self.status = crate::i18n::tr("status.clip_frame_select_contents");
                     } else {
                         self.run(Command::PlaceInside { contents, frame });
                         self.select(vec![frame]);
                     }
                 } else {
-                    self.status = "ClipFrame cancelled".into();
+                    self.status = crate::i18n::tr("status.clip_frame_cancelled");
                 }
             }
             if response.secondary_clicked() {
@@ -131,7 +135,33 @@ impl App {
         match self.tool {
             Tool::Pick => self.pick_input(response, p, screen, mods),
             Tool::FreeformPick => self.effects_input(response, p, mods),
-            Tool::Shape => self.shape_input(response, p, mods),
+            Tool::Shape => {
+                if !self.effect_node_input(response, p) {
+                    self.shape_input(response, p, mods)
+                }
+            }
+            Tool::FreeTransform
+            | Tool::AttractRepel
+            | Tool::Smudge
+            | Tool::Roughen
+            | Tool::SegmentDelete
+            | Tool::ShapeRecognition
+            | Tool::Sketch
+            | Tool::HorizontalVerticalDimension
+            | Tool::AngularDimension
+            | Tool::SegmentDimension
+            | Tool::Callout
+            | Tool::RightAngleConnector
+            | Tool::RoundedConnector
+            | Tool::AnchorEditing
+            | Tool::BlockShadow
+            | Tool::Envelope
+            | Tool::Extrude
+            | Tool::Distort
+            | Tool::AreaFill
+            | Tool::MeshFill
+            | Tool::OutlinePen
+            | Tool::OutlineColor => self.tools3_input(response, p, mods),
             Tool::Zoom => self.zoom_input(response, p, screen, mods),
             Tool::Pan => {
                 if response.dragged() {
@@ -139,6 +169,9 @@ impl App {
                 }
             }
             t if t.is_box_tool() => self.box_input(response, p, mods),
+            Tool::ThreePointRectangle | Tool::ThreePointEllipse | Tool::ThreePointCurve => {
+                self.three_point_input(response, p)
+            }
             Tool::Freehand => self.freehand_input(response, p),
             Tool::Bezier | Tool::Pen | Tool::Polyline | Tool::TwoPointLine | Tool::BSpline => {
                 self.curve_input(response, p, mods)
@@ -152,9 +185,9 @@ impl App {
                                 if let Ok((_, s)) = self.doc().shape(id) {
                                     if let Fill::Solid(c) = s.fill {
                                         self.eyedropper_color = Some(c);
-                                        self.status = format!(
-                                            "Sampled {}. Click an object to apply, Esc to cancel.",
-                                            crate::app::color_description(c)
+                                        self.status = crate::i18n::trf(
+                                            "status.sampled_color",
+                                            &[("c", &crate::app::color_description(c))],
                                         );
                                     }
                                 }
@@ -171,7 +204,7 @@ impl App {
                     }
                 }
             }
-            Tool::InteractiveFill | Tool::AreaFill => self.fill_input(response, p),
+            Tool::InteractiveFill => self.fill_input(response, p),
             Tool::Contour
             | Tool::Crop
             | Tool::Knife
@@ -181,13 +214,9 @@ impl App {
             | Tool::BrushStrokes
             | Tool::ParallelDimension
             | Tool::Connector => self.tools2_input(response, p, mods),
-            Tool::Blend
-            | Tool::Extrude
-            | Tool::Distort
-            | Tool::Envelope
-            | Tool::Smooth
-            | Tool::Smear
-            | Tool::Twirl => self.effects_input(response, p, mods),
+            Tool::Blend | Tool::Smooth | Tool::Smear | Tool::Twirl => {
+                self.effects_input(response, p, mods)
+            }
             Tool::DropShadow => {
                 if response.drag_started_by(PointerButton::Primary) {
                     if let Some(id) = self.hit_test(p) {
@@ -221,6 +250,21 @@ impl App {
                 }
             }
             Tool::Transparency => {
+                if response.drag_started_by(PointerButton::Primary) {
+                    if let Some(id) = self.hit_test(p) {
+                        self.select(vec![id]);
+                        self.drag = Drag::FillGradient {
+                            shape: id,
+                            start: p,
+                            current: p,
+                        };
+                    }
+                }
+                if response.dragged_by(PointerButton::Primary) {
+                    if let Drag::FillGradient { current, .. } = &mut self.drag {
+                        *current = p;
+                    }
+                }
                 if response.clicked() {
                     match self.hit_test(p) {
                         Some(id) => {
@@ -242,7 +286,10 @@ impl App {
             }
             _ => {
                 if response.clicked() {
-                    self.status = format!("{} tool is not implemented yet", self.tool.name());
+                    self.status = crate::i18n::trf(
+                        "status.tool_not_implemented",
+                        &[("t", &self.tool.name())],
+                    );
                 }
             }
         }
@@ -328,12 +375,7 @@ impl App {
                     .ok()
                     .and_then(|pg| pg.guides.get(index).copied())
                 {
-                    Some(tracedraw_core::document::Guide::Horizontal { .. }) => {
-                        tracedraw_core::document::Guide::Horizontal { y: p.y }
-                    }
-                    Some(tracedraw_core::document::Guide::Vertical { .. }) => {
-                        tracedraw_core::document::Guide::Vertical { x: p.x }
-                    }
+                    Some(g) => g.through(p),
                     None => return,
                 };
                 self.move_guide(index, guide);
@@ -518,6 +560,31 @@ impl App {
         }
     }
 
+    /// 3-point rectangle, ellipse and curve: drag the base segment, then
+    /// click the third point (Esc cancels, see `keyboard`).
+    fn three_point_input(&mut self, response: &Response, p: Point) {
+        let p = self.snap_point(p);
+        if self.three_point_base.is_some() {
+            if response.clicked_by(PointerButton::Primary) {
+                if let Some((a, b)) = self.three_point_base.take() {
+                    self.finish_three_point(a, b, p);
+                }
+            }
+            return;
+        }
+        if response.drag_started_by(PointerButton::Primary) {
+            self.drag = Drag::ThreePointBase {
+                start: p,
+                current: p,
+            };
+        }
+        if response.dragged_by(PointerButton::Primary) {
+            if let Drag::ThreePointBase { current, .. } = &mut self.drag {
+                *current = p;
+            }
+        }
+    }
+
     fn freehand_input(&mut self, response: &Response, p: Point) {
         if response.drag_started_by(PointerButton::Primary) {
             self.drag = Drag::Freehand { points: vec![p] };
@@ -645,9 +712,32 @@ impl App {
                 }
             }
             Drag::Connector { from, current } if self.tool == Tool::Blend => {
-                self.finish_blend(from, current)
+                if let Some(to) = self.hit_test(current).filter(|id| *id != from) {
+                    self.selection = vec![from, to];
+                    let steps = self.blend_steps;
+                    self.blend_selection(steps, 0.0, 0.0, 0.0);
+                }
+            }
+            Drag::Connector { from, current }
+                if matches!(self.tool, Tool::RightAngleConnector | Tool::AnchorEditing) =>
+            {
+                self.finish_elbow_connector(from, current, false)
+            }
+            Drag::Connector { from, current } if self.tool == Tool::RoundedConnector => {
+                self.finish_elbow_connector(from, current, true)
             }
             Drag::Connector { from, current } => self.finish_connector(from, current),
+            Drag::Freehand { points } if self.tool == Tool::ShapeRecognition => {
+                self.finish_shape_recognition(points)
+            }
+            Drag::Freehand { points } if self.tool == Tool::Sketch => {
+                self.finish_sketch(points)
+            }
+            Drag::ThreePointBase { start, current } => {
+                if (current - start).hypot() > 0.05 {
+                    self.three_point_base = Some((start, current));
+                }
+            }
             Drag::TextFrame { start, current } => {
                 let r = Rect::from_points(start, current);
                 if r.width() > 2.0 && r.height() > 2.0 {
@@ -687,7 +777,18 @@ impl App {
                 }
             }
             Drag::Freehand { points } if self.tool == Tool::BrushStrokes => {
-                self.finish_brush_strokes(points)
+                let shapes = self.media_shapes(&points);
+                if let Some(layer) = self.active_layer() {
+                    let ids: Vec<ShapeId> = shapes.iter().map(|s| s.id).collect();
+                    let cmds: Vec<Command> = shapes
+                        .into_iter()
+                        .map(|s| Command::AddShape { layer, shape: s })
+                        .collect();
+                    if !cmds.is_empty() {
+                        let _ = self.engine.run_batch("Brush Strokes", &cmds);
+                        self.selection = ids;
+                    }
+                }
             }
             Drag::Freehand { points } if self.tool == Tool::FreeformPick => {
                 self.finish_lasso(points)
@@ -703,6 +804,21 @@ impl App {
                     }) {
                         self.select(vec![id]);
                     }
+                }
+            }
+            Drag::FillGradient {
+                shape,
+                start,
+                current,
+            } if self.tool == Tool::Transparency => {
+                if (current - start).hypot() > 0.5 {
+                    let angle = (current - start).atan2().to_degrees();
+                    self.transparency_default.kind = 1;
+                    self.transparency_default.mask =
+                        Fill::linear(Color::WHITE, Color::BLACK, angle);
+                    self.selection = vec![shape];
+                    let s = self.transparency_default.clone();
+                    self.apply_transparency(&s);
                 }
             }
             Drag::FillGradient {
@@ -812,6 +928,69 @@ impl App {
     }
 
     pub fn keyboard(&mut self, ctx: &egui::Context) {
+        // Table cell typing has priority while a cell is active.
+        if self.table_edit.is_some() && self.tool == Tool::Table {
+            let mut text = self
+                .table_edit
+                .as_ref()
+                .map(|e| e.text.clone())
+                .unwrap_or_default();
+            let mut changed = false;
+            let mut finish = false;
+            let mut tab: Option<bool> = None;
+            ctx.input(|i| {
+                for ev in &i.events {
+                    match ev {
+                        egui::Event::Text(t) => {
+                            text.push_str(t);
+                            changed = true;
+                        }
+                        egui::Event::Key {
+                            key: Key::Backspace,
+                            pressed: true,
+                            ..
+                        } => {
+                            text.pop();
+                            changed = true;
+                        }
+                        egui::Event::Key {
+                            key: Key::Tab,
+                            pressed: true,
+                            modifiers,
+                            ..
+                        } => tab = Some(modifiers.shift),
+                        egui::Event::Key {
+                            key: Key::Enter,
+                            pressed: true,
+                            modifiers,
+                            ..
+                        } if !modifiers.shift => tab = Some(false),
+                        egui::Event::Key {
+                            key: Key::Escape,
+                            pressed: true,
+                            ..
+                        } => finish = true,
+                        _ => {}
+                    }
+                }
+            });
+            if changed {
+                if let Some(e) = self.table_edit.as_mut() {
+                    e.text = text;
+                }
+                self.table_commit_text();
+            }
+            if let Some(back) = tab {
+                self.table_next_cell(back);
+            }
+            if finish {
+                self.table_commit_text();
+                self.table_edit = None;
+            }
+            if changed || tab.is_some() || finish {
+                return;
+            }
+        }
         // Text typing has priority.
         if let Some(mut te) = self.text_edit.clone() {
             let mut changed = false;
@@ -1014,12 +1193,20 @@ impl App {
                 }
             }
         }
-        // Tool shortcuts (no modifiers).
-        if input.modifiers.is_none() {
+        // Tool shortcuts: user overrides from Options, then the defaults.
+        if input.modifiers.is_none() || input.modifiers.shift_only() {
             for group in crate::tools::GROUPS {
                 for t in group.tools {
-                    if let Some((k, _)) = t.shortcut() {
-                        if input.key_pressed(k) {
+                    let label = self
+                        .settings
+                        .shortcuts
+                        .iter()
+                        .find(|(id, _)| id == t.id())
+                        .map(|(_, v)| v.clone())
+                        .or_else(|| t.shortcut().map(|s| s.to_string()));
+                    let Some(label) = label else { continue };
+                    if let Some((k, shift)) = Tool::parse_shortcut(&label) {
+                        if shift == input.modifiers.shift && input.key_pressed(k) {
                             self.set_tool(*t);
                         }
                     }

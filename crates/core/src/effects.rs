@@ -103,7 +103,8 @@ pub fn extrude(path: &BezPath, depth: Vec2) -> (Vec<BezPath>, BezPath) {
     (sides, back)
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "mode", rename_all = "lowercase")]
 pub enum Distort {
     /// Push (negative) or pull (positive) points toward/away from the centre.
     PushPull { amount: f64 },

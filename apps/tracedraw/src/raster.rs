@@ -24,6 +24,11 @@ struct Key {
 }
 
 impl Raster {
+    /// Drop the cached texture so the next frame re-renders.
+    pub fn invalidate(&mut self) {
+        self.key = None;
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn texture(
         &mut self,

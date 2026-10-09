@@ -5,7 +5,7 @@ use std::fmt::Write;
 use tracedraw_core::{
     document::{Shape, ShapeKind},
     geometry::{Affine, PathEl, Shape as _},
-    Document, Fill, LineCap, LineJoin,
+    Color, Document, Fill, LineCap, LineJoin,
 };
 
 pub fn page_to_svg(doc: &Document, page_index: usize) -> String {
@@ -25,7 +25,8 @@ pub fn page_to_svg(doc: &Document, page_index: usize) -> String {
     let mut gradient_defs = String::new();
     let mut body = String::new();
     let mut next_grad = 0usize;
-    for layer in &page.layers {
+    let layers = doc.layers_for_page(page.id).unwrap_or_default();
+    for layer in layers {
         if !layer.visible {
             continue;
         }
@@ -38,6 +39,7 @@ pub fn page_to_svg(doc: &Document, page_index: usize) -> String {
         for shape in &layer.shapes {
             write_shape(
                 shape,
+                &doc.symbols,
                 flip,
                 &mut body,
                 &mut gradient_defs,
@@ -57,6 +59,7 @@ pub fn page_to_svg(doc: &Document, page_index: usize) -> String {
 
 fn write_shape(
     shape: &Shape,
+    symbols: &[tracedraw_core::Symbol],
     parent: Affine,
     out: &mut String,
     defs: &mut String,
@@ -67,11 +70,66 @@ fn write_shape(
         return;
     }
     let pad = "  ".repeat(indent);
+    if !shape.effects.is_empty() {
+        let ev = tracedraw_core::live::evaluate(shape);
+        let _ = writeln!(
+            out,
+            "{pad}<g id=\"{}\" data-effects=\"{}\">",
+            shape.id.raw(),
+            shape.effects.len()
+        );
+        for b in &ev.below {
+            let mut b = b.clone();
+            b.effects.clear();
+            write_shape(&b, symbols, parent, out, defs, next_grad, indent + 1);
+        }
+        let mut main = ev.main.clone();
+        main.effects.clear();
+        // Lens and non-uniform transparency have no SVG equivalent here;
+        // approximate with the average opacity of the mask.
+        for e in &shape.effects {
+            match e {
+                tracedraw_core::live::Effect::Transparency { mask, .. } => {
+                    main.opacity *= average_luminance(mask) as f64;
+                }
+                tracedraw_core::live::Effect::Lens(tracedraw_core::live::Lens::Transparency {
+                    rate,
+                    color,
+                }) => {
+                    main.fill = Fill::Solid(*color);
+                    main.opacity *= rate / 100.0;
+                }
+                tracedraw_core::live::Effect::Lens(_) => {
+                    main.opacity *= 0.5;
+                }
+                _ => {}
+            }
+        }
+        write_shape(&main, symbols, parent, out, defs, next_grad, indent + 1);
+        for a in &ev.above {
+            let mut a = a.clone();
+            a.effects.clear();
+            write_shape(&a, symbols, parent, out, defs, next_grad, indent + 1);
+        }
+        let _ = writeln!(out, "{pad}</g>");
+        return;
+    }
     let transform = parent * shape.transform;
     if let ShapeKind::Group { children } = &shape.kind {
         let _ = writeln!(out, "{pad}<g id=\"{}\">", shape.id.raw());
         for c in children {
-            write_shape(c, transform, out, defs, next_grad, indent + 1);
+            write_shape(c, symbols, transform, out, defs, next_grad, indent + 1);
+        }
+        let _ = writeln!(out, "{pad}</g>");
+        return;
+    }
+    if matches!(
+        shape.kind,
+        ShapeKind::Table(_) | ShapeKind::SymbolInstance { .. }
+    ) {
+        let _ = writeln!(out, "{pad}<g id=\"{}\">", shape.id.raw());
+        for c in shape.expand(symbols) {
+            write_shape(&c, symbols, transform, out, defs, next_grad, indent + 1);
         }
         let _ = writeln!(out, "{pad}</g>");
         return;
@@ -172,6 +230,26 @@ fn write_shape(
                 tracedraw_core::style::lerp_color(t.color_a, t.color_b, 0.5).to_hex()
             )
         }
+        Fill::Mesh(m) => {
+            // Average of the node colours; the renderer image path is exact.
+            let n = m.nodes.len().max(1) as f32;
+            let mut acc = [0.0f32; 3];
+            for node in &m.nodes {
+                let [r, g, b] = node.color.to_rgb_f32();
+                acc[0] += r;
+                acc[1] += g;
+                acc[2] += b;
+            }
+            format!(
+                "fill=\"{}\"",
+                Color::Rgb {
+                    r: acc[0] / n,
+                    g: acc[1] / n,
+                    b: acc[2] / n
+                }
+                .to_hex()
+            )
+        }
     };
 
     let stroke_attr = match &shape.stroke {
@@ -219,6 +297,27 @@ fn fmt(v: f64) -> String {
         "0".into()
     } else {
         s.to_string()
+    }
+}
+
+/// Mean luminance (0..1) of a mask fill, for exporters without masks.
+pub fn average_luminance(fill: &Fill) -> f32 {
+    match fill {
+        Fill::None => 1.0,
+        Fill::Solid(c) => c.luminance(),
+        Fill::Fountain(f) => {
+            let n = f.stops.len().max(1) as f32;
+            f.stops.iter().map(|s| s.color.luminance()).sum::<f32>() / n
+        }
+        Fill::Pattern(tracedraw_core::Pattern::TwoColor { front, back, .. }) => {
+            (front.luminance() + back.luminance()) / 2.0
+        }
+        Fill::Pattern(_) => 0.5,
+        Fill::Texture(t) => (t.color_a.luminance() + t.color_b.luminance()) / 2.0,
+        Fill::Mesh(m) => {
+            let n = m.nodes.len().max(1) as f32;
+            m.nodes.iter().map(|x| x.color.luminance()).sum::<f32>() / n
+        }
     }
 }
 

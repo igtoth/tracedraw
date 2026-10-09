@@ -222,19 +222,132 @@ pub struct Texture {
     pub seed: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[serde(tag = "fill", rename_all = "lowercase")]
 pub enum Fill {
+    #[default]
     None,
     Solid(Color),
     Fountain(Fountain),
     Pattern(Pattern),
     Texture(Texture),
+    Mesh(Mesh),
 }
 
-impl Default for Fill {
-    fn default() -> Self {
-        Fill::None
+/// Mesh fill: a grid of (rows+1) x (cols+1) nodes with a colour each;
+/// cells are bilinear patches (Gouraud) clipped by the object.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Mesh {
+    pub rows: u32,
+    pub cols: u32,
+    /// Row-major, (rows+1)*(cols+1) nodes in local space.
+    pub nodes: Vec<MeshNode>,
+    #[serde(default)]
+    pub smooth: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct MeshNode {
+    pub pos: Point,
+    pub color: Color,
+    /// 1.0 = opaque.
+    #[serde(default = "one_f32")]
+    pub alpha: f32,
+}
+
+fn one_f32() -> f32 {
+    1.0
+}
+
+impl Mesh {
+    pub fn new(bounds: crate::geometry::Rect, rows: u32, cols: u32, base: Color) -> Self {
+        let mut nodes = Vec::new();
+        for r in 0..=rows {
+            for c in 0..=cols {
+                nodes.push(MeshNode {
+                    pos: Point::new(
+                        bounds.x0 + bounds.width() * c as f64 / cols as f64,
+                        bounds.y0 + bounds.height() * r as f64 / rows as f64,
+                    ),
+                    color: base,
+                    alpha: 1.0,
+                });
+            }
+        }
+        Mesh {
+            rows,
+            cols,
+            nodes,
+            smooth: false,
+        }
+    }
+
+    pub fn node(&self, r: u32, c: u32) -> Option<&MeshNode> {
+        self.nodes.get((r * (self.cols + 1) + c) as usize)
+    }
+
+    /// Index of the node nearest to `p` (local space).
+    pub fn nearest(&self, p: Point) -> Option<usize> {
+        self.nodes
+            .iter()
+            .enumerate()
+            .min_by(|a, b| {
+                (a.1.pos - p)
+                    .hypot()
+                    .partial_cmp(&(b.1.pos - p).hypot())
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .map(|(i, _)| i)
+    }
+
+    /// Add a grid line through the node nearest to `p` (double-click).
+    pub fn add_line(&mut self, p: Point) {
+        let Some(i) = self.nearest(p) else { return };
+        let cols = self.cols as usize + 1;
+        let (r, c) = (i / cols, i % cols);
+        // Insert a column after c (interpolating positions and colours),
+        // or a row after r, whichever edge is nearer.
+        let pos = self.nodes[i].pos;
+        let add_col = (p.x - pos.x).abs() >= (p.y - pos.y).abs() && c + 1 < cols;
+        if add_col {
+            let mut new_nodes = Vec::new();
+            for rr in 0..=self.rows as usize {
+                for cc in 0..cols {
+                    let n = self.nodes[rr * cols + cc];
+                    new_nodes.push(n);
+                    if cc == c {
+                        let next = self.nodes[rr * cols + cc + 1];
+                        new_nodes.push(MeshNode {
+                            pos: n.pos.midpoint(next.pos),
+                            color: lerp_color(n.color, next.color, 0.5),
+                            alpha: (n.alpha + next.alpha) / 2.0,
+                        });
+                    }
+                }
+            }
+            self.cols += 1;
+            self.nodes = new_nodes;
+        } else if r < self.rows as usize {
+            let mut new_nodes = Vec::new();
+            for rr in 0..=self.rows as usize {
+                for cc in 0..cols {
+                    new_nodes.push(self.nodes[rr * cols + cc]);
+                }
+                if rr == r && rr < self.rows as usize {
+                    for cc in 0..cols {
+                        let n = self.nodes[rr * cols + cc];
+                        let next = self.nodes[(rr + 1) * cols + cc];
+                        new_nodes.push(MeshNode {
+                            pos: n.pos.midpoint(next.pos),
+                            color: lerp_color(n.color, next.color, 0.5),
+                            alpha: (n.alpha + next.alpha) / 2.0,
+                        });
+                    }
+                }
+            }
+            self.rows += 1;
+            self.nodes = new_nodes;
+        }
     }
 }
 
@@ -256,6 +369,7 @@ impl Fill {
             Fill::Pattern(Pattern::TwoColor { front, .. }) => Some(*front),
             Fill::Pattern(Pattern::Bitmap { .. }) => Some(Color::Gray { v: 0.5 }),
             Fill::Texture(t) => Some(t.color_a),
+            Fill::Mesh(m) => m.nodes.first().map(|n| n.color),
         }
     }
 }

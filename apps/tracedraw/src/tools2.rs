@@ -4,6 +4,7 @@
 //! keeps some of them live); see docs/parity.md.
 
 use crate::app::{App, Drag};
+use crate::i18n::tr;
 use crate::tools::Tool;
 use egui::{Modifiers, PointerButton, Response};
 use tracedraw_core::{
@@ -41,17 +42,17 @@ impl CommonShape {
         CommonShape::Lightning,
         CommonShape::Triangle,
     ];
-    pub fn name(self) -> &'static str {
-        match self {
-            CommonShape::RightArrow => "Arrow",
-            CommonShape::Heart => "Heart",
-            CommonShape::Diamond => "Diamond",
-            CommonShape::Banner => "Banner",
-            CommonShape::Callout => "Callout",
-            CommonShape::Cross => "Cross",
-            CommonShape::Lightning => "Lightning",
-            CommonShape::Triangle => "Triangle",
-        }
+    pub fn name(self) -> String {
+        tr(match self {
+            CommonShape::RightArrow => "shape.arrow",
+            CommonShape::Heart => "shape.heart",
+            CommonShape::Diamond => "shape.diamond",
+            CommonShape::Banner => "shape.banner",
+            CommonShape::Callout => "shape.callout",
+            CommonShape::Cross => "shape.cross",
+            CommonShape::Lightning => "shape.lightning",
+            CommonShape::Triangle => "shape.triangle",
+        })
     }
 
     /// Unit-square outline (0..1), y up.
@@ -231,9 +232,40 @@ impl App {
                     }
                 }
             }
-            Tool::Spiral | Tool::CommonShapes | Tool::Table => {
+            Tool::Table => {
+                // Click inside an existing table edits that cell; anywhere else
+                // drags out a new table.
+                let over_table = self.hit_test(p).and_then(|id| {
+                    let (_, s) = self.doc().shape(id).ok()?;
+                    matches!(s.kind, ShapeKind::Table(_)).then_some((id, s.transform))
+                });
+                if response.clicked_by(PointerButton::Primary) {
+                    if let Some((id, t)) = over_table {
+                        if self
+                            .table_edit
+                            .as_ref()
+                            .map(|e| e.shape != id)
+                            .unwrap_or(false)
+                        {
+                            self.table_commit_text();
+                        }
+                        let local = t.inverse() * p;
+                        self.table_click(id, local, mods.shift);
+                        self.select(vec![id]);
+                        self.status = tr("table.type_hint");
+                        return;
+                    }
+                    if self.table_edit.is_some() {
+                        self.table_commit_text();
+                        self.table_edit = None;
+                    }
+                }
+                if response.drag_started_by(PointerButton::Primary) && over_table.is_some() {
+                    return;
+                }
                 self.box_like_input(response, p, mods)
             }
+            Tool::Spiral | Tool::CommonShapes => self.box_like_input(response, p, mods),
             Tool::BrushStrokes => {
                 if response.drag_started_by(PointerButton::Primary) {
                     self.drag = Drag::Freehand { points: vec![p] };
@@ -622,14 +654,13 @@ impl App {
             ShapeKind::Text {
                 spans: vec![TextSpan {
                     text: label,
-                    font_family: self.text_font.clone(),
-                    size_pt: 10.0,
-                    bold: false,
-                    italic: false,
+                    ..TextSpan::new("", self.text_font.clone(), 10.0)
                 }],
                 origin: Point::ZERO,
                 frame: None,
                 align: tracedraw_core::TextAlign::Left,
+                para: Default::default(),
+                on_path: None,
             },
         );
         let angle = dir.atan2();
@@ -698,58 +729,12 @@ impl App {
 
     pub fn create_table(&mut self, rect: Rect) {
         let (rows, cols) = (self.table_rows.max(1), self.table_cols.max(1));
-        let Some(layer) = self.active_layer() else {
-            return;
-        };
-        let cw = rect.width() / cols as f64;
-        let ch = rect.height() / rows as f64;
-        let mut cmds = Vec::new();
-        let mut ids = Vec::new();
-        for r in 0..rows {
-            for c in 0..cols {
-                let cell = Rect::new(
-                    rect.x0 + cw * c as f64,
-                    rect.y0 + ch * r as f64,
-                    rect.x0 + cw * (c + 1) as f64,
-                    rect.y0 + ch * (r + 1) as f64,
-                );
-                let id = self.engine.new_shape_id();
-                let mut s = Shape::new(
-                    id,
-                    ShapeKind::Rect {
-                        rect: cell,
-                        radius: 0.0,
-                    },
-                );
-                s.fill = self.default_fill.clone();
-                s.stroke = Some(Stroke::hairline(Color::BLACK));
-                ids.push(id);
-                cmds.push(Command::AddShape { layer, shape: s });
-            }
+        let mut table =
+            tracedraw_core::Table::new(rect, rows, cols, Some(Stroke::hairline(Color::BLACK)));
+        table.cell_fill = self.default_fill.clone();
+        if let Some(id) = self.new_shape(ShapeKind::Table(table)) {
+            self.select(vec![id]);
         }
-        cmds.push(Command::Group { shapes: ids });
-        let _ = self.engine.run_batch("Table", &cmds);
-    }
-
-    pub fn finish_brush_strokes(&mut self, points: Vec<Point>) {
-        let pts = tracedraw_core::geometry::simplify(&points, 0.2);
-        let path = calligraphic_path(&pts, self.media_width, self.media_angle);
-        if path.elements().is_empty() {
-            return;
-        }
-        let Some(layer) = self.active_layer() else {
-            return;
-        };
-        let id = self.engine.new_shape_id();
-        let mut s = Shape::new(id, ShapeKind::Path { path, closed: true });
-        s.fill = match &self.default_stroke {
-            Some(st) => Fill::Solid(st.color),
-            None => Fill::Solid(Color::BLACK),
-        };
-        s.stroke = None;
-        s.name = Some("Brush Strokes".into());
-        self.run(Command::AddShape { layer, shape: s });
-        self.select(vec![id]);
     }
 
     /// Ctrl+Shift+Q: replace an outline by a filled object of its shape.
@@ -1049,59 +1034,6 @@ impl App {
         self.select(ids);
     }
 
-    pub fn finish_blend(&mut self, from: ShapeId, at: Point) {
-        let Some(to) = self.hit_test(at).filter(|id| *id != from) else {
-            return;
-        };
-        let (Ok((_, a)), Ok((_, b))) = (self.doc().shape(from), self.doc().shape(to)) else {
-            return;
-        };
-        let (a, b) = (a.clone(), b.clone());
-        let steps = self.blend_steps.max(1) as usize;
-        let mids = tracedraw_core::effects::blend(&a.page_path(), &b.page_path(), steps, 96);
-        if mids.is_empty() {
-            self.status = "Blend needs two closed objects".into();
-            return;
-        }
-        let Some(layer) = self.active_layer() else {
-            return;
-        };
-        let fa = match &a.fill {
-            Fill::Solid(c) => Some(*c),
-            _ => None,
-        };
-        let fb = match &b.fill {
-            Fill::Solid(c) => Some(*c),
-            _ => None,
-        };
-        let mut cmds = Vec::new();
-        let mut ids = vec![from];
-        for (k, path) in mids.into_iter().enumerate() {
-            let t = (k + 1) as f32 / (steps + 1) as f32;
-            let id = self.engine.new_shape_id();
-            let mut s = Shape::new(id, ShapeKind::Path { path, closed: true });
-            s.fill = match (fa, fb) {
-                (Some(x), Some(y)) => Fill::Solid(lerp_color(x, y, t)),
-                _ => a.fill.clone(),
-            };
-            s.stroke = match (&a.stroke, &b.stroke) {
-                (Some(x), Some(y)) => {
-                    let mut st = x.clone();
-                    st.color = lerp_color(x.color, y.color, t);
-                    st.width = x.width + (y.width - x.width) * t as f64;
-                    Some(st)
-                }
-                (x, _) => x.clone(),
-            };
-            s.opacity = a.opacity + (b.opacity - a.opacity) * t as f64;
-            ids.push(id);
-            cmds.push(Command::AddShape { layer, shape: s });
-        }
-        ids.push(to);
-        cmds.push(Command::Group { shapes: ids });
-        let _ = self.engine.run_batch("Blend", &cmds);
-    }
-
     pub fn apply_extrude(&mut self) {
         let shapes = self.selected_shapes();
         let Some(layer) = self.active_layer() else {
@@ -1109,7 +1041,7 @@ impl App {
         };
         let depth = self.extrude_depth;
         if depth.hypot() < 0.1 {
-            self.status = "Drag on the object to set the extrusion depth".into();
+            self.status = tr("status.extrude_drag_hint");
             return;
         }
         let mut cmds = Vec::new();

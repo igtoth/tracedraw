@@ -7,12 +7,19 @@ use tracedraw_core::{
     Command,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SnapSettings {
     pub grid: bool,
     pub guides: bool,
     pub objects: bool,
     pub page: bool,
+    pub pixels: bool,
+    pub baseline_grid: bool,
+    pub alignment_guides: bool,
+    pub dynamic_guides: bool,
+    /// Alt+Q: all snapping off.
+    pub off: bool,
+    pub grid_mm: f64,
 }
 
 impl Default for SnapSettings {
@@ -22,6 +29,12 @@ impl Default for SnapSettings {
             guides: true,
             objects: true,
             page: true,
+            pixels: false,
+            baseline_grid: false,
+            alignment_guides: true,
+            dynamic_guides: false,
+            off: false,
+            grid_mm: GRID_MM,
         }
     }
 }
@@ -49,6 +62,7 @@ impl App {
                     match g {
                         Guide::Horizontal { y } => ys.push(*y),
                         Guide::Vertical { x } => xs.push(*x),
+                        Guide::Angled { .. } => {}
                     }
                 }
             }
@@ -83,7 +97,15 @@ impl App {
             }
         }
         if best.is_none() && self.snap.grid {
-            let g = (v / GRID_MM).round() * GRID_MM;
+            let step = self.snap.grid_mm.max(0.01);
+            let g = (v / step).round() * step;
+            if (g - v).abs() <= tol {
+                return Some(g);
+            }
+        }
+        if best.is_none() && self.snap.pixels {
+            let step = 25.4 / 96.0;
+            let g = (v / step).round() * step;
             if (g - v).abs() <= tol {
                 return Some(g);
             }
@@ -97,10 +119,34 @@ impl App {
             return p;
         }
         let (xs, ys) = self.snap_candidates(&[]);
-        Point::new(
+        let axis = Point::new(
             self.snap_axis(p.x, &xs).unwrap_or(p.x),
             self.snap_axis(p.y, &ys).unwrap_or(p.y),
-        )
+        );
+        if axis != p || !self.snap.guides {
+            return axis;
+        }
+        // Angled guides: project onto the nearest one within tolerance.
+        let tol = self.snap_tolerance();
+        if let Ok(page) = self.doc().page(self.page) {
+            let mut best: Option<(f64, Point)> = None;
+            for g in &page.guides {
+                if let Guide::Angled { x, y, angle } = g {
+                    let d = g.distance(p).abs();
+                    if d <= tol && best.map(|b| d < b.0).unwrap_or(true) {
+                        let a = angle.to_radians();
+                        let dir = Vec2::new(a.cos(), a.sin());
+                        let o = Point::new(*x, *y);
+                        let t = (p - o).dot(dir);
+                        best = Some((d, o + dir * t));
+                    }
+                }
+            }
+            if let Some((_, q)) = best {
+                return q;
+            }
+        }
+        axis
     }
 
     /// Snap a translation of the selection so an edge or centre of its
@@ -133,7 +179,12 @@ impl App {
     }
 
     pub fn snap_enabled(&self) -> bool {
-        self.snap.grid || self.snap.guides || self.snap.objects || self.snap.page
+        !self.snap.off
+            && (self.snap.grid
+                || self.snap.guides
+                || self.snap.objects
+                || self.snap.page
+                || self.snap.pixels)
     }
 
     // ----- guidelines ---------------------------------------------------------
@@ -141,10 +192,7 @@ impl App {
     pub fn guide_at(&self, p: Point) -> Option<usize> {
         let tol = 4.0 / self.view.zoom as f64;
         let page = self.doc().page(self.page).ok()?;
-        page.guides.iter().position(|g| match g {
-            Guide::Horizontal { y } => (y - p.y).abs() <= tol,
-            Guide::Vertical { x } => (x - p.x).abs() <= tol,
-        })
+        page.guides.iter().position(|g| g.distance(p).abs() <= tol)
     }
 
     pub fn add_guide(&mut self, guide: Guide) {

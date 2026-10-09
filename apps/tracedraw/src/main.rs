@@ -4,15 +4,30 @@
 //! TraceDraw desktop app: a thin egui shell over the engine.
 
 mod app;
+mod barcode;
+mod bitmap_fx;
 mod canvas;
+mod effects_ui;
+mod export;
+mod i18n;
 mod interaction;
+mod interaction2;
+mod lens;
+mod media;
 mod ops;
+mod ops2;
+mod palette;
 mod raster;
+mod scripting;
+mod settings;
 mod shape_tool;
 mod snap;
+mod spell;
+mod table;
 mod theme;
 mod tools;
 mod tools2;
+mod trace;
 mod ui;
 mod view;
 

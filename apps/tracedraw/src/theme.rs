@@ -60,3 +60,84 @@ pub fn visuals() -> Visuals {
     v.menu_corner_radius = 2.0.into();
     v
 }
+
+/// Register system fonts covering the scripts of the supported UI languages
+/// (CJK, Arabic, Devanagari, Bengali) as fallbacks after the bundled font,
+/// so menus render in every language on machines that have such fonts.
+pub fn install_fallback_fonts(ctx: &egui::Context) {
+    // Per script, the families to try in order; the first installed one wins.
+    let groups: &[&[&str]] = &[
+        // Arabic (also covered by many Latin system fonts).
+        &[
+            "Noto Sans Arabic",
+            "Noto Naskh Arabic",
+            "Segoe UI",
+            "Arial",
+            "DejaVu Sans",
+            "Geeza Pro",
+        ],
+        // Devanagari (Hindi).
+        &[
+            "Noto Sans Devanagari",
+            "Nirmala UI",
+            "Mangal",
+            "Kohinoor Devanagari",
+            "Lohit Devanagari",
+        ],
+        // Bengali.
+        &[
+            "Noto Sans Bengali",
+            "Nirmala UI",
+            "Vrinda",
+            "Kohinoor Bangla",
+            "Lohit Bengali",
+        ],
+        // Simplified Chinese and Japanese.
+        &[
+            "Noto Sans CJK SC",
+            "Noto Sans SC",
+            "Microsoft YaHei",
+            "PingFang SC",
+            "Source Han Sans SC",
+            "WenQuanYi Micro Hei",
+            "Noto Sans CJK JP",
+        ],
+        &[
+            "Noto Sans CJK JP",
+            "Noto Sans JP",
+            "Meiryo",
+            "Yu Gothic UI",
+            "Hiragino Sans",
+            "Source Han Sans",
+        ],
+        // Cyrillic is in the bundled font; Latin extended too.
+    ];
+    let fs = tracedraw_text::fonts();
+    let mut defs = egui::FontDefinitions::default();
+    let mut added = Vec::new();
+    for group in groups {
+        let Some((name, data, index)) = fs.first_face_data(group) else {
+            continue;
+        };
+        let key = format!("fallback-{name}");
+        if defs.font_data.contains_key(&key) {
+            continue;
+        }
+        let mut fd = egui::FontData::from_owned(data.as_ref().clone());
+        fd.index = index;
+        defs.font_data.insert(key.clone(), std::sync::Arc::new(fd));
+        added.push(key);
+    }
+    if added.is_empty() {
+        return;
+    }
+    for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
+        if let Some(list) = defs.families.get_mut(&family) {
+            for k in &added {
+                list.push(k.clone());
+            }
+        }
+    }
+    log::info!("UI fallback fonts: {}", added.join(", "));
+    ctx.set_fonts(defs);
+}

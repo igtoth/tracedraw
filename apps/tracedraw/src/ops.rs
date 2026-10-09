@@ -178,6 +178,38 @@ impl App {
         }
     }
 
+    pub fn set_visible(&mut self, visible: bool) {
+        if self.selection.is_empty() {
+            return;
+        }
+        let shapes = self.selection.clone();
+        self.run(Command::SetVisible { shapes, visible });
+        if !visible {
+            self.selection.clear();
+        }
+    }
+
+    pub fn show_all(&mut self) {
+        let ids: Vec<_> = self
+            .doc()
+            .page(self.page)
+            .map(|p| {
+                p.layers
+                    .iter()
+                    .flat_map(|l| &l.shapes)
+                    .filter(|s| !s.visible)
+                    .map(|s| s.id)
+                    .collect()
+            })
+            .unwrap_or_default();
+        if !ids.is_empty() {
+            self.run(Command::SetVisible {
+                shapes: ids,
+                visible: true,
+            });
+        }
+    }
+
     pub fn unlock_all(&mut self) {
         let ids: Vec<_> = self
             .doc()
@@ -218,23 +250,15 @@ impl App {
         }
     }
 
-    pub fn set_opacity(&mut self, opacity: f64) {
-        if self.selection.is_empty() {
-            return;
-        }
-        let shapes = self.selection.clone();
-        if self.engine.undo_label() == Some("Transparency") {
-            let _ = self.engine.undo();
-        }
-        self.run(Command::SetOpacity { shapes, opacity });
-    }
-
     /// Import a raster image as a bitmap object at the page centre (96 dpi).
     pub fn import_bitmap(&mut self, path: &std::path::Path) {
         let img = match image::open(path) {
             Ok(i) => i.to_rgba8(),
             Err(e) => {
-                self.status = format!("Could not read {}: {e}", path.display());
+                self.status = crate::i18n::trf(
+                    "status.could_not_read",
+                    &[("p", &path.display().to_string()), ("e", &e.to_string())],
+                );
                 return;
             }
         };
@@ -243,7 +267,8 @@ impl App {
         if let Err(e) = image::DynamicImage::ImageRgba8(img)
             .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
         {
-            self.status = format!("Could not encode image: {e}");
+            self.status =
+                crate::i18n::trf("status.could_not_encode_image", &[("e", &e.to_string())]);
             return;
         }
         let mm_w = w as f64 * 25.4 / 96.0;
@@ -357,7 +382,7 @@ impl App {
                 .fold(paths[0].clone(), |acc, p| overlay(&acc, p, Op::Trim)),
         };
         if result.elements().is_empty() {
-            self.status = "Shaping produced an empty result".into();
+            self.status = crate::i18n::tr("status.shaping_empty");
             return;
         }
         let keep_sources = op == Shaping::Boundary;

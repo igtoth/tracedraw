@@ -303,8 +303,65 @@ impl App {
         }
     }
 
+    /// Reduce Nodes: simplify the selected curves (all nodes when none are selected).
+    pub fn reduce_selected_nodes(&mut self) {
+        let tol = 0.3 / self.view.zoom.max(0.05) as f64;
+        let ids: Vec<ShapeId> = if self.node_selection.is_empty() {
+            self.selection.clone()
+        } else {
+            let mut v: Vec<ShapeId> = self.node_selection.iter().map(|(id, _)| *id).collect();
+            v.dedup();
+            v
+        };
+        let mut cmds = Vec::new();
+        for id in ids {
+            let Some((path, closed, _)) = self.path_of(id) else {
+                continue;
+            };
+            let reduced = nodes::reduce_nodes(&path, tol);
+            if reduced.elements().len() < path.elements().len() {
+                cmds.push(Command::SetShapeKind {
+                    shape: id,
+                    kind: ShapeKind::Path {
+                        path: reduced,
+                        closed,
+                    },
+                });
+            }
+        }
+        if !cmds.is_empty() {
+            let _ = self.engine.run_batch("Reduce Nodes", &cmds);
+        }
+        self.node_selection.clear();
+    }
+
+    /// Align Nodes: move the selected nodes onto a common horizontal and/or vertical.
+    pub fn align_selected_nodes(&mut self, horizontal: bool, vertical: bool) {
+        let sel = self.node_selection.clone();
+        let mut by_shape: std::collections::BTreeMap<ShapeId, Vec<usize>> = Default::default();
+        for (id, i) in sel {
+            by_shape.entry(id).or_default().push(i);
+        }
+        let mut cmds = Vec::new();
+        for (id, idxs) in by_shape {
+            let Some((path, closed, _)) = self.path_of(id) else {
+                continue;
+            };
+            cmds.push(Command::SetShapeKind {
+                shape: id,
+                kind: ShapeKind::Path {
+                    path: nodes::align_nodes(&path, &idxs, horizontal, vertical),
+                    closed,
+                },
+            });
+        }
+        if !cmds.is_empty() {
+            let _ = self.engine.run_batch("Align Nodes", &cmds);
+        }
+    }
+
     pub fn delete_selected_nodes(&mut self) {
-        self.for_each_selected_node("Delete Nodes", |p, i| nodes::delete_node(p, i));
+        self.for_each_selected_node("Delete Nodes", nodes::delete_node);
         self.node_selection.clear();
     }
 
@@ -319,15 +376,15 @@ impl App {
     }
 
     pub fn selected_segments_to_line(&mut self) {
-        self.for_each_selected_node("To Line", |p, i| nodes::to_line(p, i));
+        self.for_each_selected_node("To Line", nodes::to_line);
     }
 
     pub fn selected_segments_to_curve(&mut self) {
-        self.for_each_selected_node("To Curve", |p, i| nodes::to_curve(p, i));
+        self.for_each_selected_node("To Curve", nodes::to_curve);
     }
 
     pub fn break_selected_nodes(&mut self) {
-        self.for_each_selected_node("Break Curve", |p, i| nodes::break_at(p, i));
+        self.for_each_selected_node("Break Curve", nodes::break_at);
         self.node_selection.clear();
     }
 
@@ -391,5 +448,115 @@ impl App {
         let (id, i) = *self.node_selection.first()?;
         let (path, _, _) = self.path_of(id)?;
         Some(nodes::node_type(&path, i))
+    }
+}
+
+impl App {
+    /// Join two selected end nodes (of the same or different curves).
+    pub fn join_selected_nodes(&mut self) {
+        if self.node_selection.len() != 2 {
+            return;
+        }
+        let (a, ia) = self.node_selection[0];
+        let (b, ib) = self.node_selection[1];
+        if a == b {
+            // Same curve: close it.
+            if let Some((path, _, _)) = self.path_of(a) {
+                let np = nodes::close_subpath(&path, ia.min(ib));
+                self.run(Command::SetShapeKind {
+                    shape: a,
+                    kind: ShapeKind::Path {
+                        path: np,
+                        closed: true,
+                    },
+                });
+            }
+            self.node_selection.clear();
+            return;
+        }
+        // Different curves: combine them with a connecting line.
+        self.selection = vec![a, b];
+        self.join_curves();
+        self.node_selection.clear();
+    }
+
+    /// Extract the subpath holding the first selected node into its own object.
+    pub fn extract_subpath(&mut self) {
+        let Some(&(id, index)) = self.node_selection.first() else {
+            return;
+        };
+        let Some((path, closed, _)) = self.path_of(id) else {
+            return;
+        };
+        // Find the subpath boundaries around `index`.
+        let els = path.elements();
+        let mut start = 0;
+        for (i, el) in els.iter().enumerate() {
+            if i > index {
+                break;
+            }
+            if matches!(el, tracedraw_core::geometry::PathEl::MoveTo(_)) {
+                start = i;
+            }
+        }
+        let mut end = els.len();
+        for (i, el) in els.iter().enumerate().skip(start + 1) {
+            if matches!(el, tracedraw_core::geometry::PathEl::MoveTo(_)) {
+                end = i;
+                break;
+            }
+        }
+        if start == 0 && end == els.len() {
+            return; // single subpath, nothing to extract
+        }
+        let mut extracted = tracedraw_core::BezPath::new();
+        for el in &els[start..end] {
+            extracted.push(*el);
+        }
+        let mut rest = tracedraw_core::BezPath::new();
+        for el in els[..start].iter().chain(els[end..].iter()) {
+            rest.push(*el);
+        }
+        let Ok((layer, src)) = self.doc().shape(id) else {
+            return;
+        };
+        let layer = layer.id;
+        let mut new_shape = src.clone();
+        new_shape.id = self.engine.new_shape_id();
+        new_shape.kind = ShapeKind::Path {
+            path: extracted,
+            closed,
+        };
+        let new_id = new_shape.id;
+        let cmds = vec![
+            Command::SetShapeKind {
+                shape: id,
+                kind: ShapeKind::Path { path: rest, closed },
+            },
+            Command::AddShape {
+                layer,
+                shape: new_shape,
+            },
+        ];
+        let _ = self.engine.run_batch("Extract Subpath", &cmds);
+        self.node_selection.clear();
+        self.selection = vec![new_id];
+    }
+
+    /// Object > Align with Pixel Grid: move the selection so its bounds
+    /// sit on whole 96 dpi pixels.
+    pub fn align_to_pixel_grid(&mut self) {
+        let px = 25.4 / 96.0;
+        for s in self.selected_shapes() {
+            let b = s.bounds();
+            let dx = (b.x0 / px).round() * px - b.x0;
+            let dy = (b.y0 / px).round() * px - b.y0;
+            if dx.abs() > 1e-9 || dy.abs() > 1e-9 {
+                self.run(Command::TransformShapes {
+                    shapes: vec![s.id],
+                    transform: tracedraw_core::Affine::translate((dx, dy)),
+                });
+            }
+        }
     }
 }

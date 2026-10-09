@@ -55,6 +55,13 @@ impl View {
     }
 
     /// Fit a page rect into the available screen rect with a margin.
+    /// Page-space rectangle currently visible in the canvas.
+    pub fn visible_page_rect(&self, screen: ERect) -> Rect {
+        let a = self.to_page(screen.min);
+        let b = self.to_page(screen.max);
+        Rect::from_points(a, b)
+    }
+
     pub fn fit(&mut self, page: Rect, screen: ERect) {
         let margin = 40.0;
         let zx = (screen.width() - 2.0 * margin) / page.width() as f32;

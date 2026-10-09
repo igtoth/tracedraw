@@ -3,6 +3,7 @@
 //! Left click sets the fill, right click sets the outline, the X removes it.
 
 use crate::app::App;
+use crate::i18n::tr;
 use crate::theme::Tokens;
 use egui::{Rect, Sense, Stroke, Ui, Vec2};
 
@@ -65,12 +66,10 @@ pub fn document_palette_row(app: &mut App, ui: &mut Ui) {
         );
         ui.add_space(8.0);
         ui.label(
-            egui::RichText::new(
-                "Drag colors (or objects) here to store these colors with your document",
-            )
-            .italics()
-            .color(Tokens::TEXT_DIM)
-            .size(11.0),
+            egui::RichText::new(tr("palette.document_hint"))
+                .italics()
+                .color(Tokens::TEXT_DIM)
+                .size(11.0),
         );
     });
 }
@@ -87,7 +86,7 @@ fn no_color_swatch(app: &mut App, ui: &mut Ui, sw: Vec2) {
         [r.left_bottom(), r.right_top()],
         Stroke::new(1.0, Tokens::TEXT_DIM),
     );
-    let resp = resp.on_hover_text("No fill (left click) / No outline (right click)");
+    let resp = resp.on_hover_text(tr("palette.no_color_tip"));
     if resp.clicked() {
         app.apply_fill(tracedraw_core::Fill::None);
     }

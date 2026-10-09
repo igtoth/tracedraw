@@ -1,6 +1,7 @@
 //! Standard toolbar and the context-sensitive property bar.
 
 use crate::app::{App, Units};
+use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
 use crate::tools::Tool;
 use crate::ui::icons;
@@ -8,7 +9,7 @@ use egui::{Ui, Vec2};
 use tracedraw_core::{
     document::{paper, ShapeKind},
     geometry::{Affine, Rect, Size},
-    Command,
+    Command, Fill,
 };
 
 fn tb_button(ui: &mut Ui, action: icons::Action, tip: &str, enabled: bool) -> bool {
@@ -37,6 +38,23 @@ fn tb_button(ui: &mut Ui, action: icons::Action, tip: &str, enabled: bool) -> bo
     resp.on_hover_text(tip).clicked() && enabled
 }
 
+/// Toolbar toggle: drawn pressed while `on`; returns true when clicked.
+fn tb_toggle(ui: &mut Ui, action: icons::Action, tip: &str, on: bool) -> bool {
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(24.0, 22.0), egui::Sense::click());
+    if on {
+        ui.painter().rect_filled(rect, 2.0, Tokens::TOOL_ACTIVE);
+    } else if resp.hovered() {
+        ui.painter().rect_filled(rect, 2.0, Tokens::TOOL_HOVER);
+    }
+    icons::draw_action(
+        ui.painter(),
+        egui::Rect::from_center_size(rect.center(), Vec2::splat(16.0)),
+        action,
+        Tokens::ICON,
+    );
+    resp.on_hover_text(tip).clicked()
+}
+
 fn vsep(ui: &mut Ui) {
     ui.add(egui::Separator::default().vertical().spacing(6.0));
 }
@@ -44,28 +62,30 @@ fn vsep(ui: &mut Ui) {
 pub fn standard_toolbar(app: &mut App, ui: &mut Ui) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 1.0;
-        if tb_button(ui, icons::Action::New, "New (Ctrl+N)", true) {
+        if tb_button(ui, icons::Action::New, &tr("toolbar.new"), true) {
             app.new_document();
         }
-        if tb_button(ui, icons::Action::Open, "Open (Ctrl+O)", true) {
+        if tb_button(ui, icons::Action::Open, &tr("toolbar.open"), true) {
             app.open_dialog();
         }
-        if tb_button(ui, icons::Action::Save, "Save (Ctrl+S)", true) {
+        if tb_button(ui, icons::Action::Save, &tr("toolbar.save"), true) {
             app.save(false);
         }
-        let _ = tb_button(ui, icons::Action::Print, "Print (Ctrl+P)", false);
+        if tb_button(ui, icons::Action::Print, &tr("toolbar.print"), true) {
+            app.dialog = crate::ui::dialogs::Dialog::Print(Default::default());
+        }
         vsep(ui);
         let has = !app.selection.is_empty();
-        if tb_button(ui, icons::Action::Cut, "Cut (Ctrl+X)", has) {
+        if tb_button(ui, icons::Action::Cut, &tr("toolbar.cut"), has) {
             app.cut();
         }
-        if tb_button(ui, icons::Action::Copy, "Copy (Ctrl+C)", has) {
+        if tb_button(ui, icons::Action::Copy, &tr("toolbar.copy"), has) {
             app.copy();
         }
         if tb_button(
             ui,
             icons::Action::Paste,
-            "Paste (Ctrl+V)",
+            &tr("toolbar.paste"),
             app.clipboard.is_some(),
         ) {
             app.paste();
@@ -74,7 +94,7 @@ pub fn standard_toolbar(app: &mut App, ui: &mut Ui) {
         if tb_button(
             ui,
             icons::Action::Undo,
-            "Undo (Ctrl+Z)",
+            &tr("toolbar.undo"),
             app.engine.undo_label().is_some(),
         ) {
             app.undo();
@@ -82,45 +102,52 @@ pub fn standard_toolbar(app: &mut App, ui: &mut Ui) {
         if tb_button(
             ui,
             icons::Action::Redo,
-            "Redo (Ctrl+Shift+Z)",
+            &tr("toolbar.redo"),
             app.engine.redo_label().is_some(),
         ) {
             app.redo();
         }
         vsep(ui);
-        if tb_button(ui, icons::Action::Import, "Import (Ctrl+I)", true) {
+        if tb_button(ui, icons::Action::Import, &tr("toolbar.import"), true) {
             app.import();
         }
-        if tb_button(ui, icons::Action::Export, "Export (Ctrl+E)", true) {
+        if tb_button(ui, icons::Action::Export, &tr("toolbar.export"), true) {
             app.export();
         }
-        let _ = tb_button(ui, icons::Action::Pdf, "Publish to PDF", false);
+        if tb_button(
+            ui,
+            icons::Action::Pdf,
+            &tr("menu.file.publish_to_pdf"),
+            true,
+        ) {
+            app.export_pdf();
+        }
         vsep(ui);
         // Zoom level combo.
         let mut pct = app.zoom_percent();
         let levels = [
-            "To Page",
-            "To Fit",
-            "To Selected",
-            "25%",
-            "50%",
-            "75%",
-            "100%",
-            "150%",
-            "200%",
-            "400%",
-            "800%",
+            tr("toolbar.zoom_to_page"),
+            tr("toolbar.zoom_to_fit"),
+            tr("toolbar.zoom_to_selected"),
+            "25%".to_string(),
+            "50%".to_string(),
+            "75%".to_string(),
+            "100%".to_string(),
+            "150%".to_string(),
+            "200%".to_string(),
+            "400%".to_string(),
+            "800%".to_string(),
         ];
         egui::ComboBox::from_id_salt("zoom_levels")
             .selected_text(format!("{:.0}%", pct))
             .width(80.0)
             .show_ui(ui, |ui| {
-                for l in levels {
+                for (i, l) in levels.iter().enumerate() {
                     if ui.selectable_label(false, l).clicked() {
-                        match l {
-                            "To Page" => app.zoom_to_page(),
-                            "To Fit" => app.zoom_to_fit(),
-                            "To Selected" => app.zoom_to_selection(),
+                        match i {
+                            0 => app.zoom_to_page(),
+                            1 => app.zoom_to_fit(),
+                            2 => app.zoom_to_selection(),
                             _ => {
                                 pct = l.trim_end_matches('%').parse().unwrap_or(100.0);
                                 app.set_zoom_percent(pct);
@@ -130,10 +157,133 @@ pub fn standard_toolbar(app: &mut App, ui: &mut Ui) {
                 }
             });
         vsep(ui);
-        let _ = tb_button(ui, icons::Action::Snap, "Snap To", false);
-        let _ = tb_button(ui, icons::Action::Options, "Options (Ctrl+J)", false);
+        if tb_button(
+            ui,
+            icons::Action::Fullscreen,
+            &tr("toolbar.fullscreen_preview"),
+            true,
+        ) {
+            app.fullscreen_preview = true;
+        }
+        if tb_toggle(
+            ui,
+            icons::Action::Snap,
+            &tr("menu.view.snap_off"),
+            app.snap.off,
+        ) {
+            app.snap.off = !app.snap.off;
+        }
+        ui.menu_button(tr("menu.view.snap_to"), |ui| {
+            ui.checkbox(&mut app.snap.pixels, tr("menu.view.snap_pixels"));
+            ui.checkbox(&mut app.snap.grid, tr("menu.view.snap_document_grid"));
+            ui.checkbox(
+                &mut app.snap.baseline_grid,
+                tr("menu.view.snap_baseline_grid"),
+            );
+            ui.checkbox(&mut app.snap.guides, tr("menu.view.snap_guidelines"));
+            ui.checkbox(&mut app.snap.objects, tr("menu.view.snap_objects"));
+            ui.checkbox(&mut app.snap.page, tr("menu.view.snap_page"));
+            ui.separator();
+            ui.checkbox(&mut app.snap.off, tr("toolbar.snap_off_shortcut"));
+        });
+        if tb_button(ui, icons::Action::Options, &tr("toolbar.options"), true) {
+            app.dialog = crate::ui::dialogs::Dialog::Options;
+        }
         vsep(ui);
-        let _ = tb_button(ui, icons::Action::Welcome, "Welcome Screen", false);
+        if tb_button(
+            ui,
+            icons::Action::Welcome,
+            &tr("menu.window.welcome_screen"),
+            true,
+        ) {
+            app.show_welcome = true;
+        }
+    });
+}
+
+/// Window > Toolbars > Text: font controls as a standalone bar.
+pub fn text_toolbar(app: &mut App, ui: &mut Ui) {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 4.0;
+        text_properties(app, ui);
+    });
+}
+
+/// Window > Toolbars > Zoom.
+pub fn zoom_toolbar(app: &mut App, ui: &mut Ui) {
+    ui.horizontal(|ui| {
+        for (label, pct) in [
+            ("25%", 25.0),
+            ("50%", 50.0),
+            ("100%", 100.0),
+            ("200%", 200.0),
+            ("400%", 400.0),
+        ] {
+            if ui.button(label).clicked() {
+                app.set_zoom_percent(pct);
+            }
+        }
+        vsep(ui);
+        if ui.button(tr("menu.view.zoom_in")).clicked() {
+            app.zoom_step(true);
+        }
+        if ui.button(tr("menu.view.zoom_out")).clicked() {
+            app.zoom_step(false);
+        }
+        if ui.button(tr("toolbar.zoom_to_page")).clicked() {
+            app.zoom_to_page();
+        }
+        if ui.button(tr("toolbar.zoom_to_fit")).clicked() {
+            app.zoom_to_fit();
+        }
+        if ui.button(tr("toolbar.zoom_to_selected")).clicked() {
+            app.zoom_to_selection();
+        }
+    });
+}
+
+/// Window > Toolbars > Transform.
+pub fn transform_toolbar(app: &mut App, ui: &mut Ui) {
+    ui.horizontal(|ui| {
+        let has = !app.selection.is_empty();
+        let mut b = app.selection_bounds().unwrap_or_default();
+        let (x0, y0, w, h) = (b.x0, b.y0, b.width(), b.height());
+        let mut changed = false;
+        changed |= unit_value(ui, app, "x", &mut b.x0, 0.5);
+        changed |= unit_value(ui, app, "y", &mut b.y0, 0.5);
+        let mut nw = w;
+        let mut nh = h;
+        changed |= unit_value(ui, app, "w", &mut nw, 0.5);
+        changed |= unit_value(ui, app, "h", &mut nh, 0.5);
+        if changed && has && w > 1e-9 && h > 1e-9 {
+            let t = tracedraw_core::Affine::translate((b.x0, b.y0))
+                * tracedraw_core::Affine::scale_non_uniform(nw / w, nh / h)
+                * tracedraw_core::Affine::translate((-x0, -y0));
+            app.transform_selection(t);
+        }
+        vsep(ui);
+        if ui
+            .add_enabled(has, egui::Button::new(tr("toolbar.mirror_h_short")))
+            .clicked()
+        {
+            app.mirror(true);
+        }
+        if ui
+            .add_enabled(has, egui::Button::new(tr("toolbar.mirror_v_short")))
+            .clicked()
+        {
+            app.mirror(false);
+        }
+        if ui
+            .add_enabled(has, egui::Button::new(tr("toolbar.rotate_90")))
+            .clicked()
+        {
+            let c = app.selection_bounds().unwrap_or_default().center();
+            app.transform_selection(tracedraw_core::Affine::rotate_about(
+                std::f64::consts::FRAC_PI_2,
+                c,
+            ));
+        }
     });
 }
 
@@ -165,34 +315,62 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
             Tool::Pick | Tool::FreeformPick if shapes.is_empty() => page_properties(app, ui),
             Tool::Pick | Tool::FreeformPick => object_properties(app, ui),
             Tool::Zoom | Tool::Pan => {
-                ui.label(egui::RichText::new("Zoom levels").color(Tokens::TEXT_DIM).size(11.0));
-                for (l, pct) in [("25%", 25.0), ("50%", 50.0), ("100%", 100.0), ("200%", 200.0), ("400%", 400.0)] {
+                ui.label(
+                    egui::RichText::new(tr("toolbar.zoom_levels"))
+                        .color(Tokens::TEXT_DIM)
+                        .size(11.0),
+                );
+                for (l, pct) in [
+                    ("25%", 25.0),
+                    ("50%", 50.0),
+                    ("100%", 100.0),
+                    ("200%", 200.0),
+                    ("400%", 400.0),
+                ] {
                     if ui.button(l).clicked() {
                         app.set_zoom_percent(pct);
                     }
                 }
                 vsep(ui);
-                if ui.button("Zoom to page").clicked() {
+                if ui.button(tr("menu.view.zoom_to_page")).clicked() {
                     app.zoom_to_page();
                 }
-                if ui.button("Zoom to fit").clicked() {
+                if ui.button(tr("menu.view.zoom_to_fit")).clicked() {
                     app.zoom_to_fit();
                 }
-                if ui.button("Zoom to selected").clicked() {
+                if ui.button(tr("menu.view.zoom_to_selected")).clicked() {
                     app.zoom_to_selection();
                 }
             }
             Tool::Rectangle | Tool::ThreePointRectangle => {
                 object_properties(app, ui);
                 vsep(ui);
-                ui.label(egui::RichText::new("Corner radius").color(Tokens::TEXT_DIM).size(11.0));
+                ui.label(
+                    egui::RichText::new(tr("toolbar.corner_radius"))
+                        .color(Tokens::TEXT_DIM)
+                        .size(11.0),
+                );
                 let mut r = app.rect_radius;
-                if ui.add(egui::DragValue::new(&mut r).speed(0.1).range(0.0..=500.0).suffix(" mm")).changed() {
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut r)
+                            .speed(0.1)
+                            .range(0.0..=500.0)
+                            .suffix(" mm"),
+                    )
+                    .changed()
+                {
                     app.rect_radius = r;
                     let cmds: Vec<Command> = shapes
                         .iter()
                         .filter_map(|s| match &s.kind {
-                            ShapeKind::Rect { rect, .. } => Some(Command::SetShapeKind { shape: s.id, kind: ShapeKind::Rect { rect: *rect, radius: r } }),
+                            ShapeKind::Rect { rect, .. } => Some(Command::SetShapeKind {
+                                shape: s.id,
+                                kind: ShapeKind::Rect {
+                                    rect: *rect,
+                                    radius: r,
+                                },
+                            }),
                             _ => None,
                         })
                         .collect();
@@ -210,21 +388,53 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                     Some(_) => 2,
                 };
                 let mut new_mode = mode;
-                for (i, n, tip) in [(0, "Ellipse", "Whole ellipse"), (1, "Pie", "Pie wedge"), (2, "Arc", "Open arc")] {
-                    if ui.selectable_label(mode == i, n).on_hover_text(tip).clicked() {
+                for (i, n, tip) in [
+                    (0, tr("toolbar.ellipse"), tr("toolbar.ellipse_tip")),
+                    (1, tr("toolbar.pie"), tr("toolbar.pie_tip")),
+                    (2, tr("toolbar.arc"), tr("toolbar.arc_tip")),
+                ] {
+                    if ui
+                        .selectable_label(mode == i, n)
+                        .on_hover_text(tip)
+                        .clicked()
+                    {
                         new_mode = i;
                     }
                 }
-                let mut arc = app.ellipse_arc.unwrap_or(tracedraw_core::EllipseArc { start_deg: 0.0, end_deg: 270.0, pie: true });
+                let mut arc = app.ellipse_arc.unwrap_or(tracedraw_core::EllipseArc {
+                    start_deg: 0.0,
+                    end_deg: 270.0,
+                    pie: true,
+                });
                 let mut changed = new_mode != mode;
                 if new_mode == 0 {
                     app.ellipse_arc = None;
                 } else {
                     arc.pie = new_mode == 1;
-                    ui.label(egui::RichText::new("Start").color(Tokens::TEXT_DIM).size(11.0));
-                    changed |= ui.add(egui::DragValue::new(&mut arc.start_deg).speed(1.0).suffix("°")).changed();
-                    ui.label(egui::RichText::new("End").color(Tokens::TEXT_DIM).size(11.0));
-                    changed |= ui.add(egui::DragValue::new(&mut arc.end_deg).speed(1.0).suffix("°")).changed();
+                    ui.label(
+                        egui::RichText::new(tr("toolbar.start"))
+                            .color(Tokens::TEXT_DIM)
+                            .size(11.0),
+                    );
+                    changed |= ui
+                        .add(
+                            egui::DragValue::new(&mut arc.start_deg)
+                                .speed(1.0)
+                                .suffix("°"),
+                        )
+                        .changed();
+                    ui.label(
+                        egui::RichText::new(tr("toolbar.end"))
+                            .color(Tokens::TEXT_DIM)
+                            .size(11.0),
+                    );
+                    changed |= ui
+                        .add(
+                            egui::DragValue::new(&mut arc.end_deg)
+                                .speed(1.0)
+                                .suffix("°"),
+                        )
+                        .changed();
                     app.ellipse_arc = Some(arc);
                 }
                 if changed {
@@ -232,7 +442,13 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                     let cmds: Vec<Command> = shapes
                         .iter()
                         .filter_map(|s| match &s.kind {
-                            ShapeKind::Ellipse { rect, .. } => Some(Command::SetShapeKind { shape: s.id, kind: ShapeKind::Ellipse { rect: *rect, arc: new_arc } }),
+                            ShapeKind::Ellipse { rect, .. } => Some(Command::SetShapeKind {
+                                shape: s.id,
+                                kind: ShapeKind::Ellipse {
+                                    rect: *rect,
+                                    arc: new_arc,
+                                },
+                            }),
                             _ => None,
                         })
                         .collect();
@@ -244,13 +460,25 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
             Tool::Polygon | Tool::Star => {
                 object_properties(app, ui);
                 vsep(ui);
-                ui.label(egui::RichText::new("Points").color(Tokens::TEXT_DIM).size(11.0));
+                ui.label(
+                    egui::RichText::new(tr("toolbar.points"))
+                        .color(Tokens::TEXT_DIM)
+                        .size(11.0),
+                );
                 let mut n = app.polygon_points;
-                let mut changed = ui.add(egui::DragValue::new(&mut n).range(3..=500)).changed();
+                let mut changed = ui
+                    .add(egui::DragValue::new(&mut n).range(3..=500))
+                    .changed();
                 let mut sh = app.star_sharpness;
                 if app.tool == Tool::Star {
-                    ui.label(egui::RichText::new("Sharpness").color(Tokens::TEXT_DIM).size(11.0));
-                    changed |= ui.add(egui::DragValue::new(&mut sh).speed(0.01).range(0.0..=0.95)).changed();
+                    ui.label(
+                        egui::RichText::new(tr("toolbar.sharpness"))
+                            .color(Tokens::TEXT_DIM)
+                            .size(11.0),
+                    );
+                    changed |= ui
+                        .add(egui::DragValue::new(&mut sh).speed(0.01).range(0.0..=0.95))
+                        .changed();
                 }
                 if changed {
                     app.polygon_points = n;
@@ -261,7 +489,11 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                         .filter_map(|s| match &s.kind {
                             ShapeKind::Polygon { rect, .. } => Some(Command::SetShapeKind {
                                 shape: s.id,
-                                kind: ShapeKind::Polygon { rect: *rect, points: n, sharpness: if star { sh } else { 0.0 } },
+                                kind: ShapeKind::Polygon {
+                                    rect: *rect,
+                                    points: n,
+                                    sharpness: if star { sh } else { 0.0 },
+                                },
                             }),
                             _ => None,
                         })
@@ -272,157 +504,394 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 }
             }
             Tool::Text => text_properties(app, ui),
-            Tool::Freehand | Tool::Bezier | Tool::Pen | Tool::Polyline | Tool::TwoPointLine | Tool::BSpline | Tool::ThreePointCurve => {
+            Tool::Freehand
+            | Tool::Bezier
+            | Tool::Pen
+            | Tool::Polyline
+            | Tool::TwoPointLine
+            | Tool::BSpline
+            | Tool::ThreePointCurve => {
                 object_properties(app, ui);
                 vsep(ui);
-                ui.label(egui::RichText::new("Enter or double-click finishes the curve, Esc cancels").color(Tokens::TEXT_DIM).size(11.0));
+                let hint = if app.tool == Tool::ThreePointCurve {
+                    tr("toolbar.three_point_hint")
+                } else {
+                    tr("toolbar.curve_finish_hint")
+                };
+                ui.label(egui::RichText::new(hint).color(Tokens::TEXT_DIM).size(11.0));
             }
             Tool::Blend => {
-                ui.label(egui::RichText::new("Blend steps").color(Tokens::TEXT_DIM).size(11.0));
+                ui.label(
+                    egui::RichText::new(tr("toolbar.blend_steps"))
+                        .color(Tokens::TEXT_DIM)
+                        .size(11.0),
+                );
                 ui.add(egui::DragValue::new(&mut app.blend_steps).range(1..=200));
-                ui.label(egui::RichText::new("Drag from one object to another").color(Tokens::TEXT_DIM).size(11.0));
+                ui.label(
+                    egui::RichText::new(tr("toolbar.drag_between_objects"))
+                        .color(Tokens::TEXT_DIM)
+                        .size(11.0),
+                );
             }
             Tool::Extrude => {
-                ui.label(egui::RichText::new("Extrude depth").color(Tokens::TEXT_DIM).size(11.0));
+                ui.label(
+                    egui::RichText::new(tr("toolbar.extrude_depth"))
+                        .color(Tokens::TEXT_DIM)
+                        .size(11.0),
+                );
                 let mut dx = app.extrude_depth.x;
                 let mut dy = app.extrude_depth.y;
                 ui.add(egui::DragValue::new(&mut dx).speed(0.2).suffix(" mm"));
                 ui.add(egui::DragValue::new(&mut dy).speed(0.2).suffix(" mm"));
                 app.extrude_depth = tracedraw_core::geometry::Vec2::new(dx, dy);
                 vsep(ui);
-                if ui.add_enabled(!shapes.is_empty(), egui::Button::new("Apply")).clicked() {
+                if ui
+                    .add_enabled(!shapes.is_empty(), egui::Button::new(tr("docker.apply")))
+                    .clicked()
+                {
                     app.apply_extrude();
                 }
             }
             Tool::Distort | Tool::Envelope => {
                 use crate::tools2::DistortMode;
-                for (m, n) in [(DistortMode::PushPull, "Push and Pull"), (DistortMode::Zipper, "Zipper"), (DistortMode::Twister, "Twister")] {
+                for (m, n) in [
+                    (DistortMode::PushPull, tr("toolbar.push_pull")),
+                    (DistortMode::Zipper, tr("toolbar.zipper")),
+                    (DistortMode::Twister, tr("toolbar.twister")),
+                ] {
                     if ui.selectable_label(app.distort_mode == m, n).clicked() {
                         app.distort_mode = m;
                     }
                 }
-                ui.label(egui::RichText::new("Amplitude").color(Tokens::TEXT_DIM).size(11.0));
-                ui.add(egui::DragValue::new(&mut app.distort_amount).speed(1.0).range(-200.0..=200.0));
+                ui.label(
+                    egui::RichText::new(tr("toolbar.amplitude"))
+                        .color(Tokens::TEXT_DIM)
+                        .size(11.0),
+                );
+                ui.add(
+                    egui::DragValue::new(&mut app.distort_amount)
+                        .speed(1.0)
+                        .range(-200.0..=200.0),
+                );
                 if app.distort_mode == DistortMode::Zipper {
-                    ui.label(egui::RichText::new("Frequency").color(Tokens::TEXT_DIM).size(11.0));
+                    ui.label(
+                        egui::RichText::new(tr("toolbar.frequency"))
+                            .color(Tokens::TEXT_DIM)
+                            .size(11.0),
+                    );
                     ui.add(egui::DragValue::new(&mut app.distort_frequency).range(1..=100));
                 }
                 vsep(ui);
-                if ui.add_enabled(!shapes.is_empty(), egui::Button::new("Apply")).clicked() {
+                if ui
+                    .add_enabled(!shapes.is_empty(), egui::Button::new(tr("docker.apply")))
+                    .clicked()
+                {
                     app.apply_distort();
                 }
                 if app.tool == Tool::Envelope {
-                    ui.label(egui::RichText::new("Envelope presets are not implemented yet; distortions are available here").color(Tokens::TEXT_DIM).size(11.0));
+                    ui.label(
+                        egui::RichText::new(tr("toolbar.envelope_presets_hint"))
+                            .color(Tokens::TEXT_DIM)
+                            .size(11.0),
+                    );
                 }
             }
             Tool::Smooth | Tool::Smear | Tool::Twirl => {
-                ui.label(egui::RichText::new("Nib size").color(Tokens::TEXT_DIM).size(11.0));
-                ui.add(egui::DragValue::new(&mut app.brush_radius).speed(0.5).range(1.0..=200.0).suffix(" mm"));
-                ui.label(egui::RichText::new("Drag over a selected object").color(Tokens::TEXT_DIM).size(11.0));
+                ui.label(
+                    egui::RichText::new(tr("toolbar.nib_size"))
+                        .color(Tokens::TEXT_DIM)
+                        .size(11.0),
+                );
+                ui.add(
+                    egui::DragValue::new(&mut app.brush_radius)
+                        .speed(0.5)
+                        .range(1.0..=200.0)
+                        .suffix(" mm"),
+                );
+                ui.label(
+                    egui::RichText::new(tr("toolbar.drag_over_selected"))
+                        .color(Tokens::TEXT_DIM)
+                        .size(11.0),
+                );
             }
             Tool::Contour => {
                 use crate::tools2::ContourDirection;
-                ui.label(egui::RichText::new("Contour").color(Tokens::TEXT_DIM).size(11.0));
-                for (d, n) in [(ContourDirection::Inside, "Inside"), (ContourDirection::Outside, "Outside")] {
+                ui.label(
+                    egui::RichText::new(tr("docker.contour"))
+                        .color(Tokens::TEXT_DIM)
+                        .size(11.0),
+                );
+                for (d, n) in [
+                    (ContourDirection::Inside, tr("docker.inside")),
+                    (ContourDirection::Outside, tr("docker.outside")),
+                ] {
                     if ui.selectable_label(app.contour_direction == d, n).clicked() {
                         app.contour_direction = d;
                     }
                 }
-                ui.label(egui::RichText::new("Steps").color(Tokens::TEXT_DIM).size(11.0));
+                ui.label(
+                    egui::RichText::new(tr("docker.steps"))
+                        .color(Tokens::TEXT_DIM)
+                        .size(11.0),
+                );
                 ui.add(egui::DragValue::new(&mut app.contour_steps).range(1..=50));
-                ui.label(egui::RichText::new("Offset").color(Tokens::TEXT_DIM).size(11.0));
-                ui.add(egui::DragValue::new(&mut app.contour_offset).speed(0.1).range(0.05..=200.0).suffix(" mm"));
+                ui.label(
+                    egui::RichText::new(tr("docker.offset"))
+                        .color(Tokens::TEXT_DIM)
+                        .size(11.0),
+                );
+                ui.add(
+                    egui::DragValue::new(&mut app.contour_offset)
+                        .speed(0.1)
+                        .range(0.05..=200.0)
+                        .suffix(" mm"),
+                );
                 let [r, g, b] = app.contour_color.to_rgb8();
                 let mut rgb = [r, g, b];
-                if ui.color_edit_button_srgb(&mut rgb).on_hover_text("Outermost contour colour").changed() {
+                if ui
+                    .color_edit_button_srgb(&mut rgb)
+                    .on_hover_text(tr("toolbar.outermost_contour_color"))
+                    .changed()
+                {
                     app.contour_color = tracedraw_core::Color::rgb8(rgb[0], rgb[1], rgb[2]);
                 }
                 vsep(ui);
-                if ui.add_enabled(!shapes.is_empty(), egui::Button::new("Apply")).clicked() {
+                if ui
+                    .add_enabled(!shapes.is_empty(), egui::Button::new(tr("docker.apply")))
+                    .clicked()
+                {
                     app.apply_contour();
                 }
                 if shapes.is_empty() {
-                    ui.label(egui::RichText::new("Select an object, drag to set the offset, then Apply").color(Tokens::TEXT_DIM).size(11.0));
+                    ui.label(
+                        egui::RichText::new(tr("toolbar.contour_hint"))
+                            .color(Tokens::TEXT_DIM)
+                            .size(11.0),
+                    );
                 }
             }
             Tool::Crop => {
-                ui.label(egui::RichText::new("Drag a rectangle to crop the selection (or everything) to it").color(Tokens::TEXT_DIM).size(11.0));
+                ui.label(
+                    egui::RichText::new(tr("toolbar.crop_hint"))
+                        .color(Tokens::TEXT_DIM)
+                        .size(11.0),
+                );
             }
             Tool::Knife => {
-                ui.label(egui::RichText::new("Drag a line across objects to cut them in two").color(Tokens::TEXT_DIM).size(11.0));
+                ui.label(
+                    egui::RichText::new(tr("toolbar.knife_hint"))
+                        .color(Tokens::TEXT_DIM)
+                        .size(11.0),
+                );
             }
             Tool::Spiral => {
-                ui.label(egui::RichText::new("Revolutions").color(Tokens::TEXT_DIM).size(11.0));
+                ui.label(
+                    egui::RichText::new(tr("toolbar.revolutions"))
+                        .color(Tokens::TEXT_DIM)
+                        .size(11.0),
+                );
                 ui.add(egui::DragValue::new(&mut app.spiral_revolutions).range(1..=100));
-                if ui.selectable_label(!app.spiral_logarithmic, "Symmetrical").clicked() {
+                if ui
+                    .selectable_label(!app.spiral_logarithmic, tr("toolbar.symmetrical"))
+                    .clicked()
+                {
                     app.spiral_logarithmic = false;
                 }
-                if ui.selectable_label(app.spiral_logarithmic, "Logarithmic").clicked() {
+                if ui
+                    .selectable_label(app.spiral_logarithmic, tr("toolbar.logarithmic"))
+                    .clicked()
+                {
                     app.spiral_logarithmic = true;
                 }
             }
+            Tool::GraphPaper => {
+                ui.label(
+                    egui::RichText::new(tr("toolbar.rows"))
+                        .color(Tokens::TEXT_DIM)
+                        .size(11.0),
+                );
+                ui.add(egui::DragValue::new(&mut app.graph_rows).range(1..=99));
+                ui.label(
+                    egui::RichText::new(tr("toolbar.columns"))
+                        .color(Tokens::TEXT_DIM)
+                        .size(11.0),
+                );
+                ui.add(egui::DragValue::new(&mut app.graph_cols).range(1..=99));
+            }
+            Tool::ActionLines => {
+                ui.label(
+                    egui::RichText::new(tr("toolbar.lines"))
+                        .color(Tokens::TEXT_DIM)
+                        .size(11.0),
+                );
+                ui.add(egui::DragValue::new(&mut app.action_lines_count).range(2..=500));
+                if ui
+                    .selectable_label(!app.action_lines_radial, tr("toolbar.parallel"))
+                    .clicked()
+                {
+                    app.action_lines_radial = false;
+                }
+                if ui
+                    .selectable_label(app.action_lines_radial, tr("toolbar.radial"))
+                    .clicked()
+                {
+                    app.action_lines_radial = true;
+                }
+            }
             Tool::CommonShapes => {
-                ui.label(egui::RichText::new("Shape").color(Tokens::TEXT_DIM).size(11.0));
-                egui::ComboBox::from_id_salt("common_shape").selected_text(app.common_shape.name()).show_ui(ui, |ui| {
-                    for cs in crate::tools2::CommonShape::ALL {
-                        if ui.selectable_label(app.common_shape == cs, cs.name()).clicked() {
-                            app.common_shape = cs;
+                ui.label(
+                    egui::RichText::new(tr("toolbar.shape"))
+                        .color(Tokens::TEXT_DIM)
+                        .size(11.0),
+                );
+                egui::ComboBox::from_id_salt("common_shape")
+                    .selected_text(app.common_shape.name())
+                    .show_ui(ui, |ui| {
+                        for cs in crate::tools2::CommonShape::ALL {
+                            if ui
+                                .selectable_label(app.common_shape == cs, cs.name())
+                                .clicked()
+                            {
+                                app.common_shape = cs;
+                            }
                         }
-                    }
-                });
-                ui.label(egui::RichText::new("Drag to draw").color(Tokens::TEXT_DIM).size(11.0));
+                    });
+                ui.label(
+                    egui::RichText::new(tr("toolbar.drag_to_draw"))
+                        .color(Tokens::TEXT_DIM)
+                        .size(11.0),
+                );
             }
             Tool::Table => {
-                ui.label(egui::RichText::new("Rows").color(Tokens::TEXT_DIM).size(11.0));
+                ui.label(
+                    egui::RichText::new(tr("toolbar.rows"))
+                        .color(Tokens::TEXT_DIM)
+                        .size(11.0),
+                );
                 ui.add(egui::DragValue::new(&mut app.table_rows).range(1..=100));
-                ui.label(egui::RichText::new("Columns").color(Tokens::TEXT_DIM).size(11.0));
+                ui.label(
+                    egui::RichText::new(tr("toolbar.columns"))
+                        .color(Tokens::TEXT_DIM)
+                        .size(11.0),
+                );
                 ui.add(egui::DragValue::new(&mut app.table_cols).range(1..=100));
-                ui.label(egui::RichText::new("Drag to draw the table").color(Tokens::TEXT_DIM).size(11.0));
+                ui.label(
+                    egui::RichText::new(tr("toolbar.drag_to_draw_table"))
+                        .color(Tokens::TEXT_DIM)
+                        .size(11.0),
+                );
             }
             Tool::BrushStrokes => {
-                ui.label(egui::RichText::new("Calligraphic").color(Tokens::TEXT_DIM).size(11.0));
-                ui.label(egui::RichText::new("Width").color(Tokens::TEXT_DIM).size(11.0));
-                ui.add(egui::DragValue::new(&mut app.media_width).speed(0.1).range(0.2..=50.0).suffix(" mm"));
-                ui.label(egui::RichText::new("Nib angle").color(Tokens::TEXT_DIM).size(11.0));
-                ui.add(egui::DragValue::new(&mut app.media_angle).speed(1.0).range(0.0..=180.0).suffix("°"));
+                ui.label(
+                    egui::RichText::new(tr("media.calligraphic"))
+                        .color(Tokens::TEXT_DIM)
+                        .size(11.0),
+                );
+                ui.label(
+                    egui::RichText::new(tr("toolbar.width"))
+                        .color(Tokens::TEXT_DIM)
+                        .size(11.0),
+                );
+                ui.add(
+                    egui::DragValue::new(&mut app.media_width)
+                        .speed(0.1)
+                        .range(0.2..=50.0)
+                        .suffix(" mm"),
+                );
+                ui.label(
+                    egui::RichText::new(tr("docker.nib_angle"))
+                        .color(Tokens::TEXT_DIM)
+                        .size(11.0),
+                );
+                ui.add(
+                    egui::DragValue::new(&mut app.media_angle)
+                        .speed(1.0)
+                        .range(0.0..=180.0)
+                        .suffix("°"),
+                );
             }
             Tool::ParallelDimension => {
                 let n = app.dimension_points.len();
                 let msg = match n {
-                    0 => "Click the first point",
-                    1 => "Click the second point",
-                    _ => "Click where the dimension line should sit",
+                    0 => tr("toolbar.dimension_first_point"),
+                    1 => tr("toolbar.dimension_second_point"),
+                    _ => tr("toolbar.dimension_place_line"),
                 };
                 ui.label(egui::RichText::new(msg).color(Tokens::TEXT_DIM).size(11.0));
             }
             Tool::Connector => {
-                ui.label(egui::RichText::new("Drag from one object to another").color(Tokens::TEXT_DIM).size(11.0));
+                ui.label(
+                    egui::RichText::new(tr("toolbar.drag_between_objects"))
+                        .color(Tokens::TEXT_DIM)
+                        .size(11.0),
+                );
             }
             Tool::DropShadow => {
                 let first = shapes.first().and_then(|s| s.shadow);
                 let mut sh = first.unwrap_or(app.shadow_default);
                 let mut changed = false;
-                ui.label(egui::RichText::new("Drop shadow").color(Tokens::TEXT_DIM).size(11.0));
-                if ui.add_enabled(!shapes.is_empty() && first.is_none(), egui::Button::new("Apply")).clicked() {
+                ui.label(
+                    egui::RichText::new(tr("toolbar.drop_shadow"))
+                        .color(Tokens::TEXT_DIM)
+                        .size(11.0),
+                );
+                if ui
+                    .add_enabled(
+                        !shapes.is_empty() && first.is_none(),
+                        egui::Button::new(tr("docker.apply")),
+                    )
+                    .clicked()
+                {
                     app.set_shadow(Some(sh), false);
                 }
                 let mut opacity = (sh.opacity * 100.0).round();
-                ui.label(egui::RichText::new("Opacity").color(Tokens::TEXT_DIM).size(11.0));
-                if ui.add(egui::DragValue::new(&mut opacity).range(0.0..=100.0).suffix(" %")).changed() {
+                ui.label(
+                    egui::RichText::new(tr("toolbar.opacity"))
+                        .color(Tokens::TEXT_DIM)
+                        .size(11.0),
+                );
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut opacity)
+                            .range(0.0..=100.0)
+                            .suffix(" %"),
+                    )
+                    .changed()
+                {
                     sh.opacity = opacity / 100.0;
                     changed = true;
                 }
-                ui.label(egui::RichText::new("Feathering").color(Tokens::TEXT_DIM).size(11.0));
+                ui.label(
+                    egui::RichText::new(tr("toolbar.feathering"))
+                        .color(Tokens::TEXT_DIM)
+                        .size(11.0),
+                );
                 let mut blur = sh.blur;
-                if ui.add(egui::DragValue::new(&mut blur).speed(0.1).range(0.0..=50.0).suffix(" mm")).changed() {
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut blur)
+                            .speed(0.1)
+                            .range(0.0..=50.0)
+                            .suffix(" mm"),
+                    )
+                    .changed()
+                {
                     sh.blur = blur;
                     changed = true;
                 }
                 let mut dx = sh.offset.x;
                 let mut dy = sh.offset.y;
-                ui.label(egui::RichText::new("Offset").color(Tokens::TEXT_DIM).size(11.0));
-                changed |= ui.add(egui::DragValue::new(&mut dx).speed(0.1).suffix(" mm")).changed();
-                changed |= ui.add(egui::DragValue::new(&mut dy).speed(0.1).suffix(" mm")).changed();
+                ui.label(
+                    egui::RichText::new(tr("docker.offset"))
+                        .color(Tokens::TEXT_DIM)
+                        .size(11.0),
+                );
+                changed |= ui
+                    .add(egui::DragValue::new(&mut dx).speed(0.1).suffix(" mm"))
+                    .changed();
+                changed |= ui
+                    .add(egui::DragValue::new(&mut dy).speed(0.1).suffix(" mm"))
+                    .changed();
                 sh.offset = tracedraw_core::geometry::Vec2::new(dx, dy);
                 let [r, g, b] = sh.color.to_rgb8();
                 let mut rgb = [r, g, b];
@@ -437,32 +906,186 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                     }
                 }
                 vsep(ui);
-                if ui.add_enabled(first.is_some(), egui::Button::new("Clear shadow")).clicked() {
+                if ui
+                    .add_enabled(
+                        first.is_some(),
+                        egui::Button::new(tr("toolbar.clear_shadow")),
+                    )
+                    .clicked()
+                {
                     app.set_shadow(None, false);
                 }
                 if shapes.is_empty() {
-                    ui.label(egui::RichText::new("Drag from an object to set the shadow offset").color(Tokens::TEXT_DIM).size(11.0));
+                    ui.label(
+                        egui::RichText::new(tr("toolbar.shadow_hint"))
+                            .color(Tokens::TEXT_DIM)
+                            .size(11.0),
+                    );
                 }
             }
             Tool::Transparency => {
-                let first = shapes.first().map(|s| s.opacity).unwrap_or(1.0);
-                let mut transparency = ((1.0 - first) * 100.0).round();
-                ui.label(egui::RichText::new("Uniform transparency").color(Tokens::TEXT_DIM).size(11.0));
-                let r = ui.add_enabled(!shapes.is_empty(), egui::Slider::new(&mut transparency, 0.0..=100.0).suffix(" %"));
-                if r.changed() {
-                    app.set_opacity(1.0 - transparency / 100.0);
+                let kinds = [
+                    tr("transparency.none"),
+                    tr("transparency.uniform"),
+                    tr("transparency.fountain"),
+                    tr("transparency.pattern"),
+                    tr("transparency.texture"),
+                ];
+                // Reflect the first selected object in the bar.
+                let has_mask = shapes
+                    .first()
+                    .map(|s| {
+                        s.effects
+                            .iter()
+                            .any(|e| matches!(e, tracedraw_core::live::Effect::Transparency { .. }))
+                    })
+                    .unwrap_or(false);
+                let first_opacity = shapes.first().map(|s| s.opacity).unwrap_or(1.0);
+                let current = if has_mask {
+                    app.transparency_default.kind.max(1) as usize + 1
+                } else if first_opacity < 1.0 {
+                    1
+                } else {
+                    0
+                };
+                let mut changed = false;
+                egui::ComboBox::from_id_salt("transparency_kind")
+                    .selected_text(kinds[current].clone())
+                    .width(110.0)
+                    .show_ui(ui, |ui| {
+                        for (i, k) in kinds.iter().enumerate() {
+                            if ui.selectable_label(current == i, k).clicked() {
+                                if i == 0 {
+                                    app.clear_transparency();
+                                } else {
+                                    app.transparency_default.set_kind((i - 1) as u8);
+                                    changed = true;
+                                }
+                            }
+                        }
+                    });
+                if app.transparency_default.kind == 0 {
+                    let mut amount = if first_opacity < 1.0 {
+                        ((1.0 - first_opacity) * 100.0).round()
+                    } else {
+                        app.transparency_default.amount
+                    };
+                    if ui
+                        .add_enabled(
+                            !shapes.is_empty(),
+                            egui::Slider::new(&mut amount, 0.0..=100.0).suffix(" %"),
+                        )
+                        .changed()
+                    {
+                        app.transparency_default.amount = amount;
+                        changed = true;
+                    }
+                } else if app.transparency_default.kind == 1 {
+                    if let Fill::Fountain(f) = &mut app.transparency_default.mask {
+                        let mut angle = f.angle;
+                        if ui
+                            .add(egui::DragValue::new(&mut angle).suffix("°").speed(1.0))
+                            .changed()
+                        {
+                            f.angle = angle;
+                            changed = true;
+                        }
+                        let kinds = [
+                            (tracedraw_core::style::FountainKind::Linear, "fill.linear"),
+                            (tracedraw_core::style::FountainKind::Radial, "fill.radial"),
+                            (tracedraw_core::style::FountainKind::Conical, "fill.conical"),
+                            (tracedraw_core::style::FountainKind::Square, "fill.square"),
+                        ];
+                        let name = kinds
+                            .iter()
+                            .find(|(k, _)| *k == f.kind)
+                            .map(|(_, n)| tr(n))
+                            .unwrap_or_default();
+                        egui::ComboBox::from_id_salt("transparency_fountain_kind")
+                            .selected_text(name)
+                            .width(90.0)
+                            .show_ui(ui, |ui| {
+                                for (k, n) in kinds {
+                                    if ui.selectable_label(f.kind == k, tr(n)).clicked() {
+                                        f.kind = k;
+                                        changed = true;
+                                    }
+                                }
+                            });
+                    }
+                }
+                vsep(ui);
+                ui.label(
+                    egui::RichText::new(tr("transparency.merge_mode"))
+                        .color(Tokens::TEXT_DIM)
+                        .size(11.0),
+                );
+                egui::ComboBox::from_id_salt("transparency_merge")
+                    .selected_text(app.transparency_default.merge.name())
+                    .width(100.0)
+                    .show_ui(ui, |ui| {
+                        for m in tracedraw_core::live::MergeMode::ALL {
+                            if ui
+                                .selectable_label(app.transparency_default.merge == m, m.name())
+                                .clicked()
+                            {
+                                app.transparency_default.merge = m;
+                                changed = true;
+                            }
+                        }
+                    });
+                let targets = [
+                    tr("transparency.target_fill"),
+                    tr("transparency.target_outline"),
+                    tr("transparency.target_all"),
+                ];
+                egui::ComboBox::from_id_salt("transparency_target")
+                    .selected_text(
+                        targets[(app.transparency_default.target as usize).min(2)].clone(),
+                    )
+                    .width(80.0)
+                    .show_ui(ui, |ui| {
+                        for (i, t) in targets.iter().enumerate() {
+                            if ui
+                                .selectable_label(app.transparency_default.target as usize == i, t)
+                                .clicked()
+                            {
+                                app.transparency_default.target = i as u8;
+                                changed = true;
+                            }
+                        }
+                    });
+                if changed && !shapes.is_empty() {
+                    let s = app.transparency_default.clone();
+                    app.apply_transparency(&s);
                 }
                 if shapes.is_empty() {
-                    ui.label(egui::RichText::new("Click an object first").color(Tokens::TEXT_DIM).size(11.0));
+                    ui.label(
+                        egui::RichText::new(tr("transparency.hint"))
+                            .color(Tokens::TEXT_DIM)
+                            .size(11.0),
+                    );
                 }
             }
             Tool::InteractiveFill | Tool::AreaFill | Tool::MeshFill => {
-                ui.label(egui::RichText::new("Click an object to fill it with the default fill; drag across it for a fountain fill").color(Tokens::TEXT_DIM).size(11.0));
+                ui.label(
+                    egui::RichText::new(tr("toolbar.fill_hint"))
+                        .color(Tokens::TEXT_DIM)
+                        .size(11.0),
+                );
             }
             t => {
-                ui.label(egui::RichText::new(format!("{} tool", t.name())).color(Tokens::TEXT_DIM).size(11.0));
+                ui.label(
+                    egui::RichText::new(trf("toolbar.tool_n", &[("t", &t.name())]))
+                        .color(Tokens::TEXT_DIM)
+                        .size(11.0),
+                );
                 if !t.implemented() {
-                    ui.label(egui::RichText::new("(not implemented yet)").color(Tokens::TEXT_DIM).size(11.0));
+                    ui.label(
+                        egui::RichText::new(tr("toolbar.not_implemented"))
+                            .color(Tokens::TEXT_DIM)
+                            .size(11.0),
+                    );
                 }
             }
         }
@@ -471,11 +1094,12 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
 
 fn page_properties(app: &mut App, ui: &mut Ui) {
     let size = app.page_size();
+    let custom = tr("toolbar.custom");
     let presets: [(&str, Size); 4] = [
         ("A4", paper::A4),
         ("A3", paper::A3),
         ("Letter", paper::LETTER),
-        ("Custom", size),
+        (custom.as_str(), size),
     ];
     let current = presets
         .iter()
@@ -484,7 +1108,7 @@ fn page_properties(app: &mut App, ui: &mut Ui) {
                 || ((s.height - size.width).abs() < 0.01 && (s.width - size.height).abs() < 0.01)
         })
         .map(|(n, _)| *n)
-        .unwrap_or("Custom");
+        .unwrap_or(custom.as_str());
     egui::ComboBox::from_id_salt("page_size")
         .selected_text(current)
         .width(90.0)
@@ -518,7 +1142,7 @@ fn page_properties(app: &mut App, ui: &mut Ui) {
     let portrait = size.height >= size.width;
     if ui
         .selectable_label(portrait, "▯")
-        .on_hover_text("Portrait")
+        .on_hover_text(tr("dialog.portrait"))
         .clicked()
         && !portrait
     {
@@ -531,7 +1155,7 @@ fn page_properties(app: &mut App, ui: &mut Ui) {
     }
     if ui
         .selectable_label(!portrait, "▭")
-        .on_hover_text("Landscape")
+        .on_hover_text(tr("dialog.landscape"))
         .clicked()
         && portrait
     {
@@ -544,14 +1168,14 @@ fn page_properties(app: &mut App, ui: &mut Ui) {
     }
     vsep(ui);
     let _ = ui
-        .selectable_label(true, "All pages")
-        .on_hover_text("Apply page size to all pages");
+        .selectable_label(true, tr("dialog.all_pages"))
+        .on_hover_text(tr("toolbar.all_pages_tip"));
     let _ = ui
-        .selectable_label(false, "Current page")
-        .on_hover_text("Apply page size to the current page only");
+        .selectable_label(false, tr("toolbar.current_page"))
+        .on_hover_text(tr("toolbar.current_page_tip"));
     vsep(ui);
     ui.label(
-        egui::RichText::new("Units")
+        egui::RichText::new(tr("toolbar.units"))
             .color(Tokens::TEXT_DIM)
             .size(11.0),
     );
@@ -567,12 +1191,12 @@ fn page_properties(app: &mut App, ui: &mut Ui) {
         });
     vsep(ui);
     let mut nudge = app.nudge_mm;
-    if unit_value(ui, app, "Nudge", &mut nudge, 0.1) && nudge > 0.0 {
+    if unit_value(ui, app, &tr("toolbar.nudge"), &mut nudge, 0.1) && nudge > 0.0 {
         app.nudge_mm = nudge;
     }
     let mut dx = app.duplicate_offset.x;
     let mut dy = app.duplicate_offset.y;
-    unit_value(ui, app, "Dup. x", &mut dx, 0.1);
+    unit_value(ui, app, &tr("toolbar.dup_x"), &mut dx, 0.1);
     unit_value(ui, app, "y", &mut dy, 0.1);
     app.duplicate_offset = tracedraw_core::geometry::Vec2::new(dx, dy);
 }
@@ -605,7 +1229,7 @@ fn object_properties(app: &mut App, ui: &mut Ui) {
         );
     }
     ui.label(
-        egui::RichText::new("Scale")
+        egui::RichText::new(tr("toolbar.scale"))
             .color(Tokens::TEXT_DIM)
             .size(11.0),
     );
@@ -625,7 +1249,7 @@ fn object_properties(app: &mut App, ui: &mut Ui) {
     }
     vsep(ui);
     ui.label(
-        egui::RichText::new("Angle")
+        egui::RichText::new(tr("toolbar.angle"))
             .color(Tokens::TEXT_DIM)
             .size(11.0),
     );
@@ -639,10 +1263,10 @@ fn object_properties(app: &mut App, ui: &mut Ui) {
                 * Affine::translate(-c.to_vec2()),
         );
     }
-    if tb_button(ui, icons::Action::Mirror, "Mirror horizontally", true) {
+    if tb_button(ui, icons::Action::Mirror, &tr("toolbar.mirror_h"), true) {
         app.mirror(true);
     }
-    if tb_button(ui, icons::Action::Flip, "Mirror vertically", true) {
+    if tb_button(ui, icons::Action::Flip, &tr("toolbar.mirror_v"), true) {
         app.mirror(false);
     }
     vsep(ui);
@@ -653,27 +1277,27 @@ fn object_properties(app: &mut App, ui: &mut Ui) {
         .and_then(|s| s.stroke.as_ref())
         .map(|s| s.width);
     ui.label(
-        egui::RichText::new("Outline")
+        egui::RichText::new(tr("docker.outline"))
             .color(Tokens::TEXT_DIM)
             .size(11.0),
     );
     let label = match width {
-        None => "None".to_string(),
-        Some(w) if w <= tracedraw_core::Stroke::HAIRLINE + 1e-9 => "Hairline".into(),
+        None => tr("toolbar.none"),
+        Some(w) if w <= tracedraw_core::Stroke::HAIRLINE + 1e-9 => tr("toolbar.hairline"),
         Some(w) => format!("{:.2} mm", w),
     };
     egui::ComboBox::from_id_salt("outline_width")
         .selected_text(label)
         .width(90.0)
         .show_ui(ui, |ui| {
-            if ui.selectable_label(false, "None").clicked() {
+            if ui.selectable_label(false, tr("toolbar.none")).clicked() {
                 let shapes = app.selection.clone();
                 app.run(Command::SetStroke {
                     shapes,
                     stroke: None,
                 });
             }
-            if ui.selectable_label(false, "Hairline").clicked() {
+            if ui.selectable_label(false, tr("toolbar.hairline")).clicked() {
                 app.apply_outline_width(tracedraw_core::Stroke::HAIRLINE);
             }
             for w in [0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 5.0, 8.0] {
@@ -683,15 +1307,15 @@ fn object_properties(app: &mut App, ui: &mut Ui) {
             }
         });
     vsep(ui);
-    if ui.button("To front").clicked() {
+    if ui.button(tr("toolbar.to_front")).clicked() {
         app.order(0);
     }
-    if ui.button("To back").clicked() {
+    if ui.button(tr("toolbar.to_back")).clicked() {
         app.order(3);
     }
     vsep(ui);
     if ui
-        .button("Convert to curves")
+        .button(tr("menu.object.convert_to_curves"))
         .on_hover_text("Ctrl+Q")
         .clicked()
     {
@@ -702,7 +1326,7 @@ fn object_properties(app: &mut App, ui: &mut Ui) {
 
 fn text_properties(app: &mut App, ui: &mut Ui) {
     ui.label(
-        egui::RichText::new("Font")
+        egui::RichText::new(tr("toolbar.font"))
             .color(Tokens::TEXT_DIM)
             .size(11.0),
     );
@@ -748,13 +1372,25 @@ fn text_properties(app: &mut App, ui: &mut Ui) {
         .is_some();
     vsep(ui);
     for (a, label, tip) in [
-        (tracedraw_core::TextAlign::Left, "Left", "Align left"),
-        (tracedraw_core::TextAlign::Center, "Center", "Align center"),
-        (tracedraw_core::TextAlign::Right, "Right", "Align right"),
+        (
+            tracedraw_core::TextAlign::Left,
+            tr("docker.align_left_short"),
+            tr("toolbar.align_left"),
+        ),
+        (
+            tracedraw_core::TextAlign::Center,
+            tr("docker.align_center_short"),
+            tr("toolbar.align_center"),
+        ),
+        (
+            tracedraw_core::TextAlign::Right,
+            tr("docker.align_right_short"),
+            tr("toolbar.align_right"),
+        ),
         (
             tracedraw_core::TextAlign::Justify,
-            "Justify",
-            "Full justify",
+            tr("docker.align_justify_short"),
+            tr("toolbar.full_justify"),
         ),
     ] {
         if ui
@@ -767,39 +1403,7 @@ fn text_properties(app: &mut App, ui: &mut Ui) {
         }
     }
     if changed {
-        let cmds: Vec<Command> = app
-            .selected_shapes()
-            .iter()
-            .filter_map(|s| match &s.kind {
-                ShapeKind::Text {
-                    spans,
-                    origin,
-                    frame,
-                    ..
-                } => {
-                    let mut spans = spans.clone();
-                    for sp in spans.iter_mut() {
-                        sp.font_family = app.text_font.clone();
-                        sp.size_pt = app.text_size_pt;
-                        sp.bold = app.text_bold;
-                        sp.italic = app.text_italic;
-                    }
-                    Some(Command::SetShapeKind {
-                        shape: s.id,
-                        kind: ShapeKind::Text {
-                            spans,
-                            origin: *origin,
-                            frame: *frame,
-                            align: app.text_align,
-                        },
-                    })
-                }
-                _ => None,
-            })
-            .collect();
-        if !cmds.is_empty() {
-            let _ = app.engine.run_batch("Text Properties", &cmds);
-        }
+        app.apply_text_style();
     }
 }
 
@@ -820,27 +1424,52 @@ fn shape_tool_bar(app: &mut App, ui: &mut Ui) {
     };
     if b(
         ui,
-        "+ Node",
-        "Add nodes (double-click a segment)",
+        &tr("toolbar.add_node"),
+        &tr("toolbar.add_node_tip"),
         has_nodes,
     ) {
         app.add_node_midpoints();
     }
-    if b(ui, "- Node", "Delete nodes (Delete)", has_nodes) {
+    if b(
+        ui,
+        &tr("toolbar.delete_node"),
+        &tr("toolbar.delete_node_tip"),
+        has_nodes,
+    ) {
         app.delete_selected_nodes();
     }
     vsep(ui);
-    if b(ui, "Break", "Break curve at nodes", has_nodes) {
+    if b(
+        ui,
+        &tr("toolbar.break"),
+        &tr("toolbar.break_tip"),
+        has_nodes,
+    ) {
         app.break_selected_nodes();
     }
-    if b(ui, "Close", "Close curve", has_curve) {
+    if b(
+        ui,
+        &tr("toolbar.close"),
+        &tr("toolbar.close_tip"),
+        has_curve,
+    ) {
         app.close_selected_curves();
     }
     vsep(ui);
-    if b(ui, "To line", "Convert segment to line", has_nodes) {
+    if b(
+        ui,
+        &tr("toolbar.to_line"),
+        &tr("toolbar.to_line_tip"),
+        has_nodes,
+    ) {
         app.selected_segments_to_line();
     }
-    if b(ui, "To curve", "Convert segment to curve", has_nodes) {
+    if b(
+        ui,
+        &tr("toolbar.to_curve"),
+        &tr("toolbar.to_curve_tip"),
+        has_nodes,
+    ) {
         app.selected_segments_to_curve();
     }
     vsep(ui);
@@ -848,18 +1477,18 @@ fn shape_tool_bar(app: &mut App, ui: &mut Ui) {
     for (ty, name, tip) in [
         (
             NodeType::Cusp,
-            "Cusp",
-            "Cusp node: handles move independently",
+            tr("context.node_cusp"),
+            tr("toolbar.cusp_tip"),
         ),
         (
             NodeType::Smooth,
-            "Smooth",
-            "Smooth node: handles stay in line",
+            tr("context.node_smooth"),
+            tr("toolbar.smooth_tip"),
         ),
         (
             NodeType::Symmetrical,
-            "Symm.",
-            "Symmetrical node: handles equal and in line",
+            tr("toolbar.symm_short"),
+            tr("toolbar.symm_tip"),
         ),
     ] {
         if ui
@@ -874,23 +1503,52 @@ fn shape_tool_bar(app: &mut App, ui: &mut Ui) {
         }
     }
     vsep(ui);
-    if b(ui, "Reverse", "Reverse direction", has_curve) {
+    if b(
+        ui,
+        &tr("toolbar.reverse"),
+        &tr("toolbar.reverse_tip"),
+        has_curve,
+    ) {
         app.reverse_selected_curves();
     }
-    if b(ui, "Select all", "Select all nodes (Ctrl+A)", has_curve) {
+    if b(
+        ui,
+        &tr("toolbar.select_all"),
+        &tr("toolbar.select_all_nodes_tip"),
+        has_curve,
+    ) {
         app.select_all_nodes();
     }
     vsep(ui);
-    if b(ui, "Convert to curves", "Ctrl+Q", !app.selection.is_empty()) {
+    if b(
+        ui,
+        &tr("toolbar.reduce_nodes"),
+        &tr("toolbar.reduce_nodes_tip"),
+        has_curve,
+    ) {
+        app.reduce_selected_nodes();
+    }
+    let two_nodes = app.node_selection.len() >= 2;
+    if b(ui, "⟷", &tr("toolbar.align_nodes_h"), two_nodes) {
+        app.align_selected_nodes(true, false);
+    }
+    if b(ui, "↕", &tr("toolbar.align_nodes_v"), two_nodes) {
+        app.align_selected_nodes(false, true);
+    }
+    vsep(ui);
+    if b(
+        ui,
+        &tr("menu.object.convert_to_curves"),
+        "Ctrl+Q",
+        !app.selection.is_empty(),
+    ) {
         app.convert_to_curves();
     }
     if !has_curve && !app.selection.is_empty() {
         ui.label(
-            egui::RichText::new(
-                "Double-click an object to convert it to curves and edit its nodes",
-            )
-            .color(Tokens::TEXT_DIM)
-            .size(11.0),
+            egui::RichText::new(tr("toolbar.convert_to_curves_hint"))
+                .color(Tokens::TEXT_DIM)
+                .size(11.0),
         );
     }
 }

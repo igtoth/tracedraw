@@ -88,12 +88,48 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
         Tokens::PAGE_SHADOW,
     );
     painter.rect_filled(paper, 0.0, Tokens::PAGE);
-    painter.rect_stroke(
-        paper,
-        0.0,
-        EStroke::new(1.0, Tokens::PAGE_BORDER),
-        epaint::StrokeKind::Outside,
-    );
+    if app.show_page_border {
+        painter.rect_stroke(
+            paper,
+            0.0,
+            EStroke::new(1.0, Tokens::PAGE_BORDER),
+            epaint::StrokeKind::Outside,
+        );
+    }
+    if app.show_bleed {
+        let b = app.doc().metadata.bleed.max(0.0);
+        if b > 0.0 {
+            let r = view.rect_to_screen(app.page_rect().inflate(b, b));
+            painter.rect_stroke(
+                r,
+                0.0,
+                EStroke::new(1.0, Tokens::PAGE_BORDER),
+                epaint::StrokeKind::Outside,
+            );
+        }
+    }
+    if app.show_printable_area {
+        // Printable area: the page minus the printer's typical 5 mm hardware margin.
+        let r = view.rect_to_screen(app.page_rect().inflate(-5.0, -5.0));
+        let dash = 4.0;
+        for (a, b) in [
+            (r.left_top(), r.right_top()),
+            (r.right_top(), r.right_bottom()),
+            (r.right_bottom(), r.left_bottom()),
+            (r.left_bottom(), r.left_top()),
+        ] {
+            let len = (b - a).length();
+            let n = (len / (dash * 2.0)).floor() as usize;
+            for k in 0..n {
+                let t0 = (k as f32 * dash * 2.0) / len;
+                let t1 = ((k as f32 * dash * 2.0) + dash) / len;
+                painter.line_segment(
+                    [a + (b - a) * t0, a + (b - a) * t1],
+                    EStroke::new(1.0, Tokens::TEXT_DIM),
+                );
+            }
+        }
+    }
 
     if app.show_grid {
         draw_grid(painter, rect, view);
@@ -127,6 +163,21 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
 
     // Selection.
     draw_selection(app, painter, preview);
+    draw_table_cells(app, painter);
+
+    // 3-point tools: base segment waiting for the third click, previewed to the pointer.
+    if let (Some((a, b)), Some(c)) = (app.three_point_base, app.pointer_page) {
+        let stroke = EStroke::new(1.0, Tokens::SELECTION);
+        painter.line_segment([view.to_screen(a), view.to_screen(b)], stroke);
+        let preview = three_point_preview(app.tool, a, b, c);
+        for (pts, closed) in flatten(&preview, view) {
+            if closed {
+                painter.add(epaint::PathShape::closed_line(pts, stroke));
+            } else {
+                painter.add(epaint::PathShape::line(pts, stroke));
+            }
+        }
+    }
 
     // Rubber bands and in-progress tools.
     match &app.drag {
@@ -147,6 +198,12 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
                     painter.add(epaint::PathShape::closed_line(p, stroke));
                 }
             }
+        }
+        Drag::ThreePointBase { start, current } => {
+            painter.line_segment(
+                [view.to_screen(*start), view.to_screen(*current)],
+                EStroke::new(1.0, Tokens::SELECTION),
+            );
         }
         Drag::Connector { from, current } => {
             if let Ok((_, s)) = doc.shape(*from) {
@@ -243,6 +300,108 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
                 EStroke::new(1.0, Tokens::TEXT),
             );
         }
+    }
+}
+
+/// Liang-Barsky clip of a screen segment against a rectangle.
+fn clip_segment(a: Pos2, b: Pos2, r: ERect) -> Option<(Pos2, Pos2)> {
+    let (dx, dy) = (b.x - a.x, b.y - a.y);
+    let mut t0 = 0.0f32;
+    let mut t1 = 1.0f32;
+    for (p, q) in [
+        (-dx, a.x - r.left()),
+        (dx, r.right() - a.x),
+        (-dy, a.y - r.top()),
+        (dy, r.bottom() - a.y),
+    ] {
+        if p == 0.0 {
+            if q < 0.0 {
+                return None;
+            }
+            continue;
+        }
+        let t = q / p;
+        if p < 0.0 {
+            if t > t1 {
+                return None;
+            }
+            t0 = t0.max(t);
+        } else {
+            if t < t0 {
+                return None;
+            }
+            t1 = t1.min(t);
+        }
+    }
+    Some((
+        Pos2::new(a.x + dx * t0, a.y + dy * t0),
+        Pos2::new(a.x + dx * t1, a.y + dy * t1),
+    ))
+}
+
+/// Outline of the shape a 3-point tool would create for base `a -> b` and third point `c`.
+fn three_point_preview(
+    tool: Tool,
+    a: Point,
+    b: Point,
+    c: Point,
+) -> tracedraw_core::geometry::BezPath {
+    use tracedraw_core::geometry::{BezPath, Vec2};
+    let base = b - a;
+    let len = base.hypot().max(1e-6);
+    let dir = base / len;
+    let normal = Vec2::new(-dir.y, dir.x);
+    let height = (c - a).dot(normal);
+    match tool {
+        Tool::ThreePointCurve => {
+            let ctrl = Point::new(2.0 * c.x - 0.5 * (a.x + b.x), 2.0 * c.y - 0.5 * (a.y + b.y));
+            let mut p = BezPath::new();
+            p.move_to(a);
+            p.curve_to(
+                a + (ctrl - a) * (2.0 / 3.0),
+                b + (ctrl - b) * (2.0 / 3.0),
+                b,
+            );
+            p
+        }
+        _ => {
+            let local = Rect::new(0.0, height.min(0.0), len, height.max(0.0));
+            let t = Affine::translate(a.to_vec2()) * Affine::rotate(base.atan2());
+            let p = if tool == Tool::ThreePointEllipse {
+                tracedraw_core::geometry::ellipse_path(local)
+            } else {
+                tracedraw_core::geometry::rect_path(local, 0.0)
+            };
+            t * p
+        }
+    }
+}
+
+/// Active table cells (Table tool): a filled highlight over each selected cell.
+fn draw_table_cells(app: &App, painter: &Painter) {
+    let Some(e) = &app.table_edit else {
+        return;
+    };
+    let Ok((_, s)) = app.doc().shape(e.shape) else {
+        return;
+    };
+    let tracedraw_core::document::ShapeKind::Table(t) = &s.kind else {
+        return;
+    };
+    let view = &app.view;
+    for cell in &t.cells {
+        if !e.cells.contains(&(cell.row, cell.col)) {
+            continue;
+        }
+        let r = s.transform.transform_rect_bbox(t.cell_rect(cell));
+        let sr = view.rect_to_screen(r);
+        painter.rect_filled(sr, 0.0, Tokens::SELECTION.gamma_multiply(0.25));
+        painter.rect_stroke(
+            sr,
+            0.0,
+            EStroke::new(1.5, Tokens::SELECTION),
+            epaint::StrokeKind::Inside,
+        );
     }
 }
 
@@ -588,6 +747,19 @@ pub fn draw_guides(app: &App, painter: &Painter, rect: ERect) {
                     color,
                 );
             }
+            tracedraw_core::document::Guide::Angled { x, y, angle } => {
+                // Extend far beyond the viewport in both directions.
+                let a = angle.to_radians();
+                let d = tracedraw_core::geometry::Vec2::new(a.cos(), a.sin());
+                let far = 100_000.0 / view.zoom.max(0.01) as f64;
+                let p0 = Point::new(*x, *y) - d * far;
+                let p1 = Point::new(*x, *y) + d * far;
+                let s0 = view.to_screen(p0);
+                let s1 = view.to_screen(p1);
+                if let Some((c0, c1)) = clip_segment(s0, s1, rect) {
+                    dash(painter, c0, c1, color);
+                }
+            }
         }
     }
     if let Drag::NewGuide { horizontal, pos } = &app.drag {
@@ -605,6 +777,76 @@ pub fn draw_guides(app: &App, painter: &Painter, rect: ERect) {
                 Pos2::new(s.x, rect.top()),
                 Pos2::new(s.x, rect.bottom()),
                 Color32::from_rgb(0, 120, 215),
+            );
+        }
+    }
+}
+
+/// Effect nodes (envelope, perspective, mesh) of the selection when the
+/// Shape tool is active: small blue squares joined by a dotted frame.
+pub fn draw_effect_nodes(app: &App, painter: &Painter) {
+    if app.tool != crate::tools::Tool::Shape {
+        return;
+    }
+    for s in app.selected_shapes() {
+        let nodes = crate::interaction2::effect_nodes(&s);
+        if nodes.is_empty() {
+            continue;
+        }
+        let blue = egui::Color32::from_rgb(40, 110, 220);
+        // Envelope and perspective frames.
+        let env: Vec<egui::Pos2> = nodes
+            .iter()
+            .filter(|(i, _)| *i < 100)
+            .map(|(_, p)| app.view.to_screen(*p))
+            .collect();
+        if env.len() == 8 {
+            let mut pts = env.clone();
+            pts.push(env[0]);
+            painter.add(egui::Shape::line(pts, egui::Stroke::new(1.0, blue)));
+        }
+        let persp: Vec<egui::Pos2> = nodes
+            .iter()
+            .filter(|(i, _)| (100..200).contains(i))
+            .map(|(_, p)| app.view.to_screen(*p))
+            .collect();
+        if persp.len() == 4 {
+            let mut pts = persp.clone();
+            pts.push(persp[0]);
+            painter.add(egui::Shape::line(pts, egui::Stroke::new(1.0, blue)));
+        }
+        // Mesh grid lines.
+        if let tracedraw_core::Fill::Mesh(m) = &s.fill {
+            let cols = m.cols as usize + 1;
+            for r in 0..=m.rows as usize {
+                let pts: Vec<egui::Pos2> = (0..cols)
+                    .filter_map(|c| m.nodes.get(r * cols + c))
+                    .map(|n| app.view.to_screen(s.transform * n.pos))
+                    .collect();
+                painter.add(egui::Shape::line(pts, egui::Stroke::new(1.0, blue)));
+            }
+            for c in 0..cols {
+                let pts: Vec<egui::Pos2> = (0..=m.rows as usize)
+                    .filter_map(|r| m.nodes.get(r * cols + c))
+                    .map(|n| app.view.to_screen(s.transform * n.pos))
+                    .collect();
+                painter.add(egui::Shape::line(pts, egui::Stroke::new(1.0, blue)));
+            }
+        }
+        for (i, p) in nodes {
+            let sp = app.view.to_screen(p);
+            let r = egui::Rect::from_center_size(sp, egui::vec2(7.0, 7.0));
+            let selected = app
+                .effect_node_drag
+                .map(|(id, k)| id == s.id && k == i)
+                .unwrap_or(false)
+                || app.selected_effect_node == Some((s.id, i));
+            painter.rect_filled(r, 0.0, if selected { blue } else { egui::Color32::WHITE });
+            painter.rect_stroke(
+                r,
+                0.0,
+                egui::Stroke::new(1.0, blue),
+                egui::StrokeKind::Outside,
             );
         }
     }

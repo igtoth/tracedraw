@@ -13,6 +13,94 @@ use tracedraw_core::{
     Color, Command, Engine, Fill, LayerId, PageId, ShapeId, Stroke,
 };
 
+/// How inserted page numbers look and where they go.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PageNumberSettings {
+    pub start_at: i64,
+    pub prefix: String,
+    pub suffix: String,
+    /// 0 arabic, 1 upper roman, 2 lower roman, 3 upper alpha, 4 lower alpha.
+    pub style: u8,
+    /// 0 bottom centre, 1 bottom outer corner, 2 top centre, 3 top outer corner.
+    pub position: u8,
+    pub size_pt: f64,
+}
+
+impl Default for PageNumberSettings {
+    fn default() -> Self {
+        PageNumberSettings {
+            start_at: 1,
+            prefix: String::new(),
+            suffix: String::new(),
+            style: 0,
+            position: 0,
+            size_pt: 12.0,
+        }
+    }
+}
+
+impl PageNumberSettings {
+    /// Text for the page at `index` (0-based).
+    pub fn label(&self, index: usize) -> String {
+        let n = self.start_at + index as i64;
+        let body = match self.style {
+            1 => roman(n),
+            2 => roman(n).to_lowercase(),
+            3 => alpha(n),
+            4 => alpha(n).to_lowercase(),
+            _ => n.to_string(),
+        };
+        format!("{}{}{}", self.prefix, body, self.suffix)
+    }
+}
+
+fn roman(mut n: i64) -> String {
+    if n <= 0 {
+        return n.to_string();
+    }
+    const T: [(i64, &str); 13] = [
+        (1000, "M"),
+        (900, "CM"),
+        (500, "D"),
+        (400, "CD"),
+        (100, "C"),
+        (90, "XC"),
+        (50, "L"),
+        (40, "XL"),
+        (10, "X"),
+        (9, "IX"),
+        (5, "V"),
+        (4, "IV"),
+        (1, "I"),
+    ];
+    let mut out = String::new();
+    for (v, s) in T {
+        while n >= v {
+            out.push_str(s);
+            n -= v;
+        }
+    }
+    out
+}
+
+fn alpha(n: i64) -> String {
+    if n <= 0 {
+        return n.to_string();
+    }
+    // A..Z, then AA, AB... like spreadsheet columns.
+    let mut n = n - 1;
+    let mut out = Vec::new();
+    loop {
+        out.push((b'A' + (n % 26) as u8) as char);
+        n /= 26;
+        if n == 0 {
+            break;
+        }
+        n -= 1;
+    }
+    out.iter().rev().collect()
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Units {
     Millimeters,
@@ -23,6 +111,24 @@ pub enum Units {
 }
 
 impl Units {
+    pub fn id(self) -> &'static str {
+        match self {
+            Units::Millimeters => "mm",
+            Units::Centimeters => "cm",
+            Units::Inches => "in",
+            Units::Points => "pt",
+            Units::Pixels => "px",
+        }
+    }
+    pub fn from_id(id: &str) -> Self {
+        match id {
+            "cm" => Units::Centimeters,
+            "in" => Units::Inches,
+            "pt" => Units::Points,
+            "px" => Units::Pixels,
+            _ => Units::Millimeters,
+        }
+    }
     pub const ALL: [Units; 5] = [
         Units::Millimeters,
         Units::Centimeters,
@@ -30,14 +136,14 @@ impl Units {
         Units::Points,
         Units::Pixels,
     ];
-    pub fn label(self) -> &'static str {
-        match self {
-            Units::Millimeters => "millimeters",
-            Units::Centimeters => "centimeters",
-            Units::Inches => "inches",
-            Units::Points => "points",
-            Units::Pixels => "pixels",
-        }
+    pub fn label(self) -> String {
+        crate::i18n::tr(match self {
+            Units::Millimeters => "units.millimeters",
+            Units::Centimeters => "units.centimeters",
+            Units::Inches => "units.inches",
+            Units::Points => "units.points",
+            Units::Pixels => "units.pixels",
+        })
     }
     pub fn short(self) -> &'static str {
         match self {
@@ -90,6 +196,11 @@ pub enum Drag {
     None,
     /// Drawing a new box shape from `start` (page space).
     Box {
+        start: Point,
+        current: Point,
+    },
+    /// Base segment of a 3-point rectangle, ellipse or curve.
+    ThreePointBase {
         start: Point,
         current: Point,
     },
@@ -266,6 +377,12 @@ pub struct App {
     pub common_shape: crate::tools2::CommonShape,
     pub table_rows: u32,
     pub table_cols: u32,
+    pub graph_rows: u32,
+    pub graph_cols: u32,
+    pub action_lines_count: u32,
+    pub action_lines_radial: bool,
+    /// 3-point tools: the base segment already dragged, waiting for the third click.
+    pub three_point_base: Option<(Point, Point)>,
     pub media_width: f64,
     pub media_angle: f64,
     pub dimension_points: Vec<Point>,
@@ -294,12 +411,151 @@ pub struct App {
     pub node_selection: Vec<(ShapeId, usize)>,
     pub snap: crate::snap::SnapSettings,
     pub dialog: crate::ui::dialogs::Dialog,
+    /// Layout > Page Number Settings.
+    pub page_numbers: PageNumberSettings,
+    /// Last loaded print-merge data, for Edit / Perform without reloading.
+    pub merge_state: Option<crate::ui::dialogs::PrintMergeState>,
     pub show_welcome: bool,
     /// Object > ClipFrame > Place Inside Frame is waiting for a click on the frame.
     pub pending_clip_frame: bool,
     pub show_guides: bool,
     pub selected_guide: Option<usize>,
     pub transform_values: [f64; 4],
+    // ----- added with the full menu structure -----
+    pub settings: crate::settings::Settings,
+    pub welcome_tab: WelcomeTab,
+    pub fullscreen_preview: bool,
+    pub preview_selected_only: bool,
+    pub page_sorter: bool,
+    pub view_mode: ViewMode,
+    pub proof_colors: bool,
+    pub show_page_border: bool,
+    pub show_bleed: bool,
+    pub show_printable_area: bool,
+    pub show_pixel_grid: bool,
+    pub show_baseline_grid: bool,
+    pub options_page: crate::ui::dialogs::OptionsPage,
+    pub pending_copy_properties: bool,
+    pub pending_copy_effect: Option<EffectKind>,
+    /// Object > Order > In Front Of / Behind is waiting for a click: Some(in_front).
+    pub pending_order: Option<bool>,
+    pub last_repeatable: Option<Command>,
+    pub show_non_printing: bool,
+    pub text_hyphenation: bool,
+    /// Macro recording in progress: the commands run since Record started.
+    pub recording: Option<Vec<Command>>,
+    pub workspace: Workspace,
+    pub palettes: Vec<crate::palette::Palette>,
+    pub visible_palettes: Vec<usize>,
+    pub show_standard_toolbar: bool,
+    pub show_property_bar: bool,
+    pub show_toolbox: bool,
+    pub show_text_toolbar: bool,
+    pub show_zoom_toolbar: bool,
+    pub show_transform_toolbar: bool,
+    /// Right-click context menu anchor (screen position, page position).
+    pub context_menu: Option<(egui::Pos2, Point)>,
+    pub scripts_output: Vec<String>,
+    pub script_source: String,
+    pub find_state: crate::ui::dialogs::FindReplaceState,
+    pub step_repeat: crate::ops2::StepRepeat,
+    pub align_to: crate::ops2::AlignTo,
+    pub lens: crate::lens::LensSettings,
+    pub envelope_mode: crate::effects_ui::EnvelopeMode,
+    pub bevel: crate::effects_ui::BevelSettings,
+    pub extrude: crate::effects_ui::ExtrudeSettings,
+    pub transparency_default: crate::effects_ui::TransparencySettings,
+    pub glyph_filter: String,
+    pub table_edit: Option<crate::table::TableEdit>,
+    pub missing_fonts: Vec<String>,
+    pub bitmap_fx_amount: f32,
+    pub last_bitmap_fx: Option<crate::bitmap_fx::Fx>,
+    pub shaping_keep_source: bool,
+    pub shaping_keep_target: bool,
+    pub color_model: usize,
+    pub mixer_color: Color,
+    pub lens_synced_to: Option<ShapeId>,
+    pub extrude_synced_to: Option<ShapeId>,
+    pub pending_blend_path: bool,
+    pub envelope_keep_lines: bool,
+    pub media_mode: crate::media::MediaMode,
+    pub media_preset: usize,
+    pub media_spacing: f64,
+    pub media_pressure: f64,
+    pub media_smoothing: f64,
+    pub mask_colors: Vec<Color>,
+    pub mask_tolerance: u8,
+    pub font_filter: String,
+    /// Envelope/perspective node being dragged with the Shape tool: (shape, index).
+    pub effect_node_drag: Option<(ShapeId, usize)>,
+    /// Dockers added to the tab strip beyond the defaults.
+    pub open_dockers: Vec<DockerTab>,
+    pub free_transform_last: Point,
+    pub roughen_amount: f64,
+    /// Properties docker section to expand: 0 fill, 1 outline.
+    pub properties_section: usize,
+    pub area_fill_color: Color,
+    pub mesh_rows: u32,
+    pub mesh_cols: u32,
+    /// Context menu > Frame Type > Text: next click/drag adds a text frame.
+    pub pending_text_frame: bool,
+    /// Shape tool elastic mode: dragging one node pulls its neighbours.
+    pub elastic_mode: bool,
+    /// Last clicked effect/mesh node (palette clicks colour a mesh node).
+    pub selected_effect_node: Option<(ShapeId, usize)>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WelcomeTab {
+    GetStarted,
+    Workspace,
+    News,
+    Learn,
+    Templates,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ViewMode {
+    Wireframe,
+    Normal,
+    Enhanced,
+    Pixels,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EffectKind {
+    Shadow,
+    Transparency,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Workspace {
+    Default,
+    Lite,
+    Classic,
+    Illustration,
+    PageLayout,
+}
+
+impl Workspace {
+    pub fn id(self) -> &'static str {
+        match self {
+            Workspace::Default => "default",
+            Workspace::Lite => "lite",
+            Workspace::Classic => "classic",
+            Workspace::Illustration => "illustration",
+            Workspace::PageLayout => "page_layout",
+        }
+    }
+    pub fn from_id(id: &str) -> Self {
+        match id {
+            "lite" => Workspace::Lite,
+            "classic" => Workspace::Classic,
+            "illustration" => Workspace::Illustration,
+            "page_layout" => Workspace::PageLayout,
+            _ => Workspace::Default,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -309,6 +565,131 @@ pub enum DockerTab {
     Hints,
     Transformations,
     Undo,
+    AlignDistribute,
+    Shaping,
+    StepAndRepeat,
+    Text,
+    Glyphs,
+    Color,
+    ColorStyles,
+    ObjectStyles,
+    FindReplace,
+    Scripts,
+    Palettes,
+    Lens,
+    Blend,
+    Contour,
+    Envelope,
+    Extrude,
+    Bevel,
+    BrushStrokes,
+    BitmapMask,
+    ObjectData,
+    Links,
+    Symbols,
+    Pages,
+    Guidelines,
+    Fonts,
+}
+
+impl DockerTab {
+    pub const ALL: [DockerTab; 30] = [
+        DockerTab::Properties,
+        DockerTab::Objects,
+        DockerTab::Hints,
+        DockerTab::Transformations,
+        DockerTab::Undo,
+        DockerTab::AlignDistribute,
+        DockerTab::Shaping,
+        DockerTab::StepAndRepeat,
+        DockerTab::Text,
+        DockerTab::Glyphs,
+        DockerTab::Color,
+        DockerTab::ColorStyles,
+        DockerTab::ObjectStyles,
+        DockerTab::FindReplace,
+        DockerTab::Scripts,
+        DockerTab::Palettes,
+        DockerTab::Lens,
+        DockerTab::Blend,
+        DockerTab::Contour,
+        DockerTab::Envelope,
+        DockerTab::Extrude,
+        DockerTab::Bevel,
+        DockerTab::BrushStrokes,
+        DockerTab::BitmapMask,
+        DockerTab::ObjectData,
+        DockerTab::Links,
+        DockerTab::Symbols,
+        DockerTab::Pages,
+        DockerTab::Guidelines,
+        DockerTab::Fonts,
+    ];
+
+    /// i18n key of the docker's title.
+    pub fn key(self) -> &'static str {
+        match self {
+            DockerTab::Properties => "docker.properties",
+            DockerTab::Objects => "docker.objects",
+            DockerTab::Hints => "docker.hints",
+            DockerTab::Transformations => "docker.transformations",
+            DockerTab::Undo => "docker.undo",
+            DockerTab::AlignDistribute => "docker.align_distribute",
+            DockerTab::Shaping => "docker.shaping",
+            DockerTab::StepAndRepeat => "docker.step_and_repeat",
+            DockerTab::Text => "docker.text",
+            DockerTab::Glyphs => "docker.glyphs",
+            DockerTab::Color => "docker.color",
+            DockerTab::ColorStyles => "docker.color_styles",
+            DockerTab::ObjectStyles => "docker.object_styles",
+            DockerTab::FindReplace => "docker.find_replace",
+            DockerTab::Scripts => "docker.scripts",
+            DockerTab::Palettes => "docker.palettes",
+            DockerTab::Lens => "docker.lens",
+            DockerTab::Blend => "docker.blend",
+            DockerTab::Contour => "docker.contour",
+            DockerTab::Envelope => "docker.envelope",
+            DockerTab::Extrude => "docker.extrude",
+            DockerTab::Bevel => "docker.bevel",
+            DockerTab::BrushStrokes => "docker.brush_strokes",
+            DockerTab::BitmapMask => "docker.bitmap_mask",
+            DockerTab::ObjectData => "docker.object_data",
+            DockerTab::Links => "docker.links",
+            DockerTab::Symbols => "docker.symbols",
+            DockerTab::Pages => "docker.pages",
+            DockerTab::Guidelines => "docker.guidelines",
+            DockerTab::Fonts => "docker.fonts",
+        }
+    }
+
+    pub fn shortcut(self) -> &'static str {
+        match self {
+            DockerTab::Properties => "Alt+Enter",
+            DockerTab::AlignDistribute => "Ctrl+Shift+A",
+            DockerTab::Text => "Ctrl+T",
+            DockerTab::Glyphs => "Ctrl+F11",
+            DockerTab::Color => "Shift+F11",
+            DockerTab::Contour => "Ctrl+F9",
+            DockerTab::Envelope => "Ctrl+F7",
+            DockerTab::Lens => "Alt+F3",
+            DockerTab::FindReplace => "Ctrl+F",
+            DockerTab::StepAndRepeat => "Ctrl+Shift+D",
+            DockerTab::Transformations => "Alt+F7",
+            DockerTab::Undo => "",
+            _ => "",
+        }
+    }
+
+    /// Dockers shown in the tab strip by default (the rest open from menus).
+    pub fn default_strip() -> Vec<DockerTab> {
+        vec![
+            DockerTab::Hints,
+            DockerTab::Properties,
+            DockerTab::Objects,
+            DockerTab::Transformations,
+            DockerTab::Undo,
+        ]
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -322,12 +703,28 @@ pub enum TransformTab {
 
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>, open: Option<PathBuf>) -> Self {
+        theme::install_fallback_fonts(&cc.egui_ctx);
         cc.egui_ctx.set_visuals(theme::visuals());
         cc.egui_ctx.all_styles_mut(|style| {
             style.spacing.item_spacing = egui::vec2(4.0, 3.0);
             style.spacing.button_padding = egui::vec2(5.0, 2.0);
         });
+        Self::build(open)
+    }
 
+    /// An app without a window, for tests and scripts.
+    #[cfg(test)]
+    pub fn headless() -> Self {
+        std::env::set_var(
+            "TRACEDRAW_CONFIG_DIR",
+            std::env::temp_dir().join("tracedraw-test"),
+        );
+        let mut app = Self::build(None);
+        app.show_welcome = false;
+        app
+    }
+
+    fn build(open: Option<PathBuf>) -> Self {
         let engine = Engine::default();
         let page = engine.document().pages[0].id;
         let mut app = App {
@@ -369,6 +766,11 @@ impl App {
             common_shape: crate::tools2::CommonShape::RightArrow,
             table_rows: 3,
             table_cols: 4,
+            graph_rows: 4,
+            graph_cols: 3,
+            action_lines_count: 12,
+            action_lines_radial: false,
+            three_point_base: None,
             media_width: 3.0,
             media_angle: 45.0,
             dimension_points: Vec::new(),
@@ -396,16 +798,312 @@ impl App {
             node_selection: Vec::new(),
             snap: crate::snap::SnapSettings::default(),
             dialog: crate::ui::dialogs::Dialog::None,
+            merge_state: None,
+            page_numbers: PageNumberSettings::default(),
             show_welcome: false,
             pending_clip_frame: false,
             show_guides: true,
             selected_guide: None,
             transform_values: [0.0, 0.0, 100.0, 100.0],
+            settings: crate::settings::Settings::default(),
+            welcome_tab: WelcomeTab::GetStarted,
+            fullscreen_preview: false,
+            preview_selected_only: false,
+            page_sorter: false,
+            view_mode: ViewMode::Enhanced,
+            proof_colors: false,
+            show_page_border: true,
+            show_bleed: false,
+            show_printable_area: false,
+            show_pixel_grid: false,
+            show_baseline_grid: false,
+            options_page: crate::ui::dialogs::OptionsPage::General,
+            pending_copy_properties: false,
+            pending_copy_effect: None,
+            pending_order: None,
+            last_repeatable: None,
+            show_non_printing: false,
+            text_hyphenation: false,
+            recording: None,
+            workspace: Workspace::Default,
+            palettes: crate::palette::builtin_palettes(),
+            visible_palettes: vec![0],
+            show_standard_toolbar: true,
+            show_property_bar: true,
+            show_toolbox: true,
+            show_text_toolbar: false,
+            show_zoom_toolbar: false,
+            show_transform_toolbar: false,
+            context_menu: None,
+            scripts_output: Vec::new(),
+            script_source: String::new(),
+            find_state: Default::default(),
+            step_repeat: Default::default(),
+            align_to: Default::default(),
+            lens: Default::default(),
+            envelope_mode: Default::default(),
+            bevel: Default::default(),
+            extrude: Default::default(),
+            transparency_default: Default::default(),
+            glyph_filter: String::new(),
+            table_edit: None,
+            missing_fonts: Vec::new(),
+            bitmap_fx_amount: 50.0,
+            last_bitmap_fx: None,
+            shaping_keep_source: false,
+            shaping_keep_target: false,
+            color_model: 1,
+            mixer_color: Color::cmyk_pct(0.0, 0.0, 0.0, 100.0),
+            lens_synced_to: None,
+            extrude_synced_to: None,
+            pending_blend_path: false,
+            envelope_keep_lines: false,
+            media_mode: crate::media::MediaMode::Calligraphic,
+            media_preset: 0,
+            media_spacing: 8.0,
+            media_pressure: 0.5,
+            media_smoothing: 25.0,
+            mask_colors: Vec::new(),
+            mask_tolerance: 20,
+            font_filter: String::new(),
+            effect_node_drag: None,
+            open_dockers: Vec::new(),
+            free_transform_last: Point::ZERO,
+            roughen_amount: 2.0,
+            properties_section: 0,
+            area_fill_color: Color::cmyk_pct(0.0, 0.0, 100.0, 0.0),
+            mesh_rows: 2,
+            mesh_cols: 2,
+            pending_text_frame: false,
+            elastic_mode: false,
+            selected_effect_node: None,
         };
+        app.load_settings();
+        // Default names follow the UI language chosen by the settings.
+        app.new_document();
         if let Some(p) = open {
             app.open_path(p);
+        } else if app.settings.show_welcome_on_start {
+            app.show_welcome = true;
         }
         app
+    }
+
+    /// A new document with localised default page and layer names.
+    pub fn localized_document(title: impl Into<String>, size: Size) -> tracedraw_core::Document {
+        let mut doc = tracedraw_core::Document::new(title, size);
+        for (i, p) in doc.pages.iter_mut().enumerate() {
+            p.name = crate::i18n::trf("doc.page_n", &[("n", &(i + 1).to_string())]);
+            for (k, l) in p.layers.iter_mut().enumerate() {
+                l.name = crate::i18n::trf("docker.layer_n", &[("n", &(k + 1).to_string())]);
+            }
+        }
+        doc
+    }
+
+    /// Default title for a new document.
+    pub fn untitled_name() -> String {
+        crate::i18n::trf("doc.untitled_n", &[("n", "1")])
+    }
+
+    /// Apply persisted settings (language, workspace, snapping, units).
+    pub fn load_settings(&mut self) {
+        let s = crate::settings::Settings::load();
+        let lang = if s.language.is_empty() {
+            crate::i18n::system_language().to_string()
+        } else {
+            s.language.clone()
+        };
+        crate::i18n::set_language(&lang);
+        self.workspace = Workspace::from_id(&s.workspace);
+        self.set_workspace(self.workspace);
+        self.snap.grid = s.snap.grid;
+        self.snap.guides = s.snap.guides;
+        self.snap.objects = s.snap.objects;
+        self.snap.page = s.snap.page;
+        self.nudge_mm = s.nudge_mm;
+        self.duplicate_offset = Vec2::new(s.duplicate_offset_mm[0], s.duplicate_offset_mm[1]);
+        self.units = Units::from_id(&s.units);
+        self.settings = s;
+    }
+
+    pub fn save_settings(&mut self) {
+        self.settings.workspace = self.workspace.id().into();
+        self.settings.snap.grid = self.snap.grid;
+        self.settings.snap.guides = self.snap.guides;
+        self.settings.snap.objects = self.snap.objects;
+        self.settings.snap.page = self.snap.page;
+        self.settings.nudge_mm = self.nudge_mm;
+        self.settings.duplicate_offset_mm = [self.duplicate_offset.x, self.duplicate_offset.y];
+        self.settings.units = self.units.id().into();
+        self.settings.language = crate::i18n::language();
+        self.settings.save();
+    }
+
+    /// Tools > Save Settings as Default: persist current tool defaults.
+    pub fn save_defaults(&mut self) {
+        self.save_settings();
+        self.status = crate::i18n::tr("status.settings_saved");
+    }
+
+    pub fn set_workspace(&mut self, ws: Workspace) {
+        self.workspace = ws;
+        match ws {
+            Workspace::Default | Workspace::Classic => {
+                self.show_standard_toolbar = true;
+                self.show_property_bar = true;
+                self.show_toolbox = true;
+                self.show_status_bar = true;
+                self.show_dockers = true;
+                self.show_rulers = true;
+            }
+            Workspace::Lite => {
+                self.show_standard_toolbar = true;
+                self.show_property_bar = true;
+                self.show_toolbox = true;
+                self.show_status_bar = true;
+                self.show_dockers = false;
+                self.show_rulers = false;
+            }
+            Workspace::Illustration => {
+                self.show_standard_toolbar = true;
+                self.show_property_bar = true;
+                self.show_toolbox = true;
+                self.show_status_bar = true;
+                self.show_dockers = true;
+                self.docker_tab = DockerTab::Properties;
+                self.show_rulers = true;
+            }
+            Workspace::PageLayout => {
+                self.show_standard_toolbar = true;
+                self.show_property_bar = true;
+                self.show_toolbox = true;
+                self.show_status_bar = true;
+                self.show_dockers = true;
+                self.docker_tab = DockerTab::Pages;
+                self.show_rulers = true;
+                self.show_guides = true;
+            }
+        }
+    }
+
+    pub fn document_title(&self) -> String {
+        let name = self
+            .file
+            .as_ref()
+            .and_then(|p| p.file_stem().map(|s| s.to_string_lossy().to_string()))
+            .unwrap_or_else(App::untitled_name);
+        if self.engine.is_dirty() {
+            format!("{name}*")
+        } else {
+            name
+        }
+    }
+
+    /// File > Close: back to an empty document (one document per window).
+    pub fn close_document(&mut self) {
+        if self.engine.is_dirty() {
+            self.dialog = crate::ui::dialogs::Dialog::ConfirmClose;
+            return;
+        }
+        self.new_document();
+        self.show_welcome = true;
+    }
+
+    pub fn save_as_template(&mut self) {
+        let Some(path) = rfd::FileDialog::new()
+            .add_filter(crate::i18n::tr("file.template"), &["tdt"])
+            .set_file_name("Template1.tdt")
+            .save_file()
+        else {
+            return;
+        };
+        match tracedraw_io::save_native(self.engine.document(), &path) {
+            Ok(()) => {
+                self.status = crate::i18n::trf(
+                    "status.saved_template",
+                    &[("p", &path.display().to_string())],
+                )
+            }
+            Err(e) => {
+                self.status = crate::i18n::trf("status.save_failed", &[("e", &e.to_string())])
+            }
+        }
+    }
+
+    /// Edit > Repeat: run the last repeatable command on the current selection.
+    pub fn repeat_last(&mut self) {
+        let Some(cmd) = self.last_repeatable.clone() else {
+            return;
+        };
+        let shapes = self.selection.clone();
+        let cmd = match cmd {
+            Command::TransformShapes { transform, .. } => {
+                Command::TransformShapes { shapes, transform }
+            }
+            Command::SetFill { fill, .. } => Command::SetFill { shapes, fill },
+            Command::SetStroke { stroke, .. } => Command::SetStroke { shapes, stroke },
+            Command::SetOpacity { opacity, .. } => Command::SetOpacity { shapes, opacity },
+            other => other,
+        };
+        self.run(cmd);
+    }
+
+    /// Edit > Paste in View: paste centred on the visible area.
+    pub fn paste_in_view(&mut self) {
+        let before: Vec<_> = self.selection.clone();
+        self.paste();
+        if self.selection == before {
+            return;
+        }
+        if let Some(b) = self.selection_bounds() {
+            let view_rect = self.view.visible_page_rect(self.canvas_rect);
+            let d = view_rect.center() - b.center();
+            let shapes = self.selection.clone();
+            self.run(Command::TransformShapes {
+                shapes,
+                transform: Affine::translate(d),
+            });
+        }
+    }
+
+    pub fn select_all_of(&mut self, pred: impl Fn(&Shape) -> bool) {
+        let ids: Vec<ShapeId> = self
+            .doc()
+            .page(self.page)
+            .map(|p| {
+                p.layers
+                    .iter()
+                    .filter(|l| l.visible && !l.locked)
+                    .flat_map(|l| &l.shapes)
+                    .filter(|s| !s.locked && s.visible && pred(s))
+                    .map(|s| s.id)
+                    .collect()
+            })
+            .unwrap_or_default();
+        self.select(ids);
+    }
+
+    pub fn zoom_step(&mut self, zoom_in: bool) {
+        let levels = [
+            10.0, 25.0, 50.0, 75.0, 100.0, 150.0, 200.0, 300.0, 400.0, 800.0, 1600.0,
+        ];
+        let cur = self.zoom_percent();
+        let next = if zoom_in {
+            levels
+                .iter()
+                .cloned()
+                .find(|l| *l > cur + 0.5)
+                .unwrap_or(cur * 2.0)
+        } else {
+            levels
+                .iter()
+                .rev()
+                .cloned()
+                .find(|l| *l < cur - 0.5)
+                .unwrap_or(cur / 2.0)
+        };
+        self.set_zoom_percent(next);
     }
 
     // ----- document helpers --------------------------------------------------
@@ -451,6 +1149,19 @@ impl App {
     pub fn run(&mut self, cmd: Command) {
         if let Err(e) = self.engine.run(&cmd) {
             self.status = format!("{}: {e}", cmd.label());
+            return;
+        }
+        if matches!(
+            cmd,
+            Command::TransformShapes { .. }
+                | Command::SetFill { .. }
+                | Command::SetStroke { .. }
+                | Command::SetOpacity { .. }
+        ) {
+            self.last_repeatable = Some(cmd.clone());
+        }
+        if let Some(rec) = &mut self.recording {
+            rec.push(cmd);
         }
     }
 
@@ -458,12 +1169,18 @@ impl App {
         if self.tool != tool {
             self.finish_curve();
             self.finish_text();
+            if self.table_edit.is_some() {
+                self.table_commit_text();
+                self.table_edit = None;
+            }
+            self.three_point_base = None;
             self.previous_tool = self.tool;
             self.tool = tool;
             self.rotate_mode = false;
             self.flyout_open = None;
             if !tool.implemented() {
-                self.status = format!("{} tool is not implemented yet", tool.name());
+                self.status =
+                    crate::i18n::trf("status.tool_not_implemented", &[("t", &tool.name())]);
             }
         }
     }
@@ -515,10 +1232,184 @@ impl App {
                 points: self.polygon_points,
                 sharpness: self.star_sharpness,
             },
+            Tool::GraphPaper => {
+                self.create_graph_paper(rect);
+                return;
+            }
+            Tool::ActionLines => {
+                self.create_action_lines(rect);
+                return;
+            }
             _ => return,
         };
         if let Some(id) = self.new_shape(kind) {
             self.select(vec![id]);
+        }
+    }
+
+    /// Graph Paper: a grid of `graph_rows` x `graph_cols` rectangles, grouped.
+    pub fn create_graph_paper(&mut self, rect: Rect) {
+        let (rows, cols) = (self.graph_rows.max(1), self.graph_cols.max(1));
+        let Some(layer) = self.active_layer() else {
+            return;
+        };
+        let cw = rect.width() / cols as f64;
+        let ch = rect.height() / rows as f64;
+        let mut cmds = Vec::new();
+        let mut ids = Vec::new();
+        for r in 0..rows {
+            for c in 0..cols {
+                let cell = Rect::new(
+                    rect.x0 + cw * c as f64,
+                    rect.y0 + ch * r as f64,
+                    rect.x0 + cw * (c + 1) as f64,
+                    rect.y0 + ch * (r + 1) as f64,
+                );
+                let id = self.engine.new_shape_id();
+                let mut s = Shape::new(
+                    id,
+                    ShapeKind::Rect {
+                        rect: cell,
+                        radius: 0.0,
+                    },
+                );
+                s.fill = self.default_fill.clone();
+                s.stroke = self
+                    .default_stroke
+                    .clone()
+                    .or_else(|| Some(Stroke::hairline(Color::BLACK)));
+                ids.push(id);
+                cmds.push(Command::AddShape { layer, shape: s });
+            }
+        }
+        cmds.push(Command::Group { shapes: ids });
+        let _ = self.engine.run_batch("Graph Paper", &cmds);
+        if let Some(id) = self
+            .doc()
+            .page(self.page)
+            .ok()
+            .and_then(|p| p.layers.iter().find(|l| l.id == layer))
+            .and_then(|l| l.shapes.last())
+            .map(|s| s.id)
+        {
+            self.select(vec![id]);
+        }
+    }
+
+    /// Action lines: speed lines across `rect`, parallel (left to right, random
+    /// lengths) or radial (from the centre); one combined curve object.
+    pub fn create_action_lines(&mut self, rect: Rect) {
+        use tracedraw_core::geometry::BezPath;
+        let n = self.action_lines_count.clamp(2, 500) as usize;
+        let mut path = BezPath::new();
+        // Deterministic pseudo-random lengths so the result is reproducible.
+        let mut seed: u32 = 0x9E37_79B9 ^ n as u32;
+        let mut rnd = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            (seed % 1000) as f64 / 1000.0
+        };
+        if self.action_lines_radial {
+            let c = rect.center();
+            let rmax = (rect.width().min(rect.height())) / 2.0;
+            for i in 0..n {
+                let a = std::f64::consts::TAU * i as f64 / n as f64;
+                let dir = Vec2::new(a.cos(), a.sin());
+                let r0 = rmax * (0.25 + 0.35 * rnd());
+                let r1 = rmax * (0.75 + 0.25 * rnd());
+                path.move_to(c + dir * r0);
+                path.line_to(c + dir * r1);
+            }
+        } else {
+            for i in 0..n {
+                let y = rect.y0 + rect.height() * (i as f64 + 0.5) / n as f64;
+                let len = rect.width() * (0.3 + 0.7 * rnd());
+                let x0 = rect.x1 - len;
+                path.move_to(Point::new(x0, y));
+                path.line_to(Point::new(rect.x1, y));
+            }
+        }
+        if let Some(id) = self.new_shape(ShapeKind::Path {
+            path,
+            closed: false,
+        }) {
+            let stroke = self
+                .default_stroke
+                .clone()
+                .unwrap_or_else(|| Stroke::hairline(Color::BLACK));
+            self.run(Command::SetStroke {
+                shapes: vec![id],
+                stroke: Some(stroke),
+            });
+            self.run(Command::SetFill {
+                shapes: vec![id],
+                fill: Fill::None,
+            });
+            self.select(vec![id]);
+        }
+    }
+
+    /// 3-point tools: the base segment `a -> b` was dragged, `c` is the third
+    /// click. Rectangle and ellipse take the base as one side and `c` as the
+    /// height; the curve passes through `c`.
+    pub fn finish_three_point(&mut self, a: Point, b: Point, c: Point) {
+        use tracedraw_core::geometry::BezPath;
+        let base = b - a;
+        let len = base.hypot();
+        if len < 0.05 {
+            return;
+        }
+        let angle = base.atan2();
+        let dir = base / len;
+        let normal = Vec2::new(-dir.y, dir.x);
+        let height = (c - a).dot(normal);
+        match self.tool {
+            Tool::ThreePointRectangle | Tool::ThreePointEllipse => {
+                if height.abs() < 0.05 {
+                    return;
+                }
+                let local = Rect::new(0.0, height.min(0.0), len, height.max(0.0));
+                let kind = if self.tool == Tool::ThreePointRectangle {
+                    ShapeKind::Rect {
+                        rect: local,
+                        radius: self.rect_radius,
+                    }
+                } else {
+                    ShapeKind::Ellipse {
+                        rect: local,
+                        arc: self.ellipse_arc,
+                    }
+                };
+                if let Some(id) = self.new_shape(kind) {
+                    let t = Affine::translate(a.to_vec2()) * Affine::rotate(angle);
+                    self.run(Command::TransformShapes {
+                        shapes: vec![id],
+                        transform: t,
+                    });
+                    self.select(vec![id]);
+                }
+            }
+            Tool::ThreePointCurve => {
+                // Quadratic through c at t = 0.5, written as a cubic.
+                let ctrl = Point::new(2.0 * c.x - 0.5 * (a.x + b.x), 2.0 * c.y - 0.5 * (a.y + b.y));
+                let c1 = a + (ctrl - a) * (2.0 / 3.0);
+                let c2 = b + (ctrl - b) * (2.0 / 3.0);
+                let mut path = BezPath::new();
+                path.move_to(a);
+                path.curve_to(c1, c2, b);
+                if let Some(id) = self.new_shape(ShapeKind::Path {
+                    path,
+                    closed: false,
+                }) {
+                    self.run(Command::SetFill {
+                        shapes: vec![id],
+                        fill: Fill::None,
+                    });
+                    self.select(vec![id]);
+                }
+            }
+            _ => {}
         }
     }
 
@@ -537,20 +1428,36 @@ impl App {
     }
 
     /// Start artistic text at a point, or paragraph text in a frame.
+    /// Start editing an existing text object in place.
+    pub fn begin_text_edit(&mut self, id: ShapeId) {
+        let text = match self.doc().find_shape(id).map(|s| s.kind.clone()) {
+            Some(ShapeKind::Text { spans, .. }) => {
+                spans.iter().map(|s| s.text.as_str()).collect::<String>()
+            }
+            _ => return,
+        };
+        self.finish_text();
+        self.text_edit = Some(TextEdit { shape: id, text });
+        self.select(vec![id]);
+        self.sync_text_defaults_from(id);
+    }
+
     pub fn start_text(&mut self, at: Point, frame: Option<Size>) {
         self.finish_text();
         let span = TextSpan {
-            text: String::new(),
-            font_family: self.text_font.clone(),
-            size_pt: self.text_size_pt,
             bold: self.text_bold,
             italic: self.text_italic,
+            ..TextSpan::new("", self.text_font.clone(), self.text_size_pt)
         };
+        let mut para = tracedraw_core::ParagraphStyle::default();
+        para.hyphenate = self.text_hyphenation;
         if let Some(id) = self.new_shape(ShapeKind::Text {
             spans: vec![span],
             origin: at,
             frame,
             align: self.text_align,
+            para,
+            on_path: None,
         }) {
             self.text_edit = Some(TextEdit {
                 shape: id,
@@ -586,17 +1493,28 @@ impl App {
                 origin,
                 frame,
                 align,
+                para,
+                on_path,
             } = &s.kind
             {
                 let mut spans = spans.clone();
-                if let Some(first) = spans.first_mut() {
-                    first.text = te.text.clone();
-                }
+                // Typing edits the whole text as one run with the first span's style.
+                let style = spans.first().cloned().unwrap_or_else(|| {
+                    TextSpan::new("", self.text_font.clone(), self.text_size_pt)
+                });
+                spans = vec![TextSpan {
+                    text: te.text.clone(),
+                    ..style
+                }];
+                let mut para = para.clone();
+                para.hyphenate = self.text_hyphenation;
                 let kind = ShapeKind::Text {
                     spans,
                     origin: *origin,
                     frame: *frame,
                     align: *align,
+                    para,
+                    on_path: on_path.clone(),
                 };
                 // Typing is one undo step per text object; collapse by undoing the
                 // previous keystroke entry when it was also a SetShapeKind on this shape.
@@ -652,7 +1570,10 @@ impl App {
         let shapes = self.selected_shapes();
         if !shapes.is_empty() {
             self.clipboard = Some(Clipboard { shapes });
-            self.status = format!("{} object(s) copied", self.selection.len());
+            self.status = crate::i18n::trf(
+                "status.objects_copied",
+                &[("n", &self.selection.len().to_string())],
+            );
         }
     }
 
@@ -793,7 +1714,7 @@ impl App {
     pub fn apply_fill(&mut self, fill: Fill) {
         if self.selection.is_empty() {
             self.default_fill = fill;
-            self.status = "Default fill changed for new objects".into();
+            self.status = crate::i18n::tr("status.default_fill_changed");
         } else {
             let shapes = self.selection.clone();
             self.run(Command::SetFill { shapes, fill });
@@ -884,7 +1805,7 @@ impl App {
     pub fn undo(&mut self) {
         self.finish_text();
         match self.engine.undo() {
-            Ok(l) => self.status = format!("Undo {l}"),
+            Ok(l) => self.status = crate::i18n::trf("status.undo_n", &[("l", l)]),
             Err(e) => self.status = e.to_string(),
         }
         self.selection
@@ -893,7 +1814,7 @@ impl App {
 
     pub fn redo(&mut self) {
         match self.engine.redo() {
-            Ok(l) => self.status = format!("Redo {l}"),
+            Ok(l) => self.status = crate::i18n::trf("status.redo_n", &[("l", l)]),
             Err(e) => self.status = e.to_string(),
         }
         self.selection
@@ -903,7 +1824,8 @@ impl App {
     // ----- files -------------------------------------------------------------
 
     pub fn new_document(&mut self) {
-        let doc = tracedraw_core::Document::default();
+        let doc =
+            App::localized_document(App::untitled_name(), tracedraw_core::document::paper::A4);
         self.page = doc.pages[0].id;
         self.engine.replace(doc);
         self.selection.clear();
@@ -914,8 +1836,12 @@ impl App {
 
     pub fn open_dialog(&mut self) {
         let picked = rfd::FileDialog::new()
-            .add_filter("All supported", &["cdr", "tdraw"])
-            .add_filter("CDR files (*.cdr)", &["cdr"])
+            .add_filter(
+                crate::i18n::tr("file.all_supported"),
+                &["cdr", "tdraw", "svg", "svgz"],
+            )
+            .add_filter("SVG (*.svg, *.svgz)", &["svg", "svgz"])
+            .add_filter(crate::i18n::tr("file.cdr_files"), &["cdr"])
             .add_filter("TraceDraw (*.tdraw)", &["tdraw"])
             .pick_file();
         if let Some(p) = picked {
@@ -929,7 +1855,30 @@ impl App {
             .and_then(|e| e.to_str())
             .unwrap_or("")
             .to_ascii_lowercase();
-        let result = if ext == "cdr" {
+        let result = if ext == "svg" || ext == "svgz" {
+            Self::read_svg_text(&path)
+                .and_then(|text| {
+                    tracedraw_io::svg_import::parse(
+                        &text,
+                        &mut tracedraw_core::id::IdSource::default(),
+                    )
+                })
+                .map(|imported| {
+                    let title = path
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_else(App::untitled_name);
+                    let mut doc = App::localized_document(title, imported.size);
+                    let mut ids = doc.ids().clone();
+                    let n = imported.shapes.len();
+                    for s in imported.shapes {
+                        let shape = reid_with(s, &mut ids);
+                        doc.pages[0].layers[0].shapes.push(shape);
+                    }
+                    doc.set_ids(ids);
+                    (doc, format!("SVG: {n} object(s)"))
+                })
+        } else if ext == "cdr" {
             tracedraw_cdr::open(&path)
                 .map(|(doc, report)| {
                     let ver = report.version.map(|v| v.name()).unwrap_or_default();
@@ -955,15 +1904,25 @@ impl App {
                 self.page = doc.pages[0].id;
                 self.engine.replace(doc);
                 self.selection.clear();
-                self.file = if ext == "cdr" {
+                self.file = if matches!(ext.as_str(), "cdr" | "svg" | "svgz") {
                     None
                 } else {
                     Some(path.clone())
                 };
                 self.status = format!("{}: {msg}", path.display());
                 self.fit_pending = true;
+                self.settings.touch_recent(&path);
+                self.settings.last_dir = path.parent().map(|p| p.to_path_buf());
+                self.settings.save();
+                self.show_welcome = false;
+                self.check_missing_fonts();
             }
-            Err(e) => self.status = format!("Could not open {}: {e}", path.display()),
+            Err(e) => {
+                self.status = crate::i18n::trf(
+                    "status.could_not_open",
+                    &[("p", &path.display().to_string()), ("e", &e.to_string())],
+                )
+            }
         }
     }
 
@@ -981,9 +1940,14 @@ impl App {
             Ok(()) => {
                 self.engine.mark_saved();
                 self.file = Some(path.clone());
-                self.status = format!("Saved {}", path.display());
+                self.status =
+                    crate::i18n::trf("status.saved", &[("p", &path.display().to_string())]);
+                self.settings.touch_recent(&path);
+                self.settings.save();
             }
-            Err(e) => self.status = format!("Save failed: {e}"),
+            Err(e) => {
+                self.status = crate::i18n::trf("status.save_failed", &[("e", &e.to_string())])
+            }
         }
     }
 
@@ -1002,22 +1966,28 @@ impl App {
             .position(|p| p.id == self.page)
             .unwrap_or(0);
         match tracedraw_io::save_svg(self.engine.document(), idx, &path) {
-            Ok(()) => self.status = format!("Exported {}", path.display()),
-            Err(e) => self.status = format!("Export failed: {e}"),
+            Ok(()) => {
+                self.status =
+                    crate::i18n::trf("status.exported", &[("path", &path.display().to_string())])
+            }
+            Err(e) => {
+                self.status = crate::i18n::trf("status.export_failed", &[("e", &e.to_string())])
+            }
         }
     }
 
     pub fn import(&mut self) {
         let Some(path) = rfd::FileDialog::new()
             .add_filter(
-                "All importable",
+                crate::i18n::tr("file.all_importable"),
                 &[
-                    "cdr", "png", "jpg", "jpeg", "bmp", "gif", "webp", "tif", "tiff",
+                    "cdr", "svg", "svgz", "png", "jpg", "jpeg", "bmp", "gif", "webp", "tif", "tiff",
                 ],
             )
-            .add_filter("CDR files (*.cdr)", &["cdr"])
+            .add_filter(crate::i18n::tr("file.cdr_files"), &["cdr"])
+            .add_filter("SVG (*.svg, *.svgz)", &["svg", "svgz"])
             .add_filter(
-                "Images",
+                crate::i18n::tr("file.images"),
                 &["png", "jpg", "jpeg", "bmp", "gif", "webp", "tif", "tiff"],
             )
             .pick_file()
@@ -1029,6 +1999,10 @@ impl App {
             .and_then(|e| e.to_str())
             .unwrap_or("")
             .to_ascii_lowercase();
+        if ext == "svg" || ext == "svgz" {
+            self.import_svg(&path);
+            return;
+        }
         if ext != "cdr" {
             self.import_bitmap(&path);
             return;
@@ -1056,7 +2030,51 @@ impl App {
                 }
                 self.select(ids);
             }
-            Err(e) => self.status = format!("Import failed: {e}"),
+            Err(e) => {
+                self.status = crate::i18n::trf("status.import_failed", &[("e", &e.to_string())])
+            }
+        }
+    }
+
+    /// Read an SVG file (plain or gzip-compressed) as text.
+    fn read_svg_text(path: &std::path::Path) -> std::result::Result<String, String> {
+        let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+        if bytes.len() > 2 && bytes[0] == 0x1f && bytes[1] == 0x8b {
+            use std::io::Read;
+            let mut out = String::new();
+            flate2::read::GzDecoder::new(&bytes[..])
+                .read_to_string(&mut out)
+                .map_err(|e| e.to_string())?;
+            Ok(out)
+        } else {
+            String::from_utf8(bytes).map_err(|e| e.to_string())
+        }
+    }
+
+    /// Import an SVG into the active layer, keeping its groups and clips.
+    pub fn import_svg(&mut self, path: &std::path::Path) {
+        let Some(layer) = self.active_layer() else {
+            return;
+        };
+        let parsed = Self::read_svg_text(path).and_then(|text| {
+            tracedraw_io::svg_import::parse(&text, &mut tracedraw_core::id::IdSource::default())
+        });
+        match parsed {
+            Ok(imported) => {
+                let mut cmds = Vec::new();
+                let mut ids = Vec::new();
+                for s in imported.shapes {
+                    let id = self.engine.new_shape_id();
+                    let shape = reid(s, id, &mut self.engine);
+                    ids.push(id);
+                    cmds.push(Command::AddShape { layer, shape });
+                }
+                if let Err(e) = self.engine.run_batch("Import", &cmds) {
+                    self.status = e.to_string();
+                }
+                self.select(ids);
+            }
+            Err(e) => self.status = crate::i18n::trf("status.import_failed", &[("e", &e)]),
         }
     }
 
@@ -1089,8 +2107,13 @@ impl App {
             return;
         };
         match tracedraw_io::save_pdf(self.engine.document(), &path) {
-            Ok(()) => self.status = format!("Exported {}", path.display()),
-            Err(e) => self.status = format!("Export failed: {e}"),
+            Ok(()) => {
+                self.status =
+                    crate::i18n::trf("status.exported", &[("path", &path.display().to_string())])
+            }
+            Err(e) => {
+                self.status = crate::i18n::trf("status.export_failed", &[("e", &e.to_string())])
+            }
         }
     }
 
@@ -1171,11 +2194,42 @@ impl App {
 /// Give a copied shape (and any children) fresh ids.
 fn reid(mut s: Shape, id: ShapeId, engine: &mut Engine) -> Shape {
     s.id = id;
-    if let ShapeKind::Group { children } = &mut s.kind {
-        for c in children.iter_mut() {
-            let nid = engine.new_shape_id();
-            *c = reid(c.clone(), nid, engine);
+    match &mut s.kind {
+        ShapeKind::Group { children } => {
+            for c in children.iter_mut() {
+                let nid = engine.new_shape_id();
+                *c = reid(c.clone(), nid, engine);
+            }
         }
+        ShapeKind::ClipFrame { frame, contents } => {
+            let fid = engine.new_shape_id();
+            **frame = reid((**frame).clone(), fid, engine);
+            for c in contents.iter_mut() {
+                let nid = engine.new_shape_id();
+                *c = reid(c.clone(), nid, engine);
+            }
+        }
+        _ => {}
+    }
+    s
+}
+
+/// Re-number a shape tree from an id source (documents built outside the engine).
+fn reid_with(mut s: Shape, ids: &mut tracedraw_core::id::IdSource) -> Shape {
+    s.id = ids.shape();
+    match &mut s.kind {
+        ShapeKind::Group { children } => {
+            for c in children.iter_mut() {
+                *c = reid_with(c.clone(), ids);
+            }
+        }
+        ShapeKind::ClipFrame { frame, contents } => {
+            **frame = reid_with((**frame).clone(), ids);
+            for c in contents.iter_mut() {
+                *c = reid_with(c.clone(), ids);
+            }
+        }
+        _ => {}
     }
     s
 }
@@ -1239,20 +2293,25 @@ pub fn fill_preview_color(fill: &Fill) -> Option<egui::Color32> {
 }
 
 pub fn fill_description(fill: &Fill) -> String {
+    use crate::i18n::{tr, trf};
     match fill {
-        Fill::None => "None".into(),
+        Fill::None => tr("fill.none"),
         Fill::Solid(c) => color_description(*c),
         Fill::Fountain(f) => match f.kind {
-            tracedraw_core::FountainKind::Linear => "Linear fountain".into(),
-            tracedraw_core::FountainKind::Radial => "Radial fountain".into(),
-            tracedraw_core::FountainKind::Conical => "Conical fountain".into(),
-            tracedraw_core::FountainKind::Square => "Square fountain".into(),
+            tracedraw_core::FountainKind::Linear => tr("fill.linear_fountain"),
+            tracedraw_core::FountainKind::Radial => tr("fill.radial_fountain"),
+            tracedraw_core::FountainKind::Conical => tr("fill.conical_fountain"),
+            tracedraw_core::FountainKind::Square => tr("fill.square_fountain"),
         },
         Fill::Pattern(tracedraw_core::Pattern::TwoColor { tile, .. }) => {
-            format!("Two-colour pattern ({})", tile.name())
+            trf("fill.two_color_pattern", &[("t", tile.name())])
         }
-        Fill::Pattern(tracedraw_core::Pattern::Bitmap { .. }) => "Bitmap pattern".into(),
-        Fill::Texture(_) => "Texture fill".into(),
+        Fill::Pattern(tracedraw_core::Pattern::Bitmap { .. }) => tr("fill.bitmap_pattern"),
+        Fill::Texture(_) => tr("fill.texture_fill"),
+        Fill::Mesh(m) => trf(
+            "fill.mesh_fill_n",
+            &[("r", &m.rows.to_string()), ("c", &m.cols.to_string())],
+        ),
     }
 }
 
@@ -1272,5 +2331,25 @@ pub fn color_description(c: Color) -> String {
             (k * 100.0).round()
         ),
         Color::Gray { v } => format!("Gray {}", (v * 255.0).round()),
+        Color::Hsb { h, s, b } => format!(
+            "H:{} S:{} B:{}",
+            h.round(),
+            (s * 100.0).round(),
+            (b * 100.0).round()
+        ),
+        Color::Hsl { h, s, l } => format!(
+            "H:{} S:{} L:{}",
+            h.round(),
+            (s * 100.0).round(),
+            (l * 100.0).round()
+        ),
+        Color::Lab { l, a, b } => format!("L:{} a:{} b:{}", l.round(), a.round(), b.round()),
+        Color::Yiq { y, i, q } => format!(
+            "Y:{} I:{} Q:{}",
+            (y * 255.0).round(),
+            (i * 255.0).round(),
+            (q * 255.0).round()
+        ),
+        Color::Registration => "Registration".into(),
     }
 }
