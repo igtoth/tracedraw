@@ -53,7 +53,9 @@ The app can be driven headlessly: start `Xvfb :99`, run the debug binary
 with `DISPLAY=:99 LIBGL_ALWAYS_SOFTWARE=1`, send pointer and key events
 with python-xlib (XTest) and capture with ImageMagick `import`. See
 `scripts/visual/` for the driver and example scripts. Look at the PNGs
-before claiming a UI change works.
+before claiming a UI change works. `scripts/visual/smoke_edit.py` and
+`scripts/visual/monkey.py` (random actions, `MONKEY_SEED`) must leave the
+application running with no panic in the log after any interaction change.
 
 ## Parity
 
