@@ -758,6 +758,7 @@ fn edge_detect(img: &RgbaImage, color: bool) -> RgbaImage {
     for (x, y, p) in img.enumerate_pixels() {
         let mut o = [0u8; 4];
         let mut mag = 0.0f32;
+        #[allow(clippy::needless_range_loop)]
         for c in 0..3 {
             let dx = ex.get_pixel(x, y)[c] as f32 + ex2.get_pixel(x, y)[c] as f32;
             let dy = ey.get_pixel(x, y)[c] as f32 + ey2.get_pixel(x, y)[c] as f32;

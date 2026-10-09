@@ -1985,10 +1985,8 @@ impl<'a> Interp<'a> {
             "begin" => {
                 let d = need!(self.pop());
                 match d {
-                    Obj::Dict(d) | Obj::Font(d) => {
-                        if self.dicts.len() < 1000 {
-                            self.dicts.push(d);
-                        }
+                    Obj::Dict(d) | Obj::Font(d) if self.dicts.len() < 1000 => {
+                        self.dicts.push(d);
                     }
                     _ => {}
                 }
@@ -3431,12 +3429,7 @@ impl<'a> Interp<'a> {
             return;
         }
         // Tiling pattern: run PaintProc into a tile.
-        let bbox = d
-            .borrow()
-            .map
-            .get("BBox")
-            .map(|o| nums_of(o))
-            .unwrap_or_default();
+        let bbox = d.borrow().map.get("BBox").map(nums_of).unwrap_or_default();
         if bbox.len() != 4 {
             return;
         }

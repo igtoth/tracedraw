@@ -1,3 +1,10 @@
+#![allow(
+    clippy::field_reassign_with_default,
+    clippy::too_many_arguments,
+    clippy::type_complexity,
+    clippy::enum_variant_names,
+    clippy::wrong_self_convention
+)]
 // No console window in release builds on Windows.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 

@@ -57,18 +57,10 @@ pub struct Finding {
 }
 
 /// Options that depend on the language of the text.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Options {
     /// French typography puts a space before `; : ! ?`.
     pub space_before_high_punctuation: bool,
-}
-
-impl Default for Options {
-    fn default() -> Self {
-        Options {
-            space_before_high_punctuation: false,
-        }
-    }
 }
 
 impl Options {

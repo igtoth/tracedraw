@@ -1056,9 +1056,9 @@ fn xmp_packet(title: &str, std_: PdfStandard, date: &str) -> String {
         let _ = write!(x, "<pdfxid:GTS_PDFXVersion>{version}</pdfxid:GTS_PDFXVersion>\n<pdfx:GTS_PDFXVersion>{version}</pdfx:GTS_PDFXVersion>\n");
     }
     if !conformance.is_empty() {
-        let _ = write!(
+        let _ = writeln!(
             x,
-            "<pdfx:GTS_PDFXConformance>{conformance}</pdfx:GTS_PDFXConformance>\n"
+            "<pdfx:GTS_PDFXConformance>{conformance}</pdfx:GTS_PDFXConformance>"
         );
     }
     x.push_str("</rdf:Description>\n</rdf:RDF>\n</x:xmpmeta>\n<?xpacket end=\"w\"?>");

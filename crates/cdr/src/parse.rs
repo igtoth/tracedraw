@@ -1831,7 +1831,7 @@ impl<'a> Ctx<'a> {
                 self.pending_crop = None;
                 if let Some(n) = r.u32() {
                     let n = n as usize;
-                    if n >= 3 && n <= 100_000 {
+                    if (3..=100_000).contains(&n) {
                         if let Some((pts, types)) = self.read_points(&mut r, n) {
                             let (path, _closed) = build_path(&pts, &types);
                             let b = bounds_of(&pts);
@@ -1912,7 +1912,7 @@ impl<'a> Ctx<'a> {
                 palette.push([rr, g, b]);
             }
         }
-        let stride = ((width as usize * bpp as usize + 31) / 32) * 4;
+        let stride = (width as usize * bpp as usize).div_ceil(32) * 4;
         let needed = stride.saturating_mul(height as usize);
         let Some(pixels) = d.get(r.pos..r.pos.saturating_add(size as usize)) else {
             return;
@@ -2224,10 +2224,10 @@ fn encode_png(width: u32, height: u32, rgba: &[u8]) -> Vec<u8> {
         raw.resize((row + 1) * (y + 1), 0);
     }
     let mut enc = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
-    let idat = match enc.write_all(&raw).and_then(|_| enc.finish()) {
-        Ok(v) => v,
-        Err(_) => Vec::new(),
-    };
+    let idat = enc
+        .write_all(&raw)
+        .and_then(|_| enc.finish())
+        .unwrap_or_default();
     let mut out = vec![0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
     let mut ihdr = Vec::with_capacity(13);
     ihdr.extend_from_slice(&width.to_be_bytes());

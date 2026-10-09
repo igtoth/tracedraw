@@ -65,7 +65,7 @@ fn code128(text: &str) -> Result<Vec<u8>, &'static str> {
     let digits_from =
         |i: usize| -> usize { bytes[i..].iter().take_while(|b| b.is_ascii_digit()).count() };
     let mut in_c = false;
-    let all_digits_even = bytes.iter().all(|b| b.is_ascii_digit()) && bytes.len() % 2 == 0;
+    let all_digits_even = bytes.iter().all(|b| b.is_ascii_digit()) && bytes.len().is_multiple_of(2);
     if all_digits_even || digits_from(0) >= 4 {
         codes.push(START_C);
         in_c = true;

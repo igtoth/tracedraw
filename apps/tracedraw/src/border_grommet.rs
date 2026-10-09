@@ -244,7 +244,7 @@ fn edge_images(img: &image::RgbaImage, bpx: u32, mirror: bool) -> Vec<image::Rgb
 fn render_page(app: &App) -> Option<(image::RgbaImage, f64)> {
     let size = app.page_size();
     let longest = size.width.max(size.height).max(1.0);
-    let dpi = (4000.0 * 25.4 / longest).min(150.0).max(10.0);
+    let dpi = (4000.0 * 25.4 / longest).clamp(10.0, 150.0);
     let pm = tracedraw_render::render_page_image(app.doc(), app.page, dpi)?;
     let (w, h) = (pm.width(), pm.height());
     // The background is opaque white, so premultiplied data is plain RGBA.

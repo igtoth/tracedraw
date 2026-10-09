@@ -1585,16 +1585,14 @@ impl App {
     /// Property bar defaults follow the text object being edited.
     pub fn sync_text_defaults_from(&mut self, id: ShapeId) {
         let kind = self.doc().shape(id).map(|(_, s)| s.kind.clone());
-        if let Ok(kind) = kind {
-            if let ShapeKind::Text { spans, align, .. } = &kind {
-                if let Some(sp) = spans.first() {
-                    self.text_font = sp.font_family.clone();
-                    self.text_size_pt = sp.size_pt;
-                    self.text_bold = sp.bold;
-                    self.text_italic = sp.italic;
-                }
-                self.text_align = *align;
+        if let Ok(ShapeKind::Text { spans, align, .. }) = &kind {
+            if let Some(sp) = spans.first() {
+                self.text_font = sp.font_family.clone();
+                self.text_size_pt = sp.size_pt;
+                self.text_bold = sp.bold;
+                self.text_italic = sp.italic;
             }
+            self.text_align = *align;
         }
     }
 

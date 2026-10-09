@@ -3,6 +3,7 @@
 //! dashes, hairlines and anti-aliasing. The GPU renderer, when it exists,
 //! must match this one.
 
+#![allow(clippy::field_reassign_with_default)]
 use tiny_skia::{
     Color as SkColor, FillRule, GradientStop, LineCap, LineJoin, LinearGradient, Paint,
     Path as SkPath, PathBuilder, Pixmap, RadialGradient, SpreadMode, Stroke as SkStroke,

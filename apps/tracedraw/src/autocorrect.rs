@@ -224,7 +224,7 @@ fn replace_word(word: &str, table: &[(String, String)]) -> String {
     if let Some((_, to)) = table.iter().find(|(from, _)| from == word) {
         return to.clone();
     }
-    let trimmed = word.trim_end_matches(|c: char| matches!(c, '.' | ',' | ';' | ':' | '!' | '?'));
+    let trimmed = word.trim_end_matches(['.', ',', ';', ':', '!', '?']);
     if trimmed.len() != word.len() {
         if let Some((_, to)) = table.iter().find(|(from, _)| from == trimmed) {
             return format!("{to}{}", &word[trimmed.len()..]);

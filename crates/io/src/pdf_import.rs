@@ -67,7 +67,7 @@ pub fn parse(bytes: &[u8], ids: &mut IdSource) -> Result<ImportedPdf, String> {
         .and_then(|(_, o)| o.as_dict().ok())
         .and_then(|d| d.get(b"Title").ok())
         .and_then(|t| t.as_str().ok())
-        .map(|s| pdf_string(s))
+        .map(pdf_string)
         .filter(|s| !s.trim().is_empty());
     let pages: Vec<lopdf::ObjectId> = doc.page_iter().collect();
     if pages.is_empty() {
@@ -399,7 +399,7 @@ impl<'a> Importer<'a> {
         let rotate = self
             .page_attr(page, b"Rotate")
             .and_then(Self::num)
-            .map(|r| ((r.round() as i64).rem_euclid(360)) as i64)
+            .map(|r| (r.round() as i64).rem_euclid(360))
             .unwrap_or(0);
         let (w_pt, h_pt) = if rotate == 90 || rotate == 270 {
             (crop.height(), crop.width())
@@ -2329,7 +2329,7 @@ impl<'a> BitReader<'a> {
 /// "ABCDEF+Arial-BoldItalicMT" -> ("Arial", bold, italic).
 fn split_font_name(base: &str) -> (String, bool, bool) {
     let name = match base.find('+') {
-        Some(i) if i == 6 => &base[7..],
+        Some(6) => &base[7..],
         _ => base,
     };
     let lower = name.to_ascii_lowercase();

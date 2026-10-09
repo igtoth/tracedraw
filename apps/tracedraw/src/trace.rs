@@ -328,10 +328,7 @@ pub fn contours(mask: &[bool], w: usize, h: usize) -> Vec<Vec<Point>> {
     let mut keys: Vec<(i64, i64)> = edges.keys().copied().collect();
     keys.sort_unstable();
     for start in keys {
-        loop {
-            let Some(first) = edges.get_mut(&start).and_then(|v| v.pop()) else {
-                break;
-            };
+        while let Some(first) = edges.get_mut(&start).and_then(|v| v.pop()) {
             let mut ring = vec![Point::new(start.0 as f64, start.1 as f64)];
             let mut cur = first;
             let mut prev = start;

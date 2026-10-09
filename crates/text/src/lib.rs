@@ -350,9 +350,9 @@ impl FontSystem {
         let features: Vec<rustybuzz::Feature> = span
             .features
             .iter()
-            .filter_map(|f| {
+            .map(|f| {
                 let tag = rustybuzz::ttf_parser::Tag::from_bytes_lossy(f.as_bytes());
-                Some(rustybuzz::Feature::new(tag, 1, ..))
+                rustybuzz::Feature::new(tag, 1, ..)
             })
             .collect();
         let mut buffer = rustybuzz::UnicodeBuffer::new();

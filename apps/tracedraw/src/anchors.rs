@@ -124,9 +124,7 @@ impl App {
     }
 
     fn custom_anchor_at(&self, id: ShapeId, p: Point) -> Option<usize> {
-        let Some(s) = self.doc().find_shape(id) else {
-            return None;
-        };
+        let s = self.doc().find_shape(id)?;
         let b = s.bounds();
         let tol = self.anchor_tolerance();
         custom_anchors(&s.data).iter().position(|(fx, fy)| {
@@ -236,11 +234,11 @@ impl App {
                 return;
             }
         }
-        if response.drag_stopped_by(PointerButton::Primary) {
-            if matches!(self.drag, Drag::Anchor { .. }) {
-                self.drag = Drag::None;
-                return;
-            }
+        if response.drag_stopped_by(PointerButton::Primary)
+            && matches!(self.drag, Drag::Anchor { .. })
+        {
+            self.drag = Drag::None;
+            return;
         }
         if response.clicked_by(PointerButton::Primary) {
             if let Some(id) = target {

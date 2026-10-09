@@ -258,9 +258,9 @@ impl App {
                 for c in t.cells.iter_mut() {
                     if c.row > ar {
                         c.row -= 1;
-                    } else if c.row == ar && c.row_span > 1 {
-                        c.row_span -= 1;
-                    } else if c.row < ar && c.row + c.row_span > ar {
+                    } else if (c.row == ar && c.row_span > 1)
+                        || (c.row < ar && c.row + c.row_span > ar)
+                    {
                         c.row_span -= 1;
                     }
                 }
@@ -275,9 +275,9 @@ impl App {
                 for c in t.cells.iter_mut() {
                     if c.col > ac {
                         c.col -= 1;
-                    } else if c.col == ac && c.col_span > 1 {
-                        c.col_span -= 1;
-                    } else if c.col < ac && c.col + c.col_span > ac {
+                    } else if (c.col == ac && c.col_span > 1)
+                        || (c.col < ac && c.col + c.col_span > ac)
+                    {
                         c.col_span -= 1;
                     }
                 }

@@ -1,6 +1,7 @@
 //! tracedraw-io: export the document model to interchange formats and read the
 //! native `.tdraw` file.
 
+#![allow(clippy::field_reassign_with_default)]
 pub mod dxf;
 pub mod eps;
 pub mod eps_import;

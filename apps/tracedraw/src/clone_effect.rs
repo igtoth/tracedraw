@@ -147,7 +147,7 @@ impl App {
             let cmds = match kind {
                 EffectKind::Shadow => vec![Command::SetShadow {
                     shapes: vec![clone],
-                    shadow: s.shadow.clone(),
+                    shadow: s.shadow,
                 }],
                 EffectKind::Transparency => {
                     let Some(c) = self.doc().find_shape(clone).cloned() else {

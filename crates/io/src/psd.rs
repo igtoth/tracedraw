@@ -275,7 +275,7 @@ fn resolution(res: &[u8]) -> Option<(f64, f64)> {
         // Pascal name padded to even length.
         let nlen = r.u8()? as usize;
         r.skip(nlen)?;
-        if nlen % 2 == 0 {
+        if nlen.is_multiple_of(2) {
             r.skip(1)?;
         }
         let len = r.u32()? as usize;

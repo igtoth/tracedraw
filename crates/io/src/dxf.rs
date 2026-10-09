@@ -123,7 +123,7 @@ pub fn aci_to_rgb(index: i64) -> [u8; 3] {
             let hue = (i / 10) as f32 * 15.0;
             let shade = (i % 10) as usize;
             let v = [1.0, 1.0, 0.65, 0.65, 0.5, 0.5, 0.35, 0.35, 0.3, 0.3][shade];
-            let s = if shade % 2 == 0 { 1.0 } else { 0.5 };
+            let s = if shade.is_multiple_of(2) { 1.0 } else { 0.5 };
             let (r, g, b) = hsv(hue, s, v);
             [r, g, b]
         }
