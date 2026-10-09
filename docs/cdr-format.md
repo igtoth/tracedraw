@@ -180,8 +180,11 @@ name, transparency), a `trfd` with one type 8 matrix (translation in
 coordinate units, page centre as origin) and, for text, a `txsm` in the
 7 to X5 layout with one style per run. Rectangles, ellipses and text
 keep their own types; every other object is a curve; groups are `grp `
-lists; ClipFrames become a group of the frame outline and the contents;
-effects are evaluated first. The file reads back in this crate (round
+lists; a ClipFrame holding one bitmap is written as that bitmap with the
+frame as its crop path (the way the target design stores cropped
+bitmaps), other ClipFrames become a group of the frame outline and the
+contents; effects are evaluated first. A `stlt` with one complete style
+(id 0) accompanies the font table and text objects reference it. The file reads back in this crate (round
 trip tests in `write.rs`) and another public reader of the layout
 rendered the vector content, fills, outlines and plain bitmaps of the
 test files; text and transformed bitmaps are known not to show there.

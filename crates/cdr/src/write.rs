@@ -13,8 +13,8 @@
 //! are written as their contents followed by the frame outline.
 
 use crate::parse::{
-    ARG_COORDS, ARG_FILL, ARG_NAME, ARG_OPACITY, ARG_OUTLINE, OBJ_ARTISTIC_TEXT, OBJ_BITMAP,
-    OBJ_CURVE, OBJ_ELLIPSE, OBJ_RECT,
+    ARG_COORDS, ARG_FILL, ARG_NAME, ARG_OPACITY, ARG_OUTLINE, ARG_STYLE, OBJ_ARTISTIC_TEXT,
+    OBJ_BITMAP, OBJ_CURVE, OBJ_ELLIPSE, OBJ_RECT,
 };
 use std::collections::HashMap;
 use tracedraw_core::{
@@ -263,6 +263,51 @@ fn outl(id: u32, s: Option<&Stroke>) -> Vec<u8> {
     o
 }
 
+/// A minimal `stlt` (version 7 to 12 layout): one font entry, one
+/// alignment, one interval and one full style record (id 0) that text
+/// objects reference by default. Readers that resolve text through the
+/// style table find a complete style here.
+fn stlt(font_id: u16) -> Vec<u8> {
+    let mut t = u32s(&[1]); // records
+    t.extend_from_slice(&u32s(&[0])); // fills
+    t.extend_from_slice(&u32s(&[0])); // outlines
+                                      // Fonts: id, 20 unknown, font id, encoding, 8, size, 8, flags, 8.
+    t.extend_from_slice(&u32s(&[1, 1]));
+    t.extend_from_slice(&[0; 20]);
+    t.extend_from_slice(&u16s(&[font_id, 0]));
+    t.extend_from_slice(&[0; 8]);
+    t.extend_from_slice(&i32s(&[(12.0 * 254000.0 / 72.0) as i32]));
+    t.extend_from_slice(&[0; 8]);
+    t.extend_from_slice(&u32s(&[0]));
+    t.extend_from_slice(&[0; 8]);
+    // Alignments: id, 4 unknown, value (1 = left).
+    t.extend_from_slice(&u32s(&[1, 1, 0, 1]));
+    // Intervals: id, 8, character spacing, 8, line spacing, 24.
+    t.extend_from_slice(&u32s(&[1, 1]));
+    t.extend_from_slice(&[0; 8]);
+    t.extend_from_slice(&u32s(&[0]));
+    t.extend_from_slice(&[0; 8]);
+    t.extend_from_slice(&u32s(&[1_000_000]));
+    t.extend_from_slice(&[0; 24]);
+    // set5, tabs, bullets, indents, hyphens, drop caps, set11: empty.
+    for _ in 0..7 {
+        t.extend_from_slice(&u32s(&[0]));
+    }
+    // The record: 3 sections, style id 0, no parent, 8 unknown, name.
+    let name: Vec<u16> = "Default Artistic Text".encode_utf16().collect();
+    t.extend_from_slice(&u32s(&[3, 0, 0]));
+    t.extend_from_slice(&[0; 8]);
+    t.extend_from_slice(&u32s(&[name.len() as u32]));
+    for u in &name {
+        t.extend_from_slice(&u.to_le_bytes());
+    }
+    t.extend_from_slice(&u32s(&[0, 0])); // fill, outline refs
+    t.extend_from_slice(&u32s(&[1, 1, 1, 0])); // font, align, interval, set5
+    t.extend_from_slice(&u32s(&[0])); // set11
+    t.extend_from_slice(&u32s(&[0, 0, 0, 0, 0])); // tab, bullet, indent, hyphen, drop cap
+    t
+}
+
 fn font_chunk(id: u16, name: &str) -> Vec<u8> {
     let mut f = u16s(&[id, 0]);
     f.extend_from_slice(&u32s(&[0]));
@@ -445,6 +490,56 @@ impl Writer<'_> {
         out
     }
 
+    /// A bitmap object: image rectangle, image id and crop path (the whole
+    /// rectangle, or `crop` in the bitmap's local space).
+    fn bitmap_object(&mut self, s: &Shape, center: Point, crop: Option<&BezPath>) -> Vec<u8> {
+        let ShapeKind::Bitmap { rect, png, .. } = &s.kind else {
+            return Vec::new();
+        };
+        let Some(image) = self.bitmap_id(png) else {
+            return Vec::new();
+        };
+        let transform = Affine::translate(-center.to_vec2()) * s.transform;
+        let mut c = i32s(&[
+            units(rect.x0),
+            units(rect.y0),
+            units(rect.x1),
+            units(rect.y1),
+        ]);
+        c.extend_from_slice(&[0; 32]);
+        c.extend_from_slice(&u32s(&[image]));
+        c.extend_from_slice(&[0; 20]);
+        let path_bytes = match crop {
+            Some(p) => curve_coords(p),
+            None => {
+                let mut full = BezPath::new();
+                full.move_to((rect.x0, rect.y0));
+                full.line_to((rect.x1, rect.y0));
+                full.line_to((rect.x1, rect.y1));
+                full.line_to((rect.x0, rect.y1));
+                full.close_path();
+                curve_coords(&full)
+            }
+        };
+        c.extend_from_slice(&path_bytes.unwrap_or_else(|| u32s(&[0])));
+        let fill = self.fill_id(&Fill::None);
+        let outline = self.outline_id(s.stroke.as_ref());
+        let mut args: Vec<(u32, Vec<u8>)> = vec![(ARG_COORDS, c)];
+        args.push((ARG_FILL, u32s(&[fill])));
+        args.push((ARG_OUTLINE, u32s(&[outline])));
+        if let Some(n) = &s.name {
+            args.push((ARG_NAME, utf16z(n)));
+        }
+        if s.opacity < 0.999 {
+            args.push((ARG_OPACITY, opacity_arg(s.opacity)));
+        }
+        let mut lgob = chunk(b"loda", &loda(OBJ_BITMAP, &args));
+        lgob.extend(list(b"trfl", &chunk(b"trfd", &trfd(transform))));
+        let mut body = chunk(b"flgs", &[0, 0, 0, 0]);
+        body.extend(list(b"lgob", &lgob));
+        list(b"obj ", &body)
+    }
+
     fn object(&mut self, s: &Shape, center: Point, depth: usize) -> Vec<u8> {
         if !s.visible {
             return Vec::new();
@@ -482,6 +577,19 @@ impl Writer<'_> {
                     })
                     .collect();
                 return self.objects(&kids, center, depth + 1);
+            }
+            ShapeKind::ClipFrame { frame, contents }
+                if contents.len() == 1
+                    && matches!(contents[0].kind, ShapeKind::Bitmap { .. })
+                    && contents[0].effects.is_empty() =>
+            {
+                // A clipped bitmap is a bitmap object with a crop path, the
+                // way the target design stores it.
+                let bm = &contents[0];
+                let clip = (bm.transform.inverse()) * frame.page_path();
+                let mut b = bm.clone();
+                b.transform = s.transform * bm.transform;
+                return self.bitmap_object(&b, center, Some(&clip));
             }
             ShapeKind::ClipFrame { frame, contents } => {
                 let mut body = Vec::new();
@@ -540,41 +648,12 @@ impl Writer<'_> {
             } => {
                 let t = transform * Affine::translate(origin.to_vec2());
                 args.push((ARG_COORDS, i32s(&[0, 0])));
+                args.push((ARG_STYLE, u32s(&[0])));
                 transform_out = t;
                 txsm = Some(chunk(b"txsm", &self.txsm(spans, *align, &s.fill)));
                 OBJ_ARTISTIC_TEXT
             }
-            ShapeKind::Bitmap { rect, png, .. } => {
-                let Some(image) = self.bitmap_id(png) else {
-                    return Vec::new();
-                };
-                let mut c = i32s(&[
-                    units(rect.x0),
-                    units(rect.y0),
-                    units(rect.x1),
-                    units(rect.y1),
-                ]);
-                c.extend_from_slice(&[0; 32]);
-                c.extend_from_slice(&u32s(&[image]));
-                c.extend_from_slice(&[0; 20]);
-                // Crop path covering the whole image: the four corners,
-                // closed back to the first.
-                let corners = [
-                    (rect.x0, rect.y0),
-                    (rect.x1, rect.y0),
-                    (rect.x1, rect.y1),
-                    (rect.x0, rect.y1),
-                    (rect.x0, rect.y0),
-                ];
-                c.extend_from_slice(&u32s(&[corners.len() as u32]));
-                for (x, y) in corners {
-                    c.extend_from_slice(&i32s(&[units(x), units(y)]));
-                }
-                c.extend_from_slice(&[0x00, 0x40, 0x40, 0x40, 0x48]);
-                args.push((ARG_COORDS, c));
-                transform_out = transform;
-                OBJ_BITMAP
-            }
+            ShapeKind::Bitmap { .. } => return self.bitmap_object(s, center, None),
             _ => {
                 let Some(coords) = curve_coords(&s.local_path()) else {
                     return Vec::new();
@@ -592,8 +671,13 @@ impl Writer<'_> {
         if s.opacity < 0.999 {
             args.push((ARG_OPACITY, opacity_arg(s.opacity)));
         }
-        let mut body = chunk(b"loda", &loda(kind, &args));
-        body.extend(chunk(b"trfd", &trfd(transform_out)));
+        // The object layout of real files: flags, then a `lgob` list with
+        // the attributes and a `trfl` list holding the transform, then the
+        // text chunk.
+        let mut lgob = chunk(b"loda", &loda(kind, &args));
+        lgob.extend(list(b"trfl", &chunk(b"trfd", &trfd(transform_out))));
+        let mut body = chunk(b"flgs", &[0, 0, 0, 0]);
+        body.extend(list(b"lgob", &lgob));
         if let Some(t) = txsm {
             body.extend(t);
         }
@@ -710,6 +794,7 @@ pub fn document_to_cdr(doc: &Document) -> Vec<u8> {
         }
         docl.extend(list(b"fntt", &fnt));
     }
+    docl.extend(list(b"stlt", &stlt(if w.fonts.is_empty() { 0 } else { 1 })));
     let mut fills = Vec::new();
     for f in &w.fills {
         fills.extend(chunk(b"fild", f));
@@ -739,7 +824,7 @@ mod tests {
     use super::*;
     use tracedraw_core::{
         document::{Layer, Page, ParagraphStyle},
-        geometry::{Rect, Size},
+        geometry::{Rect, Shape as _, Size},
         TextAlign,
     };
 
@@ -1003,6 +1088,75 @@ mod tests {
         );
         assert_eq!(back.pages[1].layers[0].name, "Second");
         assert_eq!(back.pages[1].layers[0].shapes.len(), 1);
+    }
+
+    #[test]
+    fn a_clipped_bitmap_round_trips_as_a_crop_path() {
+        let mut doc = doc_with(Vec::new());
+        let mut ids = doc.ids().clone();
+        let png = {
+            let mut pm = tiny_skia::Pixmap::new(4, 4).expect("pixmap");
+            pm.fill(tiny_skia::Color::from_rgba8(10, 20, 30, 255));
+            pm.encode_png().expect("png")
+        };
+        let mut bm = Shape::new(
+            ids.shape(),
+            ShapeKind::Bitmap {
+                rect: Rect::new(0.0, 0.0, 100.0, 50.0),
+                width_px: 4,
+                height_px: 4,
+                png,
+            },
+        );
+        bm.fill = Fill::None;
+        bm.stroke = None;
+        bm.transform = Affine::translate((20.0, 20.0));
+        let mut frame = Shape::new(
+            ids.shape(),
+            ShapeKind::Rect {
+                rect: Rect::new(40.0, 30.0, 80.0, 60.0),
+                radius: 0.0,
+            },
+        );
+        frame.fill = Fill::None;
+        frame.stroke = None;
+        let mut pc = Shape::new(
+            ids.shape(),
+            ShapeKind::ClipFrame {
+                frame: Box::new(frame),
+                contents: vec![bm],
+            },
+        );
+        pc.fill = Fill::None;
+        pc.stroke = None;
+        doc.pages[0].layers[0].shapes = vec![pc];
+        doc.set_ids(ids);
+        let bytes = document_to_cdr(&doc);
+        let (back, rep) = crate::open_bytes(&bytes, "back").expect("reads back");
+        let l = &back.pages[0].layers[0];
+        assert_eq!(l.shapes.len(), 1, "{:?}", rep.warnings);
+        match &l.shapes[0].kind {
+            ShapeKind::ClipFrame { frame, contents } => {
+                // Frame and contents live in the ClipFrame's own space.
+                let outer = l.shapes[0].transform;
+                let fb = (outer * frame.page_path()).bounding_box();
+                assert!(
+                    (fb.x0 - 40.0).abs() < 0.05 && (fb.x1 - 80.0).abs() < 0.05,
+                    "{fb:?}"
+                );
+                assert!(
+                    (fb.y0 - 30.0).abs() < 0.05 && (fb.y1 - 60.0).abs() < 0.05,
+                    "{fb:?}"
+                );
+                assert_eq!(contents.len(), 1);
+                let cb = (outer * contents[0].page_path()).bounding_box();
+                assert!(
+                    (cb.x0 - 20.0).abs() < 0.05 && (cb.x1 - 120.0).abs() < 0.05,
+                    "{cb:?}"
+                );
+            }
+            k => panic!("{k:?}"),
+        }
     }
 
     #[test]
