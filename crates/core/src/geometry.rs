@@ -5,6 +5,12 @@ pub use kurbo::{
     Affine, BezPath, Circle, Ellipse, Line, PathEl, Point, Rect, RoundedRect, Shape, Size, Vec2,
 };
 
+/// Flatten a path into lines within `tolerance`, calling `f` with each
+/// move, line and close element.
+pub fn flatten(path: &BezPath, tolerance: f64, f: &mut dyn FnMut(PathEl)) {
+    kurbo::flatten(path.elements().iter().copied(), tolerance, f);
+}
+
 /// Build a closed rectangle path, optionally with rounded corners.
 pub fn rect_path(rect: Rect, radius: f64) -> BezPath {
     if radius > 0.0 {

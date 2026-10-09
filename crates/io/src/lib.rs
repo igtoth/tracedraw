@@ -1,7 +1,9 @@
 //! tracedraw-io: export the document model to interchange formats and read the
 //! native `.tdraw` file.
 
+pub mod dxf;
 pub mod eps;
+pub mod html;
 pub mod pdf;
 pub mod pdf_import;
 pub mod svg;
@@ -34,6 +36,12 @@ pub fn load_native(path: impl AsRef<Path>) -> Result<Document> {
 /// Write every page to a PDF file.
 pub fn save_pdf(doc: &Document, path: impl AsRef<Path>) -> Result<()> {
     std::fs::write(path, pdf::document_to_pdf(doc))?;
+    Ok(())
+}
+
+/// Write one page as an ASCII DXF file.
+pub fn save_dxf(doc: &Document, page_index: usize, path: impl AsRef<Path>) -> Result<()> {
+    std::fs::write(path, dxf::page_to_dxf(doc, page_index))?;
     Ok(())
 }
 

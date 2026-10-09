@@ -107,7 +107,7 @@ impl ExportState {
     }
 }
 
-pub const EXPORT_FORMATS: [(&str, &str); 10] = [
+pub const EXPORT_FORMATS: [(&str, &str); 12] = [
     ("SVG", "svg"),
     ("PDF", "pdf"),
     ("PNG", "png"),
@@ -118,6 +118,8 @@ pub const EXPORT_FORMATS: [(&str, &str); 10] = [
     ("GIF", "gif"),
     ("EPS", "eps"),
     ("AI", "ai"),
+    ("DXF", "dxf"),
+    ("HTML", "html"),
 ];
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1840,7 +1842,7 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
             ));
         }
         ui.checkbox(&mut st.selection_only, tr("dialog.selected_only"));
-        if !st.selection_only && st.format != 1 {
+        if !st.selection_only && st.format != 1 && st.format != 11 {
             ui.checkbox(&mut st.all_pages, tr("dialog.all_pages"));
         }
         if ok_cancel(ui, close) {

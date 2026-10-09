@@ -161,6 +161,44 @@ fn write_shape(
         }
         return;
     }
+    if let ShapeKind::Bitmap {
+        rect,
+        width_px,
+        height_px,
+        png,
+    } = &shape.kind
+    {
+        // Image space (pixels, y down) to the local rect to the page.
+        use base64::Engine;
+        let b64 = base64::engine::general_purpose::STANDARD.encode(png);
+        let m = transform
+            * Affine::new([
+                rect.width() / (*width_px).max(1) as f64,
+                0.0,
+                0.0,
+                -(rect.height() / (*height_px).max(1) as f64),
+                rect.x0,
+                rect.y1,
+            ]);
+        let c = m.as_coeffs();
+        let opacity = if shape.opacity < 1.0 {
+            format!(" opacity=\"{}\"", fmt(shape.opacity))
+        } else {
+            String::new()
+        };
+        let _ = writeln!(
+            out,
+            "{pad}<image id=\"{}\" width=\"{width_px}\" height=\"{height_px}\" transform=\"matrix({} {} {} {} {} {})\" preserveAspectRatio=\"none\"{opacity} href=\"data:image/png;base64,{b64}\"/>",
+            shape.id.raw(),
+            fmt(c[0]),
+            fmt(c[1]),
+            fmt(c[2]),
+            fmt(c[3]),
+            fmt(c[4]),
+            fmt(c[5])
+        );
+        return;
+    }
     let path = transform * shape.local_path();
     let d = path_data(&path);
     let bounds = path.bounding_box();

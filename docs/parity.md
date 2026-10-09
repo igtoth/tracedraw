@@ -6,7 +6,7 @@ target design does, with a test or a checked screenshot behind it.
 "partial" names what is missing. "baked" means the result is applied once
 instead of staying live and editable. The goal is every row at "works".
 
-Counts: works 122, partial 1 (`.cdr` content coverage), missing 1 (EPS/DXF/PSD/CMX import), not applicable 4, icons close but not pixel-identical.
+Counts: works 122, partial 1 (`.cdr` content coverage), missing 1 (EPS/PSD/CMX import), not applicable 4, icons close but not pixel-identical.
 
 ## 1. Selection and navigation
 
@@ -159,11 +159,12 @@ Counts: works 122, partial 1 (`.cdr` content coverage), missing 1 (EPS/DXF/PSD/C
 | `.cdr` content: shapes, curves, paths, polygons, groups, bitmaps (cropped ones as ClipFrames), text (artistic, paragraph, on a path), line spacing and indents, fills, outlines, preset and custom arrowheads, opacity | partial: splines, vector pattern and PostScript fills, tabs/bullets/drop caps from style tables, lenses and effects |
 | Native `.tdraw` save/load | works |
 | Import SVG and SVGZ (groups, clips, gradients, images); open SVG as a document | works |
-| Export SVG, PDF, AI (PDF-compatible), EPS, PNG, JPEG, WebP, GIF, BMP, TIFF; Send To (Desktop, Documents, mail) as PDF; ClipFrames and bitmap transparency in SVG and PDF | works |
+| Export SVG, PDF, AI (PDF-compatible), EPS, DXF, HTML (inline SVG, page tabs), PNG, JPEG, WebP, GIF, BMP, TIFF; Send To (Desktop, Documents, mail) as PDF; bitmaps, ClipFrames and bitmap transparency in SVG and PDF | works |
 | Export for Web and Office presets | works |
 | PDF: fills rasterised when needed, arrowheads, separations | works; PDF/X profiles missing |
 | Import PDF and AI (PDF-compatible): paths, images, text, clips, shadings, patterns, forms, annotations | works (see `behavior/pdf-import.md`) |
-| Import EPS, DXF, PSD, CMX | missing |
+| Import DXF (lines, polylines, arcs, ellipses, splines, hatches, text, blocks) | works (see `behavior/dxf.md`) |
+| Import EPS, PSD, CMX | missing |
 | Acquire image (scanner) | not applicable: no scanner stack in pure Rust; import the scanned file instead |
 
 ## 11. Productivity and customisation

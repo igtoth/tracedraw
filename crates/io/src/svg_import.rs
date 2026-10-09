@@ -72,9 +72,14 @@ fn convert_group(g: &usvg::Group, to_page: Affine, ids: &mut IdSource) -> Option
     let opacity = g.opacity().get() as f64;
     let mut shape = if let Some(clip) = g.clip_path() {
         // Clip path -> ClipFrame with the union of the clip's paths as frame.
+        // Clip content is in the user space of the clipped group: its
+        // nodes' absolute transforms start at the clip's root, so the
+        // group's own absolute transform and the clip's transform come
+        // first.
         let mut frame_path = BezPath::new();
         collect_paths(clip.root(), &mut frame_path);
-        let frame_path = to_page * frame_path;
+        let frame_path =
+            to_page * to_affine(g.abs_transform()) * to_affine(clip.transform()) * frame_path;
         if frame_path.elements().is_empty() {
             group_of(children, ids)
         } else {
@@ -371,5 +376,38 @@ mod tests {
         assert!((st.width - 2.0 * PX_TO_MM).abs() < 1e-6);
         assert_eq!(children[0].name.as_deref(), Some("r"));
         assert_eq!(children[1].fill, Fill::Solid(Color::rgb8(0, 255, 0)));
+    }
+}
+
+#[cfg(test)]
+mod clip_tests {
+    use super::*;
+    use tracedraw_core::document::ShapeKind;
+
+    #[test]
+    fn clip_paths_follow_the_root_scale_and_become_clip_frames() {
+        // Millimetre page with a mm viewBox: the root scale is 96/25.4.
+        let svg = r##"<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="50mm" viewBox="0 0 100 50">
+            <defs><clipPath id="c"><path d="M 60 10 H 80 V 30 H 60 Z"/></clipPath></defs>
+            <g clip-path="url(#c)"><rect x="0" y="0" width="100" height="50" fill="#f00"/></g>
+        </svg>"##;
+        let mut ids = IdSource::default();
+        let imp = parse(svg, &mut ids).expect("parse");
+        assert_eq!(imp.shapes.len(), 1);
+        match &imp.shapes[0].kind {
+            ShapeKind::ClipFrame { frame, .. } => {
+                let b = frame.bounds();
+                // y is flipped: SVG y 10..30 on a 50 mm page is 20..40 up.
+                assert!(
+                    (b.x0 - 60.0).abs() < 1e-4 && (b.x1 - 80.0).abs() < 1e-4,
+                    "{b:?}"
+                );
+                assert!(
+                    (b.y0 - 20.0).abs() < 1e-4 && (b.y1 - 40.0).abs() < 1e-4,
+                    "{b:?}"
+                );
+            }
+            other => panic!("{other:?}"),
+        }
     }
 }

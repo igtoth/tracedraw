@@ -55,6 +55,14 @@ pub fn export(app: &mut App, path: &Path, st: &ExportState) -> Result<String, St
             let eps = tracedraw_io::eps::page_to_eps(&doc, 0);
             std::fs::write(path, eps).map_err(|e| e.to_string())?;
         }
+        "dxf" => {
+            let dxf = tracedraw_io::dxf::page_to_dxf(&doc, 0);
+            std::fs::write(path, dxf).map_err(|e| e.to_string())?;
+        }
+        "html" => {
+            let html = tracedraw_io::html::document_to_html(&doc);
+            std::fs::write(path, html).map_err(|e| e.to_string())?;
+        }
         _ => {
             // Raster: every page when all_pages, numbered files.
             let pages: Vec<_> = doc.pages.iter().map(|p| p.id).collect();

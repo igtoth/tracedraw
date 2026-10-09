@@ -1969,10 +1969,11 @@ impl App {
         let picked = rfd::FileDialog::new()
             .add_filter(
                 crate::i18n::tr("file.all_supported"),
-                &["cdr", "tdraw", "svg", "svgz", "pdf", "ai"],
+                &["cdr", "tdraw", "svg", "svgz", "pdf", "ai", "dxf"],
             )
             .add_filter("SVG (*.svg, *.svgz)", &["svg", "svgz"])
             .add_filter("PDF, AI (*.pdf, *.ai)", &["pdf", "ai"])
+            .add_filter("DXF (*.dxf)", &["dxf"])
             .add_filter(crate::i18n::tr("file.cdr_files"), &["cdr"])
             .add_filter("TraceDraw (*.tdraw)", &["tdraw"])
             .pick_file();
@@ -2009,6 +2010,39 @@ impl App {
                     }
                     doc.set_ids(ids);
                     (doc, format!("SVG: {n} object(s)"))
+                })
+        } else if ext == "dxf" {
+            std::fs::read(&path)
+                .map_err(|e| e.to_string())
+                .and_then(|bytes| {
+                    let text = String::from_utf8_lossy(&bytes).into_owned();
+                    tracedraw_io::dxf::parse(&text, &mut tracedraw_core::id::IdSource::default())
+                })
+                .map(|imported| {
+                    let title = path
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_else(App::untitled_name);
+                    for w in &imported.warnings {
+                        log::warn!("dxf: {w}");
+                    }
+                    let n = imported.shapes.len();
+                    let doc = tracedraw_io::dxf::to_document(imported, &title);
+                    let mut doc2 = App::localized_document(title, doc.pages[0].size);
+                    let mut ids = tracedraw_core::id::IdSource::default();
+                    let pid = ids.page();
+                    doc2.pages[0].id = pid;
+                    doc2.pages[0].layers.clear();
+                    for l in &doc.pages[0].layers {
+                        let mut layer =
+                            tracedraw_core::document::Layer::new(ids.layer(), l.name.clone());
+                        for s in &l.shapes {
+                            layer.shapes.push(reid_with(s.clone(), &mut ids));
+                        }
+                        doc2.pages[0].layers.push(layer);
+                    }
+                    doc2.set_ids(ids);
+                    (doc2, format!("DXF: {n} object(s)"))
                 })
         } else if ext == "pdf" || ext == "ai" {
             std::fs::read(&path)
@@ -2085,7 +2119,8 @@ impl App {
                 self.page = doc.pages[0].id;
                 self.engine.replace(doc);
                 self.selection.clear();
-                self.file = if matches!(ext.as_str(), "cdr" | "svg" | "svgz" | "pdf" | "ai") {
+                self.file = if matches!(ext.as_str(), "cdr" | "svg" | "svgz" | "pdf" | "ai" | "dxf")
+                {
                     None
                 } else {
                     Some(path.clone())
@@ -2162,13 +2197,14 @@ impl App {
             .add_filter(
                 crate::i18n::tr("file.all_importable"),
                 &[
-                    "cdr", "svg", "svgz", "pdf", "ai", "png", "jpg", "jpeg", "bmp", "gif", "webp",
-                    "tif", "tiff",
+                    "cdr", "svg", "svgz", "pdf", "ai", "dxf", "png", "jpg", "jpeg", "bmp", "gif",
+                    "webp", "tif", "tiff",
                 ],
             )
             .add_filter(crate::i18n::tr("file.cdr_files"), &["cdr"])
             .add_filter("SVG (*.svg, *.svgz)", &["svg", "svgz"])
             .add_filter("PDF, AI (*.pdf, *.ai)", &["pdf", "ai"])
+            .add_filter("DXF (*.dxf)", &["dxf"])
             .add_filter(
                 crate::i18n::tr("file.images"),
                 &["png", "jpg", "jpeg", "bmp", "gif", "webp", "tif", "tiff"],
@@ -2188,6 +2224,10 @@ impl App {
         }
         if ext == "pdf" || ext == "ai" {
             self.import_pdf(&path);
+            return;
+        }
+        if ext == "dxf" {
+            self.import_dxf(&path);
             return;
         }
         if ext != "cdr" {
@@ -2296,6 +2336,36 @@ impl App {
                 }
                 if !imported.warnings.is_empty() {
                     log::warn!("pdf import: {}", imported.warnings.join("; "));
+                }
+                self.select(ids);
+            }
+            Err(e) => self.status = crate::i18n::trf("status.import_failed", &[("e", &e)]),
+        }
+    }
+
+    /// Import a DXF drawing into the active layer.
+    pub fn import_dxf(&mut self, path: &std::path::Path) {
+        let Some(layer) = self.active_layer() else {
+            return;
+        };
+        let parsed = std::fs::read(path)
+            .map_err(|e| e.to_string())
+            .and_then(|bytes| {
+                let text = String::from_utf8_lossy(&bytes).into_owned();
+                tracedraw_io::dxf::parse(&text, &mut tracedraw_core::id::IdSource::default())
+            });
+        match parsed {
+            Ok(imported) => {
+                let mut cmds = Vec::new();
+                let mut ids = Vec::new();
+                for s in imported.shapes {
+                    let id = self.engine.new_shape_id();
+                    let shape = reid(s, id, &mut self.engine);
+                    ids.push(id);
+                    cmds.push(Command::AddShape { layer, shape });
+                }
+                if let Err(e) = self.engine.run_batch("Import", &cmds) {
+                    self.status = e.to_string();
                 }
                 self.select(ids);
             }

@@ -60,8 +60,8 @@ measure of progress; `docs/blueprint-gaps.md` lists what is still open.
   inflate; Bitmap tracing-style tracing (quick, centreline, outline, presets).
 - **Files**: native `.tdraw` (JSON), `.cdr` reader (RIFF and ZIP
   containers, compressed streams, versions 7 through 2019), SVG, SVGZ,
-  PDF and AI import, SVG, PDF, AI, EPS, PNG, JPEG, WebP, GIF, BMP and
-  TIFF export,
+  PDF, AI and DXF import, SVG, PDF, AI, EPS, DXF, HTML, PNG, JPEG, WebP,
+  GIF, BMP and TIFF export,
   print to PDF, print merge from CSV, templates.
 - **Automation**: JavaScript (boa) with an `Application`, `ActiveDocument`,
   `ActivePage`, `ActiveLayer`, `Shapes`, `Shape`, `Fill`, `Outline` and
@@ -120,7 +120,7 @@ crates/core       document model, commands, undo engine, geometry (kurbo),
 crates/cdr        .cdr reader: container, RIFF walker, object parser
 crates/text       font discovery (fontdb), shaping (rustybuzz), outlines
 crates/render     CPU rasteriser (tiny-skia): fills, outlines, effects
-crates/io         native .tdraw, SVG and PDF/AI import, SVG, PDF and EPS writers
+crates/io         native .tdraw, SVG, PDF/AI and DXF import, SVG, PDF, EPS, DXF and HTML writers
 apps/tracedraw    desktop app (egui/eframe), a thin shell over the engine
 apps/tracedraw-cli  inspect, info, convert
 docs/             architecture, decisions, behaviour notes, format notes,

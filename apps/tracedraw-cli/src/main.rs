@@ -9,7 +9,7 @@
 use std::process::ExitCode;
 
 fn usage() -> ExitCode {
-    eprintln!("usage:\n  tracedraw-cli inspect <file.cdr>\n  tracedraw-cli info <file.cdr|file.tdraw>\n  tracedraw-cli icc <profile.icc>\n  tracedraw-cli convert <in.cdr|in.tdraw|in.svg|in.pdf|in.ai> <out.svg|out.pdf|out.eps|out.png|out.tdraw>");
+    eprintln!("usage:\n  tracedraw-cli inspect <file.cdr>\n  tracedraw-cli info <file.cdr|file.tdraw>\n  tracedraw-cli icc <profile.icc>\n  tracedraw-cli convert <in.cdr|in.tdraw|in.svg|in.pdf|in.ai|in.dxf> <out.svg|out.pdf|out.eps|out.dxf|out.html|out.png|out.tdraw>");
     ExitCode::from(2)
 }
 
@@ -36,6 +36,20 @@ fn load(
             tracedraw_io::pdf_import::to_document(imported, &title),
             None,
         ))
+    } else if lower.ends_with(".dxf") {
+        let text = std::fs::read(path)
+            .map_err(|e| e.to_string())
+            .map(|b| String::from_utf8_lossy(&b).into_owned())?;
+        let imported =
+            tracedraw_io::dxf::parse(&text, &mut tracedraw_core::id::IdSource::default())?;
+        for w in &imported.warnings {
+            eprintln!("warning: {w}");
+        }
+        let title = std::path::Path::new(path)
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
+        Ok((tracedraw_io::dxf::to_document(imported, &title), None))
     } else if lower.ends_with(".svg") || lower.ends_with(".svgz") {
         let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
         let text = if bytes.len() > 2 && bytes[0] == 0x1f && bytes[1] == 0x8b {
@@ -211,6 +225,11 @@ fn main() -> ExitCode {
                 tracedraw_io::save_pdf(&doc, output)
             } else if output.to_ascii_lowercase().ends_with(".eps") {
                 std::fs::write(output, tracedraw_io::eps::page_to_eps(&doc, 0))
+                    .map_err(tracedraw_io::Error::from)
+            } else if output.to_ascii_lowercase().ends_with(".dxf") {
+                tracedraw_io::save_dxf(&doc, 0, output)
+            } else if output.to_ascii_lowercase().ends_with(".html") {
+                std::fs::write(output, tracedraw_io::html::document_to_html(&doc))
                     .map_err(tracedraw_io::Error::from)
             } else if output.to_ascii_lowercase().ends_with(".png") {
                 // Rasterise the first page at 96 dpi (or TRACEDRAW_DPI).
