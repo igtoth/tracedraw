@@ -95,7 +95,9 @@ Captured with the headless driver in `scripts/visual/`.
 ## Install
 
 Installers are built by GitHub Actions on every push to `main` and
-published on the Releases page for `v*` tags:
+published on the Releases page: the **Nightly build** pre-release always
+holds the installers of the latest commit, and `v*` tags get a versioned
+release:
 
 | Platform | File |
 |---|---|
