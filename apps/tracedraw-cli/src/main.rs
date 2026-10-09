@@ -52,7 +52,7 @@ fn mutate(data: &[u8], seed: u64) -> Vec<u8> {
 }
 
 fn usage() -> ExitCode {
-    eprintln!("usage:\n  tracedraw-cli inspect <file.cdr>\n  tracedraw-cli info <file.cdr|file.tdraw>\n  tracedraw-cli icc <profile.icc>\n  tracedraw-cli stress <file> [iterations]   mutation test of the file's reader\n  tracedraw-cli convert <in.cdr|in.tdraw|in.svg|in.pdf|in.ai|in.eps|in.dxf|in.psd> <out.svg|out.pdf|out.eps|out.dxf|out.html|out.png|out.tdraw>");
+    eprintln!("usage:\n  tracedraw-cli inspect <file.cdr>\n  tracedraw-cli info <file.cdr|file.tdraw>\n  tracedraw-cli icc <profile.icc>\n  tracedraw-cli stress <file> [iterations]   mutation test of the file's reader\n  tracedraw-cli convert <in.cdr|in.tdraw|in.svg|in.pdf|in.ai|in.eps|in.dxf|in.psd|in.emf|in.wmf> <out.svg|out.pdf|out.eps|out.dxf|out.emf|out.html|out.png|out.tdraw>");
     ExitCode::from(2)
 }
 
@@ -99,6 +99,18 @@ fn load(
         let mut doc = tracedraw_core::Document::new("psd", imported.size);
         doc.pages[0].layers[0].shapes = imported.shapes;
         Ok((doc, None))
+    } else if lower.ends_with(".emf") || lower.ends_with(".wmf") {
+        let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+        let imported =
+            tracedraw_io::emf::parse(&bytes, &mut tracedraw_core::id::IdSource::default())?;
+        for w in &imported.warnings {
+            eprintln!("warning: {w}");
+        }
+        let title = std::path::Path::new(path)
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
+        Ok((tracedraw_io::emf::to_document(imported, &title), None))
     } else if lower.ends_with(".dxf") {
         let text = std::fs::read(path)
             .map_err(|e| e.to_string())
@@ -303,6 +315,8 @@ fn main() -> ExitCode {
                         let _ = tracedraw_io::dxf::parse(&String::from_utf8_lossy(&m), &mut ids);
                     } else if lower.ends_with(".psd") || lower.ends_with(".psb") {
                         let _ = tracedraw_io::psd::parse(&m, &mut ids);
+                    } else if lower.ends_with(".emf") || lower.ends_with(".wmf") {
+                        let _ = tracedraw_io::emf::parse(&m, &mut ids);
                     } else if lower.ends_with(".svg") {
                         let _ =
                             tracedraw_io::svg_import::parse(&String::from_utf8_lossy(&m), &mut ids);
@@ -367,6 +381,8 @@ fn main() -> ExitCode {
             } else if output.to_ascii_lowercase().ends_with(".eps") {
                 std::fs::write(output, tracedraw_io::eps::page_to_eps(&doc, 0))
                     .map_err(tracedraw_io::Error::from)
+            } else if output.to_ascii_lowercase().ends_with(".emf") {
+                tracedraw_io::save_emf(&doc, 0, output)
             } else if output.to_ascii_lowercase().ends_with(".dxf") {
                 tracedraw_io::save_dxf(&doc, 0, output)
             } else if output.to_ascii_lowercase().ends_with(".html") {

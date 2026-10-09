@@ -48,6 +48,12 @@ drawing programs write depend on their prologs running, and an
 interpreter is the only way to read them without a dependency on an
 external engine. Fonts are not rasterised; text stays text.
 
+Windows metafiles (EMF, WMF) are read and written by our own GDI record
+player and writer (`crates/io/src/emf.rs`) from the public format
+specifications: the record set that drawing programs emit is small, and
+owning both directions keeps round trips exact (text stays text,
+bitmaps keep their alpha, clips become ClipFrames).
+
 ## D5. Colour management: a pure-Rust ICC engine
 
 `core/icc.rs` reads ICC v2 and v4 profiles (matrix/TRC, `mft1`, `mft2`,

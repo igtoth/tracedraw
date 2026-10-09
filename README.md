@@ -5,7 +5,7 @@ layers, curves, text with a full paragraph engine, tables, symbols, every
 fill type (uniform, fountain, pattern, texture, mesh), live effects
 (contour, blend, distort, envelope, perspective, extrude, bevel, block
 shadow, lens, transparency), ClipFrame, bitmap effects and tracing, a
-clean-room `.cdr` reader, SVG, PDF/AI, EPS, DXF and PSD import, SVG/PDF/EPS/DXF export, JavaScript
+clean-room `.cdr` reader, SVG, PDF/AI, EPS, DXF, PSD and EMF/WMF import, SVG/PDF/EPS/DXF/EMF export, JavaScript
 automation, a user interface in twelve languages, and a desktop workspace
 built for people who already know how a professional vector editor is laid
 out: menu bar, property bar, toolbox with flyouts, thirty dockers, colour
@@ -60,7 +60,7 @@ measure of progress; `docs/blueprint-gaps.md` lists what is still open.
   inflate; Bitmap tracing-style tracing (quick, centreline, outline, presets).
 - **Files**: native `.tdraw` (JSON), `.cdr` reader (RIFF and ZIP
   containers, compressed streams, versions 7 through 2019), SVG, SVGZ,
-  PDF, AI, EPS, DXF and PSD import, SVG, PDF, AI, EPS, DXF, HTML, PNG,
+  PDF, AI, EPS, DXF, PSD, EMF and WMF import, SVG, PDF, AI, EPS, DXF, EMF, HTML, PNG,
   JPEG, WebP, GIF, BMP and TIFF export,
   print to PDF, print merge from CSV, templates.
 - **Automation**: JavaScript (boa) with an `Application`, `ActiveDocument`,
@@ -121,7 +121,7 @@ crates/core       document model, commands, undo engine, geometry (kurbo),
 crates/cdr        .cdr reader: container, RIFF walker, object parser
 crates/text       font discovery (fontdb), shaping (rustybuzz), outlines
 crates/render     CPU rasteriser (tiny-skia): fills, outlines, effects
-crates/io         native .tdraw, SVG, PDF/AI, EPS, DXF and PSD import, SVG, PDF, EPS, DXF and HTML writers
+crates/io         native .tdraw, SVG, PDF/AI, EPS, DXF, PSD and EMF/WMF import, SVG, PDF, EPS, DXF, EMF and HTML writers
 apps/tracedraw    desktop app (egui/eframe), a thin shell over the engine
 apps/tracedraw-cli  inspect, info, convert, icc, stress
 docs/             architecture, decisions, behaviour notes, format notes,

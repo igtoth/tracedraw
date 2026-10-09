@@ -48,7 +48,7 @@ than 20%.
 - Mutation testing of every reader: `tracedraw-cli stress <file> [n]`
   feeds `n` damaged copies of a file (truncated, byte flips, cut spans,
   overwritten words) to the reader its extension selects and fails on
-  any panic. The `.cdr`, PDF, AI, EPS, DXF, PSD and SVG readers pass
+  any panic. The `.cdr`, PDF, AI, EPS, DXF, PSD, EMF, WMF and SVG readers pass
   hundreds of iterations on the files in the test corpus.
 - Fuzzing of the `.cdr` reader (`cargo fuzz`) with the RIFF and ZIP
   targets: no panic, no allocation over 1 GB, on 10 minutes of input.

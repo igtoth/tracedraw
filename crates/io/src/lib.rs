@@ -3,6 +3,7 @@
 
 #![allow(clippy::field_reassign_with_default)]
 pub mod dxf;
+pub mod emf;
 pub mod eps;
 pub mod eps_import;
 pub mod html;
@@ -45,6 +46,12 @@ pub fn save_pdf(doc: &Document, path: impl AsRef<Path>) -> Result<()> {
 /// Write one page as an ASCII DXF file.
 pub fn save_dxf(doc: &Document, page_index: usize, path: impl AsRef<Path>) -> Result<()> {
     std::fs::write(path, dxf::page_to_dxf(doc, page_index))?;
+    Ok(())
+}
+
+/// Write one page as an enhanced metafile (EMF).
+pub fn save_emf(doc: &Document, page_index: usize, path: impl AsRef<Path>) -> Result<()> {
+    std::fs::write(path, emf::page_to_emf(doc, page_index))?;
     Ok(())
 }
 

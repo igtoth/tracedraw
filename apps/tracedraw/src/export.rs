@@ -80,6 +80,10 @@ pub fn export(app: &mut App, path: &Path, st: &ExportState) -> Result<String, St
             let dxf = tracedraw_io::dxf::page_to_dxf(&doc, 0);
             std::fs::write(path, dxf).map_err(|e| e.to_string())?;
         }
+        "emf" => {
+            let emf = tracedraw_io::emf::page_to_emf(&doc, 0);
+            std::fs::write(path, emf).map_err(|e| e.to_string())?;
+        }
         "html" => {
             let html = tracedraw_io::html::document_to_html(&doc);
             std::fs::write(path, html).map_err(|e| e.to_string())?;
