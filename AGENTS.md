@@ -65,7 +65,9 @@ file behind it, and never add a feature without updating the row.
 
 - `cargo test --workspace` before every commit.
 - `cargo build -p tracedraw` and `cargo clippy --workspace` must stay
-  warning-free (CI runs clippy with `-D warnings` on the library crates).
+  warning-free (CI runs clippy with `-D warnings` on the library crates,
+  on the pinned toolchain 1.97.0; use the same version locally so the
+  lint set matches).
 - Keep `docs/roadmap.md` honest: a feature is "done" when it has tests
   and works on a real file, not when the menu item exists.
 

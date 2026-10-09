@@ -15,7 +15,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      # Pinned so the clippy gate matches what contributors run locally;
+      # bump it together with the version noted in AGENTS.md.
+      - uses: dtolnay/rust-toolchain@1.97.0
+        with:
+          components: clippy
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace --exclude tracedraw
       - run: cargo clippy --workspace --exclude tracedraw -- -D warnings
