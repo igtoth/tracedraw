@@ -94,7 +94,7 @@ pub fn tool_list() -> Vec<Value> {
     vec![
         tool(
             "open",
-            "Open a file as the current document: .cdr, .tdraw, .svg, .svgz, .pdf, .ai, .eps, .ps, .dxf, .psd, .psb, .emf, .wmf, or an image.",
+            "Open a file as the current document: .cdr, .tdraw, .svg, .svgz, .pdf, .ai, .eps, .ps, .dxf, .psd, .psb, .emf, .wmf, .plt, .txt, .rtf, .docx, or an image.",
             json!({"path": {"type": "string"}}),
             &["path"],
         ),
@@ -112,7 +112,7 @@ pub fn tool_list() -> Vec<Value> {
         ),
         tool(
             "export",
-            "Export the first page (or page_index) to a path; the extension picks the format: svg, pdf, eps, dxf, emf, wmf, html, png. dpi applies to png (default 96).",
+            "Export the first page (or page_index) to a path; the extension picks the format: svg, pdf, eps, dxf, emf, wmf, plt, psd, html, png. dpi applies to png and psd (default 96).",
             json!({"path": {"type": "string"}, "page_index": {"type": "integer"}, "dpi": {"type": "number"}}),
             &["path"],
         ),
@@ -244,6 +244,13 @@ fn export_to(app: &App, path: &std::path::Path, page_index: usize, dpi: f64) -> 
         "dxf" => e(tracedraw_io::save_dxf(doc, page_index, path)),
         "emf" => e(tracedraw_io::save_emf(doc, page_index, path)),
         "wmf" => e(tracedraw_io::save_wmf(doc, page_index, path)),
+        "plt" => e(tracedraw_io::save_plt(doc, page_index, path)),
+        "psd" => e(tracedraw_io::save_psd(
+            doc,
+            page_index,
+            dpi.clamp(1.0, 2400.0),
+            path,
+        )),
         "html" => std::fs::write(path, tracedraw_io::html::document_to_html(doc))
             .map_err(|e| e.to_string()),
         "png" => {

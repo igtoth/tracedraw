@@ -21,4 +21,4 @@ Pages: `fountain-fill.md`, `contour.md`, `blend.md`, `extrude.md`,
 `brush-strokes.md`, `dimensions.md`, `zoom-and-pan.md`, `brushes.md`,
 `free-transform.md`, `eyedroppers.md`, `table.md`, `distort.md`,
 `block-shadow.md`, `outline-pen.md`, `emf-wmf.md`, `shortcuts.md`,
-`mcp.md`.
+`mcp.md`, `plt.md`, `text-import.md`.

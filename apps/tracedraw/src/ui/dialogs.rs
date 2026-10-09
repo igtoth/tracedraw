@@ -116,7 +116,7 @@ impl ExportState {
     }
 }
 
-pub const EXPORT_FORMATS: [(&str, &str); 14] = [
+pub const EXPORT_FORMATS: [(&str, &str); 16] = [
     ("SVG", "svg"),
     ("PDF", "pdf"),
     ("PNG", "png"),
@@ -131,6 +131,8 @@ pub const EXPORT_FORMATS: [(&str, &str); 14] = [
     ("HTML", "html"),
     ("EMF", "emf"),
     ("WMF", "wmf"),
+    ("PLT", "plt"),
+    ("PSD", "psd"),
 ];
 
 #[derive(Debug, Clone, PartialEq)]
@@ -2227,7 +2229,7 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
                     }
                 });
         });
-        let raster = st.format >= 2 && st.format <= 7;
+        let raster = (2..=7).contains(&st.format) || st.format == 15;
         if raster {
             ui.horizontal(|ui| {
                 ui.label(tr("dialog.resolution"));

@@ -52,7 +52,7 @@ fn mutate(data: &[u8], seed: u64) -> Vec<u8> {
 }
 
 fn usage() -> ExitCode {
-    eprintln!("usage:\n  tracedraw-cli inspect <file.cdr>\n  tracedraw-cli info <file.cdr|file.tdraw>\n  tracedraw-cli icc <profile.icc>\n  tracedraw-cli stress <file> [iterations]   mutation test of the file's reader\n  tracedraw-cli convert <in.cdr|in.tdraw|in.svg|in.pdf|in.ai|in.eps|in.dxf|in.psd|in.emf|in.wmf> <out.svg|out.pdf|out.eps|out.dxf|out.emf|out.wmf|out.html|out.png|out.tdraw|out.cdr>");
+    eprintln!("usage:\n  tracedraw-cli inspect <file.cdr>\n  tracedraw-cli info <file.cdr|file.tdraw>\n  tracedraw-cli icc <profile.icc>\n  tracedraw-cli stress <file> [iterations]   mutation test of the file's reader\n  tracedraw-cli convert <in.cdr|in.tdraw|in.svg|in.pdf|in.ai|in.eps|in.dxf|in.psd|in.emf|in.wmf|in.plt|in.txt|in.rtf|in.docx> <out.svg|out.pdf|out.eps|out.dxf|out.emf|out.wmf|out.plt|out.psd|out.html|out.png|out.tdraw|out.cdr>");
     ExitCode::from(2)
 }
 
@@ -111,6 +111,38 @@ fn load(
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_default();
         Ok((tracedraw_io::emf::to_document(imported, &title), None))
+    } else if lower.ends_with(".plt") || lower.ends_with(".hpgl") || lower.ends_with(".hgl") {
+        let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+        let imported =
+            tracedraw_io::plt::parse(&bytes, &mut tracedraw_core::id::IdSource::default())?;
+        for w in &imported.warnings {
+            eprintln!("warning: {w}");
+        }
+        let title = std::path::Path::new(path)
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
+        Ok((tracedraw_io::plt::to_document(imported, &title), None))
+    } else if lower.ends_with(".txt") || lower.ends_with(".rtf") || lower.ends_with(".docx") {
+        let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+        let imported = if lower.ends_with(".rtf") {
+            tracedraw_io::text_import::parse_rtf(&bytes)?
+        } else if lower.ends_with(".docx") {
+            tracedraw_io::text_import::parse_docx(&bytes)?
+        } else {
+            tracedraw_io::text_import::parse_txt(&bytes)
+        };
+        for w in &imported.warnings {
+            eprintln!("warning: {w}");
+        }
+        let mut doc = tracedraw_core::Document::new("text", tracedraw_core::document::paper::A4);
+        let mut ids = doc.ids().clone();
+        let mut shape = imported.to_shape(tracedraw_io::text_import::Placement::a4(), &mut ids);
+        shape.fill = tracedraw_core::Fill::Solid(tracedraw_core::Color::BLACK);
+        shape.stroke = None;
+        doc.pages[0].layers[0].shapes.push(shape);
+        doc.set_ids(ids);
+        Ok((doc, None))
     } else if lower.ends_with(".dxf") {
         let text = std::fs::read(path)
             .map_err(|e| e.to_string())
@@ -317,6 +349,12 @@ fn main() -> ExitCode {
                         let _ = tracedraw_io::psd::parse(&m, &mut ids);
                     } else if lower.ends_with(".emf") || lower.ends_with(".wmf") {
                         let _ = tracedraw_io::emf::parse(&m, &mut ids);
+                    } else if lower.ends_with(".plt") {
+                        let _ = tracedraw_io::plt::parse(&m, &mut ids);
+                    } else if lower.ends_with(".rtf") {
+                        let _ = tracedraw_io::text_import::parse_rtf(&m);
+                    } else if lower.ends_with(".docx") {
+                        let _ = tracedraw_io::text_import::parse_docx(&m);
                     } else if lower.ends_with(".svg") {
                         let _ =
                             tracedraw_io::svg_import::parse(&String::from_utf8_lossy(&m), &mut ids);
@@ -388,6 +426,14 @@ fn main() -> ExitCode {
                 tracedraw_io::save_emf(&doc, 0, output)
             } else if output.to_ascii_lowercase().ends_with(".wmf") {
                 tracedraw_io::save_wmf(&doc, 0, output)
+            } else if output.to_ascii_lowercase().ends_with(".plt") {
+                tracedraw_io::save_plt(&doc, 0, output)
+            } else if output.to_ascii_lowercase().ends_with(".psd") {
+                let dpi = std::env::var("TRACEDRAW_DPI")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(96.0);
+                tracedraw_io::save_psd(&doc, 0, dpi, output)
             } else if output.to_ascii_lowercase().ends_with(".dxf") {
                 tracedraw_io::save_dxf(&doc, 0, output)
             } else if output.to_ascii_lowercase().ends_with(".html") {

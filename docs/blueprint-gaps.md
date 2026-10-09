@@ -35,8 +35,8 @@ exceptions, shown disabled so the layout stays complete:
   `content/data/*.dat` ordered by `content/dataFileList.dat` (X6 and
   later, every release since 2012). TraceDraw reads all three container
   layouts (RIFF, the X4/X5 ZIP and the X6+ ZIP with redirected chunks);
-  the `WL` binary of v1 and v2 is not read. Writing `.cdr` is not planned
-  before the reader is complete.
+  the `WL` binary of v1 and v2 is not read. Writing `.cdr` produces the
+  version 12 RIFF layout (see `cdr-format.md`, "Writing").
 - Coordinates: 1/1000 inch (16-bit versions, `V < 600`), 1/254000 inch
   otherwise.
 - Compressed lists: two zlib parts; the second is a size table that the
@@ -65,12 +65,12 @@ exceptions, shown disabled so the layout stays complete:
 
 ## Formats to add
 
-Import: CMX, EMF, WMF, DWG, CGM, PLT, DOCX, RTF, TXT.
-Export: CMX, EMF, WMF, PSD.
-Done: SVG, SVGZ, PDF, AI (PDF-compatible), EPS/PostScript, DXF and PSD
-import; SVG, PDF, AI
-(PDF-compatible), EPS, DXF, HTML, PDF/X-1a, X-3, X-4 and the bitmap
-formats on export.
+Import: CMX (no public specification), DWG (proprietary), CGM.
+Export: CMX.
+Done: SVG, SVGZ, PDF, AI (PDF-compatible), EPS/PostScript, DXF, PSD,
+EMF, WMF, PLT, TXT, RTF and DOCX import; SVG, PDF, AI (PDF-compatible),
+EPS, DXF, EMF, WMF, PLT, PSD, HTML, PDF/X-1a, X-3, X-4, `.cdr` (version
+12 layout) and the bitmap formats on export.
 
 ## Automation
 

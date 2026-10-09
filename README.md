@@ -5,7 +5,7 @@ layers, curves, text with a full paragraph engine, tables, symbols, every
 fill type (uniform, fountain, pattern, texture, mesh), live effects
 (contour, blend, distort, envelope, perspective, extrude, bevel, block
 shadow, lens, transparency), ClipFrame, bitmap effects and tracing, a
-clean-room `.cdr` reader and writer, SVG, PDF/AI, EPS, DXF, PSD and EMF/WMF import, SVG/PDF/EPS/DXF/EMF/WMF export, JavaScript
+clean-room `.cdr` reader and writer, SVG, PDF/AI, EPS, DXF, PSD, EMF/WMF, PLT, TXT/RTF/DOCX import, SVG/PDF/EPS/DXF/EMF/WMF/PLT/PSD export, JavaScript
 automation, a user interface in twelve languages, and a desktop workspace
 built for people who already know how a professional vector editor is laid
 out: menu bar, property bar, toolbox with flyouts, thirty dockers, colour
@@ -16,7 +16,7 @@ for Windows, macOS and Linux, plus a command-line tool for batch
 conversion.
 
 Status: **beta**. `docs/parity.md` lists every capability of the reference
-editor and its state (78 working, 16 partial, 6 missing) and is the
+editor and its state (129 working, 1 partial, 1 missing) and is the
 measure of progress; `docs/blueprint-gaps.md` lists what is still open.
 
 ## Highlights
@@ -61,8 +61,9 @@ measure of progress; `docs/blueprint-gaps.md` lists what is still open.
 - **Files**: native `.tdraw` (JSON), `.cdr` reader (RIFF and ZIP
   containers, compressed streams, versions 7 through 2019) and writer
   (version 12 layout), SVG, SVGZ,
-  PDF, AI, EPS, DXF, PSD, EMF and WMF import, SVG, PDF, AI, EPS, DXF, EMF, WMF, HTML, PNG,
-  JPEG, WebP, GIF, BMP and TIFF export,
+  PDF, AI, EPS, DXF, PSD, EMF, WMF, HPGL (PLT), TXT, RTF and DOCX import,
+  SVG, PDF, AI, EPS, DXF, EMF, WMF, PLT, PSD, HTML, PNG, JPEG, WebP, GIF,
+  BMP and TIFF export,
   print to PDF, print merge from CSV, templates.
 - **Automation**: JavaScript (boa) with an `Application`, `ActiveDocument`,
   `ActivePage`, `ActiveLayer`, `Shapes`, `Shape`, `Fill`, `Outline` and
@@ -124,7 +125,8 @@ crates/core       document model, commands, undo engine, geometry (kurbo),
 crates/cdr        .cdr reader: container, RIFF walker, object parser
 crates/text       font discovery (fontdb), shaping (rustybuzz), outlines
 crates/render     CPU rasteriser (tiny-skia): fills, outlines, effects
-crates/io         native .tdraw, SVG, PDF/AI, EPS, DXF, PSD and EMF/WMF import, SVG, PDF, EPS, DXF, EMF, WMF and HTML writers
+crates/io         native .tdraw, SVG, PDF/AI, EPS, DXF, PSD, EMF/WMF, PLT and text
+                  imports, SVG, PDF, EPS, DXF, EMF, WMF, PLT, PSD and HTML writers
 apps/tracedraw    desktop app (egui/eframe), a thin shell over the engine
 apps/tracedraw-cli  inspect, info, convert, icc, stress
 docs/             architecture, decisions, behaviour notes, format notes,

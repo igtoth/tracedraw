@@ -12,7 +12,7 @@ use tracedraw_core::{
     document::{Shape, ShapeKind},
     geometry::{Rect, Size},
     id::IdSource,
-    Fill, ShapeId,
+    Document, Fill, ShapeId,
 };
 
 /// Millimetres per pixel at 72 ppi (the default when the file has no
@@ -897,5 +897,210 @@ mod tests {
         let mut ids = IdSource::default();
         assert!(parse(b"nope", &mut ids).is_err());
         assert!(parse(b"8BPS\x00\x01", &mut ids).is_err());
+    }
+}
+
+// ----- writer ------------------------------------------------------------------
+
+/// Largest pixel dimension written (the PSD version 1 limit is 30000).
+const MAX_WRITE_PX: f64 = 30000.0;
+
+fn unpremultiply(px: &tiny_skia::Pixmap) -> Vec<[u8; 4]> {
+    px.pixels()
+        .iter()
+        .map(|p| {
+            let c = p.demultiply();
+            [c.red(), c.green(), c.blue(), c.alpha()]
+        })
+        .collect()
+}
+
+fn put_pascal(out: &mut Vec<u8>, name: &str, pad: usize) {
+    let bytes: Vec<u8> = name.bytes().take(255).collect();
+    let start = out.len();
+    out.push(bytes.len() as u8);
+    out.extend_from_slice(&bytes);
+    while !(out.len() - start).is_multiple_of(pad) {
+        out.push(0);
+    }
+}
+
+/// Render one page and write it as a Photoshop file: one raster layer per
+/// visible document layer (master layers included) over a white
+/// background, plus the flattened composite, RGB 8-bit, uncompressed, at
+/// `dpi` (clamped so neither side exceeds 30000 px). `None` when the
+/// page does not exist or cannot be rendered.
+pub fn page_to_psd(doc: &Document, page_index: usize, dpi: f64) -> Option<Vec<u8>> {
+    let page = doc.pages.get(page_index)?;
+    let page_id = page.id;
+    let max_dpi = (MAX_WRITE_PX / page.size.width.max(page.size.height) * 25.4).max(1.0);
+    let dpi = dpi.clamp(1.0, max_dpi);
+    let zoom = dpi / 25.4;
+    let w = (page.size.width * zoom).ceil().max(1.0) as u32;
+    let h = (page.size.height * zoom).ceil().max(1.0) as u32;
+    let view = tracedraw_render::ViewTransform {
+        zoom,
+        origin_x: 0.0,
+        origin_y: h as f64,
+    };
+    let opts = || tracedraw_render::RenderOptions {
+        width: w,
+        height: h,
+        view,
+        preview: None,
+        wireframe: false,
+        simulate_overprints: false,
+        complex_effects: true,
+    };
+
+    // One render per visible layer, with every other layer hidden.
+    let layer_ids: Vec<(tracedraw_core::id::LayerId, String)> = doc
+        .layers_for_page(page_id)
+        .ok()?
+        .iter()
+        .filter(|l| l.visible)
+        .map(|l| (l.id, l.name.clone()))
+        .collect();
+    let mut layers: Vec<(String, Vec<[u8; 4]>)> = Vec::new();
+    for (id, name) in &layer_ids {
+        let mut one = doc.clone();
+        for l in one.master.iter_mut() {
+            l.visible = l.id == *id;
+        }
+        for p in one.pages.iter_mut() {
+            for l in p.layers.iter_mut() {
+                l.visible = l.id == *id;
+            }
+        }
+        let px = tracedraw_render::render_page(&one, page_id, &opts())?;
+        layers.push((name.clone(), unpremultiply(&px)));
+    }
+    let composite = tracedraw_render::render_page_image_with(doc, page_id, dpi, &opts())?;
+    let comp = unpremultiply(&composite);
+    let n = (w as usize) * (h as usize);
+
+    let mut out = Vec::with_capacity(n * 3 + layers.len() * n * 4 + 256);
+    // Header.
+    out.extend_from_slice(b"8BPS");
+    out.extend_from_slice(&1u16.to_be_bytes());
+    out.extend_from_slice(&[0u8; 6]);
+    out.extend_from_slice(&3u16.to_be_bytes()); // channels
+    out.extend_from_slice(&h.to_be_bytes());
+    out.extend_from_slice(&w.to_be_bytes());
+    out.extend_from_slice(&8u16.to_be_bytes()); // depth
+    out.extend_from_slice(&3u16.to_be_bytes()); // RGB
+                                                // Colour mode data: none.
+    out.extend_from_slice(&0u32.to_be_bytes());
+    // Image resources: resolution info (0x03ED).
+    let mut res = Vec::new();
+    res.extend_from_slice(b"8BIM");
+    res.extend_from_slice(&0x03EDu16.to_be_bytes());
+    res.extend_from_slice(&[0, 0]); // empty pascal name, padded
+    res.extend_from_slice(&16u32.to_be_bytes());
+    let fixed = ((dpi * 65536.0).round() as u32).to_be_bytes();
+    res.extend_from_slice(&fixed);
+    res.extend_from_slice(&1u16.to_be_bytes()); // pixels per inch
+    res.extend_from_slice(&2u16.to_be_bytes()); // width unit: cm
+    res.extend_from_slice(&fixed);
+    res.extend_from_slice(&1u16.to_be_bytes());
+    res.extend_from_slice(&2u16.to_be_bytes());
+    out.extend_from_slice(&(res.len() as u32).to_be_bytes());
+    out.extend_from_slice(&res);
+
+    // Layer and mask information.
+    let mut layer_info = Vec::new();
+    layer_info.extend_from_slice(&(layers.len() as i16).to_be_bytes());
+    let channel_len = (2 + n) as u32;
+    for (name, _) in &layers {
+        layer_info.extend_from_slice(&0u32.to_be_bytes()); // top
+        layer_info.extend_from_slice(&0u32.to_be_bytes()); // left
+        layer_info.extend_from_slice(&h.to_be_bytes()); // bottom
+        layer_info.extend_from_slice(&w.to_be_bytes()); // right
+        layer_info.extend_from_slice(&4u16.to_be_bytes());
+        for ch in [-1i16, 0, 1, 2] {
+            layer_info.extend_from_slice(&ch.to_be_bytes());
+            layer_info.extend_from_slice(&channel_len.to_be_bytes());
+        }
+        layer_info.extend_from_slice(b"8BIMnorm");
+        layer_info.push(255); // opacity
+        layer_info.push(0); // clipping: base
+        layer_info.push(0); // flags: visible
+        layer_info.push(0);
+        let mut extra = Vec::new();
+        extra.extend_from_slice(&0u32.to_be_bytes()); // mask data
+        extra.extend_from_slice(&0u32.to_be_bytes()); // blending ranges
+        put_pascal(&mut extra, name, 4);
+        layer_info.extend_from_slice(&(extra.len() as u32).to_be_bytes());
+        layer_info.extend_from_slice(&extra);
+    }
+    for (_, px) in &layers {
+        for ch in [3usize, 0, 1, 2] {
+            layer_info.extend_from_slice(&0u16.to_be_bytes()); // raw
+            layer_info.extend(px.iter().map(|p| p[ch]));
+        }
+    }
+    if layer_info.len() % 2 == 1 {
+        layer_info.push(0);
+    }
+    let mut lm = Vec::new();
+    if layers.is_empty() {
+        lm.extend_from_slice(&0u32.to_be_bytes());
+    } else {
+        lm.extend_from_slice(&(layer_info.len() as u32).to_be_bytes());
+        lm.extend_from_slice(&layer_info);
+        lm.extend_from_slice(&0u32.to_be_bytes()); // global mask: none
+    }
+    out.extend_from_slice(&(lm.len() as u32).to_be_bytes());
+    out.extend_from_slice(&lm);
+
+    // Composite image data: raw, planar.
+    out.extend_from_slice(&0u16.to_be_bytes());
+    for ch in 0..3usize {
+        out.extend(comp.iter().map(|p| p[ch]));
+    }
+    Some(out)
+}
+
+#[cfg(test)]
+mod write_tests {
+    use super::*;
+    use tracedraw_core::geometry::{Rect, Size};
+    use tracedraw_core::{Color, Fill, Shape, ShapeKind};
+
+    #[test]
+    fn written_psd_reads_back_with_its_layers_and_pixels() {
+        let mut doc = Document::new("t", Size::new(20.0, 10.0));
+        let mut ids = doc.ids().clone();
+        let mut r = Shape::new(
+            ids.shape(),
+            ShapeKind::Rect {
+                rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+                radius: 0.0,
+            },
+        );
+        r.fill = Fill::Solid(Color::rgb8(255, 0, 0));
+        r.stroke = None;
+        doc.pages[0].layers[0].shapes.push(r);
+        let second = tracedraw_core::Layer::new(ids.layer(), "Top");
+        doc.pages[0].layers.push(second);
+        doc.set_ids(ids);
+        let bytes = page_to_psd(&doc, 0, 25.4).unwrap();
+        assert!(bytes.starts_with(b"8BPS"));
+        let mut rid = IdSource::default();
+        let back = parse(&bytes, &mut rid).unwrap();
+        assert_eq!(back.shapes.len(), 2, "one layer per document layer");
+        assert!((back.size.width - 20.0).abs() < 0.5, "{:?}", back.size);
+        // The layer pixels: the left half red, the right transparent.
+        let ShapeKind::Bitmap { png, width_px, .. } = &back.shapes[0].kind else {
+            panic!("expected a bitmap layer");
+        };
+        assert_eq!(*width_px, 20);
+        let img = image::load_from_memory(png).unwrap().to_rgba8();
+        let left = img.get_pixel(2, 5);
+        let right = img.get_pixel(17, 5);
+        assert_eq!(left.0, [255, 0, 0, 255]);
+        assert_eq!(right.0[3], 0);
+        // An absent page.
+        assert!(page_to_psd(&doc, 5, 72.0).is_none());
     }
 }

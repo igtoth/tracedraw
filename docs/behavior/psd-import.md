@@ -37,3 +37,11 @@ as text (their raster is kept), clipping groups.
 - Garbage and truncated headers are errors, never panics.
 - Real files: an RGB export of the 2019 banner and a 16-bit layered
   file from an image tool open with the right colours.
+
+## Export
+
+File > Export > PSD renders the page at the dialog's resolution (36 dpi
+or more, clamped so no side exceeds 30000 px): one raster layer per
+visible document layer (master layers included), named after the layer,
+RGBA, over a white background, plus the flattened composite. RGB, 8 bits,
+uncompressed, with the resolution resource set to the export dpi.

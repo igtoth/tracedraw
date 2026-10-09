@@ -88,6 +88,15 @@ pub fn export(app: &mut App, path: &Path, st: &ExportState) -> Result<String, St
             let wmf = tracedraw_io::emf::page_to_wmf(&doc, 0);
             std::fs::write(path, wmf).map_err(|e| e.to_string())?;
         }
+        "plt" => {
+            let plt = tracedraw_io::plt::page_to_plt(&doc, 0);
+            std::fs::write(path, plt).map_err(|e| e.to_string())?;
+        }
+        "psd" => {
+            let psd =
+                tracedraw_io::psd::page_to_psd(&doc, 0, st.dpi.max(36.0)).ok_or("render failed")?;
+            std::fs::write(path, psd).map_err(|e| e.to_string())?;
+        }
         "html" => {
             let html = tracedraw_io::html::document_to_html(&doc);
             std::fs::write(path, html).map_err(|e| e.to_string())?;

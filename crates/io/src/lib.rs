@@ -9,9 +9,11 @@ pub mod eps_import;
 pub mod html;
 pub mod pdf;
 pub mod pdf_import;
+pub mod plt;
 pub mod psd;
 pub mod svg;
 pub mod svg_import;
+pub mod text_import;
 
 use std::path::Path;
 use tracedraw_core::Document;
@@ -22,6 +24,8 @@ pub enum Error {
     Io(#[from] std::io::Error),
     #[error("{0}")]
     Core(#[from] tracedraw_core::Error),
+    #[error("{0}")]
+    Format(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -46,6 +50,20 @@ pub fn save_pdf(doc: &Document, path: impl AsRef<Path>) -> Result<()> {
 /// Write one page as an ASCII DXF file.
 pub fn save_dxf(doc: &Document, page_index: usize, path: impl AsRef<Path>) -> Result<()> {
     std::fs::write(path, dxf::page_to_dxf(doc, page_index))?;
+    Ok(())
+}
+
+/// Write one page as an HPGL plotter file.
+pub fn save_plt(doc: &Document, page_index: usize, path: impl AsRef<Path>) -> Result<()> {
+    std::fs::write(path, plt::page_to_plt(doc, page_index))?;
+    Ok(())
+}
+
+/// Write one page as a Photoshop file (one raster layer per document layer).
+pub fn save_psd(doc: &Document, page_index: usize, dpi: f64, path: impl AsRef<Path>) -> Result<()> {
+    let bytes = psd::page_to_psd(doc, page_index, dpi)
+        .ok_or_else(|| Error::Format("page could not be rendered".into()))?;
+    std::fs::write(path, bytes)?;
     Ok(())
 }
 

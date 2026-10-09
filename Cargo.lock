@@ -3719,11 +3719,13 @@ dependencies = [
  "flate2",
  "image",
  "lopdf",
+ "roxmltree 0.21.1",
  "thiserror 2.0.21",
  "tiny-skia",
  "tracedraw-core",
  "tracedraw-render",
  "usvg",
+ "zip",
 ]
 
 [[package]]

@@ -2028,9 +2028,11 @@ impl App {
                 crate::i18n::tr("file.all_supported"),
                 &[
                     "cdr", "tdraw", "svg", "svgz", "pdf", "ai", "eps", "ps", "dxf", "psd", "psb",
-                    "emf", "wmf",
+                    "emf", "wmf", "plt", "hpgl", "hgl", "txt", "rtf", "docx",
                 ],
             )
+            .add_filter("HPGL plotter (*.plt, *.hpgl)", &["plt", "hpgl", "hgl"])
+            .add_filter("Text (*.txt, *.rtf, *.docx)", &["txt", "rtf", "docx"])
             .add_filter("SVG (*.svg, *.svgz)", &["svg", "svgz"])
             .add_filter("PDF, AI (*.pdf, *.ai)", &["pdf", "ai"])
             .add_filter("EPS, PostScript (*.eps, *.ps)", &["eps", "ps"])
@@ -2149,6 +2151,51 @@ impl App {
                     doc.set_ids(ids);
                     (doc, format!("EPS: {n} object(s)"))
                 })
+        } else if matches!(ext.as_str(), "plt" | "hpgl" | "hgl") {
+            std::fs::read(&path)
+                .map_err(|e| e.to_string())
+                .and_then(|bytes| {
+                    tracedraw_io::plt::parse(&bytes, &mut tracedraw_core::id::IdSource::default())
+                })
+                .map(|imported| {
+                    let title = path
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_else(App::untitled_name);
+                    for w in &imported.warnings {
+                        log::warn!("plt: {w}");
+                    }
+                    let mut doc = App::localized_document(title, imported.size);
+                    let mut ids = doc.ids().clone();
+                    let n = imported.shapes.len();
+                    for s in imported.shapes {
+                        let shape = reid_with(s, &mut ids);
+                        doc.pages[0].layers[0].shapes.push(shape);
+                    }
+                    doc.set_ids(ids);
+                    (doc, format!("HPGL: {n} stroke(s)"))
+                })
+        } else if matches!(ext.as_str(), "txt" | "rtf" | "docx") {
+            Self::parse_text_file(&path).map(|imported| {
+                let title = path
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_else(App::untitled_name);
+                for w in &imported.warnings {
+                    log::warn!("text: {w}");
+                }
+                let n = imported.text().chars().count();
+                let mut doc = App::localized_document(title, tracedraw_core::document::paper::A4);
+                let mut ids = doc.ids().clone();
+                let mut shape =
+                    imported.to_shape(tracedraw_io::text_import::Placement::a4(), &mut ids);
+                shape.id = ids.shape();
+                shape.fill = Fill::Solid(Color::BLACK);
+                shape.stroke = None;
+                doc.pages[0].layers[0].shapes.push(shape);
+                doc.set_ids(ids);
+                (doc, format!("Text: {n} character(s)"))
+            })
         } else if ext == "dxf" {
             std::fs::read(&path)
                 .map_err(|e| e.to_string())
@@ -2271,6 +2318,12 @@ impl App {
                         | "psb"
                         | "emf"
                         | "wmf"
+                        | "plt"
+                        | "hpgl"
+                        | "hgl"
+                        | "txt"
+                        | "rtf"
+                        | "docx"
                 ) {
                     None
                 } else {
@@ -2363,9 +2416,12 @@ impl App {
                 crate::i18n::tr("file.all_importable"),
                 &[
                     "cdr", "svg", "svgz", "pdf", "ai", "eps", "ps", "dxf", "psd", "psb", "emf",
-                    "wmf", "png", "jpg", "jpeg", "bmp", "gif", "webp", "tif", "tiff",
+                    "wmf", "plt", "hpgl", "hgl", "txt", "rtf", "docx", "png", "jpg", "jpeg", "bmp",
+                    "gif", "webp", "tif", "tiff",
                 ],
             )
+            .add_filter("HPGL plotter (*.plt, *.hpgl)", &["plt", "hpgl", "hgl"])
+            .add_filter("Text (*.txt, *.rtf, *.docx)", &["txt", "rtf", "docx"])
             .add_filter(crate::i18n::tr("file.cdr_files"), &["cdr"])
             .add_filter("SVG (*.svg, *.svgz)", &["svg", "svgz"])
             .add_filter("PDF, AI (*.pdf, *.ai)", &["pdf", "ai"])
@@ -2400,6 +2456,14 @@ impl App {
         }
         if ext == "emf" || ext == "wmf" {
             self.import_metafile(&path);
+            return;
+        }
+        if matches!(ext.as_str(), "plt" | "hpgl" | "hgl") {
+            self.import_plt(&path);
+            return;
+        }
+        if matches!(ext.as_str(), "txt" | "rtf" | "docx") {
+            self.import_text_file(&path);
             return;
         }
         if ext == "eps" || ext == "ps" {
@@ -2555,6 +2619,87 @@ impl App {
                 let id = shape.id;
                 self.run(Command::AddShape { layer, shape });
                 self.select(vec![id]);
+            }
+            Err(e) => self.status = crate::i18n::trf("status.import_failed", &[("e", &e)]),
+        }
+    }
+
+    /// Import an HPGL plotter file into the active layer.
+    pub fn import_plt(&mut self, path: &std::path::Path) {
+        let Some(layer) = self.active_layer() else {
+            return;
+        };
+        let parsed = std::fs::read(path)
+            .map_err(|e| e.to_string())
+            .and_then(|bytes| {
+                tracedraw_io::plt::parse(&bytes, &mut tracedraw_core::id::IdSource::default())
+            });
+        match parsed {
+            Ok(imported) => {
+                let mut cmds = Vec::new();
+                let mut ids = Vec::new();
+                for s in imported.shapes {
+                    let id = self.engine.new_shape_id();
+                    let shape = reid(s, id, &mut self.engine);
+                    ids.push(id);
+                    cmds.push(Command::AddShape { layer, shape });
+                }
+                if let Err(e) = self.engine.run_batch("Import", &cmds) {
+                    self.status = e.to_string();
+                }
+                for w in &imported.warnings {
+                    log::warn!("plt import: {w}");
+                }
+                self.select(ids);
+            }
+            Err(e) => self.status = crate::i18n::trf("status.import_failed", &[("e", &e)]),
+        }
+    }
+
+    /// Parse a text document (TXT, RTF, DOCX) by extension.
+    fn parse_text_file(
+        path: &std::path::Path,
+    ) -> Result<tracedraw_io::text_import::ImportedText, String> {
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+        match ext.as_str() {
+            "rtf" => tracedraw_io::text_import::parse_rtf(&bytes),
+            "docx" => tracedraw_io::text_import::parse_docx(&bytes),
+            _ => Ok(tracedraw_io::text_import::parse_txt(&bytes)),
+        }
+    }
+
+    /// Import a text document (TXT, RTF, DOCX) as a paragraph text frame
+    /// filling the page inside 20 mm margins.
+    pub fn import_text_file(&mut self, path: &std::path::Path) {
+        let Some(layer) = self.active_layer() else {
+            return;
+        };
+        match Self::parse_text_file(path) {
+            Ok(imported) => {
+                for w in &imported.warnings {
+                    log::warn!("text import: {w}");
+                }
+                let page = self.page_rect();
+                let margin = 20.0_f64.min(page.width() / 4.0).min(page.height() / 4.0);
+                let place = tracedraw_io::text_import::Placement {
+                    origin_top_left: Point::new(page.x0 + margin, page.y1 - margin),
+                    size: Size::new(page.width() - 2.0 * margin, page.height() - 2.0 * margin),
+                };
+                let mut ids = tracedraw_core::id::IdSource::default();
+                let shape = imported.to_shape(place, &mut ids);
+                let id = self.engine.new_shape_id();
+                let mut shape = reid(shape, id, &mut self.engine);
+                shape.fill = Fill::Solid(Color::BLACK);
+                shape.stroke = None;
+                shape.name = path.file_stem().map(|s| s.to_string_lossy().to_string());
+                self.run(Command::AddShape { layer, shape });
+                self.select(vec![id]);
+                self.check_missing_fonts();
             }
             Err(e) => self.status = crate::i18n::trf("status.import_failed", &[("e", &e)]),
         }
