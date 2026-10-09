@@ -8,8 +8,51 @@
 
 use std::process::ExitCode;
 
+/// Damage a file deterministically: truncate, flip bytes, cut a span, or
+/// overwrite a few 32-bit words.
+fn mutate(data: &[u8], seed: u64) -> Vec<u8> {
+    let mut v = data.to_vec();
+    let mut s = seed | 1;
+    let mut rnd = move || {
+        s ^= s << 13;
+        s ^= s >> 7;
+        s ^= s << 17;
+        s
+    };
+    let len = v.len().max(1);
+    match rnd() % 4 {
+        0 => {
+            let n = (rnd() as usize) % len;
+            v.truncate(n);
+        }
+        1 => {
+            for _ in 0..(1 + rnd() % 64) {
+                let i = (rnd() as usize) % len;
+                if i < v.len() {
+                    v[i] = rnd() as u8;
+                }
+            }
+        }
+        2 => {
+            let i = (rnd() as usize) % len;
+            let j = (rnd() as usize) % len;
+            let (a, b) = (i.min(j), i.max(j).min(v.len()));
+            v.drain(a..b);
+        }
+        _ => {
+            for _ in 0..(1 + rnd() % 8) {
+                let i = (rnd() as usize) % len;
+                if i + 4 <= v.len() {
+                    v[i..i + 4].copy_from_slice(&(rnd() as u32).to_le_bytes());
+                }
+            }
+        }
+    }
+    v
+}
+
 fn usage() -> ExitCode {
-    eprintln!("usage:\n  tracedraw-cli inspect <file.cdr>\n  tracedraw-cli info <file.cdr|file.tdraw>\n  tracedraw-cli icc <profile.icc>\n  tracedraw-cli convert <in.cdr|in.tdraw|in.svg|in.pdf|in.ai|in.eps|in.dxf|in.psd> <out.svg|out.pdf|out.eps|out.dxf|out.html|out.png|out.tdraw>");
+    eprintln!("usage:\n  tracedraw-cli inspect <file.cdr>\n  tracedraw-cli info <file.cdr|file.tdraw>\n  tracedraw-cli icc <profile.icc>\n  tracedraw-cli stress <file> [iterations]   mutation test of the file's reader\n  tracedraw-cli convert <in.cdr|in.tdraw|in.svg|in.pdf|in.ai|in.eps|in.dxf|in.psd> <out.svg|out.pdf|out.eps|out.dxf|out.html|out.png|out.tdraw>");
     ExitCode::from(2)
 }
 
@@ -227,6 +270,58 @@ fn main() -> ExitCode {
                 }
             }
             ExitCode::SUCCESS
+        }
+        Some("stress") => {
+            // Mutation test: feed damaged copies of a file to its reader and
+            // report panics (there must be none).
+            let Some(input) = args.get(2) else {
+                return usage();
+            };
+            let iters: u64 = args.get(3).and_then(|v| v.parse().ok()).unwrap_or(200);
+            let data = match std::fs::read(input) {
+                Ok(d) => d,
+                Err(e) => {
+                    eprintln!("{input}: {e}");
+                    return ExitCode::FAILURE;
+                }
+            };
+            let lower = input.to_ascii_lowercase();
+            let mut panics = 0;
+            std::panic::set_hook(Box::new(|info| eprintln!("panic: {info}")));
+            for seed in 0..iters {
+                let m = mutate(&data, seed * 7919 + 13);
+                let lower = lower.clone();
+                let ok = std::panic::catch_unwind(move || {
+                    let mut ids = tracedraw_core::id::IdSource::default();
+                    if lower.ends_with(".cdr") {
+                        let _ = tracedraw_cdr::open_bytes(&m, "stress");
+                    } else if lower.ends_with(".pdf") || lower.ends_with(".ai") {
+                        let _ = tracedraw_io::pdf_import::parse(&m, &mut ids);
+                    } else if lower.ends_with(".eps") || lower.ends_with(".ps") {
+                        let _ = tracedraw_io::eps_import::parse(&m, &mut ids);
+                    } else if lower.ends_with(".dxf") {
+                        let _ = tracedraw_io::dxf::parse(&String::from_utf8_lossy(&m), &mut ids);
+                    } else if lower.ends_with(".psd") || lower.ends_with(".psb") {
+                        let _ = tracedraw_io::psd::parse(&m, &mut ids);
+                    } else if lower.ends_with(".svg") {
+                        let _ =
+                            tracedraw_io::svg_import::parse(&String::from_utf8_lossy(&m), &mut ids);
+                    } else {
+                        let _ = tracedraw_core::Document::from_json(&String::from_utf8_lossy(&m));
+                    }
+                })
+                .is_ok();
+                if !ok {
+                    panics += 1;
+                    eprintln!("seed {seed} panicked");
+                }
+            }
+            println!("{input}: {iters} mutated copies, {panics} panic(s)");
+            if panics == 0 {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::FAILURE
+            }
         }
         Some("convert") => {
             let (Some(input), Some(output)) = (args.get(2), args.get(3)) else {

@@ -935,12 +935,12 @@ pub fn parse(text: &str, ids: &mut IdSource) -> Result<Imported, String> {
                 .filter(|p| p.code == 2)
                 .map(|p| p.value.trim().to_ascii_uppercase())
                 .unwrap_or_default();
-            let start = i + 2;
+            let start = (i + 2).min(all.len());
             let mut end = start;
             while end < all.len() && !(all[end].code == 0 && all[end].value.trim() == "ENDSEC") {
                 end += 1;
             }
-            sections.push((name, all[start..end.min(all.len())].to_vec()));
+            sections.push((name, all[start..end].to_vec()));
             i = end + 1;
         } else {
             i += 1;
@@ -1715,5 +1715,14 @@ mod tests {
         assert!(imp.shapes.is_empty() || imp.shapes.len() <= 2);
         assert_eq!(aci_to_rgb(1), [255, 0, 0]);
         assert_eq!(rgb_to_aci([250, 5, 5]), 1);
+        // A SECTION as the very last pair (found by mutation testing).
+        assert!(parse(
+            "  0\nSECTION\n  2\nENTITIES\n  0\nENDSEC\n  0\nSECTION\n",
+            &mut ids
+        )
+        .is_ok());
+        assert!(
+            parse("  0\nSECTION", &mut ids).is_ok() || parse("  0\nSECTION", &mut ids).is_err()
+        );
     }
 }

@@ -123,7 +123,7 @@ crates/text       font discovery (fontdb), shaping (rustybuzz), outlines
 crates/render     CPU rasteriser (tiny-skia): fills, outlines, effects
 crates/io         native .tdraw, SVG, PDF/AI, EPS, DXF and PSD import, SVG, PDF, EPS, DXF and HTML writers
 apps/tracedraw    desktop app (egui/eframe), a thin shell over the engine
-apps/tracedraw-cli  inspect, info, convert
+apps/tracedraw-cli  inspect, info, convert, icc, stress
 docs/             architecture, decisions, behaviour notes, format notes,
                   parity, acceptance criteria, roadmap
 ```
