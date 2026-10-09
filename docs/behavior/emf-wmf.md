@@ -1,8 +1,8 @@
-# EMF and WMF import, EMF export
+# EMF and WMF import and export
 
 Windows metafiles: the enhanced format (EMF) and the 16-bit format
 (WMF, with or without the placeable header). Open and Import read both;
-Export writes EMF. The layouts follow the public Windows metafile
+Export writes both. The layouts follow the public Windows metafile
 specifications; the reader is a GDI record player
 (`crates/io/src/emf.rs`).
 
@@ -53,7 +53,7 @@ specifications; the reader is a GDI record player
   records stop the reader with a warning. Mutation testing finds no
   panic.
 
-## Export
+## EMF export
 
 - One logical unit is 0.01 mm (MM_TEXT on a 2540 dpi device); the header
   frame is the page in 0.01 mm and the bounds the same area in pixels.
@@ -80,6 +80,27 @@ specifications; the reader is a GDI record player
   contents, RESTOREDC, then the frame's outline. Groups, tables and
   symbol instances are expanded; live effects are evaluated first.
 
+## WMF export
+
+- Placeable header at 1440 units per inch (twips), so coordinates stay
+  within 16 bits up to about 578 mm; MM_TEXT with the page as window
+  extent.
+- Curves are flattened (0.05 mm). Fills are POLYPOLYGON records with a
+  solid brush and a null pen (even-odd or winding from the fill rule);
+  outlines are POLYLINE records with a pen (width in twips, 0 for
+  hairlines, dash presets mapped to the GDI dash styles). Fountain,
+  pattern, texture and mesh fills become their preview colour (WMF has
+  no gradients).
+- Object handles take the lowest free slot, as GDI assigns them, so the
+  SELECTOBJECT indices match what readers compute.
+- Text: CREATEFONTINDIRECT (8-bit face name; characters outside Latin-1
+  become `?`), SETTEXTCOLOR, SETTEXTALIGN with the baseline flag and one
+  EXTTEXTOUT per line.
+- Bitmaps: a 32-bit DIB through STRETCHDIB into the page bounds of the
+  image (no world transforms in WMF, so rotated images fill their
+  bounding box).
+- ClipFrames are drawn unclipped: contents, then the frame outline.
+
 ## Checks
 
 - Given an EMF with a 20 px pen, a blue brush, a rectangle at device
@@ -95,3 +116,6 @@ specifications; the reader is a GDI record player
 - Given a rectangle, text and a linear fountain exported to EMF, then
   the reader gets them back with the same size, colours and position,
   and the fountain as at least 32 bands.
+- Given a rectangle, text and a 2 x 1 bitmap exported to WMF, then the
+  reader gets a filled polygon, an outlined polyline, the text at its
+  baseline and the bitmap with its pixels, all within 0.05 mm.

@@ -52,7 +52,7 @@ fn mutate(data: &[u8], seed: u64) -> Vec<u8> {
 }
 
 fn usage() -> ExitCode {
-    eprintln!("usage:\n  tracedraw-cli inspect <file.cdr>\n  tracedraw-cli info <file.cdr|file.tdraw>\n  tracedraw-cli icc <profile.icc>\n  tracedraw-cli stress <file> [iterations]   mutation test of the file's reader\n  tracedraw-cli convert <in.cdr|in.tdraw|in.svg|in.pdf|in.ai|in.eps|in.dxf|in.psd|in.emf|in.wmf> <out.svg|out.pdf|out.eps|out.dxf|out.emf|out.html|out.png|out.tdraw>");
+    eprintln!("usage:\n  tracedraw-cli inspect <file.cdr>\n  tracedraw-cli info <file.cdr|file.tdraw>\n  tracedraw-cli icc <profile.icc>\n  tracedraw-cli stress <file> [iterations]   mutation test of the file's reader\n  tracedraw-cli convert <in.cdr|in.tdraw|in.svg|in.pdf|in.ai|in.eps|in.dxf|in.psd|in.emf|in.wmf> <out.svg|out.pdf|out.eps|out.dxf|out.emf|out.wmf|out.html|out.png|out.tdraw>");
     ExitCode::from(2)
 }
 
@@ -383,6 +383,8 @@ fn main() -> ExitCode {
                     .map_err(tracedraw_io::Error::from)
             } else if output.to_ascii_lowercase().ends_with(".emf") {
                 tracedraw_io::save_emf(&doc, 0, output)
+            } else if output.to_ascii_lowercase().ends_with(".wmf") {
+                tracedraw_io::save_wmf(&doc, 0, output)
             } else if output.to_ascii_lowercase().ends_with(".dxf") {
                 tracedraw_io::save_dxf(&doc, 0, output)
             } else if output.to_ascii_lowercase().ends_with(".html") {

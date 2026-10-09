@@ -116,7 +116,7 @@ impl ExportState {
     }
 }
 
-pub const EXPORT_FORMATS: [(&str, &str); 13] = [
+pub const EXPORT_FORMATS: [(&str, &str); 14] = [
     ("SVG", "svg"),
     ("PDF", "pdf"),
     ("PNG", "png"),
@@ -130,6 +130,7 @@ pub const EXPORT_FORMATS: [(&str, &str); 13] = [
     ("DXF", "dxf"),
     ("HTML", "html"),
     ("EMF", "emf"),
+    ("WMF", "wmf"),
 ];
 
 #[derive(Debug, Clone, PartialEq)]

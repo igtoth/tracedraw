@@ -2926,3 +2926,561 @@ mod export_tests {
         assert!(bands.len() >= 32, "{}", bands.len());
     }
 }
+
+// ---------------------------------------------------------------- WMF export
+
+/// Write one page as a placeable Windows metafile. Logical units are
+/// twips (1/1440 inch), which keeps A3 pages inside the 16-bit range.
+/// Curves are flattened (0.05 mm); fills and outlines become POLYPOLYGON
+/// and POLYLINE records with pens and brushes; text is EXTTEXTOUT with a
+/// LOGFONT; bitmaps are 32-bit DIBs through STRETCHDIB. Live effects are
+/// expanded, ClipFrames are drawn unclipped (contents then frame).
+pub fn page_to_wmf(doc: &tracedraw_core::Document, page_index: usize) -> Vec<u8> {
+    let Some(page) = doc.pages.get(page_index) else {
+        return Vec::new();
+    };
+    let (w, h) = (page.size.width.max(0.01), page.size.height.max(0.01));
+    let mut wr = WmfWriter {
+        recs: Vec::new(),
+        slots: Vec::new(),
+        objects: 0,
+        max_record: 0,
+        page_h: h,
+        symbols: &doc.symbols,
+    };
+    wr.rec(0x0103, &[1]); // SETMAPMODE MM_TEXT
+    wr.rec(0x0102, &[1]); // SETBKMODE TRANSPARENT
+    wr.rec(0x020B, &[0, 0]); // SETWINDOWORG
+    wr.rec(0x020C, &[wr.tw(h), wr.tw(w)]); // SETWINDOWEXT (y, x)
+    for layer in &page.layers {
+        if !layer.visible || !layer.printable {
+            continue;
+        }
+        for s in &layer.shapes {
+            wr.shape(s, Affine::IDENTITY);
+        }
+    }
+    wr.rec(0, &[]);
+    let body: Vec<u8> = wr.recs.concat();
+    let mut out = Vec::new();
+    // Placeable header.
+    out.extend_from_slice(&0x9AC6_CDD7u32.to_le_bytes());
+    out.extend_from_slice(&0u16.to_le_bytes());
+    for v in [0, 0, wr.tw(w), wr.tw(h)] {
+        out.extend_from_slice(&v.to_le_bytes());
+    }
+    out.extend_from_slice(&1440u16.to_le_bytes());
+    out.extend_from_slice(&0u32.to_le_bytes());
+    let mut checksum: u16 = 0;
+    for i in (0..20).step_by(2) {
+        checksum ^= u16_at(&out, i);
+    }
+    out.extend_from_slice(&checksum.to_le_bytes());
+    // Standard header: type, size (words), version, file size (words),
+    // objects, largest record (words), members.
+    let total_words = ((18 + body.len()) / 2) as u32;
+    out.extend_from_slice(&1u16.to_le_bytes());
+    out.extend_from_slice(&9u16.to_le_bytes());
+    out.extend_from_slice(&0x300u16.to_le_bytes());
+    out.extend_from_slice(&total_words.to_le_bytes());
+    out.extend_from_slice(&(wr.objects as u16).to_le_bytes());
+    out.extend_from_slice(&(wr.max_record as u32).to_le_bytes());
+    out.extend_from_slice(&0u16.to_le_bytes());
+    out.extend_from_slice(&body);
+    out
+}
+
+struct WmfWriter<'a> {
+    recs: Vec<Vec<u8>>,
+    /// Object slots in use; GDI gives a new object the lowest free slot.
+    slots: Vec<bool>,
+    objects: usize,
+    max_record: usize,
+    page_h: f64,
+    symbols: &'a [tracedraw_core::document::Symbol],
+}
+
+impl WmfWriter<'_> {
+    /// Millimetres to twips, clamped to the 16-bit range.
+    fn tw(&self, mm: f64) -> i16 {
+        (mm / 25.4 * 1440.0).round().clamp(-32768.0, 32767.0) as i16
+    }
+
+    fn pt(&self, p: Point) -> (i16, i16) {
+        (self.tw(p.x), self.tw(self.page_h - p.y))
+    }
+
+    fn rec(&mut self, func: u16, params: &[i16]) {
+        let mut r = Vec::new();
+        let words = 3 + params.len();
+        r.extend_from_slice(&(words as u32).to_le_bytes());
+        r.extend_from_slice(&func.to_le_bytes());
+        for p in params {
+            r.extend_from_slice(&p.to_le_bytes());
+        }
+        self.max_record = self.max_record.max(words);
+        self.recs.push(r);
+    }
+
+    fn rec_bytes(&mut self, func: u16, bytes: &[u8]) {
+        let mut b = bytes.to_vec();
+        if b.len() % 2 == 1 {
+            b.push(0);
+        }
+        let words = 3 + b.len() / 2;
+        let mut r = Vec::new();
+        r.extend_from_slice(&(words as u32).to_le_bytes());
+        r.extend_from_slice(&func.to_le_bytes());
+        r.extend_from_slice(&b);
+        self.max_record = self.max_record.max(words);
+        self.recs.push(r);
+    }
+
+    fn color_words(c: Color) -> [i16; 2] {
+        let [r, g, b] = c.to_rgb8();
+        [(r as u16 | ((g as u16) << 8)) as i16, b as u16 as i16]
+    }
+
+    /// The lowest free object slot, as GDI assigns handles.
+    fn alloc(&mut self) -> u16 {
+        let idx = match self.slots.iter().position(|used| !*used) {
+            Some(i) => {
+                self.slots[i] = true;
+                i
+            }
+            None => {
+                self.slots.push(true);
+                self.slots.len() - 1
+            }
+        };
+        self.objects = self.objects.max(self.slots.len());
+        idx as u16
+    }
+
+    fn create_pen(&mut self, stroke: Option<&Stroke>, scale: f64) -> u16 {
+        let idx = self.alloc();
+        match stroke {
+            None => self.rec(0x02FA, &[5, 0, 0, 0, 0]),
+            Some(s) => {
+                let w = if s.scale_with_object {
+                    s.width * scale
+                } else {
+                    s.width
+                };
+                let wt = if w <= Stroke::HAIRLINE + 1e-9 {
+                    0
+                } else {
+                    self.tw(w).max(1)
+                };
+                let style: i16 = match s.dash.len() {
+                    0 => 0,
+                    2 if s.dash[0] <= 1.5 => 2,
+                    2 => 1,
+                    4 => 3,
+                    _ => 4,
+                };
+                let [c0, c1] = Self::color_words(s.color);
+                self.rec(0x02FA, &[style, wt, wt, c0, c1]);
+            }
+        }
+        idx
+    }
+
+    fn create_brush(&mut self, fill: Option<Color>) -> u16 {
+        let idx = self.alloc();
+        match fill {
+            None => self.rec(0x02FC, &[1, 0, 0, 0]),
+            Some(c) => {
+                let [c0, c1] = Self::color_words(c);
+                self.rec(0x02FC, &[0, c0, c1, 0]);
+            }
+        }
+        idx
+    }
+
+    fn select(&mut self, idx: u16) {
+        self.rec(0x012D, &[idx as i16]);
+    }
+
+    fn delete(&mut self, idx: u16) {
+        if let Some(slot) = self.slots.get_mut(idx as usize) {
+            *slot = false;
+        }
+        self.rec(0x01F0, &[idx as i16]);
+    }
+
+    /// Flattened subpaths with their closed flag.
+    fn polylines(path: &BezPath) -> Vec<(Vec<Point>, bool)> {
+        let mut out: Vec<(Vec<Point>, bool)> = Vec::new();
+        let mut cur: Vec<Point> = Vec::new();
+        let mut closed = false;
+        tracedraw_core::geometry::flatten(path, 0.05, &mut |el| match el {
+            PathEl::MoveTo(p) => {
+                if cur.len() >= 2 {
+                    out.push((std::mem::take(&mut cur), closed));
+                } else {
+                    cur.clear();
+                }
+                closed = false;
+                cur.push(p);
+            }
+            PathEl::LineTo(p) => cur.push(p),
+            PathEl::ClosePath => closed = true,
+            _ => {}
+        });
+        if cur.len() >= 2 {
+            out.push((cur, closed));
+        }
+        out
+    }
+
+    fn fill_and_stroke(
+        &mut self,
+        path: &BezPath,
+        fill: Option<Color>,
+        stroke: Option<&Stroke>,
+        scale: f64,
+        even_odd: bool,
+    ) {
+        let polys = Self::polylines(path);
+        if polys.is_empty() {
+            return;
+        }
+        if let Some(c) = fill {
+            self.rec(0x0106, &[if even_odd { 1 } else { 2 }]);
+            let b = self.create_brush(Some(c));
+            let p = self.create_pen(None, 1.0);
+            self.select(b);
+            self.select(p);
+            let closed: Vec<&(Vec<Point>, bool)> =
+                polys.iter().filter(|(pts, _)| pts.len() >= 3).collect();
+            let mut params: Vec<i16> = vec![closed.len() as i16];
+            for (pts, _) in &closed {
+                params.push(pts.len().min(65535) as i16);
+            }
+            for (pts, _) in &closed {
+                for q in pts.iter().take(65535) {
+                    let (x, y) = self.pt(*q);
+                    params.push(x);
+                    params.push(y);
+                }
+            }
+            if !closed.is_empty() {
+                self.rec(0x0538, &params);
+            }
+            self.delete(p);
+            self.delete(b);
+        }
+        if let Some(s) = stroke {
+            let p = self.create_pen(Some(s), scale);
+            self.select(p);
+            for (pts, closed) in &polys {
+                let mut params: Vec<i16> = Vec::new();
+                let mut all: Vec<Point> = pts.clone();
+                if *closed {
+                    all.push(pts[0]);
+                }
+                params.push(all.len().min(65535) as i16);
+                for q in all.iter().take(65535) {
+                    let (x, y) = self.pt(*q);
+                    params.push(x);
+                    params.push(y);
+                }
+                self.rec(0x0325, &params);
+            }
+            self.delete(p);
+        }
+    }
+
+    fn text(
+        &mut self,
+        shape: &Shape,
+        transform: Affine,
+        spans: &[TextSpan],
+        origin: Point,
+        align: TextAlign,
+    ) {
+        let Some(first) = spans.first() else {
+            return;
+        };
+        let text: String = spans.iter().map(|s| s.text.as_str()).collect();
+        let c = transform.as_coeffs();
+        let scale = (c[0] * c[3] - c[1] * c[2]).abs().sqrt();
+        let rot_deg = c[1].atan2(c[0]).to_degrees();
+        let em_mm = first.size_pt * PT_MM * scale;
+        let color = match &shape.fill {
+            Fill::Solid(col) => *col,
+            Fill::Fountain(f) => f.first_color(),
+            _ => Color::BLACK,
+        };
+        // LOGFONT: height, width, escapement, orientation, weight, italic,
+        // underline, strikeout, charset, out/clip precision, quality,
+        // pitch, face name (32 bytes).
+        let mut lf = Vec::new();
+        lf.extend_from_slice(&(-self.tw(em_mm)).to_le_bytes());
+        lf.extend_from_slice(&0i16.to_le_bytes());
+        lf.extend_from_slice(&((rot_deg * 10.0).round() as i16).to_le_bytes());
+        lf.extend_from_slice(&((rot_deg * 10.0).round() as i16).to_le_bytes());
+        lf.extend_from_slice(&(if first.bold { 700i16 } else { 400 }).to_le_bytes());
+        lf.push(first.italic as u8);
+        lf.push(first.underline as u8);
+        lf.push(first.strikethrough as u8);
+        lf.extend_from_slice(&[1, 0, 0, 0, 0]);
+        let mut face: Vec<u8> = first
+            .font_family
+            .chars()
+            .map(|ch| if ch.is_ascii() { ch as u8 } else { b'?' })
+            .take(31)
+            .collect();
+        face.resize(32, 0);
+        lf.extend_from_slice(&face);
+        let f = self.alloc();
+        self.rec_bytes(0x02FB, &lf);
+        self.select(f);
+        let [c0, c1] = Self::color_words(color);
+        self.rec(0x0209, &[c0, c1]);
+        let ta: i16 = 24
+            | match align {
+                TextAlign::Center => 6,
+                TextAlign::Right => 2,
+                _ => 0,
+            };
+        self.rec(0x012E, &[ta]);
+        let line_h = em_mm * 1.2;
+        for (i, line) in text.lines().enumerate() {
+            if line.trim().is_empty() {
+                continue;
+            }
+            let local = Point::new(origin.x, origin.y - i as f64 * line_h / scale.max(1e-9));
+            let (x, y) = self.pt(transform * local);
+            let bytes: Vec<u8> = line
+                .chars()
+                .map(|ch| {
+                    if (ch as u32) < 256 {
+                        ch as u32 as u8
+                    } else {
+                        b'?'
+                    }
+                })
+                .collect();
+            let mut body = Vec::new();
+            body.extend_from_slice(&y.to_le_bytes());
+            body.extend_from_slice(&x.to_le_bytes());
+            body.extend_from_slice(&(bytes.len() as u16).to_le_bytes());
+            body.extend_from_slice(&0u16.to_le_bytes());
+            body.extend_from_slice(&bytes);
+            self.rec_bytes(0x0A32, &body);
+        }
+        self.delete(f);
+    }
+
+    fn bitmap(&mut self, transform: Affine, rect: Rect, png: &[u8]) {
+        let Ok(pm) = tiny_skia::Pixmap::decode_png(png) else {
+            return;
+        };
+        let (w, h) = (pm.width(), pm.height());
+        if w == 0 || h == 0 {
+            return;
+        }
+        // No world transforms in WMF: the image fills its page bounds.
+        let b = (transform * rect.to_path(0.01)).bounding_box();
+        let (x0, y0) = self.pt(Point::new(b.x0, b.y1));
+        let (x1, y1) = self.pt(Point::new(b.x1, b.y0));
+        let mut body = Vec::new();
+        body.extend_from_slice(&0x00CC0020u32.to_le_bytes());
+        body.extend_from_slice(&0u16.to_le_bytes());
+        for v in [h as i16, w as i16, 0, 0, y1 - y0, x1 - x0, y0, x0] {
+            body.extend_from_slice(&v.to_le_bytes());
+        }
+        let mut bmi = Vec::new();
+        push_i32(&mut bmi, 40);
+        push_i32(&mut bmi, w as i32);
+        push_i32(&mut bmi, h as i32);
+        bmi.extend_from_slice(&1u16.to_le_bytes());
+        bmi.extend_from_slice(&32u16.to_le_bytes());
+        push_i32(&mut bmi, 0);
+        push_i32(&mut bmi, (w * h * 4) as i32);
+        for _ in 0..4 {
+            push_i32(&mut bmi, 0);
+        }
+        body.extend_from_slice(&bmi);
+        for row in (0..h).rev() {
+            for x in 0..w {
+                let p = pm.pixels()[(row * w + x) as usize].demultiply();
+                body.extend_from_slice(&[p.blue(), p.green(), p.red(), p.alpha()]);
+            }
+        }
+        self.rec_bytes(0x0F43, &body);
+    }
+
+    fn shape(&mut self, shape: &Shape, parent: Affine) {
+        if !shape.visible {
+            return;
+        }
+        if !shape.effects.is_empty() {
+            let ev = tracedraw_core::live::evaluate(shape);
+            for s in ev
+                .below
+                .iter()
+                .chain(std::iter::once(&ev.main))
+                .chain(ev.above.iter())
+            {
+                let mut s = s.clone();
+                s.effects.clear();
+                self.shape(&s, parent);
+            }
+            return;
+        }
+        let transform = parent * shape.transform;
+        let c = transform.as_coeffs();
+        let scale = (c[0] * c[3] - c[1] * c[2]).abs().sqrt();
+        match &shape.kind {
+            ShapeKind::Group { children } => {
+                for ch in children {
+                    self.shape(ch, transform);
+                }
+            }
+            ShapeKind::Table(_) | ShapeKind::SymbolInstance { .. } => {
+                for ch in shape.expand(self.symbols) {
+                    self.shape(&ch, transform);
+                }
+            }
+            ShapeKind::ClipFrame { frame, contents } => {
+                for ch in contents {
+                    self.shape(ch, transform);
+                }
+                let mut f = (**frame).clone();
+                f.fill = Fill::None;
+                self.shape(&f, transform);
+            }
+            ShapeKind::Text {
+                spans,
+                origin,
+                align,
+                ..
+            } => self.text(shape, transform, spans, *origin, *align),
+            ShapeKind::Bitmap { rect, png, .. } => {
+                self.bitmap(transform, *rect, png);
+                if let Some(st) = &shape.stroke {
+                    let path = transform * shape.local_path();
+                    self.fill_and_stroke(&path, None, Some(st), scale, true);
+                }
+            }
+            _ => {
+                let path = transform * shape.local_path();
+                let even_odd = shape
+                    .data
+                    .iter()
+                    .any(|(k, v)| k == "fill.rule" && v == "evenodd");
+                let fill = match &shape.fill {
+                    Fill::None => None,
+                    other => other.preview_color().or(Some(Color::Gray { v: 0.5 })),
+                };
+                self.fill_and_stroke(&path, fill, shape.stroke.as_ref(), scale, even_odd);
+                if let Some(st) = &shape.stroke {
+                    for head in tracedraw_core::style::arrowhead_paths(&shape.page_path(), st) {
+                        self.fill_and_stroke(&(parent * head), Some(st.color), None, 1.0, false);
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod wmf_export_tests {
+    use super::*;
+    use tracedraw_core::{geometry::Rect, Document};
+
+    #[test]
+    fn wmf_export_round_trips_through_the_reader() {
+        let mut doc = Document::new("t", Size::new(100.0, 50.0));
+        let mut ids = doc.ids().clone();
+        let mut r = Shape::new(
+            ids.shape(),
+            ShapeKind::Rect {
+                rect: Rect::new(10.0, 10.0, 30.0, 20.0),
+                radius: 0.0,
+            },
+        );
+        r.fill = Fill::Solid(Color::rgb8(0, 0, 255));
+        r.stroke = Some(Stroke::new(Color::rgb8(255, 0, 0), 2.0));
+        let mut t = Shape::new(
+            ids.shape(),
+            ShapeKind::Text {
+                spans: vec![TextSpan::new("Hi", "Arial", 36.0)],
+                origin: Point::new(50.0, 40.0),
+                frame: None,
+                align: TextAlign::Left,
+                para: ParagraphStyle::default(),
+                on_path: None,
+            },
+        );
+        t.fill = Fill::Solid(Color::rgb8(0, 128, 0));
+        let png = crate::svg::encode_png(2, 1, &[255, 0, 0, 255, 0, 0, 255, 255]);
+        let mut b = Shape::new(
+            ids.shape(),
+            ShapeKind::Bitmap {
+                rect: Rect::new(60.0, 5.0, 90.0, 25.0),
+                width_px: 2,
+                height_px: 1,
+                png,
+            },
+        );
+        b.fill = Fill::None;
+        b.stroke = None;
+        doc.pages[0].layers[0].shapes.extend([r, t, b]);
+        doc.set_ids(ids);
+        let bytes = page_to_wmf(&doc, 0);
+        assert!(is_wmf(&bytes));
+        let mut ids2 = IdSource::default();
+        let imp = parse(&bytes, &mut ids2).expect("re-read");
+        assert!(imp.warnings.is_empty(), "{:?}", imp.warnings);
+        assert!((imp.size.width - 100.0).abs() < 0.05 && (imp.size.height - 50.0).abs() < 0.05);
+        // Fill polygon, outline polyline, text, bitmap.
+        let kinds: Vec<String> = imp
+            .shapes
+            .iter()
+            .map(|s| format!("{:?}", std::mem::discriminant(&s.kind)))
+            .collect();
+        assert_eq!(imp.shapes.len(), 4, "{kinds:?} {:?}", imp.warnings);
+        let fb = imp.shapes[0].bounds();
+        assert!(
+            (fb.x0 - 10.0).abs() < 0.05 && (fb.y1 - 20.0).abs() < 0.05,
+            "{fb:?}"
+        );
+        assert_eq!(imp.shapes[0].fill, Fill::Solid(Color::rgb8(0, 0, 255)));
+        let st = imp.shapes[1].stroke.as_ref().expect("stroke");
+        assert_eq!(st.color, Color::rgb8(255, 0, 0));
+        assert!((st.width - 2.0).abs() < 0.05, "{}", st.width);
+        match &imp.shapes[2].kind {
+            ShapeKind::Text { spans, .. } => {
+                assert_eq!(spans[0].text, "Hi");
+                assert!(
+                    (spans[0].size_pt - 36.0).abs() < 0.2,
+                    "{}",
+                    spans[0].size_pt
+                );
+            }
+            k => panic!("{k:?}"),
+        }
+        let o = imp.shapes[2].transform * Point::ZERO;
+        assert!(
+            (o.x - 50.0).abs() < 0.05 && (o.y - 40.0).abs() < 0.05,
+            "{o:?}"
+        );
+        let bb = imp.shapes[3].bounds();
+        assert!(
+            (bb.x0 - 60.0).abs() < 0.05 && (bb.y1 - 25.0).abs() < 0.05,
+            "{bb:?}"
+        );
+        match &imp.shapes[3].kind {
+            ShapeKind::Bitmap { png, .. } => {
+                let pm = tiny_skia::Pixmap::decode_png(png).expect("png");
+                assert_eq!(pm.pixels()[0].red(), 255);
+                assert_eq!(pm.pixels()[1].blue(), 255);
+            }
+            k => panic!("{k:?}"),
+        }
+    }
+}

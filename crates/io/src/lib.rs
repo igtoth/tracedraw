@@ -55,6 +55,12 @@ pub fn save_emf(doc: &Document, page_index: usize, path: impl AsRef<Path>) -> Re
     Ok(())
 }
 
+/// Write one page as a placeable Windows metafile (WMF).
+pub fn save_wmf(doc: &Document, page_index: usize, path: impl AsRef<Path>) -> Result<()> {
+    std::fs::write(path, emf::page_to_wmf(doc, page_index))?;
+    Ok(())
+}
+
 /// Write the first page (or `page_index`) as an SVG file.
 pub fn save_svg(doc: &Document, page_index: usize, path: impl AsRef<Path>) -> Result<()> {
     std::fs::write(path, svg::page_to_svg(doc, page_index))?;
