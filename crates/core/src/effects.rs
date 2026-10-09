@@ -303,7 +303,8 @@ mod tests {
         // middle step must be the same size, not collapsed by a twisted
         // point correspondence.
         let a = crate::geometry::Ellipse::from_rect(Rect::new(0.0, 40.0, 30.0, 60.0)).to_path(0.01);
-        let b = crate::geometry::Ellipse::from_rect(Rect::new(100.0, 0.0, 130.0, 20.0)).to_path(0.01);
+        let b =
+            crate::geometry::Ellipse::from_rect(Rect::new(100.0, 0.0, 130.0, 20.0)).to_path(0.01);
         let steps = blend(&a, &b, 5, 64);
         assert_eq!(steps.len(), 5);
         for s in &steps {

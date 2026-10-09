@@ -2,7 +2,7 @@
 
 | Action | Behaviour |
 |---|---|
-| Click | select the topmost object under the pointer (its fill counts only when filled; otherwise its outline within 3 px) |
+| Click | select the topmost object under the pointer (its fill counts only when filled; otherwise its outline within 3 px; text, groups, tables, bitmaps, ClipFrames and symbols count anywhere inside their bounds) |
 | Shift+click | add or remove from the selection |
 | Alt+click | select the object beneath the current one (dig) |
 | Click on selected | toggle the rotate/skew handles |
@@ -14,7 +14,7 @@
 | Skew handle | skew along the edge |
 | Arrows | nudge by the nudge distance (2.54 mm default); Shift x10 (super nudge), Ctrl x0.1 (micro nudge) |
 | Tab / Shift+Tab | cycle selection in stacking order |
-| Double-click | Shape tool on a curve, text edit on text |
+| Double-click | Shape tool on a curve; on text, the Text tool editing that text with the caret at the end |
 | Esc | deselect |
 
 Selecting inside a group: Ctrl+click.

@@ -28,11 +28,18 @@ impl App {
                 if !b.contains(p) {
                     continue;
                 }
-                // Filled objects hit anywhere inside; unfilled ones only near the outline.
+                // Filled objects hit anywhere inside; unfilled ones only near
+                // the outline. Bitmaps, ClipFrames and symbols have visible
+                // content inside whatever their fill.
                 if !matches!(s.fill, Fill::None)
                     || matches!(
                         s.kind,
-                        ShapeKind::Text { .. } | ShapeKind::Group { .. } | ShapeKind::Table(_)
+                        ShapeKind::Text { .. }
+                            | ShapeKind::Group { .. }
+                            | ShapeKind::Table(_)
+                            | ShapeKind::Bitmap { .. }
+                            | ShapeKind::ClipFrame { .. }
+                            | ShapeKind::SymbolInstance { .. }
                     )
                 {
                     return Some(s.id);
@@ -438,7 +445,9 @@ impl App {
             if let Some(id) = self.hit_test(p) {
                 if let Ok((_, s)) = self.doc().shape(id) {
                     if matches!(s.kind, ShapeKind::Text { .. }) {
-                        self.set_tool(Tool::Text);
+                        // Straight into editing that text, caret at the end.
+                        self.select(vec![id]);
+                        self.edit_selected_text();
                     } else {
                         self.select(vec![id]);
                         self.set_tool(Tool::Shape);
