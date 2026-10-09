@@ -52,6 +52,17 @@ Shortcuts page lists them too. `Ctrl` is the Command key on macOS.
 Docker shortcuts toggle: pressing one when its docker is already the
 active tab hides the docker column.
 
+## Align keys and tool keys
+
+With a selection, the plain letters L, R, T, B, E, C and P align it
+(left, right, top, bottom, centre horizontally, centre vertically,
+centre of page); a single object aligns to the page. Without a
+selection the same letters reach the tool keys (E Roughen, C none, B
+none). Tools with letter keys: Z Zoom, H Pan, Y Polygon, A Spiral, D
+Graph Paper, G Interactive Fill, M Mesh Fill, X Eraser, W Smear, V
+Smudge, E Roughen, S Sketch, Shift+S Shape Recognition, I Artistic
+Media; the Bezier, Pen, Crop and Knife tools have no key.
+
 ## Modal dialogs
 
 - Esc closes any dialog without applying; while a dialog is open the

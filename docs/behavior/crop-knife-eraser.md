@@ -1,6 +1,6 @@
 # Crop, Knife, Segment delete, Eraser
 
-## Crop (Shift+X in the target design; here on the toolbox)
+## Crop
 
 - Drag a rectangle. Every object on unlocked layers (or the selection,
   when there is one) is intersected with it: curves become their clipped
@@ -8,7 +8,7 @@
   their pixels inside a ClipFrame frame of the crop rectangle, groups
   are cropped member by member. Objects entirely outside are deleted.
 
-## Knife (C)
+## Knife
 
 - Drag a straight cut. Objects crossed by the line (selection, or every
   unlocked object) are split into the part on each side of the line;

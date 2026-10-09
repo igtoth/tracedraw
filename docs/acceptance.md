@@ -60,3 +60,11 @@ than 20%.
 - Each page in `docs/behavior/` lists checks ("given, when, then") that
   are unit tests in the owning crate. A parity row moves to "works" only
   when those tests pass.
+- Interaction smoke run (`scripts/visual/` driver): draw one of every
+  box tool, a freehand curve and text; select all; group, ungroup,
+  combine, break apart and convert to curves; drop shadow and
+  transparency drags; zoom and pan; add a page; open every docker tab.
+  The process must still be running at the end with no panic in the log
+  (Ctrl+Q once closed the application through egui's default quit
+  shortcut; it is Convert to Curves). The same sequence runs headless in
+  `ops::smoke_tests`.

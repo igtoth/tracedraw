@@ -11,7 +11,7 @@ meets the start) `Path` objects with the toolbox defaults.
   zoomed-in drawing keeps more detail) and fitted with smooth cubic
   segments (`geometry::smooth_path`).
 
-## Bezier (B), Pen and B-spline
+## Bezier, Pen and B-spline
 
 - Click places a cusp node; click-drag places a smooth node and pulls
   its handle out symmetrically (the handle follows the pointer while the

@@ -243,11 +243,32 @@ impl App {
         self.selection = keep.into_iter().collect();
     }
 
+    /// Break Apart: every subpath becomes an object; the pieces come out
+    /// selected.
     pub fn break_apart(&mut self) {
         let ids = self.selection.clone();
-        for id in ids {
-            self.run(Command::BreakApart { shape: id });
+        let before: std::collections::HashSet<tracedraw_core::ShapeId> = self
+            .doc()
+            .pages
+            .iter()
+            .flat_map(|p| &p.layers)
+            .flat_map(|l| &l.shapes)
+            .map(|s| s.id)
+            .collect();
+        for id in &ids {
+            self.run(Command::BreakApart { shape: *id });
         }
+        let mut pieces: Vec<tracedraw_core::ShapeId> = self
+            .doc()
+            .pages
+            .iter()
+            .flat_map(|p| &p.layers)
+            .flat_map(|l| &l.shapes)
+            .map(|s| s.id)
+            .filter(|id| !before.contains(id) || ids.contains(id))
+            .collect();
+        pieces.sort_by_key(|id| id.0);
+        self.select(pieces);
     }
 
     /// Import a raster image as a bitmap object at the page centre (96 dpi).
@@ -495,5 +516,82 @@ impl App {
             }
         };
         self.select(vec![ids[next]]);
+    }
+}
+
+#[cfg(test)]
+mod smoke_tests {
+    use crate::app::App;
+    use crate::tools::Tool;
+    use tracedraw_core::{
+        document::{ParagraphStyle, ShapeKind, TextSpan},
+        geometry::{Point, Rect},
+        TextAlign,
+    };
+
+    /// The sequence a user runs through: draw one of everything, then
+    /// group, ungroup, combine, break apart and convert to curves.
+    #[test]
+    fn group_ungroup_combine_break_convert_survives_mixed_objects() {
+        let mut app = App::headless();
+        app.tool = Tool::Rectangle;
+        app.create_box_shape(Point::new(10.0, 200.0), Point::new(40.0, 230.0));
+        app.tool = Tool::Ellipse;
+        app.create_box_shape(Point::new(50.0, 200.0), Point::new(80.0, 230.0));
+        app.tool = Tool::Polygon;
+        app.create_box_shape(Point::new(90.0, 200.0), Point::new(120.0, 230.0));
+        app.tool = Tool::GraphPaper;
+        app.create_box_shape(Point::new(50.0, 150.0), Point::new(80.0, 180.0));
+        app.tool = Tool::Spiral;
+        let r = Rect::new(10.0, 150.0, 40.0, 180.0);
+        let path = crate::tools2::spiral_path(r, app.spiral_revolutions, app.spiral_logarithmic);
+        app.new_shape(ShapeKind::Path {
+            path,
+            closed: false,
+        });
+        let mut line = tracedraw_core::geometry::BezPath::new();
+        line.move_to((10.0, 100.0));
+        line.line_to((60.0, 80.0));
+        app.new_shape(ShapeKind::Path {
+            path: line,
+            closed: false,
+        });
+        app.new_shape(ShapeKind::Text {
+            spans: vec![TextSpan::new("Smoke test", "Arial", 24.0)],
+            origin: Point::new(20.0, 50.0),
+            frame: None,
+            align: TextAlign::Left,
+            para: ParagraphStyle::default(),
+            on_path: None,
+        });
+        app.select_all();
+        assert_eq!(app.selection.len(), 7);
+        let render = |app: &App, step: &str| {
+            let pm = tracedraw_render::render_page_image(app.doc(), app.page, 25.4);
+            assert!(pm.is_some(), "render after {step}");
+            eprintln!(
+                "{step}: {} selected, {} objects",
+                app.selection.len(),
+                app.doc().pages[0]
+                    .layers
+                    .iter()
+                    .map(|l| l.shapes.len())
+                    .sum::<usize>()
+            );
+        };
+        app.group_selection();
+        render(&app, "group");
+        app.ungroup_selection();
+        render(&app, "ungroup");
+        app.combine();
+        render(&app, "combine");
+        app.break_apart();
+        render(&app, "break apart");
+        app.convert_to_curves();
+        render(&app, "convert");
+        assert!(!app.selection.is_empty());
+        for s in app.selected_shapes() {
+            assert!(s.bounds().width().is_finite());
+        }
     }
 }

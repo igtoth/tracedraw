@@ -367,8 +367,6 @@ impl Tool {
             Tool::MeshFill => "M",
             Tool::Eraser => "X",
             Tool::Spiral => "A",
-            Tool::Crop => "C",
-            Tool::Bezier => "B",
             Tool::GraphPaper => "D",
             Tool::Smear => "W",
             Tool::Smudge => "V",

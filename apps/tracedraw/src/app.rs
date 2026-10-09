@@ -778,6 +778,9 @@ pub enum TransformTab {
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>, open: Option<PathBuf>) -> Self {
         theme::install_fallback_fonts(&cc.egui_ctx);
+        // egui quits on Ctrl+Q by default; here Ctrl+Q is Convert to Curves
+        // and the application closes through File > Exit (Alt+F4).
+        cc.egui_ctx.options_mut(|o| o.quit_shortcuts.clear());
         cc.egui_ctx.set_visuals(theme::visuals());
         cc.egui_ctx.all_styles_mut(|style| {
             style.spacing.item_spacing = egui::vec2(4.0, 3.0);
@@ -1868,10 +1871,20 @@ impl App {
         if groups.is_empty() {
             return;
         }
+        // The members come out selected.
+        let mut members: Vec<ShapeId> = Vec::new();
+        for s in self.selected_shapes() {
+            if let ShapeKind::Group { children } = &s.kind {
+                members.extend(children.iter().map(|c| c.id));
+            }
+        }
         self.selection.clear();
         for g in groups {
             self.run(Command::Ungroup { group: g });
         }
+        let doc = self.doc();
+        members.retain(|id| doc.find_shape(*id).is_some());
+        self.select(members);
     }
 
     pub fn convert_to_curves(&mut self) {
