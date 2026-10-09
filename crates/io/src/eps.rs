@@ -145,6 +145,46 @@ impl Writer<'_> {
         }
     }
 
+    /// Emit an RGB `colorimage` of `pm` mapped from the unit square (row 0
+    /// at the top) through `m` (mm) to the page. Alpha is composited over
+    /// white, since EPS has none. The caller wraps this in gsave/grestore.
+    fn color_image(&mut self, pm: &tiny_skia::Pixmap, m: Affine) {
+        let (w, h) = (pm.width(), pm.height());
+        let m = m.as_coeffs();
+        let _ = writeln!(
+            self.out,
+            "[{} {} {} {} {} {}] concat",
+            f(m[0] * MM_PT),
+            f(m[1] * MM_PT),
+            f(m[2] * MM_PT),
+            f(m[3] * MM_PT),
+            f(m[4] * MM_PT),
+            f(m[5] * MM_PT)
+        );
+        let _ = writeln!(self.out, "{w} {h} 8 [{w} 0 0 -{h} 0 {h}]");
+        let _ = writeln!(
+            self.out,
+            "{{currentfile {} string readhexstring pop}} false 3 colorimage",
+            w * 3
+        );
+        let mut line = String::new();
+        for p in pm.pixels() {
+            let d = p.demultiply();
+            let a = d.alpha() as u32;
+            let r = (d.red() as u32 * a + 255 * (255 - a)) / 255;
+            let g = (d.green() as u32 * a + 255 * (255 - a)) / 255;
+            let b = (d.blue() as u32 * a + 255 * (255 - a)) / 255;
+            let _ = write!(line, "{r:02x}{g:02x}{b:02x}");
+            if line.len() >= 76 {
+                let _ = writeln!(self.out, "{line}");
+                line.clear();
+            }
+        }
+        if !line.is_empty() {
+            let _ = writeln!(self.out, "{line}");
+        }
+    }
+
     fn shape(&mut self, shape: &Shape, parent: Affine) {
         if !shape.visible {
             return;
@@ -196,53 +236,12 @@ impl Writer<'_> {
                 self.shape(&outline, transform);
                 return;
             }
-            ShapeKind::Bitmap {
-                rect,
-                width_px,
-                height_px,
-                png,
-            } => {
+            ShapeKind::Bitmap { rect, png, .. } => {
                 if let Ok(pm) = tiny_skia::Pixmap::decode_png(png) {
-                    let m = (transform
-                        * Affine::new([rect.width(), 0.0, 0.0, rect.height(), rect.x0, rect.y0]))
-                    .as_coeffs();
+                    let m = transform
+                        * Affine::new([rect.width(), 0.0, 0.0, rect.height(), rect.x0, rect.y0]);
                     let _ = writeln!(self.out, "gsave");
-                    let _ = writeln!(
-                        self.out,
-                        "[{} {} {} {} {} {}] concat",
-                        f(m[0] * MM_PT),
-                        f(m[1] * MM_PT),
-                        f(m[2] * MM_PT),
-                        f(m[3] * MM_PT),
-                        f(m[4] * MM_PT),
-                        f(m[5] * MM_PT)
-                    );
-                    let _ = writeln!(
-                        self.out,
-                        "{width_px} {height_px} 8 [{width_px} 0 0 -{height_px} 0 {height_px}]"
-                    );
-                    let _ = writeln!(
-                        self.out,
-                        "{{currentfile {} string readhexstring pop}} false 3 colorimage",
-                        width_px * 3
-                    );
-                    let mut line = String::new();
-                    for p in pm.pixels() {
-                        let d = p.demultiply();
-                        let a = d.alpha() as u32;
-                        // Composite over white, EPS has no alpha.
-                        let r = (d.red() as u32 * a + 255 * (255 - a)) / 255;
-                        let g = (d.green() as u32 * a + 255 * (255 - a)) / 255;
-                        let b = (d.blue() as u32 * a + 255 * (255 - a)) / 255;
-                        let _ = write!(line, "{r:02x}{g:02x}{b:02x}");
-                        if line.len() >= 76 {
-                            let _ = writeln!(self.out, "{line}");
-                            line.clear();
-                        }
-                    }
-                    if !line.is_empty() {
-                        let _ = writeln!(self.out, "{line}");
-                    }
+                    self.color_image(&pm, m);
                     let _ = writeln!(self.out, "grestore");
                 }
                 return;
@@ -346,12 +345,41 @@ impl Writer<'_> {
                     shading
                 );
             }
-            other => {
-                // Patterns and textures: average colour.
-                let c = other.preview_color().unwrap_or(Color::Gray { v: 0.5 });
-                let _ = writeln!(self.out, "{}", color_op(c));
-                self.path_ops(&path);
-                let _ = writeln!(self.out, "{}", if even_odd { "eofill" } else { "fill" });
+            other @ (Fill::Pattern(_) | Fill::Texture(_) | Fill::Mesh(_)) => {
+                // Patterns, textures and meshes: rasterised by the renderer
+                // over the bounds and clipped by the path, so the file shows
+                // the same pixels as the screen. Average colour if that fails.
+                match tracedraw_render::render_fill_image(other, bounds, 150.0) {
+                    Some(pm) => {
+                        let _ = writeln!(self.out, "gsave");
+                        self.path_ops(&path);
+                        let _ = writeln!(
+                            self.out,
+                            "{}",
+                            if even_odd {
+                                "eoclip newpath"
+                            } else {
+                                "clip newpath"
+                            }
+                        );
+                        let m = Affine::new([
+                            bounds.width(),
+                            0.0,
+                            0.0,
+                            bounds.height(),
+                            bounds.x0,
+                            bounds.y0,
+                        ]);
+                        self.color_image(&pm, m);
+                        let _ = writeln!(self.out, "grestore");
+                    }
+                    None => {
+                        let c = other.preview_color().unwrap_or(Color::Gray { v: 0.5 });
+                        let _ = writeln!(self.out, "{}", color_op(c));
+                        self.path_ops(&path);
+                        let _ = writeln!(self.out, "{}", if even_odd { "eofill" } else { "fill" });
+                    }
+                }
             }
         }
         if let Some(s) = &shape.stroke {
@@ -418,5 +446,41 @@ mod tests {
         assert!(eps.contains("%%BoundingBox: 0 0 596 842"));
         assert!(eps.contains("setcmykcolor"));
         assert!(eps.contains("eofill"));
+    }
+
+    #[test]
+    fn vector_pattern_fill_is_a_clipped_image() {
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        let mut tile_square = Shape::new(
+            tracedraw_core::ShapeId(7),
+            ShapeKind::Rect {
+                rect: Rect::new(0.0, 0.0, 5.0, 5.0),
+                radius: 0.0,
+            },
+        );
+        tile_square.fill = Fill::Solid(Color::rgb8(255, 0, 0));
+        tile_square.stroke = None;
+        let id = doc.ids_mut().shape();
+        let mut s = Shape::new(
+            id,
+            ShapeKind::Ellipse {
+                rect: Rect::new(10.0, 10.0, 30.0, 30.0),
+                arc: None,
+            },
+        );
+        s.fill = Fill::Pattern(tracedraw_core::Pattern::Vector {
+            shapes: vec![tile_square],
+            tile: tracedraw_core::geometry::Size::new(10.0, 10.0),
+        });
+        s.stroke = None;
+        doc.layer_mut(layer).unwrap().shapes.push(s);
+        let eps = page_to_eps(&doc, 0);
+        assert!(eps.contains("eoclip newpath"));
+        assert!(eps.contains("false 3 colorimage"));
+        // 20 mm at 150 dpi is 119 px (ceil of 118.1).
+        assert!(eps.contains("119 119 8 [119 0 0 -119 0 119]"), "{eps}");
+        // Red pixels from the tile appear in the hex data.
+        assert!(eps.contains("ff0000ff0000"));
     }
 }

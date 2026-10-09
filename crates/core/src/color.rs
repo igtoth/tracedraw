@@ -1,8 +1,10 @@
 //! Colour values. TraceDraw keeps the colour model the user chose, since
 //! print work is CMYK-first; spot colours keep their name and a CMYK
 //! fallback. Screen conversion is the naive formula unless a colour engine
-//! (ICC) is registered through `engine::set`.
+//! is registered: either a converter function through `engine::set`, or
+//! ICC profiles through `engine::install` (see `crate::icc`).
 
+use crate::icc::{Intent, Profile, Transform};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -18,7 +20,8 @@ pub enum Color {
     Hsb { h: f32, s: f32, b: f32 },
     /// Hue 0..360, saturation and lightness 0..1.
     Hsl { h: f32, s: f32, l: f32 },
-    /// CIE L*a*b* (D65), L 0..100, a and b about -128..127.
+    /// CIE L*a*b*, L 0..100, a and b about -128..127. The naive formulas
+    /// use D65; the ICC engine treats it as ICC Lab (D50).
     Lab { l: f32, a: f32, b: f32 },
     /// NTSC YIQ, each component 0..1 (I and Q centred on 0.5).
     Yiq { y: f32, i: f32, q: f32 },
@@ -26,19 +29,186 @@ pub enum Color {
     Registration,
 }
 
-/// Hook for an ICC colour engine; when set, `to_rgb8` uses it for CMYK
-/// and Lab. See `docs/decisions.md` D5.
+/// Hooks for a colour engine. See `docs/decisions.md` D5.
+///
+/// Two levels: a converter function (`set`), kept for callers that bring
+/// their own engine, and the built-in ICC engine (`install`) that holds the
+/// working RGB and CMYK profiles. `Color::to_rgb8`, `convert_to` and
+/// `in_cmyk_gamut` consult the converter first, then the ICC engine, then
+/// fall back to the naive formulas.
 pub mod engine {
-    use super::Color;
-    use std::sync::OnceLock;
+    use super::{Color, IccEngine};
+    use std::sync::{Arc, OnceLock, RwLock};
+
     pub type Converter = fn(Color) -> [u8; 3];
     static ENGINE: OnceLock<Converter> = OnceLock::new();
+    static ICC: RwLock<Option<Arc<IccEngine>>> = RwLock::new(None);
+
+    /// Register a converter for CMYK and Lab screen colours (once).
     pub fn set(f: Converter) {
         let _ = ENGINE.set(f);
     }
+
     pub fn get() -> Option<Converter> {
         ENGINE.get().copied()
     }
+
+    /// Install (or replace) the ICC engine used for screen and model
+    /// conversions.
+    pub fn install(engine: IccEngine) {
+        let mut slot = ICC.write().unwrap_or_else(|e| e.into_inner());
+        *slot = Some(Arc::new(engine));
+    }
+
+    /// Remove the ICC engine; conversions go back to the naive formulas.
+    pub fn clear() {
+        let mut slot = ICC.write().unwrap_or_else(|e| e.into_inner());
+        *slot = None;
+    }
+
+    /// The installed ICC engine, if any.
+    pub fn icc() -> Option<Arc<IccEngine>> {
+        ICC.read().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+}
+
+/// Profile-based colour engine. `Color::Rgb` values are taken to be in the
+/// working RGB profile (sRGB when none is loaded), `Color::Cmyk` in the
+/// CMYK profile and `Color::Lab` as ICC Lab (D50). The screen is the
+/// built-in sRGB profile.
+#[derive(Debug)]
+pub struct IccEngine {
+    display: Profile,
+    rgb: Option<Profile>,
+    cmyk: Option<Profile>,
+    intent: Intent,
+    bpc: bool,
+    rgb_to_display: Option<Transform>,
+    cmyk_to_display: Option<Transform>,
+    display_to_cmyk: Option<Transform>,
+    rgb_to_cmyk: Option<Transform>,
+    cmyk_to_rgb: Option<Transform>,
+}
+
+impl IccEngine {
+    /// Build an engine from the loaded working profiles. `rgb` is `None`
+    /// for sRGB. Transforms that a profile cannot provide (for example a
+    /// CMYK profile without a B2A table) are simply absent and the naive
+    /// formula is used for that direction.
+    pub fn new(
+        rgb: Option<Profile>,
+        cmyk: Option<Profile>,
+        intent: Intent,
+        bpc: bool,
+    ) -> IccEngine {
+        let display = Profile::srgb();
+        let working = rgb.as_ref().unwrap_or(&display);
+        let rgb_to_display = rgb
+            .as_ref()
+            .and_then(|p| Transform::new(p, &display, intent, bpc));
+        let cmyk_to_display = cmyk
+            .as_ref()
+            .and_then(|p| Transform::new(p, &display, intent, bpc));
+        let display_to_cmyk = cmyk
+            .as_ref()
+            .and_then(|p| Transform::new(&display, p, intent, bpc));
+        let rgb_to_cmyk = cmyk
+            .as_ref()
+            .and_then(|p| Transform::new(working, p, intent, bpc));
+        let cmyk_to_rgb = cmyk
+            .as_ref()
+            .and_then(|p| Transform::new(p, working, intent, bpc));
+        IccEngine {
+            display,
+            rgb,
+            cmyk,
+            intent,
+            bpc,
+            rgb_to_display,
+            cmyk_to_display,
+            display_to_cmyk,
+            rgb_to_cmyk,
+            cmyk_to_rgb,
+        }
+    }
+
+    pub fn intent(&self) -> Intent {
+        self.intent
+    }
+
+    pub fn black_point_compensation(&self) -> bool {
+        self.bpc
+    }
+
+    /// The working RGB profile, `None` for sRGB.
+    pub fn rgb_profile(&self) -> Option<&Profile> {
+        self.rgb.as_ref()
+    }
+
+    pub fn cmyk_profile(&self) -> Option<&Profile> {
+        self.cmyk.as_ref()
+    }
+
+    /// The built-in sRGB screen profile.
+    pub fn display_profile(&self) -> &Profile {
+        &self.display
+    }
+
+    /// Screen (sRGB) colour, or `None` when no loaded profile applies to
+    /// this colour model and the caller should fall back.
+    pub fn to_rgb_f32(&self, color: Color) -> Option<[f32; 3]> {
+        match color {
+            Color::Rgb { r, g, b } => {
+                let t = self.rgb_to_display.as_ref()?;
+                first3(&t.transform(&[r, g, b]))
+            }
+            Color::Cmyk { c, m, y, k } => self.cmyk_to_display.as_ref()?.cmyk_to_rgb([c, m, y, k]),
+            Color::Lab { l, a, b } => {
+                let out = self.display.from_lab([l, a, b], self.intent)?;
+                first3(&out)
+            }
+            _ => None,
+        }
+    }
+
+    /// Working RGB to CMYK through the loaded profiles.
+    pub fn rgb_to_cmyk(&self, rgb: [f32; 3]) -> Option<[f32; 4]> {
+        self.rgb_to_cmyk.as_ref()?.rgb_to_cmyk(rgb)
+    }
+
+    /// Screen sRGB to CMYK through the loaded profiles.
+    pub fn display_rgb_to_cmyk(&self, rgb: [f32; 3]) -> Option<[f32; 4]> {
+        self.display_to_cmyk.as_ref()?.rgb_to_cmyk(rgb)
+    }
+
+    /// CMYK to working RGB through the loaded profiles.
+    pub fn cmyk_to_rgb(&self, cmyk: [f32; 4]) -> Option<[f32; 3]> {
+        self.cmyk_to_rgb.as_ref()?.cmyk_to_rgb(cmyk)
+    }
+
+    /// Whether a working RGB colour is reproducible by the CMYK profile.
+    pub fn rgb_in_cmyk_gamut(&self, rgb: [f32; 3], tolerance_delta_e: f32) -> Option<bool> {
+        Some(
+            self.rgb_to_cmyk
+                .as_ref()?
+                .is_in_gamut_with(&rgb, tolerance_delta_e),
+        )
+    }
+}
+
+fn first3(v: &[f32]) -> Option<[f32; 3]> {
+    Some([*v.first()?, *v.get(1)?, *v.get(2)?])
+}
+
+fn quantise(rgb: [f32; 3]) -> [u8; 3] {
+    let f = |v: f32| {
+        if v.is_nan() {
+            0
+        } else {
+            (v.clamp(0.0, 1.0) * 255.0).round() as u8
+        }
+    };
+    [f(rgb[0]), f(rgb[1]), f(rgb[2])]
 }
 
 impl Color {
@@ -93,21 +263,35 @@ impl Color {
         }
     }
 
-    /// Screen colour as 8-bit sRGB. Uses the registered engine when there
-    /// is one, else the naive formulas.
+    /// Screen colour as 8-bit sRGB. Uses the registered converter or ICC
+    /// engine when there is one, else the naive formulas.
     pub fn to_rgb8(self) -> [u8; 3] {
         if let Some(conv) = engine::get() {
             if matches!(self, Color::Cmyk { .. } | Color::Lab { .. }) {
                 return conv(self);
             }
         }
-        let [r, g, b] = self.to_rgb_f32();
-        let f = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
-        [f(r), f(g), f(b)]
+        quantise(self.to_rgb_f32())
     }
 
-    /// Screen colour as floats 0..1 (naive conversions).
+    /// Screen colour as floats 0..1. RGB, CMYK and Lab go through the ICC
+    /// engine when one is installed and has a profile for the model; every
+    /// other case uses [`Color::to_rgb_f32_naive`].
     pub fn to_rgb_f32(self) -> [f32; 3] {
+        if matches!(
+            self,
+            Color::Rgb { .. } | Color::Cmyk { .. } | Color::Lab { .. }
+        ) {
+            if let Some(rgb) = engine::icc().and_then(|e| e.to_rgb_f32(self)) {
+                return rgb;
+            }
+        }
+        self.to_rgb_f32_naive()
+    }
+
+    /// Screen colour as floats 0..1 with the built-in formulas, ignoring
+    /// any colour engine.
+    pub fn to_rgb_f32_naive(self) -> [f32; 3] {
         match self {
             Color::Rgb { r, g, b } => [r, g, b],
             Color::Cmyk { c, m, y, k } => [
@@ -137,8 +321,28 @@ impl Color {
         }
     }
 
-    /// Convert to another model by way of sRGB (naive, no ICC).
+    /// Convert to another model by way of sRGB. RGB to CMYK and back use
+    /// the ICC engine when one is installed with a CMYK profile; the other
+    /// models use the built-in formulas.
     pub fn convert_to(self, model: &str) -> Color {
+        if let Some(icc) = engine::icc() {
+            let managed = match (self, model) {
+                (Color::Rgb { r, g, b }, "CMYK") => icc
+                    .rgb_to_cmyk([r, g, b])
+                    .map(|[c, m, y, k]| Color::Cmyk { c, m, y, k }),
+                (Color::Cmyk { .. }, "CMYK") => Some(self),
+                (_, "CMYK") => icc
+                    .display_rgb_to_cmyk(self.to_rgb_f32())
+                    .map(|[c, m, y, k]| Color::Cmyk { c, m, y, k }),
+                (Color::Cmyk { c, m, y, k }, "RGB") => icc
+                    .cmyk_to_rgb([c, m, y, k])
+                    .map(|[r, g, b]| Color::Rgb { r, g, b }),
+                _ => None,
+            };
+            if let Some(c) = managed {
+                return c;
+            }
+        }
         let [r, g, b] = self.to_rgb_f32();
         let (r, g, b) = (r.clamp(0.0, 1.0), g.clamp(0.0, 1.0), b.clamp(0.0, 1.0));
         match model {
@@ -245,9 +449,19 @@ impl Color {
         ((l1 - l2).powi(2) + (a1 - a2).powi(2) + (c1 - c2).powi(2)).sqrt()
     }
 
-    /// Whether the colour is (naively) printable in CMYK: round trip error
-    /// under the given tolerance. Used by the gamut alarm.
+    /// Whether the colour is printable in CMYK: round trip error under the
+    /// given tolerance. Uses the CMYK profile of the ICC engine when one is
+    /// installed, else the naive formulas. Used by the gamut alarm.
     pub fn in_cmyk_gamut(self, tolerance_delta_e: f32) -> bool {
+        if let Some(icc) = engine::icc() {
+            let rgb = match self {
+                Color::Rgb { r, g, b } => [r, g, b],
+                _ => self.to_rgb_f32(),
+            };
+            if let Some(ok) = icc.rgb_in_cmyk_gamut(rgb, tolerance_delta_e) {
+                return ok;
+            }
+        }
         let back = self.convert_to("CMYK").convert_to("RGB");
         self.delta_e(back) <= tolerance_delta_e
     }
@@ -395,5 +609,84 @@ mod tests {
     #[test]
     fn pure_red_is_in_cmyk_gamut_naively() {
         assert!(Color::rgb8(255, 0, 0).in_cmyk_gamut(2.0));
+    }
+
+    // The ICC engine is exercised as a value here, never installed in the
+    // process-wide slot, so the naive expectations above stay valid when
+    // tests run in parallel.
+
+    #[test]
+    fn icc_engine_without_profiles_declines() {
+        let e = IccEngine::new(None, None, Intent::RelativeColorimetric, true);
+        assert!(e.to_rgb_f32(Color::rgb8(10, 20, 30)).is_none());
+        assert!(e
+            .to_rgb_f32(Color::cmyk_pct(0.0, 0.0, 0.0, 100.0))
+            .is_none());
+        assert!(e.rgb_to_cmyk([1.0, 0.0, 0.0]).is_none());
+        assert!(e.rgb_in_cmyk_gamut([1.0, 0.0, 0.0], 2.0).is_none());
+        // Lab always goes through the built-in display profile.
+        let white = e
+            .to_rgb_f32(Color::Lab {
+                l: 100.0,
+                a: 0.0,
+                b: 0.0,
+            })
+            .unwrap();
+        assert_eq!(quantise(white), [255, 255, 255]);
+        let black = e
+            .to_rgb_f32(Color::Lab {
+                l: 0.0,
+                a: 0.0,
+                b: 0.0,
+            })
+            .unwrap();
+        assert_eq!(quantise(black), [0, 0, 0]);
+        assert!(e.rgb_profile().is_none());
+        assert!(e.cmyk_profile().is_none());
+        assert_eq!(e.display_profile().description(), Some("sRGB (built-in)"));
+    }
+
+    #[test]
+    fn icc_engine_converts_cmyk_through_profile() {
+        use crate::icc::test_profiles::{lut16_cmyk_profile, mba_cmyk_profile};
+        // A2B only: screen colours work, RGB to CMYK does not.
+        let cmyk = Profile::parse(&lut16_cmyk_profile()).unwrap();
+        let e = IccEngine::new(None, Some(cmyk), Intent::RelativeColorimetric, true);
+        let paper = e.to_rgb_f32(Color::cmyk_pct(0.0, 0.0, 0.0, 0.0)).unwrap();
+        assert_eq!(quantise(paper), [255, 255, 255]);
+        let ink = e
+            .to_rgb_f32(Color::cmyk_pct(100.0, 100.0, 100.0, 100.0))
+            .unwrap();
+        assert_eq!(quantise(ink), [0, 0, 0]);
+        let cyan = quantise(e.to_rgb_f32(Color::cmyk_pct(100.0, 0.0, 0.0, 0.0)).unwrap());
+        assert!(cyan[0] < cyan[2], "{cyan:?}");
+        assert!(e.rgb_to_cmyk([1.0, 1.0, 1.0]).is_none());
+        assert!(e.cmyk_to_rgb([0.0; 4]).is_some());
+
+        // A2B and B2A: both directions and the gamut check.
+        let cmyk = Profile::parse(&mba_cmyk_profile()).unwrap();
+        let e = IccEngine::new(None, Some(cmyk), Intent::RelativeColorimetric, false);
+        let k = e.rgb_to_cmyk([0.0, 0.0, 0.0]).unwrap();
+        assert!((k[3] - 1.0).abs() < 2e-3, "{k:?}");
+        let k = e.display_rgb_to_cmyk([1.0, 1.0, 1.0]).unwrap();
+        assert!(k[3].abs() < 2e-3, "{k:?}");
+        assert_eq!(e.rgb_in_cmyk_gamut([1.0, 0.0, 0.0], 2.0), Some(false));
+        assert_eq!(e.rgb_in_cmyk_gamut([1.0, 0.0, 0.0], 1000.0), Some(true));
+        assert!(!e.black_point_compensation());
+        assert_eq!(e.intent(), Intent::RelativeColorimetric);
+    }
+
+    #[test]
+    fn icc_engine_working_rgb_maps_to_screen() {
+        use crate::icc::test_profiles::{matrix_trc_profile, para_srgb};
+        let srgb_like =
+            Profile::parse(&matrix_trc_profile(para_srgb(), para_srgb(), para_srgb())).unwrap();
+        let e = IccEngine::new(Some(srgb_like), None, Intent::Perceptual, true);
+        let c = Color::rgb8(200, 60, 30);
+        let screen = quantise(e.to_rgb_f32(c).unwrap());
+        for (a, b) in screen.iter().zip([200u8, 60, 30]) {
+            assert!((*a as i32 - b as i32).abs() <= 1, "{screen:?}");
+        }
+        assert!(e.rgb_profile().is_some());
     }
 }

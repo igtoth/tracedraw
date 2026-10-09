@@ -2109,6 +2109,8 @@ fn spell_dialog(app: &mut App, ctx: &Context, st: &mut SpellState, close: &mut b
 }
 
 fn color_management_dialog(app: &mut App, ctx: &Context, close: &mut bool) {
+    let mut load_rgb = false;
+    let mut load_cmyk = false;
     window(ctx, tr("menu.tools.color_management")).show(ctx, |ui| {
         let c = &mut app.settings.color;
         egui::Grid::new("cm").num_columns(2).show(ui, |ui| {
@@ -2124,9 +2126,26 @@ fn color_management_dialog(app: &mut App, ctx: &Context, close: &mut bool) {
                     ] {
                         if ui.selectable_label(c.rgb_profile == p, p).clicked() {
                             c.rgb_profile = p.into();
+                            c.rgb_profile_path.clear();
                         }
                     }
                 });
+            ui.end_row();
+            ui.label("");
+            ui.horizontal(|ui| {
+                if ui.button(tr("dialog.load_icc")).clicked() {
+                    load_rgb = true;
+                }
+                ui.label(
+                    egui::RichText::new(if c.rgb_profile_path.is_empty() {
+                        tr("dialog.builtin_profile")
+                    } else {
+                        c.rgb_profile_path.clone()
+                    })
+                    .color(Tokens::TEXT_DIM)
+                    .size(11.0),
+                );
+            });
             ui.end_row();
             ui.label(tr("dialog.cmyk_profile"));
             egui::ComboBox::from_id_salt("cmykp")
@@ -2140,9 +2159,26 @@ fn color_management_dialog(app: &mut App, ctx: &Context, close: &mut bool) {
                     ] {
                         if ui.selectable_label(c.cmyk_profile == p, p).clicked() {
                             c.cmyk_profile = p.into();
+                            c.cmyk_profile_path.clear();
                         }
                     }
                 });
+            ui.end_row();
+            ui.label("");
+            ui.horizontal(|ui| {
+                if ui.button(tr("dialog.load_icc")).clicked() {
+                    load_cmyk = true;
+                }
+                ui.label(
+                    egui::RichText::new(if c.cmyk_profile_path.is_empty() {
+                        tr("dialog.builtin_profile")
+                    } else {
+                        c.cmyk_profile_path.clone()
+                    })
+                    .color(Tokens::TEXT_DIM)
+                    .size(11.0),
+                );
+            });
             ui.end_row();
             ui.label(tr("dialog.rendering_intent"));
             egui::ComboBox::from_id_salt("intent")
@@ -2175,6 +2211,7 @@ fn color_management_dialog(app: &mut App, ctx: &Context, close: &mut bool) {
         ui.checkbox(&mut app.proof_colors, tr("menu.view.proof_colors"));
         ui.horizontal(|ui| {
             if ui.button(tr("dialog.ok")).clicked() {
+                app.apply_color_settings();
                 app.save_settings();
                 *close = true;
             }
@@ -2183,6 +2220,12 @@ fn color_management_dialog(app: &mut App, ctx: &Context, close: &mut bool) {
             }
         });
     });
+    if load_rgb {
+        app.load_icc_profile(false);
+    }
+    if load_cmyk {
+        app.load_icc_profile(true);
+    }
 }
 
 fn font_manager_dialog(app: &mut App, ctx: &Context, st: &mut FontManagerState, close: &mut bool) {

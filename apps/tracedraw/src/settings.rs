@@ -55,6 +55,11 @@ pub struct ColorPrefs {
     pub intent: String,
     pub black_point_compensation: bool,
     pub proof_profile: String,
+    /// Paths of ICC files loaded by the user (empty = built-in model).
+    #[serde(default)]
+    pub rgb_profile_path: String,
+    #[serde(default)]
+    pub cmyk_profile_path: String,
 }
 
 impl Default for ColorPrefs {
@@ -65,6 +70,8 @@ impl Default for ColorPrefs {
             intent: "Relative colorimetric".into(),
             black_point_compensation: true,
             proof_profile: "Generic CMYK (open)".into(),
+            rgb_profile_path: String::new(),
+            cmyk_profile_path: String::new(),
         }
     }
 }

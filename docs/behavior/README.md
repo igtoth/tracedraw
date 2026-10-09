@@ -13,4 +13,5 @@ from observation:
 Pages: `fountain-fill.md`, `contour.md`, `blend.md`, `extrude.md`,
 `envelope.md`, `lens.md`, `area-fill.md`, `mesh-fill.md`,
 `bitmap-tracing.md`, `colour-management.md`, `text.md`, `snapping.md`,
-`pick-tool.md`, `shape-tool.md`, `transparency.md`, `drop-shadow.md`.
+`pick-tool.md`, `shape-tool.md`, `transparency.md`, `drop-shadow.md`,
+`vector-pattern-fill.md`.

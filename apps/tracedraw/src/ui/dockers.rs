@@ -492,6 +492,38 @@ fn pattern_editor(ui: &mut Ui, p: &mut Pattern) -> bool {
                 )
                 .drag_stopped();
         }
+        Pattern::Vector { shapes, tile } => {
+            ui.label(trf(
+                "docker.vector_tile_n",
+                &[("n", &shapes.len().to_string())],
+            ));
+            let (mut w, mut h) = (tile.width, tile.height);
+            changed |= ui
+                .add(
+                    egui::Slider::new(&mut w, 1.0..=200.0)
+                        .text(tr("docker.tile_width"))
+                        .logarithmic(true),
+                )
+                .drag_stopped();
+            changed |= ui
+                .add(
+                    egui::Slider::new(&mut h, 1.0..=200.0)
+                        .text(tr("docker.tile_height"))
+                        .logarithmic(true),
+                )
+                .drag_stopped();
+            if (w - tile.width).abs() > 1e-9 || (h - tile.height).abs() > 1e-9 {
+                // Scale the tile content with its size so the drawing keeps its shape.
+                let sx = w / tile.width.max(1e-6);
+                let sy = h / tile.height.max(1e-6);
+                for s in shapes.iter_mut() {
+                    s.transform =
+                        tracedraw_core::geometry::Affine::scale_non_uniform(sx, sy) * s.transform;
+                }
+                tile.width = w;
+                tile.height = h;
+            }
+        }
     }
     changed
 }

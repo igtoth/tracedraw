@@ -9,7 +9,7 @@
 use std::process::ExitCode;
 
 fn usage() -> ExitCode {
-    eprintln!("usage:\n  tracedraw-cli inspect <file.cdr>\n  tracedraw-cli info <file.cdr|file.tdraw>\n  tracedraw-cli convert <in.cdr|in.tdraw> <out.svg|out.tdraw>");
+    eprintln!("usage:\n  tracedraw-cli inspect <file.cdr>\n  tracedraw-cli info <file.cdr|file.tdraw>\n  tracedraw-cli icc <profile.icc>\n  tracedraw-cli convert <in.cdr|in.tdraw|in.svg> <out.svg|out.pdf|out.eps|out.png|out.tdraw>");
     ExitCode::from(2)
 }
 
@@ -108,6 +108,59 @@ fn main() -> ExitCode {
                 }
             }
         }
+        Some("icc") => {
+            // Describe an ICC profile and show a few conversions through it.
+            let Some(path) = args.get(2) else {
+                usage();
+                return ExitCode::FAILURE;
+            };
+            let bytes = match std::fs::read(path) {
+                Ok(b) => b,
+                Err(e) => {
+                    eprintln!("{path}: {e}");
+                    return ExitCode::FAILURE;
+                }
+            };
+            let profile = match tracedraw_core::icc::Profile::parse(&bytes) {
+                Ok(p) => p,
+                Err(e) => {
+                    eprintln!("{path}: {e}");
+                    return ExitCode::FAILURE;
+                }
+            };
+            println!(
+                "{}: {:?}, {:?} -> {:?}, version {:?}, {} channel(s), device->PCS {}, PCS->device {}",
+                profile.description().unwrap_or("(no description)"),
+                profile.class(),
+                profile.color_space(),
+                profile.pcs(),
+                profile.version(),
+                profile.channels(),
+                profile.has_device_to_pcs(),
+                profile.has_pcs_to_device()
+            );
+            let srgb = tracedraw_core::icc::Profile::srgb();
+            let intent = tracedraw_core::icc::Intent::default();
+            if let Some(t) = tracedraw_core::icc::Transform::new(&profile, &srgb, intent, true) {
+                let n = profile.channels();
+                let samples: Vec<Vec<f32>> = if n == 4 {
+                    vec![
+                        vec![0.0, 0.0, 0.0, 0.0],
+                        vec![1.0, 0.0, 0.0, 0.0],
+                        vec![0.0, 1.0, 0.0, 0.0],
+                        vec![0.0, 0.0, 1.0, 0.0],
+                        vec![0.0, 0.0, 0.0, 1.0],
+                    ]
+                } else {
+                    vec![vec![1.0; n], vec![0.0; n]]
+                };
+                for s in samples {
+                    let rgb = t.transform(&s);
+                    println!("  {s:?} -> sRGB {rgb:?}");
+                }
+            }
+            ExitCode::SUCCESS
+        }
         Some("convert") => {
             let (Some(input), Some(output)) = (args.get(2), args.get(3)) else {
                 return usage();
@@ -123,6 +176,27 @@ fn main() -> ExitCode {
                 tracedraw_io::save_svg(&doc, 0, output)
             } else if output.to_ascii_lowercase().ends_with(".pdf") {
                 tracedraw_io::save_pdf(&doc, output)
+            } else if output.to_ascii_lowercase().ends_with(".eps") {
+                std::fs::write(output, tracedraw_io::eps::page_to_eps(&doc, 0))
+                    .map_err(tracedraw_io::Error::from)
+            } else if output.to_ascii_lowercase().ends_with(".png") {
+                // Rasterise the first page at 96 dpi (or TRACEDRAW_DPI).
+                let dpi = std::env::var("TRACEDRAW_DPI")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(96.0);
+                match doc
+                    .pages
+                    .first()
+                    .and_then(|p| tracedraw_render::render_page_image(&doc, p.id, dpi))
+                {
+                    Some(pm) => pm
+                        .save_png(output)
+                        .map_err(|e| tracedraw_io::Error::Io(std::io::Error::other(e))),
+                    None => Err(tracedraw_io::Error::Io(std::io::Error::other(
+                        "render failed",
+                    ))),
+                }
             } else {
                 tracedraw_io::save_native(&doc, output)
             };

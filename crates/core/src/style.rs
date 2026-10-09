@@ -1,7 +1,7 @@
 //! Fill and outline (stroke) properties of a shape.
 
 use crate::color::Color;
-use crate::geometry::Point;
+use crate::geometry::{Affine, Point, Rect, Size};
 use serde::{Deserialize, Serialize};
 
 /// Fountain (gradient) fill geometry.
@@ -182,6 +182,55 @@ pub enum Pattern {
         height_px: u32,
         size_mm: f64,
     },
+    /// Full-colour vector tile (the target design's vector pattern fill):
+    /// `shapes` are in tile-local coordinates, origin at the bottom-left
+    /// corner of the tile, Y up, and the tile repeats every `tile.width` by
+    /// `tile.height` millimetres. The shapes carry their own transforms,
+    /// fills and outlines; there is no extra pattern transform.
+    Vector {
+        #[serde(default)]
+        shapes: Vec<crate::document::Shape>,
+        tile: Size,
+    },
+}
+
+impl Pattern {
+    /// Smallest tile edge, in mm, so a degenerate selection still tiles.
+    pub const MIN_TILE_MM: f64 = 0.01;
+
+    /// Build a vector pattern from page-space shapes: the shapes are moved
+    /// so their joint bounds start at the origin and the tile takes the
+    /// size of those bounds.
+    pub fn vector_from_shapes(shapes: &[crate::document::Shape]) -> Pattern {
+        let mut bounds: Option<Rect> = None;
+        for s in shapes {
+            let b = s.bounds();
+            if !(b.x0.is_finite() && b.y0.is_finite() && b.x1.is_finite() && b.y1.is_finite()) {
+                continue;
+            }
+            bounds = Some(match bounds {
+                Some(acc) => acc.union(b),
+                None => b,
+            });
+        }
+        let bounds = bounds.unwrap_or(Rect::new(0.0, 0.0, 0.0, 0.0));
+        let shift = Affine::translate((-bounds.x0, -bounds.y0));
+        let shapes = shapes
+            .iter()
+            .map(|s| {
+                let mut s = s.clone();
+                s.transform = shift * s.transform;
+                s
+            })
+            .collect();
+        Pattern::Vector {
+            shapes,
+            tile: Size::new(
+                bounds.width().max(Self::MIN_TILE_MM),
+                bounds.height().max(Self::MIN_TILE_MM),
+            ),
+        }
+    }
 }
 
 /// Procedural textures (the target design's texture fill, a small subset).
@@ -368,6 +417,12 @@ impl Fill {
             Fill::Fountain(f) => Some(f.first_color()),
             Fill::Pattern(Pattern::TwoColor { front, .. }) => Some(*front),
             Fill::Pattern(Pattern::Bitmap { .. }) => Some(Color::Gray { v: 0.5 }),
+            Fill::Pattern(Pattern::Vector { shapes, .. }) => Some(
+                shapes
+                    .iter()
+                    .find_map(|s| s.fill.preview_color())
+                    .unwrap_or(Color::Gray { v: 0.5 }),
+            ),
             Fill::Texture(t) => Some(t.color_a),
             Fill::Mesh(m) => m.nodes.first().map(|n| n.color),
         }
@@ -541,6 +596,80 @@ mod tests {
             }
             assert!(front > 0 && front < 400, "{t:?}");
         }
+    }
+
+    fn square(x0: f64, y0: f64, x1: f64, y1: f64) -> crate::document::Shape {
+        let mut s = crate::document::Shape::new(
+            crate::ShapeId(1),
+            crate::document::ShapeKind::Rect {
+                rect: Rect::new(x0, y0, x1, y1),
+                radius: 0.0,
+            },
+        );
+        s.fill = Fill::Solid(Color::rgb8(255, 0, 0));
+        s.stroke = None;
+        s
+    }
+
+    #[test]
+    fn vector_pattern_from_shapes_moves_bounds_to_origin() {
+        let shapes = vec![
+            square(30.0, 40.0, 35.0, 45.0),
+            square(35.0, 45.0, 40.0, 50.0),
+        ];
+        let Pattern::Vector { shapes, tile } = Pattern::vector_from_shapes(&shapes) else {
+            panic!("expected a vector pattern");
+        };
+        assert_eq!(tile, Size::new(10.0, 10.0));
+        assert_eq!(shapes.len(), 2);
+        let b = shapes[0].bounds();
+        assert!((b.x0).abs() < 1e-9 && (b.y0).abs() < 1e-9, "{b:?}");
+        assert!(
+            (b.x1 - 5.0).abs() < 1e-9 && (b.y1 - 5.0).abs() < 1e-9,
+            "{b:?}"
+        );
+        let b = shapes[1].bounds();
+        assert!(
+            (b.x1 - 10.0).abs() < 1e-9 && (b.y1 - 10.0).abs() < 1e-9,
+            "{b:?}"
+        );
+    }
+
+    #[test]
+    fn vector_pattern_from_nothing_has_a_minimal_tile() {
+        let Pattern::Vector { shapes, tile } = Pattern::vector_from_shapes(&[]) else {
+            panic!("expected a vector pattern");
+        };
+        assert!(shapes.is_empty());
+        assert!(tile.width > 0.0 && tile.height > 0.0);
+    }
+
+    #[test]
+    fn vector_pattern_round_trips_through_json() {
+        let fill = Fill::Pattern(Pattern::vector_from_shapes(&[square(0.0, 0.0, 5.0, 5.0)]));
+        let json = serde_json::to_string(&fill).unwrap();
+        assert!(json.contains("\"pattern\":\"vector\""));
+        let back: Fill = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, fill);
+    }
+
+    #[test]
+    fn older_pattern_fills_still_load() {
+        let json = r#"{"fill":"pattern","pattern":"twocolor","tile":"dots","front":{"model":"gray","v":0.0},"back":{"model":"gray","v":1.0},"size_mm":5.0}"#;
+        let back: Fill = serde_json::from_str(json).unwrap();
+        assert!(matches!(
+            back,
+            Fill::Pattern(Pattern::TwoColor {
+                tile: PatternTile::Dots,
+                ..
+            })
+        ));
+        // A vector tile without shapes is still a valid (empty) tile.
+        let json = r#"{"fill":"pattern","pattern":"vector","tile":{"width":4.0,"height":2.0}}"#;
+        let back: Fill = serde_json::from_str(json).unwrap();
+        assert!(
+            matches!(back, Fill::Pattern(Pattern::Vector { ref shapes, .. }) if shapes.is_empty())
+        );
     }
 }
 

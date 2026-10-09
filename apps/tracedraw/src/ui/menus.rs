@@ -620,6 +620,14 @@ fn object_menu(app: &mut App, ui: &mut Ui) {
         }
         if item(
             ui,
+            "menu.object.create_vector_pattern",
+            "",
+            !app.selection.is_empty(),
+        ) {
+            app.create_vector_pattern_from_selection();
+        }
+        if item(
+            ui,
             "menu.object.create_symbol",
             "",
             !app.selection.is_empty(),

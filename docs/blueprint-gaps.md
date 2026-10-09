@@ -33,9 +33,8 @@ shortcut. The one that is not interactive yet:
 
 ## Fills, colour and effects
 
-- Full-colour vector pattern fills and PostScript fills.
-- External ICC profiles: the engine has sRGB and a generic CMYK model
-  built in; parsing `.icc` files (lcms2 or a pure-Rust reader) is open.
+- PostScript fills (legacy; vector pattern fills are done).
+- PDF/X output intents embedding the loaded ICC profile.
 - Rollover objects.
 
 ## File format

@@ -851,7 +851,63 @@ impl Renderer<'_> {
                 self.pixmap
                     .fill_path(sk, &paint, rule, Transform::identity(), None);
             }
+            tracedraw_core::Pattern::Vector { shapes, tile } => {
+                let Some(pm) = self.render_vector_tile(shapes, *tile) else {
+                    return;
+                };
+                paint.shader = tiny_skia::Pattern::new(
+                    pm.as_ref(),
+                    SpreadMode::Repeat,
+                    tiny_skia::FilterQuality::Bilinear,
+                    1.0,
+                    Transform::identity(),
+                );
+                self.pixmap
+                    .fill_path(sk, &paint, rule, Transform::identity(), None);
+            }
         }
+    }
+
+    /// Rasterise a vector pattern tile at the current zoom. The tile's
+    /// shapes go through the ordinary shape drawing, so nested groups,
+    /// fills, outlines and text in the tile render exactly as on the page.
+    /// The pixmap is a whole number of pixels, so the repeat is seamless;
+    /// the tile's millimetre size is stretched to fit by at most half a
+    /// pixel on each axis.
+    fn render_vector_tile(
+        &self,
+        shapes: &[Shape],
+        tile: tracedraw_core::geometry::Size,
+    ) -> Option<Pixmap> {
+        if !(tile.width.is_finite() && tile.height.is_finite())
+            || tile.width <= 0.0
+            || tile.height <= 0.0
+        {
+            return None;
+        }
+        let tw = ((tile.width * self.zoom).round() as u32).clamp(1, 2048);
+        let th = ((tile.height * self.zoom).round() as u32).clamp(1, 2048);
+        let mut pm = Pixmap::new(tw, th)?;
+        // Tile space (mm, Y up, origin bottom-left) to tile pixels (Y down).
+        let screen = Affine::new([
+            tw as f64 / tile.width,
+            0.0,
+            0.0,
+            -(th as f64) / tile.height,
+            0.0,
+            th as f64,
+        ]);
+        let mut sub = Renderer {
+            pixmap: &mut pm,
+            screen,
+            zoom: self.zoom,
+            wireframe: false,
+            symbols: self.symbols,
+        };
+        for s in shapes {
+            sub.draw_shape(s, Affine::IDENTITY);
+        }
+        Some(pm)
     }
 
     fn stroke_paint(&self, stroke: &Stroke, transform: Affine) -> (Paint<'static>, SkStroke) {
@@ -1293,6 +1349,77 @@ mod tests {
         let b = px(&pm, 15, 5);
         assert_ne!(a.0, b.0, "checker cells should differ");
         assert!(a.0 == 0 || a.0 == 255);
+    }
+
+    #[test]
+    fn vector_pattern_tiles_the_shape() {
+        // A 10 mm tile with a red square in its lower-left quarter.
+        let tile_square = rect(7, Rect::new(0.0, 0.0, 5.0, 5.0), Color::rgb8(255, 0, 0));
+        let mut s = rect(1, Rect::new(0.0, 0.0, 20.0, 20.0), Color::WHITE);
+        s.fill = Fill::Pattern(Pattern::Vector {
+            shapes: vec![tile_square],
+            tile: tracedraw_core::geometry::Size::new(10.0, 10.0),
+        });
+        let mut doc = Document::new("t", tracedraw_core::geometry::Size::new(20.0, 20.0));
+        let page = doc.pages[0].id;
+        let layer = doc.pages[0].layers[0].id;
+        doc.layer_mut(layer).unwrap().shapes.push(s);
+        let pm = render_page_image(&doc, page, 25.4).unwrap(); // 1 px per mm
+        assert_eq!((pm.width(), pm.height()), (20, 20));
+        // Tiles start at the top-left corner; the red square sits in the
+        // lower-left quarter of each tile (image rows 5..10 and 15..20).
+        for (x, y) in [(2, 7), (12, 7), (2, 17), (12, 17)] {
+            assert_eq!(px(&pm, x, y), (255, 0, 0), "({x}, {y}) must be red");
+        }
+        for (x, y) in [(2, 2), (7, 7), (7, 2), (12, 12), (17, 17), (17, 7)] {
+            assert_eq!(
+                px(&pm, x, y),
+                (255, 255, 255),
+                "({x}, {y}) must be page white"
+            );
+        }
+    }
+
+    #[test]
+    fn vector_pattern_tile_draws_nested_groups_and_outlines() {
+        let mut child = rect(8, Rect::new(2.0, 2.0, 8.0, 8.0), Color::rgb8(0, 0, 255));
+        child.stroke = Some(Stroke::new(Color::rgb8(0, 255, 0), 2.0));
+        let group = Shape::new(
+            tracedraw_core::ShapeId(9),
+            ShapeKind::Group {
+                children: vec![child],
+            },
+        );
+        let fill = Fill::Pattern(Pattern::Vector {
+            shapes: vec![group],
+            tile: tracedraw_core::geometry::Size::new(10.0, 10.0),
+        });
+        let pm = render_fill_image(&fill, Rect::new(0.0, 0.0, 10.0, 10.0), 254.0).unwrap();
+        // 10 px per mm: the centre is blue, the 2 mm outline band is green.
+        assert_eq!(px(&pm, 50, 50), (0, 0, 255));
+        assert_eq!(px(&pm, 20, 50), (0, 255, 0));
+        assert_eq!(px(&pm, 5, 5), (0, 0, 0));
+        assert_eq!(
+            pm.pixel(5, 5).unwrap().alpha(),
+            0,
+            "outside the tile content is clear"
+        );
+    }
+
+    #[test]
+    fn degenerate_vector_pattern_does_not_panic() {
+        for tile in [
+            tracedraw_core::geometry::Size::new(0.0, 10.0),
+            tracedraw_core::geometry::Size::new(f64::NAN, 10.0),
+            tracedraw_core::geometry::Size::new(0.0001, 0.0001),
+            tracedraw_core::geometry::Size::new(1.0e9, 1.0e9),
+        ] {
+            let fill = Fill::Pattern(Pattern::Vector {
+                shapes: vec![rect(1, Rect::new(0.0, 0.0, 1.0, 1.0), Color::BLACK)],
+                tile,
+            });
+            assert!(render_fill_image(&fill, Rect::new(0.0, 0.0, 10.0, 10.0), 96.0).is_some());
+        }
     }
 
     #[test]

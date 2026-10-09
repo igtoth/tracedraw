@@ -658,7 +658,19 @@ fn read_txsm_16(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Option<Txsm> 
         if has_path != 0 {
             r.skip(nc.saturating_mul(24));
         }
-        let text = decode_utf16le(text);
+        // From version 17 (2017) the text is stored one byte per character
+        // (UTF-8 when valid, else Windows-1252); earlier X6+ files use UTF-16LE.
+        // Confirmed with a 2019 file: "PANELS" stored as 6 bytes for 6 chars.
+        let text = if v >= 17 && nbytes == nc {
+            match std::str::from_utf8(text) {
+                Ok(s) => s.to_string(),
+                Err(_) => decode_cp1252(text),
+            }
+        } else if v >= 17 && nbytes != nc * 2 {
+            String::from_utf8_lossy(text).into_owned()
+        } else {
+            decode_utf16le(text)
+        };
         // Group consecutive characters sharing a style record.
         let mut runs: Vec<TextRun> = Vec::new();
         for (i, ch) in text.chars().enumerate() {

@@ -925,6 +925,77 @@ impl App {
         self.duplicate_offset = Vec2::new(s.duplicate_offset_mm[0], s.duplicate_offset_mm[1]);
         self.units = Units::from_id(&s.units);
         self.settings = s;
+        self.apply_color_settings();
+    }
+
+    /// Install the colour engine from the settings: ICC profiles loaded from
+    /// disk when paths are set, the built-in sRGB and generic CMYK model
+    /// otherwise. Errors fall back to the built-in model with a status line.
+    pub fn apply_color_settings(&mut self) {
+        use tracedraw_core::color::{engine, IccEngine};
+        use tracedraw_core::icc::{Intent, Profile};
+        let c = &self.settings.color;
+        let load = |path: &str| -> Option<Profile> {
+            if path.is_empty() {
+                return None;
+            }
+            match std::fs::read(path).map_err(|e| e.to_string()) {
+                Ok(bytes) => Profile::parse(&bytes).map_err(|e| e.to_string()).ok(),
+                Err(_) => None,
+            }
+        };
+        let rgb = load(&c.rgb_profile_path);
+        let cmyk = load(&c.cmyk_profile_path);
+        if rgb.is_none() && cmyk.is_none() {
+            engine::clear();
+            return;
+        }
+        let intent = Intent::from_name(&c.intent).unwrap_or_default();
+        engine::install(IccEngine::new(
+            rgb,
+            cmyk,
+            intent,
+            c.black_point_compensation,
+        ));
+        self.raster.borrow_mut().invalidate();
+    }
+
+    /// Pick an `.icc`/`.icm` file for the RGB or CMYK slot.
+    pub fn load_icc_profile(&mut self, cmyk: bool) {
+        let Some(path) = rfd::FileDialog::new()
+            .add_filter("ICC", &["icc", "icm"])
+            .pick_file()
+        else {
+            return;
+        };
+        let bytes = match std::fs::read(&path) {
+            Ok(b) => b,
+            Err(e) => {
+                self.status = crate::i18n::trf("status.icc_failed", &[("e", &e.to_string())]);
+                return;
+            }
+        };
+        match tracedraw_core::icc::Profile::parse(&bytes) {
+            Ok(p) => {
+                let name = p
+                    .description()
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| path.display().to_string());
+                let c = &mut self.settings.color;
+                if cmyk {
+                    c.cmyk_profile = name.clone();
+                    c.cmyk_profile_path = path.display().to_string();
+                } else {
+                    c.rgb_profile = name.clone();
+                    c.rgb_profile_path = path.display().to_string();
+                }
+                self.apply_color_settings();
+                self.status = crate::i18n::trf("status.icc_loaded", &[("name", &name)]);
+            }
+            Err(e) => {
+                self.status = crate::i18n::trf("status.icc_failed", &[("e", &e.to_string())]);
+            }
+        }
     }
 
     pub fn save_settings(&mut self) {
@@ -988,11 +1059,20 @@ impl App {
     }
 
     pub fn document_title(&self) -> String {
+        // Imported files (.cdr, .svg) have no native path yet; their title
+        // comes from the document, like the target design shows it.
         let name = self
             .file
             .as_ref()
             .and_then(|p| p.file_stem().map(|s| s.to_string_lossy().to_string()))
-            .unwrap_or_else(App::untitled_name);
+            .unwrap_or_else(|| {
+                let t = self.doc().title.trim();
+                if t.is_empty() || t == "Untitled" {
+                    App::untitled_name()
+                } else {
+                    t.to_string()
+                }
+            });
         if self.engine.is_dirty() {
             format!("{name}*")
         } else {
@@ -2307,6 +2387,7 @@ pub fn fill_description(fill: &Fill) -> String {
             trf("fill.two_color_pattern", &[("t", tile.name())])
         }
         Fill::Pattern(tracedraw_core::Pattern::Bitmap { .. }) => tr("fill.bitmap_pattern"),
+        Fill::Pattern(tracedraw_core::Pattern::Vector { .. }) => tr("fill.vector_pattern"),
         Fill::Texture(_) => tr("fill.texture_fill"),
         Fill::Mesh(m) => trf(
             "fill.mesh_fill_n",

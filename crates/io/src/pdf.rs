@@ -621,6 +621,39 @@ mod tests {
     }
 
     #[test]
+    fn vector_pattern_fill_becomes_image() {
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        let mut tile_square = Shape::new(
+            tracedraw_core::ShapeId(7),
+            ShapeKind::Rect {
+                rect: Rect::new(0.0, 0.0, 5.0, 5.0),
+                radius: 0.0,
+            },
+        );
+        tile_square.fill = Fill::Solid(Color::rgb8(255, 0, 0));
+        tile_square.stroke = None;
+        let id = doc.ids_mut().shape();
+        let mut s = Shape::new(
+            id,
+            ShapeKind::Rect {
+                rect: Rect::new(10.0, 10.0, 30.0, 30.0),
+                radius: 0.0,
+            },
+        );
+        s.fill = Fill::Pattern(tracedraw_core::Pattern::Vector {
+            shapes: vec![tile_square],
+            tile: tracedraw_core::geometry::Size::new(10.0, 10.0),
+        });
+        s.stroke = None;
+        doc.layer_mut(layer).unwrap().shapes.push(s);
+        let text = String::from_utf8_lossy(&document_to_pdf(&doc)).to_string();
+        // The content stream is compressed; the image resource is not.
+        assert!(text.contains("/Subtype /Image"));
+        assert!(text.contains("/XObject << /Im0 "));
+    }
+
+    #[test]
     fn writes_a_parseable_pdf() {
         let mut doc = Document::default();
         let layer = doc.pages[0].layers[0].id;

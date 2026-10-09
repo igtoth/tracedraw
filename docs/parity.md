@@ -6,7 +6,7 @@ target design does, with a test or a checked screenshot behind it.
 "partial" names what is missing. "baked" means the result is applied once
 instead of staying live and editable. The goal is every row at "works".
 
-Counts: works 78, partial 17, missing 5.
+Counts: works 79, partial 16, missing 5.
 
 ## 1. Selection and navigation
 
@@ -83,7 +83,7 @@ Counts: works 78, partial 17, missing 5.
 |---|---|
 | Uniform fill in RGB, CMYK, Gray, HSB, HSL, Lab, YIQ, registration | works |
 | Fountain fill: linear, radial, conical, square; multi-stop; angle, offset, edge pad; interactive drag | works |
-| Pattern fill: two-colour (8 tiles), bitmap; texture fill (clouds, marble, noise, wood) | works; full-colour vector pattern and PostScript fills missing |
+| Pattern fill: two-colour (8 tiles), bitmap, full-colour vector (tile from the selection); texture fill (clouds, marble, noise, wood) | works; PostScript fills missing (legacy) |
 | Mesh fill with node editing | works |
 | Area Fill (enclosed region) | works |
 | Interactive Fill tool | works |
@@ -121,7 +121,7 @@ Counts: works 78, partial 17, missing 5.
 | Object styles | works |
 | Overprint fill and outline | works |
 | Proof colours (soft proofing with the built-in CMYK model) | works |
-| ICC colour management | partial: built-in sRGB/generic CMYK matrices; external ICC profiles not parsed |
+| ICC colour management (v2/v4 profiles, matrix/TRC and LUT, four intents, black point compensation, gamut check) | works; PDF/X output intent embedding missing |
 | Separations | works (PDF separations export) |
 
 ## 8. Bitmaps and images

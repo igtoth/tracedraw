@@ -3413,6 +3413,7 @@ dependencies = [
  "tracedraw-cdr",
  "tracedraw-core",
  "tracedraw-io",
+ "tracedraw-render",
  "tracedraw-text",
 ]
 

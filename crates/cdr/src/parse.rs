@@ -217,6 +217,8 @@ struct Ctx<'a> {
     styles: HashMap<u32, StyleRec>,
     /// `arrw` arrowhead definitions classified into our presets.
     arrows: HashMap<u32, Arrowhead>,
+    /// Crop outline of the bitmap object being read (local coordinates).
+    pending_crop: Option<BezPath>,
     report: ParseReport,
 }
 
@@ -242,6 +244,7 @@ impl<'a> Ctx<'a> {
             fonts: HashMap::new(),
             styles: HashMap::new(),
             arrows: HashMap::new(),
+            pending_crop: None,
             report: ParseReport::default(),
         }
     }
@@ -369,10 +372,38 @@ pub fn parse_document(tree: &Tree, main: &[u8], version: Version) -> (Document, 
                     objects.push(c);
                 }
             });
+            // Objects are stored front to back within a layer (confirmed with
+            // a 2019 file: text, then a patch, then the full-page picture
+            // underneath); our layers are bottom to top.
+            objects.reverse();
             for oc in objects {
                 let id = doc.ids_mut().shape();
                 match ctx.read_object(oc, id, size) {
-                    Some(shape) => layer.shapes.push(shape),
+                    Some(mut shape) => {
+                        // A bitmap with a crop outline becomes a ClipFrame
+                        // whose frame is that outline.
+                        if let Some(crop) = ctx.pending_crop.take() {
+                            let mut frame = Shape::new(
+                                doc.ids_mut().shape(),
+                                ShapeKind::Path {
+                                    path: crop,
+                                    closed: true,
+                                },
+                            );
+                            frame.fill = Fill::None;
+                            frame.stroke = None;
+                            let mut inner = Shape::new(doc.ids_mut().shape(), shape.kind.clone());
+                            inner.fill = shape.fill.clone();
+                            inner.stroke = shape.stroke.clone();
+                            shape.kind = ShapeKind::ClipFrame {
+                                frame: Box::new(frame),
+                                contents: vec![inner],
+                            };
+                            shape.fill = Fill::None;
+                            shape.stroke = None;
+                        }
+                        layer.shapes.push(shape)
+                    }
                     None => ctx.report.skipped_objects += 1,
                 }
             }
@@ -1727,8 +1758,10 @@ impl<'a> Ctx<'a> {
                     sharpness: 0.0,
                 })
             }
-            // Bitmap: two corners, 32 unknown bytes, image id, then a
-            // clipping outline we ignore.
+            // Bitmap: two corners, 32 unknown bytes, image id, a version
+            // dependent gap, then the crop outline as a point list. When the
+            // outline is not the full rectangle the object is cropped
+            // (confirmed with a 2019 file: a patch cut from a larger image).
             OBJ_BITMAP => {
                 let x1 = r.coord()?;
                 let y1 = r.coord()?;
@@ -1736,13 +1769,45 @@ impl<'a> Ctx<'a> {
                 let y2 = r.coord()?;
                 r.skip(32);
                 let image_id = r.u32()?;
+                let v = self.v;
+                r.skip(if v < 4 {
+                    8
+                } else if v == 8 {
+                    12
+                } else {
+                    20
+                });
+                let rect = Rect::new(x1.min(x2), y1.min(y2), x1.max(x2), y1.max(y2));
+                self.pending_crop = None;
+                if let Some(n) = r.u32() {
+                    let n = n as usize;
+                    if n >= 3 && n <= 100_000 {
+                        if let Some((pts, types)) = self.read_points(&mut r, n) {
+                            let (path, _closed) = build_path(&pts, &types);
+                            let b = bounds_of(&pts);
+                            let full = b
+                                .map(|b| {
+                                    (b.x0 - rect.x0).abs() < 0.05
+                                        && (b.y0 - rect.y0).abs() < 0.05
+                                        && (b.x1 - rect.x1).abs() < 0.05
+                                        && (b.y1 - rect.y1).abs() < 0.05
+                                        && n <= 5
+                                })
+                                .unwrap_or(true);
+                            if !full && !path.elements().is_empty() {
+                                self.pending_crop = Some(path);
+                            }
+                        }
+                    }
+                }
                 let Some(bm) = self.bitmaps.get(&image_id) else {
                     self.report
                         .warn(format!("bitmap object refers to unknown image {image_id}"));
+                    self.pending_crop = None;
                     return None;
                 };
                 Some(ShapeKind::Bitmap {
-                    rect: Rect::new(x1.min(x2), y1.min(y2), x1.max(x2), y1.max(y2)),
+                    rect,
                     width_px: bm.width_px,
                     height_px: bm.height_px,
                     png: bm.png.clone(),
@@ -2744,6 +2809,61 @@ mod tests {
     }
 
     #[test]
+    fn cropped_bitmap_object_becomes_a_clip_frame_and_layer_order_is_reversed() {
+        // Same bitmap as the test below, placed in a 25.4 mm square.
+        let mut bmp = u32s(&[42]);
+        bmp.extend_from_slice(&[0; 50]);
+        bmp.extend_from_slice(&u32s(&[5, 0, 2, 2, 0, 24, 0, 16]));
+        bmp.extend_from_slice(&[0; 32]);
+        bmp.extend_from_slice(&[0, 0, 255, 0, 255, 0, 0, 0]);
+        bmp.extend_from_slice(&[255, 0, 0, 255, 255, 255, 0, 0]);
+        let mut c = i32s(&[0, 0, 254_000, 254_000]);
+        c.extend_from_slice(&[0; 32]);
+        c.extend_from_slice(&u32s(&[42]));
+        c.extend_from_slice(&[0; 20]);
+        // Crop outline: the lower-left quarter (4 points, move + 3 lines, closed).
+        c.extend_from_slice(&u32s(&[4]));
+        c.extend_from_slice(&i32s(&[0, 0, 127_000, 0, 127_000, 127_000, 0, 127_000]));
+        c.extend_from_slice(&[0x00, 0x40, 0x40, 0x48]);
+        let cropped = list(
+            b"obj ",
+            &chunk(b"loda", &loda(OBJ_BITMAP, &[(ARG_COORDS, c)])),
+        );
+        // A plain rectangle stored after the bitmap in the file.
+        let rc = i32s(&[2_540_000, 2_540_000]);
+        let rect = list(
+            b"obj ",
+            &chunk(b"loda", &loda(OBJ_RECT, &[(ARG_COORDS, rc)])),
+        );
+        let body = [
+            chunk(b"mcfg", &mcfg(13, 2_540_000, 2_540_000)),
+            chunk(b"bmp ", &bmp),
+            list(b"page", &list(b"layr", &[cropped, rect].concat())),
+        ]
+        .concat();
+        let (doc, rep) = parse(&riff(b"CDRD", &body), 13);
+        assert_eq!(rep.shapes, 2, "{:?}", rep.warnings);
+        let shapes = &doc.pages[0].layers[0].shapes;
+        // File order is front to back: the rectangle (last in the file) is drawn first.
+        assert!(
+            matches!(shapes[0].kind, ShapeKind::Rect { .. }),
+            "{:?}",
+            shapes[0].kind
+        );
+        match &shapes[1].kind {
+            ShapeKind::ClipFrame { frame, contents } => {
+                let fb = frame.bounds();
+                assert!((fb.width() - 12.7).abs() < 1e-6 && (fb.height() - 12.7).abs() < 1e-6);
+                assert_eq!(contents.len(), 1);
+                assert!(matches!(contents[0].kind, ShapeKind::Bitmap { .. }));
+                let cb = contents[0].bounds();
+                assert!((cb.width() - 25.4).abs() < 1e-6);
+            }
+            other => panic!("expected a ClipFrame, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn bitmap_chunk_becomes_a_png_shape() {
         // 2 x 2, 24 bpp: rows are 8 bytes (6 + 2 padding), bottom-up.
         let mut bmp = u32s(&[42]);
@@ -3209,6 +3329,55 @@ mod tests {
                 assert_eq!(spans[0].fill, Some(Fill::Solid(Color::rgb8(0, 128, 0))));
                 assert_eq!(spans[1].text, "cd");
                 assert_eq!(spans[1].fill, None);
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn text_from_2017_on_is_stored_one_byte_per_character() {
+        // Confirmed with a 2019 file: "PANELS" as 6 bytes for 6 characters.
+        let v = 21u16;
+        let mut t = u32s(&[0]); // no frame flag (artistic text)
+        t.extend_from_slice(&[0; 32]);
+        t.extend_from_slice(&u16s(&[1800]));
+        t.extend_from_slice(&[0; 3]);
+        t.extend_from_slice(&u32s(&[1, 1])); // one frame, id 1
+        t.extend_from_slice(&[0; 48]);
+        t.extend_from_slice(&u32s(&[0])); // not on a path
+        t.extend_from_slice(&[0; 8]);
+        // skip record (frame flag is 0): 16 bytes + length + bytes
+        t.extend_from_slice(&[0; 16]);
+        t.extend_from_slice(&u32s(&[0]));
+        t.extend_from_slice(&u32s(&[1])); // one paragraph
+        t.extend_from_slice(&u32s(&[0]));
+        t.push(0);
+        t.extend_from_slice(&style_string(v, r#"{"character":{"font":5,"size":12}}"#));
+        t.extend_from_slice(&u32s(&[0])); // no style records
+        t.extend_from_slice(&u32s(&[6]));
+        for _ in 0..6 {
+            t.extend_from_slice(&u16s(&[0]));
+            t.push(0xfe);
+            t.extend_from_slice(&[0; 5]);
+        }
+        t.extend_from_slice(&u32s(&[6]));
+        t.extend_from_slice(b"PANELS");
+        t.push(0);
+        let tables = chunk(b"font", &font_chunk(5, "Georgia"));
+        let coords = i32s(&[0, 0]);
+        let (doc, rep) = text_doc(
+            v,
+            b"CDRM",
+            tables,
+            OBJ_ARTISTIC_TEXT,
+            &[(ARG_COORDS, coords)],
+            t,
+        );
+        assert_eq!(rep.shapes, 1, "{:?}", rep.warnings);
+        match &first_shape(&doc).kind {
+            ShapeKind::Text { spans, .. } => {
+                let text: String = spans.iter().map(|s| s.text.as_str()).collect();
+                assert_eq!(text, "PANELS");
             }
             other => panic!("{other:?}"),
         }

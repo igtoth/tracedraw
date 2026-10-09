@@ -22,11 +22,17 @@
 
 ## With a CMS
 
-A `ColorEngine` trait with `to_rgb(color, profile)`,
-`to_cmyk(color, profile, intent)`, `proof(rgb, output_profile)`. The
-lcms2 implementation builds a transform per (source, destination,
-intent) and caches it. The document stores the profile names used for
-its colours; export embeds the output intent for PDF/X.
+`IccEngine` (core/color.rs) holds the working RGB profile, the CMYK
+profile, the intent and the black point compensation flag, and builds the
+transforms once: RGB and CMYK to the display (sRGB), RGB to CMYK and back.
+`Color::to_rgb8`, `convert_to` and the gamut warning go through it when
+it is installed; otherwise the naive formulas apply. Profiles are loaded
+from `.icc`/`.icm` files in Tools > Colour Management (Load profile...),
+remembered by path in the settings and installed again at start-up. The
+CLI `tracedraw-cli icc <file>` prints a profile's class, spaces, version
+and the sRGB values of its primaries, which is how a profile is checked.
+The document stores the profile names used for its colours; export
+embeds the output intent for PDF/X (open).
 
 ## Checks
 

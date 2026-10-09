@@ -34,14 +34,21 @@ a validation layer on top (output intent, no transparency for X-1a).
 PostScript output is a Level 3 subset generated from the same path and
 fill primitives.
 
-## D5. Colour management: ICC through `lcms2` behind a trait
+## D5. Colour management: a pure-Rust ICC engine
 
-The `ColorEngine` trait (RGB, CMYK, Lab conversions, soft proof) has a
-naive implementation today (the formulas in `core/color.rs`) and will
-get an `lcms2`-backed one. Default profiles ship with the app (sRGB,
-and an open CMYK profile); the user can load others. Pure-Rust `qcms`
-is the alternative if the `lcms2` C dependency becomes a packaging
-problem on a platform.
+`core/icc.rs` reads ICC v2 and v4 profiles (matrix/TRC, `mft1`, `mft2`,
+`mAB`/`mBA` with curves, matrices and CLUTs) and builds transforms with
+the four rendering intents and black point compensation. It replaces the
+earlier plan of binding `lcms2`: no C dependency, the same binary on every
+platform, and the parser is small enough to audit. The engine is
+installed through `color::engine::install`; without loaded profiles the
+naive formulas in `core/color.rs` apply (sRGB and a generic CMYK model).
+Profiles are not bundled beyond the built-in sRGB: the user loads the
+`.icc` files they are licensed to use from the Colour Management dialog,
+and the paths persist in the settings. Checked against a real output
+profile (a US web coated CMYK profile embedded in a 2019 `.cdr`): process
+cyan converts to sRGB (0, 174, 239), magenta to (236, 0, 140), yellow to
+(255, 242, 0), black to (35, 31, 32).
 
 ## D6. Licensed content is not included
 

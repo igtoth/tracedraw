@@ -14,6 +14,7 @@ pub mod document;
 pub mod effects;
 pub mod engine;
 pub mod geometry;
+pub mod icc;
 pub mod id;
 pub mod live;
 pub mod nodes;
@@ -29,6 +30,7 @@ pub use document::{
 };
 pub use engine::Engine;
 pub use geometry::{Affine, BezPath, Point, Rect, Size, Vec2};
+pub use icc::{Intent as RenderingIntent, Profile as IccProfile, Transform as IccTransform};
 pub use id::{LayerId, PageId, ShapeId};
 pub use style::{
     arrowhead_paths, Arrowhead, Fill, Fountain, FountainKind, LineCap, LineJoin, Mesh, MeshNode,

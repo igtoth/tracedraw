@@ -463,6 +463,17 @@ impl App {
         let _ = self.engine.run_batch("Clear Transparency", &cmds);
     }
 
+    /// Object > Create > Vector Pattern Fill: the selected objects become a
+    /// vector tile, set as the default fill for new objects.
+    pub fn create_vector_pattern_from_selection(&mut self) {
+        let shapes = self.selected_shapes();
+        if shapes.is_empty() {
+            return;
+        }
+        self.default_fill = Fill::Pattern(tracedraw_core::Pattern::vector_from_shapes(&shapes));
+        self.status = tr("status.pattern_created");
+    }
+
     /// Edit > Copy Properties From: fill and outline of `source` to the selection.
     pub fn copy_properties_from(&mut self, source: ShapeId) {
         let Some(src) = self.doc().find_shape(source).cloned() else {

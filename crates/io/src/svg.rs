@@ -223,6 +223,28 @@ fn write_shape(
             let _ = writeln!(defs, "    <pattern id=\"{id}\" patternUnits=\"userSpaceOnUse\" width=\"{}\" height=\"{}\"><image width=\"{}\" height=\"{}\" href=\"data:image/png;base64,{b64}\"/></pattern>", fmt(*size_mm), fmt(h), fmt(*size_mm), fmt(h));
             format!("fill=\"url(#{id})\"")
         }
+        Fill::Pattern(tracedraw_core::Pattern::Vector {
+            shapes: tile_shapes,
+            tile,
+        }) => {
+            *next_grad += 1;
+            let id = format!("pat{}", *next_grad);
+            // The tile's content stays vector: its shapes are written into
+            // the pattern with the tile's own Y flip (tile space is Y up,
+            // origin bottom-left). Gradients they use land in `defs` too.
+            let tile_flip = Affine::new([1.0, 0.0, 0.0, -1.0, 0.0, tile.height]);
+            let mut inner = String::new();
+            for s in tile_shapes {
+                write_shape(s, symbols, tile_flip, &mut inner, defs, next_grad, 3);
+            }
+            let _ = writeln!(
+                defs,
+                "    <pattern id=\"{id}\" patternUnits=\"userSpaceOnUse\" width=\"{}\" height=\"{}\">\n{inner}    </pattern>",
+                fmt(tile.width),
+                fmt(tile.height)
+            );
+            format!("fill=\"url(#{id})\"")
+        }
         Fill::Texture(t) => {
             // Approximate with the average of the two colours.
             format!(
@@ -401,5 +423,46 @@ mod tests {
         // Bottom-left origin: y=10 in page space is y=287 in SVG space.
         assert!(svg.contains("M10 287"));
         assert!(svg.contains("stroke-width=\"0.5\""));
+    }
+
+    #[test]
+    fn vector_pattern_exports_as_svg_pattern_with_vector_content() {
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        let mut tile_square = Shape::new(
+            tracedraw_core::ShapeId(7),
+            ShapeKind::Rect {
+                rect: Rect::new(0.0, 0.0, 5.0, 5.0),
+                radius: 0.0,
+            },
+        );
+        tile_square.fill = Fill::Solid(Color::rgb8(255, 0, 0));
+        tile_square.stroke = None;
+        let id = doc.ids_mut().shape();
+        let mut s = Shape::new(
+            id,
+            ShapeKind::Rect {
+                rect: Rect::new(10.0, 10.0, 30.0, 30.0),
+                radius: 0.0,
+            },
+        );
+        s.fill = Fill::Pattern(tracedraw_core::Pattern::Vector {
+            shapes: vec![tile_square],
+            tile: tracedraw_core::geometry::Size::new(10.0, 10.0),
+        });
+        s.stroke = None;
+        doc.layer_mut(layer).unwrap().shapes.push(s);
+        let svg = page_to_svg(&doc, 0);
+        let start = svg.find("<pattern id=\"pat1\"").expect("pattern element");
+        let end = svg[start..].find("</pattern>").expect("pattern end") + start;
+        let pattern = &svg[start..end];
+        assert!(pattern.contains("patternUnits=\"userSpaceOnUse\" width=\"10\" height=\"10\""));
+        // The tile content is a vector path, not an image, flipped into the
+        // tile's top-down space (y 0..5 becomes 5..10).
+        assert!(pattern.contains("<path id=\"7\""), "{pattern}");
+        assert!(pattern.contains("fill=\"#ff0000\""), "{pattern}");
+        assert!(pattern.contains("M0 10L5 10L5 5L0 5Z"), "{pattern}");
+        assert!(!pattern.contains("<image"));
+        assert!(svg.contains("fill=\"url(#pat1)\""));
     }
 }
