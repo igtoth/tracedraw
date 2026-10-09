@@ -1057,6 +1057,14 @@ impl App {
         if ctx.egui_wants_keyboard_input() {
             return;
         }
+        // A modal dialog owns the keyboard: Esc closes it, the rest is
+        // not interpreted as shortcuts.
+        if !matches!(self.dialog, crate::ui::dialogs::Dialog::None) {
+            if ctx.input(|i| i.key_pressed(Key::Escape)) {
+                self.dialog = crate::ui::dialogs::Dialog::None;
+            }
+            return;
+        }
         let input = ctx.input(|i| i.clone());
         let pressed =
             |k: Key, m: Modifiers| input.key_pressed(k) && input.modifiers.matches_logically(m);
@@ -1077,10 +1085,11 @@ impl App {
         if pressed(Key::S, Modifiers::ALT) && !self.selection.is_empty() {
             self.create_symmetry();
         }
-        // Docker shortcuts (Ctrl+F9 Contour, Alt+F3 Lens, ...): toggle.
+        // Docker shortcuts (Ctrl+F9 Contour, Alt+F3 Lens, Alt+Enter
+        // Properties, ...): toggle.
         for tab in crate::app::DockerTab::ALL {
             let label = tab.shortcut();
-            if label.is_empty() || !label.contains("F") || label == "Ctrl+F" {
+            if label.is_empty() {
                 continue;
             }
             let Some((k, shift)) = Tool::parse_shortcut(label) else {
@@ -1154,10 +1163,12 @@ impl App {
         if pressed(Key::D, cmd) {
             self.duplicate();
         }
-        if pressed(Key::Home, cmd | Modifiers::SHIFT) {
+        // Order: Ctrl+Home/End to the front/back of the page, Shift+PgUp/PgDn
+        // within the layer, Ctrl+PgUp/PgDn one step.
+        if pressed(Key::Home, cmd) || pressed(Key::PageUp, Modifiers::SHIFT) {
             self.order(0);
         }
-        if pressed(Key::End, cmd | Modifiers::SHIFT) {
+        if pressed(Key::End, cmd) || pressed(Key::PageDown, Modifiers::SHIFT) {
             self.order(3);
         }
         if pressed(Key::PageUp, cmd) {
@@ -1165,6 +1176,61 @@ impl App {
         }
         if pressed(Key::PageDown, cmd) {
             self.order(2);
+        }
+        // The rest of the menu shortcuts.
+        if pressed(Key::P, cmd) {
+            self.dialog = crate::ui::dialogs::Dialog::Print(Default::default());
+        }
+        if pressed(Key::R, cmd) {
+            self.repeat_last();
+        }
+        if pressed(Key::V, cmd | Modifiers::SHIFT) {
+            self.paste_in_view();
+        }
+        if pressed(Key::M, cmd) {
+            self.table_op(crate::table::TableOp::Merge);
+        }
+        if pressed(Key::W, cmd) {
+            self.raster.borrow_mut().invalidate();
+        }
+        if pressed(Key::F4, cmd) {
+            self.close_document();
+        }
+        if pressed(Key::F4, Modifiers::ALT) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+        if pressed(Key::F12, Modifiers::ALT) {
+            self.straighten_text();
+        }
+        // F11: the fill editor (Properties docker, Fill section). F3: zoom out.
+        if pressed(Key::F11, Modifiers::NONE) {
+            self.show_dockers = true;
+            self.docker_tab = crate::app::DockerTab::Properties;
+            self.properties_open = Some(0);
+        }
+        if pressed(Key::F3, Modifiers::NONE) {
+            self.zoom_step(false);
+        }
+        if pressed(Key::T, cmd | Modifiers::SHIFT) {
+            self.edit_selected_text();
+        }
+        if pressed(Key::Q, Modifiers::ALT) {
+            self.snap.off = !self.snap.off;
+        }
+        if pressed(Key::A, Modifiers::ALT | Modifiers::SHIFT) {
+            self.snap.alignment_guides = !self.snap.alignment_guides;
+        }
+        if pressed(Key::D, Modifiers::ALT | Modifiers::SHIFT) {
+            self.snap.dynamic_guides = !self.snap.dynamic_guides;
+        }
+        if pressed(Key::R, Modifiers::ALT | Modifiers::SHIFT) {
+            self.show_rulers = !self.show_rulers;
+        }
+        if pressed(Key::Plus, cmd) || pressed(Key::Equals, cmd) {
+            self.zoom_step(true);
+        }
+        if pressed(Key::Minus, cmd) {
+            self.zoom_step(false);
         }
         if pressed(Key::Delete, Modifiers::NONE) || pressed(Key::Backspace, Modifiers::NONE) {
             if self.tool == Tool::Shape && !self.node_selection.is_empty() {

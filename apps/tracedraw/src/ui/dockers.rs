@@ -177,20 +177,25 @@ fn properties(app: &mut App, ui: &mut Ui) {
     );
 
     ui.separator();
-    ui.collapsing(tr("docker.fill"), |ui| {
-        let mut fill = first.fill.clone();
-        if fill_editor(ui, &mut fill) {
-            app.apply_fill(fill);
-        }
-    });
-    ui.collapsing(tr("docker.outline"), |ui| {
-        let mut stroke = first.stroke.clone();
-        let custom = app.settings.custom_arrowheads.clone();
-        if outline_editor(ui, &mut stroke, &custom) {
-            let shapes = app.selection.clone();
-            app.run(Command::SetStroke { shapes, stroke });
-        }
-    });
+    let open = app.properties_open.take();
+    egui::CollapsingHeader::new(tr("docker.fill"))
+        .open(open.map(|o| o == 0).filter(|o| *o))
+        .show(ui, |ui| {
+            let mut fill = first.fill.clone();
+            if fill_editor(ui, &mut fill) {
+                app.apply_fill(fill);
+            }
+        });
+    egui::CollapsingHeader::new(tr("docker.outline"))
+        .open(open.map(|o| o == 1).filter(|o| *o))
+        .show(ui, |ui| {
+            let mut stroke = first.stroke.clone();
+            let custom = app.settings.custom_arrowheads.clone();
+            if outline_editor(ui, &mut stroke, &custom) {
+                let shapes = app.selection.clone();
+                app.run(Command::SetStroke { shapes, stroke });
+            }
+        });
     if let ShapeKind::Text { spans, .. } = &first.kind {
         ui.collapsing(tr("docker.character"), |ui| {
             if let Some(sp) = spans.first() {

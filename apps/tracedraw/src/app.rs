@@ -561,7 +561,9 @@ pub struct App {
     pub free_transform_reflected: bool,
     pub roughen_amount: f64,
     /// Properties docker section to expand: 0 fill, 1 outline.
-    pub properties_section: usize,
+    /// A section of the Properties docker to expand on the next frame
+    /// (0 fill, 1 outline), set by F11 and F12.
+    pub properties_open: Option<usize>,
     pub area_fill_color: Color,
     pub mesh_rows: u32,
     pub mesh_cols: u32,
@@ -965,7 +967,7 @@ impl App {
             free_transform_duplicate: false,
             free_transform_reflected: false,
             roughen_amount: 2.0,
-            properties_section: 0,
+            properties_open: None,
             area_fill_color: Color::cmyk_pct(0.0, 0.0, 100.0, 0.0),
             mesh_rows: 2,
             mesh_cols: 2,

@@ -277,7 +277,7 @@ impl App {
                 self.set_tool(Tool::Pick);
                 self.show_dockers = true;
                 self.docker_tab = crate::app::DockerTab::Properties;
-                self.properties_section = 1;
+                self.properties_open = Some(1);
             }
             Tool::OutlineColor => {
                 self.set_tool(Tool::Pick);

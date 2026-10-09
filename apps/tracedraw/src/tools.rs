@@ -392,6 +392,11 @@ impl Tool {
         let key = label.rsplit('+').next()?.trim();
         let k = match key.to_ascii_uppercase().as_str() {
             "SPACE" => Key::Space,
+            "ENTER" | "RETURN" => Key::Enter,
+            "HOME" => Key::Home,
+            "END" => Key::End,
+            "PGUP" | "PAGEUP" => Key::PageUp,
+            "PGDN" | "PAGEDOWN" => Key::PageDown,
             "F1" => Key::F1,
             "F2" => Key::F2,
             "F3" => Key::F3,

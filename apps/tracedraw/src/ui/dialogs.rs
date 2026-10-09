@@ -326,7 +326,6 @@ pub enum Dialog {
     Export(ExportState),
     Print(PrintState),
     PrintMerge(PrintMergeState),
-    FindReplace(FindReplaceState),
     CreateTable {
         rows: u32,
         cols: u32,
@@ -572,7 +571,6 @@ pub fn show(app: &mut App, ctx: &Context) {
         Dialog::Export(st) => export_dialog(app, ctx, st, &mut close),
         Dialog::Print(st) => print_dialog(app, ctx, st, &mut close),
         Dialog::PrintMerge(st) => print_merge_dialog(app, ctx, st, &mut close),
-        Dialog::FindReplace(st) => find_replace_dialog(app, ctx, st, &mut close),
         Dialog::CreateTable { rows, cols } => {
             window(ctx, tr("dialog.create_table")).show(ctx, |ui| {
                 ui.horizontal(|ui| {
@@ -2390,93 +2388,6 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
             app.merge_state = Some(st.clone());
         }
     });
-}
-
-fn find_replace_dialog(app: &mut App, ctx: &Context, st: &mut FindReplaceState, close: &mut bool) {
-    egui::Window::new(tr("dialog.find_replace"))
-        .collapsible(false)
-        .resizable(false)
-        .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-40.0, 80.0))
-        .show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                ui.radio_value(&mut st.kind, 0, tr("dialog.find_text"));
-                ui.radio_value(&mut st.kind, 1, tr("dialog.find_objects"));
-            });
-            ui.horizontal(|ui| {
-                ui.label(tr("dialog.find"));
-                ui.text_edit_singleline(&mut st.find);
-            });
-            if st.kind == 0 {
-                ui.horizontal(|ui| {
-                    ui.label(tr("dialog.replace_with"));
-                    ui.text_edit_singleline(&mut st.replace);
-                });
-                ui.checkbox(&mut st.match_case, tr("dialog.match_case"));
-                ui.checkbox(&mut st.whole_word, tr("dialog.whole_word"));
-            } else {
-                ui.label(
-                    egui::RichText::new(tr("dialog.find_objects_hint"))
-                        .color(Tokens::TEXT_DIM)
-                        .size(11.0),
-                );
-            }
-            ui.horizontal(|ui| {
-                if ui.button(tr("dialog.find_next")).clicked() {
-                    st.results = crate::export::find_shapes(
-                        app,
-                        &st.find,
-                        st.kind,
-                        st.match_case,
-                        st.whole_word,
-                    );
-                    if !st.results.is_empty() {
-                        st.cursor = (st.cursor + 1) % st.results.len();
-                        let id = st.results[st.cursor];
-                        app.select(vec![id]);
-                        app.zoom_to_selection();
-                    }
-                }
-                if ui.button(tr("dialog.find_all")).clicked() {
-                    st.results = crate::export::find_shapes(
-                        app,
-                        &st.find,
-                        st.kind,
-                        st.match_case,
-                        st.whole_word,
-                    );
-                    app.select(st.results.clone());
-                }
-                if st.kind == 0 {
-                    if ui.button(tr("dialog.replace")).clicked() {
-                        crate::export::replace_text(
-                            app,
-                            &st.find,
-                            &st.replace,
-                            st.match_case,
-                            st.whole_word,
-                            false,
-                        );
-                    }
-                    if ui.button(tr("dialog.replace_all")).clicked() {
-                        crate::export::replace_text(
-                            app,
-                            &st.find,
-                            &st.replace,
-                            st.match_case,
-                            st.whole_word,
-                            true,
-                        );
-                    }
-                }
-            });
-            ui.label(trf(
-                "dialog.found_n",
-                &[("n", &st.results.len().to_string())],
-            ));
-            if ui.button(tr("dialog.close")).clicked() {
-                *close = true;
-            }
-        });
 }
 
 fn trace_dialog(app: &mut App, ctx: &Context, st: &mut TraceState, close: &mut bool) {

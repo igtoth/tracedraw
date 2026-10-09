@@ -185,7 +185,7 @@ Counts: works 123, partial 1 (`.cdr` content coverage), missing 1 (CMX import), 
 | Border and Grommet (large-format finishing) | works |
 | Bitmap plug-ins (third-party filters) | not applicable: no plug-in host; the built-in bitmap effects cover the stock filters |
 | User interface in 12 languages with system fallback fonts | works |
-| Keyboard shortcuts of the target design | works |
+| Keyboard shortcuts of the target design (every menu shortcut bound; Esc closes dialogs) | works (see `behavior/shortcuts.md`) |
 
 ## 12. Print and prepress
 

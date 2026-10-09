@@ -454,7 +454,8 @@ fn edit_menu(app: &mut App, ui: &mut Ui) {
     });
     ui.separator();
     if item(ui, "menu.edit.find_and_replace", "Ctrl+F", true) {
-        app.dialog = Dialog::FindReplace(Default::default());
+        app.show_dockers = true;
+        app.docker_tab = DockerTab::FindReplace;
     }
     if item(ui, "menu.edit.step_and_repeat", "Ctrl+Shift+D", has) {
         app.show_dockers = true;
