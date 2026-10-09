@@ -1987,7 +1987,7 @@ mod tests {
         le32(&mut dib, 81);
         let bmi_len = 40;
         let bits_len = 16; // two rows of 8 bytes (6 used + 2 pad)
-        le32(&mut dib, (80 + bmi_len + bits_len) as i32);
+        le32(&mut dib, 80 + bmi_len + bits_len);
         for v in [0, 0, 0, 0] {
             le32(&mut dib, v);
         }
@@ -1995,9 +1995,9 @@ mod tests {
             le32(&mut dib, v);
         }
         le32(&mut dib, 80);
-        le32(&mut dib, bmi_len as i32);
-        le32(&mut dib, (80 + bmi_len) as i32);
-        le32(&mut dib, bits_len as i32);
+        le32(&mut dib, bmi_len);
+        le32(&mut dib, 80 + bmi_len);
+        le32(&mut dib, bits_len);
         le32(&mut dib, 0);
         le32(&mut dib, 0x00CC0020);
         le32(&mut dib, 100);
@@ -2145,7 +2145,7 @@ mod tests {
         le32(&mut f, 0);
         le16(&mut f, 0);
         // Brush (object 0): solid green. Pen (object 1): null.
-        f.extend_from_slice(&wmf_rec(0x02FC, &[0, 0x8000u16 as i16 | 0x00, 0, 0]));
+        f.extend_from_slice(&wmf_rec(0x02FC, &[0, (0x8000u16 as i16), 0, 0]));
         f.extend_from_slice(&wmf_rec(0x02FA, &[5, 0, 0, 0, 0]));
         f.extend_from_slice(&wmf_rec(0x012D, &[0]));
         f.extend_from_slice(&wmf_rec(0x012D, &[1]));

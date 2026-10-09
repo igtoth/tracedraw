@@ -1275,7 +1275,7 @@ mod tests {
         let f = fonts();
         let s = span("one two three four five six seven eight nine ten");
         let para = ParagraphStyle::default();
-        let one_line = f.outline(&[s.clone()]);
+        let one_line = f.outline(std::slice::from_ref(&s));
         let wrapped = f.layout(&TextRequest {
             spans: &[s],
             frame: Some(Size::new(one_line.bounds.width() / 2.5, 100.0)),
@@ -1434,7 +1434,7 @@ mod tests {
         let s = span("one\ntwo\nthree");
         let para = ParagraphStyle::default();
         // Artistic text: everything fits by definition.
-        assert_eq!(f.outline(&[s.clone()]).fitted_chars, 13);
+        assert_eq!(f.outline(std::slice::from_ref(&s)).fitted_chars, 13);
         // A frame tall enough for one 12 pt line only.
         let l = f.layout(&TextRequest {
             spans: std::slice::from_ref(&s),
@@ -1448,7 +1448,7 @@ mod tests {
             l.fitted_chars, 4,
             "\"one\\n\" fits, \"two\" starts the overflow"
         );
-        let (head, tail) = tracedraw_core::split_spans_at(&[s.clone()], l.fitted_chars);
+        let (head, tail) = tracedraw_core::split_spans_at(std::slice::from_ref(&s), l.fitted_chars);
         assert_eq!(head[0].text, "one\n");
         assert_eq!(tail[0].text, "two\nthree");
         // A frame that holds everything reports the full count.

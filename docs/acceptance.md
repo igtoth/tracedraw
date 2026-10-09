@@ -70,6 +70,14 @@ than 20%.
   `ops::smoke_tests`. `scripts/visual/monkey.py` (MONKEY_SEED, MONKEY_STEPS)
   runs random clicks, drags, keys and chords; seeds 1 to 6 with 150 steps
   survive with no panic.
+- Headless UI tests run the egui interface without a window
+  (`egui::Context::run_ui`): `ui::dialogs::tests` draws every dialog over
+  a document with a rectangle, text and a bitmap and presses Enter in
+  each; `ui::menus::tests` clicks every enabled row of all twelve menus
+  (submenus inlined through the `replay` hook) against a mixed document
+  of rectangle, ellipse, text, bitmap and table, skipping only the rows
+  that open a native file chooser, another program or close the window.
+  Both must pass with no panic and a page left in the document.
 - `.cdr` writing: a document with a rectangle (radius, dashed outline,
   name, transparency), a radial fountain ellipse, a transformed curve with
   a CMYK fill, bold text, a group, a 2 x 2 bitmap and a second page is

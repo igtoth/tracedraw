@@ -1719,21 +1719,6 @@ pub fn apply_case(text: &str, mode: CaseMode) -> String {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn case_modes() {
-        assert_eq!(
-            apply_case("hello world. bye", CaseMode::Sentence),
-            "Hello world. Bye"
-        );
-        assert_eq!(apply_case("hello world", CaseMode::Title), "Hello World");
-        assert_eq!(apply_case("aBc", CaseMode::Toggle), "AbC");
-    }
-}
-
 impl App {
     /// Blend the two selected objects: the first becomes the start with a
     /// live Blend effect, the second is removed (it lives inside the effect).
@@ -1956,5 +1941,20 @@ impl App {
             self.status = trf("status.missing_fonts", &[("f", &missing.join(", "))]);
         }
         self.missing_fonts = missing;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn case_modes() {
+        assert_eq!(
+            apply_case("hello world. bye", CaseMode::Sentence),
+            "Hello world. Bye"
+        );
+        assert_eq!(apply_case("hello world", CaseMode::Title), "Hello World");
+        assert_eq!(apply_case("aBc", CaseMode::Toggle), "AbC");
     }
 }

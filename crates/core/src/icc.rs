@@ -1832,7 +1832,7 @@ pub(crate) mod test_profiles {
             let table_len = 4 + 12 * self.tags.len();
             let mut offsets = Vec::new();
             for (_, data) in &self.tags {
-                while body.len() % 4 != 0 {
+                while !body.len().is_multiple_of(4) {
                     body.push(0);
                 }
                 offsets.push((128 + table_len + body.len()) as u32);

@@ -102,6 +102,10 @@ fn sub_label(label: &str) -> egui::RichText {
 /// with a toolbar counterpart show its icon in the gutter.
 fn item(ui: &mut Ui, key: &str, shortcut: &str, enabled: bool) -> bool {
     let r = menu_row(ui, &tr(key), shortcut, enabled, None);
+    #[cfg(test)]
+    if replay::hit(key, enabled) {
+        return true;
+    }
     if let Some(a) = menu_icon(key) {
         let rect = r.rect;
         let ir = egui::Rect::from_center_size(
@@ -132,6 +136,10 @@ fn item_text(
     icon: Option<crate::ui::icons::Action>,
 ) -> bool {
     let r = menu_row(ui, label, shortcut, enabled, None);
+    #[cfg(test)]
+    if replay::hit(label, enabled) {
+        return true;
+    }
     if let Some(a) = icon {
         let rect = r.rect;
         let ir = egui::Rect::from_center_size(
@@ -179,6 +187,10 @@ fn menu_icon(key: &str) -> Option<crate::ui::icons::Action> {
 /// A checkable item (check mark on the left when `on`).
 fn check(ui: &mut Ui, key: &str, shortcut: &str, on: bool) -> bool {
     let r = menu_row(ui, &tr(key), shortcut, true, Some(on));
+    #[cfg(test)]
+    if replay::hit(key, true) {
+        return true;
+    }
     if r.clicked() {
         ui.close();
         true
@@ -199,10 +211,186 @@ fn todo_sub(ui: &mut Ui, key: &str) {
 }
 
 fn sub<R>(ui: &mut Ui, key: &str, add: impl FnOnce(&mut Ui) -> R) {
+    #[cfg(test)]
+    if replay::active() {
+        // Replaying: submenus are laid out inline so their items count.
+        let _ = add(ui);
+        return;
+    }
     ui.menu_button(sub_label(&tr(key)), |ui| {
         ui.set_min_width(MENU_WIDTH);
         add(ui)
     });
+}
+
+/// Test hook: "click" the n-th enabled menu row of a menu body without a
+/// pointer, so every menu command can be exercised headlessly.
+#[cfg(test)]
+pub(crate) mod replay {
+    use std::cell::{Cell, RefCell};
+
+    thread_local! {
+        static TARGET: Cell<Option<usize>> = const { Cell::new(None) };
+        static COUNTER: Cell<usize> = const { Cell::new(0) };
+        static HIT: RefCell<Option<String>> = const { RefCell::new(None) };
+    }
+
+    /// Items that would block on a native file chooser, start another
+    /// program (an editor or the web browser) or close the window.
+    const SKIP: [&str; 14] = [
+        "menu.file.send_to_mail",
+        "menu.help.updates",
+        "menu.help.community",
+        "menu.help.support",
+        "menu.file.open",
+        "menu.file.save",
+        "menu.file.save_as",
+        "menu.file.save_as_template",
+        "menu.file.import",
+        "menu.file.publish_to_pdf",
+        "menu.file.exit",
+        "menu.bitmaps.edit_bitmap",
+        "menu.tools.scripts_run",
+        "menu.window.palette_open",
+    ];
+
+    pub fn start(target: usize) {
+        TARGET.set(Some(target));
+        COUNTER.set(0);
+        HIT.replace(None);
+    }
+
+    /// Stop replaying; returns the key that was hit and how many rows were seen.
+    pub fn finish() -> (Option<String>, usize) {
+        TARGET.set(None);
+        (HIT.take(), COUNTER.get())
+    }
+
+    pub fn active() -> bool {
+        TARGET.get().is_some()
+    }
+
+    pub fn hit(key: &str, enabled: bool) -> bool {
+        let Some(t) = TARGET.get() else {
+            return false;
+        };
+        let i = COUNTER.get();
+        COUNTER.set(i + 1);
+        if i == t && enabled && !SKIP.contains(&key) {
+            HIT.replace(Some(key.to_string()));
+            true
+        } else {
+            false
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use egui::Context;
+    use tracedraw_core::geometry::{Point, Rect};
+    use tracedraw_core::ShapeKind;
+
+    /// A document with one of the object kinds the menus act on.
+    fn mixed_app() -> App {
+        let mut app = App::headless();
+        app.settings.autocorrect.enabled = false;
+        let r = app
+            .new_shape(ShapeKind::Rect {
+                rect: Rect::new(10.0, 10.0, 60.0, 40.0),
+                radius: 0.0,
+            })
+            .expect("rect");
+        app.new_shape(ShapeKind::Ellipse {
+            rect: Rect::new(70.0, 10.0, 120.0, 40.0),
+            arc: None,
+        });
+        app.start_text(Point::new(20.0, 80.0), None);
+        app.text_insert("Menu test");
+        app.finish_text();
+        app.select(vec![r]);
+        app.duplicate();
+        app.convert_to_bitmap(50.0, true);
+        app.create_table(Rect::new(10.0, 120.0, 80.0, 160.0));
+        app.select_all();
+        app
+    }
+
+    fn menus() -> Vec<(&'static str, fn(&mut App, &mut Ui))> {
+        vec![
+            ("file", file_menu),
+            ("edit", edit_menu),
+            ("view", view_menu),
+            ("layout", layout_menu),
+            ("object", object_menu),
+            ("effects", effects_menu),
+            ("bitmaps", bitmaps_menu),
+            ("text", text_menu),
+            ("table", table_menu),
+            ("tools", tools_menu),
+            ("window", window_menu),
+            ("help", help_menu),
+        ]
+    }
+
+    fn run_frame(ctx: &Context, f: impl FnOnce(&mut Ui)) {
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1400.0, 900.0),
+            )),
+            ..Default::default()
+        };
+        let mut f = Some(f);
+        let mut out = ctx.run_ui(input, |ui| {
+            if let Some(f) = f.take() {
+                f(ui);
+            }
+        });
+        out.textures_delta.clear();
+    }
+
+    /// Every enabled row of every menu is clicked once against a mixed
+    /// document; the application survives each command.
+    #[test]
+    fn every_menu_item_runs_without_panicking() {
+        let ctx = Context::default();
+        let mut hits = 0usize;
+        for (name, body) in menus() {
+            let mut app = mixed_app();
+            let mut target = 0usize;
+            loop {
+                replay::start(target);
+                run_frame(&ctx, |ui| body(&mut app, ui));
+                let (hit, rows) = replay::finish();
+                if let Some(key) = &hit {
+                    hits += 1;
+                    // Draw the whole window once so a dialog or docker the
+                    // command opened is laid out too.
+                    run_frame(&ctx, |ui| crate::ui::root(&mut app, ui));
+                    assert!(!app.doc().pages.is_empty(), "{name}: {key} left no page");
+                    app.dialog = crate::ui::dialogs::Dialog::None;
+                    app.finish_text();
+                    if app.doc().pages[0]
+                        .layers
+                        .iter()
+                        .all(|l| l.shapes.is_empty())
+                        || app.show_welcome
+                    {
+                        app = mixed_app();
+                    }
+                    app.show_welcome = false;
+                    app.select_all();
+                }
+                target += 1;
+                if target >= rows {
+                    break;
+                }
+            }
+        }
+        assert!(hits > 150, "only {hits} menu items were exercised");
+    }
 }
 
 pub fn menu_bar(app: &mut App, ui: &mut Ui) {

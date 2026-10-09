@@ -3456,3 +3456,129 @@ fn palette_editor_dialog(
         }
     });
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every dialog, as the menus open it.
+    fn all_dialogs(app: &App) -> Vec<Dialog> {
+        let layer = app.active_layer().unwrap_or(tracedraw_core::LayerId(1));
+        vec![
+            Dialog::RenamePage {
+                name: "Page".into(),
+            },
+            Dialog::GoToPage { page: 1 },
+            Dialog::InsertPage {
+                count: 1,
+                after: true,
+            },
+            Dialog::PageSize {
+                width: 210.0,
+                height: 297.0,
+                all_pages: false,
+            },
+            Dialog::Options,
+            Dialog::PageNumberSettings,
+            Dialog::Symmetry,
+            Dialog::RenameLayer {
+                layer,
+                name: "Layer".into(),
+            },
+            Dialog::DocumentProperties,
+            Dialog::ConfirmClose,
+            Dialog::Export(ExportState::default()),
+            Dialog::Print(PrintState::default()),
+            Dialog::PrintMerge(PrintMergeState::default()),
+            Dialog::CreateTable { rows: 3, cols: 4 },
+            Dialog::QrCode(QrState::default()),
+            Dialog::PasteSpecial(PasteSpecialState::default()),
+            Dialog::Barcode(BarcodeState::default()),
+            Dialog::ConvertToBitmap {
+                dpi: 150.0,
+                transparent: true,
+            },
+            Dialog::StraightenImage { angle: 5.0 },
+            Dialog::Resample { dpi: 100.0 },
+            Dialog::InflateBitmap { px: 4 },
+            Dialog::Trace(TraceState::new(crate::trace::Preset::Logo)),
+            Dialog::BitmapFx {
+                fx: crate::bitmap_fx::Fx::Emboss,
+                amount: 0.5,
+            },
+            Dialog::TextTabs,
+            Dialog::TextColumns,
+            Dialog::TextBullets,
+            Dialog::TextDropCap,
+            Dialog::TextStatistics,
+            Dialog::SpellCheck(SpellState::default()),
+            Dialog::Thesaurus(ThesaurusState::default()),
+            Dialog::Encode(EncodeState::default()),
+            Dialog::Grammar(GrammarState::default()),
+            Dialog::Autocorrect(AutocorrectState::default()),
+            Dialog::BorderGrommet(crate::border_grommet::BorderGrommetState::default()),
+            Dialog::ColorManagement,
+            Dialog::FontManager(FontManagerState::default()),
+            Dialog::PaletteEditor(PaletteEditorState::default()),
+            Dialog::NewDocument {
+                width: 100.0,
+                height: 100.0,
+                preset: 0,
+                name: "n".into(),
+            },
+            Dialog::About,
+        ]
+    }
+
+    fn frame(ctx: &Context, app: &mut App, enter: bool) {
+        let mut input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1400.0, 900.0),
+            )),
+            ..Default::default()
+        };
+        if enter {
+            input.events.push(egui::Event::Key {
+                key: egui::Key::Enter,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            });
+        }
+        let mut out = ctx.run_ui(input, |ui| show(app, &ui.ctx().clone()));
+        out.textures_delta.clear();
+    }
+
+    /// Every dialog can be drawn with a rectangle, text and a bitmap in the
+    /// document, and Enter (OK) applies it without a panic.
+    #[test]
+    fn every_dialog_draws_and_accepts_enter() {
+        let mut app = App::headless();
+        let r = app
+            .new_shape(ShapeKind::Rect {
+                rect: tracedraw_core::geometry::Rect::new(10.0, 10.0, 60.0, 40.0),
+                radius: 0.0,
+            })
+            .expect("rect");
+        app.start_text(tracedraw_core::geometry::Point::new(20.0, 80.0), None);
+        app.text_insert("Dialog test");
+        app.finish_text();
+        app.select(vec![r]);
+        app.convert_to_bitmap(100.0, true);
+        app.select_all();
+        let ctx = Context::default();
+        for dialog in all_dialogs(&app) {
+            let name = format!("{dialog:?}");
+            app.dialog = dialog;
+            frame(&ctx, &mut app, false);
+            frame(&ctx, &mut app, false);
+            frame(&ctx, &mut app, true);
+            frame(&ctx, &mut app, false);
+            assert!(!app.doc().pages.is_empty(), "{name}: the document survived");
+            app.dialog = Dialog::None;
+            app.select_all();
+        }
+    }
+}
