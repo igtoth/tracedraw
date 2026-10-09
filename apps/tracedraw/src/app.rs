@@ -789,13 +789,14 @@ impl App {
         Self::build(open)
     }
 
-    /// An app without a window, for tests and scripts.
-    #[cfg(test)]
+    /// An app without a window, for tests, scripts and the MCP server.
     pub fn headless() -> Self {
-        std::env::set_var(
-            "TRACEDRAW_CONFIG_DIR",
-            std::env::temp_dir().join("tracedraw-test"),
-        );
+        if std::env::var_os("TRACEDRAW_CONFIG_DIR").is_none() {
+            std::env::set_var(
+                "TRACEDRAW_CONFIG_DIR",
+                std::env::temp_dir().join("tracedraw-headless"),
+            );
+        }
         let mut app = Self::build(None);
         app.show_welcome = false;
         app
@@ -1303,11 +1304,16 @@ impl App {
         Rect::from_origin_size((0.0, 0.0), self.page_size())
     }
 
+    /// The layer new objects go to: the topmost visible, unlocked layer
+    /// (hidden layers cannot take new objects in the target design
+    /// either); with none visible, the topmost unlocked one.
     pub fn active_layer(&self) -> Option<LayerId> {
-        self.doc()
-            .page(self.page)
-            .ok()
-            .and_then(|p| p.layers.iter().rev().find(|l| !l.locked))
+        let page = self.doc().page(self.page).ok()?;
+        page.layers
+            .iter()
+            .rev()
+            .find(|l| !l.locked && l.visible)
+            .or_else(|| page.layers.iter().rev().find(|l| !l.locked))
             .map(|l| l.id)
     }
 

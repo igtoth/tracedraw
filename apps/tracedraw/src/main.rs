@@ -27,6 +27,7 @@ mod i18n;
 mod interaction;
 mod interaction2;
 mod lens;
+mod mcp;
 mod media;
 mod ops;
 mod ops2;
@@ -51,6 +52,12 @@ mod view;
 fn main() -> eframe::Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     tracedraw_text::install();
+    // `tracedraw --mcp`: no window, a Model Context Protocol server on
+    // stdin/stdout (see mcp.rs and docs/behavior/mcp.md).
+    if std::env::args().any(|a| a == "--mcp") {
+        mcp::serve();
+        return Ok(());
+    }
     let open_path = std::env::args().nth(1).map(std::path::PathBuf::from);
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()

@@ -41,7 +41,8 @@ Parity tracked in `docs/parity.md`.
 - CLI batch convert (done); installers for Windows, macOS, Linux (done)
 - JavaScript automation with macro recording (done)
 - User interface in 12 languages (done)
-- Open: JSON control channel, MCP server, WebAssembly build
+- JSON control channel and MCP server (`tracedraw --mcp`, see `behavior/mcp.md`) (done)
+- Open: WebAssembly build
 
 ## M5 Interchange
 - Import PDF, AI, EPS, DXF, PSD, EMF and WMF (done); export HTML, DXF, EMF and WMF (done); CMX

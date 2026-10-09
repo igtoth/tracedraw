@@ -97,7 +97,7 @@ class Shape {
   SetOpacity(pct) { __call('set_opacity', {id:this.id, opacity:1 - pct/100}); }
   get Transparency() { return __call('shape_info', {id:this.id}).transparency; }
   AddDropShadow(dx, dy, opacity) { __call('drop_shadow', {id:this.id, dx:dx, dy:dy, opacity:opacity===undefined?50:opacity}); }
-  get Curve() { return { Nodes: { get Count() { return __call('node_count', {id:this.id}).count; } } }; }
+  get Curve() { const id = this.id; return { Nodes: { get Count() { return __call('node_count', {id:id}).count; } } }; }
 }
 class ShapeRange {
   constructor(ids) { this.ids = ids; }
@@ -158,7 +158,7 @@ class Page {
   get SizeHeight() { return __call('page_info', {page:this.id}).h; }
   SetSize(w, h) { __call('set_page_size', {page:this.id, w:w, h:h}); }
   get ActiveLayer() { return new Layer(__call('active_layer', {page:this.id}).id); }
-  get Shapes() { return { get All() { return new ShapeRange(__call('page_shapes', {page:this.id}).ids); }, get Count() { return __call('page_shapes', {page:this.id}).ids.length; } }; }
+  get Shapes() { const page = this.id; return { get All() { return new ShapeRange(__call('page_shapes', {page:page}).ids); }, get Count() { return __call('page_shapes', {page:page}).ids.length; } }; }
   CreateLayer(name) { return new Layer(__call('create_layer', {page:this.id, name:name}).id); }
   Activate() { __call('activate_page', {page:this.id}); }
   get Index() { return __call('page_info', {page:this.id}).index; }

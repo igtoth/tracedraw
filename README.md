@@ -66,7 +66,9 @@ measure of progress; `docs/blueprint-gaps.md` lists what is still open.
   print to PDF, print merge from CSV, templates.
 - **Automation**: JavaScript (boa) with an `Application`, `ActiveDocument`,
   `ActivePage`, `ActiveLayer`, `Shapes`, `Shape`, `Fill`, `Outline` and
-  `Color` object model; macro recording produces scripts.
+  `Color` object model; macro recording produces scripts. `tracedraw
+  --mcp` serves the same editor to AI agents over the Model Context
+  Protocol (open, edit through scripts, inspect, export, save, undo).
 - **Workspace**: welcome screen, document tabs, context-sensitive property
   bar, thirty dockers, context menus, colour palette, rulers, guides,
   snapping (grid, pixel, baseline, guidelines, objects, page, dynamic),
