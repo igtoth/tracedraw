@@ -44,3 +44,17 @@
 - Given rows 2, columns 5, a white cell fill and a 0.5 mm border on the
   bar, when a 100 x 40 mm rectangle is dragged, then the table has 2 x 5
   cells with that fill and border and is 100 mm wide.
+
+## Typing in cells
+
+With the Table tool, a click in a cell makes it active and puts the caret
+at the character under the pointer. Typing, Backspace, Delete, Home, End,
+Ctrl+Home/End, Ctrl+A and Ctrl+B/I/U work as in text editing (formatting
+applies to the selected characters, or to the whole cell without a
+selection); Enter adds a line, Tab and Shift+Tab move to the next and
+previous cell, and the arrow keys step to the neighbouring cell at the
+edges of the text. While a cell is active every key goes to it, so
+letters never trigger canvas shortcuts. A row grows downwards (the table
+top stays put) when its text needs more height than the row has; rows do
+not shrink while typing. All keystrokes in one cell are one "Edit Cell"
+undo step.

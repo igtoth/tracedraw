@@ -254,6 +254,7 @@ impl App {
                 spans
             };
         }
+        grow_row_to_fit(&mut t, r, c);
         t.refit();
         if self.engine.undo_label() == Some("Edit Cell") {
             let _ = self.engine.undo();
@@ -488,14 +489,15 @@ impl App {
         crate::text_editing::caret_geometry(&layout, &to_page, e.caret, e.selection())
     }
 
-    /// Keyboard input while a cell is active (Table tool).
+    /// Keyboard input while a cell is active (Table tool). Returns true:
+    /// the keys are consumed.
     pub fn table_keyboard(&mut self, ctx: &egui::Context) -> bool {
         use crate::text_editing::CaretMove;
         use egui::{Event, Key};
         let events = ctx.input(|i| i.events.clone());
-        let mut handled = false;
+        // While a cell is active every key belongs to it, so letters never
+        // reach the single-key shortcuts (align, tools) of the canvas.
         for ev in &events {
-            handled = true;
             match ev {
                 Event::Text(t) | Event::Paste(t) => self.cell_insert(t),
                 Event::Copy => {
@@ -549,13 +551,13 @@ impl App {
                             self.cell_apply_style(move |s| s.underline = on);
                         }
                         Key::Escape => self.table_edit = None,
-                        _ => handled = false,
+                        _ => {}
                     }
                 }
-                _ => handled = false,
+                _ => {}
             }
         }
-        handled
+        true
     }
 
     pub fn table_op(&mut self, op: TableOp) {
@@ -873,6 +875,39 @@ fn blank(row: u32, col: u32) -> TableCell {
     }
 }
 
+/// Grow the cell's row so its text fits (rows grow downwards and never
+/// shrink here, as the target design does while typing). Cells
+/// spanning several rows grow their last row.
+fn grow_row_to_fit(t: &mut Table, r: u32, c: u32) {
+    let Some(cell) = t.cells.iter().find(|cell| cell.row == r && cell.col == c) else {
+        return;
+    };
+    if cell.text.is_empty() {
+        return;
+    }
+    let inner = t.cell_rect(cell).inset(-t.padding);
+    let para = tracedraw_core::ParagraphStyle::default();
+    let layout =
+        tracedraw_text::fonts().layout(&tracedraw_core::document::text_outline::TextRequest {
+            spans: &cell.text,
+            frame: Some(tracedraw_core::geometry::Size::new(
+                inner.width().max(0.1),
+                1.0e6,
+            )),
+            align: cell.align,
+            para: &para,
+            on_path: None,
+        });
+    let needed = -layout.bounds.y0 + 2.0 * t.padding + 0.01;
+    let have = t.cell_rect(cell).height();
+    let last = (cell.row + cell.row_span).saturating_sub(1) as usize;
+    if needed.is_finite() && needed > have + 1e-6 {
+        if let Some(h) = t.row_heights.get_mut(last) {
+            *h += needed - have;
+        }
+    }
+}
+
 fn cell_text(t: &Table, r: u32, c: u32) -> String {
     t.cells
         .iter()
@@ -907,10 +942,10 @@ mod tests {
     #[test]
     fn click_edits_cell_and_tab_moves_on() {
         let mut app = App::headless();
-        let t = Table::new(Rect::new(10.0, 10.0, 50.0, 40.0), 3, 4, None);
+        let t = Table::new(Rect::new(10.0, 10.0, 130.0, 40.0), 3, 4, None);
         let id = app.new_shape(ShapeKind::Table(t)).unwrap();
         app.select(vec![id]);
-        // Top-left cell: x in [10,20), y in [30,40].
+        // Top-left cell: x in [10,40), y in [30,40].
         app.table_click(id, Point::new(12.0, 38.0), false);
         assert_eq!(app.table_edit.as_ref().unwrap().cells, vec![(0, 0)]);
         app.cell_insert("Hello");
@@ -953,37 +988,22 @@ mod tests {
         assert_eq!(app.table_edit.as_ref().unwrap().cells, vec![(1, 0)]);
         // The caret has geometry even in an empty cell.
         assert!(app.cell_caret_geometry().is_some());
+        // Several lines make the row taller so nothing overlaps.
+        let (_, before) = app.selected_table().unwrap();
+        let h0 = before.row_heights[1];
+        app.cell_insert("a\nb\nc\nd\ne\nf");
+        let (_, after) = app.selected_table().unwrap();
+        if !tracedraw_text::fonts().families().is_empty() {
+            assert!(after.row_heights[1] > h0, "{h0} -> {:?}", after.row_heights);
+            assert!(
+                (after.rect.y1 - before.rect.y1).abs() < 1e-9,
+                "the top stays"
+            );
+        }
         let c00 = t.cells.iter().find(|c| c.row == 0 && c.col == 0).unwrap();
         let r = t.cell_rect(c00);
-        assert!((r.x0 - 10.0).abs() < 1e-9 && (r.x1 - 20.0).abs() < 1e-9);
+        assert!((r.x0 - 10.0).abs() < 1e-9 && (r.x1 - 40.0).abs() < 1e-9);
         assert!((r.y0 - 30.0).abs() < 1e-9 && (r.y1 - 40.0).abs() < 1e-9);
-        assert_eq!(t.rect, Rect::new(10.0, 10.0, 50.0, 40.0));
-    }
-}
-
-#[cfg(test)]
-mod render_probe {
-    use super::*;
-    use tracedraw_core::geometry::Rect;
-
-    #[test]
-    fn probe_cell_render() {
-        let mut app = App::headless();
-        let t = Table::new(Rect::new(10.0, 10.0, 130.0, 40.0), 3, 4, None);
-        let id = app.new_shape(ShapeKind::Table(t)).unwrap();
-        app.select(vec![id]);
-        app.table_click(id, Point::new(12.0, 38.0), false);
-        app.cell_insert("Cell one");
-        let (_, t) = app.selected_table().unwrap();
-        eprintln!(
-            "{:?}",
-            t.cells
-                .iter()
-                .find(|c| c.row == 0 && c.col == 0)
-                .unwrap()
-                .text
-        );
-        let pm = tracedraw_render::render_page_image(app.doc(), app.page, 300.0).unwrap();
-        pm.save_png("/tmp/claude-0/probe_cell.png").unwrap();
+        assert_eq!(t.rect, Rect::new(10.0, 10.0, 130.0, 40.0));
     }
 }

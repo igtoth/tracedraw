@@ -702,7 +702,7 @@ impl FontSystem {
             // Column overflow.
             let mut next_y = snap(y - advance_y);
             if let Some(h) = frame_h {
-                if next_y - m.descent < -h && (y != 0.0 || col > 0) {
+                if next_y - m.descent < -h - 1e-6 && (y != 0.0 || col > 0) {
                     col += 1;
                     y = 0.0;
                     advance_y = m.ascent;
