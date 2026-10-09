@@ -646,7 +646,12 @@ fn extrude(
     light_intensity: f64,
 ) -> Vec<Shape> {
     let front = shape.page_path();
-    let pts = crate::effects::resample(&front, 96);
+    // Exact vertices keep the corners sharp; very dense outlines are
+    // resampled so the weld stays cheap.
+    let mut pts = crate::effects::flat_points(&front);
+    if pts.len() > 400 {
+        pts = crate::effects::resample(&front, 400);
+    }
     if pts.len() < 3 {
         return Vec::new();
     }
@@ -1050,6 +1055,42 @@ mod tests {
         );
         s.fill = Fill::Solid(Color::rgb8(255, 0, 0));
         s
+    }
+
+    #[test]
+    fn block_shadow_keeps_corners_sharp() {
+        let mut s = rect_shape();
+        s.effects.push(Effect::BlockShadow {
+            offset: Vec2::new(5.0, -5.0),
+            color: Color::BLACK,
+            gap: 0.0,
+        });
+        let ev = evaluate(&s);
+        assert_eq!(ev.below.len(), 1);
+        let b = ev.below[0].bounds();
+        assert!(
+            (b.x0 - 0.0).abs() < 1e-6 && (b.x1 - 25.0).abs() < 1e-6,
+            "{b:?}"
+        );
+        assert!(
+            (b.y0 + 5.0).abs() < 1e-6 && (b.y1 - 20.0).abs() < 1e-6,
+            "{b:?}"
+        );
+        // The shadow's far corner is a true corner: a point 0.2 mm inside
+        // it is covered (a rounded corner would miss it).
+        let path = ev.below[0].page_path();
+        let corner = Point::new(25.0 - 0.2, -5.0 + 0.2);
+        let inside = crate::shaping::overlay(
+            &path,
+            &crate::effects::polygon(&[
+                corner,
+                corner + Vec2::new(0.1, 0.0),
+                corner + Vec2::new(0.1, 0.1),
+                corner + Vec2::new(0.0, 0.1),
+            ]),
+            crate::shaping::Op::Intersect,
+        );
+        assert!(!inside.elements().is_empty());
     }
 
     #[test]

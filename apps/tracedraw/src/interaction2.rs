@@ -161,15 +161,9 @@ impl App {
                 if response.dragged_by(PointerButton::Primary) {
                     if let Drag::ContourDrag { start } = self.drag {
                         let offset = p - start;
-                        let color = Color::cmyk_pct(0.0, 0.0, 0.0, 60.0);
-                        self.push_effect(
-                            Effect::BlockShadow {
-                                offset,
-                                color,
-                                gap: 0.0,
-                            },
-                            true,
-                        );
+                        let color = self.block_shadow_color;
+                        let gap = self.block_shadow_gap;
+                        self.push_effect(Effect::BlockShadow { offset, color, gap }, true);
                     }
                 }
             }

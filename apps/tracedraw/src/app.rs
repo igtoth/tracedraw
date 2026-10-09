@@ -413,6 +413,12 @@ pub struct App {
     pub common_shape: crate::tools2::CommonShape,
     pub table_rows: u32,
     pub table_cols: u32,
+    /// Cell fill and border of the next table drawn.
+    pub table_fill: Fill,
+    /// Block shadow colour and gap for the next drag.
+    pub block_shadow_color: Color,
+    pub block_shadow_gap: f64,
+    pub table_border: Option<Stroke>,
     pub graph_rows: u32,
     pub graph_cols: u32,
     pub action_lines_count: u32,
@@ -832,6 +838,10 @@ impl App {
             common_shape: crate::tools2::CommonShape::RightArrow,
             table_rows: 3,
             table_cols: 4,
+            table_fill: Fill::None,
+            block_shadow_color: Color::cmyk_pct(0.0, 0.0, 0.0, 60.0),
+            block_shadow_gap: 0.0,
+            table_border: Some(Stroke::hairline(Color::BLACK)),
             graph_rows: 4,
             graph_cols: 3,
             action_lines_count: 12,

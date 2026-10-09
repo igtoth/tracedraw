@@ -6,7 +6,10 @@
 use crate::geometry::{BezPath, PathEl, Point, Vec2};
 
 /// Resample the first subpath of a path into `n` evenly spaced points.
-pub fn resample(path: &BezPath, n: usize) -> Vec<Point> {
+/// Vertices of the flattened first subpath (0.05 mm tolerance), with the
+/// first point repeated at the end when the subpath is closed. Corners are
+/// kept exactly, unlike `resample`.
+pub fn flat_points(path: &BezPath) -> Vec<Point> {
     let mut pts: Vec<Point> = Vec::new();
     kurbo::flatten(path.elements().iter().copied(), 0.05, &mut |el| match el {
         PathEl::MoveTo(p) => {
@@ -22,6 +25,11 @@ pub fn resample(path: &BezPath, n: usize) -> Vec<Point> {
         }
         _ => {}
     });
+    pts
+}
+
+pub fn resample(path: &BezPath, n: usize) -> Vec<Point> {
+    let pts = flat_points(path);
     if pts.len() < 2 || n < 2 {
         return pts;
     }

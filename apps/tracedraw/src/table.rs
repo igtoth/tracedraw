@@ -510,6 +510,24 @@ fn cell_text(t: &Table, r: u32, c: u32) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn new_tables_take_the_bar_defaults() {
+        use tracedraw_core::{Color, Fill, Stroke};
+        let mut app = App::headless();
+        app.table_rows = 2;
+        app.table_cols = 5;
+        app.table_fill = Fill::Solid(Color::rgb8(0, 10, 20));
+        let mut border = Stroke::hairline(Color::rgb8(9, 9, 9));
+        border.width = 0.5;
+        app.table_border = Some(border.clone());
+        app.create_table(Rect::new(0.0, 0.0, 100.0, 40.0));
+        let (_, t) = app.selected_table().expect("table selected");
+        assert_eq!((t.rows(), t.cols()), (2, 5));
+        assert_eq!(t.cell_fill, Fill::Solid(Color::rgb8(0, 10, 20)));
+        assert_eq!(t.border, Some(border));
+        assert!((t.rect.width() - 100.0).abs() < 1e-9);
+    }
+
     use super::*;
     use tracedraw_core::geometry::Rect;
 

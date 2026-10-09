@@ -430,8 +430,33 @@ impl Renderer<'_> {
         if let Some(stroke) = &shape.stroke {
             let (mut paint, sk_stroke) = self.stroke_paint(stroke, transform);
             paint.blend_mode = self.blend_for(shape.overprint_outline);
-            self.pixmap
-                .stroke_path(&sk, &paint, &sk_stroke, Transform::identity(), None);
+            if stroke.stretch < 0.999 && stroke.width > Stroke::HAIRLINE + 1e-9 {
+                // Calligraphic nib: fill the swept band instead of stroking.
+                let object_scale = if stroke.scale_with_object {
+                    let c = transform.as_coeffs();
+                    ((c[0] * c[3] - c[1] * c[2]).abs()).sqrt().max(1e-6)
+                } else {
+                    1.0
+                };
+                let band = tracedraw_core::shaping::calligraphic_band(
+                    &page_path,
+                    stroke.width * object_scale,
+                    stroke.stretch,
+                    stroke.nib_angle,
+                );
+                if let Some(bp) = to_sk_path(&(self.screen * band)) {
+                    self.pixmap.fill_path(
+                        &bp,
+                        &paint,
+                        FillRule::Winding,
+                        Transform::identity(),
+                        None,
+                    );
+                }
+            } else {
+                self.pixmap
+                    .stroke_path(&sk, &paint, &sk_stroke, Transform::identity(), None);
+            }
             for head in tracedraw_core::style::arrowhead_paths(&page_path, stroke) {
                 if let Some(hp) = to_sk_path(&(self.screen * head)) {
                     self.pixmap.fill_path(
@@ -1334,6 +1359,50 @@ mod tests {
         s.fill = Fill::Solid(fill);
         s.stroke = None;
         s
+    }
+
+    #[test]
+    fn calligraphic_outline_is_wide_across_the_nib_and_thin_along_it() {
+        // 25.4 dpi: one pixel per millimetre. Flat 6 mm nib at 0 degrees.
+        let mut nib = tracedraw_core::Stroke::hairline(Color::BLACK);
+        nib.width = 6.0;
+        nib.stretch = 0.1;
+        nib.nib_angle = 0.0;
+        let mut vertical = Shape::new(
+            tracedraw_core::ShapeId(1),
+            ShapeKind::Path {
+                path: {
+                    let mut p = tracedraw_core::geometry::BezPath::new();
+                    p.move_to(tracedraw_core::geometry::Point::new(30.0, 10.0));
+                    p.line_to(tracedraw_core::geometry::Point::new(30.0, 90.0));
+                    p
+                },
+                closed: false,
+            },
+        );
+        vertical.fill = Fill::None;
+        vertical.stroke = Some(nib.clone());
+        let mut horizontal = vertical.clone();
+        horizontal.id = tracedraw_core::ShapeId(2);
+        horizontal.kind = ShapeKind::Path {
+            path: {
+                let mut p = tracedraw_core::geometry::BezPath::new();
+                p.move_to(tracedraw_core::geometry::Point::new(10.0, 70.0));
+                p.line_to(tracedraw_core::geometry::Point::new(90.0, 70.0));
+                p
+            },
+            closed: false,
+        };
+        horizontal.stroke = Some(nib);
+        let (doc, page) = doc_with(vec![vertical, horizontal]);
+        let pm = render_page_image(&doc, page, 25.4).unwrap();
+        // The vertical stroke covers x 27..33 at y = 50 (image y = 50).
+        assert_eq!(px(&pm, 28, 50), (0, 0, 0));
+        assert_eq!(px(&pm, 32, 50), (0, 0, 0));
+        assert_ne!(px(&pm, 25, 50), (0, 0, 0));
+        // The horizontal stroke is only 0.6 mm tall: two pixels away it is gone.
+        assert_ne!(px(&pm, 60, 28), (0, 0, 0));
+        assert_ne!(px(&pm, 60, 32), (0, 0, 0));
     }
 
     #[test]

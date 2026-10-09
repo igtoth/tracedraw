@@ -613,8 +613,25 @@ impl PageWriter<'_> {
                 let arr: Vec<String> = s.dash.iter().map(|d| f(d * w)).collect();
                 let _ = writeln!(self.content, "[{}] 0 d", arr.join(" "));
             }
-            self.path_ops(&path);
-            self.content.push_str("S\n");
+            if s.stretch < 0.999 && width > 0.0 {
+                // Calligraphic nib: the swept band, filled.
+                let band = tracedraw_core::shaping::calligraphic_band(
+                    &shape.page_path(),
+                    s.width,
+                    s.stretch,
+                    s.nib_angle,
+                );
+                let _ = writeln!(
+                    self.content,
+                    "{}",
+                    color_op_in(s.color, true, self.pdf.cmyk_only)
+                );
+                self.path_ops(&(parent * band));
+                self.content.push_str("f\n");
+            } else {
+                self.path_ops(&path);
+                self.content.push_str("S\n");
+            }
             // Arrowheads (presets and custom) are filled with the outline
             // colour. They are built on the page-space path, which already
             // carries the shape's own transform, so only the parent applies.

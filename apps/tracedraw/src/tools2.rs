@@ -714,9 +714,8 @@ impl App {
 
     pub fn create_table(&mut self, rect: Rect) {
         let (rows, cols) = (self.table_rows.max(1), self.table_cols.max(1));
-        let mut table =
-            tracedraw_core::Table::new(rect, rows, cols, Some(Stroke::hairline(Color::BLACK)));
-        table.cell_fill = self.default_fill.clone();
+        let mut table = tracedraw_core::Table::new(rect, rows, cols, self.table_border.clone());
+        table.cell_fill = self.table_fill.clone();
         if let Some(id) = self.new_shape(ShapeKind::Table(table)) {
             self.select(vec![id]);
         }

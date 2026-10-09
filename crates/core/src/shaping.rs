@@ -125,6 +125,95 @@ pub fn stroke_band(points: &[Point], width: f64, square: bool) -> BezPath {
     from_shapes(pts.stroke(style, false))
 }
 
+/// Area swept by a calligraphic nib along a path: an ellipse of width
+/// `width` along `nib_angle_deg` and `width * stretch` across it. Each
+/// flattened segment contributes the parallelogram the nib's support
+/// sweeps, each vertex the nib itself; the union of them is the outline
+/// (open subpaths get nib-shaped ends). `stretch` 1 is the round pen.
+pub fn calligraphic_band(path: &BezPath, width: f64, stretch: f64, nib_angle_deg: f64) -> BezPath {
+    if width <= 0.0 {
+        return BezPath::new();
+    }
+    let a = width / 2.0;
+    let b = a * stretch.clamp(0.01, 1.0);
+    let ang = nib_angle_deg.to_radians();
+    let e1 = [ang.cos(), ang.sin()];
+    let e2 = [-ang.sin(), ang.cos()];
+    // Polylines of every subpath, closed ones with the first point repeated.
+    let mut lines: Vec<Vec<Point>> = Vec::new();
+    let mut cur: Vec<Point> = Vec::new();
+    kurbo::flatten(path.elements().iter().copied(), 0.05, &mut |el| match el {
+        PathEl::MoveTo(p) => {
+            if cur.len() >= 2 {
+                lines.push(std::mem::take(&mut cur));
+            } else {
+                cur.clear();
+            }
+            cur.push(p);
+        }
+        PathEl::LineTo(p) => cur.push(p),
+        PathEl::ClosePath => {
+            if let Some(f) = cur.first().copied() {
+                cur.push(f);
+            }
+        }
+        _ => {}
+    });
+    if !cur.is_empty() {
+        lines.push(cur);
+    }
+    let ellipse = |c: Point| -> Vec<[f64; 2]> {
+        (0..24)
+            .map(|i| {
+                let t = i as f64 / 24.0 * std::f64::consts::TAU;
+                let (x, y) = (a * t.cos(), b * t.sin());
+                [c.x + x * e1[0] + y * e2[0], c.y + x * e1[1] + y * e2[1]]
+            })
+            .collect()
+    };
+    let mut polys: Vec<Vec<[f64; 2]>> = Vec::new();
+    for line in &lines {
+        for (i, p) in line.iter().enumerate() {
+            polys.push(ellipse(*p));
+            let Some(q) = line.get(i + 1) else {
+                continue;
+            };
+            let d = *q - *p;
+            let len = d.hypot();
+            if len < 1e-9 {
+                continue;
+            }
+            let n = [-d.y / len, d.x / len];
+            // Support half-width of the ellipse along n.
+            let h = ((a * (n[0] * e1[0] + n[1] * e1[1])).powi(2)
+                + (b * (n[0] * e2[0] + n[1] * e2[1])).powi(2))
+            .sqrt();
+            if h < 1e-9 {
+                continue;
+            }
+            polys.push(vec![
+                [p.x + n[0] * h, p.y + n[1] * h],
+                [q.x + n[0] * h, q.y + n[1] * h],
+                [q.x - n[0] * h, q.y - n[1] * h],
+                [p.x - n[0] * h, p.y - n[1] * h],
+            ]);
+        }
+    }
+    // Consistent orientation so the non-zero union adds up.
+    for poly in polys.iter_mut() {
+        let area: f64 = poly
+            .iter()
+            .zip(poly.iter().cycle().skip(1))
+            .map(|(p, q)| p[0] * q[1] - q[0] * p[1])
+            .sum();
+        if area < 0.0 {
+            poly.reverse();
+        }
+    }
+    let empty: Vec<Vec<[f64; 2]>> = Vec::new();
+    from_shapes(polys.overlay(&empty, OverlayRule::Subject, IFill::NonZero))
+}
+
 /// Union of one path with itself: removes self-overlaps (Simplify).
 pub fn simplify(path: &BezPath) -> BezPath {
     let subj = contours(path);
@@ -135,6 +224,30 @@ pub fn simplify(path: &BezPath) -> BezPath {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn calligraphic_band_is_thin_along_the_nib_and_full_across_it() {
+        use super::calligraphic_band;
+        use crate::geometry::{BezPath, Point, Shape as _};
+        // Flat nib at 0 degrees, 2 mm wide, stretch 0.1.
+        let mut horizontal = BezPath::new();
+        horizontal.move_to(Point::new(0.0, 0.0));
+        horizontal.line_to(Point::new(50.0, 0.0));
+        let hb = calligraphic_band(&horizontal, 2.0, 0.1, 0.0).bounding_box();
+        // Across a horizontal stroke the nib offers only its 0.2 mm side.
+        assert!(hb.height() < 0.25 && hb.height() > 0.15, "{hb:?}");
+        let mut vertical = BezPath::new();
+        vertical.move_to(Point::new(0.0, 0.0));
+        vertical.line_to(Point::new(0.0, 50.0));
+        let vb = calligraphic_band(&vertical, 2.0, 0.1, 0.0).bounding_box();
+        assert!((vb.width() - 2.0).abs() < 0.05, "{vb:?}");
+        // The round pen (stretch 1) is a plain 2 mm stroke with round ends.
+        let rb = calligraphic_band(&horizontal, 2.0, 1.0, 0.0).bounding_box();
+        assert!(
+            (rb.height() - 2.0).abs() < 0.05 && (rb.width() - 52.0).abs() < 0.05,
+            "{rb:?}"
+        );
+    }
+
     use super::*;
     use crate::geometry::{Rect, Shape as _};
 

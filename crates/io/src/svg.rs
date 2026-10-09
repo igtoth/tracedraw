@@ -339,8 +339,26 @@ fn write_shape(
         }
     };
 
+    // A calligraphic outline has no SVG equivalent: the swept band is
+    // written as a filled path after the object.
+    let calligraphic = shape
+        .stroke
+        .as_ref()
+        .filter(|s| s.stretch < 0.999 && s.width > tracedraw_core::Stroke::HAIRLINE + 1e-9)
+        .map(|s| {
+            (
+                tracedraw_core::shaping::calligraphic_band(
+                    &shape.page_path(),
+                    s.width,
+                    s.stretch,
+                    s.nib_angle,
+                ),
+                s.color,
+            )
+        });
     let stroke_attr = match &shape.stroke {
         None => "stroke=\"none\"".to_string(),
+        Some(_) if calligraphic.is_some() => "stroke=\"none\"".to_string(),
         Some(s) => {
             let cap = match s.cap {
                 LineCap::Butt => "butt",
@@ -375,6 +393,14 @@ fn write_shape(
         "{pad}<path id=\"{}\"{name} d=\"{d}\" {fill_attr} {stroke_attr}/>",
         shape.id.raw()
     );
+    if let Some((band, color)) = calligraphic {
+        let _ = writeln!(
+            out,
+            "{pad}<path d=\"{}\" fill=\"{}\" stroke=\"none\"/>",
+            path_data(&(parent * band)),
+            color.to_hex()
+        );
+    }
     // Arrowheads (presets and custom) are filled outlines in the stroke
     // colour. They are built in page space, where the curve direction is
     // unmirrored, and then taken through the parent transform and the flip.
@@ -501,6 +527,34 @@ mod tests {
         // Bottom-left origin: y=10 in page space is y=287 in SVG space.
         assert!(svg.contains("M10 287"));
         assert!(svg.contains("stroke-width=\"0.5\""));
+    }
+
+    #[test]
+    fn calligraphic_outline_becomes_a_filled_band() {
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        let id = doc.ids_mut().shape();
+        let mut s = Shape::new(
+            id,
+            ShapeKind::Rect {
+                rect: Rect::new(10.0, 10.0, 60.0, 40.0),
+                radius: 0.0,
+            },
+        );
+        s.fill = Fill::None;
+        let mut st = Stroke::new(Color::rgb8(0, 0, 255), 3.0);
+        st.stretch = 0.2;
+        st.nib_angle = 45.0;
+        s.stroke = Some(st);
+        doc.layer_mut(layer).unwrap().shapes.push(s);
+        let svg = page_to_svg(&doc, 0);
+        // The object itself carries no stroke; the band is a blue fill.
+        assert!(!svg.contains("stroke-width=\"3\""));
+        assert!(svg.contains("fill=\"#0000ff\" stroke=\"none\""));
+        let band_start = svg.find("fill=\"#0000ff\"").unwrap();
+        let line = svg[..band_start].rsplit('\n').next().unwrap();
+        // A real outline of the rectangle: dozens of vertices.
+        assert!(line.matches('L').count() > 20, "{line}");
     }
 
     /// A line from (10, 50) to (60, 50), 2 mm wide, with a custom

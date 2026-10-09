@@ -19,4 +19,5 @@ Pages: `fountain-fill.md`, `contour.md`, `blend.md`, `extrude.md`,
 `pdf-import.md`, `dxf.md`, `eps-import.md`, `psd-import.md`,
 `shape-tools.md`, `curve-tools.md`, `crop-knife-eraser.md`,
 `brush-strokes.md`, `dimensions.md`, `zoom-and-pan.md`, `brushes.md`,
-`free-transform.md`, `eyedroppers.md`.
+`free-transform.md`, `eyedroppers.md`, `table.md`, `distort.md`,
+`block-shadow.md`, `outline-pen.md`.

@@ -75,7 +75,7 @@ Counts: works 122, partial 1 (`.cdr` content coverage), missing 1 (CMX import), 
 | Writing tools: spell check (system Hunspell word lists), grammar, thesaurus (built-in or MyThes file), Autocorrect | works |
 | Missing-font substitution with report | works |
 | Convert text to table and table to text | works |
-| Table: cell typing, Tab navigation, insert/delete rows and columns, merge/split, distribute | works |
+| Table: cell typing, Tab navigation, insert/delete rows and columns, merge/split, distribute; fill and border on the property bar | works |
 
 ## 5. Fills and outlines
 
@@ -88,7 +88,7 @@ Counts: works 122, partial 1 (`.cdr` content coverage), missing 1 (CMX import), 
 | Area Fill (enclosed region) | works |
 | Interactive Fill tool | works |
 | Outline: width, colour, caps, joins, dashes, nib, behind fill, scale with object, arrowheads (presets and custom from the selection) | works |
-| Outline Pen and Outline Color dialogs (hidden flyout, Options toggle) | works |
+| Outline Pen and Outline Color (hidden flyout, Options toggle); calligraphic nib rendered and exported | works |
 | Eyedroppers: colour (bitmap sampling, fill or outline) and attributes (properties, transformations, effects groups) | works |
 
 ## 6. Interactive effects
@@ -103,7 +103,7 @@ Counts: works 122, partial 1 (`.cdr` content coverage), missing 1 (CMX import), 
 | Perspective (Add Perspective, node drag) | works |
 | Extrude (depth, vanishing point, bevel, lighting), live | works |
 | Bevel (soft edge, emboss) | works |
-| Block shadow | works |
+| Block shadow (depth, direction, colour, gap on the property bar) | works |
 | Transparency: uniform, fountain, pattern, texture; merge modes; fill/outline/all | works |
 | Lens (11 types, frozen, rate, palette rotation) | works |
 | ClipFrame (place inside, extract, empty frame, text frame, edit in place, lock contents) | works |

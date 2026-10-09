@@ -813,6 +813,90 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                         .size(11.0),
                 );
                 ui.add(egui::DragValue::new(&mut app.table_cols).range(1..=100));
+                vsep(ui);
+                // Cell fill, border width and colour: edit the selected table,
+                // else the defaults for the next one.
+                let selected = app.selected_table();
+                let mut fill = selected
+                    .as_ref()
+                    .map(|(_, t)| t.cell_fill.clone())
+                    .unwrap_or_else(|| app.table_fill.clone());
+                let mut border = selected
+                    .as_ref()
+                    .map(|(_, t)| t.border.clone())
+                    .unwrap_or_else(|| app.table_border.clone());
+                let mut changed = false;
+                ui.label(
+                    egui::RichText::new(tr("toolbar.attr_fill"))
+                        .color(Tokens::TEXT_DIM)
+                        .size(11.0),
+                );
+                let mut has_fill = !matches!(fill, Fill::None);
+                if ui.checkbox(&mut has_fill, "").changed() {
+                    fill = if has_fill {
+                        Fill::Solid(tracedraw_core::Color::WHITE)
+                    } else {
+                        Fill::None
+                    };
+                    changed = true;
+                }
+                if let Fill::Solid(c) = fill {
+                    let mut rgb = c.to_rgb8();
+                    if ui.color_edit_button_srgb(&mut rgb).changed() {
+                        fill = Fill::Solid(tracedraw_core::Color::rgb8(rgb[0], rgb[1], rgb[2]));
+                        changed = true;
+                    }
+                }
+                vsep(ui);
+                ui.label(
+                    egui::RichText::new(tr("toolbar.border"))
+                        .color(Tokens::TEXT_DIM)
+                        .size(11.0),
+                );
+                let mut width = border.as_ref().map(|b| b.width).unwrap_or(0.0);
+                let r = ui.add(
+                    egui::DragValue::new(&mut width)
+                        .range(0.0..=20.0)
+                        .speed(0.05)
+                        .fixed_decimals(3)
+                        .suffix(" mm"),
+                );
+                if r.changed() {
+                    border = if width <= 0.0 {
+                        None
+                    } else {
+                        let mut b = border.clone().unwrap_or_else(|| {
+                            tracedraw_core::Stroke::hairline(tracedraw_core::Color::BLACK)
+                        });
+                        b.width = width;
+                        Some(b)
+                    };
+                    changed = true;
+                }
+                if let Some(b) = &mut border {
+                    let mut rgb = b.color.to_rgb8();
+                    if ui.color_edit_button_srgb(&mut rgb).changed() {
+                        b.color = tracedraw_core::Color::rgb8(rgb[0], rgb[1], rgb[2]);
+                        changed = true;
+                    }
+                }
+                if changed {
+                    match selected {
+                        Some((id, mut t)) => {
+                            t.cell_fill = fill;
+                            t.border = border;
+                            app.run(Command::SetShapeKind {
+                                shape: id,
+                                kind: ShapeKind::Table(t),
+                            });
+                        }
+                        None => {
+                            app.table_fill = fill;
+                            app.table_border = border;
+                        }
+                    }
+                }
+                vsep(ui);
                 ui.label(
                     egui::RichText::new(tr("toolbar.drag_to_draw_table"))
                         .color(Tokens::TEXT_DIM)
@@ -1261,6 +1345,103 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                     .color(Tokens::TEXT_DIM)
                     .size(11.0),
                 );
+            }
+            Tool::BlockShadow => {
+                use tracedraw_core::{geometry::Vec2 as CVec2, live::Effect};
+                // The selected object's block shadow, else the defaults.
+                let current = shapes.first().and_then(|s| {
+                    s.effects.iter().find_map(|e| match e {
+                        Effect::BlockShadow { offset, color, gap } => Some((*offset, *color, *gap)),
+                        _ => None,
+                    })
+                });
+                let (mut offset, mut color, mut gap) = current.unwrap_or((
+                    CVec2::new(5.0, -5.0),
+                    app.block_shadow_color,
+                    app.block_shadow_gap,
+                ));
+                let mut changed = false;
+                let mut depth = offset.hypot();
+                let mut dir = offset.y.atan2(offset.x).to_degrees();
+                ui.label(
+                    egui::RichText::new(tr("toolbar.depth"))
+                        .color(Tokens::TEXT_DIM)
+                        .size(11.0),
+                );
+                changed |= ui
+                    .add(
+                        egui::DragValue::new(&mut depth)
+                            .speed(0.1)
+                            .range(0.0..=500.0)
+                            .fixed_decimals(2)
+                            .suffix(" mm"),
+                    )
+                    .changed();
+                ui.label(
+                    egui::RichText::new(tr("toolbar.direction"))
+                        .color(Tokens::TEXT_DIM)
+                        .size(11.0),
+                );
+                changed |= ui
+                    .add(
+                        egui::DragValue::new(&mut dir)
+                            .speed(1.0)
+                            .range(-180.0..=180.0)
+                            .fixed_decimals(1)
+                            .suffix("°"),
+                    )
+                    .changed();
+                if changed {
+                    let a = dir.to_radians();
+                    offset = CVec2::new(depth * a.cos(), depth * a.sin());
+                }
+                let mut rgb = color.to_rgb8();
+                if ui.color_edit_button_srgb(&mut rgb).changed() {
+                    color = tracedraw_core::Color::rgb8(rgb[0], rgb[1], rgb[2]);
+                    changed = true;
+                }
+                ui.label(
+                    egui::RichText::new(tr("toolbar.gap"))
+                        .color(Tokens::TEXT_DIM)
+                        .size(11.0),
+                );
+                changed |= ui
+                    .add(
+                        egui::DragValue::new(&mut gap)
+                            .speed(0.05)
+                            .range(0.0..=50.0)
+                            .fixed_decimals(2)
+                            .suffix(" mm"),
+                    )
+                    .changed();
+                if changed {
+                    app.block_shadow_color = color;
+                    app.block_shadow_gap = gap;
+                    if current.is_some() {
+                        app.push_effect(Effect::BlockShadow { offset, color, gap }, true);
+                    }
+                }
+                vsep(ui);
+                if ui
+                    .add_enabled(
+                        current.is_some(),
+                        egui::Button::new(tr("toolbar.clear_block_shadow")),
+                    )
+                    .clicked()
+                {
+                    app.remove_effects_of_kind(&Effect::BlockShadow {
+                        offset: CVec2::ZERO,
+                        color,
+                        gap,
+                    });
+                }
+                if current.is_none() {
+                    ui.label(
+                        egui::RichText::new(tr("hint.bar_block_shadow"))
+                            .color(Tokens::TEXT_DIM)
+                            .size(11.0),
+                    );
+                }
             }
             Tool::InteractiveFill | Tool::AreaFill | Tool::MeshFill => {
                 ui.label(
