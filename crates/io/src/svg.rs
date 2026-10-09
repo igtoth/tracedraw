@@ -134,6 +134,33 @@ fn write_shape(
         let _ = writeln!(out, "{pad}</g>");
         return;
     }
+    if let ShapeKind::ClipFrame { frame, contents } = &shape.kind {
+        // Frame fill, then the contents clipped to the frame, then its outline.
+        let mut fill_only = (**frame).clone();
+        fill_only.stroke = None;
+        write_shape(&fill_only, symbols, transform, out, defs, next_grad, indent);
+        let clip_id = format!("clip{}", shape.id.raw());
+        let _ = writeln!(
+            defs,
+            "    <clipPath id=\"{clip_id}\"><path d=\"{}\"/></clipPath>",
+            path_data(&(transform * frame.page_path()))
+        );
+        let _ = writeln!(
+            out,
+            "{pad}<g id=\"{}\" clip-path=\"url(#{clip_id})\">",
+            shape.id.raw()
+        );
+        for c in contents {
+            write_shape(c, symbols, transform, out, defs, next_grad, indent + 1);
+        }
+        let _ = writeln!(out, "{pad}</g>");
+        let mut outline = (**frame).clone();
+        outline.fill = Fill::None;
+        if outline.stroke.is_some() {
+            write_shape(&outline, symbols, transform, out, defs, next_grad, indent);
+        }
+        return;
+    }
     let path = transform * shape.local_path();
     let d = path_data(&path);
     let bounds = path.bounding_box();

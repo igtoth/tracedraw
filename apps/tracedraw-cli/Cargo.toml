@@ -13,3 +13,4 @@ tracedraw-render.workspace = true
 tracedraw-text.workspace = true
 env_logger.workspace = true
 log.workspace = true
+flate2 = "1"

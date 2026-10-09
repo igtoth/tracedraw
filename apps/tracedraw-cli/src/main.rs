@@ -9,17 +9,50 @@
 use std::process::ExitCode;
 
 fn usage() -> ExitCode {
-    eprintln!("usage:\n  tracedraw-cli inspect <file.cdr>\n  tracedraw-cli info <file.cdr|file.tdraw>\n  tracedraw-cli icc <profile.icc>\n  tracedraw-cli convert <in.cdr|in.tdraw|in.svg> <out.svg|out.pdf|out.eps|out.png|out.tdraw>");
+    eprintln!("usage:\n  tracedraw-cli inspect <file.cdr>\n  tracedraw-cli info <file.cdr|file.tdraw>\n  tracedraw-cli icc <profile.icc>\n  tracedraw-cli convert <in.cdr|in.tdraw|in.svg|in.pdf|in.ai> <out.svg|out.pdf|out.eps|out.png|out.tdraw>");
     ExitCode::from(2)
 }
 
 fn load(
     path: &str,
 ) -> Result<(tracedraw_core::Document, Option<tracedraw_cdr::ParseReport>), String> {
-    if path.to_ascii_lowercase().ends_with(".cdr") {
+    let lower = path.to_ascii_lowercase();
+    if lower.ends_with(".cdr") {
         tracedraw_cdr::open(path)
             .map(|(d, r)| (d, Some(r)))
             .map_err(|e| e.to_string())
+    } else if lower.ends_with(".pdf") || lower.ends_with(".ai") {
+        let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+        let imported =
+            tracedraw_io::pdf_import::parse(&bytes, &mut tracedraw_core::id::IdSource::default())?;
+        for w in &imported.warnings {
+            eprintln!("warning: {w}");
+        }
+        let title = std::path::Path::new(path)
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
+        Ok((
+            tracedraw_io::pdf_import::to_document(imported, &title),
+            None,
+        ))
+    } else if lower.ends_with(".svg") || lower.ends_with(".svgz") {
+        let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+        let text = if bytes.len() > 2 && bytes[0] == 0x1f && bytes[1] == 0x8b {
+            use std::io::Read;
+            let mut out = String::new();
+            flate2::read::GzDecoder::new(&bytes[..])
+                .read_to_string(&mut out)
+                .map_err(|e| e.to_string())?;
+            out
+        } else {
+            String::from_utf8(bytes).map_err(|e| e.to_string())?
+        };
+        let imported =
+            tracedraw_io::svg_import::parse(&text, &mut tracedraw_core::id::IdSource::default())?;
+        let mut doc = tracedraw_core::Document::new("svg", imported.size);
+        doc.pages[0].layers[0].shapes = imported.shapes;
+        Ok((doc, None))
     } else {
         tracedraw_io::load_native(path)
             .map(|d| (d, None))

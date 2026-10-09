@@ -205,6 +205,34 @@ impl PageWriter<'_> {
             }
             return;
         }
+        if let ShapeKind::ClipFrame { frame, contents } = &shape.kind {
+            let mut fill_only = (**frame).clone();
+            fill_only.stroke = None;
+            self.shape(&fill_only, transform);
+            self.content.push_str("q\n");
+            if shape.opacity < 1.0 {
+                let name = format!("GS{}", self.gstates.len());
+                let id = self.pdf.add_str(format!(
+                    "<< /Type /ExtGState /CA {} /ca {} >>",
+                    f(shape.opacity),
+                    f(shape.opacity)
+                ));
+                self.gstates.push((name.clone(), id));
+                let _ = writeln!(self.content, "/{name} gs");
+            }
+            self.path_ops(&(transform * frame.page_path()));
+            self.content.push_str("W n\n");
+            for c in contents {
+                self.shape(c, transform);
+            }
+            self.content.push_str("Q\n");
+            let mut outline = (**frame).clone();
+            outline.fill = Fill::None;
+            if outline.stroke.is_some() {
+                self.shape(&outline, transform);
+            }
+            return;
+        }
         let path = transform * shape.local_path();
         if path.elements().is_empty() {
             return;
@@ -230,11 +258,22 @@ impl PageWriter<'_> {
             png,
         } = &shape.kind
         {
-            if let Some(rgb) = decode_png_rgb(png) {
+            if let Some((rgb, alpha)) = decode_png_rgb_alpha(png) {
                 let name = format!("Im{}", self.images.len());
                 let data = flate(&rgb);
+                // Transparent pixels go to a soft mask.
+                let smask = alpha.map(|a| {
+                    let adata = flate(&a);
+                    self.pdf.stream(
+                        &format!("/Type /XObject /Subtype /Image /Width {width_px} /Height {height_px} /ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /FlateDecode"),
+                        &adata,
+                    )
+                });
+                let smask_ref = smask
+                    .map(|id| format!(" /SMask {id} 0 R"))
+                    .unwrap_or_default();
                 let id = self.pdf.stream(
-                    &format!("/Type /XObject /Subtype /Image /Width {width_px} /Height {height_px} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode"),
+                    &format!("/Type /XObject /Subtype /Image /Width {width_px} /Height {height_px} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode{smask_ref}"),
                     &data,
                 );
                 self.images.push((name.clone(), id));
@@ -448,13 +487,22 @@ fn rasterise_fill(
 }
 
 fn decode_png_rgb(png: &[u8]) -> Option<Vec<u8>> {
+    decode_png_rgb_alpha(png).map(|(rgb, _)| rgb)
+}
+
+/// RGB samples and, when any pixel is not opaque, the alpha channel.
+fn decode_png_rgb_alpha(png: &[u8]) -> Option<(Vec<u8>, Option<Vec<u8>>)> {
     let pm = tiny_skia::Pixmap::decode_png(png).ok()?;
     let mut rgb = Vec::with_capacity((pm.width() * pm.height() * 3) as usize);
+    let mut alpha = Vec::with_capacity((pm.width() * pm.height()) as usize);
+    let mut any = false;
     for p in pm.pixels() {
         let c = p.demultiply();
         rgb.extend_from_slice(&[c.red(), c.green(), c.blue()]);
+        alpha.push(c.alpha());
+        any |= c.alpha() != 255;
     }
-    Some(rgb)
+    Some((rgb, any.then_some(alpha)))
 }
 
 fn flate(data: &[u8]) -> Vec<u8> {

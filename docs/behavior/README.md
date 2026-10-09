@@ -15,4 +15,5 @@ Pages: `fountain-fill.md`, `contour.md`, `blend.md`, `extrude.md`,
 `bitmap-tracing.md`, `colour-management.md`, `text.md`, `snapping.md`,
 `pick-tool.md`, `shape-tool.md`, `transparency.md`, `drop-shadow.md`,
 `vector-pattern-fill.md`, `symmetry.md`, `connectors-and-anchors.md`,
-`writing-tools.md`, `border-and-grommet.md`, `clip-frame.md`.
+`writing-tools.md`, `border-and-grommet.md`, `clip-frame.md`,
+`pdf-import.md`.

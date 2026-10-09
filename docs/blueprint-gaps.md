@@ -66,10 +66,10 @@ exceptions, shown disabled so the layout stays complete:
 
 ## Formats to add
 
-Import: AI, EPS, PDF, CMX, EMF, WMF, DXF, DWG, PSD, CGM, PLT, DOCX, RTF,
-TXT. Export: CMX, EMF, WMF, DXF, PSD, HTML, PDF/X-1a, X-3, X-4.
-Done: SVG and SVGZ import; SVG, PDF, AI (PDF-compatible), EPS and the
-bitmap formats on export.
+Import: EPS, CMX, EMF, WMF, DXF, DWG, PSD, CGM, PLT, DOCX, RTF, TXT.
+Export: CMX, EMF, WMF, DXF, PSD, HTML, PDF/X-1a, X-3, X-4.
+Done: SVG, SVGZ, PDF and AI (PDF-compatible) import; SVG, PDF, AI
+(PDF-compatible), EPS and the bitmap formats on export.
 
 ## Automation
 

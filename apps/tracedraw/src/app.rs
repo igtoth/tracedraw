@@ -1969,9 +1969,10 @@ impl App {
         let picked = rfd::FileDialog::new()
             .add_filter(
                 crate::i18n::tr("file.all_supported"),
-                &["cdr", "tdraw", "svg", "svgz"],
+                &["cdr", "tdraw", "svg", "svgz", "pdf", "ai"],
             )
             .add_filter("SVG (*.svg, *.svgz)", &["svg", "svgz"])
+            .add_filter("PDF, AI (*.pdf, *.ai)", &["pdf", "ai"])
             .add_filter(crate::i18n::tr("file.cdr_files"), &["cdr"])
             .add_filter("TraceDraw (*.tdraw)", &["tdraw"])
             .pick_file();
@@ -2009,6 +2010,55 @@ impl App {
                     doc.set_ids(ids);
                     (doc, format!("SVG: {n} object(s)"))
                 })
+        } else if ext == "pdf" || ext == "ai" {
+            std::fs::read(&path)
+                .map_err(|e| e.to_string())
+                .and_then(|bytes| {
+                    tracedraw_io::pdf_import::parse(
+                        &bytes,
+                        &mut tracedraw_core::id::IdSource::default(),
+                    )
+                })
+                .map(|imported| {
+                    let title = path
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_else(App::untitled_name);
+                    for w in &imported.warnings {
+                        log::warn!("pdf: {w}");
+                    }
+                    let pages = imported.pages.len();
+                    let n: usize = imported.pages.iter().map(|p| p.shapes.len()).sum();
+                    let title = imported.title.clone().unwrap_or(title);
+                    let first = imported
+                        .pages
+                        .first()
+                        .map(|p| p.size)
+                        .unwrap_or(tracedraw_core::document::paper::A4);
+                    let mut doc2 = App::localized_document(title, first);
+                    let layer_name = doc2.pages[0].layers[0].name.clone();
+                    doc2.pages.clear();
+                    let mut ids = tracedraw_core::id::IdSource::default();
+                    for (i, p) in imported.pages.into_iter().enumerate() {
+                        let pid = ids.page();
+                        let lid = ids.layer();
+                        let mut layer =
+                            tracedraw_core::document::Layer::new(lid, layer_name.clone());
+                        for s in p.shapes {
+                            layer.shapes.push(reid_with(s, &mut ids));
+                        }
+                        doc2.pages.push(tracedraw_core::document::Page {
+                            id: pid,
+                            name: crate::i18n::trf("doc.page_n", &[("n", &(i + 1).to_string())]),
+                            size: p.size,
+                            layers: vec![layer],
+                            guides: Vec::new(),
+                            background: None,
+                        });
+                    }
+                    doc2.set_ids(ids);
+                    (doc2, format!("PDF: {pages} page(s), {n} object(s)"))
+                })
         } else if ext == "cdr" {
             tracedraw_cdr::open(&path)
                 .map(|(doc, report)| {
@@ -2035,7 +2085,7 @@ impl App {
                 self.page = doc.pages[0].id;
                 self.engine.replace(doc);
                 self.selection.clear();
-                self.file = if matches!(ext.as_str(), "cdr" | "svg" | "svgz") {
+                self.file = if matches!(ext.as_str(), "cdr" | "svg" | "svgz" | "pdf" | "ai") {
                     None
                 } else {
                     Some(path.clone())
@@ -2112,11 +2162,13 @@ impl App {
             .add_filter(
                 crate::i18n::tr("file.all_importable"),
                 &[
-                    "cdr", "svg", "svgz", "png", "jpg", "jpeg", "bmp", "gif", "webp", "tif", "tiff",
+                    "cdr", "svg", "svgz", "pdf", "ai", "png", "jpg", "jpeg", "bmp", "gif", "webp",
+                    "tif", "tiff",
                 ],
             )
             .add_filter(crate::i18n::tr("file.cdr_files"), &["cdr"])
             .add_filter("SVG (*.svg, *.svgz)", &["svg", "svgz"])
+            .add_filter("PDF, AI (*.pdf, *.ai)", &["pdf", "ai"])
             .add_filter(
                 crate::i18n::tr("file.images"),
                 &["png", "jpg", "jpeg", "bmp", "gif", "webp", "tif", "tiff"],
@@ -2132,6 +2184,10 @@ impl App {
             .to_ascii_lowercase();
         if ext == "svg" || ext == "svgz" {
             self.import_svg(&path);
+            return;
+        }
+        if ext == "pdf" || ext == "ai" {
+            self.import_pdf(&path);
             return;
         }
         if ext != "cdr" {
@@ -2202,6 +2258,44 @@ impl App {
                 }
                 if let Err(e) = self.engine.run_batch("Import", &cmds) {
                     self.status = e.to_string();
+                }
+                self.select(ids);
+            }
+            Err(e) => self.status = crate::i18n::trf("status.import_failed", &[("e", &e)]),
+        }
+    }
+
+    /// Import the first page of a PDF or AI file into the active layer.
+    pub fn import_pdf(&mut self, path: &std::path::Path) {
+        let Some(layer) = self.active_layer() else {
+            return;
+        };
+        let parsed = std::fs::read(path)
+            .map_err(|e| e.to_string())
+            .and_then(|bytes| {
+                tracedraw_io::pdf_import::parse(
+                    &bytes,
+                    &mut tracedraw_core::id::IdSource::default(),
+                )
+            });
+        match parsed {
+            Ok(imported) => {
+                let mut cmds = Vec::new();
+                let mut ids = Vec::new();
+                let Some(first) = imported.pages.into_iter().next() else {
+                    return;
+                };
+                for s in first.shapes {
+                    let id = self.engine.new_shape_id();
+                    let shape = reid(s, id, &mut self.engine);
+                    ids.push(id);
+                    cmds.push(Command::AddShape { layer, shape });
+                }
+                if let Err(e) = self.engine.run_batch("Import", &cmds) {
+                    self.status = e.to_string();
+                }
+                if !imported.warnings.is_empty() {
+                    log::warn!("pdf import: {}", imported.warnings.join("; "));
                 }
                 self.select(ids);
             }

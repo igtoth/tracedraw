@@ -34,6 +34,14 @@ a validation layer on top (output intent, no transparency for X-1a).
 PostScript output is a Level 3 subset generated from the same path and
 fill primitives.
 
+Reading PDF is the other way round: the object layer (xref, object
+streams, filters, encryption) comes from `lopdf`, a pure-Rust crate,
+because that part is large and well tested there; the content-stream
+interpreter that turns operators into our objects is ours
+(`crates/io/src/pdf_import.rs`), so what we support and how we
+approximate (clips as ClipFrames, shadings as fountains) is under our
+control and documented in `behavior/pdf-import.md`.
+
 ## D5. Colour management: a pure-Rust ICC engine
 
 `core/icc.rs` reads ICC v2 and v4 profiles (matrix/TRC, `mft1`, `mft2`,
