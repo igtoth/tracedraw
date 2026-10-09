@@ -328,6 +328,17 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 }
                 text_properties(app, ui);
             }
+            Tool::Pick | Tool::FreeformPick
+                if shapes
+                    .iter()
+                    .all(|s| matches!(s.kind, ShapeKind::Bitmap { .. })) =>
+            {
+                // Bitmaps selected with the Pick tool: the object fields,
+                // then the bitmap commands of the Bitmaps menu.
+                object_properties(app, ui);
+                vsep(ui);
+                bitmap_properties(app, ui);
+            }
             Tool::Pick | Tool::FreeformPick => object_properties(app, ui),
             Tool::Zoom | Tool::Pan => {
                 ui.label(
@@ -1705,15 +1716,76 @@ fn object_properties(app: &mut App, ui: &mut Ui) {
     if ui.button(tr("toolbar.to_back")).clicked() {
         app.order(3);
     }
-    vsep(ui);
-    if ui
-        .button(tr("menu.object.convert_to_curves"))
-        .on_hover_text("Ctrl+Q")
-        .clicked()
-    {
-        app.convert_to_curves();
+    let all_bitmaps = app
+        .selected_shapes()
+        .iter()
+        .all(|s| matches!(s.kind, ShapeKind::Bitmap { .. }));
+    if !all_bitmaps {
+        vsep(ui);
+        if ui
+            .button(tr("menu.object.convert_to_curves"))
+            .on_hover_text("Ctrl+Q")
+            .clicked()
+        {
+            app.convert_to_curves();
+        }
     }
     let _ = Rect::ZERO;
+}
+
+/// The bitmap part of the Pick tool's property bar: the commands of the
+/// Bitmaps menu that act on the selected bitmap.
+fn bitmap_properties(app: &mut App, ui: &mut Ui) {
+    use crate::ui::dialogs::{Dialog, TraceState};
+    if ui.button(tr("toolbar.edit_bitmap")).clicked() {
+        app.edit_bitmap_externally();
+    }
+    if ui.button(tr("toolbar.crop_bitmap")).clicked() {
+        app.set_tool(Tool::Crop);
+    }
+    ui.menu_button(tr("toolbar.trace_bitmap"), |ui| {
+        if ui.button(tr("menu.bitmaps.quick_trace")).clicked() {
+            app.quick_trace();
+            ui.close();
+        }
+        ui.separator();
+        for (key, preset) in [
+            (
+                "menu.bitmaps.trace_technical",
+                crate::trace::Preset::Technical,
+            ),
+            (
+                "menu.bitmaps.trace_line_drawing",
+                crate::trace::Preset::LineDrawing,
+            ),
+            ("menu.bitmaps.trace_line_art", crate::trace::Preset::LineArt),
+            ("menu.bitmaps.trace_logo", crate::trace::Preset::Logo),
+            (
+                "menu.bitmaps.trace_detailed_logo",
+                crate::trace::Preset::DetailedLogo,
+            ),
+            ("menu.bitmaps.trace_clipart", crate::trace::Preset::Clipart),
+            (
+                "menu.bitmaps.trace_low_quality",
+                crate::trace::Preset::LowQualityImage,
+            ),
+            (
+                "menu.bitmaps.trace_high_quality",
+                crate::trace::Preset::HighQualityImage,
+            ),
+        ] {
+            if ui.button(tr(key)).clicked() {
+                app.dialog = Dialog::Trace(TraceState::new(preset));
+                ui.close();
+            }
+        }
+    });
+    if ui.button(tr("menu.bitmaps.straighten_image")).clicked() {
+        app.dialog = Dialog::StraightenImage { angle: 0.0 };
+    }
+    if ui.button(tr("menu.bitmaps.resample")).clicked() {
+        app.dialog = Dialog::Resample { dpi: 300.0 };
+    }
 }
 
 fn text_properties(app: &mut App, ui: &mut Ui) {

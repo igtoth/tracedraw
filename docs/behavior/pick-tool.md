@@ -18,3 +18,20 @@
 | Esc | deselect |
 
 Selecting inside a group: Ctrl+click.
+
+## Property bar
+
+With nothing selected the bar shows the page fields (size, orientation,
+units, nudge distance). With a selection it shows X, Y (lower left corner),
+W, H, scale, angle, mirror buttons, the outline width, To Front, To Back
+and Convert to Curves. Text selected on its own adds the text fields of the
+Text tool after them. Bitmaps selected on their own replace Convert to
+Curves with the bitmap commands: Edit Bitmap, Crop Bitmap (switches to the
+Crop tool), Trace Bitmap (Quick Trace and the centreline and outline
+presets), Straighten Image and Resample.
+
+## Dialogs
+
+Enter presses OK in every modal dialog (Esc cancels). In the two
+multi-line fields (QR code text and document notes) Enter inserts a line
+break instead.

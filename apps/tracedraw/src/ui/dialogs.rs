@@ -381,6 +381,9 @@ fn window<'a>(_ctx: &Context, title: String) -> egui::Window<'a> {
         .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
 }
 
+/// OK and Cancel buttons. Enter presses OK (unless a multi-line field
+/// has the focus); Esc is handled by the keyboard handler, which closes
+/// any dialog.
 fn ok_cancel(ui: &mut Ui, close: &mut bool) -> bool {
     let mut ok = false;
     ui.add_space(6.0);
@@ -393,7 +396,27 @@ fn ok_cancel(ui: &mut Ui, close: &mut bool) -> bool {
             *close = true;
         }
     });
+    if enter_pressed(ui) {
+        ok = true;
+        *close = true;
+    }
     ok
+}
+
+/// Names of the dialogs' multi-line fields, where Enter inserts a line.
+const MULTILINE_NAMES: [&str; 2] = ["dialog_multiline_qr", "dialog_multiline_notes"];
+
+fn multiline_id(i: usize) -> egui::Id {
+    egui::Id::new(MULTILINE_NAMES[i.min(MULTILINE_NAMES.len() - 1)])
+}
+
+/// Enter was pressed this frame and no multi-line text field holds it.
+pub(crate) fn enter_pressed(ui: &Ui) -> bool {
+    ui.input(|i| i.key_pressed(egui::Key::Enter) && !i.modifiers.shift)
+        && !ui.memory(|m| {
+            m.focused()
+                .is_some_and(|id| MULTILINE_NAMES.iter().any(|n| egui::Id::new(n) == id))
+        })
 }
 
 fn unit_value(ui: &mut Ui, label: &str, mm: &mut f64, units: Units) -> bool {
@@ -773,7 +796,7 @@ pub fn show(app: &mut App, ctx: &Context) {
         Dialog::QrCode(st) => {
             window(ctx, tr("dialog.qr_code")).show(ctx, |ui| {
                 ui.label(tr("dialog.qr_text"));
-                ui.text_edit_multiline(&mut st.text);
+                ui.add(egui::TextEdit::multiline(&mut st.text).id(multiline_id(0)));
                 if st.size_mm <= 0.0 {
                     st.size_mm = 30.0;
                 }
@@ -2073,6 +2096,7 @@ fn options_dialog(app: &mut App, ctx: &Context, close: &mut bool) {
                     if ui
                         .add_sized([100.0, 26.0], egui::Button::new(tr("dialog.ok")))
                         .clicked()
+                        || enter_pressed(ui)
                     {
                         app.save_settings();
                         *close = true;
@@ -2106,7 +2130,9 @@ fn document_properties(app: &mut App, ctx: &Context, close: &mut bool) {
                 ui.end_row();
             }
             ui.label(tr("dialog.notes"));
-            changed |= ui.text_edit_multiline(&mut md.notes).lost_focus();
+            changed |= ui
+                .add(egui::TextEdit::multiline(&mut md.notes).id(multiline_id(1)))
+                .lost_focus();
             ui.end_row();
             ui.label(tr("dialog.rating"));
             ui.horizontal(|ui| {
@@ -2669,6 +2695,7 @@ fn encode_dialog(app: &mut App, ctx: &Context, st: &mut EncodeState, close: &mut
             if ui
                 .add_enabled(can, egui::Button::new(tr("dialog.ok")))
                 .clicked()
+                || (can && enter_pressed(ui))
             {
                 apply = true;
                 *close = true;
@@ -3208,7 +3235,7 @@ fn color_management_dialog(app: &mut App, ctx: &Context, close: &mut bool) {
         );
         ui.checkbox(&mut app.proof_colors, tr("menu.view.proof_colors"));
         ui.horizontal(|ui| {
-            if ui.button(tr("dialog.ok")).clicked() {
+            if ui.button(tr("dialog.ok")).clicked() || enter_pressed(ui) {
                 app.apply_color_settings();
                 app.save_settings();
                 *close = true;
