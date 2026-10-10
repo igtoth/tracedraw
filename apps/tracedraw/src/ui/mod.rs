@@ -21,6 +21,7 @@ pub mod layout_options;
 pub mod menus;
 pub mod options;
 pub mod palette;
+pub mod vector_mosaic_docker;
 pub mod preview;
 pub mod propbar;
 pub mod rulers;

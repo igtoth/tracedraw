@@ -44,6 +44,7 @@ mod node_edit;
 mod ops;
 mod ops2;
 mod palette;
+mod vector_mosaic;
 mod autocorrect;
 mod raster;
 mod scripting;

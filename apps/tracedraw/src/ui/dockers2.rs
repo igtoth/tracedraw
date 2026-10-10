@@ -56,6 +56,7 @@ pub fn show(app: &mut App, ui: &mut Ui, tab: DockerTab) {
         DockerTab::Corners => corners(app, ui),
         DockerTab::JoinCurves => join_curves(app, ui),
         DockerTab::Coordinates => crate::ui::coords_docker::coordinates(app, ui),
+        DockerTab::VectorMosaic => crate::ui::vector_mosaic_docker::vector_mosaic(app, ui),
         _ => {}
     }
 }

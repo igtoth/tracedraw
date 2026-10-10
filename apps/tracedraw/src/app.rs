@@ -778,6 +778,8 @@ pub struct App {
     /// The Coordinates docker's fields, the "Set ... interactively" pick
     /// it waits for and where that pick's drag began.
     pub coords: crate::coords::CoordsState,
+    /// The VectorMosaic docker's settings.
+    pub vector_mosaic: crate::vector_mosaic::VectorMosaicSettings,
     pub coord_pick: Option<crate::coords::CoordPick>,
     pub coord_drag: Option<Point>,
     /// Shape tool: the Curve smoothness slider and the curves it started from.
@@ -892,10 +894,11 @@ pub enum DockerTab {
     Corners,
     JoinCurves,
     Coordinates,
+    VectorMosaic,
 }
 
 impl DockerTab {
-    pub const ALL: [DockerTab; 33] = [
+    pub const ALL: [DockerTab; 34] = [
         DockerTab::Properties,
         DockerTab::Objects,
         DockerTab::Hints,
@@ -929,6 +932,7 @@ impl DockerTab {
         DockerTab::Corners,
         DockerTab::JoinCurves,
         DockerTab::Coordinates,
+        DockerTab::VectorMosaic,
     ];
 
     /// i18n key of the docker's title.
@@ -967,6 +971,7 @@ impl DockerTab {
             DockerTab::Corners => "docker.corners_docker",
             DockerTab::JoinCurves => "docker.join_curves",
             DockerTab::Coordinates => "docker.coordinates",
+            DockerTab::VectorMosaic => "docker.vector_mosaic",
         }
     }
 
@@ -1271,6 +1276,7 @@ impl App {
             node_lasso: false,
             node_run: None,
             coords: Default::default(),
+            vector_mosaic: Default::default(),
             coord_pick: None,
             coord_drag: None,
             curve_smoothness: 0.0,

@@ -1470,6 +1470,11 @@ fn effects_menu(app: &mut App, ui: &mut Ui) {
         app.show_dockers = true;
         app.docker_tab = DockerTab::Lens;
     }
+    sep(ui);
+    if item(ui, "menu.effects.vector_mosaic", "", true) {
+        app.show_dockers = true;
+        app.docker_tab = DockerTab::VectorMosaic;
+    }
 }
 
 fn bitmaps_menu(app: &mut App, ui: &mut Ui) {
