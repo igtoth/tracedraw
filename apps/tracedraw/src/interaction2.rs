@@ -1013,6 +1013,12 @@ impl App {
                 if !self.selection.contains(&id) {
                     self.select(vec![id]);
                 }
+            } else if let Some(i) = self.guide_at(p) {
+                // A guideline under the pointer gets its own menu.
+                if !self.selected_guides.contains(&i) {
+                    self.select(Vec::new());
+                    self.selected_guides = vec![i];
+                }
             }
         }
         self.context_menu = Some((screen, p));

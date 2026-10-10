@@ -1,10 +1,10 @@
-//! Snapping (grid, guidelines, page, objects) and guideline handling.
+//! Snapping to the document grid, the baseline grid, pixels, guidelines,
+//! the page and objects.
 
-use crate::app::{App, Drag};
+use crate::app::App;
 use tracedraw_core::{
-    document::Guide,
+    document::GuideLine,
     geometry::{Point, Rect, Vec2},
-    Command,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -19,7 +19,6 @@ pub struct SnapSettings {
     pub dynamic_guides: bool,
     /// Alt+Q: all snapping off.
     pub off: bool,
-    pub grid_mm: f64,
 }
 
 impl Default for SnapSettings {
@@ -34,12 +33,9 @@ impl Default for SnapSettings {
             alignment_guides: true,
             dynamic_guides: false,
             off: false,
-            grid_mm: GRID_MM,
         }
     }
 }
-
-pub const GRID_MM: f64 = 10.0;
 
 impl App {
     fn snap_tolerance(&self) -> f64 {
@@ -47,7 +43,11 @@ impl App {
     }
 
     /// Candidate x and y values to snap to.
-    fn snap_candidates(&self, exclude: &[tracedraw_core::ShapeId]) -> (Vec<f64>, Vec<f64>) {
+    fn snap_candidates(
+        &self,
+        exclude: &[tracedraw_core::ShapeId],
+        guides: bool,
+    ) -> (Vec<f64>, Vec<f64>) {
         let mut xs = Vec::new();
         let mut ys = Vec::new();
         let s = self.snap;
@@ -57,20 +57,15 @@ impl App {
             ys.extend([page.y0, page.y1, page.center().y]);
         }
         if s.baseline_grid {
-            let step = self.settings.baseline_grid_mm.max(0.1);
-            let mut y = page.y1;
-            while y > page.y0 {
-                ys.push(y);
-                y -= step;
-            }
+            ys.extend(self.baseline_ys());
         }
-        if s.guides {
+        if s.guides && guides {
             if let Ok(p) = self.doc().page(self.page) {
                 for g in &p.guides {
-                    match g {
-                        Guide::Horizontal { y } => ys.push(*y),
-                        Guide::Vertical { x } => xs.push(*x),
-                        Guide::Angled { .. } => {}
+                    match g.line {
+                        GuideLine::Horizontal { y } => ys.push(y),
+                        GuideLine::Vertical { x } => xs.push(x),
+                        GuideLine::Angled { .. } => {}
                     }
                 }
             }
@@ -95,7 +90,22 @@ impl App {
         (xs, ys)
     }
 
-    fn snap_axis(&self, v: f64, candidates: &[f64]) -> Option<f64> {
+    /// Baselines of the baseline grid, from the first one under the page
+    /// top downwards (page coordinates, Y up).
+    pub fn baseline_ys(&self) -> Vec<f64> {
+        let g = self.doc().metadata.grid;
+        let page = self.page_rect();
+        let step = g.baseline_spacing.max(0.1);
+        let mut out = Vec::new();
+        let mut y = page.y1 - g.baseline_start.max(0.0);
+        while y >= page.y0 - 1e-9 && out.len() < 100_000 {
+            out.push(y);
+            y -= step;
+        }
+        out
+    }
+
+    fn snap_axis(&self, v: f64, candidates: &[f64], horizontal: bool) -> Option<f64> {
         let tol = self.snap_tolerance();
         let mut best: Option<(f64, f64)> = None;
         for c in candidates {
@@ -105,14 +115,23 @@ impl App {
             }
         }
         if best.is_none() && self.snap.grid {
-            let step = self.snap.grid_mm.max(0.01);
-            let g = (v / step).round() * step;
+            // Grid lines pass through the ruler origin.
+            let grid = self.doc().metadata.grid;
+            let rulers = self.doc().metadata.rulers;
+            let (step, origin) = if horizontal {
+                (grid.spacing_x, rulers.origin_x)
+            } else {
+                (grid.spacing_y, rulers.origin_y)
+            };
+            let step = step.max(0.001);
+            let g = origin + ((v - origin) / step).round() * step;
             if (g - v).abs() <= tol {
                 return Some(g);
             }
         }
         if best.is_none() && self.snap.pixels {
-            let step = 25.4 / 96.0;
+            // Whole pixels of the document resolution from the page corner.
+            let step = 25.4 / self.document_dpi().max(1.0);
             let g = (v / step).round() * step;
             if (g - v).abs() <= tol {
                 return Some(g);
@@ -121,15 +140,43 @@ impl App {
         best.map(|b| b.0)
     }
 
+    /// Snap an x value (a vertical guideline being dragged) to everything
+    /// but guidelines.
+    pub fn snap_x_without_guides(&self, x: f64) -> f64 {
+        if !self.snap_enabled() {
+            return x;
+        }
+        let (xs, _) = self.snap_candidates(&[], false);
+        self.snap_axis(x, &xs, true).unwrap_or(x)
+    }
+
+    /// Snap a y value (a horizontal guideline being dragged) to everything
+    /// but guidelines.
+    pub fn snap_y_without_guides(&self, y: f64) -> f64 {
+        if !self.snap_enabled() {
+            return y;
+        }
+        let (_, ys) = self.snap_candidates(&[], false);
+        self.snap_axis(y, &ys, false).unwrap_or(y)
+    }
+
+    /// Snap a point to everything but guidelines.
+    pub fn snap_point_without_guides(&self, p: Point) -> Point {
+        Point::new(
+            self.snap_x_without_guides(p.x),
+            self.snap_y_without_guides(p.y),
+        )
+    }
+
     /// Snap a pointer position (drawing tools, text placement).
     pub fn snap_point(&self, p: Point) -> Point {
         if !self.snap_enabled() {
             return p;
         }
-        let (xs, ys) = self.snap_candidates(&[]);
+        let (xs, ys) = self.snap_candidates(&[], true);
         let axis = Point::new(
-            self.snap_axis(p.x, &xs).unwrap_or(p.x),
-            self.snap_axis(p.y, &ys).unwrap_or(p.y),
+            self.snap_axis(p.x, &xs, true).unwrap_or(p.x),
+            self.snap_axis(p.y, &ys, false).unwrap_or(p.y),
         );
         if axis != p || !self.snap.guides {
             return axis;
@@ -139,12 +186,10 @@ impl App {
         if let Ok(page) = self.doc().page(self.page) {
             let mut best: Option<(f64, Point)> = None;
             for g in &page.guides {
-                if let Guide::Angled { x, y, angle } = g {
+                if let GuideLine::Angled { .. } = g.line {
                     let d = g.distance(p).abs();
                     if d <= tol && best.map(|b| d < b.0).unwrap_or(true) {
-                        let a = angle.to_radians();
-                        let dir = Vec2::new(a.cos(), a.sin());
-                        let o = Point::new(*x, *y);
+                        let (o, dir) = g.line.point_and_direction();
                         let t = (p - o).dot(dir);
                         best = Some((d, o + dir * t));
                     }
@@ -163,11 +208,11 @@ impl App {
         if !self.snap_enabled() {
             return d;
         }
-        let (xs, ys) = self.snap_candidates(&self.selection);
+        let (xs, ys) = self.snap_candidates(&self.selection, true);
         let moved = bounds + d;
         let mut best_dx: Option<f64> = None;
         for edge in [moved.x0, moved.x1, moved.center().x] {
-            if let Some(t) = self.snap_axis(edge, &xs) {
+            if let Some(t) = self.snap_axis(edge, &xs, true) {
                 let dx = t - edge;
                 if best_dx.map(|b| dx.abs() < b.abs()).unwrap_or(true) {
                     best_dx = Some(dx);
@@ -176,7 +221,7 @@ impl App {
         }
         let mut best_dy: Option<f64> = None;
         for edge in [moved.y0, moved.y1, moved.center().y] {
-            if let Some(t) = self.snap_axis(edge, &ys) {
+            if let Some(t) = self.snap_axis(edge, &ys, false) {
                 let dy = t - edge;
                 if best_dy.map(|b| dy.abs() < b.abs()).unwrap_or(true) {
                     best_dy = Some(dy);
@@ -193,48 +238,5 @@ impl App {
                 || self.snap.objects
                 || self.snap.page
                 || self.snap.pixels)
-    }
-
-    // ----- guidelines ---------------------------------------------------------
-
-    pub fn guide_at(&self, p: Point) -> Option<usize> {
-        let tol = 4.0 / self.view.zoom as f64;
-        let page = self.doc().page(self.page).ok()?;
-        page.guides.iter().position(|g| g.distance(p).abs() <= tol)
-    }
-
-    pub fn add_guide(&mut self, guide: Guide) {
-        let page = self.page;
-        self.run(Command::AddGuide { page, guide });
-    }
-
-    pub fn move_guide(&mut self, index: usize, guide: Guide) {
-        let page = self.page;
-        if self.engine.undo_label() == Some("Move Guideline") {
-            let _ = self.engine.undo();
-        }
-        let _ = self
-            .engine
-            .run_with_label(&Command::MoveGuide { page, index, guide }, "Move Guideline");
-    }
-
-    pub fn delete_guide(&mut self, index: usize) {
-        let page = self.page;
-        self.run(Command::DeleteGuide { page, index });
-        self.selected_guide = None;
-    }
-
-    pub fn finish_guide_drag(&mut self) {
-        if let Drag::NewGuide { horizontal, pos } = self.drag.clone() {
-            if self.canvas_rect.contains(self.view.to_screen(pos)) {
-                let guide = if horizontal {
-                    Guide::Horizontal { y: pos.y }
-                } else {
-                    Guide::Vertical { x: pos.x }
-                };
-                self.add_guide(guide);
-            }
-            self.drag = Drag::None;
-        }
     }
 }

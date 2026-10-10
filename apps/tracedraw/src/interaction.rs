@@ -341,12 +341,13 @@ impl App {
                 }
                 return;
             }
-            if self.hit_test(p).is_none() {
-                if let Some(gi) = self.guide_at(p) {
-                    self.selected_guide = Some(gi);
-                    self.drag = Drag::MoveGuide { index: gi };
-                    return;
-                }
+            // Guidelines lie above the layers but objects win a press, as
+            // they are what is usually edited; the rotation handles of a
+            // guideline in rotate mode win over objects.
+            if (self.guide_rotate.is_some() || self.hit_test(p).is_none())
+                && self.press_guide(p, mods.shift)
+            {
+                return;
             }
             match self.hit_test(p) {
                 Some(id) => {
@@ -367,7 +368,7 @@ impl App {
                     if !mods.shift {
                         self.select(Vec::new());
                     }
-                    self.selected_guide = None;
+                    self.deselect_guides();
                     self.drag = Drag::Marquee {
                         start: p,
                         current: p,
@@ -376,17 +377,8 @@ impl App {
             }
         }
         if response.dragged_by(PointerButton::Primary) {
-            if let Drag::MoveGuide { index } = self.drag {
-                let guide = match self
-                    .doc()
-                    .page(self.page)
-                    .ok()
-                    .and_then(|pg| pg.guides.get(index).copied())
-                {
-                    Some(g) => g.through(p),
-                    None => return,
-                };
-                self.move_guide(index, guide);
+            if matches!(self.drag, Drag::MoveGuide { .. } | Drag::RotateGuide { .. }) {
+                self.drag_guide_to(p);
                 return;
             }
             let snapped_move = match &self.drag {
@@ -420,14 +412,12 @@ impl App {
             if self.handle_at(screen).is_some() {
                 return;
             }
-            if self.hit_test(p).is_none() {
-                if let Some(gi) = self.guide_at(p) {
-                    self.selected_guide = Some(gi);
-                    self.select(Vec::new());
-                    return;
-                }
+            if (self.guide_rotate.is_some() || self.hit_test(p).is_none())
+                && self.click_guide(p, mods.shift)
+            {
+                return;
             }
-            self.selected_guide = None;
+            self.deselect_guides();
             match self.hit_test(p) {
                 Some(id) if mods.shift => {
                     if let Some(i) = self.selection.iter().position(|s| *s == id) {
@@ -928,10 +918,19 @@ impl App {
             }
             Drag::NodeMarquee { start, current } => self.finish_node_marquee(start, current),
             Drag::NewGuide { .. } => self.finish_guide_drag(),
+            d @ (Drag::MoveGuide { .. } | Drag::RotateGuide { .. }) => {
+                // Released outside the window (no pointer): dropped off.
+                let at = self
+                    .pointer_page
+                    .map(|p| self.view.to_screen(p))
+                    .unwrap_or(egui::pos2(f32::NAN, f32::NAN));
+                self.drag = d;
+                self.finish_guide_move(at);
+            }
             Drag::FountainHandle { .. }
             | Drag::ContourDrag { .. }
             | Drag::Shadow { .. }
-            | Drag::MoveGuide { .. }
+            | Drag::RulerOrigin { .. }
             | Drag::Node { .. }
             | Drag::Handle { .. }
             | Drag::None => {}
@@ -1247,8 +1246,10 @@ impl App {
                 self.delete_selected_nodes();
             } else if self.tool == Tool::AnchorEditing && self.delete_selected_anchor() {
                 // The anchor went, the object stays.
-            } else if let Some(gi) = self.selected_guide {
-                self.delete_guide(gi);
+            } else if !self.selected_guides.is_empty() {
+                if !self.delete_selected_guides() {
+                    self.status = crate::i18n::tr("status.guideline_locked");
+                }
             } else {
                 self.delete_selection();
             }
@@ -1281,6 +1282,7 @@ impl App {
             self.dimension_points.clear();
             self.eyedropper_reset();
             self.select(Vec::new());
+            self.deselect_guides();
             if self.tool != Tool::Pick {
                 self.set_tool(Tool::Pick);
             }
@@ -1336,15 +1338,16 @@ impl App {
                 }
             }
         }
-        // Arrow nudge: plain, Shift x10 (super nudge), Ctrl x0.1 (micro).
+        // Arrow nudge: plain, Shift super nudge, Ctrl micro nudge
+        // (Document Options > Rulers).
         let mut d = Vec2::ZERO;
         for (key, mods) in &presses {
             let step = if mods.matches_exact(Modifiers::NONE) {
                 self.nudge_mm
             } else if mods.matches_exact(Modifiers::SHIFT) {
-                self.nudge_mm * 10.0
+                self.settings.super_nudge_mm.max(1e-6)
             } else if mods.matches_exact(Modifiers::COMMAND) {
-                self.nudge_mm * 0.1
+                self.settings.micro_nudge_mm.max(1e-6)
             } else {
                 continue;
             };

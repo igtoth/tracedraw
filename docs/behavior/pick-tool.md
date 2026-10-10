@@ -12,7 +12,7 @@
 | Side handle | stretch one axis |
 | Rotate handle | rotate about the centre marker; Ctrl constrains to 15 degrees |
 | Skew handle | skew along the edge |
-| Arrows | nudge by the nudge distance (2.54 mm default); Shift x10 (super nudge), Ctrl x0.1 (micro nudge) |
+| Arrows | nudge by the nudge distance (2.54 mm default); Shift by the super nudge distance (5.08 mm), Ctrl by the micro nudge distance (0.254 mm); all three in Document Options > Rulers |
 | Tab / Shift+Tab | cycle selection in stacking order |
 | Double-click | Shape tool on a curve; on text, the Text tool editing that text with the caret at the end |
 | Esc | deselect |

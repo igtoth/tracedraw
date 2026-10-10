@@ -73,7 +73,8 @@ impl App {
         self.three_point_base = None;
         self.dimension_points.clear();
         self.node_selection.clear();
-        self.selected_guide = None;
+        self.selected_guides.clear();
+        self.guide_rotate = None;
         self.rotate_mode = false;
         self.pending_clip_frame = false;
         self.pending_order = None;

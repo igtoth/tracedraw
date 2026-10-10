@@ -1254,17 +1254,15 @@ fn page_size_page(app: &mut App, ui: &mut Ui) {
             app.run(Command::ResizePage { page, size: sheet });
             for c in 0..cols {
                 let x0 = left + c as f64 * px;
-                app.add_guide(tracedraw_core::document::Guide::Vertical { x: x0 });
-                app.add_guide(tracedraw_core::document::Guide::Vertical {
-                    x: x0 + label.width,
-                });
+                app.add_guide(tracedraw_core::document::Guide::vertical(x0));
+                app.add_guide(tracedraw_core::document::Guide::vertical(x0 + label.width));
             }
             for r in 0..rows {
                 let y1 = sheet.height - (top + r as f64 * py);
-                app.add_guide(tracedraw_core::document::Guide::Horizontal { y: y1 });
-                app.add_guide(tracedraw_core::document::Guide::Horizontal {
-                    y: y1 - label.height,
-                });
+                app.add_guide(tracedraw_core::document::Guide::horizontal(y1));
+                app.add_guide(tracedraw_core::document::Guide::horizontal(
+                    y1 - label.height,
+                ));
             }
             app.fit_pending = true;
         }
@@ -1851,83 +1849,13 @@ fn options_dialog(app: &mut App, ctx: &Context, close: &mut bool) {
                                             }
                                         }
                                         OptionsPage::Guidelines => {
-                                            ui.strong(tr("options.guidelines"));
-                                            crate::ui::dockers2::guidelines_editor(app, ui);
+                                            crate::ui::layout_options::guidelines_page(app, ui)
                                         }
                                         OptionsPage::Grid => {
-                                            ui.strong(tr("options.grid"));
-                                            ui.checkbox(
-                                                &mut app.show_grid,
-                                                tr("options.show_grid"),
-                                            );
-                                            ui.checkbox(
-                                                &mut app.snap.grid,
-                                                tr("options.snap_to_grid"),
-                                            );
-                                            let u = app.units;
-                                            let mut g = u.from_mm(app.snap.grid_mm);
-                                            ui.horizontal(|ui| {
-                                                ui.label(tr("options.grid_spacing"));
-                                                if ui
-                                                    .add(
-                                                        egui::DragValue::new(&mut g)
-                                                            .speed(0.5)
-                                                            .suffix(format!(" {}", u.short())),
-                                                    )
-                                                    .changed()
-                                                    && g > 0.0
-                                                {
-                                                    app.snap.grid_mm = u.to_mm(g);
-                                                }
-                                            });
-                                            ui.checkbox(
-                                                &mut app.show_pixel_grid,
-                                                tr("menu.view.pixel_grid"),
-                                            );
-                                            ui.checkbox(
-                                                &mut app.show_baseline_grid,
-                                                tr("menu.view.baseline_grid"),
-                                            );
-                                            ui.horizontal(|ui| {
-                                                ui.label(tr("options.baseline_spacing"));
-                                                let mut b =
-                                                    u.from_mm(app.settings.baseline_grid_mm);
-                                                if ui
-                                                    .add(
-                                                        egui::DragValue::new(&mut b)
-                                                            .speed(0.1)
-                                                            .suffix(format!(" {}", u.short())),
-                                                    )
-                                                    .changed()
-                                                    && b > 0.0
-                                                {
-                                                    app.settings.baseline_grid_mm = u.to_mm(b);
-                                                }
-                                            });
+                                            crate::ui::layout_options::grid_page(app, ui)
                                         }
                                         OptionsPage::Rulers => {
-                                            ui.strong(tr("options.rulers"));
-                                            ui.checkbox(
-                                                &mut app.show_rulers,
-                                                tr("options.show_rulers"),
-                                            );
-                                            ui.horizontal(|ui| {
-                                                ui.label(tr("options.units"));
-                                                for u in Units::ALL {
-                                                    if ui
-                                                        .selectable_label(app.units == u, u.label())
-                                                        .clicked()
-                                                    {
-                                                        app.units = u;
-                                                    }
-                                                }
-                                            });
-                                            ui.label(
-                                                egui::RichText::new(tr(
-                                                    "options.rulers_origin_hint",
-                                                ))
-                                                .color(Tokens::TEXT_DIM),
-                                            );
+                                            crate::ui::layout_options::rulers_page(app, ui)
                                         }
                                         OptionsPage::Save => {
                                             ui.strong(tr("options.save"));

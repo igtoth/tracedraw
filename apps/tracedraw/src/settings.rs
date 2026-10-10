@@ -15,6 +15,12 @@ pub struct Settings {
     pub show_welcome_on_start: bool,
     pub units: String,
     pub nudge_mm: f64,
+    /// Shift+Arrow distance (super nudge), mm.
+    #[serde(default = "default_super_nudge")]
+    pub super_nudge_mm: f64,
+    /// Ctrl+Arrow distance (micro nudge), mm.
+    #[serde(default = "default_micro_nudge")]
+    pub micro_nudge_mm: f64,
     pub duplicate_offset_mm: [f64; 2],
     pub default_dpi: f64,
     pub snap: SnapPrefs,
@@ -34,9 +40,10 @@ pub struct Settings {
     /// Arrowheads created with Object > Create > Arrowhead.
     #[serde(default)]
     pub custom_arrowheads: Vec<tracedraw_core::Arrowhead>,
-    /// Baseline grid spacing in mm (the target design's default is 14 pt).
-    #[serde(default = "default_baseline_mm")]
-    pub baseline_grid_mm: f64,
+    /// Grid, ruler and guideline settings new drawings start with
+    /// (Document Options > Save as Default).
+    #[serde(default)]
+    pub document_defaults: DocumentDefaults,
     /// Text > Writing Tools > Autocorrect options.
     #[serde(default)]
     pub autocorrect: crate::autocorrect::AutocorrectPrefs,
@@ -70,8 +77,37 @@ fn default_true() -> bool {
     true
 }
 
-fn default_baseline_mm() -> f64 {
-    14.0 * 25.4 / 72.0
+fn default_super_nudge() -> f64 {
+    0.2 * 25.4
+}
+
+fn default_micro_nudge() -> f64 {
+    0.01 * 25.4
+}
+
+/// Document settings saved as the default for new drawings.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct DocumentDefaults {
+    pub grid: tracedraw_core::document::GridSettings,
+    pub rulers: tracedraw_core::document::RulerSettings,
+    pub guides: tracedraw_core::document::GuideSettings,
+}
+
+impl DocumentDefaults {
+    pub fn of(doc: &tracedraw_core::Document) -> Self {
+        DocumentDefaults {
+            grid: doc.metadata.grid,
+            rulers: doc.metadata.rulers,
+            guides: doc.metadata.guides,
+        }
+    }
+
+    pub fn apply(&self, doc: &mut tracedraw_core::Document) {
+        doc.metadata.grid = self.grid;
+        doc.metadata.rulers = self.rulers;
+        doc.metadata.guides = self.guides;
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -134,6 +170,8 @@ impl Default for Settings {
             show_welcome_on_start: true,
             units: "mm".into(),
             nudge_mm: 2.54,
+            super_nudge_mm: default_super_nudge(),
+            micro_nudge_mm: default_micro_nudge(),
             duplicate_offset_mm: [6.35, 6.35],
             default_dpi: 300.0,
             snap: SnapPrefs::default(),
@@ -144,7 +182,7 @@ impl Default for Settings {
             wheel_zooms: true,
             toolbox: Vec::new(),
             custom_arrowheads: Vec::new(),
-            baseline_grid_mm: default_baseline_mm(),
+            document_defaults: DocumentDefaults::default(),
             autocorrect: crate::autocorrect::AutocorrectPrefs::default(),
             thesaurus_file: None,
             show_new_document_dialog: true,

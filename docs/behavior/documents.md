@@ -3,14 +3,19 @@
 Several drawings can be open at once, one tab each in the strip above the
 rulers:
 
-- The Welcome Screen tab comes first (a house and its title). With no
-  drawing open it is the only tab, and the menu bar shows only File,
-  Tools, Window and Help; File commands that need a drawing are disabled.
-- Each drawing's tab shows its file name, or its document name when it
-  has never been saved, followed by `*` while it has unsaved changes. The
-  active tab is highlighted. A close button shows on the active tab and
-  on the hovered one; a middle click also closes.
-- The New button after the last tab runs File > New.
+- The strip is 26 px high over a 1 px `#00ADFE` line that runs the width
+  of the window. Tabs are `#D8D8D8` with 1 px gaps of the strip colour
+  `#EAEAEA`; the active tab is `#CEE3FF`; labels are 13 px black.
+- The Welcome Screen tab comes first (a filled dark house and its title).
+  With no drawing open it is the only tab, and the menu bar shows only
+  File, Tools, Window and Help; File commands that need a drawing are
+  disabled.
+- Each drawing's tab (at least 116 px wide) shows its file name, or its
+  document name when it has never been saved, followed by `*` while it has
+  unsaved changes. A close button shows on the hovered tab; a middle click
+  also closes.
+- The New tab after the last one (a grey plus on a 26 px square) runs
+  File > New.
 
 Each drawing keeps its own pages, objects, undo history, selection, view
 (zoom and scroll), file, page number settings and drawing units.

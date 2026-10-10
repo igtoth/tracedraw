@@ -150,24 +150,10 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
     }
 
     if app.show_grid {
-        draw_grid(painter, rect, view);
+        draw_grid(app, painter, rect);
     }
     if app.show_baseline_grid {
-        // Horizontal lines from the page top downwards, inside the page only.
-        let step = app.settings.baseline_grid_mm.max(0.1);
-        let page = app.page_rect();
-        let mut y = page.y1 - step;
-        while y > page.y0 {
-            let sy = view.to_screen(Point::new(0.0, y)).y;
-            if sy >= rect.top() && sy <= rect.bottom() {
-                painter.hline(
-                    paper.x_range(),
-                    sy,
-                    EStroke::new(0.5, Color32::from_rgb(170, 200, 230)),
-                );
-            }
-            y -= step;
-        }
+        draw_baseline_grid(app, painter, rect, paper);
     }
 
     // Objects, rasterized with tiny-skia into a texture; the live drag preview
@@ -197,6 +183,8 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
             Color32::WHITE,
         );
     }
+
+    draw_pixel_grid(app, painter, rect);
 
     // Selection.
     draw_selection(app, painter, preview);
@@ -774,136 +762,156 @@ fn draw_rotate_handle(painter: &Painter, p: Pos2, h: Handle, r: ERect) {
     }
 }
 
-fn draw_grid(painter: &Painter, rect: ERect, view: &View) {
-    // 10 mm grid, lighter 5 mm subdivision when zoomed in.
-    let step = if view.zoom > 6.0 { 5.0 } else { 10.0 };
+/// Document grid line colour (lines) and dot colour (dots).
+const GRID_LINE: Color32 = Color32::from_gray(0xDC);
+const GRID_DOT: Color32 = Color32::from_gray(0x8C);
+
+/// How many grid spacings apart drawn lines are, so they stay at least
+/// `min_px` screen pixels apart: 1, 2, 5, 10, 20, 50... spacings.
+pub fn grid_thinning(spacing_px: f64, min_px: f64) -> f64 {
+    if !(spacing_px.is_finite() && spacing_px > 0.0) {
+        return f64::INFINITY;
+    }
+    for k in 0..12 {
+        for m in [1.0, 2.0, 5.0] {
+            let f = m * 10f64.powi(k);
+            if spacing_px * f >= min_px {
+                return f;
+            }
+        }
+    }
+    f64::INFINITY
+}
+
+/// Grid positions (mm) along one axis between `a` and `b`: multiples of
+/// `step` counted from `origin`.
+pub fn grid_positions(a: f64, b: f64, origin: f64, step: f64) -> Vec<f64> {
+    let (a, b) = (a.min(b), a.max(b));
+    if !(step.is_finite() && step > 0.0) {
+        return Vec::new();
+    }
+    let first = ((a - origin) / step).floor() as i64;
+    let last = ((b - origin) / step).ceil() as i64;
+    if last - first > 5000 {
+        return Vec::new();
+    }
+    (first..=last).map(|i| origin + i as f64 * step).collect()
+}
+
+/// The document grid over the whole drawing window, as lines or dots,
+/// passing through the ruler origin. Lines are thinned out when the zoom
+/// would crowd them.
+fn draw_grid(app: &App, painter: &Painter, rect: ERect) {
+    let view = &app.view;
+    let meta = &app.doc().metadata;
+    let (grid, rulers) = (meta.grid, meta.rulers);
+    let zoom = view.zoom as f64;
+    let dots = grid.display == tracedraw_core::document::GridDisplay::Dots;
+    let min_px = if dots { 8.0 } else { 6.0 };
+    let sx = grid.spacing_x.max(1e-6) * grid_thinning(grid.spacing_x * zoom, min_px);
+    let sy = grid.spacing_y.max(1e-6) * grid_thinning(grid.spacing_y * zoom, min_px);
     let tl = view.to_page(rect.left_top());
     let br = view.to_page(rect.right_bottom());
-    let x0 = (tl.x / step).floor() * step;
-    let y0 = (br.y / step).floor() * step;
-    let mut x = x0;
-    while x <= br.x {
-        let sx = view.to_screen(Point::new(x, 0.0)).x;
-        painter.vline(
-            sx,
-            rect.y_range(),
-            EStroke::new(0.5, Color32::from_gray(190)),
-        );
-        x += step;
-    }
-    let mut y = y0;
-    while y <= tl.y {
-        let sy = view.to_screen(Point::new(0.0, y)).y;
-        painter.hline(
-            rect.x_range(),
-            sy,
-            EStroke::new(0.5, Color32::from_gray(190)),
-        );
-        y += step;
-    }
-}
-
-/// Horizontal and vertical rulers, in the document units.
-pub fn draw_rulers(app: &App, painter: &Painter, top: ERect, left: ERect) {
-    let view = &app.view;
-    painter.rect_filled(top, 0.0, Tokens::RULER_BG);
-    painter.rect_filled(left, 0.0, Tokens::RULER_BG);
-    painter.hline(
-        top.x_range(),
-        top.bottom() - 0.5,
-        EStroke::new(1.0, Tokens::BORDER),
-    );
-    painter.vline(
-        left.right() - 0.5,
-        left.y_range(),
-        EStroke::new(1.0, Tokens::BORDER),
-    );
-
-    let unit_mm = app.units.mm();
-    let px_per_unit = view.zoom as f64 * unit_mm;
-    // Choose a major step so labels are at least ~60 px apart.
-    let candidates = [
-        1.0, 2.0, 5.0, 10.0, 20.0, 25.0, 50.0, 100.0, 200.0, 500.0, 1000.0,
-    ];
-    let major = candidates
-        .iter()
-        .copied()
-        .find(|c| c * px_per_unit >= 60.0)
-        .unwrap_or(1000.0);
-    let minor = major / 10.0;
-    let font = egui::FontId::proportional(9.0);
-
-    // Horizontal.
-    let a = app.units.from_mm(view.to_page(top.left_top()).x);
-    let b = app.units.from_mm(view.to_page(top.right_top()).x);
-    let mut v = (a / minor).floor() * minor;
-    while v <= b {
-        let x = view.to_screen(Point::new(app.units.to_mm(v), 0.0)).x;
-        let is_major = ((v / major).round() * major - v).abs() < minor * 0.01;
-        let h = if is_major {
-            top.height() * 0.55
-        } else {
-            top.height() * 0.25
-        };
-        painter.vline(
-            x,
-            (top.bottom() - h)..=top.bottom(),
-            EStroke::new(1.0, Tokens::RULER_TICK),
-        );
-        if is_major {
-            painter.text(
-                Pos2::new(x + 2.0, top.top() + 1.0),
-                egui::Align2::LEFT_TOP,
-                fmt_tick(v),
-                font.clone(),
-                Tokens::TEXT_DIM,
-            );
+    let xs: Vec<f32> = grid_positions(tl.x, br.x, rulers.origin_x, sx)
+        .into_iter()
+        .map(|x| view.to_screen(Point::new(x, 0.0)).x.round() + 0.5)
+        .filter(|x| *x >= rect.left() && *x <= rect.right())
+        .collect();
+    let ys: Vec<f32> = grid_positions(br.y, tl.y, rulers.origin_y, sy)
+        .into_iter()
+        .map(|y| view.to_screen(Point::new(0.0, y)).y.round() + 0.5)
+        .filter(|y| *y >= rect.top() && *y <= rect.bottom())
+        .collect();
+    let mut px = crate::ui::rulers::Pixels::default();
+    if dots {
+        if xs.len() * ys.len() > 200_000 {
+            return;
         }
-        v += minor;
-    }
-    // Vertical (Y up: larger values toward the top).
-    let a = app.units.from_mm(view.to_page(left.left_bottom()).y);
-    let b = app.units.from_mm(view.to_page(left.left_top()).y);
-    let mut v = (a / minor).floor() * minor;
-    while v <= b {
-        let y = view.to_screen(Point::new(0.0, app.units.to_mm(v))).y;
-        let is_major = ((v / major).round() * major - v).abs() < minor * 0.01;
-        let w = if is_major {
-            left.width() * 0.55
-        } else {
-            left.width() * 0.25
-        };
-        painter.hline(
-            (left.right() - w)..=left.right(),
-            y,
-            EStroke::new(1.0, Tokens::RULER_TICK),
-        );
-        if is_major {
-            let galley = painter.layout_no_wrap(fmt_tick(v), font.clone(), Tokens::TEXT_DIM);
-            let mut ts = epaint::TextShape::new(
-                Pos2::new(left.left() + 1.0, y - 2.0),
-                galley,
-                Tokens::TEXT_DIM,
-            );
-            ts.angle = -std::f32::consts::FRAC_PI_2;
-            painter.add(ts);
+        for x in &xs {
+            for y in &ys {
+                px.dot(x.floor(), y.floor(), GRID_DOT);
+            }
         }
-        v += minor;
-    }
-    // Pointer position markers.
-    if let Some(p) = app.pointer_page {
-        let s = view.to_screen(p);
-        painter.vline(s.x, top.y_range(), EStroke::new(1.0, Tokens::SELECTION));
-        painter.hline(left.x_range(), s.y, EStroke::new(1.0, Tokens::SELECTION));
-    }
-}
-
-fn fmt_tick(v: f64) -> String {
-    if (v - v.round()).abs() < 1e-6 {
-        format!("{}", v.round() as i64)
     } else {
-        format!("{v:.1}")
+        for x in &xs {
+            px.rect(vline_rect(*x, rect), GRID_LINE);
+        }
+        for y in &ys {
+            px.rect(hline_rect(*y, rect), GRID_LINE);
+        }
     }
+    px.paint(painter);
+}
+
+/// A one-pixel vertical line through the pixel containing `x`, across `r`.
+fn vline_rect(x: f32, r: ERect) -> ERect {
+    let x = x.floor();
+    ERect::from_min_max(Pos2::new(x, r.top()), Pos2::new(x + 1.0, r.bottom()))
+}
+
+/// A one-pixel horizontal line through the pixel containing `y`.
+fn hline_rect(y: f32, r: ERect) -> ERect {
+    let y = y.floor();
+    ERect::from_min_max(Pos2::new(r.left(), y), Pos2::new(r.right(), y + 1.0))
+}
+
+/// The baseline grid: lines across the page like a ruled notebook, from
+/// the "start from top" distance down, in the grid's colour.
+fn draw_baseline_grid(app: &App, painter: &Painter, rect: ERect, paper: ERect) {
+    let grid = app.doc().metadata.grid;
+    if grid.baseline_spacing * (app.view.zoom as f64) < 2.0 {
+        return;
+    }
+    let color = to_color32(grid.baseline_color);
+    let mut px = crate::ui::rulers::Pixels::default();
+    for y in app.baseline_ys() {
+        let sy = app.view.to_screen(Point::new(0.0, y)).y.round() + 0.5;
+        if sy >= rect.top() && sy <= rect.bottom() {
+            px.rect(hline_rect(sy, paper.intersect(rect)), color);
+        }
+    }
+    px.paint(painter);
+}
+
+/// Screen pixels per document pixel at the current zoom.
+pub fn screen_px_per_doc_px(app: &App) -> f64 {
+    app.view.zoom as f64 * 25.4 / app.document_dpi().max(1.0)
+}
+
+/// The pixel grid: one cell per document pixel, aligned with the page's
+/// bottom-left corner, in the Pixels view (or with pixel rulers) from 800%
+/// zoom.
+fn draw_pixel_grid(app: &App, painter: &Painter, rect: ERect) {
+    let pixel_mode =
+        app.view_mode == crate::app::ViewMode::Pixels || app.units == crate::app::Units::Pixels;
+    if !app.show_pixel_grid || !pixel_mode || screen_px_per_doc_px(app) < 7.999 {
+        return;
+    }
+    let grid = app.doc().metadata.grid;
+    let [r, g, b] = grid.pixel_color.to_rgb8();
+    let alpha = (grid.pixel_opacity.clamp(0.0, 1.0) * 255.0).round() as u8;
+    let color = Color32::from_rgba_unmultiplied(r, g, b, alpha);
+    if alpha == 0 {
+        return;
+    }
+    let step = 25.4 / app.document_dpi().max(1.0);
+    let view = &app.view;
+    let tl = view.to_page(rect.left_top());
+    let br = view.to_page(rect.right_bottom());
+    let mut px = crate::ui::rulers::Pixels::default();
+    for x in grid_positions(tl.x, br.x, 0.0, step) {
+        let sx = view.to_screen(Point::new(x, 0.0)).x.round() + 0.5;
+        if sx >= rect.left() && sx <= rect.right() {
+            px.rect(vline_rect(sx, rect), color);
+        }
+    }
+    for y in grid_positions(br.y, tl.y, 0.0, step) {
+        let sy = view.to_screen(Point::new(0.0, y)).y.round() + 0.5;
+        if sy >= rect.top() && sy <= rect.bottom() {
+            px.rect(hline_rect(sy, rect), color);
+        }
+    }
+    px.paint(painter);
 }
 
 /// Shape tool overlay: nodes as squares (selected filled), handles of the
@@ -958,72 +966,176 @@ fn draw_nodes(app: &App, painter: &Painter) {
     }
 }
 
-/// Guidelines: dashed lines across the window; the selected one in red,
-/// a guide being dragged in blue.
-pub fn draw_guides(app: &App, painter: &Painter, rect: ERect) {
-    if !app.show_guides {
+/// A line of `pattern` (on and off lengths in pixels; empty for solid).
+/// Horizontal and vertical lines are drawn on whole pixels.
+fn pattern_line(painter: &Painter, a: Pos2, b: Pos2, color: Color32, pattern: &[f32]) {
+    let stroke = EStroke::new(1.0, color);
+    let len = a.distance(b);
+    let axis = (a.x - b.x).abs() < 0.01 || (a.y - b.y).abs() < 0.01;
+    if axis && len > 0.0 {
+        let mut px = crate::ui::rulers::Pixels::default();
+        let dir = (b - a) / len;
+        let mut t = 0.0;
+        let mut i = 0;
+        while t < len && i < 40_000 {
+            let l = if pattern.is_empty() {
+                len
+            } else {
+                pattern[i % pattern.len()].max(0.5)
+            };
+            if i % 2 == 0 {
+                let p0 = a + dir * t;
+                let p1 = a + dir * (t + l).min(len);
+                let r = ERect::from_two_pos(p0, p1);
+                let r = if (a.x - b.x).abs() < 0.01 {
+                    let x = r.min.x.floor();
+                    ERect::from_min_max(Pos2::new(x, r.min.y), Pos2::new(x + 1.0, r.max.y))
+                } else {
+                    let y = r.min.y.floor();
+                    ERect::from_min_max(Pos2::new(r.min.x, y), Pos2::new(r.max.x, y + 1.0))
+                };
+                px.rect(r, color);
+            }
+            t += l;
+            i += 1;
+        }
+        px.paint(painter);
         return;
     }
-    let view = &app.view;
-    let Ok(page) = app.doc().page(app.page) else {
+    if pattern.is_empty() || len <= 0.0 {
+        painter.line_segment([a, b], stroke);
         return;
-    };
-    for (i, g) in page.guides.iter().enumerate() {
-        let color = if app.selected_guide == Some(i) {
-            Color32::from_rgb(220, 30, 30)
-        } else {
-            Color32::from_rgb(0, 120, 215)
-        };
-        match g {
-            tracedraw_core::document::Guide::Horizontal { y } => {
-                let sy = view.to_screen(Point::new(0.0, *y)).y;
-                dash(
+    }
+    let dir = (b - a) / len;
+    let mut t = 0.0;
+    let mut i = 0;
+    let mut segments = 0;
+    while t < len && segments < 20_000 {
+        let l = pattern[i % pattern.len()].max(0.5);
+        if i % 2 == 0 {
+            painter.line_segment([a + dir * t, a + dir * (t + l).min(len)], stroke);
+            segments += 1;
+        }
+        t += l;
+        i += 1;
+    }
+}
+
+/// Selected guidelines are red.
+const GUIDE_SELECTED: Color32 = Color32::from_rgb(0xFF, 0x00, 0x00);
+
+/// One guideline across the drawing window.
+fn draw_guide_line(
+    app: &App,
+    painter: &Painter,
+    rect: ERect,
+    line: tracedraw_core::document::GuideLine,
+    color: Color32,
+    pattern: &[f32],
+) {
+    use tracedraw_core::document::GuideLine;
+    let view = &app.view;
+    match line {
+        GuideLine::Horizontal { y } => {
+            let sy = view.to_screen(Point::new(0.0, y)).y.round() + 0.5;
+            if sy >= rect.top() && sy <= rect.bottom() {
+                pattern_line(
                     painter,
                     Pos2::new(rect.left(), sy),
                     Pos2::new(rect.right(), sy),
                     color,
+                    pattern,
                 );
             }
-            tracedraw_core::document::Guide::Vertical { x } => {
-                let sx = view.to_screen(Point::new(*x, 0.0)).x;
-                dash(
+        }
+        GuideLine::Vertical { x } => {
+            let sx = view.to_screen(Point::new(x, 0.0)).x.round() + 0.5;
+            if sx >= rect.left() && sx <= rect.right() {
+                pattern_line(
                     painter,
                     Pos2::new(sx, rect.top()),
                     Pos2::new(sx, rect.bottom()),
                     color,
+                    pattern,
                 );
             }
-            tracedraw_core::document::Guide::Angled { x, y, angle } => {
-                // Extend far beyond the viewport in both directions.
-                let a = angle.to_radians();
-                let d = tracedraw_core::geometry::Vec2::new(a.cos(), a.sin());
-                let far = 100_000.0 / view.zoom.max(0.01) as f64;
-                let p0 = Point::new(*x, *y) - d * far;
-                let p1 = Point::new(*x, *y) + d * far;
-                let s0 = view.to_screen(p0);
-                let s1 = view.to_screen(p1);
-                if let Some((c0, c1)) = clip_segment(s0, s1, rect) {
-                    dash(painter, c0, c1, color);
-                }
+        }
+        GuideLine::Angled { .. } => {
+            // Extend far beyond the viewport in both directions.
+            let (o, d) = line.point_and_direction();
+            let far = 100_000.0 / view.zoom.max(0.01) as f64;
+            let s0 = view.to_screen(o - d * far);
+            let s1 = view.to_screen(o + d * far);
+            if let Some((c0, c1)) = clip_segment(s0, s1, rect) {
+                pattern_line(painter, c0, c1, color, pattern);
             }
         }
     }
-    if let Drag::NewGuide { horizontal, pos } = &app.drag {
-        let s = view.to_screen(*pos);
-        if *horizontal {
-            dash(
-                painter,
-                Pos2::new(rect.left(), s.y),
-                Pos2::new(rect.right(), s.y),
-                Color32::from_rgb(0, 120, 215),
-            );
+}
+
+/// Guidelines across the drawing window in their colour and style; the
+/// selected ones red, one being dragged where it would go, the rotation
+/// handles of a guideline in rotate mode.
+pub fn draw_guides(app: &App, painter: &Painter, rect: ERect) {
+    if !app.show_guides {
+        return;
+    }
+    let Ok(page) = app.doc().page(app.page) else {
+        return;
+    };
+    for (i, g) in page.guides.iter().enumerate() {
+        let g = match &app.drag {
+            Drag::MoveGuide { index, guide, .. } | Drag::RotateGuide { index, guide, .. }
+                if *index == i =>
+            {
+                guide
+            }
+            _ => g,
+        };
+        let color = if app.selected_guides.contains(&i) {
+            GUIDE_SELECTED
         } else {
-            dash(
-                painter,
-                Pos2::new(s.x, rect.top()),
-                Pos2::new(s.x, rect.bottom()),
-                Color32::from_rgb(0, 120, 215),
-            );
+            to_color32(app.guide_color(g))
+        };
+        draw_guide_line(app, painter, rect, g.line, color, g.style.pattern());
+    }
+    if let Drag::NewGuide { horizontal, pos } = &app.drag {
+        use tracedraw_core::document::GuideLine;
+        let line = if *horizontal {
+            GuideLine::Horizontal { y: pos.y }
+        } else {
+            GuideLine::Vertical { x: pos.x }
+        };
+        let color = to_color32(app.doc().metadata.guides.color);
+        draw_guide_line(
+            app,
+            painter,
+            rect,
+            line,
+            color,
+            tracedraw_core::document::GuideStyle::default().pattern(),
+        );
+    }
+    if let Some((_, pivot, handles)) = app.guide_rotate_handles() {
+        let c = app.view.to_screen(pivot);
+        let s = EStroke::new(1.0, Tokens::HANDLE);
+        painter.circle_filled(c, 4.0, Color32::WHITE);
+        painter.circle_stroke(c, 4.0, s);
+        painter.circle_filled(c, 1.2, Tokens::HANDLE);
+        for h in handles {
+            let p = app.view.to_screen(h);
+            let d = (p - c).normalized();
+            let n = egui::vec2(-d.y, d.x);
+            // A curved double arrow across the line, as the skew and
+            // rotate handles of objects.
+            let a = p + n * 6.0 - d * 2.0;
+            let b = p - n * 6.0 - d * 2.0;
+            painter.add(epaint::PathShape::line(
+                vec![a, p + d * 1.5, b],
+                EStroke::new(1.5, Tokens::HANDLE),
+            ));
+            painter.line_segment([a, a + d * 3.0], s);
+            painter.line_segment([b, b + d * 3.0], s);
         }
     }
 }
@@ -1095,5 +1207,40 @@ pub fn draw_effect_nodes(app: &App, painter: &Painter) {
                 egui::StrokeKind::Outside,
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn grid_lines_thin_out_and_follow_the_origin() {
+        // 10 mm at 2 px per mm is 20 px: every line.
+        assert_eq!(grid_thinning(20.0, 6.0), 1.0);
+        // At 0.5 px per mm, 5 px apart: every second line.
+        assert_eq!(grid_thinning(5.0, 6.0), 2.0);
+        assert_eq!(grid_thinning(1.0, 6.0), 10.0);
+        assert!(grid_thinning(0.0, 6.0).is_infinite());
+        // Lines pass through the origin.
+        let xs = grid_positions(-12.0, 25.0, 3.0, 10.0);
+        assert_eq!(xs, vec![-17.0, -7.0, 3.0, 13.0, 23.0, 33.0]);
+        assert!(grid_positions(0.0, 1e9, 0.0, 1e-3).is_empty());
+        assert!(grid_positions(0.0, 1.0, 0.0, 0.0).is_empty());
+    }
+
+    #[test]
+    fn baselines_start_from_the_top_and_stop_at_the_bottom() {
+        let mut app = App::headless();
+        let page = app.page_rect();
+        let ys = app.baseline_ys();
+        let g = app.doc().metadata.grid;
+        assert!((ys[0] - (page.y1 - g.baseline_start)).abs() < 1e-9);
+        assert!((ys[0] - ys[1] - g.baseline_spacing).abs() < 1e-9);
+        assert!(*ys.last().unwrap() >= page.y0);
+        let mut m = app.doc().metadata.clone();
+        m.grid.baseline_start = 0.0;
+        app.run(tracedraw_core::Command::SetMetadata { metadata: m });
+        assert!((app.baseline_ys()[0] - page.y1).abs() < 1e-9);
     }
 }

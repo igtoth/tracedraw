@@ -634,12 +634,7 @@ fn edit_menu(app: &mut App, ui: &mut Ui) {
             app.select_all_of(|s| matches!(s.kind, ShapeKind::Text { .. }));
         }
         if item(ui, "menu.edit.select_all_guidelines", "", true) {
-            app.selection.clear();
-            app.selected_guide = app
-                .doc()
-                .page(app.page)
-                .ok()
-                .and_then(|p| (!p.guides.is_empty()).then_some(0));
+            app.select_all_guides();
         }
         if item(ui, "menu.edit.select_all_nodes", "", has) {
             app.select_all_nodes();

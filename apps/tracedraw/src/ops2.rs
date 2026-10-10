@@ -691,7 +691,7 @@ impl App {
 
     /// Text > Align to Baseline Grid: toggle for the selected paragraph frames.
     pub fn toggle_baseline_grid(&mut self) {
-        let g = self.settings.baseline_grid_mm.max(0.1);
+        let g = self.doc().metadata.grid.baseline_spacing.max(0.1);
         for s in self.text_shapes() {
             if let ShapeKind::Text {
                 frame: Some(_),

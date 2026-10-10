@@ -26,6 +26,7 @@ mod eyedropper;
 mod files;
 mod fill_tool;
 mod grammar;
+mod guides;
 mod i18n;
 mod interaction;
 mod interaction2;

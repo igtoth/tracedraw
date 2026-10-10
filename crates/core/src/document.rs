@@ -860,6 +860,9 @@ pub struct Metadata {
     pub cmyk_profile: String,
     /// Colour mode effects (blends, transparencies) and exports default to.
     pub primary_color_mode: PrimaryColorMode,
+    pub grid: GridSettings,
+    pub rulers: RulerSettings,
+    pub guides: GuideSettings,
 }
 
 /// A document's primary colour mode (Create a New Document dialog).
@@ -890,10 +893,10 @@ impl Layer {
     }
 }
 
-/// A guideline on a page, in mm.
+/// The line of a guideline, in mm.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "dir", rename_all = "lowercase")]
-pub enum Guide {
+pub enum GuideLine {
     Horizontal {
         y: f64,
     },
@@ -908,13 +911,13 @@ pub enum Guide {
     },
 }
 
-impl Guide {
-    /// Signed distance from `p` to the guide line.
+impl GuideLine {
+    /// Signed distance from `p` to the line.
     pub fn distance(&self, p: crate::geometry::Point) -> f64 {
         match self {
-            Guide::Horizontal { y } => p.y - y,
-            Guide::Vertical { x } => p.x - x,
-            Guide::Angled { x, y, angle } => {
+            GuideLine::Horizontal { y } => p.y - y,
+            GuideLine::Vertical { x } => p.x - x,
+            GuideLine::Angled { x, y, angle } => {
                 let a = angle.to_radians();
                 // Normal of the line direction (cos a, sin a).
                 -(p.x - x) * a.sin() + (p.y - y) * a.cos()
@@ -922,16 +925,229 @@ impl Guide {
         }
     }
 
-    /// The guide moved so that it passes through `p` (keeps orientation).
-    pub fn through(&self, p: crate::geometry::Point) -> Guide {
+    /// The line moved so that it passes through `p` (keeps orientation).
+    pub fn through(&self, p: crate::geometry::Point) -> GuideLine {
         match *self {
-            Guide::Horizontal { .. } => Guide::Horizontal { y: p.y },
-            Guide::Vertical { .. } => Guide::Vertical { x: p.x },
-            Guide::Angled { angle, .. } => Guide::Angled {
+            GuideLine::Horizontal { .. } => GuideLine::Horizontal { y: p.y },
+            GuideLine::Vertical { .. } => GuideLine::Vertical { x: p.x },
+            GuideLine::Angled { angle, .. } => GuideLine::Angled {
                 x: p.x,
                 y: p.y,
                 angle,
             },
+        }
+    }
+
+    /// A point on the line and its direction (unit vector).
+    pub fn point_and_direction(&self) -> (crate::geometry::Point, crate::geometry::Vec2) {
+        use crate::geometry::{Point, Vec2};
+        match *self {
+            GuideLine::Horizontal { y } => (Point::new(0.0, y), Vec2::new(1.0, 0.0)),
+            GuideLine::Vertical { x } => (Point::new(x, 0.0), Vec2::new(0.0, 1.0)),
+            GuideLine::Angled { x, y, angle } => {
+                let a = angle.to_radians();
+                (Point::new(x, y), Vec2::new(a.cos(), a.sin()))
+            }
+        }
+    }
+
+    /// The line turned to `angle` degrees about `pivot`: 0 and 180 give a
+    /// horizontal guideline, 90 and 270 a vertical one.
+    pub fn rotated_to(&self, angle: f64, pivot: crate::geometry::Point) -> GuideLine {
+        let a = angle.rem_euclid(180.0);
+        if a.abs() < 1e-9 {
+            GuideLine::Horizontal { y: pivot.y }
+        } else if (a - 90.0).abs() < 1e-9 {
+            GuideLine::Vertical { x: pivot.x }
+        } else {
+            GuideLine::Angled {
+                x: pivot.x,
+                y: pivot.y,
+                angle: a,
+            }
+        }
+    }
+
+    /// Angle in degrees (0 horizontal, 90 vertical).
+    pub fn angle(&self) -> f64 {
+        match *self {
+            GuideLine::Horizontal { .. } => 0.0,
+            GuideLine::Vertical { .. } => 90.0,
+            GuideLine::Angled { angle, .. } => angle,
+        }
+    }
+}
+
+/// How a guideline is drawn (the guideline style picker).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum GuideStyle {
+    Solid,
+    #[default]
+    Dashed,
+    Dotted,
+    DashDot,
+}
+
+impl GuideStyle {
+    pub const ALL: [GuideStyle; 4] = [
+        GuideStyle::Solid,
+        GuideStyle::Dashed,
+        GuideStyle::Dotted,
+        GuideStyle::DashDot,
+    ];
+
+    /// On and off lengths in screen pixels, repeated along the line; empty
+    /// for a solid line.
+    pub fn pattern(self) -> &'static [f32] {
+        match self {
+            GuideStyle::Solid => &[],
+            GuideStyle::Dashed => &[4.0, 3.0],
+            GuideStyle::Dotted => &[1.0, 2.0],
+            GuideStyle::DashDot => &[6.0, 2.0, 1.0, 2.0],
+        }
+    }
+}
+
+/// A guideline on a page: its line, and how it looks. A guideline
+/// without its own colour uses the document's default guideline colour.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Guide {
+    #[serde(flatten)]
+    pub line: GuideLine,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<crate::Color>,
+    #[serde(default)]
+    pub style: GuideStyle,
+    /// Locked guidelines can be selected but not moved or deleted.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub locked: bool,
+}
+
+impl From<GuideLine> for Guide {
+    fn from(line: GuideLine) -> Self {
+        Guide {
+            line,
+            color: None,
+            style: GuideStyle::default(),
+            locked: false,
+        }
+    }
+}
+
+impl Guide {
+    pub fn horizontal(y: f64) -> Self {
+        GuideLine::Horizontal { y }.into()
+    }
+
+    pub fn vertical(x: f64) -> Self {
+        GuideLine::Vertical { x }.into()
+    }
+
+    pub fn angled(x: f64, y: f64, angle: f64) -> Self {
+        GuideLine::Angled { x, y, angle }.into()
+    }
+
+    /// Signed distance from `p` to the guideline.
+    pub fn distance(&self, p: crate::geometry::Point) -> f64 {
+        self.line.distance(p)
+    }
+
+    /// The guideline moved so that it passes through `p` (keeps
+    /// orientation, colour, style and lock).
+    pub fn through(&self, p: crate::geometry::Point) -> Guide {
+        Guide {
+            line: self.line.through(p),
+            ..*self
+        }
+    }
+
+    /// The same guideline with another line.
+    pub fn with_line(&self, line: GuideLine) -> Guide {
+        Guide { line, ..*self }
+    }
+}
+
+/// How the document grid is drawn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum GridDisplay {
+    #[default]
+    Lines,
+    Dots,
+}
+
+/// Document grid, baseline grid and pixel grid (Document Options, Grid).
+/// Distances in mm.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct GridSettings {
+    /// Distance between the vertical lines of the document grid.
+    pub spacing_x: f64,
+    /// Distance between the horizontal lines of the document grid.
+    pub spacing_y: f64,
+    pub display: GridDisplay,
+    /// Line spacing of the baseline grid (14 pt by default).
+    pub baseline_spacing: f64,
+    /// Distance from the page top to the first baseline.
+    pub baseline_start: f64,
+    pub baseline_color: crate::Color,
+    pub pixel_color: crate::Color,
+    /// Opacity of the pixel grid, 0 to 1.
+    pub pixel_opacity: f64,
+}
+
+impl Default for GridSettings {
+    fn default() -> Self {
+        GridSettings {
+            spacing_x: 10.0,
+            spacing_y: 10.0,
+            display: GridDisplay::Lines,
+            baseline_spacing: 14.0 * 25.4 / 72.0,
+            baseline_start: 0.5 * 25.4,
+            baseline_color: crate::Color::rgb8(0x8F, 0xC7, 0xF0),
+            pixel_color: crate::Color::rgb8(0xD9, 0xD9, 0xD9),
+            pixel_opacity: 1.0,
+        }
+    }
+}
+
+/// Ruler settings (Document Options, Rulers).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RulerSettings {
+    /// The ruler origin, in mm from the page's bottom-left corner.
+    pub origin_x: f64,
+    pub origin_y: f64,
+    /// Number of tick marks between two numbered marks.
+    pub tick_divisions: u32,
+}
+
+impl Default for RulerSettings {
+    fn default() -> Self {
+        RulerSettings {
+            origin_x: 0.0,
+            origin_y: 0.0,
+            tick_divisions: 10,
+        }
+    }
+}
+
+/// Guideline defaults (Document Options, Guidelines).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct GuideSettings {
+    /// Colour of guidelines without their own colour.
+    pub color: crate::Color,
+    /// Colour given to guidelines added from presets.
+    pub preset_color: crate::Color,
+}
+
+impl Default for GuideSettings {
+    fn default() -> Self {
+        GuideSettings {
+            color: crate::Color::rgb8(0x00, 0x00, 0xFF),
+            preset_color: crate::Color::rgb8(0x00, 0x99, 0xFF),
         }
     }
 }
@@ -1154,6 +1370,74 @@ impl Document {
 mod tests {
     use super::*;
     use crate::geometry::Point;
+
+    #[test]
+    fn guides_written_before_styles_still_load() {
+        let old =
+            r#"[{"dir":"horizontal","y":12.5},{"dir":"angled","x":1.0,"y":2.0,"angle":30.0}]"#;
+        let guides: Vec<Guide> = serde_json::from_str(old).unwrap();
+        assert_eq!(guides[0], Guide::horizontal(12.5));
+        assert_eq!(
+            guides[1].line,
+            GuideLine::Angled {
+                x: 1.0,
+                y: 2.0,
+                angle: 30.0
+            }
+        );
+        assert_eq!(guides[1].style, GuideStyle::Dashed);
+        assert!(!guides[1].locked && guides[1].color.is_none());
+    }
+
+    #[test]
+    fn guide_appearance_round_trips() {
+        let g = Guide {
+            line: GuideLine::Vertical { x: 4.0 },
+            color: Some(crate::Color::rgb8(255, 0, 0)),
+            style: GuideStyle::Dotted,
+            locked: true,
+        };
+        let json = serde_json::to_string(&g).unwrap();
+        assert!(json.contains("\"dir\":\"vertical\""));
+        let back: Guide = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, g);
+        // Moving keeps the appearance.
+        let moved = g.through(Point::new(9.0, 0.0));
+        assert_eq!(moved.line, GuideLine::Vertical { x: 9.0 });
+        assert!(moved.locked && moved.style == GuideStyle::Dotted);
+    }
+
+    #[test]
+    fn rotating_a_guide_snaps_to_horizontal_and_vertical() {
+        let g = GuideLine::Horizontal { y: 5.0 };
+        let p = Point::new(3.0, 5.0);
+        assert_eq!(g.rotated_to(90.0, p), GuideLine::Vertical { x: 3.0 });
+        assert_eq!(g.rotated_to(180.0, p), GuideLine::Horizontal { y: 5.0 });
+        assert_eq!(
+            g.rotated_to(-45.0, p),
+            GuideLine::Angled {
+                x: 3.0,
+                y: 5.0,
+                angle: 135.0
+            }
+        );
+        let (o, d) = GuideLine::Angled {
+            x: 0.0,
+            y: 0.0,
+            angle: 90.0,
+        }
+        .point_and_direction();
+        assert!(o == Point::ZERO && d.x.abs() < 1e-12 && (d.y - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn documents_without_grid_settings_get_the_defaults() {
+        let m: Metadata = serde_json::from_str(r#"{"author":"a"}"#).unwrap();
+        assert_eq!(m.grid, GridSettings::default());
+        assert_eq!(m.rulers.tick_divisions, 10);
+        assert!((m.grid.baseline_spacing - 4.938_888).abs() < 1e-5);
+        assert_eq!(m.guides, GuideSettings::default());
+    }
 
     #[test]
     fn json_round_trip() {

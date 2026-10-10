@@ -1,15 +1,25 @@
 //! The document tabs above the rulers: the Welcome Screen, one tab per open
 //! drawing (an asterisk marks unsaved changes; the close button shows on
-//! the active and the hovered tab) and the New button after the last tab.
+//! the hovered tab) and the New tab after the last one, over a blue line
+//! that runs the width of the window, as the target design draws them.
 
 use crate::app::App;
 use crate::i18n::tr;
 use crate::theme::Tokens;
 use egui::{Color32, Pos2, Rect, Sense, Stroke, Ui, Vec2};
 
-const TAB_HEIGHT: f32 = 22.0;
-const PAD: f32 = 10.0;
+/// Height of a tab; the blue line adds one pixel under it.
+pub const TAB_HEIGHT: f32 = 26.0;
+const PAD: f32 = 15.0;
 const CLOSE: f32 = 14.0;
+const FONT: f32 = 13.0;
+/// The strip behind the tabs (also the one-pixel gaps between tabs).
+pub const STRIP: Color32 = Color32::from_gray(0xEA);
+const TAB: Color32 = Color32::from_gray(0xD8);
+const TAB_ACTIVE: Color32 = Color32::from_rgb(0xCE, 0xE3, 0xFF);
+const TAB_HOVER: Color32 = Color32::from_rgb(0xE5, 0xF1, 0xFB);
+/// The line under the tabs.
+const LINE: Color32 = Color32::from_rgb(0x00, 0xAD, 0xFE);
 
 /// What a click on the strip asked for.
 enum Action {
@@ -21,6 +31,7 @@ enum Action {
 
 pub fn document_tabs(app: &mut App, ui: &mut Ui) {
     let mut action = None;
+    let strip = ui.max_rect();
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 1.0;
         if welcome_tab(ui, app.show_welcome || !app.has_document()) {
@@ -35,17 +46,20 @@ pub fn document_tabs(app: &mut App, ui: &mut Ui) {
                 TabClick::None => {}
             }
         }
-        let plus = ui
-            .add_sized(
-                [TAB_HEIGHT, TAB_HEIGHT],
-                egui::Button::new(egui::RichText::new("+").size(15.0).color(Tokens::TEXT_DIM))
-                    .frame(false),
-            )
-            .on_hover_text(tr("menu.file.new"));
-        if plus.clicked() {
+        if new_tab(ui) {
             action = Some(Action::New);
         }
     });
+    let line_y = strip.top() + TAB_HEIGHT;
+    ui.painter().rect_filled(
+        Rect::from_min_max(
+            Pos2::new(strip.left(), line_y),
+            Pos2::new(strip.right(), line_y + 1.0),
+        ),
+        0.0,
+        LINE,
+    );
+    ui.allocate_space(Vec2::new(0.0, 1.0));
     match action {
         Some(Action::Welcome) => app.show_welcome = true,
         Some(Action::Switch(i)) => app.switch_document(i),
@@ -60,64 +74,78 @@ pub fn document_tabs(app: &mut App, ui: &mut Ui) {
 
 fn tab_fill(active: bool, hovered: bool) -> Color32 {
     if active {
-        Tokens::TOOL_ACTIVE
+        TAB_ACTIVE
     } else if hovered {
-        Tokens::TOOL_HOVER
+        TAB_HOVER
     } else {
-        Tokens::PANEL_DARK
+        TAB
     }
 }
 
 /// The Welcome Screen tab: a house and the title.
 fn welcome_tab(ui: &mut Ui, active: bool) -> bool {
     let label = tr("welcome.title");
-    let galley = ui
-        .painter()
-        .layout_no_wrap(label, egui::FontId::proportional(12.0), Tokens::TEXT);
+    let galley =
+        ui.painter()
+            .layout_no_wrap(label, egui::FontId::proportional(FONT), Color32::BLACK);
     let icon = 16.0;
-    let width = PAD + icon + 6.0 + galley.size().x + PAD + 30.0;
+    let width = 6.0 + icon + 15.0 + galley.size().x + 27.0;
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(width, TAB_HEIGHT), Sense::click());
     let painter = ui.painter();
     painter.rect_filled(rect, 0.0, tab_fill(active, resp.hovered()));
-    let c = Pos2::new(rect.left() + PAD + icon / 2.0, rect.center().y);
     house(
         painter,
-        c,
-        if active { Tokens::ACCENT } else { Tokens::ICON },
+        Pos2::new(rect.left() + 6.0, rect.top() + 5.0),
+        Color32::from_gray(0x33),
     );
     painter.galley(
         Pos2::new(
-            rect.left() + PAD + icon + 6.0,
-            rect.center().y - galley.size().y / 2.0,
+            rect.left() + 6.0 + icon + 15.0,
+            (rect.center().y - galley.size().y / 2.0).round(),
         ),
         galley,
-        Tokens::TEXT,
+        Color32::BLACK,
     );
     resp.clicked()
 }
 
-fn house(painter: &egui::Painter, c: Pos2, color: Color32) {
-    let s = Stroke::new(1.3, color);
-    let roof = [
-        Pos2::new(c.x - 7.0, c.y),
-        Pos2::new(c.x, c.y - 6.5),
-        Pos2::new(c.x + 7.0, c.y),
+/// A filled house, 16 pixels square, top-left at `o`: a roof with eaves
+/// and a body with a door.
+fn house(painter: &egui::Painter, o: Pos2, color: Color32) {
+    let roof = vec![
+        Pos2::new(o.x + 8.0, o.y),
+        Pos2::new(o.x + 16.0, o.y + 8.5),
+        Pos2::new(o.x, o.y + 8.5),
     ];
-    painter.line_segment([roof[0], roof[1]], s);
-    painter.line_segment([roof[1], roof[2]], s);
-    let body = Rect::from_min_max(
-        Pos2::new(c.x - 5.0, c.y - 1.0),
-        Pos2::new(c.x + 5.0, c.y + 6.0),
-    );
-    painter.rect_filled(body, 0.0, color);
+    painter.add(egui::Shape::convex_polygon(roof, color, Stroke::NONE));
     painter.rect_filled(
         Rect::from_min_max(
-            Pos2::new(c.x - 1.5, c.y + 2.0),
-            Pos2::new(c.x + 1.5, c.y + 6.0),
+            Pos2::new(o.x + 2.0, o.y + 8.0),
+            Pos2::new(o.x + 14.0, o.y + 16.0),
         ),
         0.0,
-        Tokens::PANEL_DARK,
+        color,
     );
+    painter.rect_filled(
+        Rect::from_min_max(
+            Pos2::new(o.x + 6.0, o.y + 12.0),
+            Pos2::new(o.x + 10.0, o.y + 16.0),
+        ),
+        0.0,
+        TAB,
+    );
+}
+
+/// The New tab: a grey plus on a tab-coloured square.
+fn new_tab(ui: &mut Ui) -> bool {
+    let (rect, resp) = ui.allocate_exact_size(Vec2::splat(TAB_HEIGHT), Sense::click());
+    let painter = ui.painter();
+    painter.rect_filled(rect, 0.0, tab_fill(false, resp.hovered()));
+    let c = rect.center();
+    let s = Stroke::new(2.0, Color32::from_gray(178));
+    painter.line_segment([c - Vec2::new(7.0, 0.0), c + Vec2::new(7.0, 0.0)], s);
+    painter.line_segment([c - Vec2::new(0.0, 7.0), c + Vec2::new(0.0, 7.0)], s);
+    resp.on_hover_text(tr("menu.file.new")).clicked()
 }
 
 enum TabClick {
@@ -129,13 +157,13 @@ enum TabClick {
 fn doc_tab(ui: &mut Ui, i: usize, title: &str, active: bool) -> TabClick {
     let galley = ui.painter().layout_no_wrap(
         title.to_string(),
-        egui::FontId::proportional(12.0),
-        Tokens::TEXT,
+        egui::FontId::proportional(FONT),
+        Color32::BLACK,
     );
-    let width = (PAD + galley.size().x + 6.0 + CLOSE + PAD).max(110.0);
+    let width = (PAD + galley.size().x + 6.0 + CLOSE + 8.0).max(116.0);
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(width, TAB_HEIGHT), Sense::click());
     let close_rect = Rect::from_center_size(
-        Pos2::new(rect.right() - PAD - CLOSE / 2.0, rect.center().y),
+        Pos2::new(rect.right() - 8.0 - CLOSE / 2.0, rect.center().y),
         Vec2::splat(CLOSE),
     );
     let close_id = ui.id().with(("doc_tab_close", i));
@@ -143,11 +171,14 @@ fn doc_tab(ui: &mut Ui, i: usize, title: &str, active: bool) -> TabClick {
     let painter = ui.painter();
     painter.rect_filled(rect, 0.0, tab_fill(active, resp.hovered()));
     painter.galley(
-        Pos2::new(rect.left() + PAD, rect.center().y - galley.size().y / 2.0),
+        Pos2::new(
+            rect.left() + PAD,
+            (rect.center().y - galley.size().y / 2.0).round(),
+        ),
         galley,
-        Tokens::TEXT,
+        Color32::BLACK,
     );
-    if active || resp.hovered() || close_resp.hovered() {
+    if resp.hovered() || close_resp.hovered() {
         if close_resp.hovered() {
             painter.rect_filled(close_rect, 2.0, Tokens::BORDER);
         }

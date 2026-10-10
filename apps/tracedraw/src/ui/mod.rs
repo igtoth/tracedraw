@@ -9,9 +9,11 @@ pub mod dockers;
 pub mod dockers2;
 pub mod hints;
 pub mod icons;
+pub mod layout_options;
 pub mod menus;
 pub mod palette;
 pub mod preview;
+pub mod rulers;
 pub mod status;
 pub mod tabs;
 pub mod toolbar;
@@ -165,11 +167,7 @@ pub fn root(app: &mut App, ui: &mut Ui) {
 
     // Document tabs above the rulers.
     Panel::top("document_tabs")
-        .frame(
-            Frame::new()
-                .fill(Tokens::PANEL_DARK)
-                .inner_margin(egui::Margin::symmetric(4, 1)),
-        )
+        .frame(Frame::new().fill(tabs::STRIP))
         .show(ui, |ui| tabs::document_tabs(app, ui));
 
     if app.show_welcome {
@@ -255,23 +253,15 @@ pub fn root(app: &mut App, ui: &mut Ui) {
             }
             let mods = ui.input(|i| i.modifiers);
 
-            // A guideline being dragged out of a ruler follows the pointer until release.
-            if let crate::app::Drag::NewGuide { horizontal, .. } = app.drag {
-                if let Some(pos) = ui.input(|i| i.pointer.latest_pos()) {
-                    app.drag = crate::app::Drag::NewGuide {
-                        horizontal,
-                        pos: app.view.to_page(pos),
-                    };
-                }
-                if ui.input(|i| i.pointer.primary_released()) {
-                    app.finish_guide_drag();
-                }
-            } else {
+            // A guideline or the ruler origin dragged out of the rulers
+            // follows the pointer until release.
+            if !rulers::ruler_drag(app, ui) {
                 app.canvas_input(&response, mods);
             }
 
             canvas::draw_canvas(app, &painter, canvas_rect);
             canvas::draw_guides(app, &painter, canvas_rect);
+            rulers::draw_origin_drag(app, &painter, canvas_rect);
             canvas::draw_effect_nodes(app, &painter);
             context::context_menu(app, ui, &response);
 
@@ -279,43 +269,7 @@ pub fn root(app: &mut App, ui: &mut Ui) {
             window_bars::window_bars(app, ui, full, canvas_rect, ruler);
 
             if app.show_rulers {
-                let top = egui::Rect::from_min_max(
-                    egui::pos2(full.min.x + ruler, full.min.y),
-                    egui::pos2(full.max.x - sb, full.min.y + ruler),
-                );
-                let left = egui::Rect::from_min_max(
-                    egui::pos2(full.min.x, full.min.y + ruler),
-                    egui::pos2(full.min.x + ruler, full.max.y - sb),
-                );
-                let corner = egui::Rect::from_min_size(full.min, egui::vec2(ruler, ruler));
-                let rp = ui.painter_at(full);
-                canvas::draw_rulers(app, &rp, top, left);
-                rp.rect_filled(corner, 0.0, Tokens::RULER_BG);
-                rp.text(
-                    corner.center(),
-                    egui::Align2::CENTER_CENTER,
-                    app.units.short(),
-                    egui::FontId::proportional(8.0),
-                    Tokens::TEXT_DIM,
-                );
-                // Dragging out of a ruler creates a guideline.
-                let top_resp = ui.interact(top, egui::Id::new("ruler_top"), Sense::drag());
-                let left_resp = ui.interact(left, egui::Id::new("ruler_left"), Sense::drag());
-                if top_resp.drag_started() {
-                    app.drag = crate::app::Drag::NewGuide {
-                        horizontal: true,
-                        pos: Point::ZERO,
-                    };
-                }
-                if left_resp.drag_started() {
-                    app.drag = crate::app::Drag::NewGuide {
-                        horizontal: false,
-                        pos: Point::ZERO,
-                    };
-                }
-                if top_resp.hovered() || left_resp.hovered() {
-                    ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::Grab);
-                }
+                rulers::rulers(app, ui, full);
             }
 
             let cursor = match app.tool {
@@ -675,14 +629,15 @@ mod tests {
         );
         assert_eq!(app.selection_bounds(), before, "and does not align");
         app.dialog = crate::ui::dialogs::Dialog::None;
-        // Arrows nudge by the nudge distance, x10 with Shift, x0.1 with Ctrl.
+        // Arrows nudge by the nudge distance, Shift by the super nudge and
+        // Ctrl by the micro nudge distance.
         let b0 = app.selection_bounds().unwrap_or_default();
         key(&ctx, &mut app, Key::ArrowRight, Modifiers::NONE);
         key(&ctx, &mut app, Key::ArrowRight, Modifiers::SHIFT);
         key(&ctx, &mut app, Key::ArrowRight, Modifiers::COMMAND);
         let b1 = app.selection_bounds().unwrap_or_default();
         let moved = b1.x0 - b0.x0;
-        let want = app.nudge_mm * (1.0 + 10.0 + 0.1);
+        let want = app.nudge_mm + app.settings.super_nudge_mm + app.settings.micro_nudge_mm;
         assert!((moved - want).abs() < 1e-6, "moved {moved}, want {want}");
     }
 

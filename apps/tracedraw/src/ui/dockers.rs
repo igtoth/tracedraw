@@ -252,11 +252,12 @@ fn properties(app: &mut App, ui: &mut Ui) {
         }
     ));
     let b = app.selection_bounds().unwrap_or_default();
+    let o = app.to_ruler(tracedraw_core::geometry::Point::new(b.x0, b.y0));
     ui.label(
         egui::RichText::new(format!(
             "x {:.2}  y {:.2}  w {:.2}  h {:.2} {}",
-            app.units.from_mm(b.x0),
-            app.units.from_mm(b.y0),
+            app.units.from_mm(o.x),
+            app.units.from_mm(o.y),
             app.units.from_mm(b.width()),
             app.units.from_mm(b.height()),
             app.units.short()

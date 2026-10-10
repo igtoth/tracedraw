@@ -47,8 +47,13 @@ pub fn context_menu(app: &mut App, ui: &mut Ui, response: &Response) {
         .show(ui.ctx(), |ui| {
             egui::Frame::popup(ui.style()).show(ui, |ui| {
                 ui.set_min_width(200.0);
+                let on_guide = app.selection.is_empty()
+                    && matches!(app.tool, Tool::Pick | Tool::FreeformPick)
+                    && app.guide_at(p).is_some();
                 if app.tool == Tool::Shape {
                     node_menu(app, ui, &mut close);
+                } else if on_guide {
+                    guide_menu(app, ui, &mut close);
                 } else if app.selection.is_empty() {
                     page_menu(app, ui, p, &mut close);
                 } else {
@@ -67,6 +72,48 @@ pub fn context_menu(app: &mut App, ui: &mut Ui, response: &Response) {
         app.context_menu = None;
     }
     let _ = response;
+}
+
+/// Right-click on a guideline: delete, lock or unlock, and the Guidelines
+/// docker.
+fn guide_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {
+    let guides = app.page_guides();
+    let selected = app.selected_guides.clone();
+    let locked = !selected.is_empty()
+        && selected
+            .iter()
+            .all(|i| guides.get(*i).is_some_and(|g| g.locked));
+    if ci(
+        ui,
+        close,
+        "menu.edit.undo",
+        "Ctrl+Z",
+        app.engine.undo_label().is_some(),
+    ) {
+        app.undo();
+    }
+    ui.separator();
+    if ci(ui, close, "menu.edit.delete", "Delete", !locked) && !app.delete_selected_guides() {
+        app.status = tr("status.guideline_locked");
+    }
+    ui.separator();
+    if locked {
+        if ci(ui, close, "guides.unlock", "", true) {
+            app.set_guides_locked(&selected, false);
+        }
+    } else if ci(ui, close, "guides.lock", "", !selected.is_empty()) {
+        app.set_guides_locked(&selected, true);
+    }
+    ui.separator();
+    if ci(ui, close, "menu.object.properties", "", true) {
+        app.show_dockers = true;
+        app.docker_tab = DockerTab::Guidelines;
+        if let Some(g) = selected.first().and_then(|i| guides.get(*i)) {
+            let mut form = app.guide_form;
+            form.load(app, &g.line);
+            app.guide_form = form;
+        }
+    }
 }
 
 fn object_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {

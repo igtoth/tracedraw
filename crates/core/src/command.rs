@@ -229,6 +229,12 @@ pub enum Command {
         page: PageId,
         index: usize,
     },
+    /// Replace all guidelines of a page (several deleted, locked or
+    /// restyled at once, presets applied).
+    SetGuides {
+        page: PageId,
+        guides: Vec<Guide>,
+    },
 }
 
 impl Command {
@@ -292,6 +298,7 @@ impl Command {
             Command::AddGuide { .. } => "Add Guideline",
             Command::MoveGuide { .. } => "Move Guideline",
             Command::DeleteGuide { .. } => "Delete Guideline",
+            Command::SetGuides { .. } => "Guidelines",
         }
     }
 
@@ -769,6 +776,7 @@ impl Command {
                     p.guides.remove(*index);
                 }
             }
+            Command::SetGuides { page, guides } => doc.page_mut(*page)?.guides = guides.clone(),
             Command::Ungroup { group } => {
                 let (layer_id, idx) = doc.locate(*group)?;
                 let layer = doc.layer_mut(layer_id)?;

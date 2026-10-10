@@ -147,69 +147,118 @@ pub fn pixel_dpi() -> f64 {
     PIXEL_DPI.with(|c| c.get())
 }
 
+/// Units of measure, in the order the target design lists them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Units {
+    Inches,
     #[default]
     Millimeters,
-    Centimeters,
-    Inches,
+    Picas,
     Points,
     Pixels,
+    Ciceros,
+    Didots,
+    Feet,
+    Yards,
+    Miles,
+    Centimeters,
+    Meters,
+    Kilometers,
 }
+
+/// One didot point, mm.
+const DIDOT_MM: f64 = 0.376_065;
 
 impl Units {
     pub fn id(self) -> &'static str {
         match self {
-            Units::Millimeters => "mm",
-            Units::Centimeters => "cm",
             Units::Inches => "in",
+            Units::Millimeters => "mm",
+            Units::Picas => "pc",
             Units::Points => "pt",
             Units::Pixels => "px",
+            Units::Ciceros => "cc",
+            Units::Didots => "dd",
+            Units::Feet => "ft",
+            Units::Yards => "yd",
+            Units::Miles => "mi",
+            Units::Centimeters => "cm",
+            Units::Meters => "m",
+            Units::Kilometers => "km",
         }
     }
     pub fn from_id(id: &str) -> Self {
-        match id {
-            "cm" => Units::Centimeters,
-            "in" => Units::Inches,
-            "pt" => Units::Points,
-            "px" => Units::Pixels,
-            _ => Units::Millimeters,
-        }
+        Units::ALL
+            .into_iter()
+            .find(|u| u.id() == id)
+            .unwrap_or(Units::Millimeters)
     }
-    pub const ALL: [Units; 5] = [
-        Units::Millimeters,
-        Units::Centimeters,
+    pub const ALL: [Units; 13] = [
         Units::Inches,
+        Units::Millimeters,
+        Units::Picas,
         Units::Points,
         Units::Pixels,
+        Units::Ciceros,
+        Units::Didots,
+        Units::Feet,
+        Units::Yards,
+        Units::Miles,
+        Units::Centimeters,
+        Units::Meters,
+        Units::Kilometers,
     ];
     pub fn label(self) -> String {
         crate::i18n::tr(match self {
-            Units::Millimeters => "units.millimeters",
-            Units::Centimeters => "units.centimeters",
             Units::Inches => "units.inches",
+            Units::Millimeters => "units.millimeters",
+            Units::Picas => "units.picas",
             Units::Points => "units.points",
             Units::Pixels => "units.pixels",
+            Units::Ciceros => "units.ciceros",
+            Units::Didots => "units.didots",
+            Units::Feet => "units.feet",
+            Units::Yards => "units.yards",
+            Units::Miles => "units.miles",
+            Units::Centimeters => "units.centimeters",
+            Units::Meters => "units.meters",
+            Units::Kilometers => "units.kilometers",
         })
     }
     pub fn short(self) -> &'static str {
         match self {
-            Units::Millimeters => "mm",
-            Units::Centimeters => "cm",
             Units::Inches => "\"",
+            Units::Millimeters => "mm",
+            Units::Picas => "pc",
             Units::Points => "pt",
             Units::Pixels => "px",
+            Units::Ciceros => "c",
+            Units::Didots => "dd",
+            Units::Feet => "ft",
+            Units::Yards => "yd",
+            Units::Miles => "mi",
+            Units::Centimeters => "cm",
+            Units::Meters => "m",
+            Units::Kilometers => "km",
         }
     }
     /// Millimetres per unit. A pixel is one dot at the active drawing's
     /// resolution (see [`set_pixel_dpi`]).
     pub fn mm(self) -> f64 {
         match self {
-            Units::Millimeters => 1.0,
-            Units::Centimeters => 10.0,
             Units::Inches => 25.4,
+            Units::Millimeters => 1.0,
+            Units::Picas => 25.4 / 6.0,
             Units::Points => 25.4 / 72.0,
             Units::Pixels => 25.4 / pixel_dpi(),
+            Units::Ciceros => 12.0 * DIDOT_MM,
+            Units::Didots => DIDOT_MM,
+            Units::Feet => 304.8,
+            Units::Yards => 914.4,
+            Units::Miles => 1_609_344.0,
+            Units::Centimeters => 10.0,
+            Units::Meters => 1000.0,
+            Units::Kilometers => 1_000_000.0,
         }
     }
     pub fn from_mm(self, v: f64) -> f64 {
@@ -344,9 +393,23 @@ pub enum Drag {
         horizontal: bool,
         pos: Point,
     },
-    /// Dragging an existing guideline.
+    /// Dragging an existing guideline: where the press was, the guideline
+    /// as it was and as it is now (committed on release).
     MoveGuide {
         index: usize,
+        press: Point,
+        start: tracedraw_core::document::Guide,
+        guide: tracedraw_core::document::Guide,
+    },
+    /// Turning a guideline about its pivot with a rotation handle.
+    RotateGuide {
+        index: usize,
+        pivot: Point,
+        guide: tracedraw_core::document::Guide,
+    },
+    /// Dragging the ruler origin out of the corner between the rulers.
+    RulerOrigin {
+        pos: Point,
     },
 }
 
@@ -497,7 +560,18 @@ pub struct App {
     /// ClipFrame being edited in place: (frame id, content ids).
     pub clip_frame_edit: Option<(ShapeId, Vec<ShapeId>)>,
     pub show_guides: bool,
-    pub selected_guide: Option<usize>,
+    /// Selected guidelines of the active page (indices).
+    pub selected_guides: Vec<usize>,
+    /// The guideline showing rotation handles (second click on it).
+    pub guide_rotate: Option<usize>,
+    /// Rotation centre of that guideline, where it was clicked.
+    pub guide_pivot: Point,
+    /// The Guidelines docker's entry fields.
+    pub guide_form: crate::ui::layout_options::GuideForm,
+    /// Document Options > Guidelines presets section.
+    pub guide_presets: crate::ui::layout_options::PresetForm,
+    /// Document Options > Grid shows lines per unit instead of spacing.
+    pub grid_frequency: bool,
     pub transform_values: [f64; 4],
     // ----- added with the full menu structure -----
     pub settings: crate::settings::Settings,
@@ -959,7 +1033,12 @@ impl App {
             pending_clip_frame: false,
             clip_frame_edit: None,
             show_guides: true,
-            selected_guide: None,
+            selected_guides: Vec::new(),
+            guide_rotate: None,
+            guide_pivot: Point::ZERO,
+            guide_form: Default::default(),
+            guide_presets: Default::default(),
+            grid_frequency: false,
             transform_values: [0.0, 0.0, 100.0, 100.0],
             settings: crate::settings::Settings::default(),
             welcome_tab: WelcomeTab::GetStarted,
@@ -973,7 +1052,7 @@ impl App {
             rasterize_complex_effects: true,
             show_bleed: false,
             show_printable_area: false,
-            show_pixel_grid: false,
+            show_pixel_grid: true,
             show_baseline_grid: false,
             options_page: crate::ui::dialogs::OptionsPage::General,
             pending_copy_properties: false,
@@ -1113,6 +1192,51 @@ impl App {
     pub fn open_page_options(&mut self) {
         self.options_page = crate::ui::dialogs::OptionsPage::PageSize;
         self.dialog = crate::ui::dialogs::Dialog::Options;
+    }
+
+    /// Double-click on a ruler: Document Options at the Rulers page.
+    pub fn open_ruler_options(&mut self) {
+        self.options_page = crate::ui::dialogs::OptionsPage::Rulers;
+        self.dialog = crate::ui::dialogs::Dialog::Options;
+    }
+
+    /// The ruler origin, page coordinates in mm.
+    pub fn ruler_origin(&self) -> Point {
+        let r = self.doc().metadata.rulers;
+        Point::new(r.origin_x, r.origin_y)
+    }
+
+    /// A page position as the rulers count it (mm from the ruler origin).
+    pub fn to_ruler(&self, p: Point) -> Point {
+        let o = self.ruler_origin();
+        Point::new(p.x - o.x, p.y - o.y)
+    }
+
+    /// A position counted from the ruler origin, back to page coordinates.
+    pub fn from_ruler(&self, p: Point) -> Point {
+        let o = self.ruler_origin();
+        Point::new(p.x + o.x, p.y + o.y)
+    }
+
+    /// Move the ruler origin (undoable, saved with the drawing).
+    pub fn set_ruler_origin(&mut self, origin: Point) {
+        let mut metadata = self.doc().metadata.clone();
+        if metadata.rulers.origin_x == origin.x && metadata.rulers.origin_y == origin.y {
+            return;
+        }
+        metadata.rulers.origin_x = origin.x;
+        metadata.rulers.origin_y = origin.y;
+        if let Err(e) = self
+            .engine
+            .run_with_label(&Command::SetMetadata { metadata }, "Ruler Origin")
+        {
+            self.status = format!("Ruler Origin: {e}");
+        }
+    }
+
+    /// True while the ruler origin is being dragged out of the corner.
+    pub fn drag_is_origin(&self) -> bool {
+        matches!(self.drag, Drag::RulerOrigin { .. })
     }
 
     /// The colour around the page (Options > Customization), white by
@@ -1269,6 +1393,11 @@ impl App {
 
     /// Tools > Save Settings as Default: persist current tool defaults.
     pub fn save_defaults(&mut self) {
+        // New drawings start with this drawing's grid, rulers and
+        // guideline settings.
+        if self.has_document() {
+            self.settings.document_defaults = crate::settings::DocumentDefaults::of(self.doc());
+        }
         self.save_settings();
         self.status = crate::i18n::tr("status.settings_saved");
     }
@@ -2159,7 +2288,8 @@ impl App {
     /// Create a New Document dialog.
     pub fn new_document(&mut self) {
         let name = self.next_untitled_name();
-        let doc = self.settings.new_document.build(name);
+        let mut doc = self.settings.new_document.build(name);
+        self.settings.document_defaults.apply(&mut doc);
         self.open_document(doc, None);
         self.status.clear();
     }
@@ -3045,14 +3175,25 @@ impl App {
         }
     }
 
+    /// Screen pixels per mm at 100%: real size on a 96 dpi screen, or in
+    /// the Pixels view one screen pixel per document pixel, as the
+    /// target design counts zoom.
+    fn zoom_100(&self) -> f32 {
+        let dpi = if self.view_mode == ViewMode::Pixels {
+            self.document_dpi().max(1.0) as f32
+        } else {
+            96.0
+        };
+        dpi / 25.4
+    }
+
     pub fn zoom_percent(&self) -> f32 {
-        // 100% = 96 dpi, as the target design shows it.
-        self.view.zoom / (96.0 / 25.4) * 100.0
+        self.view.zoom / self.zoom_100() * 100.0
     }
 
     pub fn set_zoom_percent(&mut self, pct: f32) {
         let anchor: Pos2 = self.canvas_rect.center();
-        let target = pct / 100.0 * (96.0 / 25.4);
+        let target = pct / 100.0 * self.zoom_100();
         self.view.zoom_at(anchor, target / self.view.zoom);
     }
 

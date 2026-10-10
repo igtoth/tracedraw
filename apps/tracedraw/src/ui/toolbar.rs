@@ -249,8 +249,13 @@ pub fn transform_toolbar(app: &mut App, ui: &mut Ui) {
         let mut b = app.selection_bounds().unwrap_or_default();
         let (x0, y0, w, h) = (b.x0, b.y0, b.width(), b.height());
         let mut changed = false;
-        changed |= unit_value(ui, app, "x", &mut b.x0, 0.5);
-        changed |= unit_value(ui, app, "y", &mut b.y0, 0.5);
+        // Positions count from the ruler origin.
+        let o = app.ruler_origin();
+        let (mut rx, mut ry) = (b.x0 - o.x, b.y0 - o.y);
+        changed |= unit_value(ui, app, "x", &mut rx, 0.5);
+        changed |= unit_value(ui, app, "y", &mut ry, 0.5);
+        b.x0 = rx + o.x;
+        b.y0 = ry + o.y;
         let mut nw = w;
         let mut nh = h;
         changed |= unit_value(ui, app, "w", &mut nw, 0.5);
@@ -1609,14 +1614,16 @@ fn object_properties(app: &mut App, ui: &mut Ui) {
         page_properties(app, ui);
         return;
     };
-    let mut x = b.x0;
-    let mut y = b.y0;
+    // Positions count from the ruler origin.
+    let o = app.ruler_origin();
+    let mut x = b.x0 - o.x;
+    let mut y = b.y0 - o.y;
     let mut w = b.width();
     let mut h = b.height();
     let cx = unit_value(ui, app, "X", &mut x, 0.5);
     let cy = unit_value(ui, app, "Y", &mut y, 0.5);
     if cx || cy {
-        app.transform_selection(Affine::translate((x - b.x0, y - b.y0)));
+        app.transform_selection(Affine::translate((x + o.x - b.x0, y + o.y - b.y0)));
     }
     vsep(ui);
     let cw = unit_value(ui, app, "W", &mut w, 0.5);

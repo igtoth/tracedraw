@@ -18,8 +18,7 @@ impl Tokens {
     pub const PAGE_BORDER: Color32 = Color32::from_rgb(0xAA, 0xAA, 0xAA);
     /// Screen offset of the page shadow, pixels.
     pub const PAGE_SHADOW_OFFSET: egui::Vec2 = egui::vec2(6.0, 4.0);
-    pub const RULER_BG: Color32 = Color32::from_rgb(0xF7, 0xF7, 0xF7);
-    pub const RULER_TICK: Color32 = Color32::from_rgb(0x50, 0x50, 0x50);
+    pub const RULER_BG: Color32 = Color32::from_rgb(0xF4, 0xF4, 0xF4);
     pub const HANDLE: Color32 = Color32::from_rgb(0x1E, 0x1E, 0x1E);
     pub const SELECTION: Color32 = Color32::from_rgb(0x00, 0x78, 0xD7);
     pub const TOOL_ACTIVE: Color32 = Color32::from_rgb(0xCC, 0xE4, 0xF7);

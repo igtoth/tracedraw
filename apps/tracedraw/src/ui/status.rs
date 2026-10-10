@@ -126,7 +126,7 @@ fn object_details(app: &App) -> String {
 }
 
 fn cursor_coordinates(app: &App) -> String {
-    match app.pointer_page {
+    match app.pointer_page.map(|p| app.to_ruler(p)) {
         Some(p) => {
             let u = app.units;
             format!(

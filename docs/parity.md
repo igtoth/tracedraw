@@ -18,8 +18,8 @@ Counts: works 136, partial 1 (`.cdr` content coverage), missing 2 (CMX import; w
 | Free Transform (rotation, angle reflection, scale, skew modes, Apply to Duplicate) | works |
 | Zoom tool, zoom levels, zoom to page/fit/selected, marquee zoom, Shift+F4 | works |
 | Pan, mouse wheel, Ctrl and Shift wheel | works |
-| Rulers with draggable origin, guidelines from rulers, Guidelines docker | works |
-| Grid: document, pixel, baseline; snapping with threshold | works |
+| Rulers drawn as the reference (numbers from the origin without sign, unit name, origin button, pointer markers), draggable origin, double-click for ruler settings, guidelines from rulers, Guidelines docker; all 13 units | works |
+| Grid: document (lines or dots, spacing or frequency, thinned when dense, through the origin), pixel (Pixels view from 800%, colour and opacity), baseline (spacing, start from top, colour); snapping with threshold | works |
 | Snap to objects, page, guidelines, dynamic and alignment guides; Alt+Q snap off | works |
 | View modes: Wireframe, Normal, Enhanced, Pixels; full-screen preview (F9); preview selected only | works |
 | Page sorter view | works |
@@ -152,7 +152,7 @@ Counts: works 136, partial 1 (`.cdr` content coverage), missing 2 (CMX import; w
 | Master layers (all, odd, even pages), layer visibility, lock, printable | works |
 | Objects docker (layers and objects tree, drag to reorder) | works |
 | Document properties and metadata, rendering resolution, baseline grid | works |
-| Guidelines docker, presets, angled guides | works |
+| Guidelines docker, presets (seven presets, user-defined margins, columns, grid), angled guides, per-guideline colour, style and lock, rotate handles, drag off to delete, right-click Lock/Unlock, Select All > Guidelines | works |
 | Insert page number (active layer, all, odd, even) | works |
 | Templates: save as template, new from template | works |
 

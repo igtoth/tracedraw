@@ -412,7 +412,8 @@ pub fn create(app: &mut App, st: &NewDocState) {
     } else {
         st.name.trim().to_string()
     };
-    let doc = st.settings.build(name);
+    let mut doc = st.settings.build(name);
+    app.settings.document_defaults.apply(&mut doc);
     // The name shown was the next Untitled-N: use it up.
     app.untitled_counter += 1;
     app.open_document(doc, None);
