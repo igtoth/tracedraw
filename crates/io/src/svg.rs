@@ -389,9 +389,16 @@ fn write_shape(
         .as_deref()
         .map(|n| format!(" data-name=\"{}\"", escape(n)))
         .unwrap_or_default();
+    // Shapes fill even-odd, as the renderer draws them (holes in combined
+    // curves, the middle of a complex star); text keeps the default.
+    let rule = if matches!(shape.kind, ShapeKind::Text { .. }) {
+        ""
+    } else {
+        " fill-rule=\"evenodd\""
+    };
     let _ = writeln!(
         out,
-        "{pad}<path id=\"{}\"{name} d=\"{d}\" {fill_attr} {stroke_attr}/>",
+        "{pad}<path id=\"{}\"{name} d=\"{d}\" {fill_attr}{rule} {stroke_attr}/>",
         shape.id.raw()
     );
     if let Some((band, color)) = calligraphic {
@@ -529,6 +536,30 @@ mod tests {
         // Bottom-left origin: y=10 in page space is y=287 in SVG space.
         assert!(svg.contains("M10 287"));
         assert!(svg.contains("stroke-width=\"0.5\""));
+    }
+
+    #[test]
+    fn shapes_fill_even_odd_like_the_renderer() {
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        let id = doc.ids_mut().shape();
+        let mut s = Shape::new(
+            id,
+            ShapeKind::Polygon {
+                rect: Rect::new(10.0, 10.0, 60.0, 60.0),
+                points: 5,
+                sharpness: 0.0,
+                complex: Some(1),
+            },
+        );
+        s.fill = Fill::Solid(Color::rgb8(255, 0, 0));
+        doc.layer_mut(layer).unwrap().shapes.push(s);
+        let svg = page_to_svg(&doc, 0);
+        let line = svg
+            .lines()
+            .find(|l| l.contains("fill=\"#ff0000\""))
+            .expect("the star");
+        assert!(line.contains("fill-rule=\"evenodd\""), "{line}");
     }
 
     #[test]

@@ -410,6 +410,11 @@ impl App {
                 self.polygon_points,
                 0.0,
             ),
+            Tool::Star if self.star_complex => tracedraw_core::geometry::complex_star_path(
+                polygon_rect_for_bounds(r, self.complex_points, 0.0),
+                self.complex_points,
+                self.complex_sharpness,
+            ),
             Tool::Star => polygon_path(
                 polygon_rect_for_bounds(r, self.polygon_points, self.star_sharpness),
                 self.polygon_points,

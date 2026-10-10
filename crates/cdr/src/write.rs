@@ -1238,4 +1238,40 @@ mod tests {
             matches!(read[3].kind, ShapeKind::Rect { radius, .. } if (radius - 1.5).abs() < 0.01)
         );
     }
+
+    #[test]
+    fn complex_stars_are_written_as_curves() {
+        let mut doc = doc_with(Vec::new());
+        let mut ids = doc.ids().clone();
+        let mut star = Shape::new(
+            ids.shape(),
+            ShapeKind::Polygon {
+                rect: Rect::new(10.0, 10.0, 50.0, 50.0),
+                points: 6,
+                sharpness: 0.0,
+                complex: Some(1),
+            },
+        );
+        star.fill = Fill::Solid(Color::BLACK);
+        doc.pages[0].layers[0].shapes = vec![star.clone()];
+        doc.set_ids(ids);
+        let (back, rep) = crate::open_bytes(&document_to_cdr(&doc), "back").expect("reads back");
+        let read = &back.pages[0].layers[0].shapes;
+        assert_eq!(read.len(), 1, "{:?}", rep.warnings);
+        let ShapeKind::Path { path, .. } = &read[0].kind else {
+            panic!("{:?}", read[0].kind);
+        };
+        // Two triangles, as drawn.
+        let moves = path
+            .elements()
+            .iter()
+            .filter(|e| matches!(e, tracedraw_core::geometry::PathEl::MoveTo(_)))
+            .count();
+        assert_eq!(moves, 2);
+        let (a, b) = (
+            star.page_path().area().abs(),
+            read[0].page_path().area().abs(),
+        );
+        assert!((a - b).abs() < 0.5, "{a} vs {b}");
+    }
 }

@@ -82,6 +82,53 @@ pub fn polygon_path(rect: Rect, points: u32, sharpness: f64) -> BezPath {
     path
 }
 
+/// The fewest points a complex star has.
+pub const COMPLEX_STAR_MIN_POINTS: u32 = 5;
+
+/// The largest sharpness a complex star of `points` points takes: its
+/// sides join vertices at most (points - 1) / 2 apart.
+pub fn complex_star_max_sharpness(points: u32) -> u32 {
+    let n = points.max(COMPLEX_STAR_MIN_POINTS);
+    ((n - 1) / 2).saturating_sub(1).max(1)
+}
+
+/// A complex star: `points` vertices on the ellipse in `rect` (the first
+/// at the top, then clockwise), each joined to the one `sharpness + 1`
+/// further on, so the sides cross. When that step shares a factor with
+/// the count the star is several closed subpaths (two triangles for six
+/// points). Filled even-odd, the middle stays empty.
+pub fn complex_star_path(rect: Rect, points: u32, sharpness: u32) -> BezPath {
+    let n = points.clamp(COMPLEX_STAR_MIN_POINTS, 500) as usize;
+    let step = sharpness.clamp(1, complex_star_max_sharpness(n as u32)) as usize + 1;
+    let verts: Vec<Point> = {
+        let c = rect.center();
+        let (rx, ry) = (rect.width() / 2.0, rect.height() / 2.0);
+        polygon_unit_vertices(n as u32, 0.0)
+            .map(|(x, y)| Point::new(c.x + rx * x, c.y + ry * y))
+            .collect()
+    };
+    let g = gcd(n, step);
+    let mut path = BezPath::new();
+    for start in 0..g {
+        let mut i = start;
+        path.move_to(verts[i]);
+        for _ in 1..n / g {
+            i = (i + step) % n;
+            path.line_to(verts[i]);
+        }
+        path.close_path();
+    }
+    path
+}
+
+fn gcd(a: usize, b: usize) -> usize {
+    if b == 0 {
+        a.max(1)
+    } else {
+        gcd(b, a % b)
+    }
+}
+
 /// Vertices of a polygon or star on the unit circle, first at the top
 /// (y up), then clockwise.
 fn polygon_unit_vertices(points: u32, sharpness: f64) -> impl Iterator<Item = (f64, f64)> {
@@ -240,6 +287,43 @@ mod tests {
             PathEl::MoveTo(q) => assert!((q.x - 5.0).abs() < 1e-9 && (q.y - 10.0).abs() < 1e-9),
             ref e => panic!("{e:?}"),
         }
+    }
+
+    #[test]
+    fn complex_stars_cross_their_sides() {
+        let r = Rect::new(0.0, 0.0, 10.0, 10.0);
+        let count =
+            |p: &BezPath, f: fn(&PathEl) -> bool| p.elements().iter().filter(|e| f(e)).count();
+        // A pentagram: one subpath of five vertices, every second one.
+        let p = complex_star_path(r, 5, 1);
+        assert_eq!(count(&p, |e| matches!(e, PathEl::MoveTo(_))), 1);
+        assert_eq!(count(&p, |e| matches!(e, PathEl::LineTo(_))), 4);
+        let pts: Vec<Point> = p
+            .elements()
+            .iter()
+            .filter_map(|e| match e {
+                PathEl::MoveTo(q) | PathEl::LineTo(q) => Some(*q),
+                _ => None,
+            })
+            .collect();
+        let verts = polygon_path(r, 5, 0.0);
+        let PathEl::LineTo(v2) = verts.elements()[2] else {
+            panic!("{verts:?}");
+        };
+        assert!((pts[1] - v2).hypot() < 1e-9, "{pts:?}");
+        // Filled even-odd, the middle pentagon is a hole.
+        assert!(p.winding(r.center()).abs() == 2);
+        // Six points: two triangles.
+        let p = complex_star_path(r, 6, 1);
+        assert_eq!(count(&p, |e| matches!(e, PathEl::MoveTo(_))), 2);
+        // Sharpness follows the point count.
+        assert_eq!(complex_star_max_sharpness(5), 1);
+        assert_eq!(complex_star_max_sharpness(9), 3);
+        assert_eq!(complex_star_max_sharpness(12), 4);
+        assert_eq!(complex_star_max_sharpness(0), 1);
+        // Out of range values are brought in.
+        assert_eq!(complex_star_path(r, 9, 50), complex_star_path(r, 9, 3));
+        assert_eq!(complex_star_path(r, 1, 1), complex_star_path(r, 5, 1));
     }
 
     #[test]

@@ -1353,6 +1353,19 @@ pub fn draw_docker_preview(app: &App, painter: &Painter) {
             dashed_polyline(painter, &pts, stroke, 4.0, 3.0);
         }
     }
+    // The marked point (the Coordinates docker's origin point): a blue
+    // node.
+    if let Some(p) = app.docker_preview_point {
+        let c = app.view.to_screen(p);
+        let r = ERect::from_center_size(c, egui::vec2(7.0, 7.0));
+        painter.rect_filled(r, 0.0, Tokens::SELECTION);
+        painter.rect_stroke(
+            r,
+            0.0,
+            EStroke::new(1.0, Color32::WHITE),
+            egui::StrokeKind::Outside,
+        );
+    }
 }
 
 /// A polyline drawn in dashes of `on` px with `off` px gaps.

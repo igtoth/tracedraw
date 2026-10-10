@@ -122,13 +122,17 @@ impl App {
         }
         // Right click: context menu (drawn by the UI at this position).
         if response.secondary_clicked() && !self.pending_clip_frame {
-            if self.pending_click(response, p) {
+            if self.pending_click(response, p) || self.coords_pick_input(response, p) {
                 return;
             }
             self.open_context_menu(screen, p);
             return;
         }
         if self.pending_click(response, p) {
+            return;
+        }
+        // The Coordinates docker waits for a click or a drag.
+        if self.coords_pick_input(response, p) {
             return;
         }
 

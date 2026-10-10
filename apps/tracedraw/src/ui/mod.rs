@@ -5,6 +5,7 @@
 
 pub mod chrome;
 pub mod context;
+pub mod coords_docker;
 pub mod dialogs;
 pub mod dockers;
 pub mod dockers2;
@@ -54,6 +55,7 @@ fn set_window_title(ctx: &egui::Context, title: String) {
 pub fn root(app: &mut App, ui: &mut Ui) {
     // Dockers set their canvas previews again each frame they are shown.
     app.docker_preview.clear();
+    app.docker_preview_point = None;
     let ctx = ui.ctx().clone();
     // Pixels are measured at the active drawing's resolution.
     crate::app::set_pixel_dpi(app.document_dpi());

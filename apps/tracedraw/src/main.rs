@@ -18,6 +18,7 @@ mod border_grommet;
 mod canvas;
 mod clipboard;
 mod clone_effect;
+mod coords;
 mod corners;
 mod documents;
 mod effects_ui;

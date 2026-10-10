@@ -524,6 +524,11 @@ pub struct App {
     pub default_stroke: Option<Stroke>,
     pub polygon_points: u32,
     pub star_sharpness: f64,
+    /// Star tool: draw complex stars (sides crossing), their points and
+    /// sharpness.
+    pub star_complex: bool,
+    pub complex_points: u32,
+    pub complex_sharpness: u32,
     /// Corners of new rectangles (style, sizes, relative scaling).
     pub rect_corners: tracedraw_core::Corners,
     /// The property bar's lock: one corner size edits them all.
@@ -608,6 +613,9 @@ pub struct App {
     pub join_settings: crate::corners::JoinSettings,
     /// Outlines a docker previews on the canvas this frame (page space).
     pub docker_preview: Vec<tracedraw_core::geometry::BezPath>,
+    /// A point a docker marks on the drawing (the Coordinates docker's
+    /// origin point), page space.
+    pub docker_preview_point: Option<Point>,
     /// The point the pointer snapped to this frame, for its mark.
     pub snap_mark: std::cell::Cell<Option<crate::snap_points::Target>>,
     pub dialog: crate::ui::dialogs::Dialog,
@@ -752,6 +760,11 @@ pub struct App {
     pub node_lasso: bool,
     /// Shape tool: the last run of nodes Shift+click selected.
     pub node_run: Option<crate::node_edit::NodeRun>,
+    /// The Coordinates docker's fields, the "Set ... interactively" pick
+    /// it waits for and where that pick's drag began.
+    pub coords: crate::coords::CoordsState,
+    pub coord_pick: Option<crate::coords::CoordPick>,
+    pub coord_drag: Option<Point>,
     /// Shape tool: the Curve smoothness slider and the curves it started from.
     pub curve_smoothness: f64,
     pub smoothing: Option<Vec<crate::node_edit::StartCurve>>,
@@ -863,10 +876,11 @@ pub enum DockerTab {
     Fonts,
     Corners,
     JoinCurves,
+    Coordinates,
 }
 
 impl DockerTab {
-    pub const ALL: [DockerTab; 32] = [
+    pub const ALL: [DockerTab; 33] = [
         DockerTab::Properties,
         DockerTab::Objects,
         DockerTab::Hints,
@@ -899,6 +913,7 @@ impl DockerTab {
         DockerTab::Fonts,
         DockerTab::Corners,
         DockerTab::JoinCurves,
+        DockerTab::Coordinates,
     ];
 
     /// i18n key of the docker's title.
@@ -936,6 +951,7 @@ impl DockerTab {
             DockerTab::Fonts => "docker.fonts",
             DockerTab::Corners => "docker.corners_docker",
             DockerTab::JoinCurves => "docker.join_curves",
+            DockerTab::Coordinates => "docker.coordinates",
         }
     }
 
@@ -1066,6 +1082,9 @@ impl App {
             }),
             polygon_points: 5,
             star_sharpness: 0.5,
+            star_complex: false,
+            complex_points: 9,
+            complex_sharpness: 2,
             rect_corners: tracedraw_core::Corners::default(),
             corners_together: true,
             rect_corner_selected: None,
@@ -1130,6 +1149,7 @@ impl App {
             corners: Default::default(),
             join_settings: Default::default(),
             docker_preview: Vec::new(),
+            docker_preview_point: None,
             dialog: crate::ui::dialogs::Dialog::None,
             merge_state: None,
             page_numbers: PageNumberSettings::default(),
@@ -1237,6 +1257,9 @@ impl App {
             reflect_nodes: (false, false),
             node_lasso: false,
             node_run: None,
+            coords: Default::default(),
+            coord_pick: None,
+            coord_drag: None,
             curve_smoothness: 0.0,
             smoothing: None,
             selected_effect_node: None,
@@ -1891,6 +1914,18 @@ impl App {
                 ),
                 points: self.polygon_points,
                 sharpness: 0.0,
+                complex: None,
+            },
+            // A complex star's vertices are those of a polygon.
+            Tool::Star if self.star_complex => ShapeKind::Polygon {
+                rect: tracedraw_core::geometry::polygon_rect_for_bounds(
+                    rect,
+                    self.complex_points,
+                    0.0,
+                ),
+                points: self.complex_points,
+                sharpness: 0.0,
+                complex: Some(self.complex_sharpness),
             },
             Tool::Star => ShapeKind::Polygon {
                 rect: tracedraw_core::geometry::polygon_rect_for_bounds(
@@ -1900,6 +1935,7 @@ impl App {
                 ),
                 points: self.polygon_points,
                 sharpness: self.star_sharpness,
+                complex: None,
             },
             Tool::GraphPaper => {
                 self.create_graph_paper(rect);

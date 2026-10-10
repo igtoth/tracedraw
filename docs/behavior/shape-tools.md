@@ -62,9 +62,17 @@ whatever tool is active.
   vertices lie on, so the ellipse is computed from the unit polygon's
   vertex bounds `(x0, x1, y0, y1)` as `rx = w / (x1 - x0)`,
   `ry = h / (y1 - y0)`, centre `(left - x0 rx, bottom - y0 ry)`.
-- Star sharpness: default 0.5 (0 = polygon, 1 = thinnest spikes);
-  Complex star uses the same outline with the even-odd rule, so the
-  centre is hollow.
+- Star sharpness: default 0.5 (0 = polygon, 1 = thinnest spikes).
+- The Star tool's property bar starts with the Star and Complex Star
+  buttons, which pick what it draws. A complex star (default 9 points,
+  sharpness 2) joins each vertex to the one `sharpness + 1` further on,
+  so its sides cross; points 5..500, sharpness 1..`(points - 1) / 2 - 1`
+  (at least 1). When that step shares a factor with the points the star
+  is several closed subpaths (6 points: two triangles). Filled even-odd,
+  its middle stays empty. Its vertices are a polygon's, so the dragged
+  box fits them the same way; the Shape tool shows the vertices only and
+  dragging one grows or shrinks the star about its centre. `.cdr` files
+  get it as a curve.
 - Polygons are symmetric: moving one node with the Shape tool moves its
   mirrored counterparts (see `shape-tool.md`).
 
@@ -98,6 +106,9 @@ whatever tool is active.
   (30,20) (centre at the start point).
 - Given a 5-point star with sharpness 0.5 in a 40 mm square, then its
   bounds are 40 x 40 mm and it has 10 nodes.
+- `geometry::tests::complex_stars_cross_their_sides` (pentagram winding
+  2 in the middle, two triangles for 6 points, sharpness limits) and
+  `ui::propbar::tests::the_star_tool_draws_complex_stars_that_fill_the_drag`.
 - Given a 40 x 20 mm rectangle with 5 mm corners, then it loses
   (4 - pi) 25 mm2 with round corners, 25 pi with scalloped ones and 50
   with chamfered ones (`document::tests::corner_styles_cut_the_expected_area`).

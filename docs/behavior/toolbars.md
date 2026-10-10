@@ -88,7 +88,9 @@ into it (`ui::field::tests`).
   right, with spin arrows; the Edit Corners Together lock; Relative
   Corner Scaling);
   ellipse, pie or arc with start and end angles and the change direction
-  button; polygon points or sides and star sharpness (1 to 99).
+  button; polygon points or sides and star sharpness (1 to 99); with
+  the Star tool the Star and Complex Star buttons come first, and a
+  complex star's sharpness counts steps (1 up to what its points allow).
 - Then the outline: width (Hairline, None, preset widths in the ruler
   unit), line style, start and end arrowheads; then To Front, To Back and
   Convert to Curves.

@@ -84,6 +84,9 @@ pub enum Pic {
     Elastic,
     SelectAllNodes,
     ReduceNodes,
+    // The Star tool's kinds.
+    Star,
+    ComplexStar,
 }
 
 fn q(r: Rect, x: f32, y: f32) -> Pos2 {
@@ -704,6 +707,24 @@ fn draw_node_pic(painter: &Painter, r: Rect, pic: Pic, color: Color32) {
                 node(x, y, false);
             }
             line((5.5, 1.5), (10.5, 1.5), s);
+        }
+        Pic::Star | Pic::ComplexStar => {
+            let vertex = |i: usize, rad: f32| {
+                let a = std::f32::consts::FRAC_PI_2 - i as f32 * std::f32::consts::TAU / 10.0;
+                (8.0 + rad * a.cos(), 8.6 - rad * a.sin())
+            };
+            let pts: Vec<(f32, f32)> = if pic == Pic::Star {
+                (0..10)
+                    .map(|i| vertex(i, if i % 2 == 0 { 7.2 } else { 3.0 }))
+                    .collect()
+            } else {
+                // Every second vertex of five: the sides cross.
+                [0, 4, 8, 2, 6].iter().map(|i| vertex(*i, 7.2)).collect()
+            };
+            painter.add(epaint::PathShape::closed_line(
+                pts.iter().map(|(x, y)| q(r, *x, *y)).collect(),
+                s,
+            ));
         }
         _ => {}
     }
@@ -1504,14 +1525,19 @@ pub fn ellipse_part(app: &mut App, ui: &mut Ui) {
 }
 
 /// Points and sharpness of polygons and stars (sharpness 1 to 99, as
-/// the target design counts it).
+/// the target design counts it); complex stars count their sharpness in
+/// steps (1 up to what their points allow). With the Star tool, the Star
+/// and Complex Star buttons pick what it draws.
 pub fn polygon_part(app: &mut App, ui: &mut Ui, star: bool) {
-    let selected: Vec<(
+    use tracedraw_core::geometry::{complex_star_max_sharpness, COMPLEX_STAR_MIN_POINTS};
+    type Sel = (
         tracedraw_core::ShapeId,
         tracedraw_core::geometry::Rect,
         u32,
         f64,
-    )> = app
+        Option<u32>,
+    );
+    let selected: Vec<Sel> = app
         .selected_shapes()
         .iter()
         .filter_map(|s| match &s.kind {
@@ -1519,13 +1545,71 @@ pub fn polygon_part(app: &mut App, ui: &mut Ui, star: bool) {
                 rect,
                 points,
                 sharpness,
-            } => Some((s.id, *rect, *points, *sharpness)),
+                complex,
+            } => Some((s.id, *rect, *points, *sharpness, *complex)),
             _ => None,
         })
         .collect();
+    if star && app.tool == crate::tools::Tool::Star {
+        for (complex, pic, tip) in [
+            (false, Pic::Star, "toolbar.star_tool"),
+            (true, Pic::ComplexStar, "toolbar.complex_star_tool"),
+        ] {
+            if pic_button(ui, pic, &tr(tip), true, app.star_complex == complex).clicked() {
+                app.star_complex = complex;
+            }
+        }
+        sep(ui);
+    }
+    let complex = match selected.first() {
+        Some(s) => s.4.is_some(),
+        None => star && app.star_complex,
+    };
+    if complex {
+        let (mut n, mut k) = selected
+            .first()
+            .map(|s| (s.2, s.4.unwrap_or(1)))
+            .unwrap_or((app.complex_points, app.complex_sharpness));
+        let (n0, k0) = (n, k);
+        ui.label(tr("toolbar.points_sides"));
+        ui.add_sized(
+            [56.0, ROW + 4.0],
+            crate::ui::field::NumField::new(&mut n).range(COMPLEX_STAR_MIN_POINTS..=500),
+        );
+        ui.label(tr("toolbar.sharpness"));
+        let max = complex_star_max_sharpness(n);
+        ui.add_sized(
+            [56.0, ROW + 4.0],
+            crate::ui::field::NumField::new(&mut k).range(1..=max),
+        );
+        let k = k.clamp(1, complex_star_max_sharpness(n));
+        if n != n0 || k != k0 {
+            app.complex_points = n;
+            app.complex_sharpness = k;
+            let cmds: Vec<Command> = selected
+                .iter()
+                .filter(|s| s.4.is_some())
+                .map(|(id, rect, ..)| Command::SetShapeKind {
+                    shape: *id,
+                    kind: ShapeKind::Polygon {
+                        rect: *rect,
+                        points: n,
+                        sharpness: 0.0,
+                        complex: Some(k),
+                    },
+                })
+                .collect();
+            if !cmds.is_empty() {
+                if let Err(e) = app.engine.run_batch("Complex Star", &cmds) {
+                    app.status = e.to_string();
+                }
+            }
+        }
+        return;
+    }
     let (mut n, mut sharp) = selected
         .first()
-        .map(|(_, _, n, s)| (*n, *s))
+        .map(|s| (s.2, s.3))
         .unwrap_or((app.polygon_points, app.star_sharpness));
     let star = star || selected.first().is_some_and(|s| s.3 > 0.0);
     let (n0, s0) = (n, sharp);
@@ -1552,12 +1636,14 @@ pub fn polygon_part(app: &mut App, ui: &mut Ui, star: bool) {
         app.star_sharpness = sharp;
         let cmds: Vec<Command> = selected
             .iter()
-            .map(|(id, rect, _, old)| Command::SetShapeKind {
+            .filter(|s| s.4.is_none())
+            .map(|(id, rect, _, old, _)| Command::SetShapeKind {
                 shape: *id,
                 kind: ShapeKind::Polygon {
                     rect: *rect,
                     points: n,
                     sharpness: if *old > 0.0 || star { sharp } else { 0.0 },
+                    complex: None,
                 },
             })
             .collect();
@@ -1908,6 +1994,43 @@ mod tests {
         app.undo();
         let s = app.selected_shapes()[0].clone();
         assert!(!s.page_corners().unwrap().fixed);
+    }
+
+    #[test]
+    fn the_star_tool_draws_complex_stars_that_fill_the_drag() {
+        let mut app = App::headless();
+        app.tool = crate::tools::Tool::Star;
+        app.star_complex = true;
+        app.create_box_shape(Point::new(10.0, 10.0), Point::new(50.0, 30.0));
+        let s = app.selected_shapes()[0].clone();
+        assert!(matches!(
+            s.kind,
+            ShapeKind::Polygon {
+                points: 9,
+                complex: Some(2),
+                ..
+            }
+        ));
+        let b = s.bounds();
+        assert!(
+            (b.x0 - 10.0).abs() < 1e-9 && (b.x1 - 50.0).abs() < 1e-9,
+            "{b:?}"
+        );
+        assert!(
+            (b.y0 - 10.0).abs() < 1e-9 && (b.y1 - 30.0).abs() < 1e-9,
+            "{b:?}"
+        );
+        // The preview while dragging is the same star.
+        let p = app.creation_preview(Point::new(10.0, 10.0), Point::new(50.0, 30.0), false);
+        assert_eq!(
+            p.map(|p| p.elements().len()),
+            Some(s.local_path().elements().len())
+        );
+        // Perfect stars stay perfect.
+        app.star_complex = false;
+        app.create_box_shape(Point::new(10.0, 10.0), Point::new(50.0, 30.0));
+        let s = app.selected_shapes()[0].clone();
+        assert!(matches!(s.kind, ShapeKind::Polygon { complex: None, .. }));
     }
 
     #[test]

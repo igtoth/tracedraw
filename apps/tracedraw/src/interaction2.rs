@@ -512,6 +512,7 @@ impl App {
                 rect: tracedraw_core::geometry::polygon_rect_for_bounds(b, 3, 0.0),
                 points: 3,
                 sharpness: 0.0,
+                complex: None,
             }
         } else if closed && pts.len() == 4 || closed && pts.len() == 5 {
             ShapeKind::Rect {

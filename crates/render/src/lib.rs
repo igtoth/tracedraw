@@ -1912,6 +1912,7 @@ mod tests {
                 rect: Rect::new(10.0, 10.0, 90.0, 90.0),
                 points: 5,
                 sharpness: 0.6,
+                complex: None,
             },
         );
         s.fill = Fill::Solid(Color::rgb8(255, 0, 0));

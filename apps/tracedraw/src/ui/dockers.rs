@@ -942,6 +942,9 @@ pub fn kind_id(k: &ShapeKind) -> &'static str {
     match k {
         ShapeKind::Rect { .. } => "Rectangle",
         ShapeKind::Ellipse { .. } => "Ellipse",
+        ShapeKind::Polygon {
+            complex: Some(_), ..
+        } => "ComplexStar",
         ShapeKind::Polygon { sharpness, .. } if *sharpness > 0.0 => "Star",
         ShapeKind::Polygon { .. } => "Polygon",
         ShapeKind::Path { .. } => "Curve",
@@ -959,10 +962,15 @@ pub fn kind_name(k: &ShapeKind) -> String {
         ShapeKind::Rect { .. } => tr("kind.rectangle"),
         ShapeKind::Ellipse { .. } => tr("kind.ellipse"),
         ShapeKind::Polygon {
-            sharpness, points, ..
+            sharpness,
+            points,
+            complex,
+            ..
         } => {
             let n = points.to_string();
-            if *sharpness > 0.0 {
+            if complex.is_some() {
+                trf("kind.complex_star_n", &[("n", &n)])
+            } else if *sharpness > 0.0 {
                 trf("kind.star_n", &[("n", &n)])
             } else {
                 trf("kind.polygon_n", &[("n", &n)])

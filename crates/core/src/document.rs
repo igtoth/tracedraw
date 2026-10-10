@@ -265,11 +265,15 @@ pub enum ShapeKind {
         #[serde(default)]
         arc: Option<EllipseArc>,
     },
-    /// Polygon or star inscribed in `rect`.
+    /// Polygon or star inscribed in `rect`. `complex` makes a complex
+    /// star: each vertex joined to the one `complex + 1` further on, so the
+    /// sides cross (`sharpness` is then unused).
     Polygon {
         rect: Rect,
         points: u32,
         sharpness: f64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        complex: Option<u32>,
     },
     /// Free path (lines and cubic Beziers) in local space.
     Path { path: BezPath, closed: bool },
@@ -995,7 +999,11 @@ impl Shape {
                 rect,
                 points,
                 sharpness,
-            } => geometry::polygon_path(*rect, *points, *sharpness),
+                complex,
+            } => match complex {
+                Some(k) => geometry::complex_star_path(*rect, *points, *k),
+                None => geometry::polygon_path(*rect, *points, *sharpness),
+            },
             ShapeKind::Path { path, .. } => path.clone(),
             ShapeKind::Text {
                 spans,
@@ -2114,6 +2122,24 @@ mod tests {
         assert_eq!(back, k);
         c.fixed = true;
         let k = ShapeKind::rect_with_corners(Rect::new(0.0, 0.0, 2.0, 1.0), c);
+        let back: ShapeKind = serde_json::from_str(&serde_json::to_string(&k).unwrap()).unwrap();
+        assert_eq!(back, k);
+    }
+
+    #[test]
+    fn complex_stars_save_their_step_and_old_polygons_read() {
+        let old: ShapeKind = serde_json::from_str(
+            r#"{"type":"polygon","rect":{"x0":0,"y0":0,"x1":2,"y1":2},"points":5,"sharpness":0.5}"#,
+        )
+        .unwrap();
+        assert!(matches!(old, ShapeKind::Polygon { complex: None, .. }));
+        assert!(!serde_json::to_string(&old).unwrap().contains("complex"));
+        let k = ShapeKind::Polygon {
+            rect: Rect::new(0.0, 0.0, 2.0, 2.0),
+            points: 9,
+            sharpness: 0.0,
+            complex: Some(3),
+        };
         let back: ShapeKind = serde_json::from_str(&serde_json::to_string(&k).unwrap()).unwrap();
         assert_eq!(back, k);
     }

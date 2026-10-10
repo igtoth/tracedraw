@@ -1807,6 +1807,7 @@ impl<'a> Ctx<'a> {
                     rect,
                     points,
                     sharpness: 0.0,
+                    complex: None,
                 })
             }
             // Bitmap: two corners, 32 unknown bytes, image id, a version

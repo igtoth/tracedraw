@@ -75,6 +75,7 @@ pub fn nodes(s: &Shape) -> Vec<(KindNode, Point)> {
             rect,
             points,
             sharpness,
+            complex,
         } => {
             let n = (*points).max(3) as usize;
             let inner = inner_ratio(n, *sharpness);
@@ -90,6 +91,10 @@ pub fn nodes(s: &Shape) -> Vec<(KindNode, Point)> {
                     },
                     t * Point::new(c.x + rx * a.cos(), c.y + ry * a.sin()),
                 ));
+                // A complex star has its vertices only.
+                if complex.is_some() {
+                    continue;
+                }
                 out.push((
                     KindNode::Polygon {
                         outer: false,
@@ -263,6 +268,7 @@ pub fn drag(
                 rect,
                 points,
                 sharpness,
+                complex,
             },
             KindNode::Polygon { outer, .. },
         ) => {
@@ -280,23 +286,37 @@ pub fn drag(
                 if (rho - 1.0).abs() < 1e-6 {
                     return Some(start.kind.clone());
                 }
+                let grown = Rect::new(
+                    c.x - rx * rho,
+                    c.y - ry * rho,
+                    c.x + rx * rho,
+                    c.y + ry * rho,
+                );
+                if complex.is_some() {
+                    // A complex star grows or shrinks about its centre.
+                    return Some(ShapeKind::Polygon {
+                        rect: grown,
+                        points: *points,
+                        sharpness: *sharpness,
+                        complex: *complex,
+                    });
+                }
                 // The vertices move, the points between them stay.
                 let k = inner / rho;
                 Some(ShapeKind::Polygon {
-                    rect: Rect::new(
-                        c.x - rx * rho,
-                        c.y - ry * rho,
-                        c.x + rx * rho,
-                        c.y + ry * rho,
-                    ),
+                    rect: grown,
                     points: *points,
                     sharpness: (1.0 - k).clamp(0.001, 0.999),
+                    complex: None,
                 })
+            } else if complex.is_some() {
+                None
             } else {
                 Some(ShapeKind::Polygon {
                     rect: *rect,
                     points: *points,
                     sharpness: (1.0 - rho).clamp(0.001, 0.999),
+                    complex: None,
                 })
             }
         }
@@ -518,6 +538,7 @@ mod tests {
                 rect: Rect::new(-10.0, -10.0, 10.0, 10.0),
                 points: 5,
                 sharpness: 0.0,
+                complex: None,
             },
         );
         let n = nodes(&s);

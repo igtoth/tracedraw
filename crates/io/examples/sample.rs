@@ -50,6 +50,7 @@ fn main() {
             rect: Rect::new(20.0, 80.0, 90.0, 150.0),
             points: 5,
             sharpness: 0.5,
+            complex: None,
         },
         Fill::Solid(Color::cmyk_pct(0.0, 0.0, 100.0, 0.0)),
         Some(Stroke::new(Color::cmyk_pct(0.0, 0.0, 0.0, 100.0), 1.0)),

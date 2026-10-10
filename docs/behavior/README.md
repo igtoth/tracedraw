@@ -13,7 +13,7 @@ from observation:
 Pages: `brush-strokes.md`, `blend.md`, `block-shadow.md`,
 `border-and-grommet.md`, `brushes.md`, `color-palettes.md`,
 `colour-management.md`, `connectors-and-anchors.md`, `contour.md`,
-`corners-and-joins.md`,
+`coordinates.md`, `corners-and-joins.md`,
 `crop-knife-eraser.md`, `curve-tools.md`, `dimensions.md`, `distort.md`,
 `documents.md`, `drawing-window.md`, `drop-shadow.md`, `dxf.md`,
 `emf-wmf.md`, `envelope.md`, `eps-import.md`, `extrude.md`,
