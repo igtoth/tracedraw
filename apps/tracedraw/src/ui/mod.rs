@@ -15,6 +15,7 @@ pub mod menus;
 pub mod options;
 pub mod palette;
 pub mod preview;
+pub mod propbar;
 pub mod rulers;
 pub mod status;
 pub mod tabs;

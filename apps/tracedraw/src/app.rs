@@ -593,6 +593,13 @@ pub struct App {
     pub options_snapshot: Option<crate::ui::options::OptionsSnapshot>,
     /// When the last auto-backup ran (set on the first frame).
     pub last_auto_backup: Option<web_time::Instant>,
+    /// Page size changes apply to every page (the page bar's All pages).
+    pub page_size_all: bool,
+    /// The property bar's object origin: (column, row) of the 3 x 3
+    /// reference point selector, (1, 1) the centre.
+    pub object_origin: (u8, u8),
+    /// The property bar keeps width and height proportional.
+    pub scale_locked: bool,
     pub pending_copy_properties: bool,
     pub pending_copy_effect: Option<EffectKind>,
     pub pending_clone_effect: Option<EffectKind>,
@@ -1061,6 +1068,9 @@ impl App {
             options_page: crate::ui::dialogs::OptionsPage::General,
             options_snapshot: None,
             last_auto_backup: None,
+            page_size_all: true,
+            object_origin: (1, 1),
+            scale_locked: false,
             pending_copy_properties: false,
             pending_copy_effect: None,
             pending_clone_effect: None,
@@ -3325,6 +3335,24 @@ impl App {
 
     pub fn zoom_to_page(&mut self) {
         self.fit_pending = true;
+    }
+
+    /// Zoom so the page's width fills the window, keeping the vertical
+    /// position.
+    pub fn zoom_to_page_width(&mut self) {
+        let page = self.page_rect();
+        let cy = self.view.to_page(self.canvas_rect.center()).y;
+        let r = Rect::new(page.x0, cy - 1e-3, page.x1, cy + 1e-3);
+        self.view.fit(r, self.canvas_rect);
+    }
+
+    /// Zoom so the page's height fills the window, keeping the horizontal
+    /// position.
+    pub fn zoom_to_page_height(&mut self) {
+        let page = self.page_rect();
+        let cx = self.view.to_page(self.canvas_rect.center()).x;
+        let r = Rect::new(cx - 1e-3, page.y0, cx + 1e-3, page.y1);
+        self.view.fit(r, self.canvas_rect);
     }
 
     pub fn zoom_to_fit(&mut self) {

@@ -942,17 +942,28 @@ pub enum Action {
     Import,
     Export,
     Pdf,
-    Snap,
+    /// Snapping off: the snap icon crossed out in red when on.
+    SnapOff,
     Options,
     Welcome,
-    Mirror,
-    Flip,
     Fullscreen,
+    /// View toggles: a ruler, the grid and guidelines, each with an eye.
+    ShowRulers,
+    ShowGrid,
+    ShowGuidelines,
+    /// Launch other tools: a window.
+    Launch,
 }
 
+/// The New button's green badge with a white plus.
+const NEW_GREEN: Color32 = Color32::from_rgb(0x1E, 0x9E, 0x3C);
+
 pub fn draw_action(painter: &Painter, r: Rect, a: Action, color: Color32) {
-    let s = Stroke::new(1.3, color);
-    let thin = Stroke::new(1.0, color);
+    let k = r.width() / 16.0;
+    let s = Stroke::new(1.25 * k, color);
+    let thin = Stroke::new(0.9 * k, color);
+    let enabled = color == Tokens::ICON;
+    // A page with a folded top-right corner.
     let page = |painter: &Painter, x0: f32, y0: f32, x1: f32, y1: f32| {
         painter.add(epaint::PathShape::closed_line(
             vec![
@@ -964,210 +975,364 @@ pub fn draw_action(painter: &Painter, r: Rect, a: Action, color: Color32) {
             ],
             s,
         ));
-        painter.line_segment([p(r, x1 - 3.0, y0), p(r, x1 - 3.0, y0 + 3.0)], thin);
-        painter.line_segment([p(r, x1 - 3.0, y0 + 3.0), p(r, x1, y0 + 3.0)], thin);
+        painter.add(epaint::PathShape::line(
+            vec![
+                p(r, x1 - 3.0, y0),
+                p(r, x1 - 3.0, y0 + 3.0),
+                p(r, x1, y0 + 3.0),
+            ],
+            thin,
+        ));
+    };
+    // A small eye at the top right (view toggles).
+    let eye = |painter: &Painter| {
+        let c = p(r, 12.0, 3.0);
+        painter.add(epaint::PathShape::closed_line(
+            vec![
+                c + Vec2::new(-3.2, 0.0) * k,
+                c + Vec2::new(-1.2, -1.5) * k,
+                c + Vec2::new(1.2, -1.5) * k,
+                c + Vec2::new(3.2, 0.0) * k,
+                c + Vec2::new(1.2, 1.5) * k,
+                c + Vec2::new(-1.2, 1.5) * k,
+            ],
+            thin,
+        ));
+        painter.circle_filled(c, 0.9 * k, color);
     };
     match a {
-        Action::New => page(painter, 3.5, 1.5, 12.5, 14.5),
+        Action::New => {
+            page(painter, 2.5, 2.5, 11.5, 15.0);
+            let badge = Rect::from_min_max(p(r, 9.5, 0.5), p(r, 15.5, 6.5));
+            painter.rect_filled(badge, 0.0, if enabled { NEW_GREEN } else { color });
+            let c = badge.center();
+            let w = Stroke::new(1.2 * k, Color32::WHITE);
+            painter.line_segment(
+                [c - Vec2::new(2.0 * k, 0.0), c + Vec2::new(2.0 * k, 0.0)],
+                w,
+            );
+            painter.line_segment(
+                [c - Vec2::new(0.0, 2.0 * k), c + Vec2::new(0.0, 2.0 * k)],
+                w,
+            );
+        }
         Action::Open => {
+            // Back of the folder, then its open front flap, filled dark.
             painter.add(epaint::PathShape::closed_line(
                 vec![
-                    p(r, 1.5, 4.0),
-                    p(r, 6.0, 4.0),
-                    p(r, 7.5, 5.5),
-                    p(r, 14.5, 5.5),
-                    p(r, 14.5, 13.5),
-                    p(r, 1.5, 13.5),
+                    p(r, 1.5, 3.0),
+                    p(r, 6.0, 3.0),
+                    p(r, 7.5, 4.5),
+                    p(r, 13.0, 4.5),
+                    p(r, 13.0, 7.0),
                 ],
                 s,
             ));
-            painter.line_segment([p(r, 1.5, 8.0), p(r, 14.5, 8.0)], thin);
+            painter.add(epaint::PathShape::convex_polygon(
+                vec![
+                    p(r, 3.5, 7.0),
+                    p(r, 15.0, 7.0),
+                    p(r, 12.5, 14.0),
+                    p(r, 1.5, 14.0),
+                ],
+                Color32::TRANSPARENT,
+                s,
+            ));
+            painter.line_segment([p(r, 1.5, 3.0), p(r, 1.5, 14.0)], s);
         }
         Action::Save => {
-            painter.rect_stroke(
-                Rect::from_min_max(p(r, 2.0, 2.0), p(r, 14.0, 14.0)),
-                1.0,
-                s,
-                epaint::StrokeKind::Middle,
-            );
-            painter.rect_filled(
-                Rect::from_min_max(p(r, 5.0, 2.5), p(r, 11.0, 6.0)),
-                0.0,
+            // A solid floppy disk with a white label and shutter.
+            painter.add(epaint::PathShape::convex_polygon(
+                vec![
+                    p(r, 1.5, 1.5),
+                    p(r, 12.5, 1.5),
+                    p(r, 14.5, 3.5),
+                    p(r, 14.5, 14.5),
+                    p(r, 1.5, 14.5),
+                ],
                 color,
-            );
-            painter.rect_stroke(
-                Rect::from_min_max(p(r, 4.5, 9.0), p(r, 11.5, 13.5)),
-                0.0,
-                thin,
-                epaint::StrokeKind::Middle,
-            );
-        }
-        Action::Print => {
-            painter.rect_stroke(
-                Rect::from_min_max(p(r, 2.0, 6.0), p(r, 14.0, 12.0)),
-                1.0,
-                s,
-                epaint::StrokeKind::Middle,
-            );
-            painter.rect_stroke(
-                Rect::from_min_max(p(r, 5.0, 2.0), p(r, 11.0, 6.0)),
-                0.0,
-                thin,
-                epaint::StrokeKind::Middle,
-            );
-            painter.rect_stroke(
-                Rect::from_min_max(p(r, 5.0, 10.0), p(r, 11.0, 14.5)),
-                0.0,
-                thin,
-                epaint::StrokeKind::Middle,
-            );
-        }
-        Action::Cut => {
-            painter.circle_stroke(p(r, 5.0, 12.5), r.width() / 16.0 * 2.2, s);
-            painter.circle_stroke(p(r, 11.0, 12.5), r.width() / 16.0 * 2.2, s);
-            painter.line_segment([p(r, 6.5, 10.5), p(r, 12.0, 2.0)], s);
-            painter.line_segment([p(r, 9.5, 10.5), p(r, 4.0, 2.0)], s);
-        }
-        Action::Copy => {
-            painter.rect_stroke(
-                Rect::from_min_max(p(r, 2.0, 2.0), p(r, 10.0, 11.0)),
-                0.0,
-                thin,
-                epaint::StrokeKind::Middle,
-            );
+                Stroke::NONE,
+            ));
             painter.rect_filled(
-                Rect::from_min_max(p(r, 6.0, 5.0), p(r, 14.0, 14.0)),
+                Rect::from_min_max(p(r, 4.0, 1.5), p(r, 11.0, 5.5)),
                 0.0,
                 Color32::WHITE,
             );
-            painter.rect_stroke(
-                Rect::from_min_max(p(r, 6.0, 5.0), p(r, 14.0, 14.0)),
-                0.0,
-                s,
-                epaint::StrokeKind::Middle,
-            );
-        }
-        Action::Paste => {
-            painter.rect_stroke(
-                Rect::from_min_max(p(r, 2.5, 3.0), p(r, 13.5, 14.5)),
-                1.0,
-                s,
-                epaint::StrokeKind::Middle,
-            );
             painter.rect_filled(
-                Rect::from_min_max(p(r, 5.5, 1.5), p(r, 10.5, 4.5)),
+                Rect::from_min_max(p(r, 8.5, 2.2), p(r, 10.0, 4.8)),
                 0.0,
                 color,
             );
-            painter.rect_stroke(
-                Rect::from_min_max(p(r, 6.0, 7.0), p(r, 14.5, 15.0)),
+            painter.rect_filled(
+                Rect::from_min_max(p(r, 4.0, 9.0), p(r, 12.0, 14.5)),
                 0.0,
-                thin,
-                epaint::StrokeKind::Middle,
+                Color32::WHITE,
             );
         }
+        Action::Print => {
+            // Paper rising out of a tray.
+            painter.add(epaint::PathShape::line(
+                vec![
+                    p(r, 4.5, 9.0),
+                    p(r, 4.5, 1.5),
+                    p(r, 11.5, 1.5),
+                    p(r, 11.5, 9.0),
+                ],
+                s,
+            ));
+            painter.add(epaint::PathShape::closed_line(
+                vec![
+                    p(r, 1.5, 9.0),
+                    p(r, 14.5, 9.0),
+                    p(r, 14.5, 14.5),
+                    p(r, 1.5, 14.5),
+                ],
+                s,
+            ));
+            painter.line_segment([p(r, 1.5, 12.0), p(r, 14.5, 12.0)], thin);
+        }
+        Action::Cut | Action::Copy | Action::Paste => {
+            // Pages with text lines: Cut leaves a dashed page, Copy shows
+            // two pages, Paste a dark clipboard behind a page.
+            let lines = |painter: &Painter, x0: f32, y0: f32, x1: f32| {
+                for i in 0..3 {
+                    let y = y0 + i as f32 * 2.2;
+                    painter.line_segment([p(r, x0, y), p(r, x1, y)], thin);
+                }
+            };
+            match a {
+                Action::Cut => {
+                    page(painter, 1.5, 1.5, 9.5, 11.5);
+                    lines(painter, 3.5, 4.5, 7.5);
+                    for (x, y) in [
+                        (10.5, 11.0),
+                        (12.5, 11.0),
+                        (14.5, 11.0),
+                        (14.5, 13.0),
+                        (14.5, 15.0),
+                        (12.5, 15.0),
+                        (10.5, 15.0),
+                        (10.5, 13.0),
+                    ] {
+                        painter.rect_filled(
+                            Rect::from_center_size(p(r, x, y), Vec2::splat(0.9 * k)),
+                            0.0,
+                            color,
+                        );
+                    }
+                }
+                Action::Copy => {
+                    page(painter, 1.5, 1.5, 9.5, 11.0);
+                    lines(painter, 3.5, 4.5, 7.5);
+                    painter.rect_filled(
+                        Rect::from_min_max(p(r, 6.0, 5.5), p(r, 14.5, 15.0)),
+                        0.0,
+                        Color32::WHITE,
+                    );
+                    page(painter, 6.0, 5.5, 14.5, 15.0);
+                    lines(painter, 8.0, 9.0, 12.5);
+                }
+                _ => {
+                    painter.rect_filled(
+                        Rect::from_min_max(p(r, 1.5, 2.0), p(r, 9.5, 14.0)),
+                        k,
+                        color,
+                    );
+                    painter.rect_filled(
+                        Rect::from_min_max(p(r, 7.0, 6.0), p(r, 14.5, 15.0)),
+                        0.0,
+                        Color32::WHITE,
+                    );
+                    page(painter, 7.0, 6.0, 14.5, 15.0);
+                    lines(painter, 9.0, 9.0, 12.5);
+                }
+            }
+        }
         Action::Undo | Action::Redo => {
+            // A dashed circular arrow.
             let flip = a == Action::Redo;
             let fx = |x: f32| if flip { 16.0 - x } else { x };
-            let mut pts = Vec::new();
-            for i in 0..=12 {
-                let t = i as f32 / 12.0;
-                let ang = std::f32::consts::PI * (1.0 - t * 0.9);
-                pts.push(p(r, fx(8.0 + 5.0 * ang.cos()), 9.0 - 4.5 * ang.sin()));
+            let c = (8.0, 8.5);
+            let rad = 5.5;
+            let n = 16;
+            for i in 0..n {
+                if i % 3 == 2 {
+                    continue;
+                }
+                let t0 = std::f32::consts::PI * (1.05 - 1.5 * i as f32 / n as f32);
+                let t1 = std::f32::consts::PI * (1.05 - 1.5 * (i + 1) as f32 / n as f32);
+                painter.line_segment(
+                    [
+                        p(r, fx(c.0 + rad * t0.cos()), c.1 - rad * t0.sin()),
+                        p(r, fx(c.0 + rad * t1.cos()), c.1 - rad * t1.sin()),
+                    ],
+                    s,
+                );
             }
-            painter.add(epaint::PathShape::line(pts, s));
             painter.add(epaint::PathShape::convex_polygon(
-                vec![p(r, fx(1.0), 6.5), p(r, fx(5.5), 5.0), p(r, fx(4.5), 10.0)],
+                vec![p(r, fx(0.5), 6.0), p(r, fx(5.0), 5.0), p(r, fx(3.5), 9.5)],
                 color,
                 Stroke::NONE,
             ));
         }
         Action::Import | Action::Export => {
-            page(painter, 3.5, 1.5, 12.5, 14.5);
+            // A box with an arrow through its top.
+            painter.add(epaint::PathShape::line(
+                vec![
+                    p(r, 5.0, 2.0),
+                    p(r, 2.0, 2.0),
+                    p(r, 2.0, 15.0),
+                    p(r, 14.0, 15.0),
+                    p(r, 14.0, 2.0),
+                    p(r, 11.0, 2.0),
+                ],
+                s,
+            ));
             let up = a == Action::Export;
-            let (y0, y1) = if up { (12.0, 6.0) } else { (6.0, 12.0) };
-            painter.line_segment([p(r, 8.0, y0), p(r, 8.0, y1)], Stroke::new(2.0, color));
-            let d = if up { -1.0 } else { 1.0 };
-            painter.line_segment(
-                [p(r, 8.0, y1), p(r, 5.5, y1 - 2.5 * d)],
-                Stroke::new(2.0, color),
-            );
-            painter.line_segment(
-                [p(r, 8.0, y1), p(r, 10.5, y1 - 2.5 * d)],
-                Stroke::new(2.0, color),
-            );
+            let (y0, y1) = if up { (12.0, 2.5) } else { (1.0, 11.5) };
+            let w = Stroke::new(1.8 * k, color);
+            painter.line_segment([p(r, 8.0, y0), p(r, 8.0, y1)], w);
+            let d = if up { 1.0 } else { -1.0 };
+            painter.add(epaint::PathShape::convex_polygon(
+                vec![
+                    p(r, 8.0, y1 - d * 0.5),
+                    p(r, 5.0, y1 + d * 3.5),
+                    p(r, 11.0, y1 + d * 3.5),
+                ],
+                color,
+                Stroke::NONE,
+            ));
         }
         Action::Pdf => {
             painter.text(
-                p(r, 8.0, 8.0),
+                p(r, 8.0, 5.0),
                 egui::Align2::CENTER_CENTER,
                 "PDF",
                 egui::FontId::proportional(r.width() * 0.42),
                 color,
             );
-        }
-        Action::Fullscreen => {
             painter.rect_stroke(
-                Rect::from_min_max(p(r, 2.0, 3.0), p(r, 14.0, 13.0)),
-                0.0,
-                s,
-                epaint::StrokeKind::Middle,
-            );
-            painter.line_segment([p(r, 5.0, 6.0), p(r, 5.0, 10.0)], thin);
-            painter.line_segment([p(r, 11.0, 6.0), p(r, 11.0, 10.0)], thin);
-        }
-        Action::Snap => {
-            painter.rect_stroke(
-                Rect::from_min_max(p(r, 3.0, 3.0), p(r, 13.0, 13.0)),
+                Rect::from_min_max(p(r, 4.0, 10.0), p(r, 8.5, 14.5)),
                 0.0,
                 thin,
                 epaint::StrokeKind::Middle,
             );
-            painter.line_segment([p(r, 8.0, 1.0), p(r, 8.0, 15.0)], thin);
-            painter.line_segment([p(r, 1.0, 8.0), p(r, 15.0, 8.0)], thin);
-            painter.circle_filled(p(r, 8.0, 8.0), r.width() / 16.0 * 1.8, Tokens::ACCENT);
+            painter.rect_filled(
+                Rect::from_min_max(p(r, 5.0, 12.0), p(r, 7.5, 14.5)),
+                0.0,
+                color,
+            );
+        }
+        Action::Fullscreen => {
+            // A dark screen inside corner brackets.
+            painter.rect_filled(
+                Rect::from_min_max(p(r, 3.5, 3.5), p(r, 12.5, 12.5)),
+                0.0,
+                color,
+            );
+            for (x, y, dx, dy) in [
+                (1.0, 1.0, 1.0, 1.0),
+                (15.0, 1.0, -1.0, 1.0),
+                (1.0, 15.0, 1.0, -1.0),
+                (15.0, 15.0, -1.0, -1.0),
+            ] {
+                painter.add(epaint::PathShape::line(
+                    vec![p(r, x + 3.0 * dx, y), p(r, x, y), p(r, x, y + 3.0 * dy)],
+                    thin,
+                ));
+            }
+        }
+        Action::SnapOff => {
+            // A box with an arrow pointing into its corner.
+            painter.add(epaint::PathShape::closed_line(
+                vec![
+                    p(r, 2.0, 3.0),
+                    p(r, 12.0, 3.0),
+                    p(r, 12.0, 14.0),
+                    p(r, 2.0, 14.0),
+                ],
+                s,
+            ));
+            painter.add(epaint::PathShape::convex_polygon(
+                vec![p(r, 4.0, 9.0), p(r, 9.0, 5.5), p(r, 9.0, 12.5)],
+                Color32::TRANSPARENT,
+                s,
+            ));
+            let red = Stroke::new(1.4 * k, Color32::from_rgb(0xE8, 0x11, 0x23));
+            painter.line_segment([p(r, 10.5, 0.5), p(r, 15.5, 5.5)], red);
+            painter.line_segment([p(r, 15.5, 0.5), p(r, 10.5, 5.5)], red);
         }
         Action::Options => {
+            // A filled gear.
+            let c = p(r, 8.0, 8.0);
             for i in 0..8 {
                 let ang = i as f32 * std::f32::consts::TAU / 8.0;
                 painter.line_segment(
                     [
-                        p(r, 8.0 + 3.0 * ang.cos(), 8.0 + 3.0 * ang.sin()),
-                        p(r, 8.0 + 6.5 * ang.cos(), 8.0 + 6.5 * ang.sin()),
+                        c + Vec2::new(ang.cos(), ang.sin()) * 4.0 * k,
+                        c + Vec2::new(ang.cos(), ang.sin()) * 7.0 * k,
                     ],
-                    Stroke::new(2.0, color),
+                    Stroke::new(2.6 * k, color),
                 );
             }
-            painter.circle_stroke(p(r, 8.0, 8.0), r.width() / 16.0 * 3.2, s);
+            painter.circle_filled(c, 5.0 * k, color);
+            painter.circle_filled(c, 2.0 * k, Tokens::PANEL);
         }
         Action::Welcome => {
             for y in [4.0, 8.0, 12.0] {
-                painter.line_segment([p(r, 2.5, y), p(r, 13.5, y)], Stroke::new(1.8, color));
+                painter.line_segment([p(r, 2.5, y), p(r, 13.5, y)], Stroke::new(1.8 * k, color));
             }
         }
-        Action::Mirror => {
-            painter.line_segment([p(r, 8.0, 1.5), p(r, 8.0, 14.5)], thin);
+        Action::ShowRulers => {
+            // An L-shaped ruler with ticks.
             painter.add(epaint::PathShape::closed_line(
-                vec![p(r, 2.0, 4.0), p(r, 6.5, 8.0), p(r, 2.0, 12.0)],
+                vec![
+                    p(r, 1.5, 1.5),
+                    p(r, 5.0, 1.5),
+                    p(r, 5.0, 11.0),
+                    p(r, 14.5, 11.0),
+                    p(r, 14.5, 14.5),
+                    p(r, 1.5, 14.5),
+                ],
                 s,
             ));
-            painter.add(epaint::PathShape::convex_polygon(
-                vec![p(r, 14.0, 4.0), p(r, 9.5, 8.0), p(r, 14.0, 12.0)],
-                color,
-                Stroke::NONE,
-            ));
+            for i in 0..4 {
+                let y = 3.5 + i as f32 * 2.0;
+                painter.line_segment([p(r, 1.5, y), p(r, 3.2, y)], thin);
+                let x = 7.0 + i as f32 * 2.0;
+                painter.line_segment([p(r, x, 14.5), p(r, x, 12.8)], thin);
+            }
+            eye(painter);
         }
-        Action::Flip => {
-            painter.line_segment([p(r, 1.5, 8.0), p(r, 14.5, 8.0)], thin);
-            painter.add(epaint::PathShape::closed_line(
-                vec![p(r, 4.0, 2.0), p(r, 8.0, 6.5), p(r, 12.0, 2.0)],
+        Action::ShowGrid => {
+            for i in 0..5 {
+                let v = 1.5 + i as f32 * 3.2;
+                painter.line_segment([p(r, 1.5, v.max(6.0)), p(r, 14.5, v.max(6.0))], thin);
+                painter.line_segment([p(r, v, 6.0), p(r, v, 14.5)], thin);
+            }
+            painter.line_segment([p(r, 1.5, 14.5), p(r, 14.5, 14.5)], thin);
+            eye(painter);
+        }
+        Action::ShowGuidelines => {
+            // A dashed cross.
+            for i in 0..6 {
+                let t = 1.5 + i as f32 * 2.3;
+                painter.line_segment([p(r, t, 10.0), p(r, t + 1.2, 10.0)], thin);
+                painter.line_segment([p(r, 6.5, t + 2.0), p(r, 6.5, t + 3.0)], thin);
+            }
+            eye(painter);
+        }
+        Action::Launch => {
+            painter.rect_stroke(
+                Rect::from_min_max(p(r, 1.5, 2.0), p(r, 14.5, 14.5)),
+                0.0,
                 s,
-            ));
-            painter.add(epaint::PathShape::convex_polygon(
-                vec![p(r, 4.0, 14.0), p(r, 8.0, 9.5), p(r, 12.0, 14.0)],
-                color,
-                Stroke::NONE,
-            ));
+                epaint::StrokeKind::Middle,
+            );
+            painter.line_segment([p(r, 1.5, 4.5), p(r, 14.5, 4.5)], s);
+            for (y, x1) in [(7.5, 10.0), (9.5, 8.0), (11.5, 9.0)] {
+                painter.line_segment([p(r, 4.0, y), p(r, x1, y)], thin);
+            }
         }
     }
 }
