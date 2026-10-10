@@ -172,6 +172,8 @@ impl App {
                     let shift = modifiers.shift;
                     let ctrl = modifiers.command;
                     match key {
+                        Key::Num8 if ctrl => self.step_text_size(true),
+                        Key::Num2 if ctrl => self.step_text_size(false),
                         Key::Backspace => self.text_delete_backward(),
                         Key::Delete => self.text_delete_forward(),
                         Key::Enter if !shift => self.text_insert("\n"),

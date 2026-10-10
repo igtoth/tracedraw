@@ -64,12 +64,22 @@ pub fn fullscreen(app: &mut App, ui: &mut Ui) {
                     ctx.load_texture("fullscreen_preview", image, egui::TextureOptions::LINEAR);
                 let size = egui::vec2(pm.width() as f32, pm.height() as f32);
                 let pos = rect.center() - size / 2.0;
+                let page_rect = egui::Rect::from_min_size(pos, size);
                 painter.image(
                     tex.id(),
-                    egui::Rect::from_min_size(pos, size),
+                    page_rect,
                     egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
                     egui::Color32::WHITE,
                 );
+                // Options > Display > Full-screen preview > Show page border.
+                if !app.preview_selected_only && app.settings.preview_page_border {
+                    painter.rect_stroke(
+                        page_rect,
+                        0.0,
+                        egui::Stroke::new(1.0, Tokens::PAGE_BORDER),
+                        egui::StrokeKind::Outside,
+                    );
+                }
             }
             painter.text(
                 egui::pos2(rect.center().x, rect.max.y - 10.0),

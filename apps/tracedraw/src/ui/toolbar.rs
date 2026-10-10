@@ -302,7 +302,7 @@ fn unit_value(ui: &mut Ui, app: &App, label: &str, mm: &mut f64, speed: f64) -> 
     let r = ui.add(
         egui::DragValue::new(&mut v)
             .speed(speed)
-            .fixed_decimals(3)
+            .fixed_decimals(app.settings.precision.min(10) as usize)
             .suffix(format!(" {}", app.units.short())),
     );
     if r.changed() {

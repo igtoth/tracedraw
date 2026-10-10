@@ -5,7 +5,7 @@ use crate::tools::Tool;
 use egui::{Key, Modifiers, PointerButton, Response};
 use tracedraw_core::{
     document::ShapeKind,
-    geometry::{Affine, Point, Rect, Vec2},
+    geometry::{Affine, Point, Rect, Shape as _, Vec2},
     Color, Command, Fill, ShapeId,
 };
 
@@ -28,23 +28,31 @@ impl App {
                 if !b.contains(p) {
                     continue;
                 }
-                // Filled objects hit anywhere inside; unfilled ones only near
-                // the outline. Bitmaps, ClipFrames and symbols have visible
-                // content inside whatever their fill.
-                if !matches!(s.fill, Fill::None)
-                    || matches!(
-                        s.kind,
-                        ShapeKind::Text { .. }
-                            | ShapeKind::Group { .. }
-                            | ShapeKind::Table(_)
-                            | ShapeKind::Bitmap { .. }
-                            | ShapeKind::ClipFrame { .. }
-                            | ShapeKind::SymbolInstance { .. }
-                    )
-                {
+                // Text, groups, tables, bitmaps, ClipFrames and symbols hit
+                // anywhere in their box.
+                if matches!(
+                    s.kind,
+                    ShapeKind::Text { .. }
+                        | ShapeKind::Group { .. }
+                        | ShapeKind::Table(_)
+                        | ShapeKind::Bitmap { .. }
+                        | ShapeKind::ClipFrame { .. }
+                        | ShapeKind::SymbolInstance { .. }
+                ) {
                     return Some(s.id);
                 }
-                if crate::canvas::distance_to_path(&s.page_path(), p) <= tol * 1.5 {
+                // Filled objects hit inside their shape (an open curve only
+                // when the document fills open curves); with "Treat all
+                // objects as filled" unfilled ones do too. Otherwise only
+                // near the outline.
+                let path = s.page_path();
+                let open = matches!(s.kind, ShapeKind::Path { closed: false, .. });
+                let filled =
+                    !matches!(s.fill, Fill::None) && (!open || doc.metadata.fill_open_curves);
+                if (filled || self.settings.treat_all_filled) && path.contains(p) {
+                    return Some(s.id);
+                }
+                if crate::canvas::distance_to_path(&path, p) <= tol * 1.5 {
                     return Some(s.id);
                 }
             }
@@ -104,7 +112,10 @@ impl App {
 
         // With the Zoom tool a right click zooms out, as the reference
         // editor does by default.
-        if response.secondary_clicked() && self.tool == Tool::Zoom {
+        if response.secondary_clicked()
+            && self.tool == Tool::Zoom
+            && self.settings.zoom_right_click_out
+        {
             self.view.zoom_at(screen, 0.5);
             return;
         }
@@ -133,7 +144,7 @@ impl App {
                     if contents.is_empty() {
                         self.status = crate::i18n::tr("status.clip_frame_select_contents");
                     } else {
-                        self.run(Command::PlaceInside { contents, frame });
+                        self.place_inside(contents, frame);
                         self.select(vec![frame]);
                     }
                 } else {
@@ -402,9 +413,17 @@ impl App {
                 Drag::Marquee { current, .. } | Drag::Scale { current, .. } => *current = p,
                 Drag::Rotate {
                     center,
+                    start_angle,
                     current_angle,
-                    ..
-                } => *current_angle = (p - *center).atan2(),
+                } => {
+                    let mut a = (p - *center).atan2();
+                    // Ctrl turns in steps of the constrain angle.
+                    if mods.ctrl {
+                        let step = self.settings.constrain_angle.max(0.1).to_radians();
+                        a = *start_angle + ((a - *start_angle) / step).round() * step;
+                    }
+                    *current_angle = a;
+                }
                 _ => {}
             }
         }
@@ -1027,6 +1046,10 @@ impl App {
         if !matches!(self.dialog, crate::ui::dialogs::Dialog::None) {
             if ctx.input(|i| i.key_pressed(Key::Escape)) {
                 self.dialog = crate::ui::dialogs::Dialog::None;
+                // Esc is Cancel for the options dialogs.
+                if let Some(s) = self.options_snapshot.take() {
+                    s.restore(self);
+                }
             }
             return;
         }
@@ -1132,6 +1155,10 @@ impl App {
         if pressed(Key::G, cmd) {
             self.group_selection();
         }
+        // Ctrl+Shift+G: unselected nodes filled or hollow.
+        if pressed(Key::G, cmd | Modifiers::SHIFT) {
+            self.settings.nodes.unselected_filled = !self.settings.nodes.unselected_filled;
+        }
         if pressed(Key::U, cmd) {
             self.ungroup_selection();
         }
@@ -1234,6 +1261,20 @@ impl App {
         }
         if pressed(Key::R, Modifiers::ALT | Modifiers::SHIFT) {
             self.show_rulers = !self.show_rulers;
+        }
+        // Ctrl+8 and Ctrl+2: selected text one keyboard text increment
+        // larger or smaller (Options > Text).
+        if self
+            .selected_shapes()
+            .iter()
+            .any(|s| matches!(s.kind, ShapeKind::Text { .. }))
+        {
+            if pressed(Key::Num8, cmd) {
+                self.step_text_size(true);
+            }
+            if pressed(Key::Num2, cmd) {
+                self.step_text_size(false);
+            }
         }
         if pressed(Key::Plus, cmd) || pressed(Key::Equals, cmd) {
             self.zoom_step(true);

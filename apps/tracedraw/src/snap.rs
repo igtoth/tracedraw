@@ -38,8 +38,9 @@ impl Default for SnapSettings {
 }
 
 impl App {
+    /// The snapping radius (Options > Snapping, screen pixels) in mm.
     fn snap_tolerance(&self) -> f64 {
-        6.0 / self.view.zoom as f64
+        self.settings.snap.threshold_px.clamp(1.0, 100.0) / self.view.zoom.max(1e-6) as f64
     }
 
     /// Candidate x and y values to snap to.

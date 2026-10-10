@@ -67,6 +67,50 @@ pub struct Settings {
     /// each flyout's first tool).
     #[serde(default)]
     pub toolbox_hidden: Vec<String>,
+    /// Options > General: what opens at start-up.
+    #[serde(default)]
+    pub startup: Startup,
+    /// Options > General: undo levels.
+    #[serde(default = "default_undo_levels")]
+    pub undo_levels: usize,
+    /// Options > Display.
+    #[serde(default = "default_true")]
+    pub show_tooltips: bool,
+    #[serde(default)]
+    pub hide_bbox_curve_tools: bool,
+    #[serde(default = "default_true")]
+    pub preview_page_border: bool,
+    /// Options > Edit: Ctrl constrains rotation and line angles to
+    /// multiples of this angle (degrees).
+    #[serde(default = "default_constrain_angle")]
+    pub constrain_angle: f64,
+    /// Options > Edit: decimal places of distances in the property bar
+    /// and the status bar.
+    #[serde(default = "default_precision")]
+    pub precision: u32,
+    /// Options > Nodes and Handles.
+    #[serde(default)]
+    pub nodes: NodePrefs,
+    /// Options > ClipFrame.
+    #[serde(default)]
+    pub clip_frame: ClipFramePrefs,
+    /// Options > Save.
+    #[serde(default)]
+    pub backup: BackupPrefs,
+    /// Options > Text: Ctrl+Numpad 8 and 2 change the font size by this
+    /// many points.
+    #[serde(default = "default_text_increment")]
+    pub text_increment_pt: f64,
+    /// Options > Tools > Pick: unfilled objects can be picked inside.
+    #[serde(default)]
+    pub treat_all_filled: bool,
+    /// Options > Tools > Pick: the Pick tool's pointer is a cross hair.
+    #[serde(default)]
+    pub crosshair_cursor: bool,
+    /// Options > Tools > Zoom/Pan: a right click with the Zoom tool zooms
+    /// out (off: it opens the context menu).
+    #[serde(default = "default_true")]
+    pub zoom_right_click_out: bool,
 }
 
 fn default_desktop() -> [u8; 3] {
@@ -75,6 +119,178 @@ fn default_desktop() -> [u8; 3] {
 
 fn default_true() -> bool {
     true
+}
+
+fn default_undo_levels() -> usize {
+    150
+}
+
+fn default_constrain_angle() -> f64 {
+    15.0
+}
+
+fn default_precision() -> u32 {
+    3
+}
+
+fn default_text_increment() -> f64 {
+    1.0
+}
+
+/// What opens when the application starts (Options > General).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum Startup {
+    #[default]
+    WelcomeScreen,
+    NewDocument,
+    LastDocument,
+}
+
+impl Startup {
+    pub const ALL: [Startup; 3] = [
+        Startup::WelcomeScreen,
+        Startup::NewDocument,
+        Startup::LastDocument,
+    ];
+
+    pub fn key(self) -> &'static str {
+        match self {
+            Startup::WelcomeScreen => "options.startup_welcome",
+            Startup::NewDocument => "options.startup_new",
+            Startup::LastDocument => "options.startup_last",
+        }
+    }
+}
+
+/// How nodes are drawn: size, shape per node type, colours.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum NodeSize {
+    #[default]
+    Small,
+    Medium,
+    Large,
+}
+
+impl NodeSize {
+    pub const ALL: [NodeSize; 3] = [NodeSize::Small, NodeSize::Medium, NodeSize::Large];
+
+    /// Side of a node square, screen pixels.
+    pub fn px(self) -> f32 {
+        match self {
+            NodeSize::Small => 7.0,
+            NodeSize::Medium => 9.0,
+            NodeSize::Large => 11.0,
+        }
+    }
+
+    pub fn key(self) -> &'static str {
+        match self {
+            NodeSize::Small => "options.node_small",
+            NodeSize::Medium => "options.node_medium",
+            NodeSize::Large => "options.node_large",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NodeShape {
+    Square,
+    Circle,
+    Diamond,
+}
+
+impl NodeShape {
+    pub const ALL: [NodeShape; 3] = [NodeShape::Square, NodeShape::Circle, NodeShape::Diamond];
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct NodePrefs {
+    pub size: NodeSize,
+    pub cusp: NodeShape,
+    pub smooth: NodeShape,
+    pub symmetrical: NodeShape,
+    /// Selected nodes and handles.
+    pub main_rgb: [u8; 3],
+    /// The first node of a curve.
+    pub secondary_rgb: [u8; 3],
+    /// Unselected nodes are filled white (Ctrl+Shift+G).
+    pub unselected_filled: bool,
+    /// An arrow at the start node shows the curve's direction.
+    pub show_direction: bool,
+}
+
+impl Default for NodePrefs {
+    fn default() -> Self {
+        NodePrefs {
+            size: NodeSize::Small,
+            cusp: NodeShape::Square,
+            smooth: NodeShape::Circle,
+            symmetrical: NodeShape::Diamond,
+            main_rgb: [0x00, 0x8C, 0xFF],
+            secondary_rgb: [0xFF, 0x00, 0x00],
+            unselected_filled: true,
+            show_direction: true,
+        }
+    }
+}
+
+/// When new ClipFrame content is centred in its frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum AutoCenter {
+    /// When the content lies completely outside the frame.
+    #[default]
+    WhenOutside,
+    Always,
+    Never,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ClipFramePrefs {
+    pub auto_center: AutoCenter,
+    /// An empty frame shows crossing lines on screen.
+    pub empty_lines: bool,
+}
+
+impl Default for ClipFramePrefs {
+    fn default() -> Self {
+        ClipFramePrefs {
+            auto_center: AutoCenter::WhenOutside,
+            empty_lines: true,
+        }
+    }
+}
+
+/// Backups (Options > Save).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct BackupPrefs {
+    /// Copy the file being replaced to `backup_of_<name>` before saving.
+    pub before_save: bool,
+    /// Where those copies go; none: next to the original.
+    pub before_save_dir: Option<PathBuf>,
+    /// Save open drawings with unsaved changes every `minutes`.
+    pub auto: bool,
+    pub minutes: u32,
+    /// Where auto-backups go; none: the temporary folder.
+    pub auto_dir: Option<PathBuf>,
+}
+
+impl Default for BackupPrefs {
+    fn default() -> Self {
+        BackupPrefs {
+            before_save: true,
+            before_save_dir: None,
+            auto: true,
+            minutes: 20,
+            auto_dir: None,
+        }
+    }
 }
 
 fn default_super_nudge() -> f64 {
@@ -183,6 +399,20 @@ impl Default for Settings {
             toolbox: Vec::new(),
             custom_arrowheads: Vec::new(),
             document_defaults: DocumentDefaults::default(),
+            startup: Startup::default(),
+            undo_levels: default_undo_levels(),
+            show_tooltips: true,
+            hide_bbox_curve_tools: false,
+            preview_page_border: true,
+            constrain_angle: default_constrain_angle(),
+            precision: default_precision(),
+            nodes: NodePrefs::default(),
+            clip_frame: ClipFramePrefs::default(),
+            backup: BackupPrefs::default(),
+            text_increment_pt: default_text_increment(),
+            treat_all_filled: false,
+            crosshair_cursor: false,
+            zoom_right_click_out: true,
             autocorrect: crate::autocorrect::AutocorrectPrefs::default(),
             thesaurus_file: None,
             show_new_document_dialog: true,
@@ -238,10 +468,17 @@ impl Settings {
             return Settings::default();
         };
         match std::fs::read_to_string(&p) {
-            Ok(s) => serde_json::from_str(&s).unwrap_or_else(|e| {
-                log::warn!("settings unreadable ({e}); using defaults");
-                Settings::default()
-            }),
+            Ok(s) => {
+                let mut settings: Settings = serde_json::from_str(&s).unwrap_or_else(|e| {
+                    log::warn!("settings unreadable ({e}); using defaults");
+                    Settings::default()
+                });
+                // Files written before the start-up choice existed.
+                if !s.contains("\"startup\"") && !settings.show_welcome_on_start {
+                    settings.startup = Startup::NewDocument;
+                }
+                settings
+            }
             Err(_) => Settings::default(),
         }
     }

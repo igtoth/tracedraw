@@ -71,6 +71,46 @@ pub fn write(path: impl AsRef<Path>, bytes: impl AsRef<[u8]>) -> std::io::Result
     std::fs::write(path, bytes)
 }
 
+/// Copy a file, creating the target folder (backups). Nothing happens in
+/// a browser, which has no files to copy.
+pub fn copy(from: impl AsRef<Path>, to: impl AsRef<Path>) -> std::io::Result<()> {
+    if WEB {
+        return Ok(());
+    }
+    if let Some(dir) = to.as_ref().parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    std::fs::copy(from, to).map(|_| ())
+}
+
+/// True when a file exists on disk (never in a browser).
+pub fn exists(path: impl AsRef<Path>) -> bool {
+    !WEB && path.as_ref().is_file()
+}
+
+/// Write a file, creating its folder first (auto-backups).
+pub fn write_creating(path: impl AsRef<Path>, bytes: impl AsRef<[u8]>) -> std::io::Result<()> {
+    if WEB {
+        return Ok(());
+    }
+    if let Some(dir) = path.as_ref().parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    std::fs::write(path, bytes)
+}
+
+/// Choose a folder (desktop only; `None` when cancelled or in a browser).
+pub fn pick_folder() -> Option<PathBuf> {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        rfd::FileDialog::new().pick_folder()
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        None
+    }
+}
+
 /// Decode an image file (any format the image crate was built with).
 pub fn open_image(path: impl AsRef<Path>) -> Result<image::DynamicImage, String> {
     let bytes = read(path).map_err(|e| e.to_string())?;

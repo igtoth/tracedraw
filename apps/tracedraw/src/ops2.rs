@@ -598,7 +598,7 @@ impl App {
         if contents.is_empty() {
             return;
         }
-        self.run(Command::PlaceInside { contents, frame });
+        self.place_inside(contents, frame);
         self.select(vec![frame]);
     }
 

@@ -87,6 +87,8 @@ struct Flags {
     wireframe: bool,
     simulate_overprints: bool,
     complex_effects: bool,
+    /// Fill open subpaths (the document's "Fill open curves").
+    fill_open_curves: bool,
 }
 
 impl Flags {
@@ -95,6 +97,7 @@ impl Flags {
             wireframe: opts.wireframe,
             simulate_overprints: opts.simulate_overprints,
             complex_effects: opts.complex_effects,
+            fill_open_curves: false,
         }
     }
 }
@@ -105,8 +108,48 @@ impl Default for Flags {
             wireframe: false,
             simulate_overprints: false,
             complex_effects: true,
+            fill_open_curves: false,
         }
     }
+}
+
+/// The subpaths of `path` that are closed: ended with a close command, or
+/// ending where they start. Open curves are not filled unless the
+/// document asks for it.
+pub fn closed_subpaths(path: &BezPath) -> BezPath {
+    let mut out = BezPath::new();
+    let mut cur: Vec<PathEl> = Vec::new();
+    let flush = |cur: &mut Vec<PathEl>, out: &mut BezPath| {
+        if cur.is_empty() {
+            return;
+        }
+        let start = match cur.first() {
+            Some(PathEl::MoveTo(p)) => Some(*p),
+            _ => None,
+        };
+        let end = match cur.last() {
+            Some(PathEl::LineTo(p))
+            | Some(PathEl::QuadTo(_, p))
+            | Some(PathEl::CurveTo(_, _, p)) => Some(*p),
+            _ => None,
+        };
+        let closed = cur.iter().any(|e| matches!(e, PathEl::ClosePath))
+            || matches!((start, end), (Some(a), Some(b)) if (a - b).hypot() < 1e-6);
+        if closed {
+            for e in cur.drain(..) {
+                out.push(e);
+            }
+        }
+        cur.clear();
+    };
+    for el in path.elements() {
+        if matches!(el, PathEl::MoveTo(_)) {
+            flush(&mut cur, &mut out);
+        }
+        cur.push(*el);
+    }
+    flush(&mut cur, &mut out);
+    out
 }
 
 /// Render the objects of one page onto a transparent pixmap.
@@ -114,11 +157,13 @@ pub fn render_page(doc: &Document, page: PageId, opts: &RenderOptions) -> Option
     let mut pixmap = Pixmap::new(opts.width.max(1), opts.height.max(1))?;
     let page = doc.page(page).ok()?;
     let screen = opts.view.affine();
+    let mut flags = Flags::from_options(opts);
+    flags.fill_open_curves = doc.metadata.fill_open_curves;
     let mut r = Renderer {
         pixmap: &mut pixmap,
         screen,
         zoom: opts.view.zoom,
-        flags: Flags::from_options(opts),
+        flags,
         symbols: &doc.symbols,
     };
     if let Some(bg) = &page.background {
@@ -423,6 +468,15 @@ impl Renderer<'_> {
                     n.pos = transform * n.pos;
                 }
                 self.fill_mesh(&pm, &sk, rule, blend);
+            } else if !self.flags.fill_open_curves
+                && matches!(shape.kind, ShapeKind::Path { closed: false, .. })
+                && !matches!(shape.fill, Fill::None)
+            {
+                // Only the closed subpaths of a curve get the fill.
+                let closed = closed_subpaths(&page_path);
+                if let Some(sk_fill) = to_sk_path(&(self.screen * closed.clone())) {
+                    self.draw_fill_blended(&shape.fill, &closed, &sk_fill, rule, blend);
+                }
             } else {
                 self.draw_fill_blended(&shape.fill, &page_path, &sk, rule, blend);
             }
@@ -1359,6 +1413,51 @@ mod tests {
         s.fill = Fill::Solid(fill);
         s.stroke = None;
         s
+    }
+
+    #[test]
+    fn open_curves_are_not_filled_unless_the_document_says_so() {
+        use tracedraw_core::geometry::Point as P;
+        // A "U" (open) and a triangle (closed) in one curve.
+        let mut path = BezPath::new();
+        path.move_to(P::new(10.0, 90.0));
+        path.line_to(P::new(10.0, 10.0));
+        path.line_to(P::new(40.0, 10.0));
+        path.line_to(P::new(40.0, 90.0));
+        path.move_to(P::new(60.0, 10.0));
+        path.line_to(P::new(90.0, 10.0));
+        path.line_to(P::new(75.0, 60.0));
+        path.close_path();
+        let closed = closed_subpaths(&path);
+        assert_eq!(closed.elements().len(), 4);
+        let mut s = Shape::new(
+            tracedraw_core::ShapeId(1),
+            ShapeKind::Path {
+                path,
+                closed: false,
+            },
+        );
+        s.fill = Fill::Solid(Color::rgb8(255, 0, 0));
+        s.stroke = None;
+        let (mut doc, page) = doc_with(vec![s]);
+        let opts = RenderOptions {
+            width: 100,
+            height: 100,
+            view: ViewTransform {
+                zoom: 1.0,
+                origin_x: 0.0,
+                origin_y: 100.0,
+            },
+            ..RenderOptions::default()
+        };
+        let pm = render_page(&doc, page, &opts).unwrap();
+        // Inside the U (page 25, 50 -> screen 25, 50): nothing.
+        assert_eq!(pm.pixel(25, 50).unwrap().alpha(), 0);
+        // Inside the triangle (page 75, 20 -> screen 75, 80): red.
+        assert_eq!(px(&pm, 75, 80), (255, 0, 0));
+        doc.metadata.fill_open_curves = true;
+        let pm = render_page(&doc, page, &opts).unwrap();
+        assert_eq!(px(&pm, 25, 50), (255, 0, 0));
     }
 
     #[test]

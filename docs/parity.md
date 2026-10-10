@@ -6,7 +6,7 @@ target design does, with a test or a checked screenshot behind it.
 "partial" names what is missing. "baked" means the result is applied once
 instead of staying live and editable. The goal is every row at "works".
 
-Counts: works 136, partial 1 (`.cdr` content coverage), missing 2 (CMX import; window cascade and tile), not applicable 3, icons close but not pixel-identical.
+Counts: works 136, partial 1 (`.cdr` content coverage), missing 3 (CMX import; window cascade and tile; some Options pages), not applicable 3, icons close but not pixel-identical.
 
 ## 1. Selection and navigation
 
@@ -186,7 +186,8 @@ Counts: works 136, partial 1 (`.cdr` content coverage), missing 2 (CMX import; w
 | Find and Replace (text and object attributes) | works |
 | Scripts docker: JavaScript object model, run, record macro, load/save | works |
 | Workspaces: Default, Lite, Classic, Illustration, Page Layout; toolbar toggles | works |
-| Options: general, workspace, document, snapping, text, tools, shortcuts (customisable) | works |
+| Options as the reference's dialogs: Tools > Options > TraceDraw (General with start-up and undo levels, Display, Edit with constrain angle and precision, Nodes and Handles, ClipFrame auto-centre, Snapping radius, Save with backups and auto-backup, Text), Customization (Appearance, Commands, Command Bars), Tools (Pick, Zoom/Pan, shape tools, Eraser), Global, Workspaces; Layout > Document Options (General with Fill open curves, Page Size, Layout, Background, Bleed, Rulers, Grid, Guidelines, Save as Default); Cancel restores | works |
+| Options pages without an equivalent here: Tablet Mode, Bitmap tracing, Pen Settings, Warnings, VBA, Plug-ins, Color Palette, Printing, File Formats | missing |
 | Save settings as default | works |
 | Hints docker with per-tool help; Welcome Screen (recent, templates, news, learn) | works |
 | Border and Grommet (large-format finishing) | works |

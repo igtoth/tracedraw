@@ -30,6 +30,73 @@ pub enum Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+/// The document as vector exports should see it: unless the document
+/// fills open curves, an open curve's fill is kept for its closed subpaths
+/// only (the curve becomes a group of the filled closed part and the
+/// outlined whole), or dropped when it has none, as the screen shows it.
+pub fn resolve_open_fills(doc: &Document) -> std::borrow::Cow<'_, Document> {
+    use tracedraw_core::document::{Shape, ShapeKind};
+    use tracedraw_core::Fill;
+    fn needs(s: &Shape) -> bool {
+        match &s.kind {
+            ShapeKind::Path { closed: false, .. } => !matches!(s.fill, Fill::None),
+            ShapeKind::Group { children } => children.iter().any(needs),
+            ShapeKind::ClipFrame { frame, contents } => needs(frame) || contents.iter().any(needs),
+            _ => false,
+        }
+    }
+    fn fix(s: &mut Shape) {
+        match &mut s.kind {
+            ShapeKind::Path {
+                path,
+                closed: false,
+            } if !matches!(s.fill, Fill::None) => {
+                let closed = tracedraw_render::closed_subpaths(path);
+                if closed.elements().is_empty() {
+                    s.fill = Fill::None;
+                    return;
+                }
+                let mut filled = s.clone();
+                filled.kind = ShapeKind::Path {
+                    path: closed,
+                    closed: true,
+                };
+                filled.stroke = None;
+                filled.effects.clear();
+                filled.transform = tracedraw_core::geometry::Affine::IDENTITY;
+                let mut outlined = s.clone();
+                outlined.fill = Fill::None;
+                outlined.effects.clear();
+                outlined.transform = tracedraw_core::geometry::Affine::IDENTITY;
+                s.kind = ShapeKind::Group {
+                    children: vec![filled, outlined],
+                };
+                s.fill = Fill::None;
+                s.stroke = None;
+            }
+            ShapeKind::Group { children } => children.iter_mut().for_each(fix),
+            ShapeKind::ClipFrame { frame, contents } => {
+                fix(frame);
+                contents.iter_mut().for_each(fix);
+            }
+            _ => {}
+        }
+    }
+    if doc.metadata.fill_open_curves || !doc.all_layers().flat_map(|l| &l.shapes).any(needs) {
+        return std::borrow::Cow::Borrowed(doc);
+    }
+    let mut out = doc.clone();
+    for page in &mut out.pages {
+        for layer in &mut page.layers {
+            layer.shapes.iter_mut().for_each(fix);
+        }
+    }
+    for layer in &mut out.master {
+        layer.shapes.iter_mut().for_each(fix);
+    }
+    std::borrow::Cow::Owned(out)
+}
+
 /// Native format: pretty JSON with a `.tdraw` extension.
 pub fn save_native(doc: &Document, path: impl AsRef<Path>) -> Result<()> {
     std::fs::write(path, doc.to_json()?)?;
@@ -93,6 +160,39 @@ mod tests {
         geometry::{Rect, Size},
         Color, Fill, Pattern, Stroke,
     };
+
+    #[test]
+    fn open_curves_lose_their_fill_in_vector_exports() {
+        use tracedraw_core::geometry::{BezPath, Point};
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        let mut path = BezPath::new();
+        path.move_to(Point::new(10.0, 10.0));
+        path.line_to(Point::new(50.0, 10.0));
+        path.line_to(Point::new(50.0, 50.0));
+        let mut open = Shape::new(
+            tracedraw_core::ShapeId(5),
+            ShapeKind::Path {
+                path,
+                closed: false,
+            },
+        );
+        open.fill = Fill::Solid(Color::rgb8(255, 0, 0));
+        open.stroke = Some(Stroke::hairline(Color::BLACK));
+        doc.layer_mut(layer).unwrap().shapes.push(open);
+        let resolved = resolve_open_fills(&doc);
+        let s = &resolved.pages[0].layers[0].shapes[0];
+        assert!(matches!(s.fill, Fill::None));
+        assert!(s.stroke.is_some());
+        let svg = svg::page_to_svg(&doc, 0);
+        assert!(!svg.contains("fill=\"#ff0000\""), "{svg}");
+        // A document that fills open curves exports the fill.
+        doc.metadata.fill_open_curves = true;
+        assert!(matches!(
+            resolve_open_fills(&doc),
+            std::borrow::Cow::Borrowed(_)
+        ));
+    }
 
     #[test]
     fn vector_pattern_fill_round_trips_through_the_native_format() {

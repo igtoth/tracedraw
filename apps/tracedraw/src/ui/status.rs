@@ -112,14 +112,16 @@ fn object_details(app: &App) -> String {
         return String::new();
     };
     let u = app.units;
-    let f = |mm: f64| format!("{:.3}", u.from_mm(mm));
+    let d = app.settings.precision.min(10) as usize;
+    let f = |mm: f64| format!("{:.*}", d, u.from_mm(mm));
+    let c = app.to_ruler(b.center());
     trf(
         "status.details",
         &[
             ("w", &f(b.width())),
             ("h", &f(b.height())),
-            ("x", &f(b.center().x)),
-            ("y", &f(b.center().y)),
+            ("x", &f(c.x)),
+            ("y", &f(c.y)),
             ("u", &u.label()),
         ],
     )
@@ -129,9 +131,12 @@ fn cursor_coordinates(app: &App) -> String {
     match app.pointer_page.map(|p| app.to_ruler(p)) {
         Some(p) => {
             let u = app.units;
+            let d = app.settings.precision.min(10) as usize;
             format!(
-                "({:.3}, {:.3}) {}",
+                "({:.*}, {:.*}) {}",
+                d,
                 u.from_mm(p.x),
+                d,
                 u.from_mm(p.y),
                 u.label()
             )

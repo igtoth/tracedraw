@@ -185,6 +185,7 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
     }
 
     draw_pixel_grid(app, painter, rect);
+    draw_empty_clip_frames(app, painter);
 
     // Selection.
     draw_selection(app, painter, preview);
@@ -680,6 +681,23 @@ fn draw_selection(app: &App, painter: &Painter, preview: Option<Affine>) {
         draw_nodes(app, painter);
         return;
     }
+    // Options > Display > Hide bounding box for curve tools.
+    if app.settings.hide_bbox_curve_tools
+        && matches!(
+            app.tool,
+            Tool::Freehand
+                | Tool::TwoPointLine
+                | Tool::Bezier
+                | Tool::Pen
+                | Tool::BSpline
+                | Tool::Polyline
+                | Tool::ThreePointCurve
+                | Tool::ShapeRecognition
+                | Tool::BrushStrokes
+        )
+    {
+        return;
+    }
 
     // Every tool shows the selection handles and the centre marker, as the
     // target design does right after a shape is drawn; only the Pick
@@ -759,6 +777,32 @@ fn draw_rotate_handle(painter: &Painter, p: Pos2, h: Handle, r: ERect) {
         };
         painter.line_segment([p + d, p + d * 0.6 + t], s);
         painter.line_segment([p - d, p - d * 0.6 - t], s);
+    }
+}
+
+/// Empty ClipFrame frames show two grey diagonals on screen (Options >
+/// ClipFrame > Show lines in empty ClipFrame frames).
+fn draw_empty_clip_frames(app: &App, painter: &Painter) {
+    if !app.settings.clip_frame.empty_lines {
+        return;
+    }
+    let Ok(page) = app.doc().page(app.page) else {
+        return;
+    };
+    let stroke = EStroke::new(1.0, Color32::from_gray(160));
+    for s in page
+        .layers
+        .iter()
+        .filter(|l| l.visible)
+        .flat_map(|l| &l.shapes)
+    {
+        if let ShapeKind::ClipFrame { contents, .. } = &s.kind {
+            if contents.is_empty() && s.visible {
+                let r = app.view.rect_to_screen(s.bounds());
+                painter.line_segment([r.left_top(), r.right_bottom()], stroke);
+                painter.line_segment([r.right_top(), r.left_bottom()], stroke);
+            }
+        }
     }
 }
 
@@ -914,11 +958,62 @@ fn draw_pixel_grid(app: &App, painter: &Painter, rect: ERect) {
     px.paint(painter);
 }
 
-/// Shape tool overlay: nodes as squares (selected filled), handles of the
-/// selected nodes as lines with round ends, start node larger.
+/// One node marker: `shape` of side `size` around `p`.
+fn node_marker(
+    painter: &Painter,
+    p: Pos2,
+    size: f32,
+    shape: crate::settings::NodeShape,
+    fill: Option<Color32>,
+    outline: Color32,
+) {
+    use crate::settings::NodeShape;
+    let h = size / 2.0;
+    let stroke = EStroke::new(1.0, outline);
+    match shape {
+        NodeShape::Square => {
+            let r = ERect::from_center_size(p, egui::vec2(size, size));
+            if let Some(f) = fill {
+                painter.rect_filled(r, 0.0, f);
+            }
+            painter.rect_stroke(r, 0.0, stroke, epaint::StrokeKind::Inside);
+        }
+        NodeShape::Circle => {
+            if let Some(f) = fill {
+                painter.circle_filled(p, h, f);
+            }
+            painter.circle_stroke(p, h - 0.5, stroke);
+        }
+        NodeShape::Diamond => {
+            let pts = vec![
+                p + egui::vec2(0.0, -h - 0.5),
+                p + egui::vec2(h + 0.5, 0.0),
+                p + egui::vec2(0.0, h + 0.5),
+                p + egui::vec2(-h - 0.5, 0.0),
+            ];
+            painter.add(epaint::PathShape::convex_polygon(
+                pts,
+                fill.unwrap_or(Color32::TRANSPARENT),
+                stroke,
+            ));
+        }
+    }
+}
+
+/// Shape tool overlay, as Options > Nodes and Handles sets it: nodes
+/// shaped by type (cusp, smooth, symmetrical), the selected ones filled
+/// with the main colour, the others white or hollow, the first node of a
+/// curve larger, handles of the selected nodes, and an arrow in the
+/// secondary colour showing the curve's direction.
 fn draw_nodes(app: &App, painter: &Painter) {
     use tracedraw_core::nodes;
     let view = &app.view;
+    let prefs = app.settings.nodes;
+    let [r, g, b] = prefs.main_rgb;
+    let main = Color32::from_rgb(r, g, b);
+    let [r, g, b] = prefs.secondary_rgb;
+    let secondary = Color32::from_rgb(r, g, b);
+    let size = prefs.size.px();
     for s in app.selected_shapes() {
         let ShapeKind::Path { path, .. } = &s.kind else {
             painter.rect_stroke(
@@ -929,30 +1024,57 @@ fn draw_nodes(app: &App, painter: &Painter) {
             );
             continue;
         };
-        for n in nodes::nodes(path) {
+        let all = nodes::nodes(path);
+        if prefs.show_direction {
+            // A small arrow head just after the first node, along the
+            // first segment.
+            if let Some(n0) = all.iter().find(|n| n.is_start) {
+                let toward = n0
+                    .ctrl_out
+                    .or_else(|| all.iter().find(|n| !n.is_start).map(|n| n.pos));
+                if let Some(t) = toward {
+                    let a = view.to_screen(s.transform * n0.pos);
+                    let bpt = view.to_screen(s.transform * t);
+                    let d = bpt - a;
+                    if d.length() > 1.0 {
+                        let d = d.normalized();
+                        let n = egui::vec2(-d.y, d.x);
+                        let tip = a + d * (size + 9.0);
+                        let base = a + d * (size + 3.0);
+                        painter.add(epaint::PathShape::convex_polygon(
+                            vec![tip, base + n * 3.5, base - n * 3.5],
+                            secondary,
+                            EStroke::NONE,
+                        ));
+                    }
+                }
+            }
+        }
+        for n in all {
             let selected = app.node_selection.contains(&(s.id, n.index));
             let p = view.to_screen(s.transform * n.pos);
             if selected {
                 for c in [n.ctrl_in, n.ctrl_out].into_iter().flatten() {
                     let cp = view.to_screen(s.transform * c);
-                    painter.line_segment([p, cp], EStroke::new(1.0, Tokens::SELECTION));
+                    painter.line_segment([p, cp], EStroke::new(1.0, main));
                     painter.circle_filled(cp, 3.0, Color32::WHITE);
-                    painter.circle_stroke(cp, 3.0, EStroke::new(1.0, Tokens::SELECTION));
+                    painter.circle_stroke(cp, 3.0, EStroke::new(1.0, main));
                 }
             }
-            let size = if n.is_start { 8.0 } else { 6.0 };
-            let r = ERect::from_center_size(p, egui::vec2(size, size));
-            if selected {
-                painter.rect_filled(r, 0.0, Tokens::HANDLE);
+            let shape = match nodes::node_type(path, n.index) {
+                nodes::NodeType::Cusp => prefs.cusp,
+                nodes::NodeType::Smooth => prefs.smooth,
+                nodes::NodeType::Symmetrical => prefs.symmetrical,
+            };
+            let side = if n.is_start { size + 2.0 } else { size };
+            let fill = if selected {
+                Some(main)
+            } else if prefs.unselected_filled {
+                Some(Color32::WHITE)
             } else {
-                painter.rect_filled(r, 0.0, Color32::WHITE);
-                painter.rect_stroke(
-                    r,
-                    0.0,
-                    EStroke::new(1.0, Tokens::HANDLE),
-                    epaint::StrokeKind::Middle,
-                );
-            }
+                None
+            };
+            node_marker(painter, p, side, shape, fill, main);
         }
     }
     if let Drag::NodeMarquee { start, current } = &app.drag {

@@ -866,7 +866,7 @@ fn layout_menu(app: &mut App, ui: &mut Ui) {
     ui.separator();
     if item(ui, "menu.layout.document_options", "", true) {
         app.dialog = Dialog::Options;
-        app.options_page = crate::ui::dialogs::OptionsPage::PageSize;
+        app.options_page = crate::ui::dialogs::OptionsPage::DocumentGeneral;
     }
     if item(ui, "menu.layout.page_size", "", true) {
         let s = app.page_size();
@@ -1686,15 +1686,15 @@ fn tools_menu(app: &mut App, ui: &mut Ui) {
         }
         if item(ui, "menu.tools.options_customization", "", true) {
             app.dialog = Dialog::Options;
-            app.options_page = crate::ui::dialogs::OptionsPage::Shortcuts;
+            app.options_page = crate::ui::dialogs::OptionsPage::Appearance;
         }
         if item(ui, "menu.tools.options_tools", "", true) {
             app.dialog = Dialog::Options;
-            app.options_page = crate::ui::dialogs::OptionsPage::Tools;
+            app.options_page = crate::ui::dialogs::OptionsPage::Pick;
         }
         if item(ui, "menu.tools.options_global", "", true) {
             app.dialog = Dialog::Options;
-            app.options_page = crate::ui::dialogs::OptionsPage::Workspace;
+            app.options_page = crate::ui::dialogs::OptionsPage::GlobalGeneral;
         }
         if item(ui, "menu.tools.options_workspaces", "", true) {
             app.dialog = Dialog::Options;
@@ -1927,7 +1927,7 @@ fn help_menu(app: &mut App, ui: &mut Ui) {
     }
     if item(ui, "menu.help.message_settings", "", true) {
         app.dialog = Dialog::Options;
-        app.options_page = crate::ui::dialogs::OptionsPage::Workspace;
+        app.options_page = crate::ui::dialogs::OptionsPage::General;
     }
     if item(ui, "menu.help.community", "", true) {
         app.open_url("https://github.com/igtoth/tracedraw/discussions");

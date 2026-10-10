@@ -36,6 +36,8 @@ impl Tokens {
 
 pub fn visuals() -> Visuals {
     let mut v = Visuals::light();
+    // Indented groups have no guide line.
+    v.indent_has_left_vline = false;
     v.panel_fill = Tokens::PANEL;
     v.window_fill = Tokens::PANEL;
     v.extreme_bg_color = Color32::WHITE;

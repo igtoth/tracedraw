@@ -106,6 +106,8 @@ impl App {
         }
         self.page = doc.pages.first().map(|p| p.id).unwrap_or(self.page);
         self.engine = Engine::new(doc);
+        self.engine
+            .set_max_history(self.settings.undo_levels.max(1));
         self.selection.clear();
         self.file = file;
         self.view = View::default();

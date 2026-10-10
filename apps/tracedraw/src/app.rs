@@ -589,6 +589,10 @@ pub struct App {
     pub show_pixel_grid: bool,
     pub show_baseline_grid: bool,
     pub options_page: crate::ui::dialogs::OptionsPage,
+    /// What an open options dialog may change, for its Cancel button.
+    pub options_snapshot: Option<crate::ui::options::OptionsSnapshot>,
+    /// When the last auto-backup ran (set on the first frame).
+    pub last_auto_backup: Option<web_time::Instant>,
     pub pending_copy_properties: bool,
     pub pending_copy_effect: Option<EffectKind>,
     pub pending_clone_effect: Option<EffectKind>,
@@ -1055,6 +1059,8 @@ impl App {
             show_pixel_grid: true,
             show_baseline_grid: false,
             options_page: crate::ui::dialogs::OptionsPage::General,
+            options_snapshot: None,
+            last_auto_backup: None,
             pending_copy_properties: false,
             pending_copy_effect: None,
             pending_clone_effect: None,
@@ -1134,16 +1140,26 @@ impl App {
             hints: Default::default(),
         };
         app.load_settings();
-        // Start-up: the file given on the command line, else the Welcome
-        // Screen alone (no drawing open) or a new drawing, per Options.
+        app.apply_runtime_settings();
+        // Start-up: the file given on the command line, else what Options >
+        // General asks for: the Welcome Screen alone (no drawing open), a
+        // new drawing, or the last drawing edited.
         if let Some(p) = open {
             app.open_path(p);
         }
         if !app.has_document() {
-            if app.settings.show_welcome_on_start {
-                app.show_welcome = true;
-            } else {
-                app.new_document();
+            match app.settings.startup {
+                crate::settings::Startup::WelcomeScreen => app.show_welcome = true,
+                crate::settings::Startup::NewDocument => app.new_document(),
+                crate::settings::Startup::LastDocument => {
+                    match app.settings.recent_files.first().cloned() {
+                        Some(p) if crate::files::exists(&p) => app.open_path(p),
+                        _ => {}
+                    }
+                    if !app.has_document() {
+                        app.show_welcome = true;
+                    }
+                }
             }
         }
         app
@@ -1192,6 +1208,32 @@ impl App {
     pub fn open_page_options(&mut self) {
         self.options_page = crate::ui::dialogs::OptionsPage::PageSize;
         self.dialog = crate::ui::dialogs::Dialog::Options;
+    }
+
+    /// Settings that act on the editor directly (undo levels), applied
+    /// after loading the preferences and when an options dialog closes.
+    pub fn apply_runtime_settings(&mut self) {
+        let levels = self.settings.undo_levels.max(1);
+        self.engine.set_max_history(levels);
+        for slot in &mut self.docs {
+            slot.engine.set_max_history(levels);
+        }
+    }
+
+    /// Where auto-backups go unless Options > Save names a folder: a
+    /// `TraceDraw` folder in the temporary folder (none in a browser).
+    pub fn auto_backup_dir_default() -> Option<PathBuf> {
+        if crate::files::WEB {
+            return None;
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            Some(std::env::temp_dir().join("TraceDraw"))
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            None
+        }
     }
 
     /// Double-click on a ruler: Document Options at the Rulers page.
@@ -2679,6 +2721,7 @@ impl App {
                 .map(String::into_bytes)
                 .map_err(|e| e.to_string())
         };
+        self.backup_before_save(&path);
         let result = bytes.and_then(|b| crate::files::write(&path, b).map_err(|e| e.to_string()));
         match result {
             Ok(()) => {
@@ -2692,6 +2735,135 @@ impl App {
             Err(e) => {
                 self.status = crate::i18n::trf("status.save_failed", &[("e", &e.to_string())])
             }
+        }
+    }
+
+    /// Options > Save: copy the file about to be replaced to
+    /// `backup_of_<name>`, next to it or in the chosen folder.
+    fn backup_before_save(&mut self, path: &std::path::Path) {
+        let b = &self.settings.backup;
+        if !b.before_save || !crate::files::exists(path) {
+            return;
+        }
+        let Some(name) = path.file_name() else {
+            return;
+        };
+        let dir = b
+            .before_save_dir
+            .clone()
+            .or_else(|| path.parent().map(|p| p.to_path_buf()))
+            .unwrap_or_default();
+        let target = dir.join(format!("backup_of_{}", name.to_string_lossy()));
+        if let Err(e) = crate::files::copy(path, &target) {
+            log::warn!("backup of {} failed: {e}", path.display());
+        }
+    }
+
+    /// Options > Save > Auto-backup: every few minutes, save each open
+    /// drawing with unsaved changes as `AutoBackup_of_<name>.tdraw` in the
+    /// auto-backup folder. Called every frame; returns true when it saved.
+    pub fn auto_backup_tick(&mut self, now: web_time::Instant) -> bool {
+        let b = self.settings.backup.clone();
+        if !b.auto || crate::files::WEB {
+            return false;
+        }
+        let due = std::time::Duration::from_secs(u64::from(b.minutes.max(1)) * 60);
+        let last = *self.last_auto_backup.get_or_insert(now);
+        if now.duration_since(last) < due {
+            return false;
+        }
+        self.last_auto_backup = Some(now);
+        let Some(dir) = b.auto_dir.clone().or_else(App::auto_backup_dir_default) else {
+            return false;
+        };
+        let mut saved = false;
+        let mut jobs: Vec<(String, String)> = Vec::new();
+        if self.has_document() && self.engine.is_dirty() {
+            if let Ok(json) = self.doc().to_json() {
+                jobs.push((self.backup_name(None), json));
+            }
+        }
+        for (i, slot) in self.docs.iter().enumerate() {
+            if i != self.active_doc && slot.engine.is_dirty() {
+                if let Ok(json) = slot.engine.document().to_json() {
+                    jobs.push((self.backup_name(Some(i)), json));
+                }
+            }
+        }
+        for (name, json) in jobs {
+            match crate::files::write_creating(dir.join(&name), json) {
+                Ok(()) => saved = true,
+                Err(e) => log::warn!("auto-backup {name} failed: {e}"),
+            }
+        }
+        saved
+    }
+
+    /// `AutoBackup_of_<drawing name>.tdraw` for the active drawing (`None`)
+    /// or another open one.
+    fn backup_name(&self, slot: Option<usize>) -> String {
+        let title = match slot {
+            None => self.document_tab_title(self.active_doc),
+            Some(i) => self.document_tab_title(i),
+        };
+        let stem: String = title
+            .trim_end_matches('*')
+            .trim()
+            .trim_end_matches(".tdraw")
+            .trim_end_matches(".cdr")
+            .chars()
+            .map(|c| {
+                if c.is_alphanumeric() || c == '-' || c == '_' {
+                    c
+                } else {
+                    '_'
+                }
+            })
+            .collect();
+        format!("AutoBackup_of_{stem}.tdraw")
+    }
+
+    /// Ctrl+8 and Ctrl+2: the selected text (or the text being edited)
+    /// one keyboard text increment larger or smaller.
+    pub fn step_text_size(&mut self, up: bool) {
+        let step = self.settings.text_increment_pt.max(0.1);
+        let size = if up {
+            self.text_size_pt + step
+        } else {
+            self.text_size_pt - step
+        };
+        self.text_size_pt = size.clamp(1.0, 3000.0);
+        self.apply_text_style();
+    }
+
+    /// Put `contents` inside `frame` (ClipFrame), centring them in the
+    /// frame first when Options > ClipFrame asks for it: always, or when
+    /// they lie completely outside the frame (the default).
+    pub fn place_inside(&mut self, contents: Vec<ShapeId>, frame: ShapeId) {
+        use crate::settings::AutoCenter;
+        let bounds = |app: &App, ids: &[ShapeId]| -> Option<Rect> {
+            ids.iter()
+                .filter_map(|id| app.doc().shape(*id).ok().map(|(_, s)| s.bounds()))
+                .reduce(|a, b| a.union(b))
+        };
+        let mut cmds = Vec::new();
+        if let (Some(c), Some(f)) = (bounds(self, &contents), bounds(self, &[frame])) {
+            let center = match self.settings.clip_frame.auto_center {
+                AutoCenter::Always => true,
+                AutoCenter::Never => false,
+                AutoCenter::WhenOutside => c.intersect(f).area() <= 0.0,
+            };
+            if center {
+                let d = f.center() - c.center();
+                cmds.push(Command::TransformShapes {
+                    shapes: contents.clone(),
+                    transform: Affine::translate(d),
+                });
+            }
+        }
+        cmds.push(Command::PlaceInside { contents, frame });
+        if let Err(e) = self.engine.run_batch("ClipFrame", &cmds) {
+            self.status = format!("ClipFrame: {e}");
         }
     }
 
@@ -3418,5 +3590,125 @@ pub fn color_description(c: Color) -> String {
             (q * 255.0).round()
         ),
         Color::Registration => "Registration".into(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rect_shape(app: &mut App, r: Rect, filled: bool) -> ShapeId {
+        let id = app
+            .new_shape(ShapeKind::Rect {
+                rect: r,
+                radius: 0.0,
+            })
+            .expect("a layer");
+        app.run(Command::SetFill {
+            shapes: vec![id],
+            fill: if filled {
+                Fill::Solid(Color::BLACK)
+            } else {
+                Fill::None
+            },
+        });
+        id
+    }
+
+    #[test]
+    fn clip_frame_content_outside_the_frame_is_centred_in_one_step() {
+        let mut app = App::headless();
+        let frame = rect_shape(&mut app, Rect::new(0.0, 0.0, 100.0, 100.0), true);
+        let far = rect_shape(&mut app, Rect::new(200.0, 200.0, 220.0, 220.0), true);
+        let depth = app.engine.history_labels().0.len();
+        app.place_inside(vec![far], frame);
+        assert_eq!(app.engine.history_labels().0.len(), depth + 1);
+        let ShapeKind::ClipFrame { contents, .. } = &app.doc().find_shape(frame).unwrap().kind
+        else {
+            panic!("not a ClipFrame");
+        };
+        let c = contents[0].bounds().center();
+        assert!((c.x - 50.0).abs() < 1e-9 && (c.y - 50.0).abs() < 1e-9);
+        // Content overlapping the frame stays where it is by default.
+        let mut app = App::headless();
+        let frame = rect_shape(&mut app, Rect::new(0.0, 0.0, 100.0, 100.0), true);
+        let near = rect_shape(&mut app, Rect::new(90.0, 90.0, 120.0, 120.0), true);
+        app.place_inside(vec![near], frame);
+        let ShapeKind::ClipFrame { contents, .. } = &app.doc().find_shape(frame).unwrap().kind
+        else {
+            panic!("not a ClipFrame");
+        };
+        assert!((contents[0].bounds().x0 - 90.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn unfilled_objects_hit_only_near_the_outline_unless_treated_as_filled() {
+        let mut app = App::headless();
+        app.view.zoom = 1.0;
+        let id = rect_shape(&mut app, Rect::new(10.0, 10.0, 60.0, 60.0), false);
+        let inside = Point::new(35.0, 35.0);
+        assert_eq!(app.hit_test(inside), None);
+        assert_eq!(app.hit_test(Point::new(10.5, 35.0)), Some(id));
+        app.settings.treat_all_filled = true;
+        assert_eq!(app.hit_test(inside), Some(id));
+    }
+
+    #[test]
+    fn filled_ellipses_are_hit_inside_their_curve_not_their_box() {
+        let mut app = App::headless();
+        app.view.zoom = 1.0;
+        let id = app
+            .new_shape(ShapeKind::Ellipse {
+                rect: Rect::new(0.0, 0.0, 100.0, 100.0),
+                arc: None,
+            })
+            .expect("a layer");
+        app.run(Command::SetFill {
+            shapes: vec![id],
+            fill: Fill::Solid(Color::BLACK),
+        });
+        assert_eq!(app.hit_test(Point::new(50.0, 50.0)), Some(id));
+        // The box corner is outside the circle.
+        assert_eq!(app.hit_test(Point::new(3.0, 3.0)), None);
+    }
+
+    #[test]
+    fn undo_levels_limit_the_history() {
+        let mut app = App::headless();
+        app.settings.undo_levels = 2;
+        app.apply_runtime_settings();
+        for i in 0..5 {
+            rect_shape(&mut app, Rect::new(0.0, 0.0, 10.0 + i as f64, 10.0), true);
+        }
+        assert_eq!(app.engine.history_labels().0.len(), 2);
+    }
+
+    #[test]
+    fn saving_over_a_file_keeps_a_backup_and_auto_backup_saves_dirty_drawings() {
+        let dir = std::env::temp_dir().join(format!("tracedraw-backup-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut app = App::headless();
+        let path = dir.join("art.tdraw");
+        app.save_to(path.clone());
+        assert!(path.is_file());
+        assert!(
+            !dir.join("backup_of_art.tdraw").exists(),
+            "nothing to back up yet"
+        );
+        rect_shape(&mut app, Rect::new(0.0, 0.0, 10.0, 10.0), true);
+        app.save_to(path.clone());
+        assert!(dir.join("backup_of_art.tdraw").is_file());
+        // Auto-backup: due after the interval, only for unsaved changes.
+        app.settings.backup.auto_dir = Some(dir.join("auto"));
+        app.settings.backup.minutes = 1;
+        let t0 = web_time::Instant::now();
+        assert!(!app.auto_backup_tick(t0));
+        rect_shape(&mut app, Rect::new(0.0, 0.0, 20.0, 10.0), true);
+        assert!(!app.auto_backup_tick(t0 + std::time::Duration::from_secs(30)));
+        assert!(app.auto_backup_tick(t0 + std::time::Duration::from_secs(61)));
+        let saved: Vec<_> = std::fs::read_dir(dir.join("auto")).unwrap().collect();
+        assert_eq!(saved.len(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

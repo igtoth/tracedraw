@@ -9,6 +9,7 @@ use tracedraw_core::{
 };
 
 pub fn page_to_svg(doc: &Document, page_index: usize) -> String {
+    let doc = &*crate::resolve_open_fills(doc);
     let Some(page) = doc.pages.get(page_index) else {
         return String::from("<svg xmlns=\"http://www.w3.org/2000/svg\"/>");
     };

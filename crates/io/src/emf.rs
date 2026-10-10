@@ -2197,6 +2197,7 @@ mod tests {
 /// text as EXTTEXTOUTW with a LOGFONT, bitmaps as 32-bit DIBs, and
 /// ClipFrames as clip paths. Live effects are expanded first.
 pub fn page_to_emf(doc: &tracedraw_core::Document, page_index: usize) -> Vec<u8> {
+    let doc = &*crate::resolve_open_fills(doc);
     let Some(page) = doc.pages.get(page_index) else {
         return Vec::new();
     };
@@ -2936,6 +2937,7 @@ mod export_tests {
 /// LOGFONT; bitmaps are 32-bit DIBs through STRETCHDIB. Live effects are
 /// expanded, ClipFrames are drawn unclipped (contents then frame).
 pub fn page_to_wmf(doc: &tracedraw_core::Document, page_index: usize) -> Vec<u8> {
+    let doc = &*crate::resolve_open_fills(doc);
     let Some(page) = doc.pages.get(page_index) else {
         return Vec::new();
     };

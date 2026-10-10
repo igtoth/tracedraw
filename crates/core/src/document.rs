@@ -863,6 +863,9 @@ pub struct Metadata {
     pub grid: GridSettings,
     pub rulers: RulerSettings,
     pub guides: GuideSettings,
+    /// Fill the open subpaths of curves too (Document Options > General,
+    /// off by default).
+    pub fill_open_curves: bool,
 }
 
 /// A document's primary colour mode (Create a New Document dialog).

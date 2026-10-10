@@ -844,6 +844,7 @@ fn flatten_page(doc: &Document, page: &tracedraw_core::document::Page, dpi: f64)
 
 /// Write every page with the given options (PDF/X, bleed, metadata).
 pub fn document_to_pdf_with(doc: &Document, opts: &PdfOptions) -> Vec<u8> {
+    let doc = &*crate::resolve_open_fills(doc);
     let std_ = opts.standard;
     let mut pdf = Pdf {
         objects: Vec::new(),

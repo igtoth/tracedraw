@@ -3,6 +3,7 @@
 //! document tabs, rulers and canvas in the middle, navigator and colour
 //! palette under the canvas, status bar at the bottom.
 
+pub mod chrome;
 pub mod context;
 pub mod dialogs;
 pub mod dockers;
@@ -11,6 +12,7 @@ pub mod hints;
 pub mod icons;
 pub mod layout_options;
 pub mod menus;
+pub mod options;
 pub mod palette;
 pub mod preview;
 pub mod rulers;
@@ -76,6 +78,19 @@ pub fn root(app: &mut App, ui: &mut Ui) {
     }
     if !app.has_document() {
         app.show_welcome = true;
+    }
+    // Options > Display > Show tooltips.
+    let delay = if app.settings.show_tooltips {
+        0.5
+    } else {
+        f32::INFINITY
+    };
+    if ctx.global_style().interaction.tooltip_delay != delay {
+        ctx.all_styles_mut(|s| s.interaction.tooltip_delay = delay);
+    }
+    // Options > Save > Auto-backup.
+    if app.auto_backup_tick(web_time::Instant::now()) {
+        app.status = tr("status.auto_backup_saved");
     }
 
     if app.fullscreen_preview {
@@ -276,6 +291,11 @@ pub fn root(app: &mut App, ui: &mut Ui) {
                 crate::tools::Tool::Pan => egui::CursorIcon::Grab,
                 crate::tools::Tool::Zoom => egui::CursorIcon::ZoomIn,
                 crate::tools::Tool::Text => egui::CursorIcon::Text,
+                crate::tools::Tool::Pick | crate::tools::Tool::FreeformPick
+                    if app.settings.crosshair_cursor =>
+                {
+                    egui::CursorIcon::Crosshair
+                }
                 crate::tools::Tool::Pick | crate::tools::Tool::FreeformPick => {
                     egui::CursorIcon::Default
                 }

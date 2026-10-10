@@ -148,6 +148,19 @@ impl Engine {
         )
     }
 
+    /// How many steps Undo keeps (Options > General > Undo levels); older
+    /// steps are dropped at once when the limit shrinks.
+    pub fn set_max_history(&mut self, n: usize) {
+        self.max_history = n.max(1);
+        while self.undo.len() > self.max_history {
+            self.undo.remove(0);
+        }
+    }
+
+    pub fn max_history(&self) -> usize {
+        self.max_history
+    }
+
     pub fn undo_label(&self) -> Option<&'static str> {
         self.undo.last().map(|e| e.label)
     }
