@@ -3,9 +3,12 @@
 //! document tabs, rulers and canvas in the middle, navigator and colour
 //! palette under the canvas, status bar at the bottom.
 
+pub mod bitmap_dialogs;
+pub mod bitmap_preview;
 pub mod chrome;
 pub mod context;
 pub mod coords_docker;
+pub mod curve_edit;
 pub mod dialogs;
 pub mod dockers;
 pub mod dockers2;

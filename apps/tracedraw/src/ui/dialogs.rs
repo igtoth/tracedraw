@@ -253,6 +253,10 @@ pub struct PaletteEditorState {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Dialog {
     None,
+    /// Bitmaps > Mode > Black and White, Duotone and Paletted.
+    BitmapBw(crate::bitmap_modes::BwSettings),
+    BitmapDuotone(crate::ui::bitmap_dialogs::DuotoneState),
+    BitmapPaletted(crate::bitmap_modes::PalettedSettings),
     /// The Shape tool's Align Nodes: on a common horizontal and/or
     /// vertical.
     NodeAlign {
@@ -329,7 +333,7 @@ pub enum Dialog {
     About,
 }
 
-fn window<'a>(_ctx: &Context, title: String) -> egui::Window<'a> {
+pub(crate) fn window<'a>(_ctx: &Context, title: String) -> egui::Window<'a> {
     egui::Window::new(title)
         .collapsible(false)
         .resizable(false)
@@ -339,7 +343,7 @@ fn window<'a>(_ctx: &Context, title: String) -> egui::Window<'a> {
 /// OK and Cancel buttons. Enter presses OK (unless a multi-line field
 /// has the focus); Esc is handled by the keyboard handler, which closes
 /// any dialog.
-fn ok_cancel(ui: &mut Ui, close: &mut bool) -> bool {
+pub(crate) fn ok_cancel(ui: &mut Ui, close: &mut bool) -> bool {
     let mut ok = false;
     ui.add_space(6.0);
     ui.horizontal(|ui| {
@@ -402,6 +406,13 @@ pub fn show(app: &mut App, ctx: &Context) {
     let mut close = false;
     match &mut dialog {
         Dialog::None => {}
+        Dialog::BitmapBw(s) => crate::ui::bitmap_dialogs::bw_dialog(app, ctx, s, &mut close),
+        Dialog::BitmapDuotone(st) => {
+            crate::ui::bitmap_dialogs::duotone_dialog(app, ctx, st, &mut close)
+        }
+        Dialog::BitmapPaletted(s) => {
+            crate::ui::bitmap_dialogs::paletted_dialog(app, ctx, s, &mut close)
+        }
         Dialog::NodeAlign {
             horizontal,
             vertical,
@@ -2782,6 +2793,9 @@ mod tests {
                 horizontal: true,
                 vertical: false,
             },
+            Dialog::BitmapBw(Default::default()),
+            Dialog::BitmapDuotone(Default::default()),
+            Dialog::BitmapPaletted(Default::default()),
             Dialog::RenamePage {
                 name: "Page".into(),
             },

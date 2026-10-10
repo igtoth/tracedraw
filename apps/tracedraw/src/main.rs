@@ -14,6 +14,7 @@ mod anchors;
 mod app;
 mod barcode;
 mod bitmap_fx;
+mod bitmap_modes;
 mod border_grommet;
 mod canvas;
 mod clipboard;

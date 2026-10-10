@@ -1493,22 +1493,29 @@ fn bitmaps_menu(app: &mut App, ui: &mut Ui) {
     if item(ui, "menu.bitmaps.resample", "", has_bitmap) {
         app.dialog = Dialog::Resample { dpi: 300.0 };
     }
+    // Black and white, duotone and paletted open their dialogs; the
+    // others convert at once.
     sub(ui, "menu.bitmaps.mode", |ui| {
-        for (key, mode) in [
-            (
-                "menu.bitmaps.mode_bw",
-                crate::bitmap_fx::ColorMode::BlackWhite,
-            ),
-            (
-                "menu.bitmaps.mode_grayscale",
-                crate::bitmap_fx::ColorMode::Grayscale,
-            ),
-            ("menu.bitmaps.mode_rgb", crate::bitmap_fx::ColorMode::Rgb),
-            ("menu.bitmaps.mode_cmyk", crate::bitmap_fx::ColorMode::Cmyk),
-        ] {
-            if item(ui, key, "", has_bitmap) {
-                app.set_bitmap_mode(mode);
-            }
+        if item(ui, "menu.bitmaps.mode_bw", "", has_bitmap) {
+            app.dialog = Dialog::BitmapBw(Default::default());
+        }
+        if item(ui, "menu.bitmaps.mode_grayscale", "", has_bitmap) {
+            app.set_bitmap_mode(crate::bitmap_fx::ColorMode::Grayscale);
+        }
+        if item(ui, "menu.bitmaps.mode_duotone", "", has_bitmap) {
+            app.dialog = Dialog::BitmapDuotone(Default::default());
+        }
+        if item(ui, "menu.bitmaps.mode_paletted", "", has_bitmap) {
+            app.dialog = Dialog::BitmapPaletted(Default::default());
+        }
+        if item(ui, "menu.bitmaps.mode_rgb", "", has_bitmap) {
+            app.set_bitmap_mode(crate::bitmap_fx::ColorMode::Rgb);
+        }
+        if item(ui, "menu.bitmaps.mode_lab", "", has_bitmap) {
+            app.apply_to_bitmaps("Lab Color", |img, _| crate::bitmap_modes::lab_mode(img));
+        }
+        if item(ui, "menu.bitmaps.mode_cmyk", "", has_bitmap) {
+            app.set_bitmap_mode(crate::bitmap_fx::ColorMode::Cmyk);
         }
     });
     sub(ui, "menu.bitmaps.inflate", |ui| {

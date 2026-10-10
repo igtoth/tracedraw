@@ -203,7 +203,6 @@ pub const GROUPS: &[(&str, &[FxEntry])] = &[
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ColorMode {
-    BlackWhite,
     Grayscale,
     Rgb,
     Cmyk,
@@ -267,7 +266,6 @@ pub fn apply(img: &RgbaImage, fx: Fx, amount: f32) -> RgbaImage {
 /// Convert the colour mode (Bitmaps > Mode).
 pub fn convert_mode(img: &RgbaImage, mode: ColorMode) -> RgbaImage {
     match mode {
-        ColorMode::BlackWhite => threshold(img, 128),
         ColorMode::Grayscale => hue_saturation(img, 0.0, 0.0),
         // RGB and CMYK keep the pixels; the mode is a document attribute.
         ColorMode::Rgb | ColorMode::Cmyk => img.clone(),

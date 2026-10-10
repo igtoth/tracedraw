@@ -10,7 +10,7 @@ from observation:
 - checks written as "given, when, then", which are the unit tests that
   gate the parity row.
 
-Pages: `brush-strokes.md`, `blend.md`, `block-shadow.md`,
+Pages: `brush-strokes.md`, `bitmap-modes.md`, `blend.md`, `block-shadow.md`,
 `border-and-grommet.md`, `brushes.md`, `color-palettes.md`,
 `colour-management.md`, `connectors-and-anchors.md`, `contour.md`,
 `coordinates.md`, `corners-and-joins.md`,
