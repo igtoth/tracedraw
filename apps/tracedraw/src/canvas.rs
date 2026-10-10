@@ -1096,6 +1096,64 @@ fn draw_nodes(app: &App, painter: &Painter) {
             node_marker(painter, p, side, shape, fill, main);
         }
     }
+    // Node transform handles around the selected nodes.
+    let handles = app.node_transform_handles();
+    if let (false, Some(b)) = (handles.is_empty(), app.selected_nodes_bounds()) {
+        let r = view.rect_to_screen(b);
+        let corners = [
+            r.left_top(),
+            r.right_top(),
+            r.right_bottom(),
+            r.left_bottom(),
+            r.left_top(),
+        ];
+        dashed_polyline(
+            painter,
+            &corners,
+            EStroke::new(1.0, Tokens::SELECTION),
+            4.0,
+            3.0,
+        );
+        let stroke = EStroke::new(1.0, Tokens::HANDLE);
+        for (h, p) in handles {
+            let c = view.to_screen(p);
+            match app.node_transform {
+                crate::node_edit::NodeTransformMode::RotateSkew if h.is_corner() => {
+                    painter.circle_filled(c, 3.5, Color32::WHITE);
+                    painter.circle_stroke(c, 3.5, stroke);
+                }
+                crate::node_edit::NodeTransformMode::RotateSkew => {
+                    // A double arrow along the side.
+                    let d = if matches!(h, Handle::N | Handle::S) {
+                        egui::vec2(5.0, 0.0)
+                    } else {
+                        egui::vec2(0.0, 5.0)
+                    };
+                    painter.line_segment([c - d, c + d], EStroke::new(1.5, Tokens::HANDLE));
+                    painter.circle_filled(c, 1.5, Tokens::HANDLE);
+                }
+                _ => {
+                    let rr = ERect::from_center_size(c, egui::vec2(6.0, 6.0));
+                    painter.rect_filled(rr, 0.0, Tokens::HANDLE);
+                }
+            }
+        }
+        if app.node_transform == crate::node_edit::NodeTransformMode::RotateSkew {
+            let c = view.to_screen(b.center());
+            painter.circle_stroke(c, 4.0, stroke);
+            painter.circle_filled(c, 1.2, Tokens::HANDLE);
+        }
+    }
+    if let Drag::NodeLasso { points } = &app.drag {
+        let pts: Vec<Pos2> = points.iter().map(|p| view.to_screen(*p)).collect();
+        dashed_polyline(
+            painter,
+            &pts,
+            EStroke::new(1.0, Tokens::SELECTION),
+            4.0,
+            3.0,
+        );
+    }
     if let Drag::NodeMarquee { start, current } = &app.drag {
         let r = view.rect_to_screen(Rect::from_points(*start, *current));
         painter.rect_stroke(

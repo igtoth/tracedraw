@@ -149,6 +149,19 @@ impl App {
                 };
                 return;
             }
+            // The node transform handles, while a transform mode is on.
+            if let Some(handle) = self.node_transform_handle_at(p) {
+                if let Some(bounds) = self.selected_nodes_bounds() {
+                    self.drag = Drag::NodeTransform {
+                        handle,
+                        start: self.start_curves(),
+                        bounds,
+                        from: p,
+                        begun: false,
+                    };
+                    return;
+                }
+            }
             if let Some((shape, index, which)) = self.ctrl_handle_at(p) {
                 self.drag = Drag::Handle {
                     shape,
@@ -160,53 +173,98 @@ impl App {
             if let Some(hit) = self.node_at(p) {
                 let key = (hit.shape, hit.index);
                 if !self.node_selection.contains(&key) {
-                    if mods.shift {
-                        self.node_selection.push(key);
+                    if mods.ctrl || mods.command || mods.shift {
+                        self.click_node(key, mods);
                     } else {
                         self.node_selection = vec![key];
                     }
                 }
-                self.drag = Drag::Node { last: p };
+                let grab = self
+                    .selected_node_points()
+                    .into_iter()
+                    .find(|(id, i, _)| (*id, *i) == key)
+                    .map(|(_, _, q)| q)
+                    .unwrap_or(p);
+                self.drag = Drag::NodeMove {
+                    start: self.start_curves(),
+                    from: p,
+                    grab,
+                    begun: false,
+                };
                 return;
             }
-            match self.hit_test(p) {
-                Some(id) if !self.selection.contains(&id) => {
+            if let Some(id) = self.hit_test(p) {
+                if !self.selection.contains(&id) {
                     self.select(vec![id]);
-                    self.drag = Drag::NodeMarquee {
-                        start: p,
-                        current: p,
-                    };
-                }
-                _ => {
-                    self.drag = Drag::NodeMarquee {
-                        start: p,
-                        current: p,
-                    }
                 }
             }
+            self.drag = if self.node_lasso {
+                Drag::NodeLasso { points: vec![p] }
+            } else {
+                Drag::NodeMarquee {
+                    start: p,
+                    current: p,
+                }
+            };
         }
 
         if response.dragged_by(PointerButton::Primary) {
             match self.drag.clone() {
-                Drag::Node { last } => {
-                    let d = p - last;
-                    let sel = self.node_selection.clone();
-                    let mut by_shape: std::collections::BTreeMap<ShapeId, Vec<usize>> =
-                        Default::default();
-                    for (id, i) in sel {
-                        by_shape.entry(id).or_default().push(i);
-                    }
-                    for (id, idxs) in by_shape {
-                        let Some((mut path, closed, t)) = self.path_of(id) else {
-                            continue;
-                        };
-                        let ld = (t.inverse() * (Point::ZERO + d)) - (t.inverse() * Point::ZERO);
-                        for i in idxs {
-                            path = nodes::move_node(&path, i, ld);
+                Drag::NodeMove {
+                    start,
+                    from,
+                    grab,
+                    begun,
+                } => {
+                    let mut d = p - from;
+                    // Ctrl keeps the move horizontal or vertical.
+                    if mods.ctrl || mods.command {
+                        if d.x.abs() >= d.y.abs() {
+                            d.y = 0.0;
+                        } else {
+                            d.x = 0.0;
                         }
-                        self.set_path(id, path, closed, "Move Nodes");
                     }
-                    self.drag = Drag::Node { last: p };
+                    self.move_start_nodes(&start, d, grab, begun);
+                    self.drag = Drag::NodeMove {
+                        start,
+                        from,
+                        grab,
+                        begun: true,
+                    };
+                }
+                Drag::NodeTransform {
+                    handle,
+                    start,
+                    bounds,
+                    from,
+                    begun,
+                } => {
+                    let a = crate::node_edit::handle_transform(
+                        self.node_transform,
+                        handle,
+                        bounds,
+                        from,
+                        p,
+                        mods.shift,
+                    );
+                    self.transform_start_nodes(&start, a, begun);
+                    self.drag = Drag::NodeTransform {
+                        handle,
+                        start,
+                        bounds,
+                        from,
+                        begun: true,
+                    };
+                }
+                Drag::NodeLasso { mut points } => {
+                    if points
+                        .last()
+                        .is_none_or(|q| (*q - p).hypot() > 0.2 / self.view.zoom as f64)
+                    {
+                        points.push(p);
+                    }
+                    self.drag = Drag::NodeLasso { points };
                 }
                 Drag::Handle {
                     shape,
@@ -270,16 +328,7 @@ impl App {
                 return;
             }
             if let Some(hit) = self.node_at(p) {
-                let key = (hit.shape, hit.index);
-                if mods.shift {
-                    if let Some(i) = self.node_selection.iter().position(|k| *k == key) {
-                        self.node_selection.remove(i);
-                    } else {
-                        self.node_selection.push(key);
-                    }
-                } else {
-                    self.node_selection = vec![key];
-                }
+                self.click_node((hit.shape, hit.index), mods);
                 return;
             }
             match self.hit_test(p) {

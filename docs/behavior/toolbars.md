@@ -94,6 +94,11 @@ into it (`ui::field::tests`).
   Convert to Curves.
 - Zoom and Pan tools: the zoom box, Zoom In, Zoom Out, Zoom to Selected,
   to All Objects, to Page, to Page Width, to Page Height.
+- Shape tool on curves: the Selection mode list, then picture buttons in
+  groups (node edits, node types, curve direction and closing, node
+  transforms and Align Nodes, Reflect and Elastic toggles, Select All
+  Nodes, Reduce Nodes with the Curve smoothness slider); toggles are drawn
+  pressed while on. The full list is in `shape-tool.md`.
 
 ## Checks
 

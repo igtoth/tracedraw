@@ -940,6 +940,8 @@ impl App {
                 }
             }
             Drag::NodeMarquee { start, current } => self.finish_node_marquee(start, current),
+            Drag::NodeLasso { points } => self.finish_node_lasso(&points),
+            Drag::NodeMove { .. } | Drag::NodeTransform { .. } => {}
             Drag::NewGuide { .. } => self.finish_guide_drag(),
             d @ (Drag::MoveGuide { .. } | Drag::RotateGuide { .. }) => {
                 // Released outside the window (no pointer): dropped off.
@@ -1185,25 +1187,30 @@ impl App {
         if pressed(Key::J, cmd) {
             self.dialog = crate::ui::dialogs::Dialog::Options;
         }
-        if pressed(Key::Tab, Modifiers::NONE) {
+        // With the Shape tool, Tab steps through the nodes of the curve.
+        let shape_tool = self.tool == Tool::Shape;
+        if pressed(Key::Tab, Modifiers::NONE) && !(shape_tool && self.cycle_node(true)) {
             self.cycle_selection(true);
         }
-        if pressed(Key::Tab, Modifiers::SHIFT) {
+        if pressed(Key::Tab, Modifiers::SHIFT) && !(shape_tool && self.cycle_node(false)) {
             self.cycle_selection(false);
         }
         if pressed(Key::K, cmd) {
             self.break_apart();
         }
-        if pressed(Key::C, cmd) {
+        // With the Shape tool and nodes selected, the segments between
+        // them are copied, cut or duplicated.
+        let segments = shape_tool && !self.node_selection.is_empty();
+        if pressed(Key::C, cmd) && !(segments && self.copy_segments()) {
             self.copy_with_system();
         }
-        if pressed(Key::X, cmd) {
+        if pressed(Key::X, cmd) && !(segments && self.cut_segments()) {
             self.cut();
         }
         if pressed(Key::V, cmd) {
             self.paste_any();
         }
-        if pressed(Key::D, cmd) {
+        if pressed(Key::D, cmd) && !(segments && self.duplicate_segments()) {
             self.duplicate();
         }
         // Order: Ctrl+Home/End to the front/back of the page, Shift+PgUp/PgDn

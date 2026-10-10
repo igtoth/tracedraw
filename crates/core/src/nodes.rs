@@ -393,6 +393,54 @@ pub fn reduce_nodes(path: &BezPath, tolerance: f64) -> BezPath {
     cur
 }
 
+/// Reduce nodes among `chosen` only (element indices): like
+/// `reduce_nodes`, but other nodes stay. Indices are tracked as nodes go.
+pub fn reduce_chosen_nodes(path: &BezPath, chosen: &[usize], tolerance: f64) -> BezPath {
+    use kurbo::{ParamCurveNearest, PathSeg};
+    let mut cur = normalize(path);
+    let mut chosen: Vec<usize> = chosen.to_vec();
+    loop {
+        let ns = nodes(&cur);
+        let mut removed = false;
+        for n in ns.iter().rev() {
+            if n.is_start || !chosen.contains(&n.index) {
+                continue;
+            }
+            let next_is_end = matches!(
+                cur.elements().get(n.index + 1),
+                None | Some(PathEl::MoveTo(_))
+            );
+            if next_is_end {
+                continue;
+            }
+            let candidate = delete_node(&cur, n.index);
+            if candidate.elements().len() == cur.elements().len() {
+                continue;
+            }
+            let d = candidate
+                .segments()
+                .map(|seg: PathSeg| seg.nearest(n.pos, 1e-3).distance_sq.sqrt())
+                .fold(f64::INFINITY, f64::min);
+            if d <= tolerance {
+                cur = candidate;
+                // Elements after the removed one shift down by one.
+                chosen.retain(|i| *i != n.index);
+                for i in chosen.iter_mut() {
+                    if *i > n.index {
+                        *i -= 1;
+                    }
+                }
+                removed = true;
+                break;
+            }
+        }
+        if !removed {
+            break;
+        }
+    }
+    cur
+}
+
 /// Align the given nodes on a common x and/or y (their average).
 pub fn align_nodes(path: &BezPath, indices: &[usize], horizontal: bool, vertical: bool) -> BezPath {
     let ns = nodes(path);
@@ -466,6 +514,327 @@ pub fn reverse(path: &BezPath) -> BezPath {
         }
     }
     out
+}
+
+/// Apply `t` to the given nodes and to their handles (a node's incoming
+/// handle and its outgoing one). The start node of a closed subpath whose
+/// last segment ends on it takes that end along.
+pub fn transform_nodes(path: &BezPath, indices: &[usize], t: crate::geometry::Affine) -> BezPath {
+    let mut els: Vec<PathEl> = normalize(path).elements().to_vec();
+    let mut chosen: Vec<usize> = indices.to_vec();
+    // A closed subpath's start node and a last segment ending on it are
+    // one node.
+    let mut start = 0;
+    for i in 0..els.len() {
+        match els[i] {
+            PathEl::MoveTo(_) => start = i,
+            PathEl::ClosePath if i > start + 1 => {
+                let (PathEl::MoveTo(s), Some(end)) = (els[start], end_point(&els[i - 1])) else {
+                    continue;
+                };
+                if (s - end).hypot() < 1e-9 {
+                    let (a, b) = (start, i - 1);
+                    if chosen.contains(&a) && !chosen.contains(&b) {
+                        chosen.push(b);
+                    } else if chosen.contains(&b) && !chosen.contains(&a) {
+                        chosen.push(a);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    let n = els.len();
+    for &i in &chosen {
+        if i >= n {
+            continue;
+        }
+        els[i] = match els[i] {
+            PathEl::MoveTo(p) => PathEl::MoveTo(t * p),
+            PathEl::LineTo(p) => PathEl::LineTo(t * p),
+            PathEl::CurveTo(c1, c2, p) => PathEl::CurveTo(c1, t * c2, t * p),
+            other => other,
+        };
+        if let Some(PathEl::CurveTo(c1, _, _)) = els.get_mut(i + 1) {
+            *c1 = t * *c1;
+        }
+    }
+    BezPath::from_vec(els)
+}
+
+fn end_point(el: &PathEl) -> Option<Point> {
+    match el {
+        PathEl::MoveTo(p) | PathEl::LineTo(p) | PathEl::CurveTo(_, _, p) | PathEl::QuadTo(_, p) => {
+            Some(*p)
+        }
+        PathEl::ClosePath => None,
+    }
+}
+
+/// A subpath as segments: each with the element that draws it (a line or
+/// curve to its end) and the node index at each end. A closing segment's
+/// end node is the subpath's start.
+struct Segs {
+    start: Point,
+    start_index: usize,
+    segs: Vec<(PathEl, usize, usize)>,
+    closed: bool,
+}
+
+fn split_segments(path: &BezPath) -> Vec<Segs> {
+    let n = normalize(path);
+    let mut out: Vec<Segs> = Vec::new();
+    let mut last_index = 0;
+    let mut last = Point::ZERO;
+    for (i, el) in n.elements().iter().enumerate() {
+        match *el {
+            PathEl::MoveTo(p) => {
+                out.push(Segs {
+                    start: p,
+                    start_index: i,
+                    segs: Vec::new(),
+                    closed: false,
+                });
+                last_index = i;
+                last = p;
+            }
+            PathEl::LineTo(p) | PathEl::CurveTo(_, _, p) => {
+                if let Some(s) = out.last_mut() {
+                    s.segs.push((*el, last_index, i));
+                }
+                last_index = i;
+                last = p;
+            }
+            PathEl::QuadTo(..) => {}
+            PathEl::ClosePath => {
+                if let Some(s) = out.last_mut() {
+                    if (last - s.start).hypot() > 1e-9 {
+                        s.segs
+                            .push((PathEl::LineTo(s.start), last_index, s.start_index));
+                    } else if let Some(seg) = s.segs.last_mut() {
+                        // The last segment ends on the start node.
+                        seg.2 = s.start_index;
+                    }
+                    s.closed = true;
+                }
+            }
+        }
+    }
+    out
+}
+
+fn seg_end(el: &PathEl) -> Point {
+    end_point(el).unwrap_or(Point::ZERO)
+}
+
+/// The segments whose two end nodes are both among `indices`, as open
+/// subpaths: what the Shape tool copies.
+pub fn selected_segments(path: &BezPath, indices: &[usize]) -> BezPath {
+    let mut out = BezPath::new();
+    for sub in split_segments(path) {
+        let mut at = sub.start;
+        let mut open = false;
+        let mut prev_end = usize::MAX;
+        for (el, from, to) in &sub.segs {
+            let picked = indices.contains(from) && indices.contains(to);
+            if picked {
+                if !open || prev_end != *from {
+                    out.move_to(at);
+                }
+                out.push(*el);
+                open = true;
+                prev_end = *to;
+            } else {
+                open = false;
+            }
+            at = seg_end(el);
+        }
+    }
+    out
+}
+
+/// The path without the segments `selected_segments` picks (the Shape
+/// tool's Cut): what is left becomes open subpaths.
+pub fn without_segments(path: &BezPath, indices: &[usize]) -> BezPath {
+    let mut out = BezPath::new();
+    for sub in split_segments(path) {
+        let picked =
+            |(_, from, to): &(PathEl, usize, usize)| indices.contains(from) && indices.contains(to);
+        let n = sub.segs.len();
+        let first_cut = sub.segs.iter().position(picked);
+        let Some(first_cut) = first_cut else {
+            // Untouched.
+            out.move_to(sub.start);
+            for (el, _, _) in &sub.segs {
+                out.push(*el);
+            }
+            if sub.closed {
+                out.close_path();
+            }
+            continue;
+        };
+        // Walk the segments; a closed subpath starts right after a cut one.
+        let order: Vec<usize> = if sub.closed {
+            (1..=n).map(|k| (first_cut + k) % n).collect()
+        } else {
+            (0..n).collect()
+        };
+        let start_of = |k: usize| -> Point {
+            if k == 0 {
+                sub.start
+            } else {
+                seg_end(&sub.segs[k - 1].0)
+            }
+        };
+        let mut open = false;
+        for k in order {
+            let seg = &sub.segs[k];
+            if picked(seg) {
+                open = false;
+                continue;
+            }
+            if !open {
+                out.move_to(start_of(k));
+                open = true;
+            }
+            out.push(seg.0);
+        }
+    }
+    out
+}
+
+/// The nodes from `a` to `b` along their subpath, both included and in
+/// that order, and which way it went: `Some(true)` follows the path's
+/// direction (wrapping round a closed subpath), `Some(false)` goes against
+/// it, `None` takes the shorter way (on an open subpath, the only one).
+/// `None` when they lie on different subpaths or the way asked for runs
+/// off the end of an open one.
+pub fn node_run(
+    path: &BezPath,
+    a: usize,
+    b: usize,
+    forward: Option<bool>,
+) -> Option<(Vec<usize>, bool)> {
+    for sub in split_segments(path) {
+        let mut ring: Vec<usize> = vec![sub.start_index];
+        for (_, _, to) in &sub.segs {
+            if *to != sub.start_index {
+                ring.push(*to);
+            }
+        }
+        let (Some(ia), Some(ib)) = (
+            ring.iter().position(|x| *x == a),
+            ring.iter().position(|x| *x == b),
+        ) else {
+            continue;
+        };
+        let n = ring.len();
+        let ahead = if ib >= ia {
+            Some(ib - ia)
+        } else if sub.closed {
+            Some(n - ia + ib)
+        } else {
+            None
+        };
+        let behind = if ia >= ib {
+            Some(ia - ib)
+        } else if sub.closed {
+            Some(ia + n - ib)
+        } else {
+            None
+        };
+        let dir = match forward {
+            Some(d) => d,
+            None => match (ahead, behind) {
+                (Some(f), Some(r)) => f <= r,
+                (Some(_), None) => true,
+                _ => false,
+            },
+        };
+        let len = if dir { ahead } else { behind }?;
+        let run = (0..=len)
+            .map(|k| {
+                if dir {
+                    ring[(ia + k) % n]
+                } else {
+                    ring[(ia + n - k) % n]
+                }
+            })
+            .collect();
+        return Some((run, dir));
+    }
+    None
+}
+
+/// Join two end nodes with a straight segment (the Shape tool's Extend
+/// Curve to Close): the two ends of one open subpath close it; ends of two
+/// open subpaths make one subpath. `None` when either is not an end of an
+/// open subpath.
+pub fn connect_ends(path: &BezPath, a: usize, b: usize) -> Option<BezPath> {
+    let subs = split_segments(path);
+    // (subpath, is the end rather than the start)
+    let find = |x: usize| -> Option<(usize, bool)> {
+        subs.iter().enumerate().find_map(|(k, s)| {
+            if s.closed || s.segs.is_empty() {
+                return None;
+            }
+            if s.start_index == x {
+                Some((k, false))
+            } else if s.segs.last().map(|seg| seg.2) == Some(x) {
+                Some((k, true))
+            } else {
+                None
+            }
+        })
+    };
+    let (sa, ea) = find(a)?;
+    let (sb, eb) = find(b)?;
+    let to_path = |s: &Segs| -> BezPath {
+        let mut p = BezPath::new();
+        p.move_to(s.start);
+        for (el, _, _) in &s.segs {
+            p.push(*el);
+        }
+        p
+    };
+    let mut out = BezPath::new();
+    if sa == sb {
+        if ea == eb {
+            return None;
+        }
+        for (k, s) in subs.iter().enumerate() {
+            let mut p = to_path(s);
+            if s.closed || k == sa {
+                p.close_path();
+            }
+            out.extend(p);
+        }
+        return Some(out);
+    }
+    // The first subpath ends at `a`, the second starts at `b`.
+    let first = to_path(&subs[sa]);
+    let first = if ea { first } else { reverse(&first) };
+    let second = to_path(&subs[sb]);
+    let second = if eb { reverse(&second) } else { second };
+    let mut joined = first;
+    for el in second.elements() {
+        match *el {
+            PathEl::MoveTo(p) => joined.line_to(p),
+            other => joined.push(other),
+        }
+    }
+    for (k, s) in subs.iter().enumerate() {
+        if k == sa {
+            out.extend(joined.clone());
+        } else if k != sb {
+            let mut p = to_path(s);
+            if s.closed {
+                p.close_path();
+            }
+            out.extend(p);
+        }
+    }
+    Some(out)
 }
 
 /// Nearest segment to a point: (element index, t, distance).
@@ -628,5 +997,119 @@ mod reduce_tests {
         let a = align_nodes(&p, &[1, 2], true, false);
         let ns = nodes(&a);
         assert!((ns[1].pos.y - ns[2].pos.y).abs() < 1e-9);
+    }
+}
+
+#[cfg(test)]
+mod segment_tests {
+    use super::*;
+    use crate::geometry::Affine;
+
+    fn zigzag() -> BezPath {
+        let mut p = BezPath::new();
+        p.move_to((0.0, 0.0));
+        p.line_to((10.0, 0.0));
+        p.line_to((10.0, 10.0));
+        p.curve_to((5.0, 15.0), (0.0, 15.0), (0.0, 10.0));
+        p
+    }
+
+    #[test]
+    fn nodes_transform_with_their_handles() {
+        // Nodes 2 and 3 (the curve's ends) doubled about the origin.
+        let q = transform_nodes(&zigzag(), &[2, 3], Affine::scale(2.0));
+        let ns = nodes(&q);
+        assert_eq!(ns[2].pos, Point::new(20.0, 20.0));
+        assert_eq!(ns[2].ctrl_out, Some(Point::new(10.0, 30.0)));
+        assert_eq!(ns[3].pos, Point::new(0.0, 20.0));
+        assert_eq!(ns[3].ctrl_in, Some(Point::new(0.0, 30.0)));
+        // A closed square's start moves its closing end too.
+        let mut sq = BezPath::new();
+        sq.move_to((0.0, 0.0));
+        sq.line_to((10.0, 0.0));
+        sq.line_to((10.0, 10.0));
+        sq.line_to((0.0, 0.0));
+        sq.close_path();
+        let q = transform_nodes(&sq, &[0], Affine::translate((1.0, 1.0)));
+        assert_eq!(q.elements()[0], PathEl::MoveTo(Point::new(1.0, 1.0)));
+        assert_eq!(q.elements()[3], PathEl::LineTo(Point::new(1.0, 1.0)));
+    }
+
+    #[test]
+    fn segments_between_chosen_nodes_copy_and_cut() {
+        let p = zigzag();
+        let copied = selected_segments(&p, &[1, 2, 3]);
+        let ns = nodes(&copied);
+        assert_eq!(ns.len(), 3);
+        assert_eq!(ns[0].pos, Point::new(10.0, 0.0));
+        let left = without_segments(&p, &[1, 2, 3]);
+        assert_eq!(nodes(&left).len(), 2);
+        // Cutting one side of a closed square leaves one open three-sided path.
+        let sq = crate::geometry::Shape::to_path(
+            &crate::geometry::Rect::new(0.0, 0.0, 10.0, 10.0),
+            0.01,
+        );
+        let left = without_segments(&sq, &[1, 2]);
+        assert_eq!(
+            left.elements()
+                .iter()
+                .filter(|e| matches!(e, PathEl::MoveTo(_)))
+                .count(),
+            1
+        );
+        assert!(!left.elements().contains(&PathEl::ClosePath));
+        assert_eq!(nodes(&left).len(), 4);
+        // Nothing chosen: nothing copied.
+        assert!(selected_segments(&p, &[1]).elements().is_empty());
+    }
+
+    #[test]
+    fn runs_follow_the_subpath() {
+        let p = zigzag();
+        assert_eq!(node_run(&p, 3, 1, None), Some((vec![3, 2, 1], false)));
+        // An open subpath has one way only.
+        assert_eq!(node_run(&p, 3, 1, Some(true)), None);
+        let sq = crate::geometry::Shape::to_path(
+            &crate::geometry::Rect::new(0.0, 0.0, 10.0, 10.0),
+            0.01,
+        );
+        // Round the start is shorter from 3 to 0.
+        assert_eq!(node_run(&sq, 3, 0, None), Some((vec![3, 0], true)));
+        assert_eq!(node_run(&sq, 1, 2, None), Some((vec![1, 2], true)));
+        // The other way round.
+        assert_eq!(
+            node_run(&sq, 1, 2, Some(false)),
+            Some((vec![1, 0, 3, 2], false))
+        );
+        assert_eq!(node_run(&sq, 2, 2, None), Some((vec![2], true)));
+        // Different subpaths: no run.
+        let mut two = p.clone();
+        two.move_to((50.0, 50.0));
+        two.line_to((60.0, 50.0));
+        assert_eq!(node_run(&two, 1, 4, None), None);
+    }
+
+    #[test]
+    fn extending_ends_closes_or_joins_subpaths() {
+        let p = zigzag();
+        let closed = connect_ends(&p, 0, 3).expect("its two ends");
+        assert_eq!(closed.elements().last(), Some(&PathEl::ClosePath));
+        let mut two = BezPath::new();
+        two.move_to((0.0, 0.0));
+        two.line_to((10.0, 0.0));
+        two.move_to((10.0, 5.0));
+        two.line_to((0.0, 5.0));
+        let joined = connect_ends(&two, 1, 2).expect("ends of two subpaths");
+        assert_eq!(
+            joined
+                .elements()
+                .iter()
+                .filter(|e| matches!(e, PathEl::MoveTo(_)))
+                .count(),
+            1
+        );
+        assert_eq!(nodes(&joined).len(), 4);
+        // A middle node is not an end.
+        assert!(connect_ends(&p, 1, 3).is_none());
     }
 }

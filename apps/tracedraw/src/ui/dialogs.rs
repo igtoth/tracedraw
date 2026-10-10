@@ -253,6 +253,12 @@ pub struct PaletteEditorState {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Dialog {
     None,
+    /// The Shape tool's Align Nodes: on a common horizontal and/or
+    /// vertical.
+    NodeAlign {
+        horizontal: bool,
+        vertical: bool,
+    },
     RenamePage {
         name: String,
     },
@@ -396,6 +402,19 @@ pub fn show(app: &mut App, ctx: &Context) {
     let mut close = false;
     match &mut dialog {
         Dialog::None => {}
+        Dialog::NodeAlign {
+            horizontal,
+            vertical,
+        } => {
+            window(ctx, tr("dialog.node_align")).show(ctx, |ui| {
+                ui.checkbox(horizontal, tr("dialog.align_horizontal"));
+                ui.checkbox(vertical, tr("dialog.align_vertical"));
+                if ok_cancel(ui, &mut close) && (*horizontal || *vertical) {
+                    let (h, v) = (*horizontal, *vertical);
+                    app.align_selected_nodes(h, v);
+                }
+            });
+        }
         Dialog::RenamePage { name } => {
             window(ctx, tr("dialog.rename_page")).show(ctx, |ui| {
                 ui.horizontal(|ui| {
@@ -2759,6 +2778,10 @@ mod tests {
     fn all_dialogs(app: &App) -> Vec<Dialog> {
         let layer = app.active_layer().unwrap_or(tracedraw_core::LayerId(1));
         vec![
+            Dialog::NodeAlign {
+                horizontal: true,
+                vertical: false,
+            },
             Dialog::RenamePage {
                 name: "Page".into(),
             },

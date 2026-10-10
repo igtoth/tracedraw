@@ -1828,6 +1828,8 @@ fn text_properties(app: &mut App, ui: &mut Ui) {
 }
 
 fn shape_tool_bar(app: &mut App, ui: &mut Ui) {
+    use crate::node_edit::NodeTransformMode;
+    use crate::ui::propbar::{pic_button, sep, Pic};
     use tracedraw_core::nodes::NodeType;
     // Rectangles, ellipses and polygons: the Shape tool edits them through
     // their own controls (corners, pie and arc, points), as with their tools.
@@ -1844,141 +1846,213 @@ fn shape_tool_bar(app: &mut App, ui: &mut Ui) {
         return;
     }
     let has_nodes = !app.node_selection.is_empty();
-    let has_curve = app
-        .selected_shapes()
+    let two_nodes = app.node_selection.len() >= 2;
+    let has_curve = shapes
         .iter()
         .any(|s| matches!(s.kind, ShapeKind::Path { .. }));
-    let b = |ui: &mut Ui, label: &str, tip: &str, enabled: bool| -> bool {
-        ui.add_enabled(
-            enabled,
-            egui::Button::new(egui::RichText::new(label).size(11.0)),
-        )
-        .on_hover_text(tip)
-        .clicked()
+    // Selection mode: rectangular or freehand marquee.
+    ui.label(tr("toolbar.selection_mode"));
+    let mode_text = |lasso: bool| {
+        if lasso {
+            tr("toolbar.freehand")
+        } else {
+            tr("toolbar.rectangular")
+        }
     };
-    if b(
-        ui,
-        &tr("toolbar.add_node"),
-        &tr("toolbar.add_node_tip"),
-        has_nodes,
-    ) {
+    egui::ComboBox::from_id_salt("node_selection_mode")
+        .selected_text(mode_text(app.node_lasso))
+        .width(96.0)
+        .show_ui(ui, |ui| {
+            for lasso in [false, true] {
+                ui.selectable_value(&mut app.node_lasso, lasso, mode_text(lasso));
+            }
+        });
+    sep(ui);
+    let button = |ui: &mut Ui, pic: Pic, tip: &str, enabled: bool, pressed: bool| -> bool {
+        pic_button(ui, pic, &tr(tip), enabled, pressed).clicked()
+    };
+    if button(ui, Pic::AddNode, "toolbar.add_node_tip", has_nodes, false) {
         app.add_node_midpoints();
     }
-    if b(
+    if button(
         ui,
-        &tr("toolbar.delete_node"),
-        &tr("toolbar.delete_node_tip"),
+        Pic::DeleteNode,
+        "toolbar.delete_node_tip",
         has_nodes,
+        false,
     ) {
         app.delete_selected_nodes();
     }
-    vsep(ui);
-    if b(
+    sep(ui);
+    if button(
         ui,
-        &tr("toolbar.break"),
-        &tr("toolbar.break_tip"),
-        has_nodes,
+        Pic::JoinNodes,
+        "toolbar.join_nodes_tip",
+        app.node_selection.len() == 2,
+        false,
     ) {
+        app.join_selected_nodes();
+    }
+    if button(ui, Pic::BreakCurve, "toolbar.break_tip", has_nodes, false) {
         app.break_selected_nodes();
     }
-    if b(
-        ui,
-        &tr("toolbar.close"),
-        &tr("toolbar.close_tip"),
-        has_curve,
-    ) {
-        app.close_selected_curves();
-    }
-    vsep(ui);
-    if b(
-        ui,
-        &tr("toolbar.to_line"),
-        &tr("toolbar.to_line_tip"),
-        has_nodes,
-    ) {
+    sep(ui);
+    if button(ui, Pic::ToLine, "toolbar.to_line_tip", has_nodes, false) {
         app.selected_segments_to_line();
     }
-    if b(
-        ui,
-        &tr("toolbar.to_curve"),
-        &tr("toolbar.to_curve_tip"),
-        has_nodes,
-    ) {
+    if button(ui, Pic::ToCurve, "toolbar.to_curve_tip", has_nodes, false) {
         app.selected_segments_to_curve();
     }
-    vsep(ui);
+    sep(ui);
     let current = app.current_node_type();
-    for (ty, name, tip) in [
-        (
-            NodeType::Cusp,
-            tr("context.node_cusp"),
-            tr("toolbar.cusp_tip"),
-        ),
-        (
-            NodeType::Smooth,
-            tr("context.node_smooth"),
-            tr("toolbar.smooth_tip"),
-        ),
+    for (ty, pic, tip) in [
+        (NodeType::Cusp, Pic::NodeCusp, "toolbar.cusp_tip"),
+        (NodeType::Smooth, Pic::NodeSmooth, "toolbar.smooth_tip"),
         (
             NodeType::Symmetrical,
-            tr("toolbar.symm_short"),
-            tr("toolbar.symm_tip"),
+            Pic::NodeSymmetrical,
+            "toolbar.symm_tip",
         ),
     ] {
-        if ui
-            .add_enabled(
-                has_nodes,
-                egui::Button::selectable(current == Some(ty), name),
-            )
-            .on_hover_text(tip)
-            .clicked()
-        {
+        if button(ui, pic, tip, has_nodes, has_nodes && current == Some(ty)) {
             app.set_selected_node_type(ty);
         }
     }
-    vsep(ui);
-    if b(
+    sep(ui);
+    if button(
         ui,
-        &tr("toolbar.reverse"),
-        &tr("toolbar.reverse_tip"),
+        Pic::ReverseDirection,
+        "toolbar.reverse_tip",
         has_curve,
+        false,
     ) {
         app.reverse_selected_curves();
     }
-    if b(
+    if button(
         ui,
-        &tr("toolbar.select_all"),
-        &tr("toolbar.select_all_nodes_tip"),
+        Pic::ExtendToClose,
+        "toolbar.extend_close_tip",
+        two_nodes,
+        false,
+    ) {
+        app.extend_curve_to_close();
+    }
+    if button(
+        ui,
+        Pic::ExtractSubpath,
+        "toolbar.extract_subpath_tip",
+        has_nodes,
+        false,
+    ) {
+        app.extract_subpath();
+    }
+    if button(ui, Pic::CloseCurve, "toolbar.close_tip", has_curve, false) {
+        app.close_selected_curves();
+    }
+    sep(ui);
+    for (mode, pic, tip) in [
+        (
+            NodeTransformMode::StretchScale,
+            Pic::StretchNodes,
+            "toolbar.stretch_nodes_tip",
+        ),
+        (
+            NodeTransformMode::RotateSkew,
+            Pic::RotateNodes,
+            "toolbar.rotate_nodes_tip",
+        ),
+    ] {
+        let on = app.node_transform == mode;
+        if button(ui, pic, tip, has_curve, on) {
+            app.node_transform = if on { NodeTransformMode::None } else { mode };
+        }
+    }
+    if button(
+        ui,
+        Pic::AlignNodes,
+        "toolbar.align_nodes_tip",
+        two_nodes,
+        false,
+    ) {
+        app.dialog = crate::ui::dialogs::Dialog::NodeAlign {
+            horizontal: true,
+            vertical: true,
+        };
+    }
+    sep(ui);
+    let (rh, rv) = app.reflect_nodes;
+    if button(ui, Pic::ReflectH, "toolbar.reflect_h_tip", has_curve, rh) {
+        app.reflect_nodes.0 = !rh;
+    }
+    if button(ui, Pic::ReflectV, "toolbar.reflect_v_tip", has_curve, rv) {
+        app.reflect_nodes.1 = !rv;
+    }
+    if button(
+        ui,
+        Pic::Elastic,
+        "toolbar.elastic_tip",
         has_curve,
+        app.elastic_mode,
+    ) {
+        app.elastic_mode = !app.elastic_mode;
+    }
+    sep(ui);
+    if button(
+        ui,
+        Pic::SelectAllNodes,
+        "toolbar.select_all_nodes_tip",
+        has_curve,
+        false,
     ) {
         app.select_all_nodes();
     }
-    vsep(ui);
-    if b(
+    sep(ui);
+    if button(
         ui,
-        &tr("toolbar.reduce_nodes"),
-        &tr("toolbar.reduce_nodes_tip"),
+        Pic::ReduceNodes,
+        "toolbar.reduce_nodes_tip",
         has_curve,
+        false,
     ) {
         app.reduce_selected_nodes();
     }
-    let two_nodes = app.node_selection.len() >= 2;
-    if b(ui, "⟷", &tr("toolbar.align_nodes_h"), two_nodes) {
-        app.align_selected_nodes(true, false);
-    }
-    if b(ui, "↕", &tr("toolbar.align_nodes_v"), two_nodes) {
-        app.align_selected_nodes(false, true);
-    }
-    vsep(ui);
-    if b(
-        ui,
-        &tr("menu.object.convert_to_curves"),
-        "Ctrl+Q",
-        !app.selection.is_empty(),
-    ) {
-        app.convert_to_curves();
+    // Curve smoothness: dragging removes nodes from the curves as they
+    // were when the drag began, in one undo step.
+    let mut v = app.curve_smoothness;
+    let r = ui
+        .add_enabled(
+            has_curve,
+            egui::Slider::new(&mut v, 0.0..=100.0)
+                .show_value(true)
+                .integer(),
+        )
+        .on_hover_text(tr("toolbar.curve_smoothness"));
+    if r.changed() {
+        let first = app.smoothing.is_none();
+        if first {
+            app.smoothing = Some(app.smoothing_curves());
+        }
+        app.curve_smoothness = v;
+        let start = app.smoothing.clone().unwrap_or_default();
+        app.smooth_curves(&start, v, !first);
+    } else if !r.dragged() && app.smoothing.is_some() {
+        // Let go: the next change starts a new step from the new curves.
+        app.smoothing = None;
+        app.curve_smoothness = 0.0;
     }
     if !has_curve && !app.selection.is_empty() {
+        sep(ui);
+        if pic_button(
+            ui,
+            Pic::ToCurves,
+            &format!("{} (Ctrl+Q)", tr("menu.object.convert_to_curves")),
+            true,
+            false,
+        )
+        .clicked()
+        {
+            app.convert_to_curves();
+        }
         ui.label(
             egui::RichText::new(tr("toolbar.convert_to_curves_hint"))
                 .color(Tokens::TEXT_DIM)

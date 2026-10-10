@@ -37,6 +37,7 @@ mod lens;
 mod mcp;
 mod media;
 mod new_document;
+mod node_edit;
 mod ops;
 mod ops2;
 mod palette;

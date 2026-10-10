@@ -356,6 +356,26 @@ pub enum Drag {
         /// Degrees an ellipse's node has turned through.
         turn: f64,
     },
+    /// Moving the selected nodes (Shape tool): the curves as they were,
+    /// where the drag began and the node it began on.
+    NodeMove {
+        start: Vec<crate::node_edit::StartCurve>,
+        from: Point,
+        grab: Point,
+        begun: bool,
+    },
+    /// Dragging a node transform handle (Shape tool).
+    NodeTransform {
+        handle: Handle,
+        start: Vec<crate::node_edit::StartCurve>,
+        bounds: Rect,
+        from: Point,
+        begun: bool,
+    },
+    /// Freehand selection of nodes (Shape tool).
+    NodeLasso {
+        points: Vec<Point>,
+    },
     /// Rubber-band selection of nodes (Shape tool).
     NodeMarquee {
         start: Point,
@@ -724,6 +744,17 @@ pub struct App {
     pub pending_text_frame: bool,
     /// Shape tool elastic mode: dragging one node pulls its neighbours.
     pub elastic_mode: bool,
+    /// Shape tool: the node transform mode on the property bar.
+    pub node_transform: crate::node_edit::NodeTransformMode,
+    /// Shape tool: Reflect Nodes horizontally, vertically.
+    pub reflect_nodes: (bool, bool),
+    /// Shape tool: the freehand marquee for nodes (else rectangular).
+    pub node_lasso: bool,
+    /// Shape tool: the last run of nodes Shift+click selected.
+    pub node_run: Option<crate::node_edit::NodeRun>,
+    /// Shape tool: the Curve smoothness slider and the curves it started from.
+    pub curve_smoothness: f64,
+    pub smoothing: Option<Vec<crate::node_edit::StartCurve>>,
     /// Last clicked effect/mesh node (palette clicks colour a mesh node).
     pub selected_effect_node: Option<(ShapeId, usize)>,
     /// Open drawings, one tab each (see `documents.rs`); the active one's
@@ -1202,6 +1233,12 @@ impl App {
             mesh_cols: 2,
             pending_text_frame: false,
             elastic_mode: false,
+            node_transform: Default::default(),
+            reflect_nodes: (false, false),
+            node_lasso: false,
+            node_run: None,
+            curve_smoothness: 0.0,
+            smoothing: None,
             selected_effect_node: None,
             docs: Vec::new(),
             active_doc: 0,

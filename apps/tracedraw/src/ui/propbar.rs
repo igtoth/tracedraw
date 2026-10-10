@@ -62,6 +62,28 @@ pub enum Pic {
     ToFront,
     ToBack,
     ToCurves,
+    // The Shape tool's buttons.
+    AddNode,
+    DeleteNode,
+    JoinNodes,
+    BreakCurve,
+    ToLine,
+    ToCurve,
+    NodeCusp,
+    NodeSmooth,
+    NodeSymmetrical,
+    ReverseDirection,
+    ExtendToClose,
+    ExtractSubpath,
+    CloseCurve,
+    StretchNodes,
+    RotateNodes,
+    AlignNodes,
+    ReflectH,
+    ReflectV,
+    Elastic,
+    SelectAllNodes,
+    ReduceNodes,
 }
 
 fn q(r: Rect, x: f32, y: f32) -> Pos2 {
@@ -435,6 +457,255 @@ pub fn draw_pic(painter: &Painter, r: Rect, pic: Pic, color: Color32) {
                 );
             }
         }
+        _ => draw_node_pic(painter, r, pic, color),
+    }
+}
+
+/// The Shape tool's pictures: curves with their nodes (small squares),
+/// handles and marks, on the same 16 x 16 grid.
+fn draw_node_pic(painter: &Painter, r: Rect, pic: Pic, color: Color32) {
+    let k = r.width() / 16.0;
+    let s = Stroke::new(1.1 * k, color);
+    let thin = Stroke::new(0.8 * k, color);
+    let line = |a: (f32, f32), b: (f32, f32), st: Stroke| {
+        painter.line_segment([q(r, a.0, a.1), q(r, b.0, b.1)], st);
+    };
+    let node = |x: f32, y: f32, filled: bool| {
+        let rr = Rect::from_center_size(q(r, x, y), Vec2::splat(3.2 * k));
+        if filled {
+            painter.rect_filled(rr, 0.0, color);
+        } else {
+            painter.rect_filled(rr, 0.0, Color32::WHITE);
+            painter.rect_stroke(rr, 0.0, thin, egui::StrokeKind::Inside);
+        }
+    };
+    // An arch from (x0, y) to (x1, y) rising by `h`.
+    let arch = |x0: f32, x1: f32, y: f32, h: f32, st: Stroke| {
+        let mut pts = Vec::new();
+        for i in 0..=12 {
+            let t = i as f32 / 12.0;
+            pts.push(q(
+                r,
+                x0 + (x1 - x0) * t,
+                y - h * (t * std::f32::consts::PI).sin(),
+            ));
+        }
+        painter.add(epaint::PathShape::line(pts, st));
+    };
+    let arrow = |tip: (f32, f32), dir: (f32, f32)| {
+        let (dx, dy) = dir;
+        let len = (dx * dx + dy * dy).sqrt().max(1e-3);
+        let (ux, uy) = (dx / len, dy / len);
+        let (px, py) = (-uy, ux);
+        let back = (tip.0 - ux * 3.0, tip.1 - uy * 3.0);
+        painter.add(epaint::PathShape::convex_polygon(
+            vec![
+                q(r, tip.0, tip.1),
+                q(r, back.0 + px * 2.0, back.1 + py * 2.0),
+                q(r, back.0 - px * 2.0, back.1 - py * 2.0),
+            ],
+            color,
+            Stroke::NONE,
+        ));
+    };
+    let dashed = |a: (f32, f32), b: (f32, f32)| {
+        let n = 6;
+        for i in 0..n {
+            if i % 2 == 0 {
+                let t0 = i as f32 / n as f32;
+                let t1 = (i + 1) as f32 / n as f32;
+                line(
+                    (a.0 + (b.0 - a.0) * t0, a.1 + (b.1 - a.1) * t0),
+                    (a.0 + (b.0 - a.0) * t1, a.1 + (b.1 - a.1) * t1),
+                    thin,
+                );
+            }
+        }
+    };
+    match pic {
+        Pic::AddNode | Pic::DeleteNode => {
+            arch(1.5, 12.5, 14.0, 8.0, s);
+            node(7.0, 6.0, true);
+            line((10.5, 3.0), (15.0, 3.0), s);
+            if pic == Pic::AddNode {
+                line((12.75, 0.8), (12.75, 5.2), s);
+            }
+        }
+        Pic::JoinNodes => {
+            arch(1.0, 8.0, 13.0, 7.0, s);
+            arch(8.0, 15.0, 13.0, 7.0, s);
+            node(8.0, 13.0, true);
+            arrow((7.0, 11.0), (1.0, 1.0));
+            arrow((9.0, 11.0), (-1.0, 1.0));
+        }
+        Pic::BreakCurve => {
+            arch(1.0, 7.0, 13.0, 7.0, s);
+            arch(9.0, 15.0, 13.0, 7.0, s);
+            node(6.5, 13.0, true);
+            node(9.5, 13.0, true);
+        }
+        Pic::ToLine => {
+            line((2.0, 13.0), (14.0, 3.0), s);
+            node(2.0, 13.0, true);
+            node(14.0, 3.0, true);
+        }
+        Pic::ToCurve => {
+            arch(2.0, 14.0, 13.0, 9.0, s);
+            node(2.0, 13.0, true);
+            node(14.0, 13.0, true);
+        }
+        Pic::NodeCusp => {
+            line((1.5, 13.0), (8.0, 6.0), s);
+            line((8.0, 6.0), (14.5, 13.0), s);
+            line((8.0, 6.0), (3.0, 2.0), thin);
+            line((8.0, 6.0), (13.0, 2.0), thin);
+            node(8.0, 6.0, true);
+        }
+        Pic::NodeSmooth => {
+            arch(1.5, 14.5, 14.0, 9.0, s);
+            line((3.0, 5.0), (12.0, 5.0), thin);
+            painter.circle_filled(q(r, 8.0, 5.0), 1.9 * k, color);
+        }
+        Pic::NodeSymmetrical => {
+            arch(1.5, 14.5, 14.0, 9.0, s);
+            line((2.5, 5.0), (13.5, 5.0), thin);
+            painter.add(epaint::PathShape::convex_polygon(
+                vec![
+                    q(r, 8.0, 3.0),
+                    q(r, 10.0, 5.0),
+                    q(r, 8.0, 7.0),
+                    q(r, 6.0, 5.0),
+                ],
+                color,
+                Stroke::NONE,
+            ));
+        }
+        Pic::ReverseDirection => {
+            arch(2.0, 14.0, 12.0, 6.0, s);
+            arrow((2.0, 12.5), (-0.4, 1.0));
+            node(14.0, 12.0, true);
+        }
+        Pic::ExtendToClose => {
+            arch(1.0, 7.0, 13.0, 7.0, s);
+            arch(9.0, 15.0, 13.0, 7.0, s);
+            node(7.0, 13.0, true);
+            node(9.0, 13.0, true);
+            dashed((7.0, 13.0), (9.0, 13.0));
+            line((6.0, 15.0), (10.0, 15.0), thin);
+        }
+        Pic::ExtractSubpath => {
+            let rr = Rect::from_min_max(q(r, 1.5, 4.5), q(r, 10.5, 14.5));
+            painter.rect_stroke(rr, 0.0, thin, egui::StrokeKind::Middle);
+            let inner = Rect::from_min_max(q(r, 6.5, 1.5), q(r, 14.5, 9.5));
+            painter.rect_filled(inner, 0.0, Color32::WHITE);
+            painter.rect_stroke(inner, 0.0, s, egui::StrokeKind::Middle);
+            arrow((14.5, 1.5), (1.0, -1.0));
+        }
+        Pic::CloseCurve => {
+            let mut pts = Vec::new();
+            for i in 0..=14 {
+                let a = std::f32::consts::PI * (0.35 + 1.3 * i as f32 / 14.0);
+                pts.push(q(r, 8.0 + 6.0 * a.cos(), 8.0 + 6.0 * a.sin()));
+            }
+            painter.add(epaint::PathShape::line(pts, s));
+            let a0 = std::f32::consts::PI * 0.35;
+            let a1 = std::f32::consts::PI * 1.65;
+            let p0 = (8.0 + 6.0 * a0.cos(), 8.0 + 6.0 * a0.sin());
+            let p1 = (8.0 + 6.0 * a1.cos(), 8.0 + 6.0 * a1.sin());
+            dashed(p1, p0);
+            node(p0.0, p0.1, true);
+            node(p1.0, p1.1, true);
+        }
+        Pic::StretchNodes | Pic::RotateNodes => {
+            let rr = Rect::from_min_max(q(r, 3.5, 3.5), q(r, 12.5, 12.5));
+            let pts = [(3.5, 3.5), (12.5, 3.5), (12.5, 12.5), (3.5, 12.5)];
+            for i in 0..4 {
+                dashed(pts[i], pts[(i + 1) % 4]);
+            }
+            let _ = rr;
+            if pic == Pic::StretchNodes {
+                for (x, y) in pts {
+                    node(x, y, true);
+                }
+                line((12.5, 3.5), (15.0, 1.0), thin);
+                arrow((15.0, 1.0), (1.0, -1.0));
+            } else {
+                let mut arc = Vec::new();
+                for i in 0..=8 {
+                    let a = -std::f32::consts::FRAC_PI_2 * i as f32 / 8.0;
+                    arc.push(q(r, 8.0 + 6.5 * a.cos(), 8.0 + 6.5 * a.sin()));
+                }
+                painter.add(epaint::PathShape::line(arc, s));
+                arrow((8.0, 1.5), (-1.0, 0.0));
+                node(8.0, 8.0, false);
+            }
+        }
+        Pic::AlignNodes => {
+            line((1.0, 9.0), (15.0, 9.0), thin);
+            for x in [3.0, 8.0, 13.0] {
+                node(x, 9.0, true);
+            }
+            arrow((3.0, 7.0), (0.0, 1.0));
+            arrow((13.0, 11.0), (0.0, -1.0));
+        }
+        Pic::ReflectH => {
+            dashed((8.0, 1.0), (8.0, 15.0));
+            node(3.0, 8.0, true);
+            node(13.0, 8.0, true);
+            arrow((1.0, 4.0), (-1.0, 0.0));
+            arrow((15.0, 4.0), (1.0, 0.0));
+            line((1.5, 4.0), (6.0, 4.0), thin);
+            line((10.0, 4.0), (14.5, 4.0), thin);
+        }
+        Pic::ReflectV => {
+            dashed((1.0, 8.0), (15.0, 8.0));
+            node(8.0, 3.0, true);
+            node(8.0, 13.0, true);
+            arrow((4.0, 1.0), (0.0, -1.0));
+            arrow((4.0, 15.0), (0.0, 1.0));
+            line((4.0, 1.5), (4.0, 6.0), thin);
+            line((4.0, 10.0), (4.0, 14.5), thin);
+        }
+        Pic::Elastic => {
+            let pts: Vec<Pos2> = [
+                (1.0, 8.0),
+                (3.0, 8.0),
+                (4.5, 4.0),
+                (6.5, 12.0),
+                (8.5, 4.0),
+                (10.5, 12.0),
+                (12.0, 8.0),
+                (15.0, 8.0),
+            ]
+            .iter()
+            .map(|(x, y)| q(r, *x, *y))
+            .collect();
+            painter.add(epaint::PathShape::line(pts, s));
+            node(1.5, 8.0, true);
+            node(14.5, 8.0, true);
+        }
+        Pic::SelectAllNodes => {
+            arch(1.5, 14.5, 13.0, 9.0, s);
+            for (x, y) in [
+                (1.5, 13.0),
+                (4.5, 6.5),
+                (8.0, 4.0),
+                (11.5, 6.5),
+                (14.5, 13.0),
+            ] {
+                node(x, y, true);
+            }
+        }
+        Pic::ReduceNodes => {
+            arch(1.5, 14.5, 13.0, 9.0, s);
+            node(1.5, 13.0, true);
+            node(14.5, 13.0, true);
+            for (x, y) in [(4.5, 6.5), (11.5, 6.5)] {
+                node(x, y, false);
+            }
+            line((5.5, 1.5), (10.5, 1.5), s);
+        }
+        _ => {}
     }
 }
 
