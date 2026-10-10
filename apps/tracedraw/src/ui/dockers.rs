@@ -10,9 +10,31 @@ use tracedraw_core::{
 };
 
 /// The vertical strip of docker tabs on the right edge of the window.
+/// Height of a docker's title bar (it runs across the tab column too).
+pub const TITLE_H: f32 = 27.0;
+/// The title bar, the empty part of the tab column.
+pub const TITLE_FILL: egui::Color32 = egui::Color32::from_gray(0xEA);
+/// Tabs, and the open docker's tab.
+const TAB_FILL: egui::Color32 = egui::Color32::from_gray(0xD8);
+const TAB_ACTIVE: egui::Color32 = egui::Color32::from_gray(0xB2);
+const TAB_HOVER: egui::Color32 = egui::Color32::from_gray(0xC8);
+/// The line between a docker and the tab column.
+const TAB_LINE: egui::Color32 = egui::Color32::from_gray(0xB2);
+
+/// The docker tab column: the open dockers as vertical tabs (an icon on
+/// top, the name running downwards), grey, the open one darker, then the
+/// button that adds a docker.
 pub fn tab_strip(app: &mut App, ui: &mut Ui) {
-    ui.spacing_mut().item_spacing = egui::vec2(0.0, 4.0);
-    ui.add_space(4.0);
+    let full = ui.max_rect();
+    // The title bar's part and the line along the docker.
+    ui.painter().rect_filled(full, 0.0, TITLE_FILL);
+    ui.painter().vline(
+        full.left() + 0.5,
+        (full.top() + TITLE_H)..=full.bottom(),
+        egui::Stroke::new(1.0, TAB_LINE),
+    );
+    ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
+    ui.add_space(TITLE_H);
     let mut tabs = DockerTab::default_strip();
     for t in &app.open_dockers {
         if !tabs.contains(t) {
@@ -32,32 +54,28 @@ pub fn tab_strip(app: &mut App, ui: &mut Ui) {
         );
         let w = galley.size().x;
         let gh = galley.size().y;
-        // An icon on top (for the dockers that have one), the name below
-        // it running downwards; the active tab is tinted with an accent
-        // line on its inner edge.
-        let icon_h = if tab_icon(tab).is_some() { 22.0 } else { 0.0 };
-        let h = 12.0 + icon_h + w;
-        let (r, resp) = ui.allocate_exact_size(egui::vec2(26.0, h), egui::Sense::click());
-        if active {
-            ui.painter().rect_filled(r, 0.0, Tokens::TOOL_ACTIVE);
-            ui.painter().vline(
-                r.min.x + 1.0,
-                r.y_range(),
-                egui::Stroke::new(2.0, Tokens::ACCENT),
-            );
+        let icon_h = if tab_icon(tab).is_some() { 24.0 } else { 0.0 };
+        let h = 14.0 + icon_h + w;
+        let (r, resp) = ui.allocate_exact_size(egui::vec2(full.width(), h), egui::Sense::click());
+        let bg = egui::Rect::from_min_max(egui::pos2(r.min.x + 1.0, r.min.y), r.max);
+        let fill = if active {
+            TAB_ACTIVE
         } else if resp.hovered() {
-            ui.painter().rect_filled(r, 0.0, Tokens::TOOL_HOVER);
-        }
+            TAB_HOVER
+        } else {
+            TAB_FILL
+        };
+        ui.painter().rect_filled(bg, 0.0, fill);
         if let Some(icon) = tab_icon(tab) {
             let ir = egui::Rect::from_center_size(
-                egui::pos2(r.center().x, r.min.y + 6.0 + icon_h / 2.0),
+                egui::pos2(bg.center().x, r.min.y + 7.0 + icon_h / 2.0),
                 egui::vec2(16.0, 16.0),
             );
             icon(ui.painter(), ir);
         }
-        let text_top = r.min.y + 6.0 + icon_h;
+        let text_top = r.min.y + 7.0 + icon_h;
         let mut ts = egui::epaint::TextShape::new(
-            egui::pos2(r.center().x + gh / 2.0 - 1.0, text_top),
+            egui::pos2(bg.center().x + gh / 2.0, text_top),
             galley,
             Tokens::TEXT,
         );
@@ -71,31 +89,53 @@ pub fn tab_strip(app: &mut App, ui: &mut Ui) {
                 app.docker_tab = tab;
             }
         }
-        resp.context_menu(|ui| {
-            if ui.button(tr("docker.close_docker")).clicked() {
-                app.open_dockers.retain(|t| *t != tab);
-                if app.docker_tab == tab {
-                    app.show_dockers = false;
-                }
-                ui.close();
-            }
-        });
-    }
-    ui.menu_button(
-        egui::RichText::new("+").size(14.0).color(Tokens::TEXT_DIM),
-        |ui| {
-            for tab in DockerTab::ALL {
-                if ui.button(tr(tab.key())).clicked() {
-                    if !app.open_dockers.contains(&tab) {
-                        app.open_dockers.push(tab);
+        egui::Popup::context_menu(&resp)
+            .id(egui::Id::new(("docker_tab_menu", tab.key())))
+            .style(crate::ui::menus::menu_popup_style)
+            .show(|ui| {
+                crate::ui::menus::body(ui, |ui| {
+                    if crate::ui::menus::item(ui, "docker.close_docker", "", true) {
+                        app.open_dockers.retain(|t| *t != tab);
+                        if app.docker_tab == tab {
+                            app.show_dockers = false;
+                        }
                     }
-                    app.show_dockers = true;
-                    app.docker_tab = tab;
-                    ui.close();
+                })
+            });
+    }
+    // Add a docker.
+    ui.add_space(8.0);
+    let (r, resp) = ui.allocate_exact_size(egui::vec2(full.width(), 22.0), egui::Sense::click());
+    let c = r.center() + egui::vec2(0.5, 0.0);
+    if resp.hovered() {
+        ui.painter().rect_filled(
+            egui::Rect::from_center_size(c, egui::vec2(18.0, 18.0)),
+            0.0,
+            TAB_HOVER,
+        );
+    }
+    let s = egui::Stroke::new(1.5, egui::Color32::from_gray(0x8C));
+    ui.painter()
+        .line_segment([c + egui::vec2(-5.0, 0.0), c + egui::vec2(5.0, 0.0)], s);
+    ui.painter()
+        .line_segment([c + egui::vec2(0.0, -5.0), c + egui::vec2(0.0, 5.0)], s);
+    let resp = resp.on_hover_text(tr("docker.add_docker"));
+    egui::Popup::menu(&resp)
+        .id(egui::Id::new("docker_add_menu"))
+        .style(crate::ui::menus::menu_popup_style)
+        .show(|ui| {
+            crate::ui::menus::body(ui, |ui| {
+                for tab in DockerTab::ALL {
+                    if crate::ui::menus::item(ui, tab.key(), "", true) {
+                        if !app.open_dockers.contains(&tab) {
+                            app.open_dockers.push(tab);
+                        }
+                        app.show_dockers = true;
+                        app.docker_tab = tab;
+                    }
                 }
-            }
-        },
-    );
+            })
+        });
 }
 
 type TabIcon = fn(&egui::Painter, egui::Rect);
@@ -166,37 +206,82 @@ fn tab_icon(tab: DockerTab) -> Option<TabIcon> {
     }
 }
 
+/// The open docker: its title bar (name, collapse and close), then its
+/// page on white.
 pub fn dockers(app: &mut App, ui: &mut Ui) {
-    ui.horizontal(|ui| {
-        let name = tr(app.docker_tab.key());
-        ui.label(egui::RichText::new(name).size(12.0));
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui
-                .add(egui::Button::new("✕").frame(false))
-                .on_hover_text(tr("docker.close_docker"))
-                .clicked()
-            {
-                app.show_dockers = false;
-            }
-            let _ = ui
-                .add(egui::Button::new("»").frame(false))
-                .on_hover_text(tr("docker.collapse"));
-        });
-    });
-    ui.separator();
-    // Hints scrolls its page above its own navigation bar.
-    if app.docker_tab == DockerTab::Hints {
-        crate::ui::hints::hints_docker(app, ui);
-        return;
+    let full = ui.max_rect();
+    let (bar, _) = ui.allocate_exact_size(egui::vec2(full.width(), TITLE_H), egui::Sense::hover());
+    ui.painter().rect_filled(bar, 0.0, TITLE_FILL);
+    ui.painter().text(
+        egui::pos2(bar.left() + 7.0, bar.center().y),
+        egui::Align2::LEFT_CENTER,
+        tr(app.docker_tab.key()),
+        egui::FontId::proportional(12.0),
+        Tokens::TEXT,
+    );
+    let grey = egui::Color32::from_gray(0x8C);
+    // Close, at the right end.
+    let close = egui::Rect::from_center_size(
+        egui::pos2(bar.right() - 12.0, bar.center().y),
+        egui::vec2(20.0, 20.0),
+    );
+    let resp = ui
+        .interact(close, egui::Id::new("docker_close"), egui::Sense::click())
+        .on_hover_text(tr("docker.close_docker"));
+    let col = if resp.hovered() { Tokens::TEXT } else { grey };
+    let c = close.center();
+    let s = egui::Stroke::new(1.5, col);
+    ui.painter()
+        .line_segment([c + egui::vec2(-4.5, -4.5), c + egui::vec2(4.5, 4.5)], s);
+    ui.painter()
+        .line_segment([c + egui::vec2(4.5, -4.5), c + egui::vec2(-4.5, 4.5)], s);
+    if resp.clicked() {
+        app.show_dockers = false;
     }
-    egui::ScrollArea::vertical().show(ui, |ui| match app.docker_tab {
-        DockerTab::Properties => properties(app, ui),
-        DockerTab::Objects => objects(app, ui),
-        DockerTab::Hints => {}
-        DockerTab::Transformations => transformations(app, ui),
-        DockerTab::Undo => undo_docker(app, ui),
-        other => crate::ui::dockers2::show(app, ui, other),
-    });
+    // Collapse: two small triangles.
+    let fold = egui::Rect::from_center_size(
+        egui::pos2(bar.right() - 36.0, bar.center().y),
+        egui::vec2(20.0, 20.0),
+    );
+    let resp = ui
+        .interact(fold, egui::Id::new("docker_fold"), egui::Sense::click())
+        .on_hover_text(tr("docker.collapse"));
+    let col = if resp.hovered() { Tokens::TEXT } else { grey };
+    for dx in [-3.5f32, 3.0] {
+        let c = fold.center() + egui::vec2(dx, 0.0);
+        ui.painter().add(egui::epaint::PathShape::convex_polygon(
+            vec![
+                c + egui::vec2(-2.5, -4.5),
+                c + egui::vec2(2.5, 0.0),
+                c + egui::vec2(-2.5, 4.5),
+            ],
+            col,
+            egui::Stroke::NONE,
+        ));
+    }
+    if resp.clicked() {
+        app.show_dockers = false;
+    }
+    let content = egui::Rect::from_min_max(egui::pos2(full.left(), bar.bottom()), full.max);
+    ui.painter().rect_filled(content, 0.0, egui::Color32::WHITE);
+    ui.scope_builder(
+        egui::UiBuilder::new().max_rect(content.shrink2(egui::vec2(8.0, 6.0))),
+        |ui| {
+            // Hints scrolls its page above its own navigation bar.
+            if app.docker_tab == DockerTab::Hints {
+                crate::ui::hints::hints_docker(app, ui);
+                return;
+            }
+            egui::ScrollArea::vertical().show(ui, |ui| match app.docker_tab {
+                DockerTab::Properties => properties(app, ui),
+                DockerTab::Objects => objects(app, ui),
+                DockerTab::Hints => {}
+                DockerTab::Transformations => transformations(app, ui),
+                DockerTab::Undo => undo_docker(app, ui),
+                other => crate::ui::dockers2::show(app, ui, other),
+            });
+        },
+    );
 }
 
 fn color_row(ui: &mut Ui, label: &str, c: &mut Color) -> bool {

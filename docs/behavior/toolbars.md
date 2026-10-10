@@ -23,6 +23,15 @@ way.
 The View menu follows the target design's: Zoom In, Zoom Out and Zoom
 To Fit (with their pictures) and no other zoom commands.
 
+## Dockers
+
+The open docker has a 27 px `#EAEAEA` title bar (its name at 12 px, then
+collapse and close in grey at the right) over a white page. The tab
+column to its right is 27 px wide: `#EAEAEA` under the title bar and
+below the tabs, a `#B2B2B2` line along the docker, grey `#D8D8D8` tabs
+with an icon and the name running downwards, the open docker's tab
+`#B2B2B2`; the plus button under the tabs adds a docker.
+
 ## Standard toolbar
 
 A 35 px band (and its line): 32 px buttons with 20 px icons in groups

@@ -177,12 +177,10 @@ pub fn root(app: &mut App, ui: &mut Ui) {
         Panel::right("docker_tabs")
     };
     docker_tabs
-        .exact_size(30.0)
-        .frame(
-            Frame::new()
-                .fill(Tokens::PANEL)
-                .inner_margin(egui::Margin::symmetric(2, 0)),
-        )
+        .exact_size(27.0)
+        .resizable(false)
+        .show_separator_line(false)
+        .frame(Frame::new().fill(dockers::TITLE_FILL))
         .show(ui, |ui| dockers::tab_strip(app, ui));
     if app.show_dockers {
         let dockers_panel = if rtl {
@@ -191,9 +189,9 @@ pub fn root(app: &mut App, ui: &mut Ui) {
             Panel::right("dockers")
         };
         dockers_panel
-            .default_size(300.0)
+            .default_size(340.0)
             .resizable(true)
-            .frame(Frame::new().fill(Tokens::PANEL).inner_margin(6))
+            .frame(Frame::new().fill(egui::Color32::WHITE))
             .show(ui, |ui| dockers::dockers(app, ui));
     }
 
