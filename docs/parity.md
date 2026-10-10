@@ -6,7 +6,7 @@ target design does, with a test or a checked screenshot behind it.
 "partial" names what is missing. "baked" means the result is applied once
 instead of staying live and editable. The goal is every row at "works".
 
-Counts: works 145, partial 2 (`.cdr` content coverage; polygon nodes in the Shape tool), missing 3 (CMX import; window cascade and tile; some Options pages), not applicable 3, icons close but not pixel-identical.
+Counts: works 146, partial 2 (`.cdr` content coverage; polygon nodes in the Shape tool), missing 3 (CMX import; window cascade and tile; some Options pages), not applicable 3, icons close but not pixel-identical.
 
 ## 1. Selection and navigation
 
@@ -80,6 +80,7 @@ Counts: works 145, partial 2 (`.cdr` content coverage; polygon nodes in the Shap
 | Font family, size, bold, italic, alignment, underline, strikethrough | works |
 | Leading, paragraph spacing, indents, tabs, columns, bullets, drop cap | works |
 | Tracking, baseline shift, OpenType features (ligatures, small caps, old-style figures, fractions, swash) | works |
+| Character horizontal and vertical offsets and angle; character and word spacing; Shape tool character nodes (drag to shift) and interactive horizontal and vertical spacing arrows; Straighten Text and Align to Baseline for characters | works (see `behavior/text.md`); `.cdr` character offsets are not read yet |
 | Hyphenation (Liang patterns en/pt, heuristic elsewhere) | works |
 | Text on path (offset, distance, mirror), straighten text | works |
 | Fit text to frame, wrap paragraph text around objects | works |

@@ -1409,7 +1409,8 @@ impl App {
         self.selection = vec![text.id];
     }
 
-    /// Text > Straighten Text: remove text-on-path and reset rotation.
+    /// Text > Straighten Text on text fitted to a path: it comes off the
+    /// path, unrotated, where the path's text began.
     pub fn straighten_text(&mut self) {
         for s in self.text_shapes() {
             let ShapeKind::Text {
@@ -1418,7 +1419,7 @@ impl App {
                 frame,
                 align,
                 para,
-                ..
+                on_path: Some(_),
             } = s.kind.clone()
             else {
                 continue;

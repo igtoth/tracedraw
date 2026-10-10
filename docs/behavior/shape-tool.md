@@ -79,6 +79,13 @@ shows their controls (corners, pie and arc, points) while the Shape tool
 is active. Each drag is one undo step. Other objects show a Convert to
 Curves button.
 
+## Text
+
+With a text object selected the Shape tool shows a node per character
+and the two spacing arrows; the property bar shows the chosen
+characters' horizontal and vertical offsets and angle. See `text.md`,
+Shape tool on text.
+
 ## Property bar
 
 Selection mode | Add Node, Delete Node | Join Nodes, Break Curve | Convert

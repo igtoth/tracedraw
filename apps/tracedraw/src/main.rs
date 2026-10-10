@@ -52,6 +52,7 @@ mod snap_points;
 mod spell;
 mod table;
 mod text_editing;
+mod text_nodes;
 mod textflow;
 mod theme;
 mod thesaurus;

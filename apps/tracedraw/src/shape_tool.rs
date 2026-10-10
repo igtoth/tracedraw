@@ -132,6 +132,37 @@ impl App {
         }
 
         if response.drag_started_by(PointerButton::Primary) {
+            // Text: the spacing arrows, then the character nodes.
+            if let Some((id, horizontal)) = self.text_arrow_at(p) {
+                if let Some(s) = self.doc().find_shape(id).cloned() {
+                    self.drag = Drag::TextSpacing {
+                        start: Box::new(s),
+                        horizontal,
+                        word: mods.shift,
+                        from: p,
+                        begun: false,
+                    };
+                    return;
+                }
+            }
+            if let Some(key) = self.text_node_at(p) {
+                if !self.node_selection.contains(&key) {
+                    if mods.ctrl || mods.command || mods.shift {
+                        self.click_node(key, mods);
+                    } else {
+                        self.node_selection = vec![key];
+                    }
+                }
+                if let Some(s) = self.doc().find_shape(key.0).cloned() {
+                    self.drag = Drag::TextChars {
+                        chars: self.chosen_chars(key.0),
+                        start: Box::new(s),
+                        from: p,
+                        begun: false,
+                    };
+                    return;
+                }
+            }
             if let Some((s, node)) = self.kind_node_at(p) {
                 let single = crate::kind_nodes::single_corner(
                     self.rect_corner_selected,
@@ -210,6 +241,44 @@ impl App {
 
         if response.dragged_by(PointerButton::Primary) {
             match self.drag.clone() {
+                Drag::TextChars {
+                    start,
+                    chars,
+                    from,
+                    begun,
+                } => {
+                    let mut d = p - from;
+                    if mods.ctrl || mods.command {
+                        if d.x.abs() >= d.y.abs() {
+                            d.y = 0.0;
+                        } else {
+                            d.x = 0.0;
+                        }
+                    }
+                    self.move_text_chars(&start, &chars, d, begun);
+                    self.drag = Drag::TextChars {
+                        start,
+                        chars,
+                        from,
+                        begun: true,
+                    };
+                }
+                Drag::TextSpacing {
+                    start,
+                    horizontal,
+                    word,
+                    from,
+                    begun,
+                } => {
+                    self.drag_text_spacing(&start, horizontal, word, p - from, begun);
+                    self.drag = Drag::TextSpacing {
+                        start,
+                        horizontal,
+                        word,
+                        from,
+                        begun: true,
+                    };
+                }
                 Drag::NodeMove {
                     start,
                     from,
@@ -318,6 +387,10 @@ impl App {
         }
 
         if response.clicked_by(PointerButton::Primary) {
+            if let Some(key) = self.text_node_at(p) {
+                self.click_node(key, mods);
+                return;
+            }
             if let Some((s, node)) = self.kind_node_at(p) {
                 // A click on a rectangle corner chooses it: dragging it
                 // then changes that corner only.
@@ -366,6 +439,8 @@ impl App {
             }
         }
         self.node_selection = sel;
+        // Character nodes of selected texts too.
+        self.choose_chars_in(|q| r.contains(q));
     }
 
     /// Nearest segment of a selected curve within a few pixels.

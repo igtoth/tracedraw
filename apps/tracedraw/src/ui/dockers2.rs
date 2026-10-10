@@ -293,14 +293,11 @@ fn text(app: &mut App, ui: &mut Ui) {
                             .suffix(" %"),
                     )
                     .changed();
-                ui.label(tr("docker.baseline_shift"));
-                sc |= ui
-                    .add(
-                        egui::DragValue::new(&mut sp.baseline_shift_pt)
-                            .range(-100.0..=100.0)
-                            .suffix(" pt"),
-                    )
-                    .changed();
+            });
+            // Character offsets and angle: the selected characters while
+            // editing, else every character.
+            ui.horizontal(|ui| {
+                crate::ui::propbar::char_offset_part(app, ui);
             });
             ui.horizontal(|ui| {
                 sc |= ui
@@ -335,7 +332,6 @@ fn text(app: &mut App, ui: &mut Ui) {
                     .iter()
                     .map(|s| tracedraw_core::TextSpan {
                         tracking_pct: sp.tracking_pct,
-                        baseline_shift_pt: sp.baseline_shift_pt,
                         underline: sp.underline,
                         strikethrough: sp.strikethrough,
                         features: sp.features.clone(),
@@ -372,7 +368,25 @@ fn text(app: &mut App, ui: &mut Ui) {
                 pc |= ui
                     .add(
                         egui::DragValue::new(&mut p.leading_pct)
-                            .range(50.0..=400.0)
+                            .range(0.0..=2000.0)
+                            .suffix(" %"),
+                    )
+                    .changed();
+            });
+            ui.horizontal(|ui| {
+                ui.label(tr("docker.char_spacing"));
+                pc |= ui
+                    .add(
+                        egui::DragValue::new(&mut p.char_spacing_pct)
+                            .range(-100.0..=2000.0)
+                            .suffix(" %"),
+                    )
+                    .changed();
+                ui.label(tr("docker.word_spacing"));
+                pc |= ui
+                    .add(
+                        egui::DragValue::new(&mut p.word_spacing_pct)
+                            .range(0.0..=2000.0)
                             .suffix(" %"),
                     )
                     .changed();

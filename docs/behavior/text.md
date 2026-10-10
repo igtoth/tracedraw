@@ -56,6 +56,43 @@ The property bar's font, size and style buttons act on the selected
 characters while a selection exists, and show the style at the caret. All
 the keystrokes of one editing session are one "Edit Text" undo step.
 
+## Character offsets, angle and spacing
+
+- Each character can be shifted and turned: Horizontal character offset
+  (percent of the font size, positive right), Vertical character offset
+  (percent of the size, positive up; stored as the baseline shift in
+  points) and Character angle (degrees, counter-clockwise, about the
+  character's origin on its shifted baseline). The characters after a
+  shifted one keep their place. The fields are in the Text docker's
+  Character section and on the Shape tool's property bar; they act on
+  the selected characters while editing, on the chosen character nodes
+  with the Shape tool, else on every character of the selected texts.
+- Paragraph: Character spacing (percent of the width of a space, -100 to
+  2000, added after every character) and Word spacing (percent of the
+  space's own width, 0 to 2000), besides line spacing.
+- Text > Straighten Text puts the characters back (no offsets, no
+  angle) and takes text fitted to a path off it; Text > Align to
+  Baseline (Alt+F12) removes the vertical offsets only.
+
+## Shape tool on text
+
+- A node at the lower left of every character, on its (shifted)
+  baseline; newlines have none. Click chooses one, Ctrl+click adds or
+  removes, Shift+click adds, a marquee (rectangular or freehand) chooses
+  the nodes inside. Chosen nodes are filled.
+- Dragging a node moves the chosen characters (the one dragged when it
+  was not chosen); Ctrl keeps the move horizontal or vertical. The move
+  becomes their offsets (layout space, so rotated text moves along its
+  own axes). One undo step per drag ("Move Characters").
+- The Interactive horizontal spacing arrow, below the lower right
+  corner, changes the character spacing so the end of the widest line
+  follows the pointer: `+dx / n` per character for `n` characters on
+  that line. With Shift it changes word spacing: `+dx / spaces` per
+  space. The Interactive vertical spacing arrow, below the lower left
+  corner, changes line spacing so the last baseline follows the pointer:
+  `leading' = leading * (pitch - dy / (lines - 1)) / pitch`.
+- Text fitted to a path shows no character nodes.
+
 ## Formulas
 
 - Line height `= size * leading / 100 * (asc - desc + gap) / upm`.
@@ -66,6 +103,13 @@ the keystrokes of one editing session are one "Edit Text" undo step.
 - Fit text to frame: scale size so the paragraph fills the frame height.
 
 ## Checks
+
+- `text_nodes::tests::every_character_has_a_node_on_its_baseline`,
+  `text_nodes::tests::dragging_chosen_characters_shifts_only_them`,
+  `text_nodes::tests::a_marquee_chooses_character_nodes`,
+  `text_nodes::tests::spacing_arrows_change_character_word_and_line_spacing`,
+  `tests::shifted_and_rotated_characters_leave_the_others_in_place` and
+  `tests::character_and_word_spacing_widen_the_text` (text crate).
 
 - Given "ab" at 100 pt, then the width equals the sum of the two
   advances minus the kerning pair from the font.

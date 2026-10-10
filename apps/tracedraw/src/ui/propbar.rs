@@ -1655,6 +1655,68 @@ pub fn polygon_part(app: &mut App, ui: &mut Ui, star: bool) {
     }
 }
 
+/// The horizontal and vertical character offsets (percent of the font
+/// size) and the character angle (degrees) of the characters being edited:
+/// the Text tool's selection, the Shape tool's chosen character nodes, or
+/// every character of the selected texts. Each change is one undo step.
+pub fn char_offset_part(app: &mut App, ui: &mut Ui) {
+    let Some((mut h, mut v, mut a)) = app.char_attrs() else {
+        return;
+    };
+    let (h0, v0, a0) = (h, v, a);
+    let field = |ui: &mut Ui,
+                 tip: &str,
+                 label: &str,
+                 val: &mut f64,
+                 range: std::ops::RangeInclusive<f64>,
+                 suffix: &str| {
+        ui.label(label).on_hover_text(tr(tip));
+        ui.add_sized(
+            [72.0, ROW + 4.0],
+            crate::ui::field::NumField::new(val)
+                .range(range)
+                .max_decimals(1)
+                .suffix(suffix),
+        )
+        .on_hover_text(tr(tip));
+    };
+    field(
+        ui,
+        "toolbar.char_h_offset",
+        "x:",
+        &mut h,
+        -500.0..=500.0,
+        " %",
+    );
+    field(
+        ui,
+        "toolbar.char_v_offset",
+        "y:",
+        &mut v,
+        -500.0..=500.0,
+        " %",
+    );
+    field(
+        ui,
+        "toolbar.char_angle",
+        "\u{2220}",
+        &mut a,
+        -360.0..=360.0,
+        " \u{b0}",
+    );
+    if (h - h0).abs() > 1e-9 {
+        app.set_char_attrs("Character Offset", move |sp| sp.offset_x_pct = h);
+    }
+    if (v - v0).abs() > 1e-9 {
+        app.set_char_attrs("Character Offset", move |sp| {
+            sp.baseline_shift_pt = v / 100.0 * sp.size_pt
+        });
+    }
+    if (a - a0).abs() > 1e-9 {
+        app.set_char_attrs("Character Angle", move |sp| sp.angle_deg = a);
+    }
+}
+
 /// A change the rectangle part of the bar makes to corners.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CornerEdit {

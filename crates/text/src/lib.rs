@@ -318,13 +318,15 @@ impl FontSystem {
             req.spans
                 .iter()
                 .map(|s| format!(
-                    "{}|{}|{}|{}|{}|{}|{}|{}|{:?}|{}",
+                    "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{:?}|{}",
                     s.font_family,
                     s.size_pt,
                     s.bold,
                     s.italic,
                     s.tracking_pct,
                     s.baseline_shift_pt,
+                    s.offset_x_pct,
+                    s.angle_deg,
                     s.underline,
                     s.strikethrough,
                     s.features,
@@ -410,7 +412,8 @@ impl FontSystem {
         }
     }
 
-    /// Shape one run of text in one span's style into glyphs.
+    /// Shape one run of text in one span's style into glyphs, with the
+    /// paragraph's character and word spacing.
     fn shape_run(
         &self,
         span: &TextSpan,
@@ -418,6 +421,7 @@ impl FontSystem {
         text: &str,
         size_scale: f64,
         char_base: usize,
+        para: &ParagraphStyle,
     ) -> Vec<Glyph> {
         let mut out = Vec::new();
         if text.is_empty() {
@@ -442,6 +446,26 @@ impl FontSystem {
         let synth_italic = span.italic && !face.is_italic();
         let tracking = span.tracking_pct / 100.0 * size_pt * PT_MM;
         let baseline = span.baseline_shift_pt * PT_MM;
+        // Character spacing counts in widths of a space; word spacing
+        // scales the spaces themselves.
+        let space_adv = face
+            .glyph_index(' ')
+            .and_then(|g| face.glyph_hor_advance(g))
+            .map(|a| a as f64 * scale)
+            .unwrap_or(size_pt * PT_MM * 0.25);
+        let char_spacing = para.char_spacing_pct.clamp(-100.0, 2000.0) / 100.0 * space_adv;
+        let word_scale = para.word_spacing_pct.clamp(0.0, 2000.0) / 100.0;
+        // Shifted and rotated characters: about the glyph's origin on its
+        // shifted baseline; the pen does not move with them.
+        let shift_x = span.offset_x_pct / 100.0 * size_pt * PT_MM;
+        let place = if span.angle_deg.abs() > 1e-9 || shift_x.abs() > 1e-12 {
+            Some(
+                Affine::translate((shift_x, 0.0))
+                    * Affine::rotate_about(span.angle_deg.to_radians(), Point::new(0.0, baseline)),
+            )
+        } else {
+            None
+        };
 
         let features: Vec<rustybuzz::Feature> = span
             .features
@@ -492,14 +516,21 @@ impl FontSystem {
                 let g2 = Affine::translate((off, 0.0)) * gp.clone();
                 gp.extend(g2.elements().iter().copied());
             }
+            if let Some(a) = place {
+                gp = a * gp;
+            }
             let cluster = chars.iter().position(|(i, _)| *i == info.cluster as usize);
             let ch = cluster
                 .and_then(|k| chars.get(k))
                 .map(|(_, c)| *c)
                 .unwrap_or(' ');
+            let mut adv = pos.x_advance as f64 * scale;
+            if ch == ' ' {
+                adv *= word_scale;
+            }
             out.push(Glyph {
                 path: Arc::new(gp),
-                advance: pos.x_advance as f64 * scale + tracking,
+                advance: adv + tracking + char_spacing,
                 x_offset: pos.x_offset as f64 * scale,
                 y_offset: pos.y_offset as f64 * scale,
                 ch,
@@ -593,7 +624,7 @@ impl FontSystem {
                         }
                         char_idx += 1;
                     }
-                    let run = self.shape_run(span, si, part, size_scale, char_idx);
+                    let run = self.shape_run(span, si, part, size_scale, char_idx, para);
                     char_idx += part.chars().count();
                     if let Some(p) = paragraphs.last_mut() {
                         p.extend(run);
@@ -775,7 +806,7 @@ impl FontSystem {
             // Bullet.
             if para.bullets && line.first_in_para && !artistic {
                 if let Some(span) = spans.get(glyphs.first().map(|g| g.span).unwrap_or(0)) {
-                    let b = self.shape_run(span, 0, &para.bullet_char, size_scale, 0);
+                    let b = self.shape_run(span, 0, &para.bullet_char, size_scale, 0, para);
                     for g in &b {
                         let gp = Affine::translate((col_x + para.left_indent, y))
                             * g.path.as_ref().clone();
@@ -1270,6 +1301,8 @@ mod tests {
             italic: false,
             tracking_pct: 0.0,
             baseline_shift_pt: 0.0,
+            offset_x_pct: 0.0,
+            angle_deg: 0.0,
             underline: false,
             strikethrough: false,
             fill: None,
@@ -1292,6 +1325,72 @@ mod tests {
             assert!(layout.bounds.width() > 1.0);
             assert!(!layout.path.elements().is_empty());
         }
+    }
+
+    #[test]
+    fn shifted_and_rotated_characters_leave_the_others_in_place() {
+        if !has_fonts() {
+            return;
+        }
+        let f = fonts();
+        let plain = f.outline(&[span("AB")]);
+        let b_box = |l: &TextLayout| {
+            // The second glyph's outline: the path after the first glyph's
+            // subpaths, found by its x position.
+            l.path.bounding_box()
+        };
+        let mut a = span("A");
+        a.offset_x_pct = 50.0;
+        let shifted = f.outline(&[a.clone(), span("B")]);
+        // A moved right by half the size; B did not move, so the whole
+        // outline grows on the left side only by what A covers.
+        let size = 12.0 * PT_MM;
+        assert!((shifted.path.bounding_box().x0 - (b_box(&plain).x0 + 0.5 * size)).abs() < 1e-6);
+        assert!((shifted.path.bounding_box().x1 - b_box(&plain).x1).abs() < 1e-6);
+        assert_eq!(shifted.lines[0].edges, plain.lines[0].edges);
+        // Turning A a quarter turn about its origin puts it left of x = 0.
+        let mut a = span("A");
+        a.angle_deg = 90.0;
+        let turned = f.outline(&[a, span("B")]);
+        assert!(turned.path.bounding_box().x0 < -1.0);
+    }
+
+    #[test]
+    fn character_and_word_spacing_widen_the_text() {
+        if !has_fonts() {
+            return;
+        }
+        let f = fonts();
+        let measure = |para: &ParagraphStyle| {
+            let l = f.layout(&TextRequest {
+                spans: &[span("a b c")],
+                frame: None,
+                align: TextAlign::Left,
+                para,
+                on_path: None,
+            });
+            *l.lines[0].edges.last().expect("edges")
+        };
+        let base = measure(&ParagraphStyle::default());
+        let wide = measure(&ParagraphStyle {
+            char_spacing_pct: 100.0,
+            ..Default::default()
+        });
+        let words = measure(&ParagraphStyle {
+            word_spacing_pct: 300.0,
+            ..Default::default()
+        });
+        // Five characters, each one space wider; two spaces three times as
+        // wide.
+        let space = f.measure(&span(" "), " ");
+        assert!(
+            (wide - base - 5.0 * space).abs() < 1e-6,
+            "{base} {wide} {space}"
+        );
+        assert!(
+            (words - base - 4.0 * space).abs() < 1e-6,
+            "{base} {words} {space}"
+        );
     }
 
     #[test]

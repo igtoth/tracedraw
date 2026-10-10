@@ -1652,11 +1652,14 @@ fn text_menu(app: &mut App, ui: &mut Ui) {
     ) {
         app.fit_text_to_path();
     }
+    // Shifted and rotated characters go back (the selected characters
+    // while editing, the chosen character nodes with the Shape tool, else
+    // all); Straighten Text also takes text off its path.
     if item(ui, "menu.text.straighten_text", "", is_text) {
-        app.straighten_text();
+        app.straighten_chars();
     }
     if item(ui, "menu.text.align_to_baseline", "Alt+F12", is_text) {
-        app.straighten_text();
+        app.align_chars_to_baseline();
     }
     let on_grid = app
         .text_shapes()

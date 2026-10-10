@@ -462,6 +462,7 @@ impl App {
             }
         }
         self.node_selection = sel;
+        self.choose_chars_in(|q| in_polygon(poly, q));
     }
 
     /// The segments between selected nodes as new curves, styled like

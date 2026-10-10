@@ -372,6 +372,23 @@ pub enum Drag {
         from: Point,
         begun: bool,
     },
+    /// Moving chosen characters of a text (Shape tool): the text as it
+    /// was, the characters, where the drag began.
+    TextChars {
+        start: Box<tracedraw_core::Shape>,
+        chars: Vec<usize>,
+        from: Point,
+        begun: bool,
+    },
+    /// Dragging a text's spacing arrow (Shape tool): horizontal for
+    /// character (or, with `word`, word) spacing, else line spacing.
+    TextSpacing {
+        start: Box<tracedraw_core::Shape>,
+        horizontal: bool,
+        word: bool,
+        from: Point,
+        begun: bool,
+    },
     /// Freehand selection of nodes (Shape tool).
     NodeLasso {
         points: Vec<Point>,

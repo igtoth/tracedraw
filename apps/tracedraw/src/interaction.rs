@@ -945,7 +945,10 @@ impl App {
             }
             Drag::NodeMarquee { start, current } => self.finish_node_marquee(start, current),
             Drag::NodeLasso { points } => self.finish_node_lasso(&points),
-            Drag::NodeMove { .. } | Drag::NodeTransform { .. } => {}
+            Drag::NodeMove { .. }
+            | Drag::NodeTransform { .. }
+            | Drag::TextChars { .. }
+            | Drag::TextSpacing { .. } => {}
             Drag::NewGuide { .. } => self.finish_guide_drag(),
             d @ (Drag::MoveGuide { .. } | Drag::RotateGuide { .. }) => {
                 // Released outside the window (no pointer): dropped off.
@@ -1254,7 +1257,7 @@ impl App {
             self.request_exit();
         }
         if pressed(Key::F12, Modifiers::ALT) {
-            self.straighten_text();
+            self.align_chars_to_baseline();
         }
         // F11: the fill editor (Properties docker, Fill section). F3: zoom out.
         if pressed(Key::F11, Modifiers::NONE) {

@@ -1000,6 +1000,27 @@ fn node_marker(
     }
 }
 
+/// A text's Interactive spacing arrow: a bar and an arrow pointing right
+/// (character spacing) or down (line spacing), centred on `c`.
+fn draw_spacing_arrow(painter: &Painter, c: Pos2, horizontal: bool, color: Color32) {
+    let s = EStroke::new(1.5, color);
+    let v = |x: f32, y: f32| {
+        if horizontal {
+            c + egui::vec2(x, y)
+        } else {
+            c + egui::vec2(y, x)
+        }
+    };
+    painter.circle_filled(c, 8.0, Color32::from_white_alpha(200));
+    painter.line_segment([v(-6.0, -4.0), v(-6.0, 4.0)], s);
+    painter.line_segment([v(-6.0, 0.0), v(5.0, 0.0)], s);
+    painter.add(epaint::PathShape::convex_polygon(
+        vec![v(7.0, 0.0), v(3.0, -3.5), v(3.0, 3.5)],
+        color,
+        EStroke::NONE,
+    ));
+}
+
 /// Shape tool overlay, as Options > Nodes and Handles sets it: nodes
 /// shaped by type (cusp, smooth, symmetrical), the selected ones filled
 /// with the main colour, the others white or hollow, the first node of a
@@ -1015,6 +1036,27 @@ fn draw_nodes(app: &App, painter: &Painter) {
     let secondary = Color32::from_rgb(r, g, b);
     let size = prefs.size.px();
     for s in app.selected_shapes() {
+        // Text: a node per character and the two spacing arrows.
+        if matches!(s.kind, ShapeKind::Text { .. }) {
+            let chars = crate::text_nodes::char_nodes(&s);
+            if !chars.is_empty() {
+                for (c, p) in chars {
+                    let chosen = app.node_selection.contains(&(s.id, c));
+                    let r = ERect::from_center_size(view.to_screen(p), egui::vec2(6.0, 6.0));
+                    painter.rect_filled(r, 0.0, if chosen { main } else { Color32::WHITE });
+                    painter.rect_stroke(
+                        r,
+                        0.0,
+                        EStroke::new(1.0, main),
+                        epaint::StrokeKind::Inside,
+                    );
+                }
+                let (h, v) = app.spacing_arrow_spots(&s);
+                draw_spacing_arrow(painter, h, true, main);
+                draw_spacing_arrow(painter, v, false, main);
+                continue;
+            }
+        }
         let ShapeKind::Path { path, .. } = &s.kind else {
             // Rectangles, ellipses and polygons show their own nodes.
             let own = crate::kind_nodes::nodes(&s);

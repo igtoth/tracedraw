@@ -1845,6 +1845,21 @@ fn shape_tool_bar(app: &mut App, ui: &mut Ui) {
     {
         return;
     }
+    // Text: the chosen characters' offsets and angle.
+    if !shapes.is_empty()
+        && shapes
+            .iter()
+            .all(|s| matches!(s.kind, ShapeKind::Text { on_path: None, .. }))
+    {
+        crate::ui::propbar::char_offset_part(app, ui);
+        crate::ui::propbar::sep(ui);
+        ui.label(
+            egui::RichText::new(tr("toolbar.text_nodes_hint"))
+                .color(Tokens::TEXT_DIM)
+                .size(11.0),
+        );
+        return;
+    }
     let has_nodes = !app.node_selection.is_empty();
     let two_nodes = app.node_selection.len() >= 2;
     let has_curve = shapes

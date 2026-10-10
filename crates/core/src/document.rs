@@ -418,9 +418,18 @@ pub struct TextSpan {
     /// Range kerning (tracking) as a percentage of the em; 0 = none.
     #[serde(default)]
     pub tracking_pct: f64,
-    /// Baseline shift in points, positive = up.
+    /// Baseline shift in points, positive = up (the vertical character
+    /// offset).
     #[serde(default)]
     pub baseline_shift_pt: f64,
+    /// Horizontal character offset as a percentage of the font size,
+    /// positive = right; the characters after it keep their place.
+    #[serde(default)]
+    pub offset_x_pct: f64,
+    /// Character angle in degrees, counter-clockwise, about the
+    /// character's origin on its (shifted) baseline.
+    #[serde(default)]
+    pub angle_deg: f64,
     #[serde(default)]
     pub underline: bool,
     #[serde(default)]
@@ -443,6 +452,8 @@ impl TextSpan {
             italic: false,
             tracking_pct: 0.0,
             baseline_shift_pt: 0.0,
+            offset_x_pct: 0.0,
+            angle_deg: 0.0,
             underline: false,
             strikethrough: false,
             fill: None,
@@ -618,6 +629,11 @@ fn same_style(a: &TextSpan, b: &TextSpan) -> bool {
 pub struct ParagraphStyle {
     /// Line spacing as a percentage of the font's line height.
     pub leading_pct: f64,
+    /// Space added after every character, as a percentage of the width
+    /// of a space (-100 to 2000).
+    pub char_spacing_pct: f64,
+    /// The width of spaces, as a percentage of their own (0 to 2000).
+    pub word_spacing_pct: f64,
     /// Space before and after each paragraph, mm.
     pub space_before: f64,
     pub space_after: f64,
@@ -646,6 +662,8 @@ impl Default for ParagraphStyle {
     fn default() -> Self {
         ParagraphStyle {
             leading_pct: 100.0,
+            char_spacing_pct: 0.0,
+            word_spacing_pct: 100.0,
             space_before: 0.0,
             space_after: 0.0,
             first_line_indent: 0.0,
