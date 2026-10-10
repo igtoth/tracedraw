@@ -8,6 +8,7 @@ pub mod context;
 pub mod dialogs;
 pub mod dockers;
 pub mod dockers2;
+pub mod field;
 pub mod hints;
 pub mod icons;
 pub mod layout_options;
@@ -153,7 +154,8 @@ pub fn root(app: &mut App, ui: &mut Ui) {
 
     if app.show_status_bar {
         Panel::bottom("status_bar")
-            .frame(bar())
+            .frame(Frame::new().fill(Tokens::PANEL))
+            .exact_size(status::BAR_H)
             .show_separator_line(false)
             .show(ui, |ui| status::status_bar(app, ui));
     }

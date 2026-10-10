@@ -64,6 +64,13 @@ and sharing their middle border, 8 px from the top; fields and lists are
 white with a grey border and 13 px text, small pictures before fields
 name them (hover for a tooltip), and some fields have spin arrows.
 
+Number fields show their value at the left and are typed into: a click
+selects the value, Enter or leaving the field applies it, Esc puts it
+back. A comma or a point marks decimals; sums work (`10+5`, `2*3,5`,
+brackets); a distance typed with another unit is converted (`1 in` in a
+millimetre field is 25.4 mm). Values outside a field's range are brought
+into it (`ui::field::tests`).
+
 - Pick tool, nothing selected (page bar): page size list; page width and
   height; portrait, landscape; all pages or current page (which pages a
   size change applies to, one undo step); Units; nudge distance;

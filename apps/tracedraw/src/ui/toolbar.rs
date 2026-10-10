@@ -593,7 +593,7 @@ fn unit_value(ui: &mut Ui, app: &App, label: &str, mm: &mut f64, speed: f64) -> 
     );
     let mut v = app.units.from_mm(*mm);
     let r = ui.add(
-        egui::DragValue::new(&mut v)
+        crate::ui::field::NumField::new(&mut v)
             .speed(speed)
             .fixed_decimals(app.settings.precision.min(10) as usize)
             .suffix(format!(" {}", app.units.short())),
@@ -705,7 +705,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                         .color(Tokens::TEXT_DIM)
                         .size(11.0),
                 );
-                ui.add(egui::DragValue::new(&mut app.blend_steps).range(1..=200));
+                ui.add(crate::ui::field::NumField::new(&mut app.blend_steps).range(1..=200));
                 ui.label(
                     egui::RichText::new(tr("toolbar.drag_between_objects"))
                         .color(Tokens::TEXT_DIM)
@@ -720,8 +720,16 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 );
                 let mut dx = app.extrude_depth.x;
                 let mut dy = app.extrude_depth.y;
-                ui.add(egui::DragValue::new(&mut dx).speed(0.2).suffix(" mm"));
-                ui.add(egui::DragValue::new(&mut dy).speed(0.2).suffix(" mm"));
+                ui.add(
+                    crate::ui::field::NumField::new(&mut dx)
+                        .speed(0.2)
+                        .suffix(" mm"),
+                );
+                ui.add(
+                    crate::ui::field::NumField::new(&mut dy)
+                        .speed(0.2)
+                        .suffix(" mm"),
+                );
                 app.extrude_depth = tracedraw_core::geometry::Vec2::new(dx, dy);
                 vsep(ui);
                 if ui
@@ -748,7 +756,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                         .size(11.0),
                 );
                 ui.add(
-                    egui::DragValue::new(&mut app.distort_amount)
+                    crate::ui::field::NumField::new(&mut app.distort_amount)
                         .speed(1.0)
                         .range(-200.0..=200.0),
                 );
@@ -758,7 +766,9 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                             .color(Tokens::TEXT_DIM)
                             .size(11.0),
                     );
-                    ui.add(egui::DragValue::new(&mut app.distort_frequency).range(1..=100));
+                    ui.add(
+                        crate::ui::field::NumField::new(&mut app.distort_frequency).range(1..=100),
+                    );
                 }
                 vsep(ui);
                 if ui
@@ -784,7 +794,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 let mut w = app.units.from_mm(app.eraser_width);
                 if ui
                     .add(
-                        egui::DragValue::new(&mut w)
+                        crate::ui::field::NumField::new(&mut w)
                             .speed(0.1)
                             .range(0.01..=1000.0)
                             .suffix(format!(" {}", app.units.short())),
@@ -820,7 +830,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                         .size(11.0),
                 );
                 ui.add(
-                    egui::DragValue::new(&mut app.brush_radius)
+                    crate::ui::field::NumField::new(&mut app.brush_radius)
                         .speed(0.5)
                         .range(1.0..=200.0)
                         .suffix(" mm"),
@@ -851,14 +861,14 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                         .color(Tokens::TEXT_DIM)
                         .size(11.0),
                 );
-                ui.add(egui::DragValue::new(&mut app.contour_steps).range(1..=50));
+                ui.add(crate::ui::field::NumField::new(&mut app.contour_steps).range(1..=50));
                 ui.label(
                     egui::RichText::new(tr("docker.offset"))
                         .color(Tokens::TEXT_DIM)
                         .size(11.0),
                 );
                 ui.add(
-                    egui::DragValue::new(&mut app.contour_offset)
+                    crate::ui::field::NumField::new(&mut app.contour_offset)
                         .speed(0.1)
                         .range(0.05..=200.0)
                         .suffix(" mm"),
@@ -907,7 +917,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                         .color(Tokens::TEXT_DIM)
                         .size(11.0),
                 );
-                ui.add(egui::DragValue::new(&mut app.spiral_revolutions).range(1..=100));
+                ui.add(crate::ui::field::NumField::new(&mut app.spiral_revolutions).range(1..=100));
                 if ui
                     .selectable_label(!app.spiral_logarithmic, tr("toolbar.symmetrical"))
                     .clicked()
@@ -927,13 +937,13 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                         .color(Tokens::TEXT_DIM)
                         .size(11.0),
                 );
-                ui.add(egui::DragValue::new(&mut app.graph_rows).range(1..=99));
+                ui.add(crate::ui::field::NumField::new(&mut app.graph_rows).range(1..=99));
                 ui.label(
                     egui::RichText::new(tr("toolbar.columns"))
                         .color(Tokens::TEXT_DIM)
                         .size(11.0),
                 );
-                ui.add(egui::DragValue::new(&mut app.graph_cols).range(1..=99));
+                ui.add(crate::ui::field::NumField::new(&mut app.graph_cols).range(1..=99));
             }
             Tool::ActionLines => {
                 ui.label(
@@ -941,7 +951,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                         .color(Tokens::TEXT_DIM)
                         .size(11.0),
                 );
-                ui.add(egui::DragValue::new(&mut app.action_lines_count).range(2..=500));
+                ui.add(crate::ui::field::NumField::new(&mut app.action_lines_count).range(2..=500));
                 if ui
                     .selectable_label(!app.action_lines_radial, tr("toolbar.parallel"))
                     .clicked()
@@ -985,13 +995,13 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                         .color(Tokens::TEXT_DIM)
                         .size(11.0),
                 );
-                ui.add(egui::DragValue::new(&mut app.table_rows).range(1..=100));
+                ui.add(crate::ui::field::NumField::new(&mut app.table_rows).range(1..=100));
                 ui.label(
                     egui::RichText::new(tr("toolbar.columns"))
                         .color(Tokens::TEXT_DIM)
                         .size(11.0),
                 );
-                ui.add(egui::DragValue::new(&mut app.table_cols).range(1..=100));
+                ui.add(crate::ui::field::NumField::new(&mut app.table_cols).range(1..=100));
                 vsep(ui);
                 // Cell fill, border width and colour: edit the selected table,
                 // else the defaults for the next one.
@@ -1034,7 +1044,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 );
                 let mut width = border.as_ref().map(|b| b.width).unwrap_or(0.0);
                 let r = ui.add(
-                    egui::DragValue::new(&mut width)
+                    crate::ui::field::NumField::new(&mut width)
                         .range(0.0..=20.0)
                         .speed(0.05)
                         .fixed_decimals(3)
@@ -1094,7 +1104,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                         .size(11.0),
                 );
                 ui.add(
-                    egui::DragValue::new(&mut app.media_width)
+                    crate::ui::field::NumField::new(&mut app.media_width)
                         .speed(0.1)
                         .range(0.2..=50.0)
                         .suffix(" mm"),
@@ -1105,7 +1115,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                         .size(11.0),
                 );
                 ui.add(
-                    egui::DragValue::new(&mut app.media_angle)
+                    crate::ui::field::NumField::new(&mut app.media_angle)
                         .speed(1.0)
                         .range(0.0..=180.0)
                         .suffix("°"),
@@ -1187,7 +1197,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 );
                 if ui
                     .add(
-                        egui::DragValue::new(&mut opacity)
+                        crate::ui::field::NumField::new(&mut opacity)
                             .range(0.0..=100.0)
                             .suffix(" %"),
                     )
@@ -1204,7 +1214,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 let mut blur = sh.blur;
                 if ui
                     .add(
-                        egui::DragValue::new(&mut blur)
+                        crate::ui::field::NumField::new(&mut blur)
                             .speed(0.1)
                             .range(0.0..=50.0)
                             .suffix(" mm"),
@@ -1222,10 +1232,18 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                         .size(11.0),
                 );
                 changed |= ui
-                    .add(egui::DragValue::new(&mut dx).speed(0.1).suffix(" mm"))
+                    .add(
+                        crate::ui::field::NumField::new(&mut dx)
+                            .speed(0.1)
+                            .suffix(" mm"),
+                    )
                     .changed();
                 changed |= ui
-                    .add(egui::DragValue::new(&mut dy).speed(0.1).suffix(" mm"))
+                    .add(
+                        crate::ui::field::NumField::new(&mut dy)
+                            .speed(0.1)
+                            .suffix(" mm"),
+                    )
                     .changed();
                 sh.offset = tracedraw_core::geometry::Vec2::new(dx, dy);
                 let [r, g, b] = sh.color.to_rgb8();
@@ -1319,7 +1337,11 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                     if let Fill::Fountain(f) = &mut app.transparency_default.mask {
                         let mut angle = f.angle;
                         if ui
-                            .add(egui::DragValue::new(&mut angle).suffix("°").speed(1.0))
+                            .add(
+                                crate::ui::field::NumField::new(&mut angle)
+                                    .suffix("°")
+                                    .speed(1.0),
+                            )
                             .changed()
                         {
                             f.angle = angle;
@@ -1549,7 +1571,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 );
                 changed |= ui
                     .add(
-                        egui::DragValue::new(&mut depth)
+                        crate::ui::field::NumField::new(&mut depth)
                             .speed(0.1)
                             .range(0.0..=500.0)
                             .fixed_decimals(2)
@@ -1563,7 +1585,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 );
                 changed |= ui
                     .add(
-                        egui::DragValue::new(&mut dir)
+                        crate::ui::field::NumField::new(&mut dir)
                             .speed(1.0)
                             .range(-180.0..=180.0)
                             .fixed_decimals(1)
@@ -1586,7 +1608,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 );
                 changed |= ui
                     .add(
-                        egui::DragValue::new(&mut gap)
+                        crate::ui::field::NumField::new(&mut gap)
                             .speed(0.05)
                             .range(0.0..=50.0)
                             .fixed_decimals(2)
@@ -1743,7 +1765,7 @@ fn text_properties(app: &mut App, ui: &mut Ui) {
     let mut size = app.text_size_pt;
     if ui
         .add(
-            egui::DragValue::new(&mut size)
+            crate::ui::field::NumField::new(&mut size)
                 .speed(0.5)
                 .range(1.0..=999.0)
                 .suffix(" pt"),
@@ -2073,7 +2095,7 @@ fn interactive_fill_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::do
             );
             changed |= ui
                 .add(
-                    egui::DragValue::new(&mut f.angle)
+                    crate::ui::field::NumField::new(&mut f.angle)
                         .speed(1.0)
                         .range(-360.0..=360.0)
                         .fixed_decimals(1)
@@ -2088,7 +2110,7 @@ fn interactive_fill_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::do
             let mut pad = f.edge_pad * 100.0;
             if ui
                 .add(
-                    egui::DragValue::new(&mut pad)
+                    crate::ui::field::NumField::new(&mut pad)
                         .speed(1.0)
                         .range(0.0..=49.0)
                         .suffix(" %"),

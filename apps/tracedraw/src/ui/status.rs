@@ -14,6 +14,11 @@ use egui::{Color32, Pos2, Rect, Sense, Stroke, Ui, Vec2};
 use serde::{Deserialize, Serialize};
 use tracedraw_core::document::ShapeKind;
 
+/// Height of the bar: a 1 px line, then 41 px.
+pub const BAR_H: f32 = 42.0;
+/// Text size of the bar.
+const TEXT: f32 = 13.0;
+
 /// What the status bar's first field shows (the settings button's menu).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum StatusInfo {
@@ -190,26 +195,25 @@ fn outline_text(app: &App, stroke: &Option<tracedraw_core::Stroke>) -> String {
 
 pub fn status_bar(app: &mut App, ui: &mut Ui) {
     let full = ui.available_rect_before_wrap();
-    let h = full.height().max(20.0);
-    let row = Rect::from_min_size(full.min, Vec2::new(full.width(), h));
-    ui.allocate_rect(row, Sense::hover());
-    let painter = ui.painter_at(row);
     // The separator over the bar, the colour of the palette lines.
-    let top = ui.max_rect().top().round() - 2.0;
+    let top = full.top().round();
     ui.painter().rect_filled(
-        Rect::from_min_size(
-            Pos2::new(ui.max_rect().left() - 4.0, top),
-            Vec2::new(ui.max_rect().width() + 8.0, 1.0),
-        ),
+        Rect::from_min_size(Pos2::new(full.left(), top), Vec2::new(full.width(), 1.0)),
         0.0,
         egui::Color32::from_gray(0xD8),
     );
+    let row = Rect::from_min_max(
+        Pos2::new(full.left() + 4.0, top + 1.0),
+        Pos2::new(full.right() - 4.0, full.bottom().max(top + BAR_H)),
+    );
+    ui.allocate_rect(full, Sense::hover());
+    let painter = ui.painter_at(row);
     let cy = row.center().y;
-    let font = egui::FontId::proportional(12.0);
+    let font = egui::FontId::proportional(TEXT);
     let doc = app.has_document() && !app.show_welcome;
 
-    // The settings button and its menu.
-    let gear = Rect::from_center_size(Pos2::new(row.min.x + 12.0, cy), Vec2::splat(20.0));
+    // The settings button and its menu: a gear with a small corner arrow.
+    let gear = Rect::from_center_size(Pos2::new(row.min.x + 14.0, cy), Vec2::splat(26.0));
     let gear_resp = ui
         .interact(gear, egui::Id::new("status_settings"), Sense::click())
         .on_hover_text(tr("status.bar_options"));
@@ -218,10 +222,19 @@ pub fn status_bar(app: &mut App, ui: &mut Ui) {
     }
     crate::ui::icons::draw_action(
         &painter,
-        gear.shrink(2.0),
+        gear.shrink(3.0),
         crate::ui::icons::Action::Options,
         Tokens::ICON,
     );
+    painter.add(egui::Shape::convex_polygon(
+        vec![
+            gear.right_bottom() + Vec2::new(-1.0, -1.0),
+            gear.right_bottom() + Vec2::new(-5.0, -1.0),
+            gear.right_bottom() + Vec2::new(-1.0, -5.0),
+        ],
+        Tokens::TEXT_DIM,
+        Stroke::NONE,
+    ));
     egui::Popup::menu(&gear_resp)
         .id(egui::Id::new("status_settings_menu"))
         .show(|ui| {
@@ -238,9 +251,18 @@ pub fn status_bar(app: &mut App, ui: &mut Ui) {
 
     // Positions of the right-hand parts, as fractions of the bar like the
     // target design's (fill about 70 %, outline about 82 %).
-    let fill_x = row.min.x + row.width() * 0.695;
-    let outline_x = row.min.x + row.width() * 0.825;
-    let proof = Rect::from_center_size(Pos2::new(row.max.x - 14.0, cy), Vec2::splat(18.0));
+    let fill_x = row.min.x + row.width() * 0.685;
+    let outline_x = row.min.x + row.width() * 0.818;
+    let proof = Rect::from_center_size(Pos2::new(row.max.x - 17.0, cy), Vec2::splat(26.0));
+    // A line sets the proof colours button apart.
+    let sep_x = (proof.min.x - 8.0).round() + 0.5;
+    painter.line_segment(
+        [
+            Pos2::new(sep_x, row.min.y + 7.0),
+            Pos2::new(sep_x, row.max.y - 7.0),
+        ],
+        Stroke::new(1.0, Tokens::BORDER),
+    );
 
     // Left field and object information.
     let (left, info) = if !doc {
@@ -261,7 +283,7 @@ pub fn status_bar(app: &mut App, ui: &mut Ui) {
         };
         (left, object_info(app))
     };
-    let text_x = gear.max.x + 6.0;
+    let text_x = gear.max.x + 3.0;
     let info_w = if info.is_empty() {
         0.0
     } else {
@@ -384,16 +406,19 @@ impl Indicator<'_> {
             .interact(part, egui::Id::new(self.id), Sense::click())
             .on_hover_text(self.tip);
         let cy = part.center().y;
-        let icon_r = Rect::from_center_size(Pos2::new(part.min.x + 9.0, cy), Vec2::splat(16.0));
+        let icon_r = Rect::from_center_size(Pos2::new(part.min.x + 11.0, cy), Vec2::splat(20.0));
         crate::ui::icons::draw(painter, icon_r, self.icon, Tokens::ICON);
-        let sw = Rect::from_center_size(Pos2::new(icon_r.max.x + 14.0, cy), Vec2::new(18.0, 16.0));
+        let sw = Rect::from_min_size(
+            Pos2::new(icon_r.max.x + 3.0, (cy - 12.5).round()),
+            Vec2::new(26.0, 25.0),
+        );
         draw_swatch(painter, sw, self.swatch);
-        let clip = Rect::from_min_max(Pos2::new(sw.max.x + 6.0, part.min.y), part.max);
+        let clip = Rect::from_min_max(Pos2::new(sw.max.x + 5.0, part.min.y), part.max);
         painter.with_clip_rect(clip).text(
-            Pos2::new(sw.max.x + 6.0, cy),
+            Pos2::new(sw.max.x + 5.0, cy),
             egui::Align2::LEFT_CENTER,
             self.text,
-            egui::FontId::proportional(12.0),
+            egui::FontId::proportional(TEXT),
             Tokens::TEXT,
         );
         resp.double_clicked()
@@ -410,8 +435,8 @@ pub fn draw_swatch(painter: &egui::Painter, r: Rect, color: Option<Color32>) {
             painter.rect_filled(r, 0.0, Color32::WHITE);
             painter.line_segment(
                 [
-                    r.left_bottom() + Vec2::new(1.0, -1.0),
-                    r.right_top() + Vec2::new(-1.0, 1.0),
+                    r.left_bottom() + Vec2::new(1.5, -1.5),
+                    r.right_top() + Vec2::new(-1.5, 1.5),
                 ],
                 Stroke::new(1.5, Color32::from_rgb(0xE0, 0x20, 0x20)),
             );
@@ -420,48 +445,45 @@ pub fn draw_swatch(painter: &egui::Painter, r: Rect, color: Option<Color32>) {
     painter.rect_stroke(
         r,
         0.0,
-        Stroke::new(1.0, Tokens::TEXT_DIM),
+        Stroke::new(1.0, Color32::from_gray(0xAA)),
         egui::StrokeKind::Inside,
     );
 }
 
-/// A small monitor showing colour bars.
+/// The proof colours picture: a monitor whose screen is red over sky
+/// blue with a lens in the middle, on a stand.
 fn proof_icon(painter: &egui::Painter, r: Rect) {
-    let screen = Rect::from_min_max(
-        r.min + Vec2::new(1.0, 1.0),
-        Pos2::new(r.max.x - 1.0, r.max.y - 4.0),
+    // Drawn on a 20 x 20 grid centred in `r`.
+    let o = r.center() - Vec2::splat(10.0);
+    let at = |x: f32, y: f32| o + Vec2::new(x, y);
+    let dark = Color32::from_gray(0x33);
+    // Frame and screen.
+    painter.rect_filled(Rect::from_min_max(at(0.0, 0.0), at(20.0, 15.0)), 0.0, dark);
+    painter.rect_filled(
+        Rect::from_min_max(at(1.0, 1.0), at(19.0, 14.0)),
+        0.0,
+        Color32::from_gray(0xC8),
     );
-    let bars = [
-        Color32::from_rgb(0xE8, 0x3A, 0x3A),
-        Color32::from_rgb(0x3A, 0xA8, 0x3A),
-        Color32::from_rgb(0x3A, 0x6A, 0xE8),
-    ];
-    let inner = screen.shrink(1.5);
-    let w = inner.width() / bars.len() as f32;
-    for (i, c) in bars.iter().enumerate() {
-        let b = Rect::from_min_size(
-            Pos2::new(inner.min.x + w * i as f32, inner.min.y),
-            Vec2::new(w, inner.height()),
-        );
-        painter.rect_filled(b, 0.0, *c);
-    }
-    let s = Stroke::new(1.0, Tokens::ICON);
-    painter.rect_stroke(screen, 1.0, s, egui::StrokeKind::Inside);
-    let foot = r.max.y - 1.0;
-    painter.line_segment(
-        [
-            Pos2::new(r.center().x - 3.0, foot),
-            Pos2::new(r.center().x + 3.0, foot),
-        ],
-        s,
+    painter.rect_filled(
+        Rect::from_min_max(at(2.0, 2.0), at(18.0, 7.5)),
+        0.0,
+        Color32::from_rgb(0xFF, 0x10, 0x10),
     );
-    painter.line_segment(
-        [
-            Pos2::new(r.center().x, screen.max.y),
-            Pos2::new(r.center().x, foot),
-        ],
-        s,
+    painter.rect_filled(
+        Rect::from_min_max(at(2.0, 7.5), at(18.0, 13.0)),
+        0.0,
+        Color32::from_rgb(0x12, 0xAE, 0xF0),
     );
+    // The lens.
+    painter.circle_filled(at(10.0, 7.5), 3.6, Color32::WHITE);
+    painter.circle_filled(at(10.0, 7.5), 2.0, Color32::from_gray(0x70));
+    // Stand.
+    painter.rect_filled(
+        Rect::from_min_max(at(7.0, 15.0), at(13.0, 17.0)),
+        0.0,
+        Color32::from_gray(0x99),
+    );
+    painter.rect_filled(Rect::from_min_max(at(3.0, 18.0), at(17.0, 19.5)), 0.0, dark);
 }
 
 #[cfg(test)]

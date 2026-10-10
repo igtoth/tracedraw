@@ -521,18 +521,15 @@ fn distance(ui: &mut Ui, app: &App, mm: f64, width: f32, step: Option<f64>) -> O
     let mut v = u.from_mm(mm);
     let r = ui.add_sized(
         [width, ROW],
-        egui::DragValue::new(&mut v)
-            .speed(0.1)
+        crate::ui::field::NumField::new(&mut v)
             .fixed_decimals(d.min(3))
             .max_decimals(d)
-            .suffix(format!(" {}", u.short())),
+            .suffix(format!(" {}", u.short()))
+            .unit_mm(u.mm()),
     );
     let mut out = None;
-    // Typed values apply when the field loses focus, dragged ones when the
-    // drag ends.
-    let committed =
-        r.lost_focus() || r.drag_stopped() || (r.changed() && !r.has_focus() && !r.dragged());
-    if committed && (u.to_mm(v) - mm).abs() > 1e-12 {
+    // Typed values apply with Enter or when the field is left.
+    if r.changed() && (u.to_mm(v) - mm).abs() > 1e-12 {
         out = Some(u.to_mm(v));
     }
     if let Some(step) = step {
@@ -896,7 +893,7 @@ pub fn object_bar(app: &mut App, ui: &mut Ui) {
                 let mut pct = 100.0f64;
                 let r = ui.add_sized(
                     [64.0, ROW],
-                    egui::DragValue::new(&mut pct)
+                    crate::ui::field::NumField::new(&mut pct)
                         .speed(0.5)
                         .fixed_decimals(1)
                         .suffix(" %"),
@@ -944,7 +941,7 @@ pub fn object_bar(app: &mut App, ui: &mut Ui) {
     label_pic(ui, Pic::Rotate, &tr("toolbar.rotation_angle"));
     let r = ui.add_sized(
         [64.0, ROW + 4.0],
-        egui::DragValue::new(&mut a)
+        crate::ui::field::NumField::new(&mut a)
             .speed(1.0)
             .fixed_decimals(1)
             .suffix(" \u{00B0}"),
@@ -1187,7 +1184,7 @@ pub fn ellipse_part(app: &mut App, ui: &mut Ui) {
                 let mut v = if start { arc.start_deg } else { arc.end_deg };
                 let r = ui.add_enabled(
                     angles_on,
-                    egui::DragValue::new(&mut v)
+                    crate::ui::field::NumField::new(&mut v)
                         .speed(1.0)
                         .fixed_decimals(1)
                         .suffix(" \u{00B0}"),
@@ -1264,7 +1261,7 @@ pub fn polygon_part(app: &mut App, ui: &mut Ui, star: bool) {
     ui.label(tr("toolbar.points_sides"));
     ui.add_sized(
         [56.0, ROW + 4.0],
-        egui::DragValue::new(&mut n).range(3..=500),
+        crate::ui::field::NumField::new(&mut n).range(3..=500),
     );
     if star {
         ui.label(tr("toolbar.sharpness"));
@@ -1272,7 +1269,7 @@ pub fn polygon_part(app: &mut App, ui: &mut Ui, star: bool) {
         if ui
             .add_sized(
                 [56.0, ROW + 4.0],
-                egui::DragValue::new(&mut pct).range(1.0..=99.0),
+                crate::ui::field::NumField::new(&mut pct).range(1.0..=99.0),
             )
             .changed()
         {

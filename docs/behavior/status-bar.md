@@ -1,8 +1,10 @@
 # Status bar
 
+The bar is 41 px under a 1 px `#D8D8D8` line, `#F4F4F4`, text 13 px.
 From the left:
 
-1. The settings button. Its menu chooses what the first field shows:
+1. The settings button (a gear with a small corner arrow). Its menu
+   chooses what the first field shows:
    Tool Hints (default), Object Details, Cursor Coordinates or Document
    Color Settings. The choice is kept in the settings (`status_info`).
 2. The first field:
@@ -19,13 +21,15 @@ From the left:
    Shape tool and a curve selected, "Curve: N Nodes"; while typing,
    "Editing text". It starts after the first field, never closer than
    156 px from it.
-4. The fill: the Interactive Fill icon, a swatch and a description (None,
-   the colour values, or the fill type). At 69.5 % of the bar.
+4. The fill: the Interactive Fill icon (20 px), a 26 x 25 px swatch and
+   a description (None, the colour values, or the fill type). At 68.5 %
+   of the bar.
 5. The outline: the outline pen icon, a swatch and the colour values with
    the width in the drawing units (three decimals; two in pixels), or
-   Hairline, or None. At 82.5 % of the bar.
-6. The proof colours button at the right end (a small monitor); a click
-   toggles soft proofing and its tooltip says whether it is on.
+   Hairline, or None. At 81.8 % of the bar.
+6. After a short vertical line, the proof colours button at the right end
+   (a monitor, red over sky blue with a lens); a click toggles soft
+   proofing and its tooltip says whether it is on.
 
 With nothing selected the fill and outline parts show the defaults for
 new objects: no fill, a 0.2 mm black (C0 M0 Y0 K100) outline. A swatch

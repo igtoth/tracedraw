@@ -374,16 +374,10 @@ pub fn format_number(v: f64, decimals: usize, suffix: &str) -> String {
     }
 }
 
-/// The number at the start of a field's text (a unit after it is
-/// ignored; a comma counts as the decimal point).
+/// The number typed in a field's text (a unit after it is ignored; a
+/// comma counts as the decimal point; sums such as `10+5` work).
 pub fn parse_number(text: &str) -> Option<f64> {
-    let t = text.trim().replace(',', ".");
-    let end = t
-        .char_indices()
-        .find(|(i, c)| !(c.is_ascii_digit() || *c == '.' || (*i == 0 && (*c == '-' || *c == '+'))))
-        .map(|(i, _)| i)
-        .unwrap_or(t.len());
-    t.get(..end)?.parse::<f64>().ok().filter(|v| v.is_finite())
+    crate::ui::field::parse(text, None)
 }
 
 #[cfg(test)]
