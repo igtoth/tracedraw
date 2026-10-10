@@ -25,6 +25,7 @@ pub mod preview;
 pub mod propbar;
 pub mod rulers;
 pub mod status;
+pub mod straighten_dialog;
 pub mod tabs;
 pub mod toolbar;
 pub mod toolbox;

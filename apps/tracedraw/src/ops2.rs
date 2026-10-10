@@ -966,7 +966,7 @@ impl App {
 
     // ----- bitmaps -------------------------------------------------------------------
 
-    fn bitmap_shapes(&self) -> Vec<(ShapeId, Rect, u32, u32, Vec<u8>)> {
+    pub(crate) fn bitmap_shapes(&self) -> Vec<(ShapeId, Rect, u32, u32, Vec<u8>)> {
         self.selected_shapes()
             .into_iter()
             .filter_map(|s| match s.kind {
@@ -1008,22 +1008,55 @@ impl App {
         }
     }
 
-    pub fn inflate_bitmap(&mut self, px: Option<u32>) {
+    /// Bitmaps > Inflate Bitmap > Manually Inflate Bitmap: grow every
+    /// selected bitmap's canvas to `pw` by `ph` percent of its size (100
+    /// or more), centred, with transparent margins; one undo step. The
+    /// bitmap keeps its resolution, so it grows on the page too.
+    pub fn inflate_bitmaps_by(&mut self, pw: f64, ph: f64) {
+        let mut cmds = Vec::new();
         for (id, rect, w, h, png) in self.bitmap_shapes() {
             let Some(img) = crate::bitmap_fx::decode(&png) else {
                 continue;
             };
-            let pad = px.unwrap_or((w.max(h) / 10).max(4));
-            let out = crate::bitmap_fx::inflate(&img, pad);
-            let mm_x = rect.width() / w.max(1) as f64 * pad as f64;
-            let mm_y = rect.height() / h.max(1) as f64 * pad as f64;
-            let r = Rect::new(
-                rect.x0 - mm_x,
-                rect.y0 - mm_y,
-                rect.x1 + mm_x,
-                rect.y1 + mm_y,
+            let grow = |n: u32, pct: f64| -> u32 {
+                let pct = if pct.is_finite() {
+                    pct.clamp(100.0, 1000.0)
+                } else {
+                    100.0
+                };
+                ((n as f64 * pct / 100.0).round() as u32).max(n)
+            };
+            let (nw, nh) = (grow(w, pw), grow(h, ph));
+            if (nw, nh) == (w, h) {
+                continue;
+            }
+            let out = crate::bitmap_fx::inflate_to(&img, nw, nh);
+            let Some(png) = crate::bitmap_fx::encode(&out) else {
+                continue;
+            };
+            let (mx, my) = (
+                rect.width() / w.max(1) as f64,
+                rect.height() / h.max(1) as f64,
             );
-            self.replace_bitmap(id, r, &out);
+            let (left, top) = ((nw - w) / 2, (nh - h) / 2);
+            let x0 = rect.x0 - left as f64 * mx;
+            let y0 = rect.y0 - top as f64 * my;
+            cmds.push(Command::SetShapeKind {
+                shape: id,
+                kind: ShapeKind::Bitmap {
+                    rect: Rect::new(x0, y0, x0 + nw as f64 * mx, y0 + nh as f64 * my),
+                    width_px: nw,
+                    height_px: nh,
+                    png,
+                    fx: None,
+                },
+            });
+        }
+        if cmds.is_empty() {
+            return;
+        }
+        if let Err(e) = self.engine.run_batch("Inflate Bitmap", &cmds) {
+            self.status = e.to_string();
         }
     }
 
@@ -1036,27 +1069,6 @@ impl App {
             let h = (rect.height() / 25.4 * dpi).round().max(1.0) as u32;
             let out = crate::bitmap_fx::resample(&img, w, h);
             self.replace_bitmap(id, rect, &out);
-        }
-    }
-
-    pub fn straighten_bitmap(&mut self, degrees: f64) {
-        for (id, rect, w, h, png) in self.bitmap_shapes() {
-            let Some(img) = crate::bitmap_fx::decode(&png) else {
-                continue;
-            };
-            let out = crate::bitmap_fx::rotate(&img, degrees as f32);
-            let sx = rect.width() / w.max(1) as f64;
-            let sy = rect.height() / h.max(1) as f64;
-            let c = rect.center();
-            let nw = out.width() as f64 * sx;
-            let nh = out.height() as f64 * sy;
-            let r = Rect::new(
-                c.x - nw / 2.0,
-                c.y - nh / 2.0,
-                c.x + nw / 2.0,
-                c.y + nh / 2.0,
-            );
-            self.replace_bitmap(id, r, &out);
         }
     }
 
@@ -2099,5 +2111,56 @@ mod tests {
         );
         assert_eq!(apply_case("hello world", CaseMode::Title), "Hello World");
         assert_eq!(apply_case("aBc", CaseMode::Toggle), "AbC");
+    }
+
+    #[test]
+    fn manual_inflate_grows_by_percent_around_the_middle() {
+        let mut app = App::headless();
+        let img: image::RgbaImage =
+            image::ImageBuffer::from_pixel(40, 20, image::Rgba([9, 9, 9, 255]));
+        let png = crate::bitmap_fx::encode(&img).expect("png");
+        let id = app
+            .new_shape(ShapeKind::Bitmap {
+                rect: Rect::new(0.0, 0.0, 40.0, 20.0),
+                width_px: 40,
+                height_px: 20,
+                png,
+                fx: None,
+            })
+            .expect("bitmap");
+        app.select(vec![id]);
+        let mut st = crate::ui::dialogs::InflateState::for_app(&app);
+        assert_eq!((st.base, st.pixels()), ((40, 20), (40, 20)));
+        st.set_width(150.0);
+        assert_eq!(st.pixels(), (60, 30));
+        st.keep = false;
+        st.set_height(200.0);
+        assert_eq!(st.pixels(), (60, 40));
+        st.set_width(50.0);
+        assert_eq!(st.pw, 100.0);
+        let depth = app.engine.history_labels().0.len();
+        app.inflate_bitmaps_by(150.0, 200.0);
+        assert_eq!(app.engine.history_labels().0.len(), depth + 1);
+        let ShapeKind::Bitmap {
+            rect,
+            width_px,
+            height_px,
+            png,
+            ..
+        } = &app.doc().find_shape(id).expect("bitmap").kind
+        else {
+            panic!("not a bitmap");
+        };
+        assert_eq!((*width_px, *height_px), (60, 40));
+        // The original stays in the middle, one millimetre per pixel.
+        assert_eq!(
+            (rect.x0, rect.y0, rect.x1, rect.y1),
+            (-10.0, -10.0, 50.0, 30.0)
+        );
+        let out = crate::bitmap_fx::decode(png).expect("png");
+        assert_eq!((out.get_pixel(0, 0)[3], out.get_pixel(30, 20)[3]), (0, 255));
+        // Less than the original size does nothing.
+        app.inflate_bitmaps_by(100.0, 100.0);
+        assert_eq!(app.engine.history_labels().0.len(), depth + 1);
     }
 }

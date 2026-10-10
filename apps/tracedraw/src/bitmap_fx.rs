@@ -1,6 +1,6 @@
-//! Bitmap helpers: PNG codecs, resampling, rotation (Straighten Image),
-//! inflation, colour masks and the simple colour modes. The effects of
-//! the Effects menu are in `fx`.
+//! Bitmap helpers: PNG codecs, resampling, inflation, colour masks and
+//! the simple colour modes. The effects of the Effects menu are in `fx`,
+//! Straighten Image in `straighten`.
 
 use image::{ImageBuffer, Rgba, RgbaImage};
 
@@ -29,10 +29,6 @@ pub fn convert_mode(img: &RgbaImage, mode: ColorMode) -> RgbaImage {
     }
 }
 
-fn bilinear(img: &RgbaImage, x: f32, y: f32) -> Rgba<u8> {
-    crate::fx::util::bilinear(img, x, y, false)
-}
-
 /// Decode PNG bytes into an RGBA image.
 pub fn decode(png: &[u8]) -> Option<RgbaImage> {
     image::load_from_memory_with_format(png, image::ImageFormat::Png)
@@ -57,26 +53,13 @@ pub fn resample(img: &RgbaImage, w: u32, h: u32) -> RgbaImage {
     )
 }
 
-/// Rotate by `degrees` about the centre, growing the canvas (Straighten Image).
-pub fn rotate(img: &RgbaImage, degrees: f32) -> RgbaImage {
-    let a = degrees.to_radians();
-    let (w, h) = (img.width() as f32, img.height() as f32);
-    let nw = (w * a.cos().abs() + h * a.sin().abs()).ceil().max(1.0) as u32;
-    let nh = (w * a.sin().abs() + h * a.cos().abs()).ceil().max(1.0) as u32;
-    let (cx, cy) = (w / 2.0, h / 2.0);
-    let (ncx, ncy) = (nw as f32 / 2.0, nh as f32 / 2.0);
-    let mut out = ImageBuffer::from_pixel(nw, nh, Rgba([0, 0, 0, 0]));
-    for y in 0..nh {
-        for x in 0..nw {
-            let dx = x as f32 - ncx;
-            let dy = y as f32 - ncy;
-            let sx = cx + dx * a.cos() + dy * a.sin();
-            let sy = cy - dx * a.sin() + dy * a.cos();
-            if sx >= 0.0 && sy >= 0.0 && sx < w && sy < h {
-                out.put_pixel(x, y, bilinear(img, sx, sy));
-            }
-        }
-    }
+/// Grow the canvas to `w` by `h` pixels (at least the image's size), the
+/// image in the middle and transparent around it.
+pub fn inflate_to(img: &RgbaImage, w: u32, h: u32) -> RgbaImage {
+    let (w, h) = (w.max(img.width()), h.max(img.height()));
+    let mut out = ImageBuffer::from_pixel(w, h, Rgba([0, 0, 0, 0]));
+    let (left, top) = ((w - img.width()) / 2, (h - img.height()) / 2);
+    image::imageops::overlay(&mut out, img, left as i64, top as i64);
     out
 }
 
@@ -124,10 +107,8 @@ mod tests {
     }
 
     #[test]
-    fn rotate_grows_canvas_and_inflate_pads() {
+    fn inflate_pads_with_transparency() {
         let g = gradient();
-        let r = rotate(&g, 45.0);
-        assert!(r.width() > 40 && r.height() > 40);
         let i = inflate(&g, 5);
         assert_eq!(i.dimensions(), (42, 42));
         assert_eq!(i.get_pixel(0, 0)[3], 0);

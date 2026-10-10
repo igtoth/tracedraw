@@ -296,7 +296,7 @@ fn at(r: Rect, x: f32, y: f32) -> Pos2 {
 }
 
 /// A circular arrow, counter-clockwise when `left`.
-fn draw_rotate(p: &Painter, r: Rect, c: Color32, left: bool) {
+pub(crate) fn draw_rotate(p: &Painter, r: Rect, c: Color32, left: bool) {
     let k = r.width() / 16.0;
     let centre = at(r, 8.0, 8.5);
     let rad = 5.2 * k;

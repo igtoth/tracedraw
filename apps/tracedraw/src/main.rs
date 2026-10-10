@@ -52,6 +52,7 @@ mod shape_tool;
 mod snap;
 mod snap_points;
 mod spell;
+mod straighten;
 mod table;
 mod text_editing;
 mod text_nodes;

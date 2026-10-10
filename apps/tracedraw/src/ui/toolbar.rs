@@ -1732,7 +1732,7 @@ fn bitmap_properties(app: &mut App, ui: &mut Ui) {
         }
     });
     if ui.button(tr("menu.bitmaps.straighten_image")).clicked() {
-        app.dialog = Dialog::StraightenImage { angle: 0.0 };
+        app.dialog = Dialog::StraightenImage(Default::default());
     }
     if ui.button(tr("menu.bitmaps.resample")).clicked() {
         app.dialog = Dialog::Resample { dpi: 300.0 };

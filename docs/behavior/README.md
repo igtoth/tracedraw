@@ -24,6 +24,7 @@ Pages: `brush-strokes.md`, `bitmap-effects.md`, `bitmap-modes.md`, `blend.md`,
 `clip-frame.md`, `bitmap-tracing.md`, `psd-import.md`,
 `rulers-grid-guidelines.md`, `shape-tool.md`, `shape-tools.md`,
 `shortcuts.md`, `area-fill.md`, `snapping.md`, `status-bar.md`,
+`straighten-image.md`,
 `symmetry.md`, `table.md`, `text-import.md`, `text.md`, `toolbars.md`,
 `toolbox.md`, `transparency.md`, `vector-pattern-fill.md`, `web.md`,
 `writing-tools.md`, `zoom-and-pan.md`.

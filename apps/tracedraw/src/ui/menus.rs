@@ -1488,7 +1488,7 @@ fn bitmaps_menu(app: &mut App, ui: &mut Ui) {
         };
     }
     if item(ui, "menu.bitmaps.straighten_image", "", has_bitmap) {
-        app.dialog = Dialog::StraightenImage { angle: 0.0 };
+        app.dialog = Dialog::StraightenImage(Default::default());
     }
     if item(
         ui,
@@ -1537,7 +1537,7 @@ fn bitmaps_menu(app: &mut App, ui: &mut Ui) {
             app.set_auto_inflate_bitmaps(!auto);
         }
         if item(ui, "menu.bitmaps.inflate_manual", "", has_bitmap) {
-            app.dialog = Dialog::InflateBitmap { px: 10 };
+            app.dialog = Dialog::InflateBitmap(crate::ui::dialogs::InflateState::for_app(app));
         }
     });
     sep(ui);

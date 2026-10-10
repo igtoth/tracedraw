@@ -301,15 +301,11 @@ pub enum Dialog {
         dpi: f64,
         transparent: bool,
     },
-    StraightenImage {
-        angle: f64,
-    },
+    StraightenImage(crate::ui::straighten_dialog::StraightenState),
     Resample {
         dpi: f64,
     },
-    InflateBitmap {
-        px: u32,
-    },
+    InflateBitmap(InflateState),
     Trace(TraceState),
     /// A bitmap effect's settings (Effects menu, FX section).
     Effect(crate::ui::effect_dialog::EffectState),
@@ -329,6 +325,131 @@ pub enum Dialog {
     PaletteEditor(PaletteEditorState),
     NewDocument(crate::new_document::NewDocState),
     About,
+}
+
+/// Manually Inflate Bitmap: the first selected bitmap's pixel size and
+/// the new size as percentages (Inflate by), shown in pixels too
+/// (Inflate to).
+#[derive(Debug, Clone, PartialEq)]
+pub struct InflateState {
+    pub base: (u32, u32),
+    pub pw: f64,
+    pub ph: f64,
+    /// Maintain aspect ratio: both percentages move together.
+    pub keep: bool,
+}
+
+impl InflateState {
+    pub fn for_app(app: &App) -> Self {
+        let base = app
+            .selected_shapes()
+            .into_iter()
+            .find_map(|s| match s.kind {
+                ShapeKind::Bitmap {
+                    width_px,
+                    height_px,
+                    ..
+                } => Some((width_px.max(1), height_px.max(1))),
+                _ => None,
+            })
+            .unwrap_or((1, 1));
+        InflateState {
+            base,
+            pw: 100.0,
+            ph: 100.0,
+            keep: true,
+        }
+    }
+
+    /// Set the width percentage (the height follows when keeping the
+    /// aspect ratio); at least 100.
+    pub fn set_width(&mut self, pct: f64) {
+        self.pw = pct.clamp(100.0, 1000.0);
+        if self.keep {
+            self.ph = self.pw;
+        }
+    }
+
+    pub fn set_height(&mut self, pct: f64) {
+        self.ph = pct.clamp(100.0, 1000.0);
+        if self.keep {
+            self.pw = self.ph;
+        }
+    }
+
+    /// The new size in pixels.
+    pub fn pixels(&self) -> (u32, u32) {
+        (
+            (self.base.0 as f64 * self.pw / 100.0).round() as u32,
+            (self.base.1 as f64 * self.ph / 100.0).round() as u32,
+        )
+    }
+}
+
+/// The Width and Height rows (Inflate to pixels, Inflate by percent) and
+/// Maintain aspect ratio.
+fn inflate_fields(ui: &mut Ui, st: &mut InflateState) {
+    let (px_w, px_h) = st.pixels();
+    egui::Grid::new("inflate_grid")
+        .num_columns(5)
+        .spacing([8.0, 6.0])
+        .show(ui, |ui| {
+            ui.label("");
+            ui.label(tr("dialog.inflate_to"));
+            ui.label("");
+            ui.label(tr("dialog.inflate_by"));
+            ui.label("");
+            ui.end_row();
+            for (row, px, base) in [(0, px_w, st.base.0), (1, px_h, st.base.1)] {
+                ui.label(tr(if row == 0 {
+                    "dialog.width"
+                } else {
+                    "dialog.height"
+                }));
+                let mut p = px as f64;
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut p)
+                            .range(base as f64..=base as f64 * 10.0)
+                            .speed(1.0),
+                    )
+                    .changed()
+                {
+                    let pct = p / base.max(1) as f64 * 100.0;
+                    if row == 0 {
+                        st.set_width(pct);
+                    } else {
+                        st.set_height(pct);
+                    }
+                }
+                ui.label(tr("dialog.pixels"));
+                let mut pct = if row == 0 { st.pw } else { st.ph };
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut pct)
+                            .range(100.0..=1000.0)
+                            .speed(0.5)
+                            .max_decimals(1),
+                    )
+                    .changed()
+                {
+                    if row == 0 {
+                        st.set_width(pct);
+                    } else {
+                        st.set_height(pct);
+                    }
+                }
+                ui.label("%");
+                ui.end_row();
+            }
+        });
+    if ui
+        .checkbox(&mut st.keep, tr("dialog.maintain_aspect"))
+        .changed()
+        && st.keep
+    {
+        st.ph = st.pw;
+    }
 }
 
 pub(crate) fn window<'a>(_ctx: &Context, title: String) -> egui::Window<'a> {
@@ -849,17 +970,8 @@ pub fn show(app: &mut App, ctx: &Context) {
                 }
             });
         }
-        Dialog::StraightenImage { angle } => {
-            window(ctx, tr("dialog.straighten_image")).show(ctx, |ui| {
-                ui.add(
-                    egui::Slider::new(angle, -45.0..=45.0)
-                        .suffix("°")
-                        .text(tr("dialog.angle")),
-                );
-                if ok_cancel(ui, &mut close) {
-                    app.straighten_bitmap(*angle);
-                }
-            });
+        Dialog::StraightenImage(st) => {
+            crate::ui::straighten_dialog::straighten_dialog(app, ctx, st, &mut close)
         }
         Dialog::Resample { dpi } => {
             window(ctx, tr("dialog.resample")).show(ctx, |ui| {
@@ -876,14 +988,11 @@ pub fn show(app: &mut App, ctx: &Context) {
                 }
             });
         }
-        Dialog::InflateBitmap { px } => {
+        Dialog::InflateBitmap(st) => {
             window(ctx, tr("dialog.inflate_bitmap")).show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(tr("dialog.pixels"));
-                    ui.add(egui::DragValue::new(px).range(1..=500));
-                });
+                inflate_fields(ui, st);
                 if ok_cancel(ui, &mut close) {
-                    app.inflate_bitmap(Some(*px));
+                    app.inflate_bitmaps_by(st.pw, st.ph);
                 }
             });
         }
@@ -2818,9 +2927,20 @@ mod tests {
                 dpi: 150.0,
                 transparent: true,
             },
-            Dialog::StraightenImage { angle: 5.0 },
+            Dialog::StraightenImage(crate::ui::straighten_dialog::StraightenState {
+                s: crate::straighten::Straighten {
+                    angle: 5.0,
+                    ..Default::default()
+                },
+                ..Default::default()
+            }),
             Dialog::Resample { dpi: 100.0 },
-            Dialog::InflateBitmap { px: 4 },
+            Dialog::InflateBitmap(InflateState {
+                base: (40, 30),
+                pw: 120.0,
+                ph: 110.0,
+                keep: false,
+            }),
             Dialog::Trace(TraceState::new(crate::trace::Preset::Logo)),
             Dialog::Effect(crate::ui::effect_dialog::EffectState::new("emboss")),
             Dialog::Effect(crate::ui::effect_dialog::EffectState::new("tone_curve")),

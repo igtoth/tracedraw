@@ -124,6 +124,15 @@ millimetres, so a blur is not cut off at the edges. Reach: Gaussian Blur
 `Strength / 2` pixels. The switch is stored in the document and applies
 to effects rendered from then on.
 
+Bitmaps > Inflate Bitmap > Manually Inflate Bitmap grows the selected
+bitmaps' canvas by hand: for Width and Height, Inflate to (pixels, from
+the first selected bitmap) or Inflate by (100 to 1000 %, default 100),
+which follow each other; Maintain aspect ratio (on) moves both
+percentages together. Every selected bitmap grows by the percentages,
+centred, with transparent margins, keeping its resolution, in one undo
+step; sizes below the original do nothing
+(`manual_inflate_grows_by_percent_around_the_middle`).
+
 ## Effects
 
 Settings are listed in the dialog's order with their defaults (lists show
