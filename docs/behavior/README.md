@@ -10,15 +10,18 @@ from observation:
 - checks written as "given, when, then", which are the unit tests that
   gate the parity row.
 
-Pages: `fountain-fill.md`, `contour.md`, `blend.md`, `extrude.md`,
-`envelope.md`, `lens.md`, `area-fill.md`, `mesh-fill.md`,
-`bitmap-tracing.md`, `colour-management.md`, `text.md`, `snapping.md`,
-`pick-tool.md`, `shape-tool.md`, `transparency.md`, `drop-shadow.md`,
-`vector-pattern-fill.md`, `symmetry.md`, `connectors-and-anchors.md`,
-`writing-tools.md`, `border-and-grommet.md`, `clip-frame.md`,
-`pdf-import.md`, `dxf.md`, `eps-import.md`, `psd-import.md`,
-`shape-tools.md`, `curve-tools.md`, `crop-knife-eraser.md`,
-`brush-strokes.md`, `dimensions.md`, `zoom-and-pan.md`, `brushes.md`,
-`free-transform.md`, `eyedroppers.md`, `table.md`, `distort.md`,
-`block-shadow.md`, `outline-pen.md`, `emf-wmf.md`, `shortcuts.md`,
-`mcp.md`, `plt.md`, `text-import.md`.
+Pages: `brush-strokes.md`, `blend.md`, `block-shadow.md`,
+`border-and-grommet.md`, `brushes.md`, `color-palettes.md`,
+`colour-management.md`, `connectors-and-anchors.md`, `contour.md`,
+`crop-knife-eraser.md`, `curve-tools.md`, `dimensions.md`, `distort.md`,
+`documents.md`, `drawing-window.md`, `drop-shadow.md`, `dxf.md`,
+`emf-wmf.md`, `envelope.md`, `eps-import.md`, `extrude.md`,
+`eyedroppers.md`, `fountain-fill.md`, `free-transform.md`, `hints.md`,
+`lens.md`, `mcp.md`, `mesh-fill.md`, `new-document.md`, `options.md`,
+`outline-pen.md`, `pdf-import.md`, `pick-tool.md`, `plt.md`,
+`clip-frame.md`, `bitmap-tracing.md`, `psd-import.md`,
+`rulers-grid-guidelines.md`, `shape-tool.md`, `shape-tools.md`,
+`shortcuts.md`, `area-fill.md`, `snapping.md`, `status-bar.md`,
+`symmetry.md`, `table.md`, `text-import.md`, `text.md`, `toolbars.md`,
+`toolbox.md`, `transparency.md`, `vector-pattern-fill.md`, `web.md`,
+`writing-tools.md`, `zoom-and-pan.md`.

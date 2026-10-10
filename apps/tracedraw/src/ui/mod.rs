@@ -100,7 +100,13 @@ pub fn root(app: &mut App, ui: &mut Ui) {
     }
 
     Panel::top("menu_bar")
-        .frame(bar())
+        .frame(
+            Frame::new()
+                .fill(Tokens::MENU_BAR)
+                .inner_margin(egui::Margin::symmetric(4, 2)),
+        )
+        .exact_size(24.0)
+        .resizable(false)
         .show(ui, |ui| menus::menu_bar(app, ui));
     if app.show_standard_toolbar {
         Panel::top("standard_toolbar")
@@ -131,6 +137,7 @@ pub fn root(app: &mut App, ui: &mut Ui) {
     if app.show_status_bar {
         Panel::bottom("status_bar")
             .frame(bar())
+            .show_separator_line(false)
             .show(ui, |ui| status::status_bar(app, ui));
     }
 
@@ -173,13 +180,24 @@ pub fn root(app: &mut App, ui: &mut Ui) {
             .show(ui, |ui| dockers::dockers(app, ui));
     }
 
-    // Under the canvas: document palette row, then navigator + palette row.
-    Panel::bottom("document_palette")
-        .frame(bar())
-        .show(ui, |ui| palette::document_palette_row(app, ui));
-    Panel::bottom("palette").frame(bar()).show(ui, |ui| {
-        ui.horizontal(|ui| palette::palette_row(app, ui));
-    });
+    // Under the canvas: the default palette, then the document palette
+    // above the status bar.
+    let palette_frame = Frame::new().fill(Tokens::PANEL);
+    if app.settings.palette.show_document {
+        Panel::bottom("document_palette")
+            .frame(palette_frame)
+            .exact_size(palette::ROW_H)
+            .resizable(false)
+            .show_separator_line(false)
+            .show(ui, |ui| palette::document_palette_row(app, ui));
+    }
+    Panel::bottom("palette")
+        .frame(palette_frame)
+        .exact_size(palette::ROW_H)
+        .resizable(false)
+        .show_separator_line(false)
+        .show(ui, |ui| palette::palette_row(app, ui));
+    palette::popups(app, &ctx);
 
     // Document tabs above the rulers.
     Panel::top("document_tabs")
@@ -301,6 +319,11 @@ pub fn root(app: &mut App, ui: &mut Ui) {
                     egui::CursorIcon::Default
                 }
                 _ => egui::CursorIcon::Crosshair,
+            };
+            let cursor = if app.pending_palette_sample {
+                egui::CursorIcon::Crosshair
+            } else {
+                cursor
             };
             if response.hovered() {
                 ui.output_mut(|o| o.cursor_icon = cursor);

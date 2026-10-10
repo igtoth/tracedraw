@@ -65,5 +65,9 @@ pub fn open_bytes(bytes: &[u8], title: &str) -> Result<(tracedraw_core::Document
     let root = riff::parse_with_externals(&riff, externals, container.version.0)?;
     let mut doc_report = parse::parse_document(&root, &riff, container.version);
     doc_report.0.title = title.to_string();
+    doc_report.0.palette = container::document_palette(bytes, &container)
+        .into_iter()
+        .map(|(_, c)| c)
+        .collect();
     Ok(doc_report)
 }

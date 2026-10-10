@@ -194,6 +194,16 @@ pub fn status_bar(app: &mut App, ui: &mut Ui) {
     let row = Rect::from_min_size(full.min, Vec2::new(full.width(), h));
     ui.allocate_rect(row, Sense::hover());
     let painter = ui.painter_at(row);
+    // The separator over the bar, the colour of the palette lines.
+    let top = ui.max_rect().top().round() - 2.0;
+    ui.painter().rect_filled(
+        Rect::from_min_size(
+            Pos2::new(ui.max_rect().left() - 4.0, top),
+            Vec2::new(ui.max_rect().width() + 8.0, 1.0),
+        ),
+        0.0,
+        egui::Color32::from_gray(0xD8),
+    );
     let cy = row.center().y;
     let font = egui::FontId::proportional(12.0);
     let doc = app.has_document() && !app.show_welcome;

@@ -100,7 +100,7 @@ fn sub_label(label: &str) -> egui::RichText {
 
 /// A menu item; `key` is an i18n key. Returns true when clicked. Items
 /// with a toolbar counterpart show its icon in the gutter.
-fn item(ui: &mut Ui, key: &str, shortcut: &str, enabled: bool) -> bool {
+pub(crate) fn item(ui: &mut Ui, key: &str, shortcut: &str, enabled: bool) -> bool {
     let r = menu_row(ui, &tr(key), shortcut, enabled, None);
     #[cfg(test)]
     if replay::hit(key, enabled) {
@@ -185,7 +185,7 @@ fn menu_icon(key: &str) -> Option<crate::ui::icons::Action> {
 }
 
 /// A checkable item (check mark on the left when `on`).
-fn check(ui: &mut Ui, key: &str, shortcut: &str, on: bool) -> bool {
+pub(crate) fn check(ui: &mut Ui, key: &str, shortcut: &str, on: bool) -> bool {
     let r = menu_row(ui, &tr(key), shortcut, true, Some(on));
     #[cfg(test)]
     if replay::hit(key, true) {
@@ -210,7 +210,7 @@ fn todo_sub(ui: &mut Ui, key: &str) {
     );
 }
 
-fn sub<R>(ui: &mut Ui, key: &str, add: impl FnOnce(&mut Ui) -> R) {
+pub(crate) fn sub<R>(ui: &mut Ui, key: &str, add: impl FnOnce(&mut Ui) -> R) {
     #[cfg(test)]
     if replay::active() {
         // Replaying: submenus are laid out inline so their items count.
@@ -1843,6 +1843,15 @@ fn window_menu(app: &mut App, ui: &mut Ui) {
                 )
             })
             .collect();
+        if check(
+            ui,
+            "palette.show_document",
+            "",
+            app.settings.palette.show_document,
+        ) {
+            app.settings.palette.show_document = !app.settings.palette.show_document;
+            app.settings.save();
+        }
         for (i, key, on) in entries {
             if check(ui, &key, "", on) {
                 app.toggle_palette(i);

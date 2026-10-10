@@ -21,7 +21,8 @@ impl App {
             || self.pending_copy_properties
             || self.pending_copy_effect.is_some()
             || self.pending_clone_effect.is_some()
-            || self.pending_blend_path;
+            || self.pending_blend_path
+            || self.pending_palette_sample;
         if !waiting {
             return false;
         }
@@ -31,10 +32,21 @@ impl App {
             self.pending_copy_effect = None;
             self.pending_clone_effect = None;
             self.pending_blend_path = false;
+            self.pending_palette_sample = false;
             self.status = tr("status.cancelled");
             return true;
         }
         if !response.clicked_by(PointerButton::Primary) {
+            return true;
+        }
+        if self.pending_palette_sample {
+            // The document palette's eyedropper: the colour under the
+            // pointer joins the palette; Ctrl keeps sampling.
+            let more = response.ctx.input(|i| i.modifiers.ctrl);
+            self.pending_palette_sample = more;
+            if let Some(c) = self.sample_color_at(p, false) {
+                self.add_to_document_palette(c);
+            }
             return true;
         }
         let target = self.hit_test(p);

@@ -32,9 +32,12 @@ impl Palette {
     }
 }
 
-/// The default CMYK palette of the reference workspace, top to bottom.
+/// The default CMYK palette of the reference workspace, in its order: the
+/// greys, the process colours and their overprints, then tints in 20%
+/// steps. The first 64 were checked against the target design's
+/// palette on screen.
 pub fn default_cmyk() -> Vec<(String, Color)> {
-    let mut v: Vec<(String, Color)> = Vec::new();
+    let mut v: Vec<(String, Color)> = Vec::with_capacity(99);
     let mut add = |n: &str, c: f32, m: f32, y: f32, k: f32| {
         v.push((n.to_string(), Color::cmyk_pct(c, m, y, k)));
     };
@@ -55,29 +58,88 @@ pub fn default_cmyk() -> Vec<(String, Color)> {
     add("Yellow", 0.0, 0.0, 100.0, 0.0);
     add("Red", 0.0, 100.0, 100.0, 0.0);
     add("Magenta", 0.0, 100.0, 0.0, 0.0);
-    add("Purple", 40.0, 100.0, 0.0, 0.0);
+    add("Purple", 20.0, 80.0, 0.0, 20.0);
     add("Orange", 0.0, 60.0, 100.0, 0.0);
-    add("Pink", 0.0, 40.0, 0.0, 0.0);
-    add("Baby Blue", 40.0, 0.0, 0.0, 0.0);
-    add("Pale Yellow", 0.0, 0.0, 40.0, 0.0);
-    add("Lime", 40.0, 0.0, 100.0, 0.0);
-    add("Teal", 100.0, 0.0, 40.0, 0.0);
-    add("Brown", 0.0, 60.0, 100.0, 40.0);
-    add("Navy", 100.0, 100.0, 0.0, 40.0);
-    add("Forest Green", 100.0, 0.0, 100.0, 40.0);
-    add("Maroon", 0.0, 100.0, 100.0, 40.0);
-    add("Gold", 0.0, 20.0, 100.0, 10.0);
-    add("Olive", 0.0, 0.0, 100.0, 50.0);
-    add("Sky Blue", 60.0, 20.0, 0.0, 0.0);
-    add("Lavender", 20.0, 40.0, 0.0, 0.0);
-    add("Peach", 0.0, 30.0, 40.0, 0.0);
-    add("Mint", 40.0, 0.0, 40.0, 0.0);
-    add("Rose", 0.0, 60.0, 20.0, 0.0);
-    add("Violet", 60.0, 80.0, 0.0, 0.0);
-    add("Turquoise", 80.0, 0.0, 20.0, 0.0);
-    add("Tan", 0.0, 20.0, 40.0, 10.0);
-    add("Rust", 0.0, 80.0, 100.0, 30.0);
-    add("Plum", 40.0, 100.0, 20.0, 20.0);
+    add("Pink", 0.0, 40.0, 20.0, 0.0);
+    add("Dark Brown", 0.0, 20.0, 20.0, 60.0);
+    add("Powder Blue", 20.0, 20.0, 0.0, 0.0);
+    add("Pastel Blue", 40.0, 40.0, 0.0, 0.0);
+    add("Baby Blue", 60.0, 40.0, 0.0, 0.0);
+    add("Electric Blue", 60.0, 60.0, 0.0, 0.0);
+    add("Twilight Blue", 40.0, 40.0, 0.0, 20.0);
+    add("Navy Blue", 60.0, 40.0, 0.0, 40.0);
+    add("Deep Navy Blue", 40.0, 40.0, 0.0, 60.0);
+    add("Desert Blue", 40.0, 20.0, 0.0, 40.0);
+    add("Sky Blue", 100.0, 20.0, 0.0, 0.0);
+    add("Ice Blue", 40.0, 0.0, 0.0, 0.0);
+    add("Light BlueGreen", 20.0, 0.0, 0.0, 20.0);
+    add("Ocean Green", 20.0, 0.0, 0.0, 40.0);
+    add("Moss Green", 20.0, 0.0, 0.0, 60.0);
+    add("Dark Green", 20.0, 0.0, 0.0, 80.0);
+    add("Forest Green", 40.0, 0.0, 20.0, 60.0);
+    add("Grass Green", 60.0, 0.0, 40.0, 40.0);
+    add("Kentucky Green", 40.0, 0.0, 20.0, 40.0);
+    add("Light Green", 60.0, 0.0, 40.0, 20.0);
+    add("Spring Green", 60.0, 0.0, 60.0, 20.0);
+    add("Turquoise", 60.0, 0.0, 20.0, 0.0);
+    add("Sea Green", 60.0, 0.0, 20.0, 20.0);
+    add("Faded Green", 20.0, 0.0, 20.0, 20.0);
+    add("Ghost Green", 20.0, 0.0, 20.0, 0.0);
+    add("Mint Green", 40.0, 0.0, 40.0, 0.0);
+    add("Army Green", 20.0, 0.0, 20.0, 40.0);
+    add("Avocado Green", 20.0, 0.0, 40.0, 40.0);
+    add("Martian Green", 20.0, 0.0, 60.0, 20.0);
+    add("Dull Green", 20.0, 0.0, 40.0, 20.0);
+    add("Chartreuse", 40.0, 0.0, 100.0, 0.0);
+    add("Moon Green", 20.0, 0.0, 60.0, 0.0);
+    add("Murky Green", 0.0, 0.0, 20.0, 80.0);
+    add("Olive Drab", 0.0, 0.0, 20.0, 60.0);
+    add("Khaki", 0.0, 0.0, 20.0, 40.0);
+    add("Olive", 0.0, 0.0, 40.0, 40.0);
+    add("Banana Yellow", 0.0, 0.0, 60.0, 20.0);
+    add("Light Yellow", 0.0, 0.0, 60.0, 0.0);
+    add("Chalk", 0.0, 0.0, 40.0, 0.0);
+    add("Pale Yellow", 0.0, 0.0, 20.0, 0.0);
+    add("Brown", 0.0, 20.0, 40.0, 40.0);
+    add("Red Brown", 0.0, 40.0, 60.0, 20.0);
+    add("Gold", 0.0, 20.0, 60.0, 20.0);
+    add("Autumn Orange", 0.0, 60.0, 80.0, 0.0);
+    add("Light Orange", 0.0, 40.0, 80.0, 0.0);
+    add("Peach", 0.0, 40.0, 60.0, 0.0);
+    add("Deep Yellow", 0.0, 20.0, 100.0, 0.0);
+    add("Sand", 0.0, 20.0, 40.0, 0.0);
+    add("Walnut", 0.0, 20.0, 40.0, 60.0);
+    add("Ruby Red", 0.0, 60.0, 60.0, 40.0);
+    add("Brick Red", 0.0, 60.0, 80.0, 20.0);
+    add("Tropical Pink", 0.0, 60.0, 60.0, 0.0);
+    add("Soft Pink", 0.0, 40.0, 40.0, 0.0);
+    add("Faded Pink", 0.0, 20.0, 20.0, 0.0);
+    add("Crimson", 0.0, 100.0, 60.0, 20.0);
+    add("Regal Red", 0.0, 100.0, 100.0, 20.0);
+    add("Deep Rose", 0.0, 100.0, 60.0, 0.0);
+    add("Neon Red", 0.0, 100.0, 80.0, 0.0);
+    add("Deep Pink", 0.0, 60.0, 40.0, 0.0);
+    add("Hot Pink", 0.0, 80.0, 40.0, 0.0);
+    add("Dusty Rose", 0.0, 40.0, 20.0, 20.0);
+    add("Plum", 0.0, 60.0, 0.0, 40.0);
+    add("Deep Violet", 0.0, 60.0, 0.0, 60.0);
+    add("Light Violet", 0.0, 40.0, 0.0, 0.0);
+    add("Violet", 0.0, 40.0, 0.0, 20.0);
+    add("Dusty Plum", 0.0, 20.0, 0.0, 20.0);
+    add("Pale Purple", 0.0, 20.0, 0.0, 0.0);
+    add("Majestic Purple", 20.0, 60.0, 0.0, 20.0);
+    add("Neon Purple", 20.0, 80.0, 0.0, 0.0);
+    add("Light Purple", 20.0, 60.0, 0.0, 0.0);
+    add("Twilight Violet", 20.0, 40.0, 0.0, 20.0);
+    add("Easter Purple", 20.0, 40.0, 0.0, 0.0);
+    add("Deep Purple", 20.0, 40.0, 0.0, 60.0);
+    add("Grape", 20.0, 40.0, 0.0, 40.0);
+    add("Blue Violet", 40.0, 60.0, 0.0, 0.0);
+    add("Blue Purple", 40.0, 100.0, 0.0, 0.0);
+    add("Deep River", 60.0, 60.0, 0.0, 20.0);
+    add("Deep Azure", 60.0, 60.0, 0.0, 40.0);
+    add("Storm Blue", 40.0, 40.0, 0.0, 40.0);
+    add("Deep Blue", 60.0, 60.0, 0.0, 60.0);
     v
 }
 

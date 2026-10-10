@@ -39,7 +39,8 @@ double-click on a ruler, the page border or its shadow).
 Appearance (desktop colour, page border, Outline flyout in the toolbox),
 Commands (keyboard shortcuts of the tools), Command Bars (standard
 toolbar, property bar, toolbox, status bar, Text, Zoom and Transform
-toolbars).
+toolbars), Color Palette (No Color well, right mouse button, document
+palette; see `color-palettes.md`).
 
 ## Tools
 

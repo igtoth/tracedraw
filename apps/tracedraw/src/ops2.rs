@@ -1561,7 +1561,8 @@ impl App {
     pub fn rebuild_palette(&mut self) {
         if let Some(i) = self.visible_palettes.first() {
             if let Some(p) = self.palettes.get(*i) {
-                self.palette = p.colors.iter().map(|(_, c)| *c).collect();
+                self.palette = p.colors.clone();
+                self.palette_scroll = 0;
             }
         }
     }
@@ -1614,6 +1615,67 @@ impl App {
             .collect();
         Self::colors_of(&all, &mut colors);
         self.run(Command::SetDocumentPalette { colors });
+    }
+
+    /// Add from document: every colour used in the drawing joins the
+    /// document palette (the colours already there stay first).
+    pub fn add_document_colors_to_palette(&mut self) {
+        let mut colors = self.doc().palette.clone();
+        let all: Vec<Shape> = self
+            .doc()
+            .all_layers()
+            .flat_map(|l| l.shapes.iter().cloned())
+            .collect();
+        let before = colors.len();
+        Self::colors_of(&all, &mut colors);
+        if colors.len() != before {
+            self.run(Command::SetDocumentPalette { colors });
+        }
+    }
+
+    /// Reset palette: the document palette keeps only the colours the
+    /// drawing still uses.
+    pub fn reset_document_palette(&mut self) {
+        let mut used = Vec::new();
+        let all: Vec<Shape> = self
+            .doc()
+            .all_layers()
+            .flat_map(|l| l.shapes.iter().cloned())
+            .collect();
+        Self::colors_of(&all, &mut used);
+        let colors: Vec<Color> = self
+            .doc()
+            .palette
+            .iter()
+            .copied()
+            .filter(|c| used.contains(c))
+            .collect();
+        if colors != self.doc().palette {
+            self.run(Command::SetDocumentPalette { colors });
+            self.doc_palette_current = None;
+        }
+    }
+
+    /// Ctrl+click on a palette colour: a tenth of it goes into the uniform
+    /// fill of each selected object.
+    pub fn mix_into_fill(&mut self, c: Color) {
+        let cmds: Vec<Command> = self
+            .selected_shapes()
+            .iter()
+            .filter_map(|s| match s.fill {
+                Fill::Solid(old) => Some(Command::SetFill {
+                    shapes: vec![s.id],
+                    fill: Fill::Solid(crate::ui::palette::mix(old, c, 0.1)),
+                }),
+                _ => None,
+            })
+            .collect();
+        if cmds.is_empty() {
+            return;
+        }
+        if let Err(e) = self.engine.run_batch("Fill", &cmds) {
+            self.status = e.to_string();
+        }
     }
 
     pub fn palette_from_selection(&mut self) {

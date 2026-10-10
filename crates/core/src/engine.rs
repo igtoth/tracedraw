@@ -25,6 +25,9 @@ pub struct Engine {
     revision: u64,
     /// Revision at the last save, to know whether the document is dirty.
     saved_revision: u64,
+    /// Revision right after the last recorded step, so a side effect can
+    /// join that step only while nothing happened since.
+    step_revision: u64,
     max_history: usize,
 }
 
@@ -42,6 +45,7 @@ impl Engine {
             redo: Vec::new(),
             revision: 0,
             saved_revision: 0,
+            step_revision: u64::MAX,
             max_history: 200,
         }
     }
@@ -69,6 +73,7 @@ impl Engine {
         self.redo.clear();
         self.revision += 1;
         self.saved_revision = self.revision;
+        self.step_revision = u64::MAX;
     }
 
     /// Apply a command and record it. A failing command leaves the document
@@ -86,12 +91,17 @@ impl Engine {
             before,
             after: self.doc.clone(),
         });
-        if self.undo.len() > self.max_history {
+        self.finish_step();
+        Ok(())
+    }
+
+    fn finish_step(&mut self) {
+        while self.undo.len() > self.max_history {
             self.undo.remove(0);
         }
         self.redo.clear();
         self.revision += 1;
-        Ok(())
+        self.step_revision = self.revision;
     }
 
     /// Apply several commands as one undo step.
@@ -107,8 +117,27 @@ impl Engine {
             before,
             after: self.doc.clone(),
         });
-        self.redo.clear();
+        self.finish_step();
+        Ok(())
+    }
+
+    /// Apply a command as part of the step just recorded (a side effect of
+    /// it, such as the document palette remembering a colour that was just
+    /// applied), so one Undo takes both back. Recorded as a step of its own
+    /// when anything else happened since.
+    pub fn amend(&mut self, cmd: &Command) -> Result<()> {
+        if self.revision != self.step_revision {
+            return self.run(cmd);
+        }
+        let Some(last) = self.undo.last_mut() else {
+            return self.run(cmd);
+        };
+        let mut doc = self.doc.clone();
+        cmd.apply(&mut doc)?;
+        self.doc = doc;
+        last.after = self.doc.clone();
         self.revision += 1;
+        self.step_revision = self.revision;
         Ok(())
     }
 
@@ -196,6 +225,44 @@ mod tests {
         eng.redo().unwrap();
         assert_eq!(eng.document().layer(layer).unwrap().shapes.len(), 1);
         assert!(matches!(eng.redo(), Err(Error::NothingToRedo)));
+    }
+
+    #[test]
+    fn amending_joins_the_last_step_only_right_after_it() {
+        let mut eng = Engine::default();
+        let layer = eng.document().pages[0].layers[0].id;
+        let id = eng.new_shape_id();
+        let shape = Shape::new(
+            id,
+            ShapeKind::Rect {
+                rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+                radius: 0.0,
+            },
+        );
+        eng.run(&Command::AddShape { layer, shape }).unwrap();
+        let red = crate::Color::rgb8(255, 0, 0);
+        eng.amend(&Command::SetDocumentPalette { colors: vec![red] })
+            .unwrap();
+        assert_eq!(eng.history_labels().0.len(), 1);
+        eng.undo().unwrap();
+        assert!(eng.document().palette.is_empty());
+        assert_eq!(eng.document().layer(layer).unwrap().shapes.len(), 0);
+        // After an undo there is no step to join: a step of its own.
+        eng.amend(&Command::SetDocumentPalette { colors: vec![red] })
+            .unwrap();
+        assert_eq!(eng.history_labels().0, vec!["Document Palette"]);
+    }
+
+    #[test]
+    fn batches_respect_the_undo_levels() {
+        let mut eng = Engine::default();
+        eng.set_max_history(2);
+        for i in 0..4 {
+            let colors = vec![crate::Color::rgb8(i, 0, 0)];
+            eng.run_batch("Palette", &[Command::SetDocumentPalette { colors }])
+                .unwrap();
+        }
+        assert_eq!(eng.history_labels().0.len(), 2);
     }
 
     #[test]

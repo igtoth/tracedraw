@@ -111,6 +111,9 @@ pub struct Settings {
     /// out (off: it opens the context menu).
     #[serde(default = "default_true")]
     pub zoom_right_click_out: bool,
+    /// Options > Customization > Color Palette.
+    #[serde(default)]
+    pub palette: PalettePrefs,
 }
 
 fn default_desktop() -> [u8; 3] {
@@ -266,6 +269,33 @@ impl Default for ClipFramePrefs {
     }
 }
 
+/// The colour palettes docked under the drawing window (Options >
+/// Customization > Color Palette).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PalettePrefs {
+    /// Colours applied to objects join the document palette.
+    pub auto_update_document: bool,
+    /// A right click on a swatch sets the outline colour (off: it opens
+    /// the palette menu).
+    pub right_click_outline: bool,
+    /// The "No Color" well at the start of the palette.
+    pub show_no_color: bool,
+    /// The document palette row under the default palette.
+    pub show_document: bool,
+}
+
+impl Default for PalettePrefs {
+    fn default() -> Self {
+        PalettePrefs {
+            auto_update_document: true,
+            right_click_outline: true,
+            show_no_color: true,
+            show_document: true,
+        }
+    }
+}
+
 /// Backups (Options > Save).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -413,6 +443,7 @@ impl Default for Settings {
             treat_all_filled: false,
             crosshair_cursor: false,
             zoom_right_click_out: true,
+            palette: PalettePrefs::default(),
             autocorrect: crate::autocorrect::AutocorrectPrefs::default(),
             thesaurus_file: None,
             show_new_document_dialog: true,

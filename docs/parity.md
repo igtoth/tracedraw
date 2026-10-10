@@ -6,7 +6,7 @@ target design does, with a test or a checked screenshot behind it.
 "partial" names what is missing. "baked" means the result is applied once
 instead of staying live and editable. The goal is every row at "works".
 
-Counts: works 136, partial 1 (`.cdr` content coverage), missing 3 (CMX import; window cascade and tile; some Options pages), not applicable 3, icons close but not pixel-identical.
+Counts: works 137, partial 1 (`.cdr` content coverage), missing 3 (CMX import; window cascade and tile; some Options pages), not applicable 3, icons close but not pixel-identical.
 
 ## 1. Selection and navigation
 
@@ -121,11 +121,12 @@ Counts: works 136, partial 1 (`.cdr` content coverage), missing 3 (CMX import; w
 | Capability | Status |
 |---|---|
 | Colour models with conversions, colour docker, mixer, gamut warning | works |
-| Palettes: default, document palette, open/save, palette editor, palette manager, from document/selection | works |
+| Palettes: the target design's default CMYK palette (99 named colours, the values of the first 64 checked on screen), document palette (filled as colours are applied, eyedropper, add from selection or document, delete, reset; read from `.cdr`), scroll arrows and wheel, show all colours, click and hold for shades, Ctrl+click to mix, open/save, palette editor, palette manager, from document/selection; Options > Customization > Color Palette | works |
 | Colour styles and harmonies | works |
 | Object styles | works |
 | Overprint fill, outline and bitmap; Simulate Overprints preview | works |
 | Proof colours (soft proofing with the built-in CMYK model) | works |
+| CMYK shown as in the target design without a loaded profile (built-in press model of coated stock: default palette within 2.5 Delta E); RGB to CMYK with black-only greys and pure black | works |
 | ICC colour management (v2/v4 profiles, matrix/TRC and LUT, four intents, black point compensation, gamut check); PDF/X output intent embedding | works |
 | Separations | works (PDF separations export) |
 
@@ -187,7 +188,7 @@ Counts: works 136, partial 1 (`.cdr` content coverage), missing 3 (CMX import; w
 | Scripts docker: JavaScript object model, run, record macro, load/save | works |
 | Workspaces: Default, Lite, Classic, Illustration, Page Layout; toolbar toggles | works |
 | Options as the reference's dialogs: Tools > Options > TraceDraw (General with start-up and undo levels, Display, Edit with constrain angle and precision, Nodes and Handles, ClipFrame auto-centre, Snapping radius, Save with backups and auto-backup, Text), Customization (Appearance, Commands, Command Bars), Tools (Pick, Zoom/Pan, shape tools, Eraser), Global, Workspaces; Layout > Document Options (General with Fill open curves, Page Size, Layout, Background, Bleed, Rulers, Grid, Guidelines, Save as Default); Cancel restores | works |
-| Options pages without an equivalent here: Tablet Mode, Bitmap tracing, Pen Settings, Warnings, VBA, Plug-ins, Color Palette, Printing, File Formats | missing |
+| Options pages without an equivalent here: Tablet Mode, Bitmap tracing, Pen Settings, Warnings, VBA, Plug-ins, Printing, File Formats | missing |
 | Save settings as default | works |
 | Hints docker with per-tool help; Welcome Screen (recent, templates, news, learn) | works |
 | Border and Grommet (large-format finishing) | works |

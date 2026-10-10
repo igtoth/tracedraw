@@ -2,6 +2,7 @@
 
 use crate::{Error, Result};
 use std::io::Read;
+use tracedraw_core::Color;
 
 /// CDR major version, as encoded in the RIFF form type (`CDR9`,
 /// `CDRA` = 10, ... `CDRE` = X4 (14), `CDRH` = X7 (17), `CDRJ` = X8 (18),
@@ -179,9 +180,141 @@ pub fn external_member(bytes: &[u8], container: &Container, name: &str) -> Optio
     None
 }
 
+/// The document palette of an X4+ ZIP file (`color/docPalette.xml`):
+/// each `<color cs=".." name=".." tints=".."/>` with its name. CMYK, RGB
+/// and grey colours are read; other colour spaces are skipped.
+pub fn document_palette(bytes: &[u8], container: &Container) -> Vec<(String, Color)> {
+    if container.kind == ContainerKind::Riff {
+        return Vec::new();
+    }
+    let cursor = std::io::Cursor::new(bytes);
+    let Ok(mut archive) = zip::ZipArchive::new(cursor) else {
+        return Vec::new();
+    };
+    let mut xml = String::new();
+    for name in ["color/docPalette.xml", "color/DocumentPalette.xml"] {
+        if let Ok(mut f) = archive.by_name(name) {
+            let mut raw = Vec::new();
+            if f.read_to_end(&mut raw).is_ok() {
+                xml = String::from_utf8_lossy(&raw).into_owned();
+                break;
+            }
+        }
+    }
+    parse_palette_xml(&xml)
+}
+
+/// The colours of a palette XML document, in order.
+pub fn parse_palette_xml(xml: &str) -> Vec<(String, Color)> {
+    let mut out = Vec::new();
+    let mut rest = xml;
+    while let Some(at) = rest.find("<color ") {
+        rest = &rest[at + 7..];
+        let end = rest.find('>').unwrap_or(rest.len());
+        let tag = &rest[..end];
+        rest = &rest[end..];
+        let cs = attribute(tag, "cs")
+            .unwrap_or_default()
+            .to_ascii_uppercase();
+        let name = attribute(tag, "name").unwrap_or_default();
+        let tints: Vec<f32> = attribute(tag, "tints")
+            .unwrap_or_default()
+            .split(',')
+            .filter_map(|v| v.trim().parse::<f32>().ok())
+            .filter(|v| v.is_finite())
+            .map(|v| v.clamp(0.0, 1.0))
+            .collect();
+        let color = match (cs.as_str(), tints.as_slice()) {
+            ("CMYK", [c, m, y, k]) => Color::Cmyk {
+                c: *c,
+                m: *m,
+                y: *y,
+                k: *k,
+            },
+            ("RGB", [r, g, b]) => Color::Rgb {
+                r: *r,
+                g: *g,
+                b: *b,
+            },
+            ("GRAY" | "GRAYSCALE", [v]) => Color::Gray { v: *v },
+            _ => {
+                log::warn!("document palette colour {name:?} in {cs:?} skipped");
+                continue;
+            }
+        };
+        out.push((name, color));
+    }
+    out
+}
+
+/// The value of `key="..."` in a tag, with the five XML entities decoded.
+fn attribute(tag: &str, key: &str) -> Option<String> {
+    let pat = format!("{key}=\"");
+    let mut search = tag;
+    loop {
+        let at = search.find(&pat)?;
+        // A whole attribute name, not the end of a longer one.
+        let ok = at == 0 || search[..at].ends_with(char::is_whitespace);
+        let after = &search[at + pat.len()..];
+        if ok {
+            let end = after.find('"')?;
+            let v = &after[..end];
+            return Some(
+                v.replace("&quot;", "\"")
+                    .replace("&apos;", "'")
+                    .replace("&lt;", "<")
+                    .replace("&gt;", ">")
+                    .replace("&amp;", "&"),
+            );
+        }
+        search = after;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn document_palette_xml_reads_names_and_tints() {
+        let xml = r#"<?xml version="1.0"?><palette guid="x" name="Document Palette"><colors><page><color cs="CMYK" name="Green" tints="1,0,1,0"/><color cs="CMYK" name="Mint Green" tints="0.4,0,0.4,0"/><color cs="RGB" name="R &amp; B" tints="1,0,0.5"/><color cs="SPOT" name="Ink" tints="1"/><color cs="CMYK" name="Short" tints="1,0"/><color cs="CMYK" name="Black" tints="0,0,0,1"/></page></colors></palette>"#;
+        let p = parse_palette_xml(xml);
+        let names: Vec<&str> = p.iter().map(|(n, _)| n.as_str()).collect();
+        assert_eq!(names, ["Green", "Mint Green", "R & B", "Black"]);
+        assert_eq!(
+            p[1].1,
+            Color::Cmyk {
+                c: 0.4,
+                m: 0.0,
+                y: 0.4,
+                k: 0.0
+            }
+        );
+        assert_eq!(
+            p[2].1,
+            Color::Rgb {
+                r: 1.0,
+                g: 0.0,
+                b: 0.5
+            }
+        );
+    }
+
+    #[test]
+    fn broken_palette_xml_yields_what_it_can() {
+        assert!(parse_palette_xml("").is_empty());
+        assert!(parse_palette_xml("<color cs=\"CMYK\" tints=\"a,b,c,d\"").is_empty());
+        let p = parse_palette_xml("<color tints=\"9,-1,0.5,0\" cs=\"cmyk\">");
+        assert_eq!(
+            p[0].1,
+            Color::Cmyk {
+                c: 1.0,
+                m: 0.0,
+                y: 0.5,
+                k: 0.0
+            }
+        );
+    }
 
     #[test]
     fn version_letters() {

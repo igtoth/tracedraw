@@ -541,7 +541,19 @@ pub struct App {
     pub canvas_rect: egui::Rect,
     pub pointer_page: Option<Point>,
     pub about_open: bool,
-    pub palette: Vec<Color>,
+    /// The palette shown in the bottom strip (the first visible one).
+    pub palette: Vec<(String, Color)>,
+    /// First swatch shown in the bottom strip (its scroll position).
+    pub palette_scroll: usize,
+    /// The same for the document palette row.
+    pub doc_palette_scroll: usize,
+    /// The document palette swatch clicked last (Delete color acts on it).
+    pub doc_palette_current: Option<usize>,
+    /// Pop-up of a palette colour's shades (click and hold a swatch): the
+    /// colour and where the swatch is.
+    pub palette_shades: Option<(Color, egui::Pos2)>,
+    /// All colours of a palette at once (the expand button): which row.
+    pub palette_expanded: Option<crate::ui::palette::Row>,
     pub raster: std::cell::RefCell<crate::raster::Raster>,
     pub wireframe: bool,
     pub font_families: Vec<String>,
@@ -652,6 +664,8 @@ pub struct App {
     pub lens_synced_to: Option<ShapeId>,
     pub extrude_synced_to: Option<ShapeId>,
     pub pending_blend_path: bool,
+    /// The document palette's eyedropper waits for a click on the drawing.
+    pub pending_palette_sample: bool,
     pub envelope_keep_lines: bool,
     pub media_mode: crate::media::MediaMode,
     pub media_preset: usize,
@@ -1030,7 +1044,12 @@ impl App {
             canvas_rect: egui::Rect::NOTHING,
             pointer_page: None,
             about_open: false,
-            palette: default_palette(),
+            palette: crate::palette::default_cmyk(),
+            palette_scroll: 0,
+            doc_palette_scroll: 0,
+            doc_palette_current: None,
+            palette_shades: None,
+            palette_expanded: None,
             raster: std::cell::RefCell::new(crate::raster::Raster::default()),
             wireframe: false,
             font_families: tracedraw_text::fonts().families().to_vec(),
@@ -1117,6 +1136,7 @@ impl App {
             lens_synced_to: None,
             extrude_synced_to: None,
             pending_blend_path: false,
+            pending_palette_sample: false,
             envelope_keep_lines: false,
             media_mode: crate::media::MediaMode::Calligraphic,
             media_preset: 0,
@@ -2227,7 +2247,41 @@ impl App {
             self.status = crate::i18n::tr("status.default_fill_changed");
         } else {
             let shapes = self.selection.clone();
+            let used = match &fill {
+                Fill::Solid(c) => Some(*c),
+                _ => None,
+            };
+            let before = self.engine.revision();
             self.run(Command::SetFill { shapes, fill });
+            if let Some(c) = used.filter(|_| self.engine.revision() != before) {
+                self.remember_color(c);
+            }
+        }
+    }
+
+    /// Add a colour to the document palette as a step of its own (its
+    /// eyedropper, Add from selection); nothing when it is there already.
+    pub fn add_to_document_palette(&mut self, c: Color) {
+        if self.doc().palette.contains(&c) {
+            return;
+        }
+        let mut colors = self.doc().palette.clone();
+        colors.push(c);
+        self.run(Command::SetDocumentPalette { colors });
+    }
+
+    /// The document palette collects the colours applied to objects; the addition joins the step that applied it.
+    pub fn remember_color(&mut self, c: Color) {
+        if !self.settings.palette.auto_update_document
+            || matches!(c, Color::Registration)
+            || self.doc().palette.contains(&c)
+        {
+            return;
+        }
+        let mut colors = self.doc().palette.clone();
+        colors.push(c);
+        if let Err(e) = self.engine.amend(&Command::SetDocumentPalette { colors }) {
+            self.status = e.to_string();
         }
     }
 
@@ -2252,6 +2306,8 @@ impl App {
                 .collect();
             if let Err(e) = self.engine.run_batch("Outline Color", &cmds) {
                 self.status = e.to_string();
+            } else if let Some(c) = color {
+                self.remember_color(c);
             }
         }
     }
@@ -3498,56 +3554,6 @@ fn reid_with(mut s: Shape, ids: &mut tracedraw_core::id::IdSource) -> Shape {
         _ => {}
     }
     s
-}
-
-/// the target design's default CMYK palette, top to bottom.
-pub fn default_palette() -> Vec<Color> {
-    let mut v = vec![
-        Color::cmyk_pct(0.0, 0.0, 0.0, 100.0),
-        Color::cmyk_pct(0.0, 0.0, 0.0, 90.0),
-        Color::cmyk_pct(0.0, 0.0, 0.0, 80.0),
-        Color::cmyk_pct(0.0, 0.0, 0.0, 70.0),
-        Color::cmyk_pct(0.0, 0.0, 0.0, 60.0),
-        Color::cmyk_pct(0.0, 0.0, 0.0, 50.0),
-        Color::cmyk_pct(0.0, 0.0, 0.0, 40.0),
-        Color::cmyk_pct(0.0, 0.0, 0.0, 30.0),
-        Color::cmyk_pct(0.0, 0.0, 0.0, 20.0),
-        Color::cmyk_pct(0.0, 0.0, 0.0, 10.0),
-        Color::cmyk_pct(0.0, 0.0, 0.0, 0.0),
-        Color::cmyk_pct(100.0, 0.0, 0.0, 0.0),
-        Color::cmyk_pct(0.0, 100.0, 0.0, 0.0),
-        Color::cmyk_pct(0.0, 0.0, 100.0, 0.0),
-        Color::cmyk_pct(100.0, 100.0, 0.0, 0.0),
-        Color::cmyk_pct(0.0, 100.0, 100.0, 0.0),
-        Color::cmyk_pct(100.0, 0.0, 100.0, 0.0),
-    ];
-    // Tints and shades across the hue wheel, like the default palette's long run.
-    for i in 0..24 {
-        let h = i as f32 / 24.0;
-        let [r, g, b] = hsv_to_rgb(h, 1.0, 1.0);
-        v.push(Color::Rgb { r, g, b });
-        let [r, g, b] = hsv_to_rgb(h, 0.55, 1.0);
-        v.push(Color::Rgb { r, g, b });
-        let [r, g, b] = hsv_to_rgb(h, 1.0, 0.55);
-        v.push(Color::Rgb { r, g, b });
-    }
-    v
-}
-
-fn hsv_to_rgb(h: f32, s: f32, v: f32) -> [f32; 3] {
-    let i = (h * 6.0).floor();
-    let f = h * 6.0 - i;
-    let p = v * (1.0 - s);
-    let q = v * (1.0 - f * s);
-    let t = v * (1.0 - (1.0 - f) * s);
-    match (i as i32).rem_euclid(6) {
-        0 => [v, t, p],
-        1 => [q, v, p],
-        2 => [p, v, t],
-        3 => [p, q, v],
-        4 => [t, p, v],
-        _ => [v, p, q],
-    }
 }
 
 pub fn fill_preview_color(fill: &Fill) -> Option<egui::Color32> {

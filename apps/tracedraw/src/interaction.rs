@@ -1322,6 +1322,9 @@ impl App {
             self.curve = None;
             self.dimension_points.clear();
             self.eyedropper_reset();
+            self.pending_palette_sample = false;
+            self.palette_shades = None;
+            self.palette_expanded = None;
             self.select(Vec::new());
             self.deselect_guides();
             if self.tool != Tool::Pick {

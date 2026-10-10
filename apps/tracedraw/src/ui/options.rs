@@ -39,6 +39,7 @@ pub enum OptionsPage {
     Appearance,
     Commands,
     CommandBars,
+    ColorPalette,
     // Tools > Options > Tools.
     Pick,
     ZoomPan,
@@ -79,7 +80,7 @@ impl OptionsSet {
                 Save,
                 Text,
             ],
-            OptionsSet::Customization => &[Appearance, Commands, CommandBars],
+            OptionsSet::Customization => &[Appearance, Commands, CommandBars, ColorPalette],
             OptionsSet::Tools => &[
                 Pick, ZoomPan, Rectangle, Ellipse, Polygon, Spiral, GraphPaper, Table, Eraser,
             ],
@@ -139,6 +140,7 @@ impl OptionsPage {
             Appearance => "options.appearance",
             Commands => "options.commands",
             CommandBars => "options.command_bars",
+            ColorPalette => "options.color_palette",
             Pick => "tool.pick",
             ZoomPan => "options.zoom_pan",
             Rectangle => "tool.rectangle",
@@ -464,6 +466,7 @@ fn draw_page(app: &mut App, ui: &mut Ui) {
         Appearance => appearance_page(app, ui),
         Commands => commands_page(app, ui),
         CommandBars => command_bars_page(app, ui),
+        ColorPalette => color_palette_page(app, ui),
         Pick => pick_page(app, ui),
         ZoomPan => zoom_pan_page(app, ui),
         Rectangle => rectangle_page(app, ui),
@@ -867,6 +870,31 @@ fn appearance_page(app: &mut App, ui: &mut Ui) {
     );
 }
 
+/// Customization > Color Palette: the docked palettes' swatches, the
+/// right mouse button and the document palette.
+fn color_palette_page(app: &mut App, ui: &mut Ui) {
+    let p = &mut app.settings.palette;
+    crate::ui::chrome::section(ui, &tr("options.palette_swatches"));
+    ui.checkbox(&mut p.show_no_color, tr("options.palette_no_color"));
+    crate::ui::chrome::section(ui, &tr("options.palette_right_button"));
+    ui.radio_value(
+        &mut p.right_click_outline,
+        false,
+        tr("options.palette_context_menu"),
+    );
+    ui.radio_value(
+        &mut p.right_click_outline,
+        true,
+        tr("options.palette_set_outline"),
+    );
+    crate::ui::chrome::section(ui, &tr("palette.show_document"));
+    ui.checkbox(&mut p.show_document, tr("options.palette_show_document"));
+    ui.checkbox(
+        &mut p.auto_update_document,
+        tr("options.palette_auto_update"),
+    );
+}
+
 fn commands_page(app: &mut App, ui: &mut Ui) {
     ui.label(egui::RichText::new(tr("options.shortcuts_hint")).color(Tokens::TEXT_DIM));
     egui::ScrollArea::vertical()
@@ -1039,7 +1067,14 @@ fn polygon_page(app: &mut App, ui: &mut Ui) {
         ui.add(egui::DragValue::new(&mut app.polygon_points).range(3..=500));
         ui.end_row();
         row_label(ui, &tr("options.sharpness"));
-        ui.add(egui::DragValue::new(&mut app.star_sharpness).range(1.0..=99.0));
+        // Stored as a fraction, shown in percent like the property bar.
+        let mut pct = (app.star_sharpness * 100.0).round();
+        if ui
+            .add(egui::DragValue::new(&mut pct).range(1.0..=99.0).suffix("%"))
+            .changed()
+        {
+            app.star_sharpness = (pct / 100.0).clamp(0.01, 0.99);
+        }
         ui.end_row();
     });
 }
@@ -1433,5 +1468,8 @@ mod tests {
                 out.textures_delta.clear();
             }
         }
+        // Drawing a page never changes what it shows (fields clamp the
+        // values they hold to their ranges).
+        assert_eq!(app.star_sharpness, 0.5);
     }
 }

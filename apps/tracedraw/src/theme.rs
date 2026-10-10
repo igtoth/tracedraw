@@ -6,7 +6,10 @@ use egui::{Color32, Visuals};
 pub struct Tokens;
 
 impl Tokens {
-    pub const PANEL: Color32 = Color32::from_rgb(0xF0, 0xF0, 0xF0);
+    /// Toolbars, dockers, palettes, the status bar and dialog bodies.
+    pub const PANEL: Color32 = Color32::from_rgb(0xF4, 0xF4, 0xF4);
+    /// The menu bar.
+    pub const MENU_BAR: Color32 = Color32::from_rgb(0xD8, 0xD8, 0xD8);
     pub const PANEL_DARK: Color32 = Color32::from_rgb(0xE1, 0xE1, 0xE1);
     pub const BORDER: Color32 = Color32::from_rgb(0xC8, 0xC8, 0xC8);
     pub const TEXT: Color32 = Color32::from_rgb(0x1E, 0x1E, 0x1E);
@@ -31,7 +34,6 @@ impl Tokens {
     pub const TOOLBOX_WIDTH: f32 = 38.0;
     pub const TOOL_BUTTON: f32 = 32.0;
     pub const RULER: f32 = 18.0;
-    pub const SWATCH: f32 = 16.0;
 }
 
 pub fn visuals() -> Visuals {

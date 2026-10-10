@@ -1,8 +1,10 @@
 //! Colour values. TraceDraw keeps the colour model the user chose, since
 //! print work is CMYK-first; spot colours keep their name and a CMYK
-//! fallback. Screen conversion is the naive formula unless a colour engine
-//! is registered: either a converter function through `engine::set`, or
-//! ICC profiles through `engine::install` (see `crate::icc`).
+//! fallback. CMYK shows through the built-in press model (`crate::press`,
+//! fitted to the target design's default colour settings) and the other
+//! models through the usual formulas, unless a colour engine is registered:
+//! either a converter function through `engine::set`, or ICC profiles
+//! through `engine::install` (see `crate::icc`).
 
 use crate::icc::{Intent, Profile, Transform};
 use serde::{Deserialize, Serialize};
@@ -20,8 +22,8 @@ pub enum Color {
     Hsb { h: f32, s: f32, b: f32 },
     /// Hue 0..360, saturation and lightness 0..1.
     Hsl { h: f32, s: f32, l: f32 },
-    /// CIE L*a*b*, L 0..100, a and b about -128..127. The naive formulas
-    /// use D65; the ICC engine treats it as ICC Lab (D50).
+    /// CIE L*a*b*, L 0..100, a and b about -128..127. The built-in
+    /// formulas use D65; the ICC engine treats it as ICC Lab (D50).
     Lab { l: f32, a: f32, b: f32 },
     /// NTSC YIQ, each component 0..1 (I and Q centred on 0.5).
     Yiq { y: f32, i: f32, q: f32 },
@@ -35,7 +37,7 @@ pub enum Color {
 /// their own engine, and the built-in ICC engine (`install`) that holds the
 /// working RGB and CMYK profiles. `Color::to_rgb8`, `convert_to` and
 /// `in_cmyk_gamut` consult the converter first, then the ICC engine, then
-/// fall back to the naive formulas.
+/// fall back to the built-in conversions.
 pub mod engine {
     use super::{Color, IccEngine};
     use std::sync::{Arc, OnceLock, RwLock};
@@ -60,7 +62,7 @@ pub mod engine {
         *slot = Some(Arc::new(engine));
     }
 
-    /// Remove the ICC engine; conversions go back to the naive formulas.
+    /// Remove the ICC engine; conversions go back to the built-in ones.
     pub fn clear() {
         let mut slot = ICC.write().unwrap_or_else(|e| e.into_inner());
         *slot = None;
@@ -93,8 +95,8 @@ pub struct IccEngine {
 impl IccEngine {
     /// Build an engine from the loaded working profiles. `rgb` is `None`
     /// for sRGB. Transforms that a profile cannot provide (for example a
-    /// CMYK profile without a B2A table) are simply absent and the naive
-    /// formula is used for that direction.
+    /// CMYK profile without a B2A table) are simply absent and the built-in
+    /// conversion is used for that direction.
     pub fn new(
         rgb: Option<Profile>,
         cmyk: Option<Profile>,
@@ -264,7 +266,7 @@ impl Color {
     }
 
     /// Screen colour as 8-bit sRGB. Uses the registered converter or ICC
-    /// engine when there is one, else the naive formulas.
+    /// engine when there is one, else the built-in conversions.
     pub fn to_rgb8(self) -> [u8; 3] {
         if let Some(conv) = engine::get() {
             if matches!(self, Color::Cmyk { .. } | Color::Lab { .. }) {
@@ -276,7 +278,7 @@ impl Color {
 
     /// Screen colour as floats 0..1. RGB, CMYK and Lab go through the ICC
     /// engine when one is installed and has a profile for the model; every
-    /// other case uses [`Color::to_rgb_f32_naive`].
+    /// other case uses [`Color::to_rgb_f32_builtin`].
     pub fn to_rgb_f32(self) -> [f32; 3] {
         if matches!(
             self,
@@ -286,19 +288,15 @@ impl Color {
                 return rgb;
             }
         }
-        self.to_rgb_f32_naive()
+        self.to_rgb_f32_builtin()
     }
 
-    /// Screen colour as floats 0..1 with the built-in formulas, ignoring
-    /// any colour engine.
-    pub fn to_rgb_f32_naive(self) -> [f32; 3] {
+    /// Screen colour as floats 0..1 with the built-in conversions (the
+    /// press model for CMYK), ignoring any colour engine.
+    pub fn to_rgb_f32_builtin(self) -> [f32; 3] {
         match self {
             Color::Rgb { r, g, b } => [r, g, b],
-            Color::Cmyk { c, m, y, k } => [
-                (1.0 - c) * (1.0 - k),
-                (1.0 - m) * (1.0 - k),
-                (1.0 - y) * (1.0 - k),
-            ],
+            Color::Cmyk { c, m, y, k } => crate::press::cmyk_to_srgb([c, m, y, k]),
             Color::Gray { v } => [v, v, v],
             Color::Registration => [0.0, 0.0, 0.0],
             Color::Hsb { h, s, b } => hsb_to_rgb(h, s, b),
@@ -322,9 +320,13 @@ impl Color {
     }
 
     /// Convert to another model by way of sRGB. RGB to CMYK and back use
-    /// the ICC engine when one is installed with a CMYK profile; the other
-    /// models use the built-in formulas.
+    /// the ICC engine when one is installed with a CMYK profile, else the
+    /// press model; the other models use the built-in formulas. A colour
+    /// already in the asked model comes back unchanged.
     pub fn convert_to(self, model: &str) -> Color {
+        if self.model_name() == model {
+            return self;
+        }
         if let Some(icc) = engine::icc() {
             let managed = match (self, model) {
                 (Color::Rgb { r, g, b }, "CMYK") => icc
@@ -348,21 +350,8 @@ impl Color {
         match model {
             "RGB" => Color::Rgb { r, g, b },
             "CMYK" => {
-                let k = 1.0 - r.max(g).max(b);
-                if k >= 1.0 - 1e-6 {
-                    return Color::Cmyk {
-                        c: 0.0,
-                        m: 0.0,
-                        y: 0.0,
-                        k: 1.0,
-                    };
-                }
-                Color::Cmyk {
-                    c: (1.0 - r - k) / (1.0 - k),
-                    m: (1.0 - g - k) / (1.0 - k),
-                    y: (1.0 - b - k) / (1.0 - k),
-                    k,
-                }
+                let [c, m, y, k] = crate::press::srgb_to_cmyk([r, g, b]);
+                Color::Cmyk { c, m, y, k }
             }
             "Grayscale" => Color::Gray {
                 v: luminance(r, g, b),
@@ -451,7 +440,7 @@ impl Color {
 
     /// Whether the colour is printable in CMYK: round trip error under the
     /// given tolerance. Uses the CMYK profile of the ICC engine when one is
-    /// installed, else the naive formulas. Used by the gamut alarm.
+    /// installed, else the press model. Used by the gamut alarm.
     pub fn in_cmyk_gamut(self, tolerance_delta_e: f32) -> bool {
         if let Some(icc) = engine::icc() {
             let rgb = match self {
@@ -579,24 +568,64 @@ mod tests {
     use super::*;
 
     #[test]
-    fn cmyk_to_rgb() {
-        assert_eq!(Color::cmyk_pct(0.0, 0.0, 0.0, 100.0).to_rgb8(), [0, 0, 0]);
+    fn cmyk_shows_like_the_reference_editor() {
+        // Process black is the warm dark grey of coated stock, not 0 0 0.
+        let black = Color::cmyk_pct(0.0, 0.0, 0.0, 100.0).to_rgb8();
+        for (a, b) in black.iter().zip([34u8, 31, 32]) {
+            assert!(a.abs_diff(b) <= 2, "{black:?}");
+        }
         assert_eq!(
-            Color::cmyk_pct(100.0, 0.0, 0.0, 0.0).to_rgb8(),
-            [0, 255, 255]
+            Color::cmyk_pct(0.0, 0.0, 0.0, 0.0).to_rgb8(),
+            [255, 255, 255]
         );
+        let cyan = Color::cmyk_pct(100.0, 0.0, 0.0, 0.0).to_rgb8();
+        assert!(cyan[0] == 0 && (171..=176).contains(&cyan[1]), "{cyan:?}");
         assert_eq!(Color::rgb8(255, 128, 0).to_hex(), "#ff8000");
     }
 
     #[test]
     fn round_trips_through_models() {
         let c = Color::rgb8(200, 60, 30);
-        for model in ["CMYK", "HSB", "HSL", "Lab", "YIQ"] {
+        for model in ["HSB", "HSL", "Lab", "YIQ"] {
             let back = c.convert_to(model).to_rgb8();
             for (a, b) in back.iter().zip(c.to_rgb8()) {
                 assert!((*a as i32 - b as i32).abs() <= 2, "{model}: {back:?}");
             }
         }
+        // CMYK keeps colours the press can print.
+        for c in [
+            Color::rgb8(190, 70, 50),
+            Color::rgb8(140, 190, 160),
+            Color::rgb8(100, 50, 20),
+        ] {
+            let back = c.convert_to("CMYK").to_rgb8();
+            for (a, b) in back.iter().zip(c.to_rgb8()) {
+                assert!((*a as i32 - b as i32).abs() <= 1, "{c:?}: {back:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn converting_to_the_same_model_keeps_the_colour() {
+        let k = Color::cmyk_pct(0.0, 0.0, 0.0, 100.0);
+        assert_eq!(k.convert_to("CMYK"), k);
+        let rich = Color::cmyk_pct(60.0, 40.0, 40.0, 100.0);
+        assert_eq!(rich.convert_to("CMYK"), rich);
+        let rgb = Color::rgb8(1, 2, 3);
+        assert_eq!(rgb.convert_to("RGB"), rgb);
+    }
+
+    #[test]
+    fn black_and_greys_convert_to_black_ink() {
+        assert_eq!(
+            Color::rgb8(0, 0, 0).convert_to("CMYK"),
+            Color::cmyk_pct(0.0, 0.0, 0.0, 100.0)
+        );
+        let Color::Cmyk { c, m, y, k } = Color::Gray { v: 0.5 }.convert_to("CMYK") else {
+            panic!("not CMYK");
+        };
+        assert_eq!((c, m, y), (0.0, 0.0, 0.0));
+        assert!(k > 0.5 && k < 0.7, "{k}");
     }
 
     #[test]
@@ -607,12 +636,17 @@ mod tests {
     }
 
     #[test]
-    fn pure_red_is_in_cmyk_gamut_naively() {
-        assert!(Color::rgb8(255, 0, 0).in_cmyk_gamut(2.0));
+    fn screen_red_is_outside_the_press_gamut() {
+        assert!(!Color::rgb8(255, 0, 0).in_cmyk_gamut(2.0));
+        assert!(!Color::rgb8(0, 0, 255).in_cmyk_gamut(2.0));
+        // The red of solid magenta and yellow prints.
+        let press_red = Color::cmyk_pct(0.0, 100.0, 100.0, 0.0).to_rgb8();
+        let [r, g, b] = press_red;
+        assert!(Color::rgb8(r, g, b).in_cmyk_gamut(2.0));
     }
 
     // The ICC engine is exercised as a value here, never installed in the
-    // process-wide slot, so the naive expectations above stay valid when
+    // process-wide slot, so the built-in expectations above stay valid when
     // tests run in parallel.
 
     #[test]

@@ -62,7 +62,10 @@ the four rendering intents and black point compensation. It replaces the
 earlier plan of binding `lcms2`: no C dependency, the same binary on every
 platform, and the parser is small enough to audit. The engine is
 installed through `color::engine::install`; without loaded profiles the
-naive formulas in `core/color.rs` apply (sRGB and a generic CMYK model).
+built-in conversions apply: sRGB, and for CMYK the press model in
+`core/press.rs`, a Yule-Nielsen modified Neugebauer model whose
+constants were fitted to the colours the target design shows with its
+default settings (see `docs/behavior/colour-management.md`).
 Profiles are not bundled beyond the built-in sRGB: the user loads the
 `.icc` files they are licensed to use from the Colour Management dialog,
 and the paths persist in the settings. Checked against a real output

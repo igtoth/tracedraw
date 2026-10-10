@@ -6,7 +6,7 @@
 //!
 //! Units: all geometry is stored in millimetres, with the origin at the
 //! bottom-left corner of the page and the Y axis pointing up, matching the
-//! the target design's convention. Renderers flip to screen space as needed.
+//! target design's convention. Renderers flip to screen space as needed.
 
 #![allow(clippy::should_implement_trait)]
 pub mod color;
@@ -19,6 +19,7 @@ pub mod icc;
 pub mod id;
 pub mod live;
 pub mod nodes;
+mod press;
 pub mod shaping;
 pub mod style;
 
