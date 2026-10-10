@@ -613,6 +613,8 @@ pub struct App {
     /// Share of the drawing window's bottom row given to the page tabs
     /// (the rest is the horizontal scrollbar); set with the splitter.
     pub page_tabs_fraction: f32,
+    /// The Hints docker's page and history.
+    pub hints: crate::ui::hints::HintsState,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -796,13 +798,7 @@ impl DockerTab {
 
     /// Dockers shown in the tab strip by default (the rest open from menus).
     pub fn default_strip() -> Vec<DockerTab> {
-        vec![
-            DockerTab::Hints,
-            DockerTab::Properties,
-            DockerTab::Objects,
-            DockerTab::Transformations,
-            DockerTab::Undo,
-        ]
+        vec![DockerTab::Hints, DockerTab::Properties, DockerTab::Objects]
     }
 }
 
@@ -817,7 +813,7 @@ pub enum TransformTab {
 
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>, open: Option<PathBuf>) -> Self {
-        theme::install_fallback_fonts(&cc.egui_ctx);
+        theme::install_fonts(&cc.egui_ctx);
         // egui quits on Ctrl+Q by default; here Ctrl+Q is Convert to Curves
         // and the application closes through File > Exit (Alt+F4).
         cc.egui_ctx.options_mut(|o| o.quit_shortcuts.clear());
@@ -825,6 +821,25 @@ impl App {
         cc.egui_ctx.all_styles_mut(|style| {
             style.spacing.item_spacing = egui::vec2(4.0, 3.0);
             style.spacing.button_padding = egui::vec2(5.0, 2.0);
+            // Interface text at 12 px (9 pt), headings in the bold face.
+            use egui::{FontFamily, FontId, TextStyle};
+            style.text_styles = [
+                (
+                    TextStyle::Small,
+                    FontId::new(10.0, FontFamily::Proportional),
+                ),
+                (TextStyle::Body, FontId::new(12.0, FontFamily::Proportional)),
+                (
+                    TextStyle::Button,
+                    FontId::new(12.0, FontFamily::Proportional),
+                ),
+                (
+                    TextStyle::Monospace,
+                    FontId::new(12.0, FontFamily::Monospace),
+                ),
+                (TextStyle::Heading, theme::bold(16.0)),
+            ]
+            .into();
         });
         Self::build(open)
     }
@@ -869,7 +884,7 @@ impl App {
             show_grid: false,
             show_status_bar: true,
             show_dockers: true,
-            docker_tab: DockerTab::Properties,
+            docker_tab: DockerTab::Hints,
             flyout_open: None,
             toolbox_last: crate::tools::GROUPS.iter().map(|g| g.tools[0]).collect(),
             clipboard: None,
@@ -1037,6 +1052,7 @@ impl App {
             quit_after_closing: false,
             quit_now: false,
             page_tabs_fraction: 0.45,
+            hints: Default::default(),
         };
         app.load_settings();
         // Start-up: the file given on the command line, else the Welcome

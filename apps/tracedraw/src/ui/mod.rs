@@ -7,6 +7,7 @@ pub mod context;
 pub mod dialogs;
 pub mod dockers;
 pub mod dockers2;
+pub mod hints;
 pub mod icons;
 pub mod menus;
 pub mod palette;
@@ -559,7 +560,7 @@ mod tests {
     /// the document keeps its page.
     #[test]
     fn every_tool_survives_pointer_input() {
-        let ctx = egui::Context::default();
+        let ctx = crate::theme::ui_context();
         let mut app = mixed_app();
         app.show_welcome = false;
         frame(&ctx, &mut app);
@@ -647,7 +648,7 @@ mod tests {
     #[test]
     fn shortcuts_use_the_modifiers_of_each_key_press() {
         use egui::{Key, Modifiers};
-        let ctx = egui::Context::default();
+        let ctx = crate::theme::ui_context();
         let mut app = mixed_app();
         app.show_welcome = false;
         frame(&ctx, &mut app);
@@ -689,7 +690,7 @@ mod tests {
     /// kind of selection, including while a text is being edited.
     #[test]
     fn window_draws_with_every_docker_tool_and_selection() {
-        let ctx = egui::Context::default();
+        let ctx = crate::theme::ui_context();
         let mut app = mixed_app();
         app.show_welcome = true;
         frame(&ctx, &mut app);

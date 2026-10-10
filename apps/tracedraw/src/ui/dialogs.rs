@@ -3560,7 +3560,7 @@ mod tests {
         app.select(vec![r]);
         app.convert_to_bitmap(100.0, true);
         app.select_all();
-        let ctx = Context::default();
+        let ctx = crate::theme::ui_context();
         for dialog in all_dialogs(&app) {
             let name = format!("{dialog:?}");
             app.dialog = dialog;

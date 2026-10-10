@@ -3,7 +3,6 @@
 use crate::app::{App, DockerTab};
 use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
-use crate::tools::Tool;
 use egui::Ui;
 use tracedraw_core::{
     document::ShapeKind, Arrowhead, Color, Command, Fill, Fountain, FountainKind, Pattern,
@@ -26,22 +25,39 @@ pub fn tab_strip(app: &mut App, ui: &mut Ui) {
     for tab in tabs {
         let name = tr(tab.key());
         let active = app.show_dockers && app.docker_tab == tab;
-        let h = 14.0 + name.chars().count() as f32 * 7.0;
-        let (r, resp) = ui.allocate_exact_size(egui::vec2(26.0, h), egui::Sense::click());
-        if active {
-            ui.painter().rect_filled(r, 2.0, Tokens::TOOL_ACTIVE);
-        } else if resp.hovered() {
-            ui.painter().rect_filled(r, 2.0, Tokens::TOOL_HOVER);
-        }
         let galley = ui.painter().layout_no_wrap(
             name.clone(),
-            egui::FontId::proportional(11.0),
+            egui::FontId::proportional(12.0),
             Tokens::TEXT,
         );
         let w = galley.size().x;
         let gh = galley.size().y;
+        // An icon on top (for the dockers that have one), the name below
+        // it running downwards; the active tab is tinted with an accent
+        // line on its inner edge.
+        let icon_h = if tab_icon(tab).is_some() { 22.0 } else { 0.0 };
+        let h = 12.0 + icon_h + w;
+        let (r, resp) = ui.allocate_exact_size(egui::vec2(26.0, h), egui::Sense::click());
+        if active {
+            ui.painter().rect_filled(r, 0.0, Tokens::TOOL_ACTIVE);
+            ui.painter().vline(
+                r.min.x + 1.0,
+                r.y_range(),
+                egui::Stroke::new(2.0, Tokens::ACCENT),
+            );
+        } else if resp.hovered() {
+            ui.painter().rect_filled(r, 0.0, Tokens::TOOL_HOVER);
+        }
+        if let Some(icon) = tab_icon(tab) {
+            let ir = egui::Rect::from_center_size(
+                egui::pos2(r.center().x, r.min.y + 6.0 + icon_h / 2.0),
+                egui::vec2(16.0, 16.0),
+            );
+            icon(ui.painter(), ir);
+        }
+        let text_top = r.min.y + 6.0 + icon_h;
         let mut ts = egui::epaint::TextShape::new(
-            egui::pos2(r.center().x + gh / 2.0 - 1.0, r.center().y - w / 2.0),
+            egui::pos2(r.center().x + gh / 2.0 - 1.0, text_top),
             galley,
             Tokens::TEXT,
         );
@@ -82,6 +98,74 @@ pub fn tab_strip(app: &mut App, ui: &mut Ui) {
     );
 }
 
+type TabIcon = fn(&egui::Painter, egui::Rect);
+
+/// The small picture above a docker tab's name.
+fn tab_icon(tab: DockerTab) -> Option<TabIcon> {
+    match tab {
+        DockerTab::Hints => Some(|p, r| {
+            // A pointer with a question mark.
+            let s = egui::Stroke::new(1.2, Tokens::ICON);
+            let o = r.min + egui::vec2(2.0, 1.0);
+            let pts = vec![
+                o,
+                o + egui::vec2(0.0, 11.0),
+                o + egui::vec2(3.0, 8.0),
+                o + egui::vec2(5.5, 13.0),
+                o + egui::vec2(7.0, 12.2),
+                o + egui::vec2(4.6, 7.4),
+                o + egui::vec2(8.5, 7.4),
+            ];
+            p.add(egui::epaint::PathShape::convex_polygon(
+                pts,
+                Tokens::ICON,
+                s,
+            ));
+            p.text(
+                r.min + egui::vec2(12.5, 3.5),
+                egui::Align2::CENTER_CENTER,
+                "?",
+                egui::FontId::proportional(10.0),
+                Tokens::ICON,
+            );
+        }),
+        DockerTab::Properties => Some(|p, r| {
+            // A pen over a ruled sheet.
+            let s = egui::Stroke::new(1.2, Tokens::ICON);
+            let c = r.center();
+            p.line_segment([c + egui::vec2(-6.0, 6.0), c + egui::vec2(5.0, -5.0)], s);
+            p.line_segment([c + egui::vec2(-6.0, 6.0), c + egui::vec2(-3.0, 5.0)], s);
+            p.line_segment([c + egui::vec2(3.0, -7.0), c + egui::vec2(7.0, -3.0)], s);
+            for y in [2.0, 5.0] {
+                p.line_segment([c + egui::vec2(1.0, y), c + egui::vec2(7.0, y)], s);
+            }
+        }),
+        DockerTab::Objects => Some(|p, r| {
+            // Three stacked sheets.
+            let c = r.center();
+            for (k, dy) in [(0u8, 4.0f32), (1, 0.0), (2, -4.0)] {
+                let pts = vec![
+                    c + egui::vec2(-7.0, dy),
+                    c + egui::vec2(0.0, dy - 3.5),
+                    c + egui::vec2(7.0, dy),
+                    c + egui::vec2(0.0, dy + 3.5),
+                ];
+                let fill = if k == 2 {
+                    Tokens::ICON
+                } else {
+                    egui::Color32::WHITE
+                };
+                p.add(egui::epaint::PathShape::convex_polygon(
+                    pts,
+                    fill,
+                    egui::Stroke::new(1.0, Tokens::ICON),
+                ));
+            }
+        }),
+        _ => None,
+    }
+}
+
 pub fn dockers(app: &mut App, ui: &mut Ui) {
     ui.horizontal(|ui| {
         let name = tr(app.docker_tab.key());
@@ -100,10 +184,15 @@ pub fn dockers(app: &mut App, ui: &mut Ui) {
         });
     });
     ui.separator();
+    // Hints scrolls its page above its own navigation bar.
+    if app.docker_tab == DockerTab::Hints {
+        crate::ui::hints::hints_docker(app, ui);
+        return;
+    }
     egui::ScrollArea::vertical().show(ui, |ui| match app.docker_tab {
         DockerTab::Properties => properties(app, ui),
         DockerTab::Objects => objects(app, ui),
-        DockerTab::Hints => hints(app, ui),
+        DockerTab::Hints => {}
         DockerTab::Transformations => transformations(app, ui),
         DockerTab::Undo => undo_docker(app, ui),
         other => crate::ui::dockers2::show(app, ui, other),
@@ -895,67 +984,6 @@ fn objects(app: &mut App, ui: &mut Ui) {
             app.select(vec![id]);
         }
     }
-}
-
-fn hints(app: &mut App, ui: &mut Ui) {
-    if app.tool == Tool::Pick && app.selection.is_empty() {
-        ui.heading(tr("hint.home"));
-        ui.add_space(4.0);
-        ui.label(tr("hint.home_intro"));
-        ui.add_space(4.0);
-        for t in [
-            "hint.topic_lines",
-            "hint.topic_connector_lines",
-            "hint.topic_dimension_lines",
-            "hint.topic_shapes",
-            "hint.topic_select",
-            "hint.topic_move_scale",
-            "hint.topic_rotate_skew",
-            "hint.topic_shape_objects",
-            "hint.topic_effects",
-            "hint.topic_outline",
-            "hint.topic_fill",
-            "hint.topic_text",
-            "hint.topic_help",
-        ] {
-            ui.horizontal(|ui| {
-                ui.label("•");
-                let _ = ui.link(egui::RichText::new(tr(t)).color(Tokens::ACCENT));
-            });
-        }
-        ui.add_space(12.0);
-        ui.separator();
-        ui.heading(tr("hint.learn_more"));
-        ui.label(egui::RichText::new(tr("hint.help_topic")).strong());
-        let _ = ui.link(egui::RichText::new(tr("hint.app_help")).color(Tokens::ACCENT));
-        return;
-    }
-    ui.heading(app.tool.name());
-    ui.add_space(4.0);
-    let key = match app.tool {
-        Tool::Pick => "hint.pick",
-        Tool::Shape => "hint.shape",
-        Tool::Zoom => "hint.zoom",
-        Tool::Pan => "hint.pan",
-        Tool::Freehand => "hint.freehand",
-        Tool::Bezier | Tool::Pen => "hint.bezier",
-        Tool::Polyline | Tool::TwoPointLine => "hint.polyline",
-        Tool::Rectangle => "hint.rectangle",
-        Tool::Ellipse => "hint.ellipse",
-        Tool::Polygon | Tool::Star => "hint.polygon",
-        Tool::Text => "hint.text",
-        Tool::InteractiveFill => "hint.interactive_fill",
-        Tool::ColorEyedropper => "hint.eyedropper",
-        Tool::Eraser => "hint.eraser",
-        _ => "hint.roadmap",
-    };
-    ui.label(tr(key));
-    ui.add_space(8.0);
-    ui.label(
-        egui::RichText::new(tr("hint.palette_footer"))
-            .color(Tokens::TEXT_DIM)
-            .size(11.0),
-    );
 }
 
 fn transformations(app: &mut App, ui: &mut Ui) {

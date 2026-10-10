@@ -44,10 +44,15 @@ impl StatusInfo {
 
 /// The active tool's hint; the Pick tool's depends on the selection.
 pub fn tool_hint(app: &App) -> String {
-    if app.tool == Tool::Pick && !app.selection.is_empty() {
+    tool_hint_for(app.tool, app.selection.is_empty())
+}
+
+/// A tool's hint, with or without a selection.
+pub fn tool_hint_for(tool: Tool, nothing_selected: bool) -> String {
+    if tool == Tool::Pick && !nothing_selected {
         return tr("status_hint.pick_selected");
     }
-    tr(&format!("status_hint.{}", app.tool.id()))
+    tr(&format!("status_hint.{}", tool.id()))
 }
 
 /// "Rectangle on Layer 1", "3 Objects Selected on Layer 1", and with the

@@ -70,10 +70,72 @@ pub fn visuals() -> Visuals {
     v
 }
 
-/// Register system fonts covering the scripts of the supported UI languages
-/// (CJK, Arabic, Devanagari, Bengali) as fallbacks after the bundled font,
-/// so menus render in every language on machines that have such fonts.
-pub fn install_fallback_fonts(ctx: &egui::Context) {
+/// The interface font, bundled (SIL Open Font License, see
+/// `assets/fonts/Selawik-OFL.txt`): regular for text, bold for headings and
+/// emphasis. Scripts it lacks fall back to egui's fonts and the system's.
+const UI_REGULAR: &[u8] = include_bytes!("../assets/fonts/Selawik-Regular.ttf");
+const UI_BOLD: &[u8] = include_bytes!("../assets/fonts/Selawik-Bold.ttf");
+
+/// The font family name of the bold interface font.
+pub const BOLD: &str = "ui-bold";
+
+/// A bold interface font of the given size.
+pub fn bold(size: f32) -> egui::FontId {
+    egui::FontId::new(size, egui::FontFamily::Name(BOLD.into()))
+}
+
+/// Install the interface fonts: the bundled UI font first, then egui's
+/// own and the system fonts covering the scripts of the supported UI
+/// languages (CJK, Arabic, Devanagari, Bengali), so menus render in every
+/// language on machines that have such fonts.
+pub fn install_fonts(ctx: &egui::Context) {
+    let mut defs = egui::FontDefinitions::default();
+    defs.font_data.insert(
+        "ui-regular".into(),
+        std::sync::Arc::new(egui::FontData::from_static(UI_REGULAR)),
+    );
+    defs.font_data.insert(
+        "ui-bold".into(),
+        std::sync::Arc::new(egui::FontData::from_static(UI_BOLD)),
+    );
+    let defaults = defs
+        .families
+        .get(&egui::FontFamily::Proportional)
+        .cloned()
+        .unwrap_or_default();
+    if let Some(list) = defs.families.get_mut(&egui::FontFamily::Proportional) {
+        list.insert(0, "ui-regular".into());
+    }
+    let mut bold = vec!["ui-bold".to_string()];
+    bold.extend(defaults);
+    defs.families
+        .insert(egui::FontFamily::Name(BOLD.into()), bold);
+    for key in fallback_fonts(&mut defs) {
+        for family in [
+            egui::FontFamily::Proportional,
+            egui::FontFamily::Monospace,
+            egui::FontFamily::Name(BOLD.into()),
+        ] {
+            if let Some(list) = defs.families.get_mut(&family) {
+                list.push(key.clone());
+            }
+        }
+    }
+    ctx.set_fonts(defs);
+}
+
+/// A context with the interface fonts installed (headless tests draw
+/// the real interface, which uses the bold family).
+#[cfg(test)]
+pub fn ui_context() -> egui::Context {
+    let ctx = egui::Context::default();
+    install_fonts(&ctx);
+    ctx
+}
+
+/// Add the system fonts covering the non-Latin UI languages to `defs`;
+/// returns their keys.
+fn fallback_fonts(defs: &mut egui::FontDefinitions) -> Vec<String> {
     // Per script, the families to try in order; the first installed one wins.
     let groups: &[&[&str]] = &[
         // Arabic (also covered by many Latin system fonts).
@@ -122,7 +184,6 @@ pub fn install_fallback_fonts(ctx: &egui::Context) {
         // Cyrillic is in the bundled font; Latin extended too.
     ];
     let fs = tracedraw_text::fonts();
-    let mut defs = egui::FontDefinitions::default();
     let mut added = Vec::new();
     for group in groups {
         let Some((name, data, index)) = fs.first_face_data(group) else {
@@ -137,16 +198,8 @@ pub fn install_fallback_fonts(ctx: &egui::Context) {
         defs.font_data.insert(key.clone(), std::sync::Arc::new(fd));
         added.push(key);
     }
-    if added.is_empty() {
-        return;
+    if !added.is_empty() {
+        log::info!("UI fallback fonts: {}", added.join(", "));
     }
-    for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
-        if let Some(list) = defs.families.get_mut(&family) {
-            for k in &added {
-                list.push(k.clone());
-            }
-        }
-    }
-    log::info!("UI fallback fonts: {}", added.join(", "));
-    ctx.set_fonts(defs);
+    added
 }

@@ -355,7 +355,7 @@ mod tests {
     /// document; the application survives each command.
     #[test]
     fn every_menu_item_runs_without_panicking() {
-        let ctx = Context::default();
+        let ctx = crate::theme::ui_context();
         let mut hits = 0usize;
         for (name, body) in menus() {
             let mut app = mixed_app();
