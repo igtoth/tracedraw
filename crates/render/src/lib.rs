@@ -172,6 +172,7 @@ pub fn render_page(doc: &Document, page: PageId, opts: &RenderOptions) -> Option
             ShapeKind::Rect {
                 rect: page.rect(),
                 radius: 0.0,
+                corners: None,
             },
         );
         bg_shape.fill = bg.clone();
@@ -1408,6 +1409,7 @@ mod tests {
             ShapeKind::Rect {
                 rect: r,
                 radius: 0.0,
+                corners: None,
             },
         );
         s.fill = Fill::Solid(fill);
@@ -1934,6 +1936,7 @@ mod tests {
             ShapeKind::Rect {
                 rect: Rect::new(0.0, 0.0, 20.0, 20.0),
                 radius: 0.0,
+                corners: None,
             },
         );
         s.fill = Fill::Solid(Color::rgb8(255, 0, 0));
@@ -1957,6 +1960,7 @@ mod tests {
             ShapeKind::Rect {
                 rect: Rect::new(10.0, 10.0, 25.0, 25.0),
                 radius: 0.0,
+                corners: None,
             },
         );
         s.fill = Fill::Solid(Color::rgb8(0, 0, 255));
@@ -1987,6 +1991,7 @@ mod tests {
             ShapeKind::Rect {
                 rect: Rect::new(5.0, 5.0, 45.0, 45.0),
                 radius: 0.0,
+                corners: None,
             },
         );
         let mut st = Stroke::new(Color::BLACK, 1.0);

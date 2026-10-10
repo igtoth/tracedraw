@@ -29,7 +29,8 @@ Counts: works 137, partial 1 (`.cdr` content coverage), missing 3 (CMX import; w
 
 | Capability | Status |
 |---|---|
-| Rectangle, 3-point rectangle, corner radius, page frame on double-click; Ctrl square, Shift from centre | works (see `behavior/shape-tools.md`) |
+| Rectangle, 3-point rectangle, page frame on double-click; Ctrl square, Shift from centre | works (see `behavior/shape-tools.md`) |
+| Rectangle corners: Round, Scalloped, Chamfered; a size per corner; Edit Corners Together; Relative Corner Scaling (property bar, Properties docker, Options > Toolbox > Rectangle tool) | works (see `behavior/shape-tools.md`) |
 | Ellipse, 3-point ellipse, pie and arc | works |
 | Polygon, Star, Complex star, Spiral (symmetric, logarithmic), Graph paper, Common shapes, Impact | works |
 | Freehand, 2-point line, Bezier, Pen, B-spline, Polyline, 3-point curve | works |
@@ -51,6 +52,7 @@ Counts: works 137, partial 1 (`.cdr` content coverage), missing 3 (CMX import; w
 | Capability | Status |
 |---|---|
 | Shape tool: move nodes and handles, marquee select nodes, Elastic mode | works |
+| Shape tool on rectangles (corner nodes, all or one corner), ellipses (pie inside, arc outside) and polygons (mirrored nodes) | partial: polygon nodes move in and out only, a drag's angle is not used (no twisted stars) (see `behavior/shape-tool.md`) |
 | Node types: cusp, smooth, symmetrical; to line / to curve; reverse subpaths | works |
 | Add, delete, join, break, extract subpath, close curve, align nodes, reduce nodes | works |
 | Weld, Trim, Intersect, Simplify, Front minus back, Back minus front, Boundary (menu and docker) | works |

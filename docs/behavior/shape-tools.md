@@ -27,8 +27,25 @@ whatever tool is active.
 
 ## Rectangle (F6)
 
-- Corner radius from the property bar, default 0 (shared by all four
-  corners; the Shape tool drags corners individually).
+- New rectangles take the corners set on the property bar (or in Tools >
+  Options > Toolbox > Rectangle tool) while nothing is selected; default
+  square, round, relative scaling on.
+- Corner style: Round (a quarter circle), Scalloped (a quarter circle
+  centred on the corner, cutting inwards) or Chamfered (a straight cut).
+  The size is the radius, or for a chamfer how far the cut starts from
+  the corner.
+- Four sizes: top left, top right, bottom left, bottom right (the bar
+  shows them as two columns, left corners then right ones). With Edit
+  Corners Together (the lock, on by default) a size typed in one field
+  goes to all four. A corner is at most half the shorter side.
+- Relative Corner Scaling (on by default): the corners scale, or
+  stretch, with the rectangle. Off: they keep their size on the page
+  when the rectangle is resized, and stay circular when it is stretched.
+  Turning it on or off keeps the corners as they look. The size is
+  measured against the rectangle's own scaling: scaling a group scales
+  its rectangles' corners, and ungrouping keeps them as they look.
+- The sizes on the bar are page sizes in the ruler unit; with relative
+  scaling on a stretched rectangle shows the smaller of its two scales.
 - Double-clicking the tool button draws a page frame: a rectangle the
   size of the page, selected.
 
@@ -81,3 +98,11 @@ whatever tool is active.
   (30,20) (centre at the start point).
 - Given a 5-point star with sharpness 0.5 in a 40 mm square, then its
   bounds are 40 x 40 mm and it has 10 nodes.
+- Given a 40 x 20 mm rectangle with 5 mm corners, then it loses
+  (4 - pi) 25 mm2 with round corners, 25 pi with scalloped ones and 50
+  with chamfered ones (`document::tests::corner_styles_cut_the_expected_area`).
+- Given fixed 4 mm corners on a rectangle scaled 3 x 2, then the corners
+  still cut (4 - pi) 16 mm2
+  (`document::tests::fixed_corners_keep_their_size_when_scaled`).
+- `ui::propbar::tests::corner_edits_change_the_selection_in_one_step_or_the_defaults`,
+  `ui::propbar::tests::the_rectangle_tool_draws_with_the_default_corners`.

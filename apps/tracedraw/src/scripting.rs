@@ -833,6 +833,7 @@ impl HostInner {
                     ShapeKind::Rect {
                         rect: Rect::new(x, y, x + w, y + h),
                         radius: num(a, "radius", 0.0),
+                        corners: None,
                     },
                 );
                 s.stroke = Some(Stroke::default());

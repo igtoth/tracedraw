@@ -17,7 +17,9 @@ use crate::riff::{Chunk, Tree};
 use crate::text::{self, RunStyle, StyleRec};
 use std::collections::HashMap;
 use tracedraw_core::{
-    document::{EllipseArc, Layer, Page, ParagraphStyle, Shape, ShapeKind, TextAlign, TextSpan},
+    document::{
+        Corners, EllipseArc, Layer, Page, ParagraphStyle, Shape, ShapeKind, TextAlign, TextSpan,
+    },
     geometry::{Affine, BezPath, Point, Rect, Size},
     style::{Arrowhead, Fountain, FountainKind, Pattern, PatternTile, Stop, Texture, TextureKind},
     Color, Document, Fill, LineCap, LineJoin, Stroke,
@@ -1725,21 +1727,16 @@ impl<'a> Ctx<'a> {
                     };
                     (w * sx, h * sy, radii)
                 };
-                let radius = radii.iter().cloned().fold(0.0_f64, f64::max);
-                if radii.iter().any(|r| (r - radius).abs() > 1e-6) {
-                    self.report
-                        .warn("rectangle with per-corner radii; largest used");
-                }
                 let rect = Rect::new(
                     0.0_f64.min(w),
                     0.0_f64.min(h),
                     0.0_f64.max(w),
                     0.0_f64.max(h),
                 );
-                Some(ShapeKind::Rect {
+                Some(ShapeKind::rect_with_corners(
                     rect,
-                    radius: radius.max(0.0),
-                })
+                    file_corners(&radii, w, h),
+                ))
             }
             // Ellipse: width, height, start/end angle, pie flag.
             OBJ_ELLIPSE => {
@@ -2269,6 +2266,37 @@ fn encode_png(width: u32, height: u32, rgba: &[u8]) -> Vec<u8> {
     out
 }
 
+/// A rectangle's corners from the radii in file order: one radius for
+/// every corner, or four running counter-clockwise from the corner at
+/// (width, 0) (assumed, see `docs/cdr-format.md`). `w` and `h` are the
+/// signed size from the object's origin, so a negative one mirrors the
+/// corners onto the other side.
+fn file_corners(radii: &[f64], w: f64, h: f64) -> Corners {
+    let r = |i: usize| -> f64 {
+        let v = radii.get(i).or(radii.first()).copied().unwrap_or(0.0);
+        if v.is_finite() {
+            v.max(0.0)
+        } else {
+            0.0
+        }
+    };
+    // Corner positions in file order, as (right, top) flags for w, h > 0.
+    let order = [(true, false), (true, true), (false, true), (false, false)];
+    let mut c = Corners::default();
+    for (i, (right, top)) in order.into_iter().enumerate() {
+        let right = right == (w >= 0.0);
+        let top = top == (h >= 0.0);
+        let at = match (right, top) {
+            (false, true) => Corners::TOP_LEFT,
+            (true, true) => Corners::TOP_RIGHT,
+            (false, false) => Corners::BOTTOM_LEFT,
+            (true, false) => Corners::BOTTOM_RIGHT,
+        };
+        c.radii[at] = r(i);
+    }
+    c
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2516,7 +2544,7 @@ mod tests {
         let s = first_shape(&doc);
         assert_eq!(s.fill, Fill::Solid(Color::cmyk_pct(0.0, 100.0, 100.0, 0.0)));
         match &s.kind {
-            ShapeKind::Rect { rect, radius } => {
+            ShapeKind::Rect { rect, radius, .. } => {
                 assert!((rect.width() - 25.4).abs() < 1e-9);
                 assert!((rect.height() - 12.7).abs() < 1e-9);
                 assert_eq!(*radius, 0.0);
@@ -2817,13 +2845,62 @@ mod tests {
         let (doc, rep) = parse(&riff(b"CDRF", &body), 15);
         assert_eq!(rep.shapes, 1, "{:?}", rep.warnings);
         match &first_shape(&doc).kind {
-            ShapeKind::Rect { rect, radius } => {
+            ShapeKind::Rect { rect, radius, .. } => {
                 assert!((rect.width() - 50.8).abs() < 1e-9);
                 assert!((rect.height() - 25.4).abs() < 1e-9);
                 assert!((radius - 2.54).abs() < 1e-9);
             }
             other => panic!("{other:?}"),
         }
+    }
+
+    #[test]
+    fn rectangle_radii_per_corner() {
+        // Width, height, then four radii from the corner at (width, 0)
+        // counter-clockwise: 1, 2, 3 and 4 mm.
+        let read = |w: i32| {
+            let c = i32s(&[w, 127000, 10000, 20000, 30000, 40000]);
+            let obj = list(
+                b"obj ",
+                &chunk(b"loda", &loda(OBJ_RECT, &[(ARG_COORDS, c)])),
+            );
+            let body = [
+                chunk(b"mcfg", &mcfg(9, 2_540_000, 2_540_000)),
+                list(b"page", &list(b"layr", &obj)),
+            ]
+            .concat();
+            let (doc, rep) = parse(&riff(b"CDR9", &body), 9);
+            assert_eq!(rep.shapes, 1, "{:?}", rep.warnings);
+            assert!(rep.warnings.is_empty(), "{:?}", rep.warnings);
+            first_shape(&doc)
+                .kind
+                .rect_corners()
+                .expect("a rectangle")
+                .1
+        };
+        let near = |a: [f64; 4], b: [f64; 4]| a.iter().zip(b).all(|(x, y)| (x - y).abs() < 1e-9);
+        // Top left, top right, bottom left, bottom right.
+        let c = read(254000);
+        assert!(near(c.radii, [3.0, 2.0, 4.0, 1.0]), "{c:?}");
+        // Drawn leftwards: the first corner is on the left.
+        let c = read(-254000);
+        assert!(near(c.radii, [2.0, 3.0, 1.0, 4.0]), "{c:?}");
+        // One radius for every corner stays the plain form.
+        let c = i32s(&[254000, 127000, 5000, 5000, 5000, 5000]);
+        let obj = list(
+            b"obj ",
+            &chunk(b"loda", &loda(OBJ_RECT, &[(ARG_COORDS, c)])),
+        );
+        let body = [
+            chunk(b"mcfg", &mcfg(9, 2_540_000, 2_540_000)),
+            list(b"page", &list(b"layr", &obj)),
+        ]
+        .concat();
+        let (doc, _) = parse(&riff(b"CDR9", &body), 9);
+        assert!(matches!(
+            first_shape(&doc).kind,
+            ShapeKind::Rect { corners: None, radius, .. } if (radius - 0.5).abs() < 1e-9
+        ));
     }
 
     #[test]

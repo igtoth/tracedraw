@@ -189,7 +189,8 @@ pub struct OptionsSnapshot {
     snap: crate::snap::SnapSettings,
     polygon_points: u32,
     star_sharpness: f64,
-    rect_radius: f64,
+    rect_corners: tracedraw_core::Corners,
+    corners_together: bool,
     ellipse_arc: Option<tracedraw_core::EllipseArc>,
     spiral_revolutions: u32,
     spiral_logarithmic: bool,
@@ -232,7 +233,8 @@ impl OptionsSnapshot {
             snap: app.snap,
             polygon_points: app.polygon_points,
             star_sharpness: app.star_sharpness,
-            rect_radius: app.rect_radius,
+            rect_corners: app.rect_corners,
+            corners_together: app.corners_together,
             ellipse_arc: app.ellipse_arc,
             spiral_revolutions: app.spiral_revolutions,
             spiral_logarithmic: app.spiral_logarithmic,
@@ -282,7 +284,8 @@ impl OptionsSnapshot {
         app.snap = self.snap;
         app.polygon_points = self.polygon_points;
         app.star_sharpness = self.star_sharpness;
-        app.rect_radius = self.rect_radius;
+        app.rect_corners = self.rect_corners;
+        app.corners_together = self.corners_together;
         app.ellipse_arc = self.ellipse_arc;
         app.spiral_revolutions = self.spiral_revolutions;
         app.spiral_logarithmic = self.spiral_logarithmic;
@@ -998,23 +1001,72 @@ fn zoom_pan_page(app: &mut App, ui: &mut Ui) {
 }
 
 fn rectangle_page(app: &mut App, ui: &mut Ui) {
-    grid("rect").show(ui, |ui| {
-        row_label(ui, &tr("options.corner_radius"));
-        let u = app.units;
-        let mut v = u.from_mm(app.rect_radius);
+    use tracedraw_core::{CornerKind, Corners};
+    let mut c = app.rect_corners;
+    let u = app.units;
+    let together = app.corners_together;
+    chrome::section(ui, &tr("options.rectangle_corners"));
+    ui.indent("rect_corners", |ui| {
+        ui.horizontal(|ui| {
+            for (kind, key) in [
+                (CornerKind::Round, "toolbar.corner_round"),
+                (CornerKind::Scallop, "toolbar.corner_scallop"),
+                (CornerKind::Chamfer, "toolbar.corner_chamfer"),
+            ] {
+                ui.radio_value(&mut c.kind, kind, tr(key));
+            }
+        });
+        egui::Grid::new("rect_corners_grid")
+            .num_columns(4)
+            .spacing([8.0, 8.0])
+            .show(ui, |ui| {
+                for pair in [
+                    [
+                        (Corners::TOP_LEFT, "toolbar.corner_top_left"),
+                        (Corners::TOP_RIGHT, "toolbar.corner_top_right"),
+                    ],
+                    [
+                        (Corners::BOTTOM_LEFT, "toolbar.corner_bottom_left"),
+                        (Corners::BOTTOM_RIGHT, "toolbar.corner_bottom_right"),
+                    ],
+                ] {
+                    for (i, key) in pair {
+                        row_label(ui, &tr(key));
+                        let mut v = u.from_mm(c.radii[i]);
+                        if ui
+                            .add_sized(
+                                [80.0, 22.0],
+                                egui::DragValue::new(&mut v)
+                                    .range(0.0..=10_000.0)
+                                    .speed(0.1)
+                                    .suffix(format!(" {}", u.short())),
+                            )
+                            .changed()
+                        {
+                            let v = u.to_mm(v).max(0.0);
+                            if together {
+                                c.radii = [v; 4];
+                            } else {
+                                c.radii[i] = v;
+                            }
+                        }
+                    }
+                    ui.end_row();
+                }
+            });
+        ui.checkbox(&mut app.corners_together, tr("toolbar.corners_together"));
+    });
+    chrome::section(ui, &tr("options.scale_corners"));
+    ui.indent("scale_corners", |ui| {
+        let mut relative = !c.fixed;
         if ui
-            .add(
-                egui::DragValue::new(&mut v)
-                    .range(0.0..=10_000.0)
-                    .speed(0.1)
-                    .suffix(format!(" {}", u.short())),
-            )
+            .checkbox(&mut relative, tr("toolbar.relative_corners"))
             .changed()
         {
-            app.rect_radius = u.to_mm(v).max(0.0);
+            c.fixed = !relative;
         }
-        ui.end_row();
     });
+    app.rect_corners = c;
 }
 
 fn ellipse_page(app: &mut App, ui: &mut Ui) {

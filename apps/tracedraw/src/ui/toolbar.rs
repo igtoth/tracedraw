@@ -1807,6 +1807,20 @@ fn text_properties(app: &mut App, ui: &mut Ui) {
 
 fn shape_tool_bar(app: &mut App, ui: &mut Ui) {
     use tracedraw_core::nodes::NodeType;
+    // Rectangles, ellipses and polygons: the Shape tool edits them through
+    // their own controls (corners, pie and arc, points), as with their tools.
+    let shapes = app.selected_shapes();
+    if !shapes.is_empty()
+        && shapes.iter().all(|s| {
+            matches!(
+                s.kind,
+                ShapeKind::Rect { .. } | ShapeKind::Ellipse { .. } | ShapeKind::Polygon { .. }
+            )
+        })
+        && crate::ui::propbar::kind_part(app, ui)
+    {
+        return;
+    }
     let has_nodes = !app.node_selection.is_empty();
     let has_curve = app
         .selected_shapes()

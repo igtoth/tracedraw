@@ -301,6 +301,7 @@ impl App {
         if let Some(id) = self.new_shape(tracedraw_core::ShapeKind::Rect {
             rect: tracedraw_core::geometry::Rect::new(0.0, 0.0, size.width, size.height),
             radius: 0.0,
+            corners: None,
         }) {
             self.select(vec![id]);
         }

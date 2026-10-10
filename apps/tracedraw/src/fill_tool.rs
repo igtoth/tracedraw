@@ -119,6 +119,7 @@ mod tests {
             .new_shape(ShapeKind::Rect {
                 rect: Rect::new(0.0, 0.0, 40.0, 20.0),
                 radius: 0.0,
+                corners: None,
             })
             .expect("shape");
         app.select(vec![id]);
@@ -146,6 +147,7 @@ mod tests {
             .new_shape(ShapeKind::Rect {
                 rect: Rect::new(0.0, 0.0, 40.0, 20.0),
                 radius: 0.0,
+                corners: None,
             })
             .expect("shape");
         app.select(vec![id]);

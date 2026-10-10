@@ -10,7 +10,7 @@ use egui::{epaint, Color32, Painter, Pos2, Rect, Response, Sense, Stroke, Ui, Ve
 use tracedraw_core::{
     document::ShapeKind,
     geometry::{Affine, Point, Size},
-    Command,
+    Command, CornerKind, Corners,
 };
 
 /// Height of the bar's content: two stacked rows of fields.
@@ -55,6 +55,10 @@ pub enum Pic {
     Arc,
     ArcDirection,
     CornerRound,
+    CornerScallop,
+    CornerChamfer,
+    /// Relative corner scaling: a small corner, a larger one, an arrow.
+    CornerScaling,
     ToFront,
     ToBack,
     ToCurves,
@@ -346,6 +350,44 @@ pub fn draw_pic(painter: &Painter, r: Rect, pic: Pic, color: Color32) {
                 pts.push(q(r, 8.0 + 6.0 * t.cos(), 8.0 - 6.0 * t.sin()));
             }
             painter.add(epaint::PathShape::line(pts, s));
+        }
+        Pic::CornerScallop => {
+            line((2.0, 15.0), (2.0, 8.0), s);
+            line((8.0, 2.0), (15.0, 2.0), s);
+            // A quarter circle centred on the corner, bending inwards.
+            let mut pts = Vec::new();
+            for i in 0..=8 {
+                let t = std::f32::consts::FRAC_PI_2 * (1.0 - i as f32 / 8.0);
+                pts.push(q(r, 2.0 + 6.0 * t.cos(), 2.0 + 6.0 * t.sin()));
+            }
+            painter.add(epaint::PathShape::line(pts, s));
+        }
+        Pic::CornerChamfer => {
+            painter.add(epaint::PathShape::line(
+                vec![
+                    q(r, 2.0, 15.0),
+                    q(r, 2.0, 8.0),
+                    q(r, 8.0, 2.0),
+                    q(r, 15.0, 2.0),
+                ],
+                s,
+            ));
+        }
+        Pic::CornerScaling => {
+            // The corner at two sizes and an arrow from the small to the
+            // large one.
+            for (o, rad) in [(1.5f32, 6.0f32), (8.0, 3.5)] {
+                let c = o + rad;
+                let mut pts = vec![q(r, o, 15.0)];
+                for i in 0..=8 {
+                    let t = std::f32::consts::PI * (1.0 - 0.5 * i as f32 / 8.0);
+                    pts.push(q(r, c + rad * t.cos(), c - rad * t.sin()));
+                }
+                pts.push(q(r, 15.0, o));
+                painter.add(epaint::PathShape::line(pts, thin));
+            }
+            line((8.6, 8.6), (5.4, 5.4), thin);
+            poly(&[(4.6, 4.6), (7.6, 5.4), (5.4, 7.6)], color, Stroke::NONE);
         }
         Pic::ToFront | Pic::ToBack => {
             let front = pic == Pic::ToFront;
@@ -1259,48 +1301,138 @@ pub fn polygon_part(app: &mut App, ui: &mut Ui, star: bool) {
     }
 }
 
-/// The corner radius of rectangles.
-pub fn rectangle_part(app: &mut App, ui: &mut Ui) {
-    let selected: Vec<(tracedraw_core::ShapeId, tracedraw_core::geometry::Rect, f64)> = app
-        .selected_shapes()
-        .iter()
-        .filter_map(|s| match &s.kind {
-            ShapeKind::Rect { rect, radius } => Some((s.id, *rect, *radius)),
-            _ => None,
-        })
-        .collect();
-    let radius = selected.first().map(|s| s.2).unwrap_or(app.rect_radius);
-    draw_corner_label(ui);
-    if let Some(r) = distance(ui, app, radius, 92.0, Some(1.0)) {
-        let r = r.max(0.0);
-        app.rect_radius = r;
-        let cmds: Vec<Command> = selected
-            .iter()
-            .map(|(id, rect, _)| Command::SetShapeKind {
-                shape: *id,
-                kind: ShapeKind::Rect {
-                    rect: *rect,
-                    radius: r,
-                },
-            })
-            .collect();
-        if !cmds.is_empty() {
-            if let Err(e) = app.engine.run_batch("Corner Radius", &cmds) {
-                app.status = e.to_string();
+/// A change the rectangle part of the bar makes to corners.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum CornerEdit {
+    Kind(CornerKind),
+    /// One corner's size (page mm); with the lock every corner gets it.
+    Size(usize, f64),
+    /// Relative corner scaling on or off.
+    Scaling(bool),
+}
+
+impl CornerEdit {
+    /// `c` (measured on the page) after the edit.
+    pub fn apply(self, mut c: Corners, together: bool) -> Corners {
+        match self {
+            CornerEdit::Kind(k) => c.kind = k,
+            CornerEdit::Size(i, v) => {
+                let v = if v.is_finite() { v.max(0.0) } else { 0.0 };
+                if together {
+                    c.radii = [v; 4];
+                } else if let Some(r) = c.radii.get_mut(i) {
+                    *r = v;
+                }
             }
+            CornerEdit::Scaling(relative) => c.fixed = !relative,
         }
+        c
     }
 }
 
-fn draw_corner_label(ui: &mut Ui) {
-    let (rect, resp) = ui.allocate_exact_size(Vec2::new(20.0, BAR_H), Sense::hover());
-    draw_pic(
-        ui.painter(),
-        Rect::from_center_size(rect.center(), Vec2::splat(16.0)),
-        Pic::CornerRound,
-        Tokens::ICON,
-    );
-    resp.on_hover_text(tr("toolbar.corner_radius"));
+/// Apply a corner edit to the selected rectangles, or to the defaults for
+/// new ones when none is selected.
+pub fn edit_corners(app: &mut App, edit: CornerEdit) {
+    let together = app.corners_together;
+    let cmds: Vec<Command> = app
+        .selected_shapes()
+        .iter()
+        .filter_map(|s| {
+            let kind = s.with_page_corners(edit.apply(s.page_corners()?, together))?;
+            (kind != s.kind).then_some(Command::SetShapeKind { shape: s.id, kind })
+        })
+        .collect();
+    let any_rect = app
+        .selected_shapes()
+        .iter()
+        .any(|s| matches!(s.kind, ShapeKind::Rect { .. }));
+    if !any_rect {
+        app.rect_corners = edit.apply(app.rect_corners, together);
+        return;
+    }
+    if cmds.is_empty() {
+        return;
+    }
+    let label = match edit {
+        CornerEdit::Kind(_) => "Corner Style",
+        CornerEdit::Size(..) => "Corner Radius",
+        CornerEdit::Scaling(_) => "Corner Scaling",
+    };
+    if let Err(e) = app.engine.run_batch(label, &cmds) {
+        app.status = e.to_string();
+    }
+}
+
+/// Rectangle corners: the corner style, the four sizes (top left over
+/// bottom left, then top right over bottom right) with the lock that edits
+/// them together, and relative corner scaling.
+pub fn rectangle_part(app: &mut App, ui: &mut Ui) {
+    let current = app
+        .selected_shapes()
+        .iter()
+        .find_map(|s| s.page_corners())
+        .unwrap_or(app.rect_corners);
+    let mut edit = None;
+    for (kind, pic, tip) in [
+        (CornerKind::Round, Pic::CornerRound, "toolbar.corner_round"),
+        (
+            CornerKind::Scallop,
+            Pic::CornerScallop,
+            "toolbar.corner_scallop",
+        ),
+        (
+            CornerKind::Chamfer,
+            Pic::CornerChamfer,
+            "toolbar.corner_chamfer",
+        ),
+    ] {
+        if pic_button(ui, pic, &tr(tip), true, current.kind == kind).clicked() {
+            edit = Some(CornerEdit::Kind(kind));
+        }
+    }
+    sep(ui);
+    for column in [
+        [Corners::TOP_LEFT, Corners::BOTTOM_LEFT],
+        [Corners::TOP_RIGHT, Corners::BOTTOM_RIGHT],
+    ] {
+        stacked(ui, |ui| {
+            for i in column {
+                row(ui, |ui| {
+                    if let Some(v) = distance(ui, app, current.radii[i], 66.0, Some(1.0)) {
+                        edit = Some(CornerEdit::Size(i, v));
+                    }
+                });
+            }
+        });
+    }
+    let together = app.corners_together;
+    if pic_button(
+        ui,
+        Pic::Lock(together),
+        &tr("toolbar.corners_together"),
+        true,
+        together,
+    )
+    .clicked()
+    {
+        app.corners_together = !together;
+    }
+    sep(ui);
+    let relative = !current.fixed;
+    if pic_button(
+        ui,
+        Pic::CornerScaling,
+        &tr("toolbar.relative_corners"),
+        true,
+        relative,
+    )
+    .clicked()
+    {
+        edit = Some(CornerEdit::Scaling(!relative));
+    }
+    if let Some(e) = edit {
+        edit_corners(app, e);
+    }
 }
 
 /// The part that follows the object bar for the selected kind of object
@@ -1461,5 +1593,63 @@ mod tests {
             outline_text(&app, Some(tracedraw_core::Stroke::HAIRLINE)),
             tr("toolbar.hairline")
         );
+    }
+
+    #[test]
+    fn corner_edits_change_the_selection_in_one_step_or_the_defaults() {
+        let mut app = App::headless();
+        // Nothing selected: the defaults for new rectangles.
+        edit_corners(&mut app, CornerEdit::Size(Corners::TOP_LEFT, 3.0));
+        assert_eq!(app.rect_corners.radii, [3.0; 4]);
+        edit_corners(&mut app, CornerEdit::Kind(CornerKind::Chamfer));
+        assert_eq!(app.rect_corners.kind, CornerKind::Chamfer);
+        app.rect_corners = Corners::default();
+        let id = app
+            .new_shape(ShapeKind::rect_with_corners(
+                R::new(0.0, 0.0, 40.0, 20.0),
+                Corners::default(),
+            ))
+            .expect("a rectangle");
+        app.select(vec![id]);
+        app.transform_selection(Affine::scale(2.0));
+        let depth = app.engine.history_labels().0.len();
+        // Together: every corner; the sizes are page millimetres.
+        edit_corners(&mut app, CornerEdit::Size(Corners::TOP_RIGHT, 6.0));
+        let s = app.selected_shapes()[0].clone();
+        assert_eq!(s.page_corners().unwrap().radii, [6.0; 4]);
+        assert_eq!(app.engine.history_labels().0.len(), depth + 1);
+        assert_eq!(app.engine.undo_label(), Some("Corner Radius"));
+        // Unlocked: one corner.
+        app.corners_together = false;
+        edit_corners(&mut app, CornerEdit::Size(Corners::BOTTOM_LEFT, 1.0));
+        let s = app.selected_shapes()[0].clone();
+        assert_eq!(s.page_corners().unwrap().radii, [6.0, 6.0, 1.0, 6.0]);
+        // Turning relative scaling off keeps the sizes on the page.
+        edit_corners(&mut app, CornerEdit::Scaling(false));
+        let s = app.selected_shapes()[0].clone();
+        let c = s.page_corners().unwrap();
+        assert!(c.fixed);
+        assert_eq!(c.radii, [6.0, 6.0, 1.0, 6.0]);
+        // ... and scaling the rectangle again leaves them alone.
+        app.transform_selection(Affine::scale(0.5));
+        let s = app.selected_shapes()[0].clone();
+        assert_eq!(s.page_corners().unwrap().radii, [6.0, 6.0, 1.0, 6.0]);
+        assert_eq!(app.rect_corners, Corners::default());
+        // Undo goes back one edit at a time.
+        app.undo();
+        app.undo();
+        let s = app.selected_shapes()[0].clone();
+        assert!(!s.page_corners().unwrap().fixed);
+    }
+
+    #[test]
+    fn the_rectangle_tool_draws_with_the_default_corners() {
+        let mut app = App::headless();
+        app.rect_corners = Corners::uniform(2.0, CornerKind::Scallop);
+        app.tool = crate::tools::Tool::Rectangle;
+        app.create_box_shape(Point::new(10.0, 10.0), Point::new(50.0, 30.0));
+        let s = app.selected_shapes()[0].clone();
+        let (_, c) = s.kind.rect_corners().unwrap();
+        assert_eq!(c, Corners::uniform(2.0, CornerKind::Scallop));
     }
 }

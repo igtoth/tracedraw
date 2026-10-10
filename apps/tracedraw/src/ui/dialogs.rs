@@ -1346,6 +1346,7 @@ pub(crate) fn page_size_page(app: &mut App, ui: &mut Ui) {
             if let Some(id) = app.new_shape(ShapeKind::Rect {
                 rect: r,
                 radius: 0.0,
+                corners: None,
             }) {
                 app.select(vec![id]);
             }
@@ -2851,6 +2852,7 @@ mod tests {
             .new_shape(ShapeKind::Rect {
                 rect: tracedraw_core::geometry::Rect::new(10.0, 10.0, 60.0, 40.0),
                 radius: 0.0,
+                corners: None,
             })
             .expect("rect");
         app.start_text(tracedraw_core::geometry::Point::new(20.0, 80.0), None);

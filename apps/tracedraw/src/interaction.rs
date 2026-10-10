@@ -609,6 +609,7 @@ impl App {
             if let Some(id) = self.new_shape(ShapeKind::Rect {
                 rect: r,
                 radius: 0.0,
+                corners: None,
             }) {
                 self.select(vec![id]);
             }
@@ -951,6 +952,7 @@ impl App {
             | Drag::Shadow { .. }
             | Drag::RulerOrigin { .. }
             | Drag::Node { .. }
+            | Drag::KindNode { .. }
             | Drag::Handle { .. }
             | Drag::None => {}
         }

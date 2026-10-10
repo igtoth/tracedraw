@@ -650,7 +650,7 @@ impl App {
             let contents = contents
                 .into_iter()
                 .map(|mut c| {
-                    c.transform = fix * c.transform;
+                    c.absorb(fix);
                     c
                 })
                 .collect();
@@ -1966,7 +1966,7 @@ impl App {
                 let layer = layer.id;
                 let mut copy = def.shape.clone();
                 copy.id = self.engine.new_shape_id();
-                copy.transform = s.transform * copy.transform;
+                copy.absorb(s.transform);
                 new_sel.push(copy.id);
                 cmds.push(Command::DeleteShapes { shapes: vec![s.id] });
                 cmds.push(Command::AddShape { layer, shape: copy });

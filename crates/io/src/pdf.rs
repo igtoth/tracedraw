@@ -880,6 +880,7 @@ pub fn document_to_pdf_with(doc: &Document, opts: &PdfOptions) -> Vec<u8> {
                 ShapeKind::Rect {
                     rect: page.rect(),
                     radius: 0.0,
+                    corners: None,
                 },
             );
             bg_shape.fill = bg.clone();
@@ -1099,6 +1100,7 @@ mod tests {
             ShapeKind::Rect {
                 rect: Rect::new(10.0, 10.0, 60.0, 40.0),
                 radius: 0.0,
+                corners: None,
             },
         );
         s.fill = Fill::Fountain(tracedraw_core::Fountain {
@@ -1164,6 +1166,7 @@ mod tests {
             ShapeKind::Rect {
                 rect: Rect::new(0.0, 0.0, 5.0, 5.0),
                 radius: 0.0,
+                corners: None,
             },
         );
         tile_square.fill = Fill::Solid(Color::rgb8(255, 0, 0));
@@ -1174,6 +1177,7 @@ mod tests {
             ShapeKind::Rect {
                 rect: Rect::new(10.0, 10.0, 30.0, 30.0),
                 radius: 0.0,
+                corners: None,
             },
         );
         s.fill = Fill::Pattern(tracedraw_core::Pattern::Vector {
@@ -1255,6 +1259,7 @@ mod tests {
             ShapeKind::Rect {
                 rect: Rect::new(10.0, 10.0, 60.0, 40.0),
                 radius: 0.0,
+                corners: None,
             },
         );
         s.fill = Fill::linear(Color::cmyk_pct(100.0, 0.0, 0.0, 0.0), Color::WHITE, 0.0);
@@ -1283,6 +1288,7 @@ mod pdfx_tests {
             ShapeKind::Rect {
                 rect: Rect::new(0.0, 0.0, 100.0, 50.0),
                 radius: 0.0,
+                corners: None,
             },
         );
         base.fill = Fill::Solid(Color::rgb8(255, 0, 0));
@@ -1292,6 +1298,7 @@ mod pdfx_tests {
             ShapeKind::Rect {
                 rect: Rect::new(20.0, 10.0, 60.0, 40.0),
                 radius: 0.0,
+                corners: None,
             },
         );
         top.fill = Fill::Solid(Color::rgb8(0, 0, 255));

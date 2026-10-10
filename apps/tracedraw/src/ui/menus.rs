@@ -420,6 +420,7 @@ mod tests {
             .new_shape(ShapeKind::Rect {
                 rect: Rect::new(10.0, 10.0, 60.0, 40.0),
                 radius: 0.0,
+                corners: None,
             })
             .expect("rect");
         app.new_shape(ShapeKind::Ellipse {

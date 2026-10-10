@@ -1076,6 +1076,7 @@ mod write_tests {
             ShapeKind::Rect {
                 rect: Rect::new(0.0, 0.0, 10.0, 10.0),
                 radius: 0.0,
+                corners: None,
             },
         );
         r.fill = Fill::Solid(Color::rgb8(255, 0, 0));

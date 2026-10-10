@@ -1136,6 +1136,7 @@ fn blend(app: &mut App, ui: &mut Ui) {
                         ShapeKind::Rect {
                             rect: Default::default(),
                             radius: 0.0,
+                            corners: None,
                         },
                     )),
                     steps: 1,

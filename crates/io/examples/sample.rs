@@ -28,6 +28,7 @@ fn main() {
         ShapeKind::Rect {
             rect: Rect::new(20.0, 180.0, 90.0, 240.0),
             radius: 5.0,
+            corners: None,
         },
         Fill::Solid(Color::cmyk_pct(100.0, 0.0, 0.0, 0.0)),
         Some(Stroke::new(Color::BLACK, 0.5)),
@@ -93,6 +94,7 @@ fn main() {
         ShapeKind::Rect {
             rect: Rect::new(60.0, 25.0, 110.0, 60.0),
             radius: 3.0,
+            corners: None,
         },
         Fill::Solid(Color::cmyk_pct(100.0, 0.0, 0.0, 0.0)),
         None,

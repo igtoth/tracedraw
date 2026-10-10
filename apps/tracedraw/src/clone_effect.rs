@@ -192,6 +192,7 @@ mod tests {
         app.new_shape(ShapeKind::Rect {
             rect: Rect::new(x, 10.0, x + 20.0, 30.0),
             radius: 0.0,
+            corners: None,
         })
         .unwrap()
     }

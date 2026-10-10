@@ -371,6 +371,9 @@ fn properties(app: &mut App, ui: &mut Ui) {
                 app.run(Command::SetStroke { shapes, stroke });
             }
         });
+    if let Some(c) = first.page_corners() {
+        ui.collapsing(tr("kind.rectangle"), |ui| rectangle_section(app, ui, c));
+    }
     if let ShapeKind::Text { spans, .. } = &first.kind {
         ui.collapsing(tr("docker.character"), |ui| {
             if let Some(sp) = spans.first() {
@@ -407,6 +410,70 @@ fn properties(app: &mut App, ui: &mut Ui) {
             ));
         }
     });
+}
+
+/// The Properties docker's rectangle part: corner style, the four corner
+/// sizes, editing them together and relative corner scaling, as on the
+/// property bar.
+fn rectangle_section(app: &mut App, ui: &mut Ui, c: tracedraw_core::Corners) {
+    use crate::ui::propbar::{edit_corners, CornerEdit};
+    use tracedraw_core::{CornerKind, Corners};
+    let mut edit = None;
+    ui.horizontal(|ui| {
+        for (kind, key) in [
+            (CornerKind::Round, "toolbar.corner_round"),
+            (CornerKind::Scallop, "toolbar.corner_scallop"),
+            (CornerKind::Chamfer, "toolbar.corner_chamfer"),
+        ] {
+            if ui.radio(c.kind == kind, tr(key)).clicked() {
+                edit = Some(CornerEdit::Kind(kind));
+            }
+        }
+    });
+    let u = app.units;
+    egui::Grid::new("docker_corners")
+        .num_columns(4)
+        .spacing([6.0, 4.0])
+        .show(ui, |ui| {
+            for pair in [
+                [
+                    (Corners::TOP_LEFT, "toolbar.corner_top_left"),
+                    (Corners::TOP_RIGHT, "toolbar.corner_top_right"),
+                ],
+                [
+                    (Corners::BOTTOM_LEFT, "toolbar.corner_bottom_left"),
+                    (Corners::BOTTOM_RIGHT, "toolbar.corner_bottom_right"),
+                ],
+            ] {
+                for (i, key) in pair {
+                    ui.label(tr(key));
+                    let mut v = u.from_mm(c.radii[i]);
+                    let r = ui.add(
+                        egui::DragValue::new(&mut v)
+                            .range(0.0..=10_000.0)
+                            .speed(0.1)
+                            .suffix(format!(" {}", u.short())),
+                    );
+                    if (r.drag_stopped() || r.lost_focus() || (r.changed() && !r.dragged()))
+                        && (u.to_mm(v) - c.radii[i]).abs() > 1e-12
+                    {
+                        edit = Some(CornerEdit::Size(i, u.to_mm(v)));
+                    }
+                }
+                ui.end_row();
+            }
+        });
+    ui.checkbox(&mut app.corners_together, tr("toolbar.corners_together"));
+    let mut relative = !c.fixed;
+    if ui
+        .checkbox(&mut relative, tr("toolbar.relative_corners"))
+        .changed()
+    {
+        edit = Some(CornerEdit::Scaling(relative));
+    }
+    if let Some(e) = edit {
+        edit_corners(app, e);
+    }
 }
 
 fn fill_editor(ui: &mut Ui, fill: &mut Fill) -> bool {

@@ -1661,6 +1661,7 @@ mod tests {
             ShapeKind::Rect {
                 rect: Rect::new(10.0, 10.0, 40.0, 30.0),
                 radius: 0.0,
+                corners: None,
             },
         );
         r.fill = Fill::Solid(Color::rgb8(0, 0, 255));

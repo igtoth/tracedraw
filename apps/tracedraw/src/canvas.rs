@@ -1016,12 +1016,31 @@ fn draw_nodes(app: &App, painter: &Painter) {
     let size = prefs.size.px();
     for s in app.selected_shapes() {
         let ShapeKind::Path { path, .. } = &s.kind else {
-            painter.rect_stroke(
-                view.rect_to_screen(s.bounds()),
-                0.0,
-                EStroke::new(1.0, Tokens::SELECTION),
-                epaint::StrokeKind::Outside,
-            );
+            // Rectangles, ellipses and polygons show their own nodes.
+            let own = crate::kind_nodes::nodes(&s);
+            if own.is_empty() {
+                painter.rect_stroke(
+                    view.rect_to_screen(s.bounds()),
+                    0.0,
+                    EStroke::new(1.0, Tokens::SELECTION),
+                    epaint::StrokeKind::Outside,
+                );
+            }
+            for (node, p) in own {
+                let chosen = matches!(
+                    node,
+                    crate::kind_nodes::KindNode::Corner { corner, .. }
+                        if app.rect_corner_selected == Some((s.id, corner))
+                );
+                let fill = if chosen {
+                    Some(main)
+                } else if prefs.unselected_filled {
+                    Some(Color32::WHITE)
+                } else {
+                    None
+                };
+                node_marker(painter, view.to_screen(p), size, prefs.cusp, fill, main);
+            }
             continue;
         };
         let all = nodes::nodes(path);

@@ -237,6 +237,7 @@ mod tests {
             ShapeKind::Rect {
                 rect: Rect::new(0.0, 0.0, 10.0, 10.0),
                 radius: 0.0,
+                corners: None,
             },
         );
         eng.run(&Command::AddShape { layer, shape }).unwrap();

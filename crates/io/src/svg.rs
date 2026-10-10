@@ -517,6 +517,7 @@ mod tests {
             ShapeKind::Rect {
                 rect: Rect::new(10.0, 10.0, 60.0, 40.0),
                 radius: 0.0,
+                corners: None,
             },
         );
         s.fill = Fill::Solid(Color::rgb8(255, 0, 0));
@@ -540,6 +541,7 @@ mod tests {
             ShapeKind::Rect {
                 rect: Rect::new(10.0, 10.0, 60.0, 40.0),
                 radius: 0.0,
+                corners: None,
             },
         );
         s.fill = Fill::None;
@@ -626,6 +628,7 @@ mod tests {
             ShapeKind::Rect {
                 rect: Rect::new(0.0, 0.0, 5.0, 5.0),
                 radius: 0.0,
+                corners: None,
             },
         );
         tile_square.fill = Fill::Solid(Color::rgb8(255, 0, 0));
@@ -636,6 +639,7 @@ mod tests {
             ShapeKind::Rect {
                 rect: Rect::new(10.0, 10.0, 30.0, 30.0),
                 radius: 0.0,
+                corners: None,
             },
         );
         s.fill = Fill::Pattern(tracedraw_core::Pattern::Vector {

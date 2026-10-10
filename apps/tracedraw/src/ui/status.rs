@@ -487,6 +487,7 @@ mod tests {
             .new_shape(ShapeKind::Rect {
                 rect: PRect::new(0.0, 0.0, 10.0, 10.0),
                 radius: 0.0,
+                corners: None,
             })
             .expect("layer");
         app.select(vec![a]);

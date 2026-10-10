@@ -47,7 +47,9 @@ palette; see `color-palettes.md`).
 
 Pick (cross hair cursor; treat all objects as filled: unfilled objects
 are picked inside too), Zoom/Pan (right mouse button of the Zoom tool:
-zoom out or context menu; mouse wheel action), Rectangle (corner radius),
+zoom out or context menu; mouse wheel action), Rectangle (Rectangle
+corners: style, the four sizes, Edit corners together; Scale corners:
+Relative corner scaling; see `shape-tools.md`),
 Ellipse (ellipse, pie or arc and its angles), Polygon (points, sharpness),
 Spiral (revolutions, symmetrical or logarithmic), Graph Paper and Table
 (rows, columns), Eraser (thickness, round or square nib).

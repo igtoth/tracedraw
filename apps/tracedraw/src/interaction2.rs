@@ -517,6 +517,7 @@ impl App {
             ShapeKind::Rect {
                 rect: b,
                 radius: 0.0,
+                corners: None,
             }
         } else if closed {
             // Circularity: compare the area with the bounding ellipse.

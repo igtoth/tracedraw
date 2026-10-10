@@ -1,7 +1,7 @@
 //! The document model: pages, layers and shapes. Pure data, serde-friendly,
 //! no behaviour beyond lookups and bounds. Mutation goes through commands.
 
-use crate::geometry::{self, Affine, BezPath, Rect, Shape as _};
+use crate::geometry::{self, Affine, BezPath, Point, Rect, Shape as _, Vec2};
 use crate::id::{IdSource, LayerId, PageId, ShapeId};
 use crate::style::{Fill, Stroke};
 use crate::{Error, Result};
@@ -45,11 +45,220 @@ pub mod paper {
     pub const LETTER: Size = Size::new(215.9, 279.4);
 }
 
+/// The style of a rectangle's corners (the target design's Round,
+/// Scallop and Chamfer).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CornerKind {
+    #[default]
+    Round,
+    /// Cut by a quarter circle centred on the corner.
+    Scallop,
+    /// Cut by a straight line.
+    Chamfer,
+}
+
+impl CornerKind {
+    pub const ALL: [CornerKind; 3] = [CornerKind::Round, CornerKind::Scallop, CornerKind::Chamfer];
+}
+
+/// Each corner's size (mm) and the corner style of a rectangle. The radii
+/// run in the property bar's order: top left, top right, bottom left,
+/// bottom right (top is +y in the local space).
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+pub struct Corners {
+    pub radii: [f64; 4],
+    #[serde(default)]
+    pub kind: CornerKind,
+    /// The corners keep their size when the rectangle is scaled (the
+    /// target design's Relative corner scaling turned off): the radii
+    /// are page millimetres. Otherwise they are in the rectangle's own
+    /// space and scale, or stretch, with it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub fixed: bool,
+}
+
+impl Corners {
+    pub const TOP_LEFT: usize = 0;
+    pub const TOP_RIGHT: usize = 1;
+    pub const BOTTOM_LEFT: usize = 2;
+    pub const BOTTOM_RIGHT: usize = 3;
+
+    pub fn uniform(radius: f64, kind: CornerKind) -> Corners {
+        Corners {
+            radii: [radius; 4],
+            kind,
+            fixed: false,
+        }
+    }
+
+    /// Every corner the same size.
+    pub fn is_uniform(&self) -> bool {
+        self.radii.iter().all(|r| (r - self.radii[0]).abs() < 1e-9)
+    }
+
+    /// Same size on every corner, round and scaling with the object: a
+    /// plain radius says as much.
+    pub fn is_plain(&self) -> bool {
+        self.kind == CornerKind::Round && !self.fixed && self.is_uniform()
+    }
+
+    /// The largest corner.
+    pub fn max(&self) -> f64 {
+        self.radii.iter().cloned().fold(0.0, f64::max)
+    }
+
+    /// No corner is cut.
+    pub fn is_square(&self) -> bool {
+        self.max() <= 1e-9
+    }
+
+    /// Each corner in drawing order (counter-clockwise from the bottom
+    /// right): its index, the corner point, the edge directions into and
+    /// out of it, and how far the cut runs along each edge, all in the
+    /// rectangle's own space. `scale` is the page length of one unit along
+    /// the rectangle's x and y axes; fixed corners are divided by it so
+    /// that they keep their size on the page. A corner is at most half the
+    /// shorter side.
+    fn layout(&self, rect: Rect, scale: (f64, f64)) -> [CornerAt; 4] {
+        let rect = rect.abs();
+        let (sx, sy) = if self.fixed {
+            (scale.0.abs().max(1e-9), scale.1.abs().max(1e-9))
+        } else {
+            (1.0, 1.0)
+        };
+        // Page-space limit, then each corner as an ellipse in local space.
+        let limit = (rect.width() * sx).min(rect.height() * sy) / 2.0;
+        let (x0, y0, x1, y1) = (rect.x0, rect.y0, rect.x1, rect.y1);
+        let at = |index: usize, p: Point, d_in: Vec2, d_out: Vec2| {
+            let r = self.radii[index];
+            let r = if r.is_finite() {
+                r.clamp(0.0, limit.max(0.0))
+            } else {
+                0.0
+            };
+            // The part of the corner's size along a direction.
+            let along = |d: Vec2| if d.x != 0.0 { r / sx } else { r / sy };
+            CornerAt {
+                index,
+                p,
+                d_in,
+                d_out,
+                a_in: along(d_in),
+                a_out: along(d_out),
+            }
+        };
+        [
+            at(
+                Self::BOTTOM_RIGHT,
+                Point::new(x1, y0),
+                Vec2::new(1.0, 0.0),
+                Vec2::new(0.0, 1.0),
+            ),
+            at(
+                Self::TOP_RIGHT,
+                Point::new(x1, y1),
+                Vec2::new(0.0, 1.0),
+                Vec2::new(-1.0, 0.0),
+            ),
+            at(
+                Self::TOP_LEFT,
+                Point::new(x0, y1),
+                Vec2::new(-1.0, 0.0),
+                Vec2::new(0.0, -1.0),
+            ),
+            at(
+                Self::BOTTOM_LEFT,
+                Point::new(x0, y0),
+                Vec2::new(0.0, -1.0),
+                Vec2::new(1.0, 0.0),
+            ),
+        ]
+    }
+
+    /// Where each corner's cut meets the edges, in the rectangle's own
+    /// space, by corner index (top left, top right, bottom left, bottom
+    /// right): the corner point, the end on the vertical edge, the end on
+    /// the horizontal edge. A square corner has both ends on its point.
+    pub fn ends(&self, rect: Rect, scale: (f64, f64)) -> [(Point, Point, Point); 4] {
+        let mut out = [(Point::ZERO, Point::ZERO, Point::ZERO); 4];
+        for c in self.layout(rect, scale) {
+            let a = c.p - c.d_in * c.a_in;
+            let b = c.p + c.d_out * c.a_out;
+            out[c.index] = if c.d_in.x == 0.0 {
+                (c.p, a, b)
+            } else {
+                (c.p, b, a)
+            };
+        }
+        out
+    }
+
+    /// Outline of `rect` with these corners; see `layout` for `scale`.
+    pub fn path(&self, rect: Rect, scale: (f64, f64)) -> BezPath {
+        // Quarter-ellipse handle length.
+        const K: f64 = 0.552_284_749_830_793_4;
+        let order = self.layout(rect, scale);
+        let mut path = BezPath::new();
+        let last = &order[3];
+        let start = last.p + last.d_out * last.a_out;
+        path.move_to(start);
+        let mut at = start;
+        for c in order {
+            let (a_in, a_out) = (c.a_in, c.a_out);
+            let (d_in, d_out) = (c.d_in, c.d_out);
+            let a = c.p - d_in * a_in;
+            let b = c.p + d_out * a_out;
+            if (a - at).hypot() > 1e-12 {
+                path.line_to(a);
+            }
+            if a_in > 1e-12 && a_out > 1e-12 {
+                match self.kind {
+                    CornerKind::Round => {
+                        path.curve_to(a + d_in * (K * a_in), b - d_out * (K * a_out), b)
+                    }
+                    CornerKind::Scallop => {
+                        path.curve_to(a + d_out * (K * a_out), b - d_in * (K * a_in), b)
+                    }
+                    CornerKind::Chamfer => path.line_to(b),
+                }
+            } else if (b - a).hypot() > 1e-12 {
+                path.line_to(b);
+            }
+            at = b;
+        }
+        path.close_path();
+        path
+    }
+}
+
+/// One corner of a rectangle as `Corners::layout` places it.
+struct CornerAt {
+    index: usize,
+    p: Point,
+    d_in: Vec2,
+    d_out: Vec2,
+    a_in: f64,
+    a_out: f64,
+}
+
+/// Page length of one unit along the x and y axes of `t`.
+pub fn axis_scale(t: Affine) -> (f64, f64) {
+    let [a, b, c, d, _, _] = t.as_coeffs();
+    (a.hypot(b), c.hypot(d))
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum ShapeKind {
-    /// Rectangle in local space; `radius` rounds the corners (mm).
-    Rect { rect: Rect, radius: f64 },
+    /// Rectangle in local space; `radius` rounds the corners (mm), or
+    /// `corners` gives each corner its own size and the corner style.
+    Rect {
+        rect: Rect,
+        radius: f64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        corners: Option<Corners>,
+    },
     /// Ellipse inscribed in `rect`, in local space; optionally a pie or arc.
     Ellipse {
         rect: Rect,
@@ -98,6 +307,44 @@ pub enum ShapeKind {
         #[serde(with = "png_bytes")]
         png: Vec<u8>,
     },
+}
+
+impl ShapeKind {
+    /// A rectangle with these corners. Plain ones (one round radius that
+    /// scales with the object) keep the short form; otherwise `radius`
+    /// holds the largest corner for readers that know only one.
+    pub fn rect_with_corners(rect: Rect, corners: Corners) -> ShapeKind {
+        if corners.is_plain() {
+            let r = corners.radii[0];
+            ShapeKind::Rect {
+                rect,
+                radius: if r.is_finite() { r.max(0.0) } else { 0.0 },
+                corners: None,
+            }
+        } else {
+            ShapeKind::Rect {
+                rect,
+                radius: corners.max(),
+                corners: Some(corners),
+            }
+        }
+    }
+
+    /// The corners of a rectangle as stored (a plain radius as four equal
+    /// round corners); `None` for other kinds.
+    pub fn rect_corners(&self) -> Option<(Rect, Corners)> {
+        match self {
+            ShapeKind::Rect {
+                rect,
+                radius,
+                corners,
+            } => Some((
+                *rect,
+                corners.unwrap_or_else(|| Corners::uniform(*radius, CornerKind::Round)),
+            )),
+            _ => None,
+        }
+    }
 }
 
 /// PNG bytes as base64 in the JSON format.
@@ -614,11 +861,132 @@ impl Shape {
         }
     }
 
+    /// A rectangle's corners as they measure on the page: fixed corners as
+    /// stored, the others times the smaller scale of the rectangle's axes.
+    /// `None` for other kinds.
+    pub fn page_corners(&self) -> Option<Corners> {
+        let (_, c) = self.kind.rect_corners()?;
+        if c.fixed {
+            return Some(c);
+        }
+        let (sx, sy) = axis_scale(self.transform);
+        let k = sx.min(sy);
+        Some(Corners {
+            radii: c.radii.map(|r| r * k),
+            ..c
+        })
+    }
+
+    /// This rectangle with corners measured on the page (as
+    /// `page_corners` gives them), each at most half the shorter side.
+    /// `None` for other kinds.
+    pub fn with_page_corners(&self, page: Corners) -> Option<ShapeKind> {
+        let (rect, _) = self.kind.rect_corners()?;
+        let rect = rect.abs();
+        let (sx, sy) = axis_scale(self.transform);
+        let limit = (rect.width() * sx).min(rect.height() * sy) / 2.0;
+        let mut c = page;
+        let fit = |r: f64, limit: f64| {
+            if r.is_finite() {
+                r.clamp(0.0, limit.max(0.0))
+            } else {
+                0.0
+            }
+        };
+        c.radii = c.radii.map(|r| fit(r, limit));
+        if !c.fixed {
+            let k = sx.min(sy).max(1e-9);
+            let local_limit = rect.width().min(rect.height()) / 2.0;
+            c.radii = c.radii.map(|r| fit(r / k, local_limit));
+        }
+        Some(ShapeKind::rect_with_corners(rect, c))
+    }
+
+    /// Put `parent` in front of the shape's own transform (ungrouping,
+    /// flattening a group for a file) and keep its look. Fixed corners
+    /// measure against the rectangle's own transform, so when `parent`
+    /// scales them they first become scaling corners of the same size, or a
+    /// curve when the rectangle's axes scale differently.
+    pub fn absorb(&mut self, parent: Affine) {
+        let next = parent * self.transform;
+        if let ShapeKind::Rect {
+            rect,
+            corners: Some(c),
+            ..
+        } = &self.kind
+        {
+            let (sx, sy) = axis_scale(self.transform);
+            let (nx, ny) = axis_scale(next);
+            let same = |a: f64, b: f64| (a - b).abs() <= 1e-9 * a.abs().max(b.abs()).max(1.0);
+            if c.fixed && !(same(sx, nx) && same(sy, ny)) {
+                self.kind = if same(sx, sy) && sx > 1e-9 {
+                    let rect = rect.abs();
+                    let limit = (rect.width() * sx).min(rect.height() * sy) / 2.0;
+                    let mut rel = *c;
+                    rel.fixed = false;
+                    rel.radii = c.radii.map(|r| {
+                        if r.is_finite() {
+                            r.clamp(0.0, limit.max(0.0)) / sx
+                        } else {
+                            0.0
+                        }
+                    });
+                    ShapeKind::rect_with_corners(rect, rel)
+                } else {
+                    ShapeKind::Path {
+                        path: self.local_path(),
+                        closed: true,
+                    }
+                };
+            }
+        }
+        self.transform = next;
+    }
+
+    /// A rectangle that one round radius in its own space describes (what
+    /// formats with a single radius store): the rectangle and the radius.
+    /// `None` for other kinds and for corners that need a path.
+    pub fn plain_rect(&self) -> Option<(Rect, f64)> {
+        let ShapeKind::Rect {
+            rect,
+            radius,
+            corners,
+        } = &self.kind
+        else {
+            return None;
+        };
+        let Some(c) = corners else {
+            return Some((*rect, *radius));
+        };
+        if c.is_square() {
+            return Some((*rect, 0.0));
+        }
+        if c.kind != CornerKind::Round || !c.is_uniform() {
+            return None;
+        }
+        if !c.fixed {
+            return Some((*rect, c.radii[0]));
+        }
+        let (sx, sy) = axis_scale(self.transform);
+        if sx < 1e-9 || (sx - sy).abs() > 1e-9 * sx.max(sy) {
+            return None;
+        }
+        let limit = (rect.width().abs() * sx).min(rect.height().abs() * sy) / 2.0;
+        Some((*rect, c.radii[0].min(limit) / sx))
+    }
+
     /// Outline of the shape in local coordinates. Text and groups return an
     /// approximation (bounds box) until the type engine exists.
     pub fn local_path(&self) -> BezPath {
         match &self.kind {
-            ShapeKind::Rect { rect, radius } => geometry::rect_path(*rect, *radius),
+            ShapeKind::Rect {
+                rect,
+                radius,
+                corners,
+            } => match corners {
+                Some(c) => c.path(*rect, axis_scale(self.transform)),
+                None => geometry::rect_path(*rect, *radius),
+            },
             ShapeKind::Ellipse { rect, arc } => match arc {
                 None => geometry::ellipse_path(*rect),
                 Some(a) => geometry::ellipse_arc_path(*rect, a.start_deg, a.end_deg, a.pie),
@@ -699,6 +1067,7 @@ impl Shape {
                             ShapeKind::Rect {
                                 rect: r,
                                 radius: 0.0,
+                                corners: None,
                             },
                         );
                         bg.fill = fill;
@@ -1453,6 +1822,7 @@ mod tests {
             ShapeKind::Rect {
                 rect: Rect::new(10.0, 10.0, 50.0, 30.0),
                 radius: 2.0,
+                corners: None,
             },
         );
         s.transform = Affine::translate((5.0, 5.0));
@@ -1558,5 +1928,229 @@ mod tests {
         let p: ParagraphStyle = serde_json::from_str(r#"{"leading_pct":120.0}"#).unwrap();
         assert_eq!(p.baseline_grid_mm, 0.0);
         assert_eq!(p.leading_pct, 120.0);
+    }
+
+    fn rect_shape(w: f64, h: f64, corners: Corners) -> Shape {
+        Shape::new(
+            ShapeId(1),
+            ShapeKind::rect_with_corners(Rect::new(0.0, 0.0, w, h), corners),
+        )
+    }
+
+    fn area(s: &Shape) -> f64 {
+        s.page_path().area().abs()
+    }
+
+    #[test]
+    fn corner_styles_cut_the_expected_area() {
+        let (w, h, r) = (40.0, 20.0, 5.0);
+        let pi = std::f64::consts::PI;
+        for (kind, cut) in [
+            (CornerKind::Round, (4.0 - pi) * r * r),
+            (CornerKind::Scallop, pi * r * r),
+            (CornerKind::Chamfer, 2.0 * r * r),
+        ] {
+            let s = rect_shape(w, h, Corners::uniform(r, kind));
+            let a = area(&s);
+            assert!((a - (w * h - cut)).abs() < 0.05, "{kind:?}: {a}");
+            // The outline still spans the whole box.
+            let b = s.bounds();
+            assert!((b.width() - w).abs() < 1e-9 && (b.height() - h).abs() < 1e-9);
+        }
+        // Equal round corners are the plain radius.
+        let plain = rect_shape(w, h, Corners::uniform(r, CornerKind::Round));
+        assert!(matches!(plain.kind, ShapeKind::Rect { corners: None, radius, .. } if radius == r));
+    }
+
+    #[test]
+    fn each_corner_has_its_own_size() {
+        let mut c = Corners::uniform(0.0, CornerKind::Chamfer);
+        c.radii[Corners::TOP_LEFT] = 6.0;
+        let s = rect_shape(30.0, 20.0, c);
+        let path = s.local_path();
+        // Only the top left corner (x0, y1) is cut.
+        assert!(!path.contains(Point::new(0.5, 19.5)));
+        for p in [(29.5, 19.5), (0.5, 0.5), (29.5, 0.5)] {
+            assert!(path.contains(Point::new(p.0, p.1)), "{p:?}");
+        }
+        assert!((area(&s) - (600.0 - 18.0)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn corner_ends_sit_on_the_edges() {
+        let mut c = Corners::uniform(5.0, CornerKind::Round);
+        c.radii[Corners::BOTTOM_RIGHT] = 0.0;
+        let ends = c.ends(Rect::new(0.0, 0.0, 30.0, 20.0), (1.0, 1.0));
+        assert_eq!(
+            ends[Corners::TOP_LEFT],
+            (
+                Point::new(0.0, 20.0),
+                Point::new(0.0, 15.0),
+                Point::new(5.0, 20.0)
+            )
+        );
+        assert_eq!(
+            ends[Corners::TOP_RIGHT],
+            (
+                Point::new(30.0, 20.0),
+                Point::new(30.0, 15.0),
+                Point::new(25.0, 20.0)
+            )
+        );
+        assert_eq!(
+            ends[Corners::BOTTOM_LEFT],
+            (
+                Point::new(0.0, 0.0),
+                Point::new(0.0, 5.0),
+                Point::new(5.0, 0.0)
+            )
+        );
+        let p = Point::new(30.0, 0.0);
+        assert_eq!(ends[Corners::BOTTOM_RIGHT], (p, p, p));
+        // Fixed corners on a rectangle shown twice as wide.
+        c.fixed = true;
+        let ends = c.ends(Rect::new(0.0, 0.0, 30.0, 20.0), (2.0, 1.0));
+        assert_eq!(ends[Corners::TOP_LEFT].2, Point::new(2.5, 20.0));
+    }
+
+    #[test]
+    fn corners_are_at_most_half_the_shorter_side() {
+        let s = rect_shape(40.0, 10.0, Corners::uniform(50.0, CornerKind::Chamfer));
+        // Chamfers of 5 mm: four triangles of 12.5 mm2.
+        assert!((area(&s) - (400.0 - 50.0)).abs() < 1e-9);
+        // Negative and non-finite sizes count as square corners.
+        let mut c = Corners::uniform(-3.0, CornerKind::Scallop);
+        c.radii[1] = f64::NAN;
+        c.radii[2] = f64::INFINITY;
+        let s = rect_shape(40.0, 10.0, c);
+        assert!(area(&s) <= 400.0 + 1e-9);
+        assert!(s.local_path().elements().len() >= 5);
+    }
+
+    #[test]
+    fn fixed_corners_keep_their_size_when_scaled() {
+        let r = 4.0;
+        let mut c = Corners::uniform(r, CornerKind::Round);
+        c.fixed = true;
+        let mut s = rect_shape(20.0, 10.0, c);
+        assert!(matches!(
+            s.kind,
+            ShapeKind::Rect {
+                corners: Some(_),
+                ..
+            }
+        ));
+        s.transform = Affine::scale_non_uniform(3.0, 2.0);
+        let pi = std::f64::consts::PI;
+        let a = area(&s);
+        assert!((a - (60.0 * 20.0 - (4.0 - pi) * r * r)).abs() < 0.05, "{a}");
+        assert_eq!(s.page_corners().unwrap().radii, [r; 4]);
+        assert_eq!(s.plain_rect(), None);
+        // Scaling corners stretch with the object.
+        let mut s = rect_shape(20.0, 10.0, Corners::uniform(r, CornerKind::Round));
+        s.transform = Affine::scale_non_uniform(3.0, 2.0);
+        let a = area(&s);
+        assert!((a - (1200.0 - 6.0 * (4.0 - pi) * r * r)).abs() < 0.1, "{a}");
+        assert_eq!(s.page_corners().unwrap().radii, [2.0 * r; 4]);
+        assert_eq!(s.plain_rect(), Some((Rect::new(0.0, 0.0, 20.0, 10.0), r)));
+    }
+
+    #[test]
+    fn corners_set_on_the_page_land_in_the_right_space() {
+        let mut s = rect_shape(20.0, 10.0, Corners::default());
+        s.transform = Affine::scale(2.0);
+        // Scaling corners: 6 mm on the page is 3 in the rectangle's space.
+        let kind = s
+            .with_page_corners(Corners::uniform(6.0, CornerKind::Round))
+            .unwrap();
+        assert_eq!(kind.rect_corners().unwrap().1.radii, [3.0; 4]);
+        s.kind = kind;
+        assert_eq!(s.page_corners().unwrap().radii, [6.0; 4]);
+        assert_eq!(s.plain_rect(), Some((Rect::new(0.0, 0.0, 20.0, 10.0), 3.0)));
+        // Fixed corners are stored as page sizes, limited by the page box.
+        let mut c = Corners::uniform(50.0, CornerKind::Scallop);
+        c.fixed = true;
+        let kind = s.with_page_corners(c).unwrap();
+        assert_eq!(kind.rect_corners().unwrap().1.radii, [10.0; 4]);
+        // A fixed round radius on a uniformly scaled rectangle is still one radius.
+        c.kind = CornerKind::Round;
+        c.radii = [4.0; 4];
+        s.kind = s.with_page_corners(c).unwrap();
+        assert_eq!(s.plain_rect(), Some((Rect::new(0.0, 0.0, 20.0, 10.0), 2.0)));
+        // Other kinds have no corners.
+        let e = Shape::new(
+            ShapeId(2),
+            ShapeKind::Ellipse {
+                rect: Rect::new(0.0, 0.0, 1.0, 1.0),
+                arc: None,
+            },
+        );
+        assert!(e.page_corners().is_none() && e.with_page_corners(c).is_none());
+        assert!(e.plain_rect().is_none());
+    }
+
+    #[test]
+    fn rectangles_save_their_corners_only_when_they_have_some() {
+        let plain = ShapeKind::rect_with_corners(Rect::new(0.0, 0.0, 2.0, 1.0), Corners::default());
+        let json = serde_json::to_string(&plain).unwrap();
+        assert!(!json.contains("corners"), "{json}");
+        let old: ShapeKind = serde_json::from_str(
+            r#"{"type":"rect","rect":{"x0":0,"y0":0,"x1":2,"y1":1},"radius":0.25}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            old.rect_corners().unwrap().1,
+            Corners::uniform(0.25, CornerKind::Round)
+        );
+        let mut c = Corners::uniform(0.5, CornerKind::Chamfer);
+        c.radii[3] = 0.1;
+        let k = ShapeKind::rect_with_corners(Rect::new(0.0, 0.0, 2.0, 1.0), c);
+        let json = serde_json::to_string(&k).unwrap();
+        assert!(
+            json.contains("\"chamfer\"") && !json.contains("fixed"),
+            "{json}"
+        );
+        let back: ShapeKind = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, k);
+        c.fixed = true;
+        let k = ShapeKind::rect_with_corners(Rect::new(0.0, 0.0, 2.0, 1.0), c);
+        let back: ShapeKind = serde_json::from_str(&serde_json::to_string(&k).unwrap()).unwrap();
+        assert_eq!(back, k);
+    }
+
+    #[test]
+    fn absorbing_a_parent_keeps_fixed_corners_as_they_look() {
+        let mut c = Corners::uniform(3.0, CornerKind::Chamfer);
+        c.fixed = true;
+        let check = |own: Affine, parent: Affine| -> Shape {
+            let mut s = rect_shape(20.0, 10.0, c);
+            s.transform = own;
+            let before = parent * s.page_path();
+            s.absorb(parent);
+            let after = s.page_path();
+            assert!((before.area() - after.area()).abs() < 1e-6, "{parent:?}");
+            let (b, a) = (before.bounding_box(), after.bounding_box());
+            assert!(
+                (b.x0 - a.x0).abs() < 1e-9 && (b.y1 - a.y1).abs() < 1e-9,
+                "{b:?} {a:?}"
+            );
+            s
+        };
+        // Evenly scaled rectangle: the same corners, now scaling with it.
+        for parent in [Affine::scale(2.0), Affine::scale_non_uniform(2.0, 1.0)] {
+            let s = check(Affine::IDENTITY, parent);
+            assert!(
+                matches!(&s.kind, ShapeKind::Rect { corners: Some(k), .. } if !k.fixed && k.kind == CornerKind::Chamfer && k.radii == [3.0; 4])
+            );
+        }
+        // A stretched rectangle: its outline as a curve.
+        let s = check(Affine::scale_non_uniform(2.0, 1.0), Affine::scale(2.0));
+        assert!(matches!(s.kind, ShapeKind::Path { closed: true, .. }));
+        // Moving and turning change nothing.
+        let s = check(
+            Affine::scale_non_uniform(2.0, 1.0),
+            Affine::rotate(0.5) * Affine::translate((3.0, 4.0)),
+        );
+        assert!(matches!(&s.kind, ShapeKind::Rect { corners: Some(k), .. } if k.fixed));
     }
 }

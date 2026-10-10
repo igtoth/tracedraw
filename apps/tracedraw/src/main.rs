@@ -30,6 +30,7 @@ mod guides;
 mod i18n;
 mod interaction;
 mod interaction2;
+mod kind_nodes;
 mod lens;
 #[cfg(not(target_arch = "wasm32"))]
 mod mcp;

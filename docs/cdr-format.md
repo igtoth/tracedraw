@@ -81,7 +81,8 @@ as hundreds (1300 = X3); `vrsn` stores the same number.
 |---|---|---|
 | Point list: `n` points of (x, y) coords followed by `n` type bytes; `n` is clamped to what fits | confirmed (public spec) | |
 | Point type byte: bits 7..6 operation (00 move to, 01 line to, 10 cubic Bezier end point, 11 control point); bit 3 closes the subpath (also set on the move-to of a closed subpath); bits 5..4 node continuity (angle, smooth, symmetrical); bit 2 "can modify"; bit 1 character start | confirmed (public spec) | We had 10 and 11 swapped and closed on the move-to. |
-| Rectangle before X5: width, height, radius (coords); from version 9 three more radii follow (four corners) | confirmed (public spec) | Our model has one radius; the largest is used. |
+| Rectangle before X5: width, height, radius (coords); from version 9 three more radii follow (four corners) | confirmed (public spec) | Each corner keeps its own radius. |
+| The four radii run counter-clockwise from the corner at (width, 0): (width, 0), (width, height), (0, height), (0, 0); with a negative width or height the corners mirror with it | assumed | Not confirmed with a file; a file with different corners would show it. The corner type byte (X5+) is not read: corners import round. |
 | Rectangle X5+: width, height as f64 in coordinate units, scale x, scale y (f64), scale-with flag u8, 7 unknown; then four radii as f64 each followed by a corner type byte and unknown bytes (16 bytes between radii) | confirmed (public spec) | Radii are multiplied by 254000 when the flag is set (spec); meaning of the flag is otherwise not stated. |
 | Rectangle spans 0..width x scale and 0..height x scale from its origin | assumed | The spec derives half-extents from the same fields; we treat the fields as the full extent, like the ellipse. |
 | Ellipse: width, height, start angle, end angle, pie flag (u32; u16 before 6); the ellipse spans 0..width, 0..height | confirmed (public spec) | Arc when the angles differ. |
@@ -180,7 +181,10 @@ and `bmpt`/`bmp ` (24-bit, model 1); then one `page` per page with `flgs`
 name, transparency), a `trfd` with one type 8 matrix (translation in
 coordinate units, page centre as origin) and, for text, a `txsm` in the
 7 to X5 layout with one style per run. Rectangles, ellipses and text
-keep their own types; every other object is a curve; groups are `grp `
+keep their own types (a rectangle only when one round radius describes
+it: corner styles, sizes per corner and fixed corners on a stretched
+rectangle are written as the curve they draw, since the corner order
+and type byte are not confirmed); every other object is a curve; groups are `grp `
 lists; a ClipFrame holding one bitmap is written as that bitmap with the
 frame as its crop path (the way the target design stores cropped
 bitmaps), other ClipFrames become a group of the frame outline and the

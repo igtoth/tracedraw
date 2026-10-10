@@ -784,7 +784,7 @@ impl Command {
                 match g.kind {
                     ShapeKind::Group { children } => {
                         for (k, mut c) in children.into_iter().enumerate() {
-                            c.transform = g.transform * c.transform;
+                            c.absorb(g.transform);
                             layer.shapes.insert(idx + k, c);
                         }
                     }
@@ -822,6 +822,7 @@ mod tests {
             ShapeKind::Rect {
                 rect: Rect::new(x, 0.0, x + 10.0, 10.0),
                 radius: 0.0,
+                corners: None,
             },
         )
     }

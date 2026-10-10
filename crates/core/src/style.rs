@@ -655,6 +655,7 @@ mod tests {
             crate::document::ShapeKind::Rect {
                 rect: Rect::new(x0, y0, x1, y1),
                 radius: 0.0,
+                corners: None,
             },
         );
         s.fill = Fill::Solid(Color::rgb8(255, 0, 0));

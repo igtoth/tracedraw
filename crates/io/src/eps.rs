@@ -82,6 +82,7 @@ pub fn page_to_eps(doc: &Document, page_index: usize) -> String {
             ShapeKind::Rect {
                 rect: page.rect(),
                 radius: 0.0,
+                corners: None,
             },
         );
         s.fill = bg.clone();
@@ -439,6 +440,7 @@ mod tests {
             ShapeKind::Rect {
                 rect: Rect::new(10.0, 10.0, 60.0, 40.0),
                 radius: 0.0,
+                corners: None,
             },
         );
         s.fill = Fill::Solid(Color::cmyk_pct(100.0, 0.0, 0.0, 0.0));
@@ -506,6 +508,7 @@ mod tests {
             ShapeKind::Rect {
                 rect: Rect::new(0.0, 0.0, 5.0, 5.0),
                 radius: 0.0,
+                corners: None,
             },
         );
         tile_square.fill = Fill::Solid(Color::rgb8(255, 0, 0));

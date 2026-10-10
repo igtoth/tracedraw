@@ -337,6 +337,7 @@ mod tests {
         app.new_shape(ShapeKind::Rect {
             rect: r,
             radius: 0.0,
+            corners: None,
         })
         .expect("shape")
     }

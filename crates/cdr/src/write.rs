@@ -562,7 +562,7 @@ impl Writer<'_> {
                 let mut body = Vec::new();
                 for c in children.iter().rev() {
                     let mut c = c.clone();
-                    c.transform = s.transform * c.transform;
+                    c.absorb(s.transform);
                     body.extend(self.object(&c, center, depth + 1));
                 }
                 return list(b"grp ", &body);
@@ -572,7 +572,7 @@ impl Writer<'_> {
                     .expand(self.symbols)
                     .into_iter()
                     .map(|mut c| {
-                        c.transform = s.transform * c.transform;
+                        c.absorb(s.transform);
                         c
                     })
                     .collect();
@@ -594,12 +594,12 @@ impl Writer<'_> {
             ShapeKind::ClipFrame { frame, contents } => {
                 let mut body = Vec::new();
                 let mut f = (**frame).clone();
-                f.transform = s.transform * f.transform;
+                f.absorb(s.transform);
                 f.fill = Fill::None;
                 body.extend(self.object(&f, center, depth + 1));
                 for c in contents.iter().rev() {
                     let mut c = c.clone();
-                    c.transform = s.transform * c.transform;
+                    c.absorb(s.transform);
                     body.extend(self.object(&c, center, depth + 1));
                 }
                 return list(b"grp ", &body);
@@ -611,12 +611,17 @@ impl Writer<'_> {
         let mut args: Vec<(u32, Vec<u8>)> = Vec::new();
         let mut txsm: Option<Vec<u8>> = None;
         let transform_out: Affine;
+        // Rectangles one round radius describes stay rectangles; other
+        // corners (styles, sizes per corner, fixed sizes on a stretched
+        // rectangle) go out as the curve they draw.
+        let plain = s.plain_rect();
         let kind = match &s.kind {
-            ShapeKind::Rect { rect, radius } => {
+            ShapeKind::Rect { .. } if plain.is_some() => {
+                let (rect, radius) = plain.unwrap_or_default();
                 // Width and height from the rect's own corner: fold the
                 // corner into the transform.
                 let t = transform * Affine::translate((rect.x0, rect.y0));
-                let r = units(*radius);
+                let r = units(radius);
                 args.push((
                     ARG_COORDS,
                     i32s(&[units(rect.width()), units(rect.height()), r, r, r, r]),
@@ -844,6 +849,7 @@ mod tests {
             ShapeKind::Rect {
                 rect: Rect::new(10.0, 20.0, 60.0, 50.0),
                 radius: 2.0,
+                corners: None,
             },
         );
         r.fill = Fill::Solid(Color::rgb8(255, 0, 0));
@@ -994,6 +1000,7 @@ mod tests {
             ShapeKind::Rect {
                 rect: Rect::new(0.0, 0.0, 10.0, 10.0),
                 radius: 0.0,
+                corners: None,
             },
         );
         a.fill = Fill::Solid(Color::BLACK);
@@ -1116,6 +1123,7 @@ mod tests {
             ShapeKind::Rect {
                 rect: Rect::new(40.0, 30.0, 80.0, 60.0),
                 radius: 0.0,
+                corners: None,
             },
         );
         frame.fill = Fill::None;
@@ -1168,6 +1176,7 @@ mod tests {
             ShapeKind::Rect {
                 rect: Rect::new(0.0, 0.0, 10.0, 10.0),
                 radius: 0.0,
+                corners: None,
             },
         );
         r.fill = Fill::Solid(Color::BLACK);
@@ -1182,5 +1191,51 @@ mod tests {
             m[i] ^= 0x5a;
             let _ = crate::open_bytes(&m, "flip");
         }
+    }
+
+    #[test]
+    fn corners_one_radius_cannot_hold_are_written_as_curves() {
+        use tracedraw_core::{CornerKind, Corners};
+        let mut doc = doc_with(Vec::new());
+        let mut ids = doc.ids().clone();
+        let rect = Rect::new(0.0, 0.0, 40.0, 20.0);
+        let mut per_corner = Corners::uniform(2.0, CornerKind::Round);
+        per_corner.radii[Corners::TOP_LEFT] = 8.0;
+        let mut fixed = Corners::uniform(3.0, CornerKind::Round);
+        fixed.fixed = true;
+        let mut shapes = Vec::new();
+        for (corners, scale) in [
+            (Corners::uniform(4.0, CornerKind::Scallop), (1.0, 1.0)),
+            (per_corner, (1.0, 1.0)),
+            (fixed, (2.0, 1.0)),
+            (fixed, (2.0, 2.0)),
+        ] {
+            let mut s = Shape::new(ids.shape(), ShapeKind::rect_with_corners(rect, corners));
+            s.transform =
+                Affine::translate((20.0, 20.0)) * Affine::scale_non_uniform(scale.0, scale.1);
+            s.fill = Fill::Solid(Color::BLACK);
+            shapes.push(s);
+        }
+        doc.pages[0].layers[0].shapes = shapes.clone();
+        doc.set_ids(ids);
+        let (back, rep) = crate::open_bytes(&document_to_cdr(&doc), "back").expect("reads back");
+        let read = &back.pages[0].layers[0].shapes;
+        assert_eq!(read.len(), 4, "{:?}", rep.warnings);
+        for (i, (a, b)) in shapes.iter().zip(read).enumerate() {
+            let (aa, ab) = (a.page_path().area().abs(), b.page_path().area().abs());
+            assert!((aa - ab).abs() < 0.5, "{i}: {aa} vs {ab}");
+            let (ba, bb) = (a.bounds(), b.bounds());
+            assert!(
+                (ba.x0 - bb.x0).abs() < 0.01 && (ba.y1 - bb.y1).abs() < 0.01,
+                "{i}"
+            );
+        }
+        assert!(matches!(read[0].kind, ShapeKind::Path { closed: true, .. }));
+        assert!(matches!(read[1].kind, ShapeKind::Path { closed: true, .. }));
+        assert!(matches!(read[2].kind, ShapeKind::Path { closed: true, .. }));
+        // A fixed radius on an evenly scaled rectangle is still a rectangle.
+        assert!(
+            matches!(read[3].kind, ShapeKind::Rect { radius, .. } if (radius - 1.5).abs() < 0.01)
+        );
     }
 }

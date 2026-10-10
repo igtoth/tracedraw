@@ -584,7 +584,11 @@ impl<'a> Player<'a> {
         let a = self.to_page(l, t);
         let c = self.to_page(r, b);
         let rect = Rect::from_points(a, c);
-        let mut s = self.new_shape(ShapeKind::Rect { rect, radius });
+        let mut s = self.new_shape(ShapeKind::Rect {
+            rect,
+            radius,
+            corners: None,
+        });
         s.fill = self.dc.brush.fill.clone();
         s.stroke = self.stroke();
         if matches!(s.fill, Fill::None) && s.stroke.is_none() {
@@ -2845,6 +2849,7 @@ mod export_tests {
             ShapeKind::Rect {
                 rect: Rect::new(10.0, 10.0, 30.0, 20.0),
                 radius: 0.0,
+                corners: None,
             },
         );
         r.fill = Fill::Solid(Color::rgb8(0, 0, 255));
@@ -3403,6 +3408,7 @@ mod wmf_export_tests {
             ShapeKind::Rect {
                 rect: Rect::new(10.0, 10.0, 30.0, 20.0),
                 radius: 0.0,
+                corners: None,
             },
         );
         r.fill = Fill::Solid(Color::rgb8(0, 0, 255));

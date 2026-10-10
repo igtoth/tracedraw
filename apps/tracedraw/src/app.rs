@@ -341,6 +341,18 @@ pub enum Drag {
         index: usize,
         which: tracedraw_core::nodes::Which,
     },
+    /// Dragging a node of a rectangle, ellipse or polygon (Shape tool):
+    /// the object as it was when the drag began; `single` changes one
+    /// rectangle corner only; `begun` once the first step is recorded.
+    KindNode {
+        shape: ShapeId,
+        node: crate::kind_nodes::KindNode,
+        start: Box<tracedraw_core::Shape>,
+        single: bool,
+        begun: bool,
+        /// Degrees an ellipse's node has turned through.
+        turn: f64,
+    },
     /// Rubber-band selection of nodes (Shape tool).
     NodeMarquee {
         start: Point,
@@ -489,7 +501,13 @@ pub struct App {
     pub default_stroke: Option<Stroke>,
     pub polygon_points: u32,
     pub star_sharpness: f64,
-    pub rect_radius: f64,
+    /// Corners of new rectangles (style, sizes, relative scaling).
+    pub rect_corners: tracedraw_core::Corners,
+    /// The property bar's lock: one corner size edits them all.
+    pub corners_together: bool,
+    /// The Shape tool's chosen rectangle corner: dragging it changes that
+    /// corner only.
+    pub rect_corner_selected: Option<(tracedraw_core::ShapeId, usize)>,
     pub ellipse_arc: Option<tracedraw_core::EllipseArc>,
     pub contour_steps: u32,
     pub contour_offset: f64,
@@ -1000,7 +1018,9 @@ impl App {
             }),
             polygon_points: 5,
             star_sharpness: 0.5,
-            rect_radius: 0.0,
+            rect_corners: tracedraw_core::Corners::default(),
+            corners_together: true,
+            rect_corner_selected: None,
             ellipse_arc: None,
             contour_steps: 3,
             contour_offset: 2.0,
@@ -1760,6 +1780,7 @@ impl App {
         self.selection = ids;
         self.rotate_mode = false;
         self.node_selection.clear();
+        self.rect_corner_selected = None;
     }
 
     // ----- object creation ---------------------------------------------------
@@ -1796,10 +1817,9 @@ impl App {
             return;
         }
         let kind = match self.tool {
-            Tool::Rectangle | Tool::ThreePointRectangle => ShapeKind::Rect {
-                rect,
-                radius: self.rect_radius,
-            },
+            Tool::Rectangle | Tool::ThreePointRectangle => {
+                ShapeKind::rect_with_corners(rect, self.rect_corners)
+            }
             Tool::Ellipse | Tool::ThreePointEllipse => ShapeKind::Ellipse {
                 rect,
                 arc: self.ellipse_arc,
@@ -1862,6 +1882,7 @@ impl App {
                     ShapeKind::Rect {
                         rect: cell,
                         radius: 0.0,
+                        corners: None,
                     },
                 );
                 s.fill = self.default_fill.clone();
@@ -1932,10 +1953,7 @@ impl App {
                 }
                 let local = Rect::new(0.0, height.min(0.0), len, height.max(0.0));
                 let kind = if self.tool == Tool::ThreePointRectangle {
-                    ShapeKind::Rect {
-                        rect: local,
-                        radius: self.rect_radius,
-                    }
+                    ShapeKind::rect_with_corners(local, self.rect_corners)
                 } else {
                     ShapeKind::Ellipse {
                         rect: local,
@@ -3638,6 +3656,7 @@ mod tests {
             .new_shape(ShapeKind::Rect {
                 rect: r,
                 radius: 0.0,
+                corners: None,
             })
             .expect("a layer");
         app.run(Command::SetFill {

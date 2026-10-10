@@ -67,6 +67,18 @@ impl App {
         None
     }
 
+    /// A rectangle, ellipse or polygon node of the selection under the
+    /// pointer, with its object.
+    pub fn kind_node_at(
+        &self,
+        p: Point,
+    ) -> Option<(tracedraw_core::Shape, crate::kind_nodes::KindNode)> {
+        let tol = NODE_PX / self.view.zoom as f64;
+        self.selected_shapes()
+            .into_iter()
+            .find_map(|s| crate::kind_nodes::node_at(&s, p, tol).map(|n| (s, n)))
+    }
+
     /// Control handle under the pointer, for selected nodes only.
     fn ctrl_handle_at(&self, p: Point) -> Option<(ShapeId, usize, Which)> {
         let tol = NODE_PX / self.view.zoom as f64;
@@ -120,6 +132,23 @@ impl App {
         }
 
         if response.drag_started_by(PointerButton::Primary) {
+            if let Some((s, node)) = self.kind_node_at(p) {
+                let single = crate::kind_nodes::single_corner(
+                    self.rect_corner_selected,
+                    &s,
+                    node,
+                    mods.ctrl,
+                );
+                self.drag = Drag::KindNode {
+                    shape: s.id,
+                    node,
+                    start: Box::new(s),
+                    single,
+                    begun: false,
+                    turn: 0.0,
+                };
+                return;
+            }
             if let Some((shape, index, which)) = self.ctrl_handle_at(p) {
                 self.drag = Drag::Handle {
                     shape,
@@ -198,11 +227,48 @@ impl App {
                 Drag::NodeMarquee { start, .. } => {
                     self.drag = Drag::NodeMarquee { start, current: p }
                 }
+                Drag::KindNode {
+                    shape,
+                    node,
+                    start,
+                    single,
+                    begun,
+                    mut turn,
+                } => {
+                    if let Some(kind) = crate::kind_nodes::drag(&start, node, p, single, &mut turn)
+                    {
+                        let cmd = Command::SetShapeKind { shape, kind };
+                        // One undo step for the whole drag.
+                        let _ = if begun {
+                            self.engine.amend(&cmd)
+                        } else {
+                            self.engine
+                                .run_with_label(&cmd, crate::kind_nodes::label(&start))
+                        };
+                    }
+                    self.drag = Drag::KindNode {
+                        shape,
+                        node,
+                        start,
+                        single,
+                        begun: true,
+                        turn,
+                    };
+                }
                 _ => {}
             }
         }
 
         if response.clicked_by(PointerButton::Primary) {
+            if let Some((s, node)) = self.kind_node_at(p) {
+                // A click on a rectangle corner chooses it: dragging it
+                // then changes that corner only.
+                self.rect_corner_selected = match node {
+                    crate::kind_nodes::KindNode::Corner { corner, .. } => Some((s.id, corner)),
+                    _ => None,
+                };
+                return;
+            }
             if let Some(hit) = self.node_at(p) {
                 let key = (hit.shape, hit.index);
                 if mods.shift {
@@ -696,6 +762,7 @@ mod eraser_tests {
             .new_shape(ShapeKind::Rect {
                 rect: Rect::new(0.0, 0.0, 40.0, 20.0),
                 radius: 0.0,
+                corners: None,
             })
             .unwrap();
         app.select(vec![id]);

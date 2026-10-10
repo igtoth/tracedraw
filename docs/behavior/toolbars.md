@@ -75,7 +75,11 @@ name them (hover for a tooltip), and some fields have spin arrows.
   that keeps proportions; the rotation angle of a single object (read
   from its transform, changed about the origin point); mirror
   horizontally and vertically.
-- Then, by the kind of the selected objects: rectangle corner radius;
+- Then, by the kind of the selected objects: rectangle corners (Round,
+  Scalloped and Chamfered Corner buttons; the four corner sizes in two
+  stacked columns, top left over bottom left, then top right over bottom
+  right, with spin arrows; the Edit Corners Together lock; Relative
+  Corner Scaling);
   ellipse, pie or arc with start and end angles and the change direction
   button; polygon points or sides and star sharpness (1 to 99).
 - Then the outline: width (Hairline, None, preset widths in the ruler
@@ -89,5 +93,6 @@ name them (hover for a tooltip), and some fields have spin arrows.
 - `ui::propbar::tests::the_object_origin_picks_corners_edges_and_centre`
 - `ui::propbar::tests::page_size_changes_one_page_or_all_in_one_step`
 - `ui::propbar::tests::outline_widths_read_in_the_ruler_unit`
+- `ui::propbar::tests::corner_edits_change_the_selection_in_one_step_or_the_defaults`
 - `ui::mod::tests::window_draws_with_every_docker_tool_and_selection`
   draws every tool's bar.

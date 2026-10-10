@@ -1051,6 +1051,7 @@ mod tests {
             ShapeKind::Rect {
                 rect: Rect::new(0.0, 0.0, 20.0, 20.0),
                 radius: 0.0,
+                corners: None,
             },
         );
         s.fill = Fill::Solid(Color::rgb8(255, 0, 0));
@@ -1199,6 +1200,7 @@ mod symmetry_tests {
             ShapeKind::Rect {
                 rect: Rect::new(10.0, 0.0, 20.0, 10.0),
                 radius: 0.0,
+                corners: None,
             },
         );
         s.effects.push(Effect::Symmetry {
