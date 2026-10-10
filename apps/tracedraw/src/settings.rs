@@ -56,6 +56,10 @@ pub struct Settings {
     /// What the status bar's first field shows.
     #[serde(default)]
     pub status_info: crate::ui::status::StatusInfo,
+    /// Toolbox flyouts hidden with the toolbox's "+" button (the id of
+    /// each flyout's first tool).
+    #[serde(default)]
+    pub toolbox_hidden: Vec<String>,
 }
 
 fn default_desktop() -> [u8; 3] {
@@ -147,6 +151,7 @@ impl Default for Settings {
             new_document: crate::new_document::NewDocSettings::default(),
             desktop_rgb: default_desktop(),
             status_info: crate::ui::status::StatusInfo::default(),
+            toolbox_hidden: Vec::new(),
         }
     }
 }
