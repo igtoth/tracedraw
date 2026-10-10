@@ -57,26 +57,19 @@ pub fn ellipse_arc_path(rect: Rect, start_deg: f64, end_deg: f64, pie: bool) -> 
     path
 }
 
-/// Build a regular polygon or star inscribed in `rect`.
+/// Build a regular polygon or star inscribed in the ellipse that fills
+/// `rect`, with its first vertex at the top (as the target design
+/// draws them).
 ///
 /// `points` is the number of vertices; `sharpness` in `0.0..1.0` pulls every
 /// other vertex toward the centre, turning a polygon into a star.
 pub fn polygon_path(rect: Rect, points: u32, sharpness: f64) -> BezPath {
-    let points = points.max(3) as usize;
     let c = rect.center();
     let rx = rect.width() / 2.0;
     let ry = rect.height() / 2.0;
-    let inner = 1.0 - sharpness.clamp(0.0, 1.0);
     let mut path = BezPath::new();
-    let n = if sharpness > 0.0 { points * 2 } else { points };
-    for i in 0..n {
-        let t = -std::f64::consts::FRAC_PI_2 + i as f64 * std::f64::consts::TAU / n as f64;
-        let k = if sharpness > 0.0 && i % 2 == 1 {
-            inner
-        } else {
-            1.0
-        };
-        let p = Point::new(c.x + rx * k * t.cos(), c.y + ry * k * t.sin());
+    for (i, (x, y)) in polygon_unit_vertices(points, sharpness).enumerate() {
+        let p = Point::new(c.x + rx * x, c.y + ry * y);
         if i == 0 {
             path.move_to(p);
         } else {
@@ -85,6 +78,38 @@ pub fn polygon_path(rect: Rect, points: u32, sharpness: f64) -> BezPath {
     }
     path.close_path();
     path
+}
+
+/// Vertices of a polygon or star on the unit circle, first at the top
+/// (y up), then clockwise.
+fn polygon_unit_vertices(points: u32, sharpness: f64) -> impl Iterator<Item = (f64, f64)> {
+    let points = points.max(3) as usize;
+    let star = sharpness > 0.0;
+    let inner = 1.0 - sharpness.clamp(0.0, 1.0);
+    let n = if star { points * 2 } else { points };
+    (0..n).map(move |i| {
+        let t = std::f64::consts::FRAC_PI_2 - i as f64 * std::f64::consts::TAU / n as f64;
+        let k = if star && i % 2 == 1 { inner } else { 1.0 };
+        (k * t.cos(), k * t.sin())
+    })
+}
+
+/// The ellipse rectangle (the `rect` of a polygon shape) whose polygon or
+/// star exactly fills `bounds`. Drawing tools drag the visible box of the
+/// polygon; the model keeps the ellipse its outer vertices lie on.
+pub fn polygon_rect_for_bounds(bounds: Rect, points: u32, sharpness: f64) -> Rect {
+    let (mut x0, mut y0, mut x1, mut y1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
+    for (x, y) in polygon_unit_vertices(points, sharpness) {
+        x0 = x0.min(x);
+        y0 = y0.min(y);
+        x1 = x1.max(x);
+        y1 = y1.max(y);
+    }
+    let rx = bounds.width() / (x1 - x0).max(1e-9);
+    let ry = bounds.height() / (y1 - y0).max(1e-9);
+    let cx = bounds.x0 - x0 * rx;
+    let cy = bounds.y0 - y0 * ry;
+    Rect::new(cx - rx, cy - ry, cx + rx, cy + ry)
 }
 
 /// Straight segments through the points.
@@ -203,5 +228,31 @@ mod tests {
             .filter(|e| matches!(e, PathEl::LineTo(_)))
             .count();
         assert_eq!(n, 9);
+    }
+
+    #[test]
+    fn polygons_point_up() {
+        // First vertex at the top centre (y up), as drawn by the target design.
+        let p = polygon_path(Rect::new(0.0, 0.0, 10.0, 10.0), 5, 0.0);
+        match p.elements()[0] {
+            PathEl::MoveTo(q) => assert!((q.x - 5.0).abs() < 1e-9 && (q.y - 10.0).abs() < 1e-9),
+            ref e => panic!("{e:?}"),
+        }
+    }
+
+    #[test]
+    fn polygon_fills_the_dragged_box() {
+        let drag = Rect::new(20.0, 10.0, 70.0, 40.0);
+        for (n, sharp) in [(3, 0.0), (5, 0.0), (6, 0.0), (5, 0.5), (3, 0.2), (12, 0.3)] {
+            let r = polygon_rect_for_bounds(drag, n, sharp);
+            let b = polygon_path(r, n, sharp).bounding_box();
+            assert!(
+                (b.x0 - drag.x0).abs() < 1e-9
+                    && (b.y0 - drag.y0).abs() < 1e-9
+                    && (b.x1 - drag.x1).abs() < 1e-9
+                    && (b.y1 - drag.y1).abs() < 1e-9,
+                "{n} {sharp}: {b:?}"
+            );
+        }
     }
 }

@@ -208,18 +208,16 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
             start,
             current,
             from_center,
-        } => {
-            let page_rect = App::box_rect(*start, *current, *from_center);
-            let r = view.rect_to_screen(page_rect);
-            let stroke = EStroke::new(1.0, Tokens::SELECTION);
-            painter.rect_stroke(r, 0.0, stroke, epaint::StrokeKind::Outside);
-            if matches!(app.tool, Tool::Ellipse | Tool::ThreePointEllipse) {
-                let pts = flatten(&tracedraw_core::geometry::ellipse_path(page_rect), view);
-                for (p, _) in pts {
-                    painter.add(epaint::PathShape::closed_line(p, stroke));
-                }
+        } => match app.creation_preview(*start, *current, *from_center) {
+            // Shape tools: the shape itself follows the pointer.
+            Some(path) => draw_creation_preview(app, painter, &path),
+            None => {
+                let page_rect = App::box_rect(*start, *current, *from_center);
+                let r = view.rect_to_screen(page_rect);
+                let stroke = EStroke::new(1.0, Tokens::SELECTION);
+                painter.rect_stroke(r, 0.0, stroke, epaint::StrokeKind::Outside);
             }
-        }
+        },
         Drag::Marquee { start, current } | Drag::ZoomBox { start, current } => {
             let r = view.rect_to_screen(Rect::from_points(*start, *current));
             let stroke = EStroke::new(1.0, Tokens::SELECTION);
@@ -378,6 +376,27 @@ fn clip_segment(a: Pos2, b: Pos2, r: ERect) -> Option<(Pos2, Pos2)> {
 }
 
 /// Outline of the shape a 3-point tool would create for base `a -> b` and third point `c`.
+/// The outline of the object being drawn, in the colour and width of the
+/// default outline (at least one pixel wide; the selection colour when new
+/// objects get no outline), so the preview looks like the result.
+fn draw_creation_preview(app: &App, painter: &Painter, path: &BezPath) {
+    let view = &app.view;
+    let stroke = match &app.default_stroke {
+        Some(s) => EStroke::new((s.width as f32 * view.zoom).max(1.0), to_color32(s.color)),
+        None => EStroke::new(1.0, Tokens::SELECTION),
+    };
+    for (pts, closed) in flatten(path, view) {
+        if pts.len() < 2 {
+            continue;
+        }
+        if closed {
+            painter.add(epaint::PathShape::closed_line(pts, stroke));
+        } else {
+            painter.add(epaint::PathShape::line(pts, stroke));
+        }
+    }
+}
+
 fn three_point_preview(
     tool: Tool,
     a: Point,
@@ -656,20 +675,14 @@ fn draw_selection(app: &App, painter: &Painter, preview: Option<Affine>) {
         return;
     }
 
-    if !matches!(
+    // Every tool shows the selection handles and the centre marker, as the
+    // target design does right after a shape is drawn; only the Pick
+    // tools switch to the rotate and skew arrows.
+    let pick = matches!(
         app.tool,
         Tool::Pick | Tool::FreeformPick | Tool::InteractiveFill | Tool::Text
-    ) {
-        painter.rect_stroke(
-            r,
-            0.0,
-            EStroke::new(1.0, Tokens::SELECTION),
-            epaint::StrokeKind::Outside,
-        );
-        return;
-    }
-
-    if app.rotate_mode {
+    );
+    if app.rotate_mode && pick {
         // Rotation arrows at corners, skew arrows at edges, centre pivot.
         let c = r.center();
         painter.circle_stroke(c, 5.0, EStroke::new(1.0, Tokens::HANDLE));

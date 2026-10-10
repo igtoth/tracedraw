@@ -1478,13 +1478,22 @@ impl App {
                 rect,
                 arc: self.ellipse_arc,
             },
+            // The dragged box is the polygon's own bounding box.
             Tool::Polygon => ShapeKind::Polygon {
-                rect,
+                rect: tracedraw_core::geometry::polygon_rect_for_bounds(
+                    rect,
+                    self.polygon_points,
+                    0.0,
+                ),
                 points: self.polygon_points,
                 sharpness: 0.0,
             },
             Tool::Star => ShapeKind::Polygon {
-                rect,
+                rect: tracedraw_core::geometry::polygon_rect_for_bounds(
+                    rect,
+                    self.polygon_points,
+                    self.star_sharpness,
+                ),
                 points: self.polygon_points,
                 sharpness: self.star_sharpness,
             },
@@ -1555,37 +1564,7 @@ impl App {
     /// Action lines: speed lines across `rect`, parallel (left to right, random
     /// lengths) or radial (from the centre); one combined curve object.
     pub fn create_action_lines(&mut self, rect: Rect) {
-        use tracedraw_core::geometry::BezPath;
-        let n = self.action_lines_count.clamp(2, 500) as usize;
-        let mut path = BezPath::new();
-        // Deterministic pseudo-random lengths so the result is reproducible.
-        let mut seed: u32 = 0x9E37_79B9 ^ n as u32;
-        let mut rnd = move || {
-            seed ^= seed << 13;
-            seed ^= seed >> 17;
-            seed ^= seed << 5;
-            (seed % 1000) as f64 / 1000.0
-        };
-        if self.action_lines_radial {
-            let c = rect.center();
-            let rmax = (rect.width().min(rect.height())) / 2.0;
-            for i in 0..n {
-                let a = std::f64::consts::TAU * i as f64 / n as f64;
-                let dir = Vec2::new(a.cos(), a.sin());
-                let r0 = rmax * (0.25 + 0.35 * rnd());
-                let r1 = rmax * (0.75 + 0.25 * rnd());
-                path.move_to(c + dir * r0);
-                path.line_to(c + dir * r1);
-            }
-        } else {
-            for i in 0..n {
-                let y = rect.y0 + rect.height() * (i as f64 + 0.5) / n as f64;
-                let len = rect.width() * (0.3 + 0.7 * rnd());
-                let x0 = rect.x1 - len;
-                path.move_to(Point::new(x0, y));
-                path.line_to(Point::new(rect.x1, y));
-            }
-        }
+        let path = crate::tools2::action_lines_path(rect, self.action_lines_count, self.action_lines_radial);
         if let Some(id) = self.new_shape(ShapeKind::Path {
             path,
             closed: false,

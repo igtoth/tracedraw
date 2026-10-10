@@ -497,7 +497,7 @@ impl App {
             }
         } else if closed && (3..=5).contains(&pts.len()) && pts.len() != 4 {
             ShapeKind::Polygon {
-                rect: b,
+                rect: tracedraw_core::geometry::polygon_rect_for_bounds(b, 3, 0.0),
                 points: 3,
                 sharpness: 0.0,
             }

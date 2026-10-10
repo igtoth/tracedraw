@@ -171,6 +171,60 @@ pub fn spiral_path(rect: Rect, revolutions: u32, logarithmic: bool) -> BezPath {
     tracedraw_core::geometry::smooth_path(&pts, false)
 }
 
+/// A grid of `rows` x `cols` cells covering `rect`: the outer frame and
+/// the inner lines (previews of Graph Paper and Table).
+pub fn grid_path(rect: Rect, rows: u32, cols: u32) -> BezPath {
+    let mut p = rect.to_path(0.01);
+    let (rows, cols) = (rows.max(1), cols.max(1));
+    for c in 1..cols {
+        let x = rect.x0 + rect.width() * c as f64 / cols as f64;
+        p.move_to((x, rect.y0));
+        p.line_to((x, rect.y1));
+    }
+    for r in 1..rows {
+        let y = rect.y0 + rect.height() * r as f64 / rows as f64;
+        p.move_to((rect.x0, y));
+        p.line_to((rect.x1, y));
+    }
+    p
+}
+
+/// The Action Lines tool's speed lines across `rect`: parallel (ending at the
+/// right edge, random lengths) or radial (around the centre). The lengths
+/// come from a fixed pseudo-random sequence, so the live preview and the
+/// object created on release are the same.
+pub fn action_lines_path(rect: Rect, lines: u32, radial: bool) -> BezPath {
+    let n = lines.clamp(2, 500) as usize;
+    let mut path = BezPath::new();
+    let mut seed: u32 = 0x9E37_79B9 ^ n as u32;
+    let mut rnd = move || {
+        seed ^= seed << 13;
+        seed ^= seed >> 17;
+        seed ^= seed << 5;
+        (seed % 1000) as f64 / 1000.0
+    };
+    if radial {
+        let c = rect.center();
+        let rmax = (rect.width().min(rect.height())) / 2.0;
+        for i in 0..n {
+            let a = std::f64::consts::TAU * i as f64 / n as f64;
+            let dir = Vec2::new(a.cos(), a.sin());
+            let r0 = rmax * (0.25 + 0.35 * rnd());
+            let r1 = rmax * (0.75 + 0.25 * rnd());
+            path.move_to(c + dir * r0);
+            path.line_to(c + dir * r1);
+        }
+    } else {
+        for i in 0..n {
+            let y = rect.y0 + rect.height() * (i as f64 + 0.5) / n as f64;
+            let len = rect.width() * (0.3 + 0.7 * rnd());
+            path.move_to(Point::new(rect.x1 - len, y));
+            path.line_to(Point::new(rect.x1, y));
+        }
+    }
+    path
+}
+
 /// Calligraphic stroke: the outline swept by a flat nib along the points.
 pub fn calligraphic_path(points: &[Point], width: f64, angle_deg: f64) -> BezPath {
     if points.len() < 2 {
@@ -328,6 +382,56 @@ impl App {
                 *current = q;
             }
         }
+    }
+
+    /// The object a box drag with the current tool would create, as page
+    /// space outlines, so the shape itself follows the pointer while
+    /// dragging (the target design never shows an empty box for shape
+    /// tools). `None` when the drag does not create an object outline
+    /// (crop, zoom, text frames).
+    pub fn creation_preview(
+        &self,
+        start: Point,
+        current: Point,
+        from_center: bool,
+    ) -> Option<BezPath> {
+        use tracedraw_core::geometry::{
+            ellipse_arc_path, ellipse_path, polygon_path, polygon_rect_for_bounds, rect_path,
+        };
+        let r = App::box_rect(start, current, from_center);
+        let path = match self.tool {
+            Tool::Rectangle => rect_path(r, self.rect_radius),
+            Tool::Ellipse => match &self.ellipse_arc {
+                None => ellipse_path(r),
+                Some(a) => ellipse_arc_path(r, a.start_deg, a.end_deg, a.pie),
+            },
+            Tool::Polygon => polygon_path(
+                polygon_rect_for_bounds(r, self.polygon_points, 0.0),
+                self.polygon_points,
+                0.0,
+            ),
+            Tool::Star => polygon_path(
+                polygon_rect_for_bounds(r, self.polygon_points, self.star_sharpness),
+                self.polygon_points,
+                self.star_sharpness,
+            ),
+            Tool::Spiral => spiral_path(r, self.spiral_revolutions, self.spiral_logarithmic),
+            Tool::CommonShapes => {
+                Affine::new([r.width(), 0.0, 0.0, r.height(), r.x0, r.y0])
+                    * self.common_shape.unit_path()
+            }
+            Tool::GraphPaper => grid_path(r, self.graph_rows, self.graph_cols),
+            Tool::ActionLines => action_lines_path(r, self.action_lines_count, self.action_lines_radial),
+            Tool::Table => grid_path(r, self.table_rows, self.table_cols),
+            Tool::Knife => {
+                let mut p = BezPath::new();
+                p.move_to(start);
+                p.line_to(current);
+                p
+            }
+            _ => return None,
+        };
+        Some(path)
     }
 
     /// Box drags for the second-wave tools, called from `end_drag`.
@@ -1134,4 +1238,73 @@ pub fn point_in_path(path: &BezPath, p: Point) -> bool {
         j = i;
     }
     inside
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn bounds(p: &BezPath) -> Rect {
+        p.bounding_box()
+    }
+
+    /// Every shape tool previews the object it is about to create, sized
+    /// to the dragged box, while the drag is still in progress.
+    #[test]
+    fn shape_tools_preview_the_shape_being_drawn() {
+        let mut app = App::headless();
+        let (a, b) = (Point::new(10.0, 20.0), Point::new(60.0, 50.0));
+        let full = Rect::from_points(a, b);
+        for tool in [
+            Tool::Rectangle,
+            Tool::Ellipse,
+            Tool::Polygon,
+            Tool::Star,
+            Tool::CommonShapes,
+            Tool::GraphPaper,
+            Tool::Table,
+        ] {
+            app.tool = tool;
+            let p = app
+                .creation_preview(a, b, false)
+                .unwrap_or_else(|| panic!("{tool:?} has a preview"));
+            let r = bounds(&p);
+            assert!(
+                (r.width() - full.width()).abs() < 0.5 && (r.height() - full.height()).abs() < 0.5,
+                "{tool:?}: {r:?}"
+            );
+        }
+        // The spiral fills the box but ends inside its corners.
+        app.tool = Tool::Spiral;
+        let r = bounds(&app.creation_preview(a, b, false).expect("spiral"));
+        assert!(full.inflate(0.01, 0.01).contains_rect(r) && r.width() > full.width() * 0.8);
+        // Shift: the box grows from the start point as its centre.
+        app.tool = Tool::Rectangle;
+        let r = bounds(&app.creation_preview(a, b, true).expect("rect"));
+        assert!((r.center() - a).hypot() < 1e-6);
+        // Crop and zoom boxes are not objects.
+        app.tool = Tool::Crop;
+        assert!(app.creation_preview(a, b, false).is_none());
+    }
+
+    #[test]
+    fn knife_preview_follows_the_drag_direction() {
+        let mut app = App::headless();
+        app.tool = Tool::Knife;
+        let (a, b) = (Point::new(10.0, 50.0), Point::new(60.0, 20.0));
+        let p = app.creation_preview(a, b, false).expect("knife line");
+        let els = p.elements();
+        assert!(matches!(els[0], kurbo::PathEl::MoveTo(q) if q == a));
+        assert!(matches!(els[1], kurbo::PathEl::LineTo(q) if q == b));
+    }
+
+    #[test]
+    fn action_lines_preview_matches_the_created_object() {
+        let r = Rect::new(0.0, 0.0, 80.0, 40.0);
+        assert_eq!(action_lines_path(r, 12, false), action_lines_path(r, 12, false));
+        assert_eq!(action_lines_path(r, 12, true).elements().len(), 24);
+        let g = grid_path(r, 4, 3);
+        // Frame (5 elements) plus 2 vertical and 3 horizontal lines.
+        assert_eq!(g.elements().len(), 5 + 2 * 2 + 3 * 2);
+    }
 }

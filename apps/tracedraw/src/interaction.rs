@@ -762,7 +762,13 @@ impl App {
                 from_center,
             } => {
                 let r = App::box_rect(start, current, from_center);
-                let (a, b) = (Point::new(r.x0, r.y0), Point::new(r.x1, r.y1));
+                // The knife cuts along the dragged line, in its direction;
+                // shape tools take the normalised box.
+                let (a, b) = if self.tool == Tool::Knife {
+                    (start, current)
+                } else {
+                    (Point::new(r.x0, r.y0), Point::new(r.x1, r.y1))
+                };
                 if !self.finish_tools2_box(a, b) {
                     self.create_box_shape(a, b);
                 }

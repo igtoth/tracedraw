@@ -5,6 +5,18 @@ Complex star, Spiral, Graph paper, Common shapes and Impact. All of them
 draw by dragging a box; the object takes the toolbox defaults (no fill,
 black hairline outline) unless the Properties docker set other defaults.
 
+## Live preview
+
+While the button is held the object itself follows the pointer, built
+with the current property bar settings (corner radius, arc angles,
+points and sharpness, revolutions, rows and columns, the chosen common
+shape, action lines): the same geometry the release creates. It is drawn
+in the colour and width of the default outline, at least one pixel wide
+(the selection colour when new objects get no outline). Crop, zoom and
+text frame drags keep a plain rectangle. After the release the new
+object is selected and shows the eight handles and the centre marker
+whatever tool is active.
+
 ## Drag modifiers (every box tool)
 
 - Ctrl constrains the box to a square (circle, regular polygon).
@@ -28,6 +40,11 @@ black hairline outline) unless the Properties docker set other defaults.
 ## Polygon (Y) and Star
 
 - Points: default 5, range 3..500 (property bar).
+- The first vertex is at the top centre. The dragged box is the
+  polygon's own bounding box: the model keeps the ellipse the outer
+  vertices lie on, so the ellipse is computed from the unit polygon's
+  vertex bounds `(x0, x1, y0, y1)` as `rx = w / (x1 - x0)`,
+  `ry = h / (y1 - y0)`, centre `(left - x0 rx, bottom - y0 ry)`.
 - Star sharpness: default 0.5 (0 = polygon, 1 = thinnest spikes);
   Complex star uses the same outline with the even-odd rule, so the
   centre is hollow.
