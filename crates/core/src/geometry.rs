@@ -2,8 +2,9 @@
 //! shares one set of types, and add the few helpers the editor needs.
 
 pub use kurbo::{
-    Affine, BezPath, Circle, Ellipse, Line, ParamCurve, ParamCurveArclen, ParamCurveDeriv,
-    ParamCurveNearest, PathEl, PathSeg, Point, Rect, RoundedRect, Shape, Size, Vec2,
+    Affine, Arc, BezPath, Circle, CubicBez, Ellipse, Line, ParamCurve, ParamCurveArclen,
+    ParamCurveDeriv, ParamCurveNearest, PathEl, PathSeg, Point, Rect, RoundedRect, Shape, Size,
+    Vec2,
 };
 
 /// Flatten a path into lines within `tolerance`, calling `f` with each

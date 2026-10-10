@@ -582,6 +582,12 @@ pub struct App {
     /// Selected nodes: (shape, element index).
     pub node_selection: Vec<(ShapeId, usize)>,
     pub snap: crate::snap::SnapSettings,
+    /// The Corners docker's operation and sizes.
+    pub corners: crate::corners::CornersSettings,
+    /// The Join Curves docker's joint, gap tolerance and radius.
+    pub join_settings: crate::corners::JoinSettings,
+    /// Outlines a docker previews on the canvas this frame (page space).
+    pub docker_preview: Vec<tracedraw_core::geometry::BezPath>,
     /// The point the pointer snapped to this frame, for its mark.
     pub snap_mark: std::cell::Cell<Option<crate::snap_points::Target>>,
     pub dialog: crate::ui::dialogs::Dialog,
@@ -824,10 +830,12 @@ pub enum DockerTab {
     Pages,
     Guidelines,
     Fonts,
+    Corners,
+    JoinCurves,
 }
 
 impl DockerTab {
-    pub const ALL: [DockerTab; 30] = [
+    pub const ALL: [DockerTab; 32] = [
         DockerTab::Properties,
         DockerTab::Objects,
         DockerTab::Hints,
@@ -858,6 +866,8 @@ impl DockerTab {
         DockerTab::Pages,
         DockerTab::Guidelines,
         DockerTab::Fonts,
+        DockerTab::Corners,
+        DockerTab::JoinCurves,
     ];
 
     /// i18n key of the docker's title.
@@ -893,6 +903,8 @@ impl DockerTab {
             DockerTab::Pages => "docker.pages",
             DockerTab::Guidelines => "docker.guidelines",
             DockerTab::Fonts => "docker.fonts",
+            DockerTab::Corners => "docker.corners_docker",
+            DockerTab::JoinCurves => "docker.join_curves",
         }
     }
 
@@ -1084,6 +1096,9 @@ impl App {
             node_selection: Vec::new(),
             snap: crate::snap::SnapSettings::default(),
             snap_mark: std::cell::Cell::new(None),
+            corners: Default::default(),
+            join_settings: Default::default(),
+            docker_preview: Vec::new(),
             dialog: crate::ui::dialogs::Dialog::None,
             merge_state: None,
             page_numbers: PageNumberSettings::default(),

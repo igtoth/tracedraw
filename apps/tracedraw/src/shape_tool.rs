@@ -542,7 +542,7 @@ impl App {
         }
         // Different curves: combine them with a connecting line.
         self.selection = vec![a, b];
-        self.join_curves();
+        self.join_two_curves();
         self.node_selection.clear();
     }
 

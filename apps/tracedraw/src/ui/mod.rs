@@ -52,6 +52,8 @@ fn set_window_title(ctx: &egui::Context, title: String) {
 }
 
 pub fn root(app: &mut App, ui: &mut Ui) {
+    // Dockers set their canvas previews again each frame they are shown.
+    app.docker_preview.clear();
     let ctx = ui.ctx().clone();
     // Pixels are measured at the active drawing's resolution.
     crate::app::set_pixel_dpi(app.document_dpi());
@@ -314,6 +316,7 @@ pub fn root(app: &mut App, ui: &mut Ui) {
             canvas::draw_guides(app, &painter, canvas_rect);
             rulers::draw_origin_drag(app, &painter, canvas_rect);
             canvas::draw_effect_nodes(app, &painter);
+            canvas::draw_docker_preview(app, &painter);
             canvas::draw_snap_mark(app, &painter);
             context::context_menu(app, ui, &response);
 

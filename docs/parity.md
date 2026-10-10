@@ -6,7 +6,7 @@ target design does, with a test or a checked screenshot behind it.
 "partial" names what is missing. "baked" means the result is applied once
 instead of staying live and editable. The goal is every row at "works".
 
-Counts: works 139, partial 2 (`.cdr` content coverage; polygon nodes in the Shape tool), missing 3 (CMX import; window cascade and tile; some Options pages), not applicable 3, icons close but not pixel-identical.
+Counts: works 141, partial 2 (`.cdr` content coverage; polygon nodes in the Shape tool), missing 3 (CMX import; window cascade and tile; some Options pages), not applicable 3, icons close but not pixel-identical.
 
 ## 1. Selection and navigation
 
@@ -57,7 +57,9 @@ Counts: works 139, partial 2 (`.cdr` content coverage; polygon nodes in the Shap
 | Node types: cusp, smooth, symmetrical; to line / to curve; reverse subpaths | works |
 | Add, delete, join, break, extract subpath, close curve, align nodes, reduce nodes | works |
 | Weld, Trim, Intersect, Simplify, Front minus back, Back minus front, Boundary (menu and docker) | works |
-| Combine, Break apart, Group, Ungroup, Ungroup all, Join curves | works |
+| Combine, Break apart, Group, Ungroup, Ungroup all | works |
+| Join Curves docker: Extend, Chamfer, Fillet, Bezier Curve joints, gap tolerance, nearest ends first, closes subpaths | works (see `behavior/corners-and-joins.md`) |
+| Corners docker: fillet, scallop, chamfer (A and B distances) the corners of curves or of chosen nodes, with preview; corners that do not fit are skipped | works (see `behavior/corners-and-joins.md`) |
 | Convert to curves, Convert outline to object | works |
 | Smear, Twirl, Attract, Repel, Smudge, Roughen, Smooth brushes | works |
 | Lock, hide, order (front/back of page and layer, one step, in front of, behind, reverse) | works |

@@ -1281,6 +1281,48 @@ pub fn draw_guides(app: &App, painter: &Painter, rect: ERect) {
     }
 }
 
+/// Outlines a docker previews (the Corners docker's cut): dashed in the
+/// selection colour over the drawing.
+pub fn draw_docker_preview(app: &App, painter: &Painter) {
+    let stroke = EStroke::new(1.0, Tokens::SELECTION);
+    for path in &app.docker_preview {
+        for (mut pts, closed) in flatten(path, &app.view) {
+            if closed {
+                if let Some(first) = pts.first().copied() {
+                    pts.push(first);
+                }
+            }
+            dashed_polyline(painter, &pts, stroke, 4.0, 3.0);
+        }
+    }
+}
+
+/// A polyline drawn in dashes of `on` px with `off` px gaps.
+fn dashed_polyline(painter: &Painter, pts: &[Pos2], stroke: EStroke, on: f32, off: f32) {
+    let period = on + off;
+    let mut walked = 0.0f32;
+    for w in pts.windows(2) {
+        let (a, b) = (w[0], w[1]);
+        let len = a.distance(b);
+        if len <= 0.0 {
+            continue;
+        }
+        let dir = (b - a) / len;
+        let mut t = 0.0f32;
+        while t < len {
+            let phase = (walked + t) % period;
+            if phase < on {
+                let end = (t + (on - phase)).min(len);
+                painter.line_segment([a + dir * t, a + dir * end], stroke);
+                t = end;
+            } else {
+                t += period - phase;
+            }
+        }
+        walked += len;
+    }
+}
+
 /// The mark of a snapping mode, about 11 px across, centred on `c`.
 pub fn draw_snap_glyph(
     painter: &Painter,

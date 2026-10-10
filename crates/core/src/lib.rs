@@ -11,12 +11,14 @@
 #![allow(clippy::should_implement_trait)]
 pub mod color;
 pub mod command;
+pub mod corner_cut;
 pub mod document;
 pub mod effects;
 pub mod engine;
 pub mod geometry;
 pub mod icc;
 pub mod id;
+pub mod join;
 pub mod live;
 pub mod nodes;
 mod press;

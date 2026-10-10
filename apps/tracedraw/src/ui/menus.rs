@@ -1346,8 +1346,9 @@ fn object_menu(app: &mut App, ui: &mut Ui) {
     ) {
         app.convert_outline_to_object();
     }
-    if item(ui, "menu.object.join_curves", "", many) {
-        app.join_curves();
+    if item(ui, "menu.object.join_curves", "", true) {
+        app.show_dockers = true;
+        app.docker_tab = crate::app::DockerTab::JoinCurves;
     }
     sep(ui);
     let has_fill = app

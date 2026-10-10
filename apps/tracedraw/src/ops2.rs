@@ -3,6 +3,7 @@
 //! tracing, text conversions, scripts, palettes.
 
 use crate::app::{App, EffectKind};
+use crate::corners::JoinKind;
 use crate::i18n::{tr, trf};
 use tracedraw_core::{
     document::{Shape, ShapeKind},
@@ -799,8 +800,9 @@ impl App {
         }
     }
 
-    /// Object > Join Curves: connect the open ends of selected curves.
-    pub fn join_curves(&mut self) {
+    /// The Shape tool's Join of two end nodes on different curves: one
+    /// curve, the second one's path drawn on from the first one's end.
+    pub fn join_two_curves(&mut self) {
         let shapes: Vec<Shape> = self
             .selected_shapes()
             .into_iter()
@@ -852,6 +854,76 @@ impl App {
             self.status = e.to_string();
         }
         self.selection = vec![keep];
+    }
+
+    /// The Join Curves docker: join the open ends of the selected curves
+    /// (and the open subpaths inside them) that lie within the gap
+    /// tolerance, nearest first, with the chosen joint. The result takes
+    /// the place and properties of the curve selected last. Returns the
+    /// number of joints made.
+    pub fn join_curves(&mut self) -> usize {
+        let shapes: Vec<Shape> = self
+            .selected_shapes()
+            .into_iter()
+            .filter(|s| matches!(s.kind, ShapeKind::Path { .. }))
+            .collect();
+        let Some(last) = shapes.last() else {
+            return 0;
+        };
+        let keep = last.id;
+        let keep_transform = last.transform;
+        let paths: Vec<BezPath> = shapes.iter().map(|s| s.page_path()).collect();
+        let j = self.join_settings;
+        let mode = match j.mode {
+            JoinKind::Extend => tracedraw_core::join::JoinMode::Extend,
+            JoinKind::Chamfer => tracedraw_core::join::JoinMode::Chamfer,
+            JoinKind::Fillet => tracedraw_core::join::JoinMode::Fillet(j.radius),
+            JoinKind::Bezier => tracedraw_core::join::JoinMode::Bezier,
+        };
+        let (joined, n) = tracedraw_core::join::join_curves(&paths, mode, j.gap);
+        if n == 0 {
+            self.status = tr("status.join_gap_too_small");
+            return 0;
+        }
+        let closed = joined
+            .elements()
+            .iter()
+            .filter(|e| matches!(e, kurbo::PathEl::MoveTo(_)))
+            .count()
+            == joined
+                .elements()
+                .iter()
+                .filter(|e| matches!(e, kurbo::PathEl::ClosePath))
+                .count();
+        let others: Vec<ShapeId> = shapes
+            .iter()
+            .map(|s| s.id)
+            .filter(|id| *id != keep)
+            .collect();
+        // The joined outline is in page space: the kept curve's transform
+        // goes back to none.
+        let mut cmds = vec![
+            Command::TransformShapes {
+                shapes: vec![keep],
+                transform: keep_transform.inverse(),
+            },
+            Command::SetShapeKind {
+                shape: keep,
+                kind: ShapeKind::Path {
+                    path: joined,
+                    closed,
+                },
+            },
+        ];
+        if !others.is_empty() {
+            cmds.push(Command::DeleteShapes { shapes: others });
+        }
+        if let Err(e) = self.engine.run_batch("Join Curves", &cmds) {
+            self.status = e.to_string();
+            return 0;
+        }
+        self.selection = vec![keep];
+        n
     }
 
     pub fn toggle_overprint(&mut self, fill: bool) {

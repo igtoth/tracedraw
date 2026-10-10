@@ -53,6 +53,8 @@ pub fn show(app: &mut App, ui: &mut Ui, tab: DockerTab) {
         DockerTab::Pages => pages(app, ui),
         DockerTab::Guidelines => guidelines(app, ui),
         DockerTab::Fonts => fonts(app, ui),
+        DockerTab::Corners => corners(app, ui),
+        DockerTab::JoinCurves => join_curves(app, ui),
         _ => {}
     }
 }
@@ -1956,4 +1958,157 @@ fn fonts(app: &mut App, ui: &mut Ui) {
             }
         }
     });
+}
+
+/// Corners: fillet, scallop or chamfer the corners of the selected
+/// objects (or of the nodes chosen with the Shape tool), with a preview of
+/// the result on the drawing.
+fn corners(app: &mut App, ui: &mut Ui) {
+    use crate::corners::CornerOp;
+    let u = app.units;
+    let field = |ui: &mut Ui, label: &str, mm: &mut f64| {
+        ui.horizontal(|ui| {
+            ui.label(label);
+            let mut v = u.from_mm(*mm);
+            if ui
+                .add_sized(
+                    [90.0, 22.0],
+                    crate::ui::field::NumField::new(&mut v)
+                        .range(0.0..=100_000.0)
+                        .max_decimals(3)
+                        .suffix(format!(" {}", u.short()))
+                        .unit_mm(u.mm()),
+                )
+                .changed()
+            {
+                *mm = u.to_mm(v);
+            }
+        });
+    };
+    ui.strong(tr("docker.corners_operation"));
+    for (op, key) in [
+        (CornerOp::Fillet, "docker.corners_fillet"),
+        (CornerOp::Scallop, "docker.corners_scallop"),
+        (CornerOp::Chamfer, "docker.corners_chamfer"),
+    ] {
+        ui.radio_value(&mut app.corners.op, op, tr(key));
+    }
+    ui.add_space(6.0);
+    let mut c = app.corners;
+    if c.op == CornerOp::Chamfer {
+        ui.strong(tr("docker.corners_chamfer_distance"));
+        field(ui, "A:", &mut c.a);
+        ui.horizontal(|ui| {
+            ui.add_enabled_ui(!c.lock, |ui| {
+                ui.label("B:");
+                let mut v = u.from_mm(if c.lock { c.a } else { c.b });
+                if ui
+                    .add_sized(
+                        [90.0, 22.0],
+                        crate::ui::field::NumField::new(&mut v)
+                            .range(0.0..=100_000.0)
+                            .max_decimals(3)
+                            .suffix(format!(" {}", u.short()))
+                            .unit_mm(u.mm()),
+                    )
+                    .changed()
+                {
+                    c.b = u.to_mm(v);
+                }
+            });
+            if crate::ui::propbar::pic_button(
+                ui,
+                crate::ui::propbar::Pic::Lock(c.lock),
+                &tr("docker.corners_lock"),
+                true,
+                c.lock,
+            )
+            .clicked()
+            {
+                c.lock = !c.lock;
+            }
+        });
+    } else {
+        field(ui, &tr("docker.corners_radius"), &mut c.radius);
+    }
+    app.corners = c;
+    // Preview what Apply would do.
+    let preview = app.corner_preview();
+    let valid = !preview.is_empty();
+    app.docker_preview = preview;
+    ui.add_space(8.0);
+    if ui
+        .add_enabled(valid, egui::Button::new(tr("docker.apply")))
+        .clicked()
+    {
+        app.apply_corners();
+        app.docker_preview.clear();
+    }
+}
+
+/// Join Curves: the joint (Extend, Chamfer, Fillet, Bezier Curve), the
+/// gap tolerance and the fillet radius.
+fn join_curves(app: &mut App, ui: &mut Ui) {
+    use crate::corners::JoinKind;
+    let u = app.units;
+    let label = |k: JoinKind| {
+        tr(match k {
+            JoinKind::Extend => "docker.join_extend",
+            JoinKind::Chamfer => "docker.join_chamfer",
+            JoinKind::Fillet => "docker.join_fillet",
+            JoinKind::Bezier => "docker.join_bezier",
+        })
+    };
+    let mut j = app.join_settings;
+    ui.horizontal(|ui| {
+        ui.label(tr("docker.join_mode"));
+        egui::ComboBox::from_id_salt("join_mode")
+            .selected_text(label(j.mode))
+            .width(140.0)
+            .show_ui(ui, |ui| {
+                for k in [
+                    JoinKind::Extend,
+                    JoinKind::Chamfer,
+                    JoinKind::Fillet,
+                    JoinKind::Bezier,
+                ] {
+                    ui.selectable_value(&mut j.mode, k, label(k));
+                }
+            });
+    });
+    let field = |ui: &mut Ui, key: &str, mm: &mut f64| {
+        ui.horizontal(|ui| {
+            ui.label(tr(key));
+            let mut v = u.from_mm(*mm);
+            if ui
+                .add_sized(
+                    [90.0, 22.0],
+                    crate::ui::field::NumField::new(&mut v)
+                        .range(0.0..=100_000.0)
+                        .max_decimals(3)
+                        .suffix(format!(" {}", u.short()))
+                        .unit_mm(u.mm()),
+                )
+                .changed()
+            {
+                *mm = u.to_mm(v);
+            }
+        });
+    };
+    field(ui, "docker.join_gap", &mut j.gap);
+    if j.mode == JoinKind::Fillet {
+        field(ui, "docker.corners_radius", &mut j.radius);
+    }
+    app.join_settings = j;
+    let curves = app
+        .selected_shapes()
+        .iter()
+        .any(|s| matches!(s.kind, ShapeKind::Path { .. }));
+    ui.add_space(8.0);
+    if ui
+        .add_enabled(curves, egui::Button::new(tr("docker.apply")))
+        .clicked()
+    {
+        app.join_curves();
+    }
 }
