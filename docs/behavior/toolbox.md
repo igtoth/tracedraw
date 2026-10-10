@@ -1,8 +1,8 @@
 # Toolbox
 
 - One button per flyout, top to bottom, with
-  separator lines after the Zoom, Drawing, Text, Connector and
-  Transparency groups. A button shows the tool last used from its flyout
+  separator lines after the Shape, Zoom, Polygon, Text, Connector,
+  Transparency and Fill groups (before the "+"). A button shows the tool last used from its flyout
   (kept in the settings); the active tool's button is tinted.
 - Buttons with a flyout have a small arrow at the bottom-right. Clicking
   the arrow, right-clicking, dragging, or pressing and holding the button

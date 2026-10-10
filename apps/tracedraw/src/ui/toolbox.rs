@@ -24,7 +24,7 @@ const SEPARATE_AFTER: [Tool; 6] = [
 ];
 
 /// Toolbox groups followed by a separator line.
-const GROUP_BREAKS: [usize; 5] = [3, 5, 9, 11, 13];
+const GROUP_BREAKS: [usize; 7] = [1, 3, 8, 9, 11, 13, 15];
 
 /// Whether group `gi` is shown (the Outline flyout is hidden by default).
 pub fn group_visible(app: &App, gi: usize) -> bool {
@@ -79,23 +79,25 @@ pub fn toolbox(app: &mut App, ui: &mut Ui) {
         let (rect, resp) = ui.allocate_exact_size(size, Sense::click_and_drag());
         let has_flyout = group.tools.len() > 1;
         let arrow_zone = Rect::from_min_max(rect.right_bottom() - Vec2::splat(10.0), rect.max);
+        // The active tool's button is white with a grey frame; hovering
+        // tints a button blue.
         let bg = if active {
-            Tokens::TOOL_ACTIVE
+            egui::Color32::WHITE
         } else if resp.hovered() {
             Tokens::TOOL_HOVER
         } else {
             Tokens::PANEL
         };
-        ui.painter().rect_filled(rect, 2.0, bg);
+        ui.painter().rect_filled(rect, 0.0, bg);
         if active {
             ui.painter().rect_stroke(
                 rect,
-                2.0,
-                Stroke::new(1.0, Tokens::SELECTION.gamma_multiply(0.5)),
+                0.0,
+                Stroke::new(1.0, Tokens::CONTROL_BORDER),
                 egui::StrokeKind::Inside,
             );
         }
-        let icon_rect = Rect::from_center_size(rect.center(), Vec2::splat(20.0));
+        let icon_rect = Rect::from_center_size(rect.center(), Vec2::splat(22.0));
         icons::draw(ui.painter(), icon_rect, shown, Tokens::ICON);
         if has_flyout {
             // The flyout arrow: a small triangle at the bottom-right.
@@ -285,8 +287,10 @@ fn flyout(app: &mut App, ui: &mut Ui, gi: usize, button: Rect) {
 fn quick_customize(app: &mut App, ui: &mut Ui) {
     ui.add_space(4.0);
     ui.vertical_centered(|ui| {
+        ui.visuals_mut().widgets.inactive.weak_bg_fill = egui::Color32::TRANSPARENT;
+        ui.visuals_mut().widgets.inactive.bg_stroke = Stroke::NONE;
         ui.menu_button(
-            egui::RichText::new("+").size(16.0).color(Tokens::TEXT_DIM),
+            egui::RichText::new("+").size(18.0).color(Tokens::TEXT_DIM),
             |ui| {
                 for (gi, group) in GROUPS.iter().enumerate() {
                     let mut on = group_visible(app, gi);

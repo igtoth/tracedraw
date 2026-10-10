@@ -285,8 +285,22 @@ impl Ic<'_> {
 }
 
 pub fn draw(painter: &Painter, r: Rect, tool: Tool, color: Color32) {
-    let s = Stroke::new(1.4, color);
-    let thin = Stroke::new(1.0, color);
+    // Stroke weights follow the icon size (1.25 and 0.9 px at 16 px).
+    let k = r.width() / 16.0;
+    let s = Stroke::new(1.25 * k, color);
+    let thin = Stroke::new((0.9 * k).max(1.0), color);
+    // Colour accents (connector ends, the dropper's tip, the bucket's paint)
+    // only on the normal icon colour; dimmed icons stay monochrome.
+    let accent = if color == Tokens::ICON {
+        Color32::from_rgb(0xE8, 0x5A, 0x1C)
+    } else {
+        color
+    };
+    let paint = if color == Tokens::ICON {
+        Color32::from_rgb(0xE0, 0x10, 0x1A)
+    } else {
+        color
+    };
     let faint = color.gamma_multiply(0.35);
     let faint_stroke = Stroke::new(1.0, faint);
     let ic = Ic {
@@ -315,8 +329,11 @@ pub fn draw(painter: &Painter, r: Rect, tool: Tool, color: Color32) {
 
         // Shape edit group.
         Tool::Shape => {
-            ic.cursor(4.0, 2.0, 1.0, false);
-            ic.node(12.5, 3.5);
+            // A curve with a hollow node and the pointer reshaping it.
+            let a = ic.arc(11.0, 9.0, 8.0, 7.5, PI * 0.78, PI * 1.32, 14);
+            ic.open(&a, s);
+            ic.node_hollow(a[5].0, a[5].1);
+            ic.cursor(8.0, 6.5, 0.62, true);
         }
         Tool::Smooth => {
             let pts: Vec<(f32, f32)> = (0..=20)
@@ -379,10 +396,12 @@ pub fn draw(painter: &Painter, r: Rect, tool: Tool, color: Color32) {
 
         // Crop group.
         Tool::Crop => {
-            ic.line(5.0, 2.0, 5.0, 11.0, s);
-            ic.line(5.0, 11.0, 14.0, 11.0, s);
-            ic.line(2.0, 5.0, 11.0, 5.0, s);
-            ic.line(11.0, 5.0, 11.0, 14.0, s);
+            // Two crop marks.
+            let w = Stroke::new(1.9 * k, color);
+            ic.line(5.0, 1.5, 5.0, 11.0, w);
+            ic.line(5.0, 11.0, 14.5, 11.0, w);
+            ic.line(1.5, 5.0, 11.0, 5.0, w);
+            ic.line(11.0, 5.0, 11.0, 14.5, w);
         }
         Tool::Knife => {
             // Blade with a straight spine and a curved cutting edge, handle at lower left.
@@ -414,13 +433,12 @@ pub fn draw(painter: &Painter, r: Rect, tool: Tool, color: Color32) {
 
         // Zoom group.
         Tool::Zoom => {
-            ic.circle_s(7.0, 7.0, 4.5, s);
+            // A magnifying glass.
+            ic.circle_s(6.8, 6.8, 5.0, s);
             ic.painter.line_segment(
-                [ic.at(10.3, 10.3), ic.at(14.5, 14.5)],
-                Stroke::new(2.2, color),
+                [ic.at(10.4, 10.4), ic.at(14.8, 14.8)],
+                Stroke::new(1.9 * k, color),
             );
-            ic.line(4.5, 7.0, 9.5, 7.0, thin);
-            ic.line(7.0, 4.5, 7.0, 9.5, thin);
         }
         Tool::Pan => {
             // Open hand: four fingers, thumb and palm.
@@ -434,7 +452,22 @@ pub fn draw(painter: &Painter, r: Rect, tool: Tool, color: Color32) {
 
         // Curve group.
         Tool::Freehand => {
-            ic.pencil(3.0, 13.0, 13.0);
+            // The drawing cursor and a freehand scribble.
+            ic.line(1.0, 3.5, 6.0, 3.5, thin);
+            ic.line(3.5, 1.0, 3.5, 6.0, thin);
+            let pts: Vec<(f32, f32)> = (0..=28)
+                .map(|i| {
+                    let t = i as f32 / 28.0;
+                    let x = 3.5 + 11.5 * t;
+                    let y = if t < 0.18 {
+                        7.5 + 30.0 * t
+                    } else {
+                        13.0 - 3.0 * ((t - 0.18) * 26.0).sin().abs()
+                    };
+                    (x, y)
+                })
+                .collect();
+            ic.open(&pts, s);
         }
         Tool::TwoPointLine => {
             ic.line(3.0, 13.0, 13.0, 3.0, s);
@@ -528,25 +561,24 @@ pub fn draw(painter: &Painter, r: Rect, tool: Tool, color: Color32) {
 
         // Brush strokes: a tapered brush stroke.
         Tool::BrushStrokes => {
-            let n = 14;
-            let pts: Vec<(f32, f32)> = (0..=n)
-                .map(|i| {
-                    let t = i as f32 / n as f32;
-                    (2.0 + 12.0 * t, 10.5 - 6.0 * t + 2.0 * (t * 5.0).sin())
-                })
-                .collect();
+            // A brush stroke shaped like an S, thickening towards a heavy,
+            // rounded end at the bottom left.
+            let mut pts = ic.arc(7.5, 5.0, 3.0, 3.2, -PI * 0.15, -PI * 1.5, 12);
+            pts.extend(ic.arc(8.0, 11.4, 4.2, 3.2, -PI * 0.5, PI * 0.85, 14));
             for (i, w) in pts.windows(2).enumerate() {
-                let t = (i as f32 + 0.5) / n as f32;
-                let width = ic.u(0.6 + 3.6 * (PI * t).sin());
+                let t = i as f32 / pts.len() as f32;
                 ic.painter.line_segment(
                     [ic.at(w[0].0, w[0].1), ic.at(w[1].0, w[1].1)],
-                    Stroke::new(width, color),
+                    Stroke::new(ic.u(0.9 + 1.4 * t), color),
                 );
+            }
+            if let Some(&(x, y)) = pts.last() {
+                ic.circle_f(x, y, 1.5, color);
             }
         }
 
         // Rectangle group.
-        Tool::Rectangle => ic.rect_s(2.5, 4.0, 13.5, 12.0, 0.0, s),
+        Tool::Rectangle => ic.rect_s(1.8, 1.8, 14.2, 14.2, 0.0, s),
         Tool::ThreePointRectangle => {
             let pts = [(3.0, 6.0), (9.5, 2.0), (13.5, 8.5), (7.0, 12.5)];
             ic.closed(&pts, s);
@@ -556,7 +588,7 @@ pub fn draw(painter: &Painter, r: Rect, tool: Tool, color: Color32) {
         }
 
         // Ellipse group.
-        Tool::Ellipse => ic.ellipse_s(8.0, 8.0, 5.5, 4.0, s),
+        Tool::Ellipse => ic.ellipse_s(8.0, 8.0, 6.4, 6.4, s),
         Tool::ThreePointEllipse => {
             // Tilted ellipse built from a rotated parametric curve.
             let ang = -0.6f32;
@@ -587,10 +619,11 @@ pub fn draw(painter: &Painter, r: Rect, tool: Tool, color: Color32) {
 
         // Polygon group.
         Tool::Polygon => {
+            // A hexagon with flat top and bottom.
             let pts: Vec<(f32, f32)> = (0..6)
                 .map(|i| {
-                    let a = -FRAC_PI_2 + i as f32 * TAU / 6.0;
-                    (8.0 + 6.0 * a.cos(), 8.0 + 6.0 * a.sin())
+                    let a = i as f32 * TAU / 6.0;
+                    (8.0 + 6.8 * a.cos(), 8.0 + 6.2 * a.sin())
                 })
                 .collect();
             ic.closed(&pts, s);
@@ -642,14 +675,9 @@ pub fn draw(painter: &Painter, r: Rect, tool: Tool, color: Color32) {
 
         // Text group.
         Tool::Text => {
-            // Capital A drawn with strokes, with serifs at the feet.
-            ic.open(
-                &[(3.0, 14.0), (8.0, 2.0), (13.0, 14.0)],
-                Stroke::new(1.8, color),
-            );
-            ic.line(5.2, 9.8, 10.8, 9.8, Stroke::new(1.6, color));
-            ic.line(1.8, 14.0, 4.5, 14.0, thin);
-            ic.line(11.5, 14.0, 14.2, 14.0, thin);
+            // A capital A.
+            ic.open(&[(2.0, 15.0), (8.0, 1.0), (14.0, 15.0)], s);
+            ic.line(4.6, 10.2, 11.4, 10.2, s);
         }
         Tool::Table => {
             ic.rect_s(2.0, 3.0, 14.0, 13.0, 0.0, s);
@@ -661,9 +689,10 @@ pub fn draw(painter: &Painter, r: Rect, tool: Tool, color: Color32) {
 
         // Dimension group.
         Tool::ParallelDimension => {
-            ic.line(2.0, 13.0, 4.5, 15.0, thin);
-            ic.line(11.0, 2.5, 13.5, 4.5, thin);
-            ic.dim_line(3.5, 12.5, 12.5, 3.5);
+            // A slanted dimension line with ticks across both ends.
+            ic.line(2.5, 13.5, 13.5, 2.5, s);
+            ic.line(0.8, 11.8, 4.2, 15.2, s);
+            ic.line(11.8, 0.8, 15.2, 4.2, s);
         }
         Tool::HorizontalVerticalDimension => {
             ic.dim_line(4.5, 13.0, 14.5, 13.0);
@@ -698,9 +727,12 @@ pub fn draw(painter: &Painter, r: Rect, tool: Tool, color: Color32) {
 
         // Connector group.
         Tool::Connector => {
-            ic.rect_s(1.5, 1.5, 6.5, 6.5, 0.0, thin);
-            ic.rect_s(9.5, 9.5, 14.5, 14.5, 0.0, thin);
-            ic.line(6.5, 6.5, 9.5, 9.5, s);
+            // A line joining two coloured anchor squares.
+            ic.line(3.5, 3.5, 12.5, 12.5, s);
+            for (x, y) in [(3.5, 3.5), (12.5, 12.5)] {
+                ic.rect_f(x - 2.2, y - 2.2, x + 2.2, y + 2.2, accent);
+                ic.rect_s(x - 2.2, y - 2.2, x + 2.2, y + 2.2, 0.0, thin);
+            }
         }
         Tool::RightAngleConnector => {
             ic.rect_s(1.5, 1.5, 6.5, 6.5, 0.0, thin);
@@ -729,8 +761,15 @@ pub fn draw(painter: &Painter, r: Rect, tool: Tool, color: Color32) {
 
         // Effects group.
         Tool::DropShadow => {
-            ic.rect_f(5.0, 5.0, 14.0, 14.0, faint);
-            ic.rect_s(2.5, 2.5, 11.5, 11.5, 0.0, s);
+            // A square casting a shadow down and to the right.
+            let shade = if color == Tokens::ICON {
+                Color32::from_rgb(0x55, 0x55, 0x55)
+            } else {
+                color
+            };
+            ic.rect_f(4.0, 4.0, 14.5, 14.5, shade);
+            ic.rect_f(1.5, 1.5, 12.0, 12.0, Color32::WHITE);
+            ic.rect_s(1.5, 1.5, 12.0, 12.0, 0.0, s);
         }
         Tool::Contour => {
             ic.rect_s(2.0, 2.0, 14.0, 14.0, 0.0, thin);
@@ -812,21 +851,29 @@ pub fn draw(painter: &Painter, r: Rect, tool: Tool, color: Color32) {
         }
 
         Tool::Transparency => {
-            // Checkerboard showing through a half-faded square.
-            for i in 0..3 {
-                for j in 0..3 {
+            // A checkerboard.
+            let n = 6;
+            let cell = 13.0 / n as f32;
+            for i in 0..n {
+                for j in 0..n {
                     if (i + j) % 2 == 0 {
-                        let (x, y) = (2.0 + i as f32 * 4.0, 2.0 + j as f32 * 4.0);
-                        ic.rect_f(x, y, x + 4.0, y + 4.0, faint);
+                        let (x, y) = (1.5 + i as f32 * cell, 1.5 + j as f32 * cell);
+                        ic.rect_f(x, y, x + cell, y + cell, color);
                     }
                 }
             }
-            ic.rect_s(2.0, 2.0, 14.0, 14.0, 0.0, thin);
-            ic.rect_f(2.0, 2.0, 8.0, 14.0, color);
+            ic.rect_s(1.5, 1.5, 14.5, 14.5, 0.0, thin);
         }
 
         // Eyedropper group.
-        Tool::ColorEyedropper => ic.dropper(),
+        Tool::ColorEyedropper => {
+            ic.dropper();
+            // The tip holds the picked colour.
+            ic.painter.line_segment(
+                [ic.at(3.0, 13.0), ic.at(6.5, 9.5)],
+                Stroke::new(2.4 * k, accent),
+            );
+        }
         Tool::AttributesEyedropper => {
             ic.dropper();
             ic.rect_s(10.0, 10.0, 14.5, 14.5, 0.0, s);
@@ -834,7 +881,12 @@ pub fn draw(painter: &Painter, r: Rect, tool: Tool, color: Color32) {
         }
 
         // Fill group.
-        Tool::InteractiveFill => ic.bucket(),
+        Tool::InteractiveFill => {
+            ic.bucket();
+            // Paint in the bucket and a drop of it at the corner.
+            ic.fill(&[(4.2, 8.2), (11.8, 8.2), (8.0, 12.0)], paint);
+            ic.fill(&[(15.0, 11.0), (15.0, 15.0), (11.0, 15.0)], paint);
+        }
         Tool::AreaFill => {
             ic.bucket();
             ic.sparkle(13.0, 3.0, 2.6);

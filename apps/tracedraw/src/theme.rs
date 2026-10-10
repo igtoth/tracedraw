@@ -29,8 +29,8 @@ impl Tokens {
     pub const BUTTON: Color32 = Color32::from_rgb(0xE1, 0xE1, 0xE1);
     pub const CONTROL_BORDER: Color32 = Color32::from_rgb(0xAD, 0xAD, 0xAD);
 
-    pub const TOOLBOX_WIDTH: f32 = 36.0;
-    pub const TOOL_BUTTON: f32 = 30.0;
+    pub const TOOLBOX_WIDTH: f32 = 38.0;
+    pub const TOOL_BUTTON: f32 = 32.0;
     pub const RULER: f32 = 18.0;
     pub const SWATCH: f32 = 16.0;
 }
