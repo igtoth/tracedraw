@@ -1242,6 +1242,7 @@ status.link_needs_two_frames = "Выберите две рамки просто�
 status.merge_done = "Слияние при печати создало страниц: {n}"
 status.missing_fonts = "Заменены отсутствующие шрифты: {f}"
 status.n_objects_selected = "Выбрано объектов: {n}"
+status.navigator = "Навигатор"
 status.next_page = "Следующая страница"
 status.none = "Нет"
 status.not_in_browser = "Недоступно в браузерной версии"

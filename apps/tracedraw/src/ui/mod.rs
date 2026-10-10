@@ -16,6 +16,7 @@ pub mod tabs;
 pub mod toolbar;
 pub mod toolbox;
 pub mod welcome;
+pub mod window_bars;
 
 use crate::app::App;
 use crate::canvas;
@@ -156,11 +157,7 @@ pub fn root(app: &mut App, ui: &mut Ui) {
         .frame(bar())
         .show(ui, |ui| palette::document_palette_row(app, ui));
     Panel::bottom("palette").frame(bar()).show(ui, |ui| {
-        ui.horizontal(|ui| {
-            status::navigator(app, ui);
-            ui.add(egui::Separator::default().vertical());
-            palette::palette_row(app, ui);
-        });
+        ui.horizontal(|ui| palette::palette_row(app, ui));
     });
 
     // Document tabs above the rulers.
@@ -192,7 +189,7 @@ pub fn root(app: &mut App, ui: &mut Ui) {
         .show(ui, |ui| {
             let full = ui.available_rect_before_wrap();
             let ruler = if app.show_rulers { Tokens::RULER } else { 0.0 };
-            let sb = Tokens::SCROLLBAR;
+            let sb = window_bars::BAR;
             let canvas_rect = egui::Rect::from_min_max(
                 full.min + egui::vec2(ruler, ruler),
                 full.max - egui::vec2(sb, sb),
@@ -275,8 +272,8 @@ pub fn root(app: &mut App, ui: &mut Ui) {
             canvas::draw_effect_nodes(app, &painter);
             context::context_menu(app, ui, &response);
 
-            // Scrollbars: the desktop extends one page size around the page.
-            scrollbars(app, ui, full, canvas_rect, ruler, sb);
+            // Scrollbars, document navigator, page tabs, Navigator button.
+            window_bars::window_bars(app, ui, full, canvas_rect, ruler);
 
             if app.show_rulers {
                 let top = egui::Rect::from_min_max(
@@ -340,117 +337,28 @@ pub fn root(app: &mut App, ui: &mut Ui) {
     }
 }
 
-/// Horizontal and vertical scrollbars at the edges of the document window.
-fn scrollbars(
-    app: &mut App,
-    ui: &mut Ui,
-    full: egui::Rect,
-    canvas: egui::Rect,
-    ruler: f32,
-    sb: f32,
-) {
-    let page = app.page_rect();
-    let desktop = page.inflate(page.width(), page.height());
-    let view = app.view;
-    let visible_x0 = view.to_page(canvas.left_top()).x;
-    let visible_x1 = view.to_page(canvas.right_top()).x;
-    let visible_y1 = view.to_page(canvas.left_top()).y;
-    let visible_y0 = view.to_page(canvas.left_bottom()).y;
-    let ext_x0 = desktop.x0.min(visible_x0);
-    let ext_x1 = desktop.x1.max(visible_x1);
-    let ext_y0 = desktop.y0.min(visible_y0);
-    let ext_y1 = desktop.y1.max(visible_y1);
-
-    let hbar = egui::Rect::from_min_max(
-        egui::pos2(full.min.x + ruler, full.max.y - sb),
-        egui::pos2(full.max.x - sb, full.max.y),
-    );
-    let vbar = egui::Rect::from_min_max(
-        egui::pos2(full.max.x - sb, full.min.y + ruler),
-        egui::pos2(full.max.x, full.max.y - sb),
-    );
-    let p = ui.painter_at(full);
-    p.rect_filled(hbar, 0.0, Tokens::PANEL_DARK);
-    p.rect_filled(vbar, 0.0, Tokens::PANEL_DARK);
-    let corner = egui::Rect::from_min_max(egui::pos2(full.max.x - sb, full.max.y - sb), full.max);
-    p.rect_filled(corner, 0.0, Tokens::PANEL_DARK);
-    view_navigator(app, ui, corner, canvas);
-
-    // Horizontal thumb.
-    let ext_w = (ext_x1 - ext_x0).max(1e-6);
-    let t0 = ((visible_x0 - ext_x0) / ext_w) as f32;
-    let t1 = ((visible_x1 - ext_x0) / ext_w) as f32;
-    let thumb_h = egui::Rect::from_min_max(
-        egui::pos2(hbar.min.x + hbar.width() * t0, hbar.min.y + 3.0),
-        egui::pos2(
-            hbar.min.x + hbar.width() * t1.max(t0 + 0.02),
-            hbar.max.y - 3.0,
-        ),
-    );
-    let rh = ui.interact(hbar, egui::Id::new("hscroll"), Sense::click_and_drag());
-    p.rect_filled(
-        thumb_h,
-        3.0,
-        if rh.hovered() || rh.dragged() {
-            Tokens::TEXT_DIM
-        } else {
-            Tokens::BORDER
-        },
-    );
-    if rh.dragged() {
-        let d = rh.drag_delta().x / hbar.width() * ext_w as f32;
-        app.view.pan(egui::vec2(-d * view.zoom, 0.0));
-    }
-    // Vertical thumb (page y up: top of the bar is ext_y1).
-    let ext_h = (ext_y1 - ext_y0).max(1e-6);
-    let s0 = ((ext_y1 - visible_y1) / ext_h) as f32;
-    let s1 = ((ext_y1 - visible_y0) / ext_h) as f32;
-    let thumb_v = egui::Rect::from_min_max(
-        egui::pos2(vbar.min.x + 3.0, vbar.min.y + vbar.height() * s0),
-        egui::pos2(
-            vbar.max.x - 3.0,
-            vbar.min.y + vbar.height() * s1.max(s0 + 0.02),
-        ),
-    );
-    let rv = ui.interact(vbar, egui::Id::new("vscroll"), Sense::click_and_drag());
-    p.rect_filled(
-        thumb_v,
-        3.0,
-        if rv.hovered() || rv.dragged() {
-            Tokens::TEXT_DIM
-        } else {
-            Tokens::BORDER
-        },
-    );
-    if rv.dragged() {
-        let d = rv.drag_delta().y / vbar.height() * ext_h as f32;
-        app.view.pan(egui::vec2(0.0, -d * view.zoom));
-    }
-}
-
 /// The Navigator: the small button in the corner between the scrollbars
 /// opens a thumbnail of the page while the button is held; moving the
 /// pointer over the thumbnail pans the view to that spot, like the
 /// target design's navigator pop-up.
-fn view_navigator(app: &mut App, ui: &mut Ui, corner: egui::Rect, canvas: egui::Rect) {
+pub(crate) fn view_navigator(app: &mut App, ui: &mut Ui, corner: egui::Rect, canvas: egui::Rect) {
     let resp = ui.interact(
         corner,
         egui::Id::new("view_navigator"),
         Sense::click_and_drag(),
     );
     let painter = ui.painter_at(corner);
-    let icon = corner.shrink(3.0);
-    painter.rect_stroke(
-        icon,
-        1.0,
-        egui::Stroke::new(1.0, Tokens::TEXT_DIM),
-        egui::StrokeKind::Inside,
-    );
-    painter.rect_filled(
-        egui::Rect::from_center_size(icon.center(), icon.size() * 0.45),
-        0.0,
-        Tokens::TEXT_DIM,
-    );
+    if resp.hovered() {
+        painter.rect_filled(corner, 0.0, Tokens::TOOL_HOVER);
+    }
+    // A magnifier over a cross, as on the target design's button.
+    let c = corner.center() + egui::vec2(-1.0, -1.0);
+    let s = egui::Stroke::new(1.2, Tokens::TEXT_DIM);
+    painter.circle_stroke(c, 4.5, s);
+    painter.line_segment([c + egui::vec2(3.3, 3.3), c + egui::vec2(6.5, 6.5)], s);
+    painter.line_segment([c + egui::vec2(-2.5, 0.0), c + egui::vec2(2.5, 0.0)], s);
+    painter.line_segment([c + egui::vec2(0.0, -2.5), c + egui::vec2(0.0, 2.5)], s);
+    let resp = resp.on_hover_text(crate::i18n::tr("status.navigator"));
     let down = ui.input(|i| i.pointer.primary_down());
     if resp.drag_started() || resp.is_pointer_button_down_on() {
         app.navigator_open = true;

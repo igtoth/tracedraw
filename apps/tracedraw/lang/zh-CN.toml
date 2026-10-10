@@ -1242,6 +1242,7 @@ status.link_needs_two_frames = "选择两个段落文本框：第一个流入第
 status.merge_done = "合并打印已创建 {n} 页"
 status.missing_fonts = "已替换缺少的字体: {f}"
 status.n_objects_selected = "已选择 {n} 个对象"
+status.navigator = "导航器"
 status.next_page = "下一页"
 status.none = "无"
 status.not_in_browser = "浏览器版本中不可用"

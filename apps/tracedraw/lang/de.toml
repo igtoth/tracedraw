@@ -1242,6 +1242,7 @@ status.link_needs_two_frames = "Wählen Sie zwei Mengentextrahmen: der erste fli
 status.merge_done = "Seriendruck hat {n} Seite(n) erstellt"
 status.missing_fonts = "Fehlende Schriften ersetzt: {f}"
 status.n_objects_selected = "{n} Objekte ausgewählt"
+status.navigator = "Navigator"
 status.next_page = "Nächste Seite"
 status.none = "Keine"
 status.not_in_browser = "In der Browserversion nicht verfügbar"

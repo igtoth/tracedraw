@@ -12,10 +12,12 @@ impl Tokens {
     pub const TEXT: Color32 = Color32::from_rgb(0x1E, 0x1E, 0x1E);
     pub const TEXT_DIM: Color32 = Color32::from_rgb(0x6E, 0x6E, 0x6E);
     pub const ACCENT: Color32 = Color32::from_rgb(0x00, 0x78, 0xD7);
-    pub const DESKTOP: Color32 = Color32::from_rgb(0xD4, 0xD4, 0xD4);
     pub const PAGE: Color32 = Color32::WHITE;
-    pub const PAGE_SHADOW: Color32 = Color32::from_rgba_premultiplied(0, 0, 0, 70);
-    pub const PAGE_BORDER: Color32 = Color32::from_rgb(0x80, 0x80, 0x80);
+    /// The page's drop shadow, offset right and down behind the page.
+    pub const PAGE_SHADOW: Color32 = Color32::from_rgb(0xBF, 0xBF, 0xBF);
+    pub const PAGE_BORDER: Color32 = Color32::from_rgb(0xAA, 0xAA, 0xAA);
+    /// Screen offset of the page shadow, pixels.
+    pub const PAGE_SHADOW_OFFSET: egui::Vec2 = egui::vec2(6.0, 4.0);
     pub const RULER_BG: Color32 = Color32::from_rgb(0xF7, 0xF7, 0xF7);
     pub const RULER_TICK: Color32 = Color32::from_rgb(0x50, 0x50, 0x50);
     pub const HANDLE: Color32 = Color32::from_rgb(0x1E, 0x1E, 0x1E);
@@ -30,7 +32,6 @@ impl Tokens {
     pub const TOOLBOX_WIDTH: f32 = 36.0;
     pub const TOOL_BUTTON: f32 = 30.0;
     pub const RULER: f32 = 18.0;
-    pub const SCROLLBAR: f32 = 14.0;
     pub const SWATCH: f32 = 16.0;
 }
 

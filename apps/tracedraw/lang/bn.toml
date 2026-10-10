@@ -1242,6 +1242,7 @@ status.link_needs_two_frames = "দুটি অনুচ্ছেদ টেক�
 status.merge_done = "প্রিন্ট মার্জ {n}টি পৃষ্ঠা তৈরি করেছে"
 status.missing_fonts = "অনুপস্থিত ফন্ট প্রতিস্থাপিত: {f}"
 status.n_objects_selected = "{n}টি অবজেক্ট নির্বাচিত"
+status.navigator = "নেভিগেটর"
 status.next_page = "পরবর্তী পৃষ্ঠা"
 status.none = "কোনোটি নয়"
 status.not_in_browser = "ব্রাউজার সংস্করণে উপলব্ধ নয়"

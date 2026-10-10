@@ -591,6 +591,9 @@ pub struct App {
     pub quit_after_closing: bool,
     /// Close the window on the next frame.
     pub quit_now: bool,
+    /// Share of the drawing window's bottom row given to the page tabs
+    /// (the rest is the horizontal scrollbar); set with the splitter.
+    pub page_tabs_fraction: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1008,6 +1011,7 @@ impl App {
             closing_all: false,
             quit_after_closing: false,
             quit_now: false,
+            page_tabs_fraction: 0.45,
         };
         app.load_settings();
         // Start-up: the file given on the command line, else the Welcome
@@ -1035,6 +1039,20 @@ impl App {
             }
         }
         doc
+    }
+
+    /// Layout > Page Setup and a double click on the page border or
+    /// shadow: the Options dialog at the page size page.
+    pub fn open_page_options(&mut self) {
+        self.options_page = crate::ui::dialogs::OptionsPage::PageSize;
+        self.dialog = crate::ui::dialogs::Dialog::Options;
+    }
+
+    /// The colour around the page (Options > Customization), white by
+    /// default.
+    pub fn desktop_color(&self) -> egui::Color32 {
+        let [r, g, b] = self.settings.desktop_rgb;
+        egui::Color32::from_rgb(r, g, b)
     }
 
     /// A fallback title (a file without a usable name).
@@ -2977,6 +2995,24 @@ impl App {
         if let Some(p) = self.doc().pages.last() {
             self.page = p.id;
         }
+        self.selection.clear();
+        self.fit_pending = true;
+    }
+
+    /// The document navigator's insert buttons: a page like the current
+    /// one, before or after it, made current.
+    pub fn insert_page(&mut self, after: bool) {
+        let idx = self.page_index();
+        let size = self.page_size();
+        self.run(Command::AddPage { name: None, size });
+        let Some(new) = self.doc().pages.last().map(|p| p.id) else {
+            return;
+        };
+        let to = if after { idx + 1 } else { idx };
+        if to + 1 < self.doc().pages.len() {
+            self.run(Command::MovePage { page: new, to });
+        }
+        self.page = new;
         self.selection.clear();
         self.fit_pending = true;
     }

@@ -1242,6 +1242,7 @@ status.link_needs_two_frames = "Selecione dois quadros de texto de parágrafo: o
 status.merge_done = "A mala direta criou {n} página(s)"
 status.missing_fonts = "Fontes ausentes substituídas: {f}"
 status.n_objects_selected = "{n} objetos selecionados"
+status.navigator = "Navegador"
 status.next_page = "Próxima página"
 status.none = "Nenhum"
 status.not_in_browser = "Não disponível na versão para navegador"

@@ -50,6 +50,13 @@ pub struct Settings {
     /// The Create a New Document dialog's last used settings.
     #[serde(default)]
     pub new_document: crate::new_document::NewDocSettings,
+    /// Colour of the area around the page (Customization > Appearance).
+    #[serde(default = "default_desktop")]
+    pub desktop_rgb: [u8; 3],
+}
+
+fn default_desktop() -> [u8; 3] {
+    [255, 255, 255]
 }
 
 fn default_true() -> bool {
@@ -135,6 +142,7 @@ impl Default for Settings {
             thesaurus_file: None,
             show_new_document_dialog: true,
             new_document: crate::new_document::NewDocSettings::default(),
+            desktop_rgb: default_desktop(),
         }
     }
 }

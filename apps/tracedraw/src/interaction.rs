@@ -448,6 +448,14 @@ impl App {
             }
         }
         if response.double_clicked_by(PointerButton::Primary) {
+            // The page border or its shadow: the page size options.
+            let on_frame = response
+                .interact_pointer_pos()
+                .is_some_and(|s| crate::canvas::on_page_frame(self, s));
+            if on_frame && self.hit_test(p).is_none() {
+                self.open_page_options();
+                return;
+            }
             if let Some(id) = self.hit_test(p) {
                 if let Ok((_, s)) = self.doc().shape(id) {
                     if matches!(s.kind, ShapeKind::Text { .. }) {

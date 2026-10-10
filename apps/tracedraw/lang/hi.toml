@@ -1242,6 +1242,7 @@ status.link_needs_two_frames = "दो अनुच्छेद टेक्स�
 status.merge_done = "प्रिंट मर्ज ने {n} पृष्ठ बनाए"
 status.missing_fonts = "अनुपलब्ध फ़ॉन्ट प्रतिस्थापित: {f}"
 status.n_objects_selected = "{n} ऑब्जेक्ट चयनित"
+status.navigator = "नेविगेटर"
 status.next_page = "अगला पृष्ठ"
 status.none = "कोई नहीं"
 status.not_in_browser = "ब्राउज़र संस्करण में उपलब्ध नहीं"

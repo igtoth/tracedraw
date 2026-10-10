@@ -1242,6 +1242,7 @@ status.link_needs_two_frames = "حدد إطاري نص فقرة: الأول يت
 status.merge_done = "أنشأ دمج الطباعة {n} صفحة (صفحات)"
 status.missing_fonts = "تم استبدال الخطوط المفقودة: {f}"
 status.n_objects_selected = "{n} كائنات محددة"
+status.navigator = "المتصفح"
 status.next_page = "الصفحة التالية"
 status.none = "بدون"
 status.not_in_browser = "غير متاح في إصدار المتصفح"

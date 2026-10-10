@@ -1242,6 +1242,7 @@ status.link_needs_two_frames = "Seleccione dos marcos de texto de párrafo: el p
 status.merge_done = "La fusión de impresión creó {n} página(s)"
 status.missing_fonts = "Fuentes ausentes sustituidas: {f}"
 status.n_objects_selected = "{n} objetos seleccionados"
+status.navigator = "Navegador"
 status.next_page = "Página siguiente"
 status.none = "Ninguno"
 status.not_in_browser = "No disponible en la versión para navegador"

@@ -76,17 +76,35 @@ fn seg_dist(a: Point, b: Point, p: Point) -> f64 {
     (p - (a + ab * t)).hypot()
 }
 
+/// The page on screen, snapped to whole pixels.
+pub fn page_screen_rect(app: &App) -> ERect {
+    let r = app.view.rect_to_screen(app.page_rect());
+    ERect::from_min_max(r.min.round(), r.max.round())
+}
+
+/// True when a screen point is on the page border (within 3 px) or on
+/// its shadow: double-clicking there opens the page size options.
+pub fn on_page_frame(app: &App, s: Pos2) -> bool {
+    let paper = page_screen_rect(app);
+    let near_border = paper.expand(3.0).contains(s) && !paper.shrink(3.0).contains(s);
+    let shadow = paper.expand(1.0).translate(Tokens::PAGE_SHADOW_OFFSET);
+    near_border || (shadow.contains(s) && !paper.contains(s))
+}
+
 pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
     let view = &app.view;
-    painter.rect_filled(rect, 0.0, Tokens::DESKTOP);
+    painter.rect_filled(rect, 0.0, app.desktop_color());
 
-    // Page.
-    let paper = view.rect_to_screen(app.page_rect());
-    painter.rect_filled(
-        paper.translate(egui::vec2(3.0, 3.0)),
-        0.0,
-        Tokens::PAGE_SHADOW,
-    );
+    // Page: a flat grey shadow offset right and down, the white page, a
+    // one-pixel grey border (pixel-aligned so it stays crisp).
+    let paper = page_screen_rect(app);
+    if app.show_page_border {
+        painter.rect_filled(
+            paper.expand(1.0).translate(Tokens::PAGE_SHADOW_OFFSET),
+            0.0,
+            Tokens::PAGE_SHADOW,
+        );
+    }
     painter.rect_filled(paper, 0.0, Tokens::PAGE);
     if app.show_page_border {
         painter.rect_stroke(

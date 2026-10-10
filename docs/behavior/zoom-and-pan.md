@@ -32,7 +32,7 @@
 ## Navigator and scrollbars
 
 - The scrollbars cover the page plus a margin of one page in every
-  direction.
+  direction; their layout and buttons are in `drawing-window.md`.
 - The navigator button sits in the corner between the two scrollbars.
   Pressing and holding it opens a pop-up with a thumbnail of the current
   page (longest side 220 px, aspect kept) and a blue rectangle for the

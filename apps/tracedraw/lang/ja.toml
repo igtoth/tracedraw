@@ -1242,6 +1242,7 @@ status.link_needs_two_frames = "段落テキストフレームを 2 つ選択し
 status.merge_done = "印刷マージで {n} ページを作成しました"
 status.missing_fonts = "不足フォントを代替しました: {f}"
 status.n_objects_selected = "{n} 個のオブジェクトを選択"
+status.navigator = "ナビゲーター"
 status.next_page = "次のページ"
 status.none = "なし"
 status.not_in_browser = "ブラウザー版では使用できません"

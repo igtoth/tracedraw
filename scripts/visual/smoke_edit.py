@@ -21,7 +21,7 @@ combo("Control_L", "l"); combo("Control_L", "k"); combo("Control_L", "q"); check
 click(17, 505); drag(500, 240, 540, 270); check("drop shadow")
 click(17, 540); drag(650, 240, 620, 220); check("transparency")
 key("F2"); click(600, 400); key("F4"); key("h"); drag(600, 400, 650, 420); key("F4"); check("zoom pan")
-click(151, 893); click(62, 893); check("pages")
+click(175, 872); click(77, 872); check("pages")
 for y in (105, 180, 250, 340, 430):
     click(1583, y); time.sleep(0.3)
 check("dockers")

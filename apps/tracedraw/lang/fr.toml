@@ -1242,6 +1242,7 @@ status.link_needs_two_frames = "Sélectionnez deux encadrés de texte courant : 
 status.merge_done = "La fusion d'impression a créé {n} page(s)"
 status.missing_fonts = "Polices manquantes remplacées : {f}"
 status.n_objects_selected = "{n} objets sélectionnés"
+status.navigator = "Navigateur"
 status.next_page = "Page suivante"
 status.none = "Aucun"
 status.not_in_browser = "Non disponible dans la version navigateur"

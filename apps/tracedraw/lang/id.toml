@@ -1242,6 +1242,7 @@ status.link_needs_two_frames = "Pilih dua bingkai teks paragraf: yang pertama me
 status.merge_done = "Gabung cetak membuat {n} halaman"
 status.missing_fonts = "Fon hilang diganti: {f}"
 status.n_objects_selected = "{n} objek dipilih"
+status.navigator = "Navigator"
 status.next_page = "Halaman berikutnya"
 status.none = "Tidak ada"
 status.not_in_browser = "Tidak tersedia di versi peramban"
