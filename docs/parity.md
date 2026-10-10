@@ -6,7 +6,7 @@ target design does, with a test or a checked screenshot behind it.
 "partial" names what is missing. "baked" means the result is applied once
 instead of staying live and editable. The goal is every row at "works".
 
-Counts: works 149, partial 2 (`.cdr` content coverage; polygon nodes in the Shape tool), missing 3 (CMX import; window cascade and tile; some Options pages), not applicable 3, icons close but not pixel-identical.
+Counts: works 150, partial 2 (`.cdr` content coverage; polygon nodes in the Shape tool), missing 3 (CMX import; window cascade and tile; some Options pages), not applicable 3, icons close but not pixel-identical.
 
 ## 1. Selection and navigation
 
@@ -146,7 +146,8 @@ Counts: works 149, partial 2 (`.cdr` content coverage; polygon nodes in the Shap
 |---|---|
 | Import PNG, JPEG, BMP, GIF, WebP, TIFF; crop, resample | works |
 | Straighten Image: correct lens distortion, rotate -15 to 15 degrees, vertical and horizontal perspective, quarter turns, grid with size and colour, zoom and pan, Crop image, Crop and resample to original size | works (see `behavior/straighten-image.md`) |
-| Convert to bitmap (resolution, colour mode, transparent background) | works |
+| Convert to bitmap (resolution list and value, colour mode, dithered, always overprint black, anti-aliasing, transparent background, uncompressed size) | works (see `behavior/bitmap-modes.md`) |
+| Colour monochrome bitmaps from the palette (click: background, right-click: foreground) | works (see `behavior/bitmap-modes.md`) |
 | Bitmap colour modes: Black and White (line art, ordered, halftone, cardinality-distribution, Jarvis, Stucki, Floyd-Steinberg), Grayscale, Duotone (one to four inks with tone curves, load and save), Paletted (uniform, VGA, adaptive, optimized, grayscale, system, document palette; ordered and error-diffusion dithering), RGB, Lab, CMYK; dialogs with before and after previews | works (see `behavior/bitmap-modes.md`); no overprint tab or range sensitivity |
 | Bitmap effects, all 98 of the target design's Effects menu: Adjust (Auto Adjust, Image Adjustments, Contrast Enhancement, Local Equalization, Target Color Balance, Tone Curve, Brightness/Contrast/Intensity, Color Balance, Gamma, Hue/Saturation/Lightness, Selective Color, Replace Colors, Desaturate, Channel Mixer), Transform, Correction, 3D Effects, Art Strokes, Blur, Camera, Color Transform, Contour, Creative, Custom, Distort, Noise, Sharpen, Texture; each with its settings dialog and before and after previews; Ctrl+B, Ctrl+Shift+B, Ctrl+Shift+U; the Image Adjustments (rotate, pan, zoom, three preview modes, Auto adjust, white and black point pickers, histogram, undo, redo, reset, snapshots); Tone Curve styles (curve, straight, freehand, gamma), eyedropper nodes, Auto Balance Tone; Contrast Enhancement's interactive histogram and channel list; Target Color Balance channel list; eyedroppers for sample colours | works (see `behavior/bitmap-effects.md`); results close in look, not pixel-identical; Tone Curve presets are JSON files |
 | Effects kept apart from the pixels: Properties docker FX section (show or hide, edit, reorder, delete, add effect), original kept until Flatten Effects; Auto inflate bitmaps for effects (Document Options and Bitmaps > Inflate Bitmap) | works (see `behavior/bitmap-effects.md`); reordering with buttons instead of dragging |

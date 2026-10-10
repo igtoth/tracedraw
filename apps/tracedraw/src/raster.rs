@@ -77,6 +77,7 @@ impl Raster {
             wireframe,
             simulate_overprints,
             complex_effects,
+            anti_alias: true,
         };
         let pixmap = render_page(doc, page, &opts)?;
         let pixels: Vec<egui::Color32> = pixmap

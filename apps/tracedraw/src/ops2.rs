@@ -1091,6 +1091,16 @@ impl App {
         dpi: f64,
         transparent: bool,
     ) -> Option<(Vec<u8>, u32, u32, Rect)> {
+        self.render_selection_png_with(dpi, transparent, true)
+    }
+
+    /// [`App::render_selection_png`] with or without smoothed edges.
+    pub fn render_selection_png_with(
+        &self,
+        dpi: f64,
+        transparent: bool,
+        anti_alias: bool,
+    ) -> Option<(Vec<u8>, u32, u32, Rect)> {
         let shapes = self.selected_shapes();
         if shapes.is_empty() {
             return None;
@@ -1128,6 +1138,7 @@ impl App {
                 view,
                 preview: None,
                 wireframe: false,
+                anti_alias,
                 ..tracedraw_render::RenderOptions::default()
             },
         )?;
@@ -1147,13 +1158,42 @@ impl App {
         Some((png, w, h, bounds))
     }
 
+    #[cfg(test)]
     pub fn convert_to_bitmap(&mut self, dpi: f64, transparent: bool) {
+        self.convert_to_bitmap_with(&crate::bitmap_modes::ConvertOptions {
+            dpi,
+            transparent,
+            ..Default::default()
+        });
+    }
+
+    /// Bitmaps > Convert to Bitmap: the selection becomes one bitmap with
+    /// the dialog's resolution, colour mode, dithering, anti-aliasing,
+    /// background and overprint, in one undo step.
+    pub fn convert_to_bitmap_with(&mut self, o: &crate::bitmap_modes::ConvertOptions) {
         let shapes = self.selected_shapes();
         let Some(layer) = self.active_layer() else {
             return;
         };
-        let Some((png, w, h, bounds)) = self.render_selection_png(dpi, transparent) else {
+        let dpi = if o.dpi.is_finite() {
+            o.dpi.clamp(36.0, 2400.0)
+        } else {
+            300.0
+        };
+        let Some((png, w, h, bounds)) =
+            self.render_selection_png_with(dpi, o.transparent, o.anti_alias)
+        else {
             return;
+        };
+        let png = match o.mode {
+            crate::bitmap_modes::ConvertMode::Rgb | crate::bitmap_modes::ConvertMode::Cmyk => png,
+            _ => match crate::bitmap_fx::decode(&png)
+                .map(|img| crate::bitmap_modes::convert_pixels(&img, o))
+                .and_then(|img| crate::bitmap_fx::encode(&img))
+            {
+                Some(p) => p,
+                None => return,
+            },
         };
         let id = self.engine.new_shape_id();
         let mut bitmap = Shape::new(
@@ -1168,6 +1208,7 @@ impl App {
         );
         bitmap.fill = Fill::None;
         bitmap.stroke = None;
+        bitmap.overprint_fill = o.overprint_black;
         let ids: Vec<ShapeId> = shapes.iter().map(|s| s.id).collect();
         let cmds = vec![
             Command::DeleteShapes { shapes: ids },
@@ -2111,6 +2152,71 @@ mod tests {
         );
         assert_eq!(apply_case("hello world", CaseMode::Title), "Hello World");
         assert_eq!(apply_case("aBc", CaseMode::Toggle), "AbC");
+    }
+
+    #[test]
+    fn convert_to_bitmap_applies_mode_dither_and_overprint() {
+        use crate::bitmap_modes::{ConvertMode, ConvertOptions};
+        let make = || {
+            let mut app = App::headless();
+            let id = app
+                .new_shape(ShapeKind::Ellipse {
+                    rect: Rect::new(0.0, 0.0, 30.0, 20.0),
+                    arc: None,
+                })
+                .expect("ellipse");
+            app.run(Command::SetFill {
+                shapes: vec![id],
+                fill: Fill::Solid(Color::rgb8(200, 120, 40)),
+            });
+            app.select(vec![id]);
+            app
+        };
+        let pixels = |app: &App| -> image::RgbaImage {
+            let s = app.selected_shapes().into_iter().next().expect("bitmap");
+            match s.kind {
+                ShapeKind::Bitmap { png, .. } => crate::bitmap_fx::decode(&png).expect("png"),
+                _ => panic!("not a bitmap"),
+            }
+        };
+        // Black and white: only black and white where it is opaque.
+        let mut app = make();
+        app.convert_to_bitmap_with(&ConvertOptions {
+            dpi: 72.0,
+            mode: ConvertMode::BlackWhite,
+            transparent: false,
+            ..Default::default()
+        });
+        let bw = pixels(&app);
+        assert!(bw
+            .pixels()
+            .all(|p| (p[0] == 0 || p[0] == 255) && p[0] == p[1] && p[1] == p[2]));
+        // Grayscale: equal channels; overprint marks the bitmap.
+        let mut app = make();
+        app.convert_to_bitmap_with(&ConvertOptions {
+            dpi: 72.0,
+            mode: ConvertMode::Grayscale,
+            overprint_black: true,
+            ..Default::default()
+        });
+        assert!(pixels(&app).pixels().all(|p| p[0] == p[1] && p[1] == p[2]));
+        assert!(app.selected_shapes()[0].overprint_fill);
+        // Without anti-aliasing the edge has no half-covered pixels.
+        let mut app = make();
+        app.convert_to_bitmap_with(&ConvertOptions {
+            dpi: 150.0,
+            anti_alias: false,
+            ..Default::default()
+        });
+        assert!(pixels(&app).pixels().all(|p| p[3] == 0 || p[3] == 255));
+        // The uncompressed size: 1 bit a pixel rounds up per row.
+        let o = ConvertOptions {
+            mode: ConvertMode::BlackWhite,
+            ..Default::default()
+        };
+        assert_eq!(o.bytes(10, 3), 6);
+        assert_eq!(ConvertOptions::default().bytes(10, 3), 90);
+        assert!(!ConvertMode::Rgb.can_dither() && ConvertMode::Paletted.can_dither());
     }
 
     #[test]

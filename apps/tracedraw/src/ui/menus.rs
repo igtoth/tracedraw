@@ -1333,10 +1333,7 @@ fn object_menu(app: &mut App, ui: &mut Ui) {
         app.convert_to_curves();
     }
     if item(ui, "menu.object.convert_to_bitmap", "", has) {
-        app.dialog = Dialog::ConvertToBitmap {
-            dpi: 300.0,
-            transparent: true,
-        };
+        app.dialog = Dialog::ConvertToBitmap(Default::default());
     }
     if item(
         ui,
@@ -1482,10 +1479,7 @@ fn bitmaps_menu(app: &mut App, ui: &mut Ui) {
         .iter()
         .any(|s| matches!(s.kind, ShapeKind::Bitmap { .. }));
     if item(ui, "menu.bitmaps.convert_to_bitmap", "", has) {
-        app.dialog = Dialog::ConvertToBitmap {
-            dpi: 300.0,
-            transparent: true,
-        };
+        app.dialog = Dialog::ConvertToBitmap(Default::default());
     }
     if item(ui, "menu.bitmaps.straighten_image", "", has_bitmap) {
         app.dialog = Dialog::StraightenImage(Default::default());

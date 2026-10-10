@@ -18,6 +18,126 @@ fn clamp8(v: f32) -> u8 {
 
 // ----- tone curves -----------------------------------------------------------
 
+/// Convert to Bitmap's colour modes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ConvertMode {
+    BlackWhite,
+    Grayscale,
+    Paletted,
+    #[default]
+    Rgb,
+    Cmyk,
+}
+
+impl ConvertMode {
+    pub const ALL: [ConvertMode; 5] = [
+        ConvertMode::BlackWhite,
+        ConvertMode::Grayscale,
+        ConvertMode::Paletted,
+        ConvertMode::Rgb,
+        ConvertMode::Cmyk,
+    ];
+
+    /// The mode's name in the list.
+    pub fn key(self) -> &'static str {
+        match self {
+            ConvertMode::BlackWhite => "dialog.convert_mode_bw",
+            ConvertMode::Grayscale => "dialog.convert_mode_gray",
+            ConvertMode::Paletted => "dialog.convert_mode_paletted",
+            ConvertMode::Rgb => "dialog.convert_mode_rgb",
+            ConvertMode::Cmyk => "dialog.convert_mode_cmyk",
+        }
+    }
+
+    /// Bits per pixel, for the uncompressed size.
+    pub fn bits(self) -> u64 {
+        match self {
+            ConvertMode::BlackWhite => 1,
+            ConvertMode::Grayscale | ConvertMode::Paletted => 8,
+            ConvertMode::Rgb => 24,
+            ConvertMode::Cmyk => 32,
+        }
+    }
+
+    /// Dithering applies to modes of 256 colours or fewer.
+    pub fn can_dither(self) -> bool {
+        matches!(self, ConvertMode::BlackWhite | ConvertMode::Paletted)
+    }
+}
+
+/// Bitmaps > Convert to Bitmap's settings.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ConvertOptions {
+    pub dpi: f64,
+    pub mode: ConvertMode,
+    pub dithered: bool,
+    /// Always overprint black: the bitmap is marked to overprint, so its
+    /// black prints over what lies beneath.
+    pub overprint_black: bool,
+    pub anti_alias: bool,
+    pub transparent: bool,
+}
+
+impl Default for ConvertOptions {
+    fn default() -> Self {
+        ConvertOptions {
+            dpi: 300.0,
+            mode: ConvertMode::Rgb,
+            dithered: false,
+            overprint_black: false,
+            anti_alias: true,
+            transparent: true,
+        }
+    }
+}
+
+impl ConvertOptions {
+    /// The uncompressed size of a `w` by `h` result, bytes.
+    pub fn bytes(&self, w: u64, h: u64) -> u64 {
+        (w * self.mode.bits()).div_ceil(8) * h
+    }
+}
+
+/// The rendered pixels in the chosen colour mode: black and white by a
+/// 50 % threshold or Floyd-Steinberg when dithered; grayscale by
+/// luminance; paletted to an optimized 256-colour palette, dithered or
+/// not; RGB and CMYK as they are. Alpha is kept.
+pub fn convert_pixels(img: &RgbaImage, o: &ConvertOptions) -> RgbaImage {
+    match o.mode {
+        ConvertMode::BlackWhite => black_and_white(
+            img,
+            &BwSettings {
+                method: if o.dithered {
+                    BwMethod::FloydSteinberg
+                } else {
+                    BwMethod::LineArt
+                },
+                threshold: 128,
+                intensity: 50.0,
+                ..Default::default()
+            },
+            o.dpi as f32,
+        ),
+        ConvertMode::Grayscale => {
+            crate::bitmap_fx::convert_mode(img, crate::bitmap_fx::ColorMode::Grayscale)
+        }
+        ConvertMode::Paletted => paletted(
+            img,
+            &PalettedSettings {
+                palette: PaletteType::Optimized,
+                colors: 256,
+                dither: if o.dithered {
+                    Dither::FloydSteinberg
+                } else {
+                    Dither::None
+                },
+                ..Default::default()
+            },
+        ),
+        ConvertMode::Rgb | ConvertMode::Cmyk => img.clone(),
+    }
+}
+
 /// A tone curve through points (x, y), both 0 to 255, sorted by x; the
 /// first and last points are the ends. Smooth curves pass through the
 /// points with a monotone cubic; others join them with straight lines.
@@ -894,7 +1014,91 @@ pub fn lab_mode(img: &RgbaImage) -> RgbaImage {
     out
 }
 
+/// A monochrome bitmap's two colours, the darker (foreground) first;
+/// `None` when its opaque pixels have more than two colours or none. A
+/// single colour pairs with white (or black when it is light).
+pub fn mono_colors(img: &RgbaImage) -> Option<([u8; 3], [u8; 3])> {
+    let mut a: Option<[u8; 3]> = None;
+    let mut b: Option<[u8; 3]> = None;
+    for p in img.pixels().filter(|p| p[3] > 0) {
+        let c = [p[0], p[1], p[2]];
+        if a.is_none() || a == Some(c) {
+            a = Some(c);
+        } else if b.is_none() || b == Some(c) {
+            b = Some(c);
+        } else {
+            return None;
+        }
+    }
+    let a = a?;
+    let l = |c: [u8; 3]| luma(&Rgba([c[0], c[1], c[2], 255]));
+    let b = b.unwrap_or(if l(a) < 128.0 { [255; 3] } else { [0; 3] });
+    Some(if l(a) <= l(b) { (a, b) } else { (b, a) })
+}
+
+/// A monochrome bitmap with its foreground (or background) pixels in
+/// `to`; `None` when it is not monochrome.
+pub fn recolor_mono(img: &RgbaImage, foreground: bool, to: [u8; 3]) -> Option<RgbaImage> {
+    let (fg, bg) = mono_colors(img)?;
+    let from = if foreground { fg } else { bg };
+    let mut out = img.clone();
+    for p in out.pixels_mut() {
+        if p[3] > 0 && [p[0], p[1], p[2]] == from {
+            *p = Rgba([to[0], to[1], to[2], p[3]]);
+        }
+    }
+    Some(out)
+}
+
 impl crate::app::App {
+    /// Colour the selected monochrome bitmaps from the palette: the background (white) pixels with a click, the
+    /// foreground (black) ones with a right-click. False (nothing done)
+    /// unless every selected object is a monochrome bitmap without
+    /// effects.
+    pub fn recolor_mono_bitmaps(&mut self, foreground: bool, c: tracedraw_core::Color) -> bool {
+        use tracedraw_core::document::ShapeKind;
+        let shapes = self.selected_shapes();
+        if shapes.is_empty() {
+            return false;
+        }
+        let to = c.to_rgb8();
+        let mut cmds = Vec::new();
+        for s in &shapes {
+            let ShapeKind::Bitmap {
+                rect,
+                width_px,
+                height_px,
+                png,
+                fx: None,
+            } = &s.kind
+            else {
+                return false;
+            };
+            let Some(out) =
+                crate::bitmap_fx::decode(png).and_then(|img| recolor_mono(&img, foreground, to))
+            else {
+                return false;
+            };
+            let Some(png) = crate::bitmap_fx::encode(&out) else {
+                return false;
+            };
+            cmds.push(tracedraw_core::Command::SetShapeKind {
+                shape: s.id,
+                kind: ShapeKind::Bitmap {
+                    rect: *rect,
+                    width_px: *width_px,
+                    height_px: *height_px,
+                    png,
+                    fx: None,
+                },
+            });
+        }
+        if let Err(e) = self.engine.run_batch("Bitmap Color", &cmds) {
+            self.status = e.to_string();
+        }
+        true
+    }
+
     /// Run `f` (the image and its pixels per inch) on every selected
     /// bitmap, in one undo step.
     pub fn apply_to_bitmaps(
@@ -950,6 +1154,50 @@ impl crate::app::App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn monochrome_bitmaps_take_palette_colours() {
+        use tracedraw_core::document::ShapeKind;
+        let img: RgbaImage = ImageBuffer::from_fn(8, 4, |x, _| {
+            if x < 4 {
+                Rgba([0, 0, 0, 255])
+            } else {
+                Rgba([255, 255, 255, 255])
+            }
+        });
+        assert_eq!(mono_colors(&img), Some(([0; 3], [255; 3])));
+        let gray: RgbaImage = ImageBuffer::from_fn(3, 1, |x, _| Rgba([x as u8 * 100, 0, 0, 255]));
+        assert_eq!(mono_colors(&gray), None);
+        let mut app = crate::app::App::headless();
+        let png = crate::bitmap_fx::encode(&img).expect("png");
+        let id = app
+            .new_shape(ShapeKind::Bitmap {
+                rect: tracedraw_core::Rect::new(0.0, 0.0, 8.0, 4.0),
+                width_px: 8,
+                height_px: 4,
+                png,
+                fx: None,
+            })
+            .expect("bitmap");
+        app.select(vec![id]);
+        let shown = |app: &crate::app::App| match &app.doc().find_shape(id).expect("bitmap").kind {
+            ShapeKind::Bitmap { png, .. } => crate::bitmap_fx::decode(png).expect("png"),
+            _ => panic!("not a bitmap"),
+        };
+        let stroke = app.doc().find_shape(id).expect("bitmap").stroke.clone();
+        // A click colours the background, a right-click the foreground.
+        app.apply_fill(tracedraw_core::Fill::Solid(tracedraw_core::Color::rgb8(
+            255, 0, 0,
+        )));
+        assert_eq!(shown(&app).get_pixel(6, 0).0, [255, 0, 0, 255]);
+        app.apply_outline_color(Some(tracedraw_core::Color::rgb8(0, 0, 255)));
+        assert_eq!(shown(&app).get_pixel(1, 0).0, [0, 0, 255, 255]);
+        assert_eq!(shown(&app).get_pixel(6, 0).0, [255, 0, 0, 255]);
+        // The object's own outline is left alone.
+        assert_eq!(app.doc().find_shape(id).expect("bitmap").stroke, stroke);
+        app.undo();
+        assert_eq!(shown(&app).get_pixel(1, 0).0, [0, 0, 0, 255]);
+    }
 
     fn ramp() -> RgbaImage {
         ImageBuffer::from_fn(64, 16, |x, y| {

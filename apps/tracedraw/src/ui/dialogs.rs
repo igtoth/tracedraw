@@ -297,10 +297,7 @@ pub enum Dialog {
     QrCode(QrState),
     PasteSpecial(PasteSpecialState),
     Barcode(BarcodeState),
-    ConvertToBitmap {
-        dpi: f64,
-        transparent: bool,
-    },
+    ConvertToBitmap(crate::bitmap_modes::ConvertOptions),
     StraightenImage(crate::ui::straighten_dialog::StraightenState),
     Resample {
         dpi: f64,
@@ -325,6 +322,70 @@ pub enum Dialog {
     PaletteEditor(PaletteEditorState),
     NewDocument(crate::new_document::NewDocState),
     About,
+}
+
+/// Convert to Bitmap: Resolution (a list and a value), Color mode,
+/// Dithered (256 colours or fewer), Always overprint black,
+/// Anti-aliasing, Transparent background and the uncompressed size.
+fn convert_fields(app: &App, ui: &mut Ui, o: &mut crate::bitmap_modes::ConvertOptions) {
+    use crate::bitmap_modes::ConvertMode;
+    egui::Grid::new("convert_grid")
+        .num_columns(2)
+        .spacing([10.0, 8.0])
+        .show(ui, |ui| {
+            ui.label(tr("dialog.resolution"));
+            ui.horizontal(|ui| {
+                egui::ComboBox::from_id_salt("convert_dpi")
+                    .selected_text(format!("{:.0}", o.dpi))
+                    .width(70.0)
+                    .show_ui(ui, |ui| {
+                        for d in [72.0, 96.0, 150.0, 200.0, 300.0, 400.0, 600.0] {
+                            ui.selectable_value(&mut o.dpi, d, format!("{d:.0}"));
+                        }
+                    });
+                ui.add(
+                    egui::DragValue::new(&mut o.dpi)
+                        .range(36.0..=2400.0)
+                        .suffix(" dpi"),
+                );
+            });
+            ui.end_row();
+            ui.label(tr("dialog.color_mode"));
+            egui::ComboBox::from_id_salt("convert_mode")
+                .selected_text(tr(o.mode.key()))
+                .width(190.0)
+                .show_ui(ui, |ui| {
+                    for m in ConvertMode::ALL {
+                        ui.selectable_value(&mut o.mode, m, tr(m.key()));
+                    }
+                });
+            ui.end_row();
+        });
+    ui.add_space(4.0);
+    ui.add_enabled(
+        o.mode.can_dither(),
+        egui::Checkbox::new(&mut o.dithered, tr("dialog.dithered")),
+    );
+    ui.checkbox(&mut o.overprint_black, tr("dialog.overprint_black"));
+    ui.checkbox(&mut o.anti_alias, tr("dialog.anti_aliasing"));
+    ui.checkbox(&mut o.transparent, tr("dialog.transparent_background"));
+    if let Some(b) = app.selection_bounds() {
+        let w = (b.width() / 25.4 * o.dpi).ceil().max(1.0) as u64;
+        let h = (b.height() / 25.4 * o.dpi).ceil().max(1.0) as u64;
+        let kb = o.bytes(w, h).div_ceil(1024);
+        ui.add_space(4.0);
+        ui.label(
+            egui::RichText::new(trf(
+                "dialog.uncompressed_size",
+                &[
+                    ("size", &format!("{kb} KB")),
+                    ("w", &w.to_string()),
+                    ("h", &h.to_string()),
+                ],
+            ))
+            .color(Tokens::TEXT_DIM),
+        );
+    }
 }
 
 /// Manually Inflate Bitmap: the first selected bitmap's pixel size and
@@ -944,29 +1005,11 @@ pub fn show(app: &mut App, ctx: &Context) {
                 }
             });
         }
-        Dialog::ConvertToBitmap { dpi, transparent } => {
+        Dialog::ConvertToBitmap(o) => {
             window(ctx, tr("dialog.convert_to_bitmap")).show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(tr("dialog.resolution"));
-                    ui.add(
-                        egui::DragValue::new(dpi)
-                            .range(36.0..=1200.0)
-                            .suffix(" dpi"),
-                    );
-                    for d in [72.0, 150.0, 300.0, 600.0] {
-                        if ui.small_button(format!("{d:.0}")).clicked() {
-                            *dpi = d;
-                        }
-                    }
-                });
-                ui.checkbox(transparent, tr("dialog.transparent_background"));
-                if let Some(b) = app.selection_bounds() {
-                    let w = (b.width() / 25.4 * *dpi).round();
-                    let h = (b.height() / 25.4 * *dpi).round();
-                    ui.label(format!("{w} x {h} px"));
-                }
+                convert_fields(app, ui, o);
                 if ok_cancel(ui, &mut close) {
-                    app.convert_to_bitmap(*dpi, *transparent);
+                    app.convert_to_bitmap_with(o);
                 }
             });
         }
@@ -2923,10 +2966,12 @@ mod tests {
             Dialog::QrCode(QrState::default()),
             Dialog::PasteSpecial(PasteSpecialState::default()),
             Dialog::Barcode(BarcodeState::default()),
-            Dialog::ConvertToBitmap {
+            Dialog::ConvertToBitmap(crate::bitmap_modes::ConvertOptions {
                 dpi: 150.0,
-                transparent: true,
-            },
+                mode: crate::bitmap_modes::ConvertMode::BlackWhite,
+                dithered: true,
+                ..Default::default()
+            }),
             Dialog::StraightenImage(crate::ui::straighten_dialog::StraightenState {
                 s: crate::straighten::Straighten {
                     angle: 5.0,

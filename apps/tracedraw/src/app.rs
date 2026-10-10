@@ -2369,6 +2369,12 @@ impl App {
     }
 
     pub fn apply_fill(&mut self, fill: Fill) {
+        // Monochrome bitmaps take the colour as their background.
+        if let Fill::Solid(c) = &fill {
+            if self.recolor_mono_bitmaps(false, *c) {
+                return;
+            }
+        }
         if self.selection.is_empty() {
             self.default_fill = fill;
             self.status = crate::i18n::tr("status.default_fill_changed");
@@ -2413,6 +2419,12 @@ impl App {
     }
 
     pub fn apply_outline_color(&mut self, color: Option<Color>) {
+        // Monochrome bitmaps take the colour as their foreground.
+        if let Some(c) = color {
+            if self.recolor_mono_bitmaps(true, c) {
+                return;
+            }
+        }
         let make = |existing: Option<&Stroke>| -> Option<Stroke> {
             color.map(|c| {
                 let mut s = existing.cloned().unwrap_or_default();

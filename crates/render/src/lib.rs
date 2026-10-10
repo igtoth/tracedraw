@@ -61,6 +61,9 @@ pub struct RenderOptions {
     /// editor's "Rasterize complex effects" in Enhanced view). When false
     /// those objects are drawn plainly, which is much faster.
     pub complex_effects: bool,
+    /// Smooth edges (Convert to Bitmap's Anti-aliasing); off gives hard
+    /// pixel edges.
+    pub anti_alias: bool,
 }
 
 impl Default for RenderOptions {
@@ -77,6 +80,7 @@ impl Default for RenderOptions {
             wireframe: false,
             simulate_overprints: false,
             complex_effects: true,
+            anti_alias: true,
         }
     }
 }
@@ -89,6 +93,7 @@ struct Flags {
     complex_effects: bool,
     /// Fill open subpaths (the document's "Fill open curves").
     fill_open_curves: bool,
+    anti_alias: bool,
 }
 
 impl Flags {
@@ -98,6 +103,7 @@ impl Flags {
             simulate_overprints: opts.simulate_overprints,
             complex_effects: opts.complex_effects,
             fill_open_curves: false,
+            anti_alias: opts.anti_alias,
         }
     }
 }
@@ -109,6 +115,7 @@ impl Default for Flags {
             simulate_overprints: false,
             complex_effects: true,
             fill_open_curves: false,
+            anti_alias: true,
         }
     }
 }
@@ -349,7 +356,7 @@ impl Renderer<'_> {
                     let shifted = Affine::translate(sh.offset) * page_path.clone();
                     if let Some(sk_sh) = to_sk_path(&(self.screen * shifted)) {
                         let mut paint = Paint::default();
-                        paint.anti_alias = true;
+                        paint.anti_alias = self.flags.anti_alias;
                         paint.set_color(sk_color(sh.color));
                         layer.fill_path(
                             &sk_sh,
@@ -422,7 +429,8 @@ impl Renderer<'_> {
                         m[5] as f32,
                     );
                     let mut paint = Paint::default();
-                    paint.anti_alias = true;
+                    paint.anti_alias = self.flags.anti_alias;
+                    paint.blend_mode = self.blend_for(shape.overprint_fill);
                     paint.shader = tiny_skia::Pattern::new(
                         img.as_ref(),
                         SpreadMode::Pad,
@@ -527,7 +535,7 @@ impl Renderer<'_> {
         } else if self.flags.wireframe {
             let mut paint = Paint::default();
             paint.set_color_rgba8(0, 0, 0, 255);
-            paint.anti_alias = true;
+            paint.anti_alias = self.flags.anti_alias;
             let s = SkStroke {
                 width: 0.0,
                 ..Default::default()
@@ -746,7 +754,7 @@ impl Renderer<'_> {
             return;
         }
         let mut paint = Paint::default();
-        paint.anti_alias = true;
+        paint.anti_alias = self.flags.anti_alias;
         paint.blend_mode = blend;
         match fill {
             Fill::None => {}
@@ -965,7 +973,7 @@ impl Renderer<'_> {
             }
         }
         let mut paint = Paint::default();
-        paint.anti_alias = true;
+        paint.anti_alias = self.flags.anti_alias;
         paint.shader = tiny_skia::Pattern::new(
             pm.as_ref(),
             SpreadMode::Pad,
@@ -979,7 +987,7 @@ impl Renderer<'_> {
 
     fn fill_pattern(&mut self, p: &tracedraw_core::Pattern, sk: &SkPath, rule: FillRule) {
         let mut paint = Paint::default();
-        paint.anti_alias = true;
+        paint.anti_alias = self.flags.anti_alias;
         match p {
             tracedraw_core::Pattern::TwoColor {
                 tile,
@@ -1101,7 +1109,7 @@ impl Renderer<'_> {
 
     fn stroke_paint(&self, stroke: &Stroke, transform: Affine) -> (Paint<'static>, SkStroke) {
         let mut paint = Paint::default();
-        paint.anti_alias = true;
+        paint.anti_alias = self.flags.anti_alias;
         paint.set_color(sk_color(stroke.color));
         let hair = stroke.width <= Stroke::HAIRLINE + 1e-9;
         // "Scale with object" uses the object's own scale factor.
@@ -1365,6 +1373,7 @@ pub fn render_page_image_with(
             wireframe: opts.wireframe,
             simulate_overprints: opts.simulate_overprints,
             complex_effects: opts.complex_effects,
+            anti_alias: opts.anti_alias,
         },
     )?;
     let mut out = Pixmap::new(w, h)?;
@@ -1926,6 +1935,42 @@ mod tests {
         assert_eq!(px(50, 50).red(), 255);
         assert_eq!(px(50, 50).green(), 0);
         assert_eq!(px(2, 2).green(), 255);
+    }
+
+    #[test]
+    fn without_anti_aliasing_edges_are_hard() {
+        let mut ellipse = Shape::new(
+            tracedraw_core::ShapeId(3),
+            ShapeKind::Ellipse {
+                rect: Rect::new(10.0, 10.0, 90.0, 70.0),
+                arc: None,
+            },
+        );
+        ellipse.fill = Fill::Solid(Color::rgb8(0, 0, 0));
+        ellipse.stroke = None;
+        let (doc, page) = doc_with(vec![ellipse]);
+        let render = |anti_alias: bool| {
+            let opts = RenderOptions {
+                width: 100,
+                height: 100,
+                view: ViewTransform {
+                    zoom: 1.0,
+                    origin_x: 0.0,
+                    origin_y: 100.0,
+                },
+                anti_alias,
+                ..RenderOptions::default()
+            };
+            render_page(&doc, page, &opts).unwrap()
+        };
+        let partial = |pm: &Pixmap| {
+            pm.pixels()
+                .iter()
+                .filter(|p| p.alpha() != 0 && p.alpha() != 255)
+                .count()
+        };
+        assert!(partial(&render(true)) > 20);
+        assert_eq!(partial(&render(false)), 0);
     }
 
     #[test]
