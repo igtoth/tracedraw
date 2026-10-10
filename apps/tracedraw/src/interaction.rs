@@ -1216,9 +1216,7 @@ impl App {
         }
         // F11: the fill editor (Properties docker, Fill section). F3: zoom out.
         if pressed(Key::F11, Modifiers::NONE) {
-            self.show_dockers = true;
-            self.docker_tab = crate::app::DockerTab::Properties;
-            self.properties_open = Some(0);
+            self.open_fill_editor();
         }
         if pressed(Key::F3, Modifiers::NONE) {
             self.zoom_step(false);

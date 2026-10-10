@@ -6,7 +6,7 @@ creating a new object from the area under the click.
 | Control | Default |
 |---|---|
 | Fill | use default (last used colour) |
-| Outline | use default (hairline black) |
+| Outline | use default (0.2 mm black) |
 
 ## Algorithm
 

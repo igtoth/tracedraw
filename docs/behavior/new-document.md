@@ -42,6 +42,14 @@ Choosing a page size keeps the current orientation. A typed width and
 height that match a paper size in either orientation select its name;
 anything else shows Custom.
 
+## Pixels
+
+A pixel is one dot at the drawing's resolution: 1920 px is 162.56 mm at
+300 dpi and 677.33 mm at 72 dpi. The dialog measures pixels at its own
+Resolution; when the units are pixels, changing the resolution keeps the
+page's pixel size. Everywhere else pixels follow the active drawing's
+resolution.
+
 ## Result
 
 OK opens a drawing with the given name, number of pages (each named

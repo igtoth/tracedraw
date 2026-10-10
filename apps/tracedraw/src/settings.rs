@@ -53,6 +53,9 @@ pub struct Settings {
     /// Colour of the area around the page (Customization > Appearance).
     #[serde(default = "default_desktop")]
     pub desktop_rgb: [u8; 3],
+    /// What the status bar's first field shows.
+    #[serde(default)]
+    pub status_info: crate::ui::status::StatusInfo,
 }
 
 fn default_desktop() -> [u8; 3] {
@@ -143,6 +146,7 @@ impl Default for Settings {
             show_new_document_dialog: true,
             new_document: crate::new_document::NewDocSettings::default(),
             desktop_rgb: default_desktop(),
+            status_info: crate::ui::status::StatusInfo::default(),
         }
     }
 }

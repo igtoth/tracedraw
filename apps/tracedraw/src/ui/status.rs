@@ -1,155 +1,508 @@
-//! Page navigator (left of the palette) and status bar (bottom): tool hint,
-//! object information, fill and outline swatches.
+//! The status bar, laid out like the target design's: a settings button
+//! whose menu picks what the left field shows (tool hints, object details,
+//! cursor coordinates or the document colour settings), the object
+//! information, the fill and outline of the selection (or of new objects)
+//! with their swatches, and the proof colours button at the right end.
+//! Double-clicking the fill or outline part opens its editor.
 
 use crate::app::App;
 use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
 use crate::tools::Tool;
 use crate::ui::dockers::kind_name;
-use egui::{Sense, Stroke, Ui, Vec2};
+use egui::{Color32, Pos2, Rect, Sense, Stroke, Ui, Vec2};
+use serde::{Deserialize, Serialize};
+use tracedraw_core::document::ShapeKind;
 
-fn tool_hint(tool: Tool) -> String {
-    let key = match tool {
-        Tool::Pick | Tool::FreeformPick => "hint.bar_pick",
-        Tool::Shape => "hint.bar_shape",
-        Tool::Zoom => "hint.bar_zoom",
-        Tool::Pan => "hint.bar_pan",
-        Tool::Rectangle | Tool::ThreePointRectangle => "hint.bar_rectangle",
-        Tool::Ellipse | Tool::ThreePointEllipse => "hint.bar_ellipse",
-        Tool::Polygon | Tool::Star => "hint.bar_polygon",
-        Tool::Text => "hint.bar_text",
-        Tool::Freehand => "hint.bar_freehand",
-        Tool::Bezier | Tool::Pen | Tool::Polyline | Tool::TwoPointLine | Tool::BSpline => {
-            "hint.bar_bezier"
-        }
-        Tool::InteractiveFill | Tool::AreaFill => "hint.bar_fill",
-        Tool::ColorEyedropper | Tool::AttributesEyedropper => "hint.bar_eyedropper",
-        Tool::Eraser => "hint.bar_eraser",
-        Tool::Contour => "hint.bar_contour",
-        Tool::Crop => "hint.bar_crop",
-        Tool::Knife => "hint.bar_knife",
-        Tool::Spiral => "hint.bar_spiral",
-        Tool::CommonShapes => "hint.bar_common_shapes",
-        Tool::Table => "hint.bar_table",
-        Tool::BrushStrokes => "hint.bar_brush_strokes",
-        Tool::ParallelDimension => "hint.bar_dimension",
-        Tool::Connector => "hint.bar_connector",
-        Tool::DropShadow => "hint.bar_drop_shadow",
-        Tool::Transparency => "hint.bar_transparency",
-        _ => "hint.bar_not_implemented",
+/// What the status bar's first field shows (the settings button's menu).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum StatusInfo {
+    #[default]
+    ToolHints,
+    ObjectDetails,
+    CursorCoordinates,
+    DocumentColor,
+}
+
+impl StatusInfo {
+    pub const ALL: [StatusInfo; 4] = [
+        StatusInfo::ToolHints,
+        StatusInfo::ObjectDetails,
+        StatusInfo::CursorCoordinates,
+        StatusInfo::DocumentColor,
+    ];
+
+    fn label(self) -> String {
+        tr(match self {
+            StatusInfo::ToolHints => "status.tool_hints",
+            StatusInfo::ObjectDetails => "status.object_details",
+            StatusInfo::CursorCoordinates => "status.cursor_coordinates",
+            StatusInfo::DocumentColor => "status.document_color_settings",
+        })
+    }
+}
+
+/// The active tool's hint; the Pick tool's depends on the selection.
+pub fn tool_hint(app: &App) -> String {
+    if app.tool == Tool::Pick && !app.selection.is_empty() {
+        return tr("status_hint.pick_selected");
+    }
+    tr(&format!("status_hint.{}", app.tool.id()))
+}
+
+/// "Rectangle on Layer 1", "3 Objects Selected on Layer 1", and with the
+/// Shape tool "Curve: 17 Nodes". Empty with nothing selected.
+pub fn object_info(app: &App) -> String {
+    if app.text_edit.is_some() {
+        return tr("status.editing_text");
+    }
+    let shapes = app.selected_shapes();
+    let layer_of = |id| {
+        app.doc()
+            .shape(id)
+            .map(|(l, _)| l.name.clone())
+            .unwrap_or_default()
     };
-    tr(key)
+    match shapes.as_slice() {
+        [] => String::new(),
+        [s] => {
+            if app.tool == Tool::Shape {
+                if let ShapeKind::Path { path, .. } = &s.kind {
+                    let n = path
+                        .elements()
+                        .iter()
+                        .filter(|e| !matches!(e, tracedraw_core::geometry::PathEl::ClosePath))
+                        .count();
+                    return trf("status.curve_nodes", &[("n", &n.to_string())]);
+                }
+            }
+            let mut kind = match &s.kind {
+                ShapeKind::Path { .. } => tr("kind.curve"),
+                k => kind_name(k),
+            };
+            if app.is_effect_clone(s.id) {
+                kind = format!("{kind} ({})", tr("status.effect_clone"));
+            }
+            trf(
+                "status.object_on_layer",
+                &[("k", &kind), ("l", &layer_of(s.id))],
+            )
+        }
+        many => {
+            let first = layer_of(many[0].id);
+            let same = many.iter().all(|s| layer_of(s.id) == first);
+            let n = many.len().to_string();
+            if same {
+                trf("status.n_selected_on_layer", &[("n", &n), ("l", &first)])
+            } else {
+                trf("status.n_selected_on_layers", &[("n", &n)])
+            }
+        }
+    }
+}
+
+/// The selection's size and centre in the drawing units.
+fn object_details(app: &App) -> String {
+    let Some(b) = app.selection_bounds() else {
+        return String::new();
+    };
+    let u = app.units;
+    let f = |mm: f64| format!("{:.3}", u.from_mm(mm));
+    trf(
+        "status.details",
+        &[
+            ("w", &f(b.width())),
+            ("h", &f(b.height())),
+            ("x", &f(b.center().x)),
+            ("y", &f(b.center().y)),
+            ("u", &u.label()),
+        ],
+    )
+}
+
+fn cursor_coordinates(app: &App) -> String {
+    match app.pointer_page {
+        Some(p) => {
+            let u = app.units;
+            format!(
+                "({:.3}, {:.3}) {}",
+                u.from_mm(p.x),
+                u.from_mm(p.y),
+                u.label()
+            )
+        }
+        None => String::new(),
+    }
+}
+
+fn document_color(app: &App) -> String {
+    let m = &app.doc().metadata;
+    let pick = |doc: &str, default: &str| {
+        if doc.is_empty() {
+            default.to_string()
+        } else {
+            doc.to_string()
+        }
+    };
+    trf(
+        "status.document_colors",
+        &[
+            (
+                "rgb",
+                &pick(&m.rgb_profile, &app.settings.color.rgb_profile),
+            ),
+            (
+                "cmyk",
+                &pick(&m.cmyk_profile, &app.settings.color.cmyk_profile),
+            ),
+            ("gray", &app.settings.new_document.gray_profile),
+        ],
+    )
+}
+
+/// The outline as the status bar describes it: colour and width in the
+/// drawing units (or "Hairline").
+fn outline_text(app: &App, stroke: &Option<tracedraw_core::Stroke>) -> String {
+    match stroke {
+        None => tr("status.none"),
+        Some(s) => {
+            let width = if s.width <= tracedraw_core::Stroke::HAIRLINE + 1e-9 {
+                tr("status.hairline")
+            } else {
+                let u = app.units;
+                let decimals = if u == crate::app::Units::Pixels { 2 } else { 3 };
+                format!("{:.*} {}", decimals, u.from_mm(s.width), u.short())
+            };
+            format!("{}  {}", crate::app::color_description(s.color), width)
+        }
+    }
 }
 
 pub fn status_bar(app: &mut App, ui: &mut Ui) {
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 8.0;
-        let (r, resp) = ui.allocate_exact_size(Vec2::new(16.0, 16.0), Sense::click());
-        crate::ui::icons::draw_action(
-            ui.painter(),
-            r,
-            crate::ui::icons::Action::Options,
-            Tokens::ICON,
-        );
-        let _ = resp.on_hover_text(tr("status.bar_options"));
-        let shapes = app.selected_shapes();
-        let info = if app.text_edit.is_some() {
-            tr("status.editing_text")
-        } else if shapes.is_empty() {
-            if app.status.is_empty() {
-                tool_hint(app.tool)
-            } else {
-                format!("{}    {}", app.status, tool_hint(app.tool))
-            }
-        } else if shapes.len() == 1 {
-            let layer = app
-                .doc()
-                .shape(shapes[0].id)
-                .map(|(l, _)| l.name.clone())
-                .unwrap_or_default();
-            let mut kind = kind_name(&shapes[0].kind);
-            if app.is_effect_clone(shapes[0].id) {
-                kind = format!("{kind} ({})", tr("status.effect_clone"));
-            }
-            trf("status.object_on_layer", &[("k", &kind), ("l", &layer)])
-        } else {
-            trf(
-                "status.n_objects_selected",
-                &[("n", &shapes.len().to_string())],
-            )
-        };
-        ui.label(egui::RichText::new(info).size(11.0));
+    let full = ui.available_rect_before_wrap();
+    let h = full.height().max(20.0);
+    let row = Rect::from_min_size(full.min, Vec2::new(full.width(), h));
+    ui.allocate_rect(row, Sense::hover());
+    let painter = ui.painter_at(row);
+    let cy = row.center().y;
+    let font = egui::FontId::proportional(12.0);
+    let doc = app.has_document() && !app.show_welcome;
 
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let (fill, stroke) = match shapes.first() {
-                Some(s) => (s.fill.clone(), s.stroke.clone()),
-                None => (app.default_fill.clone(), app.default_stroke.clone()),
-            };
-            let width_label = match &stroke {
-                None => String::new(),
-                Some(s) if s.width <= tracedraw_core::Stroke::HAIRLINE + 1e-9 => {
-                    tr("status.hairline")
+    // The settings button and its menu.
+    let gear = Rect::from_center_size(Pos2::new(row.min.x + 12.0, cy), Vec2::splat(20.0));
+    let gear_resp = ui
+        .interact(gear, egui::Id::new("status_settings"), Sense::click())
+        .on_hover_text(tr("status.bar_options"));
+    if gear_resp.hovered() {
+        painter.rect_filled(gear, 2.0, Tokens::TOOL_HOVER);
+    }
+    crate::ui::icons::draw_action(
+        &painter,
+        gear.shrink(2.0),
+        crate::ui::icons::Action::Options,
+        Tokens::ICON,
+    );
+    egui::Popup::menu(&gear_resp)
+        .id(egui::Id::new("status_settings_menu"))
+        .show(|ui| {
+            for mode in StatusInfo::ALL {
+                if ui
+                    .radio(app.settings.status_info == mode, mode.label())
+                    .clicked()
+                {
+                    app.settings.status_info = mode;
+                    ui.close();
                 }
-                Some(s) => format!("{:.2} {}", app.units.from_mm(s.width), app.units.short()),
-            };
-            let outline_text = match &stroke {
-                None => tr("status.none"),
-                Some(s) => format!(
-                    "{}  {}",
-                    crate::app::color_description(s.color),
-                    width_label
-                ),
-            };
-            ui.add_space(12.0);
-            ui.label(egui::RichText::new(outline_text).size(11.0));
-            swatch(
-                ui,
-                stroke.as_ref().map(|s| crate::canvas::to_color32(s.color)),
-                &tr("status.swatch_outline"),
-            );
-            let (r, _) = ui.allocate_exact_size(Vec2::new(16.0, 16.0), Sense::hover());
-            crate::ui::icons::draw(
-                ui.painter(),
-                r,
-                crate::tools::Tool::Freehand,
-                Tokens::TEXT_DIM,
-            );
-            ui.add_space(24.0);
-            ui.label(egui::RichText::new(crate::app::fill_description(&fill)).size(11.0));
-            swatch(
-                ui,
-                crate::app::fill_preview_color(&fill),
-                &tr("status.swatch_fill"),
-            );
-            let (r, _) = ui.allocate_exact_size(Vec2::new(16.0, 16.0), Sense::hover());
-            crate::ui::icons::draw(
-                ui.painter(),
-                r,
-                crate::tools::Tool::InteractiveFill,
-                Tokens::TEXT_DIM,
-            );
+            }
         });
-    });
+
+    // Positions of the right-hand parts, as fractions of the bar like the
+    // target design's (fill about 70 %, outline about 82 %).
+    let fill_x = row.min.x + row.width() * 0.695;
+    let outline_x = row.min.x + row.width() * 0.825;
+    let proof = Rect::from_center_size(Pos2::new(row.max.x - 14.0, cy), Vec2::splat(18.0));
+
+    // Left field and object information.
+    let (left, info) = if !doc {
+        (tr("status.tool_hints"), tr("status.object_information"))
+    } else {
+        let left = match app.settings.status_info {
+            StatusInfo::ToolHints => {
+                let hint = tool_hint(app);
+                if app.status.is_empty() {
+                    hint
+                } else {
+                    format!("{}    {hint}", app.status)
+                }
+            }
+            StatusInfo::ObjectDetails => object_details(app),
+            StatusInfo::CursorCoordinates => cursor_coordinates(app),
+            StatusInfo::DocumentColor => document_color(app),
+        };
+        (left, object_info(app))
+    };
+    let text_x = gear.max.x + 6.0;
+    let info_w = if info.is_empty() {
+        0.0
+    } else {
+        painter
+            .layout_no_wrap(info.clone(), font.clone(), Tokens::TEXT)
+            .size()
+            .x
+            .min((fill_x - text_x) * 0.45)
+    };
+    let left_max = fill_x - 16.0 - if info_w > 0.0 { info_w + 24.0 } else { 0.0 };
+    let left_galley = painter.layout_no_wrap(left, font.clone(), Tokens::TEXT);
+    let left_w = left_galley.size().x.min(left_max - text_x).max(0.0);
+    let clip = Rect::from_min_max(Pos2::new(text_x, row.min.y), Pos2::new(left_max, row.max.y));
+    painter.with_clip_rect(clip).galley(
+        Pos2::new(text_x, cy - left_galley.size().y / 2.0),
+        left_galley,
+        Tokens::TEXT,
+    );
+    if info_w > 0.0 {
+        // After the left field, never closer than a placeholder's width,
+        // so it sits where the target design puts it.
+        let x = (text_x + left_w + 24.0)
+            .max(text_x + 156.0)
+            .min(left_max + 24.0);
+        let g = painter.layout_no_wrap(info, font.clone(), Tokens::TEXT);
+        let clip = Rect::from_min_max(Pos2::new(x, row.min.y), Pos2::new(fill_x - 8.0, row.max.y));
+        painter
+            .with_clip_rect(clip)
+            .galley(Pos2::new(x, cy - g.size().y / 2.0), g, Tokens::TEXT);
+    }
+
+    // Fill and outline of the selection, or of new objects.
+    let shapes = app.selected_shapes();
+    let (fill, stroke) = match shapes.first() {
+        Some(s) => (s.fill.clone(), s.stroke.clone()),
+        None => (app.default_fill.clone(), app.default_stroke.clone()),
+    };
+    let (fill_text, fill_swatch, outline_label, outline_swatch) = if doc {
+        (
+            crate::app::fill_description(&fill),
+            crate::app::fill_preview_color(&fill),
+            outline_text(app, &stroke),
+            stroke.as_ref().map(|s| crate::canvas::to_color32(s.color)),
+        )
+    } else {
+        (
+            tr("status.fill_color"),
+            None,
+            tr("status.outline_color"),
+            None,
+        )
+    };
+    let fill_part = Rect::from_min_max(
+        Pos2::new(fill_x, row.min.y),
+        Pos2::new(outline_x - 8.0, row.max.y),
+    );
+    let fill_hit = Indicator {
+        id: "status_fill",
+        icon: Tool::InteractiveFill,
+        swatch: fill_swatch,
+        text: &fill_text,
+        tip: &tr("status.swatch_fill"),
+    }
+    .show(ui, &painter, fill_part);
+    if fill_hit && doc {
+        app.open_fill_editor();
+    }
+    let outline_part = Rect::from_min_max(
+        Pos2::new(outline_x, row.min.y),
+        Pos2::new(proof.min.x - 8.0, row.max.y),
+    );
+    let outline_hit = Indicator {
+        id: "status_outline",
+        icon: Tool::OutlinePen,
+        swatch: outline_swatch,
+        text: &outline_label,
+        tip: &tr("status.swatch_outline"),
+    }
+    .show(ui, &painter, outline_part);
+    if outline_hit && doc {
+        app.open_outline_editor();
+    }
+
+    // Proof colours.
+    let proof_resp = ui
+        .interact(proof, egui::Id::new("status_proof"), Sense::click())
+        .on_hover_text(if app.proof_colors {
+            tr("status.proof_on")
+        } else {
+            tr("status.proof_off")
+        });
+    if proof_resp.hovered() || app.proof_colors {
+        let fill = if app.proof_colors {
+            Tokens::TOOL_ACTIVE
+        } else {
+            Tokens::TOOL_HOVER
+        };
+        painter.rect_filled(proof, 2.0, fill);
+    }
+    proof_icon(&painter, proof.shrink(2.0));
+    if proof_resp.clicked() && doc {
+        app.proof_colors = !app.proof_colors;
+        app.raster.borrow_mut().invalidate();
+    }
 }
 
-fn swatch(ui: &mut Ui, color: Option<egui::Color32>, tip: &str) {
-    let (r, resp) = ui.allocate_exact_size(Vec2::new(18.0, 14.0), Sense::hover());
+/// The fill or outline part: tool icon, swatch, description.
+struct Indicator<'a> {
+    id: &'a str,
+    icon: Tool,
+    swatch: Option<Color32>,
+    text: &'a str,
+    tip: &'a str,
+}
+
+impl Indicator<'_> {
+    /// Draw it; true when double-clicked.
+    fn show(&self, ui: &mut Ui, painter: &egui::Painter, part: Rect) -> bool {
+        let resp = ui
+            .interact(part, egui::Id::new(self.id), Sense::click())
+            .on_hover_text(self.tip);
+        let cy = part.center().y;
+        let icon_r = Rect::from_center_size(Pos2::new(part.min.x + 9.0, cy), Vec2::splat(16.0));
+        crate::ui::icons::draw(painter, icon_r, self.icon, Tokens::ICON);
+        let sw = Rect::from_center_size(Pos2::new(icon_r.max.x + 14.0, cy), Vec2::new(18.0, 16.0));
+        draw_swatch(painter, sw, self.swatch);
+        let clip = Rect::from_min_max(Pos2::new(sw.max.x + 6.0, part.min.y), part.max);
+        painter.with_clip_rect(clip).text(
+            Pos2::new(sw.max.x + 6.0, cy),
+            egui::Align2::LEFT_CENTER,
+            self.text,
+            egui::FontId::proportional(12.0),
+            Tokens::TEXT,
+        );
+        resp.double_clicked()
+    }
+}
+
+/// A colour swatch; no colour is a white box crossed by a red line.
+pub fn draw_swatch(painter: &egui::Painter, r: Rect, color: Option<Color32>) {
     match color {
         Some(c) => {
-            ui.painter().rect_filled(r, 1.0, c);
+            painter.rect_filled(r, 0.0, c);
         }
         None => {
-            ui.painter().rect_stroke(
-                r,
-                1.0,
-                Stroke::new(1.0, Tokens::TEXT_DIM),
-                egui::epaint::StrokeKind::Inside,
-            );
-            ui.painter().line_segment(
-                [r.left_bottom(), r.right_top()],
-                Stroke::new(1.0, Tokens::TEXT_DIM),
+            painter.rect_filled(r, 0.0, Color32::WHITE);
+            painter.line_segment(
+                [
+                    r.left_bottom() + Vec2::new(1.0, -1.0),
+                    r.right_top() + Vec2::new(-1.0, 1.0),
+                ],
+                Stroke::new(1.5, Color32::from_rgb(0xE0, 0x20, 0x20)),
             );
         }
+    };
+    painter.rect_stroke(
+        r,
+        0.0,
+        Stroke::new(1.0, Tokens::TEXT_DIM),
+        egui::StrokeKind::Inside,
+    );
+}
+
+/// A small monitor showing colour bars.
+fn proof_icon(painter: &egui::Painter, r: Rect) {
+    let screen = Rect::from_min_max(
+        r.min + Vec2::new(1.0, 1.0),
+        Pos2::new(r.max.x - 1.0, r.max.y - 4.0),
+    );
+    let bars = [
+        Color32::from_rgb(0xE8, 0x3A, 0x3A),
+        Color32::from_rgb(0x3A, 0xA8, 0x3A),
+        Color32::from_rgb(0x3A, 0x6A, 0xE8),
+    ];
+    let inner = screen.shrink(1.5);
+    let w = inner.width() / bars.len() as f32;
+    for (i, c) in bars.iter().enumerate() {
+        let b = Rect::from_min_size(
+            Pos2::new(inner.min.x + w * i as f32, inner.min.y),
+            Vec2::new(w, inner.height()),
+        );
+        painter.rect_filled(b, 0.0, *c);
     }
-    resp.on_hover_text(tip);
+    let s = Stroke::new(1.0, Tokens::ICON);
+    painter.rect_stroke(screen, 1.0, s, egui::StrokeKind::Inside);
+    let foot = r.max.y - 1.0;
+    painter.line_segment(
+        [
+            Pos2::new(r.center().x - 3.0, foot),
+            Pos2::new(r.center().x + 3.0, foot),
+        ],
+        s,
+    );
+    painter.line_segment(
+        [
+            Pos2::new(r.center().x, screen.max.y),
+            Pos2::new(r.center().x, foot),
+        ],
+        s,
+    );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tracedraw_core::geometry::Rect as PRect;
+
+    #[test]
+    fn every_tool_has_its_own_hint() {
+        crate::i18n::set_language("en");
+        for t in Tool::ALL {
+            let key = format!("status_hint.{}", t.id());
+            assert_ne!(tr(&key), key, "missing status hint for {t:?}");
+        }
+    }
+
+    #[test]
+    fn object_information_names_the_object_and_its_layer() {
+        crate::i18n::set_language("en");
+        let mut app = App::headless();
+        assert_eq!(object_info(&app), "");
+        let a = app
+            .new_shape(ShapeKind::Rect {
+                rect: PRect::new(0.0, 0.0, 10.0, 10.0),
+                radius: 0.0,
+            })
+            .expect("layer");
+        app.select(vec![a]);
+        assert_eq!(object_info(&app), "Rectangle on Layer 1");
+        let mut path = tracedraw_core::geometry::BezPath::new();
+        path.move_to((0.0, 0.0));
+        path.line_to((5.0, 5.0));
+        path.line_to((9.0, 1.0));
+        let b = app
+            .new_shape(ShapeKind::Path {
+                path,
+                closed: false,
+            })
+            .expect("layer");
+        app.select(vec![b]);
+        assert_eq!(object_info(&app), "Curve on Layer 1");
+        app.tool = Tool::Shape;
+        assert_eq!(object_info(&app), "Curve: 3 Nodes");
+        app.tool = Tool::Pick;
+        app.select(vec![a, b]);
+        assert_eq!(object_info(&app), "2 Objects Selected on Layer 1");
+        assert!(tool_hint(&app).contains("twice"));
+    }
+
+    #[test]
+    fn outline_width_is_shown_in_the_drawing_units() {
+        crate::i18n::set_language("en");
+        let mut app = App::headless();
+        let s = Some(tracedraw_core::Stroke {
+            width: 0.2,
+            ..Default::default()
+        });
+        app.units = crate::app::Units::Millimeters;
+        assert!(outline_text(&app, &s).ends_with("0.200 mm"));
+        app.units = crate::app::Units::Points;
+        assert!(outline_text(&app, &s).ends_with("0.567 pt"));
+        assert_eq!(outline_text(&app, &None), "None");
+    }
 }

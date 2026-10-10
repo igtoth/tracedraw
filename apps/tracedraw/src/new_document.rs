@@ -75,8 +75,8 @@ impl Destination {
             Destination::Web => PresetValues {
                 rgb: true,
                 page_size: CUSTOM.into(),
-                width_mm: 1920.0 * Units::Pixels.mm(),
-                height_mm: 1080.0 * Units::Pixels.mm(),
+                width_mm: 1920.0 * 25.4 / 72.0,
+                height_mm: 1080.0 * 25.4 / 72.0,
                 units: "px".into(),
                 dpi: 72.0,
             },
@@ -290,6 +290,9 @@ impl NewDocState {
 
 /// Draw the dialog; `close` is set when it should go away.
 pub fn new_document_dialog(app: &mut App, ctx: &Context, st: &mut NewDocState, close: &mut bool) {
+    // Pixel sizes in the dialog are at the dialog's resolution.
+    let outer_dpi = crate::app::pixel_dpi();
+    crate::app::set_pixel_dpi(st.settings.values.dpi);
     let mut ok = false;
     egui::Window::new(tr("dialog.create_new_document"))
         .collapsible(false)
@@ -390,6 +393,7 @@ pub fn new_document_dialog(app: &mut App, ctx: &Context, st: &mut NewDocState, c
                 ok = true;
             }
         });
+    crate::app::set_pixel_dpi(outer_dpi);
     if ok {
         *close = true;
         create(app, st);
@@ -569,8 +573,14 @@ fn dimensions(ui: &mut Ui, st: &mut NewDocState) {
                 .speed(1.0),
         );
         ui.label(tr("newdoc.dpi"));
-        if dpi != v.dpi {
+        if dpi != v.dpi && dpi > 0.0 {
+            // In pixels the page keeps its pixel size at the new resolution.
+            if units == Units::Pixels {
+                v.width_mm *= v.dpi / dpi;
+                v.height_mm *= v.dpi / dpi;
+            }
             v.dpi = dpi;
+            crate::app::set_pixel_dpi(dpi);
             st.settings.refresh_preset();
         }
     });
@@ -757,6 +767,6 @@ mod tests {
         // With the dialog off, New uses the remembered settings at once.
         app.request_new_document();
         assert_eq!(app.docs.len(), before + 2);
-        assert!((app.page_size().width - 1920.0 * Units::Pixels.mm()).abs() < 1e-6);
+        assert!((app.page_size().width - 1920.0 * 25.4 / 72.0).abs() < 1e-6);
     }
 }

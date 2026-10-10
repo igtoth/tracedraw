@@ -46,6 +46,8 @@ fn set_window_title(ctx: &egui::Context, title: String) {
 
 pub fn root(app: &mut App, ui: &mut Ui) {
     let ctx = ui.ctx().clone();
+    // Pixels are measured at the active drawing's resolution.
+    crate::app::set_pixel_dpi(app.document_dpi());
     app.keyboard(&ctx);
 
     let doc_name = if app.has_document() && !app.show_welcome {

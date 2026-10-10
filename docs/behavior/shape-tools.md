@@ -3,7 +3,7 @@
 Rectangle, 3-point rectangle, Ellipse, 3-point ellipse, Polygon, Star,
 Complex star, Spiral, Graph paper, Common shapes and Impact. All of them
 draw by dragging a box; the object takes the toolbox defaults (no fill,
-black hairline outline) unless the Properties docker set other defaults.
+a 0.2 mm black outline) unless the Properties docker set other defaults.
 
 ## Live preview
 

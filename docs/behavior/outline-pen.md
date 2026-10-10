@@ -9,8 +9,8 @@ Colour (Shift+F12) opens the Colour docker. The model is
 
 | Field | Default | Notes |
 | --- | --- | --- |
-| Colour | black | any colour model |
-| Width | hairline (0.0762 mm, 0.216 pt) | the hairline draws one device pixel at every zoom |
+| Colour | black (C0 M0 Y0 K100 for new objects) | any colour model |
+| Width | 0.2 mm (0.567 pt) for new objects; imported outlines keep theirs | a hairline (0.0762 mm, 0.216 pt) draws one device pixel at every zoom |
 | Caps | butt | butt, round, square |
 | Corners | mitre | mitre (limit 4), round, bevel |
 | Dash | solid | presets dashed 4:2, dotted 1:1, dash dot 6:2:1:2, in multiples of the width |

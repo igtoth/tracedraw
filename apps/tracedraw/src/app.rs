@@ -129,6 +129,24 @@ fn alpha(n: i64) -> String {
     out.iter().rev().collect()
 }
 
+thread_local! {
+    /// Dots per inch of the pixel unit: the active drawing's resolution.
+    static PIXEL_DPI: std::cell::Cell<f64> = const { std::cell::Cell::new(96.0) };
+}
+
+/// Set the resolution pixels are measured at (each frame, from the active
+/// drawing; the Create a New Document dialog uses its own while drawn).
+pub fn set_pixel_dpi(dpi: f64) {
+    if dpi.is_finite() && dpi > 0.0 {
+        PIXEL_DPI.with(|c| c.set(dpi));
+    }
+}
+
+/// The resolution pixels are measured at.
+pub fn pixel_dpi() -> f64 {
+    PIXEL_DPI.with(|c| c.get())
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Units {
     #[default]
@@ -183,14 +201,15 @@ impl Units {
             Units::Pixels => "px",
         }
     }
-    /// Millimetres per unit.
+    /// Millimetres per unit. A pixel is one dot at the active drawing's
+    /// resolution (see [`set_pixel_dpi`]).
     pub fn mm(self) -> f64 {
         match self {
             Units::Millimeters => 1.0,
             Units::Centimeters => 10.0,
             Units::Inches => 25.4,
             Units::Points => 25.4 / 72.0,
-            Units::Pixels => 25.4 / 96.0,
+            Units::Pixels => 25.4 / pixel_dpi(),
         }
     }
     pub fn from_mm(self, v: f64) -> f64 {
@@ -856,7 +875,13 @@ impl App {
             clipboard: None,
             duplicate_offset: Vec2::new(6.35, 6.35),
             default_fill: Fill::None,
-            default_stroke: Some(Stroke::default()),
+            // New objects: no fill, a 0.2 mm black outline (CMYK black),
+            // the target design's defaults.
+            default_stroke: Some(Stroke {
+                color: Color::cmyk_pct(0.0, 0.0, 0.0, 100.0),
+                width: 0.2,
+                ..Stroke::default()
+            }),
             polygon_points: 5,
             star_sharpness: 0.5,
             rect_radius: 0.0,
@@ -1039,6 +1064,32 @@ impl App {
             }
         }
         doc
+    }
+
+    /// F11, and a double click on the status bar's fill: the fill
+    /// settings (the Properties docker's Fill section).
+    pub fn open_fill_editor(&mut self) {
+        self.show_dockers = true;
+        self.docker_tab = DockerTab::Properties;
+        self.properties_open = Some(0);
+    }
+
+    /// F12, and a double click on the status bar's outline: the outline
+    /// settings (the Properties docker's Outline section).
+    pub fn open_outline_editor(&mut self) {
+        self.show_dockers = true;
+        self.docker_tab = DockerTab::Properties;
+        self.properties_open = Some(1);
+    }
+
+    /// The resolution of the active drawing, for the pixel unit.
+    pub fn document_dpi(&self) -> f64 {
+        let dpi = self.doc().metadata.resolution_dpi;
+        if dpi > 0.0 {
+            dpi
+        } else {
+            self.settings.default_dpi.max(1.0)
+        }
     }
 
     /// Layout > Page Setup and a double click on the page border or
