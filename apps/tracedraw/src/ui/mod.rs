@@ -21,6 +21,7 @@ pub mod layout_options;
 pub mod menus;
 pub mod options;
 pub mod palette;
+pub mod picture_mosaic_docker;
 pub mod vector_mosaic_docker;
 pub mod preview;
 pub mod propbar;
@@ -44,6 +45,23 @@ fn bar() -> Frame {
     Frame::new()
         .fill(Tokens::PANEL)
         .inner_margin(egui::Margin::symmetric(4, 2))
+}
+
+/// A slider whose rail shows on the white and light grey panels. egui
+/// paints slider rails with the fill of framed controls, which the theme
+/// makes white for check boxes and fields; here the rail gets a grey
+/// groove instead, thinner, like the target design's track.
+pub struct Rail<'a>(pub egui::Slider<'a>);
+
+impl egui::Widget for Rail<'_> {
+    fn ui(self, ui: &mut Ui) -> egui::Response {
+        ui.scope(|ui| {
+            ui.spacing_mut().slider_rail_height = 4.0;
+            ui.visuals_mut().widgets.inactive.bg_fill = Tokens::SLIDER_RAIL;
+            ui.add(self.0)
+        })
+        .inner
+    }
 }
 
 /// Set the window title (the page title in a browser) when it changes.

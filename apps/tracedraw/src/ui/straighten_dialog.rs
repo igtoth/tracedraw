@@ -290,7 +290,9 @@ pub fn straighten_dialog(app: &mut App, ctx: &Context, st: &mut StraightenState,
                               range: std::ops::RangeInclusive<f32>,
                               step: f64| {
                     ui.label(tr(key));
-                    ui.add(egui::Slider::new(v, range).step_by(step).max_decimals(1));
+                    ui.add(crate::ui::Rail(
+                        egui::Slider::new(v, range).step_by(step).max_decimals(1),
+                    ));
                 };
                 slider(
                     ui,
@@ -331,7 +333,7 @@ pub fn straighten_dialog(app: &mut App, ctx: &Context, st: &mut StraightenState,
                 });
                 ui.add_enabled(
                     st.grid,
-                    egui::Slider::new(&mut st.grid_size, 8.0..=80.0).integer(),
+                    crate::ui::Rail(egui::Slider::new(&mut st.grid_size, 8.0..=80.0).integer()),
                 );
                 ui.separator();
                 ui.checkbox(&mut st.s.crop, tr("dialog.straighten_crop"));

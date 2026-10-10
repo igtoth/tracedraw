@@ -71,7 +71,10 @@ pub fn bw_dialog(app: &mut App, ctx: &Context, s: &mut BwSettings, close: &mut b
             match s.method {
                 BwMethod::LineArt => {
                     ui.label(tr("dialog.threshold"));
-                    ui.add(egui::Slider::new(&mut s.threshold, 0..=255));
+                    ui.add(crate::ui::Rail(egui::Slider::new(
+                        &mut s.threshold,
+                        0..=255,
+                    )));
                     ui.end_row();
                 }
                 BwMethod::Halftone => {
@@ -85,15 +88,20 @@ pub fn bw_dialog(app: &mut App, ctx: &Context, s: &mut BwSettings, close: &mut b
                         });
                     ui.end_row();
                     ui.label(tr("dialog.angle"));
-                    ui.add(egui::Slider::new(&mut s.angle, -180.0..=180.0).suffix(" \u{b0}"));
+                    ui.add(crate::ui::Rail(
+                        egui::Slider::new(&mut s.angle, -180.0..=180.0).suffix(" \u{b0}"),
+                    ));
                     ui.end_row();
                     ui.label(tr("dialog.lines_per_inch"));
-                    ui.add(egui::Slider::new(&mut s.lpi, 1.0..=300.0));
+                    ui.add(crate::ui::Rail(egui::Slider::new(&mut s.lpi, 1.0..=300.0)));
                     ui.end_row();
                 }
                 _ => {
                     ui.label(tr("dialog.intensity"));
-                    ui.add(egui::Slider::new(&mut s.intensity, 0.0..=100.0));
+                    ui.add(crate::ui::Rail(egui::Slider::new(
+                        &mut s.intensity,
+                        0.0..=100.0,
+                    )));
                     ui.end_row();
                 }
             }
@@ -252,7 +260,7 @@ pub fn paletted_dialog(app: &mut App, ctx: &Context, s: &mut PalettedSettings, c
             ui.end_row();
             if s.palette.counts() {
                 ui.label(tr("dialog.colors"));
-                ui.add(egui::Slider::new(&mut s.colors, 2..=256));
+                ui.add(crate::ui::Rail(egui::Slider::new(&mut s.colors, 2..=256)));
                 ui.end_row();
             }
             ui.label(tr("dialog.dithering"));
@@ -260,7 +268,10 @@ pub fn paletted_dialog(app: &mut App, ctx: &Context, s: &mut PalettedSettings, c
             ui.end_row();
             if s.dither != Dither::None {
                 ui.label(tr("dialog.dither_intensity"));
-                ui.add(egui::Slider::new(&mut s.intensity, 0.0..=100.0));
+                ui.add(crate::ui::Rail(egui::Slider::new(
+                    &mut s.intensity,
+                    0.0..=100.0,
+                )));
                 ui.end_row();
             }
         });

@@ -659,11 +659,11 @@ fn fountain_editor(ui: &mut Ui, f: &mut Fountain) -> bool {
         FountainKind::Linear | FountainKind::Conical | FountainKind::Square
     ) {
         changed |= ui
-            .add(
+            .add(crate::ui::Rail(
                 egui::Slider::new(&mut f.angle, -180.0..=180.0)
                     .text(tr("docker.angle_lc"))
                     .suffix("°"),
-            )
+            ))
             .drag_stopped();
     }
     if !matches!(f.kind, FountainKind::Linear) {
@@ -687,11 +687,11 @@ fn fountain_editor(ui: &mut Ui, f: &mut Fountain) -> bool {
     }
     let mut pad = f.edge_pad * 100.0;
     if ui
-        .add(
+        .add(crate::ui::Rail(
             egui::Slider::new(&mut pad, 0.0..=49.0)
                 .text(tr("docker.edge_pad"))
                 .suffix("%"),
-        )
+        ))
         .drag_stopped()
     {
         f.edge_pad = pad / 100.0;
@@ -722,11 +722,11 @@ fn pattern_editor(ui: &mut Ui, p: &mut Pattern) -> bool {
             changed |= color_row(ui, &tr("docker.front"), front);
             changed |= color_row(ui, &tr("docker.back"), back);
             changed |= ui
-                .add(
+                .add(crate::ui::Rail(
                     egui::Slider::new(size_mm, 1.0..=100.0)
                         .text(tr("docker.tile_size_mm"))
                         .logarithmic(true),
-                )
+                ))
                 .drag_stopped();
         }
         Pattern::Bitmap {
@@ -740,11 +740,11 @@ fn pattern_editor(ui: &mut Ui, p: &mut Pattern) -> bool {
                 &[("w", &width_px.to_string()), ("h", &height_px.to_string())],
             ));
             changed |= ui
-                .add(
+                .add(crate::ui::Rail(
                     egui::Slider::new(size_mm, 1.0..=200.0)
                         .text(tr("docker.tile_size_mm"))
                         .logarithmic(true),
-                )
+                ))
                 .drag_stopped();
         }
         Pattern::Vector { shapes, tile } => {
@@ -754,18 +754,18 @@ fn pattern_editor(ui: &mut Ui, p: &mut Pattern) -> bool {
             ));
             let (mut w, mut h) = (tile.width, tile.height);
             changed |= ui
-                .add(
+                .add(crate::ui::Rail(
                     egui::Slider::new(&mut w, 1.0..=200.0)
                         .text(tr("docker.tile_width"))
                         .logarithmic(true),
-                )
+                ))
                 .drag_stopped();
             changed |= ui
-                .add(
+                .add(crate::ui::Rail(
                     egui::Slider::new(&mut h, 1.0..=200.0)
                         .text(tr("docker.tile_height"))
                         .logarithmic(true),
-                )
+                ))
                 .drag_stopped();
             if (w - tile.width).abs() > 1e-9 || (h - tile.height).abs() > 1e-9 {
                 // Scale the tile content with its size so the drawing keeps its shape.
@@ -801,11 +801,11 @@ fn texture_editor(ui: &mut Ui, t: &mut Texture) -> bool {
     changed |= color_row(ui, &tr("docker.colour_a"), &mut t.color_a);
     changed |= color_row(ui, &tr("docker.colour_b"), &mut t.color_b);
     changed |= ui
-        .add(
+        .add(crate::ui::Rail(
             egui::Slider::new(&mut t.scale, 1.0..=200.0)
                 .text(tr("docker.scale_mm"))
                 .logarithmic(true),
-        )
+        ))
         .drag_stopped();
     ui.horizontal(|ui| {
         ui.label(tr("docker.seed"));
@@ -866,11 +866,11 @@ fn outline_editor(ui: &mut Ui, stroke: &mut Option<Stroke>, custom: &[Arrowhead]
         }
         if !hair {
             changed |= ui
-                .add(
+                .add(crate::ui::Rail(
                     egui::Slider::new(&mut s.width, 0.1..=25.0)
                         .text(tr("docker.width_mm"))
                         .logarithmic(true),
-                )
+                ))
                 .drag_stopped();
         }
         ui.horizontal(|ui| {
@@ -924,14 +924,16 @@ fn outline_editor(ui: &mut Ui, stroke: &mut Option<Stroke>, custom: &[Arrowhead]
             }
         });
         changed |= ui
-            .add(egui::Slider::new(&mut s.stretch, 0.1..=1.0).text(tr("docker.nib_stretch")))
+            .add(crate::ui::Rail(
+                egui::Slider::new(&mut s.stretch, 0.1..=1.0).text(tr("docker.nib_stretch")),
+            ))
             .drag_stopped();
         changed |= ui
-            .add(
+            .add(crate::ui::Rail(
                 egui::Slider::new(&mut s.nib_angle, -90.0..=90.0)
                     .text(tr("docker.nib_angle_lc"))
                     .suffix("°"),
-            )
+            ))
             .drag_stopped();
         changed |= ui
             .checkbox(&mut s.behind_fill, tr("docker.behind_fill"))

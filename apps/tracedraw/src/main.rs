@@ -44,6 +44,7 @@ mod node_edit;
 mod ops;
 mod ops2;
 mod palette;
+mod picture_mosaic;
 mod vector_mosaic;
 mod autocorrect;
 mod raster;
@@ -116,6 +117,11 @@ impl eframe::App for Shell {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         // File dialogs that finished in the background (browser build).
         files::run_finished(&mut self.app);
+        // A PictureMosaic library indexed on worker threads.
+        if self.app.poll_picture_mosaic_index() {
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(100));
+        }
         ui::root(&mut self.app, ui);
     }
 

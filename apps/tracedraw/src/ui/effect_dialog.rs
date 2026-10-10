@@ -102,7 +102,7 @@ pub fn param_widget(
             if min > 0.0 && max / min >= 100.0 {
                 s = s.logarithmic(true);
             }
-            if ui.add(s).changed() {
+            if ui.add(crate::ui::Rail(s)).changed() {
                 values.insert(spec.name.to_string(), v);
                 changed = true;
             }

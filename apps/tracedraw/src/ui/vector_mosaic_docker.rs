@@ -85,21 +85,23 @@ pub fn vector_mosaic(app: &mut App, ui: &mut Ui) {
         .show(ui, |ui| {
             let s = &mut app.vector_mosaic;
             ui.label(tr("docker.vector_mosaic_density"));
-            ui.add(egui::Slider::new(&mut s.density, 1.0..=100.0).max_decimals(1));
+            ui.add(crate::ui::Rail(
+                egui::Slider::new(&mut s.density, 1.0..=100.0).max_decimals(1),
+            ));
             ui.end_row();
             ui.label(tr("docker.vector_mosaic_scale"));
-            ui.add(
+            ui.add(crate::ui::Rail(
                 egui::Slider::new(&mut s.scale, 0.1..=5.0)
                     .step_by(0.05)
                     .max_decimals(2),
-            );
+            ));
             ui.end_row();
             ui.label(tr("docker.vector_mosaic_angle"));
-            ui.add(
+            ui.add(crate::ui::Rail(
                 egui::Slider::new(&mut s.angle, -90.0..=90.0)
                     .suffix("\u{b0}")
                     .max_decimals(1),
-            );
+            ));
             ui.end_row();
         });
     let s = &mut app.vector_mosaic;

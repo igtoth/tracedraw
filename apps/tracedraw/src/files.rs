@@ -111,6 +111,22 @@ pub fn pick_folder() -> Option<PathBuf> {
     }
 }
 
+/// The files directly inside a folder (not its subfolders), in no
+/// particular order; empty when it cannot be read or in a browser.
+pub fn list_dir(path: impl AsRef<Path>) -> Vec<PathBuf> {
+    if WEB {
+        return Vec::new();
+    }
+    match std::fs::read_dir(path) {
+        Ok(entries) => entries
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| p.is_file())
+            .collect(),
+        Err(_) => Vec::new(),
+    }
+}
+
 /// Decode an image file (any format the image crate was built with).
 pub fn open_image(path: impl AsRef<Path>) -> Result<image::DynamicImage, String> {
     let bytes = read(path).map_err(|e| e.to_string())?;

@@ -1326,7 +1326,9 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                     if ui
                         .add_enabled(
                             !shapes.is_empty(),
-                            egui::Slider::new(&mut amount, 0.0..=100.0).suffix(" %"),
+                            crate::ui::Rail(
+                                egui::Slider::new(&mut amount, 0.0..=100.0).suffix(" %"),
+                            ),
                         )
                         .changed()
                     {
@@ -2037,9 +2039,11 @@ fn shape_tool_bar(app: &mut App, ui: &mut Ui) {
     let r = ui
         .add_enabled(
             has_curve,
-            egui::Slider::new(&mut v, 0.0..=100.0)
-                .show_value(true)
-                .integer(),
+            crate::ui::Rail(
+                egui::Slider::new(&mut v, 0.0..=100.0)
+                    .show_value(true)
+                    .integer(),
+            ),
         )
         .on_hover_text(tr("toolbar.curve_smoothness"));
     if r.changed() {

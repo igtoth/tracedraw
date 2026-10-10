@@ -57,6 +57,7 @@ pub fn show(app: &mut App, ui: &mut Ui, tab: DockerTab) {
         DockerTab::JoinCurves => join_curves(app, ui),
         DockerTab::Coordinates => crate::ui::coords_docker::coordinates(app, ui),
         DockerTab::VectorMosaic => crate::ui::vector_mosaic_docker::vector_mosaic(app, ui),
+        DockerTab::PictureMosaic => crate::ui::picture_mosaic_docker::picture_mosaic(app, ui),
         _ => {}
     }
 }
@@ -535,7 +536,9 @@ fn color(app: &mut App, ui: &mut Ui) {
                 ui.label($label);
                 let mut x = *$v * $max;
                 if ui
-                    .add(egui::Slider::new(&mut x, 0.0..=$max).show_value(true))
+                    .add(crate::ui::Rail(
+                        egui::Slider::new(&mut x, 0.0..=$max).show_value(true),
+                    ))
                     .changed()
                 {
                     *$v = x / $max;
@@ -569,15 +572,21 @@ fn color(app: &mut App, ui: &mut Ui) {
         Color::Lab { l, a, b } => {
             ui.horizontal(|ui| {
                 ui.label("L");
-                changed |= ui.add(egui::Slider::new(l, 0.0..=100.0)).changed();
+                changed |= ui
+                    .add(crate::ui::Rail(egui::Slider::new(l, 0.0..=100.0)))
+                    .changed();
             });
             ui.horizontal(|ui| {
                 ui.label("a");
-                changed |= ui.add(egui::Slider::new(a, -128.0..=127.0)).changed();
+                changed |= ui
+                    .add(crate::ui::Rail(egui::Slider::new(a, -128.0..=127.0)))
+                    .changed();
             });
             ui.horizontal(|ui| {
                 ui.label("b");
-                changed |= ui.add(egui::Slider::new(b, -128.0..=127.0)).changed();
+                changed |= ui
+                    .add(crate::ui::Rail(egui::Slider::new(b, -128.0..=127.0)))
+                    .changed();
             });
         }
         Color::Gray { v } => {
@@ -1022,10 +1031,14 @@ fn lens(app: &mut App, ui: &mut Ui) {
     let l = &mut app.lens;
     match l.kind {
         1 => {
-            ui.add(egui::Slider::new(&mut l.rate, -100.0..=100.0).text(tr("docker.rate")));
+            ui.add(crate::ui::Rail(
+                egui::Slider::new(&mut l.rate, -100.0..=100.0).text(tr("docker.rate")),
+            ));
         }
         2 | 3 | 10 => {
-            ui.add(egui::Slider::new(&mut l.rate, 0.0..=100.0).text(tr("docker.rate")));
+            ui.add(crate::ui::Rail(
+                egui::Slider::new(&mut l.rate, 0.0..=100.0).text(tr("docker.rate")),
+            ));
             ui.horizontal(|ui| {
                 ui.label(tr("docker.color"));
                 color_button(ui, &mut l.color);
@@ -1040,13 +1053,19 @@ fn lens(app: &mut App, ui: &mut Ui) {
             });
         }
         5 => {
-            ui.add(egui::Slider::new(&mut l.rate, -100.0..=100.0).text(tr("docker.rate")));
+            ui.add(crate::ui::Rail(
+                egui::Slider::new(&mut l.rate, -100.0..=100.0).text(tr("docker.rate")),
+            ));
         }
         6 => {
-            ui.add(egui::Slider::new(&mut l.rate, 0.0..=100.0).text(tr("docker.palette_rotation")));
+            ui.add(crate::ui::Rail(
+                egui::Slider::new(&mut l.rate, 0.0..=100.0).text(tr("docker.palette_rotation")),
+            ));
         }
         8 => {
-            ui.add(egui::Slider::new(&mut l.amount, 1.0..=10.0).text(tr("docker.amount")));
+            ui.add(crate::ui::Rail(
+                egui::Slider::new(&mut l.amount, 1.0..=10.0).text(tr("docker.amount")),
+            ));
         }
         9 | 11 => {
             ui.horizontal(|ui| {
@@ -1108,20 +1127,26 @@ fn blend(app: &mut App, ui: &mut Ui) {
     };
     let mut changed = false;
     changed |= ui
-        .add(egui::Slider::new(&mut steps, 1..=200).text(tr("docker.steps")))
+        .add(crate::ui::Rail(
+            egui::Slider::new(&mut steps, 1..=200).text(tr("docker.steps")),
+        ))
         .changed();
     changed |= ui
-        .add(
+        .add(crate::ui::Rail(
             egui::Slider::new(&mut rot, -360.0..=360.0)
                 .text(tr("docker.rotation"))
                 .suffix("°"),
-        )
+        ))
         .changed();
     changed |= ui
-        .add(egui::Slider::new(&mut accel_o, -1.0..=1.0).text(tr("docker.object_acceleration")))
+        .add(crate::ui::Rail(
+            egui::Slider::new(&mut accel_o, -1.0..=1.0).text(tr("docker.object_acceleration")),
+        ))
         .changed();
     changed |= ui
-        .add(egui::Slider::new(&mut accel_c, -1.0..=1.0).text(tr("docker.color_acceleration")))
+        .add(crate::ui::Rail(
+            egui::Slider::new(&mut accel_c, -1.0..=1.0).text(tr("docker.color_acceleration")),
+        ))
         .changed();
     changed |= ui
         .checkbox(&mut rotate_on_path, tr("docker.rotate_all_objects"))
@@ -1249,21 +1274,21 @@ fn contour(app: &mut App, ui: &mut Ui) {
     });
     if !to_center {
         changed |= ui
-            .add(
+            .add(crate::ui::Rail(
                 egui::Slider::new(&mut steps, 1..=999)
                     .text(tr("docker.steps"))
                     .logarithmic(true),
-            )
+            ))
             .changed();
     }
     let u = app.units;
     let mut o = u.from_mm(offset);
     if ui
-        .add(
+        .add(crate::ui::Rail(
             egui::Slider::new(&mut o, 0.01..=u.from_mm(50.0))
                 .text(tr("docker.offset"))
                 .logarithmic(true),
-        )
+        ))
         .changed()
     {
         offset = u.to_mm(o);
@@ -1442,7 +1467,9 @@ fn extrude(app: &mut App, ui: &mut Ui) {
     });
     if e.use_vanishing {
         changed |= ui
-            .add(egui::Slider::new(&mut e.amount, 0.0..=0.95).text(tr("docker.depth")))
+            .add(crate::ui::Rail(
+                egui::Slider::new(&mut e.amount, 0.0..=0.95).text(tr("docker.depth")),
+            ))
             .changed();
     } else {
         ui.horizontal(|ui| {
@@ -1465,17 +1492,17 @@ fn extrude(app: &mut App, ui: &mut Ui) {
         });
     }
     changed |= ui
-        .add(
+        .add(crate::ui::Rail(
             egui::Slider::new(&mut e.light_angle, 0.0..=360.0)
                 .text(tr("docker.light_angle"))
                 .suffix("°"),
-        )
+        ))
         .changed();
     changed |= ui
-        .add(
+        .add(crate::ui::Rail(
             egui::Slider::new(&mut e.light_intensity, 0.0..=100.0)
                 .text(tr("docker.light_intensity")),
-        )
+        ))
         .changed();
     let center = app
         .selection_bounds()
@@ -1534,21 +1561,23 @@ fn bevel(app: &mut App, ui: &mut Ui) {
             .is_some();
     });
     changed |= ui
-        .add(
+        .add(crate::ui::Rail(
             egui::Slider::new(&mut b.distance, 0.1..=50.0)
                 .text(tr("docker.distance"))
                 .logarithmic(true),
-        )
+        ))
         .changed();
     changed |= ui
-        .add(
+        .add(crate::ui::Rail(
             egui::Slider::new(&mut b.light_angle, 0.0..=360.0)
                 .text(tr("docker.light_angle"))
                 .suffix("°"),
-        )
+        ))
         .changed();
     changed |= ui
-        .add(egui::Slider::new(&mut b.intensity, 0.0..=100.0).text(tr("docker.intensity")))
+        .add(crate::ui::Rail(
+            egui::Slider::new(&mut b.intensity, 0.0..=100.0).text(tr("docker.intensity")),
+        ))
         .changed();
     ui.horizontal(|ui| {
         ui.label(tr("docker.shadow_color"));
@@ -1597,22 +1626,22 @@ fn brush_strokes(app: &mut App, ui: &mut Ui) {
     let u = app.units;
     let mut w = u.from_mm(app.media_width);
     if ui
-        .add(
+        .add(crate::ui::Rail(
             egui::Slider::new(&mut w, 0.1..=u.from_mm(50.0))
                 .text(tr("docker.stroke_width"))
                 .logarithmic(true),
-        )
+        ))
         .changed()
     {
         app.media_width = u.to_mm(w);
     }
     match app.media_mode {
         crate::media::MediaMode::Calligraphic => {
-            ui.add(
+            ui.add(crate::ui::Rail(
                 egui::Slider::new(&mut app.media_angle, 0.0..=180.0)
                     .text(tr("docker.nib_angle"))
                     .suffix("°"),
-            );
+            ));
         }
         crate::media::MediaMode::Preset | crate::media::MediaMode::Brush => {
             ui.horizontal_wrapped(|ui| {
@@ -1631,19 +1660,22 @@ fn brush_strokes(app: &mut App, ui: &mut Ui) {
                     }
                 }
             });
-            ui.add(
+            ui.add(crate::ui::Rail(
                 egui::Slider::new(&mut app.media_spacing, 1.0..=50.0).text(tr("docker.spacing")),
-            );
+            ));
         }
         crate::media::MediaMode::Expression => {
-            ui.add(
+            ui.add(crate::ui::Rail(
                 egui::Slider::new(&mut app.media_pressure, 0.0..=1.0).text(tr("docker.pressure")),
-            );
+            ));
         }
     }
     ui.horizontal(|ui| {
         ui.label(tr("docker.smoothing"));
-        ui.add(egui::Slider::new(&mut app.media_smoothing, 0.0..=100.0));
+        ui.add(crate::ui::Rail(egui::Slider::new(
+            &mut app.media_smoothing,
+            0.0..=100.0,
+        )));
     });
     let has_curve = app
         .selected_shapes()
@@ -1686,7 +1718,9 @@ fn bitmap_mask(app: &mut App, ui: &mut Ui) {
             app.set_tool(crate::tools::Tool::ColorEyedropper);
         }
     });
-    ui.add(egui::Slider::new(&mut app.mask_tolerance, 0..=255).text(tr("docker.tolerance")));
+    ui.add(crate::ui::Rail(
+        egui::Slider::new(&mut app.mask_tolerance, 0..=255).text(tr("docker.tolerance")),
+    ));
     if ui
         .add_enabled(
             has_bitmap && !app.mask_colors.is_empty(),

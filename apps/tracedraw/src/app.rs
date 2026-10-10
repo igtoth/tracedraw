@@ -780,6 +780,10 @@ pub struct App {
     pub coords: crate::coords::CoordsState,
     /// The VectorMosaic docker's settings.
     pub vector_mosaic: crate::vector_mosaic::VectorMosaicSettings,
+    /// The PictureMosaic docker's settings and indexed library.
+    pub picture_mosaic: crate::picture_mosaic::PictureMosaicSettings,
+    /// A PictureMosaic library being indexed in the background.
+    pub picture_mosaic_job: Option<crate::picture_mosaic::IndexJob>,
     pub coord_pick: Option<crate::coords::CoordPick>,
     pub coord_drag: Option<Point>,
     /// Shape tool: the Curve smoothness slider and the curves it started from.
@@ -895,10 +899,11 @@ pub enum DockerTab {
     JoinCurves,
     Coordinates,
     VectorMosaic,
+    PictureMosaic,
 }
 
 impl DockerTab {
-    pub const ALL: [DockerTab; 34] = [
+    pub const ALL: [DockerTab; 35] = [
         DockerTab::Properties,
         DockerTab::Objects,
         DockerTab::Hints,
@@ -933,6 +938,7 @@ impl DockerTab {
         DockerTab::JoinCurves,
         DockerTab::Coordinates,
         DockerTab::VectorMosaic,
+        DockerTab::PictureMosaic,
     ];
 
     /// i18n key of the docker's title.
@@ -972,6 +978,7 @@ impl DockerTab {
             DockerTab::JoinCurves => "docker.join_curves",
             DockerTab::Coordinates => "docker.coordinates",
             DockerTab::VectorMosaic => "docker.vector_mosaic",
+            DockerTab::PictureMosaic => "docker.picture_mosaic",
         }
     }
 
@@ -1277,6 +1284,8 @@ impl App {
             node_run: None,
             coords: Default::default(),
             vector_mosaic: Default::default(),
+            picture_mosaic: Default::default(),
+            picture_mosaic_job: None,
             coord_pick: None,
             coord_drag: None,
             curve_smoothness: 0.0,

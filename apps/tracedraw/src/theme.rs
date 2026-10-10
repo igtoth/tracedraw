@@ -33,6 +33,8 @@ impl Tokens {
     /// Push buttons and their border, check boxes and fields.
     pub const BUTTON: Color32 = Color32::from_rgb(0xE1, 0xE1, 0xE1);
     pub const CONTROL_BORDER: Color32 = Color32::from_rgb(0xAD, 0xAD, 0xAD);
+    /// A slider's groove.
+    pub const SLIDER_RAIL: Color32 = Color32::from_rgb(0xC4, 0xC4, 0xC4);
 
     pub const TOOLBOX_WIDTH: f32 = 38.0;
     pub const TOOL_BUTTON: f32 = 32.0;

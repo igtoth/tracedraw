@@ -1714,7 +1714,9 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
                 ui.checkbox(&mut st.transparent, tr("dialog.transparent_background"));
             }
             if st.format == 3 || st.format == 6 {
-                ui.add(egui::Slider::new(&mut st.quality, 1..=100).text(tr("dialog.quality")));
+                ui.add(crate::ui::Rail(
+                    egui::Slider::new(&mut st.quality, 1..=100).text(tr("dialog.quality")),
+                ));
             }
             let b = if st.selection_only {
                 app.selection_bounds().unwrap_or(app.page_rect())
@@ -1919,12 +1921,16 @@ fn trace_dialog(app: &mut App, ctx: &Context, st: &mut TraceState, close: &mut b
             }
         });
         let s = &mut st.settings;
-        ui.add(egui::Slider::new(&mut s.detail, 0.0..=100.0).text(tr("dialog.detail")));
-        ui.add(egui::Slider::new(&mut s.smoothing, 0.0..=100.0).text(tr("dialog.smoothing")));
-        ui.add(
+        ui.add(crate::ui::Rail(
+            egui::Slider::new(&mut s.detail, 0.0..=100.0).text(tr("dialog.detail")),
+        ));
+        ui.add(crate::ui::Rail(
+            egui::Slider::new(&mut s.smoothing, 0.0..=100.0).text(tr("dialog.smoothing")),
+        ));
+        ui.add(crate::ui::Rail(
             egui::Slider::new(&mut s.corner_smoothness, 0.0..=100.0)
                 .text(tr("dialog.corner_smoothness")),
-        );
+        ));
         if !s.centerline {
             ui.horizontal(|ui| {
                 ui.checkbox(&mut s.black_white, tr("dialog.black_and_white"));
