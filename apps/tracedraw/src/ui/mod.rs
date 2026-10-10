@@ -312,6 +312,7 @@ pub fn root(app: &mut App, ui: &mut Ui) {
             canvas::draw_guides(app, &painter, canvas_rect);
             rulers::draw_origin_drag(app, &painter, canvas_rect);
             canvas::draw_effect_nodes(app, &painter);
+            canvas::draw_snap_mark(app, &painter);
             context::context_menu(app, ui, &response);
 
             // Scrollbars, document navigator, page tabs, Navigator button.

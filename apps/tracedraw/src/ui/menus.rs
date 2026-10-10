@@ -917,7 +917,7 @@ fn view_menu(app: &mut App, ui: &mut Ui) {
         if check(ui, "menu.view.snap_pixels", "", app.snap.pixels) {
             app.snap.pixels = !app.snap.pixels;
         }
-        if check(ui, "menu.view.snap_document_grid", "", app.snap.grid) {
+        if check(ui, "menu.view.snap_document_grid", "Ctrl+Y", app.snap.grid) {
             app.snap.grid = !app.snap.grid;
         }
         if check(
@@ -931,7 +931,7 @@ fn view_menu(app: &mut App, ui: &mut Ui) {
         if check(ui, "menu.view.snap_guidelines", "", app.snap.guides) {
             app.snap.guides = !app.snap.guides;
         }
-        if check(ui, "menu.view.snap_objects", "", app.snap.objects) {
+        if check(ui, "menu.view.snap_objects", "Alt+Z", app.snap.objects) {
             app.snap.objects = !app.snap.objects;
         }
         if check(ui, "menu.view.snap_page", "", app.snap.page) {

@@ -25,6 +25,7 @@ Shortcuts page lists them too. `Ctrl` is the Command key on macOS.
 | Ctrl++ (or Ctrl+=), Ctrl+- | Zoom in and out one step |
 | Alt+Shift+R | Rulers on and off |
 | Alt+Q, Alt+Shift+A, Alt+Shift+D | Snapping off, alignment guides, dynamic guides |
+| Alt+Z, Ctrl+Y | Snap to objects, snap to the document grid, on and off |
 | PgUp, PgDn | Previous and next page |
 
 ## Objects

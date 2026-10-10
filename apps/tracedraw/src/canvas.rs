@@ -1281,6 +1281,98 @@ pub fn draw_guides(app: &App, painter: &Painter, rect: ERect) {
     }
 }
 
+/// The mark of a snapping mode, about 11 px across, centred on `c`.
+pub fn draw_snap_glyph(
+    painter: &Painter,
+    c: Pos2,
+    mode: crate::snap_points::SnapMode,
+    color: Color32,
+) {
+    use crate::snap_points::SnapMode;
+    let s = EStroke::new(1.5, color);
+    let h = 5.0;
+    let v = egui::vec2;
+    match mode {
+        SnapMode::Node => {
+            painter.rect_stroke(
+                ERect::from_center_size(c, v(2.0 * h - 1.0, 2.0 * h - 1.0)),
+                0.0,
+                s,
+                epaint::StrokeKind::Middle,
+            );
+        }
+        SnapMode::Intersection => {
+            painter.line_segment([c + v(-h, -h), c + v(h, h)], s);
+            painter.line_segment([c + v(-h, h), c + v(h, -h)], s);
+        }
+        SnapMode::Midpoint => {
+            painter.add(epaint::PathShape::closed_line(
+                vec![c + v(0.0, -h), c + v(h, h - 1.0), c + v(-h, h - 1.0)],
+                s,
+            ));
+        }
+        SnapMode::Quadrant => {
+            painter.add(epaint::PathShape::closed_line(
+                vec![c + v(0.0, -h), c + v(h, 0.0), c + v(0.0, h), c + v(-h, 0.0)],
+                s,
+            ));
+        }
+        SnapMode::Tangent => {
+            painter.circle_stroke(c + v(0.0, 1.5), h - 1.5, s);
+            painter.line_segment([c + v(-h, -h + 2.0), c + v(h, -h + 2.0)], s);
+        }
+        SnapMode::Perpendicular => {
+            painter.line_segment([c + v(-h, h), c + v(h, h)], s);
+            painter.line_segment([c + v(0.0, h), c + v(0.0, -h)], s);
+        }
+        SnapMode::Edge => {
+            painter.add(epaint::PathShape::closed_line(
+                vec![c + v(-h, -h), c + v(h, -h), c + v(-h, h), c + v(h, h)],
+                s,
+            ));
+        }
+        SnapMode::Center => {
+            painter.circle_stroke(c, h, s);
+            painter.circle_filled(c, 1.5, color);
+        }
+        SnapMode::TextBaseline => {
+            // A "T" standing on its baseline.
+            painter.line_segment([c + v(-h - 1.0, h), c + v(h + 1.0, h)], s);
+            let thin = EStroke::new(1.0, color);
+            painter.line_segment([c + v(-h + 1.0, -h), c + v(h - 1.0, -h)], thin);
+            painter.line_segment([c + v(0.0, -h), c + v(0.0, h - 2.0)], thin);
+        }
+    }
+}
+
+/// The point the pointer snapped to: its mode's mark and, with screen
+/// tips on, the mode's name beside it (Options > Snapping).
+pub fn draw_snap_mark(app: &App, painter: &Painter) {
+    let Some(t) = app.snap_mark.get() else {
+        return;
+    };
+    if !app.settings.snap.show_marks {
+        return;
+    }
+    let c = app.view.to_screen(t.point);
+    let color = Tokens::SELECTION;
+    draw_snap_glyph(painter, c, t.mode, color);
+    if app.settings.snap.screen_tips {
+        let font = egui::FontId::proportional(11.0);
+        let galley = painter.layout_no_wrap(crate::i18n::tr(t.mode.key()), font, color);
+        let at = c + egui::vec2(10.0, 8.0);
+        let r = ERect::from_min_size(at, galley.size()).expand2(egui::vec2(3.0, 1.0));
+        painter.rect_filled(r, 2.0, Color32::from_rgba_unmultiplied(255, 255, 255, 230));
+        painter.rect_stroke(
+            r,
+            2.0,
+            EStroke::new(1.0, Tokens::BORDER),
+            epaint::StrokeKind::Inside,
+        );
+        painter.galley(at, galley, color);
+    }
+}
+
 /// Effect nodes (envelope, perspective, mesh) of the selection when the
 /// Shape tool is active: small blue squares joined by a dotted frame.
 pub fn draw_effect_nodes(app: &App, painter: &Painter) {

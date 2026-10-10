@@ -20,7 +20,8 @@ Counts: works 137, partial 1 (`.cdr` content coverage), missing 3 (CMX import; w
 | Pan, mouse wheel, Ctrl and Shift wheel | works |
 | Rulers drawn as the reference (numbers from the origin without sign, unit name, origin button, pointer markers), draggable origin, double-click for ruler settings, guidelines from rulers, Guidelines docker; all 13 units | works |
 | Grid: document (lines or dots, spacing or frequency, thinned when dense, through the origin), pixel (Pixels view from 800%, colour and opacity), baseline (spacing, start from top, colour); snapping with threshold | works |
-| Snap to objects, page, guidelines, dynamic and alignment guides; Alt+Q snap off | works |
+| Snap to objects, page, guidelines, dynamic and alignment guides; Alt+Q snap off, Alt+Z objects, Ctrl+Y grid | works |
+| Snapping modes (node, intersection, midpoint, quadrant, tangent, perpendicular, edge, center, text baseline) with snap location marks and screen tips; moves carry the grabbed point (Options > Snapping) | works (see `behavior/snapping.md`) |
 | View modes: Wireframe, Normal, Enhanced, Pixels; full-screen preview (F9); preview selected only | works |
 | Page sorter view | works |
 | Navigator and page tabs | works |

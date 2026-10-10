@@ -84,6 +84,7 @@ impl App {
     }
 
     pub fn canvas_input(&mut self, response: &Response, mods: Modifiers) {
+        self.snap_mark.set(None);
         let hover = response.hover_pos();
         let pointer = hover.map(|h| self.view.to_page(h));
         self.pointer_page = pointer;
@@ -373,6 +374,7 @@ impl App {
                         last: p,
                         total: Vec2::ZERO,
                         start_bounds: self.selection_bounds().unwrap_or(Rect::ZERO),
+                        source: self.selection_snap_source(p),
                     };
                 }
                 None => {
@@ -397,9 +399,10 @@ impl App {
                     last,
                     total,
                     start_bounds,
+                    source,
                 } => {
                     let raw = *total + (p - *last);
-                    Some((p, self.snap_move(*start_bounds, raw)))
+                    Some((p, self.snap_move_from(*source, *start_bounds, raw)))
                 }
                 _ => None,
             };
@@ -1254,6 +1257,12 @@ impl App {
         }
         if pressed(Key::Q, Modifiers::ALT) {
             self.snap.off = !self.snap.off;
+        }
+        if pressed(Key::Z, Modifiers::ALT) {
+            self.snap.objects = !self.snap.objects;
+        }
+        if pressed(Key::Y, cmd) {
+            self.snap.grid = !self.snap.grid;
         }
         if pressed(Key::A, Modifiers::ALT | Modifiers::SHIFT) {
             self.snap.alignment_guides = !self.snap.alignment_guides;

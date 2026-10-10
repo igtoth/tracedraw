@@ -364,6 +364,12 @@ pub struct SnapPrefs {
     pub objects: bool,
     pub page: bool,
     pub threshold_px: f64,
+    /// The snapping modes in use (Options > Snapping).
+    pub modes: crate::snap_points::SnapModes,
+    /// Draw the mark of the point snapped to.
+    pub show_marks: bool,
+    /// Name the point snapped to next to its mark.
+    pub screen_tips: bool,
 }
 
 impl Default for SnapPrefs {
@@ -374,6 +380,9 @@ impl Default for SnapPrefs {
             objects: true,
             page: true,
             threshold_px: 10.0,
+            modes: crate::snap_points::SnapModes::default(),
+            show_marks: true,
+            screen_tips: true,
         }
     }
 }

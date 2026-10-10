@@ -45,6 +45,7 @@ mod scripting;
 mod settings;
 mod shape_tool;
 mod snap;
+mod snap_points;
 mod spell;
 mod table;
 mod text_editing;

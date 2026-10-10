@@ -308,6 +308,9 @@ pub enum Drag {
         last: Point,
         total: Vec2,
         start_bounds: Rect,
+        /// The selection's snap point under the pointer when the move
+        /// began: it snaps to other objects' points.
+        source: Option<Point>,
     },
     /// Scaling the selection with a handle; `anchor` stays fixed.
     Scale {
@@ -579,6 +582,8 @@ pub struct App {
     /// Selected nodes: (shape, element index).
     pub node_selection: Vec<(ShapeId, usize)>,
     pub snap: crate::snap::SnapSettings,
+    /// The point the pointer snapped to this frame, for its mark.
+    pub snap_mark: std::cell::Cell<Option<crate::snap_points::Target>>,
     pub dialog: crate::ui::dialogs::Dialog,
     /// Layout > Page Number Settings.
     pub page_numbers: PageNumberSettings,
@@ -1078,6 +1083,7 @@ impl App {
             transform_tab: TransformTab::Position,
             node_selection: Vec::new(),
             snap: crate::snap::SnapSettings::default(),
+            snap_mark: std::cell::Cell::new(None),
             dialog: crate::ui::dialogs::Dialog::None,
             merge_state: None,
             page_numbers: PageNumberSettings::default(),

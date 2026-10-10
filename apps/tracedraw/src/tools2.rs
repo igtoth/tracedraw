@@ -1003,6 +1003,7 @@ impl App {
                             last: p,
                             total: Vec2::ZERO,
                             start_bounds: self.selection_bounds().unwrap_or(Rect::ZERO),
+                            source: None,
                         };
                     } else {
                         self.drag = Drag::Freehand { points: vec![p] };

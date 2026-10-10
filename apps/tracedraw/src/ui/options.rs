@@ -746,6 +746,43 @@ fn snapping_page(app: &mut App, ui: &mut Ui) {
         tr("menu.view.snap_baseline_grid"),
     );
     ui.checkbox(&mut app.snap.pixels, tr("options.snap_to_pixels"));
+    ui.checkbox(
+        &mut app.settings.snap.show_marks,
+        tr("options.show_snap_marks"),
+    );
+    ui.horizontal(|ui| {
+        ui.add_space(16.0);
+        ui.add_enabled(
+            app.settings.snap.show_marks,
+            egui::Checkbox::new(
+                &mut app.settings.snap.screen_tips,
+                tr("options.snap_screen_tip"),
+            ),
+        );
+    });
+    chrome::section(ui, &tr("options.snap_modes"));
+    ui.indent("snap_modes", |ui| {
+        let modes = &mut app.settings.snap.modes;
+        for m in crate::snap_points::SnapMode::ALL {
+            ui.horizontal(|ui| {
+                let mut on = modes.get(m);
+                if ui.checkbox(&mut on, "").changed() {
+                    modes.set(m, on);
+                }
+                let (r, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
+                crate::canvas::draw_snap_glyph(ui.painter(), r.center(), m, Tokens::SELECTION);
+                ui.label(tr(m.key()));
+            });
+        }
+        ui.horizontal(|ui| {
+            if ui.button(tr("options.select_all")).clicked() {
+                *modes = crate::snap_points::SnapModes::default();
+            }
+            if ui.button(tr("options.deselect_all")).clicked() {
+                *modes = crate::snap_points::SnapModes::none();
+            }
+        });
+    });
 }
 
 /// A read-only path with a Browse button that picks a folder (desktop).
