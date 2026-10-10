@@ -14,8 +14,9 @@ use tracedraw_core::{
 };
 
 /// Height of the bar's content: two stacked rows of fields.
-pub const BAR_H: f32 = 34.0;
-const ROW: f32 = 17.0;
+/// Two fields stacked: 19 px each, sharing their middle border.
+pub const BAR_H: f32 = 37.0;
+const ROW: f32 = 19.0;
 /// Icon buttons are 28 px square with an 18 px icon.
 const BTN: f32 = 28.0;
 const HOVER_FILL: Color32 = Color32::from_rgb(0xE5, 0xF3, 0xFF);
@@ -538,8 +539,10 @@ fn stacked<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
         Vec2::new(0.0, BAR_H),
         egui::Layout::top_down(egui::Align::Min),
         |ui| {
-            ui.spacing_mut().item_spacing.y = 0.0;
+            // The second field's top border is the first one's bottom.
+            ui.spacing_mut().item_spacing.y = -1.0;
             ui.spacing_mut().interact_size.y = ROW;
+            ui.spacing_mut().button_padding.y = 0.0;
             add(ui)
         },
     )
@@ -549,6 +552,7 @@ fn stacked<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
 fn row<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 2.0;
+        ui.spacing_mut().button_padding.y = 0.0;
         ui.set_height(ROW);
         add(ui)
     })

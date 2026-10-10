@@ -920,23 +920,25 @@ impl App {
         cc.egui_ctx.all_styles_mut(|style| {
             style.spacing.item_spacing = egui::vec2(4.0, 3.0);
             style.spacing.button_padding = egui::vec2(5.0, 2.0);
-            // Interface text at 12 px (9 pt), headings in the bold face.
+            // Interface text at 13 px, the size the target design's
+            // labels, lists, menus and status bar measure in this font;
+            // headings in the bold face.
             use egui::{FontFamily, FontId, TextStyle};
             style.text_styles = [
                 (
                     TextStyle::Small,
-                    FontId::new(10.0, FontFamily::Proportional),
+                    FontId::new(11.0, FontFamily::Proportional),
                 ),
-                (TextStyle::Body, FontId::new(12.0, FontFamily::Proportional)),
+                (TextStyle::Body, FontId::new(13.0, FontFamily::Proportional)),
                 (
                     TextStyle::Button,
-                    FontId::new(12.0, FontFamily::Proportional),
+                    FontId::new(13.0, FontFamily::Proportional),
                 ),
                 (
                     TextStyle::Monospace,
-                    FontId::new(12.0, FontFamily::Monospace),
+                    FontId::new(13.0, FontFamily::Monospace),
                 ),
-                (TextStyle::Heading, theme::bold(16.0)),
+                (TextStyle::Heading, theme::bold(17.0)),
             ]
             .into();
         });

@@ -329,9 +329,13 @@ fn title(ui: &mut Ui, text: &str) {
     ui.add_space(6.0);
 }
 
+/// The docker's text: 14 px on 21 px lines, as the target design's.
+const TEXT_SIZE: f32 = 14.0;
+const LINE_HEIGHT: f32 = 21.0;
+
 /// Text where `**...**` is bold, wrapped to the docker's width.
 fn rich(ui: &mut Ui, text: &str) {
-    let job = rich_job(text, ui.available_width(), 12.5);
+    let job = rich_job(text, ui.available_width(), TEXT_SIZE);
     ui.label(job);
 }
 
@@ -340,11 +344,13 @@ fn rich_job(text: &str, width: f32, size: f32) -> LayoutJob {
     let plain = TextFormat {
         font_id: FontId::proportional(size),
         color: Tokens::TEXT,
+        line_height: Some(LINE_HEIGHT),
         ..Default::default()
     };
     let strong = TextFormat {
         font_id: theme::bold(size),
         color: Tokens::TEXT,
+        line_height: Some(LINE_HEIGHT),
         ..Default::default()
     };
     for (i, part) in text.split("**").enumerate() {
@@ -366,8 +372,12 @@ fn rich_job(text: &str, width: f32, size: f32) -> LayoutJob {
 
 fn link(ui: &mut Ui, text: &str) -> egui::Response {
     ui.add(
-        egui::Label::new(egui::RichText::new(text).color(Tokens::ACCENT).size(12.5))
-            .sense(Sense::click()),
+        egui::Label::new(
+            egui::RichText::new(text)
+                .color(Tokens::ACCENT)
+                .size(TEXT_SIZE),
+        )
+        .sense(Sense::click()),
     )
     .on_hover_cursor(egui::CursorIcon::PointingHand)
 }
@@ -375,7 +385,7 @@ fn link(ui: &mut Ui, text: &str) -> egui::Response {
 fn bullet_row<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
     ui.horizontal_top(|ui| {
         ui.spacing_mut().item_spacing.x = 6.0;
-        ui.label(egui::RichText::new("•").size(12.5));
+        ui.label(egui::RichText::new("•").size(TEXT_SIZE));
         ui.vertical(add).inner
     })
     .inner
@@ -425,7 +435,7 @@ fn tool_row(ui: &mut Ui, tool: Tool) -> bool {
         tool.name(),
         tr(&format!("tooldesc.{}", tool.id()))
     );
-    let job = rich_job(&text, (width - 30.0).max(60.0), 12.5);
+    let job = rich_job(&text, (width - 30.0).max(60.0), TEXT_SIZE);
     let galley = ui.painter().layout_job(job);
     let h = galley.size().y.max(20.0);
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(width, h), Sense::click());
@@ -452,6 +462,7 @@ fn tool_page(app: &mut App, ui: &mut Ui, tool: Tool) -> Option<HintPage> {
     let hint = crate::ui::status::tool_hint_for(tool, app.selection.is_empty());
     for part in split_hint(&hint) {
         bullet_row(ui, |ui| rich(ui, &emphasize_keys(&part)));
+        ui.add_space(4.0);
     }
     learn_more(
         app,
@@ -464,7 +475,7 @@ fn tool_page(app: &mut App, ui: &mut Ui, tool: Tool) -> Option<HintPage> {
     let mut go = None;
     ui.add_space(6.0);
     ui.horizontal(|ui| {
-        ui.label(egui::RichText::new(tr("hint.see_also")).size(12.5));
+        ui.label(egui::RichText::new(tr("hint.see_also")).size(TEXT_SIZE));
         if link(ui, &topic.title()).clicked() {
             go = Some(HintPage::Topic(topic));
         }
@@ -537,14 +548,14 @@ fn learn_more(app: &mut App, ui: &mut Ui, label: &str, page: &str) {
     ui.add_space(10.0);
     ui.separator();
     ui.add_space(4.0);
-    ui.label(egui::RichText::new(tr("hint.learn_more")).font(theme::bold(16.0)));
-    ui.add_space(6.0);
+    ui.label(egui::RichText::new(tr("hint.learn_more")).font(theme::bold(18.0)));
+    ui.add_space(8.0);
     ui.horizontal_top(|ui| {
-        ui.spacing_mut().item_spacing.x = 10.0;
-        let (r, _) = ui.allocate_exact_size(Vec2::splat(20.0), Sense::hover());
+        ui.spacing_mut().item_spacing.x = 14.0;
+        let (r, _) = ui.allocate_exact_size(Vec2::splat(26.0), Sense::hover());
         info_icon(ui.painter(), r);
         ui.vertical(|ui| {
-            ui.label(egui::RichText::new(tr("hint.help_topic")).font(theme::bold(13.0)));
+            ui.label(egui::RichText::new(tr("hint.help_topic")).font(theme::bold(16.0)));
             if link(ui, label).clicked() {
                 app.open_url(&format!("{DOCS}{page}"));
             }
@@ -554,10 +565,10 @@ fn learn_more(app: &mut App, ui: &mut Ui, label: &str, page: &str) {
 
 fn info_icon(p: &egui::Painter, r: Rect) {
     let c = r.center();
-    let s = Stroke::new(1.3, Tokens::ICON);
-    p.circle_stroke(c, 8.0, s);
-    p.circle_filled(c + Vec2::new(0.0, -3.5), 1.2, Tokens::ICON);
-    p.line_segment([c + Vec2::new(0.0, -0.5), c + Vec2::new(0.0, 4.5)], s);
+    let s = Stroke::new(2.0, Tokens::ICON);
+    p.circle_stroke(c, 11.0, s);
+    p.circle_filled(c + Vec2::new(0.0, -5.0), 1.6, Tokens::ICON);
+    p.line_segment([c + Vec2::new(0.0, -1.5), c + Vec2::new(0.0, 6.0)], s);
 }
 
 /// Home at the left, back and forward at the right.

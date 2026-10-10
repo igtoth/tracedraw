@@ -103,19 +103,36 @@ pub fn root(app: &mut App, ui: &mut Ui) {
         .frame(
             Frame::new()
                 .fill(Tokens::MENU_BAR)
-                .inner_margin(egui::Margin::symmetric(4, 2)),
+                .inner_margin(egui::Margin::symmetric(0, 1)),
         )
         .exact_size(24.0)
         .resizable(false)
+        .show_separator_line(false)
         .show(ui, |ui| menus::menu_bar(app, ui));
+    // the target design's bands: a 35 px standard toolbar and a 52 px
+    // property bar, each closed by a light line (included in the sizes).
     if app.show_standard_toolbar {
         Panel::top("standard_toolbar")
-            .frame(bar())
+            .frame(Frame::new().fill(Tokens::PANEL).inner_margin(egui::Margin {
+                left: 4,
+                right: 4,
+                top: 2,
+                bottom: 2,
+            }))
+            .exact_size(36.0)
+            .resizable(false)
             .show(ui, |ui| toolbar::standard_toolbar(app, ui));
     }
     if app.show_property_bar {
         Panel::top("property_bar")
-            .frame(bar())
+            .frame(Frame::new().fill(Tokens::PANEL).inner_margin(egui::Margin {
+                left: 4,
+                right: 4,
+                top: 8,
+                bottom: 8,
+            }))
+            .exact_size(53.0)
+            .resizable(false)
             .show(ui, |ui| toolbar::property_bar(app, ui));
     }
     if app.show_text_toolbar {

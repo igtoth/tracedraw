@@ -160,11 +160,13 @@ fn row(app: &mut App, ui: &mut Ui, which: Row) {
     let menu_resp = menu_resp.on_hover_text(tr("palette.menu_tip"));
     egui::Popup::menu(&menu_resp)
         .id(egui::Id::new(("palette_menu_popup", which as u8)))
-        .show(|ui| palette_menu(app, ui, which));
+        .style(crate::ui::menus::menu_popup_style)
+        .show(|ui| crate::ui::menus::body(ui, |ui| palette_menu(app, ui, which)));
     // A right click on the row outside the swatches opens the same menu.
     egui::Popup::context_menu(&bg)
         .id(egui::Id::new(("palette_context_popup", which as u8)))
-        .show(|ui| palette_menu(app, ui, which));
+        .style(crate::ui::menus::menu_popup_style)
+        .show(|ui| crate::ui::menus::body(ui, |ui| palette_menu(app, ui, which)));
 
     // The eyedropper: only the document palette takes new colours.
     let drop_rect = Rect::from_min_size(pos2(x0 + 34.0, frame_top + 2.0), vec2(18.0, 18.0));
@@ -427,7 +429,8 @@ fn swatch(
     } else {
         egui::Popup::context_menu(&resp)
             .id(egui::Id::new(("palette_swatch_menu", which as u8, index)))
-            .show(|ui| palette_menu(app, ui, which));
+            .style(crate::ui::menus::menu_popup_style)
+            .show(|ui| crate::ui::menus::body(ui, |ui| palette_menu(app, ui, which)));
     }
 }
 
@@ -491,7 +494,7 @@ fn double_chevron(painter: &egui::Painter, c: Pos2, color: Color32) {
 
 /// The palette menu (the arrow button, or a right click on the row).
 fn palette_menu(app: &mut App, ui: &mut Ui, which: Row) {
-    use crate::ui::menus::{check, item, sub};
+    use crate::ui::menus::{check, item, sep, sub};
     ui.set_min_width(220.0);
     match which {
         Row::Main => {
@@ -505,7 +508,7 @@ fn palette_menu(app: &mut App, ui: &mut Ui, which: Row) {
                 app.show_dockers = true;
                 app.docker_tab = crate::app::DockerTab::Palettes;
             }
-            ui.separator();
+            sep(ui);
             if check(
                 ui,
                 "palette.show_document",
@@ -528,7 +531,7 @@ fn palette_menu(app: &mut App, ui: &mut Ui, which: Row) {
                     !app.settings.palette.auto_update_document;
                 app.settings.save();
             }
-            ui.separator();
+            sep(ui);
             if item(
                 ui,
                 "palette.add_from_selection",
@@ -551,7 +554,7 @@ fn palette_menu(app: &mut App, ui: &mut Ui, which: Row) {
                     app.doc_palette_current = None;
                 }
             }
-            ui.separator();
+            sep(ui);
             sub(ui, "palette.palette", |ui| {
                 if item(ui, "palette.reset", "", doc) {
                     app.reset_document_palette();

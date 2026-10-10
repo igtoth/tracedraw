@@ -11,7 +11,10 @@ impl Tokens {
     /// The menu bar.
     pub const MENU_BAR: Color32 = Color32::from_rgb(0xD8, 0xD8, 0xD8);
     pub const PANEL_DARK: Color32 = Color32::from_rgb(0xE1, 0xE1, 0xE1);
-    pub const BORDER: Color32 = Color32::from_rgb(0xC8, 0xC8, 0xC8);
+    /// Light lines: panel separators, frames of lists and docker parts.
+    pub const BORDER: Color32 = Color32::from_rgb(0xD8, 0xD8, 0xD8);
+    /// Icons of commands that cannot run now.
+    pub const ICON_OFF: Color32 = Color32::from_rgb(0xC8, 0xC8, 0xC8);
     pub const TEXT: Color32 = Color32::from_rgb(0x1E, 0x1E, 0x1E);
     pub const TEXT_DIM: Color32 = Color32::from_rgb(0x6E, 0x6E, 0x6E);
     pub const ACCENT: Color32 = Color32::from_rgb(0x00, 0x78, 0xD7);

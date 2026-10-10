@@ -24,6 +24,17 @@ used in the dialog. Every new drawing opens in its own tab.
 Under the sections: a help button, "Do not show this dialog again", OK
 and Cancel. Enter presses OK.
 
+Drawn like the target design's dialog (480 x 507 px with Color
+settings closed; each open section row adds 33 px): the common dialog
+frame (`options.md`), bold section headings, labels right-aligned to
+190 px, 28 px controls from 195 px in rows 33 px apart: white text
+fields with a grey border (blue while typing), grey lists, number fields
+with up and down arrows inside their border (typed values apply on Enter
+or when the field loses focus), the orientation buttons framed when
+chosen, the Resolution field with its list of usual resolutions behind
+an arrow, a triangle before Color settings, and 100 x 28 px OK and
+Cancel buttons.
+
 ## Presets
 
 | Preset | Colour mode | Size | Units | Resolution |

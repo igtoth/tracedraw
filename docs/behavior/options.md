@@ -7,9 +7,10 @@ double-click on a ruler, the page border or its shadow).
 
 ## Layout
 
-- 887 x 663 px, centred: a white 30 px title bar with the title at the
-  left and a close button at the right (red under the pointer), a light
-  grey body, a 1 px grey border.
+- 887 x 663 px, centred, framed like every dialog of the reference
+  editor: a 1 px `#B2B2B2` border, a white 31 px title bar with the title
+  (13 px) at the left and a close button at the right (red under the
+  pointer), and a white 5 px frame round the `#F4F4F4` body.
 - A white page list on the left (225 px; rows 23 px apart; the current
   page `#CCE8FF` with a `#99D1FF` frame) and the white page frame on the
   right (622 px), both 566 px high with a 1 px `#D9D9D9` border.

@@ -11,26 +11,84 @@ use tracedraw_core::document::ShapeKind;
 use tracedraw_core::Command;
 
 const MENU_WIDTH: f32 = 250.0;
-const ROW_HEIGHT: f32 = 21.0;
-const GUTTER: f32 = 24.0;
-const FONT: f32 = 12.5;
+/// Menu rows: 26 px tall, a 30 px grey gutter
+/// for icons and check marks, labels from 38 px, shortcuts right-aligned
+/// 28 px from the edge, 13 px text.
+const ROW_HEIGHT: f32 = 26.0;
+const GUTTER: f32 = 30.0;
+const LABEL_X: f32 = 38.0;
+const SHORTCUT_PAD: f32 = 28.0;
+const FONT: f32 = 13.0;
+const SEPARATOR_HEIGHT: f32 = 7.0;
+const MENU_TEXT: egui::Color32 = egui::Color32::BLACK;
+const MENU_TEXT_OFF: egui::Color32 = egui::Color32::from_gray(0xC8);
+const MENU_GUTTER: egui::Color32 = egui::Color32::from_gray(0xF4);
+const MENU_BORDER: egui::Color32 = egui::Color32::from_gray(0xB2);
+const MENU_LINE: egui::Color32 = egui::Color32::from_gray(0xD8);
+/// Hovered rows and open menu titles: a light blue box with a blue frame.
+const MENU_HOVER: egui::Color32 = egui::Color32::from_rgb(0xE0, 0xF0, 0xFF);
+const MENU_HOVER_LINE: egui::Color32 = egui::Color32::from_rgb(0x00, 0xAD, 0xFE);
+const SUBMENU_ARROW: egui::Color32 = egui::Color32::from_gray(120);
 
-/// One menu row drawn: check-mark gutter, label on
-/// the left, shortcut right-aligned in a dimmer colour, hover highlight.
+/// The style of menu pop-ups: white, a one-pixel grey frame, square
+/// corners, rows touching.
+pub(crate) fn menu_popup_style(style: &mut egui::Style) {
+    egui::containers::menu::menu_style(style);
+    style.visuals.window_fill = egui::Color32::WHITE;
+    style.visuals.window_stroke = egui::Stroke::new(1.0, MENU_BORDER);
+    style.visuals.menu_corner_radius = egui::CornerRadius::ZERO;
+    style.visuals.popup_shadow = egui::epaint::Shadow {
+        offset: [2, 2],
+        blur: 4,
+        spread: 0,
+        color: egui::Color32::from_black_alpha(30),
+    };
+    style.spacing.menu_margin = egui::Margin {
+        left: 0,
+        right: 0,
+        top: 2,
+        bottom: 2,
+    };
+    style.spacing.item_spacing.y = 0.0;
+    style.override_font_id = Some(egui::FontId::proportional(FONT));
+}
+
+/// The grey gutter down the left of a menu body, under its rows: reserved
+/// first, sized once the rows are laid out.
+pub(crate) fn body<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
+    let width_id = ui.id().with("menu_width");
+    if let Some(w) = ui.ctx().data(|d| d.get_temp::<f32>(width_id)) {
+        ui.set_min_width(w);
+    }
+    let slot = ui.painter().add(egui::Shape::Noop);
+    let r = add(ui);
+    let rows = ui.min_rect();
+    ui.ctx().data_mut(|d| d.insert_temp(width_id, rows.width()));
+    let gutter = egui::Rect::from_min_max(
+        egui::pos2(rows.left(), rows.top() - 2.0),
+        egui::pos2(rows.left() + GUTTER, rows.bottom() + 2.0),
+    );
+    ui.painter()
+        .set(slot, egui::Shape::rect_filled(gutter, 0.0, MENU_GUTTER));
+    r
+}
+
+/// One menu row drawn: icon or check mark in the
+/// gutter, label, shortcut right-aligned, hover box.
 fn menu_row(
     ui: &mut Ui,
     label: &str,
     shortcut: &str,
     enabled: bool,
-    checked: Option<bool>,
-) -> egui::Response {
+    mark: Mark,
+) -> (egui::Response, egui::layers::ShapeIdx) {
     // Fixed width like a native menu; longer translations widen their row.
     let needed = ui.fonts_mut(|f| {
         let l = f
             .layout_no_wrap(
                 label.to_string(),
                 egui::FontId::proportional(FONT),
-                Tokens::TEXT,
+                MENU_TEXT,
             )
             .size()
             .x;
@@ -39,15 +97,16 @@ fn menu_row(
         } else {
             f.layout_no_wrap(
                 shortcut.to_string(),
-                egui::FontId::proportional(FONT - 1.0),
-                Tokens::TEXT,
+                egui::FontId::proportional(FONT),
+                MENU_TEXT,
             )
             .size()
-            .x + 24.0
+            .x + 32.0
         };
-        GUTTER + l + s + 12.0
+        LABEL_X + l + s + SHORTCUT_PAD
     });
-    let width = MENU_WIDTH.max(needed);
+    // As wide as the widest row (remembered by `body` from the last frame).
+    let width = MENU_WIDTH.max(needed).max(ui.min_rect().width());
     let (rect, resp) = ui.allocate_exact_size(
         egui::vec2(width, ROW_HEIGHT),
         if enabled {
@@ -57,25 +116,32 @@ fn menu_row(
         },
     );
     let painter = ui.painter();
+    let slot = painter.add(egui::Shape::Noop);
     if enabled && resp.hovered() {
-        painter.rect_filled(rect, 2.0, Tokens::TOOL_HOVER);
+        painter.set(slot, highlight(rect));
     }
-    let color = if enabled {
-        Tokens::TEXT
-    } else {
-        Tokens::TEXT_DIM
-    };
-    if checked == Some(true) {
-        painter.text(
-            egui::pos2(rect.left() + 8.0, rect.center().y),
-            egui::Align2::LEFT_CENTER,
-            "\u{2713}",
-            egui::FontId::proportional(FONT),
-            color,
-        );
+    let color = if enabled { MENU_TEXT } else { MENU_TEXT_OFF };
+    let mid = egui::pos2(rect.left() + GUTTER / 2.0, rect.center().y);
+    match mark {
+        Mark::Check(true) => {
+            // A bold check mark.
+            let s = egui::Stroke::new(2.0, color);
+            painter.line_segment(
+                [mid + egui::vec2(-5.0, 0.0), mid + egui::vec2(-1.5, 3.5)],
+                s,
+            );
+            painter.line_segment(
+                [mid + egui::vec2(-1.5, 3.5), mid + egui::vec2(5.0, -4.5)],
+                s,
+            );
+        }
+        Mark::Radio(true) => {
+            painter.circle_filled(mid, 3.5, color);
+        }
+        _ => {}
     }
     painter.text(
-        egui::pos2(rect.left() + GUTTER, rect.center().y),
+        egui::pos2(rect.left() + LABEL_X, rect.center().y),
         egui::Align2::LEFT_CENTER,
         label,
         egui::FontId::proportional(FONT),
@@ -83,75 +149,104 @@ fn menu_row(
     );
     if !shortcut.is_empty() {
         painter.text(
-            egui::pos2(rect.right() - 10.0, rect.center().y),
+            egui::pos2(rect.right() - SHORTCUT_PAD, rect.center().y),
             egui::Align2::RIGHT_CENTER,
             shortcut,
-            egui::FontId::proportional(FONT - 1.0),
-            Tokens::TEXT_DIM,
+            egui::FontId::proportional(FONT),
+            color,
         );
     }
-    resp
+    if mark == Mark::Submenu {
+        let c = egui::pos2(rect.right() - 13.0, rect.center().y);
+        painter.add(egui::epaint::PathShape::convex_polygon(
+            vec![
+                c + egui::vec2(-2.0, -4.0),
+                c + egui::vec2(2.0, 0.0),
+                c + egui::vec2(-2.0, 4.0),
+            ],
+            if enabled {
+                SUBMENU_ARROW
+            } else {
+                MENU_TEXT_OFF
+            },
+            egui::Stroke::NONE,
+        ));
+    }
+    (resp, slot)
 }
 
-/// Label for a submenu button, indented to line up with plain rows.
-fn sub_label(label: &str) -> egui::RichText {
-    egui::RichText::new(format!("        {label}")).size(FONT)
+/// The box behind a hovered row or an open submenu's row.
+fn highlight(rect: egui::Rect) -> egui::Shape {
+    egui::Shape::Rect(egui::epaint::RectShape::new(
+        rect.shrink2(egui::vec2(2.0, 0.0)),
+        0.0,
+        MENU_HOVER,
+        egui::Stroke::new(1.0, MENU_HOVER_LINE),
+        egui::StrokeKind::Inside,
+    ))
+}
+
+/// What a row shows in its gutter and at its right end.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Mark {
+    None,
+    Check(bool),
+    Radio(bool),
+    Submenu,
+}
+
+/// A separator: a light line from the gutter to the right edge.
+pub(crate) fn sep(ui: &mut Ui) {
+    let width = ui.min_rect().width().max(MENU_WIDTH);
+    let (rect, _) =
+        ui.allocate_exact_size(egui::vec2(width, SEPARATOR_HEIGHT), egui::Sense::hover());
+    let y = rect.center().y.round() - 0.5;
+    ui.painter().rect_filled(
+        egui::Rect::from_min_max(
+            egui::pos2(rect.left() + GUTTER + 2.0, y),
+            egui::pos2(rect.right(), y + 1.0),
+        ),
+        0.0,
+        MENU_LINE,
+    );
 }
 
 /// A menu item; `key` is an i18n key. Returns true when clicked. Items
 /// with a toolbar counterpart show its icon in the gutter.
 pub(crate) fn item(ui: &mut Ui, key: &str, shortcut: &str, enabled: bool) -> bool {
-    let r = menu_row(ui, &tr(key), shortcut, enabled, None);
-    #[cfg(test)]
-    if replay::hit(key, enabled) {
-        return true;
-    }
-    if let Some(a) = menu_icon(key) {
-        let rect = r.rect;
-        let ir = egui::Rect::from_center_size(
-            egui::pos2(rect.left() + GUTTER / 2.0, rect.center().y),
-            egui::vec2(16.0, 16.0),
-        );
-        let color = if enabled {
-            Tokens::TEXT
-        } else {
-            Tokens::TEXT_DIM
-        };
-        crate::ui::icons::draw_action(ui.painter(), ir, a, color);
-    }
-    if r.clicked() {
-        ui.close();
-        true
-    } else {
-        false
-    }
+    item_text(ui, &tr(key), shortcut, enabled, menu_icon(key), key)
 }
 
-/// A menu item with a ready label and an optional icon.
+/// A menu item with a ready label (a style name, a file).
+pub(crate) fn item_label(ui: &mut Ui, label: &str, shortcut: &str, enabled: bool) -> bool {
+    item_text(ui, label, shortcut, enabled, None, label)
+}
+
+/// A menu item with a ready label and an optional icon; `id` names it for
+/// the test replay.
 fn item_text(
     ui: &mut Ui,
     label: &str,
     shortcut: &str,
     enabled: bool,
     icon: Option<crate::ui::icons::Action>,
+    id: &str,
 ) -> bool {
-    let r = menu_row(ui, label, shortcut, enabled, None);
+    let (r, _) = menu_row(ui, label, shortcut, enabled, Mark::None);
     #[cfg(test)]
-    if replay::hit(label, enabled) {
+    if replay::hit(id, enabled) {
         return true;
     }
+    let _ = id;
+    let ir = egui::Rect::from_center_size(
+        egui::pos2(r.rect.left() + GUTTER / 2.0, r.rect.center().y),
+        egui::vec2(16.0, 16.0),
+    );
+    let color = if enabled { Tokens::ICON } else { MENU_TEXT_OFF };
     if let Some(a) = icon {
-        let rect = r.rect;
-        let ir = egui::Rect::from_center_size(
-            egui::pos2(rect.left() + GUTTER / 2.0, rect.center().y),
-            egui::vec2(16.0, 16.0),
-        );
-        let color = if enabled {
-            Tokens::TEXT
-        } else {
-            Tokens::TEXT_DIM
-        };
         crate::ui::icons::draw_action(ui.painter(), ir, a, color);
+    } else if let Some(p) = menu_pic(id) {
+        crate::ui::propbar::draw_pic(ui.painter(), ir.expand(2.0), p, color);
     }
     if r.clicked() {
         ui.close();
@@ -184,9 +279,29 @@ fn menu_icon(key: &str) -> Option<crate::ui::icons::Action> {
     })
 }
 
-/// A checkable item (check mark on the left when `on`).
+/// Property bar picture for a menu item, when it has one.
+fn menu_pic(key: &str) -> Option<crate::ui::propbar::Pic> {
+    use crate::ui::propbar::Pic;
+    Some(match key {
+        "menu.view.zoom_in" => Pic::ZoomIn,
+        "menu.view.zoom_out" => Pic::ZoomOut,
+        "menu.view.zoom_to_fit" => Pic::ZoomAll,
+        _ => return None,
+    })
+}
+
+/// A checkable item (check mark in the gutter when `on`).
 pub(crate) fn check(ui: &mut Ui, key: &str, shortcut: &str, on: bool) -> bool {
-    let r = menu_row(ui, &tr(key), shortcut, true, Some(on));
+    mark_item(ui, key, shortcut, Mark::Check(on))
+}
+
+/// One of a set of exclusive items (a dot in the gutter when `on`).
+pub(crate) fn radio(ui: &mut Ui, key: &str, shortcut: &str, on: bool) -> bool {
+    mark_item(ui, key, shortcut, Mark::Radio(on))
+}
+
+fn mark_item(ui: &mut Ui, key: &str, shortcut: &str, mark: Mark) -> bool {
+    let (r, _) = menu_row(ui, &tr(key), shortcut, true, mark);
     #[cfg(test)]
     if replay::hit(key, true) {
         return true;
@@ -204,12 +319,10 @@ fn todo(ui: &mut Ui, key: &str, shortcut: &str) {
 }
 
 fn todo_sub(ui: &mut Ui, key: &str) {
-    ui.add_enabled(
-        false,
-        egui::Button::new(sub_label(&tr(key)).color(Tokens::TEXT_DIM)).frame(false),
-    );
+    menu_row(ui, &tr(key), "", false, Mark::Submenu);
 }
 
+/// A submenu row: the submenu opens beside it while it is hovered.
 pub(crate) fn sub<R>(ui: &mut Ui, key: &str, add: impl FnOnce(&mut Ui) -> R) {
     #[cfg(test)]
     if replay::active() {
@@ -217,9 +330,16 @@ pub(crate) fn sub<R>(ui: &mut Ui, key: &str, add: impl FnOnce(&mut Ui) -> R) {
         let _ = add(ui);
         return;
     }
-    ui.menu_button(sub_label(&tr(key)), |ui| {
+    let (resp, slot) = menu_row(ui, &tr(key), "", true, Mark::Submenu);
+    let open = egui::containers::menu::MenuState::from_ui(ui, |state, _| {
+        state.open_item == Some(egui::containers::menu::SubMenu::id_from_widget_id(resp.id))
+    });
+    if open {
+        ui.painter().set(slot, highlight(resp.rect));
+    }
+    egui::containers::menu::SubMenu::new().show(ui, &resp, |ui| {
         ui.set_min_width(MENU_WIDTH);
-        add(ui)
+        body(ui, add)
     });
 }
 
@@ -393,27 +513,59 @@ mod tests {
     }
 }
 
+/// Menu bar titles: the target design's size and spacing (about 25 px
+/// between titles, the first one 11 px from the edge; within 2 px of it
+/// across the bar).
+const BAR_FONT: f32 = 13.0;
+
+fn menu_bar_style(style: &mut egui::Style) {
+    egui::containers::menu::menu_style(style);
+    style.override_font_id = Some(egui::FontId::proportional(BAR_FONT));
+    // An open or hovered title: light blue with a blue frame, square.
+    for w in [
+        &mut style.visuals.widgets.hovered,
+        &mut style.visuals.widgets.active,
+        &mut style.visuals.widgets.open,
+    ] {
+        w.weak_bg_fill = MENU_HOVER;
+        w.bg_fill = MENU_HOVER;
+        w.bg_stroke = egui::Stroke::new(1.0, MENU_HOVER_LINE);
+        w.corner_radius = egui::CornerRadius::ZERO;
+        w.expansion = 0.0;
+        w.fg_stroke.color = MENU_TEXT;
+    }
+    style.visuals.widgets.inactive.fg_stroke.color = MENU_TEXT;
+    style.spacing.button_padding = egui::vec2(10.0, 3.0);
+    style.spacing.item_spacing.x = 3.0;
+}
+
 pub fn menu_bar(app: &mut App, ui: &mut Ui) {
-    egui::MenuBar::new().ui(ui, |ui| {
-        ui.menu_button(tr("menu.file"), |ui| {
-            ui.set_min_width(MENU_WIDTH);
-            file_menu(app, ui)
+    egui::MenuBar::new()
+        .style(menu_bar_style)
+        .config(egui::containers::menu::MenuConfig::new().style(menu_popup_style))
+        .ui(ui, |ui| {
+            let menu = |ui: &mut Ui, key: &str, f: &mut dyn FnMut(&mut Ui)| {
+                ui.menu_button(tr(key), |ui| {
+                    ui.set_min_width(MENU_WIDTH);
+                    body(ui, |ui| f(ui))
+                });
+            };
+            menu(ui, "menu.file", &mut |ui| file_menu(app, ui));
+            // With no drawing open only File, Tools, Window and Help remain.
+            if app.has_document() {
+                menu(ui, "menu.edit", &mut |ui| edit_menu(app, ui));
+                menu(ui, "menu.view", &mut |ui| view_menu(app, ui));
+                menu(ui, "menu.layout", &mut |ui| layout_menu(app, ui));
+                menu(ui, "menu.object", &mut |ui| object_menu(app, ui));
+                menu(ui, "menu.effects", &mut |ui| effects_menu(app, ui));
+                menu(ui, "menu.bitmaps", &mut |ui| bitmaps_menu(app, ui));
+                menu(ui, "menu.text", &mut |ui| text_menu(app, ui));
+                menu(ui, "menu.table", &mut |ui| table_menu(app, ui));
+            }
+            menu(ui, "menu.tools", &mut |ui| tools_menu(app, ui));
+            menu(ui, "menu.window", &mut |ui| window_menu(app, ui));
+            menu(ui, "menu.help", &mut |ui| help_menu(app, ui));
         });
-        // With no drawing open only File, Tools, Window and Help remain.
-        if app.has_document() {
-            ui.menu_button(tr("menu.edit"), |ui| edit_menu(app, ui));
-            ui.menu_button(tr("menu.view"), |ui| view_menu(app, ui));
-            ui.menu_button(tr("menu.layout"), |ui| layout_menu(app, ui));
-            ui.menu_button(tr("menu.object"), |ui| object_menu(app, ui));
-            ui.menu_button(tr("menu.effects"), |ui| effects_menu(app, ui));
-            ui.menu_button(tr("menu.bitmaps"), |ui| bitmaps_menu(app, ui));
-            ui.menu_button(tr("menu.text"), |ui| text_menu(app, ui));
-            ui.menu_button(tr("menu.table"), |ui| table_menu(app, ui));
-        }
-        ui.menu_button(tr("menu.tools"), |ui| tools_menu(app, ui));
-        ui.menu_button(tr("menu.window"), |ui| window_menu(app, ui));
-        ui.menu_button(tr("menu.help"), |ui| help_menu(app, ui));
-    });
 }
 
 fn file_menu(app: &mut App, ui: &mut Ui) {
@@ -442,7 +594,8 @@ fn file_menu(app: &mut App, ui: &mut Ui) {
                 .file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_default();
-            if menu_row(ui, &name, "", true, None)
+            if menu_row(ui, &name, "", true, Mark::None)
+                .0
                 .on_hover_text(p.display().to_string())
                 .clicked()
             {
@@ -451,21 +604,21 @@ fn file_menu(app: &mut App, ui: &mut Ui) {
             }
         }
         if !recent.is_empty() {
-            ui.separator();
+            sep(ui);
             if item(ui, "menu.file.clear_recent", "", true) {
                 app.settings.recent_files.clear();
                 app.settings.save();
             }
         }
     });
-    ui.separator();
+    sep(ui);
     if item(ui, "menu.file.close", "", doc) {
         app.close_document();
     }
     if item(ui, "menu.file.close_all", "", doc) {
         app.close_document();
     }
-    ui.separator();
+    sep(ui);
     if item(ui, "menu.file.save", "Ctrl+S", doc) {
         app.save(false);
     }
@@ -485,7 +638,7 @@ fn file_menu(app: &mut App, ui: &mut Ui) {
             app.open_path(p);
         }
     }
-    ui.separator();
+    sep(ui);
     todo_sub(ui, "menu.file.acquire_image");
     if item(ui, "menu.file.import", "Ctrl+I", doc) {
         app.import();
@@ -516,7 +669,7 @@ fn file_menu(app: &mut App, ui: &mut Ui) {
     if item(ui, "menu.file.publish_to_pdf", "", doc) {
         app.export_pdf();
     }
-    ui.separator();
+    sep(ui);
     sub(ui, "menu.file.print_merge", |ui| {
         if item(ui, "menu.file.print_merge_create", "", doc) {
             app.dialog = Dialog::PrintMerge(Default::default());
@@ -533,18 +686,18 @@ fn file_menu(app: &mut App, ui: &mut Ui) {
             }
         }
     });
-    ui.separator();
+    sep(ui);
     if item(ui, "menu.file.print", "Ctrl+P", doc) {
         app.dialog = Dialog::Print(Default::default());
     }
     if item(ui, "menu.file.print_preview", "", doc) {
         app.fullscreen_preview = true;
     }
-    ui.separator();
+    sep(ui);
     if item(ui, "menu.file.document_properties", "", doc) {
         app.dialog = Dialog::DocumentProperties;
     }
-    ui.separator();
+    sep(ui);
     if item(ui, "menu.file.exit", "Alt+F4", true) {
         app.request_exit();
     }
@@ -568,6 +721,7 @@ fn edit_menu(app: &mut App, ui: &mut Ui) {
         "Ctrl+Z",
         app.engine.undo_label().is_some(),
         Some(crate::ui::icons::Action::Undo),
+        "menu.edit.undo",
     ) {
         app.undo();
     }
@@ -577,6 +731,7 @@ fn edit_menu(app: &mut App, ui: &mut Ui) {
         "Ctrl+Shift+Z",
         app.engine.redo_label().is_some(),
         Some(crate::ui::icons::Action::Redo),
+        "menu.edit.redo",
     ) {
         app.redo();
     }
@@ -588,7 +743,7 @@ fn edit_menu(app: &mut App, ui: &mut Ui) {
     ) {
         app.repeat_last();
     }
-    ui.separator();
+    sep(ui);
     if item(ui, "menu.edit.cut", "Ctrl+X", has) {
         app.cut();
     }
@@ -599,7 +754,7 @@ fn edit_menu(app: &mut App, ui: &mut Ui) {
         app.pending_copy_properties = true;
         app.status = tr("status.click_source_object");
     }
-    ui.separator();
+    sep(ui);
     if item(ui, "menu.edit.paste", "Ctrl+V", true) {
         app.paste_any();
     }
@@ -614,18 +769,18 @@ fn edit_menu(app: &mut App, ui: &mut Ui) {
     if item(ui, "menu.edit.paste_special", "", true) {
         app.dialog = Dialog::PasteSpecial(Default::default());
     }
-    ui.separator();
+    sep(ui);
     if item(ui, "menu.edit.delete", "Delete", has) {
         app.delete_selection();
     }
-    ui.separator();
+    sep(ui);
     if item(ui, "menu.edit.duplicate", "Ctrl+D", has) {
         app.duplicate();
     }
     if item(ui, "menu.edit.clone", "", has) {
         app.duplicate();
     }
-    ui.separator();
+    sep(ui);
     sub(ui, "menu.edit.select_all", |ui| {
         if item(ui, "menu.edit.select_all_objects", "Ctrl+A", true) {
             app.select_all();
@@ -640,7 +795,7 @@ fn edit_menu(app: &mut App, ui: &mut Ui) {
             app.select_all_nodes();
         }
     });
-    ui.separator();
+    sep(ui);
     if item(ui, "menu.edit.find_and_replace", "Ctrl+F", true) {
         app.show_dockers = true;
         app.docker_tab = DockerTab::FindReplace;
@@ -658,12 +813,12 @@ fn view_menu(app: &mut App, ui: &mut Ui) {
         ("menu.view.enhanced", crate::app::ViewMode::Enhanced),
         ("menu.view.pixels", crate::app::ViewMode::Pixels),
     ] {
-        if check(ui, key, "", app.view_mode == mode) {
+        if radio(ui, key, "", app.view_mode == mode) {
             app.view_mode = mode;
             app.wireframe = mode == crate::app::ViewMode::Wireframe;
         }
     }
-    ui.separator();
+    sep(ui);
     if item(ui, "menu.view.fullscreen_preview", "F9", true) {
         app.fullscreen_preview = true;
     }
@@ -679,7 +834,7 @@ fn view_menu(app: &mut App, ui: &mut Ui) {
     if check(ui, "menu.view.page_sorter", "", app.page_sorter) {
         app.page_sorter = !app.page_sorter;
     }
-    ui.separator();
+    sep(ui);
     if item(ui, "menu.view.zoom_in", "Ctrl++", true) {
         app.zoom_step(true);
     }
@@ -689,18 +844,7 @@ fn view_menu(app: &mut App, ui: &mut Ui) {
     if item(ui, "menu.view.zoom_to_fit", "F4", true) {
         app.zoom_to_fit();
     }
-    if item(ui, "menu.view.zoom_to_page", "Shift+F4", true) {
-        app.zoom_to_page();
-    }
-    if item(
-        ui,
-        "menu.view.zoom_to_selected",
-        "Shift+F2",
-        !app.selection.is_empty(),
-    ) {
-        app.zoom_to_selection();
-    }
-    ui.separator();
+    sep(ui);
     if check(ui, "menu.view.proof_colors", "", app.proof_colors) {
         app.proof_colors = !app.proof_colors;
     }
@@ -722,7 +866,7 @@ fn view_menu(app: &mut App, ui: &mut Ui) {
         app.rasterize_complex_effects = !app.rasterize_complex_effects;
         app.raster.borrow_mut().invalidate();
     }
-    ui.separator();
+    sep(ui);
     sub(ui, "menu.view.page", |ui| {
         if check(ui, "menu.view.page_border", "", app.show_page_border) {
             app.show_page_border = !app.show_page_border;
@@ -767,7 +911,7 @@ fn view_menu(app: &mut App, ui: &mut Ui) {
     ) {
         app.snap.dynamic_guides = !app.snap.dynamic_guides;
     }
-    ui.separator();
+    sep(ui);
     sub(ui, "menu.view.snap_to", |ui| {
         if check(ui, "menu.view.snap_pixels", "", app.snap.pixels) {
             app.snap.pixels = !app.snap.pixels;
@@ -825,7 +969,7 @@ fn layout_menu(app: &mut App, ui: &mut Ui) {
             page: app.page_index() + 1,
         };
     }
-    ui.separator();
+    sep(ui);
     sub(ui, "menu.layout.insert_page_number", |ui| {
         for (key, where_) in [
             (
@@ -853,7 +997,7 @@ fn layout_menu(app: &mut App, ui: &mut Ui) {
     if item(ui, "menu.layout.page_number_settings", "", true) {
         app.dialog = Dialog::PageNumberSettings;
     }
-    ui.separator();
+    sep(ui);
     if item(ui, "menu.layout.switch_orientation", "", true) {
         let s = app.page_size();
         let page = app.page;
@@ -863,7 +1007,7 @@ fn layout_menu(app: &mut App, ui: &mut Ui) {
         });
         app.fit_pending = true;
     }
-    ui.separator();
+    sep(ui);
     if item(ui, "menu.layout.document_options", "", true) {
         app.dialog = Dialog::Options;
         app.options_page = crate::ui::dialogs::OptionsPage::DocumentGeneral;
@@ -940,7 +1084,7 @@ fn object_menu(app: &mut App, ui: &mut Ui) {
             app.insert_page_number(crate::ops2::PageNumberWhere::Active);
         }
     });
-    ui.separator();
+    sep(ui);
     sub(ui, "menu.object.clip_frame", |ui| {
         let is_clip = app
             .selected_shapes()
@@ -1011,11 +1155,11 @@ fn object_menu(app: &mut App, ui: &mut Ui) {
         }
     });
     todo_sub(ui, "menu.object.rollover");
-    ui.separator();
+    sep(ui);
     if item(ui, "menu.object.clear_transformations", "", has) {
         app.clear_transformations();
     }
-    ui.separator();
+    sep(ui);
     sub(ui, "menu.object.copy_effect", |ui| {
         if item(ui, "menu.object.copy_shadow_from", "", has) {
             app.pending_copy_effect = Some(crate::app::EffectKind::Shadow);
@@ -1039,7 +1183,7 @@ fn object_menu(app: &mut App, ui: &mut Ui) {
     if item(ui, "menu.object.clear_effect", "", has) {
         app.clear_effects();
     }
-    ui.separator();
+    sep(ui);
     sub(ui, "menu.object.align_distribute", |ui| {
         use crate::ops::{Align, Distribute};
         for (key, shortcut, a) in [
@@ -1055,7 +1199,7 @@ fn object_menu(app: &mut App, ui: &mut Ui) {
                 app.align(a);
             }
         }
-        ui.separator();
+        sep(ui);
         let three = app.selection.len() >= 3;
         for (key, d) in [
             ("menu.object.distribute_centers_h", Distribute::CentersH),
@@ -1067,7 +1211,7 @@ fn object_menu(app: &mut App, ui: &mut Ui) {
                 app.distribute(d);
             }
         }
-        ui.separator();
+        sep(ui);
         if item(
             ui,
             "menu.object.align_distribute_docker",
@@ -1123,7 +1267,7 @@ fn object_menu(app: &mut App, ui: &mut Ui) {
             app.ungroup_all();
         }
     });
-    ui.separator();
+    sep(ui);
     sub(ui, "menu.object.hide", |ui| {
         if item(ui, "menu.object.hide_object", "", has) {
             app.set_visible(false);
@@ -1143,7 +1287,7 @@ fn object_menu(app: &mut App, ui: &mut Ui) {
             app.unlock_all();
         }
     });
-    ui.separator();
+    sep(ui);
     sub(ui, "menu.object.shaping", |ui| {
         use crate::ops::Shaping;
         let two = app.selection.len() >= 2;
@@ -1168,7 +1312,7 @@ fn object_menu(app: &mut App, ui: &mut Ui) {
                 app.shaping(op);
             }
         }
-        ui.separator();
+        sep(ui);
         if item(ui, "menu.object.shaping_docker", "", true) {
             app.show_dockers = true;
             app.docker_tab = DockerTab::Shaping;
@@ -1183,7 +1327,7 @@ fn object_menu(app: &mut App, ui: &mut Ui) {
     if item(ui, "menu.object.add_perspective", "", has) {
         app.add_perspective();
     }
-    ui.separator();
+    sep(ui);
     if item(ui, "menu.object.convert_to_curves", "Ctrl+Q", has) {
         app.convert_to_curves();
     }
@@ -1204,7 +1348,7 @@ fn object_menu(app: &mut App, ui: &mut Ui) {
     if item(ui, "menu.object.join_curves", "", many) {
         app.join_curves();
     }
-    ui.separator();
+    sep(ui);
     let has_fill = app
         .selected_shapes()
         .iter()
@@ -1243,7 +1387,7 @@ fn object_menu(app: &mut App, ui: &mut Ui) {
     if check(ui, "menu.object.object_hinting", "", hinted) && has {
         app.toggle_object_hinting();
     }
-    ui.separator();
+    sep(ui);
     if check(
         ui,
         "menu.object.properties",
@@ -1273,7 +1417,7 @@ fn effects_menu(app: &mut App, ui: &mut Ui) {
     if item(ui, "menu.effects.flatten", "", has) {
         app.flatten_effects();
     }
-    ui.separator();
+    sep(ui);
     // Bitmap effect groups, as in the target design's Effects menu.
     for (key, group) in crate::bitmap_fx::GROUPS {
         sub(ui, key, |ui| {
@@ -1287,7 +1431,7 @@ fn effects_menu(app: &mut App, ui: &mut Ui) {
             }
         });
     }
-    ui.separator();
+    sep(ui);
     if item(ui, "menu.effects.brush_strokes", "", true) {
         app.show_dockers = true;
         app.docker_tab = DockerTab::BrushStrokes;
@@ -1373,7 +1517,7 @@ fn bitmaps_menu(app: &mut App, ui: &mut Ui) {
             app.dialog = Dialog::InflateBitmap { px: 10 };
         }
     });
-    ui.separator();
+    sep(ui);
     let linked = app.selected_bitmap_is_linked();
     if item(ui, "menu.bitmaps.break_link", "", linked) {
         app.break_bitmap_link();
@@ -1381,7 +1525,7 @@ fn bitmaps_menu(app: &mut App, ui: &mut Ui) {
     if item(ui, "menu.bitmaps.update_from_link", "", linked) {
         app.update_bitmap_from_link();
     }
-    ui.separator();
+    sep(ui);
     if item(ui, "menu.bitmaps.quick_trace", "", has_bitmap) {
         app.quick_trace();
     }
@@ -1424,9 +1568,9 @@ fn bitmaps_menu(app: &mut App, ui: &mut Ui) {
             }
         }
     });
-    ui.separator();
+    sep(ui);
     todo_sub(ui, "menu.bitmaps.plugins");
-    ui.separator();
+    sep(ui);
     if item(ui, "menu.bitmaps.bitmap_mask", "", true) {
         app.show_dockers = true;
         app.docker_tab = DockerTab::BitmapMask;
@@ -1457,7 +1601,7 @@ fn text_menu(app: &mut App, ui: &mut Ui) {
     if item(ui, "menu.text.text_statistics", "", true) {
         app.dialog = Dialog::TextStatistics;
     }
-    ui.separator();
+    sep(ui);
     if item(ui, "menu.text.edit_text", "Ctrl+Shift+T", is_text) {
         app.edit_selected_text();
     }
@@ -1477,14 +1621,14 @@ fn text_menu(app: &mut App, ui: &mut Ui) {
             }
         }
     });
-    ui.separator();
+    sep(ui);
     if item(ui, "menu.text.convert", "Ctrl+F8", is_text) {
         app.toggle_text_kind();
     }
     if check(ui, "menu.text.show_non_printing", "", app.show_non_printing) {
         app.show_non_printing = !app.show_non_printing;
     }
-    ui.separator();
+    sep(ui);
     sub(ui, "menu.text.paragraph_text_frame", |ui| {
         if item(ui, "menu.text.frame_fit_text", "", is_para) {
             app.fit_text_to_frame();
@@ -1497,7 +1641,7 @@ fn text_menu(app: &mut App, ui: &mut Ui) {
             app.unlink_text_frames();
         }
     });
-    ui.separator();
+    sep(ui);
     if item(
         ui,
         "menu.text.fit_text_to_path",
@@ -1519,7 +1663,7 @@ fn text_menu(app: &mut App, ui: &mut Ui) {
     if check(ui, "menu.text.align_to_baseline_grid", "", on_grid) {
         app.toggle_baseline_grid();
     }
-    ui.separator();
+    sep(ui);
     if check(ui, "menu.text.use_hyphenation", "", app.text_hyphenation) {
         app.text_hyphenation = !app.text_hyphenation;
         if let Some(spans) = app.edit_spans() {
@@ -1540,7 +1684,7 @@ fn text_menu(app: &mut App, ui: &mut Ui) {
             app.dialog = Dialog::Autocorrect(Default::default());
         }
     });
-    ui.separator();
+    sep(ui);
     sub(ui, "menu.text.change_case", |ui| {
         for (key, mode) in [
             ("menu.text.case_sentence", crate::ops2::CaseMode::Sentence),
@@ -1557,11 +1701,11 @@ fn text_menu(app: &mut App, ui: &mut Ui) {
     if item(ui, "menu.text.make_web_compatible", "", is_text) {
         app.make_text_web_compatible();
     }
-    ui.separator();
+    sep(ui);
     if item(ui, "menu.text.encode", "", is_text) {
         app.dialog = Dialog::Encode(Default::default());
     }
-    ui.separator();
+    sep(ui);
     if item(ui, "menu.text.text_docker", "Ctrl+T", true) {
         app.show_dockers = true;
         app.docker_tab = DockerTab::Text;
@@ -1593,7 +1737,7 @@ fn table_menu(app: &mut App, ui: &mut Ui) {
     if item(ui, "menu.table.convert_table_to_text", "", in_table) {
         app.convert_table_to_text();
     }
-    ui.separator();
+    sep(ui);
     sub(ui, "menu.table.insert", |ui| {
         for (key, op) in [
             (
@@ -1663,7 +1807,7 @@ fn table_menu(app: &mut App, ui: &mut Ui) {
             }
         }
     });
-    ui.separator();
+    sep(ui);
     if item(ui, "menu.table.merge_cells", "Ctrl+M", in_table) {
         app.table_op(crate::table::TableOp::Merge);
     }
@@ -1704,11 +1848,11 @@ fn tools_menu(app: &mut App, ui: &mut Ui) {
     if item(ui, "menu.tools.save_settings_as_default", "", true) {
         app.save_defaults();
     }
-    ui.separator();
+    sep(ui);
     if item(ui, "menu.tools.color_management", "", true) {
         app.dialog = Dialog::ColorManagement;
     }
-    ui.separator();
+    sep(ui);
     sub(ui, "menu.tools.scripts", |ui| {
         if item(ui, "menu.tools.scripts_docker", "", true) {
             app.show_dockers = true;
@@ -1740,13 +1884,13 @@ fn window_menu(app: &mut App, ui: &mut Ui) {
     if item(ui, "menu.window.close_all", "", true) {
         app.close_all_documents();
     }
-    ui.separator();
+    sep(ui);
     todo(ui, "menu.window.cascade", "");
     todo(ui, "menu.window.tile_horizontally", "");
     todo(ui, "menu.window.tile_vertically", "");
     todo(ui, "menu.window.combine_windows", "");
     todo(ui, "menu.window.dock_window", "");
-    ui.separator();
+    sep(ui);
     sub(ui, "menu.window.workspace", |ui| {
         for (key, ws) in [
             (
@@ -1772,7 +1916,7 @@ fn window_menu(app: &mut App, ui: &mut Ui) {
             }
         }
     });
-    ui.separator();
+    sep(ui);
     sub(ui, "menu.window.dockers", |ui| {
         for tab in DockerTab::ALL {
             if check(
@@ -1857,7 +2001,7 @@ fn window_menu(app: &mut App, ui: &mut Ui) {
                 app.toggle_palette(i);
             }
         }
-        ui.separator();
+        sep(ui);
         if item(ui, "menu.window.palette_open", "", true) {
             app.open_palette_file();
         }
@@ -1880,7 +2024,7 @@ fn window_menu(app: &mut App, ui: &mut Ui) {
             app.palette_from_selection();
         }
     });
-    ui.separator();
+    sep(ui);
     if check(ui, "menu.window.welcome_screen", "", app.show_welcome) {
         app.show_welcome = true;
     }
@@ -1888,7 +2032,7 @@ fn window_menu(app: &mut App, ui: &mut Ui) {
     for i in 0..app.docs.len() {
         let title = format!("{} {}", i + 1, app.document_tab_title(i));
         let on = !app.show_welcome && i == app.active_doc;
-        if menu_row(ui, &title, "", true, Some(on)).clicked() {
+        if menu_row(ui, &title, "", true, Mark::Check(on)).0.clicked() {
             ui.close();
             app.switch_document(i);
         }
@@ -1924,13 +2068,13 @@ fn help_menu(app: &mut App, ui: &mut Ui) {
         app.show_welcome = true;
         app.welcome_tab = crate::app::WelcomeTab::Learn;
     }
-    ui.separator();
+    sep(ui);
     if item(ui, "menu.help.whats_new", "", true) {
         app.show_welcome = true;
         app.welcome_tab = crate::app::WelcomeTab::News;
     }
     todo_sub(ui, "menu.help.highlight_whats_new");
-    ui.separator();
+    sep(ui);
     if item(ui, "menu.help.updates", "", true) {
         app.open_url("https://github.com/igtoth/tracedraw/releases");
     }
@@ -1944,7 +2088,7 @@ fn help_menu(app: &mut App, ui: &mut Ui) {
     if item(ui, "menu.help.support", "", true) {
         app.open_url("https://github.com/igtoth/tracedraw/issues");
     }
-    ui.separator();
+    sep(ui);
     if item(ui, "menu.help.about", "", true) {
         app.about_open = true;
     }

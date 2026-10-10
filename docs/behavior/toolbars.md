@@ -1,8 +1,32 @@
-# Standard toolbar and property bar
+# Menu bar, standard toolbar and property bar
+
+Interface text is 13 px, the size the target design's menus, labels,
+lists and status bar measure in the bundled interface font. Toolbars,
+dockers, palettes, the status bar and dialog bodies are `#F4F4F4`; light
+lines between bands are `#D8D8D8`.
+
+## Menu bar
+
+A 24 px `#D8D8D8` band. Titles are 13 px, the first 11 px from the edge
+and about 25 px apart; the open or hovered title is a light blue box
+(`#E0F0FF`) with a blue frame (`#00ADFE`). Menus are white with a 1 px
+`#B2B2B2` border and square corners: a 30 px `#F4F4F4` gutter holds the
+icons, the bold check marks and the dots of exclusive choices (View >
+Wireframe, Normal, Enhanced, Pixels); rows are 26 px with labels from
+38 px and shortcuts right-aligned 28 px from the edge, all black (light
+grey when unavailable); separators are 7 px with a `#D8D8D8` line from
+the gutter; a submenu row ends in a grey triangle and stays highlighted
+while its submenu is open; a hovered row is the same blue box as the
+titles. The canvas, palette and New Document menus are drawn the same
+way.
+
+The View menu follows the target design's: Zoom In, Zoom Out and Zoom
+To Fit (with their pictures) and no other zoom commands.
 
 ## Standard toolbar
 
-32 px buttons with 20 px icons in groups split by thin lines:
+A 35 px band (and its line): 32 px buttons with 20 px icons in groups
+split by thin lines:
 
 1. New (a page with a green plus), Open with the recent drawings behind
    its arrow, Save, Print.
@@ -26,9 +50,10 @@ buttons are light blue with a light blue frame.
 
 ## Property bar
 
-34 px high, so fields stack two to a column; fields and lists are white
-with a grey border, small pictures before fields name them (hover for a
-tooltip), and some fields have spin arrows.
+A 52 px band (and its line); fields stack two to a column, 19 px each
+and sharing their middle border, 8 px from the top; fields and lists are
+white with a grey border and 13 px text, small pictures before fields
+name them (hover for a tooltip), and some fields have spin arrows.
 
 - Pick tool, nothing selected (page bar): page size list; page width and
   height; portrait, landscape; all pages or current page (which pages a

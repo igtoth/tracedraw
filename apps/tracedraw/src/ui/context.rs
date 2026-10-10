@@ -5,6 +5,7 @@ use crate::app::{App, DockerTab};
 use crate::i18n::tr;
 use crate::tools::Tool;
 use crate::ui::dialogs::Dialog;
+use crate::ui::menus::{body, check, item, item_label, menu_popup_style, sep, sub};
 use egui::{Response, Ui};
 use tracedraw_core::{document::ShapeKind, Command};
 
@@ -16,60 +17,54 @@ fn ci(ui: &mut Ui, close: &mut bool, key: &str, shortcut: &str, enabled: bool) -
     r
 }
 
-fn item(ui: &mut Ui, key: &str, shortcut: &str, enabled: bool) -> bool {
-    let text = if shortcut.is_empty() {
-        tr(key)
-    } else {
-        format!("{}    {shortcut}", tr(key))
-    };
-    let r = ui.add_enabled(
-        enabled,
-        egui::Button::new(egui::RichText::new(text).size(12.0)).frame(false),
-    );
-    if r.clicked() {
-        ui.close();
-        true
-    } else {
-        false
-    }
-}
-
+/// The canvas context menu, drawn like the menus of the menu bar, at the
+/// position of the right click. Clicking an item or anywhere else closes
+/// it; submenus open on hover.
 pub fn context_menu(app: &mut App, ui: &mut Ui, response: &Response) {
     let Some((pos, p)) = app.context_menu else {
         return;
     };
     let id = egui::Id::new("canvas_context_menu");
+    let ctx = ui.ctx().clone();
+    // A new right click (a new position) opens the menu afresh.
+    let pos_id = id.with("pos");
+    if ctx.data(|d| d.get_temp::<egui::Pos2>(pos_id)) != Some(pos) {
+        ctx.data_mut(|d| d.insert_temp(pos_id, pos));
+        egui::Popup::open_id(&ctx, id);
+    }
     let mut close = false;
-    egui::Area::new(id)
-        .order(egui::Order::Foreground)
-        .fade_in(false)
-        .fixed_pos(pos)
-        .show(ui.ctx(), |ui| {
-            egui::Frame::popup(ui.style()).show(ui, |ui| {
-                ui.set_min_width(200.0);
-                let on_guide = app.selection.is_empty()
-                    && matches!(app.tool, Tool::Pick | Tool::FreeformPick)
-                    && app.guide_at(p).is_some();
-                if app.tool == Tool::Shape {
-                    node_menu(app, ui, &mut close);
-                } else if on_guide {
-                    guide_menu(app, ui, &mut close);
-                } else if app.selection.is_empty() {
-                    page_menu(app, ui, p, &mut close);
-                } else {
-                    object_menu(app, ui, &mut close);
-                }
-            });
-        });
-    // Close on any click outside or Escape.
-    let clicked_elsewhere = ui.input(|i| i.pointer.any_pressed())
-        && !ui
-            .ctx()
-            .layer_id_at(ui.input(|i| i.pointer.interact_pos().unwrap_or_default()))
-            .map(|l| l.id == id)
-            .unwrap_or(false);
-    if close || clicked_elsewhere || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+    let shown = egui::Popup::new(
+        id,
+        ctx.clone(),
+        egui::PopupAnchor::Position(pos),
+        ui.layer_id(),
+    )
+    .kind(egui::PopupKind::Menu)
+    .layout(egui::Layout::top_down_justified(egui::Align::Min))
+    .style(menu_popup_style)
+    .open_memory(None)
+    .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+    .show(|ui| {
+        ui.set_min_width(200.0);
+        body(ui, |ui| {
+            let on_guide = app.selection.is_empty()
+                && matches!(app.tool, Tool::Pick | Tool::FreeformPick)
+                && app.guide_at(p).is_some();
+            if app.tool == Tool::Shape {
+                node_menu(app, ui, &mut close);
+            } else if on_guide {
+                guide_menu(app, ui, &mut close);
+            } else if app.selection.is_empty() {
+                page_menu(app, ui, p, &mut close);
+            } else {
+                object_menu(app, ui, &mut close);
+            }
+        })
+    });
+    if close || shown.is_none() {
+        egui::Popup::close_id(&ctx, id);
         app.context_menu = None;
+        ctx.data_mut(|d| d.remove::<egui::Pos2>(pos_id));
     }
     let _ = response;
 }
@@ -92,11 +87,11 @@ fn guide_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {
     ) {
         app.undo();
     }
-    ui.separator();
+    sep(ui);
     if ci(ui, close, "menu.edit.delete", "Delete", !locked) && !app.delete_selected_guides() {
         app.status = tr("status.guideline_locked");
     }
-    ui.separator();
+    sep(ui);
     if locked {
         if ci(ui, close, "guides.unlock", "", true) {
             app.set_guides_locked(&selected, false);
@@ -104,7 +99,7 @@ fn guide_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {
     } else if ci(ui, close, "guides.lock", "", !selected.is_empty()) {
         app.set_guides_locked(&selected, true);
     }
-    ui.separator();
+    sep(ui);
     if ci(ui, close, "menu.object.properties", "", true) {
         app.show_dockers = true;
         app.docker_tab = DockerTab::Guidelines;
@@ -138,7 +133,7 @@ fn object_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {
         if ci(ui, close, "menu.text.convert", "Ctrl+F8", true) {
             app.toggle_text_kind();
         }
-        ui.separator();
+        sep(ui);
     }
     if is_bitmap {
         if ci(ui, close, "menu.bitmaps.crop_bitmap", "", true) {
@@ -147,7 +142,7 @@ fn object_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {
         if ci(ui, close, "menu.bitmaps.quick_trace", "", true) {
             app.quick_trace();
         }
-        ui.separator();
+        sep(ui);
     }
     if ci(
         ui,
@@ -170,7 +165,7 @@ fn object_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {
     if ci(ui, close, "menu.object.combine", "Ctrl+L", many) {
         app.combine();
     }
-    ui.separator();
+    sep(ui);
     if ci(ui, close, "menu.edit.cut", "Ctrl+X", true) {
         app.cut();
     }
@@ -183,8 +178,8 @@ fn object_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {
     if ci(ui, close, "menu.edit.delete", "Delete", true) {
         app.delete_selection();
     }
-    ui.separator();
-    ui.menu_button(tr("menu.object.order"), |ui| {
+    sep(ui);
+    sub(ui, "menu.object.order", |ui| {
         if ci(ui, close, "menu.object.to_front_of_page", "Ctrl+Home", true) {
             app.order(0);
         }
@@ -218,7 +213,7 @@ fn object_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {
             app.ungroup_all();
         }
     }
-    ui.separator();
+    sep(ui);
     if ci(ui, close, "menu.object.hide_object", "", true) {
         app.set_visible(false);
     }
@@ -236,12 +231,12 @@ fn object_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {
     ) {
         app.set_locked(!locked);
     }
-    ui.separator();
+    sep(ui);
     if ci(ui, close, "menu.object.clip_frame_place_inside", "", true) {
         app.pending_clip_frame = true;
         app.status = tr("status.click_frame");
     }
-    ui.menu_button(tr("context.frame_type"), |ui| {
+    sub(ui, "context.frame_type", |ui| {
         if ci(ui, close, "context.frame_none", "", true) {
             app.apply_outline_color(None);
         }
@@ -265,27 +260,27 @@ fn object_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {
             app.pending_text_frame = true;
         }
     });
-    ui.separator();
+    sep(ui);
     if ci(ui, close, "menu.object.symmetry_create", "Alt+S", true) {
         app.create_symmetry();
     }
     if ci(ui, close, "context.create_symbol", "", true) {
         app.create_symbol_from_selection();
     }
-    ui.menu_button(tr("context.internet_links"), |ui| {
+    sub(ui, "context.internet_links", |ui| {
         if ci(ui, close, "docker.hyperlink", "", true) {
             app.show_dockers = true;
             app.docker_tab = DockerTab::Links;
         }
     });
-    ui.menu_button(tr("docker.object_styles"), |ui| {
+    sub(ui, "docker.object_styles", |ui| {
         if ci(ui, close, "docker.new_style_from_selection", "", true) {
             app.show_dockers = true;
             app.docker_tab = DockerTab::ObjectStyles;
         }
         let styles = app.doc().object_styles.clone();
         for os in styles {
-            if ui.button(&os.name).clicked() {
+            if item_label(ui, &os.name, "", true) {
                 let shapes = app.selection.clone();
                 let cmds = vec![
                     Command::SetFill {
@@ -298,54 +293,46 @@ fn object_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {
                     },
                 ];
                 let _ = app.engine.run_batch("Apply Style", &cmds);
-                ui.close();
                 *close = true;
             }
         }
     });
-    ui.menu_button(tr("docker.color_styles"), |ui| {
+    sub(ui, "docker.color_styles", |ui| {
         if ci(ui, close, "docker.new_from_selection", "", true) {
             app.show_dockers = true;
             app.docker_tab = DockerTab::ColorStyles;
         }
     });
-    ui.separator();
-    let mut wrap = shapes.iter().any(|s| s.wrap_text);
-    if ui
-        .checkbox(&mut wrap, tr("context.wrap_paragraph_text"))
-        .changed()
-    {
+    sep(ui);
+    let wrap = shapes.iter().any(|s| s.wrap_text);
+    if check(ui, "context.wrap_paragraph_text", "", wrap) {
         let ids = app.selection.clone();
-        app.run(Command::SetWrapText { shapes: ids, wrap });
+        app.run(Command::SetWrapText {
+            shapes: ids,
+            wrap: !wrap,
+        });
+        *close = true;
     }
-    ui.separator();
+    sep(ui);
     let of = shapes.iter().any(|s| s.overprint_fill);
     let oo = shapes.iter().any(|s| s.overprint_outline);
-    let mut f = of;
-    if ui
-        .checkbox(&mut f, tr("menu.object.overprint_fill"))
-        .changed()
-    {
+    if check(ui, "menu.object.overprint_fill", "", of) {
         app.toggle_overprint(true);
+        *close = true;
     }
-    let mut o = oo;
-    if ui
-        .checkbox(&mut o, tr("menu.object.overprint_outline"))
-        .changed()
-    {
+    if check(ui, "menu.object.overprint_outline", "", oo) {
         app.toggle_overprint(false);
+        *close = true;
     }
-    let mut hint = shapes.iter().all(|s| app.object_hinted(s.id));
-    if ui
-        .checkbox(&mut hint, tr("menu.object.object_hinting"))
-        .changed()
-    {
+    let hint = shapes.iter().all(|s| app.object_hinted(s.id));
+    if check(ui, "menu.object.object_hinting", "", hint) {
         app.toggle_object_hinting();
+        *close = true;
     }
     if ci(ui, close, "context.align_pixel_grid", "", true) {
         app.align_to_pixel_grid();
     }
-    ui.separator();
+    sep(ui);
     if ci(ui, close, "menu.object.properties", "Alt+Enter", true) {
         app.show_dockers = true;
         app.docker_tab = DockerTab::Properties;
@@ -361,7 +348,7 @@ fn node_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {
     if ci(ui, close, "context.node_delete", "Delete", has_nodes) {
         app.delete_selected_nodes();
     }
-    ui.separator();
+    sep(ui);
     if ci(
         ui,
         close,
@@ -374,14 +361,14 @@ fn node_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {
     if ci(ui, close, "context.node_break", "", has_nodes) {
         app.break_selected_nodes();
     }
-    ui.separator();
+    sep(ui);
     if ci(ui, close, "context.node_to_line", "", has_nodes) {
         app.selected_segments_to_line();
     }
     if ci(ui, close, "context.node_to_curve", "", has_nodes) {
         app.selected_segments_to_curve();
     }
-    ui.separator();
+    sep(ui);
     if ci(ui, close, "context.node_cusp", "C", has_nodes) {
         app.set_selected_node_type(NodeType::Cusp);
     }
@@ -391,25 +378,22 @@ fn node_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {
     if ci(ui, close, "context.node_symmetrical", "Y", has_nodes) {
         app.set_selected_node_type(NodeType::Symmetrical);
     }
-    ui.separator();
+    sep(ui);
     if ci(ui, close, "context.node_reverse", "", true) {
         app.reverse_selected_curves();
     }
     if ci(ui, close, "context.node_extract", "", has_nodes) {
         app.extract_subpath();
     }
-    ui.separator();
+    sep(ui);
     if ci(ui, close, "context.node_close", "", true) {
         app.close_selected_curves();
     }
-    let mut elastic = app.elastic_mode;
-    if ui
-        .checkbox(&mut elastic, tr("context.elastic_mode"))
-        .changed()
-    {
-        app.elastic_mode = elastic;
+    if check(ui, "context.elastic_mode", "", app.elastic_mode) {
+        app.elastic_mode = !app.elastic_mode;
+        *close = true;
     }
-    ui.separator();
+    sep(ui);
     if ci(ui, close, "menu.object.properties", "Alt+Enter", true) {
         app.show_dockers = true;
         app.docker_tab = DockerTab::Properties;
@@ -436,7 +420,7 @@ fn page_menu(app: &mut App, ui: &mut Ui, p: tracedraw_core::Point, close: &mut b
     if ci(ui, close, "menu.edit.select_all_objects", "Ctrl+A", true) {
         app.select_all();
     }
-    ui.separator();
+    sep(ui);
     if ci(ui, close, "menu.layout.insert_page", "", true) {
         app.dialog = Dialog::InsertPage {
             count: 1,
@@ -463,14 +447,14 @@ fn page_menu(app: &mut App, ui: &mut Ui, p: tracedraw_core::Point, close: &mut b
         app.dialog = Dialog::Options;
         app.options_page = crate::ui::dialogs::OptionsPage::Background;
     }
-    ui.separator();
+    sep(ui);
     if ci(ui, close, "menu.view.zoom_to_page", "Shift+F4", true) {
         app.zoom_to_page();
     }
     if ci(ui, close, "menu.view.zoom_to_fit", "F4", true) {
         app.zoom_to_fit();
     }
-    ui.separator();
+    sep(ui);
     if ci(ui, close, "menu.tools.options_app", "Ctrl+J", true) {
         app.dialog = Dialog::Options;
     }

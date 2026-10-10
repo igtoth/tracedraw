@@ -62,7 +62,7 @@ fn std_button(
         if enabled {
             Tokens::ICON
         } else {
-            Tokens::BORDER
+            Tokens::ICON_OFF
         },
     );
     resp.on_hover_text(tip)
@@ -85,7 +85,7 @@ fn std_arrow(ui: &mut Ui, id: &str, enabled: bool) -> egui::Response {
     let color = if enabled {
         Tokens::TEXT_DIM
     } else {
-        Tokens::BORDER
+        Tokens::ICON_OFF
     };
     ui.painter().add(egui::epaint::PathShape::convex_polygon(
         vec![
@@ -206,7 +206,7 @@ fn zoom_box(app: &mut App, ui: &mut Ui, id: &str, width: f32) {
 pub fn standard_toolbar(app: &mut App, ui: &mut Ui) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 1.0;
-        ui.set_min_height(STD + 4.0);
+        ui.set_min_height(STD);
         let doc = app.has_document();
         if std_button(ui, icons::Action::New, &tr("toolbar.new"), true, false).clicked() {
             app.request_new_document();
