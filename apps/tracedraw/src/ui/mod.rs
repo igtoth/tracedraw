@@ -16,6 +16,7 @@ pub mod effect_dialog;
 pub mod field;
 pub mod hints;
 pub mod icons;
+pub mod lab_dialog;
 pub mod layout_options;
 pub mod menus;
 pub mod options;

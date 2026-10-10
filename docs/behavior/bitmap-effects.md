@@ -50,11 +50,58 @@ later, and removing the last one gives the original back.
 - Editing an effect from the FX section previews from what the effects
   before it made, and the after view also runs the visible effects after
   it; OK changes that effect in place ("Edit Effect").
-- Tone Curve shows a curve editor instead: the master curve and the red,
-  green and blue curves (Channel), the image's brightness histogram
-  behind the grid, Linear for straight segments, Reset and Invert. Drag
-  on empty space to add a point, drag a point to move it, double-click a
-  point or drag it off the grid to remove it.
+- Colours of the image (Target Color Balance's samples, Replace
+  Colors' old colour) have an eyedropper beside their colour button: turn
+  it on and click either preview to take the colour under the pointer.
+- Contrast Enhancement shows the image's histogram with the input
+  clipping markers below it (drag the black or white triangle; the
+  clipped ends are shaded), the output range as a black to white bar with
+  its two markers, eyedroppers that take the input black and white
+  levels from the preview's brightness, and Auto adjust (the levels that
+  cut 0.5 % at either end). The Channel list picks the channel the
+  levels apply to and the histogram shows (Master: all, brightness). The
+  numbers stay below for exact values.
+- Tone Curve has a Channel list (Master, Red, Green, Blue) and a Style
+  list (Curve, Straight, Freehand, Gamma), and the curve editor with the
+  image's brightness histogram behind the grid. Curve and Straight: drag
+  on empty space to add a node, drag a node to move it, double-click it
+  or drag it off the grid to remove it; the eyedropper adds a node at the
+  level of the pixel clicked in the preview (its brightness for Master,
+  its channel otherwise). Freehand: drag to draw the curve; Smooth
+  averages it over 9 levels. Gamma: drag the middle handle up or down.
+  Invert flips the curve, Reset Active Channel resets the channel shown,
+  Reset all of them, Auto Balance Tone stretches each of red, green and
+  blue to the full range clipping 0.5 % at either end, Display all
+  channels draws the other curves thin behind, and Load... and Save keep
+  every channel's curve in a JSON file of the settings.
+
+## Image Adjustments
+
+Effects > Adjust > Image Adjustments opens a larger dialog instead of
+the plain one:
+
+- A 600 x 420 preview of a copy at most 720 pixels across. Tools above
+  it: Rotate left and Rotate right (the view, a quarter turn), Pan (drag;
+  the default tool), Zoom in and Zoom out (click a point to zoom by 1.5
+  about it), Zoom to fit, 100% (one bitmap pixel per screen point); the
+  wheel zooms about the pointer with any tool. Preview modes: Full
+  preview, Before and after full preview (side by side, same view) and
+  Before and after split preview (the original left of a dashed divider,
+  the result right; drag the divider).
+- Auto adjust sets the black and white points to the levels that cut
+  0.5 % of the opaque pixels at either end. Select white point and Select
+  black point turn the preview into a picker: a click sets that point
+  to the brightness of the pixel clicked (kept at least one level apart).
+- Sliders in the target design's groups: Temperature, Tint,
+  Saturation; Brightness, Contrast; Highlights, Shadows, Midtones. The
+  histogram below shows the result's brightness (square-root scaled).
+- Undo and Redo step through the corrections made in the dialog (a step
+  is recorded when a slider is let go, a pick or a button); Reset to
+  original clears every correction. Create snapshot keeps the current
+  settings as a numbered thumbnail below the preview; a click on one
+  brings its settings back, its cross deletes it.
+- OK adds one Image Adjustments effect (or changes the one being
+  edited) with the settings, which the FX section can edit later.
 
 ## Properties docker: FX
 
@@ -92,10 +139,10 @@ transparent areas.
 |---|---|---|
 | Auto Adjust | none | Each channel stretched between the levels that cut 0.5 % of the opaque pixels at either end. |
 | Image Adjustments | Black point 0 (0 to 254); White point 255 (1 to 255); Temperature 0 (-100 to 100); Tint 0 (-100 to 100); Saturation 0 (-100 to 100); Brightness 0 (-100 to 100); Contrast 0 (-100 to 100); Highlights 0 (-100 to 100); Shadows 0 (-100 to 100); Midtones 0 (-100 to 100) | In this order (settings / 100, values 0 to 1): black and white points map to 0 and 1; temperature `t` scales red by `1 - 0.25 t` and blue by `1 + 0.25 t`; tint `n` scales green by `1 + 0.2 n`, red and blue by `1 - 0.1 n`; saturation moves each channel away from the luminance by `1 + s`; brightness is the gamma `v^(2^-b)`; contrast scales about 0.5 by `1 + c`; then `0.35 (h smoothstep(0.5, 1, L) + s (1 - smoothstep(0, 0.5, L)) + m (1 - abs(2 L - 1)))` is added for highlights, shadows and midtones. |
-| Contrast Enhancement | Input low 0 (0 to 254); Input high 255 (1 to 255); Output low 0 (0 to 255); Output high 255 (0 to 255); Gamma 1 (0.1 to 10) | Levels: `t = clamp((v - in_low) / (in_high - in_low))^(1 / gamma)`, result `out_low + (out_high - out_low) t`. |
-| Local Equalization | Width 20 (2 to 255); Height 20 (2 to 255) | Histogram equalization of the brightness in tiles of Width x Height pixels, each level clipped at 1/64 of the tile's pixels, blended bilinearly between tile centres; colours scale with their brightness so hues stay. |
-| Target Color Balance | Shadow sample (#000000); Shadow target (#000000); Midtone sample (#808080); Midtone target (#808080); Highlight sample (#FFFFFF); Highlight target (#FFFFFF) | Per channel, straight segments through (0, 0), each sample to its target, and (255, 255). |
-| Tone Curve | curves (see below) | A master curve, then red, green and blue curves (smooth monotone cubic, or straight segments with Linear). |
+| Contrast Enhancement | Channel: **Master**, Red, Green, Blue; Input low 0 (0 to 254); Input high 255 (1 to 255); Output low 0 (0 to 255); Output high 255 (0 to 255); Gamma 1 (0.1 to 10) | Levels: `t = clamp((v - in_low) / (in_high - in_low))^(1 / gamma)`, result `out_low + (out_high - out_low) t`, on every channel (Master) or the channel chosen. |
+| Local Equalization | Width 20 (2 to 255); Height 20 (2 to 255); Lock width and height (on) | Histogram equalization of the brightness in tiles of Width x Height pixels (Width x Width when locked), each level clipped at 1/64 of the tile's pixels, blended bilinearly between tile centres; colours scale with their brightness so hues stay. |
+| Target Color Balance | Channel: **Master**, Red, Green, Blue; Always adjust all channels (off); Shadow sample (#000000); Shadow target (#000000); Midtone sample (#808080); Midtone target (#808080); Highlight sample (#FFFFFF); Highlight target (#FFFFFF) | Per channel, straight segments through (0, 0), each sample to its target, and (255, 255); with Red, Green or Blue chosen only that channel changes, unless Always adjust all channels. |
+| Tone Curve | curves (see below) | A master curve, then red, green and blue curves, each in its style: Curve (smooth monotone cubic through the nodes), Straight, Freehand (drawn, kept as straight segments every 4 levels) or Gamma (`255 (x / 255)^(1 / gamma)`). |
 | Brightness/Contrast/Intensity | Brightness 0 (-100 to 100); Contrast 0 (-100 to 100); Intensity 0 (-100 to 100) | On values 0 to 1 with the settings / 100: `x = v + b / 2`, then `(x - 0.5)(1 + c) + 0.5`, then `x (1 + i / 2)`. |
 | Color Balance | Shadows (on); Midtones (on); Highlights (on); Preserve luminance (on); Cyan / Red 0 (-100 to 100); Magenta / Green 0 (-100 to 100); Yellow / Blue 0 (-100 to 100) | Each axis adds `0.3 d w` to red, green or blue; `w` sums the checked ranges' weights (shadows `1 - smoothstep(0, 0.5, L)`, midtones `1 - abs(2 L - 1)`, highlights `smoothstep(0.5, 1, L)`). Preserve luminance shifts the three channels back to the old luminance. |
 | Gamma | Gamma 1 (0.1 to 10) | `v^(1 / gamma)`. |
@@ -263,8 +310,10 @@ transparent areas.
 
 The curves are stored as settings too: for each channel `rgb`, `r`, `g`
 and `b`, `<channel>n` points, `<channel><k>x` and `<channel><k>y` for
-each point (0 to 255) and `<channel>linear` (1 for straight segments). A
-channel with fewer than two points is the identity. Each pixel goes
+each point (0 to 255), `<channel>style` (0 Curve, 1 Straight, 2
+Freehand, 3 Gamma), `<channel>gamma` (0.1 to 10) and `<channel>linear`
+(1 for straight segments, which older settings have instead of a style).
+A channel with fewer than two points is the identity. Each pixel goes
 through the master curve, then its channel's curve.
 
 ## Not covered
@@ -277,6 +326,9 @@ through the master curve, then its channel's curve.
 - The algorithms follow the target design's descriptions and
   settings; results are close in look, not pixel-identical. 3D Rotate
   uses sliders where the target design also has a model to drag.
+- Tone Curve presets are JSON files of the settings rather than the
+  target design's own curve files, and Auto Balance Tone always clips
+  0.5 % (no settings for its limits).
 - Third-party plug-in filters are not supported.
 
 ## Checks
@@ -311,6 +363,25 @@ through the master curve, then its channel's curve.
   the exact one for sigma 0.8, 3 and 9, and the running-histogram
   median, minimum and maximum equal sorting for radii 1, 3 and 6
   (`fx::util::tests`).
+- Given the Tone Curve's styles, then a missing style follows Linear,
+  setting a style keeps Linear in step, Gamma 2 lifts 64 to 128, a
+  freehand curve keeps a point every 4 levels and smoothing keeps its
+  ends, Auto Balance Tone stretches 50..200 to 0..255, and Reset Active
+  Channel leaves the other channels' settings
+  (`tone_curve_styles_gamma_freehand_and_balance`,
+  `resetting_a_channel_leaves_the_others`).
+- Given the Image Adjustments, then undo and redo walk the recorded
+  steps and a new change drops the undone ones, snapshots are numbered
+  from 1, Auto adjust finds 60 and 200 on columns of grays from 60 to
+  200 with two outliers, the pickers keep the points apart, and every
+  quarter turn maps preview points back to the same pixel
+  (`ui::lab_dialog::tests`).
+- Given gray 64, then Contrast Enhancement with input high 128 doubles
+  only red when Red is chosen and every channel for Master, and
+  Target Color Balance from 64 to 128 changes only green when Green is
+  chosen and all three with Always adjust all channels
+  (`channel_lists_limit_levels_and_target_balance`); a preset file keeps
+  only its numbers (`presets_keep_numbers_only`).
 - Given a preview at a quarter of the size, then pixel settings are a
   quarter, never below their minimum, and other settings stay
   (`previews_scale_pixel_sizes_only`).

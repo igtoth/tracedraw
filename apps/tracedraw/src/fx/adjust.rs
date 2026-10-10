@@ -32,6 +32,7 @@ pub const EFFECTS: &[EffectSpec] = &[
     EffectSpec {
         id: "contrast_enhancement",
         params: &[
+            choice("channel", &RGB_CHANNELS, 0),
             range("input_low", 0.0, 254.0, 0.0, 1.0),
             range("input_high", 1.0, 255.0, 255.0, 1.0),
             range("output_low", 0.0, 255.0, 0.0, 1.0),
@@ -46,6 +47,7 @@ pub const EFFECTS: &[EffectSpec] = &[
         params: &[
             range("width", 2.0, 255.0, 20.0, 1.0),
             range("height", 2.0, 255.0, 20.0, 1.0),
+            check("lock", true),
         ],
         apply: local_equalization,
         reach: no_reach,
@@ -53,6 +55,8 @@ pub const EFFECTS: &[EffectSpec] = &[
     EffectSpec {
         id: "target_balance",
         params: &[
+            choice("channel", &RGB_CHANNELS, 0),
+            check("all_channels", false),
             color("low_sample", 0x000000),
             color("low_target", 0x000000),
             color("mid_sample", 0x808080),
@@ -207,6 +211,8 @@ pub const CHANNELS: [&str; 8] = [
     "magenta",
     "grayscale",
 ];
+/// The composite channel and the red, green and blue ones.
+pub const RGB_CHANNELS: [&str; 4] = ["master", "red", "green", "blue"];
 pub const SPECTRUM: [&str; 7] = [
     "reds", "yellows", "greens", "cyans", "blues", "magentas", "grays",
 ];
@@ -326,7 +332,8 @@ pub fn image_adjustments(img: &RgbaImage, p: &P) -> RgbaImage {
     })
 }
 
-/// Levels: input range to output range through a gamma.
+/// Levels: input range to output range through a gamma, on every
+/// channel or the one chosen.
 pub fn contrast_enhancement(img: &RgbaImage, p: &P) -> RgbaImage {
     let (il, ih) = (
         p.f32("input_low"),
@@ -339,15 +346,46 @@ pub fn contrast_enhancement(img: &RgbaImage, p: &P) -> RgbaImage {
         let t = ((i as f32 - il) / (ih - il)).clamp(0.0, 1.0).powf(1.0 / g);
         *v = clamp8(ol + (oh - ol) * t);
     }
-    map_lut(img, &lut)
+    luts_on(img, &channel_luts(&lut, p.i("channel"), false))
 }
 
-/// Contrast-limited equalization over tiles of the given size, blended
-/// between neighbouring tiles; colours keep their hue.
+/// The tables for the red, green and blue channels when `lut` applies to
+/// the channel chosen in [`RGB_CHANNELS`] (all of them for the composite
+/// or with `all`).
+fn channel_luts(lut: &[u8; 256], channel: usize, all: bool) -> [[u8; 256]; 3] {
+    let id: [u8; 256] = std::array::from_fn(|i| i as u8);
+    std::array::from_fn(|c| {
+        if channel == 0 || all || channel == c + 1 {
+            *lut
+        } else {
+            id
+        }
+    })
+}
+
+fn luts_on(img: &RgbaImage, luts: &[[u8; 256]; 3]) -> RgbaImage {
+    map_px(img, |_, _, q| {
+        Rgba([
+            luts[0][q[0] as usize],
+            luts[1][q[1] as usize],
+            luts[2][q[2] as usize],
+            q[3],
+        ])
+    })
+}
+
+/// Contrast-limited equalization over tiles of the given size (square
+/// when locked), blended between neighbouring tiles; colours keep their
+/// hue.
 pub fn local_equalization(img: &RgbaImage, p: &P) -> RgbaImage {
     let (w, h) = img.dimensions();
     let tw = p.u("width").max(2);
-    let th = p.u("height").max(2);
+    // Locked, the region stays square: the width sets both.
+    let th = if p.b("lock") {
+        tw
+    } else {
+        p.u("height").max(2)
+    };
     let nx = w.div_ceil(tw).max(1);
     let ny = h.div_ceil(th).max(1);
     let mut luts = vec![[0u8; 256]; (nx * ny) as usize];
@@ -407,7 +445,8 @@ pub fn local_equalization(img: &RgbaImage, p: &P) -> RgbaImage {
 }
 
 /// Each channel through the line from black through the low, mid and
-/// high samples (to their targets) to white.
+/// high samples (to their targets) to white; with a single channel
+/// chosen, only that one unless all channels are adjusted.
 pub fn target_balance(img: &RgbaImage, p: &P) -> RgbaImage {
     let pairs = [
         (p.rgb("low_sample"), p.rgb("low_target")),
@@ -428,19 +467,23 @@ pub fn target_balance(img: &RgbaImage, p: &P) -> RgbaImage {
         };
         *lut = curve.lut();
     }
-    map_px(img, |_, _, q| {
-        Rgba([
-            luts[0][q[0] as usize],
-            luts[1][q[1] as usize],
-            luts[2][q[2] as usize],
-            q[3],
-        ])
-    })
+    // A single channel chosen (and not all of them): the others stay.
+    let channel = p.i("channel");
+    if channel > 0 && !p.b("all_channels") {
+        for (c, lut) in luts.iter_mut().enumerate() {
+            if c + 1 != channel {
+                *lut = std::array::from_fn(|i| i as u8);
+            }
+        }
+    }
+    luts_on(img, &luts)
 }
 
 /// The Tone Curve filter's curves: `<channel>n` points, then
 /// `<channel><k>x` and `<channel><k>y`, for the channels `rgb`, `r`, `g`
-/// and `b`; `<channel>linear` 1 for straight segments.
+/// and `b`; `<channel>style` (see [`CURVE_STYLES`]), `<channel>gamma`
+/// for the Gamma style, and `<channel>linear` 1 for straight segments
+/// (what older settings have instead of a style).
 pub fn curve_from(values: &BTreeMap<String, f64>, ch: &str) -> crate::bitmap_modes::ToneCurve {
     let n = values
         .get(&format!("{ch}n"))
@@ -461,12 +504,16 @@ pub fn curve_from(values: &BTreeMap<String, f64>, ch: &str) -> crate::bitmap_mod
             points.push((x as f32, y as f32));
         }
     }
+    let style = curve_style(values, ch);
+    if style == 3 {
+        return gamma_curve(curve_gamma(values, ch));
+    }
     if points.len() < 2 {
         return crate::bitmap_modes::ToneCurve::identity();
     }
     crate::bitmap_modes::ToneCurve {
         points,
-        smooth: values.get(&format!("{ch}linear")).copied().unwrap_or(0.0) == 0.0,
+        smooth: style == 0,
     }
 }
 
@@ -490,6 +537,131 @@ pub fn curve_into(
         values.insert(format!("{ch}{k}y"), *y as f64);
     }
     values.insert(format!("{ch}linear"), if c.smooth { 0.0 } else { 1.0 });
+}
+
+/// The Tone Curve's styles, as its Style list: smooth curve, straight
+/// segments, freehand (drawn, kept as straight segments every 4 levels)
+/// and gamma (one value).
+pub const CURVE_STYLES: [&str; 4] = ["curve", "straight", "freehand", "gamma"];
+
+/// A channel's curve style (an index into [`CURVE_STYLES`]); without
+/// `<channel>style`, `<channel>linear` picks curve or straight.
+pub fn curve_style(values: &BTreeMap<String, f64>, ch: &str) -> usize {
+    match values
+        .get(&format!("{ch}style"))
+        .copied()
+        .filter(|v| v.is_finite())
+    {
+        Some(v) => (v.round().max(0.0) as usize).min(CURVE_STYLES.len() - 1),
+        None => usize::from(values.get(&format!("{ch}linear")).copied().unwrap_or(0.0) != 0.0),
+    }
+}
+
+/// Set a channel's style, keeping `<channel>linear` in step.
+pub fn set_curve_style(values: &mut BTreeMap<String, f64>, ch: &str, style: usize) {
+    let style = style.min(CURVE_STYLES.len() - 1);
+    values.insert(format!("{ch}style"), style as f64);
+    values.insert(
+        format!("{ch}linear"),
+        if style == 1 || style == 2 { 1.0 } else { 0.0 },
+    );
+}
+
+/// A channel's gamma (Gamma style), 0.1 to 10.
+pub fn curve_gamma(values: &BTreeMap<String, f64>, ch: &str) -> f64 {
+    values
+        .get(&format!("{ch}gamma"))
+        .copied()
+        .filter(|v| v.is_finite())
+        .unwrap_or(1.0)
+        .clamp(0.1, 10.0)
+}
+
+/// The curve `255 (x / 255)^(1 / gamma)` through 33 points.
+pub fn gamma_curve(gamma: f64) -> crate::bitmap_modes::ToneCurve {
+    let g = gamma.clamp(0.1, 10.0) as f32;
+    crate::bitmap_modes::ToneCurve {
+        points: (0..=32)
+            .map(|i| {
+                let x = i as f32 * 255.0 / 32.0;
+                (x, 255.0 * (x / 255.0).powf(1.0 / g))
+            })
+            .collect(),
+        smooth: true,
+    }
+}
+
+/// A drawn curve (one value per level) as straight segments every 4
+/// levels, the last at 255.
+pub fn freehand_points(lut: &[f32; 256]) -> Vec<(f32, f32)> {
+    let mut pts: Vec<(f32, f32)> = (0..256)
+        .step_by(4)
+        .map(|x| (x as f32, lut[x].clamp(0.0, 255.0)))
+        .collect();
+    pts.push((255.0, lut[255].clamp(0.0, 255.0)));
+    pts
+}
+
+/// A curve's values smoothed by a 9-level moving average, ends kept.
+pub fn smoothed(c: &crate::bitmap_modes::ToneCurve) -> [f32; 256] {
+    let v: Vec<f32> = (0..256).map(|x| c.eval(x as f32)).collect();
+    let mut out = [0f32; 256];
+    for (x, o) in out.iter_mut().enumerate() {
+        let lo = x.saturating_sub(4);
+        let hi = (x + 4).min(255);
+        *o = v[lo..=hi].iter().sum::<f32>() / (hi - lo + 1) as f32;
+    }
+    out[0] = v[0];
+    out[255] = v[255];
+    out
+}
+
+/// Auto Balance Tone: per channel, the levels that cut `clip` of the
+/// opaque pixels at either end, stretched to 0 and 255.
+pub fn balance_curves(img: &RgbaImage, clip: f32) -> [crate::bitmap_modes::ToneCurve; 3] {
+    let mut hist = [[0u32; 256]; 3];
+    let mut n = 0u32;
+    for p in img.pixels().filter(|p| p[3] > 0) {
+        n += 1;
+        for c in 0..3 {
+            hist[c][p[c] as usize] += 1;
+        }
+    }
+    let cut = (n as f32 * clip.clamp(0.0, 0.49)) as u32;
+    std::array::from_fn(|c| {
+        if n == 0 {
+            return crate::bitmap_modes::ToneCurve::identity();
+        }
+        let mut acc = 0;
+        let lo = (0..256)
+            .find(|&i| {
+                acc += hist[c][i];
+                acc > cut
+            })
+            .unwrap_or(0);
+        acc = 0;
+        let hi = (0..256)
+            .rev()
+            .find(|&i| {
+                acc += hist[c][i];
+                acc > cut
+            })
+            .unwrap_or(255);
+        if hi <= lo {
+            return crate::bitmap_modes::ToneCurve::identity();
+        }
+        let mut points = vec![(lo as f32, 0.0), (hi as f32, 255.0)];
+        if lo > 0 {
+            points.insert(0, (0.0, 0.0));
+        }
+        if hi < 255 {
+            points.push((255.0, 255.0));
+        }
+        crate::bitmap_modes::ToneCurve {
+            points,
+            smooth: false,
+        }
+    })
 }
 
 pub fn tone_curve(img: &RgbaImage, p: &P) -> RgbaImage {

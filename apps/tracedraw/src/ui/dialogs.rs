@@ -2824,6 +2824,9 @@ mod tests {
             Dialog::Trace(TraceState::new(crate::trace::Preset::Logo)),
             Dialog::Effect(crate::ui::effect_dialog::EffectState::new("emboss")),
             Dialog::Effect(crate::ui::effect_dialog::EffectState::new("tone_curve")),
+            Dialog::Effect(crate::ui::effect_dialog::EffectState::new(
+                "image_adjustments",
+            )),
             Dialog::TextTabs,
             Dialog::TextColumns,
             Dialog::TextBullets,

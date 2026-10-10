@@ -662,6 +662,85 @@ mod tests {
     }
 
     #[test]
+    fn tone_curve_styles_gamma_freehand_and_balance() {
+        use adjust::*;
+        let mut v = BTreeMap::new();
+        assert_eq!(curve_style(&v, "rgb"), 0);
+        v.insert("rgblinear".to_string(), 1.0);
+        assert_eq!(curve_style(&v, "rgb"), 1);
+        set_curve_style(&mut v, "rgb", 3);
+        assert_eq!((curve_style(&v, "rgb"), v["rgblinear"]), (3, 0.0));
+        set_curve_style(&mut v, "r", 2);
+        assert_eq!((curve_style(&v, "r"), v["rlinear"]), (2, 1.0));
+        // Gamma 2 lifts 64 to about 128.
+        v.insert("rgbgamma".to_string(), 2.0);
+        let mut e = new_effect("tone_curve");
+        e.params = v.clone();
+        e.params.remove("rstyle");
+        e.params.remove("rlinear");
+        let gray: RgbaImage = ImageBuffer::from_pixel(2, 2, Rgba([64, 64, 64, 255]));
+        let out = apply_effect(&gray, &e);
+        assert!(
+            (out.get_pixel(0, 0)[0] as i32 - 128).abs() <= 1,
+            "{:?}",
+            out.get_pixel(0, 0)
+        );
+        // Freehand: points every 4 levels and the last at 255.
+        let lut: [f32; 256] = std::array::from_fn(|x| 255.0 - x as f32);
+        let pts = freehand_points(&lut);
+        assert_eq!(
+            (pts.len(), pts[1], *pts.last().expect("points")),
+            (65, (4.0, 251.0), (255.0, 0.0))
+        );
+        let c = crate::bitmap_modes::ToneCurve {
+            points: pts,
+            smooth: false,
+        };
+        let sm = smoothed(&c);
+        assert_eq!((sm[0], sm[255]), (255.0, 0.0));
+        assert!((sm[100] - 155.0).abs() < 0.5);
+        // Auto Balance Tone stretches 50..200 to 0..255.
+        let img: RgbaImage = ImageBuffer::from_fn(151, 4, |x, _| {
+            let v = (50 + x) as u8;
+            Rgba([v, v, v, 255])
+        });
+        let curves = balance_curves(&img, 0.005);
+        assert!(curves[0].eval(50.0) < 1.0 && curves[0].eval(200.0) > 254.0);
+        assert!((curves[1].eval(125.0) - 127.5).abs() < 1.0);
+    }
+
+    #[test]
+    fn channel_lists_limit_levels_and_target_balance() {
+        let gray: RgbaImage = ImageBuffer::from_pixel(2, 2, Rgba([64, 64, 64, 255]));
+        let red_only = run(
+            &gray,
+            "contrast_enhancement",
+            &[("channel", 1.0), ("input_high", 128.0)],
+        );
+        assert_eq!(red_only.get_pixel(0, 0).0, [128, 64, 64, 255]);
+        let all = run(&gray, "contrast_enhancement", &[("input_high", 128.0)]);
+        assert_eq!(all.get_pixel(0, 0).0, [128, 128, 128, 255]);
+        // Sample 64 to target 128: green alone, then every channel.
+        let set = [
+            ("mid_sample", 0x404040 as f64),
+            ("mid_target", 0x808080 as f64),
+            ("channel", 2.0),
+        ];
+        assert_eq!(
+            run(&gray, "target_balance", &set).get_pixel(0, 0).0,
+            [64, 128, 64, 255]
+        );
+        let mut every = set.to_vec();
+        every.push(("all_channels", 1.0));
+        assert_eq!(
+            run(&gray, "target_balance", &every)
+                .get_pixel(0, 0)
+                .0,
+            [128, 128, 128, 255]
+        );
+    }
+
+    #[test]
     fn previews_scale_pixel_sizes_only() {
         let mut e = new_effect("unsharp_mask");
         e.params.insert("radius".into(), 10.0);

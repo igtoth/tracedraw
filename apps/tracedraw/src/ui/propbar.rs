@@ -730,7 +730,7 @@ fn draw_node_pic(painter: &Painter, r: Rect, pic: Pic, color: Color32) {
     }
 }
 
-fn frame(ui: &Ui, rect: Rect, hovered: bool, pressed: bool) {
+pub(crate) fn frame(ui: &Ui, rect: Rect, hovered: bool, pressed: bool) {
     if pressed {
         ui.painter().rect_filled(rect, 0.0, Color32::WHITE);
         ui.painter().rect_stroke(

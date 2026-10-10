@@ -13,20 +13,22 @@ use tracedraw_core::{document::ShapeKind, BitmapEffect, BitmapFxStack, ShapeId};
 /// The largest side of the preview copy, pixels.
 pub const THUMB: u32 = 240;
 
+/// A copy of a bitmap for previews and its texture.
 #[derive(Clone)]
-struct Thumb {
-    shape: ShapeId,
-    /// What the copy was made from (see [`Source`]).
-    key: u64,
-    img: Arc<RgbaImage>,
+pub struct Thumb {
+    pub shape: ShapeId,
+    /// What the copy was made from (see [`Source`]) and its size.
+    pub key: u64,
+    pub img: Arc<RgbaImage>,
     /// The copy's scale against the bitmap.
-    scale: f32,
-    tex: TextureHandle,
+    pub scale: f32,
+    pub tex: TextureHandle,
 }
 
 #[derive(Clone)]
 struct After {
     key: u64,
+    img: Arc<RgbaImage>,
     tex: TextureHandle,
 }
 
@@ -65,10 +67,10 @@ pub enum Source<'a> {
     },
 }
 
-/// A small copy of `img` (at most [`THUMB`] across) and its scale.
-fn shrink(img: RgbaImage) -> (RgbaImage, f32) {
+/// A copy of `img` at most `side` pixels across and its scale.
+fn shrink(img: RgbaImage, side: u32) -> (RgbaImage, f32) {
     let (w, h) = img.dimensions();
-    let scale = (THUMB as f32 / w.max(h).max(1) as f32).min(1.0);
+    let scale = (side as f32 / w.max(h).max(1) as f32).min(1.0);
     if scale >= 1.0 {
         return (img, 1.0);
     }
@@ -81,13 +83,20 @@ fn shrink(img: RgbaImage) -> (RgbaImage, f32) {
     (small, scale)
 }
 
-/// The preview copy and its scale, made once per source.
+/// The preview copy (at most [`THUMB`] across) and its scale, made once
+/// per source.
 fn thumb(app: &App, ctx: &egui::Context, src: &Source) -> Option<Thumb> {
-    let cache = egui::Id::new("bitmap_preview_thumb");
+    copy_of(app, ctx, src, THUMB)
+}
+
+/// A copy of the source at most `side` pixels across, made once per
+/// source and size.
+pub fn copy_of(app: &App, ctx: &egui::Context, src: &Source, side: u32) -> Option<Thumb> {
+    let cache = egui::Id::new(("bitmap_preview_thumb", side));
     let (shape, key, png, before): (ShapeId, u64, Vec<u8>, &[BitmapEffect]) = match src {
         Source::Shown => {
             let (id, _, png) = selected_bitmap(app)?;
-            let key = settings_key(&("shown", png.len()));
+            let key = settings_key(&("shown", png.len(), side));
             (id, key, png, &[])
         }
         Source::Stack {
@@ -96,7 +105,7 @@ fn thumb(app: &App, ctx: &egui::Context, src: &Source) -> Option<Thumb> {
             index,
         } => {
             let before = &stack.effects[..(*index).min(stack.effects.len())];
-            let key = settings_key(&("stack", stack.png.len(), before));
+            let key = settings_key(&("stack", stack.png.len(), before, side));
             (*shape, key, stack.png.clone(), before)
         }
     };
@@ -105,7 +114,7 @@ fn thumb(app: &App, ctx: &egui::Context, src: &Source) -> Option<Thumb> {
             return Some(t);
         }
     }
-    let (mut small, scale) = shrink(crate::bitmap_fx::decode(&png)?);
+    let (mut small, scale) = shrink(crate::bitmap_fx::decode(&png)?, side);
     for e in before.iter().filter(|e| e.visible) {
         small = crate::fx::apply_effect(&small, &crate::fx::scaled(e, scale));
     }
@@ -123,6 +132,35 @@ fn thumb(app: &App, ctx: &egui::Context, src: &Source) -> Option<Thumb> {
     };
     ctx.data_mut(|d| d.insert_temp(cache, t.clone()));
     Some(t)
+}
+
+/// An image and its texture kept under `name` until `key` changes;
+/// `make` runs only then.
+pub fn cached(
+    ctx: &egui::Context,
+    name: &str,
+    key: u64,
+    make: impl FnOnce() -> RgbaImage,
+) -> (TextureHandle, Arc<RgbaImage>) {
+    let id = egui::Id::new(("bitmap_preview_cache", name));
+    if let Some(a) = ctx.data(|d| d.get_temp::<After>(id)) {
+        if a.key == key {
+            return (a.tex, a.img);
+        }
+    }
+    let img = Arc::new(make());
+    let tex = ctx.load_texture(name, color_image(&img), TextureOptions::LINEAR);
+    ctx.data_mut(|d| {
+        d.insert_temp(
+            id,
+            After {
+                key,
+                img: img.clone(),
+                tex: tex.clone(),
+            },
+        )
+    });
+    (tex, img)
 }
 
 /// A hash of anything printable: the settings a preview depends on.
@@ -155,45 +193,49 @@ pub fn before_after_from(
     side: f32,
     f: impl FnOnce(&RgbaImage, f32) -> RgbaImage,
 ) -> Option<Arc<RgbaImage>> {
+    before_after_pick(ui, app, src, key, side, false, f).map(|p| p.img)
+}
+
+/// What a preview gives back: the copy, and the copy's pixel under a
+/// click on either picture.
+pub struct Preview {
+    pub img: Arc<RgbaImage>,
+    pub picked: Option<(u32, u32)>,
+}
+
+/// [`before_after_from`] where a click on a picture picks a pixel; with
+/// `picking` the pointer shows a crosshair over the pictures.
+pub fn before_after_pick(
+    ui: &mut Ui,
+    app: &App,
+    src: &Source,
+    key: u64,
+    side: f32,
+    picking: bool,
+    f: impl FnOnce(&RgbaImage, f32) -> RgbaImage,
+) -> Option<Preview> {
     let ctx = ui.ctx().clone();
     let Some(t) = thumb(app, &ctx, src) else {
         ui.label(tr("dialog.no_bitmap_preview"));
         return None;
     };
-    let after_id = egui::Id::new("bitmap_preview_after");
     let full_key = key ^ (t.shape.raw().rotate_left(17)) ^ t.key.rotate_left(41);
-    let after = match ctx.data(|d| d.get_temp::<After>(after_id)) {
-        Some(a) if a.key == full_key => a.tex,
-        _ => {
-            let out = f(&t.img, t.scale);
-            let tex = ctx.load_texture(
-                "bitmap_preview_after",
-                color_image(&out),
-                TextureOptions::LINEAR,
-            );
-            ctx.data_mut(|d| {
-                d.insert_temp(
-                    after_id,
-                    After {
-                        key: full_key,
-                        tex: tex.clone(),
-                    },
-                )
-            });
-            tex
-        }
-    };
+    let (after, _) = cached(&ctx, "bitmap_preview_after", full_key, || {
+        f(&t.img, t.scale)
+    });
     let fit = |tex: &TextureHandle| {
         let s = tex.size_vec2();
         let k = (side / s.x.max(s.y).max(1.0)).min(1.0);
         s * k
     };
+    let (w, h) = t.img.dimensions();
+    let mut picked = None;
     ui.horizontal(|ui| {
         for (label, tex) in [(tr("dialog.before"), &t.tex), (tr("dialog.after"), &after)] {
             ui.vertical(|ui| {
                 ui.label(egui::RichText::new(label).size(11.0));
-                let (rect, _) =
-                    ui.allocate_exact_size(egui::vec2(side, side), egui::Sense::hover());
+                let (rect, resp) =
+                    ui.allocate_exact_size(egui::vec2(side, side), egui::Sense::click());
                 // A checkerboard shows transparency.
                 let painter = ui.painter_at(rect);
                 let cell = 8.0;
@@ -225,8 +267,22 @@ pub fn before_after_from(
                     egui::Stroke::new(1.0, crate::theme::Tokens::BORDER),
                     egui::StrokeKind::Inside,
                 );
+                if picking && resp.hovered() {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
+                }
+                if resp.clicked() {
+                    if let Some(pos) = resp.interact_pointer_pos() {
+                        if r.contains(pos) && w > 0 && h > 0 {
+                            let u = (pos - r.min) / r.size();
+                            picked = Some((
+                                ((u.x * w as f32) as u32).min(w - 1),
+                                ((u.y * h as f32) as u32).min(h - 1),
+                            ));
+                        }
+                    }
+                }
             });
         }
     });
-    Some(t.img)
+    Some(Preview { img: t.img, picked })
 }
