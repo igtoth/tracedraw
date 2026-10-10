@@ -6,7 +6,7 @@ target design does, with a test or a checked screenshot behind it.
 "partial" names what is missing. "baked" means the result is applied once
 instead of staying live and editable. The goal is every row at "works".
 
-Counts: works 146, partial 3 (`.cdr` content coverage; polygon nodes in the Shape tool; bitmap effect dialogs), missing 3 (CMX import; window cascade and tile; some Options pages), not applicable 3, icons close but not pixel-identical.
+Counts: works 146, partial 4 (`.cdr` content coverage; polygon nodes in the Shape tool; the Image Adjustments and Target Color Balance dialogs; the manual inflate dialog), missing 3 (CMX import; window cascade and tile; some Options pages), not applicable 3, icons close but not pixel-identical.
 
 ## 1. Selection and navigation
 
@@ -147,10 +147,11 @@ Counts: works 146, partial 3 (`.cdr` content coverage; polygon nodes in the Shap
 | Import PNG, JPEG, BMP, GIF, WebP, TIFF; crop, resample, straighten | works |
 | Convert to bitmap (resolution, colour mode, transparent background) | works |
 | Bitmap colour modes: Black and White (line art, ordered, halftone, cardinality-distribution, Jarvis, Stucki, Floyd-Steinberg), Grayscale, Duotone (one to four inks with tone curves, load and save), Paletted (uniform, VGA, adaptive, optimized, grayscale, system, document palette; ordered and error-diffusion dithering), RGB, Lab, CMYK; dialogs with before and after previews | works (see `behavior/bitmap-modes.md`); no overprint tab or range sensitivity |
-| Bitmap effects: 3D, adjust, art strokes, blur, camera, colour transform, contour, correction, creative, custom, distort, noise, sharpen, texture, transform | partial: one Amount slider per effect instead of the reference's per-effect dialogs, and some of its effects are missing |
+| Bitmap effects, all 98 of the target design's Effects menu: Adjust (Auto Adjust, Image Adjustments, Contrast Enhancement, Local Equalization, Target Color Balance, Tone Curve, Brightness/Contrast/Intensity, Color Balance, Gamma, Hue/Saturation/Lightness, Selective Color, Replace Colors, Desaturate, Channel Mixer), Transform, Correction, 3D Effects, Art Strokes, Blur, Camera, Color Transform, Contour, Creative, Custom, Distort, Noise, Sharpen, Texture; each with its settings dialog and before and after previews; Ctrl+B, Ctrl+Shift+B, Ctrl+Shift+U | partial (see `behavior/bitmap-effects.md`): the Image Adjustments and Target Color Balance dialogs have plain settings, without eyedroppers, snapshots or a histogram; results close in look, not pixel-identical |
+| Effects kept apart from the pixels: Properties docker FX section (show or hide, edit, reorder, delete, add effect), original kept until Flatten Effects; Auto inflate bitmaps for effects (Document Options and Bitmaps > Inflate Bitmap) | works (see `behavior/bitmap-effects.md`); reordering with buttons instead of dragging |
 | Colour modes: 1-bit, grayscale, RGB, CMYK | works |
 | Bitmap colour mask | works |
-| Inflate bitmap (auto and manual) | works |
+| Inflate bitmap: Auto Inflate Bitmap switch, Manually Inflate Bitmap | partial: the manual dialog takes a margin in pixels, without Inflate to, Inflate by percentages or Maintain aspect ratio |
 | Bitmap tracing: quick, centreline, outline; presets; smoothing, detail, colour count | works |
 | Edit bitmap in the system editor, linked bitmaps (update from link, break link) | works |
 

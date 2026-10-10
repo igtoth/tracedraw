@@ -1,6 +1,6 @@
 //! Dialogs: pages, layers, Options (multi-page), Document Properties,
 //! Export, Print, Print Merge, Find and Replace, tables, QR codes,
-//! bitmaps (convert, straighten, resample, inflate, trace, effect amount),
+//! bitmaps (convert, straighten, resample, inflate, trace),
 //! text (tabs, columns, bullets, drop cap, statistics, spell check),
 //! colour management, font manager, palette editor, confirmations.
 
@@ -311,10 +311,8 @@ pub enum Dialog {
         px: u32,
     },
     Trace(TraceState),
-    BitmapFx {
-        fx: crate::bitmap_fx::Fx,
-        amount: f32,
-    },
+    /// A bitmap effect's settings (Effects menu, FX section).
+    Effect(crate::ui::effect_dialog::EffectState),
     TextTabs,
     TextColumns,
     TextBullets,
@@ -890,16 +888,7 @@ pub fn show(app: &mut App, ctx: &Context) {
             });
         }
         Dialog::Trace(st) => trace_dialog(app, ctx, st, &mut close),
-        Dialog::BitmapFx { fx, amount } => {
-            window(ctx, tr("dialog.effect")).show(ctx, |ui| {
-                ui.label(format!("{fx:?}"));
-                ui.add(egui::Slider::new(amount, 0.0..=100.0).text(tr("dialog.amount")));
-                if ok_cancel(ui, &mut close) {
-                    app.bitmap_fx_amount = *amount;
-                    app.apply_bitmap_effect_amount(*fx, *amount);
-                }
-            });
-        }
+        Dialog::Effect(st) => crate::ui::effect_dialog::effect_dialog(app, ctx, st, &mut close),
         Dialog::TextTabs | Dialog::TextColumns | Dialog::TextBullets | Dialog::TextDropCap => {
             paragraph_dialog(app, ctx, &dialog, &mut close)
         }
@@ -2833,10 +2822,8 @@ mod tests {
             Dialog::Resample { dpi: 100.0 },
             Dialog::InflateBitmap { px: 4 },
             Dialog::Trace(TraceState::new(crate::trace::Preset::Logo)),
-            Dialog::BitmapFx {
-                fx: crate::bitmap_fx::Fx::Emboss,
-                amount: 0.5,
-            },
+            Dialog::Effect(crate::ui::effect_dialog::EffectState::new("emboss")),
+            Dialog::Effect(crate::ui::effect_dialog::EffectState::new("tone_curve")),
             Dialog::TextTabs,
             Dialog::TextColumns,
             Dialog::TextBullets,

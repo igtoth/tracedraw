@@ -167,6 +167,7 @@ fn write_shape(
         width_px,
         height_px,
         png,
+        fx: _,
     } = &shape.kind
     {
         // Image space (pixels, y down) to the local rect to the page.

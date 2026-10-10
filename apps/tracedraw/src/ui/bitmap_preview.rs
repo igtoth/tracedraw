@@ -8,7 +8,7 @@ use egui::{ColorImage, TextureHandle, TextureOptions, Ui};
 use image::RgbaImage;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
-use tracedraw_core::{document::ShapeKind, ShapeId};
+use tracedraw_core::{document::ShapeKind, BitmapEffect, BitmapFxStack, ShapeId};
 
 /// The largest side of the preview copy, pixels.
 pub const THUMB: u32 = 240;
@@ -16,7 +16,8 @@ pub const THUMB: u32 = 240;
 #[derive(Clone)]
 struct Thumb {
     shape: ShapeId,
-    len: usize,
+    /// What the copy was made from (see [`Source`]).
+    key: u64,
     img: Arc<RgbaImage>,
     /// The copy's scale against the bitmap.
     scale: f32,
@@ -51,41 +52,76 @@ pub fn selected_bitmap(app: &App) -> Option<(ShapeId, f32, Vec<u8>)> {
         })
 }
 
-/// The preview copy of the selected bitmap and its scale, decoded once.
-fn thumb(app: &App, ctx: &egui::Context) -> Option<Thumb> {
-    let (id, _, png) = selected_bitmap(app)?;
-    let key = egui::Id::new("bitmap_preview_thumb");
-    if let Some(t) = ctx.data(|d| d.get_temp::<Thumb>(key)) {
-        if t.shape == id && t.len == png.len() {
+/// What a preview starts from.
+pub enum Source<'a> {
+    /// The first selected bitmap as it shows now.
+    Shown,
+    /// A bitmap's original pixels through its visible effects before
+    /// `index`: where the effect being edited starts.
+    Stack {
+        shape: ShapeId,
+        stack: &'a BitmapFxStack,
+        index: usize,
+    },
+}
+
+/// A small copy of `img` (at most [`THUMB`] across) and its scale.
+fn shrink(img: RgbaImage) -> (RgbaImage, f32) {
+    let (w, h) = img.dimensions();
+    let scale = (THUMB as f32 / w.max(h).max(1) as f32).min(1.0);
+    if scale >= 1.0 {
+        return (img, 1.0);
+    }
+    let small = image::imageops::resize(
+        &img,
+        ((w as f32 * scale).round() as u32).max(1),
+        ((h as f32 * scale).round() as u32).max(1),
+        image::imageops::FilterType::Triangle,
+    );
+    (small, scale)
+}
+
+/// The preview copy and its scale, made once per source.
+fn thumb(app: &App, ctx: &egui::Context, src: &Source) -> Option<Thumb> {
+    let cache = egui::Id::new("bitmap_preview_thumb");
+    let (shape, key, png, before): (ShapeId, u64, Vec<u8>, &[BitmapEffect]) = match src {
+        Source::Shown => {
+            let (id, _, png) = selected_bitmap(app)?;
+            let key = settings_key(&("shown", png.len()));
+            (id, key, png, &[])
+        }
+        Source::Stack {
+            shape,
+            stack,
+            index,
+        } => {
+            let before = &stack.effects[..(*index).min(stack.effects.len())];
+            let key = settings_key(&("stack", stack.png.len(), before));
+            (*shape, key, stack.png.clone(), before)
+        }
+    };
+    if let Some(t) = ctx.data(|d| d.get_temp::<Thumb>(cache)) {
+        if t.shape == shape && t.key == key {
             return Some(t);
         }
     }
-    let img = crate::bitmap_fx::decode(&png)?;
-    let (w, h) = img.dimensions();
-    let scale = (THUMB as f32 / w.max(h).max(1) as f32).min(1.0);
-    let small = if scale < 1.0 {
-        image::imageops::resize(
-            &img,
-            ((w as f32 * scale).round() as u32).max(1),
-            ((h as f32 * scale).round() as u32).max(1),
-            image::imageops::FilterType::Triangle,
-        )
-    } else {
-        img
-    };
+    let (mut small, scale) = shrink(crate::bitmap_fx::decode(&png)?);
+    for e in before.iter().filter(|e| e.visible) {
+        small = crate::fx::apply_effect(&small, &crate::fx::scaled(e, scale));
+    }
     let tex = ctx.load_texture(
         "bitmap_preview_before",
         color_image(&small),
         TextureOptions::LINEAR,
     );
     let t = Thumb {
-        shape: id,
-        len: png.len(),
+        shape,
+        key,
         img: Arc::new(small),
         scale,
         tex,
     };
-    ctx.data_mut(|d| d.insert_temp(key, t.clone()));
+    ctx.data_mut(|d| d.insert_temp(cache, t.clone()));
     Some(t)
 }
 
@@ -107,13 +143,25 @@ pub fn before_after(
     side: f32,
     f: impl FnOnce(&RgbaImage, f32) -> RgbaImage,
 ) -> Option<Arc<RgbaImage>> {
+    before_after_from(ui, app, &Source::Shown, key, side, f)
+}
+
+/// [`before_after`] starting from `src`.
+pub fn before_after_from(
+    ui: &mut Ui,
+    app: &App,
+    src: &Source,
+    key: u64,
+    side: f32,
+    f: impl FnOnce(&RgbaImage, f32) -> RgbaImage,
+) -> Option<Arc<RgbaImage>> {
     let ctx = ui.ctx().clone();
-    let Some(t) = thumb(app, &ctx) else {
+    let Some(t) = thumb(app, &ctx, src) else {
         ui.label(tr("dialog.no_bitmap_preview"));
         return None;
     };
     let after_id = egui::Id::new("bitmap_preview_after");
-    let full_key = key ^ (t.shape.raw().rotate_left(17)) ^ (t.len as u64).rotate_left(41);
+    let full_key = key ^ (t.shape.raw().rotate_left(17)) ^ t.key.rotate_left(41);
     let after = match ctx.data(|d| d.get_temp::<After>(after_id)) {
         Some(a) if a.key == full_key => a.tex,
         _ => {

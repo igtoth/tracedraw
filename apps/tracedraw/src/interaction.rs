@@ -1176,6 +1176,22 @@ impl App {
         if pressed(Key::U, cmd) {
             self.ungroup_selection();
         }
+        // Bitmap adjustments, as in the target design's Effects menu.
+        if self
+            .selected_shapes()
+            .iter()
+            .any(|s| matches!(s.kind, ShapeKind::Bitmap { .. }))
+        {
+            for (key, mods, id) in [
+                (Key::B, cmd, "brightness_contrast_intensity"),
+                (Key::B, cmd | Modifiers::SHIFT, "color_balance"),
+                (Key::U, cmd | Modifiers::SHIFT, "hue_saturation_lightness"),
+            ] {
+                if pressed(key, mods) {
+                    crate::ui::effect_dialog::choose_effect(self, id);
+                }
+            }
+        }
         if pressed(Key::Q, cmd | Modifiers::SHIFT) {
             self.convert_outline_to_object();
         } else if pressed(Key::Q, cmd) {

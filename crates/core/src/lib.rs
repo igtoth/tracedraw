@@ -29,9 +29,9 @@ pub use color::Color;
 pub use command::Command;
 pub use document::{
     merge_equal_spans, spans_apply, spans_char_count, spans_delete, spans_insert, spans_text,
-    split_spans_at, ColorStyle, CornerKind, Corners, Document, EllipseArc, Layer, MasterScope,
-    Metadata, ObjectStyle, Page, ParagraphStyle, Shadow, Shape, ShapeKind, Symbol, Table,
-    TableCell, TextAlign, TextOnPath, TextSpan,
+    split_spans_at, BitmapEffect, BitmapFxStack, ColorStyle, CornerKind, Corners, Document,
+    EllipseArc, Layer, MasterScope, Metadata, ObjectStyle, Page, ParagraphStyle, Shadow, Shape,
+    ShapeKind, Symbol, Table, TableCell, TextAlign, TextOnPath, TextSpan,
 };
 pub use engine::Engine;
 pub use geometry::{Affine, BezPath, Point, Rect, Size, Vec2};

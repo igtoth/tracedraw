@@ -303,14 +303,47 @@ pub enum ShapeKind {
     Table(Table),
     /// An instance of `Document::symbols[index]`, drawn with this shape's transform.
     SymbolInstance { index: usize },
-    /// A bitmap, PNG-encoded, placed in `rect` (local space).
+    /// A bitmap, PNG-encoded, placed in `rect` (local space). With bitmap
+    /// effects `png` is their result and `fx` keeps the original and the
+    /// effects, so they can be edited, hidden or removed.
     Bitmap {
         rect: Rect,
         width_px: u32,
         height_px: u32,
         #[serde(with = "png_bytes")]
         png: Vec<u8>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        fx: Option<Box<BitmapFxStack>>,
     },
+}
+
+/// One bitmap effect, as the Properties docker's FX tab lists it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BitmapEffect {
+    /// The effect's stable name ("gaussian_blur").
+    pub id: String,
+    /// Its settings by name: colours as 0xRRGGBB, choices as their index,
+    /// check boxes as 0 or 1. Missing ones take the effect's defaults.
+    #[serde(default)]
+    pub params: std::collections::BTreeMap<String, f64>,
+    #[serde(default = "visible_default")]
+    pub visible: bool,
+}
+
+fn visible_default() -> bool {
+    true
+}
+
+/// What a bitmap's effects were applied to: the original pixels and
+/// place, and the effects in order (the first applies first).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BitmapFxStack {
+    pub rect: Rect,
+    pub width_px: u32,
+    pub height_px: u32,
+    #[serde(with = "png_bytes")]
+    pub png: Vec<u8>,
+    pub effects: Vec<BitmapEffect>,
 }
 
 impl ShapeKind {
@@ -1261,6 +1294,16 @@ pub struct Metadata {
     /// Fill the open subpaths of curves too (Document Options > General,
     /// off by default).
     pub fill_open_curves: bool,
+    /// Document Options > General: Auto inflate bitmaps for effects is on
+    /// unless this is set.
+    pub no_auto_inflate: bool,
+}
+
+impl Metadata {
+    /// Bitmap effects that spread past the edges grow the bitmap first.
+    pub fn auto_inflate_bitmaps(&self) -> bool {
+        !self.no_auto_inflate
+    }
 }
 
 /// A document's primary colour mode (Create a New Document dialog).
@@ -1860,6 +1903,64 @@ mod tests {
         assert!((b.x0 - 15.0).abs() < 1e-6 && (b.y1 - 35.0).abs() < 1e-6);
         assert_eq!(back.locate(id).unwrap(), (layer, 0));
         let _ = Point::ZERO;
+    }
+
+    #[test]
+    fn bitmap_effects_round_trip_and_plain_bitmaps_stay_short() {
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        let plain = doc.ids_mut().shape();
+        let with_fx = doc.ids_mut().shape();
+        let bitmap = |fx| ShapeKind::Bitmap {
+            rect: Rect::new(0.0, 0.0, 20.0, 10.0),
+            width_px: 4,
+            height_px: 2,
+            png: vec![1, 2, 3, 4],
+            fx,
+        };
+        let mut params = std::collections::BTreeMap::new();
+        params.insert("radius".to_string(), 3.5);
+        let stack = BitmapFxStack {
+            rect: Rect::new(1.0, 1.0, 19.0, 9.0),
+            width_px: 3,
+            height_px: 1,
+            png: vec![9, 8, 7],
+            effects: vec![
+                BitmapEffect {
+                    id: "gaussian_blur".into(),
+                    params,
+                    visible: true,
+                },
+                BitmapEffect {
+                    id: "invert_colors".into(),
+                    params: Default::default(),
+                    visible: false,
+                },
+            ],
+        };
+        let l = doc.layer_mut(layer).unwrap();
+        l.shapes.push(Shape::new(plain, bitmap(None)));
+        l.shapes
+            .push(Shape::new(with_fx, bitmap(Some(Box::new(stack)))));
+        doc.metadata.no_auto_inflate = true;
+        let json = doc.to_json().unwrap();
+        let back = Document::from_json(&json).unwrap();
+        assert_eq!(back, doc);
+        assert!(!back.metadata.auto_inflate_bitmaps());
+        // Only the bitmap with effects writes the field.
+        assert_eq!(json.matches("\"fx\"").count(), 1, "{json}");
+        // Files from before effects were kept apart still load, and an
+        // effect written without settings or visibility takes defaults.
+        let mut v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let removed = v["metadata"]
+            .as_object_mut()
+            .unwrap()
+            .remove("no_auto_inflate");
+        assert_eq!(removed, Some(serde_json::Value::Bool(true)));
+        let back = Document::from_json(&v.to_string()).unwrap();
+        assert!(back.metadata.auto_inflate_bitmaps());
+        let e: BitmapEffect = serde_json::from_str(r#"{"id":"emboss"}"#).unwrap();
+        assert!(e.visible && e.params.is_empty());
     }
 
     #[test]

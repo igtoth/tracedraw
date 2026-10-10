@@ -4135,6 +4135,7 @@ impl<'a> Interp<'a> {
             width_px: w,
             height_px: h,
             png,
+            fx: None,
         });
         shape.transform = transform;
         shape.fill = Fill::None;

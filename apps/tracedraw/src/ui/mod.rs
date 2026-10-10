@@ -12,6 +12,7 @@ pub mod curve_edit;
 pub mod dialogs;
 pub mod dockers;
 pub mod dockers2;
+pub mod effect_dialog;
 pub mod field;
 pub mod hints;
 pub mod icons;

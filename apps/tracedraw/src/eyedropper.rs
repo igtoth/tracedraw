@@ -107,6 +107,7 @@ impl App {
             width_px,
             height_px,
             png,
+            fx: _,
         } = &s.kind
         {
             let lp = s.transform.inverse() * p;

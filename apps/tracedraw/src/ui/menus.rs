@@ -1421,14 +1421,25 @@ fn effects_menu(app: &mut App, ui: &mut Ui) {
     }
     sep(ui);
     // Bitmap effect groups, as in the target design's Effects menu.
-    for (key, group) in crate::bitmap_fx::GROUPS {
+    for (key, group) in crate::fx::groups() {
         sub(ui, key, |ui| {
             for fx in group.iter() {
-                if item(ui, fx.key, "", has_bitmap) {
-                    app.dialog = Dialog::BitmapFx {
-                        fx: fx.fx,
-                        amount: app.bitmap_fx_amount,
-                    };
+                let shortcut = match fx.id {
+                    "brightness_contrast_intensity" => "Ctrl+B",
+                    "color_balance" => "Ctrl+Shift+B",
+                    "hue_saturation_lightness" => "Ctrl+Shift+U",
+                    _ => "",
+                };
+                // Effects with settings open a dialog: "..." as in the
+                // target design's menus.
+                let dots = if fx.params.is_empty() && fx.id != "tone_curve" {
+                    ""
+                } else {
+                    "..."
+                };
+                let label = format!("{}{dots}", tr(&format!("fx.{}", fx.id)));
+                if item_label(ui, &label, shortcut, has_bitmap) {
+                    crate::ui::effect_dialog::choose_effect(app, fx.id);
                 }
             }
         });
@@ -1519,8 +1530,11 @@ fn bitmaps_menu(app: &mut App, ui: &mut Ui) {
         }
     });
     sub(ui, "menu.bitmaps.inflate", |ui| {
-        if item(ui, "menu.bitmaps.inflate_auto", "", has_bitmap) {
-            app.inflate_bitmap(None);
+        // The same switch as Document Options > General: effects that
+        // spread past the edges grow the bitmap first.
+        let auto = app.doc().metadata.auto_inflate_bitmaps();
+        if check(ui, "menu.bitmaps.inflate_auto", "", auto) {
+            app.set_auto_inflate_bitmaps(!auto);
         }
         if item(ui, "menu.bitmaps.inflate_manual", "", has_bitmap) {
             app.dialog = Dialog::InflateBitmap { px: 10 };

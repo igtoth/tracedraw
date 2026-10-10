@@ -403,6 +403,7 @@ impl Renderer<'_> {
             width_px,
             height_px,
             png,
+            fx: _,
         } = &shape.kind
         {
             if !self.flags.wireframe {

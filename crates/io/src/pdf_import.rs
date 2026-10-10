@@ -1195,6 +1195,7 @@ impl<'a> Importer<'a> {
             width_px: w,
             height_px: h,
             png,
+            fx: None,
         });
         shape.transform = gs.ctm;
         shape.stroke = None;

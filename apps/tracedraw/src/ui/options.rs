@@ -1327,6 +1327,13 @@ fn document_general_page(app: &mut App, ui: &mut Ui) {
         ui.end_row();
     });
     ui.checkbox(&mut meta.fill_open_curves, tr("options.fill_open_curves"));
+    let mut inflate = !meta.no_auto_inflate;
+    if ui
+        .checkbox(&mut inflate, tr("options.auto_inflate_bitmaps"))
+        .changed()
+    {
+        meta.no_auto_inflate = !inflate;
+    }
     if meta != app.doc().metadata {
         app.run(Command::SetMetadata { metadata: meta });
     }

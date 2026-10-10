@@ -268,6 +268,7 @@ impl App {
                 width_px: w,
                 height_px: h,
                 png,
+                fx: None,
             },
         });
         self.status = tr("status.bitmap_updated");

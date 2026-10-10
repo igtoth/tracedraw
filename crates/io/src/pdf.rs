@@ -431,6 +431,7 @@ impl PageWriter<'_> {
             width_px,
             height_px,
             png,
+            fx: _,
         } = &shape.kind
         {
             if let Some((mut rgb, alpha)) = decode_png_rgb_alpha(png) {
@@ -832,6 +833,7 @@ fn flatten_page(doc: &Document, page: &tracedraw_core::document::Page, dpi: f64)
                 width_px: crop.width(),
                 height_px: crop.height(),
                 png,
+                fx: None,
             },
         );
         raster.fill = Fill::None;

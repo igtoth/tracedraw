@@ -745,6 +745,7 @@ impl<'a> Player<'a> {
             width_px: pw,
             height_px: ph,
             png,
+            fx: None,
         });
         let c = rect.center();
         s.transform = Affine::translate(c.to_vec2())
@@ -2802,6 +2803,7 @@ mod export_tests {
                 width_px: 2,
                 height_px: 2,
                 png,
+                fx: None,
             },
         );
         b.fill = Fill::None;
@@ -3433,6 +3435,7 @@ mod wmf_export_tests {
                 width_px: 2,
                 height_px: 1,
                 png,
+                fx: None,
             },
         );
         b.fill = Fill::None;

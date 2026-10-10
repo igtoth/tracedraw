@@ -929,6 +929,7 @@ impl crate::app::App {
                     width_px: out.width(),
                     height_px: out.height(),
                     png,
+                    fx: None,
                 },
             });
         }
@@ -1090,6 +1091,7 @@ mod tests {
                 width_px: 256,
                 height_px: 8,
                 png: png.clone(),
+                fx: None,
             })
             .expect("bitmap")
         };

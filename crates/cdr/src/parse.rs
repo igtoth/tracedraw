@@ -1863,6 +1863,7 @@ impl<'a> Ctx<'a> {
                     width_px: bm.width_px,
                     height_px: bm.height_px,
                     png: bm.png.clone(),
+                    fx: None,
                 })
             }
             _ => None,
@@ -3151,6 +3152,7 @@ mod tests {
                 height_px,
                 png,
                 rect,
+                fx: _,
             } => {
                 assert_eq!((*width_px, *height_px), (2, 2));
                 assert_eq!(&png[..8], &[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a]);

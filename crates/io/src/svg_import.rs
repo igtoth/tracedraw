@@ -329,6 +329,7 @@ fn convert_image(img: &usvg::Image, to_page: Affine, ids: &mut IdSource) -> Opti
             width_px,
             height_px,
             png,
+            fx: None,
         },
     );
     shape.stroke = None;

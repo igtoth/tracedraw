@@ -203,6 +203,7 @@ pub fn parse(bytes: &[u8], ids: &mut IdSource) -> Result<Imported, String> {
                             width_px: w,
                             height_px: h,
                             png,
+                            fx: None,
                         },
                     );
                     s.fill = Fill::None;
@@ -248,6 +249,7 @@ pub fn parse(bytes: &[u8], ids: &mut IdSource) -> Result<Imported, String> {
                         width_px: width,
                         height_px: height,
                         png,
+                        fx: None,
                     },
                 );
                 s.fill = Fill::None;
@@ -873,6 +875,7 @@ mod tests {
                 width_px,
                 height_px,
                 rect,
+                fx: _,
             } => {
                 assert_eq!((*width_px, *height_px), (2, 2));
                 let pm = tiny_skia::Pixmap::decode_png(png).unwrap();

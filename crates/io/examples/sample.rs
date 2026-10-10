@@ -119,6 +119,7 @@ fn main() {
             width_px: 64,
             height_px: 48,
             png,
+            fx: None,
         },
         Fill::None,
         None,

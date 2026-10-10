@@ -1030,6 +1030,7 @@ mod tests {
                 width_px: 2,
                 height_px: 2,
                 png,
+                fx: None,
             },
         );
         bm.fill = Fill::None;
@@ -1113,6 +1114,7 @@ mod tests {
                 width_px: 4,
                 height_px: 4,
                 png,
+                fx: None,
             },
         );
         bm.fill = Fill::None;

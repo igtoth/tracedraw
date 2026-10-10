@@ -57,8 +57,9 @@ measure of progress; `docs/blueprint-gaps.md` lists what is still open.
   harmonies, object styles, palettes and palette manager, proof colours,
   separations.
 - **Bitmaps**: import of PNG, JPEG, BMP, GIF, TIFF, WebP; convert to
-  bitmap; fifteen groups of bitmap effects; colour modes; colour mask;
-  inflate; Bitmap tracing-style tracing (quick, centreline, outline, presets).
+  bitmap; 98 bitmap effects in fifteen groups, each with its dialog,
+  kept editable in the Properties docker's FX list; colour modes; colour
+  mask; inflate; Bitmap tracing-style tracing (quick, centreline, outline, presets).
 - **Files**: native `.tdraw` (JSON), `.cdr` reader (RIFF and ZIP
   containers, compressed streams, versions 7 through 2019) and writer
   (version 12 layout), SVG, SVGZ,

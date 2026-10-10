@@ -374,6 +374,12 @@ fn properties(app: &mut App, ui: &mut Ui) {
     if let Some(c) = first.page_corners() {
         ui.collapsing(tr("kind.rectangle"), |ui| rectangle_section(app, ui, c));
     }
+    if matches!(first.kind, ShapeKind::Bitmap { .. }) {
+        let id = first.id;
+        egui::CollapsingHeader::new(tr("docker.fx"))
+            .default_open(true)
+            .show(ui, |ui| crate::ui::effect_dialog::fx_section(app, ui, id));
+    }
     if let ShapeKind::Text { spans, .. } = &first.kind {
         ui.collapsing(tr("docker.character"), |ui| {
             if let Some(sp) = spans.first() {

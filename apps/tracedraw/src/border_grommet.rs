@@ -262,6 +262,7 @@ fn bitmap_shape(app: &mut App, rect: Rect, img: &image::RgbaImage, name: &str) -
             width_px: img.width(),
             height_px: img.height(),
             png,
+            fx: None,
         },
     );
     s.fill = Fill::None;

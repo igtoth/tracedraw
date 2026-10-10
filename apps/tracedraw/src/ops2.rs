@@ -299,6 +299,26 @@ impl App {
         let mut cmds = Vec::new();
         let mut new_sel = Vec::new();
         for s in shapes {
+            // A bitmap's effects become its pixels.
+            if let ShapeKind::Bitmap {
+                rect,
+                width_px,
+                height_px,
+                png,
+                fx: Some(_),
+            } = &s.kind
+            {
+                cmds.push(Command::SetShapeKind {
+                    shape: s.id,
+                    kind: ShapeKind::Bitmap {
+                        rect: *rect,
+                        width_px: *width_px,
+                        height_px: *height_px,
+                        png: png.clone(),
+                        fx: None,
+                    },
+                });
+            }
             if s.effects.is_empty() {
                 new_sel.push(s.id);
                 continue;
@@ -955,6 +975,7 @@ impl App {
                     width_px,
                     height_px,
                     png,
+                    fx: _,
                 } => Some((s.id, rect, width_px, height_px, png)),
                 _ => None,
             })
@@ -972,19 +993,9 @@ impl App {
                 width_px: img.width(),
                 height_px: img.height(),
                 png,
+                fx: None,
             },
         });
-    }
-
-    pub fn apply_bitmap_effect_amount(&mut self, fx: crate::bitmap_fx::Fx, amount: f32) {
-        for (id, rect, _, _, png) in self.bitmap_shapes() {
-            let Some(img) = crate::bitmap_fx::decode(&png) else {
-                continue;
-            };
-            let out = crate::bitmap_fx::apply(&img, fx, amount);
-            self.replace_bitmap(id, rect, &out);
-        }
-        self.last_bitmap_fx = Some(fx);
     }
 
     pub fn set_bitmap_mode(&mut self, mode: crate::bitmap_fx::ColorMode) {
@@ -1140,6 +1151,7 @@ impl App {
                 width_px: w,
                 height_px: h,
                 png,
+                fx: None,
             },
         );
         bitmap.fill = Fill::None;

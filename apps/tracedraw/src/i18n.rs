@@ -131,6 +131,15 @@ pub fn tr(key: &str) -> String {
     key.rsplit('.').next().unwrap_or(key).to_string()
 }
 
+/// Whether the English table has `key` (tests of generated keys).
+#[cfg(test)]
+pub fn has_english(key: &str) -> bool {
+    state()
+        .read()
+        .map(|st| st.english.contains_key(key))
+        .unwrap_or(false)
+}
+
 /// Translate with `{name}` placeholders replaced.
 pub fn trf(key: &str, args: &[(&str, &str)]) -> String {
     let mut s = tr(key);
