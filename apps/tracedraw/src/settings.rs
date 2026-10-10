@@ -23,6 +23,10 @@ pub struct Settings {
     pub color: ColorPrefs,
     /// Show the Outline flyout in the toolbox (hidden by default).
     pub show_outline_flyout: bool,
+    /// Tool shown by each toolbox group (tool ids, one per group): the one
+    /// last used from its flyout.
+    #[serde(default)]
+    pub toolbox: Vec<String>,
     /// Default action of the mouse wheel: zoom (the target design's
     /// default) or scroll.
     #[serde(default = "default_true")]
@@ -117,6 +121,7 @@ impl Default for Settings {
             color: ColorPrefs::default(),
             show_outline_flyout: false,
             wheel_zooms: true,
+            toolbox: Vec::new(),
             custom_arrowheads: Vec::new(),
             baseline_grid_mm: default_baseline_mm(),
             autocorrect: crate::autocorrect::AutocorrectPrefs::default(),

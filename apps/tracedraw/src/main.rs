@@ -105,4 +105,9 @@ impl eframe::App for Shell {
         files::run_finished(&mut self.app);
         ui::root(&mut self.app, ui);
     }
+
+    /// Keep the toolbox, dockers and other preferences for the next session.
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        self.app.save_settings();
+    }
 }

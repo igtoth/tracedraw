@@ -546,25 +546,11 @@ impl<'a> Ctx<'a> {
             let raw = r.u32()?;
             (model, raw.to_le_bytes())
         };
-        Some(match model {
-            // CMYK in percent
-            0x02 => Color::cmyk_pct(b[0] as f32, b[1] as f32, b[2] as f32, b[3] as f32),
-            // CMYK in 0..255 (two encodings)
-            0x03 | 0x11 => Color::cmyk8(b[0], b[1], b[2], b[3]),
-            // CMY in 0..255
-            0x04 => Color::cmyk8(b[0], b[1], b[2], 0),
-            // BGR, and BGR with a tint byte (tint already applied)
-            0x05 | 0x15 => Color::rgb8(b[2], b[1], b[0]),
-            // Grayscale 0..255
-            0x09 => Color::Gray {
-                v: b[0] as f32 / 255.0,
-            },
-            // Registration colour prints on every plate; black on screen.
-            0x14 => Color::BLACK,
-            // Spot, Lab, HSB, HLS, YIQ and others: fall back to black and note it.
-            other => {
+        Some(match color_from_model(model, b) {
+            Some(c) => c,
+            None => {
                 self.report.warn(format!(
-                    "colour model 0x{other:02x} not modelled; using black"
+                    "colour model 0x{model:02x} not modelled; using black"
                 ));
                 Color::BLACK
             }
@@ -592,6 +578,10 @@ impl<'a> Ctx<'a> {
         let Some(body) = d.get(r.pos..body_end.max(r.pos)) else {
             return;
         };
+        if log::log_enabled!(log::Level::Trace) {
+            let hex: Vec<String> = body.iter().take(160).map(|b| format!("{b:02x}")).collect();
+            log::trace!("fill {id:#x} type {ftype}: {}", hex.join(" "));
+        }
         let fill = match ftype {
             0 => Fill::None,
             1 => self.read_solid_fill(body).unwrap_or_else(|| {
@@ -1495,6 +1485,20 @@ impl<'a> Ctx<'a> {
         let d = self.data(loda);
         let l = self.read_loda(d)?;
         let kind_code = l.kind;
+        log::debug!(
+            "object type 0x{kind_code:02x}, args (type, bytes): {:?}",
+            l.args
+                .iter()
+                .map(|a| (a.ty, a.end.saturating_sub(a.off)))
+                .collect::<Vec<_>>()
+        );
+        if log::log_enabled!(log::Level::Trace) {
+            for a in &l.args {
+                let bytes = d.get(a.off..a.end.min(a.off + 192)).unwrap_or(&[]);
+                let hex: Vec<String> = bytes.iter().map(|b| format!("{b:02x}")).collect();
+                log::trace!("  arg {}: {}", a.ty, hex.join(" "));
+            }
+        }
 
         let mut fill = Fill::None;
         let mut stroke: Option<Stroke> = None;
@@ -2155,7 +2159,33 @@ fn classify_arrowhead(path: &BezPath, pts: &[Point], types: &[u8]) -> Arrowhead 
 /// to, `10` cubic Bezier end point preceded by two control points, `11`
 /// control point); bit 3 marks the segment that closes the subpath (it is
 /// also set on the move-to of a closed subpath, which we ignore).
-fn build_path(pts: &[Point], types: &[u8]) -> (BezPath, bool) {
+/// A colour from its model code and four value bytes (the encoding shared
+/// by `.cdr` from version 5 and CMX): `None` for models we do not model.
+pub(crate) fn color_from_model(model: u16, b: [u8; 4]) -> Option<Color> {
+    Some(match model {
+        // CMYK in percent
+        0x02 => Color::cmyk_pct(b[0] as f32, b[1] as f32, b[2] as f32, b[3] as f32),
+        // CMYK in 0..255 (two encodings)
+        0x03 | 0x11 => Color::cmyk8(b[0], b[1], b[2], b[3]),
+        // CMY in 0..255
+        0x04 => Color::cmyk8(b[0], b[1], b[2], 0),
+        // BGR, and BGR with a tint byte (tint already applied)
+        0x05 | 0x15 => Color::rgb8(b[2], b[1], b[0]),
+        // Grayscale 0..255
+        0x09 => Color::Gray {
+            v: b[0] as f32 / 255.0,
+        },
+        // Registration colour prints on every plate; black on screen.
+        0x14 => Color::BLACK,
+        // Spot, Lab, HSB, HLS, YIQ and others.
+        _ => return None,
+    })
+}
+
+/// A path from points and their node bytes: bits 7-6 are the node kind
+/// (00 move, 01 line, 10 curve end, 11 control point) and bit 3 closes the
+/// subpath after the node.
+pub(crate) fn build_path(pts: &[Point], types: &[u8]) -> (BezPath, bool) {
     let mut path = BezPath::new();
     let mut closed = false;
     let mut ctrl: Vec<Point> = Vec::with_capacity(2);

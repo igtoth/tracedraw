@@ -13,11 +13,15 @@ pub fn toolbox(app: &mut App, ui: &mut Ui) {
         if group.hidden && !app.settings.show_outline_flyout {
             continue;
         }
-        // The button shows the tool last used in this group.
+        // The button shows the tool last used in this group, even while a tool of another group is active.
         let shown = if group.tools.contains(&app.tool) {
             app.tool
         } else {
-            group.tools[0]
+            app.toolbox_last
+                .get(gi)
+                .copied()
+                .filter(|t| group.tools.contains(t))
+                .unwrap_or(group.tools[0])
         };
         let active = group.tools.contains(&app.tool);
         let size = Vec2::new(Tokens::TOOL_BUTTON, Tokens::TOOL_BUTTON);
@@ -57,6 +61,16 @@ pub fn toolbox(app: &mut App, ui: &mut Ui) {
         // opened the flyout leaves it open so an item can be chosen.
         if resp.clicked() && app.flyout_open != Some(gi) {
             app.set_tool(shown);
+        }
+        // Double-clicking a tool button: Pick selects every object, Zoom
+        // fits the drawing, Rectangle adds a frame around the page.
+        if resp.double_clicked() {
+            match shown {
+                Tool::Pick => app.select_all(),
+                Tool::Zoom => app.zoom_to_fit(),
+                Tool::Rectangle => app.add_page_frame(),
+                _ => {}
+            }
         }
         if group.tools.len() > 1 {
             // Right click, a drag, or press-and-hold for 0.4 s opens the flyout.

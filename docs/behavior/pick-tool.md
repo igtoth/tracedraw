@@ -16,6 +16,10 @@
 | Tab / Shift+Tab | cycle selection in stacking order |
 | Double-click | Shape tool on a curve; on text, the Text tool editing that text with the caret at the end |
 | Esc | deselect |
+| Double-click the tool button | select all objects |
+
+The toolbox button of each flyout shows the tool last used from it; the
+choice is kept between sessions (`toolbox` in the settings file).
 
 Selecting inside a group: Ctrl+click.
 

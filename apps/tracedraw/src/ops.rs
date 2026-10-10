@@ -294,6 +294,18 @@ impl App {
         }
     }
 
+    /// Double-clicking the Rectangle tool: a rectangle exactly the size of
+    /// the page (a page frame), selected.
+    pub fn add_page_frame(&mut self) {
+        let size = self.page_size();
+        if let Some(id) = self.new_shape(tracedraw_core::ShapeKind::Rect {
+            rect: tracedraw_core::geometry::Rect::new(0.0, 0.0, size.width, size.height),
+            radius: 0.0,
+        }) {
+            self.select(vec![id]);
+        }
+    }
+
     /// Layout > Page Background > Bitmap: an image file as the page's
     /// background, scaled to cover the page.
     pub fn set_page_background_image(
@@ -627,5 +639,37 @@ mod smoke_tests {
         for s in app.selected_shapes() {
             assert!(s.bounds().width().is_finite());
         }
+    }
+
+    #[test]
+    fn page_frame_is_a_selected_rectangle_the_size_of_the_page() {
+        let mut app = App::headless();
+        app.add_page_frame();
+        let size = app.page_size();
+        let shapes = app.selected_shapes();
+        assert_eq!(shapes.len(), 1);
+        let b = shapes[0].bounds();
+        assert!((b.width() - size.width).abs() < 1e-6);
+        assert!((b.height() - size.height).abs() < 1e-6);
+        assert!(b.x0.abs() < 1e-6 && b.y0.abs() < 1e-6);
+    }
+
+    #[test]
+    fn toolbox_groups_remember_the_last_tool_used() {
+        let mut app = App::headless();
+        let gi = crate::tools::GROUPS
+            .iter()
+            .position(|g| g.tools.contains(&Tool::Spiral))
+            .expect("spiral is in a group");
+        app.set_tool(Tool::Spiral);
+        app.set_tool(Tool::Pick);
+        assert_eq!(app.toolbox_last[gi], Tool::Spiral);
+        app.sync_settings();
+        let saved = app.settings.toolbox.clone();
+        let mut other = App::headless();
+        let mut s = other.settings.clone();
+        s.toolbox = saved;
+        other.apply_settings(s);
+        assert_eq!(other.toolbox_last[gi], Tool::Spiral);
     }
 }

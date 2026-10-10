@@ -102,6 +102,12 @@ impl App {
             return;
         }
 
+        // With the Zoom tool a right click zooms out, as the reference
+        // editor does by default.
+        if response.secondary_clicked() && self.tool == Tool::Zoom {
+            self.view.zoom_at(screen, 0.5);
+            return;
+        }
         // Right click: context menu (drawn by the UI at this position).
         if response.secondary_clicked() && !self.pending_clip_frame {
             if self.pending_click(response, p) {
@@ -548,9 +554,6 @@ impl App {
         if response.clicked_by(PointerButton::Primary) {
             self.view
                 .zoom_at(screen, if mods.shift { 0.5 } else { 2.0 });
-        }
-        if response.secondary_clicked() {
-            self.view.zoom_at(screen, 0.5);
         }
     }
 

@@ -2,8 +2,13 @@
 
 ## Zoom tool (Z, F2)
 
-- Click zooms in by 2 at the point; Shift+click (or right-click) zooms
-  out by 2. Dragging a marquee zooms to fit that rectangle.
+- Click zooms in by 2 at the point; Shift+click or right-click zooms
+  out by 2 (with this tool the right button never opens the context
+  menu). Dragging a marquee zooms to fit that rectangle.
+- Zooming to a rectangle (marquee, selection, all objects, page) centres
+  that rectangle in the window, wherever it lies on the page, with a
+  40 px margin: `zoom = min((W - 80) / w, (H - 80) / h)`.
+- Double-clicking the tool button zooms to fit all objects (F4).
 - F2 picks the tool; Shift+F2 zooms to the selection; F4 zooms to fit
   all objects; Shift+F4 zooms to the page.
 - `+`/`=` and `-` zoom by 1.25 about the canvas centre; the zoom combo
@@ -41,3 +46,5 @@
 - Given 100 % zoom, when the zoom-in step runs, then the zoom is 150 %.
 - Given a click with the Zoom tool at the page centre, then the page
   centre stays under the pointer and the zoom doubles.
+- Given an object far from the page origin, when zooming to fit it, then
+  its centre is the window centre (`view::tests::fit_centres_rectangles_anywhere_on_the_page`).

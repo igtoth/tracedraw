@@ -397,6 +397,8 @@ pub struct App {
     pub show_dockers: bool,
     pub docker_tab: DockerTab,
     pub flyout_open: Option<usize>,
+    /// The tool each toolbox group shows: the one last used from its flyout.
+    pub toolbox_last: Vec<Tool>,
     pub clipboard: Option<Clipboard>,
     pub duplicate_offset: Vec2,
     // Defaults for new objects (the target design: no fill, black hairline).
@@ -831,6 +833,7 @@ impl App {
             show_dockers: true,
             docker_tab: DockerTab::Properties,
             flyout_open: None,
+            toolbox_last: crate::tools::GROUPS.iter().map(|g| g.tools[0]).collect(),
             clipboard: None,
             duplicate_offset: Vec2::new(6.35, 6.35),
             default_fill: Fill::None,
@@ -1014,7 +1017,11 @@ impl App {
 
     /// Apply persisted settings (language, workspace, snapping, units).
     pub fn load_settings(&mut self) {
-        let s = crate::settings::Settings::load();
+        self.apply_settings(crate::settings::Settings::load());
+    }
+
+    /// Apply a set of preferences to the running editor.
+    pub fn apply_settings(&mut self, s: crate::settings::Settings) {
         let lang = if s.language.is_empty() {
             crate::i18n::system_language().to_string()
         } else {
@@ -1028,6 +1035,15 @@ impl App {
         self.snap.objects = s.snap.objects;
         self.snap.page = s.snap.page;
         self.nudge_mm = s.nudge_mm;
+        for (gi, id) in s.toolbox.iter().enumerate() {
+            let group = crate::tools::GROUPS.get(gi);
+            let tool = Tool::ALL.iter().find(|t| t.id() == id);
+            if let (Some(g), Some(t), Some(slot)) = (group, tool, self.toolbox_last.get_mut(gi)) {
+                if g.tools.contains(t) {
+                    *slot = *t;
+                }
+            }
+        }
         self.duplicate_offset = Vec2::new(s.duplicate_offset_mm[0], s.duplicate_offset_mm[1]);
         self.units = Units::from_id(&s.units);
         self.settings = s;
@@ -1108,16 +1124,27 @@ impl App {
     }
 
     pub fn save_settings(&mut self) {
+        self.sync_settings();
+        self.settings.save();
+    }
+
+    /// Copy the editor's state (workspace, snapping, toolbox, units...)
+    /// into the preferences, without writing them.
+    pub fn sync_settings(&mut self) {
         self.settings.workspace = self.workspace.id().into();
         self.settings.snap.grid = self.snap.grid;
         self.settings.snap.guides = self.snap.guides;
         self.settings.snap.objects = self.snap.objects;
         self.settings.snap.page = self.snap.page;
         self.settings.nudge_mm = self.nudge_mm;
+        self.settings.toolbox = self
+            .toolbox_last
+            .iter()
+            .map(|t| t.id().to_string())
+            .collect();
         self.settings.duplicate_offset_mm = [self.duplicate_offset.x, self.duplicate_offset.y];
         self.settings.units = self.units.id().into();
         self.settings.language = crate::i18n::language();
-        self.settings.save();
     }
 
     /// Tools > Save Settings as Default: persist current tool defaults.
@@ -1388,6 +1415,14 @@ impl App {
             self.tool = tool;
             self.rotate_mode = false;
             self.flyout_open = None;
+            if let Some(gi) = crate::tools::GROUPS
+                .iter()
+                .position(|g| g.tools.contains(&tool))
+            {
+                if let Some(slot) = self.toolbox_last.get_mut(gi) {
+                    *slot = tool;
+                }
+            }
             if !tool.implemented() {
                 self.status =
                     crate::i18n::trf("status.tool_not_implemented", &[("t", &tool.name())]);
