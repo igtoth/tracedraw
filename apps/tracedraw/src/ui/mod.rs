@@ -12,6 +12,7 @@ pub mod menus;
 pub mod palette;
 pub mod preview;
 pub mod status;
+pub mod tabs;
 pub mod toolbar;
 pub mod toolbox;
 pub mod welcome;
@@ -46,8 +47,30 @@ pub fn root(app: &mut App, ui: &mut Ui) {
     let ctx = ui.ctx().clone();
     app.keyboard(&ctx);
 
-    let doc_name = app.document_title();
+    let doc_name = if app.has_document() && !app.show_welcome {
+        app.document_title()
+    } else {
+        tr("welcome.title")
+    };
     set_window_title(&ctx, format!("TraceDraw - {doc_name}"));
+
+    // Closing the window with unsaved drawings asks about each first.
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        if ctx.input(|i| i.viewport().close_requested())
+            && !app.quit_now
+            && !app.dirty_documents().is_empty()
+        {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            app.request_exit();
+        }
+        if app.quit_now {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+    }
+    if !app.has_document() {
+        app.show_welcome = true;
+    }
 
     if app.fullscreen_preview {
         preview::fullscreen(app, ui);
@@ -147,49 +170,7 @@ pub fn root(app: &mut App, ui: &mut Ui) {
                 .fill(Tokens::PANEL_DARK)
                 .inner_margin(egui::Margin::symmetric(4, 1)),
         )
-        .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 2.0;
-                let tab = |ui: &mut Ui, label: &str, active: bool| -> bool {
-                    ui.add(
-                        egui::Button::new(egui::RichText::new(label).size(12.0))
-                            .fill(if active {
-                                Tokens::PANEL
-                            } else {
-                                Tokens::PANEL_DARK
-                            })
-                            .stroke(egui::Stroke::new(
-                                1.0,
-                                if active {
-                                    Tokens::BORDER
-                                } else {
-                                    Tokens::PANEL_DARK
-                                },
-                            )),
-                    )
-                    .clicked()
-                };
-                if tab(ui, &tr("welcome.title"), app.show_welcome) {
-                    app.show_welcome = true;
-                }
-                if tab(ui, &doc_name, !app.show_welcome) {
-                    app.show_welcome = false;
-                }
-                if ui
-                    .add(egui::Button::new(egui::RichText::new("+").size(12.0)).frame(false))
-                    .on_hover_text(tr("menu.file.new"))
-                    .clicked()
-                {
-                    let s = app.page_size();
-                    app.dialog = dialogs::Dialog::NewDocument {
-                        width: s.width,
-                        height: s.height,
-                        preset: 0,
-                        name: App::untitled_name(),
-                    };
-                }
-            });
-        });
+        .show(ui, |ui| tabs::document_tabs(app, ui));
 
     if app.show_welcome {
         egui::CentralPanel::default()

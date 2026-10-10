@@ -1053,6 +1053,24 @@ impl App {
         };
         let cmd = Modifiers::COMMAND;
 
+        // The Welcome Screen alone (no drawing open): only the commands
+        // that need no drawing.
+        if !self.has_document() {
+            if pressed(Key::N, cmd) {
+                self.request_new_document();
+            }
+            if pressed(Key::O, cmd) {
+                self.open_dialog();
+            }
+            if pressed(Key::J, cmd) {
+                self.dialog = crate::ui::dialogs::Dialog::Options;
+            }
+            if pressed(Key::F4, Modifiers::ALT) {
+                self.request_exit();
+            }
+            return;
+        }
+
         if pressed(Key::Z, cmd) {
             self.undo();
         }
@@ -1096,7 +1114,7 @@ impl App {
             self.open_dialog();
         }
         if pressed(Key::N, cmd) {
-            self.new_document();
+            self.request_new_document();
         }
         if pressed(Key::E, cmd) {
             self.export();
@@ -1183,7 +1201,7 @@ impl App {
             self.close_document();
         }
         if pressed(Key::F4, Modifiers::ALT) {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            self.request_exit();
         }
         if pressed(Key::F12, Modifiers::ALT) {
             self.straighten_text();

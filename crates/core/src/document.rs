@@ -858,6 +858,16 @@ pub struct Metadata {
     pub bleed: f64,
     pub rgb_profile: String,
     pub cmyk_profile: String,
+    /// Colour mode effects (blends, transparencies) and exports default to.
+    pub primary_color_mode: PrimaryColorMode,
+}
+
+/// A document's primary colour mode (Create a New Document dialog).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum PrimaryColorMode {
+    #[default]
+    Cmyk,
+    Rgb,
 }
 
 impl Layer {

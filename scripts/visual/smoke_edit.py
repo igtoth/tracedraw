@@ -3,7 +3,8 @@
 # scripts/visual/run.sh scripts/visual/smoke_edit.py
 def check(tag):
     print(tag, "alive" if alive() else "DEAD")
-click(178, 86); time.sleep(0.8)                       # Welcome: New Document
+click(800, 600); combo("Control_L", "n"); time.sleep(0.8)   # Welcome: File > New
+key("Return"); time.sleep(0.8)                        # Create a New Document: OK
 for k, (x0, y0, x1, y1) in [("F6", (450, 200, 550, 280)), ("F7", (600, 200, 700, 280)),
                             ("y", (750, 200, 850, 280)), ("a", (450, 320, 550, 400)),
                             ("d", (600, 320, 700, 400))]:

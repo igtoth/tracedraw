@@ -102,13 +102,7 @@ fn get_started(app: &mut App, ui: &mut Ui) {
                 tr("welcome.new_document"),
                 "Ctrl+N".into(),
             ) {
-                let s = app.page_size();
-                app.dialog = crate::ui::dialogs::Dialog::NewDocument {
-                    width: s.width,
-                    height: s.height,
-                    preset: 0,
-                    name: App::untitled_name(),
-                };
+                app.request_new_document();
             }
             ui.add_space(8.0);
             if big_button(
@@ -331,13 +325,9 @@ fn templates(app: &mut App, ui: &mut Ui) {
                         )
                         .clicked()
                     {
-                        let doc = App::localized_document(App::untitled_name(), size);
-                        app.page = doc.pages[0].id;
-                        app.engine.replace(doc);
-                        app.file = None;
-                        app.selection.clear();
-                        app.fit_pending = true;
-                        app.show_welcome = false;
+                        let name = app.next_untitled_name();
+                        let doc = App::localized_document(name, size);
+                        app.open_document(doc, None);
                     }
                 }
             });

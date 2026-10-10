@@ -399,14 +399,17 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
             ui.set_min_width(MENU_WIDTH);
             file_menu(app, ui)
         });
-        ui.menu_button(tr("menu.edit"), |ui| edit_menu(app, ui));
-        ui.menu_button(tr("menu.view"), |ui| view_menu(app, ui));
-        ui.menu_button(tr("menu.layout"), |ui| layout_menu(app, ui));
-        ui.menu_button(tr("menu.object"), |ui| object_menu(app, ui));
-        ui.menu_button(tr("menu.effects"), |ui| effects_menu(app, ui));
-        ui.menu_button(tr("menu.bitmaps"), |ui| bitmaps_menu(app, ui));
-        ui.menu_button(tr("menu.text"), |ui| text_menu(app, ui));
-        ui.menu_button(tr("menu.table"), |ui| table_menu(app, ui));
+        // With no drawing open only File, Tools, Window and Help remain.
+        if app.has_document() {
+            ui.menu_button(tr("menu.edit"), |ui| edit_menu(app, ui));
+            ui.menu_button(tr("menu.view"), |ui| view_menu(app, ui));
+            ui.menu_button(tr("menu.layout"), |ui| layout_menu(app, ui));
+            ui.menu_button(tr("menu.object"), |ui| object_menu(app, ui));
+            ui.menu_button(tr("menu.effects"), |ui| effects_menu(app, ui));
+            ui.menu_button(tr("menu.bitmaps"), |ui| bitmaps_menu(app, ui));
+            ui.menu_button(tr("menu.text"), |ui| text_menu(app, ui));
+            ui.menu_button(tr("menu.table"), |ui| table_menu(app, ui));
+        }
         ui.menu_button(tr("menu.tools"), |ui| tools_menu(app, ui));
         ui.menu_button(tr("menu.window"), |ui| window_menu(app, ui));
         ui.menu_button(tr("menu.help"), |ui| help_menu(app, ui));
@@ -414,8 +417,10 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
 }
 
 fn file_menu(app: &mut App, ui: &mut Ui) {
+    // Commands that work on a drawing are off on the Welcome Screen alone.
+    let doc = app.has_document();
     if item(ui, "menu.file.new", "Ctrl+N", true) {
-        app.new_document();
+        app.request_new_document();
     }
     if item(ui, "menu.file.new_from_template", "", true) {
         app.show_welcome = true;
@@ -454,20 +459,20 @@ fn file_menu(app: &mut App, ui: &mut Ui) {
         }
     });
     ui.separator();
-    if item(ui, "menu.file.close", "", true) {
+    if item(ui, "menu.file.close", "", doc) {
         app.close_document();
     }
-    if item(ui, "menu.file.close_all", "", true) {
+    if item(ui, "menu.file.close_all", "", doc) {
         app.close_document();
     }
     ui.separator();
-    if item(ui, "menu.file.save", "Ctrl+S", true) {
+    if item(ui, "menu.file.save", "Ctrl+S", doc) {
         app.save(false);
     }
-    if item(ui, "menu.file.save_as", "Ctrl+Shift+S", true) {
+    if item(ui, "menu.file.save_as", "Ctrl+Shift+S", doc) {
         app.save(true);
     }
-    if item(ui, "menu.file.save_as_template", "", true) {
+    if item(ui, "menu.file.save_as_template", "", doc) {
         app.save_as_template();
     }
     if item(
@@ -482,17 +487,17 @@ fn file_menu(app: &mut App, ui: &mut Ui) {
     }
     ui.separator();
     todo_sub(ui, "menu.file.acquire_image");
-    if item(ui, "menu.file.import", "Ctrl+I", true) {
+    if item(ui, "menu.file.import", "Ctrl+I", doc) {
         app.import();
     }
-    if item(ui, "menu.file.export", "Ctrl+E", true) {
+    if item(ui, "menu.file.export", "Ctrl+E", doc) {
         app.dialog = Dialog::Export(crate::ui::dialogs::ExportState::default());
     }
     sub(ui, "menu.file.export_for", |ui| {
-        if item(ui, "menu.file.export_for_web", "", true) {
+        if item(ui, "menu.file.export_for_web", "", doc) {
             app.dialog = Dialog::Export(crate::ui::dialogs::ExportState::web());
         }
-        if item(ui, "menu.file.export_for_office", "", true) {
+        if item(ui, "menu.file.export_for_office", "", doc) {
             app.dialog = Dialog::Export(crate::ui::dialogs::ExportState::office());
         }
     });
@@ -503,17 +508,17 @@ fn file_menu(app: &mut App, ui: &mut Ui) {
             ("menu.file.send_to_documents", SendTarget::Documents),
             ("menu.file.send_to_mail", SendTarget::Mail),
         ] {
-            if item(ui, key, "", true) {
+            if item(ui, key, "", doc) {
                 app.send_to(t);
             }
         }
     });
-    if item(ui, "menu.file.publish_to_pdf", "", true) {
+    if item(ui, "menu.file.publish_to_pdf", "", doc) {
         app.export_pdf();
     }
     ui.separator();
     sub(ui, "menu.file.print_merge", |ui| {
-        if item(ui, "menu.file.print_merge_create", "", true) {
+        if item(ui, "menu.file.print_merge_create", "", doc) {
             app.dialog = Dialog::PrintMerge(Default::default());
         }
         let loaded = app.merge_state.is_some();
@@ -529,19 +534,19 @@ fn file_menu(app: &mut App, ui: &mut Ui) {
         }
     });
     ui.separator();
-    if item(ui, "menu.file.print", "Ctrl+P", true) {
+    if item(ui, "menu.file.print", "Ctrl+P", doc) {
         app.dialog = Dialog::Print(Default::default());
     }
-    if item(ui, "menu.file.print_preview", "", true) {
+    if item(ui, "menu.file.print_preview", "", doc) {
         app.fullscreen_preview = true;
     }
     ui.separator();
-    if item(ui, "menu.file.document_properties", "", true) {
+    if item(ui, "menu.file.document_properties", "", doc) {
         app.dialog = Dialog::DocumentProperties;
     }
     ui.separator();
     if item(ui, "menu.file.exit", "Alt+F4", true) {
-        ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+        app.request_exit();
     }
 }
 
@@ -1738,7 +1743,7 @@ fn window_menu(app: &mut App, ui: &mut Ui) {
         app.close_document();
     }
     if item(ui, "menu.window.close_all", "", true) {
-        app.close_document();
+        app.close_all_documents();
     }
     ui.separator();
     todo(ui, "menu.window.cascade", "");
@@ -1875,10 +1880,14 @@ fn window_menu(app: &mut App, ui: &mut Ui) {
     if check(ui, "menu.window.welcome_screen", "", app.show_welcome) {
         app.show_welcome = true;
     }
-    let title = app.document_title();
-    if menu_row(ui, &title, "", true, Some(!app.show_welcome)).clicked() {
-        ui.close();
-        app.show_welcome = false;
+    // One entry per open drawing, numbered.
+    for i in 0..app.docs.len() {
+        let title = format!("{} {}", i + 1, app.document_tab_title(i));
+        let on = !app.show_welcome && i == app.active_doc;
+        if menu_row(ui, &title, "", true, Some(on)).clicked() {
+            ui.close();
+            app.switch_document(i);
+        }
     }
 }
 

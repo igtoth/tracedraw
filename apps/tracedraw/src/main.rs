@@ -18,6 +18,7 @@ mod border_grommet;
 mod canvas;
 mod clipboard;
 mod clone_effect;
+mod documents;
 mod effects_ui;
 mod encode;
 mod export;
@@ -32,6 +33,7 @@ mod lens;
 #[cfg(not(target_arch = "wasm32"))]
 mod mcp;
 mod media;
+mod new_document;
 mod ops;
 mod ops2;
 mod palette;

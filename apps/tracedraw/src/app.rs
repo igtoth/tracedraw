@@ -129,8 +129,9 @@ fn alpha(n: i64) -> String {
     out.iter().rev().collect()
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Units {
+    #[default]
     Millimeters,
     Centimeters,
     Inches,
@@ -578,6 +579,18 @@ pub struct App {
     pub elastic_mode: bool,
     /// Last clicked effect/mesh node (palette clicks colour a mesh node).
     pub selected_effect_node: Option<(ShapeId, usize)>,
+    /// Open drawings, one tab each (see `documents.rs`); the active one's
+    /// state lives in the fields above.
+    pub docs: Vec<crate::documents::DocSlot>,
+    pub active_doc: usize,
+    /// Last "Untitled-N" number handed out this session.
+    pub untitled_counter: u32,
+    /// Window > Close All (or Exit) is going through the open drawings.
+    pub closing_all: bool,
+    /// Quit once every drawing is closed (File > Exit with unsaved work).
+    pub quit_after_closing: bool,
+    /// Close the window on the next frame.
+    pub quit_now: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -804,6 +817,9 @@ impl App {
             );
         }
         let mut app = Self::build(None);
+        if !app.has_document() {
+            app.new_document();
+        }
         app.show_welcome = false;
         app
     }
@@ -986,14 +1002,25 @@ impl App {
             pending_text_frame: false,
             elastic_mode: false,
             selected_effect_node: None,
+            docs: Vec::new(),
+            active_doc: 0,
+            untitled_counter: 0,
+            closing_all: false,
+            quit_after_closing: false,
+            quit_now: false,
         };
         app.load_settings();
-        // Default names follow the UI language chosen by the settings.
-        app.new_document();
+        // Start-up: the file given on the command line, else the Welcome
+        // Screen alone (no drawing open) or a new drawing, per Options.
         if let Some(p) = open {
             app.open_path(p);
-        } else if app.settings.show_welcome_on_start {
-            app.show_welcome = true;
+        }
+        if !app.has_document() {
+            if app.settings.show_welcome_on_start {
+                app.show_welcome = true;
+            } else {
+                app.new_document();
+            }
         }
         app
     }
@@ -1010,9 +1037,17 @@ impl App {
         doc
     }
 
-    /// Default title for a new document.
+    /// A fallback title (a file without a usable name).
     pub fn untitled_name() -> String {
         crate::i18n::trf("doc.untitled_n", &[("n", "1")])
+    }
+
+    /// The name the next new drawing will get (without using it up).
+    pub fn peek_untitled_name(&self) -> String {
+        crate::i18n::trf(
+            "doc.untitled_n",
+            &[("n", &(self.untitled_counter + 1).to_string())],
+        )
     }
 
     /// Apply persisted settings (language, workspace, snapping, units).
@@ -1216,14 +1251,17 @@ impl App {
         }
     }
 
-    /// File > Close: back to an empty document (one document per window).
+    /// File > Close: close the active drawing, asking to save unsaved
+    /// changes first.
     pub fn close_document(&mut self) {
+        if !self.has_document() {
+            return;
+        }
         if self.engine.is_dirty() {
             self.dialog = crate::ui::dialogs::Dialog::ConfirmClose;
             return;
         }
-        self.new_document();
-        self.show_welcome = true;
+        self.close_active_document();
     }
 
     pub fn save_as_template(&mut self) {
@@ -2032,15 +2070,29 @@ impl App {
 
     // ----- files -------------------------------------------------------------
 
+    /// A new drawing in its own tab, with the settings last used in the
+    /// Create a New Document dialog.
     pub fn new_document(&mut self) {
-        let doc =
-            App::localized_document(App::untitled_name(), tracedraw_core::document::paper::A4);
-        self.page = doc.pages[0].id;
-        self.engine.replace(doc);
-        self.selection.clear();
-        self.file = None;
-        self.fit_pending = true;
+        let name = self.next_untitled_name();
+        let doc = self.settings.new_document.build(name);
+        self.open_document(doc, None);
         self.status.clear();
+    }
+
+    /// File > New, Ctrl+N, the New button and the "+" tab: the Create a
+    /// New Document dialog, unless it was turned off, then a new drawing
+    /// with the last used settings.
+    pub fn request_new_document(&mut self) {
+        if self.settings.show_new_document_dialog {
+            self.dialog = crate::ui::dialogs::Dialog::NewDocument(
+                crate::new_document::NewDocState::from_settings(
+                    &self.settings.new_document,
+                    self.peek_untitled_name(),
+                ),
+            );
+        } else {
+            self.new_document();
+        }
     }
 
     pub fn open_dialog(&mut self) {
@@ -2322,9 +2374,7 @@ impl App {
         };
         match result {
             Ok((doc, msg)) => {
-                self.page = doc.pages[0].id;
-                self.engine.replace(doc);
-                self.selection.clear();
+                self.open_document(doc, None);
                 self.file = if matches!(
                     ext.as_str(),
                     "cdr"

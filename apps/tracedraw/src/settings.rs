@@ -43,6 +43,13 @@ pub struct Settings {
     /// Thesaurus file picked by the user (Text > Writing Tools > Thesaurus).
     #[serde(default)]
     pub thesaurus_file: Option<PathBuf>,
+    /// Options > General: show the Create a New Document dialog for File >
+    /// New (off: new drawings use the last settings at once).
+    #[serde(default = "default_true")]
+    pub show_new_document_dialog: bool,
+    /// The Create a New Document dialog's last used settings.
+    #[serde(default)]
+    pub new_document: crate::new_document::NewDocSettings,
 }
 
 fn default_true() -> bool {
@@ -126,6 +133,8 @@ impl Default for Settings {
             baseline_grid_mm: default_baseline_mm(),
             autocorrect: crate::autocorrect::AutocorrectPrefs::default(),
             thesaurus_file: None,
+            show_new_document_dialog: true,
+            new_document: crate::new_document::NewDocSettings::default(),
         }
     }
 }

@@ -168,12 +168,9 @@ pub fn call_tool(app: &mut App, name: &str, args: &Value) -> Result<String, Stri
                 .get("title")
                 .and_then(|v| v.as_str())
                 .map(String::from)
-                .unwrap_or_else(App::untitled_name);
+                .unwrap_or_else(|| app.next_untitled_name());
             let doc = App::localized_document(title, tracedraw_core::geometry::Size::new(w, h));
-            app.page = doc.pages[0].id;
-            app.engine.replace(doc);
-            app.selection.clear();
-            app.file = None;
+            app.open_document(doc, None);
             Ok(describe(app).to_string())
         }
         "save" => {

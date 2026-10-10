@@ -6,7 +6,7 @@ target design does, with a test or a checked screenshot behind it.
 "partial" names what is missing. "baked" means the result is applied once
 instead of staying live and editable. The goal is every row at "works".
 
-Counts: works 130, partial 1 (`.cdr` content coverage), missing 1 (CMX import), not applicable 4, icons close but not pixel-identical.
+Counts: works 136, partial 1 (`.cdr` content coverage), missing 2 (CMX import; window cascade and tile), not applicable 3, icons close but not pixel-identical.
 
 ## 1. Selection and navigation
 
@@ -213,4 +213,5 @@ Counts: works 130, partial 1 (`.cdr` content coverage), missing 1 (CMX import), 
 | Welcome Screen with tabs | works |
 | Right-click context menus (object, node, page, table) | works |
 | Dialogs: New Document, Options, Export, Print, Print Merge, Colour Management, Font Manager, Document Properties, Convert to Bitmap, Resample, Trace, QR Code, Barcode, Change Case, Text Statistics, Tabs, Columns, Bullets, Drop Cap, Table create/split, Page Number Settings, Paste Special, Symmetry, Thesaurus, Grammar, Autocorrect, Encode, Border and Grommet | works |
-| Window management (new window, cascade, tile) | not applicable: single document window with tabs |
+| Several open drawings in tabs (unsaved marker, close button, New after the last tab), Window list, Close, Close All, exit asks about each unsaved drawing | works (see `behavior/documents.md`) |
+| Window > Cascade, Tile, undocking a drawing into its own window | missing |

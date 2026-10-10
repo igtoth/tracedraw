@@ -23,6 +23,9 @@ impl Tokens {
     pub const TOOL_ACTIVE: Color32 = Color32::from_rgb(0xCC, 0xE4, 0xF7);
     pub const TOOL_HOVER: Color32 = Color32::from_rgb(0xE5, 0xF1, 0xFB);
     pub const ICON: Color32 = Color32::from_rgb(0x2A, 0x2A, 0x2A);
+    /// Push buttons and their border, check boxes and fields.
+    pub const BUTTON: Color32 = Color32::from_rgb(0xE1, 0xE1, 0xE1);
+    pub const CONTROL_BORDER: Color32 = Color32::from_rgb(0xAD, 0xAD, 0xAD);
 
     pub const TOOLBOX_WIDTH: f32 = 36.0;
     pub const TOOL_BUTTON: f32 = 30.0;
@@ -40,9 +43,14 @@ pub fn visuals() -> Visuals {
     v.widgets.noninteractive.bg_fill = Tokens::PANEL;
     v.widgets.noninteractive.fg_stroke.color = Tokens::TEXT;
     v.widgets.noninteractive.bg_stroke.color = Tokens::BORDER;
-    v.widgets.inactive.bg_fill = Tokens::PANEL;
-    v.widgets.inactive.weak_bg_fill = Tokens::PANEL;
+    // Framed controls look like the desktop's: white check boxes, radio
+    // buttons and fields with a grey border, light grey push buttons.
+    v.widgets.inactive.bg_fill = Color32::WHITE;
+    v.widgets.inactive.weak_bg_fill = Tokens::BUTTON;
+    v.widgets.inactive.bg_stroke = egui::Stroke::new(1.0, Tokens::CONTROL_BORDER);
     v.widgets.inactive.fg_stroke.color = Tokens::TEXT;
+    v.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, Tokens::ACCENT);
+    v.widgets.active.bg_stroke = egui::Stroke::new(1.0, Tokens::ACCENT);
     v.widgets.hovered.bg_fill = Tokens::TOOL_HOVER;
     v.widgets.hovered.weak_bg_fill = Tokens::TOOL_HOVER;
     v.widgets.hovered.fg_stroke.color = Tokens::TEXT;

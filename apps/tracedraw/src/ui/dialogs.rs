@@ -367,12 +367,7 @@ pub enum Dialog {
     ColorManagement,
     FontManager(FontManagerState),
     PaletteEditor(PaletteEditorState),
-    NewDocument {
-        width: f64,
-        height: f64,
-        preset: usize,
-        name: String,
-    },
+    NewDocument(crate::new_document::NewDocState),
     About,
 }
 
@@ -576,19 +571,21 @@ pub fn show(app: &mut App, ctx: &Context) {
                 ui.horizontal(|ui| {
                     if ui.button(tr("dialog.save")).clicked() {
                         app.save(false);
-                        if !app.engine.is_dirty() {
-                            app.new_document();
-                            app.show_welcome = true;
+                        let saved = !app.engine.is_dirty();
+                        if saved {
+                            app.close_active_document();
                         }
                         close = true;
+                        app.after_close_question(saved);
                     }
                     if ui.button(tr("dialog.dont_save")).clicked() {
-                        app.new_document();
-                        app.show_welcome = true;
+                        app.close_active_document();
                         close = true;
+                        app.after_close_question(true);
                     }
                     if ui.button(tr("dialog.cancel")).clicked() {
                         close = true;
+                        app.after_close_question(false);
                     }
                 });
             });
@@ -971,61 +968,8 @@ pub fn show(app: &mut App, ctx: &Context) {
         Dialog::ColorManagement => color_management_dialog(app, ctx, &mut close),
         Dialog::FontManager(st) => font_manager_dialog(app, ctx, st, &mut close),
         Dialog::PaletteEditor(st) => palette_editor_dialog(app, ctx, st, &mut close),
-        Dialog::NewDocument {
-            width,
-            height,
-            preset,
-            name,
-        } => {
-            window(ctx, tr("dialog.create_new_document")).show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(tr("dialog.name"));
-                    ui.text_edit_singleline(name);
-                });
-                let presets = paper_presets();
-                egui::ComboBox::from_label(tr("dialog.preset"))
-                    .selected_text(presets.get(*preset).map(|p| p.0).unwrap_or("Custom"))
-                    .show_ui(ui, |ui| {
-                        for (i, (n, s)) in presets.iter().enumerate() {
-                            if ui.selectable_label(*preset == i, *n).clicked() {
-                                *preset = i;
-                                *width = s.width;
-                                *height = s.height;
-                            }
-                        }
-                    });
-                unit_value(ui, &tr("dialog.width"), width, app.units);
-                unit_value(ui, &tr("dialog.height"), height, app.units);
-                ui.horizontal(|ui| {
-                    if ui
-                        .selectable_label(*width <= *height, tr("dialog.portrait"))
-                        .clicked()
-                        && *width > *height
-                    {
-                        std::mem::swap(width, height);
-                    }
-                    if ui
-                        .selectable_label(*width > *height, tr("dialog.landscape"))
-                        .clicked()
-                        && *width <= *height
-                    {
-                        std::mem::swap(width, height);
-                    }
-                });
-                if ok_cancel(ui, &mut close) {
-                    let mut doc = App::localized_document(
-                        name.clone(),
-                        Size::new(width.max(1.0), height.max(1.0)),
-                    );
-                    doc.metadata.resolution_dpi = app.settings.default_dpi;
-                    app.page = doc.pages[0].id;
-                    app.engine.replace(doc);
-                    app.selection.clear();
-                    app.file = None;
-                    app.fit_pending = true;
-                    app.show_welcome = false;
-                }
-            });
+        Dialog::NewDocument(st) => {
+            crate::new_document::new_document_dialog(app, ctx, st, &mut close)
         }
         Dialog::Symmetry => {
             window(ctx, tr("dialog.symmetry")).show(ctx, |ui| match app.selected_symmetry() {
@@ -1166,7 +1110,11 @@ pub fn show(app: &mut App, ctx: &Context) {
             });
         }
     }
-    app.dialog = if close { Dialog::None } else { dialog };
+    // A closing dialog may have opened the next one (the next unsaved
+    // drawing's question); keep that.
+    if !close {
+        app.dialog = dialog;
+    }
 }
 
 pub fn paper_presets() -> Vec<(&'static str, Size)> {
@@ -1596,6 +1544,10 @@ fn options_dialog(app: &mut App, ctx: &Context, close: &mut bool) {
                                             ui.checkbox(
                                                 &mut app.settings.show_welcome_on_start,
                                                 tr("options.show_welcome"),
+                                            );
+                                            ui.checkbox(
+                                                &mut app.settings.show_new_document_dialog,
+                                                tr("options.show_new_document_dialog"),
                                             );
                                             let u = app.units;
                                             let mut nudge = u.from_mm(app.nudge_mm);
@@ -3562,12 +3514,10 @@ mod tests {
             Dialog::ColorManagement,
             Dialog::FontManager(FontManagerState::default()),
             Dialog::PaletteEditor(PaletteEditorState::default()),
-            Dialog::NewDocument {
-                width: 100.0,
-                height: 100.0,
-                preset: 0,
-                name: "n".into(),
-            },
+            Dialog::NewDocument(crate::new_document::NewDocState::from_settings(
+                &Default::default(),
+                "n".into(),
+            )),
             Dialog::About,
         ]
     }

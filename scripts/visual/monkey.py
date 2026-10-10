@@ -3,7 +3,7 @@
 import os, random
 random.seed(int(os.environ.get("MONKEY_SEED", "1")))
 steps = int(os.environ.get("MONKEY_STEPS", "150"))
-click(178, 86); time.sleep(0.8)
+click(800, 600); combo("Control_L", "n"); time.sleep(0.8); key("Return"); time.sleep(0.8)
 key("F6"); drag(450, 250, 600, 350); key("F7"); drag(650, 250, 800, 350)
 keys = ["F6", "F7", "F8", "F5", "F10", "space", "y", "a", "d", "g", "x", "i", "s", "Escape",
         "Delete", "Return", "Tab", "Left", "Right", "Up", "Down", "F2", "F4", "z", "h"]

@@ -63,7 +63,7 @@ pub fn standard_toolbar(app: &mut App, ui: &mut Ui) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 1.0;
         if tb_button(ui, icons::Action::New, &tr("toolbar.new"), true) {
-            app.new_document();
+            app.request_new_document();
         }
         if tb_button(ui, icons::Action::Open, &tr("toolbar.open"), true) {
             app.open_dialog();
