@@ -22,7 +22,6 @@ pub mod menus;
 pub mod options;
 pub mod palette;
 pub mod picture_mosaic_docker;
-pub mod vector_mosaic_docker;
 pub mod preview;
 pub mod propbar;
 pub mod rulers;
@@ -31,6 +30,7 @@ pub mod straighten_dialog;
 pub mod tabs;
 pub mod toolbar;
 pub mod toolbox;
+pub mod vector_mosaic_docker;
 pub mod welcome;
 pub mod window_bars;
 
@@ -49,8 +49,8 @@ fn bar() -> Frame {
 
 /// A slider whose rail shows on the white and light grey panels. egui
 /// paints slider rails with the fill of framed controls, which the theme
-/// makes white for check boxes and fields; here the rail gets a grey
-/// groove instead, thinner, like the target design's track.
+/// makes white for check boxes and fields; here the rail gets a thin grey
+/// groove instead.
 pub struct Rail<'a>(pub egui::Slider<'a>);
 
 impl egui::Widget for Rail<'_> {
@@ -139,8 +139,8 @@ pub fn root(app: &mut App, ui: &mut Ui) {
         .resizable(false)
         .show_separator_line(false)
         .show(ui, |ui| menus::menu_bar(app, ui));
-    // the target design's bands: a 35 px standard toolbar and a 52 px
-    // property bar, each closed by a light line (included in the sizes).
+    // The bands: a 35 px standard toolbar and a 52 px property bar, each
+    // closed by a light line (included in the sizes).
     if app.show_standard_toolbar {
         Panel::top("standard_toolbar")
             .frame(Frame::new().fill(Tokens::PANEL).inner_margin(egui::Margin {
@@ -388,8 +388,7 @@ pub fn root(app: &mut App, ui: &mut Ui) {
 
 /// The Navigator: the small button in the corner between the scrollbars
 /// opens a thumbnail of the page while the button is held; moving the
-/// pointer over the thumbnail pans the view to that spot, like the
-/// target design's navigator pop-up.
+/// pointer over the thumbnail pans the view to that spot.
 pub(crate) fn view_navigator(app: &mut App, ui: &mut Ui, corner: egui::Rect, canvas: egui::Rect) {
     let resp = ui.interact(
         corner,
@@ -400,7 +399,7 @@ pub(crate) fn view_navigator(app: &mut App, ui: &mut Ui, corner: egui::Rect, can
     if resp.hovered() {
         painter.rect_filled(corner, 0.0, Tokens::TOOL_HOVER);
     }
-    // A magnifier over a cross, as on the target design's button.
+    // A magnifier over a cross.
     let c = corner.center() + egui::vec2(-1.0, -1.0);
     let s = egui::Stroke::new(1.2, Tokens::TEXT_DIM);
     painter.circle_stroke(c, 4.5, s);

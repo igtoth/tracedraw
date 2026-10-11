@@ -1,4 +1,4 @@
-# Fountain fill
+# Gradient fill
 
 ## Controls and defaults
 
@@ -19,14 +19,14 @@ click gives the default fill; Ctrl constrains the angle to 15 degree
 steps; dragging a palette colour onto a stop recolours it; dragging a
 colour onto the fill line adds a stop.
 
-Property bar (Interactive Fill): the fill type (None, Uniform, Fountain,
+Property bar (Interactive Fill): the fill type (None, Uniform, Gradient,
 Pattern, Texture, Mesh), then the type's fields: the colour for a
-uniform fill; for a fountain the kind (Linear, Radial, Conical, Square),
+uniform fill; for a gradient the kind (Linear, Radial, Conical, Square),
 the start and end colours, the angle and the edge pad. With a selection
 the fields edit it; with nothing selected they set the default fill for
 the next object.
 
-Handles on the canvas (Interactive Fill, fountain-filled selection): a
+Handles on the canvas (Interactive Fill, gradient-filled selection): a
 linear fill shows its axis as a dashed line between a start node and an
 end node (squares in the two colours) at `c -/+ h (cos a, sin a)` with
 `h = (w |cos a| + h |sin a|) / 2`; dragging either node turns the axis

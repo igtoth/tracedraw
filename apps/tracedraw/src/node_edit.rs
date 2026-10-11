@@ -1,4 +1,4 @@
-//! More of the Shape tool, as the target design has it: Ctrl+click
+//! More of the Shape tool: Ctrl+click
 //! adds or removes a node, Shift+click selects the run of nodes up to the
 //! one clicked, Tab and Shift+Tab step through the nodes, the selected
 //! nodes can be stretched, scaled, rotated and skewed with handles around

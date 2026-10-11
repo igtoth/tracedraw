@@ -189,13 +189,13 @@ pub enum Command {
         shapes: Vec<ShapeId>,
         shadow: Option<Shadow>,
     },
-    /// Place objects inside a frame object (ClipFrame). The frame keeps its
+    /// Place objects inside a frame object (a clip frame). The frame keeps its
     /// id; the contents keep their page positions.
     PlaceInside {
         contents: Vec<ShapeId>,
         frame: ShapeId,
     },
-    /// Take the contents out of a ClipFrame, leaving the frame as a plain object.
+    /// Take the contents out of a clip frame, leaving the frame as a plain object.
     ExtractContents {
         clip: ShapeId,
     },
@@ -285,7 +285,7 @@ impl Command {
             Command::ReverseOrder { .. } => "Reverse Order",
             Command::Combine { .. } => "Combine",
             Command::BreakApart { .. } => "Break Apart",
-            Command::PlaceInside { .. } => "ClipFrame",
+            Command::PlaceInside { .. } => "Place Inside Frame",
             Command::ExtractContents { .. } => "Extract Contents",
             Command::RenamePage { .. } => "Rename Page",
             Command::DuplicatePage { .. } => "Duplicate Page",

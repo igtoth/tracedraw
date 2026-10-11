@@ -1,7 +1,7 @@
 //! Second wave of tools: Contour, Crop, Knife, Spiral, Common Shapes,
 //! Brush Strokes (calligraphic), Parallel Dimension, Connector, Table,
-//! and Convert Outline To Object. These produce static results (the target design
-//! keeps some of them live); see docs/parity.md.
+//! and Convert Outline To Object. These produce static results; see
+//! docs/features.md.
 
 use crate::app::{App, Drag};
 use crate::i18n::tr;
@@ -386,8 +386,7 @@ impl App {
 
     /// The object a box drag with the current tool would create, as page
     /// space outlines, so the shape itself follows the pointer while
-    /// dragging (the target design never shows an empty box for shape
-    /// tools). `None` when the drag does not create an object outline
+    /// dragging (shape tools never show an empty box). `None` when the drag does not create an object outline
     /// (crop, zoom, text frames).
     pub fn creation_preview(
         &self,
@@ -426,7 +425,9 @@ impl App {
                     * self.common_shape.unit_path()
             }
             Tool::GraphPaper => grid_path(r, self.graph_rows, self.graph_cols),
-            Tool::ActionLines => action_lines_path(r, self.action_lines_count, self.action_lines_radial),
+            Tool::ActionLines => {
+                action_lines_path(r, self.action_lines_count, self.action_lines_radial)
+            }
             Tool::Table => grid_path(r, self.table_rows, self.table_cols),
             Tool::Knife => {
                 let mut p = BezPath::new();
@@ -1307,7 +1308,10 @@ mod tests {
     #[test]
     fn action_lines_preview_matches_the_created_object() {
         let r = Rect::new(0.0, 0.0, 80.0, 40.0);
-        assert_eq!(action_lines_path(r, 12, false), action_lines_path(r, 12, false));
+        assert_eq!(
+            action_lines_path(r, 12, false),
+            action_lines_path(r, 12, false)
+        );
         assert_eq!(action_lines_path(r, 12, true).elements().len(), 24);
         let g = grid_path(r, 4, 3);
         // Frame (5 elements) plus 2 vertical and 3 horizontal lines.

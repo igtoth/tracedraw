@@ -57,7 +57,7 @@ becomes "Привет".
 
 ## Make Text Web Compatible
 
-For each selected text object: fountain, pattern, texture and mesh fills
+For each selected text object: gradient, pattern, texture and mesh fills
 become a solid colour (first stop, front colour, first node); the outline,
 drop shadow and live effects are removed; per-character fills that are
 not solid are cleared. Solid fills and character colours are kept.

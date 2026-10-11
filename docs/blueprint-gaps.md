@@ -1,11 +1,9 @@
-# Gaps against the reference blueprint
+# Open items
 
-Cross-check of the project against the public feature inventory of the
-target design's 2019 release (toolbox help page, quick start guide,
-reviewer's guide) and the community notes on the `.cdr` container.
-Rows move to `parity.md` when done; this file keeps only what is open.
+What is still open, by area. Rows move to `features.md` when done; this
+file keeps only what is open.
 
-## Toolbox (17 groups, official list)
+## Toolbox (17 groups)
 
 All 62 tools exist with their own icon, flyout position, property bar and
 shortcut, and all of them are interactive (the Anchor Editing tool was the
@@ -30,11 +28,11 @@ exceptions, shown disabled so the layout stays complete:
 
 ## File format
 
-- `.cdr` generations: `WL` binary (v1, v2), RIFF (v3 to X3), ZIP with
-  `content/riffData.cdr` (X4, X5), ZIP with `content/root.dat` and
-  `content/data/*.dat` ordered by `content/dataFileList.dat` (X6 and
-  later, every release since 2012). TraceDraw reads all three container
-  layouts (RIFF, the X4/X5 ZIP and the X6+ ZIP with redirected chunks);
+- `.cdr` generations: `WL` binary (v1, v2), RIFF (v3 to 13), ZIP with
+  `content/riffData.cdr` (14, 15), ZIP with `content/root.dat` and
+  `content/data/*.dat` ordered by `content/dataFileList.dat` (16 and
+  later). TraceDraw reads all three container layouts (RIFF, the 14/15
+  ZIP and the 16+ ZIP with redirected chunks);
   the `WL` binary of v1 and v2 is not read. Writing `.cdr` produces the
   version 12 RIFF layout (see `cdr-format.md`, "Writing").
 - Coordinates: 1/1000 inch (16-bit versions, `V < 600`), 1/254000 inch
@@ -44,8 +42,8 @@ exceptions, shown disabled so the layout stays complete:
 - Read: pages, layers, rectangles, ellipses, curves, paths, polygons,
   bitmaps, artistic and paragraph text (`font`, `stlt`, both `txsm`
   layouts from version 7 on; family, size, bold, italic, underline,
-  strike-through, run fill, frame size, alignment), uniform, fountain
-  (with the X6+ transformation), two-colour pattern (with the `bmpf`
+  strike-through, run fill, frame size, alignment), uniform, gradient
+  (with the version 16+ transformation), two-colour pattern (with the `bmpf`
   tile), colour bitmap and texture fills (the latter from the stored
   bitmap), outlines with dashes and arrowheads classified into our
   presets, object opacity.
@@ -58,7 +56,7 @@ exceptions, shown disabled so the layout stays complete:
   single-byte code pages other than Windows-1252, tabs, bullets and drop
   caps from `stlt` (tables skipped by size), the `ftil` fill transform,
   lenses and other effects. Layouts marked "assumed" in
-  `cdr-format.md` (`bmpf`, `arrw`, the X6+ style string content, the
+  `cdr-format.md` (`bmpf`, `arrw`, the version 16+ style string content, the
   opacity direction, the alignment codes) have no file behind them yet.
 - Chunks with public descriptions: `vrsn`, `DISP`, `LIST cmpr`, `stlt`,
   `font`, `txsm`, `mcfg`, `loda`, `trfd`, `fild`, `outl`, `bmp `, `sumi`.

@@ -1,5 +1,5 @@
-//! Fillet, scallop and chamfer the corners of curves (the reference
-//! editor's Corners docker). A corner is a node where two segments meet
+//! Fillet, scallop and chamfer the corners of curves (the Corners
+//! panel). A corner is a node where two segments meet
 //! at an angle; smooth and symmetrical nodes are not corners. Corners are
 //! cut in path order, and one whose segments are too short for the cut,
 //! after the cuts already made on them, is left as it is.

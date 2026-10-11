@@ -1,5 +1,5 @@
-//! The rulers along the top and the left of the drawing window, drawn as
-//! the target design draws them: numbered marks centred over long
+//! The rulers along the top and the left of the drawing window:
+//! numbered marks centred over long
 //! ticks, half and minor ticks, distances from the ruler origin without
 //! sign, the unit name at the right end of the horizontal ruler and the
 //! origin button in the corner where the rulers meet.
@@ -247,8 +247,8 @@ impl Pixels {
     }
 }
 
-/// A dashed axis-aligned line, 3 pixels on and 3 off, as the reference
-/// editor's pointer markers; `a` and `b` share x or y.
+/// A dashed axis-aligned line, 3 pixels on and 3 off (the pointer
+/// markers); `a` and `b` share x or y.
 fn dashed(painter: &Painter, a: Pos2, b: Pos2, color: Color32) {
     let mut pixels = Pixels::default();
     let (x0, y0) = (a.x.floor(), a.y.floor());
@@ -434,7 +434,7 @@ fn draw_corner(painter: &Painter, corner: Rect, active: bool) {
         corner.y_range(),
         Stroke::new(1.0, BORDER_COLOR),
     );
-    // Pixel pattern measured on the target design (17 px corner): a
+    // Pixel pattern (17 px corner): a
     // dotted vertical line at x 6, a dotted horizontal one at y 6, and a
     // diagonal from (7, 7) to (11, 11) ending in a 2x2 square.
     let mut pixels = Pixels::default();
@@ -481,8 +481,7 @@ mod tests {
 
     #[test]
     fn numbered_marks_keep_their_distance() {
-        // Half a screen pixel per unit: a mark every 100 units (50 px),
-        // as the target design shows a 1920-pixel page at 50%.
+        // Half a screen pixel per unit: a mark every 100 units (50 px).
         assert_eq!(major_step(0.5), 100.0);
         assert_eq!(major_step(2.0), 50.0);
         assert_eq!(major_step(10.0), 5.0);

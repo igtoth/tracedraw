@@ -1,7 +1,7 @@
 # PDF and AI import
 
 File > Open and File > Import accept `.pdf` and `.ai` (PDF-compatible
-Illustrator files, which carry a PDF after a PostScript preamble). Open
+AI files, which carry a PDF after a PostScript preamble). Open
 makes one page per PDF page; Import places the first page's objects on
 the active layer.
 
@@ -15,7 +15,7 @@ the active layer.
   CTM, constant alpha from ExtGStates (`ca`, `CA`).
 - Colour: DeviceGray/RGB/CMYK, ICCBased (by component count), Indexed,
   Separation and DeviceN (as tints), CalRGB/Lab (as RGB).
-- Clipping: `W`/`W*` paths become ClipFrames around the objects they
+- Clipping: `W`/`W*` paths become clip frames around the objects they
   clip; the intersection of nested clips is approximated by the inner
   one (or the shared rectangle). Objects fully inside a clip are not
   wrapped; text that is at least 60 % inside is left unclipped because
@@ -27,10 +27,10 @@ the active layer.
   black), SMask soft masks (resampled nearest), DCTDecode through the
   JPEG decoder. JPX images become a grey box. Inline images (`BI`) are
   read with their abbreviated keys expanded.
-- Shadings: axial (type 2) and radial (type 3) as fountain fills, with
+- Shadings: axial (type 2) and radial (type 3) as gradient fills, with
   type 2, 3 (stitching) and 0 (sampled) functions sampled into stops;
   `sh` paints the current clip. Shading patterns used as fills become
-  fountain fills; tiling patterns become vector pattern fills built from
+  gradient fills; tiling patterns become vector pattern fills built from
   the tile's content.
 - Text: `BT`/`ET` blocks with Tf, Td, TD, Tm, T*, TL, Tc, Tw, Tz, Ts, Tr,
   Tj, TJ, ' and ". Consecutive strings on the same baseline merge into
@@ -61,8 +61,8 @@ password is empty.
 - `(Hello) Tj ( World) Tj` on one line gives one text "Hello World" at
   12 pt bold; `[(Se) -250 (cond)] TJ` gives "Se cond".
 - A form XObject with a Matrix is placed by it and takes the page's
-  `ca`; a rectangle painted under `W n` becomes a ClipFrame.
-- A type 2 axial shading pattern becomes a two-stop linear fountain.
+  `ca`; a rectangle painted under `W n` becomes a clip frame.
+- A type 2 axial shading pattern becomes a two-stop linear gradient.
 - A raw 2 x 1 RGB image gives a 2 x 1 bitmap at the CTM's rectangle,
   also when the file starts with a PostScript preamble (`.ai`).
 - Garbage and truncated input return an error, never a panic.

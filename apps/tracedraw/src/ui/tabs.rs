@@ -1,7 +1,7 @@
 //! The document tabs above the rulers: the Welcome Screen, one tab per open
 //! drawing (an asterisk marks unsaved changes; the close button shows on
 //! the hovered tab) and the New tab after the last one, over a blue line
-//! that runs the width of the window, as the target design draws them.
+//! that runs the width of the window.
 
 use crate::app::App;
 use crate::i18n::tr;

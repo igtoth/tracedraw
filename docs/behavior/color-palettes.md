@@ -22,13 +22,11 @@ default palette, then the document palette above the status bar
 
 ## Default palette
 
-the target design's default CMYK palette, 99 named colours in its
+The default CMYK palette, 99 named colours in this
 order: Black, 90% to 10% Black, White, Blue, Cyan, Green, Yellow, Red,
 Magenta, then tints in 20% steps (Purple 20 80 0 20, Orange 0 60 100 0,
 Pink 0 40 20 0, Dark Brown 0 20 20 60, Powder Blue 20 20 0 0 and so on,
-to Deep Blue 60 60 0 60). The values of the first 64 were checked
-against the target design's palette on screen through the press model
-(`colour-management.md`).
+to Deep Blue 60 60 0 60).
 
 ## Using a palette
 
@@ -45,7 +43,7 @@ against the target design's palette on screen through the press model
 ## Document palette
 
 - Every colour applied to an object (fill or outline, from a palette, the
-  colour docker or a dialog) joins the document palette, in the same undo
+  colour panel or a dialog) joins the document palette, in the same undo
   step as the change. The palette menu's Automatically Update turns that
   off (also in Options > Customization > Color Palette).
 - The eyedropper waits for a click on the drawing and adds the colour
@@ -73,7 +71,7 @@ update the document palette (on).
 ## Checks
 
 - `ui::palette::tests::tooltips_name_the_colour_and_its_values`
-- `ui::palette::tests::the_default_palette_is_the_reference_one`
+- `ui::palette::tests::the_default_palette_has_greys_process_colours_and_tints`
 - `ui::palette::tests::shades_keep_the_colour_in_the_middle`
 - `ui::palette::tests::mixing_moves_a_tenth_of_the_way`
 - `ui::palette::tests::applying_a_colour_adds_it_to_the_document_palette_in_the_same_step`

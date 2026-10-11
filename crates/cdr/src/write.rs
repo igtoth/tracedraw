@@ -9,7 +9,7 @@
 //! symbols, expanded effects), groups, artistic text with one font, size
 //! and style per run, bitmaps (24-bit), solid and fountain fills,
 //! outlines with width, caps, joins, dashes, nib and the "scale with
-//! object" and "behind fill" flags, and uniform transparency. ClipFrames
+//! object" and "behind fill" flags, and uniform transparency. clip frames
 //! are written as their contents followed by the frame outline.
 
 use crate::parse::{
@@ -151,7 +151,7 @@ fn mcfg(w_mm: f64, h_mm: f64) -> Vec<u8> {
     out
 }
 
-/// Pre-X3 `fild`: id, type, then the body.
+/// Before version 13: `fild`: id, type, then the body.
 fn fild_solid(id: u32, c: Color) -> Vec<u8> {
     let mut f = u32s(&[id]);
     f.extend_from_slice(&u16s(&[1, 0]));
@@ -165,7 +165,7 @@ fn fild_none(id: u32) -> Vec<u8> {
     f
 }
 
-/// Pre-X3 fountain body (version 6 to 12 layout).
+/// Before version 13: fountain body (version 6 to 12 layout).
 fn fild_fountain(id: u32, f: &tracedraw_core::Fountain) -> Vec<u8> {
     let mut b = u32s(&[id]);
     b.extend_from_slice(&u16s(&[2]));
@@ -463,7 +463,7 @@ impl Writer<'_> {
         }
         let mut b = u32s(&[id]);
         b.extend_from_slice(&[0; 50]);
-        // Colour model 1 is 24-bit BGR (confirmed on a 2019 file; model 5
+        // Colour model 1 is 24-bit BGR (confirmed on a version 21 file; model 5
         // is greyscale in other readers).
         b.extend_from_slice(&u32s(&[1]));
         b.extend_from_slice(&[0; 4]);
@@ -583,8 +583,8 @@ impl Writer<'_> {
                     && matches!(contents[0].kind, ShapeKind::Bitmap { .. })
                     && contents[0].effects.is_empty() =>
             {
-                // A clipped bitmap is a bitmap object with a crop path, the
-                // way the target design stores it.
+                // A clipped bitmap is stored as a bitmap object with a crop
+                // path.
                 let bm = &contents[0];
                 let clip = (bm.transform.inverse()) * frame.page_path();
                 let mut b = bm.clone();
@@ -689,7 +689,7 @@ impl Writer<'_> {
         list(b"obj ", &body)
     }
 
-    /// `txsm` in the version 7 to X5 layout: one frame, one paragraph,
+    /// `txsm` in the version 7 to version 15 layout: one frame, one paragraph,
     /// one style per span, the text as UTF-16.
     fn txsm(
         &mut self,
@@ -1147,7 +1147,7 @@ mod tests {
         assert_eq!(l.shapes.len(), 1, "{:?}", rep.warnings);
         match &l.shapes[0].kind {
             ShapeKind::ClipFrame { frame, contents } => {
-                // Frame and contents live in the ClipFrame's own space.
+                // Frame and contents live in the clip frame's own space.
                 let outer = l.shapes[0].transform;
                 let fb = (outer * frame.page_path()).bounding_box();
                 assert!(

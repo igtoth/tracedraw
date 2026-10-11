@@ -876,7 +876,7 @@ fn blank(row: u32, col: u32) -> TableCell {
 }
 
 /// Grow the cell's row so its text fits (rows grow downwards and never
-/// shrink here, as the target design does while typing). Cells
+/// shrink while typing). Cells
 /// spanning several rows grow their last row.
 fn grow_row_to_fit(t: &mut Table, r: u32, c: u32) {
     let Some(cell) = t.cells.iter().find(|cell| cell.row == r && cell.col == c) else {

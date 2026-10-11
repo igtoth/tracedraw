@@ -1,6 +1,6 @@
 # Keyboard shortcuts
 
-The default bindings, as the target design assigns them. Every menu
+The default bindings. Every menu
 item that shows a shortcut is bound to it; the Options dialog's
 Shortcuts page lists them too. `Ctrl` is the Command key on macOS.
 
@@ -13,9 +13,9 @@ Shortcuts page lists them too. `Ctrl` is the Command key on macOS.
 | Ctrl+F4, Alt+F4 | Close window, Exit |
 | Ctrl+Z, Ctrl+Shift+Z, Ctrl+R | Undo, Redo, Repeat |
 | Ctrl+X, Ctrl+C, Ctrl+V, Ctrl+Shift+V | Cut, Copy, Paste, Paste in view |
-| Ctrl+D, Ctrl+Shift+D | Duplicate, Step and Repeat docker |
+| Ctrl+D, Ctrl+Shift+D | Duplicate, Step and Repeat panel |
 | Ctrl+A, Delete or Backspace | Select all, Delete |
-| Ctrl+F, Ctrl+J, Ctrl+W | Find and Replace docker, Options, Refresh window |
+| Ctrl+F, Ctrl+J, Ctrl+W | Find and Replace panel, Options, Refresh window |
 
 ## View
 
@@ -38,20 +38,20 @@ Shortcuts page lists them too. `Ctrl` is the Command key on macOS.
 | Ctrl+Home, Ctrl+End | To front and back of the page |
 | Shift+PgUp, Shift+PgDn | To front and back of the layer |
 | Ctrl+PgUp, Ctrl+PgDn | Forward one, back one |
-| Alt+Enter, Ctrl+Shift+A, Alt+F7 | Properties, Align and Distribute, Transformations dockers |
+| Alt+Enter, Ctrl+Shift+A, Alt+F7 | Properties, Align and Distribute, Transformations panels |
 | Ctrl+M | Merge table cells |
 
 ## Text and effects
 
 | Keys | Action |
 | --- | --- |
-| Ctrl+T, Ctrl+F11, Ctrl+F12 | Text, Insert Character, Fonts dockers |
+| Ctrl+T, Ctrl+F11, Ctrl+F12 | Text, Insert Character, Fonts panels |
 | Ctrl+Shift+T, Alt+F12 | Edit text, Align to baseline |
-| F11, Shift+F11, F12, Shift+F12 | Fountain fill, Colour, Outline pen, Outline colour |
-| Ctrl+F7, Ctrl+F8, Ctrl+F9, Ctrl+F10, Alt+F3, Ctrl+F3 | Envelope, Blend, Contour, Extrude, Lens, Symbols dockers |
+| F11, Shift+F11, F12, Shift+F12 | Gradient fill, Colour, Outline pen, Outline colour |
+| Ctrl+F7, Ctrl+F8, Ctrl+F9, Ctrl+F10, Alt+F3, Ctrl+F3 | Envelope, Blend, Contour, Extrude, Lens, Symbols panels |
 
-Docker shortcuts toggle: pressing one when its docker is already the
-active tab hides the docker column.
+Panel shortcuts toggle: pressing one when its panel is already the
+active tab hides the panel column.
 
 ## Align keys and tool keys
 

@@ -1,7 +1,7 @@
 //! File > New: the Create a New Document dialog and the settings it keeps
 //! for the next drawing (see docs/behavior/new-document.md).
 //!
-//! Layout follows the target design: a General section (name,
+//! Layout: a General section (name,
 //! destination preset with a menu to save or delete presets, number of
 //! pages, primary colour mode), a Dimensions section (page size, width
 //! with the drawing units, height with the orientation buttons,
@@ -289,8 +289,8 @@ impl NewDocState {
 }
 
 /// Dialog geometry, in pixels from the dialog's left edge and from the
-/// top of its body (under the title bar), as the target design lays it
-/// out: labels end at 190, fields start at 195, rows 33 px apart.
+/// top of its body (under the title bar): labels end at 190, fields
+/// start at 195, rows 33 px apart.
 const DIALOG_W: f32 = 480.0;
 const LABEL_RIGHT: f32 = 190.0;
 const FIELD_X: f32 = 195.0;

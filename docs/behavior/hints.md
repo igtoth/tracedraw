@@ -1,6 +1,6 @@
-# Hints docker
+# Hints panel
 
-The Hints docker is open by default, docked on the right with Properties
+The Hints panel is open by default, docked on the right with Properties
 and Objects (the tab strip shows an icon above each name; the active tab
 is tinted with an accent line).
 
@@ -22,7 +22,7 @@ Every page ends with "Learn more" and its help topic link.
 
 ## Navigation
 
-- Choosing another tool shows that tool's page (the docker follows the
+- Choosing another tool shows that tool's page (the panel follows the
   active tool; it starts on Home with the Pick tool).
 - The bar under the page: Home at the left, Back and Forward at the
   right (dimmed when there is nowhere to go). Going to a new page drops

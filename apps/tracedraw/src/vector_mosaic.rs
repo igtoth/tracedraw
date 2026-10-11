@@ -1,4 +1,4 @@
-//! Effects > VectorMosaic: a vector mosaic of
+//! Effects > Vector Mosaic: a vector mosaic of
 //! tiles (circles, squares or a custom curve) on a screen of rows turned by
 //! the screen angle, sampled from the selected objects. The tiles can be
 //! uniform (flattened on white), sized by opacity or by darkness, limited
@@ -60,7 +60,7 @@ impl TileShape {
     }
 }
 
-/// The VectorMosaic docker's settings.
+/// The Vector Mosaic docker's settings.
 #[derive(Debug, Clone, PartialEq)]
 pub struct VectorMosaicSettings {
     /// Tiles per inch along the rows and columns, 1 to 100.
@@ -397,7 +397,7 @@ pub fn mosaic_shapes(
 }
 
 impl crate::app::App {
-    /// Apply the VectorMosaic to the selection: the mosaic, grouped, on
+    /// Apply the Vector Mosaic to the selection: the mosaic, grouped, on
     /// top of it (the selection removed unless Keep original), in one
     /// undo step. False with a status message when nothing came out.
     pub fn apply_vector_mosaic(&mut self, s: &VectorMosaicSettings) -> bool {
@@ -441,7 +441,7 @@ impl crate::app::App {
             layer,
             shape: group,
         });
-        if let Err(e) = self.engine.run_batch("VectorMosaic", &cmds) {
+        if let Err(e) = self.engine.run_batch("Vector Mosaic", &cmds) {
             self.status = e.to_string();
             return false;
         }

@@ -7,8 +7,7 @@ double-click on a ruler, the page border or its shadow).
 
 ## Layout
 
-- 887 x 663 px, centred, framed like every dialog of the reference
-  editor: a 1 px `#B2B2B2` border, a white 31 px title bar with the title
+- 887 x 663 px, centred, framed like every dialog: a 1 px `#B2B2B2` border, a white 31 px title bar with the title
   (13 px) at the left and a close button at the right (red under the
   pointer), and a white 5 px frame round the `#F4F4F4` body.
 - A white page list on the left (225 px; rows 23 px apart; the current
@@ -30,7 +29,7 @@ double-click on a ruler, the page border or its shadow).
 | Display | Proof colors; Show tooltips (on); Hide bounding box for curve tools (off); Full-screen preview: Show page border (on); Default action for mouse wheel: Zoom or Scroll |
 | Edit | Constrain angle (15 degrees: Ctrl while rotating); Drawing precision (3 decimal places in the property bar and the status bar) |
 | Nodes and Handles | Node size Small, Medium, Large (7, 9, 11 px); node shape per type (cusp square, smooth circle, symmetrical diamond); Show curve direction (an arrow after the first node, secondary colour); main colour (selected nodes and handles, blue) and secondary colour (red); Show unselected nodes with fill (on, Ctrl+Shift+G) |
-| ClipFrame | Auto-center new content: when it lies completely outside the frame (default), always, never; Show lines in empty ClipFrame frames (on, on screen) |
+| clip frame | Auto-center new content: when it lies completely outside the frame (default), always, never; Show lines in empty clip frame frames (on, on screen) |
 | Snapping | Snap to objects, page, guidelines, grid, baseline grid, pixels; snapping radius (10 px); show snap location marks and the screen tip (on); the modes, each with its mark (all on), Select All, Deselect All |
 | Save | Back up original file before saving (on): `backup_of_<name>` next to the file or in a chosen folder; Auto-backup every 20 minutes (on): each open drawing with unsaved changes as `AutoBackup_of_<name>.tdraw` in `TraceDraw` under the temporary folder or a chosen folder |
 | Text | Keyboard text increment (1 pt: Ctrl+8 and Ctrl+2 grow and shrink the selected text); default font and size; hyphenation; non-printing characters |
@@ -74,4 +73,4 @@ Default keeps the grid, ruler and guideline settings for new drawings.
 - `ui::options::tests::every_page_draws`
 - `tracedraw_render` `open_curves_are_not_filled_unless_the_document_says_so`
 - `tracedraw_io` `open_curves_lose_their_fill_in_vector_exports`
-- `app::tests` start-up, backups and ClipFrame centring (below)
+- `app::tests` start-up, backups and clip frame centring (below)

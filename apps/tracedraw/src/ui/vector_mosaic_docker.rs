@@ -1,12 +1,12 @@
-//! The VectorMosaic docker (Effects > VectorMosaic): density, scale and
+//! The Vector Mosaic docker (Effects > Vector Mosaic): density, scale and
 //! screen angle, Keep original, Limit colors, the tracking options
 //! (method, merge adjacent, weld adjacent overlap), the tile shape with
 //! its preview and Select for a custom curve, and Apply.
 
 use crate::app::App;
 use crate::i18n::tr;
-use crate::vector_mosaic::{unit_tile, TileShape, TrackMethod};
 use crate::theme::Tokens;
+use crate::vector_mosaic::{unit_tile, TileShape, TrackMethod};
 use egui::{Color32, Sense, Stroke, Ui, Vec2};
 use tracedraw_core::geometry::{Affine, Shape as _};
 

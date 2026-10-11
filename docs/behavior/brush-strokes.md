@@ -1,7 +1,7 @@
 # Brush Strokes (I)
 
 Strokes drawn freehand (or applied to a selected curve from the Artistic
-Media docker) become filled objects in one of five modes. Defaults:
+Media panel) become filled objects in one of five modes. Defaults:
 Calligraphic mode, width 3 mm, angle 45 degrees, smoothing 25,
 pressure 0.5, sprayer spacing 8 mm.
 
@@ -11,8 +11,8 @@ pressure 0.5, sprayer spacing 8 mm.
   `0.1 + smoothing / 100 x 1.5` mm (smoothing 0..100) before the stroke
   is built, so a higher smoothing gives fewer wobbles.
 - The result takes the current fill colour (black when none) and no
-  outline; the Properties docker edits it like any curve.
-- Brush Strokes docker > Apply to curve replaces the selected curves by
+  outline; the Properties panel edits it like any curve.
+- Brush Strokes panel > Apply to curve replaces the selected curves by
   strokes of the current mode along their path.
 
 ## Modes

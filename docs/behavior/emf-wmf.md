@@ -31,7 +31,7 @@ specifications; the reader is a GDI record player
   only.
 - Clipping: SELECTCLIPPATH, INTERSECTCLIPRECT and EXTSELECTCLIPRGN
   (rectangle regions) set a clip in page space; objects drawn under a
-  clip they do not fit in become ClipFrames with the clip as frame (text
+  clip they do not fit in become clip frames with the clip as frame (text
   that is 60 % inside is left unclipped). SAVEDC and RESTOREDC keep the
   whole device context including the clip.
 - Text: EXTTEXTOUTA/W and WMF TEXTOUT/EXTTEXTOUT become artistic text in
@@ -64,8 +64,8 @@ specifications; the reader is a GDI record player
   geometric pen (EXTCREATEPEN: width, caps, joins, user-style dashes in
   logical units); hairlines are cosmetic pens of width 0. Arrowheads are
   filled paths.
-- Fountain fills: the path becomes the clip, then 64 bands: linear
-  fills as rotated quadrilaterals along the fountain axis, radial,
+- Gradient fills: the path becomes the clip, then 64 bands: linear
+  fills as rotated quadrilaterals along the gradient axis, radial,
   conical and square fills as concentric ellipses from the outside in.
   Pattern, texture and mesh fills are their preview colour.
 - Text: EXTCREATEFONTINDIRECTW (em height as a negative LOGFONT height,
@@ -76,7 +76,7 @@ specifications; the reader is a GDI record player
   STRETCHDIBITS under a world transform (SETWORLDTRANSFORM between
   SAVEDC and RESTOREDC), so rotated and skewed images keep their
   placement.
-- ClipFrames: SAVEDC, the frame path as SELECTCLIPPATH (RGN_COPY), the
+- clip frames: SAVEDC, the frame path as SELECTCLIPPATH (RGN_COPY), the
   contents, RESTOREDC, then the frame's outline. Groups, tables and
   symbol instances are expanded; live effects are evaluated first.
 
@@ -88,7 +88,7 @@ specifications; the reader is a GDI record player
 - Curves are flattened (0.05 mm). Fills are POLYPOLYGON records with a
   solid brush and a null pen (even-odd or winding from the fill rule);
   outlines are POLYLINE records with a pen (width in twips, 0 for
-  hairlines, dash presets mapped to the GDI dash styles). Fountain,
+  hairlines, dash presets mapped to the GDI dash styles). Gradient,
   pattern, texture and mesh fills become their preview colour (WMF has
   no gradients).
 - Object handles take the lowest free slot, as GDI assigns them, so the
@@ -99,7 +99,7 @@ specifications; the reader is a GDI record player
 - Bitmaps: a 32-bit DIB through STRETCHDIB into the page bounds of the
   image (no world transforms in WMF, so rotated images fill their
   bounding box).
-- ClipFrames are drawn unclipped: contents, then the frame outline.
+- clip frames are drawn unclipped: contents, then the frame outline.
 
 ## Checks
 
@@ -110,12 +110,12 @@ specifications; the reader is a GDI record player
 - Given a 2 x 2 24-bit DIB, then the pixels come back in order (top row
   first).
 - Given a path selected as clip and a rectangle crossing it, then the
-  rectangle is inside a ClipFrame whose frame is the clip.
+  rectangle is inside a clip frame whose frame is the clip.
 - Given a placeable WMF at 1440 units per inch with a half-inch square,
   then the page is 25.4 x 12.7 mm and the square 12.7 x 6.35 mm.
-- Given a rectangle, text and a linear fountain exported to EMF, then
+- Given a rectangle, text and a linear gradient exported to EMF, then
   the reader gets them back with the same size, colours and position,
-  and the fountain as at least 32 bands.
+  and the gradient as at least 32 bands.
 - Given a rectangle, text and a 2 x 1 bitmap exported to WMF, then the
   reader gets a filled polygon, an outlined polyline, the text at its
   baseline and the bitmap with its pixels, all within 0.05 mm.

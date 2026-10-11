@@ -1,6 +1,5 @@
-//! The menu bar, item for item as in the target design's 2019
-//! workspace. Items without an implementation are shown disabled so the
-//! layout is complete; wiring them is tracked in docs/parity.md.
+//! The menu bar. Items without an implementation are shown disabled so
+//! the layout is complete; wiring them is tracked in docs/features.md.
 
 use crate::app::{App, DockerTab};
 use crate::i18n::tr;
@@ -514,9 +513,8 @@ mod tests {
     }
 }
 
-/// Menu bar titles: the target design's size and spacing (about 25 px
-/// between titles, the first one 11 px from the edge; within 2 px of it
-/// across the bar).
+/// Menu bar titles: size and spacing (about 25 px between titles, the
+/// first one 11 px from the edge).
 const BAR_FONT: f32 = 13.0;
 
 fn menu_bar_style(style: &mut egui::Style) {
@@ -1417,7 +1415,7 @@ fn effects_menu(app: &mut App, ui: &mut Ui) {
         app.flatten_effects();
     }
     sep(ui);
-    // Bitmap effect groups, as in the target design's Effects menu.
+    // Bitmap effect groups.
     for (key, group) in crate::fx::groups() {
         sub(ui, key, |ui| {
             for fx in group.iter() {
@@ -1427,8 +1425,7 @@ fn effects_menu(app: &mut App, ui: &mut Ui) {
                     "hue_saturation_lightness" => "Ctrl+Shift+U",
                     _ => "",
                 };
-                // Effects with settings open a dialog: "..." as in the
-                // target design's menus.
+                // Effects with settings open a dialog, marked "...".
                 let dots = if fx.params.is_empty() && fx.id != "tone_curve" {
                     ""
                 } else {

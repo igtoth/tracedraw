@@ -119,7 +119,7 @@ pub fn directional_smooth(img: &RgbaImage, p: &P) -> RgbaImage {
 }
 
 pub fn gaussian_blur(img: &RgbaImage, p: &P) -> RgbaImage {
-    // The radius is the target design's: about two sigma.
+    // The radius is about two sigma.
     gaussian(img, p.f32("radius") / 2.0)
 }
 

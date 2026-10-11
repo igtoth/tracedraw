@@ -279,8 +279,7 @@ fn set_metadata(app: &mut App, metadata: Metadata) {
     }
 }
 
-/// A row label right-aligned in the first grid column, as in the
-/// target design's dialogs.
+/// A row label right-aligned in the first grid column.
 fn row_label(ui: &mut Ui, key: &str) {
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
         ui.label(tr(key));
@@ -798,8 +797,7 @@ fn guide_list(app: &mut App, ui: &mut Ui, kind: Option<GuideKind>, height: f32) 
     });
 }
 
-/// Window > Dockers > Guidelines, laid out as the target design's
-/// docker: show and snap toggles, the guideline type, position fields,
+/// Window > Panels > Guidelines: show and snap toggles, the guideline type, position fields,
 /// Add and Modify, the list, delete and lock, colour and style.
 pub fn guidelines_docker(app: &mut App, ui: &mut Ui) {
     ui.horizontal(|ui| {

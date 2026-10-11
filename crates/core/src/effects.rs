@@ -1,7 +1,7 @@
 //! Static effects on paths: blend (interpolate between two shapes), extrude
 //! (parallel), distort (push/pull, zipper, twister) and brush-style
 //! deformations (smear, twirl, smooth). All work on flattened polylines
-//! and return new paths; the target design keeps these live, we bake them.
+//! and return new paths; the results are baked, not kept live.
 
 use crate::geometry::{BezPath, PathEl, Point, Vec2};
 

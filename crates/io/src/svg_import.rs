@@ -1,7 +1,7 @@
 //! SVG import: parses with `usvg` (which resolves CSS, `use`, units and
 //! nested transforms into a flat tree) and converts the result into
 //! document shapes. Groups keep their structure, clip paths become
-//! ClipFrames, images become bitmaps, text is already outlined by usvg
+//! clip frames, images become bitmaps, text is already outlined by usvg
 //! (with `text` feature off, text nodes are dropped).
 //!
 //! Coordinates: SVG is in user units at 96 dpi with Y down; the document is

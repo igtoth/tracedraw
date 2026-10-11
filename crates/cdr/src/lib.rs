@@ -4,9 +4,9 @@
 //! and from observing real files, never from any vendor's code.
 //!
 //! Two containers exist:
-//! - **RIFF** (CDR versions 7 through X3, and the inner stream of newer files):
+//! - **RIFF** (CDR versions 7 through version 13, and the inner stream of newer files):
 //!   `RIFF <size> CDR<v>` followed by nested `LIST` chunks.
-//! - **ZIP** (X4 and later): a ZIP archive whose `content/riffData.cdr`
+//! - **ZIP** (version 14 and later): a ZIP archive whose `content/riffData.cdr`
 //!   holds the RIFF stream; large payloads live in `content/data/*.dat`
 //!   and are referenced from the stream.
 //!

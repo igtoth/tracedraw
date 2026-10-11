@@ -1,9 +1,9 @@
-# PictureMosaic
+# Picture Mosaic
 
-Effects > PictureMosaic opens the PictureMosaic docker, which recreates
+Effects > Picture Mosaic opens the Picture Mosaic panel, which recreates
 the selected objects (vector or bitmap, any number) as a mosaic of
 pictures from an image library. Apply makes
-the mosaic on top of the selection in one undo step ("PictureMosaic") and
+the mosaic on top of the selection in one undo step ("Picture Mosaic") and
 selects it.
 
 ## Image library
@@ -11,10 +11,10 @@ selects it.
 Browse chooses a folder; its pictures (PNG, JPEG, BMP, GIF, WebP, TIFF,
 not those in subfolders) are read in name order, at most 1000 of them,
 and each gets the average colour of its centred square (flattened on
-white). Reading happens on worker threads while the docker shows a
-progress bar; files that cannot be read are skipped. The docker shows
+white). Reading happens on worker threads while the panel shows a
+progress bar; files that cannot be read are skipped. The panel shows
 the folder's name (the full path as a tooltip) and how many pictures it
-holds. In the browser build there are no folders to read, so the docker
+holds. In the browser build there are no folders to read, so the panel
 says libraries need the desktop application.
 
 ## Settings
@@ -30,7 +30,7 @@ says libraries need the desktop application.
 | Edges | Stretch | Stretch, Remove | What happens to the last, partial row |
 | Output priority | Document resolution | | How the pixel size is chosen, below |
 
-Under the options the docker shows the mosaic's size in pixels for the
+Under the options the panel shows the mosaic's size in pixels for the
 current selection. Apply needs a selection and a library.
 
 ## How the mosaic is made
@@ -44,7 +44,7 @@ current selection. Apply needs a selection and a library.
 2. The tile size in pixels, `tw` across:
    - Document resolution: `w / 25.4 x dpi / c` with the drawing's
      resolution.
-   - Custom resolution: the same with the docker's resolution (10 to
+   - Custom resolution: the same with the panel's resolution (10 to
      2400 dpi).
    - Custom tile dimensions: the tile width (4 to 2000 px).
    - Custom output dimensions: the mosaic width (16 to 15000 px) over the

@@ -32,10 +32,8 @@ impl Palette {
     }
 }
 
-/// The default CMYK palette of the reference workspace, in its order: the
-/// greys, the process colours and their overprints, then tints in 20%
-/// steps. The first 64 were checked against the target design's
-/// palette on screen.
+/// The default CMYK palette, in its order: the greys, the process
+/// colours and their overprints, then tints in 20% steps.
 pub fn default_cmyk() -> Vec<(String, Color)> {
     let mut v: Vec<(String, Color)> = Vec::with_capacity(99);
     let mut add = |n: &str, c: f32, m: f32, y: f32, k: f32| {

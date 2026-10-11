@@ -1,4 +1,4 @@
-//! Dialog windows drawn like the target design's: a one-pixel grey
+//! Dialog windows with a one-pixel grey
 //! border, a white 31 px title bar with the title on the left and a close
 //! button on the right, a white 5 px frame round a light grey body, centred
 //! over the main window. Also the form controls its dialogs use: labels
@@ -63,9 +63,8 @@ pub fn dialog(ctx: &Context, id: &str, title: &str, size: Vec2, add: impl FnOnce
             if title_bar(ui, bar, title, id) {
                 closed = true;
             }
-            // Body coordinates: x from the window's outer edge (as the
-            // target design's dialogs are measured), y from under the
-            // title bar.
+            // Body coordinates: x from the window's outer edge, y from
+            // under the title bar.
             let body = Rect::from_min_max(
                 Pos2::new(bar.left() - 1.0, bar.bottom()),
                 Pos2::new(bar.right(), bar.top() + size.y),
@@ -149,8 +148,7 @@ pub fn form_style(ui: &mut Ui) {
     ui.spacing_mut().icon_width_inner = 12.0;
 }
 
-/// A white panel with a light border, as the target design's list and
-/// page frames.
+/// A white panel with a light border, for lists and page frames.
 pub fn panel() -> Frame {
     Frame::new()
         .fill(Color32::WHITE)
@@ -182,7 +180,7 @@ pub fn section(ui: &mut Ui, text: &str) {
     ui.add_space(4.0);
 }
 
-/// A push button of the target design's size (100 x 27).
+/// A push button of the standard dialog size (100 x 27).
 pub fn button(ui: &mut Ui, text: &str) -> egui::Response {
     ui.add_sized([100.0, 27.0], egui::Button::new(text))
 }
@@ -260,8 +258,8 @@ pub fn combo<R>(
     out
 }
 
-/// A number field with the up and down arrows at its right end, as the
-/// target design's spin boxes: typing commits on Enter or when the
+/// A number field with the up and down arrows at its right end (a spin
+/// box): typing commits on Enter or when the
 /// field loses focus, the arrows step by `step`. Returns the new value.
 #[allow(clippy::too_many_arguments)]
 pub fn spin_field(

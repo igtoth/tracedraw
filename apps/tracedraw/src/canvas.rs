@@ -456,7 +456,7 @@ fn dash(painter: &Painter, a: Pos2, b: Pos2, color: Color32) {
 }
 
 /// Mirror lines of selected objects with a Symmetry effect (dashed, with a
-/// centre handle), as the target design shows them in symmetry mode.
+/// centre handle), shown in symmetry mode.
 fn draw_symmetry_lines(app: &App, painter: &Painter, rect: ERect) {
     let view = &app.view;
     for s in app.selected_shapes() {
@@ -589,7 +589,7 @@ fn draw_anchors(app: &App, painter: &Painter) {
 }
 
 /// Linked paragraph frames: a blue connector from the bottom of a selected
-/// frame to the top of the next one, like the target design shows.
+/// frame to the top of the next one.
 fn draw_frame_links(app: &App, painter: &Painter) {
     let view = &app.view;
     let stroke = EStroke::new(1.0, Tokens::SELECTION);
@@ -699,9 +699,9 @@ fn draw_selection(app: &App, painter: &Painter, preview: Option<Affine>) {
         return;
     }
 
-    // Every tool shows the selection handles and the centre marker, as the
-    // target design does right after a shape is drawn; only the Pick
-    // tools switch to the rotate and skew arrows.
+    // Every tool shows the selection handles and the centre marker right
+    // after a shape is drawn; only the Pick tools switch to the rotate and
+    // skew arrows.
     let pick = matches!(
         app.tool,
         Tool::Pick | Tool::FreeformPick | Tool::InteractiveFill | Tool::Text
@@ -738,7 +738,7 @@ fn draw_selection(app: &App, painter: &Painter, preview: Option<Affine>) {
             );
         }
     }
-    // Hint "x" in the centre, the target design's move marker.
+    // Hint "x" in the centre: the move marker.
     let c = r.center();
     painter.line_segment(
         [c - egui::vec2(4.0, 4.0), c + egui::vec2(4.0, 4.0)],
@@ -780,8 +780,8 @@ fn draw_rotate_handle(painter: &Painter, p: Pos2, h: Handle, r: ERect) {
     }
 }
 
-/// Empty ClipFrame frames show two grey diagonals on screen (Options >
-/// ClipFrame > Show lines in empty ClipFrame frames).
+/// Empty clip frames show two grey diagonals on screen (Options >
+/// Clip Frames > Show lines in empty clip frames).
 fn draw_empty_clip_frames(app: &App, painter: &Painter) {
     if !app.settings.clip_frame.empty_lines {
         return;

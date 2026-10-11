@@ -20,7 +20,7 @@ rulers:
 Each drawing keeps its own pages, objects, undo history, selection, view
 (zoom and scroll), file, page number settings and drawing units.
 Switching tabs ends the interaction in progress (a drag, text or table
-cell editing, a curve being drawn, ClipFrame editing).
+cell editing, a curve being drawn, clip frame editing).
 
 New and opened drawings get a tab after the last one. Closing a tab
 (File > Close, Ctrl+F4, the tab's close button) asks to save unsaved

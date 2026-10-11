@@ -3,7 +3,7 @@
 //! The content stream of every page is interpreted into TraceDraw objects:
 //! paths with fills and outlines, images, text runs, form XObjects, axial
 //! and radial shadings as fountain fills, constant alpha from ExtGStates,
-//! and clipping paths as ClipFrames. The object parsing (xref, streams,
+//! and clipping paths as clip frames. The object parsing (xref, streams,
 //! filters) is `lopdf`'s; everything after the operator list is here.
 //!
 //! Units: a PDF user unit is a point; the page's media box bottom-left
@@ -3272,7 +3272,7 @@ mod tests {
         let b = p.shapes[0].bounds();
         assert!((b.x0 - 100.0 * PT_MM).abs() < 1e-6, "{b:?}");
         assert!((p.shapes[0].opacity - 0.5).abs() < 1e-9);
-        // The clipped rectangle became a ClipFrame with the clip as frame.
+        // The clipped rectangle became a clip frame with the clip as frame.
         match &p.shapes[1].kind {
             ShapeKind::ClipFrame { frame, contents } => {
                 let fb = frame.bounds();

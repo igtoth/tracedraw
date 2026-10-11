@@ -5,7 +5,7 @@
 //! nodes (start and end colour); dragging a node turns the axis around
 //! the object's centre and the fill angle follows. Radial, conical and
 //! square fountains show one node at the centre, which drags the centre
-//! offset. The formulas match `docs/behavior/fountain-fill.md`.
+//! offset. The formulas match `docs/behavior/gradient-fill.md`.
 
 use crate::app::App;
 use tracedraw_core::{

@@ -206,7 +206,7 @@ struct PolygonInfo {
 struct Ctx<'a> {
     main: &'a [u8],
     tree: &'a Tree,
-    /// Effective major version (7 = CDR 7, 13 = X3, 16 = X6 ...).
+    /// Effective major version (7 = CDR 7, 13 = version 13, 16 = version 16 ...).
     v: u16,
     fills: HashMap<u32, FillDef>,
     outlines: HashMap<u32, OutlineDef>,
@@ -260,7 +260,7 @@ pub fn parse_document(tree: &Tree, main: &[u8], version: Version) -> (Document, 
     let mut ctx = Ctx::new(main, tree, version.0);
     ctx.report.version = Some(version);
 
-    // The `vrsn` chunk carries the version as a number (1300 = X3, 801 =
+    // The `vrsn` chunk carries the version as a number (1300 = version 13, 801 =
     // CDR 8 bidi); prefer it over the form-type letter when it is sane.
     let mut vrsn: Option<u16> = None;
     tree.root.walk(&mut |c, _| {
@@ -490,7 +490,7 @@ impl<'a> Ctx<'a> {
     }
 
     /// `mcfg`: page width and height. Leading unknown bytes depend on the
-    /// version: 12 (X3+), 4 (9 to 12), 28 (6), none before.
+    /// version: 12 (version 13+), 4 (9 to 12), 28 (6), none before.
     fn read_page_size(&mut self, c: &Chunk) -> Option<Size> {
         let d = self.data(c);
         let v = self.v;
@@ -570,7 +570,7 @@ impl<'a> Ctx<'a> {
         let v = self.v;
         let mut body_end = d.len();
         if v >= 13 {
-            // X3+: a "since version" tag (1300) and the body length.
+            // version 13+: a "since version" tag (1300) and the body length.
             let _since = r.u32();
             if let Some(len) = r.u32() {
                 body_end = body_end.min(r.pos.saturating_add(len as usize));
@@ -617,7 +617,7 @@ impl<'a> Ctx<'a> {
         self.fills.insert(id, FillDef { fill });
     }
 
-    /// Solid fill body. Before X3: 2 unknown bytes then a colour. From X3:
+    /// Solid fill body. Before version 13: 2 unknown bytes then a colour. From version 13:
     /// a tag (1300), a length, then a property list of (type u8, len u32,
     /// body) records ending with type 0; type 1 is the colour.
     fn read_solid_fill(&mut self, body: &'a [u8]) -> Option<Fill> {
@@ -721,7 +721,7 @@ impl<'a> Ctx<'a> {
             (cy as f64 / 100.0).clamp(-1.0, 1.0),
         );
         let mut edge_pad = (edge as f64 / 100.0).clamp(0.0, 0.49);
-        // X6+: four doubles relative to the object (centre x, centre y,
+        // version 16+: four doubles relative to the object (centre x, centre y,
         // width, height) follow when the body is long enough.
         if v >= 16 {
             r.skip(3);
@@ -754,11 +754,11 @@ impl<'a> Ctx<'a> {
         }))
     }
 
-    /// Colour bitmap (9) and texture (11) fill body. X3+ bodies start with
+    /// Colour bitmap (9) and texture (11) fill body. version 13+ bodies start with
     /// optional records (a 0x640 word followed by 0x640 bytes, or a bare
     /// 0x514 word); then the
     /// pattern id, tile width and height, tile offsets or 4 unknown bytes,
-    /// rcp offset, flags, 21 (17 from X3) unknown bytes and the pattern id
+    /// rcp offset, flags, 21 (17 from version 13) unknown bytes and the pattern id
     /// again (version 6+). The pattern id names a `bmp ` image.
     fn read_image_fill(&mut self, body: &'a [u8], id: u32, ftype: u16) -> Option<Fill> {
         let v = self.v;
@@ -1228,7 +1228,7 @@ impl<'a> Ctx<'a> {
         let Some(id) = r.u32() else { return };
         let v = self.v;
         if v >= 13 {
-            // X3+: tagged records (id u32, len u32, body) until id 1,
+            // version 13+: tagged records (id u32, len u32, body) until id 1,
             // whose body is the outline proper.
             let mut found = false;
             for _ in 0..64 {
@@ -1581,7 +1581,7 @@ impl<'a> Ctx<'a> {
     }
 
     /// The objects of a layer or group list, bottom to top. Files store
-    /// them front to back (confirmed with a 2019 file: text, then a patch,
+    /// them front to back (confirmed with a version 21 file: text, then a patch,
     /// then the full-page picture underneath). `grp ` lists become groups;
     /// a group holding a text fitted to a path and the path itself gets
     /// the text placed on that path.
@@ -1633,9 +1633,9 @@ impl<'a> Ctx<'a> {
         out
     }
 
-    /// Opacity argument (8000): 10 unknown bytes (14 from X3), then a u16
+    /// Opacity argument (8000): 10 unknown bytes (14 from version 13), then a u16
     /// in thousandths. The spec does not say whether the value is opacity
-    /// or transparency; the target design's slider is a transparency
+    /// or transparency; files observed so far store a transparency
     /// (0 = opaque), so we read it that way. Values above 1.0 are taken as
     /// percent in thousandths.
     fn read_opacity(&mut self, d: &'a [u8], arg: Arg) -> Option<f64> {
@@ -1701,7 +1701,7 @@ impl<'a> Ctx<'a> {
                     }
                     (w, h, radii)
                 } else {
-                    // X5+: doubles in coordinate units, scale factors, and
+                    // version 15+: doubles in coordinate units, scale factors, and
                     // four radii each followed by corner data we skip.
                     let w = r.f64_coord()?;
                     let h = r.f64_coord()?;
@@ -1772,7 +1772,7 @@ impl<'a> Ctx<'a> {
                 }
                 Some(ShapeKind::Path { path, closed })
             }
-            // Path (X6+): 4 unknown, two u16 counts, 16 unknown, points.
+            // Path (version 16+): 4 unknown, two u16 counts, 16 unknown, points.
             OBJ_PATH => {
                 r.skip(4);
                 let n1 = r.u16()? as usize;
@@ -1813,7 +1813,7 @@ impl<'a> Ctx<'a> {
             // Bitmap: two corners, 32 unknown bytes, image id, a version
             // dependent gap, then the crop outline as a point list. When the
             // outline is not the full rectangle the object is cropped
-            // (confirmed with a 2019 file: a patch cut from a larger image).
+            // (confirmed with a version 21 file: a patch cut from a larger image).
             OBJ_BITMAP => {
                 let x1 = r.coord()?;
                 let y1 = r.coord()?;
@@ -1977,7 +1977,7 @@ impl<'a> Ctx<'a> {
 /// Object data key marking a text that the file fits to a path.
 const ON_PATH_KEY: &str = "cdr.text_on_path";
 
-/// A bitmap with a crop outline becomes a ClipFrame whose frame is that
+/// A bitmap with a crop outline becomes a clip frame whose frame is that
 /// outline.
 fn crop_to_clip_frame(
     mut shape: Shape,
@@ -2006,8 +2006,8 @@ fn crop_to_clip_frame(
 }
 
 /// In a group that holds a text flagged "fitted to path" and exactly one
-/// curve, place the text on that curve (the target design keeps the
-/// curve as a separate, usually invisible, object; so do we).
+/// curve, place the text on that curve (the curve stays a separate,
+/// usually invisible, object).
 fn attach_text_to_path(children: &mut [Shape]) {
     let text_idx: Vec<usize> = children
         .iter()
@@ -2595,7 +2595,7 @@ mod tests {
 
     #[test]
     fn fountain_fill_version_12_reads_angle_and_all_stops() {
-        // Version 12 (pre X3) layout.
+        // Version 12 (before version 13) layout.
         let mut g = vec![0u8; 2]; // unknown1
         g.push(2); // type: radial
         g.extend_from_slice(&[0; 19]); // unknown2
@@ -2638,7 +2638,7 @@ mod tests {
         let mut g = vec![0u8; 8];
         g.push(1);
         g.extend_from_slice(&[0; 17]);
-        g.extend_from_slice(&i16s(&[0])); // edge offset is s2 again from X3
+        g.extend_from_slice(&i16s(&[0])); // edge offset is s2 again from version 13
         g.extend_from_slice(&i32s(&[90_000_000]));
         g.extend_from_slice(&i32s(&[0, 0]));
         g.extend_from_slice(&[0; 2]);
@@ -2937,7 +2937,7 @@ mod tests {
         let mut coords = u32s(&[2]);
         coords.extend_from_slice(&i32s(&[0, 0, 10000, 10000]));
         coords.extend_from_slice(&[0x00, 0x40]);
-        // X3 layout: num angles, next point 1 (> 1 so 4 unknown bytes
+        // version 13 layout: num angles, next point 1 (> 1 so 4 unknown bytes
         // follow), unknown3, rx, ry, cx, cy.
         let mut poly = u32s(&[6, 2, 0, 0]);
         poly.extend_from_slice(&f64s(&[254000.0, 127000.0]));
@@ -3275,7 +3275,7 @@ mod tests {
         f
     }
 
-    /// Pre-X3 solid fill (`fild`: id, type 1, 2 unknown, colour).
+    /// Before version 13: solid fill (`fild`: id, type 1, 2 unknown, colour).
     fn solid_fild(id: u32, rgb: (u8, u8, u8)) -> Vec<u8> {
         let mut fild = u32s(&[id]);
         fild.extend_from_slice(&u16s(&[1, 0]));
@@ -3283,7 +3283,7 @@ mod tests {
         fild
     }
 
-    /// X3+ solid fill with a property list holding one colour.
+    /// version 13+ solid fill with a property list holding one colour.
     fn solid_fild_x3(id: u32, rgb: (u8, u8, u8)) -> Vec<u8> {
         let mut props = vec![0x01u8];
         props.extend_from_slice(&12u32.to_le_bytes());
@@ -3297,7 +3297,7 @@ mod tests {
         fild
     }
 
-    /// One style record of the 7 to X5 `txsm` layout.
+    /// One style record of the 7 to version 15 `txsm` layout.
     struct Style7 {
         chars: u16,
         font: Option<u16>,
@@ -3590,7 +3590,7 @@ mod tests {
         }
     }
 
-    /// X6+ style string: u32 length in UTF-16 units, then the text.
+    /// version 16+ style string: u32 length in UTF-16 units, then the text.
     fn style_string(v: u16, s: &str) -> Vec<u8> {
         if v < 17 {
             let mut out = u32s(&[s.encode_utf16().count() as u32]);
@@ -3674,8 +3674,8 @@ mod tests {
     }
 
     #[test]
-    fn text_from_2017_on_is_stored_one_byte_per_character() {
-        // Confirmed with a 2019 file: "PANELS" as 6 bytes for 6 characters.
+    fn text_from_version_17_on_is_stored_one_byte_per_character() {
+        // Confirmed with a version 21 file: six letters as 6 bytes for 6 characters.
         let v = 21u16;
         let mut t = u32s(&[0]); // no frame flag (artistic text)
         t.extend_from_slice(&[0; 32]);
@@ -3815,7 +3815,7 @@ mod tests {
         assert!(rep.warnings.iter().any(|w| w.contains("txsm")));
     }
 
-    // Fills: bitmaps, textures, pattern tiles, X6 fountain transform.
+    // Fills: bitmaps, textures, pattern tiles, version 16 fountain transform.
 
     /// 2 x 2 24-bit `bmp ` payload with the given image id.
     fn bmp_2x2(image_id: u32) -> Vec<u8> {
@@ -3828,7 +3828,7 @@ mod tests {
         bmp
     }
 
-    /// X3+ image fill body (types 9 and 11): one 0x514 record, then the
+    /// version 13+ image fill body (types 9 and 11): one 0x514 record, then the
     /// pattern data.
     fn image_fill_x3(ftype: u16, id: u32, pattern: u32, w: u32) -> Vec<u8> {
         let mut p = u32s(&[0x514]);
@@ -4024,7 +4024,7 @@ mod tests {
         a
     }
 
-    /// X3 outline with the given marker ids.
+    /// version 13 outline with the given marker ids.
     fn outl_x3(id: u32, start: u32, end: u32) -> Vec<u8> {
         let mut o = u32s(&[id]);
         o.extend_from_slice(&u32s(&[1, 0]));

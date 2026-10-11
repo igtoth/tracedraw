@@ -1,6 +1,6 @@
-# Coordinates docker
+# Coordinates panel
 
-Window > Dockers > Coordinates. Draws a new object, or replaces the
+Window > Panels > Coordinates. Draws a new object, or replaces the
 selected one, from typed coordinates, with a live preview: the drawing
 shows the object as a dashed outline in the selection colour and marks
 its origin point (a polygon's centre, a line's start, the chosen point of
@@ -38,7 +38,7 @@ Each button with a pointer and target waits for the drawing:
 
 Snapping applies to the clicked and dragged points. While a drag is
 under way it is shown as a dashed line. A right click cancels; clicking
-the pressed button again cancels too. The docker says which kind of
+the pressed button again cancels too. The panel says which kind of
 input it waits for.
 
 ## Create and replace
@@ -51,7 +51,7 @@ input it waits for.
   perspective are dropped, as are rotations and skews the fields do not
   hold (one undo step, "Replace Object").
 - Selecting an object reads it into the fields: rectangles (squares when
-  the docker shows squares and the sides match), ellipses without an arc
+  the panel shows squares and the sides match), ellipses without an arc
   (circles likewise), polygons, stars and complex stars, curves made of
   straight segments (two points open: a line; otherwise a multipoint
   curve). Size comes from the object's scale, the angle from its x axis.
@@ -73,4 +73,4 @@ a click on the drawing.
 - `coords::tests::every_object_draws_from_the_defaults`
 - `coords::tests::picks_wait_for_a_click_or_a_drag`
 - `ui::mod::tests::window_draws_with_every_docker_tool_and_selection`
-  draws the docker.
+  draws the panel.

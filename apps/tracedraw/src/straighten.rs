@@ -62,7 +62,7 @@ impl Straighten {
     /// perspective, then the lens.
     pub fn source(&self, p: (f32, f32), w: f32, h: f32) -> (f32, f32) {
         // Positive angles turn the picture counter-clockwise on screen
-        // (y down), as the target design's angles do.
+        // (y down).
         let (s, c) = self.angle.to_radians().sin_cos();
         let (x0, y0) = (p.0 * c - p.1 * s, p.0 * s + p.1 * c);
         let kv = self.vertical / 100.0 * 0.5;

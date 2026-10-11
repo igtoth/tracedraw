@@ -55,15 +55,15 @@ than 20%.
 - Opening any file yields a document, possibly empty, with a warning
   list; this is a unit test on truncated and corrupted fixtures.
 
-## Behaviour parity
+## Behaviour checks
 
 - Each page in `docs/behavior/` lists checks ("given, when, then") that
-  are unit tests in the owning crate. A parity row moves to "works" only
+  are unit tests in the owning crate. A row of `docs/features.md` moves to "works" only
   when those tests pass.
 - Interaction smoke run (`scripts/visual/run.sh scripts/visual/smoke_edit.py`): draw one of every
   box tool, a freehand curve and text; select all; group, ungroup,
   combine, break apart and convert to curves; drop shadow and
-  transparency drags; zoom and pan; add a page; open every docker tab.
+  transparency drags; zoom and pan; add a page; open every panel tab.
   The process must still be running at the end with no panic in the log
   (Ctrl+Q once closed the application through egui's default quit
   shortcut; it is Convert to Curves). The same sequence runs headless in
@@ -77,13 +77,13 @@ than 20%.
   (submenus inlined through the `replay` hook) against a mixed document
   of rectangle, ellipse, text, bitmap and table, skipping only the rows
   that open a native file chooser, another program or close the window.
-  `ui::tests` draws the whole window with every docker tab, every tool
+  `ui::tests` draws the whole window with every panel tab, every tool
   and each kind of selection, and drives every tool with pointer events
   (drags across the page and from an object, clicks on an object, on
   empty space and with the right button, then Esc). All must pass with
   no panic and a page left in the document.
 - `.cdr` writing: a document with a rectangle (radius, dashed outline,
-  name, transparency), a radial fountain ellipse, a transformed curve with
+  name, transparency), a radial gradient ellipse, a transformed curve with
   a CMYK fill, bold text, a group, a 2 x 2 bitmap and a second page is
   written and read back with every value within 0.05 mm (tests in
   `crates/cdr/src/write.rs`); truncated and bit-flipped copies of a written

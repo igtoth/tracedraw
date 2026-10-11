@@ -1,4 +1,4 @@
-//! The Hints docker, organised like the target design's: a Home page
+//! The Hints panel: a Home page
 //! listing topics, one page per topic (an introduction and the tools that
 //! serve it), and one page per tool (what it does, how to use it, and a
 //! link to its help topic). Choosing a tool shows its page; a bar at the
@@ -249,9 +249,7 @@ fn help_page(tool: Tool) -> &'static str {
         | Tool::AttractRepel
         | Tool::Smudge
         | Tool::Roughen => "shape-tool.md",
-        Tool::Crop | Tool::Knife | Tool::SegmentDelete | Tool::Eraser => {
-            "crop-knife-eraser.md"
-        }
+        Tool::Crop | Tool::Knife | Tool::SegmentDelete | Tool::Eraser => "crop-knife-eraser.md",
         Tool::Zoom | Tool::Pan => "zoom-and-pan.md",
         Tool::BrushStrokes => "brush-strokes.md",
         Tool::Freehand
@@ -293,7 +291,7 @@ fn help_page(tool: Tool) -> &'static str {
         Tool::BlockShadow => "block-shadow.md",
         Tool::Transparency => "transparency.md",
         Tool::ColorEyedropper | Tool::AttributesEyedropper => "eyedroppers.md",
-        Tool::InteractiveFill => "fountain-fill.md",
+        Tool::InteractiveFill => "gradient-fill.md",
         Tool::AreaFill => "area-fill.md",
         Tool::MeshFill => "mesh-fill.md",
         Tool::OutlinePen | Tool::OutlineColor => "outline-pen.md",
@@ -329,7 +327,7 @@ fn title(ui: &mut Ui, text: &str) {
     ui.add_space(6.0);
 }
 
-/// The docker's text: 14 px on 21 px lines, as the target design's.
+/// The panel's text: 14 px on 21 px lines.
 const TEXT_SIZE: f32 = 14.0;
 const LINE_HEIGHT: f32 = 21.0;
 

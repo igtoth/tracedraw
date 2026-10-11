@@ -24,7 +24,7 @@ used in the dialog. Every new drawing opens in its own tab.
 Under the sections: a help button, "Do not show this dialog again", OK
 and Cancel. Enter presses OK.
 
-Drawn like the target design's dialog (480 x 507 px with Color
+The dialog is 480 x 507 px with Color
 settings closed; each open section row adds 33 px): the common dialog
 frame (`options.md`), bold section headings, labels right-aligned to
 190 px, 28 px controls from 195 px in rows 33 px apart: white text

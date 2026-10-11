@@ -1,4 +1,4 @@
-//! The property bar's pieces, drawn like the target design's: values in
+//! The property bar's pieces: values in
 //! white fields stacked two to a column with a small icon before each,
 //! spin arrows, icon buttons that stay pressed, the object origin selector,
 //! and the page, object, outline and zoom bars built from them.
@@ -1255,7 +1255,7 @@ pub fn object_bar(app: &mut App, ui: &mut Ui) {
     }
 }
 
-/// Outline width, as the target design lists them.
+/// Outline widths the list offers.
 const OUTLINE_WIDTHS_MM: [f64; 10] = [0.1, 0.2, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0];
 
 /// Text for an outline width in the ruler unit ("Hairline", "None").
@@ -1524,8 +1524,8 @@ pub fn ellipse_part(app: &mut App, ui: &mut Ui) {
     }
 }
 
-/// Points and sharpness of polygons and stars (sharpness 1 to 99, as
-/// the target design counts it); complex stars count their sharpness in
+/// Points and sharpness of polygons and stars (sharpness 1 to 99);
+/// complex stars count their sharpness in
 /// steps (1 up to what their points allow). With the Star tool, the Star
 /// and Complex Star buttons pick what it draws.
 pub fn polygon_part(app: &mut App, ui: &mut Ui, star: bool) {

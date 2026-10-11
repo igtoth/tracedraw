@@ -51,14 +51,14 @@ pub struct RenderOptions {
     pub height: u32,
     pub view: ViewTransform,
     pub preview: Option<Preview>,
-    /// Draw outlines only (the target design's Wireframe view).
+    /// Draw outlines only (the Wireframe view).
     pub wireframe: bool,
     /// Show overprints (View > Simulate Overprints): a fill marked
     /// `overprint_fill` and an outline marked `overprint_outline` are
     /// multiplied over what lies beneath instead of knocking it out.
     pub simulate_overprints: bool,
-    /// Rasterise lenses and non-uniform transparency (the reference
-    /// editor's "Rasterize complex effects" in Enhanced view). When false
+    /// Rasterise lenses and non-uniform transparency ("Rasterize complex
+    /// effects" in Enhanced view). When false
     /// those objects are drawn plainly, which is much faster.
     pub complex_effects: bool,
     /// Smooth edges (Convert to Bitmap's Anti-aliasing); off gives hard

@@ -13,9 +13,8 @@
 ## Conversions without a loaded profile
 
 CMYK uses a built-in model of process inks on coated stock
-(`core/press.rs`), so CMYK colours look the way the target design shows
-them with its default colour settings (a coated web offset CMYK space,
-relative colorimetric, black point compensation): process black is the
+(`core/press.rs`) of a coated web offset CMYK space shown with relative
+colorimetric intent and black point compensation: process black is the
 warm dark grey (34, 31, 32) rather than (0, 0, 0), cyan is (0, 173, 239),
 magenta (236, 0, 139), yellow (255, 241, 0).
 
@@ -23,11 +22,11 @@ magenta (236, 0, 139), yellow (255, 241, 0).
   coverage goes through its dot gain curve (11 points), the 16 overprints
   of solid inks are mixed with the Demichel weights in a power-law space
   (exponent per screen channel), the result is linear sRGB and is clipped
-  to the screen gamut. The constants were fitted to the colours the
-  target design shows: its default palette within 2.5 Delta E (CIE76),
+  to the screen gamut. The constants were fitted so the default palette
+  lands within 2.5 Delta E (CIE76),
   any ink mixture up to 320% within about 1 on average and 2.2 for 99% of
   them.
-- RGB to CMYK, as the target design's defaults do: pure black becomes
+- RGB to CMYK: pure black becomes
   K 100 only, neutral greys use black ink only (the grey with the same
   mean level), and other colours get a grey component replacement (black
   grows with the darkness of the colour) with C, M and Y solved by
@@ -81,13 +80,13 @@ Export > PDF offers PDF 1.4, PDF/X-1a:2003, PDF/X-3:2003 and PDF/X-4
   BleedBox the media box; content is shifted by the bleed.
 
 `pdfinfo` reports "PDF subtype: PDF/X-1a:2003" for the X-1a output and
-`qpdf --check` finds no errors; a sample X-1a file of the 2019 banner
+`qpdf --check` finds no errors; a sample X-1a file of a real banner
 rendered the same picture through the DeviceCMYK image.
 
 ## Checks
 
-- `tracedraw_core` `press::tests::process_inks_show_as_in_the_reference_editor`:
-  the target design's palette colours on screen within 5 levels.
+- `tracedraw_core` `press::tests::process_inks_show_as_on_a_coated_web_press`:
+  the default palette colours on screen within 5 levels.
 - `press::tests::printable_colours_round_trip`: CMYK to RGB to CMYK to RGB
   within one level for ink totals up to 260%.
 - `press::tests::black_and_greys_use_black_ink_only`,

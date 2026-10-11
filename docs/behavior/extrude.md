@@ -12,7 +12,7 @@ A 3D-looking body built from an object's outline.
 | Colour | use object fill | object fill, solid, shade (from, to) |
 | Bevel | off | depth, angle |
 
-Shortcut: none by default; Effects > Extrude opens the docker.
+Shortcut: none by default; Effects > Extrude opens the panel.
 
 ## Formulas
 

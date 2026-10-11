@@ -1,8 +1,8 @@
 # Menu bar, standard toolbar and property bar
 
-Interface text is 13 px, the size the target design's menus, labels,
-lists and status bar measure in the bundled interface font. Toolbars,
-dockers, palettes, the status bar and dialog bodies are `#F4F4F4`; light
+Interface text is 13 px for menus, labels, lists and the status bar, in
+the bundled interface font. Toolbars,
+panels, palettes, the status bar and dialog bodies are `#F4F4F4`; light
 lines between bands are `#D8D8D8`.
 
 ## Menu bar
@@ -20,17 +20,17 @@ while its submenu is open; a hovered row is the same blue box as the
 titles. The canvas, palette and New Document menus are drawn the same
 way.
 
-The View menu follows the target design's: Zoom In, Zoom Out and Zoom
+The View menu has Zoom In, Zoom Out and Zoom
 To Fit (with their pictures) and no other zoom commands.
 
-## Dockers
+## Panels
 
-The open docker has a 27 px `#EAEAEA` title bar (its name at 12 px, then
+The open panel has a 27 px `#EAEAEA` title bar (its name at 12 px, then
 collapse and close in grey at the right) over a white page. The tab
 column to its right is 27 px wide: `#EAEAEA` under the title bar and
-below the tabs, a `#B2B2B2` line along the docker, grey `#D8D8D8` tabs
-with an icon and the name running downwards, the open docker's tab
-`#B2B2B2`; the plus button under the tabs adds a docker.
+below the tabs, a `#B2B2B2` line along the panel, grey `#D8D8D8` tabs
+with an icon and the name running downwards, the open panel's tab
+`#B2B2B2`; the plus button under the tabs adds a panel.
 
 ## Standard toolbar
 

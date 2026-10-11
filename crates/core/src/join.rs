@@ -1,4 +1,4 @@
-//! Join curves (the target design's Join Curves docker): the open
+//! Join curves (the Join Curves panel): the open
 //! subpaths of the curves given are joined end to end, nearest ends
 //! first, as long as the ends are within the gap tolerance. The two ends
 //! of one subpath close it. The joint takes the mode's shape: the ends

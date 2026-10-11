@@ -1,8 +1,8 @@
-# Feature parity
+# Features
 
-The capabilities of the target design, grouped the way its own feature
-list groups them, each with a status. "works" means it does what the
-target design does, with a test or a checked screenshot behind it.
+TraceDraw's capabilities, grouped by area, each with a status. "works"
+means it does what its page in `behavior/` describes, with a test or a
+checked screenshot behind it.
 "partial" names what is missing. "baked" means the result is applied once
 instead of staying live and editable. The goal is every row at "works".
 
@@ -18,7 +18,7 @@ Counts: works 152, partial 2 (`.cdr` content coverage; polygon nodes in the Shap
 | Free Transform (rotation, angle reflection, scale, skew modes, Apply to Duplicate) | works |
 | Zoom tool, zoom levels, zoom to page/fit/selected, marquee zoom, Shift+F4 | works |
 | Pan, mouse wheel, Ctrl and Shift wheel | works |
-| Rulers drawn as the reference (numbers from the origin without sign, unit name, origin button, pointer markers), draggable origin, double-click for ruler settings, guidelines from rulers, Guidelines docker; all 13 units | works |
+| Rulers drawn as the reference (numbers from the origin without sign, unit name, origin button, pointer markers), draggable origin, double-click for ruler settings, guidelines from rulers, Guidelines panel; all 13 units | works |
 | Grid: document (lines or dots, spacing or frequency, thinned when dense, through the origin), pixel (Pixels view from 800%, colour and opacity), baseline (spacing, start from top, colour); snapping with threshold | works |
 | Snap to objects, page, guidelines, dynamic and alignment guides; Alt+Q snap off, Alt+Z objects, Ctrl+Y grid | works |
 | Snapping modes (node, intersection, midpoint, quadrant, tangent, perpendicular, edge, center, text baseline) with snap location marks and screen tips; moves carry the grabbed point (Options > Snapping) | works (see `behavior/snapping.md`) |
@@ -31,9 +31,9 @@ Counts: works 152, partial 2 (`.cdr` content coverage; polygon nodes in the Shap
 | Capability | Status |
 |---|---|
 | Rectangle, 3-point rectangle, page frame on double-click; Ctrl square, Shift from centre | works (see `behavior/shape-tools.md`) |
-| Rectangle corners: Round, Scalloped, Chamfered; a size per corner; Edit Corners Together; Relative Corner Scaling (property bar, Properties docker, Options > Toolbox > Rectangle tool) | works (see `behavior/shape-tools.md`) |
+| Rectangle corners: Round, Scalloped, Chamfered; a size per corner; Edit Corners Together; Relative Corner Scaling (property bar, Properties panel, Options > Toolbox > Rectangle tool) | works (see `behavior/shape-tools.md`) |
 | Ellipse, 3-point ellipse, pie and arc | works |
-| Polygon, Star, Complex star (crossing sides, Star and Complex Star buttons on the Star tool's bar), Spiral (symmetric, logarithmic), Graph paper, Common shapes, Impact | works (see `behavior/shape-tools.md`) |
+| Polygon, Star, Complex star (crossing sides, Star and Complex Star buttons on the Star tool's bar), Spiral (symmetric, logarithmic), Graph paper, Common shapes, Action Lines | works (see `behavior/shape-tools.md`) |
 | Freehand, 2-point line, Bezier, Pen, B-spline, Polyline, 3-point curve | works |
 | Shape Recognition (shape recognition) and Sketch (stroke merging) | works |
 | Brush Strokes: Preset, Brush, Sprayer, Calligraphic, Expression | works |
@@ -59,16 +59,16 @@ Counts: works 152, partial 2 (`.cdr` content coverage; polygon nodes in the Shap
 | Shape tool on rectangles (corner nodes, all or one corner), ellipses (pie inside, arc outside) and polygons (mirrored nodes) | partial: polygon nodes move in and out only, a drag's angle is not used (no twisted stars) (see `behavior/shape-tool.md`) |
 | Node types: cusp, smooth, symmetrical; to line / to curve; reverse subpaths | works |
 | Add, delete, join, break, extract subpath, close curve, align nodes, reduce nodes | works |
-| Weld, Trim, Intersect, Simplify, Front minus back, Back minus front, Boundary (menu and docker) | works |
+| Weld, Trim, Intersect, Simplify, Front minus back, Back minus front, Boundary (menu and panel) | works |
 | Combine, Break apart, Group, Ungroup, Ungroup all | works |
-| Join Curves docker: Extend, Chamfer, Fillet, Bezier Curve joints, gap tolerance, nearest ends first, closes subpaths | works (see `behavior/corners-and-joins.md`) |
-| Corners docker: fillet, scallop, chamfer (A and B distances) the corners of curves or of chosen nodes, with preview; corners that do not fit are skipped | works (see `behavior/corners-and-joins.md`) |
-| Coordinates docker: rectangle, square, ellipse, circle, polygon, regular polygon, star, complex star, 2-point line and multipoint curve from typed coordinates (origin point, size, angle, bounding box, bounding circle, points list), set interactively by clicking or dragging, live preview, Create object and Replace object | works (see `behavior/coordinates.md`) |
+| Join Curves panel: Extend, Chamfer, Fillet, Bezier Curve joints, gap tolerance, nearest ends first, closes subpaths | works (see `behavior/corners-and-joins.md`) |
+| Corners panel: fillet, scallop, chamfer (A and B distances) the corners of curves or of chosen nodes, with preview; corners that do not fit are skipped | works (see `behavior/corners-and-joins.md`) |
+| Coordinates panel: rectangle, square, ellipse, circle, polygon, regular polygon, star, complex star, 2-point line and multipoint curve from typed coordinates (origin point, size, angle, bounding box, bounding circle, points list), set interactively by clicking or dragging, live preview, Create object and Replace object | works (see `behavior/coordinates.md`) |
 | Convert to curves, Convert outline to object | works |
 | Smear, Twirl, Attract, Repel, Smudge, Roughen, Smooth brushes | works |
 | Lock, hide, order (front/back of page and layer, one step, in front of, behind, reverse) | works |
 | Align and Distribute (all modes, align to page/edge/centre/grid/active object) | works |
-| Transformations docker: position, rotate, scale, size, skew; apply to duplicate | works |
+| Transformations panel: position, rotate, scale, size, skew; apply to duplicate | works |
 | Step and Repeat | works |
 | Align with pixel grid | works |
 
@@ -86,7 +86,7 @@ Counts: works 152, partial 2 (`.cdr` content coverage; polygon nodes in the Shap
 | Fit text to frame, wrap paragraph text around objects | works |
 | Linked paragraph text frames (link, unlink, live re-flow) | works |
 | Change case, insert formatting codes, show non-printing characters, Encode, Make Text Web Compatible | works |
-| Text statistics, Find and Replace, Glyphs docker, font filter and sample | works |
+| Text statistics, Find and Replace, Glyphs panel, font filter and sample | works |
 | Writing tools: spell check (system Hunspell word lists), grammar, thesaurus (built-in or MyThes file), Autocorrect | works |
 | Missing-font substitution with report | works |
 | Convert text to table and table to text | works |
@@ -97,11 +97,11 @@ Counts: works 152, partial 2 (`.cdr` content coverage; polygon nodes in the Shap
 | Capability | Status |
 |---|---|
 | Uniform fill in RGB, CMYK, Gray, HSB, HSL, Lab, YIQ, registration | works |
-| Fountain fill: linear, radial, conical, square; multi-stop; angle, offset, edge pad; interactive drag | works |
+| Gradient fill: linear, radial, conical, square; multi-stop; angle, offset, edge pad; interactive drag | works |
 | Pattern fill: two-colour (8 tiles), bitmap, full-colour vector (tile from the selection); texture fill (clouds, marble, noise, wood) | works; PostScript fills not planned (legacy) |
 | Mesh fill with node editing | works |
 | Area Fill (enclosed region) | works |
-| Interactive Fill tool: property bar with fill type and fountain fields, axis and centre handles on the canvas | works |
+| Interactive Fill tool: property bar with fill type and gradient fields, axis and centre handles on the canvas | works |
 | Outline: width, colour, caps, joins, dashes, nib, behind fill, scale with object, arrowheads (presets and custom from the selection) | works |
 | Outline Pen and Outline Color (hidden flyout, Options toggle); calligraphic nib rendered and exported | works |
 | Eyedroppers: colour (bitmap sampling, fill or outline) and attributes (properties, transformations, effects groups) | works |
@@ -119,10 +119,10 @@ Counts: works 152, partial 2 (`.cdr` content coverage; polygon nodes in the Shap
 | Extrude (depth, vanishing point, bevel, lighting), live | works |
 | Bevel (soft edge, emboss) | works |
 | Block shadow (depth, direction, colour, gap on the property bar) | works |
-| Transparency: uniform, fountain, pattern, texture; merge modes; fill/outline/all | works |
+| Transparency: uniform, gradient, pattern, texture; merge modes; fill/outline/all | works |
 | Lens (11 types, frozen, rate, palette rotation) | works |
-| ClipFrame (place inside, extract, empty frame, text frame, edit in place, lock contents) | works |
-| Symbols (Object > Symbol menu, create, insert, revert, Symbols docker, Ctrl+F3) | works |
+| clip frame (place inside, extract, empty frame, text frame, edit in place, lock contents) | works |
+| Symbols (Object > Symbol menu, create, insert, revert, Symbols panel, Ctrl+F3) | works |
 | Copy effect, Clone effect (shadow and transparency follow the source until edited), Clear effect, Clear transformations, Symmetry (live, 1 to 12 mirror lines) | works |
 | Rollover | not applicable: web-page interactivity with no HTML export target |
 
@@ -130,13 +130,13 @@ Counts: works 152, partial 2 (`.cdr` content coverage; polygon nodes in the Shap
 
 | Capability | Status |
 |---|---|
-| Colour models with conversions, colour docker, mixer, gamut warning | works |
-| Palettes: the target design's default CMYK palette (99 named colours, the values of the first 64 checked on screen), document palette (filled as colours are applied, eyedropper, add from selection or document, delete, reset; read from `.cdr`), scroll arrows and wheel, show all colours, click and hold for shades, Ctrl+click to mix, open/save, palette editor, palette manager, from document/selection; Options > Customization > Color Palette | works |
+| Colour models with conversions, colour panel, mixer, gamut warning | works |
+| Palettes: the default CMYK palette (99 named colours), document palette (filled as colours are applied, eyedropper, add from selection or document, delete, reset; read from `.cdr`), scroll arrows and wheel, show all colours, click and hold for shades, Ctrl+click to mix, open/save, palette editor, palette manager, from document/selection; Options > Customization > Color Palette | works |
 | Colour styles and harmonies | works |
 | Object styles | works |
 | Overprint fill, outline and bitmap; Simulate Overprints preview | works |
 | Proof colours (soft proofing with the built-in CMYK model) | works |
-| CMYK shown as in the target design without a loaded profile (built-in press model of coated stock: default palette within 2.5 Delta E); RGB to CMYK with black-only greys and pure black | works |
+| CMYK shown through a built-in press model of coated stock when no profile is loaded (default palette within 2.5 Delta E); RGB to CMYK with black-only greys and pure black | works |
 | ICC colour management (v2/v4 profiles, matrix/TRC and LUT, four intents, black point compensation, gamut check); PDF/X output intent embedding | works |
 | Separations | works (PDF separations export) |
 
@@ -149,8 +149,8 @@ Counts: works 152, partial 2 (`.cdr` content coverage; polygon nodes in the Shap
 | Convert to bitmap (resolution list and value, colour mode, dithered, always overprint black, anti-aliasing, transparent background, uncompressed size) | works (see `behavior/bitmap-modes.md`) |
 | Colour monochrome bitmaps from the palette (click: background, right-click: foreground) | works (see `behavior/bitmap-modes.md`) |
 | Bitmap colour modes: Black and White (line art, ordered, halftone, cardinality-distribution, Jarvis, Stucki, Floyd-Steinberg), Grayscale, Duotone (one to four inks with tone curves, load and save), Paletted (uniform, VGA, adaptive, optimized, grayscale, system, document palette; ordered and error-diffusion dithering), RGB, Lab, CMYK; dialogs with before and after previews | works (see `behavior/bitmap-modes.md`); no overprint tab or range sensitivity |
-| Bitmap effects, all 98 of the target design's Effects menu: Adjust (Auto Adjust, Image Adjustments, Contrast Enhancement, Local Equalization, Target Color Balance, Tone Curve, Brightness/Contrast/Intensity, Color Balance, Gamma, Hue/Saturation/Lightness, Selective Color, Replace Colors, Desaturate, Channel Mixer), Transform, Correction, 3D Effects, Art Strokes, Blur, Camera, Color Transform, Contour, Creative, Custom, Distort, Noise, Sharpen, Texture; each with its settings dialog and before and after previews; Ctrl+B, Ctrl+Shift+B, Ctrl+Shift+U; the Image Adjustments (rotate, pan, zoom, three preview modes, Auto adjust, white and black point pickers, histogram, undo, redo, reset, snapshots); Tone Curve styles (curve, straight, freehand, gamma), eyedropper nodes, Auto Balance Tone; Contrast Enhancement's interactive histogram and channel list; Target Color Balance channel list; eyedroppers for sample colours | works (see `behavior/bitmap-effects.md`); results close in look, not pixel-identical; Tone Curve presets are JSON files |
-| Effects kept apart from the pixels: Properties docker FX section (show or hide, edit, reorder, delete, add effect), original kept until Flatten Effects; Auto inflate bitmaps for effects (Document Options and Bitmaps > Inflate Bitmap) | works (see `behavior/bitmap-effects.md`); reordering with buttons instead of dragging |
+| Bitmap effects, 98 in fifteen groups: Adjust (Auto Adjust, Image Adjustments, Contrast Enhancement, Local Equalization, Target Color Balance, Tone Curve, Brightness/Contrast/Intensity, Color Balance, Gamma, Hue/Saturation/Lightness, Selective Color, Replace Colors, Desaturate, Channel Mixer), Transform, Correction, 3D Effects, Art Strokes, Blur, Camera, Color Transform, Contour, Creative, Custom, Distort, Noise, Sharpen, Texture; each with its settings dialog and before and after previews; Ctrl+B, Ctrl+Shift+B, Ctrl+Shift+U; the Image Adjustments (rotate, pan, zoom, three preview modes, Auto adjust, white and black point pickers, histogram, undo, redo, reset, snapshots); Tone Curve styles (curve, straight, freehand, gamma), eyedropper nodes, Auto Balance Tone; Contrast Enhancement's interactive histogram and channel list; Target Color Balance channel list; eyedroppers for sample colours | works (see `behavior/bitmap-effects.md`); results close in look, not pixel-identical; Tone Curve presets are JSON files |
+| Effects kept apart from the pixels: Properties panel FX section (show or hide, edit, reorder, delete, add effect), original kept until Flatten Effects; Auto inflate bitmaps for effects (Document Options and Bitmaps > Inflate Bitmap) | works (see `behavior/bitmap-effects.md`); reordering with buttons instead of dragging |
 | Colour modes: 1-bit, grayscale, RGB, CMYK | works |
 | Bitmap colour mask | works |
 | Inflate bitmap: Auto Inflate Bitmap switch, Manually Inflate Bitmap (Inflate to pixels, Inflate by percent, Maintain aspect ratio) | works (see `behavior/bitmap-effects.md`) |
@@ -165,9 +165,9 @@ Counts: works 152, partial 2 (`.cdr` content coverage; polygon nodes in the Shap
 | Page size presets and orientation, custom sizes, bleed, printable area | works |
 | Page background: solid or bitmap | works |
 | Master layers (all, odd, even pages), layer visibility, lock, printable | works |
-| Objects docker (layers and objects tree, drag to reorder) | works |
+| Objects panel (layers and objects tree, drag to reorder) | works |
 | Document properties and metadata, rendering resolution, baseline grid | works |
-| Guidelines docker, presets (seven presets, user-defined margins, columns, grid), angled guides, per-guideline colour, style and lock, rotate handles, drag off to delete, right-click Lock/Unlock, Select All > Guidelines | works |
+| Guidelines panel, presets (seven presets, user-defined margins, columns, grid), angled guides, per-guideline colour, style and lock, rotate handles, drag off to delete, right-click Lock/Unlock, Select All > Guidelines | works |
 | Insert page number (active layer, all, odd, even) | works |
 | Templates: save as template, new from template | works |
 
@@ -176,12 +176,12 @@ Counts: works 152, partial 2 (`.cdr` content coverage; polygon nodes in the Shap
 | Capability | Status |
 |---|---|
 | Open `.cdr`: RIFF (v3 to X3), X4/X5 ZIP, X6+ ZIP with redirected chunks | works (layouts confirmed against the public format description; real-file corpus still being collected) |
-| `.cdr` content: shapes, curves, paths, polygons, groups, bitmaps (cropped ones as ClipFrames), text (artistic, paragraph, on a path), line spacing and indents, fills, outlines, preset and custom arrowheads, opacity | partial: splines, vector pattern and PostScript fills, tabs/bullets/drop caps from style tables, lenses and effects |
+| `.cdr` content: shapes, curves, paths, polygons, groups, bitmaps (cropped ones as clip frames), text (artistic, paragraph, on a path), line spacing and indents, fills, outlines, preset and custom arrowheads, opacity | partial: splines, vector pattern and PostScript fills, tabs/bullets/drop caps from style tables, lenses and effects |
 | Native `.tdraw` save/load | works |
-| MCP server (`tracedraw --mcp`): open, new, save, export, run_script, document_info, undo, redo over JSON-RPC | works (see `behavior/mcp.md`; beyond the target design) |
-| Save As `.cdr` (version 12 layout: pages, layers, rectangles, ellipses, curves, groups, text, bitmaps, solid and fountain fills, outlines, transparency) | works (round trip; see `cdr-format.md`, Writing) |
+| MCP server (`tracedraw --mcp`): open, new, save, export, run_script, document_info, undo, redo over JSON-RPC | works (see `behavior/mcp.md`) |
+| Save As `.cdr` (version 12 layout: pages, layers, rectangles, ellipses, curves, groups, text, bitmaps, solid and gradient fills, outlines, transparency) | works (round trip; see `cdr-format.md`, Writing) |
 | Import SVG and SVGZ (groups, clips, gradients, images); open SVG as a document | works |
-| Export SVG, PDF, AI (PDF-compatible), EPS, DXF, EMF, WMF, HTML (inline SVG, page tabs), PNG, JPEG, WebP, GIF, BMP, TIFF; Send To (Desktop, Documents, mail) as PDF; bitmaps, ClipFrames and bitmap transparency in SVG and PDF | works |
+| Export SVG, PDF, AI (PDF-compatible), EPS, DXF, EMF, WMF, HTML (inline SVG, page tabs), PNG, JPEG, WebP, GIF, BMP, TIFF; Send To (Desktop, Documents, mail) as PDF; bitmaps, clip frames and bitmap transparency in SVG and PDF | works |
 | Export for Web and Office presets | works |
 | PDF: fills rasterised when needed, arrowheads, separations, PDF/X-1a, X-3 and X-4 with output intent, flattening and bleed | works |
 | Import PDF and AI (PDF-compatible): paths, images, text, clips, shadings, patterns, forms, annotations | works (see `behavior/pdf-import.md`) |
@@ -196,21 +196,21 @@ Counts: works 152, partial 2 (`.cdr` content coverage; polygon nodes in the Shap
 
 | Capability | Status |
 |---|---|
-| Undo/redo with history docker, repeat (Ctrl+R) | works |
+| Undo/redo with history panel, repeat (Ctrl+R) | works |
 | Copy, paste, paste in view, Paste Special (system clipboard as text, bitmap or objects), duplicate, clone, copy properties from | works |
 | Find and Replace (text and object attributes) | works |
-| Scripts docker: JavaScript object model, run, record macro, load/save | works |
+| Scripts panel: JavaScript object model, run, record macro, load/save | works |
 | Workspaces: Default, Lite, Classic, Illustration, Page Layout; toolbar toggles | works |
-| Options as the reference's dialogs: Tools > Options > TraceDraw (General with start-up and undo levels, Display, Edit with constrain angle and precision, Nodes and Handles, ClipFrame auto-centre, Snapping radius, Save with backups and auto-backup, Text), Customization (Appearance, Commands, Command Bars), Tools (Pick, Zoom/Pan, shape tools, Eraser), Global, Workspaces; Layout > Document Options (General with Fill open curves, Page Size, Layout, Background, Bleed, Rulers, Grid, Guidelines, Save as Default); Cancel restores | works |
+| Options as the reference's dialogs: Tools > Options > TraceDraw (General with start-up and undo levels, Display, Edit with constrain angle and precision, Nodes and Handles, clip frame auto-centre, Snapping radius, Save with backups and auto-backup, Text), Customization (Appearance, Commands, Command Bars), Tools (Pick, Zoom/Pan, shape tools, Eraser), Global, Workspaces; Layout > Document Options (General with Fill open curves, Page Size, Layout, Background, Bleed, Rulers, Grid, Guidelines, Save as Default); Cancel restores | works |
 | Options pages without an equivalent here: Tablet Mode, Bitmap tracing, Pen Settings, Warnings, VBA, Plug-ins, Printing, File Formats | missing |
 | Save settings as default | works |
-| Hints docker with per-tool help; Welcome Screen (recent, templates, news, learn) | works |
+| Hints panel with per-tool help; Welcome Screen (recent, templates, news, learn) | works |
 | Border and Grommet (large-format finishing) | works |
-| VectorMosaic (vector mosaics): density, scale, screen angle, keep original, limit colors, uniform, opacity and luminosity tracking, merge adjacent, weld adjacent overlap, circle, square and custom tiles | works (see `behavior/vector-mosaic.md`); made at once rather than in the background |
-| PictureMosaic (bitmap mosaics from an image library folder): columns and rows from the shape, blending, duplicates with tile spacing, Single, Stack and Array composition, Stretch and Remove edges, document, custom, tile and output size priorities, keep original | works (see `behavior/picture-mosaic.md`); a library is one folder, read on worker threads |
+| Vector Mosaic (vector mosaics): density, scale, screen angle, keep original, limit colors, uniform, opacity and luminosity tracking, merge adjacent, weld adjacent overlap, circle, square and custom tiles | works (see `behavior/vector-mosaic.md`); made at once rather than in the background |
+| Picture Mosaic (bitmap mosaics from an image library folder): columns and rows from the shape, blending, duplicates with tile spacing, Single, Stack and Array composition, Stretch and Remove edges, document, custom, tile and output size priorities, keep original | works (see `behavior/picture-mosaic.md`); a library is one folder, read on worker threads |
 | Bitmap plug-ins (third-party filters) | not applicable: no plug-in host; the built-in bitmap effects cover the stock filters |
 | User interface in 12 languages with system fallback fonts | works |
-| Keyboard shortcuts of the target design (every menu shortcut bound; Esc closes dialogs) | works (see `behavior/shortcuts.md`) |
+| Keyboard shortcuts (every menu shortcut bound; Esc closes dialogs) | works (see `behavior/shortcuts.md`) |
 
 ## 12. Print and prepress
 
@@ -225,9 +225,9 @@ Counts: works 152, partial 2 (`.cdr` content coverage; polygon nodes in the Shap
 
 | Element | Status |
 |---|---|
-| Menu bar, standard toolbar (icons, Open/Undo/Redo lists, zoom box, view toggles, Snap Off, Snap To, Launch), property bar (stacked fields, page bar, object bar with object origin, shape parts, outline part, zoom bar), toolbox with flyouts, rulers, document tabs, bottom palette, docker tab strip, navigator, status bar | works |
+| Menu bar, standard toolbar (icons, Open/Undo/Redo lists, zoom box, view toggles, Snap Off, Snap To, Launch), property bar (stacked fields, page bar, object bar with object origin, shape parts, outline part, zoom bar), toolbox with flyouts, rulers, document tabs, bottom palette, panel tab strip, navigator, status bar | works |
 | Icons | painted vector icons, one per tool, close in style; not pixel-identical |
-| Dockers (35): Properties, Objects, Hints, Transformations, Undo, Align and Distribute, Shaping, Step and Repeat, Text, Glyphs, Colour, Colour Styles, Object Styles, Find and Replace, Scripts, Palettes, Lens, Blend, Contour, Envelope, Extrude, Bevel, Brush Strokes, Bitmap Mask, Object Data, Links, Symbols, Pages, Guidelines, Fonts, Corners, Join Curves, Coordinates, VectorMosaic, PictureMosaic | works |
+| Panels (35): Properties, Objects, Hints, Transformations, Undo, Align and Distribute, Shaping, Step and Repeat, Text, Glyphs, Colour, Colour Styles, Object Styles, Find and Replace, Scripts, Palettes, Lens, Blend, Contour, Envelope, Extrude, Bevel, Brush Strokes, Bitmap Mask, Object Data, Links, Symbols, Pages, Guidelines, Fonts, Corners, Join Curves, Coordinates, Vector Mosaic, Picture Mosaic | works |
 | Welcome Screen with tabs | works |
 | Right-click context menus (object, node, page, table) | works |
 | Dialogs: New Document, Options, Export, Print, Print Merge, Colour Management, Font Manager, Document Properties, Convert to Bitmap, Resample, Trace, QR Code, Barcode, Change Case, Text Statistics, Tabs, Columns, Bullets, Drop Cap, Table create/split, Page Number Settings, Paste Special, Symmetry, Thesaurus, Grammar, Autocorrect, Encode, Border and Grommet | works |

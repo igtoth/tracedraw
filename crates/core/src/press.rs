@@ -9,9 +9,8 @@
 //! primaries lie slightly outside sRGB (solid cyan has no red left at all);
 //! mixtures beyond the screen gamut are clipped.
 //!
-//! The constants were fitted to the colours the target design shows
-//! with its default colour settings (a coated web offset CMYK space,
-//! relative colorimetric intent with black point compensation): its
+//! The constants were fitted to a coated web offset CMYK space shown with
+//! relative colorimetric intent and black point compensation: the
 //! default palette comes out within about 2.5 Delta E (CIE76), and ink
 //! combinations up to 320% within about 1 on average, 2.2 for 99% of them.
 //!
@@ -317,8 +316,8 @@ mod tests {
     }
 
     #[test]
-    fn process_inks_show_as_in_the_reference_editor() {
-        // Colours of the target design's default palette on screen.
+    fn process_inks_show_as_on_a_coated_web_press() {
+        // Colours of the default palette on screen.
         let cases = [
             ([0.0, 0.0, 0.0, 0.0], [255, 255, 255]),
             ([0.0, 0.0, 0.0, 100.0], [34, 31, 32]),

@@ -1,6 +1,6 @@
 //! Tools > Options (the application options and the Customization, Tools,
-//! Global and Workspaces dialogs) and Layout > Document Options, laid out
-//! as the target design's: a white page list on the left, the page on
+//! Global and Workspaces dialogs) and Layout > Document Options: a white
+//! page list on the left, the page on
 //! the right, the help button at the bottom left, OK and Cancel at the
 //! bottom right. Cancel puts back what the dialog changed.
 

@@ -1,14 +1,13 @@
 # Behaviour notes
 
 One page per tool or subsystem whose behaviour is easy to get subtly
-wrong. Each page records, from the target design's public help and
-from observation:
+wrong. Each page records:
 
 - defaults and ranges of every control,
 - shortcuts and modifier keys,
 - the formulas TraceDraw uses, with the units,
 - checks written as "given, when, then", which are the unit tests that
-  gate the parity row.
+  gate the feature's row in `docs/features.md`.
 
 Pages: `brush-strokes.md`, `bitmap-effects.md`, `bitmap-modes.md`, `blend.md`,
 `block-shadow.md`,
@@ -18,7 +17,7 @@ Pages: `brush-strokes.md`, `bitmap-effects.md`, `bitmap-modes.md`, `blend.md`,
 `crop-knife-eraser.md`, `curve-tools.md`, `dimensions.md`, `distort.md`,
 `documents.md`, `drawing-window.md`, `drop-shadow.md`, `dxf.md`,
 `emf-wmf.md`, `envelope.md`, `eps-import.md`, `extrude.md`,
-`eyedroppers.md`, `fountain-fill.md`, `free-transform.md`, `hints.md`,
+`eyedroppers.md`, `gradient-fill.md`, `free-transform.md`, `hints.md`,
 `lens.md`, `mcp.md`, `mesh-fill.md`, `new-document.md`, `options.md`,
 `outline-pen.md`, `pdf-import.md`, `picture-mosaic.md`, `pick-tool.md`,
 `plt.md`, `vector-mosaic.md`,

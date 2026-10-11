@@ -1,9 +1,7 @@
 # Roadmap
 
-Reference product: the most recent workflow of the target design we
-can observe (2019 workspace).
-File compatibility target: open `.cdr` from 9 through X7 reliably; newer
-versions best effort.
+File compatibility target: open `.cdr` format versions 9 through 17
+reliably; newer versions best effort.
 
 ## M0 Skeleton (done)
 Workspace, document model, commands + undo, SVG export, native format,
@@ -11,15 +9,15 @@ Workspace, document model, commands + undo, SVG export, native format,
 
 ## M0.5 Workspace shell (done)
 The full workspace layout: menus, standard toolbar, property bar,
-toolbox with flyouts, rulers, palette, dockers, navigator, status bar.
-Parity tracked in `docs/parity.md`.
+toolbox with flyouts, rulers, palette, panels, navigator, status bar.
+Status tracked in `docs/features.md`.
 
 ## M1 Real files (done for all three containers)
 - `tracedraw-cli inspect` dumps chunk trees
 - Text objects read as text with font and size; bitmaps read and drawn
 - Layer names, page names, multi-page
-- X6+ container (`content/root.dat`, redirected chunks); a 2019 file
-  opens correctly (text, cropped bitmaps, object order)
+- Version 16+ container (`content/root.dat`, redirected chunks); a
+  version 21 file opens correctly (text, cropped bitmaps, object order)
 - Open: corpus per version in `corpus/`, text on path, splines, paragraph
   formatting from the style tables
 
@@ -28,7 +26,7 @@ Parity tracked in `docs/parity.md`.
 - tiny-skia renderer: fills of every kind, dashes, hairlines, effects
 - Text engine with shaping, paragraph layout, text on path, tables
 - Live effects, lenses, transparency, mesh fill, symbols, master layers
-- Symmetry, ClipFrame editing, linked text frames, connector anchors,
+- Symmetry, clip frame editing, linked text frames, connector anchors,
   writing tools, clone effects, custom arrowheads
 
 ## M3 Output (done)

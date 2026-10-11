@@ -1,4 +1,4 @@
-//! The status bar, laid out like the target design's: a settings button
+//! The status bar: a settings button
 //! whose menu picks what the left field shows (tool hints, object details,
 //! cursor coordinates or the document colour settings), the object
 //! information, the fill and outline of the selection (or of new objects)
@@ -249,8 +249,8 @@ pub fn status_bar(app: &mut App, ui: &mut Ui) {
             }
         });
 
-    // Positions of the right-hand parts, as fractions of the bar like the
-    // target design's (fill about 70 %, outline about 82 %).
+    // Positions of the right-hand parts, as fractions of the bar (fill
+    // about 70 %, outline about 82 %).
     let fill_x = row.min.x + row.width() * 0.685;
     let outline_x = row.min.x + row.width() * 0.818;
     let proof = Rect::from_center_size(Pos2::new(row.max.x - 17.0, cy), Vec2::splat(26.0));
@@ -303,8 +303,7 @@ pub fn status_bar(app: &mut App, ui: &mut Ui) {
         Tokens::TEXT,
     );
     if info_w > 0.0 {
-        // After the left field, never closer than a placeholder's width,
-        // so it sits where the target design puts it.
+        // After the left field, never closer than a placeholder's width.
         let x = (text_x + left_w + 24.0)
             .max(text_x + 156.0)
             .min(left_max + 24.0);

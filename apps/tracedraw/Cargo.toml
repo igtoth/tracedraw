@@ -3,6 +3,9 @@ name = "tracedraw"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
 description = "TraceDraw: an open-source vector illustration editor"
 
 [[bin]]
@@ -54,7 +57,7 @@ name = "tracedraw"
 maintainer = "TraceDraw contributors <noreply@tracedraw.dev>"
 copyright = "2026, Ighor Toth and the TraceDraw contributors"
 license-file = ["../../LICENSE-MIT", "0"]
-extended-description = "Open-source vector illustration editor with a reference-style workflow and a .cdr reader."
+extended-description = "Open-source vector illustration editor with a classic desktop workflow and a .cdr reader."
 section = "graphics"
 priority = "optional"
 depends = "$auto"

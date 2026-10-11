@@ -147,7 +147,7 @@ pub fn pixel_dpi() -> f64 {
     PIXEL_DPI.with(|c| c.get())
 }
 
-/// Units of measure, in the order the target design lists them.
+/// Units of measure, in the order the Units list shows them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Units {
     Inches,
@@ -536,7 +536,7 @@ pub struct App {
     pub toolbox_last: Vec<Tool>,
     pub clipboard: Option<Clipboard>,
     pub duplicate_offset: Vec2,
-    // Defaults for new objects (the target design: no fill, black hairline).
+    // Defaults for new objects (no fill, black hairline).
     pub default_fill: Fill,
     pub default_stroke: Option<Stroke>,
     pub polygon_points: u32,
@@ -641,9 +641,9 @@ pub struct App {
     /// Last loaded print-merge data, for Edit / Perform without reloading.
     pub merge_state: Option<crate::ui::dialogs::PrintMergeState>,
     pub show_welcome: bool,
-    /// Object > ClipFrame > Place Inside Frame is waiting for a click on the frame.
+    /// Object > Clip to Frame > Place Inside Frame is waiting for a click on the frame.
     pub pending_clip_frame: bool,
-    /// ClipFrame being edited in place: (frame id, content ids).
+    /// Clip frame being edited in place: (frame id, content ids).
     pub clip_frame_edit: Option<(ShapeId, Vec<ShapeId>)>,
     pub show_guides: bool,
     /// Selected guidelines of the active page (indices).
@@ -778,11 +778,11 @@ pub struct App {
     /// The Coordinates docker's fields, the "Set ... interactively" pick
     /// it waits for and where that pick's drag began.
     pub coords: crate::coords::CoordsState,
-    /// The VectorMosaic docker's settings.
+    /// The Vector Mosaic docker's settings.
     pub vector_mosaic: crate::vector_mosaic::VectorMosaicSettings,
-    /// The PictureMosaic docker's settings and indexed library.
+    /// The Picture Mosaic docker's settings and indexed library.
     pub picture_mosaic: crate::picture_mosaic::PictureMosaicSettings,
-    /// A PictureMosaic library being indexed in the background.
+    /// A Picture Mosaic library being indexed in the background.
     pub picture_mosaic_job: Option<crate::picture_mosaic::IndexJob>,
     pub coord_pick: Option<crate::coords::CoordPick>,
     pub coord_drag: Option<Point>,
@@ -1029,8 +1029,8 @@ impl App {
         cc.egui_ctx.all_styles_mut(|style| {
             style.spacing.item_spacing = egui::vec2(4.0, 3.0);
             style.spacing.button_padding = egui::vec2(5.0, 2.0);
-            // Interface text at 13 px, the size the target design's
-            // labels, lists, menus and status bar measure in this font;
+            // Interface text at 13 px, the size labels, lists, menus and
+            // the status bar use in this font;
             // headings in the bold face.
             use egui::{FontFamily, FontId, TextStyle};
             style.text_styles = [
@@ -1100,8 +1100,7 @@ impl App {
             clipboard: None,
             duplicate_offset: Vec2::new(6.35, 6.35),
             default_fill: Fill::None,
-            // New objects: no fill, a 0.2 mm black outline (CMYK black),
-            // the target design's defaults.
+            // New objects: no fill, a 0.2 mm black outline (CMYK black).
             default_stroke: Some(Stroke {
                 color: Color::cmyk_pct(0.0, 0.0, 0.0, 100.0),
                 width: 0.2,
@@ -1648,7 +1647,7 @@ impl App {
 
     pub fn document_title(&self) -> String {
         // Imported files (.cdr, .svg) have no native path yet; their title
-        // comes from the document, like the target design shows it.
+        // comes from the document.
         let name = self
             .file
             .as_ref()
@@ -1801,8 +1800,8 @@ impl App {
     }
 
     /// The layer new objects go to: the topmost visible, unlocked layer
-    /// (hidden layers cannot take new objects in the target design
-    /// either); with none visible, the topmost unlocked one.
+    /// (hidden layers cannot take new objects); with none visible, the
+    /// topmost unlocked one.
     pub fn active_layer(&self) -> Option<LayerId> {
         let page = self.doc().page(self.page).ok()?;
         page.layers
@@ -1901,7 +1900,7 @@ impl App {
         shape.fill = self.default_fill.clone();
         shape.stroke = self.default_stroke.clone();
         if matches!(shape.kind, ShapeKind::Text { .. }) {
-            // the target design: text defaults to black fill and no outline.
+            // Text defaults to a black fill and no outline.
             shape.fill = Fill::Solid(Color::BLACK);
             shape.stroke = None;
         }
@@ -2033,7 +2032,11 @@ impl App {
     /// Action lines: speed lines across `rect`, parallel (left to right, random
     /// lengths) or radial (from the centre); one combined curve object.
     pub fn create_action_lines(&mut self, rect: Rect) {
-        let path = crate::tools2::action_lines_path(rect, self.action_lines_count, self.action_lines_radial);
+        let path = crate::tools2::action_lines_path(
+            rect,
+            self.action_lines_count,
+            self.action_lines_radial,
+        );
         if let Some(id) = self.new_shape(ShapeKind::Path {
             path,
             closed: false,
@@ -3056,8 +3059,8 @@ impl App {
         self.apply_text_style();
     }
 
-    /// Put `contents` inside `frame` (ClipFrame), centring them in the
-    /// frame first when Options > ClipFrame asks for it: always, or when
+    /// Put `contents` inside `frame` (a clip frame), centring them in the
+    /// frame first when Options > Clip Frames asks for it: always, or when
     /// they lie completely outside the frame (the default).
     pub fn place_inside(&mut self, contents: Vec<ShapeId>, frame: ShapeId) {
         use crate::settings::AutoCenter;
@@ -3082,7 +3085,7 @@ impl App {
             }
         }
         cmds.push(Command::PlaceInside { contents, frame });
-        if let Err(e) = self.engine.run_batch("ClipFrame", &cmds) {
+        if let Err(e) = self.engine.run_batch("Place Inside Frame", &cmds) {
             self.status = format!("ClipFrame: {e}");
         }
     }
@@ -3586,8 +3589,7 @@ impl App {
     }
 
     /// Screen pixels per mm at 100%: real size on a 96 dpi screen, or in
-    /// the Pixels view one screen pixel per document pixel, as the
-    /// target design counts zoom.
+    /// the Pixels view one screen pixel per document pixel.
     fn zoom_100(&self) -> f32 {
         let dpi = if self.view_mode == ViewMode::Pixels {
             self.document_dpi().max(1.0) as f32

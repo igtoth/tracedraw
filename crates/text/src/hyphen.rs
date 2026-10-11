@@ -1,8 +1,7 @@
 //! Hyphenation: break points inside a word (character indices after which
 //! a hyphen may be inserted). Uses a compact Liang-style pattern set for
 //! English and Portuguese plus a vowel/consonant heuristic for everything
-//! else. Minimum 2 letters before and 3 after a break, as the reference
-//! editor defaults to.
+//! else. Minimum 2 letters before and 3 after a break by default.
 
 use std::collections::HashMap;
 use std::sync::OnceLock;

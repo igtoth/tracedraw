@@ -35,7 +35,7 @@ writes the AutoCAD 2000 (AC1015) dialect that every CAD reader accepts.
 - One solid HATCH per filled object (non-solid fills use their first
   colour), external polyline boundaries, one per closed subpath.
 - TEXT per line of a text object (height from the point size, rotation
-  and alignment kept); bitmaps are not written; ClipFrames write their
+  and alignment kept); bitmaps are not written; clip frames write their
   frame and contents unclipped; live effects are baked.
 - A LAYER record per document layer (frozen when hidden, locked flag,
   plot flag); names are made DXF-safe.

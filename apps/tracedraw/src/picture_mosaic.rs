@@ -1,4 +1,4 @@
-//! Effects > PictureMosaic: a mosaic of
+//! Effects > Picture Mosaic: a mosaic of
 //! pictures from an image library that recreates the selected objects. A
 //! grid of cells takes the library picture closest in colour to each
 //! cell; the reference can be blended over the tiles; the result is one
@@ -118,7 +118,7 @@ impl Priority {
     }
 }
 
-/// The PictureMosaic docker's settings and library.
+/// The Picture Mosaic docker's settings and library.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PictureMosaicSettings {
     pub library: Option<PathBuf>,
@@ -528,7 +528,7 @@ impl crate::app::App {
         false
     }
 
-    /// Apply PictureMosaic to the selection, in one undo step. False with
+    /// Apply Picture Mosaic to the selection, in one undo step. False with
     /// a status message when nothing came out.
     pub fn apply_picture_mosaic(&mut self, s: &PictureMosaicSettings) -> bool {
         if s.images.is_empty() {
@@ -680,7 +680,7 @@ impl crate::app::App {
         for shape in shapes {
             cmds.push(Command::AddShape { layer, shape });
         }
-        if let Err(e) = self.engine.run_batch("PictureMosaic", &cmds) {
+        if let Err(e) = self.engine.run_batch("Picture Mosaic", &cmds) {
             self.status = e.to_string();
             return false;
         }
@@ -769,7 +769,8 @@ mod tests {
 
     #[test]
     fn libraries_index_in_name_order_in_the_background() {
-        let dir = std::env::temp_dir().join(format!("tracedraw-picture_mosaic-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("tracedraw-picture_mosaic-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("dir");
         let save = |name: &str, c: [u8; 3]| {

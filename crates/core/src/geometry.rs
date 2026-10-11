@@ -60,8 +60,7 @@ pub fn ellipse_arc_path(rect: Rect, start_deg: f64, end_deg: f64, pie: bool) -> 
 }
 
 /// Build a regular polygon or star inscribed in the ellipse that fills
-/// `rect`, with its first vertex at the top (as the target design
-/// draws them).
+/// `rect`, with its first vertex at the top.
 ///
 /// `points` is the number of vertices; `sharpness` in `0.0..1.0` pulls every
 /// other vertex toward the centre, turning a polygon into a star.
@@ -281,7 +280,7 @@ mod tests {
 
     #[test]
     fn polygons_point_up() {
-        // First vertex at the top centre (y up), as drawn by the target design.
+        // First vertex at the top centre (y up).
         let p = polygon_path(Rect::new(0.0, 0.0, 10.0, 10.0), 5, 0.0);
         match p.elements()[0] {
             PathEl::MoveTo(q) => assert!((q.x - 5.0).abs() < 1e-9 && (q.y - 10.0).abs() < 1e-9),

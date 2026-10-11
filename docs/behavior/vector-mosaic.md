@@ -1,9 +1,9 @@
-# VectorMosaic
+# Vector Mosaic
 
-Effects > VectorMosaic opens the VectorMosaic docker, which turns the
+Effects > Vector Mosaic opens the Vector Mosaic panel, which turns the
 selected objects (vector or bitmap, any number) into a vector mosaic of
 tiles. Apply makes the mosaic as one group on
-top of the selection, in one undo step ("VectorMosaic"), and selects it.
+top of the selection, in one undo step ("Vector Mosaic"), and selects it.
 
 ## Settings
 
@@ -55,8 +55,7 @@ editor.
 
 ## Not covered
 
-the target design renders in the background and Esc cancels it; here
-the mosaic is made at once. Welding joins the tiles of a colour into one
+The mosaic is made at once, not in the background. Welding joins the tiles of a colour into one
 curve without removing the overlaps (they print as one area).
 
 ## Checks

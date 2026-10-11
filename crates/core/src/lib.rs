@@ -5,8 +5,7 @@
 //! [`Command`]s applied to a [`Document`] via an [`Engine`].
 //!
 //! Units: all geometry is stored in millimetres, with the origin at the
-//! bottom-left corner of the page and the Y axis pointing up, matching the
-//! target design's convention. Renderers flip to screen space as needed.
+//! bottom-left corner of the page and the Y axis pointing up. Renderers flip to screen space as needed.
 
 #![allow(clippy::should_implement_trait)]
 pub mod color;

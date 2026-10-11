@@ -1,6 +1,5 @@
-//! The toolbox: the 17 groups of the target design's 2019 toolbox, one
-//! button per group, each group a flyout of related tools. Shortcuts
-//! follow the target design and can be changed in Options > Shortcuts.
+//! The toolbox: 17 groups, one button per group, each group a flyout of
+//! related tools. Shortcuts can be changed in Options > Shortcuts.
 
 use egui::Key;
 
@@ -112,12 +111,7 @@ pub const GROUPS: &[ToolGroup] = &[
         hidden: false,
     },
     ToolGroup {
-        tools: &[
-            Tool::Crop,
-            Tool::Knife,
-            Tool::SegmentDelete,
-            Tool::Eraser,
-        ],
+        tools: &[Tool::Crop, Tool::Knife, Tool::SegmentDelete, Tool::Eraser],
         hidden: false,
     },
     ToolGroup {
@@ -351,7 +345,7 @@ impl Tool {
         crate::i18n::tr(&format!("tool.{}", self.id()))
     }
 
-    /// the target design's default shortcut, if any.
+    /// The default shortcut, if any.
     pub fn shortcut(self) -> Option<&'static str> {
         Some(match self {
             Tool::Pick => "Space",

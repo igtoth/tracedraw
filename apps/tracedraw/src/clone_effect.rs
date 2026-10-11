@@ -108,7 +108,7 @@ impl App {
     }
 
     /// Before a user command runs: editing a clone's own effect breaks the
-    /// link (the target design behaves the same way).
+    /// link.
     pub fn break_clone_links_for(&mut self, cmd: &Command) {
         let Some((shapes, kind)) = touched(cmd) else {
             return;

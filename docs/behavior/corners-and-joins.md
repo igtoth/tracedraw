@@ -1,6 +1,6 @@
-# Corners and Join Curves dockers
+# Corners and Join Curves panels
 
-## Corners (Window > Dockers > Corners)
+## Corners (Window > Panels > Corners)
 
 Fillets, scallops or chamfers the corners of the selected objects.
 
@@ -15,7 +15,7 @@ Fillets, scallops or chamfers the corners of the selected objects.
   symmetrical nodes are not corners.
 - Every corner is cut, unless the Shape tool is active and nodes of a
   curve are selected: then only those. Rectangles, ellipses, polygons and
-  text become curves (the docker never selects their nodes).
+  text become curves (the panel never selects their nodes).
 - Corners are cut in the order the path is drawn. A corner whose sides
   are not long enough for the cut, counting the cuts already made on
   them, is skipped; the next corner may still fit.
@@ -23,12 +23,12 @@ Fillets, scallops or chamfers the corners of the selected objects.
   `r / tan(theta / 2)` from the corner on each side; on curved sides the
   distance is measured along the curve and the arc leaves along the
   curve's direction. Arcs are cubic Beziers, one per quarter turn.
-- While the docker is open, the result is previewed on the drawing as a
+- While the panel is open, the result is previewed on the drawing as a
   dashed outline in the selection colour.
 - One undo step ("Fillet", "Scallop" or "Chamfer").
 
 Rectangles keep their own corner settings when rounded from the property
-bar or with the Shape tool (`shape-tools.md`); the docker is for curves.
+bar or with the Shape tool (`shape-tools.md`); the panel is for curves.
 
 ## Join Curves (Object > Join Curves)
 

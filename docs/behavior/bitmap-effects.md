@@ -1,7 +1,7 @@
 # Bitmap effects
 
 The Effects menu's bitmap groups apply effects to the selected bitmaps.
-As in the target design, effects are kept apart from the pixels: a
+Effects are kept apart from the pixels: a
 bitmap with effects remembers its original pixels and the list of
 effects, so any of them can be edited, hidden, reordered or removed
 later, and removing the last one gives the original back.
@@ -28,8 +28,8 @@ later, and removing the last one gives the original back.
 
 - Effects > Adjust, Transform and Correction, then the special effect
   groups (3D Effects, Art Strokes, Blur, Camera, Color Transform,
-  Contour, Creative, Custom, Distort, Noise, Sharpen, Texture), in the
-  target design's order. Items with settings end in "...".
+  Contour, Creative, Custom, Distort, Noise, Sharpen, Texture). Items
+  with settings end in "...".
 - An item without settings (Auto Adjust, Desaturate, Invert Colors)
   adds the effect to every selected bitmap at once. The others open the
   effect's dialog; OK adds it to every selected bitmap. Either way the
@@ -92,7 +92,7 @@ the plain one:
   0.5 % of the opaque pixels at either end. Select white point and Select
   black point turn the preview into a picker: a click sets that point
   to the brightness of the pixel clicked (kept at least one level apart).
-- Sliders in the target design's groups: Temperature, Tint,
+- Sliders in three groups: Temperature, Tint,
   Saturation; Brightness, Contrast; Highlights, Shadows, Midtones. The
   histogram below shows the result's brightness (square-root scaled).
 - Undo and Redo step through the corrections made in the dialog (a step
@@ -103,12 +103,11 @@ the plain one:
 - OK adds one Image Adjustments effect (or changes the one being
   edited) with the settings, which the FX section can edit later.
 
-## Properties docker: FX
+## Properties panel: FX
 
 A bitmap's Properties show an FX section listing its effects, first
 applied at the top. Each row has a check box to show or hide the effect,
-its name, Edit (opens its dialog), Move up and Move down (the reference
-editor drags rows instead) and Delete. Add effect opens the effect groups
+its name, Edit (opens its dialog), Move up, Move down and Delete. Add effect opens the effect groups
 as a menu. Every change is one undo step and renders the list again from
 the original pixels.
 
@@ -327,17 +326,9 @@ through the master curve, then its channel's curve.
 
 ## Not covered
 
-- The effects that the reference suite offers only in its photo editor
-  (Bevel, Glass, The Boss, Zig zag, Dabble, Tune blur, Bokeh blur, Lens
-  flare, Lighting effects, Spot filter, Band pass, User defined, Shear,
-  Tune noise, 3D stereo noise, Brick wall, Bubbles, Canvas, Plaster wall,
-  Screen door, Underpainting) are not in this list.
-- The algorithms follow the target design's descriptions and
-  settings; results are close in look, not pixel-identical. 3D Rotate
-  uses sliders where the target design also has a model to drag.
-- Tone Curve presets are JSON files of the settings rather than the
-  target design's own curve files, and Auto Balance Tone always clips
-  0.5 % (no settings for its limits).
+- 3D Rotate is set with sliders (no model to drag).
+- Tone Curve presets are JSON files of the settings, and Auto Balance
+  Tone always clips 0.5 % (no settings for its limits).
 - Third-party plug-in filters are not supported.
 
 ## Checks

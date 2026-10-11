@@ -40,10 +40,15 @@ pub const EFFECTS: &[EffectSpec] = &[
         id: "vintage_photo",
         params: &[
             choice(
-                "era",
+                "style",
                 &[
-                    "era_1839", "era_1876", "era_1925", "era_1945", "era_1955", "era_1960",
-                    "era_1965",
+                    "daguerreotype",
+                    "albumen_print",
+                    "sepia",
+                    "black_white",
+                    "cross_process",
+                    "faded_print",
+                    "warm_color",
                 ],
                 1,
             ),
@@ -125,12 +130,12 @@ pub fn sepia(img: &RgbaImage, p: &P) -> RgbaImage {
 }
 
 /// Old photographic processes: tone, contrast, fading, grain and a
-/// vignette per era.
+/// vignette per style.
 pub fn vintage_photo(img: &RgbaImage, p: &P) -> RgbaImage {
-    let era = p.i("era");
+    let style = p.i("style");
     let t = p.f32("intensity") / 100.0;
     // (tint, contrast, fade, grain, vignette)
-    let (tint, contrast, fade, grain, vig): ([f32; 3], f32, f32, f32, f32) = match era {
+    let (tint, contrast, fade, grain, vig): ([f32; 3], f32, f32, f32, f32) = match style {
         0 => ([1.0, 0.92, 0.75], 1.3, 0.1, 0.25, 0.6),
         1 => ([1.05, 0.9, 0.7], 1.15, 0.15, 0.12, 0.5),
         2 => ([0.95, 0.95, 0.92], 1.25, 0.05, 0.1, 0.35),

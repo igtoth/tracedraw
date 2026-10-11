@@ -33,8 +33,7 @@ pub struct Settings {
     /// last used from its flyout.
     #[serde(default)]
     pub toolbox: Vec<String>,
-    /// Default action of the mouse wheel: zoom (the target design's
-    /// default) or scroll.
+    /// Default action of the mouse wheel: zoom (the default) or scroll.
     #[serde(default = "default_true")]
     pub wheel_zooms: bool,
     /// Arrowheads created with Object > Create > Arrowhead.
@@ -91,7 +90,7 @@ pub struct Settings {
     /// Options > Nodes and Handles.
     #[serde(default)]
     pub nodes: NodePrefs,
-    /// Options > ClipFrame.
+    /// Options > Clip Frames.
     #[serde(default)]
     pub clip_frame: ClipFramePrefs,
     /// Options > Save.
@@ -241,7 +240,7 @@ impl Default for NodePrefs {
     }
 }
 
-/// When new ClipFrame content is centred in its frame.
+/// When new clip frame content is centred in its frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum AutoCenter {

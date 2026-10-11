@@ -583,7 +583,7 @@ impl App {
         let _ = self.engine.run_batch("Clear Transparency", &cmds);
     }
 
-    /// Object > ClipFrame > Edit ClipFrame: take the contents out so they can
+    /// Object > Clip to Frame > Edit Contents: take the contents out so they can
     /// be moved and edited; Finish Editing puts them back in the frame.
     pub fn edit_clip_frame(&mut self) {
         let Some(clip) = self
@@ -603,7 +603,7 @@ impl App {
         self.status = tr("status.editing_clip_frame");
     }
 
-    /// Object > ClipFrame > Finish Editing: place the (surviving) contents
+    /// Object > Clip to Frame > Finish Editing Contents: place the (surviving) contents
     /// back inside the frame.
     pub fn finish_clip_frame_edit(&mut self) {
         let Some((frame, ids)) = self.clip_frame_edit.take() else {
@@ -623,7 +623,7 @@ impl App {
         self.select(vec![frame]);
     }
 
-    /// Whether a ClipFrame's contents move with the frame (the default).
+    /// Whether a clip frame's contents move with the frame (the default).
     pub fn clip_frame_locked(&self, id: ShapeId) -> bool {
         self.doc()
             .find_shape(id)
@@ -635,7 +635,7 @@ impl App {
             .unwrap_or(true)
     }
 
-    /// Object > ClipFrame > Lock Contents: toggle for the selected clips.
+    /// Object > Clip to Frame > Lock Contents to Frame: toggle for the selected clips.
     pub fn toggle_clip_frame_lock(&mut self) {
         for s in self.selected_shapes() {
             if !matches!(s.kind, ShapeKind::ClipFrame { .. }) {
@@ -651,7 +651,7 @@ impl App {
         }
     }
 
-    /// After moving unlocked ClipFrames by `t`, keep their contents in place.
+    /// After moving unlocked clip frames by `t`, keep their contents in place.
     pub fn compensate_unlocked_clip_frames(&mut self, ids: &[ShapeId], t: Affine) {
         let inv = t.inverse();
         for id in ids {

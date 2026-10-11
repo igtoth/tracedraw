@@ -18,8 +18,7 @@ text object with the measurement.
   current font, placed 1.5 mm above the middle of the line and rotated
   with it.
 - The text is a normal text object: it can be moved or restyled; it
-  does not update when the drawing changes (dimensions are static, as
-  "Convert to curves" leaves them in the target design).
+  does not update when the drawing changes (dimensions are static).
 
 ## Angular dimension
 

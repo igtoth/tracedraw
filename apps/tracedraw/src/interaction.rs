@@ -28,7 +28,7 @@ impl App {
                 if !b.contains(p) {
                     continue;
                 }
-                // Text, groups, tables, bitmaps, ClipFrames and symbols hit
+                // Text, groups, tables, bitmaps, clip frames and symbols hit
                 // anywhere in their box.
                 if matches!(
                     s.kind,
@@ -111,8 +111,7 @@ impl App {
             return;
         }
 
-        // With the Zoom tool a right click zooms out, as the reference
-        // editor does by default.
+        // With the Zoom tool a right click zooms out by default.
         if response.secondary_clicked()
             && self.tool == Tool::Zoom
             && self.settings.zoom_right_click_out
@@ -604,14 +603,13 @@ impl App {
                     let m = d.x.abs().max(d.y.abs());
                     q = *start + Vec2::new(m * d.x.signum(), m * d.y.signum());
                 }
-                // Shift draws from the centre (checked while dragging, as
-                // in the target design).
+                // Shift draws from the centre (checked while dragging).
                 *from_center = mods.shift;
                 *current = q;
             }
         }
         if response.double_clicked_by(PointerButton::Primary) && self.tool == Tool::Rectangle {
-            // the target design: double-click the rectangle tool draws a page frame.
+            // Double-clicking the Rectangle tool draws a page frame.
             let r = self.page_rect();
             if let Some(id) = self.new_shape(ShapeKind::Rect {
                 rect: r,
@@ -828,9 +826,7 @@ impl App {
             Drag::Freehand { points } if self.tool == Tool::ShapeRecognition => {
                 self.finish_shape_recognition(points)
             }
-            Drag::Freehand { points } if self.tool == Tool::Sketch => {
-                self.finish_sketch(points)
-            }
+            Drag::Freehand { points } if self.tool == Tool::Sketch => self.finish_sketch(points),
             Drag::ThreePointBase { start, current } => {
                 if (current - start).hypot() > 0.05 {
                     self.three_point_base = Some((start, current));
@@ -1176,7 +1172,7 @@ impl App {
         if pressed(Key::U, cmd) {
             self.ungroup_selection();
         }
-        // Bitmap adjustments, as in the target design's Effects menu.
+        // Bitmap adjustments of the Effects menu.
         if self
             .selected_shapes()
             .iter()
@@ -1382,7 +1378,7 @@ impl App {
                 self.goto_page(i - 1);
             }
         }
-        // Align shortcuts (the target design: plain letters with a selection).
+        // Align shortcuts: plain letters with a selection.
         if !self.selection.is_empty() {
             use crate::ops::Align;
             for (k, a) in [

@@ -4,8 +4,8 @@
 //! box sides. Custom anchors live in the object data (`anchor.<n>` =
 //! `fx,fy`, fractions of the bounding box, so they move and scale with
 //! the object). Connectors start and end at the anchor nearest to where the
-//! drag began and ended; an anchor marked `!` (auto) is one the reference
-//! editor would also pick first, which here is every custom anchor.
+//! drag began and ended; an anchor marked `!` (auto) is picked first,
+//! which here is every custom anchor.
 //!
 //! Anchor Editing tool: click an object to show its anchors, click inside
 //! it to add one, drag an anchor to move it, Delete removes the selected

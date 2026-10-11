@@ -5,8 +5,8 @@ use std::io::Read;
 use tracedraw_core::Color;
 
 /// CDR major version, as encoded in the RIFF form type (`CDR9`,
-/// `CDRA` = 10, ... `CDRE` = X4 (14), `CDRH` = X7 (17), `CDRJ` = X8 (18),
-/// `CDRK` = 2017 (19), and so on; the letter `I` is not used).
+/// `CDRA` = 10, ... `CDRE` = 14, `CDRH` = 17, `CDRJ` = 18,
+/// `CDRK` = 19, and so on; the letter `I` is not used).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Version(pub u16);
 
@@ -17,7 +17,7 @@ impl Version {
         }
         let c = form[3];
         // Digits are versions 1 to 9; letters continue from `A` = 10, but
-        // `I` is skipped: `H` = X7 (17), `J` = X8 (18), `K` = 2017 (19).
+        // `I` is skipped: `H` = 17, `J` = 18, `K` = 19.
         match c {
             b'1'..=b'9' => Some(Version((c - b'0') as u16)),
             b'A'..=b'H' => Some(Version(10 + (c - b'A') as u16)),
@@ -26,13 +26,11 @@ impl Version {
         }
     }
 
-    /// Human name: 9 → "CDR 9", 13 → "X3", 17 → "X7", 19 → "2017".
+    /// Human name: 9 → "CDR version 9", 21 → "CDR version 21".
     pub fn name(self) -> String {
         match self.0 {
-            v @ 1..=12 => format!("CDR {v}"),
-            v @ 13..=18 => format!("CDR X{}", v - 10),
-            v @ 19.. => format!("CDR {}", 1998 + v as u32),
-            _ => "CDR (unknown)".into(),
+            0 => "CDR (unknown version)".into(),
+            v => format!("CDR version {v}"),
         }
     }
 }
@@ -46,7 +44,7 @@ pub struct Container {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ContainerKind {
     Riff,
-    /// ZIP archive; the RIFF stream is the named member. X6 and later
+    /// ZIP archive; the RIFF stream is the named member. version 16 and later
     /// store most chunk payloads outside the RIFF stream, in the members
     /// listed by `content/dataFileList.dat` (`data_files`, in that order).
     Zip {
@@ -101,7 +99,7 @@ pub fn detect(bytes: &[u8]) -> Result<Container> {
         }
         let form: [u8; 4] = head[8..12].try_into().map_err(|_| Error::NotCdr)?;
         let version = Version::from_form_type(&form).ok_or(Error::NotCdr)?;
-        // X6+: the order of external data streams.
+        // version 16+: the order of external data streams.
         let mut data_files = Vec::new();
         if let Ok(mut list) = archive.by_name(DATA_FILE_LIST) {
             let mut text = String::new();
@@ -139,7 +137,7 @@ pub fn riff_stream(bytes: &[u8], container: &Container) -> Result<Vec<u8>> {
     }
 }
 
-/// The external data streams of an X6+ file, in `dataFileList.dat` order.
+/// The external data streams of an version 16+ file, in `dataFileList.dat` order.
 /// A missing member yields an empty stream so indices stay aligned.
 pub fn external_streams(bytes: &[u8], container: &Container) -> Vec<Vec<u8>> {
     let ContainerKind::Zip { data_files, .. } = &container.kind else {
@@ -180,7 +178,7 @@ pub fn external_member(bytes: &[u8], container: &Container, name: &str) -> Optio
     None
 }
 
-/// The document palette of an X4+ ZIP file (`color/docPalette.xml`):
+/// The document palette of an version 14+ ZIP file (`color/docPalette.xml`):
 /// each `<color cs=".." name=".." tints=".."/>` with its name. CMYK, RGB
 /// and grey colours are read; other colour spaces are skipped.
 pub fn document_palette(bytes: &[u8], container: &Container) -> Vec<(String, Color)> {
@@ -321,15 +319,15 @@ mod tests {
         assert_eq!(Version::from_form_type(b"CDR9"), Some(Version(9)));
         assert_eq!(Version::from_form_type(b"CDRD"), Some(Version(13)));
         assert_eq!(Version::from_form_type(b"CDRH"), Some(Version(17)));
-        // `I` is not used; `J` is X8 and `K` is 2017.
+        // `I` is not used; `J` is version 18 and `K` is 19.
         assert_eq!(Version::from_form_type(b"CDRI"), None);
         assert_eq!(Version::from_form_type(b"CDRJ"), Some(Version(18)));
         assert_eq!(
             Version::from_form_type(b"CDRK").map(|v| v.name()),
-            Some("CDR 2017".to_string())
+            Some("CDR version 19".to_string())
         );
         assert_eq!(Version::from_form_type(b"cdr8"), Some(Version(8)));
-        assert_eq!(Version(13).name(), "CDR X3");
+        assert_eq!(Version(13).name(), "CDR version 13");
         assert_eq!(Version::from_form_type(b"WAVE"), None);
     }
 

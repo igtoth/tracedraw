@@ -110,7 +110,7 @@ fn std_sep(ui: &mut Ui) {
     );
 }
 
-/// The zoom levels the zoom box lists, as the target design's.
+/// The zoom levels the zoom box lists.
 fn zoom_level_menu(app: &mut App, ui: &mut Ui) {
     for (key, f) in [
         ("toolbar.zoom_to_selected", 0),
@@ -608,8 +608,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 4.0;
         ui.set_min_height(crate::ui::propbar::BAR_H);
-        // Fields and lists are white with a grey border, as the reference
-        // editor's.
+        // Fields and lists are white with a grey border.
         let v = ui.visuals_mut();
         v.widgets.inactive.weak_bg_fill = egui::Color32::WHITE;
         v.widgets.hovered.weak_bg_fill = egui::Color32::WHITE;
@@ -623,7 +622,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                     .all(|s| matches!(s.kind, ShapeKind::Text { .. })) =>
             {
                 // Text selected with the Pick tool: the object fields, then
-                // the text fields, as the target design shows them.
+                // the text fields.
                 object_properties(app, ui);
                 vsep(ui);
                 if let Some(first) = shapes.first() {

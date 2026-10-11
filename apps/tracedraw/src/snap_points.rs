@@ -1,5 +1,4 @@
-//! The points objects offer for snapping, by the target design's
-//! snapping modes: nodes, intersections, segment midpoints, the quadrants
+//! The points objects offer for snapping, by snapping mode: nodes, intersections, segment midpoints, the quadrants
 //! of ellipses and arcs, tangent and perpendicular points from the point a
 //! line starts at, edges, centres and text baselines. Everything here is
 //! page space.

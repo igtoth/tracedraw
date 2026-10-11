@@ -1,5 +1,5 @@
-//! The colour palettes docked under the drawing window, drawn like the
-//! target design's: the default palette, then the document palette.
+//! The colour palettes docked under the drawing window: the default
+//! palette, then the document palette.
 //!
 //! Each row: a grip, the palette menu button, the eyedropper (it adds
 //! colours sampled from the drawing; only the document palette can be
@@ -85,7 +85,7 @@ pub fn swatch_tip(name: &str, c: Color) -> String {
     }
 }
 
-/// Values as the target design's palette tooltips show them.
+/// Values as the palette tooltips show them.
 pub fn color_values(c: Color) -> String {
     let pct = |v: f32| (v * 100.0).round() as i32;
     let byte = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as i32;
@@ -804,7 +804,7 @@ mod tests {
     }
 
     #[test]
-    fn the_default_palette_is_the_reference_one() {
+    fn the_default_palette_has_greys_process_colours_and_tints() {
         let app = App::headless();
         assert_eq!(app.palette.len(), 99);
         let names: Vec<&str> = app.palette.iter().map(|(n, _)| n.as_str()).collect();

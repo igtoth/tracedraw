@@ -733,9 +733,7 @@ mod tests {
         let mut every = set.to_vec();
         every.push(("all_channels", 1.0));
         assert_eq!(
-            run(&gray, "target_balance", &every)
-                .get_pixel(0, 0)
-                .0,
+            run(&gray, "target_balance", &every).get_pixel(0, 0).0,
             [128, 128, 128, 255]
         );
     }

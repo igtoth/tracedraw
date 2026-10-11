@@ -2,7 +2,7 @@
 
 | Action | Behaviour |
 |---|---|
-| Click | select the topmost object under the pointer (its fill counts only when filled; otherwise its outline within 3 px; text, groups, tables, bitmaps, ClipFrames and symbols count anywhere inside their bounds) |
+| Click | select the topmost object under the pointer (its fill counts only when filled; otherwise its outline within 3 px; text, groups, tables, bitmaps, clip frames and symbols count anywhere inside their bounds) |
 | Shift+click | add or remove from the selection |
 | Alt+click | select the object beneath the current one (dig) |
 | Click on selected | toggle the rotate/skew handles |

@@ -1,4 +1,4 @@
-//! The vertical toolbox, laid out like the target design's: one button
+//! The vertical toolbox: one button
 //! per flyout showing the tool last used from it, a small arrow at the
 //! bottom-right of the buttons that have a flyout, tooltips with the tool
 //! name, shortcut and what the tool does, and vertical flyouts listing
@@ -354,7 +354,7 @@ mod tests {
     }
 
     #[test]
-    fn separators_split_the_reference_subgroups() {
+    fn separators_split_the_toolbox_subgroups() {
         // Each separator tool sits inside a flyout and is not its last tool.
         for t in SEPARATE_AFTER {
             let g = GROUPS

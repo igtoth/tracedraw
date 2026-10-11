@@ -1,7 +1,7 @@
 //! Colour values. TraceDraw keeps the colour model the user chose, since
 //! print work is CMYK-first; spot colours keep their name and a CMYK
 //! fallback. CMYK shows through the built-in press model (`crate::press`,
-//! fitted to the target design's default colour settings) and the other
+//! fitted to a coated web offset press) and the other
 //! models through the usual formulas, unless a colour engine is registered:
 //! either a converter function through `engine::set`, or ICC profiles
 //! through `engine::install` (see `crate::icc`).
@@ -242,7 +242,7 @@ impl Color {
         }
     }
 
-    /// CMYK given in percent, the way the target design shows it.
+    /// CMYK given in percent, the way colour fields show it.
     pub fn cmyk_pct(c: f32, m: f32, y: f32, k: f32) -> Self {
         Color::Cmyk {
             c: c / 100.0,
@@ -568,7 +568,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn cmyk_shows_like_the_reference_editor() {
+    fn cmyk_shows_through_the_press_model() {
         // Process black is the warm dark grey of coated stock, not 0 0 0.
         let black = Color::cmyk_pct(0.0, 0.0, 0.0, 100.0).to_rgb8();
         for (a, b) in black.iter().zip([34u8, 31, 32]) {

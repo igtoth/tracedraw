@@ -4,6 +4,7 @@
 <dict>
   <key>CFBundleName</key><string>TraceDraw</string>
   <key>CFBundleDisplayName</key><string>TraceDraw</string>
+  <key>NSHumanReadableCopyright</key><string>Copyright © 2026 Ighor Toth and the TraceDraw contributors</string>
   <key>CFBundleIdentifier</key><string>dev.tracedraw.app</string>
   <key>CFBundleVersion</key><string>__VERSION__</string>
   <key>CFBundleShortVersionString</key><string>__VERSION__</string>

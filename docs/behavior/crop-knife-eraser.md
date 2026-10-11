@@ -5,7 +5,7 @@
 - Drag a rectangle. Every object on unlocked layers (or the selection,
   when there is one) is intersected with it: curves become their clipped
   outline (shaping intersect on flattened paths, 0.02 mm), bitmaps keep
-  their pixels inside a ClipFrame frame of the crop rectangle, groups
+  their pixels inside a clip frame frame of the crop rectangle, groups
   are cropped member by member. Objects entirely outside are deleted.
 
 ## Knife
@@ -33,8 +33,8 @@
   bounds the band does not touch are left alone.
 - Click: erases a dot of the nib's size.
 - Double-click an object: deletes it whole.
-- Bitmaps, groups and ClipFrames are not erased (the target design
-  erases bitmaps by masking; not implemented here).
+- Bitmaps, groups and clip frames are not erased (erasing bitmaps by
+  masking is not implemented).
 
 ## Checks
 

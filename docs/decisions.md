@@ -39,7 +39,7 @@ streams, filters, encryption) comes from `lopdf`, a pure-Rust crate,
 because that part is large and well tested there; the content-stream
 interpreter that turns operators into our objects is ours
 (`crates/io/src/pdf_import.rs`), so what we support and how we
-approximate (clips as ClipFrames, shadings as fountains) is under our
+approximate (clips as clip frames, shadings as gradients) is under our
 control and documented in `behavior/pdf-import.md`.
 
 EPS import runs a PostScript interpreter of our own
@@ -52,7 +52,7 @@ Windows metafiles (EMF, WMF) are read and written by our own GDI record
 player and writer (`crates/io/src/emf.rs`) from the public format
 specifications: the record set that drawing programs emit is small, and
 owning both directions keeps round trips exact (text stays text,
-bitmaps keep their alpha, clips become ClipFrames).
+bitmaps keep their alpha, clips become clip frames).
 
 ## D5. Colour management: a pure-Rust ICC engine
 
@@ -64,8 +64,8 @@ platform, and the parser is small enough to audit. The engine is
 installed through `color::engine::install`; without loaded profiles the
 built-in conversions apply: sRGB, and for CMYK the press model in
 `core/press.rs`, a Yule-Nielsen modified Neugebauer model whose
-constants were fitted to the colours the target design shows with its
-default settings (see `docs/behavior/colour-management.md`).
+constants were fitted to a coated web offset CMYK space (see
+`docs/behavior/colour-management.md`).
 Profiles are not bundled beyond the built-in sRGB: the user loads the
 `.icc` files they are licensed to use from the Colour Management dialog,
 and the paths persist in the settings. Checked against a real output
@@ -75,7 +75,7 @@ cyan converts to sRGB (0, 174, 239), magenta to (236, 0, 140), yellow to
 
 ## D6. Licensed content is not included
 
-Spot colour libraries (Pantone, TOYO, DIC, Trumatch, FOCOLTONE, HKS)
+Licensed spot colour libraries
 and third-party clipart, font and photo libraries are licensed and do
 not ship. Replacements:
 
@@ -99,7 +99,7 @@ Blend, contour, distort, extrude and envelope currently produce static
 geometry. The model will gain an `effects: Vec<Effect>` on `Shape`,
 evaluated at render time, with the source geometry kept. Baked results
 remain available as "Break Effect Apart". This is tracked in
-`docs/parity.md` as "baked".
+`docs/features.md` as "baked".
 
 ## D9. Macros: command scripts, not VBA
 
@@ -119,8 +119,7 @@ live in per-language TOML files; see `docs/i18n.md`.
 
 Extrude, Blend, Area Fill, Mesh Fill, Lens, Bitmap tracing and colour
 management each get a page in `docs/behavior/` with defaults, shortcuts
-and the formulas we use, written from the target design's public
-help and from observation, before the code lands.
+and the formulas we use before the code lands.
 
 ## D12. Acceptance is measurable
 

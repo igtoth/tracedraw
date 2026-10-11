@@ -1,4 +1,4 @@
-//! Number fields as the target design's bars have them: a white box
+//! Number fields for the bars: a white box
 //! with the value at the left, typed into. Enter or leaving the box
 //! applies the value, Esc puts it back. Sums such as `10+5` or `2*3,5`
 //! work, a comma or a point marks decimals, and a distance field takes a
@@ -332,7 +332,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn typed_values_read_like_the_reference_editor() {
+    fn typed_values_read_units_decimal_commas_and_sums() {
         assert_eq!(parse("12.5 mm", Some(1.0)), Some(12.5));
         assert_eq!(parse("783,16 px", None), Some(783.16));
         assert_eq!(parse("10+5", None), Some(15.0));

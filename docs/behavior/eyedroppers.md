@@ -12,7 +12,7 @@ back. Esc also drops the sample and returns to the Pick tool.
   - a bitmap gives the pixel under the pointer, averaged over the
     sample box (box anchored at the pointer pixel, clipped to the
     image), as RGB;
-  - a solid fill gives its colour; a fountain fill gives its first
+  - a solid fill gives its colour; a gradient fill gives its first
     stop; otherwise the outline colour;
   - Shift+click reads the outline colour first.
 - Apply mode, click on an object: a solid fill with the sampled colour

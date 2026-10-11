@@ -1,15 +1,15 @@
 //! RIFF chunk walker. Builds a tree of chunks referencing the source bytes by
 //! offset, so nothing is copied until a parser asks for a payload.
 //!
-//! the target design's RIFF is standard: `fourcc u32(size) payload [pad]`, with
+//! The RIFF layout is standard: `fourcc u32(size) payload [pad]`, with
 //! `LIST` chunks carrying a list type and nested chunks. Two format quirks:
-//! - Since X4 (v14) chunk sizes are stored in a slightly different way in
+//! - Since version 14 chunk sizes are stored in a slightly different way in
 //!   some files (the low bits can carry flags); we mask them off.
-//! - `cmpr` lists hold zlib-compressed sub-streams (CDR 7 to X3 with
+//! - `cmpr` lists hold zlib-compressed sub-streams (CDR 7 to version 13 with
 //!   compression on): two `CPng` blocks, the first with the chunk stream
 //!   and the second with a pool of chunk sizes. Inside the inflated stream
 //!   a chunk's size field is an index into that pool, not a byte count.
-//! - X6 (v16) and later keep most payloads outside the RIFF stream: a chunk
+//! - Version 16 and later keep most payloads outside the RIFF stream: a chunk
 //!   whose declared size is exactly 16 bytes is a redirect record
 //!   `stream u32, length u32, offset u32, reserved u32` pointing into one of
 //!   the external data streams (`content/data/*.dat`, in `dataFileList.dat`
@@ -72,13 +72,13 @@ impl Chunk {
 pub struct Tree {
     pub root: Chunk,
     /// Out-of-line buffers, indexed from 1 (0 is the main buffer): first the
-    /// external data streams of X6+ files, then inflated `cmpr` streams.
+    /// external data streams of version 16+ files, then inflated `cmpr` streams.
     pub streams: Vec<Vec<u8>>,
 }
 
 /// Parsing context shared down the chunk tree.
 struct Ctx {
-    /// Number of external data streams (X6+); 0 for older files.
+    /// Number of external data streams (version 16+); 0 for older files.
     externals: usize,
     /// Whether 16-byte chunks are redirect records.
     redirects: bool,
@@ -86,7 +86,7 @@ struct Ctx {
     version: u16,
 }
 
-/// Size of a redirect record (X6+).
+/// Size of a redirect record (version 16+).
 const REDIRECT_LEN: usize = 16;
 
 impl Tree {
@@ -137,7 +137,7 @@ pub fn parse(main: &[u8]) -> Result<Tree> {
     parse_with_externals(main, Vec::new(), 0)
 }
 
-/// Parse a RIFF stream whose chunks may redirect into `externals` (X6+).
+/// Parse a RIFF stream whose chunks may redirect into `externals` (version 16+).
 /// `version` is the major format version; redirects are only recognised
 /// from 16 on.
 pub fn parse_with_externals(main: &[u8], externals: Vec<Vec<u8>>, version: u16) -> Result<Tree> {
@@ -204,7 +204,7 @@ fn parse_children(
             break;
         }
         let is_list = &id == b"LIST";
-        // X6+ redirect record: resolve where the payload really lives.
+        // version 16+ redirect record: resolve where the payload really lives.
         let mut body = (stream, payload, payload_end);
         if ctx.redirects && size == REDIRECT_LEN && payload_end - payload == REDIRECT_LEN {
             let s = u32le(buf, payload).unwrap_or(u32::MAX);

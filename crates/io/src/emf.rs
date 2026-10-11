@@ -6,7 +6,7 @@
 //! (EMF) world transform to device pixels, and from there to millimetres
 //! using the header frame. Paths, polygons, rectangles, ellipses, arcs,
 //! text and DIB bitmaps become TraceDraw objects; clip paths and rects
-//! become ClipFrames around what is drawn inside them. Layouts follow the
+//! become clip frames around what is drawn inside them. Layouts follow the
 //! public Windows metafile specifications. Nothing in the input can panic
 //! the reader: every read is bounds-checked and record counts are capped.
 
@@ -394,7 +394,7 @@ impl<'a> Player<'a> {
         self.emit(s);
     }
 
-    /// Place a shape, inside a ClipFrame when a clip is set and does not
+    /// Place a shape, inside a clip frame when a clip is set and does not
     /// contain it.
     fn emit(&mut self, mut shape: Shape) {
         if let Some(clip) = self.dc.clip.clone() {
@@ -2200,7 +2200,7 @@ mod tests {
 /// (MM_TEXT on a 2540 dpi device), paths are written as GDI paths with
 /// geometric pens and solid brushes, fountain fills as clipped bands,
 /// text as EXTTEXTOUTW with a LOGFONT, bitmaps as 32-bit DIBs, and
-/// ClipFrames as clip paths. Live effects are expanded first.
+/// clip frames as clip paths. Live effects are expanded first.
 pub fn page_to_emf(doc: &tracedraw_core::Document, page_index: usize) -> Vec<u8> {
     let doc = &*crate::resolve_open_fills(doc);
     let Some(page) = doc.pages.get(page_index) else {
@@ -2924,7 +2924,7 @@ mod export_tests {
             "{o:?}"
         );
         assert_eq!(text.fill, Fill::Solid(Color::rgb8(0, 128, 0)));
-        // The fountain became clipped bands inside a ClipFrame-free run:
+        // The fountain became clipped bands inside a clip frame-free run:
         // dozens of fills with colours from black to white.
         let bands: Vec<&Shape> = imp
             .shapes
@@ -2942,7 +2942,7 @@ mod export_tests {
 /// Curves are flattened (0.05 mm); fills and outlines become POLYPOLYGON
 /// and POLYLINE records with pens and brushes; text is EXTTEXTOUT with a
 /// LOGFONT; bitmaps are 32-bit DIBs through STRETCHDIB. Live effects are
-/// expanded, ClipFrames are drawn unclipped (contents then frame).
+/// expanded, clip frames are drawn unclipped (contents then frame).
 pub fn page_to_wmf(doc: &tracedraw_core::Document, page_index: usize) -> Vec<u8> {
     let doc = &*crate::resolve_open_fills(doc);
     let Some(page) = doc.pages.get(page_index) else {

@@ -164,7 +164,7 @@ impl MergeMode {
     }
 }
 
-/// The eleven lens types of the target design.
+/// The eleven lens types.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "lens", rename_all = "lowercase")]
 pub enum Lens {

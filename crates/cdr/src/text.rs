@@ -391,7 +391,7 @@ pub(crate) struct TextRun {
 #[derive(Debug, Clone, Default)]
 pub(crate) struct TextParagraph {
     pub style_id: u32,
-    /// Paragraph-wide properties (X6+ style strings); runs sit on top.
+    /// Paragraph-wide properties (version 16+ style strings); runs sit on top.
     pub base: RunStyle,
     pub runs: Vec<TextRun>,
 }
@@ -406,7 +406,7 @@ pub(crate) struct Txsm {
     pub paragraphs: Vec<TextParagraph>,
 }
 
-/// `txsm`: two layouts, versions 7 to X5 and X6+. Versions before 7 are
+/// `txsm`: two layouts, versions 7 to version 15 and version 16+. Versions before 7 are
 /// not described and yield `None`.
 pub(crate) fn read_txsm(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Option<Txsm> {
     if v < 7 {
@@ -730,9 +730,9 @@ fn read_txsm_16(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Option<Txsm> 
         if has_path != 0 {
             r.skip(nc.saturating_mul(24));
         }
-        // From version 17 (2017) the text is stored one byte per character
-        // (UTF-8 when valid, else Windows-1252); earlier X6+ files use UTF-16LE.
-        // Confirmed with a 2019 file: "PANELS" stored as 6 bytes for 6 chars.
+        // From version 17 the text is stored one byte per character
+        // (UTF-8 when valid, else Windows-1252); earlier version 16+ files use UTF-16LE.
+        // Confirmed with a version 21 file: six letters stored as 6 bytes for 6 chars.
         let text = if v >= 17 && nbytes == nc {
             match std::str::from_utf8(text) {
                 Ok(s) => s.to_string(),
@@ -774,7 +774,7 @@ fn read_txsm_16(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Option<Txsm> 
     Some(out)
 }
 
-/// Minimal JSON value for the X6+ style strings.
+/// Minimal JSON value for the version 16+ style strings.
 #[derive(Debug, Clone, PartialEq)]
 enum Json {
     Null,
@@ -1045,7 +1045,7 @@ fn apply_style_object(s: &mut RunStyle, obj: &Json, depth: usize) {
     }
 }
 
-/// X6+ style string: a JSON object with `character` and `paragraph`
+/// version 16+ style string: a JSON object with `character` and `paragraph`
 /// sections (font, size, fill, outline, justify), or a `key:value;` list.
 /// Unknown keys are ignored.
 pub(crate) fn parse_style_string(s: &str) -> RunStyle {

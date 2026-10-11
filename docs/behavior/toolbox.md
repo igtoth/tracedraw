@@ -14,7 +14,7 @@
   button shows, the icon, the name and the shortcut at the right.
   Separators split Pick and Freehand Pick from Free Transform; Crop, Knife
   and Segment Delete from Eraser; Polygon, Star, Spiral and Common
-  Shapes from Impact and Graph Paper; the dimension tools from the 3-point
+  Shapes from Action Lines and Graph Paper; the dimension tools from the 3-point
   callout; the connectors from Anchor Editing; Interactive and Area Fill
   from Mesh Fill.
 - Tooltips: "<Name> tool (<shortcut>)" in bold, then what the tool does.

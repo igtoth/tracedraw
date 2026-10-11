@@ -63,7 +63,7 @@ the keystrokes of one editing session are one "Edit Text" undo step.
   (percent of the size, positive up; stored as the baseline shift in
   points) and Character angle (degrees, counter-clockwise, about the
   character's origin on its shifted baseline). The characters after a
-  shifted one keep their place. The fields are in the Text docker's
+  shifted one keep their place. The fields are in the Text panel's
   Character section and on the Shape tool's property bar; they act on
   the selected characters while editing, on the chosen character nodes
   with the Shape tool, else on every character of the selected texts.

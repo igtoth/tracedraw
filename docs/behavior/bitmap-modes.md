@@ -66,7 +66,7 @@ before the conversion, so higher is lighter.
 - The processed palette is shown under the settings.
 - Nearest colours are looked up through a 32 x 32 x 32 cache.
 
-Not yet: the reference's Overprint tab, range sensitivity and saved
+Not yet: an Overprint tab, range sensitivity and saved
 conversion presets; the current mode of a bitmap is not tracked, so it
 is not greyed out in the menu.
 

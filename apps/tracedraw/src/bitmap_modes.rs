@@ -1,5 +1,4 @@
-//! Bitmap colour mode conversions (Bitmaps > Mode), as the reference
-//! editor offers them: black and white with seven conversion methods,
+//! Bitmap colour mode conversions (Bitmaps > Mode): black and white with seven conversion methods,
 //! duotone (one to four inks, each with a tone curve), paletted (uniform,
 //! standard VGA, adaptive, optimized, grayscale, system or custom
 //! palettes, with ordered or error-diffusion dithering), and Lab. Pixels

@@ -29,7 +29,7 @@ Alt+Q turns all snapping off and on.
 | Center | the centre of rectangles, ellipses, polygons, bitmaps and tables; the area centroid of closed curves | circle with a dot |
 | Text baseline | the nearest point of the baseline of a line of artistic or paragraph text | a T on a line |
 
-Groups and ClipFrames offer their contents' points. The line being drawn
+Groups and clip frames offer their contents' points. The line being drawn
 starts at the last node of the curve in progress (Bezier, Pen, Polyline,
 2-point line, B-spline) or at the last point a dimension or callout tool
 placed.

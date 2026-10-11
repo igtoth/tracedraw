@@ -1,9 +1,9 @@
 # Shape tools
 
 Rectangle, 3-point rectangle, Ellipse, 3-point ellipse, Polygon, Star,
-Complex star, Spiral, Graph paper, Common shapes and Impact. All of them
+Complex star, Spiral, Graph paper, Common shapes and Action Lines. All of them
 draw by dragging a box; the object takes the toolbox defaults (no fill,
-a 0.2 mm black outline) unless the Properties docker set other defaults.
+a 0.2 mm black outline) unless the Properties panel set other defaults.
 
 ## Live preview
 
@@ -92,7 +92,7 @@ whatever tool is active.
 - Right arrow, heart, diamond, banner, callout, cross, lightning,
   triangle; picked on the property bar; the glyph scales to the box.
 
-## Impact
+## Action Lines
 
 - Lines: default 12 (2..500), parallel (default) or radial. Lengths are
   pseudo-random from a fixed seed, so the same box gives the same

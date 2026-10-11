@@ -22,7 +22,7 @@ const VIEW: Vec2 = Vec2::new(600.0, 420.0);
 /// Snapshot thumbnails' largest side.
 const SNAP: u32 = 96;
 
-/// The settings the sliders show, in the target design's groups.
+/// The settings the sliders show, in groups.
 const SLIDERS: [&[&str]; 3] = [
     &["temperature", "tint", "saturation"],
     &["brightness", "contrast"],

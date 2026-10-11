@@ -1,5 +1,5 @@
-//! Visual tokens: a light workspace in the spirit of the target design's default
-//! theme. Colours live here and nowhere else.
+//! Visual tokens: a light workspace theme. Colours live here and
+//! nowhere else.
 
 use egui::{Color32, Visuals};
 

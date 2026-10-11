@@ -1,8 +1,8 @@
 # Outline Pen and Outline Colour
 
-The Outline Pen tool (F12 in the target design) opens the Properties
-docker on the Outline section and returns to the Pick tool; Outline
-Colour (Shift+F12) opens the Colour docker. The model is
+The Outline Pen tool (F12) opens the Properties
+panel on the Outline section and returns to the Pick tool; Outline
+Colour (Shift+F12) opens the Colour panel. The model is
 `tracedraw_core::Stroke`.
 
 ## Fields and defaults

@@ -1231,6 +1231,20 @@ pub fn show(app: &mut App, ctx: &Context) {
                     env!("CARGO_PKG_VERSION")
                 ));
                 ui.label(tr("dialog.about_text"));
+                ui.add_space(6.0);
+                ui.label(trf(
+                    "dialog.about_copyright",
+                    &[("name", env!("CARGO_PKG_AUTHORS"))],
+                ));
+                ui.label(tr("dialog.about_ai"));
+                ui.horizontal(|ui| {
+                    ui.label(tr("dialog.about_source"));
+                    let repo = env!("CARGO_PKG_REPOSITORY");
+                    if ui.link(repo).clicked() {
+                        app.open_url(repo);
+                    }
+                });
+                ui.add_space(6.0);
                 if ui.button(tr("dialog.close")).clicked() {
                     close = true;
                 }

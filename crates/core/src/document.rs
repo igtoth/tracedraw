@@ -45,8 +45,7 @@ pub mod paper {
     pub const LETTER: Size = Size::new(215.9, 279.4);
 }
 
-/// The style of a rectangle's corners (the target design's Round,
-/// Scallop and Chamfer).
+/// The style of a rectangle's corners: Round, Scallop or Chamfer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum CornerKind {
@@ -70,8 +69,8 @@ pub struct Corners {
     pub radii: [f64; 4],
     #[serde(default)]
     pub kind: CornerKind,
-    /// The corners keep their size when the rectangle is scaled (the
-    /// target design's Relative corner scaling turned off): the radii
+    /// The corners keep their size when the rectangle is scaled (Relative
+    /// corner scaling turned off): the radii
     /// are page millimetres. Otherwise they are in the rectangle's own
     /// space and scale, or stretch, with it.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -277,7 +276,7 @@ pub enum ShapeKind {
     },
     /// Free path (lines and cubic Beziers) in local space.
     Path { path: BezPath, closed: bool },
-    /// Artistic text (the target design's single-line text object).
+    /// Artistic text (a single-line text object).
     Text {
         spans: Vec<TextSpan>,
         origin: crate::geometry::Point,
@@ -408,7 +407,7 @@ pub struct EllipseArc {
     pub pie: bool,
 }
 
-/// Drop shadow attached to an object (the target design's Drop Shadow tool).
+/// Drop shadow attached to an object (the Drop Shadow tool).
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Shadow {
     pub offset: crate::geometry::Vec2,
@@ -865,7 +864,7 @@ pub struct Shape {
     pub stroke: Option<Stroke>,
     pub visible: bool,
     pub locked: bool,
-    /// 1.0 = opaque, 0.0 = invisible (the target design's uniform transparency).
+    /// 1.0 = opaque, 0.0 = invisible (uniform transparency).
     #[serde(default = "one")]
     pub opacity: f64,
     #[serde(default)]
@@ -1768,7 +1767,7 @@ impl Document {
         Err(Error::ShapeNotFound(id))
     }
 
-    /// Find any shape, including children of groups and ClipFrames.
+    /// Find any shape, including children of groups and clip frames.
     pub fn find_shape(&self, id: ShapeId) -> Option<&Shape> {
         fn walk(s: &Shape, id: ShapeId) -> Option<&Shape> {
             if s.id == id {

@@ -1,4 +1,4 @@
-//! The Shape tool on text, as the target design has it: a node at the
+//! The Shape tool on text: a node at the
 //! lower left of every character (click, Ctrl or Shift+click and marquee
 //! choose them; dragging moves the chosen characters, which sets their
 //! horizontal and vertical offsets; the property bar edits their offsets

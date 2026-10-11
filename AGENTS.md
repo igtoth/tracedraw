@@ -15,14 +15,22 @@ The product name is **TraceDraw** in prose; machine names are `tracedraw`
    `panic!`, `todo!` or raw indexing on data that came from a file or the
    user. Return `Result`, log a warning, skip the object. Opening any file
    must always yield a document.
-3. **Clean-room.** Study the target design for behaviour and look only.
-   Never name it, or any other vendor or product, anywhere in the repo:
-   not in code, comments, docs, commit messages or packaging. Write
-   "the target design". The `.cdr`
-   reader comes from public notes and observed files; never port code from
-   libcdr or any other implementation, only use their documentation to
-   confirm layouts. Record what was confirmed, and with which file, in
-   `docs/cdr-format.md`.
+3. **Clean-room and independence.** TraceDraw stands on its own: never
+   name other graphics editors or their makers anywhere in the repo (code,
+   comments, docs, commit messages, packaging, file names), and never
+   describe TraceDraw or a feature as modelled on another program.
+   Features carry our own names: generic terms (Fill, Blend, Contour,
+   Envelope, Weld) are fine, distinctive product or feature names of other
+   software are never used. File formats go by their usual names (`.cdr`,
+   `.ai`, `.psd`, a format owner's name in a file dialog filter, a header
+   string a format requires) only to describe compatibility; copyright
+   notices that a license requires stay in `ATTRIBUTION.md`. Never decompile any program and never use
+   decompiled code or dumps, not even in conversations with AI tools.
+   Format readers come from public format notes and from inspecting files
+   we own; never port code from libcdr or any other implementation.
+   Record each piece of format knowledge, its source and date in
+   `CLEANROOM.md` and the details in `docs/cdr-format.md`. Bundle only
+   original or openly licensed assets and list them in `ATTRIBUTION.md`.
 4. **Layering is enforced by review.** `core` has no workspace deps; `cdr`,
    `text` and `render` depend on `core` only; `io` depends on `core` and
    `render` (rasterised fills in exports); egui stays in `apps/`.
@@ -68,15 +76,16 @@ temporary folders, system clipboard images) checks `files::WEB` or is
 `SystemTime::now`, `std::env::temp_dir` and `std::process::id` panic in a
 browser: use `web_time` or avoid them. See `docs/behavior/web.md`.
 
-## Parity
+## Feature status
 
-`docs/parity.md` is the measure of progress: every tool and menu item of
-the target design with its status. Move a row to "works" only with a test or a checked
-file behind it, and never add a feature without updating the row.
+`docs/features.md` is the measure of progress: every tool and menu item
+with its status. Move a row to "works" only with a test or a checked file
+behind it, and never add a feature without updating the row.
 
 ## Workflow
 
 - `cargo test --workspace` before every commit.
+- Commits carry a `Signed-off-by:` line (DCO, see `CONTRIBUTING.md`).
 - `cargo build -p tracedraw` and `cargo clippy --workspace` must stay
   warning-free (CI runs clippy with `-D warnings` on the library crates,
   on the pinned toolchain 1.97.0; use the same version locally so the
@@ -87,7 +96,8 @@ file behind it, and never add a feature without updating the row.
 ## Documentation duties
 
 - A new tool or effect gets a page in `docs/behavior/` with its defaults,
-  shortcuts and the formulas it uses, before the parity row moves.
+  shortcuts and the formulas it uses, before its row in
+  `docs/features.md` moves.
 - User-visible strings go through the i18n table (`docs/i18n.md`), never
   as bare literals in the UI.
 - Acceptance criteria in `docs/acceptance.md` are tests; when one changes,

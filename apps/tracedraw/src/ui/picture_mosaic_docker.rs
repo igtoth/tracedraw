@@ -1,4 +1,4 @@
-//! The PictureMosaic docker (Effects > PictureMosaic): the image library
+//! The Picture Mosaic docker (Effects > Picture Mosaic): the image library
 //! folder and its picture count, Keep original, columns with the rows they
 //! give, blending, duplicates and their spacing, the advanced options
 //! (composition, edges, output priority with its value), the mosaic's
@@ -71,8 +71,11 @@ fn library(app: &mut App, ui: &mut Ui) {
         None => {
             let n = app.picture_mosaic.images.len();
             ui.label(
-                RichText::new(trf("docker.picture_mosaic_images", &[("n", &n.to_string())]))
-                    .color(Tokens::TEXT_DIM),
+                RichText::new(trf(
+                    "docker.picture_mosaic_images",
+                    &[("n", &n.to_string())],
+                ))
+                .color(Tokens::TEXT_DIM),
             );
         }
     }
@@ -85,7 +88,10 @@ pub fn picture_mosaic(app: &mut App, ui: &mut Ui) {
     let bounds = app.selection_bounds();
     let dpi = app.document_dpi();
     let s = &mut app.picture_mosaic;
-    ui.checkbox(&mut s.keep_original, tr("docker.picture_mosaic_keep_original"));
+    ui.checkbox(
+        &mut s.keep_original,
+        tr("docker.picture_mosaic_keep_original"),
+    );
     let (cols, rows, _) = match bounds {
         Some(b) => grid(s.columns, b.width(), b.height(), s.edges),
         None => (s.columns, 0, 1.0),
@@ -210,7 +216,9 @@ pub fn picture_mosaic(app: &mut App, ui: &mut Ui) {
         }
     }
     ui.add_space(8.0);
-    let ready = bounds.is_some() && !app.picture_mosaic.images.is_empty() && app.picture_mosaic_job.is_none();
+    let ready = bounds.is_some()
+        && !app.picture_mosaic.images.is_empty()
+        && app.picture_mosaic_job.is_none();
     if ui
         .add_enabled(
             ready,

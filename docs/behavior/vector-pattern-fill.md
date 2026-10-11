@@ -1,7 +1,7 @@
 # Vector pattern fill
 
-A fill made of vector objects repeated as a tile. the target design
-calls it a full-colour (vector) pattern fill.
+A fill made of vector objects repeated as a tile (a full-colour vector
+pattern fill).
 
 ## Model
 
@@ -17,10 +17,10 @@ Object > Create > Vector Pattern Fill with a selection: the selected
 objects become the tile (`Pattern::vector_from_shapes` translates them so
 their joint bounds start at the origin and sets the tile to the bounds
 size). The pattern becomes the default fill for new objects, like the
-other Create commands; apply it to a selection from the Properties docker
+other Create commands; apply it to a selection from the Properties panel
 (Fill > Pattern) or by drawing a new object.
 
-## Properties docker
+## Properties panel
 
 Pattern > Vector: object count, tile width and tile height. Changing a
 dimension scales the tile content with it, so the drawing keeps its

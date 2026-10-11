@@ -2,13 +2,13 @@
 
 **An open-source vector illustration editor in pure Rust.** Pages, master
 layers, curves, text with a full paragraph engine, tables, symbols, every
-fill type (uniform, fountain, pattern, texture, mesh), live effects
+fill type (uniform, gradient, pattern, texture, mesh), live effects
 (contour, blend, distort, envelope, perspective, extrude, bevel, block
-shadow, lens, transparency), ClipFrame, bitmap effects and tracing, a
+shadow, lens, transparency), clip frame, bitmap effects and tracing, a
 clean-room `.cdr` reader and writer, SVG, PDF/AI, EPS, DXF, PSD, EMF/WMF, PLT, TXT/RTF/DOCX import, SVG/PDF/EPS/DXF/EMF/WMF/PLT/PSD export, JavaScript
 automation, a user interface in twelve languages, and a desktop workspace
 built for people who already know how a professional vector editor is laid
-out: menu bar, property bar, toolbox with flyouts, thirty dockers, colour
+out: menu bar, property bar, toolbox with flyouts, thirty-five panels, colour
 palette, rulers and a page navigator.
 
 No Electron, no webview, no runtime: a single native binary (egui/eframe)
@@ -16,9 +16,9 @@ for Windows, macOS and Linux, a command-line tool for batch conversion,
 and the same editor compiled to WebAssembly for the browser
 (https://igtoth.github.io/tracedraw/).
 
-Status: **beta**. `docs/parity.md` lists every capability of the reference
-editor and its state (130 working, 1 partial, 1 missing) and is the
-measure of progress; `docs/blueprint-gaps.md` lists what is still open.
+Status: **beta**. `docs/features.md` lists every capability with its
+state and is the measure of progress; `docs/blueprint-gaps.md` lists
+what is still open.
 
 ## Highlights
 
@@ -26,10 +26,10 @@ measure of progress; `docs/blueprint-gaps.md` lists what is still open.
   odd, even), guides (horizontal, vertical, angled), rectangles, ellipses
   (pie, arc), polygons and stars, spirals, graph paper, action lines,
   common shapes, Bezier curves, artistic and paragraph text, text on a
-  path, tables, groups, ClipFrame containers, symbols, bitmaps, page
+  path, tables, groups, clip frame containers, symbols, bitmaps, page
   backgrounds, metadata.
 - **Fills**: uniform in RGB, CMYK, Gray, HSB, HSL, Lab, YIQ and
-  registration; fountain fills with any number of stops (linear, radial,
+  registration; gradient fills with any number of stops (linear, radial,
   conical, square); two-colour and bitmap patterns; procedural textures;
   mesh fills; area fill of enclosed regions.
 - **Outlines**: width or hairline, caps, corners, dash patterns,
@@ -42,7 +42,7 @@ measure of progress; `docs/blueprint-gaps.md` lists what is still open.
   Bezier, Pen, B-Spline, Polyline, 3-Point Curve, Shape Recognition,
   Sketch, Brush Strokes (preset, brush, sprayer, calligraphic,
   expression), Rectangle and 3-Point Rectangle, Ellipse and 3-Point
-  Ellipse, Polygon, Star, Spiral, Common Shapes, ActionLines, Graph Paper,
+  Ellipse, Polygon, Star, Spiral, Common Shapes, Action Lines, Graph Paper,
   Text, Table, five dimension tools, three connectors, Drop Shadow,
   Contour, Blend, Distort, Envelope, Extrude, Block Shadow, Transparency,
   two eyedroppers, Interactive Fill, Area Fill, Mesh Fill, Outline Pen
@@ -52,16 +52,16 @@ measure of progress; `docs/blueprint-gaps.md` lists what is still open.
   drop caps, hyphenation, tracking, baseline shift, OpenType features,
   fit to frame, wrap around objects, spell check, find and replace,
   glyph browser, font manager with missing-font substitution.
-- **Effects and colour**: live effects editable from their dockers,
+- **Effects and colour**: live effects editable from their panels,
   eleven lens types, transparency with merge modes, colour styles and
   harmonies, object styles, palettes and palette manager, proof colours,
   separations.
 - **Bitmaps**: import of PNG, JPEG, BMP, GIF, TIFF, WebP; convert to
   bitmap; 98 bitmap effects in fifteen groups, each with its dialog,
-  kept editable in the Properties docker's FX list; colour modes; colour
-  mask; inflate; Bitmap tracing-style tracing (quick, centreline, outline, presets).
+  kept editable in the Properties panel's FX list; colour modes; colour
+  mask; inflate; bitmap tracing (quick, centreline, outline, presets).
 - **Files**: native `.tdraw` (JSON), `.cdr` reader (RIFF and ZIP
-  containers, compressed streams, versions 7 through 2019) and writer
+  containers, compressed streams, format versions 7 through 21) and writer
   (version 12 layout), SVG, SVGZ,
   PDF, AI, EPS, DXF, PSD, EMF, WMF, HPGL (PLT), TXT, RTF and DOCX import,
   SVG, PDF, AI, EPS, DXF, EMF, WMF, PLT, PSD, HTML, PNG, JPEG, WebP, GIF,
@@ -73,7 +73,7 @@ measure of progress; `docs/blueprint-gaps.md` lists what is still open.
   --mcp` serves the same editor to AI agents over the Model Context
   Protocol (open, edit through scripts, inspect, export, save, undo).
 - **Workspace**: welcome screen, document tabs, context-sensitive property
-  bar, thirty dockers, context menus, colour palette, rulers, guides,
+  bar, thirty-five panels, context menus, colour palette, rulers, guides,
   snapping (grid, pixel, baseline, guidelines, objects, page, dynamic),
   page sorter, full-screen preview, five workspaces, customisable
   shortcuts, Options dialog, settings persisted per user.
@@ -87,8 +87,8 @@ measure of progress; `docs/blueprint-gaps.md` lists what is still open.
 | | |
 |---|---|
 | ![Welcome screen](docs/screenshots/welcome.png) | ![File menu](docs/screenshots/file-menu.png) |
-| ![Fills](docs/screenshots/fills.png) | ![ClipFrame](docs/screenshots/clip-frame.png) |
-| ![Shape tools](docs/screenshots/shape-tools.png) | ![SVG import](docs/screenshots/svg-import.png) |
+| ![Fills](docs/screenshots/fills.png) | ![Clip to Frame](docs/screenshots/clip-frame.png) |
+| ![Shape tools](docs/screenshots/shape-tools.png) | ![Effects menu](docs/screenshots/effects-menu.png) |
 | ![Context menu, Portuguese](docs/screenshots/context-menu-pt-br.png) | ![Chinese interface](docs/screenshots/welcome-zh-cn.png) |
 | ![Document Options](docs/screenshots/document-options.png) | |
 
@@ -137,7 +137,7 @@ crates/io         native .tdraw, SVG, PDF/AI, EPS, DXF, PSD, EMF/WMF, PLT and te
 apps/tracedraw    desktop app (egui/eframe), a thin shell over the engine
 apps/tracedraw-cli  inspect, info, convert, icc, stress
 docs/             architecture, decisions, behaviour notes, format notes,
-                  parity, acceptance criteria, roadmap
+                  feature status, acceptance criteria, roadmap
 ```
 
 Every user-visible change is a `Command` applied through the engine, which
@@ -151,14 +151,17 @@ the choices behind it.
 |---|---|
 | `docs/architecture.md` | crates, data flow, units, rendering, text |
 | `docs/decisions.md` | stack, rendering, text, PDF, colour, licensing |
-| `docs/parity.md` | every capability of the target design and its status |
+| `docs/features.md` | every capability and its status |
 | `docs/behavior/` | exact behaviour, defaults and formulas per tool; `web.md` for the browser version |
 | `docs/acceptance.md` | measurable acceptance criteria and performance targets |
 | `docs/i18n.md` | user interface languages |
-| `docs/blueprint-gaps.md` | what is still open against the reference feature inventory |
+| `docs/blueprint-gaps.md` | what is still open |
 | `docs/cdr-format.md` | what the `.cdr` reader assumes and what is confirmed |
 | `docs/roadmap.md` | milestones |
 | `AGENTS.md` | rules for contributors and AI agents |
+| `CONTRIBUTING.md` | how to contribute: clean contributions and sign-off |
+| `CLEANROOM.md` | where the knowledge of every file format comes from |
+| `ATTRIBUTION.md` | bundled third-party assets and their licenses |
 
 ## Shortcuts
 
@@ -178,13 +181,31 @@ the choices behind it.
 | Open / Save / Import / Export | Ctrl+O / Ctrl+S / Ctrl+I / Ctrl+E |
 | Options | Ctrl+J |
 
-## Clean-room notice
+## Credits
 
-TraceDraw is implemented from public documentation, published
-reverse-engineering notes and observation of real files only. It contains
-no code or assets from any other vector editor and is not affiliated with
-any vendor. Licensed colour libraries and third-party content libraries
-are deliberately not included; see `docs/decisions.md`.
+TraceDraw is written by Ighor Toth with Claude Code, Anthropic's AI
+coding assistant, as co-author: every commit that Claude Code helped
+write names it in a `Co-Authored-By` line, and the About box says so
+too.
+
+## Notices
+
+TraceDraw is an independent open-source project. It is not affiliated
+with, sponsored by or endorsed by any other software vendor. Trademarks
+and product names belong to their owners; file format names such as
+`.cdr`, `.ai`, `.psd` or `.pdf` are used only to describe the files
+TraceDraw can read and write.
+
+The file format support is a clean-room implementation: it was written
+from public format notes and from inspecting files, never from
+decompiled programs or code of other implementations. `CLEANROOM.md`
+records where each piece of format knowledge comes from. The bundled
+assets are original or openly licensed and listed in `ATTRIBUTION.md`.
+Licensed colour libraries and third-party content libraries are
+deliberately not included; see `docs/decisions.md`.
+
+The software is provided "as is", without warranty of any kind, as the
+licenses below state.
 
 ## License
 

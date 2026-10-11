@@ -1,7 +1,7 @@
 # Symmetry
 
-Live mirrored copies of an object across one or more mirror lines, as
-Object > Symmetry in the target design.
+Live mirrored copies of an object across one or more mirror lines
+(Object > Symmetry).
 
 ## Model
 

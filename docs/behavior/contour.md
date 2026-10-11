@@ -11,7 +11,7 @@ Concentric copies of an object's outline, inside, outside or to centre.
 | Colour blend | direct | direct, clockwise, counter-clockwise (HSB) |
 | Corner type | Mitered | Mitered, Round, Bevel |
 
-Shortcut: Ctrl+F9 opens the Contour docker. Interactive: drag outward
+Shortcut: Ctrl+F9 opens the Contour panel. Interactive: drag outward
 from the object for outside, inward for inside; the drag distance sets
 `steps * offset`.
 

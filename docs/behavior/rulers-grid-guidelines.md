@@ -31,11 +31,11 @@
 The origin is saved with the drawing (mm from the page's bottom-left
 corner, 0, 0 by default). Rulers, the status bar's cursor coordinates,
 the property bar's X and Y, the Transformations summary, the Guidelines
-docker and the document grid all count from it.
+panel and the document grid all count from it.
 
 ### Document Options > Rulers
 
-Units (every unit of the target design: inches, millimeters, picas,
+Units (inches, millimeters, picas,
 points, pixels, ciceros, didots, feet, yards, miles, centimeters, meters,
 kilometers), Origin (horizontal, vertical), Tick divisions, Nudge (nudge
 2.54 mm, super nudge 5.08 mm with Shift, micro nudge 0.254 mm with Ctrl),
@@ -88,10 +88,10 @@ Show rulers, and a button that puts the origin back at the page corner.
 - Locked guidelines can be selected but not moved or deleted.
 - Delete removes the selected guidelines that are not locked.
 - Right-click on a guideline: Undo, Delete, Lock or Unlock, Properties
-  (opens the Guidelines docker with the guideline's values).
+  (opens the Guidelines panel with the guideline's values).
 - Edit > Select All > Guidelines selects every guideline of the page.
 
-### Guidelines docker
+### Guidelines panel
 
 Show and Snap toggles, Guideline type (horizontal, vertical, angled), the
 x, y and angle fields (counted from the ruler origin), Add and Modify, the

@@ -1,5 +1,5 @@
-//! JavaScript automation (Scripts docker, Tools > Scripts). The object
-//! model mirrors the target design's: `Application.ActiveDocument`,
+//! JavaScript automation (Scripts panel, Tools > Scripts). The object
+//! model: `Application.ActiveDocument`,
 //! `ActivePage`, `ActiveLayer`, `Shapes`, `Shape` with `Fill`, `Outline`,
 //! `Move`, `Rotate`, `Stretch`, `Delete`, `Duplicate`, `ConvertToCurves`,
 //! plus `CreateRectangle`, `CreateEllipse`, `CreateArtisticText`,

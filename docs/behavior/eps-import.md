@@ -33,7 +33,7 @@ what the program paints; no external PostScript engine is involved.
   single or multiple data sources (read row by row in turn), Decode
   arrays, JPEG through DCTDecode. The image matrix places the bitmap.
 - Shadings: `shfill` and shading patterns (`makepattern`/`setpattern`
-  with PatternType 2) become fountain fills from type 2, 3 and 0
+  with PatternType 2) become gradient fills from type 2, 3 and 0
   functions or a procedure; tiling patterns (PatternType 1) run their
   PaintProc into a vector pattern tile.
 - Text: `show` and the spacing variants, `glyphshow`, `charpath`
@@ -41,7 +41,7 @@ what the program paints; no external PostScript engine is involved.
   size from the font matrix and the CTM; glyph outlines are not
   interpreted (Type 1/Type 3 programs), so the installed font of the
   same name draws the text and advances use 0.5 em per character.
-- Clipping wraps painted objects in ClipFrames the way the PDF importer
+- Clipping wraps painted objects in clip frames the way the PDF importer
   does; the page is the `%%HiResBoundingBox`/`%%BoundingBox` with its
   lower-left corner at the origin.
 
@@ -59,15 +59,15 @@ not run (warnings). Unknown operators are reported once and ignored.
 - A prolog with `def`, `bind`, `for`, `forall`, `ifelse`, nested
   dictionaries runs with no warnings and paints the expected boxes.
 - `arc` under `translate`/`scale` gives a 40 pt circle; `rectclip` makes
-  a ClipFrame.
+  a clip frame.
 - `findfont`/`scalefont`/`setfont`/`show` and `selectfont` give text
   objects at 12 and 10 pt; a `colorimage` from a hex string gives a 2 x 1
   bitmap; a rectangle after an `eexec` section is still painted.
 - A Level 2 image dictionary with `currentfile /ASCII85Decode filter`
   decodes the pixels and leaves the program position after `~>`; the
   DOS EPS header is honoured.
-- A shading pattern fill becomes a linear fountain.
+- A shading pattern fill becomes a linear gradient.
 - Garbage is an error; `{ } loop` and unbounded recursion stop with a
   warning; unbalanced delimiters never panic.
-- Real files checked by eye: an Illustrator/AutoTrace logo, two cairo
+- Real files checked by eye: an AI logo traced with AutoTrace, two cairo
   exports, a GIMP RGB image (three `RunLengthDecode` sources).

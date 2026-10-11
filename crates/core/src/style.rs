@@ -27,7 +27,7 @@ pub struct Fountain {
     pub kind: FountainKind,
     /// At least two stops, sorted by position.
     pub stops: Vec<Stop>,
-    /// Degrees, the target design's convention (0 = left to right, CCW positive).
+    /// Degrees (0 = left to right, counter-clockwise positive).
     pub angle: f64,
     /// Centre offset in bounds-relative units (-1..1), for radial/conical/square.
     pub offset: Point,
@@ -104,7 +104,7 @@ pub fn lerp_color(a: Color, b: Color, t: f32) -> Color {
     Color::rgb8(l(r1, r2), l(g1, g2), l(b1, b2))
 }
 
-/// Built-in two-colour pattern tiles (the target design's two-colour pattern fill).
+/// Built-in two-colour pattern tiles (the two-colour pattern fill).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum PatternTile {
@@ -182,7 +182,7 @@ pub enum Pattern {
         height_px: u32,
         size_mm: f64,
     },
-    /// Full-colour vector tile (the target design's vector pattern fill):
+    /// Full-colour vector tile (the vector pattern fill):
     /// `shapes` are in tile-local coordinates, origin at the bottom-left
     /// corner of the tile, Y up, and the tile repeats every `tile.width` by
     /// `tile.height` millimetres. The shapes carry their own transforms,
@@ -233,7 +233,7 @@ impl Pattern {
     }
 }
 
-/// Procedural textures (the target design's texture fill, a small subset).
+/// Procedural textures (the texture fill).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum TextureKind {
@@ -538,15 +538,15 @@ impl Arrowhead {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Stroke {
     pub color: Color,
-    /// Width in millimetres. the target design's "hairline" is 0.0762 mm (0.216 pt).
+    /// Width in millimetres. A "hairline" is 0.0762 mm (0.216 pt).
     pub width: f64,
     pub cap: LineCap,
     pub join: LineJoin,
-    /// Dash pattern as alternating on/off lengths, in multiples of the width
-    /// (the target design's convention). Empty = solid.
+    /// Dash pattern as alternating on/off lengths, in multiples of the width.
+    /// Empty = solid.
     pub dash: Vec<f64>,
-    /// When true, the outline scales with the object (the target design's
-    /// "Scale with object"). When false, width stays fixed under transforms.
+    /// When true, the outline scales with the object ("Scale with
+    /// object"). When false, width stays fixed under transforms.
     pub scale_with_object: bool,
     /// Draw the outline behind the fill.
     pub behind_fill: bool,

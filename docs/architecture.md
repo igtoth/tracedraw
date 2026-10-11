@@ -19,12 +19,12 @@ crates/cdr, crates/text --> crates/core
 The document model and everything that changes it.
 
 - `document.rs`: `Document` > `Page` > `Layer` > `Shape`. A shape has a
-  `ShapeKind` (rect, ellipse, polygon, path, text, group, ClipFrame,
+  `ShapeKind` (rect, ellipse, polygon, path, text, group, clip frame,
   bitmap), an affine `transform`, `fill`, `stroke`, `opacity`, `shadow`,
   `visible`, `locked`, `name`. Ids are allocated by `IdSource` and never
   reused, even across undo.
 - `command.rs`: the `Command` enum. Every user-visible mutation is a
-  variant with a `label()` for the Undo docker.
+  variant with a `label()` for the Undo panel.
 - `engine.rs`: applies commands, keeps snapshot history (undo/redo),
   batches, dirty tracking. Snapshots are whole documents; a document of a
   few thousand objects is tens of kilobytes, so this stays simple until
@@ -38,7 +38,7 @@ The document model and everything that changes it.
 - `effects.rs`: blend, contour, extrude, distort, brushes. These bake
   their result today; live effects are a planned change to the model
   (an `Effect` list on the shape, re-evaluated on render).
-- `style.rs`: `Fill` (none, solid, fountain, pattern, texture), `Stroke`
+- `style.rs`: `Fill` (none, solid, gradient, pattern, texture), `Stroke`
   (width, caps, joins, dashes, arrowheads, nib), `Color`.
 - `color.rs`: RGB, CMYK and grayscale colours, conversions, hex.
 
@@ -65,7 +65,7 @@ frame width; alignment is applied per line.
 A CPU rasteriser on `tiny-skia`. `render_page` draws a page into a pixmap
 through a `ViewTransform` (zoom, origin). Fills map directly to shaders
 (solid, linear, radial) or are computed per pixel (conical, square,
-textures) or tiled (patterns). ClipFrame uses a mask, opacity a scratch
+textures) or tiled (patterns). clip frame uses a mask, opacity a scratch
 layer, drop shadows a separable box blur. `render_fill_image` rasterises
 a fill alone for exporters.
 
@@ -89,7 +89,7 @@ re-renders when something changed.
 selection, drag state and tool defaults. `interaction.rs` turns pointer
 and keyboard input into commands per tool; `ops.rs` holds the operations
 that menus and shortcuts call; `ui/` lays out the workspace: menus,
-standard toolbar, property bar, toolbox, dockers, palette, status bar,
+standard toolbar, property bar, toolbox, panels, palette, status bar,
 document tabs, dialogs. `canvas.rs` draws the cached raster and the
 overlays (handles, nodes, rubber bands, guides, rulers).
 
