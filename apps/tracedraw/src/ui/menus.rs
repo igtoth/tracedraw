@@ -543,28 +543,48 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
         .style(menu_bar_style)
         .config(egui::containers::menu::MenuConfig::new().style(menu_popup_style))
         .ui(ui, |ui| {
-            let menu = |ui: &mut Ui, key: &str, f: &mut dyn FnMut(&mut Ui)| {
+            let menu = |ui: &mut Ui, key: &str, f: &mut dyn FnMut(&mut Ui)| -> egui::Response {
                 ui.menu_button(tr(key), |ui| {
                     ui.set_min_width(MENU_WIDTH);
                     body(ui, |ui| f(ui))
-                });
+                })
+                .response
             };
-            menu(ui, "menu.file", &mut |ui| file_menu(app, ui));
+            let mut titles = vec![menu(ui, "menu.file", &mut |ui| file_menu(app, ui))];
             // With no drawing open only File, Tools, Window and Help remain.
             if app.has_document() {
-                menu(ui, "menu.edit", &mut |ui| edit_menu(app, ui));
-                menu(ui, "menu.view", &mut |ui| view_menu(app, ui));
-                menu(ui, "menu.layout", &mut |ui| layout_menu(app, ui));
-                menu(ui, "menu.object", &mut |ui| object_menu(app, ui));
-                menu(ui, "menu.effects", &mut |ui| effects_menu(app, ui));
-                menu(ui, "menu.bitmaps", &mut |ui| bitmaps_menu(app, ui));
-                menu(ui, "menu.text", &mut |ui| text_menu(app, ui));
-                menu(ui, "menu.table", &mut |ui| table_menu(app, ui));
+                titles.push(menu(ui, "menu.edit", &mut |ui| edit_menu(app, ui)));
+                titles.push(menu(ui, "menu.view", &mut |ui| view_menu(app, ui)));
+                titles.push(menu(ui, "menu.layout", &mut |ui| layout_menu(app, ui)));
+                titles.push(menu(ui, "menu.object", &mut |ui| object_menu(app, ui)));
+                titles.push(menu(ui, "menu.effects", &mut |ui| effects_menu(app, ui)));
+                titles.push(menu(ui, "menu.bitmaps", &mut |ui| bitmaps_menu(app, ui)));
+                titles.push(menu(ui, "menu.text", &mut |ui| text_menu(app, ui)));
+                titles.push(menu(ui, "menu.table", &mut |ui| table_menu(app, ui)));
             }
-            menu(ui, "menu.tools", &mut |ui| tools_menu(app, ui));
-            menu(ui, "menu.window", &mut |ui| window_menu(app, ui));
-            menu(ui, "menu.help", &mut |ui| help_menu(app, ui));
+            titles.push(menu(ui, "menu.tools", &mut |ui| tools_menu(app, ui)));
+            titles.push(menu(ui, "menu.window", &mut |ui| window_menu(app, ui)));
+            titles.push(menu(ui, "menu.help", &mut |ui| help_menu(app, ui)));
+            switch_on_hover(ui.ctx(), &titles);
         });
+}
+
+/// With one menu open, pointing at another title of the bar opens that
+/// menu instead, as desktop menu bars do.
+fn switch_on_hover(ctx: &egui::Context, titles: &[egui::Response]) {
+    let popup_id = egui::Popup::default_response_id;
+    let Some(open) = titles
+        .iter()
+        .position(|r| egui::Popup::is_id_open(ctx, popup_id(r)))
+    else {
+        return;
+    };
+    if let Some(hovered) = titles.iter().position(|r| r.hovered()) {
+        if hovered != open {
+            egui::Popup::close_id(ctx, popup_id(&titles[open]));
+            egui::Popup::open_id(ctx, popup_id(&titles[hovered]));
+        }
+    }
 }
 
 fn file_menu(app: &mut App, ui: &mut Ui) {
