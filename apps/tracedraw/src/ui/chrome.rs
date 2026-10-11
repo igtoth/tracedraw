@@ -88,6 +88,267 @@ pub fn dialog(ctx: &Context, id: &str, title: &str, size: Vec2, add: impl FnOnce
     closed
 }
 
+/// An auto-sized dialog window in the same chrome as [`dialog`]: the white
+/// title bar with the close button, a white edge and the light grey body,
+/// centred over the main window. The close button asks the dialog system
+/// to close the dialog (see [`take_close_request`]).
+pub struct Window {
+    title: String,
+    id: egui::Id,
+}
+
+/// The chrome window for a dialog titled `title`.
+pub fn window(title: impl Into<String>) -> Window {
+    let title = title.into();
+    let id = egui::Id::new(("chrome_dialog", title.clone()));
+    Window { title, id }
+}
+
+/// The widest a dialog's title bar must be for its title and close button.
+fn title_width(ui: &Ui, title: &str) -> f32 {
+    let galley = ui.painter().layout_no_wrap(
+        title.to_string(),
+        FontId::proportional(TITLE_FONT),
+        Color32::BLACK,
+    );
+    galley.size().x + 12.0 + 24.0 + CLOSE_W
+}
+
+impl Window {
+    /// Draw the window with `add` as its body. Returns what `add` returned.
+    pub fn show<R>(self, ctx: &Context, add: impl FnOnce(&mut Ui) -> R) -> Option<R> {
+        let mut out = None;
+        let mut closed = false;
+        egui::Window::new(&self.title)
+            .id(self.id)
+            .title_bar(false)
+            .collapsible(false)
+            .resizable(false)
+            .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
+            .frame(window_frame())
+            .show(ctx, |ui| {
+                ui.spacing_mut().item_spacing.y = 6.0;
+                let min_w = title_width(ui, &self.title).max(280.0);
+                ui.set_min_width(min_w);
+                let top = ui.cursor().min;
+                ui.add_space(TITLE_BAR);
+                let inner = Frame::new()
+                    .fill(Tokens::PANEL)
+                    .inner_margin(Margin {
+                        left: 14,
+                        right: 14,
+                        top: 12,
+                        bottom: 12,
+                    })
+                    .outer_margin(Margin {
+                        left: EDGE as i8,
+                        right: EDGE as i8,
+                        top: 0,
+                        bottom: EDGE as i8,
+                    })
+                    .show(ui, |ui| {
+                        form_style(ui);
+                        add(ui)
+                    });
+                out = Some(inner.inner);
+                let width = ui.min_rect().width().max(min_w);
+                let bar = Rect::from_min_size(top, Vec2::new(width, TITLE_BAR));
+                if title_bar(ui, bar, &self.title, &format!("{:?}", self.id)) {
+                    closed = true;
+                }
+            });
+        if closed {
+            request_close(ctx);
+        }
+        out
+    }
+}
+
+/// The frame of every dialog window: white, a grey border and a shadow.
+fn window_frame() -> Frame {
+    Frame::new()
+        .fill(Color32::WHITE)
+        .stroke(Stroke::new(1.0, WINDOW_BORDER))
+        .shadow(egui::epaint::Shadow {
+            offset: [0, 4],
+            blur: 16,
+            spread: 0,
+            color: Color32::from_black_alpha(60),
+        })
+        .inner_margin(Margin::ZERO)
+}
+
+fn close_request_id() -> egui::Id {
+    egui::Id::new("chrome_dialog_close_request")
+}
+
+/// Ask the dialog system to close the open dialog (its close button).
+pub fn request_close(ctx: &Context) {
+    ctx.data_mut(|d| d.insert_temp(close_request_id(), true));
+}
+
+/// True once after a dialog's close button was clicked.
+pub fn take_close_request(ctx: &Context) -> bool {
+    ctx.data_mut(|d| d.remove_temp::<bool>(close_request_id()))
+        .unwrap_or(false)
+}
+
+/// The icon a message box shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MessageIcon {
+    Question,
+}
+
+/// Paint a 32 px message icon at `rect`: a blue disc with a white
+/// question mark.
+fn paint_message_icon(ui: &Ui, rect: Rect, icon: MessageIcon) {
+    let p = ui.painter();
+    let c = rect.center();
+    let r = rect.width().min(rect.height()) / 2.0;
+    match icon {
+        MessageIcon::Question => {
+            p.circle_filled(c, r, Color32::from_rgb(0x1F, 0x6F, 0xC5));
+            p.circle_stroke(
+                c,
+                r - 0.5,
+                Stroke::new(1.0, Color32::from_rgb(0x14, 0x52, 0x96)),
+            );
+            p.text(
+                c + Vec2::new(0.0, 0.5),
+                Align2::CENTER_CENTER,
+                "?",
+                crate::theme::bold(r * 1.25),
+                Color32::WHITE,
+            );
+        }
+    }
+}
+
+/// A button label with its access key (the first letter) underlined.
+fn access_label(text: &str) -> egui::WidgetText {
+    let mut job = egui::text::LayoutJob::default();
+    let font = FontId::proportional(13.0);
+    let mut chars = text.chars();
+    if let Some(first) = chars.next() {
+        job.append(
+            &first.to_string(),
+            0.0,
+            egui::TextFormat {
+                font_id: font.clone(),
+                color: Tokens::TEXT,
+                underline: Stroke::new(1.0, Tokens::TEXT),
+                ..Default::default()
+            },
+        );
+        job.append(
+            chars.as_str(),
+            0.0,
+            egui::TextFormat {
+                font_id: font,
+                color: Tokens::TEXT,
+                ..Default::default()
+            },
+        );
+    }
+    job.into()
+}
+
+/// A row of 100 x 27 push buttons aligned to the right of what was drawn
+/// above them. The first is the default button (a blue border, Enter);
+/// the last answers Escape. With `access_keys`, each button's first letter
+/// is underlined and pressing it (with no field focused) picks it. Returns
+/// the index of the button picked this frame.
+pub fn button_row(ui: &mut Ui, labels: &[&str], access_keys: bool) -> Option<usize> {
+    let mut picked = None;
+    let spacing = 8.0;
+    let total = labels.len() as f32 * 100.0 + (labels.len().saturating_sub(1)) as f32 * spacing;
+    let left = (ui.min_rect().width() - total).max(0.0);
+    ui.add_space(10.0);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = spacing;
+        ui.add_space(left);
+        for (i, label) in labels.iter().enumerate() {
+            let text: egui::WidgetText = if access_keys {
+                access_label(label)
+            } else {
+                (*label).into()
+            };
+            let resp = ui
+                .scope(|ui| {
+                    if i == 0 {
+                        let w = &mut ui.visuals_mut().widgets;
+                        w.inactive.bg_stroke = Stroke::new(1.0, Tokens::ACCENT);
+                        w.inactive.weak_bg_fill = Color32::from_rgb(0xE5, 0xF1, 0xFB);
+                    }
+                    ui.add_sized([100.0, 27.0], egui::Button::new(text))
+                })
+                .inner;
+            if resp.clicked() {
+                picked = Some(i);
+            }
+        }
+    });
+    let typing = ui.memory(|m| m.focused().is_some());
+    ui.input(|inp| {
+        if picked.is_some() {
+            return;
+        }
+        if inp.key_pressed(egui::Key::Enter) && !typing {
+            picked = Some(0);
+        } else if inp.key_pressed(egui::Key::Escape) && labels.len() > 1 {
+            picked = Some(labels.len() - 1);
+        } else if access_keys && !typing && inp.modifiers.is_none() {
+            for ev in &inp.events {
+                if let egui::Event::Text(t) = ev {
+                    let typed = t.to_lowercase();
+                    if let Some(i) = labels.iter().position(|l| {
+                        l.chars()
+                            .next()
+                            .map(|c| c.to_lowercase().to_string() == typed)
+                            .unwrap_or(false)
+                    }) {
+                        picked = Some(i);
+                    }
+                }
+            }
+        }
+    });
+    picked
+}
+
+/// A message box: the application name as title, an icon, the message and
+/// a row of buttons (see [`button_row`]). Returns the index of the button
+/// picked, the last one when the close button was clicked.
+pub fn message_box(
+    ctx: &Context,
+    icon: MessageIcon,
+    text: &str,
+    buttons: &[&str],
+) -> Option<usize> {
+    let mut picked = None;
+    let before = take_close_request(ctx);
+    window("TraceDraw").show(ctx, |ui| {
+        ui.set_min_width(360.0);
+        ui.horizontal(|ui| {
+            ui.add_space(4.0);
+            let (rect, _) = ui.allocate_exact_size(Vec2::splat(32.0), Sense::hover());
+            paint_message_icon(ui, rect, icon);
+            ui.add_space(12.0);
+            ui.vertical(|ui| {
+                ui.add_space(6.0);
+                ui.set_max_width(380.0);
+                ui.add(egui::Label::new(egui::RichText::new(text).size(13.5)).wrap());
+            });
+        });
+        ui.add_space(14.0);
+        picked = button_row(ui, buttons, true);
+    });
+    if before || take_close_request(ctx) {
+        picked = Some(buttons.len().saturating_sub(1));
+    }
+    picked
+}
+
 /// The white title bar: title at the left, the close button at the right.
 /// Returns true when the close button was clicked.
 fn title_bar(ui: &mut Ui, bar: Rect, title: &str, id: &str) -> bool {

@@ -513,29 +513,28 @@ fn inflate_fields(ui: &mut Ui, st: &mut InflateState) {
     }
 }
 
-pub(crate) fn window<'a>(_ctx: &Context, title: String) -> egui::Window<'a> {
-    egui::Window::new(title)
-        .collapsible(false)
-        .resizable(false)
-        .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+/// A dialog window in the dialogs' chrome (white title bar with a close
+/// button, grey body), sized to its content and centred.
+pub(crate) fn window(_ctx: &Context, title: String) -> crate::ui::chrome::Window {
+    crate::ui::chrome::window(title)
 }
 
-/// OK and Cancel buttons. Enter presses OK (unless a multi-line field
-/// has the focus); Esc is handled by the keyboard handler, which closes
-/// any dialog.
+/// OK and Cancel, 100 x 27 and aligned right; OK is the default button.
+/// Enter presses OK (unless a multi-line field has the focus); Esc is
+/// handled by the keyboard handler, which closes any dialog.
 pub(crate) fn ok_cancel(ui: &mut Ui, close: &mut bool) -> bool {
     let mut ok = false;
-    ui.add_space(6.0);
-    ui.horizontal(|ui| {
-        if ui.button(tr("dialog.ok")).clicked() {
+    let ok_label = tr("dialog.ok");
+    let cancel_label = tr("dialog.cancel");
+    match crate::ui::chrome::button_row(ui, &[&ok_label, &cancel_label], false) {
+        Some(0) => {
             ok = true;
             *close = true;
         }
-        if ui.button(tr("dialog.cancel")).clicked() {
-            *close = true;
-        }
-    });
-    if enter_pressed(ui) {
+        Some(_) => *close = true,
+        None => {}
+    }
+    if !ok && enter_pressed(ui) {
         ok = true;
         *close = true;
     }
@@ -732,29 +731,34 @@ pub fn show(app: &mut App, ctx: &Context) {
         Dialog::Options => crate::ui::options::options_dialog(app, ctx, &mut close),
         Dialog::DocumentProperties => document_properties(app, ctx, &mut close),
         Dialog::ConfirmClose => {
-            window(ctx, tr("dialog.close_document")).show(ctx, |ui| {
-                ui.label(tr("dialog.save_changes_question"));
-                ui.horizontal(|ui| {
-                    if ui.button(tr("dialog.save")).clicked() {
-                        app.save(false);
-                        let saved = !app.engine.is_dirty();
-                        if saved {
-                            app.close_active_document();
-                        }
-                        close = true;
-                        app.after_close_question(saved);
-                    }
-                    if ui.button(tr("dialog.dont_save")).clicked() {
+            let text = trf("dialog.save_changes_to", &[("name", &app.document_name())]);
+            let (yes, no, cancel) = (tr("dialog.yes"), tr("dialog.no"), tr("dialog.cancel"));
+            match crate::ui::chrome::message_box(
+                ctx,
+                crate::ui::chrome::MessageIcon::Question,
+                &text,
+                &[&yes, &no, &cancel],
+            ) {
+                Some(0) => {
+                    app.save(false);
+                    let saved = !app.engine.is_dirty();
+                    if saved {
                         app.close_active_document();
-                        close = true;
-                        app.after_close_question(true);
                     }
-                    if ui.button(tr("dialog.cancel")).clicked() {
-                        close = true;
-                        app.after_close_question(false);
-                    }
-                });
-            });
+                    close = true;
+                    app.after_close_question(saved);
+                }
+                Some(1) => {
+                    app.close_active_document();
+                    close = true;
+                    app.after_close_question(true);
+                }
+                Some(_) => {
+                    close = true;
+                    app.after_close_question(false);
+                }
+                None => {}
+            }
         }
         Dialog::Export(st) => export_dialog(app, ctx, st, &mut close),
         Dialog::Print(st) => print_dialog(app, ctx, st, &mut close),
@@ -1081,7 +1085,7 @@ pub fn show(app: &mut App, ctx: &Context) {
                     "dialog.stats_fonts",
                     &[("n", &fonts.iter().cloned().collect::<Vec<_>>().join(", "))],
                 ));
-                if ui.button(tr("dialog.close")).clicked() {
+                if crate::ui::chrome::button_row(ui, &[&tr("dialog.close")], false).is_some() {
                     close = true;
                 }
             });
@@ -1153,7 +1157,7 @@ pub fn show(app: &mut App, ctx: &Context) {
                 }
                 None => {
                     ui.label(tr("docker.no_objects_selected"));
-                    if ui.button(tr("dialog.close")).clicked() {
+                    if crate::ui::chrome::button_row(ui, &[&tr("dialog.close")], false).is_some() {
                         close = true;
                     }
                 }
@@ -1217,7 +1221,7 @@ pub fn show(app: &mut App, ctx: &Context) {
                     egui::RichText::new(format!("{}  {}", pn.label(0), pn.label(1)))
                         .color(Tokens::TEXT_DIM),
                 );
-                if ui.button(tr("dialog.close")).clicked() {
+                if crate::ui::chrome::button_row(ui, &[&tr("dialog.close")], false).is_some() {
                     close = true;
                 }
             });
@@ -1245,11 +1249,15 @@ pub fn show(app: &mut App, ctx: &Context) {
                     }
                 });
                 ui.add_space(6.0);
-                if ui.button(tr("dialog.close")).clicked() {
+                if crate::ui::chrome::button_row(ui, &[&tr("dialog.close")], false).is_some() {
                     close = true;
                 }
             });
         }
+    }
+    // A dialog's close button closes it like Esc.
+    if crate::ui::chrome::take_close_request(ctx) {
+        close = true;
     }
     // A closing dialog may have opened the next one (the next unsaved
     // drawing's question); keep that.
@@ -1679,7 +1687,7 @@ fn document_properties(app: &mut App, ctx: &Context, close: &mut bool) {
                 fonts.into_iter().collect::<Vec<_>>().join(", ")
             ));
         }
-        if ui.button(tr("dialog.close")).clicked() {
+        if crate::ui::chrome::button_row(ui, &[&tr("dialog.close")], false).is_some() {
             *close = true;
         }
     });
@@ -2066,7 +2074,7 @@ fn paragraph_dialog(app: &mut App, ctx: &Context, which: &Dialog, close: &mut bo
                 }
             }
         }
-        if ui.button(tr("dialog.close")).clicked() {
+        if crate::ui::chrome::button_row(ui, &[&tr("dialog.close")], false).is_some() {
             *close = true;
         }
     });
@@ -2144,7 +2152,7 @@ fn spell_dialog(app: &mut App, ctx: &Context, st: &mut SpellState, close: &mut b
                 st.unknown.clear();
             }
         }
-        if ui.button(tr("dialog.close")).clicked() {
+        if crate::ui::chrome::button_row(ui, &[&tr("dialog.close")], false).is_some() {
             *close = true;
         }
     });

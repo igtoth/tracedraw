@@ -1646,10 +1646,20 @@ impl App {
     }
 
     pub fn document_title(&self) -> String {
+        let name = self.document_name();
+        if self.engine.is_dirty() {
+            format!("{name}*")
+        } else {
+            name
+        }
+    }
+
+    /// The active drawing's name: its file's name without the extension,
+    /// else the document title (an Untitled name for a new drawing).
+    pub fn document_name(&self) -> String {
         // Imported files (.cdr, .svg) have no native path yet; their title
         // comes from the document.
-        let name = self
-            .file
+        self.file
             .as_ref()
             .and_then(|p| p.file_stem().map(|s| s.to_string_lossy().to_string()))
             .unwrap_or_else(|| {
@@ -1659,12 +1669,7 @@ impl App {
                 } else {
                     t.to_string()
                 }
-            });
-        if self.engine.is_dirty() {
-            format!("{name}*")
-        } else {
-            name
-        }
+            })
     }
 
     /// File > Close: close the active drawing, asking to save unsaved
