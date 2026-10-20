@@ -245,7 +245,9 @@ pub fn standard_toolbar(app: &mut App, ui: &mut Ui) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 1.0;
         ui.set_min_height(STD);
-        let doc = app.has_document();
+        // Commands on the drawing are pale without one shown (the Welcome
+        // Screen, even with drawings open behind it).
+        let doc = app.drawing_shown();
         if std_button(ui, icons::Action::New, &tip("toolbar.new"), true, false).clicked() {
             app.request_new_document();
         }
@@ -490,14 +492,23 @@ pub fn standard_toolbar(app: &mut App, ui: &mut Ui) {
             .size()
             .x;
         let width = (text_w + 6.0 + 22.0).max(86.0);
-        let (rect, snap_resp) = ui.allocate_exact_size(Vec2::new(width, STD), egui::Sense::click());
-        std_frame(ui, rect, snap_resp.hovered(), false);
+        let sense = if doc {
+            egui::Sense::click()
+        } else {
+            egui::Sense::hover()
+        };
+        let (rect, snap_resp) = ui.allocate_exact_size(Vec2::new(width, STD), sense);
+        std_frame(ui, rect, doc && snap_resp.hovered(), false);
         ui.painter().text(
             egui::pos2(rect.left() + 6.0, rect.center().y),
             egui::Align2::LEFT_CENTER,
             label,
             font,
-            Tokens::text(),
+            if doc {
+                Tokens::text()
+            } else {
+                Tokens::text_dim()
+            },
         );
         let c = egui::pos2(rect.right() - 9.0, rect.center().y);
         ui.painter().add(egui::epaint::PathShape::convex_polygon(
@@ -802,6 +813,10 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 4.0;
         ui.set_min_height(crate::ui::propbar::BAR_H);
+        // The Welcome Screen has no page to set: the bar shows pale.
+        if !app.drawing_shown() {
+            ui.disable();
+        }
         // Fields and lists are white with a grey border.
         let v = ui.visuals_mut();
         v.widgets.inactive.weak_bg_fill = crate::theme::Tokens::field();

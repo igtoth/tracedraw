@@ -21,7 +21,12 @@ moved, scaled, turned or skewed (`dimensions.rs`).
 - While the last point is wanted, the dimension follows the pointer,
   drawn thin in blue; before that, a line from the last point. The
   property bar says what to click next; Escape starts again. Points snap
-  as drawing does.
+  as drawing does. With Ctrl held, the second point of a linear
+  dimension (clicked, or where a drag from the first point ends) and
+  each side of an angular one keep to steps of the constrain angle
+  (Options > Edit, 15 degrees by default) from the first point or the
+  vertex, as the curve tools do; the preview follows
+  (`pick_drag_tests::ctrl_keeps_a_dimension_leg_to_the_constrain_angle`).
 - The new dimension is selected; one undo step.
 
 ## Drawing

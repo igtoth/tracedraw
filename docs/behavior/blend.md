@@ -41,6 +41,13 @@ line on dragging from one object to another.
 Interactive: drag from the start object to the end object; the start
 and end are the two selected objects' order on drop.
 
+The steps lie between the two objects in the stacking order: with the
+end object below the start one (a front object blended to one behind
+it, the usual way to build depth), they are drawn below the start, the
+step nearest the end lowest; with the end above, above the start. The
+blend follows when either object is reordered
+(`blend_link::tests::the_steps_lie_between_the_two_objects`).
+
 ## Start and end objects
 
 Both objects stay objects of the drawing. The start object holds the

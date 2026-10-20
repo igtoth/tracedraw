@@ -176,7 +176,9 @@ mod tests {
             (d.graphic.fill.clone(), d.paragraph_text.fill.clone()),
             (red.clone(), red.clone())
         );
-        assert_eq!(d.artistic_text.fill, Fill::Solid(Color::BLACK));
+        // Artistic text keeps its black (in the drawing's colour mode).
+        let black = app.doc().metadata.primary_color_mode.black();
+        assert_eq!(d.artistic_text.fill, Fill::Solid(black));
         // One undo step.
         app.undo();
         assert_eq!(app.default_fill(), Fill::None);
@@ -218,6 +220,41 @@ mod tests {
         assert!(p.stroke.is_none());
         DefaultChange::OutlineColor(None).apply(&mut p);
         assert!(p.stroke.is_none());
+    }
+
+    #[test]
+    fn new_text_is_black_in_the_drawings_colour_mode() {
+        use tracedraw_core::document::{ObjectDefaults, PrimaryColorMode};
+        // A CMYK drawing: text and an outline turned on are CMYK black.
+        let cmyk = ObjectDefaults::for_mode(PrimaryColorMode::Cmyk);
+        let k100 = Color::cmyk_pct(0.0, 0.0, 0.0, 100.0);
+        assert_eq!(cmyk.artistic_text.fill, Fill::Solid(k100));
+        assert_eq!(cmyk.paragraph_text.fill, Fill::Solid(k100));
+        assert_eq!(ObjectDefaults::default(), cmyk);
+        // An RGB drawing keeps RGB black, as before.
+        let rgb = ObjectDefaults::for_mode(PrimaryColorMode::Rgb);
+        assert_eq!(rgb.artistic_text.fill, Fill::Solid(Color::BLACK));
+        // Both keep the CMYK black outline of graphics.
+        assert_eq!(rgb.graphic, cmyk.graphic);
+        // New drawings get the defaults of the mode picked for them.
+        let mut app = App::headless();
+        for (rgb, want) in [(false, k100), (true, Color::BLACK)] {
+            app.settings.new_document.values.rgb = rgb;
+            app.new_document();
+            assert_eq!(
+                app.doc().defaults.artistic_text.fill,
+                Fill::Solid(want),
+                "rgb {rgb}"
+            );
+            let lib = crate::ui::line_style::OutlineLib::of(&app);
+            assert_eq!(lib.black, want, "the outline turned on, rgb {rgb}");
+        }
+        // Defaults set by the user stay as they were set.
+        let red = Fill::Solid(Color::rgb8(200, 0, 0));
+        app.settings.document_defaults.objects.artistic_text.fill = red.clone();
+        app.settings.new_document.values.rgb = false;
+        app.new_document();
+        assert_eq!(app.doc().defaults.artistic_text.fill, red);
     }
 
     #[test]

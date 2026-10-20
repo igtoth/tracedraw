@@ -142,12 +142,18 @@ pub(crate) fn apply_shadows(ctx: &egui::Context, on: bool) {
 #[cfg(test)]
 pub(crate) const UI_SIZES: [f32; 8] = [0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0];
 
-/// The zoom of the interface at 100 %. Its measures (13 px text, 20 px
-/// icons, 24 px rows) are pixels of a monitor the system scales by
-/// 125 %, where other programs at 100 % draw their text and icons that
-/// large: one interface point per pixel there is 1 / 1.25 of the
+/// The zoom of the interface at 100 % on Windows: its 13 px text comes
+/// out as large as the system's own (Segoe UI 9 pt, 12 px at 100 %
+/// scaling and in proportion at every other), so 100 % is the size of
+/// other programs. At 0.8 the text was 10.4 px on a monitor at 100 %,
+/// reported too small (#229).
+#[cfg(target_os = "windows")]
+pub(crate) const BASE_ZOOM: f32 = 12.0 / 13.0;
+
+/// The zoom of the interface at 100 % elsewhere (macOS, the browser):
+/// its measures (13 px text, 20 px icons, 24 px rows) at 0.8 of the
 /// system's scaling.
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
 pub(crate) const BASE_ZOOM: f32 = 0.8;
 
 /// On Linux 100 % is one interface point per pixel at the system's
@@ -203,10 +209,11 @@ fn set_window_title(ctx: &egui::Context, title: String) {
 
 pub fn root(app: &mut App, ui: &mut Ui) {
     root_frame(app, ui);
-    // A fill dragged in a colour picker ends with the button (after this
-    // frame's last change).
+    // A fill or an outline dragged in a colour picker ends with the
+    // button (after this frame's last change).
     if !ui.ctx().input(|i| i.pointer.any_down()) {
         app.end_live_fill();
+        app.end_live_stroke();
     }
 }
 
@@ -875,11 +882,20 @@ mod tests {
         assert!(UI_SIZES
             .iter()
             .all(|s| (interface_size(*s) - s).abs() < 1e-6));
-        // 100 % draws the interface's measures at 0.8 of the system's
-        // scaling: one point per pixel on a monitor scaled to 125 %, as
-        // large as other programs at 100 % there. On Linux 100 % is one
-        // point per pixel at the system's scaling.
-        let base = if cfg!(target_os = "linux") { 1.0 } else { 0.8 };
+        // 100 % on Windows: the 13 px text as large as the system's
+        // 12 px. On Linux one point per pixel at the system's scaling;
+        // elsewhere 0.8 of it.
+        let base = if cfg!(target_os = "linux") {
+            1.0
+        } else if cfg!(target_os = "windows") {
+            12.0 / 13.0
+        } else {
+            0.8
+        };
+        // On Windows the text at 100 % is the system's 12 px.
+        if cfg!(target_os = "windows") {
+            assert!((13.0 * ui_zoom(1.0) - 12.0).abs() < 1e-4);
+        }
         assert_eq!(BASE_ZOOM, base);
         assert!((ui_zoom(0.0) - base).abs() < 1e-6);
         assert!((ui_zoom(1.0) - base).abs() < 1e-6);

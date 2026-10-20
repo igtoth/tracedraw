@@ -225,22 +225,27 @@ impl App {
 
     /// Node under the pointer among selected curves.
     pub fn node_at(&self, p: Point) -> Option<NodeHit> {
+        // The nearest node within the pick distance, measured on the page:
+        // a curve with a scale of its own (text converted to curves, for
+        // one) takes the same reach as any other.
         let tol = self.settings.nodes.pick_px() / self.view.zoom as f64;
+        let mut best: Option<(NodeHit, f64)> = None;
         for id in &self.node_targets() {
             let Some((path, _, t)) = self.path_of(*id) else {
                 continue;
             };
-            let lp = t.inverse() * p;
-            for n in nodes::nodes(&path) {
-                if (n.pos - lp).hypot() <= tol {
-                    return Some(NodeHit {
+            for n in nodes::nodes(&(t * path)) {
+                let d = (n.pos - p).hypot();
+                if d <= tol && best.as_ref().is_none_or(|b| d < b.1) {
+                    let hit = NodeHit {
                         shape: *id,
                         index: n.index,
-                    });
+                    };
+                    best = Some((hit, d));
                 }
             }
         }
-        None
+        best.map(|b| b.0)
     }
 
     /// `p` lies within three pick distances of a node, a control handle
@@ -252,15 +257,14 @@ impl App {
             let Some((path, _, t)) = self.path_of(*id) else {
                 continue;
             };
-            let lp = t.inverse() * p;
-            for n in nodes::nodes(&path) {
+            for n in nodes::nodes(&(t * path)) {
                 let chosen = self.node_selection.contains(&(*id, n.index));
                 let mut spots = vec![n.pos];
                 if chosen {
                     spots.extend(n.ctrl_in);
                     spots.extend(n.ctrl_out);
                 }
-                if spots.iter().any(|q| (*q - lp).hypot() <= reach) {
+                if spots.iter().any(|q| (*q - p).hypot() <= reach) {
                     return true;
                 }
             }
@@ -284,26 +288,28 @@ impl App {
 
     /// Control handle under the pointer, for selected nodes only.
     pub(crate) fn ctrl_handle_at(&self, p: Point) -> Option<(ShapeId, usize, Which)> {
+        // The nearest handle within the pick distance, on the page.
         let tol = self.settings.nodes.pick_px() / self.view.zoom as f64;
+        let mut best: Option<((ShapeId, usize, Which), f64)> = None;
         for (id, index) in &self.node_selection {
             let Some((path, _, t)) = self.path_of(*id) else {
                 continue;
             };
-            let lp = t.inverse() * p;
-            if let Some(n) = nodes::nodes(&path).into_iter().find(|n| n.index == *index) {
-                if let Some(c) = n.ctrl_in {
-                    if (c - lp).hypot() <= tol {
-                        return Some((*id, *index, Which::In));
-                    }
-                }
-                if let Some(c) = n.ctrl_out {
-                    if (c - lp).hypot() <= tol {
-                        return Some((*id, *index, Which::Out));
-                    }
+            let Some(n) = nodes::nodes(&(t * path))
+                .into_iter()
+                .find(|n| n.index == *index)
+            else {
+                continue;
+            };
+            for (c, which) in [(n.ctrl_in, Which::In), (n.ctrl_out, Which::Out)] {
+                let Some(c) = c else { continue };
+                let d = (c - p).hypot();
+                if d <= tol && best.as_ref().is_none_or(|b| d < b.1) {
+                    best = Some(((*id, *index, which), d));
                 }
             }
         }
-        None
+        best.map(|b| b.0)
     }
 
     pub fn shape_tool_input(&mut self, response: &Response, p: Point, mods: Modifiers) {
@@ -734,8 +740,8 @@ impl App {
             let Some((path, _, t)) = self.path_of(*id) else {
                 continue;
             };
-            let lp = t.inverse() * p;
-            if let Some((i, tt, d)) = nodes::nearest_segment(&path, lp) {
+            // Measured on the page, as the nodes are.
+            if let Some((i, tt, d)) = nodes::nearest_segment(&(t * path), p) {
                 if d <= tol && best.map(|b| d < b.3).unwrap_or(true) {
                     best = Some((*id, i, tt, d));
                 }

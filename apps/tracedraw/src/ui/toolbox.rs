@@ -69,6 +69,10 @@ pub fn floating_width() -> f32 {
 /// column on a side, or floating as a grid two buttons wide.
 pub fn toolbox(app: &mut App, ui: &mut Ui, dock: crate::ui::bars::Dock) {
     use crate::ui::bars::Dock;
+    // Nothing to draw on the Welcome Screen: the tools show pale.
+    if !app.drawing_shown() {
+        ui.disable();
+    }
     match dock {
         Dock::Top | Dock::Bottom => {
             crate::ui::overflow::row(ui, "toolbox_row", |ui| tools(app, ui, dock));

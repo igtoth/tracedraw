@@ -91,7 +91,9 @@ one of its nodes. Not in rotate mode.
 While the selection is moved, scaled, turned or slanted, the objects stay
 where they are and their outline shows where they would go: a blue line
 on a white halo, which reads as two light lines on a dark fill. The
-handles return on release.
+outline is the one the release makes: a rectangle's corners that keep
+their size stay round while it is stretched
+(`Shape::page_path_after`). The handles return on release.
 
 A move grabbed on a mark (see below) carries that point: a node,
 midpoint, centre or the point of an edge lands on other objects' points

@@ -2638,6 +2638,24 @@ impl Shape {
         self.transform * self.local_path()
     }
 
+    /// The outline in page coordinates the shape would have once `t` (a
+    /// page-space transformation) is applied to it, as a move, scale or
+    /// turn being dragged shows it: corners that keep their size stay
+    /// round instead of stretching with `t`.
+    pub fn page_path_after(&self, t: Affine) -> BezPath {
+        match &self.kind {
+            ShapeKind::Rect {
+                rect,
+                corners: Some(c),
+                ..
+            } => {
+                let moved = t * self.transform;
+                moved * c.path(*rect, axis_scale(moved))
+            }
+            _ => t * self.page_path(),
+        }
+    }
+
     /// Axis-aligned bounds in page coordinates, ignoring outline width.
     /// Paragraph text counts its whole frame (empty or not), and a group
     /// the bounds of its objects.
@@ -2855,11 +2873,19 @@ impl DefaultKind {
 }
 
 impl Default for ObjectDefaults {
-    /// Graphics: no fill and a 0.2 mm CMYK black outline; text: a black
-    /// fill and no outline.
+    /// The defaults of a CMYK drawing (the default primary colour mode).
     fn default() -> Self {
+        ObjectDefaults::for_mode(PrimaryColorMode::Cmyk)
+    }
+}
+
+impl ObjectDefaults {
+    /// Graphics: no fill and a 0.2 mm CMYK black outline; text: a black
+    /// fill in the drawing's primary colour mode (CMYK or RGB black) and
+    /// no outline.
+    pub fn for_mode(mode: PrimaryColorMode) -> Self {
         let text = DefaultProperties {
-            fill: Fill::Solid(crate::Color::BLACK),
+            fill: Fill::Solid(mode.black()),
             stroke: None,
         };
         ObjectDefaults {
@@ -2991,6 +3017,16 @@ pub enum PrimaryColorMode {
     #[default]
     Cmyk,
     Rgb,
+}
+
+impl PrimaryColorMode {
+    /// Black in this mode: 100 % K in CMYK, RGB black in RGB.
+    pub fn black(self) -> crate::Color {
+        match self {
+            PrimaryColorMode::Cmyk => crate::Color::cmyk_pct(0.0, 0.0, 0.0, 100.0),
+            PrimaryColorMode::Rgb => crate::Color::BLACK,
+        }
+    }
 }
 
 impl Layer {
@@ -4895,6 +4931,40 @@ mod tests {
         let json = serde_json::to_string(&twisted).unwrap();
         assert!(json.contains("twist"));
         assert_eq!(serde_json::from_str::<ShapeKind>(&json).unwrap(), twisted);
+    }
+
+    #[test]
+    fn the_outline_after_a_transform_is_what_applying_it_gives() {
+        for fixed in [true, false] {
+            let mut c = Corners::uniform(4.0, CornerKind::Round);
+            c.fixed = fixed;
+            let s = rect_shape(20.0, 10.0, c);
+            for t in [
+                Affine::scale_non_uniform(3.0, 1.0),
+                Affine::rotate(0.4) * Affine::scale_non_uniform(1.0, 2.5),
+                Affine::translate((5.0, -2.0)),
+            ] {
+                let mut applied = s.clone();
+                applied.transform = t * applied.transform;
+                let want = applied.page_path();
+                let got = s.page_path_after(t);
+                assert_eq!(got, want, "fixed {fixed} {t:?}");
+            }
+            // Fixed corners stay round in the preview: the plain stretched
+            // outline (what the preview used to draw) differs.
+            if fixed {
+                let t = Affine::scale_non_uniform(3.0, 1.0);
+                assert_ne!(s.page_path_after(t), t * s.page_path());
+            }
+        }
+        // Other kinds: the outline with the transform applied.
+        let mut plain = rect_shape(20.0, 10.0, Corners::uniform(0.0, CornerKind::Round));
+        plain.kind = ShapeKind::Ellipse {
+            rect: Rect::new(0.0, 0.0, 20.0, 10.0),
+            arc: None,
+        };
+        let t = Affine::scale(2.0);
+        assert_eq!(plain.page_path_after(t), t * plain.page_path());
     }
 
     #[test]

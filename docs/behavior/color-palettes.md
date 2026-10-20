@@ -58,10 +58,12 @@ to Deep Blue 60 60 0 60).
   colour panel or a dialog) joins the document palette, in the same undo
   step as the change. The palette menu's Automatically Update turns that
   off (also in Options > Customization > Color Palette).
-- A colour dragged in a colour picker (Properties > Fill > Uniform):
-  the object shows each colour the pointer passes over, but the whole
-  drag is one undo step and only the colour it ends on joins the
-  document palette, when the button is let go.
+- A colour dragged in a colour picker (Properties > Fill > Uniform, and
+  Properties > Outline > Colour): the object shows each colour the
+  pointer passes over, but the whole drag is one undo step and only the
+  colour it ends on joins the document palette, when the button is let
+  go. Other drags in the outline editor (its sliders) are one undo step
+  too.
 - With characters selected in a text being edited, a swatch colours
   only them (see `text.md`, Character colours).
 - The eyedropper waits for a click on the drawing and adds the colour

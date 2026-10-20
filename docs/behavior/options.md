@@ -148,15 +148,14 @@ it), applied when the slider is let go.
 - 100 % is the size of the other programs on that monitor, and it
   follows the monitor: moving the window to a monitor the system scales
   differently rescales it. 200 % is twice that size.
-- The interface's own measures (13 px text, 20 px icons, 24 px rows) are
-  pixels of a monitor the system scales by 125 %, where other programs
-  at 100 % draw their text and icons that large. So 100 % is a zoom of
-  0.8 over the system's scaling: one interface point per pixel on a
-  monitor at 125 %, 0.8 pixel at 100 %, 1.6 pixels at 200 %; 125 % is
-  one point per pixel at the system's scaling.
+- The interface's own measures are 13 px text, 20 px icons and 24 px
+  rows. On Windows 100 % is a zoom of 12 / 13 over the system's scaling,
+  so the text comes out as large as the system's own (Segoe UI 9 pt,
+  12 px at 100 % scaling, 15 px at 125 %); at 0.8 it was 10.4 px at
+  100 %, too small (#229).
 - On Linux 100 % is a zoom of 1 over the system's scaling: one interface
-  point per pixel at the system's scaling, a quarter larger than on the
-  other systems (#1). The sizes offered and their order are the same.
+  point per pixel at the system's scaling (#1). Elsewhere (macOS, the
+  browser) it is 0.8. The sizes offered and their order are the same.
 - The size is a zoom factor over the monitor's own scaling, so text stays
   sharp. Values out of 50 % to 400 % count as 100 %.
 - The interface size never changes how large drawings are: zoom 100 %
@@ -174,8 +173,8 @@ ruler at that resolution: hold a real ruler against the screen and
 change the value until the marks match. Zoom 100% then shows a drawing
 at its real size (the zoom box percentages follow; the Pixels view shows
 one pixel at the system's scaling per document pixel). Interface points
-per inch are that resolution over the interface's zoom (120 at 100 %,
-96 at 125 %; on Linux 96 at 100 %), so the interface size never changes real sizes. Reset puts
+per inch are that resolution over the interface's zoom (104 at 100 %
+on Windows, 96 on Linux, 120 elsewhere), so the interface size never changes real sizes. Reset puts
 96 back.
 
 ## Document Options

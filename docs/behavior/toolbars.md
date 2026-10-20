@@ -54,8 +54,12 @@ split by thin lines:
 8. Options (the TraceDraw options).
 9. Launch: Font Manager, Welcome Screen, Color Management.
 
-Buttons that need a drawing are disabled on the Welcome Screen; hovered
-buttons are light blue with a light blue frame.
+Buttons that need a drawing, and Snap To, are disabled on the Welcome
+Screen, also when drawings are open behind it; the property bar and the
+toolbox are pale there too, so the page fields cannot be changed
+(`pick_drag_tests::the_page_bar_does_nothing_on_the_welcome_screen`).
+New, Open, Options, Launch and AI Generate stay on. Hovered buttons are
+light blue with a light blue frame.
 
 ## Property bar
 

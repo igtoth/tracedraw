@@ -515,7 +515,8 @@ pub(crate) fn apply_to_default(app: &mut App) {
         app.text_italic = sp.italic;
     }
     if size {
-        app.text_size_pt = sp.size_pt;
+        // As seen: new text, not scaled, comes out the same size.
+        app.text_size_pt = sp.size_pt * app.text_scale(t.id);
     }
     if underline {
         app.text_underline = sp.underline;

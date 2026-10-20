@@ -551,10 +551,19 @@ pub fn evaluate(shape: &Shape) -> Evaluated {
                     *rotate_on_path,
                     options,
                 );
-                above.extend(shapes);
-                // An end object of the drawing draws itself.
-                if end_id.is_none() {
-                    above.push((**end).clone());
+                if options.steps_below {
+                    // Bottom to top: the end (when the effect draws it),
+                    // then the steps from the end's side to the start.
+                    if end_id.is_none() {
+                        below.push((**end).clone());
+                    }
+                    below.extend(shapes.into_iter().rev());
+                } else {
+                    above.extend(shapes);
+                    // An end object of the drawing draws itself.
+                    if end_id.is_none() {
+                        above.push((**end).clone());
+                    }
                 }
             }
             Effect::Extrude {
@@ -915,6 +924,11 @@ pub struct BlendOptions {
     /// The object acceleration changes the steps' sizes too.
     pub accel_sizing: bool,
     pub color_blend: ColorBlend,
+    /// The end object lies below the start object: the steps are drawn
+    /// below the start, from the end's side up, so they sit between the
+    /// two (kept up to date with the stacking order by the editor).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub steps_below: bool,
 }
 
 impl BlendOptions {

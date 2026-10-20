@@ -3342,3 +3342,110 @@ fn removed_and_alt_shortcuts_act_on_the_keyboard() {
     );
     assert_eq!(app.tool, Tool::Ellipse);
 }
+
+#[test]
+fn ctrl_keeps_a_dimension_leg_to_the_constrain_angle() {
+    let (ctx, mut app, _) = setup();
+    app.select(Vec::new());
+    app.set_tool(Tool::ParallelDimension);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let ctrl = Modifiers::COMMAND | Modifiers::CTRL;
+    let first = Point::new(100.0, 150.0);
+    let at = app.view.to_screen(first);
+    click_at(&ctx, &mut app, at, Modifiers::NONE);
+    assert_eq!(app.dimension_points.len(), 1);
+    let a = app.dimension_points[0];
+    // A second point a little off the horizontal, Ctrl held: the leg lies
+    // on it.
+    let off = Point::new(160.0, 154.0);
+    let at = app.view.to_screen(off);
+    click_at(&ctx, &mut app, at, ctrl);
+    assert_eq!(app.dimension_points.len(), 2);
+    let b = app.dimension_points[1];
+    assert!((b.y - a.y).abs() < 1e-6, "{a:?} {b:?}");
+    assert!(b.x > a.x + 50.0);
+    // Without Ctrl the point is taken as it is.
+    app.dimension_points = vec![a];
+    let at = app.view.to_screen(off);
+    click_at(&ctx, &mut app, at, Modifiers::NONE);
+    let free = app.dimension_points[1];
+    assert!((free.y - a.y).abs() > 2.0, "{free:?}");
+    // The angular tool keeps each side from the vertex.
+    app.set_tool(Tool::AngularDimension);
+    app.dimension_points = vec![first];
+    let near_vertical = Point::new(103.0, 200.0);
+    let at = app.view.to_screen(near_vertical);
+    click_at(&ctx, &mut app, at, ctrl);
+    let side = app.dimension_points[1];
+    assert!((side.x - first.x).abs() < 1e-6, "{side:?}");
+}
+
+#[test]
+fn the_page_bar_does_nothing_on_the_welcome_screen() {
+    let (ctx, mut app, _) = setup();
+    app.select(Vec::new());
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let size = |app: &App| {
+        let p = app.doc().page(app.page).expect("page");
+        (p.size.width, p.size.height)
+    };
+    let portrait = size(&app);
+    assert!(portrait.1 > portrait.0, "{portrait:?}");
+    // The page bar's landscape button.
+    let landscape = egui::pos2(408.0, 87.0);
+    // The Welcome Screen shown (the drawing behind it): the bar is pale.
+    app.show_welcome = true;
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    click_at(&ctx, &mut app, landscape, Modifiers::NONE);
+    assert_eq!(size(&app), portrait);
+    // Back on the drawing, the same click turns the page.
+    app.show_welcome = false;
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    click_at(&ctx, &mut app, landscape, Modifiers::NONE);
+    let turned = size(&app);
+    assert!(turned.0 > turned.1, "{turned:?}");
+}
+
+#[test]
+fn the_shape_tool_takes_the_nearest_node_of_a_scaled_curve() {
+    let (ctx, mut app, id) = setup();
+    app.select(vec![id]);
+    app.delete_selection();
+    // A small curve in its own units, then scaled ten times on the page,
+    // as text converted to curves can be: nodes 1 mm apart locally are
+    // 10 mm apart on the page.
+    let mut path = tracedraw_core::BezPath::new();
+    path.move_to((2.0, 2.0));
+    path.line_to((3.0, 2.0));
+    path.line_to((4.0, 2.0));
+    path.line_to((4.0, 3.0));
+    let c = app
+        .new_shape(ShapeKind::Path {
+            path,
+            closed: false,
+        })
+        .expect("curve");
+    app.select(vec![c]);
+    app.transform_selection(tracedraw_core::geometry::Affine::scale(10.0));
+    app.set_tool(Tool::Shape);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let page = |x: f64, y: f64| Point::new(x * 10.0, y * 10.0);
+    // On each node, that node; a little off it, still the nearest.
+    for (i, q) in [
+        (0usize, page(2.0, 2.0)),
+        (1, page(3.0, 2.0)),
+        (2, page(4.0, 2.0)),
+        (3, page(4.0, 3.0)),
+    ] {
+        let hit = app.node_at(q).expect("node");
+        assert_eq!((hit.shape, hit.index), (c, i), "at {q:?}");
+        let off = Point::new(q.x + 0.4, q.y - 0.3);
+        assert_eq!(app.node_at(off).map(|h| h.index), Some(i), "near {q:?}");
+    }
+    // Halfway between two nodes (5 mm from each): beyond the pick
+    // distance, no node.
+    assert!(app.node_at(page(3.5, 2.0)).is_none());
+    // A segment is found on the page too: the middle of the last one.
+    let (_, seg, _) = app.segment_at(page(4.0, 2.5)).expect("segment");
+    assert_eq!(seg, 3);
+}

@@ -278,6 +278,22 @@ impl Writer<'_> {
             }
             return;
         }
+        // An outline set behind the fill: the outline first, then the
+        // fill over it, as the drawing window draws it.
+        if shape.stroke.as_ref().is_some_and(|st| st.behind_fill)
+            && !matches!(shape.fill, Fill::None)
+        {
+            let mut outline = shape.clone();
+            outline.fill = Fill::None;
+            if let Some(st) = outline.stroke.as_mut() {
+                st.behind_fill = false;
+            }
+            let mut fill = shape.clone();
+            fill.stroke = None;
+            self.shape(&outline, parent);
+            self.shape(&fill, parent);
+            return;
+        }
         let transform = parent * shape.transform;
         match &shape.kind {
             ShapeKind::Group { children } => {
@@ -553,6 +569,43 @@ mod tests {
         assert!(eps.contains("%%BoundingBox: 0 0 596 842"));
         assert!(eps.contains("setcmykcolor"));
         assert!(eps.contains("eofill"));
+    }
+
+    /// An outline behind the fill is stroked first, the fill over it
+    /// (#235, printed to PostScript too).
+    #[test]
+    fn an_outline_behind_the_fill_is_stroked_first() {
+        let order = |behind: bool| -> (usize, usize) {
+            let mut doc = Document::default();
+            let layer = doc.pages[0].layers[0].id;
+            let id = doc.ids_mut().shape();
+            let mut s = Shape::new(
+                id,
+                ShapeKind::Rect {
+                    rect: Rect::new(10.0, 10.0, 60.0, 40.0),
+                    radius: 0.0,
+                    corners: None,
+                },
+            );
+            s.fill = Fill::Solid(Color::rgb8(0, 0, 0));
+            s.stroke = Some(tracedraw_core::Stroke {
+                behind_fill: behind,
+                ..tracedraw_core::Stroke::new(Color::rgb8(255, 255, 255), 2.0)
+            });
+            doc.layer_mut(layer).unwrap().shapes.push(s);
+            let eps = page_to_eps(&doc, 0);
+            let lines: Vec<&str> = eps.lines().map(str::trim).collect();
+            let stroke = lines.iter().position(|l| *l == "stroke").expect("stroke");
+            let fill = lines
+                .iter()
+                .position(|l| *l == "fill" || *l == "eofill")
+                .expect("fill");
+            (stroke, fill)
+        };
+        let (s, f) = order(true);
+        assert!(s < f, "behind: the outline first ({s} {f})");
+        let (s, f) = order(false);
+        assert!(f < s, "in front: the fill first ({s} {f})");
     }
 
     #[test]

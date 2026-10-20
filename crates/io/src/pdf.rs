@@ -632,6 +632,23 @@ impl PageWriter<'_> {
             }
             return;
         }
+        // An outline set behind the fill: the outline first, then the
+        // fill over it (half the outline's width shows outside), as the
+        // drawing window draws it.
+        if shape.stroke.as_ref().is_some_and(|st| st.behind_fill)
+            && !matches!(shape.fill, Fill::None)
+        {
+            let mut outline = shape.clone();
+            outline.fill = Fill::None;
+            if let Some(st) = outline.stroke.as_mut() {
+                st.behind_fill = false;
+            }
+            let mut fill = shape.clone();
+            fill.stroke = None;
+            self.shape(&outline, parent);
+            self.shape(&fill, parent);
+            return;
+        }
         let transform = parent * shape.transform;
         if let ShapeKind::Group { children } = &shape.kind {
             for c in children {
@@ -2143,6 +2160,68 @@ mod tests {
         let tip = format!("{} {} l", f(60.0 * MM_PT), f(150.0 * MM_PT));
         assert!(content.contains(&tip), "head tip: {content}");
         assert!(!content.contains(&format!("{} {} l", f(60.0 * MM_PT), f(250.0 * MM_PT))));
+    }
+
+    /// The page's content streams, inflated.
+    fn page_content(bytes: &[u8]) -> String {
+        let mut content = String::new();
+        let mut rest: &[u8] = bytes;
+        while let Some(i) = rest.windows(6).position(|w| w == b"stream") {
+            let after = &rest[i + 6..];
+            let start = after
+                .iter()
+                .position(|b| *b == b'\n')
+                .map(|n| n + 1)
+                .unwrap_or(0);
+            let data = &after[start..];
+            use std::io::Read;
+            let mut out = Vec::new();
+            if flate2::read::ZlibDecoder::new(data)
+                .read_to_end(&mut out)
+                .is_ok()
+            {
+                content.push_str(&String::from_utf8_lossy(&out));
+            }
+            rest = &after[start..];
+        }
+        content
+    }
+
+    /// An outline behind the fill is painted first and the fill over it,
+    /// as the drawing window draws it (#235: a white outline behind black
+    /// letters covered them in the PDF).
+    #[test]
+    fn an_outline_behind_the_fill_is_painted_first() {
+        let order = |behind: bool| -> (usize, usize) {
+            let mut doc = Document::default();
+            let layer = doc.pages[0].layers[0].id;
+            let mut sq = Shape::new(
+                tracedraw_core::ShapeId(1),
+                ShapeKind::Rect {
+                    rect: tracedraw_core::Rect::new(10.0, 10.0, 60.0, 40.0),
+                    radius: 0.0,
+                    corners: None,
+                },
+            );
+            sq.fill = Fill::Solid(Color::rgb8(0, 0, 0));
+            sq.stroke = Some(tracedraw_core::Stroke {
+                behind_fill: behind,
+                ..tracedraw_core::Stroke::new(Color::rgb8(255, 255, 255), 2.0)
+            });
+            doc.layer_mut(layer).unwrap().shapes.push(sq);
+            let content = page_content(&document_to_pdf(&doc));
+            let lines: Vec<&str> = content.lines().map(str::trim).collect();
+            let stroke = lines.iter().position(|l| *l == "S").expect("a stroke");
+            let fill = lines
+                .iter()
+                .position(|l| *l == "f" || *l == "f*")
+                .expect("a fill");
+            (stroke, fill)
+        };
+        let (s, f) = order(true);
+        assert!(s < f, "behind: the outline first ({s} {f})");
+        let (s, f) = order(false);
+        assert!(f < s, "in front: the fill first ({s} {f})");
     }
 
     #[test]

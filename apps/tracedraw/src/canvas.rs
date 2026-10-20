@@ -936,7 +936,8 @@ pub fn draw_transform_outline(app: &App, painter: &Painter, t: Affine) {
     let halo = EStroke::new(3.0, Color32::from_white_alpha(220));
     let line = EStroke::new(1.0, Tokens::DRAG_OUTLINE);
     for s in app.selected_shapes() {
-        let path = t * s.page_path();
+        // What the release will make: rounded corners keep their size.
+        let path = s.page_path_after(t);
         for (mut pts, closed) in flatten(&path, &app.view) {
             if closed {
                 if let Some(first) = pts.first().copied() {

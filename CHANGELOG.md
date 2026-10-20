@@ -6,6 +6,30 @@ full, row-by-row status.
 
 ## Unreleased
 
+- PDF, print, PostScript, EPS and SVG: an outline set behind the fill is painted first and the fill over it, as on screen; a white outline behind black letters no longer covers them, so black text no longer prints white (#235, #191).
+
+- Windows: at interface size 100 % the text is as large as the system's own (12 px at 100 % scaling), as the setting says; it was 10.4 px. A size raised to make up for it may be set back to 100 % (#229).
+
+- Blend: the steps lie between the two objects in the stacking order; a front object blended to one behind it no longer has the steps drawn over it (#232).
+
+- CMYK drawings: new artistic and paragraph text is CMYK black, and an outline turned on in Properties is CMYK black, so their colour pickers start in CMYK; RGB drawings keep RGB black (#259).
+
+- Properties > Outline: dragging in the colour picker is one undo step and adds only the final colour to the document palette, when the button is let go, as the fill picker does (#258).
+
+- Shape tool: Smooth and Symmetrical now act on nodes beside a straight segment: next to a line the curve's handle lines up with it, and between two lines both become curves and the node is smoothed (#228).
+
+- Shape tool: a click takes the nearest node, handle or segment, measured on the page; on curves with a scale of their own, such as text converted to curves, a click no longer took a node far from the pointer (#242).
+
+- Text: the size field shows the size as seen on the page after the text is scaled with the Pick tool (24 pt doubled reads 48 pt), and a size typed there is the size the text then shows (#243).
+
+- Pick tool: while a rectangle with rounded corners is resized, the preview outline keeps the corners round as the result will, instead of stretching them (#239).
+
+- Welcome Screen: the property bar (page size, orientation, units, nudge, duplicate offset), the toolbox, Snap To and the standard bar's drawing commands are pale, also with drawings open behind it; New, Open, Options, Launch and AI Generate stay on (#246).
+
+- Transformations, Rotate: the centre of rotation moved on the canvas is the centre the docker turns about (and shows with Relative center off), and after Apply the new copies keep it, so repeated rotated copies go round one point instead of drifting (#230).
+
+- Dimension tools: Ctrl keeps the leg being given (the second point of a linear dimension, each side of an angular one) to steps of the constrain angle, preview included (#251).
+
 - Options > Customization > Commands: tools take shortcuts with Ctrl, Alt and Shift like menu commands, and Alt with a letter given to a command no longer opens a menu (#248); Delete also removes a built-in shortcut, leaving the command without one (#249); Reset to defaults resets only the category shown, and a separate Reset all shortcuts asks first (#250).
 
 - A right click on a locked object (with the Pick tool) opens a menu with Unlock Object, which unlocks and selects it, and Unlock All Objects; the object stays unselected and uneditable until then (#256).

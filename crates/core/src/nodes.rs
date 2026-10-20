@@ -305,15 +305,25 @@ pub fn move_handle(
     BezPath::from_vec(els)
 }
 
-/// Make the node cusp/smooth/symmetrical by adjusting its handles.
+/// Make the node cusp/smooth/symmetrical by adjusting its handles. With a
+/// curve on both sides, the handles line up (and for symmetrical take
+/// one length). With a straight segment on one side, the curve's handle
+/// lines up with it, keeping its length, so the join is smooth and the
+/// line stays straight. With straight segments on both sides they become
+/// curves first (as To Curve makes them), then the node is smoothed; a
+/// closing line that is only a close stays straight. An end node of an
+/// open subpath has one side only and stays as it is.
 pub fn set_node_type(path: &BezPath, index: usize, ty: NodeType) -> BezPath {
     let n = normalize(path);
     let Some(node) = nodes(&n).into_iter().find(|n| n.index == index) else {
         return n;
     };
-    match (node.ctrl_in, node.ctrl_out, ty) {
-        (_, _, NodeType::Cusp) => n,
-        (Some(a), Some(b), _) => {
+    if ty == NodeType::Cusp {
+        return n;
+    }
+    let els = n.elements();
+    match (node.ctrl_in, node.ctrl_out) {
+        (Some(a), Some(b)) => {
             let va = a - node.pos;
             let vb = b - node.pos;
             let dir = (va - vb).normalize();
@@ -329,7 +339,86 @@ pub fn set_node_type(path: &BezPath, index: usize, ty: NodeType) -> BezPath {
             let n2 = move_handle(&n, index, Which::In, node.pos + dir * la, NodeType::Cusp);
             move_handle(&n2, index, Which::Out, node.pos - dir * lb, NodeType::Cusp)
         }
-        _ => n,
+        // Leaving on a straight segment: the arriving handle points back
+        // along it.
+        (Some(a), None) => {
+            let Some(dir) = line_out_point(els, index).and_then(|q| unit(q - node.pos)) else {
+                return n;
+            };
+            let len = (a - node.pos).hypot();
+            move_handle(&n, index, Which::In, node.pos - dir * len, NodeType::Cusp)
+        }
+        // Arriving on a straight segment: the leaving handle carries on
+        // along it.
+        (None, Some(b)) => {
+            let Some(dir) = line_in_point(els, index).and_then(|p| unit(node.pos - p)) else {
+                return n;
+            };
+            let len = (b - node.pos).hypot();
+            move_handle(&n, index, Which::Out, node.pos + dir * len, NodeType::Cusp)
+        }
+        (None, None) => {
+            // An end node of an open subpath has one side only.
+            let has_out = matches!(
+                els.get(index + 1),
+                Some(PathEl::LineTo(_) | PathEl::CurveTo(..) | PathEl::ClosePath)
+            );
+            if !has_out || line_in_point(els, index).is_none() {
+                return n;
+            }
+            let mut m = n.clone();
+            let mut curved = false;
+            let in_index = match els.get(index) {
+                Some(PathEl::MoveTo(_)) => twin_of(els, index),
+                _ => Some(index),
+            };
+            if let Some(i) = in_index.filter(|i| matches!(els.get(*i), Some(PathEl::LineTo(_)))) {
+                m = to_curve(&m, i);
+                curved = true;
+            }
+            if matches!(els.get(index + 1), Some(PathEl::LineTo(_))) {
+                m = to_curve(&m, index + 1);
+                curved = true;
+            }
+            if curved {
+                set_node_type(&m, index, ty)
+            } else {
+                n
+            }
+        }
+    }
+}
+
+/// Where the straight segment leaving node `index` goes: a line's end, or
+/// the subpath's start for a closing line.
+fn line_out_point(els: &[PathEl], index: usize) -> Option<Point> {
+    match els.get(index + 1)? {
+        PathEl::LineTo(q) => Some(*q),
+        PathEl::ClosePath => Some(subpath_start(els, index)),
+        _ => None,
+    }
+}
+
+/// Where the straight segment arriving at node `index` comes from; for a
+/// closed subpath's start, the last segment's start, or the last point
+/// when a closing line arrives.
+fn line_in_point(els: &[PathEl], index: usize) -> Option<Point> {
+    match els.get(index)? {
+        PathEl::MoveTo(_) => {
+            if let Some(t) = twin_of(els, index) {
+                return Some(prev_point(els, t));
+            }
+            let mut j = index + 1;
+            while let Some(e) = els.get(j) {
+                match e {
+                    PathEl::MoveTo(_) => return None,
+                    PathEl::ClosePath => return end_point(els.get(j - 1)?),
+                    _ => j += 1,
+                }
+            }
+            None
+        }
+        _ => Some(prev_point(els, index)),
     }
 }
 
@@ -1879,5 +1968,81 @@ mod segment_tests {
         let mut c = p.clone();
         c.close_path();
         assert!(join_ends(&c, 0, 2).is_none());
+    }
+
+    fn close_pt(a: Point, b: Point) -> bool {
+        (a - b).hypot() < 1e-9
+    }
+
+    #[test]
+    fn smoothing_a_join_of_a_line_and_a_curve_lines_the_handle_up() {
+        // A line in, a curve out: the leaving handle carries on along the
+        // line, keeping its length; the line stays straight.
+        let mut p = BezPath::new();
+        p.move_to((0.0, 0.0));
+        p.line_to((10.0, 0.0));
+        p.curve_to((15.0, 5.0), (20.0, 5.0), (20.0, 10.0));
+        let s = set_node_type(&p, 1, NodeType::Smooth);
+        let len = 50f64.sqrt();
+        assert!(matches!(s.elements()[1], PathEl::LineTo(q) if close_pt(q, Point::new(10.0, 0.0))));
+        let PathEl::CurveTo(c1, _, _) = s.elements()[2] else {
+            panic!("{s:?}");
+        };
+        assert!(close_pt(c1, Point::new(10.0 + len, 0.0)), "{c1:?}");
+        // A curve in, a line out: the arriving handle points back along it.
+        let mut q = BezPath::new();
+        q.move_to((0.0, 0.0));
+        q.curve_to((2.0, 5.0), (5.0, 5.0), (10.0, 0.0));
+        q.line_to((20.0, 0.0));
+        let t = set_node_type(&q, 1, NodeType::Smooth);
+        let PathEl::CurveTo(_, c2, _) = t.elements()[1] else {
+            panic!("{t:?}");
+        };
+        assert!(close_pt(c2, Point::new(10.0 - len, 0.0)), "{c2:?}");
+        // Symmetrical does the same there (the line has no handle).
+        assert_eq!(set_node_type(&q, 1, NodeType::Symmetrical), t);
+    }
+
+    #[test]
+    fn smoothing_a_corner_of_two_lines_makes_them_curves() {
+        let mut p = BezPath::new();
+        p.move_to((0.0, 0.0));
+        p.line_to((10.0, 0.0));
+        p.line_to((10.0, 10.0));
+        let s = set_node_type(&p, 1, NodeType::Smooth);
+        assert!(matches!(s.elements()[1], PathEl::CurveTo(..)));
+        assert!(matches!(s.elements()[2], PathEl::CurveTo(..)));
+        // The handles line up (equal here, so they read symmetrical).
+        assert_ne!(node_type(&s, 1), NodeType::Cusp);
+        assert_eq!(nodes(&s)[1].pos, Point::new(10.0, 0.0));
+        assert_eq!(nodes(&s).len(), 3);
+        // An end node has one side: nothing to smooth.
+        assert_eq!(set_node_type(&p, 0, NodeType::Smooth), normalize(&p));
+        assert_eq!(set_node_type(&p, 2, NodeType::Smooth), normalize(&p));
+    }
+
+    #[test]
+    fn smoothing_beside_a_closing_line_lines_up_with_it() {
+        // A curve arrives at (5, 10); the close goes straight back to (0, 0).
+        let mut p = BezPath::new();
+        p.move_to((0.0, 0.0));
+        p.line_to((10.0, 0.0));
+        p.curve_to((12.0, 6.0), (9.0, 10.0), (5.0, 10.0));
+        p.close_path();
+        let s = set_node_type(&p, 2, NodeType::Smooth);
+        let PathEl::CurveTo(_, c2, _) = s.elements()[2] else {
+            panic!("{s:?}");
+        };
+        // The handle points away from (0, 0), through (5, 10).
+        let away = (Point::new(5.0, 10.0) - Point::new(0.0, 0.0)).normalize();
+        let h = (c2 - Point::new(5.0, 10.0)).normalize();
+        assert!((h - away).hypot() < 1e-9, "{c2:?}");
+        assert!(matches!(s.elements()[3], PathEl::ClosePath));
+        // The start, with the closing line arriving and a line leaving:
+        // the close stays a close, the line out becomes a curve.
+        let t = set_node_type(&p, 0, NodeType::Smooth);
+        assert!(matches!(t.elements()[1], PathEl::CurveTo(..)));
+        assert!(matches!(t.elements()[3], PathEl::ClosePath));
+        assert_eq!(t.elements().len(), p.elements().len());
     }
 }

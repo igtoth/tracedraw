@@ -70,7 +70,10 @@ the choices. The writer:
   the line (text on a path, shifted or turned characters, drop caps).
 - Keeps paint: a uniform fill (RGB, CMYK, grey, spot inks) is the
   text's fill (render mode 0); a plain outline is its stroke (mode 1,
-  or 2 with a fill), with its width, caps, joins and dashes. A gradient,
+  or 2 with a fill), with its width, caps, joins and dashes. An outline
+  set behind the fill is painted first and the fill over it, as on
+  screen, for text and every other object (also in PostScript and
+  EPS; SVG writes `paint-order="stroke"`) (#235). A gradient,
   pattern, texture or mesh fill, and a calligraphic, variable,
   painterly or painted outline, is painted on the text's outlines as
   for any curve; the text then goes over it invisibly (mode 3, or as

@@ -783,6 +783,45 @@ mod tests {
     }
 
     #[test]
+    fn a_scaled_text_shows_and_takes_its_size_as_seen() {
+        let mut app = App::headless();
+        app.settings.autocorrect.enabled = false;
+        app.text_size_pt = 24.0;
+        app.start_text(Point::new(10.0, 10.0), None);
+        app.text_insert("Size");
+        app.finish_text();
+        let id = *app.selection.first().expect("text selected");
+        let sizes = |app: &App| match app.doc().find_shape(id).map(|s| &s.kind) {
+            Some(ShapeKind::Text { spans, .. }) => {
+                spans.iter().map(|s| s.size_pt).collect::<Vec<_>>()
+            }
+            other => panic!("not a text: {other:?}"),
+        };
+        // Twice as large with the Pick tool: the bar reads 48 pt.
+        app.transform_selection(Affine::scale(2.0));
+        app.sync_text_defaults_from(id);
+        assert!(
+            (app.text_size_pt - 48.0).abs() < 1e-9,
+            "{}",
+            app.text_size_pt
+        );
+        // 36 pt typed: it shows 36 pt (18 pt before its scale).
+        app.text_size_pt = 36.0;
+        app.apply_text_style();
+        assert!(sizes(&app).iter().all(|s| (s - 18.0).abs() < 1e-9));
+        app.sync_text_defaults_from(id);
+        assert!((app.text_size_pt - 36.0).abs() < 1e-9);
+        // Another field changed: the size stays as it is, with no drift.
+        app.text_bold = !app.text_bold;
+        app.apply_text_style();
+        assert!(sizes(&app).iter().all(|s| (s - 18.0).abs() < 1e-12));
+        // Stretched sideways only: the size follows the height.
+        app.transform_selection(Affine::scale_non_uniform(3.0, 1.0));
+        app.sync_text_defaults_from(id);
+        assert!((app.text_size_pt - 36.0).abs() < 1e-9);
+    }
+
+    #[test]
     fn typing_moves_the_caret_and_edits_at_it() {
         let mut app = App::headless();
         app.settings.autocorrect.enabled = false;

@@ -523,6 +523,12 @@ impl App {
         Some(self.moved_pivot(b).unwrap_or(b.center()))
     }
 
+    /// The centre of rotation the user moved for the selection (page
+    /// space), if one was moved.
+    pub fn moved_rotation_center(&self) -> Option<Point> {
+        self.moved_pivot(self.selection_bounds()?)
+    }
+
     /// The centre of rotation moved for the selection, in page space.
     fn moved_pivot(&self, b: Rect) -> Option<Point> {
         let p = match self.selection.as_slice() {

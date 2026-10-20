@@ -164,6 +164,11 @@ pub fn draw_preview(app: &App, painter: &Painter) {
     let Some(at) = app.pointer_page else {
         return;
     };
+    // Ctrl keeps the leg being given to steps of the constrain angle.
+    let ctrl = painter
+        .ctx()
+        .input(|i| i.modifiers.command || i.modifiers.ctrl);
+    let at = app.dimension_point(at, ctrl);
     let blue = Color32::from_rgb(40, 110, 220);
     // The first leg follows the pointer while the second point is wanted.
     if let (

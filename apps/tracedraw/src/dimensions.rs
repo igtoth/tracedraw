@@ -607,6 +607,24 @@ impl App {
         }
     }
 
+    /// The point the dimension tools take for `p`: with the constrain key
+    /// (`ctrl`) held while the second point of a linear dimension, or a
+    /// side of an angular one, is given, the leg from the first point (the
+    /// vertex) keeps to steps of the constrain angle, as the curve tools
+    /// do.
+    pub fn dimension_point(&self, p: Point, ctrl: bool) -> Point {
+        if !ctrl {
+            return p;
+        }
+        let angular = self.tool == crate::tools::Tool::AngularDimension;
+        let from = match (angular, &self.dimension_points[..]) {
+            (false, [a]) => *a,
+            (true, [center]) | (true, [center, _]) => *center,
+            _ => return p,
+        };
+        crate::interaction::constrain_from(from, p, self.settings.constrain_angle)
+    }
+
     /// The dimension the tool would make with the pointer at `at`, while
     /// its points are being given (for the preview).
     pub fn dimension_preview(&self, at: Point) -> Option<Dimension> {
@@ -642,6 +660,10 @@ impl App {
         use crate::tools::Tool;
         use egui::PointerButton;
         let p = self.snap_point(p);
+        let ctrl = response
+            .ctx
+            .input(|i| i.modifiers.command || i.modifiers.ctrl);
+        let p = self.dimension_point(p, ctrl);
         let angular = self.tool == Tool::AngularDimension;
         if !angular {
             if response.drag_started_by(PointerButton::Primary) && self.dimension_points.is_empty()

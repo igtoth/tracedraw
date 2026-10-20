@@ -22,10 +22,14 @@ direction is off by default (Options > Nodes and Handles).
 
 ## Taking nodes and handles
 
-A press takes a node, or a control handle of a chosen node, within the
-pick distance of it: Options > Nodes and Handles > Pick distance, 6
-screen pixels by default (never less than the node marker reaches). A
-segment of a selected curve is taken a pixel further out. A click that
+A press takes the nearest node, or the nearest control handle of a
+chosen node, within the pick distance of it: Options > Nodes and
+Handles > Pick distance, 6 screen pixels by default (never less than
+the node marker reaches). A segment of a selected curve is taken a
+pixel further out. Distances are measured on the page, so a curve with
+a scale of its own (text converted to curves, for one) is picked like
+any other
+(`pick_drag_tests::the_shape_tool_takes_the_nearest_node_of_a_scaled_curve`). A click that
 takes nothing but lands within three pick distances of a node or a
 handle of the selected curves (or a node of a selected rectangle,
 ellipse or polygon) is a near miss: the selection stays. Only a click
@@ -82,6 +86,7 @@ Properties.
 | Click segment | chooses that segment: it is drawn over in the main colour with its handles, its end node is not shown as chosen (To Line and To Curve act on the segment through it), and the spot clicked gets a small round mark; Add Node (+ or the property bar button) puts the new node at that spot |
 | Drag segment | bends it: the point grabbed follows the pointer exactly while both end nodes stay; a straight (or closing) segment becomes a curve first; both control points move, the nearer one more (by `k (1 - t) d` and `k t d` with `k = 1 / (3 t (1 - t) ((1 - t)² + t²))`, `t` the grabbed point's place along the segment, kept within 0.02 to 0.98, `d` the drag); a smooth or symmetrical end node stays so, its other handle turning along; one undo step (Bend Segment) |
 | Drag handle | smooth nodes move the opposite handle to stay collinear; symmetrical also keep the length |
+| Smooth, Symmetrical (property bar, node menu, C, S, Y) | a node between two curves gets its handles in line (symmetrical: of one length); between a straight segment and a curve, the curve's handle lines up with the straight segment, keeping its length, and the straight segment stays straight; between two straight segments both become curves (as To Curve makes them) and the node is smoothed, except a closing line that is only a close, which stays straight; an end node of an open curve stays as it is |
 | Double-click segment | add a node |
 | Double-click node | delete |
 | Double-click a rectangle, ellipse or polygon | it becomes a curve; pictures, text, groups and clip frames stay as they are |

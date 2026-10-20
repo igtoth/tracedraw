@@ -1975,16 +1975,22 @@ impl App {
         // shows (a new size keeps the selection's fonts).
         if self.text_edit.as_ref().is_some_and(|te| te.has_selection()) {
             let shown = self.text_span_at_caret();
+            // The bar shows the size as seen; the characters keep it before
+            // the text's own scale.
+            let scale = self
+                .text_edit
+                .as_ref()
+                .map_or(1.0, |te| self.text_scale(te.shape));
             let (font, size, bold, italic, underline) = (
                 self.text_font.clone(),
-                self.text_size_pt,
+                self.text_size_pt / scale,
                 self.text_bold,
                 self.text_italic,
                 self.text_underline,
             );
             let differs = |f: &dyn Fn(&TextSpan) -> bool| shown.as_ref().is_none_or(f);
             let set_font = differs(&|s| s.font_family != font);
-            let set_size = differs(&|s| (s.size_pt - size).abs() > 1e-9);
+            let set_size = differs(&|s| ((s.size_pt - size) * scale).abs() > 0.005);
             let set_bold = differs(&|s| s.bold != bold);
             let set_italic = differs(&|s| s.italic != italic);
             let set_underline = differs(&|s| s.underline != underline);
@@ -2020,9 +2026,15 @@ impl App {
                     on_path,
                 } => {
                     let mut spans = spans.clone();
+                    // The bar's size is the size as seen: before the text's
+                    // own scale it is smaller (or larger). A size the bar
+                    // shows unchanged leaves each character's as it was.
+                    let scale = self.text_scale(s.id);
                     for sp in spans.iter_mut() {
                         sp.font_family = self.text_font.clone();
-                        sp.size_pt = self.text_size_pt;
+                        if (sp.size_pt * scale - self.text_size_pt).abs() > 0.005 {
+                            sp.size_pt = self.text_size_pt / scale;
+                        }
                         sp.bold = self.text_bold;
                         sp.italic = self.text_italic;
                         sp.underline = self.text_underline;
@@ -2491,6 +2503,9 @@ impl App {
         };
         let mut effects = start.effects.clone();
         effects.retain(|e| !matches!(e, Effect::Blend { .. }));
+        // The steps lie between the two objects in the stacking order.
+        let mut options = self.blend_options;
+        options.steps_below = self.stacked_below(end.id, start.id);
         effects.push(Effect::Blend {
             end: Box::new(crate::blend_link::end_copy(&end)),
             steps,
@@ -2500,7 +2515,7 @@ impl App {
             path: None,
             rotate_on_path: false,
             end_id: Some(end.id),
-            options: self.blend_options,
+            options,
         });
         let cmds = vec![Command::SetEffects {
             shape: start.id,

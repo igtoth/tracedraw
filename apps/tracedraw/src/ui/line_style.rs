@@ -17,12 +17,26 @@ pub const MAX_PATTERNS: usize = 64;
 
 /// What the outline editors offer beyond the presets: custom arrowheads
 /// and custom dash patterns.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct OutlineLib {
     pub arrows: Vec<tracedraw_core::Arrowhead>,
     pub dashes: Vec<Vec<f64>>,
     /// The unit outline widths are shown in.
     pub units: crate::app::Units,
+    /// The colour an outline turned on gets: black in the drawing's
+    /// primary colour mode.
+    pub black: tracedraw_core::Color,
+}
+
+impl Default for OutlineLib {
+    fn default() -> Self {
+        OutlineLib {
+            arrows: Vec::new(),
+            dashes: Vec::new(),
+            units: Default::default(),
+            black: tracedraw_core::document::PrimaryColorMode::default().black(),
+        }
+    }
 }
 
 impl OutlineLib {
@@ -31,6 +45,7 @@ impl OutlineLib {
             arrows: app.settings.custom_arrowheads.clone(),
             dashes: app.settings.custom_dashes.clone(),
             units: app.outline_units(),
+            black: app.doc().metadata.primary_color_mode.black(),
         }
     }
 }

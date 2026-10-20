@@ -31,8 +31,9 @@ impl App {
         });
     }
 
-    /// A drawing is open and shown (not the Welcome Screen).
-    fn drawing_shown(&self) -> bool {
+    /// A drawing is open and shown (not the Welcome Screen); without one
+    /// the property bar and the toolbox are pale too.
+    pub(crate) fn drawing_shown(&self) -> bool {
         self.has_document() && !self.show_welcome
     }
 

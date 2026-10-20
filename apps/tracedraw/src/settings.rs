@@ -739,7 +739,18 @@ impl DocumentDefaults {
         doc.metadata.grid = self.grid;
         doc.metadata.rulers = self.rulers.clone();
         doc.metadata.guides = self.guides;
-        doc.defaults = self.objects.clone();
+        // Defaults never set otherwise (either mode's own, the RGB one
+        // being what earlier versions kept) follow the drawing's primary
+        // colour mode: new text is black in it.
+        use tracedraw_core::document::{ObjectDefaults, PrimaryColorMode};
+        let untouched = [PrimaryColorMode::Cmyk, PrimaryColorMode::Rgb]
+            .into_iter()
+            .any(|m| self.objects == ObjectDefaults::for_mode(m));
+        doc.defaults = if untouched {
+            ObjectDefaults::for_mode(doc.metadata.primary_color_mode)
+        } else {
+            self.objects.clone()
+        };
     }
 }
 

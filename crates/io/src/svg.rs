@@ -352,6 +352,10 @@ fn write_unlinked(
                 let dashes: Vec<String> = s.dash.iter().map(|d| fmt(d * s.width)).collect();
                 let _ = write!(a, " stroke-dasharray=\"{}\"", dashes.join(" "));
             }
+            // An outline behind the fill: painted first, the fill over it.
+            if s.behind_fill {
+                a.push_str(" paint-order=\"stroke\"");
+            }
             a
         }
     };
@@ -777,6 +781,32 @@ mod tests {
         assert!(svg.contains(&format!("<g id=\"{}\">", id.raw())), "{svg}");
         assert!(svg.contains("fill=\"#0000ff\""), "{svg}");
         assert!(svg.contains("fill=\"#ff0000\""), "{svg}");
+    }
+
+    #[test]
+    fn an_outline_behind_the_fill_paints_first() {
+        let svg_of = |behind: bool| {
+            let mut doc = Document::default();
+            let layer = doc.pages[0].layers[0].id;
+            let id = doc.ids_mut().shape();
+            let mut s = Shape::new(
+                id,
+                ShapeKind::Rect {
+                    rect: Rect::new(10.0, 10.0, 60.0, 40.0),
+                    radius: 0.0,
+                    corners: None,
+                },
+            );
+            s.fill = Fill::Solid(Color::rgb8(0, 0, 0));
+            s.stroke = Some(Stroke {
+                behind_fill: behind,
+                ..Stroke::new(Color::rgb8(255, 255, 255), 2.0)
+            });
+            doc.layer_mut(layer).unwrap().shapes.push(s);
+            page_to_svg(&doc, 0)
+        };
+        assert!(svg_of(true).contains("paint-order=\"stroke\""));
+        assert!(!svg_of(false).contains("paint-order"));
     }
 
     #[test]

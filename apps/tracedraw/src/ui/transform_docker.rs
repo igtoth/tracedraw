@@ -56,9 +56,13 @@ pub struct TransformForm {
     /// point (Position page, Relative Position on) and follow the
     /// selection's size; typing into them clears it.
     direction: bool,
-    /// The selection and its bounds the absolute fields were last filled
-    /// from.
-    synced: Option<(Vec<ShapeId>, PageRect)>,
+    /// The centre of rotation the user moved for the selection on the
+    /// canvas (page space), set before each use: the Rotate page turns
+    /// about it instead of the reference point.
+    pub pivot: Option<Point>,
+    /// The selection, its bounds and its moved centre of rotation the
+    /// absolute fields were last filled from.
+    synced: Option<(Vec<ShapeId>, PageRect, Option<Point>)>,
 }
 
 impl Default for TransformForm {
@@ -80,6 +84,7 @@ impl Default for TransformForm {
             anchor: (1, 1),
             copies: 0,
             direction: false,
+            pivot: None,
             synced: None,
         }
     }
@@ -132,14 +137,12 @@ impl TransformForm {
             self.synced = None;
             return;
         };
-        if self
-            .synced
-            .as_ref()
-            .is_some_and(|(ids, sb)| ids.as_slice() == selection && *sb == b)
-        {
+        if self.synced.as_ref().is_some_and(|(ids, sb, pv)| {
+            ids.as_slice() == selection && *sb == b && *pv == self.pivot
+        }) {
             return;
         }
-        self.synced = Some((selection.to_vec(), b));
+        self.synced = Some((selection.to_vec(), b, self.pivot));
         let a = origin_point(b, self.anchor);
         if !self.relative_position {
             self.position = [a.x - origin.x, a.y - origin.y];
@@ -147,7 +150,8 @@ impl TransformForm {
             self.position = direction_offset(b, self.anchor);
         }
         if !self.relative_center {
-            self.center = [a.x - origin.x, a.y - origin.y];
+            let c = self.rotation_base(b);
+            self.center = [c.x - origin.x, c.y - origin.y];
         }
         self.size = [b.width(), b.height()];
     }
@@ -156,6 +160,22 @@ impl TransformForm {
     /// point or a Relative box changed).
     pub fn resync(&mut self) {
         self.synced = None;
+    }
+
+    /// The point the Rotate page turns about before its offset: the
+    /// centre of rotation moved on the canvas, else the reference point.
+    fn rotation_base(&self, b: PageRect) -> Point {
+        self.pivot.unwrap_or_else(|| origin_point(b, self.anchor))
+    }
+
+    /// The centre the Rotate page turns a selection with bounds `b` about.
+    pub fn rotation_center(&self, b: PageRect, origin: Point) -> Point {
+        let c = PageVec::new(self.center[0], self.center[1]);
+        if self.relative_center {
+            self.rotation_base(b) + c
+        } else {
+            origin + c
+        }
     }
 
     /// The transformation of the current page for a selection with bounds
@@ -171,15 +191,10 @@ impl TransformForm {
                     Affine::translate(origin.to_vec2() + d - a.to_vec2())
                 }
             }
-            TransformTab::Rotate => {
-                let c = PageVec::new(self.center[0], self.center[1]);
-                let centre = if self.relative_center {
-                    a + c
-                } else {
-                    origin + c
-                };
-                about(centre, Affine::rotate(self.angle.to_radians()))
-            }
+            TransformTab::Rotate => about(
+                self.rotation_center(b, origin),
+                Affine::rotate(self.angle.to_radians()),
+            ),
             TransformTab::Scale => {
                 let sign = |m: bool| if m { -1.0 } else { 1.0 };
                 about(
@@ -248,10 +263,19 @@ pub fn apply(app: &mut App) {
     let Some(b) = app.selection_bounds() else {
         return;
     };
-    let t = app.transform.affine(b, app.ruler_origin());
+    app.transform.pivot = app.moved_rotation_center();
+    let origin = app.ruler_origin();
+    let t = app.transform.affine(b, origin);
+    // Rotating keeps its centre where it is for what comes out of it, so
+    // a next Apply turns about the same point (copies round a centre).
+    let keep_centre = (app.transform.tab == TransformTab::Rotate)
+        .then(|| app.transform.rotation_center(b, origin));
     let copies = app.transform.copies.min(MAX_COPIES);
     if copies == 0 {
         app.transform_selection(t);
+        if let Some(c) = keep_centre {
+            app.set_pivot(c);
+        }
         return;
     }
     let shapes = app.selected_shapes();
@@ -278,6 +302,9 @@ pub fn apply(app: &mut App) {
         return;
     }
     app.select(last);
+    if let Some(c) = keep_centre {
+        app.set_pivot(c);
+    }
 }
 
 /// Open the docker on `tab`; with `toggle` (the shortcuts), close the
@@ -488,6 +515,7 @@ pub fn transformations(app: &mut App, ui: &mut Ui) {
     let bounds = app.selection_bounds();
     let origin = app.ruler_origin();
     let selection = app.selection.clone();
+    app.transform.pivot = app.moved_rotation_center();
     app.transform.sync(&selection, bounds, origin);
     let has = bounds.is_some();
     ui.horizontal(|ui| {
@@ -515,6 +543,9 @@ pub fn transformations(app: &mut App, ui: &mut Ui) {
     let decimals = app.settings.precision.min(6) as usize;
     let form = &mut app.transform;
     let mut resync = false;
+    // A reference point picked on the Rotate page: the centre of rotation
+    // goes there (a centre moved on the canvas is let go).
+    let mut reset_pivot = false;
     {
         {
             egui::Grid::new("transform_fields")
@@ -653,6 +684,9 @@ pub fn transformations(app: &mut App, ui: &mut Ui) {
                 if anchor_grid(ui, &mut form.anchor, direction) {
                     resync = true;
                     form.pick_anchor(bounds);
+                    if form.tab == TransformTab::Rotate {
+                        reset_pivot = true;
+                    }
                 }
             });
             if direction {
@@ -692,6 +726,10 @@ pub fn transformations(app: &mut App, ui: &mut Ui) {
                 .clicked()
         })
         .inner;
+    if reset_pivot {
+        app.reset_pivot();
+        app.transform.pivot = None;
+    }
     if clicked {
         apply(app);
     }
@@ -780,6 +818,53 @@ mod tests {
         apply(&mut app);
         let b = bounds(&app);
         assert!((b.y0 - 10.0).abs() < 1e-6 && (b.width() - 30.0).abs() < 1e-6);
+    }
+
+    /// What the docker does every frame before it draws: take the moved
+    /// centre of rotation, then fill the absolute fields.
+    fn frame_sync(app: &mut App) {
+        app.transform.pivot = app.moved_rotation_center();
+        let sel = app.selection.clone();
+        let (b, o) = (app.selection_bounds(), app.ruler_origin());
+        app.transform.sync(&sel, b, o);
+    }
+
+    #[test]
+    fn rotated_copies_turn_about_the_centre_moved_on_the_canvas() {
+        for relative in [true, false] {
+            let mut app = App::headless();
+            square(&mut app);
+            // The centre of rotation dragged off the square, to its right.
+            let pivot = Point::new(40.0, 15.0);
+            app.set_pivot(pivot);
+            app.transform.tab = TransformTab::Rotate;
+            app.transform.relative_center = relative;
+            app.transform.center = [0.0; 2];
+            app.transform.angle = 90.0;
+            app.transform.copies = 1;
+            // Apply again and again: every copy lies at the same distance
+            // from the moved centre (the square's middle was 20 mm from
+            // it), each a quarter turn on.
+            let mut middles = Vec::new();
+            for _ in 0..3 {
+                frame_sync(&mut app);
+                apply(&mut app);
+                middles.push(bounds(&app).center());
+            }
+            for m in &middles {
+                assert!(
+                    ((*m - pivot).hypot() - 20.0).abs() < 1e-6,
+                    "relative {relative}: {middles:?}"
+                );
+            }
+            assert!((middles[0] - middles[2]).hypot() > 39.0, "{middles:?}");
+            // The absolute fields show the moved centre.
+            if !relative {
+                let o = app.ruler_origin();
+                assert!((app.transform.center[0] - (pivot.x - o.x)).abs() < 1e-6);
+                assert!((app.transform.center[1] - (pivot.y - o.y)).abs() < 1e-6);
+            }
+        }
     }
 
     #[test]

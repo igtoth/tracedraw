@@ -581,7 +581,14 @@ fn properties(app: &mut App, ui: &mut Ui) {
                 let custom = crate::ui::line_style::OutlineLib::of(app);
                 let mut touched = Vec::new();
                 if outline_editor_mixed(ui, &mut stroke, &custom, &mix, &mut touched) {
-                    app.patch_selection_stroke(&old, &stroke, &touched);
+                    // Dragging in the picker (or a slider): one step, and
+                    // a new colour joins the document palette on release.
+                    let live = app.live_stroke.is_some() || ui.input(|i| i.pointer.any_down());
+                    if live {
+                        app.patch_selection_stroke_live(&old, &stroke, &touched);
+                    } else {
+                        app.patch_selection_stroke(&old, &stroke, &touched);
+                    }
                 }
                 extra_strokes(app, ui, first);
             }
@@ -1736,7 +1743,15 @@ fn outline_editor_mixed(
         .add(egui::Checkbox::new(&mut has, tr("docker.outline")).indeterminate(mix.presence))
         .changed()
     {
-        *stroke = if has { Some(Stroke::default()) } else { None };
+        *stroke = if has {
+            // Black in the drawing's primary colour mode.
+            Some(Stroke {
+                color: lib.black,
+                ..Stroke::default()
+            })
+        } else {
+            None
+        };
         changed = true;
     }
     let mut remove = false;
@@ -2160,6 +2175,62 @@ mod tests {
         };
         let mut out = ctx.run_ui(input, |ui| crate::ui::root(app, ui));
         out.textures_delta.clear();
+    }
+
+    /// Dragging in the outline colour picker, as with the fill: every
+    /// colour passed over shows on the outline, but the drag is one undo
+    /// step and only the colour it ends on joins the document palette.
+    #[test]
+    fn an_outline_dragged_in_the_picker_is_one_step_and_one_palette_colour() {
+        use tracedraw_core::{Color, Stroke};
+        let mut app = App::headless();
+        app.settings.palette.auto_update_document = true;
+        let id = app
+            .new_shape(tracedraw_core::ShapeKind::Rect {
+                rect: tracedraw_core::Rect::new(0.0, 0.0, 10.0, 10.0),
+                radius: 0.0,
+                corners: None,
+            })
+            .expect("shape");
+        app.select(vec![id]);
+        let stroke = |app: &App| app.doc().find_shape(id).expect("shape").stroke.clone();
+        let before = stroke(&app);
+        let old = Some(before.clone().unwrap_or_default());
+        let steps = |app: &App| app.engine.history_labels().0.len();
+        let n = steps(&app);
+        let palette = app.doc().palette.clone();
+        let colours = [
+            Color::rgb8(250, 10, 10),
+            Color::rgb8(10, 250, 10),
+            Color::rgb8(10, 10, 250),
+        ];
+        for c in colours {
+            let new = Some(Stroke {
+                color: c,
+                ..old.clone().unwrap_or_default()
+            });
+            app.patch_selection_stroke_live(&old, &new, &[]);
+            assert_eq!(stroke(&app).map(|s| s.color), Some(c));
+            assert_eq!(steps(&app), n + 1, "one step for the drag");
+            assert_eq!(app.doc().palette, palette, "nothing added while dragging");
+        }
+        // A frame with the button up ends the drag: the last colour only.
+        let ctx = crate::theme::ui_context();
+        draw(&ctx, &mut app);
+        assert!(app.live_stroke.is_none());
+        let added: Vec<Color> = app
+            .doc()
+            .palette
+            .iter()
+            .filter(|c| !palette.contains(c))
+            .copied()
+            .collect();
+        assert_eq!(added, vec![colours[2]]);
+        assert_eq!(steps(&app), n + 1);
+        // One undo takes the whole drag back, palette colour included.
+        app.undo();
+        assert_eq!(stroke(&app), before);
+        assert_eq!(app.doc().palette, palette);
     }
 
     /// Dragging in the fill colour picker: every colour passed over shows

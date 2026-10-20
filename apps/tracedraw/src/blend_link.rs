@@ -45,6 +45,23 @@ fn with_blend(effects: &[Effect], b: Option<Effect>) -> Vec<Effect> {
 }
 
 impl App {
+    /// Whether `a` is drawn below `b` on the page (an earlier layer, or
+    /// earlier in the same layer). False when either is not a top-level
+    /// object of the page.
+    pub(crate) fn stacked_below(&self, a: ShapeId, b: ShapeId) -> bool {
+        let layers = self.page_layers();
+        let place = |id: ShapeId| {
+            layers
+                .iter()
+                .enumerate()
+                .find_map(|(li, l)| l.shapes.iter().position(|s| s.id == id).map(|i| (li, i)))
+        };
+        match (place(a), place(b)) {
+            (Some(pa), Some(pb)) => pa < pb,
+            _ => false,
+        }
+    }
+
     /// Every object with a blend, and its blend.
     fn all_blends(&self) -> Vec<(ShapeId, Effect)> {
         fn walk(s: &Shape, out: &mut Vec<(ShapeId, Effect)>) {
@@ -147,12 +164,18 @@ impl App {
                 None => None,
                 Some(now) => {
                     let copy = end_copy(&now);
-                    if copy == **end {
+                    // The steps go between the two objects: below the
+                    // start when the end is below it.
+                    let below = self.stacked_below(*end_id, id);
+                    let was_below =
+                        matches!(&e, Effect::Blend { options, .. } if options.steps_below);
+                    if copy == **end && below == was_below {
                         continue;
                     }
                     let mut b = e.clone();
-                    if let Effect::Blend { end, .. } = &mut b {
+                    if let Effect::Blend { end, options, .. } = &mut b {
                         **end = copy;
+                        options.steps_below = below;
                     }
                     Some(b)
                 }
@@ -198,6 +221,41 @@ mod tests {
     fn steps_of(app: &App, id: ShapeId) -> Vec<Shape> {
         let s = app.doc().find_shape(id).cloned().expect("start");
         tracedraw_core::live::evaluate(&s).above
+    }
+
+    /// The steps sit between the two objects: with the end object below
+    /// the start one (a front object blended to one behind it, as in
+    /// #232) they are drawn below the start, from the end's side up, and
+    /// they move above it when the end is brought to the front.
+    #[test]
+    fn the_steps_lie_between_the_two_objects() {
+        let mut app = App::headless();
+        // The end first (below), the start on top of it.
+        let end = square(&mut app, 100.0, Color::rgb8(0, 160, 80));
+        let start = square(&mut app, 0.0, Color::rgb8(250, 220, 0));
+        app.select(vec![start, end]);
+        app.blend_selection(3, 0.0, 0.0, 0.0);
+        app.refresh_blends();
+        let ev = |app: &App| {
+            let s = app.doc().find_shape(start).cloned().expect("start");
+            tracedraw_core::live::evaluate(&s)
+        };
+        let e = ev(&app);
+        assert!(e.above.is_empty());
+        assert_eq!(e.below.len(), 3);
+        // Bottom to top: the step nearest the end first.
+        let xs: Vec<f64> = e.below.iter().map(|s| s.bounds().center().x).collect();
+        assert!(xs[0] > xs[1] && xs[1] > xs[2], "{xs:?}");
+        // The end brought to the front: the steps go above the start, in
+        // the same step as the reordering.
+        let before = app.engine.history_labels().0.len();
+        app.select(vec![end]);
+        app.order(0);
+        app.refresh_blends();
+        assert_eq!(app.engine.history_labels().0.len(), before + 1);
+        let e = ev(&app);
+        assert!(e.below.is_empty());
+        assert_eq!(e.above.len(), 3);
     }
 
     #[test]

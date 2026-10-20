@@ -21,7 +21,7 @@ positive), scales in percent.
 | Page | Fields (defaults) | What Apply does, `b` the selection's bounds, `a` its reference point |
 |---|---|---|
 | Position | X, Y (0, 0); Relative position (on) | relative: moves by (X, Y); otherwise moves `a` to (X, Y) counted from the ruler origin |
-| Rotate | Angle (0); Center X, Y (0, 0); Relative center (on) | turns by Angle about `a + (X, Y)`, or about (X, Y) from the ruler origin when Relative center is off |
+| Rotate | Angle (0); Center X, Y (0, 0); Relative center (on) | turns by Angle about `c + (X, Y)`, or about (X, Y) from the ruler origin when Relative center is off; `c` is the centre of rotation moved on the canvas (Pick tool, rotate mode) when there is one, else `a` |
 | Scale and Mirror | X, Y (100 %); Mirror horizontally, Mirror vertically (off); Proportional (on) | scales by X/100 and Y/100 about `a`, each negated when its mirror button is down; Proportional copies a typed X into Y and Y into X |
 | Size | W, H (the selection's size); Proportional (on) | scales about `a` by W / width(b) and H / height(b) (a side of zero size stays); Proportional keeps H / W at the selection's ratio |
 | Skew | X, Y (0); Use anchor point (off) | `x' = x + tan(X) (y - p.y)`, `y' = y + tan(Y) (x - p.x)` about `p`: `a` with Use anchor point, else the centre of `b`; the reference point is pale without it |
@@ -38,7 +38,7 @@ positive), scales in percent.
   and on again.
 - The absolute fields follow the selection: Position with Relative
   position off shows where `a` is, Rotate with Relative center off shows
-  `a`, and Size shows the selection's width and height, each time the
+  `c` (the centre moved on the canvas, else `a`), and Size shows the selection's width and height, each time the
   selection or its bounds change (also after Apply). Turning a Relative
   box on sets its fields to 0.
 - Copies (0 to 500, default 0): with 0, Apply transforms the selection
@@ -47,6 +47,12 @@ positive), scales in percent.
   the active layer, copy k transformed k times; the last copies become
   the selection, so another Apply goes on from there. The copies are one
   undo step named after the page.
+- Rotate keeps its centre: after Apply (with or without copies) the
+  centre of rotation of the new selection is the point it turned about,
+  so Apply again goes on round the same point (copies make a wheel
+  round a centre moved off the object). Picking a reference point on
+  the Rotate page lets a centre moved on the canvas go, and the turn is
+  about that point again.
 - With nothing selected the fields, the boxes, Copies and Apply are pale;
   the page buttons stay usable.
 
@@ -55,6 +61,7 @@ positive), scales in percent.
 - `ui::transform_docker::tests::position_moves_by_an_offset_or_to_a_point`
 - `ui::transform_docker::tests::rotate_scale_size_and_skew_keep_the_reference_point_still`
 - `ui::transform_docker::tests::copies_repeat_the_transformation_in_one_step`
+- `ui::transform_docker::tests::rotated_copies_turn_about_the_centre_moved_on_the_canvas`
 - `ui::transform_docker::tests::absolute_fields_follow_the_selection`
 - `ui::transform_docker::tests::relative_position_boxes_pick_a_direction_the_size_of_the_selection`
 - `ui::transform_docker::tests::the_docker_draws_with_nothing_selected`

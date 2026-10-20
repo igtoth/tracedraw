@@ -66,7 +66,11 @@ resolution.
 OK opens a drawing with the given name, number of pages (each named
 "Page N" with one layer), page size, resolution (document metadata, used
 for rasterised effects), primary colour mode and profiles, and switches
-the property bar's units to the chosen drawing units. The dialog's values
+the property bar's units to the chosen drawing units. New text in it is
+black in its primary colour mode (100 % K in CMYK, RGB black in RGB),
+and an outline turned on in Properties is black in that mode too, so a
+CMYK drawing's colour pickers start in CMYK; defaults the user set
+(Tools > Save Settings as Default) stay as set. The dialog's values
 are kept in the settings file (`new_document`) for the next time.
 
 ## Checks

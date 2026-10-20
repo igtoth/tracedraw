@@ -169,9 +169,62 @@ impl App {
         new: &Option<Stroke>,
         touched: &[StrokeField],
     ) {
+        if let Some(c) = self.patch_selection_stroke_as(old, new, touched) {
+            self.add_ink_for(c);
+            self.remember_color(c);
+        }
+    }
+
+    /// An outline changed by dragging in the Properties outline editor
+    /// (its colour picker, a slider): while the button is held every
+    /// change replaces the step the drag made before (one undo step for
+    /// the whole drag), and a new colour joins the document palette only
+    /// when the button is let go (`end_live_stroke`).
+    pub fn patch_selection_stroke_live(
+        &mut self,
+        old: &Option<Stroke>,
+        new: &Option<Stroke>,
+        touched: &[StrokeField],
+    ) {
+        let mut kept = None;
+        if let Some((rev, c)) = self.live_stroke {
+            if rev == self.engine.revision() {
+                let _ = self.engine.undo();
+                kept = c;
+            }
+        }
+        let before = self.engine.revision();
+        let color = self.patch_selection_stroke_as(old, new, touched).or(kept);
+        let after = self.engine.revision();
+        self.live_stroke = (after != before).then_some((after, color));
+    }
+
+    /// The button is up: an outline dragged in the outline editor is
+    /// done, and its new colour joins the document palette.
+    pub fn end_live_stroke(&mut self) {
+        let Some((rev, color)) = self.live_stroke.take() else {
+            return;
+        };
+        if rev != self.engine.revision() {
+            return;
+        }
+        if let Some(c) = color {
+            self.add_ink_for(c);
+            self.remember_color(c);
+        }
+    }
+
+    /// Apply the outline change; the colour it painted, if any, for the
+    /// caller to add to the document palette.
+    fn patch_selection_stroke_as(
+        &mut self,
+        old: &Option<Stroke>,
+        new: &Option<Stroke>,
+        touched: &[StrokeField],
+    ) -> Option<tracedraw_core::Color> {
         let shapes = self.selection.clone();
         if shapes.is_empty() {
-            return;
+            return None;
         }
         let Some(n) = new else {
             if old.is_some() || self.selection_stroke_mix().presence {
@@ -180,7 +233,7 @@ impl App {
                     stroke: None,
                 });
             }
-            return;
+            return None;
         };
         let mut fields = match old {
             Some(o) => stroke_changes(o, n),
@@ -194,7 +247,7 @@ impl App {
             }
         }
         if fields.is_empty() && old.is_some() && !self.selection_stroke_mix().presence {
-            return;
+            return None;
         }
         let paint = fields.contains(&StrokeField::Paint) && n.fill.is_none();
         let before = self.engine.revision();
@@ -205,9 +258,9 @@ impl App {
         });
         if paint && self.engine.revision() != before {
             self.current_colors.1 = n.color;
-            self.add_ink_for(n.color);
-            self.remember_color(n.color);
+            return Some(n.color);
         }
+        None
     }
 
     /// A fill editor showed `old` and the user made it `new`: a new type

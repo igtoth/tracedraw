@@ -32,7 +32,11 @@ dialogs), Text Properties (the Text docker, Ctrl+T) and Edit Text
 (Ctrl+Shift+T). Each change applies to the
 selected text objects at once (every span takes the font, size and
 style) as one "Text Style" undo step, and becomes the default for the
-next text. The alignment goes to the paragraphs (see Paragraph
+next text. The size is the size as seen: a text scaled with the Pick
+tool shows its font size times its vertical scale (24 pt doubled reads
+48 pt), and a size typed for it is the size it then shows (the
+characters keep it before the text's scale); a field left as it was
+leaves each character's size alone. The alignment goes to the paragraphs (see Paragraph
 formatting below) as one "Text Alignment" step. Text typed at a point
 lines up about that point, so a new alignment (from the bar, the Text
 docker or the keys) moves the object back so that the reference point
@@ -47,6 +51,7 @@ typed the same keys keep their other jobs (Export, Combine, Repeat and
 so on). Checks: `text_wrap_tests::a_new_alignment_keeps_the_reference_point_in_place`,
 `text_wrap_tests::frame_text_keeps_its_frame_when_the_alignment_changes`,
 `pick_drag_tests::alignment_keys_while_typing`. Double-clicking text
+main
 with the Pick tool edits it in place.
 
 ## Right-to-left and mixed text
