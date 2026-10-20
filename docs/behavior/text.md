@@ -33,8 +33,65 @@ dialogs), Text Properties (the Text docker, Ctrl+T) and Edit Text
 selected text objects at once (every span takes the font, size and
 style) as one "Text Style" undo step, and becomes the default for the
 next text. The alignment goes to the paragraphs (see Paragraph
-formatting below) as one "Text Alignment" step. Double-clicking text
+formatting below) as one "Text Alignment" step. Text typed at a point
+lines up about that point, so a new alignment (from the bar, the Text
+docker or the keys) moves the object back so that the reference point
+of the X and Y fields (the 3 x 3 selector) stays where it was, in the
+same step; text in a frame keeps its frame and realigns its lines inside
+it, text on a path keeps its path. While text is being typed, Ctrl+L
+aligns left, Ctrl+E centres, Ctrl+R aligns right, Ctrl+J justifies,
+Ctrl+H forces justification and Ctrl+N turns alignment off: for text
+typed at a point the whole text lines up, for text in a frame the
+paragraphs at the caret or in the selection; when no text is being
+typed the same keys keep their other jobs (Export, Combine, Repeat and
+so on). Checks: `text_wrap_tests::a_new_alignment_keeps_the_reference_point_in_place`,
+`text_wrap_tests::frame_text_keeps_its_frame_when_the_alignment_changes`,
+`pick_drag_tests::alignment_keys_while_typing`. Double-clicking text
 with the Pick tool edits it in place.
+
+## Right-to-left and mixed text
+
+- Each paragraph runs one way: from its first strong letter (a Hebrew or
+  Arabic first letter runs right to left) unless set to Left to right or
+  Right to left. Within it, runs of the other direction, numbers,
+  punctuation and spaces are ordered by the Unicode Bidirectional
+  Algorithm (UAX #9): each run is shaped in its own direction, and each
+  line is put in visual order when it is drawn (rules L1 and L2: spaces
+  at the line end and before tabs take the paragraph's direction, then
+  runs are turned round from the highest level down). Line breaking,
+  justification and hyphenation work on the characters in reading order.
+- Setting the direction: the Left to right and Right to left buttons on
+  the text bar and in the Text docker's paragraph row, or while typing
+  Left Ctrl + Left Shift (left to right) and Right Ctrl + Right Shift
+  (right to left), both keys of one side pressed and let go with no
+  other key between (on Windows, where the system tells the keys' sides;
+  elsewhere the buttons). Right to left also aligns right a paragraph
+  that was aligned left or not at all, and left to right aligns left one
+  that was aligned right. Text typed at a point takes it as a whole,
+  text in a frame in the paragraphs at the caret. It is one "Text
+  Direction" undo step and keeps the reference point of the X and Y
+  fields in place, like a new alignment.
+- The caret before a character is on its leading side (the right of a
+  right-to-left letter). A click on a letter puts the caret on the
+  nearer side of it. Left and Right move on screen on lines with
+  right-to-left text (Left always goes left), and one character at a
+  time on left-to-right lines; Shift extends the selection. A selection
+  is highlighted over every selected character, in several pieces where
+  a line mixes directions; Ctrl+A highlights all the text.
+- The direction is saved with the paragraph in `.tdraw` files (only when
+  it is not automatic, so older files open unchanged and run by their
+  first letter). Exports to SVG and PDF draw the text as outlines, in the
+  order shown. `.cdr` files keep the text; the direction setting is not
+  written to them.
+- Checks: `tracedraw_text::tests::hebrew_and_english_on_one_line_are_in_reading_order`,
+  `tracedraw_text::tests::the_paragraph_direction_can_be_set`,
+  `tracedraw_text::tests::hebrew_carets_and_selections`,
+  `tracedraw_text::tests::nikud_and_wrapped_mixed_text`,
+  `text_wrap_tests::select_all_highlights_all_hebrew_text`,
+  `text_wrap_tests::arrows_move_on_screen_in_hebrew`,
+  `text_wrap_tests::the_direction_is_set_kept_and_saved`,
+  `direction_keys::tests::both_keys_of_one_side_set_the_direction_when_let_go`,
+  `direction_keys::tests::another_key_or_mixed_sides_cancel_it`.
 
 ## Font list
 

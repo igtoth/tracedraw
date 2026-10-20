@@ -4079,6 +4079,7 @@ dependencies = [
  "rustybuzz",
  "tracedraw-core",
  "ttf-parser",
+ "unicode-bidi",
 ]
 
 [[package]]

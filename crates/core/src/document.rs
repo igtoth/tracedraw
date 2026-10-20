@@ -748,6 +748,25 @@ impl Default for Shadow {
     }
 }
 
+/// Which way a paragraph's text runs: from its first strong letter
+/// (Hebrew or Arabic first gives right to left), or set to left to right
+/// or right to left. Within a paragraph, runs of the other direction are
+/// ordered by the Unicode Bidirectional Algorithm.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum TextDirection {
+    #[default]
+    Auto,
+    Ltr,
+    Rtl,
+}
+
+impl TextDirection {
+    pub fn is_auto(&self) -> bool {
+        *self == TextDirection::Auto
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum TextAlign {
@@ -1082,6 +1101,9 @@ pub struct ParagraphStyle {
     /// Tab stops in mm from the left edge; empty = default every 12.7 mm.
     pub tabs: Vec<f64>,
     pub hyphenate: bool,
+    /// Which way the text runs (see [`TextDirection`]).
+    #[serde(skip_serializing_if = "TextDirection::is_auto")]
+    pub direction: TextDirection,
     /// Fit text to frame: scale the font so the text fills the frame height.
     pub fit_to_frame: bool,
     /// Align baselines to a grid of this pitch in mm (Text > Align to
@@ -1168,6 +1190,7 @@ impl Default for ParagraphStyle {
             drop_cap_lines: 0,
             tabs: Vec::new(),
             hyphenate: false,
+            direction: TextDirection::Auto,
             fit_to_frame: false,
             baseline_grid_mm: 0.0,
             vertical_align: VerticalAlign::Top,

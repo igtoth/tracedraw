@@ -3144,6 +3144,169 @@ fn a_right_click_on_a_locked_object_offers_to_unlock_it() {
     right_click(&ctx, &mut app, empty);
     assert_eq!(app.context_locked, None);
 }
+#[test]
+fn a_click_with_a_drawing_tool_selects_and_a_drag_draws() {
+    let (ctx, mut app, id) = setup();
+    app.set_tool(Tool::Rectangle);
+    app.select(Vec::new());
+    let inside = app.view.to_screen(Point::new(35.0, 25.0));
+    let before = shape_count(&app);
+    // A click on the square selects it and draws nothing.
+    click_at(&ctx, &mut app, inside, Modifiers::NONE);
+    assert_eq!(app.selection, vec![id]);
+    assert_eq!(shape_count(&app), before, "a click draws nothing");
+    assert_eq!(app.tool, Tool::Rectangle, "the tool stays");
+    // A drag that starts on the square draws a new rectangle.
+    let to = app.view.to_screen(Point::new(90.0, 70.0));
+    drag(&ctx, &mut app, inside, to, Modifiers::NONE, Vec::new());
+    assert_eq!(shape_count(&app), before + 1, "a drag draws");
+    assert_eq!(app.tool, Tool::Rectangle);
+    assert!(!app.selection.contains(&id));
+    // A click on empty space lets go of the selection.
+    let empty = app.view.to_screen(Point::new(150.0, 150.0));
+    click_at(&ctx, &mut app, empty, Modifiers::NONE);
+    assert!(app.selection.is_empty(), "{:?}", app.selection);
+    assert_eq!(shape_count(&app), before + 1);
+}
+
+#[test]
+fn shift_click_with_a_drawing_tool_adds_and_takes_away() {
+    let (ctx, mut app, id) = setup();
+    let other = app
+        .new_shape(ShapeKind::Rect {
+            rect: Rect::new(100.0, 10.0, 140.0, 40.0),
+            radius: 0.0,
+            corners: None,
+        })
+        .expect("rect");
+    app.select(vec![other]);
+    app.apply_fill(tracedraw_core::Fill::Solid(tracedraw_core::Color::rgb8(
+        30, 30, 200,
+    )));
+    for tool in [Tool::Ellipse, Tool::Spiral, Tool::Smear, Tool::Knife] {
+        app.set_tool(tool);
+        app.select(vec![id]);
+        let at = app.view.to_screen(Point::new(120.0, 25.0));
+        click_at(&ctx, &mut app, at, Modifiers::SHIFT);
+        assert!(
+            app.selection.contains(&id) && app.selection.contains(&other),
+            "{tool:?}: {:?}",
+            app.selection
+        );
+        click_at(&ctx, &mut app, at, Modifiers::SHIFT);
+        assert_eq!(app.selection, vec![id], "{tool:?}");
+        // Shift on empty space keeps the selection.
+        let empty = app.view.to_screen(Point::new(150.0, 150.0));
+        click_at(&ctx, &mut app, empty, Modifiers::SHIFT);
+        assert_eq!(app.selection, vec![id], "{tool:?}");
+        assert_eq!(app.tool, tool);
+    }
+}
+
+#[test]
+fn line_tools_still_place_points_on_objects() {
+    let (ctx, mut app, id) = setup();
+    app.select(Vec::new());
+    let before = shape_count(&app);
+    app.set_tool(Tool::Polyline);
+    let a = app.view.to_screen(Point::new(35.0, 25.0));
+    let b = app.view.to_screen(Point::new(50.0, 30.0));
+    click_at(&ctx, &mut app, a, Modifiers::NONE);
+    click_at(&ctx, &mut app, b, Modifiers::NONE);
+    assert!(
+        !app.selection.contains(&id),
+        "a click on an object places a point, it does not select"
+    );
+    app.finish_curve();
+    assert_eq!(shape_count(&app), before + 1, "the line was drawn");
+}
+
+#[test]
+fn a_click_outside_a_table_selects_with_the_table_tool() {
+    let (ctx, mut app, id) = setup();
+    app.set_tool(Tool::Table);
+    app.select(Vec::new());
+    let before = shape_count(&app);
+    let inside = app.view.to_screen(Point::new(35.0, 25.0));
+    click_at(&ctx, &mut app, inside, Modifiers::NONE);
+    assert_eq!(app.selection, vec![id]);
+    assert_eq!(shape_count(&app), before);
+}
+
+#[test]
+fn every_click_selecting_tool_selects_on_click() {
+    let (ctx, mut app, id) = setup();
+    let inside = app.view.to_screen(Point::new(35.0, 25.0));
+    let empty = app.view.to_screen(Point::new(150.0, 150.0));
+    for tool in Tool::ALL.iter().copied().filter(|t| t.click_selects()) {
+        app.set_tool(tool);
+        if app.tool != tool {
+            continue; // a tool that is not available here
+        }
+        app.select(Vec::new());
+        let before = shape_count(&app);
+        click_at(&ctx, &mut app, inside, Modifiers::NONE);
+        assert_eq!(app.selection, vec![id], "{tool:?}");
+        click_at(&ctx, &mut app, empty, Modifiers::NONE);
+        assert!(app.selection.is_empty(), "{tool:?}");
+        assert_eq!(shape_count(&app), before, "{tool:?} drew on a click");
+    }
+}
+
+/// While text is typed, Ctrl+L, E, R, J, H and N align it; the same keys
+/// do not touch text alignment when nothing is being typed.
+#[test]
+fn alignment_keys_while_typing() {
+    use tracedraw_core::TextAlign;
+    tracedraw_text::install();
+    let (ctx, mut app, _id) = setup();
+    app.set_tool(Tool::Text);
+    app.start_text(Point::new(100.0, 150.0), None);
+    app.text_insert("Hello\nworld");
+    let align_of = |app: &App| {
+        let id = app.text_edit.as_ref().map(|t| t.shape).expect("editing");
+        match &app.doc().find_shape(id).expect("text").kind {
+            ShapeKind::Text {
+                spans, align, para, ..
+            } => tracedraw_core::paragraphs::paragraph_styles(spans, *align, para)
+                .last()
+                .map(|p| p.0)
+                .unwrap_or(*align),
+            _ => unreachable!(),
+        }
+    };
+    for (k, a) in [
+        (egui::Key::E, TextAlign::Center),
+        (egui::Key::R, TextAlign::Right),
+        (egui::Key::J, TextAlign::Justify),
+        (egui::Key::H, TextAlign::ForceJustify),
+        (egui::Key::N, TextAlign::None),
+        (egui::Key::L, TextAlign::Left),
+    ] {
+        frame(
+            &ctx,
+            &mut app,
+            vec![key(k, Modifiers::COMMAND)],
+            Modifiers::COMMAND,
+        );
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+        assert_eq!(align_of(&app), a, "{k:?}");
+        assert!(app.text_edit.is_some(), "still typing after {k:?}");
+        // Text typed at a point lines up as a whole.
+        let id = app.text_edit.as_ref().map(|t| t.shape).expect("editing");
+        if let ShapeKind::Text {
+            spans, align, para, ..
+        } = &app.doc().find_shape(id).expect("text").kind
+        {
+            let all = tracedraw_core::paragraphs::paragraph_styles(spans, *align, para);
+            assert!(
+                all.iter().all(|p| p.0 == a),
+                "{k:?}: {:?}",
+                all.iter().map(|p| p.0).collect::<Vec<_>>()
+            );
+        }
+    }
+}
 
 #[test]
 fn removed_and_alt_shortcuts_act_on_the_keyboard() {

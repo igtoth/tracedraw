@@ -153,6 +153,24 @@ impl App {
     pub fn text_keyboard(&mut self, ctx: &egui::Context) {
         use egui::{Event, Key};
         let events = ctx.input(|i| i.events.clone());
+        // Right Ctrl + Right Shift or Left Ctrl + Left Shift, let go with
+        // no other key: the paragraph direction.
+        let (ctrl_shift, other_key) = ctx.input(|i| {
+            (
+                i.modifiers.ctrl && i.modifiers.shift,
+                i.events
+                    .iter()
+                    .any(|e| matches!(e, Event::Key { pressed: true, .. } | Event::Text(_))),
+            )
+        });
+        let side = if ctrl_shift {
+            crate::direction_keys::held_side()
+        } else {
+            None
+        };
+        if let Some(d) = self.direction_gesture.step(ctrl_shift, side, other_key) {
+            self.apply_text_direction(d);
+        }
         for ev in &events {
             // An input method composing text owns the keys until it
             // commits (Enter, Backspace and the arrows edit the
@@ -208,6 +226,27 @@ impl App {
                         Key::Home => self.text_move(CaretMove::LineStart, shift),
                         Key::End => self.text_move(CaretMove::LineEnd, shift),
                         Key::A if ctrl => self.text_select_all(),
+                        // Alignment of the paragraphs at the caret (the
+                        // same keys export, combine and repeat when no
+                        // text is being typed).
+                        Key::L if ctrl && !shift => {
+                            self.apply_text_align(tracedraw_core::TextAlign::Left)
+                        }
+                        Key::E if ctrl && !shift => {
+                            self.apply_text_align(tracedraw_core::TextAlign::Center)
+                        }
+                        Key::R if ctrl && !shift => {
+                            self.apply_text_align(tracedraw_core::TextAlign::Right)
+                        }
+                        Key::J if ctrl && !shift => {
+                            self.apply_text_align(tracedraw_core::TextAlign::Justify)
+                        }
+                        Key::H if ctrl && !shift => {
+                            self.apply_text_align(tracedraw_core::TextAlign::ForceJustify)
+                        }
+                        Key::N if ctrl && !shift => {
+                            self.apply_text_align(tracedraw_core::TextAlign::None)
+                        }
                         Key::B if ctrl => {
                             let on = !self.text_bold;
                             self.text_bold = on;
@@ -351,18 +390,36 @@ impl App {
         let (a, b) = te.selection();
         let mut goal_x = None;
         let caret = match m {
-            CaretMove::Left => {
+            CaretMove::Left | CaretMove::Right => {
+                let left = m == CaretMove::Left;
                 if te.has_selection() && !extend {
-                    a
+                    if left {
+                        a
+                    } else {
+                        b
+                    }
                 } else {
-                    te.caret.saturating_sub(1)
-                }
-            }
-            CaretMove::Right => {
-                if te.has_selection() && !extend {
-                    b
-                } else {
-                    (te.caret + 1).min(len)
+                    // On a line with right-to-left text the arrows move on
+                    // screen; elsewhere one character.
+                    let visual = self
+                        .text_layout_of(te.shape)
+                        .and_then(|(layout, _)| layout.visual_step(te.caret, left));
+                    let rtl_line = self
+                        .text_layout_of(te.shape)
+                        .and_then(|(layout, _)| {
+                            layout
+                                .line_of(te.caret)
+                                .and_then(|i| layout.lines.get(i))
+                                .map(|l| l.rtl)
+                        })
+                        .unwrap_or(false);
+                    match visual {
+                        Some(c) => c,
+                        // Off the end of the line: on to the next line the
+                        // way the text reads.
+                        None if left != rtl_line => te.caret.saturating_sub(1),
+                        None => (te.caret + 1).min(len),
+                    }
                 }
             }
             CaretMove::WordLeft => word_start_before(&text, te.caret),
@@ -654,26 +711,42 @@ fn caret_geometry_sized(
     let bottom = *to_page * Point::new(x, base - desc);
     let mut quads = Vec::new();
     if a != b {
-        for line in &layout.lines {
-            let s = a.max(line.start_char);
-            let e = b.min(line.end_char);
-            if s > e || (s == e && !(a < line.start_char && b > line.end_char)) {
-                continue;
-            }
-            let x0 = line.edges.get(s - line.start_char).copied().unwrap_or(0.0);
-            let x1 = line.edges.get(e - line.start_char).copied().unwrap_or(x0);
+        let quad = |x0: f64, x1: f64, line: &tracedraw_text::LineBox| {
             let r = Rect::new(
                 x0,
                 line.baseline - line.descent,
                 x1.max(x0 + 0.3),
                 line.baseline + line.ascent,
             );
-            quads.push([
+            [
                 *to_page * Point::new(r.x0, r.y0),
                 *to_page * Point::new(r.x1, r.y0),
                 *to_page * Point::new(r.x1, r.y1),
                 *to_page * Point::new(r.x0, r.y1),
-            ]);
+            ]
+        };
+        // The selected characters' boxes, in as many pieces as a line
+        // that mixes directions needs.
+        let pieces = layout.selection_pieces(a, b);
+        let mut on_line = vec![false; layout.lines.len()];
+        for (li, x0, x1) in pieces {
+            if let Some(line) = layout.lines.get(li) {
+                quads.push(quad(x0, x1, line));
+                if let Some(f) = on_line.get_mut(li) {
+                    *f = true;
+                }
+            }
+        }
+        // An empty line inside the selection shows a sliver.
+        for (li, line) in layout.lines.iter().enumerate() {
+            if !on_line[li]
+                && line.start_char == line.end_char
+                && a < line.start_char
+                && b > line.end_char
+            {
+                let x = line.edges.first().copied().unwrap_or(0.0);
+                quads.push(quad(x, x, line));
+            }
         }
     }
     Some((top, bottom, quads))

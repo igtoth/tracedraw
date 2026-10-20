@@ -38,6 +38,7 @@ Customization > Commands lists them and takes shortcuts of your own
 | --- | --- |
 | Ctrl+G, Ctrl+U | Group, Ungroup |
 | Ctrl+L, Ctrl+K | Combine, Break apart |
+| While typing text: Ctrl+L, Ctrl+E, Ctrl+R, Ctrl+J, Ctrl+H, Ctrl+N | Align left, center, right, justify, force justify, no alignment (the whole text typed at a point; the paragraphs at the caret in a frame) |
 | Ctrl+Q, Ctrl+Shift+Q | Convert to curves, Convert outline to object |
 | Ctrl+Home, Ctrl+End | To front and back of the page |
 | Shift+PgUp, Shift+PgDn | To front and back of the layer |

@@ -1259,6 +1259,15 @@ pub struct App {
     pub brush: crate::ui::brush_bars::BrushSettings,
     /// A step of the brush stroke under way is on the undo list.
     pub brush_stepped: bool,
+    /// The outlines the brush stroke under way has given so far, by
+    /// object: each step puts them all back as one undo step, so an
+    /// object the nib left earlier in the stroke keeps its change.
+    pub brush_stroke: Vec<(tracedraw_core::ShapeId, tracedraw_core::ShapeKind)>,
+    /// How far the pointer has gone in the brush stroke under way (mm).
+    pub brush_travel: f64,
+    /// The text direction keys while text is typed (see
+    /// `direction_keys`).
+    pub direction_gesture: crate::direction_keys::DirectionGesture,
     /// The style new dimensions take (the dimension tools' bar).
     pub dimension_style: crate::dimensions::DimensionStyle,
     /// The document revision dimensions were last checked at for moves
@@ -2034,6 +2043,9 @@ impl App {
             roughen_amount: 2.0,
             brush: Default::default(),
             brush_stepped: false,
+            brush_stroke: Vec::new(),
+            brush_travel: 0.0,
+            direction_gesture: Default::default(),
             dimension_style: Default::default(),
             dimensions_checked: u64::MAX,
             dimension_dragging: false,

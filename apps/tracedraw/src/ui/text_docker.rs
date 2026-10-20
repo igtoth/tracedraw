@@ -884,6 +884,8 @@ fn paragraph(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) 
                 set_align(app, a);
             }
         }
+        ui.add_space(6.0);
+        crate::ui::toolbar::text_direction_buttons(app, ui);
         row_check(app, ui, "align");
     });
     let Some(t) = first else {

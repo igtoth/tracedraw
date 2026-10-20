@@ -40,6 +40,7 @@ mod curve_join;
 mod defaults;
 mod describe;
 mod dimensions;
+mod direction_keys;
 mod distort_tool;
 mod doc_stats;
 mod documents;

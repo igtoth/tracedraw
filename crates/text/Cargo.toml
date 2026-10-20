@@ -11,6 +11,7 @@ kurbo.workspace = true
 fontdb = { version = "0.24", default-features = false, features = ["std"] }
 ttf-parser.workspace = true
 rustybuzz.workspace = true
+unicode-bidi = { version = "0.3", default-features = false, features = ["hardcoded-data"] }
 log.workspace = true
 
 # System font discovery exists only natively; the browser build registers

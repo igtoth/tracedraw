@@ -302,3 +302,223 @@ fn the_context_menu_lists_the_wrap_styles_and_picks_one() {
     }
     assert!(seen.iter().any(|k| k == "context.wrap_text_on"), "{seen:?}");
 }
+
+fn point_text(app: &mut App, text: &str) -> ShapeId {
+    app.new_shape(ShapeKind::Text {
+        spans: vec![TextSpan::new(text, "DejaVu Sans", 24.0)],
+        origin: Point::new(50.0, 100.0),
+        frame: None,
+        align: TextAlign::Left,
+        para: ParagraphStyle::default(),
+        on_path: None,
+    })
+    .expect("text")
+}
+
+fn page_bounds(app: &App, id: ShapeId) -> Rect {
+    app.doc().shape_on_page(id).expect("text").bounds()
+}
+
+/// A new alignment keeps the reference point of the X and Y fields where
+/// it was, for each of the nine reference points and every alignment, on
+/// one line and on several; one undo takes back the alignment and the
+/// move together.
+#[test]
+fn a_new_alignment_keeps_the_reference_point_in_place() {
+    if !fonts_available() {
+        return;
+    }
+    for text in ["Centered words", "A longer first line\nshort\nmiddle one"] {
+        let mut app = App::headless();
+        let id = point_text(&mut app, text);
+        app.select(vec![id]);
+        for col in 0..3u8 {
+            for row in 0..3u8 {
+                app.object_origin = (col, row);
+                for a in [
+                    TextAlign::Center,
+                    TextAlign::Right,
+                    TextAlign::Left,
+                    TextAlign::Justify,
+                    TextAlign::None,
+                    TextAlign::ForceJustify,
+                    TextAlign::Right,
+                    TextAlign::Center,
+                ] {
+                    let before =
+                        crate::ui::propbar::origin_point(page_bounds(&app, id), (col, row));
+                    app.apply_text_align(a);
+                    let after = crate::ui::propbar::origin_point(page_bounds(&app, id), (col, row));
+                    assert!(
+                        (before - after).hypot() < 0.001,
+                        "{text:?} {a:?} at {:?}: {before:?} -> {after:?}",
+                        (col, row)
+                    );
+                }
+            }
+        }
+        // One undo: the alignment and the move.
+        app.object_origin = (1, 1);
+        app.apply_text_align(TextAlign::Left);
+        let kind = app.doc().find_shape(id).expect("text").kind.clone();
+        let transform = app.doc().find_shape(id).expect("text").transform;
+        app.apply_text_align(TextAlign::Right);
+        assert_ne!(app.doc().find_shape(id).expect("text").transform, transform);
+        let _ = app.engine.undo();
+        let s = app.doc().find_shape(id).expect("text");
+        assert_eq!(s.kind, kind);
+        assert_eq!(s.transform, transform);
+    }
+}
+
+/// Text in a frame keeps its frame where it is and as big as it is; its
+/// lines realign inside it.
+#[test]
+fn frame_text_keeps_its_frame_when_the_alignment_changes() {
+    if !fonts_available() {
+        return;
+    }
+    let mut app = App::headless();
+    let id = frame(&mut app, "first line\nsecond");
+    app.select(vec![id]);
+    let s0 = app.doc().find_shape(id).expect("frame").clone();
+    for a in [
+        TextAlign::Center,
+        TextAlign::Right,
+        TextAlign::Justify,
+        TextAlign::Left,
+    ] {
+        app.apply_text_align(a);
+        let s = app.doc().find_shape(id).expect("frame");
+        assert_eq!(s.transform, s0.transform, "{a:?}");
+        let ShapeKind::Text { origin, frame, .. } = &s.kind else {
+            unreachable!()
+        };
+        let ShapeKind::Text {
+            origin: o0,
+            frame: f0,
+            ..
+        } = &s0.kind
+        else {
+            unreachable!()
+        };
+        assert_eq!((origin, frame), (o0, f0), "{a:?}");
+    }
+}
+
+const SHALOM_OLAM: &str = "\u{5e9}\u{5dc}\u{5d5}\u{5dd} \u{5e2}\u{5d5}\u{5dc}\u{5dd}";
+
+fn hebrew_ready() -> bool {
+    fonts_available() && tracedraw_text::fonts().has_family("DejaVu Sans")
+}
+
+/// Ctrl+A on Hebrew text highlights all of it, not a sliver at the
+/// caret; on mixed text too.
+#[test]
+fn select_all_highlights_all_hebrew_text() {
+    if !hebrew_ready() {
+        return;
+    }
+    for text in [SHALOM_OLAM.to_string(), format!("abc {SHALOM_OLAM} 123")] {
+        let mut app = App::headless();
+        let id = point_text(&mut app, &text);
+        app.begin_text_edit(id);
+        app.text_select_all();
+        let (layout, to_page) = app.text_layout_of(id).expect("layout");
+        let te = app.text_edit.clone().expect("editing");
+        let (_, _, quads) =
+            crate::text_editing::caret_geometry(&layout, &to_page, te.caret, te.selection())
+                .expect("geometry");
+        let covered: f64 = quads.iter().map(|q| (q[1].x - q[0].x).abs()).sum();
+        let width = page_bounds(&app, id).width();
+        assert!(covered > width * 0.9, "{text:?}: {covered} of {width}");
+    }
+}
+
+/// The arrows move on screen in Hebrew: Left goes left, Right goes right.
+#[test]
+fn arrows_move_on_screen_in_hebrew() {
+    if !hebrew_ready() {
+        return;
+    }
+    let mut app = App::headless();
+    let id = point_text(&mut app, SHALOM_OLAM);
+    app.begin_text_edit(id);
+    // From the start of the text (its right end).
+    if let Some(te) = app.text_edit.as_mut() {
+        te.caret = 0;
+        te.anchor = 0;
+    }
+    let x_of = |app: &App| {
+        let (layout, _) = app.text_layout_of(id).expect("layout");
+        let c = app.text_edit.as_ref().expect("editing").caret;
+        layout.caret(c).expect("caret").0
+    };
+    let x0 = x_of(&app);
+    app.text_move(crate::text_editing::CaretMove::Left, false);
+    let x1 = x_of(&app);
+    assert!(x1 < x0, "{x1} < {x0}");
+    assert_eq!(app.text_edit.as_ref().map(|t| t.caret), Some(1));
+    app.text_move(crate::text_editing::CaretMove::Right, false);
+    assert_eq!(app.text_edit.as_ref().map(|t| t.caret), Some(0));
+    // English text still moves one character at a time.
+    let e = point_text(&mut app, "abc");
+    app.begin_text_edit(e);
+    app.text_move(crate::text_editing::CaretMove::Left, false);
+    assert_eq!(app.text_edit.as_ref().map(|t| t.caret), Some(2));
+}
+
+/// Setting the direction: right to left aligns right, keeps the
+/// reference point, is one undo step, and is kept in the file; files
+/// without the field still open, running by their first letter.
+#[test]
+fn the_direction_is_set_kept_and_saved() {
+    if !hebrew_ready() {
+        return;
+    }
+    use tracedraw_core::TextDirection;
+    let mut app = App::headless();
+    let id = point_text(&mut app, "abc!");
+    app.select(vec![id]);
+    app.object_origin = (2, 0);
+    let before = crate::ui::propbar::origin_point(page_bounds(&app, id), (2, 0));
+    let depth = app.engine.history_labels().0.len();
+    app.apply_text_direction(TextDirection::Rtl);
+    assert_eq!(app.engine.history_labels().0.len(), depth + 1);
+    let after = crate::ui::propbar::origin_point(page_bounds(&app, id), (2, 0));
+    assert!((before - after).hypot() < 0.001, "{before:?} {after:?}");
+    let st = styles(&app, id);
+    assert_eq!(st[0].0, TextAlign::Right);
+    assert_eq!(st[0].1.direction, TextDirection::Rtl);
+    let s = app.doc().find_shape(id).cloned().expect("text");
+    assert_eq!(app.text_runs_rtl(&s), Some(true));
+    // Saved and opened again.
+    let json = app.doc().to_json().expect("json");
+    let back = Document::from_json(&json).expect("opens");
+    let ShapeKind::Text {
+        spans, align, para, ..
+    } = &back.find_shape(id).expect("text").kind
+    else {
+        unreachable!()
+    };
+    assert_eq!(
+        paragraph_styles(spans, *align, para)[0].1.direction,
+        TextDirection::Rtl
+    );
+    // Undo.
+    let _ = app.engine.undo();
+    assert_eq!(styles(&app, id)[0].1.direction, TextDirection::Auto);
+    // Back to left to right.
+    app.apply_text_direction(TextDirection::Rtl);
+    app.apply_text_direction(TextDirection::Ltr);
+    let st = styles(&app, id);
+    assert_eq!(
+        (st[0].0, st[0].1.direction),
+        (TextAlign::Left, TextDirection::Ltr)
+    );
+    // Without the field: automatic; a Hebrew first letter runs right to left.
+    assert!(!json.contains("\"direction\":\"auto\""));
+    let h = point_text(&mut app, SHALOM_OLAM);
+    let s = app.doc().find_shape(h).cloned().expect("text");
+    assert_eq!(app.text_runs_rtl(&s), Some(true));
+}
