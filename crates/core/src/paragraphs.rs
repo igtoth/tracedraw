@@ -11,7 +11,8 @@
 //! field give every paragraph the object's own formatting, as before.
 
 use crate::document::{
-    merge_equal_spans, spans_apply, LeadingUnit, ParagraphStyle, ShapeKind, TextAlign, TextSpan,
+    merge_equal_spans, spans_apply, LeadingUnit, ParagraphStyle, ShapeKind, TextAlign,
+    TextDirection, TextSpan,
 };
 use serde::{Deserialize, Serialize};
 
@@ -36,6 +37,8 @@ pub struct ParagraphFormat {
     pub drop_cap_lines: u32,
     pub tabs: Vec<f64>,
     pub hyphenate: bool,
+    #[serde(skip_serializing_if = "TextDirection::is_auto")]
+    pub direction: TextDirection,
 }
 
 impl Default for ParagraphFormat {
@@ -64,6 +67,7 @@ impl ParagraphFormat {
             drop_cap_lines: p.drop_cap_lines,
             tabs: p.tabs.clone(),
             hyphenate: p.hyphenate,
+            direction: p.direction,
         }
     }
 
@@ -85,6 +89,7 @@ impl ParagraphFormat {
         p.drop_cap_lines = self.drop_cap_lines;
         p.tabs = self.tabs.clone();
         p.hyphenate = self.hyphenate;
+        p.direction = self.direction;
         self.align
     }
 
@@ -115,7 +120,8 @@ impl ParagraphFormat {
             bullet_indent,
             drop_cap_lines,
             tabs,
-            hyphenate
+            hyphenate,
+            direction
         );
     }
 }

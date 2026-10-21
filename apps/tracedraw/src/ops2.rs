@@ -1594,22 +1594,130 @@ impl App {
     /// text object. One undo step.
     pub fn apply_text_align(&mut self, a: tracedraw_core::TextAlign) {
         self.text_align = a;
-        let cmds: Vec<Command> = self
+        self.apply_paragraph_edit("Text Alignment", move |f| f.align = a);
+    }
+
+    /// Set which way the selected text runs (the paragraphs at the caret
+    /// while text in a frame is typed), as [`App::apply_text_align`] does
+    /// for the alignment. Right to left also aligns right what was left
+    /// aligned, and left to right aligns left what was right aligned.
+    pub fn apply_text_direction(&mut self, d: tracedraw_core::TextDirection) {
+        use tracedraw_core::{TextAlign, TextDirection};
+        self.apply_paragraph_edit("Text Direction", move |f| {
+            f.direction = d;
+            match (d, f.align) {
+                (TextDirection::Rtl, TextAlign::Left | TextAlign::None) => {
+                    f.align = TextAlign::Right
+                }
+                (TextDirection::Ltr, TextAlign::Right) => f.align = TextAlign::Left,
+                _ => {}
+            }
+        });
+    }
+
+    /// Whether the text `s` (the paragraph at the caret while it is
+    /// typed, else its first one) runs right to left: as set, or from its
+    /// first strong letter. `None` for other shapes.
+    pub fn text_runs_rtl(&self, s: &Shape) -> Option<bool> {
+        use tracedraw_core::TextDirection;
+        let (_, style) = self.paragraph_style_of(s)?;
+        Some(match style.direction {
+            TextDirection::Rtl => true,
+            TextDirection::Ltr => false,
+            TextDirection::Auto => {
+                let ShapeKind::Text { spans, .. } = &s.kind else {
+                    return None;
+                };
+                let text: String = spans.iter().map(|sp| sp.text.as_str()).collect();
+                let caret = self
+                    .text_edit
+                    .as_ref()
+                    .filter(|te| te.shape == s.id)
+                    .map_or(0, |te| te.caret);
+                // The paragraph at the caret.
+                let mut start = 0;
+                let mut para = "";
+                for piece in text.split('\n') {
+                    let n = piece.chars().count();
+                    para = piece;
+                    if caret <= start + n {
+                        break;
+                    }
+                    start += n + 1;
+                }
+                first_strong_rtl(para)
+            }
+        })
+    }
+
+    /// Change the paragraph formatting of the selected text with `edit`,
+    /// as one undo step named `label`: text typed at a point as a whole,
+    /// text in a frame in the paragraphs at the caret. Text typed at a
+    /// point moves back so the reference point of the X and Y fields stays
+    /// where it was.
+    pub fn apply_paragraph_edit(
+        &mut self,
+        label: &'static str,
+        edit: impl Fn(&mut tracedraw_core::paragraphs::ParagraphFormat),
+    ) {
+        let doc = self.doc();
+        let mut cmds: Vec<Command> = Vec::new();
+        for s in self
             .selected_shapes()
             .iter()
             .filter(|s| matches!(s.kind, ShapeKind::Text { .. }))
-            .filter_map(|s| {
-                let mut kind = s.kind.clone();
-                tracedraw_core::paragraphs::edit_paragraph_formats(
-                    &mut kind,
-                    self.paragraph_range(s.id),
-                    |f| f.align = a,
-                );
-                (kind != s.kind).then_some(Command::SetShapeKind { shape: s.id, kind })
-            })
-            .collect();
+        {
+            let mut kind = s.kind.clone();
+            // Text typed at a point lines up as a whole; paragraph text
+            // takes the alignment in the paragraphs at the caret.
+            let point_text = matches!(&s.kind, ShapeKind::Text { frame: None, .. });
+            let range = if point_text {
+                None
+            } else {
+                self.paragraph_range(s.id)
+            };
+            tracedraw_core::paragraphs::edit_paragraph_formats(&mut kind, range, &edit);
+            if kind == s.kind {
+                continue;
+            }
+            // Text typed at a point lines up about that point, so a new
+            // alignment would move it: it moves back so the reference
+            // point of the X and Y fields stays where it was. Text in a
+            // frame or on a path keeps its frame or path; its lines
+            // realign inside.
+            let anchored = matches!(
+                &kind,
+                ShapeKind::Text {
+                    frame: None,
+                    on_path: None,
+                    ..
+                }
+            );
+            let shift = if anchored {
+                let before = s.bounds();
+                let mut after = s.clone();
+                after.kind = kind.clone();
+                let after = after.bounds();
+                let o = self.object_origin;
+                let d = crate::ui::propbar::origin_point(before, o)
+                    - crate::ui::propbar::origin_point(after, o);
+                // The move in the object's parent's space (a group's).
+                let parent = doc.parent_transform(s.id).unwrap_or(Affine::IDENTITY);
+                let local = parent.inverse() * (Point::ZERO + d) - parent.inverse() * Point::ZERO;
+                (local.hypot() > 1e-9).then_some(local)
+            } else {
+                None
+            };
+            cmds.push(Command::SetShapeKind { shape: s.id, kind });
+            if let Some(v) = shift {
+                cmds.push(Command::TransformShapes {
+                    shapes: vec![s.id],
+                    transform: Affine::translate(v),
+                });
+            }
+        }
         if !cmds.is_empty() {
-            if let Err(e) = self.engine.run_batch("Text Alignment", &cmds) {
+            if let Err(e) = self.engine.run_batch(label, &cmds) {
                 self.status = e.to_string();
             }
         }
@@ -2994,4 +3102,21 @@ mod tests {
         app.inflate_bitmaps_by(100.0, 100.0);
         assert_eq!(app.engine.history_labels().0.len(), depth + 1);
     }
+}
+
+/// Whether the first letter of `text` with a direction of its own is a
+/// right-to-left one (Hebrew, Arabic and the like); left to right when
+/// there is none.
+fn first_strong_rtl(text: &str) -> bool {
+    for c in text.chars() {
+        let r = matches!(c as u32,
+            0x0590..=0x08FF | 0xFB1D..=0xFDFF | 0xFE70..=0xFEFF | 0x10800..=0x10FFF | 0x1E800..=0x1EFFF);
+        if r && c.is_alphabetic() {
+            return true;
+        }
+        if c.is_alphabetic() {
+            return false;
+        }
+    }
+    false
 }

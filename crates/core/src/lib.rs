@@ -42,8 +42,8 @@ pub use document::{
     DefaultKind, DefaultProperties, Document, DocumentFont, DocumentProfile, EllipseArc, Layer,
     LeadingUnit, MasterScope, Metadata, ObjectDefaults, ObjectStyle, Page, ParagraphStyle,
     PathTextOrientation, PathTextVertical, QrCode, QrKind, Shadow, Shape, ShapeKind, StyleParts,
-    Symbol, Table, TableCell, TextAlign, TextOnPath, TextSpan, TimeTracker, TrackedTask,
-    VerticalAlign,
+    Symbol, Table, TableCell, TextAlign, TextDirection, TextOnPath, TextSpan, TimeTracker,
+    TrackedTask, VerticalAlign,
 };
 pub use engine::Engine;
 pub use geometry::{Affine, BezPath, Point, Rect, Size, Vec2};

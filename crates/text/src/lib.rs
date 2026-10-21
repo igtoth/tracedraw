@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex, OnceLock, RwLock, RwLockReadGuard};
 use tracedraw_core::{
     document::{
         text_outline::TextRequest, DocumentFont, ParagraphStyle, PathTextOrientation,
-        PathTextVertical, TextAlign, TextOnPath, TextSpan, VerticalAlign,
+        PathTextVertical, TextAlign, TextDirection, TextOnPath, TextSpan, VerticalAlign,
     },
     geometry::{Affine, BezPath, Point, Rect, Shape as _},
     text_flow::{free_segments, WrapRegion},
@@ -622,6 +622,10 @@ struct Glyph {
     /// The font glyph behind the outline, for writers that keep text as
     /// text; `None` for markers without an outline.
     src: Option<Arc<GlyphSource>>,
+    /// The bidirectional embedding level of its characters (odd: right
+    /// to left). Glyphs of a paragraph are kept in logical order; each
+    /// line is put in visual order when it is drawn.
+    level: u8,
 }
 
 /// Where a shaped glyph's outline comes from.
@@ -715,9 +719,19 @@ pub struct LineBox {
     pub baseline: f64,
     pub ascent: f64,
     pub descent: f64,
-    /// Pen x before each character from `start_char` to `end_char`, then
-    /// after the last one: `end_char - start_char + 1` entries.
+    /// The caret before each character from `start_char` to `end_char`
+    /// (the left of a left-to-right character, the right of a
+    /// right-to-left one), then after the last one in logical order:
+    /// `end_char - start_char + 1` entries.
     pub edges: Vec<f64>,
+    /// Each character's box from left to right (`end_char - start_char`
+    /// entries); in a line that mixes directions, the characters of a
+    /// selection may lie in several pieces.
+    pub boxes: Vec<(f64, f64)>,
+    /// Each character's bidirectional level (odd: right to left).
+    pub levels: Vec<u8>,
+    /// The line's paragraph runs right to left.
+    pub rtl: bool,
 }
 
 impl TextLayout {
@@ -768,12 +782,101 @@ impl TextLayout {
                     .then_with(|| x_gap(a).total_cmp(&x_gap(b)))
             })
         })?;
+        // On a character: the caret goes before or after it, whichever
+        // side of it is nearer (for a right-to-left character, its right
+        // side is before it).
+        if let Some((i, &(a, b))) = line
+            .boxes
+            .iter()
+            .enumerate()
+            .find(|(_, (a, b))| p.x >= a.min(*b) && p.x <= a.max(*b) && (b - a).abs() > 1e-9)
+        {
+            let rtl = line.levels.get(i).is_some_and(|l| l % 2 == 1);
+            let left_half = p.x < (a + b) / 2.0;
+            let after = left_half == rtl;
+            return Some(line.start_char + i + usize::from(after));
+        }
         let (i, _) = line.edges.iter().enumerate().min_by(|(_, a), (_, b)| {
             let da = (*a - p.x).abs();
             let db = (*b - p.x).abs();
             da.total_cmp(&db)
         })?;
         Some(line.start_char + i)
+    }
+
+    /// The pieces of the selection from character `a` to `b` on each line:
+    /// (line index, left x, right x), the boxes of the selected characters
+    /// side by side joined. A line that mixes directions may give several
+    /// pieces.
+    pub fn selection_pieces(&self, a: usize, b: usize) -> Vec<(usize, f64, f64)> {
+        let (a, b) = (a.min(b), a.max(b));
+        let mut out = Vec::new();
+        for (li, line) in self.lines.iter().enumerate() {
+            let s = a.max(line.start_char);
+            let e = b.min(line.end_char);
+            if s >= e {
+                continue;
+            }
+            let mut spans: Vec<(f64, f64)> = (s..e)
+                .filter_map(|c| line.boxes.get(c - line.start_char).copied())
+                .map(|(x0, x1)| (x0.min(x1), x0.max(x1)))
+                .collect();
+            spans.sort_by(|p, q| p.0.total_cmp(&q.0));
+            let mut merged: Vec<(f64, f64)> = Vec::new();
+            for (x0, x1) in spans {
+                match merged.last_mut() {
+                    Some(m) if x0 <= m.1 + 1e-6 => m.1 = m.1.max(x1),
+                    _ => merged.push((x0, x1)),
+                }
+            }
+            for (x0, x1) in merged {
+                out.push((li, x0, x1));
+            }
+        }
+        out
+    }
+
+    /// The caret one step to the left (`left`) or right on screen from
+    /// character index `idx`, on lines that hold right-to-left text: the
+    /// nearest caret place on that side on the same line. `None` when
+    /// the line runs left to right only (a step is then one character)
+    /// or there is no place on that side (the caret leaves the line).
+    pub fn visual_step(&self, idx: usize, left: bool) -> Option<usize> {
+        let li = self.line_of(idx)?;
+        let line = self.lines.get(li)?;
+        if !line.rtl && line.levels.iter().all(|l| l % 2 == 0) {
+            return None;
+        }
+        let here = line.edges.get(idx.checked_sub(line.start_char)?)?;
+        let mut best: Option<(usize, f64)> = None;
+        for (i, x) in line.edges.iter().enumerate() {
+            let c = line.start_char + i;
+            if c == idx {
+                continue;
+            }
+            let ahead = if left {
+                *x < here - 1e-6
+            } else {
+                *x > here + 1e-6
+            };
+            if !ahead {
+                continue;
+            }
+            let better = match best {
+                None => true,
+                Some((_, bx)) => {
+                    if left {
+                        *x > bx + 1e-9
+                    } else {
+                        *x < bx - 1e-9
+                    }
+                }
+            };
+            if better {
+                best = Some((c, *x));
+            }
+        }
+        best.map(|(c, _)| c)
     }
 
     /// Index of the line holding the character index `idx`.
@@ -1660,7 +1763,67 @@ impl FontSystem {
                 size_scale,
                 char_base + before,
                 para,
+                None,
             ));
+        }
+        out
+    }
+
+    /// Shape one run of text in one span's style as [`FontSystem::shape_run`]
+    /// does, cut into runs of one bidirectional level (`levels`, one per
+    /// character of the concatenated span text, indexed from `char_base`),
+    /// each shaped in its direction; the glyphs come in logical order.
+    #[allow(clippy::too_many_arguments)]
+    fn shape_run_bidi(
+        &self,
+        span: &TextSpan,
+        span_idx: usize,
+        text: &str,
+        size_scale: f64,
+        char_base: usize,
+        para: &ParagraphStyle,
+        levels: &[u8],
+    ) -> Vec<Glyph> {
+        let mut out = Vec::new();
+        if text.is_empty() {
+            return out;
+        }
+        let Some(id) = self.face_for(&span.font_family, span.bold, span.italic) else {
+            return out;
+        };
+        let mapped: String;
+        let text = if symbol_encoded(&span.font_family) && !self.has_symbol_cmap(id) {
+            mapped = text.chars().map(symbol_to_unicode).collect();
+            mapped.as_str()
+        } else {
+            text
+        };
+        let level_at = |k: usize| levels.get(char_base + k).copied().unwrap_or(0);
+        // Byte ranges of one level, with the index of their first char.
+        let mut runs: Vec<(Range<usize>, usize, u8)> = Vec::new();
+        for (k, (i, c)) in text.char_indices().enumerate() {
+            let l = level_at(k);
+            let end = i + c.len_utf8();
+            match runs.last_mut() {
+                Some(r) if r.2 == l => r.0.end = end,
+                _ => runs.push((i..end, k, l)),
+            }
+        }
+        for (range, first_char, level) in runs {
+            let piece = &text[range];
+            for (sub, face) in self.coverage_runs(id, piece, span.bold, span.italic) {
+                let before = piece[..sub.start].chars().count();
+                out.extend(self.shape_with(
+                    face,
+                    span,
+                    span_idx,
+                    &piece[sub],
+                    size_scale,
+                    char_base + first_char + before,
+                    para,
+                    Some(level),
+                ));
+            }
         }
         out
     }
@@ -1799,6 +1962,10 @@ impl FontSystem {
     }
 
     /// Shape `text` with the face `id` (see [`FontSystem::shape_run`]).
+    /// With `level` the text is one bidirectional run of that level: it
+    /// is shaped in its direction and the glyphs come back in logical
+    /// order (first character first); without, the direction is guessed
+    /// and the glyphs come in drawing order.
     #[allow(clippy::too_many_arguments)]
     fn shape_with(
         &self,
@@ -1809,6 +1976,7 @@ impl FontSystem {
         size_scale: f64,
         char_base: usize,
         para: &ParagraphStyle,
+        level: Option<u8>,
     ) -> Vec<Glyph> {
         let mut out = Vec::new();
         let Some((data, index)) = self.face_data(id) else {
@@ -1865,6 +2033,13 @@ impl FontSystem {
         let mut buffer = rustybuzz::UnicodeBuffer::new();
         buffer.push_str(text);
         buffer.guess_segment_properties();
+        if let Some(l) = level {
+            buffer.set_direction(if l % 2 == 1 {
+                rustybuzz::Direction::RightToLeft
+            } else {
+                rustybuzz::Direction::LeftToRight
+            });
+        }
         let glyphs = rustybuzz::shape(&hb, &features, buffer);
         let infos = glyphs.glyph_infos();
         let positions = glyphs.glyph_positions();
@@ -1959,7 +2134,13 @@ impl FontSystem {
                 span: span_idx,
                 hyphen_after: hyphen_glyph.clone(),
                 src: Some(src),
+                level: level.unwrap_or(0),
             });
+        }
+        // A right-to-left run comes from the shaper in drawing order:
+        // turned round, its glyphs are in logical order like the rest.
+        if level.is_some_and(|l| l % 2 == 1) {
+            out.reverse();
         }
         out
     }
@@ -2029,6 +2210,11 @@ impl FontSystem {
             })
             .collect();
 
+        // 0. Bidirectional levels, one per character of the concatenated
+        // span text (newlines included), paragraph by paragraph: from the
+        // paragraph's direction, or its first strong letter (UAX #9).
+        let (levels, para_levels) = bidi_levels(spans, |pi| style_of(pi).1.direction);
+
         // 1. Split the spans into paragraphs of glyph runs. `char_idx`
         // counts characters of the concatenated span text, newlines and
         // tabs included, so lines can report where they start.
@@ -2060,12 +2246,21 @@ impl FontSystem {
                                 span: si,
                                 hyphen_after: None,
                                 src: None,
+                                level: levels.get(char_idx).copied().unwrap_or(0),
                             })
                         }
                         char_idx += 1;
                     }
                     let pi = paragraphs.len().saturating_sub(1);
-                    let run = self.shape_run(span, si, part, size_scale, char_idx, &style_of(pi).1);
+                    let run = self.shape_run_bidi(
+                        span,
+                        si,
+                        part,
+                        size_scale,
+                        char_idx,
+                        &style_of(pi).1,
+                        &levels,
+                    );
                     char_idx += part.chars().count();
                     if let Some(p) = paragraphs.last_mut() {
                         p.extend(run);
@@ -2442,26 +2637,49 @@ impl FontSystem {
             let mut underline_runs: Vec<(usize, f64, f64)> = Vec::new();
             let end_char = line_ends.get(li).copied().unwrap_or(total_chars);
             let n_chars = end_char.saturating_sub(line.start_char);
-            // Pen x before each character; clusters of several characters
-            // share their glyph's advance evenly.
-            let mut edges: Vec<f64> = vec![line_start; n_chars + 1];
-            let mut record = |from: usize, to: usize, x0: f64, x1: f64| {
+            // Where each character sits: its leading edge (the caret
+            // before it: the left of a left-to-right character, the right
+            // of a right-to-left one) and its box. Clusters of several
+            // characters share their glyph's advance evenly. The glyphs
+            // are drawn in visual order (see `visual_order`).
+            let mut lead: Vec<Option<f64>> = vec![None; n_chars + 1];
+            let mut boxes: Vec<(f64, f64)> = vec![(line_start, line_start); n_chars];
+            let mut char_levels: Vec<u8> =
+                vec![para_levels.get(line.para).copied().unwrap_or(0); n_chars];
+            let mut trailing: Option<f64> = None;
+            let mut record = |from: usize, to: usize, x0: f64, x1: f64, level: u8| {
                 let from = from.max(line.start_char);
                 let to = to.min(end_char);
                 if to <= from {
                     return;
                 }
+                let rtl = level % 2 == 1;
                 let n = (to - from) as f64;
+                let w = x1 - x0;
                 for (k, c) in (from..to).enumerate() {
-                    if let Some(e) = edges.get_mut(c - line.start_char) {
-                        *e = x0 + (x1 - x0) * k as f64 / n;
+                    let (a, b) = if rtl {
+                        (x1 - w * (k + 1) as f64 / n, x1 - w * k as f64 / n)
+                    } else {
+                        (x0 + w * k as f64 / n, x0 + w * (k + 1) as f64 / n)
+                    };
+                    let i = c - line.start_char;
+                    if let Some(e) = lead.get_mut(i) {
+                        *e = Some(if rtl { b } else { a });
+                    }
+                    if let Some(bx) = boxes.get_mut(i) {
+                        *bx = (a, b);
+                    }
+                    if let Some(l) = char_levels.get_mut(i) {
+                        *l = level;
                     }
                 }
-                if let Some(e) = edges.get_mut(to - line.start_char) {
-                    *e = x1;
+                if to == end_char {
+                    trailing = Some(if rtl { x0 } else { x1 });
                 }
             };
-            for (gi, g) in glyphs.iter().enumerate() {
+            let para_level = para_levels.get(line.para).copied().unwrap_or(0);
+            for gi in visual_order(glyphs, para_level) {
+                let g = &glyphs[gi];
                 let next_idx = glyphs
                     .get(gi + 1)
                     .map(|n| n.char_idx)
@@ -2472,7 +2690,7 @@ impl FontSystem {
                     let next = next_tab(rel, &ps.tabs);
                     let before = pen;
                     pen = col_start + next;
-                    record(g.char_idx, next_idx, before, pen);
+                    record(g.char_idx, next_idx, before, pen, para_level);
                     continue;
                 }
                 if span_drawn(g.span) {
@@ -2491,10 +2709,30 @@ impl FontSystem {
                         _ => underline_runs.push((g.span, pen, pen + adv)),
                     }
                 }
-                record(g.char_idx, next_idx, pen, pen + adv);
+                record(g.char_idx, next_idx, pen, pen + adv, g.level);
                 pen += adv;
                 glyph_count += 1;
             }
+            // The caret before each character, then after the last one.
+            // A character with no glyph takes the edge after the one
+            // before it.
+            let mut edges: Vec<f64> = Vec::with_capacity(n_chars + 1);
+            let mut last = if para_level % 2 == 1 { pen } else { line_start };
+            for (i, e) in lead.iter().enumerate().take(n_chars) {
+                let x = e.unwrap_or(last);
+                edges.push(x);
+                last = match boxes.get(i) {
+                    Some(&(a, b)) if e.is_some() => {
+                        if char_levels.get(i).is_some_and(|l| l % 2 == 1) {
+                            a
+                        } else {
+                            b
+                        }
+                    }
+                    _ => x,
+                };
+            }
+            edges.push(trailing.unwrap_or(last));
             line_boxes.push(LineBox {
                 start_char: line.start_char,
                 end_char,
@@ -2502,6 +2740,9 @@ impl FontSystem {
                 ascent: m.ascent,
                 descent: m.descent,
                 edges,
+                boxes,
+                levels: char_levels,
+                rtl: para_level % 2 == 1,
             });
             if let Some(h) = &line.hyphen {
                 if line.glyphs.last().is_none_or(|g| span_drawn(g.span)) {
@@ -2889,6 +3130,103 @@ struct DropCap {
     glyph_advance: f64,
 }
 
+/// The bidirectional embedding level of every character of the
+/// concatenated text of `spans` (newlines included) and of every
+/// paragraph, from the Unicode Bidirectional Algorithm (UAX #9). A
+/// paragraph runs the way `direction` says, or, when that is
+/// [`TextDirection::Auto`], the way its first strong letter goes.
+fn bidi_levels(
+    spans: &[TextSpan],
+    direction: impl Fn(usize) -> TextDirection,
+) -> (Vec<u8>, Vec<u8>) {
+    use unicode_bidi::{BidiInfo, Level};
+    let full: String = spans.iter().map(|s| s.text.as_str()).collect();
+    let mut levels: Vec<u8> = Vec::with_capacity(full.len());
+    let mut paras: Vec<u8> = Vec::new();
+    let pieces: Vec<&str> = full.split('\n').collect();
+    let n = pieces.len();
+    for (pi, text) in pieces.into_iter().enumerate() {
+        let given = match direction(pi) {
+            TextDirection::Auto => None,
+            TextDirection::Ltr => Some(Level::ltr()),
+            TextDirection::Rtl => Some(Level::rtl()),
+        };
+        let para_level = if text.is_empty() {
+            given.unwrap_or_else(Level::ltr).number()
+        } else {
+            let info = BidiInfo::new(text, given);
+            let pl = info
+                .paragraphs
+                .first()
+                .map(|p| p.level)
+                .or(given)
+                .unwrap_or_else(Level::ltr)
+                .number();
+            for (bi, _) in text.char_indices() {
+                levels.push(info.levels.get(bi).map_or(pl, |l| l.number()));
+            }
+            pl
+        };
+        paras.push(para_level);
+        if pi + 1 < n {
+            // The newline ending the paragraph.
+            levels.push(para_level);
+        }
+    }
+    (levels, paras)
+}
+
+/// The order to draw a line's glyphs in (indices into `glyphs`, which are
+/// in logical order), by rules L1 and L2 of UAX #9: tabs and the spaces
+/// before them, and the spaces at the end of the line, take the
+/// paragraph's level `para`; then from the highest level down to the
+/// lowest odd one, every run at that level or above is turned round.
+fn visual_order(glyphs: &[Glyph], para: u8) -> Vec<usize> {
+    let mut lv: Vec<u8> = glyphs.iter().map(|g| g.level).collect();
+    let n = lv.len();
+    // L1: trailing whitespace and whitespace before a tab.
+    let mut reset = true;
+    for i in (0..n).rev() {
+        let ch = glyphs[i].ch;
+        if ch == '\t' {
+            lv[i] = para;
+            reset = true;
+        } else if reset && ch.is_whitespace() {
+            lv[i] = para;
+        } else {
+            reset = false;
+        }
+    }
+    let mut order: Vec<usize> = (0..n).collect();
+    let Some(&max) = lv.iter().max() else {
+        return order;
+    };
+    let Some(min_odd) = lv.iter().copied().filter(|l| l % 2 == 1).min() else {
+        return order;
+    };
+    let mut level = max;
+    while level >= min_odd {
+        let mut i = 0;
+        while i < n {
+            if lv[order[i]] >= level {
+                let mut j = i;
+                while j < n && lv[order[j]] >= level {
+                    j += 1;
+                }
+                order[i..j].reverse();
+                i = j;
+            } else {
+                i += 1;
+            }
+        }
+        if level == 0 {
+            break;
+        }
+        level -= 1;
+    }
+    order
+}
+
 /// Place artistic text along a path: each glyph is centred on its arc
 /// length position along the baseline (see [`TextOnPath::baseline`]) and
 /// turned to its direction there. Positions wrap around closed paths.
@@ -3244,6 +3582,153 @@ mod tests {
         assert_eq!(l.hit_char(Point::new(c2.0 + 50.0, c0.1)), Some(2));
         // A caret past the end sits after the last character.
         assert_eq!(l.caret(99), Some(c5));
+    }
+
+    /// A face with Hebrew letters, if the system has one.
+    fn hebrew_ready() -> bool {
+        has_fonts() && fonts().has_family("DejaVu Sans")
+    }
+
+    fn bidi_layout(text: &str, direction: TextDirection, frame: Option<Size>) -> TextLayout {
+        let s = TextSpan::new(text, "DejaVu Sans", 12.0);
+        let para = ParagraphStyle {
+            direction,
+            ..ParagraphStyle::default()
+        };
+        fonts().layout(&TextRequest {
+            spans: std::slice::from_ref(&s),
+            frame,
+            align: TextAlign::Left,
+            para: &para,
+            on_path: None,
+        })
+    }
+
+    /// The middle of character `i`'s box on the first line.
+    fn mid(l: &TextLayout, i: usize) -> f64 {
+        let (a, b) = l.lines[0].boxes[i];
+        (a + b) / 2.0
+    }
+
+    /// Hebrew and English on one line come out in the right order: a
+    /// Hebrew-first line runs right to left with the English and the
+    /// number in it left to right; an English-first line keeps its Hebrew
+    /// run right to left and the closing mark after it.
+    #[test]
+    fn hebrew_and_english_on_one_line_are_in_reading_order() {
+        if !hebrew_ready() {
+            return;
+        }
+        // שלום world 123
+        let l = bidi_layout(
+            "\u{5e9}\u{5dc}\u{5d5}\u{5dd} world 123",
+            TextDirection::Auto,
+            None,
+        );
+        assert!(l.lines[0].rtl, "a Hebrew first letter: right to left");
+        // The Hebrew word reads from the right.
+        assert!(mid(&l, 0) > mid(&l, 1) && mid(&l, 1) > mid(&l, 2) && mid(&l, 2) > mid(&l, 3));
+        // The English and the number sit to its left, left to right.
+        assert!(mid(&l, 5) < mid(&l, 9) && mid(&l, 9) < mid(&l, 11));
+        assert!(mid(&l, 11) < mid(&l, 12) && mid(&l, 12) < mid(&l, 13));
+        assert!(mid(&l, 13) < mid(&l, 3));
+        // hello שלום, עולם!
+        let t = "hello \u{5e9}\u{5dc}\u{5d5}\u{5dd}, \u{5e2}\u{5d5}\u{5dc}\u{5dd}!";
+        let l = bidi_layout(t, TextDirection::Auto, None);
+        assert!(!l.lines[0].rtl);
+        assert!(mid(&l, 0) < mid(&l, 4) && mid(&l, 4) < mid(&l, 15));
+        // The first Hebrew letter is the right end of the Hebrew run, the
+        // second word's last letter its left end; the mark ends the line.
+        assert!(mid(&l, 6) > mid(&l, 9) && mid(&l, 9) > mid(&l, 12));
+        assert!(mid(&l, 16) > mid(&l, 6), "the mark after the Hebrew run");
+    }
+
+    /// A paragraph set to run right to left puts the closing mark of an
+    /// English sentence on the left; set to left to right, Hebrew-first
+    /// text runs left to right.
+    #[test]
+    fn the_paragraph_direction_can_be_set() {
+        if !hebrew_ready() {
+            return;
+        }
+        let l = bidi_layout("abc!", TextDirection::Rtl, None);
+        assert!(l.lines[0].rtl);
+        assert!(mid(&l, 3) < mid(&l, 0), "the mark on the left");
+        let l = bidi_layout("\u{5d0} abc", TextDirection::Ltr, None);
+        assert!(!l.lines[0].rtl);
+        assert!(mid(&l, 0) < mid(&l, 2), "left to right");
+    }
+
+    /// Carets and selections of Hebrew text: the caret before the first
+    /// letter is at the right end, a selection of the whole line covers
+    /// its whole width, and a mixed selection may come in pieces.
+    #[test]
+    fn hebrew_carets_and_selections() {
+        if !hebrew_ready() {
+            return;
+        }
+        // שלום עולם
+        let t = "\u{5e9}\u{5dc}\u{5d5}\u{5dd} \u{5e2}\u{5d5}\u{5dc}\u{5dd}";
+        let l = bidi_layout(t, TextDirection::Auto, None);
+        let n = t.chars().count();
+        let (x0, ..) = l.caret(0).expect("caret");
+        let (x9, ..) = l.caret(n).expect("caret");
+        assert!(x0 > x9 + 10.0, "{x0} {x9}");
+        let pieces = l.selection_pieces(0, n);
+        assert_eq!(pieces.len(), 1, "{pieces:?}");
+        let (_, a, b) = pieces[0];
+        assert!((b - a) > (x0 - x9) - 0.01, "{a} {b}");
+        // A click near the right end puts the caret before the first
+        // letter; near the left end, after the last.
+        let base = l.lines[0].baseline;
+        assert_eq!(l.hit_char(Point::new(x0 - 0.2, base)), Some(0));
+        assert_eq!(l.hit_char(Point::new(x9 + 0.2, base)), Some(n));
+        // Arrows move on screen: left from the start goes to after the
+        // first letter, which is to its left.
+        assert_eq!(l.visual_step(0, true), Some(1));
+        assert_eq!(l.visual_step(1, false), Some(0));
+        // English only: steps stay logical.
+        let e = bidi_layout("abc", TextDirection::Auto, None);
+        assert_eq!(e.visual_step(1, true), None);
+        // Mixed: "ab שלום": selecting "b ש" gives two pieces.
+        let m = bidi_layout("ab \u{5e9}\u{5dc}\u{5d5}\u{5dd}", TextDirection::Auto, None);
+        let pieces = m.selection_pieces(1, 4);
+        assert_eq!(pieces.len(), 2, "{pieces:?}");
+    }
+
+    /// Hebrew with vowel marks, and mixed text wrapped in a frame, lay
+    /// out in order; nothing is lost.
+    #[test]
+    fn nikud_and_wrapped_mixed_text() {
+        if !hebrew_ready() {
+            return;
+        }
+        // שָׁלוֹם
+        let l = bidi_layout(
+            "\u{5e9}\u{5b8}\u{5c1}\u{5dc}\u{5d5}\u{5b9}\u{5dd}",
+            TextDirection::Auto,
+            None,
+        );
+        assert!(l.glyphs >= 4);
+        assert!(l.bounds.width() > 1.0);
+        assert!(mid(&l, 0) > mid(&l, 6));
+        // Several lines in a frame: each Hebrew-first line runs right to
+        // left, and every character is on a line.
+        let text =
+            "\u{5e9}\u{5dc}\u{5d5}\u{5dd} hello \u{5e2}\u{5d5}\u{5dc}\u{5dd} world ".repeat(6);
+        let l = bidi_layout(&text, TextDirection::Auto, Some(Size::new(40.0, 200.0)));
+        assert!(l.lines.len() > 2);
+        assert!(l.lines.iter().all(|line| line.rtl));
+        let covered: usize = l
+            .lines
+            .iter()
+            .map(|line| line.end_char - line.start_char)
+            .sum();
+        assert!(covered + l.lines.len() >= text.chars().count() - 1);
+        for line in &l.lines {
+            assert_eq!(line.boxes.len(), line.end_char - line.start_char);
+            assert_eq!(line.edges.len(), line.boxes.len() + 1);
+        }
     }
 
     #[test]

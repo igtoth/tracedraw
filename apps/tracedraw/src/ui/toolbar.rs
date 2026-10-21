@@ -1590,6 +1590,34 @@ const TEXT_ALIGNS: [(tracedraw_core::TextAlign, crate::ui::propbar::Pic, &str); 
     ),
 ];
 
+/// Left to right and Right to left: which way the selected text (the
+/// paragraph at the caret while text in a frame is typed) runs. The
+/// button of the way it runs now is down.
+pub fn text_direction_buttons(app: &mut App, ui: &mut Ui) {
+    use tracedraw_core::TextDirection;
+    let current = app
+        .selected_shapes()
+        .iter()
+        .find(|s| matches!(s.kind, ShapeKind::Text { .. }))
+        .and_then(|s| app.text_runs_rtl(s));
+    for (d, label, key) in [
+        (TextDirection::Ltr, "\u{00b6}\u{2192}", "toolbar.text_ltr"),
+        (TextDirection::Rtl, "\u{2190}\u{00b6}", "toolbar.text_rtl"),
+    ] {
+        let on = current == Some(d == TextDirection::Rtl);
+        if ui
+            .add_sized(
+                [26.0, 22.0],
+                egui::Button::selectable(on, egui::RichText::new(label).size(13.0)),
+            )
+            .on_hover_text(tr(key))
+            .clicked()
+        {
+            app.apply_text_direction(d);
+        }
+    }
+}
+
 /// The text part of the property bar: the font list, the size list, bold,
 /// italic and underline, the alignment list, bullets and drop cap (for
 /// paragraph text), the Text docker and Edit Text.
@@ -1632,6 +1660,7 @@ fn text_properties(app: &mut App, ui: &mut Ui) {
         let a = app.text_align;
         app.apply_text_align(a);
     }
+    text_direction_buttons(app, ui);
     vsep(ui);
     let shapes = app.selected_shapes();
     let is_text = shapes

@@ -56,3 +56,31 @@ Each tool's pointer says which tool is active (code: `ui/cursors.rs`):
 The cross hair, the arrows and the I-beam are the system's own; the
 icons, nibs and drawn pointers are painted by TraceDraw above the
 drawing. Nib outlines stay between 2 and 400 points on screen.
+
+## Clicks with drawing tools
+
+With the drawing and shaping tools whose click has no job of its own
+(Rectangle, Ellipse, Polygon, Star, Graph Paper, Action Lines, Spiral,
+Common Shapes, Table outside a table, Knife, Brush Strokes, the connectors, Blend, Block Shadow, Shape Recognition, Sketch
+and the shape brushes Smooth, Smear, Twirl, Attract and Repel, Smudge and
+Roughen), a click selects the same way the Pick tool does: the object
+under the pointer becomes the selection, Shift+click adds or removes it,
+Ctrl+click reaches one group level further in, and a click on empty
+space lets go of the selection (Shift+click there keeps it). The tool
+stays active. A drag still does the tool's work, even when it starts on
+top of an object.
+
+Tools whose click already does something keep it: the line tools
+(Freehand, Bezier, Pen, B-spline, Polyline, 2-point line, the 3-point
+tools) place points, Text places the caret, the fill tools, eyedroppers,
+Zoom, Crop, Eraser, Segment Delete, Area Fill, the dimension and callout
+tools and Variable Outline keep their own clicks, and the effect tools
+that already selected on a click (Free Transform, Drop Shadow,
+Transparency, Envelope, Extrude, Distort, Contour, Mesh Fill, Anchor
+Editing, Painterly Brush) go on doing so.
+
+Check: `pick_drag_tests::every_click_selecting_tool_selects_on_click`,
+`pick_drag_tests::a_click_with_a_drawing_tool_selects_and_a_drag_draws`,
+`pick_drag_tests::shift_click_with_a_drawing_tool_adds_and_takes_away`,
+`pick_drag_tests::line_tools_still_place_points_on_objects`,
+`pick_drag_tests::a_click_outside_a_table_selects_with_the_table_tool`.
