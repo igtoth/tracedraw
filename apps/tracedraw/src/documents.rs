@@ -258,7 +258,6 @@ impl App {
         self.distort_drag = None;
         self.context_menu = None;
         self.navigator_tex = None;
-        self.last_repeatable = None;
         self.flyout_open = None;
         self.raster.borrow_mut().invalidate();
     }

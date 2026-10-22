@@ -14,6 +14,8 @@ struct HistoryEntry {
     label: &'static str,
     before: Document,
     after: Document,
+    /// The command Edit > Repeat repeats for this step, when it is one.
+    repeatable: Option<Command>,
 }
 
 #[derive(Debug)]
@@ -122,6 +124,11 @@ impl Engine {
             label,
             before,
             after: self.doc.clone(),
+            repeatable: if cmd.is_repeatable() {
+                Some(cmd.clone())
+            } else {
+                None
+            },
         });
         self.finish_step();
         Ok(())
@@ -150,6 +157,7 @@ impl Engine {
             label,
             before,
             after: self.doc.clone(),
+            repeatable: None,
         });
         self.finish_step();
         Ok(())
@@ -275,6 +283,13 @@ impl Engine {
 
     pub fn redo_label(&self) -> Option<&'static str> {
         self.redo.last().map(|e| e.label)
+    }
+
+    /// The command Edit > Repeat repeats: the newest repeatable step still
+    /// applied. Undone steps leave the undo stack, so after an undo the step
+    /// before it becomes the one; redoing the step makes it the newest again.
+    pub fn repeatable(&self) -> Option<&Command> {
+        self.undo.iter().rev().find_map(|e| e.repeatable.as_ref())
     }
 }
 
@@ -486,5 +501,51 @@ mod tests {
             .is_err());
         assert_eq!(eng.revision(), rev);
         assert!(eng.undo_label().is_none());
+    }
+
+    #[test]
+    fn repeatable_follows_the_undo_and_redo_stacks() {
+        use crate::geometry::{Affine, Vec2};
+        let mut eng = Engine::default();
+        let page = eng.document().pages[0].id;
+        let layer = eng.document().pages[0].layers[0].id;
+        let id = eng.new_shape_id();
+        let shape = Shape::new(
+            id,
+            ShapeKind::Rect {
+                rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        eng.run(&Command::AddShape { layer, shape }).unwrap();
+        assert!(eng.repeatable().is_none());
+        let a = Command::TransformShapes {
+            shapes: vec![id],
+            transform: Affine::translate(Vec2::new(10.0, 0.0)),
+        };
+        eng.run(&a).unwrap();
+        let b = Command::SetFill {
+            shapes: vec![id],
+            fill: crate::Fill::None,
+        };
+        eng.run(&b).unwrap();
+        assert_eq!(eng.repeatable(), Some(&b));
+        eng.undo().unwrap();
+        assert_eq!(eng.repeatable(), Some(&a));
+        eng.redo().unwrap();
+        assert_eq!(eng.repeatable(), Some(&b));
+        // A non-repeatable step on top does not hide the last repeatable one.
+        eng.run(&Command::AddLayer {
+            page,
+            name: "Another".into(),
+        })
+        .unwrap();
+        assert_eq!(eng.repeatable(), Some(&b));
+        eng.undo().unwrap();
+        eng.undo().unwrap();
+        assert_eq!(eng.repeatable(), Some(&a));
+        eng.undo().unwrap();
+        assert!(eng.repeatable().is_none());
     }
 }

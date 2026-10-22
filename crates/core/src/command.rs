@@ -378,6 +378,20 @@ impl Command {
         matches!(self, Command::SetTimeTracker { .. })
     }
 
+    /// True for property changes that Edit > Repeat can apply again to the
+    /// current selection.
+    pub fn is_repeatable(&self) -> bool {
+        matches!(
+            self,
+            Command::TransformShapes { .. }
+                | Command::SetFill { .. }
+                | Command::SetStroke { .. }
+                | Command::PatchStroke { .. }
+                | Command::PatchFill { .. }
+                | Command::SetOpacity { .. }
+        )
+    }
+
     /// Short label for the History panel and the Edit menu ("Undo Move").
     pub fn label(&self) -> &'static str {
         match self {

@@ -1160,7 +1160,6 @@ pub struct App {
     pub anchor_sel: Option<usize>,
     /// Object > Order > In Front Of / Behind is waiting for a click: Some(in_front).
     pub pending_order: Option<bool>,
-    pub last_repeatable: Option<Command>,
     pub show_non_printing: bool,
     pub text_hyphenation: bool,
     /// Macro recording in progress: the commands run since Record started.
@@ -2043,7 +2042,6 @@ impl App {
             options_current_only: false,
             anchor_sel: None,
             pending_order: None,
-            last_repeatable: None,
             show_non_printing: false,
             text_hyphenation: false,
             recording: None,
@@ -3300,7 +3298,7 @@ impl App {
 
     /// Edit > Repeat: run the last repeatable command on the current selection.
     pub fn repeat_last(&mut self) {
-        let Some(cmd) = self.last_repeatable.clone() else {
+        let Some(cmd) = self.engine.repeatable().cloned() else {
             return;
         };
         let shapes = self.selection.clone();
@@ -3526,17 +3524,6 @@ impl App {
         }
         self.sync_effect_clones_for(&cmd);
         self.sync_object_clones();
-        if matches!(
-            cmd,
-            Command::TransformShapes { .. }
-                | Command::SetFill { .. }
-                | Command::SetStroke { .. }
-                | Command::PatchStroke { .. }
-                | Command::PatchFill { .. }
-                | Command::SetOpacity { .. }
-        ) {
-            self.last_repeatable = Some(cmd.clone());
-        }
         if let Some(rec) = &mut self.recording {
             rec.push(cmd);
         }
@@ -6666,6 +6653,32 @@ mod tests {
             },
         });
         id
+    }
+
+    #[test]
+    fn repeat_after_undo_uses_the_action_still_applied() {
+        let mut app = App::headless();
+        let id = rect_shape(&mut app, Rect::new(0.0, 0.0, 10.0, 10.0), true);
+        app.selection = vec![id];
+        app.run(Command::TransformShapes {
+            shapes: vec![id],
+            transform: Affine::translate(Vec2::new(10.0, 0.0)),
+        });
+        app.run(Command::TransformShapes {
+            shapes: vec![id],
+            transform: Affine::translate(Vec2::new(0.0, 5.0)),
+        });
+        app.undo();
+        app.repeat_last();
+        let b = app.doc().find_shape(id).unwrap().bounds();
+        assert!((b.x0 - 20.0).abs() < 1e-9, "{b:?}");
+        assert!((b.y0 - 0.0).abs() < 1e-9, "{b:?}");
+        assert!((b.x1 - 30.0).abs() < 1e-9, "{b:?}");
+        assert!((b.y1 - 10.0).abs() < 1e-9, "{b:?}");
+        // The repeat itself is the newest step, so undo takes it back.
+        app.undo();
+        let back = app.doc().find_shape(id).unwrap().bounds();
+        assert!((back.x0 - 10.0).abs() < 1e-9, "{back:?}");
     }
 
     #[test]

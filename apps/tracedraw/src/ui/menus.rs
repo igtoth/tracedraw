@@ -1762,7 +1762,7 @@ fn edit_menu(app: &mut App, ui: &mut Ui) {
         ui,
         "menu.edit.repeat",
         "Ctrl+R",
-        app.last_repeatable.is_some(),
+        app.engine.repeatable().is_some(),
     ) {
         app.repeat_last();
     }
