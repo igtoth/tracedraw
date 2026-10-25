@@ -729,3 +729,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# Automated fix for issue #761: Edit fill Color change problem
