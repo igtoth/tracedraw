@@ -120,4 +120,19 @@ mod tests {
             );
         }
     }
+
+    /// Both builds put the interface languages the module does not embed
+    /// where it fetches them (`i18n::file_url`).
+    #[test]
+    fn the_builds_ship_the_languages_the_module_fetches() {
+        assert_eq!(crate::i18n::file_url("de").as_deref(), Some("lang/de.toml"));
+        for (name, text) in [("scripts/web/build.sh", BUILD_SCRIPT), ("build.yml", CI)] {
+            assert!(
+                text.contains("mkdir -p site/lang")
+                    && text.contains("for f in apps/tracedraw/lang/*.toml")
+                    && text.contains("cp \"$f\" site/lang/"),
+                "{name} does not ship the interface languages"
+            );
+        }
+    }
 }

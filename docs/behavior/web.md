@@ -23,6 +23,8 @@ refuse to load modules from `file://`).
 | Fonts | installed system fonts | bundled at build time: Liberation Sans, Serif and Mono, DejaVu Sans, Noto Sans Devanagari and Bengali; the published page's font folder adds about a hundred free families (stand-ins of the same widths for common office faces, popular families, Chinese, Japanese, Korean, Arabic, Hebrew and Thai) and its font catalog every other family of the google/fonts collection (about 2,000), each fetched the first time a drawing's text needs it or a font list's pointer rests on it (see `web/FONTS.md`); Chinese and Japanese UI text needs a font the build machine had |
 | System clipboard | text, images and copied files (arboard) | text through the browser; pasting images or files from other programs is not available |
 | Help links | system browser | a new tab |
+| Interface languages | all eighteen built into the program | English built in; another language's file (`lang/<code>.toml` next to the page, about 230 to 390 KB) is fetched when the editor starts in it or it is chosen, English shows until it arrives and then the interface switches without a reload; when the fetch fails English stays (logged in the browser console) and the next start tries again |
+| Starting language (none chosen in Options) | the system locale (`LC_ALL`, `LANG`) | the browser's preferred languages (`navigator.languages`, else `navigator.language`), read once at start: the first one TraceDraw has (`pt` and `pt-BR` give Portuguese (Brasil), `zh-Hant-TW` and `zh-HK` Traditional Chinese, `es-419` Spanish), English when none; a language chosen in Options wins (`i18n::tests::browser_tags_choose_the_interface_language`, `i18n::tests::the_start_language_prefers_the_saved_one`) |
 
 ## Loading
 
@@ -94,6 +96,10 @@ size=$(wc -c < site/tracedraw_bg.wasm | tr -d ' ')
 sed -e "s/data-wasm-size=\"0\"/data-wasm-size=\"$size\"/" -e "s/@VERSION@/0.4.0/" \
     web/index.html > site/index.html
 cp assets/icon/tracedraw-256.png site/icon-256.png
+mkdir -p site/lang   # every language file but en.toml (built in)
+for f in apps/tracedraw/lang/*.toml; do
+    [ "$(basename "$f")" = en.toml ] || cp "$f" site/lang/
+done
 python3 -m http.server -d site 8080   # then open http://localhost:8080
 ```
 
@@ -101,7 +107,13 @@ Checks: the page keeps the splash, what it says, its links and the
 elements the module uses, and never says "demo"
 (`web_page::tests::the_loading_page_shows_the_splash_and_says_what_it_is`);
 both builds fill in the module's size and the version
-(`web_page::tests::the_builds_fill_in_the_modules_size_and_the_version`).
+(`web_page::tests::the_builds_fill_in_the_modules_size_and_the_version`);
+both ship the language files the module fetches
+(`web_page::tests::the_builds_ship_the_languages_the_module_fetches`),
+and the module shows English until a fetched language arrives, keeps it
+for switching back and stays in English when it is missing
+(`i18n::tests::a_fetched_language_shows_english_until_it_arrives`,
+`i18n::tests::a_missing_language_falls_back_to_english`).
 Checked in a browser with a stand-in module: the progress, the start, an
 error with the links kept, on a desktop and a phone-sized window.
 

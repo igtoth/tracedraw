@@ -221,11 +221,7 @@ fn main() -> eframe::Result<()> {
         settings = settings.reset_keeping_history();
         settings.save();
     }
-    i18n::set_language(&if settings.language.is_empty() {
-        i18n::system_language().to_string()
-    } else {
-        settings.language.clone()
-    });
+    i18n::set_language(&i18n::start_language(&settings.language));
     let splash = settings.show_splash && !plain;
     let viewport = if splash {
         // The splash has no frame, so it cannot be dragged larger; it is

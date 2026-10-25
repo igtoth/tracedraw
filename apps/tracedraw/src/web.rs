@@ -136,6 +136,39 @@ async fn fetch_bytes(url: &str) -> Option<Vec<u8>> {
     Some(js_sys::Uint8Array::new(&buffer).to_vec())
 }
 
+/// The browser's preferred languages (`navigator.languages`, else
+/// `navigator.language`), most wanted first.
+pub fn browser_languages() -> Vec<String> {
+    let Some(navigator) = web_sys::window().map(|w| w.navigator()) else {
+        return Vec::new();
+    };
+    let list: Vec<String> = navigator
+        .languages()
+        .iter()
+        .filter_map(|v| v.as_string())
+        .collect();
+    if list.is_empty() {
+        navigator.language().into_iter().collect()
+    } else {
+        list
+    }
+}
+
+/// Fetch an interface language's file from the page's `lang/` folder
+/// (see `i18n::set_language`) and draw again in that language when it
+/// arrives. When the fetch fails English stays, and the next start (or
+/// choosing the language again) tries again.
+pub fn fetch_language(code: String, url: String) {
+    wasm_bindgen_futures::spawn_local(async move {
+        let text = fetch_bytes(&url)
+            .await
+            .and_then(|bytes| String::from_utf8(bytes).ok());
+        if crate::i18n::language_arrived(&code, text.as_deref()) {
+            request_repaint();
+        }
+    });
+}
+
 /// Read the page's font folder list (`fonts/fonts.json`) and font catalog
 /// (`fonts/catalog.json`) and offer their families to the text engine,
 /// which asks for them as text (or a font list) needs them; a family both

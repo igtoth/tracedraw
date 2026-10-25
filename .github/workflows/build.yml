@@ -331,6 +331,12 @@ jobs:
           grep -q "data-wasm-size=\"$size\"" site/index.html
           if grep -q "@VERSION@" site/index.html; then exit 1; fi
           cp assets/icon/tracedraw-256.png site/icon-256.png
+          # The interface languages but English, which the module embeds:
+          # the page fetches the one chosen (apps/tracedraw/src/i18n.rs).
+          mkdir -p site/lang
+          for f in apps/tracedraw/lang/*.toml; do
+            [ "$(basename "$f")" = en.toml ] || cp "$f" site/lang/
+          done
           (cd site && zip -r "../dist/tracedraw-${{ steps.ver.outputs.version }}-web.zip" .)
 
       # The font folder of the published page (web/fonts.txt): free fonts

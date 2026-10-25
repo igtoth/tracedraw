@@ -2641,12 +2641,7 @@ impl App {
         s.bars.migrate();
         s.migrate_ai();
         self.ai.key = crate::ai::remembered_key(&s.ai);
-        let lang = if s.language.is_empty() {
-            crate::i18n::system_language().to_string()
-        } else {
-            s.language.clone()
-        };
-        crate::i18n::set_language(&lang);
+        crate::i18n::set_language(&crate::i18n::start_language(&s.language));
         self.workspace = Workspace::from_id(&s.workspace);
         self.set_workspace(self.workspace);
         // The bars as they were left, over the workspace's own.

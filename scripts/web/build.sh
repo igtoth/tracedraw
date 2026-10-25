@@ -14,6 +14,12 @@ version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
 sed -e "s/data-wasm-size=\"0\"/data-wasm-size=\"$size\"/" -e "s/@VERSION@/$version/" \
     web/index.html > site/index.html
 cp assets/icon/tracedraw-256.png site/icon-256.png
+# The interface languages but English, which the module embeds: the page
+# fetches the one chosen (apps/tracedraw/src/i18n.rs).
+mkdir -p site/lang
+for f in apps/tracedraw/lang/*.toml; do
+    [ "$(basename "$f")" = en.toml ] || cp "$f" site/lang/
+done
 # The font folder (web/fonts.txt) and the font catalog when asked for:
 # TRACEDRAW_FONT_FOLDER=1,
 # with TRACEDRAW_GOOGLE_FONTS pointing at a google/fonts checkout to copy

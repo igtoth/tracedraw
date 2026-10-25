@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Browser version: the module no longer carries the seventeen interface languages besides English (about 4.4 MB); the page fetches the chosen language's file when the editor starts in it or it is chosen, showing English until it arrives, then switching without a reload. The desktop program keeps every language built in. Until a language is chosen in Options, the browser version now starts in the browser's preferred language (the first of its list that TraceDraw has) instead of always in English.
+
 - Convert Outline to Object (Ctrl+Shift+Q) on an outline with round ends or round corners: each round end is now two real curves meeting at its tip, with nodes where it meets the sides, and each round corner a curve, instead of many tiny straight segments. Curved sides also get fewer nodes (#623).
 
 - File > Export now starts with the choices of the last export of the session (format, resolution, quality, transparency, pages and PDF settings; Selected only starts off again) instead of resetting them each time. To keep them for the next session too, turn on Options > Global > File Formats > Remember the settings of the last export, which new preferences now have on and which now keeps WebP lossless as well (#617).
