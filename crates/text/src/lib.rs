@@ -826,6 +826,21 @@ fn continues_syllable(prev: char, c: char) -> bool {
         || (prev == '\u{200D}' && indic_letter(c))
 }
 
+/// Two spans whose letters shape the same way: only their colours,
+/// outlines, backgrounds, lines or paragraph differ, so they can be
+/// shaped as one run (#911).
+fn shapes_alike(a: &TextSpan, b: &TextSpan) -> bool {
+    a.font_family == b.font_family
+        && a.size_pt == b.size_pt
+        && a.bold == b.bold
+        && a.italic == b.italic
+        && a.tracking_pct == b.tracking_pct
+        && a.baseline_shift_pt == b.baseline_shift_pt
+        && a.offset_x_pct == b.offset_x_pct
+        && a.angle_deg == b.angle_deg
+        && a.features == b.features
+}
+
 /// Text in which a character may continue the syllable before it: any
 /// text but plain ASCII, the only text the syllable checks are skipped
 /// for (every frame of editing lays text out, #599).
@@ -2152,7 +2167,10 @@ impl FontSystem {
 
     /// Shape one run of text in one span's style into glyphs, with the
     /// paragraph's character and word spacing. Letters the span's face
-    /// lacks are drawn with a face that has them.
+    /// lacks are drawn with a face that has them. `breaks` are the
+    /// characters (counted like `char_base`) where another span shaped
+    /// with this one starts: no ligature joins letters across them.
+    #[allow(clippy::too_many_arguments)]
     fn shape_run(
         &self,
         span: &TextSpan,
@@ -2161,6 +2179,7 @@ impl FontSystem {
         size_scale: f64,
         char_base: usize,
         para: &ParagraphStyle,
+        breaks: &[usize],
     ) -> Vec<Glyph> {
         let mut out = Vec::new();
         if text.is_empty() {
@@ -2211,6 +2230,7 @@ impl FontSystem {
                         char_base + before,
                         para,
                         level,
+                        breaks,
                     ));
                 }
             }
@@ -2377,6 +2397,7 @@ impl FontSystem {
         char_base: usize,
         para: &ParagraphStyle,
         level: Option<u8>,
+        breaks: &[usize],
     ) -> Vec<Glyph> {
         let mut out = Vec::new();
         let Some((data, index)) = self.face_data(id) else {
@@ -2434,6 +2455,26 @@ impl FontSystem {
                 rustybuzz::Feature::new(tag, 1, ..)
             })
             .collect();
+        // Letters of two spans shaped together keep their own colours: no
+        // ligature forms over the two letters either side of the change
+        // (a font may form one from a lookahead past its first letter);
+        // kerning and the other features still see across it.
+        for b in breaks {
+            let Some(k) = b.checked_sub(char_base).filter(|k| *k > 0) else {
+                continue;
+            };
+            let Some((at, c)) = text.char_indices().nth(k) else {
+                continue;
+            };
+            let from = text[..at].char_indices().next_back().map_or(at, |(i, _)| i);
+            for tag in [b"liga", b"clig", b"dlig"] {
+                features.push(rustybuzz::Feature::new(
+                    rustybuzz::ttf_parser::Tag::from_bytes(tag),
+                    0,
+                    from..at + c.len_utf8(),
+                ));
+            }
+        }
         // Vertical text takes the font's vertical forms (brackets and
         // punctuation turned or moved for columns) for its upright
         // letters.
@@ -2707,18 +2748,39 @@ impl FontSystem {
                         char_idx += 1;
                     }
                     let mut shaped = std::borrow::Cow::Borrowed(part);
+                    // The spans after this one that shape alike (the same
+                    // font, size and character placement, another colour
+                    // only) are shaped with it, so the font's kerning and
+                    // contextual forms hold across the change of colour
+                    // (#911): the characters each one gave, and where it
+                    // starts.
+                    let mut joined: Vec<(Range<usize>, usize)> = Vec::new();
+                    let mut breaks: Vec<usize> = Vec::new();
                     if let (true, Some(mut prev)) = (
                         last_piece && parts.peek().is_none(),
                         part.chars().next_back(),
                     ) {
                         for (sj, next) in spans.iter().enumerate().skip(si + 1) {
                             let mut n = 0;
-                            for c in next.text.chars() {
-                                if !continues_syllable(prev, c) {
-                                    break;
+                            if shapes_alike(span, next) {
+                                n = next.text.find(['\n', '\t']).unwrap_or(next.text.len());
+                                if let Some(c) =
+                                    next.text.get(..n).and_then(|t| t.chars().next_back())
+                                {
+                                    let from = char_idx + shaped.chars().count();
+                                    let count = next.text.get(..n).map_or(0, |t| t.chars().count());
+                                    breaks.push(from);
+                                    joined.push((from..from + count, sj));
+                                    prev = c;
                                 }
-                                prev = c;
-                                n += c.len_utf8();
+                            } else {
+                                for c in next.text.chars() {
+                                    if !continues_syllable(prev, c) {
+                                        break;
+                                    }
+                                    prev = c;
+                                    n += c.len_utf8();
+                                }
                             }
                             if let Some(more) = next.text.get(..n).filter(|m| !m.is_empty()) {
                                 shaped.to_mut().push_str(more);
@@ -2735,8 +2797,24 @@ impl FontSystem {
                         }
                     }
                     let pi = paragraphs.len().saturating_sub(1);
-                    let run =
-                        self.shape_run(span, si, &shaped, size_scale, char_idx, &style_of(pi).1);
+                    let mut run = self.shape_run(
+                        span,
+                        si,
+                        &shaped,
+                        size_scale,
+                        char_idx,
+                        &style_of(pi).1,
+                        &breaks,
+                    );
+                    if !joined.is_empty() {
+                        for g in &mut run {
+                            if let Some((_, sj)) =
+                                joined.iter().find(|(r, _)| r.contains(&g.char_idx))
+                            {
+                                g.span = *sj;
+                            }
+                        }
+                    }
                     char_idx += shaped.chars().count();
                     if let Some(p) = paragraphs.last_mut() {
                         p.extend(run);
@@ -3099,7 +3177,7 @@ impl FontSystem {
             if let (Some(bx), false) = (line.bullet_x, artistic) {
                 let first_span = glyphs.first().map(|g| g.span).unwrap_or(0);
                 if let Some(span) = spans.get(first_span).filter(|_| span_drawn(first_span)) {
-                    let b = self.shape_run(span, 0, &ps.bullet_char, size_scale, 0, ps);
+                    let b = self.shape_run(span, 0, &ps.bullet_char, size_scale, 0, ps, &[]);
                     for g in &b {
                         let a = orient(Affine::translate((bx, y)), g, m.ascent);
                         place_glyph(collect, a, g, &mut line_glyphs);
@@ -5705,6 +5783,64 @@ mod tests {
             (a.x0 - b.x0).abs() < 1e-6 && (a.x1 - b.x1).abs() < 1e-6,
             "{a:?} {b:?}"
         );
+    }
+
+    /// Letters in another colour keep the font's kerning with their
+    /// neighbours: "Hell" and "o" in two colours are as wide as "Hello"
+    /// in one, its "lo" pair kerned, and each part draws its own letters
+    /// where the whole text has them (#911).
+    #[test]
+    fn a_colour_change_keeps_the_kerning_across_it() {
+        let f = system_with(&[QUICKSAND]);
+        let whole = f.outline(&[TextSpan::new("Hello", "Quicksand", 100.0)]);
+        let mut a = TextSpan::new("Hell", "Quicksand", 100.0);
+        a.fill = Some(tracedraw_core::Fill::Solid(tracedraw_core::Color::rgb8(
+            0, 255, 255,
+        )));
+        let b = TextSpan::new("o", "Quicksand", 100.0);
+        let split = f.outline(&[a.clone(), b.clone()]);
+        assert_eq!(whole.lines[0].edges, split.lines[0].edges);
+        assert_eq!(split.glyphs, 5);
+        // Shaped apart the pair loses its kerning: the test sees it.
+        let apart = |t: &str| f.outline(&[TextSpan::new(t, "Quicksand", 100.0)]);
+        let loose = apart("Hell").lines[0].edges[4] + apart("o").lines[0].edges[1];
+        assert!((loose - whole.lines[0].edges[5]).abs() > 1e-3, "{loose}");
+        // The two parts of the coloured text: each its own letters, at
+        // their places in the whole.
+        let part = |first_drawn: bool| {
+            let mut a = a.clone();
+            let mut b = b.clone();
+            a.layout_only = !first_drawn;
+            b.layout_only = first_drawn;
+            f.outline(&[a, b]).path.bounding_box()
+        };
+        let all = whole.path.bounding_box();
+        assert!((part(true).x0 - all.x0).abs() < 1e-9);
+        assert!((part(false).x1 - all.x1).abs() < 1e-9);
+        // Another size is shaped on its own, as before.
+        let mut big = b.clone();
+        big.size_pt = 200.0;
+        let mixed = f.outline(&[a.clone(), big]);
+        assert_eq!(mixed.glyphs, 5);
+    }
+
+    /// No ligature joins letters of two colours: each keeps its glyph.
+    #[test]
+    fn a_colour_change_breaks_ligatures() {
+        for font in [SELAWIK, QUICKSAND] {
+            let f = system_with(&[font]);
+            let family = f.families().into_iter().next().unwrap_or_default();
+            for pair in ["fi", "fl", "ff"] {
+                let one = f.outline(&[TextSpan::new(pair, &family, 100.0)]);
+                let mut a = TextSpan::new(&pair[..1], &family, 100.0);
+                a.fill = Some(tracedraw_core::Fill::Solid(tracedraw_core::Color::rgb8(
+                    255, 0, 0,
+                )));
+                let two = f.outline(&[a, TextSpan::new(&pair[1..], &family, 100.0)]);
+                assert!(one.glyphs <= 2);
+                assert_eq!(two.glyphs, 2, "{family} {pair}");
+            }
+        }
     }
 
     #[test]
