@@ -20,6 +20,7 @@ full, row-by-row status.
 - Shaping: Trim with an open curve (a line, a polyline or a curve) crossing a closed object cuts the object along it into separate pieces, each keeping the object's fill and outline; several curves make more pieces, and a curve that ends inside cuts nothing and the status bar says so. The object came back whole. Front Minus Back and Back Minus Front split along open curves the same way (#1005).
 - Tracing: the grain of photos and compressed images is taken out before the colours are picked (more at lower detail, none at the highest), so flat colours no longer come out full of white holes, scratches and specks, and the trace has far fewer curves; edges and corners keep their place (#611).
 - Text fitted to a path: with the Pick tool the property bar shows the path's own fields (placement with Top centre and Bottom centre, distance from the path, the two mirrors, Straighten Text) before the text fields, so text on the bottom of a circle can be turned to read left to right, as on a stamp. The text fields came first and hid them (#193).
+- `.cdr` mesh fills: objects filled with a mesh open with their colour grid instead of being left out. In a version 11 drawing of 412 objects, 62 mesh fill objects (the skin, the jacket and skirt shading) were skipped and now show; each takes its outline from the mesh's edge, which is where the program that saved the file draws it. The grid's cells are drawn with straight sides between the nodes (#896).
 
 ## 0.19.8 (2026-10-27)
 
