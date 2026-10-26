@@ -392,6 +392,11 @@ fn font_list_with(
     });
     let (field, arrow) = row.inner;
     let anchor = field.rect.union(arrow.rect);
+    // A family that came with the drawing (embedded in the file, not
+    // installed) says so in the field while it shows that name (#518).
+    if !field.has_focus() && st.typed.is_none() && is_embedded(current) {
+        embedded_tag(ui.painter(), field.rect.shrink2(Vec2::new(3.0, 1.0)), true);
+    }
     let was_open = egui::Popup::is_id_open(&ctx, popup_id);
     if field.gained_focus() {
         // Typing replaces the name.
@@ -963,6 +968,18 @@ fn draw_row(
     if resp.clicked() && !out.toggled {
         out.clicked = true;
     }
+    // "Embedded" at the end of a family that came with the drawing.
+    if matches!(row, Row::Family(_)) && info.as_ref().is_some_and(|i| i.embedded) {
+        let tag = embedded_tag(
+            &painter,
+            Rect::from_min_max(
+                egui::pos2(left, rect.top()),
+                egui::pos2(right, rect.bottom()),
+            ),
+            false,
+        );
+        right = tag.left() - 6.0;
+    }
     // The name in its own font; symbol fonts, families to download and
     // names it cannot draw in the interface font.
     let own = !info.as_ref().is_some_and(|i| i.symbol);
@@ -1007,6 +1024,27 @@ fn draw_row(
         }
     }
     out
+}
+
+/// Whether `family` came with a drawing and is not installed.
+fn is_embedded(family: &str) -> bool {
+    !family.is_empty() && tracedraw_text::fonts().is_document_family(family)
+}
+
+/// The word "Embedded" at the right end of `r`, on the field's colour
+/// when `field` (over the end of a long name); the room it took.
+fn embedded_tag(painter: &egui::Painter, r: Rect, field: bool) -> Rect {
+    let text = tr("font_list.embedded_tag");
+    let font = egui::FontId::proportional(11.0);
+    let galley = painter.layout_no_wrap(text, font, Color32::from_rgb(0xC0, 0x6A, 0x12));
+    let size = galley.size();
+    let at = egui::pos2(r.right() - size.x, r.center().y - size.y / 2.0);
+    let room = Rect::from_min_size(at, size).expand2(Vec2::new(3.0, 0.0));
+    if field {
+        painter.rect_filled(room, 0.0, Tokens::field());
+    }
+    painter.galley(at, galley, Color32::from_rgb(0xC0, 0x6A, 0x12));
+    room
 }
 
 /// The small picture of how a family is built; returns its description.
@@ -1292,6 +1330,75 @@ mod tests {
     /// The list draws open, with every filter, styles shown, a long list
     /// and typed text; picking returns the family and keeps it among the
     /// fonts used last.
+    /// A family that came with a drawing and is not installed says
+    /// "Embedded" in the font box and at the end of its row in the list;
+    /// installed families do not (#518).
+    #[test]
+    fn fonts_embedded_in_the_drawing_say_so() {
+        let mut app = App::headless();
+        app.add_carried_fonts(&[tracedraw_core::DocumentFont::new(
+            "Selawik",
+            include_bytes!("../../assets/fonts/Selawik-Regular.ttf").to_vec(),
+        )]);
+        if !tracedraw_text::fonts().is_document_family("Selawik") {
+            return; // installed on this machine
+        }
+        let installed = app
+            .font_families
+            .iter()
+            .find(|f| !is_embedded(f))
+            .cloned()
+            .expect("an installed family");
+        let tag = tr("font_list.embedded_tag");
+        let ctx = crate::theme::ui_context();
+        let texts = |out: &egui::FullOutput| -> Vec<String> {
+            out.shapes
+                .iter()
+                .filter_map(|c| match &c.shape {
+                    egui::Shape::Text(t) => Some(t.galley.text().to_string()),
+                    _ => None,
+                })
+                .collect()
+        };
+        let input = || egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(
+                egui::Pos2::ZERO,
+                Vec2::new(1200.0, 900.0),
+            )),
+            ..Default::default()
+        };
+        // The closed font box.
+        for (family, tagged) in [("Selawik", true), (installed.as_str(), false)] {
+            let mut out = ctx.run_ui(input(), |ui| {
+                font_list_live(&mut app, ui, "embedded_test", family, 220.0);
+            });
+            out.textures_delta.clear();
+            assert_eq!(texts(&out).contains(&tag), tagged, "{family}");
+        }
+        // The rows of the list.
+        for (family, tagged) in [("Selawik", true), (installed.as_str(), false)] {
+            let mut st = ListState::default();
+            let rows = vec![Row::Family(family.to_string())];
+            let families = vec![family.to_string()];
+            let (mut pick, mut hovered) = (None, None);
+            let mut out = ctx.run_ui(input(), |ui| {
+                list_body(
+                    &mut app,
+                    ui,
+                    &mut st,
+                    &rows,
+                    &families,
+                    "",
+                    false,
+                    &mut pick,
+                    &mut hovered,
+                );
+            });
+            out.textures_delta.clear();
+            assert_eq!(texts(&out).contains(&tag), tagged, "row {family}");
+        }
+    }
+
     #[test]
     fn the_list_draws_in_every_state() {
         let ctx = crate::theme::ui_context();

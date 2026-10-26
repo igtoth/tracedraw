@@ -23,6 +23,8 @@ const ERROR: egui::Color32 = egui::Color32::from_rgb(0xC4, 0x2B, 0x1C);
 const WIDTH: f32 = 760.0;
 const LIST_H: f32 = 250.0;
 const PLACES_W: f32 = 150.0;
+/// Letters typed in the list this many seconds apart start a new search.
+const TYPE_AHEAD_PAUSE: f64 = 1.0;
 
 /// The file types the drawing can be saved as.
 pub const TDRAW: &str = "tdraw";
@@ -64,6 +66,18 @@ pub struct SaveAsState {
     pub replace: Option<PathBuf>,
     /// Why nothing was saved (no name, no such folder).
     pub note: Option<String>,
+    /// The entry picked in the list (a folder or a file).
+    pub selected: Option<PathBuf>,
+    /// The entry being renamed and the name typed so far.
+    pub renaming: Option<(PathBuf, String)>,
+    /// The list has the keyboard: letters jump to entries, F2 renames,
+    /// Enter opens a folder, the arrows move.
+    pub list_keys: bool,
+    /// The letters typed in the list, and when the last came (seconds).
+    pub typed: String,
+    pub typed_at: f64,
+    /// The list scrolls to the picked entry (the keys moved it).
+    pub scroll_to: bool,
 }
 
 impl SaveAsState {
@@ -142,6 +156,12 @@ impl SaveAsState {
             entries: Vec::new(),
             replace: None,
             note: None,
+            selected: None,
+            renaming: None,
+            list_keys: false,
+            typed: String::new(),
+            typed_at: 0.0,
+            scroll_to: false,
         };
         st.name = format!("{stem}.{}", st.extension());
         st.open_dir(dir);
@@ -190,6 +210,155 @@ impl SaveAsState {
         self.dir = dir;
         self.replace = None;
         self.note = None;
+        self.selected = None;
+        self.renaming = None;
+        self.typed.clear();
+    }
+
+    /// New folder: make "New folder" (or "New folder (2)" ...) here, pick
+    /// it and start renaming it, staying in this folder.
+    pub fn new_folder(&mut self) {
+        let base = tr("dialog.new_folder");
+        let mut path = self.dir.join(&base);
+        let mut n = 2;
+        while path.exists() {
+            path = self.dir.join(format!("{base} ({n})"));
+            n += 1;
+        }
+        match files::create_dir(&path) {
+            Ok(()) => {
+                let dir = self.dir.clone();
+                self.open_dir(dir);
+                self.list_keys = true;
+                self.start_rename(path);
+            }
+            Err(e) => self.note = Some(e.to_string()),
+        }
+    }
+
+    /// Pick an entry; a file's name becomes the name to save as.
+    pub fn select(&mut self, path: PathBuf) {
+        if let Some(e) = self.entries.iter().find(|e| e.path == path) {
+            if !e.is_dir {
+                self.name = e.name.clone();
+                self.replace = None;
+            }
+        }
+        self.selected = Some(path);
+    }
+
+    /// Start renaming an entry of the list.
+    pub fn start_rename(&mut self, path: PathBuf) {
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+        self.selected = Some(path.clone());
+        self.renaming = Some((path, name));
+    }
+
+    /// Give the entry being renamed the name typed. A name that is empty,
+    /// has a folder separator or is taken leaves it as it was and says so;
+    /// false then.
+    pub fn finish_rename(&mut self) -> bool {
+        let Some((from, typed)) = self.renaming.take() else {
+            return true;
+        };
+        let name = typed.trim();
+        let old = from.file_name().map(|n| n.to_string_lossy().to_string());
+        if old.as_deref() == Some(name) {
+            return true;
+        }
+        if name.is_empty() || name == "." || name == ".." || name.contains(['/', '\\']) {
+            self.note = Some(tr("dialog.bad_name"));
+            return false;
+        }
+        let to = self.dir.join(name);
+        match files::rename(&from, &to) {
+            Ok(()) => {
+                let dir = self.dir.clone();
+                self.open_dir(dir);
+                self.select(to);
+                true
+            }
+            Err(e) => {
+                self.note = Some(if e.kind() == std::io::ErrorKind::AlreadyExists {
+                    trf("dialog.name_taken", &[("name", name)])
+                } else {
+                    e.to_string()
+                });
+                false
+            }
+        }
+    }
+
+    /// Letters typed in the list pick the first entry whose name starts
+    /// with them; letters a second or more apart start again, and one
+    /// letter typed again goes on to the next entry starting with it.
+    pub fn type_ahead(&mut self, text: &str, now: f64) {
+        if !(0.0..=TYPE_AHEAD_PAUSE).contains(&(now - self.typed_at)) {
+            self.typed.clear();
+        }
+        self.typed_at = now;
+        self.typed.push_str(&text.to_lowercase());
+        let shown: Vec<PathBuf> = self
+            .shown()
+            .iter()
+            .filter(|e| {
+                let name = e.name.to_lowercase();
+                name.starts_with(&self.typed)
+            })
+            .map(|e| e.path.clone())
+            .collect();
+        let mut chars = self.typed.chars();
+        let first = chars.next();
+        let repeated = first.is_some_and(|c| chars.all(|d| d == c));
+        let pick = if repeated && self.typed.chars().count() > 1 && shown.is_empty() {
+            // "ss": the next entry starting with "s" after the picked one.
+            let c = first.unwrap_or_default().to_string();
+            let same: Vec<PathBuf> = self
+                .shown()
+                .iter()
+                .filter(|e| e.name.to_lowercase().starts_with(&c))
+                .map(|e| e.path.clone())
+                .collect();
+            let at = same.iter().position(|p| Some(p) == self.selected.as_ref());
+            match at {
+                Some(i) => same.get((i + 1) % same.len()).cloned(),
+                None => same.first().cloned(),
+            }
+        } else {
+            shown.first().cloned()
+        };
+        if let Some(path) = pick {
+            self.select(path);
+            self.scroll_to = true;
+        }
+    }
+
+    /// The arrow keys: the entry `by` places down (up when negative).
+    pub fn step(&mut self, by: i32) {
+        let shown: Vec<PathBuf> = self.shown().iter().map(|e| e.path.clone()).collect();
+        if shown.is_empty() {
+            return;
+        }
+        let at = shown.iter().position(|p| Some(p) == self.selected.as_ref());
+        let next = match at {
+            Some(i) => (i as i64 + by as i64).clamp(0, shown.len() as i64 - 1) as usize,
+            None if by < 0 => shown.len() - 1,
+            None => 0,
+        };
+        self.select(shown[next].clone());
+        self.scroll_to = true;
+    }
+
+    /// The picked entry when it is a folder.
+    fn selected_folder(&self) -> Option<PathBuf> {
+        let path = self.selected.as_ref()?;
+        self.entries
+            .iter()
+            .find(|e| &e.path == path && e.is_dir)
+            .map(|e| e.path.clone())
     }
 
     /// The type changed: the name takes its extension.
@@ -478,17 +647,7 @@ fn folder_bar(ui: &mut Ui, st: &mut SaveAsState) {
             }
         }
         if ui.button(tr("dialog.new_folder")).clicked() {
-            let base = tr("dialog.new_folder");
-            let mut path = st.dir.join(&base);
-            let mut n = 2;
-            while path.exists() {
-                path = st.dir.join(format!("{base} ({n})"));
-                n += 1;
-            }
-            match files::create_dir(&path) {
-                Ok(()) => st.open_dir(path),
-                Err(e) => st.note = Some(e.to_string()),
-            }
+            st.new_folder();
         }
     });
 }
@@ -510,12 +669,17 @@ fn places(ui: &mut Ui, st: &mut SaveAsState) {
     });
 }
 
-/// The folder's contents: a click on a file takes its name, a double
-/// click on a folder opens it.
+/// The folder's contents: a click picks an entry (a file's name becomes
+/// the name), a double click on a folder opens it, a right click offers
+/// Open and Rename. With the list picked, letters jump to entries, F2
+/// renames, Enter opens a folder and the arrows move.
 fn listing(ui: &mut Ui, st: &mut SaveAsState) {
     let tz = jiff::tz::TimeZone::system();
     let mut open: Option<PathBuf> = None;
-    let mut pick: Option<String> = None;
+    let mut pick: Option<PathBuf> = None;
+    let mut rename: Option<PathBuf> = None;
+    let mut rename_done: Option<bool> = None;
+    list_keys(ui, st, &mut open, &mut rename);
     ui.vertical(|ui| {
         egui::ScrollArea::vertical()
             .id_salt("save_as_list")
@@ -536,19 +700,61 @@ fn listing(ui: &mut Ui, st: &mut SaveAsState) {
                             ui.label(RichText::new(tr(head)).color(Tokens::text_dim()));
                         }
                         ui.end_row();
-                        for e in st.shown() {
-                            let selected = !e.is_dir && e.name == st.name;
-                            let r = ui
-                                .horizontal(|ui| {
+                        let picked = st.selected.clone();
+                        let name = st.name.clone();
+                        let entries: Vec<DirEntry> = st.shown().into_iter().cloned().collect();
+                        for e in &entries {
+                            let selected = picked.as_ref() == Some(&e.path)
+                                || (picked.is_none() && !e.is_dir && e.name == name);
+                            let editing = st
+                                .renaming
+                                .as_mut()
+                                .filter(|(path, _)| path == &e.path)
+                                .map(|(_, typed)| typed);
+                            if let Some(typed) = editing {
+                                ui.horizontal(|ui| {
                                     ui.spacing_mut().item_spacing.x = 4.0;
                                     entry_icon(ui, e.is_dir);
-                                    ui.selectable_label(selected, e.name.as_str())
-                                })
-                                .inner;
-                            if r.double_clicked() && e.is_dir {
-                                open = Some(e.path.clone());
-                            } else if r.clicked() && !e.is_dir {
-                                pick = Some(e.name.clone());
+                                    let field = ui.add(
+                                        egui::TextEdit::singleline(typed)
+                                            .id(egui::Id::new("save_as_rename"))
+                                            .desired_width(220.0),
+                                    );
+                                    if !field.has_focus() && !field.lost_focus() {
+                                        field.request_focus();
+                                        field.scroll_to_me(None);
+                                    }
+                                    if field.lost_focus() {
+                                        let cancel = ui.input(|i| i.key_pressed(egui::Key::Escape));
+                                        rename_done = Some(!cancel);
+                                    }
+                                });
+                            } else {
+                                let r = ui
+                                    .horizontal(|ui| {
+                                        ui.spacing_mut().item_spacing.x = 4.0;
+                                        entry_icon(ui, e.is_dir);
+                                        ui.selectable_label(selected, e.name.as_str())
+                                    })
+                                    .inner;
+                                if selected && st.scroll_to {
+                                    r.scroll_to_me(None);
+                                }
+                                if r.double_clicked() && e.is_dir {
+                                    open = Some(e.path.clone());
+                                } else if r.clicked() || r.secondary_clicked() {
+                                    pick = Some(e.path.clone());
+                                }
+                                r.context_menu(|ui| {
+                                    if e.is_dir && ui.button(tr("dialog.open_entry")).clicked() {
+                                        open = Some(e.path.clone());
+                                        ui.close();
+                                    }
+                                    if ui.button(tr("dialog.rename_entry")).clicked() {
+                                        rename = Some(e.path.clone());
+                                        ui.close();
+                                    }
+                                });
                             }
                             ui.label(
                                 e.modified
@@ -574,12 +780,84 @@ fn listing(ui: &mut Ui, st: &mut SaveAsState) {
                     });
             });
     });
+    st.scroll_to = false;
+    match rename_done {
+        Some(true) => {
+            // The Enter that ends a rename does not also save.
+            ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
+            st.finish_rename();
+        }
+        Some(false) => st.renaming = None,
+        None => {}
+    }
+    if let Some(path) = pick {
+        st.list_keys = true;
+        st.select(path);
+    }
+    if let Some(path) = rename {
+        st.list_keys = true;
+        st.start_rename(path);
+    }
     if let Some(dir) = open {
+        st.list_keys = true;
         st.open_dir(dir);
     }
-    if let Some(name) = pick {
-        st.name = name;
-        st.replace = None;
+}
+
+/// The keys of the list, while it is picked and no field takes typing.
+fn list_keys(
+    ui: &mut Ui,
+    st: &mut SaveAsState,
+    open: &mut Option<PathBuf>,
+    rename: &mut Option<PathBuf>,
+) {
+    if st.renaming.is_some() {
+        return;
+    }
+    if ui.ctx().egui_wants_keyboard_input() {
+        // Typing in the name or the path bar hands the keys back.
+        st.list_keys = false;
+        return;
+    }
+    if !st.list_keys {
+        return;
+    }
+    let now = ui.input(|i| i.time);
+    let (text, f2, down, up) = ui.input(|i| {
+        let text: String = i
+            .events
+            .iter()
+            .filter_map(|e| match e {
+                egui::Event::Text(t) => Some(t.as_str()),
+                _ => None,
+            })
+            .collect();
+        (
+            text,
+            i.key_pressed(egui::Key::F2),
+            i.key_pressed(egui::Key::ArrowDown),
+            i.key_pressed(egui::Key::ArrowUp),
+        )
+    });
+    let text = text.trim();
+    if !text.is_empty() {
+        st.type_ahead(text, now);
+    }
+    if down {
+        st.step(1);
+    }
+    if up {
+        st.step(-1);
+    }
+    if f2 {
+        if let Some(path) = st.selected.clone() {
+            *rename = Some(path);
+        }
+    }
+    if let Some(dir) = st.selected_folder() {
+        if ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter)) {
+            *open = Some(dir);
+        }
     }
 }
 
@@ -803,19 +1081,31 @@ mod tests {
 
     /// Draw the open dialog for a frame, pressing Enter when `enter`.
     fn frame(ctx: &Context, app: &mut App, enter: bool) {
-        let mut input = egui::RawInput {
+        let keys = if enter {
+            vec![key(egui::Key::Enter)]
+        } else {
+            Vec::new()
+        };
+        frame_with(ctx, app, keys);
+    }
+
+    fn key(key: egui::Key) -> egui::Event {
+        egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        }
+    }
+
+    /// Draw the open dialog for a frame with these events.
+    fn frame_with(ctx: &Context, app: &mut App, events: Vec<egui::Event>) {
+        let input = egui::RawInput {
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1400.0, 900.0))),
+            events,
             ..Default::default()
         };
-        if enter {
-            input.events.push(egui::Event::Key {
-                key: egui::Key::Enter,
-                physical_key: None,
-                pressed: true,
-                repeat: false,
-                modifiers: egui::Modifiers::NONE,
-            });
-        }
         let mut out = ctx.run_ui(input, |ui| crate::ui::dialogs::show(app, ui.ctx()));
         out.textures_delta.clear();
     }
@@ -970,16 +1260,108 @@ mod tests {
         frame(&ctx, &mut app, false);
         frame(&ctx, &mut app, false);
         assert!(matches!(app.dialog, Dialog::SaveAs(_)));
-        // New folder makes one and opens it; Up goes back.
+        // New folder makes one, stays here and starts renaming it (#913).
         let st = state(&mut app);
+        st.new_folder();
         let made = dir.join(tr("dialog.new_folder"));
-        files::create_dir(&made).expect("made");
+        assert!(made.is_dir());
+        assert_eq!(st.dir, dir);
+        assert_eq!(st.renaming, Some((made.clone(), tr("dialog.new_folder"))));
+        st.renaming = None;
         st.open_dir(made.clone());
         assert_eq!(st.dir, made);
         st.open_dir(dir.clone());
         assert_eq!(st.shown().len(), 2);
         assert_eq!(size_text(10), "1 KB");
         assert_eq!(size_text(3 * 1024 * 1024 + 1), "3.0 MB");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A new folder can be renamed at once, and so can any entry; a bad or
+    /// taken name leaves it as it was (#913).
+    #[test]
+    fn entries_of_the_folder_list_are_renamed() {
+        let dir = temp_dir("save-as-rename");
+        std::fs::create_dir_all(dir.join("taken")).expect("folder");
+        let mut app = drawing();
+        app.save_as_dialog();
+        let st = state(&mut app);
+        st.open_dir(dir.clone());
+        st.new_folder();
+        let made = dir.join(tr("dialog.new_folder"));
+        // A second New folder is "New folder (2)".
+        st.renaming = None;
+        st.new_folder();
+        assert_eq!(
+            st.selected,
+            Some(dir.join(format!("{} (2)", tr("dialog.new_folder"))))
+        );
+        st.renaming = None;
+        st.start_rename(made.clone());
+        st.renaming.as_mut().expect("renaming").1 = "a/b".into();
+        assert!(!st.finish_rename());
+        assert_eq!(st.note, Some(tr("dialog.bad_name")));
+        st.start_rename(made.clone());
+        st.renaming.as_mut().expect("renaming").1 = "taken".into();
+        assert!(!st.finish_rename());
+        assert!(made.is_dir());
+        st.start_rename(made.clone());
+        st.renaming.as_mut().expect("renaming").1 = " Drawings ".into();
+        assert!(st.finish_rename());
+        assert!(!made.exists());
+        assert!(dir.join("Drawings").is_dir());
+        assert_eq!(st.selected, Some(dir.join("Drawings")));
+        assert_eq!(st.renaming, None);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Letters typed in the list jump to the entries starting with them;
+    /// F2 renames, Enter opens the folder picked rather than saving (#913).
+    #[test]
+    fn letters_jump_through_the_folder_list() {
+        let dir = temp_dir("save-as-keys");
+        for d in ["apple", "banana", "berry"] {
+            std::fs::create_dir_all(dir.join(d)).expect("folder");
+        }
+        std::fs::write(dir.join("bird.tdraw"), b"{}").expect("file");
+        let mut app = drawing();
+        app.save_as_dialog();
+        let st = state(&mut app);
+        st.set_cdr(false);
+        st.open_dir(dir.clone());
+        st.type_ahead("b", 0.0);
+        assert_eq!(st.selected, Some(dir.join("banana")));
+        st.type_ahead("E", 0.4);
+        assert_eq!(st.selected, Some(dir.join("berry")));
+        // After a pause the search starts again.
+        st.type_ahead("b", 5.0);
+        assert_eq!(st.selected, Some(dir.join("banana")));
+        // The same letter again goes on to the next entry with it.
+        st.type_ahead("b", 5.2);
+        assert_eq!(st.selected, Some(dir.join("berry")));
+        st.type_ahead("b", 5.4);
+        assert_eq!(st.selected, Some(dir.join("bird.tdraw")));
+        assert_eq!(st.name, "bird.tdraw");
+        st.step(-3);
+        assert_eq!(st.selected, Some(dir.join("apple")));
+
+        // Through the dialog: with the list picked, letters, F2 and Enter.
+        st.list_keys = true;
+        st.selected = None;
+        let ctx = crate::theme::ui_context();
+        frame(&ctx, &mut app, false);
+        frame_with(&ctx, &mut app, vec![egui::Event::Text("a".into())]);
+        assert_eq!(state(&mut app).selected, Some(dir.join("apple")));
+        frame_with(&ctx, &mut app, vec![key(egui::Key::F2)]);
+        assert_eq!(
+            state(&mut app).renaming,
+            Some((dir.join("apple"), "apple".to_string()))
+        );
+        state(&mut app).renaming = None;
+        frame_with(&ctx, &mut app, vec![key(egui::Key::Enter)]);
+        assert!(matches!(app.dialog, Dialog::SaveAs(_)));
+        assert_eq!(state(&mut app).dir, dir.join("apple"));
+        assert!(!dir.join("apple").join("bird.tdraw").exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

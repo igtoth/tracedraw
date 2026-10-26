@@ -24,8 +24,11 @@ the object and survive save and load without a model change.
 
 ## Connectors
 
-A connector drag starts on one object and ends on another. The end points
-are:
+A connector drag starts on one object and ends on another; while it is
+dragged, a blue hairline on a white line twice as wide runs from the
+start anchor to the pointer, so it shows over a black fill (#672; the
+Blend tool's drag from one object to another shows the same line from
+the object's centre). The end points are:
 
 - the anchor of the start object nearest to where the drag began, when
   the drag began on an anchor (within the hit radius),

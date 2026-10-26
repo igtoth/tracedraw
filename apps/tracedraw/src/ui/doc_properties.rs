@@ -408,9 +408,7 @@ pub fn dialog(app: &mut App, ctx: &Context, st: &mut DocPropsState, close: &mut 
                         ui.end_row();
                     });
                 ui.add_space(6.0);
-                egui::Frame::new()
-                    .fill(egui::Color32::WHITE)
-                    .stroke(egui::Stroke::new(1.0, egui::Color32::from_gray(0xC8)))
+                crate::ui::color_management::tab_page()
                     .inner_margin(egui::Margin::symmetric(8, 4))
                     .show(ui, |ui| {
                         ui.set_width(inner.width() - 18.0);

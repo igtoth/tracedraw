@@ -125,6 +125,13 @@ same function (`export::print_sheets`).
 
 - Top bar: Print (prints these settings and closes), the sheet shown with previous and next (Page Up, Page Down), Zoom from 25 to 400 % of the fitted size
   with Fit, and Close (Esc) at the right end (#534).
+- Left, at the top: the printer, as in the Print dialog's General tab
+  (the system's printers in name order, the PDF viewer, PDF and
+  PostScript files; read off the interface's thread when the preview
+  opens, the list read last shown meanwhile), the gear button that
+  opens the chosen printer's own Properties, its status, and the number
+  of copies with Collate. Print in the top bar prints there (#792,
+  `print_preview::tests::the_preview_offers_the_printer_and_the_copies`).
 - Left: the Print dialog's options (all pages, fit, scale, prepress and
   layout with its sketch); every change rebuilds the sheets at once.
   While Print separations is on, a box for cyan, magenta, yellow, black
