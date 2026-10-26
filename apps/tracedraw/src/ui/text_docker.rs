@@ -629,6 +629,80 @@ fn fill_row(
     out
 }
 
+/// The style list: the faces the family has (Regular, SemiBold, Bold
+/// ...), else regular, italic, bold and bold italic. A face of a weight
+/// between is the family named with its weight, so the list shows
+/// "SemiBold" for "Titillium Web SemiBold", never Bold (#892). True when
+/// the style changed.
+fn style_list(app: &mut App, ui: &mut Ui) -> bool {
+    let font = app.text_font.clone();
+    let base = tracedraw_text::split_weight(&font).map_or(font.as_str(), |(b, _)| b);
+    let faces = app
+        .font_previews
+        .info(base)
+        .map(|i| i.faces)
+        .unwrap_or_default();
+    let now = (font.clone(), app.text_bold, app.text_italic);
+    let picks: Vec<(String, (String, bool, bool))> = faces
+        .iter()
+        .map(|f| (f.name.clone(), tracedraw_text::face_family(base, f)))
+        .collect();
+    let shown = style_name(&picks, &now);
+    let mut changed = false;
+    egui::ComboBox::from_id_salt("docker_text_style")
+        .width(110.0)
+        .selected_text(shown)
+        .show_ui(ui, |ui| {
+            let mut chosen = None;
+            if picks.is_empty() {
+                for (b, i, key) in STYLES {
+                    let on = app.text_bold == b && app.text_italic == i;
+                    if ui.selectable_label(on, tr(key)).clicked() {
+                        chosen = Some((font.clone(), b, i));
+                    }
+                }
+            } else {
+                for (name, pick) in &picks {
+                    if ui.selectable_label(*pick == now, name).clicked() {
+                        chosen = Some(pick.clone());
+                    }
+                }
+            }
+            if let Some((family, bold, italic)) = chosen {
+                if family != app.text_font {
+                    app.text_font = family;
+                }
+                app.text_bold = bold;
+                app.text_italic = italic;
+                changed = true;
+            }
+        });
+    changed
+}
+
+/// The style the list shows for the text settings `now` (family, bold,
+/// italic) among a family's faces and the names text gives them: the
+/// face's own name, else the weight a family name ends in ("SemiBold"),
+/// else regular, italic, bold or bold italic.
+fn style_name(picks: &[(String, (String, bool, bool))], now: &(String, bool, bool)) -> String {
+    if let Some((name, _)) = picks.iter().find(|(_, p)| p == now) {
+        return name.clone();
+    }
+    let (family, bold, italic) = now;
+    if let Some(weight) = tracedraw_text::weight_suffix(family).filter(|_| !*bold) {
+        return if *italic {
+            format!("{weight} {}", tr("docker.style_italic"))
+        } else {
+            weight.to_string()
+        };
+    }
+    let idx = STYLES
+        .iter()
+        .position(|(b, i, _)| b == bold && i == italic)
+        .unwrap_or(0);
+    tr(STYLES[idx].2)
+}
+
 fn character(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) {
     let span = first.and_then(|t| match &t.kind {
         ShapeKind::Text { spans, .. } => spans.first().cloned(),
@@ -646,25 +720,7 @@ fn character(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) 
         row_check(app, ui, "font");
     });
     ui.horizontal(|ui| {
-        let idx = STYLES
-            .iter()
-            .position(|(b, i, _)| *b == app.text_bold && *i == app.text_italic)
-            .unwrap_or(0);
-        egui::ComboBox::from_id_salt("docker_text_style")
-            .width(110.0)
-            .selected_text(tr(STYLES[idx].2))
-            .show_ui(ui, |ui| {
-                for (b, i, key) in STYLES {
-                    if ui
-                        .selectable_label(app.text_bold == b && app.text_italic == i, tr(key))
-                        .clicked()
-                    {
-                        app.text_bold = b;
-                        app.text_italic = i;
-                        changed = true;
-                    }
-                }
-            });
+        changed |= style_list(app, ui);
         row_check(app, ui, "style");
         changed |= crate::ui::toolbar::text_size_list(app, ui);
         row_check(app, ui, "size");
@@ -1164,6 +1220,66 @@ mod tests {
         }
         draw(&mut app);
         assert_eq!(app.settings.text_sections_closed.len(), 3);
+    }
+
+    /// The style list names a semibold face by its weight, never Bold
+    /// (#892, #624): from the family's faces, and from the family name
+    /// when the faces are not known.
+    #[test]
+    fn the_style_list_shows_a_semibold_face_as_semibold() {
+        let face = |name: &str, weight: u16, italic: bool| tracedraw_text::FaceStyle {
+            name: name.into(),
+            weight,
+            italic,
+        };
+        let faces = [
+            face("Regular", 400, false),
+            face("SemiBold", 600, false),
+            face("Bold", 700, false),
+        ];
+        let picks: Vec<(String, (String, bool, bool))> = faces
+            .iter()
+            .map(|f| {
+                (
+                    f.name.clone(),
+                    tracedraw_text::face_family("Titillium Web", f),
+                )
+            })
+            .collect();
+        let now = |f: &str, b: bool| (f.to_string(), b, false);
+        assert_eq!(
+            style_name(&picks, &now("Titillium Web SemiBold", false)),
+            "SemiBold"
+        );
+        assert_eq!(style_name(&picks, &now("Titillium Web", true)), "Bold");
+        assert_eq!(style_name(&picks, &now("Titillium Web", false)), "Regular");
+        // Faces not known (the family is not installed).
+        assert_eq!(
+            style_name(&[], &now("Titillium Web SemiBold", false)),
+            "SemiBold"
+        );
+        assert_eq!(
+            style_name(&[], &now("Titillium Web", true)),
+            tr("docker.style_bold")
+        );
+        // A .cdr run in the semibold face shows as that face in the docker,
+        // with Bold off.
+        let mut app = App::headless();
+        let id = app
+            .new_shape(ShapeKind::Text {
+                spans: vec![TextSpan::new("Text", "Selawik SemiBold", 11.0)],
+                origin: Point::new(10.0, 10.0),
+                frame: None,
+                align: TextAlign::Left,
+                para: ParagraphStyle::default(),
+                on_path: None,
+            })
+            .expect("text");
+        app.select(vec![id]);
+        app.sync_text_defaults_from(id);
+        draw(&mut app);
+        assert_eq!(app.text_font, "Selawik SemiBold");
+        assert!(!app.text_bold);
     }
 
     /// The vertical alignment a paragraph text takes is kept with it and
