@@ -2,7 +2,8 @@
 //! corner of the curves being edited; dragging one into the corner rounds
 //! it, live, with the arc's middle under the pointer. With nodes chosen
 //! only their corners show a widget and round; with none, every corner
-//! rounds together. Open curves round their inner corners too. See
+//! rounds together. Open curves round their inner corners too. They show
+//! only with Options > Nodes and Handles > corner widgets on (#884). See
 //! docs/behavior/shape-tool.md, Corner widgets.
 
 use crate::app::{App, Drag};
@@ -66,9 +67,13 @@ pub fn radius_for(d: f64, theta: f64) -> f64 {
 
 impl App {
     /// The corner widgets to show now, in screen space; none while one is
-    /// dragged.
+    /// dragged, and none at all unless Options > Nodes and Handles turns
+    /// them on (#884).
     pub fn corner_widgets(&self) -> Vec<Widget> {
-        if self.tool != Tool::Shape || matches!(self.drag, Drag::CornerWidget(_)) {
+        if !self.settings.nodes.corner_widgets
+            || self.tool != Tool::Shape
+            || matches!(self.drag, Drag::CornerWidget(_))
+        {
             return Vec::new();
         }
         let targets: Vec<ShapeId> = self

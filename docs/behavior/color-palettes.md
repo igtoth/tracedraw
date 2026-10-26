@@ -109,7 +109,12 @@ management converts. A CMYK drawing keeps them CMYK (#483, #620,
 
 ## Default palette menu
 
-Open Palette..., Palette Editor..., Palette Manager, the Document
+Open Palette... (files of `.tdpal`, `.xml`, `.gpl`, `.ase`, `.aco` and
+`.json`, the filter naming each extension; an XML palette is read as
+the document palette of a `.cdr` file, its CMYK, RGB, grey, Lab and the
+other colour models with their names, spot colours skipped, and a file
+with no colour that can be read says so in the status bar, #882,
+`palette::tests::xml_palettes_open_with_names_and_values`), Palette Editor..., Palette Manager, the Document
 Palette switch, and Rows > 1 Row, 2 Rows, 3 Rows (a radio choice, kept
 in the preferences, the same setting as in Options). A right click on a row outside the swatches opens the
 same menu.

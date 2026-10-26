@@ -1001,6 +1001,8 @@ fn nodes_page(app: &mut App, ui: &mut Ui) {
         ui.end_row();
     });
     ui.checkbox(&mut n.show_direction, tr("options.show_curve_direction"));
+    ui.checkbox(&mut n.corner_widgets, tr("options.corner_widgets"))
+        .on_hover_text(tr("options.corner_widgets_tip"));
     ui.horizontal(|ui| {
         ui.label(tr("options.node_pick_distance"));
         ui.add(
