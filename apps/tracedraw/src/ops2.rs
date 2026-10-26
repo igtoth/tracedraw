@@ -3305,6 +3305,16 @@ impl App {
 }
 
 impl App {
+    /// Whether text set in `family` draws with an installed or carried
+    /// font of that family. A face named with its weight ("Titillium Web
+    /// SemiBold") is drawn by its family's face of that weight, so it is
+    /// not missing when the family is there (#892).
+    pub fn font_installed(&self, family: &str) -> bool {
+        self.font_families.iter().any(|g| g == family)
+            || tracedraw_text::split_weight(family)
+                .is_some_and(|(base, _)| self.font_families.iter().any(|g| g == base))
+    }
+
     /// Fonts used by the document (in groups, tables and symbols too) that
     /// are neither installed nor carried by a drawing (Font Manager,
     /// missing-font substitution notice).
@@ -3313,7 +3323,7 @@ impl App {
             .doc()
             .font_families_used()
             .into_iter()
-            .filter(|f| !self.font_families.contains(f))
+            .filter(|f| !self.font_installed(f))
             .collect();
         if !missing.is_empty() {
             self.status = trf("status.missing_fonts", &[("f", &with_stand_ins(&missing))]);

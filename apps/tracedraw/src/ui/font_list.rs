@@ -449,11 +449,14 @@ fn font_list_with(
         if st.expanded.as_deref() == Some(f.as_str()) {
             if let Some(info) = app.font_previews.info(f) {
                 for face in info.faces {
+                    // A semibold face is the family with its weight, not
+                    // bold (#892).
+                    let (family, bold, italic) = tracedraw_text::face_family(f, &face);
                     rows.push(Row::Style {
-                        family: f.clone(),
+                        family,
                         name: face.name,
-                        bold: face.weight >= 600,
-                        italic: face.italic,
+                        bold,
+                        italic,
                     });
                 }
             }
@@ -461,9 +464,16 @@ fn font_list_with(
     }
     let typing = st.typed.as_deref().is_some_and(|t| t != current);
     if st.highlight.is_none() || !typing && st.scroll {
+        // A face named with its weight ("Titillium Web SemiBold") that no
+        // family row lists: its family's row.
+        let base = tracedraw_text::split_weight(current).map(|(b, _)| b);
         st.highlight = rows
             .iter()
-            .position(|r| matches!(r, Row::Family(f) if f == current));
+            .position(|r| matches!(r, Row::Family(f) if f == current))
+            .or_else(|| {
+                rows.iter()
+                    .position(|r| matches!(r, Row::Family(f) if Some(f.as_str()) == base))
+            });
     }
 
     // The wheel over the closed list: the family after (down) or before

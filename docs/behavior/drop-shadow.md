@@ -32,6 +32,12 @@ with linear edges, as before.
   perspective shadow standing on that edge: the edge stays where it is
   and the opposite side of the object falls on the pointer.
 - One drag is one undo step.
+- A group or a clip frame takes a shadow of its own, drawn beneath
+  everything it holds. Its silhouette is what it shows: each object of
+  a group, and a clip frame's filled frame with its contents cut to the
+  frame (an empty part of an unfilled frame, or contents outside the
+  frame, cast none). The shadow is measured on the frame's box (the
+  group's box). Break Drop Shadow Apart makes the same silhouette (#873).
 
 ## Perspective geometry
 
@@ -89,7 +95,8 @@ Checked by `shadow::tests` in the core (perspective geometry for the
 bottom and top edges, flat offset, feather ramps, old files and preset
 round trips, degenerate boxes), the renderer's
 `tests::shadow_darkens_pixels_beside_the_object`,
-`tests::shadow_merge_mode_multiplies_with_what_is_beneath` and
-`tests::perspective_shadow_falls_on_the_floor_and_fades`, and
+`tests::shadow_merge_mode_multiplies_with_what_is_beneath`,
+`tests::perspective_shadow_falls_on_the_floor_and_fades`,
+`tests::clip_frames_and_groups_cast_their_shadows`, and
 `shadow_tool::tests` in the application (drags, handles, colour drop,
-presets, Break Apart with one undo step).
+presets, Break Apart with one undo step, a clip frame's shadow).

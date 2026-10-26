@@ -337,8 +337,9 @@ impl App {
         self.navigator_tex = None;
         *self.overflow_cache.borrow_mut() = Default::default();
         if !self.missing_fonts.is_empty() {
-            let families = &self.font_families;
-            self.missing_fonts.retain(|f| !families.contains(f));
+            let mut missing = std::mem::take(&mut self.missing_fonts);
+            missing.retain(|f| !self.font_installed(f));
+            self.missing_fonts = missing;
         }
     }
 
@@ -1070,6 +1071,17 @@ mod tests {
         app.open_document(drawing_with_text_in("Nowhere Grotesk"), None);
         app.check_missing_fonts();
         assert_eq!(app.missing_fonts, vec!["Nowhere Grotesk".to_string()]);
+        // A face named with its weight is drawn by its family's face of
+        // that weight: not reported (#892), unless the family is missing.
+        app.open_document(drawing_with_text_in("Selawik SemiBold"), None);
+        app.check_missing_fonts();
+        assert!(app.missing_fonts.is_empty(), "{:?}", app.missing_fonts);
+        app.open_document(drawing_with_text_in("Nowhere Grotesk SemiBold"), None);
+        app.check_missing_fonts();
+        assert_eq!(
+            app.missing_fonts,
+            vec!["Nowhere Grotesk SemiBold".to_string()]
+        );
     }
 
     #[test]

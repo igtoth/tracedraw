@@ -1879,7 +1879,7 @@ fn fonts(app: &mut App, ui: &mut Ui) {
     if !used.is_empty() {
         ui.strong(tr("docker.fonts_in_document"));
         for f in &used {
-            let missing = !app.font_families.contains(f);
+            let missing = !app.font_installed(f);
             let carried = !missing && tracedraw_text::fonts().is_document_family(f);
             ui.horizontal(|ui| {
                 if ui.selectable_label(app.text_font == *f, f).clicked() {
