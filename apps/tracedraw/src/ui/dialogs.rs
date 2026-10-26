@@ -549,7 +549,7 @@ pub struct PrintMergeState {
 
 /// The counter of a number field being added (see
 /// [`PrintMergeState::adding_number`]).
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct NumberForm {
     pub start: i64,
     pub increment: bool,
@@ -557,6 +557,9 @@ pub struct NumberForm {
     pub digits: u32,
     pub use_end: bool,
     pub end: i64,
+    /// How the counter is written: numbers, letters or custom text around
+    /// the number (#930).
+    pub format: crate::print_merge::NumberFormat,
 }
 
 impl Default for NumberForm {
@@ -568,6 +571,7 @@ impl Default for NumberForm {
             digits: 1,
             use_end: false,
             end: 1,
+            format: Default::default(),
         }
     }
 }
@@ -3821,11 +3825,54 @@ fn merge_kind_of(index: usize) -> crate::print_merge::FieldKind {
             start: 1,
             step: 1,
             digits: 1,
+            format: Default::default(),
         },
         2 => FieldKind::Image,
         3 => FieldKind::Qr,
         _ => FieldKind::Text,
     }
+}
+
+/// A number field's Format: 1, 2, 3 / A, B, C / a, b, c / Custom, and for
+/// Custom the texts before and after the number (#930).
+fn merge_number_format(
+    ui: &mut egui::Ui,
+    salt: impl std::hash::Hash + std::fmt::Debug,
+    format: &mut crate::print_merge::NumberFormat,
+) {
+    use crate::print_merge::NumberFormat;
+    let cur = format.index();
+    let mut pick = cur;
+    ui.horizontal(|ui| {
+        ui.label(tr("merge.format"));
+        egui::ComboBox::from_id_salt(("merge_format", salt))
+            .selected_text(tr(NumberFormat::KEYS[cur]))
+            .width(110.0)
+            .show_ui(ui, |ui| {
+                for (i, key) in NumberFormat::KEYS.iter().enumerate() {
+                    ui.selectable_value(&mut pick, i, tr(key));
+                }
+            });
+    });
+    if pick != cur {
+        *format = NumberFormat::from_index(pick);
+    }
+    if let NumberFormat::Custom { prefix, suffix } = format {
+        ui.horizontal(|ui| {
+            ui.label(tr("merge.prefix"));
+            ui.add(egui::TextEdit::singleline(prefix).desired_width(90.0));
+        });
+        ui.horizontal(|ui| {
+            ui.label(tr("merge.suffix"));
+            ui.add(egui::TextEdit::singleline(suffix).desired_width(90.0));
+        });
+    }
+}
+
+/// Whether a number format pads with zeros (letters have no digits).
+fn merge_format_has_digits(format: &crate::print_merge::NumberFormat) -> bool {
+    use crate::print_merge::NumberFormat;
+    !matches!(format, NumberFormat::Upper | NumberFormat::Lower)
 }
 
 fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, close: &mut bool) {
@@ -3912,8 +3959,10 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
                 // the records from the start to it (#791).
                 if *kind == 1 {
                     let f = &mut st.adding_number;
+                    merge_number_format(ui, "add", &mut f.format);
                     ui.horizontal(|ui| {
-                        ui.add(
+                        ui.add_enabled(
+                            merge_format_has_digits(&f.format),
                             crate::ui::field::NumField::new(&mut f.digits)
                                 .range(1..=12)
                                 .prefix(tr("merge.digits")),
@@ -3954,13 +4003,14 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
         if let Some(done) = add_done {
             if let Some((name, kind)) = done {
                 if kind == 1 {
-                    let f = st.adding_number;
+                    let f = st.adding_number.clone();
                     pm::add_number_field(
                         st,
                         &name,
                         f.start,
                         if f.increment { f.step } else { 0 },
                         f.digits,
+                        f.format,
                         (f.use_end && f.increment).then_some(f.end),
                     );
                 } else {
@@ -4021,8 +4071,10 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
                                         start,
                                         step,
                                         digits,
+                                        format,
                                     } = &mut st.kinds[i]
                                     {
+                                        merge_number_format(ui, ("cfg", i), format);
                                         ui.add(
                                             crate::ui::field::NumField::new(start)
                                                 .prefix(tr("merge.start")),
@@ -4031,7 +4083,8 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
                                             crate::ui::field::NumField::new(step)
                                                 .prefix(tr("merge.step")),
                                         );
-                                        ui.add(
+                                        ui.add_enabled(
+                                            merge_format_has_digits(format),
                                             crate::ui::field::NumField::new(digits)
                                                 .range(1..=12)
                                                 .prefix(tr("merge.digits")),
