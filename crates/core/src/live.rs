@@ -801,15 +801,50 @@ impl Effect {
 }
 
 /// Result of evaluating a shape's effect stack.
+#[derive(Clone)]
 pub struct Evaluated {
     pub below: Vec<Shape>,
     pub main: Shape,
     pub above: Vec<Shape>,
 }
 
+/// How many evaluations [`evaluate`] remembers.
+const EVALUATION_MEMORY: usize = 8;
+
+/// The latest evaluations of shapes that draw objects from their outline,
+/// newest last, each with the shape it was made from. Shared by all
+/// threads: the rasteriser works on its own.
+static EVALUATED: std::sync::Mutex<Vec<(Shape, Evaluated)>> = std::sync::Mutex::new(Vec::new());
+
 /// Evaluate every effect of `shape` in order. Geometry effects replace the
 /// main shape's kind with a path; object effects add shapes.
+///
+/// A contour, blend or extrusion costs milliseconds, and a frame asks for
+/// it to draw, to measure and to pick: the evaluations of the latest
+/// shapes are kept, so the same shape is worked out once (#897).
 pub fn evaluate(shape: &Shape) -> Evaluated {
+    if !shape.effects.iter().any(Effect::draws_from_outline) {
+        return evaluate_now(shape);
+    }
+    if let Ok(mut kept) = EVALUATED.lock() {
+        if let Some(i) = kept.iter().position(|(from, _)| from == shape) {
+            let hit = kept.remove(i);
+            let ev = hit.1.clone();
+            kept.push(hit);
+            return ev;
+        }
+    }
+    let ev = evaluate_now(shape);
+    if let Ok(mut kept) = EVALUATED.lock() {
+        if kept.len() >= EVALUATION_MEMORY {
+            kept.remove(0);
+        }
+        kept.push((shape.clone(), ev.clone()));
+    }
+    ev
+}
+
+fn evaluate_now(shape: &Shape) -> Evaluated {
     let mut main = shape.clone();
     let mut below: Vec<Shape> = Vec::new();
     let mut above: Vec<Shape> = Vec::new();
@@ -2002,6 +2037,44 @@ mod tests {
             (inner.y0 - outer.y0 - 4.0).abs() < 0.05,
             "{outer:?} {inner:?}"
         );
+    }
+
+    /// An evaluation kept for the same shape is the one made then, and a
+    /// change of the shape or of its effect is never answered with it
+    /// (#897).
+    #[test]
+    fn a_kept_evaluation_follows_the_shape() {
+        let contour = |offset: f64| Effect::Contour {
+            steps: 2,
+            offset,
+            outside: true,
+            to_center: false,
+            fill_to: Color::WHITE,
+            outline_to: None,
+            color_blend: 0,
+            corners: Some(crate::shaping::Join::Miter),
+            accel_objects: 0.0,
+            accel_colors: 0.0,
+        };
+        let mut s = rect_shape();
+        s.effects.push(contour(2.0));
+        let first = evaluate(&s);
+        let again = evaluate(&s);
+        assert_eq!(first.below.len(), again.below.len());
+        assert_eq!(first.below[0].bounds(), again.below[0].bounds());
+        // Another offset, the same object.
+        s.effects = vec![contour(3.0)];
+        let wider = evaluate(&s).below[0].bounds().width();
+        assert!(wider > first.below[0].bounds().width() + 1.0, "{wider}");
+        // Another fill, the same effect.
+        let mut red = s.clone();
+        red.fill = Fill::Solid(Color::rgb8(200, 0, 0));
+        assert_ne!(evaluate(&red).main.fill, evaluate(&s).main.fill);
+        // Moved: the steps move with it.
+        let mut moved = s.clone();
+        moved.transform = Affine::translate((10.0, 0.0)) * moved.transform;
+        let dx = evaluate(&moved).below[0].bounds().x0 - evaluate(&s).below[0].bounds().x0;
+        assert!((dx - 10.0).abs() < 1e-6, "{dx}");
     }
 
     #[test]

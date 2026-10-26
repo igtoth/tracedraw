@@ -7,6 +7,10 @@ full, row-by-row status.
 ## Unreleased
 
 - Text in a semibold face (or a light, medium or black one) shows that face everywhere: picking SemiBold under a family in the font list sets "Titillium Web SemiBold" instead of the family with Bold on, so the property bar and the Character docker no longer show Bold for it, and the docker's style list names the family's own faces (Regular, SemiBold, Bold ...). Such a face is no longer reported as a missing font substituted when its family is installed (#892, #624).
+- Contour, blend and extrusion keep the CPU low while dragging and pointing: a frame no longer works the effect out again to draw, to measure and to pick the same object. On a line of letters with a contour, a hit test with the pointer resting went from about 22 ms to 0.1 ms, and a drag works the contour out once for each move (#897).
+- Save As: Embed fonts starts off, for `.tdraw` and `.cdr` files alike. It started on, so every drawing saved carried its own copy of the fonts its text uses; tick the box for the files that are going to another machine, and the choice stays for the next Save As (#886).
+- Area Fill: a drawing of many lines that nearly meet (a line stopping a few ten thousandths of a millimetre short of the next, as files carry from rounding) now fills the cell under the click, not the whole drawing. Ends of open lines within 0.01 mm of an outline, or of their own start, count as meeting it (#899).
+- Start on Windows: a start whose graphics driver hangs while the window is set up no longer stays open with no window. After 20 seconds without one, TraceDraw starts again with the next renderer by itself (OpenGL, then the software adapter), so the first start opens instead of only the one after it, and a drawing opened meanwhile gets a window of its own instead of going to the one that never showed (#570).
 
 ## 0.19.4 (2026-10-26)
 
