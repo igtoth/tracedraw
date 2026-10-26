@@ -591,7 +591,13 @@ has it.
 A font is found by the family name its file lists (the typographic
 family, "Arial") and by its legacy family name when that differs
 ("Arial Narrow", "Arial Black", "Segoe UI Semibold", the name a drawing
-from another program usually gives); the font lists show both. A
+from another program usually gives); the font lists show both. Every
+language the font names its family in counts: "方正黑体_GBK" finds the
+font that lists it beside an English name, whether its name table keeps
+the Chinese name in UTF-16 or in an East Asian code page (GBK, Big5,
+Shift JIS, Korean; Windows and Mac records, #860). On Windows the fonts
+the registry lists by a full path outside the font folders (fonts
+installed by font managers) are loaded too. A
 legacy name picks the face of that name nearest the text's weight and
 style. A family name ending in a weight ("Titillium Web SemiBold",
 "Lato Light", "Semi Bold" written apart too) that no font lists is
@@ -793,6 +799,8 @@ stand-in next to each missing family: "Arial (Liberation Sans)".
   preview ask for many times a frame (#802,
   `tests::text_bounds_come_from_the_cached_box_and_match_the_outline`).
 - `tests::fonts_are_found_by_their_legacy_family_names`,
+  `tests::fonts_are_found_by_their_localized_family_names`,
+  `installed::tests::fonts_registered_elsewhere_are_found`,
   `tests::family_names_ending_in_a_weight_split`,
   `tests::a_family_named_with_its_weight_draws_with_the_nearest_face`,
   `tests::a_weight_in_the_family_name_reaches_every_way_of_drawing`,

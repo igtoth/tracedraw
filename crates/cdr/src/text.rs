@@ -44,6 +44,18 @@ pub(crate) fn decode_cp1252(b: &[u8]) -> String {
         .collect()
 }
 
+/// Decode a version 17+ style string (JSON, one byte per character):
+/// UTF-8 when the bytes are valid UTF-8, as the font names of East Asian
+/// faces are stored there ("方正黑体_GBK" as E6 96 B9 ..., #898), else
+/// Windows-1252. Stops at the first NUL.
+pub(crate) fn decode_byte_string(b: &[u8]) -> String {
+    let b = &b[..b.iter().position(|c| *c == 0).unwrap_or(b.len())];
+    match std::str::from_utf8(b) {
+        Ok(s) => s.to_string(),
+        Err(_) => decode_cp1252(b),
+    }
+}
+
 /// Decode version 17+ text whose characters are one byte each (Windows-1252)
 /// except those flagged `wide`, which are a UTF-16LE unit of two bytes:
 /// letters beyond Latin-1 such as "č" (0D 01) or "ř" (59 01). `None` when
@@ -1064,7 +1076,7 @@ fn read_style_string(r: &mut Reader, d: &[u8], v: u16) -> Option<String> {
     Some(if v < 17 {
         decode_utf16le(s)
     } else {
-        decode_cp1252(s)
+        decode_byte_string(s)
     })
 }
 
@@ -2017,6 +2029,24 @@ mod tests {
         assert!(StyleFlags(1 << 18).underline());
         assert!(StyleFlags(1 << 24).strikethrough());
         assert!(!StyleFlags(0x40).underline());
+    }
+
+    /// Version 17+ style strings keep a Chinese font name in UTF-8; Latin
+    /// text that is not UTF-8 is Windows-1252 (#898).
+    #[test]
+    fn style_strings_read_utf8_font_names() {
+        let json = r#"{"character":{"latin":{"font":"方正黑体_GBK","size":"128819"}}}"#;
+        let mut d = (json.len() as u32).to_le_bytes().to_vec();
+        d.extend_from_slice(json.as_bytes());
+        let mut r = Reader::new(&d, false);
+        let s = read_style_string(&mut r, &d, 21).expect("a string");
+        assert_eq!(
+            parse_style_string(&s).family.as_deref(),
+            Some("方正黑体_GBK")
+        );
+        assert_eq!(decode_byte_string(&[0x43, 0x61, 0x66, 0xe9, 0]), "Café");
+        assert_eq!(decode_byte_string("Café".as_bytes()), "Café");
+        assert_eq!(decode_byte_string(b"Arial\0junk"), "Arial");
     }
 
     /// The version 21 style string: the run's colour from its inline

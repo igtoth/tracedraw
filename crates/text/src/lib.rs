@@ -395,9 +395,13 @@ pub fn target_weight(family: &str, bold: bool) -> u16 {
     }
 }
 
-/// The legacy family names (name ID 1) a face's name table gives that
-/// differ from the families fontdb lists for it (the typographic family,
-/// name ID 16): "Arial Narrow" for a face fontdb files under "Arial".
+/// The family names (name IDs 1 and 16, in every language the name table
+/// has) a face's name table gives that differ from the families fontdb
+/// lists for it: "Arial Narrow" for a face fontdb files under "Arial",
+/// and the localized names fontdb leaves out because they are not stored
+/// in UTF-16 ("方正黑体_GBK" in the GBK code page of a Windows PRC record or
+/// a Mac Simplified Chinese one, #860). Drawings name a font by the
+/// family the system showed when it was set, in whatever language.
 fn legacy_families(db: &fontdb::Database, id: fontdb::ID) -> Vec<String> {
     let Some(face) = db.face(id) else {
         return Vec::new();
@@ -409,10 +413,12 @@ fn legacy_families(db: &fontdb::Database, id: fontdb::ID) -> Vec<String> {
         };
         let mut out: Vec<String> = Vec::new();
         for name in f.names() {
-            if name.name_id != ttf_parser::name_id::FAMILY || !name.is_unicode() {
+            if name.name_id != ttf_parser::name_id::FAMILY
+                && name.name_id != ttf_parser::name_id::TYPOGRAPHIC_FAMILY
+            {
                 continue;
             }
-            let Some(text) = name.to_string() else {
+            let Some(text) = name_text(&name) else {
                 continue;
             };
             let text = text.trim().to_string();
@@ -423,6 +429,35 @@ fn legacy_families(db: &fontdb::Database, id: fontdb::ID) -> Vec<String> {
         out
     })
     .unwrap_or_default()
+}
+
+/// The text of a name record: UTF-16 for the Unicode encodings; for the
+/// East Asian code pages of the Windows platform (2 Shift JIS, 3 PRC, 4
+/// Big5, 5 Wansung) and of the Mac platform (1 Japanese, 2 traditional
+/// Chinese, 3 Korean, 25 simplified Chinese) the bytes in that code page.
+/// Windows records of those encodings keep each character in a 16-bit
+/// unit (a double-byte code whole, a single byte after a zero), so the
+/// zero bytes are dropped first. Mac Roman (English) names are left to
+/// fontdb; other encodings give `None`.
+fn name_text(name: &ttf_parser::name::Name) -> Option<String> {
+    if name.is_unicode() {
+        return name.to_string();
+    }
+    use ttf_parser::PlatformId;
+    let enc = match (name.platform_id, name.encoding_id) {
+        (PlatformId::Windows, 2) | (PlatformId::Macintosh, 1) => encoding_rs::SHIFT_JIS,
+        (PlatformId::Windows, 3) | (PlatformId::Macintosh, 25) => encoding_rs::GBK,
+        (PlatformId::Windows, 4) | (PlatformId::Macintosh, 2) => encoding_rs::BIG5,
+        (PlatformId::Windows, 5) | (PlatformId::Macintosh, 3) => encoding_rs::EUC_KR,
+        _ => return None,
+    };
+    let bytes: Vec<u8> = if name.platform_id == PlatformId::Windows {
+        name.name.iter().copied().filter(|b| *b != 0).collect()
+    } else {
+        name.name.to_vec()
+    };
+    let (text, _, bad) = enc.decode(&bytes);
+    (!bad).then(|| text.into_owned())
 }
 
 /// How a family's fonts are built, for the icons of font lists.
@@ -1180,7 +1215,7 @@ impl FontSystem {
         #[cfg(not(target_arch = "wasm32"))]
         db.load_system_fonts();
         #[cfg(windows)]
-        installed::drop_unregistered(&mut db);
+        installed::sync_with_registry(&mut db);
         if let Ok(extra) = EXTRA_FONTS.lock() {
             for data in extra.iter() {
                 let source: Arc<dyn AsRef<[u8]> + Sync + Send> = data.clone();
@@ -5466,6 +5501,124 @@ mod tests {
         assert!(!bold);
         assert!(f.has_family(&family));
         assert_eq!(f.substitute(&family), None);
+    }
+
+    /// `font` with its name table replaced by `records` (platform,
+    /// encoding, language, name ID, bytes) and an English family and
+    /// PostScript name ("Probe Sans").
+    fn with_names(font: &[u8], records: &[(u16, u16, u16, u16, Vec<u8>)]) -> Vec<u8> {
+        let be16 = |b: &[u8], at: usize| u16::from_be_bytes([b[at], b[at + 1]]);
+        let be32 =
+            |b: &[u8], at: usize| u32::from_be_bytes([b[at], b[at + 1], b[at + 2], b[at + 3]]);
+        let utf16 = |s: &str| -> Vec<u8> { s.encode_utf16().flat_map(u16::to_be_bytes).collect() };
+        let mut all = vec![
+            (3, 1, 0x409, 1, utf16("Probe Sans")),
+            (3, 1, 0x409, 2, utf16("Regular")),
+            (3, 1, 0x409, 6, utf16("ProbeSans-Regular")),
+        ];
+        all.extend(records.iter().cloned());
+        let mut name = Vec::new();
+        name.extend_from_slice(&0u16.to_be_bytes());
+        name.extend_from_slice(&(all.len() as u16).to_be_bytes());
+        name.extend_from_slice(&(6 + 12 * all.len() as u16).to_be_bytes());
+        let mut strings = Vec::new();
+        for (p, e, l, id, bytes) in &all {
+            for v in [*p, *e, *l, *id, bytes.len() as u16, strings.len() as u16] {
+                name.extend_from_slice(&v.to_be_bytes());
+            }
+            strings.extend_from_slice(bytes);
+        }
+        name.extend_from_slice(&strings);
+        let n = be16(font, 4) as usize;
+        let mut tables: Vec<([u8; 4], Vec<u8>)> = (0..n)
+            .map(|i| {
+                let r = 12 + 16 * i;
+                let tag = [font[r], font[r + 1], font[r + 2], font[r + 3]];
+                let (off, len) = (be32(font, r + 8) as usize, be32(font, r + 12) as usize);
+                let data = if &tag == b"name" {
+                    name.clone()
+                } else {
+                    font[off..off + len].to_vec()
+                };
+                (tag, data)
+            })
+            .collect();
+        tables.sort_by_key(|(t, _)| *t);
+        let mut out = font[..12].to_vec();
+        let mut off = 12 + 16 * n;
+        let mut body = Vec::new();
+        for (tag, data) in &tables {
+            out.extend_from_slice(tag);
+            out.extend_from_slice(&0u32.to_be_bytes());
+            out.extend_from_slice(&(off as u32).to_be_bytes());
+            out.extend_from_slice(&(data.len() as u32).to_be_bytes());
+            body.extend_from_slice(data);
+            while body.len() % 4 != 0 {
+                body.push(0);
+            }
+            off = 12 + 16 * n + body.len();
+        }
+        out.extend_from_slice(&body);
+        out
+    }
+
+    /// A Chinese font is found by its Chinese family names whatever code
+    /// page the name table keeps them in: UTF-16, the GBK of a Windows
+    /// PRC record (each character in a 16-bit unit) or of a Mac
+    /// simplified Chinese one, Big5 for traditional Chinese (#860, #898).
+    #[test]
+    fn fonts_are_found_by_their_localized_family_names() {
+        let gbk = |s: &str| encoding_rs::GBK.encode(s).0.into_owned();
+        // Windows PRC: a double-byte code in one unit, ASCII after a zero.
+        let prc: Vec<u8> = {
+            let b = gbk("方正黑体_GBK");
+            let mut out = Vec::new();
+            let mut i = 0;
+            while i < b.len() {
+                if b[i] < 0x80 {
+                    out.extend_from_slice(&[0, b[i]]);
+                    i += 1;
+                } else {
+                    out.extend_from_slice(&[b[i], b[i + 1]]);
+                    i += 2;
+                }
+            }
+            out
+        };
+        let utf16 = |s: &str| -> Vec<u8> { s.encode_utf16().flat_map(u16::to_be_bytes).collect() };
+        let font = with_names(
+            SELAWIK,
+            &[
+                (3, 3, 0x804, 1, prc),
+                (1, 25, 33, 1, gbk("方正大黑_GBK")),
+                (
+                    3,
+                    4,
+                    0x404,
+                    1,
+                    encoding_rs::BIG5.encode("方正黑體").0.into_owned(),
+                ),
+                (3, 1, 0x804, 16, utf16("阿里巴巴普惠体 2.0")),
+            ],
+        );
+        let f = system_with(&[&font]);
+        for name in [
+            "Probe Sans",
+            "方正黑体_GBK",
+            "方正大黑_GBK",
+            "方正黑體",
+            "阿里巴巴普惠体 2.0",
+        ] {
+            assert!(f.has_family(name), "{name}: {:?}", f.families());
+            assert_eq!(f.substitute(name), None, "{name}");
+            assert_eq!(
+                f.face_for(name, false, false),
+                f.face_for("Probe Sans", false, false),
+                "{name}"
+            );
+        }
+        // The font list finds it by the Chinese letters typed.
+        assert!(f.families().iter().any(|n| n.contains("方正")));
     }
 
     #[test]

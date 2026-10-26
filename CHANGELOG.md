@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Chinese font names: a `.cdr` file naming a font in Chinese ("方正黑体_GBK") shows that name, not garbled letters, and finds the installed font. Fonts are found by their family names in every language their name table holds, also when it keeps them in an East Asian code page (GBK, Big5, Shift JIS, Korean) instead of UTF-16, and on Windows the fonts the registry lists outside the font folders (as font managers install them) are loaded too, so typing a Chinese name in the font list finds the font (#898, #860).
 ## 0.19.5 (2026-10-26)
 
 - Drop Shadow on a clip frame or a group: the shadow now shows, beneath the frame and everything placed inside it. The tool gave the frame a shadow but it was never drawn, so only an object inside the frame could have one. The shadow follows what the frame shows: its fill and the contents within it, not the parts of the contents outside the frame; groups cast the shadow of each of their objects, and Break Drop Shadow Apart makes the same picture (#873).

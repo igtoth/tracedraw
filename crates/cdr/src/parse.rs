@@ -2143,7 +2143,7 @@ impl<'a> Ctx<'a> {
         Some(if self.v < 17 {
             text::decode_utf16le(s)
         } else {
-            String::from_utf8_lossy(s).into_owned()
+            text::decode_byte_string(s)
         })
     }
 

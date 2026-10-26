@@ -14,6 +14,7 @@ rustybuzz.workspace = true
 unicode-bidi = "0.3"
 unicode-general-category.workspace = true
 log.workspace = true
+encoding_rs.workspace = true
 
 # System font discovery exists only natively; the browser build registers
 # its fonts with `add_font_data`.
