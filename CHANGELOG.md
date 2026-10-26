@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Outlines: new outlines start with a mitre limit of 45 degrees instead of 5, so a thick outline on text or on shapes with narrow turns bevels those corners instead of growing long spikes. Outlines already in drawings keep their limit (#894).
 - Drop Shadow on a clip frame or a group: the shadow now shows, beneath the frame and everything placed inside it. The tool gave the frame a shadow but it was never drawn, so only an object inside the frame could have one. The shadow follows what the frame shows: its fill and the contents within it, not the parts of the contents outside the frame; groups cast the shadow of each of their objects, and Break Drop Shadow Apart makes the same picture (#873).
 - Text in a semibold face (or a light, medium or black one) shows that face everywhere: picking SemiBold under a family in the font list sets "Titillium Web SemiBold" instead of the family with Bold on, so the property bar and the Character docker no longer show Bold for it, and the docker's style list names the family's own faces (Regular, SemiBold, Bold ...). Such a face is no longer reported as a missing font substituted when its family is installed (#892, #624).
 - Contour, blend and extrusion keep the CPU low while dragging and pointing: a frame no longer works the effect out again to draw, to measure and to pick the same object. On a line of letters with a contour, a hit test with the pointer resting went from about 22 ms to 0.1 ms, and a drag works the contour out once for each move (#897).
