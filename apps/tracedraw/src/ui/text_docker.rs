@@ -987,21 +987,28 @@ fn paragraph(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) 
             });
         row_check(app, ui, "leading");
     });
+    // Drawn rather than taken from the font: the interface font has no
+    // arrows of these shapes, which showed as empty boxes (#863).
+    let spacing_icon = |ui: &mut Ui, icon: SpacingIcon, key: &str| {
+        let (rect, resp) = ui.allocate_exact_size(Vec2::new(18.0, 22.0), Sense::hover());
+        paint_spacing_icon(ui.painter(), rect, icon, Tokens::icon());
+        resp.on_hover_text(tr(key));
+    };
     egui::Grid::new("text_paragraph")
         .num_columns(4)
         .spacing([4.0, 4.0])
         .show(ui, |ui| {
-            line_icon(ui, "\u{21E5}", "docker.left_indent");
+            spacing_icon(ui, SpacingIcon::LeftIndent, "docker.left_indent");
             pc |= length(ui, app, &mut p.left_indent);
-            line_icon(ui, "\u{2912}", "docker.space_before");
+            spacing_icon(ui, SpacingIcon::SpaceBefore, "docker.space_before");
             pc |= length(ui, app, &mut p.space_before);
             ui.end_row();
-            line_icon(ui, "\u{21B3}", "docker.first_line_indent");
+            spacing_icon(ui, SpacingIcon::FirstLine, "docker.first_line_indent");
             pc |= length(ui, app, &mut p.first_line_indent);
-            line_icon(ui, "\u{2913}", "docker.space_after");
+            spacing_icon(ui, SpacingIcon::SpaceAfter, "docker.space_after");
             pc |= length(ui, app, &mut p.space_after);
             ui.end_row();
-            line_icon(ui, "\u{21E4}", "docker.right_indent");
+            spacing_icon(ui, SpacingIcon::RightIndent, "docker.right_indent");
             pc |= length(ui, app, &mut p.right_indent);
             ui.end_row();
         });
@@ -1177,9 +1184,110 @@ fn frame(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) {
     }
 }
 
+/// The pictures beside the indent and paragraph spacing fields.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SpacingIcon {
+    LeftIndent,
+    FirstLine,
+    RightIndent,
+    SpaceBefore,
+    SpaceAfter,
+}
+
+impl SpacingIcon {
+    const ALL: [SpacingIcon; 5] = [
+        SpacingIcon::LeftIndent,
+        SpacingIcon::FirstLine,
+        SpacingIcon::RightIndent,
+        SpacingIcon::SpaceBefore,
+        SpacingIcon::SpaceAfter,
+    ];
+}
+
+/// Lines of text with an arrow for the indent, or a bar and a two-way
+/// arrow for the space above or below, on a 16 by 16 grid centred in `r`.
+fn paint_spacing_icon(painter: &egui::Painter, r: Rect, icon: SpacingIcon, color: Color32) {
+    let o = r.center() - Vec2::splat(8.0);
+    let at = |x: f32, y: f32| o + Vec2::new(x, y);
+    let stroke = Stroke::new(1.2, color);
+    let line = |x0: f32, x1: f32, y: f32| painter.line_segment([at(x0, y), at(x1, y)], stroke);
+    let across = |x0: f32, x1: f32, y: f32| {
+        // A level arrow from x0 to x1 with its head at x1.
+        let d = if x1 > x0 { -2.5 } else { 2.5 };
+        line(x0, x1, y);
+        painter.line_segment([at(x1, y), at(x1 + d, y - 2.5)], stroke);
+        painter.line_segment([at(x1, y), at(x1 + d, y + 2.5)], stroke);
+    };
+    let both_ways = |x: f32, y0: f32, y1: f32| {
+        painter.line_segment([at(x, y0), at(x, y1)], stroke);
+        for (y, d) in [(y0, 2.0), (y1, -2.0)] {
+            painter.line_segment([at(x, y), at(x - 2.0, y + d)], stroke);
+            painter.line_segment([at(x, y), at(x + 2.0, y + d)], stroke);
+        }
+    };
+    match icon {
+        SpacingIcon::LeftIndent => {
+            for y in [3.0, 8.0, 13.0] {
+                line(8.0, 15.0, y);
+            }
+            across(1.0, 6.0, 8.0);
+        }
+        SpacingIcon::RightIndent => {
+            for y in [3.0, 8.0, 13.0] {
+                line(1.0, 8.0, y);
+            }
+            across(15.0, 10.0, 8.0);
+        }
+        SpacingIcon::FirstLine => {
+            line(8.0, 15.0, 3.0);
+            line(1.0, 15.0, 8.0);
+            line(1.0, 15.0, 13.0);
+            across(1.0, 6.0, 3.0);
+        }
+        SpacingIcon::SpaceBefore => {
+            line(1.0, 15.0, 1.0);
+            line(6.0, 15.0, 10.0);
+            line(6.0, 15.0, 14.0);
+            both_ways(2.5, 3.0, 13.0);
+        }
+        SpacingIcon::SpaceAfter => {
+            line(6.0, 15.0, 2.0);
+            line(6.0, 15.0, 6.0);
+            line(1.0, 15.0, 15.0);
+            both_ways(2.5, 3.0, 13.0);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The indent and spacing pictures are drawn, inside their place, so
+    /// no system lacks them (#863).
+    #[test]
+    fn the_paragraph_spacing_icons_are_drawn_in_their_place() {
+        let ctx = crate::theme::ui_context();
+        let r = Rect::from_min_size(egui::pos2(100.0, 50.0), Vec2::new(18.0, 22.0));
+        let mut seen = Vec::new();
+        for icon in SpacingIcon::ALL {
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                paint_spacing_icon(ui.painter(), r, icon, Color32::BLACK);
+            });
+            out.textures_delta.clear();
+            let shapes: Vec<_> = out.shapes.iter().map(|c| c.shape.clone()).collect();
+            assert!(shapes.len() >= 5, "{icon:?}");
+            for s in &shapes {
+                assert!(
+                    r.expand(0.5).contains_rect(s.visual_bounding_rect()),
+                    "{icon:?}"
+                );
+            }
+            let key = format!("{shapes:?}");
+            assert!(!seen.contains(&key), "{icon:?} looks like another");
+            seen.push(key);
+        }
+    }
     use tracedraw_core::{Point, Size, TextSpan};
 
     fn draw(app: &mut App) {
