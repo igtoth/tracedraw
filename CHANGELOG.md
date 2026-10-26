@@ -8,6 +8,7 @@ full, row-by-row status.
 
 - Text panel, Paragraph: the icons beside the indent and spacing fields are drawn, so they show on every system; on Windows they were empty boxes, the interface fonts there lacking those arrows (#863).
 - Color Management Settings and Document Properties read in the dark themes: the page under their tabs is drawn in the theme's field colour instead of white, under the light labels (#904).
+- Pen: the preview segment from the last node to the pointer is a solid blue line on a white line twice as wide instead of dashes, so it shows over any colour; the handle lines are dashed in blue and white in turn, as thin as the preview's blue line (#670).
 
 ## 0.19.5 (2026-10-26)
 
