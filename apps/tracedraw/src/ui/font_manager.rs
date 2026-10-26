@@ -75,12 +75,51 @@ impl FontManagerPrefs {
     }
 }
 
-/// Load the font files installed for TraceDraw (at start).
+/// Load the font files installed for TraceDraw and those of the added
+/// folders (at start).
 pub fn install_saved(prefs: &FontManagerPrefs) -> Vec<String> {
-    if prefs.installed.is_empty() {
+    install_saved_in(tracedraw_text::fonts(), prefs)
+}
+
+fn install_saved_in(fonts: &tracedraw_text::FontSystem, prefs: &FontManagerPrefs) -> Vec<String> {
+    let mut paths = prefs.installed.clone();
+    paths.extend(folder_files(prefs));
+    if paths.is_empty() {
         return Vec::new();
     }
-    tracedraw_text::fonts().install_paths(&prefs.installed)
+    fonts.install_paths(&paths)
+}
+
+/// The font files of the added folders: usable in drawings for as long as
+/// their folder is in the libraries (#866).
+fn folder_files(prefs: &FontManagerPrefs) -> Vec<PathBuf> {
+    prefs
+        .folders
+        .iter()
+        .flat_map(|d| catalog::font_files(d))
+        .collect()
+}
+
+/// Take out the fonts of `dir`, a folder just removed from the
+/// libraries, except those installed on their own or in another folder
+/// still added (the system's fonts are never taken out). Returns how many
+/// files went.
+fn remove_folder_fonts(
+    fonts: &tracedraw_text::FontSystem,
+    prefs: &FontManagerPrefs,
+    dir: &std::path::Path,
+) -> usize {
+    let keep: BTreeSet<PathBuf> = prefs
+        .installed
+        .iter()
+        .cloned()
+        .chain(folder_files(prefs))
+        .collect();
+    catalog::font_files(dir)
+        .into_iter()
+        .filter(|p| !keep.contains(p))
+        .filter(|p| fonts.uninstall_path(p))
+        .count()
 }
 
 /// The library the list shows.
@@ -657,6 +696,15 @@ fn run(app: &mut App, st: &mut FontManagerState, a: Action) {
                 if !prefs.folders.contains(&dir) {
                     prefs.folders.push(dir.clone());
                 }
+                // Its fonts are usable at once, without Install (#866).
+                let files = catalog::font_files(&dir);
+                let added = fonts.install_paths(&files);
+                log::info!("fonts of {}: {}", dir.display(), added.join(", "));
+                st.note = Some(trf(
+                    "font_manager.installed_n",
+                    &[("n", &files.len().to_string())],
+                ));
+                app.font_families = fonts.available_families();
                 st.library = Library::Folder(dir);
                 app.save_settings();
             }
@@ -722,6 +770,9 @@ fn run(app: &mut App, st: &mut FontManagerState, a: Action) {
         }
         Action::RemoveFolder(dir) => {
             prefs.folders.retain(|f| f != &dir);
+            if remove_folder_fonts(fonts, prefs, &dir) > 0 {
+                app.font_families = fonts.available_families();
+            }
             app.font_catalog.rescan(&dir);
             if st.library == Library::Folder(dir) {
                 st.library = Library::MyFonts;
@@ -2273,6 +2324,43 @@ mod tests {
         inst.installed = true;
         cat.installed = Some(vec![inst]);
         assert!(cat.faces(&Library::Folder(dir.clone()), &prefs)[0].installed);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The fonts of an added folder are usable in drawings, also after a
+    /// restart, without installing them one by one; removing the folder
+    /// takes them out again, except a file installed on its own (#866).
+    #[test]
+    fn the_fonts_of_an_added_folder_are_usable() {
+        let dir = std::env::temp_dir().join(format!("tracedraw-fm-use-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("sub")).expect("dir");
+        let file = dir.join("sub").join("s.ttf");
+        std::fs::write(
+            &file,
+            include_bytes!("../../assets/fonts/Selawik-Regular.ttf"),
+        )
+        .expect("write");
+        let fonts = tracedraw_text::FontSystem::empty();
+        let mut prefs = FontManagerPrefs {
+            folders: vec![dir.clone()],
+            ..Default::default()
+        };
+        assert_eq!(
+            install_saved_in(&fonts, &prefs),
+            vec!["Selawik".to_string()]
+        );
+        assert!(fonts.has_family("Selawik"));
+        prefs.folders.clear();
+        assert_eq!(remove_folder_fonts(&fonts, &prefs, &dir), 1);
+        assert!(!fonts.has_family("Selawik"));
+        // Installed on its own as well: it stays when the folder goes.
+        prefs.installed = vec![file.clone()];
+        prefs.folders = vec![dir.clone()];
+        install_saved_in(&fonts, &prefs);
+        prefs.folders.clear();
+        assert_eq!(remove_folder_fonts(&fonts, &prefs, &dir), 0);
+        assert!(fonts.has_family("Selawik"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
