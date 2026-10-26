@@ -65,6 +65,13 @@ impl Theme {
         }
     }
 
+    /// The page under a tabbed dialog's tabs and its frame line in this
+    /// theme: the colour of fields (white in the light themes), so the
+    /// labels on it read in every theme (#904).
+    pub fn dialog_page(self) -> (Color32, Color32) {
+        (self.palette().field, self.palette().border)
+    }
+
     fn palette(self) -> &'static Palette {
         match self {
             Theme::Light => &LIGHT,
@@ -830,6 +837,25 @@ mod theme_tests {
                 p.text,
                 p.field
             );
+        }
+    }
+
+    /// The labels on a tabbed dialog's page (Color Management, Document
+    /// Properties) read in every theme: the page was white in the dark
+    /// themes too, under their light text (#904).
+    #[test]
+    fn dialog_pages_carry_readable_text_in_every_theme() {
+        for t in Theme::ALL {
+            let (page, _) = t.dialog_page();
+            let p = t.palette();
+            assert!(
+                contrast(page, p.text) >= 4.5,
+                "{t:?}: {:?} on {page:?}",
+                p.text
+            );
+            if t.is_dark() {
+                assert_ne!(page, Color32::WHITE, "{t:?}");
+            }
         }
     }
 

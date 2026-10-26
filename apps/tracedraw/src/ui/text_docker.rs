@@ -946,15 +946,15 @@ fn paragraph(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) 
     };
     let before = p.clone();
     let mut pc = false;
-    let line_icon = |ui: &mut Ui, text: &str, key: &str| {
-        ui.add_sized(
-            [18.0, 22.0],
-            egui::Label::new(egui::RichText::new(text).size(13.0)),
-        )
-        .on_hover_text(tr(key));
+    let line_icon = |ui: &mut Ui, icon: ParaIcon, key: &str| {
+        let (r, resp) = ui.allocate_exact_size(egui::vec2(18.0, 22.0), egui::Sense::hover());
+        for shape in para_icon_shapes(icon, r, ui.visuals().text_color()) {
+            ui.painter().add(shape);
+        }
+        resp.on_hover_text(tr(key));
     };
     ui.horizontal(|ui| {
-        line_icon(ui, "\u{2195}", "docker.leading");
+        line_icon(ui, ParaIcon::Leading, "docker.leading");
         let (range, suffix) = match p.leading_unit {
             LeadingUnit::Points => (0.0..=2000.0, " pt"),
             _ => (0.0..=2000.0, " %"),
@@ -991,17 +991,17 @@ fn paragraph(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) 
         .num_columns(4)
         .spacing([4.0, 4.0])
         .show(ui, |ui| {
-            line_icon(ui, "\u{21E5}", "docker.left_indent");
+            line_icon(ui, ParaIcon::LeftIndent, "docker.left_indent");
             pc |= length(ui, app, &mut p.left_indent);
-            line_icon(ui, "\u{2912}", "docker.space_before");
+            line_icon(ui, ParaIcon::SpaceBefore, "docker.space_before");
             pc |= length(ui, app, &mut p.space_before);
             ui.end_row();
-            line_icon(ui, "\u{21B3}", "docker.first_line_indent");
+            line_icon(ui, ParaIcon::FirstLineIndent, "docker.first_line_indent");
             pc |= length(ui, app, &mut p.first_line_indent);
-            line_icon(ui, "\u{2913}", "docker.space_after");
+            line_icon(ui, ParaIcon::SpaceAfter, "docker.space_after");
             pc |= length(ui, app, &mut p.space_after);
             ui.end_row();
-            line_icon(ui, "\u{21E4}", "docker.right_indent");
+            line_icon(ui, ParaIcon::RightIndent, "docker.right_indent");
             pc |= length(ui, app, &mut p.right_indent);
             ui.end_row();
         });
@@ -1177,9 +1177,125 @@ fn frame(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) {
     }
 }
 
+/// The small pictures beside the paragraph spacing and indent fields.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ParaIcon {
+    Leading,
+    LeftIndent,
+    RightIndent,
+    FirstLineIndent,
+    SpaceBefore,
+    SpaceAfter,
+}
+
+/// The lines of a paragraph icon in `r`: lines of text with an arrow or a
+/// bar showing what the field sets. Drawn rather than taken from a font,
+/// whose arrows the interface fonts of some systems lack (#863).
+fn para_icon_shapes(icon: ParaIcon, r: egui::Rect, color: egui::Color32) -> Vec<egui::Shape> {
+    let st = egui::Stroke::new(1.0, color);
+    let c = r.center();
+    let (l, rt) = (c.x - 7.0, c.x + 7.0);
+    let line = |x0: f32, x1: f32, y: f32| {
+        egui::Shape::line_segment([egui::pos2(x0, y), egui::pos2(x1, y)], st)
+    };
+    let arrow = |from: egui::Pos2, to: egui::Pos2| {
+        let d = (to - from).normalized() * 3.0;
+        let n = egui::vec2(-d.y, d.x);
+        vec![
+            egui::Shape::line_segment([from, to], st),
+            egui::Shape::line_segment([to, to - d + n], st),
+            egui::Shape::line_segment([to, to - d - n], st),
+        ]
+    };
+    let mut out = Vec::new();
+    match icon {
+        ParaIcon::Leading => {
+            out.push(line(l, rt - 5.0, c.y - 6.0));
+            out.push(line(l, rt - 5.0, c.y + 6.0));
+            out.extend(arrow(
+                egui::pos2(rt - 1.0, c.y),
+                egui::pos2(rt - 1.0, c.y - 6.0),
+            ));
+            out.extend(arrow(
+                egui::pos2(rt - 1.0, c.y),
+                egui::pos2(rt - 1.0, c.y + 6.0),
+            ));
+        }
+        ParaIcon::LeftIndent | ParaIcon::RightIndent => {
+            let left = icon == ParaIcon::LeftIndent;
+            let (x0, x1) = if left { (l + 6.0, rt) } else { (l, rt - 6.0) };
+            for k in -1..=1 {
+                out.push(line(x0, x1, c.y + k as f32 * 4.0));
+            }
+            if left {
+                out.extend(arrow(egui::pos2(l, c.y), egui::pos2(l + 4.0, c.y)));
+            } else {
+                out.extend(arrow(egui::pos2(rt, c.y), egui::pos2(rt - 4.0, c.y)));
+            }
+        }
+        ParaIcon::FirstLineIndent => {
+            out.push(line(l + 6.0, rt, c.y - 4.0));
+            out.push(line(l, rt, c.y));
+            out.push(line(l, rt, c.y + 4.0));
+            out.extend(arrow(
+                egui::pos2(l, c.y - 4.0),
+                egui::pos2(l + 4.0, c.y - 4.0),
+            ));
+        }
+        ParaIcon::SpaceBefore => {
+            out.push(line(l, rt, c.y - 7.0));
+            out.push(line(l, rt, c.y + 3.0));
+            out.push(line(l, rt, c.y + 7.0));
+            out.extend(arrow(
+                egui::pos2(c.x, c.y - 6.0),
+                egui::pos2(c.x, c.y + 1.0),
+            ));
+        }
+        ParaIcon::SpaceAfter => {
+            out.push(line(l, rt, c.y - 7.0));
+            out.push(line(l, rt, c.y - 3.0));
+            out.push(line(l, rt, c.y + 7.0));
+            out.extend(arrow(
+                egui::pos2(c.x, c.y + 6.0),
+                egui::pos2(c.x, c.y - 1.0),
+            ));
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The paragraph icons are drawn lines inside their box, not font
+    /// arrows, which the interface fonts of some systems do not have and
+    /// left the boxes empty (#863).
+    #[test]
+    fn paragraph_icons_are_drawn_lines_inside_their_box() {
+        let r = egui::Rect::from_min_size(egui::pos2(10.0, 20.0), egui::vec2(18.0, 22.0));
+        for icon in [
+            ParaIcon::Leading,
+            ParaIcon::LeftIndent,
+            ParaIcon::RightIndent,
+            ParaIcon::FirstLineIndent,
+            ParaIcon::SpaceBefore,
+            ParaIcon::SpaceAfter,
+        ] {
+            let shapes = para_icon_shapes(icon, r, egui::Color32::BLACK);
+            assert!(shapes.len() >= 4, "{icon:?}");
+            for sh in &shapes {
+                match sh {
+                    egui::Shape::LineSegment { points, .. } => {
+                        for p in points {
+                            assert!(r.expand(0.5).contains(*p), "{icon:?}: {p:?} outside {r:?}");
+                        }
+                    }
+                    other => panic!("{icon:?}: not a line: {other:?}"),
+                }
+            }
+        }
+    }
     use tracedraw_core::{Point, Size, TextSpan};
 
     fn draw(app: &mut App) {

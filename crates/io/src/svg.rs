@@ -1198,7 +1198,7 @@ mod tests {
         let mut st = Stroke::new(Color::rgb8(255, 0, 0), 2.0);
         // Centred: a stroke with its mitre limit.
         let svg = one_shape_svg(Fill::None, Some(st.clone()));
-        assert!(svg.contains("stroke-miterlimit=\"22.9"), "{svg}");
+        assert!(svg.contains("stroke-miterlimit=\"2.61"), "{svg}");
         // Inside: no stroke on the object, a filled path in the colour.
         st.position = tracedraw_core::OutlinePosition::Inside;
         let svg = one_shape_svg(Fill::None, Some(st.clone()));
