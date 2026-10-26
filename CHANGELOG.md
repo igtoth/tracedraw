@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Chinese font names: a .cdr file saved in version 17 or later that names a Chinese font (方正黑体_GBK, 方正大黑_GBK) shows the name as written instead of garbled letters, and finds the installed font instead of reporting it missing; drawings TraceDraw saves keep such names too. Installed fonts that give their Chinese, Japanese or Korean family name only in a GBK, Big5, Shift JIS or Wansung name record are found by that name and listed under it (#898, #860).
 - Contour, blend and extrusion keep the CPU low while dragging and pointing: a frame no longer works the effect out again to draw, to measure and to pick the same object. On a line of letters with a contour, a hit test with the pointer resting went from about 22 ms to 0.1 ms, and a drag works the contour out once for each move (#897).
 - Save As: Embed fonts starts off, for `.tdraw` and `.cdr` files alike. It started on, so every drawing saved carried its own copy of the fonts its text uses; tick the box for the files that are going to another machine, and the choice stays for the next Save As (#886).
 - Area Fill: a drawing of many lines that nearly meet (a line stopping a few ten thousandths of a millimetre short of the next, as files carry from rounding) now fills the cell under the click, not the whole drawing. Ends of open lines within 0.01 mm of an outline, or of their own start, count as meeting it (#899).
