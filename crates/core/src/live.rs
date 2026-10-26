@@ -491,40 +491,47 @@ impl OutlineWarp {
     /// across the part alone). Each part on its own if the warp changed
     /// the number of subpaths.
     pub fn apply_parts(&self, parts: &[BezPath]) -> Vec<BezPath> {
-        let starts = |p: &BezPath| {
-            p.elements()
-                .iter()
-                .filter(|e| matches!(e, PathEl::MoveTo(_)))
-                .count()
-        };
-        let mut whole = BezPath::new();
-        for p in parts {
-            whole.extend(p.elements().iter().copied());
-        }
-        let warped = self.apply(&whole);
-        let counts: Vec<usize> = parts.iter().map(starts).collect();
-        if counts.iter().sum::<usize>() != starts(&warped) {
-            return parts.iter().map(|p| self.apply(p)).collect();
-        }
-        let mut out = Vec::with_capacity(parts.len());
-        let mut els = warped.elements().iter().copied().peekable();
-        for n in counts {
-            let mut part = BezPath::new();
-            let mut seen = 0;
-            while let Some(e) = els.peek() {
-                if matches!(e, PathEl::MoveTo(_)) {
-                    if seen == n {
-                        break;
-                    }
-                    seen += 1;
-                }
-                part.push(*e);
-                els.next();
-            }
-            out.push(part);
-        }
-        out
+        warp_parts(parts, &|p| self.apply(p))
     }
+}
+
+/// `parts`, which together make one outline, warped by `warp` as the
+/// whole is: warped together, then split back by their subpaths. Each
+/// part on its own if the warp changed the number of subpaths.
+fn warp_parts(parts: &[BezPath], warp: &dyn Fn(&BezPath) -> BezPath) -> Vec<BezPath> {
+    let starts = |p: &BezPath| {
+        p.elements()
+            .iter()
+            .filter(|e| matches!(e, PathEl::MoveTo(_)))
+            .count()
+    };
+    let mut whole = BezPath::new();
+    for p in parts {
+        whole.extend(p.elements().iter().copied());
+    }
+    let warped = warp(&whole);
+    let counts: Vec<usize> = parts.iter().map(starts).collect();
+    if counts.iter().sum::<usize>() != starts(&warped) {
+        return parts.iter().map(warp).collect();
+    }
+    let mut out = Vec::with_capacity(parts.len());
+    let mut els = warped.elements().iter().copied().peekable();
+    for n in counts {
+        let mut part = BezPath::new();
+        let mut seen = 0;
+        while let Some(e) = els.peek() {
+            if matches!(e, PathEl::MoveTo(_)) {
+                if seen == n {
+                    break;
+                }
+                seen += 1;
+            }
+            part.push(*e);
+            els.next();
+        }
+        out.push(part);
+    }
+    out
 }
 
 /// The outline warps of `shape` a bake would take (see [`OutlineWarp`]).
@@ -1015,6 +1022,29 @@ fn evaluate_now(shape: &Shape) -> Evaluated {
 /// bounding box, for a group the box of all its objects.
 fn reshape(shape: &mut Shape, f: &dyn Fn(&BezPath, Rect) -> BezPath) {
     let b = shape.local_path().bounding_box();
+    // Text with characters of their own colours: a group of one curve a
+    // look (as the text is drawn in parts), warped together in the box of
+    // the whole text, so the colours stay (#912).
+    if let Some(parts) = shape.text_parts() {
+        let paths: Vec<BezPath> = parts.iter().map(Shape::local_path).collect();
+        let warped = warp_parts(&paths, &|p| f(p, b));
+        let children = parts
+            .into_iter()
+            .zip(warped)
+            .map(|(mut part, path)| {
+                part.transform = Affine::IDENTITY;
+                part.effects.clear();
+                part.parked_effects.clear();
+                part.shadow = None;
+                set_path(&mut part, path);
+                part
+            })
+            .collect();
+        shape.kind = ShapeKind::Group { children };
+        shape.spline = None;
+        shape.node_types.clear();
+        return;
+    }
     match &mut shape.kind {
         ShapeKind::Group { children } => {
             for c in children.iter_mut() {
