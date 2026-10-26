@@ -212,6 +212,78 @@ fn end_attempt_at(path: &std::path::Path) {
     let _ = std::fs::remove_file(path);
 }
 
+/// How long a start waits for its window before it takes the renderer
+/// for hung (#570). Opening it takes a second or two, a software adapter
+/// on an old computer a few more.
+pub const WINDOW_WAIT: std::time::Duration = std::time::Duration::from_secs(20);
+
+/// What a start does once it has waited `waited` for its window.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Watch {
+    /// The window is open, or there is time left.
+    Wait,
+    /// Start again with this renderer and end this start.
+    Next(Mode),
+    /// The last renderer: keep waiting, it may only be slow.
+    Last,
+}
+
+pub fn watch(opened: bool, waited: std::time::Duration, next: Option<Mode>) -> Watch {
+    if opened || waited < WINDOW_WAIT {
+        return Watch::Wait;
+    }
+    next.map_or(Watch::Last, Watch::Next)
+}
+
+/// Watch this start: a renderer that hangs inside the graphics driver
+/// never returns to hand over to the next one, so after `WINDOW_WAIT`
+/// without a window the next renderer is started from here and this
+/// process ends. `decline` makes this start refuse files from later starts
+/// first, so the new one opens its own window (#570).
+pub fn watch_start(
+    mode: Mode,
+    next: Option<Mode>,
+    args: Vec<String>,
+    decline: Option<Arc<AtomicBool>>,
+) {
+    let spawned = std::thread::Builder::new()
+        .name("tracedraw-start-watch".into())
+        .spawn(move || {
+            let start = std::time::Instant::now();
+            loop {
+                match watch(window_opened(), start.elapsed(), next) {
+                    Watch::Wait if window_opened() => return,
+                    Watch::Wait => std::thread::sleep(std::time::Duration::from_millis(100)),
+                    Watch::Last => {
+                        log::warn!(
+                            "no window after {}s with {mode:?}, the last renderer; still waiting",
+                            WINDOW_WAIT.as_secs()
+                        );
+                        return;
+                    }
+                    Watch::Next(_) if window_opened() => return,
+                    Watch::Next(n) => {
+                        log::warn!(
+                            "no window after {}s with {mode:?}; starting again with {n:?}",
+                            WINDOW_WAIT.as_secs()
+                        );
+                        if let Some(d) = &decline {
+                            d.store(true, Ordering::SeqCst);
+                        }
+                        if spawn_with(n, &args) {
+                            std::process::exit(0);
+                        }
+                        log::error!("could not start TraceDraw again with {n:?}");
+                        return;
+                    }
+                }
+            }
+        });
+    if let Err(e) = spawned {
+        log::warn!("the start is not watched: {e}");
+    }
+}
+
 /// What draws the window in this run, as Options shows it.
 pub fn in_use() -> Option<&'static str> {
     IN_USE.get().map(String::as_str)
@@ -531,19 +603,39 @@ pub fn options(
     (eframe::Renderer::Wgpu, config)
 }
 
-/// Run TraceDraw again with `next`, the other arguments kept, until it
-/// ends; false when it did not start.
-pub fn restart_with(next: Mode, args: &[String]) -> bool {
-    let Ok(exe) = std::env::current_exe() else {
-        return false;
-    };
+/// The arguments of a start with `next`, the other arguments kept.
+fn args_with(next: Mode, args: &[String]) -> Vec<String> {
     let mut rest: Vec<String> = args
         .iter()
         .filter(|a| !a.starts_with(ARG))
         .cloned()
         .collect();
     rest.push(next.arg());
-    std::process::Command::new(exe).args(rest).status().is_ok()
+    rest
+}
+
+/// Run TraceDraw again with `next`, the other arguments kept, until it
+/// ends; false when it did not start.
+pub fn restart_with(next: Mode, args: &[String]) -> bool {
+    let Ok(exe) = std::env::current_exe() else {
+        return false;
+    };
+    std::process::Command::new(exe)
+        .args(args_with(next, args))
+        .status()
+        .is_ok()
+}
+
+/// Start TraceDraw again with `next` without waiting for it; false when
+/// it did not start.
+fn spawn_with(next: Mode, args: &[String]) -> bool {
+    let Ok(exe) = std::env::current_exe() else {
+        return false;
+    };
+    std::process::Command::new(exe)
+        .args(args_with(next, args))
+        .spawn()
+        .is_ok()
 }
 
 /// The patched eframe's context fallback with its tests, run here: the
@@ -650,6 +742,29 @@ mod tests {
         std::fs::write(&path, "nonsense").expect("write");
         assert_eq!(failed_attempt_at(&path), None);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A start whose window does not open in `WINDOW_WAIT` (the driver
+    /// hung it in wgpu's set-up) starts the next renderer itself, so the
+    /// first start opens, not only the one after it; the last renderer is
+    /// left to finish. The new start keeps the files and swaps the switch
+    /// (#570).
+    #[test]
+    fn a_start_hung_without_its_window_goes_on_with_the_next_renderer() {
+        use std::time::Duration;
+        let early = WINDOW_WAIT - Duration::from_millis(1);
+        assert_eq!(watch(false, early, Some(Mode::Gl)), Watch::Wait);
+        assert_eq!(watch(true, WINDOW_WAIT * 2, Some(Mode::Gl)), Watch::Wait);
+        assert_eq!(
+            watch(false, WINDOW_WAIT, Some(Mode::Gl)),
+            Watch::Next(Mode::Gl)
+        );
+        assert_eq!(watch(false, WINDOW_WAIT, None), Watch::Last);
+        let args = vec!["a.cdr".to_string(), Mode::Hardware.arg()];
+        assert_eq!(
+            args_with(Mode::Gl, &args),
+            vec!["a.cdr".to_string(), Mode::Gl.arg()]
+        );
     }
 
     fn adapter(name: &str, kind: eframe::wgpu::DeviceType, surface: bool) -> Candidate {

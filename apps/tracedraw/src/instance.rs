@@ -65,6 +65,9 @@ pub struct Primary {
     /// The window to wake when files arrive (set once it exists).
     pub wake: Arc<OnceLock<egui::Context>>,
     stop: Arc<AtomicBool>,
+    /// Set when this start gives up on its window: later starts are told
+    /// no and open a window of their own (#570).
+    pub decline: Arc<AtomicBool>,
     port: u16,
     file: PathBuf,
 }
@@ -159,8 +162,10 @@ fn listen(dir: &Path, lock: File, inbox: Sender<Vec<PathBuf>>) -> std::io::Resul
         &serde_json::to_vec(&info).map_err(std::io::Error::other)?,
     )?;
     let stop = Arc::new(AtomicBool::new(false));
+    let decline = Arc::new(AtomicBool::new(false));
     let wake: Arc<OnceLock<egui::Context>> = Arc::new(OnceLock::new());
     let (token, stopped, woken) = (info.token.clone(), stop.clone(), wake.clone());
+    let declined = decline.clone();
     std::thread::Builder::new()
         .name("tracedraw-instance".into())
         .spawn(move || {
@@ -169,7 +174,8 @@ fn listen(dir: &Path, lock: File, inbox: Sender<Vec<PathBuf>>) -> std::io::Resul
                     break;
                 }
                 if let Ok(stream) = stream {
-                    serve(stream, &token, &inbox, &woken);
+                    let inbox = (!declined.load(Ordering::Relaxed)).then_some(&inbox);
+                    serve(stream, &token, inbox, &woken);
                 }
             }
         })?;
@@ -177,6 +183,7 @@ fn listen(dir: &Path, lock: File, inbox: Sender<Vec<PathBuf>>) -> std::io::Resul
         _lock: lock,
         wake,
         stop,
+        decline,
         port,
         file,
     })
@@ -199,11 +206,12 @@ fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     std::fs::rename(&tmp, path)
 }
 
-/// Answer one start: its files go to `inbox` when the token is right.
+/// Answer one start: its files go to `inbox` when the token is right; no
+/// inbox (the window gave up, #570) answers no.
 fn serve(
     stream: TcpStream,
     token: &str,
-    inbox: &Sender<Vec<PathBuf>>,
+    inbox: Option<&Sender<Vec<PathBuf>>>,
     wake: &OnceLock<egui::Context>,
 ) {
     let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
@@ -224,7 +232,7 @@ fn serve(
     if req.token != token {
         return;
     }
-    let ok = inbox.send(req.files).is_ok();
+    let ok = inbox.is_some_and(|i| i.send(req.files).is_ok());
     if ok {
         if let Some(ctx) = wake.get() {
             ctx.request_repaint();
@@ -331,6 +339,30 @@ mod tests {
         ] {
             assert!(!hands_over(&[flag.to_string()]), "{flag}");
         }
+    }
+
+    /// A start that gave up on its window (its renderer hung, #570) tells
+    /// later starts no at once, so they open a window of their own instead
+    /// of handing their files to one that never shows.
+    #[test]
+    fn a_start_without_its_window_declines_files() {
+        let dir = temp_dir("instance-decline");
+        let (tx, rx) = channel();
+        let Claim::Primary(first) = claim(Some(&dir), &[], tx) else {
+            panic!("the first start keeps the window");
+        };
+        first.decline.store(true, Ordering::Relaxed);
+        let file = dir.join("a.cdr");
+        let (tx2, _rx2) = channel();
+        let asked = Instant::now();
+        assert!(matches!(
+            claim(Some(&dir), std::slice::from_ref(&file), tx2),
+            Claim::Alone
+        ));
+        assert!(asked.elapsed() < Duration::from_secs(2), "no waiting");
+        assert!(rx.try_recv().is_err());
+        drop(first);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// A second start hands its files to the first, which wakes its
