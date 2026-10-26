@@ -49,6 +49,7 @@ nastavuje, jak program pracuje. Stránku zvolte ze seznamu vlevo.
 - [[options.node_shape]] pro uzly typu [[options.node_cusp]],
   [[options.node_smooth]] a [[options.node_symmetrical]].
 - [[options.show_curve_direction]].
+- [[options.corner_widgets]].
 - [[options.colors]]: [[options.main_color]] vybraných uzlů a úchytů a
   [[options.secondary_color]].
 - [[options.unselected_nodes_filled]].

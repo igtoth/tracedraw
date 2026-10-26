@@ -37,6 +37,7 @@
 - [[options.node_size]]：小、中或大。
 - [[options.node_cusp]]、[[options.node_smooth]] 和 [[options.node_symmetrical]] 节点的 [[options.node_shape]]。
 - [[options.show_curve_direction]]。
+- [[options.corner_widgets]]。
 - [[options.colors]]：所选节点和控制柄的 [[options.main_color]] 以及 [[options.secondary_color]]。
 - [[options.unselected_nodes_filled]]。
 
