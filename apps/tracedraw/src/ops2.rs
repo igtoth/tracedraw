@@ -2841,7 +2841,13 @@ impl App {
 
     pub fn open_palette_file(&mut self) {
         crate::files::Dialog::new()
-            .add_filter(tr("file.palettes"), &["tdpal", "gpl", "ase", "aco", "json"])
+            .add_filter(
+                crate::palette::filter_label(
+                    &tr("file.palettes"),
+                    crate::palette::PALETTE_EXTENSIONS,
+                ),
+                crate::palette::PALETTE_EXTENSIONS,
+            )
             .pick_file(self, |app, path| {
                 match crate::palette::load_palette(&path) {
                     Ok(p) => {
