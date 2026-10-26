@@ -555,7 +555,7 @@ font. The Fonts docker marks carried families
 "embedded" under "Fonts in document". Saving a drawing as `.tdraw` adds
 the carried fonts its text uses (text imported or pasted from another
 drawing), so the file keeps its letters on machines without them, and,
-with Save As's Embed fonts on (as it starts), the installed fonts its
+with Save As's Embed fonts on (it starts off), the installed fonts its
 text uses whose licence allows it (`FontSystem::fonts_to_embed`; see
 `files.md`, Save Drawing dialog). An embedded copy of an installed font
 is ignored where the font is installed.
