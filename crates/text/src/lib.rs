@@ -324,6 +324,66 @@ pub fn split_weight(family: &str) -> Option<(&str, u16)> {
         .map(|w| (head2, w))
 }
 
+/// How text names a face picked from a family's styles: the family, and
+/// whether it is bold and italic. A face of a weight other than regular
+/// and bold is named by the family with the weight ("Titillium Web" and
+/// its SemiBold face are "Titillium Web SemiBold", not bold), as drawings
+/// name it, so the bars show the face's own weight and not Bold (#892).
+/// The weight's name is the style's own when it is one ("SemiBold
+/// Italic" gives "SemiBold"), else the usual name of the weight. Regular
+/// and bold faces, and a family already named with its weight, keep the
+/// family, bold from 700 (600 for an unnamed weight between).
+pub fn face_family(family: &str, face: &FaceStyle) -> (String, bool, bool) {
+    let italic = face.italic;
+    if let Some((_, named)) = split_weight(family) {
+        return (
+            family.to_string(),
+            face.weight >= 700 && named < 700,
+            italic,
+        );
+    }
+    let weight_words: Vec<&str> = face
+        .name
+        .split_whitespace()
+        .filter(|w| !w.eq_ignore_ascii_case("italic") && !w.eq_ignore_ascii_case("oblique"))
+        .collect();
+    let own = weight_words.join(" ");
+    if !own.is_empty() {
+        let full = format!("{} {own}", family.trim_end());
+        if split_weight(&full).is_some() {
+            return (full, false, italic);
+        }
+    }
+    let rounded = (face.weight.saturating_add(50) / 100 * 100).clamp(100, 900);
+    let canonical = match rounded {
+        100 => Some("Thin"),
+        200 => Some("ExtraLight"),
+        300 => Some("Light"),
+        500 => Some("Medium"),
+        600 => Some("SemiBold"),
+        800 => Some("ExtraBold"),
+        900 => Some("Black"),
+        _ => None,
+    };
+    // A style named "Bold" or "Regular" is that, whatever its weight.
+    let plain = own.is_empty()
+        || ["regular", "normal", "book", "roman", "bold"]
+            .iter()
+            .any(|n| own.eq_ignore_ascii_case(n));
+    match canonical.filter(|_| !plain) {
+        Some(name) => (format!("{} {name}", family.trim_end()), false, italic),
+        None => (family.to_string(), face.weight >= 600, italic),
+    }
+}
+
+/// The weight part of a family named with its weight: "SemiBold" for
+/// "Titillium Web SemiBold", "Semi Bold" for "Lato Semi Bold". `None`
+/// for other names.
+pub fn weight_suffix(family: &str) -> Option<&str> {
+    let (base, _) = split_weight(family)?;
+    family.get(base.len()..).map(str::trim)
+}
+
 /// The weight text in `family` is drawn at: the weight the family's
 /// name ends in ("Lato Black" 900), else 400; bold text at least 700.
 pub fn target_weight(family: &str, bold: bool) -> u16 {
@@ -5339,6 +5399,68 @@ mod tests {
         let g = system_with(&[]);
         g.add_document_fonts(&[DocumentFont::new("Selawik", SELAWIK.to_vec())]);
         assert!(g.family_info("Selawik").is_some_and(|i| i.embedded));
+    }
+
+    /// A face picked from a family's styles is named the way drawings
+    /// name it: a semibold face by the family with its weight, not as
+    /// bold (#892, #624).
+    #[test]
+    fn faces_of_in_between_weights_are_named_by_their_weight() {
+        let face = |name: &str, weight: u16, italic: bool| FaceStyle {
+            name: name.into(),
+            weight,
+            italic,
+        };
+        let pick = |family: &str, f: FaceStyle| face_family(family, &f);
+        assert_eq!(
+            pick("Titillium Web", face("SemiBold", 600, false)),
+            ("Titillium Web SemiBold".to_string(), false, false)
+        );
+        assert_eq!(
+            pick("Titillium Web", face("SemiBold Italic", 600, true)),
+            ("Titillium Web SemiBold".to_string(), false, true)
+        );
+        assert_eq!(
+            pick("Lato", face("Semi Bold", 600, false)),
+            ("Lato Semi Bold".to_string(), false, false)
+        );
+        // A style name that is not a weight: the weight's usual name.
+        assert_eq!(
+            pick("Some Sans", face("Demi", 600, false)),
+            ("Some Sans SemiBold".to_string(), false, false)
+        );
+        assert_eq!(
+            pick("Some Sans", face("Thin Italic", 100, true)),
+            ("Some Sans Thin".to_string(), false, true)
+        );
+        // Regular and bold faces keep the family and the Bold switch.
+        assert_eq!(
+            pick("Titillium Web", face("Bold", 700, false)),
+            ("Titillium Web".to_string(), true, false)
+        );
+        assert_eq!(
+            pick("Titillium Web", face("Regular", 400, false)),
+            ("Titillium Web".to_string(), false, false)
+        );
+        assert_eq!(
+            pick("Titillium Web", face("Bold Italic", 700, true)),
+            ("Titillium Web".to_string(), true, true)
+        );
+        // A family named with its weight already keeps its name.
+        assert_eq!(
+            pick("Titillium Web SemiBold", face("SemiBold", 600, false)),
+            ("Titillium Web SemiBold".to_string(), false, false)
+        );
+        // What the bars show as the style of such a family.
+        assert_eq!(weight_suffix("Titillium Web SemiBold"), Some("SemiBold"));
+        assert_eq!(weight_suffix("Lato Semi Bold"), Some("Semi Bold"));
+        assert_eq!(weight_suffix("Titillium Web"), None);
+        // The face picked that way draws at its weight and is not missing.
+        let f = system_with(&[SELAWIK]);
+        let (family, bold, _) = pick("Selawik", face("SemiBold", 600, false));
+        assert!(!bold);
+        assert!(f.has_family(&family));
+        assert_eq!(f.substitute(&family), None);
     }
 
     #[test]
