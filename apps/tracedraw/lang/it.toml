@@ -3005,6 +3005,7 @@ print.tab_prepress = "Prestampa"
 print.text_black = "Stampa il testo in nero"
 print.zoom = "Zoom"
 print.margins = "Margini della carta (sinistra, destra, alto, basso); trascina le linee tratteggiate sul foglio" # mt
+print.paper_margins = "Margini"
 print.sheet_custom = "Personalizzato" # mt
 print.sheet_name = "Nome" # mt
 print.sheet_save = "Salva formato" # mt

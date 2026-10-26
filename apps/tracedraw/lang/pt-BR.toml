@@ -3005,6 +3005,7 @@ print.tab_prepress = "Pré-impressão"
 print.text_black = "Imprimir texto em preto"
 print.zoom = "Zoom"
 print.margins = "Margens do papel (esquerda, direita, topo, base); arraste as linhas tracejadas na folha" # mt
+print.paper_margins = "Margens"
 print.sheet_custom = "Personalizado" # mt
 print.sheet_name = "Nome" # mt
 print.sheet_save = "Salvar tamanho" # mt

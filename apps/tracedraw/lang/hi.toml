@@ -3005,6 +3005,7 @@ print.tab_prepress = "प्रीप्रेस"
 print.text_black = "टेक्स्ट काले में प्रिंट करें"
 print.zoom = "ज़ूम"
 print.margins = "कागज़ के हाशिए (बाएँ, दाएँ, ऊपर, नीचे); शीट पर उनकी डैश रेखाएँ खींचें" # mt
+print.paper_margins = "मार्जिन"
 print.sheet_custom = "Custom" # mt
 print.sheet_name = "Name" # mt
 print.sheet_save = "Save size" # mt

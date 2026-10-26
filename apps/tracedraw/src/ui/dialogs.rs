@@ -3142,6 +3142,28 @@ pub(crate) fn take_saved_sheet(app: &mut App, st: &mut PrintState) {
     }
 }
 
+/// The paper's margins kept clear (left, right, top, bottom, mm), in a
+/// row: the Print dialog's Layout and Print Preview share them.
+pub(crate) fn margin_fields(ui: &mut Ui, margins: &mut [f64; 4]) {
+    ui.horizontal(|ui| {
+        for (m, key) in margins.iter_mut().zip([
+            "print.margin_left",
+            "print.margin_right",
+            "print.margin_top",
+            "print.margin_bottom",
+        ]) {
+            ui.add(
+                crate::ui::field::NumField::new(m)
+                    .range(0.0..=200.0)
+                    .speed(0.5)
+                    .suffix(" mm")
+                    .width(62.0),
+            )
+            .on_hover_text(tr(key));
+        }
+    });
+}
+
 pub(crate) fn print_layout_fields(app: &App, ui: &mut Ui, st: &mut PrintState) {
     ui.strong(tr("print.layout"));
     ui.vertical(|ui| {
@@ -3272,6 +3294,13 @@ pub(crate) fn print_layout_fields(app: &App, ui: &mut Ui, st: &mut PrintState) {
                             .on_hover_text(tr("print.keep_size_tip"));
                         ui.end_row();
                     }
+                    // The paper's margins kept clear: typed here, or in
+                    // Print Preview their dashed lines dragged on the
+                    // sheet (#580, #582, #909).
+                    ui.label(tr("print.paper_margins"))
+                        .on_hover_text(tr("print.margins"));
+                    margin_fields(ui, &mut st.margins);
+                    ui.end_row();
                 });
         });
         ui.add_space(8.0);

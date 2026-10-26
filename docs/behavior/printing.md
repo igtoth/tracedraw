@@ -104,7 +104,8 @@ has one.
   page stay out (#534, `fit_contents_to_page`,
   `export::tests::fit_to_page_shrinks_what_runs_off_the_page`). Bleed limit
   (how far beyond the page objects print, 4 mm by default); the
-  imposition, sheet, gap and the sketch (below).
+  imposition, sheet, gap, the paper margins (left, right, top, bottom,
+  the same as Print Preview's; #909) and the sketch (below).
 - Prepress: Invert and Mirror (the whole sheet, marks included; Invert
   prints a negative, the sheet's empty paper black too, so black ink
   shows clear rather than white on white paper,
@@ -148,7 +149,8 @@ same function (`export::print_sheets`).
   paper's edges clear: the pages and their marks go in the middle of what
   is left, shrinking to fit inside it unless Keep size is on; a sheet
   fitted to the pages grows by them (`imposition::tests::pages_sit_inside_the_paper_margins`).
-  They are typed in the left panel or set by dragging their dashed blue
+  They are typed in the left panel (with the layout, as on the Print
+  dialog's Layout tab) or set by dragging their dashed blue
   lines on the sheet (within 6 pixels; the pointer turns to a resize
   arrow and the line under it is drawn bolder; a drag inwards makes the
   margin larger, 0 to 200 mm; #580, #582).
