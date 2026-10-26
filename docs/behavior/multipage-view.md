@@ -26,6 +26,17 @@ at once, so pages can be compared and edited side by side.
 - Zoom to Fit (F4) and turning the view on fit every page in the window.
 - Page Sorter View and Multipage View exclude each other.
 
+## Drawing
+
+- Each other page keeps its own picture. While the view pans or zooms,
+  the last picture is scaled and moved with its paper, and the pages are
+  rendered anew once the view has rested for 0.12 s.
+- A page that covers no more of the screen than the canvas is rendered
+  whole; a larger one only where it shows.
+- One frame spends at most 10 ms rendering the current page and the
+  others; pages left over show their last picture and render in the next
+  frames. One render runs every frame, so every page gets its turn.
+
 ## Formula
 
 With `cols = ceil(sqrt(n))`, page `i` is in row `i / cols`, column

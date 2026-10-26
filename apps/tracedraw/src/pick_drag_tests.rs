@@ -9486,3 +9486,107 @@ fn alignment_keys_while_typing() {
         }
     }
 }
+
+/// Frame times of a zoom in the Multipage View (#903): nine pages of
+/// many objects each, zoomed out step by step until they all show, then
+/// left to rest. Run with
+/// `cargo test --release -- --ignored frame_times_of_a_multipage_zoom --nocapture`.
+#[test]
+#[ignore]
+fn frame_times_of_a_multipage_zoom() {
+    let (ctx, mut app, _) = setup();
+    let n: usize = std::env::var("FRAME_N")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1500);
+    let mut s = 11u64;
+    let mut r = || {
+        s = s
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        ((s >> 33) as f64) / (1u64 << 31) as f64
+    };
+    let first = app.page;
+    for page in 0..9 {
+        if page > 0 {
+            app.add_page();
+        }
+        for _ in 0..n {
+            let (x, y) = (r() * 200.0, r() * 280.0);
+            let mut p = tracedraw_core::geometry::BezPath::new();
+            p.move_to((x, y));
+            for _ in 0..6 {
+                p.curve_to(
+                    (x + r() * 20.0 - 10.0, y + r() * 20.0 - 10.0),
+                    (x + r() * 20.0 - 10.0, y + r() * 20.0 - 10.0),
+                    (x + r() * 20.0 - 10.0, y + r() * 20.0 - 10.0),
+                );
+            }
+            p.close_path();
+            app.new_shape(ShapeKind::Path {
+                path: p,
+                closed: true,
+            });
+        }
+    }
+    app.page = first;
+    app.select(Vec::new());
+    app.set_multipage(true);
+    let mut time = 0.0f64;
+    let mut timed = |app: &mut App| {
+        time += 1.0 / 60.0;
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                Pos2::ZERO,
+                egui::vec2(1600.0, 1000.0),
+            )),
+            time: Some(time),
+            ..Default::default()
+        };
+        let t = std::time::Instant::now();
+        let mut out = ctx.run_ui(input, |ui| crate::ui::root(app, ui));
+        out.textures_delta.clear();
+        t.elapsed()
+    };
+    for _ in 0..3 {
+        timed(&mut app);
+    }
+    app.zoom_to_page();
+    for _ in 0..30 {
+        timed(&mut app);
+    }
+    let at = egui::pos2(800.0, 500.0);
+    let steps = 24u32;
+    let mut sum = std::time::Duration::ZERO;
+    let mut worst = std::time::Duration::ZERO;
+    for _ in 0..steps {
+        app.view.zoom_at(at, 0.93);
+        let d = timed(&mut app);
+        sum += d;
+        worst = worst.max(d);
+    }
+    let mut rest_sum = std::time::Duration::ZERO;
+    let mut rest_worst = std::time::Duration::ZERO;
+    let mut rest = Vec::new();
+    for _ in 0..30 {
+        let d = timed(&mut app);
+        rest_sum += d;
+        rest_worst = rest_worst.max(d);
+        rest.push(d.as_millis());
+    }
+    eprintln!("frames at rest, ms: {rest:?}");
+    let t = std::time::Instant::now();
+    let copy = app.doc().clone();
+    eprintln!(
+        "a copy of the drawing ({} pages): {:?}",
+        copy.pages.len(),
+        t.elapsed()
+    );
+    eprintln!(
+        "multipage zoom: {:?} per frame, worst {:?}; at rest after: {:?} per frame, worst {:?}",
+        sum / steps,
+        worst,
+        rest_sum / 30,
+        rest_worst
+    );
+}

@@ -47,6 +47,23 @@ pub struct Raster {
     /// The render running on its own thread, if any.
     #[cfg(not(target_arch = "wasm32"))]
     job: Option<Job>,
+    /// A picture whose canvas follows the zoom (a page beside the current
+    /// one in the Multipage View): the last render stays moved and scaled
+    /// into place while the view moves even though the canvas changed
+    /// size, instead of rendering anew every frame, and once there is a
+    /// picture the next ones are drawn on a thread of their own
+    /// (#902, #903).
+    pub follows_zoom: bool,
+    /// No render this frame (the frame's time for them is spent): the
+    /// last picture shows where its part of the page now is, and the
+    /// render waits for a later frame (#903).
+    pub defer: bool,
+    /// The drawing as given, shared, for a render on its own thread to
+    /// take instead of a copy of its own (no threads in the browser).
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    pub snapshot: Option<std::sync::Arc<Document>>,
+    /// Renders started so far, on this thread or another.
+    renders: u64,
 }
 
 /// Screen colours as they would print, on a `N` x `N` x `N` grid of the
@@ -228,6 +245,16 @@ impl Raster {
         }
     }
 
+    /// True once a picture has been rendered.
+    pub fn has_picture(&self) -> bool {
+        self.texture.is_some()
+    }
+
+    /// How many renders this picture has started.
+    pub fn render_count(&self) -> u64 {
+        self.renders
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn texture(
         &mut self,
@@ -295,7 +322,7 @@ impl Raster {
             if let (Some(old), Some(t), Some(page_rect)) =
                 (self.key.as_ref(), self.texture.as_ref(), self.page_rect)
             {
-                if old.same_but_view(&key) {
+                if old.same_but_view(&key, self.follows_zoom) {
                     let now = ctx.input(|i| i.time);
                     let due = match &self.settle {
                         Some((k, due)) if *k == key => *due,
@@ -308,6 +335,12 @@ impl Raster {
                     }
                 }
             }
+        }
+        if self.defer {
+            ctx.request_repaint();
+            let t = self.texture.as_ref()?;
+            let page_rect = self.page_rect?;
+            return Some((t.id(), view.rect_to_screen(page_rect)));
         }
         self.settle = None;
         let vt = match (window, pixel_dpi) {
@@ -350,10 +383,18 @@ impl Raster {
             )
         });
         // A slow page, with a picture to show meanwhile: drawn on a
-        // thread of its own, the window answering all along.
+        // thread of its own, the window answering all along. A page
+        // beside the current one always is: many of them come due in the
+        // same moment, once a zoom rests (#903).
         #[cfg(not(target_arch = "wasm32"))]
-        if window.is_none() && self.last_seconds > SLOW_RENDER && self.texture.is_some() {
-            let doc = doc.clone();
+        if window.is_none()
+            && (self.last_seconds > SLOW_RENDER || self.follows_zoom)
+            && self.texture.is_some()
+        {
+            let doc = self
+                .snapshot
+                .take()
+                .unwrap_or_else(|| std::sync::Arc::new(doc.clone()));
             let (tx, rx) = std::sync::mpsc::channel();
             let wake = ctx.clone();
             std::thread::spawn(move || {
@@ -362,10 +403,12 @@ impl Raster {
                 let _ = tx.send(image.map(|i| (i, t.elapsed().as_secs_f64())));
                 wake.request_repaint();
             });
+            self.renders += 1;
             self.job = Some(Job { key, page_rect, rx });
             return self.shown_meanwhile(view, screen);
         }
         let t = web_time::Instant::now();
+        self.renders += 1;
         let pixmap = render_page(doc, page, &opts)?;
         let image = to_image(&pixmap, lut.as_deref());
         self.last_seconds = t.elapsed().as_secs_f64();
@@ -430,11 +473,12 @@ impl Raster {
 
 impl Key {
     /// True when `other` shows the same drawing the same way, only from
-    /// another place or at another zoom (the canvas the same size).
-    fn same_but_view(&self, other: &Key) -> bool {
+    /// another place or at another zoom (the canvas the same size, unless
+    /// `any_size`).
+    fn same_but_view(&self, other: &Key, any_size: bool) -> bool {
         self.revision == other.revision
             && self.page == other.page
-            && self.size == other.size
+            && (any_size || self.size == other.size)
             && self.preview == other.preview
             && self.wireframe == other.wireframe
             && self.simulate_overprints == other.simulate_overprints
@@ -611,6 +655,93 @@ mod tests {
         }
         assert!(done, "the picture from the thread was taken");
         assert!(raster.last_seconds < 1.0, "its time measured");
+    }
+
+    /// A page beside the current one in the Multipage View is rendered
+    /// on a canvas the size of its paper, which changes with the zoom:
+    /// while the view moves, the last picture is scaled into place, the
+    /// page's corner and size following the zoom, and nothing is rendered
+    /// until the view rests (#902, #903).
+    #[test]
+    fn a_picture_that_follows_the_zoom_keeps_its_place_while_resized() {
+        let ctx = Context::default();
+        let doc = Document::new("t", Size::new(100.0, 50.0));
+        let mut raster = Raster {
+            follows_zoom: true,
+            ..Default::default()
+        };
+        let view = View {
+            zoom: 2.0,
+            origin: egui::pos2(10.0, 110.0),
+        };
+        let paper =
+            |v: &View| v.rect_to_screen(tracedraw_core::geometry::Rect::new(0.0, 0.0, 100.0, 50.0));
+        let (first, at) = pass(&ctx, &mut raster, &doc, &view, paper(&view), 0.0);
+        assert_eq!(at, paper(&view));
+        let renders = raster.render_count();
+        // Zoomed out about a point: the paper is smaller, the canvas with
+        // it. The same picture, exactly on the paper.
+        let mut zoomed = view;
+        zoomed.zoom_at(egui::pos2(300.0, 300.0), 0.8);
+        let (tex, at) = pass(&ctx, &mut raster, &doc, &zoomed, paper(&zoomed), 0.02);
+        assert_eq!(tex, first);
+        assert_eq!(raster.render_count(), renders, "nothing rendered");
+        let want = paper(&zoomed);
+        assert!((at.min - want.min).length() < 1e-3, "{at:?} {want:?}");
+        assert!((at.max - want.max).length() < 1e-3, "{at:?} {want:?}");
+        // At rest: rendered for the new size.
+        pass(
+            &ctx,
+            &mut raster,
+            &doc,
+            &zoomed,
+            paper(&zoomed),
+            0.02 + SETTLE_SECONDS + 0.01,
+        );
+        assert_eq!(raster.render_count(), renders + 1);
+        // The main canvas keeps rendering when its size changes.
+        let mut main = Raster::default();
+        let rect = Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(320.0, 200.0));
+        pass(&ctx, &mut main, &doc, &view, rect, 0.0);
+        let wider = Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(330.0, 200.0));
+        pass(&ctx, &mut main, &doc, &view, wider, 0.01);
+        assert_eq!(main.render_count(), 2);
+    }
+
+    /// A deferred render shows the last picture where its part of the
+    /// page now is and renders nothing; the next frame without the
+    /// deferral renders.
+    #[test]
+    fn a_deferred_render_waits_for_a_later_frame() {
+        let ctx = Context::default();
+        let doc = Document::new("t", Size::new(100.0, 50.0));
+        let page = doc.pages[0].id;
+        let rect = Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(320.0, 200.0));
+        let view = View::default();
+        let mut raster = Raster {
+            defer: true,
+            ..Default::default()
+        };
+        let at_revision = |raster: &mut Raster, revision: u64| {
+            raster.texture(
+                &ctx, &doc, page, &view, rect, None, revision, false, false, false, false, None,
+                None,
+            )
+        };
+        // Nothing to show yet: nothing shown, nothing rendered.
+        assert!(at_revision(&mut raster, 1).is_none());
+        assert_eq!(raster.render_count(), 0);
+        raster.defer = false;
+        let (first, _) = at_revision(&mut raster, 1).expect("rendered");
+        // The drawing changed: deferred, the old picture stays.
+        raster.defer = true;
+        let (tex, at) = at_revision(&mut raster, 2).expect("old picture");
+        assert_eq!(tex, first);
+        assert_eq!(at, rect);
+        assert_eq!(raster.render_count(), 1);
+        raster.defer = false;
+        at_revision(&mut raster, 2).expect("rendered");
+        assert_eq!(raster.render_count(), 2);
     }
 
     #[test]

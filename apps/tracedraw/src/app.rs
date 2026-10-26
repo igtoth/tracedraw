@@ -1195,6 +1195,9 @@ pub struct App {
     pub vo: crate::variable_outline::VariableOutlineState,
     /// Textures of the other pages in the Multipage View.
     pub page_rasters: std::cell::RefCell<std::collections::HashMap<PageId, crate::raster::Raster>>,
+    /// The drawing at a revision, shared by the other pages' renders on
+    /// their threads (one copy a change, not one a page) (#903).
+    pub page_snapshot: std::cell::RefCell<Option<(u64, std::sync::Arc<tracedraw_core::Document>)>>,
     pub view_mode: ViewMode,
     pub proof_colors: bool,
     pub show_page_border: bool,
@@ -2261,6 +2264,7 @@ impl App {
             painterly: Default::default(),
             vo: Default::default(),
             page_rasters: Default::default(),
+            page_snapshot: Default::default(),
             view_mode: ViewMode::Enhanced,
             proof_colors: false,
             show_page_border: true,

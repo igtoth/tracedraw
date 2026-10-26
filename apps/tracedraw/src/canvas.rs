@@ -441,8 +441,52 @@ pub(crate) fn ime_at_caret(app: &App, painter: &Painter, top: Pos2, bottom: Pos2
 fn draw_page(app: &App, painter: &Painter, rect: ERect, preview: Option<Affine>) {
     let view = &app.view;
     painter.rect_filled(rect, 0.0, app.desktop_color());
+    // Objects, rasterized with tiny-skia into a texture; the live drag preview
+    // is applied to the selection during the render. Rendered before the
+    // other pages of the Multipage View so their renders know the time
+    // this one took (#903); painted after the page and its grids.
+    let started = web_time::Instant::now();
+    let renders_before = app.raster.borrow().render_count();
+    // Editing a symmetry with Show full preview off: drawn without its
+    // copies (the canvas outlines them in red); a revision of its own so
+    // the picture is not taken for the full one.
+    let without_copies = app.symmetry_without_copies();
+    let doc: &Document = without_copies.as_deref().unwrap_or(app.doc());
+    let revision = app.engine.revision()
+        ^ if without_copies.is_some() {
+            1u64 << 62
+        } else {
+            0
+        };
+    // Paragraph text being resized keeps its letters while the frame
+    // follows the drag (the text flows anew on release).
+    let preview_ids = preview.map(|t| {
+        let ids: Vec<_> = app
+            .selection
+            .iter()
+            .copied()
+            .filter(|id| !app.resizes_text_frame(*id, t))
+            .collect();
+        (ids, t)
+    });
+    let main = app.raster.borrow_mut().texture(
+        painter.ctx(),
+        doc,
+        app.page,
+        view,
+        rect,
+        preview_ids,
+        revision,
+        app.wireframe,
+        app.simulate_overprints,
+        app.rasterize_complex_effects,
+        app.proof_colors,
+        app.render_focus(),
+        (app.view_mode == crate::app::ViewMode::Pixels).then(|| app.document_dpi()),
+    );
+    let main_rendered = app.raster.borrow().render_count() != renders_before;
     if app.multipage {
-        crate::multipage::draw_other_pages(app, painter, rect);
+        crate::multipage::draw_other_pages(app, painter, rect, started, main_rendered);
     }
 
     // Page: a flat grey shadow offset right and down, the white page, a
@@ -514,46 +558,7 @@ fn draw_page(app: &App, painter: &Painter, rect: ERect, preview: Option<Affine>)
         draw_baseline_grid(app, painter, rect, paper);
     }
 
-    // Objects, rasterized with tiny-skia into a texture; the live drag preview
-    // is applied to the selection during the render.
-    // Editing a symmetry with Show full preview off: drawn without its
-    // copies (the canvas outlines them in red); a revision of its own so
-    // the picture is not taken for the full one.
-    let without_copies = app.symmetry_without_copies();
-    let doc: &Document = without_copies.as_deref().unwrap_or(app.doc());
-    let revision = app.engine.revision()
-        ^ if without_copies.is_some() {
-            1u64 << 62
-        } else {
-            0
-        };
-    // Paragraph text being resized keeps its letters while the frame
-    // follows the drag (the text flows anew on release).
-    let preview_ids = preview.map(|t| {
-        let ids: Vec<_> = app
-            .selection
-            .iter()
-            .copied()
-            .filter(|id| !app.resizes_text_frame(*id, t))
-            .collect();
-        (ids, t)
-    });
-    if let Some(tex) = app.raster.borrow_mut().texture(
-        painter.ctx(),
-        doc,
-        app.page,
-        view,
-        rect,
-        preview_ids,
-        revision,
-        app.wireframe,
-        app.simulate_overprints,
-        app.rasterize_complex_effects,
-        app.proof_colors,
-        app.render_focus(),
-        (app.view_mode == crate::app::ViewMode::Pixels).then(|| app.document_dpi()),
-    ) {
-        let (tex, at) = tex;
+    if let Some((tex, at)) = main {
         painter.image(
             tex,
             at,

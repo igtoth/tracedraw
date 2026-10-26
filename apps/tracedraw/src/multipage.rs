@@ -81,6 +81,10 @@ impl App {
     /// Turn the Multipage View on or off; turning it on shows every page.
     pub fn set_multipage(&mut self, on: bool) {
         self.multipage = on;
+        if !on {
+            self.page_rasters.borrow_mut().clear();
+            self.page_snapshot.borrow_mut().take();
+        }
         if on {
             self.page_sorter = false;
         }
@@ -138,14 +142,43 @@ impl App {
     }
 }
 
+/// How long one frame may spend rendering the page and the pages beside
+/// it, seconds; the pages left wait for the next frames, showing their
+/// last picture meanwhile (#903). One render a frame always runs.
+pub const RENDER_BUDGET: f64 = 0.010;
+
+/// The part of a page to render, on screen: the whole paper while it
+/// covers no more of the screen than the canvas does, so the picture
+/// stays whole while the view moves; else only its visible part.
+pub fn render_rect(paper: ERect, canvas: ERect) -> ERect {
+    let clip = paper.intersect(canvas);
+    let area = |r: ERect| r.width().max(0.0) * r.height().max(0.0);
+    if area(paper) <= area(canvas) {
+        paper
+    } else {
+        clip
+    }
+}
+
 /// Paints the pages other than the current one: shadow, paper, objects
-/// (each page kept as its own texture) and the page name below.
-pub fn draw_other_pages(app: &App, painter: &Painter, rect: ERect) {
+/// (each page kept as its own texture) and the page name below. While
+/// the view moves each page shows its last picture scaled into place, and
+/// the pages render anew once it rests, as many a frame as
+/// [`RENDER_BUDGET`] allows, counted from `started` (before the current
+/// page's render; `rendered` when that one rendered) (#902, #903).
+pub fn draw_other_pages(
+    app: &App,
+    painter: &Painter,
+    rect: ERect,
+    started: web_time::Instant,
+    rendered: bool,
+) {
     let placed = app.multipage_layout();
     let doc = app.doc();
     let ctx = painter.ctx();
     let mut rasters = app.page_rasters.borrow_mut();
     rasters.retain(|id, _| doc.pages.iter().any(|p| p.id == *id));
+    let mut rendered = rendered;
     for (index, (id, r)) in placed.iter().enumerate() {
         let paper = app.view.rect_to_screen(*r);
         let paper = ERect::from_min_max(paper.min.round(), paper.max.round());
@@ -167,12 +200,26 @@ pub fn draw_other_pages(app: &App, painter: &Painter, rect: ERect) {
                     origin: paper.left_bottom(),
                 };
                 let raster = rasters.entry(*id).or_default();
-                if let Some(tex) = raster.texture(
+                raster.follows_zoom = true;
+                raster.defer = rendered && started.elapsed().as_secs_f64() > RENDER_BUDGET;
+                // A render on its thread takes the drawing shared by all
+                // the pages, copied once a change (the browser build draws
+                // on the one thread).
+                if cfg!(not(target_arch = "wasm32")) && !raster.defer && raster.has_picture() {
+                    let revision = app.engine.revision();
+                    let mut snap = app.page_snapshot.borrow_mut();
+                    if snap.as_ref().is_none_or(|(r, _)| *r != revision) {
+                        *snap = Some((revision, std::sync::Arc::new(doc.clone())));
+                    }
+                    raster.snapshot = snap.as_ref().map(|(_, d)| d.clone());
+                }
+                let before = raster.render_count();
+                let shown = raster.texture(
                     ctx,
                     doc,
                     *id,
                     &view,
-                    clip,
+                    render_rect(paper, rect),
                     None,
                     app.engine.revision(),
                     app.wireframe,
@@ -181,11 +228,17 @@ pub fn draw_other_pages(app: &App, painter: &Painter, rect: ERect) {
                     app.proof_colors,
                     None,
                     None,
-                ) {
-                    let (tex, _) = tex;
-                    painter.image(
+                );
+                rendered |= raster.render_count() != before;
+                raster.defer = false;
+                raster.snapshot = None;
+                // The picture where its part of the page is, cut to the
+                // page's visible part: an older picture shown while the
+                // view moves covers another part of the page than now.
+                if let Some((tex, at)) = shown {
+                    painter.with_clip_rect(clip).image(
                         tex,
-                        clip,
+                        at,
                         ERect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)),
                         Color32::WHITE,
                     );
@@ -266,6 +319,81 @@ mod tests {
         // top lines up with page 1's.
         assert_eq!(placed[1].1, Rect::new(180.0, -30.0, 220.0, 50.0));
         assert_eq!(placed[2].1, Rect::new(0.0, -90.0, 150.0, -60.0));
+    }
+
+    #[test]
+    fn a_small_page_renders_whole_and_a_large_one_its_visible_part() {
+        let canvas = ERect::from_min_size(Pos2::ZERO, egui::vec2(800.0, 600.0));
+        // Small and partly off the canvas: the whole paper, so the picture
+        // stays whole while the view moves.
+        let small = ERect::from_min_size(egui::pos2(-50.0, 100.0), egui::vec2(200.0, 150.0));
+        assert_eq!(render_rect(small, canvas), small);
+        // Larger than the canvas: only what shows.
+        let large = ERect::from_min_size(egui::pos2(-500.0, -500.0), egui::vec2(2000.0, 1500.0));
+        assert_eq!(render_rect(large, canvas), canvas);
+    }
+
+    /// One frame of the whole window at egui time `time`.
+    fn frame_at(ctx: &egui::Context, app: &mut App, time: f64) {
+        let input = egui::RawInput {
+            screen_rect: Some(ERect::from_min_size(Pos2::ZERO, egui::vec2(1600.0, 1000.0))),
+            time: Some(time),
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(input, |ui| crate::ui::root(app, ui));
+        out.textures_delta.clear();
+    }
+
+    fn renders(app: &App) -> u64 {
+        app.page_rasters
+            .borrow()
+            .values()
+            .map(|r| r.render_count())
+            .sum()
+    }
+
+    /// While the view zooms, the pages beside the current one show their
+    /// last pictures scaled into place and render nothing; once the view
+    /// rests they render anew (#902, #903).
+    #[test]
+    fn other_pages_render_once_the_zoom_rests() {
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        app.show_welcome = false;
+        for _ in 0..3 {
+            app.add_page();
+            app.new_shape(tracedraw_core::ShapeKind::Rect {
+                rect: Rect::new(10.0, 10.0, 60.0, 40.0),
+                radius: 0.0,
+                corners: None,
+            });
+        }
+        app.page = app.doc().pages[0].id;
+        app.set_multipage(true);
+        let mut t = 0.0;
+        for _ in 0..20 {
+            t += 0.02;
+            frame_at(&ctx, &mut app, t);
+        }
+        let at_rest = renders(&app);
+        assert!(at_rest >= 3, "every other page rendered: {at_rest}");
+        // Still at rest: nothing rendered again.
+        t += 0.02;
+        frame_at(&ctx, &mut app, t);
+        assert_eq!(renders(&app), at_rest);
+        // A zoom, frame by frame: nothing rendered.
+        for _ in 0..5 {
+            app.view.zoom_at(egui::pos2(800.0, 500.0), 0.9);
+            t += 0.016;
+            frame_at(&ctx, &mut app, t);
+        }
+        assert_eq!(renders(&app), at_rest, "no render while zooming");
+        // At rest: each page rendered again.
+        for _ in 0..20 {
+            t += 0.02;
+            frame_at(&ctx, &mut app, t);
+        }
+        assert!(renders(&app) >= at_rest + 3);
     }
 
     #[test]
