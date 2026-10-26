@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Save As .cdr with Embed fonts: the embedded fonts are written as files that embed fonts have them. Each font in the file's font list now carries the number the text uses for it (the faces of a family share it), the embedded fonts follow those numbers, and their headers have the names, character set and checksums such files hold, so other programs can match the text to its embedded font; before, the fonts were numbered 1, 2, 3 in turn, which only TraceDraw itself did not need (#352).
 - Multipage View: zooming with every page in view stays smooth, and the other pages scale with the zoom instead of jiggling and stretching. Each page was drawn anew on every frame of the zoom, and the picture shown meanwhile was stretched over the page's visible part; now the last picture follows its page until the view rests, and the pages are then drawn a few per frame. On nine pages of 1500 curves each, a zoom frame went from about 300 ms to under 1 ms (#903, #902).
 - Blend: the objects acceleration slider moves the steps toward the start or the end object, also when the blend follows no path. It changed only their sizes (with Apply to sizing) and turns, so moving it seemed to do nothing (#910).
 - Print Preview: the options at the left are wider and their edge drags wider, and what still does not fit scrolls sideways, so longer languages (Spanish and others) are no longer cut off at the right (#862).

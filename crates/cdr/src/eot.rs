@@ -20,6 +20,10 @@ const VERSIONS: [u32; 3] = [0x0001_0000, 0x0002_0001, 0x0002_0002];
 /// header ends 8 bytes later (four empty names with their padding).
 const FAMILY_AT: usize = 82;
 const MIN_HEADER: usize = FAMILY_AT + 2 + 3 * 4;
+/// `RootStringCheckSum` of an empty root string, as files embed fonts.
+const ROOT_CHECKSUM_EMPTY: u32 = 0x5047_5342;
+/// `EUDCCodePage` as files embed fonts.
+const EUDC_CODE_PAGE: u32 = 1252;
 
 /// A font read from an EOT structure.
 #[derive(Debug, Clone, PartialEq)]
@@ -143,7 +147,7 @@ pub fn encode(font: &[u8], names: &EotNames) -> Vec<u8> {
     h.extend_from_slice(&0x0002_0002u32.to_le_bytes());
     h.extend_from_slice(&FLAG_XOR.to_le_bytes());
     h.extend_from_slice(&names.panose);
-    h.push(1); // DEFAULT_CHARSET
+    h.push(0); // charset: 0, as the files seen have it for every face
     h.push(u8::from(names.italic));
     h.extend_from_slice(&names.weight.to_le_bytes());
     h.extend_from_slice(&names.fs_type.to_le_bytes());
@@ -158,20 +162,35 @@ pub fn encode(font: &[u8], names: &EotNames) -> Vec<u8> {
     h.extend_from_slice(&[0; 16]); // reserved
     h.extend_from_slice(&[0; 2]); // padding
     debug_assert_eq!(h.len(), FAMILY_AT);
-    for (i, name) in [&names.family, &names.style, &names.version, &names.full]
-        .into_iter()
-        .enumerate()
+    // The family and style names end with a NUL, the version and full
+    // names do not, as in the files seen.
+    for (i, (name, nul)) in [
+        (&names.family, true),
+        (&names.style, true),
+        (&names.version, false),
+        (&names.full, false),
+    ]
+    .into_iter()
+    .enumerate()
     {
         if i > 0 {
             h.extend_from_slice(&[0; 2]); // padding
         }
-        let b = utf16(name);
-        h.extend_from_slice(&(b.len() as u16).to_le_bytes());
-        h.extend_from_slice(&b);
+        let mut b = utf16(name);
+        if nul {
+            b.extend_from_slice(&[0; 2]);
+        }
+        let len = b.len().min(usize::from(u16::MAX) & !1);
+        h.extend_from_slice(&(len as u16).to_le_bytes());
+        h.extend_from_slice(&b[..len]);
     }
-    // Padding, an empty root string, its checksum, the EUDC code page,
-    // padding, an empty signature, EUDC flags and an empty EUDC font.
-    h.extend_from_slice(&[0; 2 + 2 + 4 + 4 + 2 + 2 + 4 + 4]);
+    // Padding, an empty root string, its checksum (that of no bytes),
+    // the EUDC code page (1252), padding, an empty signature, EUDC flags
+    // and an empty EUDC font.
+    h.extend_from_slice(&[0; 2 + 2]);
+    h.extend_from_slice(&ROOT_CHECKSUM_EMPTY.to_le_bytes());
+    h.extend_from_slice(&EUDC_CODE_PAGE.to_le_bytes());
+    h.extend_from_slice(&[0; 2 + 2 + 4 + 4]);
     h.extend_from_slice(&data);
     let size = h.len() as u32;
     h[0..4].copy_from_slice(&size.to_le_bytes());
