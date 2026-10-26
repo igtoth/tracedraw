@@ -9058,3 +9058,80 @@ fn a_toolbar_dragged_onto_another_row_shares_it() {
     }
     assert_eq!(rows(&app), vec![vec![Bar::Standard], vec![Bar::Property]]);
 }
+
+/// Dragging a contour out of a line of letters (#897): the CPU went from
+/// 5 % to 60 % because the contour was worked out again for every draw,
+/// measure and pick of a frame, the pointer resting on the object included.
+/// `cargo test --release -p tracedraw -- --ignored frame_times_of_a_contour_drag --nocapture`.
+#[test]
+#[ignore]
+fn frame_times_of_a_contour_drag() {
+    // Letters as outlines: 25 of them, each a wobbly curved ring with a
+    // counter, about what a line of text is once its glyphs are outlined.
+    let (ctx, mut app, _) = setup();
+    app.select(Vec::new());
+    let mut path = tracedraw_core::geometry::BezPath::new();
+    for letter in 0..25 {
+        let (cx, cy) = (20.0 + letter as f64 * 8.0, 100.0);
+        for (r, dir) in [(4.0, 1.0), (1.6, -1.0)] {
+            let seg = 24;
+            let at = |k: usize| {
+                let a = dir * k as f64 / seg as f64 * std::f64::consts::TAU;
+                let w = r * (1.0 + 0.12 * (a * 5.0).sin());
+                (cx + w * a.cos(), cy + w * a.sin())
+            };
+            path.move_to(at(0));
+            for k in 1..=seg {
+                let (p0, p1) = (at(k - 1), at(k));
+                path.curve_to(
+                    (p0.0 + (p1.0 - p0.0) / 3.0, p0.1 + (p1.1 - p0.1) / 3.0),
+                    (
+                        p0.0 + (p1.0 - p0.0) * 2.0 / 3.0,
+                        p0.1 + (p1.1 - p0.1) * 2.0 / 3.0,
+                    ),
+                    p1,
+                );
+            }
+            path.close_path();
+        }
+    }
+    let text = app
+        .new_shape(ShapeKind::Path { path, closed: true })
+        .expect("letters");
+    app.apply_fill(tracedraw_core::Fill::Solid(tracedraw_core::Color::BLACK));
+    app.set_tool(Tool::Contour);
+    app.select(vec![text]);
+    let b = app.doc().shape(text).expect("text").1.bounds();
+    app.view.zoom = 1.0;
+    let start = Point::new(b.center().x, b.y0 + 1.0);
+    assert!(app.begin_contour(start));
+    let n = 60;
+    let mut drag = std::time::Duration::ZERO;
+    let mut paint = std::time::Duration::ZERO;
+    for i in 0..n {
+        let p = Point::new(start.x, start.y - 1.0 - i as f64 * 0.3);
+        let t = std::time::Instant::now();
+        app.drag_contour(p);
+        drag += t.elapsed();
+        let t = std::time::Instant::now();
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+        paint += t.elapsed();
+    }
+    let time = |label: &str, f: &mut dyn FnMut()| {
+        let t = std::time::Instant::now();
+        for _ in 0..20 {
+            f();
+        }
+        eprintln!("  {label}: {:?}", t.elapsed() / 20);
+    };
+    // Pointing at the object while the pointer rests: the contour is not
+    // worked out again.
+    time("hit_test", &mut || {
+        let _ = app.hit_test(start);
+    });
+    eprintln!(
+        "contour drag on text: {:?} per move, {:?} per frame",
+        drag / n,
+        paint / n
+    );
+}
