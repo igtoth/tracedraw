@@ -24,6 +24,7 @@ pub mod catalog;
 pub mod hyphen;
 #[cfg(any(windows, all(test, not(target_arch = "wasm32"))))]
 mod installed;
+pub mod traits;
 
 /// Points to millimetres.
 pub const PT_MM: f64 = 25.4 / 72.0;
@@ -496,6 +497,13 @@ pub struct FamilyInfo {
     /// A symbol font (its character map is the symbol encoding): its
     /// letters are pictures, so its name reads in another font.
     pub symbol: bool,
+    /// The kind of letters (the first face that says, else the name).
+    pub class: traits::FontClass,
+    /// Every letter one width (a face's `post` table or PANOSE, else
+    /// the name).
+    pub monospace: bool,
+    /// A face has OpenType layout features beyond kerning.
+    pub features: bool,
 }
 
 /// A face's style name: the typographic subfamily (name ID 17), else the
@@ -1851,6 +1859,44 @@ impl FontSystem {
             }
             ids
         };
+        self.info_of(family, ids)
+    }
+
+    /// [`FontSystem::family_info`] of each of `families`, reading the
+    /// font database's list of faces once rather than once a family (a
+    /// font list's filter reads every family, #867).
+    pub fn family_infos(&self, families: &[String]) -> Vec<Option<FamilyInfo>> {
+        let mut by_family: HashMap<&str, Vec<fontdb::ID>> = HashMap::new();
+        for f in families {
+            by_family.entry(f.as_str()).or_default();
+        }
+        {
+            let db = self.db();
+            for face in db.faces() {
+                for (n, _) in &face.families {
+                    if let Some(ids) = by_family.get_mut(n.as_str()) {
+                        if !ids.contains(&face.id) {
+                            ids.push(face.id);
+                        }
+                    }
+                }
+            }
+        }
+        families
+            .iter()
+            .map(|family| {
+                let mut ids = by_family.get(family.as_str()).cloned().unwrap_or_default();
+                if ids.is_empty() {
+                    let legacy = self.legacy.read().unwrap_or_else(|e| e.into_inner());
+                    ids = legacy.get(family).cloned().unwrap_or_default();
+                }
+                self.info_of(family, ids)
+            })
+            .collect()
+    }
+
+    /// What a font list shows about `family`, whose faces are `ids`.
+    fn info_of(&self, family: &str, ids: Vec<fontdb::ID>) -> Option<FamilyInfo> {
         if ids.is_empty() {
             let offered = self
                 .offered
@@ -1863,11 +1909,17 @@ impl FontSystem {
                 faces: Vec::new(),
                 embedded: false,
                 symbol: false,
+                class: traits::FontClass::Unknown,
+                monospace: false,
+                features: false,
             });
         }
         let db = self.db();
         let mut kind = FontKind::TrueType;
         let mut symbol = false;
+        let mut class = traits::FontClass::Unknown;
+        let mut monospace = false;
+        let mut features = false;
         let mut faces: Vec<FaceStyle> = Vec::new();
         for id in ids {
             let Some(info) = db.face(id) else {
@@ -1889,11 +1941,16 @@ impl FontSystem {
                     })
                 });
                 let style = face_style_name(&f);
-                Some((face_kind, symbol, style))
+                Some((face_kind, symbol, style, traits::face_traits(&f)))
             });
-            let Some(Some((face_kind, face_symbol, style))) = read else {
+            let Some(Some((face_kind, face_symbol, style, face_traits))) = read else {
                 continue;
             };
+            if class == traits::FontClass::Unknown {
+                class = face_traits.class;
+            }
+            monospace |= face_traits.monospace;
+            features |= face_traits.features;
             // A family is as its most capable face shows it.
             kind = match (kind, face_kind) {
                 (FontKind::Variable, _) | (_, FontKind::Variable) => FontKind::Variable,
@@ -1920,11 +1977,17 @@ impl FontSystem {
             }
         }
         faces.sort_by_key(|f| (f.italic, f.weight));
+        if class == traits::FontClass::Unknown {
+            class = traits::name_class(family);
+        }
         Some(FamilyInfo {
             kind,
             faces,
             embedded: self.is_document_family(family),
             symbol,
+            class,
+            monospace: monospace || traits::name_monospace(family),
+            features,
         })
     }
 
@@ -5975,6 +6038,81 @@ mod tests {
                 assert_eq!(two.glyphs, 2, "{family} {pair}");
             }
         }
+    }
+
+    /// `font` with byte `at` of its OS/2 table set to each of `bytes`.
+    fn with_os2(font: &[u8], at: usize, bytes: &[u8]) -> Vec<u8> {
+        let mut out = font.to_vec();
+        let n = usize::from(u16::from_be_bytes([font[4], font[5]]));
+        for i in 0..n {
+            let rec = 12 + 16 * i;
+            if &font[rec..rec + 4] == b"OS/2" {
+                let off =
+                    u32::from_be_bytes(font[rec + 8..rec + 12].try_into().expect("4")) as usize;
+                out[off + at..off + at + bytes.len()].copy_from_slice(bytes);
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn font_lists_filter_families_by_what_their_tables_say() {
+        use traits::{FontClass, FontFilter, FontTrait};
+        // Selawik as a sans serif by its family class (8), and as a
+        // monospaced serif by its PANOSE digits.
+        let sans = with_os2(SELAWIK, 30, &[8, 0]);
+        let f = system_with(&[&sans, QUICKSAND]);
+        let selawik = f.family_info("Selawik").expect("installed");
+        assert_eq!(selawik.class, FontClass::SansSerif);
+        assert!(!selawik.monospace);
+        assert_ne!(selawik.kind, FontKind::Variable);
+        let quicksand = f.family_info("Quicksand").expect("installed");
+        assert_eq!(quicksand.kind, FontKind::Variable);
+        // No class in its tables nor its name.
+        assert_eq!(quicksand.class, FontClass::Unknown);
+
+        let mono_serif = with_os2(SELAWIK, 32, &[2, 2, 6, 9]);
+        let g = system_with(&[&mono_serif]);
+        let info = g.family_info("Selawik").expect("installed");
+        assert_eq!(info.class, FontClass::Serif);
+        assert!(info.monospace);
+
+        let mut filter = FontFilter::default();
+        filter.set(FontTrait::Variable, true);
+        assert!(filter.matches(Some(&quicksand)));
+        assert!(!filter.matches(Some(&selawik)));
+        filter = FontFilter::default();
+        filter.set(FontTrait::SansSerif, true);
+        assert!(filter.matches(Some(&selawik)));
+        assert!(!filter.matches(Some(&quicksand)));
+        filter.set(FontTrait::Monospace, true);
+        assert!(!filter.matches(Some(&selawik)));
+        assert!(!filter.matches(Some(&info)));
+        filter.set(FontTrait::Serif, true);
+        assert!(filter.matches(Some(&info)));
+    }
+
+    /// Reading what the filter needs for every installed family stays
+    /// quick (#867); run with `--ignored --nocapture` on a machine with
+    /// many fonts.
+    #[test]
+    #[ignore]
+    fn family_infos_of_every_installed_family_time() {
+        let f = FontSystem::load();
+        let families = f.families();
+        let t = std::time::Instant::now();
+        let one_by_one: Vec<Option<FamilyInfo>> =
+            families.iter().map(|n| f.family_info(n)).collect();
+        let single = t.elapsed();
+        let t = std::time::Instant::now();
+        let batch = f.family_infos(&families);
+        println!(
+            "{} of {} families read in {:?} (one by one {single:?})",
+            batch.iter().flatten().count(),
+            families.len(),
+            t.elapsed()
+        );
+        assert_eq!(batch, one_by_one);
     }
 
     #[test]
