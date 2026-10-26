@@ -12,6 +12,7 @@ fontdb = { version = "0.24", default-features = false, features = ["std"] }
 ttf-parser.workspace = true
 rustybuzz.workspace = true
 unicode-bidi = "0.3"
+encoding_rs.workspace = true
 unicode-general-category.workspace = true
 log.workspace = true
 

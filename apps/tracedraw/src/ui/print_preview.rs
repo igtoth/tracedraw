@@ -337,29 +337,6 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                         st.art_stretch = (1.0, 1.0);
                     }
                 });
-                // The paper's margins kept clear: typed here, or their
-                // dashed lines dragged on the sheet (#580, #582).
-                ui.label(tr("print.margins"));
-                ui.horizontal(|ui| {
-                    for (i, key) in [
-                        "print.margin_left",
-                        "print.margin_right",
-                        "print.margin_top",
-                        "print.margin_bottom",
-                    ]
-                    .into_iter()
-                    .enumerate()
-                    {
-                        ui.add(
-                            crate::ui::field::NumField::new(&mut st.margins[i])
-                                .range(0.0..=200.0)
-                                .speed(0.5)
-                                .suffix(" mm")
-                                .width(62.0),
-                        )
-                        .on_hover_text(tr(key));
-                    }
-                });
                 // Where the artwork sits on its page: a drag on the sheet
                 // moves it too (#536).
                 ui.horizontal(|ui| {

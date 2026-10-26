@@ -3005,6 +3005,7 @@ print.tab_prepress = "Pracetak"
 print.text_black = "Cetak teks dalam hitam"
 print.zoom = "Zoom"
 print.margins = "Margin kertas (kiri, kanan, atas, bawah); seret garis putus-putusnya di lembar" # mt
+print.paper_margins = "Margin"
 print.sheet_custom = "Kustom" # mt
 print.sheet_name = "Nama" # mt
 print.sheet_save = "Simpan ukuran" # mt

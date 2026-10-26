@@ -1064,8 +1064,20 @@ fn read_style_string(r: &mut Reader, d: &[u8], v: u16) -> Option<String> {
     Some(if v < 17 {
         decode_utf16le(s)
     } else {
-        decode_cp1252(s)
+        decode_style_bytes(s)
     })
+}
+
+/// A style string of version 17 on, held as bytes: UTF-8, as the object
+/// style strings and the strings TraceDraw writes are, so a font named
+/// in Chinese ("方正黑体_GBK") reads as named (#898); bytes that are not
+/// UTF-8 read as Windows-1252, stopping at the first NUL either way.
+pub(crate) fn decode_style_bytes(b: &[u8]) -> String {
+    let b = &b[..b.iter().position(|c| *c == 0).unwrap_or(b.len())];
+    match std::str::from_utf8(b) {
+        Ok(s) => s.to_string(),
+        Err(_) => decode_cp1252(b),
+    }
 }
 
 fn read_txsm_16(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Option<Txsm> {
@@ -1908,6 +1920,24 @@ mod tests {
     }
 
     use super::*;
+
+    /// Style strings of version 17 on are UTF-8: a font named in Chinese
+    /// keeps its name; bytes that are not UTF-8 still read as
+    /// Windows-1252 (#898).
+    #[test]
+    fn byte_style_strings_read_as_utf8() {
+        let json = r#"{"character":{"latin":{"font":"方正黑体_GBK","size":"128819"}}}"#;
+        let s = parse_style_string(&decode_style_bytes(json.as_bytes()));
+        assert_eq!(s.family.as_deref(), Some("方正黑体_GBK"));
+        assert_eq!(decode_style_bytes(b"Caf\xe9\0x"), "Caf\u{e9}");
+        assert_eq!(decode_style_bytes(b"ab\0cd"), "ab");
+        // The record as read from a text chunk: length, then the bytes.
+        let mut d = (json.len() as u32).to_le_bytes().to_vec();
+        d.extend_from_slice(json.as_bytes());
+        let mut r = Reader::new(&d, false);
+        let read = read_style_string(&mut r, &d, 19).expect("string");
+        assert!(read.contains("方正黑体_GBK"), "{read}");
+    }
 
     #[test]
     fn early_text_lines_end_at_cr_or_cr_lf() {

@@ -3005,6 +3005,7 @@ print.tab_prepress = "プリプレス"
 print.text_black = "テキストを黒で印刷"
 print.zoom = "ズーム"
 print.margins = "用紙の余白 (左、右、上、下)。用紙上の破線をドラッグ" # mt
+print.paper_margins = "余白"
 print.sheet_custom = "カスタム" # mt
 print.sheet_name = "名前" # mt
 print.sheet_save = "サイズを保存" # mt

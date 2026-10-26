@@ -3005,6 +3005,7 @@ print.tab_prepress = "印前"
 print.text_black = "以黑色打印文本"
 print.zoom = "缩放"
 print.margins = "纸张边距（左、右、上、下）；在纸上拖动其虚线" # mt
+print.paper_margins = "边距"
 print.sheet_custom = "自定义" # mt
 print.sheet_name = "名称" # mt
 print.sheet_save = "保存尺寸" # mt

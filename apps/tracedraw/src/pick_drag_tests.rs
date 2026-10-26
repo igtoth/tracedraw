@@ -9486,3 +9486,57 @@ fn alignment_keys_while_typing() {
         }
     }
 }
+
+/// The Print dialog's Layout tab has the paper margins, which Print
+/// Preview had alone, and a margin typed there reaches the layout (#909).
+#[test]
+fn the_print_layout_tab_has_the_paper_margins() {
+    fn texts(ctx: &egui::Context, app: &mut App) -> Vec<String> {
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                Pos2::ZERO,
+                egui::vec2(1600.0, 1000.0),
+            )),
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(input, |ui| crate::ui::root(app, ui));
+        out.textures_delta.clear();
+        fn walk(s: &egui::Shape, texts: &mut Vec<String>) {
+            match s {
+                egui::Shape::Text(t) => texts.push(t.galley.text().to_string()),
+                egui::Shape::Vec(v) => v.iter().for_each(|s| walk(s, texts)),
+                _ => {}
+            }
+        }
+        let mut texts = Vec::new();
+        out.shapes.iter().for_each(|c| walk(&c.shape, &mut texts));
+        texts
+    }
+    use crate::ui::dialogs::Dialog;
+    let (ctx, mut app, _) = setup();
+    app.print();
+    match &mut app.dialog {
+        Dialog::Print(st) => {
+            st.tab = 3;
+            st.margins = [7.0, 0.0, 0.0, 0.0];
+        }
+        other => panic!("no Print dialog: {other:?}"),
+    }
+    let shown = texts(&ctx, &mut app);
+    let shown = texts(&ctx, &mut app)
+        .into_iter()
+        .chain(shown)
+        .collect::<Vec<_>>();
+    assert!(
+        shown
+            .iter()
+            .any(|t| *t == crate::i18n::tr("print.paper_margins")),
+        "{shown:?}"
+    );
+    assert!(shown.iter().any(|t| t.starts_with("7")), "{shown:?}");
+    let Dialog::Print(st) = &app.dialog else {
+        panic!("the Print dialog closed");
+    };
+    let layout = crate::export::print_layout(&app, st, app.doc());
+    assert_eq!(layout.paper_margins[0], 7.0);
+}
