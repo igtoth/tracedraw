@@ -3005,6 +3005,7 @@ print.tab_prepress = "Druckvorstufe"
 print.text_black = "Text in Schwarz drucken"
 print.zoom = "Zoom"
 print.margins = "Papierränder (links, rechts, oben, unten); ihre gestrichelten Linien auf dem Blatt ziehen" # mt
+print.paper_margins = "Ränder"
 print.sheet_custom = "Benutzerdefiniert" # mt
 print.sheet_name = "Name" # mt
 print.sheet_save = "Größe speichern" # mt

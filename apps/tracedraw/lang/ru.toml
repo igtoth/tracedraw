@@ -3005,6 +3005,7 @@ print.tab_prepress = "Допечатная подготовка"
 print.text_black = "Печатать текст чёрным"
 print.zoom = "Масштаб"
 print.margins = "Поля бумаги (слева, справа, сверху, снизу); перетаскивайте их пунктирные линии на листе" # mt
+print.paper_margins = "Поля"
 print.sheet_custom = "Другой" # mt
 print.sheet_name = "Имя" # mt
 print.sheet_save = "Сохранить размер" # mt

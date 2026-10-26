@@ -3005,6 +3005,7 @@ print.tab_prepress = "Předtisková příprava"
 print.text_black = "Tisknout text černě"
 print.zoom = "Lupa"
 print.margins = "Okraje papíru (vlevo, vpravo, nahoře, dole); táhněte jejich přerušované čáry na listu" # mt
+print.paper_margins = "Okraje"
 print.sheet_custom = "Vlastní" # mt
 print.sheet_name = "Název" # mt
 print.sheet_save = "Uložit velikost" # mt

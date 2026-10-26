@@ -3005,6 +3005,7 @@ print.tab_prepress = "Przygotowalnia"
 print.text_black = "Drukuj tekst na czarno"
 print.zoom = "Powiększenie"
 print.margins = "Marginesy papieru (lewy, prawy, górny, dolny); przeciągaj ich przerywane linie na arkuszu" # mt
+print.paper_margins = "Marginesy"
 print.sheet_custom = "Niestandardowy" # mt
 print.sheet_name = "Nazwa" # mt
 print.sheet_save = "Zapisz rozmiar" # mt

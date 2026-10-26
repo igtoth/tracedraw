@@ -3005,6 +3005,7 @@ print.tab_prepress = "Baskı öncesi"
 print.text_black = "Metni siyah yazdır"
 print.zoom = "Yakınlaştırma"
 print.margins = "Kağıt kenar boşlukları (sol, sağ, üst, alt); sayfadaki kesikli çizgilerini sürükleyin" # mt
+print.paper_margins = "Kenar boşlukları"
 print.sheet_custom = "Özel" # mt
 print.sheet_name = "Ad" # mt
 print.sheet_save = "Boyutu kaydet" # mt

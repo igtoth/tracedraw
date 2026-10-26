@@ -395,9 +395,32 @@ pub fn target_weight(family: &str, bold: bool) -> u16 {
     }
 }
 
+/// A name record kept in a Chinese, Japanese or Korean code page (the
+/// Windows encodings 2 to 5 and the matching Macintosh scripts of the
+/// OpenType `name` table), decoded: older Chinese fonts name their family
+/// in GBK only ("方正黑体_GBK"). Windows records keep each character in
+/// 16 bits, a one-byte one with a zero high byte; the zeros are dropped
+/// (no code of these code pages holds a zero byte). `None` for other
+/// encodings and for bytes that do not decode.
+fn code_page_name(name: &ttf_parser::name::Name) -> Option<String> {
+    use ttf_parser::PlatformId;
+    let enc = match (name.platform_id, name.encoding_id) {
+        (PlatformId::Windows, 2) | (PlatformId::Macintosh, 1) => encoding_rs::SHIFT_JIS,
+        (PlatformId::Windows, 3) | (PlatformId::Macintosh, 25) => encoding_rs::GBK,
+        (PlatformId::Windows, 4) | (PlatformId::Macintosh, 2) => encoding_rs::BIG5,
+        (PlatformId::Windows, 5) | (PlatformId::Macintosh, 3) => encoding_rs::EUC_KR,
+        _ => return None,
+    };
+    let bytes: Vec<u8> = name.name.iter().copied().filter(|b| *b != 0).collect();
+    let (text, bad) = enc.decode_without_bom_handling(&bytes);
+    (!bad && !text.trim().is_empty()).then(|| text.into_owned())
+}
+
 /// The legacy family names (name ID 1) a face's name table gives that
 /// differ from the families fontdb lists for it (the typographic family,
 /// name ID 16): "Arial Narrow" for a face fontdb files under "Arial".
+/// Family names (IDs 1 and 16) kept only in a CJK code page count too
+/// (see [`code_page_name`]).
 fn legacy_families(db: &fontdb::Database, id: fontdb::ID) -> Vec<String> {
     let Some(face) = db.face(id) else {
         return Vec::new();
@@ -409,10 +432,22 @@ fn legacy_families(db: &fontdb::Database, id: fontdb::ID) -> Vec<String> {
         };
         let mut out: Vec<String> = Vec::new();
         for name in f.names() {
-            if name.name_id != ttf_parser::name_id::FAMILY || !name.is_unicode() {
+            let family = name.name_id == ttf_parser::name_id::FAMILY;
+            let typographic = name.name_id == ttf_parser::name_id::TYPOGRAPHIC_FAMILY;
+            // Unicode legacy names, and the family names a font keeps in a
+            // Chinese, Japanese or Korean code page only (#860), which the
+            // font database does not read.
+            let text = if name.is_unicode() {
+                if !family {
+                    continue;
+                }
+                name.to_string()
+            } else if family || typographic {
+                code_page_name(&name)
+            } else {
                 continue;
-            }
-            let Some(text) = name.to_string() else {
+            };
+            let Some(text) = text else {
                 continue;
             };
             let text = text.trim().to_string();
@@ -5448,6 +5483,105 @@ mod tests {
             db.load_font_data(f.to_vec());
         }
         FontSystem::from_db(db)
+    }
+
+    /// `font` with its `name` table replaced by one holding `records`
+    /// (platform, encoding, language, name id, bytes), the tables laid
+    /// out again; checksums are not kept (fonts are read without them).
+    fn with_names(font: &[u8], records: &[(u16, u16, u16, u16, Vec<u8>)]) -> Vec<u8> {
+        let be16 = |d: &[u8], at: usize| u16::from_be_bytes([d[at], d[at + 1]]);
+        let be32 = |d: &[u8], at: usize| u32::from_be_bytes(d[at..at + 4].try_into().expect("4"));
+        let mut name = Vec::new();
+        name.extend_from_slice(&0u16.to_be_bytes());
+        name.extend_from_slice(&(records.len() as u16).to_be_bytes());
+        name.extend_from_slice(&(6 + 12 * records.len() as u16).to_be_bytes());
+        let mut strings = Vec::new();
+        for (p, e, l, id, bytes) in records {
+            for v in [*p, *e, *l, *id, bytes.len() as u16, strings.len() as u16] {
+                name.extend_from_slice(&v.to_be_bytes());
+            }
+            strings.extend_from_slice(bytes);
+        }
+        name.extend_from_slice(&strings);
+        let n = usize::from(be16(font, 4));
+        let mut tables: Vec<([u8; 4], Vec<u8>)> = (0..n)
+            .map(|i| {
+                let at = 12 + 16 * i;
+                let tag: [u8; 4] = font[at..at + 4].try_into().expect("tag");
+                let off = be32(font, at + 8) as usize;
+                let len = be32(font, at + 12) as usize;
+                let data = if &tag == b"name" {
+                    name.clone()
+                } else {
+                    font[off..off + len].to_vec()
+                };
+                (tag, data)
+            })
+            .collect();
+        tables.sort_by_key(|t| t.0);
+        let mut out = font[..12].to_vec();
+        let mut body = Vec::new();
+        let start = 12 + 16 * n;
+        for (tag, data) in &tables {
+            out.extend_from_slice(tag);
+            out.extend_from_slice(&0u32.to_be_bytes());
+            out.extend_from_slice(&((start + body.len()) as u32).to_be_bytes());
+            out.extend_from_slice(&(data.len() as u32).to_be_bytes());
+            body.extend_from_slice(data);
+            while body.len() % 4 != 0 {
+                body.push(0);
+            }
+        }
+        out.extend_from_slice(&body);
+        out
+    }
+
+    /// A font that names its family in Chinese only in the GBK code page
+    /// (Windows encoding 3), as older Chinese fonts do, is found by that
+    /// name as well as its English one, and not reported missing (#860,
+    /// #898); a Big5 name too, with or without the zero high bytes.
+    #[test]
+    fn family_names_in_chinese_code_pages_are_found() {
+        let utf16 = |s: &str| -> Vec<u8> { s.encode_utf16().flat_map(u16::to_be_bytes).collect() };
+        let gbk = encoding_rs::GBK.encode("方正黑体_GBK").0.into_owned();
+        // Big5 kept as 16-bit values: "_" with a zero high byte.
+        let mut big5 = Vec::new();
+        for c in "華康_W5".chars() {
+            let b = encoding_rs::BIG5.encode(&c.to_string()).0.into_owned();
+            if b.len() == 1 {
+                big5.push(0);
+            }
+            big5.extend_from_slice(&b);
+        }
+        let font = with_names(
+            SELAWIK,
+            &[
+                (3, 1, 0x409, 1, utf16("FZHei-B01")),
+                (3, 1, 0x409, 2, utf16("Regular")),
+                (3, 1, 0x409, 4, utf16("FZHei-B01")),
+                (3, 1, 0x409, 6, utf16("FZHei-B01")),
+                (3, 3, 0x804, 1, gbk),
+                (3, 1, 0x804, 1, utf16("方正测试")),
+                (3, 4, 0x404, 16, big5),
+                // Johab is not read; nothing breaks.
+                (3, 6, 0x412, 1, vec![0x88, 0x61]),
+            ],
+        );
+        let f = system_with(&[&font]);
+        let families = f.families();
+        assert!(families.iter().any(|n| n == "FZHei-B01"), "{families:?}");
+        assert!(families.iter().any(|n| n == "方正黑体_GBK"), "{families:?}");
+        assert!(families.iter().any(|n| n == "華康_W5"), "{families:?}");
+        // A Unicode name in Chinese, as most fonts give it.
+        assert!(families.iter().any(|n| n == "方正测试"), "{families:?}");
+        assert!(f.has_family("方正测试"));
+        assert!(f.has_family("方正黑体_GBK"));
+        assert_eq!(f.substitute("方正黑体_GBK"), None);
+        assert_eq!(
+            f.face_for("方正黑体_GBK", false, false),
+            f.face_for("FZHei-B01", false, false)
+        );
+        assert!(f.family_info("方正黑体_GBK").is_some());
     }
 
     #[test]

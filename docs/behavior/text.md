@@ -591,7 +591,11 @@ has it.
 A font is found by the family name its file lists (the typographic
 family, "Arial") and by its legacy family name when that differs
 ("Arial Narrow", "Arial Black", "Segoe UI Semibold", the name a drawing
-from another program usually gives); the font lists show both. A
+from another program usually gives); the font lists show both. Names
+in every language the file gives count ("微软雅黑" as well as "Microsoft
+YaHei"), including family names a font keeps only in a Chinese,
+Japanese or Korean code page (GBK, Big5, Shift JIS, Wansung), as older
+Chinese fonts such as "方正黑体_GBK" do (#860, #898). A
 legacy name picks the face of that name nearest the text's weight and
 style. A family name ending in a weight ("Titillium Web SemiBold",
 "Lato Light", "Semi Bold" written apart too) that no font lists is

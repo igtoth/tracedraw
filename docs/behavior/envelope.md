@@ -118,6 +118,12 @@ nothing selected, how to start.
   symbol instance with its envelope (there is nothing to break; Convert to
   Curves bakes it). See `convert-to-curves.md`.
 
+Text with characters of their own colour or outline keeps them under an
+envelope: it is drawn as one warped curve for each look, all warped
+together in the box of the whole text, so the letters sit exactly where
+the text in one colour has them (#912,
+`text_effect_tests::an_envelope_keeps_the_colours_of_the_letters`).
+
 ## Panel
 
 A full-width Add New (which also takes the Envelope tool); "Choose a
@@ -158,6 +164,7 @@ rectangle selects it, and the selection box reaches the top of the arch.
 - `text_effect_tests::break_apart_bakes_the_envelope_into_letter_curves`
 - `text_effect_tests::break_apart_keeps_the_hole_of_a_single_warped_letter`
 - `text_effect_tests::breaking_several_warped_texts_keeps_the_stacking_order`
+- `text_effect_tests::an_envelope_keeps_the_colours_of_the_letters`
 - `envelope_edit::tests::break_apart_leaves_an_enveloped_group`
 - `tracedraw_core::live::tests::a_baked_group_object_loses_its_spline`
 - `tracedraw_core::live::tests::outline_warp_warps_parts_as_the_whole`

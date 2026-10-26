@@ -2844,3 +2844,34 @@ fn reader_pictures_are_filtered_and_exact() {
     let png = crate::parse::encode_png(w, h, &rgba[..rgba.len() / 2]);
     assert!(tiny_skia::Pixmap::decode_png(&png).is_ok());
 }
+
+/// A font named in Chinese keeps its name through a save and an open in
+/// every version that names fonts in Unicode: from 17 the style strings
+/// hold it as UTF-8, which used to read back as Windows-1252 and showed
+/// the name garbled and reported missing (#898).
+#[test]
+fn fonts_named_in_chinese_keep_their_names() {
+    let mut ids = tracedraw_core::id::IdSource::default();
+    let span = TextSpan::new("标题 Title", "方正黑体_GBK", 20.0);
+    let doc = doc_with(vec![text_shape(&mut ids, vec![span], TextAlign::Left)]);
+    for v in 12u16..=*versions().end() {
+        let bytes = document_to_cdr_version(&doc, v);
+        let (back, _) = crate::open_bytes(&bytes, "back").expect("reads back");
+        let families: Vec<String> = back.pages[0].layers[0]
+            .shapes
+            .iter()
+            .filter_map(|s| match &s.kind {
+                ShapeKind::Text { spans, .. } => {
+                    Some(spans.iter().map(|sp| sp.font_family.clone()))
+                }
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        assert!(!families.is_empty(), "{v}");
+        assert!(
+            families.iter().all(|f| f == "方正黑体_GBK"),
+            "{v}: {families:?}"
+        );
+    }
+}

@@ -305,6 +305,77 @@ fn convert_to_curves_bakes_the_envelope_of_text() {
     );
 }
 
+/// An enveloped text with letters of their own colour keeps the colours:
+/// it is drawn as one warped curve a colour, together as warped as the
+/// text in one colour is (#912).
+#[test]
+fn an_envelope_keeps_the_colours_of_the_letters() {
+    let mut app = App::headless();
+    let id = text(&mut app, Point::new(20.0, 100.0), "ABC");
+    let blue = Fill::Solid(Color::rgb8(0, 0, 255));
+    let mut kind = app.doc().find_shape(id).expect("text").kind.clone();
+    if let ShapeKind::Text { spans, .. } = &mut kind {
+        let first = spans[0].clone();
+        let mut b = first.clone();
+        b.text = "B".into();
+        b.fill = Some(blue.clone());
+        let mut c = first.clone();
+        c.text = "C".into();
+        spans.clear();
+        spans.push(tracedraw_core::TextSpan {
+            text: "A".into(),
+            ..first
+        });
+        spans.push(b);
+        spans.push(c);
+    }
+    app.run(tracedraw_core::Command::SetShapeKind {
+        shape: id,
+        kind: kind.clone(),
+    });
+    app.select(vec![id]);
+    app.apply_envelope_preset(crate::envelope_edit::Preset::Arch);
+    let s = app.doc().find_shape(id).expect("text").clone();
+    let ev = tracedraw_core::live::evaluate(&s);
+    let ShapeKind::Group { children } = &ev.main.kind else {
+        panic!("a curve a colour: {:?}", ev.main.kind);
+    };
+    let fills: Vec<&Fill> = children.iter().map(|c| &c.fill).collect();
+    assert_eq!(fills, [&Fill::Solid(Color::rgb8(200, 30, 30)), &blue]);
+    assert!(children
+        .iter()
+        .all(|c| matches!(c.kind, ShapeKind::Path { .. }) && c.effects.is_empty()));
+    // The same warp as the text in one colour: the curves together cover
+    // what it covers, and the blue "B" sits between the others.
+    let mut plain = s.clone();
+    if let ShapeKind::Text { spans, .. } = &mut plain.kind {
+        spans.iter_mut().for_each(|sp| sp.fill = None);
+    }
+    let one = tracedraw_core::live::evaluate(&plain).main;
+    assert!(matches!(one.kind, ShapeKind::Path { .. }));
+    assert!(
+        near_rect(ev.main.bounds(), one.bounds(), 1e-6),
+        "{:?} {:?}",
+        ev.main.bounds(),
+        one.bounds()
+    );
+    let mut b = children[1].clone();
+    b.transform_by(ev.main.transform);
+    let mut rest = children[0].clone();
+    rest.transform_by(ev.main.transform);
+    let (bb, rb) = (b.bounds(), rest.bounds());
+    assert!(bb.x0 > rb.x0 && bb.x1 < rb.x1, "{bb:?} {rb:?}");
+    // The page draws the blue letter.
+    let doc = app.doc();
+    let pm = tracedraw_render::render_page_image(doc, doc.pages[0].id, 60.0).expect("page");
+    let blue_px = pm
+        .pixels()
+        .iter()
+        .filter(|p| p.blue() > 200 && p.red() < 60 && p.green() < 60)
+        .count();
+    assert!(blue_px > 10, "{blue_px}");
+}
+
 /// Break Apart of an enveloped text gives one curve per letter, each
 /// warped as the whole text was and keeping its holes (#647); one undo
 /// brings the text and its envelope back.

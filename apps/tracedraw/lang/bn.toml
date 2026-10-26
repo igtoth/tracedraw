@@ -3005,6 +3005,7 @@ print.tab_prepress = "প্রিপ্রেস"
 print.text_black = "লেখা কালোতে প্রিন্ট"
 print.zoom = "জুম"
 print.margins = "কাগজের মার্জিন (বাম, ডান, উপর, নিচ); শিটে ড্যাশ রেখা টানুন" # mt
+print.paper_margins = "মার্জিন"
 print.sheet_custom = "Custom" # mt
 print.sheet_name = "Name" # mt
 print.sheet_save = "Save size" # mt

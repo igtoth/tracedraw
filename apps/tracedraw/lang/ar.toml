@@ -3005,6 +3005,7 @@ print.tab_prepress = "ما قبل الطباعة"
 print.text_black = "طباعة النص بالأسود"
 print.zoom = "تكبير"
 print.margins = "هوامش الورق (يسار، يمين، أعلى، أسفل)؛ اسحب خطوطها المتقطعة على الورقة" # mt
+print.paper_margins = "الهوامش"
 print.sheet_custom = "Custom" # mt
 print.sheet_name = "Name" # mt
 print.sheet_save = "Save size" # mt
