@@ -2088,6 +2088,45 @@ fn turning_snaps_the_pointer_to_another_objects_node() {
     assert!(app.doc().find_shape(other).is_some());
 }
 
+/// The pointer turning the selection does not snap to lines: crossing
+/// an edge of another object (or of the page) far from its points, the
+/// turn follows the pointer instead of sticking to the edge (#933). The
+/// turning handle stands off the object, so nothing of it lands there.
+#[test]
+fn turning_follows_the_pointer_across_edges() {
+    let (ctx, mut app, id) = setup();
+    // Another rectangle up and to the right; its bottom edge runs at
+    // y = 80 from x = 100 to 160, its nearest points (the corner, the
+    // middle of the edge) 15 mm away from x = 115.
+    app.new_shape(ShapeKind::Rect {
+        rect: Rect::new(100.0, 80.0, 160.0, 110.0),
+        radius: 0.0,
+        corners: None,
+    })
+    .expect("rect");
+    app.select(vec![id]);
+    app.rotate_mode = true;
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let c = app.rotation_center().expect("centre");
+    let ne = handle(&app, Handle::NE);
+    let start = app.view.to_page(ne);
+    // Released a point and a half below the edge, within the snapping
+    // distance of it.
+    let off = 1.5 / app.view.zoom as f64;
+    let at = app.view.to_screen(Point::new(115.0, 80.0 - off));
+    drag(&ctx, &mut app, ne, at, Modifiers::NONE, Vec::new());
+    let t = app
+        .doc()
+        .find_shape(id)
+        .map(|s| s.transform)
+        .expect("shape");
+    let k = t.as_coeffs();
+    let turned = k[1].atan2(k[0]);
+    let pointer = app.view.to_page(at);
+    let want = (pointer - c).atan2() - (start - c).atan2();
+    assert!((turned - want).abs() < 1e-6, "{turned} {want}");
+}
+
 #[test]
 fn drawing_a_new_shape_lets_the_selection_go_at_once() {
     let (ctx, mut app, id) = setup();

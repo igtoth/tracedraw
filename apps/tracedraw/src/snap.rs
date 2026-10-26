@@ -390,6 +390,26 @@ impl App {
         self.snap_point_with(p, exclude, &[])
     }
 
+    /// Snap the pointer turning the selection: onto a point of another
+    /// object or of the page (a node, a midpoint, a centre) only, so that
+    /// the turn aims at it. Lines are not taken (page edges and centre
+    /// lines, guidelines, grid lines, the bounds of other objects): the
+    /// turning handle stands off the object, so lining it up with a line
+    /// means nothing, and the turn stuck behind the pointer while it
+    /// crossed one, anywhere on the canvas (#933).
+    pub fn snap_turn_point(&self, p: Point, exclude: &[ShapeId]) -> Point {
+        if !self.snap_enabled() {
+            return p;
+        }
+        match self.object_snap(p, exclude, &[], true, false) {
+            Some(t) => {
+                self.snap_mark.set(Some(t));
+                t.point
+            }
+            None => p,
+        }
+    }
+
     /// [`App::snap_point_excluding`], with `own` snapping geometry of the
     /// excluded objects that stays put meanwhile (a node being dragged
     /// snaps to the other nodes and segments of its own curve, #673).

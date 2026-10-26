@@ -1602,8 +1602,9 @@ impl App {
         };
         // Handles snap to other objects, guidelines, the grid and the
         // page, never to the selection's own points: the point of the box
-        // a scale or skew handle stands for, and the pointer turning the
-        // selection (unless Ctrl turns it in steps).
+        // a scale or skew handle stands for. The pointer turning the
+        // selection (unless Ctrl turns it in steps) snaps to points only
+        // (#933, see `snap_turn_point`).
         let snapped_handle = match &self.drag {
             Drag::Scale { grab, .. } => self.snap_point_excluding(p - *grab, &self.selection),
             Drag::Skew {
@@ -1615,7 +1616,7 @@ impl App {
                 let grab = *start - handle_point(*start_bounds, *handle);
                 self.snap_point_excluding(p - grab, &self.selection) + grab
             }
-            Drag::Rotate { .. } if !mods.ctrl => self.snap_point_excluding(p, &self.selection),
+            Drag::Rotate { .. } if !mods.ctrl => self.snap_turn_point(p, &self.selection),
             _ => p,
         };
         match &mut self.drag {
