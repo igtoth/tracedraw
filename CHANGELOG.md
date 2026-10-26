@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Shape tool: the rings inside the corners of a curve being edited, dragged to round them, are now a preference, Options > Nodes and Handles > Show corner rounding rings on curve nodes, and are off at first, so they no longer get in the way of editing nodes. Turn it on to round the corners of curves by dragging again; rectangles round their corners as before (#884).
 - Print Merge: a Number field has a Format: 1, 2, 3, the letters A, B, C or a, b, c (Z is followed by AA), or Custom, which puts a text of your own before and after the number, for tickets and serial numbers such as "Ticket T-0098". Chosen in Add Column and in Configure Columns (#930).
 
 - Open Palette: XML palette files open, with their colours' names and CMYK, RGB or Lab values (spot colours are skipped, and a file with nothing readable says so), and the file filter lists the extensions it accepts. `.xml` files were not offered at all, and the filter showed only "Palettes" (#882).

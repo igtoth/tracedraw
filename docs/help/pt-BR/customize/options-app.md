@@ -49,6 +49,7 @@ define como o programa funciona. Escolha uma página na lista à esquerda.
 - [[options.node_shape]] para nós [[options.node_cusp]],
   [[options.node_smooth]] e [[options.node_symmetrical]].
 - [[options.show_curve_direction]].
+- [[options.corner_widgets]].
 - [[options.colors]]: a [[options.main_color]] de nós e alças selecionados e a
   [[options.secondary_color]].
 - [[options.unselected_nodes_filled]].

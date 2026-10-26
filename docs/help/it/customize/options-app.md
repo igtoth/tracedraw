@@ -51,6 +51,7 @@ sinistra.
 - [[options.node_shape]] per i nodi [[options.node_cusp]],
   [[options.node_smooth]] e [[options.node_symmetrical]].
 - [[options.show_curve_direction]].
+- [[options.corner_widgets]].
 - [[options.colors]]: il [[options.main_color]] dei nodi e delle maniglie
   selezionati e il [[options.secondary_color]].
 - [[options.unselected_nodes_filled]].

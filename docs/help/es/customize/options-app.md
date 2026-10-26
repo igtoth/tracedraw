@@ -52,6 +52,7 @@ izquierda.
 - [[options.node_shape]] para los nodos [[options.node_cusp]],
   [[options.node_smooth]] y [[options.node_symmetrical]].
 - [[options.show_curve_direction]].
+- [[options.corner_widgets]].
 - [[options.colors]]: el [[options.main_color]] de los nodos y tiradores
   seleccionados y el [[options.secondary_color]].
 - [[options.unselected_nodes_filled]].
