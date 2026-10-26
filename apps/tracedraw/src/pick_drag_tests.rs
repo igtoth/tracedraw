@@ -2826,6 +2826,54 @@ fn a_three_point_curve_continues_and_closes_the_selected_curve() {
     assert_eq!(shape_count(&app), before + 2);
 }
 
+/// Ctrl keeps the chord of a 3-point curve (and the base of a 3-point
+/// rectangle or ellipse) to steps of the constrain angle, so a bow drawn
+/// with Ctrl stands level; Ctrl did nothing there (#934).
+#[test]
+fn ctrl_keeps_the_three_point_base_to_the_constrain_angle() {
+    let (ctx, mut app, first) = setup();
+    app.select(vec![first]);
+    app.delete_selection();
+    app.set_tool(Tool::ThreePointCurve);
+    let before = shape_count(&app);
+    // A chord 4 degrees off the horizontal, dragged with Ctrl.
+    let (a, b) = (Point::new(100.0, 150.0), Point::new(160.0, 154.0));
+    let (sa, sb) = (app.view.to_screen(a), app.view.to_screen(b));
+    drag(&ctx, &mut app, sa, sb, Modifiers::CTRL, Vec::new());
+    let (s, e) = app.three_point_base.expect("the chord waits for a click");
+    assert!((e.y - s.y).abs() < 1e-6, "level: {s:?} {e:?}");
+    assert!(((e - s).hypot() - 60.0).abs() < 0.5, "{s:?} {e:?}");
+    click_page(&ctx, &mut app, Point::new(130.0, 175.0));
+    assert_eq!(shape_count(&app), before + 1);
+    let p = last_path(&app);
+    let (first_pt, last_pt) = match (p.elements().first(), p.segments().last()) {
+        (Some(tracedraw_core::geometry::PathEl::MoveTo(f)), Some(seg)) => (*f, cubic(seg).p3),
+        other => panic!("a curve: {other:?}"),
+    };
+    assert!((first_pt.y - last_pt.y).abs() < 1e-6, "{p:?}");
+    // Without Ctrl the chord goes where it is dragged (away from the
+    // curve, whose end nodes the pointer would snap to).
+    let (c, d) = (Point::new(100.0, 220.0), Point::new(160.0, 224.0));
+    let (sc, sd) = (app.view.to_screen(c), app.view.to_screen(d));
+    drag(&ctx, &mut app, sc, sd, Modifiers::NONE, Vec::new());
+    let (s, e) = app.three_point_base.expect("chord");
+    assert!((e.y - s.y - 4.0).abs() < 0.5, "{s:?} {e:?}");
+    app.three_point_base = None;
+    // A 3-point rectangle drawn with Ctrl has a level base: it is not
+    // turned.
+    app.set_tool(Tool::ThreePointRectangle);
+    drag(&ctx, &mut app, sa, sb, Modifiers::CTRL, Vec::new());
+    click_page(&ctx, &mut app, Point::new(130.0, 170.0));
+    let id = *app.selection.first().expect("the rectangle");
+    let t = app
+        .doc()
+        .find_shape(id)
+        .map(|s| s.transform)
+        .expect("shape");
+    let k = t.as_coeffs();
+    assert!(k[1].abs() < 1e-9 && k[2].abs() < 1e-9, "{t:?}");
+}
+
 #[test]
 fn clicking_the_last_node_again_makes_it_a_cusp() {
     let (ctx, mut app, _) = setup();

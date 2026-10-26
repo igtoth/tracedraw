@@ -1096,7 +1096,7 @@ impl App {
             }
             t if t.is_box_tool() => self.box_input(response, p, mods),
             Tool::ThreePointRectangle | Tool::ThreePointEllipse | Tool::ThreePointCurve => {
-                self.three_point_input(response, p)
+                self.three_point_input(response, p, mods)
             }
             Tool::Freehand => self.freehand_input(response, p, mods),
             Tool::Bezier | Tool::Pen | Tool::Polyline | Tool::TwoPointLine | Tool::BSpline => {
@@ -1843,9 +1843,18 @@ impl App {
     }
 
     /// 3-point rectangle, ellipse and curve: drag the base segment, then
-    /// click the third point (Esc cancels, see `keyboard`).
-    fn three_point_input(&mut self, response: &Response, p: Point) {
+    /// click the third point (Esc cancels, see `keyboard`). Ctrl keeps the
+    /// base to steps of the constrain angle from where it starts, as the
+    /// other line tools do (the curve's chord: the constrain key of the
+    /// curve tools, Ctrl by default; #934).
+    fn three_point_input(&mut self, response: &Response, p: Point, mods: Modifiers) {
         let p = self.snap_point(p);
+        let constrain = if self.tool == Tool::ThreePointCurve {
+            self.constrain_held(&mods)
+        } else {
+            mods.ctrl || mods.command
+        };
+        let step = self.settings.constrain_angle;
         if self.three_point_base.is_some() {
             if response.clicked_by(PointerButton::Primary) {
                 if let Some((a, b)) = self.three_point_base.take() {
@@ -1868,8 +1877,12 @@ impl App {
             };
         }
         if response.dragged_by(PointerButton::Primary) {
-            if let Drag::ThreePointBase { current, .. } = &mut self.drag {
-                *current = p;
+            if let Drag::ThreePointBase { start, current } = &mut self.drag {
+                *current = if constrain {
+                    constrain_from(*start, p, step)
+                } else {
+                    p
+                };
             }
         }
     }

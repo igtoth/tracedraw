@@ -220,6 +220,10 @@ finish a curve.
 - Drag the chord, then click the point the curve passes through; the
   curve is the quadratic through the three points (the click at t = 0.5),
   written as a cubic.
+- Ctrl (the curve tools' constrain key) while dragging the chord keeps
+  it to steps of the constrain angle from its start, so a bow drawn with
+  Ctrl stands level or upright (#934,
+  `pick_drag_tests::ctrl_keeps_the_three_point_base_to_the_constrain_angle`).
 - A chord starting on an end node of the selected open curve (within
   the join distance) continues it, and the curve ending on its other
   end node closes it, as the other curve tools do (`curve_join.rs`;
