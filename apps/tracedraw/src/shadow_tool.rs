@@ -308,6 +308,47 @@ mod tests {
         assert!((sh.offset.x - 3.0).abs() < 1e-9 && (sh.offset.y + 3.0).abs() < 1e-9);
     }
 
+    /// A rectangle with an ellipse placed inside it: a drag on it with
+    /// the Drop Shadow tool gives the clip frame its shadow, which draws
+    /// beside the frame with its contents (#873).
+    #[test]
+    fn a_clip_frame_takes_a_shadow_that_shows() {
+        let (mut app, rect) = app_with_rect();
+        let ellipse = app
+            .new_shape(ShapeKind::Ellipse {
+                rect: Rect::new(30.0, 30.0, 50.0, 70.0),
+                arc: None,
+            })
+            .expect("ellipse");
+        app.select(vec![ellipse]);
+        app.apply_fill(Fill::Solid(Color::rgb8(255, 0, 0)));
+        app.place_inside(vec![ellipse], rect);
+        app.tool = crate::tools::Tool::DropShadow;
+        let mid = Point::new(40.0, 50.0);
+        let hit = app.hit_test(mid).expect("the clip frame");
+        assert!(matches!(
+            app.doc().find_shape(hit).map(|s| &s.kind),
+            Some(ShapeKind::ClipFrame { .. })
+        ));
+        app.drag_new_shadow(hit, mid, mid, true);
+        app.drag_new_shadow(hit, mid, Point::new(70.0, 50.0), false);
+        let sh = shadow(&app, hit).expect("shadow");
+        assert!((sh.offset.x - 30.0).abs() < 1e-9);
+        // Drawn: right of the frame, where only its shadow falls.
+        let dpi = 25.4;
+        let pm = tracedraw_render::render_page_image(app.doc(), app.page, dpi).expect("page");
+        let page = app.page_rect();
+        let px = |x: f64, y: f64| {
+            pm.pixel((x - page.x0) as u32, (page.y1 - y) as u32)
+                .expect("pixel")
+                .demultiply()
+        };
+        let under = px(85.0, 50.0);
+        assert!(under.red() < 200, "{under:?}");
+        let clear = px(120.0, 50.0);
+        assert!(clear.red() > 240, "{clear:?}");
+    }
+
     #[test]
     fn handles_move_the_end_set_the_opacity_and_take_dropped_colours() {
         let (mut app, id) = app_with_rect();

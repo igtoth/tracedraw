@@ -249,7 +249,7 @@ pub fn watch_start(
     let spawned = std::thread::Builder::new()
         .name("tracedraw-start-watch".into())
         .spawn(move || {
-            let start = std::time::Instant::now();
+            let start = web_time::Instant::now();
             loop {
                 match watch(window_opened(), start.elapsed(), next) {
                     Watch::Wait if window_opened() => return,
