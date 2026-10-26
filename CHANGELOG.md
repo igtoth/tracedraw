@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Save As: Embed fonts starts off, for `.tdraw` and `.cdr` files alike. It started on, so every drawing saved carried its own copy of the fonts its text uses; tick the box for the files that are going to another machine, and the choice stays for the next Save As (#886).
+
 ## 0.19.4 (2026-10-26)
 
 - Print Preview: a page smaller than the paper repeated on it (step and repeat, several pages per sheet) shows every copy. Only the copies in one band of the preview were drawn and white covered the rest; any group or clip frame moved by its own transform was left out the same way in large renders (#848).

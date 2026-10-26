@@ -2105,8 +2105,8 @@ impl App {
             cdr_unsaved_version: None,
             tdraw_version: None,
             cdr_embed_profile: true,
-            cdr_embed_fonts: true,
-            tdraw_embed_fonts: true,
+            cdr_embed_fonts: false,
+            tdraw_embed_fonts: false,
             status: String::new(),
             status_opens_options: None,
             fit_pending: true,
@@ -7488,7 +7488,7 @@ pub(crate) fn cdr_previews(doc: &tracedraw_core::Document) -> tracedraw_cdr::wri
         thumbnail: pages.first().cloned(),
         pages,
         fonts: cdr_font_faces(doc),
-        embed_fonts: true,
+        embed_fonts: false,
     }
 }
 

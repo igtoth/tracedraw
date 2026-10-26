@@ -1141,10 +1141,10 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// Save As for `.tdraw` offers Embed fonts, on by default: the
-    /// installed fonts the text uses go into the file when their licence
-    /// allows it, and are left out when the box is cleared; the choice
-    /// stays for the next Save As (#275).
+    /// Save As for `.tdraw` offers Embed fonts, off by default (#886): the
+    /// installed fonts the text uses go into the file, when their licence
+    /// allows it, only when the box is ticked; the choice stays for the
+    /// next Save As (#275).
     #[test]
     fn installed_fonts_go_into_tdraw_files_unless_left_out() {
         let fonts = tracedraw_text::fonts();
@@ -1181,7 +1181,7 @@ mod tests {
             on_path: None,
         })
         .expect("a layer");
-        assert!(app.tdraw_embed_fonts, "on by default");
+        assert!(!app.tdraw_embed_fonts, "off by default");
         let fonts_in = |path: &Path| -> usize {
             let doc = tracedraw_io::load_native(path).expect("the file opens");
             doc.fonts.len()
@@ -1191,7 +1191,8 @@ mod tests {
             let st = state(&mut app);
             assert!(!st.cdr);
             assert!(st.tdraw_fonts_size > 0, "the size is shown");
-            assert!(st.tdraw_embed_fonts, "{name}: on by default, and kept");
+            // Off the first time, then what the last Save As chose.
+            assert_eq!(st.tdraw_embed_fonts, name == "without", "{name}");
             st.tdraw_embed_fonts = embed;
             st.open_dir(dir.clone());
             st.name = name.into();
