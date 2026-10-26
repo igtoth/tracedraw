@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Start on Windows: a start whose graphics driver hangs while the window is set up no longer stays open with no window. After 20 seconds without one, TraceDraw starts again with the next renderer by itself (OpenGL, then the software adapter), so the first start opens instead of only the one after it, and a drawing opened meanwhile gets a window of its own instead of going to the one that never showed (#570).
+
 ## 0.19.4 (2026-10-26)
 
 - Print Preview: a page smaller than the paper repeated on it (step and repeat, several pages per sheet) shows every copy. Only the copies in one band of the preview were drawn and white covered the rest; any group or clip frame moved by its own transform was left out the same way in large renders (#848).

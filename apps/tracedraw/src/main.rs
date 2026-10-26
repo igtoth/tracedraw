@@ -263,6 +263,13 @@ fn main() -> eframe::Result<()> {
     let next = mode.next(first);
     log::info!("opening the window with {mode:?} (Options asks for {first:?})");
     gpu::begin_attempt(mode);
+    // A renderer that hangs never returns here to hand over (#570).
+    gpu::watch_start(
+        mode,
+        next,
+        args.clone(),
+        primary.as_ref().map(|p| p.decline.clone()),
+    );
     let (renderer, wgpu_options) = gpu::options(mode, &settings.gpu_adapter);
     let options = eframe::NativeOptions {
         viewport,

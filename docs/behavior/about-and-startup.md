@@ -151,6 +151,16 @@ and `--reset-settings` starts open windows of their own.
   computer whose card crashes in wgpu opens with OpenGL from the second
   start on, without `--renderer=gl` typed (#570,
   `gpu::tests::a_start_that_never_opened_its_window_is_followed_by_the_next_renderer`).
+- A start whose window has not opened 20 seconds after it began
+  (`gpu::WINDOW_WAIT`: the driver hung it inside wgpu's set-up, so it
+  never comes back to hand over) starts TraceDraw again with the next
+  renderer itself, the other arguments kept, and ends. Before that it
+  answers no to later starts, so a file opened meanwhile goes to a window
+  of its own instead of to the window that never shows. With the last
+  renderer it only logs and keeps waiting, which may just be slow. So the
+  first start opens too, not only the one after it (#570,
+  `gpu::tests::a_start_hung_without_its_window_goes_on_with_the_next_renderer`,
+  `instance::tests::a_start_without_its_window_declines_files`).
 - The log names every graphics adapter wgpu offers (backend, type,
   vendor and device ids, driver) with why it was taken or left, the
   renderer each start tries and the one that opened the window; an
