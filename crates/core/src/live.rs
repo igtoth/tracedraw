@@ -1254,7 +1254,19 @@ fn blend(
             .clamp(1, 999),
         _ => steps.max(1) as usize,
     };
-    let paths = crate::effects::blend(&a, &b, n, 120);
+    // Where each step is between the two objects, evenly (`t`) and as
+    // the object acceleration packs them toward one end (`to`): the
+    // steps are morphed at `to`, so the acceleration moves them (#910).
+    let even = |i: usize| {
+        if options.full_path && path_samples.is_some() && n > 1 {
+            i as f64 / (n - 1) as f64
+        } else {
+            (i + 1) as f64 / (n + 1) as f64
+        }
+    };
+    let accelerated = |t: f64| t.powf((1.0 + accel_objects).max(0.05));
+    let at: Vec<f64> = (0..n).map(|i| accelerated(even(i))).collect();
+    let paths = crate::effects::blend_at(&a, &b, &at, 120);
     let fa = start.fill.preview_color();
     let fb = end.fill.preview_color();
     let ca = start.stroke.as_ref().map(|s| s.color);
@@ -1271,12 +1283,8 @@ fn blend(
     for (i, p) in paths.into_iter().enumerate() {
         // Along the whole path the steps reach its ends; otherwise they
         // sit between the two objects.
-        let t = if options.full_path && path_samples.is_some() && n > 1 {
-            i as f64 / (n - 1) as f64
-        } else {
-            (i + 1) as f64 / (n + 1) as f64
-        };
-        let to = t.powf((1.0 + accel_objects).max(0.05));
+        let t = even(i);
+        let to = accelerated(t);
         let tc = t.powf((1.0 + accel_colors).max(0.05));
         let mut s = start.clone();
         s.effects.clear();
@@ -1285,14 +1293,15 @@ fn blend(
         let mut geo = p;
         let center = geo.bounding_box().center();
         let mut extra = Affine::IDENTITY;
-        if options.accel_sizing {
-            // The size the acceleration asks for over the size the even
-            // blend gave.
+        if !options.accel_sizing {
+            // The step is where the acceleration puts it, at the size an
+            // even blend gives it there: the size of the even step over
+            // the size of the accelerated one.
             let (sa, sb) = (size(ba), size(bb));
             let even = sa + (sb - sa) * t;
-            let wanted = sa + (sb - sa) * to;
-            if even > 1e-9 {
-                extra = Affine::scale_about(wanted / even, center);
+            let got = sa + (sb - sa) * to;
+            if got > 1e-9 && even > 1e-9 {
+                extra = Affine::scale_about(even / got, center);
             }
         }
         if rotation != 0.0 {
@@ -2670,6 +2679,59 @@ mod tests {
         assert_eq!(evaluate(&linked).above.len(), 9);
         let mid = ev.above[4].bounds().center();
         assert!((mid.x - 60.0).abs() < 1.0, "{mid:?}");
+    }
+
+    /// The object acceleration moves the steps: with 0.5 they pack toward
+    /// the start, each where `t ^ 1.5` of the way puts it, and keep the
+    /// size an even blend gives them; at 0 they are evenly spaced (#910).
+    #[test]
+    fn the_object_acceleration_moves_the_steps() {
+        let a = rect_shape();
+        let mut b = rect_shape();
+        b.transform = Affine::translate((100.0, 0.0)) * Affine::scale(2.0);
+        let steps = |accel_objects: f64, accel_sizing: bool| {
+            let mut s = a.clone();
+            s.effects.push(Effect::Blend {
+                end: Box::new(b.clone()),
+                steps: 4,
+                accel_objects,
+                accel_colors: 0.0,
+                rotation: 0.0,
+                path: None,
+                rotate_on_path: false,
+                end_id: Some(b.id),
+                options: BlendOptions {
+                    accel_sizing,
+                    ..Default::default()
+                },
+            });
+            evaluate(&s)
+                .above
+                .iter()
+                .map(|s| (s.bounds().center().x, s.bounds().width()))
+                .collect::<Vec<_>>()
+        };
+        // From the centre at 10 to the centre at 120, 20 wide to 40.
+        let at = |t: f64| (10.0 + 110.0 * t, 20.0 + 20.0 * t);
+        let even = steps(0.0, false);
+        let packed = steps(0.5, false);
+        let sized = steps(0.5, true);
+        assert_eq!(packed.len(), 4);
+        for (i, ((e, p), z)) in even.iter().zip(&packed).zip(&sized).enumerate() {
+            let t = (i + 1) as f64 / 5.0;
+            let (x, w) = at(t);
+            assert!((e.0 - x).abs() < 0.2 && (e.1 - w).abs() < 0.2, "{i}: {e:?}");
+            let (xa, wa) = at(t.powf(1.5));
+            assert!((p.0 - xa).abs() < 0.2, "{i}: {p:?} want {xa}");
+            assert!((p.1 - w).abs() < 0.2, "{i}: {p:?} want width {w}");
+            assert!(
+                (z.0 - xa).abs() < 0.2 && (z.1 - wa).abs() < 0.2,
+                "{i}: {z:?}"
+            );
+        }
+        // A negative acceleration packs them toward the end.
+        let late = steps(-0.5, false);
+        assert!(late[0].0 > even[0].0 + 5.0, "{late:?}");
     }
 
     #[test]

@@ -88,6 +88,42 @@ fn the_blend_tool_blends_two_texts_and_a_text_with_a_shape() {
     assert_eq!(ev.below.len() + ev.above.len(), 5);
 }
 
+/// A blend of two texts follows its object acceleration: the steps pack
+/// toward the start text at 0.5 and toward the end at -0.5 (#910).
+#[test]
+fn the_object_acceleration_moves_the_steps_of_a_text_blend() {
+    let mut app = App::headless();
+    let a = text(&mut app, Point::new(20.0, 200.0), "ABC");
+    let b = text(&mut app, Point::new(120.0, 200.0), "XYZ");
+    let start = app.doc().find_shape(a).expect("a").clone();
+    let end = app.doc().find_shape(b).expect("b").clone();
+    let centres = |accel_objects: f64| -> Vec<f64> {
+        let mut s = start.clone();
+        s.effects.push(Effect::Blend {
+            end: Box::new(end.clone()),
+            steps: 5,
+            accel_objects,
+            accel_colors: 0.0,
+            rotation: 0.0,
+            path: None,
+            rotate_on_path: false,
+            end_id: Some(b),
+            options: Default::default(),
+        });
+        tracedraw_core::live::evaluate(&s)
+            .above
+            .iter()
+            .map(|s| s.bounds().center().x)
+            .collect()
+    };
+    let (even, early, late) = (centres(0.0), centres(0.5), centres(-0.5));
+    assert_eq!(even.len(), 5);
+    for i in 0..5 {
+        assert!(early[i] < even[i] - 1.0, "{i}: {early:?} {even:?}");
+        assert!(late[i] > even[i] + 1.0, "{i}: {late:?} {even:?}");
+    }
+}
+
 #[test]
 fn text_can_be_extruded() {
     let mut app = App::headless();

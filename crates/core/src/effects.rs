@@ -69,8 +69,17 @@ pub fn polygon(pts: &[Point]) -> BezPath {
     p
 }
 
-/// Intermediate shapes between `a` and `b` (excluding both), `steps` of them.
+/// Intermediate shapes between `a` and `b` (excluding both), `steps` of
+/// them, evenly spaced.
 pub fn blend(a: &BezPath, b: &BezPath, steps: usize, samples: usize) -> Vec<BezPath> {
+    let at: Vec<f64> = (1..=steps).map(|k| k as f64 / (steps + 1) as f64).collect();
+    blend_at(a, b, &at, samples)
+}
+
+/// The shapes between `a` (0) and `b` (1) at each of `at`, in order: a
+/// blend whose steps an acceleration packs toward one end.
+pub fn blend_at(a: &BezPath, b: &BezPath, at: &[f64], samples: usize) -> Vec<BezPath> {
+    let steps = at.len();
     // Outlines of several parts (letters, shapes with holes) morph part by
     // part: the n-th part of one into the n-th part of the other, in
     // order; a part without a partner grows from, or shrinks to, a point
@@ -95,7 +104,7 @@ pub fn blend(a: &BezPath, b: &BezPath, steps: usize, samples: usize) -> Vec<BezP
                 (None, Some(y)) => (point_path(y), y.clone()),
                 (None, None) => continue,
             };
-            for (k, step) in blend_one(&x, &y, steps, per).into_iter().enumerate() {
+            for (k, step) in blend_one(&x, &y, at, per).into_iter().enumerate() {
                 if let Some(o) = out.get_mut(k) {
                     o.extend(step.elements().iter().copied());
                 }
@@ -103,7 +112,7 @@ pub fn blend(a: &BezPath, b: &BezPath, steps: usize, samples: usize) -> Vec<BezP
         }
         return out;
     }
-    blend_one(a, b, steps, samples)
+    blend_one(a, b, at, samples)
 }
 
 /// A closed path collapsed to the centre of `p`'s outline (a part that
@@ -124,8 +133,8 @@ fn point_path(p: &BezPath) -> BezPath {
 }
 
 /// The morph of one outline into another (each taken as one closed run of
-/// points).
-fn blend_one(a: &BezPath, b: &BezPath, steps: usize, samples: usize) -> Vec<BezPath> {
+/// points), at each of `at`.
+fn blend_one(a: &BezPath, b: &BezPath, at: &[f64], samples: usize) -> Vec<BezPath> {
     let pa = resample(a, samples);
     let pb = resample(b, samples);
     if pa.len() != pb.len() || pa.is_empty() {
@@ -164,9 +173,8 @@ fn blend_one(a: &BezPath, b: &BezPath, steps: usize, samples: usize) -> Vec<BezP
         })
         .unwrap_or(0);
     let pb: Vec<Point> = (0..pb.len()).map(|i| pb[(i + start) % pb.len()]).collect();
-    (1..=steps)
-        .map(|k| {
-            let t = k as f64 / (steps + 1) as f64;
+    at.iter()
+        .map(|&t| {
             polygon(
                 &pa.iter()
                     .zip(&pb)

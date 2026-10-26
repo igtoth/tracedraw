@@ -69,7 +69,9 @@ only inside the effect; such a blend draws its end with the steps.
 
 ## Formulas
 
-For step `k` of `n` (`t = (k) / (n + 1)` with acceleration `t' = t ^ (1 + 2*acc)`):
+For step `k` of `n` (`t = (k) / (n + 1)` with acceleration `t' = t ^ max(1 + acc, 0.05)`, the
+object acceleration for the step's place and shape, the colour
+acceleration for its colours):
 - Geometry: both paths are resampled to the same node count
   (the larger of the two, nodes mapped by arc length, or by the user's
   node map), then interpolated node by node, including control points.
@@ -77,7 +79,12 @@ For step `k` of `n` (`t = (k) / (n + 1)` with acceleration `t' = t ^ (1 + 2*acc)
   and its first node is the one whose direction from its own centre is
   closest to the start outline's first node's direction from its centre,
   so equal shapes blend without twisting through the middle whatever
-  their relative position.
+  their relative position. Step `k` is the morph at `t'`: the object
+  acceleration moves the steps toward the start (above 0) or the end
+  (below 0); without Apply to sizing each step is then scaled about its
+  centre to the size the even blend gives it at `t` (#910,
+  `live::tests::the_object_acceleration_moves_the_steps`,
+  `text_effect_tests::the_object_acceleration_moves_the_steps_of_a_text_blend`).
 - Transform: interpolated as translation + rotation + scale (not matrix
   entries), so blends rotate the short way unless "rotation" adds turns.
 - Colour: mixed directly (each colour's values from start to end).

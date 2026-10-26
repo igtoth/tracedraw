@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Blend: the object acceleration moves the steps. Its slider only changed their rotation, their outline width and, with Apply to sizing, their size, so the steps of a blend between two texts (or any objects) stayed evenly spaced whatever it was set to; above 0 they now gather toward the start object and below 0 toward the end, keeping the size an even blend gives them unless Apply to sizing is on (#910).
 - Text panel, Paragraph: the icons beside the indent and spacing fields are drawn, so they show on every system; on Windows they were empty boxes, the interface fonts there lacking those arrows (#863).
 - Color Management Settings and Document Properties read in the dark themes: the page under their tabs is drawn in the theme's field colour instead of white, under the light labels (#904).
 
