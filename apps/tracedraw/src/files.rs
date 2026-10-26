@@ -61,6 +61,20 @@ pub fn same_path(a: &Path, b: &Path) -> bool {
     }
 }
 
+/// A canonical path as people type it: on Windows without the `\\?\`
+/// prefix (`\\?\C:\a` is `C:\a`, `\\?\UNC\server\share` is
+/// `\\server\share`); other paths as they are.
+pub fn plain_path(path: &Path) -> PathBuf {
+    let s = path.to_string_lossy();
+    if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+        return PathBuf::from(format!(r"\\{rest}"));
+    }
+    match s.strip_prefix(r"\\?\") {
+        Some(rest) if rest.as_bytes().get(1) == Some(&b':') => PathBuf::from(rest),
+        _ => path.to_path_buf(),
+    }
+}
+
 /// Read a whole file (or an uploaded one in a browser).
 pub fn read(path: impl AsRef<Path>) -> std::io::Result<Vec<u8>> {
     let path = path.as_ref();
