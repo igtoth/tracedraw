@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- `.cdr` mesh fills: objects filled with a mesh open with their colour grid instead of being left out. In a version 11 drawing of 412 objects, 62 mesh fill objects (the skin, the jacket and skirt shading) were skipped and now show; each takes its outline from the mesh's edge, which is where the program that saved the file draws it. The grid's cells are drawn with straight sides between the nodes (#896).
 - Blend: the objects acceleration slider moves the steps toward the start or the end object, also when the blend follows no path. It changed only their sizes (with Apply to sizing) and turns, so moving it seemed to do nothing (#910).
 - Print Preview: the options at the left are wider and their edge drags wider, and what still does not fit scrolls sideways, so longer languages (Spanish and others) are no longer cut off at the right (#862).
 - Text panel, Paragraph: the icons beside the indent and spacing fields are drawn, so they show on every system; on Windows they were empty boxes, the interface fonts there lacking those arrows (#863).
