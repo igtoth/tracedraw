@@ -56,6 +56,7 @@ first Undo only moving the copy back onto the original, #471). Checks:
 | --- | --- |
 | Ctrl+G, Ctrl+U | Group, Ungroup |
 | Ctrl+L, Ctrl+K | Combine, Break apart |
+| While typing text: Ctrl+L, Ctrl+E, Ctrl+R, Ctrl+J, Ctrl+H, Ctrl+N | Align left, center, right, justify, force justify, no alignment (the whole text typed at a point, which stays in place at the reference point of the X and Y fields; the paragraphs at the caret in a frame) (`pick_drag_tests::alignment_keys_while_typing`, `text_wrap_tests::a_new_alignment_keeps_the_reference_point_in_place`) |
 | Ctrl+Q, Ctrl+Shift+Q | Convert to curves, Convert outline to object (a dashed outline keeps its dashes, each a closed shape, the pattern in widths as drawn; #490, `tools2::tests::a_dashed_outline_becomes_one_shape_per_dash`) |
 | Ctrl+Home, Ctrl+End | To front and back of the page |
 | Shift+PgUp, Shift+PgDn | To front and back of the layer |

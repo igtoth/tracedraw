@@ -1303,6 +1303,14 @@ fn blend(
             };
             extra = Affine::rotate_about(rotation.to_radians() * to, pivot) * extra;
         }
+        if path_samples.is_none() && to != t {
+            // Off a path the object acceleration moves the steps toward
+            // one end: each goes where its accelerated place lies between
+            // the two objects' centres (the steps stay evenly sized unless
+            // Apply to sizing is on). It moved only sizes and turns, so
+            // the slider seemed to do nothing (#910).
+            extra = Affine::translate((cb_center - ca_center) * (to - t)) * extra;
+        }
         if let Some((pts, cum)) = &path_samples {
             if pts.len() >= 2 {
                 let total = *cum.last().unwrap_or(&0.0);
@@ -2670,6 +2678,54 @@ mod tests {
         assert_eq!(evaluate(&linked).above.len(), 9);
         let mid = ev.above[4].bounds().center();
         assert!((mid.x - 60.0).abs() < 1.0, "{mid:?}");
+    }
+
+    /// The object acceleration moves the steps toward one end of a blend
+    /// off a path; it only changed their sizes and turns, so the slider
+    /// seemed to do nothing (#910).
+    #[test]
+    fn object_acceleration_moves_the_steps() {
+        let a = rect_shape();
+        let mut b = rect_shape();
+        b.transform = Affine::translate((100.0, 0.0));
+        let centres = |accel: f64| -> Vec<f64> {
+            let mut s = a.clone();
+            s.effects.push(Effect::Blend {
+                end: Box::new(b.clone()),
+                steps: 3,
+                accel_objects: accel,
+                accel_colors: 0.0,
+                rotation: 0.0,
+                path: None,
+                rotate_on_path: false,
+                end_id: Some(b.id),
+                options: BlendOptions::default(),
+            });
+            evaluate(&s)
+                .above
+                .iter()
+                .map(|x| x.bounds().center().x)
+                .collect()
+        };
+        let even = centres(0.0);
+        let x0 = a.bounds().center().x;
+        for (k, x) in even.iter().enumerate() {
+            let want = x0 + 100.0 * (k + 1) as f64 / 4.0;
+            assert!((x - want).abs() < 1.0, "even step {k}: {x} not {want}");
+        }
+        // Toward the start object, then toward the end one.
+        let to_start = centres(0.8);
+        let to_end = centres(-0.8);
+        for k in 0..3 {
+            assert!(
+                to_start[k] < even[k] - 2.0,
+                "step {k}: {to_start:?} {even:?}"
+            );
+            assert!(to_end[k] > even[k] + 2.0, "step {k}: {to_end:?} {even:?}");
+        }
+        // Still in order between the two objects.
+        assert!(to_start.windows(2).all(|w| w[0] < w[1]) && to_start[0] > x0);
+        assert!(to_end.windows(2).all(|w| w[0] < w[1]) && to_end[2] < x0 + 100.0);
     }
 
     #[test]

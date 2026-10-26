@@ -85,3 +85,29 @@ frame of the drag (it waited at the press point for one frame,
 black under every theme, not in the theme's icon colour, which is light
 on the dark themes (`cursors::tests::the_badge_icon_is_dark_under_every_theme`).
 Nib outlines stay between 2 and 400 points on screen.
+
+## Clicks with drawing tools
+
+With the drawing and shaping tools whose click has no job of its own
+(Rectangle, Ellipse, Polygon, Star, Graph Paper, Action Lines and the
+other box tools, Spiral, Common Shapes, Table outside a table, Knife,
+Brush Strokes, the connectors, Blend, Block Shadow, Shape Recognition,
+Sketch and the shape brushes Smooth, Smear, Twirl, Attract and Repel,
+Smudge and Roughen), a click selects the way the Pick tool does: the
+object under the pointer becomes the selection, Shift+click adds or
+removes it, Ctrl+click reaches one group level further in, and a click
+on empty space lets go of the selection (Shift+click there keeps it).
+The tool stays active. A drag still does the tool's work, also when it
+starts on top of an object (`Tool::click_selects`, #271).
+
+Tools whose click already does something keep it: the line tools
+(Freehand, Bezier, Pen, B-spline, Polyline, 2-point line, the 3-point
+tools) place points, Text places the caret, and the fill tools,
+eyedroppers, Zoom, Crop, Eraser, Segment Delete, Area Fill, the
+dimension and callout tools and the effect tools keep their own clicks.
+
+Checks: `pick_drag_tests::every_click_selecting_tool_selects_on_click`,
+`pick_drag_tests::a_click_with_a_drawing_tool_selects_and_a_drag_draws`,
+`pick_drag_tests::shift_click_with_a_drawing_tool_adds_and_takes_away`,
+`pick_drag_tests::line_tools_still_place_points_on_objects`,
+`pick_drag_tests::a_click_outside_a_table_selects_with_the_table_tool`.

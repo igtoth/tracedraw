@@ -966,57 +966,100 @@ impl App {
         let mut ordered = shapes.clone();
         ordered.sort_by_key(|s| doc.locate(s.id).map(|(_, i)| i).unwrap_or(0));
         let target = shapes.last().cloned().unwrap_or_else(|| ordered[0].clone());
-        let paths: Vec<tracedraw_core::BezPath> = ordered.iter().map(Shape::page_path).collect();
-        let result = match op {
-            Shaping::Weld | Shaping::Boundary => paths
-                .iter()
-                .skip(1)
-                .fold(paths[0].clone(), |acc, p| overlay(&acc, p, Op::Weld)),
-            Shaping::Intersect => paths
-                .iter()
-                .skip(1)
-                .fold(paths[0].clone(), |acc, p| overlay(&acc, p, Op::Intersect)),
-            Shaping::Simplify => {
-                // Each object loses what is covered by objects above it.
-                let mut cmds = Vec::new();
-                for (i, s) in ordered.iter().enumerate() {
-                    let mut p = s.page_path();
-                    for above in &paths[i + 1..] {
-                        p = overlay(&p, above, Op::Trim);
-                    }
-                    let p = simplify(&p);
-                    let local = s.transform.inverse() * p;
-                    cmds.push(Command::SetShapeKind {
-                        shape: s.id,
-                        kind: ShapeKind::Path {
-                            path: local,
-                            closed: true,
-                        },
-                    });
-                }
-                let _ = self.engine.run_batch("Simplify", &cmds);
+        // Weld, Trim and Intersect: an open curve as the target is cut by
+        // the closed objects and stays open; an open curve acting on a
+        // closed target takes no part (cutting a shape in two along a
+        // line is the Knife's job) and stays as it is (#828).
+        let open = |s: &Shape| matches!(s.kind, ShapeKind::Path { closed: false, .. });
+        let open_target = op.picks_target() && open(&target);
+        if op.picks_target() {
+            ordered.retain(|s| s.id == target.id || !open(s));
+            if ordered.len() < 2 {
+                self.status = crate::i18n::tr("status.shaping_open_cutter");
                 return;
             }
-            Shaping::Trim => {
-                let mut p = target.page_path();
-                for s in &ordered {
-                    if s.id != target.id {
-                        p = overlay(&p, &s.page_path(), Op::Trim);
-                    }
-                }
-                p
-            }
-            Shaping::FrontMinusBack => {
-                let front = paths.last().cloned().unwrap_or_default();
-                paths
-                    .iter()
-                    .take(paths.len() - 1)
-                    .fold(front, |acc, p| overlay(&acc, p, Op::Trim))
-            }
-            Shaping::BackMinusFront => paths
+        }
+        let used: Vec<tracedraw_core::ShapeId> = ordered.iter().map(|s| s.id).collect();
+        let paths: Vec<tracedraw_core::BezPath> = ordered.iter().map(Shape::page_path).collect();
+        let open_result = open_target.then(|| {
+            use tracedraw_core::shaping::{cut_open, Keep};
+            let regions: Vec<tracedraw_core::BezPath> = ordered
                 .iter()
-                .skip(1)
-                .fold(paths[0].clone(), |acc, p| overlay(&acc, p, Op::Trim)),
+                .filter(|s| s.id != target.id)
+                .map(Shape::page_path)
+                .collect();
+            let line = target.page_path();
+            match op {
+                Shaping::Intersect => cut_open(&line, &regions, Keep::Inside),
+                Shaping::Weld => {
+                    // The closed objects welded, with the curve's parts
+                    // outside them, as one open curve.
+                    let mut welded = regions
+                        .iter()
+                        .skip(1)
+                        .fold(regions[0].clone(), |acc, p| overlay(&acc, p, Op::Weld));
+                    for el in cut_open(&line, &regions, Keep::Outside).elements() {
+                        welded.push(*el);
+                    }
+                    welded
+                }
+                _ => cut_open(&line, &regions, Keep::Outside),
+            }
+        });
+        let result = if let Some(r) = open_result {
+            r
+        } else {
+            match op {
+                Shaping::Weld | Shaping::Boundary => paths
+                    .iter()
+                    .skip(1)
+                    .fold(paths[0].clone(), |acc, p| overlay(&acc, p, Op::Weld)),
+                Shaping::Intersect => paths
+                    .iter()
+                    .skip(1)
+                    .fold(paths[0].clone(), |acc, p| overlay(&acc, p, Op::Intersect)),
+                Shaping::Simplify => {
+                    // Each object loses what is covered by objects above it.
+                    let mut cmds = Vec::new();
+                    for (i, s) in ordered.iter().enumerate() {
+                        let mut p = s.page_path();
+                        for above in &paths[i + 1..] {
+                            p = overlay(&p, above, Op::Trim);
+                        }
+                        let p = simplify(&p);
+                        let local = s.transform.inverse() * p;
+                        cmds.push(Command::SetShapeKind {
+                            shape: s.id,
+                            kind: ShapeKind::Path {
+                                path: local,
+                                closed: true,
+                            },
+                        });
+                    }
+                    let _ = self.engine.run_batch("Simplify", &cmds);
+                    return;
+                }
+                Shaping::Trim => {
+                    let mut p = target.page_path();
+                    for s in &ordered {
+                        if s.id != target.id {
+                            p = overlay(&p, &s.page_path(), Op::Trim);
+                        }
+                    }
+                    p
+                }
+                Shaping::FrontMinusBack => {
+                    let front = paths.last().cloned().unwrap_or_default();
+                    paths
+                        .iter()
+                        .take(paths.len() - 1)
+                        .fold(front, |acc, p| overlay(&acc, p, Op::Trim))
+                }
+                Shaping::BackMinusFront => paths
+                    .iter()
+                    .skip(1)
+                    .fold(paths[0].clone(), |acc, p| overlay(&acc, p, Op::Trim)),
+            }
         };
         if result.elements().is_empty() {
             self.status = crate::i18n::tr("status.shaping_empty");
@@ -1075,7 +1118,7 @@ impl App {
                 id,
                 ShapeKind::Path {
                     path: result,
-                    closed: true,
+                    closed: !open_target,
                 },
             );
             shape.fill = attrs.fill.clone();
@@ -1143,6 +1186,7 @@ impl App {
         let gone: Vec<_> = shapes
             .iter()
             .map(|s| s.id)
+            .filter(|id| used.contains(id))
             .filter(|id| {
                 if *id == target.id {
                     !leave_target
@@ -1744,6 +1788,102 @@ mod curves_and_target_tests {
             .expect("a result")
             .clone();
         s.fill
+    }
+
+    /// #828: an open line as the target of Trim, Intersect and Weld is
+    /// cut by the closed rectangle and stays open (Trim keeps the parts
+    /// outside, Intersect the part inside, Weld the rectangle with the
+    /// parts outside); an open line acting on a closed target does not
+    /// cut it (the Knife's job), and says so.
+    #[test]
+    fn open_targets_are_cut_and_open_cutters_leave_shapes_alone() {
+        use tracedraw_core::geometry::{BezPath, Shape as _};
+        let setup = || {
+            let mut app = App::headless();
+            let rect = app
+                .new_shape(ShapeKind::Rect {
+                    rect: Rect::new(20.0, 40.0, 60.0, 60.0),
+                    radius: 0.0,
+                    corners: None,
+                })
+                .expect("rect");
+            let mut p = BezPath::new();
+            p.move_to((0.0, 50.0));
+            p.line_to((80.0, 50.0));
+            let line = app
+                .new_shape(ShapeKind::Path {
+                    path: p,
+                    closed: false,
+                })
+                .expect("line");
+            (app, rect, line)
+        };
+        let path_of = |app: &App| -> (BezPath, bool) {
+            let s = app.doc().shape_on_page(app.selection[0]).expect("result");
+            let closed = matches!(s.kind, ShapeKind::Path { closed: true, .. });
+            (s.page_path(), closed)
+        };
+        let length = |p: &BezPath| -> f64 {
+            use tracedraw_core::geometry::ParamCurveArclen as _;
+            p.segments().map(|s| s.arclen(1e-6)).sum()
+        };
+        // Trim: the line target keeps its two parts outside, 40 mm.
+        let (mut app, rect, line) = setup();
+        app.select(vec![rect, line]);
+        app.shaping(Shaping::Trim);
+        let (p, closed) = path_of(&app);
+        assert!(!closed);
+        assert!((length(&p) - 40.0).abs() < 1e-6, "{p:?}");
+        assert!(
+            app.doc().find_shape(line).is_none(),
+            "the target is replaced"
+        );
+        assert!(app.doc().find_shape(rect).is_some(), "the cutter stays");
+        // Intersect: the part inside.
+        let (mut app, rect, line) = setup();
+        app.select(vec![rect, line]);
+        app.shaping(Shaping::Intersect);
+        let (p, closed) = path_of(&app);
+        assert!(!closed);
+        let b = p.bounding_box();
+        assert!(
+            (b.x0 - 20.0).abs() < 1e-6 && (b.x1 - 60.0).abs() < 1e-6,
+            "{b:?}"
+        );
+        // Weld: the rectangle's outline and the parts outside, open.
+        let (mut app, rect, line) = setup();
+        app.select(vec![rect, line]);
+        app.shaping(Shaping::Weld);
+        let (p, closed) = path_of(&app);
+        assert!(!closed);
+        assert!((length(&p) - (40.0 + 120.0)).abs() < 0.1, "{}", length(&p));
+        // An open line acting on the rectangle: nothing cut, a message.
+        let (mut app, rect, line) = setup();
+        let before = app.doc().clone();
+        app.select(vec![line, rect]);
+        app.shaping(Shaping::Trim);
+        assert_eq!(app.doc().pages, before.pages);
+        assert_eq!(app.status, crate::i18n::tr("status.shaping_open_cutter"));
+        // With a closed cutter as well, the open one takes no part and
+        // stays.
+        let (mut app, rect, line) = setup();
+        let small = app
+            .new_shape(ShapeKind::Rect {
+                rect: Rect::new(50.0, 45.0, 70.0, 55.0),
+                radius: 0.0,
+                corners: None,
+            })
+            .expect("rect");
+        app.select(vec![line, small, rect]);
+        app.shaping(Shaping::Weld);
+        assert!(app.doc().find_shape(line).is_some(), "the open line stays");
+        let (p, closed) = path_of(&app);
+        assert!(closed);
+        let b = p.bounding_box();
+        assert!(
+            (b.x1 - 70.0).abs() < 1e-6 && (b.y0 - 40.0).abs() < 1e-6,
+            "{b:?}"
+        );
     }
 
     #[test]

@@ -36,6 +36,19 @@ The result goes on top of the active layer and becomes the selection; an
 empty result changes nothing and the status bar says so. Each operation
 is one undo step.
 
+Open curves (#828, `ops::curves_and_target_tests::open_targets_are_cut_and_open_cutters_leave_shapes_alone`,
+`shaping::tests::open_paths_are_cut_by_closed_regions`): an open curve as
+the target of Weld, Trim or Intersect is cut where it crosses the closed
+sources and stays an open curve with the target's attributes: Trim keeps
+its parts outside every source, Intersect its parts inside every source,
+Weld the sources welded together with the curve's parts outside them,
+as one open curve. Each part is a piece of the curve's own line or
+curve segment (`shaping::cut_open`). An open curve as a source takes no
+part in Weld, Trim or Intersect and stays as it is: cutting a closed
+object in two along a line is the Knife tool's job. With no closed
+source left the operation does nothing and the status bar points to the
+Knife.
+
 When the object whose attributes the result takes is a group: Trim, Front
 Minus Back and Back Minus Front cut each object of the group on its own,
 each keeping its fill, outline and opacity, the pieces a group (pieces

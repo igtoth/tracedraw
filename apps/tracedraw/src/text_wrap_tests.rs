@@ -304,3 +304,106 @@ fn the_context_menu_lists_the_wrap_styles_and_picks_one() {
     }
     assert!(seen.iter().any(|k| k == "context.wrap_text_on"), "{seen:?}");
 }
+
+fn point_text(app: &mut App, text: &str) -> ShapeId {
+    app.new_shape(ShapeKind::Text {
+        spans: vec![TextSpan::new(text, "DejaVu Sans", 24.0)],
+        origin: Point::new(50.0, 100.0),
+        frame: None,
+        align: TextAlign::Left,
+        para: ParagraphStyle::default(),
+        on_path: None,
+    })
+    .expect("text")
+}
+
+fn page_bounds(app: &App, id: ShapeId) -> Rect {
+    app.doc().shape_on_page(id).expect("text").bounds()
+}
+
+/// A new alignment keeps the reference point of the X and Y fields where
+/// it was, for each of the nine reference points and every alignment, on
+/// one line and on several; one undo takes back the alignment and the
+/// move together.
+#[test]
+fn a_new_alignment_keeps_the_reference_point_in_place() {
+    if !fonts_available() {
+        return;
+    }
+    for text in ["Centered words", "A longer first line\nshort\nmiddle one"] {
+        let mut app = App::headless();
+        let id = point_text(&mut app, text);
+        app.select(vec![id]);
+        for col in 0..3u8 {
+            for row in 0..3u8 {
+                app.object_origin = (col, row);
+                for a in [
+                    TextAlign::Center,
+                    TextAlign::Right,
+                    TextAlign::Left,
+                    TextAlign::Justify,
+                    TextAlign::None,
+                    TextAlign::ForceJustify,
+                    TextAlign::Right,
+                    TextAlign::Center,
+                ] {
+                    let before =
+                        crate::ui::propbar::origin_point(page_bounds(&app, id), (col, row));
+                    app.apply_text_align(a);
+                    let after = crate::ui::propbar::origin_point(page_bounds(&app, id), (col, row));
+                    assert!(
+                        (before - after).hypot() < 0.001,
+                        "{text:?} {a:?} at {:?}: {before:?} -> {after:?}",
+                        (col, row)
+                    );
+                }
+            }
+        }
+        // One undo: the alignment and the move.
+        app.object_origin = (1, 1);
+        app.apply_text_align(TextAlign::Left);
+        let kind = app.doc().find_shape(id).expect("text").kind.clone();
+        let transform = app.doc().find_shape(id).expect("text").transform;
+        app.apply_text_align(TextAlign::Right);
+        assert_ne!(app.doc().find_shape(id).expect("text").transform, transform);
+        let _ = app.engine.undo();
+        let s = app.doc().find_shape(id).expect("text");
+        assert_eq!(s.kind, kind);
+        assert_eq!(s.transform, transform);
+    }
+}
+
+/// Text in a frame keeps its frame where it is and as big as it is; its
+/// lines realign inside it.
+#[test]
+fn frame_text_keeps_its_frame_when_the_alignment_changes() {
+    if !fonts_available() {
+        return;
+    }
+    let mut app = App::headless();
+    let id = frame(&mut app, "first line\nsecond");
+    app.select(vec![id]);
+    let s0 = app.doc().find_shape(id).expect("frame").clone();
+    for a in [
+        TextAlign::Center,
+        TextAlign::Right,
+        TextAlign::Justify,
+        TextAlign::Left,
+    ] {
+        app.apply_text_align(a);
+        let s = app.doc().find_shape(id).expect("frame");
+        assert_eq!(s.transform, s0.transform, "{a:?}");
+        let ShapeKind::Text { origin, frame, .. } = &s.kind else {
+            unreachable!()
+        };
+        let ShapeKind::Text {
+            origin: o0,
+            frame: f0,
+            ..
+        } = &s0.kind
+        else {
+            unreachable!()
+        };
+        assert_eq!((origin, frame), (o0, f0), "{a:?}");
+    }
+}

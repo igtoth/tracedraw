@@ -614,6 +614,32 @@ impl App {
         self.marquee_selection = Some(self.selection.clone());
     }
 
+    /// A click that selects with a tool other than Pick (see
+    /// [`Tool::click_selects`]): the object under `p` becomes the
+    /// selection, Shift adds it or takes it away, Ctrl reaches one group
+    /// level further in, and a click on empty space (without Shift) lets
+    /// go of the selection. The tool stays.
+    pub fn click_select(&mut self, p: Point, mods: Modifiers) {
+        let hit = if mods.ctrl {
+            self.hit_test_step(p)
+        } else {
+            self.hit_test(p)
+        };
+        match hit {
+            Some(id) if mods.shift => {
+                if let Some(i) = self.selection.iter().position(|s| *s == id) {
+                    self.selection.remove(i);
+                    self.rotate_mode = false;
+                } else {
+                    self.select_add(id);
+                }
+            }
+            Some(id) => self.select(vec![id]),
+            None if mods.shift => {}
+            None => self.select(Vec::new()),
+        }
+    }
+
     /// Add `id` to the selection, taking out the groups holding it and the
     /// objects inside it, so nothing is selected twice over.
     pub fn select_add(&mut self, id: ShapeId) {
@@ -1024,6 +1050,12 @@ impl App {
             if response.secondary_clicked() {
                 self.pending_clip_frame = false;
             }
+            return;
+        }
+        // A click with a tool whose click has no job of its own selects;
+        // a drag goes on to the tool below.
+        if self.tool.click_selects() && response.clicked_by(PointerButton::Primary) {
+            self.click_select(p, mods);
             return;
         }
         match self.tool {

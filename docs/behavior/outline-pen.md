@@ -55,7 +55,7 @@ selected (the default outline) nothing is previewed.
 | Width | 0.2 mm (0.567 pt) for new objects; imported outlines keep theirs | a hairline (0.0762 mm, 0.216 pt) draws one device pixel at every zoom |
 | Caps | butt | butt, round, square |
 | Corners | mitre | mitre, round, bevel |
-| Mitre limit | 5 degrees | 1 to 179 degrees; shown with mitred corners |
+| Mitre limit | 45 degrees | 1 to 179 degrees; shown with mitred corners |
 | Dash | solid | presets dashed 4:2, dotted 1:1, dash dot 6:2:1:2, and custom line styles, in multiples of the width |
 | Align dashes | off | fit the dashes to the corners and ends (with a dash pattern) |
 | Position | centred | outside, centred, inside |
@@ -85,7 +85,7 @@ A mitred corner sharper than the mitre limit angle is bevelled. The
 angle `a` is kept in the model (`Stroke::miter_limit`, degrees) and
 given to the renderer, SVG (`stroke-miterlimit`), PDF (`M`) and EPS
 (`setmiterlimit`) as the ratio of mitre length to width
-`1 / sin(a / 2)` (5 degrees: 22.9). SVG files read back the other way:
+`1 / sin(a / 2)` (45 degrees: 2.6; 5 degrees: 22.9). New outlines start at 45 degrees, so a thick outline on lettering bevels its narrow turns instead of growing spikes several widths long (#894; the reporter's comparison video shows new outlines with a limit of 45 degrees). They started at 5 degrees before. SVG files read back the other way:
 `a = 2 asin(1 / ratio)`. Outlines in files saved before the field
 existed keep the limit they were drawn with, ratio 4 (about 29
 degrees). `.cdr` files: the limit is neither read nor written (where it

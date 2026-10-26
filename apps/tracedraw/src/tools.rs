@@ -448,6 +448,36 @@ impl Tool {
         Some((k, shift))
     }
 
+    /// Tools whose click on its own had no job: with these a click on an
+    /// object selects it (Shift adds or takes it away, Ctrl reaches into
+    /// groups) and a click on empty space lets go of the selection, while
+    /// a drag still does the tool's work. Tools whose click already does
+    /// something (placing points, the caret, a fill, a cut point, a zoom
+    /// step) are not in the list.
+    pub fn click_selects(self) -> bool {
+        self.is_box_tool()
+            || matches!(
+                self,
+                Tool::Spiral
+                    | Tool::CommonShapes
+                    | Tool::Knife
+                    | Tool::BrushStrokes
+                    | Tool::Connector
+                    | Tool::RightAngleConnector
+                    | Tool::RoundedConnector
+                    | Tool::Blend
+                    | Tool::BlockShadow
+                    | Tool::ShapeRecognition
+                    | Tool::Sketch
+                    | Tool::Smooth
+                    | Tool::Smear
+                    | Tool::Twirl
+                    | Tool::AttractRepel
+                    | Tool::Smudge
+                    | Tool::Roughen
+            )
+    }
+
     /// Tools that draw by dragging a bounding box.
     pub fn is_box_tool(self) -> bool {
         matches!(

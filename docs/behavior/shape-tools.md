@@ -16,8 +16,11 @@ in the colour and width of the default outline, at least one pixel wide
 (the selection colour when new objects get no outline), and over it a
 black hairline on a white line twice as wide, so its edge shows on any
 outline colour and any drawing under it (#670; the 3-point tools'
-preview too). Crop, zoom and
-text frame drags keep a plain rectangle. After the release the new
+preview and their base line too, while it is dragged and while it waits
+for the third click). The zoom and text frame drags, and a
+box tool's rubber band, are a hairline (blue, black for a text frame) on
+a white line twice as wide, so they show over a black fill too (#672).
+Crop keeps a plain rectangle. After the release the new
 object is selected and shows the eight handles and the centre marker
 whatever tool is active.
 

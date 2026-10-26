@@ -119,8 +119,14 @@ at once (#437). From top to bottom:
   (`print_merge_docker::tests::place_inside_frame_uses_the_users_shapes_also_in_a_group`,
   `pick_drag_tests::place_inside_frame_waits_for_a_click_with_its_arrow`,
   #460, #577).
-- On every page (under the placeholder picture, off at first): Place
-  Inside Frame also puts the placeholder picture in the same place on
+- On every page (for every kind of field, Text, Image and QR code, off
+  at first): Insert Field puts the field in the same place on every
+  other page of the drawing too, a copy with ids of its own in each
+  page's first shown, unlocked layer, joining the undo step of the
+  insert; a field typed into text being edited goes in that text only
+  (#793,
+  `print_merge_docker::tests::on_every_page_a_text_field_goes_on_every_page_and_merges_there`).
+  For a picture field Place Inside Frame also puts the placeholder picture in the same place on
   every other page of the drawing, as part of the same undo step: in the
   shape there of the same kind and bounds (within 0.01 mm), which takes
   the field's name and placement, else in a copy of the frame added to

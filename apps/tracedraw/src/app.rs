@@ -6568,7 +6568,20 @@ impl App {
     /// File > Print Preview: the sheets for the given print settings, or
     /// for those of Options > Global > Printing.
     pub fn print_preview(&mut self, st: Option<crate::ui::dialogs::PrintState>) {
-        let st = st.unwrap_or_else(|| self.settings.printing.state());
+        let mut st = st.unwrap_or_else(|| self.settings.printing.state());
+        // The printers, for the preview's printer choice (#792): the list
+        // read last at once, the system's read again off the interface's
+        // thread, as the Print dialog does.
+        if st.printers.is_empty() {
+            st.printers = self.printers_seen.clone();
+            if !st.printers.is_empty() && !st.printer_picked {
+                st.printer = crate::printers::starting_printer(st.printer.as_deref(), &st.printers);
+            }
+        }
+        if self.printer_fetch.is_none() && !crate::files::WEB {
+            st.looking_for_printers = true;
+            self.fetch_printers(crate::printers::system_printers);
+        }
         self.print_preview = Some(crate::ui::print_preview::PrintPreview::new(st));
     }
 

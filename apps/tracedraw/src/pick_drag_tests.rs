@@ -7425,10 +7425,19 @@ fn the_edge_of_the_shape_being_drawn_shows_over_a_wide_outline() {
             matches!(s, egui::Shape::Path(p) if p.stroke.width >= wide - 0.01
                 && p.stroke.color == egui::epaint::ColorMode::Solid(egui::Color32::BLACK))
         });
-        let edge = shapes.iter().rposition(|s| {
-            matches!(s, egui::Shape::LineSegment { stroke, .. }
-                if stroke.color == egui::Color32::WHITE
-                    && (stroke.width - crate::canvas::HALO_WIDTH).abs() < 1e-3)
+        // The white line under the edge: segments for a short outline,
+        // a path for a long one such as an ellipse's.
+        let halo = |stroke: &egui::Stroke| {
+            stroke.color == egui::Color32::WHITE
+                && (stroke.width - crate::canvas::HALO_WIDTH).abs() < 1e-3
+        };
+        let edge = shapes.iter().rposition(|s| match s {
+            egui::Shape::LineSegment { stroke, .. } => halo(stroke),
+            egui::Shape::Path(p) => {
+                (p.stroke.width - crate::canvas::HALO_WIDTH).abs() < 1e-3
+                    && p.stroke.color == egui::epaint::ColorMode::Solid(egui::Color32::WHITE)
+            }
+            _ => false,
         });
         assert!(
             matches!((outline, edge), (Some(o), Some(e)) if e > o),
@@ -9134,4 +9143,346 @@ fn frame_times_of_a_contour_drag() {
         drag / n,
         paint / n
     );
+}
+
+/// Over a black fill, what is being drawn shows (#672): a freehand stroke,
+/// a polyline in progress and a 3-point tool's base line waiting for the
+/// third click are black lines on white ones along them, the Bezier
+/// tool's placed segments, in the black outline they will get, lie on a
+/// white line too, and the polyline's node squares have a white edge.
+#[test]
+fn lines_being_drawn_show_on_a_black_fill() {
+    use egui::epaint::ColorMode;
+    let (ctx, mut app, _) = setup();
+    app.apply_fill(tracedraw_core::Fill::Solid(tracedraw_core::Color::BLACK));
+    app.select(Vec::new());
+    // Distance from `p` to the polyline `along`.
+    let off = |p: Pos2, along: &[Pos2]| {
+        along
+            .windows(2)
+            .map(|w| {
+                let (a, b) = (w[0], w[1]);
+                let ab = b - a;
+                let t = ((p - a).dot(ab) / ab.length_sq().max(1e-6)).clamp(0.0, 1.0);
+                (a + ab * t - p).length()
+            })
+            .fold(f32::MAX, f32::min)
+    };
+    // The index of a line of `color` and `width` lying along `along`
+    // (within 3 px), segment or path.
+    let line_at = |shapes: &[egui::Shape], color: egui::Color32, width: f32, along: &[Pos2]| {
+        shapes.iter().position(|s| {
+            let (pts, w, c): (Vec<Pos2>, f32, bool) = match s {
+                egui::Shape::LineSegment { points, stroke } => {
+                    (points.to_vec(), stroke.width, stroke.color == color)
+                }
+                egui::Shape::Path(ps) => (
+                    ps.points.clone(),
+                    ps.stroke.width,
+                    ps.stroke.color == ColorMode::Solid(color),
+                ),
+                _ => return false,
+            };
+            c && (w - width).abs() < 1e-3
+                && pts.len() > 1
+                && pts.iter().all(|p| off(*p, along) < 3.0)
+        })
+    };
+    let haloed = |shapes: &[egui::Shape], inner: egui::Color32, along: &[Pos2]| {
+        let white = line_at(
+            shapes,
+            egui::Color32::WHITE,
+            crate::canvas::HALO_WIDTH,
+            along,
+        );
+        let line = line_at(shapes, inner, crate::canvas::HALO_INNER, along);
+        matches!((white, line), (Some(w), Some(l)) if l > w)
+    };
+    let a = app.view.to_screen(Point::new(20.0, 20.0));
+    let b = app.view.to_screen(Point::new(50.0, 30.0));
+    let c = app.view.to_screen(Point::new(40.0, 35.0));
+    // A freehand stroke, while the button is down.
+    app.set_tool(Tool::Freehand);
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::PointerMoved(a)],
+        Modifiers::NONE,
+    );
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(a, true, PointerButton::Primary, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    let mut stroke = vec![a];
+    for i in 1..=4 {
+        let p = a + (b - a) * (i as f32 / 4.0) + egui::vec2(0.0, (i % 2) as f32 * 6.0);
+        stroke.push(p);
+        frame(
+            &ctx,
+            &mut app,
+            vec![Event::PointerMoved(p)],
+            Modifiers::NONE,
+        );
+    }
+    let shapes = frame_shapes(&ctx, &mut app, Vec::new());
+    assert!(haloed(&shapes, egui::Color32::BLACK, &stroke), "freehand");
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(b, false, PointerButton::Primary, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    // A polyline with two points placed, the pointer away.
+    app.select(Vec::new());
+    app.set_tool(Tool::Polyline);
+    click_at(&ctx, &mut app, a, Modifiers::NONE);
+    click_at(&ctx, &mut app, b, Modifiers::NONE);
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::PointerMoved(c)],
+        Modifiers::NONE,
+    );
+    assert!(app.curve.is_some(), "a polyline in progress");
+    let shapes = frame_shapes(&ctx, &mut app, Vec::new());
+    assert!(
+        haloed(&shapes, egui::Color32::BLACK, &[a, b, c]),
+        "polyline"
+    );
+    // Its node squares have a white edge.
+    for p in [a, b] {
+        assert!(
+            shapes.iter().any(|s| matches!(s, egui::Shape::Rect(r)
+                if r.stroke.color == egui::Color32::WHITE
+                    && (r.rect.center() - p).length() < 1.5)),
+            "a white edge at {p:?}"
+        );
+    }
+    frame(
+        &ctx,
+        &mut app,
+        vec![key(egui::Key::Escape, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    // The Bezier tool: a segment placed, in the default black outline,
+    // away from the freehand stroke and the polyline (Esc keeps the
+    // polyline): a click on their end nodes would go on from them.
+    app.curve = None;
+    app.select(Vec::new());
+    app.set_tool(Tool::Bezier);
+    // Snapping off: the nodes go where they are clicked.
+    app.snap.off = true;
+    let (a2, b2) = (
+        app.view.to_screen(Point::new(15.0, 37.0)),
+        app.view.to_screen(Point::new(55.0, 38.0)),
+    );
+    click_at(&ctx, &mut app, a2, Modifiers::NONE);
+    click_at(&ctx, &mut app, b2, Modifiers::NONE);
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::PointerMoved(c)],
+        Modifiers::NONE,
+    );
+    assert!(app.curve.is_some(), "a curve in progress");
+    let shapes = frame_shapes(&ctx, &mut app, Vec::new());
+    let outline = app
+        .default_stroke()
+        .map(|s| crate::canvas::to_color32(s.color))
+        .expect("a default outline");
+    assert!(haloed(&shapes, outline, &[a2, b2]), "placed segments");
+    app.snap.off = false;
+    frame(
+        &ctx,
+        &mut app,
+        vec![key(egui::Key::Escape, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    // A 3-point curve's base line, released and waiting for the
+    // third click.
+    app.curve = None;
+    app.select(Vec::new());
+    app.set_tool(Tool::ThreePointCurve);
+    drag(&ctx, &mut app, a, b, Modifiers::NONE, Vec::new());
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::PointerMoved(c)],
+        Modifiers::NONE,
+    );
+    assert!(
+        app.three_point_base.is_some(),
+        "waiting for the third click"
+    );
+    let shapes = frame_shapes(&ctx, &mut app, Vec::new());
+    assert!(
+        haloed(&shapes, egui::Color32::BLACK, &[a, b]),
+        "3-point base"
+    );
+}
+
+#[test]
+fn a_click_with_a_drawing_tool_selects_and_a_drag_draws() {
+    let (ctx, mut app, id) = setup();
+    app.set_tool(Tool::Rectangle);
+    app.select(Vec::new());
+    let inside = app.view.to_screen(Point::new(35.0, 25.0));
+    let before = shape_count(&app);
+    // A click on the square selects it and draws nothing.
+    click_at(&ctx, &mut app, inside, Modifiers::NONE);
+    assert_eq!(app.selection, vec![id]);
+    assert_eq!(shape_count(&app), before, "a click draws nothing");
+    assert_eq!(app.tool, Tool::Rectangle, "the tool stays");
+    // A drag that starts on the square draws a new rectangle.
+    let to = app.view.to_screen(Point::new(90.0, 70.0));
+    drag(&ctx, &mut app, inside, to, Modifiers::NONE, Vec::new());
+    assert_eq!(shape_count(&app), before + 1, "a drag draws");
+    assert_eq!(app.tool, Tool::Rectangle);
+    assert!(!app.selection.contains(&id));
+    // A click on empty space lets go of the selection.
+    let empty = app.view.to_screen(Point::new(150.0, 150.0));
+    click_at(&ctx, &mut app, empty, Modifiers::NONE);
+    assert!(app.selection.is_empty(), "{:?}", app.selection);
+    assert_eq!(shape_count(&app), before + 1);
+}
+
+#[test]
+fn shift_click_with_a_drawing_tool_adds_and_takes_away() {
+    let (ctx, mut app, id) = setup();
+    let other = app
+        .new_shape(ShapeKind::Rect {
+            rect: Rect::new(100.0, 10.0, 140.0, 40.0),
+            radius: 0.0,
+            corners: None,
+        })
+        .expect("rect");
+    app.select(vec![other]);
+    app.apply_fill(tracedraw_core::Fill::Solid(tracedraw_core::Color::rgb8(
+        30, 30, 200,
+    )));
+    for tool in [Tool::Ellipse, Tool::Spiral, Tool::Smear, Tool::Knife] {
+        app.set_tool(tool);
+        app.select(vec![id]);
+        let at = app.view.to_screen(Point::new(120.0, 25.0));
+        click_at(&ctx, &mut app, at, Modifiers::SHIFT);
+        assert!(
+            app.selection.contains(&id) && app.selection.contains(&other),
+            "{tool:?}: {:?}",
+            app.selection
+        );
+        click_at(&ctx, &mut app, at, Modifiers::SHIFT);
+        assert_eq!(app.selection, vec![id], "{tool:?}");
+        // Shift on empty space keeps the selection.
+        let empty = app.view.to_screen(Point::new(150.0, 150.0));
+        click_at(&ctx, &mut app, empty, Modifiers::SHIFT);
+        assert_eq!(app.selection, vec![id], "{tool:?}");
+        assert_eq!(app.tool, tool);
+    }
+}
+
+#[test]
+fn line_tools_still_place_points_on_objects() {
+    let (ctx, mut app, id) = setup();
+    app.select(Vec::new());
+    let before = shape_count(&app);
+    app.set_tool(Tool::Polyline);
+    let a = app.view.to_screen(Point::new(35.0, 25.0));
+    let b = app.view.to_screen(Point::new(50.0, 30.0));
+    click_at(&ctx, &mut app, a, Modifiers::NONE);
+    click_at(&ctx, &mut app, b, Modifiers::NONE);
+    assert!(
+        !app.selection.contains(&id),
+        "a click on an object places a point, it does not select"
+    );
+    app.finish_curve();
+    assert_eq!(shape_count(&app), before + 1, "the line was drawn");
+}
+
+#[test]
+fn a_click_outside_a_table_selects_with_the_table_tool() {
+    let (ctx, mut app, id) = setup();
+    app.set_tool(Tool::Table);
+    app.select(Vec::new());
+    let before = shape_count(&app);
+    let inside = app.view.to_screen(Point::new(35.0, 25.0));
+    click_at(&ctx, &mut app, inside, Modifiers::NONE);
+    assert_eq!(app.selection, vec![id]);
+    assert_eq!(shape_count(&app), before);
+}
+
+#[test]
+fn every_click_selecting_tool_selects_on_click() {
+    let (ctx, mut app, id) = setup();
+    let inside = app.view.to_screen(Point::new(35.0, 25.0));
+    let empty = app.view.to_screen(Point::new(150.0, 150.0));
+    for tool in Tool::ALL.iter().copied().filter(|t| t.click_selects()) {
+        app.set_tool(tool);
+        if app.tool != tool {
+            continue; // a tool that is not available here
+        }
+        app.select(Vec::new());
+        let before = shape_count(&app);
+        click_at(&ctx, &mut app, inside, Modifiers::NONE);
+        assert_eq!(app.selection, vec![id], "{tool:?}");
+        click_at(&ctx, &mut app, empty, Modifiers::NONE);
+        assert!(app.selection.is_empty(), "{tool:?}");
+        assert_eq!(shape_count(&app), before, "{tool:?} drew on a click");
+    }
+}
+
+/// While text is typed, Ctrl+L, E, R, J, H and N align it; the same keys
+/// do not touch text alignment when nothing is being typed.
+#[test]
+fn alignment_keys_while_typing() {
+    use tracedraw_core::TextAlign;
+    tracedraw_text::install();
+    let (ctx, mut app, _id) = setup();
+    app.set_tool(Tool::Text);
+    app.start_text(Point::new(100.0, 150.0), None);
+    app.text_insert("Hello\nworld");
+    let align_of = |app: &App| {
+        let id = app.text_edit.as_ref().map(|t| t.shape).expect("editing");
+        match &app.doc().find_shape(id).expect("text").kind {
+            ShapeKind::Text {
+                spans, align, para, ..
+            } => tracedraw_core::paragraphs::paragraph_styles(spans, *align, para)
+                .last()
+                .map(|p| p.0)
+                .unwrap_or(*align),
+            _ => unreachable!(),
+        }
+    };
+    for (k, a) in [
+        (egui::Key::E, TextAlign::Center),
+        (egui::Key::R, TextAlign::Right),
+        (egui::Key::J, TextAlign::Justify),
+        (egui::Key::H, TextAlign::ForceJustify),
+        (egui::Key::N, TextAlign::None),
+        (egui::Key::L, TextAlign::Left),
+    ] {
+        frame(
+            &ctx,
+            &mut app,
+            vec![key(k, Modifiers::COMMAND)],
+            Modifiers::COMMAND,
+        );
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+        assert_eq!(align_of(&app), a, "{k:?}");
+        assert!(app.text_edit.is_some(), "still typing after {k:?}");
+        // Text typed at a point lines up as a whole.
+        let id = app.text_edit.as_ref().map(|t| t.shape).expect("editing");
+        if let ShapeKind::Text {
+            spans, align, para, ..
+        } = &app.doc().find_shape(id).expect("text").kind
+        {
+            let all = tracedraw_core::paragraphs::paragraph_styles(spans, *align, para);
+            assert!(
+                all.iter().all(|p| p.0 == a),
+                "{k:?}: {:?}",
+                all.iter().map(|p| p.0).collect::<Vec<_>>()
+            );
+        }
+    }
 }

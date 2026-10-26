@@ -93,12 +93,8 @@ pub(crate) fn tab_header(ui: &mut Ui, tab: &mut usize, labels: &[String]) {
             let on = *tab == i;
             let text = RichText::new(l.as_str()).size(13.0);
             let b = egui::Button::new(text)
-                .fill(if on {
-                    egui::Color32::WHITE
-                } else {
-                    Tokens::panel()
-                })
-                .stroke(egui::Stroke::new(1.0, egui::Color32::from_gray(0xC8)))
+                .fill(if on { Tokens::field() } else { Tokens::panel() })
+                .stroke(egui::Stroke::new(1.0, Tokens::border()))
                 .corner_radius(0.0)
                 .min_size(egui::vec2(80.0, 26.0));
             if ui.add(b).clicked() {
@@ -117,9 +113,18 @@ fn section(ui: &mut Ui, title: &str) {
         let y = r.center().y;
         ui.painter().line_segment(
             [egui::pos2(r.left() + 6.0, y), egui::pos2(r.right(), y)],
-            egui::Stroke::new(1.0, egui::Color32::from_gray(0xC8)),
+            egui::Stroke::new(1.0, Tokens::border()),
         );
     });
+}
+
+/// The page under a dialog's tabs: the colour of fields in the theme
+/// (white in the light ones), so its labels read in every theme (#904).
+pub(crate) fn tab_page() -> egui::Frame {
+    let (fill, line) = crate::theme::theme().dialog_page();
+    egui::Frame::new()
+        .fill(fill)
+        .stroke(egui::Stroke::new(1.0, line))
 }
 
 /// A profile combo: the default one first under "Default profiles", then
@@ -253,7 +258,7 @@ pub fn dialog(app: &mut App, ctx: &Context, st: &mut ColorManagementState, close
                 area.min + egui::vec2(15.0, 12.0),
                 egui::pos2(area.max.x - 15.0, area.max.y - 56.0),
             );
-            // The white page under the tabs fills what the tabs leave.
+            // The page under the tabs fills what the tabs leave.
             let page_h = inner.height() - 26.0 - 24.0;
             ui.scope_builder(egui::UiBuilder::new().max_rect(inner), |ui| {
                 tab_header(
@@ -261,9 +266,7 @@ pub fn dialog(app: &mut App, ctx: &Context, st: &mut ColorManagementState, close
                     &mut st.tab,
                     &[tr("color_mgmt.tab_document"), tr("color_mgmt.tab_default")],
                 );
-                egui::Frame::new()
-                    .fill(egui::Color32::WHITE)
-                    .stroke(egui::Stroke::new(1.0, egui::Color32::from_gray(0xC8)))
+                tab_page()
                     .inner_margin(egui::Margin::symmetric(40, 12))
                     .show(ui, |ui| {
                         ui.set_min_size(egui::vec2(inner.width() - 82.0, page_h));
