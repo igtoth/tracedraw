@@ -302,11 +302,23 @@ pub fn centred_position(size: Vec2, monitor: Option<Vec2>) -> Option<Pos2> {
     Some(Pos2::new(p.x, p.y))
 }
 
+/// The monitor's size in system points (pixels over the system's
+/// scaling), whatever the interface size: the unit the window's kept
+/// size is in. egui reports it in interface points, which shrink as the
+/// interface grows (#787).
+fn monitor_in_system_points(ctx: &egui::Context) -> Option<Vec2> {
+    let zoom = ctx.zoom_factor();
+    ctx.input(|i| i.viewport().monitor_size).map(|m| m * zoom)
+}
+
 /// Turn the splash window into the main window: decorations, resizable,
 /// the kept size centred on the monitor, maximized when it was left so.
+/// Sizes are worked out in system points (see [`remember_window`]) and
+/// sent in interface points.
 pub fn open_main_window(ctx: &egui::Context, settings: &Settings) {
     use egui::ViewportCommand as V;
-    let monitor = ctx.input(|i| i.viewport().monitor_size);
+    let zoom = ctx.zoom_factor().max(0.01);
+    let monitor = monitor_in_system_points(ctx);
     let size = main_window_size(settings.window_size, monitor);
     ctx.send_viewport_cmd(V::Decorations(true));
     // The splash window is made not resizable, which on X11 records its
@@ -315,16 +327,16 @@ pub fn open_main_window(ctx: &egui::Context, settings: &Settings) {
     // or the main window keeps the splash's maximum and cannot be
     // maximized or resized.
     ctx.send_viewport_cmd(V::MaxInnerSize(egui::Vec2::INFINITY));
-    ctx.send_viewport_cmd(V::MinInnerSize(min_size_for(monitor)));
+    ctx.send_viewport_cmd(V::MinInnerSize(min_size_for(monitor) / zoom));
     ctx.send_viewport_cmd(V::Resizable(true));
     ctx.send_viewport_cmd(V::EnableButtons {
         close: true,
         minimized: true,
         maximize: true,
     });
-    ctx.send_viewport_cmd(V::InnerSize(size));
+    ctx.send_viewport_cmd(V::InnerSize(size / zoom));
     if let Some(p) = centred_position(size, monitor) {
-        ctx.send_viewport_cmd(V::OuterPosition(p));
+        ctx.send_viewport_cmd(V::OuterPosition((p.to_vec2() / zoom).to_pos2()));
     }
     if start_maximized(settings.window_size, settings.window_maximized, monitor) {
         ctx.send_viewport_cmd(V::Maximized(true));
@@ -332,9 +344,50 @@ pub fn open_main_window(ctx: &egui::Context, settings: &Settings) {
     ctx.send_viewport_cmd(V::Focus);
 }
 
+/// Frames after the main window opens during which its state is still
+/// settling: what the window system reports then is not kept, and a
+/// maximize it dropped is asked for again (#787).
+pub const SETTLE_FRAMES: u32 = 30;
+
+/// One of the first [`SETTLE_FRAMES`] frames of the main window
+/// (`frame` counted from 0). Some window systems drop a maximize asked
+/// for while the splash turns into the main window (on Windows the
+/// window's frame changes at the same time), and the window started at
+/// its kept size instead, every time: it is asked for again a few frames
+/// on while the window still reports it is not maximized. So is a window
+/// started without the splash at a kept size larger than the monitor
+/// (another screen, a larger scaling), which then fills the screen.
+pub fn settle_window(ctx: &egui::Context, settings: &Settings, frame: u32) {
+    use egui::ViewportCommand as V;
+    let monitor = monitor_in_system_points(ctx);
+    let (maximized, minimized) = ctx.input(|i| {
+        let v = i.viewport();
+        (v.maximized, v.minimized)
+    });
+    if frame + 1 < SETTLE_FRAMES {
+        ctx.request_repaint();
+    }
+    if minimized == Some(true) {
+        return;
+    }
+    // Left maximized, or a kept size this monitor cannot hold (another
+    // screen, a larger scaling): maximized.
+    if start_maximized(settings.window_size, settings.window_maximized, monitor)
+        && maximized == Some(false)
+        && (frame == 3 || frame == 15)
+    {
+        ctx.send_viewport_cmd(V::Maximized(true));
+    }
+}
+
 /// Keep the main window's state for the next start: maximized or not,
-/// and the size while it is neither maximized nor minimized.
+/// and the size while it is neither maximized nor minimized, in system
+/// points: the interface size (Options, or the system's text size)
+/// scales the interface points the window reports, and a size kept in
+/// them came back smaller at every start, as the splash opens the
+/// window before the interface size applies (#787).
 pub fn remember_window(ctx: &egui::Context, settings: &mut Settings) {
+    let zoom = ctx.zoom_factor();
     let (maximized, minimized, inner) = ctx.input(|i| {
         let v = i.viewport();
         (v.maximized, v.minimized, v.inner_rect)
@@ -345,8 +398,11 @@ pub fn remember_window(ctx: &egui::Context, settings: &mut Settings) {
     if let Some(m) = maximized {
         settings.window_maximized = m;
         if !m {
-            if let Some(r) = inner.filter(|r| r.width() >= MIN_SIZE.x && r.height() >= MIN_SIZE.y) {
-                settings.window_size = [r.width(), r.height()];
+            if let Some(r) = inner
+                .map(|r| r.size() * zoom)
+                .filter(|r| r.x >= MIN_SIZE.x && r.y >= MIN_SIZE.y)
+            {
+                settings.window_size = [r.x, r.y];
             }
         }
     }
@@ -406,6 +462,132 @@ mod tests {
         assert!(!start_maximized([1600.0, 950.0], false, big));
         assert!(start_maximized([1600.0, 950.0], true, big));
         assert_eq!(min_size_for(big), MIN_SIZE);
+    }
+
+    /// A frame with the window reported as `info`, interface size `zoom`.
+    fn window_frame(
+        zoom: f32,
+        info: egui::ViewportInfo,
+        f: impl FnMut(&egui::Context),
+    ) -> Vec<egui::ViewportCommand> {
+        let ctx = egui::Context::default();
+        ctx.set_zoom_factor(zoom);
+        let mut f = f;
+        let mut input = egui::RawInput::default();
+        input.viewports.insert(egui::ViewportId::ROOT, info);
+        // The zoom applies from the frame after it is set.
+        ctx.run_ui(input.clone(), |_| {}).textures_delta.clear();
+        let mut out = ctx.run_ui(input, |ui| f(ui.ctx()));
+        out.textures_delta.clear();
+        out.viewport_output[&egui::ViewportId::ROOT]
+            .commands
+            .clone()
+    }
+
+    /// #787: the kept size is in system points, whatever the interface
+    /// size, so the window comes back at the size it was left at; it was
+    /// kept in interface points and came back smaller at every start
+    /// with the interface at 150 % (the splash opens it at 100 %).
+    #[test]
+    fn the_window_comes_back_at_its_size_with_a_larger_interface() {
+        use egui::ViewportCommand as V;
+        // 1000 x 600 interface points at 150 %: 1500 x 900 system points.
+        let info = egui::ViewportInfo {
+            maximized: Some(false),
+            minimized: Some(false),
+            inner_rect: Some(egui::Rect::from_min_size(
+                Pos2::ZERO,
+                Vec2::new(1000.0, 600.0),
+            )),
+            monitor_size: Some(Vec2::new(2560.0, 1440.0) / 1.5),
+            ..Default::default()
+        };
+        let mut settings = Settings::default();
+        window_frame(1.5, info.clone(), |ctx| remember_window(ctx, &mut settings));
+        assert!(!settings.window_maximized);
+        let [w, h] = settings.window_size;
+        assert!(
+            (w - 1500.0).abs() < 0.5 && (h - 900.0).abs() < 0.5,
+            "{w} {h}"
+        );
+        // Opened again with the interface at 150 %: the same window.
+        let cmds = window_frame(1.5, info.clone(), |ctx| open_main_window(ctx, &settings));
+        let size = cmds
+            .iter()
+            .find_map(|c| match c {
+                V::InnerSize(s) => Some(*s),
+                _ => None,
+            })
+            .expect("a size");
+        assert!((size - Vec2::new(1000.0, 600.0)).length() < 0.5, "{size:?}");
+        assert!(!cmds.iter().any(|c| matches!(c, V::Maximized(true))));
+        // And at 100 % (the splash): 1500 x 900, fitting the monitor.
+        let at_100 = egui::ViewportInfo {
+            monitor_size: Some(Vec2::new(2560.0, 1440.0)),
+            ..info
+        };
+        let cmds = window_frame(1.0, at_100, |ctx| open_main_window(ctx, &settings));
+        assert!(cmds.iter().any(
+            |c| matches!(c, V::InnerSize(s) if (*s - Vec2::new(1500.0, 900.0)).length() < 0.5)
+        ));
+    }
+
+    /// #787: a maximize the window system dropped while the window was
+    /// set up is asked for again while the window says it is not
+    /// maximized, and for a kept size larger than the monitor.
+    #[test]
+    fn a_dropped_maximize_is_asked_for_again_and_a_large_window_fills_the_screen() {
+        use egui::ViewportCommand as V;
+        let monitor = Some(Vec2::new(1920.0, 1080.0));
+        let not_max = egui::ViewportInfo {
+            maximized: Some(false),
+            minimized: Some(false),
+            inner_rect: Some(egui::Rect::from_min_size(
+                Pos2::ZERO,
+                Vec2::new(1600.0, 950.0),
+            )),
+            monitor_size: monitor,
+            ..Default::default()
+        };
+        let settings = Settings::default();
+        assert!(settings.window_maximized);
+        let asks = |info: &egui::ViewportInfo, frame| {
+            window_frame(1.0, info.clone(), |ctx| {
+                settle_window(ctx, &settings, frame)
+            })
+            .iter()
+            .any(|c| matches!(c, V::Maximized(true)))
+        };
+        assert!(asks(&not_max, 3));
+        assert!(asks(&not_max, 15));
+        assert!(!asks(&not_max, 4));
+        let max = egui::ViewportInfo {
+            maximized: Some(true),
+            ..not_max.clone()
+        };
+        assert!(!asks(&max, 3));
+        // Kept not maximized but larger than this monitor: maximized.
+        let mut large = Settings::default();
+        large.window_maximized = false;
+        large.window_size = [1700.0, 1000.0];
+        let small_screen = egui::ViewportInfo {
+            inner_rect: Some(egui::Rect::from_min_size(
+                Pos2::ZERO,
+                Vec2::new(1700.0, 1000.0),
+            )),
+            monitor_size: Some(Vec2::new(1366.0, 768.0)),
+            ..not_max.clone()
+        };
+        let cmds = window_frame(1.0, small_screen.clone(), |ctx| {
+            settle_window(ctx, &large, 3)
+        });
+        assert!(cmds.iter().any(|c| matches!(c, V::Maximized(true))));
+        // Kept not maximized and fitting: left alone.
+        large.window_size = [1200.0, 700.0];
+        let cmds = window_frame(1.0, small_screen, |ctx| settle_window(ctx, &large, 3));
+        assert!(!cmds
+            .iter()
+            .any(|c| matches!(c, V::Maximized(true) | V::InnerSize(_))));
     }
 
     #[test]

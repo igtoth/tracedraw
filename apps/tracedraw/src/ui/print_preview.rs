@@ -139,6 +139,11 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         return;
     };
     crate::ui::dialogs::take_saved_sheet(app, &mut pv.st);
+    // The printer list, once it has been read (#792).
+    if pv.st.looking_for_printers && app.poll_printers(&mut pv.st) {
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_millis(200));
+    }
     let mut close = false;
     let mut print = false;
     let ctx = ui.ctx().clone();
@@ -213,6 +218,37 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         .show(ui, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 let st = &mut pv.st;
+                // The printer and its own settings, the copies: what the
+                // Print button prints with (#792).
+                ui.strong(tr("print.printer"));
+                if let Some(p) = crate::ui::dialogs::destination_row(ui, st, 270.0) {
+                    if let Err(e) = crate::printers::open_properties(&p) {
+                        app.status = e;
+                    }
+                }
+                let chosen = st.printers.iter().find(|p| {
+                    st.destination == 0 && st.printer.as_deref() == Some(p.name.as_str())
+                });
+                if let Some(p) = chosen {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "{}: {}",
+                            tr("print.status"),
+                            tr(p.state.key())
+                        ))
+                        .color(Tokens::text_dim())
+                        .size(11.0),
+                    );
+                }
+                ui.horizontal(|ui| {
+                    ui.label(tr("print.number_of_copies"));
+                    ui.add(crate::ui::field::NumField::new(&mut st.copies).range(1..=999));
+                    ui.add_enabled(
+                        st.copies > 1,
+                        egui::Checkbox::new(&mut st.collate, tr("print.collate")),
+                    );
+                });
+                ui.separator();
                 ui.checkbox(&mut st.all_pages, tr("dialog.all_pages"));
                 ui.horizontal(|ui| {
                     ui.checkbox(&mut st.fit_to_page, tr("dialog.fit_to_page"));
@@ -824,6 +860,96 @@ mod tests {
             assert!(at.x < 330.0, "{ink} in the left panel: {at:?}");
             assert!(at.y > option.y && at.x > option.x, "{ink} under it: {at:?}");
         }
+    }
+
+    /// Print Preview shows the printer choice, the Properties button of
+    /// the printer chosen and the copies at the top of its left panel,
+    /// the printers coming in when the system has listed them; the Print
+    /// button prints to the printer chosen there (#792).
+    #[test]
+    fn the_preview_offers_the_printer_and_the_copies() {
+        use crate::printers::{Printer, PrinterState};
+        fn list() -> Vec<Printer> {
+            vec![
+                Printer {
+                    name: "Studio Laser".into(),
+                    default: true,
+                    state: PrinterState::Ready,
+                    ..Default::default()
+                },
+                Printer {
+                    name: "Plotter".into(),
+                    ..Default::default()
+                },
+            ]
+        }
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        app.printers_seen.clear();
+        app.print_preview = Some(PrintPreview::new(PrintState {
+            looking_for_printers: true,
+            ..PrintState::default()
+        }));
+        app.fetch_printers(list);
+        let texts = |shapes: &[egui::epaint::ClippedShape]| -> Vec<(String, egui::Pos2)> {
+            fn walk(s: &egui::Shape, out: &mut Vec<(String, egui::Pos2)>) {
+                match s {
+                    egui::Shape::Text(t) => out.push((t.galley.text().to_string(), t.pos)),
+                    egui::Shape::Vec(v) => v.iter().for_each(|s| walk(s, out)),
+                    _ => {}
+                }
+            }
+            let mut out = Vec::new();
+            shapes.iter().for_each(|c| walk(&c.shape, &mut out));
+            out
+        };
+        let mut shapes = Vec::new();
+        for _ in 0..200 {
+            let mut out = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(1400.0, 900.0),
+                    )),
+                    ..Default::default()
+                },
+                |ui| show(&mut app, ui),
+            );
+            out.textures_delta.clear();
+            shapes = out.shapes;
+            if app
+                .print_preview
+                .as_ref()
+                .is_some_and(|p| !p.st.looking_for_printers)
+            {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let st = &app.print_preview.as_ref().expect("preview").st;
+        assert_eq!(st.printers.len(), 2, "the printers came in");
+        assert_eq!(st.printer.as_deref(), Some("Studio Laser"), "the default");
+        // One more frame to show them.
+        let mut out = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1400.0, 900.0),
+                )),
+                ..Default::default()
+            },
+            |ui| show(&mut app, ui),
+        );
+        out.textures_delta.clear();
+        shapes = out.shapes;
+        let t = texts(&shapes);
+        let at = |label: &str| t.iter().find(|(s, _)| s == label).map(|(_, p)| *p);
+        let printer = at("Studio Laser").expect("the printer chosen");
+        let copies = at(&tr("print.number_of_copies")).expect("the copies");
+        let all_pages = at(&tr("dialog.all_pages")).expect("the other options");
+        assert!(printer.x < 330.0 && copies.x < 330.0, "in the left panel");
+        assert!(printer.y < copies.y && copies.y < all_pages.y, "at its top");
+        assert!(at(&tr("print.collate")).is_some());
     }
 
     #[test]

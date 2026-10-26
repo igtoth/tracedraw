@@ -354,6 +354,27 @@ impl App {
                         Key::Home => self.text_move(CaretMove::LineStart, shift),
                         Key::End => self.text_move(CaretMove::LineEnd, shift),
                         Key::A if ctrl => self.text_select_all(),
+                        // Alignment of the paragraphs at the caret (the
+                        // same keys export, combine and repeat when no
+                        // text is being typed).
+                        Key::L if ctrl && !shift => {
+                            self.apply_text_align(tracedraw_core::TextAlign::Left)
+                        }
+                        Key::E if ctrl && !shift => {
+                            self.apply_text_align(tracedraw_core::TextAlign::Center)
+                        }
+                        Key::R if ctrl && !shift => {
+                            self.apply_text_align(tracedraw_core::TextAlign::Right)
+                        }
+                        Key::J if ctrl && !shift => {
+                            self.apply_text_align(tracedraw_core::TextAlign::Justify)
+                        }
+                        Key::H if ctrl && !shift => {
+                            self.apply_text_align(tracedraw_core::TextAlign::ForceJustify)
+                        }
+                        Key::N if ctrl && !shift => {
+                            self.apply_text_align(tracedraw_core::TextAlign::None)
+                        }
                         Key::B if ctrl => {
                             let on = !self.text_bold;
                             self.text_bold = on;

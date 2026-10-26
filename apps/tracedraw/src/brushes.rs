@@ -1,7 +1,8 @@
 //! Strokes of the shaping brushes (Smooth, Smear, Twirl, Attract and
-//! Repel, Smudge, Roughen): a drag over the selected objects (or the one
-//! under the pointer when nothing is selected) reshapes the curves under
-//! the nib, step by step, the whole stroke one undo step. Objects that are
+//! Repel, Smudge, Roughen): a drag over the selected objects reshapes the
+//! curves under the nib, step by step, the whole stroke one undo step.
+//! Brushes change only what is selected: with nothing selected a drag
+//! does nothing and a click selects (#271). Objects that are
 //! not curves are converted first. The settings come from the property bar
 //! (`ui::brush_bars`).
 
@@ -16,12 +17,16 @@ use tracedraw_core::{effects, geometry::Point, Command, ShapeKind};
 pub const HOLD_MM_PER_S: f64 = 10.0;
 
 impl App {
-    /// A stroke begins at `p`.
+    /// A stroke begins at `p`. Brushes change only what is selected:
+    /// with nothing selected the stroke does nothing and the status bar
+    /// says to select an object first (a click selects, see
+    /// [`crate::tools::Tool::click_selects`]).
     pub fn brush_begin(&mut self, p: Point) {
+        self.brush_stepped = false;
         if self.selection.is_empty() {
-            if let Some(id) = self.hit_test(p) {
-                self.select(vec![id]);
-            }
+            self.status = crate::i18n::tr("status.brush_select_first");
+            self.drag = Drag::None;
+            return;
         }
         // Brushes work on curves. A group or clip frame is never brushed,
         // so it keeps its envelope and objects as they are.
@@ -197,6 +202,56 @@ mod tests {
         }
         let half = bounds(&app, id).x1;
         assert!(half > 40.5 && half < full - 0.5, "{half} vs {full}");
+    }
+
+    /// Brushes change only the selected objects: a stroke over a
+    /// selected square and an unselected one beside it reshapes the
+    /// selected one alone, and with nothing selected a stroke changes
+    /// nothing and says to select an object first (#271).
+    #[test]
+    fn brushes_change_only_the_selected_objects() {
+        for tool in [Tool::Smear, Tool::Roughen, Tool::Smudge, Tool::Twirl] {
+            let mut app = App::headless();
+            let a = square(&mut app);
+            let b = app
+                .new_shape(ShapeKind::Rect {
+                    rect: Rect::new(40.0, 0.0, 80.0, 40.0),
+                    radius: 0.0,
+                    corners: None,
+                })
+                .expect("shape");
+            app.select(vec![a]);
+            app.tool = tool;
+            app.brush_radius = 10.0;
+            let kind_b = app.doc().find_shape(b).expect("b").kind.clone();
+            // Along the edge both squares share.
+            app.brush_begin(Point::new(40.0, 5.0));
+            for y in [10.0, 15.0, 20.0, 25.0, 30.0] {
+                app.brush_step(Point::new(40.0 + y / 10.0, y), false, 0.05);
+            }
+            assert!(
+                matches!(
+                    app.doc().find_shape(a).expect("a").kind,
+                    ShapeKind::Path { .. }
+                ),
+                "{tool:?}: the selected square is brushed"
+            );
+            assert_eq!(
+                app.doc().find_shape(b).expect("b").kind,
+                kind_b,
+                "{tool:?}: the other square is left alone"
+            );
+            // Nothing selected: nothing changes.
+            app.select(Vec::new());
+            let doc = app.doc().clone();
+            app.brush_begin(Point::new(60.0, 5.0));
+            for y in [10.0, 20.0, 30.0] {
+                app.brush_step(Point::new(62.0, y), false, 0.05);
+            }
+            assert_eq!(app.doc().pages, doc.pages, "{tool:?}");
+            assert!(app.selection.is_empty());
+            assert_eq!(app.status, crate::i18n::tr("status.brush_select_first"));
+        }
     }
 
     /// Attract pulls and Repel pushes; Shift swaps them. Twirl turns the

@@ -81,6 +81,102 @@ pub fn overlay(subject: &BezPath, clip: &BezPath, op: Op) -> BezPath {
     recover_curves(&from_shapes(result), &[subject, clip])
 }
 
+/// Which parts of an open path [`cut_open`] keeps.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Keep {
+    /// Outside every region (Trim, Weld).
+    Outside,
+    /// Inside every region (Intersect).
+    Inside,
+}
+
+/// An open path cut where it crosses the outlines of the closed
+/// `regions` (all in one space), keeping its pieces outside every region
+/// or inside every one. Each piece keeps the path's own lines and curves
+/// (a curve cut is a part of the same curve), and pieces that meet stay
+/// one subpath. The result is open (#828).
+pub fn cut_open(path: &BezPath, regions: &[BezPath], keep: Keep) -> BezPath {
+    use kurbo::{Line, PathSeg, Shape as _};
+    // The regions' outlines as straight edges, flattened finely.
+    let mut edges: Vec<Line> = Vec::new();
+    for r in regions {
+        let mut start: Option<Point> = None;
+        let mut last: Option<Point> = None;
+        kurbo::flatten(
+            r.elements().iter().copied(),
+            TOL / 4.0,
+            &mut |el| match el {
+                PathEl::MoveTo(p) => {
+                    if let (Some(a), Some(b)) = (last, start) {
+                        edges.push(Line::new(a, b));
+                    }
+                    start = Some(p);
+                    last = Some(p);
+                }
+                PathEl::LineTo(p) => {
+                    if let Some(a) = last {
+                        edges.push(Line::new(a, p));
+                    }
+                    last = Some(p);
+                }
+                PathEl::ClosePath => {
+                    if let (Some(a), Some(b)) = (last, start) {
+                        edges.push(Line::new(a, b));
+                    }
+                    last = start;
+                }
+                _ => {}
+            },
+        );
+        // Regions count as closed, closed or not.
+        if let (Some(a), Some(b)) = (last, start) {
+            if a != b {
+                edges.push(Line::new(a, b));
+            }
+        }
+    }
+    let kept = |p: Point| match keep {
+        Keep::Outside => regions.iter().all(|r| r.winding(p) == 0),
+        Keep::Inside => regions.iter().all(|r| r.winding(p) != 0),
+    };
+    let mut out = BezPath::new();
+    // Whether the last piece pushed ends where the next one starts.
+    let mut open_end: Option<Point> = None;
+    let push = |out: &mut BezPath, open_end: &mut Option<Point>, seg: PathSeg| {
+        let a = seg.start();
+        if open_end.is_none_or(|e| (e - a).hypot() > 1e-9) {
+            out.move_to(a);
+        }
+        match seg {
+            PathSeg::Line(l) => out.line_to(l.p1),
+            PathSeg::Quad(q) => out.quad_to(q.p1, q.p2),
+            PathSeg::Cubic(c) => out.curve_to(c.p1, c.p2, c.p3),
+        }
+        *open_end = Some(seg.end());
+    };
+    for seg in path.segments() {
+        let mut ts: Vec<f64> = edges
+            .iter()
+            .flat_map(|e| seg.intersect_line(*e))
+            .map(|i| i.segment_t)
+            .filter(|t| *t > 1e-9 && *t < 1.0 - 1e-9)
+            .collect();
+        ts.push(0.0);
+        ts.push(1.0);
+        ts.sort_by(|a, b| a.total_cmp(b));
+        ts.dedup_by(|a, b| (*a - *b).abs() < 1e-9);
+        for w in ts.windows(2) {
+            let piece = seg.subsegment(w[0]..w[1]);
+            if kept(piece.eval(0.5)) {
+                push(&mut out, &mut open_end, piece);
+            } else {
+                open_end = None;
+            }
+        }
+    }
+    out
+}
+
 /// Combine `subject` and `clip` as [`overlay`] does, each separate piece
 /// of the result (its outline with its holes) a path of its own.
 pub fn overlay_parts(subject: &BezPath, clip: &BezPath, op: Op) -> Vec<BezPath> {
@@ -2275,6 +2371,68 @@ mod tests {
         let area = band.area().abs();
         let want = std::f64::consts::PI * 49.0;
         assert!((area - want).abs() < want * 0.02, "{area} against {want}");
+    }
+
+    /// #828: an open path cut by closed regions keeps its pieces outside
+    /// them (or inside), open, each a part of its own line or curve.
+    #[test]
+    fn open_paths_are_cut_by_closed_regions() {
+        use super::{cut_open, Keep};
+        use crate::geometry::{BezPath, PathEl, Point, Rect, Shape as _};
+        let rect = Rect::new(20.0, -10.0, 60.0, 10.0).to_path(0.01);
+        let mut line = BezPath::new();
+        line.move_to((0.0, 0.0));
+        line.line_to((80.0, 0.0));
+        let outside = cut_open(&line, std::slice::from_ref(&rect), Keep::Outside);
+        let starts: Vec<Point> = outside
+            .elements()
+            .iter()
+            .filter_map(|e| match e {
+                PathEl::MoveTo(p) => Some(*p),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(starts.len(), 2, "{outside:?}");
+        let b = outside.bounding_box();
+        assert!((b.x0 - 0.0).abs() < 1e-9 && (b.x1 - 80.0).abs() < 1e-9);
+        assert!(!outside
+            .elements()
+            .iter()
+            .any(|e| matches!(e, PathEl::ClosePath)));
+        let len: f64 = outside.segments().map(|s| s.arclen(1e-6)).sum();
+        assert!((len - 40.0).abs() < 1e-6, "{len}");
+        let inside = cut_open(&line, std::slice::from_ref(&rect), Keep::Inside);
+        let b = inside.bounding_box();
+        assert!(
+            (b.x0 - 20.0).abs() < 1e-6 && (b.x1 - 60.0).abs() < 1e-6,
+            "{b:?}"
+        );
+        // A curve keeps its curve: the cut pieces are parts of it.
+        let mut arc = BezPath::new();
+        arc.move_to((0.0, 0.0));
+        arc.curve_to((20.0, 40.0), (60.0, 40.0), (80.0, 0.0));
+        let cut = cut_open(
+            &arc,
+            &[Rect::new(30.0, 0.0, 50.0, 50.0).to_path(0.01)],
+            Keep::Outside,
+        );
+        let curves = cut
+            .elements()
+            .iter()
+            .filter(|e| matches!(e, PathEl::CurveTo(..)))
+            .count();
+        assert_eq!(curves, 2, "{cut:?}");
+        let full: f64 = arc.segments().map(|s| s.arclen(1e-6)).sum();
+        let kept: f64 = cut.segments().map(|s| s.arclen(1e-6)).sum();
+        assert!(kept < full - 15.0 && kept > full - 25.0, "{kept} of {full}");
+        // Two regions: outside both.
+        let two = cut_open(
+            &line,
+            &[rect.clone(), Rect::new(70.0, -5.0, 90.0, 5.0).to_path(0.01)],
+            Keep::Outside,
+        );
+        let len: f64 = two.segments().map(|s| s.arclen(1e-6)).sum();
+        assert!((len - 30.0).abs() < 1e-6, "{len}");
     }
 
     #[test]

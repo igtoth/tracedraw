@@ -98,6 +98,17 @@ impl App {
                 self.start_text(at, None);
                 self.text_insert(&field);
                 self.finish_text();
+                // On every page: the field in the same place on the
+                // drawing's other pages too (#793).
+                if self.merge_docker.all_pages {
+                    let made =
+                        self.selection.first().copied().filter(|id| {
+                            self.doc().find_shape(*id).and_then(field_of) == Some(name)
+                        });
+                    if let Some(id) = made {
+                        self.copy_to_other_pages(id);
+                    }
+                }
             }
             return;
         }
@@ -160,8 +171,48 @@ impl App {
             });
         }
         match self.engine.run_batch("Insert Print Merge Field", &cmds) {
-            Ok(()) => self.select(vec![id]),
+            Ok(()) => {
+                self.select(vec![id]);
+                if d.all_pages {
+                    self.copy_to_other_pages(id);
+                }
+            }
             Err(e) => self.status = e.to_string(),
+        }
+    }
+
+    /// A copy of the object `id` (on the current page) in the same place
+    /// on every other page of the drawing, in the first layer there that
+    /// is shown and not locked, joining the undo step that made it: an
+    /// inserted field with On every page (#793).
+    fn copy_to_other_pages(&mut self, id: ShapeId) {
+        let Some(s) = self.doc().find_shape(id).cloned() else {
+            return;
+        };
+        if self.doc().top_level_of(id) != Some(id) {
+            return;
+        }
+        let current = self.page;
+        let targets: Vec<tracedraw_core::LayerId> = self
+            .doc()
+            .pages
+            .iter()
+            .filter(|pg| pg.id != current)
+            .filter_map(|pg| {
+                pg.layers
+                    .iter()
+                    .find(|l| l.visible && !l.locked)
+                    .map(|l| l.id)
+            })
+            .collect();
+        let mut cmds = Vec::new();
+        for layer in targets {
+            let new = self.engine.new_shape_id();
+            let shape = crate::app::reid_pub(s.clone(), new, &mut self.engine);
+            cmds.push(Command::AddShape { layer, shape });
+        }
+        if let Err(e) = self.engine.amend_batch("Insert Print Merge Field", &cmds) {
+            self.status = e.to_string();
         }
     }
 
@@ -670,8 +721,6 @@ pub fn print_merge(app: &mut App, ui: &mut Ui) {
                         .desired_width(ui.available_width()),
                 );
             });
-            ui.checkbox(&mut d.all_pages, tr("merge.all_pages"))
-                .on_hover_text(tr("merge.all_pages_tip"));
             ui.add_space(4.0);
             ui.label(tr("merge.align_scale"));
             ui.horizontal(|ui| {
@@ -686,6 +735,15 @@ pub fn print_merge(app: &mut App, ui: &mut Ui) {
                     });
             });
         }
+        // On every page, for every kind of field: Insert Field puts it on
+        // every page, Create Merged Document fills the drawing's own
+        // pages instead of making a new drawing (#598, #618, #793).
+        ui.checkbox(&mut d.all_pages, tr("merge.all_pages"))
+            .on_hover_text(tr(if d.kind == 1 {
+                "merge.all_pages_tip"
+            } else {
+                "merge.all_pages_text_tip"
+            }));
         ui.add_space(6.0);
         let wide = Vec2::new(full - 8.0, 26.0);
         if ui
@@ -951,6 +1009,81 @@ mod tests {
         app.undo();
         assert_eq!(text_on(&app, 0), "<Name>");
         assert_eq!(text_on(&app, 1), "<Name>");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// On every page with a text field (#793): in a drawing that already
+    /// has its pages, Insert Field puts the field in the same place on
+    /// every page, in one undo step, and Create Merged Document then
+    /// fills those pages, one record each, with no new drawing. Off, the
+    /// field goes on the current page alone.
+    #[test]
+    fn on_every_page_a_text_field_goes_on_every_page_and_merges_there() {
+        let dir = std::env::temp_dir().join(format!("td_merge_text_all_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut app = App::headless();
+        app.add_page();
+        app.add_page();
+        app.goto_page(0);
+        app.merge_state = Some(data(&dir));
+        app.merge_docker.kind = 0;
+        app.merge_docker.column = 0;
+        let texts = |app: &App, k: usize| -> Vec<(String, tracedraw_core::geometry::Rect)> {
+            all_of(&app.doc().pages[k])
+                .iter()
+                .filter_map(|s| match &s.kind {
+                    ShapeKind::Text { spans, .. } => Some((
+                        spans.iter().map(|sp| sp.text.as_str()).collect(),
+                        s.bounds(),
+                    )),
+                    _ => None,
+                })
+                .collect()
+        };
+        let depth = |app: &App| app.engine.history_labels().0.len();
+        // Off: the current page only.
+        let d0 = depth(&app);
+        app.insert_merge_field();
+        let steps = depth(&app) - d0;
+        assert_eq!(texts(&app, 0).len(), 1);
+        assert!(texts(&app, 1).is_empty() && texts(&app, 2).is_empty());
+        for _ in 0..steps {
+            app.undo();
+        }
+        assert!(texts(&app, 0).is_empty());
+        // On: every page, in the same place, with no undo step of its own.
+        app.merge_docker.all_pages = true;
+        app.insert_merge_field();
+        assert_eq!(depth(&app) - d0, steps, "the copies join the insert's step");
+        let on_first = texts(&app, 0);
+        assert_eq!(on_first.len(), 1);
+        for k in 1..3 {
+            let t = texts(&app, k);
+            assert_eq!(t.len(), 1, "page {k}");
+            assert_eq!(t[0].0, "<Name>");
+            assert!((t[0].1.x0 - on_first[0].1.x0).abs() < 1e-6, "page {k}");
+            assert!((t[0].1.y0 - on_first[0].1.y0).abs() < 1e-6, "page {k}");
+        }
+        // Every object has an id of its own.
+        let ids: std::collections::BTreeSet<_> = app
+            .doc()
+            .pages
+            .iter()
+            .flat_map(all_of)
+            .map(|s| s.id)
+            .collect();
+        assert_eq!(ids.len(), 3);
+        app.undo();
+        assert!((1..3).all(|k| texts(&app, k).is_empty()), "undone together");
+        app.redo();
+        assert!((0..3).all(|k| texts(&app, k).len() == 1));
+        // The merge fills the drawing's own pages.
+        app.create_merged_document(false);
+        assert_eq!(app.active_doc, 0, "no new drawing");
+        assert_eq!(app.doc().pages.len(), 3);
+        assert_eq!(texts(&app, 0)[0].0, "Ana");
+        assert_eq!(texts(&app, 1)[0].0, "Bob");
+        assert_eq!(texts(&app, 2)[0].0, "<Name>");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

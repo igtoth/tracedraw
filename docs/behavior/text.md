@@ -560,7 +560,12 @@ bitmaps-only counts from table version 2; the reserved bits, which old
 fonts set, mean nothing; `tracedraw_text::usable_in_documents`); others
 are skipped with a log line and their text falls back like any missing
 font. The Fonts docker marks carried families
-"embedded" under "Fonts in document". Saving a drawing as `.tdraw` adds
+"embedded" under "Fonts in document". In every font list (the property
+bar, the Text docker, the Glyphs docker) a carried family that is not
+installed shows "Embedded" in orange at the end of its row, and the font
+box shows it after the name while that family is the current one and
+nothing is typed in it (#518,
+`ui::font_list::tests::fonts_embedded_in_the_drawing_say_so`). Saving a drawing as `.tdraw` adds
 the carried fonts its text uses (text imported or pasted from another
 drawing), so the file keeps its letters on machines without them, and,
 with Save As's Embed fonts on (it starts off), the installed fonts its

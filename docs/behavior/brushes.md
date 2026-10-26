@@ -1,9 +1,12 @@
 # Shape brushes: Smooth, Smear, Twirl, Attract and Repel, Smudge, Roughen
 
 Drag over a selected curve (objects that are not curves are converted
-first; with nothing selected, the object under the pointer is taken) to
-reshape the outline within the nib. The whole drag is one undo step; the
-next drag is another.
+first) to reshape the outline within the nib. Only selected objects
+change: with nothing selected a drag does nothing and the status bar
+says "Select an object first, then drag over it with the brush"; a
+click selects (see "Clicks with drawing tools" in `toolbox.md`;
+`brushes::tests::brushes_change_only_the_selected_objects`). The whole
+drag is one undo step; the next drag is another.
 
 ## Common behaviour
 

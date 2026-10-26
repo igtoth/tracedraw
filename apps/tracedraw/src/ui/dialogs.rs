@@ -3445,6 +3445,70 @@ fn print_dialog(app: &mut App, ctx: &Context, st: &mut PrintState, close: &mut b
     });
 }
 
+/// The destination list (the system's printers in name order, then the
+/// PDF viewer and the file destinations), `width` wide, and the button
+/// of the chosen printer's own settings; the printer whose Properties
+/// button was clicked. The Print dialog's General tab and Print Preview
+/// show it (#614, #792).
+pub fn destination_row(ui: &mut Ui, st: &mut PrintState, width: f32) -> Option<String> {
+    let mut properties = None;
+    let dests = ["print.dest_viewer", "print.dest_pdf", "print.dest_ps"];
+    let on_printer = st.destination == 0 && st.printer.is_some();
+    let selected = match (&st.printer, st.destination) {
+        (Some(p), 0) => p.clone(),
+        _ => tr(dests[st.destination.min(2)]),
+    };
+    ui.horizontal(|ui| {
+        egui::ComboBox::from_id_salt("print_destination")
+            .selected_text(selected)
+            .width(width)
+            .show_ui(ui, |ui| {
+                if st.looking_for_printers && st.printers.is_empty() {
+                    ui.add_enabled(false, egui::Label::new(tr("print.looking")));
+                }
+                for p in st.printers.clone() {
+                    let is = on_printer && st.printer.as_deref() == Some(p.name.as_str());
+                    if ui.selectable_label(is, &p.name).clicked() {
+                        st.destination = 0;
+                        st.printer = Some(p.name.clone());
+                        st.printer_picked = true;
+                    }
+                }
+                for (i, d) in dests.iter().enumerate() {
+                    let is = st.destination == i && (i != 0 || !on_printer);
+                    if ui.selectable_label(is, tr(d)).clicked() {
+                        st.destination = i;
+                        st.printer_picked = true;
+                        if i == 0 {
+                            st.printer = None;
+                        }
+                    }
+                }
+            });
+        // The printer's own settings (#614).
+        let gear = ui
+            .add_enabled(
+                on_printer,
+                egui::Button::new("").min_size(egui::vec2(24.0, 22.0)),
+            )
+            .on_hover_text(tr("print.properties"));
+        crate::ui::icons::draw_action(
+            ui.painter(),
+            egui::Rect::from_center_size(gear.rect.center(), egui::vec2(16.0, 16.0)),
+            crate::ui::icons::Action::Options,
+            if on_printer {
+                Tokens::icon()
+            } else {
+                Tokens::icon_off()
+            },
+        );
+        if gear.clicked() {
+            properties = st.printer.clone();
+        }
+    });
+    properties
+}
+
 /// The General tab; the printer whose Properties button was clicked.
 fn print_tab_general(app: &App, ui: &mut Ui, st: &mut PrintState) -> Option<String> {
     let mut properties = None;
@@ -3454,63 +3518,9 @@ fn print_tab_general(app: &App, ui: &mut Ui, st: &mut PrintState) -> Option<Stri
             .spacing([8.0, 6.0])
             .show(ui, |ui| {
                 ui.label(tr("print.printer"));
-                // The system's printers (in name order), then the PDF
-                // viewer and the file destinations.
-                let dests = ["print.dest_viewer", "print.dest_pdf", "print.dest_ps"];
-                let on_printer = st.destination == 0 && st.printer.is_some();
-                let selected = match (&st.printer, st.destination) {
-                    (Some(p), 0) => p.clone(),
-                    _ => tr(dests[st.destination.min(2)]),
-                };
-                ui.horizontal(|ui| {
-                    egui::ComboBox::from_id_salt("print_destination")
-                        .selected_text(selected)
-                        .width(300.0)
-                        .show_ui(ui, |ui| {
-                            if st.looking_for_printers && st.printers.is_empty() {
-                                ui.add_enabled(false, egui::Label::new(tr("print.looking")));
-                            }
-                            for p in st.printers.clone() {
-                                let is =
-                                    on_printer && st.printer.as_deref() == Some(p.name.as_str());
-                                if ui.selectable_label(is, &p.name).clicked() {
-                                    st.destination = 0;
-                                    st.printer = Some(p.name.clone());
-                                    st.printer_picked = true;
-                                }
-                            }
-                            for (i, d) in dests.iter().enumerate() {
-                                let is = st.destination == i && (i != 0 || !on_printer);
-                                if ui.selectable_label(is, tr(d)).clicked() {
-                                    st.destination = i;
-                                    st.printer_picked = true;
-                                    if i == 0 {
-                                        st.printer = None;
-                                    }
-                                }
-                            }
-                        });
-                    // The printer's own settings (#614).
-                    let gear = ui
-                        .add_enabled(
-                            on_printer,
-                            egui::Button::new("").min_size(egui::vec2(24.0, 22.0)),
-                        )
-                        .on_hover_text(tr("print.properties"));
-                    crate::ui::icons::draw_action(
-                        ui.painter(),
-                        egui::Rect::from_center_size(gear.rect.center(), egui::vec2(16.0, 16.0)),
-                        crate::ui::icons::Action::Options,
-                        if on_printer {
-                            Tokens::icon()
-                        } else {
-                            Tokens::icon_off()
-                        },
-                    );
-                    if gear.clicked() {
-                        properties = st.printer.clone();
-                    }
-                });
+                if let Some(p) = destination_row(ui, st, 300.0) {
+                    properties = Some(p);
+                }
                 ui.end_row();
                 ui.label(tr("print.orientation"));
                 let ors = [
@@ -3531,6 +3541,7 @@ fn print_tab_general(app: &App, ui: &mut Ui, st: &mut PrintState) -> Option<Stri
                     });
                 ui.end_row();
                 // What the system says of the printer chosen (#614).
+                let on_printer = st.destination == 0 && st.printer.is_some();
                 let chosen = st
                     .printers
                     .iter()

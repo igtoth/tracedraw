@@ -436,7 +436,10 @@ impl App {
                 self.status = crate::i18n::tr("table.type_hint");
                 return;
             }
+            // Elsewhere a click selects, as with the other drawing tools.
             self.table_edit = None;
+            self.click_select(p, mods);
+            return;
         }
         if response.drag_started_by(PointerButton::Primary) {
             let start = hit.map(|(id, _)| id).or(over_table.map(|(id, _)| id));
