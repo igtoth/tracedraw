@@ -24,13 +24,17 @@ any other colour. The choices are kept in the preferences
    live effects counts as it is drawn (its warped outline and the
    objects its effects add). The area may lie anywhere, on the page or
    off it on the desktop, in a drawing of any size (#499).
-2. The outlines, flattened to 0.02 mm, cut a box around them all (their
+2. The end of an open outline that stops within 0.01 mm of another
+   outline (or of its own start) is joined to it by a short line, so a
+   drawing whose lines nearly meet, as files carry from rounding,
+   encloses its cells all the same (#899). A wider gap stays open.
+3. The outlines, flattened to 0.02 mm, cut a box around them all (their
    bounds and 2 mm more) into faces (`shaping::enclosed_area`). The face
    under the click is the area; a face that reaches the box's margin is
    open (nothing encloses it), and a click there or outside the box
    makes nothing and the status bar says so; a click exactly on an
    outline makes nothing.
-3. The outlines' own curves are put back into the face's sides, as the
+4. The outlines' own curves are put back into the face's sides, as the
    Shaping commands do: the new object follows the outlines exactly,
    its sides the same Bezier segments, with nodes only where outlines
    cross (#734; it was traced from pixels before, which gave jagged
@@ -45,6 +49,9 @@ any other colour. The choices are kept in the preferences
   outline, its own colour and outline, none).
 - `ui::fill_tool_bars::tests::smart_fill_works_off_the_page_in_a_large_drawing`
 - `shaping::tests::enclosed_area_keeps_the_outlines_curves`
+- `shaping::tests::enclosed_area_closes_hairline_gaps` (lines 0.0002 mm
+  short of a frame divide it; 0.2 mm short they do not; an open ring
+  closed by a hairline is an area of its own)
 - `pick_drag_tests::area_fill_keeps_the_curves_it_fills_between`
 - Given a circle 60 mm across, when the Area Fill tool clicks inside it,
   then the new object has four curves, every point within 0.02 mm of the

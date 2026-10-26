@@ -41,8 +41,9 @@ One window, 760 px wide, the same on every system:
   it; every face is listed in the file's font table either way. It is
   greyed below version 16 and when no face may be embedded. Both
   choices stay for the next Save As and for Save. Embed fonts starts
-  on.
-- **Embed fonts (size)** for TraceDraw files: on (as it starts), the
+  off, so that drawings saved one after another do not each carry a copy
+  of the same fonts (#886).
+- **Embed fonts (size)** for TraceDraw files: on (it starts off, #886), the
   installed fonts the text uses go into the `.tdraw` file, one file per
   face (the regular face for a bold or italic the family lacks), where
   the font's licence allows use in documents, so the drawing keeps its
