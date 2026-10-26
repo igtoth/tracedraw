@@ -6,10 +6,16 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Blend: the objects acceleration slider moves the steps toward the start or the end object, also when the blend follows no path. It changed only their sizes (with Apply to sizing) and turns, so moving it seemed to do nothing (#910).
+- Print Preview: the options at the left are wider and their edge drags wider, and what still does not fit scrolls sideways, so longer languages (Spanish and others) are no longer cut off at the right (#862).
+- Text panel, Paragraph: the icons beside the indent and spacing fields are drawn, so they show on every system; on Windows they were empty boxes, the interface fonts there lacking those arrows (#863).
+- Color Management Settings and Document Properties read in the dark themes: the page under their tabs is drawn in the theme's field colour instead of white, under the light labels (#904).
 - Envelope on text: letters given their own colour (or outline) keep it when the text is wrapped in an envelope, and the same holds for perspective and distortion. The warped text was drawn as one curve in the object's colour; it is now drawn as one curve for each colour, warped together as the whole text is (#912).
 
 ## 0.19.5 (2026-10-26)
 
+- Outlines: new outlines start with a mitre limit of 45 degrees instead of 5, so a thick outline on text or on shapes with narrow turns bevels those corners instead of growing long spikes. Outlines already in drawings keep their limit (#894).
+- Artistic and paragraph text: letters given another colour keep the font's kerning with the letters beside them. A text was shaped one colour at a time, so changing the colour of the "V" in "VA" dropped the pair's kerning and moved the "A" away; letters of the same font, size and placement are now shaped together whatever their colours, and no ligature joins two letters of different colours (#911).
 - Drop Shadow on a clip frame or a group: the shadow now shows, beneath the frame and everything placed inside it. The tool gave the frame a shadow but it was never drawn, so only an object inside the frame could have one. The shadow follows what the frame shows: its fill and the contents within it, not the parts of the contents outside the frame; groups cast the shadow of each of their objects, and Break Drop Shadow Apart makes the same picture (#873).
 - Text in a semibold face (or a light, medium or black one) shows that face everywhere: picking SemiBold under a family in the font list sets "Titillium Web SemiBold" instead of the family with Bold on, so the property bar and the Character docker no longer show Bold for it, and the docker's style list names the family's own faces (Regular, SemiBold, Bold ...). Such a face is no longer reported as a missing font substituted when its family is installed (#892, #624).
 - Save Drawing: New folder stays in the folder shown and starts renaming the new folder; any folder or file in the list can be renamed with F2 or a right click; typing letters in the list jumps to the entries starting with them, and Enter opens the folder picked (#913).

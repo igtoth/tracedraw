@@ -1483,8 +1483,10 @@ fn one() -> f64 {
 
 impl Stroke {
     pub const HAIRLINE: f64 = 0.0762;
-    /// Mitre limit of new outlines, degrees.
-    pub const DEFAULT_MITER_LIMIT: f64 = 5.0;
+    /// Mitre limit of new outlines, degrees: a corner sharper than a
+    /// right angle's half is bevelled, so a thick outline on lettering
+    /// does not grow long spikes at its narrow turns (#894).
+    pub const DEFAULT_MITER_LIMIT: f64 = 45.0;
     /// The range the mitre limit is kept in, degrees.
     pub const MITER_LIMIT_RANGE: std::ops::RangeInclusive<f64> = 1.0..=179.0;
 
@@ -2289,10 +2291,10 @@ mod arrowhead_tests {
     #[test]
     fn mitre_limit_angles_and_ratios_convert_both_ways() {
         let s = Stroke::new(Color::BLACK, 1.0);
-        assert_eq!(s.miter_limit, 5.0);
-        // 1 / sin(2.5 degrees)
+        assert_eq!(s.miter_limit, 45.0);
+        // 1 / sin(22.5 degrees)
         assert!(
-            (s.miter_ratio() - 22.926).abs() < 1e-3,
+            (s.miter_ratio() - 2.6131).abs() < 1e-3,
             "{}",
             s.miter_ratio()
         );
@@ -2305,7 +2307,7 @@ mod arrowhead_tests {
             assert!((back.miter_ratio() - r).abs() < 1e-9, "{r}");
         }
         for bad in [f64::NAN, 0.5, f64::INFINITY] {
-            assert_eq!(Stroke::miter_angle_from_ratio(bad), 5.0);
+            assert_eq!(Stroke::miter_angle_from_ratio(bad), 45.0);
         }
         let odd = Stroke {
             miter_limit: f64::NAN,

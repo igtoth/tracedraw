@@ -2545,6 +2545,27 @@ mod tests {
         assert!(cut < 51.0, "{cut}");
     }
 
+    /// A thick outline with the default mitre limit keeps narrow turns
+    /// (the joins inside lettering) to a bevel, not a long spike (#894).
+    #[test]
+    fn a_thick_default_outline_grows_no_spikes() {
+        use crate::style::Stroke;
+        // Two turns of about 20 degrees, like a stem meeting a serifless
+        // curve; the outline is as wide as the shape is tall.
+        let mut shape = BezPath::new();
+        shape.move_to((0.0, 0.0));
+        shape.line_to((40.0, 0.0));
+        shape.line_to((0.0, 7.0));
+        shape.line_to((0.0, 14.0));
+        shape.line_to((40.0, 14.0));
+        shape.close_path();
+        let st = Stroke::new(crate::Color::BLACK, 14.0);
+        let reach = stroke_area(&shape, &st).bounding_box();
+        // Half the width each side and a bevel: never several widths out.
+        assert!(reach.x1 < 40.0 + 14.0, "{reach:?}");
+        assert!(reach.x0 > -14.0, "{reach:?}");
+    }
+
     /// Whether `p` is on the drawn part of `dashes` (within `tol`).
     fn covered(dashes: &BezPath, p: Point, tol: f64) -> bool {
         use kurbo::ParamCurveNearest as _;

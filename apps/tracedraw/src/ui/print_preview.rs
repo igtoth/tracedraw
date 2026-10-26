@@ -134,6 +134,9 @@ fn plate_names(doc: &Document) -> Vec<String> {
     names
 }
 
+/// The id of the options panel at the left of Print Preview.
+const PREVIEW_OPTIONS: &str = "print_preview_options";
+
 pub fn show(app: &mut App, ui: &mut Ui) {
     let Some(mut pv) = app.print_preview.take() else {
         return;
@@ -212,11 +215,14 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     };
     pv.inks.resize(ink_names.len().saturating_sub(1), true);
 
-    egui::Panel::left("print_preview_options")
-        .resizable(false)
-        .exact_size(330.0)
+    // Wide enough for the longer languages; its edge drags wider still,
+    // and what does not fit scrolls sideways instead of being cut (#862).
+    egui::Panel::left(PREVIEW_OPTIONS)
+        .resizable(true)
+        .default_size(360.0)
+        .size_range(300.0..=720.0)
         .show(ui, |ui| {
-            egui::ScrollArea::vertical().show(ui, |ui| {
+            egui::ScrollArea::both().show(ui, |ui| {
                 let st = &mut pv.st;
                 // The printer and its own settings, the copies: what the
                 // Print button prints with (#792).
@@ -999,5 +1005,76 @@ mod tests {
             let px = img.pixels[y * w + x];
             assert!(px.r() > 200 && px.g() < 80, "cell at {m:?}: {px:?}");
         }
+    }
+
+    /// The options at the left of Print Preview come wider than before
+    /// and their edge drags wider, so the longer languages are not cut
+    /// off (#862).
+    #[test]
+    fn the_options_panel_is_wider_and_its_edge_drags() {
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        app.show_welcome = false;
+        app.print_preview(None);
+        let run = |app: &mut App, events: Vec<egui::Event>| {
+            let mut out = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(1400.0, 900.0),
+                    )),
+                    events,
+                    ..Default::default()
+                },
+                |ui| show(app, ui),
+            );
+            out.textures_delta.clear();
+        };
+        for _ in 0..3 {
+            run(&mut app, Vec::new());
+        }
+        let id = egui::Id::new(PREVIEW_OPTIONS);
+        let width = || {
+            egui::containers::panel::PanelState::load(&ctx, id)
+                .map(|s| s.outer_rect.width())
+                .expect("the panel's state")
+        };
+        let start = width();
+        assert!(start >= 355.0, "{start}");
+        let right = egui::containers::panel::PanelState::load(&ctx, id)
+            .map(|s| s.outer_rect.right())
+            .expect("the panel's state");
+        let edge = egui::pos2(right - 2.0, 450.0);
+        let to = edge + egui::vec2(120.0, 0.0);
+        run(&mut app, vec![egui::Event::PointerMoved(edge)]);
+        run(
+            &mut app,
+            vec![egui::Event::PointerButton {
+                pos: edge,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::NONE,
+            }],
+        );
+        for k in 1..=6 {
+            run(
+                &mut app,
+                vec![egui::Event::PointerMoved(
+                    edge + (to - edge) * (k as f32 / 6.0),
+                )],
+            );
+        }
+        run(
+            &mut app,
+            vec![egui::Event::PointerButton {
+                pos: to,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: egui::Modifiers::NONE,
+            }],
+        );
+        run(&mut app, Vec::new());
+        assert!(width() > start + 80.0, "{start} -> {}", width());
+        assert!(app.print_preview.is_some());
     }
 }

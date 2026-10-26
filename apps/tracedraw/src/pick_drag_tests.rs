@@ -7425,10 +7425,19 @@ fn the_edge_of_the_shape_being_drawn_shows_over_a_wide_outline() {
             matches!(s, egui::Shape::Path(p) if p.stroke.width >= wide - 0.01
                 && p.stroke.color == egui::epaint::ColorMode::Solid(egui::Color32::BLACK))
         });
-        let edge = shapes.iter().rposition(|s| {
-            matches!(s, egui::Shape::LineSegment { stroke, .. }
-                if stroke.color == egui::Color32::WHITE
-                    && (stroke.width - crate::canvas::HALO_WIDTH).abs() < 1e-3)
+        // The white line under the edge: segments for a short outline,
+        // a path for a long one such as an ellipse's.
+        let halo = |stroke: &egui::Stroke| {
+            stroke.color == egui::Color32::WHITE
+                && (stroke.width - crate::canvas::HALO_WIDTH).abs() < 1e-3
+        };
+        let edge = shapes.iter().rposition(|s| match s {
+            egui::Shape::LineSegment { stroke, .. } => halo(stroke),
+            egui::Shape::Path(p) => {
+                (p.stroke.width - crate::canvas::HALO_WIDTH).abs() < 1e-3
+                    && p.stroke.color == egui::epaint::ColorMode::Solid(egui::Color32::WHITE)
+            }
+            _ => false,
         });
         assert!(
             matches!((outline, edge), (Some(o), Some(e)) if e > o),
