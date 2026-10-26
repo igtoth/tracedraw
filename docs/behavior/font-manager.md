@@ -62,8 +62,12 @@ dialogs it keeps the rest of the application waiting until it closes.
 ## Installing
 
 - A folder added is scanned for font files (TTF, OTF, TTC, OTC) three
-  levels down, off the interface thread; its faces show as not
-  installed unless their file is already loaded.
+  levels down, off the interface thread, and its fonts are loaded for
+  TraceDraw at once and at every start while the folder is in the
+  libraries, so they can be used in drawings without Install. Remove
+  Folder takes them out again, except files installed on their own or
+  in another folder still added; the system's fonts are never taken out
+  (#866, `ui::font_manager::tests::the_fonts_of_an_added_folder_are_usable`).
 - Install loads the picked faces' files into the font database for this
   session and keeps their paths in the settings: TraceDraw loads them
   again at every start. Add Font installs one file at once.

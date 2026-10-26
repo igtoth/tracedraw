@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Font Manager: the fonts of a folder added to the libraries can be used in drawings straight away and after every restart, without installing them one by one; removing the folder takes them out again, except fonts installed on their own (#866).
+
 ## 0.19.4 (2026-10-26)
 
 - Print Preview: a page smaller than the paper repeated on it (step and repeat, several pages per sheet) shows every copy. Only the copies in one band of the preview were drawn and white covered the rest; any group or clip frame moved by its own transform was left out the same way in large renders (#848).

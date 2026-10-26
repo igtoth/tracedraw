@@ -1130,6 +1130,11 @@ impl FontSystem {
         Self::from_db(db)
     }
 
+    /// A font system with no fonts, for tests that install their own.
+    pub fn empty() -> Self {
+        Self::from_db(fontdb::Database::new())
+    }
+
     /// A font system over `db` (tests start from an empty one).
     fn from_db(db: fontdb::Database) -> Self {
         let mut families: Vec<String> = db
