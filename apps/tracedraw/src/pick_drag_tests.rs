@@ -7090,6 +7090,150 @@ fn corner_widgets_round_every_corner_or_the_chosen_ones() {
     }
 }
 
+/// A corner rounded with a widget can be rounded again (#872): the curve
+/// selected later shows a widget off the middle of each arc, and
+/// dragging it changes the radius from where it was, further in or back
+/// to a sharp corner, in one undo step; with an arc's node chosen only
+/// that corner changes.
+#[test]
+fn rounded_corners_keep_their_widgets_and_round_again() {
+    use tracedraw_core::corner_cut::fillets;
+    use tracedraw_core::geometry::{BezPath, Shape as _};
+    let (ctx, mut app, rect) = setup();
+    app.select(vec![rect]);
+    app.delete_selection();
+    let mut square = BezPath::new();
+    square.move_to((20.0, 20.0));
+    square.line_to((60.0, 20.0));
+    square.line_to((60.0, 60.0));
+    square.line_to((20.0, 60.0));
+    square.close_path();
+    let id = app
+        .new_shape(ShapeKind::Path {
+            path: square.clone(),
+            closed: true,
+        })
+        .expect("square");
+    app.select(vec![id]);
+    app.set_tool(Tool::Shape);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let path_of = |app: &App| match &app.doc().find_shape(id).expect("curve").kind {
+        ShapeKind::Path { path, .. } => path.clone(),
+        _ => panic!("a curve"),
+    };
+    let centre = app.view.to_screen(Point::new(40.0, 40.0));
+    let zoom = app.view.zoom;
+    // Every drag below moves far enough to be a drag, not a click.
+    assert!(5.0 * zoom > 8.0, "{zoom}");
+    let r_of = |d: f64| crate::corner_widgets::radius_for(d, std::f64::consts::FRAC_PI_2);
+    // Rounded 7 mm in.
+    let w = app.corner_widgets()[0];
+    let dir = (centre - w.at).normalized();
+    drag(
+        &ctx,
+        &mut app,
+        w.at,
+        w.at + dir * (7.0 * zoom),
+        Modifiers::NONE,
+        Vec::new(),
+    );
+    let once = path_of(&app);
+    let found = fillets(&once);
+    assert_eq!(found.len(), 4, "{found:?}");
+    assert!(found.iter().all(|f| (f.radius - r_of(7.0)).abs() < 0.05));
+    // Selected again: a widget on every rounded corner, off its arc.
+    app.select(Vec::new());
+    app.select(vec![id]);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let widgets = app.corner_widgets();
+    assert_eq!(widgets.len(), 4, "{widgets:?}");
+    let w = widgets[0];
+    assert!((w.depth - 7.0).abs() < 0.05, "{}", w.depth);
+    let mid = app.view.to_screen(w.corner.at + w.corner.inside * w.depth);
+    assert!(
+        ((w.at - mid).length() - crate::corner_widgets::WIDGET_OFFSET_PX).abs() < 0.5,
+        "{:?} {mid:?}",
+        w.at
+    );
+    // Dragged 5 mm back out: every corner takes the radius whose arc
+    // lies 2 mm in.
+    let dir = (centre - w.at).normalized();
+    drag(
+        &ctx,
+        &mut app,
+        w.at,
+        w.at - dir * (5.0 * zoom),
+        Modifiers::NONE,
+        Vec::new(),
+    );
+    let twice = path_of(&app);
+    let found = fillets(&twice);
+    assert_eq!(found.len(), 4, "{found:?}");
+    for f in &found {
+        assert!((f.radius - r_of(2.0)).abs() < 0.05, "{}", f.radius);
+    }
+    let b = twice.bounding_box();
+    assert!(
+        (b.width() - 40.0).abs() < 1e-6,
+        "the sides keep their place"
+    );
+    // One undo step back to the first rounding.
+    app.undo();
+    assert_eq!(path_of(&app), once);
+    // Dragged back out past the corner: sharp again.
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let w = app.corner_widgets()[0];
+    let dir = (centre - w.at).normalized();
+    drag(
+        &ctx,
+        &mut app,
+        w.at,
+        w.at - dir * (10.0 * zoom),
+        Modifiers::NONE,
+        Vec::new(),
+    );
+    let sharp = path_of(&app);
+    assert!(fillets(&sharp).is_empty());
+    assert!(
+        (sharp.area().abs() - 1600.0).abs() < 1e-6,
+        "{}",
+        sharp.area()
+    );
+    app.undo();
+    assert_eq!(path_of(&app), once);
+    // An arc's node chosen: only its corner has a widget, and only it
+    // changes.
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let target = fillets(&once)[2].clone();
+    app.node_selection = vec![(id, target.nodes[0])];
+    let widgets = app.corner_widgets();
+    assert_eq!(widgets.len(), 1, "{widgets:?}");
+    let w = widgets[0];
+    assert!((w.corner.at - target.corner).hypot() < 1e-6);
+    let dir = (centre - w.at).normalized();
+    drag(
+        &ctx,
+        &mut app,
+        w.at,
+        w.at - dir * (5.0 * zoom),
+        Modifiers::NONE,
+        Vec::new(),
+    );
+    let found = fillets(&path_of(&app));
+    assert_eq!(found.len(), 4, "{found:?}");
+    let changed: Vec<_> = found
+        .iter()
+        .filter(|f| (f.radius - r_of(7.0)).abs() > 0.05)
+        .collect();
+    assert_eq!(changed.len(), 1, "{found:?}");
+    assert!((changed[0].corner - target.corner).hypot() < 1e-6);
+    assert!(
+        (changed[0].radius - r_of(2.0)).abs() < 0.05,
+        "{}",
+        changed[0].radius
+    );
+}
+
 /// Every shape of one frame, nested ones taken out of their lists.
 fn frame_shapes(ctx: &egui::Context, app: &mut App, events: Vec<Event>) -> Vec<egui::Shape> {
     let input = egui::RawInput {

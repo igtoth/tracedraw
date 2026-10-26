@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Shape tool: a corner rounded with its corner widget can be rounded again. Selecting the curve later shows a widget on each rounded corner, and dragging it changes the radius from the one it has, further in or back to a sharp corner; the widget had disappeared once the corner was rounded. This works for corners rounded between straight sides, also in saved drawings and with the Corners panel (#872).
 - Multipage View: zooming with every page in view stays smooth, and the other pages scale with the zoom instead of jiggling and stretching. Each page was drawn anew on every frame of the zoom, and the picture shown meanwhile was stretched over the page's visible part; now the last picture follows its page until the view rests, and the pages are then drawn a few per frame. On nine pages of 1500 curves each, a zoom frame went from about 300 ms to under 1 ms (#903, #902).
 - Blend: the objects acceleration slider moves the steps toward the start or the end object, also when the blend follows no path. It changed only their sizes (with Apply to sizing) and turns, so moving it seemed to do nothing (#910).
 - Print Preview: the options at the left are wider and their edge drags wider, and what still does not fit scrolls sideways, so longer languages (Spanish and others) are no longer cut off at the right (#862).
