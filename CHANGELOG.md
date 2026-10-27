@@ -7,6 +7,7 @@ full, row-by-row status.
 ## Unreleased
 
 - Distort: a value changed on the property bar (Amplitude, Frequency, Random, Smooth, Local, direction, Rotations, Degrees) shows on the selected object at once, also when it has no distortion yet. It changed only objects already distorted, so with a plain object selected the bar seemed to do nothing until Apply (#1030).
+- Print Merge: Place Inside Frame, picking the shape with a click, takes a shape that already holds a picture, not the picture inside it. The merge then put each record's photo in that picture's box, with the old picture still showing next to the shape (#596).
 - Web version: a notch of the mouse wheel zooms 15 % about the pointer, as on the desktop. The browser sends a notch as 100 pixels or three lines, which the canvas read as several notches, so every notch zoomed far more than that at once (#1016).
 - Pick and Freehand Pick: a right click while dragging a selection box no longer leaves the box frozen on the canvas. The right button is ignored: the box goes on with the pointer and selects when the left button goes up, whichever button is released first (#1015).
 - Pen and Bezier: a handle pulled out of the drawing window (over a docker or a toolbar) and let go there ends the pull. The preview stayed stuck where the pointer left the drawing, and the first click back on it only brought the preview back instead of placing a node (#1014).
