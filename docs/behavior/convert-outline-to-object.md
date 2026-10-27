@@ -2,8 +2,12 @@
 
 Object > Convert Outline to Object (Ctrl+Shift+Q) replaces the outline
 of each selected object by a new closed object filled with the outline's
-colour, the shape the outline draws; the original keeps its fill and
-loses its outline. One undo step, and the new objects are selected.
+colour, the shape the outline draws, placed right above its object in
+that object's layer. An object whose fill draws something keeps its fill
+and loses its outline; one without a fill, or an open line or curve
+(whose fill is not drawn unless the document fills open curves), is
+replaced by the new object, so no invisible object stays behind (#999).
+One undo step, and the new objects are selected.
 
 - A hairline counts as 0.25 mm wide.
 - A dashed outline keeps its dashes: each dash becomes a closed shape of
@@ -36,6 +40,14 @@ loses its outline. One undo step, and the new objects are selected.
 
 ## Checks
 
+- Given three rectangles, the middle one with an outline and no fill,
+  the result is three objects with the outline object in the middle
+  and the original gone; Undo brings the original back in one step
+  (`tools2::tests::an_unfilled_object_is_replaced_by_its_outline`). An
+  open curve is replaced the same way
+  (`tools2::tests::an_open_curve_is_replaced_by_its_outline`); a filled
+  middle rectangle keeps its fill with the outline object right above it
+  (`tools2::tests::a_filled_object_keeps_its_fill_under_its_outline`).
 - Given a line with a dashed outline, the result is one closed shape
   per dash with the gaps empty
   (`tools2::tests::a_dashed_outline_becomes_one_shape_per_dash`).

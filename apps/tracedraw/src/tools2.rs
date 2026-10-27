@@ -439,17 +439,55 @@ impl App {
             o.fill = Fill::Solid(st.color);
             o.stroke = None;
             o.name = Some("Outline".into());
-            cmds.push(Command::AddShape { layer, shape: o });
-            cmds.push(Command::SetStroke {
-                shapes: vec![s.id],
-                stroke: None,
+            // The new object takes the outline's place: right above its
+            // object in that object's layer, so the stacking order stays.
+            let placed = self.doc().locate(s.id).ok();
+            cmds.push(Command::AddShape {
+                layer: placed.map(|(l, _)| l).unwrap_or(layer),
+                shape: o,
             });
+            if placed.is_some() {
+                cmds.push(Command::OrderRelative {
+                    shapes: vec![id],
+                    reference: s.id,
+                    in_front: true,
+                });
+            }
+            // An object whose fill draws nothing (no fill, or an open
+            // curve) would stay behind invisible: the outline replaces it
+            // (#999).
+            if fill_draws(&s, self.doc().metadata.fill_open_curves) {
+                cmds.push(Command::SetStroke {
+                    shapes: vec![s.id],
+                    stroke: None,
+                });
+            } else {
+                cmds.push(Command::DeleteShapes { shapes: vec![s.id] });
+            }
             ids.push(id);
         }
         if !cmds.is_empty() {
             let _ = self.engine.run_batch("Convert Outline To Object", &cmds);
             self.select(ids);
         }
+    }
+}
+
+/// Whether the fill of `s` draws anything: it has one, and an open curve
+/// fills only its closed subpaths unless the document fills open curves
+/// (`fill_open`), as the renderer does.
+fn fill_draws(s: &Shape, fill_open: bool) -> bool {
+    if matches!(s.fill, Fill::None) {
+        return false;
+    }
+    match &s.kind {
+        ShapeKind::Path {
+            path,
+            closed: false,
+        } if !fill_open => !tracedraw_render::closed_subpaths(path)
+            .elements()
+            .is_empty(),
+        _ => true,
     }
 }
 
@@ -745,6 +783,106 @@ mod tests {
         let pp = out.page_path();
         assert!(!kurbo::Shape::contains(&pp, Point::new(15.0, 10.0)));
         assert!(kurbo::Shape::contains(&pp, Point::new(12.0, 10.0)));
+    }
+
+    /// Three rectangles stacked, the middle one with a 2 mm outline and
+    /// `fill`: the app, the layer's ids bottom to top and the middle id.
+    fn stacked_with_outline(fill: Fill) -> (App, Vec<ShapeId>, ShapeId) {
+        let mut app = App::headless();
+        let mut ids = Vec::new();
+        for i in 0..3 {
+            let x = 10.0 + 10.0 * i as f64;
+            let id = app
+                .new_shape(ShapeKind::Rect {
+                    rect: Rect::new(x, 10.0, x + 30.0, 40.0),
+                    radius: 0.0,
+                    corners: None,
+                })
+                .expect("rect");
+            ids.push(id);
+        }
+        let mid = ids[1];
+        app.run(Command::SetFill {
+            shapes: vec![mid],
+            fill,
+        });
+        app.run(Command::SetStroke {
+            shapes: vec![mid],
+            stroke: Some(Stroke::new(tracedraw_core::Color::BLACK, 2.0)),
+        });
+        app.select(vec![mid]);
+        (app, ids, mid)
+    }
+
+    fn layer_ids(app: &App) -> Vec<ShapeId> {
+        let layer = app.active_layer().expect("layer");
+        app.doc()
+            .layer(layer)
+            .expect("layer")
+            .shapes
+            .iter()
+            .map(|s| s.id)
+            .collect()
+    }
+
+    /// An object without a fill is replaced by its outline: one object,
+    /// where the original was in the stacking order, one undo step
+    /// (#999).
+    #[test]
+    fn an_unfilled_object_is_replaced_by_its_outline() {
+        let (mut app, ids, mid) = stacked_with_outline(Fill::None);
+        app.convert_outline_to_object();
+        let new = app.selection[0];
+        assert_eq!(layer_ids(&app), vec![ids[0], new, ids[2]]);
+        assert!(
+            app.doc().find_shape(mid).is_none(),
+            "no invisible object left"
+        );
+        app.undo();
+        assert_eq!(layer_ids(&app), ids);
+        let back = app.doc().find_shape(mid).expect("original back");
+        assert!(back.stroke.is_some());
+    }
+
+    /// An open curve draws no fill: it is replaced as well (#999).
+    #[test]
+    fn an_open_curve_is_replaced_by_its_outline() {
+        let mut app = App::headless();
+        let mut line = BezPath::new();
+        line.move_to((10.0, 10.0));
+        line.curve_to((20.0, 0.0), (30.0, 20.0), (40.0, 10.0));
+        let id = app
+            .new_shape(ShapeKind::Path {
+                path: line,
+                closed: false,
+            })
+            .expect("line");
+        app.run(Command::SetFill {
+            shapes: vec![id],
+            fill: Fill::Solid(tracedraw_core::Color::BLACK),
+        });
+        app.run(Command::SetStroke {
+            shapes: vec![id],
+            stroke: Some(Stroke::new(tracedraw_core::Color::BLACK, 2.0)),
+        });
+        app.select(vec![id]);
+        app.convert_outline_to_object();
+        assert_eq!(layer_ids(&app), app.selection);
+        assert!(app.doc().find_shape(id).is_none());
+    }
+
+    /// A filled object keeps its fill, and the outline lies right above
+    /// it, not on top of everything else.
+    #[test]
+    fn a_filled_object_keeps_its_fill_under_its_outline() {
+        let fill = Fill::Solid(tracedraw_core::Color::BLACK);
+        let (mut app, ids, mid) = stacked_with_outline(fill.clone());
+        app.convert_outline_to_object();
+        let new = app.selection[0];
+        assert_eq!(layer_ids(&app), vec![ids[0], mid, new, ids[2]]);
+        let kept = app.doc().find_shape(mid).expect("original");
+        assert!(kept.stroke.is_none());
+        assert_eq!(kept.fill, fill);
     }
 
     /// Ctrl+Shift+Q on an object of `kind` with a `width` mm black
