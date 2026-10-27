@@ -200,11 +200,14 @@ pub enum FillField {
     Repeat,
     Bilinear,
     Invert,
+    /// Where the nodes are placed freely (see `Fountain::handles`), or
+    /// none: the angle and the offset place the fill.
+    Handles,
 }
 
 impl FillField {
     /// The gradient fields, in the order an editor shows them.
-    pub const FOUNTAIN: [FillField; 10] = [
+    pub const FOUNTAIN: [FillField; 11] = [
         FillField::FountainKind,
         FillField::StartColor,
         FillField::EndColor,
@@ -215,6 +218,7 @@ impl FillField {
         FillField::Repeat,
         FillField::Bilinear,
         FillField::Invert,
+        FillField::Handles,
     ];
 
     fn same_fountain(self, a: &Fountain, b: &Fountain) -> bool {
@@ -234,6 +238,7 @@ impl FillField {
             FillField::Repeat => a.repeat == b.repeat && a.repeats == b.repeats,
             FillField::Bilinear => a.bilinear == b.bilinear,
             FillField::Invert => a.invert == b.invert,
+            FillField::Handles => a.handles == b.handles,
         }
     }
 
@@ -261,6 +266,7 @@ impl FillField {
             }
             FillField::Bilinear => to.bilinear = from.bilinear,
             FillField::Invert => to.invert = from.invert,
+            FillField::Handles => to.handles = from.handles,
         }
     }
 }
@@ -493,6 +499,30 @@ mod tests {
         // A type change is the whole fill.
         assert_eq!(fill_changes(&solid, &a), vec![FillField::All]);
         assert!(fill_changes(&a, &a).is_empty());
+    }
+
+    /// Nodes placed freely (or taken back to the angle and the offset)
+    /// are a change of their own that a patch carries (#939).
+    #[test]
+    fn placed_nodes_are_a_change_of_their_own() {
+        let a = Fill::linear(Color::BLACK, Color::WHITE, 0.0);
+        let Fill::Fountain(mut fb) = a.clone() else {
+            panic!("a gradient");
+        };
+        fb.handles = Some(crate::style::FountainHandles {
+            start: crate::geometry::Point::new(-1.0, 0.0),
+            end: crate::geometry::Point::new(0.5, 0.0),
+            skew: crate::geometry::Point::new(-1.0, 1.0),
+        });
+        let b = Fill::Fountain(fb.clone());
+        assert_eq!(fill_changes(&a, &b), vec![FillField::Handles]);
+        let target = Fill::linear(Color::rgb8(255, 0, 0), Color::WHITE, 0.0);
+        let Fill::Fountain(out) = patch_fill(&target, &b, &[FillField::Handles]) else {
+            panic!("a gradient");
+        };
+        assert_eq!(out.handles, fb.handles);
+        assert_eq!(out.stops[0].color, Color::rgb8(255, 0, 0));
+        assert_eq!(fill_changes(&b, &a), vec![FillField::Handles]);
     }
 
     #[test]
