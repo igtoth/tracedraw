@@ -169,9 +169,58 @@ pub fn model_list(ui: &mut Ui, id: Id, c: &mut Color) -> bool {
 }
 
 /// A colour chosen in the viewer (hue, saturation, brightness) as a
-/// colour of `model`.
+/// colour of `model`. In CMYK the square spans the ink space itself
+/// (#907): left to right the hue's inks go from none to full, top to
+/// bottom black ink goes from 0 to 100%, so every corner is a CMYK
+/// extreme (paper, the hue's solid inks, K 100, the hue's inks over
+/// K 100) instead of a screen colour the press cannot print.
 pub fn from_viewer(h: f32, s: f32, b: f32, model: &str) -> Color {
-    Color::Hsb { h, s, b }.convert_to(model)
+    if model == "CMYK" {
+        let [c, m, y] = hue_inks(h);
+        let s = unit(s);
+        Color::Cmyk {
+            c: c * s,
+            m: m * s,
+            y: y * s,
+            k: 1.0 - unit(b),
+        }
+    } else {
+        Color::Hsb { h, s, b }.convert_to(model)
+    }
+}
+
+/// `v` within 0..1 (0 for NaN).
+fn unit(v: f32) -> f32 {
+    if v.is_nan() {
+        0.0
+    } else {
+        v.clamp(0.0, 1.0)
+    }
+}
+
+/// The C, M and Y inks of hue `h` at full strength: the complement of
+/// the hue's pure screen colour, so one ink is solid, one is off and the
+/// third blends between hues.
+fn hue_inks(h: f32) -> [f32; 3] {
+    let h = if h.is_finite() { h } else { 0.0 };
+    tracedraw_core::color::hsb_to_rgb(h.rem_euclid(360.0), 1.0, 1.0).map(|v| 1.0 - unit(v))
+}
+
+/// Where the viewer shows `c` (hue, saturation, brightness), the way
+/// back of [`from_viewer`] for the colour's edit model: in CMYK its inks
+/// (black ink sets the height, the strongest of C, M and Y the width,
+/// their balance the hue), else its screen look.
+pub fn viewer_point(c: Color) -> (f32, f32, f32) {
+    if edit_model(c) == "CMYK" {
+        if let Color::Cmyk { c, m, y, k } = c.process().convert_to("CMYK") {
+            let (c, m, y) = (unit(c), unit(m), unit(y));
+            let s = c.max(m).max(y);
+            let (h, _, _) = tracedraw_core::color::rgb_to_hsb(1.0 - c, 1.0 - m, 1.0 - y);
+            return (h, s, 1.0 - unit(k));
+        }
+    }
+    let (h, s, b) = c.to_hsb();
+    (h as f32, s as f32, b as f32)
 }
 
 /// Whether the popup closes: on Esc, or on a press outside it and its
@@ -286,7 +335,7 @@ pub fn color_button(ui: &mut Ui, c: &mut Color) -> bool {
         open = match open {
             Some(_) => None,
             None => Some(Open {
-                hue: c.to_hsb().0 as f32,
+                hue: viewer_point(*c).0,
                 size: FIRST_SIZE,
                 offset: Vec2::ZERO,
             }),
@@ -446,6 +495,47 @@ mod tests {
             Color::Rgb { .. }
         ));
         assert_eq!(edit_model(Color::Registration), "CMYK");
+    }
+
+    /// In CMYK the viewer spans the inks (#907): the way back of every
+    /// point gives the point again, so the ring sits where it was put
+    /// and can reach the edges and corners.
+    #[test]
+    fn the_cmyk_viewer_round_trips_its_points() {
+        for h in [0.0f32, 30.0, 90.0, 180.0, 250.0, 330.0] {
+            for s in [0.0f32, 0.25, 1.0] {
+                for b in [0.0f32, 0.4, 1.0] {
+                    let c = from_viewer(h, s, b, "CMYK");
+                    let Color::Cmyk { c: cc, m, y, k } = c else {
+                        panic!("{c:?}");
+                    };
+                    assert!(cc + m + y + k <= 3.0 + 1e-5, "ink limit {c:?}");
+                    let (h2, s2, b2) = viewer_point(c);
+                    assert!(
+                        (s2 - s).abs() < 1e-4 && (b2 - b).abs() < 1e-4,
+                        "{h} {s} {b}: {s2} {b2}"
+                    );
+                    if s > 0.0 {
+                        let dh = (h2 - h).rem_euclid(360.0);
+                        assert!(dh.min(360.0 - dh) < 0.1, "{h} {s} {b}: {h2}");
+                    }
+                }
+            }
+        }
+        // A spot ink is shown by its process inks.
+        let spot = Color::Spot {
+            ink: 1,
+            tint: 1.0,
+            c: 0.0,
+            m: 1.0,
+            y: 1.0,
+            k: 0.0,
+        };
+        let (_, s, b) = viewer_point(spot);
+        assert!((s - 1.0).abs() < 1e-4 && (b - 1.0).abs() < 1e-4, "{s} {b}");
+        // Nonsense from a file does not panic.
+        let odd = from_viewer(f32::NAN, f32::NAN, f32::INFINITY, "CMYK");
+        assert!(matches!(odd, Color::Cmyk { .. }));
     }
 
     /// The Model list offers the registration colour after the models, as

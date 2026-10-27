@@ -77,9 +77,9 @@ fn follow_selection(app: &mut App) {
 fn set_color(app: &mut App, c: Color) {
     let model = MODELS.get(app.color_model).copied().unwrap_or("CMYK");
     app.mixer_color = c.convert_to(model);
-    let (h, s, _) = app.mixer_color.to_hsb();
+    let (h, s, _) = crate::ui::color_picker::viewer_point(app.mixer_color);
     if s > 1e-3 {
-        app.color_docker.hue = h as f32;
+        app.color_docker.hue = h;
     }
 }
 
@@ -158,14 +158,76 @@ fn to32(c: [f32; 3]) -> Color32 {
 /// The saturation (left to right) and brightness (bottom to top) square
 /// of `hue`, as an `n` x `n` grid of shaded cells.
 fn hsb_square(p: &Painter, r: Rect, hue: f32, n: usize) {
-    let mut mesh = Mesh::default();
+    color_square(p, r, &square_colors(hue, "HSB", n), n);
+}
+
+/// The screen colours of the viewer's square for `hue` in `model`, as an
+/// `(n + 1)` x `(n + 1)` grid of vertex colours, row by row from the top:
+/// in CMYK the look of the inks each point gives (#907), else the
+/// saturation and brightness of the hue.
+fn square_colors(hue: f32, model: &str, n: usize) -> Vec<Color32> {
     let n = n.max(1);
+    let cmyk = model == "CMYK";
+    let mut out = Vec::with_capacity((n + 1) * (n + 1));
     for j in 0..=n {
         for i in 0..=n {
             let s = i as f32 / n as f32;
             let v = 1.0 - j as f32 / n as f32;
-            let pos = r.min + Vec2::new(r.width() * s, r.height() * (1.0 - v));
-            mesh.colored_vertex(pos, to32(tracedraw_core::color::hsb_to_rgb(hue, s, v)));
+            out.push(to32(if cmyk {
+                crate::ui::color_picker::from_viewer(hue, s, v, model).to_rgb_f32()
+            } else {
+                tracedraw_core::color::hsb_to_rgb(hue, s, v)
+            }));
+        }
+    }
+    out
+}
+
+/// The colours of the square `id` for `hue` in `model`, kept between
+/// frames while the hue, the model and the colour engine stay the same:
+/// CMYK looks cost more than a frame should spend on them every time.
+fn cached_square_colors(
+    ui: &Ui,
+    id: egui::Id,
+    hue: f32,
+    model: &str,
+    n: usize,
+) -> std::sync::Arc<Vec<Color32>> {
+    let cmyk = model == "CMYK";
+    let engine = if cmyk {
+        tracedraw_core::color::engine::icc().map_or(0usize, |e| std::sync::Arc::as_ptr(&e) as usize)
+    } else {
+        0
+    };
+    let key = (hue.to_bits(), cmyk, n, engine);
+    type Cached = (u32, bool, usize, usize);
+    let id = id.with("colors");
+    if let Some((k, c)) = ui.data(|d| d.get_temp::<(Cached, std::sync::Arc<Vec<Color32>>)>(id)) {
+        if k == key {
+            return c;
+        }
+    }
+    let c = std::sync::Arc::new(square_colors(hue, model, n));
+    ui.data_mut(|d| d.insert_temp(id, (key, c.clone())));
+    c
+}
+
+/// The viewer's square from its vertex colours (`n` x `n` cells).
+fn color_square(p: &Painter, r: Rect, colors: &[Color32], n: usize) {
+    let mut mesh = Mesh::default();
+    let n = n.max(1);
+    for j in 0..=n {
+        for i in 0..=n {
+            let pos = r.min
+                + Vec2::new(
+                    r.width() * i as f32 / n as f32,
+                    r.height() * j as f32 / n as f32,
+                );
+            let c = colors
+                .get(j * (n + 1) + i)
+                .copied()
+                .unwrap_or(Color32::GRAY);
+            mesh.colored_vertex(pos, c);
         }
     }
     let w = (n + 1) as u32;
@@ -179,13 +241,18 @@ fn hsb_square(p: &Painter, r: Rect, hue: f32, n: usize) {
     p.add(Shape::mesh(mesh));
 }
 
-/// The hue strip, red at the top through the spectrum to red again.
-fn hue_strip(p: &Painter, r: Rect) {
+/// The hue strip, red at the top through the spectrum to red again: each
+/// hue's pure screen colour, or in CMYK the look of its solid inks.
+fn hue_strip(p: &Painter, r: Rect, model: &str) {
     let mut mesh = Mesh::default();
     let n = 36u32;
     for k in 0..=n {
         let t = k as f32 / n as f32;
-        let c = to32(tracedraw_core::color::hsb_to_rgb(t * 360.0, 1.0, 1.0));
+        let c = to32(if model == "CMYK" {
+            crate::ui::color_picker::from_viewer(t * 360.0, 1.0, 1.0, model).to_rgb_f32()
+        } else {
+            tracedraw_core::color::hsb_to_rgb(t * 360.0, 1.0, 1.0)
+        });
         let y = r.top() + r.height() * t;
         mesh.colored_vertex(Pos2::new(r.left(), y), c);
         mesh.colored_vertex(Pos2::new(r.right(), y), c);
@@ -205,8 +272,8 @@ fn shown_point(picked: Option<(f32, f32, Color)>, color: Color) -> (f32, f32) {
     match picked {
         Some((s, b, c)) if c == color => (s, b),
         _ => {
-            let (_, s, b) = color.to_hsb();
-            (s as f32, b as f32)
+            let (_, s, b) = crate::ui::color_picker::viewer_point(color);
+            (s, b)
         }
     }
 }
@@ -227,15 +294,17 @@ pub(crate) fn viewer(ui: &mut Ui, hue: f32, color: Color) -> Option<(f32, f32, f
         let (s, b) = shown_point(ui.data(|d| d.get_temp(picked_id)), color);
         ui.add_space(8.0);
         let (strip, st) = ui.allocate_exact_size(Vec2::new(18.0, side), Sense::click_and_drag());
+        let model = crate::ui::color_picker::edit_model(color);
+        let colors = cached_square_colors(ui, sq.id, hue, model, 16);
         let p = ui.painter();
-        hsb_square(p, square, hue, 16);
+        color_square(p, square, &colors, 16);
         p.rect_stroke(
             square,
             0.0,
             Stroke::new(1.0, Tokens::control_border()),
             egui::StrokeKind::Outside,
         );
-        hue_strip(p, strip);
+        hue_strip(p, strip, model);
         p.rect_stroke(
             strip,
             0.0,
@@ -269,12 +338,7 @@ pub(crate) fn viewer(ui: &mut Ui, hue: f32, color: Color) -> Option<(f32, f32, f
         }
         if let Some((h, ns, nb)) = out {
             // The colour this point gives, as the caller makes it.
-            let c = crate::ui::color_picker::from_viewer(
-                h,
-                ns,
-                nb,
-                crate::ui::color_picker::edit_model(color),
-            );
+            let c = crate::ui::color_picker::from_viewer(h, ns, nb, model);
             ui.data_mut(|d| d.insert_temp(picked_id, (ns, nb, c)));
         }
         if st.dragged() || st.clicked() {
@@ -470,7 +534,12 @@ pub fn color(app: &mut App, ui: &mut Ui) {
     if app.color_docker.shown[0] {
         if let Some((h, s, b)) = viewer(ui, app.color_docker.hue, c) {
             app.color_docker.hue = h;
-            c = Color::Hsb { h, s, b };
+            c = crate::ui::color_picker::from_viewer(
+                h,
+                s,
+                b,
+                crate::ui::color_picker::edit_model(c),
+            );
             changed = true;
         }
         ui.add_space(6.0);
@@ -803,21 +872,69 @@ mod tests {
         assert!(widest >= 100.0, "no visible tint rail ({widest})");
     }
 
-    /// In CMYK every point near the black corner gives K 100, whose
-    /// screen look is lighter: the ring stays at the point picked instead
-    /// of jumping back up to that look, so the click is seen to take
-    /// (#761). Another colour shows where it sits.
+    /// The ring stays at the point picked while the colour is the one it
+    /// gave (#761); another colour shows where it sits.
     #[test]
     fn the_ring_stays_where_a_dark_cmyk_colour_was_picked() {
-        let k100 = Color::cmyk_pct(0.0, 0.0, 0.0, 100.0);
         let picked = crate::ui::color_picker::from_viewer(0.0, 0.05, 0.02, "CMYK");
-        assert_eq!(picked, k100, "the darkest points are all K 100");
-        let (_, _, look) = k100.to_hsb();
-        assert!(look > 0.1, "K 100 looks lighter than the corner: {look}");
-        assert_eq!(shown_point(Some((0.05, 0.02, picked)), k100), (0.05, 0.02));
+        assert_eq!(
+            shown_point(Some((0.05, 0.02, picked)), picked),
+            (0.05, 0.02)
+        );
         let other = Color::cmyk_pct(0.0, 100.0, 100.0, 0.0);
         let (s, b) = shown_point(Some((0.05, 0.02, picked)), other);
         assert!(b > 0.5 && s > 0.5, "{s} {b}");
+    }
+
+    /// In CMYK the ring reaches every corner of the square, and the
+    /// square's corners show the ink extremes, not screen colours the
+    /// press cannot print (#907).
+    #[test]
+    fn a_cmyk_colour_reaches_the_corners_of_the_viewer() {
+        for (c, at) in [
+            (Color::cmyk_pct(0.0, 0.0, 0.0, 0.0), (0.0, 1.0)),
+            (Color::cmyk_pct(0.0, 100.0, 100.0, 0.0), (1.0, 1.0)),
+            (Color::cmyk_pct(0.0, 0.0, 0.0, 100.0), (0.0, 0.0)),
+            (Color::cmyk_pct(0.0, 100.0, 100.0, 100.0), (1.0, 0.0)),
+        ] {
+            let (s, b) = shown_point(None, c);
+            assert!(
+                (s - at.0).abs() < 1e-4 && (b - at.1).abs() < 1e-4,
+                "{c:?}: {s} {b}"
+            );
+        }
+        let n = 4;
+        let colors = square_colors(0.0, "CMYK", n);
+        let corner = |i: usize, j: usize| colors[j * (n + 1) + i];
+        let look = |c: Color| to32(c.to_rgb_f32());
+        assert_eq!(corner(0, 0), look(Color::cmyk_pct(0.0, 0.0, 0.0, 0.0)));
+        assert_eq!(corner(n, 0), look(Color::cmyk_pct(0.0, 100.0, 100.0, 0.0)));
+        assert_eq!(corner(0, n), look(Color::cmyk_pct(0.0, 0.0, 0.0, 100.0)));
+        assert_eq!(
+            corner(n, n),
+            look(Color::cmyk_pct(0.0, 100.0, 100.0, 100.0))
+        );
+        // RGB keeps the screen's own square, black at the bottom.
+        let rgb = square_colors(0.0, "RGB", n);
+        assert_eq!(rgb[n * (n + 1)], Color32::BLACK);
+        assert_eq!(rgb[n], Color32::from_rgb(255, 0, 0));
+    }
+
+    /// The docker's viewer makes a colour of the chosen model, and in
+    /// CMYK its bottom right corner is the hue's inks over full black.
+    #[test]
+    fn the_docker_viewer_picks_in_the_model() {
+        let c = crate::ui::color_picker::from_viewer(240.0, 1.0, 0.0, "CMYK");
+        assert_eq!(c, Color::cmyk_pct(100.0, 100.0, 0.0, 100.0));
+        let r = crate::ui::color_picker::from_viewer(0.0, 1.0, 0.0, "RGB");
+        assert_eq!(
+            r,
+            Color::Rgb {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0
+            }
+        );
     }
 
     #[test]
