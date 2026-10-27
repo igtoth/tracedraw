@@ -752,8 +752,13 @@ draws as before. A weight set this way replaces synthetic bold, and a
 slant or italic value replaces synthetic italic
 (`tests::variable_font_axes_set_on_the_text_draw_it_there`,
 `ui::text_docker::tests::variable_font_axes_show_and_set_on_the_text`).
-The sliders do not preview while dragged; `.cdr` files do not keep the
-values.
+The sliders do not preview while dragged. `.cdr` files keep only the
+weight (#1013), in the steps of 100 their style codes count: text at
+600 is saved as the family's 600 face and reopens as the family named
+with the weight ("MiSans VF SemiBold"), which draws the variable font at
+600 (`write::tests::variable_font_weight_axis_round_trips`); a weight
+between steps is rounded to the nearest, and the other axes are not
+kept.
 
 The browser build offers the families of its font folder (see
 `web/FONTS.md`): the font lists show them, and text asks for one the

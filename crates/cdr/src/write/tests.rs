@@ -2929,6 +2929,69 @@ fn faces_named_with_their_weight_round_trip() {
     }
 }
 
+/// The weight axis of a variable font set on the text is written as the
+/// style code of its weight, so the text reopens at that weight in every
+/// version (#1013): 600 is 1024 and reads back as the family's SemiBold
+/// face (the variable font drawn at 600), 700 as bold, 400 as regular.
+#[test]
+fn variable_font_weight_axis_round_trips() {
+    let mut doc = doc_with(Vec::new());
+    let mut ids = doc.ids().clone();
+    let at = |w: Option<f64>, bold: bool, italic: bool| {
+        let mut sp = TextSpan::new("Weight", "MiSans VF", 18.0);
+        sp.bold = bold;
+        sp.italic = italic;
+        sp.set_variation("wght", w);
+        sp
+    };
+    // The codes: one bit per 100 of weight, the italic the bit above;
+    // a weight between steps rounds, one out of range is clamped.
+    assert_eq!(weight_code(&at(Some(600.0), false, false)), 1024);
+    assert_eq!(weight_code(&at(Some(600.0), false, true)), 2048);
+    assert_eq!(weight_code(&at(Some(640.0), true, false)), 1024);
+    assert_eq!(weight_code(&at(Some(100.0), false, false)), 1);
+    assert_eq!(weight_code(&at(Some(1000.0), false, true)), 0x2_0000);
+    assert_eq!(weight_code(&at(Some(f64::NAN), false, false)), 64);
+    assert_eq!(weight_code(&at(None, false, false)), 64);
+    assert_eq!(weight_code(&at(None, true, true)), 0x2000);
+    assert_eq!(style_flags(&at(Some(500.0), false, false)), 256);
+    let json = character_json(&at(Some(600.0), false, true), None);
+    assert!(
+        json.contains(r#""weight":"1024""#) && json.contains(r#""italic":"1""#),
+        "{json}"
+    );
+    // Set on bold text, the axis is what draws it.
+    let json = character_json(&at(Some(400.0), true, false), None);
+    assert!(json.contains(r#""weight":"64""#), "{json}");
+
+    let spans = [
+        (at(Some(600.0), false, false), "MiSans VF SemiBold", false),
+        (at(Some(700.0), false, false), "MiSans VF", true),
+        (at(Some(300.0), true, false), "MiSans VF Light", false),
+        (at(None, false, false), "MiSans VF", false),
+    ];
+    doc.pages[0].layers[0].shapes = spans
+        .iter()
+        .map(|(sp, _, _)| text_shape(&mut ids, vec![sp.clone()], TextAlign::Left))
+        .collect();
+    doc.set_ids(ids);
+    for v in versions() {
+        let bytes = document_to_cdr_version(&doc, v);
+        let (back, rep) = crate::open_bytes(&bytes, "back").expect("reads back");
+        let read = &back.pages[0].layers[0].shapes;
+        assert_eq!(read.len(), spans.len(), "{v}: {:?}", rep.warnings);
+        for (s, (_, family, bold)) in read.iter().zip(&spans) {
+            match &s.kind {
+                ShapeKind::Text { spans, .. } => {
+                    assert_eq!(spans[0].font_family, *family, "{v}");
+                    assert_eq!(spans[0].bold, *bold, "{v}: {family}");
+                }
+                k => panic!("{v}: {k:?}"),
+            }
+        }
+    }
+}
+
 /// Bitmap pattern fills with the same picture are one fill record, even
 /// when each holds its own copy of the bytes (as a reopened file does);
 /// another picture is another record.

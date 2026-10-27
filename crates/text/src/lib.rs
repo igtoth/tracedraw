@@ -6515,6 +6515,17 @@ mod tests {
         let plain = f.outline(std::slice::from_ref(&s)).path;
         s.set_variation("wght", Some(900.0));
         assert_eq!(f.outline(&[s]).path, plain);
+
+        // The family named with a weight draws the variable font at it:
+        // a weight of 600 saved in a .cdr file reopens as the SemiBold
+        // face of the family (#1013) and draws as the axis at 600 does.
+        let semi = f.outline(&[TextSpan::new("Hello", "Quicksand SemiBold", 100.0)]);
+        assert_eq!(semi.path, draw(false, Some(600.0)).path);
+        assert_ne!(semi.path, draw(false, None).path);
+        assert_eq!(
+            f.variation_axes("Quicksand SemiBold", false, false)[0].auto,
+            600.0
+        );
     }
 
     /// `data` with the OS/2 embedding bits set to `fs_type`.

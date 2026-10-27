@@ -2493,13 +2493,12 @@ fn object_style_json(
 /// The style codes of the font tables: one bit per weight and slant
 /// (0x40 regular, 0x80 italic, 0x1000 bold, 0x2000 bold italic), single
 /// underline in bits 18 to 20, single strike-through in bits 24 to 26.
+/// A face of another weight (a variable font's weight axis set on the
+/// text, #1013) takes the code of its weight: one bit per 100 of weight
+/// (1 = 100 ... 64 = 400, 1024 = 600, 4096 = 700 ... 65536 = 900), the
+/// next bit up its italic.
 fn style_flags(sp: &TextSpan) -> u32 {
-    let mut f = match (sp.bold, sp.italic) {
-        (false, false) => 0x40,
-        (false, true) => 0x80,
-        (true, false) => 0x1000,
-        (true, true) => 0x2000,
-    };
+    let mut f = weight_code(sp);
     if sp.underline {
         f |= 1 << 18;
     }
@@ -2507,6 +2506,31 @@ fn style_flags(sp: &TextSpan) -> u32 {
         f |= 1 << 24;
     }
     f
+}
+
+/// The weight `sp` is drawn at, in the steps of 100 the style codes
+/// count: its variable font weight axis when that is set (#1013), else
+/// 700 bold and 400 regular.
+fn span_weight(sp: &TextSpan) -> u32 {
+    match sp.variation("wght").filter(|w| w.is_finite()) {
+        Some(w) => (w / 100.0).round().clamp(1.0, 9.0) as u32 * 100,
+        None if sp.bold => 700,
+        None => 400,
+    }
+}
+
+/// The style code of `sp`'s face: a power of two counting weights from
+/// 1 for 100 (64 = 400, 1024 = 600, 4096 = 700), the italic of a weight
+/// the bit above it (128 = 400 italic, 8192 = 700 italic).
+fn weight_code(sp: &TextSpan) -> u32 {
+    let step = span_weight(sp) / 100 - 1;
+    1 << (2 * step + u32::from(sp.italic))
+}
+
+/// The weight member of a version 16+ font style: the weight's code,
+/// without the italic, which has a member of its own.
+fn weight_member(sp: &TextSpan) -> u32 {
+    1 << (2 * (span_weight(sp) / 100 - 1))
 }
 
 /// The style string of a run (versions 16+): its font, size, weight,
@@ -2517,7 +2541,7 @@ fn run_style_json(sp: &TextSpan, fill: Option<&Fill>) -> String {
 
 /// The `character` member of a style string.
 fn character_json(sp: &TextSpan, fill: Option<&Fill>) -> String {
-    let weight = if sp.bold { 4096 } else { 64 };
+    let weight = weight_member(sp);
     let size = (sp.size_pt * 254000.0 / 72.0).round() as i64;
     let family = sp.font_family.replace('\\', "\\\\").replace('"', "\\\"");
     let font = format!(
@@ -2572,7 +2596,7 @@ fn full_text_style(
         Some(sp) => (
             sp.font_family.replace('\\', "\\\\").replace('"', "\\\""),
             (sp.size_pt * 254000.0 / 72.0).round() as i64,
-            if sp.bold { 4096 } else { 64 },
+            weight_member(sp),
             u8::from(sp.italic),
             u8::from(sp.underline),
             u8::from(sp.strikethrough),
