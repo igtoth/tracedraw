@@ -375,11 +375,15 @@ pub enum Drag {
     },
     /// Moving the centre of rotation in rotate mode.
     Pivot,
-    /// Rotating the selection about `center`.
+    /// Rotating the selection about `center`. `grab` is the selection's
+    /// own point (a node) the turn started from in rotate mode, which the
+    /// turn carries onto other objects' points and edges (#933); `None`
+    /// for a rotate handle.
     Rotate {
         center: Point,
         start_angle: f64,
         current_angle: f64,
+        grab: Option<Point>,
     },
     /// Rubber-band selection; with `touching` (Alt) objects it touches
     /// count too.

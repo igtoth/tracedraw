@@ -650,6 +650,7 @@ fn the_pointer_shows_what_a_press_would_do() {
         center: Point::new(0.0, 0.0),
         start_angle: 0.0,
         current_angle: 0.0,
+        grab: None,
     };
     assert_eq!(cursor(&app, empty), ToolCursor::Rotate);
     // Moving: the arrow with a dotted box; once a right click makes the
@@ -704,6 +705,7 @@ fn the_status_bar_tells_how_far_how_much_and_what_angle() {
         center: Point::new(0.0, 0.0),
         start_angle: 0.0,
         current_angle: 30f64.to_radians(),
+        grab: None,
     };
     assert!(info(&app).contains("30.0"), "{}", info(&app));
     app.drag = Drag::Skew {
@@ -2121,6 +2123,143 @@ fn turning_snaps_the_pointer_to_another_objects_node() {
     let want = (node - c).atan2() - (start - c).atan2();
     assert!((turned - want).abs() < 1e-6, "{turned} {want}");
     assert!(app.doc().find_shape(other).is_some());
+}
+
+/// The pointer turning the selection does not snap to lines: crossing
+/// an edge of another object (or of the page) far from its points, the
+/// turn follows the pointer instead of sticking to the edge (#933). The
+/// turning handle stands off the object, so nothing of it lands there.
+#[test]
+fn turning_follows_the_pointer_across_edges() {
+    let (ctx, mut app, id) = setup();
+    // Another rectangle up and to the right; its bottom edge runs at
+    // y = 80 from x = 100 to 160, its nearest points (the corner, the
+    // middle of the edge) 15 mm away from x = 115.
+    app.new_shape(ShapeKind::Rect {
+        rect: Rect::new(100.0, 80.0, 160.0, 110.0),
+        radius: 0.0,
+        corners: None,
+    })
+    .expect("rect");
+    app.select(vec![id]);
+    app.rotate_mode = true;
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let c = app.rotation_center().expect("centre");
+    let ne = handle(&app, Handle::NE);
+    let start = app.view.to_page(ne);
+    // Released a point and a half below the edge, within the snapping
+    // distance of it.
+    let off = 1.5 / app.view.zoom as f64;
+    let at = app.view.to_screen(Point::new(115.0, 80.0 - off));
+    drag(&ctx, &mut app, ne, at, Modifiers::NONE, Vec::new());
+    let t = app
+        .doc()
+        .find_shape(id)
+        .map(|s| s.transform)
+        .expect("shape");
+    let k = t.as_coeffs();
+    let turned = k[1].atan2(k[0]);
+    let pointer = app.view.to_page(at);
+    let want = (pointer - c).atan2() - (start - c).atan2();
+    assert!((turned - want).abs() < 1e-6, "{turned} {want}");
+}
+
+/// Rotate mode, the centre of rotation on one end of an arc standing on
+/// a line: the other end node, dragged, turns the arc about it, and let
+/// go near the line it ends exactly on the line (#933). Dragging the arc
+/// by its edge still moves it.
+#[test]
+fn a_node_dragged_in_rotate_mode_turns_the_selection_onto_a_line() {
+    let (ctx, mut app, id) = setup();
+    app.select(vec![id]);
+    app.delete_selection();
+    let mut line = tracedraw_core::BezPath::new();
+    line.move_to((-30.0, 210.0));
+    line.line_to((210.0, 210.0));
+    app.new_shape(ShapeKind::Path {
+        path: line,
+        closed: false,
+    })
+    .expect("line");
+    let mut a = tracedraw_core::BezPath::new();
+    a.move_to((20.0, 210.0));
+    a.curve_to((20.0, 170.0), (60.0, 140.0), (100.0, 175.0));
+    let arc = app
+        .new_shape(ShapeKind::Path {
+            path: a,
+            closed: false,
+        })
+        .expect("arc");
+    app.select(vec![arc]);
+    app.rotate_mode = true;
+    let pivot = Point::new(20.0, 210.0);
+    app.set_pivot(pivot);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let end = |app: &App| {
+        let p = app.doc().find_shape(arc).expect("arc").page_path();
+        match p.segments().last() {
+            Some(seg) => tracedraw_core::geometry::ParamCurve::end(&seg),
+            None => panic!("a curve"),
+        }
+    };
+    let node = Point::new(100.0, 175.0);
+    let screen_node = app.view.to_screen(node);
+    // Over the node the pointer shows it turns.
+    assert_eq!(
+        for_tool(&app, false, false, false, Some(screen_node)),
+        ToolCursor::Rotate
+    );
+    // Let go a little short of the line and off the node's circle.
+    let r = (node - pivot).hypot();
+    let off = 1.5 / app.view.zoom as f64;
+    let to = app
+        .view
+        .to_screen(Point::new(20.0 + r - 2.0 * off, 210.0 - off));
+    drag(&ctx, &mut app, screen_node, to, Modifiers::NONE, Vec::new());
+    let e = end(&app);
+    assert!((e.y - 210.0).abs() < 1e-6, "on the line: {e:?}");
+    assert!(((e - pivot).hypot() - r).abs() < 1e-6, "turned: {e:?}");
+    let start = app.doc().find_shape(arc).expect("arc").page_path();
+    match start.elements().first() {
+        Some(tracedraw_core::geometry::PathEl::MoveTo(s)) => {
+            assert!((*s - pivot).hypot() < 1e-6, "about the pivot: {s:?}")
+        }
+        other => panic!("{other:?}"),
+    }
+    // Away from a node, a drag along the selection moves it.
+    app.rotate_mode = true;
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let path = app.doc().find_shape(arc).expect("arc").page_path();
+    let seg = path.segments().next().expect("segment");
+    let on = tracedraw_core::geometry::ParamCurve::eval(&seg, 0.3);
+    let before = end(&app);
+    let from = app.view.to_screen(on);
+    drag(
+        &ctx,
+        &mut app,
+        from,
+        from + egui::vec2(0.0, -40.0),
+        Modifiers::NONE,
+        Vec::new(),
+    );
+    let moved = end(&app) - before;
+    let first = |app: &App| match app
+        .doc()
+        .find_shape(arc)
+        .expect("arc")
+        .page_path()
+        .elements()
+        .first()
+    {
+        Some(tracedraw_core::geometry::PathEl::MoveTo(s)) => *s,
+        other => panic!("{other:?}"),
+    };
+    let start_moved = first(&app) - pivot;
+    assert!(moved.hypot() > 1.0, "moved: {moved:?}");
+    assert!(
+        (moved - start_moved).hypot() < 1e-6,
+        "{moved:?} {start_moved:?}"
+    );
 }
 
 #[test]
