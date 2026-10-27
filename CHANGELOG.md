@@ -7,6 +7,7 @@ full, row-by-row status.
 ## Unreleased
 
 - Main window: with the splash screen turned off, a window left maximized opens at the size of the screen straight away; it showed at its normal size first and then grew to fill the screen (#787).
+- Menus taller than the window (such as Object on a short screen) fit inside it and scroll with the mouse wheel or the scroll bar at their right edge; a menu of the menu bar stays under its title. The bottom items ran past the screen edge and could not be reached (#1008).
 - Drop shadows show in exported and printed PDFs, beneath their objects, in their colour, opacity, feathering and merge mode; they were left out, so a shadow showed only once broken apart into a bitmap (#1029).
 - Convert Outline to Object (Ctrl+Shift+Q) on a combined curve whose lines cross (such as an "f" made of a stem and a cross bar) gives one shape with a merged outline, filled where the lines cross, so it looks as it did before. Each line came out as a shape of its own and the crossing turned into a hole (#997).
 - Save As with Embed fonts: the fonts of all the text now go into the `.cdr` and `.tdraw` file, so the drawing keeps its letters when opened again where they are not installed. Only text whose font had a face of exactly that name, weight and slant was embedded before, so text in a family named with its weight ("Montserrat SemiBold"), bold or italic in a family without that face, or a variable font at another weight saved no font at all. A font file two faces share is embedded once (#1009).

@@ -44,12 +44,62 @@ pub(crate) fn menu_popup_style(style: &mut egui::Style) {
 }
 
 /// The grey gutter down the left of a menu body, under its rows: reserved
-/// first, sized once the rows are laid out.
+/// first, sized once the rows are laid out. A body taller than the window
+/// scrolls (wheel, scroll bar, keyboard focus) instead of running past the
+/// window's edge; the pop-up then moves to fit inside the window.
 pub(crate) fn body<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
+    let limit = screen_body_limit(ui);
+    body_within(ui, limit, add)
+}
+
+/// The tallest a menu body may be anywhere in the window: the window's
+/// height less the pop-up frame around the rows.
+fn screen_body_limit(ui: &Ui) -> f32 {
+    let frame = egui::Frame::menu(ui.style()).total_margin().sum().y;
+    body_limit(ui.ctx().content_rect().height() - frame)
+}
+
+/// The tallest the body of a menu-bar menu may be: the room from its
+/// title's bottom edge (`title_bottom`, last frame's) down to the window's
+/// bottom edge, so the menu stays under its title instead of moving up
+/// over the bar. A pixel is kept spare so rounding never makes the menu
+/// miss the room below its title.
+fn below_body_limit(ui: &Ui, title_bottom: Option<f32>) -> f32 {
+    let Some(title_bottom) = title_bottom else {
+        return screen_body_limit(ui);
+    };
+    let frame = egui::Frame::menu(ui.style()).total_margin().sum().y;
+    body_limit(ui.ctx().content_rect().bottom() - title_bottom - frame - 1.0)
+}
+
+/// At least a few rows, however small the window.
+fn body_limit(room: f32) -> f32 {
+    room.max(3.0 * ROW_HEIGHT)
+}
+
+/// A menu body at most `max_height` tall; taller rows scroll.
+fn body_within<R>(ui: &mut Ui, max_height: f32, add: impl FnOnce(&mut Ui) -> R) -> R {
     let width_id = ui.id().with("menu_width");
-    if let Some(w) = ui.ctx().data(|d| d.get_temp::<f32>(width_id)) {
+    let width = ui.ctx().data(|d| d.get_temp::<f32>(width_id));
+    if let Some(w) = width {
         ui.set_min_width(w);
     }
+    // The pop-up's room is last frame's size (or a default on its first
+    // frame); the rows may need more, up to the limit.
+    ui.set_max_height(max_height);
+    egui::ScrollArea::vertical()
+        .id_salt("menu_scroll")
+        .max_height(max_height)
+        .show(ui, |ui| {
+            if let Some(w) = width {
+                ui.set_min_width(w);
+            }
+            body_rows(ui, width_id, add)
+        })
+        .inner
+}
+
+fn body_rows<R>(ui: &mut Ui, width_id: egui::Id, add: impl FnOnce(&mut Ui) -> R) -> R {
     let slot = ui.painter().add(egui::Shape::Noop);
     let r = {
         let _keys = access::Scope::new();
@@ -675,6 +725,16 @@ pub(crate) fn sub<R>(ui: &mut Ui, key: &str, add: impl FnOnce(&mut Ui) -> R) {
     });
     if open {
         ui.painter().set(slot, highlight(resp.rect));
+    }
+    // A row scrolled out of a long menu's view does not open its submenu
+    // from a pointer outside that view (over the menu bar, say).
+    let view = ui.clip_rect();
+    let pointer_in_view = ui
+        .ctx()
+        .pointer_hover_pos()
+        .is_none_or(|p| view.contains(p));
+    if !view.intersects(resp.rect) || !(open || pointer_in_view) {
+        return;
     }
     egui::containers::menu::SubMenu::new().show(ui, &resp, |ui| {
         ui.set_min_width(MENU_WIDTH);
@@ -1427,6 +1487,169 @@ mod tests {
         );
     }
 
+    /// A frame of the menu bar alone in a window `height` tall.
+    fn bar_frame(ctx: &Context, app: &mut App, height: f32, events: Vec<egui::Event>) {
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1400.0, height),
+            )),
+            events,
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(input, |ui| menu_bar(app, ui));
+        out.textures_delta.clear();
+    }
+
+    /// The rects of the pop-ups on screen.
+    fn popup_rects(ctx: &Context) -> Vec<egui::Rect> {
+        ctx.memory(|m| {
+            m.areas()
+                .visible_layer_ids()
+                .into_iter()
+                .filter(|l| l.order == egui::Order::Foreground)
+                .filter_map(|l| m.area_rect(l.id))
+                .collect()
+        })
+    }
+
+    /// The Object menu opened with Alt and its access key in a window
+    /// `height` tall: the rects of the pop-ups shown.
+    fn open_object_menu(height: f32) -> Vec<egui::Rect> {
+        let ctx = crate::theme::ui_context();
+        let mut app = mixed_app();
+        let mut taken = Vec::new();
+        let mut letter = ' ';
+        for key in [
+            "menu.file",
+            "menu.edit",
+            "menu.view",
+            "menu.layout",
+            "menu.object",
+        ] {
+            let c = access::choose(&tr(key), &taken).map(|a| a.1).unwrap_or(' ');
+            taken.push(c);
+            letter = c;
+        }
+        let k = access::key_of(letter).expect("object menu access key");
+        bar_frame(&ctx, &mut app, height, Vec::new());
+        bar_frame(&ctx, &mut app, height, vec![key(k, egui::Modifiers::ALT)]);
+        for _ in 0..4 {
+            bar_frame(&ctx, &mut app, height, Vec::new());
+        }
+        popup_rects(&ctx)
+    }
+
+    /// A long menu in a short window stays inside the window, under its
+    /// title, and scrolls instead of running past the bottom edge (#1008).
+    #[test]
+    fn a_long_menu_fits_a_short_window() {
+        let tall = open_object_menu(1200.0);
+        assert_eq!(tall.len(), 1, "{tall:?}");
+        let full = tall[0];
+        let height = 360.0;
+        assert!(full.height() > height, "the Object menu is {full:?}");
+        let short = open_object_menu(height);
+        assert_eq!(short.len(), 1, "{short:?}");
+        let menu = short[0];
+        assert!(
+            menu.bottom() <= height + 0.5,
+            "{menu:?} runs past the window"
+        );
+        assert!(
+            (menu.top() - full.top()).abs() < 0.5,
+            "{menu:?} left its title"
+        );
+        assert!(menu.height() > 3.0 * ROW_HEIGHT, "{menu:?}");
+    }
+
+    /// One frame of a menu pop-up with `rows` rows at the top left of a
+    /// window `height` tall: the pop-up's rect and the last row's rect.
+    fn long_menu_frame(
+        ctx: &Context,
+        height: f32,
+        rows: usize,
+        events: Vec<egui::Event>,
+    ) -> (egui::Rect, egui::Rect) {
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(800.0, height),
+            )),
+            events,
+            ..Default::default()
+        };
+        let mut last = egui::Rect::NOTHING;
+        let mut area = egui::Rect::NOTHING;
+        let mut out = ctx.run_ui(input, |ui| {
+            let r = egui::Area::new(egui::Id::new("long menu"))
+                .fixed_pos(egui::pos2(10.0, 10.0))
+                .order(egui::Order::Foreground)
+                .show(ui.ctx(), |ui| {
+                    ui.set_style(ui.ctx().global_style());
+                    menu_popup_style(ui.style_mut());
+                    egui::Frame::menu(ui.style()).show(ui, |ui| {
+                        body(ui, |ui| {
+                            for i in 0..rows {
+                                item_label(ui, &format!("Row {i}"), "", true);
+                            }
+                            last = ui.label("last").rect;
+                        })
+                    })
+                });
+            area = r.response.rect;
+        });
+        out.textures_delta.clear();
+        (area, last)
+    }
+
+    /// A menu that fits the window shows all its rows, however tall it
+    /// is, without a scroll bar's limit.
+    #[test]
+    fn a_menu_that_fits_shows_every_row() {
+        let ctx = crate::theme::ui_context();
+        let mut shown = (egui::Rect::NOTHING, egui::Rect::NOTHING);
+        for _ in 0..4 {
+            shown = long_menu_frame(&ctx, 1000.0, 30, Vec::new());
+        }
+        let (area, last) = shown;
+        assert!(area.height() > 30.0 * ROW_HEIGHT, "{area:?}");
+        assert!(last.bottom() <= area.bottom(), "{last:?} in {area:?}");
+    }
+
+    /// The wheel scrolls a menu body taller than the window, so its last
+    /// rows come into view.
+    #[test]
+    fn the_wheel_scrolls_a_long_menu_body() {
+        let ctx = crate::theme::ui_context();
+        let height = 300.0;
+        let frame = |events: Vec<egui::Event>| long_menu_frame(&ctx, height, 40, events);
+        for _ in 0..3 {
+            frame(Vec::new());
+        }
+        let (area, before) = frame(vec![egui::Event::PointerMoved(egui::pos2(60.0, 100.0))]);
+        assert!(area.bottom() <= height + 0.5, "{area:?}");
+        assert!(
+            before.top() > height,
+            "the last row starts in view: {before:?}"
+        );
+        let wheel = egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(0.0, -2000.0),
+            phase: egui::TouchPhase::Move,
+            modifiers: egui::Modifiers::NONE,
+        };
+        frame(vec![wheel]);
+        let mut after = before;
+        for _ in 0..30 {
+            after = frame(Vec::new()).1;
+        }
+        assert!(
+            after.bottom() <= height,
+            "the last row stays hidden: {after:?}"
+        );
+    }
+
     /// Every enabled row of every menu is clicked once against a mixed
     /// document; the application survives each command.
     #[test]
@@ -1520,6 +1743,8 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
                 let label = tr(key);
                 let access = access::choose(&label, &keys);
                 keys.push(access.map(|a| a.1).unwrap_or(' '));
+                let title_bottom_id = ui.id().with(key).with("title_bottom");
+                let title_bottom = ui.ctx().data(|d| d.get_temp::<f32>(title_bottom_id));
                 let r = ui
                     .menu_button(
                         access::title(
@@ -1530,10 +1755,13 @@ pub fn menu_bar(app: &mut App, ui: &mut Ui) {
                         ),
                         |ui| {
                             ui.set_min_width(MENU_WIDTH);
-                            body(ui, |ui| f(ui))
+                            let limit = below_body_limit(ui, title_bottom);
+                            body_within(ui, limit, |ui| f(ui))
                         },
                     )
                     .response;
+                ui.ctx()
+                    .data_mut(|d| d.insert_temp(title_bottom_id, r.rect.bottom()));
                 if marked_new(key) {
                     // A dot over the title's top right corner.
                     ui.painter().circle_filled(
