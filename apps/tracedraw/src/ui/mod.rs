@@ -602,6 +602,36 @@ fn root_frame(app: &mut App, ui: &mut Ui) {
     }
 }
 
+/// Raw wheel units one notch of a mouse wheel sends. The desktop
+/// backends report a notch as one line (or 50 points from a
+/// trackpad); browsers report it as three lines or as 100 pixels, so
+/// read as desktop notches a browser notch zoomed three or two notches
+/// at once (#1016).
+fn wheel_notch(unit: egui::MouseWheelUnit, web: bool) -> f32 {
+    match (unit, web) {
+        (egui::MouseWheelUnit::Line, false) => 1.0,
+        (egui::MouseWheelUnit::Line, true) => 3.0,
+        (egui::MouseWheelUnit::Point, false) => 50.0,
+        (egui::MouseWheelUnit::Point, true) => 100.0,
+        (egui::MouseWheelUnit::Page, _) => 0.1,
+    }
+}
+
+/// Points of egui's smoothed scroll delta that one wheel notch in
+/// `unit` adds up to: egui turns a line into `line_speed` points and a
+/// page into the window's height. On the desktop a notch stays at
+/// `line_speed` points whatever the unit, as before; in the browser
+/// it is the browser's notch in points (#1016).
+fn smooth_wheel_notch(unit: egui::MouseWheelUnit, line_speed: f32, height: f32, web: bool) -> f32 {
+    let points = match (unit, web) {
+        (_, false) => line_speed,
+        (egui::MouseWheelUnit::Line, true) => wheel_notch(unit, web) * line_speed,
+        (egui::MouseWheelUnit::Point, true) => wheel_notch(unit, web),
+        (egui::MouseWheelUnit::Page, true) => wheel_notch(unit, web) * height,
+    };
+    points.max(1.0)
+}
+
 /// The active drawing's window in `full`: rulers, the canvas with its
 /// tools, scrollbars, the page tabs and the navigator.
 pub(crate) fn drawing_window(app: &mut App, ui: &mut Ui, full: egui::Rect) {
@@ -627,24 +657,42 @@ pub(crate) fn drawing_window(app: &mut App, ui: &mut Ui, full: egui::Rect) {
     // horizontally; with the scroll setting the wheel scrolls,
     // Shift+wheel horizontally and Ctrl+wheel zooms. Pinch zooms.
     if response.hovered() {
-        let (scroll, notches, zoom_delta, mods) = ui.input(|i| {
+        let (scroll, notches, zoom_delta, mods, unit) = ui.input(|i| {
             // Wheel notches this frame (the smoothed delta is spread
             // over several frames, so the zoom steps come from the
-            // raw events: one notch is one line or 50 points).
+            // raw events).
+            let mut unit = None;
             let notches: f32 = i
                 .events
                 .iter()
                 .map(|e| match e {
-                    egui::Event::MouseWheel { unit, delta, .. } => match unit {
-                        egui::MouseWheelUnit::Line => delta.y,
-                        egui::MouseWheelUnit::Point => delta.y / 50.0,
-                        egui::MouseWheelUnit::Page => delta.y * 10.0,
-                    },
+                    egui::Event::MouseWheel { unit: u, delta, .. } => {
+                        unit = Some(*u);
+                        delta.y / wheel_notch(*u, cfg!(target_arch = "wasm32"))
+                    }
                     _ => 0.0,
                 })
                 .sum();
-            (i.smooth_scroll_delta, notches, i.zoom_delta(), i.modifiers)
+            (
+                i.smooth_scroll_delta,
+                notches,
+                i.zoom_delta(),
+                i.modifiers,
+                unit,
+            )
         });
+        // The unit of the last wheel event, kept while its smoothed
+        // delta is still being spread over the next frames.
+        let unit_id = egui::Id::new("canvas_wheel_unit");
+        let unit = match unit {
+            Some(u) => {
+                ui.data_mut(|d| d.insert_temp(unit_id, u));
+                u
+            }
+            None => ui
+                .data(|d| d.get_temp(unit_id))
+                .unwrap_or(egui::MouseWheelUnit::Line),
+        };
         if let Some(h) = response.hover_pos() {
             let zoom_factor = 1.15f32.powf(notches);
             if zoom_delta != 1.0 {
@@ -658,11 +706,14 @@ pub(crate) fn drawing_window(app: &mut App, ui: &mut Ui, full: egui::Rect) {
                     // The smoothed wheel delta, spread over a few frames
                     // as a scroll is, so a notch zooms in one glide
                     // instead of one jump; its frames multiply to the same
-                    // 1.15 a notch (#766).
-                    let per_notch = ui
-                        .ctx()
-                        .options(|o| o.input_options.line_scroll_speed)
-                        .max(1.0);
+                    // 1.15 a notch (#766), in the browser too (#1016).
+                    let line = ui.ctx().options(|o| o.input_options.line_scroll_speed);
+                    let per_notch = smooth_wheel_notch(
+                        unit,
+                        line,
+                        ui.ctx().content_rect().height(),
+                        cfg!(target_arch = "wasm32"),
+                    );
                     app.view.zoom_at(h, 1.15f32.powf(scroll.y / per_notch));
                 }
             } else if mods.ctrl && notches != 0.0 {
@@ -885,6 +936,34 @@ pub(crate) fn view_navigator(app: &mut App, ui: &mut Ui, corner: egui::Rect, can
 
 #[cfg(test)]
 mod tests {
+    /// One browser wheel notch (100 pixels, or three lines at egui's
+    /// web line speed of 8 points) zooms 15 %, as a desktop notch
+    /// does; it zoomed about 5.7 times or 52 % at once (#1016).
+    #[test]
+    fn a_browser_wheel_notch_zooms_as_a_desktop_notch() {
+        use egui::MouseWheelUnit::{Line, Page, Point};
+        let zoom = |smoothed: f32, unit, line, web| {
+            1.15f32.powf(smoothed / super::smooth_wheel_notch(unit, line, 800.0, web))
+        };
+        // The browser: Chrome, Edge and Safari send 100 pixels a notch,
+        // Firefox three lines.
+        assert!((zoom(100.0, Point, 8.0, true) - 1.15).abs() < 1e-4);
+        assert!((zoom(3.0 * 8.0, Line, 8.0, true) - 1.15).abs() < 1e-4);
+        assert!((zoom(-100.0, Point, 8.0, true) - 1.0 / 1.15).abs() < 1e-4);
+        assert!((zoom(0.1 * 800.0, Page, 8.0, true) - 1.15).abs() < 1e-4);
+        // The desktop keeps one line of 40 points a notch.
+        assert!((zoom(40.0, Line, 40.0, false) - 1.15).abs() < 1e-4);
+        assert!((zoom(40.0, Point, 40.0, false) - 1.15).abs() < 1e-4);
+        // The raw notches of the scroll setting's Ctrl+wheel: one each.
+        for (unit, raw) in [(Line, 3.0), (Point, 100.0)] {
+            assert_eq!(raw / super::wheel_notch(unit, true), 1.0);
+        }
+        assert_eq!(1.0 / super::wheel_notch(Line, false), 1.0);
+        assert_eq!(50.0 / super::wheel_notch(Point, false), 1.0);
+        // A zero line speed never divides by zero.
+        assert!(super::smooth_wheel_notch(Line, 0.0, 800.0, false) >= 1.0);
+    }
+
     #[test]
     fn interface_size_is_relative_to_the_system_scaling() {
         // No choice made, or 100 %: the system's size, whatever the
