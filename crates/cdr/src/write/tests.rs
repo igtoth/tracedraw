@@ -3088,3 +3088,33 @@ fn a_blend_of_two_texts_is_written_as_a_group_of_text_and_curves() {
         assert_eq!(spans[0].text, "XYZ", "{v}");
     }
 }
+
+/// A face drawn with another face's file (italic text in a family
+/// without an italic face) is listed in the font table and the file is
+/// embedded once (#1009).
+#[test]
+fn a_font_file_two_faces_share_is_embedded_once() {
+    const FONT: &[u8] =
+        include_bytes!("../../../../apps/tracedraw/assets/fonts/Selawik-Regular.ttf");
+    let data = std::sync::Arc::new(FONT.to_vec());
+    let face = |italic: bool| FontFace {
+        family: "Selawik".into(),
+        bold: false,
+        italic,
+        data: Some(data.clone()),
+    };
+    let faces = vec![face(false), face(true)];
+    assert_eq!(embedded_size(&faces), FONT.len() as u64);
+    let previews = Previews {
+        fonts: faces,
+        embed_fonts: true,
+        ..Default::default()
+    };
+    let bytes = document_to_cdr_version_with(&doc_with(Vec::new()), NEWEST_VERSION, &previews);
+    let z = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).expect("zip");
+    assert!(z.file_names().any(|n| n == "embed/embedding0"));
+    assert!(!z.file_names().any(|n| n == "embed/embedding1"));
+    let (back, _) = crate::open_bytes(&bytes, "shared").expect("reads back");
+    assert_eq!(back.fonts.len(), 1);
+    assert_eq!(back.fonts[0].data.as_slice(), FONT);
+}

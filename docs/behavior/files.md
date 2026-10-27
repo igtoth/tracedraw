@@ -46,7 +46,14 @@ One window, 760 px wide, the same on every system:
   and greyed for older versions and for a drawing without a profile
   ("Colour profile: none"). **Embed fonts (size)** sits beside it: on,
   the faces the text uses go into the file when their licence allows
-  it; every face is listed in the file's font table either way. It is
+  it; every face is listed in the file's font table either way. The
+  file embedded for a face is the one that draws its text: found by the
+  family's name or legacy name, or as the family of a name with a weight
+  ("Montserrat SemiBold"), the regular face for a bold or italic the
+  family lacks, a variable font for any weight, each file once; only
+  faces drawn by a stand-in and faces in collection files are left out
+  (before #1009 only a face of exactly that name, weight and slant was
+  embedded, so most text kept no font). It is
   greyed below version 16 and when no face may be embedded. Both
   choices stay for the next Save As and for Save. Embed fonts starts
   off, so that drawings saved one after another do not each carry a copy

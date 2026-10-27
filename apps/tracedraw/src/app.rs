@@ -7565,7 +7565,15 @@ pub(crate) fn cdr_previews(doc: &tracedraw_core::Document) -> tracedraw_cdr::wri
 pub(crate) fn cdr_font_faces(
     doc: &tracedraw_core::Document,
 ) -> Vec<tracedraw_cdr::write::FontFace> {
-    let fonts = tracedraw_text::fonts();
+    cdr_font_faces_from(doc, tracedraw_text::fonts())
+}
+
+/// [`cdr_font_faces`] with the fonts of `fonts`: each face's file is the
+/// one that draws its text (see `FontSystem::face_file`).
+pub(crate) fn cdr_font_faces_from(
+    doc: &tracedraw_core::Document,
+    fonts: &tracedraw_text::FontSystem,
+) -> Vec<tracedraw_cdr::write::FontFace> {
     doc.font_faces_used()
         .into_iter()
         .map(|(family, bold, italic)| tracedraw_cdr::write::FontFace {
@@ -8602,5 +8610,101 @@ mod tests {
         let mut next = App::headless();
         next.show_web_notice();
         assert!(matches!(next.dialog, crate::ui::dialogs::Dialog::WebNotice));
+    }
+
+    /// Save As .cdr with Embed fonts, opened on a machine without the
+    /// fonts (#1009): every font file that draws the text goes into the
+    /// file, also for text whose face is not one of exactly that name,
+    /// weight and slant (a family named with its weight, bold italic and
+    /// italic in a family with only regular and bold, a variable font at
+    /// 700), each file once, and
+    /// the file opened elsewhere draws its text with those fonts and lists
+    /// them as the drawing's own.
+    #[test]
+    fn embedded_cdr_fonts_serve_the_text_where_they_are_not_installed() {
+        const REGULAR: &[u8] = include_bytes!("../assets/fonts/Selawik-Regular.ttf");
+        const BOLD: &[u8] = include_bytes!("../assets/fonts/Selawik-Bold.ttf");
+        const VARIABLE: &[u8] = include_bytes!("../../../crates/text/testdata/Quicksand-VF.ttf");
+        let here = tracedraw_text::FontSystem::empty();
+        here.add_fonts(vec![REGULAR.to_vec(), BOLD.to_vec(), VARIABLE.to_vec()]);
+        let mut doc = tracedraw_core::Document::default();
+        let runs = [
+            ("Selawik SemiBold", false, false),
+            ("Selawik", true, true),
+            ("Selawik", false, true),
+            ("Quicksand", true, false),
+        ];
+        for (n, (family, bold, italic)) in runs.into_iter().enumerate() {
+            let mut span = TextSpan::new("Hello", family, 24.0);
+            span.bold = bold;
+            span.italic = italic;
+            doc.pages[0].layers[0]
+                .shapes
+                .push(tracedraw_core::Shape::new(
+                    ShapeId(n as u64 + 1),
+                    ShapeKind::Text {
+                        spans: vec![span],
+                        origin: Point::new(10.0, 20.0 + 30.0 * n as f64),
+                        frame: None,
+                        align: tracedraw_core::TextAlign::Left,
+                        para: Default::default(),
+                        on_path: None,
+                    },
+                ));
+        }
+        let faces = cdr_font_faces_from(&doc, &here);
+        assert!(faces.iter().all(|f| f.data.is_some()), "{faces:?}");
+        let previews = tracedraw_cdr::write::Previews {
+            fonts: faces,
+            embed_fonts: true,
+            ..Default::default()
+        };
+        let bytes = tracedraw_cdr::write::document_to_cdr_version_with(
+            &doc,
+            tracedraw_cdr::write::NEWEST_VERSION,
+            &previews,
+        );
+        let (back, report) = tracedraw_cdr::open_bytes(&bytes, "fonts").expect("opens");
+        let mut carried: Vec<usize> = back.fonts.iter().map(|f| f.data.len()).collect();
+        carried.sort_unstable();
+        let mut want = vec![REGULAR.len(), BOLD.len(), VARIABLE.len()];
+        want.sort_unstable();
+        assert_eq!(carried, want, "{:?}", report.warnings);
+        // Another machine, without these fonts.
+        let there = tracedraw_text::FontSystem::empty();
+        let added = there.add_document_fonts(&back.fonts);
+        for family in ["Selawik", "Quicksand"] {
+            assert!(added.iter().any(|f| f == family), "{added:?}");
+            assert!(there.is_document_family(family), "{family}");
+            assert!(there.family_info(family).is_some_and(|i| i.embedded));
+        }
+        let spans: Vec<TextSpan> = back
+            .pages
+            .iter()
+            .flat_map(|p| &p.layers)
+            .flat_map(|l| &l.shapes)
+            .filter_map(|s| match &s.kind {
+                ShapeKind::Text { spans, .. } => spans.first().cloned(),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(spans.len(), 4);
+        for span in &spans {
+            // Drawn with the embedded file, not a stand-in.
+            let file = there.face_file(&span.font_family, span.bold, span.italic);
+            assert!(
+                file.is_some_and(|d| back.fonts.iter().any(|f| f.data == d)),
+                "{} bold {} italic {}",
+                span.font_family,
+                span.bold,
+                span.italic
+            );
+            assert_eq!(
+                there.substitute(&span.font_family),
+                None,
+                "{}",
+                span.font_family
+            );
+        }
     }
 }
