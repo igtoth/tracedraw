@@ -9008,44 +9008,6 @@ fn a_wheel_notch_zooms_in_a_glide() {
     );
 }
 
-/// A right click on a button of the Standard toolbar opens the bar's
-/// menu, as one on its empty part does (#835).
-#[test]
-fn a_right_click_on_a_toolbar_button_opens_the_bar_menu() {
-    let (ctx, mut app, _) = setup();
-    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
-    let slot = app
-        .shown_bar_slots
-        .iter()
-        .find(|s| s.bar == crate::ui::bar_items::ItemBar::Standard)
-        .cloned()
-        .expect("the Standard toolbar");
-    let at = slot.items[1].center();
-    let menu =
-        egui::Id::new(("bar_background", crate::ui::bars::Bar::Standard as u8)).with("bar_menu");
-    assert!(!egui::Popup::is_id_open(&ctx, menu));
-    frame(
-        &ctx,
-        &mut app,
-        vec![Event::PointerMoved(at)],
-        Modifiers::NONE,
-    );
-    frame(
-        &ctx,
-        &mut app,
-        vec![button(at, true, PointerButton::Secondary, Modifiers::NONE)],
-        Modifiers::NONE,
-    );
-    frame(
-        &ctx,
-        &mut app,
-        vec![button(at, false, PointerButton::Secondary, Modifiers::NONE)],
-        Modifiers::NONE,
-    );
-    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
-    assert!(egui::Popup::is_id_open(&ctx, menu), "the bar's menu");
-}
-
 /// Ctrl+Z through a curve drawn with the Pen goes back to drawing it: the
 /// Pen is chosen again and a line goes on from the last node left,
 /// leaving along the mirror of its handle, with a curved preview; that
@@ -10406,4 +10368,190 @@ fn frame_times_of_an_envelope_drag() {
             );
         }
     }
+}
+
+/// Whether the toolbars' menu shows this frame: its "Lock Toolbars"
+/// entry is drawn.
+fn bar_menu_shown(ctx: &egui::Context, app: &mut App, events: Vec<Event>) -> bool {
+    let lock = crate::i18n::tr("bars.lock");
+    frame_shapes(ctx, app, events).iter().any(|s| match s {
+        egui::Shape::Text(t) => t.galley.text() == lock,
+        _ => false,
+    })
+}
+
+/// A right click at `at` (press and release in frames of their own, or
+/// both in one frame as a quick click can come), then three quiet
+/// frames: whether the bar menu showed on each of those frames. The
+/// release frame only measures the menu (egui's sizing pass draws
+/// nothing), so it is left out.
+fn right_click_menu(ctx: &egui::Context, app: &mut App, at: Pos2, one_frame: bool) -> Vec<bool> {
+    let none = Modifiers::NONE;
+    let mut shown = Vec::new();
+    frame(ctx, app, vec![Event::PointerMoved(at)], none);
+    if one_frame {
+        frame(
+            ctx,
+            app,
+            vec![
+                button(at, true, PointerButton::Secondary, none),
+                button(at, false, PointerButton::Secondary, none),
+            ],
+            none,
+        );
+    } else {
+        frame(
+            ctx,
+            app,
+            vec![button(at, true, PointerButton::Secondary, none)],
+            none,
+        );
+        frame(
+            ctx,
+            app,
+            vec![button(at, false, PointerButton::Secondary, none)],
+            none,
+        );
+    }
+    for _ in 0..3 {
+        shown.push(bar_menu_shown(ctx, app, Vec::new()));
+    }
+    shown
+}
+
+/// Close whatever menu is open with a left click far from any bar, on
+/// the canvas, and check it went.
+fn click_menu_away(ctx: &egui::Context, app: &mut App) {
+    let away = egui::pos2(900.0, 600.0);
+    let none = Modifiers::NONE;
+    frame(ctx, app, vec![Event::PointerMoved(away)], none);
+    frame(
+        ctx,
+        app,
+        vec![button(away, true, PointerButton::Primary, none)],
+        none,
+    );
+    frame(
+        ctx,
+        app,
+        vec![button(away, false, PointerButton::Primary, none)],
+        none,
+    );
+    assert!(
+        !bar_menu_shown(ctx, app, Vec::new()),
+        "a click outside closes the menu"
+    );
+}
+
+/// A right click anywhere on a toolbar opens the toolbars' menu and it
+/// stays open with its entries over the frames after the release, on
+/// the Standard toolbar (a button and its empty end), the property bar,
+/// the toolbox and a floating toolbar; a click outside closes it, and so
+/// does picking an entry (#835, #994).
+#[test]
+fn a_right_click_on_any_toolbar_keeps_the_bar_menu_open() {
+    use crate::ui::bars::{Bar, Dock};
+    let (ctx, mut app, _) = setup();
+    let background = |ctx: &egui::Context, bar: Bar| {
+        ctx.read_response(egui::Id::new(("bar_background", bar as u8)))
+            .map(|r| r.rect)
+            .expect("the bar's background")
+    };
+    let standard = app
+        .shown_bar_slots
+        .iter()
+        .find(|s| s.bar == crate::ui::bar_items::ItemBar::Standard)
+        .cloned()
+        .expect("the Standard toolbar");
+    let std_rect = background(&ctx, Bar::Standard);
+    let property = background(&ctx, Bar::Property);
+    let toolbox = background(&ctx, Bar::Toolbox);
+    let spots = [
+        ("a Standard button", standard.items[1].center()),
+        (
+            "the Standard bar's empty end",
+            egui::pos2(
+                standard.items.last().map_or(std_rect.left(), |r| r.right()) + 20.0,
+                std_rect.center().y,
+            ),
+        ),
+        (
+            "the property bar",
+            egui::pos2(property.left() + 40.0, property.center().y),
+        ),
+        (
+            "a toolbox button",
+            egui::pos2(toolbox.center().x, toolbox.top() + 30.0),
+        ),
+    ];
+    for one_frame in [false, true] {
+        for (what, at) in spots {
+            let shown = right_click_menu(&ctx, &mut app, at, one_frame);
+            assert!(
+                shown.iter().all(|s| *s),
+                "{what} (one frame: {one_frame}): {shown:?}"
+            );
+            click_menu_away(&ctx, &mut app);
+        }
+    }
+    // A floating toolbar: on its title and on one of its buttons.
+    crate::ui::bars::move_bar(
+        &mut app,
+        Bar::Zoom,
+        Dock::Floating,
+        Some(egui::pos2(500.0, 400.0)),
+    );
+    for _ in 0..3 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    let zoom = app
+        .shown_bar_slots
+        .iter()
+        .find(|s| s.bar == crate::ui::bar_items::ItemBar::Zoom)
+        .cloned()
+        .expect("the floating Zoom toolbar");
+    for (what, at) in [
+        (
+            "a floating title",
+            egui::pos2(zoom.rect.left() + 30.0, 400.0 + 6.0),
+        ),
+        ("a floating button", zoom.items[0].center()),
+    ] {
+        let shown = right_click_menu(&ctx, &mut app, at, false);
+        assert!(shown.iter().all(|s| *s), "{what}: {shown:?}");
+        click_menu_away(&ctx, &mut app);
+    }
+    // Picking an entry runs it and closes the menu: Lock Toolbars.
+    let at = standard.items[1].center();
+    assert!(right_click_menu(&ctx, &mut app, at, false)
+        .iter()
+        .all(|s| *s));
+    let lock = crate::i18n::tr("bars.lock");
+    let entry = frame_shapes(&ctx, &mut app, Vec::new())
+        .iter()
+        .find_map(|s| match s {
+            egui::Shape::Text(t) if t.galley.text() == lock => Some(t.pos + egui::vec2(4.0, 4.0)),
+            _ => None,
+        })
+        .expect("the Lock Toolbars entry");
+    let locked = app.settings.bars.locked;
+    let none = Modifiers::NONE;
+    frame(&ctx, &mut app, vec![Event::PointerMoved(entry)], none);
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(entry, true, PointerButton::Primary, none)],
+        none,
+    );
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(entry, false, PointerButton::Primary, none)],
+        none,
+    );
+    assert_eq!(app.settings.bars.locked, !locked, "the entry ran");
+    assert!(
+        !bar_menu_shown(&ctx, &mut app, Vec::new()),
+        "and the menu closed"
+    );
 }
