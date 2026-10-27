@@ -1270,6 +1270,8 @@ pub struct App {
     /// The choices of the last File > Export of this session, which the
     /// next one starts with (#617).
     pub last_export: Option<crate::ui::dialogs::ExportState>,
+    /// The choices of this session's last export of each format (#617).
+    pub export_by_format: Vec<crate::prefs::ExportPreset>,
     /// Print Merge's Place Inside Frame waiting for a click on the shape
     /// that holds the picture (#577).
     pub pending_merge_frame: bool,
@@ -2316,6 +2318,7 @@ impl App {
             pending_merge_frame: false,
             autofit_preview: None,
             last_export: None,
+            export_by_format: Vec::new(),
             pending_copy_effect: None,
             pending_copy_envelope: false,
             pending_clone_effect: None,
@@ -6435,10 +6438,43 @@ impl App {
         kept.tags.clear();
         kept.selection_only = false;
         kept.preset_name = None;
+        crate::prefs::keep_format_choices(&mut self.export_by_format, &kept);
         self.last_export = Some(kept);
         if self.settings.formats.remember_last {
             self.settings.formats.remember(st);
             self.settings.save();
+        }
+    }
+
+    /// The Export dialog `st` switched to the format `format`: it takes the
+    /// choices that format was last exported with, in this session or,
+    /// with Remember the settings of the last export on, an earlier one
+    /// (#617). A format not exported yet keeps the dialog's choices.
+    pub fn recall_export_format(&self, st: &mut crate::ui::dialogs::ExportState, format: usize) {
+        st.format = format;
+        st.script = None;
+        if !st.remember {
+            return;
+        }
+        let saved = self
+            .export_by_format
+            .iter()
+            .find(|p| p.format == format)
+            .or_else(|| {
+                self.settings
+                    .formats
+                    .remember_last
+                    .then(|| {
+                        self.settings
+                            .formats
+                            .export_by_format
+                            .iter()
+                            .find(|p| p.format == format)
+                    })
+                    .flatten()
+            });
+        if let Some(p) = saved {
+            p.recall(st);
         }
     }
 

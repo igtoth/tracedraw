@@ -65,6 +65,12 @@ pub struct ExportState {
     /// A name being typed for a new preset (false) or for renaming the
     /// chosen one (true).
     pub preset_name: Option<(String, bool)>,
+    /// The unit the bitmap size is typed in: an index into
+    /// [`EXPORT_SIZE_UNITS`] (#617).
+    pub size_unit: usize,
+    /// Bitmaps: the artwork's printed size against the page's, the same
+    /// across and down (1 = as drawn, #617).
+    pub scale: f64,
 }
 
 impl Default for ExportState {
@@ -87,6 +93,52 @@ impl Default for ExportState {
             webp_lossless: false,
             preset: String::new(),
             preset_name: None,
+            size_unit: 0,
+            scale: 1.0,
+        }
+    }
+}
+
+/// The units a bitmap export's size is shown and typed in, with their
+/// length in mm (pixels have none: they follow the resolution).
+pub const EXPORT_SIZE_UNITS: [(&str, f64); 4] =
+    [("px", 0.0), ("mm", 1.0), ("cm", 10.0), ("in", 25.4)];
+
+/// The smallest and largest bitmap export scale.
+pub const EXPORT_SCALE_RANGE: std::ops::RangeInclusive<f64> = 0.01..=100.0;
+
+/// What the bitmap size fields show for an artwork `w_mm` by `h_mm` with
+/// `st`'s scale, resolution and unit.
+pub fn export_size_in_unit(w_mm: f64, h_mm: f64, st: &ExportState) -> (f64, f64) {
+    let unit = EXPORT_SIZE_UNITS[st.size_unit.min(EXPORT_SIZE_UNITS.len() - 1)].1;
+    if unit > 0.0 {
+        let s = st.scale_or_one();
+        (w_mm * s / unit, h_mm * s / unit)
+    } else {
+        let (w, h) = export_pixels(w_mm, h_mm, st.render_dpi());
+        (f64::from(w), f64::from(h))
+    }
+}
+
+/// A size typed in a bitmap size field: `typed` (in `st`'s unit) for the
+/// side that is `side_mm` long on the page. In pixels it sets the
+/// resolution, as before; in a length it sets the scale, the resolution
+/// staying. Either way the other side follows (#617).
+pub fn set_export_size(st: &mut ExportState, side_mm: f64, typed: f64) {
+    if !(side_mm > 0.0 && side_mm.is_finite() && typed > 0.0 && typed.is_finite()) {
+        return;
+    }
+    let unit = EXPORT_SIZE_UNITS[st.size_unit.min(EXPORT_SIZE_UNITS.len() - 1)].1;
+    if unit > 0.0 {
+        // Not past what the highest resolution can draw.
+        let most = (2400.0 / st.dpi.max(MIN_EXPORT_DPI)).min(*EXPORT_SCALE_RANGE.end());
+        let least = EXPORT_SCALE_RANGE.start().min(most);
+        st.scale = (typed * unit / side_mm).clamp(least, most);
+    } else {
+        let px = typed.round().clamp(1.0, 200_000.0) as u32;
+        let scale = st.scale_or_one();
+        if let Some(dpi) = dpi_for_pixels(side_mm * scale, px) {
+            st.dpi = dpi;
         }
     }
 }
@@ -97,6 +149,22 @@ pub const CDR_ISSUE: &str = "https://github.com/igtoth/tracedraw/issues/new?temp
 pub const PDF_STANDARDS: [&str; 4] = ["PDF 1.4", "PDF/X-1a:2003", "PDF/X-3:2003", "PDF/X-4"];
 
 impl ExportState {
+    /// The scale, 1 when it is not a usable number.
+    pub fn scale_or_one(&self) -> f64 {
+        if self.scale.is_finite() && self.scale > 0.0 {
+            self.scale
+                .clamp(*EXPORT_SCALE_RANGE.start(), *EXPORT_SCALE_RANGE.end())
+        } else {
+            1.0
+        }
+    }
+
+    /// The resolution bitmaps are drawn at: the one the file records,
+    /// times the scale.
+    pub fn render_dpi(&self) -> f64 {
+        (self.dpi * self.scale_or_one()).clamp(MIN_EXPORT_DPI, 2400.0)
+    }
+
     pub fn web() -> Self {
         ExportState {
             format: 2,
@@ -2668,6 +2736,8 @@ fn export_preview_key(app: &App, st: &ExportState) -> u64 {
     st.all_pages.hash(&mut h);
     st.quality.hash(&mut h);
     st.dpi.to_bits().hash(&mut h);
+    st.scale_or_one().to_bits().hash(&mut h);
+    st.webp_lossless.hash(&mut h);
     if st.selection_only {
         for id in &app.selection {
             id.raw().hash(&mut h);
@@ -2972,9 +3042,9 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
                                         export_format_label(i),
                                     )
                                     .clicked()
+                                    && (st.format != i || st.script.is_some())
                                 {
-                                    st.format = i;
-                                    st.script = None;
+                                    app.recall_export_format(st, i);
                                 }
                             }
                             if !scripted.is_empty() {
@@ -3020,32 +3090,73 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
                     } else {
                         app.page_rect()
                     };
-                    // The size in pixels: typing either side sets the
-                    // resolution that gives it, the other side following.
-                    let (mut w, mut h) = export_pixels(b.width(), b.height(), st.dpi);
+                    // The size in the chosen unit: typing either side sets
+                    // the resolution (pixels) or the scale (lengths) that
+                    // gives it, the other side following (#617).
+                    let (mut w, mut h) = export_size_in_unit(b.width(), b.height(), st);
+                    let unit = st.size_unit.min(EXPORT_SIZE_UNITS.len() - 1);
+                    let (decimals, step) = if unit == 0 { (0, 1.0) } else { (2, 0.1) };
                     ui.horizontal(|ui| {
-                        ui.label(tr("dialog.pixels"));
+                        ui.label(tr("dialog.export_size"));
                         let wc = ui
                             .add(
                                 crate::ui::field::NumField::new(&mut w)
-                                    .range(1..=200_000)
-                                    .suffix(" px"),
+                                    .range(0.01..=200_000.0)
+                                    .max_decimals(decimals)
+                                    .speed(step)
+                                    .width(70.0),
                             )
                             .changed();
                         ui.label("x");
                         let hc = ui
                             .add(
                                 crate::ui::field::NumField::new(&mut h)
-                                    .range(1..=200_000)
-                                    .suffix(" px"),
+                                    .range(0.01..=200_000.0)
+                                    .max_decimals(decimals)
+                                    .speed(step)
+                                    .width(70.0),
                             )
                             .changed();
                         if wc {
-                            st.dpi = dpi_for_pixels(b.width(), w).unwrap_or(st.dpi);
+                            set_export_size(st, b.width(), w);
                         } else if hc {
-                            st.dpi = dpi_for_pixels(b.height(), h).unwrap_or(st.dpi);
+                            set_export_size(st, b.height(), h);
+                        }
+                        egui::ComboBox::from_id_salt("exp_size_unit")
+                            .selected_text(EXPORT_SIZE_UNITS[unit].0)
+                            .width(50.0)
+                            .show_ui(ui, |ui| {
+                                for (i, (name, _)) in EXPORT_SIZE_UNITS.iter().enumerate() {
+                                    ui.selectable_value(&mut st.size_unit, i, *name);
+                                }
+                            });
+                        let scale = st.scale_or_one();
+                        if (scale - 1.0).abs() > 1e-9
+                            && ui
+                                .small_button(format!("{:.0} %", scale * 100.0))
+                                .on_hover_text(tr("dialog.export_scale_reset"))
+                                .clicked()
+                        {
+                            st.scale = 1.0;
                         }
                     });
+                    // What comes out: pixels, the resolution the file
+                    // records and its colours.
+                    let (pw, ph) = export_pixels(b.width(), b.height(), st.render_dpi());
+                    let (_, ext) = EXPORT_FORMATS[st.format.min(EXPORT_FORMATS.len() - 1)];
+                    let alpha = st.transparent && crate::export::keeps_alpha(ext);
+                    ui.label(
+                        egui::RichText::new(trf(
+                            "dialog.export_output",
+                            &[
+                                ("w", &pw.to_string()),
+                                ("h", &ph.to_string()),
+                                ("dpi", &format!("{:.0}", st.dpi)),
+                                ("mode", if alpha { "sRGB + alpha" } else { "sRGB" }),
+                            ],
+                        ))
+                        .color(Tokens::text_dim()),
+                    );
                 }
                 if !scripted && st.format == 1 {
                     ui.horizontal(|ui| {
