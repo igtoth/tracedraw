@@ -77,6 +77,8 @@ is kept in the preferences (`tools.dimension_style`).
 | Options > Extension line gap | 0 | 0 to 100 mm between the measured points and the extension lines (at most the lines' length) |
 | Options > Extension past the line | 2 mm | 0 to 100 mm |
 | Options > Horizontal text | off | a linear dimension's label stays horizontal |
+| Options > Join lines at corners | off | the extension lines run into the dimension line (or arc) as one curve with corners, nothing past it (#641) |
+| Options > Corner radius | 0 | 0 to 100 mm, rounds those corners (each cut at most half an inner leg, an end leg wholly); off unless the lines are joined |
 
 The Options menu stays open while its fields are typed in or stepped;
 a click outside it closes it
@@ -84,6 +86,20 @@ a click outside it closes it
 Styles saved before the options read with their defaults; lengths that
 are not finite numbers read as the defaults
 (`dimensions::tests::more_options_shape_the_dimension`).
+
+Joined, a linear dimension is one open curve from the first measured
+point (or the gap off it) up to the dimension line, along it and down to
+the second; a centred label breaks it in two, each with one corner. An
+angular one runs from the vertex (or the gap off it) out along the first
+side, round the arc and back along the second side. A rounded corner is
+a quarter-circle cubic from the cut on one leg to the cut on the other
+(on the arc the same length along it), so it stays smooth for Convert to
+Curves, Break Apart and the Shape tool. Both options are kept in the
+dimension, so in a saved `.tdraw` file, and in the bar's style for the
+next ones; styles saved before read with both off and a radius that is
+not a finite number reads as 0
+(`dimensions::tests::joined_lines_meet_in_rounded_corners`,
+`dimensions::tests::joined_corners_are_kept_in_the_file`).
 
 ## Editing the label
 
@@ -230,6 +246,8 @@ ones made next; the style is kept in the preferences
 - `dimensions::tests::a_label_edited_in_place_stays_linked`
 - `dimensions::tests::new_units_or_default_font_keep_labels_measured`
 - `dimensions::tests::more_options_shape_the_dimension`
+- `dimensions::tests::joined_lines_meet_in_rounded_corners`
+- `dimensions::tests::joined_corners_are_kept_in_the_file`
 - `dimensions::tests::undo_after_an_emptied_label_goes_all_the_way_back`
 - `dimensions::tests::decimals_older_dimensions_and_fills_read_back`
 - `dimensions::tests::a_dragged_fill_on_a_dimension_is_one_step`

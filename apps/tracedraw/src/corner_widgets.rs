@@ -2,13 +2,17 @@
 //! corner of the curves being edited; dragging one into the corner rounds
 //! it, live, with the arc's middle under the pointer. With nodes chosen
 //! only their corners show a widget and round; with none, every corner
-//! rounds together. Open curves round their inner corners too. They show
-//! only with Options > Nodes and Handles > corner widgets on (#884). See
+//! rounds together. Open curves round their inner corners too. A corner
+//! already rounded (an arc tangent to two straight sides) keeps a widget
+//! on its arc, so its radius can change again (#872). They show only
+//! with Options > Nodes and Handles > corner widgets on (#884). See
 //! docs/behavior/shape-tool.md, Corner widgets.
 
 use crate::app::{App, Drag};
 use crate::tools::Tool;
-use tracedraw_core::corner_cut::{corners, cut_corners, max_fillet, Corner, CornerCut};
+use tracedraw_core::corner_cut::{
+    corners_and_fillets, cut_corners, fillets, max_fillet, unround, Corner, CornerCut,
+};
 use tracedraw_core::geometry::{Affine, BezPath, Point};
 use tracedraw_core::{Command, ShapeId, ShapeKind};
 
@@ -27,20 +31,35 @@ const MAX_WIDGETS: usize = 32;
 #[derive(Default)]
 pub struct CornerCache {
     key: Option<(u64, Vec<ShapeId>)>,
-    curves: Vec<(ShapeId, Affine, Vec<Corner>)>,
+    curves: Vec<(ShapeId, Affine, Vec<Spot>)>,
 }
 
-/// One widget on the screen: the curve, its corner, and where it is.
+/// A corner that takes a widget: a sharp one, or one already rounded
+/// (#872), whose `corner` is the sharp corner its sides meet at.
+struct Spot {
+    corner: Corner,
+    /// How far the rounded corner's arc lies into the corner (0 when
+    /// sharp).
+    depth: f64,
+    /// The nodes that choose it: the corner's, or every node of the arc.
+    nodes: Vec<usize>,
+}
+
+/// One widget on the screen: the curve, its corner, how far its arc lies
+/// into the corner already, and where it is.
 #[derive(Debug, Clone, Copy)]
 pub struct Widget {
     pub shape: ShapeId,
     pub corner: Corner,
+    pub depth: f64,
     pub at: egui::Pos2,
 }
 
-/// The drag of a corner widget: the curve as it was, the corners it
-/// rounds (`None`: every corner), the grabbed corner (local space), the
-/// largest radius they all take, and where the drag began (local).
+/// The drag of a corner widget: the curve as it was, with the rounded
+/// corners the drag changes made sharp again, the corners it rounds
+/// (`None`: every corner), the grabbed corner (local space), how far its
+/// arc lay into it when the drag began, the largest radius they all take,
+/// and where the drag began (local).
 #[derive(Debug, Clone, PartialEq)]
 pub struct CornerDrag {
     pub shape: ShapeId,
@@ -48,6 +67,7 @@ pub struct CornerDrag {
     pub closed: bool,
     pub only: Option<Vec<usize>>,
     pub corner: Corner,
+    pub depth: f64,
     pub max: f64,
     pub from: Point,
     pub begun: bool,
@@ -96,7 +116,29 @@ impl App {
                         return None;
                     }
                     let t = self.doc().parent_transform(*id)? * s.transform;
-                    Some((*id, t, corners(path)))
+                    let (sharp, rounded) = corners_and_fillets(path);
+                    let mut spots: Vec<Spot> = sharp
+                        .into_iter()
+                        .map(|c| Spot {
+                            corner: c,
+                            depth: 0.0,
+                            nodes: vec![c.node],
+                        })
+                        .collect();
+                    spots.extend(rounded.into_iter().filter_map(|f| {
+                        let depth = f.depth();
+                        Some(Spot {
+                            corner: Corner {
+                                node: *f.nodes.first()?,
+                                at: f.corner,
+                                inside: f.inside,
+                                theta: f.theta,
+                            },
+                            depth,
+                            nodes: f.nodes,
+                        })
+                    }));
+                    Some((*id, t, spots))
                 })
                 .collect();
             cache.key = Some(key);
@@ -112,12 +154,15 @@ impl App {
             if chosen.is_empty() && list.len() > MAX_WIDGETS {
                 continue;
             }
-            for c in list {
-                if !chosen.is_empty() && !chosen.contains(&c.node) {
+            for spot in list {
+                if !chosen.is_empty() && !spot.nodes.iter().any(|n| chosen.contains(n)) {
                     continue;
                 }
-                let node = self.view.to_screen(*t * c.at);
-                let toward = self.view.to_screen(*t * (c.at + c.inside));
+                let c = &spot.corner;
+                // A rounded corner's widget sits off the middle of its arc.
+                let mid = c.at + c.inside * spot.depth;
+                let node = self.view.to_screen(*t * mid);
+                let toward = self.view.to_screen(*t * (mid + c.inside));
                 let d = toward - node;
                 if d.length() < 1e-6 || !d.x.is_finite() || !d.y.is_finite() {
                     continue;
@@ -125,6 +170,7 @@ impl App {
                 out.push(Widget {
                     shape: *id,
                     corner: *c,
+                    depth: spot.depth,
                     at: node + d.normalized() * WIDGET_OFFSET_PX,
                 });
             }
@@ -167,16 +213,39 @@ impl App {
             .filter(|(id, _)| *id == w.shape)
             .map(|(_, i)| *i)
             .collect();
+        // The rounded corners the drag changes become sharp again first
+        // (#872): every one with no node chosen, else those of the chosen
+        // nodes; the chosen nodes are renumbered to match.
+        let rounded = fillets(path);
+        let which: Vec<usize> = rounded
+            .iter()
+            .enumerate()
+            .filter(|(_, f)| chosen.is_empty() || f.nodes.iter().any(|n| chosen.contains(n)))
+            .map(|(i, _)| i)
+            .collect();
+        let (base, chosen) = if which.is_empty() {
+            (path.clone(), chosen)
+        } else {
+            let (base, map) = unround(path, Some(&which));
+            let mut renumbered: Vec<usize> = chosen
+                .iter()
+                .filter_map(|i| map.get(*i).copied().flatten())
+                .collect();
+            renumbered.sort_unstable();
+            renumbered.dedup();
+            (base, renumbered)
+        };
         let only = (!chosen.is_empty()).then_some(chosen);
-        let Some(max) = max_fillet(path, only.as_deref()) else {
+        let Some(max) = max_fillet(&base, only.as_deref()) else {
             return false;
         };
         self.drag = Drag::CornerWidget(Box::new(CornerDrag {
             shape: w.shape,
-            path: path.clone(),
+            path: base,
             closed: *closed,
             only,
             corner: w.corner,
+            depth: w.depth,
             max,
             from: t.inverse() * p,
             begun: false,
@@ -202,7 +271,8 @@ impl App {
             return;
         }
         let lp = t.inverse() * p;
-        let along: f64 = (lp - d.from).dot(d.corner.inside);
+        // A rounded corner's arc starts where it was (#872).
+        let along: f64 = d.depth + (lp - d.from).dot(d.corner.inside);
         let r = radius_for(along, d.corner.theta).min(d.max * 0.999);
         let path = if r > 1e-6 {
             cut_corners(&d.path, CornerCut::Fillet(r), d.only.as_deref()).0

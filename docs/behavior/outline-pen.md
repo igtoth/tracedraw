@@ -65,6 +65,19 @@ selected (the default outline) nothing is previewed.
 | Behind fill | off | the outline is drawn under the fill |
 | Scale with object | off | the width follows the object's scale factor `sqrt(|det|)` |
 
+## Properties docker
+
+The Properties docker's outline section (the default outline with
+nothing selected, the selection's outline otherwise) shows the common
+settings in view: Paint, Hairline and the width, Caps, Corners, the
+start and end arrowheads, Dash (and custom dashes), Align dashes, Edit
+Line Style, Position, Behind fill and Scale with object. The mitre limit
+(with mitred corners), the nib stretch and the nib angle sit under an
+Advanced header below them, closed at first unless one of them is set
+away from its default (45 degrees, 100 %, 0 degrees) or differs between
+the selected objects, so nothing set is hidden (#487,
+`ui::dockers::tests::every_outline_option_is_in_the_properties_docker`).
+
 ## Width unit
 
 Widths are kept in millimetres. The Properties docker's outline section
