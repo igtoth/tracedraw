@@ -1,0 +1,24 @@
+[2026-10-26T15:18:21Z INFO  tracedraw::startup_log] TraceDraw 0.19.4 on windows x86_64
+[2026-10-26T15:18:21Z INFO  tracedraw::startup_log] Intel64 Family 6 Model 37 Stepping 5, GenuineIntel, 4 threads, Windows 10.0 build 19045
+[2026-10-26T15:18:21Z INFO  tracedraw] opening the window with Hardware (Options asks for Hardware)
+[2026-10-26T15:18:21Z INFO  eframe] Both the glow and wgpu renderers are available. Using wgpu.
+[2026-10-26T15:18:21Z DEBUG wgpu_core::instance] Instance::new: failed to create Vulkan backend: InstanceError { message: "missing Vulkan entry points", source: Some(LibraryLoadFailure(LoadLibraryExW { source: Os { code: 126, kind: Uncategorized, message: "Uvedený modul nebyl nalezen." } })) }
+[2026-10-26T15:18:21Z DEBUG wgpu_core::instance] Instance::new: created Dx12 backend
+[2026-10-26T15:18:21Z DEBUG wgpu_core::instance] Instance::new: created Gl backend
+[2026-10-26T15:18:21Z DEBUG wgpu_core::instance] Adapter AdapterInfo { name: "Microsoft Basic Render Driver", vendor: 5140, device: 140, device_type: Cpu, device_pci_bus_id: "", driver: "10.0.19041.7802", driver_info: "", backend: Dx12, subgroup_min_size: 4, subgroup_max_size: 4, transient_saves_memory: Some(false), limit_bucket: None }
+[2026-10-26T15:18:21Z WARN  wgpu_hal::gles::adapter] Returned GL context is 2.1, when 3.3+ is needed
+[2026-10-26T15:18:21Z INFO  tracedraw::gpu] 1 graphics adapter(s) for Hardware:
+[2026-10-26T15:18:21Z INFO  tracedraw::gpu]   Microsoft Basic Render Driver (Dx12, Cpu, 1414:008c, driver 10.0.19041.7802 ): rejected: software adapter (hardware acceleration wants a graphics card)
+[2026-10-26T15:18:21Z ERROR eframe::native::run] Exiting because of error: WGPU error: Adapter selection failed: no graphics card can draw the window (a software adapter is left to the last renderer)
+[2026-10-26T15:18:21Z WARN  tracedraw] the window did not open with Hardware (WGPU error: Adapter selection failed: no graphics card can draw the window (a software adapter is left to the last renderer)); trying Gl
+[2026-10-26T15:18:21Z INFO  tracedraw::startup_log] TraceDraw 0.19.4 on windows x86_64
+[2026-10-26T15:18:21Z INFO  tracedraw::startup_log] Intel64 Family 6 Model 37 Stepping 5, GenuineIntel, 4 threads, Windows 10.0 build 19045
+[2026-10-26T15:18:21Z INFO  tracedraw] opening the window with Gl (Options asks for Hardware)
+[2026-10-26T15:18:21Z INFO  eframe] Both the glow and wgpu renderers are available. Using glow.
+[2026-10-26T15:18:21Z WARN  eframe::native::glow_integration::first_context] Failed to create context using context attributes ContextAttributes { release_behavior: Flush, debug: false, robustness: NotRobust, profile: None, api: None, priority: None, shared_context: None, raw_window_handle: Some(Win32(Win32WindowHandle { hwnd: 2688266, hinstance: Some(140695661510656) })) } due to error: [ffffffffc0072095] OS Error -1073274731 (FormatMessageW() returned error 317) (os error -1073274731)
+[2026-10-26T15:18:21Z WARN  eframe::native::glow_integration::first_context] Failed to create context using context attributes ContextAttributes { release_behavior: Flush, debug: false, robustness: NotRobust, profile: None, api: Some(Gles(None)), priority: None, shared_context: None, raw_window_handle: Some(Win32(Win32WindowHandle { hwnd: 2688266, hinstance: Some(140695661510656) })) } due to error: extension to create ES context with wgl is not present
+[2026-10-26T15:18:21Z INFO  tracedraw::gpu] OpenGL: Intel, Intel(R) HD Graphics, version 2.1.0 - Build 8.15.10.2900, GLSL 1.20  - Intel Build 8.15.10.2900
+[2026-10-26T15:18:21Z INFO  tracedraw::gpu] the window opened with Gl: OpenGL
+[2026-10-26T15:18:23Z INFO  tracedraw_text] loaded 2645 font faces, 1332 families
+[2026-10-26T15:18:23Z INFO  tracedraw::theme] UI fallback fonts: fallback-Noto Sans Arabic, fallback-Nirmala UI, fallback-Microsoft YaHei, fallback-Microsoft JhengHei, fallback-Yu Gothic UI
+[2026-10-26T15:18:23Z INFO  tracedraw::frame_stats] first frame 2.09 s after the start: window 1920 x 1017 px, 1 px per point, monitor 1920 x 1080 points
