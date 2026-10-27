@@ -12,3 +12,5 @@
 616 https://github.com/user-attachments/files/33973652/02-tracedraw-0.19.4-removed-previous-config-files%2Brestart.log
 616 https://github.com/user-attachments/files/33973651/03-tracedraw-0.19.4-third-run-keyboard-shortcuts-worked-but-the-app-crashed.log
 616 https://github.com/user-attachments/assets/f6b92bce-9ad5-4c6a-9447-b8cf3487a7e6
+787 https://github.com/user-attachments/assets/a219aa73-b281-4561-b479-5d0e5804b5de
+787 https://github.com/user-attachments/assets/611cbfe4-8b0b-49b7-9d14-efa5f45b844f
