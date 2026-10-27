@@ -1181,6 +1181,11 @@ pub fn accelerate(t: f64, a: f64) -> f64 {
 /// The most steps a contour draws.
 const MAX_CONTOUR_STEPS: u32 = 999;
 
+/// The most steps a blend draws (the range the Blend tool offers). A
+/// blend asking for more, from a file or a script, draws this many, so
+/// one value can never fill the memory with steps (#980).
+pub const MAX_BLEND_STEPS: u32 = 999;
+
 /// The contour steps of `shape`: step `i` of `n` is its outline offset by
 /// `n * offset * accelerate(i / n, accel_objects)` (to the centre: by
 /// `i * offset` until nothing is left), coloured `accelerate(i / n,
@@ -1282,7 +1287,7 @@ fn blend(
         Some(d) if d > 1e-6 && path_len > 0.0 => ((path_len / d).floor() as usize)
             .saturating_sub(1)
             .clamp(1, 999),
-        _ => steps.max(1) as usize,
+        _ => steps.clamp(1, MAX_BLEND_STEPS) as usize,
     };
     // Paired from the given nodes (in page space now) or by shape.
     let nodes = options.map_nodes.map(|m| {
@@ -2833,6 +2838,29 @@ mod tests {
         let p = baked.local_path();
         assert!(pieces(&p) <= 12, "{} pieces", pieces(&p));
         assert!(same_outline(&p, &evaluate(&circle).main.local_path(), 0.05));
+    }
+
+    /// A blend asking for more steps than the Blend tool offers draws
+    /// that most, so a misread or edited value cannot fill the memory
+    /// (#980).
+    #[test]
+    fn a_blend_draws_at_most_its_maximum_steps() {
+        let a = rect_shape();
+        let mut b = rect_shape();
+        b.transform = Affine::translate((100.0, 0.0));
+        let mut s = a.clone();
+        s.effects.push(Effect::Blend {
+            end: Box::new(b.clone()),
+            steps: u32::MAX,
+            accel_objects: 0.0,
+            accel_colors: 0.0,
+            rotation: 0.0,
+            path: None,
+            rotate_on_path: false,
+            end_id: Some(b.id),
+            options: BlendOptions::default(),
+        });
+        assert_eq!(evaluate(&s).above.len(), MAX_BLEND_STEPS as usize);
     }
 
     #[test]
