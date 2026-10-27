@@ -140,13 +140,21 @@ fn info(face: &FontFace) -> FaceInfo {
 }
 
 /// The bytes the faces that may be embedded add to a file (their font
-/// files), 0 when none may be.
+/// files, each once), 0 when none may be.
 pub fn embedded_size(faces: &[FontFace]) -> u64 {
-    faces
+    let mut seen: Vec<&Arc<Vec<u8>>> = Vec::new();
+    for d in faces
         .iter()
         .filter_map(|f| f.data.as_ref().filter(|_| info(f).embeddable))
-        .map(|d| d.len() as u64)
-        .sum()
+    {
+        if !seen
+            .iter()
+            .any(|s| Arc::ptr_eq(s, d) || s.as_slice() == d.as_slice())
+        {
+            seen.push(d);
+        }
+    }
+    seen.iter().map(|d| d.len() as u64).sum()
 }
 
 /// A string as the font table stores it: its length in UTF-16 units with
@@ -202,9 +210,21 @@ pub fn members(faces: &[FontFace], embed: bool, ids: &[(u16, String)]) -> Vec<(S
     let mut table = Buf::default();
     table.u32(0).u32(0).u32(faces.len() as u32);
     let mut embeddings = Vec::new();
+    // The font files embedded so far: a face drawn with another face's
+    // file (italic text in a family without an italic face) is listed,
+    // and its file embedded once.
+    let mut embedded_files: Vec<&Arc<Vec<u8>>> = Vec::new();
     for i in order {
         let (face, inf) = (&faces[i], &infos[i]);
-        let embedded = embed && inf.embeddable && face.data.is_some();
+        let new_file = face.data.as_ref().filter(|d| {
+            !embedded_files
+                .iter()
+                .any(|e| Arc::ptr_eq(e, d) || e.as_slice() == d.as_slice())
+        });
+        let embedded = embed && inf.embeddable && new_file.is_some();
+        if let (true, Some(d)) = (embedded, new_file) {
+            embedded_files.push(d);
+        }
         let mut e = Buf::default();
         // The face's font number (its family's font id), then the
         // character set (Western).
