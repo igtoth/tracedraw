@@ -1150,6 +1150,7 @@ edit_fill.repeat_default = "Varsayılan" # mt
 edit_fill.repeat_mirror = "Tekrarla ve yansıt" # mt
 edit_fill.reset_nodes = "Açıya ve merkeze dön" # mt
 edit_fill.reset_nodes_tip = "Etkileşimli Dolgu ile konan düğümleri unut" # mt
+edit_fill.preview_tip = "Düğümleri sürükleyin: başlangıç degradeyi taşır, son döndürür ve uzatır, yuvarlak düğüm eğer. Ctrl 15° adımlarla döndürür." # mt
 edit_fill.reverse = "Ters çevir" # mt
 edit_fill.reverse_tip = "Renkleri ters yönde yürüt" # mt
 edit_fill.rotate = "Döndür:" # mt

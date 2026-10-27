@@ -1150,6 +1150,7 @@ edit_fill.repeat_default = "默认" # mt
 edit_fill.repeat_mirror = "重复和镜像" # mt
 edit_fill.reset_nodes = "恢复角度和中心" # mt
 edit_fill.reset_nodes_tip = "忘记交互式填充放置的节点" # mt
+edit_fill.preview_tip = "拖动节点：起点移动渐变，终点旋转并拉伸，圆形节点使其倾斜。按 Ctrl 以 15° 为步长旋转。" # mt
 edit_fill.reverse = "反转" # mt
 edit_fill.reverse_tip = "让颜色反方向排列" # mt
 edit_fill.rotate = "旋转:" # mt

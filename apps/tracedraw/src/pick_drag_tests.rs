@@ -10081,3 +10081,77 @@ fn a_click_on_a_drop_shadow_picks_its_object() {
     );
     assert!(close(bounds(&app, id).x0, 10.0), "the object stays");
 }
+
+/// Dragging an envelope's node (#881): the frame and the enveloped
+/// object follow every move; a line of outlined letters and a plain
+/// rectangle, zoomed in so the frame is large on screen.
+/// `cargo test --release -p tracedraw -- --ignored frame_times_of_an_envelope_drag --nocapture`.
+#[test]
+#[ignore]
+fn frame_times_of_an_envelope_drag() {
+    use crate::envelope_edit::Part;
+    use tracedraw_core::envelope::Mode;
+    let (ctx, mut app, rect) = setup();
+    let mut path = tracedraw_core::geometry::BezPath::new();
+    for letter in 0..25 {
+        let (cx, cy) = (20.0 + letter as f64 * 8.0, 100.0);
+        for (r, dir) in [(4.0, 1.0), (1.6, -1.0)] {
+            let seg = 24;
+            let at = |k: usize| {
+                let a = dir * k as f64 / seg as f64 * std::f64::consts::TAU;
+                let w = r * (1.0 + 0.12 * (a * 5.0).sin());
+                (cx + w * a.cos(), cy + w * a.sin())
+            };
+            path.move_to(at(0));
+            for k in 1..=seg {
+                let (p0, p1) = (at(k - 1), at(k));
+                path.curve_to(
+                    (p0.0 + (p1.0 - p0.0) / 3.0, p0.1 + (p1.1 - p0.1) / 3.0),
+                    (
+                        p0.0 + (p1.0 - p0.0) * 2.0 / 3.0,
+                        p0.1 + (p1.1 - p0.1) * 2.0 / 3.0,
+                    ),
+                    p1,
+                );
+            }
+            path.close_path();
+        }
+    }
+    app.select(Vec::new());
+    let text = app
+        .new_shape(ShapeKind::Path { path, closed: true })
+        .expect("letters");
+    app.apply_fill(tracedraw_core::Fill::Solid(tracedraw_core::Color::BLACK));
+    app.set_tool(Tool::Envelope);
+    for (label, id) in [("rectangle", rect), ("letters", text)] {
+        for mode in [Mode::Unconstrained, Mode::SingleArc] {
+            app.select(vec![id]);
+            app.add_new_envelope();
+            app.envelope_mode = mode;
+            let (_, f) = app.envelope_of(id).expect("envelope");
+            let page = app.doc().shape_on_page(id).expect("shape");
+            let start = page.transform * f.nodes[5];
+            app.view.zoom = 4.0;
+            app.begin_envelope_drag(id, Part::Node(5), start);
+            let n = 60;
+            let mut drag = std::time::Duration::ZERO;
+            let mut paint = std::time::Duration::ZERO;
+            for i in 0..n {
+                let p = Point::new(start.x + i as f64 * 0.2, start.y + i as f64 * 0.5);
+                let t = std::time::Instant::now();
+                app.envelope_drag_to(p);
+                drag += t.elapsed();
+                let t = std::time::Instant::now();
+                frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+                paint += t.elapsed();
+            }
+            app.envelope_drag = None;
+            app.clear_envelope();
+            eprintln!(
+                "envelope drag on {label} ({mode:?}): {:?} per move, {:?} per frame",
+                drag / n,
+                paint / n
+            );
+        }
+    }
+}

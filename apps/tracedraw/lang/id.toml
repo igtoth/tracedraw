@@ -1150,6 +1150,7 @@ edit_fill.repeat_default = "Bawaan" # mt
 edit_fill.repeat_mirror = "Ulangi dan cerminkan" # mt
 edit_fill.reset_nodes = "Kembali ke sudut dan pusat" # mt
 edit_fill.reset_nodes_tip = "Lupakan node yang dipasang dengan Isian Interaktif" # mt
+edit_fill.preview_tip = "Seret node: awal menggeser gradien, akhir memutar dan merentangkannya, node bulat memiringkannya. Ctrl memutar per 15°." # mt
 edit_fill.reverse = "Balik" # mt
 edit_fill.reverse_tip = "Jalankan warna ke arah sebaliknya" # mt
 edit_fill.rotate = "Putar:" # mt
