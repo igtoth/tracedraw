@@ -258,7 +258,7 @@ Counts: works 189, partial 6 (`.cdr` content coverage; CMX import; print preview
 | Save settings as default | works |
 | Preferences kept across restarts and saved as they change (desktop file, browser local storage): Options, bars, dockers, units, snapping, tool settings, what the window shows, dockers' choices (see `behavior/workspaces.md`, Kept across restarts) | works |
 | Hints panel with per-tool help; Welcome Screen (recent drawings with thumbnails, templates, news, learn) | works |
-| Help > Updates and a daily check at start (Options > Global > General): a newer release offers its download for this system, its notes, or skipping it; a Linux AppImage installs it in place after checking its digest | works (see `behavior/updates.md`) |
+| Help > Updates and a daily check at start (Options > Global > General): a newer release offers the file for this system, its processor and how it was installed (none rather than another one), its notes, or skipping it; a Linux AppImage installs it in place after checking its digest | works (see `behavior/updates.md`) |
 | Help > Highlight What's New: the menus mark the rows new in this version and the menus leading to them | works (see `behavior/whats-new.md`) |
 | Border and Grommet (large-format finishing) | works |
 | Vector Mosaic (vector mosaics): density, scale, screen angle, keep original, limit colors, uniform, opacity and luminosity tracking, merge adjacent, weld adjacent overlap, circle, square and custom tiles | works (see `behavior/vector-mosaic.md`); made at once rather than in the background |
