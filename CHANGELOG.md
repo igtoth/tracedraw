@@ -20,6 +20,7 @@ full, row-by-row status.
 - Shaping: Trim with an open curve (a line, a polyline or a curve) crossing a closed object cuts the object along it into separate pieces, each keeping the object's fill and outline; several curves make more pieces, and a curve that ends inside cuts nothing and the status bar says so. The object came back whole. Front Minus Back and Back Minus Front split along open curves the same way (#1005).
 - Tracing: the grain of photos and compressed images is taken out before the colours are picked (more at lower detail, none at the highest), so flat colours no longer come out full of white holes, scratches and specks, and the trace has far fewer curves; edges and corners keep their place (#611).
 - Text fitted to a path: with the Pick tool the property bar shows the path's own fields (placement with Top centre and Bottom centre, distance from the path, the two mirrors, Straighten Text) before the text fields, so text on the bottom of a circle can be turned to read left to right, as on a stamp. The text fields came first and hid them (#193).
+- Blend: a bitmap effect (such as Add Noise) on the blend's start object keeps the blend drawn. The start object shows with its effect and the steps and the end object stay as they were; the effect's picture held the start object together with its steps, placed wrongly and cut off, so the blend fell apart (#1043).
 
 ## 0.19.8 (2026-10-27)
 
