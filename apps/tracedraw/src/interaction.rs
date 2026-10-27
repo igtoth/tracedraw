@@ -506,6 +506,18 @@ impl App {
         chain
     }
 
+    /// Whether a Pick press at `p` lands on what is selected: `None`
+    /// where no object is, else whether the topmost object there, or one
+    /// of its parts under `p`, is in the selection (a drag then moves the
+    /// selection as it is, see [`Self::press_target`]).
+    pub fn over_selection(&self, p: Point) -> Option<bool> {
+        if self.selection.is_empty() {
+            return self.hit_test(p).map(|_| false);
+        }
+        let chain = self.hit_chain(p);
+        (!chain.is_empty()).then(|| chain.iter().any(|id| self.selection.contains(id)))
+    }
+
     /// What a Pick press at `p` takes: a selected object under `p` (an
     /// object chosen inside a group stays chosen, so a drag moves it alone,
     /// #849), else with `ctrl` the object one group level in, else the

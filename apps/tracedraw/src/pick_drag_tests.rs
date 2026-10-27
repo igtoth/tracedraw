@@ -1152,16 +1152,51 @@ fn clicking_the_selection_or_its_centre_mark_turns_the_handles() {
 
 #[test]
 fn the_pointer_shows_moves_for_objects_and_guidelines() {
-    let (_ctx, mut app, [a, _b, _c], _group) = grouped();
+    let (ctx, mut app, [a, _b, c], group) = grouped();
     let cursor = |app: &App, at: Pos2| for_tool(app, false, false, false, Some(at));
-    // Unselected objects show the move arrows too.
+    let arrow = ToolCursor::System(egui::CursorIcon::Default);
+    let moving = ToolCursor::System(egui::CursorIcon::Move);
+    // Unselected objects keep the plain arrow (#885): a press there picks
+    // them first.
     assert!(app.selection.is_empty());
     let on_a = app.view.to_screen(Point::new(115.0, 110.0));
-    assert_eq!(
-        cursor(&app, on_a),
-        ToolCursor::System(egui::CursorIcon::Move)
-    );
+    let on_b = app.view.to_screen(Point::new(155.0, 110.0));
+    let on_c = app.view.to_screen(Point::new(110.0, 160.0));
+    assert_eq!(cursor(&app, on_a), arrow);
+    assert_eq!(cursor(&app, on_c), arrow);
+    // The selected group: the move arrows over it, the arrow over the
+    // object beside it.
+    app.select(vec![group]);
+    assert_eq!(cursor(&app, on_a), moving);
+    assert_eq!(cursor(&app, on_b), moving);
+    assert_eq!(cursor(&app, on_c), arrow);
+    // An object chosen inside the group: only it shows the move arrows,
+    // as only it moves; a press on its neighbour in the group picks the
+    // group.
     assert!(app.doc().is_nested(a));
+    app.select(vec![a]);
+    assert_eq!(cursor(&app, on_a), moving);
+    assert_eq!(cursor(&app, on_b), arrow);
+    // With the cross hair setting, the cross hair over the unselected one.
+    app.settings.crosshair_cursor = true;
+    assert_eq!(cursor(&app, on_b), ToolCursor::Cross);
+    assert_eq!(cursor(&app, on_a), moving);
+    app.settings.crosshair_cursor = false;
+    // A drag from the unselected object still picks it and moves it; it is
+    // then selected and shows the move arrows.
+    let before = page_bounds(&app, c);
+    let to = app.view.to_screen(Point::new(110.0, 190.0));
+    drag(&ctx, &mut app, on_c, to, Modifiers::NONE, Vec::new());
+    assert_eq!(app.selection, vec![c]);
+    assert!(close(page_bounds(&app, c).y0 - before.y0, 30.0));
+    assert_eq!(cursor(&app, to), moving);
+    assert_eq!(cursor(&app, on_a), arrow);
+    // An unselected object over a guideline: the arrow, not the arrows
+    // across the guideline, as the object takes the press.
+    app.add_guide(tracedraw_core::document::Guide::horizontal(110.0));
+    assert_eq!(cursor(&app, on_a), arrow);
+    app.select(Vec::new());
+    app.delete_guide(0);
     // Guidelines: arrows across them; a locked one keeps the arrow.
     app.add_guide(tracedraw_core::document::Guide::horizontal(250.0));
     app.add_guide(tracedraw_core::document::Guide::vertical(250.0));

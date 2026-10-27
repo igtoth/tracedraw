@@ -181,8 +181,12 @@ fn pick_cursor(app: &App, pos: Option<Pos2>) -> Option<ToolCursor> {
     if app.guide_rotate_handle_at(p) {
         return Some(ToolCursor::Rotate);
     }
-    if app.hit_test(p).is_some() {
-        return Some(moving);
+    // Over an object: the move arrows only where a press would move what
+    // is selected already (the object or one of its parts); over another
+    // object the plain arrow, as a press there picks it first (#885).
+    // Objects win a press over guidelines, so no guideline arrows there.
+    if let Some(selected) = app.over_selection(p) {
+        return selected.then_some(moving);
     }
     let guides = app.page_guides();
     let g = guides.get(app.guide_at(p)?)?;
