@@ -139,21 +139,47 @@ pub fn dialog(ctx: &Context, id: &str, title: &str, size: Vec2, add: impl FnOnce
     closed
 }
 
-/// Place a dialog window `id`: it can always be dragged by its title bar.
-/// When it opens (it was not shown on the frame before) it starts at the
-/// centre of the main window, or, with Center dialog boxes off, where it
-/// was left; while open it stays where the user put it.
+/// How much of a dialog stays inside the main window, at least, when it
+/// is dragged towards a side: enough of its title bar to take it back.
+pub const KEPT_IN_VIEW: f32 = 100.0;
+
+/// Where a dialog of `size` may be dragged within `screen`: anywhere its
+/// title bar stays below the top edge and at least [`KEPT_IN_VIEW`] of
+/// it stays inside the left, right and bottom edges. A dialog about as
+/// large as the window can so still be pushed aside to show the drawing
+/// beneath; one held wholly inside the window could not move at all
+/// (#908).
+pub fn drag_reach(screen: Rect, size: Vec2) -> Rect {
+    let side = (size.x - KEPT_IN_VIEW).max(0.0);
+    let below = (size.y - TITLE_BAR).max(0.0);
+    Rect::from_min_max(
+        Pos2::new(screen.left() - side, screen.top()),
+        Pos2::new(screen.right() + side, screen.bottom() + below),
+    )
+}
+
+/// Place a dialog window `id`: it can always be dragged by its title bar,
+/// partly out of the main window (see [`drag_reach`]). When it opens (it
+/// was not shown on the frame before) it starts at the centre of the
+/// main window, or, with Center dialog boxes off, where it was left;
+/// while open it stays where the user put it.
 fn placed<'a>(window: egui::Window<'a>, ctx: &Context, id: egui::Id) -> egui::Window<'a> {
     let frame = ctx.cumulative_frame_nr();
     let key = id.with("chrome_last_frame");
     let last: Option<u64> = ctx.data(|d| d.get_temp(key));
     ctx.data_mut(|d| d.insert_temp(key, frame));
     let opened = last.is_none_or(|l| l + 1 < frame);
+    let screen = ctx.content_rect();
+    // The size it had last frame; on its first frame the window itself.
+    let reach = match ctx.memory(|m| m.area_rect(id)) {
+        Some(r) if !opened && r.is_finite() => drag_reach(screen, r.size()),
+        _ => screen,
+    };
     let window = window
         .movable(true)
         .pivot(Align2::CENTER_CENTER)
-        .default_pos(ctx.content_rect().center())
-        .constrain(true);
+        .default_pos(screen.center())
+        .constrain_to(reach);
     if opened && center_dialogs(ctx) {
         window.current_pos(ctx.content_rect().center())
     } else {
@@ -968,6 +994,87 @@ mod tests {
             (again.center() - screen.center()).length() < 2.0,
             "{again:?}"
         );
+    }
+
+    /// A dialog nearly as tall as the window moves down and sideways
+    /// when its title bar is dragged, out of the window as far as a part
+    /// of it stays in (#908): kept wholly inside, it could not move.
+    #[test]
+    fn a_dialog_as_tall_as_the_window_drags_partly_out_of_it() {
+        let ctx = crate::theme::ui_context();
+        let screen = Rect::from_min_size(Pos2::ZERO, Vec2::new(1200.0, 800.0));
+        let id = egui::Id::new(("chrome_dialog", "Tall".to_string()));
+        let run = |ctx: &Context, events: Vec<egui::Event>| -> Option<Rect> {
+            let input = egui::RawInput {
+                screen_rect: Some(screen),
+                events,
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| {
+                window("Tall").show(ui.ctx(), |ui| {
+                    ui.label("body");
+                    ui.add_space(2000.0);
+                });
+            });
+            out.textures_delta.clear();
+            ctx.memory(|m| m.area_rect(id))
+        };
+        let press = |pos, pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let drag = |ctx: &Context, from: Pos2, to: Pos2| {
+            run(ctx, vec![egui::Event::PointerMoved(from)]);
+            run(ctx, vec![press(from, true)]);
+            for i in 1..=5 {
+                run(
+                    ctx,
+                    vec![egui::Event::PointerMoved(
+                        from + (to - from) * (i as f32 / 5.0),
+                    )],
+                );
+            }
+            run(ctx, vec![press(to, false)]);
+            run(ctx, Vec::new()).expect("shown")
+        };
+        for _ in 0..3 {
+            run(&ctx, Vec::new());
+        }
+        let r = run(&ctx, Vec::new()).expect("shown");
+        assert!(r.height() > 700.0, "{r:?}");
+        // Down and to the right by 200 px: it follows.
+        let from = Pos2::new(r.left() + 40.0, r.top() + TITLE_BAR / 2.0);
+        let moved = drag(&ctx, from, from + Vec2::new(200.0, 200.0));
+        assert!(
+            (moved.min - (r.min + Vec2::new(200.0, 200.0))).length() < 3.0,
+            "{r:?} -> {moved:?}"
+        );
+        // Far down and left: its title bar and a part of it stay in.
+        let from = Pos2::new(moved.left() + 40.0, moved.top() + TITLE_BAR / 2.0);
+        let far = drag(&ctx, from, from + Vec2::new(-3000.0, 3000.0));
+        assert!(far.top() <= screen.bottom() - TITLE_BAR + 0.5, "{far:?}");
+        assert!(far.top() > screen.bottom() - 200.0, "{far:?}");
+        assert!(far.right() >= screen.left() + KEPT_IN_VIEW - 0.5, "{far:?}");
+        assert!(far.right() < screen.left() + 200.0, "{far:?}");
+        // Up: never above the window's top edge.
+        let from = Pos2::new(far.right() - 40.0, far.top() + TITLE_BAR / 2.0);
+        let up = drag(&ctx, from, Pos2::new(from.x, -3000.0));
+        assert!(up.top() >= screen.top() - 0.5, "{up:?}");
+    }
+
+    #[test]
+    fn drag_reach_keeps_a_part_of_the_dialog_in_the_window() {
+        let screen = Rect::from_min_size(Pos2::ZERO, Vec2::new(1000.0, 700.0));
+        let r = drag_reach(screen, Vec2::new(400.0, 300.0));
+        assert_eq!(r.top(), 0.0);
+        assert_eq!(r.left(), -(400.0 - KEPT_IN_VIEW));
+        assert_eq!(r.right(), 1000.0 + 400.0 - KEPT_IN_VIEW);
+        assert_eq!(r.bottom(), 700.0 + 300.0 - TITLE_BAR);
+        // A dialog narrower than what is kept stays inside sideways.
+        let r = drag_reach(screen, Vec2::new(60.0, 20.0));
+        assert_eq!((r.left(), r.right(), r.bottom()), (0.0, 1000.0, 700.0));
     }
 
     #[test]

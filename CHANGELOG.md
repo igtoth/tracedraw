@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Dialogs (Outline Pen, Fill, the effect dialogs and the others) can be dragged anywhere by their title bar, also partly out of the main window, so they no longer have to cover the drawing. A dialog was held wholly inside the window, so one nearly as tall or wide as the window, as on a laptop screen, could hardly move at all; now its title bar stays below the window's top edge and at least 100 px of it stays inside the other edges. Dialogs still open centred, or where they were left with Center Dialog Boxes off (#908).
 - Pick tool: the pointer shows the move arrows only over what is selected. Over any other object it keeps the plain arrow (or the cross hair), as a press there picks that object first, so starting a marquee or picking objects that lie inside a frame or over other objects is no longer hidden under the move arrows. Dragging an unselected object still picks and moves it, and Alt+click still picks the object beneath (#885).
 
 - Save As .cdr with Embed fonts: the embedded fonts are written as files that embed fonts have them. Each font in the file's font list now carries the number the text uses for it (the faces of a family share it), the embedded fonts follow those numbers, and their headers have the names, character set and checksums such files hold, so other programs can match the text to its embedded font; before, the fonts were numbered 1, 2, 3 in turn, which only TraceDraw itself did not need (#352).
