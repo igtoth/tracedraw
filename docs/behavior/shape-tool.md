@@ -151,7 +151,12 @@ step.
 A curve being edited shows a small white circle with a ring in the node
 colour inside each corner (a node where two segments meet at an angle,
 as the Corners panel counts them), 18 px from the node along the middle
-of the corner (#635).
+of the corner (#635), when Options > Nodes and Handles > Show corner
+rounding rings on curve nodes is on. That preference is off at first, so
+the widgets do not get in the way of node editing (#884); it is saved
+with the other preferences. With it off no widget shows and a press where
+one would sit works as any other press of the Shape tool. Rectangles
+round their corners with their own handles either way.
 
 - With no node chosen every corner has one (a curve with more than 32
   corners shows none, so a traced outline is not covered in them); with
@@ -185,6 +190,7 @@ of the corner (#635).
   widgets too; no extra data is stored.
 - A click on a widget keeps the selection.
 - Checked by `pick_drag_tests::corner_widgets_round_every_corner_or_the_chosen_ones`,
+  `pick_drag_tests::corner_widgets_follow_their_preference_off_by_default`,
   `pick_drag_tests::rounded_corners_keep_their_widgets_and_round_again`,
   `corner_cut::tests::rounded_corners_are_found_and_taken_back_off`,
   `corner_cut::tests::chosen_rounded_corners_are_taken_off_alone`,

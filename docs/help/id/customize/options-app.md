@@ -50,6 +50,7 @@ mengatur cara kerja program. Pilih halaman dari daftar di sebelah kiri.
 - [[options.node_shape]] untuk simpul [[options.node_cusp]],
   [[options.node_smooth]], dan [[options.node_symmetrical]].
 - [[options.show_curve_direction]].
+- [[options.corner_widgets]].
 - [[options.colors]]: [[options.main_color]] simpul dan gagang yang dipilih
   serta [[options.secondary_color]].
 - [[options.unselected_nodes_filled]].

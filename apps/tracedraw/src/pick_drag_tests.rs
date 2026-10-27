@@ -6989,6 +6989,8 @@ fn corner_widgets_round_every_corner_or_the_chosen_ones() {
         .expect("square");
     app.select(vec![id]);
     app.set_tool(Tool::Shape);
+    // The widgets are off unless the preference turns them on (#884).
+    app.settings.nodes.corner_widgets = true;
     frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
     let path_of = |app: &App| match &app.doc().find_shape(id).expect("curve").kind {
         ShapeKind::Path { path, .. } => path.clone(),
@@ -7090,6 +7092,77 @@ fn corner_widgets_round_every_corner_or_the_chosen_ones() {
     }
 }
 
+/// The corner widgets on curve nodes are a preference, off by default
+/// (#884): with it off a selected curve's corners show no widget, a press
+/// where one would sit does not round anything, and choosing a node works
+/// as before; turning it on shows them again. The preference is saved
+/// with the others.
+#[test]
+fn corner_widgets_follow_their_preference_off_by_default() {
+    use tracedraw_core::geometry::{BezPath, PathEl};
+    assert!(!crate::settings::Settings::default().nodes.corner_widgets);
+    let (ctx, mut app, rect) = setup();
+    assert!(!app.settings.nodes.corner_widgets);
+    app.select(vec![rect]);
+    app.delete_selection();
+    let mut square = BezPath::new();
+    square.move_to((20.0, 20.0));
+    square.line_to((60.0, 20.0));
+    square.line_to((60.0, 60.0));
+    square.line_to((20.0, 60.0));
+    square.close_path();
+    let id = app
+        .new_shape(ShapeKind::Path {
+            path: square.clone(),
+            closed: true,
+        })
+        .expect("square");
+    app.select(vec![id]);
+    app.set_tool(Tool::Shape);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    assert!(app.corner_widgets().is_empty(), "off by default");
+    // Where the widget of the corner at (20, 20) would sit: 18 px from the
+    // node towards the centre.
+    let node = app.view.to_screen(Point::new(20.0, 20.0));
+    let centre = app.view.to_screen(Point::new(40.0, 40.0));
+    let at = node + (centre - node).normalized() * crate::corner_widgets::WIDGET_OFFSET_PX;
+    assert!(app.corner_widget_at(app.view.to_page(at)).is_none());
+    drag(
+        &ctx,
+        &mut app,
+        at,
+        at + (centre - node).normalized() * 30.0,
+        Modifiers::NONE,
+        Vec::new(),
+    );
+    match &app.doc().find_shape(id).expect("square").kind {
+        ShapeKind::Path { path, .. } => assert!(
+            !path
+                .elements()
+                .iter()
+                .any(|e| matches!(e, PathEl::CurveTo(..))),
+            "no corner rounded"
+        ),
+        _ => panic!("a curve"),
+    }
+    // A node is still chosen with a click.
+    app.select(vec![id]);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    click_at(&ctx, &mut app, node, Modifiers::NONE);
+    assert_eq!(app.node_selection.len(), 1, "{:?}", app.node_selection);
+    assert!(app.corner_widgets().is_empty());
+    // Turned on, the chosen node's corner has its widget.
+    app.settings.nodes.corner_widgets = true;
+    assert_eq!(app.corner_widgets().len(), 1);
+    // Saved and read back with the other preferences.
+    let json = serde_json::to_string(&app.settings).expect("settings");
+    let back: crate::settings::Settings = serde_json::from_str(&json).expect("read back");
+    assert!(back.nodes.corner_widgets);
+    // Settings saved before the preference existed read it as off.
+    let old: crate::settings::NodePrefs = serde_json::from_str("{}").expect("old prefs");
+    assert!(!old.corner_widgets);
+}
+
 /// A corner rounded with a widget can be rounded again (#872): the curve
 /// selected later shows a widget off the middle of each arc, and
 /// dragging it changes the radius from where it was, further in or back
@@ -7116,6 +7189,8 @@ fn rounded_corners_keep_their_widgets_and_round_again() {
         .expect("square");
     app.select(vec![id]);
     app.set_tool(Tool::Shape);
+    // The widgets are off unless the preference turns them on (#884).
+    app.settings.nodes.corner_widgets = true;
     frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
     let path_of = |app: &App| match &app.doc().find_shape(id).expect("curve").kind {
         ShapeKind::Path { path, .. } => path.clone(),
@@ -7145,6 +7220,10 @@ fn rounded_corners_keep_their_widgets_and_round_again() {
     app.select(Vec::new());
     app.select(vec![id]);
     frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    // Rounded corners follow the preference too (#884).
+    app.settings.nodes.corner_widgets = false;
+    assert!(app.corner_widgets().is_empty(), "off: no widget on an arc");
+    app.settings.nodes.corner_widgets = true;
     let widgets = app.corner_widgets();
     assert_eq!(widgets.len(), 4, "{widgets:?}");
     let w = widgets[0];

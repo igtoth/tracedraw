@@ -5035,7 +5035,10 @@ fn palette_editor_dialog(
                 }
                 if ui.button(tr("dialog.save_palette")).clicked() {
                     if let Some(p) = crate::files::Dialog::new()
-                        .add_filter("Palette", &["tdpal", "gpl"])
+                        .add_filter(
+                            crate::palette::filter_label(&tr("file.palettes"), &["tdpal", "gpl"]),
+                            &["tdpal", "gpl"],
+                        )
                         .set_file_name(format!("{}.tdpal", pal.name))
                         .save_path()
                     {
