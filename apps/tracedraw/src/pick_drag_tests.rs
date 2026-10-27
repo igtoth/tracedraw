@@ -8639,6 +8639,34 @@ fn add_column_offers_a_number_range() {
     }
 }
 
+/// The Add Column form of a number field has a Format; with Custom it
+/// shows the texts before and after the number (#930).
+#[test]
+fn add_column_offers_number_formats_and_custom_text() {
+    let (ctx, mut app, _) = setup();
+    let mut st = crate::ui::dialogs::PrintMergeState {
+        adding: Some(("Ticket".into(), 1)),
+        ..Default::default()
+    };
+    st.adding_number.format = crate::print_merge::NumberFormat::from_index(3);
+    app.dialog = crate::ui::dialogs::Dialog::PrintMerge(st);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let (_, texts) = painted(&ctx, &mut app);
+    for key in [
+        "merge.format",
+        "merge.format_custom",
+        "merge.prefix",
+        "merge.suffix",
+    ] {
+        let label = crate::i18n::tr(key);
+        assert!(
+            texts.iter().any(|(t, _)| t.trim() == label.trim()),
+            "{label:?} in {:?}",
+            texts.iter().map(|(t, _)| t).collect::<Vec<_>>()
+        );
+    }
+}
+
 /// With the wheel zooming (the default), a notch zooms in one glide over
 /// a few frames, as a scroll moves, instead of one jump; the frames
 /// together still zoom 1.15 a notch, about the pointer (#766).

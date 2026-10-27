@@ -6,8 +6,11 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Save As .cdr with Embed fonts: the embedded fonts are written as files that embed fonts have them. Each font in the file's font list now carries the number the text uses for it (the faces of a family share it), the embedded fonts follow those numbers, and their headers have the names, character set and checksums such files hold, so other programs can match the text to its embedded font; before, the fonts were numbered 1, 2, 3 in turn, which only TraceDraw itself did not need (#352).
+
 - Shape tool: a corner rounded with its corner widget can be rounded again. Selecting the curve later shows a widget on each rounded corner, and dragging it changes the radius from the one it has, further in or back to a sharp corner; the widget had disappeared once the corner was rounded. This works for corners rounded between straight sides, also in saved drawings and with the Corners panel (#872).
 - Shape tool: the rings inside the corners of a curve being edited, dragged to round them, are now a preference, Options > Nodes and Handles > Show corner rounding rings on curve nodes, and are off at first, so they no longer get in the way of editing nodes. Turn it on to round the corners of curves by dragging again; rectangles round their corners as before (#884).
+- Print Merge: a Number field has a Format: 1, 2, 3, the letters A, B, C or a, b, c (Z is followed by AA), or Custom, which puts a text of your own before and after the number, for tickets and serial numbers such as "Ticket T-0098". Chosen in Add Column and in Configure Columns (#930).
 
 - Open Palette: XML palette files open, with their colours' names and CMYK, RGB or Lab values (spot colours are skipped, and a file with nothing readable says so), and the file filter lists the extensions it accepts. `.xml` files were not offered at all, and the filter showed only "Palettes" (#882).
 
