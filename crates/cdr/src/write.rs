@@ -101,6 +101,7 @@ pub fn document_to_cdr_version_with(doc: &Document, version: u16, previews: &Pre
     let v = Ver(version.clamp(OLDEST_VERSION, NEWEST_VERSION));
     let mut w = Writer::new(v, &doc.symbols, &doc.title);
     let mut tree = w.document(doc);
+    let font_ids = w.fonts.clone();
     if !v.zip() {
         // RIFF files carry their picture and an empty keywords and
         // comment list right after `vrsn`.
@@ -127,7 +128,7 @@ pub fn document_to_cdr_version_with(doc: &Document, version: u16, previews: &Pre
     }
     if v.redirects() {
         let (root, files) = pack_redirected(v, &tree);
-        zip_v16(v, doc, &root, &files, previews)
+        zip_v16(v, doc, &root, &files, previews, &font_ids)
     } else {
         let riff = riff_file(v.form(), &tree);
         if v.zip() {
@@ -1079,7 +1080,14 @@ fn cmyk_profile_member(name: &str) -> String {
 /// colour its objects use.
 const COLOR_XML: &str = "<Color><ColorContext><ColorModel>Cmyk</ColorModel><RenderingIntent>RelativeColorimetric</RenderingIntent></ColorContext><HasRgbObjects>true</HasRgbObjects><HasCmykObjects>true</HasCmykObjects><HasGrayscaleObjects>false</HasGrayscaleObjects></Color>\r\n";
 
-fn zip_v16(v: Ver, doc: &Document, root: &[u8], files: &DataFiles, previews: &Previews) -> Vec<u8> {
+fn zip_v16(
+    v: Ver,
+    doc: &Document,
+    root: &[u8],
+    files: &DataFiles,
+    previews: &Previews,
+    font_ids: &[(u16, String)],
+) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
     let deflated = zip::write::SimpleFileOptions::default()
         .compression_method(zip::CompressionMethod::Deflated);
@@ -1093,7 +1101,7 @@ fn zip_v16(v: Ver, doc: &Document, root: &[u8], files: &DataFiles, previews: &Pr
             .is_ok()
             && zip.write_all(data).is_ok();
     }
-    for (name, data) in fonts::members(&previews.fonts, previews.embed_fonts) {
+    for (name, data) in fonts::members(&previews.fonts, previews.embed_fonts, font_ids) {
         ok &= zip.start_file(name, deflated).is_ok() && zip.write_all(&data).is_ok();
     }
     ok &= zip.start_file("content/dataFileList.dat", deflated).is_ok()

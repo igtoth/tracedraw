@@ -147,7 +147,8 @@ The pointer says what a press would do (code: `ui/cursors.rs`):
 |---|---|
 | A corner handle | diagonal resize arrows (top left and bottom right, or top right and bottom left) |
 | A side handle | vertical (top, bottom) or horizontal (left, right) resize arrows |
-| An object (selected or not), the centre mark or the centre of rotation | move arrows |
+| A selected object (or the selected part of a group under the pointer), the centre mark or the centre of rotation | move arrows |
+| An object that is not selected | the arrow (the cross hair with Options > Tools > Pick > Cross hair): a press picks it first, and a drag then moves it |
 | A horizontal or vertical guideline (where no object is) | up and down or sideways arrows across it; the move arrows on a slanted one; the arrow on a locked one |
 | A rotation handle of a guideline in rotate mode | a turning arrow |
 | A corner handle in rotate mode | a turning arrow |

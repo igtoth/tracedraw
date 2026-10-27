@@ -2731,6 +2731,146 @@ fn the_package_lists_the_text_faces_and_embeds_those_allowed() {
         .any(|n| n.starts_with("font/") || n.starts_with("embed/")));
 }
 
+/// Embedded fonts are written as files that embed them have them (#352):
+/// each font table entry carries its family's font id from the drawing
+/// (shared by the faces of a family), entries and embeddings follow
+/// those numbers, and the EOT header has charset 0, family and style
+/// names ending in a NUL, the empty root string's checksum and code page
+/// 1252. The faces read back from the file.
+#[test]
+fn embedded_fonts_carry_the_drawings_font_ids() {
+    const REGULAR: &[u8] =
+        include_bytes!("../../../../apps/tracedraw/assets/fonts/Selawik-Regular.ttf");
+    const BOLD: &[u8] = include_bytes!("../../../../apps/tracedraw/assets/fonts/Selawik-Bold.ttf");
+    let mut ids = tracedraw_core::id::IdSource::default();
+    let missing = TextSpan::new("first", "Missing Sans", 12.0);
+    let plain = TextSpan::new("plain", "Selawik", 12.0);
+    let mut bold = TextSpan::new("bold", "Selawik", 12.0);
+    bold.bold = true;
+    let doc = doc_with(vec![
+        text_shape(&mut ids, vec![missing], TextAlign::Left),
+        text_shape(&mut ids, vec![plain, bold], TextAlign::Left),
+    ]);
+    let face = |family: &str, bold: bool, data: Option<&[u8]>| FontFace {
+        family: family.into(),
+        bold,
+        italic: false,
+        data: data.map(|d| std::sync::Arc::new(d.to_vec())),
+    };
+    // The faces in another order than the drawing names the families.
+    let previews = Previews {
+        fonts: vec![
+            face("Selawik", false, Some(REGULAR)),
+            face("Selawik", true, Some(BOLD)),
+            face("Missing Sans", false, None),
+        ],
+        embed_fonts: true,
+        ..Default::default()
+    };
+    let u16_at = |b: &[u8], at: usize| u16::from_le_bytes([b[at], b[at + 1]]);
+    let u32_at = |b: &[u8], at: usize| u32::from_le_bytes(b[at..at + 4].try_into().expect("u32"));
+    for v in 16..=NEWEST_VERSION {
+        let bytes = document_to_cdr_version_with(&doc, v, &previews);
+        // The drawing's font ids by family, from its `font` records.
+        let (_, tree, riff) = chunk_ids(&bytes);
+        let mut font_ids: Vec<(u16, String)> = Vec::new();
+        tree.root.walk(&mut |ch, _| {
+            if ch.id_str() == "font" {
+                let d = tree.data(&riff, ch);
+                let name: Vec<u16> = d[18..]
+                    .chunks_exact(2)
+                    .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                    .take_while(|&u| u != 0)
+                    .collect();
+                font_ids.push((u16_at(d, 0), String::from_utf16_lossy(&name)));
+            }
+        });
+        let id_of = |family: &str| {
+            font_ids
+                .iter()
+                .find(|(_, f)| f == family)
+                .map(|(id, _)| *id)
+                .unwrap_or_else(|| panic!("{v}: {family} in {font_ids:?}"))
+        };
+        let mut z = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).expect("zip");
+        let read = |z: &mut zip::ZipArchive<std::io::Cursor<&Vec<u8>>>, name: &str| {
+            let mut m = Vec::new();
+            std::io::Read::read_to_end(&mut z.by_name(name).expect(name), &mut m).expect("read");
+            m
+        };
+        let table = read(&mut z, "font/fontTable.dat");
+        // Each entry: u32 0, u32 size, then the font number.
+        let mut numbers = Vec::new();
+        let mut at = 12;
+        for _ in 0..u32_at(&table, 8) {
+            numbers.push(u16_at(&table, at + 8));
+            at += 8 + u32_at(&table, at + 4) as usize;
+        }
+        assert_eq!(at, table.len(), "{v}");
+        let (missing, selawik) = (id_of("Missing Sans"), id_of("Selawik"));
+        assert_ne!(missing, selawik, "{v}");
+        let mut expected = vec![selawik, selawik, missing];
+        expected.sort_unstable();
+        assert_eq!(numbers, expected, "{v}: {font_ids:?}");
+        assert!(!z.file_names().any(|n| n == "embed/embedding2"), "{v}");
+        for (n, (font, style)) in [(REGULAR, "Regular"), (BOLD, "Bold")].iter().enumerate() {
+            let m = read(&mut z, &format!("embed/embedding{n}"));
+            let eot = &m[2705..];
+            assert_eq!(u32_at(eot, 0) as usize, eot.len(), "{v}");
+            assert_eq!(eot[26], 0, "{v}: charset");
+            let family_len = u16_at(eot, 82) as usize;
+            assert_eq!(&eot[84..84 + family_len], &utf16z("Selawik"), "{v}");
+            let at = 84 + family_len + 2;
+            let style_len = u16_at(eot, at) as usize;
+            assert_eq!(&eot[at + 2..at + 2 + style_len], &utf16z(style), "{v}");
+            // The 2.2 fields after the full name, before the font data.
+            let tail = &eot[eot.len() - font.len() - 24..eot.len() - font.len()];
+            assert_eq!(u32_at(tail, 4), 0x5047_5342, "{v}: root string checksum");
+            assert_eq!(u32_at(tail, 8), 1252, "{v}: EUDC code page");
+        }
+        let (back, rep) = crate::open_bytes(&bytes, "fonts").expect("reads back");
+        assert_eq!(back.fonts.len(), 2, "{v}: {:?}", rep.warnings);
+        assert_eq!(back.fonts[0].data.as_slice(), REGULAR, "{v}");
+        assert_eq!(back.fonts[1].data.as_slice(), BOLD, "{v}");
+        assert!(back.fonts.iter().all(|f| f.family == "Selawik"), "{v}");
+    }
+}
+
+/// A family the drawing does not name gets a font number of its own
+/// after the drawing's ids, shared by its faces.
+#[test]
+fn faces_of_families_the_drawing_does_not_name_get_new_numbers() {
+    let face = |family: &str, bold: bool| FontFace {
+        family: family.into(),
+        bold,
+        italic: false,
+        data: None,
+    };
+    let faces = [
+        face("Other", false),
+        face("arial", true),
+        face("Other", true),
+    ];
+    let members = fonts::members(&faces, true, &[(4, "Arial".into())]);
+    assert_eq!(members.len(), 1, "nothing to embed");
+    let table = &members[0].1;
+    let mut numbers = Vec::new();
+    let mut at = 12;
+    while at < table.len() {
+        numbers.push(u16::from_le_bytes([table[at + 8], table[at + 9]]));
+        at += 8 + u32::from_le_bytes(table[at + 4..at + 8].try_into().expect("u32")) as usize;
+    }
+    assert_eq!(numbers, [4, 5, 5]);
+}
+
+/// UTF-16LE with a closing NUL.
+fn utf16z(s: &str) -> Vec<u8> {
+    s.encode_utf16()
+        .chain(std::iter::once(0))
+        .flat_map(|u| u.to_le_bytes())
+        .collect()
+}
+
 /// The style table of the bidirectional version 8 layout (with the set11
 /// table, as later versions write it) reads as version 8 too.
 #[test]

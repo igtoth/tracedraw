@@ -49,6 +49,7 @@ określa sposób działania programu. Wybierz stronę z listy po lewej stronie.
 - [[options.node_shape]] dla węzłów [[options.node_cusp]],
   [[options.node_smooth]] i [[options.node_symmetrical]].
 - [[options.show_curve_direction]].
+- [[options.corner_widgets]].
 - [[options.colors]]: [[options.main_color]] zaznaczonych węzłów i uchwytów
   oraz [[options.secondary_color]].
 - [[options.unselected_nodes_filled]].

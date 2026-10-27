@@ -51,6 +51,7 @@ bir sayfa seçin.
 - [[options.node_cusp]], [[options.node_smooth]] ve
   [[options.node_symmetrical]] düğümler için [[options.node_shape]].
 - [[options.show_curve_direction]].
+- [[options.corner_widgets]].
 - [[options.colors]]: seçili düğümlerin ve tutamaçların
   [[options.main_color]] öğesi ve [[options.secondary_color]].
 - [[options.unselected_nodes_filled]].

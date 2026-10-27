@@ -73,11 +73,15 @@ fn info(face: &FontFace) -> FaceInfo {
     let Ok(f) = ttf_parser::Face::parse(data, 0) else {
         return out;
     };
+    // The English (United States) name of the Windows records first, as
+    // files have them (a bold face that also names itself in other
+    // languages keeps "Bold"), then any name that reads.
     let name = |id: u16| {
-        f.names()
-            .into_iter()
-            .filter(|n| n.name_id == id)
+        let of_id = || f.names().into_iter().filter(move |n| n.name_id == id);
+        of_id()
+            .filter(|n| n.platform_id == ttf_parser::PlatformId::Windows && n.language_id == 0x0409)
             .find_map(|n| n.to_string())
+            .or_else(|| of_id().find_map(|n| n.to_string()))
             .unwrap_or_default()
     };
     let raw = f.raw_face();
@@ -115,7 +119,12 @@ fn info(face: &FontFace) -> FaceInfo {
         italic: face.italic,
         weight: u32::from(be16(os2, 4)).max(if face.bold { 700 } else { 400 }),
         fs_type,
-        unicode_ranges: [be32(os2, 42), be32(os2, 46), be32(os2, 50), be32(os2, 54)],
+        // Left zero for an OS/2 table of version 0, as files have it.
+        unicode_ranges: if be16(os2, 0) >= 1 {
+            [be32(os2, 42), be32(os2, 46), be32(os2, 50), be32(os2, 54)]
+        } else {
+            [0; 4]
+        },
         code_page_ranges: if be16(os2, 0) >= 1 {
             [be32(os2, 78), be32(os2, 82)]
         } else {
@@ -150,21 +159,56 @@ fn string(b: &mut Buf, s: &str) {
     }
 }
 
+/// The font number of each face: the id of its family's `font` records
+/// in the drawing (`ids`, as the text refers to it), shared by the faces
+/// of a family; a family the drawing does not name gets a number after
+/// those.
+fn font_numbers(faces: &[FontFace], ids: &[(u16, String)]) -> Vec<u16> {
+    let mut extra: Vec<(u16, &str)> = Vec::new();
+    let mut next = ids.iter().map(|(id, _)| *id).max().unwrap_or(0);
+    faces
+        .iter()
+        .map(|face| {
+            let known = ids.iter().find(|(_, f)| *f == face.family).or_else(|| {
+                ids.iter()
+                    .find(|(_, f)| f.eq_ignore_ascii_case(&face.family))
+            });
+            if let Some((id, _)) = known {
+                return *id;
+            }
+            if let Some((id, _)) = extra.iter().find(|(_, f)| *f == face.family) {
+                return *id;
+            }
+            next = next.saturating_add(1);
+            extra.push((next, &face.family));
+            next
+        })
+        .collect()
+}
+
 /// The fonts members of a package: the font table, and an embedding per
-/// face that may be embedded when `embed` is set (in table order).
-pub fn members(faces: &[FontFace], embed: bool) -> Vec<(String, Vec<u8>)> {
+/// face that may be embedded when `embed` is set. `ids` are the drawing's
+/// font ids by family. Entries and embeddings follow the font numbers
+/// (faces of one family in the order given), as files order their
+/// embeddings.
+pub fn members(faces: &[FontFace], embed: bool, ids: &[(u16, String)]) -> Vec<(String, Vec<u8>)> {
     if faces.is_empty() {
         return Vec::new();
     }
+    let numbers = font_numbers(faces, ids);
+    let mut order: Vec<usize> = (0..faces.len()).collect();
+    order.sort_by_key(|&i| numbers[i]);
     let infos: Vec<FaceInfo> = faces.iter().map(info).collect();
     let mut table = Buf::default();
     table.u32(0).u32(0).u32(faces.len() as u32);
     let mut embeddings = Vec::new();
-    for (i, (face, inf)) in faces.iter().zip(&infos).enumerate() {
+    for i in order {
+        let (face, inf) = (&faces[i], &infos[i]);
         let embedded = embed && inf.embeddable && face.data.is_some();
         let mut e = Buf::default();
-        // The face's number, then the character set (Western).
-        e.u16(i as u16 + 1).u16(0).u32(inf.flags);
+        // The face's font number (its family's font id), then the
+        // character set (Western).
+        e.u16(numbers[i]).u16(0).u32(inf.flags);
         for p in inf.panose {
             e.u8(p);
         }

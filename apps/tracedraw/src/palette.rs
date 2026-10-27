@@ -1,6 +1,6 @@
 //! Colour palettes: the built-in ones (generated, no licensed libraries),
-//! palette files (.tdpal JSON, Adobe .ase, GIMP .gpl, Adobe .aco) and the
-//! document palette.
+//! palette files (.tdpal JSON, Adobe .ase, GIMP .gpl, Adobe .aco, XML
+//! palettes) and the document palette.
 
 use tracedraw_core::Color;
 
@@ -320,7 +320,17 @@ pub fn builtin_palettes() -> Vec<Palette> {
 
 // ----- palette files ---------------------------------------------------------
 
-/// Load a palette from .tdpal (JSON), .gpl, .ase or .aco.
+/// The extensions Open Palette accepts, in the order its filter lists them.
+pub const PALETTE_EXTENSIONS: &[&str] = &["tdpal", "xml", "gpl", "ase", "aco", "json"];
+
+/// A file filter label naming its extensions, "Palettes (*.tdpal, *.xml)":
+/// some file dialogs show only the label, so the label lists them (#882).
+pub fn filter_label(name: &str, extensions: &[&str]) -> String {
+    let list: Vec<String> = extensions.iter().map(|e| format!("*.{e}")).collect();
+    format!("{name} ({})", list.join(", "))
+}
+
+/// Load a palette from .tdpal (JSON), .xml, .gpl, .ase or .aco.
 pub fn load_palette(path: &std::path::Path) -> Result<Palette, String> {
     let ext = path
         .extension()
@@ -335,6 +345,7 @@ pub fn load_palette(path: &std::path::Path) -> Result<Palette, String> {
         "gpl" => parse_gpl(&crate::files::read_to_string(path).map_err(|e| e.to_string())?),
         "ase" => parse_ase(&crate::files::read(path).map_err(|e| e.to_string())?),
         "aco" => parse_aco(&crate::files::read(path).map_err(|e| e.to_string())?),
+        "xml" => parse_xml(&crate::files::read(path).map_err(|e| e.to_string())?)?,
         "tdpal" | "json" => {
             parse_tdpal(&crate::files::read_to_string(path).map_err(|e| e.to_string())?)?
         }
@@ -395,6 +406,29 @@ fn parse_tdpal(src: &str) -> Result<Vec<(String, Color)>, String> {
         }
     }
     Ok(out)
+}
+
+/// An XML palette: `<palette name=".."><colors><page>` then one
+/// `<color cs="CMYK" name="Green" tints="1,0,1,0"/>` per colour, the
+/// layout of the document palette `.cdr` files carry (see
+/// `docs/cdr-format.md`). CMYK, RGB, grey, CMY, HSB, HLS, Lab and YIQ
+/// colours are read with their names; spot colours and unknown colour
+/// spaces are skipped. A file with no colour that can be read is an error,
+/// so the status bar says why nothing was added (#882).
+pub fn parse_xml(bytes: &[u8]) -> Result<Vec<(String, Color)>, String> {
+    let text = String::from_utf8_lossy(bytes);
+    let colors = tracedraw_cdr::container::parse_palette_xml(&text);
+    if colors.is_empty() {
+        let entries = text.matches("<color ").count();
+        return Err(if entries == 0 {
+            "no <color> entries in this XML palette".into()
+        } else {
+            format!(
+                "none of its {entries} colours is in a colour space TraceDraw reads (spot colours are not read)"
+            )
+        });
+    }
+    Ok(colors)
 }
 
 /// GIMP palette: `r g b [name]` per line after the header.
@@ -652,6 +686,61 @@ impl Harmony {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Open Palette lists the extensions it accepts, XML among them,
+    /// and a small XML palette comes in with its names and values (#882).
+    #[test]
+    fn xml_palettes_open_with_names_and_values() {
+        assert!(PALETTE_EXTENSIONS.contains(&"xml"));
+        assert_eq!(
+            filter_label("Palettes", PALETTE_EXTENSIONS),
+            "Palettes (*.tdpal, *.xml, *.gpl, *.ase, *.aco, *.json)"
+        );
+        let xml = br#"<?xml version="1.0" encoding="utf-8"?>
+<palette guid="00000000-0000-0000-0000-000000000000" name="Test Inks">
+  <colors>
+    <page>
+      <color cs="CMYK" name="Sky &amp; Sea" tints="0.6,0.1,0,0"/>
+      <color cs="RGB" name="Orange" tints="1,0.5,0"/>
+      <color cs="LAB" name="L76 a-14 b66" tints="0.764706,0.447059,0.760784"/>
+      <color cs="SPOT INK 1" name="Spot" tints="1"/>
+    </page>
+  </colors>
+</palette>"#;
+        let dir = std::env::temp_dir().join(format!("td-pal-xml-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("Test Inks.XML");
+        std::fs::write(&path, xml).unwrap();
+        let p = load_palette(&path);
+        std::fs::remove_dir_all(&dir).ok();
+        let p = p.unwrap();
+        assert_eq!(p.name, "Test Inks");
+        let names: Vec<&str> = p.colors.iter().map(|(n, _)| n.as_str()).collect();
+        assert_eq!(names, ["Sky & Sea", "Orange", "L76 a-14 b66"]);
+        assert_eq!(
+            p.colors[0].1,
+            Color::Cmyk {
+                c: 0.6,
+                m: 0.1,
+                y: 0.0,
+                k: 0.0
+            }
+        );
+        assert_eq!(p.colors[1].1.to_rgb8(), [255, 128, 0]);
+        assert!(matches!(p.colors[2].1, Color::Lab { .. }));
+    }
+
+    /// XML that holds no colour that can be read says so instead of
+    /// adding an empty palette; broken XML never panics.
+    #[test]
+    fn xml_palettes_without_readable_colours_are_errors() {
+        assert!(parse_xml(b"").is_err());
+        assert!(parse_xml(b"<palette><colors></colors></palette>").is_err());
+        let e = parse_xml(br#"<color cs="SPOT" name="Ink" tints="1"/>"#).unwrap_err();
+        assert!(e.contains("spot"), "{e}");
+        assert!(parse_xml(&[0xff, 0xfe, b'<', 0, b'c']).is_err());
+        assert!(parse_xml(b"<color cs=\"CMYK\" name=\"cut").is_err());
+    }
 
     #[test]
     fn gpl_parses_lines() {
