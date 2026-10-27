@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Color panel: the spot ink tint slider shows its groove, and the remove button of a spot ink and the out-of-gamut sign show their icons. The groove had the white of the panel, so only the handle showed, and both icons came from characters the bundled interface font lacks, drawn as empty boxes on systems without a font for them; the gamut sign is now drawn and the remove buttons there and elsewhere use a cross the bundled font has (#949).
 - Opening `.cdr`: text whose letters are each turned and moved on their own, as the ring of letters around a seal, opens from version 13 to 15 files with every letter in its place. Such texts were skipped and counted as objects that could not be read (#955).
 - Save As .cdr: a blend goes out as one group of its start object and its steps, drawn as curves, beside its end object, instead of loose objects on the layer. A blend of two texts saved so is a plain group of a text and curves in the program that opens the file (#946).
 

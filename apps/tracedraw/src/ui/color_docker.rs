@@ -443,8 +443,7 @@ pub fn color(app: &mut App, ui: &mut Ui) {
             }
         }
         if !c.in_cmyk_gamut(6.0) {
-            ui.label(egui::RichText::new("\u{26A0}").color(Color32::from_rgb(200, 120, 0)))
-                .on_hover_text(tr("docker.gamut_warning"));
+            gamut_warning(ui).on_hover_text(tr("docker.gamut_warning"));
         }
         if crate::ui::propbar::pic_button(
             ui,
@@ -521,6 +520,36 @@ pub fn color(app: &mut App, ui: &mut Ui) {
     spot_inks(app, ui, c);
 }
 
+/// The out-of-gamut sign: an orange triangle with an exclamation mark,
+/// drawn rather than taken from a font (no bundled font has the warning
+/// sign character, so it drew as an empty box, #949).
+fn gamut_warning(ui: &mut Ui) -> Response {
+    let (r, resp) = ui.allocate_exact_size(Vec2::new(16.0, 16.0), Sense::hover());
+    let orange = Color32::from_rgb(200, 120, 0);
+    let p = ui.painter();
+    let top = Pos2::new(r.center().x, r.top() + 1.5);
+    let left = Pos2::new(r.left() + 1.0, r.bottom() - 1.5);
+    let right = Pos2::new(r.right() - 1.0, r.bottom() - 1.5);
+    p.add(Shape::convex_polygon(
+        vec![top, right, left],
+        orange,
+        Stroke::NONE,
+    ));
+    let x = r.center().x;
+    let white = Stroke::new(1.6, Color32::WHITE);
+    p.line_segment(
+        [Pos2::new(x, r.top() + 6.0), Pos2::new(x, r.bottom() - 6.0)],
+        white,
+    );
+    p.circle_filled(Pos2::new(x, r.bottom() - 3.8), 0.9, Color32::WHITE);
+    resp
+}
+
+/// The remove button of a spot ink: the multiplication sign, which the
+/// bundled interface font has (a heavier cross drew as an empty box on
+/// systems without a font for it, #949).
+const REMOVE_INK: char = '\u{00D7}';
+
 /// The drawing's spot inks: each applies as fill or outline at the tint;
 /// a new one takes the new color's process values and the name typed.
 fn spot_inks(app: &mut App, ui: &mut Ui, current: Color) {
@@ -555,7 +584,7 @@ fn spot_inks(app: &mut App, ui: &mut Ui, current: Color) {
                 app.apply_outline_color(Some(ink.color(tint)));
             }
             if ui
-                .small_button("\u{2715}")
+                .small_button(REMOVE_INK.to_string())
                 .on_hover_text(tr("docker.remove_ink"))
                 .clicked()
             {
@@ -567,11 +596,13 @@ fn spot_inks(app: &mut App, ui: &mut Ui, current: Color) {
         ui.horizontal(|ui| {
             ui.label(tr("docker.tint"));
             ui.spacing_mut().slider_width = 140.0;
-            ui.add(
+            // A rail in the slider colour: a plain slider's groove has the
+            // white of fields and vanished on the panel (#949).
+            ui.add(crate::ui::Rail(
                 egui::Slider::new(&mut app.color_docker.tint, 0.0..=100.0)
                     .suffix(" %")
                     .max_decimals(0),
-            );
+            ));
         });
     }
     ui.horizontal(|ui| {
@@ -661,6 +692,116 @@ fn palette_view(app: &mut App, ui: &mut Ui) -> Option<Color> {
 mod tests {
     use super::*;
     use tracedraw_core::ShapeKind;
+
+    /// The other places that drew the same remove cross as a spot ink.
+    const CROSS_SOURCES: [(&str, &str); 11] = [
+        ("dockers.rs", include_str!("dockers.rs")),
+        ("dockers2.rs", include_str!("dockers2.rs")),
+        ("effect_dialog.rs", include_str!("effect_dialog.rs")),
+        ("effects_docker.rs", include_str!("effects_docker.rs")),
+        ("export_docker.rs", include_str!("export_docker.rs")),
+        ("focus_bar.rs", include_str!("focus_bar.rs")),
+        ("font_sampler.rs", include_str!("font_sampler.rs")),
+        ("lab_dialog.rs", include_str!("lab_dialog.rs")),
+        ("options.rs", include_str!("options.rs")),
+        (
+            "print_merge_docker.rs",
+            include_str!("print_merge_docker.rs"),
+        ),
+        ("toolbar.rs", include_str!("toolbar.rs")),
+    ];
+
+    /// The characters `src` writes as `\u{...}` escapes or as non-ASCII
+    /// characters outside comments: its text icons.
+    fn source_glyphs(src: &str) -> Vec<char> {
+        let mut out = Vec::new();
+        for line in src.lines() {
+            let code = line.trim_start();
+            if code.starts_with("//") {
+                continue;
+            }
+            out.extend(code.chars().filter(|c| !c.is_ascii()));
+            for (at, _) in code.match_indices("\\u{") {
+                let rest = &code[at + 3..];
+                let Some(end) = rest.find('}') else { continue };
+                if let Some(c) = u32::from_str_radix(&rest[..end], 16)
+                    .ok()
+                    .and_then(char::from_u32)
+                {
+                    out.push(c);
+                }
+            }
+        }
+        out.sort_unstable();
+        out.dedup();
+        out
+    }
+
+    /// Every text icon of the panel is in the fonts the app bundles, so
+    /// it never draws as an empty box where no system font has it: the
+    /// remove button of a spot ink and the out-of-gamut sign did (#949).
+    /// The other remove buttons use the same cross, which the bundled
+    /// fonts have, instead of the heavy cross U+2715, which they lack.
+    #[test]
+    fn every_text_icon_is_in_the_bundled_fonts() {
+        let ctx = egui::Context::default();
+        crate::theme::install_fonts_bundled(&ctx);
+        let mut out = ctx.run_ui(Default::default(), |_| {});
+        out.textures_delta.clear();
+        let font = egui::FontId::proportional(12.0);
+        let has = |c: char| ctx.fonts_mut(|f| f.has_glyph(&font, c));
+        let glyphs = source_glyphs(include_str!("color_docker.rs"));
+        assert!(glyphs.contains(&REMOVE_INK), "{glyphs:?}");
+        let missing: Vec<String> = glyphs
+            .into_iter()
+            .filter(|c| !has(*c))
+            .map(|c| format!("U+{:04X}", c as u32))
+            .collect();
+        assert!(missing.is_empty(), "not in the bundled fonts: {missing:?}");
+        let heavy = char::from_u32(0x2715).expect("a char");
+        assert!(!has(heavy));
+        for (name, src) in CROSS_SOURCES {
+            let glyphs = source_glyphs(src);
+            assert!(glyphs.contains(&REMOVE_INK), "{name}");
+            assert!(!glyphs.contains(&heavy), "{name}");
+        }
+    }
+
+    /// The spot ink tint slider shows its groove: a rail as wide as the
+    /// slider, in the slider rail colour rather than the white of fields
+    /// that the panel is drawn on (#949).
+    #[test]
+    fn the_tint_slider_shows_its_rail() {
+        let mut app = App::headless();
+        add_ink(
+            &mut app,
+            "Gold".into(),
+            Color::cmyk_pct(0.0, 20.0, 80.0, 10.0),
+        );
+        let ctx = crate::theme::ui_context();
+        ctx.set_visuals(crate::theme::visuals());
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(320.0, 400.0),
+            )),
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(input, |ui| spot_inks(&mut app, ui, Color::BLACK));
+        out.textures_delta.clear();
+        let rail = Tokens::slider_rail();
+        assert_ne!(rail, Tokens::field());
+        assert_ne!(rail, crate::theme::visuals().panel_fill);
+        let widest = out
+            .shapes
+            .iter()
+            .filter_map(|c| match &c.shape {
+                egui::Shape::Rect(r) if r.fill == rail => Some(r.rect.width()),
+                _ => None,
+            })
+            .fold(0.0f32, f32::max);
+        assert!(widest >= 100.0, "no visible tint rail ({widest})");
+    }
 
     /// In CMYK every point near the black corner gives K 100, whose
     /// screen look is lighter: the ring stays at the point picked instead

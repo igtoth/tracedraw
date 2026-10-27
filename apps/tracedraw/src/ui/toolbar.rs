@@ -819,7 +819,7 @@ fn snap_to_button(app: &mut App, ui: &mut Ui, bar: &str, doc: bool) {
                 ui.checkbox(&mut app.snap.pixels, tr("menu.view.snap_pixels"));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui
-                        .add(egui::Button::new("\u{2715}").frame(false))
+                        .add(egui::Button::new("\u{00D7}").frame(false))
                         .rich_tip(tr("toolbar.snap_close"))
                         .clicked()
                     {
