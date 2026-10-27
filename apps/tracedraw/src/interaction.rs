@@ -1134,6 +1134,10 @@ impl App {
         // A click with a tool whose click has no job of its own selects;
         // a drag goes on to the tool below.
         if self.tool.click_selects() && response.clicked_by(PointerButton::Primary) {
+            // A click on a slider of the selected blend keeps the blend.
+            if self.tool == Tool::Blend && self.blend_handle_at(p).is_some() {
+                return;
+            }
             self.click_select(p, mods);
             return;
         }

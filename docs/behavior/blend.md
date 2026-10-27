@@ -41,6 +41,26 @@ line on dragging from one object to another.
 Interactive: drag from the start object to the end object; the start
 and end are the two selected objects' order on drop.
 
+## On the canvas (Blend tool)
+
+A click on a blended object (the start, the end or a step; text as any
+other object) selects it and picks its blend; a click on empty space
+lets go. The selected blend shows a white square on the start object's
+centre, a crossed one on the end object's, the line between them, and
+two sliders on that line: the object acceleration (triangle above the
+line) and the colour acceleration (triangle below). Each sits where the
+middle step lands, `0.5 ^ (1 + acc)` of the way from the start, so at
+0 both are halfway. Dragging a slider along the line sets its
+acceleration to the one that puts the middle step there (two decimals,
+-1..1): toward the start bunches the steps (or the colours) near the
+start, toward the end near the end. With Link acceleration both
+follow either slider. Each drag is one undo step and the bar shows the
+new values; a press on a slider never starts a new blend
+(`blend_tool.rs`, `text_effect_tests::the_blend_tool_picks_a_text_blend_and_its_sliders_tune_it`).
+
+Not yet on the canvas: dragging the start or end square to another
+object, and dropping colours on them.
+
 The steps lie between the two objects in the stacking order: with the
 end object below the start one (a front object blended to one behind
 it, the usual way to build depth), they are drawn below the start, the

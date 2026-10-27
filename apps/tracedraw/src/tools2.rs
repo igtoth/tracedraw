@@ -641,7 +641,16 @@ impl App {
         match self.tool {
             Tool::Blend => {
                 if response.drag_started_by(PointerButton::Primary) {
-                    if let Some(id) = self.hit_test_inside(p) {
+                    // The press point, not where the drag was noticed.
+                    let press = response
+                        .ctx
+                        .input(|i| i.pointer.press_origin())
+                        .map(|o| self.view.to_page(o))
+                        .unwrap_or(p);
+                    self.blend_handle_drag = None;
+                    if self.begin_blend_handle(press) {
+                        // A slider of the selected blend: no new blend.
+                    } else if let Some(id) = self.hit_test_inside(p) {
                         self.drag = Drag::Connector {
                             from: id,
                             start: p,
@@ -650,9 +659,14 @@ impl App {
                     }
                 }
                 if response.dragged_by(PointerButton::Primary) {
-                    if let Drag::Connector { current, .. } = &mut self.drag {
+                    if let Some(h) = self.blend_handle_drag {
+                        self.drag_blend_handle(h, p);
+                    } else if let Drag::Connector { current, .. } = &mut self.drag {
                         *current = p;
                     }
+                }
+                if response.drag_stopped() {
+                    self.blend_handle_drag = None;
                 }
             }
             Tool::Smooth | Tool::Smear | Tool::Twirl => self.brush_input(response, p, mods),

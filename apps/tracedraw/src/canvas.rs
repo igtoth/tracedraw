@@ -123,6 +123,7 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
     draw_anchors(app, painter);
     draw_fountain_handles(app, painter);
     draw_shadow_handles(app, painter);
+    draw_blend_controls(app, painter);
 
     // Fit Text to Path waiting for its path: the text on the one near.
     if app.pending_text_path {
@@ -1145,6 +1146,64 @@ fn draw_shadow_handles(app: &App, painter: &Painter) {
             egui::StrokeKind::Outside,
         );
     }
+}
+
+/// Blend tool: the selected blend's start and end squares, the line
+/// between them and the object (above) and colour (below) acceleration
+/// sliders on it, plain segments and small shapes (#965).
+fn draw_blend_controls(app: &App, painter: &Painter) {
+    use crate::blend_tool::{screen_normal, BlendHandle, SLIDER_OFFSET_PX};
+    // Not while a new blend is being dragged out.
+    if app.tool != Tool::Blend || matches!(app.drag, Drag::Connector { .. }) {
+        return;
+    }
+    let Some(c) = app.blend_controls() else {
+        return;
+    };
+    let view = &app.view;
+    let (a, z) = (view.to_screen(c.start), view.to_screen(c.end));
+    haloed_polyline(painter, &[a, z], false, Tokens::SELECTION);
+    let n = screen_normal(a, z);
+    if (z - a).length() >= 14.0 {
+        let along = (z - a).normalized();
+        for (h, side) in [(BlendHandle::Objects, 1.0), (BlendHandle::Colors, -1.0)] {
+            let o = view.to_screen(c.slider_point(h));
+            // A triangle pointing at the line from its side.
+            let tip = o + n * side * 1.0;
+            let base = o + n * side * (SLIDER_OFFSET_PX + 5.0);
+            let pts = vec![tip, base + along * 4.5, base - along * 4.5];
+            let fill = if app.blend_handle_drag == Some(h) {
+                Tokens::SELECTION
+            } else {
+                Color32::WHITE
+            };
+            painter.add(egui::Shape::convex_polygon(
+                pts,
+                fill,
+                EStroke::new(1.0, Tokens::SELECTION),
+            ));
+        }
+    }
+    for p in [a, z] {
+        let rect = ERect::from_center_size(p, egui::vec2(9.0, 9.0));
+        painter.rect_filled(rect, 0.0, Color32::WHITE);
+        painter.rect_stroke(
+            rect,
+            0.0,
+            EStroke::new(1.0, Tokens::SELECTION),
+            egui::StrokeKind::Outside,
+        );
+    }
+    // The end square is crossed, as the start one is plain.
+    let r = 3.5;
+    painter.line_segment(
+        [z + egui::vec2(-r, -r), z + egui::vec2(r, r)],
+        EStroke::new(1.0, Tokens::SELECTION),
+    );
+    painter.line_segment(
+        [z + egui::vec2(-r, r), z + egui::vec2(r, -r)],
+        EStroke::new(1.0, Tokens::SELECTION),
+    );
 }
 
 fn draw_anchors(app: &App, painter: &Painter) {

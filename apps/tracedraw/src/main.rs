@@ -20,6 +20,7 @@ mod bg_remove;
 mod bitmap_fx;
 mod bitmap_modes;
 mod blend_link;
+mod blend_tool;
 mod border_grommet;
 mod brushes;
 mod callouts;
