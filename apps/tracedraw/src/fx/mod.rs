@@ -411,6 +411,9 @@ pub fn vector_base(
     }
     let mut c = shape.clone();
     c.raster_fx = None;
+    // A blend's steps are drawn beside the picture, not in it.
+    c.effects
+        .retain(|e| !tracedraw_core::document::beside_picture(e));
     c.transform = Affine::scale_non_uniform(sx, sy);
     let b = c.bounds();
     if !(b.width().is_finite() && b.height().is_finite()) || b.width() <= 0.0 && b.height() <= 0.0 {
@@ -1259,6 +1262,58 @@ mod tests {
         // Exports draw the picture too.
         let svg = tracedraw_io::svg::page_to_svg(app.doc(), 0);
         assert!(svg.contains("<image"));
+    }
+
+    /// A bitmap effect on the start of a blend leaves the blend drawn: its
+    /// steps stay vector objects around the picture (#1043).
+    #[test]
+    fn a_blend_keeps_its_steps_when_its_start_gets_a_bitmap_effect() {
+        use tracedraw_core::live::{BlendOptions, Effect};
+        use tracedraw_core::{geometry::Affine, Color, Command, Fill};
+        let (mut app, id) = red_rect_app();
+        let mut end = app.doc().find_shape(id).unwrap().clone();
+        end.transform = Affine::translate((100.0, 0.0));
+        end.fill = Fill::Solid(Color::rgb8(20, 20, 220));
+        let blend = |end: &tracedraw_core::Shape| Effect::Blend {
+            end: Box::new(end.clone()),
+            steps: 2,
+            accel_objects: 0.0,
+            accel_colors: 0.0,
+            rotation: 0.0,
+            path: None,
+            rotate_on_path: false,
+            end_id: None,
+            options: BlendOptions::default(),
+        };
+        app.run(Command::SetEffectStack {
+            shape: id,
+            effects: vec![blend(&end)],
+            parked: Vec::new(),
+        });
+        let step = pixel_at(&app, 75.0, 30.0);
+        assert!(step[2] > 60 && step[1] < 60, "a step between: {step:?}");
+        app.add_bitmap_effect(new_effect("invert_colors"));
+        // The start is its inverted picture, the step and the end as they were.
+        let p = pixel_at(&app, 30.0, 30.0);
+        assert!(p[0] < 60 && p[1] > 200 && p[2] > 200, "{p:?}");
+        assert_eq!(pixel_at(&app, 75.0, 30.0), step);
+        assert_eq!(pixel_at(&app, 140.0, 30.0)[..3], [20, 20, 220]);
+        // The picture holds the start alone: a new end does not make it again.
+        let made = app.doc().find_shape(id).unwrap().raster_fx.clone().unwrap();
+        end.transform = Affine::translate((120.0, 0.0));
+        app.run(Command::SetEffectStack {
+            shape: id,
+            effects: vec![blend(&end)],
+            parked: Vec::new(),
+        });
+        app.sync_raster_fx();
+        let s = app.doc().find_shape(id).unwrap().clone();
+        assert_eq!(s.raster_fx.as_ref(), Some(&made));
+        assert_eq!(pixel_at(&app, 170.0, 30.0)[..3], [20, 20, 220]);
+        // Exports draw the steps too.
+        let svg = tracedraw_io::svg::page_to_svg(app.doc(), 0);
+        assert!(svg.contains("<image"));
+        assert!(svg.matches("<path").count() + svg.matches("<rect").count() >= 3);
     }
 }
 
