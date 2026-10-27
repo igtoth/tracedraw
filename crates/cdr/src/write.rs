@@ -3379,6 +3379,19 @@ impl<'a> Writer<'a> {
             for x in all.iter_mut() {
                 x.effects.clear();
             }
+            // A blend goes out as one plain group of what it draws: its
+            // start object and its steps as curves (and its end when the
+            // effect holds it), ordinary objects held together as the
+            // blend is one object here. They were loose objects of the
+            // layer; a blend of two texts saved so closed the program
+            // that wrote the samples when the text was clicked (#946).
+            let blends = s
+                .effects
+                .iter()
+                .any(|e| matches!(e, tracedraw_core::live::Effect::Blend { .. }));
+            if blends && all.len() > 1 {
+                return self.group(&all, centre, depth + 1);
+            }
             return self.objects(&all, centre, depth + 1);
         }
         let v = self.v;

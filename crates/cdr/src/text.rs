@@ -233,6 +233,22 @@ pub(crate) struct RunStyle {
     /// Version 16+ style strings: underline and strikeout on or off.
     pub underline: Option<bool>,
     pub strikethrough: Option<bool>,
+    /// Versions 7 to 15: a character's own placement, as (angle in
+    /// degrees counter-clockwise, horizontal shift and vertical shift in
+    /// percent of the font size, up positive).
+    pub char_shift: Option<CharShift>,
+}
+
+/// A character moved and turned on its own (style flags 0x08, 0x10 and
+/// 0x20 of a version 7 to 15 text run).
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub(crate) struct CharShift {
+    /// Degrees, counter-clockwise, about the character's origin.
+    pub angle_deg: f64,
+    /// Percent of the font size, positive to the right.
+    pub x_pct: f64,
+    /// Percent of the font size, positive up.
+    pub y_pct: f64,
 }
 
 impl RunStyle {
@@ -274,6 +290,7 @@ impl RunStyle {
             fill_color: self.fill_color.or(base.fill_color),
             underline: self.underline.or(base.underline),
             strikethrough: self.strikethrough.or(base.strikethrough),
+            char_shift: self.char_shift.or(base.char_shift),
         }
     }
 }
@@ -826,8 +843,12 @@ fn read_txsm_7_frames(
     for _ in 0..np {
         let style_id = r.u32()?;
         r.skip(1);
-        if v >= 13 && frame {
-            r.skip(1);
+        // Version 13+ with the frame flag: one more byte; when it is 1,
+        // 64 bytes follow (a version 14 file: the frame's id, -1, the
+        // frame's matrix and 8 zero bytes, before text whose letters are
+        // each moved and turned; #955), as in version 16 on.
+        if v >= 13 && frame && r.u8()? == 1 {
+            r.skip(64);
         }
         let ns = r.u32()? as usize;
         if ns > MAX_RUNS || ns > r.remaining() / 3 {
@@ -852,14 +873,27 @@ fn read_txsm_7_frames(
                     s.size_pt = Some(pt);
                 }
             }
-            if flags & 0x08 != 0 {
-                r.skip(4);
-            }
-            if flags & 0x10 != 0 {
-                r.skip(4);
-            }
-            if flags & 0x20 != 0 {
-                r.skip(4);
+            // The character's angle (millionths of a degree) and its
+            // horizontal and vertical shifts (hundredths of the font
+            // size): a version 14 seal's ring of letters, each turned and
+            // moved onto the ring (#955).
+            let angle = if flags & 0x08 != 0 {
+                Some(r.i32()?)
+            } else {
+                None
+            };
+            let dx = if flags & 0x10 != 0 {
+                Some(r.i32()?)
+            } else {
+                None
+            };
+            let dy = if flags & 0x20 != 0 {
+                Some(r.i32()?)
+            } else {
+                None
+            };
+            if angle.is_some() || dx.is_some() || dy.is_some() {
+                s.char_shift = char_shift(angle, dx, dy);
             }
             if flags & 0x40 != 0 {
                 s.fill_id = Some(r.u32()?);
@@ -971,6 +1005,32 @@ fn read_txsm_7_frames(
         });
     }
     Some(out)
+}
+
+/// A character's placement from its raw fields (a shift of 100 is the
+/// font size); values out of reason (shifts beyond 100 times the font
+/// size) are dropped.
+fn char_shift(angle: Option<i32>, dx: Option<i32>, dy: Option<i32>) -> Option<CharShift> {
+    const MAX_SHIFT: i32 = 10_000;
+    let dx = dx.unwrap_or(0);
+    let dy = dy.unwrap_or(0);
+    if dx.unsigned_abs() > MAX_SHIFT as u32 || dy.unsigned_abs() > MAX_SHIFT as u32 {
+        return None;
+    }
+    let shift = CharShift {
+        // Turned the short way: 347 degrees is -13.
+        angle_deg: {
+            let a = (f64::from(angle.unwrap_or(0)) / 1_000_000.0).rem_euclid(360.0);
+            if a > 180.0 {
+                a - 360.0
+            } else {
+                a
+            }
+        },
+        x_pct: f64::from(dx),
+        y_pct: f64::from(dy),
+    };
+    (shift != CharShift::default()).then_some(shift)
 }
 
 /// Runs of consecutive characters sharing a style index, each with the
