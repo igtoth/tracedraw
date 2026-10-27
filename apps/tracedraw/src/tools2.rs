@@ -409,6 +409,13 @@ impl App {
                     }
                 }
             }
+            // Each subpath of a combined curve is stroked on its own, and
+            // the outline draws them all in full: where they cross, the
+            // pieces become one shape, or the even-odd fill of the result
+            // would leave a hole there (#997).
+            if contours.len() > 1 {
+                out = tracedraw_core::shaping::simplify(&out);
+            }
             if out.elements().is_empty() {
                 continue;
             }
@@ -783,6 +790,50 @@ mod tests {
         let pp = out.page_path();
         assert!(!kurbo::Shape::contains(&pp, Point::new(15.0, 10.0)));
         assert!(kurbo::Shape::contains(&pp, Point::new(12.0, 10.0)));
+    }
+
+    /// A combined curve of two crossing open lines (an "f": a stem and a
+    /// cross bar) becomes one shape covering both strokes, the crossing
+    /// filled under the even-odd rule curves are filled with, as it was
+    /// drawn before (#997).
+    #[test]
+    fn crossing_subpaths_become_one_filled_shape() {
+        let mut path = BezPath::new();
+        path.move_to((20.0, 50.0));
+        path.curve_to((30.0, 50.0), (28.0, 10.0), (40.0, 10.0));
+        path.move_to((15.0, 30.0));
+        path.line_to((45.0, 30.0));
+        let kind = ShapeKind::Path {
+            path,
+            closed: false,
+        };
+        let (_, out) = outline_object(kind, 4.0, |st| {
+            st.cap = tracedraw_core::LineCap::Round;
+            st.join = tracedraw_core::LineJoin::Round;
+        });
+        let moves = out
+            .elements()
+            .iter()
+            .filter(|e| matches!(e, kurbo::PathEl::MoveTo(_)))
+            .count();
+        assert_eq!(moves, 1, "one merged outline");
+        let even_odd = |p: Point| out.winding(p) % 2 != 0;
+        // Where the stem crosses the bar, and on each stroke away from it.
+        let stem_at_bar = (0..=200)
+            .map(|i| i as f64 / 200.0)
+            .map(|t| {
+                kurbo::ParamCurve::eval(
+                    &kurbo::CubicBez::new((20.0, 50.0), (30.0, 50.0), (28.0, 10.0), (40.0, 10.0)),
+                    t,
+                )
+            })
+            .min_by(|a, b| (a.y - 30.0).abs().total_cmp(&(b.y - 30.0).abs()))
+            .expect("point");
+        assert!(even_odd(stem_at_bar), "the crossing is filled");
+        assert!(even_odd(Point::new(17.0, 30.0)));
+        assert!(even_odd(Point::new(43.0, 30.0)));
+        assert!(even_odd(Point::new(21.0, 50.0)));
+        assert!(!even_odd(Point::new(40.0, 40.0)));
     }
 
     /// Three rectangles stacked, the middle one with a 2 mm outline and
