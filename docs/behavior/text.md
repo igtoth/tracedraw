@@ -100,15 +100,19 @@ Text and Glyphs dockers and Options (default font):
   being edited or selected: with nothing to change it does nothing
   rather than ask for the font of new text (#665,
   `ui::font_list::live_tests::the_wheel_over_the_font_list_steps_the_font`).
-- At the top of the list, the number of families shown and what to show:
-  all fonts, installed fonts, the fonts in this drawing, or (in the
-  browser) the fonts to download.
-- Beside it, Filter (#867): boxes for the kind of letters (Serif, Sans
-  serif, Script, Decorative) and for what a family has (Monospaced,
-  Symbol, Variable, OpenType features); the menu stays open while boxes
-  are ticked and its button counts them ("Filter (2)"). A family shows
+- At the top of the list, the number of families shown and the Filter
+  button (#867). It shows or hides the filter's choices inside the list,
+  under its top row: what to show (all fonts, installed fonts, the fonts
+  in this drawing, or, in the browser, the fonts to download), boxes for
+  the kind of letters (Serif, Sans serif, Script, Decorative) and for
+  what a family has (Monospaced, Symbol, Variable, OpenType features).
+  They are part of the list, not a menu of their own (only one menu is
+  open at a time, so a menu opened from the list closed it): a click
+  there filters at once and leaves the list open
+  (`ui::font_list::live_tests::the_filter_opens_inside_the_font_list`).
+  The button counts the choices made ("Filter (2)"). A family shows
   when it has one of the kinds ticked (if any) and every other box
-  ticked; Clear filter shows all again. What a family is comes from its
+  ticked; Clear filter shows all fonts again. What a family is comes from its
   faces' tables as the OpenType specification defines them: the OS/2
   `sFamilyClass` class ID (1 to 5 and 7 serif, 8 sans serif, 9
   ornamental, 10 script, 12 symbolic), else the PANOSE family kind (2
