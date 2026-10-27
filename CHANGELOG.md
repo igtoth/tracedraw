@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Variable fonts: the Text docker's Character expander shows a slider for each axis of the selected text's variable font (weight, width, slant, optical size and the font's own axes). The values set go on the selected characters, are saved in .tdraw files and are drawn in the canvas, exports and PDF; Default axes takes them off (#870).
 - Envelope: the frame and the enveloped object stay smooth. The frame was drawn as 16 straight lines a segment and showed as a row of lines when zoomed in; a hard bend drew the object in visible facets; and Horizontal and Vertical followed a polygon through the frame instead of its curves. The frame is now drawn within a quarter pixel at any zoom, the object gets more points only where the envelope bends hard, and its sides lie on the frame (#881).
 - Font lists: a Filter beside what to show picks families by the kind of letters (serif, sans serif, script, decorative) and by what they have (monospaced, symbol, variable, OpenType features), read from the fonts' own tables; the list opens as fast as before and, with thousands of fonts, fills in over a few frames the first time a box is ticked (#867).
 - Properties panel: the outline's mitre limit, nib stretch and nib angle sit under an Advanced header after the common settings (caps, corners, arrows, dashes, position, behind fill, scale with object), closed at first unless one of them is set, so the outline section is shorter and its basic options are found at a glance (#487).

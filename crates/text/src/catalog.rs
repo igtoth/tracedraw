@@ -163,7 +163,7 @@ fn be32(b: &[u8], at: usize) -> u32 {
 }
 
 /// The English name `id` of a face, else any.
-fn name(f: &ttf_parser::Face, id: u16) -> Option<String> {
+pub(crate) fn name(f: &ttf_parser::Face, id: u16) -> Option<String> {
     let mut best: Option<(bool, String)> = None;
     for n in f.names() {
         if n.name_id != id {

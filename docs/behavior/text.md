@@ -435,7 +435,9 @@ the preferences, `text_sections_closed`).
   The background is drawn behind each character's box, from its descent
   to its ascent (`TextSpan::background`). The expander under the section
   shows the characters' offsets and angle, strikethrough and the
-  OpenType features.
+  OpenType features, and for text in a variable font a "Variable font"
+  row with a slider for each axis the font shows (see Variable fonts
+  below).
 - Paragraph: the gear opens Custom Optional Hyphens; six alignment
   buttons, no alignment (lines start at the left; characters keep their
   offsets), left, centre, right, full justification and forced
@@ -721,6 +723,27 @@ axis (within its range), and slant on their italic or slant axis for
 italic when the face is upright; only what no axis gives is made
 synthetically (bold by drawing the letters twice, italic by slanting
 them).
+
+The axes can also be set on the text (#870): the Text docker's
+Character expander shows, for the selected text's variable font (its
+`fvar` table), a slider for each axis the font does not hide (flag
+0x0001): Weight, Width, Slant, Italic and Optical size by those names,
+the font's own axes by the names its `name` table gives them, each over
+the font's range. A slider shows the value set on the text, else the one
+the text's weight and slant give (the font's default for other axes).
+Releasing it, or typing a value, sets that axis on the selected
+characters (every character of the selected text objects when not
+editing), one undo step; Default axes takes the values off. The values
+are kept on the characters (`TextSpan::variations`: tag and value),
+saved in `.tdraw` (left out when none is set) and drawn clamped to the
+font's range, in the canvas, exports and PDF (the embedded font is the
+instance drawn); an axis the font lacks is ignored, so a static font
+draws as before. A weight set this way replaces synthetic bold, and a
+slant or italic value replaces synthetic italic
+(`tests::variable_font_axes_set_on_the_text_draw_it_there`,
+`ui::text_docker::tests::variable_font_axes_show_and_set_on_the_text`).
+The sliders do not preview while dragged; `.cdr` files do not keep the
+values.
 
 The browser build offers the families of its font folder (see
 `web/FONTS.md`): the font lists show them, and text asks for one the

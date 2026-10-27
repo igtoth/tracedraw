@@ -10,8 +10,8 @@
 //! - Character: font, style and size; range kerning and underline; the
 //!   text fill, the characters' background and the text outline, each a
 //!   kind, a colour and "..." for its full settings; the expander shows
-//!   strikethrough, the characters' offsets and angle and the OpenType
-//!   features.
+//!   strikethrough, the characters' offsets and angle, the OpenType
+//!   features and, for a variable font, a slider for each of its axes.
 //! - Paragraph: the six alignments (none, left, centre, right, full and
 //!   forced justification), line spacing in % of the character height,
 //!   points or % of the font size, left, first-line and right indents,
@@ -874,11 +874,99 @@ fn character(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) 
             }
         }
     });
+    font_axes(app, ui, &sp);
     if sc {
         let (strike, features) = (sp.strikethrough, sp.features.clone());
         edit_spans(app, move |s| {
             s.strikethrough = strike;
             s.features = features.clone();
+        });
+    }
+}
+
+/// The axes of a variable font (cached for the fonts as they are now).
+fn axes_of(ctx: &egui::Context, sp: &TextSpan) -> Vec<tracedraw_text::VariationAxis> {
+    let fonts = tracedraw_text::fonts();
+    let id = egui::Id::new((
+        "font_axes",
+        &sp.font_family,
+        sp.bold,
+        sp.italic,
+        fonts.generation(),
+    ));
+    if let Some(axes) = ctx.data(|d| d.get_temp::<Vec<tracedraw_text::VariationAxis>>(id)) {
+        return axes;
+    }
+    let axes: Vec<tracedraw_text::VariationAxis> = fonts
+        .variation_axes(&sp.font_family, sp.bold, sp.italic)
+        .into_iter()
+        .filter(|a| !a.hidden && a.max > a.min)
+        .collect();
+    ctx.data_mut(|d| d.insert_temp(id, axes.clone()));
+    axes
+}
+
+/// An axis's name: the registered axes in the interface language, the
+/// others as the font names them.
+fn axis_name(axis: &tracedraw_text::VariationAxis) -> String {
+    match axis.tag.as_str() {
+        "wght" => tr("docker.axis_wght"),
+        "wdth" => tr("docker.axis_wdth"),
+        "slnt" => tr("docker.axis_slnt"),
+        "ital" => tr("docker.axis_ital"),
+        "opsz" => tr("docker.axis_opsz"),
+        _ => axis.name.clone(),
+    }
+}
+
+/// The axes of the selected text's variable font (#870): a slider for
+/// each (weight, width, slant, optical size and the font's own axes),
+/// showing the value set on the text or, with none set, the one its
+/// weight and slant give. Releasing a slider (or typing a value) sets it
+/// on the selected characters, one undo step; Default axes takes every
+/// value off again. Nothing shows for a static font.
+fn font_axes(app: &mut App, ui: &mut Ui, sp: &TextSpan) {
+    let axes = axes_of(ui.ctx(), sp);
+    if axes.is_empty() {
+        return;
+    }
+    ui.horizontal(|ui| {
+        ui.label(tr("docker.font_axes"))
+            .on_hover_text(tr("docker.font_axes_tip"));
+        if ui
+            .add_enabled(
+                !sp.variations.is_empty(),
+                egui::Button::new(tr("docker.font_axes_reset")).small(),
+            )
+            .clicked()
+        {
+            edit_spans(app, |s| s.variations.clear());
+        }
+    });
+    for axis in &axes {
+        ui.horizontal(|ui| {
+            ui.add_sized([72.0, 18.0], egui::Label::new(axis_name(axis)).truncate())
+                .on_hover_text(&axis.tag);
+            let id = ui.id().with(("font_axis", &axis.tag));
+            let held = sp
+                .variation(&axis.tag)
+                .map_or(axis.auto, |v| v.clamp(axis.min, axis.max));
+            let mut v = ui.data(|d| d.get_temp::<f64>(id)).unwrap_or(held);
+            let step = if axis.max - axis.min > 20.0 { 1.0 } else { 0.1 };
+            ui.spacing_mut().slider_width = (ui.available_width() - 70.0).max(60.0);
+            let r = ui.add(crate::ui::Rail(
+                egui::Slider::new(&mut v, axis.min..=axis.max)
+                    .step_by(step)
+                    .clamping(egui::SliderClamping::Always),
+            ));
+            if r.dragged() {
+                ui.data_mut(|d| d.insert_temp(id, v));
+            }
+            if r.drag_stopped() || r.changed() && !r.dragged() {
+                ui.data_mut(|d| d.remove::<f64>(id));
+                let tag = axis.tag.clone();
+                edit_spans(app, move |s| s.set_variation(&tag, Some(v)));
+            }
         });
     }
 }
@@ -1309,6 +1397,58 @@ mod tests {
         };
         let mut out = ctx.run_ui(input, |ui| text_docker(app, ui));
         out.textures_delta.clear();
+    }
+
+    /// A text in a variable font shows its axes in the Character section
+    /// (#870); a value set there goes on the text in one undo step and
+    /// Default axes takes it off; a static font shows none.
+    #[test]
+    fn variable_font_axes_show_and_set_on_the_text() {
+        let quicksand = include_bytes!("../../../../crates/text/testdata/Quicksand-VF.ttf");
+        let _ = tracedraw_text::fonts().add_fonts(vec![quicksand.to_vec()]);
+        let mut app = App::headless();
+        let id = app
+            .new_shape(ShapeKind::Text {
+                spans: vec![TextSpan::new("Text", "Quicksand", 24.0)],
+                origin: Point::new(10.0, 10.0),
+                frame: None,
+                align: TextAlign::Left,
+                para: ParagraphStyle::default(),
+                on_path: None,
+            })
+            .expect("text");
+        app.select(vec![id]);
+        let ctx = crate::theme::ui_context();
+        ctx.data_mut(|d| d.insert_temp(egui::Id::new(("text_docker_more", "character")), true));
+        let input = || egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(360.0, 900.0),
+            )),
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(input(), |ui| text_docker(&mut app, ui));
+        out.textures_delta.clear();
+        let sp = TextSpan::new("Text", "Quicksand", 24.0);
+        let axes = axes_of(&ctx, &sp);
+        assert_eq!(axes.len(), 1, "{axes:?}");
+        assert_eq!(axes[0].tag, "wght");
+        assert_eq!(axis_name(&axes[0]), tr("docker.axis_wght"));
+        assert!(axes_of(&ctx, &TextSpan::new("Text", "Selawik", 24.0)).is_empty());
+
+        let wght = |app: &App| match app.doc().find_shape(id).map(|s| s.kind.clone()) {
+            Some(ShapeKind::Text { spans, .. }) => spans[0].variation("wght"),
+            _ => panic!("text"),
+        };
+        edit_spans(&mut app, |s| s.set_variation("wght", Some(650.0)));
+        assert_eq!(wght(&app), Some(650.0));
+        // It draws with the value set.
+        let mut out = ctx.run_ui(input(), |ui| text_docker(&mut app, ui));
+        out.textures_delta.clear();
+        edit_spans(&mut app, |s| s.variations.clear());
+        assert_eq!(wght(&app), None);
+        app.undo();
+        assert_eq!(wght(&app), Some(650.0));
     }
 
     #[test]
