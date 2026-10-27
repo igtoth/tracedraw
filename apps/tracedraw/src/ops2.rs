@@ -1357,56 +1357,42 @@ impl App {
     }
 
     /// Object > Fit Objects to Path: the last selected object is the path;
-    /// the others are spread evenly along it.
+    /// the others are placed along it with the Fit Objects to Path panel's
+    /// settings (#1027).
     pub fn fit_objects_to_path(&mut self) {
         let shapes = self.selected_shapes();
-        if shapes.len() < 2 {
+        let moves = fit_to_path_moves(&shapes, &self.fit_path);
+        if moves.is_empty() {
             return;
         }
-        let Some(path_shape) = shapes.last() else {
-            return;
-        };
-        let path = path_shape.page_path();
-        let mut pts: Vec<Point> = Vec::new();
-        kurbo::flatten(path.elements().iter().copied(), 0.05, |el| match el {
-            kurbo::PathEl::MoveTo(p) | kurbo::PathEl::LineTo(p) => pts.push(p),
-            _ => {}
-        });
-        if pts.len() < 2 {
-            return;
-        }
-        let mut cum = vec![0.0];
-        for w in pts.windows(2) {
-            cum.push(cum.last().copied().unwrap_or(0.0) + (w[1] - w[0]).hypot());
-        }
-        let total = *cum.last().unwrap_or(&0.0);
-        let objects = &shapes[..shapes.len() - 1];
-        let n = objects.len();
-        let mut cmds = Vec::new();
-        for (i, s) in objects.iter().enumerate() {
-            let t = if n == 1 {
-                0.5
-            } else {
-                i as f64 / (n as f64 - 1.0)
-            };
-            let target = t * total;
-            let k = cum
-                .partition_point(|c| *c <= target)
-                .saturating_sub(1)
-                .min(pts.len() - 2);
-            let seg = pts[k + 1] - pts[k];
-            let len = seg.hypot().max(1e-9);
-            let u = ((target - cum[k]) / len).clamp(0.0, 1.0);
-            let pos = pts[k] + seg * u;
-            let c = s.bounds().center();
-            cmds.push(Command::TransformShapes {
-                shapes: vec![s.id],
-                transform: Affine::translate(pos - c),
-            });
-        }
+        let cmds: Vec<Command> = moves
+            .into_iter()
+            .map(|(id, transform)| Command::TransformShapes {
+                shapes: vec![id],
+                transform,
+            })
+            .collect();
         if let Err(e) = self.engine.run_batch("Fit Objects to Path", &cmds) {
             self.status = e.to_string();
         }
+    }
+
+    /// The outlines the selected objects would have after
+    /// [`Self::fit_objects_to_path`], for the panel's preview; empty when
+    /// the selection cannot be fitted or is too large to preview cheaply.
+    pub fn fit_objects_to_path_preview(&self) -> Vec<BezPath> {
+        if self.selection.len() < 2 || self.selection.len() > 200 {
+            return Vec::new();
+        }
+        let shapes = self.selected_shapes();
+        let moves = fit_to_path_moves(&shapes, &self.fit_path);
+        moves
+            .into_iter()
+            .filter_map(|(id, t)| {
+                let s = shapes.iter().find(|s| s.id == id)?;
+                Some(t * s.page_path())
+            })
+            .collect()
     }
 
     /// The Join Curves docker: join the open ends of the selected curves
@@ -3394,6 +3380,147 @@ pub(crate) fn with_stand_ins(missing: &[String]) -> String {
         .join(", ")
 }
 
+/// How Fit Objects to Path spaces the objects along the path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FitSpacing {
+    /// Spread evenly over the whole path (after the start offset).
+    Even,
+    /// A fixed distance between the centres of neighbouring objects.
+    Distance,
+}
+
+/// The Fit Objects to Path panel's settings (millimetres, #1027).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FitPathSettings {
+    pub spacing: FitSpacing,
+    /// Distance between object centres with [`FitSpacing::Distance`].
+    pub distance: f64,
+    /// Where along the path the first object goes.
+    pub offset: f64,
+    /// Turn each object to follow the direction of the path.
+    pub rotate: bool,
+    /// Start from the other end of the path.
+    pub reverse: bool,
+}
+
+impl Default for FitPathSettings {
+    fn default() -> Self {
+        FitPathSettings {
+            spacing: FitSpacing::Even,
+            distance: 10.0,
+            offset: 0.0,
+            rotate: false,
+            reverse: false,
+        }
+    }
+}
+
+/// The move (and turn) of each object for Fit Objects to Path: the last
+/// shape is the path, the others are centred on points along its first
+/// subpath, in selection order. Empty when there is nothing to fit.
+pub fn fit_to_path_moves(shapes: &[Shape], set: &FitPathSettings) -> Vec<(ShapeId, Affine)> {
+    let Some((path_shape, objects)) = shapes.split_last() else {
+        return Vec::new();
+    };
+    if objects.is_empty() {
+        return Vec::new();
+    }
+    // The first subpath, flattened; a closed one ends where it started.
+    let mut pts: Vec<Point> = Vec::new();
+    let mut closed = false;
+    let mut done = false;
+    kurbo::flatten(
+        path_shape.page_path().elements().iter().copied(),
+        0.05,
+        |el| match el {
+            _ if done => {}
+            kurbo::PathEl::MoveTo(p) => {
+                if pts.is_empty() {
+                    pts.push(p);
+                } else {
+                    done = true;
+                }
+            }
+            kurbo::PathEl::LineTo(p) => pts.push(p),
+            kurbo::PathEl::ClosePath => {
+                if let Some(&first) = pts.first() {
+                    pts.push(first);
+                }
+                closed = true;
+                done = true;
+            }
+            _ => {}
+        },
+    );
+    pts.dedup_by(|a, b| (*a - *b).hypot() < 1e-9);
+    if pts.len() < 2 {
+        return Vec::new();
+    }
+    if set.reverse {
+        pts.reverse();
+    }
+    let mut cum = vec![0.0];
+    for w in pts.windows(2) {
+        cum.push(cum.last().copied().unwrap_or(0.0) + (w[1] - w[0]).hypot());
+    }
+    let total = cum.last().copied().unwrap_or(0.0);
+    if total <= 1e-9 {
+        return Vec::new();
+    }
+    let n = objects.len();
+    let offset = if set.offset.is_finite() {
+        set.offset
+    } else {
+        0.0
+    };
+    let at = |i: usize| -> f64 {
+        let d = match set.spacing {
+            FitSpacing::Even => {
+                let start = offset.clamp(0.0, total);
+                let room = total - start;
+                if closed {
+                    offset + room * i as f64 / n as f64
+                } else if n == 1 {
+                    start + room / 2.0
+                } else {
+                    start + room * i as f64 / (n as f64 - 1.0)
+                }
+            }
+            FitSpacing::Distance => offset + set.distance.max(0.0) * i as f64,
+        };
+        if closed {
+            d.rem_euclid(total)
+        } else {
+            d.clamp(0.0, total)
+        }
+    };
+    objects
+        .iter()
+        .enumerate()
+        .map(|(i, s)| {
+            let target = at(i);
+            let k = cum
+                .partition_point(|c| *c <= target)
+                .saturating_sub(1)
+                .min(pts.len() - 2);
+            let seg = pts[k + 1] - pts[k];
+            let len = seg.hypot().max(1e-9);
+            let u = ((target - cum[k]) / len).clamp(0.0, 1.0);
+            let pos = pts[k] + seg * u;
+            let c = s.bounds().center();
+            let turn = if set.rotate {
+                Affine::rotate(seg.y.atan2(seg.x))
+            } else {
+                Affine::IDENTITY
+            };
+            (
+                s.id,
+                Affine::translate(pos.to_vec2()) * turn * Affine::translate(-c.to_vec2()),
+            )
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -4074,6 +4201,124 @@ mod tests {
         // Less than the original size does nothing.
         app.inflate_bitmaps_by(100.0, 100.0);
         assert_eq!(app.engine.history_labels().0.len(), depth + 1);
+    }
+
+    fn square_at(app: &mut App, x: f64, y: f64) -> ShapeId {
+        app.new_shape(ShapeKind::Rect {
+            rect: Rect::new(x, y, x + 4.0, y + 2.0),
+            radius: 0.0,
+            corners: None,
+        })
+        .expect("square")
+    }
+
+    fn line_path(app: &mut App, pts: &[(f64, f64)], closed: bool) -> ShapeId {
+        let mut path = BezPath::new();
+        path.move_to(pts[0]);
+        for p in &pts[1..] {
+            path.line_to(*p);
+        }
+        if closed {
+            path.close_path();
+        }
+        app.new_shape(ShapeKind::Path { path, closed })
+            .expect("path")
+    }
+
+    fn centre(app: &App, id: ShapeId) -> Point {
+        app.doc().find_shape(id).expect("shape").bounds().center()
+    }
+
+    /// Object > Fit Objects to Path opens its panel instead of moving the
+    /// objects at once, and the panel's settings decide the placing (#1027).
+    #[test]
+    fn fit_objects_to_path_opens_its_panel_and_uses_its_settings() {
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        let a = square_at(&mut app, 50.0, 50.0);
+        let b = square_at(&mut app, 60.0, 60.0);
+        let c = square_at(&mut app, 70.0, 70.0);
+        let line = line_path(&mut app, &[(0.0, 0.0), (100.0, 0.0)], false);
+        app.select(vec![a, b, c, line]);
+        app.open_docker(crate::app::DockerTab::FitToPath);
+        assert!(app.open_dockers.contains(&crate::app::DockerTab::FitToPath));
+        assert_eq!(app.docker_tab, crate::app::DockerTab::FitToPath);
+        // The panel draws and previews three outlines.
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            crate::ui::dockers2::show(&mut app, ui, crate::app::DockerTab::FitToPath);
+        });
+        out.textures_delta.clear();
+        assert_eq!(app.docker_preview.len(), 3);
+        assert!(
+            (centre(&app, a) - Point::new(52.0, 51.0)).hypot() < 1e-9,
+            "nothing moved yet"
+        );
+
+        // Evenly: both ends and the middle.
+        app.fit_objects_to_path();
+        for (id, x) in [(a, 0.0), (b, 50.0), (c, 100.0)] {
+            assert!(
+                (centre(&app, id) - Point::new(x, 0.0)).hypot() < 1e-6,
+                "{x}"
+            );
+        }
+        // A fixed distance after an offset, from the other end.
+        app.fit_path = FitPathSettings {
+            spacing: FitSpacing::Distance,
+            distance: 20.0,
+            offset: 10.0,
+            rotate: false,
+            reverse: true,
+        };
+        app.fit_objects_to_path();
+        for (id, x) in [(a, 90.0), (b, 70.0), (c, 50.0)] {
+            assert!(
+                (centre(&app, id) - Point::new(x, 0.0)).hypot() < 1e-6,
+                "{x}"
+            );
+        }
+        assert_eq!(app.engine.undo_label(), Some("Fit Objects to Path"));
+    }
+
+    /// With Rotate the objects turn with the path; on a closed path they go
+    /// all the way round, the closing side included, without the first and
+    /// last meeting (#1027).
+    #[test]
+    fn fit_objects_to_path_turns_and_goes_round_closed_paths() {
+        let mut app = App::headless();
+        let ids: Vec<ShapeId> = (0..4)
+            .map(|i| square_at(&mut app, 200.0 + i as f64, 0.0))
+            .collect();
+        // A 40 x 40 square, so the objects land on its four corners.
+        let sq = line_path(
+            &mut app,
+            &[(0.0, 0.0), (40.0, 0.0), (40.0, 40.0), (0.0, 40.0)],
+            true,
+        );
+        let mut sel = ids.clone();
+        sel.push(sq);
+        app.select(sel);
+        app.fit_objects_to_path();
+        for (id, p) in ids
+            .iter()
+            .zip([(0.0, 0.0), (40.0, 0.0), (40.0, 40.0), (0.0, 40.0)])
+        {
+            assert!((centre(&app, *id) - Point::from(p)).hypot() < 1e-6, "{p:?}");
+        }
+        // Turned: on the right side (going down) the 4 x 2 object stands up.
+        app.fit_path.rotate = true;
+        app.fit_path.offset = 50.0;
+        app.fit_objects_to_path();
+        let s = app.doc().find_shape(ids[0]).expect("shape").clone();
+        let r = s.bounds();
+        assert!(
+            (r.center() - Point::new(40.0, 10.0)).hypot() < 1e-6,
+            "{r:?}"
+        );
+        assert!(
+            (r.width() - 2.0).abs() < 1e-6 && (r.height() - 4.0).abs() < 1e-6,
+            "{r:?}"
+        );
     }
 }
 
