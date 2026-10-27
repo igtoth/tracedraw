@@ -2337,57 +2337,6 @@ fn outline_editor_mixed(
                 }
             }
         });
-        if s.join == tracedraw_core::LineJoin::Miter {
-            ui.horizontal(|ui| {
-                ui.label(tr("docker.miter_limit"));
-                if ui
-                    .add(
-                        crate::ui::field::NumField::new(&mut s.miter_limit)
-                            .range(Stroke::MITER_LIMIT_RANGE)
-                            .speed(0.5)
-                            .max_decimals(1)
-                            .suffix("°")
-                            .width(56.0)
-                            .mixed(mix.has(StrokeField::MiterLimit)),
-                    )
-                    .on_hover_text(tr("docker.miter_limit_tip"))
-                    .changed()
-                {
-                    touched.push(StrokeField::MiterLimit);
-                    changed = true;
-                }
-            });
-        }
-        for (field, key, range, suffix) in [
-            (StrokeField::Stretch, "docker.nib_stretch", 0.1..=1.0, ""),
-            (
-                StrokeField::NibAngle,
-                "docker.nib_angle_lc",
-                -90.0..=90.0,
-                "°",
-            ),
-        ] {
-            let v = if field == StrokeField::Stretch {
-                &mut s.stretch
-            } else {
-                &mut s.nib_angle
-            };
-            // A slider cannot be empty: a mixed one says so in its text.
-            let text = if mix.has(field) {
-                format!("{} ({})", tr(key), tr("docker.mixed"))
-            } else {
-                tr(key)
-            };
-            if ui
-                .add(crate::ui::Rail(
-                    egui::Slider::new(v, range).text(text).suffix(suffix),
-                ))
-                .drag_stopped()
-            {
-                touched.push(field);
-                changed = true;
-            }
-        }
         for (field, key) in [
             (StrokeField::BehindFill, "docker.behind_fill"),
             (StrokeField::ScaleWithObject, "docker.scale_with_object"),
@@ -2405,6 +2354,76 @@ fn outline_editor_mixed(
                 changed = true;
             }
         }
+        // The settings few outlines need, under their own header so the
+        // common ones are found at a glance (#487): open at first when
+        // one of them is set away from its default or differs between
+        // the objects, so nothing set is hidden.
+        let advanced_set = s.miter_limit != Stroke::DEFAULT_MITER_LIMIT
+            || s.stretch != 1.0
+            || s.nib_angle != 0.0
+            || [
+                StrokeField::MiterLimit,
+                StrokeField::Stretch,
+                StrokeField::NibAngle,
+            ]
+            .iter()
+            .any(|f| mix.has(*f));
+        egui::CollapsingHeader::new(tr("docker.outline_advanced"))
+            .id_salt("docker_outline_advanced")
+            .default_open(advanced_set)
+            .show(ui, |ui| {
+                if s.join == tracedraw_core::LineJoin::Miter {
+                    ui.horizontal(|ui| {
+                        ui.label(tr("docker.miter_limit"));
+                        if ui
+                            .add(
+                                crate::ui::field::NumField::new(&mut s.miter_limit)
+                                    .range(Stroke::MITER_LIMIT_RANGE)
+                                    .speed(0.5)
+                                    .max_decimals(1)
+                                    .suffix("°")
+                                    .width(56.0)
+                                    .mixed(mix.has(StrokeField::MiterLimit)),
+                            )
+                            .on_hover_text(tr("docker.miter_limit_tip"))
+                            .changed()
+                        {
+                            touched.push(StrokeField::MiterLimit);
+                            changed = true;
+                        }
+                    });
+                }
+                for (field, key, range, suffix) in [
+                    (StrokeField::Stretch, "docker.nib_stretch", 0.1..=1.0, ""),
+                    (
+                        StrokeField::NibAngle,
+                        "docker.nib_angle_lc",
+                        -90.0..=90.0,
+                        "°",
+                    ),
+                ] {
+                    let v = if field == StrokeField::Stretch {
+                        &mut s.stretch
+                    } else {
+                        &mut s.nib_angle
+                    };
+                    // A slider cannot be empty: a mixed one says so in its text.
+                    let text = if mix.has(field) {
+                        format!("{} ({})", tr(key), tr("docker.mixed"))
+                    } else {
+                        tr(key)
+                    };
+                    if ui
+                        .add(crate::ui::Rail(
+                            egui::Slider::new(v, range).text(text).suffix(suffix),
+                        ))
+                        .drag_stopped()
+                    {
+                        touched.push(field);
+                        changed = true;
+                    }
+                }
+            });
     }
     changed
 }
@@ -3027,6 +3046,186 @@ mod tests {
         let texts = painted_texts(&ctx, &mut app);
         assert_eq!(count(&texts, "docker.add_outline"), 1, "{texts:?}");
         assert_eq!(count(&texts, "docker.add_fill"), 1, "{texts:?}");
+    }
+
+    /// Every outline option stays in the Properties docker, with and
+    /// without a selection: the common ones in view, the mitre limit and
+    /// the nib under an Advanced header that a click opens (open at once
+    /// when one of them is set), and no label cut short (#487).
+    #[test]
+    fn every_outline_option_is_in_the_properties_docker() {
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        app.show_welcome = false;
+        app.settings.autocorrect.enabled = false;
+        app.settings.properties_closed.clear();
+        app.show_dockers = true;
+        app.docker_tab = DockerTab::Properties;
+        // The texts painted, with where they are.
+        let frame = |app: &mut App, events: Vec<egui::Event>| -> Vec<(String, egui::Rect)> {
+            fn walk(s: &egui::Shape, out: &mut Vec<(String, egui::Rect)>) {
+                match s {
+                    egui::Shape::Text(t) => out.push((
+                        t.galley.text().to_string(),
+                        t.galley.rect.translate(t.pos.to_vec2()),
+                    )),
+                    egui::Shape::Vec(v) => v.iter().for_each(|s| walk(s, out)),
+                    _ => {}
+                }
+            }
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1400.0, 1900.0),
+                )),
+                events,
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| crate::ui::root(app, ui));
+            out.textures_delta.clear();
+            let mut texts = Vec::new();
+            out.shapes.iter().for_each(|c| walk(&c.shape, &mut texts));
+            texts
+        };
+        let common = [
+            "docker.hairline",
+            "docker.caps",
+            "docker.cap_butt",
+            "docker.cap_round",
+            "docker.cap_square",
+            "docker.corners",
+            "docker.join_miter",
+            "docker.join_round",
+            "docker.join_bevel",
+            "docker.dash",
+            "docker.dash_solid",
+            "docker.dash_dashed",
+            "docker.dash_dotted",
+            "docker.dash_dash_dot",
+            "docker.align_dashes",
+            "docker.edit_line_style",
+            "docker.outline_position",
+            "docker.position_outside",
+            "docker.position_center",
+            "docker.position_inside",
+            "docker.behind_fill",
+            "docker.scale_with_object",
+            "docker.outline_advanced",
+        ];
+        let advanced = [
+            "docker.miter_limit",
+            "docker.nib_stretch",
+            "docker.nib_angle_lc",
+        ];
+        let has = |texts: &[(String, egui::Rect)], key: &str| {
+            let want = tr(key);
+            texts
+                .iter()
+                .any(|(t, _)| t.replace('\n', " ") == want || t.starts_with(&want))
+        };
+        let check = |app: &mut App, what: &str| {
+            for _ in 0..3 {
+                frame(app, Vec::new());
+            }
+            let texts = frame(app, Vec::new());
+            for key in common
+                .iter()
+                .chain(["docker.arrow_start", "docker.arrow_end"].iter())
+            {
+                assert!(has(&texts, key), "{what}: {key} missing in {texts:?}");
+            }
+            for key in advanced {
+                assert!(!has(&texts, key), "{what}: {key} not under Advanced");
+            }
+            assert!(
+                !texts.iter().any(|(t, _)| t.ends_with('\u{2026}')),
+                "{what}: a label cut short in {texts:?}"
+            );
+            // A click on the header shows the rest.
+            let at = texts
+                .iter()
+                .find(|(t, _)| *t == tr("docker.outline_advanced"))
+                .map(|(_, r)| r.center())
+                .expect("the Advanced header");
+            let press = |pressed| egui::Event::PointerButton {
+                pos: at,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            };
+            frame(app, vec![egui::Event::PointerMoved(at)]);
+            frame(app, vec![press(true)]);
+            frame(app, vec![press(false)]);
+            for _ in 0..3 {
+                frame(app, Vec::new());
+            }
+            let texts = frame(app, Vec::new());
+            for key in advanced {
+                assert!(
+                    has(&texts, key),
+                    "{what}: {key} missing when open: {texts:?}"
+                );
+            }
+            assert!(!texts.iter().any(|(t, _)| t.ends_with('\u{2026}')));
+            // Closed again for the next check.
+            frame(app, vec![egui::Event::PointerMoved(at)]);
+            frame(app, vec![press(true)]);
+            frame(app, vec![press(false)]);
+        };
+        // Nothing selected: the outline of new objects (mitred corners, so
+        // the mitre limit shows).
+        let mut pen = app.default_stroke().unwrap_or_default();
+        pen.join = tracedraw_core::LineJoin::Miter;
+        app.change_defaults(
+            &crate::defaults::DefaultChange::Outline(Some(pen.clone())),
+            [true, true, true],
+        );
+        check(&mut app, "nothing selected");
+        // An object with that outline.
+        let id = app
+            .new_shape(ShapeKind::Rect {
+                rect: tracedraw_core::geometry::Rect::new(10.0, 10.0, 60.0, 40.0),
+                radius: 0.0,
+                corners: None,
+            })
+            .expect("rect");
+        app.run(Command::SetStroke {
+            shapes: vec![id],
+            stroke: Some(pen.clone()),
+        });
+        app.select(vec![id]);
+        check(&mut app, "a rectangle");
+        // A nib set away from its default: the header comes open.
+        let ctx2 = crate::theme::ui_context();
+        let mut app2 = App::headless();
+        app2.show_welcome = false;
+        app2.settings.autocorrect.enabled = false;
+        app2.settings.properties_closed.clear();
+        app2.show_dockers = true;
+        app2.docker_tab = DockerTab::Properties;
+        let id = app2
+            .new_shape(ShapeKind::Rect {
+                rect: tracedraw_core::geometry::Rect::new(10.0, 10.0, 60.0, 40.0),
+                radius: 0.0,
+                corners: None,
+            })
+            .expect("rect");
+        app2.run(Command::SetStroke {
+            shapes: vec![id],
+            stroke: Some(Stroke {
+                nib_angle: 30.0,
+                ..pen
+            }),
+        });
+        app2.select(vec![id]);
+        for _ in 0..3 {
+            draw(&ctx2, &mut app2);
+        }
+        let texts = painted_texts(&ctx2, &mut app2);
+        assert!(
+            texts.iter().any(|t| *t == tr("docker.nib_angle_lc")),
+            "{texts:?}"
+        );
     }
 
     /// The Properties docker keeps its default width with every section

@@ -939,6 +939,7 @@ docker.new_symbol = "選択範囲から新しいシンボル"
 docker.nib_angle = "ペン先の角度"
 docker.nib_angle_lc = "ペン先の角度"
 docker.nib_stretch = "ペン先の伸縮"
+docker.outline_advanced = "詳細設定" # mt
 docker.no_effects = "効果なし"
 docker.no_objects_selected = "オブジェクトが選択されていません"
 docker.object_acceleration = "オブジェクトの加速"

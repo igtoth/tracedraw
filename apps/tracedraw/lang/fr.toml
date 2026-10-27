@@ -939,6 +939,7 @@ docker.new_symbol = "Nouveau symbole à partir de la sélection"
 docker.nib_angle = "Angle de la plume"
 docker.nib_angle_lc = "angle de la plume"
 docker.nib_stretch = "étirement de la plume"
+docker.outline_advanced = "Avancé" # mt
 docker.no_effects = "Aucun effet"
 docker.no_objects_selected = "Aucun objet sélectionné"
 docker.object_acceleration = "Accélération des objets"

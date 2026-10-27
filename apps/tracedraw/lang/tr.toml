@@ -939,6 +939,7 @@ docker.new_symbol = "Seçimden yeni sembol"
 docker.nib_angle = "Uç açısı"
 docker.nib_angle_lc = "uç açısı"
 docker.nib_stretch = "uç esnetme"
+docker.outline_advanced = "Gelişmiş" # mt
 docker.no_effects = "Efekt yok"
 docker.no_objects_selected = "Seçili nesne yok"
 docker.object_acceleration = "Nesne hızlandırma"

@@ -939,6 +939,7 @@ docker.new_symbol = "從選取範圍建立新符號"
 docker.nib_angle = "筆尖角度"
 docker.nib_angle_lc = "筆尖角度"
 docker.nib_stretch = "筆尖拉伸"
+docker.outline_advanced = "進階" # mt
 docker.no_effects = "沒有效果"
 docker.no_objects_selected = "未選取物件"
 docker.object_acceleration = "物件加速"

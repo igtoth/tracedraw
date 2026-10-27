@@ -939,6 +939,7 @@ docker.new_symbol = "নির্বাচন থেকে নতুন সি�
 docker.nib_angle = "নিবের কোণ"
 docker.nib_angle_lc = "নিব কোণ"
 docker.nib_stretch = "নিব প্রসার"
+docker.outline_advanced = "উন্নত" # mt
 docker.no_effects = "কোনো ইফেক্ট নেই"
 docker.no_objects_selected = "কোনো অবজেক্ট নির্বাচিত নয়"
 docker.object_acceleration = "অবজেক্ট ত্বরণ"

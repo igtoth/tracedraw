@@ -939,6 +939,7 @@ docker.new_symbol = "Nieuw symbool vanuit selectie"
 docker.nib_angle = "Hoek van de penpunt"
 docker.nib_angle_lc = "hoek penpunt"
 docker.nib_stretch = "uitrekking penpunt"
+docker.outline_advanced = "Geavanceerd" # mt
 docker.no_effects = "Geen effecten"
 docker.no_objects_selected = "Geen objecten geselecteerd"
 docker.object_acceleration = "Objectversnelling"

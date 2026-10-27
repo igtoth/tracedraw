@@ -939,6 +939,7 @@ docker.new_symbol = "Nový symbol z výběru"
 docker.nib_angle = "Úhel hrotu"
 docker.nib_angle_lc = "úhel hrotu"
 docker.nib_stretch = "roztažení hrotu"
+docker.outline_advanced = "Pokročilé" # mt
 docker.no_effects = "Žádné efekty"
 docker.no_objects_selected = "Nejsou vybrány žádné objekty"
 docker.object_acceleration = "Zrychlení objektů"

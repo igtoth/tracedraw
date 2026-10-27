@@ -939,6 +939,7 @@ docker.new_symbol = "Новый символ из выделения"
 docker.nib_angle = "Угол пера"
 docker.nib_angle_lc = "угол пера"
 docker.nib_stretch = "растяжение пера"
+docker.outline_advanced = "Дополнительно" # mt
 docker.no_effects = "Нет эффектов"
 docker.no_objects_selected = "Объекты не выбраны"
 docker.object_acceleration = "Ускорение объектов"

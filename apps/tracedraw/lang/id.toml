@@ -939,6 +939,7 @@ docker.new_symbol = "Simbol baru dari pilihan"
 docker.nib_angle = "Sudut mata pena"
 docker.nib_angle_lc = "sudut pena"
 docker.nib_stretch = "regangan pena"
+docker.outline_advanced = "Lanjutan" # mt
 docker.no_effects = "Tidak ada efek"
 docker.no_objects_selected = "Tidak ada objek yang dipilih"
 docker.object_acceleration = "Akselerasi objek"
