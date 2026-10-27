@@ -939,6 +939,7 @@ docker.new_symbol = "चयन से नया सिंबल"
 docker.nib_angle = "निब कोण"
 docker.nib_angle_lc = "निब कोण"
 docker.nib_stretch = "निब खिंचाव"
+docker.outline_advanced = "उन्नत" # mt
 docker.no_effects = "कोई प्रभाव नहीं"
 docker.no_objects_selected = "कोई ऑब्जेक्ट चयनित नहीं"
 docker.object_acceleration = "ऑब्जेक्ट त्वरण"

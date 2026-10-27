@@ -939,6 +939,7 @@ docker.new_symbol = "رمز جديد من التحديد"
 docker.nib_angle = "زاوية السن"
 docker.nib_angle_lc = "زاوية الريشة"
 docker.nib_stretch = "تمدد الريشة"
+docker.outline_advanced = "متقدم" # mt
 docker.no_effects = "لا توجد تأثيرات"
 docker.no_objects_selected = "لم يتم تحديد كائنات"
 docker.object_acceleration = "تسارع الكائنات"

@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Properties panel: the outline's mitre limit, nib stretch and nib angle sit under an Advanced header after the common settings (caps, corners, arrows, dashes, position, behind fill, scale with object), closed at first unless one of them is set, so the outline section is shorter and its basic options are found at a glance (#487).
 - Edit Fill: the gradient preview shows the start, end and skew nodes, and dragging them moves, turns and stretches the gradient as on the canvas (Ctrl turns in 15 degree steps); the preview has the object's proportions, the rotation and centre fields move nodes placed freely too, and OK now keeps nodes placed (or reset) in the dialog (#939).
 
 - Dimensions: the bar's Options menu can join the extension lines and the dimension line (or an angle's arc) into one line that turns a corner instead of running past it, and a corner radius rounds those corners. Both are kept in the dimension and in saved files (#641).

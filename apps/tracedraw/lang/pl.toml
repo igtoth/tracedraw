@@ -939,6 +939,7 @@ docker.new_symbol = "Nowy symbol z zaznaczenia"
 docker.nib_angle = "Kąt stalówki"
 docker.nib_angle_lc = "kąt stalówki"
 docker.nib_stretch = "rozciągnięcie stalówki"
+docker.outline_advanced = "Zaawansowane" # mt
 docker.no_effects = "Brak efektów"
 docker.no_objects_selected = "Nie zaznaczono obiektów"
 docker.object_acceleration = "Przyspieszenie obiektów"
