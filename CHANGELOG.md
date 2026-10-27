@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Print Merge: a text, picture or QR code field inserted with On every page and then moved or resized on its page is merged in that same place on every other page too. The copies on the other pages stayed where the field was first inserted, so from the second page on the merged objects landed somewhere else, and Place Inside Frame made a second frame there (#956).
 - Color panel: the spot ink tint slider shows its groove, and the remove button of a spot ink and the out-of-gamut sign show their icons. The groove had the white of the panel, so only the handle showed, and both icons came from characters the bundled interface font lacks, drawn as empty boxes on systems without a font for them; the gamut sign is now drawn and the remove buttons there and elsewhere use a cross the bundled font has (#949).
 - Text: full justification spreads Chinese and Japanese lines to the right edge of the frame. It widened only the spaces between words, so text written without spaces stayed left aligned with room on the right; the room now goes between the characters (never after a line's last one), mixed lines widen their spaces and the gaps beside the Chinese characters, and the last line of a paragraph stays left aligned unless justification is forced (#952).
 - Opening `.cdr`: text whose letters are each turned and moved on their own, as the ring of letters around a seal, opens from version 13 to 15 files with every letter in its place. Such texts were skipped and counted as objects that could not be read (#955).
