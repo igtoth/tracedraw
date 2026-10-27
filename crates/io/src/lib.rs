@@ -293,6 +293,44 @@ mod tests {
         ));
     }
 
+    /// The axis values of a variable font set on text are kept in the
+    /// native file (#1013): a weight of 600 reopens at 600.
+    #[test]
+    fn variable_font_axes_round_trip_in_native_files() {
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        let id = doc.ids_mut().shape();
+        let mut span = tracedraw_core::TextSpan::new("Weight", "MiSans VF", 24.0);
+        span.set_variation("wght", Some(600.0));
+        span.set_variation("wdth", Some(87.5));
+        let s = Shape::new(
+            id,
+            ShapeKind::Text {
+                spans: vec![span],
+                origin: tracedraw_core::geometry::Point::new(10.0, 20.0),
+                frame: None,
+                align: tracedraw_core::TextAlign::Left,
+                para: tracedraw_core::document::ParagraphStyle::default(),
+                on_path: None,
+            },
+        );
+        doc.layer_mut(layer).unwrap().shapes.push(s);
+        let path = std::env::temp_dir().join(format!(
+            "tracedraw-font-axes-{}-{:?}.tdraw",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        save_native(&doc, &path).unwrap();
+        let back = load_native(&path).unwrap();
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(back, doc);
+        let ShapeKind::Text { spans, .. } = &back.pages[0].layers[0].shapes[0].kind else {
+            panic!("not text");
+        };
+        assert_eq!(spans[0].variation("wght"), Some(600.0));
+        assert_eq!(spans[0].variation("wdth"), Some(87.5));
+    }
+
     #[test]
     fn outline_position_mitre_limit_dashes_and_shadows_round_trip() {
         use tracedraw_core::shadow::{FeatherDirection, FeatherEdges, Perspective, ShadowEdge};
