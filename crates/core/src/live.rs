@@ -1657,7 +1657,10 @@ fn block_shadow(shape: &Shape, offset: Vec2, color: Color, gap: f64) -> Vec<Shap
 }
 
 /// Flatten, subdivide long segments and map every point through `map`, so
-/// straight edges bend with the warp.
+/// straight edges bend with the warp. Where the warp bends hard a piece
+/// of 1/64 of the object's size is halved again, so a tight bend is not
+/// drawn in visible facets (#881); elsewhere the points are as many as
+/// before and so are the calls to `map`.
 pub(crate) fn warp(path: &BezPath, b: Rect, map: impl Fn(Point) -> Point) -> BezPath {
     let size = b.width().max(b.height());
     let step = (size / 64.0).max(size * 1e-4).max(1e-9);
@@ -1665,33 +1668,40 @@ pub(crate) fn warp(path: &BezPath, b: Rect, map: impl Fn(Point) -> Point) -> Bez
     // tolerance made letters, whose own space is small and scaled up by
     // their transform, come out in facets (#455).
     let tolerance = (size * 2e-5).clamp(1e-7, 0.05);
+    // How far where a piece's middle maps to may lie off its mapped
+    // chord.
+    let deviation = (size * 1e-5).clamp(1e-8, 0.01);
     let mut out = BezPath::new();
-    let mut last: Option<Point> = None;
-    let mut start: Option<Point> = None;
+    // The last point, where it maps to, and the subpath's start.
+    let mut last: Option<(Point, Point)> = None;
+    let mut start: Option<(Point, Point)> = None;
+    let mut line = WarpLine::default();
     kurbo::flatten(path.elements().iter().copied(), tolerance, |el| match el {
         PathEl::MoveTo(p) => {
-            out.move_to(map(p));
-            last = Some(p);
-            start = Some(p);
+            let m = map(p);
+            out.move_to(m);
+            last = Some((p, m));
+            start = last;
         }
-        PathEl::LineTo(p) => {
-            if let Some(l) = last {
-                let n = ((p - l).hypot() / step).ceil().max(1.0) as usize;
-                for i in 1..=n {
-                    let t = i as f64 / n as f64;
-                    out.line_to(map(l + (p - l) * t));
-                }
-            } else {
-                out.line_to(map(p));
+        PathEl::LineTo(p) => match last {
+            Some(from) => {
+                line.run(&map, from, p, step, deviation);
+                line.out.iter().for_each(|q| out.line_to(*q));
+                last = Some((p, line.end));
             }
-            last = Some(p);
-        }
+            None => {
+                let m = map(p);
+                out.line_to(m);
+                last = Some((p, m));
+            }
+        },
         PathEl::ClosePath => {
-            if let (Some(l), Some(s)) = (last, start) {
-                let n = ((s - l).hypot() / step).ceil().max(1.0) as usize;
-                for i in 1..n {
-                    let t = i as f64 / n as f64;
-                    out.line_to(map(l + (s - l) * t));
+            if let (Some(from), Some(s)) = (last, start) {
+                if (s.0 - from.0).hypot() > 0.0 {
+                    line.run(&map, from, s.0, step, deviation);
+                    // The last point is the start, which the close reaches.
+                    line.out.pop();
+                    line.out.iter().for_each(|q| out.line_to(*q));
                 }
             }
             out.close_path();
@@ -1700,6 +1710,125 @@ pub(crate) fn warp(path: &BezPath, b: Rect, map: impl Fn(Point) -> Point) -> Bez
         _ => {}
     });
     out
+}
+
+/// How many times a piece of a warped line may be halved: up to 64
+/// pieces for each 1/64 of the object's size.
+const WARP_HALVINGS: u32 = 6;
+
+/// One line of a warped outline, divided and mapped; its buffers are
+/// kept from line to line.
+#[derive(Default)]
+struct WarpLine {
+    src: Vec<Point>,
+    mapped: Vec<Point>,
+    /// How far each mapped point lies off its neighbours' chord (0 at
+    /// the ends).
+    off: Vec<f64>,
+    /// The mapped points after the line's start, its end included.
+    out: Vec<Point>,
+    /// Where the line's end maps to.
+    end: Point,
+}
+
+impl WarpLine {
+    /// Map the line from `from` (a point and where it maps to) to `to`
+    /// in pieces of at most `step`. A piece is halved where the warp
+    /// bends it more than `deviation` off its chord: judged without more
+    /// calls to `map` from how far each point lies off the chord of its
+    /// neighbours (on a straight line only the warp bends them; a piece
+    /// strays from its chord about a quarter of that), then measured at
+    /// its middle. A line of one piece (a curve's flattening) is measured
+    /// only when longer than a quarter of `step`: a shorter one strays
+    /// sixteen times less than the pieces of `step` drawn before.
+    fn run(
+        &mut self,
+        map: &impl Fn(Point) -> Point,
+        from: (Point, Point),
+        to: Point,
+        step: f64,
+        deviation: f64,
+    ) {
+        let (l, ml) = from;
+        let len = (to - l).hypot();
+        let n = (len / step).ceil().clamp(1.0, 1e6) as usize;
+        self.src.clear();
+        self.mapped.clear();
+        self.out.clear();
+        self.src.push(l);
+        self.mapped.push(ml);
+        for i in 1..=n {
+            let at = l + (to - l) * (i as f64 / n as f64);
+            self.src.push(at);
+            self.mapped.push(map(at));
+        }
+        self.end = self.mapped.last().copied().unwrap_or(ml);
+        // How far each inner point lies off its neighbours' chord.
+        self.off.clear();
+        if n > 1 {
+            self.off.push(0.0);
+            for w in self.mapped.windows(3) {
+                self.off.push(off_chord(w[1], w[0], w[2]));
+            }
+        }
+        let off = &self.off;
+        for i in 0..n {
+            let bent = if n == 1 {
+                len > step * 0.25
+            } else {
+                // The bend at either end of the piece, or at its inner
+                // neighbour's for the first and the last piece.
+                let near = [i, i + 1, i.max(1), (i + 1).min(n - 1)];
+                near.iter()
+                    .any(|k| off.get(*k).copied().unwrap_or(0.0) * 0.25 > deviation)
+            };
+            let a = (self.src[i], self.mapped[i]);
+            let c = (self.src[i + 1], self.mapped[i + 1]);
+            if bent {
+                refine(map, a, c, deviation, WARP_HALVINGS, &mut self.out);
+            } else {
+                self.out.push(c.1);
+            }
+        }
+    }
+}
+
+/// How far `p` lies off the line through `a` and `b` (off `a` when they
+/// meet).
+fn off_chord(p: Point, a: Point, b: Point) -> f64 {
+    let chord = b - a;
+    let len = chord.hypot();
+    if len > 1e-12 {
+        (p - a).cross(chord).abs() / len
+    } else {
+        (p - a).hypot()
+    }
+}
+
+/// The mapped points after `from` up to `to` (each a point and where it
+/// maps to), the piece halved while where its middle maps to lies more
+/// than `deviation` off the mapped chord.
+fn refine(
+    map: &impl Fn(Point) -> Point,
+    from: (Point, Point),
+    to: (Point, Point),
+    deviation: f64,
+    halvings: u32,
+    out: &mut Vec<Point>,
+) {
+    if halvings > 0 {
+        let mid = from.0.midpoint(to.0);
+        let m = map(mid);
+        // Off the mapped chord, not along it: a warp that only stretches
+        // a straight piece needs no more points there.
+        let off = off_chord(m, from.1, to.1);
+        if off.is_finite() && off > deviation {
+            refine(map, from, (mid, m), deviation, halvings - 1, out);
+            refine(map, (mid, m), to, deviation, halvings - 1, out);
+            return;
+        }
+    }
+    out.push(to.1);
 }
 
 /// Projective map of the bounding box onto `corners` (BL, BR, TR, TL).

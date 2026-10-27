@@ -1150,6 +1150,7 @@ edit_fill.repeat_default = "既定" # mt
 edit_fill.repeat_mirror = "繰り返しとミラー" # mt
 edit_fill.reset_nodes = "角度と中心に戻す" # mt
 edit_fill.reset_nodes_tip = "インタラクティブ塗りつぶしで置いたノードを破棄" # mt
+edit_fill.preview_tip = "ノードをドラッグ: 始点でグラデーションを移動、終点で回転と伸縮、丸いノードで傾斜。Ctrl で 15° 刻みに回転。" # mt
 edit_fill.reverse = "反転" # mt
 edit_fill.reverse_tip = "色を逆向きに流す" # mt
 edit_fill.rotate = "回転:" # mt

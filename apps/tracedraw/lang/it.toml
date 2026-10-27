@@ -1150,6 +1150,7 @@ edit_fill.repeat_default = "Predefinito" # mt
 edit_fill.repeat_mirror = "Ripeti e rifletti" # mt
 edit_fill.reset_nodes = "Torna ad angolo e centro" # mt
 edit_fill.reset_nodes_tip = "Dimentica i nodi posati con Riempimento interattivo" # mt
+edit_fill.preview_tip = "Trascina i nodi: l'inizio sposta la sfumatura, la fine la ruota e la allunga, il nodo tondo la inclina. Ctrl ruota a passi di 15°." # mt
 edit_fill.reverse = "Inverti" # mt
 edit_fill.reverse_tip = "Fa scorrere i colori al contrario" # mt
 edit_fill.rotate = "Ruota:" # mt

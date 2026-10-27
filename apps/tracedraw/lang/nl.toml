@@ -1150,6 +1150,7 @@ edit_fill.repeat_default = "Standaard" # mt
 edit_fill.repeat_mirror = "Herhalen en spiegelen" # mt
 edit_fill.reset_nodes = "Terug naar hoek en midden" # mt
 edit_fill.reset_nodes_tip = "Vergeet de knooppunten van Interactieve vulling" # mt
+edit_fill.preview_tip = "Sleep de knooppunten: het begin verplaatst het verloop, het einde draait en rekt het, het ronde knooppunt kantelt het. Ctrl draait in stappen van 15°." # mt
 edit_fill.reverse = "Omkeren" # mt
 edit_fill.reverse_tip = "De kleuren de andere kant op laten lopen" # mt
 edit_fill.rotate = "Draaien:" # mt

@@ -1150,6 +1150,7 @@ edit_fill.repeat_default = "Domyślnie" # mt
 edit_fill.repeat_mirror = "Powtórz i odbij" # mt
 edit_fill.reset_nodes = "Wróć do kąta i środka" # mt
 edit_fill.reset_nodes_tip = "Zapomnij węzły ustawione Wypełnieniem interakcyjnym" # mt
+edit_fill.preview_tip = "Przeciągnij węzły: początek przesuwa gradient, koniec obraca go i rozciąga, okrągły węzeł pochyla. Ctrl obraca co 15°." # mt
 edit_fill.reverse = "Odwróć" # mt
 edit_fill.reverse_tip = "Kolory w drugą stronę" # mt
 edit_fill.rotate = "Obrót:" # mt

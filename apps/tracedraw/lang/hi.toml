@@ -1150,6 +1150,7 @@ edit_fill.repeat_default = "डिफ़ॉल्ट" # mt
 edit_fill.repeat_mirror = "दोहराएँ और प्रतिबिंबित करें" # mt
 edit_fill.reset_nodes = "कोण और केंद्र पर लौटें" # mt
 edit_fill.reset_nodes_tip = "इंटरैक्टिव फ़िल से रखे नोड भूलें" # mt
+edit_fill.preview_tip = "नोड खींचें: शुरुआत ग्रेडिएंट को खिसकाती है, अंत घुमाता और खींचता है, गोल नोड झुकाता है। Ctrl 15° के कदमों में घुमाता है।" # mt
 edit_fill.reverse = "उलटें" # mt
 edit_fill.reverse_tip = "रंगों को उलटी दिशा में चलाएँ" # mt
 edit_fill.rotate = "घुमाएँ:" # mt

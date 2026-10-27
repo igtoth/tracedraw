@@ -1150,6 +1150,7 @@ edit_fill.repeat_default = "預設" # mt
 edit_fill.repeat_mirror = "重複和鏡射" # mt
 edit_fill.reset_nodes = "恢復角度和中心" # mt
 edit_fill.reset_nodes_tip = "忘記互動式填色放置的節點" # mt
+edit_fill.preview_tip = "拖曳節點：起點移動漸層，終點旋轉並拉伸，圓形節點使其傾斜。按 Ctrl 以 15° 為步長旋轉。" # mt
 edit_fill.reverse = "反轉" # mt
 edit_fill.reverse_tip = "讓顏色反方向排列" # mt
 edit_fill.rotate = "旋轉:" # mt

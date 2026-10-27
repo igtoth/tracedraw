@@ -1150,6 +1150,7 @@ edit_fill.repeat_default = "Predeterminado" # mt
 edit_fill.repeat_mirror = "Repetir y reflejar" # mt
 edit_fill.reset_nodes = "Volver a ángulo y centro" # mt
 edit_fill.reset_nodes_tip = "Olvidar los nodos puestos con Relleno interactivo" # mt
+edit_fill.preview_tip = "Arrastre los nodos: el inicio mueve el degradado, el final lo gira y lo estira, el nodo redondo lo inclina. Ctrl gira de 15° en 15°." # mt
 edit_fill.reverse = "Invertir" # mt
 edit_fill.reverse_tip = "Recorrer los colores al revés" # mt
 edit_fill.rotate = "Rotar:" # mt

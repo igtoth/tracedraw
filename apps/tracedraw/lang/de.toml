@@ -1150,6 +1150,7 @@ edit_fill.repeat_default = "Standard" # mt
 edit_fill.repeat_mirror = "Wiederholen und spiegeln" # mt
 edit_fill.reset_nodes = "Zurück zu Winkel und Mitte" # mt
 edit_fill.reset_nodes_tip = "Die mit der interaktiven Füllung gesetzten Knoten vergessen" # mt
+edit_fill.preview_tip = "Knoten ziehen: der Anfang verschiebt den Verlauf, das Ende dreht und streckt ihn, der runde Knoten neigt ihn. Strg dreht in 15°-Schritten." # mt
 edit_fill.reverse = "Umkehren" # mt
 edit_fill.reverse_tip = "Die Farben andersherum laufen lassen" # mt
 edit_fill.rotate = "Drehen:" # mt

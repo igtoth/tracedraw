@@ -1150,6 +1150,7 @@ edit_fill.repeat_default = "Padrão" # mt
 edit_fill.repeat_mirror = "Repetir e espelhar" # mt
 edit_fill.reset_nodes = "Voltar ao ângulo e centro" # mt
 edit_fill.reset_nodes_tip = "Esquecer os nós postos com o Preenchimento interativo" # mt
+edit_fill.preview_tip = "Arraste os nós: o início move o gradiente, o fim o gira e estica, o nó redondo o inclina. Ctrl gira de 15° em 15°." # mt
 edit_fill.reverse = "Inverter" # mt
 edit_fill.reverse_tip = "Corre as cores no outro sentido" # mt
 edit_fill.rotate = "Girar:" # mt
