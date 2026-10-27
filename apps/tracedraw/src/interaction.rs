@@ -974,9 +974,11 @@ impl App {
         // egui ends a drag when the right button of a right click goes up
         // and then hovers nothing while the left one is held: the
         // transform goes on with the latest pointer position.
+        // A Pen or Bezier handle pulled out of the drawing window goes on
+        // following the pointer, and its release ends it there (#1014).
         let hover = response.hover_pos().or_else(|| {
             let held = response.ctx.input(|i| i.pointer.primary_down());
-            if self.transforming() && held {
+            if (self.transforming() && held) || self.curve_drag_running(response) {
                 self.pointer_screen
             } else {
                 None
@@ -1000,9 +1002,13 @@ impl App {
             return;
         }
         let Some(p) = pointer else {
-            let released = self.transforming() && !response.ctx.input(|i| i.pointer.primary_down());
+            let up = !response.ctx.input(|i| i.pointer.primary_down());
+            let released = self.transforming() && up;
             if response.drag_stopped() || released {
                 self.end_drag();
+            }
+            if up {
+                self.end_curve_drag_outside();
             }
             return;
         };
@@ -2242,6 +2248,36 @@ impl App {
                 c.dragging_handle = false;
                 c.alt_from = None;
             }
+        }
+    }
+
+    /// A handle of the curve being drawn is pulled (or its closing
+    /// segment shaped) by the drawing window's own primary drag, this
+    /// frame or in the release that ends it.
+    fn curve_drag_running(&self, response: &Response) -> bool {
+        self.curve
+            .as_ref()
+            .is_some_and(|c| c.dragging_handle || c.closing.is_some())
+            && (response.dragged_by(PointerButton::Primary)
+                || response.drag_stopped_by(PointerButton::Primary))
+    }
+
+    /// The button went up with the pointer nowhere over the drawing (out
+    /// of the window): a handle pull of the curve being drawn ends where
+    /// it was last seen, and a closing drag closes the curve. Otherwise
+    /// the curve waited for a release it never saw, the preview stopped
+    /// following the pointer and the next click only ended the pull
+    /// instead of placing a node (#1014).
+    pub(crate) fn end_curve_drag_outside(&mut self) {
+        if self.curve.as_ref().is_some_and(|c| c.closing.is_some()) {
+            if let Some(c) = self.curve.take() {
+                self.close_curve(c);
+            }
+            return;
+        }
+        if let Some(c) = &mut self.curve {
+            c.dragging_handle = false;
+            c.alt_from = None;
         }
     }
 

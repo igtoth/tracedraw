@@ -29,6 +29,12 @@ meets the start) `Path` objects with the toolbox defaults.
   is let go; pressing it again in the same pull changes nothing more.
   While a curve is being drawn C never aligns the selection. Alt while
   pulling moves the node itself, its handles with it.
+  A pull carried out of the drawing window (over a docker or a toolbar)
+  goes on following the pointer and ends where the button goes up, and a
+  closing drag from the first node closes the curve there; the preview
+  then follows the pointer back on the drawing and the next click places
+  a node (#1014;
+  `pick_drag_tests::a_pen_pull_let_go_outside_the_canvas_ends_and_the_next_click_places_a_node`).
 - A plain click places a node without a handle: the segment to it is
   the one the preview showed, curved by the handle of the node before
   (straight when that node has none) and arriving straight at the new

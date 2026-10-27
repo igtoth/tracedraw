@@ -3153,6 +3153,107 @@ fn clicking_the_last_node_again_makes_it_a_cusp() {
     assert!(near(s1.p2, Point::new(170.0, 170.0)), "{s1:?}");
 }
 
+/// A screen point right of the drawing window (over the dockers), at the
+/// height of page point `p`.
+fn beside_canvas(app: &App, p: Point) -> Pos2 {
+    let r = app.canvas_rect;
+    Pos2::new((r.max.x + 60.0).min(1590.0), app.view.to_screen(p).y)
+}
+
+/// A Pen handle pulled out of the drawing window and let go over a docker
+/// ends there: back on the drawing the preview follows the pointer again
+/// and the first click places a node (#1014).
+#[test]
+fn a_pen_pull_let_go_outside_the_canvas_ends_and_the_next_click_places_a_node() {
+    let (ctx, mut app, _) = setup();
+    app.select(Vec::new());
+    app.set_tool(Tool::Pen);
+    let (a, b, c) = (
+        Point::new(100.0, 150.0),
+        Point::new(140.0, 150.0),
+        Point::new(150.0, 200.0),
+    );
+    click_page(&ctx, &mut app, a);
+    let out = beside_canvas(&app, b);
+    assert!(!app.canvas_rect.contains(out));
+    let from = app.view.to_screen(b);
+    drag(&ctx, &mut app, from, out, Modifiers::NONE, Vec::new());
+    let curve = app.curve.as_ref().expect("the curve goes on");
+    assert!(!curve.dragging_handle, "the pull ended with the release");
+    assert_eq!(curve.nodes.len(), 2);
+    // The handle followed the pointer out of the window.
+    let handle = curve.nodes[1].1.expect("a pulled handle");
+    assert!(near(handle, app.view.to_page(out)), "{handle:?}");
+    // Back on the drawing the preview runs to the pointer.
+    let back = app.view.to_screen(c);
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::PointerMoved(back)],
+        Modifiers::NONE,
+    );
+    let pointer = app.pointer_page.expect("the pointer is on the drawing");
+    let look = crate::pen_look::curve_look(
+        app.curve.as_ref().expect("curve"),
+        Some(pointer),
+        true,
+        None,
+    );
+    assert!(look.preview.is_some(), "the preview follows the pointer");
+    // The first click places the node.
+    click_page(&ctx, &mut app, c);
+    let curve = app.curve.as_ref().expect("curve");
+    assert_eq!(curve.nodes.len(), 3);
+    assert!(near(curve.nodes[2].0, c), "{:?}", curve.nodes[2]);
+}
+
+/// A drag from the first node let go outside the drawing window closes
+/// the curve, as it does on the drawing (#1014).
+#[test]
+fn a_pen_closing_drag_let_go_outside_the_canvas_closes_the_curve() {
+    let (ctx, mut app, _) = setup();
+    app.select(Vec::new());
+    app.set_tool(Tool::Pen);
+    let a = Point::new(100.0, 150.0);
+    click_page(&ctx, &mut app, a);
+    click_page(&ctx, &mut app, Point::new(150.0, 190.0));
+    click_page(&ctx, &mut app, Point::new(160.0, 130.0));
+    let before = shape_count(&app);
+    let out = beside_canvas(&app, a);
+    let from = app.view.to_screen(a);
+    drag(&ctx, &mut app, from, out, Modifiers::NONE, Vec::new());
+    assert!(app.curve.is_none(), "the curve was closed");
+    assert_eq!(shape_count(&app), before + 1);
+}
+
+/// The button let go with the pointer out of the window (no position
+/// known): the pull of the curve being drawn ends all the same, and a
+/// closing drag closes the curve (#1014).
+#[test]
+fn a_pen_pull_ends_when_the_button_goes_up_out_of_the_window() {
+    let (ctx, mut app, _) = setup();
+    app.select(Vec::new());
+    app.set_tool(Tool::Pen);
+    click_page(&ctx, &mut app, Point::new(100.0, 150.0));
+    if let Some(c) = &mut app.curve {
+        c.dragging_handle = true;
+    }
+    frame(&ctx, &mut app, vec![Event::PointerGone], Modifiers::NONE);
+    let curve = app.curve.as_ref().expect("curve");
+    assert!(!curve.dragging_handle);
+    assert_eq!(curve.nodes.len(), 1);
+
+    click_page(&ctx, &mut app, Point::new(150.0, 190.0));
+    click_page(&ctx, &mut app, Point::new(160.0, 130.0));
+    let before = shape_count(&app);
+    if let Some(c) = &mut app.curve {
+        c.closing = Some(Point::new(90.0, 140.0));
+    }
+    frame(&ctx, &mut app, vec![Event::PointerGone], Modifiers::NONE);
+    assert!(app.curve.is_none(), "the curve was closed");
+    assert_eq!(shape_count(&app), before + 1);
+}
+
 #[test]
 fn dragging_from_the_first_node_shapes_only_the_closing_segment() {
     let (ctx, mut app, _) = setup();
