@@ -114,6 +114,20 @@ other than Normal is kept as an opaque transparency with that merge
 mode. The object loses its shadow. Everything happens in one undo step,
 and the new bitmaps come out selected.
 
+## PDF and printing
+
+PDF export, Publish to PDF and printing (which goes through the same
+PDF) draw each shadow beneath its object as a picture of the blurred
+silhouette at 300 dpi (fewer when the shadow is so large it would pass
+40 million pixels), in the shadow's colour, with its feathering, fade
+and opacity in a soft mask; PDF has no blur of its own. The merge mode
+goes in as the PDF blend mode nearest to it (Multiply, Difference,
+Screen for Divide, Lighten, Darken, Hue, Saturation, Color, Exclusion
+for Invert; the others draw normally). The object stays vector on top.
+The colour image downsampling asked for applies to the shadow's picture
+too. PDF/X-1a and X-3 keep no transparency: an object with a shadow is
+flattened with what lies beneath it, over the shadow's area (#1029).
+
 ## Checks
 
 Checked by `shadow::tests` in the core (perspective geometry for the
@@ -124,7 +138,9 @@ round trips, degenerate boxes), the renderer's
 `tests::perspective_shadow_falls_on_the_floor_and_fades`,
 `tests::clip_frames_and_groups_cast_their_shadows`,
 `tests::shadows_on_their_own_pixels_match_a_layer_of_the_whole_window`,
-`shadow_tool::tests` in the application (drags, handles, colour drop,
+`pdf::tests::a_drop_shadow_goes_in_beneath_its_object` and
+`pdf::tests::a_drop_shadow_is_flattened_for_x1a` in the io crate,
+`export::tests::a_drop_shadow_prints`, `shadow_tool::tests` in the application (drags, handles, colour drop,
 presets, Break Apart with one undo step, a clip frame's shadow, picking
 a shadow over what lies beneath) and
 `pick_drag_tests::a_click_on_a_drop_shadow_picks_its_object` (Pick and
