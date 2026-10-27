@@ -148,7 +148,7 @@ pub struct AlignCache {
 
 impl App {
     /// The snapping radius (Options > Snapping, screen pixels) in mm.
-    fn snap_tolerance(&self) -> f64 {
+    pub(crate) fn snap_tolerance(&self) -> f64 {
         self.settings.snap.threshold_px.clamp(1.0, 100.0) / self.view.zoom.max(1e-6) as f64
     }
 
@@ -388,6 +388,67 @@ impl App {
     /// points).
     pub fn snap_point_excluding(&self, p: Point, exclude: &[ShapeId]) -> Point {
         self.snap_point_with(p, exclude, &[])
+    }
+
+    /// Snap the pointer turning the selection: onto a point of another
+    /// object or of the page (a node, a midpoint, a centre) only, so that
+    /// the turn aims at it. Lines are not taken (page edges and centre
+    /// lines, guidelines, grid lines, the bounds of other objects): the
+    /// turning handle stands off the object, so lining it up with a line
+    /// means nothing, and the turn stuck behind the pointer while it
+    /// crossed one, anywhere on the canvas (#933).
+    pub fn snap_turn_point(&self, p: Point, exclude: &[ShapeId]) -> Point {
+        if !self.snap_enabled() {
+            return p;
+        }
+        match self.object_snap(p, exclude, &[], true, false) {
+            Some(t) => {
+                self.snap_mark.set(Some(t));
+                t.point
+            }
+            None => p,
+        }
+    }
+
+    /// Snap the selection's own point `grab` turned about `center` by the
+    /// pointer at `p` (rotate mode, a node dragged, #933): the point goes
+    /// round its circle towards the pointer; near another object's point
+    /// the turn aims at that point, and near an edge the point lands
+    /// where its circle crosses the edge, so a node turned onto a line
+    /// ends on the line. Returns where the turn aims (only its direction
+    /// from `center` counts).
+    pub fn snap_turn_grab(
+        &self,
+        center: Point,
+        grab: Point,
+        p: Point,
+        exclude: &[ShapeId],
+    ) -> Point {
+        let r = (grab - center).hypot();
+        let d = p - center;
+        let len = d.hypot();
+        if !(r > 1e-9 && len > 1e-9 && r.is_finite() && len.is_finite()) {
+            return p;
+        }
+        let q = center + d * (r / len);
+        if !self.snap_enabled() {
+            return q;
+        }
+        let Some(t) = self.object_snap(q, exclude, &[], true, true) else {
+            return q;
+        };
+        if t.mode.is_point() {
+            self.snap_mark.set(Some(t));
+            return t.point;
+        }
+        let reach = 2.0 * self.snap_tolerance();
+        match t.edge.and_then(|seg| circle_crossing(seg, center, r, q)) {
+            Some(x) if (x - q).hypot() <= reach => {
+                self.snap_mark.set(Some(Target { point: x, ..t }));
+                x
+            }
+            _ => q,
+        }
     }
 
     /// [`App::snap_point_excluding`], with `own` snapping geometry of the
@@ -954,6 +1015,51 @@ fn text_baselines(s: &Shape, parent: Affine) -> Vec<(Point, Point)> {
             })
         })
         .collect()
+}
+
+/// Where the circle about `center` of radius `r` crosses the segment
+/// `seg` (a curve taken as short straight pieces), the crossing nearest
+/// `near`; `None` when it does not cross.
+fn circle_crossing(
+    seg: tracedraw_core::geometry::PathSeg,
+    center: Point,
+    r: f64,
+    near: Point,
+) -> Option<Point> {
+    use tracedraw_core::geometry::{ParamCurve, PathSeg};
+    let pieces = match seg {
+        PathSeg::Line(_) => 1,
+        _ => 64,
+    };
+    let mut best: Option<(f64, Point)> = None;
+    let mut a = seg.eval(0.0);
+    for i in 1..=pieces {
+        let b = seg.eval(i as f64 / pieces as f64);
+        // |a + t (b - a) - center|² = r², for t in [0, 1].
+        let d = b - a;
+        let f = a - center;
+        let qa = d.hypot2();
+        if qa > 1e-18 {
+            let qb = 2.0 * f.dot(d);
+            let qc = f.hypot2() - r * r;
+            let disc = qb * qb - 4.0 * qa * qc;
+            if disc >= 0.0 {
+                let s = disc.sqrt();
+                for t in [(-qb - s) / (2.0 * qa), (-qb + s) / (2.0 * qa)] {
+                    if (-1e-9..=1.0 + 1e-9).contains(&t) {
+                        let x = a + d * t;
+                        let dist = (x - near).hypot();
+                        if best.is_none_or(|(bd, _)| dist < bd) {
+                            best = Some((dist, x));
+                        }
+                    }
+                }
+            }
+        }
+        a = b;
+    }
+    best.map(|(_, x)| x)
+        .filter(|x| x.x.is_finite() && x.y.is_finite())
 }
 
 #[cfg(test)]

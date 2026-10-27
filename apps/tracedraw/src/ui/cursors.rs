@@ -181,6 +181,10 @@ fn pick_cursor(app: &App, pos: Option<Pos2>) -> Option<ToolCursor> {
     if app.guide_rotate_handle_at(p) {
         return Some(ToolCursor::Rotate);
     }
+    // Rotate mode: a node of the selection turns it (#933).
+    if app.grab_turn_point(p).is_some() {
+        return Some(ToolCursor::Rotate);
+    }
     // Over an object: the move arrows only where a press would move what
     // is selected already (the object or one of its parts); over another
     // object the plain arrow, as a press there picks it first (#885).
