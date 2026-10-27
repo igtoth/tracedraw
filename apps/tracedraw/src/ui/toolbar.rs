@@ -1099,9 +1099,16 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                     .all(|s| matches!(s.kind, ShapeKind::Text { .. })) =>
             {
                 // Text selected with the Pick tool: the object fields, then
-                // the text fields.
+                // the text fields. A text fitted to a path also gets how it
+                // follows the path (placement, distance, mirrors) first; a
+                // separate arm for it came after this one and was never
+                // reached (#193).
                 object_properties(app, ui);
                 vsep(ui);
+                if app.fitted_text().is_some() {
+                    crate::ui::text_path_bar::text_path_bar(app, ui);
+                    vsep(ui);
+                }
                 if let Some(first) = shapes.first() {
                     let id = first.id;
                     app.sync_text_defaults_from(id);
@@ -1119,13 +1126,6 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 object_properties(app, ui);
                 vsep(ui);
                 crate::ui::connector_bar::connector_bar(app, ui);
-            }
-            Tool::Pick | Tool::FreeformPick if app.fitted_text().is_some() => {
-                // A text fitted to a path: the object fields, then how it
-                // follows the path.
-                object_properties(app, ui);
-                vsep(ui);
-                crate::ui::text_path_bar::text_path_bar(app, ui);
             }
             Tool::Pick | Tool::FreeformPick
                 if shapes

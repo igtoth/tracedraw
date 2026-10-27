@@ -941,8 +941,11 @@ stand-in next to each missing family: "Arial (Liberation Sans)".
   A pick on the bottom of an ellipse puts the text there,
   outside and upside down; both mirrors then turn it round onto the
   inside, reading left to right, on the same spot.
-- With the Pick tool, a text fitted to a path shows its own property
-  bar after the object fields: Text orientation (Rotated letters,
+- With the Pick tool, a text fitted to a path shows its path fields in
+  the property bar after the object fields, followed by the usual text
+  fields (font, size, style; #193,
+  `ui::text_path_bar::tests::a_fitted_text_shows_the_path_fields_in_the_property_bar`):
+  Text orientation (Rotated letters,
   Vertical skew, Horizontal skew, Upright letters), Vertical placement
   (Baseline, Ascender, Descender on path, Centred on path), Text
   placement (start, centre or end of the path, the text's alignment; on
