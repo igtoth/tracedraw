@@ -167,7 +167,10 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 .inner_margin(egui::Margin::symmetric(8, 4)),
         )
         .show(ui, |ui| {
-            ui.horizontal(|ui| {
+            // One row, wrapping onto a second in a narrow window.
+            ui.horizontal_wrapped(|ui| {
+                // Whole labels go to the next row, never half of one.
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
                 if ui.button(tr("dialog.print")).clicked() {
                     print = true;
                 }
@@ -205,6 +208,35 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 if ui.button(tr("print.fit")).clicked() {
                     pv.zoom = 1.0;
                 }
+                // The printer with its Properties and status, and the
+                // copies: in the bar, so the left panel keeps its room
+                // for the options (#792, #953).
+                ui.separator();
+                let st = &mut pv.st;
+                ui.label(tr("print.printer"));
+                if let Some(p) = crate::ui::dialogs::destination_row(ui, st, 220.0) {
+                    if let Err(e) = crate::printers::open_properties(&p) {
+                        app.status = e;
+                    }
+                }
+                let chosen = st.printers.iter().find(|p| {
+                    st.destination == 0 && st.printer.as_deref() == Some(p.name.as_str())
+                });
+                if let Some(p) = chosen {
+                    ui.label(
+                        egui::RichText::new(tr(p.state.key()))
+                            .color(Tokens::text_dim())
+                            .size(11.0),
+                    )
+                    .on_hover_text(tr("print.status"));
+                }
+                ui.separator();
+                ui.label(tr("print.number_of_copies"));
+                ui.add(crate::ui::field::NumField::new(&mut st.copies).range(1..=999));
+                ui.add_enabled(
+                    st.copies > 1,
+                    egui::Checkbox::new(&mut st.collate, tr("print.collate")),
+                );
                 // Close at the bar's right end, where windows keep it
                 // (#534).
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -228,6 +260,8 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     // It is never narrower than its widest row as last laid out, up to
     // half the window, so no label is cut; past that what does not fit
     // scrolls sideways (#862).
+    let page_count = app.doc().pages.len();
+    let has_selection = !app.selection.is_empty();
     let widest = (ui.max_rect().width() * 0.5).max(OPTIONS_MIN);
     let need = pv.options_need.clamp(OPTIONS_MIN, widest);
     let panel = egui::Panel::left(PREVIEW_OPTIONS)
@@ -237,48 +271,52 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         .show(ui, |ui| {
             egui::ScrollArea::both().show(ui, |ui| {
                 let st = &mut pv.st;
-                // The printer and its own settings, the copies: what the
-                // Print button prints with (#792).
-                ui.strong(tr("print.printer"));
-                if let Some(p) = crate::ui::dialogs::destination_row(ui, st, 270.0) {
-                    if let Err(e) = crate::printers::open_properties(&p) {
-                        app.status = e;
-                    }
+                // Two options to a row, so the panel has room for more
+                // (#951): which pages print, then the marks.
+                egui::Grid::new("print_preview_range")
+                    .num_columns(2)
+                    .spacing([16.0, 4.0])
+                    .show(ui, |ui| {
+                        if ui
+                            .radio_value(&mut st.range, 0, tr("dialog.all_pages"))
+                            .clicked()
+                        {
+                            st.all_pages = true;
+                        }
+                        ui.radio_value(&mut st.range, 1, tr("print.range_page"));
+                        ui.end_row();
+                        ui.horizontal(|ui| {
+                            ui.radio_value(&mut st.range, 2, tr("print.range_pages"));
+                            ui.add_enabled(
+                                st.range == 2,
+                                egui::TextEdit::singleline(&mut st.pages)
+                                    .hint_text(format!("1-{page_count}"))
+                                    .desired_width(70.0),
+                            );
+                        });
+                        ui.add_enabled_ui(has_selection, |ui| {
+                            ui.radio_value(&mut st.range, 3, tr("print.range_selection"));
+                        });
+                        ui.end_row();
+                        ui.horizontal(|ui| {
+                            ui.checkbox(&mut st.fit_to_page, tr("dialog.fit_to_page"));
+                            if !st.fit_to_page {
+                                ui.add(
+                                    crate::ui::field::NumField::new(&mut st.scale)
+                                        .range(1.0..=1000.0)
+                                        .suffix(" %"),
+                                );
+                            }
+                        });
+                        crate::ui::dialogs::parity_combo(ui, st, "print_preview_parity");
+                        ui.end_row();
+                    });
+                // As the Print dialog keeps it: every range but the
+                // current page prints more than one page.
+                if st.range == 3 && !has_selection {
+                    st.range = 0;
                 }
-                let chosen = st.printers.iter().find(|p| {
-                    st.destination == 0 && st.printer.as_deref() == Some(p.name.as_str())
-                });
-                if let Some(p) = chosen {
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "{}: {}",
-                            tr("print.status"),
-                            tr(p.state.key())
-                        ))
-                        .color(Tokens::text_dim())
-                        .size(11.0),
-                    );
-                }
-                ui.horizontal(|ui| {
-                    ui.label(tr("print.number_of_copies"));
-                    ui.add(crate::ui::field::NumField::new(&mut st.copies).range(1..=999));
-                    ui.add_enabled(
-                        st.copies > 1,
-                        egui::Checkbox::new(&mut st.collate, tr("print.collate")),
-                    );
-                });
-                ui.separator();
-                ui.checkbox(&mut st.all_pages, tr("dialog.all_pages"));
-                ui.horizontal(|ui| {
-                    ui.checkbox(&mut st.fit_to_page, tr("dialog.fit_to_page"));
-                    if !st.fit_to_page {
-                        ui.add(
-                            crate::ui::field::NumField::new(&mut st.scale)
-                                .range(1.0..=1000.0)
-                                .suffix(" %"),
-                        );
-                    }
-                });
+                st.all_pages = st.range != 1;
                 ui.separator();
                 ui.strong(tr("dialog.prepress"));
                 ui.checkbox(&mut st.separations, tr("dialog.separations"));
@@ -292,17 +330,26 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                         }
                     });
                 }
-                ui.checkbox(&mut st.bleed, tr("dialog.print_bleed"));
-                ui.checkbox(&mut st.crop_marks, tr("dialog.crop_marks"));
-                ui.checkbox(&mut st.registration_marks, tr("dialog.registration_marks"));
-                ui.checkbox(&mut st.color_bars, tr("print.color_bars"));
-                ui.checkbox(&mut st.densitometer, tr("print.densitometer"));
-                ui.checkbox(&mut st.page_info, tr("print.page_info_mark"));
-                if st.page_info {
-                    ui.horizontal(|ui| {
-                        ui.add_space(18.0);
-                        ui.checkbox(&mut pv.move_info, tr("print.move_info"));
+                let st = &mut pv.st;
+                egui::Grid::new("print_preview_marks")
+                    .num_columns(2)
+                    .spacing([16.0, 4.0])
+                    .show(ui, |ui| {
+                        ui.checkbox(&mut st.bleed, tr("dialog.print_bleed"));
+                        ui.checkbox(&mut st.crop_marks, tr("dialog.crop_marks"));
+                        ui.end_row();
+                        ui.checkbox(&mut st.registration_marks, tr("dialog.registration_marks"));
+                        ui.checkbox(&mut st.color_bars, tr("print.color_bars"));
+                        ui.end_row();
+                        ui.checkbox(&mut st.densitometer, tr("print.densitometer"));
+                        ui.checkbox(&mut st.page_info, tr("print.page_info_mark"));
+                        ui.end_row();
+                        ui.checkbox(&mut st.mirror, tr("dialog.mirror"));
+                        ui.checkbox(&mut st.invert, tr("dialog.invert"));
+                        ui.end_row();
                     });
+                if st.page_info {
+                    ui.checkbox(&mut pv.move_info, tr("print.move_info"));
                 }
                 let st = &mut pv.st;
                 if st.info_offset != (0.0, 0.0)
@@ -380,8 +427,6 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                         st.art_offset = (0.0, 0.0);
                     }
                 });
-                ui.checkbox(&mut st.mirror, tr("dialog.mirror"));
-                ui.checkbox(&mut st.invert, tr("dialog.invert"));
                 ui.separator();
                 crate::ui::dialogs::print_layout_fields(app, ui, st);
             })
@@ -871,9 +916,10 @@ mod tests {
     }
 
     /// Print Preview shows the printer choice, the Properties button of
-    /// the printer chosen and the copies at the top of its left panel,
-    /// the printers coming in when the system has listed them; the Print
-    /// button prints to the printer chosen there (#792).
+    /// the printer chosen and the copies in its top bar, beside Print
+    /// (they were at the top of the left panel, #953), the printers
+    /// coming in when the system has listed them; the Print button prints
+    /// to the printer chosen there (#792).
     #[test]
     fn the_preview_offers_the_printer_and_the_copies() {
         use crate::printers::{Printer, PrinterState};
@@ -911,7 +957,6 @@ mod tests {
             shapes.iter().for_each(|c| walk(&c.shape, &mut out));
             out
         };
-        let mut shapes = Vec::new();
         for _ in 0..200 {
             let mut out = ctx.run_ui(
                 egui::RawInput {
@@ -924,7 +969,6 @@ mod tests {
                 |ui| show(&mut app, ui),
             );
             out.textures_delta.clear();
-            shapes = out.shapes;
             if app
                 .print_preview
                 .as_ref()
@@ -949,15 +993,23 @@ mod tests {
             |ui| show(&mut app, ui),
         );
         out.textures_delta.clear();
-        shapes = out.shapes;
-        let t = texts(&shapes);
+        let t = texts(&out.shapes);
         let at = |label: &str| t.iter().find(|(s, _)| s == label).map(|(_, p)| *p);
         let printer = at("Studio Laser").expect("the printer chosen");
         let copies = at(&tr("print.number_of_copies")).expect("the copies");
         let all_pages = at(&tr("dialog.all_pages")).expect("the other options");
-        assert!(printer.x < 330.0 && copies.x < 330.0, "in the left panel");
-        assert!(printer.y < copies.y && copies.y < all_pages.y, "at its top");
+        let print = at(&tr("dialog.print")).expect("the Print button");
+        // In the top bar, after Print, the left panel starting with the
+        // pages to print (#953).
+        assert!((printer.y - print.y).abs() < 8.0, "{printer:?} {print:?}");
+        assert!((copies.y - print.y).abs() < 8.0, "{copies:?} {print:?}");
+        assert!(
+            printer.x > print.x && copies.x > printer.x,
+            "{print:?} {printer:?} {copies:?}"
+        );
+        assert!(all_pages.x < 330.0 && all_pages.y > printer.y + 15.0);
         assert!(at(&tr("print.collate")).is_some());
+        assert!(at(&tr("print.printer")).is_some_and(|p| p.y < all_pages.y));
     }
 
     #[test]
@@ -1136,6 +1188,23 @@ mod tests {
                 for c in &shapes {
                     walk(&c.shape, c.clip_rect, &mut texts);
                 }
+                // The top bar with the printer and the copies (#953)
+                // stays inside the window, wrapping when it must.
+                let close = tr("dialog.close");
+                for (text, r, _) in &texts {
+                    if r.top() < 80.0 {
+                        assert!(
+                            r.right() <= size.x + 1.0,
+                            "{code}: {text:?} past the window {r:?}"
+                        );
+                    }
+                }
+                assert!(
+                    texts
+                        .iter()
+                        .any(|(t, r, _)| *t == close && r.right() <= size.x),
+                    "{code}: Close shows"
+                );
                 // The panel's texts: those drawn within its clip.
                 let ours: Vec<_> = texts
                     .iter()
@@ -1157,5 +1226,119 @@ mod tests {
                 assert!(panel.width() <= size.x * 0.5 + 1.0, "{code}: {panel:?}");
             });
         }
+    }
+    /// Texts drawn by one frame of the preview at `size`, with where.
+    fn frame_texts(
+        app: &mut App,
+        ctx: &egui::Context,
+        size: egui::Vec2,
+    ) -> Vec<(String, egui::Rect)> {
+        fn walk(s: &egui::Shape, out: &mut Vec<(String, egui::Rect)>) {
+            match s {
+                egui::Shape::Text(t) => {
+                    out.push((t.galley.text().to_string(), t.visual_bounding_rect()))
+                }
+                egui::Shape::Vec(v) => v.iter().for_each(|s| walk(s, out)),
+                _ => {}
+            }
+        }
+        let mut out = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+                ..Default::default()
+            },
+            |ui| show(app, ui),
+        );
+        out.textures_delta.clear();
+        let mut texts = Vec::new();
+        out.shapes.iter().for_each(|c| walk(&c.shape, &mut texts));
+        texts
+    }
+
+    /// The options at the left stand two to a row, as the report's sketch
+    /// has them: All pages beside Current page, Pages with its list beside
+    /// Selection, Fit to page beside Odd and even pages, then Bleed beside
+    /// Crop marks, Registration marks beside Color bars, Densitometer
+    /// scale beside Page information and Mirror beside Invert (#951).
+    #[test]
+    fn the_options_stand_two_to_a_row() {
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        app.show_welcome = false;
+        app.print_preview(None);
+        let mut texts = Vec::new();
+        for _ in 0..4 {
+            texts = frame_texts(&mut app, &ctx, egui::vec2(1400.0, 900.0));
+        }
+        let at = |key: &str| {
+            let label = tr(key);
+            texts
+                .iter()
+                .find(|(t, _)| *t == label)
+                .map(|(_, r)| r.left_top())
+                .unwrap_or_else(|| panic!("{key} shown"))
+        };
+        for (left, right) in [
+            ("dialog.all_pages", "print.range_page"),
+            ("print.range_pages", "print.range_selection"),
+            ("dialog.fit_to_page", "print.odd_and_even"),
+            ("dialog.print_bleed", "dialog.crop_marks"),
+            ("dialog.registration_marks", "print.color_bars"),
+            ("print.densitometer", "print.page_info_mark"),
+            ("dialog.mirror", "dialog.invert"),
+        ] {
+            let (l, r) = (at(left), at(right));
+            assert!((l.y - r.y).abs() < 4.0, "{left} {l:?} beside {right} {r:?}");
+            assert!(
+                r.x > l.x + 40.0 && r.x < 480.0,
+                "{right} {r:?} right of {left}"
+            );
+        }
+        // The rows follow each other down the panel.
+        assert!(at("print.range_pages").y > at("dialog.all_pages").y);
+        assert!(at("dialog.print_bleed").y > at("dialog.fit_to_page").y);
+        assert!(at("dialog.mirror").y > at("print.densitometer").y);
+    }
+
+    /// The pages printed are chosen in the preview: the current page, a
+    /// list, odd or even pages; the preview's sheets follow (#951).
+    #[test]
+    fn the_preview_prints_the_pages_chosen() {
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        app.show_welcome = false;
+        let size = app.doc().pages[0].size;
+        for _ in 0..4 {
+            app.run(tracedraw_core::Command::AddPage { name: None, size });
+        }
+        let n = app.doc().pages.len();
+        assert_eq!(n, 5);
+        app.print_preview(None);
+        let count = |app: &mut App| {
+            let _ = frame_texts(app, &ctx, egui::vec2(1400.0, 900.0));
+            let pv = app.print_preview.as_mut().expect("preview");
+            let st = pv.st.clone();
+            print_sheets(app, &st).pages.len()
+        };
+        assert_eq!(count(&mut app), 5);
+        let set = |app: &mut App, f: &dyn Fn(&mut PrintState)| {
+            if let Some(pv) = app.print_preview.as_mut() {
+                f(&mut pv.st);
+            }
+        };
+        set(&mut app, &|st| st.parity = 1);
+        assert_eq!(count(&mut app), 3, "pages 1, 3 and 5");
+        set(&mut app, &|st| st.parity = 2);
+        assert_eq!(count(&mut app), 2, "pages 2 and 4");
+        set(&mut app, &|st| {
+            st.range = 2;
+            st.pages = "2-5".into();
+            st.parity = 1;
+        });
+        assert_eq!(count(&mut app), 2, "pages 3 and 5");
+        set(&mut app, &|st| st.range = 1);
+        assert_eq!(count(&mut app), 1, "the current page, whatever the parity");
+        let st = &app.print_preview.as_ref().expect("preview").st;
+        assert!(!st.all_pages, "the current page alone");
     }
 }

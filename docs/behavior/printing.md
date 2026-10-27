@@ -82,7 +82,8 @@ has one.
     time (Options keeps them, #591).
   - Print range: Current document, Current page, Pages (a list such as
     `1-3, 5, 8-`; an empty or unusable list prints them all), Selection
-    (the selected objects of the current page).
+    (the selected objects of the current page); and Odd and even pages,
+    Odd pages or Even pages of the document or the list (#951).
   - Copies: a file gets its copies inside, as whole sets (Collate) or
     each sheet repeated.
   - Print as bitmap: each sheet becomes one picture at the resolution
@@ -125,16 +126,29 @@ sends them: the imposition, the marks, Mirror and Invert, built by the
 same function (`export::print_sheets`).
 
 - Top bar: Print (prints these settings and closes), the sheet shown with previous and next (Page Up, Page Down), Zoom from 25 to 400 % of the fitted size
-  with Fit, and Close (Esc) at the right end (#534).
-- Left, at the top: the printer, as in the Print dialog's General tab
-  (the system's printers in name order, the PDF viewer, PDF and
-  PostScript files; read off the interface's thread when the preview
-  opens, the list read last shown meanwhile), the gear button that
+  with Fit, the printer, and Close (Esc) at the right end (#534). The
+  bar wraps onto a second row when the window is too narrow for it.
+- The printer sits in the top bar after Fit, as in the Print dialog's
+  General tab (the system's printers in name order, the PDF viewer, PDF
+  and PostScript files; read off the interface's thread when the preview
+  opens, the list read last shown meanwhile), with the gear button that
   opens the chosen printer's own Properties, its status, and the number
-  of copies with Collate. Print in the top bar prints there (#792,
+  of copies with Collate; it was at the top of the left panel, which now
+  keeps that room for the options (#953). Print in the top bar prints
+  there (#792,
   `print_preview::tests::the_preview_offers_the_printer_and_the_copies`).
-- Left: the Print dialog's options (all pages, fit, scale, prepress and
-  layout with its sketch); every change rebuilds the sheets at once.
+- Left: the Print dialog's options, two to a row (#951,
+  `print_preview::tests::the_options_stand_two_to_a_row`): All pages
+  beside Current page, Pages (a list such as `1-3, 5`) beside Selection
+  (with objects selected), Fit to page (or the scale) beside Odd and even
+  pages, Odd pages or Even pages (for all pages or the list; the current
+  page and the selection print as they are, and a choice that leaves no
+  page is let go; the Print dialog's Print range has the same choice,
+  `print_preview::tests::the_preview_prints_the_pages_chosen`); then
+  Prepress: Print separations, Bleed beside Crop marks, Registration
+  marks beside Color bars, Densitometer scale beside Page information,
+  Mirror beside Invert, Transform and Artwork position; then the layout
+  with its sketch. Every change rebuilds the sheets at once.
   The panel is 360 points wide at first and its edge drags from 300 to
   720. It is never narrower than its widest row as last laid out (a
   longer language, Repeat's rows), up to half the window, so no label

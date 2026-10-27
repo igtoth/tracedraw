@@ -1714,6 +1714,20 @@ mod tests {
         st.range = 2;
         st.pages = "3".into();
         assert_eq!(st.page_indexes(3, 0), vec![2]);
+        // Odd or even pages of the document or the list (#951); the
+        // current page stays, and a choice leaving no page is let go.
+        st.parity = 1;
+        assert_eq!(st.page_indexes(3, 0), vec![2]);
+        st.pages = "1-6".into();
+        assert_eq!(st.page_indexes(6, 0), vec![0, 2, 4]);
+        st.parity = 2;
+        assert_eq!(st.page_indexes(6, 0), vec![1, 3, 5]);
+        st.pages = "3".into();
+        assert_eq!(st.page_indexes(6, 0), vec![2], "nothing left: as listed");
+        st.range = 0;
+        assert_eq!(st.page_indexes(5, 0), vec![1, 3]);
+        st.range = 1;
+        assert_eq!(st.page_indexes(5, 0), vec![0]);
     }
 
     /// Black text prints black, and a negative (Invert) prints it as the
