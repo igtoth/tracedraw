@@ -12,6 +12,10 @@ pub mod file_storage;
 
 pub(crate) mod winit_integration;
 
+// TraceDraw: a maximized window is not given its size again once made
+// (see vendor/README.md, #787).
+mod window_start;
+
 #[cfg(feature = "glow")]
 mod glow_integration;
 

@@ -1064,7 +1064,8 @@ impl Viewport {
 
         let viewport_id = self.ids.this;
 
-        match egui_winit::create_window(egui_ctx, event_loop, &self.builder) {
+        // TraceDraw: a maximized window is not given its size again (#787).
+        match epi_integration::create_window(egui_ctx, event_loop, &self.builder) {
             Ok(window) => {
                 windows_id.insert(window.id(), viewport_id);
 
@@ -1112,7 +1113,8 @@ fn create_window(
     )
     .with_visible(false); // Start hidden until we render the first frame to fix white flash on startup (https://github.com/emilk/egui/pull/3631)
 
-    let window = egui_winit::create_window(egui_ctx, event_loop, &viewport_builder)?;
+    // TraceDraw: a maximized window is not given its size again (#787).
+    let window = epi_integration::create_window(egui_ctx, event_loop, &viewport_builder)?;
     epi_integration::apply_window_settings(&window, window_settings);
     Ok((window, viewport_builder))
 }

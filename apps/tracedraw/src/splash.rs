@@ -311,6 +311,21 @@ fn monitor_in_system_points(ctx: &egui::Context) -> Option<Vec2> {
     ctx.input(|i| i.viewport().monitor_size).map(|m| m * zoom)
 }
 
+/// The main window when there is no splash screen: its kept size, which
+/// is also the size a maximized window restores to, and maximized from
+/// the start when it was left so (not in a `plain` start for automation).
+/// It opens at once at the screen's size: the patched eframe does not ask
+/// for the size again after making a maximized window, which on Windows
+/// showed it at its normal size first and then maximized it (#787,
+/// vendor/README.md).
+pub fn main_window_builder(settings: &Settings, plain: bool) -> egui::ViewportBuilder {
+    egui::ViewportBuilder::default()
+        .with_inner_size(main_window_size(settings.window_size, None))
+        .with_min_inner_size(MIN_SIZE)
+        .with_maximized(settings.window_maximized && !plain)
+        .with_title("TraceDraw")
+}
+
 /// Turn the splash window into the main window: decorations, resizable,
 /// the kept size centred on the monitor. Sizes are worked out in system
 /// points (see [`remember_window`]) and sent in interface points. A
@@ -498,6 +513,13 @@ pub fn remember_window(ctx: &egui::Context, settings: &mut Settings) {
         }
     }
 }
+
+/// What the patched eframe applies again to a window it has just made,
+/// with its tests, run here: the copy in vendor/ is outside the workspace
+/// (vendor/README.md, #787).
+#[cfg(test)]
+#[path = "../../../vendor/eframe/src/native/window_start.rs"]
+mod eframe_window_start;
 
 #[cfg(test)]
 mod tests {
@@ -875,6 +897,47 @@ mod tests {
                 .iter()
                 .any(|c| matches!(c, V::Maximized(_) | V::InnerSize(_))));
         }
+    }
+
+    /// Without the splash screen a window left maximized is made
+    /// maximized, with its kept size as the size it restores to, and the
+    /// patched eframe does not ask for that size again once the window
+    /// exists: on Windows that un-maximized the window, so it showed at
+    /// its normal size and then grew to the screen (#787).
+    #[test]
+    fn without_the_splash_a_maximized_window_opens_at_the_screen_size() {
+        let mut settings = Settings::default();
+        settings.window_size = [1500.0, 900.0];
+        settings.window_maximized = true;
+        let builder = main_window_builder(&settings, false);
+        assert_eq!(builder.maximized, Some(true));
+        assert_eq!(builder.inner_size, Some(Vec2::new(1500.0, 900.0)));
+        let after = eframe_window_start::after_creation(&builder);
+        assert_eq!(after.inner_size, None);
+        assert_eq!(after.position, None);
+        assert_eq!(after.maximized, Some(true));
+        // A start for automation is never maximized; one left at its
+        // normal size gets that size again as before.
+        assert_eq!(main_window_builder(&settings, true).maximized, Some(false));
+        settings.window_maximized = false;
+        let normal = main_window_builder(&settings, false);
+        assert_eq!(
+            eframe_window_start::after_creation(&normal).inner_size,
+            normal.inner_size
+        );
+        // Every place the patched eframe makes a window goes through it.
+        let glow = include_str!("../../../vendor/eframe/src/native/glow_integration.rs");
+        let wgpu = include_str!("../../../vendor/eframe/src/native/wgpu_integration.rs");
+        let epi = include_str!("../../../vendor/eframe/src/native/epi_integration.rs");
+        for source in [glow, wgpu, epi] {
+            assert!(!source.contains("egui_winit::create_window("));
+            assert_eq!(
+                source.matches("apply_viewport_builder_to_window(").count(),
+                source.matches("window_start::after_creation(").count(),
+            );
+        }
+        assert_eq!(glow.matches("window_start::after_creation(").count(), 2);
+        assert_eq!(wgpu.matches("epi_integration::create_window(").count(), 2);
     }
 
     #[test]

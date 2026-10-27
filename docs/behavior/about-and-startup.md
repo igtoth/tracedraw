@@ -297,6 +297,17 @@ screen with the maximized button state (#787, seen with the interface
 in Chinese and a new drawing at start, whose slow first frames change
 the timing).
 
+Without the splash screen the main window is made at its kept size and
+maximized from the start when it was left maximized, and it opens at the
+screen's size with no step in between. The kept size is the size it
+restores to. The patched eframe (`vendor/README.md`) does not ask for the
+size and position again once it has made a maximized window: egui-winit
+did, and on Windows a size asked for after the maximize clears it, so
+the window was restored to its normal size (shown while it was) and then
+maximized again, and it opened at that size first and grew to the screen
+after (#787, seen with the splash screen turned off in Options,
+`splash::tests::without_the_splash_a_maximized_window_opens_at_the_screen_size`).
+
 For the first 30 frames of the main window and at least its first 3
 seconds (`splash::SETTLE_FRAMES`, `splash::SETTLE_SECONDS`) its state is
 not kept: the window system may still report the splash's state then.
