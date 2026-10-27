@@ -98,12 +98,8 @@ pub fn export(app: &mut App, path: &Path, st: &ExportState) -> Result<String, St
             crate::files::write(path, plt).map_err(|e| e.to_string())?;
         }
         "psd" => {
-            let psd = tracedraw_io::psd::page_to_psd(
-                &doc,
-                0,
-                st.dpi.max(crate::ui::dialogs::MIN_EXPORT_DPI),
-            )
-            .ok_or("render failed")?;
+            let psd =
+                tracedraw_io::psd::page_to_psd(&doc, 0, st.render_dpi()).ok_or("render failed")?;
             crate::files::write(path, psd).map_err(|e| e.to_string())?;
         }
         "html" => {
@@ -114,12 +110,12 @@ pub fn export(app: &mut App, path: &Path, st: &ExportState) -> Result<String, St
             // Raster: every page when all_pages, numbered files.
             let pages: Vec<_> = doc.pages.iter().map(|p| p.id).collect();
             for (i, pid) in pages.iter().enumerate() {
-                let mut pm = tracedraw_render::render_page_image(&doc, *pid, st.dpi)
+                let mut pm = tracedraw_render::render_page_image(&doc, *pid, st.render_dpi())
                     .ok_or("render failed")?;
                 if st.transparent && matches!(ext, "png" | "webp" | "gif") {
                     // Re-render on a transparent background.
                     let p = doc.page(*pid).map_err(|e| e.to_string())?;
-                    let zoom = st.dpi / 25.4;
+                    let zoom = st.render_dpi() / 25.4;
                     let w = (p.size.width * zoom).ceil() as u32;
                     let h = (p.size.height * zoom).ceil() as u32;
                     pm = tracedraw_render::render_page(
@@ -149,7 +145,11 @@ pub fn export(app: &mut App, path: &Path, st: &ExportState) -> Result<String, St
                 } else {
                     path.to_path_buf()
                 };
-                write_raster(&pm, &target, ext, st.quality, st.webp_lossless)?;
+                let bytes = encode_raster_with(&pm, ext, st.quality, st.webp_lossless)?;
+                // The file says its resolution, so it opens at the size
+                // chosen in the dialog (#617).
+                let bytes = record_dpi(bytes, ext, st.dpi);
+                crate::files::write(&target, bytes).map_err(|e| e.to_string())?;
             }
         }
     }
@@ -171,15 +171,79 @@ pub(crate) fn pdfx_profile(app: &App, standard: tracedraw_io::pdf::PdfStandard) 
         .flatten()
 }
 
-fn write_raster(
-    pm: &tiny_skia::Pixmap,
-    path: &Path,
-    ext: &str,
-    quality: u8,
-    lossless: bool,
-) -> Result<(), String> {
-    let bytes = encode_raster_with(pm, ext, quality, lossless)?;
-    crate::files::write(path, bytes).map_err(|e| e.to_string())
+/// `bytes`, a PNG, JPEG or BMP file, saying it was made at `dpi` dots per
+/// inch: a PNG gets a `pHYs` chunk after its header, a JPEG's JFIF header
+/// and a BMP's header get the density (#617). Other formats, and files not
+/// laid out as the encoder writes them, come back unchanged.
+pub fn record_dpi(mut bytes: Vec<u8>, ext: &str, dpi: f64) -> Vec<u8> {
+    if !(dpi.is_finite() && dpi >= 1.0) {
+        return bytes;
+    }
+    let per_metre = (dpi / 0.0254).round().min(f64::from(i32::MAX)) as u32;
+    match ext {
+        "png" => {
+            // Signature (8) and the IHDR chunk (4 + 4 + 13 + 4).
+            if bytes.len() < 33
+                || !bytes.starts_with(b"\x89PNG\r\n\x1a\n")
+                || bytes.get(12..16) != Some(b"IHDR")
+            {
+                return bytes;
+            }
+            let mut chunk = Vec::with_capacity(21);
+            chunk.extend_from_slice(&9u32.to_be_bytes());
+            chunk.extend_from_slice(b"pHYs");
+            chunk.extend_from_slice(&per_metre.to_be_bytes());
+            chunk.extend_from_slice(&per_metre.to_be_bytes());
+            chunk.push(1);
+            let crc = crc32(&chunk[4..]);
+            chunk.extend_from_slice(&crc.to_be_bytes());
+            bytes.splice(33..33, chunk);
+            bytes
+        }
+        "jpg" => {
+            // SOI, then the JFIF APP0 segment: units at 13, densities at
+            // 14 and 16.
+            if bytes.len() < 18
+                || bytes.get(2..4) != Some(&[0xFF, 0xE0])
+                || bytes.get(6..11) != Some(b"JFIF\0")
+            {
+                return bytes;
+            }
+            let d = (dpi.round().min(f64::from(u16::MAX)) as u16).to_be_bytes();
+            bytes[13] = 1;
+            bytes[14..16].copy_from_slice(&d);
+            bytes[16..18].copy_from_slice(&d);
+            bytes
+        }
+        "bmp" => {
+            // File header (14), then the info header with the pixels per
+            // metre at 24 and 28.
+            if bytes.len() < 46 || !bytes.starts_with(b"BM") {
+                return bytes;
+            }
+            let m = per_metre.to_le_bytes();
+            bytes[38..42].copy_from_slice(&m);
+            bytes[42..46].copy_from_slice(&m);
+            bytes
+        }
+        _ => bytes,
+    }
+}
+
+/// The CRC-32 a PNG chunk ends with.
+fn crc32(data: &[u8]) -> u32 {
+    let mut c = 0xFFFF_FFFFu32;
+    for &b in data {
+        c ^= u32::from(b);
+        for _ in 0..8 {
+            c = if c & 1 != 0 {
+                0xEDB8_8320 ^ (c >> 1)
+            } else {
+                c >> 1
+            };
+        }
+    }
+    !c
 }
 
 /// True when the export format `ext` keeps transparency.
@@ -247,7 +311,8 @@ pub fn estimated_size(app: &App, st: &ExportState, preview: &tiny_skia::Pixmap) 
             let bytes = encode_raster_with(preview, enc, st.quality, st.webp_lossless)
                 .ok()?
                 .len() as f64;
-            let full = (bounds.width() / 25.4 * st.dpi) * (bounds.height() / 25.4 * st.dpi);
+            let dpi = st.render_dpi();
+            let full = (bounds.width() / 25.4 * dpi) * (bounds.height() / 25.4 * dpi);
             let shown = (preview.width() as f64 * preview.height() as f64).max(1.0);
             let pages = if st.all_pages && !st.selection_only {
                 doc.pages.len().max(1) as f64
@@ -1632,6 +1697,96 @@ mod tests {
         };
         assert!(estimated_size(&app, &svg, &pm).is_some());
         assert!(keeps_alpha("png") && !keeps_alpha("jpg"));
+    }
+
+    /// A bitmap export records the resolution of the dialog, and the
+    /// scale changes how many pixels it has but not that resolution, so it
+    /// opens at the size chosen (#617).
+    #[test]
+    fn bitmap_exports_record_their_resolution_and_scale() {
+        let mut app = App::headless();
+        app.new_shape(ShapeKind::Rect {
+            rect: Rect::new(10.0, 10.0, 100.0, 60.0),
+            radius: 0.0,
+            corners: None,
+        });
+        let b = app.page_rect();
+        let dir = std::env::temp_dir().join(format!("tracedraw-617-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        for (format, ext) in [(2, "png"), (3, "jpg"), (4, "bmp")] {
+            let st = ExportState {
+                format,
+                dpi: 50.0,
+                scale: 2.0,
+                transparent: false,
+                ..ExportState::default()
+            };
+            let path = dir.join(format!("out.{ext}"));
+            export(&mut app, &path, &st).expect(ext);
+            let bytes = std::fs::read(&path).unwrap();
+            let (x, y) = crate::image_dpi::resolution(&bytes).expect(ext);
+            assert!(
+                (x - 50.0).abs() < 0.1 && (y - 50.0).abs() < 0.1,
+                "{ext}: {x} {y}"
+            );
+            // Still a file every reader opens, twice the pixels of 50 dpi.
+            let img = image::load_from_memory(&bytes).expect(ext);
+            let want = crate::ui::dialogs::export_pixels(b.width(), b.height(), 100.0);
+            assert_eq!((img.width(), img.height()), want, "{ext}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+        // Files not laid out as expected come back as they were.
+        assert_eq!(record_dpi(vec![1, 2, 3], "png", 300.0), vec![1, 2, 3]);
+        assert_eq!(record_dpi(b"BM".to_vec(), "bmp", 300.0), b"BM".to_vec());
+        assert_eq!(
+            record_dpi(vec![0xFF, 0xD8], "jpg", f64::NAN),
+            vec![0xFF, 0xD8]
+        );
+    }
+
+    /// The bitmap size in the Export dialog: in pixels it sets the
+    /// resolution as before, in a length it sets the scale; the other side
+    /// follows and nonsense is ignored (#617).
+    #[test]
+    fn the_export_size_is_typed_in_pixels_or_lengths() {
+        use crate::ui::dialogs::{export_size_in_unit, set_export_size};
+        let mut st = ExportState {
+            dpi: 100.0,
+            size_unit: 3,
+            ..ExportState::default()
+        };
+        let near =
+            |a: (f64, f64), b: (f64, f64)| (a.0 - b.0).abs() < 1e-6 && (a.1 - b.1).abs() < 1e-6;
+        assert!(near(export_size_in_unit(254.0, 127.0, &st), (10.0, 5.0)));
+        set_export_size(&mut st, 254.0, 20.0);
+        assert!((st.scale - 2.0).abs() < 1e-9 && st.dpi == 100.0);
+        assert!(near(export_size_in_unit(254.0, 127.0, &st), (20.0, 10.0)));
+        assert!((st.render_dpi() - 200.0).abs() < 1e-9);
+        st.size_unit = 1;
+        assert!(near(export_size_in_unit(254.0, 127.0, &st), (508.0, 254.0)));
+        st.size_unit = 0;
+        assert!(near(
+            export_size_in_unit(254.0, 127.0, &st),
+            (2000.0, 1000.0)
+        ));
+        set_export_size(&mut st, 254.0, 1000.0);
+        assert!((st.dpi - 50.0).abs() < 1e-3 && (st.scale - 2.0).abs() < 1e-9);
+        assert!(near(
+            export_size_in_unit(254.0, 127.0, &st),
+            (1000.0, 500.0)
+        ));
+        // Never past the highest resolution, and nonsense changes nothing.
+        st.size_unit = 3;
+        set_export_size(&mut st, 254.0, 1.0e9);
+        assert!(st.render_dpi() <= 2400.0 + 1e-6);
+        let before = st.clone();
+        for typed in [0.0, -5.0, f64::NAN, f64::INFINITY] {
+            set_export_size(&mut st, 254.0, typed);
+        }
+        set_export_size(&mut st, 0.0, 10.0);
+        assert_eq!(st, before);
+        st.scale = f64::NAN;
+        assert_eq!(st.scale_or_one(), 1.0);
     }
 
     #[test]

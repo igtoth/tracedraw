@@ -3,7 +3,9 @@
 //! where imported objects go, what every trace starts with, and which
 //! messages show. See docs/behavior/options.md.
 
-use crate::ui::dialogs::{ExportState, PrintState, EXPORT_FORMATS, PDF_STANDARDS};
+use crate::ui::dialogs::{
+    ExportState, PrintState, EXPORT_FORMATS, EXPORT_SCALE_RANGE, EXPORT_SIZE_UNITS, PDF_STANDARDS,
+};
 use serde::{Deserialize, Serialize};
 
 fn yes() -> bool {
@@ -198,6 +200,14 @@ pub struct FormatPrefs {
     pub output_condition: String,
     /// PDF bleed, mm.
     pub pdf_bleed_mm: f64,
+    /// The unit of the bitmap size fields (#617).
+    pub export_size_unit: usize,
+    /// Bitmaps: the scale of the artwork (1 = as drawn, #617).
+    pub export_scale: f64,
+    /// The choices of the last export of each format (the preset name
+    /// unused), so choosing a format in the Export dialog brings back how
+    /// it was exported last (#617).
+    pub export_by_format: Vec<ExportPreset>,
     /// Exporting keeps the dialog's choices here for the next time.
     pub remember_last: bool,
     pub import_place: ImportPlace,
@@ -228,6 +238,9 @@ impl Default for FormatPrefs {
             pdf_standard: st.pdf_standard,
             output_condition: st.output_condition,
             pdf_bleed_mm: st.bleed_mm,
+            export_size_unit: st.size_unit,
+            export_scale: st.scale,
+            export_by_format: Vec::new(),
             remember_last: true,
             import_place: ImportPlace::AsInFile,
             cdr_version: tracedraw_cdr::write::NEWEST_VERSION,
@@ -255,6 +268,9 @@ pub struct ExportPreset {
     pub bleed_mm: f64,
     pub output_condition: String,
     pub webp_lossless: bool,
+    /// The bitmap size's unit and the scale (#617).
+    pub size_unit: usize,
+    pub scale: f64,
 }
 
 impl Default for ExportPreset {
@@ -291,6 +307,8 @@ impl ExportPreset {
             bleed_mm: st.bleed_mm,
             output_condition: st.output_condition.clone(),
             webp_lossless: st.webp_lossless,
+            size_unit: st.size_unit,
+            scale: st.scale,
         }
     }
 
@@ -318,7 +336,41 @@ impl ExportPreset {
             st.output_condition = self.output_condition.chars().take(64).collect();
         }
         st.webp_lossless = self.webp_lossless;
+        self.apply_size(st);
         st.preset = self.name.clone();
+    }
+
+    /// The bitmap size's unit and scale into the dialog, when usable.
+    fn apply_size(&self, st: &mut ExportState) {
+        if self.size_unit < EXPORT_SIZE_UNITS.len() {
+            st.size_unit = self.size_unit;
+        }
+        if self.scale.is_finite() && EXPORT_SCALE_RANGE.contains(&self.scale) {
+            st.scale = self.scale;
+        }
+    }
+
+    /// The last export's choices of this format back into the dialog,
+    /// which has just been switched to it (#617): like [`Self::apply`],
+    /// but Selected only and the preset stay as the dialog has them.
+    pub fn recall(&self, st: &mut ExportState) {
+        let (selection_only, preset) = (st.selection_only, std::mem::take(&mut st.preset));
+        self.apply(st);
+        st.selection_only = selection_only;
+        st.preset = preset;
+    }
+}
+
+/// Keep `st`'s choices as the last export of its format in `list`,
+/// replacing the one kept before (#617).
+pub fn keep_format_choices(list: &mut Vec<ExportPreset>, st: &ExportState) {
+    if st.script.is_some() {
+        return;
+    }
+    let kept = ExportPreset::from_state("", st);
+    match list.iter_mut().find(|p| p.format == st.format) {
+        Some(p) => *p = kept,
+        None => list.push(kept),
     }
 }
 
@@ -432,6 +484,18 @@ impl FormatPrefs {
                 d.bleed_mm
             },
             remember: self.remember_last,
+            size_unit: if self.export_size_unit < EXPORT_SIZE_UNITS.len() {
+                self.export_size_unit
+            } else {
+                d.size_unit
+            },
+            scale: if self.export_scale.is_finite()
+                && EXPORT_SCALE_RANGE.contains(&self.export_scale)
+            {
+                self.export_scale
+            } else {
+                d.scale
+            },
             ..d
         }
     }
@@ -447,6 +511,9 @@ impl FormatPrefs {
         self.pdf_standard = st.pdf_standard;
         self.output_condition = st.output_condition.clone();
         self.pdf_bleed_mm = st.bleed_mm;
+        self.export_size_unit = st.size_unit;
+        self.export_scale = st.scale;
+        keep_format_choices(&mut self.export_by_format, st);
     }
 }
 
@@ -753,6 +820,77 @@ mod tests {
             ..ExportState::default()
         });
         assert_eq!((g.state().format, g.state().pdf_standard), (1, 3));
+    }
+
+    /// Choosing a format in the Export dialog brings back how that format
+    /// was exported last: in this session, and with Remember the settings
+    /// of the last export on, in the next one too (#617).
+    #[test]
+    fn each_export_format_comes_back_as_it_was_last_exported() {
+        let mut app = crate::app::App::headless();
+        app.settings.formats.remember_last = false;
+        let jpeg = ExportState {
+            remember: true,
+            format: 3,
+            quality: 100,
+            dpi: 150.0,
+            size_unit: 3,
+            scale: 0.5,
+            ..ExportState::default()
+        };
+        app.keep_export_choices(&jpeg);
+        let png = ExportState {
+            format: 2,
+            quality: 60,
+            dpi: 72.0,
+            size_unit: 0,
+            scale: 1.0,
+            transparent: false,
+            ..jpeg.clone()
+        };
+        app.keep_export_choices(&png);
+        let mut st = ExportState {
+            selection_only: true,
+            ..png.clone()
+        };
+        app.recall_export_format(&mut st, 3);
+        assert_eq!(
+            (st.format, st.quality, st.dpi, st.size_unit, st.scale),
+            (3, 100, 150.0, 3, 0.5)
+        );
+        assert!(
+            st.selection_only,
+            "Selected only stays as the dialog has it"
+        );
+        app.recall_export_format(&mut st, 2);
+        assert_eq!((st.format, st.quality, st.dpi), (2, 60, 72.0));
+        assert!(!st.transparent);
+        // A format not exported yet keeps the dialog's choices.
+        app.recall_export_format(&mut st, 5);
+        assert_eq!((st.format, st.quality, st.dpi), (5, 60, 72.0));
+        assert!(
+            app.settings.formats.export_by_format.is_empty(),
+            "Remember off"
+        );
+        // With Remember on the next session gets them too.
+        app.settings.formats.remember_last = true;
+        app.keep_export_choices(&jpeg);
+        let json = serde_json::to_string(&app.settings.formats).expect("json");
+        let mut later = crate::app::App::headless();
+        later.settings.formats = serde_json::from_str(&json).expect("back");
+        let mut st = later.settings.formats.state();
+        assert_eq!((st.format, st.size_unit, st.scale), (3, 3, 0.5));
+        st.quality = 5;
+        later.recall_export_format(&mut st, 2);
+        later.recall_export_format(&mut st, 3);
+        assert_eq!((st.quality, st.dpi), (100, 150.0));
+        // Export for Web keeps to its own choices.
+        let mut web = ExportState::web();
+        later.recall_export_format(&mut web, 3);
+        assert_eq!((web.format, web.quality, web.dpi), (3, 90, 96.0));
+        // Preferences from before have no size: as drawn, in pixels.
+        let old: ExportPreset = serde_json::from_str(r#"{"name":"x","format":2}"#).expect("old");
+        assert_eq!((old.size_unit, old.scale), (0, 1.0));
     }
 
     #[test]
