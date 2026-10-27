@@ -487,9 +487,7 @@ as co-author: commits it helped write carry a `Co-Authored-By` line, and
 the About box says so too.
 
 Code contributed by others is listed, person by person, in
-[CONTRIBUTORS.md](CONTRIBUTORS.md): thanks to
-[@belchiordameao-cmd](https://github.com/belchiordameao-cmd) and
-[@LaMka21](https://github.com/LaMka21).
+[CONTRIBUTORS.md](CONTRIBUTORS.md).
 
 Bundled fonts, icons and other assets keep their own open licenses; each
 is listed with its author, source and license in
