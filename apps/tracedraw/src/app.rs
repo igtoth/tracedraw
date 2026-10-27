@@ -375,15 +375,11 @@ pub enum Drag {
     },
     /// Moving the centre of rotation in rotate mode.
     Pivot,
-    /// Rotating the selection about `center`. `grab` is the selection's
-    /// own point (a node) the turn started from in rotate mode, which the
-    /// turn carries onto other objects' points and edges (#933); `None`
-    /// for a rotate handle.
+    /// Rotating the selection about `center`.
     Rotate {
         center: Point,
         start_angle: f64,
         current_angle: f64,
-        grab: Option<Point>,
     },
     /// Rubber-band selection; with `touching` (Alt) objects it touches
     /// count too.
@@ -764,6 +760,9 @@ pub struct Clipboard {
     /// The object styles of the drawing copied from, so that pasted
     /// objects keep their links only to the same styles.
     pub styles: Vec<tracedraw_core::ObjectStyle>,
+    /// The symbols of the drawing copied from, so that pasted instances
+    /// show the same symbols in any drawing (#678).
+    pub symbols: Vec<tracedraw_core::Symbol>,
     /// What the system clipboard held right after this copy (see
     /// `clipboard::Mark`).
     pub system: crate::clipboard::Mark,
@@ -4740,6 +4739,7 @@ impl App {
             self.clipboard = Some(Clipboard {
                 shapes,
                 styles: self.doc().object_styles.clone(),
+                symbols: self.doc().symbols.clone(),
                 system: Default::default(),
                 guides: Vec::new(),
             });
@@ -4774,13 +4774,20 @@ impl App {
         let mut ids = Vec::new();
         let mut cmds = Vec::new();
         let here = self.doc().object_styles.clone();
+        let mut symbols = self.doc().symbols.clone();
+        let had_symbols = symbols.len();
         let mut copies = Vec::new();
         for s in &cb.shapes {
             let id = self.engine.new_shape_id();
             let mut shape = reid(s.clone(), id, &mut self.engine);
             crate::styles::keep_links_to(&mut shape, &cb.styles, &here);
+            crate::symbol_paste::bring(&mut shape, &cb.symbols, &mut symbols);
             ids.push(id);
             copies.push(shape);
+        }
+        // Symbols this drawing lacks come first, for the instances.
+        for symbol in symbols.drain(had_symbols..) {
+            cmds.push(Command::AddSymbol { symbol });
         }
         crate::textflow::relink_copies(&cb.shapes, &mut copies);
         // Copies of connected objects still in the drawing come with

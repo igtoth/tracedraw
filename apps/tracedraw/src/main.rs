@@ -140,6 +140,7 @@ mod splash;
 mod startup_log;
 mod straighten;
 mod styles;
+mod symbol_paste;
 mod symmetry_edit;
 mod system_prefs;
 mod table;
