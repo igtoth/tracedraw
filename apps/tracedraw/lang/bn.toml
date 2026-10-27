@@ -1150,6 +1150,7 @@ edit_fill.repeat_default = "ডিফল্ট" # mt
 edit_fill.repeat_mirror = "পুনরাবৃত্তি ও প্রতিফলন" # mt
 edit_fill.reset_nodes = "কোণ ও কেন্দ্রে ফেরা" # mt
 edit_fill.reset_nodes_tip = "ইন্টারঅ্যাকটিভ ফিলে রাখা নোড ভুলে যান" # mt
+edit_fill.preview_tip = "নোড টানুন: শুরু গ্রেডিয়েন্ট সরায়, শেষ ঘোরায় ও টানে, গোল নোড হেলায়। Ctrl ১৫° ধাপে ঘোরায়।" # mt
 edit_fill.reverse = "উল্টান" # mt
 edit_fill.reverse_tip = "রংগুলো উল্টো দিকে চালান" # mt
 edit_fill.rotate = "ঘোরান:" # mt

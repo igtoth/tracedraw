@@ -1150,6 +1150,7 @@ edit_fill.repeat_default = "Par défaut" # mt
 edit_fill.repeat_mirror = "Répéter et refléter" # mt
 edit_fill.reset_nodes = "Revenir à l'angle et au centre" # mt
 edit_fill.reset_nodes_tip = "Oublier les nœuds placés avec Remplissage interactif" # mt
+edit_fill.preview_tip = "Faites glisser les nœuds : le début déplace le dégradé, la fin le tourne et l'étire, le nœud rond l'incline. Ctrl tourne par pas de 15°." # mt
 edit_fill.reverse = "Inverser" # mt
 edit_fill.reverse_tip = "Faire courir les couleurs dans l'autre sens" # mt
 edit_fill.rotate = "Rotation :" # mt

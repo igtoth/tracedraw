@@ -1150,6 +1150,7 @@ edit_fill.repeat_default = "Výchozí" # mt
 edit_fill.repeat_mirror = "Opakovat a zrcadlit" # mt
 edit_fill.reset_nodes = "Zpět na úhel a střed" # mt
 edit_fill.reset_nodes_tip = "Zapomenout uzly umístěné interaktivní výplní" # mt
+edit_fill.preview_tip = "Táhněte uzly: začátek přechod posune, konec jej otočí a natáhne, kulatý uzel jej zkosí. Ctrl otáčí po 15°." # mt
 edit_fill.reverse = "Obrátit" # mt
 edit_fill.reverse_tip = "Barvy opačným směrem" # mt
 edit_fill.rotate = "Otočení:" # mt

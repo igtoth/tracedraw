@@ -1150,6 +1150,7 @@ edit_fill.repeat_default = "افتراضي" # mt
 edit_fill.repeat_mirror = "تكرار وانعكاس" # mt
 edit_fill.reset_nodes = "العودة إلى الزاوية والمركز" # mt
 edit_fill.reset_nodes_tip = "نسيان العقد الموضوعة بالتعبئة التفاعلية" # mt
+edit_fill.preview_tip = "اسحب العقد: البداية تحرك التدرج، والنهاية تديره وتمده، والعقدة المستديرة تميله. Ctrl يدير بخطوات 15°." # mt
 edit_fill.reverse = "عكس" # mt
 edit_fill.reverse_tip = "تشغيل الألوان في الاتجاه الآخر" # mt
 edit_fill.rotate = "تدوير:" # mt

@@ -1150,6 +1150,7 @@ edit_fill.repeat_default = "По умолчанию" # mt
 edit_fill.repeat_mirror = "Повтор с отражением" # mt
 edit_fill.reset_nodes = "Вернуть угол и центр" # mt
 edit_fill.reset_nodes_tip = "Забыть узлы, поставленные интерактивной заливкой" # mt
+edit_fill.preview_tip = "Перетаскивайте узлы: начало сдвигает градиент, конец поворачивает и растягивает его, круглый узел наклоняет. Ctrl поворачивает шагами по 15°." # mt
 edit_fill.reverse = "Обратить" # mt
 edit_fill.reverse_tip = "Пустить цвета в обратную сторону" # mt
 edit_fill.rotate = "Поворот:" # mt
