@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Opening `.cdr`: blends from versions 9 and X3 look as they did where they were made. The steps now turn from one end object into the other, curving or folding through the middle as the file's nodes pair up, and lie between the two objects instead of on top of the upper one. Before, every step kept the same upright shape on a straight line (#597).
+
 - Properties panel: the outline's mitre limit, nib stretch and nib angle sit under an Advanced header after the common settings (caps, corners, arrows, dashes, position, behind fill, scale with object), closed at first unless one of them is set, so the outline section is shorter and its basic options are found at a glance (#487).
 - Dimensions: the bar's Options menu can join the extension lines and the dimension line (or an angle's arc) into one line that turns a corner instead of running past it, and a corner radius rounds those corners. Both are kept in the dimension and in saved files (#641).
 - Drop shadow: making or editing a shadow follows the pointer smoothly, and a click on a shadow picks its object for editing. Each frame blurred and shaded a layer the size of the whole window for every shadow, however small; a shadow is now worked out on just the pixels it reaches, the picture unchanged, and in a 1168 x 733 window a redraw went from about 119 ms to under 10 ms. A click on the shadow with the Pick tool (or any tool that selects on a click) selects its object; with the Drop Shadow tool it shows the shadow's handles, and a drag on the shadow moves it (#935).

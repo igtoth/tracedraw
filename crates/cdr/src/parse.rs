@@ -3130,6 +3130,14 @@ impl<'a> Ctx<'a> {
             }
             let end = out[at].clone();
             let end_id = end.id;
+            // The steps pair the two outlines from their first nodes, as
+            // the file's program draws them (twists and folds included),
+            // and lie between the two: the start, read first, is the
+            // upper one (#597).
+            let map_nodes = match (blend_nodes(&out[at - 1]), blend_nodes(&end)) {
+                (Some(start), Some(end)) => Some(tracedraw_core::live::BlendNodes { start, end }),
+                _ => None,
+            };
             out[at - 1]
                 .effects
                 .push(tracedraw_core::live::Effect::Blend {
@@ -3141,7 +3149,11 @@ impl<'a> Ctx<'a> {
                     path: None,
                     rotate_on_path: false,
                     end_id: Some(end_id),
-                    options: Default::default(),
+                    options: tracedraw_core::live::BlendOptions {
+                        steps_below: true,
+                        map_nodes,
+                        ..Default::default()
+                    },
                 });
         }
     }
@@ -4208,6 +4220,35 @@ fn fit_text(t: &mut Shape, curve: &Shape, fitted: &OnPathText) -> bool {
         on_path: Some(tp),
     };
     true
+}
+
+/// Where a blend's steps start on an end object, in its own coordinates:
+/// its first node and a point after it along the outline. A rectangle
+/// runs from its corner at the origin (where the file's transform places
+/// it) along its height first: the steps of the two blends attached to
+/// issue #597 turn and fold as they do only from there. Other objects
+/// run from their own first node, as their outline is built (a polygon
+/// from its top vertex, clockwise, as the file stores it). `None` when
+/// the outline has fewer than two distinct points.
+fn blend_nodes(s: &Shape) -> Option<[Point; 2]> {
+    if let ShapeKind::Rect { rect, .. } = &s.kind {
+        let near = |a: f64, b: f64| if a.abs() <= b.abs() { a } else { b };
+        let far = |a: f64, b: f64| if a.abs() <= b.abs() { b } else { a };
+        let first = Point::new(near(rect.x0, rect.x1), near(rect.y0, rect.y1));
+        let next = Point::new(first.x, far(rect.y0, rect.y1));
+        return ((next - first).hypot() > 1e-9).then_some([first, next]);
+    }
+    use tracedraw_core::geometry::PathEl;
+    let path = s.local_path();
+    let mut nodes = path.elements().iter().filter_map(|el| match el {
+        PathEl::MoveTo(p) | PathEl::LineTo(p) | PathEl::QuadTo(_, p) | PathEl::CurveTo(_, _, p) => {
+            Some(*p)
+        }
+        PathEl::ClosePath => None,
+    });
+    let first = nodes.next()?;
+    let next = nodes.find(|p| (*p - first).hypot() > 1e-6)?;
+    Some([first, next])
 }
 
 fn bounds_of(pts: &[Point]) -> Option<Rect> {
@@ -6897,6 +6938,20 @@ mod tests {
             .find(|s| s.effects.is_empty())
             .expect("the other end");
         assert_eq!(blends[0].1, Some(other.id));
+        // The steps lie below the start (the upper object) and pair the
+        // two outlines from their first nodes (#597).
+        let options = shapes
+            .iter()
+            .flat_map(|s| &s.effects)
+            .find_map(|e| match e {
+                tracedraw_core::live::Effect::Blend { options, .. } => Some(*options),
+                _ => None,
+            })
+            .expect("blend");
+        assert!(options.steps_below);
+        let nodes = options.map_nodes.expect("nodes");
+        assert!((nodes.start[0] - nodes.start[1]).hypot() > 1e-6);
+        assert!((nodes.end[0] - nodes.end[1]).hypot() > 1e-6);
         // A blend group with no object before it: a warning, no blend.
         let body = [
             chunk(b"mcfg", &mcfg(v, 2_540_000, 2_540_000)),
@@ -6919,6 +6974,45 @@ mod tests {
             .shapes
             .iter()
             .all(|s| s.effects.is_empty()));
+    }
+
+    /// A blend starts a rectangle at its corner at the origin, along its
+    /// height first, whichever way the file drew it; other objects at
+    /// their first node, toward the next (#597).
+    #[test]
+    fn blend_nodes_start_at_the_file_s_first_node() {
+        let rect = |x0, y0, x1, y1| {
+            Shape::new(
+                tracedraw_core::ShapeId(1),
+                ShapeKind::Rect {
+                    rect: Rect::new(x0, y0, x1, y1),
+                    radius: 0.0,
+                    corners: None,
+                },
+            )
+        };
+        // Width and height negative: the origin is the upper right corner.
+        let n = blend_nodes(&rect(-73.0, -67.0, 0.0, 0.0)).expect("nodes");
+        assert_eq!(n, [Point::new(0.0, 0.0), Point::new(0.0, -67.0)]);
+        // Height positive.
+        let n = blend_nodes(&rect(-81.0, 0.0, 0.0, 75.0)).expect("nodes");
+        assert_eq!(n, [Point::new(0.0, 0.0), Point::new(0.0, 75.0)]);
+        // A polygon: its top vertex, then the next one clockwise.
+        let poly = Shape::new(
+            tracedraw_core::ShapeId(2),
+            ShapeKind::Polygon {
+                rect: Rect::new(-10.0, -10.0, 10.0, 10.0),
+                points: 4,
+                sharpness: 0.0,
+                complex: None,
+                twist: 0.0,
+            },
+        );
+        let [a, b] = blend_nodes(&poly).expect("nodes");
+        assert!((a - Point::new(0.0, 10.0)).hypot() < 1e-9, "{a:?}");
+        assert!((b - Point::new(10.0, 0.0)).hypot() < 1e-9, "{b:?}");
+        // A flat rectangle has no way to run.
+        assert!(blend_nodes(&rect(-5.0, 0.0, 0.0, 0.0)).is_none());
     }
 
     /// Version 21 texts fitted to a circle they are not grouped with (as
