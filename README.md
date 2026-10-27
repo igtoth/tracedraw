@@ -355,12 +355,16 @@ editor needs X11 or Wayland, libxkbcommon and Mesa.
 
 ### What it runs on
 
-- **Windows 10 and 11** (x64), **macOS** (Apple silicon and Intel),
-  **Linux** (x86_64 and arm64) and any current browser.
+- **Windows 10 and 11** (x64), **macOS 11 or later** (Apple silicon and
+  Intel), **Linux** (x86_64 and arm64, glibc 2.35 or later: Ubuntu 22.04,
+  Debian 12, Fedora 36 or newer) and any current browser. Older Linux
+  distributions can use the browser version.
 - **Older computers too:** a graphics card with OpenGL 2.1 is enough. An
   office PC from 2010 with Intel HD Graphics (Ironlake) under Windows 10
   runs TraceDraw with its own card since 0.19.8 (#616). Without a usable
   card, TraceDraw draws the window on the CPU.
+- Minimum and recommended hardware and software, measured and
+  estimated: [`docs/system-requirements.md`](docs/system-requirements.md).
 - If the window still does not come up, start it with
   `tracedraw --renderer=gl` and send `tracedraw.log` (in the settings folder) in
   [an issue](https://github.com/igtoth/tracedraw/issues/new?template=bug_report.yml).

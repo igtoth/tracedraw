@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Documentation: minimum and recommended systems for Windows, macOS, Linux and the browser, in `docs/system-requirements.md` and linked from the README: Linux builds need glibc 2.35 or later (Ubuntu 22.04, Debian 12, Fedora 36 or newer), graphics from a Direct3D 12, Vulkan or Metal card down to OpenGL 2.1 or the CPU, and measured memory and disk use.
 - Pick and Freehand Pick: a right click while dragging a selection box no longer leaves the box frozen on the canvas. The right button is ignored: the box goes on with the pointer and selects when the left button goes up, whichever button is released first (#1015).
 - Pen and Bezier: a handle pulled out of the drawing window (over a docker or a toolbar) and let go there ends the pull. The preview stayed stuck where the pointer left the drawing, and the first click back on it only brought the preview back instead of placing a node (#1014).
 - Saving as .cdr: text in a variable font keeps the weight set on its weight axis (600 reopens at 600, as the family's SemiBold face); every such text was saved at the regular or bold weight and came back at 400 or 700 (#1013).
