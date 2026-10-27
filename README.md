@@ -58,7 +58,7 @@
     </td>
     <td width="25%" valign="top">
       <h3>Native and light</h3>
-      One program per platform built with egui, a CPU renderer for exact output and no runtime to install. No Electron, no web view; the same code runs in the browser as WebAssembly.
+      One program per platform built with egui, a CPU renderer for exact output and no runtime to install. No Electron, no web view; it runs on PCs from 2010 with OpenGL 2.1, and the same code runs in the browser as WebAssembly.
     </td>
     <td width="25%" valign="top">
       <h3>Opens your files</h3>
@@ -325,12 +325,18 @@ see [`docs/behavior/ai-drawing.md`](docs/behavior/ai-drawing.md).
   shell over it. The layering between crates is checked in review.
 - **One renderer:** a CPU rasteriser on tiny-skia draws the canvas, the
   exports and the previews, so what is on screen is what comes out.
+- **Old PCs welcome:** the window is drawn with Direct3D 12, Vulkan or
+  Metal, then OpenGL, then a software adapter, whichever the computer
+  can open. Cards with OpenGL 2.1 only (the Intel HD Graphics of 2010
+  PCs, for example) get the fixed-function pipeline they were made for,
+  and a start that comes up black or hangs restarts with the next
+  renderer by itself.
 - **Real text:** fonts from the system through fontdb, shaping with
   rustybuzz, a paragraph engine of its own.
 - **Runs in the browser:** the whole editor compiles to WebAssembly.
 - **Clean-room:** format support from public notes and owned files only;
   no proprietary code or assets.
-- **Tested:** about 1,600 tests, including format round trips,
+- **Tested:** about 2,200 tests, including format round trips,
   malformed-input tests, effect geometry and interface drawing, plus
   headless visual checks that drive the real app.
 
@@ -344,8 +350,20 @@ cargo run --release -p tracedraw -- drawing.cdr   # open a file
 cargo test --workspace                            # the test suite
 ```
 
-A recent stable Rust (CI builds with 1.97). On Linux the editor needs X11
-or Wayland, libxkbcommon and Mesa.
+A recent stable Rust (1.89 or newer; CI builds with 1.97). On Linux the
+editor needs X11 or Wayland, libxkbcommon and Mesa.
+
+### What it runs on
+
+- **Windows 10 and 11** (x64), **macOS** (Apple silicon and Intel),
+  **Linux** (x86_64 and arm64) and any current browser.
+- **Older computers too:** a graphics card with OpenGL 2.1 is enough. An
+  office PC from 2010 with Intel HD Graphics (Ironlake) under Windows 10
+  runs TraceDraw with its own card since 0.19.8 (#616). Without a usable
+  card, TraceDraw draws the window on the CPU.
+- If the window still does not come up, start it with
+  `tracedraw --renderer=gl` and send `tracedraw.log` (in the settings folder) in
+  [an issue](https://github.com/igtoth/tracedraw/issues/new?template=bug_report.yml).
 
 New contributors and AI agents: start with [`AGENTS.md`](AGENTS.md), then
 [`CONTRIBUTING.md`](CONTRIBUTING.md) and the pages in [`docs/`](docs/).
@@ -454,7 +472,7 @@ pages) in your browser only when you choose to. The full policy is in
 | [`docs/code-signing.md`](docs/code-signing.md) | signing the Windows downloads and the Microsoft Store package |
 | [`CLEANROOM.md`](CLEANROOM.md) | where the knowledge of every file format comes from |
 | [`ATTRIBUTION.md`](ATTRIBUTION.md) | bundled assets and their licenses |
-| [`CONTRIBUTORS.md`](CONTRIBUTORS.md) | the people who contributed code |
+| [`CONTRIBUTORS.md`](CONTRIBUTORS.md) | the people who contributed code, tests and reports |
 
 ---
 
