@@ -3000,6 +3000,119 @@ fn a_three_point_curve_continues_and_closes_the_selected_curve() {
     assert_eq!(shape_count(&app), before + 2);
 }
 
+/// Ctrl keeps the chord of a 3-point curve (and the base of a 3-point
+/// rectangle or ellipse) to steps of the constrain angle, so a bow drawn
+/// with Ctrl stands level; Ctrl did nothing there (#934).
+#[test]
+fn ctrl_keeps_the_three_point_base_to_the_constrain_angle() {
+    let (ctx, mut app, first) = setup();
+    app.select(vec![first]);
+    app.delete_selection();
+    app.set_tool(Tool::ThreePointCurve);
+    let before = shape_count(&app);
+    // A chord 4 degrees off the horizontal, dragged with Ctrl.
+    let (a, b) = (Point::new(100.0, 150.0), Point::new(160.0, 154.0));
+    let (sa, sb) = (app.view.to_screen(a), app.view.to_screen(b));
+    drag(&ctx, &mut app, sa, sb, Modifiers::CTRL, Vec::new());
+    let (s, e) = app.three_point_base.expect("the chord waits for a click");
+    assert!((e.y - s.y).abs() < 1e-6, "level: {s:?} {e:?}");
+    assert!(((e - s).hypot() - 60.0).abs() < 0.5, "{s:?} {e:?}");
+    click_page(&ctx, &mut app, Point::new(130.0, 175.0));
+    assert_eq!(shape_count(&app), before + 1);
+    let p = last_path(&app);
+    let (first_pt, last_pt) = match (p.elements().first(), p.segments().last()) {
+        (Some(tracedraw_core::geometry::PathEl::MoveTo(f)), Some(seg)) => (*f, cubic(seg).p3),
+        other => panic!("a curve: {other:?}"),
+    };
+    assert!((first_pt.y - last_pt.y).abs() < 1e-6, "{p:?}");
+    // Without Ctrl the chord goes where it is dragged (away from the
+    // curve, whose end nodes the pointer would snap to).
+    let (c, d) = (Point::new(100.0, 220.0), Point::new(160.0, 224.0));
+    let (sc, sd) = (app.view.to_screen(c), app.view.to_screen(d));
+    drag(&ctx, &mut app, sc, sd, Modifiers::NONE, Vec::new());
+    let (s, e) = app.three_point_base.expect("chord");
+    assert!((e.y - s.y - 4.0).abs() < 0.5, "{s:?} {e:?}");
+    app.three_point_base = None;
+    // A 3-point rectangle drawn with Ctrl has a level base: it is not
+    // turned.
+    app.set_tool(Tool::ThreePointRectangle);
+    drag(&ctx, &mut app, sa, sb, Modifiers::CTRL, Vec::new());
+    click_page(&ctx, &mut app, Point::new(130.0, 170.0));
+    let id = *app.selection.first().expect("the rectangle");
+    let t = app
+        .doc()
+        .find_shape(id)
+        .map(|s| s.transform)
+        .expect("shape");
+    let k = t.as_coeffs();
+    assert!(k[1].abs() < 1e-9 && k[2].abs() < 1e-9, "{t:?}");
+}
+
+/// Ctrl held at the third click of a 3-point curve draws a bow: the arc
+/// of the circle through the three points, standing evenly on its chord
+/// wherever the third point is (#934). Without Ctrl the curve stays the
+/// one through the third point at its middle, lopsided when that point
+/// is off to a side.
+#[test]
+fn ctrl_at_the_third_click_draws_a_bow() {
+    let (ctx, mut app, first) = setup();
+    app.select(vec![first]);
+    app.delete_selection();
+    app.set_tool(Tool::ThreePointCurve);
+    // Off the page's centre lines, which the third point would snap to.
+    let (a, b) = (Point::new(40.0, 230.0), Point::new(120.0, 230.0));
+    // Off to the right of the chord's middle, and up.
+    let c = Point::new(108.0, 200.0);
+    let (sa, sb) = (app.view.to_screen(a), app.view.to_screen(b));
+    drag(&ctx, &mut app, sa, sb, Modifiers::NONE, Vec::new());
+    assert!(
+        app.three_point_base.is_some(),
+        "the chord waits for a click"
+    );
+    let at = app.view.to_screen(c);
+    click_at(&ctx, &mut app, at, Modifiers::CTRL);
+    let p = last_path(&app);
+    // The circle through a, b and c: its centre on the chord's bisector.
+    let cx = 80.0;
+    let cy = {
+        // |a - (cx, cy)| = |c - (cx, cy)|
+        let (ax, ay, px, py) = (a.x, a.y, c.x, c.y);
+        ((ax - cx).powi(2) + ay * ay - (px - cx).powi(2) - py * py) / (2.0 * (ay - py))
+    };
+    let center = Point::new(cx, cy);
+    let r = (a - center).hypot();
+    let segs: Vec<_> = p.segments().collect();
+    assert!(!segs.is_empty() && segs.len() <= 4, "{p:?}");
+    let mut top = f64::MAX;
+    for seg in &segs {
+        for i in 0..=16 {
+            let q = tracedraw_core::geometry::ParamCurve::eval(seg, i as f64 / 16.0);
+            assert!(
+                ((q - center).hypot() - r).abs() < 0.02,
+                "on the circle: {q:?}"
+            );
+            top = top.min(q.y);
+        }
+    }
+    // The ends are the chord's, and the bow stands evenly: its top is
+    // over the chord's middle, above the third point.
+    let (s, e) = (
+        tracedraw_core::geometry::ParamCurve::start(&segs[0]),
+        tracedraw_core::geometry::ParamCurve::end(segs.last().expect("seg")),
+    );
+    assert!(near(s, a) && near(e, b), "{s:?} {e:?}");
+    assert!((top - (cy - r)).abs() < 0.05 && top < c.y, "{top}");
+    // Without Ctrl: the curve through c at its middle, as before (a new
+    // curve, not one going on from the bow's end).
+    app.select(Vec::new());
+    drag(&ctx, &mut app, sa, sb, Modifiers::NONE, Vec::new());
+    click_at(&ctx, &mut app, at, Modifiers::NONE);
+    let p = last_path(&app);
+    let seg = p.segments().next().expect("segment");
+    let mid = tracedraw_core::geometry::ParamCurve::eval(&seg, 0.5);
+    assert!(near(mid, c), "{mid:?}");
+}
+
 #[test]
 fn clicking_the_last_node_again_makes_it_a_cusp() {
     let (ctx, mut app, _) = setup();

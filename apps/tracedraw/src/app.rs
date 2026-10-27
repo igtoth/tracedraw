@@ -4347,9 +4347,9 @@ impl App {
 
     /// 3-point tools: the base segment `a -> b` was dragged, `c` is the third
     /// click. Rectangle and ellipse take the base as one side and `c` as the
-    /// height; the curve passes through `c`.
-    pub fn finish_three_point(&mut self, a: Point, b: Point, c: Point) {
-        use tracedraw_core::geometry::BezPath;
+    /// height; the curve passes through `c`, a bow (an arc of a circle)
+    /// with `arc` (the constrain key held at the click, #934).
+    pub fn finish_three_point(&mut self, a: Point, b: Point, c: Point, arc: bool) {
         let base = b - a;
         let len = base.hypot();
         if len < 0.05 {
@@ -4383,13 +4383,7 @@ impl App {
                 }
             }
             Tool::ThreePointCurve => {
-                // Quadratic through c at t = 0.5, written as a cubic.
-                let ctrl = Point::new(2.0 * c.x - 0.5 * (a.x + b.x), 2.0 * c.y - 0.5 * (a.y + b.y));
-                let c1 = a + (ctrl - a) * (2.0 / 3.0);
-                let c2 = b + (ctrl - b) * (2.0 / 3.0);
-                let mut path = BezPath::new();
-                path.move_to(a);
-                path.curve_to(c1, c2, b);
+                let path = three_point_curve(a, b, c, arc);
                 // The curve continues the selected curve when it starts
                 // or ends on one of its end nodes (closing it when it
                 // joins both ends), else it is a curve of its own.
@@ -7542,6 +7536,79 @@ pub(crate) fn cdr_font_faces(
             italic,
         })
         .collect()
+}
+
+/// The curve of the 3-point curve tool from `a` to `b` through `c`: a
+/// quadratic through `c` at its middle, written as a cubic; with `arc`
+/// (the constrain key held, #934) the arc of the circle through the
+/// three points, a bow standing evenly on its chord wherever `c` is
+/// (the quadratic when the points are in a line or nearly).
+pub fn three_point_curve(a: Point, b: Point, c: Point, arc: bool) -> tracedraw_core::BezPath {
+    if arc {
+        if let Some(p) = three_point_arc(a, b, c) {
+            return p;
+        }
+    }
+    let ctrl = Point::new(2.0 * c.x - 0.5 * (a.x + b.x), 2.0 * c.y - 0.5 * (a.y + b.y));
+    let mut path = tracedraw_core::BezPath::new();
+    path.move_to(a);
+    path.curve_to(
+        a + (ctrl - a) * (2.0 / 3.0),
+        b + (ctrl - b) * (2.0 / 3.0),
+        b,
+    );
+    path
+}
+
+/// The arc from `a` to `b` through `c` of the circle through all three,
+/// as cubic segments of at most a quarter turn; `None` when the points
+/// are (nearly) in a line, the circle then too large to draw.
+fn three_point_arc(a: Point, b: Point, c: Point) -> Option<tracedraw_core::BezPath> {
+    use std::f64::consts::TAU;
+    let chord = (b - a).hypot().max((c - a).hypot()).max((c - b).hypot());
+    let d = 2.0 * (a.x * (b.y - c.y) + b.x * (c.y - a.y) + c.x * (a.y - b.y));
+    // Twice the triangle's area against the square of its longest side:
+    // flatter than about one part in a thousand is a line.
+    let flat = d.abs() <= 2e-3 * chord * chord;
+    if chord.is_nan() || chord <= 1e-9 || d.is_nan() || flat {
+        return None;
+    }
+    let (a2, b2, c2) = (
+        a.to_vec2().hypot2(),
+        b.to_vec2().hypot2(),
+        c.to_vec2().hypot2(),
+    );
+    let center = Point::new(
+        (a2 * (b.y - c.y) + b2 * (c.y - a.y) + c2 * (a.y - b.y)) / d,
+        (a2 * (c.x - b.x) + b2 * (a.x - c.x) + c2 * (b.x - a.x)) / d,
+    );
+    let r = (a - center).hypot();
+    if !(r.is_finite() && center.x.is_finite() && center.y.is_finite()) {
+        return None;
+    }
+    let angle = |p: Point| (p - center).atan2();
+    let from = angle(a);
+    let turn = |p: Point| (angle(p) - from).rem_euclid(TAU);
+    // The way round from `a` to `b` that passes `c`.
+    let to_b = turn(b);
+    let sweep = if turn(c) < to_b { to_b } else { to_b - TAU };
+    let n = (sweep.abs() / (TAU / 4.0)).ceil().max(1.0) as usize;
+    let step = sweep / n as f64;
+    // Each piece's handles lie along its tangents, k radii long, k being
+    // 4/3 tan(a quarter of the piece's angle), as for any circular arc.
+    let k = 4.0 / 3.0 * (step / 4.0).tan();
+    let on = |t: f64| center + Vec2::new(t.cos(), t.sin()) * r;
+    let tangent = |t: f64| Vec2::new(-t.sin(), t.cos()) * r;
+    let mut path = tracedraw_core::BezPath::new();
+    path.move_to(a);
+    for i in 0..n {
+        let t0 = from + step * i as f64;
+        let t1 = t0 + step;
+        let p0 = if i == 0 { a } else { on(t0) };
+        let p1 = if i + 1 == n { b } else { on(t1) };
+        path.curve_to(p0 + tangent(t0) * k, p1 - tangent(t1) * k, p1);
+    }
+    Some(path)
 }
 
 #[cfg(test)]

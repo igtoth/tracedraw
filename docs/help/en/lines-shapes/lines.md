@@ -77,9 +77,11 @@ finish. Hold <kbd>Ctrl</kbd> to keep each segment to steps of 15 degrees.
 
 The [[tool.three_point_curve]] tool draws an arc through three points:
 
-1. Drag from where the curve starts to where it ends.
+1. Drag from where the curve starts to where it ends. Hold <kbd>Ctrl</kbd>
+   to keep this line to steps of 15 degrees, for a level arc.
 2. Move the pointer to bend the curve, and click the point it passes
-   through.
+   through. Hold <kbd>Ctrl</kbd> for a bow, a part of a circle that stands
+   evenly on the line.
 
 ## Continuing a curve {#continue}
 

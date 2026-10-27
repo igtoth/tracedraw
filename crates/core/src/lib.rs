@@ -42,11 +42,11 @@ pub use command::Command;
 pub use document::{
     merge_equal_spans, spans_apply, spans_char_count, spans_delete, spans_insert, spans_text,
     split_spans_at, Baseline, BitmapEffect, BitmapFxStack, ColorStyle, CornerKind, Corners,
-    DefaultKind, DefaultProperties, Document, DocumentFont, DocumentProfile, EllipseArc, Layer,
-    LeadingUnit, MasterScope, Metadata, ObjectDefaults, ObjectStyle, Page, ParagraphStyle,
-    PathTextOrientation, PathTextVertical, QrCode, QrKind, Shadow, Shape, ShapeKind, StyleParts,
-    Symbol, Table, TableCell, TextAlign, TextOnPath, TextSpan, TimeTracker, TrackedTask,
-    VerticalAlign,
+    DefaultKind, DefaultProperties, Document, DocumentFont, DocumentProfile, EllipseArc,
+    FontVariation, Layer, LeadingUnit, MasterScope, Metadata, ObjectDefaults, ObjectStyle, Page,
+    ParagraphStyle, PathTextOrientation, PathTextVertical, QrCode, QrKind, Shadow, Shape,
+    ShapeKind, StyleParts, Symbol, Table, TableCell, TextAlign, TextOnPath, TextSpan, TimeTracker,
+    TrackedTask, VerticalAlign,
 };
 pub use engine::Engine;
 pub use geometry::{Affine, BezPath, Point, Rect, Size, Vec2};

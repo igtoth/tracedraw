@@ -139,7 +139,9 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
             false,
             Color32::BLACK,
         );
-        let preview = three_point_preview(app.tool, a, b, c);
+        let mods = painter.ctx().input(|i| i.modifiers);
+        let arc = app.tool == Tool::ThreePointCurve && app.constrain_held(&mods);
+        let preview = three_point_preview(app.tool, a, b, c, arc);
         for (pts, closed) in flatten(&preview, view) {
             if pts.len() > 1 {
                 haloed_polyline(painter, &pts, closed, Color32::BLACK);
@@ -831,25 +833,16 @@ fn three_point_preview(
     a: Point,
     b: Point,
     c: Point,
+    arc: bool,
 ) -> tracedraw_core::geometry::BezPath {
-    use tracedraw_core::geometry::{BezPath, Vec2};
+    use tracedraw_core::geometry::Vec2;
     let base = b - a;
     let len = base.hypot().max(1e-6);
     let dir = base / len;
     let normal = Vec2::new(-dir.y, dir.x);
     let height = (c - a).dot(normal);
     match tool {
-        Tool::ThreePointCurve => {
-            let ctrl = Point::new(2.0 * c.x - 0.5 * (a.x + b.x), 2.0 * c.y - 0.5 * (a.y + b.y));
-            let mut p = BezPath::new();
-            p.move_to(a);
-            p.curve_to(
-                a + (ctrl - a) * (2.0 / 3.0),
-                b + (ctrl - b) * (2.0 / 3.0),
-                b,
-            );
-            p
-        }
+        Tool::ThreePointCurve => crate::app::three_point_curve(a, b, c, arc),
         _ => {
             let local = Rect::new(0.0, height.min(0.0), len, height.max(0.0));
             let t = Affine::translate(a.to_vec2()) * Affine::rotate(base.atan2());

@@ -51,7 +51,8 @@ corners at once.
 
 The [[tool.three_point_rectangle]] tool draws a rectangle at an angle:
 
-1. Drag to draw the base line, at any angle.
+1. Drag to draw the base line, at any angle (hold <kbd>Ctrl</kbd> for steps
+   of 15 degrees).
 2. Move the pointer to set the height and click.
 
 ## Ellipse {#ellipse}
@@ -68,7 +69,8 @@ right) and the direction. You can also drag the node of an ellipse with the
 
 The [[tool.three_point_ellipse]] tool draws an ellipse at an angle:
 
-1. Drag to draw the center line of the ellipse, at any angle.
+1. Drag to draw the center line of the ellipse, at any angle (hold
+   <kbd>Ctrl</kbd> for steps of 15 degrees).
 2. Move the pointer to set the height and click.
 
 ## The Corners panel {#corners}
