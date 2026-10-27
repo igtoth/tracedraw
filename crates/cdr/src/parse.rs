@@ -45,6 +45,17 @@ impl ParseReport {
     }
 }
 
+/// Steps of a blend read from a file whose step count field holds no
+/// plausible count: the default of the program that saves them, which
+/// both sample files hold (#980).
+const BLEND_DEFAULT_STEPS: u32 = 20;
+
+/// The most steps all the blends of one file take together: 5000 blends
+/// of the default 20 steps. Each step is drawn from its own outline, so
+/// without a bound a file of many blends could take all the memory
+/// (#980).
+const FILE_BLEND_STEPS: u32 = 100_000;
+
 /// Farther than this from (0, 0), the coordinates of artistic text are
 /// not a place (see `build_text`).
 const MAX_TEXT_ORIGIN_MM: f64 = 10_000.0;
@@ -375,6 +386,8 @@ struct Ctx<'a> {
     v3_fonts: Vec<String>,
     v3_effect_warned: bool,
     stand_in_warned: bool,
+    /// Blend steps the file's blends may still take together (#980).
+    blend_steps_left: u32,
     /// Guidelines of the page being read (objects of type 0x16).
     guides: Vec<tracedraw_core::document::Guide>,
     /// The last object read was a guideline, not a skipped object.
@@ -450,6 +463,7 @@ impl<'a> Ctx<'a> {
             v3_fonts: Vec::new(),
             v3_effect_warned: false,
             stand_in_warned: false,
+            blend_steps_left: FILE_BLEND_STEPS,
             pending_on_path: None,
             on_path: HashMap::new(),
             pending_text_transform: None,
@@ -2675,9 +2689,15 @@ impl<'a> Ctx<'a> {
 
     /// The step count of a blend's linked group (`LIST lnkg` whose own
     /// `lgob` holds a `loda` of object type 7): the first u32 of its
-    /// argument of type 3000, kept to 1..=999. `None` for other linked
-    /// groups (a contour's is of type 15). Read from two files saved by
-    /// versions 9 and 13 with the default 20 steps (see CLEANROOM.md).
+    /// argument of type 3000. `None` for other linked groups (a contour's
+    /// is of type 15). Read from two files saved by versions 9 and 13 with
+    /// the default 20 steps (see CLEANROOM.md).
+    ///
+    /// A value outside 1..=999 is no step count the program can save: the
+    /// field holds something else in this file (another version's layout),
+    /// so the blend gets the default 20 steps with a warning naming the
+    /// value. It used to be kept to 999, which drew such blends with 999
+    /// steps each and could take all the memory (#980).
     fn blend_steps(&mut self, group: &Chunk) -> Option<u32> {
         let lgob = group.children.iter().find(|k| k.is(b"lgob"))?;
         let loda = lgob.children.iter().find(|k| k.is(b"loda"))?;
@@ -2687,8 +2707,38 @@ impl<'a> Ctx<'a> {
             return None;
         }
         let arg = l.args.iter().find(|a| a.ty == 3000)?;
-        let steps = self.reader_at(d, arg.off).uint()?;
-        Some(steps.clamp(1, 999))
+        let raw = self.reader_at(d, arg.off).uint();
+        Some(match raw {
+            Some(n @ 1..=tracedraw_core::live::MAX_BLEND_STEPS) => n,
+            other => {
+                let value = other.map_or_else(|| "nothing".to_owned(), |n| n.to_string());
+                log::warn!(
+                    "blend step count of a version {} file reads {value}; {BLEND_DEFAULT_STEPS} steps used",
+                    self.v
+                );
+                self.report.warn(format!(
+                    "a blend's step count reads {value}, not 1 to {}; drawn with {BLEND_DEFAULT_STEPS} steps",
+                    tracedraw_core::live::MAX_BLEND_STEPS
+                ));
+                BLEND_DEFAULT_STEPS
+            }
+        })
+    }
+
+    /// `steps` for the next blend of the file, within what the file's
+    /// blends may still take together ([`FILE_BLEND_STEPS`]); past that
+    /// each blend gets one step, with a warning, so a file of thousands
+    /// of blends opens without filling the memory (#980).
+    fn budget_blend_steps(&mut self, steps: u32) -> u32 {
+        let granted = steps.min(self.blend_steps_left).max(1);
+        if granted < steps {
+            log::warn!("blend steps past {FILE_BLEND_STEPS} in one file; a blend drawn with {granted} of its {steps}");
+            self.report.warn(format!(
+                "the file's blends ask for more than {FILE_BLEND_STEPS} steps together; the later ones are drawn with fewer"
+            ));
+        }
+        self.blend_steps_left = self.blend_steps_left.saturating_sub(granted);
+        granted
     }
 
     /// `obj `: one object, built from its `loda` (attributes) and `trfd`.
@@ -3110,6 +3160,7 @@ impl<'a> Ctx<'a> {
                 // holding the step count (#597).
                 if out.len() == before {
                     if let Some(steps) = self.blend_steps(c) {
+                        let steps = self.budget_blend_steps(steps);
                         blends.push((before, steps));
                     }
                 }
@@ -6875,6 +6926,109 @@ mod tests {
         t.push(1); // path data per letter
         t.extend_from_slice(&vec![0; 24 * text.len()]);
         t
+    }
+
+    /// Blends between ellipses in a version `v` file, one linked group of
+    /// object type 7 with the given first u32 of its 3000 argument each:
+    /// the step count of each live blend read, and the report.
+    fn read_blends(v: u16, counts: &[u32]) -> (Vec<u32>, ParseReport) {
+        let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
+        let ellipse = |x: i32| {
+            let mut c = i32s(&[x, -100_000, x + 200_000, 100_000]);
+            c.extend_from_slice(&u32s(&[0]));
+            list(
+                b"obj ",
+                &[
+                    chunk(b"loda", &loda(OBJ_ELLIPSE, &[(ARG_COORDS, c)])),
+                    chunk(b"trfd", &trfd(v, identity)),
+                ]
+                .concat(),
+            )
+        };
+        let group = |steps: u32| {
+            let mut a = u32s(&[steps, 254_000]);
+            a.extend_from_slice(&[0; 80]);
+            list(
+                b"lnkg",
+                &list(
+                    b"lgob",
+                    &chunk(b"loda", &loda(7, &[(12020, u32s(&[2, 0, 0])), (3000, a)])),
+                ),
+            )
+        };
+        let mut objects = Vec::new();
+        for &n in counts {
+            objects.extend(ellipse(0));
+            objects.extend(group(n));
+            objects.extend(ellipse(600_000));
+        }
+        let body = [
+            chunk(b"mcfg", &mcfg(v, 2_540_000, 2_540_000)),
+            list(b"page", &list(b"layr", &objects)),
+        ]
+        .concat();
+        let (doc, rep) = parse(&riff(b"CDRD", &body), v);
+        // The layer lists its objects from the top, the file from the
+        // bottom: in file order.
+        let steps = doc.pages[0].layers[0]
+            .shapes
+            .iter()
+            .rev()
+            .flat_map(|s| &s.effects)
+            .filter_map(|e| match e {
+                tracedraw_core::live::Effect::Blend { steps, .. } => Some(*steps),
+                _ => None,
+            })
+            .collect();
+        (steps, rep)
+    }
+
+    /// A step count field holding no count a blend can have (0, or the
+    /// 254000 that follows it in the sample files, as another layout
+    /// would put there) gives the default 20 steps and a warning naming
+    /// the value; it was kept to 999, so such files drew every blend with
+    /// 999 steps (#980). Counts of 1 to 999 are kept as read.
+    #[test]
+    fn a_blend_step_count_out_of_range_gives_the_default() {
+        for v in [9u16, 13, 15] {
+            let (steps, rep) = read_blends(v, &[254_000, 0, u32::MAX, 1, 999, 35]);
+            assert_eq!(steps, [20, 20, 20, 1, 999, 35], "version {v}");
+            assert!(
+                rep.warnings.iter().any(|w| w.contains("254000")),
+                "{:?}",
+                rep.warnings
+            );
+            let (_, rep) = read_blends(v, &[20, 400]);
+            assert!(
+                !rep.warnings.iter().any(|w| w.contains("blend")),
+                "{:?}",
+                rep.warnings
+            );
+        }
+    }
+
+    /// The blends of one file take at most `FILE_BLEND_STEPS` steps
+    /// together; the blend that crosses it gets what is left, later ones
+    /// one step, with a warning (#980).
+    #[test]
+    fn the_blends_of_a_file_share_a_bound_on_steps() {
+        let per = 999u32;
+        let full = (FILE_BLEND_STEPS / per) as usize;
+        let mut counts = vec![per; full + 2];
+        counts.push(5);
+        let (steps, rep) = read_blends(13, &counts);
+        assert_eq!(steps.len(), counts.len());
+        assert!(steps[..full].iter().all(|n| *n == per));
+        assert_eq!(steps[full], FILE_BLEND_STEPS - full as u32 * per);
+        assert_eq!(&steps[full + 1..], [1, 1]);
+        assert!(
+            rep.warnings.iter().any(|w| w.contains("fewer")),
+            "{:?}",
+            rep.warnings
+        );
+        let (steps, rep) = read_blends(13, &[20; 50]);
+        assert_eq!(steps, [20; 50]);
+        assert!(rep.warnings.is_empty(), "{:?}", rep.warnings);
     }
 
     /// A blend as versions 9 and 13 store it: the two end objects with an

@@ -14,6 +14,9 @@ Intermediate objects between a start and an end object.
 | Apply to sizing | off | the object acceleration changes the steps' sizes too |
 | Color blend | Direct | Direct (straight through RGB), Clockwise (hue increasing), Counterclockwise (hue decreasing), through HSB |
 
+A blend asking for more than 999 steps (from a file or a script) draws
+999 (`tracedraw_core::live::tests::a_blend_draws_at_most_its_maximum_steps`, #980).
+
 Not yet: mapping nodes, splitting and fusing.
 
 ## Panel (Effects > Blend)

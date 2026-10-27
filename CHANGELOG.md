@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Opening `.cdr`: a blend whose step count the file does not hold where expected opens with 20 steps and a warning naming the value read, instead of 999 steps, and the blends of one file take at most 100000 steps together, so files with many blends open without filling the memory. A blend never draws more than 999 steps, whatever asks for them (#980).
 - Tracing: the grain of photos and compressed images is taken out before the colours are picked (more at lower detail, none at the highest), so flat colours no longer come out full of white holes, scratches and specks, and the trace has far fewer curves; edges and corners keep their place (#611).
 - Text fitted to a path: with the Pick tool the property bar shows the path's own fields (placement with Top centre and Bottom centre, distance from the path, the two mirrors, Straighten Text) before the text fields, so text on the bottom of a circle can be turned to read left to right, as on a stamp. The text fields came first and hid them (#193).
 
