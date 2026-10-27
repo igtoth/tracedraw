@@ -268,7 +268,11 @@ bar move (`ui/bars.rs`).
   toolbox, the colour palette, the AI prompt bar, the status bar, the
   Text, Zoom and Transform toolbars, the time tracker); Customize; Lock
   Toolbars and Reset Bar Positions. Window > Toolbars has the same list,
-  Lock Toolbars and Reset Bar Positions.
+  Lock Toolbars and Reset Bar Positions. A right click on the buttons and
+  boxes of a toolbar, docked or floating, opens the same menu (#835). The
+  menu stays open after the button comes up, until an entry is picked, a
+  click lands outside it or Esc is pressed; each click opens one menu,
+  shown once a frame (`pick_drag_tests::a_right_click_on_any_toolbar_keeps_the_bar_menu_open`, #994).
 - Customize holds: Default Button Size (Small, Medium, Large, Small at
   first: the buttons of every bar are 24, 32 or 40 px square, the
   property bar's 21, 28 or 35; `settings.button_size`, `theme::set_button_sizes`); Toolbox

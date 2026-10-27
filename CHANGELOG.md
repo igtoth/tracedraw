@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Toolbars: a right click on the empty part of a docked toolbar opens its menu and keeps it open until an entry is picked or you click elsewhere; the menu showed and closed at once. A right click on the buttons of a floating toolbar opens the menu too (#994).
 - Opening `.cdr`: a blend whose step count the file does not hold where expected opens with 20 steps and a warning naming the value read, instead of 999 steps, and the blends of one file take at most 100000 steps together, so files with many blends open without filling the memory. A blend never draws more than 999 steps, whatever asks for them (#980).
 - Shaping: Trim with an open curve (a line, a polyline or a curve) crossing a closed object cuts the object along it into separate pieces, each keeping the object's fill and outline; several curves make more pieces, and a curve that ends inside cuts nothing and the status bar says so. The object came back whole. Front Minus Back and Back Minus Front split along open curves the same way (#1005).
 - Tracing: the grain of photos and compressed images is taken out before the colours are picked (more at lower detail, none at the highest), so flat colours no longer come out full of white holes, scratches and specks, and the trace has far fewer curves; edges and corners keep their place (#611).
