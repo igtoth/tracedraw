@@ -1090,21 +1090,38 @@ impl Renderer<'_> {
     /// filled with the shadow colour, feathered, faded along a
     /// perspective shadow and merged with what is beneath.
     fn draw_drop_shadow(&mut self, sh: &tracedraw_core::Shadow, page_path: &BezPath) {
-        let (w, h) = (self.pixmap.width(), self.pixmap.height());
-        let Some(mut layer) = Pixmap::new(w, h) else {
+        let b = page_path.bounding_box();
+        let Some((layer_at, mut layer, screen)) = self.shadow_target(sh, b) else {
             return;
         };
         if !shadow_layer(
             &mut layer,
             sh,
             page_path,
-            self.screen,
+            screen,
             self.zoom,
             self.flags.anti_alias,
         ) {
             return;
         }
-        self.merge_shadow(sh, &layer);
+        self.merge_shadow(sh, &layer, layer_at);
+    }
+
+    /// The layer a drop shadow measured on box `b` is painted on: only
+    /// the pixels of the target it can reach (see [`shadow_pixels`]),
+    /// with where it sits on the target and the page-to-layer map. A
+    /// layer the size of the whole target made every frame of a shadow
+    /// drag blur and shade the whole window (#935).
+    fn shadow_target(
+        &self,
+        sh: &tracedraw_core::Shadow,
+        b: Rect,
+    ) -> Option<((i32, i32), Pixmap, Affine)> {
+        let (w, h) = (self.pixmap.width(), self.pixmap.height());
+        let (x, y, lw, lh) = shadow_pixels(sh, b, self.screen, self.zoom, w, h)?;
+        let layer = Pixmap::new(lw, lh)?;
+        let screen = Affine::translate((-f64::from(x), -f64::from(y))) * self.screen;
+        Some(((x, y), layer, screen))
     }
 
     /// The drop shadow of a group or a clip frame drawn inside `parent`:
@@ -1112,31 +1129,34 @@ impl Renderer<'_> {
     /// returned before their own shadow was drawn, so a shadow given to a
     /// clip frame or a group never showed (#873).
     fn draw_group_shadow(&mut self, sh: &tracedraw_core::Shadow, shape: &Shape, parent: Affine) {
-        let (w, h) = (self.pixmap.width(), self.pixmap.height());
-        let Some(mut layer) = Pixmap::new(w, h) else {
+        let Some(b) = group_shadow_box(shape, parent) else {
             return;
         };
-        if group_shadow_layer(
+        let Some((layer_at, mut layer, screen)) = self.shadow_target(sh, b) else {
+            return;
+        };
+        group_shadow_layer(
             &mut layer,
             sh,
             shape,
             parent,
-            self.screen,
+            b,
+            screen,
             self.zoom,
             self.flags.anti_alias,
-        ) {
-            self.merge_shadow(sh, &layer);
-        }
+        );
+        self.merge_shadow(sh, &layer, layer_at);
     }
 
-    /// Merge a finished shadow layer with what lies beneath.
-    fn merge_shadow(&mut self, sh: &tracedraw_core::Shadow, layer: &Pixmap) {
+    /// Merge a finished shadow layer, its top left at `at` on the
+    /// target, with what lies beneath.
+    fn merge_shadow(&mut self, sh: &tracedraw_core::Shadow, layer: &Pixmap, at: (i32, i32)) {
         let pp = tiny_skia::PixmapPaint {
             blend_mode: merge_blend(sh.merge),
             ..Default::default()
         };
         self.pixmap
-            .draw_pixmap(0, 0, layer.as_ref(), &pp, Transform::identity(), None);
+            .draw_pixmap(at.0, at.1, layer.as_ref(), &pp, Transform::identity(), None);
     }
 
     /// A one pixel line along `sk` (the Wireframe view).
@@ -2065,23 +2085,83 @@ fn shadow_layer(
 /// a clip frame's contents cut to its frame (#873), not the outline of
 /// the whole. The shadow is measured on the object's box, as the Drop
 /// Shadow tool measures it.
+#[allow(clippy::too_many_arguments)]
 fn group_shadow_layer(
     layer: &mut Pixmap,
     sh: &tracedraw_core::Shadow,
     shape: &Shape,
     parent: Affine,
+    b: Rect,
     screen: Affine,
     zoom: f64,
     anti_alias: bool,
-) -> bool {
-    let b = (parent * shape.page_path()).bounding_box();
-    if !(b.width().is_finite() && b.height().is_finite()) {
-        return false;
-    }
+) {
     let to_screen = screen * sh.silhouette_transform(b) * parent;
     fill_silhouette(layer, shape, to_screen, None, anti_alias);
     shade_shadow(layer, sh, b, screen, zoom);
-    true
+}
+
+/// The box the shadow of a group or a clip frame drawn inside `parent`
+/// is measured on; `None` when it is not finite.
+fn group_shadow_box(shape: &Shape, parent: Affine) -> Option<Rect> {
+    let b = (parent * shape.page_path()).bounding_box();
+    (b.width().is_finite() && b.height().is_finite()).then_some(b)
+}
+
+/// The pixels of a `w` x `h` target that the shadow `sh` of an object
+/// measured on box `b` can reach through `screen` (`zoom` pixels per
+/// millimetre): the moved or sheared box, widened by the three blur
+/// passes and a pixel of smoothing, as left, top, width and height.
+/// Pixels beyond stay clear on a layer of any size, so the shadow drawn
+/// on a layer of only these is the same as on one the size of the target
+/// (a blur clamps at the target's own edges, which this keeps). `None`
+/// when it covers no pixel of the target.
+fn shadow_pixels(
+    sh: &tracedraw_core::Shadow,
+    b: Rect,
+    screen: Affine,
+    zoom: f64,
+    w: u32,
+    h: u32,
+) -> Option<(i32, i32, u32, u32)> {
+    let (w, h) = (f64::from(w), f64::from(h));
+    let flat = tracedraw_core::Shadow { blur: 0.0, ..*sh }.bounds(b);
+    let corners = [
+        Point::new(flat.x0, flat.y0),
+        Point::new(flat.x1, flat.y0),
+        Point::new(flat.x0, flat.y1),
+        Point::new(flat.x1, flat.y1),
+    ]
+    .map(|p| screen * p);
+    let (mut x0, mut y0) = (f64::INFINITY, f64::INFINITY);
+    let (mut x1, mut y1) = (f64::NEG_INFINITY, f64::NEG_INFINITY);
+    for c in corners {
+        (x0, x1) = (x0.min(c.x), x1.max(c.x));
+        (y0, y1) = (y0.min(c.y), y1.max(c.y));
+    }
+    let blur = if sh.blur.is_finite() { sh.blur } else { 0.0 };
+    let radius = (blur * zoom).round().max(0.0);
+    // Three box passes reach three radii; Average's one pass of 1.7
+    // radii less. Two more pixels for the smoothed edge and rounding.
+    let reach = radius * 3.0 + 2.0;
+    if !(x0.is_finite() && x1.is_finite() && y0.is_finite() && y1.is_finite() && reach.is_finite())
+    {
+        // Nothing to measure by: the whole target, as before.
+        return Some((0, 0, w as u32, h as u32));
+    }
+    let left = (x0 - reach).floor().clamp(0.0, w);
+    let right = (x1 + reach).ceil().clamp(0.0, w);
+    let top = (y0 - reach).floor().clamp(0.0, h);
+    let bottom = (y1 + reach).ceil().clamp(0.0, h);
+    if right <= left || bottom <= top {
+        return None;
+    }
+    Some((
+        left as i32,
+        top as i32,
+        (right - left) as u32,
+        (bottom - top) as u32,
+    ))
 }
 
 /// Fill in white what `shape` covers, its parent's space taken to the
@@ -2239,7 +2319,13 @@ pub fn render_shadow_image(shape: &Shape, dpi: f64) -> Option<(Rect, Pixmap)> {
         shape.kind,
         ShapeKind::Group { .. } | ShapeKind::ClipFrame { .. }
     ) {
-        group_shadow_layer(&mut pm, sh, shape, Affine::IDENTITY, screen, zoom, true)
+        match group_shadow_box(shape, Affine::IDENTITY) {
+            Some(b) => {
+                group_shadow_layer(&mut pm, sh, shape, Affine::IDENTITY, b, screen, zoom, true);
+                true
+            }
+            None => false,
+        }
     } else {
         shadow_layer(&mut pm, sh, &path, screen, zoom, true)
     };
@@ -4144,6 +4230,179 @@ mod tests {
         assert!(p.red() < 100, "red was {}", p.red());
         let far = img.pixel(2, 2).unwrap();
         assert_eq!(far.red(), 255);
+    }
+
+    /// A drop shadow is painted on a layer of only the pixels it can
+    /// reach, which a drag redraws every frame (#935): the picture is
+    /// the same, pixel for pixel, as with a layer the size of the whole
+    /// window, for flat and perspective shadows, every feather
+    /// direction, merge modes over a filled object, shadows running off
+    /// the window's edges, and a group's shadow.
+    #[test]
+    fn shadows_on_their_own_pixels_match_a_layer_of_the_whole_window() {
+        use tracedraw_core::live::MergeMode;
+        use tracedraw_core::shadow::{FeatherDirection, Perspective, ShadowEdge};
+        use tracedraw_core::Shadow;
+        let opts = RenderOptions {
+            width: 240,
+            height: 180,
+            view: ViewTransform {
+                zoom: 3.0,
+                origin_x: -15.0,
+                origin_y: 200.0,
+            },
+            ..Default::default()
+        };
+        let screen = opts.view.affine();
+        let rect = |doc: &mut Document, r: Rect, fill: Fill| {
+            let mut s = Shape::new(
+                doc.ids_mut().shape(),
+                ShapeKind::Rect {
+                    rect: r,
+                    radius: 0.0,
+                    corners: None,
+                },
+            );
+            s.fill = fill;
+            s.stroke = None;
+            s
+        };
+        let flat = |dx: f64, dy: f64, blur: f64, dir: FeatherDirection, merge: MergeMode| Shadow {
+            offset: tracedraw_core::geometry::Vec2::new(dx, dy),
+            opacity: 0.7,
+            blur,
+            color: Color::rgb8(20, 40, 160),
+            merge,
+            feather_direction: dir,
+            ..Default::default()
+        };
+        let mut floor = flat(0.0, 0.0, 2.0, FeatherDirection::Middle, MergeMode::Multiply);
+        floor.perspective = Some(Perspective {
+            fade: 0.6,
+            ..Perspective::new(ShadowEdge::Bottom)
+        });
+        let body = Rect::new(30.0, 30.0, 50.0, 60.0);
+        let cases = [
+            (
+                body,
+                flat(
+                    6.0,
+                    -4.0,
+                    1.5,
+                    FeatherDirection::Middle,
+                    MergeMode::Multiply,
+                ),
+            ),
+            (
+                body,
+                flat(3.0, 3.0, 2.5, FeatherDirection::Outside, MergeMode::Normal),
+            ),
+            (
+                body,
+                flat(
+                    -4.0,
+                    -2.0,
+                    3.0,
+                    FeatherDirection::Average,
+                    MergeMode::Difference,
+                ),
+            ),
+            (
+                Rect::new(40.0, 40.0, 60.0, 50.0),
+                flat(2.0, 2.0, 1.0, FeatherDirection::Inside, MergeMode::Add),
+            ),
+            (body, floor),
+            // Off the window's left and top edges.
+            (
+                Rect::new(0.0, 55.0, 15.0, 70.0),
+                flat(
+                    -3.0,
+                    3.0,
+                    4.0,
+                    FeatherDirection::Middle,
+                    MergeMode::Multiply,
+                ),
+            ),
+            // Off the right and bottom edges, unfeathered.
+            (
+                Rect::new(75.0, 5.0, 90.0, 20.0),
+                flat(4.0, -4.0, 0.0, FeatherDirection::Middle, MergeMode::Normal),
+            ),
+        ];
+        for (k, (r, sh)) in cases.into_iter().enumerate() {
+            for group in [false, true] {
+                let mut doc = Document::new("t", tracedraw_core::geometry::Size::new(100.0, 100.0));
+                let layer = doc.pages[0].layers[0].id;
+                // A filled object beneath, so the merge mode tells.
+                let under = rect(
+                    &mut doc,
+                    Rect::new(20.0, 20.0, 90.0, 140.0),
+                    Fill::Solid(Color::rgb8(230, 180, 40)),
+                );
+                // The shadowed object draws nothing itself, so only its
+                // shadow lies over what is beneath.
+                let mut top = rect(&mut doc, r, Fill::None);
+                if group {
+                    let second = rect(
+                        &mut doc,
+                        Rect::new(r.x0 + 2.0, r.y1 + 3.0, r.x1, r.y1 + 9.0),
+                        Fill::None,
+                    );
+                    top = Shape::new(
+                        doc.ids_mut().shape(),
+                        ShapeKind::Group {
+                            children: vec![top, second],
+                        },
+                    );
+                    top.fill = Fill::None;
+                    top.stroke = None;
+                }
+                let mut without = doc.clone();
+                without.layer_mut(layer).unwrap().shapes = vec![under.clone(), top.clone()];
+                top.shadow = Some(sh);
+                let shadowed = top.clone();
+                doc.layer_mut(layer).unwrap().shapes = vec![under, top];
+                let page = doc.pages[0].id;
+                let drawn = render_page(&doc, page, &opts).expect("render");
+                let plain = render_page(&without, page, &opts).expect("render");
+                // The reference: a layer the size of the window.
+                let mut expected = plain.clone();
+                let mut full = Pixmap::new(opts.width, opts.height).expect("layer");
+                let zoom = opts.view.zoom;
+                if group {
+                    let b = group_shadow_box(&shadowed, Affine::IDENTITY).expect("box");
+                    group_shadow_layer(
+                        &mut full,
+                        &sh,
+                        &shadowed,
+                        Affine::IDENTITY,
+                        b,
+                        screen,
+                        zoom,
+                        true,
+                    );
+                } else {
+                    let path = shadowed.page_path();
+                    assert!(shadow_layer(&mut full, &sh, &path, screen, zoom, true));
+                }
+                let pp = tiny_skia::PixmapPaint {
+                    blend_mode: merge_blend(sh.merge),
+                    ..Default::default()
+                };
+                expected.draw_pixmap(0, 0, full.as_ref(), &pp, Transform::identity(), None);
+                assert!(drawn.data() == expected.data(), "case {k}, group {group}");
+                // And the shadow shows at all.
+                assert!(drawn.data() != plain.data(), "case {k}, group {group}");
+            }
+        }
+        // A shadow wholly outside the window paints nothing and takes no layer.
+        let sh = flat(500.0, 0.0, 1.0, FeatherDirection::Middle, MergeMode::Normal);
+        assert_eq!(shadow_pixels(&sh, body, screen, 3.0, 240, 180), None);
+        // A small one takes a small layer.
+        let sh = flat(2.0, -2.0, 1.0, FeatherDirection::Middle, MergeMode::Normal);
+        let small = Rect::new(30.0, 30.0, 40.0, 40.0);
+        let (_, _, w, h) = shadow_pixels(&sh, small, screen, 3.0, 240, 180).expect("pixels");
+        assert!(w < 60 && h < 60, "{w} x {h}");
     }
 
     /// A clip frame and a group with a shadow of their own draw it: the

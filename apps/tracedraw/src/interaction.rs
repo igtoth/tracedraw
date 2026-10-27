@@ -337,6 +337,32 @@ impl App {
         None
     }
 
+    /// What a click at `p` picks: the topmost object there, or an object
+    /// whose drop shadow lies at `p` over whatever is beneath it (a
+    /// shadow draws above the objects under its own), so a shadow is
+    /// picked for editing with its object (#935). In focus mode and
+    /// while a symmetry is edited, as [`Self::hit_test`].
+    pub fn pick_at(&self, p: Point) -> Option<ShapeId> {
+        let hit = self.hit_test(p);
+        if self.focus_shape_on_page().is_some() || self.symmetry_edit.is_some() {
+            return hit;
+        }
+        self.page_layers()
+            .into_iter()
+            .rev()
+            .filter(|l| l.visible && !l.locked)
+            .flat_map(|l| l.shapes.iter().rev())
+            .filter(|s| !s.locked && s.visible && !self.outside_clip_edit(s.id))
+            .find_map(|s| {
+                if Some(s.id) == hit {
+                    hit
+                } else {
+                    crate::shadow_tool::shadow_covers(s, p).then_some(s.id)
+                }
+            })
+            .or(hit)
+    }
+
     /// `s` (in page space) is under `p` within `tol` page units: text,
     /// groups, tables, bitmaps, clip frames and symbols anywhere in their
     /// box; filled objects inside their shape (an open curve only when the
@@ -487,10 +513,11 @@ impl App {
         chain.get(next.min(chain.len().saturating_sub(1))).copied()
     }
 
-    /// The topmost object at `p` and the objects inside it under `p`, one
+    /// The topmost object at `p` (or the one whose drop shadow is there,
+    /// see [`Self::pick_at`]) and the objects inside it under `p`, one
     /// group level further in each, down to the innermost one.
     fn hit_chain(&self, p: Point) -> Vec<ShapeId> {
-        let Some(top) = self.hit_test(p) else {
+        let Some(top) = self.pick_at(p) else {
             return Vec::new();
         };
         let tol = 3.0 / self.view.zoom as f64;
@@ -635,7 +662,7 @@ impl App {
         let hit = if mods.ctrl {
             self.hit_test_step(p)
         } else {
-            self.hit_test(p)
+            self.pick_at(p)
         };
         match hit {
             Some(id) if mods.shift => {
@@ -1145,7 +1172,16 @@ impl App {
                         .map(|o| self.view.to_page(o))
                         .unwrap_or(p);
                     if let Some(handle) = self.shadow_handle_at(press) {
-                        self.drag = Drag::ShadowHandle { handle };
+                        self.drag = Drag::ShadowHandle {
+                            handle,
+                            grab: Vec2::ZERO,
+                        };
+                    } else if let Some(grab) = self.grab_shadow(press) {
+                        // On the shadow itself: it moves with the pointer.
+                        self.drag = Drag::ShadowHandle {
+                            handle: crate::shadow_tool::ShadowHandle::End,
+                            grab,
+                        };
                     } else if let Some(id) = self.hit_test(press) {
                         self.select(vec![id]);
                         self.drag = Drag::Shadow {
@@ -1161,7 +1197,9 @@ impl App {
                             self.drag_new_shadow(shape, start, p, first);
                             self.drag = Drag::Shadow { shape, start };
                         }
-                        Drag::ShadowHandle { handle } => self.drag_shadow_handle(handle, p),
+                        Drag::ShadowHandle { handle, grab } => {
+                            self.drag_shadow_handle(handle, p + grab)
+                        }
                         _ => {}
                     }
                 }
@@ -1169,7 +1207,7 @@ impl App {
                     if self.shadow_handle_at(p).is_some() {
                         return;
                     }
-                    match self.hit_test(p) {
+                    match self.pick_at(p) {
                         Some(id) => self.select(vec![id]),
                         None => self.select(Vec::new()),
                     }
@@ -1484,7 +1522,7 @@ impl App {
             let hit = if mods.ctrl {
                 self.hit_test_step(p)
             } else {
-                self.hit_test(p)
+                self.pick_at(p)
             };
             match hit {
                 Some(id) if mods.shift => {

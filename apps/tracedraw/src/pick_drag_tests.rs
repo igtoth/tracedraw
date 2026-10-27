@@ -9930,3 +9930,154 @@ fn the_print_layout_tab_has_the_paper_margins() {
     let layout = crate::export::print_layout(&app, st, app.doc());
     assert_eq!(layout.paper_margins[0], 7.0);
 }
+
+/// Dragging a drop shadow out of an object (#935): it followed the
+/// pointer slowly and in jerks in the browser, where the page is drawn on
+/// the window's own thread. Times the drag step, the frame and the page
+/// render of each move.
+/// `cargo test --release -p tracedraw -- --ignored frame_times_of_a_shadow_drag --nocapture`.
+#[test]
+#[ignore]
+fn frame_times_of_a_shadow_drag() {
+    let (ctx, mut app, id) = setup();
+    app.set_tool(Tool::DropShadow);
+    app.select(vec![id]);
+    let b = app.doc().shape(id).expect("rect").1.bounds();
+    let start = app.view.to_screen(b.center());
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::PointerMoved(start)],
+        Modifiers::NONE,
+    );
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(start, true, PointerButton::Primary, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    let ppp = ctx.pixels_per_point();
+    let rect = app.canvas_rect;
+    let opts = |app: &App| tracedraw_render::RenderOptions {
+        width: (rect.width() * ppp) as u32,
+        height: (rect.height() * ppp) as u32,
+        view: tracedraw_render::ViewTransform {
+            zoom: (app.view.zoom * ppp) as f64,
+            origin_x: ((app.view.origin.x - rect.min.x) * ppp) as f64,
+            origin_y: ((app.view.origin.y - rect.min.y) * ppp) as f64,
+        },
+        draft: true,
+        ..Default::default()
+    };
+    let n = 40;
+    let (mut paint, mut render) = (std::time::Duration::ZERO, std::time::Duration::ZERO);
+    for i in 1..=n {
+        let p = start + egui::vec2(i as f32 * 3.0, i as f32 * 2.0);
+        let t = std::time::Instant::now();
+        frame(
+            &ctx,
+            &mut app,
+            vec![Event::PointerMoved(p)],
+            Modifiers::NONE,
+        );
+        paint += t.elapsed();
+        let o = opts(&app);
+        let t = std::time::Instant::now();
+        let _ = tracedraw_render::render_page(app.doc(), app.page, &o);
+        render += t.elapsed();
+    }
+    let end = start + egui::vec2(n as f32 * 3.0, n as f32 * 2.0);
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(end, false, PointerButton::Primary, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    assert!(app.doc().find_shape(id).and_then(|s| s.shadow).is_some());
+    let o = opts(&app);
+    // The same page without the shadow, for comparison: what any render
+    // of this window costs.
+    let mut plain = app.doc().clone();
+    for l in plain.pages.iter_mut().flat_map(|p| p.layers.iter_mut()) {
+        for s in &mut l.shapes {
+            s.shadow = None;
+        }
+    }
+    let t = std::time::Instant::now();
+    for _ in 0..n {
+        let _ = tracedraw_render::render_page(&plain, app.page, &o);
+    }
+    let unshadowed = t.elapsed() / n;
+    eprintln!(
+        "shadow drag ({} x {} px): {:?} per frame, {:?} per page render ({:?} without the shadow)",
+        o.width,
+        o.height,
+        paint / n,
+        render / n,
+        unshadowed
+    );
+}
+
+/// A created drop shadow is picked for editing (#935): a Pick tool click
+/// on the shadow, away from its object, selects the object; with the
+/// Drop Shadow tool a click there shows its handles and a drag on it
+/// moves the whole shadow by the drag, the object staying where it is.
+#[test]
+fn a_click_on_a_drop_shadow_picks_its_object() {
+    let (ctx, mut app, id) = setup();
+    app.set_shadow(
+        Some(tracedraw_core::Shadow {
+            offset: Vec2::new(70.0, 0.0),
+            ..Default::default()
+        }),
+        false,
+    );
+    let shadow = |app: &App| app.doc().find_shape(id).and_then(|s| s.shadow);
+    let click = |ctx: &egui::Context, app: &mut App, at: Pos2| {
+        frame(ctx, app, vec![Event::PointerMoved(at)], Modifiers::NONE);
+        frame(
+            ctx,
+            app,
+            vec![button(at, true, PointerButton::Primary, Modifiers::NONE)],
+            Modifiers::NONE,
+        );
+        frame(
+            ctx,
+            app,
+            vec![button(at, false, PointerButton::Primary, Modifiers::NONE)],
+            Modifiers::NONE,
+        );
+        frame(ctx, app, Vec::new(), Modifiers::NONE);
+    };
+    // The rectangle spans 10 to 60 by 10 to 40; its shadow 80 to 130.
+    let on_shadow = app.view.to_screen(Point::new(105.0, 25.0));
+    let beside = app.view.to_screen(Point::new(170.0, 25.0));
+    click(&ctx, &mut app, beside);
+    assert!(app.selection.is_empty());
+    click(&ctx, &mut app, on_shadow);
+    assert_eq!(app.selection, vec![id]);
+    // The Drop Shadow tool: a click there selects it too, with the handles.
+    click(&ctx, &mut app, beside);
+    assert!(app.selection.is_empty());
+    app.set_tool(Tool::DropShadow);
+    click(&ctx, &mut app, on_shadow);
+    assert_eq!(app.selection, vec![id]);
+    assert!(app.selected_shadow().is_some());
+    // A drag on the shadow moves it whole.
+    let before = shadow(&app).expect("shadow").offset;
+    let zoom = app.view.zoom;
+    drag(
+        &ctx,
+        &mut app,
+        on_shadow,
+        on_shadow + egui::vec2(20.0 * zoom, -10.0 * zoom),
+        Modifiers::NONE,
+        Vec::new(),
+    );
+    let after = shadow(&app).expect("shadow").offset;
+    assert!(
+        (after.x - before.x - 20.0).abs() < 0.5 && (after.y - before.y - 10.0).abs() < 0.5,
+        "{before:?} -> {after:?}"
+    );
+    assert!(close(bounds(&app, id).x0, 10.0), "the object stays");
+}

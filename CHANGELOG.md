@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Drop shadow: making or editing a shadow follows the pointer smoothly, and a click on a shadow picks its object for editing. Each frame blurred and shaded a layer the size of the whole window for every shadow, however small; a shadow is now worked out on just the pixels it reaches, the picture unchanged, and in a 1168 x 733 window a redraw went from about 119 ms to under 10 ms. A click on the shadow with the Pick tool (or any tool that selects on a click) selects its object; with the Drop Shadow tool it shows the shadow's handles, and a drag on the shadow moves it (#935).
 - Dialogs (Outline Pen, Fill, the effect dialogs and the others) can be dragged anywhere by their title bar, also partly out of the main window, so they no longer have to cover the drawing. A dialog was held wholly inside the window, so one nearly as tall or wide as the window, as on a laptop screen, could hardly move at all; now its title bar stays below the window's top edge and at least 100 px of it stays inside the other edges. Dialogs still open centred, or where they were left with Center Dialog Boxes off (#908).
 - Pick tool: the pointer shows the move arrows only over what is selected. Over any other object it keeps the plain arrow (or the cross hair), as a press there picks that object first, so starting a marquee or picking objects that lie inside a frame or over other objects is no longer hidden under the move arrows. Dragging an unselected object still picks and moves it, and Alt+click still picks the object beneath (#885).
 
