@@ -7,6 +7,7 @@ full, row-by-row status.
 ## Unreleased
 
 - Saving as .cdr: text in a variable font keeps the weight set on its weight axis (600 reopens at 600, as the family's SemiBold face); every such text was saved at the regular or bold weight and came back at 400 or 700 (#1013).
+- Updates on Linux x86_64 download and install the x86_64 AppImage, so TraceDraw starts again after updating. The update took the first AppImage of the release, the arm64 one; now every system takes the file named for its processor and for how it was installed (AppImage, .deb, tar.gz, Windows setup or portable zip, macOS disk image), and when the release has none, Download opens the release page instead of a file for another processor (#1038).
 - Main window: with the splash screen turned off, a window left maximized opens at the size of the screen straight away; it showed at its normal size first and then grew to fill the screen (#787).
 - Menus taller than the window (such as Object on a short screen) fit inside it and scroll with the mouse wheel or the scroll bar at their right edge; a menu of the menu bar stays under its title. The bottom items ran past the screen edge and could not be reached (#1008).
 - Drop shadows show in exported and printed PDFs, beneath their objects, in their colour, opacity, feathering and merge mode; they were left out, so a shadow showed only once broken apart into a bitmap (#1029).
