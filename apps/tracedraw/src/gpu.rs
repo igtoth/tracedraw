@@ -152,6 +152,118 @@ pub fn choose(mode: Mode, wanted: &str, list: &[Candidate]) -> (Option<usize>, V
 
 static IN_USE: OnceLock<String> = OnceLock::new();
 
+/// The renderer the window of this run opened with.
+static MODE_IN_USE: OnceLock<Mode> = OnceLock::new();
+
+/// The window opened, but the frames the renderer drew came back nearly
+/// black when read (#616): the driver takes every call and shows nothing.
+/// Noted so that the start goes on with the next renderer once the
+/// window closes (see `frame_looks_blind`).
+static BLIND: AtomicBool = AtomicBool::new(false);
+
+pub fn mode_in_use() -> Option<Mode> {
+    MODE_IN_USE.get().copied()
+}
+
+pub fn blind() -> bool {
+    BLIND.load(Ordering::SeqCst)
+}
+
+pub fn note_blind() {
+    BLIND.store(true, Ordering::SeqCst);
+}
+
+/// A pixel with a channel at least this bright counts as drawn.
+pub const BLIND_BRIGHTNESS: u8 = 40;
+/// A frame with fewer drawn pixels than one in this many is nearly
+/// black: the reporter's frames of #616 had one in 200 to 500 (stray
+/// triangles), a drawn window has more than one in 2 in the light and
+/// dark themes and one in 30 in the high-contrast theme with the welcome
+/// screen (which is why the probe decides with it, see `renderer_blind`).
+pub const BLIND_ONE_IN: usize = 50;
+/// The main-window frame (counted from the first) at which the first
+/// read-back is asked for.
+pub const CHECKED_FRAME: u32 = 4;
+/// How many frames after a read-back that came back nearly black the
+/// next one is asked for.
+pub const RECHECK_FRAMES: u32 = 30;
+/// How many read-backs must come back nearly black, with the window in
+/// front, before the renderer is blind: one may be of a window another
+/// covered (a desktop without composition leaves covered pixels undrawn).
+pub const BLIND_READS: u8 = 2;
+/// The side, in points, of the probe drawn last at the window's bottom
+/// right while a frame is read back, and its distance from the corner.
+pub const PROBE_SIDE: f32 = 6.0;
+
+/// Whether a pixel counts as drawn: a channel at [`BLIND_BRIGHTNESS`] or
+/// more.
+fn bright(c: egui::Color32) -> bool {
+    c.r().max(c.g()).max(c.b()) >= BLIND_BRIGHTNESS
+}
+
+/// Whether `image`, a frame of the main window read back from the
+/// renderer, is nearly black: below its top quarter (the menu bar and the
+/// toolbars, the first meshes of a frame, which a failing driver still
+/// drew right, #616) fewer than one pixel in [`BLIND_ONE_IN`] is bright.
+/// A frame too small to judge passes.
+pub fn frame_looks_blind(image: &egui::ColorImage) -> bool {
+    let [w, h] = image.size;
+    if w < 64 || h < 64 {
+        return false;
+    }
+    let (mut bright_count, mut total) = (0_usize, 0_usize);
+    for y in (h / 4..h).step_by(4) {
+        for x in (0..w).step_by(4) {
+            let Some(c) = image.pixels.get(y * w + x) else {
+                continue;
+            };
+            total += 1;
+            if bright(*c) {
+                bright_count += 1;
+            }
+        }
+    }
+    bright_count * BLIND_ONE_IN < total
+}
+
+/// Whether the probe (a bright square drawn last in the frame, see
+/// `PROBE_SIDE`) is in `image` around the pixel `[x, y]` its centre lands
+/// on: at least five of the nine pixels there are bright.
+pub fn probe_drawn(image: &egui::ColorImage, [x, y]: [usize; 2]) -> bool {
+    let [w, h] = image.size;
+    let mut bright_count = 0;
+    for py in y.saturating_sub(1)..=y + 1 {
+        for px in x.saturating_sub(1)..=x + 1 {
+            if px < w && py < h && image.pixels.get(py * w + px).is_some_and(|c| bright(*c)) {
+                bright_count += 1;
+            }
+        }
+    }
+    bright_count >= 5
+}
+
+/// Whether a frame read back from the renderer says it draws nothing
+/// that can be seen (#616): the probe, drawn last, is missing (the
+/// reporter's driver drew only the first meshes of a frame right) and
+/// the frame is nearly black. A frame with the probe is drawn whatever
+/// its brightness (the high-contrast theme is mostly black), and a frame
+/// that holds a drawn window but no probe is left alone too.
+pub fn renderer_blind(image: &egui::ColorImage, probe: [usize; 2]) -> bool {
+    !probe_drawn(image, probe) && frame_looks_blind(image)
+}
+
+/// The renderer the start goes on with when this one draws nothing that
+/// can be seen; none when this one is the last.
+static NEXT: OnceLock<Option<Mode>> = OnceLock::new();
+
+pub fn note_next(next: Option<Mode>) {
+    let _ = NEXT.set(next);
+}
+
+pub fn next_renderer() -> Option<Mode> {
+    NEXT.get().copied().flatten()
+}
+
 /// Whether the window of this run opened (the app is being built): a
 /// panic before that is a renderer that failed to start, after it one of
 /// the app.
@@ -293,6 +405,7 @@ pub fn in_use() -> Option<&'static str> {
 /// first choice is remembered, so the next start goes straight to it.
 pub fn note_renderer(cc: &eframe::CreationContext<'_>, mode: Mode) {
     OPENED.store(true, Ordering::SeqCst);
+    let _ = MODE_IN_USE.set(mode);
     end_attempt();
     crate::startup_log::quiet_panics(false);
     let mut s = crate::settings::Settings::load();
@@ -644,6 +757,12 @@ fn spawn_with(next: Mode, args: &[String]) -> bool {
 #[path = "../../../vendor/eframe/src/native/first_context.rs"]
 mod eframe_context_fallback;
 
+/// The arithmetic of the patched eframe's fixed-function painter with its
+/// tests, run here for the same reason (#616).
+#[cfg(test)]
+#[path = "../../../vendor/eframe/src/native/fixed_function_geometry.rs"]
+mod eframe_fixed_function_geometry;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -665,6 +784,113 @@ mod tests {
         let gles = tried.find("ContextApi::Gles(None)");
         assert!(compat.is_some() && gles < compat, "compatibility last");
         assert!(glow.contains("create_first_context("));
+        // The fixed-function painter takes desktop OpenGL below 3.0, where
+        // egui_glow's shaders and buffers draw wrongly on older drivers.
+        assert!(glow.contains("GlPainter::new("));
+        let painter = include_str!("../../../vendor/eframe/src/native/fixed_function_painter.rs");
+        assert!(painter.contains("glVertexPointer") && painter.contains("GL_MODULATE"));
+        let choice = include_str!("../../../vendor/eframe/src/native/gl_painter.rs");
+        assert!(
+            choice.contains("fixed_function_wanted(") && choice.contains("TRACEDRAW_GL_PAINTER")
+        );
+    }
+
+    /// A main-window frame read back from the renderer is blind when
+    /// nearly nothing below the menu bar is drawn: the reporter's driver
+    /// drew the first meshes right and the rest nearly black (#616).
+    #[test]
+    fn a_nearly_black_frame_is_a_blind_renderer() {
+        use egui::{Color32, ColorImage};
+        let filled = |w, h, c| ColorImage::filled([w, h], c);
+        // The light theme: everything bright.
+        assert!(!frame_looks_blind(&filled(
+            640,
+            400,
+            Color32::from_gray(245)
+        )));
+        // The dark theme without a page: dark panels with text on them.
+        let mut dark = filled(640, 400, Color32::from_gray(27));
+        for y in (0..400).step_by(8) {
+            for x in (0..640).step_by(8) {
+                dark[(x, y)] = Color32::from_gray(200);
+            }
+        }
+        assert!(!frame_looks_blind(&dark));
+        // The reporter's frame: a right menu bar, the rest nearly black.
+        let mut broken = filled(1920, 1017, Color32::from_rgb(0, 8, 8));
+        for y in 0..60 {
+            for x in 0..1920 {
+                broken[(x, y)] = Color32::from_gray(240);
+            }
+        }
+        assert!(frame_looks_blind(&broken));
+        assert!(frame_looks_blind(&filled(800, 600, Color32::BLACK)));
+        // A few drawn pixels are not enough: one in 50 is the line. The
+        // reporter's recording had one bright pixel in 400 to 500 on a
+        // 26-grey ground (one drawn pixel in 80 by 80 is one in 400 of
+        // the samples); one in 20 by 20 is one in 25.
+        let mut sparse = filled(800, 600, Color32::from_gray(26));
+        for y in (150..600).step_by(80) {
+            for x in (0..800).step_by(80) {
+                sparse[(x, y)] = Color32::WHITE;
+            }
+        }
+        assert!(frame_looks_blind(&sparse));
+        let mut enough = filled(800, 600, Color32::BLACK);
+        for y in (150..600).step_by(20) {
+            for x in (0..800).step_by(20) {
+                enough[(x, y)] = Color32::WHITE;
+            }
+        }
+        assert!(!frame_looks_blind(&enough));
+        // Too small to judge.
+        assert!(!frame_looks_blind(&filled(32, 32, Color32::BLACK)));
+    }
+
+    /// The probe drawn last decides with the frame: a frame with it was
+    /// drawn however dark (the high-contrast theme), one without it that
+    /// is nearly black was not (#616).
+    #[test]
+    fn the_probe_decides_with_the_frame() {
+        use egui::{Color32, ColorImage};
+        let probe = [800 - 9, 600 - 9];
+        let mut black = ColorImage::filled([800, 600], Color32::BLACK);
+        assert!(!probe_drawn(&black, probe));
+        assert!(renderer_blind(&black, probe));
+        // The probe, 6 by 6 px around its centre.
+        for y in probe[1] - 3..probe[1] + 3 {
+            for x in probe[0] - 3..probe[0] + 3 {
+                black[(x, y)] = Color32::from_gray(220);
+            }
+        }
+        assert!(probe_drawn(&black, probe));
+        assert!(frame_looks_blind(&black));
+        assert!(!renderer_blind(&black, probe));
+        // The high-contrast welcome screen: black with sparse text, no
+        // probe drawn (its last mesh was lost): not a blind renderer.
+        let mut contrast = ColorImage::filled([800, 600], Color32::BLACK);
+        for y in (150..600).step_by(20) {
+            for x in (0..800).step_by(20) {
+                contrast[(x, y)] = Color32::WHITE;
+            }
+        }
+        assert!(!renderer_blind(&contrast, probe));
+        // A probe at the very corner is judged from the pixels that exist.
+        let mut corner = ColorImage::filled([800, 600], Color32::BLACK);
+        for y in 598..600 {
+            for x in 798..800 {
+                corner[(x, y)] = Color32::WHITE;
+            }
+        }
+        assert!(!probe_drawn(&corner, [799, 599]));
+        assert!(!probe_drawn(&corner, [0, 0]));
+        for y in 597..600 {
+            for x in 797..800 {
+                corner[(x, y)] = Color32::WHITE;
+            }
+        }
+        assert!(probe_drawn(&corner, [798, 598]));
+        assert!(!probe_drawn(&corner, [900, 700]));
     }
 
     #[test]

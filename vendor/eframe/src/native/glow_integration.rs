@@ -36,6 +36,7 @@ use log::warn;
 
 use super::{
     epi_integration, event_loop_context,
+    gl_painter::GlPainter,
     winit_integration::{EventResult, UserEvent, WinitApp, create_egui_context},
 };
 use crate::epaint::textures::TexturesDelta;
@@ -74,7 +75,12 @@ struct GlowWinitRunning<'app> {
     glutin: Rc<RefCell<GlutinWindowContext>>,
 
     // NOTE: one painter shared by all viewports.
-    painter: Rc<RefCell<egui_glow::Painter>>,
+    // TraceDraw: `GlPainter` in place of `egui_glow::Painter` here, in
+    // the return type of `init_run_state`, in the parameters of
+    // `render_immediate_viewport` and `save_screenshot_and_exit`, and in
+    // the `clear` call of `render_immediate_viewport` (see
+    // vendor/README.md).
+    painter: Rc<RefCell<GlPainter>>,
 
     /// Any not yet applied deltas for this app.
     pending_deltas: TexturesDelta,
@@ -195,7 +201,7 @@ impl<'app> GlowWinitApp<'app> {
         event_loop: &ActiveEventLoop,
         storage: Option<&dyn Storage>,
         native_options: &mut NativeOptions,
-    ) -> Result<(GlutinWindowContext, egui_glow::Painter)> {
+    ) -> Result<(GlutinWindowContext, GlPainter)> {
         profiling::function_scope!();
         let window_settings = epi_integration::load_window_settings(storage);
 
@@ -230,9 +236,11 @@ impl<'app> GlowWinitApp<'app> {
             }))
         };
 
-        let painter = egui_glow::Painter::new(
+        // TraceDraw: egui_glow's painter, or the fixed-function one on
+        // desktop OpenGL below 3.0 (see vendor/README.md).
+        let painter = GlPainter::new(
             gl,
-            "",
+            &mut |s| glutin_window_context.get_proc_address(s),
             native_options.glow_options.shader_version,
             native_options.dithering,
         )?;
@@ -1139,6 +1147,17 @@ impl GlutinWindowContext {
         // TraceDraw: backported from eframe 0.37 (see vendor/README.md).
         let [default_attributes, fallback_attributes @ ..] =
             context_attributes_to_try(glutin_raw_window_handle);
+        // TraceDraw: `TRACEDRAW_GL_CONTEXT=compat` asks for the
+        // compatibility profile first, so that a test under a driver that
+        // can make OpenGL ES contexts (Mesa forced to OpenGL 2.1) takes the
+        // path an older Windows driver takes.
+        let compat_first = std::env::var(CONTEXT_ENV).is_ok_and(|v| v == "compat");
+        let (default_attributes, fallback_attributes) = if compat_first {
+            let [es, compat] = fallback_attributes;
+            (compat, [default_attributes, es])
+        } else {
+            (default_attributes, fallback_attributes)
+        };
         let gl_context = create_first_context(
             default_attributes,
             fallback_attributes,
@@ -1586,7 +1605,7 @@ fn is_viewport_or_descendant_visible(
 fn render_immediate_viewport(
     egui_ctx: &egui::Context,
     glutin: &RefCell<GlutinWindowContext>,
-    painter: &RefCell<egui_glow::Painter>,
+    painter: &RefCell<GlPainter>,
     beginning: Instant,
     immediate_viewport: ImmediateViewport<'_>,
 ) {
@@ -1701,11 +1720,9 @@ fn render_immediate_viewport(
         );
     }
 
-    egui_glow::painter::clear(
-        painter.borrow().gl(),
-        screen_size_in_pixels,
-        [0.0, 0.0, 0.0, 0.0],
-    );
+    painter
+        .borrow()
+        .clear(screen_size_in_pixels, [0.0, 0.0, 0.0, 0.0]);
 
     painter.borrow_mut().paint_and_update_textures(
         screen_size_in_pixels,
@@ -1734,6 +1751,10 @@ fn render_immediate_viewport(
 mod first_context;
 use first_context::create_first_context;
 
+/// TraceDraw: the environment variable that puts the compatibility profile
+/// first (`compat`), for tests.
+const CONTEXT_ENV: &str = "TRACEDRAW_GL_CONTEXT";
+
 /// The OpenGL contexts to ask for, in order of preference.
 ///
 /// 1. glutin's default, which is OpenGL 3.3 core.
@@ -1759,11 +1780,7 @@ fn context_attributes_to_try(
 }
 
 #[cfg(feature = "__screenshot")]
-fn save_screenshot_and_exit(
-    path: &str,
-    painter: &egui_glow::Painter,
-    screen_size_in_pixels: [u32; 2],
-) {
+fn save_screenshot_and_exit(path: &str, painter: &GlPainter, screen_size_in_pixels: [u32; 2]) {
     assert!(
         egui::load::has_extension(path, "png"),
         "Expected EFRAME_SCREENSHOT_TO to end with '.png', got {path:?}"

@@ -121,8 +121,10 @@ and `--reset-settings` starts open windows of their own.
   ES, then a compatibility context of any version. A card whose driver
   offers OpenGL 2.1 only (Intel HD Graphics of the Ironlake generation,
   which has no Direct3D 12 and which wgpu's OpenGL backend refuses below
-  3.3) gets the last one and draws on the card through `--renderer=gl`
-  with GLSL 1.20 shaders, instead of on the CPU (#616). eframe 0.36
+  3.3) gets the last one and draws on the card through `--renderer=gl`,
+  with the fixed-function painter of the next item
+  (`TRACEDRAW_GL_PAINTER=shaders` keeps egui's GLSL 1.20 shaders),
+  instead of on the CPU (#616). eframe 0.36
   stopped after OpenGL ES; the likely reason the reporter's
   `--renderer=gl` did not start is that Windows drivers of that age
   cannot make an OpenGL ES context (WGL needs an extension they do not
@@ -133,6 +135,57 @@ and `--reset-settings` starts open windows of their own.
   `gpu::eframe_context_fallback::tests`). Checked
   under Mesa forced to OpenGL 2.1 and GLSL 1.20: the window, the page,
   gradients and text draw as on the other renderers.
+- On desktop OpenGL below 3.0 the OpenGL renderer draws with the
+  fixed-function pipeline of OpenGL 1.x (client-side vertex arrays,
+  texturing that multiplies the vertex colour, premultiplied alpha
+  blending; no shaders, buffer objects or vertex array objects), the
+  painter TraceDraw carries in its eframe copy (`vendor/README.md`,
+  `TRACEDRAW_GL_PAINTER=fixed` or `=shaders` overrides the choice). The
+  2012 driver of the Intel HD Graphics of 2010 PCs (8.15.10.2900, OpenGL
+  2.1, #616) opened the window with egui's shaders and drew everything
+  after the first mesh of each frame as black boxes and stray triangles,
+  so the window came out nearly black; the fixed-function pipeline is the
+  path such drivers were made for. The log says `drawing with the
+  fixed-function pipeline`, the driver's texture limit and extension
+  count, the first frame's mesh count, and any OpenGL error the driver
+  reports (up to twelve). Textures are kept to 8192 px a side at most,
+  as on wgpu; mipmaps are not made (OpenGL 3.0), so a shrunk picture
+  filters without them. Checked under Mesa forced to OpenGL 2.1
+  (`TRACEDRAW_GL_CONTEXT=compat`, which asks for the compatibility
+  profile first, as Mesa would otherwise answer the OpenGL ES attempt):
+  the window matches the one egui's shaders draw
+  (`gpu::eframe_fixed_function_geometry::tests` cover the scissor,
+  index and texture-limit arithmetic).
+- The OpenGL renderer is also checked once it draws (#616,
+  `Shell::check_renderer`): at the main window's frame
+  `gpu::CHECKED_FRAME` a read-back is asked for, and the frame after it
+  is read back from the renderer with a probe drawn last in it, a light
+  square `gpu::PROBE_SIDE` points wide near the bottom right corner, on
+  the topmost layer (the reporter's driver drew only the first meshes of
+  a frame right). The frame says the renderer is blind
+  (`gpu::renderer_blind`) when the probe is missing and the frame is
+  nearly black: below its top quarter fewer than one pixel in
+  `gpu::BLIND_ONE_IN` (50) has a channel at `gpu::BLIND_BRIGHTNESS` (40 of
+  255) or more; the reporter's recording has one in 200 to 500, a drawn
+  window more than one in 2 in the light and dark themes and one in 30
+  in the high-contrast theme with the welcome screen, which the probe
+  settles. A read-back of a window another window is in front of does
+  not count (a desktop without composition leaves covered pixels
+  undrawn) and is logged as `came back nearly black from the renderer
+  while another window is in front; checking again`; one that counts is
+  logged as `came back nearly black from the renderer: it draws nothing
+  that can be seen (1 of 2)`, and `gpu::RECHECK_FRAMES` (30) frames
+  later another is asked for. After `gpu::BLIND_READS` (2) such
+  read-backs the window closes whatever the documents hold, and the
+  start goes on with the next renderer, which is remembered as usual
+  (`working_renderer`, Options > General shows and changes it), so the
+  next start takes it at once; a start again that fails is reported the
+  way a window that would not open is. When no renderer is left to try
+  (hardware acceleration off: the chain ends with OpenGL) the log says
+  `no other renderer is left to try; the window stays`. A window drawn
+  is logged as `read back drawn`
+  (`gpu::tests::a_nearly_black_frame_is_a_blind_renderer`,
+  `gpu::tests::the_probe_decides_with_the_frame`).
 - A panic while a renderer starts (eframe's OpenGL set-up panics when
   the driver offers no matching pixel format) is caught and logged, and
   the next renderer is tried; it is not written to `crash.log` or shown.
