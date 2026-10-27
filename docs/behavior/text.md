@@ -12,7 +12,7 @@ baseline point; paragraph text: a frame with wrapping. Shortcut F8.
 | Kerning | font kerning on (GPOS kern, kern table) |
 | Tracking (range kerning) | 0% of em |
 | Baseline shift | 0 pt |
-| Alignment | left; justify stretches spaces only, last line left |
+| Alignment | left; justify stretches the spaces and the gaps beside Chinese and Japanese characters (a line with neither, between its letters), last line left |
 | Hyphenation | off; when on, at least 2 letters before and 3 after a break, from a compact pattern set (a vowel and consonant rule for words it leaves whole); digraphs (ch, ck, gh, ph, sh, th, wh, qu) stay together; words with a capital letter (names, acronyms) are never broken. Options > Text > Paragraph Text > Hyphenation patterns picks a hyphenation dictionary instead (`hyph_*.dic`, found where the spelling dictionaries are, see `writing-tools.md`): its first line names the character set; `LEFTHYPHENMIN` and `RIGHTHYPHENMIN` set the minimums (else 2 and 3); `%` and `#` lines are comments; `NEXTLEVEL` starts a second level of patterns, a word breaking where either level allows; patterns with a replacement (`/`) are left out. With a dictionary a capital first letter no longer stops a break (nouns in some languages); other capitals still do. A dictionary that is gone at start-up leaves the built-in patterns and a status message (`hyphen::tests::pattern_files`, `spell::tests::real_hyphenation_files`, ignored, over English, Brazilian Portuguese, German and Italian files: hy-phen-ation, com-pu-ta-dor, Haus-tür, Schiff-fahrt, in-for-ma-zione). Punctuation before or after a word (a comma at a line's end, quotation marks) is left aside and the letters between break; an apostrophe inside a word (' or ’) is kept for the patterns, and without a pattern file only the part after the last apostrophe breaks (#255, `hyphen::tests::punctuation_round_a_word_and_apostrophes_inside_it`). Text > Use Hyphenation turns hyphenation on or off for the selected texts (off when they all have it); while a text is edited it is the setting of the paragraphs at the caret, its check following them; with no text selected it is the setting new text takes (`writing_tools::tests::use_hyphenation_acts_on_the_selected_text`). Typing keeps a text's own hyphenation; it took the setting for new text, so editing a text turned its hyphenation on or off (#470, `writing_tools::tests::editing_a_text_keeps_its_hyphenation`) |
 | Chinese and Japanese line breaks | text written without spaces breaks between any two characters when one of them is Chinese or Japanese (ideographs, kana, full-width forms and their punctuation), except before a character that may not start a line (，。、；：？！ and their half-width forms, closing brackets and quotes such as ）」』】”’, iteration marks, ー and small kana) and after one that may not end a line (opening brackets and quotes such as （「『【“‘, and ￥ ＄ £ before a sum); the character before goes down to the next line with it. Latin text keeps breaking at spaces and hyphenation points (#847, `tests::cjk_punctuation_never_starts_a_line`) |
 | Columns | 1, gutter 5 mm |
@@ -763,7 +763,11 @@ stand-in next to each missing family: "Arial (Liberation Sans)".
 - Line height `= size * leading / 100 * (asc - desc + gap) / upm`, each
   line from the tallest letters in it (a big first letter drops the
   first line only).
-- Justify: extra space `= (frame_width - line_width) / n_spaces`.
+- Justify: each opportunity gets `(frame_width - line_width) / n`, where
+  the `n` opportunities are the line's spaces and the gaps between two
+  glyphs of which one is a Chinese or Japanese character (none after the
+  last glyph, inside a cluster or before the last tab); a line with
+  neither spreads between all its letters (#952).
 - Text on path: the baseline is the path's first subpath (followed from
   its end back to its start when mirrored), moved `distance` to its left,
   towards the letters' tops (corners mitred, at most 4 times the
@@ -807,6 +811,8 @@ stand-in next to each missing family: "Arial (Liberation Sans)".
   `ui::text_docker::tests::section_buttons_boxes_and_apply_to_default`,
   `ui::text_docker::tests::fields_edit_the_selected_text`;
   `tests::forced_justification_spreads_the_last_line_too`,
+  `tests::justification_spreads_chinese_between_characters`,
+  `tests::justified_chinese_lines_end_at_the_right_edge`,
   `tests::line_spacing_in_points_and_in_percent_of_the_size`,
   `tests::character_backgrounds_cover_their_characters` (text crate);
 - The Glyphs docker: `ui::glyphs_docker::tests::ranges_pick_their_characters`,

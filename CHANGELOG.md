@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Text: full justification spreads Chinese and Japanese lines to the right edge of the frame. It widened only the spaces between words, so text written without spaces stayed left aligned with room on the right; the room now goes between the characters (never after a line's last one), mixed lines widen their spaces and the gaps beside the Chinese characters, and the last line of a paragraph stays left aligned unless justification is forced (#952).
 - Opening `.cdr`: text whose letters are each turned and moved on their own, as the ring of letters around a seal, opens from version 13 to 15 files with every letter in its place. Such texts were skipped and counted as objects that could not be read (#955).
 - Save As .cdr: a blend goes out as one group of its start object and its steps, drawn as curves, beside its end object, instead of loose objects on the layer. A blend of two texts saved so is a plain group of a text and curves in the program that opens the file (#946).
 - The main window fills the screen at start when it was left maximized, also with the interface in Chinese and a new drawing at start, where it came up with the maximized button state at its normal size in the corner of the screen. The maximize now follows the window's size instead of coming with it, and a window that says it is maximized but does not fill the screen is restored and maximized again (#787).

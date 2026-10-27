@@ -3429,20 +3429,20 @@ impl FontSystem {
 
             let avail = line.avail;
             let col_start = line.col_x;
-            let (content_w, n_spaces) = line_width(glyphs, ps, x0 - col_start);
+            let content_w = line_width(glyphs, ps, x0 - col_start);
             let hyphen_w = line.hyphen.as_ref().map(|h| h.advance).unwrap_or(0.0);
             let total_w = content_w + hyphen_w;
-            let (dx, space_extra) = match align {
-                TextAlign::Left | TextAlign::None => (0.0, 0.0),
-                TextAlign::Center => (((avail.min(1e9)) - total_w).max(0.0) / 2.0, 0.0),
-                TextAlign::Right => ((avail.min(1e9) - total_w).max(0.0), 0.0),
+            let (dx, extras) = match align {
+                TextAlign::Left | TextAlign::None => (0.0, Vec::new()),
+                TextAlign::Center => (((avail.min(1e9)) - total_w).max(0.0) / 2.0, Vec::new()),
+                TextAlign::Right => ((avail.min(1e9) - total_w).max(0.0), Vec::new()),
                 TextAlign::Justify | TextAlign::ForceJustify => {
                     // Forced justification spreads the last line too.
                     let last = line.last_in_para && align == TextAlign::Justify;
-                    if last || n_spaces == 0 || !avail.is_finite() {
-                        (0.0, 0.0)
+                    if last || !avail.is_finite() {
+                        (0.0, Vec::new())
                     } else {
-                        (0.0, (avail - total_w).max(0.0) / n_spaces as f64)
+                        (0.0, justify_extras(glyphs, avail - total_w))
                     }
                 }
             };
@@ -3540,7 +3540,7 @@ impl FontSystem {
                     let gp = a * g.path.as_ref().clone();
                     line_path.extend(gp.elements().iter().copied());
                 }
-                let adv = g.advance + if g.ch == ' ' { space_extra } else { 0.0 };
+                let adv = g.advance + extras.get(gi).copied().unwrap_or(0.0);
                 let span = &spans[g.span];
                 if (span.underline || span.strikethrough) && !span.layout_only {
                     match underline_runs.last_mut() {
@@ -3794,20 +3794,73 @@ fn drop_cap_placement(
 }
 
 /// Width of a line's glyphs with tab expansion; returns (width, spaces).
-fn line_width(glyphs: &[Glyph], para: &ParagraphStyle, start: f64) -> (f64, usize) {
+fn line_width(glyphs: &[Glyph], para: &ParagraphStyle, start: f64) -> f64 {
     let mut x = start;
-    let mut spaces = 0;
     for g in glyphs {
         if g.ch == '\t' {
             x = next_tab(x, &para.tabs);
         } else {
-            if g.ch == ' ' {
-                spaces += 1;
-            }
             x += g.advance;
         }
     }
-    (x - start, spaces)
+    x - start
+}
+
+/// The width added after each glyph of a justified line (indexed like
+/// `glyphs`, in text order) so that `room` more is spread over it (#952).
+///
+/// The room goes in equal shares to the line's justification
+/// opportunities: its spaces, and the gaps between neighbouring glyphs of
+/// which one is Chinese or Japanese (ideographs, kana and their
+/// punctuation, written without spaces). A line with neither, such as a
+/// single word broken to fit, spreads it between all its letters. Never
+/// after the line's last glyph, inside a cluster, before a mark that
+/// takes no room, in connected right-to-left script, or before the
+/// line's last tab (the tab stop would take it back).
+fn justify_extras(glyphs: &[Glyph], room: f64) -> Vec<f64> {
+    let mut extras = vec![0.0; glyphs.len()];
+    if room <= 1e-9 || !room.is_finite() {
+        return extras;
+    }
+    let from = glyphs
+        .iter()
+        .rposition(|g| g.ch == '\t')
+        .map_or(0, |t| t + 1);
+    // A gap between glyph `i` and the next one that may be widened.
+    let gap = |i: usize| -> bool {
+        let (Some(a), Some(b)) = (glyphs.get(i), glyphs.get(i + 1)) else {
+            return false;
+        };
+        !b.joins
+            && b.char_idx != a.char_idx
+            && b.advance > 0.0
+            && !a.rtl
+            && !b.rtl
+            && ![a.ch, b.ch].iter().any(|c| *c == ' ' || *c == '\t')
+    };
+    let last = glyphs.len().saturating_sub(1);
+    let mut opportunities: Vec<usize> = (from..last)
+        .filter(|&i| {
+            glyphs.get(i).is_some_and(|g| g.ch == ' ')
+                || (gap(i)
+                    && glyphs
+                        .get(i..i + 2)
+                        .is_some_and(|p| p.iter().any(|g| cjk_char(g.ch))))
+        })
+        .collect();
+    if opportunities.is_empty() {
+        opportunities = (from..last).filter(|&i| gap(i)).collect();
+    }
+    if opportunities.is_empty() {
+        return extras;
+    }
+    let share = room / opportunities.len() as f64;
+    for i in opportunities {
+        if let Some(e) = extras.get_mut(i) {
+            *e = share;
+        }
+    }
+    extras
 }
 
 fn next_tab(x: f64, tabs: &[f64]) -> f64 {
@@ -4973,6 +5026,128 @@ mod tests {
             on_path: None,
         });
         assert!((l.bounds.width() - 30.0).abs() < 0.01);
+    }
+
+    /// Synthetic 1 mm glyphs for `text`, one per character.
+    fn cells(text: &str) -> Vec<Glyph> {
+        text.chars()
+            .enumerate()
+            .map(|(i, ch)| Glyph {
+                path: Arc::new(BezPath::new()),
+                advance: 1.0,
+                x_offset: 0.0,
+                y_offset: 0.0,
+                ch,
+                char_idx: i,
+                char_end: i + 1,
+                rtl: false,
+                level: 0,
+                span: 0,
+                joins: false,
+                hyphen_after: None,
+                src: None,
+            })
+            .collect()
+    }
+
+    /// Chinese text has no spaces: justification spreads the room between
+    /// its characters, never after the last one; with spaces in a line
+    /// of Latin letters only the spaces widen (#952).
+    #[test]
+    fn justification_spreads_chinese_between_characters() {
+        let e = justify_extras(&cells("相师得此奇遇"), 1.0);
+        assert_eq!(e.len(), 6);
+        for x in &e[..5] {
+            assert!((x - 0.2).abs() < 1e-9, "{e:?}");
+        }
+        assert_eq!(e[5], 0.0);
+        // Latin with spaces: only the spaces.
+        let e = justify_extras(&cells("ab cd ef"), 1.0);
+        assert_eq!(e, vec![0.0, 0.0, 0.5, 0.0, 0.0, 0.5, 0.0, 0.0]);
+        // Mixed: the spaces and the gaps touching a Chinese character.
+        let e = justify_extras(&cells("ab 中文"), 1.0);
+        assert_eq!(e, vec![0.0, 0.0, 0.5, 0.5, 0.0]);
+        // Latin letters next to an ideograph get a share, a space next
+        // to one only its own.
+        let e = justify_extras(&cells("ab中c d"), 1.0);
+        let third = 1.0 / 3.0;
+        let want = [0.0, third, third, 0.0, third, 0.0];
+        for (x, w) in e.iter().zip(want) {
+            assert!((x - w).abs() < 1e-9, "{e:?}");
+        }
+        // A word with no space spreads between its letters.
+        let e = justify_extras(&cells("abcde"), 2.0);
+        assert_eq!(e, vec![0.5, 0.5, 0.5, 0.5, 0.0]);
+        // No room, or one glyph: nothing moves.
+        assert!(justify_extras(&cells("中文"), 0.0)
+            .iter()
+            .all(|x| *x == 0.0));
+        assert!(justify_extras(&cells("中"), 3.0).iter().all(|x| *x == 0.0));
+        // Not before the last tab, whose stop would take it back.
+        let e = justify_extras(&cells("中文\t中文"), 1.0);
+        assert_eq!(e, vec![0.0, 0.0, 0.0, 1.0, 0.0]);
+        // Further glyphs of a cluster and marks without width stay.
+        let mut g = cells("中文字");
+        g[1].char_idx = 0;
+        g[2].advance = 0.0;
+        assert!(justify_extras(&g, 1.0).iter().all(|x| *x == 0.0));
+    }
+
+    /// The issue's paragraph, justified in a narrow frame: every line but
+    /// the last ends at the right edge, the last stays as left aligned
+    /// lays it out, and forced justification spreads it too (#952).
+    #[test]
+    fn justified_chinese_lines_end_at_the_right_edge() {
+        if !has_fonts() {
+            return;
+        }
+        let f = fonts();
+        let mut s = span(concat!(
+            "据说开派祖师本是一个江湖相师，半生潦倒，郁郁不得志。在其四十九岁那年，",
+            "云游四方，路经青云山，一眼便看出此山钟灵奇秀，聚天地灵气。"
+        ));
+        s.font_family = "WenQuanYi Zen Hei".into();
+        let para = ParagraphStyle::default();
+        let width = 31.0;
+        let lay = |s: &TextSpan, align| {
+            f.layout(&TextRequest {
+                spans: std::slice::from_ref(s),
+                frame: Some(Size::new(width, 200.0)),
+                align,
+                para: &para,
+                on_path: None,
+            })
+        };
+        let right = |l: &LineBox| l.edges.last().copied().unwrap_or(0.0);
+        let left = |l: &LineBox| l.edges.first().copied().unwrap_or(0.0);
+        let full = lay(&s, TextAlign::Justify);
+        let plain = lay(&s, TextAlign::Left);
+        assert!(full.lines.len() > 2, "{}", full.lines.len());
+        assert_eq!(full.lines.len(), plain.lines.len());
+        let (body, last) = full.lines.split_at(full.lines.len() - 1);
+        for (l, p) in body.iter().zip(&plain.lines) {
+            assert!((left(l) - left(p)).abs() < 1e-6);
+            assert!(
+                (right(l) - left(l) - width).abs() < 1e-6,
+                "line ends at {} of {width}",
+                right(l) - left(l)
+            );
+            // Left aligned, the same line stops short of the edge.
+            assert!(right(p) - left(p) < width - 1e-3);
+        }
+        let plain_last = plain.lines.last().expect("lines");
+        assert_eq!(last[0].edges, plain_last.edges);
+        assert!(right(&last[0]) - left(&last[0]) < width - 1.0);
+        let forced = lay(&s, TextAlign::ForceJustify);
+        let forced_last = forced.lines.last().expect("lines");
+        assert!((right(forced_last) - left(forced_last) - width).abs() < 1e-6);
+        // Mixed Latin and Chinese lines fill the width too.
+        s.text = "TraceDraw 支持中文排版 and Latin words 混合在同一行里面测试两端对齐".into();
+        let mixed = lay(&s, TextAlign::Justify);
+        assert!(mixed.lines.len() > 1);
+        for l in &mixed.lines[..mixed.lines.len() - 1] {
+            assert!((right(l) - left(l) - width).abs() < 1e-6);
+        }
     }
 
     #[test]
