@@ -358,10 +358,10 @@ struct Shell {
     /// Frames paced on a software adapter (#616).
     #[cfg(not(target_arch = "wasm32"))]
     pacer: gpu::Pacer,
-    /// Frames the main window has had (up to the settling ones, see
-    /// `splash::settle_window`).
+    /// The main window settling after it opens (see
+    /// `splash::WindowSettle`).
     #[cfg(not(target_arch = "wasm32"))]
-    window_frames: u32,
+    window_settle: splash::WindowSettle,
 }
 
 impl Shell {
@@ -379,7 +379,7 @@ impl Shell {
             #[cfg(not(target_arch = "wasm32"))]
             pacer: gpu::Pacer::new(cc),
             #[cfg(not(target_arch = "wasm32"))]
-            window_frames: 0,
+            window_settle: Default::default(),
         }
     }
 
@@ -392,7 +392,7 @@ impl Shell {
             open,
             handed_over: None,
             pacer: gpu::Pacer::new(cc),
-            window_frames: 0,
+            window_settle: Default::default(),
         }
     }
 }
@@ -477,12 +477,11 @@ impl eframe::App for Shell {
         app.refresh_callouts();
         // Blends follow their end objects.
         app.refresh_blends();
-        // The window's state is kept once it has settled; until then a
-        // maximize the window system dropped is asked for again (#787).
+        // The window's state is kept once it has settled; until then it
+        // is maximized when it should start so, and checked (#787).
         #[cfg(not(target_arch = "wasm32"))]
-        if self.window_frames < splash::SETTLE_FRAMES {
-            splash::settle_window(ui.ctx(), &app.settings, self.window_frames);
-            self.window_frames += 1;
+        if self.window_settle.settling() {
+            self.window_settle.step(ui.ctx(), &app.settings);
         } else {
             splash::remember_window(ui.ctx(), &mut app.settings);
         }
