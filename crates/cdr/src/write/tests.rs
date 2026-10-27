@@ -1887,6 +1887,38 @@ fn the_version_12_record_keeps_the_page_and_settings_of_version_13() {
 }
 
 #[test]
+fn versions_7_and_8_carry_a_whole_configuration_record() {
+    let r8 = mcfg(Ver(8), 297.0, 210.0);
+    let r7 = mcfg(Ver(7), 297.0, 210.0);
+    assert_eq!((r7.len(), r8.len()), (536, 656));
+    let i32_at =
+        |r: &[u8], at: usize| i32::from_le_bytes(r[at..at + 4].try_into().unwrap_or([0; 4]));
+    let f64_at =
+        |r: &[u8], at: usize| f64::from_le_bytes(r[at..at + 8].try_into().unwrap_or([0; 8]));
+    // Page size first, then the ruler origin at the bottom-left corner
+    // and a grid that is not zero.
+    assert_eq!((i32_at(&r8, 0), i32_at(&r8, 4)), (2_970_000, 2_100_000));
+    assert_eq!((i32_at(&r8, 24), i32_at(&r8, 28)), (-1_485_000, -1_050_000));
+    assert_eq!((f64_at(&r8, 32), f64_at(&r8, 40)), (0.2, 0.2));
+    assert_eq!(f64_at(&r8, 56), 1.0);
+    assert_eq!((i32_at(&r8, 68), i32_at(&r8, 72)), (11_811_024, 11_811_024));
+    // Version 7: the white page colour after the paper, the rest moved.
+    assert_eq!(&r7[0..12], &r8[0..12]);
+    assert_eq!(&r7[12..24], &[5, 0, 5, 0, 0, 0, 0, 0, 0xff, 0xff, 0xff, 0]);
+    assert_eq!(&r7[24..44], &r8[12..32]);
+    assert_eq!(&r7[48..480], &r8[32..464]);
+    assert_eq!(i32_at(&r7, 480), 1);
+    assert_eq!(&r7[484..536], &r8[468..520]);
+    // Both versions read their page size back.
+    for v in [7, 8] {
+        let doc = Document::new("t", Size::new(297.0, 210.0));
+        let (back, _) = crate::open_bytes(&document_to_cdr_version(&doc, v), "t").expect("opens");
+        assert!((back.pages[0].size.width - 297.0).abs() < 0.01, "{v}");
+        assert!((back.pages[0].size.height - 210.0).abs() < 0.01, "{v}");
+    }
+}
+
+#[test]
 fn version_16_text_is_one_byte_a_letter_and_reads_back() {
     let mut ids = Document::new("w", Size::new(200.0, 100.0)).ids().clone();
     let t = text_shape(
