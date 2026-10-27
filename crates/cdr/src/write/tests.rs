@@ -3015,3 +3015,76 @@ fn fonts_named_in_chinese_keep_their_names() {
         );
     }
 }
+
+/// A blend of two texts goes out as one plain group of the start text
+/// and its steps as curves, beside the end text, and reads back so in
+/// every version (#946).
+#[test]
+fn a_blend_of_two_texts_is_written_as_a_group_of_text_and_curves() {
+    let mut doc = doc_with(Vec::new());
+    let mut ids = doc.ids().clone();
+    let mut start = text_shape(
+        &mut ids,
+        vec![TextSpan::new("ABC", "Arial", 24.0)],
+        TextAlign::Left,
+    );
+    let mut end = text_shape(
+        &mut ids,
+        vec![TextSpan::new("XYZ", "Arial", 24.0)],
+        TextAlign::Left,
+    );
+    end.transform = Affine::translate((120.0, 20.0));
+    end.fill = Fill::Solid(Color::rgb8(255, 0, 0));
+    start.effects.push(tracedraw_core::live::Effect::Blend {
+        end: Box::new(end.clone()),
+        steps: 5,
+        accel_objects: 0.0,
+        accel_colors: 0.0,
+        rotation: 0.0,
+        path: None,
+        rotate_on_path: false,
+        end_id: Some(end.id),
+        options: Default::default(),
+    });
+    // The end above the start, as the Blend tool leaves them.
+    doc.pages[0].layers[0].shapes = vec![start, end];
+    doc.set_ids(ids);
+    for v in versions() {
+        let (back, rep) =
+            crate::open_bytes(&document_to_cdr_version(&doc, v), "back").expect("reads back");
+        assert_eq!(rep.skipped_objects, 0, "{v}: {:?}", rep.warnings);
+        let read = &back.pages[0].layers[0].shapes;
+        assert_eq!(read.len(), 2, "{v}: {read:?}");
+        let ShapeKind::Group { children } = &read[0].kind else {
+            panic!("{v}: {:?}", read[0].kind);
+        };
+        let texts: Vec<&Shape> = children
+            .iter()
+            .filter(|c| matches!(c.kind, ShapeKind::Text { .. }))
+            .collect();
+        let steps: Vec<&Shape> = children
+            .iter()
+            .filter(|c| matches!(c.kind, ShapeKind::Path { closed: true, .. }))
+            .collect();
+        assert_eq!((texts.len(), steps.len()), (1, 5), "{v}: {children:?}");
+        assert_eq!(children.len(), 6, "{v}");
+        let ShapeKind::Text { spans, .. } = &texts[0].kind else {
+            unreachable!()
+        };
+        assert_eq!(spans[0].text, "ABC", "{v}");
+        // The steps' colours run from the start's black to the end's red.
+        for s in &steps {
+            let Fill::Solid(c) = s.fill else {
+                panic!("{v}: {:?}", s.fill);
+            };
+            assert!(
+                c != Color::BLACK && c != Color::rgb8(255, 0, 0),
+                "{v}: {c:?}"
+            );
+        }
+        let ShapeKind::Text { spans, .. } = &read[1].kind else {
+            panic!("{v}: {:?}", read[1].kind);
+        };
+        assert_eq!(spans[0].text, "XYZ", "{v}");
+    }
+}
