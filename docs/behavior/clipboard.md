@@ -34,6 +34,15 @@ is neither. Ctrl+C with nothing selected changes nothing.
 
 Ctrl+Shift+V pastes the objects copied here in the middle of the view.
 
+Symbol instances pasted into another drawing (or inside pasted groups and
+clip frames) bring their symbols along: a symbol the drawing holds
+already, the same objects under the same name, is used; any other is
+added to the drawing's symbols, with the symbols it shows, in the same
+step as the paste. In the drawing copied from, an instance stays an
+instance of its own symbol (#678,
+`ops2::tests::an_instance_pasted_in_another_drawing_brings_its_symbol`,
+`symbol_paste::tests`).
+
 ## When the clipboard holds no text
 
 The windowing layer turns Ctrl+V into a paste event only while the

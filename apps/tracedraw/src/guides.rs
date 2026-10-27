@@ -255,6 +255,7 @@ impl App {
         self.clipboard = Some(crate::app::Clipboard {
             shapes: Vec::new(),
             styles: Vec::new(),
+            symbols: Vec::new(),
             system: Default::default(),
             guides: copied,
         });
