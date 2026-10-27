@@ -78,6 +78,31 @@ a bar on the line at the opacity (start = 0 %, end = 100 %).
 - A palette colour dropped on the end square becomes the shadow colour
   (one undo step).
 
+## Picking a shadow
+
+A shadow is picked with its object, where it lies above what is beneath
+(it is drawn over the objects under its own): a Pick tool click on the
+shadow, away from the object, selects the object, as does a click with
+a tool that selects on a click, so the shadow is then edited with the
+Drop Shadow tool (its handles and property bar). The shadow counts inside its
+silhouette, moved or sheared as it is drawn (text, groups, tables,
+bitmaps, clip frames and symbols: their box), not in the feathered
+fringe; a shadow of 0 % opacity cannot be picked. A Pick drag that
+starts on the shadow moves the object, and the shadow with it.
+
+With the Drop Shadow tool a click on a shadow selects its object and
+shows the shadow's handles; a drag that starts on the shadow (not on a
+handle or on the object) moves the whole shadow: its end goes as far as
+the pointer does.
+
+## Drawing speed
+
+A shadow is drawn on a layer of only the pixels it can reach (its moved
+or sheared box widened by three blur radii and two pixels, within the
+window), not one the size of the window, so a drag that changes it
+every frame costs what the shadow covers. The picture is the same,
+pixel for pixel.
+
 ## Break Drop Shadow Apart
 
 Object > Break Drop Shadow Apart (Ctrl+K, which takes the place of
@@ -97,6 +122,11 @@ round trips, degenerate boxes), the renderer's
 `tests::shadow_darkens_pixels_beside_the_object`,
 `tests::shadow_merge_mode_multiplies_with_what_is_beneath`,
 `tests::perspective_shadow_falls_on_the_floor_and_fades`,
-`tests::clip_frames_and_groups_cast_their_shadows`, and
+`tests::clip_frames_and_groups_cast_their_shadows`,
+`tests::shadows_on_their_own_pixels_match_a_layer_of_the_whole_window`,
 `shadow_tool::tests` in the application (drags, handles, colour drop,
-presets, Break Apart with one undo step, a clip frame's shadow).
+presets, Break Apart with one undo step, a clip frame's shadow, picking
+a shadow over what lies beneath) and
+`pick_drag_tests::a_click_on_a_drop_shadow_picks_its_object` (Pick and
+Drop Shadow tool clicks, a shadow dragged whole). Frame times:
+`frame_times_of_a_shadow_drag`.

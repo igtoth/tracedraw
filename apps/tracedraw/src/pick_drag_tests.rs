@@ -1152,16 +1152,51 @@ fn clicking_the_selection_or_its_centre_mark_turns_the_handles() {
 
 #[test]
 fn the_pointer_shows_moves_for_objects_and_guidelines() {
-    let (_ctx, mut app, [a, _b, _c], _group) = grouped();
+    let (ctx, mut app, [a, _b, c], group) = grouped();
     let cursor = |app: &App, at: Pos2| for_tool(app, false, false, false, Some(at));
-    // Unselected objects show the move arrows too.
+    let arrow = ToolCursor::System(egui::CursorIcon::Default);
+    let moving = ToolCursor::System(egui::CursorIcon::Move);
+    // Unselected objects keep the plain arrow (#885): a press there picks
+    // them first.
     assert!(app.selection.is_empty());
     let on_a = app.view.to_screen(Point::new(115.0, 110.0));
-    assert_eq!(
-        cursor(&app, on_a),
-        ToolCursor::System(egui::CursorIcon::Move)
-    );
+    let on_b = app.view.to_screen(Point::new(155.0, 110.0));
+    let on_c = app.view.to_screen(Point::new(110.0, 160.0));
+    assert_eq!(cursor(&app, on_a), arrow);
+    assert_eq!(cursor(&app, on_c), arrow);
+    // The selected group: the move arrows over it, the arrow over the
+    // object beside it.
+    app.select(vec![group]);
+    assert_eq!(cursor(&app, on_a), moving);
+    assert_eq!(cursor(&app, on_b), moving);
+    assert_eq!(cursor(&app, on_c), arrow);
+    // An object chosen inside the group: only it shows the move arrows,
+    // as only it moves; a press on its neighbour in the group picks the
+    // group.
     assert!(app.doc().is_nested(a));
+    app.select(vec![a]);
+    assert_eq!(cursor(&app, on_a), moving);
+    assert_eq!(cursor(&app, on_b), arrow);
+    // With the cross hair setting, the cross hair over the unselected one.
+    app.settings.crosshair_cursor = true;
+    assert_eq!(cursor(&app, on_b), ToolCursor::Cross);
+    assert_eq!(cursor(&app, on_a), moving);
+    app.settings.crosshair_cursor = false;
+    // A drag from the unselected object still picks it and moves it; it is
+    // then selected and shows the move arrows.
+    let before = page_bounds(&app, c);
+    let to = app.view.to_screen(Point::new(110.0, 190.0));
+    drag(&ctx, &mut app, on_c, to, Modifiers::NONE, Vec::new());
+    assert_eq!(app.selection, vec![c]);
+    assert!(close(page_bounds(&app, c).y0 - before.y0, 30.0));
+    assert_eq!(cursor(&app, to), moving);
+    assert_eq!(cursor(&app, on_a), arrow);
+    // An unselected object over a guideline: the arrow, not the arrows
+    // across the guideline, as the object takes the press.
+    app.add_guide(tracedraw_core::document::Guide::horizontal(110.0));
+    assert_eq!(cursor(&app, on_a), arrow);
+    app.select(Vec::new());
+    app.delete_guide(0);
     // Guidelines: arrows across them; a locked one keeps the arrow.
     app.add_guide(tracedraw_core::document::Guide::horizontal(250.0));
     app.add_guide(tracedraw_core::document::Guide::vertical(250.0));
@@ -7037,6 +7072,8 @@ fn corner_widgets_round_every_corner_or_the_chosen_ones() {
         .expect("square");
     app.select(vec![id]);
     app.set_tool(Tool::Shape);
+    // The widgets are off unless the preference turns them on (#884).
+    app.settings.nodes.corner_widgets = true;
     frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
     let path_of = |app: &App| match &app.doc().find_shape(id).expect("curve").kind {
         ShapeKind::Path { path, .. } => path.clone(),
@@ -7136,6 +7173,227 @@ fn corner_widgets_round_every_corner_or_the_chosen_ones() {
         }
         _ => panic!("a curve"),
     }
+}
+
+/// The corner widgets on curve nodes are a preference, off by default
+/// (#884): with it off a selected curve's corners show no widget, a press
+/// where one would sit does not round anything, and choosing a node works
+/// as before; turning it on shows them again. The preference is saved
+/// with the others.
+#[test]
+fn corner_widgets_follow_their_preference_off_by_default() {
+    use tracedraw_core::geometry::{BezPath, PathEl};
+    assert!(!crate::settings::Settings::default().nodes.corner_widgets);
+    let (ctx, mut app, rect) = setup();
+    assert!(!app.settings.nodes.corner_widgets);
+    app.select(vec![rect]);
+    app.delete_selection();
+    let mut square = BezPath::new();
+    square.move_to((20.0, 20.0));
+    square.line_to((60.0, 20.0));
+    square.line_to((60.0, 60.0));
+    square.line_to((20.0, 60.0));
+    square.close_path();
+    let id = app
+        .new_shape(ShapeKind::Path {
+            path: square.clone(),
+            closed: true,
+        })
+        .expect("square");
+    app.select(vec![id]);
+    app.set_tool(Tool::Shape);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    assert!(app.corner_widgets().is_empty(), "off by default");
+    // Where the widget of the corner at (20, 20) would sit: 18 px from the
+    // node towards the centre.
+    let node = app.view.to_screen(Point::new(20.0, 20.0));
+    let centre = app.view.to_screen(Point::new(40.0, 40.0));
+    let at = node + (centre - node).normalized() * crate::corner_widgets::WIDGET_OFFSET_PX;
+    assert!(app.corner_widget_at(app.view.to_page(at)).is_none());
+    drag(
+        &ctx,
+        &mut app,
+        at,
+        at + (centre - node).normalized() * 30.0,
+        Modifiers::NONE,
+        Vec::new(),
+    );
+    match &app.doc().find_shape(id).expect("square").kind {
+        ShapeKind::Path { path, .. } => assert!(
+            !path
+                .elements()
+                .iter()
+                .any(|e| matches!(e, PathEl::CurveTo(..))),
+            "no corner rounded"
+        ),
+        _ => panic!("a curve"),
+    }
+    // A node is still chosen with a click.
+    app.select(vec![id]);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    click_at(&ctx, &mut app, node, Modifiers::NONE);
+    assert_eq!(app.node_selection.len(), 1, "{:?}", app.node_selection);
+    assert!(app.corner_widgets().is_empty());
+    // Turned on, the chosen node's corner has its widget.
+    app.settings.nodes.corner_widgets = true;
+    assert_eq!(app.corner_widgets().len(), 1);
+    // Saved and read back with the other preferences.
+    let json = serde_json::to_string(&app.settings).expect("settings");
+    let back: crate::settings::Settings = serde_json::from_str(&json).expect("read back");
+    assert!(back.nodes.corner_widgets);
+    // Settings saved before the preference existed read it as off.
+    let old: crate::settings::NodePrefs = serde_json::from_str("{}").expect("old prefs");
+    assert!(!old.corner_widgets);
+}
+
+/// A corner rounded with a widget can be rounded again (#872): the curve
+/// selected later shows a widget off the middle of each arc, and
+/// dragging it changes the radius from where it was, further in or back
+/// to a sharp corner, in one undo step; with an arc's node chosen only
+/// that corner changes.
+#[test]
+fn rounded_corners_keep_their_widgets_and_round_again() {
+    use tracedraw_core::corner_cut::fillets;
+    use tracedraw_core::geometry::{BezPath, Shape as _};
+    let (ctx, mut app, rect) = setup();
+    app.select(vec![rect]);
+    app.delete_selection();
+    let mut square = BezPath::new();
+    square.move_to((20.0, 20.0));
+    square.line_to((60.0, 20.0));
+    square.line_to((60.0, 60.0));
+    square.line_to((20.0, 60.0));
+    square.close_path();
+    let id = app
+        .new_shape(ShapeKind::Path {
+            path: square.clone(),
+            closed: true,
+        })
+        .expect("square");
+    app.select(vec![id]);
+    app.set_tool(Tool::Shape);
+    // The widgets are off unless the preference turns them on (#884).
+    app.settings.nodes.corner_widgets = true;
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let path_of = |app: &App| match &app.doc().find_shape(id).expect("curve").kind {
+        ShapeKind::Path { path, .. } => path.clone(),
+        _ => panic!("a curve"),
+    };
+    let centre = app.view.to_screen(Point::new(40.0, 40.0));
+    let zoom = app.view.zoom;
+    // Every drag below moves far enough to be a drag, not a click.
+    assert!(5.0 * zoom > 8.0, "{zoom}");
+    let r_of = |d: f64| crate::corner_widgets::radius_for(d, std::f64::consts::FRAC_PI_2);
+    // Rounded 7 mm in.
+    let w = app.corner_widgets()[0];
+    let dir = (centre - w.at).normalized();
+    drag(
+        &ctx,
+        &mut app,
+        w.at,
+        w.at + dir * (7.0 * zoom),
+        Modifiers::NONE,
+        Vec::new(),
+    );
+    let once = path_of(&app);
+    let found = fillets(&once);
+    assert_eq!(found.len(), 4, "{found:?}");
+    assert!(found.iter().all(|f| (f.radius - r_of(7.0)).abs() < 0.05));
+    // Selected again: a widget on every rounded corner, off its arc.
+    app.select(Vec::new());
+    app.select(vec![id]);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    // Rounded corners follow the preference too (#884).
+    app.settings.nodes.corner_widgets = false;
+    assert!(app.corner_widgets().is_empty(), "off: no widget on an arc");
+    app.settings.nodes.corner_widgets = true;
+    let widgets = app.corner_widgets();
+    assert_eq!(widgets.len(), 4, "{widgets:?}");
+    let w = widgets[0];
+    assert!((w.depth - 7.0).abs() < 0.05, "{}", w.depth);
+    let mid = app.view.to_screen(w.corner.at + w.corner.inside * w.depth);
+    assert!(
+        ((w.at - mid).length() - crate::corner_widgets::WIDGET_OFFSET_PX).abs() < 0.5,
+        "{:?} {mid:?}",
+        w.at
+    );
+    // Dragged 5 mm back out: every corner takes the radius whose arc
+    // lies 2 mm in.
+    let dir = (centre - w.at).normalized();
+    drag(
+        &ctx,
+        &mut app,
+        w.at,
+        w.at - dir * (5.0 * zoom),
+        Modifiers::NONE,
+        Vec::new(),
+    );
+    let twice = path_of(&app);
+    let found = fillets(&twice);
+    assert_eq!(found.len(), 4, "{found:?}");
+    for f in &found {
+        assert!((f.radius - r_of(2.0)).abs() < 0.05, "{}", f.radius);
+    }
+    let b = twice.bounding_box();
+    assert!(
+        (b.width() - 40.0).abs() < 1e-6,
+        "the sides keep their place"
+    );
+    // One undo step back to the first rounding.
+    app.undo();
+    assert_eq!(path_of(&app), once);
+    // Dragged back out past the corner: sharp again.
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let w = app.corner_widgets()[0];
+    let dir = (centre - w.at).normalized();
+    drag(
+        &ctx,
+        &mut app,
+        w.at,
+        w.at - dir * (10.0 * zoom),
+        Modifiers::NONE,
+        Vec::new(),
+    );
+    let sharp = path_of(&app);
+    assert!(fillets(&sharp).is_empty());
+    assert!(
+        (sharp.area().abs() - 1600.0).abs() < 1e-6,
+        "{}",
+        sharp.area()
+    );
+    app.undo();
+    assert_eq!(path_of(&app), once);
+    // An arc's node chosen: only its corner has a widget, and only it
+    // changes.
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let target = fillets(&once)[2].clone();
+    app.node_selection = vec![(id, target.nodes[0])];
+    let widgets = app.corner_widgets();
+    assert_eq!(widgets.len(), 1, "{widgets:?}");
+    let w = widgets[0];
+    assert!((w.corner.at - target.corner).hypot() < 1e-6);
+    let dir = (centre - w.at).normalized();
+    drag(
+        &ctx,
+        &mut app,
+        w.at,
+        w.at - dir * (5.0 * zoom),
+        Modifiers::NONE,
+        Vec::new(),
+    );
+    let found = fillets(&path_of(&app));
+    assert_eq!(found.len(), 4, "{found:?}");
+    let changed: Vec<_> = found
+        .iter()
+        .filter(|f| (f.radius - r_of(7.0)).abs() > 0.05)
+        .collect();
+    assert_eq!(changed.len(), 1, "{found:?}");
+    assert!((changed[0].corner - target.corner).hypot() < 1e-6);
+    assert!(
+        (changed[0].radius - r_of(2.0)).abs() < 0.05,
+        "{}",
+        changed[0].radius
+    );
 }
 
 /// Every shape of one frame, nested ones taken out of their lists.
@@ -8464,6 +8722,34 @@ fn add_column_offers_a_number_range() {
     }
 }
 
+/// The Add Column form of a number field has a Format; with Custom it
+/// shows the texts before and after the number (#930).
+#[test]
+fn add_column_offers_number_formats_and_custom_text() {
+    let (ctx, mut app, _) = setup();
+    let mut st = crate::ui::dialogs::PrintMergeState {
+        adding: Some(("Ticket".into(), 1)),
+        ..Default::default()
+    };
+    st.adding_number.format = crate::print_merge::NumberFormat::from_index(3);
+    app.dialog = crate::ui::dialogs::Dialog::PrintMerge(st);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let (_, texts) = painted(&ctx, &mut app);
+    for key in [
+        "merge.format",
+        "merge.format_custom",
+        "merge.prefix",
+        "merge.suffix",
+    ] {
+        let label = crate::i18n::tr(key);
+        assert!(
+            texts.iter().any(|(t, _)| t.trim() == label.trim()),
+            "{label:?} in {:?}",
+            texts.iter().map(|(t, _)| t).collect::<Vec<_>>()
+        );
+    }
+}
+
 /// With the wheel zooming (the default), a notch zooms in one glide over
 /// a few frames, as a scroll moves, instead of one jump; the frames
 /// together still zoom 1.15 a notch, about the pointer (#766).
@@ -9691,4 +9977,229 @@ fn the_print_layout_tab_has_the_paper_margins() {
     };
     let layout = crate::export::print_layout(&app, st, app.doc());
     assert_eq!(layout.paper_margins[0], 7.0);
+}
+
+/// Dragging a drop shadow out of an object (#935): it followed the
+/// pointer slowly and in jerks in the browser, where the page is drawn on
+/// the window's own thread. Times the drag step, the frame and the page
+/// render of each move.
+/// `cargo test --release -p tracedraw -- --ignored frame_times_of_a_shadow_drag --nocapture`.
+#[test]
+#[ignore]
+fn frame_times_of_a_shadow_drag() {
+    let (ctx, mut app, id) = setup();
+    app.set_tool(Tool::DropShadow);
+    app.select(vec![id]);
+    let b = app.doc().shape(id).expect("rect").1.bounds();
+    let start = app.view.to_screen(b.center());
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::PointerMoved(start)],
+        Modifiers::NONE,
+    );
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(start, true, PointerButton::Primary, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    let ppp = ctx.pixels_per_point();
+    let rect = app.canvas_rect;
+    let opts = |app: &App| tracedraw_render::RenderOptions {
+        width: (rect.width() * ppp) as u32,
+        height: (rect.height() * ppp) as u32,
+        view: tracedraw_render::ViewTransform {
+            zoom: (app.view.zoom * ppp) as f64,
+            origin_x: ((app.view.origin.x - rect.min.x) * ppp) as f64,
+            origin_y: ((app.view.origin.y - rect.min.y) * ppp) as f64,
+        },
+        draft: true,
+        ..Default::default()
+    };
+    let n = 40;
+    let (mut paint, mut render) = (std::time::Duration::ZERO, std::time::Duration::ZERO);
+    for i in 1..=n {
+        let p = start + egui::vec2(i as f32 * 3.0, i as f32 * 2.0);
+        let t = std::time::Instant::now();
+        frame(
+            &ctx,
+            &mut app,
+            vec![Event::PointerMoved(p)],
+            Modifiers::NONE,
+        );
+        paint += t.elapsed();
+        let o = opts(&app);
+        let t = std::time::Instant::now();
+        let _ = tracedraw_render::render_page(app.doc(), app.page, &o);
+        render += t.elapsed();
+    }
+    let end = start + egui::vec2(n as f32 * 3.0, n as f32 * 2.0);
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(end, false, PointerButton::Primary, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    assert!(app.doc().find_shape(id).and_then(|s| s.shadow).is_some());
+    let o = opts(&app);
+    // The same page without the shadow, for comparison: what any render
+    // of this window costs.
+    let mut plain = app.doc().clone();
+    for l in plain.pages.iter_mut().flat_map(|p| p.layers.iter_mut()) {
+        for s in &mut l.shapes {
+            s.shadow = None;
+        }
+    }
+    let t = std::time::Instant::now();
+    for _ in 0..n {
+        let _ = tracedraw_render::render_page(&plain, app.page, &o);
+    }
+    let unshadowed = t.elapsed() / n;
+    eprintln!(
+        "shadow drag ({} x {} px): {:?} per frame, {:?} per page render ({:?} without the shadow)",
+        o.width,
+        o.height,
+        paint / n,
+        render / n,
+        unshadowed
+    );
+}
+
+/// A created drop shadow is picked for editing (#935): a Pick tool click
+/// on the shadow, away from its object, selects the object; with the
+/// Drop Shadow tool a click there shows its handles and a drag on it
+/// moves the whole shadow by the drag, the object staying where it is.
+#[test]
+fn a_click_on_a_drop_shadow_picks_its_object() {
+    let (ctx, mut app, id) = setup();
+    app.set_shadow(
+        Some(tracedraw_core::Shadow {
+            offset: Vec2::new(70.0, 0.0),
+            ..Default::default()
+        }),
+        false,
+    );
+    let shadow = |app: &App| app.doc().find_shape(id).and_then(|s| s.shadow);
+    let click = |ctx: &egui::Context, app: &mut App, at: Pos2| {
+        frame(ctx, app, vec![Event::PointerMoved(at)], Modifiers::NONE);
+        frame(
+            ctx,
+            app,
+            vec![button(at, true, PointerButton::Primary, Modifiers::NONE)],
+            Modifiers::NONE,
+        );
+        frame(
+            ctx,
+            app,
+            vec![button(at, false, PointerButton::Primary, Modifiers::NONE)],
+            Modifiers::NONE,
+        );
+        frame(ctx, app, Vec::new(), Modifiers::NONE);
+    };
+    // The rectangle spans 10 to 60 by 10 to 40; its shadow 80 to 130.
+    let on_shadow = app.view.to_screen(Point::new(105.0, 25.0));
+    let beside = app.view.to_screen(Point::new(170.0, 25.0));
+    click(&ctx, &mut app, beside);
+    assert!(app.selection.is_empty());
+    click(&ctx, &mut app, on_shadow);
+    assert_eq!(app.selection, vec![id]);
+    // The Drop Shadow tool: a click there selects it too, with the handles.
+    click(&ctx, &mut app, beside);
+    assert!(app.selection.is_empty());
+    app.set_tool(Tool::DropShadow);
+    click(&ctx, &mut app, on_shadow);
+    assert_eq!(app.selection, vec![id]);
+    assert!(app.selected_shadow().is_some());
+    // A drag on the shadow moves it whole.
+    let before = shadow(&app).expect("shadow").offset;
+    let zoom = app.view.zoom;
+    drag(
+        &ctx,
+        &mut app,
+        on_shadow,
+        on_shadow + egui::vec2(20.0 * zoom, -10.0 * zoom),
+        Modifiers::NONE,
+        Vec::new(),
+    );
+    let after = shadow(&app).expect("shadow").offset;
+    assert!(
+        (after.x - before.x - 20.0).abs() < 0.5 && (after.y - before.y - 10.0).abs() < 0.5,
+        "{before:?} -> {after:?}"
+    );
+    assert!(close(bounds(&app, id).x0, 10.0), "the object stays");
+}
+
+/// Dragging an envelope's node (#881): the frame and the enveloped
+/// object follow every move; a line of outlined letters and a plain
+/// rectangle, zoomed in so the frame is large on screen.
+/// `cargo test --release -p tracedraw -- --ignored frame_times_of_an_envelope_drag --nocapture`.
+#[test]
+#[ignore]
+fn frame_times_of_an_envelope_drag() {
+    use crate::envelope_edit::Part;
+    use tracedraw_core::envelope::Mode;
+    let (ctx, mut app, rect) = setup();
+    let mut path = tracedraw_core::geometry::BezPath::new();
+    for letter in 0..25 {
+        let (cx, cy) = (20.0 + letter as f64 * 8.0, 100.0);
+        for (r, dir) in [(4.0, 1.0), (1.6, -1.0)] {
+            let seg = 24;
+            let at = |k: usize| {
+                let a = dir * k as f64 / seg as f64 * std::f64::consts::TAU;
+                let w = r * (1.0 + 0.12 * (a * 5.0).sin());
+                (cx + w * a.cos(), cy + w * a.sin())
+            };
+            path.move_to(at(0));
+            for k in 1..=seg {
+                let (p0, p1) = (at(k - 1), at(k));
+                path.curve_to(
+                    (p0.0 + (p1.0 - p0.0) / 3.0, p0.1 + (p1.1 - p0.1) / 3.0),
+                    (
+                        p0.0 + (p1.0 - p0.0) * 2.0 / 3.0,
+                        p0.1 + (p1.1 - p0.1) * 2.0 / 3.0,
+                    ),
+                    p1,
+                );
+            }
+            path.close_path();
+        }
+    }
+    app.select(Vec::new());
+    let text = app
+        .new_shape(ShapeKind::Path { path, closed: true })
+        .expect("letters");
+    app.apply_fill(tracedraw_core::Fill::Solid(tracedraw_core::Color::BLACK));
+    app.set_tool(Tool::Envelope);
+    for (label, id) in [("rectangle", rect), ("letters", text)] {
+        for mode in [Mode::Unconstrained, Mode::SingleArc] {
+            app.select(vec![id]);
+            app.add_new_envelope();
+            app.envelope_mode = mode;
+            let (_, f) = app.envelope_of(id).expect("envelope");
+            let page = app.doc().shape_on_page(id).expect("shape");
+            let start = page.transform * f.nodes[5];
+            app.view.zoom = 4.0;
+            app.begin_envelope_drag(id, Part::Node(5), start);
+            let n = 60;
+            let mut drag = std::time::Duration::ZERO;
+            let mut paint = std::time::Duration::ZERO;
+            for i in 0..n {
+                let p = Point::new(start.x + i as f64 * 0.2, start.y + i as f64 * 0.5);
+                let t = std::time::Instant::now();
+                app.envelope_drag_to(p);
+                drag += t.elapsed();
+                let t = std::time::Instant::now();
+                frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+                paint += t.elapsed();
+            }
+            app.envelope_drag = None;
+            app.clear_envelope();
+            eprintln!(
+                "envelope drag on {label} ({mode:?}): {:?} per move, {:?} per frame",
+                drag / n,
+                paint / n
+            );
+        }
+    }
 }

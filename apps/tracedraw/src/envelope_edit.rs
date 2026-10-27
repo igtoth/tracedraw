@@ -320,7 +320,7 @@ impl App {
         }
     }
 
-    fn begin_envelope_drag(&mut self, id: ShapeId, part: Part, p: Point) {
+    pub(crate) fn begin_envelope_drag(&mut self, id: ShapeId, part: Part, p: Point) {
         let Some(s) = self.doc().find_shape(id) else {
             return;
         };
@@ -338,7 +338,7 @@ impl App {
 
     /// A drag step: the part moved from where the drag began to `p`, the
     /// whole drag one undo step.
-    fn envelope_drag_to(&mut self, p: Point) {
+    pub(crate) fn envelope_drag_to(&mut self, p: Point) {
         let Some(drag) = self.envelope_drag.clone() else {
             return;
         };

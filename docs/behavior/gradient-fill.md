@@ -44,7 +44,21 @@ it), Reverse (each node at `1 - pos`, midpoints mirrored), the picked
 node's colour, transparency, position and midpoint, and Transform:
 rotation, centre (radial, conical, square), edge pad, bilinear and
 invert; a fill with free nodes from Interactive Fill gets "Back to angle
-and center". Pattern and texture: a preview and their editors. OK sends
+and center". The preview has the object's proportions (its box scaled to
+50 mm on the longer side, a side at least an eighth of the other) and
+shows the start, end and skew nodes the Interactive Fill tool shows on
+the canvas, which a drag moves the same way (#939,
+`edit_fill::drag_preview_node`): the start moves the fill (the centre of
+an elliptical, conical or square fill whose nodes are not placed freely
+sets its centre offset, kept within the box), the end turns and
+stretches the axis (Ctrl in 15 degree steps), the skew node tilts it;
+a drag anywhere else in the preview moves the start by as much as the
+pointer moves.
+The rotation and centre fields turn and move nodes placed freely, so the
+fields and the preview agree (`turn_nodes`, `shift_nodes`), and OK sends
+the placed nodes (or their removal) to every selected object as a fill
+field of their own (`FillField::Handles`;
+`a_drag_in_the_preview_turns_the_objects_gradient`). Pattern and texture: a preview and their editors. OK sends
 the fields that changed to every selected object with Overprint fill in
 one step (`App::apply_edit_fill`, `edit_fill_applies_what_was_changed`,
 `nodes_are_added_moved_and_reversed`); with nothing selected it changes

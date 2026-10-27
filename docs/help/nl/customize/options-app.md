@@ -50,6 +50,7 @@ stelt in hoe het programma werkt. Kies een pagina in de lijst links.
 - [[options.node_shape]] voor knooppunten van het type [[options.node_cusp]],
   [[options.node_smooth]] en [[options.node_symmetrical]].
 - [[options.show_curve_direction]].
+- [[options.corner_widgets]].
 - [[options.colors]]: de [[options.main_color]] van geselecteerde knooppunten
   en grepen en de [[options.secondary_color]].
 - [[options.unselected_nodes_filled]].

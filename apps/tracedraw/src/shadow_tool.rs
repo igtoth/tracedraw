@@ -6,7 +6,7 @@
 use crate::app::App;
 use crate::i18n::tr;
 use tracedraw_core::{
-    geometry::{Point, Rect},
+    geometry::{Point, Rect, Vec2},
     live::{Effect, MergeMode},
     shadow::edge_near,
     Color, Command, Fill, Shadow, Shape, ShapeId, ShapeKind,
@@ -49,6 +49,38 @@ pub fn shadow_box(s: &Shape) -> Rect {
     s.page_path().bounding_box()
 }
 
+/// `p` (page space) lies on the drop shadow of `s`: inside its
+/// silhouette moved or sheared as the shadow is drawn, the feathered
+/// fringe left out. Text, groups, tables, bitmaps, clip frames and
+/// symbols cast it from anywhere in their box, as they are picked
+/// themselves. A shadow with no opacity is not there to pick.
+pub fn shadow_covers(s: &Shape, p: Point) -> bool {
+    use tracedraw_core::geometry::Shape as _;
+    let Some(sh) = s.shadow.filter(|sh| sh.opacity > 0.0) else {
+        return false;
+    };
+    let path = s.page_path();
+    let b = path.bounding_box();
+    if !(Shadow { blur: 0.0, ..sh }).bounds(b).contains(p) {
+        return false;
+    }
+    let t = sh.silhouette_transform(b);
+    let boxed = matches!(
+        s.kind,
+        ShapeKind::Text { .. }
+            | ShapeKind::Group { .. }
+            | ShapeKind::Table(_)
+            | ShapeKind::Bitmap { .. }
+            | ShapeKind::ClipFrame { .. }
+            | ShapeKind::SymbolInstance { .. }
+    );
+    if boxed {
+        (t * b.to_path(0.1)).contains(p)
+    } else {
+        (t * path).contains(p)
+    }
+}
+
 impl App {
     /// The first selected object's shadow, with its id and box.
     pub fn selected_shadow(&self) -> Option<(ShapeId, Shadow, Rect)> {
@@ -68,6 +100,21 @@ impl App {
             .into_iter()
             .find(|(_, hp)| (*hp - p).hypot() <= tol)
             .map(|(h, _)| h)
+    }
+
+    /// A press at `p` on an object's drop shadow away from the object
+    /// itself (Drop Shadow tool): the object becomes the selection, and
+    /// what is returned is the way from `p` to the shadow's end, so that
+    /// dragging the end by it moves the whole shadow with the pointer
+    /// (#935). `None` anywhere else.
+    pub fn grab_shadow(&mut self, p: Point) -> Option<Vec2> {
+        let id = self.pick_at(p)?;
+        if self.hit_test(p) == Some(id) {
+            return None;
+        }
+        self.select(vec![id]);
+        let (_, sh, b) = self.selected_shadow()?;
+        Some(sh.end_point(b) - p)
     }
 
     /// A drag on `shape` started at `start` and is now at `p`. The first
@@ -381,6 +428,64 @@ mod tests {
         assert_eq!(shadow(&app, id).map(|s| s.color), Some(red));
         app.undo();
         assert_eq!(shadow(&app, id).map(|s| s.color), Some(Color::BLACK));
+    }
+
+    /// A shadow is picked with its object (#935): where it lies over an
+    /// object beneath, it wins, as it is drawn over that object; outside
+    /// its silhouette (the feathered fringe included) nothing is picked;
+    /// a perspective shadow is picked where it falls; and a shadow with
+    /// no opacity is not there.
+    #[test]
+    fn a_shadow_is_picked_with_its_object_above_what_lies_beneath() {
+        let (mut app, below) = app_with_rect();
+        let top = app
+            .new_shape(ShapeKind::Rect {
+                rect: Rect::new(100.0, 20.0, 120.0, 40.0),
+                radius: 0.0,
+                corners: None,
+            })
+            .expect("rect");
+        app.select(vec![top]);
+        app.apply_fill(Fill::Solid(Color::rgb8(255, 0, 0)));
+        app.set_shadow(
+            Some(Shadow {
+                offset: Vec2::new(-60.0, 20.0),
+                ..Shadow::default()
+            }),
+            false,
+        );
+        app.select(Vec::new());
+        // The shadow covers 40 to 60 by 40 to 60, over the rectangle below.
+        let on_both = Point::new(50.0, 50.0);
+        assert_eq!(app.hit_test(on_both), Some(below));
+        assert_eq!(app.pick_at(on_both), Some(top));
+        // The rectangle below where no shadow is, and the top object itself.
+        assert_eq!(app.pick_at(Point::new(30.0, 70.0)), Some(below));
+        assert_eq!(app.pick_at(Point::new(110.0, 30.0)), Some(top));
+        // Just outside the silhouette, in the feathering: nothing new.
+        assert_eq!(app.pick_at(Point::new(50.0, 61.0)), Some(below));
+        assert_eq!(app.pick_at(Point::new(80.0, 50.0)), None);
+        // A click there with a tool that selects on click.
+        app.click_select(on_both, egui::Modifiers::NONE);
+        assert_eq!(app.selection, vec![top]);
+        // A perspective shadow on the floor, falling to the right.
+        let mut sh = Shadow {
+            perspective: Some(tracedraw_core::shadow::Perspective::new(ShadowEdge::Bottom)),
+            ..Shadow::default()
+        };
+        let b = Rect::new(100.0, 20.0, 120.0, 40.0);
+        sh.set_end_point(b, Point::new(150.0, 30.0));
+        app.set_shadow(Some(sh), false);
+        app.select(Vec::new());
+        let s = app.doc().find_shape(top).expect("top").clone();
+        let far = sh.silhouette_transform(b) * Point::new(110.0, 39.0);
+        assert!(shadow_covers(&s, far), "{far:?}");
+        assert_eq!(app.pick_at(far), Some(top));
+        // No opacity: nothing to pick.
+        app.select(vec![top]);
+        app.set_shadow(Some(Shadow { opacity: 0.0, ..sh }), false);
+        let s = app.doc().find_shape(top).expect("top").clone();
+        assert!(!shadow_covers(&s, far));
     }
 
     #[test]

@@ -50,6 +50,7 @@
 - [[options.node_shape]] для узлов [[options.node_cusp]],
   [[options.node_smooth]] и [[options.node_symmetrical]].
 - [[options.show_curve_direction]].
+- [[options.corner_widgets]].
 - [[options.colors]]: [[options.main_color]] выделенных узлов и маркеров и
   [[options.secondary_color]].
 - [[options.unselected_nodes_filled]].

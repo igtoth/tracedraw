@@ -185,7 +185,7 @@ fn name(f: &ttf_parser::Face, id: u16) -> Option<String> {
 }
 
 /// The OpenType feature tags of a GSUB or GPOS table.
-fn feature_tags(table: &[u8]) -> Vec<[u8; 4]> {
+pub(crate) fn feature_tags(table: &[u8]) -> Vec<[u8; 4]> {
     let list = be16(table, 6) as usize;
     if list == 0 {
         return Vec::new();

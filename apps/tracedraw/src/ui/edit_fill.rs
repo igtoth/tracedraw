@@ -4,7 +4,10 @@
 //! repeats, the colour band with its nodes (a click picks one, a drag
 //! moves it, a double click on the band adds one, on a node removes it),
 //! the picked node's colour, transparency, position and midpoint, Reverse,
-//! and the transform (rotation, centre, edge pad). Uniform colours get the
+//! and the transform (rotation, centre, edge pad). The preview has the
+//! start, end and skew nodes the Interactive Fill tool shows on the
+//! canvas: a drag there moves, turns and stretches the gradient, in step
+//! with the rotation and centre fields (#939). Uniform colours get the
 //! colour viewer; patterns, textures and meshes their editors. The
 //! selection shows the fill as it is edited; OK applies what was changed,
 //! with Overprint fill, in one undo step, and Cancel takes it back; with
@@ -12,11 +15,13 @@
 //! docs/behavior/gradient-fill.md.
 
 use crate::app::App;
+use crate::fill_tool::{fountain_handles, moved_nodes, FountainHandle};
 use crate::i18n::tr;
 use crate::theme::Tokens;
 use egui::{Color32, Pos2, Rect, Sense, Stroke as EStroke, Ui, Vec2};
+use tracedraw_core::geometry::{Point as GPoint, Rect as GRect, Vec2 as GVec2};
 use tracedraw_core::patch::{FillField, FillMix};
-use tracedraw_core::style::{Fountain, FountainKind, FountainRepeat, Stop};
+use tracedraw_core::style::{Fountain, FountainHandles, FountainKind, FountainRepeat, Stop};
 use tracedraw_core::{Color, Fill};
 
 /// What the dialog keeps while it is open.
@@ -42,6 +47,11 @@ pub struct EditFillState {
     /// What the selection shows meanwhile: the fill, the fields set and
     /// Overprint fill last previewed.
     pub shown: Option<(Fill, Vec<FillField>, Option<bool>)>,
+    /// The box the preview draws the fill on (see [`preview_bounds`]).
+    pub bounds: GRect,
+    /// The gradient node a drag in the preview holds, and how far it was
+    /// from the press (it keeps that distance from the pointer).
+    pub drag: Option<(FountainHandle, Vec2)>,
 }
 
 /// Width of the band of colours.
@@ -57,8 +67,10 @@ impl App {
     /// Open the Edit Fill dialog on the selection's fill (or the default
     /// fill when nothing is selected).
     pub fn open_edit_fill(&mut self) {
+        use tracedraw_core::geometry::Shape as _;
         let targets = self.paint_targets();
         let defaults = targets.is_empty();
+        let bounds = preview_bounds(targets.first().map(|s| s.page_path().bounding_box()));
         let old = match targets.first() {
             Some(s) => s.fill.clone(),
             None => self.default_fill(),
@@ -92,6 +104,8 @@ impl App {
             defaults,
             hue,
             shown: None,
+            bounds,
+            drag: None,
         }));
     }
 
@@ -361,7 +375,7 @@ fn fountain(ui: &mut Ui, st: &mut EditFillState) {
     ui.horizontal_top(|ui| {
         ui.vertical(|ui| {
             ui.set_width(200.0);
-            preview(ui, &Fill::Fountain(f.clone()));
+            fountain_preview(ui, f, st.bounds, &mut st.drag);
             ui.add_space(4.0);
             ui.label(tr("edit_fill.fill_picker"));
             picker(ui, f);
@@ -405,23 +419,34 @@ fn fountain(ui: &mut Ui, st: &mut EditFillState) {
             node_fields(ui, f, st.node);
             ui.add_space(4.0);
             crate::ui::chrome::section(ui, &tr("edit_fill.transform"));
-            transform(ui, f);
+            transform(ui, f, st.bounds);
         });
     });
 }
 
 /// The fill drawn on a square, with a checker behind what is clear.
 fn preview(ui: &mut Ui, fill: &Fill) {
-    let size = Vec2::splat(180.0);
-    let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
-    let key = egui::Id::new(("edit_fill_preview", format!("{fill:?}")));
-    let tex: Option<egui::TextureHandle> = ui.data(|d| d.get_temp(key));
+    let (rect, _) = ui.allocate_exact_size(Vec2::splat(180.0), Sense::hover());
+    draw_fill(ui, rect, fill, GRect::new(0.0, 0.0, PREVIEW_MM, PREVIEW_MM));
+}
+
+/// `fill` rendered on the page box `b` and drawn on `rect`, with a
+/// checker behind what is clear.
+fn draw_fill(ui: &mut Ui, rect: Rect, fill: &Fill, b: GRect) {
+    let size = rect.size();
+    let key = egui::Id::new((
+        "edit_fill_preview",
+        format!("{fill:?}"),
+        b.width().to_bits(),
+        b.height().to_bits(),
+    ));
+    // One texture kept, made anew when the fill or the box changes (a
+    // drag in the preview changes it every frame).
+    let slot = egui::Id::new("edit_fill_preview_tex");
+    let kept: Option<(egui::Id, egui::TextureHandle)> = ui.data(|d| d.get_temp(slot));
+    let tex = kept.filter(|(k, _)| *k == key).map(|(_, t)| t);
     let tex = tex.or_else(|| {
-        let pm = tracedraw_render::render_fill_image(
-            fill,
-            tracedraw_core::geometry::Rect::new(0.0, 0.0, 50.0, 50.0),
-            90.0,
-        )?;
+        let pm = tracedraw_render::render_fill_image(fill, b, 90.0)?;
         let img = egui::ColorImage::from_rgba_premultiplied(
             [pm.width() as usize, pm.height() as usize],
             pm.data(),
@@ -429,14 +454,14 @@ fn preview(ui: &mut Ui, fill: &Fill) {
         let t = ui
             .ctx()
             .load_texture("edit_fill_preview", img, egui::TextureOptions::LINEAR);
-        ui.data_mut(|d| d.insert_temp(key, t.clone()));
+        ui.data_mut(|d| d.insert_temp(slot, (key, t.clone())));
         Some(t)
     });
     let p = ui.painter();
     // A checker for what the fill leaves clear.
     let cell = 10.0;
-    for y in 0..(size.y / cell) as i32 {
-        for x in 0..(size.x / cell) as i32 {
+    for y in 0..(size.y / cell).ceil() as i32 {
+        for x in 0..(size.x / cell).ceil() as i32 {
             let c = if (x + y) % 2 == 0 {
                 Color32::from_gray(255)
             } else {
@@ -446,7 +471,8 @@ fn preview(ui: &mut Ui, fill: &Fill) {
                 Rect::from_min_size(
                     rect.min + Vec2::new(x as f32 * cell, y as f32 * cell),
                     Vec2::splat(cell),
-                ),
+                )
+                .intersect(rect),
                 0.0,
                 c,
             );
@@ -466,6 +492,248 @@ fn preview(ui: &mut Ui, fill: &Fill) {
         EStroke::new(1.0, Tokens::border()),
         egui::StrokeKind::Inside,
     );
+}
+
+/// Longest side of the box the gradient preview is drawn on (mm).
+const PREVIEW_MM: f64 = 50.0;
+
+/// Room around the gradient preview's box for nodes just outside it.
+const PREVIEW_MARGIN: f32 = 14.0;
+
+/// Screen pixels within which a press in the preview takes a node.
+const PREVIEW_PICK: f32 = 8.0;
+
+/// The box the gradient preview draws the fill on: the object's bounds
+/// scaled to a longest side of 50 mm, so the nodes, the angle and the
+/// centre are where they are on the object (they are relative to its
+/// box); a square for no object or a flat one. A side is kept at least an
+/// eighth of the other so a thin object still shows a preview.
+pub fn preview_bounds(b: Option<GRect>) -> GRect {
+    let square = GRect::new(0.0, 0.0, PREVIEW_MM, PREVIEW_MM);
+    let Some(b) = b else {
+        return square;
+    };
+    let (w, h) = (b.width(), b.height());
+    if !(w.is_finite() && h.is_finite() && w > 1e-9 && h > 1e-9) {
+        return square;
+    }
+    let m = w.max(h);
+    GRect::new(
+        0.0,
+        0.0,
+        (w / m).max(0.125) * PREVIEW_MM,
+        (h / m).max(0.125) * PREVIEW_MM,
+    )
+}
+
+/// Where the preview's page box `page` is on the screen (`screen`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PreviewMap {
+    pub screen: Rect,
+    pub page: GRect,
+}
+
+impl PreviewMap {
+    /// The box `page` as large as it fits in `area`, centred.
+    pub fn fit(area: Rect, page: GRect) -> Self {
+        let (w, h) = (page.width().max(1e-9), page.height().max(1e-9));
+        let k = (f64::from(area.width()) / w).min(f64::from(area.height()) / h);
+        let size = Vec2::new((w * k) as f32, (h * k) as f32);
+        PreviewMap {
+            screen: Rect::from_center_size(area.center(), size),
+            page,
+        }
+    }
+
+    /// A page point on the screen (the page's y runs up).
+    pub fn to_screen(&self, p: GPoint) -> Pos2 {
+        let (s, b) = (self.screen, self.page);
+        Pos2::new(
+            s.left() + ((p.x - b.x0) / b.width().max(1e-9)) as f32 * s.width(),
+            s.top() + ((b.y1 - p.y) / b.height().max(1e-9)) as f32 * s.height(),
+        )
+    }
+
+    /// A screen point on the page.
+    pub fn to_page(&self, q: Pos2) -> GPoint {
+        let (s, b) = (self.screen, self.page);
+        let u = f64::from((q.x - s.left()) / s.width().max(1e-6));
+        let v = f64::from((q.y - s.top()) / s.height().max(1e-6));
+        GPoint::new(b.x0 + u * b.width(), b.y1 - v * b.height())
+    }
+}
+
+/// Move node `h` of the gradient to `p` (a point of the preview's box
+/// `b`), as the Interactive Fill tool moves it on the canvas: the start
+/// moves the fill (the centre of an elliptical, conical or square one
+/// moves it whole, which is its offset while its nodes are not placed
+/// freely), the end turns and stretches the axis, the skew handle tilts
+/// it. With `snap` the end turns in steps of 15 degrees. A shaped fill
+/// has no nodes.
+pub fn drag_preview_node(f: &mut Fountain, b: GRect, h: FountainHandle, p: GPoint, snap: bool) {
+    if f.kind == FountainKind::Shaped || !(p.x.is_finite() && p.y.is_finite()) {
+        return;
+    }
+    let centred = matches!(
+        f.kind,
+        FountainKind::Radial | FountainKind::Conical | FountainKind::Square
+    );
+    if h == FountainHandle::Start && centred && f.handles.is_none() {
+        let r = Fountain::page_to_rel(b, p);
+        f.offset = GPoint::new(r.x.clamp(-1.0, 1.0), r.y.clamp(-1.0, 1.0));
+        return;
+    }
+    let pts = fountain_handles(f, b);
+    let [(_, s), (_, e), (_, k)] = pts.as_slice() else {
+        return;
+    };
+    let mut p = p;
+    let mut snapped = None;
+    if snap && h == FountainHandle::End {
+        let d = p - *s;
+        let len = d.hypot();
+        if len > 1e-9 {
+            let step = 15.0;
+            let a = (d.y.atan2(d.x).to_degrees() / step).round() * step;
+            let r = a.to_radians();
+            p = *s + GVec2::new(r.cos(), r.sin()) * len;
+            snapped = Some(if a > 180.0 { a - 360.0 } else { a });
+        }
+    }
+    let (s, e, k) = moved_nodes(f.kind, (*s, *e, *k), h, p);
+    let rel = |q: GPoint| Fountain::page_to_rel(b, q);
+    f.set_handles(
+        b,
+        FountainHandles {
+            start: rel(s),
+            end: rel(e),
+            skew: rel(k),
+        },
+    );
+    if let Some(a) = snapped {
+        f.angle = a;
+    }
+}
+
+/// Turn nodes placed freely by `deg` about the start (on the box `b`), as
+/// a change of the rotation field turns the fill; nothing without them.
+pub fn turn_nodes(f: &mut Fountain, b: GRect, deg: f64) {
+    let Some(h) = f.handles else {
+        return;
+    };
+    if !deg.is_finite() {
+        return;
+    }
+    let s = Fountain::rel_to_page(b, h.start);
+    let (c, sn) = (deg.to_radians().cos(), deg.to_radians().sin());
+    let turn = |q: GPoint| {
+        let v = Fountain::rel_to_page(b, q) - s;
+        Fountain::page_to_rel(b, s + GVec2::new(v.x * c - v.y * sn, v.x * sn + v.y * c))
+    };
+    f.handles = Some(FountainHandles {
+        start: h.start,
+        end: turn(h.end),
+        skew: turn(h.skew),
+    });
+}
+
+/// Move nodes placed freely by `(dx, dy)` of the box's half sides, as a
+/// change of the centre fields moves the fill; nothing without them.
+pub fn shift_nodes(f: &mut Fountain, dx: f64, dy: f64) {
+    let Some(h) = &mut f.handles else {
+        return;
+    };
+    if !(dx.is_finite() && dy.is_finite()) {
+        return;
+    }
+    for q in [&mut h.start, &mut h.end, &mut h.skew] {
+        *q = GPoint::new(q.x + dx, q.y + dy);
+    }
+}
+
+/// The gradient preview with its nodes on it: a drag on a node moves it
+/// (see [`drag_preview_node`]); a drag anywhere else moves the start (the
+/// centre of the fill) by as much as the pointer moves.
+fn fountain_preview(
+    ui: &mut Ui,
+    f: &mut Fountain,
+    b: GRect,
+    drag: &mut Option<(FountainHandle, Vec2)>,
+) {
+    let (area, resp) = ui.allocate_exact_size(Vec2::new(200.0, 180.0), Sense::drag());
+    let map = PreviewMap::fit(area.shrink(PREVIEW_MARGIN), b);
+    ui.data_mut(|d| d.insert_temp(egui::Id::new("edit_fill_preview_box"), map.screen));
+    let nearest = |f: &Fountain, at: Pos2| {
+        fountain_handles(f, b)
+            .into_iter()
+            .map(|(h, p)| (h, map.to_screen(p).distance(at)))
+            .filter(|(_, d)| *d <= PREVIEW_PICK)
+            .min_by(|x, y| x.1.total_cmp(&y.1))
+            .map(|(h, _)| h)
+    };
+    if resp.drag_started() && f.kind != FountainKind::Shaped {
+        *drag = ui.input(|i| i.pointer.press_origin()).and_then(|at| {
+            let h = nearest(f, at).unwrap_or(FountainHandle::Start);
+            let node = fountain_handles(f, b)
+                .into_iter()
+                .find(|(n, _)| *n == h)
+                .map(|(_, p)| map.to_screen(p))?;
+            Some((h, node - at))
+        });
+    }
+    if resp.dragged() {
+        if let (Some((h, grab)), Some(at)) = (*drag, resp.interact_pointer_pos()) {
+            let snap = ui.input(|i| i.modifiers.command || i.modifiers.ctrl);
+            drag_preview_node(f, b, h, map.to_page(at + grab), snap);
+        }
+    }
+    if resp.drag_stopped() {
+        *drag = None;
+    }
+    if drag.is_some() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+    } else if resp.hover_pos().and_then(|at| nearest(f, at)).is_some() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+    }
+    draw_fill(ui, map.screen, &Fill::Fountain(f.clone()), b);
+    let pts = fountain_handles(f, b);
+    let [(_, s), (_, e), (_, k)] = pts.as_slice() else {
+        resp.on_hover_text(tr("edit_fill.preview_tip"));
+        return;
+    };
+    let (s, e, k) = (map.to_screen(*s), map.to_screen(*e), map.to_screen(*k));
+    // Plain line segments, a light one under a dark one, so they show on
+    // any colour.
+    let p = ui.painter_at(area);
+    let light = EStroke::new(3.0, Color32::WHITE);
+    let dark = EStroke::new(1.0, Color32::from_gray(40));
+    for (a, z) in [(s, k), (s, e)] {
+        p.line_segment([a, z], light);
+        p.line_segment([a, z], dark);
+    }
+    let rgb = |c: Option<&Stop>| {
+        let [r, g, bl] = c.map_or([255, 255, 255], |s| s.color.to_rgb8());
+        Color32::from_rgb(r, g, bl)
+    };
+    let ring = |h: FountainHandle| {
+        if drag.is_some_and(|(d, _)| d == h) {
+            EStroke::new(2.0, Tokens::ACCENT)
+        } else {
+            EStroke::new(1.0, Color32::from_gray(40))
+        }
+    };
+    for (at, h, c) in [
+        (s, FountainHandle::Start, rgb(f.stops.first())),
+        (e, FountainHandle::End, rgb(f.stops.last())),
+    ] {
+        let r = Rect::from_center_size(at, Vec2::splat(9.0));
+        p.rect_filled(r.expand(1.0), 0.0, Color32::WHITE);
+        p.rect_filled(r, 0.0, c);
+        p.rect_stroke(r, 0.0, ring(h), egui::StrokeKind::Outside);
+    }
+    p.circle_filled(k, 4.5, Color32::WHITE);
+    p.circle_stroke(k, 4.5, ring(FountainHandle::Skew));
+    resp.on_hover_text(tr("edit_fill.preview_tip"));
 }
 
 /// The built-in gradients; a click takes its colours.
@@ -705,18 +973,26 @@ fn node_fields(ui: &mut Ui, f: &mut Fountain, node: usize) {
     });
 }
 
-/// Rotation, centre and edge pad, mirror and inversion.
-fn transform(ui: &mut Ui, f: &mut Fountain) {
+/// Rotation, centre and edge pad, mirror and inversion. Nodes placed
+/// freely turn and move with the rotation and the centre (preview box
+/// `b`), so the fields and the preview's nodes stay in step (#939).
+fn transform(ui: &mut Ui, f: &mut Fountain, b: GRect) {
     ui.horizontal(|ui| {
         ui.label(tr("edit_fill.rotate"));
-        ui.add(
-            crate::ui::field::NumField::new(&mut f.angle)
-                .range(-360.0..=360.0)
-                .speed(1.0)
-                .max_decimals(1)
-                .suffix("°")
-                .width(60.0),
-        );
+        let before = f.angle;
+        if ui
+            .add(
+                crate::ui::field::NumField::new(&mut f.angle)
+                    .range(-360.0..=360.0)
+                    .speed(1.0)
+                    .max_decimals(1)
+                    .suffix("°")
+                    .width(60.0),
+            )
+            .changed()
+        {
+            turn_nodes(f, b, f.angle - before);
+        }
         if !matches!(f.kind, FountainKind::Linear | FountainKind::Shaped) {
             ui.label(tr("edit_fill.x"));
             let mut x = f.offset.x * 100.0;
@@ -729,6 +1005,7 @@ fn transform(ui: &mut Ui, f: &mut Fountain) {
                 )
                 .changed()
             {
+                shift_nodes(f, x / 100.0 - f.offset.x, 0.0);
                 f.offset.x = x / 100.0;
             }
             ui.label(tr("edit_fill.y"));
@@ -742,6 +1019,7 @@ fn transform(ui: &mut Ui, f: &mut Fountain) {
                 )
                 .changed()
             {
+                shift_nodes(f, 0.0, y / 100.0 - f.offset.y);
                 f.offset.y = y / 100.0;
             }
         }
@@ -1081,5 +1359,291 @@ mod tests {
             panic!("a gradient");
         };
         assert_eq!(kept.kind, FountainKind::Radial);
+    }
+
+    fn near(a: GPoint, b: GPoint) -> bool {
+        (a - b).hypot() < 1e-6
+    }
+
+    /// The preview's box has the object's proportions and maps the page
+    /// (y up) to the screen and back (#939).
+    #[test]
+    fn the_preview_box_has_the_objects_proportions() {
+        let b = preview_bounds(Some(GRect::new(10.0, 10.0, 110.0, 60.0)));
+        assert!((b.width() - 50.0).abs() < 1e-9 && (b.height() - 25.0).abs() < 1e-9);
+        assert_eq!(
+            preview_bounds(None).size(),
+            GRect::new(0.0, 0.0, 50.0, 50.0).size()
+        );
+        let flat = preview_bounds(Some(GRect::new(0.0, 0.0, 10.0, 0.0)));
+        assert!((flat.width() - flat.height()).abs() < 1e-9, "{flat:?}");
+        let thin = preview_bounds(Some(GRect::new(0.0, 0.0, 100.0, 1.0)));
+        assert!((thin.height() - 50.0 / 8.0).abs() < 1e-9, "{thin:?}");
+        let map = PreviewMap::fit(
+            Rect::from_min_size(Pos2::new(100.0, 100.0), Vec2::new(172.0, 152.0)),
+            b,
+        );
+        assert!((map.screen.width() / map.screen.height() - 2.0).abs() < 1e-3);
+        let top_left = map.to_screen(GPoint::new(b.x0, b.y1));
+        assert!((top_left - map.screen.min).length() < 1e-3);
+        let p = GPoint::new(12.5, 20.0);
+        assert!((map.to_page(map.to_screen(p)) - p).hypot() < 1e-3);
+    }
+
+    /// The centre of an elliptical fill dragged in the preview is its
+    /// offset; the end of a linear one turns it, Ctrl in 15 degree steps,
+    /// and places its nodes as on the canvas (#939).
+    #[test]
+    fn preview_nodes_move_and_turn_the_gradient() {
+        let b = GRect::new(0.0, 0.0, 50.0, 50.0);
+        let mut f = Fountain::two(FountainKind::Radial, Color::BLACK, Color::WHITE, 0.0);
+        drag_preview_node(
+            &mut f,
+            b,
+            FountainHandle::Start,
+            GPoint::new(37.5, 12.5),
+            false,
+        );
+        assert!(near(f.offset, GPoint::new(0.5, -0.5)), "{:?}", f.offset);
+        assert!(f.handles.is_none(), "an offset still places it");
+        drag_preview_node(
+            &mut f,
+            b,
+            FountainHandle::Start,
+            GPoint::new(500.0, 25.0),
+            false,
+        );
+        assert!(near(f.offset, GPoint::new(1.0, 0.0)), "kept in the box");
+
+        let mut f = two();
+        let start = fountain_handles(&f, b)[0].1;
+        assert!(near(start, GPoint::new(0.0, 25.0)));
+        drag_preview_node(
+            &mut f,
+            b,
+            FountainHandle::End,
+            GPoint::new(25.0, 50.0),
+            false,
+        );
+        assert!((f.angle - 45.0).abs() < 1e-9, "{}", f.angle);
+        let h = f.handles.expect("nodes placed");
+        assert!(near(
+            h.end,
+            Fountain::page_to_rel(b, GPoint::new(25.0, 50.0))
+        ));
+        // Turned in steps, the length kept.
+        drag_preview_node(
+            &mut f,
+            b,
+            FountainHandle::End,
+            GPoint::new(30.0, 50.0),
+            true,
+        );
+        assert_eq!(f.angle, 45.0);
+        let e = fountain_handles(&f, b)[1].1;
+        let len = (GPoint::new(30.0, 50.0) - start).hypot();
+        assert!(((e - start).hypot() - len).abs() < 1e-9);
+        // The start of a linear fill moves it.
+        drag_preview_node(
+            &mut f,
+            b,
+            FountainHandle::Start,
+            GPoint::new(5.0, 30.0),
+            false,
+        );
+        assert!(near(fountain_handles(&f, b)[0].1, GPoint::new(5.0, 30.0)));
+        // A shaped fill has no nodes; nonsense points change nothing.
+        let mut sh = Fountain::two(FountainKind::Shaped, Color::BLACK, Color::WHITE, 0.0);
+        let was = sh.clone();
+        drag_preview_node(
+            &mut sh,
+            b,
+            FountainHandle::End,
+            GPoint::new(1.0, 1.0),
+            false,
+        );
+        assert_eq!(sh, was);
+        let was = f.clone();
+        drag_preview_node(
+            &mut f,
+            b,
+            FountainHandle::End,
+            GPoint::new(f64::NAN, 1.0),
+            false,
+        );
+        assert_eq!(f, was);
+    }
+
+    /// With nodes placed, the rotation and centre fields turn and move
+    /// them, so the preview and the fields agree (#939).
+    #[test]
+    fn the_fields_turn_and_move_placed_nodes() {
+        let b = GRect::new(0.0, 0.0, 50.0, 25.0);
+        let mut f = two();
+        drag_preview_node(
+            &mut f,
+            b,
+            FountainHandle::End,
+            GPoint::new(40.0, 12.5),
+            false,
+        );
+        let before = f.handles.expect("placed");
+        let s = Fountain::rel_to_page(b, before.start);
+        turn_nodes(&mut f, b, 90.0);
+        let h = f.handles.expect("placed");
+        assert!(near(h.start, before.start));
+        let e = Fountain::rel_to_page(b, h.end) - s;
+        assert!(e.x.abs() < 1e-9 && (e.y - 40.0).abs() < 1e-9, "{e:?}");
+        // What the fill now shows has the angle the field says.
+        let mut g = f.clone();
+        g.set_handles(b, h);
+        assert!((g.angle - 90.0).abs() < 1e-9, "{}", g.angle);
+        shift_nodes(&mut f, 0.25, -0.5);
+        let m = f.handles.expect("placed");
+        assert!(near(
+            m.start,
+            GPoint::new(h.start.x + 0.25, h.start.y - 0.5)
+        ));
+        assert!(near(m.end, GPoint::new(h.end.x + 0.25, h.end.y - 0.5)));
+        // Without placed nodes the fields alone place the fill.
+        let mut plain = two();
+        turn_nodes(&mut plain, b, 30.0);
+        shift_nodes(&mut plain, 0.5, 0.5);
+        assert_eq!(plain, two());
+    }
+
+    /// A drag on the preview's end node in the open dialog turns the
+    /// gradient, and OK puts the placed nodes on the object; Reset nodes
+    /// takes them off it again (#939).
+    #[test]
+    fn a_drag_in_the_preview_turns_the_objects_gradient() {
+        let ctx = crate::theme::ui_context();
+        App::setup_context(&ctx);
+        let mut app = App::headless();
+        let id = app
+            .new_shape(ShapeKind::Rect {
+                rect: tracedraw_core::geometry::Rect::new(10.0, 10.0, 50.0, 30.0),
+                radius: 0.0,
+                corners: None,
+            })
+            .expect("rect");
+        app.select(vec![id]);
+        app.apply_fill(Fill::Fountain(two()));
+        app.show_dockers = false;
+        app.open_edit_fill();
+        let run = |app: &mut App, events: Vec<egui::Event>| {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1400.0, 900.0),
+                )),
+                events,
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| crate::ui::root(app, ui));
+            out.textures_delta.clear();
+        };
+        for _ in 0..3 {
+            run(&mut app, Vec::new());
+        }
+        let Dialog::EditFill(st) = &app.dialog else {
+            panic!("the dialog");
+        };
+        let b = st.bounds;
+        assert!((b.width() / b.height() - 2.0).abs() < 1e-9, "{b:?}");
+        let screen: Rect = ctx
+            .data(|d| d.get_temp(egui::Id::new("edit_fill_preview_box")))
+            .expect("the preview drawn");
+        let map = PreviewMap { screen, page: b };
+        let Fill::Fountain(f) = &st.fill else {
+            panic!("a gradient");
+        };
+        let from = map.to_screen(fountain_handles(f, b)[1].1);
+        // Up to the top right corner of the box.
+        let to = map.to_screen(GPoint::new(b.x1, b.y1));
+        let press = |pos, pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        run(&mut app, vec![egui::Event::PointerMoved(from)]);
+        run(&mut app, vec![press(from, true)]);
+        for i in 1..=5 {
+            let p = from + (to - from) * (i as f32 / 5.0);
+            run(&mut app, vec![egui::Event::PointerMoved(p)]);
+        }
+        run(&mut app, vec![press(to, false)]);
+        run(&mut app, Vec::new());
+        let Dialog::EditFill(st) = &app.dialog else {
+            panic!("the dialog stays open");
+        };
+        let st = st.as_ref().clone();
+        assert_eq!(st.drag, None, "let go");
+        let Fill::Fountain(f) = &st.fill else {
+            panic!("a gradient");
+        };
+        let h = f.handles.expect("the end moved");
+        assert!(
+            (h.end.x - 1.0).abs() < 0.05 && (h.end.y - 1.0).abs() < 0.05,
+            "{h:?}"
+        );
+        assert!(f.angle > 5.0, "turned up: {}", f.angle);
+        // Shown on the object meanwhile, kept with OK.
+        let Fill::Fountain(shown) = fill_of(&app, id) else {
+            panic!("a gradient");
+        };
+        assert_eq!(shown.handles, f.handles);
+        app.end_edit_fill_preview();
+        app.apply_edit_fill(&st);
+        let Fill::Fountain(kept) = fill_of(&app, id) else {
+            panic!("a gradient");
+        };
+        assert_eq!(kept.handles, f.handles);
+        // Reset nodes: back to the angle alone.
+        app.open_edit_fill();
+        let Dialog::EditFill(mut st) = std::mem::replace(&mut app.dialog, Dialog::None) else {
+            panic!("the dialog");
+        };
+        let Fill::Fountain(f) = &mut st.fill else {
+            panic!("a gradient");
+        };
+        f.handles = None;
+        app.apply_edit_fill(&st);
+        let Fill::Fountain(reset) = fill_of(&app, id) else {
+            panic!("a gradient");
+        };
+        assert_eq!(reset.handles, None);
+        // A drag off the nodes of an elliptical fill moves its centre.
+        app.select(vec![id]);
+        app.apply_fill(Fill::Fountain(Fountain::two(
+            FountainKind::Radial,
+            Color::BLACK,
+            Color::WHITE,
+            0.0,
+        )));
+        app.open_edit_fill();
+        for _ in 0..3 {
+            run(&mut app, Vec::new());
+        }
+        let from = screen.center() + egui::vec2(20.0, 10.0);
+        let to = from + egui::vec2(screen.width() / 4.0, 0.0);
+        run(&mut app, vec![egui::Event::PointerMoved(from)]);
+        run(&mut app, vec![press(from, true)]);
+        for i in 1..=5 {
+            let p = from + (to - from) * (i as f32 / 5.0);
+            run(&mut app, vec![egui::Event::PointerMoved(p)]);
+        }
+        run(&mut app, vec![press(to, false)]);
+        run(&mut app, Vec::new());
+        let Dialog::EditFill(st) = &app.dialog else {
+            panic!("the dialog stays open");
+        };
+        let Fill::Fountain(f) = &st.fill else {
+            panic!("a gradient");
+        };
+        assert!((f.offset.x - 0.5).abs() < 0.05, "{:?}", f.offset);
+        assert!(f.offset.y.abs() < 0.05, "{:?}", f.offset);
+        assert_eq!(f.handles, None);
     }
 }

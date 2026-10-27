@@ -16,7 +16,7 @@ use crate::ui::propbar::{pic_button, sep, Pic};
 use crate::ui::tips::RichTip;
 use egui::{epaint, Color32, Painter, Pos2, Rect, Stroke, Ui, Vec2};
 use tracedraw_core::envelope::{Mapping, Mode};
-use tracedraw_core::geometry::ParamCurve;
+use tracedraw_core::geometry::{CubicBez, ParamCurve};
 
 /// The name of a mode.
 pub fn mode_key(m: Mode) -> &'static str {
@@ -339,6 +339,26 @@ pub fn envelope_docker(app: &mut App, ui: &mut Ui) {
     }
 }
 
+/// How far a drawn frame may stray from its curves, in pixels.
+const FRAME_TOLERANCE: f64 = 0.25;
+
+/// How many equal steps draw the frame segment `c` (in screen pixels)
+/// within [`FRAME_TOLERANCE`] of the curve: a step of `1/n` strays at most
+/// `6 d / (8 n^2)` from a cubic whose control points' second differences
+/// are at most `d`. A fixed 16 steps drew a large segment, zoomed in, as
+/// a visible row of lines (#881); a short one takes few.
+fn frame_steps(c: &CubicBez) -> usize {
+    let d = (c.p0.to_vec2() - 2.0 * c.p1.to_vec2() + c.p2.to_vec2())
+        .hypot()
+        .max((c.p1.to_vec2() - 2.0 * c.p2.to_vec2() + c.p3.to_vec2()).hypot());
+    let n = (0.75 * d / FRAME_TOLERANCE).sqrt().ceil();
+    if n.is_finite() {
+        (n as usize).clamp(1, 256)
+    } else {
+        1
+    }
+}
+
 /// The frames of the selected objects' last envelopes, with the Envelope
 /// and the Shape tools: the frame, its nodes (the selected one filled)
 /// and, in the Unconstrained mode, the selected node's handles.
@@ -354,9 +374,16 @@ pub fn draw_envelopes(app: &App, painter: &Painter) {
         let page = f.transformed(s.transform);
         let mut outline: Vec<Pos2> = Vec::new();
         for i in 0..page.len() {
+            let screen = |p: tracedraw_core::geometry::Point| {
+                let q = app.view.to_screen(p);
+                tracedraw_core::geometry::Point::new(q.x as f64, q.y as f64)
+            };
             let c = page.segment(i);
-            for k in 0..16 {
-                outline.push(app.view.to_screen(c.eval(k as f64 / 16.0)));
+            let c = CubicBez::new(screen(c.p0), screen(c.p1), screen(c.p2), screen(c.p3));
+            let n = frame_steps(&c);
+            for k in 0..n {
+                let p = c.eval(k as f64 / n as f64);
+                outline.push(Pos2::new(p.x as f32, p.y as f32));
             }
         }
         if outline.len() > 2 {
@@ -501,6 +528,62 @@ pub fn draw_envelope_pic(painter: &Painter, r: Rect, pic: Pic, color: Color32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tracedraw_core::geometry::Point;
+
+    /// A frame segment is drawn within a quarter pixel of its curve
+    /// however large it is on screen, with few steps when it is small or
+    /// straight (#881).
+    #[test]
+    fn the_frame_is_drawn_smooth_at_any_zoom() {
+        // An arch, from a frame segment seen at growing zooms.
+        for zoom in [0.5, 4.0, 40.0, 400.0] {
+            let c = CubicBez::new(
+                Point::new(0.0, 0.0),
+                Point::new(10.0 * zoom, -30.0 * zoom),
+                Point::new(30.0 * zoom, -30.0 * zoom),
+                Point::new(40.0 * zoom, 0.0),
+            );
+            let n = frame_steps(&c);
+            let pts: Vec<Point> = (0..=n).map(|k| c.eval(k as f64 / n as f64)).collect();
+            // The curve's farthest point from the drawn line.
+            let mut worst: f64 = 0.0;
+            for k in 0..=4000 {
+                let p = c.eval(k as f64 / 4000.0);
+                let d = pts
+                    .windows(2)
+                    .map(|w| {
+                        let ab = w[1] - w[0];
+                        let t = ((p - w[0]).dot(ab) / ab.hypot2().max(1e-12)).clamp(0.0, 1.0);
+                        (p - (w[0] + ab * t)).hypot()
+                    })
+                    .fold(f64::MAX, f64::min);
+                worst = worst.max(d);
+            }
+            assert!(
+                worst <= FRAME_TOLERANCE,
+                "zoom {zoom}: {n} steps, {worst} px off"
+            );
+            if zoom >= 40.0 {
+                // The 16 steps it used to take were not enough.
+                assert!(n > 16, "zoom {zoom}: {n}");
+            }
+        }
+        // A straight segment is one line; a tiny curve a few.
+        let line = CubicBez::new(
+            Point::new(0.0, 0.0),
+            Point::new(100.0, 0.0),
+            Point::new(200.0, 0.0),
+            Point::new(300.0, 0.0),
+        );
+        assert_eq!(frame_steps(&line), 1);
+        let nan = CubicBez::new(
+            Point::new(f64::NAN, 0.0),
+            Point::ZERO,
+            Point::ZERO,
+            Point::ZERO,
+        );
+        assert_eq!(frame_steps(&nan), 1);
+    }
 
     /// The bar and the docker draw with nothing selected, with an
     /// enveloped object and in every mode.
