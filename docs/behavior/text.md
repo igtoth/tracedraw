@@ -724,9 +724,15 @@ italic when the face is upright; only what no axis gives is made
 synthetically (bold by drawing the letters twice, italic by slanting
 them).
 
-The axes can also be set on the text (#870): the Text docker's
-Character expander shows, for the selected text's variable font (its
-`fvar` table), a slider for each axis the font does not hide (flag
+The axes can also be set on the text (#870): a button beside the font
+size, on the property bar (and the Text toolbar) and in the Text
+docker's first section, opens the sliders in a small window under it;
+the Text docker's Character expander shows them too. The button is
+enabled only when the selected text's font is variable, and its tip
+says so when it is not
+(`ui::tests::the_font_size_has_a_button_for_variable_font_axes`). For
+the selected text's variable font (its `fvar` table) there is a slider
+for each axis the font does not hide (flag
 0x0001): Weight, Width, Slant, Italic and Optical size by those names,
 the font's own axes by the names its `name` table gives them, each over
 the font's range. A slider shows the value set on the text, else the one

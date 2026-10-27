@@ -1867,6 +1867,8 @@ fn text_properties(app: &mut App, ui: &mut Ui) {
     }
     let mut changed = crate::ui::font_list::text_font_list(app, ui, "propbar_font", 180.0);
     changed |= text_size_list(app, ui);
+    // The axes of a variable font, beside its size (#870).
+    crate::ui::text_docker::font_axes_button(app, ui, "propbar");
     for (on, label, key) in [
         (
             app.text_bold,

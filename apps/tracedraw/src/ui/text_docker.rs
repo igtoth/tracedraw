@@ -723,6 +723,8 @@ fn character(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) 
         changed |= style_list(app, ui);
         row_check(app, ui, "style");
         changed |= crate::ui::toolbar::text_size_list(app, ui);
+        // The axes of a variable font, beside its size (#870).
+        font_axes_button(app, ui, "docker");
         row_check(app, ui, "size");
     });
     if changed {
@@ -967,6 +969,123 @@ fn font_axes(app: &mut App, ui: &mut Ui, sp: &TextSpan) {
                 let tag = axis.tag.clone();
                 edit_spans(app, move |s| s.set_variation(&tag, Some(v)));
             }
+        });
+    }
+}
+
+/// The first span of the selected text, or of the text being edited:
+/// the font whose axes the axes button offers (#870).
+pub(crate) fn selected_text_span(app: &App) -> Option<TextSpan> {
+    app.selected_shapes().iter().find_map(|s| match &s.kind {
+        ShapeKind::Text { spans, .. } => spans.first().cloned(),
+        _ => None,
+    })
+}
+
+/// Where the axes button of the bar or docker `salt` was drawn last, for
+/// tests.
+#[cfg(test)]
+pub(crate) fn font_axes_button_rect(ctx: &egui::Context, salt: &str) -> Option<Rect> {
+    ctx.data(|d| d.get_temp(egui::Id::new(("font_axes_button_rect", salt))))
+}
+
+/// Where the axes popup of the bar or docker `salt` was drawn last, for
+/// tests.
+#[cfg(test)]
+pub(crate) fn font_axes_popup_rect(ctx: &egui::Context, salt: &str) -> Option<Rect> {
+    ctx.data(|d| d.get_temp(egui::Id::new(("font_axes_popup_rect", salt))))
+}
+
+/// The popup of the axes button whose id is `id`.
+fn font_axes_popup_id(id: egui::Id) -> egui::Id {
+    id.with("popup")
+}
+
+/// The button beside the font size that opens the axis sliders of the
+/// selected text's variable font in a small window under it (#870): the
+/// same sliders as the Character section. It is enabled only when that
+/// font has axes; its tip says why when it is not.
+pub(crate) fn font_axes_button(app: &mut App, ui: &mut Ui, salt: &str) {
+    use crate::ui::tips::RichTip;
+    let span = selected_text_span(app);
+    let enabled = span
+        .as_ref()
+        .is_some_and(|sp| !axes_of(ui.ctx(), sp).is_empty());
+    // Salted with the bar's id too: the property bar and the Text
+    // toolbar can both show one.
+    let id = ui.make_persistent_id(("font_axes_button", salt));
+    let popup_id = font_axes_popup_id(id);
+    let ctx = ui.ctx().clone();
+    let open = egui::Popup::is_id_open(&ctx, popup_id);
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(24.0, 22.0), Sense::hover());
+    let sense = if enabled {
+        Sense::click()
+    } else {
+        Sense::hover()
+    };
+    let resp = ui.interact(rect, id, sense);
+    #[cfg(test)]
+    ctx.data_mut(|d| d.insert_temp(egui::Id::new(("font_axes_button_rect", salt)), rect));
+    if ui.is_rect_visible(rect) {
+        let painter = ui.painter();
+        if open {
+            painter.rect_filled(rect, 2.0, Tokens::tool_active());
+        } else if enabled && resp.hovered() {
+            painter.rect_filled(rect, 2.0, Tokens::tool_hover());
+        }
+        let color = if enabled {
+            Tokens::icon()
+        } else {
+            Tokens::text_dim().gamma_multiply(0.6)
+        };
+        // A letter over a slider.
+        painter.text(
+            rect.center() - Vec2::new(0.0, 3.0),
+            egui::Align2::CENTER_CENTER,
+            "A",
+            egui::FontId::proportional(13.0),
+            color,
+        );
+        let y = rect.bottom() - 5.0;
+        painter.line_segment(
+            [
+                egui::pos2(rect.left() + 4.0, y),
+                egui::pos2(rect.right() - 4.0, y),
+            ],
+            Stroke::new(1.0, color),
+        );
+        painter.circle_filled(egui::pos2(rect.center().x + 3.0, y), 2.5, color);
+    }
+    let why = if enabled {
+        "toolbar.font_axes_desc"
+    } else {
+        "toolbar.font_axes_none"
+    };
+    let resp = resp.rich_tip(format!("{}\n{}", tr("toolbar.font_axes"), tr(why)));
+    if resp.clicked() {
+        egui::Popup::toggle_id(&ctx, popup_id);
+    }
+    if !enabled && open {
+        egui::Popup::close_id(&ctx, popup_id);
+    }
+    let Some(sp) = span.filter(|_| enabled) else {
+        return;
+    };
+    let _shown = egui::Popup::new(popup_id, ctx.clone(), resp.rect, ui.layer_id())
+        .open_memory(None)
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+        .width(280.0)
+        .show(|ui| {
+            ui.set_width(280.0);
+            font_axes(app, ui, &sp);
+        });
+    #[cfg(test)]
+    if let Some(r) = _shown {
+        ctx.data_mut(|d| {
+            d.insert_temp(
+                egui::Id::new(("font_axes_popup_rect", salt)),
+                r.response.rect,
+            )
         });
     }
 }
