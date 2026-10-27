@@ -3596,6 +3596,12 @@ impl FontSystem {
                 }
                 pen += h.advance;
             }
+            // The letters' winding, so the lines below go round the same way.
+            let glyph_area = if underline_runs.is_empty() {
+                0.0
+            } else {
+                line_path.area()
+            };
             for (si, a, b) in underline_runs {
                 let span = &spans[si];
                 let sm = metrics[si];
@@ -3606,7 +3612,7 @@ impl FontSystem {
                         b,
                         y + sm.underline_pos,
                     );
-                    let rp = orient_rest(r.to_path(0.01));
+                    let rp = wound_like(orient_rest(r.to_path(0.01)), glyph_area);
                     line_path.extend(rp.elements().iter().copied());
                     if collect {
                         line_glyphs.rest.extend(rp.elements().iter().copied());
@@ -3619,7 +3625,7 @@ impl FontSystem {
                         b,
                         y + sm.strike_pos + sm.underline_thick / 2.0,
                     );
-                    let rp = orient_rest(r.to_path(0.01));
+                    let rp = wound_like(orient_rest(r.to_path(0.01)), glyph_area);
                     line_path.extend(rp.elements().iter().copied());
                     if collect {
                         line_glyphs.rest.extend(rp.elements().iter().copied());
@@ -4320,6 +4326,19 @@ impl ttf_parser::OutlineBuilder for OutlineSink {
 
 #[cfg(test)]
 mod devanagari_tests;
+
+/// `line` (an underline or a strike line) wound the same way as the
+/// letters it crosses, whose summed signed area is `glyph_area`: text is
+/// filled with the nonzero rule, so a line wound against the letters cut
+/// holes where it crossed them (#1017). Fonts wind their outlines either
+/// way, so the letters decide.
+fn wound_like(line: BezPath, glyph_area: f64) -> BezPath {
+    if glyph_area != 0.0 && line.area() * glyph_area < 0.0 {
+        line.reverse_subpaths()
+    } else {
+        line
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -5214,6 +5233,47 @@ mod tests {
             ..ParagraphStyle::default()
         });
         assert!((pct - 1.5 * size).abs() < 1e-6, "{pct}");
+    }
+
+    /// A strike line or an underline crossing the letters fills with them:
+    /// under the nonzero rule text is filled with, every point of a solid
+    /// stem stays inside, whichever way the font winds its outlines
+    /// (TrueType and CFF wind opposite ways, #1017).
+    #[test]
+    fn strike_lines_and_underlines_fill_with_the_letters_they_cross() {
+        if !has_fonts() {
+            return;
+        }
+        let f = fonts();
+        let mut checked = 0;
+        for family in ["DejaVu Sans", "Inter", "FreeSans"] {
+            let mut plain = span("I");
+            plain.font_family = family.into();
+            plain.size_pt = 72.0;
+            let mut struck = plain.clone();
+            struck.strikethrough = true;
+            struck.underline = true;
+            let bare = f.outline(&[plain]);
+            let lined = f.outline(&[struck]);
+            if bare.glyphs != 1 {
+                continue;
+            }
+            let b = bare.path.bounding_box();
+            let x = b.center().x;
+            let mut inside_all = true;
+            for i in 1..40 {
+                let y = b.y0 + b.height() * i as f64 / 40.0;
+                if lined.path.winding(Point::new(x, y)) == 0 {
+                    inside_all = false;
+                }
+            }
+            assert!(inside_all, "{family}: the lines cut holes in the stem");
+            // The lines themselves are filled away from the letters too.
+            let lb = lined.path.bounding_box();
+            assert!(lb.x1 > b.x1, "{family}: {lb:?} {b:?}");
+            checked += 1;
+        }
+        assert!(checked > 0);
     }
 
     #[test]
