@@ -16,6 +16,12 @@ was changed on every tab (#633).
 - 887 x 695 px, centred, framed like every dialog: a 1 px `#B2B2B2` border, a white 31 px title bar with the title
   (13 px) at the left and a close button at the right (red under the
   pointer), and a white 5 px frame round the `#F4F4F4` body.
+- Every dialog opens centred (or, with Center Dialog Boxes off, where
+  it was left) and moves by its title bar, also partly out of the main
+  window: the title bar stays below the window's top edge, and at least
+  100 px of the dialog stays inside the left, right and bottom edges,
+  so even a dialog as large as the window can be pushed aside to show
+  the drawing (#908).
 - The tabs in a row at the top of the body, over a light line, the
   current one selected.
 - A white page list on the left (225 px; rows 23 px apart; the current
