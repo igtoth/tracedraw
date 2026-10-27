@@ -169,13 +169,13 @@ impl<N: Numeric> Widget for NumField<'_, N> {
             .layout()
             .horizontal_justify()
             .then(|| ui.available_width());
-        // The prefix, the box and the arrows stay on one line: in a column
-        // (or a justified slot) they would land under each other or the
-        // prefix would take the whole slot.
-        if slot.is_some() || ui.layout().main_dir().is_vertical() {
-            return ui.horizontal(|ui| self.row(ui, slot)).inner;
-        }
-        self.row(ui, slot)
+        // The prefix, the box and the arrows stay together on one line, in
+        // a row of their own: in a column (or a justified slot) they would
+        // land under each other or the prefix would take the whole slot,
+        // and in a grid each would take a cell of its own, the arrows
+        // standing apart from the box at the right of the next column
+        // (#948).
+        ui.horizontal(|ui| self.row(ui, slot)).inner
     }
 }
 
@@ -963,6 +963,82 @@ mod tests {
         assert_eq!(format_number(0.123456, false, 1, Some(4)), "0.1235");
         assert_eq!(format_number(-0.0001, false, 0, Some(2)), "0");
         assert_eq!(format_number(7.6, true, 0, None), "8");
+    }
+
+    /// A field alone in a grid cell, with a wider row below setting the
+    /// column, as Print Preview's gap between pages: its arrows sit at
+    /// the right of its box, in the same cell, and step the value (#948).
+    #[test]
+    fn a_field_in_a_grid_keeps_its_arrows_at_its_box() {
+        let ctx = egui::Context::default();
+        let mut v = 5.0f64;
+        let run = |v: &mut f64, events: Vec<egui::Event>| -> (egui::Rect, egui::Rect) {
+            let mut rects = (egui::Rect::NOTHING, egui::Rect::NOTHING);
+            let mut out = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(900.0, 300.0),
+                    )),
+                    events,
+                    ..Default::default()
+                },
+                |ui| {
+                    egui::Grid::new("gap_grid").num_columns(2).show(ui, |ui| {
+                        ui.label("Gap between pages");
+                        let field = ui.add(NumField::new(v).range(0.0..=50.0).suffix(" mm"));
+                        ui.end_row();
+                        ui.label("Margins");
+                        let (wide, _) =
+                            ui.allocate_exact_size(egui::vec2(320.0, 20.0), egui::Sense::hover());
+                        ui.end_row();
+                        rects = (field.rect, wide);
+                    });
+                },
+            );
+            out.textures_delta.clear();
+            rects
+        };
+        // The grid sizes itself on the first frames.
+        for _ in 0..3 {
+            run(&mut v, Vec::new());
+        }
+        let (field, wide) = run(&mut v, Vec::new());
+        assert!(field.right() + SPIN_W < wide.right(), "{field:?} {wide:?}");
+        // A click just right of the box, on the up arrow, steps the value.
+        let at = egui::pos2(
+            field.right() + SPIN_W / 2.0,
+            field.top() + field.height() * 0.25,
+        );
+        run(&mut v, vec![egui::Event::PointerMoved(at)]);
+        for pressed in [true, false] {
+            run(
+                &mut v,
+                vec![egui::Event::PointerButton {
+                    pos: at,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                }],
+            );
+        }
+        run(&mut v, Vec::new());
+        assert_eq!(v, 6.0, "the arrows are at the box");
+        // The next widget in the row comes after the arrows, not over them.
+        let mut rects = (egui::Rect::NOTHING, egui::Rect::NOTHING);
+        let mut w = 1.0f64;
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            ui.horizontal(|ui| {
+                let a = ui.add(NumField::new(&mut w));
+                let b = ui.label("x");
+                rects = (a.rect, b.rect);
+            });
+        });
+        out.textures_delta.clear();
+        assert!(
+            rects.1.left() >= rects.0.right() + SPIN_W - 0.5,
+            "{rects:?}"
+        );
     }
 
     #[test]
