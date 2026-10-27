@@ -771,6 +771,46 @@ impl App {
     }
 
     /// Start moving the selection from `p` (page).
+    /// The selection's own point under `p` that a drag in rotate mode
+    /// turns the selection by: a node, a segment's midpoint or an
+    /// ellipse's quadrant (as the pointer marks it), away from the centre
+    /// of rotation (#933).
+    pub(crate) fn grab_turn_point(&self, p: Point) -> Option<Point> {
+        use crate::snap_points::SnapMode;
+        if !self.rotate_mode || !matches!(self.tool, Tool::Pick | Tool::FreeformPick) {
+            return None;
+        }
+        let t = self.selection_hover_target(p)?;
+        if !matches!(
+            t.mode,
+            SnapMode::Node | SnapMode::Midpoint | SnapMode::Quadrant
+        ) {
+            return None;
+        }
+        let c = self.rotation_center()?;
+        ((t.point - c).hypot() > self.snap_tolerance()).then_some(t.point)
+    }
+
+    /// Rotate mode: a press on a node of the selection (see
+    /// [`App::grab_turn_point`]) starts turning it about the centre of
+    /// rotation, the node following the pointer round its circle.
+    fn start_grab_turn(&mut self, p: Point) -> bool {
+        let Some(g) = self.grab_turn_point(p) else {
+            return false;
+        };
+        let Some(c) = self.rotation_center() else {
+            return false;
+        };
+        let a = (g - c).atan2();
+        self.drag = Drag::Rotate {
+            center: c,
+            start_angle: a,
+            current_angle: a,
+            grab: Some(g),
+        };
+        true
+    }
+
     fn start_move(&mut self, p: Point) {
         // A text fitted to a path slides along it instead.
         if self.fitted_text().is_some() {
@@ -1326,6 +1366,7 @@ impl App {
                             center: c,
                             start_angle: a,
                             current_angle: a,
+                            grab: None,
                         };
                     } else {
                         self.drag = Drag::Skew {
@@ -1365,6 +1406,12 @@ impl App {
                 if let Some(now) = self.pointer_page {
                     self.pick_drag_to(now, mods);
                 }
+                return;
+            }
+            // Rotate mode: a node of the selection (a midpoint, a quadrant)
+            // turns it about the centre of rotation, carried onto other
+            // objects' points and edges (#933).
+            if !mods.shift && self.start_grab_turn(p) {
                 return;
             }
             // The centre mark moves the selection, whatever lies under it.
@@ -1616,6 +1663,11 @@ impl App {
                 let grab = *start - handle_point(*start_bounds, *handle);
                 self.snap_point_excluding(p - grab, &self.selection) + grab
             }
+            Drag::Rotate {
+                center,
+                grab: Some(g),
+                ..
+            } if !mods.ctrl => self.snap_turn_grab(*center, *g, p, &self.selection),
             Drag::Rotate { .. } if !mods.ctrl => self.snap_turn_point(p, &self.selection),
             _ => p,
         };
@@ -1681,6 +1733,7 @@ impl App {
                 center,
                 start_angle,
                 current_angle,
+                ..
             } => {
                 let mut a = (snapped_handle - *center).atan2();
                 // Ctrl turns in steps of the constrain angle.
@@ -2652,6 +2705,7 @@ impl App {
                 center,
                 start_angle,
                 current_angle,
+                ..
             } => {
                 let a = current_angle - start_angle;
                 Some(

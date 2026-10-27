@@ -6,7 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
-- Rotating with the Pick tool: the turn follows the pointer when the rotate handle passes over the edge of another object or of the page. The pointer snapped to the edge, so the object stuck at one angle and then jumped while the handle crossed it; the handle still snaps to other objects' nodes, midpoints and centres to aim the turn at one (#933).
+- Rotating with the Pick tool: in rotate mode a node of the selection (or a segment's midpoint) dragged turns it about the centre of rotation instead of moving it, and let go near another object's edge the node lands exactly on it, so an arc turned about one end can be laid onto a line; the pointer shows the turning arrows over such a node. Also, the turn follows the pointer when the rotate handle passes over the edge of another object or of the page. The pointer snapped to the edge, so the object stuck at one angle and then jumped while the handle crossed it; the handle still snaps to other objects' nodes, midpoints and centres to aim the turn at one (#933).
 
 - Shape tool: the rings inside the corners of a curve being edited, dragged to round them, are now a preference, Options > Nodes and Handles > Show corner rounding rings on curve nodes, and are off at first, so they no longer get in the way of editing nodes. Turn it on to round the corners of curves by dragging again; rectangles round their corners as before (#884).
 

@@ -181,6 +181,10 @@ fn pick_cursor(app: &App, pos: Option<Pos2>) -> Option<ToolCursor> {
     if app.guide_rotate_handle_at(p) {
         return Some(ToolCursor::Rotate);
     }
+    // Rotate mode: a node of the selection turns it (#933).
+    if app.grab_turn_point(p).is_some() {
+        return Some(ToolCursor::Rotate);
+    }
     if app.hit_test(p).is_some() {
         return Some(moving);
     }
