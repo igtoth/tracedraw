@@ -112,11 +112,18 @@ fn outline(img: &RgbaImage, s: &Settings) -> Vec<Traced> {
     if w == 0 || h == 0 {
         return Vec::new();
     }
-    // 1. Smooth a little when detail is low, then quantise.
+    // 1. Take out the noise of photos and compressed images below the
+    // highest detail, so it makes no specks, holes and seams of its own
+    // inside flat colours (#611); smooth a little more when detail is
+    // low, then quantise.
+    let mut quiet = img.clone();
+    for _ in 0..denoise_passes(s.detail) {
+        quiet = denoise(&quiet);
+    }
     let src = if s.detail < 50.0 {
-        image::imageops::blur(img, (50.0 - s.detail as f32) / 25.0)
+        image::imageops::blur(&quiet, (50.0 - s.detail as f32) / 25.0)
     } else {
-        img.clone()
+        quiet
     };
     let palette: Vec<[u8; 3]> = if s.black_white {
         vec![[0, 0, 0], [255, 255, 255]]
@@ -451,6 +458,68 @@ fn despeckle_bands(labels: &mut [usize], w: usize, h: usize, palette: &[[u8; 3]]
     }
     for (i, to) in changes {
         labels[i] = to;
+    }
+}
+
+/// `img` with the noise of photos and compressed images taken out (#611):
+/// each colour channel of each pixel becomes the middle value of the
+/// pixel and its four edge neighbours (a median over a plus-shaped
+/// window). Isolated odd pixels take the value around them, while
+/// straight edges, square corners and lines one pixel wide along the rows
+/// or columns keep their place (a line's end pixels go), unlike a blur
+/// that softens every edge.
+/// Alpha is left as it is, and transparent pixels take no part.
+fn denoise(img: &RgbaImage) -> RgbaImage {
+    let (w, h) = (img.width(), img.height());
+    let mut out = img.clone();
+    if w < 3 || h < 3 {
+        return out;
+    }
+    for y in 0..h {
+        for x in 0..w {
+            let at = |dx: i64, dy: i64| {
+                let px = (x as i64 + dx).clamp(0, w as i64 - 1) as u32;
+                let py = (y as i64 + dy).clamp(0, h as i64 - 1) as u32;
+                *img.get_pixel(px, py)
+            };
+            let mut p = *img.get_pixel(x, y);
+            if p[3] < 128 {
+                continue;
+            }
+            // Opaque pixels only: the colour under a transparent one
+            // means nothing.
+            let mut window = [p; 5];
+            let mut n = 1;
+            for q in [at(-1, 0), at(1, 0), at(0, -1), at(0, 1)] {
+                if q[3] >= 128 {
+                    window[n] = q;
+                    n += 1;
+                }
+            }
+            for k in 0..3 {
+                let mut v = [0u8; 5];
+                for (slot, q) in v.iter_mut().zip(&window[..n]) {
+                    *slot = q[k];
+                }
+                let v = &mut v[..n];
+                v.sort_unstable();
+                p[k] = v[n / 2];
+            }
+            out.put_pixel(x, y, p);
+        }
+    }
+    out
+}
+
+/// How many times noise is taken out: none at the highest detail (where
+/// specks stay too), once at high detail, twice below.
+fn denoise_passes(detail: f64) -> usize {
+    if speck_area(detail) <= 1 {
+        0
+    } else if detail >= 75.0 {
+        1
+    } else {
+        2
     }
 }
 
@@ -1252,6 +1321,128 @@ mod tests {
     use super::*;
     use image::ImageBuffer;
     use tracedraw_core::geometry::Shape as _;
+
+    /// Flat art saved with noise, as compressed images are (#611): the
+    /// yellow disc crossed by a black band, each pixel off by up to 10 in
+    /// every channel. Traced with the Clipart preset, the noise makes
+    /// neither holes showing the page inside the art nor a crowd of
+    /// specks: before noise was taken out, about 3800 pixels inside the
+    /// disc showed the page and the trace held over 1400 subpaths.
+    #[test]
+    fn noisy_flat_art_traces_without_holes_or_specks() {
+        use tracedraw_core::geometry::PathEl;
+        const N: u32 = 160;
+        let mut seed = 12345u32;
+        let mut noise = move || {
+            seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            ((seed >> 16) % 21) as f32 - 10.0
+        };
+        let mut img = RgbaImage::new(N, N);
+        for y in 0..N {
+            for x in 0..N {
+                let (mut yl, mut bl) = (0.0f32, 0.0f32);
+                for sy in 0..4 {
+                    for sx in 0..4 {
+                        let px = x as f32 + (sx as f32 + 0.5) / 4.0;
+                        let py = y as f32 + (sy as f32 + 0.5) / 4.0;
+                        let disc = (px - 80.0).powi(2) + (py - 80.0).powi(2) < 60.0f32.powi(2);
+                        let band = (py - 0.3 * px - 50.0).abs() < 14.0;
+                        if disc && band {
+                            bl += 1.0 / 16.0;
+                        } else if disc {
+                            yl += 1.0 / 16.0;
+                        }
+                    }
+                }
+                let wh = 1.0 - yl - bl;
+                let n = noise();
+                let mix =
+                    |a: f32, b: f32, c: f32| (a * yl + b * bl + c * wh + n).clamp(0.0, 255.0) as u8;
+                img.put_pixel(
+                    x,
+                    y,
+                    Rgba([
+                        mix(250.0, 10.0, 255.0),
+                        mix(205.0, 10.0, 255.0),
+                        mix(40.0, 10.0, 255.0),
+                        255,
+                    ]),
+                );
+            }
+        }
+        let t = trace(&img, &Preset::Clipart.settings());
+        let subpaths: usize = t
+            .iter()
+            .map(|r| {
+                r.path
+                    .elements()
+                    .iter()
+                    .filter(|e| matches!(e, PathEl::MoveTo(_)))
+                    .count()
+            })
+            .sum();
+        assert!(subpaths < 1000, "{subpaths} subpaths");
+        let out = render_traced(&t, N, N, 1.0);
+        let (mut inside, mut holes) = (0, 0);
+        for y in 0..N {
+            for x in 0..N {
+                if (x as f32 - 80.0).hypot(y as f32 - 80.0) >= 56.0 {
+                    continue;
+                }
+                inside += 1;
+                let p = out.get_pixel(x, y);
+                if p[3] < 255 || (p[0] > 230 && p[1] > 230 && p[2] > 230) {
+                    holes += 1;
+                }
+            }
+        }
+        assert!(
+            holes * 200 < inside,
+            "{holes} of {inside} pixels show the page"
+        );
+    }
+
+    /// Taking noise out replaces a lone odd pixel by its surroundings and
+    /// keeps square corners, straight edges and lines one pixel wide along
+    /// a row (all but its end pixels); transparent pixels stay as they are.
+    #[test]
+    fn denoise_removes_lone_pixels_and_keeps_edges() {
+        let white = Rgba([255, 255, 255, 255]);
+        let black = Rgba([0, 0, 0, 255]);
+        let img: RgbaImage = ImageBuffer::from_fn(20, 20, |x, y| {
+            let square = (5..12).contains(&x) && (5..12).contains(&y);
+            let line = y == 15 && (2..18).contains(&x);
+            let lone = x == 16 && y == 4;
+            if (x, y) == (0, 0) {
+                Rgba([9, 9, 9, 0])
+            } else if square || line || lone {
+                black
+            } else {
+                white
+            }
+        });
+        let out = denoise(&img);
+        assert_eq!(*out.get_pixel(16, 4), white, "the lone pixel goes");
+        for (x, y) in [
+            (5, 5),
+            (11, 5),
+            (5, 11),
+            (11, 11),
+            (8, 8),
+            (3, 15),
+            (10, 15),
+            (16, 15),
+        ] {
+            assert_eq!(*out.get_pixel(x, y), black, "kept at {x},{y}");
+        }
+        for (x, y) in [(4, 5), (12, 11), (8, 14), (8, 16)] {
+            assert_eq!(*out.get_pixel(x, y), white, "kept at {x},{y}");
+        }
+        assert_eq!(*out.get_pixel(0, 0), Rgba([9, 9, 9, 0]));
+        // Nothing to do on a tiny image.
+        let tiny = RgbaImage::new(2, 1);
+        assert_eq!(denoise(&tiny), tiny);
+    }
 
     fn circle_image() -> RgbaImage {
         ImageBuffer::from_fn(100, 100, |x, y| {

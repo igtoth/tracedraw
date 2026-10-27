@@ -36,7 +36,15 @@ full trace.
 
 ## Algorithm (outline mode)
 
-1. Blur a little when detail < 50, then quantise the colours with median
+1. Noise (#611, off at detail 95 and up, where the specks stay too):
+   each colour channel of each opaque pixel becomes the median of the
+   pixel and its four edge neighbours (opaque ones only), once at detail
+   75 and up, twice below. Lone odd pixels and the grain of compressed
+   images go, straight edges, square corners and one pixel lines along
+   rows or columns stay (a line's end pixels go). Without it the grain of
+   flat colours split them into many shades whose patches left holes
+   showing the page inside the art.
+   Blur a little when detail < 50, then quantise the colours with median
    cut to the number of colours (black and white: by brightness).
 2. Specks (#611): every 4-connected patch of one colour smaller than
    `round(((100 - detail) / 10)^2)` pixels (none at detail 100, 4 at 80,
@@ -92,6 +100,11 @@ width equal to the mean local thickness.
   specks around it is one square with corners on its pixel corners; at
   detail 100 the specks stay.
 - `trace::tests::despeckle_fills_small_patches_with_their_surroundings`.
+- `trace::tests::denoise_removes_lone_pixels_and_keeps_edges`.
+- `trace::tests::noisy_flat_art_traces_without_holes_or_specks`: the
+  yellow disc and black band with noise of up to 10 per channel, Clipart
+  preset: under 1000 subpaths (over 1400 before) and fewer than 1 in 200
+  pixels inside the disc showing the page (about 3800 of 9800 before).
 - `trace::tests::neighbouring_regions_leave_no_gaps_and_edges_make_no_slivers`:
   an anti-aliased yellow disc crossed by a black band on white, Clipart
   preset: two or three regions, and drawn back no pixel more than 2 px
