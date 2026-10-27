@@ -97,7 +97,7 @@ pub fn export_docker(app: &mut App, ui: &mut Ui) {
                         ui.checkbox(&mut asset.checked, "");
                         ui.add(egui::TextEdit::singleline(&mut asset.name).desired_width(110.0));
                         if ui
-                            .small_button("✕")
+                            .small_button("\u{00D7}")
                             .on_hover_text(tr("export_docker.remove"))
                             .clicked()
                         {

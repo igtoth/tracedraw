@@ -6,10 +6,12 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Color panel: the spot ink tint slider shows its groove, and the remove button of a spot ink and the out-of-gamut sign show their icons. The groove had the white of the panel, so only the handle showed, and both icons came from characters the bundled interface font lacks, drawn as empty boxes on systems without a font for them; the gamut sign is now drawn and the remove buttons there and elsewhere use a cross the bundled font has (#949).
 - Text: full justification spreads Chinese and Japanese lines to the right edge of the frame. It widened only the spaces between words, so text written without spaces stayed left aligned with room on the right; the room now goes between the characters (never after a line's last one), mixed lines widen their spaces and the gaps beside the Chinese characters, and the last line of a paragraph stays left aligned unless justification is forced (#952).
 - Opening `.cdr`: text whose letters are each turned and moved on their own, as the ring of letters around a seal, opens from version 13 to 15 files with every letter in its place. Such texts were skipped and counted as objects that could not be read (#955).
 - Save As .cdr: a blend goes out as one group of its start object and its steps, drawn as curves, beside its end object, instead of loose objects on the layer. A blend of two texts saved so is a plain group of a text and curves in the program that opens the file (#946).
 - The main window fills the screen at start when it was left maximized, also with the interface in Chinese and a new drawing at start, where it came up with the maximized button state at its normal size in the corner of the screen. The maximize now follows the window's size instead of coming with it, and a window that says it is maximized but does not fill the screen is restored and maximized again (#787).
+- Outline widths: the Outline Pen dialog's width list offers the same widths as the property bar's list, in the outline unit (0.1, 0.2, 0.25 mm and so on in millimetres). The dialog listed its own widths in points turned into the unit, so in millimetres it showed 0.088, 0.176, 0.265 while the property bar showed round values (#967).
 
 ## 0.19.7 (2026-10-27)
 

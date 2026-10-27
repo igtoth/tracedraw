@@ -658,7 +658,7 @@ fn extra_fills(app: &mut App, ui: &mut Ui, first: &tracedraw_core::Shape, has_fi
         ui.horizontal(|ui| {
             ui.strong(trf("docker.fill_n", &[("n", &(i + 2).to_string())]));
             if ui
-                .small_button("\u{2715}")
+                .small_button("\u{00D7}")
                 .on_hover_text(tr("docker.remove_fill"))
                 .clicked()
             {
@@ -703,7 +703,7 @@ fn extra_strokes(app: &mut App, ui: &mut Ui, first: &tracedraw_core::Shape, has_
         ui.horizontal(|ui| {
             ui.strong(trf("docker.outline_n", &[("n", &(i + 2).to_string())]));
             if ui
-                .small_button("\u{2715}")
+                .small_button("\u{00D7}")
                 .on_hover_text(tr("docker.remove_outline"))
                 .clicked()
             {

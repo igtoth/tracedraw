@@ -940,7 +940,7 @@ pub fn fx_section(app: &mut App, ui: &mut Ui, id: ShapeId) {
                 app.edit_bitmap_effects(id, "Reorder Effects", move |l| l.swap(i, i + 1));
             }
             if ui
-                .small_button("\u{2715}")
+                .small_button("\u{00D7}")
                 .on_hover_text(tr("docker.delete_effect"))
                 .clicked()
             {

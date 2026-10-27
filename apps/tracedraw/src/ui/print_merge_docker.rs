@@ -705,7 +705,7 @@ pub fn print_merge(app: &mut App, ui: &mut Ui) {
                         .color(Tokens::text_dim())
                         .size(11.0),
                 );
-                if folder.is_some() && ui.small_button("\u{2715}").clicked() {
+                if folder.is_some() && ui.small_button("\u{00D7}").clicked() {
                     clear_folder = true;
                 }
             });
