@@ -135,6 +135,17 @@ at once (#437). From top to bottom:
   insert; a field typed into text being edited goes in that text only
   (#793,
   `print_merge_docker::tests::on_every_page_a_text_field_goes_on_every_page_and_merges_there`).
+  Each copy keeps the field it was copied from and the box it was put in
+  (object data `PrintMerge.CopyOf` and `PrintMerge.CopyAt`). While a copy
+  is still in that box, it follows its field: when the field was moved or
+  resized on its page, Create Merged Document and Print Merged Document
+  with On every page first put the copy in the field's box (same box, so
+  the same anchor for pictures and QR codes), in the same undo step as the
+  merge, and Place Inside Frame with On every page moves the copy there
+  and puts the picture in it instead of making a second frame. A copy
+  moved or resized by hand on its own page stays where it is (#956,
+  `print_merge_docker::tests::on_every_page_copies_follow_the_field_moved_on_its_page`,
+  `print_merge_docker::tests::place_inside_frame_moves_the_copies_of_a_moved_frame`).
   For a picture field Place Inside Frame also puts the placeholder picture in the same place on
   every other page of the drawing, as part of the same undo step: in the
   shape there of the same kind and bounds (within 0.01 mm), which takes
@@ -206,3 +217,5 @@ large as its box allows.
 - `ui::print_merge_docker::tests::the_docker_draws_with_and_without_data`
 - `ui::print_merge_docker::tests::on_every_page_takes_the_pictures_folder_page_by_page`
 - `ui::print_merge_docker::tests::on_every_page_merges_onto_the_drawings_own_pages`
+- `ui::print_merge_docker::tests::on_every_page_copies_follow_the_field_moved_on_its_page`
+- `ui::print_merge_docker::tests::place_inside_frame_moves_the_copies_of_a_moved_frame`
