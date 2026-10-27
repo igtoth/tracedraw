@@ -135,7 +135,7 @@ Counts: works 189, partial 6 (`.cdr` content coverage; CMX import; print preview
 
 | Capability | Status |
 |---|---|
-| Drop shadow, live: flat or perspective (from an edge: angle, stretch, fade), opacity, feathering with direction and edges, merge mode (Multiply by default), colour, presets, on-canvas start, end and opacity handles with colour drop, Break Drop Shadow Apart (see `behavior/drop-shadow.md`) | works |
+| Drop shadow, live: flat or perspective (from an edge: angle, stretch, fade), opacity, feathering with direction and edges, merge mode (Multiply by default), colour, presets, on-canvas start, end and opacity handles with colour drop, picked with its object by a click on it, Break Drop Shadow Apart (see `behavior/drop-shadow.md`) | works |
 | Contour (to centre, inside, outside; steps, offset, mitred, round or bevelled corners, colour direction, end colours, object and colour accelerations), live; the tool's drag and bar edit it like the panel (see `behavior/contour.md`) | works |
 | Blend (steps, 20 by default, or spacing along a path, rotation with loop, along the full path, accelerations with sizing and link, direct or clockwise or counterclockwise colours), live, both objects kept and the steps following either (see `behavior/blend.md`) | works |
 | Contour (to centre, inside, outside; steps, offset, mitred, round or bevelled corners, colour direction, end colours, object and colour accelerations; offsets measured on the page whatever the object's scale), live; the tool's drag and bar edit it like the panel (see `behavior/contour.md`) | works |
