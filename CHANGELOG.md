@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Outline widths: the Outline Pen dialog's width list offers the same widths as the property bar's list, in the outline unit (0.1, 0.2, 0.25 mm and so on in millimetres). The dialog listed its own widths in points turned into the unit, so in millimetres it showed 0.088, 0.176, 0.265 while the property bar showed round values (#967).
 - Symbols: a symbol instance copied in one drawing and pasted in another brings its symbol along and shows the same objects there. It kept only the symbol's number in the list, so in a drawing without symbols it showed nothing, and in one with symbols of its own it showed one of those; symbols that show other symbols come along too, and pasting again reuses the symbol already brought (#678).
 - Rotating with the Pick tool: in rotate mode a node of the selection (or a segment's midpoint) dragged turns it about the centre of rotation instead of moving it, and let go near another object's edge the node lands exactly on it, so an arc turned about one end can be laid onto a line; the pointer shows the turning arrows over such a node. Also, the turn follows the pointer when the rotate handle passes over the edge of another object or of the page. The pointer snapped to the edge, so the object stuck at one angle and then jumped while the handle crossed it; the handle still snaps to other objects' nodes, midpoints and centres to aim the turn at one (#933).
 
