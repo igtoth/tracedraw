@@ -126,6 +126,11 @@ pub struct DimensionStyle {
     /// A linear dimension's label stays horizontal instead of running
     /// along its line.
     pub horizontal_text: bool,
+    /// The extension lines meet the dimension line (or arc) in a corner
+    /// instead of running past it, rounded by the corner radius, mm
+    /// (#641).
+    pub joined: bool,
+    pub corner_radius: f64,
 }
 
 impl Default for DimensionStyle {
@@ -147,11 +152,22 @@ impl Default for DimensionStyle {
             extension_gap: 0.0,
             extension_overshoot: OVERSHOOT,
             horizontal_text: false,
+            joined: false,
+            corner_radius: 0.0,
         }
     }
 }
 
 impl DimensionStyle {
+    /// The corner radius of joined lines, kept finite and in range.
+    fn radius(&self) -> f64 {
+        if self.corner_radius.is_finite() {
+            self.corner_radius.clamp(0.0, 100.0)
+        } else {
+            0.0
+        }
+    }
+
     /// The extension gap and overshoot, kept finite and in range.
     fn lengths(&self) -> (f64, f64) {
         let ok = |v: f64, d: f64| {
@@ -258,6 +274,70 @@ const ARROW_HALF: f64 = 1.0;
 /// past the dimension line, mm.
 const GAP: f64 = 1.0;
 const OVERSHOOT: f64 = 2.0;
+
+/// The handle length, as a share of the leg, that makes a cubic a
+/// quarter circle.
+const KAPPA: f64 = 0.552_284_749_8;
+
+/// A corner from `p_in` through `corner` to `p_out`, rounded: a line to
+/// `p_in`, then a cubic that leaves and meets the legs along them.
+fn round_corner(path: &mut BezPath, p_in: Point, corner: Point, p_out: Point) {
+    path.line_to(p_in);
+    path.curve_to(
+        p_in + (corner - p_in) * KAPPA,
+        p_out + (corner - p_out) * KAPPA,
+        p_out,
+    );
+}
+
+/// The straight polyline `pts` with its inner corners rounded by
+/// `radius` (each cut back at most half of an inner leg, the whole of an
+/// end leg); a radius of 0 keeps sharp corners.
+fn rounded_polyline(path: &mut BezPath, pts: &[Point], radius: f64) {
+    let Some((&first, rest)) = pts.split_first() else {
+        return;
+    };
+    path.move_to(first);
+    let n = pts.len();
+    for w in pts.windows(3).enumerate() {
+        let (i, &[prev, corner, next]) = w else {
+            continue;
+        };
+        let i = i + 1;
+        let (lin, lout) = ((corner - prev).hypot(), (next - corner).hypot());
+        let share = |end: bool| if end { 1.0 } else { 0.5 };
+        let cut = radius
+            .min(lin * share(i == 1))
+            .min(lout * share(i + 2 == n));
+        if cut <= 1e-9 || lin <= 1e-9 || lout <= 1e-9 {
+            path.line_to(corner);
+            continue;
+        }
+        let p_in = corner - (corner - prev) * (cut / lin);
+        let p_out = corner + (next - corner) * (cut / lout);
+        round_corner(path, p_in, corner, p_out);
+    }
+    if let Some(&last) = rest.last() {
+        path.line_to(last);
+    }
+}
+
+/// The arc round `center` at radius `r` from angle `from` to `to`,
+/// added to `path` as a few clean curves, with no move to its start.
+fn arc_to(path: &mut BezPath, center: Point, r: f64, from: f64, to: f64) {
+    if to - from <= 1e-9 {
+        return;
+    }
+    kurbo::Arc {
+        center,
+        radii: Vec2::new(r, r),
+        start_angle: from,
+        sweep_angle: to - from,
+        x_rotation: 0.0,
+    }
+    .append_iter(0.01)
+    .for_each(|el| path.push(el));
+}
 
 /// Whether a shape is a dimension group, without reading its data (cheap
 /// enough for every frame).
@@ -564,10 +644,14 @@ impl Dimension {
                 // Extension lines, from a gap off the measured points to
                 // past the dimension line.
                 let gap = ext_gap.min(off.abs());
-                for (p, q) in [(a, a2), (b, b2)] {
-                    lines.move_to(p + side * gap);
-                    lines.line_to(q + side * overshoot);
+                let joined = self.style.joined;
+                if !joined {
+                    for (p, q) in [(a, a2), (b, b2)] {
+                        lines.move_to(p + side * gap);
+                        lines.line_to(q + side * overshoot);
+                    }
                 }
+                let (a1, b1) = (a + side * gap, b + side * gap);
                 // The label reads left to right, upright.
                 let read = if dir.x < -1e-9 || (dir.x.abs() <= 1e-9 && dir.y < 0.0) {
                     -dir
@@ -584,12 +668,22 @@ impl Dimension {
                     tb.width() / 2.0
                 };
                 // The dimension line, with a gap for a centred label.
+                // Joined, the extension lines run into it in a corner
+                // (#641).
+                let radius = self.style.radius();
                 if pos == TextPosition::Centered && len > 2.0 * (half + GAP) {
                     let (g1, g2) = (mid - dir * (half + GAP), mid + dir * (half + GAP));
-                    lines.move_to(a2);
-                    lines.line_to(g1);
-                    lines.move_to(g2);
-                    lines.line_to(b2);
+                    if joined {
+                        rounded_polyline(&mut lines, &[a1, a2, g1], radius);
+                        rounded_polyline(&mut lines, &[g2, b2, b1], radius);
+                    } else {
+                        lines.move_to(a2);
+                        lines.line_to(g1);
+                        lines.move_to(g2);
+                        lines.line_to(b2);
+                    }
+                } else if joined {
+                    rounded_polyline(&mut lines, &[a1, a2, b2, b1], radius);
                 } else {
                     lines.move_to(a2);
                     lines.line_to(b2);
@@ -623,9 +717,12 @@ impl Dimension {
                 let sw = sweep(center, a, b);
                 let r = (at - center).hypot().max(1.0);
                 let ray = |t: f64| Vec2::new(t.cos(), t.sin());
-                for t in [a0, a0 + sw] {
-                    lines.move_to(center + ray(t) * ext_gap.min(r));
-                    lines.line_to(center + ray(t) * (r + overshoot));
+                let joined = self.style.joined && sw > 1e-6;
+                if !joined {
+                    for t in [a0, a0 + sw] {
+                        lines.move_to(center + ray(t) * ext_gap.min(r));
+                        lines.line_to(center + ray(t) * (r + overshoot));
+                    }
                 }
                 let mid = a0 + sw / 2.0;
                 let (w, h) = (tb.width(), tb.height());
@@ -635,6 +732,54 @@ impl Dimension {
                 } else {
                     0.0
                 };
+                let a1 = a0 + sw;
+                if joined {
+                    // From the first side's gap out to the arc, round it
+                    // and back in along the second side (#641). Each
+                    // corner is cut by the radius along the side and the
+                    // same length along the arc.
+                    let g = ext_gap.min(r);
+                    let piece = if gap > 0.0 { sw / 2.0 - gap } else { sw / 2.0 };
+                    let cut = self
+                        .style
+                        .radius()
+                        .min(r - g)
+                        .min(r * piece.max(0.0))
+                        .max(0.0);
+                    let delta = cut / r;
+                    lines.move_to(center + ray(a0) * g);
+                    if cut > 1e-9 {
+                        round_corner(
+                            &mut lines,
+                            center + ray(a0) * (r - cut),
+                            center + ray(a0) * r,
+                            center + ray(a0 + delta) * r,
+                        );
+                    } else {
+                        lines.line_to(center + ray(a0) * r);
+                    }
+                    if gap > 0.0 {
+                        arc_to(&mut lines, center, r, a0 + delta, mid - gap);
+                        lines.move_to(center + ray(mid + gap) * r);
+                        arc_to(&mut lines, center, r, mid + gap, a1 - delta);
+                    } else {
+                        arc_to(&mut lines, center, r, a0 + delta, a1 - delta);
+                    }
+                    if cut > 1e-9 {
+                        // Out of the arc into the second side.
+                        let (from, corner, to) = (
+                            center + ray(a1 - delta) * r,
+                            center + ray(a1) * r,
+                            center + ray(a1) * (r - cut),
+                        );
+                        lines.curve_to(
+                            from + (corner - from) * KAPPA,
+                            to + (corner - to) * KAPPA,
+                            to,
+                        );
+                    }
+                    lines.line_to(center + ray(a1) * g);
+                }
                 // The arc as a few clean curves (#640), broken for a
                 // centred label.
                 let mut arc = |from: f64, to: f64| {
@@ -642,17 +787,11 @@ impl Dimension {
                         return;
                     }
                     lines.move_to(center + ray(from) * r);
-                    kurbo::Arc {
-                        center,
-                        radii: Vec2::new(r, r),
-                        start_angle: from,
-                        sweep_angle: to - from,
-                        x_rotation: 0.0,
-                    }
-                    .append_iter(0.01)
-                    .for_each(|el| lines.push(el));
+                    arc_to(&mut lines, center, r, from, to);
                 };
-                if gap > 0.0 {
+                if joined {
+                    // Drawn above.
+                } else if gap > 0.0 {
                     arc(a0, mid - gap);
                     arc(mid + gap, a0 + sw);
                 } else {
@@ -661,7 +800,6 @@ impl Dimension {
                 // Arrowheads along the arc at both ends.
                 if sw > 1e-6 {
                     arrow(center + ray(a0) * r, Vec2::new(-a0.sin(), a0.cos()));
-                    let a1 = a0 + sw;
                     arrow(center + ray(a1) * r, Vec2::new(a1.sin(), -a1.cos()));
                 }
                 // The label upright, its middle out from, on or inside the
@@ -2205,5 +2343,157 @@ mod tests {
         app.start_text(Point::new(300.0, 300.0), None);
         let plain = time(&mut app);
         println!("keystroke: dimension label {label:.3} ms, plain text {plain:.3} ms");
+    }
+
+    /// Joined, the extension lines run into the dimension line (or arc)
+    /// in one curve with corners, nothing past them, the corners rounded
+    /// by the corner radius; a centred label breaks it in two (#641).
+    #[test]
+    fn joined_lines_meet_in_rounded_corners() {
+        use tracedraw_core::geometry::PathEl;
+        let ids = [ShapeId(1), ShapeId(2), ShapeId(3)];
+        let lines = |measure: Measure, style: DimensionStyle| {
+            let [l, _, _] = Dimension::new(measure, style).shapes(ids, "Arial", Units::Millimeters);
+            match l.kind {
+                ShapeKind::Path { path, .. } => path,
+                other => panic!("{other:?}"),
+            }
+        };
+        let count =
+            |p: &BezPath, f: fn(&PathEl) -> bool| p.elements().iter().filter(|e| f(e)).count();
+        let moves = |p: &BezPath| count(p, |e| matches!(e, PathEl::MoveTo(_)));
+        let curves = |p: &BezPath| count(p, |e| matches!(e, PathEl::CurveTo(..)));
+        let linear = Measure::Linear {
+            a: Point::new(0.0, 0.0),
+            b: Point::new(40.0, 0.0),
+            at: Point::new(20.0, 10.0),
+        };
+        let apart = lines(linear, DimensionStyle::default());
+        assert_eq!(moves(&apart), 3, "off: three separate lines");
+        let sharp = lines(
+            linear,
+            DimensionStyle {
+                joined: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(moves(&sharp), 1);
+        assert_eq!(curves(&sharp), 0);
+        assert!(sharp
+            .elements()
+            .contains(&PathEl::LineTo(Point::new(0.0, 10.0))));
+        // Nothing past the dimension line.
+        assert!((sharp.bounding_box().y1 - 10.0).abs() < 1e-9);
+        let round = lines(
+            linear,
+            DimensionStyle {
+                joined: true,
+                corner_radius: 2.0,
+                ..Default::default()
+            },
+        );
+        assert_eq!(moves(&round), 1);
+        assert_eq!(curves(&round), 2);
+        let corner = Point::new(0.0, 10.0);
+        assert!(!round
+            .elements()
+            .iter()
+            .any(|e| matches!(e, PathEl::LineTo(p) | PathEl::CurveTo(_, _, p) if *p == corner)));
+        assert!(round
+            .elements()
+            .contains(&PathEl::LineTo(Point::new(0.0, 8.0))));
+        // A radius larger than the legs is cut back to fit them.
+        let huge = lines(
+            linear,
+            DimensionStyle {
+                joined: true,
+                corner_radius: 100.0,
+                ..Default::default()
+            },
+        );
+        let bb = huge.bounding_box();
+        assert!(bb.x0 >= -1e-9 && bb.x1 <= 40.0 + 1e-9 && bb.y1 <= 10.0 + 1e-9);
+        let centred = lines(
+            linear,
+            DimensionStyle {
+                joined: true,
+                corner_radius: 2.0,
+                text_position: TextPosition::Centered,
+                ..Default::default()
+            },
+        );
+        assert_eq!(moves(&centred), 2);
+        // An angle: one curve from side to side through the arc.
+        let angle = Measure::Angular {
+            center: Point::ZERO,
+            a: Point::new(30.0, 0.0),
+            b: Point::new(0.0, 30.0),
+            at: Point::new(14.0, 14.0),
+        };
+        let arc = lines(
+            angle,
+            DimensionStyle {
+                joined: true,
+                corner_radius: 3.0,
+                ..Default::default()
+            },
+        );
+        assert_eq!(moves(&arc), 1);
+        assert!(curves(&arc) >= 3);
+        match arc.elements().last() {
+            Some(PathEl::LineTo(p)) => assert!(p.distance(Point::ZERO) < 1e-9),
+            other => panic!("{other:?}"),
+        }
+        let r = Point::new(14.0, 14.0).distance(Point::ZERO);
+        assert!(arc.bounding_box().x1 <= r + 1e-6, "nothing past the arc");
+        let arc_centred = lines(
+            angle,
+            DimensionStyle {
+                joined: true,
+                corner_radius: 3.0,
+                text_position: TextPosition::Centered,
+                ..Default::default()
+            },
+        );
+        assert_eq!(moves(&arc_centred), 2);
+        // Styles saved before read with both off; a radius that is not a
+        // finite number reads as none.
+        let old: DimensionStyle = serde_json::from_str(r#"{"precision":1}"#).expect("old");
+        assert_eq!((old.joined, old.corner_radius), (false, 0.0));
+        let odd = DimensionStyle {
+            corner_radius: f64::NAN,
+            ..Default::default()
+        };
+        assert_eq!(odd.radius(), 0.0);
+    }
+
+    /// The bar's join and radius go to the selected dimension in one undo
+    /// step and are kept in a saved .tdraw file (#641).
+    #[test]
+    fn joined_corners_are_kept_in_the_file() {
+        let mut app = App::headless();
+        let id = forty(&mut app);
+        let before = app.doc().find_shape(id).cloned().expect("g");
+        app.set_dimension_style(|s| {
+            s.joined = true;
+            s.corner_radius = 1.5;
+        });
+        let d = dimension(&app, id);
+        assert!(d.style.joined);
+        assert_eq!(d.style.corner_radius, 1.5);
+        assert!(app.dimension_style.joined, "the next dimension too");
+        let path = std::env::temp_dir().join(format!(
+            "tracedraw-dimension-corners-{}.tdraw",
+            std::process::id()
+        ));
+        tracedraw_io::save_native(app.doc(), &path).expect("save");
+        let doc = tracedraw_io::load_native(&path).expect("load");
+        let _ = std::fs::remove_file(&path);
+        let g = doc.find_shape(id).expect("g");
+        let read = Dimension::of(g).expect("dimension");
+        assert!(read.style.joined);
+        assert_eq!(read.style.corner_radius, 1.5);
+        app.undo();
+        assert_eq!(app.doc().find_shape(id), Some(&before));
     }
 }
