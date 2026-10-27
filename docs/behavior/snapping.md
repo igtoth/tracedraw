@@ -66,7 +66,19 @@ centre within the radius) carries that point onto another object's point
 or edge; otherwise the selection's box edges and centre snap to
 guidelines, the grids, the page and the other objects' boxes. A scale
 handle being dragged snaps like the pointer of a drawing tool, leaving
-out the selection's own points.
+out the selection's own points. The pointer turning the selection (a
+rotate handle without Ctrl) snaps to the points of other objects and of
+the page only (nodes, midpoints, centres), so the turn aims at one;
+edges, guidelines and grid lines are left out, since the handle stands
+off the object and nothing of it lands on them, and the turn used to
+stick to an edge while the pointer crossed it (#933,
+`pick_drag_tests::turning_snaps_the_pointer_to_another_objects_node`,
+`turning_follows_the_pointer_across_edges`). A node of the selection
+dragged in rotate mode turns it too, and that node snaps: it goes
+round its circle about the centre of rotation, aims at another
+object's point near it, and near an edge lands where its circle
+crosses the edge, exactly on it (#933,
+`a_node_dragged_in_rotate_mode_turns_the_selection_onto_a_line`).
 
 A node dragged with the Shape tool (or by node tracking with the Pick
 tool) snaps to other objects and also to what stays put of its own
