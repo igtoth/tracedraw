@@ -565,28 +565,75 @@ fn embedding_allowed(face: &ttf_parser::Face) -> bool {
     !restricted && !bitmap_only
 }
 
+/// The instance of a variable font a text is drawn at (see [`set_axes`]).
+struct Instance {
+    /// The weight drawn, which decides synthetic bold.
+    weight: u16,
+    /// The letters slant, which decides synthetic italic.
+    slanted: bool,
+    /// The axis values set (empty for a static font).
+    coords: Vec<([u8; 4], f32)>,
+    /// The text sets the weight axis itself: no synthetic bold.
+    own_weight: bool,
+    /// The text sets the italic or slant axis itself: no synthetic italic.
+    own_slant: bool,
+}
+
 /// Choose the instance of a variable font: the text's weight (see
 /// [`target_weight`]: 700 for bold text, 400 for regular, the weight a
 /// family name ends in; within the font's range), and its italic or slant axis
-/// for italic text when the face is upright. Returns the weight and
-/// whether the letters slant, which decide the synthetic styles, and the
-/// axis values set (empty for a static font).
+/// for italic text when the face is upright. An axis the text sets a value
+/// for (`own`, #870) takes that value, clamped to the font's range, over
+/// the one its weight and slant give; values for axes the font lacks are
+/// left out.
 fn set_axes(
     face: &mut ttf_parser::Face,
     hb: &mut rustybuzz::Face,
     target: u16,
     italic: bool,
-) -> (u16, bool, Vec<([u8; 4], f32)>) {
+    own: &[tracedraw_core::FontVariation],
+) -> Instance {
+    let upright_face = !(face.is_italic() || face.is_oblique());
     let mut weight = face.weight().to_number();
-    let mut slanted = face.is_italic() || face.is_oblique();
+    let mut slanted = !upright_face;
+    let mut own_weight = false;
+    let mut own_slant = false;
     if !face.is_variable() {
-        return (weight, slanted, Vec::new());
+        return Instance {
+            weight,
+            slanted,
+            coords: Vec::new(),
+            own_weight,
+            own_slant,
+        };
     }
     let mut set: Vec<rustybuzz::Variation> = Vec::new();
     for axis in face.variation_axes() {
         let lo = axis.min_value.min(axis.max_value);
         let hi = axis.max_value.max(axis.min_value);
-        match &axis.tag.to_bytes() {
+        let tag = axis.tag.to_bytes();
+        let given = own
+            .iter()
+            .find(|v| v.tag.as_bytes() == tag)
+            .map(|v| v.value as f32)
+            .filter(|v| v.is_finite());
+        if let Some(v) = given {
+            let v = v.clamp(lo, hi);
+            set.push(rustybuzz::Variation {
+                tag: axis.tag,
+                value: v,
+            });
+            match &tag {
+                b"wght" => {
+                    weight = v.round().clamp(1.0, 1000.0) as u16;
+                    own_weight = true;
+                }
+                b"ital" | b"slnt" => own_slant = true,
+                _ => {}
+            }
+            continue;
+        }
+        match &tag {
             b"wght" => {
                 let v = f32::from(target).clamp(lo, hi);
                 set.push(rustybuzz::Variation {
@@ -612,12 +659,44 @@ fn set_axes(
             _ => {}
         }
     }
+    // A slant the text sets decides whether the letters slant.
+    if own_slant {
+        slanted = !upright_face
+            || set.iter().any(|v| match &v.tag.to_bytes() {
+                b"ital" => v.value >= 0.5,
+                b"slnt" => v.value < 0.0,
+                _ => false,
+            });
+    }
     for v in &set {
         face.set_variation(v.tag, v.value);
     }
     hb.set_variations(&set);
     let coords = set.iter().map(|v| (v.tag.to_bytes(), v.value)).collect();
-    (weight, slanted, coords)
+    Instance {
+        weight,
+        slanted,
+        coords,
+        own_weight,
+        own_slant,
+    }
+}
+
+/// One axis of a variable font, for the controls that set it (#870).
+#[derive(Debug, Clone, PartialEq)]
+pub struct VariationAxis {
+    /// The OpenType tag ("wght", "wdth", "slnt", "opsz", or the font's own).
+    pub tag: String,
+    /// The name the font gives it (English where it has one), else the tag.
+    pub name: String,
+    pub min: f64,
+    pub default: f64,
+    pub max: f64,
+    /// The value the text has when it sets none: from its weight and
+    /// slant on those axes, else the font's default.
+    pub auto: f64,
+    /// The font asks for the axis not to be shown (fvar flag 0x0001).
+    pub hidden: bool,
 }
 
 /// Letters 0x20 to 0xFF of the symbol encoding of the Symbol family as
@@ -882,6 +961,7 @@ fn shapes_alike(a: &TextSpan, b: &TextSpan) -> bool {
         && a.offset_x_pct == b.offset_x_pct
         && a.angle_deg == b.angle_deg
         && a.features == b.features
+        && a.variations == b.variations
 }
 
 /// Text in which a character may continue the syllable before it: any
@@ -1991,6 +2071,60 @@ impl FontSystem {
         })
     }
 
+    /// The axes of the variable font text in `family` (bold and italic as
+    /// given) is drawn with, in the font's order, with the value each has
+    /// when the text sets none (#870). Empty for a static font or a family
+    /// that is not here.
+    pub fn variation_axes(&self, family: &str, bold: bool, italic: bool) -> Vec<VariationAxis> {
+        // Not the axes of a stand-in for a family that is not here.
+        if !self.has_family(family) {
+            return Vec::new();
+        }
+        let Some((id, target)) = self.face_and_weight(family, bold, italic) else {
+            return Vec::new();
+        };
+        let Some((data, index)) = self.face_data(id) else {
+            return Vec::new();
+        };
+        let Ok(mut face) = ttf_parser::Face::parse(&data, index) else {
+            return Vec::new();
+        };
+        let Some(mut hb) = rustybuzz::Face::from_slice(&data, index) else {
+            return Vec::new();
+        };
+        let axes: Vec<ttf_parser::VariationAxis> = face.variation_axes().into_iter().collect();
+        let names: Vec<String> = axes
+            .iter()
+            .map(|a| {
+                let tag = String::from_utf8_lossy(&a.tag.to_bytes()).to_string();
+                catalog::name(&face, a.name_id).unwrap_or(tag)
+            })
+            .collect();
+        let auto = set_axes(&mut face, &mut hb, target, italic, &[]).coords;
+        axes.iter()
+            .zip(names)
+            .map(|(a, name)| {
+                let tag = a.tag.to_bytes();
+                let lo = a.min_value.min(a.max_value);
+                let hi = a.max_value.max(a.min_value);
+                let default = a.def_value.clamp(lo, hi);
+                VariationAxis {
+                    tag: String::from_utf8_lossy(&tag).to_string(),
+                    name,
+                    min: f64::from(lo),
+                    default: f64::from(default),
+                    max: f64::from(hi),
+                    auto: f64::from(
+                        auto.iter()
+                            .find(|(t, _)| *t == tag)
+                            .map_or(default, |(_, v)| *v),
+                    ),
+                    hidden: a.hidden,
+                }
+            })
+            .collect()
+    }
+
     /// Ask for an offered family now (a font list showing it), as text set
     /// in it would; true when it is offered. The application fetches it
     /// after [`FontSystem::take_font_requests`].
@@ -2146,7 +2280,7 @@ impl FontSystem {
             req.spans
                 .iter()
                 .map(|s| format!(
-                    "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{:?}|{:?}|{}",
+                    "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{:?}|{:?}|{:?}|{}",
                     s.layout_only,
                     s.font_family,
                     s.size_pt,
@@ -2159,6 +2293,7 @@ impl FontSystem {
                     s.underline,
                     s.strikethrough,
                     s.features,
+                    s.variations,
                     s.paragraph,
                     s.text
                 ))
@@ -2510,7 +2645,13 @@ impl FontSystem {
         let target = self
             .face_and_weight(&span.font_family, span.bold, span.italic)
             .map_or(if span.bold { 700 } else { 400 }, |(_, w)| w);
-        let (weight, slanted, coords) = set_axes(&mut face, &mut hb, target, span.italic);
+        let Instance {
+            weight,
+            slanted,
+            coords,
+            own_weight,
+            own_slant,
+        } = set_axes(&mut face, &mut hb, target, span.italic, &span.variations);
         let font = tracedraw_core::document::text_outline::GlyphFont {
             data: data.clone(),
             index,
@@ -2520,8 +2661,9 @@ impl FontSystem {
         let upem = face.units_per_em() as f64;
         let scale = size_pt * PT_MM / upem;
         // A heavy weight the face lacks is drawn thicker.
-        let synth_bold = target >= 600 && weight < 600;
-        let synth_italic = span.italic && !slanted;
+        // Not when the text sets the weight or slant axis itself (#870).
+        let synth_bold = target >= 600 && weight < 600 && !own_weight;
+        let synth_italic = span.italic && !slanted && !own_slant;
         let tracking = span.tracking_pct / 100.0 * size_pt * PT_MM;
         let baseline = span.baseline_shift_pt * PT_MM;
         // Character spacing counts in widths of a space; word spacing
@@ -4532,6 +4674,7 @@ mod tests {
             outline: None,
             layout_only: false,
             features: Vec::new(),
+            variations: Vec::new(),
             paragraph: None,
         }
     }
@@ -6147,6 +6290,54 @@ mod tests {
         let italic = set(false, true);
         assert_eq!(italic.path.elements().len(), regular.path.elements().len());
         assert!(italic.path.bounding_box().x1 > regular.path.bounding_box().x1);
+    }
+
+    /// Axis values the text sets (#870) draw the font at them, clamped to
+    /// its range, and turn off the synthetic bold they replace.
+    #[test]
+    fn variable_font_axes_set_on_the_text_draw_it_there() {
+        let f = system_with(&[QUICKSAND, SELAWIK]);
+        let axes = f.variation_axes("Quicksand", false, false);
+        assert_eq!(axes.len(), 1, "{axes:?}");
+        let w = &axes[0];
+        assert_eq!(w.tag, "wght");
+        assert_eq!((w.min, w.default, w.max), (300.0, 300.0, 700.0));
+        assert_eq!(w.auto, 400.0);
+        assert!(!w.name.is_empty() && !w.hidden);
+        assert_eq!(f.variation_axes("Quicksand", true, false)[0].auto, 700.0);
+        // A static font has none.
+        assert!(f.variation_axes("Selawik", false, false).is_empty());
+        assert!(f
+            .variation_axes("Not Installed Anywhere", false, false)
+            .is_empty());
+
+        let em = 100.0 * PT_MM;
+        let advance = |l: &TextLayout| l.lines[0].edges.last().copied().unwrap_or(0.0);
+        let draw = |bold: bool, wght: Option<f64>| {
+            let mut s = TextSpan::new("Hello", "Quicksand", 100.0);
+            s.bold = bold;
+            s.set_variation("wght", wght);
+            f.outline(&[s])
+        };
+        // Weight 700 set on regular text draws as bold text does.
+        let bold = draw(true, None);
+        let heavy = draw(false, Some(700.0));
+        assert!((advance(&heavy) - 2.463 * em).abs() < 0.002 * em);
+        assert_eq!(heavy.path, bold.path);
+        // 300 on bold text: the light letters, not thickened.
+        let light = draw(true, Some(300.0));
+        assert!((advance(&light) - 2.295 * em).abs() < 0.002 * em);
+        assert_eq!(light.path, draw(false, Some(300.0)).path);
+        // Out of range values are clamped; axes the font lacks are left out.
+        assert_eq!(draw(false, Some(5000.0)).path, heavy.path);
+        let mut s = TextSpan::new("Hello", "Quicksand", 100.0);
+        s.set_variation("wdth", Some(50.0));
+        assert_eq!(f.outline(&[s]).path, draw(false, None).path);
+        // A static font ignores them.
+        let mut s = TextSpan::new("Hello", "Selawik", 100.0);
+        let plain = f.outline(std::slice::from_ref(&s)).path;
+        s.set_variation("wght", Some(900.0));
+        assert_eq!(f.outline(&[s]).path, plain);
     }
 
     /// `data` with the OS/2 embedding bits set to `fs_type`.

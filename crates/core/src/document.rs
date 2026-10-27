@@ -879,6 +879,15 @@ impl TextAlign {
     }
 }
 
+/// A value set for one axis of a variable font (#870): the axis's
+/// OpenType tag ("wght", "wdth", "slnt", "opsz" or a font's own) and a
+/// value in the axis's units, drawn clamped to the font's range.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FontVariation {
+    pub tag: String,
+    pub value: f64,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TextSpan {
     pub text: String,
@@ -926,6 +935,11 @@ pub struct TextSpan {
     /// OpenType features to enable, e.g. "liga", "smcp", "frac".
     #[serde(default)]
     pub features: Vec<String>,
+    /// Axis values of a variable font set for these characters (#870);
+    /// an axis not listed takes the value the text's weight and slant
+    /// give, else the font's default.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub variations: Vec<FontVariation>,
     /// The formatting of the paragraph these characters are in, when it
     /// has its own (see [`crate::paragraphs`]); `None` = the text
     /// object's alignment and paragraph style.
@@ -957,7 +971,31 @@ impl TextSpan {
             outline: None,
             layout_only: false,
             features: Vec::new(),
+            variations: Vec::new(),
             paragraph: None,
+        }
+    }
+
+    /// The value set for variable font axis `tag`, if any.
+    pub fn variation(&self, tag: &str) -> Option<f64> {
+        self.variations
+            .iter()
+            .find(|v| v.tag == tag)
+            .map(|v| v.value)
+    }
+
+    /// Set axis `tag` to `value`, or take it off (`None`); a value that
+    /// is not finite takes it off too.
+    pub fn set_variation(&mut self, tag: &str, value: Option<f64>) {
+        match value.filter(|v| v.is_finite()) {
+            Some(value) => match self.variations.iter_mut().find(|v| v.tag == tag) {
+                Some(v) => v.value = value,
+                None => self.variations.push(FontVariation {
+                    tag: tag.to_string(),
+                    value,
+                }),
+            },
+            None => self.variations.retain(|v| v.tag != tag),
         }
     }
 
@@ -4770,6 +4808,55 @@ mod tests {
     }
 
     use super::*;
+
+    /// Variable font axis values (#870) are set, replaced and taken off
+    /// per tag, saved with the text in the native format and left out of
+    /// it when none is set.
+    #[test]
+    fn variable_font_axes_are_kept_with_the_text() {
+        let mut sp = TextSpan::new("Hello", "Quicksand", 24.0);
+        sp.set_variation("wght", Some(550.0));
+        sp.set_variation("wdth", Some(80.0));
+        sp.set_variation("wght", Some(620.0));
+        sp.set_variation("XOPQ", Some(f64::NAN));
+        assert_eq!(sp.variation("wght"), Some(620.0));
+        assert_eq!(sp.variations.len(), 2);
+        sp.set_variation("wdth", None);
+        assert_eq!(sp.variation("wdth"), None);
+
+        let text = |sp: TextSpan| {
+            Shape::new(
+                ShapeId(1),
+                ShapeKind::Text {
+                    spans: vec![sp],
+                    origin: crate::geometry::Point::new(0.0, 0.0),
+                    frame: None,
+                    align: TextAlign::Left,
+                    para: ParagraphStyle::default(),
+                    on_path: None,
+                },
+            )
+        };
+        let mut doc = Document::default();
+        doc.pages[0].layers[0].shapes = vec![text(sp.clone())];
+        let json = doc.to_json().expect("json");
+        assert!(json.contains("\"wght\""));
+        let back = Document::from_json(&json).expect("opens again");
+        let ShapeKind::Text { spans, .. } = &back.pages[0].layers[0].shapes[0].kind else {
+            panic!("a text");
+        };
+        assert_eq!(spans[0].variations, sp.variations);
+
+        doc.pages[0].layers[0].shapes = vec![text(TextSpan::new("Hello", "Quicksand", 24.0))];
+        let json = doc.to_json().expect("json");
+        assert!(!json.contains("variations"));
+        // Files written before keep opening.
+        let back = Document::from_json(&json).expect("opens again");
+        let ShapeKind::Text { spans, .. } = &back.pages[0].layers[0].shapes[0].kind else {
+            panic!("a text");
+        };
+        assert!(spans[0].variations.is_empty());
+    }
 
     /// Imported rounded corners keep their size (#619): a corner larger
     /// than the shorter side stays as it was, and a stretched rectangle
