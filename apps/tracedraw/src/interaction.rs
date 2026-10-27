@@ -1896,7 +1896,9 @@ impl App {
     /// click the third point (Esc cancels, see `keyboard`). Ctrl keeps the
     /// base to steps of the constrain angle from where it starts, as the
     /// other line tools do (the curve's chord: the constrain key of the
-    /// curve tools, Ctrl by default; #934).
+    /// curve tools, Ctrl by default; #934). Held at the third click of the
+    /// curve, it makes the curve a bow: the arc of the circle through the
+    /// three points.
     fn three_point_input(&mut self, response: &Response, p: Point, mods: Modifiers) {
         let p = self.snap_point(p);
         let constrain = if self.tool == Tool::ThreePointCurve {
@@ -1908,7 +1910,7 @@ impl App {
         if self.three_point_base.is_some() {
             if response.clicked_by(PointerButton::Primary) {
                 if let Some((a, b)) = self.three_point_base.take() {
-                    self.finish_three_point(a, b, p);
+                    self.finish_three_point(a, b, p, constrain);
                 }
             }
             return;
