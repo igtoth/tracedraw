@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Opening `.cdr`: text whose letters are each turned and moved on their own, as the ring of letters around a seal, opens from version 13 to 15 files with every letter in its place. Such texts were skipped and counted as objects that could not be read (#955).
 - Symbols: a symbol instance copied in one drawing and pasted in another brings its symbol along and shows the same objects there. It kept only the symbol's number in the list, so in a drawing without symbols it showed nothing, and in one with symbols of its own it showed one of those; symbols that show other symbols come along too, and pasting again reuses the symbol already brought (#678).
 - Rotating with the Pick tool: in rotate mode a node of the selection (or a segment's midpoint) dragged turns it about the centre of rotation instead of moving it, and let go near another object's edge the node lands exactly on it, so an arc turned about one end can be laid onto a line; the pointer shows the turning arrows over such a node. Also, the turn follows the pointer when the rotate handle passes over the edge of another object or of the page. The pointer snapped to the edge, so the object stuck at one angle and then jumped while the handle crossed it; the handle still snaps to other objects' nodes, midpoints and centres to aim the turn at one (#933).
 
