@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- The main window fills the screen at start when it was left maximized, also with the interface in Chinese and a new drawing at start, where it came up with the maximized button state at its normal size in the corner of the screen. The maximize now follows the window's size instead of coming with it, and a window that says it is maximized but does not fill the screen is restored and maximized again (#787).
 - Rotating with the Pick tool: in rotate mode a node of the selection (or a segment's midpoint) dragged turns it about the centre of rotation instead of moving it, and let go near another object's edge the node lands exactly on it, so an arc turned about one end can be laid onto a line; the pointer shows the turning arrows over such a node. Also, the turn follows the pointer when the rotate handle passes over the edge of another object or of the page. The pointer snapped to the edge, so the object stuck at one angle and then jumped while the handle crossed it; the handle still snaps to other objects' nodes, midpoints and centres to aim the turn at one (#933).
 
 - Variable fonts: the Text docker's Character expander shows a slider for each axis of the selected text's variable font (weight, width, slant, optical size and the font's own axes). The values set go on the selected characters, are saved in .tdraw files and are drawn in the canvas, exports and PDF; Default axes takes them off (#870).

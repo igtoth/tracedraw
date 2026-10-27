@@ -44,9 +44,9 @@ the version on the right).
   (never more than four fifths of the monitor, so it fits a 1366 x 768
   or 1280 x 720 screen with a taskbar at any interface size), the size
   kept from the last session (1600 x 950 the first time, never larger
-  than 95 % of the monitor) centred on the monitor, maximized when it
-  was left maximized or when that size does not fit the monitor (a
-  small screen).
+  than 95 % of the monitor) centred on the monitor, then maximized in
+  the next frames when it was left maximized or when that size does
+  not fit the monitor (a small screen; see Window state below).
 - The splash window is made resizable too, though it has no frame to
   drag: a window made not resizable stays at its size for good under
   some window managers (Xfwm4), and the main window could then neither
@@ -234,13 +234,30 @@ window before the interface size applies, and a size kept in interface
 points came back smaller at every start (#787,
 `splash::tests::the_window_comes_back_at_its_size_with_a_larger_interface`).
 
-For the first 30 frames of the main window (`splash::SETTLE_FRAMES`)
-its state is not kept: the window system may still report the splash's
-state then. In those frames, a window that should start maximized (it
-was left maximized, or its kept size does not fit this monitor) and
-still reports it is not is asked to maximize again at the 4th and 16th
-frame: some window systems drop a maximize asked for while the splash
-window takes its frame (#787,
+The splash turns into the main window by asking for its decorations,
+its kept size and its position only. A window that should start
+maximized (it was left maximized, or its kept size does not fit this
+monitor) is maximized from the main window's first frame on, once the
+window system has applied that size: on Windows a size applied after
+the maximize left the window at its normal size in the corner of the
+screen with the maximized button state (#787, seen with the interface
+in Chinese and a new drawing at start, whose slow first frames change
+the timing).
+
+For the first 30 frames of the main window and at least its first 3
+seconds (`splash::SETTLE_FRAMES`, `splash::SETTLE_SECONDS`) its state is
+not kept: the window system may still report the splash's state then.
+Meanwhile, every quarter of a second, a window that should start
+maximized is checked against the monitor, not only by the state it
+reports: one that reports it is not maximized is asked to maximize, and
+one that reports it is maximized but has not filled at least 96 % of
+the monitor's width or height (a taskbar sits on one side; a window at
+its normal size starts at 95 % at most) for a quarter of a second is
+restored and then maximized again (a second maximize does not change
+such a window). It stops once the window is maximized and fills the
+screen, and after 6 requests; each request is logged (#787,
+`splash::tests::a_maximized_window_left_at_its_normal_size_is_maximized_again`,
+`splash::tests::the_window_settles_for_its_frames_and_its_time`,
 `splash::tests::a_dropped_maximize_is_asked_for_again_and_a_large_window_fills_the_screen`).
 
 ## Checks

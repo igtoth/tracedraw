@@ -312,9 +312,10 @@ fn monitor_in_system_points(ctx: &egui::Context) -> Option<Vec2> {
 }
 
 /// Turn the splash window into the main window: decorations, resizable,
-/// the kept size centred on the monitor, maximized when it was left so.
-/// Sizes are worked out in system points (see [`remember_window`]) and
-/// sent in interface points.
+/// the kept size centred on the monitor. Sizes are worked out in system
+/// points (see [`remember_window`]) and sent in interface points. A
+/// window that starts maximized is maximized by [`WindowSettle`] in the
+/// next frames, once the window system has applied this size (#787).
 pub fn open_main_window(ctx: &egui::Context, settings: &Settings) {
     use egui::ViewportCommand as V;
     let zoom = ctx.zoom_factor().max(0.01);
@@ -338,45 +339,135 @@ pub fn open_main_window(ctx: &egui::Context, settings: &Settings) {
     if let Some(p) = centred_position(size, monitor) {
         ctx.send_viewport_cmd(V::OuterPosition((p.to_vec2() / zoom).to_pos2()));
     }
-    if start_maximized(settings.window_size, settings.window_maximized, monitor) {
-        ctx.send_viewport_cmd(V::Maximized(true));
-    }
     ctx.send_viewport_cmd(V::Focus);
 }
 
 /// Frames after the main window opens during which its state is still
-/// settling: what the window system reports then is not kept, and a
-/// maximize it dropped is asked for again (#787).
+/// settling: what the window system reports then is not kept (#787).
 pub const SETTLE_FRAMES: u32 = 30;
+/// The shortest time, in seconds, the main window's state settles: slow
+/// first frames (an interface in a language drawn with a large system
+/// font, a new drawing with its panels) can use up the frames before
+/// the window system has done what it was asked (#787).
+pub const SETTLE_SECONDS: f64 = 3.0;
+/// The time, in seconds, the window system gets for one request before
+/// the window's state is looked at again.
+const SETTLE_GAP: f64 = 0.25;
+/// Requests made at most while the window settles, so a window system
+/// that never maximizes is not asked forever.
+const SETTLE_REQUESTS: u32 = 6;
+/// A maximized window's inner size is at least this share of the
+/// monitor's in one direction at least: a taskbar sits on one side, and
+/// the title bar takes a little of the height. A window at its normal
+/// size starts at most 95 % of the monitor in both (see
+/// [`main_window_size`]).
+const FILLS_SHARE: f32 = 0.96;
 
-/// One of the first [`SETTLE_FRAMES`] frames of the main window
-/// (`frame` counted from 0). Some window systems drop a maximize asked
-/// for while the splash turns into the main window (on Windows the
-/// window's frame changes at the same time), and the window started at
-/// its kept size instead, every time: it is asked for again a few frames
-/// on while the window still reports it is not maximized. So is a window
-/// started without the splash at a kept size larger than the monitor
-/// (another screen, a larger scaling), which then fills the screen.
-pub fn settle_window(ctx: &egui::Context, settings: &Settings, frame: u32) {
-    use egui::ViewportCommand as V;
-    let monitor = monitor_in_system_points(ctx);
-    let (maximized, minimized) = ctx.input(|i| {
-        let v = i.viewport();
-        (v.maximized, v.minimized)
-    });
-    if frame + 1 < SETTLE_FRAMES {
-        ctx.request_repaint();
+/// The main window's first moments (#787). Until it has settled its
+/// state is not kept, and a window that should start maximized (left
+/// maximized, or a kept size this monitor cannot hold) is maximized
+/// here, a frame after the splash asked for its size and position:
+/// on Windows a size applied after the maximize left the window at its
+/// normal size in the corner of the screen with the maximized button
+/// state, and a second maximize does not change such a window. So the
+/// window is checked against the monitor, not only by the state it
+/// reports: one that says it is maximized but does not fill the screen
+/// is restored and then maximized again, and a maximize the window
+/// system dropped is asked for again.
+#[derive(Debug, Default, Clone)]
+pub struct WindowSettle {
+    /// Frames seen so far.
+    frames: u32,
+    /// The input time of the first frame and of the latest one.
+    started: Option<f64>,
+    now: f64,
+    /// The input time of the last request.
+    asked_at: Option<f64>,
+    /// Since when the window says it is maximized but does not fill the
+    /// screen (a window system still resizing it shows that briefly).
+    stuck_since: Option<f64>,
+    /// Requests made.
+    requests: u32,
+    /// The window was seen as it should be (maximized and filling the
+    /// screen, or not to be maximized): nothing more to do, a later
+    /// restore is the user's.
+    done: bool,
+}
+
+impl WindowSettle {
+    /// True while the window's state is still settling.
+    pub fn settling(&self) -> bool {
+        let elapsed = self.started.map_or(0.0, |s| self.now - s);
+        self.frames < SETTLE_FRAMES || elapsed < SETTLE_SECONDS
     }
-    if minimized == Some(true) {
-        return;
-    }
-    // Left maximized, or a kept size this monitor cannot hold (another
-    // screen, a larger scaling): maximized.
-    if start_maximized(settings.window_size, settings.window_maximized, monitor)
-        && maximized == Some(false)
-        && (frame == 3 || frame == 15)
-    {
-        ctx.send_viewport_cmd(V::Maximized(true));
+
+    /// One frame of the main window while it settles.
+    pub fn step(&mut self, ctx: &egui::Context, settings: &Settings) {
+        use egui::ViewportCommand as V;
+        self.now = ctx.input(|i| i.time);
+        self.started.get_or_insert(self.now);
+        self.frames += 1;
+        // Frames go on while nothing else asks for one: at once for the
+        // first ones, then a few a second.
+        if self.frames < SETTLE_FRAMES {
+            ctx.request_repaint();
+        } else if self.settling() {
+            ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        }
+        if self.done || self.requests >= SETTLE_REQUESTS {
+            return;
+        }
+        let (maximized, minimized, inner, monitor_points) = ctx.input(|i| {
+            let v = i.viewport();
+            (v.maximized, v.minimized, v.inner_rect, v.monitor_size)
+        });
+        if minimized == Some(true) {
+            return;
+        }
+        // Left maximized, or a kept size this monitor cannot hold
+        // (another screen, a larger scaling): maximized.
+        let monitor = monitor_in_system_points(ctx);
+        if !start_maximized(settings.window_size, settings.window_maximized, monitor) {
+            self.done = true;
+            return;
+        }
+        if self.asked_at.is_some_and(|t| self.now - t < SETTLE_GAP) {
+            return;
+        }
+        // Both in interface points; unknown sizes count as filling.
+        let fills = match (inner, monitor_points) {
+            (Some(r), Some(m)) if m.x > 0.0 && m.y > 0.0 => {
+                r.width() >= m.x * FILLS_SHARE || r.height() >= m.y * FILLS_SHARE
+            }
+            _ => true,
+        };
+        if maximized != Some(true) || fills {
+            self.stuck_since = None;
+        }
+        let request = match maximized {
+            Some(true) if fills => {
+                self.done = true;
+                None
+            }
+            // Says maximized but has not filled the screen for a while:
+            // restored, and maximized at the next look.
+            Some(true) => {
+                let since = *self.stuck_since.get_or_insert(self.now);
+                (self.now - since >= SETTLE_GAP).then_some(V::Maximized(false))
+            }
+            Some(false) => Some(V::Maximized(true)),
+            None => None,
+        };
+        if let Some(r) = request {
+            log::info!(
+                "main window: {r:?} (maximized {maximized:?}, inner {:?}, monitor {monitor_points:?})",
+                inner.map(|r| r.size()),
+            );
+            ctx.send_viewport_cmd(r);
+            self.asked_at = Some(self.now);
+            self.stuck_since = None;
+            self.requests += 1;
+        }
     }
 }
 
@@ -532,13 +623,204 @@ mod tests {
         ));
     }
 
-    /// #787: a maximize the window system dropped while the window was
-    /// set up is asked for again while the window says it is not
-    /// maximized, and for a kept size larger than the monitor.
+    /// One settling frame at input time `time` with the window reported
+    /// as `info`; the commands it sent.
+    fn settle_frame(
+        settle: &mut WindowSettle,
+        settings: &Settings,
+        info: egui::ViewportInfo,
+        time: f64,
+    ) -> Vec<egui::ViewportCommand> {
+        let ctx = egui::Context::default();
+        let mut input = egui::RawInput {
+            time: Some(time),
+            ..Default::default()
+        };
+        input.viewports.insert(egui::ViewportId::ROOT, info);
+        let mut out = ctx.run_ui(input, |ui| settle.step(ui.ctx(), settings));
+        out.textures_delta.clear();
+        // Only the window's state (a new context also sends its theme).
+        out.viewport_output[&egui::ViewportId::ROOT]
+            .commands
+            .iter()
+            .filter(|c| {
+                matches!(
+                    c,
+                    egui::ViewportCommand::Maximized(_)
+                        | egui::ViewportCommand::InnerSize(_)
+                        | egui::ViewportCommand::OuterPosition(_)
+                )
+            })
+            .cloned()
+            .collect()
+    }
+
+    /// A window system as seen on Windows in #787: a window maximized
+    /// already ignores another maximize, and a size applied after the
+    /// maximize (it came in late) resizes the window but leaves it
+    /// marked maximized, in the corner of the screen at its normal size.
+    struct FakeWindow {
+        maximized: bool,
+        inner: Vec2,
+        normal: Vec2,
+        work_area: Vec2,
+        monitor: Vec2,
+    }
+
+    impl FakeWindow {
+        fn apply(&mut self, cmd: &egui::ViewportCommand) {
+            use egui::ViewportCommand as V;
+            match cmd {
+                V::Maximized(true) if !self.maximized => {
+                    self.maximized = true;
+                    self.inner = self.work_area;
+                }
+                V::Maximized(false) if self.maximized => {
+                    self.maximized = false;
+                    self.inner = self.normal;
+                }
+                V::InnerSize(s) => {
+                    self.inner = *s;
+                    if !self.maximized {
+                        self.normal = *s;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        fn info(&self) -> egui::ViewportInfo {
+            egui::ViewportInfo {
+                maximized: Some(self.maximized),
+                minimized: Some(false),
+                inner_rect: Some(egui::Rect::from_min_size(Pos2::ZERO, self.inner)),
+                monitor_size: Some(self.monitor),
+                ..Default::default()
+            }
+        }
+
+        fn fills(&self) -> bool {
+            self.maximized && self.inner == self.work_area
+        }
+    }
+
+    /// The splash's window on a 1920 x 1080 monitor with a taskbar.
+    fn fake_windows_window() -> FakeWindow {
+        FakeWindow {
+            maximized: false,
+            inner: SIZE,
+            normal: SIZE,
+            work_area: Vec2::new(1920.0, 1017.0),
+            monitor: Vec2::new(1920.0, 1080.0),
+        }
+    }
+
+    /// Settling frames 50 ms apart for `seconds`, the late commands
+    /// `late` applied after the first request the settling made; the
+    /// commands the settling sent.
+    fn settle_run(
+        window: &mut FakeWindow,
+        settings: &Settings,
+        mut late: Vec<egui::ViewportCommand>,
+        seconds: f64,
+    ) -> Vec<egui::ViewportCommand> {
+        let mut settle = WindowSettle::default();
+        let mut sent = Vec::new();
+        let mut t = 10.0;
+        while settle.settling() && t < 10.0 + seconds {
+            let cmds = settle_frame(&mut settle, settings, window.info(), t);
+            for c in &cmds {
+                window.apply(c);
+            }
+            if !cmds.is_empty() {
+                for c in late.drain(..) {
+                    window.apply(&c);
+                }
+            }
+            sent.extend(cmds);
+            t += 0.05;
+        }
+        sent
+    }
+
+    /// #787: with the interface in Chinese and a new drawing at start,
+    /// the window came up with the maximized button state but at its
+    /// normal size in the corner of the screen: the size the splash
+    /// asked for was applied after the maximize. The splash no longer
+    /// asks for the maximize with the size, and a window that says it is
+    /// maximized but does not fill the screen is restored and maximized
+    /// again, until it fills the screen.
+    #[test]
+    fn a_maximized_window_left_at_its_normal_size_is_maximized_again() {
+        use egui::ViewportCommand as V;
+        let settings = Settings::default();
+        assert!(settings.window_maximized);
+        // The splash asks for the size and position only.
+        let mut window = fake_windows_window();
+        let info = window.info();
+        let cmds = window_frame(1.0, info, |ctx| open_main_window(ctx, &settings));
+        assert!(
+            !cmds.iter().any(|c| matches!(c, V::Maximized(_))),
+            "{cmds:?}"
+        );
+        let size = cmds
+            .iter()
+            .find_map(|c| match c {
+                V::InnerSize(s) => Some(*s),
+                _ => None,
+            })
+            .expect("a size");
+        // Worst case: that size lands after the maximize that follows.
+        let sent = settle_run(&mut window, &settings, vec![V::InnerSize(size)], 5.0);
+        assert!(window.fills(), "{sent:?}");
+        assert!(sent.iter().any(|c| matches!(c, V::Maximized(false))));
+
+        // The state the reporter saw (marked maximized, normal size):
+        // restored, then maximized.
+        let mut stuck = fake_windows_window();
+        stuck.apply(&V::InnerSize(DEFAULT_SIZE));
+        stuck.apply(&V::Maximized(true));
+        stuck.apply(&V::InnerSize(DEFAULT_SIZE));
+        assert!(stuck.maximized && !stuck.fills());
+        let sent = settle_run(&mut stuck, &settings, Vec::new(), 5.0);
+        assert!(stuck.fills(), "{sent:?}");
+        let first = sent.iter().position(|c| matches!(c, V::Maximized(false)));
+        let last = sent.iter().rposition(|c| matches!(c, V::Maximized(true)));
+        assert!(first < last, "{sent:?}");
+    }
+
+    /// #787: the settling lasts at least its time and its frames, a slow
+    /// first frame does not end it early, and a window that is maximized
+    /// and fills the screen is left alone.
+    #[test]
+    fn the_window_settles_for_its_frames_and_its_time() {
+        let settings = Settings::default();
+        let mut window = fake_windows_window();
+        window.apply(&egui::ViewportCommand::Maximized(true));
+        let mut settle = WindowSettle::default();
+        assert!(settle.settling());
+        // Two frames five seconds apart: frames still to come.
+        settle_frame(&mut settle, &settings, window.info(), 1.0);
+        settle_frame(&mut settle, &settings, window.info(), 6.0);
+        assert!(settle.settling());
+        // Thirty frames within a tenth of a second: time still to come.
+        let mut settle = WindowSettle::default();
+        for i in 0..SETTLE_FRAMES {
+            let cmds = settle_frame(&mut settle, &settings, window.info(), f64::from(i) * 0.003);
+            assert!(cmds.is_empty(), "{cmds:?}");
+        }
+        assert!(settle.settling());
+        settle_frame(&mut settle, &settings, window.info(), SETTLE_SECONDS + 0.1);
+        assert!(!settle.settling());
+    }
+
+    /// #787: a maximize the window system dropped is asked for again,
+    /// a kept size larger than the monitor fills the screen, a kept size
+    /// that fits is left alone, and a window system that never maximizes
+    /// is not asked forever.
     #[test]
     fn a_dropped_maximize_is_asked_for_again_and_a_large_window_fills_the_screen() {
         use egui::ViewportCommand as V;
-        let monitor = Some(Vec2::new(1920.0, 1080.0));
         let not_max = egui::ViewportInfo {
             maximized: Some(false),
             minimized: Some(false),
@@ -546,26 +828,20 @@ mod tests {
                 Pos2::ZERO,
                 Vec2::new(1600.0, 950.0),
             )),
-            monitor_size: monitor,
+            monitor_size: Some(Vec2::new(1920.0, 1080.0)),
             ..Default::default()
         };
         let settings = Settings::default();
-        assert!(settings.window_maximized);
-        let asks = |info: &egui::ViewportInfo, frame| {
-            window_frame(1.0, info.clone(), |ctx| {
-                settle_window(ctx, &settings, frame)
-            })
-            .iter()
-            .any(|c| matches!(c, V::Maximized(true)))
-        };
-        assert!(asks(&not_max, 3));
-        assert!(asks(&not_max, 15));
-        assert!(!asks(&not_max, 4));
-        let max = egui::ViewportInfo {
-            maximized: Some(true),
-            ..not_max.clone()
-        };
-        assert!(!asks(&max, 3));
+        let mut settle = WindowSettle::default();
+        let mut asked = 0;
+        for i in 0..200 {
+            let cmds = settle_frame(&mut settle, &settings, not_max.clone(), f64::from(i) * 0.05);
+            asked += cmds
+                .iter()
+                .filter(|c| matches!(c, V::Maximized(true)))
+                .count();
+        }
+        assert!(asked >= 2 && asked as u32 <= SETTLE_REQUESTS, "{asked}");
         // Kept not maximized but larger than this monitor: maximized.
         let mut large = Settings::default();
         large.window_maximized = false;
@@ -573,21 +849,32 @@ mod tests {
         let small_screen = egui::ViewportInfo {
             inner_rect: Some(egui::Rect::from_min_size(
                 Pos2::ZERO,
-                Vec2::new(1700.0, 1000.0),
+                Vec2::new(1300.0, 700.0),
             )),
             monitor_size: Some(Vec2::new(1366.0, 768.0)),
             ..not_max.clone()
         };
-        let cmds = window_frame(1.0, small_screen.clone(), |ctx| {
-            settle_window(ctx, &large, 3)
-        });
+        let cmds = settle_frame(
+            &mut WindowSettle::default(),
+            &large,
+            small_screen.clone(),
+            0.0,
+        );
         assert!(cmds.iter().any(|c| matches!(c, V::Maximized(true))));
         // Kept not maximized and fitting: left alone.
         large.window_size = [1200.0, 700.0];
-        let cmds = window_frame(1.0, small_screen, |ctx| settle_window(ctx, &large, 3));
-        assert!(!cmds
-            .iter()
-            .any(|c| matches!(c, V::Maximized(true) | V::InnerSize(_))));
+        let mut settle = WindowSettle::default();
+        for i in 0..100 {
+            let cmds = settle_frame(
+                &mut settle,
+                &large,
+                small_screen.clone(),
+                f64::from(i) * 0.05,
+            );
+            assert!(!cmds
+                .iter()
+                .any(|c| matches!(c, V::Maximized(_) | V::InnerSize(_))));
+        }
     }
 
     #[test]
