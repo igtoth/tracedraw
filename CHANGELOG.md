@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Convert Outline to Object (Ctrl+Shift+Q) on a combined curve whose lines cross (such as an "f" made of a stem and a cross bar) gives one shape with a merged outline, filled where the lines cross, so it looks as it did before. Each line came out as a shape of its own and the crossing turned into a hole (#997).
 - Toolbars: a right click on the empty part of a docked toolbar opens its menu and keeps it open until an entry is picked or you click elsewhere; the menu showed and closed at once. A right click on the buttons of a floating toolbar opens the menu too (#994).
 - Opening `.cdr`: a blend whose step count the file does not hold where expected opens with 20 steps and a warning naming the value read, instead of 999 steps, and the blends of one file take at most 100000 steps together, so files with many blends open without filling the memory. A blend never draws more than 999 steps, whatever asks for them (#980).
 - Shaping: Trim with an open curve (a line, a polyline or a curve) crossing a closed object cuts the object along it into separate pieces, each keeping the object's fill and outline; several curves make more pieces, and a curve that ends inside cuts nothing and the status bar says so. The object came back whole. Front Minus Back and Back Minus Front split along open curves the same way (#1005).
