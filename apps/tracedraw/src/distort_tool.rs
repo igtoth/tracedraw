@@ -202,6 +202,11 @@ pub struct DistortDrag {
     pub last_angle: Option<f64>,
 }
 
+/// Objects the tool distorts: not groups or bitmaps.
+pub fn distortable(kind: &ShapeKind) -> bool {
+    !matches!(kind, ShapeKind::Bitmap { .. } | ShapeKind::Group { .. })
+}
+
 /// The distortion among `effects`, if any.
 pub fn distortion_of(effects: &[Effect]) -> Option<Distort> {
     effects.iter().find_map(|e| match e {
@@ -259,11 +264,23 @@ impl App {
         label: &'static str,
         f: impl Fn(&Distort) -> Option<Distort>,
     ) {
+        let targets = self.distorted_selection();
+        self.set_distortions(label, targets, f);
+    }
+
+    /// [`App::change_distortions`] on `targets` (object, its distortion,
+    /// its effects).
+    fn set_distortions(
+        &mut self,
+        label: &'static str,
+        targets: Vec<(ShapeId, Distort, Vec<Effect>)>,
+        f: impl Fn(&Distort) -> Option<Distort>,
+    ) {
         let mut cmds = Vec::new();
         let mut ids = Vec::new();
-        for (id, d, effects) in self.distorted_selection() {
+        for (id, d, effects) in targets {
             let next = f(&d);
-            if next == Some(d) {
+            if next == Some(d) && distortion_of(&effects) == Some(d) {
                 continue;
             }
             ids.push(id);
@@ -287,18 +304,36 @@ impl App {
     }
 
     /// The bar's values went to the tool; the selected distortions of the
-    /// mode shown take them (keeping their centres).
+    /// mode shown take them (keeping their centres), and selected objects
+    /// without one take it about their middles, so an edit on the bar
+    /// shows on the selection at once (#1030). Typing on, the edits are
+    /// one undo step.
     pub fn apply_distort_settings(&mut self) {
         self.distort = self.distort.clamped();
         let s = self.distort;
-        self.change_distortions("Distortion", |d| Some(s.effect(s.mode, d.center())));
+        let targets: Vec<(ShapeId, Distort, Vec<Effect>)> = self
+            .selected_shapes()
+            .into_iter()
+            .filter_map(|sh| match distortion_of(&sh.effects) {
+                Some(d) => Some((sh.id, d, sh.effects.clone())),
+                None if distortable(&sh.kind) => {
+                    Some((sh.id, s.effect(s.mode, None), sh.effects.clone()))
+                }
+                None => None,
+            })
+            .collect();
+        self.set_distortions("Distortion", targets, |d| {
+            Some(s.effect(s.mode, d.center()))
+        });
     }
 
     /// A mode button: the tool's mode, and the selected distortions turn
     /// into that kind with the tool's values for it.
     pub fn set_distort_mode(&mut self, mode: DistortMode) {
         self.distort.mode = mode;
-        self.apply_distort_settings();
+        self.distort = self.distort.clamped();
+        let s = self.distort;
+        self.change_distortions("Distortion", |d| Some(s.effect(s.mode, d.center())));
     }
 
     /// Apply the bar's distortion to the selected objects that have none
@@ -307,9 +342,7 @@ impl App {
         let s = self.distort.clamped();
         let mut cmds = Vec::new();
         for sh in self.selected_shapes() {
-            if distortion_of(&sh.effects).is_some()
-                || matches!(sh.kind, ShapeKind::Bitmap { .. } | ShapeKind::Group { .. })
-            {
+            if distortion_of(&sh.effects).is_some() || !distortable(&sh.kind) {
                 continue;
             }
             cmds.push(Command::SetEffects {
@@ -644,6 +677,45 @@ mod tests {
         app.undo();
         app.clear_distortion();
         assert!(effect(&app, id).is_none());
+    }
+
+    /// A value changed on the bar shows on the selected object at once,
+    /// also on one without a distortion yet (about its middle), and a
+    /// run of edits is one undo step (#1030).
+    #[test]
+    fn a_bar_edit_previews_on_an_undistorted_selection() {
+        let mut app = App::headless();
+        app.tool = Tool::Distort;
+        let id = square(&mut app);
+        let picture = app
+            .new_shape(ShapeKind::Bitmap {
+                rect: Rect::new(30.0, 0.0, 40.0, 10.0),
+                width_px: 1,
+                height_px: 1,
+                png: Vec::new().into(),
+                fx: None,
+            })
+            .expect("bitmap");
+        app.select(vec![id, picture]);
+        let before = steps(&app);
+        // Choosing the kind alone leaves the object as it is.
+        app.set_distort_mode(DistortMode::Twister);
+        assert_eq!(effect(&app, id), None);
+        app.distort.degrees = 30.0;
+        app.apply_distort_settings();
+        app.distort.degrees = 45.0;
+        app.apply_distort_settings();
+        assert_eq!(
+            effect(&app, id),
+            Some(Distort::Twister {
+                angle_deg: -45.0,
+                center: None
+            })
+        );
+        assert_eq!(effect(&app, picture), None, "bitmaps are not distorted");
+        assert_eq!(steps(&app), before + 1, "one undo step for the edits");
+        app.undo();
+        assert_eq!(effect(&app, id), None);
     }
 
     #[test]
