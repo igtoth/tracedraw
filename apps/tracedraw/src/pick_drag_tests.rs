@@ -2432,6 +2432,85 @@ fn ctrl_keeps_the_marquee_square_and_space_copies_while_turning() {
     );
 }
 
+/// A right press during a selection box (or a freehand selection): the
+/// box goes on with the pointer and ends with the buttons, whichever
+/// goes up first, selecting what it encloses. It stayed on the canvas,
+/// frozen, until the next selection box (#1015).
+#[test]
+fn a_right_press_during_a_selection_box_does_not_leave_it_frozen() {
+    let n = Modifiers::NONE;
+    let right = |p: Pos2, down: bool| button(p, down, PointerButton::Secondary, n);
+    let left = |p: Pos2, down: bool| button(p, down, PointerButton::Primary, n);
+    for tool in [Tool::Pick, Tool::FreeformPick] {
+        for left_first in [false, true] {
+            for same_frame in [false, true] {
+                let (ctx, mut app, id) = setup();
+                app.set_tool(tool);
+                app.select(Vec::new());
+                frame(&ctx, &mut app, Vec::new(), n);
+                // From an empty spot above and left of the rectangle,
+                // around it.
+                let from = app.view.to_screen(Point::new(2.0, 2.0));
+                frame(&ctx, &mut app, vec![Event::PointerMoved(from)], n);
+                frame(&ctx, &mut app, vec![left(from, true)], n);
+                let mut p = from;
+                for _ in 0..4 {
+                    p += egui::vec2(15.0, 0.0);
+                    frame(&ctx, &mut app, vec![Event::PointerMoved(p)], n);
+                }
+                assert!(
+                    matches!(app.drag, Drag::Marquee { .. } | Drag::Lasso { .. }),
+                    "{tool:?}: {:?}",
+                    app.drag
+                );
+                frame(&ctx, &mut app, vec![right(p, true)], n);
+                // Moves with both buttons held go on shaping the box.
+                let corner = app.view.to_screen(Point::new(70.0, 2.0));
+                let mut end = app.view.to_screen(Point::new(70.0, 50.0));
+                frame(&ctx, &mut app, vec![Event::PointerMoved(corner)], n);
+                frame(&ctx, &mut app, vec![Event::PointerMoved(end)], n);
+                if tool == Tool::FreeformPick {
+                    // On round the bottom left, so that the freehand
+                    // selection goes all around the rectangle.
+                    end = app.view.to_screen(Point::new(2.0, 50.0));
+                    frame(&ctx, &mut app, vec![Event::PointerMoved(end)], n);
+                }
+                let what = format!("{tool:?} left first {left_first} same frame {same_frame}");
+                assert!(
+                    !matches!(app.drag, Drag::None),
+                    "{what}: the box goes on while the left button is held"
+                );
+                let ups = if left_first {
+                    vec![left(end, false), right(end, false)]
+                } else {
+                    vec![right(end, false), left(end, false)]
+                };
+                if same_frame {
+                    frame(&ctx, &mut app, ups, n);
+                } else {
+                    for e in ups {
+                        frame(&ctx, &mut app, vec![e], n);
+                    }
+                }
+                frame(&ctx, &mut app, Vec::new(), n);
+                assert!(matches!(app.drag, Drag::None), "{what}: {:?}", app.drag);
+                assert_eq!(app.selection, vec![id], "{what}: the box selects");
+                assert!(app.right_drag.is_none(), "{what}");
+                assert!(app.drop_menu.is_none(), "{what}");
+                // The next click on bare canvas empties the selection as
+                // usual: nothing is held over.
+                let bare = app.view.to_screen(Point::new(150.0, 150.0));
+                frame(&ctx, &mut app, vec![Event::PointerMoved(bare)], n);
+                frame(&ctx, &mut app, vec![left(bare, true)], n);
+                frame(&ctx, &mut app, vec![left(bare, false)], n);
+                frame(&ctx, &mut app, Vec::new(), n);
+                assert!(matches!(app.drag, Drag::None), "{what}: {:?}", app.drag);
+                assert!(app.selection.is_empty(), "{what}");
+            }
+        }
+    }
+}
+
 #[test]
 fn selection_groups_store_recall_add_and_zoom() {
     let (ctx, mut app, id) = setup();
