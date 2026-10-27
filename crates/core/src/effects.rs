@@ -106,6 +106,98 @@ pub fn blend(a: &BezPath, b: &BezPath, steps: usize, samples: usize) -> Vec<BezP
     blend_one(a, b, steps, samples)
 }
 
+/// [`blend`], but with one-part outlines paired from given nodes:
+/// `nodes` holds, in page space, the first node of `a` and a point after
+/// it along `a`, then the same for `b`. Each outline is run from the
+/// sample nearest its first node, the way that reaches the second point
+/// sooner, and the two are paired point by point without matching them
+/// by shape: when the nodes sit at different places on the two outlines
+/// the steps turn, and when the outlines run opposite ways they fold
+/// through the middle, as blends read from `.cdr` files draw (#597).
+/// Outlines of several parts, or `None`, blend as [`blend`] does.
+pub fn blend_from_nodes(
+    a: &BezPath,
+    b: &BezPath,
+    steps: usize,
+    samples: usize,
+    nodes: Option<[Point; 4]>,
+) -> Vec<BezPath> {
+    let one_part = |p: &BezPath| {
+        p.elements()
+            .iter()
+            .filter(|e| matches!(e, PathEl::MoveTo(_)))
+            .count()
+            == 1
+    };
+    let Some([a0, a1, b0, b1]) = nodes else {
+        return blend(a, b, steps, samples);
+    };
+    if !one_part(a) || !one_part(b) {
+        return blend(a, b, steps, samples);
+    }
+    let (Some(pa), Some(pb)) = (
+        run_from(&resample(a, samples), a0, a1),
+        run_from(&resample(b, samples), b0, b1),
+    ) else {
+        return blend(a, b, steps, samples);
+    };
+    if pa.len() != pb.len() {
+        return blend(a, b, steps, samples);
+    }
+    (1..=steps)
+        .map(|k| {
+            let t = k as f64 / (steps + 1) as f64;
+            polygon(
+                &pa.iter()
+                    .zip(&pb)
+                    .map(|(x, y)| x.lerp(*y, t))
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .collect()
+}
+
+/// The closed run of `pts` (the last point repeating the first) started at
+/// the point nearest `first` and turned the way that reaches the point
+/// nearest `next` sooner; the repeated point is dropped. `None` when there
+/// are too few points or a node is not finite.
+fn run_from(pts: &[Point], first: Point, next: Point) -> Option<Vec<Point>> {
+    if ![first.x, first.y, next.x, next.y]
+        .iter()
+        .all(|v| v.is_finite())
+    {
+        return None;
+    }
+    let mut ring = pts.to_vec();
+    if ring.len() > 1 && (ring[0] - ring[ring.len() - 1]).hypot() < 1e-9 {
+        ring.pop();
+    }
+    let n = ring.len();
+    if n < 3 {
+        return None;
+    }
+    let nearest = |q: Point| {
+        (0..n)
+            .min_by(|i, j| {
+                (ring[*i] - q)
+                    .hypot()
+                    .partial_cmp(&(ring[*j] - q).hypot())
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .unwrap_or(0)
+    };
+    let (i0, i1) = (nearest(first), nearest(next));
+    let forward = (i1 + n - i0) % n <= n / 2;
+    Some(
+        (0..n)
+            .map(|k| {
+                let i = if forward { i0 + k } else { i0 + n - k };
+                ring[i % n]
+            })
+            .collect(),
+    )
+}
+
 /// A closed path collapsed to the centre of `p`'s outline (a part that
 /// appears or vanishes in a blend).
 fn point_path(p: &BezPath) -> BezPath {
@@ -853,6 +945,42 @@ mod tests {
         assert_eq!(mid.len(), 1);
         let c = mid[0].bounding_box().center();
         assert!((c.x - 15.0).abs() < 0.5, "{c:?}");
+    }
+
+    /// Paired from given nodes, a square blends into the same square as
+    /// they are paired: from matching nodes the way they run, the middle
+    /// step is that square; from the next corner it turns (a quarter turn
+    /// halfway is a smaller, turned square); run the other way it folds
+    /// flat (#597). Without nodes it is the plain blend.
+    #[test]
+    fn blend_from_nodes_pairs_the_outlines_from_their_nodes() {
+        let sq = Rect::new(0.0, 0.0, 10.0, 10.0).to_path(0.01);
+        let area = |p: &BezPath| p.area().abs();
+        let (o, x, y, xy) = (
+            Point::new(0.0, 0.0),
+            Point::new(10.0, 0.0),
+            Point::new(0.0, 10.0),
+            Point::new(10.0, 10.0),
+        );
+        let mid = |nodes| blend_from_nodes(&sq, &sq, 1, 64, Some(nodes))[0].clone();
+        assert!((area(&mid([o, x, o, x])) - 100.0).abs() < 1.0);
+        let turned = mid([o, x, x, xy]);
+        assert!(
+            area(&turned) < 80.0 && area(&turned) > 20.0,
+            "{}",
+            area(&turned)
+        );
+        let c = turned.bounding_box().center();
+        assert!((c.x - 5.0).abs() < 0.5 && (c.y - 5.0).abs() < 0.5, "{c:?}");
+        assert!(area(&mid([o, x, o, y])) < 5.0);
+        let plain = blend(&sq, &sq, 1, 64);
+        assert_eq!(blend_from_nodes(&sq, &sq, 1, 64, None), plain);
+        // Nodes that are not numbers: the plain blend, no panic.
+        let nan = Point::new(f64::NAN, 0.0);
+        assert_eq!(
+            blend_from_nodes(&sq, &sq, 1, 64, Some([nan, x, o, x])),
+            plain
+        );
     }
 
     #[test]
