@@ -4148,6 +4148,8 @@ dependencies = [
  "encoding_rs",
  "flate2",
  "log",
+ "serde",
+ "serde_json",
  "thiserror 2.0.21",
  "tiny-skia",
  "tracedraw-core",

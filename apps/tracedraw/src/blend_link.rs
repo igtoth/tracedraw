@@ -343,4 +343,57 @@ mod tests {
         assert!(app.doc().find_shape(c).is_some());
         assert!(steps_of(&app, a).is_empty());
     }
+
+    /// A blend of two texts saved as `.cdr` and opened again is still a
+    /// blend: the end text is its end object, moving it redraws the
+    /// steps, and the Blend panel finds it (#986).
+    #[test]
+    fn a_text_blend_survives_saving_and_opening_as_cdr() {
+        let mut app = App::headless();
+        let text = |app: &mut App, x: f64, c: Color| {
+            let id = app
+                .new_shape(ShapeKind::Text {
+                    spans: vec![tracedraw_core::document::TextSpan::new("A", "Sans", 200.0)],
+                    origin: tracedraw_core::geometry::Point::new(x, 100.0),
+                    frame: None,
+                    align: tracedraw_core::document::TextAlign::Left,
+                    para: Default::default(),
+                    on_path: None,
+                })
+                .expect("text");
+            app.run(Command::SetFill {
+                shapes: vec![id],
+                fill: Fill::Solid(c),
+            });
+            id
+        };
+        let start = text(&mut app, 20.0, Color::rgb8(255, 240, 0));
+        let end = text(&mut app, 90.0, Color::rgb8(0, 180, 80));
+        app.select(vec![start, end]);
+        app.blend_selection(20, 0.0, 0.0, 0.0);
+        app.refresh_blends();
+        let drawn: Vec<Rect> = steps_of(&app, start).iter().map(|s| s.bounds()).collect();
+        assert_eq!(drawn.len(), 20);
+        let bytes = tracedraw_cdr::write::document_to_cdr(app.doc());
+        let (doc, _) = tracedraw_cdr::open_bytes(&bytes, "t").expect("read back");
+        let mut back = App::headless();
+        back.open_document(doc, None);
+        let shapes = back.doc().pages[0].layers[0].shapes.clone();
+        assert_eq!(shapes.len(), 2, "{shapes:?}");
+        let (a, b) = (shapes[0].id, shapes[1].id);
+        let again: Vec<Rect> = steps_of(&back, a).iter().map(|s| s.bounds()).collect();
+        assert_eq!(again.len(), 20);
+        for (x, y) in again.iter().zip(&drawn) {
+            assert!((x.center() - y.center()).hypot() < 0.05, "{x:?} {y:?}");
+        }
+        back.select(vec![b]);
+        assert_eq!(back.selected_blends().len(), 1);
+        back.run(Command::TransformShapes {
+            shapes: vec![b],
+            transform: Affine::translate((0.0, 40.0)),
+        });
+        back.refresh_blends();
+        let moved: Vec<Rect> = steps_of(&back, a).iter().map(|s| s.bounds()).collect();
+        assert!(moved[10].center().y > again[10].center().y + 15.0);
+    }
 }

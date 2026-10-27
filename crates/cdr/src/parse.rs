@@ -415,6 +415,9 @@ struct Ctx<'a> {
     cmyk_profile: Option<tracedraw_core::icc::Profile>,
     /// CMYK to RGB through that profile, built for the first CMYK bitmap.
     cmyk_lut: Option<tracedraw_core::icc::CmykLut>,
+    /// The shape each static id (`usdn`) was read as, gathered only when
+    /// the package names blends by them (#986).
+    static_ids: Option<HashMap<u32, tracedraw_core::ShapeId>>,
     report: ParseReport,
 }
 
@@ -472,6 +475,7 @@ impl<'a> Ctx<'a> {
             pending_node_types: Default::default(),
             cmyk_profile: None,
             cmyk_lut: None,
+            static_ids: None,
             report: ParseReport::default(),
         }
     }
@@ -490,7 +494,22 @@ pub fn parse_document_with(
     version: Version,
     cmyk_profile: Option<&[u8]>,
 ) -> (Document, ParseReport) {
+    parse_document_kept(tree, main, version, cmyk_profile, &[])
+}
+
+/// [`parse_document_with`] that turns the groups `kept` names back into
+/// live blends (see [`crate::kept_blends`]).
+pub(crate) fn parse_document_kept(
+    tree: &Tree,
+    main: &[u8],
+    version: Version,
+    cmyk_profile: Option<&[u8]>,
+    kept: &[crate::kept_blends::KeptBlend],
+) -> (Document, ParseReport) {
     let mut ctx = Ctx::new(main, tree, version.0);
+    if !kept.is_empty() {
+        ctx.static_ids = Some(HashMap::new());
+    }
     ctx.report.version = Some(version);
     ctx.cmyk_profile = cmyk_profile
         .and_then(|b| tracedraw_core::icc::Profile::parse(b).ok())
@@ -698,6 +717,16 @@ pub fn parse_document_with(
         });
     }
 
+    if let Some(ids) = ctx.static_ids.take() {
+        let n = crate::kept_blends::restore(&mut doc, kept, &ids);
+        if n < kept.len() {
+            log::warn!(
+                "{} of the file's {} blends open as drawn: their groups changed",
+                kept.len() - n,
+                kept.len()
+            );
+        }
+    }
     if !ctx.library_inks.is_empty() {
         let n = ctx.library_inks.len();
         for (palette, number) in &ctx.library_inks {
@@ -2725,6 +2754,23 @@ impl<'a> Ctx<'a> {
         })
     }
 
+    /// Remember that the object list `c` was read as `shape`, by its
+    /// static id (`usdn`), when the package names blends (#986).
+    fn note_static_id(&mut self, c: &Chunk, shape: tracedraw_core::ShapeId) {
+        if self.static_ids.is_none() {
+            return;
+        }
+        let Some(k) = c.children.iter().find(|k| k.is(b"usdn")) else {
+            return;
+        };
+        let Some(u) = self.reader_at(self.data(k), 0).uint() else {
+            return;
+        };
+        if let Some(m) = self.static_ids.as_mut() {
+            m.insert(u, shape);
+        }
+    }
+
     /// `steps` for the next blend of the file, within what the file's
     /// blends may still take together ([`FILE_BLEND_STEPS`]); past that
     /// each blend gets one step, with a warning, so a file of thousands
@@ -3095,6 +3141,7 @@ impl<'a> Ctx<'a> {
                         if let Some(clip) = self.pending_clip.take() {
                             shape = self.with_clip_contents(shape, clip, ids, page_size, depth);
                         }
+                        self.note_static_id(c, shape.id);
                         out.push(shape);
                     }
                     None if std::mem::take(&mut self.last_was_guide) => {}
@@ -3127,6 +3174,7 @@ impl<'a> Ctx<'a> {
                         let mut g = Shape::new(ids.shape(), ShapeKind::Group { children });
                         g.fill = Fill::None;
                         g.stroke = None;
+                        self.note_static_id(c, g.id);
                         out.push(g);
                     }
                 }

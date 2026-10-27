@@ -3016,11 +3016,10 @@ fn fonts_named_in_chinese_keep_their_names() {
     }
 }
 
-/// A blend of two texts goes out as one plain group of the start text
-/// and its steps as curves, beside the end text, and reads back so in
-/// every version (#946).
-#[test]
-fn a_blend_of_two_texts_is_written_as_a_group_of_text_and_curves() {
+/// A blend of two texts and its end, as the Blend tool leaves them: the
+/// end above the start (or below it, the steps then drawn below the
+/// start), both texts of the drawing.
+fn text_blend(steps: u32, end_below: bool) -> Document {
     let mut doc = doc_with(Vec::new());
     let mut ids = doc.ids().clone();
     let mut start = text_shape(
@@ -3028,31 +3027,76 @@ fn a_blend_of_two_texts_is_written_as_a_group_of_text_and_curves() {
         vec![TextSpan::new("ABC", "Arial", 24.0)],
         TextAlign::Left,
     );
+    start.transform = Affine::translate((10.0, 30.0));
+    start.fill = Fill::Solid(Color::rgb8(255, 240, 0));
     let mut end = text_shape(
         &mut ids,
         vec![TextSpan::new("XYZ", "Arial", 24.0)],
         TextAlign::Left,
     );
-    end.transform = Affine::translate((120.0, 20.0));
-    end.fill = Fill::Solid(Color::rgb8(255, 0, 0));
+    end.transform = Affine::translate((120.0, 50.0));
+    end.fill = Fill::Solid(Color::rgb8(0, 180, 80));
     start.effects.push(tracedraw_core::live::Effect::Blend {
         end: Box::new(end.clone()),
-        steps: 5,
-        accel_objects: 0.0,
-        accel_colors: 0.0,
+        steps,
+        accel_objects: 0.25,
+        accel_colors: -0.5,
         rotation: 0.0,
         path: None,
         rotate_on_path: false,
         end_id: Some(end.id),
-        options: Default::default(),
+        options: tracedraw_core::live::BlendOptions {
+            steps_below: end_below,
+            ..Default::default()
+        },
     });
-    // The end above the start, as the Blend tool leaves them.
-    doc.pages[0].layers[0].shapes = vec![start, end];
+    doc.pages[0].layers[0].shapes = if end_below {
+        vec![end, start]
+    } else {
+        vec![start, end]
+    };
     doc.set_ids(ids);
+    doc
+}
+
+/// `bytes` read as a reader without TraceDraw's own package member sees
+/// them (what other programs show).
+fn open_as_drawn(bytes: &[u8]) -> Document {
+    let container = crate::container::detect(bytes).expect("container");
+    let riff = crate::container::riff_stream(bytes, &container).expect("riff");
+    let externals = crate::container::external_streams(bytes, &container);
+    let root =
+        crate::riff::parse_with_externals(&riff, externals, container.version.0).expect("tree");
+    crate::parse::parse_document_with(&root, &riff, container.version, None).0
+}
+
+/// The boxes of what a blend draws besides its two objects.
+fn step_boxes(s: &Shape) -> Vec<Rect> {
+    let ev = tracedraw_core::live::evaluate(s);
+    ev.below
+        .iter()
+        .chain(&ev.above)
+        .map(|x| x.bounds())
+        .collect()
+}
+
+fn near(a: Rect, b: Rect, tol: f64) -> bool {
+    (a.x0 - b.x0).abs() < tol
+        && (a.y0 - b.y0).abs() < tol
+        && (a.x1 - b.x1).abs() < tol
+        && (a.y1 - b.y1).abs() < tol
+}
+
+/// A blend of two texts goes out as one plain group of the start text
+/// and its steps as curves, beside the end text, and other readers see
+/// it so in every version (#946), the steps where the blend drew them.
+#[test]
+fn a_blend_of_two_texts_is_written_as_a_group_of_text_and_curves() {
+    let doc = text_blend(5, false);
+    let drawn = step_boxes(&doc.pages[0].layers[0].shapes[0]);
+    assert_eq!(drawn.len(), 5);
     for v in versions() {
-        let (back, rep) =
-            crate::open_bytes(&document_to_cdr_version(&doc, v), "back").expect("reads back");
-        assert_eq!(rep.skipped_objects, 0, "{v}: {:?}", rep.warnings);
+        let back = open_as_drawn(&document_to_cdr_version(&doc, v));
         let read = &back.pages[0].layers[0].shapes;
         assert_eq!(read.len(), 2, "{v}: {read:?}");
         let ShapeKind::Group { children } = &read[0].kind else {
@@ -3068,23 +3112,150 @@ fn a_blend_of_two_texts_is_written_as_a_group_of_text_and_curves() {
             .collect();
         assert_eq!((texts.len(), steps.len()), (1, 5), "{v}: {children:?}");
         assert_eq!(children.len(), 6, "{v}");
+        assert!(read[0].effects.is_empty(), "{v}");
         let ShapeKind::Text { spans, .. } = &texts[0].kind else {
             unreachable!()
         };
         assert_eq!(spans[0].text, "ABC", "{v}");
-        // The steps' colours run from the start's black to the end's red.
-        for s in &steps {
+        // The steps' colours run from the start's yellow to the end's
+        // green, and they lie where the blend drew them.
+        for (s, want) in steps.iter().zip(&drawn) {
             let Fill::Solid(c) = s.fill else {
                 panic!("{v}: {:?}", s.fill);
             };
             assert!(
-                c != Color::BLACK && c != Color::rgb8(255, 0, 0),
+                c != Color::rgb8(255, 240, 0) && c != Color::rgb8(0, 180, 80),
                 "{v}: {c:?}"
+            );
+            assert!(
+                near(s.bounds(), *want, 0.05),
+                "{v}: {:?} {want:?}",
+                s.bounds()
             );
         }
         let ShapeKind::Text { spans, .. } = &read[1].kind else {
             panic!("{v}: {:?}", read[1].kind);
         };
         assert_eq!(spans[0].text, "XYZ", "{v}");
+    }
+}
+
+/// A blend of two texts saved and opened again in TraceDraw is a blend
+/// again (#986): from version 14 (a package) the start text comes back
+/// with its blend to the end text, settings and all, its steps where
+/// they were; RIFF files keep the drawn group.
+#[test]
+fn a_text_blend_opens_live_again() {
+    for end_below in [false, true] {
+        a_text_blend_opens_live_again_with(end_below);
+    }
+}
+
+fn a_text_blend_opens_live_again_with(end_below: bool) {
+    let doc = text_blend(20, end_below);
+    let (si, ei) = if end_below { (1, 0) } else { (0, 1) };
+    let shapes = &doc.pages[0].layers[0].shapes;
+    let drawn = step_boxes(&shapes[si]);
+    assert_eq!(drawn.len(), 20);
+    let tracedraw_core::live::Effect::Blend {
+        accel_objects,
+        accel_colors,
+        options,
+        ..
+    } = &shapes[si].effects[0]
+    else {
+        unreachable!()
+    };
+    for v in versions() {
+        let (back, rep) =
+            crate::open_bytes(&document_to_cdr_version(&doc, v), "back").expect("reads back");
+        assert_eq!(rep.skipped_objects, 0, "{v}: {:?}", rep.warnings);
+        let read = &back.pages[0].layers[0].shapes;
+        assert_eq!(read.len(), 2, "{v}: {read:?}");
+        if v < 14 {
+            assert!(matches!(read[si].kind, ShapeKind::Group { .. }), "{v}");
+            continue;
+        }
+        let ShapeKind::Text { spans, .. } = &read[si].kind else {
+            panic!("{v} {end_below}: {:?}", read[si].kind);
+        };
+        assert_eq!(spans[0].text, "ABC", "{v}");
+        let [tracedraw_core::live::Effect::Blend {
+            end,
+            steps,
+            accel_objects: ao,
+            accel_colors: ac,
+            end_id,
+            options: o,
+            ..
+        }] = read[si].effects.as_slice()
+        else {
+            panic!("{v}: {:?}", read[si].effects);
+        };
+        assert_eq!(*steps, 20, "{v}");
+        assert_eq!((*ao, *ac), (*accel_objects, *accel_colors), "{v}");
+        assert_eq!(o, options, "{v}");
+        // The end is the end text of the drawing, its copy up to date.
+        assert_eq!(*end_id, Some(read[ei].id), "{v}");
+        let ShapeKind::Text { spans, .. } = &end.kind else {
+            panic!("{v}: {:?}", end.kind);
+        };
+        assert_eq!(spans[0].text, "XYZ", "{v}");
+        assert_eq!(end.transform, read[ei].transform, "{v}");
+        let again = step_boxes(&read[si]);
+        assert_eq!(again.len(), 20, "{v}");
+        for (a, b) in again.iter().zip(&drawn) {
+            assert!(near(*a, *b, 0.05), "{v}: {a:?} {b:?}");
+        }
+        // Saved and opened once more, it is still the same blend.
+        let (twice, _) =
+            crate::open_bytes(&document_to_cdr_version(&back, v), "twice").expect("reads back");
+        let read2 = &twice.pages[0].layers[0].shapes;
+        assert_eq!(read2.len(), 2, "{v}");
+        assert_eq!(step_boxes(&read2[si]).len(), 20, "{v}");
+    }
+}
+
+/// A blend whose drawn group another program changed (a step deleted),
+/// or a member that does not read, opens as drawn, never fails (#986).
+#[test]
+fn a_kept_blend_that_no_longer_matches_opens_as_drawn() {
+    let doc = text_blend(4, false);
+    let mut w = Writer::new(Ver(27), &doc.symbols, &doc.title);
+    let _ = w.document(&doc);
+    let member = crate::kept_blends::encode(&w.blends, &w.static_ids).expect("member");
+    let mut kept = crate::kept_blends::decode(&member);
+    assert_eq!(kept.len(), 1);
+    assert_eq!(kept[0].count, 5);
+    // The member is small: the end object is read back, not copied.
+    assert!(member.len() < 4096, "{}", member.len());
+    let bytes = document_to_cdr_version(&doc, 27);
+    let container = crate::container::detect(&bytes).expect("container");
+    let riff = crate::container::riff_stream(&bytes, &container).expect("riff");
+    let externals = crate::container::external_streams(&bytes, &container);
+    let root = crate::riff::parse_with_externals(&riff, externals, 27).expect("tree");
+    let open = |kept: &[crate::kept_blends::KeptBlend]| {
+        crate::parse::parse_document_kept(&root, &riff, container.version, None, kept).0
+    };
+    let live = open(&kept);
+    assert!(matches!(
+        live.pages[0].layers[0].shapes[0].kind,
+        ShapeKind::Text { .. }
+    ));
+    kept[0].count = 4;
+    let drawn = open(&kept);
+    assert!(matches!(
+        drawn.pages[0].layers[0].shapes[0].kind,
+        ShapeKind::Group { .. }
+    ));
+    kept[0].count = 5;
+    kept[0].group = 9999;
+    let drawn = open(&kept);
+    assert!(matches!(
+        drawn.pages[0].layers[0].shapes[0].kind,
+        ShapeKind::Group { .. }
+    ));
+    for junk in [&b""[..], b"{", b"{\"format\":2,\"blends\":[]}", b"[1,2]"] {
+        assert!(crate::kept_blends::decode(junk).is_empty());
     }
 }

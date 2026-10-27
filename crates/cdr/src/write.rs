@@ -126,13 +126,17 @@ pub fn document_to_cdr_version_with(doc: &Document, version: u16, previews: &Pre
     if !v.zip() {
         tree.push(chunk(b"sumi", sumi(v, doc)));
     }
+    // Blends drawn as groups open live again in TraceDraw from the
+    // package's own member (#986); a RIFF file has no place for it.
+    let own = crate::kept_blends::encode(&w.blends, &w.static_ids);
+    let own = own.as_deref();
     if v.redirects() {
         let (root, files) = pack_redirected(v, &tree);
-        zip_v16(v, doc, &root, &files, previews, &font_ids)
+        zip_v16(v, doc, &root, &files, previews, &font_ids, own)
     } else {
         let riff = riff_file(v.form(), &tree);
         if v.zip() {
-            zip_v14(v, doc, &riff, previews)
+            zip_v14(v, doc, &riff, previews, own)
         } else {
             riff
         }
@@ -852,7 +856,14 @@ fn summary_xml(v: Ver, doc: &Document) -> String {
 /// Versions 14 and 15: the RIFF stream stored, its pictures as BMP files,
 /// a summary, the names and an empty link list, as files of these versions
 /// hold them.
-fn zip_v14(v: Ver, doc: &Document, riff: &[u8], previews: &Previews) -> Vec<u8> {
+/// `own`: the package's member of TraceDraw's own (see [`crate::kept_blends`]).
+fn zip_v14(
+    v: Ver,
+    doc: &Document,
+    riff: &[u8],
+    previews: &Previews,
+    own: Option<&[u8]>,
+) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
     let stored =
         zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
@@ -889,6 +900,10 @@ fn zip_v14(v: Ver, doc: &Document, riff: &[u8], previews: &Previews) -> Vec<u8> 
     ];
     for (name, text) in members {
         ok &= zip.start_file(name, deflated).is_ok() && zip.write_all(text.as_bytes()).is_ok();
+    }
+    if let Some(b) = own {
+        ok &= zip.start_file(crate::kept_blends::MEMBER, deflated).is_ok()
+            && zip.write_all(b).is_ok();
     }
     match zip.finish() {
         Ok(c) if ok => c.into_inner(),
@@ -1087,6 +1102,7 @@ fn zip_v16(
     files: &DataFiles,
     previews: &Previews,
     font_ids: &[(u16, String)],
+    own: Option<&[u8]>,
 ) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
     let deflated = zip::write::SimpleFileOptions::default()
@@ -1138,6 +1154,10 @@ fn zip_v16(
     ];
     for (name, text) in members {
         ok &= zip.start_file(name, deflated).is_ok() && zip.write_all(text.as_bytes()).is_ok();
+    }
+    if let Some(b) = own {
+        ok &= zip.start_file(crate::kept_blends::MEMBER, deflated).is_ok()
+            && zip.write_all(b).is_ok();
     }
     match zip.finish() {
         Ok(c) if ok => c.into_inner(),
@@ -2662,6 +2682,11 @@ struct Writer<'a> {
     /// which each page's entries for them repeat.
     master_guids: [[u8; 16]; 3],
     has_text: bool,
+    /// The static id each object was written with, by shape (the
+    /// outermost list written for it), and the blends written as groups:
+    /// the package's own member names them (#986).
+    static_ids: HashMap<tracedraw_core::ShapeId, u32>,
+    blends: Vec<crate::kept_blends::Written>,
 }
 
 /// The master page's layers, in the order of `Writer::master_guids`.
@@ -2720,6 +2745,8 @@ impl<'a> Writer<'a> {
             fonts: Vec::new(),
             bitmaps: Vec::new(),
             next_usdn: 1,
+            static_ids: HashMap::new(),
+            blends: Vec::new(),
             next_object: 1,
             graded: std::collections::HashMap::new(),
             next_fill: 1,
@@ -3063,7 +3090,13 @@ impl<'a> Writer<'a> {
             return Placed { nodes, bounds };
         }
         for s in shapes.iter().rev() {
+            let before = self.next_usdn;
             let p = self.object(s, centre, depth);
+            // One list for the shape: the last static id given is its
+            // own (a group's head follows its children).
+            if p.nodes.len() == 1 && self.next_usdn > before {
+                self.static_ids.insert(s.id, self.next_usdn - 1);
+            }
             if let Some(b) = p.bounds {
                 bounds = Some(bounds.map_or(b, |c| c.union(b)));
             }
@@ -3390,7 +3423,25 @@ impl<'a> Writer<'a> {
                 .iter()
                 .any(|e| matches!(e, tracedraw_core::live::Effect::Blend { .. }));
             if blends && all.len() > 1 {
-                return self.group(&all, centre, depth + 1);
+                let start = ev.below.len();
+                let before = self.next_usdn;
+                let placed = self.group(&all, centre, depth + 1);
+                // A blend that is the object's only effect opens live
+                // again in TraceDraw: the package names the group (#986).
+                if let [blend @ tracedraw_core::live::Effect::Blend { end_id, .. }] =
+                    s.effects.as_slice()
+                {
+                    if placed.nodes.len() == 1 && self.next_usdn > before {
+                        self.blends.push(crate::kept_blends::Written {
+                            group: self.next_usdn - 1,
+                            count: all.len(),
+                            start,
+                            end: *end_id,
+                            blend: blend.clone(),
+                        });
+                    }
+                }
+                return placed;
             }
             return self.objects(&all, centre, depth + 1);
         }

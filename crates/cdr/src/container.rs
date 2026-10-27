@@ -209,6 +209,29 @@ pub fn external_member(bytes: &[u8], container: &Container, name: &str) -> Optio
     None
 }
 
+/// A member of TraceDraw's own in a ZIP package (see
+/// [`crate::kept_blends`]), read up to `limit` bytes; `None` for RIFF
+/// files, packages without it and members past the limit.
+pub(crate) fn own_member(
+    bytes: &[u8],
+    container: &Container,
+    name: &str,
+    limit: u64,
+) -> Option<Vec<u8>> {
+    if container.kind == ContainerKind::Riff {
+        return None;
+    }
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).ok()?;
+    let f = archive.by_name(name).ok()?;
+    if f.size() > limit {
+        log::warn!("{name} declares {} bytes; left out", f.size());
+        return None;
+    }
+    let mut out = Vec::new();
+    f.take(limit + 1).read_to_end(&mut out).ok()?;
+    (out.len() as u64 <= limit).then_some(out)
+}
+
 /// Embedded members larger than this are skipped (fonts are far smaller;
 /// this keeps a damaged size from taking all memory).
 const MAX_EMBEDDED: u64 = 64 << 20;

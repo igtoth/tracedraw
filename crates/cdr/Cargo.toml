@@ -8,6 +8,8 @@ description = "Clean-room reader for .cdr files: RIFF and ZIP containers"
 [dependencies]
 tracedraw-core.workspace = true
 thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 log.workspace = true
 zip.workspace = true
 encoding_rs.workspace = true

@@ -22,6 +22,7 @@
 pub mod cmx;
 pub mod container;
 pub mod eot;
+mod kept_blends;
 pub mod ole;
 pub mod parse;
 pub mod riff;
@@ -93,11 +94,21 @@ pub fn open_bytes(bytes: &[u8], title: &str) -> Result<(tracedraw_core::Document
     let externals = container::external_streams(bytes, &container);
     let root = riff::parse_with_externals(&riff, externals, container.version.0)?;
     let cmyk_profile = container::cmyk_profile(bytes, &container);
-    let mut doc_report = parse::parse_document_with(
+    // Blends TraceDraw saved as groups open live again (#986).
+    let kept = container::own_member(
+        bytes,
+        &container,
+        kept_blends::MEMBER,
+        kept_blends::MAX_MEMBER,
+    )
+    .map(|b| kept_blends::decode(&b))
+    .unwrap_or_default();
+    let mut doc_report = parse::parse_document_kept(
         &root,
         &riff,
         container.version,
         cmyk_profile.as_ref().map(|p| p.data.as_slice()),
+        &kept,
     );
     doc_report.0.title = title.to_string();
     doc_report.0.palette = container::document_palette(bytes, &container)
