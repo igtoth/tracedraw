@@ -30,6 +30,9 @@ pub struct PrintPreview {
     /// (#595), and the one being dragged (x and y sides, -1, 0 or 1).
     pub transform: bool,
     pub handle_drag: Option<(i8, i8)>,
+    /// The width the options panel needs for its widest row, as last
+    /// laid out (0 until a row did not fit, #862).
+    options_need: f32,
     built: Option<(String, Document)>,
     texture: Option<(String, egui::TextureHandle)>,
 }
@@ -45,6 +48,7 @@ impl PrintPreview {
             margin_drag: None,
             transform: false,
             handle_drag: None,
+            options_need: 0.0,
             built: None,
             texture: None,
         }
@@ -136,6 +140,11 @@ fn plate_names(doc: &Document) -> Vec<String> {
 
 /// The id of the options panel at the left of Print Preview.
 const PREVIEW_OPTIONS: &str = "print_preview_options";
+/// The options panel's width at first, its narrowest and the widest its
+/// edge drags to (wider still when a row needs it), points.
+const OPTIONS_DEFAULT: f32 = 360.0;
+const OPTIONS_MIN: f32 = 300.0;
+const OPTIONS_MAX: f32 = 720.0;
 
 pub fn show(app: &mut App, ui: &mut Ui) {
     let Some(mut pv) = app.print_preview.take() else {
@@ -215,12 +224,16 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     };
     pv.inks.resize(ink_names.len().saturating_sub(1), true);
 
-    // Wide enough for the longer languages; its edge drags wider still,
-    // and what does not fit scrolls sideways instead of being cut (#862).
-    egui::Panel::left(PREVIEW_OPTIONS)
+    // Wide enough for the longer languages; its edge drags wider still.
+    // It is never narrower than its widest row as last laid out, up to
+    // half the window, so no label is cut; past that what does not fit
+    // scrolls sideways (#862).
+    let widest = (ui.max_rect().width() * 0.5).max(OPTIONS_MIN);
+    let need = pv.options_need.clamp(OPTIONS_MIN, widest);
+    let panel = egui::Panel::left(PREVIEW_OPTIONS)
         .resizable(true)
-        .default_size(360.0)
-        .size_range(300.0..=720.0)
+        .default_size(OPTIONS_DEFAULT.max(need))
+        .size_range(need..=OPTIONS_MAX.max(need))
         .show(ui, |ui| {
             egui::ScrollArea::both().show(ui, |ui| {
                 let st = &mut pv.st;
@@ -371,8 +384,20 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 ui.checkbox(&mut st.invert, tr("dialog.invert"));
                 ui.separator();
                 crate::ui::dialogs::print_layout_fields(app, ui, st);
-            });
+            })
         });
+    // A row wider than the panel (a longer language, a setting shown):
+    // the panel takes its width from the next frame on, this frame not
+    // shown, so nothing is drawn cut.
+    let scroll = &panel.inner;
+    let chrome = panel.response.rect.width() - scroll.inner_rect.width();
+    let want = scroll.content_size.x + chrome;
+    if scroll.content_size.x > scroll.inner_rect.width() + 0.5 && want > pv.options_need + 0.5 {
+        pv.options_need = want;
+        if want <= widest {
+            ctx.request_discard("print preview options wider");
+        }
+    }
 
     egui::CentralPanel::default()
         .frame(egui::Frame::new().fill(egui::Color32::from_gray(90)))
@@ -1053,5 +1078,84 @@ mod tests {
         run(&mut app, Vec::new());
         assert!(width() > start + 80.0, "{start} -> {}", width());
         assert!(app.print_preview.is_some());
+    }
+
+    /// In every language, at the main window's default size, no label of
+    /// the options panel is cut at its right: the panel takes the width of
+    /// its widest row (Spanish in the report, #862), with the layout
+    /// options that add rows (Repeat, a sheet size, page information) on.
+    #[test]
+    fn no_option_is_cut_off_in_any_language() {
+        let size = crate::splash::DEFAULT_SIZE;
+        for code in [
+            "en", "es", "pt-BR", "fr", "de", "it", "nl", "pl", "cs", "ru", "tr", "id", "ar", "hi",
+            "bn", "ja", "zh-CN", "zh-TW",
+        ] {
+            crate::i18n::with_thread_language(code, || {
+                let ctx = crate::theme::ui_context();
+                let mut app = App::headless();
+                app.show_welcome = false;
+                app.print_preview(None);
+                if let Some(pv) = app.print_preview.as_mut() {
+                    pv.st.looking_for_printers = false;
+                    pv.st.layout_kind = 3;
+                    pv.st.sheet = 1;
+                    pv.st.page_info = true;
+                    pv.st.copies = 2;
+                }
+                let mut shapes = Vec::new();
+                for _ in 0..8 {
+                    let mut out = ctx.run_ui(
+                        egui::RawInput {
+                            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+                            ..Default::default()
+                        },
+                        |ui| show(&mut app, ui),
+                    );
+                    out.textures_delta.clear();
+                    shapes = out.shapes;
+                }
+                let panel =
+                    egui::containers::panel::PanelState::load(&ctx, egui::Id::new(PREVIEW_OPTIONS))
+                        .map(|s| s.outer_rect)
+                        .expect("the panel's state");
+                fn walk(
+                    s: &egui::Shape,
+                    clip: egui::Rect,
+                    out: &mut Vec<(String, egui::Rect, egui::Rect)>,
+                ) {
+                    match s {
+                        egui::Shape::Text(t) => {
+                            out.push((t.galley.text().to_string(), t.visual_bounding_rect(), clip))
+                        }
+                        egui::Shape::Vec(v) => v.iter().for_each(|s| walk(s, clip, out)),
+                        _ => {}
+                    }
+                }
+                let mut texts = Vec::new();
+                for c in &shapes {
+                    walk(&c.shape, c.clip_rect, &mut texts);
+                }
+                // The panel's texts: those drawn within its clip.
+                let ours: Vec<_> = texts
+                    .iter()
+                    .filter(|(_, r, clip)| {
+                        clip.right() <= panel.right() + 1.0 && r.left() < panel.right()
+                    })
+                    .collect();
+                assert!(ours.len() > 20, "{code}: the options drew ({})", ours.len());
+                for (text, r, clip) in ours {
+                    if text.trim().is_empty() || r.bottom() < clip.top() || r.top() > clip.bottom()
+                    {
+                        continue;
+                    }
+                    assert!(
+                        r.right() <= clip.right() + 1.0 && r.left() >= clip.left() - 1.0,
+                        "{code}: {text:?} cut off: {r:?} in {clip:?} (panel {panel:?})"
+                    );
+                }
+                assert!(panel.width() <= size.x * 0.5 + 1.0, "{code}: {panel:?}");
+            });
+        }
     }
 }

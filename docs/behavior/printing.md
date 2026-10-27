@@ -135,6 +135,13 @@ same function (`export::print_sheets`).
   `print_preview::tests::the_preview_offers_the_printer_and_the_copies`).
 - Left: the Print dialog's options (all pages, fit, scale, prepress and
   layout with its sketch); every change rebuilds the sheets at once.
+  The panel is 360 points wide at first and its edge drags from 300 to
+  720. It is never narrower than its widest row as last laid out (a
+  longer language, Repeat's rows), up to half the window, so no label
+  is cut at its right; past half the window what does not fit scrolls
+  sideways, and the panel scrolls down when it is taller than the window
+  (#862, `print_preview::tests::the_options_panel_is_wider_and_its_edge_drags`,
+  `print_preview::tests::no_option_is_cut_off_in_any_language`).
   While Print separations is on, a box for cyan, magenta, yellow, black
   and each spot ink stands indented under it, all ticked at first
   (#571; `print_preview::tests::the_ink_boxes_stand_under_print_separations`).
