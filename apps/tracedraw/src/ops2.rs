@@ -3398,6 +3398,70 @@ pub(crate) fn with_stand_ins(missing: &[String]) -> String {
 mod tests {
     use super::*;
 
+    fn symbol_of(app: &mut App, rect: kurbo::Rect) -> ShapeId {
+        let a = app
+            .new_shape(ShapeKind::Rect {
+                rect,
+                radius: 0.0,
+                corners: None,
+            })
+            .expect("rect");
+        app.select(vec![a]);
+        app.create_symbol_from_selection();
+        app.selection[0]
+    }
+
+    fn instance_index(app: &App, id: ShapeId) -> usize {
+        match app.doc().find_shape(id).expect("instance").kind {
+            ShapeKind::SymbolInstance { index } => index,
+            ref k => panic!("{k:?}"),
+        }
+    }
+
+    /// New Symbol is one step to undo: the symbol goes with its instance.
+    #[test]
+    fn undoing_new_symbol_removes_the_symbol() {
+        let mut app = App::headless();
+        symbol_of(&mut app, kurbo::Rect::new(0.0, 0.0, 10.0, 10.0));
+        assert_eq!(app.doc().symbols.len(), 1);
+        app.undo();
+        assert!(app.doc().symbols.is_empty());
+        app.redo();
+        assert_eq!(app.doc().symbols.len(), 1);
+    }
+
+    /// An instance copied in one drawing and pasted in another brings its
+    /// symbol along, and shows the same objects there.
+    #[test]
+    fn an_instance_pasted_in_another_drawing_brings_its_symbol() {
+        let mut app = App::headless();
+        let inst = symbol_of(&mut app, kurbo::Rect::new(0.0, 0.0, 10.0, 10.0));
+        app.select(vec![inst]);
+        app.copy();
+        let expected = app.doc().symbols[0].shape.clone();
+        // The other drawing has a symbol of its own first.
+        app.open_document(
+            tracedraw_core::Document::new("Second", tracedraw_core::Size::new(100.0, 50.0)),
+            None,
+        );
+        symbol_of(&mut app, kurbo::Rect::new(0.0, 0.0, 30.0, 5.0));
+        app.paste();
+        let pasted = app.selection[0];
+        let index = instance_index(&app, pasted);
+        let sym = app.doc().symbols.get(index).expect("the symbol is there");
+        assert_eq!(sym.shape.bounds(), expected.bounds());
+        assert_eq!(app.doc().symbols.len(), 2);
+        // Pasted again: the same symbol, not another copy of it.
+        app.paste();
+        assert_eq!(instance_index(&app, app.selection[0]), index);
+        assert_eq!(app.doc().symbols.len(), 2);
+        // In the drawing it came from, it stays an instance of its symbol.
+        app.switch_document(0);
+        app.paste();
+        assert_eq!(instance_index(&app, app.selection[0]), 0);
+        assert_eq!(app.doc().symbols.len(), 1);
+    }
+
     /// Insert Page Number with a master layer active puts one field on
     /// that layer, which shows each page's own number where pages are
     /// drawn (screen, print, export) and stays a field when saved (#807);

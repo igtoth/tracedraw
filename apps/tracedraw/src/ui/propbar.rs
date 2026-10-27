@@ -1964,8 +1964,9 @@ pub const OUTLINE_UNITS: [Units; 5] = [
     Units::Pixels,
 ];
 
-/// The widths the outline width list offers in unit `u`: round values in
-/// that unit, given back in millimetres (the model's unit).
+/// The widths the outline width lists offer in unit `u`: round values in
+/// that unit, given back in millimetres (the model's unit). The property
+/// bar, the callout bar and the Outline Pen dialog all offer this one list.
 pub fn outline_width_presets(u: Units) -> Vec<f64> {
     let list: &[f64] = match u {
         Units::Points => &OUTLINE_WIDTHS_PT,
@@ -1986,10 +1987,15 @@ fn outline_decimals(u: Units) -> usize {
     }
 }
 
+/// An outline width (mm) as a number in unit `u`, without the unit
+/// ("0.75"): what the Outline Pen dialog's list shows beside its unit box.
+pub fn outline_width_number(w: f64, u: Units) -> String {
+    crate::ui::field::format_number(u.from_mm(w), false, 0, Some(outline_decimals(u)))
+}
+
 /// An outline width (mm) in unit `u`, as the lists show it ("0.75 pt").
 pub fn outline_width_label(w: f64, u: Units) -> String {
-    let v = crate::ui::field::format_number(u.from_mm(w), false, 0, Some(outline_decimals(u)));
-    format!("{v} {}", u.short())
+    format!("{} {}", outline_width_number(w, u), u.short())
 }
 
 /// Text for an outline width in the outline unit ("Hairline", "None").

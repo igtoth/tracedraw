@@ -81,7 +81,7 @@ pub fn effects_docker(app: &mut App, ui: &mut Ui) {
             });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui
-                    .small_button("\u{2715}")
+                    .small_button("\u{00D7}")
                     .on_hover_text(tr("effects.remove"))
                     .clicked()
                 {

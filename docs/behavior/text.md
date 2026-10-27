@@ -12,7 +12,7 @@ baseline point; paragraph text: a frame with wrapping. Shortcut F8.
 | Kerning | font kerning on (GPOS kern, kern table) |
 | Tracking (range kerning) | 0% of em |
 | Baseline shift | 0 pt |
-| Alignment | left; justify stretches spaces only, last line left |
+| Alignment | left; justify stretches the spaces and the gaps beside Chinese and Japanese characters (a line with neither, between its letters), last line left |
 | Hyphenation | off; when on, at least 2 letters before and 3 after a break, from a compact pattern set (a vowel and consonant rule for words it leaves whole); digraphs (ch, ck, gh, ph, sh, th, wh, qu) stay together; words with a capital letter (names, acronyms) are never broken. Options > Text > Paragraph Text > Hyphenation patterns picks a hyphenation dictionary instead (`hyph_*.dic`, found where the spelling dictionaries are, see `writing-tools.md`): its first line names the character set; `LEFTHYPHENMIN` and `RIGHTHYPHENMIN` set the minimums (else 2 and 3); `%` and `#` lines are comments; `NEXTLEVEL` starts a second level of patterns, a word breaking where either level allows; patterns with a replacement (`/`) are left out. With a dictionary a capital first letter no longer stops a break (nouns in some languages); other capitals still do. A dictionary that is gone at start-up leaves the built-in patterns and a status message (`hyphen::tests::pattern_files`, `spell::tests::real_hyphenation_files`, ignored, over English, Brazilian Portuguese, German and Italian files: hy-phen-ation, com-pu-ta-dor, Haus-tür, Schiff-fahrt, in-for-ma-zione). Punctuation before or after a word (a comma at a line's end, quotation marks) is left aside and the letters between break; an apostrophe inside a word (' or ’) is kept for the patterns, and without a pattern file only the part after the last apostrophe breaks (#255, `hyphen::tests::punctuation_round_a_word_and_apostrophes_inside_it`). Text > Use Hyphenation turns hyphenation on or off for the selected texts (off when they all have it); while a text is edited it is the setting of the paragraphs at the caret, its check following them; with no text selected it is the setting new text takes (`writing_tools::tests::use_hyphenation_acts_on_the_selected_text`). Typing keeps a text's own hyphenation; it took the setting for new text, so editing a text turned its hyphenation on or off (#470, `writing_tools::tests::editing_a_text_keeps_its_hyphenation`) |
 | Chinese and Japanese line breaks | text written without spaces breaks between any two characters when one of them is Chinese or Japanese (ideographs, kana, full-width forms and their punctuation), except before a character that may not start a line (，。、；：？！ and their half-width forms, closing brackets and quotes such as ）」』】”’, iteration marks, ー and small kana) and after one that may not end a line (opening brackets and quotes such as （「『【“‘, and ￥ ＄ £ before a sum); the character before goes down to the next line with it. Latin text keeps breaking at spaces and hyphenation points (#847, `tests::cjk_punctuation_never_starts_a_line`) |
 | Columns | 1, gutter 5 mm |
@@ -100,9 +100,38 @@ Text and Glyphs dockers and Options (default font):
   being edited or selected: with nothing to change it does nothing
   rather than ask for the font of new text (#665,
   `ui::font_list::live_tests::the_wheel_over_the_font_list_steps_the_font`).
-- At the top of the list, the number of families shown and what to show:
-  all fonts, installed fonts, the fonts in this drawing, or (in the
-  browser) the fonts to download.
+- At the top of the list, the number of families shown and the Filter
+  button (#867). It shows or hides the filter's choices inside the list,
+  under its top row: what to show (all fonts, installed fonts, the fonts
+  in this drawing, or, in the browser, the fonts to download), boxes for
+  the kind of letters (Serif, Sans serif, Script, Decorative) and for
+  what a family has (Monospaced, Symbol, Variable, OpenType features).
+  They are part of the list, not a menu of their own (only one menu is
+  open at a time, so a menu opened from the list closed it): a click
+  there filters at once and leaves the list open
+  (`ui::font_list::live_tests::the_filter_opens_inside_the_font_list`).
+  The button counts the choices made ("Filter (2)"). A family shows
+  when it has one of the kinds ticked (if any) and every other box
+  ticked; Clear filter shows all fonts again. What a family is comes from its
+  faces' tables as the OpenType specification defines them: the OS/2
+  `sFamilyClass` class ID (1 to 5 and 7 serif, 8 sans serif, 9
+  ornamental, 10 script, 12 symbolic), else the PANOSE family kind (2
+  text, 3 handwritten, 4 decorative, 5 symbol) and, for text, the serif
+  style digit (2 to 10 serif, 11 to 15 sans serif); monospaced from the
+  `post` table's `isFixedPitch` or PANOSE (proportion 9, or spacing 3
+  for handwritten); variable from `fvar`; OpenType features when GSUB or
+  GPOS lists one of liga, dlig, hlig, smcp, c2sc, onum, lnum, pnum, tnum,
+  frac, swsh, salt, calt, ss01, ordn or zero; symbol from the symbol
+  character map or the class. A family whose tables say nothing is
+  judged by the words of its name ("Sans", "Serif", "Script", "Symbol";
+  "Mono", "Monospace", "Code" for monospaced). Families to download are
+  not read until fetched and show only with no box ticked. The used-last
+  rows hide while a box is ticked. Families are read once for the fonts
+  as they are now and at most 8 ms a frame, so the list opens as fast
+  with thousands of fonts and fills in over the next frames ("Reading
+  fonts..." until it is done); with no box ticked nothing is read
+  (`tracedraw_text::traits`,
+  `ui::font_list::tests::the_filter_keeps_the_families_with_what_it_asks`).
 - "Used last": the last five families picked in any font list, newest
   first (kept in the preferences, `recent_fonts`), while nothing is typed.
 - Every family, its name drawn in its own font in the theme's text
@@ -410,7 +439,9 @@ the preferences, `text_sections_closed`).
   The background is drawn behind each character's box, from its descent
   to its ascent (`TextSpan::background`). The expander under the section
   shows the characters' offsets and angle, strikethrough and the
-  OpenType features.
+  OpenType features, and for text in a variable font a "Variable font"
+  row with a slider for each axis the font shows (see Variable fonts
+  below).
 - Paragraph: the gear opens Custom Optional Hyphens; six alignment
   buttons, no alignment (lines start at the left; characters keep their
   offsets), left, centre, right, full justification and forced
@@ -697,6 +728,33 @@ italic when the face is upright; only what no axis gives is made
 synthetically (bold by drawing the letters twice, italic by slanting
 them).
 
+The axes can also be set on the text (#870): a button beside the font
+size, on the property bar (and the Text toolbar) and in the Text
+docker's first section, opens the sliders in a small window under it;
+the Text docker's Character expander shows them too. The button is
+enabled only when the selected text's font is variable, and its tip
+says so when it is not
+(`ui::tests::the_font_size_has_a_button_for_variable_font_axes`). For
+the selected text's variable font (its `fvar` table) there is a slider
+for each axis the font does not hide (flag
+0x0001): Weight, Width, Slant, Italic and Optical size by those names,
+the font's own axes by the names its `name` table gives them, each over
+the font's range. A slider shows the value set on the text, else the one
+the text's weight and slant give (the font's default for other axes).
+Releasing it, or typing a value, sets that axis on the selected
+characters (every character of the selected text objects when not
+editing), one undo step; Default axes takes the values off. The values
+are kept on the characters (`TextSpan::variations`: tag and value),
+saved in `.tdraw` (left out when none is set) and drawn clamped to the
+font's range, in the canvas, exports and PDF (the embedded font is the
+instance drawn); an axis the font lacks is ignored, so a static font
+draws as before. A weight set this way replaces synthetic bold, and a
+slant or italic value replaces synthetic italic
+(`tests::variable_font_axes_set_on_the_text_draw_it_there`,
+`ui::text_docker::tests::variable_font_axes_show_and_set_on_the_text`).
+The sliders do not preview while dragged; `.cdr` files do not keep the
+values.
+
 The browser build offers the families of its font folder (see
 `web/FONTS.md`): the font lists show them, and text asks for one the
 first time it needs it (text set in it, in a family it stands in for,
@@ -715,7 +773,11 @@ stand-in next to each missing family: "Arial (Liberation Sans)".
 - Line height `= size * leading / 100 * (asc - desc + gap) / upm`, each
   line from the tallest letters in it (a big first letter drops the
   first line only).
-- Justify: extra space `= (frame_width - line_width) / n_spaces`.
+- Justify: each opportunity gets `(frame_width - line_width) / n`, where
+  the `n` opportunities are the line's spaces and the gaps between two
+  glyphs of which one is a Chinese or Japanese character (none after the
+  last glyph, inside a cluster or before the last tab); a line with
+  neither spreads between all its letters (#952).
 - Text on path: the baseline is the path's first subpath (followed from
   its end back to its start when mirrored), moved `distance` to its left,
   towards the letters' tops (corners mitred, at most 4 times the
@@ -759,6 +821,8 @@ stand-in next to each missing family: "Arial (Liberation Sans)".
   `ui::text_docker::tests::section_buttons_boxes_and_apply_to_default`,
   `ui::text_docker::tests::fields_edit_the_selected_text`;
   `tests::forced_justification_spreads_the_last_line_too`,
+  `tests::justification_spreads_chinese_between_characters`,
+  `tests::justified_chinese_lines_end_at_the_right_edge`,
   `tests::line_spacing_in_points_and_in_percent_of_the_size`,
   `tests::character_backgrounds_cover_their_characters` (text crate);
 - The Glyphs docker: `ui::glyphs_docker::tests::ranges_pick_their_characters`,

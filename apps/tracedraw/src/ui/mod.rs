@@ -1357,4 +1357,99 @@ mod tests {
         app.finish_text();
         assert!(!app.doc().pages.is_empty());
     }
+
+    /// The property bar has a button beside the font size that opens the
+    /// axis sliders of the selected text's variable font (#870): a click
+    /// on a slider sets the axis on the text, a click outside closes it,
+    /// and for a static font the button is there but opens nothing.
+    #[test]
+    fn the_font_size_has_a_button_for_variable_font_axes() {
+        use crate::ui::text_docker::{font_axes_button_rect, font_axes_popup_rect};
+        use tracedraw_core::{ParagraphStyle, TextAlign, TextSpan};
+        let quicksand = include_bytes!("../../../../crates/text/testdata/Quicksand-VF.ttf");
+        let _ = tracedraw_text::fonts().add_fonts(vec![quicksand.to_vec()]);
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        app.show_welcome = false;
+        let text = |app: &mut App, family: &str, y: f64| {
+            app.new_shape(ShapeKind::Text {
+                spans: vec![TextSpan::new("Text", family, 24.0)],
+                origin: Point::new(20.0, y),
+                frame: None,
+                align: TextAlign::Left,
+                para: ParagraphStyle::default(),
+                on_path: None,
+            })
+            .expect("text")
+        };
+        let variable = text(&mut app, "Quicksand", 40.0);
+        let fixed = text(&mut app, "Selawik", 80.0);
+        let wght = |app: &App| match app.doc().find_shape(variable).map(|s| s.kind.clone()) {
+            Some(ShapeKind::Text { spans, .. }) => spans[0].variation("wght"),
+            _ => None,
+        };
+        app.set_tool(Tool::Pick);
+        app.select(vec![variable]);
+        frame(&ctx, &mut app);
+        frame(&ctx, &mut app);
+        let button = font_axes_button_rect(&ctx, "propbar").expect("the button is on the bar");
+        assert!(!egui::Popup::is_any_open(&ctx));
+        click(
+            &ctx,
+            &mut app,
+            button.center(),
+            egui::PointerButton::Primary,
+        );
+        assert!(egui::Popup::is_any_open(&ctx), "the sliders open");
+        let popup = font_axes_popup_rect(&ctx, "propbar").expect("the sliders show");
+        assert!(popup.top() >= button.bottom() - 1.0, "under the button");
+        // A click on the weight slider sets the weight on the text, one
+        // undo step, with the sliders still open.
+        let history = app.engine.history_labels().0.len();
+        let x = popup.right() - 100.0;
+        let mut y = popup.top() + 4.0;
+        while wght(&app).is_none() && y < popup.bottom() {
+            click(
+                &ctx,
+                &mut app,
+                egui::pos2(x, y),
+                egui::PointerButton::Primary,
+            );
+            y += 4.0;
+        }
+        assert!(wght(&app).is_some(), "a click on the slider sets the axis");
+        assert!(egui::Popup::is_any_open(&ctx), "the sliders stay open");
+        assert_eq!(app.engine.history_labels().0.len(), history + 1);
+        // A click outside closes them.
+        click(
+            &ctx,
+            &mut app,
+            egui::pos2(1500.0, 900.0),
+            egui::PointerButton::Primary,
+        );
+        assert!(!egui::Popup::is_any_open(&ctx));
+        // A static font: the button is there and opens nothing.
+        app.select(vec![fixed]);
+        frame(&ctx, &mut app);
+        let button = font_axes_button_rect(&ctx, "propbar").expect("still on the bar");
+        click(
+            &ctx,
+            &mut app,
+            button.center(),
+            egui::PointerButton::Primary,
+        );
+        assert!(
+            !egui::Popup::is_any_open(&ctx),
+            "disabled for a static font"
+        );
+        // The Text docker has the same button beside its font size.
+        app.select(vec![variable]);
+        app.docker_tab = DockerTab::Text;
+        frame(&ctx, &mut app);
+        frame(&ctx, &mut app);
+        assert!(
+            font_axes_button_rect(&ctx, "docker").is_some(),
+            "in the Text docker"
+        );
+    }
 }

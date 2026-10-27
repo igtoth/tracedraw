@@ -1284,7 +1284,17 @@ fn blend(
             .clamp(1, 999),
         _ => steps.max(1) as usize,
     };
-    let paths = crate::effects::blend(&a, &b, n, 120);
+    // Paired from the given nodes (in page space now) or by shape.
+    let nodes = options.map_nodes.map(|m| {
+        let (ts, te) = (start.transform, end.transform);
+        [
+            ts * m.start[0],
+            ts * m.start[1],
+            te * m.end[0],
+            te * m.end[1],
+        ]
+    });
+    let paths = crate::effects::blend_from_nodes(&a, &b, n, 120, nodes);
     let fa = start.fill.preview_color();
     let fb = end.fill.preview_color();
     let ca = start.stroke.as_ref().map(|s| s.color);
@@ -1414,6 +1424,22 @@ pub struct BlendOptions {
     /// two (kept up to date with the stacking order by the editor).
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub steps_below: bool,
+    /// The nodes the morph starts from: on each object, in its own
+    /// coordinates, the node the steps pair with the other object's, then
+    /// a point the outline passes next (the way it runs). The outlines are
+    /// then paired from these nodes as they are, twists included, as a
+    /// `.cdr` blend draws (#597). `None`: they are matched by shape, so
+    /// the steps do not twist.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub map_nodes: Option<BlendNodes>,
+}
+
+/// See [`BlendOptions::map_nodes`]: each pair is a first node and a point
+/// after it along the outline, in that object's own coordinates.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct BlendNodes {
+    pub start: [Point; 2],
+    pub end: [Point; 2],
 }
 
 impl BlendOptions {
@@ -2999,6 +3025,29 @@ mod tests {
         )
         .expect("reads");
         assert!(matches!(old, Effect::Blend { options, .. } if options.is_default()));
+        // Nodes given in each object's own coordinates (the end's moved by
+        // its transform): paired from the next corner, the steps turn and
+        // differ from the plain blend; the nodes are saved (#597).
+        let local = a.local_path().bounding_box();
+        let (p0, p1) = (
+            Point::new(local.x0, local.y0),
+            Point::new(local.x1, local.y0),
+        );
+        let p2 = Point::new(local.x1, local.y1);
+        let mapped = BlendOptions {
+            map_nodes: Some(BlendNodes {
+                start: [p0, p1],
+                end: [p1, p2],
+            }),
+            ..Default::default()
+        };
+        let plain = blend(BlendOptions::default(), None, 0.0);
+        let turned = blend(mapped, None, 0.0);
+        assert_eq!(plain.len(), turned.len());
+        assert_ne!(plain[1].page_path(), turned[1].page_path());
+        let json = serde_json::to_string(&mapped).expect("json");
+        let back: BlendOptions = serde_json::from_str(&json).expect("reads");
+        assert_eq!(back, mapped);
     }
 
     #[test]

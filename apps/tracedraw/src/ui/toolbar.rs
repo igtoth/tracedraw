@@ -819,7 +819,7 @@ fn snap_to_button(app: &mut App, ui: &mut Ui, bar: &str, doc: bool) {
                 ui.checkbox(&mut app.snap.pixels, tr("menu.view.snap_pixels"));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui
-                        .add(egui::Button::new("\u{2715}").frame(false))
+                        .add(egui::Button::new("\u{00D7}").frame(false))
                         .rich_tip(tr("toolbar.snap_close"))
                         .clicked()
                     {
@@ -1867,6 +1867,8 @@ fn text_properties(app: &mut App, ui: &mut Ui) {
     }
     let mut changed = crate::ui::font_list::text_font_list(app, ui, "propbar_font", 180.0);
     changed |= text_size_list(app, ui);
+    // The axes of a variable font, beside its size (#870).
+    crate::ui::text_docker::font_axes_button(app, ui, "propbar");
     for (on, label, key) in [
         (
             app.text_bold,

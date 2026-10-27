@@ -27,7 +27,7 @@ pub fn show(app: &mut App, ctx: &Context) {
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
                         if ui
-                            .button(RichText::new("\u{2715}").size(14.0))
+                            .button(RichText::new("\u{00D7}").size(14.0))
                             .rich_tip(tr("focus.exit"))
                             .clicked()
                         {

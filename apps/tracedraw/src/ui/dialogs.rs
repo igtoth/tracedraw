@@ -269,6 +269,9 @@ pub struct PrintState {
     pub range: usize,
     /// Pages to print, e.g. "1-3, 5".
     pub pages: String,
+    /// Of the whole drawing or the pages listed: 0 every page, 1 the odd
+    /// pages only, 2 the even ones (#951).
+    pub parity: usize,
     /// Copies of a file come out as whole sets (on) or page by page.
     pub collate: bool,
     /// Every sheet printed as one picture of `bitmap_dpi`.
@@ -416,6 +419,28 @@ impl PrintState {
     /// The indexes of the pages to print among `count` pages, the current
     /// one being `current`.
     pub fn page_indexes(&self, count: usize, current: usize) -> Vec<usize> {
+        let picked = self.range_indexes(count, current);
+        // Odd or even pages of the drawing or of the list; the current
+        // page and the selection stay as they are, and a choice that
+        // leaves no page is let go rather than printing nothing (#951).
+        if self.parity == 0 || matches!(self.range, 1 | 3) || self.range == 0 && !self.all_pages {
+            return picked;
+        }
+        let odd = self.parity == 1;
+        let kept: Vec<usize> = picked
+            .iter()
+            .copied()
+            .filter(|i| (i % 2 == 0) == odd)
+            .collect();
+        if kept.is_empty() {
+            picked
+        } else {
+            kept
+        }
+    }
+
+    /// The pages of the range, before the odd or even choice.
+    fn range_indexes(&self, count: usize, current: usize) -> Vec<usize> {
         match self.range {
             1 | 3 => vec![current.min(count.saturating_sub(1))],
             2 => {
@@ -501,6 +526,7 @@ impl Default for PrintState {
             orientation: 0,
             range: 0,
             pages: String::new(),
+            parity: 0,
             collate: true,
             as_bitmap: false,
             bitmap_dpi: 300.0,
@@ -3542,6 +3568,37 @@ pub fn destination_row(ui: &mut Ui, st: &mut PrintState, width: f32) -> Option<S
     properties
 }
 
+/// The choice of every page, the odd ones or the even ones, for the
+/// whole drawing or the pages listed (greyed out for the current page
+/// and the selection), as wide as its longest choice (#951).
+pub fn parity_combo(ui: &mut Ui, st: &mut PrintState, id: &str) {
+    let keys = [
+        "print.odd_and_even",
+        "options.scope_odd",
+        "options.scope_even",
+    ];
+    let names = keys.map(tr);
+    let font = egui::TextStyle::Button.resolve(ui.style());
+    let widest = names
+        .iter()
+        .map(|n| {
+            ui.fonts_mut(|f| f.layout_no_wrap(n.clone(), font.clone(), egui::Color32::WHITE))
+                .size()
+                .x
+        })
+        .fold(0.0_f32, f32::max);
+    ui.add_enabled_ui(matches!(st.range, 0 | 2), |ui| {
+        egui::ComboBox::from_id_salt(id)
+            .selected_text(names[st.parity.min(2)].clone())
+            .width(widest + 2.0 * ui.spacing().button_padding.x + ui.spacing().icon_width)
+            .show_ui(ui, |ui| {
+                for (i, n) in names.iter().enumerate() {
+                    ui.selectable_value(&mut st.parity, i, n.clone());
+                }
+            });
+    });
+}
+
 /// The General tab; the printer whose Properties button was clicked.
 fn print_tab_general(app: &App, ui: &mut Ui, st: &mut PrintState) -> Option<String> {
     let mut properties = None;
@@ -3610,6 +3667,7 @@ fn print_tab_general(app: &App, ui: &mut Ui, st: &mut PrintState) -> Option<Stri
                 ui.add_enabled_ui(!app.selection.is_empty(), |ui| {
                     ui.radio_value(&mut st.range, 3, tr("print.range_selection"));
                 });
+                parity_combo(ui, st, "print_parity");
             });
         });
         ui.vertical(|ui| {

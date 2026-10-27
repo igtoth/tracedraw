@@ -10,8 +10,8 @@
 //! - Character: font, style and size; range kerning and underline; the
 //!   text fill, the characters' background and the text outline, each a
 //!   kind, a colour and "..." for its full settings; the expander shows
-//!   strikethrough, the characters' offsets and angle and the OpenType
-//!   features.
+//!   strikethrough, the characters' offsets and angle, the OpenType
+//!   features and, for a variable font, a slider for each of its axes.
 //! - Paragraph: the six alignments (none, left, centre, right, full and
 //!   forced justification), line spacing in % of the character height,
 //!   points or % of the font size, left, first-line and right indents,
@@ -723,6 +723,8 @@ fn character(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) 
         changed |= style_list(app, ui);
         row_check(app, ui, "style");
         changed |= crate::ui::toolbar::text_size_list(app, ui);
+        // The axes of a variable font, beside its size (#870).
+        font_axes_button(app, ui, "docker");
         row_check(app, ui, "size");
     });
     if changed {
@@ -874,11 +876,216 @@ fn character(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) 
             }
         }
     });
+    font_axes(app, ui, &sp);
     if sc {
         let (strike, features) = (sp.strikethrough, sp.features.clone());
         edit_spans(app, move |s| {
             s.strikethrough = strike;
             s.features = features.clone();
+        });
+    }
+}
+
+/// The axes of a variable font (cached for the fonts as they are now).
+fn axes_of(ctx: &egui::Context, sp: &TextSpan) -> Vec<tracedraw_text::VariationAxis> {
+    let fonts = tracedraw_text::fonts();
+    let id = egui::Id::new((
+        "font_axes",
+        &sp.font_family,
+        sp.bold,
+        sp.italic,
+        fonts.generation(),
+    ));
+    if let Some(axes) = ctx.data(|d| d.get_temp::<Vec<tracedraw_text::VariationAxis>>(id)) {
+        return axes;
+    }
+    let axes: Vec<tracedraw_text::VariationAxis> = fonts
+        .variation_axes(&sp.font_family, sp.bold, sp.italic)
+        .into_iter()
+        .filter(|a| !a.hidden && a.max > a.min)
+        .collect();
+    ctx.data_mut(|d| d.insert_temp(id, axes.clone()));
+    axes
+}
+
+/// An axis's name: the registered axes in the interface language, the
+/// others as the font names them.
+fn axis_name(axis: &tracedraw_text::VariationAxis) -> String {
+    match axis.tag.as_str() {
+        "wght" => tr("docker.axis_wght"),
+        "wdth" => tr("docker.axis_wdth"),
+        "slnt" => tr("docker.axis_slnt"),
+        "ital" => tr("docker.axis_ital"),
+        "opsz" => tr("docker.axis_opsz"),
+        _ => axis.name.clone(),
+    }
+}
+
+/// The axes of the selected text's variable font (#870): a slider for
+/// each (weight, width, slant, optical size and the font's own axes),
+/// showing the value set on the text or, with none set, the one its
+/// weight and slant give. Releasing a slider (or typing a value) sets it
+/// on the selected characters, one undo step; Default axes takes every
+/// value off again. Nothing shows for a static font.
+fn font_axes(app: &mut App, ui: &mut Ui, sp: &TextSpan) {
+    let axes = axes_of(ui.ctx(), sp);
+    if axes.is_empty() {
+        return;
+    }
+    ui.horizontal(|ui| {
+        ui.label(tr("docker.font_axes"))
+            .on_hover_text(tr("docker.font_axes_tip"));
+        if ui
+            .add_enabled(
+                !sp.variations.is_empty(),
+                egui::Button::new(tr("docker.font_axes_reset")).small(),
+            )
+            .clicked()
+        {
+            edit_spans(app, |s| s.variations.clear());
+        }
+    });
+    for axis in &axes {
+        ui.horizontal(|ui| {
+            ui.add_sized([72.0, 18.0], egui::Label::new(axis_name(axis)).truncate())
+                .on_hover_text(&axis.tag);
+            let id = ui.id().with(("font_axis", &axis.tag));
+            let held = sp
+                .variation(&axis.tag)
+                .map_or(axis.auto, |v| v.clamp(axis.min, axis.max));
+            let mut v = ui.data(|d| d.get_temp::<f64>(id)).unwrap_or(held);
+            let step = if axis.max - axis.min > 20.0 { 1.0 } else { 0.1 };
+            ui.spacing_mut().slider_width = (ui.available_width() - 70.0).max(60.0);
+            let r = ui.add(crate::ui::Rail(
+                egui::Slider::new(&mut v, axis.min..=axis.max)
+                    .step_by(step)
+                    .clamping(egui::SliderClamping::Always),
+            ));
+            if r.dragged() {
+                ui.data_mut(|d| d.insert_temp(id, v));
+            }
+            if r.drag_stopped() || r.changed() && !r.dragged() {
+                ui.data_mut(|d| d.remove::<f64>(id));
+                let tag = axis.tag.clone();
+                edit_spans(app, move |s| s.set_variation(&tag, Some(v)));
+            }
+        });
+    }
+}
+
+/// The first span of the selected text, or of the text being edited:
+/// the font whose axes the axes button offers (#870).
+pub(crate) fn selected_text_span(app: &App) -> Option<TextSpan> {
+    app.selected_shapes().iter().find_map(|s| match &s.kind {
+        ShapeKind::Text { spans, .. } => spans.first().cloned(),
+        _ => None,
+    })
+}
+
+/// Where the axes button of the bar or docker `salt` was drawn last, for
+/// tests.
+#[cfg(test)]
+pub(crate) fn font_axes_button_rect(ctx: &egui::Context, salt: &str) -> Option<Rect> {
+    ctx.data(|d| d.get_temp(egui::Id::new(("font_axes_button_rect", salt))))
+}
+
+/// Where the axes popup of the bar or docker `salt` was drawn last, for
+/// tests.
+#[cfg(test)]
+pub(crate) fn font_axes_popup_rect(ctx: &egui::Context, salt: &str) -> Option<Rect> {
+    ctx.data(|d| d.get_temp(egui::Id::new(("font_axes_popup_rect", salt))))
+}
+
+/// The popup of the axes button whose id is `id`.
+fn font_axes_popup_id(id: egui::Id) -> egui::Id {
+    id.with("popup")
+}
+
+/// The button beside the font size that opens the axis sliders of the
+/// selected text's variable font in a small window under it (#870): the
+/// same sliders as the Character section. It is enabled only when that
+/// font has axes; its tip says why when it is not.
+pub(crate) fn font_axes_button(app: &mut App, ui: &mut Ui, salt: &str) {
+    use crate::ui::tips::RichTip;
+    let span = selected_text_span(app);
+    let enabled = span
+        .as_ref()
+        .is_some_and(|sp| !axes_of(ui.ctx(), sp).is_empty());
+    // Salted with the bar's id too: the property bar and the Text
+    // toolbar can both show one.
+    let id = ui.make_persistent_id(("font_axes_button", salt));
+    let popup_id = font_axes_popup_id(id);
+    let ctx = ui.ctx().clone();
+    let open = egui::Popup::is_id_open(&ctx, popup_id);
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(24.0, 22.0), Sense::hover());
+    let sense = if enabled {
+        Sense::click()
+    } else {
+        Sense::hover()
+    };
+    let resp = ui.interact(rect, id, sense);
+    #[cfg(test)]
+    ctx.data_mut(|d| d.insert_temp(egui::Id::new(("font_axes_button_rect", salt)), rect));
+    if ui.is_rect_visible(rect) {
+        let painter = ui.painter();
+        if open {
+            painter.rect_filled(rect, 2.0, Tokens::tool_active());
+        } else if enabled && resp.hovered() {
+            painter.rect_filled(rect, 2.0, Tokens::tool_hover());
+        }
+        let color = if enabled {
+            Tokens::icon()
+        } else {
+            Tokens::text_dim().gamma_multiply(0.6)
+        };
+        // A letter over a slider.
+        painter.text(
+            rect.center() - Vec2::new(0.0, 3.0),
+            egui::Align2::CENTER_CENTER,
+            "A",
+            egui::FontId::proportional(13.0),
+            color,
+        );
+        let y = rect.bottom() - 5.0;
+        painter.line_segment(
+            [
+                egui::pos2(rect.left() + 4.0, y),
+                egui::pos2(rect.right() - 4.0, y),
+            ],
+            Stroke::new(1.0, color),
+        );
+        painter.circle_filled(egui::pos2(rect.center().x + 3.0, y), 2.5, color);
+    }
+    let why = if enabled {
+        "toolbar.font_axes_desc"
+    } else {
+        "toolbar.font_axes_none"
+    };
+    let resp = resp.rich_tip(format!("{}\n{}", tr("toolbar.font_axes"), tr(why)));
+    if resp.clicked() {
+        egui::Popup::toggle_id(&ctx, popup_id);
+    }
+    if !enabled && open {
+        egui::Popup::close_id(&ctx, popup_id);
+    }
+    let Some(sp) = span.filter(|_| enabled) else {
+        return;
+    };
+    let _shown = egui::Popup::new(popup_id, ctx.clone(), resp.rect, ui.layer_id())
+        .open_memory(None)
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+        .width(280.0)
+        .show(|ui| {
+            ui.set_width(280.0);
+            font_axes(app, ui, &sp);
+        });
+    #[cfg(test)]
+    if let Some(r) = _shown {
+        ctx.data_mut(|d| {
+            d.insert_temp(
+                egui::Id::new(("font_axes_popup_rect", salt)),
+                r.response.rect,
+            )
         });
     }
 }
@@ -1309,6 +1516,58 @@ mod tests {
         };
         let mut out = ctx.run_ui(input, |ui| text_docker(app, ui));
         out.textures_delta.clear();
+    }
+
+    /// A text in a variable font shows its axes in the Character section
+    /// (#870); a value set there goes on the text in one undo step and
+    /// Default axes takes it off; a static font shows none.
+    #[test]
+    fn variable_font_axes_show_and_set_on_the_text() {
+        let quicksand = include_bytes!("../../../../crates/text/testdata/Quicksand-VF.ttf");
+        let _ = tracedraw_text::fonts().add_fonts(vec![quicksand.to_vec()]);
+        let mut app = App::headless();
+        let id = app
+            .new_shape(ShapeKind::Text {
+                spans: vec![TextSpan::new("Text", "Quicksand", 24.0)],
+                origin: Point::new(10.0, 10.0),
+                frame: None,
+                align: TextAlign::Left,
+                para: ParagraphStyle::default(),
+                on_path: None,
+            })
+            .expect("text");
+        app.select(vec![id]);
+        let ctx = crate::theme::ui_context();
+        ctx.data_mut(|d| d.insert_temp(egui::Id::new(("text_docker_more", "character")), true));
+        let input = || egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(360.0, 900.0),
+            )),
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(input(), |ui| text_docker(&mut app, ui));
+        out.textures_delta.clear();
+        let sp = TextSpan::new("Text", "Quicksand", 24.0);
+        let axes = axes_of(&ctx, &sp);
+        assert_eq!(axes.len(), 1, "{axes:?}");
+        assert_eq!(axes[0].tag, "wght");
+        assert_eq!(axis_name(&axes[0]), tr("docker.axis_wght"));
+        assert!(axes_of(&ctx, &TextSpan::new("Text", "Selawik", 24.0)).is_empty());
+
+        let wght = |app: &App| match app.doc().find_shape(id).map(|s| s.kind.clone()) {
+            Some(ShapeKind::Text { spans, .. }) => spans[0].variation("wght"),
+            _ => panic!("text"),
+        };
+        edit_spans(&mut app, |s| s.set_variation("wght", Some(650.0)));
+        assert_eq!(wght(&app), Some(650.0));
+        // It draws with the value set.
+        let mut out = ctx.run_ui(input(), |ui| text_docker(&mut app, ui));
+        out.textures_delta.clear();
+        edit_spans(&mut app, |s| s.variations.clear());
+        assert_eq!(wght(&app), None);
+        app.undo();
+        assert_eq!(wght(&app), Some(650.0));
     }
 
     #[test]

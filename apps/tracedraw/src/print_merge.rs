@@ -165,6 +165,122 @@ impl Scale {
 pub const SCALE_DATA: &str = "PrintMerge.Scale";
 pub const ANCHOR_DATA: &str = "PrintMerge.Anchor";
 
+/// The object data a copy of a field made by On every page keeps: the id
+/// of the field object on the page it was copied from, and the box the
+/// copy was last put in ("x0 y0 x1 y1", mm). While the copy is still in
+/// that box (not moved or resized by hand) it follows its original (#956).
+pub const COPY_OF_DATA: &str = "PrintMerge.CopyOf";
+pub const COPY_AT_DATA: &str = "PrintMerge.CopyAt";
+
+/// `data` with the link of a copy of `original` put in `at`, replacing
+/// any link it had.
+pub fn copy_data(
+    data: &[(String, String)],
+    original: tracedraw_core::ShapeId,
+    at: Rect,
+) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = data
+        .iter()
+        .filter(|(k, _)| k != COPY_OF_DATA && k != COPY_AT_DATA)
+        .cloned()
+        .collect();
+    out.push((COPY_OF_DATA.to_string(), original.raw().to_string()));
+    out.push((
+        COPY_AT_DATA.to_string(),
+        format!("{} {} {} {}", at.x0, at.y0, at.x1, at.y1),
+    ));
+    out
+}
+
+/// The original a copy made by On every page follows and the box it was
+/// put in; `None` for any other object or unreadable data.
+pub fn copy_link(s: &Shape) -> Option<(tracedraw_core::ShapeId, Rect)> {
+    let get = |k: &str| s.data.iter().find(|(n, _)| n == k).map(|(_, v)| v.as_str());
+    let id = get(COPY_OF_DATA)?.trim().parse::<u64>().ok()?;
+    let v: Vec<f64> = get(COPY_AT_DATA)?
+        .split_whitespace()
+        .map(|t| t.parse::<f64>())
+        .collect::<Result<_, _>>()
+        .ok()?;
+    match v.as_slice() {
+        [x0, y0, x1, y1] if v.iter().all(|n| n.is_finite()) => {
+            Some((tracedraw_core::ShapeId(id), Rect::new(*x0, *y0, *x1, *y1)))
+        }
+        _ => None,
+    }
+}
+
+/// Two boxes the same within 0.01 mm.
+pub fn same_box(a: Rect, b: Rect) -> bool {
+    (a.x0 - b.x0).abs() < 0.01
+        && (a.y0 - b.y0).abs() < 0.01
+        && (a.x1 - b.x1).abs() < 0.01
+        && (a.y1 - b.y1).abs() < 0.01
+}
+
+/// The move (and scale) that takes box `from` onto box `to`.
+pub fn box_to_box(from: Rect, to: Rect) -> tracedraw_core::geometry::Affine {
+    use tracedraw_core::geometry::Affine;
+    let k = |a: f64, b: f64| {
+        if a.abs() > 1e-9 && b.abs() > 1e-9 {
+            b / a
+        } else {
+            1.0
+        }
+    };
+    Affine::translate((to.x0, to.y0))
+        * Affine::scale_non_uniform(k(from.width(), to.width()), k(from.height(), to.height()))
+        * Affine::translate((-from.x0, -from.y0))
+}
+
+/// The commands that put `copy` (a copy made by On every page) in the box
+/// of its original `original`, when it is still where it was put: the
+/// field moved or resized on its page after it was copied moves the same
+/// on the other pages; a copy moved by hand stays where it is (#956).
+pub fn follow(copy: &Shape, original: &Shape) -> Vec<Command> {
+    let Some((of, at)) = copy_link(copy) else {
+        return Vec::new();
+    };
+    let (from, to) = (copy.bounds(), original.bounds());
+    if of != original.id
+        || copy.id == original.id
+        || !same_box(from, at)
+        || same_box(from, to)
+        || ![to.x0, to.y0, to.x1, to.y1].iter().all(|v| v.is_finite())
+    {
+        return Vec::new();
+    }
+    vec![
+        Command::TransformShapes {
+            shapes: vec![copy.id],
+            transform: box_to_box(from, to),
+        },
+        Command::SetObjectData {
+            shape: copy.id,
+            data: copy_data(&copy.data, of, to),
+        },
+    ]
+}
+
+/// [`follow`] for every copy on the drawing's pages whose original is
+/// still there.
+pub fn follow_originals(doc: &tracedraw_core::Document) -> Vec<Command> {
+    let mut cmds = Vec::new();
+    for s in doc
+        .pages
+        .iter()
+        .flat_map(|p| p.layers.iter().flat_map(|l| l.shapes.iter()))
+    {
+        let Some((of, _)) = copy_link(s) else {
+            continue;
+        };
+        if let Some(o) = doc.find_shape(of) {
+            cmds.extend(follow(s, o));
+        }
+    }
+    cmds
+}
+
 /// A placeholder's Align and scale: its object data, else (placeholders
 /// made before the docker) filling it from the centre.
 pub fn placement_of(s: &Shape) -> (Scale, u8) {
@@ -1045,6 +1161,18 @@ pub fn merge_onto_pages(
     st: &PrintMergeState,
 ) -> Result<InPlaceMerge, String> {
     let rows = values(st);
+    // Copies of a field put on every page go where the field is now on
+    // its own page, unless they were moved by hand (#956).
+    let follow = if rows.is_empty() {
+        Vec::new()
+    } else {
+        follow_originals(engine.document())
+    };
+    if !follow.is_empty() {
+        engine
+            .run_batch("Print Merge", &follow)
+            .map_err(|e| e.to_string())?;
+    }
     let pages: Vec<tracedraw_core::document::Page> = engine
         .document()
         .pages
@@ -1064,9 +1192,13 @@ pub fn merge_onto_pages(
         cmds.extend(page_cmds);
     }
     if !cmds.is_empty() {
-        engine
-            .run_batch("Print Merge", &cmds)
-            .map_err(|e| e.to_string())?;
+        // One undo step with the copies' moves.
+        let done = if follow.is_empty() {
+            engine.run_batch("Print Merge", &cmds)
+        } else {
+            engine.amend_batch("Print Merge", &cmds)
+        };
+        done.map_err(|e| e.to_string())?;
     }
     let fields = pages
         .iter()

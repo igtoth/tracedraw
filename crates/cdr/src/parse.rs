@@ -1710,6 +1710,11 @@ impl<'a> Ctx<'a> {
                 span.tracking_pct = cs * 100.0 * SPACE_EM;
             }
         }
+        if let Some(c) = style.char_shift {
+            span.angle_deg = c.angle_deg;
+            span.offset_x_pct = c.x_pct;
+            span.baseline_shift_pt = c.y_pct / 100.0 * size_pt;
+        }
         if let Some(inline) = style.fill_color {
             // Version 16+ files describe the run's colour inline.
             let fill = inline.map(Fill::Solid).unwrap_or(Fill::None);
@@ -1876,7 +1881,10 @@ impl<'a> Ctx<'a> {
                             && last.italic == span.italic
                             && last.underline == span.underline
                             && last.strikethrough == span.strikethrough
-                            && last.fill == span.fill =>
+                            && last.fill == span.fill
+                            && last.angle_deg == span.angle_deg
+                            && last.offset_x_pct == span.offset_x_pct
+                            && last.baseline_shift_pt == span.baseline_shift_pt =>
                     {
                         last.text.push_str(&span.text)
                     }
@@ -3130,6 +3138,14 @@ impl<'a> Ctx<'a> {
             }
             let end = out[at].clone();
             let end_id = end.id;
+            // The steps pair the two outlines from their first nodes, as
+            // the file's program draws them (twists and folds included),
+            // and lie between the two: the start, read first, is the
+            // upper one (#597).
+            let map_nodes = match (blend_nodes(&out[at - 1]), blend_nodes(&end)) {
+                (Some(start), Some(end)) => Some(tracedraw_core::live::BlendNodes { start, end }),
+                _ => None,
+            };
             out[at - 1]
                 .effects
                 .push(tracedraw_core::live::Effect::Blend {
@@ -3141,7 +3157,11 @@ impl<'a> Ctx<'a> {
                     path: None,
                     rotate_on_path: false,
                     end_id: Some(end_id),
-                    options: Default::default(),
+                    options: tracedraw_core::live::BlendOptions {
+                        steps_below: true,
+                        map_nodes,
+                        ..Default::default()
+                    },
                 });
         }
     }
@@ -4208,6 +4228,35 @@ fn fit_text(t: &mut Shape, curve: &Shape, fitted: &OnPathText) -> bool {
         on_path: Some(tp),
     };
     true
+}
+
+/// Where a blend's steps start on an end object, in its own coordinates:
+/// its first node and a point after it along the outline. A rectangle
+/// runs from its corner at the origin (where the file's transform places
+/// it) along its height first: the steps of the two blends attached to
+/// issue #597 turn and fold as they do only from there. Other objects
+/// run from their own first node, as their outline is built (a polygon
+/// from its top vertex, clockwise, as the file stores it). `None` when
+/// the outline has fewer than two distinct points.
+fn blend_nodes(s: &Shape) -> Option<[Point; 2]> {
+    if let ShapeKind::Rect { rect, .. } = &s.kind {
+        let near = |a: f64, b: f64| if a.abs() <= b.abs() { a } else { b };
+        let far = |a: f64, b: f64| if a.abs() <= b.abs() { b } else { a };
+        let first = Point::new(near(rect.x0, rect.x1), near(rect.y0, rect.y1));
+        let next = Point::new(first.x, far(rect.y0, rect.y1));
+        return ((next - first).hypot() > 1e-9).then_some([first, next]);
+    }
+    use tracedraw_core::geometry::PathEl;
+    let path = s.local_path();
+    let mut nodes = path.elements().iter().filter_map(|el| match el {
+        PathEl::MoveTo(p) | PathEl::LineTo(p) | PathEl::QuadTo(_, p) | PathEl::CurveTo(_, _, p) => {
+            Some(*p)
+        }
+        PathEl::ClosePath => None,
+    });
+    let first = nodes.next()?;
+    let next = nodes.find(|p| (*p - first).hypot() > 1e-6)?;
+    Some([first, next])
 }
 
 fn bounds_of(pts: &[Point]) -> Option<Rect> {
@@ -6897,6 +6946,20 @@ mod tests {
             .find(|s| s.effects.is_empty())
             .expect("the other end");
         assert_eq!(blends[0].1, Some(other.id));
+        // The steps lie below the start (the upper object) and pair the
+        // two outlines from their first nodes (#597).
+        let options = shapes
+            .iter()
+            .flat_map(|s| &s.effects)
+            .find_map(|e| match e {
+                tracedraw_core::live::Effect::Blend { options, .. } => Some(*options),
+                _ => None,
+            })
+            .expect("blend");
+        assert!(options.steps_below);
+        let nodes = options.map_nodes.expect("nodes");
+        assert!((nodes.start[0] - nodes.start[1]).hypot() > 1e-6);
+        assert!((nodes.end[0] - nodes.end[1]).hypot() > 1e-6);
         // A blend group with no object before it: a warning, no blend.
         let body = [
             chunk(b"mcfg", &mcfg(v, 2_540_000, 2_540_000)),
@@ -6919,6 +6982,45 @@ mod tests {
             .shapes
             .iter()
             .all(|s| s.effects.is_empty()));
+    }
+
+    /// A blend starts a rectangle at its corner at the origin, along its
+    /// height first, whichever way the file drew it; other objects at
+    /// their first node, toward the next (#597).
+    #[test]
+    fn blend_nodes_start_at_the_file_s_first_node() {
+        let rect = |x0, y0, x1, y1| {
+            Shape::new(
+                tracedraw_core::ShapeId(1),
+                ShapeKind::Rect {
+                    rect: Rect::new(x0, y0, x1, y1),
+                    radius: 0.0,
+                    corners: None,
+                },
+            )
+        };
+        // Width and height negative: the origin is the upper right corner.
+        let n = blend_nodes(&rect(-73.0, -67.0, 0.0, 0.0)).expect("nodes");
+        assert_eq!(n, [Point::new(0.0, 0.0), Point::new(0.0, -67.0)]);
+        // Height positive.
+        let n = blend_nodes(&rect(-81.0, 0.0, 0.0, 75.0)).expect("nodes");
+        assert_eq!(n, [Point::new(0.0, 0.0), Point::new(0.0, 75.0)]);
+        // A polygon: its top vertex, then the next one clockwise.
+        let poly = Shape::new(
+            tracedraw_core::ShapeId(2),
+            ShapeKind::Polygon {
+                rect: Rect::new(-10.0, -10.0, 10.0, 10.0),
+                points: 4,
+                sharpness: 0.0,
+                complex: None,
+                twist: 0.0,
+            },
+        );
+        let [a, b] = blend_nodes(&poly).expect("nodes");
+        assert!((a - Point::new(0.0, 10.0)).hypot() < 1e-9, "{a:?}");
+        assert!((b - Point::new(10.0, 0.0)).hypot() < 1e-9, "{b:?}");
+        // A flat rectangle has no way to run.
+        assert!(blend_nodes(&rect(-5.0, 0.0, 0.0, 0.0)).is_none());
     }
 
     /// Version 21 texts fitted to a circle they are not grouped with (as
@@ -7859,6 +7961,88 @@ mod tests {
         let s = shapes[0].stroke.as_ref().expect("the style's outline");
         assert!((s.width - 0.254).abs() < 1e-9, "{s:?}");
         assert!(shapes[1].stroke.is_none());
+    }
+
+    /// A version 14 framed `txsm` as a seal's ring of letters is stored
+    /// (#955): the paragraph's extra byte set to 1 and 64 bytes after it,
+    /// then one style per letter turning and shifting it.
+    fn txsm14_ring(letters: &[(char, i32, i32, i32)]) -> Vec<u8> {
+        let mut t = u32s(&[1]); // frame flag
+        t.extend_from_slice(&[0; 32]);
+        t.extend_from_slice(&u32s(&[1, 4])); // one frame, id 4
+        t.extend_from_slice(&[0; 48]);
+        t.extend_from_slice(&u32s(&[0])); // not on a path
+        t.extend_from_slice(&u32s(&[1, 0x1a])); // one paragraph, style id
+        t.push(0);
+        t.push(1); // 64 bytes follow
+        let mut block = u32s(&[4, u32::MAX]);
+        for m in [0.77f64, 0.0, 1000.0, 0.0, 1.0, 2000.0] {
+            block.extend_from_slice(&m.to_le_bytes());
+        }
+        block.extend_from_slice(&[0; 8]);
+        assert_eq!(block.len(), 64);
+        t.extend_from_slice(&block);
+        t.extend_from_slice(&u32s(&[letters.len() as u32]));
+        for &(_, angle, dx, dy) in letters {
+            t.extend_from_slice(&u16s(&[1]));
+            t.push(0x3c); // size, angle, shifts
+            t.push(0);
+            t.extend_from_slice(&i32s(&[63_500, angle, dx, dy]));
+        }
+        t.extend_from_slice(&u32s(&[letters.len() as u32]));
+        for i in 0..letters.len() {
+            // Two bytes a letter; its style numbered in the third byte.
+            t.extend_from_slice(&[1, 0, (i as u8) << 1, 0, 0, 0, 0, 0]);
+        }
+        let text: String = letters.iter().map(|l| l.0).collect();
+        let bytes = utf16(&text);
+        t.extend_from_slice(&u32s(&[bytes.len() as u32]));
+        t.extend_from_slice(&bytes);
+        t.push(0); // no path
+        t
+    }
+
+    #[test]
+    fn version_14_ring_of_turned_and_shifted_letters_opens() {
+        // As a version 14 seal stores its ring of letters (#955).
+        let letters = [
+            ('\u{6d2a}', 129_432_549, 842, 428),
+            ('\u{5c71}', 98_894_641, 655, 505),
+            ('\u{533a}', 347_035_491, 424, -760),
+        ];
+        let (doc, rep) = text_doc(
+            14,
+            b"CDRE",
+            Vec::new(),
+            OBJ_ARTISTIC_TEXT,
+            &[(ARG_COORDS, i32s(&[0, 0]))],
+            txsm14_ring(&letters),
+        );
+        assert_eq!(rep.skipped_objects, 0, "{:?}", rep.warnings);
+        assert_eq!(rep.shapes, 1, "{:?}", rep.warnings);
+        let ShapeKind::Text { spans, .. } = &first_shape(&doc).kind else {
+            panic!("{:?}", first_shape(&doc).kind);
+        };
+        let text: String = spans.iter().map(|s| s.text.as_str()).collect();
+        assert_eq!(text, "\u{6d2a}\u{5c71}\u{533a}");
+        // One span a letter, each with its own placement.
+        assert_eq!(spans.len(), 3, "{spans:?}");
+        assert!((spans[0].angle_deg - 129.432549).abs() < 1e-9);
+        assert!((spans[0].offset_x_pct - 842.0).abs() < 1e-9);
+        assert!((spans[0].size_pt - 18.0).abs() < 1e-9);
+        assert!((spans[0].baseline_shift_pt - 4.28 * 18.0).abs() < 1e-9);
+        assert!((spans[1].angle_deg - 98.894641).abs() < 1e-9);
+        // 347 degrees is 13 clockwise; a negative shift goes down.
+        assert!((spans[2].angle_deg + 12.964509).abs() < 1e-9);
+        assert!((spans[2].baseline_shift_pt + 7.6 * 18.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn version_14_ring_text_cut_short_never_panics() {
+        let t = txsm14_ring(&[('a', 0, 10, 10), ('b', 90_000_000, 20, 20)]);
+        for cut in 0..t.len() {
+            let _ = text::read_txsm(&t[..cut], 14, &mut |_| {});
+        }
     }
 
     #[test]

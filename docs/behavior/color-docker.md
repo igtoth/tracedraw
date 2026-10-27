@@ -19,7 +19,17 @@ Window > Panels > Color, Shift+F11, and Outline Colour (Shift+F12).
   the hue strip beside it (red at the top, then yellow, green, cyan,
   blue, magenta, red). Click or drag in either. A grey keeps the last hue
   shown; picking a hue for a grey takes full saturation and at least
-  half brightness so the hue shows.
+  half brightness so the hue shows. In CMYK (the docker's model, or a
+  CMYK colour in the colour picker and the fill editors) the square spans
+  the inks instead (#907): left to right the hue's inks go from 0 to
+  100 %, top to bottom black ink goes from 0 to 100 %, and the square and
+  the hue strip show how those inks print. The hue's inks are the
+  complement of its pure screen colour (red is M 100 Y 100, orange
+  M 50 Y 100), so the corners are paper, the solid inks, K 100 and the
+  inks over K 100 (at most 300 % ink), and the ring sits on any CMYK
+  colour's inks (black ink for the height, the strongest of C, M and Y
+  for the width) and reaches every edge. In the other models the square
+  is the screen's saturation and brightness.
 - Color sliders: one per component of the model with its value: RGB and
   YIQ 0 to 255, CMYK, saturation, brightness, lightness and grey 0 to
   100, hues 0 to 360 degrees, Lab L 0 to 100 and a, b -128 to 127.

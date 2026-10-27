@@ -31,6 +31,9 @@ whatever tool is active.
   while dragging, so it can be pressed or released mid-drag.
 - Snapping applies to the start and current points (see `snapping.md`).
 - A drag shorter than 0.05 mm in either direction creates nothing.
+- 3-point rectangle and 3-point ellipse: Ctrl while dragging the base
+  keeps it to steps of the constrain angle from its start (#934,
+  `pick_drag_tests::ctrl_keeps_the_three_point_base_to_the_constrain_angle`).
 
 ## Rectangle (F6)
 

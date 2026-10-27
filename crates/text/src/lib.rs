@@ -24,6 +24,7 @@ pub mod catalog;
 pub mod hyphen;
 #[cfg(any(windows, all(test, not(target_arch = "wasm32"))))]
 mod installed;
+pub mod traits;
 
 /// Points to millimetres.
 pub const PT_MM: f64 = 25.4 / 72.0;
@@ -496,6 +497,13 @@ pub struct FamilyInfo {
     /// A symbol font (its character map is the symbol encoding): its
     /// letters are pictures, so its name reads in another font.
     pub symbol: bool,
+    /// The kind of letters (the first face that says, else the name).
+    pub class: traits::FontClass,
+    /// Every letter one width (a face's `post` table or PANOSE, else
+    /// the name).
+    pub monospace: bool,
+    /// A face has OpenType layout features beyond kerning.
+    pub features: bool,
 }
 
 /// A face's style name: the typographic subfamily (name ID 17), else the
@@ -557,28 +565,75 @@ fn embedding_allowed(face: &ttf_parser::Face) -> bool {
     !restricted && !bitmap_only
 }
 
+/// The instance of a variable font a text is drawn at (see [`set_axes`]).
+struct Instance {
+    /// The weight drawn, which decides synthetic bold.
+    weight: u16,
+    /// The letters slant, which decides synthetic italic.
+    slanted: bool,
+    /// The axis values set (empty for a static font).
+    coords: Vec<([u8; 4], f32)>,
+    /// The text sets the weight axis itself: no synthetic bold.
+    own_weight: bool,
+    /// The text sets the italic or slant axis itself: no synthetic italic.
+    own_slant: bool,
+}
+
 /// Choose the instance of a variable font: the text's weight (see
 /// [`target_weight`]: 700 for bold text, 400 for regular, the weight a
 /// family name ends in; within the font's range), and its italic or slant axis
-/// for italic text when the face is upright. Returns the weight and
-/// whether the letters slant, which decide the synthetic styles, and the
-/// axis values set (empty for a static font).
+/// for italic text when the face is upright. An axis the text sets a value
+/// for (`own`, #870) takes that value, clamped to the font's range, over
+/// the one its weight and slant give; values for axes the font lacks are
+/// left out.
 fn set_axes(
     face: &mut ttf_parser::Face,
     hb: &mut rustybuzz::Face,
     target: u16,
     italic: bool,
-) -> (u16, bool, Vec<([u8; 4], f32)>) {
+    own: &[tracedraw_core::FontVariation],
+) -> Instance {
+    let upright_face = !(face.is_italic() || face.is_oblique());
     let mut weight = face.weight().to_number();
-    let mut slanted = face.is_italic() || face.is_oblique();
+    let mut slanted = !upright_face;
+    let mut own_weight = false;
+    let mut own_slant = false;
     if !face.is_variable() {
-        return (weight, slanted, Vec::new());
+        return Instance {
+            weight,
+            slanted,
+            coords: Vec::new(),
+            own_weight,
+            own_slant,
+        };
     }
     let mut set: Vec<rustybuzz::Variation> = Vec::new();
     for axis in face.variation_axes() {
         let lo = axis.min_value.min(axis.max_value);
         let hi = axis.max_value.max(axis.min_value);
-        match &axis.tag.to_bytes() {
+        let tag = axis.tag.to_bytes();
+        let given = own
+            .iter()
+            .find(|v| v.tag.as_bytes() == tag)
+            .map(|v| v.value as f32)
+            .filter(|v| v.is_finite());
+        if let Some(v) = given {
+            let v = v.clamp(lo, hi);
+            set.push(rustybuzz::Variation {
+                tag: axis.tag,
+                value: v,
+            });
+            match &tag {
+                b"wght" => {
+                    weight = v.round().clamp(1.0, 1000.0) as u16;
+                    own_weight = true;
+                }
+                b"ital" | b"slnt" => own_slant = true,
+                _ => {}
+            }
+            continue;
+        }
+        match &tag {
             b"wght" => {
                 let v = f32::from(target).clamp(lo, hi);
                 set.push(rustybuzz::Variation {
@@ -604,12 +659,44 @@ fn set_axes(
             _ => {}
         }
     }
+    // A slant the text sets decides whether the letters slant.
+    if own_slant {
+        slanted = !upright_face
+            || set.iter().any(|v| match &v.tag.to_bytes() {
+                b"ital" => v.value >= 0.5,
+                b"slnt" => v.value < 0.0,
+                _ => false,
+            });
+    }
     for v in &set {
         face.set_variation(v.tag, v.value);
     }
     hb.set_variations(&set);
     let coords = set.iter().map(|v| (v.tag.to_bytes(), v.value)).collect();
-    (weight, slanted, coords)
+    Instance {
+        weight,
+        slanted,
+        coords,
+        own_weight,
+        own_slant,
+    }
+}
+
+/// One axis of a variable font, for the controls that set it (#870).
+#[derive(Debug, Clone, PartialEq)]
+pub struct VariationAxis {
+    /// The OpenType tag ("wght", "wdth", "slnt", "opsz", or the font's own).
+    pub tag: String,
+    /// The name the font gives it (English where it has one), else the tag.
+    pub name: String,
+    pub min: f64,
+    pub default: f64,
+    pub max: f64,
+    /// The value the text has when it sets none: from its weight and
+    /// slant on those axes, else the font's default.
+    pub auto: f64,
+    /// The font asks for the axis not to be shown (fvar flag 0x0001).
+    pub hidden: bool,
 }
 
 /// Letters 0x20 to 0xFF of the symbol encoding of the Symbol family as
@@ -874,6 +961,7 @@ fn shapes_alike(a: &TextSpan, b: &TextSpan) -> bool {
         && a.offset_x_pct == b.offset_x_pct
         && a.angle_deg == b.angle_deg
         && a.features == b.features
+        && a.variations == b.variations
 }
 
 /// Text in which a character may continue the syllable before it: any
@@ -1851,6 +1939,44 @@ impl FontSystem {
             }
             ids
         };
+        self.info_of(family, ids)
+    }
+
+    /// [`FontSystem::family_info`] of each of `families`, reading the
+    /// font database's list of faces once rather than once a family (a
+    /// font list's filter reads every family, #867).
+    pub fn family_infos(&self, families: &[String]) -> Vec<Option<FamilyInfo>> {
+        let mut by_family: HashMap<&str, Vec<fontdb::ID>> = HashMap::new();
+        for f in families {
+            by_family.entry(f.as_str()).or_default();
+        }
+        {
+            let db = self.db();
+            for face in db.faces() {
+                for (n, _) in &face.families {
+                    if let Some(ids) = by_family.get_mut(n.as_str()) {
+                        if !ids.contains(&face.id) {
+                            ids.push(face.id);
+                        }
+                    }
+                }
+            }
+        }
+        families
+            .iter()
+            .map(|family| {
+                let mut ids = by_family.get(family.as_str()).cloned().unwrap_or_default();
+                if ids.is_empty() {
+                    let legacy = self.legacy.read().unwrap_or_else(|e| e.into_inner());
+                    ids = legacy.get(family).cloned().unwrap_or_default();
+                }
+                self.info_of(family, ids)
+            })
+            .collect()
+    }
+
+    /// What a font list shows about `family`, whose faces are `ids`.
+    fn info_of(&self, family: &str, ids: Vec<fontdb::ID>) -> Option<FamilyInfo> {
         if ids.is_empty() {
             let offered = self
                 .offered
@@ -1863,11 +1989,17 @@ impl FontSystem {
                 faces: Vec::new(),
                 embedded: false,
                 symbol: false,
+                class: traits::FontClass::Unknown,
+                monospace: false,
+                features: false,
             });
         }
         let db = self.db();
         let mut kind = FontKind::TrueType;
         let mut symbol = false;
+        let mut class = traits::FontClass::Unknown;
+        let mut monospace = false;
+        let mut features = false;
         let mut faces: Vec<FaceStyle> = Vec::new();
         for id in ids {
             let Some(info) = db.face(id) else {
@@ -1889,11 +2021,16 @@ impl FontSystem {
                     })
                 });
                 let style = face_style_name(&f);
-                Some((face_kind, symbol, style))
+                Some((face_kind, symbol, style, traits::face_traits(&f)))
             });
-            let Some(Some((face_kind, face_symbol, style))) = read else {
+            let Some(Some((face_kind, face_symbol, style, face_traits))) = read else {
                 continue;
             };
+            if class == traits::FontClass::Unknown {
+                class = face_traits.class;
+            }
+            monospace |= face_traits.monospace;
+            features |= face_traits.features;
             // A family is as its most capable face shows it.
             kind = match (kind, face_kind) {
                 (FontKind::Variable, _) | (_, FontKind::Variable) => FontKind::Variable,
@@ -1920,12 +2057,72 @@ impl FontSystem {
             }
         }
         faces.sort_by_key(|f| (f.italic, f.weight));
+        if class == traits::FontClass::Unknown {
+            class = traits::name_class(family);
+        }
         Some(FamilyInfo {
             kind,
             faces,
             embedded: self.is_document_family(family),
             symbol,
+            class,
+            monospace: monospace || traits::name_monospace(family),
+            features,
         })
+    }
+
+    /// The axes of the variable font text in `family` (bold and italic as
+    /// given) is drawn with, in the font's order, with the value each has
+    /// when the text sets none (#870). Empty for a static font or a family
+    /// that is not here.
+    pub fn variation_axes(&self, family: &str, bold: bool, italic: bool) -> Vec<VariationAxis> {
+        // Not the axes of a stand-in for a family that is not here.
+        if !self.has_family(family) {
+            return Vec::new();
+        }
+        let Some((id, target)) = self.face_and_weight(family, bold, italic) else {
+            return Vec::new();
+        };
+        let Some((data, index)) = self.face_data(id) else {
+            return Vec::new();
+        };
+        let Ok(mut face) = ttf_parser::Face::parse(&data, index) else {
+            return Vec::new();
+        };
+        let Some(mut hb) = rustybuzz::Face::from_slice(&data, index) else {
+            return Vec::new();
+        };
+        let axes: Vec<ttf_parser::VariationAxis> = face.variation_axes().into_iter().collect();
+        let names: Vec<String> = axes
+            .iter()
+            .map(|a| {
+                let tag = String::from_utf8_lossy(&a.tag.to_bytes()).to_string();
+                catalog::name(&face, a.name_id).unwrap_or(tag)
+            })
+            .collect();
+        let auto = set_axes(&mut face, &mut hb, target, italic, &[]).coords;
+        axes.iter()
+            .zip(names)
+            .map(|(a, name)| {
+                let tag = a.tag.to_bytes();
+                let lo = a.min_value.min(a.max_value);
+                let hi = a.max_value.max(a.min_value);
+                let default = a.def_value.clamp(lo, hi);
+                VariationAxis {
+                    tag: String::from_utf8_lossy(&tag).to_string(),
+                    name,
+                    min: f64::from(lo),
+                    default: f64::from(default),
+                    max: f64::from(hi),
+                    auto: f64::from(
+                        auto.iter()
+                            .find(|(t, _)| *t == tag)
+                            .map_or(default, |(_, v)| *v),
+                    ),
+                    hidden: a.hidden,
+                }
+            })
+            .collect()
     }
 
     /// Ask for an offered family now (a font list showing it), as text set
@@ -2083,7 +2280,7 @@ impl FontSystem {
             req.spans
                 .iter()
                 .map(|s| format!(
-                    "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{:?}|{:?}|{}",
+                    "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{:?}|{:?}|{:?}|{}",
                     s.layout_only,
                     s.font_family,
                     s.size_pt,
@@ -2096,6 +2293,7 @@ impl FontSystem {
                     s.underline,
                     s.strikethrough,
                     s.features,
+                    s.variations,
                     s.paragraph,
                     s.text
                 ))
@@ -2447,7 +2645,13 @@ impl FontSystem {
         let target = self
             .face_and_weight(&span.font_family, span.bold, span.italic)
             .map_or(if span.bold { 700 } else { 400 }, |(_, w)| w);
-        let (weight, slanted, coords) = set_axes(&mut face, &mut hb, target, span.italic);
+        let Instance {
+            weight,
+            slanted,
+            coords,
+            own_weight,
+            own_slant,
+        } = set_axes(&mut face, &mut hb, target, span.italic, &span.variations);
         let font = tracedraw_core::document::text_outline::GlyphFont {
             data: data.clone(),
             index,
@@ -2457,8 +2661,9 @@ impl FontSystem {
         let upem = face.units_per_em() as f64;
         let scale = size_pt * PT_MM / upem;
         // A heavy weight the face lacks is drawn thicker.
-        let synth_bold = target >= 600 && weight < 600;
-        let synth_italic = span.italic && !slanted;
+        // Not when the text sets the weight or slant axis itself (#870).
+        let synth_bold = target >= 600 && weight < 600 && !own_weight;
+        let synth_italic = span.italic && !slanted && !own_slant;
         let tracking = span.tracking_pct / 100.0 * size_pt * PT_MM;
         let baseline = span.baseline_shift_pt * PT_MM;
         // Character spacing counts in widths of a space; word spacing
@@ -3224,20 +3429,20 @@ impl FontSystem {
 
             let avail = line.avail;
             let col_start = line.col_x;
-            let (content_w, n_spaces) = line_width(glyphs, ps, x0 - col_start);
+            let content_w = line_width(glyphs, ps, x0 - col_start);
             let hyphen_w = line.hyphen.as_ref().map(|h| h.advance).unwrap_or(0.0);
             let total_w = content_w + hyphen_w;
-            let (dx, space_extra) = match align {
-                TextAlign::Left | TextAlign::None => (0.0, 0.0),
-                TextAlign::Center => (((avail.min(1e9)) - total_w).max(0.0) / 2.0, 0.0),
-                TextAlign::Right => ((avail.min(1e9) - total_w).max(0.0), 0.0),
+            let (dx, extras) = match align {
+                TextAlign::Left | TextAlign::None => (0.0, Vec::new()),
+                TextAlign::Center => (((avail.min(1e9)) - total_w).max(0.0) / 2.0, Vec::new()),
+                TextAlign::Right => ((avail.min(1e9) - total_w).max(0.0), Vec::new()),
                 TextAlign::Justify | TextAlign::ForceJustify => {
                     // Forced justification spreads the last line too.
                     let last = line.last_in_para && align == TextAlign::Justify;
-                    if last || n_spaces == 0 || !avail.is_finite() {
-                        (0.0, 0.0)
+                    if last || !avail.is_finite() {
+                        (0.0, Vec::new())
                     } else {
-                        (0.0, (avail - total_w).max(0.0) / n_spaces as f64)
+                        (0.0, justify_extras(glyphs, avail - total_w))
                     }
                 }
             };
@@ -3335,7 +3540,7 @@ impl FontSystem {
                     let gp = a * g.path.as_ref().clone();
                     line_path.extend(gp.elements().iter().copied());
                 }
-                let adv = g.advance + if g.ch == ' ' { space_extra } else { 0.0 };
+                let adv = g.advance + extras.get(gi).copied().unwrap_or(0.0);
                 let span = &spans[g.span];
                 if (span.underline || span.strikethrough) && !span.layout_only {
                     match underline_runs.last_mut() {
@@ -3589,20 +3794,73 @@ fn drop_cap_placement(
 }
 
 /// Width of a line's glyphs with tab expansion; returns (width, spaces).
-fn line_width(glyphs: &[Glyph], para: &ParagraphStyle, start: f64) -> (f64, usize) {
+fn line_width(glyphs: &[Glyph], para: &ParagraphStyle, start: f64) -> f64 {
     let mut x = start;
-    let mut spaces = 0;
     for g in glyphs {
         if g.ch == '\t' {
             x = next_tab(x, &para.tabs);
         } else {
-            if g.ch == ' ' {
-                spaces += 1;
-            }
             x += g.advance;
         }
     }
-    (x - start, spaces)
+    x - start
+}
+
+/// The width added after each glyph of a justified line (indexed like
+/// `glyphs`, in text order) so that `room` more is spread over it (#952).
+///
+/// The room goes in equal shares to the line's justification
+/// opportunities: its spaces, and the gaps between neighbouring glyphs of
+/// which one is Chinese or Japanese (ideographs, kana and their
+/// punctuation, written without spaces). A line with neither, such as a
+/// single word broken to fit, spreads it between all its letters. Never
+/// after the line's last glyph, inside a cluster, before a mark that
+/// takes no room, in connected right-to-left script, or before the
+/// line's last tab (the tab stop would take it back).
+fn justify_extras(glyphs: &[Glyph], room: f64) -> Vec<f64> {
+    let mut extras = vec![0.0; glyphs.len()];
+    if room <= 1e-9 || !room.is_finite() {
+        return extras;
+    }
+    let from = glyphs
+        .iter()
+        .rposition(|g| g.ch == '\t')
+        .map_or(0, |t| t + 1);
+    // A gap between glyph `i` and the next one that may be widened.
+    let gap = |i: usize| -> bool {
+        let (Some(a), Some(b)) = (glyphs.get(i), glyphs.get(i + 1)) else {
+            return false;
+        };
+        !b.joins
+            && b.char_idx != a.char_idx
+            && b.advance > 0.0
+            && !a.rtl
+            && !b.rtl
+            && ![a.ch, b.ch].iter().any(|c| *c == ' ' || *c == '\t')
+    };
+    let last = glyphs.len().saturating_sub(1);
+    let mut opportunities: Vec<usize> = (from..last)
+        .filter(|&i| {
+            glyphs.get(i).is_some_and(|g| g.ch == ' ')
+                || (gap(i)
+                    && glyphs
+                        .get(i..i + 2)
+                        .is_some_and(|p| p.iter().any(|g| cjk_char(g.ch))))
+        })
+        .collect();
+    if opportunities.is_empty() {
+        opportunities = (from..last).filter(|&i| gap(i)).collect();
+    }
+    if opportunities.is_empty() {
+        return extras;
+    }
+    let share = room / opportunities.len() as f64;
+    for i in opportunities {
+        if let Some(e) = extras.get_mut(i) {
+            *e = share;
+        }
+    }
+    extras
 }
 
 fn next_tab(x: f64, tabs: &[f64]) -> f64 {
@@ -4469,6 +4727,7 @@ mod tests {
             outline: None,
             layout_only: false,
             features: Vec::new(),
+            variations: Vec::new(),
             paragraph: None,
         }
     }
@@ -4767,6 +5026,128 @@ mod tests {
             on_path: None,
         });
         assert!((l.bounds.width() - 30.0).abs() < 0.01);
+    }
+
+    /// Synthetic 1 mm glyphs for `text`, one per character.
+    fn cells(text: &str) -> Vec<Glyph> {
+        text.chars()
+            .enumerate()
+            .map(|(i, ch)| Glyph {
+                path: Arc::new(BezPath::new()),
+                advance: 1.0,
+                x_offset: 0.0,
+                y_offset: 0.0,
+                ch,
+                char_idx: i,
+                char_end: i + 1,
+                rtl: false,
+                level: 0,
+                span: 0,
+                joins: false,
+                hyphen_after: None,
+                src: None,
+            })
+            .collect()
+    }
+
+    /// Chinese text has no spaces: justification spreads the room between
+    /// its characters, never after the last one; with spaces in a line
+    /// of Latin letters only the spaces widen (#952).
+    #[test]
+    fn justification_spreads_chinese_between_characters() {
+        let e = justify_extras(&cells("相师得此奇遇"), 1.0);
+        assert_eq!(e.len(), 6);
+        for x in &e[..5] {
+            assert!((x - 0.2).abs() < 1e-9, "{e:?}");
+        }
+        assert_eq!(e[5], 0.0);
+        // Latin with spaces: only the spaces.
+        let e = justify_extras(&cells("ab cd ef"), 1.0);
+        assert_eq!(e, vec![0.0, 0.0, 0.5, 0.0, 0.0, 0.5, 0.0, 0.0]);
+        // Mixed: the spaces and the gaps touching a Chinese character.
+        let e = justify_extras(&cells("ab 中文"), 1.0);
+        assert_eq!(e, vec![0.0, 0.0, 0.5, 0.5, 0.0]);
+        // Latin letters next to an ideograph get a share, a space next
+        // to one only its own.
+        let e = justify_extras(&cells("ab中c d"), 1.0);
+        let third = 1.0 / 3.0;
+        let want = [0.0, third, third, 0.0, third, 0.0];
+        for (x, w) in e.iter().zip(want) {
+            assert!((x - w).abs() < 1e-9, "{e:?}");
+        }
+        // A word with no space spreads between its letters.
+        let e = justify_extras(&cells("abcde"), 2.0);
+        assert_eq!(e, vec![0.5, 0.5, 0.5, 0.5, 0.0]);
+        // No room, or one glyph: nothing moves.
+        assert!(justify_extras(&cells("中文"), 0.0)
+            .iter()
+            .all(|x| *x == 0.0));
+        assert!(justify_extras(&cells("中"), 3.0).iter().all(|x| *x == 0.0));
+        // Not before the last tab, whose stop would take it back.
+        let e = justify_extras(&cells("中文\t中文"), 1.0);
+        assert_eq!(e, vec![0.0, 0.0, 0.0, 1.0, 0.0]);
+        // Further glyphs of a cluster and marks without width stay.
+        let mut g = cells("中文字");
+        g[1].char_idx = 0;
+        g[2].advance = 0.0;
+        assert!(justify_extras(&g, 1.0).iter().all(|x| *x == 0.0));
+    }
+
+    /// The issue's paragraph, justified in a narrow frame: every line but
+    /// the last ends at the right edge, the last stays as left aligned
+    /// lays it out, and forced justification spreads it too (#952).
+    #[test]
+    fn justified_chinese_lines_end_at_the_right_edge() {
+        if !has_fonts() {
+            return;
+        }
+        let f = fonts();
+        let mut s = span(concat!(
+            "据说开派祖师本是一个江湖相师，半生潦倒，郁郁不得志。在其四十九岁那年，",
+            "云游四方，路经青云山，一眼便看出此山钟灵奇秀，聚天地灵气。"
+        ));
+        s.font_family = "WenQuanYi Zen Hei".into();
+        let para = ParagraphStyle::default();
+        let width = 31.0;
+        let lay = |s: &TextSpan, align| {
+            f.layout(&TextRequest {
+                spans: std::slice::from_ref(s),
+                frame: Some(Size::new(width, 200.0)),
+                align,
+                para: &para,
+                on_path: None,
+            })
+        };
+        let right = |l: &LineBox| l.edges.last().copied().unwrap_or(0.0);
+        let left = |l: &LineBox| l.edges.first().copied().unwrap_or(0.0);
+        let full = lay(&s, TextAlign::Justify);
+        let plain = lay(&s, TextAlign::Left);
+        assert!(full.lines.len() > 2, "{}", full.lines.len());
+        assert_eq!(full.lines.len(), plain.lines.len());
+        let (body, last) = full.lines.split_at(full.lines.len() - 1);
+        for (l, p) in body.iter().zip(&plain.lines) {
+            assert!((left(l) - left(p)).abs() < 1e-6);
+            assert!(
+                (right(l) - left(l) - width).abs() < 1e-6,
+                "line ends at {} of {width}",
+                right(l) - left(l)
+            );
+            // Left aligned, the same line stops short of the edge.
+            assert!(right(p) - left(p) < width - 1e-3);
+        }
+        let plain_last = plain.lines.last().expect("lines");
+        assert_eq!(last[0].edges, plain_last.edges);
+        assert!(right(&last[0]) - left(&last[0]) < width - 1.0);
+        let forced = lay(&s, TextAlign::ForceJustify);
+        let forced_last = forced.lines.last().expect("lines");
+        assert!((right(forced_last) - left(forced_last) - width).abs() < 1e-6);
+        // Mixed Latin and Chinese lines fill the width too.
+        s.text = "TraceDraw 支持中文排版 and Latin words 混合在同一行里面测试两端对齐".into();
+        let mixed = lay(&s, TextAlign::Justify);
+        assert!(mixed.lines.len() > 1);
+        for l in &mixed.lines[..mixed.lines.len() - 1] {
+            assert!((right(l) - left(l) - width).abs() < 1e-6);
+        }
     }
 
     #[test]
@@ -5977,6 +6358,81 @@ mod tests {
         }
     }
 
+    /// `font` with byte `at` of its OS/2 table set to each of `bytes`.
+    fn with_os2(font: &[u8], at: usize, bytes: &[u8]) -> Vec<u8> {
+        let mut out = font.to_vec();
+        let n = usize::from(u16::from_be_bytes([font[4], font[5]]));
+        for i in 0..n {
+            let rec = 12 + 16 * i;
+            if &font[rec..rec + 4] == b"OS/2" {
+                let off =
+                    u32::from_be_bytes(font[rec + 8..rec + 12].try_into().expect("4")) as usize;
+                out[off + at..off + at + bytes.len()].copy_from_slice(bytes);
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn font_lists_filter_families_by_what_their_tables_say() {
+        use traits::{FontClass, FontFilter, FontTrait};
+        // Selawik as a sans serif by its family class (8), and as a
+        // monospaced serif by its PANOSE digits.
+        let sans = with_os2(SELAWIK, 30, &[8, 0]);
+        let f = system_with(&[&sans, QUICKSAND]);
+        let selawik = f.family_info("Selawik").expect("installed");
+        assert_eq!(selawik.class, FontClass::SansSerif);
+        assert!(!selawik.monospace);
+        assert_ne!(selawik.kind, FontKind::Variable);
+        let quicksand = f.family_info("Quicksand").expect("installed");
+        assert_eq!(quicksand.kind, FontKind::Variable);
+        // No class in its tables nor its name.
+        assert_eq!(quicksand.class, FontClass::Unknown);
+
+        let mono_serif = with_os2(SELAWIK, 32, &[2, 2, 6, 9]);
+        let g = system_with(&[&mono_serif]);
+        let info = g.family_info("Selawik").expect("installed");
+        assert_eq!(info.class, FontClass::Serif);
+        assert!(info.monospace);
+
+        let mut filter = FontFilter::default();
+        filter.set(FontTrait::Variable, true);
+        assert!(filter.matches(Some(&quicksand)));
+        assert!(!filter.matches(Some(&selawik)));
+        filter = FontFilter::default();
+        filter.set(FontTrait::SansSerif, true);
+        assert!(filter.matches(Some(&selawik)));
+        assert!(!filter.matches(Some(&quicksand)));
+        filter.set(FontTrait::Monospace, true);
+        assert!(!filter.matches(Some(&selawik)));
+        assert!(!filter.matches(Some(&info)));
+        filter.set(FontTrait::Serif, true);
+        assert!(filter.matches(Some(&info)));
+    }
+
+    /// Reading what the filter needs for every installed family stays
+    /// quick (#867); run with `--ignored --nocapture` on a machine with
+    /// many fonts.
+    #[test]
+    #[ignore]
+    fn family_infos_of_every_installed_family_time() {
+        let f = FontSystem::load();
+        let families = f.families();
+        let t = std::time::Instant::now();
+        let one_by_one: Vec<Option<FamilyInfo>> =
+            families.iter().map(|n| f.family_info(n)).collect();
+        let single = t.elapsed();
+        let t = std::time::Instant::now();
+        let batch = f.family_infos(&families);
+        println!(
+            "{} of {} families read in {:?} (one by one {single:?})",
+            batch.iter().flatten().count(),
+            families.len(),
+            t.elapsed()
+        );
+        assert_eq!(batch, one_by_one);
+    }
+
     #[test]
     fn variable_fonts_draw_bold_with_their_weight_axis() {
         let f = system_with(&[QUICKSAND]);
@@ -6009,6 +6465,54 @@ mod tests {
         let italic = set(false, true);
         assert_eq!(italic.path.elements().len(), regular.path.elements().len());
         assert!(italic.path.bounding_box().x1 > regular.path.bounding_box().x1);
+    }
+
+    /// Axis values the text sets (#870) draw the font at them, clamped to
+    /// its range, and turn off the synthetic bold they replace.
+    #[test]
+    fn variable_font_axes_set_on_the_text_draw_it_there() {
+        let f = system_with(&[QUICKSAND, SELAWIK]);
+        let axes = f.variation_axes("Quicksand", false, false);
+        assert_eq!(axes.len(), 1, "{axes:?}");
+        let w = &axes[0];
+        assert_eq!(w.tag, "wght");
+        assert_eq!((w.min, w.default, w.max), (300.0, 300.0, 700.0));
+        assert_eq!(w.auto, 400.0);
+        assert!(!w.name.is_empty() && !w.hidden);
+        assert_eq!(f.variation_axes("Quicksand", true, false)[0].auto, 700.0);
+        // A static font has none.
+        assert!(f.variation_axes("Selawik", false, false).is_empty());
+        assert!(f
+            .variation_axes("Not Installed Anywhere", false, false)
+            .is_empty());
+
+        let em = 100.0 * PT_MM;
+        let advance = |l: &TextLayout| l.lines[0].edges.last().copied().unwrap_or(0.0);
+        let draw = |bold: bool, wght: Option<f64>| {
+            let mut s = TextSpan::new("Hello", "Quicksand", 100.0);
+            s.bold = bold;
+            s.set_variation("wght", wght);
+            f.outline(&[s])
+        };
+        // Weight 700 set on regular text draws as bold text does.
+        let bold = draw(true, None);
+        let heavy = draw(false, Some(700.0));
+        assert!((advance(&heavy) - 2.463 * em).abs() < 0.002 * em);
+        assert_eq!(heavy.path, bold.path);
+        // 300 on bold text: the light letters, not thickened.
+        let light = draw(true, Some(300.0));
+        assert!((advance(&light) - 2.295 * em).abs() < 0.002 * em);
+        assert_eq!(light.path, draw(false, Some(300.0)).path);
+        // Out of range values are clamped; axes the font lacks are left out.
+        assert_eq!(draw(false, Some(5000.0)).path, heavy.path);
+        let mut s = TextSpan::new("Hello", "Quicksand", 100.0);
+        s.set_variation("wdth", Some(50.0));
+        assert_eq!(f.outline(&[s]).path, draw(false, None).path);
+        // A static font ignores them.
+        let mut s = TextSpan::new("Hello", "Selawik", 100.0);
+        let plain = f.outline(std::slice::from_ref(&s)).path;
+        s.set_variation("wght", Some(900.0));
+        assert_eq!(f.outline(&[s]).path, plain);
     }
 
     /// `data` with the OS/2 embedding bits set to `fs_type`.

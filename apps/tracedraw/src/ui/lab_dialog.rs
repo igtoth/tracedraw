@@ -885,7 +885,7 @@ fn snapshots(ui: &mut Ui, app: &App, ctx: &Context, st: &mut EffectState, src: &
                         ui.horizontal(|ui| {
                             ui.label(trf("dialog.lab_snapshot_n", &[("n", &n.to_string())]));
                             if ui
-                                .small_button("\u{2715}")
+                                .small_button("\u{00D7}")
                                 .on_hover_text(tr("dialog.lab_delete_snapshot"))
                                 .clicked()
                             {

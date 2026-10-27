@@ -650,6 +650,7 @@ fn the_pointer_shows_what_a_press_would_do() {
         center: Point::new(0.0, 0.0),
         start_angle: 0.0,
         current_angle: 0.0,
+        grab: None,
     };
     assert_eq!(cursor(&app, empty), ToolCursor::Rotate);
     // Moving: the arrow with a dotted box; once a right click makes the
@@ -704,6 +705,7 @@ fn the_status_bar_tells_how_far_how_much_and_what_angle() {
         center: Point::new(0.0, 0.0),
         start_angle: 0.0,
         current_angle: 30f64.to_radians(),
+        grab: None,
     };
     assert!(info(&app).contains("30.0"), "{}", info(&app));
     app.drag = Drag::Skew {
@@ -2123,6 +2125,143 @@ fn turning_snaps_the_pointer_to_another_objects_node() {
     assert!(app.doc().find_shape(other).is_some());
 }
 
+/// The pointer turning the selection does not snap to lines: crossing
+/// an edge of another object (or of the page) far from its points, the
+/// turn follows the pointer instead of sticking to the edge (#933). The
+/// turning handle stands off the object, so nothing of it lands there.
+#[test]
+fn turning_follows_the_pointer_across_edges() {
+    let (ctx, mut app, id) = setup();
+    // Another rectangle up and to the right; its bottom edge runs at
+    // y = 80 from x = 100 to 160, its nearest points (the corner, the
+    // middle of the edge) 15 mm away from x = 115.
+    app.new_shape(ShapeKind::Rect {
+        rect: Rect::new(100.0, 80.0, 160.0, 110.0),
+        radius: 0.0,
+        corners: None,
+    })
+    .expect("rect");
+    app.select(vec![id]);
+    app.rotate_mode = true;
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let c = app.rotation_center().expect("centre");
+    let ne = handle(&app, Handle::NE);
+    let start = app.view.to_page(ne);
+    // Released a point and a half below the edge, within the snapping
+    // distance of it.
+    let off = 1.5 / app.view.zoom as f64;
+    let at = app.view.to_screen(Point::new(115.0, 80.0 - off));
+    drag(&ctx, &mut app, ne, at, Modifiers::NONE, Vec::new());
+    let t = app
+        .doc()
+        .find_shape(id)
+        .map(|s| s.transform)
+        .expect("shape");
+    let k = t.as_coeffs();
+    let turned = k[1].atan2(k[0]);
+    let pointer = app.view.to_page(at);
+    let want = (pointer - c).atan2() - (start - c).atan2();
+    assert!((turned - want).abs() < 1e-6, "{turned} {want}");
+}
+
+/// Rotate mode, the centre of rotation on one end of an arc standing on
+/// a line: the other end node, dragged, turns the arc about it, and let
+/// go near the line it ends exactly on the line (#933). Dragging the arc
+/// by its edge still moves it.
+#[test]
+fn a_node_dragged_in_rotate_mode_turns_the_selection_onto_a_line() {
+    let (ctx, mut app, id) = setup();
+    app.select(vec![id]);
+    app.delete_selection();
+    let mut line = tracedraw_core::BezPath::new();
+    line.move_to((-30.0, 210.0));
+    line.line_to((210.0, 210.0));
+    app.new_shape(ShapeKind::Path {
+        path: line,
+        closed: false,
+    })
+    .expect("line");
+    let mut a = tracedraw_core::BezPath::new();
+    a.move_to((20.0, 210.0));
+    a.curve_to((20.0, 170.0), (60.0, 140.0), (100.0, 175.0));
+    let arc = app
+        .new_shape(ShapeKind::Path {
+            path: a,
+            closed: false,
+        })
+        .expect("arc");
+    app.select(vec![arc]);
+    app.rotate_mode = true;
+    let pivot = Point::new(20.0, 210.0);
+    app.set_pivot(pivot);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let end = |app: &App| {
+        let p = app.doc().find_shape(arc).expect("arc").page_path();
+        match p.segments().last() {
+            Some(seg) => tracedraw_core::geometry::ParamCurve::end(&seg),
+            None => panic!("a curve"),
+        }
+    };
+    let node = Point::new(100.0, 175.0);
+    let screen_node = app.view.to_screen(node);
+    // Over the node the pointer shows it turns.
+    assert_eq!(
+        for_tool(&app, false, false, false, Some(screen_node)),
+        ToolCursor::Rotate
+    );
+    // Let go a little short of the line and off the node's circle.
+    let r = (node - pivot).hypot();
+    let off = 1.5 / app.view.zoom as f64;
+    let to = app
+        .view
+        .to_screen(Point::new(20.0 + r - 2.0 * off, 210.0 - off));
+    drag(&ctx, &mut app, screen_node, to, Modifiers::NONE, Vec::new());
+    let e = end(&app);
+    assert!((e.y - 210.0).abs() < 1e-6, "on the line: {e:?}");
+    assert!(((e - pivot).hypot() - r).abs() < 1e-6, "turned: {e:?}");
+    let start = app.doc().find_shape(arc).expect("arc").page_path();
+    match start.elements().first() {
+        Some(tracedraw_core::geometry::PathEl::MoveTo(s)) => {
+            assert!((*s - pivot).hypot() < 1e-6, "about the pivot: {s:?}")
+        }
+        other => panic!("{other:?}"),
+    }
+    // Away from a node, a drag along the selection moves it.
+    app.rotate_mode = true;
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let path = app.doc().find_shape(arc).expect("arc").page_path();
+    let seg = path.segments().next().expect("segment");
+    let on = tracedraw_core::geometry::ParamCurve::eval(&seg, 0.3);
+    let before = end(&app);
+    let from = app.view.to_screen(on);
+    drag(
+        &ctx,
+        &mut app,
+        from,
+        from + egui::vec2(0.0, -40.0),
+        Modifiers::NONE,
+        Vec::new(),
+    );
+    let moved = end(&app) - before;
+    let first = |app: &App| match app
+        .doc()
+        .find_shape(arc)
+        .expect("arc")
+        .page_path()
+        .elements()
+        .first()
+    {
+        Some(tracedraw_core::geometry::PathEl::MoveTo(s)) => *s,
+        other => panic!("{other:?}"),
+    };
+    let start_moved = first(&app) - pivot;
+    assert!(moved.hypot() > 1.0, "moved: {moved:?}");
+    assert!(
+        (moved - start_moved).hypot() < 1e-6,
+        "{moved:?} {start_moved:?}"
+    );
+}
+
 #[test]
 fn drawing_a_new_shape_lets_the_selection_go_at_once() {
     let (ctx, mut app, id) = setup();
@@ -2859,6 +2998,119 @@ fn a_three_point_curve_continues_and_closes_the_selected_curve() {
     );
     click_page(&ctx, &mut app, Point::new(220.0, 220.0));
     assert_eq!(shape_count(&app), before + 2);
+}
+
+/// Ctrl keeps the chord of a 3-point curve (and the base of a 3-point
+/// rectangle or ellipse) to steps of the constrain angle, so a bow drawn
+/// with Ctrl stands level; Ctrl did nothing there (#934).
+#[test]
+fn ctrl_keeps_the_three_point_base_to_the_constrain_angle() {
+    let (ctx, mut app, first) = setup();
+    app.select(vec![first]);
+    app.delete_selection();
+    app.set_tool(Tool::ThreePointCurve);
+    let before = shape_count(&app);
+    // A chord 4 degrees off the horizontal, dragged with Ctrl.
+    let (a, b) = (Point::new(100.0, 150.0), Point::new(160.0, 154.0));
+    let (sa, sb) = (app.view.to_screen(a), app.view.to_screen(b));
+    drag(&ctx, &mut app, sa, sb, Modifiers::CTRL, Vec::new());
+    let (s, e) = app.three_point_base.expect("the chord waits for a click");
+    assert!((e.y - s.y).abs() < 1e-6, "level: {s:?} {e:?}");
+    assert!(((e - s).hypot() - 60.0).abs() < 0.5, "{s:?} {e:?}");
+    click_page(&ctx, &mut app, Point::new(130.0, 175.0));
+    assert_eq!(shape_count(&app), before + 1);
+    let p = last_path(&app);
+    let (first_pt, last_pt) = match (p.elements().first(), p.segments().last()) {
+        (Some(tracedraw_core::geometry::PathEl::MoveTo(f)), Some(seg)) => (*f, cubic(seg).p3),
+        other => panic!("a curve: {other:?}"),
+    };
+    assert!((first_pt.y - last_pt.y).abs() < 1e-6, "{p:?}");
+    // Without Ctrl the chord goes where it is dragged (away from the
+    // curve, whose end nodes the pointer would snap to).
+    let (c, d) = (Point::new(100.0, 220.0), Point::new(160.0, 224.0));
+    let (sc, sd) = (app.view.to_screen(c), app.view.to_screen(d));
+    drag(&ctx, &mut app, sc, sd, Modifiers::NONE, Vec::new());
+    let (s, e) = app.three_point_base.expect("chord");
+    assert!((e.y - s.y - 4.0).abs() < 0.5, "{s:?} {e:?}");
+    app.three_point_base = None;
+    // A 3-point rectangle drawn with Ctrl has a level base: it is not
+    // turned.
+    app.set_tool(Tool::ThreePointRectangle);
+    drag(&ctx, &mut app, sa, sb, Modifiers::CTRL, Vec::new());
+    click_page(&ctx, &mut app, Point::new(130.0, 170.0));
+    let id = *app.selection.first().expect("the rectangle");
+    let t = app
+        .doc()
+        .find_shape(id)
+        .map(|s| s.transform)
+        .expect("shape");
+    let k = t.as_coeffs();
+    assert!(k[1].abs() < 1e-9 && k[2].abs() < 1e-9, "{t:?}");
+}
+
+/// Ctrl held at the third click of a 3-point curve draws a bow: the arc
+/// of the circle through the three points, standing evenly on its chord
+/// wherever the third point is (#934). Without Ctrl the curve stays the
+/// one through the third point at its middle, lopsided when that point
+/// is off to a side.
+#[test]
+fn ctrl_at_the_third_click_draws_a_bow() {
+    let (ctx, mut app, first) = setup();
+    app.select(vec![first]);
+    app.delete_selection();
+    app.set_tool(Tool::ThreePointCurve);
+    // Off the page's centre lines, which the third point would snap to.
+    let (a, b) = (Point::new(40.0, 230.0), Point::new(120.0, 230.0));
+    // Off to the right of the chord's middle, and up.
+    let c = Point::new(108.0, 200.0);
+    let (sa, sb) = (app.view.to_screen(a), app.view.to_screen(b));
+    drag(&ctx, &mut app, sa, sb, Modifiers::NONE, Vec::new());
+    assert!(
+        app.three_point_base.is_some(),
+        "the chord waits for a click"
+    );
+    let at = app.view.to_screen(c);
+    click_at(&ctx, &mut app, at, Modifiers::CTRL);
+    let p = last_path(&app);
+    // The circle through a, b and c: its centre on the chord's bisector.
+    let cx = 80.0;
+    let cy = {
+        // |a - (cx, cy)| = |c - (cx, cy)|
+        let (ax, ay, px, py) = (a.x, a.y, c.x, c.y);
+        ((ax - cx).powi(2) + ay * ay - (px - cx).powi(2) - py * py) / (2.0 * (ay - py))
+    };
+    let center = Point::new(cx, cy);
+    let r = (a - center).hypot();
+    let segs: Vec<_> = p.segments().collect();
+    assert!(!segs.is_empty() && segs.len() <= 4, "{p:?}");
+    let mut top = f64::MAX;
+    for seg in &segs {
+        for i in 0..=16 {
+            let q = tracedraw_core::geometry::ParamCurve::eval(seg, i as f64 / 16.0);
+            assert!(
+                ((q - center).hypot() - r).abs() < 0.02,
+                "on the circle: {q:?}"
+            );
+            top = top.min(q.y);
+        }
+    }
+    // The ends are the chord's, and the bow stands evenly: its top is
+    // over the chord's middle, above the third point.
+    let (s, e) = (
+        tracedraw_core::geometry::ParamCurve::start(&segs[0]),
+        tracedraw_core::geometry::ParamCurve::end(segs.last().expect("seg")),
+    );
+    assert!(near(s, a) && near(e, b), "{s:?} {e:?}");
+    assert!((top - (cy - r)).abs() < 0.05 && top < c.y, "{top}");
+    // Without Ctrl: the curve through c at its middle, as before (a new
+    // curve, not one going on from the bow's end).
+    app.select(Vec::new());
+    drag(&ctx, &mut app, sa, sb, Modifiers::NONE, Vec::new());
+    click_at(&ctx, &mut app, at, Modifiers::NONE);
+    let p = last_path(&app);
+    let seg = p.segments().next().expect("segment");
+    let mid = tracedraw_core::geometry::ParamCurve::eval(&seg, 0.5);
+    assert!(near(mid, c), "{mid:?}");
 }
 
 #[test]

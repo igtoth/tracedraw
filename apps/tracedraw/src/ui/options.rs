@@ -1249,7 +1249,7 @@ fn dynamic_guides_page(app: &mut App, ui: &mut Ui) {
                 ui.horizontal_wrapped(|ui| {
                     for a in others {
                         if ui
-                            .button(format!("{a:.1}\u{00B0} \u{2715}"))
+                            .button(format!("{a:.1}\u{00B0} \u{00D7}"))
                             .on_hover_text(tr("options.dynamic_remove_angle"))
                             .clicked()
                         {

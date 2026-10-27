@@ -92,7 +92,9 @@ impl App {
                 None
             }
         };
-        let hue = old.preview_color().map_or(0.0, |c| c.to_hsb().0 as f32);
+        let hue = old
+            .preview_color()
+            .map_or(0.0, |c| crate::ui::color_picker::viewer_point(c).0);
         self.dialog = crate::ui::dialogs::Dialog::EditFill(Box::new(EditFillState {
             fill: old.clone(),
             old,

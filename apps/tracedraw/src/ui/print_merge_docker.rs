@@ -205,10 +205,15 @@ impl App {
                     .map(|l| l.id)
             })
             .collect();
+        // Each copy remembers the field and where it was put, so moving
+        // or resizing the field on this page later moves the copies too
+        // (#956).
+        let mut linked = s.clone();
+        linked.data = crate::print_merge::copy_data(&s.data, id, s.bounds());
         let mut cmds = Vec::new();
         for layer in targets {
             let new = self.engine.new_shape_id();
-            let shape = crate::app::reid_pub(s.clone(), new, &mut self.engine);
+            let shape = crate::app::reid_pub(linked.clone(), new, &mut self.engine);
             cmds.push(Command::AddShape { layer, shape });
         }
         if let Err(e) = self.engine.amend_batch("Insert Print Merge Field", &cmds) {
@@ -383,17 +388,47 @@ impl App {
             };
             for s in on_page.iter().copied() {
                 let pid = self.engine.new_shape_id();
-                let target = match shapes.iter().find(|o| same_place(o, s)) {
-                    Some(o) => o.id,
-                    None => {
-                        let id = self.engine.new_shape_id();
-                        let mut copy = crate::app::reid_pub(s.clone(), id, &mut self.engine);
-                        if let ShapeKind::ClipFrame { contents, .. } = &mut copy.kind {
-                            contents.clear();
+                // The copy On every page made of this frame comes first:
+                // still where it was put, it moves to where the frame is
+                // now; moved by hand, it keeps its place (#956).
+                let linked = shapes
+                    .iter()
+                    .find(|o| crate::print_merge::copy_link(o).is_some_and(|(of, _)| of == s.id));
+                // The target, the box the picture goes in, and the link
+                // the target keeps (a copy moved by hand keeps its own).
+                let (target, area, link) = match linked {
+                    Some(o) => {
+                        let moves = crate::print_merge::follow(o, s);
+                        let kept = moves.is_empty()
+                            && !crate::print_merge::same_box(o.bounds(), s.bounds());
+                        cmds.extend(moves);
+                        if kept {
+                            let link: Vec<(String, String)> = o
+                                .data
+                                .iter()
+                                .filter(|(k, _)| {
+                                    k == crate::print_merge::COPY_OF_DATA
+                                        || k == crate::print_merge::COPY_AT_DATA
+                                })
+                                .cloned()
+                                .collect();
+                            (o.id, o.bounds(), Some(link))
+                        } else {
+                            (o.id, s.bounds(), None)
                         }
-                        cmds.push(Command::AddShape { layer, shape: copy });
-                        id
                     }
+                    None => match shapes.iter().find(|o| same_place(o, s)) {
+                        Some(o) => (o.id, s.bounds(), None),
+                        None => {
+                            let id = self.engine.new_shape_id();
+                            let mut copy = crate::app::reid_pub(s.clone(), id, &mut self.engine);
+                            if let ShapeKind::ClipFrame { contents, .. } = &mut copy.kind {
+                                contents.clear();
+                            }
+                            cmds.push(Command::AddShape { layer, shape: copy });
+                            (id, s.bounds(), None)
+                        }
+                    },
                 };
                 cmds.push(Command::SetShapeName {
                     shape: target,
@@ -401,7 +436,16 @@ impl App {
                 });
                 cmds.push(Command::SetObjectData {
                     shape: target,
-                    data: frame_data(s, d),
+                    data: match link {
+                        Some(link) => {
+                            let mut data =
+                                crate::print_merge::copy_data(&frame_data(s, d), s.id, area);
+                            data.truncate(data.len() - 2);
+                            data.extend(link);
+                            data
+                        }
+                        None => crate::print_merge::copy_data(&frame_data(s, d), s.id, area),
+                    },
                 });
                 // A frame there that already holds something keeps it,
                 // as on the page itself.
@@ -414,13 +458,7 @@ impl App {
                 let mut pic = Shape::new(
                     pid,
                     ShapeKind::Bitmap {
-                        rect: crate::print_merge::place(
-                            s.bounds(),
-                            p.mm.0,
-                            p.mm.1,
-                            d.scale,
-                            d.anchor,
-                        ),
+                        rect: crate::print_merge::place(area, p.mm.0, p.mm.1, d.scale, d.anchor),
                         width_px: p.px.0,
                         height_px: p.px.1,
                         png: p.png.clone(),
@@ -705,7 +743,7 @@ pub fn print_merge(app: &mut App, ui: &mut Ui) {
                         .color(Tokens::text_dim())
                         .size(11.0),
                 );
-                if folder.is_some() && ui.small_button("\u{2715}").clicked() {
+                if folder.is_some() && ui.small_button("\u{00D7}").clicked() {
                     clear_folder = true;
                 }
             });
@@ -1526,5 +1564,183 @@ mod tests {
             app.merge_docker.kind = kind;
             frame(&mut app);
         }
+    }
+
+    /// The field moved on its own page after On every page copied it
+    /// (#956): the report's flow with a text, a QR code and a picture
+    /// frame inserted on every page, then dragged on the first page. The
+    /// merge onto the drawing's own pages puts every merged object where
+    /// its field is on the first page, with the same box and so the same
+    /// anchor; a copy moved by hand on its own page stays there.
+    #[test]
+    fn on_every_page_copies_follow_the_field_moved_on_its_page() {
+        let dir = std::env::temp_dir().join(format!("td_merge_follow_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        image::RgbaImage::from_pixel(96, 48, image::Rgba([0, 0, 200, 255]))
+            .save(dir.join("wide.png"))
+            .unwrap();
+        let mut app = App::headless();
+        app.add_page();
+        app.add_page();
+        app.goto_page(0);
+        let mut st = data(&dir);
+        st.rows
+            .push(vec!["Cy".into(), "wide.png".into(), "C-3".into()]);
+        app.merge_state = Some(st);
+        app.merge_docker.all_pages = true;
+        app.merge_docker.scale = Scale::Fit;
+        app.merge_docker.anchor = 0;
+        // Insert each kind of field and drag it on the first page, as in
+        // the report's video.
+        let moves = [(0, (-40.0, 60.0)), (2, (-30.0, -70.0)), (1, (45.0, 50.0))];
+        let mut fields = Vec::new();
+        for (kind, by) in moves {
+            app.merge_docker.kind = kind;
+            app.merge_docker.column = kind;
+            app.insert_merge_field();
+            let id = app.selection[0];
+            app.engine
+                .run(&Command::TransformShapes {
+                    shapes: vec![id],
+                    transform: tracedraw_core::geometry::Affine::translate(by),
+                })
+                .unwrap();
+            fields.push(id);
+        }
+        // The QR copy on the last page is moved by hand there.
+        let by_hand = app.doc().pages[2]
+            .layers
+            .iter()
+            .flat_map(|l| &l.shapes)
+            .find(|s| s.name.as_deref() == Some("<Code>"))
+            .map(|s| s.id)
+            .expect("the QR copy on page 3");
+        app.engine
+            .run(&Command::TransformShapes {
+                shapes: vec![by_hand],
+                transform: tracedraw_core::geometry::Affine::translate((5.0, 5.0)),
+            })
+            .unwrap();
+        let by_hand_box = app.doc().find_shape(by_hand).unwrap().bounds();
+        let placeholders: Vec<Rect> = fields
+            .iter()
+            .map(|id| app.doc().find_shape(*id).unwrap().bounds())
+            .collect();
+        app.create_merged_document(false);
+        assert_eq!(app.active_doc, 0, "no new drawing");
+        assert_eq!(app.doc().pages.len(), 3);
+        // The merged text, QR code and picture frame on page `k`.
+        let merged = |app: &App, k: usize| -> (Rect, Rect, Rect) {
+            let shapes: Vec<&Shape> = app.doc().pages[k]
+                .layers
+                .iter()
+                .flat_map(|l| &l.shapes)
+                .collect();
+            let text = shapes
+                .iter()
+                .find(|s| matches!(s.kind, ShapeKind::Text { .. }))
+                .map(|s| s.bounds())
+                .expect("the text");
+            let qr = shapes
+                .iter()
+                .find(|s| s.name.as_deref() == Some("<Code>"))
+                .map(|s| s.bounds())
+                .expect("the QR code");
+            let photos: Vec<&&Shape> = shapes
+                .iter()
+                .filter(|s| s.name.as_deref() == Some("<Photo>"))
+                .collect();
+            assert_eq!(photos.len(), 1, "one picture frame on page {k}");
+            let ShapeKind::ClipFrame { frame, contents } = &photos[0].kind else {
+                panic!("the picture frame on page {k} holds the picture");
+            };
+            let pic = contents.first().map(|c| c.bounds()).expect("the picture");
+            assert!(frame.bounds().contains(pic.center()), "page {k}");
+            (text, qr, photos[0].bounds())
+        };
+        let near = |a: Rect, b: Rect, tol: f64| {
+            (a.x0 - b.x0).abs() < tol
+                && (a.y1 - b.y1).abs() < tol
+                && (a.x1 - b.x1).abs() < tol
+                && (a.y0 - b.y0).abs() < tol
+        };
+        let first = merged(&app, 0);
+        // The picture frame and the QR code keep their placeholder's box.
+        assert!(near(first.2, placeholders[2], 0.01), "{:?}", first.2);
+        assert!(placeholders[1].contains(first.1.center()));
+        for k in 1..3 {
+            let (text, qr, photo) = merged(&app, k);
+            // The text starts where the field does on the first page (its
+            // left and top; the names differ in width).
+            assert!(
+                (text.x0 - first.0.x0).abs() < 1.0 && (text.y1 - first.0.y1).abs() < 1.0,
+                "page {k}: {text:?} vs {:?}",
+                first.0
+            );
+            assert!(near(photo, first.2, 0.01), "page {k}: {photo:?}");
+            if k == 2 {
+                assert!(by_hand_box.contains(qr.center()), "moved by hand: stays");
+                assert!(!placeholders[1].contains(qr.center()));
+            } else {
+                assert!(near(qr, first.1, 0.01), "page {k}: {qr:?} vs {:?}", first.1);
+            }
+        }
+        // One undo step takes the merge and the moves back.
+        app.undo();
+        let copy_on_2 = app.doc().pages[1]
+            .layers
+            .iter()
+            .flat_map(|l| &l.shapes)
+            .find(|s| s.name.as_deref() == Some("<Photo>"))
+            .map(|s| s.bounds())
+            .expect("the frame copy on page 2");
+        assert!(!near(copy_on_2, placeholders[2], 0.01), "undone");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Place Inside Frame with On every page after the frame inserted on
+    /// every page was moved on its page (#956): the copy on each other
+    /// page moves there and takes the picture; no second frame is made.
+    #[test]
+    fn place_inside_frame_moves_the_copies_of_a_moved_frame() {
+        let dir = std::env::temp_dir().join(format!("td_merge_follow_pif_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        image::RgbaImage::from_pixel(40, 40, image::Rgba([200, 0, 0, 255]))
+            .save(dir.join("stand_in.png"))
+            .unwrap();
+        let mut app = App::headless();
+        app.add_page();
+        app.goto_page(0);
+        app.merge_state = Some(data(&dir));
+        app.merge_docker.all_pages = true;
+        app.merge_docker.kind = 1;
+        app.merge_docker.column = 1;
+        app.insert_merge_field();
+        let id = app.selection[0];
+        app.engine
+            .run(&Command::TransformShapes {
+                shapes: vec![id],
+                transform: tracedraw_core::geometry::Affine::translate((35.0, 60.0)),
+            })
+            .unwrap();
+        let moved = app.doc().find_shape(id).unwrap().bounds();
+        app.merge_docker.placeholder = dir.join("stand_in.png").display().to_string();
+        app.select(vec![id]);
+        app.place_merge_field_inside();
+        let on_2: Vec<&Shape> = app.doc().pages[1]
+            .layers
+            .iter()
+            .flat_map(|l| &l.shapes)
+            .collect();
+        assert_eq!(on_2.len(), 1, "one frame on page 2");
+        let f = on_2[0];
+        assert!(
+            crate::print_merge::same_box(f.bounds(), moved),
+            "{:?} vs {moved:?}",
+            f.bounds()
+        );
+        assert!(matches!(&f.kind, ShapeKind::ClipFrame { contents, .. }
+            if contents.iter().any(|c| matches!(c.kind, ShapeKind::Bitmap { .. }))));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

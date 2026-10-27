@@ -862,7 +862,7 @@ fn lens(app: &mut App, ui: &mut Ui) {
             for (i, e) in l.effects.iter().enumerate() {
                 ui.horizontal(|ui| {
                     ui.label(format!("{}. {}", i + 1, tr(&format!("fx.{}", e.id))));
-                    if ui.small_button("\u{2715}").clicked() {
+                    if ui.small_button("\u{00D7}").clicked() {
                         remove = Some(i);
                     }
                 });

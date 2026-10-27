@@ -11,6 +11,7 @@ use crate::theme::Tokens;
 use egui::{Color32, Key, Rect, Sense, Ui, Vec2};
 use std::collections::HashMap;
 use tracedraw_core::document::TextSpan;
+use tracedraw_text::traits::{FontFilter, FontTrait};
 use tracedraw_text::{FamilyInfo, FontKind};
 
 /// Width of the list.
@@ -34,6 +35,11 @@ pub const DEFAULT_SAMPLE: f32 = 18.0;
 const REST_SECONDS: f64 = 0.4;
 /// Pictures kept before the oldest go.
 const MAX_PICTURES: usize = 1200;
+/// The longest a frame spends reading families for the filter (#867):
+/// with many fonts the rest come in the next frames.
+const FILTER_BUDGET: std::time::Duration = std::time::Duration::from_millis(8);
+/// Families read together for the filter.
+const FILTER_CHUNK: usize = 24;
 
 /// A family picked in a font list, with the style when one was picked
 /// (bold, italic).
@@ -113,6 +119,45 @@ impl FontPreviews {
         let info = tracedraw_text::fonts().family_info(family);
         self.infos.insert(family.to_string(), info.clone());
         info
+    }
+
+    /// The `families` with what `filter` asks, and whether every one of
+    /// them was read: a family is read once (for the fonts as they are
+    /// now), for at most [`FILTER_BUDGET`] a frame, so that the list opens
+    /// as fast with many fonts and fills in over the next frames (#867).
+    /// Nothing checked costs nothing.
+    pub fn filtered(&mut self, families: &[String], filter: FontFilter) -> (Vec<String>, bool) {
+        if filter.is_empty() {
+            return (families.to_vec(), true);
+        }
+        let missing: Vec<String> = families
+            .iter()
+            .filter(|f| !self.infos.contains_key(f.as_str()))
+            .cloned()
+            .collect();
+        let start = web_time::Instant::now();
+        let mut read = 0;
+        for chunk in missing.chunks(FILTER_CHUNK) {
+            let infos = tracedraw_text::fonts().family_infos(chunk);
+            for (f, info) in chunk.iter().zip(infos) {
+                self.infos.insert(f.clone(), info);
+            }
+            read += chunk.len();
+            if start.elapsed() >= FILTER_BUDGET {
+                break;
+            }
+        }
+        let complete = read == missing.len();
+        let shown = families
+            .iter()
+            .filter(|f| {
+                self.infos
+                    .get(f.as_str())
+                    .is_some_and(|i| filter.matches(i.as_ref()))
+            })
+            .cloned()
+            .collect();
+        (shown, complete)
     }
 
     /// `text` in `family` at `em_px` pixels to the em, as a texture (cached);
@@ -324,6 +369,17 @@ struct ListState {
     /// rested on a row: the preview follows the highlight.
     keyed: bool,
     rest: Option<(String, f64)>,
+    /// What the families must have (#867).
+    filter: FontFilter,
+    /// Families are still being read for the filter.
+    reading: bool,
+    /// The filter's choices show inside the list. They are part of the
+    /// list, not a menu of their own: egui keeps one popup open at a
+    /// time, so a menu opened from the list closed the list (#867).
+    filter_open: bool,
+    /// Where the filter button and its boxes were drawn last (the show
+    /// choices, then the traits in [`FontTrait::ALL`] order), for tests.
+    filter_hits: Vec<Rect>,
 }
 
 /// A font list showing `current`, `width` points wide. Returns what was
@@ -446,7 +502,16 @@ fn font_list_with(
         field.lost_focus(),
         wheeling,
     );
-    let all = listed_families(app, st.show, needed);
+    let mut all = listed_families(app, st.show, needed);
+    st.reading = false;
+    if needed && !st.filter.is_empty() {
+        let (shown, complete) = app.font_previews.filtered(&all, st.filter);
+        all = shown;
+        st.reading = !complete;
+        if st.reading {
+            ctx.request_repaint();
+        }
+    }
     let families = matching(&all, st.typed.as_deref(), current);
     let mut rows: Vec<Row> = Vec::with_capacity(families.len());
     for f in &families {
@@ -695,21 +760,20 @@ fn list_body(
             .color(Tokens::text_dim())
             .size(11.5),
         );
+        if st.reading {
+            ui.label(
+                egui::RichText::new(tr("font_list.reading"))
+                    .color(Tokens::text_dim())
+                    .size(11.5),
+            );
+        }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            egui::ComboBox::from_id_salt(ui.id().with("show"))
-                .selected_text(egui::RichText::new(tr(st.show.key())).size(11.5))
-                .width(150.0)
-                .show_ui(ui, |ui| {
-                    for s in Show::ALL {
-                        if ui.selectable_label(st.show == s, tr(s.key())).clicked() {
-                            st.show = s;
-                            st.highlight = None;
-                            st.scroll = true;
-                        }
-                    }
-                });
+            filter_button(ui, st);
         });
     });
+    if st.filter_open {
+        filter_choices(ui, st);
+    }
     let sample = app
         .settings
         .font_sample_px
@@ -730,7 +794,7 @@ fn list_body(
         })
         .cloned()
         .collect();
-    if !typing && st.show == Show::All && !recent.is_empty() {
+    if !typing && st.show == Show::All && st.filter.is_empty() && !recent.is_empty() {
         ui.label(
             egui::RichText::new(tr("font_list.recent"))
                 .color(Tokens::text_dim())
@@ -750,8 +814,13 @@ fn list_body(
     }
 
     // Every family.
-    if rows.is_empty() {
-        ui.label(egui::RichText::new(tr("font_list.no_match")).color(Tokens::text_dim()));
+    if rows.is_empty() && !st.reading {
+        let why = if st.filter.is_empty() || typing {
+            "font_list.no_match"
+        } else {
+            "font_list.no_filter_match"
+        };
+        ui.label(egui::RichText::new(tr(why)).color(Tokens::text_dim()));
     }
     let mut scroll = egui::ScrollArea::vertical()
         .id_salt(ui.id().with("families"))
@@ -861,6 +930,100 @@ fn list_body(
             }
         }
         _ => st.rest = None,
+    }
+}
+
+/// The i18n key of a trait the filter offers.
+fn trait_key(t: FontTrait) -> &'static str {
+    match t {
+        FontTrait::Serif => "font_list.trait_serif",
+        FontTrait::SansSerif => "font_list.trait_sans",
+        FontTrait::Script => "font_list.trait_script",
+        FontTrait::Decorative => "font_list.trait_decorative",
+        FontTrait::Monospace => "font_list.trait_monospace",
+        FontTrait::Symbol => "font_list.trait_symbol",
+        FontTrait::Variable => "font_list.trait_variable",
+        FontTrait::Features => "font_list.trait_features",
+    }
+}
+
+/// How many of the filter's choices are not the default: the traits
+/// checked, and which fonts show when not all of them.
+fn filter_count(st: &ListState) -> u32 {
+    st.filter.count() + u32::from(st.show != Show::All)
+}
+
+/// The filter's button: it shows or hides the choices inside the list
+/// (#867) and says how many are made.
+fn filter_button(ui: &mut Ui, st: &mut ListState) {
+    let n = filter_count(st);
+    let label = if n == 0 {
+        tr("font_list.filter")
+    } else {
+        trf("font_list.filter_n", &[("n", &n.to_string())])
+    };
+    let mut text = egui::RichText::new(label).size(11.5);
+    if n > 0 {
+        text = text.strong();
+    }
+    let r = ui
+        .add(egui::Button::selectable(st.filter_open, text))
+        .on_hover_text(tr("font_list.filter_tip"));
+    st.filter_hits.clear();
+    st.filter_hits.push(r.rect);
+    if r.clicked() {
+        st.filter_open = !st.filter_open;
+    }
+}
+
+/// The filter's choices, inside the list under its header: which fonts
+/// show, the kinds of letters and what a family has (#867). Ticking a box
+/// filters at once and leaves the list open.
+fn filter_choices(ui: &mut Ui, st: &mut ListState) {
+    let before = (st.filter, st.show);
+    egui::Frame::group(ui.style()).show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        ui.horizontal_wrapped(|ui| {
+            for s in Show::ALL {
+                let r =
+                    ui.selectable_label(st.show == s, egui::RichText::new(tr(s.key())).size(11.5));
+                st.filter_hits.push(r.rect);
+                if r.clicked() {
+                    st.show = s;
+                }
+            }
+        });
+        ui.separator();
+        ui.columns(2, |cols| {
+            for t in FontTrait::ALL {
+                // The kinds of letters on the left, what a family has on
+                // the right.
+                let col = usize::from(!t.is_class());
+                let Some(ui) = cols.get_mut(col) else {
+                    continue;
+                };
+                let mut on = st.filter.has(t);
+                let r = ui.checkbox(&mut on, tr(trait_key(t)));
+                st.filter_hits.push(r.rect);
+                if r.changed() {
+                    st.filter.set(t, on);
+                }
+            }
+        });
+        if ui
+            .add_enabled(
+                filter_count(st) > 0,
+                egui::Button::new(tr("font_list.filter_clear")),
+            )
+            .clicked()
+        {
+            st.filter = FontFilter::default();
+            st.show = Show::All;
+        }
+    });
+    if (st.filter, st.show) != before {
+        st.highlight = None;
+        st.scroll = true;
     }
 }
 
@@ -1399,6 +1562,38 @@ mod tests {
         }
     }
 
+    /// The filter (#867) reads each family once, a little a frame, and
+    /// keeps the families with what it asks; nothing checked keeps all.
+    #[test]
+    fn the_filter_keeps_the_families_with_what_it_asks() {
+        let fonts = tracedraw_text::fonts();
+        let mut families = fonts.families();
+        families.push("Not Installed Anywhere".to_string());
+        let mut previews = FontPreviews::default();
+        let (all, done) = previews.filtered(&families, FontFilter::default());
+        assert!(done);
+        assert_eq!(all, families);
+        for t in FontTrait::ALL {
+            let mut filter = FontFilter::default();
+            filter.set(t, true);
+            let shown = loop {
+                let (shown, done) = previews.filtered(&families, filter);
+                if done {
+                    break shown;
+                }
+            };
+            assert!(!shown.iter().any(|f| f == "Not Installed Anywhere"));
+            for f in &families {
+                let info = fonts.family_info(f);
+                assert_eq!(
+                    shown.contains(f),
+                    filter.matches(info.as_ref()),
+                    "{f} {t:?}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn the_list_draws_in_every_state() {
         let ctx = crate::theme::ui_context();
@@ -1421,12 +1616,20 @@ mod tests {
         });
         out.textures_delta.clear();
         // Every filter and an expanded family draw.
-        for show in Show::ALL {
+        for (i, show) in Show::ALL.into_iter().enumerate() {
+            // With and without a filter, still reading or read (#867).
+            let mut filter = FontFilter::default();
+            if i % 2 == 1 {
+                filter.set(FontTrait::Serif, true);
+                filter.set(FontTrait::Variable, true);
+            }
             let mut st = ListState {
                 show,
                 expanded: Some(first.clone()),
                 typed: Some(first.chars().take(2).collect()),
                 scroll: true,
+                filter,
+                reading: i == 1,
                 ..Default::default()
             };
             st.hovered = Some((first.clone(), (true, false)));
@@ -1743,6 +1946,105 @@ mod live_tests {
         app.dialog = crate::ui::dialogs::Dialog::None;
         assert!(!wheel(&mut app, -1.0));
         assert!(matches!(app.dialog, crate::ui::dialogs::Dialog::None));
+    }
+
+    /// The filter opens inside the font list and leaves it open: its
+    /// button, a box ticked and a choice of which fonts show each keep
+    /// the list up and filter it at once, in every list (#867). A menu
+    /// of its own used to replace the list (egui keeps one popup open).
+    #[test]
+    fn the_filter_opens_inside_the_font_list() {
+        let mut app = App::headless();
+        let ctx = crate::theme::ui_context();
+        let origin = egui::pos2(100.0, 100.0);
+        for salt in [
+            "propbar_font",
+            "docker_text_font",
+            "glyphs_font",
+            "options_default_font",
+        ] {
+            let run = |app: &mut App, events: Vec<egui::Event>| {
+                let mut out = ctx.run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(
+                            egui::Pos2::ZERO,
+                            egui::vec2(1000.0, 900.0),
+                        )),
+                        events,
+                        ..Default::default()
+                    },
+                    |ui| {
+                        egui::Area::new(egui::Id::new("font_host"))
+                            .fixed_pos(origin)
+                            .show(ui.ctx(), |ui| {
+                                if salt == "options_default_font" {
+                                    default_font_list(app, ui, salt, 180.0);
+                                } else {
+                                    text_font_list(app, ui, salt, 180.0);
+                                }
+                            });
+                    },
+                );
+                out.textures_delta.clear();
+            };
+            let click = |app: &mut App, at: egui::Pos2| {
+                let press = |pressed| egui::Event::PointerButton {
+                    pos: at,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                };
+                run(app, vec![egui::Event::PointerMoved(at)]);
+                run(app, vec![press(true)]);
+                run(app, vec![press(false)]);
+                run(app, Vec::new());
+            };
+            let id = egui::Id::new("font_host").with(("font_list", salt));
+            let popup = id.with("popup");
+            let state = || -> ListState { ctx.data(|d| d.get_temp(id)).unwrap_or_default() };
+            run(&mut app, Vec::new());
+            // The arrow at the right of the field opens the list.
+            click(&mut app, origin + egui::vec2(180.0 - 9.0, 9.0));
+            assert!(egui::Popup::is_id_open(&ctx, popup), "{salt}: list opens");
+            // The filter's button shows its choices; the list stays.
+            let button = state().filter_hits.first().copied().expect("filter button");
+            click(&mut app, button.center());
+            assert!(egui::Popup::is_id_open(&ctx, popup), "{salt}: list stays");
+            let st = state();
+            assert!(st.filter_open, "{salt}: choices show");
+            // The four show choices, then the traits.
+            assert_eq!(
+                st.filter_hits.len(),
+                1 + Show::ALL.len() + FontTrait::ALL.len()
+            );
+            let serif = FontTrait::ALL
+                .iter()
+                .position(|t| *t == FontTrait::Serif)
+                .expect("serif");
+            let tick = st.filter_hits[1 + Show::ALL.len() + serif];
+            click(&mut app, tick.center());
+            assert!(egui::Popup::is_id_open(&ctx, popup), "{salt}: list stays");
+            assert!(state().filter.has(FontTrait::Serif), "{salt}: box ticked");
+            // Which fonts show is a choice there too.
+            let installed = state().filter_hits[2];
+            click(&mut app, installed.center());
+            assert!(egui::Popup::is_id_open(&ctx, popup), "{salt}: list stays");
+            let st = state();
+            assert_eq!(st.show, Show::Installed);
+            assert_eq!(filter_count(&st), 2);
+            // The list filters what it lists.
+            let listed = listed_families(&app, st.show, true);
+            let (shown, _) = app.font_previews.filtered(&listed, st.filter);
+            assert!(shown.len() <= listed.len());
+            // A click outside still closes the list.
+            click(&mut app, egui::pos2(900.0, 880.0));
+            assert!(
+                !egui::Popup::is_id_open(&ctx, popup),
+                "{salt}: closes outside"
+            );
+            // The filter is kept for the next time the list opens.
+            assert!(state().filter.has(FontTrait::Serif));
+        }
     }
 
     fn text_of(app: &App, id: tracedraw_core::ShapeId) -> (String, f64) {

@@ -574,3 +574,165 @@ fn frame_times_converting_long_text() {
         );
     }
 }
+
+/// One frame of the whole window with `events`.
+fn frame(ctx: &egui::Context, app: &mut App, events: Vec<egui::Event>) {
+    let input = egui::RawInput {
+        screen_rect: Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(1600.0, 1000.0),
+        )),
+        events,
+        ..Default::default()
+    };
+    let mut out = ctx.run_ui(input, |ui| crate::ui::root(app, ui));
+    out.textures_delta.clear();
+}
+
+fn press(pos: egui::Pos2, pressed: bool) -> egui::Event {
+    egui::Event::PointerButton {
+        pos,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: egui::Modifiers::NONE,
+    }
+}
+
+fn click(ctx: &egui::Context, app: &mut App, at: egui::Pos2) {
+    frame(ctx, app, vec![egui::Event::PointerMoved(at)]);
+    frame(ctx, app, vec![press(at, true)]);
+    frame(ctx, app, vec![press(at, false)]);
+    // Past the double-click time, so the next click is one of its own.
+    for _ in 0..20 {
+        frame(ctx, app, Vec::new());
+    }
+}
+
+fn drag(ctx: &egui::Context, app: &mut App, from: egui::Pos2, to: egui::Pos2) {
+    frame(ctx, app, vec![egui::Event::PointerMoved(from)]);
+    frame(ctx, app, vec![press(from, true)]);
+    for i in 1..=6 {
+        let p = from + (to - from) * (i as f32 / 6.0);
+        frame(ctx, app, vec![egui::Event::PointerMoved(p)]);
+    }
+    frame(ctx, app, vec![press(to, false)]);
+    frame(ctx, app, Vec::new());
+}
+
+fn blend_of(app: &App, id: ShapeId) -> Option<Effect> {
+    app.doc()
+        .find_shape(id)?
+        .effects
+        .iter()
+        .find(|e| matches!(e, Effect::Blend { .. }))
+        .cloned()
+}
+
+/// The Blend tool on a blend of two texts, in the window: a click on
+/// either text picks the blend and shows its controls on the canvas;
+/// dragging the object slider toward the start bunches the steps there,
+/// the colour slider stays, the end stays the end, and each drag is one
+/// undo step (#965).
+#[test]
+fn the_blend_tool_picks_a_text_blend_and_its_sliders_tune_it() {
+    use crate::blend_tool::{screen_normal, BlendHandle, SLIDER_OFFSET_PX};
+    let ctx = crate::theme::ui_context();
+    let mut app = App::headless();
+    app.show_welcome = false;
+    let a = text(&mut app, Point::new(30.0, 150.0), "A");
+    let b = text(&mut app, Point::new(150.0, 150.0), "A");
+    app.run(tracedraw_core::Command::SetFill {
+        shapes: vec![b],
+        fill: Fill::Solid(Color::rgb8(0, 160, 80)),
+    });
+    app.selection = vec![a, b];
+    app.blend_selection(20, 0.0, 0.0, 0.0);
+    assert!(blend_of(&app, a).is_some());
+    app.set_tool(crate::tools::Tool::Blend);
+    app.select(Vec::new());
+    for _ in 0..3 {
+        frame(&ctx, &mut app, Vec::new());
+    }
+    app.zoom_to_page();
+    for _ in 0..2 {
+        frame(&ctx, &mut app, Vec::new());
+    }
+    assert_eq!(app.blend_controls(), None, "nothing selected");
+
+    // A click on the end text picks the blend.
+    let on_b = app.view.to_screen(center(&app, b));
+    click(&ctx, &mut app, on_b);
+    assert_eq!(app.selection, vec![b]);
+    let c = app.blend_controls().expect("the blend's controls");
+    assert_eq!(c.shape, a);
+    // A click on empty space lets go; one on the start text picks it.
+    let empty = app.view.to_screen(Point::new(100.0, 40.0));
+    click(&ctx, &mut app, empty);
+    assert_eq!(app.blend_controls(), None);
+    let on_a = app.view.to_screen(center(&app, a));
+    click(&ctx, &mut app, on_a);
+    assert_eq!(app.selection, vec![a]);
+    let c = app.blend_controls().expect("the blend's controls");
+    assert!((c.start - center(&app, a)).hypot() < 1e-6);
+    assert!((c.end - center(&app, b)).hypot() < 1e-6);
+
+    // The object slider, above the line, dragged to 30 % of the way.
+    let (sa, sb) = (app.view.to_screen(c.start), app.view.to_screen(c.end));
+    let n = screen_normal(sa, sb) * SLIDER_OFFSET_PX;
+    let grab = app.view.to_screen(c.slider_point(BlendHandle::Objects)) + n;
+    assert_eq!(
+        app.blend_handle_at(app.view.to_page(grab)),
+        Some(BlendHandle::Objects)
+    );
+    let undo_before = app.engine.history_labels().0.len();
+    drag(&ctx, &mut app, grab, sa + (sb - sa) * 0.3 + n);
+    let Some(Effect::Blend {
+        accel_objects,
+        accel_colors,
+        end_id,
+        steps,
+        ..
+    }) = blend_of(&app, a)
+    else {
+        panic!("still a blend");
+    };
+    assert!(accel_objects > 0.3, "{accel_objects}");
+    assert_eq!(accel_colors, 0.0);
+    assert_eq!((end_id, steps), (Some(b), 20));
+    assert_eq!(app.selection, vec![a], "the blend stays selected");
+    assert_eq!(app.engine.history_labels().0.len(), undo_before + 1);
+    // The bar shows the new value.
+    assert_eq!(app.blend_accel_objects, accel_objects);
+    // The steps follow: the middle one now nearer the start.
+    let s = app.doc().find_shape(a).expect("a").clone();
+    let ev = tracedraw_core::live::evaluate(&s);
+    let mut xs: Vec<f64> = ev
+        .below
+        .iter()
+        .chain(&ev.above)
+        .map(|s| s.page_path().bounding_box().center().x)
+        .collect();
+    xs.sort_by(f64::total_cmp);
+    let middle = xs[xs.len() / 2];
+    assert!(middle < (c.start.x + c.end.x) / 2.0 - 5.0, "{middle}");
+
+    // The colour slider, below the line, toward the end.
+    let c = app.blend_controls().expect("controls");
+    let grab = app.view.to_screen(c.slider_point(BlendHandle::Colors)) - n;
+    assert_eq!(
+        app.blend_handle_at(app.view.to_page(grab)),
+        Some(BlendHandle::Colors)
+    );
+    drag(&ctx, &mut app, grab, sa + (sb - sa) * 0.7 - n);
+    let Some(Effect::Blend {
+        accel_objects: o2,
+        accel_colors,
+        ..
+    }) = blend_of(&app, a)
+    else {
+        panic!("still a blend");
+    };
+    assert!(accel_colors < -0.3, "{accel_colors}");
+    assert_eq!(o2, accel_objects, "the object slider stays");
+    assert_eq!(app.engine.history_labels().0.len(), undo_before + 2);
+}
