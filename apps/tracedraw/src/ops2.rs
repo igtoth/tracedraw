@@ -501,7 +501,7 @@ impl App {
         for s in shapes {
             // A vector object with bitmap effects becomes the bitmap of its
             // picture, in its place.
-            if let Some(pic) = s.drawn_as() {
+            if let Some(pic) = s.picture() {
                 let id = vec![s.id];
                 cmds.extend([
                     Command::SetShapeKind {
