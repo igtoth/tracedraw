@@ -67,7 +67,12 @@ curve stays open.
 | Degrees | 90 | 0 to 359 |
 
 - The bar shows the selected object's distortion (its kind and values)
-  and edits the selected distortions; each change is one undo step.
+  and edits the selected distortions; each change is one undo step (a
+  run of edits of the same objects, typing on, is one). A value changed
+  on the bar also distorts the selected objects that have no distortion
+  yet, about their middles, so the change shows at once (#1030,
+  `distort_tool::tests::a_bar_edit_previews_on_an_undistorted_selection`);
+  a kind button alone only turns existing distortions into that kind.
 - Center Distortion: the selected distortions about their objects'
   middles again. Clear Distortion removes them. Convert to Curves
   (Ctrl+Q) makes the distorted outline the object's own (the object
@@ -87,6 +92,7 @@ curve stays open.
 - `distort_tool::tests::a_drag_distorts_about_where_it_started`
 - `distort_tool::tests::the_bar_edits_the_selected_distortion`
 - `distort_tool::tests::settings_round_trip_and_stay_in_range`
+- `distort_tool::tests::a_bar_edit_previews_on_an_undistorted_selection`
 - `ui::distort_bar::tests::the_bar_draws_for_every_kind_and_shows_the_selection`
 - Given a 20 mm square about its middle and Push and Pull 50, then a
   corner node is 1.5 times as far from the middle and the middle of a
