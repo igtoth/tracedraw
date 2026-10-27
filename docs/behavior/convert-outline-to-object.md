@@ -18,6 +18,10 @@ One undo step, and the new objects are selected.
   Length band is built from the path flattened to 0.005 mm for it: the
   eased width becomes a few curves on each side and the butt ends lines
   (#627).
+- A combined curve's subpaths are stroked one by one and the pieces
+  joined into one shape (nonzero union), so where its lines cross the
+  result is filled as the outline was drawn, not a hole under the
+  even-odd fill of curves (#997).
 - A closed path, an ellipse included, is stroked all round, with no
   ends at its start.
 - The result is clean: the stroke is computed on short lines, then
@@ -48,6 +52,10 @@ One undo step, and the new objects are selected.
   (`tools2::tests::an_open_curve_is_replaced_by_its_outline`); a filled
   middle rectangle keeps its fill with the outline object right above it
   (`tools2::tests::a_filled_object_keeps_its_fill_under_its_outline`).
+- Given a combined curve of a curved stem and a straight bar crossing
+  it with a 4 mm round outline, the result is one closed shape filled
+  at the crossing and along both strokes
+  (`tools2::tests::crossing_subpaths_become_one_filled_shape`).
 - Given a line with a dashed outline, the result is one closed shape
   per dash with the gaps empty
   (`tools2::tests::a_dashed_outline_becomes_one_shape_per_dash`).
