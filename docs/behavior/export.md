@@ -23,11 +23,24 @@ Office presets start with their own (see `options.md`).
 | SVG, EPS, AI, DXF, HTML, EMF, WMF, PLT | none |
 | PostScript (`.ps`), PRN (`.prn`) | none; every exported page in one file (All pages, else the current page), each page setting its size with `setpagedevice` and ending with `showpage` (Document Structuring Conventions 3.0); a `.prn` print file is the same PostScript, to send to a PostScript printer |
 
-- Bitmap formats show the size in pixels, the page (or selection) size
-  over 25.4 times the resolution rounded up, as two fields: typing a
-  width or a height sets the resolution that gives it, the other side
-  following the page's proportions, so a 32 x 32 pixel icon is typed
-  rather than worked out.
+- Bitmap formats show Size: a width and a height and their unit (px,
+  mm, cm or in, kept with the other choices; #617). In pixels the size
+  is the page (or selection) size over 25.4 times the resolution,
+  rounded up, and typing a width or a height sets the resolution that
+  gives it, so a 32 x 32 pixel icon is typed rather than worked out. In
+  a length it is the printed size: typing a width or a height sets the
+  scale of the artwork (the resolution stays), from 1 % to 10000 % and
+  never past what 2400 dpi can draw; a button with the scale ("200 %")
+  shows when it is not 100 % and puts it back. Either way the other side
+  follows the page's proportions.
+- Under the size: what comes out, "1240 x 1754 pixels, 150 dpi, sRGB"
+  ("sRGB + alpha" with a transparent background).
+- PNG, JPEG and BMP files record the resolution of the dialog (PNG
+  `pHYs`, the JFIF density, the BMP header's pixels per metre), so a
+  scaled export opens at the printed size chosen; the scale multiplies
+  the pixels, not that resolution (#617,
+  `export::tests::bitmap_exports_record_their_resolution_and_scale`,
+  `export::tests::the_export_size_is_typed_in_pixels_or_lengths`).
 - File size: vector formats (SVG, EPS, PostScript, PDF, AI) are written in memory and
   measured; bitmap formats are estimated by encoding the preview the same
   way and scaling by the pixel count of the export (times the pages with
@@ -63,8 +76,8 @@ not know shows with every format; its name must be free in all of them
 
 Choosing a preset
 puts back its format, resolution, quality, transparent background,
-selection only, all pages and the PDF choices (standard, bleed, output
-condition). Presets are kept in the preferences
+selection only, all pages, the size's unit and scale and the PDF
+choices (standard, bleed, output condition). Presets are kept in the preferences
 (`formats.export_presets`; #547,
 `prefs::tests::export_presets_save_apply_rename_and_delete`).
 
@@ -85,6 +98,15 @@ of Options > Global > File Formats, which keep the last
 export's choices for the next session while Remember the settings of the
 last export is on (on in new preferences; `options.md`, #617).
 
+Each format also keeps how it was exported last: choosing a format in the
+dialog brings back its resolution, quality, transparent background,
+WebP lossless, all pages, size unit and scale and PDF choices (Selected
+only and the preset stay as they are), from this session's exports and,
+with Remember the settings of the last export on, from earlier ones
+(`formats.export_by_format`). A format not exported yet keeps the
+dialog's choices, and Export for Web and Office keep their own (#617,
+`prefs::tests::each_export_format_comes_back_as_it_was_last_exported`).
+
 ## Checks
 
 - `export::tests::the_export_preview_shows_the_page_and_estimates_the_size`
@@ -92,6 +114,9 @@ last export is on (on in new preferences; `options.md`, #617).
 - `export::tests::sizes_read_in_kilobytes_and_megabytes`
 - `ui::dialogs::tests::a_pixel_size_sets_the_resolution_that_gives_it`
 - `pick_drag_tests::the_export_dialog_lists_only_the_presets_of_its_format`
+- `export::tests::bitmap_exports_record_their_resolution_and_scale`
+- `export::tests::the_export_size_is_typed_in_pixels_or_lengths`
+- `prefs::tests::each_export_format_comes_back_as_it_was_last_exported`
 
 ## Format list and file properties
 
