@@ -123,7 +123,10 @@ at once (#437). From top to bottom:
   waits for a click on the shape (it shows pressed, the status bar asks
   for the shape and the pointer is the Place Inside arrow, as for Place
   Inside Frame on the Object menu); the click takes the object under it,
-  also one inside a group, and makes it the frame; Esc, a right click or
+  also one inside a group, and makes it the frame; under a picture a
+  clip frame holds, the click takes the outermost clip frame holding it,
+  never the picture (#596,
+  `print_merge_docker::tests::a_click_on_a_framed_shape_takes_the_frame_not_its_picture`); Esc, a right click or
   a click on nothing cancels
   (`print_merge_docker::tests::place_inside_frame_uses_the_users_shapes_also_in_a_group`,
   `pick_drag_tests::place_inside_frame_waits_for_a_click_with_its_arrow`,
