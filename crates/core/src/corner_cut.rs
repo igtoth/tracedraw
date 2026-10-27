@@ -2,7 +2,10 @@
 //! panel). A corner is a node where two segments meet
 //! at an angle; smooth and symmetrical nodes are not corners. Corners are
 //! cut in path order, and one whose segments are too short for the cut,
-//! after the cuts already made on them, is left as it is.
+//! after the cuts already made on them, is left as it is. A corner
+//! filleted between straight sides is found again by its arc
+//! ([`fillets`]) and can be taken back off ([`unround`]), so its radius
+//! can change later (#872).
 
 use crate::geometry::{
     BezPath, CubicBez, Line, ParamCurve, ParamCurveArclen, PathEl, PathSeg, Point, Vec2,
@@ -211,8 +214,22 @@ pub struct Corner {
 /// The corners of `path` that [`cut_corners`] would cut, in path order.
 /// Cheap: no lengths are measured.
 pub fn corners(path: &BezPath) -> Vec<Corner> {
+    corners_of(&subpaths(path))
+}
+
+/// The corners and the rounded corners of `path` ([`corners`] and
+/// [`fillets`]), the curve read once.
+pub fn corners_and_fillets(path: &BezPath) -> (Vec<Corner>, Vec<Fillet>) {
+    let subs = subpaths(path);
+    (
+        corners_of(&subs),
+        fillets_at(&subs).into_iter().map(|f| f.fillet).collect(),
+    )
+}
+
+fn corners_of(subs: &[Sub]) -> Vec<Corner> {
     let mut out = Vec::new();
-    for sub in subpaths(path) {
+    for sub in subs {
         let n = sub.segs.len();
         if n == 0 {
             continue;
@@ -429,6 +446,292 @@ pub fn cut_corners(path: &BezPath, cut: CornerCut, only: Option<&[usize]>) -> (B
     (out, count)
 }
 
+/// A rounded corner of a curve: a circular arc (one cubic or more)
+/// between two straight sides and tangent to both, as a fillet leaves
+/// it. The sides, extended, meet at the sharp corner it rounds (#872).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Fillet {
+    /// The arc's nodes (element indices, as the Shape tool counts them):
+    /// where it leaves the incoming side, its inner nodes, and where it
+    /// meets the outgoing side.
+    pub nodes: Vec<usize>,
+    /// The sharp corner: where the two sides meet when extended.
+    pub corner: Point,
+    /// The unit direction from the sharp corner into it.
+    pub inside: Vec2,
+    /// The angle between the sides (radians).
+    pub theta: f64,
+    /// The arc's radius.
+    pub radius: f64,
+}
+
+impl Fillet {
+    /// How far the arc's middle lies from the sharp corner, along
+    /// `inside`: `r (1 / sin(theta / 2) - 1)`.
+    pub fn depth(&self) -> f64 {
+        let s = (self.theta / 2.0).sin();
+        if s > 1e-9 {
+            self.radius * (1.0 / s - 1.0)
+        } else {
+            0.0
+        }
+    }
+}
+
+/// A fillet and where its pieces sit in its subpath: the subpath, the
+/// incoming side, the arc's segments and the outgoing side (segment
+/// positions in [`Sub::segs`]).
+struct FilletAt {
+    sub: usize,
+    side_in: usize,
+    arc: Vec<usize>,
+    side_out: usize,
+    fillet: Fillet,
+}
+
+fn fillets_at(subs: &[Sub]) -> Vec<FilletAt> {
+    let mut out = Vec::new();
+    for (si, sub) in subs.iter().enumerate() {
+        let n = sub.segs.len();
+        if n < 3 {
+            continue;
+        }
+        let is_line = |k: usize| matches!(sub.segs[k].0, PathSeg::Line(_));
+        let last = if sub.closed { n } else { n - 1 };
+        for k in 0..last {
+            if !is_line(k) {
+                continue;
+            }
+            let mut arc = Vec::new();
+            let mut m = k + 1;
+            loop {
+                if !sub.closed && m >= n {
+                    break;
+                }
+                let j = m % n;
+                if j == k || is_line(j) {
+                    break;
+                }
+                arc.push(j);
+                m += 1;
+            }
+            if arc.is_empty() || (!sub.closed && m >= n) {
+                continue;
+            }
+            let side_out = m % n;
+            if side_out == k {
+                continue;
+            }
+            if let Some(fillet) = fillet_of(sub, k, &arc, side_out) {
+                out.push(FilletAt {
+                    sub: si,
+                    side_in: k,
+                    arc,
+                    side_out,
+                    fillet,
+                });
+            }
+        }
+    }
+    out
+}
+
+/// The fillet the segments `arc` of `sub` make between the sides
+/// `side_in` and `side_out`, if they are a circular arc tangent to both.
+fn fillet_of(sub: &Sub, side_in: usize, arc: &[usize], side_out: usize) -> Option<Fillet> {
+    let (PathSeg::Line(l_in), PathSeg::Line(l_out)) = (sub.segs[side_in].0, sub.segs[side_out].0)
+    else {
+        return None;
+    };
+    let d_in = unit(l_in.p1 - l_in.p0)?;
+    let d_out = unit(l_out.p1 - l_out.p0)?;
+    let theta = (-d_in).dot(d_out).clamp(-1.0, 1.0).acos();
+    if !(1e-3..=std::f64::consts::PI - 1e-3).contains(&theta) {
+        return None;
+    }
+    // Smooth all along: the arc leaves and meets the sides along them.
+    const SMOOTH: f64 = 1.0 - 1e-6;
+    let segs: Vec<&PathSeg> = arc.iter().map(|j| &sub.segs[*j].0).collect();
+    let first = segs.first()?;
+    let last = segs.last()?;
+    if start_dir(first)?.dot(d_in) < SMOOTH || end_dir(last)?.dot(d_out) < SMOOTH {
+        return None;
+    }
+    for w in segs.windows(2) {
+        if end_dir(w[0])?.dot(start_dir(w[1])?) < SMOOTH {
+            return None;
+        }
+    }
+    // The sides meet at the corner, as far from both ends of the arc.
+    let (p0, p1) = (l_in.p1, l_out.p0);
+    let den = d_in.cross(d_out);
+    if den.abs() < 1e-12 {
+        return None;
+    }
+    let a = (p1 - p0).cross(d_out) / den;
+    let b = d_in.cross(p1 - p0) / den;
+    if !(a > 1e-9 && b > 1e-9 && a.is_finite() && b.is_finite()) {
+        return None;
+    }
+    if (a - b).abs() > 1e-6 + 1e-3 * a.max(b) {
+        return None;
+    }
+    let radius = (a + b) / 2.0 * (theta / 2.0).tan();
+    let corner = p0 + d_in * a;
+    // The arc turns the way the sides do, by as much, and keeps to the
+    // circle tangent to both.
+    let sweep = turn(d_in, d_out);
+    let mut turned = 0.0;
+    for s in &segs {
+        turned += turn(start_dir(s)?, end_dir(s)?);
+    }
+    if (turned - sweep).abs() > 1e-3 {
+        return None;
+    }
+    let normal = if sweep >= 0.0 {
+        Vec2::new(-d_in.y, d_in.x)
+    } else {
+        Vec2::new(d_in.y, -d_in.x)
+    };
+    let center = p0 + normal * radius;
+    let tol = 2e-3 * radius + 1e-7;
+    for s in &segs {
+        for t in [0.0, 0.25, 0.5, 0.75, 1.0] {
+            if ((s.eval(t) - center).hypot() - radius).abs() > tol {
+                return None;
+            }
+        }
+    }
+    let inside = unit(d_out - d_in)?;
+    let mut nodes = vec![sub.segs[side_in].1];
+    nodes.extend(arc.iter().map(|j| sub.segs[*j].1));
+    Some(Fillet {
+        nodes,
+        corner,
+        inside,
+        theta,
+        radius,
+    })
+}
+
+/// The rounded corners of `path`: circular arcs between straight sides,
+/// tangent to both, as [`cut_corners`] fillets them, in path order. A
+/// corner filleted between curved sides is not one.
+pub fn fillets(path: &BezPath) -> Vec<Fillet> {
+    fillets_at(&subpaths(path))
+        .into_iter()
+        .map(|f| f.fillet)
+        .collect()
+}
+
+/// `path` with the rounded corners `which` (positions in
+/// [`fillets`]`(path)`; every one without it) taken back off: their sides
+/// run on to the sharp corner again. Also returns, for each element index
+/// of `path`, the index of the same node in the new path (the nodes of a
+/// rounded corner taken off become its sharp corner); `None` for the
+/// elements that are no node of it.
+pub fn unround(path: &BezPath, which: Option<&[usize]>) -> (BezPath, Vec<Option<usize>>) {
+    let normal = crate::nodes::normalize(path);
+    let subs = subpaths(&normal);
+    let all = fillets_at(&subs);
+    let chosen: Vec<&FilletAt> = all
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| which.is_none_or(|w| w.contains(i)))
+        .map(|(_, f)| f)
+        .collect();
+    let mut map = vec![None; normal.elements().len()];
+    let mut out = BezPath::new();
+    for (si, sub) in subs.iter().enumerate() {
+        let n = sub.segs.len();
+        let here: Vec<&&FilletAt> = chosen.iter().filter(|f| f.sub == si).collect();
+        if n == 0 {
+            // A lone move-to (and its close) stays.
+            if let Some(PathEl::MoveTo(p)) = normal.elements().get(sub.start_index) {
+                map[sub.start_index] = Some(out.elements().len());
+                out.move_to(*p);
+                if sub.closed {
+                    out.close_path();
+                }
+            }
+            continue;
+        }
+        let dropped = |k: usize| here.iter().any(|f| f.arc.contains(&k));
+        let ends_at = |k: usize| {
+            here.iter()
+                .find(|f| f.side_in == k)
+                .map(|f| f.fillet.corner)
+        };
+        let starts_at = |k: usize| {
+            here.iter()
+                .find(|f| f.side_out == k)
+                .map(|f| f.fillet.corner)
+        };
+        // A closed subpath starts on a segment that stays.
+        let first = if sub.closed {
+            (0..n).find(|k| !dropped(*k)).unwrap_or(0)
+        } else {
+            0
+        };
+        let seg_start = |k: usize| starts_at(k).unwrap_or_else(|| sub.segs[k].0.eval(0.0));
+        let move_index = out.elements().len();
+        out.move_to(seg_start(first));
+        if !sub.closed {
+            map[sub.start_index] = Some(move_index);
+        }
+        let order: Vec<usize> = (0..n).map(|i| (first + i) % n).collect();
+        let kept: Vec<usize> = order.iter().copied().filter(|k| !dropped(*k)).collect();
+        for (pos, &k) in kept.iter().enumerate() {
+            let (seg, index) = &sub.segs[k];
+            let last = pos + 1 == kept.len();
+            match seg {
+                PathSeg::Line(l) => {
+                    let to = ends_at(k).unwrap_or(l.p1);
+                    if sub.closed && last {
+                        // The close draws the side back to the start.
+                        map[*index] = Some(move_index);
+                    } else {
+                        map[*index] = Some(out.elements().len());
+                        out.line_to(to);
+                    }
+                }
+                PathSeg::Quad(q) => {
+                    map[*index] = Some(out.elements().len());
+                    out.quad_to(q.p1, q.p2);
+                }
+                PathSeg::Cubic(c) => {
+                    map[*index] = Some(out.elements().len());
+                    out.curve_to(c.p1, c.p2, c.p3);
+                }
+            }
+        }
+        if sub.closed {
+            // The start node is the end of the last segment.
+            map[sub.start_index] = sub.segs.last().and_then(|(_, i)| map[*i]);
+            out.close_path();
+        }
+        for f in &here {
+            let corner = map[sub.segs[f.side_in].1];
+            for node in &f.fillet.nodes {
+                map[*node] = corner;
+            }
+            if sub.closed && f.fillet.nodes.contains(&sub.start_index) {
+                map[sub.start_index] = corner;
+            }
+        }
+        // A rounded corner whose arc ended on the start: the start node
+        // is now that corner.
+        if sub.closed {
+            if let Some((_, i)) = sub.segs.last() {
+                if map[sub.start_index].is_none() {
+                    map[sub.start_index] = map[*i];
+                }
+            }
+        }
+    }
+    (out, map)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -584,5 +887,143 @@ mod tests {
         let (p, n) = cut_corners(&BezPath::new(), CornerCut::Fillet(1.0), None);
         assert_eq!(n, 0);
         assert!(p.elements().is_empty());
+    }
+
+    /// A filleted square's rounded corners are found again, with the
+    /// radius they were cut with and the sharp corner they round; taking
+    /// them off gives the square back, and the nodes of each arc map to
+    /// its corner node (#872).
+    #[test]
+    fn rounded_corners_are_found_and_taken_back_off() {
+        let sq = square();
+        assert!(fillets(&sq).is_empty(), "a sharp square has none");
+        let (round, n) = cut_corners(&sq, CornerCut::Fillet(3.0), None);
+        assert_eq!(n, 4);
+        let found = fillets(&round);
+        assert_eq!(found.len(), 4, "{found:?}");
+        assert_eq!(
+            corners_and_fillets(&round),
+            (corners(&round), found.clone())
+        );
+        let want = [
+            Point::new(0.0, 0.0),
+            Point::new(10.0, 0.0),
+            Point::new(10.0, 10.0),
+            Point::new(0.0, 10.0),
+        ];
+        for f in &found {
+            assert!((f.radius - 3.0).abs() < 1e-6, "{}", f.radius);
+            assert!((f.theta - std::f64::consts::FRAC_PI_2).abs() < 1e-6);
+            assert!(
+                want.iter().any(|w| (*w - f.corner).hypot() < 1e-6),
+                "{:?}",
+                f.corner
+            );
+            assert!(f.nodes.len() >= 2);
+            // The arc's middle lies `depth` into the corner.
+            assert!((f.depth() - 3.0 * (2f64.sqrt() - 1.0)).abs() < 1e-9);
+        }
+        let (back, map) = unround(&round, None);
+        assert!((back.area() - sq.area()).abs() < 1e-6, "{}", back.area());
+        assert_eq!(corners(&back).len(), 4);
+        assert!(fillets(&back).is_empty());
+        assert_eq!(map.len(), round.elements().len());
+        let back_corners = corners(&back);
+        for f in &found {
+            let at = map[f.nodes[0]].expect("mapped");
+            for node in &f.nodes {
+                assert_eq!(map[*node], Some(at), "{node} of {:?}", f.nodes);
+            }
+            let c = back_corners
+                .iter()
+                .find(|c| c.node == at)
+                .expect("a corner node");
+            assert!((c.at - f.corner).hypot() < 1e-6);
+        }
+        // Rounded again with another radius: the same as rounding the
+        // square with it.
+        let (again, _) = cut_corners(&back, CornerCut::Fillet(4.0), None);
+        let (direct, _) = cut_corners(&sq, CornerCut::Fillet(4.0), None);
+        assert!((again.area() - direct.area()).abs() < 1e-6);
+        assert!(fillets(&again)
+            .iter()
+            .all(|f| (f.radius - 4.0).abs() < 1e-6));
+    }
+
+    /// Only the rounded corners asked for are taken off; a corner rounded
+    /// on its own, on an open curve, comes back too.
+    #[test]
+    fn chosen_rounded_corners_are_taken_off_alone() {
+        let sq = square();
+        // Round the corner at (10, 10) only: node 2.
+        let (one, n) = cut_corners(&sq, CornerCut::Fillet(2.0), Some(&[2]));
+        assert_eq!(n, 1);
+        let found = fillets(&one);
+        assert_eq!(found.len(), 1);
+        assert!((found[0].corner - Point::new(10.0, 10.0)).hypot() < 1e-6);
+        let (back, map) = unround(&one, Some(&[0]));
+        assert!((back.area() - sq.area()).abs() < 1e-6);
+        let node = map[found[0].nodes[0]].expect("mapped");
+        let (rounded, n) = cut_corners(&back, CornerCut::Fillet(1.0), Some(&[node]));
+        assert_eq!(n, 1);
+        assert!((fillets(&rounded)[0].radius - 1.0).abs() < 1e-6);
+        // None asked for: nothing changes.
+        let (same, _) = unround(&one, Some(&[]));
+        assert!((same.area() - one.area()).abs() < 1e-9);
+        assert_eq!(fillets(&same).len(), 1);
+        // An open zigzag's inner corners.
+        let mut zig = BezPath::new();
+        zig.move_to((0.0, 0.0));
+        zig.line_to((10.0, 0.0));
+        zig.line_to((10.0, 10.0));
+        zig.line_to((20.0, 10.0));
+        let (r, n) = cut_corners(&zig, CornerCut::Fillet(2.5), None);
+        assert_eq!(n, 2);
+        let found = fillets(&r);
+        assert_eq!(found.len(), 2);
+        let (back, _) = unround(&r, None);
+        let pts: Vec<Point> = back
+            .elements()
+            .iter()
+            .filter_map(|e| e.end_point())
+            .collect();
+        assert_eq!(pts.len(), 4, "{pts:?}");
+        for (a, b) in pts.iter().zip(
+            [(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (20.0, 10.0)]
+                .iter()
+                .map(|p| Point::new(p.0, p.1)),
+        ) {
+            assert!((*a - b).hypot() < 1e-9, "{a:?} {b:?}");
+        }
+    }
+
+    /// Curves that only look rounded are not rounded corners: an arc
+    /// that is not tangent to its sides, a curve that is no circle, a
+    /// circle with no sides, scallops and chamfers.
+    #[test]
+    fn other_curves_are_not_rounded_corners() {
+        let sq = square();
+        let (scallop, _) = cut_corners(&sq, CornerCut::Scallop(2.0), None);
+        assert!(fillets(&scallop).is_empty());
+        let (chamfer, _) = cut_corners(&sq, CornerCut::Chamfer(2.0, 2.0), None);
+        assert!(fillets(&chamfer).is_empty());
+        let circle = crate::geometry::Circle::new((0.0, 0.0), 5.0).to_path(1e-3);
+        assert!(fillets(&circle).is_empty());
+        // Tangent to both sides but no circular arc.
+        let mut p = BezPath::new();
+        p.move_to((0.0, 0.0));
+        p.line_to((7.0, 0.0));
+        p.curve_to((9.5, 0.0), (10.0, 0.5), (10.0, 3.0));
+        p.line_to((10.0, 10.0));
+        assert!(fillets(&p).is_empty());
+        // Malformed values never panic.
+        let mut bad = BezPath::new();
+        bad.move_to((f64::NAN, 0.0));
+        bad.line_to((1.0, f64::INFINITY));
+        bad.curve_to((2.0, 2.0), (3.0, 3.0), (4.0, 4.0));
+        bad.line_to((5.0, 0.0));
+        let _ = fillets(&bad);
+        let _ = unround(&bad, None);
+        let _ = unround(&BezPath::new(), None);
     }
 }

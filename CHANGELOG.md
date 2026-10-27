@@ -7,6 +7,17 @@ full, row-by-row status.
 ## Unreleased
 
 - Pick tool: the pointer shows the move arrows only over what is selected. Over any other object it keeps the plain arrow (or the cross hair), as a press there picks that object first, so starting a marquee or picking objects that lie inside a frame or over other objects is no longer hidden under the move arrows. Dragging an unselected object still picks and moves it, and Alt+click still picks the object beneath (#885).
+
+- Save As .cdr with Embed fonts: the embedded fonts are written as files that embed fonts have them. Each font in the file's font list now carries the number the text uses for it (the faces of a family share it), the embedded fonts follow those numbers, and their headers have the names, character set and checksums such files hold, so other programs can match the text to its embedded font; before, the fonts were numbered 1, 2, 3 in turn, which only TraceDraw itself did not need (#352).
+
+- Shape tool: a corner rounded with its corner widget can be rounded again. Selecting the curve later shows a widget on each rounded corner, and dragging it changes the radius from the one it has, further in or back to a sharp corner; the widget had disappeared once the corner was rounded. This works for corners rounded between straight sides, also in saved drawings and with the Corners panel (#872).
+- Shape tool: the rings inside the corners of a curve being edited, dragged to round them, are now a preference, Options > Nodes and Handles > Show corner rounding rings on curve nodes, and are off at first, so they no longer get in the way of editing nodes. Turn it on to round the corners of curves by dragging again; rectangles round their corners as before (#884).
+- Print Merge: a Number field has a Format: 1, 2, 3, the letters A, B, C or a, b, c (Z is followed by AA), or Custom, which puts a text of your own before and after the number, for tickets and serial numbers such as "Ticket T-0098". Chosen in Add Column and in Configure Columns (#930).
+
+- Open Palette: XML palette files open, with their colours' names and CMYK, RGB or Lab values (spot colours are skipped, and a file with nothing readable says so), and the file filter lists the extensions it accepts. `.xml` files were not offered at all, and the filter showed only "Palettes" (#882).
+
+## 0.19.6 (2026-10-26)
+
 - Multipage View: zooming with every page in view stays smooth, and the other pages scale with the zoom instead of jiggling and stretching. Each page was drawn anew on every frame of the zoom, and the picture shown meanwhile was stretched over the page's visible part; now the last picture follows its page until the view rests, and the pages are then drawn a few per frame. On nine pages of 1500 curves each, a zoom frame went from about 300 ms to under 1 ms (#903, #902).
 - Blend: the objects acceleration slider moves the steps toward the start or the end object, also when the blend follows no path. It changed only their sizes (with Apply to sizing) and turns, so moving it seemed to do nothing (#910).
 - Print Preview: the options at the left are wider and their edge drags wider, and what still does not fit scrolls sideways, so longer languages (Spanish and others) are no longer cut off at the right (#862).

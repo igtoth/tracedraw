@@ -54,6 +54,7 @@ page dans la liste de gauche.
 - [[options.node_shape]] pour les nœuds [[options.node_cusp]],
   [[options.node_smooth]] et [[options.node_symmetrical]].
 - [[options.show_curve_direction]].
+- [[options.corner_widgets]].
 - [[options.colors]] : la [[options.main_color]] des nœuds et poignées
   sélectionnés et la [[options.secondary_color]].
 - [[options.unselected_nodes_filled]].

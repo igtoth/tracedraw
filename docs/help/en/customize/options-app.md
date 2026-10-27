@@ -49,6 +49,7 @@ sets how the program works. Choose a page from the list on the left.
 - [[options.node_shape]] for [[options.node_cusp]], [[options.node_smooth]]
   and [[options.node_symmetrical]] nodes.
 - [[options.show_curve_direction]].
+- [[options.corner_widgets]].
 - [[options.colors]]: the [[options.main_color]] of selected nodes and handles
   and the [[options.secondary_color]].
 - [[options.unselected_nodes_filled]].

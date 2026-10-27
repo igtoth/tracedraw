@@ -151,7 +151,12 @@ step.
 A curve being edited shows a small white circle with a ring in the node
 colour inside each corner (a node where two segments meet at an angle,
 as the Corners panel counts them), 18 px from the node along the middle
-of the corner (#635).
+of the corner (#635), when Options > Nodes and Handles > Show corner
+rounding rings on curve nodes is on. That preference is off at first, so
+the widgets do not get in the way of node editing (#884); it is saved
+with the other preferences. With it off no widget shows and a press where
+one would sit works as any other press of the Shape tool. Rectangles
+round their corners with their own handles either way.
 
 - With no node chosen every corner has one (a curve with more than 32
   corners shows none, so a traced outline is not covered in them); with
@@ -166,11 +171,30 @@ of the corner (#635).
   rounding back off. The status bar shows the radius.
 - Open curves round their inner corners the same way.
 - The drag is one undo step, "Fillet". The rounded corners become arcs
-  of the curve (nodes and segments, as the Corners panel makes them), so
-  a rounded corner no longer shows a widget; the chosen nodes are
-  cleared.
+  of the curve (nodes and segments, as the Corners panel makes them); the
+  chosen nodes are cleared.
+- A rounded corner keeps its widget, so its radius can change again
+  later (#872). A rounded corner is a circular arc (one cubic or more,
+  smooth where they join) between two straight sides, tangent to both,
+  whose sides, run on, meet as far from both ends of the arc; the
+  radius is read back from the arc. Its widget sits 18 px off the
+  middle of the arc, along the middle of the corner. Dragging it takes
+  the corner back to the sharp corner its sides meet at and rounds that
+  again, starting from the radius it had: with no node chosen every
+  corner of the curve (sharp or rounded) takes the new radius, with
+  nodes chosen only theirs (a rounded corner is chosen by any node of
+  its arc). Dragging back past the corner makes it sharp. Arcs between
+  curved sides, scallops and chamfers are not found again.
+- The arcs are found from the curve itself, so a drawing saved and
+  opened again, or a curve rounded with the Corners panel, keeps its
+  widgets too; no extra data is stored.
 - A click on a widget keeps the selection.
-- Checked by `pick_drag_tests::corner_widgets_round_every_corner_or_the_chosen_ones`
+- Checked by `pick_drag_tests::corner_widgets_round_every_corner_or_the_chosen_ones`,
+  `pick_drag_tests::corner_widgets_follow_their_preference_off_by_default`,
+  `pick_drag_tests::rounded_corners_keep_their_widgets_and_round_again`,
+  `corner_cut::tests::rounded_corners_are_found_and_taken_back_off`,
+  `corner_cut::tests::chosen_rounded_corners_are_taken_off_alone`,
+  `corner_cut::tests::other_curves_are_not_rounded_corners`
   and `tracedraw_core` `corner_cut::tests::corners_and_the_largest_fillet_they_take`.
 
 ## Rectangles, ellipses and polygons
