@@ -954,6 +954,41 @@ impl App {
         }
     }
 
+    /// A selection box or freehand selection of the Pick tools is being
+    /// dragged.
+    pub fn selecting(&self) -> bool {
+        matches!(self.drag, Drag::Marquee { .. } | Drag::Lasso { .. })
+            && matches!(self.tool, Tool::Pick | Tool::FreeformPick)
+    }
+
+    /// A selection box (or freehand selection) runs from the press until
+    /// the left button goes up, whatever the right button does meanwhile:
+    /// a right press is ignored. egui takes the right press for the start
+    /// of a new click or drag and never reported the left release as the
+    /// end of the drag, so the box stayed on the canvas, frozen, until the
+    /// next one replaced it (#1015). While the left button is held the box
+    /// follows the latest pointer position even when egui reports no
+    /// hover after the right press.
+    fn selection_drag_input(
+        &mut self,
+        response: &Response,
+        hover: Option<egui::Pos2>,
+        mods: Modifiers,
+    ) {
+        let held = response.ctx.input(|i| i.pointer.primary_down());
+        let at = hover.or(if held { self.pointer_screen } else { None });
+        if let Some(s) = at {
+            let p = self.view.to_page(s);
+            self.pointer_page = Some(p);
+            if held {
+                self.pick_drag_to(p, mods);
+            }
+        }
+        if !held {
+            self.end_drag();
+        }
+    }
+
     pub(crate) fn handle_at(&self, screen: egui::Pos2) -> Option<Handle> {
         let b = self.selection_bounds()?;
         let reach = if self.rotate_mode {
@@ -999,6 +1034,10 @@ impl App {
                     .unwrap_or(tracedraw_core::Color::WHITE);
                 crate::ui::color_picker::finish_pick(&response.ctx, Some(c));
             }
+            return;
+        }
+        if self.selecting() {
+            self.selection_drag_input(response, hover, mods);
             return;
         }
         let Some(p) = pointer else {
