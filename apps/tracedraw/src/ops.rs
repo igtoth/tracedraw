@@ -966,20 +966,49 @@ impl App {
         let mut ordered = shapes.clone();
         ordered.sort_by_key(|s| doc.locate(s.id).map(|(_, i)| i).unwrap_or(0));
         let target = shapes.last().cloned().unwrap_or_else(|| ordered[0].clone());
-        // Weld, Trim and Intersect: an open curve as the target is cut by
-        // the closed objects and stays open; an open curve acting on a
-        // closed target takes no part (cutting a shape in two along a
-        // line is the Knife's job) and stays as it is (#828).
+        // The object that keeps its attributes and is cut: the target, the
+        // front one (Front Minus Back) or the back one (Back Minus Front).
+        let kept = match op {
+            Shaping::FrontMinusBack => ordered.last().cloned().unwrap_or(target.clone()),
+            Shaping::BackMinusFront => ordered[0].clone(),
+            _ => target.clone(),
+        };
         let open = |s: &Shape| matches!(s.kind, ShapeKind::Path { closed: false, .. });
-        let open_target = op.picks_target() && open(&target);
-        if op.picks_target() {
-            ordered.retain(|s| s.id == target.id || !open(s));
-            if ordered.len() < 2 {
+        let subtracts = matches!(
+            op,
+            Shaping::Trim | Shaping::FrontMinusBack | Shaping::BackMinusFront
+        );
+        // An open curve that is cut (the target of Weld, Trim or
+        // Intersect, the kept one of the Minus operations) is cut by the
+        // closed objects and stays open (#828).
+        let open_target = (op.picks_target() || subtracts) && open(&kept);
+        // An open curve acting on a closed object: Trim and the Minus
+        // operations split the object along it, into pieces (#1005);
+        // Weld and Intersect leave it out, and it stays as it is.
+        let mut slicers: Vec<tracedraw_core::BezPath> = Vec::new();
+        let mut slicer_ids: Vec<tracedraw_core::ShapeId> = Vec::new();
+        if op.picks_target() || subtracts {
+            if subtracts && !open_target {
+                for s in ordered.iter().filter(|s| s.id != kept.id && open(s)) {
+                    slicers.push(s.page_path());
+                    slicer_ids.push(s.id);
+                }
+            }
+            ordered.retain(|s| s.id == kept.id || !open(s));
+            if ordered.len() < 2 && slicers.is_empty() {
                 self.status = crate::i18n::tr("status.shaping_open_cutter");
                 return;
             }
+        } else if op == Shaping::Simplify {
+            // An open curve covers nothing and is not a region to cut.
+            ordered.retain(|s| !open(s));
+            if ordered.is_empty() {
+                return;
+            }
         }
-        let used: Vec<tracedraw_core::ShapeId> = ordered.iter().map(|s| s.id).collect();
+        let target = kept;
+        let mut used: Vec<tracedraw_core::ShapeId> = ordered.iter().map(|s| s.id).collect();
+        used.extend(&slicer_ids);
         let paths: Vec<tracedraw_core::BezPath> = ordered.iter().map(Shape::page_path).collect();
         let open_result = open_target.then(|| {
             use tracedraw_core::shaping::{cut_open, Keep};
@@ -1065,6 +1094,24 @@ impl App {
             self.status = crate::i18n::tr("status.shaping_empty");
             return;
         }
+        // The open curves acting on it split what is left into pieces,
+        // each an object of its own (#1005).
+        let pieces: Vec<tracedraw_core::BezPath> = if slicers.is_empty() {
+            Vec::new()
+        } else {
+            use tracedraw_core::shaping::slice_open;
+            let whole = slice_open(&result, &[]).len();
+            let pieces = slice_open(&result, &slicers);
+            if pieces.len() > whole {
+                pieces
+            } else if ordered.len() < 2 {
+                // Only open curves, none crossing it from edge to edge.
+                self.status = crate::i18n::tr("status.shaping_open_no_cut");
+                return;
+            } else {
+                Vec::new()
+            }
+        };
         let (leave_source, leave_target) = match op {
             Shaping::Boundary => (true, true),
             _ if op.can_leave_originals() => (leave_source, leave_target),
@@ -1081,16 +1128,24 @@ impl App {
         let id = self.engine.new_shape_id();
         let leaves = group_leaves(&attrs);
         let pictures = picture_contents(&attrs);
+        // The further pieces of a split object, after the first.
+        let mut extra: Vec<Shape> = Vec::new();
         let shape = if let Some(contents) = pictures {
             // A picture keeps showing inside the result: its frame takes
             // the result's shape, as a crop with the Shape tool does
             // (#827).
+            let path = if pieces.is_empty() {
+                result
+            } else {
+                let mut all = tracedraw_core::BezPath::new();
+                for p in &pieces {
+                    all.extend(p.elements().iter().copied());
+                }
+                all
+            };
             let mut frame = Shape::new(
                 self.engine.new_shape_id(),
-                ShapeKind::Path {
-                    path: result,
-                    closed: true,
-                },
+                ShapeKind::Path { path, closed: true },
             );
             frame.fill = tracedraw_core::Fill::None;
             frame.stroke = attrs
@@ -1114,17 +1169,25 @@ impl App {
             shape.opacity = attrs.opacity;
             shape
         } else if leaves.is_empty() {
-            let mut shape = Shape::new(
-                id,
-                ShapeKind::Path {
-                    path: result,
-                    closed: !open_target,
-                },
-            );
-            shape.fill = attrs.fill.clone();
-            shape.stroke = attrs.stroke.clone();
-            shape.opacity = attrs.opacity;
-            shape
+            let mut paths = pieces.into_iter();
+            let first = paths.next().unwrap_or(result);
+            let piece = |id, path| {
+                let mut shape = Shape::new(
+                    id,
+                    ShapeKind::Path {
+                        path,
+                        closed: !open_target,
+                    },
+                );
+                shape.fill = attrs.fill.clone();
+                shape.stroke = attrs.stroke.clone();
+                shape.opacity = attrs.opacity;
+                shape
+            };
+            for path in paths {
+                extra.push(piece(self.engine.new_shape_id(), path));
+            }
+            piece(id, first)
         } else if matches!(
             op,
             Shaping::Trim | Shaping::FrontMinusBack | Shaping::BackMinusFront
@@ -1146,17 +1209,24 @@ impl App {
                 if p.elements().is_empty() {
                     continue;
                 }
-                let mut piece = Shape::new(
-                    self.engine.new_shape_id(),
-                    ShapeKind::Path {
-                        path: p,
-                        closed: true,
-                    },
-                );
-                piece.fill = leaf.fill.clone();
-                piece.stroke = leaf.stroke.clone();
-                piece.opacity = leaf.opacity;
-                children.push(piece);
+                let parts = if slicers.is_empty() {
+                    vec![p]
+                } else {
+                    tracedraw_core::shaping::slice_open(&p, &slicers)
+                };
+                for p in parts {
+                    let mut piece = Shape::new(
+                        self.engine.new_shape_id(),
+                        ShapeKind::Path {
+                            path: p,
+                            closed: true,
+                        },
+                    );
+                    piece.fill = leaf.fill.clone();
+                    piece.stroke = leaf.stroke.clone();
+                    piece.opacity = leaf.opacity;
+                    children.push(piece);
+                }
             }
             if children.is_empty() {
                 self.status = crate::i18n::tr("status.shaping_empty");
@@ -1182,7 +1252,12 @@ impl App {
             shape.opacity = first.opacity;
             shape
         };
+        let mut ids = vec![id];
         let mut cmds = vec![Command::AddShape { layer, shape }];
+        for shape in extra {
+            ids.push(shape.id);
+            cmds.push(Command::AddShape { layer, shape });
+        }
         let gone: Vec<_> = shapes
             .iter()
             .map(|s| s.id)
@@ -1211,7 +1286,7 @@ impl App {
             self.status = e.to_string();
             return;
         }
-        self.select(vec![id]);
+        self.select(ids);
     }
 }
 
@@ -1790,11 +1865,142 @@ mod curves_and_target_tests {
         s.fill
     }
 
+    /// #1005: Trim with an open line across a circle cuts the circle in
+    /// two along the line, two pieces with the circle's fill and outline
+    /// whose areas add up to the circle's; the line stays. Two lines make
+    /// three pieces, a line that ends inside cuts nothing and says so, a
+    /// closed object and a line together cut and split, and Back Minus
+    /// Front splits the back object along a line in front.
+    #[test]
+    fn open_curves_split_closed_targets_into_pieces() {
+        use tracedraw_core::geometry::{BezPath, Shape as _};
+        let red = Fill::Solid(Color::rgb8(255, 0, 0));
+        let line_at = |app: &mut App, pts: &[(f64, f64)]| {
+            let mut p = BezPath::new();
+            p.move_to(pts[0]);
+            for q in &pts[1..] {
+                p.line_to(*q);
+            }
+            app.new_shape(ShapeKind::Path {
+                path: p,
+                closed: false,
+            })
+            .expect("line")
+        };
+        let circle_app = || {
+            let mut app = App::headless();
+            let circle = app
+                .new_shape(ShapeKind::Ellipse {
+                    rect: Rect::new(30.0, 30.0, 70.0, 70.0),
+                    arc: None,
+                })
+                .expect("circle");
+            app.run(tracedraw_core::Command::SetFill {
+                shapes: vec![circle],
+                fill: red.clone(),
+            });
+            (app, circle)
+        };
+        let pieces = |app: &App| -> Vec<Shape> {
+            app.selection
+                .iter()
+                .map(|id| app.doc().shape_on_page(*id).expect("piece").clone())
+                .collect()
+        };
+        let area = |s: &Shape| s.page_path().area().abs();
+        // The issue: a slanted line past the outline at both ends.
+        let (mut app, circle) = circle_app();
+        let full = area(app.doc().find_shape(circle).expect("circle"));
+        let stroke = app.doc().find_shape(circle).expect("circle").stroke.clone();
+        let line = line_at(&mut app, &[(20.0, 35.0), (80.0, 75.0)]);
+        app.select(vec![line, circle]);
+        app.shaping(Shaping::Trim);
+        let got = pieces(&app);
+        assert_eq!(got.len(), 2, "{:?}", app.status);
+        for p in &got {
+            assert!(matches!(p.kind, ShapeKind::Path { closed: true, .. }));
+            assert_eq!(p.fill, red);
+            assert_eq!(p.stroke, stroke);
+            assert!(area(p) > 100.0 && area(p) < full - 100.0, "{}", area(p));
+        }
+        let sum: f64 = got.iter().map(area).sum();
+        assert!((sum - full).abs() < 1e-3, "{sum} against {full}");
+        assert!(app.doc().find_shape(circle).is_none(), "the circle is cut");
+        assert!(app.doc().find_shape(line).is_some(), "the line stays");
+        // One undo step brings the circle back.
+        app.undo();
+        assert!(app.doc().find_shape(circle).is_some());
+        // A horizontal line through the centre: two equal halves.
+        let (mut app, circle) = circle_app();
+        let line = line_at(&mut app, &[(20.0, 50.0), (80.0, 50.0)]);
+        app.select(vec![line, circle]);
+        app.shaping(Shaping::Trim);
+        let got = pieces(&app);
+        assert_eq!(got.len(), 2);
+        for p in &got {
+            assert!((area(p) - full / 2.0).abs() < 1e-3, "{}", area(p));
+        }
+        // Two lines: three pieces.
+        let (mut app, circle) = circle_app();
+        let a = line_at(&mut app, &[(20.0, 45.0), (80.0, 45.0)]);
+        let b = line_at(&mut app, &[(20.0, 55.0), (80.0, 55.0)]);
+        app.select(vec![a, b, circle]);
+        app.shaping(Shaping::Trim);
+        let got = pieces(&app);
+        assert_eq!(got.len(), 3);
+        let sum: f64 = got.iter().map(area).sum();
+        assert!((sum - full).abs() < 1e-3);
+        // A line that ends inside: nothing cut, a message.
+        let (mut app, circle) = circle_app();
+        let line = line_at(&mut app, &[(20.0, 50.0), (50.0, 50.0)]);
+        let before = app.doc().clone();
+        app.select(vec![line, circle]);
+        app.shaping(Shaping::Trim);
+        assert_eq!(app.doc().pages, before.pages);
+        assert_eq!(app.status, crate::i18n::tr("status.shaping_open_no_cut"));
+        // A 40 by 20 rectangle, a closed square taking 10 by 10 off a
+        // corner and a polyline cutting another 10 by 10 corner off: two
+        // pieces, 100 and 600 mm2.
+        let mut app = App::headless();
+        let rect = app
+            .new_shape(ShapeKind::Rect {
+                rect: Rect::new(0.0, 0.0, 40.0, 20.0),
+                radius: 0.0,
+                corners: None,
+            })
+            .expect("rect");
+        let square = app
+            .new_shape(ShapeKind::Rect {
+                rect: Rect::new(30.0, 10.0, 50.0, 30.0),
+                radius: 0.0,
+                corners: None,
+            })
+            .expect("square");
+        let poly = line_at(&mut app, &[(-10.0, 10.0), (10.0, 10.0), (10.0, 30.0)]);
+        app.select(vec![square, poly, rect]);
+        app.shaping(Shaping::Trim);
+        let mut areas: Vec<f64> = pieces(&app).iter().map(area).collect();
+        areas.sort_by(f64::total_cmp);
+        assert_eq!(areas.len(), 2, "{areas:?}");
+        assert!((areas[0] - 100.0).abs() < 1e-6, "{areas:?}");
+        assert!((areas[1] - 600.0).abs() < 1e-6, "{areas:?}");
+        // Back Minus Front: the circle at the back, a line in front.
+        let (mut app, circle) = circle_app();
+        let line = line_at(&mut app, &[(20.0, 50.0), (80.0, 50.0)]);
+        app.select(vec![circle, line]);
+        app.shaping(Shaping::BackMinusFront);
+        let got = pieces(&app);
+        assert_eq!(got.len(), 2);
+        assert!(got.iter().all(|p| p.fill == red));
+        assert!(app.doc().find_shape(line).is_none());
+        assert!(app.doc().find_shape(circle).is_none());
+    }
+
     /// #828: an open line as the target of Trim, Intersect and Weld is
     /// cut by the closed rectangle and stays open (Trim keeps the parts
     /// outside, Intersect the part inside, Weld the rectangle with the
-    /// parts outside); an open line acting on a closed target does not
-    /// cut it (the Knife's job), and says so.
+    /// parts outside); an open line acting on a closed target in Weld or
+    /// Intersect does not cut it, and says so.
     #[test]
     fn open_targets_are_cut_and_open_cutters_leave_shapes_alone() {
         use tracedraw_core::geometry::{BezPath, Shape as _};
@@ -1857,13 +2063,16 @@ mod curves_and_target_tests {
         let (p, closed) = path_of(&app);
         assert!(!closed);
         assert!((length(&p) - (40.0 + 120.0)).abs() < 0.1, "{}", length(&p));
-        // An open line acting on the rectangle: nothing cut, a message.
-        let (mut app, rect, line) = setup();
-        let before = app.doc().clone();
-        app.select(vec![line, rect]);
-        app.shaping(Shaping::Trim);
-        assert_eq!(app.doc().pages, before.pages);
-        assert_eq!(app.status, crate::i18n::tr("status.shaping_open_cutter"));
+        // An open line acting on the rectangle in Weld or Intersect:
+        // nothing cut, a message (Trim splits it, #1005).
+        for op in [Shaping::Weld, Shaping::Intersect] {
+            let (mut app, rect, line) = setup();
+            let before = app.doc().clone();
+            app.select(vec![line, rect]);
+            app.shaping(op);
+            assert_eq!(app.doc().pages, before.pages);
+            assert_eq!(app.status, crate::i18n::tr("status.shaping_open_cutter"));
+        }
         // With a closed cutter as well, the open one takes no part and
         // stays.
         let (mut app, rect, line) = setup();
