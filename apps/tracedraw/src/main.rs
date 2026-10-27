@@ -263,6 +263,7 @@ fn main() -> eframe::Result<()> {
     let mode = gpu::Mode::for_start(&args, &settings, failed);
     let first = gpu::Mode::first(&settings);
     let next = mode.next(first);
+    gpu::note_next(next);
     log::info!("opening the window with {mode:?} (Options asks for {first:?})");
     gpu::begin_attempt(mode);
     // A renderer that hangs never returns here to hand over (#570).
@@ -321,6 +322,20 @@ fn main() -> eframe::Result<()> {
     // A start with the next renderer must be able to take the place.
     drop(primary);
     let Err(e) = result else {
+        // The window opened but what the renderer drew came back nearly
+        // black (#616): the next renderer, in a new start.
+        if let (true, Some(next)) = (gpu::blind(), next) {
+            log::warn!(
+                "the window opened with {mode:?} but its frames came back nearly black; trying {next:?}"
+            );
+            if !gpu::restart_with(next, &args) {
+                let what = format!(
+                    "the window opened with {mode:?} but what it drew came back nearly black, and TraceDraw could not start again with {next:?}"
+                );
+                log::error!("{what}");
+                startup_log::no_window(&what);
+            }
+        }
         return Ok(());
     };
     // The window could not be opened this way: the next renderer, in a
@@ -363,6 +378,31 @@ struct Shell {
     /// `splash::WindowSettle`).
     #[cfg(not(target_arch = "wasm32"))]
     window_settle: splash::WindowSettle,
+    /// Where the check of the OpenGL renderer stands (see
+    /// `check_renderer`).
+    #[cfg(not(target_arch = "wasm32"))]
+    renderer_check: RendererCheck,
+    /// How many read-backs came back nearly black with the window in
+    /// front.
+    #[cfg(not(target_arch = "wasm32"))]
+    blind_reads: u8,
+    /// The main-window frames the check has seen (`window_frames` stops
+    /// counting at `splash::SETTLE_FRAMES`).
+    #[cfg(not(target_arch = "wasm32"))]
+    check_frames: u32,
+}
+
+/// Where the check of the OpenGL renderer stands (`Shell::check_renderer`).
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum RendererCheck {
+    /// A read-back is asked for at this main-window frame.
+    At(u32),
+    /// Asked for: the probe is drawn until the picture arrives.
+    Pending,
+    /// Over: the window is drawn, or blind and closing, or nothing is
+    /// left to try.
+    Done,
 }
 
 impl Shell {
@@ -381,6 +421,12 @@ impl Shell {
             pacer: gpu::Pacer::new(cc),
             #[cfg(not(target_arch = "wasm32"))]
             window_settle: Default::default(),
+            #[cfg(not(target_arch = "wasm32"))]
+            renderer_check: RendererCheck::At(gpu::CHECKED_FRAME),
+            #[cfg(not(target_arch = "wasm32"))]
+            blind_reads: 0,
+            #[cfg(not(target_arch = "wasm32"))]
+            check_frames: 0,
         }
     }
 
@@ -394,9 +440,128 @@ impl Shell {
             handed_over: None,
             pacer: gpu::Pacer::new(cc),
             window_settle: Default::default(),
+            renderer_check: RendererCheck::At(gpu::CHECKED_FRAME),
+            blind_reads: 0,
+            check_frames: 0,
         }
     }
+
+    /// The OpenGL renderer is checked once it draws: a frame of the main
+    /// window is read back and looked at, with a probe drawn last in it
+    /// (`gpu::renderer_blind`). A driver that takes every call and shows
+    /// nothing (#616: the first meshes of a frame right, the rest black)
+    /// loses the probe and leaves the frame nearly black; after
+    /// `gpu::BLIND_READS` such read-backs with the window in front the
+    /// renderer is noted as blind and the window closes, so the start
+    /// goes on with the next renderer. The first read-back is asked for
+    /// at frame `gpu::CHECKED_FRAME` and is of the frame after it; a
+    /// read-back of a window another covers does not count, and when no
+    /// renderer is left to try the window stays.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn check_renderer(&mut self, ctx: &egui::Context) {
+        if gpu::mode_in_use() != Some(gpu::Mode::Gl) {
+            return;
+        }
+        let frame = self.check_frames;
+        self.check_frames += 1;
+        match self.renderer_check {
+            RendererCheck::Done => return,
+            RendererCheck::At(at) => {
+                if frame >= at {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::new(
+                        RENDERER_CHECK,
+                    )));
+                    ctx.request_repaint();
+                    self.renderer_check = RendererCheck::Pending;
+                    paint_probe(ctx);
+                } else if ctx.input(|i| i.viewport().focused) != Some(false) {
+                    // The frames up to it keep coming while the window is
+                    // in front; a window behind another waits for an event.
+                    ctx.request_repaint();
+                }
+                return;
+            }
+            RendererCheck::Pending => {}
+        }
+        let probe = paint_probe(ctx);
+        let image = ctx.input(|i| {
+            i.events.iter().find_map(|e| match e {
+                egui::Event::Screenshot {
+                    user_data, image, ..
+                } if user_data
+                    .data
+                    .as_ref()
+                    .and_then(|d| d.downcast_ref::<&str>())
+                    .is_some_and(|tag| *tag == RENDERER_CHECK) =>
+                {
+                    Some(image.clone())
+                }
+                _ => None,
+            })
+        });
+        let Some(image) = image else {
+            return;
+        };
+        let [w, h] = image.size;
+        if !gpu::renderer_blind(&image, probe) {
+            self.renderer_check = RendererCheck::Done;
+            log::info!("the window ({w} x {h} px) read back drawn");
+            return;
+        }
+        if ctx.input(|i| i.viewport().focused) == Some(false) {
+            log::warn!(
+                "the window ({w} x {h} px) came back nearly black from the renderer while another window is in front; checking again"
+            );
+        } else {
+            self.blind_reads += 1;
+            log::error!(
+                "the window ({w} x {h} px) came back nearly black from the renderer: it draws nothing that can be seen ({} of {})",
+                self.blind_reads,
+                gpu::BLIND_READS
+            );
+        }
+        if self.blind_reads < gpu::BLIND_READS {
+            self.renderer_check = RendererCheck::At(frame + gpu::RECHECK_FRAMES);
+            ctx.request_repaint();
+            return;
+        }
+        self.renderer_check = RendererCheck::Done;
+        if gpu::next_renderer().is_none() {
+            log::error!("no other renderer is left to try; the window stays");
+            return;
+        }
+        gpu::note_blind();
+        // The window closes whatever the documents hold: nothing of them
+        // can be seen, and the start goes on with them.
+        if let Some(app) = self.app.as_mut() {
+            app.quit_now = true;
+        }
+        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+    }
 }
+
+/// Draw the probe of `Shell::check_renderer`, a light square
+/// `gpu::PROBE_SIDE` points wide near the window's bottom right corner,
+/// on the topmost layer, so that it is the last mesh of the frame; the
+/// pixel its centre lands on is returned.
+#[cfg(not(target_arch = "wasm32"))]
+fn paint_probe(ctx: &egui::Context) -> [usize; 2] {
+    let window = ctx.content_rect();
+    let side = gpu::PROBE_SIDE;
+    let probe = egui::Rect::from_min_size(
+        egui::pos2(window.max.x - 2.0 * side, window.max.y - 2.0 * side),
+        egui::vec2(side, side),
+    );
+    ctx.debug_painter()
+        .rect_filled(probe, 0.0, egui::Color32::from_gray(220));
+    let pixels_per_point = ctx.pixels_per_point();
+    let px = |points: f32| (points * pixels_per_point).round().max(0.0) as usize;
+    [px(probe.center().x), px(probe.center().y)]
+}
+
+/// The tag of the frame read back by `Shell::check_renderer`.
+#[cfg(not(target_arch = "wasm32"))]
+const RENDERER_CHECK: &str = "renderer-check";
 
 impl eframe::App for Shell {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
@@ -419,6 +584,11 @@ impl eframe::App for Shell {
             ui.ctx().request_repaint();
             return;
         }
+        if self.app.is_none() {
+            return;
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        self.check_renderer(ui.ctx());
         let Some(app) = self.app.as_mut() else {
             return;
         };
