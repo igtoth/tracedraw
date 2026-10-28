@@ -12,6 +12,7 @@
 use crate::app::{App, Units};
 use crate::i18n::tr;
 use crate::theme::Tokens;
+use crate::ui::tips::RichTip;
 use egui::{Context, Ui};
 use serde::{Deserialize, Serialize};
 use tracedraw_core::geometry::Size;
@@ -467,7 +468,7 @@ pub fn new_document_dialog(app: &mut App, ctx: &Context, st: &mut NewDocState, c
             // The bottom row.
             let help = egui::Rect::from_min_size(at(14.0, y), egui::vec2(FIELD_H, FIELD_H));
             if chrome::button_at(ui, help, "?")
-                .on_hover_text(tr("menu.help.product_help"))
+                .rich_tip(tr("menu.help.product_help"))
                 .clicked()
             {
                 app.open_dialog_help();
@@ -672,7 +673,7 @@ fn dimensions(ui: &mut Ui, st: &mut NewDocState, body: egui::Rect, top: f32) {
     let v = &mut st.settings.values;
     let landscape = v.width_mm > v.height_mm;
     if orientation_button(ui, field(FIELD_X, y, FIELD_H), false, !landscape)
-        .on_hover_text(tr("dialog.portrait"))
+        .rich_tip(tr("dialog.portrait"))
         .clicked()
         && landscape
     {
@@ -681,7 +682,7 @@ fn dimensions(ui: &mut Ui, st: &mut NewDocState, body: egui::Rect, top: f32) {
     }
     let v = &mut st.settings.values;
     if orientation_button(ui, field(FIELD_X + 33.0, y, FIELD_H), true, landscape)
-        .on_hover_text(tr("dialog.landscape"))
+        .rich_tip(tr("dialog.landscape"))
         .clicked()
         && !landscape
     {

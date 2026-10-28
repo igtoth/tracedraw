@@ -64,8 +64,11 @@ fn style_part(app: &mut App, ui: &mut Ui, style: &DimensionStyle) {
     } else {
         style.font.clone()
     };
-    let (pick, _) =
-        crate::ui::font_list::font_list_live(app, ui, "dimension_font", &current, 130.0);
+    let (pick, _) = crate::ui::tips::tip_over(
+        ui,
+        crate::ui::tips::pair("toolbar.font", "dimension.font_desc"),
+        |ui| crate::ui::font_list::font_list_live(app, ui, "dimension_font", &current, 130.0),
+    );
     if let Some(p) = pick {
         app.set_dimension_style(|s| s.font = p.family.clone());
     }
@@ -115,6 +118,7 @@ fn style_part(app: &mut App, ui: &mut Ui, style: &DimensionStyle) {
     let mut round = style.round_ends;
     if ui
         .checkbox(&mut round, tr("dimension.round_ends"))
+        .rich_tip(crate::ui::tips::keyed("dimension.round_ends"))
         .changed()
     {
         app.set_dimension_style(|s| s.round_ends = round);
@@ -224,7 +228,9 @@ pub fn dimension_bar(app: &mut App, ui: &mut Ui) {
             for p in 0..=6u8 {
                 ui.selectable_value(&mut precision, p, precision_sample(p));
             }
-        });
+        })
+        .response
+        .rich_tip(crate::ui::tips::keyed("dimension.precision"));
     if precision != style.precision.min(6) {
         app.set_dimension_style(|s| s.precision = precision);
     }
@@ -243,12 +249,18 @@ pub fn dimension_bar(app: &mut App, ui: &mut Ui) {
             for (id, label) in &choices {
                 ui.selectable_value(&mut units, id.clone(), label);
             }
-        });
+        })
+        .response
+        .rich_tip(crate::ui::tips::keyed("dimension.units"));
     if units != style.units {
         app.set_dimension_style(|s| s.units = units.clone());
     }
     let mut show = style.show_units;
-    if ui.checkbox(&mut show, tr("dimension.show_units")).changed() {
+    if ui
+        .checkbox(&mut show, tr("dimension.show_units"))
+        .rich_tip(crate::ui::tips::keyed("dimension.show_units"))
+        .changed()
+    {
         app.set_dimension_style(|s| s.show_units = show);
     }
     crate::ui::propbar::sep(ui);
@@ -270,7 +282,9 @@ pub fn dimension_bar(app: &mut App, ui: &mut Ui) {
             for p in TextPosition::ALL {
                 ui.selectable_value(&mut pos, p, tr(p.key()));
             }
-        });
+        })
+        .response
+        .rich_tip(crate::ui::tips::keyed("dimension.text_position"));
     if pos != style.text_position {
         app.set_dimension_style(|s| s.text_position = pos);
     }

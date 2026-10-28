@@ -164,12 +164,14 @@ pub fn brush_bar(app: &mut App, ui: &mut Ui) {
             );
             if ui
                 .selectable_label(!b.twirl_clockwise, tr("toolbar.counterclockwise"))
+                .rich_tip(crate::ui::tips::keyed("toolbar.counterclockwise"))
                 .clicked()
             {
                 b.twirl_clockwise = false;
             }
             if ui
                 .selectable_label(b.twirl_clockwise, tr("toolbar.clockwise"))
+                .rich_tip(crate::ui::tips::keyed("toolbar.clockwise"))
                 .clicked()
             {
                 b.twirl_clockwise = true;
@@ -210,6 +212,7 @@ pub fn brush_bar(app: &mut App, ui: &mut Ui) {
                         .range(0.05..=50.0)
                         .suffix(format!(" {}", app.units.short())),
                 )
+                .rich_tip(crate::ui::tips::keyed("toolbar.spike_size"))
                 .changed()
             {
                 app.roughen_amount = app.units.to_mm(a).clamp(0.05, 50.0);

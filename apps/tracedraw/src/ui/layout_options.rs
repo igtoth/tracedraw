@@ -7,6 +7,7 @@ use crate::app::{App, Units};
 use crate::guides::GuidePreset;
 use crate::i18n::tr;
 use crate::theme::Tokens;
+use crate::ui::tips::RichTip;
 use egui::Ui;
 use tracedraw_core::{
     document::{GridDisplay, Guide, GuideLine, GuideStyle, Metadata},
@@ -924,9 +925,9 @@ fn guide_list(app: &mut App, ui: &mut Ui, kind: Option<GuideKind>, height: f32) 
 pub fn guidelines_docker(app: &mut App, ui: &mut Ui) {
     ui.horizontal(|ui| {
         ui.toggle_value(&mut app.show_guides, tr("guides.show"))
-            .on_hover_text(tr("guides.show_tip"));
+            .rich_tip(tr("guides.show_tip"));
         ui.toggle_value(&mut app.snap.guides, tr("guides.snap"))
-            .on_hover_text(tr("guides.snap_tip"));
+            .rich_tip(tr("guides.snap_tip"));
     });
     ui.add_space(4.0);
     app.sync_guide_form();
@@ -1030,7 +1031,7 @@ pub fn guidelines_docker(app: &mut App, ui: &mut Ui) {
         // Copies of the selected guidelines, moved by the duplicate offset.
         if ui
             .add_enabled(any, egui::Button::new(tr("guides.duplicate")))
-            .on_hover_text(tr("guides.duplicate_tip"))
+            .rich_tip(tr("guides.duplicate_tip"))
             .clicked()
         {
             app.duplicate_selected_guides();
@@ -1042,7 +1043,7 @@ pub fn guidelines_docker(app: &mut App, ui: &mut Ui) {
             .any(|g| GuideKind::of(&g.line) == form.kind);
         if ui
             .add_enabled(of_kind, egui::Button::new(tr("guides.clear")))
-            .on_hover_text(tr("guides.clear_tip"))
+            .rich_tip(tr("guides.clear_tip"))
             .clicked()
         {
             app.clear_guides_of_kind(form.kind);

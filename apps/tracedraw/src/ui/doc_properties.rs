@@ -8,6 +8,7 @@ use crate::app::App;
 use crate::doc_stats::DocStats;
 use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
+use crate::ui::tips::RichTip;
 use egui::{Context, RichText, Ui};
 use tracedraw_core::Command;
 
@@ -427,7 +428,7 @@ pub fn dialog(app: &mut App, ctx: &Context, st: &mut DocPropsState, close: &mut 
                 ui.horizontal(|ui| {
                     help = ui
                         .add_sized([27.0, 27.0], egui::Button::new("?"))
-                        .on_hover_text(tr("dialog.help"))
+                        .rich_tip(tr("dialog.help"))
                         .clicked();
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui

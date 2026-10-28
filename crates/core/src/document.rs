@@ -3134,8 +3134,12 @@ impl Shape {
             ShapeKind::Text { .. } => self
                 .text_bounds()
                 .unwrap_or_else(|| self.page_path().bounding_box()),
+            // A member that draws nothing (an empty curve, such as a
+            // dimension's arrowheads when it has none) takes no room:
+            // its box would stretch the group's to the origin (#996).
             ShapeKind::Group { children } => children
                 .iter()
+                .filter(|c| !c.is_empty_path())
                 .map(|c| {
                     let mut c = c.clone();
                     c.transform = self.transform * c.transform;
@@ -3145,6 +3149,11 @@ impl Shape {
                 .unwrap_or_else(|| self.page_path().bounding_box()),
             _ => self.page_path().bounding_box(),
         }
+    }
+
+    /// A curve with no segments: it draws nothing.
+    pub fn is_empty_path(&self) -> bool {
+        matches!(&self.kind, ShapeKind::Path { path, .. } if path.elements().is_empty())
     }
 
     /// The frame of paragraph text in page space (its four corners, the
@@ -4803,6 +4812,35 @@ mod index_keys {
 
 #[cfg(test)]
 mod tests {
+    /// An empty curve in a group takes no room in the group's box: the
+    /// box of a dimension without arrowheads reached the origin (#996).
+    #[test]
+    fn an_empty_curve_takes_no_room_in_its_group() {
+        use crate::geometry::{Affine, BezPath, Rect};
+        let mut line = BezPath::new();
+        line.move_to((100.0, 300.0));
+        line.line_to((150.0, 310.0));
+        let part = |id: u64, path: BezPath| {
+            Shape::new(
+                ShapeId(id),
+                ShapeKind::Path {
+                    path,
+                    closed: false,
+                },
+            )
+        };
+        let mut group = Shape::new(
+            ShapeId(1),
+            ShapeKind::Group {
+                children: vec![part(2, line), part(3, BezPath::new())],
+            },
+        );
+        assert_eq!(group.bounds(), Rect::new(100.0, 300.0, 150.0, 310.0));
+        assert_eq!(group.visual_bounds(), group.bounds());
+        group.transform = Affine::translate((-20.0, 5.0));
+        assert_eq!(group.bounds(), Rect::new(80.0, 305.0, 130.0, 315.0));
+    }
+
     #[test]
     fn node_types_of_curves_inside_groups_survive_the_native_format() {
         use crate::geometry::BezPath;

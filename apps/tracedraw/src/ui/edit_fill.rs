@@ -18,6 +18,7 @@ use crate::app::App;
 use crate::fill_tool::{fountain_handles, moved_nodes, FountainHandle};
 use crate::i18n::tr;
 use crate::theme::Tokens;
+use crate::ui::tips::RichTip;
 use egui::{Color32, Pos2, Rect, Sense, Stroke as EStroke, Ui, Vec2};
 use tracedraw_core::geometry::{Point as GPoint, Rect as GRect, Vec2 as GVec2};
 use tracedraw_core::patch::{FillField, FillMix};
@@ -181,7 +182,7 @@ pub fn dialog(app: &mut App, ctx: &egui::Context, st: &mut EditFillState, close:
         ui.horizontal(|ui| {
             help = ui
                 .add_sized([27.0, 27.0], egui::Button::new("?"))
-                .on_hover_text(tr("dialog.help"))
+                .rich_tip(tr("dialog.help"))
                 .clicked();
             if !st.defaults {
                 let mut on = st.overprint.unwrap_or(false);
@@ -282,7 +283,7 @@ fn kinds(ui: &mut Ui, st: &mut EditFillState) {
                 Rect::from_center_size(rect.center(), Vec2::splat(18.0)),
                 i,
             );
-            if resp.on_hover_text(tr(key)).clicked() && shown != Some(i) {
+            if resp.rich_tip(tr(key)).clicked() && shown != Some(i) {
                 st.fill = new_of_kind(&st.fill, i);
                 st.touched = vec![FillField::All];
                 st.node = 0;
@@ -700,7 +701,7 @@ fn fountain_preview(
     draw_fill(ui, map.screen, &Fill::Fountain(f.clone()), b);
     let pts = fountain_handles(f, b);
     let [(_, s), (_, e), (_, k)] = pts.as_slice() else {
-        resp.on_hover_text(tr("edit_fill.preview_tip"));
+        resp.rich_tip(tr("edit_fill.preview_tip"));
         return;
     };
     let (s, e, k) = (map.to_screen(*s), map.to_screen(*e), map.to_screen(*k));
@@ -735,7 +736,7 @@ fn fountain_preview(
     }
     p.circle_filled(k, 4.5, Color32::WHITE);
     p.circle_stroke(k, 4.5, ring(FountainHandle::Skew));
-    resp.on_hover_text(tr("edit_fill.preview_tip"));
+    resp.rich_tip(tr("edit_fill.preview_tip"));
 }
 
 /// The built-in gradients; a click takes its colours.
@@ -763,7 +764,7 @@ fn picker(ui: &mut Ui, f: &mut Fountain) {
                         EStroke::new(1.0, line),
                         egui::StrokeKind::Inside,
                     );
-                    if resp.on_hover_text(tr(key)).clicked() {
+                    if resp.rich_tip(tr(key)).clicked() {
                         f.stops = stops;
                         if let Some(a) = crate::gradient_presets::angle(i)
                             .filter(|_| f.kind == FountainKind::Linear)
@@ -850,7 +851,7 @@ fn band(ui: &mut Ui, f: &mut Fountain, node: &mut usize) {
     ui.horizontal(|ui| {
         if ui
             .button(tr("edit_fill.reverse"))
-            .on_hover_text(tr("edit_fill.reverse_tip"))
+            .rich_tip(tr("edit_fill.reverse_tip"))
             .clicked()
         {
             reverse(f);
@@ -967,7 +968,7 @@ fn node_fields(ui: &mut Ui, f: &mut Fountain, node: usize) {
                     .suffix(" %")
                     .width(54.0),
             )
-            .on_hover_text(tr("edit_fill.midpoint_tip"))
+            .rich_tip(tr("edit_fill.midpoint_tip"))
             .changed()
         {
             f.stops[node].mid = (mid / 100.0).clamp(0.01, 0.99);
@@ -1041,15 +1042,15 @@ fn transform(ui: &mut Ui, f: &mut Fountain, b: GRect) {
             f.edge_pad = pad / 100.0;
         }
         ui.checkbox(&mut f.bilinear, tr("docker.bilinear"))
-            .on_hover_text(tr("docker.bilinear_tip"));
+            .rich_tip(tr("docker.bilinear_tip"));
         ui.checkbox(&mut f.invert, tr("docker.invert_colours"))
-            .on_hover_text(tr("docker.invert_colours_tip"));
+            .rich_tip(tr("docker.invert_colours_tip"));
     });
     if f.handles.is_some() {
         // Nodes placed with Interactive Fill: back to the angle and centre.
         if ui
             .button(tr("edit_fill.reset_nodes"))
-            .on_hover_text(tr("edit_fill.reset_nodes_tip"))
+            .rich_tip(tr("edit_fill.reset_nodes_tip"))
             .clicked()
         {
             f.handles = None;

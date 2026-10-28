@@ -61,6 +61,8 @@ pub fn show(ui: &mut Ui, tip: &str) {
     #[cfg(test)]
     record(tip);
     let (title, desc) = parts(tip);
+    // A menu name's "..." says a dialog opens; the tip names the command.
+    let title = title.trim_end_matches("...").trim_end_matches('\u{2026}');
     ui.set_max_width(280.0);
     // A tip that is already a sentence (no name above it) reads as one.
     if desc.is_none() && title.chars().count() > 45 {
@@ -92,6 +94,44 @@ impl RichTip for Response {
         #[cfg(test)]
         record(&tip);
         self.on_disabled_hover_ui(|ui| show(ui, &tip))
+    }
+}
+
+/// The tip of `key`: its name, and the description kept under
+/// `key_desc` below it.
+pub fn keyed(key: &str) -> String {
+    format!("{}\n{}", tr(key), tr(&format!("{key}_desc")))
+}
+
+/// A tip named by `title_key` and described by `desc_key`.
+pub fn pair(title_key: &str, desc_key: &str) -> String {
+    format!("{}\n{}", tr(title_key), tr(desc_key))
+}
+
+/// Draw `add`, then give everything it drew one rich tip: a field with
+/// its spin arrows, a picture and the field after it, a row of options.
+/// The controls inside keep working; one that shows a tip of its own
+/// keeps it, and this tip stays away.
+pub fn tip_over<R>(ui: &mut Ui, tip: impl AsRef<str>, add: impl FnOnce(&mut Ui) -> R) -> R {
+    let inner = ui.scope(add);
+    cover(
+        ui,
+        inner.response.rect,
+        inner.response.id.with("tip_over"),
+        tip,
+    );
+    inner.inner
+}
+
+/// A rich tip over `rect`, already drawn: see [`tip_over`].
+pub fn cover(ui: &mut Ui, rect: egui::Rect, id: egui::Id, tip: impl AsRef<str>) {
+    // A control inside already showed its own tip this frame.
+    let own_tip = ui.rect_contains_pointer(rect)
+        && ui
+            .ctx()
+            .viewport(|v| !v.this_pass.tooltips.widget_tooltips.is_empty());
+    if !own_tip {
+        ui.interact(rect, id, egui::Sense::hover()).rich_tip(tip);
     }
 }
 

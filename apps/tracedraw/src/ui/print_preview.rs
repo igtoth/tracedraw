@@ -8,6 +8,7 @@ use crate::export::{plate_page, plates, print_sheets};
 use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
 use crate::ui::dialogs::PrintState;
+use crate::ui::tips::RichTip;
 use egui::Ui;
 use tracedraw_core::Document;
 
@@ -179,7 +180,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 pv.sheet = pv.sheet.min(n - 1);
                 if ui
                     .add_enabled(pv.sheet > 0, egui::Button::new("<"))
-                    .on_hover_text(tr("status.previous_page"))
+                    .rich_tip(tr("status.previous_page"))
                     .clicked()
                 {
                     pv.sheet -= 1;
@@ -193,7 +194,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 ));
                 if ui
                     .add_enabled(pv.sheet + 1 < n, egui::Button::new(">"))
-                    .on_hover_text(tr("status.next_page"))
+                    .rich_tip(tr("status.next_page"))
                     .clicked()
                 {
                     pv.sheet += 1;
@@ -228,7 +229,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                             .color(Tokens::text_dim())
                             .size(11.0),
                     )
-                    .on_hover_text(tr("print.status"));
+                    .rich_tip(tr("print.status"));
                 }
                 ui.separator();
                 ui.label(tr("print.number_of_copies"));
@@ -355,7 +356,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 if st.info_offset != (0.0, 0.0)
                     && ui
                         .small_button(tr("print.info_reset"))
-                        .on_hover_text(tr("print.info_drag_tip"))
+                        .rich_tip(tr("print.info_drag_tip"))
                         .clicked()
                 {
                     st.info_offset = (0.0, 0.0);
@@ -363,7 +364,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 // Transform: the page stretched on the sheet by handles,
                 // or by these percentages (#595).
                 ui.checkbox(&mut pv.transform, tr("print.transform"))
-                    .on_hover_text(tr("print.transform_tip"));
+                    .rich_tip(tr("print.transform_tip"));
                 let st = &mut pv.st;
                 ui.horizontal(|ui| {
                     let mut x = st.art_stretch.0 * 100.0;
@@ -485,7 +486,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                     .available_size()
                     .max(size + egui::vec2(2.0 * margin, 2.0 * margin));
                 let (r, resp) = ui.allocate_exact_size(avail, egui::Sense::drag());
-                let resp = resp.on_hover_text(if info {
+                let resp = resp.rich_tip(if info {
                     tr("print.info_drag_tip")
                 } else {
                     tr("print.art_drag_tip")

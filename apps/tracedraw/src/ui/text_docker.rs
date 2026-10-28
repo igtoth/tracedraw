@@ -31,6 +31,7 @@ use crate::i18n::tr;
 use crate::theme::Tokens;
 use crate::ui::field::NumField;
 use crate::ui::propbar::{pic_button, Pic};
+use crate::ui::tips::RichTip;
 use egui::{Color32, Rect, Sense, Stroke, Ui, Vec2};
 use tracedraw_core::{
     Color, Fill, LeadingUnit, ParagraphStyle, ShapeKind, TextAlign, TextSpan, VerticalAlign,
@@ -79,7 +80,7 @@ fn row_check(app: &mut App, ui: &mut Ui, key: &str) {
     let mut on = ticked(app, key);
     if ui
         .add_sized([CHECK_W, 18.0], egui::Checkbox::without_text(&mut on))
-        .on_hover_text(tr("docker.text_tick_tip"))
+        .rich_tip(tr("docker.text_tick_tip"))
         .changed()
     {
         let list = &mut app.settings.text_docker_ticked;
@@ -194,7 +195,7 @@ fn picture_button(
         ui.painter(),
         Rect::from_center_size(rect.center(), Vec2::splat(18.0)),
     );
-    resp.on_hover_text(tip).clicked()
+    resp.rich_tip(tip).clicked()
 }
 
 /// A section's header bar; a click opens or closes it. True when open.
@@ -247,7 +248,7 @@ fn header(app: &mut App, ui: &mut Ui, id: &str, title: &str, gear: bool) -> (boo
             ui.painter().rect_filled(g, 2.0, Tokens::tool_active());
         }
         gear_picture(ui.painter(), g.shrink(2.0));
-        gear_clicked = gr.on_hover_text(tr("docker.paragraph_settings")).clicked();
+        gear_clicked = gr.rich_tip(tr("docker.paragraph_settings")).clicked();
     }
     if resp.clicked() && !gear_clicked {
         toggle(app, id);
@@ -301,7 +302,7 @@ fn expander(ui: &mut Ui, id: &str) -> bool {
         Stroke::NONE,
     ));
     if resp
-        .on_hover_text(tr(if open {
+        .rich_tip(tr(if open {
             "docker.show_less"
         } else {
             "docker.show_more"
@@ -382,6 +383,30 @@ fn paint_vertical_align(p: &egui::Painter, r: Rect, v: VerticalAlign, color: Col
             ],
             Stroke::new(1.3, color),
         );
+    }
+}
+
+/// The picture of Fit Text to Frame: a frame with a letter scaled up to
+/// it, arrows from the letter to the frame's top and bottom.
+fn paint_fit_to_frame(p: &egui::Painter, r: Rect, color: Color32) {
+    let f = r.shrink(1.0);
+    let thin = Stroke::new(1.0, color);
+    p.rect_stroke(f, 0.0, thin, egui::StrokeKind::Inside);
+    // An "A" from the frame's bottom to below its top.
+    let (base, apex) = (f.bottom() - 2.5, f.top() + 2.5);
+    let cx = f.left() + 6.5;
+    let st = Stroke::new(1.3, color);
+    p.line_segment([egui::pos2(cx - 4.0, base), egui::pos2(cx, apex)], st);
+    p.line_segment([egui::pos2(cx, apex), egui::pos2(cx + 4.0, base)], st);
+    let bar = base - (base - apex) * 0.38;
+    p.line_segment([egui::pos2(cx - 2.5, bar), egui::pos2(cx + 2.5, bar)], thin);
+    // A double arrow from top to bottom beside it.
+    let x = f.right() - 3.5;
+    let (t, b) = (f.top() + 2.0, f.bottom() - 2.0);
+    p.line_segment([egui::pos2(x, t), egui::pos2(x, b)], thin);
+    for (tip, d) in [(t, 2.5), (b, -2.5)] {
+        p.line_segment([egui::pos2(x, tip), egui::pos2(x - 2.0, tip + d)], thin);
+        p.line_segment([egui::pos2(x, tip), egui::pos2(x + 2.0, tip + d)], thin);
     }
 }
 
@@ -598,8 +623,7 @@ fn fill_row(
 ) -> Option<Option<Fill>> {
     let mut out = None;
     let color = fill.and_then(|f| f.preview_color());
-    ui.label(egui::RichText::new(icon).strong())
-        .on_hover_text(tip);
+    ui.label(egui::RichText::new(icon).strong()).rich_tip(tip);
     let uniform = color.is_some();
     let names = [tr("docker.no_fill"), tr("docker.uniform_fill")];
     egui::ComboBox::from_id_salt(id)
@@ -621,7 +645,7 @@ fn fill_row(
     });
     if ui
         .small_button("\u{2022}\u{2022}\u{2022}")
-        .on_hover_text(tr("docker.more_settings"))
+        .rich_tip(tr("docker.more_settings"))
         .clicked()
     {
         *more = true;
@@ -733,7 +757,7 @@ fn character(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) 
     // Range kerning and underline.
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new("AV").strong().size(11.0))
-            .on_hover_text(tr("docker.tracking"));
+            .rich_tip(tr("docker.tracking"));
         let mut kern = span.as_ref().map_or(0.0, |s| s.tracking_pct);
         let enabled = span.is_some();
         let mut kc = false;
@@ -750,7 +774,7 @@ fn character(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) 
                 [26.0, 22.0],
                 egui::Button::selectable(on, egui::RichText::new("U").underline().size(14.0)),
             )
-            .on_hover_text(tr("toolbar.underline"))
+            .rich_tip(tr("toolbar.underline"))
             .clicked()
         {
             app.text_underline = !on;
@@ -801,7 +825,7 @@ fn character(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) 
     }
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new("A").strong().color(Tokens::text_dim()))
-            .on_hover_text(tr("docker.text_outline"));
+            .rich_tip(tr("docker.text_outline"));
         let stroke = first.and_then(|t| t.stroke.clone());
         let pt = stroke.as_ref().map_or(0.0, |s| s.width * 72.0 / 25.4);
         egui::ComboBox::from_id_salt("docker_text_outline")
@@ -833,7 +857,7 @@ fn character(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) 
         });
         if ui
             .small_button("\u{2022}\u{2022}\u{2022}")
-            .on_hover_text(tr("docker.more_settings"))
+            .rich_tip(tr("docker.more_settings"))
             .clicked()
         {
             app.open_outline_editor();
@@ -934,7 +958,7 @@ fn font_axes(app: &mut App, ui: &mut Ui, sp: &TextSpan) {
     }
     ui.horizontal(|ui| {
         ui.label(tr("docker.font_axes"))
-            .on_hover_text(tr("docker.font_axes_tip"));
+            .rich_tip(tr("docker.font_axes_tip"));
         if ui
             .add_enabled(
                 !sp.variations.is_empty(),
@@ -948,7 +972,7 @@ fn font_axes(app: &mut App, ui: &mut Ui, sp: &TextSpan) {
     for axis in &axes {
         ui.horizontal(|ui| {
             ui.add_sized([72.0, 18.0], egui::Label::new(axis_name(axis)).truncate())
-                .on_hover_text(&axis.tag);
+                .rich_tip(&axis.tag);
             let id = ui.id().with(("font_axis", &axis.tag));
             let held = sp
                 .variation(&axis.tag)
@@ -1158,7 +1182,7 @@ fn paragraph(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) 
         for shape in para_icon_shapes(icon, r, ui.visuals().text_color()) {
             ui.painter().add(shape);
         }
-        resp.on_hover_text(tr(key));
+        resp.rich_tip(tr(key));
     };
     ui.horizontal(|ui| {
         line_icon(ui, ParaIcon::Leading, "docker.leading");
@@ -1287,7 +1311,7 @@ fn frame(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) {
             .unwrap_or(Color::WHITE);
         if ui
             .selectable_label(has, egui::RichText::new("\u{25A3}").size(15.0))
-            .on_hover_text(tr("docker.frame_background"))
+            .rich_tip(tr("docker.frame_background"))
             .clicked()
         {
             p.frame_fill = if has { None } else { Some(Fill::Solid(c)) };
@@ -1311,7 +1335,7 @@ fn frame(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) {
             p.vertical_align,
             Tokens::icon(),
         );
-        let resp = resp.on_hover_text(tr("docker.vertical_align"));
+        let resp = resp.rich_tip(tr("docker.vertical_align"));
         egui::Popup::menu(&resp)
             .id(egui::Id::new("docker_valign"))
             .show(|ui| {
@@ -1330,12 +1354,16 @@ fn frame(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) {
                     }
                 }
             });
-        // Fit the text to the frame.
-        if ui
-            .selectable_label(p.fit_to_frame, egui::RichText::new("\u{2922}").size(14.0))
-            .on_hover_text(tr("menu.text.frame_fit_text"))
-            .clicked()
-        {
+        // Fit the text to the frame, a drawn picture: the arrow it had
+        // is in no bundled font and showed as nothing on Windows (#1041).
+        let (rect, resp) = ui.allocate_exact_size(Vec2::new(28.0, 26.0), Sense::click());
+        crate::ui::propbar::frame(ui, rect, resp.hovered(), p.fit_to_frame);
+        paint_fit_to_frame(
+            ui.painter(),
+            Rect::from_center_size(rect.center(), Vec2::splat(18.0)),
+            Tokens::icon(),
+        );
+        if resp.rich_tip(tr("menu.text.frame_fit_text")).clicked() {
             p.fit_to_frame = !p.fit_to_frame;
             pc = true;
         }
@@ -1474,6 +1502,30 @@ fn para_icon_shapes(icon: ParaIcon, r: egui::Rect, color: egui::Color32) -> Vec<
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every text icon of the panel is in the fonts the app bundles, so
+    /// none draws as an empty box or nothing where no system font has it:
+    /// the Fit Text to Frame arrow did (#1041), as the indent and spacing
+    /// arrows had (#863).
+    #[test]
+    fn every_text_icon_is_in_the_bundled_fonts() {
+        let ctx = egui::Context::default();
+        crate::theme::install_fonts_bundled(&ctx);
+        let mut out = ctx.run_ui(Default::default(), |_| {});
+        out.textures_delta.clear();
+        let font = egui::FontId::proportional(12.0);
+        let missing: Vec<String> =
+            crate::ui::color_docker::tests::source_glyphs(include_str!("text_docker.rs"))
+                .into_iter()
+                // The full-width colon is trimmed off labels, not drawn.
+                .filter(|c| *c != '\u{FF1A}')
+                .filter(|c| !ctx.fonts_mut(|f| f.has_glyph(&font, *c)))
+                .map(|c| format!("U+{:04X}", c as u32))
+                .collect();
+        assert!(missing.is_empty(), "not in the bundled fonts: {missing:?}");
+        let arrow = char::from_u32(0x2922).expect("a char");
+        assert!(!ctx.fonts_mut(|f| f.has_glyph(&font, arrow)));
+    }
 
     /// The paragraph icons are drawn lines inside their box, not font
     /// arrows, which the interface fonts of some systems do not have and

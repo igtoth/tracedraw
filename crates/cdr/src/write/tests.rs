@@ -3416,3 +3416,218 @@ fn the_font_table_lists_weight_named_faces_under_their_family() {
         ]
     );
 }
+
+#[test]
+fn versions_9_to_11_carry_a_whole_configuration_record() {
+    let r9 = mcfg(Ver(9), 210.0, 297.0);
+    let r10 = mcfg(Ver(10), 210.0, 297.0);
+    let r11 = mcfg(Ver(11), 210.0, 297.0);
+    assert_eq!((r9.len(), r10.len(), r11.len()), (848, 4096, 4088));
+    let i32_at =
+        |r: &[u8], at: usize| i32::from_le_bytes(r[at..at + 4].try_into().unwrap_or([0; 4]));
+    let f64_at =
+        |r: &[u8], at: usize| f64::from_le_bytes(r[at..at + 8].try_into().unwrap_or([0; 8]));
+    // Page size after 4 zero bytes, the ruler origin at the bottom-left
+    // corner, a grid and scale that are not zero.
+    for r in [&r9, &r10, &r11] {
+        assert_eq!(i32_at(r, 0), 0);
+        assert_eq!((i32_at(r, 4), i32_at(r, 8)), (2_100_000, 2_970_000));
+        assert_eq!((i32_at(r, 372), i32_at(r, 376)), (-1_050_000, -1_485_000));
+        assert_eq!((f64_at(r, 384), f64_at(r, 392)), (0.2, 0.2));
+        assert_eq!(f64_at(r, 408), 1.0);
+        assert_eq!((i32_at(r, 428), i32_at(r, 448)), (11_811_024, 11_811_024));
+        assert_eq!(i32_at(r, 520), 1_000);
+    }
+    // Version 11 scales of 2.54, version 10 the same record with smaller
+    // scales and 8 bytes more at 940, ending with 12.0.
+    assert_eq!(f64_at(&r11, 848), 2.54);
+    assert_eq!(f64_at(&r10, 848), 0.000_254);
+    assert_eq!(&r10[..848], &r11[..848]);
+    assert_eq!(&r10[896..940], &r11[896..940]);
+    assert_eq!((i32_at(&r10, 940), i32_at(&r10, 944)), (0, 1));
+    assert_eq!(&r10[948..], &r11[940..]);
+    assert_eq!(f64_at(&r11, 4080), 12.0);
+    // Version 9: version 10 without the bytes after the nudge, the name
+    // fields and the last flag.
+    assert_eq!(&r9[..528], &r10[..528]);
+    assert_eq!(&r9[528..612], &r10[536..620]);
+    assert_eq!(&r9[616..764], &r10[700..848]);
+    assert_eq!(&r9[768..844], &r10[848..924]);
+    assert_eq!(i32_at(&r9, 536), 10_000);
+    // Each version reads its page size back.
+    for v in [9, 10, 11] {
+        let doc = Document::new("t", Size::new(210.0, 297.0));
+        let (back, _) = crate::open_bytes(&document_to_cdr_version(&doc, v), "t").expect("opens");
+        assert!((back.pages[0].size.width - 210.0).abs() < 0.01, "{v}");
+        assert!((back.pages[0].size.height - 297.0).abs() < 0.01, "{v}");
+    }
+}
+
+/// A text whose only run has a colour of its own, and a text of several
+/// paragraphs, one run each, in different colours, keep their colours in
+/// every version (#1057: they came back black).
+#[test]
+fn single_run_colours_round_trip() {
+    let mut doc = doc_with(Vec::new());
+    let mut ids = doc.ids().clone();
+    let red = Fill::Solid(Color::rgb8(255, 0, 0));
+    let blue = Fill::Solid(Color::rgb8(0, 0, 255));
+    let mut one = TextSpan::new("Red", "Arial", 12.0);
+    one.fill = Some(red.clone());
+    let mut a = TextSpan::new("Red\n", "Arial", 12.0);
+    a.fill = Some(red.clone());
+    let mut b = TextSpan::new("Blue", "Arial", 12.0);
+    b.fill = Some(blue.clone());
+    doc.pages[0].layers[0].shapes = vec![
+        text_shape(&mut ids, vec![one], TextAlign::Left),
+        text_shape(&mut ids, vec![a, b], TextAlign::Left),
+    ];
+    doc.set_ids(ids);
+    let colour = |s: &Shape, i: usize| {
+        let ShapeKind::Text { spans, .. } = &s.kind else {
+            panic!("{:?}", s.kind);
+        };
+        let mut at = 0;
+        for sp in spans {
+            let n = sp.text.chars().count();
+            if i < at + n {
+                return sp.fill.clone().unwrap_or_else(|| s.fill.clone());
+            }
+            at += n;
+        }
+        panic!("letter {i} past {spans:?}");
+    };
+    for v in versions() {
+        let (back, rep) =
+            crate::open_bytes(&document_to_cdr_version(&doc, v), "back").expect("reads back");
+        let read = &back.pages[0].layers[0].shapes;
+        assert_eq!(read.len(), 2, "{v}: {:?}", rep.warnings);
+        assert_eq!(colour(&read[0], 0), red, "{v}");
+        assert_eq!(colour(&read[1], 0), red, "{v}");
+        assert_eq!(colour(&read[1], 4), blue, "{v}");
+    }
+}
+
+/// `font` with its name table replaced by one of `names` (name ID and
+/// text, Windows English records), appended at the end of the file.
+fn with_names(font: &[u8], names: &[(u16, &str)]) -> Vec<u8> {
+    let mut f = font.to_vec();
+    let be16 = |b: &[u8], at: usize| u16::from_be_bytes([b[at], b[at + 1]]) as usize;
+    let dir = (0..be16(&f, 4))
+        .map(|i| 12 + 16 * i)
+        .find(|&r| &f[r..r + 4] == b"name")
+        .expect("name table");
+    let mut storage = Vec::new();
+    let mut table = Vec::new();
+    table.extend_from_slice(&0u16.to_be_bytes());
+    table.extend_from_slice(&(names.len() as u16).to_be_bytes());
+    table.extend_from_slice(&(6 + 12 * names.len() as u16).to_be_bytes());
+    for (id, text) in names {
+        let bytes: Vec<u8> = text.encode_utf16().flat_map(|u| u.to_be_bytes()).collect();
+        for v in [
+            3u16,
+            1,
+            0x0409,
+            *id,
+            bytes.len() as u16,
+            storage.len() as u16,
+        ] {
+            table.extend_from_slice(&v.to_be_bytes());
+        }
+        storage.extend_from_slice(&bytes);
+    }
+    table.extend_from_slice(&storage);
+    while !f.len().is_multiple_of(4) {
+        f.push(0);
+    }
+    let at = f.len() as u32;
+    f[dir + 8..dir + 12].copy_from_slice(&at.to_be_bytes());
+    f[dir + 12..dir + 16].copy_from_slice(&(table.len() as u32).to_be_bytes());
+    f.extend_from_slice(&table);
+    f
+}
+
+/// A static face of a large family names the whole name only as its
+/// family (name ID 1, "Khand SemiBold") and the family in its
+/// typographic names (ID 16 and 17, "Khand" and "SemiBold"): it is
+/// written as the family at the SemiBold weight, its font table entry
+/// "Khand" at 0x400 with the style "SemiBold", as files list such faces,
+/// and its embedded font keeps the font's own names (#1055: the whole
+/// name at the regular weight was reported missing where the face was
+/// only embedded).
+#[test]
+fn a_face_with_typographic_names_is_written_under_its_family() {
+    const FONT: &[u8] =
+        include_bytes!("../../../../apps/tracedraw/assets/fonts/Selawik-Regular.ttf");
+    let khand = with_names(
+        FONT,
+        &[
+            (1, "Khand SemiBold"),
+            (2, "Regular"),
+            (4, "Khand SemiBold"),
+            (6, "Khand-SemiBold"),
+            (16, "Khand"),
+            (17, "SemiBold"),
+        ],
+    );
+    let faces = vec![FontFace {
+        family: "Khand SemiBold".into(),
+        bold: false,
+        italic: false,
+        data: Some(std::sync::Arc::new(khand)),
+    }];
+    assert_eq!(
+        fonts::split_family("Khand SemiBold", false, &faces),
+        Some(("Khand".into(), 600))
+    );
+    let mut ids = tracedraw_core::id::IdSource::default();
+    let doc = doc_with(vec![text_shape(
+        &mut ids,
+        vec![TextSpan::new("semi", "Khand SemiBold", 12.0)],
+        TextAlign::Left,
+    )]);
+    let previews = Previews {
+        fonts: faces,
+        embed_fonts: true,
+        ..Default::default()
+    };
+    let bytes = document_to_cdr_version_with(&doc, NEWEST_VERSION, &previews);
+    let mut z = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).expect("zip");
+    let mut table = Vec::new();
+    std::io::Read::read_to_end(
+        &mut z.by_name("font/fontTable.dat").expect("table"),
+        &mut table,
+    )
+    .expect("read");
+    let units = |s: &str| -> Vec<u8> {
+        s.encode_utf16()
+            .chain(std::iter::once(0))
+            .flat_map(|u| u.to_le_bytes())
+            .collect()
+    };
+    let has = |s: &str| table.windows(units(s).len()).any(|w| w == units(s));
+    let u32_at = |at: usize| u32::from_le_bytes(table[at..at + 4].try_into().expect("u32"));
+    assert_eq!(u32_at(8), 1, "one face");
+    assert_eq!(u32_at(12 + 8 + 4), 0x400, "the SemiBold flags");
+    assert!(
+        has("Khand") && !has("Khand SemiBold"),
+        "listed as the family"
+    );
+    assert!(has("SemiBold"), "its style");
+    let mut member = Vec::new();
+    std::io::Read::read_to_end(
+        &mut z.by_name("embed/embedding0").expect("embedded"),
+        &mut member,
+    )
+    .expect("read");
+    let eot = crate::eot::read(&member[crate::eot::find(&member).expect("eot")..]).expect("font");
+    assert_eq!(eot.family, "Khand SemiBold", "the font's own family");
+
+    let (back, _) = crate::open_bytes(&bytes, "khand").expect("reads back");
+    let ShapeKind::Text { spans, .. } = &back.pages[0].layers[0].shapes[0].kind else {
+        panic!("not text");
+    };
+    assert_eq!(spans[0].font_family, "Khand SemiBold");
+    assert!(!spans[0].bold);
+    assert_eq!(back.fonts.len(), 1);
+}

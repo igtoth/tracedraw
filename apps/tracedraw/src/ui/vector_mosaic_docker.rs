@@ -8,6 +8,7 @@ use crate::app::App;
 use crate::i18n::tr;
 use crate::theme::Tokens;
 use crate::ui::docker_form::{indented, row, section, wide_button};
+use crate::ui::tips::RichTip;
 use crate::vector_mosaic::{unit_tile, TileShape, TrackMethod};
 use egui::{Color32, Sense, Stroke, Ui, Vec2};
 use tracedraw_core::geometry::{Affine, Shape as _};
@@ -146,7 +147,7 @@ pub fn vector_mosaic(app: &mut App, ui: &mut Ui) {
                 custom && !app.selection.is_empty(),
                 egui::Button::new(tr("docker.vector_mosaic_select")),
             )
-            .on_hover_text(tr("docker.vector_mosaic_select_tip"))
+            .rich_tip(tr("docker.vector_mosaic_select_tip"))
             .clicked();
     });
     indented(ui, |ui| preview(ui, app));

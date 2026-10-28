@@ -273,6 +273,25 @@ pub fn window_opened() -> bool {
     OPENED.load(Ordering::SeqCst)
 }
 
+/// Whether this run handed the window over to a new start with another
+/// renderer (`restart_with`): its watch then has nothing left to wait
+/// for, or it would start yet another TraceDraw beside the one that
+/// opened.
+static HANDED_OVER: AtomicBool = AtomicBool::new(false);
+
+fn hand_over() {
+    HANDED_OVER.store(true, Ordering::SeqCst);
+}
+
+fn handed_over() -> bool {
+    HANDED_OVER.load(Ordering::SeqCst)
+}
+
+/// The window of this start opened, or a new start took its place.
+fn start_settled() -> bool {
+    window_opened() || handed_over()
+}
+
 /// The file that names the renderer a start is trying, written before
 /// the window is opened and removed as soon as it is. A start that finds
 /// it knows the last one never got a window with that renderer: the
@@ -363,8 +382,8 @@ pub fn watch_start(
         .spawn(move || {
             let start = web_time::Instant::now();
             loop {
-                match watch(window_opened(), start.elapsed(), next) {
-                    Watch::Wait if window_opened() => return,
+                match watch(start_settled(), start.elapsed(), next) {
+                    Watch::Wait if start_settled() => return,
                     Watch::Wait => std::thread::sleep(std::time::Duration::from_millis(100)),
                     Watch::Last => {
                         log::warn!(
@@ -373,7 +392,7 @@ pub fn watch_start(
                         );
                         return;
                     }
-                    Watch::Next(_) if window_opened() => return,
+                    Watch::Next(_) if start_settled() => return,
                     Watch::Next(n) => {
                         log::warn!(
                             "no window after {}s with {mode:?}; starting again with {n:?}",
@@ -733,6 +752,7 @@ pub fn restart_with(next: Mode, args: &[String]) -> bool {
     let Ok(exe) = std::env::current_exe() else {
         return false;
     };
+    hand_over();
     std::process::Command::new(exe)
         .args(args_with(next, args))
         .status()
@@ -968,6 +988,21 @@ mod tests {
         std::fs::write(&path, "nonsense").expect("write");
         assert_eq!(failed_attempt_at(&path), None);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A renderer that fails at once hands the window over to a new start
+    /// with the next one, and this start waits for it: its watch must
+    /// count that as settled, or `WINDOW_WAIT` later it starts a second
+    /// TraceDraw beside the first (found while checking #741).
+    #[test]
+    fn a_start_that_handed_over_is_not_started_again() {
+        assert!(!handed_over());
+        hand_over();
+        assert!(start_settled());
+        assert_eq!(
+            watch(start_settled(), WINDOW_WAIT * 2, Some(Mode::Gl)),
+            Watch::Wait
+        );
     }
 
     /// A start whose window does not open in `WINDOW_WAIT` (the driver
