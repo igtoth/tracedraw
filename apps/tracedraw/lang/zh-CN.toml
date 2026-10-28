@@ -2892,6 +2892,7 @@ palette.no_color_tip = "无填充（左键）/ 无轮廓（右键）"
 palette.palette = "调色板"
 palette.process = "印刷色"
 palette.reset = "重置调色板"
+palette.close = "关闭调色板"
 palette.show_document = "文档调色板"
 palette.rows = "行数" # mt
 palette.rows_1 = "1 行" # mt

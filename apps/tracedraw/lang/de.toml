@@ -2892,6 +2892,7 @@ palette.no_color_tip = "Keine Füllung (Linksklick) / Kein Umriss (Rechtsklick)"
 palette.palette = "Palette"
 palette.process = "Prozessfarben"
 palette.reset = "Palette zurücksetzen"
+palette.close = "Palette schließen"
 palette.show_document = "Dokumentpalette"
 palette.rows = "Zeilen" # mt
 palette.rows_1 = "1 Zeile" # mt

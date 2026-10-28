@@ -2892,6 +2892,7 @@ palette.no_color_tip = "Geen vulling (linkerklik) / Geen omtrek (rechterklik)"
 palette.palette = "Palet"
 palette.process = "Proceskleuren"
 palette.reset = "Palet opnieuw instellen"
+palette.close = "Palet sluiten"
 palette.show_document = "Documentpalet"
 palette.rows = "Rijen" # mt
 palette.rows_1 = "1 rij" # mt

@@ -8,7 +8,12 @@ into a floating window with as many rows as the Rows setting (see "Moving the ba
 `toolbars.md`); where it is put is kept across restarts, in the browser
 too. The document palette stays a row under the drawing window wherever
 the default palette is (over the drawing window when the default palette
-is along the top). Window > Toolbars > Color Palette hides or shows
+is along the top). Each further palette ticked in Window > Color
+Palettes (or in the Palette Manager) gets a strip of one row of its own
+next to the default palette, in the order ticked, each further from
+it: rows over it at the bottom (under it along the top), columns
+inside it on a side, rows under it in its floating window (#1164). Its menu offers the Palette Editor, the Palette Manager and
+Close Palette, which unticks it. Window > Toolbars > Color Palette hides or shows
 them. The rows described below are the same along a column, turned
 downwards.
 
@@ -138,6 +143,7 @@ update the document palette (on).
 - `ui::palette::tests::the_default_palette_of_an_rgb_drawing_is_clean_rgb`
 - `ui::palette::tests::the_default_palette_can_show_several_rows`
 - `ui::palette::tests::every_colour_opens_clear_of_all_the_rows`
+- `pick_drag_tests::every_palette_shown_gets_a_strip`
 - `ui::dockers::tests::a_fill_dragged_in_the_picker_is_one_step_and_one_palette_colour`
 - `color_drop::tests` (fill inside, outline on the edge, No Color, an
   object without a fill, the document palette)

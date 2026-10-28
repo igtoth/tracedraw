@@ -2892,6 +2892,7 @@ palette.no_color_tip = "कोई फ़िल नहीं (बायाँ क
 palette.palette = "पैलेट"
 palette.process = "प्रोसेस"
 palette.reset = "पैलेट रीसेट करें"
+palette.close = "पैलेट बंद करें"
 palette.show_document = "दस्तावेज़ पैलेट"
 palette.rows = "पंक्तियाँ" # mt
 palette.rows_1 = "1 पंक्ति" # mt

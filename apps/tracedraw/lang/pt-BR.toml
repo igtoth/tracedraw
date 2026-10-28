@@ -2892,6 +2892,7 @@ palette.no_color_tip = "Sem preenchimento (clique esquerdo) / Sem contorno (cliq
 palette.palette = "Paleta"
 palette.process = "Processo"
 palette.reset = "Redefinir paleta"
+palette.close = "Fechar paleta"
 palette.show_document = "Paleta do documento"
 palette.rows = "Linhas" # mt
 palette.rows_1 = "1 linha" # mt

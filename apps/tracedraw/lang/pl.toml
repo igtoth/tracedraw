@@ -2892,6 +2892,7 @@ palette.no_color_tip = "Brak wypełnienia (lewy przycisk) / Brak konturu (prawy 
 palette.palette = "Paleta"
 palette.process = "Skład"
 palette.reset = "Resetuj paletę"
+palette.close = "Zamknij paletę"
 palette.show_document = "Paleta dokumentu"
 palette.rows = "Wiersze" # mt
 palette.rows_1 = "1 wiersz" # mt

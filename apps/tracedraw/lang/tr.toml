@@ -2892,6 +2892,7 @@ palette.no_color_tip = "Dolgu yok (sol tıklama) / Anahat yok (sağ tıklama)"
 palette.palette = "Palet"
 palette.process = "Proses"
 palette.reset = "Paleti Sıfırla"
+palette.close = "Paleti Kapat"
 palette.show_document = "Belge Paleti"
 palette.rows = "Satırlar" # mt
 palette.rows_1 = "1 satır" # mt

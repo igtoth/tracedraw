@@ -2892,6 +2892,7 @@ palette.no_color_tip = "Nessun riempimento (clic sinistro) / Nessun contorno (cl
 palette.palette = "Tavolozza"
 palette.process = "Quadricromia"
 palette.reset = "Ripristina tavolozza"
+palette.close = "Chiudi tavolozza"
 palette.show_document = "Tavolozza del documento"
 palette.rows = "Righe" # mt
 palette.rows_1 = "1 riga" # mt

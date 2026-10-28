@@ -2892,6 +2892,7 @@ palette.no_color_tip = "ফিল নেই (বাম ক্লিক) / আউ
 palette.palette = "প্যালেট"
 palette.process = "প্রসেস"
 palette.reset = "প্যালেট রিসেট করুন"
+palette.close = "প্যালেট বন্ধ করুন"
 palette.show_document = "ডকুমেন্ট প্যালেট"
 palette.rows = "সারি" # mt
 palette.rows_1 = "১টি সারি" # mt

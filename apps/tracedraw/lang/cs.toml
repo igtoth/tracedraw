@@ -2892,6 +2892,7 @@ palette.no_color_tip = "Bez výplně (levé tlačítko) / Bez obrysu (pravé tla
 palette.palette = "Paleta"
 palette.process = "Procesní"
 palette.reset = "Obnovit paletu"
+palette.close = "Zavřít paletu"
 palette.show_document = "Paleta dokumentu"
 palette.rows = "Řádky" # mt
 palette.rows_1 = "1 řádek" # mt

@@ -1,5 +1,6 @@
 //! The colour palettes docked under the drawing window: the default
-//! palette, then the document palette.
+//! palette, a strip for each further palette shown (#1164), then the
+//! document palette.
 //!
 //! Each row: a grip, the palette menu button, the eyedropper (it adds
 //! colours sampled from the drawing; only the document palette can be
@@ -35,10 +36,49 @@ const HOLD: f64 = 0.5;
 const RIGHT_HOLD: f64 = 1.0;
 
 /// Which palette a row shows.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Row {
     Main,
     Document,
+    /// The `k`th palette shown after the first ([`App::extra_palettes`]).
+    Extra(usize),
+}
+
+impl Row {
+    /// A small number telling the rows apart in widget ids.
+    fn key(self) -> u8 {
+        match self {
+            Row::Main => 0,
+            Row::Document => 1,
+            Row::Extra(k) => u8::try_from(k.saturating_add(2)).unwrap_or(u8::MAX),
+        }
+    }
+}
+
+/// A further palette shown in a strip of its own: which palette, its
+/// colours (and as an RGB drawing shows them, worked out once when the
+/// palettes change), and how far the strip is scrolled.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExtraRow {
+    pub index: usize,
+    pub colors: Vec<(String, Color)>,
+    pub rgb: Vec<(String, Color)>,
+    pub scroll: usize,
+}
+
+/// The strips of the further palettes shown, in order.
+pub fn extra_rows(app: &App) -> Vec<Row> {
+    (0..app.extra_palettes.len()).map(Row::Extra).collect()
+}
+
+/// A further palette as a row.
+pub fn extra_palette_row(app: &mut App, ui: &mut Ui, which: Row) {
+    row(app, ui, which, false);
+}
+
+/// A further palette as a column.
+pub fn extra_palette_column(app: &mut App, ui: &mut Ui, which: Row) {
+    row(app, ui, which, true);
 }
 
 /// The default palette row.
@@ -109,6 +149,11 @@ fn colors_of(app: &App, which: Row) -> Vec<(String, Color)> {
             .iter()
             .map(|c| (name_of(app, *c), *c))
             .collect(),
+        Row::Extra(k) => match app.extra_palettes.get(k) {
+            Some(r) if rgb_drawing(app) => r.rgb.clone(),
+            Some(r) => r.colors.clone(),
+            None => Vec::new(),
+        },
     }
 }
 
@@ -222,6 +267,9 @@ fn scroll_of(app: &mut App, which: Row) -> &mut usize {
     match which {
         Row::Main => &mut app.palette_scroll,
         Row::Document => &mut app.doc_palette_scroll,
+        Row::Extra(k) if k < app.extra_palettes.len() => &mut app.extra_palettes[k].scroll,
+        // A strip gone since: nothing scrolls it.
+        Row::Extra(_) => &mut app.palette_scroll_spare,
     }
 }
 
@@ -231,11 +279,12 @@ pub fn thickness(app: &App, which: Row) -> f32 {
     ROW_H + (lines_of(app, which) - 1) as f32 * STRIDE
 }
 
-/// Rows of swatches in the strip of `which` (the document palette has one).
+/// Rows of swatches in the strip of `which` (the document palette and
+/// the further palettes have one).
 fn lines_of(app: &App, which: Row) -> usize {
     match which {
         Row::Main => app.settings.palette.rows(),
-        Row::Document => 1,
+        Row::Document | Row::Extra(_) => 1,
     }
 }
 
@@ -293,7 +342,7 @@ fn row(app: &mut App, ui: &mut Ui, which: Row, vertical: bool) {
         ui,
         crate::ui::bars::Bar::Palette,
         ax.rect(0.0, 0.0, 11.0, thick),
-        which as u8,
+        which.key(),
     );
 
     let colors = colors_of(app, which);
@@ -311,7 +360,7 @@ fn row(app: &mut App, ui: &mut Ui, which: Row, vertical: bool) {
     let menu_rect = ax.rect(13.0, EDGE, 15.0, 22.0);
     let menu_resp = ui.interact(
         menu_rect,
-        ui.id().with(("palette_menu", which as u8)),
+        ui.id().with(("palette_menu", which.key())),
         Sense::click(),
     );
     let c = menu_rect.center();
@@ -326,12 +375,12 @@ fn row(app: &mut App, ui: &mut Ui, which: Row, vertical: bool) {
     ));
     let menu_resp = menu_resp.rich_tip(tr("palette.menu_tip"));
     egui::Popup::menu(&menu_resp)
-        .id(egui::Id::new(("palette_menu_popup", which as u8)))
+        .id(egui::Id::new(("palette_menu_popup", which.key())))
         .style(crate::ui::menus::menu_popup_style)
         .show(|ui| crate::ui::menus::body(ui, |ui| palette_menu(app, ui, which)));
     // A right click on the row outside the swatches opens the same menu.
     egui::Popup::context_menu(&bg)
-        .id(egui::Id::new(("palette_context_popup", which as u8)))
+        .id(egui::Id::new(("palette_context_popup", which.key())))
         .style(crate::ui::menus::menu_popup_style)
         .show(|ui| crate::ui::menus::body(ui, |ui| palette_menu(app, ui, which)));
 
@@ -340,7 +389,7 @@ fn row(app: &mut App, ui: &mut Ui, which: Row, vertical: bool) {
     let can_sample = which == Row::Document && app.drawing_shown();
     let drop_resp = ui.interact(
         drop_rect,
-        ui.id().with(("palette_dropper", which as u8)),
+        ui.id().with(("palette_dropper", which.key())),
         if can_sample {
             Sense::click()
         } else {
@@ -394,7 +443,7 @@ fn row(app: &mut App, ui: &mut Ui, which: Row, vertical: bool) {
     let expand_resp = ui
         .interact(
             expand,
-            ui.id().with(("palette_expand", which as u8)),
+            ui.id().with(("palette_expand", which.key())),
             Sense::click(),
         )
         .rich_tip(tr("palette.expand_tip"));
@@ -409,7 +458,7 @@ fn row(app: &mut App, ui: &mut Ui, which: Row, vertical: bool) {
         vertical,
     );
     ui.ctx()
-        .data_mut(|d| d.insert_temp(egui::Id::new(("palette_expand_rect", which as u8)), expand));
+        .data_mut(|d| d.insert_temp(egui::Id::new(("palette_expand_rect", which.key())), expand));
     if expand_resp.clicked() && count > 0 {
         app.palette_expanded = if app.palette_expanded == Some(which) {
             None
@@ -421,9 +470,9 @@ fn row(app: &mut App, ui: &mut Ui, which: Row, vertical: bool) {
     // The swatches.
     let strip = ax.point(LEAD, 0.0);
     ui.ctx().data_mut(|d| {
-        d.insert_temp(egui::Id::new(("palette_strip", which as u8)), strip);
+        d.insert_temp(egui::Id::new(("palette_strip", which.key())), strip);
         d.insert_temp(
-            egui::Id::new(("palette_strip_vertical", which as u8)),
+            egui::Id::new(("palette_strip_vertical", which.key())),
             vertical,
         );
     });
@@ -519,7 +568,7 @@ fn swatch(
     index: usize,
     color_index: Option<usize>,
 ) {
-    let id = ui.id().with(("swatch", which as u8, index));
+    let id = ui.id().with(("swatch", which.key(), index));
     // Nothing to colour on the Welcome Screen or with no drawing open:
     // the swatches keep their colours and their tooltips but take no
     // clicks or drags (#482, #1082).
@@ -638,7 +687,7 @@ fn swatch(
             }
         }
     }
-    let menu_id = egui::Id::new(("palette_swatch_menu", which as u8, index));
+    let menu_id = egui::Id::new(("palette_swatch_menu", which.key(), index));
     if app.settings.palette.right_click_outline {
         // A right click sets the outline; held for a second it opens the
         // palette menu instead (the release then does nothing).
@@ -739,7 +788,7 @@ fn chevron(
     which: Row,
     vertical: bool,
 ) -> bool {
-    let id = ui.id().with(("palette_chevron", which as u8, dir));
+    let id = ui.id().with(("palette_chevron", which.key(), dir));
     let key = if dir < 0 {
         "palette.scroll_back"
     } else {
@@ -891,6 +940,22 @@ fn palette_menu(app: &mut App, ui: &mut Ui, which: Row) {
                 }
             });
         }
+        Row::Extra(k) => {
+            let index = app.extra_palettes.get(k).map(|r| r.index);
+            if item(ui, "menu.window.palette_editor", "", true) {
+                app.dialog = crate::ui::dialogs::Dialog::PaletteEditor(Default::default());
+            }
+            if item(ui, "menu.window.palette_manager", "", true) {
+                app.show_dockers = true;
+                app.docker_tab = crate::app::DockerTab::Palettes;
+            }
+            sep(ui);
+            if item(ui, "palette.close", "", index.is_some()) {
+                if let Some(i) = index {
+                    app.toggle_palette(i);
+                }
+            }
+        }
     }
 }
 
@@ -963,12 +1028,12 @@ pub fn popups(app: &mut App, ctx: &egui::Context) {
         let screen = ctx.content_rect();
         // Above the row, from its first swatch.
         let strip = ctx
-            .data(|d| d.get_temp::<Pos2>(egui::Id::new(("palette_strip", which as u8))))
+            .data(|d| d.get_temp::<Pos2>(egui::Id::new(("palette_strip", which.key()))))
             .unwrap_or(pos2(screen.left() + LEAD, screen.bottom() - 3.0 * ROW_H));
         // Clear of every row of the strip.
         let thick = thickness(app, which);
         let vertical = ctx
-            .data(|d| d.get_temp::<bool>(egui::Id::new(("palette_strip_vertical", which as u8))))
+            .data(|d| d.get_temp::<bool>(egui::Id::new(("palette_strip_vertical", which.key()))))
             .unwrap_or(false);
         let (cols, size, pos) = if vertical {
             // Beside a column: towards the middle of the window.
@@ -1053,7 +1118,7 @@ pub fn popups(app: &mut App, ctx: &egui::Context) {
 
 /// The expand button toggles the pop-up itself.
 fn on_expand_button(ctx: &egui::Context, which: Row) -> bool {
-    let r = ctx.data(|d| d.get_temp::<Rect>(egui::Id::new(("palette_expand_rect", which as u8))));
+    let r = ctx.data(|d| d.get_temp::<Rect>(egui::Id::new(("palette_expand_rect", which.key()))));
     let p = ctx.input(|i| i.pointer.interact_pos());
     matches!((r, p), (Some(r), Some(p)) if r.contains(p))
 }

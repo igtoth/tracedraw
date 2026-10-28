@@ -2892,6 +2892,7 @@ palette.no_color_tip = "Tanpa isian (klik kiri) / Tanpa garis luar (klik kanan)"
 palette.palette = "Palet"
 palette.process = "Proses"
 palette.reset = "Atur ulang palet"
+palette.close = "Tutup Palet"
 palette.show_document = "Palet dokumen"
 palette.rows = "Baris" # mt
 palette.rows_1 = "1 baris" # mt

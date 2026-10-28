@@ -426,6 +426,18 @@ fn root_frame(app: &mut App, ui: &mut Ui) {
             )
             .frame(palette_frame)
             .show(ui, |ui| palette::palette_column(app, ui));
+            // A column for each further palette shown, inside it (#1164).
+            for which in palette::extra_rows(app) {
+                let id = egui::Id::new(("palette_extra", which));
+                let panel = if palette_dock == Dock::Left {
+                    Panel::left(id)
+                } else {
+                    Panel::right(id)
+                };
+                side(panel, palette::thickness(app, which))
+                    .frame(palette_frame)
+                    .show(ui, |ui| palette::extra_palette_column(app, ui, which));
+            }
         }
     }
 
@@ -536,6 +548,18 @@ fn root_frame(app: &mut App, ui: &mut Ui) {
             )
             .frame(palette_frame)
             .show(ui, |ui| palette::palette_row(app, ui));
+            // A row for each further palette shown, next to it (#1164).
+            for which in palette::extra_rows(app) {
+                let id = egui::Id::new(("palette_extra", which));
+                let panel = if palette_dock == Dock::Top {
+                    Panel::top(id)
+                } else {
+                    Panel::bottom(id)
+                };
+                side(panel, palette::thickness(app, which))
+                    .frame(palette_frame)
+                    .show(ui, |ui| palette::extra_palette_row(app, ui, which));
+            }
         }
     }
     // The AI prompt bar, over the palette rows, while a service is set up.

@@ -2819,7 +2819,9 @@ impl App {
         self.rebuild_palette();
     }
 
-    /// The bottom palette strip shows the first visible palette.
+    /// The main palette strip shows the first visible palette, and each
+    /// further visible palette gets a strip of its own (#1164), keeping
+    /// how far it was scrolled.
     pub fn rebuild_palette(&mut self) {
         if let Some(i) = self.visible_palettes.first() {
             if let Some(p) = self.palettes.get(*i) {
@@ -2828,6 +2830,25 @@ impl App {
                 self.palette_scroll = 0;
             }
         }
+        let old = std::mem::take(&mut self.extra_palettes);
+        self.extra_palettes = self
+            .visible_palettes
+            .iter()
+            .skip(1)
+            .filter_map(|&index| {
+                let p = self.palettes.get(index)?;
+                let scroll = old
+                    .iter()
+                    .find(|r| r.index == index)
+                    .map_or(0, |r| r.scroll);
+                Some(crate::ui::palette::ExtraRow {
+                    index,
+                    rgb: crate::ui::palette::as_rgb(&p.colors),
+                    colors: p.colors.clone(),
+                    scroll,
+                })
+            })
+            .collect();
     }
 
     pub fn open_palette_file(&mut self) {

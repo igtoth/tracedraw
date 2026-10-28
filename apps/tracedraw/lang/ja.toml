@@ -2892,6 +2892,7 @@ palette.no_color_tip = "塗りなし（左クリック）/ 輪郭なし（右ク
 palette.palette = "パレット"
 palette.process = "プロセス"
 palette.reset = "パレットをリセット"
+palette.close = "パレットを閉じる"
 palette.show_document = "ドキュメント パレット"
 palette.rows = "行数" # mt
 palette.rows_1 = "1 行" # mt

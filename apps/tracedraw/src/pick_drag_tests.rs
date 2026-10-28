@@ -748,6 +748,61 @@ fn objects_dropped_on_the_document_palette_give_their_colours() {
         .contains(&tracedraw_core::Color::rgb8(200, 30, 30)));
 }
 
+/// #1164: every palette ticked in Window > Color Palettes gets a strip,
+/// not only the first. With three shown, a click on the third one's
+/// strip paints with its colour; closing the second leaves the third.
+#[test]
+fn every_palette_shown_gets_a_strip() {
+    use crate::ui::palette::Row;
+    let (ctx, mut app, id) = setup();
+    let gray = app
+        .palettes
+        .iter()
+        .position(|p| p.key == "palette.grayscale")
+        .expect("grayscale palette");
+    let process = app
+        .palettes
+        .iter()
+        .position(|p| p.key == "palette.process")
+        .expect("process palette");
+    app.toggle_palette(process);
+    app.toggle_palette(gray);
+    assert_eq!(app.extra_palettes.len(), 2);
+    for _ in 0..3 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    let strip = |ctx: &egui::Context, which: Row| {
+        egui::PanelState::load(ctx, egui::Id::new(("palette_extra", which))).map(|s| s.outer_rect)
+    };
+    let third = strip(&ctx, Row::Extra(1)).expect("the third palette shows");
+    assert!(strip(&ctx, Row::Extra(0)).is_some());
+    assert!(
+        third.height() >= crate::ui::palette::ROW_H - 1.0,
+        "{third:?}"
+    );
+    // The fourth swatch slot of the grayscale strip.
+    let at = Pos2::new(third.left() + 77.0 + 21.0 * 3.5, third.center().y);
+    click_at(&ctx, &mut app, at, Modifiers::NONE);
+    let fill = app
+        .doc()
+        .find_shape(id)
+        .and_then(|s| s.fill.preview_color())
+        .expect("a solid fill");
+    let grays: Vec<_> = app.palettes[gray].colors.iter().map(|(_, c)| *c).collect();
+    let rgb_grays: Vec<_> = crate::ui::palette::as_rgb(&app.palettes[gray].colors)
+        .into_iter()
+        .map(|(_, c)| c)
+        .collect();
+    assert!(
+        grays.contains(&fill) || rgb_grays.contains(&fill),
+        "{fill:?} is not a grey of the third palette"
+    );
+    // Closing the second palette leaves the third in a strip.
+    app.toggle_palette(process);
+    assert_eq!(app.extra_palettes.len(), 1);
+    assert_eq!(app.extra_palettes[0].index, gray);
+}
+
 fn click_at(ctx: &egui::Context, app: &mut App, at: Pos2, mods: Modifiers) {
     frame(ctx, app, vec![Event::PointerMoved(at)], mods);
     frame(

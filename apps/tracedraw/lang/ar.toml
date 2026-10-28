@@ -2892,6 +2892,7 @@ palette.no_color_tip = "بدون تعبئة (نقر أيسر) / بدون حد (�
 palette.palette = "لوحة الألوان"
 palette.process = "ألوان العملية"
 palette.reset = "إعادة تعيين لوحة الألوان"
+palette.close = "إغلاق لوحة الألوان"
 palette.show_document = "لوحة ألوان المستند"
 palette.rows = "الصفوف" # mt
 palette.rows_1 = "صف واحد" # mt

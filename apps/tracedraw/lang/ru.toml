@@ -2892,6 +2892,7 @@ palette.no_color_tip = "Без заливки (левая кнопка) / Без
 palette.palette = "Палитра"
 palette.process = "Триадные"
 palette.reset = "Сбросить палитру"
+palette.close = "Закрыть палитру"
 palette.show_document = "Палитра документа"
 palette.rows = "Строки" # mt
 palette.rows_1 = "1 строка" # mt

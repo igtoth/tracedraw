@@ -2892,6 +2892,7 @@ palette.no_color_tip = "Aucune surface (clic gauche) / Aucun contour (clic droit
 palette.palette = "Palette"
 palette.process = "Quadrichromie"
 palette.reset = "Réinitialiser la palette"
+palette.close = "Fermer la palette"
 palette.show_document = "Palette du document"
 palette.rows = "Rangées" # mt
 palette.rows_1 = "1 rangée" # mt

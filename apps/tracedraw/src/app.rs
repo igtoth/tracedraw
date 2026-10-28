@@ -1044,6 +1044,11 @@ pub struct App {
     pub palette_scroll: usize,
     /// The same for the document palette row.
     pub doc_palette_scroll: usize,
+    /// The palettes shown after the first one (Window > Color Palettes),
+    /// a strip each (#1164).
+    pub extra_palettes: Vec<crate::ui::palette::ExtraRow>,
+    /// What a strip no longer there scrolls (nothing reads it).
+    pub palette_scroll_spare: usize,
     /// The document palette swatch clicked last (Delete color acts on it).
     pub doc_palette_current: Option<usize>,
     /// Pop-up of a palette colour's shades (click and hold a swatch): the
@@ -2226,6 +2231,8 @@ impl App {
             palette_rgb: crate::ui::palette::as_rgb(&crate::palette::default_cmyk()),
             palette_scroll: 0,
             doc_palette_scroll: 0,
+            extra_palettes: Vec::new(),
+            palette_scroll_spare: 0,
             doc_palette_current: None,
             palette_shades: None,
             palette_expanded: None,

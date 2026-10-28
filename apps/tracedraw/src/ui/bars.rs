@@ -202,7 +202,10 @@ impl Bar {
             Bar::Toolbox => vec2(crate::ui::toolbox::floating_width(app) + 8.0, 400.0),
             Bar::Palette => vec2(
                 460.0,
-                crate::ui::palette::thickness(app, crate::ui::palette::Row::Main) + TITLE_H + 4.0,
+                crate::ui::palette::thickness(app, crate::ui::palette::Row::Main)
+                    + crate::ui::palette::ROW_H * app.extra_palettes.len() as f32
+                    + TITLE_H
+                    + 4.0,
             ),
             Bar::Standard => vec2(940.0, 36.0 + TITLE_H + 4.0),
             Bar::Property => vec2(1100.0, 53.0 + TITLE_H + 4.0),
@@ -1146,6 +1149,10 @@ fn floating_body(app: &mut App, ui: &mut Ui, bar: Bar, size: Vec2) {
         Bar::Palette => {
             ui.set_width(size.x);
             crate::ui::palette::palette_row(app, ui);
+            // The further palettes shown, under it (#1164).
+            for which in crate::ui::palette::extra_rows(app) {
+                crate::ui::palette::extra_palette_row(app, ui, which);
+            }
         }
         Bar::Standard => {
             egui::Frame::new()
