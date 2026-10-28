@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Multipage View: the pages always sit in four columns, so a page added goes at the next place and the pages before it stay where they were. The number of columns followed the page count (2 columns for 2 and 3 pages, 3 for 4 to 9, 4 from 10), so adding the 4th or the 10th page moved every page (#1018).
 - Document palette: a colour picked with its eyedropper that the palette has already gets the white frame of the last colour used, so it shows where it is; a new colour takes the frame as it joins, and applying a colour of the palette moves the frame to it (#1125).
 - Status bar: a tool hint or message cut off at the right shows whole in a tip on hover, so a long path before the hint no longer hides it for good (#1126).
 - Pages added to a drawing (Layout > Insert Page, the + beside the page tabs, the navigator's insert buttons) are named in the interface's language, as the first page is, and so is their first layer. They were named "Page 2", "Layer 1" and so on in English whatever the language (#1127).
