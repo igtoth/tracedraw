@@ -1382,11 +1382,29 @@ impl App {
         }
     }
 
+    /// The Fit Objects to Path panel for the objects selected now: values
+    /// set for other objects (or in another drawing) are not carried
+    /// over; the panel starts again from the defaults, with no preview
+    /// until a value is entered (#1136).
+    pub fn fit_path_follow_selection(&mut self) {
+        let drawing = self.docs.get(self.active_doc).map(|d| d.drawing);
+        let same = self
+            .fit_path_for
+            .as_ref()
+            .is_some_and(|(d, sel)| *d == drawing && *sel == self.selection);
+        if !same {
+            self.fit_path = FitPathSettings::default();
+            self.fit_path_edited = false;
+            self.fit_path_for = Some((drawing, self.selection.clone()));
+        }
+    }
+
     /// The outlines the selected objects would have after
     /// [`Self::fit_objects_to_path`], for the panel's preview; empty when
-    /// the selection cannot be fitted or is too large to preview cheaply.
+    /// the selection cannot be fitted or is too large to preview cheaply,
+    /// and until a value was entered for these objects (#1136).
     pub fn fit_objects_to_path_preview(&self) -> Vec<BezPath> {
-        if self.selection.len() < 2 || self.selection.len() > 200 {
+        if !self.fit_path_edited || self.selection.len() < 2 || self.selection.len() > 200 {
             return Vec::new();
         }
         let shapes = self.selected_shapes();
@@ -4321,12 +4339,15 @@ mod tests {
         app.open_docker(crate::app::DockerTab::FitToPath);
         assert!(app.open_dockers.contains(&crate::app::DockerTab::FitToPath));
         assert_eq!(app.docker_tab, crate::app::DockerTab::FitToPath);
-        // The panel draws and previews three outlines.
+        // The panel draws; it previews the three outlines once a value is
+        // entered for these objects (#1136).
         let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
             crate::ui::dockers2::show(&mut app, ui, crate::app::DockerTab::FitToPath);
         });
         out.textures_delta.clear();
-        assert_eq!(app.docker_preview.len(), 3);
+        assert!(app.docker_preview.is_empty());
+        app.fit_path_edited = true;
+        assert_eq!(app.fit_objects_to_path_preview().len(), 3);
         assert!(
             (centre(&app, a) - Point::new(52.0, 51.0)).hypot() < 1e-9,
             "nothing moved yet"
@@ -4356,6 +4377,66 @@ mod tests {
             );
         }
         assert_eq!(app.engine.undo_label(), Some("Fit Objects to Path"));
+    }
+
+    /// The panel starts from the defaults, with no preview, for objects it
+    /// was not used on: values entered for other objects or in another
+    /// drawing are not carried over; for the same objects they stay, and
+    /// the preview shows once a value is entered (#1136).
+    #[test]
+    fn fit_objects_to_path_starts_from_the_defaults_for_other_objects() {
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        let show = |app: &mut App| {
+            app.docker_preview.clear();
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                crate::ui::dockers2::show(app, ui, crate::app::DockerTab::FitToPath);
+            });
+            out.textures_delta.clear();
+        };
+        let a = square_at(&mut app, 50.0, 50.0);
+        let line = line_path(&mut app, &[(0.0, 0.0), (100.0, 0.0)], false);
+        app.select(vec![a, line]);
+        app.open_docker(crate::app::DockerTab::FitToPath);
+        show(&mut app);
+        assert!(app.docker_preview.is_empty(), "no preview before a value");
+        // Values entered for these objects (as the panel's fields do).
+        let entered = FitPathSettings {
+            spacing: FitSpacing::Distance,
+            distance: 20.0,
+            offset: 30.0,
+            rotate: true,
+            reverse: true,
+        };
+        app.fit_path = entered;
+        app.fit_path_edited = true;
+        show(&mut app);
+        assert_eq!(app.fit_path, entered);
+        assert_eq!(app.docker_preview.len(), 1);
+        app.fit_objects_to_path();
+        // Another object on the path: the defaults, no preview.
+        let b = square_at(&mut app, 80.0, 80.0);
+        app.select(vec![b, line]);
+        show(&mut app);
+        assert_eq!(app.fit_path, FitPathSettings::default());
+        assert!(app.docker_preview.is_empty());
+        // Back to the first objects: the defaults too (the panel follows
+        // the objects selected, it does not remember every selection).
+        app.select(vec![a, line]);
+        show(&mut app);
+        assert_eq!(app.fit_path, FitPathSettings::default());
+        // Another drawing with objects of the same ids.
+        app.fit_path = entered;
+        app.fit_path_edited = true;
+        show(&mut app);
+        assert_eq!(app.fit_path, entered);
+        app.new_document();
+        let a2 = square_at(&mut app, 50.0, 50.0);
+        let line2 = line_path(&mut app, &[(0.0, 0.0), (100.0, 0.0)], false);
+        app.select(vec![a2, line2]);
+        show(&mut app);
+        assert_eq!(app.fit_path, FitPathSettings::default());
+        assert!(app.docker_preview.is_empty());
     }
 
     /// With Rotate the objects turn with the path; on a closed path they go

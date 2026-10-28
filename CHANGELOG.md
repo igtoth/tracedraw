@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Fit Objects to Path panel: it no longer starts with the values and the preview left from earlier work (on other objects or in another drawing); for other objects it starts from the defaults and shows no preview until a value is entered (#1136).
+
 - Dimensions: a dimension placed between two edges of an object (the sides of a rectangle, say, not its corners) now holds to them like one placed on nodes: moving, resizing, turning or reshaping the object takes the dimension along, each end keeping its place along its edge, and the value follows. Only ends on nodes were held, so a dimension between two sides stayed where it was (#1178).
 
 ## 0.19.12 (2026-10-28)

@@ -1116,6 +1116,12 @@ pub struct App {
     pub join_settings: crate::corners::JoinSettings,
     /// The Fit Objects to Path docker's spacing, offset and turning.
     pub fit_path: crate::ops2::FitPathSettings,
+    /// The objects (the drawing and the selection, the path last) the
+    /// Fit Objects to Path docker's values were set for, and whether a
+    /// value was entered for them: other objects start from the defaults
+    /// with no preview (#1136).
+    pub fit_path_for: Option<(Option<u64>, Vec<ShapeId>)>,
+    pub fit_path_edited: bool,
     /// Outlines a docker previews on the canvas this frame (page space).
     pub docker_preview: Vec<tracedraw_core::geometry::BezPath>,
     /// A point a docker marks on the drawing (the Coordinates docker's
@@ -2262,6 +2268,8 @@ impl App {
             corners: Default::default(),
             join_settings: Default::default(),
             fit_path: Default::default(),
+            fit_path_for: None,
+            fit_path_edited: false,
             docker_preview: Vec::new(),
             docker_preview_point: None,
             dialog: crate::ui::dialogs::Dialog::None,

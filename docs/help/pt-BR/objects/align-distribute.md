@@ -72,8 +72,10 @@ curva ou do contorno de uma forma. Abra-o com
 4. Marque [[docker.fit_to_path_rotate]] para girar cada objeto com a direção
    do caminho, e [[docker.fit_to_path_reverse]] para começar pela outra
    ponta.
-5. Os contornos na tela mostram onde os objetos vão ficar. Clique em
-   [[docker.apply]].
+5. Assim que você muda um valor, os contornos na tela mostram onde os
+   objetos vão ficar. Clique em [[docker.apply]].
 
-Numa forma fechada, os objetos dão a volta inteira sem que o primeiro e o
+O painel começa com os valores padrão, sem contornos, sempre que você
+seleciona outros objetos (ou trabalha em outro desenho); os valores que
+você digita ficam enquanto os mesmos objetos estão selecionados. Numa forma fechada, os objetos dão a volta inteira sem que o primeiro e o
 último se encontrem. Encaixar é um passo de desfazer.

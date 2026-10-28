@@ -70,8 +70,10 @@ outline of a shape. Open it with
 4. Tick [[docker.fit_to_path_rotate]] to turn each object with the direction
    of the path, and [[docker.fit_to_path_reverse]] to start from the other
    end.
-5. The outlines on the canvas show where the objects will go. Click
-   [[docker.apply]].
+5. Once you change a value, the outlines on the canvas show where the
+   objects will go. Click [[docker.apply]].
 
-On a closed shape the objects go all the way round without the first and
+The panel starts from its default values, with no outlines, each time you
+select other objects (or work in another drawing); the values you enter
+stay while the same objects are selected. On a closed shape the objects go all the way round without the first and
 last meeting. Fitting is one undo step.

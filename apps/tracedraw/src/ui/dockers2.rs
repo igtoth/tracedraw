@@ -2555,6 +2555,7 @@ fn join_curves(app: &mut App, ui: &mut Ui) {
 fn fit_to_path(app: &mut App, ui: &mut Ui) {
     use crate::ops2::FitSpacing;
     let u = app.units;
+    app.fit_path_follow_selection();
     let mut f = app.fit_path;
     let field = |ui: &mut Ui, key: &str, mm: &mut f64, min: f64| {
         ui.horizontal(|ui| {
@@ -2603,6 +2604,9 @@ fn fit_to_path(app: &mut App, ui: &mut Ui) {
         .rich_tip(crate::ui::tips::keyed("docker.fit_to_path_rotate"));
     ui.checkbox(&mut f.reverse, tr("docker.fit_to_path_reverse"))
         .rich_tip(crate::ui::tips::keyed("docker.fit_to_path_reverse"));
+    if f != app.fit_path {
+        app.fit_path_edited = true;
+    }
     app.fit_path = f;
     let preview = app.fit_objects_to_path_preview();
     let valid = app.selection.len() >= 2;

@@ -85,7 +85,7 @@ Counts: works 189, partial 6 (`.cdr` content coverage; CMX import; print preview
 | Align and Distribute: six aligns to the active object, the page's edges, its centre or the grid, with Use Outline; eight distributes (edges, centres, gaps along x and y) between the outermost objects or across the page; picture buttons in the panel (see `behavior/align-distribute.md`) | works |
 | Transformations panel: Position, Rotate, Scale and Mirror, Size and Skew pages (Alt+F7 to Alt+F10, Object > Transformations) with a 3 x 3 reference point (a direction picker for relative position), relative or absolute position and centre, mirror buttons, proportional scale and size, skew about the anchor point, and copies in one undo step (see `behavior/transformations.md`) | works |
 | Step and Repeat (the values start from the defaults for each new selection, and after an Apply; the fields wait for a selection) | works |
-| Fit Objects to Path panel: objects spread evenly or at a fixed distance along a path, a start offset, turned with the path, reversed, with a preview (see `help/en/objects/align-distribute.md`, #1027) | works |
+| Fit Objects to Path panel: objects spread evenly or at a fixed distance along a path, a start offset, turned with the path, reversed, with a preview once a value is entered; other objects or another drawing start from the defaults (#1136; see `help/en/objects/align-distribute.md`, #1027) | works |
 | Align with pixel grid | works |
 
 ## 4. Text
