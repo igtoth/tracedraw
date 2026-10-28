@@ -736,3 +736,46 @@ fn the_blend_tool_picks_a_text_blend_and_its_sliders_tune_it() {
     assert_eq!(o2, accel_objects, "the object slider stays");
     assert_eq!(app.engine.history_labels().0.len(), undo_before + 2);
 }
+
+/// Copy Envelope Properties from a shape with no envelope fits the text
+/// into that shape (#993): text taking a circle's outline fills the
+/// ellipse inside its own box and leaves the box's corners empty.
+#[test]
+fn text_takes_the_shape_of_an_object_as_its_envelope() {
+    let mut app = App::headless();
+    let id = text(&mut app, Point::new(20.0, 100.0), "HHHHHH");
+    let circle = app
+        .new_shape(ShapeKind::Ellipse {
+            rect: Rect::new(150.0, 50.0, 190.0, 90.0),
+            arc: None,
+        })
+        .expect("circle");
+    app.select(vec![id]);
+    let before = tracedraw_core::live::evaluate(app.doc().find_shape(id).expect("text"))
+        .main
+        .bounds();
+    app.start_copy_envelope();
+    app.copy_envelope_from(circle);
+    assert!(app.envelope_of(id).is_some(), "{}", app.status);
+    let s = app.doc().find_shape(id).expect("text").clone();
+    let drawn = s.transform * tracedraw_core::live::evaluate(&s).main.local_path();
+    let b = drawn.bounding_box();
+    // The text keeps its place and size.
+    assert!(
+        (b.center() - before.center()).hypot() < 0.5,
+        "{b:?} {before:?}"
+    );
+    assert!((b.width() - before.width()).abs() < 0.5, "{b:?} {before:?}");
+    // Every point drawn lies in the ellipse of the box.
+    let (c, rx, ry) = (b.center(), b.width() / 2.0, b.height() / 2.0);
+    let mut worst = 0.0f64;
+    tracedraw_core::geometry::flatten(&drawn, 0.01, &mut |el| {
+        if let tracedraw_core::geometry::PathEl::LineTo(p)
+        | tracedraw_core::geometry::PathEl::MoveTo(p) = el
+        {
+            let d = ((p.x - c.x) / rx).powi(2) + ((p.y - c.y) / ry).powi(2);
+            worst = worst.max(d);
+        }
+    });
+    assert!(worst < 1.02, "{worst}");
+}

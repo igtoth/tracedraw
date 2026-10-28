@@ -613,24 +613,39 @@ impl App {
     }
 
     /// The selected objects take `source`'s last envelope, its frame
-    /// stretched from `source`'s box to each object's, one undo step.
+    /// stretched from `source`'s box to each object's, one undo step. A
+    /// source with no envelope gives the shape of its outline, so text
+    /// can be fitted into a drawn shape (#993).
     pub fn copy_envelope_from(&mut self, source: ShapeId) {
         let Some(src) = self.doc().find_shape(source).cloned() else {
             return;
         };
-        let Some((src_at, frame)) = last_envelope(&src.effects) else {
-            self.status = tr("status.no_envelope_to_copy");
-            return;
+        let (frame, from, keep, mapping) = match last_envelope(&src.effects) {
+            Some((src_at, frame)) => {
+                let (keep, mapping) = match src.effects.get(src_at) {
+                    Some(Effect::Envelope {
+                        keep_lines,
+                        mapping,
+                        ..
+                    }) => (*keep_lines, *mapping),
+                    _ => (false, Mapping::Putty),
+                };
+                (frame, box_at(&src, src_at), keep, mapping)
+            }
+            None => {
+                let outline = self
+                    .doc()
+                    .parent_transform(source)
+                    .unwrap_or(Affine::IDENTITY)
+                    * src.page_path();
+                let Some(frame) = Frame::from_outline(&outline) else {
+                    self.status = tr("status.no_envelope_to_copy");
+                    return;
+                };
+                let from = frame.bounds();
+                (frame, from, self.envelope_keep_lines, self.envelope_mapping)
+            }
         };
-        let (keep, mapping) = match src.effects.get(src_at) {
-            Some(Effect::Envelope {
-                keep_lines,
-                mapping,
-                ..
-            }) => (*keep_lines, *mapping),
-            _ => (false, Mapping::Putty),
-        };
-        let from = box_at(&src, src_at);
         if from.width() < 1e-9 || from.height() < 1e-9 {
             return;
         }
