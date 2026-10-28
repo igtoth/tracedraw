@@ -1614,10 +1614,9 @@ fn ftil() -> Vec<u8> {
     identity_matrix()
 }
 
-/// `mcfg`: the document configuration. Versions 7, 8 and 12 to 27 get
-/// the record of files of their version, with the fields that are
-/// understood (see `docs/cdr-format.md`, Writing); versions 9 to 11 get
-/// the page size and zeros up to 4088 bytes.
+/// `mcfg`: the document configuration. Every version from 7 gets the
+/// record of files of its version, with the fields that are understood
+/// (see `docs/cdr-format.md`, Writing).
 fn mcfg(v: Ver, w_mm: f64, h_mm: f64) -> Vec<u8> {
     if v.0 >= 21 {
         return mcfg_21(w_mm, h_mm);
@@ -1631,25 +1630,7 @@ fn mcfg(v: Ver, w_mm: f64, h_mm: f64) -> Vec<u8> {
     if v.0 <= 8 {
         return mcfg_7_8(v, w_mm, h_mm);
     }
-    let mut b = Buf::default();
-    let size: usize = if v.0 >= 15 {
-        8323
-    } else if v.tagged() {
-        8197
-    } else {
-        4088
-    };
-    if v.tagged() {
-        b.u32(SINCE_13).u32(size as u32 - 8).zeros(4);
-    } else if v.0 >= 9 {
-        b.zeros(4);
-    }
-    b.i32(units(w_mm))
-        .i32(units(h_mm))
-        .u32(0x0f)
-        .u32(1)
-        .pad_to(size);
-    b.done()
+    mcfg_9_11(v, w_mm, h_mm)
 }
 
 /// The configuration record of versions 13 to 20 (8323 bytes, tag 1300):
@@ -1868,6 +1849,128 @@ fn mcfg_7_8(v: Ver, w_mm: f64, h_mm: f64) -> Vec<u8> {
     r7.resize(536, 0);
     put(&mut r7, 464 + 16, &1u32.to_le_bytes());
     r7
+}
+
+/// The configuration record of version 11 (4088 bytes), version 10
+/// (4096) and version 9 (848), with the values files saved for those
+/// versions hold: 4 zero bytes, the page size, the paper (A4 code as
+/// before), the ruler origin at the page's bottom-left corner, a grid of
+/// 0.2 across and down, the units, a scale of 1, the 46.5 inch square
+/// twice, the nudge (1000), the flags and default colour records after
+/// them, four drawing scales (2.54 in version 11, 0.000254 before) and
+/// 12.0 at the end. The name fields (two default style names and a web
+/// folder) are left empty. Version 10 holds 8 bytes more near the end;
+/// version 9 lacks the 8 bytes after the nudge and the name fields and
+/// stops after the scales. A record holding only the page size, followed
+/// by zeros, was what these versions got before: a zero grid and scale
+/// (issue #98).
+fn mcfg_9_11(v: Ver, w_mm: f64, h_mm: f64) -> Vec<u8> {
+    const SIZE_11: usize = 4088;
+    let (w, h) = (units(w_mm), units(h_mm));
+    let mut r = vec![0u8; SIZE_11];
+    put(&mut r, 4, &w.to_le_bytes());
+    put(&mut r, 8, &h.to_le_bytes());
+    put(&mut r, 12, &0x0fu32.to_le_bytes());
+    // Ruler origin: the page's bottom-left corner, from the page centre.
+    put(&mut r, 372, &(-(w / 2)).to_le_bytes());
+    put(&mut r, 376, &(-(h / 2)).to_le_bytes());
+    let scale = if v.0 >= 11 { 2.54f64 } else { 0.000_254 };
+    let fine = if v.0 >= 11 { 0.51f64 } else { 0.000_051 };
+    for (at, x) in [
+        (384, 0.2f64),
+        (392, 0.2),
+        (408, 1.0),
+        (848, scale),
+        (856, scale),
+        (864, scale),
+        (872, scale),
+        (888, fine),
+        (904, 0.1),
+        (912, 0.1),
+        (4080, 12.0),
+    ] {
+        put(&mut r, at, &x.to_le_bytes());
+    }
+    put(&mut r, 416, &[2, 0, 2, 0]);
+    for (at, x) in [
+        (16, 1i32),
+        (28, 1),
+        (32, 1),
+        (400, 2),
+        (428, 11_811_024),
+        (432, 11_811_024),
+        (436, 1),
+        (440, 1),
+        (444, 1),
+        (448, 11_811_024),
+        (452, 11_811_024),
+        (456, 1),
+        (492, 1),
+        (496, 1),
+        (500, 1),
+        (508, 3),
+        (520, 1_000),
+        (524, 2),
+        (528, 2),
+        (532, 1),
+        (540, 2),
+        (544, 10_000),
+        (552, 1),
+        (556, 1),
+        (560, 1),
+        (568, 1),
+        (592, 196),
+        (700, 3),
+        (704, 1),
+        (708, 1),
+        (712, 1),
+        (720, 1),
+        (744, 2),
+        (752, 4),
+        (756, 100),
+        (768, 1),
+        (784, 255),
+        (800, 1),
+        (836, 1),
+        (880, 2),
+        (896, 1),
+        (920, 2),
+        (924, 1),
+        (940, 1),
+    ] {
+        put(&mut r, at, &x.to_le_bytes());
+    }
+    r[797] = 100;
+    // Colour records (model 5, palette 5, black) and the values between.
+    for at in [472, 584, 596, 608, 776, 788] {
+        put(&mut r, at, &[5, 0, 5, 0]);
+    }
+    for (at, x) in [(604, 32u16), (606, 196), (616, 196), (618, 196)] {
+        put(&mut r, at, &x.to_le_bytes());
+    }
+    if v.0 >= 11 {
+        return r;
+    }
+    // Version 10: a zero and a 1 more at 940, 4096 bytes in all.
+    let mut r10 = Vec::with_capacity(4096);
+    r10.extend_from_slice(r.get(..940).unwrap_or_default());
+    r10.extend_from_slice(&[0, 0, 0, 0, 1, 0, 0, 0]);
+    r10.extend_from_slice(r.get(940..).unwrap_or_default());
+    if v.0 >= 10 {
+        return r10;
+    }
+    // Version 9: without the two values after the nudge (528), the name
+    // fields (620 to 700) and the flag after the last scales (924), 4
+    // zero bytes before the scales, and 848 bytes in all.
+    let mut r9 = Vec::with_capacity(848);
+    r9.extend_from_slice(r10.get(..528).unwrap_or_default());
+    r9.extend_from_slice(r10.get(536..620).unwrap_or_default());
+    r9.extend_from_slice(&[0; 4]);
+    r9.extend_from_slice(r10.get(700..848).unwrap_or_default());
+    r9.extend_from_slice(&[0; 4]);
+    r9.extend_from_slice(r10.get(848..924).unwrap_or_default());
+    r9.resize(848, 0);
+    r9
 }
 
 /// Write `bytes` into `rec` at `at` (records are built to their size

@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Saving as .cdr in version 9, 10 or 11: the file carries the whole document settings record files of those versions hold (ruler origin, grid, units, nudge, drawing scale). It held only the page size followed by zeros, a zero grid and scale (#98).
 - Zoom: F2 picks the Zoom tool for one zoom. After a click, a right click or a marquee the tool used before comes back (the Pick tool, most of the time); it stayed on the Zoom tool. Z and the toolbox button still pick the Zoom tool until another one is chosen (#1039).
 - Blend: the steps between two objects are clean shapes with few nodes. Each step has the nodes of the two objects paired by their place along the outlines, with straight sides where both objects are straight and smooth curves elsewhere: a square blended into a circle gives steps of eight nodes that round off evenly. Each step was a polygon of 120 points, with corners cut off and lumpy outlines, heavy to edit after Convert to Curves (#1020).
 - Saving as .cdr: text in a SemiBold face (or a Light, Medium, Black ...) is saved as its family at that weight ("Titillium Web" at SemiBold), as the file it came from names it. It was saved under the name "Titillium Web SemiBold", which no installed font goes by, so the saved file opened elsewhere in a substituted font (#892, #624).
