@@ -94,7 +94,7 @@ Properties.
 |---|---|
 | Drag node | move the selected nodes; Ctrl constrains |
 | Click segment | chooses that segment: it is drawn over in the main colour with its handles, its end node is not shown as chosen (To Line and To Curve act on the segment through it), and the spot clicked gets a small round mark; Add Node (+ or the property bar button) puts the new node at that spot |
-| Drag segment | bends it: the point grabbed follows the pointer exactly while both end nodes stay; a straight (or closing) segment becomes a curve first; both control points move, the nearer one more (by `k (1 - t) d` and `k t d` with `k = 1 / (3 t (1 - t) ((1 - t)² + t²))`, `t` the grabbed point's place along the segment, kept within 0.02 to 0.98, `d` the drag); a smooth or symmetrical end node stays so, its other handle turning along; one undo step (Bend Segment) |
+| Drag segment | bends it: the point grabbed follows the pointer exactly while both end nodes stay; a straight (or closing) segment becomes a curve first; both control points move, the nearer one more (by `k (1 - t) d` and `k t d` with `k = 1 / (3 t (1 - t) ((1 - t)² + t²))`, `t` the grabbed point's place along the segment, kept within 0.02 to 0.98, `d` the drag); a smooth or symmetrical end node stays so, its other handle turning along, and a node made cusp keeps its other handle where it is even when its handles line up (the type chosen for the node counts, not how its handles read, #1140); one undo step (Bend Segment) |
 | Drag handle | smooth nodes move the opposite handle to stay collinear; symmetrical also keep the length; with Ctrl or Shift the handle keeps to the constrain angle about its node (on the page), the node keeping its type (#510, `pick_drag_tests::ctrl_or_shift_keeps_a_handle_to_the_constrain_angle`) |
 | Smooth, Symmetrical (property bar, node menu, C, S, Y) | a node between two curves gets its handles in line (symmetrical: of one length); between a straight segment and a curve, the curve's handle lines up with the straight segment, keeping its length, and the straight segment stays straight; between two straight segments both become curves (as To Curve makes them) and the node is smoothed, except a closing line that is only a close, which stays straight; an end node of an open curve stays as it is |
 | Double-click segment | add a node |
@@ -283,6 +283,7 @@ Reduce Nodes, Curve smoothness.
 - `pick_drag_tests::a_right_click_in_the_shape_tool_takes_the_node_or_segment_under_it`
 - `pick_drag_tests::dragging_a_segment_bends_it_and_a_click_marks_where_a_node_goes`
 - `nodes::tests::bending_a_segment_moves_its_point_and_keeps_the_ends` (core)
+- `nodes::tests::bending_a_segment_keeps_chosen_cusp_nodes_cusp` (core)
 - `pick_drag_tests::c_s_and_y_set_the_type_of_the_chosen_nodes`
 - `pick_drag_tests::the_pointer_shows_what_a_press_would_do` (marks, node
   transform handles)

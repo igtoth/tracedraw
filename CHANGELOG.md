@@ -35,6 +35,8 @@ full, row-by-row status.
 - Status bar in a narrow window: the fill and outline parts keep room for their swatches and values and move left as the window narrows, the tool hints and object information giving way first and ending in an ellipsis. The outline's colour and width were cut off at the right, and the parts could not be read or double-clicked (#1004).
 - Area Fill: areas filled side by side now meet exactly, with no hairline gap between their colours where curves cross or shapes overlap. A corner where two outlines cross was placed where their flattened outlines cross, up to 0.02 mm off the curves, so neighbouring areas could leave a thin gap or a missed corner when zoomed in; the same holds for the results of Weld, Trim and Intersect (#1065).
 - Distort: the Twister spirals smoothly all the way to the ends of a shape, and the Zipper teeth run through the nodes, also on closed shapes; the first node no longer stays locked (#1108).
+- Smudge and Twirl: a long stroke stays quick and no longer freezes or closes TraceDraw. The curve under the nib is rebuilt with TraceDraw's own curve fitter; the one used before could take ever longer, hang or crash partway through a stroke on a simple shape (#1133).
+- Shape tool: dragging a curve segment between two nodes made cusp keeps them cusp. Their other handles stay where they are; when a node's handles happened to line up, they turned along with the dragged segment, as if the node were smooth or symmetrical (#1140).
 
 ## 0.19.9 (2026-10-28)
 
