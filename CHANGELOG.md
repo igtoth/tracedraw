@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Export: the Preset list holds every saved preset from the moment the dialog opens, each with its format in brackets; choosing one of another format switches to that format, and changing the format leaves the preset unchosen while the list stays whole. Since 0.18.0 the list shrank to the chosen format's presets, so a dialog opening at a format without presets showed none (#612).
 - Document palette: a colour picked with its eyedropper that the palette has already gets the white frame of the last colour used, so it shows where it is; a new colour takes the frame as it joins, and applying a colour of the palette moves the frame to it (#1125).
 - Status bar: a tool hint or message cut off at the right shows whole in a tip on hover, so a long path before the hint no longer hides it for good (#1126).
 - Pages added to a drawing (Layout > Insert Page, the + beside the page tabs, the navigator's insert buttons) are named in the interface's language, as the first page is, and so is their first layer. They were named "Page 2", "Layer 1" and so on in English whatever the language (#1127).
