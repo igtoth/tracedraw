@@ -307,6 +307,7 @@ pub fn start() {
     watch_chorded_right_press();
     register_fonts();
     tracedraw_text::install();
+    tracedraw_io::emf::install();
     load_font_list();
     wasm_bindgen_futures::spawn_local(async {
         let Some(document) = web_sys::window().and_then(|w| w.document()) else {

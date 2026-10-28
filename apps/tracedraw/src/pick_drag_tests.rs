@@ -7923,8 +7923,10 @@ fn overlays_are_drawn_on_a_white_line() {
         })
         .count();
     assert!(heads >= 2, "{heads}");
+    // The handle line: white under blue dashes of the same width, so
+    // the dashes go blue and white in turn (#670).
     assert!(shapes.iter().any(|s| matches!(s, egui::Shape::LineSegment { stroke, .. }
-        if stroke.color == egui::Color32::WHITE && (stroke.width - crate::canvas::HALO_WIDTH).abs() < 1e-3)));
+        if stroke.color == egui::Color32::WHITE && (stroke.width - crate::canvas::HALO_INNER).abs() < 1e-3)));
 }
 
 /// An idle window asks for no frame (#616): once the start has settled,
@@ -11127,4 +11129,67 @@ fn the_pen_makes_the_start_of_a_continued_curve_a_cusp() {
         }
         other => panic!("{other:?}"),
     }
+}
+
+/// #670: the Pen's preview segment to the pointer is a solid line, the
+/// selection blue on top of a white line twice as wide, unbroken from
+/// the last node to the pointer; dashes are for the handles.
+#[test]
+fn the_pen_preview_is_a_blue_line_on_a_white_one() {
+    let (ctx, mut app, _) = setup();
+    app.select(Vec::new());
+    app.set_tool(Tool::Pen);
+    let a = Pos2::new(500.0, 400.0);
+    click_at(&ctx, &mut app, a, Modifiers::NONE);
+    let b = Pos2::new(700.0, 400.0);
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::PointerMoved(b)],
+        Modifiers::NONE,
+    );
+    let input = egui::RawInput {
+        screen_rect: Some(egui::Rect::from_min_size(
+            Pos2::ZERO,
+            egui::vec2(1600.0, 1000.0),
+        )),
+        events: vec![Event::PointerMoved(b)],
+        ..Default::default()
+    };
+    let out = ctx.run_ui(input, |ui| crate::ui::root(&mut app, ui));
+    fn flat(s: &egui::Shape, f: &mut dyn FnMut(&egui::Shape)) {
+        match s {
+            egui::Shape::Vec(v) => v.iter().for_each(|s| flat(s, f)),
+            s => f(s),
+        }
+    }
+    // Segments along y = 400 between the node and the pointer.
+    let (mut blue, mut white) = (0.0f32, 0.0f32);
+    for c in &out.shapes {
+        flat(&c.shape, &mut |s| {
+            if let egui::Shape::LineSegment { points, stroke } = s {
+                let along = points
+                    .iter()
+                    .all(|p| (p.y - 400.0).abs() < 1.0 && p.x > a.x - 1.0);
+                if !along {
+                    return;
+                }
+                let len = (points[1] - points[0]).length();
+                if stroke.color == crate::theme::Tokens::SELECTION {
+                    assert_eq!(stroke.width, crate::canvas::HALO_INNER);
+                    blue += len;
+                } else if stroke.color == egui::Color32::WHITE {
+                    assert_eq!(stroke.width, crate::canvas::HALO_WIDTH);
+                    white += len;
+                }
+            }
+        });
+    }
+    let span = b.x - a.x;
+    assert!(
+        (blue - span).abs() < 2.0,
+        "blue {blue} of {span}: not dashed"
+    );
+    assert!((white - span).abs() < 2.0, "white {white} of {span}");
+    assert_eq!(crate::canvas::HALO_INNER * 2.0, crate::canvas::HALO_WIDTH);
 }

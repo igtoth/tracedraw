@@ -121,13 +121,15 @@ meets the start) `Path` objects with the toolbox defaults.
   one), as the curve will look, on a white line twice as wide so a black
   outline shows over a black fill (#672); nodes placed before are small hollow
   squares and the last node a filled blue one; the last node's handles
-  are blue dashed lines ending in arrow tips (a cusp shows its incoming
+  are dashed lines, blue and white dashes in turn as wide as the
+  preview's blue line, ending in blue arrow tips with a white edge (a cusp shows its incoming
   handle as it was frozen). While the first node is dragged to close,
-  the closing segment shows dashed in blue with its handle.
-- Preview mode (Pen, on by default): while the button is up a dashed blue
-  segment (5 px dashes, 2 px gaps, over a white line as thin as the dashes
-  that shows in the gaps, so it reads over any colour, #489; plain line
-  segments, so the preview costs nothing noticeable in a frame:
+  the closing segment shows in blue on white with its handle.
+- Preview mode (Pen, on by default): while the button is up a solid
+  segment, a 2 px white line with a 1 px blue line on top (half its
+  width), so it reads over any colour (#489, #670; the dashes are the
+  handles' look; `pick_drag_tests::the_pen_preview_is_a_blue_line_on_a_white_one`;
+  plain line segments, so the preview costs nothing noticeable in a frame:
   `frame_times_of_the_pen_preview`, #560) runs from the last node to the pointer (as the next node would
   take it, snapped and with Ctrl's steps), curved by the last node's
   outgoing handle, so the next segment shows before the click. The

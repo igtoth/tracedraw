@@ -1,6 +1,6 @@
 //! The Pen and Bezier tools while a curve is being drawn: what the canvas
 //! shows (the segments placed in the outline the curve will get, the
-//! Pen's dashed preview segment to the pointer, the nodes and the last
+//! Pen's preview segment to the pointer, the nodes and the last
 //! node's handles). Pure functions, so tests can check them.
 
 use crate::app::{App, CurveInProgress};
@@ -27,7 +27,8 @@ pub struct CurveLook {
     pub placed_color: Color32,
     /// Pen preview: the next segment, from the last node to the pointer
     /// (curved by the last node's outgoing handle), or the closing segment
-    /// while the first node is dragged; dashed in `preview_color`.
+    /// while the first node is dragged; a solid line in `preview_color`
+    /// on a white line twice as wide (#670).
     pub preview: Option<BezPath>,
     pub preview_color: Color32,
     /// Every node with its mark.

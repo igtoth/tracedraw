@@ -10,7 +10,8 @@ Drawing dialog.
 One window, 760 px wide, the same on every system:
 
 - **Folder** (desktop): an Up button, the path bar (a folder typed there
-  opens with Enter; one that does not exist says so) and New folder
+  opens with Enter, and Save writes into it without Enter; one that does
+  not exist says so) and New folder
   (makes "New folder", "New folder (2)" ... in the folder shown, picks it
   and starts renaming it: Enter keeps the name typed, Esc the one it
   has). Down the left,
@@ -74,8 +75,10 @@ One window, 760 px wide, the same on every system:
   the file is written.
 - **Save** (or Enter) writes the file; a file that exists asks "<name>
   already exists. Replace it?" with Replace and Cancel. Cancel closes
-  without writing. The dialog starts in the drawing's folder, else the
-  last folder saved to, else Documents, else home.
+  without writing. The dialog starts in the drawing's folder (for a
+  drawing read from a `.cdr` or another format, the folder and name of
+  the file it was read from), else the last folder used, else
+  Documents, else home.
 - In the browser, where every save is a download, the dialog keeps the
   file name, type, version and properties, and says the browser saves
   the file in its downloads folder.

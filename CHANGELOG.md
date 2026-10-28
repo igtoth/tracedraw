@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Pen: the preview segment from the last node to the pointer is a solid blue line on a white line twice as wide instead of dashes, so it shows over any colour; the handle lines are dashed in blue and white in turn, as thin as the preview's blue line (#670).
+- Save As of a drawing opened from a `.cdr` file (or any other format TraceDraw reads) starts in that file's folder with its name, so saving over it replaces it. It started in the folder any dialog used last, so with another file opened from Downloads the save went there and the original stayed as it was. A folder typed in the path bar now takes the file without pressing Enter first (#900).
 - Objects panel: selecting an object on the page scrolls the list to its row, so an object far down a long list comes into view; a selection that stays the same leaves the scroll alone (#1044).
 - Envelope: Copy Envelope Properties (and Object > Copy Effect > Envelope From) picking an object with no envelope, such as a circle, a star or a drawn curve, now fits the selected text or objects into that object's shape. It said the object had no envelope, so text could not be fitted into a drawn shape (#993).
 - Hints panel: every tool's page now walks through the tool in steps, each with a picture of the object, its handles or nodes, the drag and the tool's cursor (181 steps for 64 tools, in all 18 languages). It showed only the one-line status bar hint.
@@ -16,6 +18,7 @@ full, row-by-row status.
 - Saving `.cdr`: blends, text blends too, open again in TraceDraw as live blends to their end object, with their steps, accelerations and options, so they can be changed and follow the end object as before saving (files of version 14 and later). They came back as loose steps that could not be edited; other programs still see the blend as a group of its start object and its steps (#986).
 
 - Saving as .cdr: curves whose outline ends back at its start, such as text fitted to a path (written as its letters' outlines), close on their last node instead of adding a closing line of no length after it. The other program that opened such a file closed when the text was clicked; lines of no length and empty subpaths are also left out (#1130).
+- Opening .cdr: objects embedded from another program that keep their picture as a Windows metafile, such as barcodes, are drawn, also inside clip containers. Version 26 files name such an object's data in a link record instead of a name, so the objects were skipped; the metafile is now played and stretched over the object's rectangle, and a metafile that sets no viewport (as these pictures do) is drawn at its window's size instead of shrinking to a speck (#1131).
 ## 0.19.10 (2026-10-28)
 
 - New Document: the RGB, CMYK and grayscale profile lists of Color Settings offer the ICC profiles installed on this computer, as Color Management does; they held only sRGB and Generic CMYK. A CMYK profile picked there goes with the new drawing, so its colours show through it, and the grayscale profile chosen is kept in the drawing (#1033).

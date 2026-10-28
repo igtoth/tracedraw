@@ -234,6 +234,50 @@ pub fn embedded_pictures(buf: &[u8]) -> HashMap<String, Picture> {
         .collect()
 }
 
+/// The cached pictures (`\x02OlePres000` streams) of the embedded objects
+/// in the compound file `buf` that hold a Windows metafile, by storage
+/// name. Objects whose own data we cannot draw (a barcode, #1131) keep
+/// the picture their program last drew there.
+pub fn embedded_metafiles(buf: &[u8]) -> HashMap<String, Vec<u8>> {
+    let Some(c) = Compound::parse(buf) else {
+        return HashMap::new();
+    };
+    c.streams_named("\u{2}OlePres000")
+        .into_iter()
+        .filter_map(|(name, data)| presentation_metafile(&data).map(|m| (name, m)))
+        .collect()
+}
+
+/// Clipboard formats of a presentation stream: a Windows metafile, an
+/// enhanced one.
+const CF_METAFILEPICT: u32 = 3;
+const CF_ENHMETAFILE: u32 = 14;
+
+/// The metafile of a presentation stream (the public MS-OLEDS layout):
+/// the clipboard format (a u32 marker of -1 or -2, then the format), the
+/// target device (a u32 size counting itself, then the rest), aspect,
+/// index, advise flags, a reserved u32, width and height (0.01 mm), the
+/// data size and the data. `None` for other formats.
+pub fn presentation_metafile(b: &[u8]) -> Option<Vec<u8>> {
+    let marker = u32_at(b, 0)?;
+    if marker != 0xFFFF_FFFF && marker != 0xFFFF_FFFE {
+        return None;
+    }
+    let format = u32_at(b, 4)?;
+    if format != CF_METAFILEPICT && format != CF_ENHMETAFILE {
+        return None;
+    }
+    let device = u32_at(b, 8)? as usize;
+    if device < 4 {
+        return None;
+    }
+    let at = 8usize.checked_add(device)?;
+    let size = u32_at(b, at.checked_add(24)?)? as usize;
+    let start = at.checked_add(28)?;
+    let data = b.get(start..start.checked_add(size)?)?;
+    Some(data.to_vec())
+}
+
 /// A `.bmp` file (a 40-byte or larger info header; 24 and 32 bits, or 1,
 /// 4 and 8 bits with a palette; no compression) as a PNG.
 pub fn decode_bmp_file(b: &[u8]) -> Option<Picture> {
@@ -352,6 +396,11 @@ pub(crate) mod tests {
     /// A compound file of 512-byte sectors: header, FAT, directory, and
     /// one big stream of 4096 bytes inside a storage.
     fn compound(stream: &[u8]) -> Vec<u8> {
+        compound_named("\u{1}Ole10Native", stream)
+    }
+
+    /// [`compound`] with the stream under another name.
+    pub(crate) fn compound_named(name: &str, stream: &[u8]) -> Vec<u8> {
         assert_eq!(stream.len(), 4096);
         let mut h = vec![0u8; 512];
         h[..8].copy_from_slice(&SIGNATURE);
@@ -395,7 +444,7 @@ pub(crate) mod tests {
         let mut dir = Vec::new();
         dir.extend(entry("Root Entry", 5, 1, END_OF_CHAIN, 0));
         dir.extend(entry("Embedding 3", 1, 2, 0, 0));
-        dir.extend(entry("\u{1}Ole10Native", 2, NO_STREAM, 2, 4096));
+        dir.extend(entry(name, 2, NO_STREAM, 2, 4096));
         dir.extend(vec![0u8; 128]);
         let mut out = h;
         out.extend(fat);
@@ -424,5 +473,51 @@ pub(crate) mod tests {
             let _ = embedded_pictures(&file[..cut]);
         }
         assert!(embedded_pictures(b"not a compound file").is_empty());
+    }
+
+    /// A presentation stream holding `metafile` as a Windows metafile
+    /// picture, as the barcodes of #1131 keep theirs.
+    pub(crate) fn presentation(metafile: &[u8]) -> Vec<u8> {
+        let mut p = Vec::new();
+        for v in [
+            0xFFFF_FFFFu32,
+            CF_METAFILEPICT,
+            4,
+            1,
+            0xFFFF_FFFF,
+            2,
+            0,
+            3810,
+            2773,
+        ] {
+            p.extend_from_slice(&v.to_le_bytes());
+        }
+        p.extend_from_slice(&(metafile.len() as u32).to_le_bytes());
+        p.extend_from_slice(metafile);
+        p
+    }
+
+    #[test]
+    fn metafile_pictures_of_embedded_objects_are_found_by_storage() {
+        let wmf = [1u8, 0, 9, 0, 0, 3, 7, 7];
+        let mut stream = presentation(&wmf);
+        stream.resize(4096, 0);
+        let file = compound_named("\u{2}OlePres000", &stream);
+        let found = embedded_metafiles(&file);
+        assert_eq!(found.get("Embedding 3").map(Vec::as_slice), Some(&wmf[..]));
+        // Other formats (a bitmap, 8) and short or damaged streams give none.
+        let mut dib = presentation(&wmf);
+        dib[4] = 8;
+        assert_eq!(presentation_metafile(&dib), None);
+        let p = presentation(&wmf);
+        for cut in 0..p.len() {
+            assert_eq!(presentation_metafile(&p[..cut]), None, "{cut}");
+        }
+        let mut huge = presentation(&wmf);
+        huge[8..12].copy_from_slice(&u32::MAX.to_le_bytes());
+        assert_eq!(presentation_metafile(&huge), None);
+        for cut in (0..file.len()).step_by(37) {
+            let _ = embedded_metafiles(&file[..cut]);
+        }
     }
 }
