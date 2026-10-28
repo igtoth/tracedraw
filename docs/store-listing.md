@@ -19,8 +19,10 @@ brackets are the Store's.
 - Support contact: <https://github.com/igtoth/tracedraw/issues>
 - Product declarations: none of the data, accessibility or
   inking boxes apply; the app works with a mouse and a keyboard.
-- System requirements: Windows 10 version 1809 or later, x64, with
-  graphics drivers that support OpenGL (the interface is drawn with it).
+- System requirements: Windows 10 version 1809 or later, x64. A
+  graphics card with Direct3D 12, Vulkan or OpenGL 2.1 or later is used
+  when present; without one the window is drawn on the CPU (see
+  `docs/system-requirements.md`).
 
 ## Age ratings
 

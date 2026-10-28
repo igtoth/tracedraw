@@ -355,12 +355,16 @@ editor needs X11 or Wayland, libxkbcommon and Mesa.
 
 ### What it runs on
 
-- **Windows 10 and 11** (x64), **macOS** (Apple silicon and Intel),
-  **Linux** (x86_64 and arm64) and any current browser.
+- **Windows 10 and 11** (x64), **macOS 11 or later** (Apple silicon and
+  Intel), **Linux** (x86_64 and arm64, glibc 2.35 or later: Ubuntu 22.04,
+  Debian 12, Fedora 36 or newer) and any current browser. Older Linux
+  distributions can use the browser version.
 - **Older computers too:** a graphics card with OpenGL 2.1 is enough. An
   office PC from 2010 with Intel HD Graphics (Ironlake) under Windows 10
   runs TraceDraw with its own card since 0.19.8 (#616). Without a usable
   card, TraceDraw draws the window on the CPU.
+- Minimum and recommended hardware and software, measured and
+  estimated: [`docs/system-requirements.md`](docs/system-requirements.md).
 - If the window still does not come up, start it with
   `tracedraw --renderer=gl` and send `tracedraw.log` (in the settings folder) in
   [an issue](https://github.com/igtoth/tracedraw/issues/new?template=bug_report.yml).
@@ -428,7 +432,7 @@ names is the version number.
 |---|---|
 | Windows (x64) | `tracedraw-<version>-windows-x86_64-setup.exe` (installer), `tracedraw-<version>-windows-x86_64-portable.zip` (keeps its settings in the `tracedraw-settings` folder beside the program; not signed yet: if SmartScreen warns, More info > Run anyway) |
 | macOS (Apple silicon, Intel) | `tracedraw-<version>-macos-arm64.dmg`, `tracedraw-<version>-macos-x86_64.dmg` (unsigned for now: right-click, Open) |
-| Linux (x86_64, arm64) | `.deb` (`_amd64` or `_arm64`), `tracedraw-<version>-linux-x86_64.AppImage` or `-linux-arm64.AppImage`, `tracedraw-<version>-linux-x86_64.tar.gz` or `-linux-arm64.tar.gz` |
+| Linux (x86_64, arm64) | `.deb` (`_amd64` or `_arm64`), `tracedraw-<version>-linux-amd64.AppImage` or `-linux-arm64.AppImage`, `tracedraw-<version>-linux-x86_64.tar.gz` or `-linux-arm64.tar.gz` |
 | Web | no download: [open it in the browser](https://igtoth.github.io/tracedraw/), nothing to install |
 
 Each download includes `tracedraw-cli` next to the editor. Packaging sources

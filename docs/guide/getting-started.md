@@ -20,7 +20,7 @@ install it:
    | Windows (x64) | `tracedraw-<version>-windows-x86_64-setup.exe` (installer) or `tracedraw-<version>-windows-x86_64-portable.zip` |
    | macOS (Apple silicon) | `tracedraw-<version>-macos-arm64.dmg` |
    | macOS (Intel) | `tracedraw-<version>-macos-x86_64.dmg` |
-   | Linux (x86_64) | the `.deb` package (`_amd64`), `tracedraw-<version>-linux-x86_64.AppImage` or `tracedraw-<version>-linux-x86_64.tar.gz` |
+   | Linux (x86_64) | the `.deb` package (`_amd64`), `tracedraw-<version>-linux-amd64.AppImage` or `tracedraw-<version>-linux-x86_64.tar.gz` |
    | Linux (arm64: Raspberry Pi 4/5 with a 64-bit system, ARM laptops) | the `.deb` package (`_arm64`), `tracedraw-<version>-linux-arm64.AppImage` or `tracedraw-<version>-linux-arm64.tar.gz` |
 
 3. Install or unpack it as you would any program on your system.

@@ -129,21 +129,33 @@ fn arch_names(arch: &str) -> Option<(&'static str, &'static str)> {
     }
 }
 
-/// The exact name of the release file of `version` that updates a copy
-/// installed as `kind` on `os` (as `std::env::consts::OS`) and `arch`.
-/// `None` when the release builds no such file. The names are the ones
-/// the release workflow gives its files.
-pub fn asset_name(version: &str, os: &str, arch: &str, kind: Kind) -> Option<String> {
-    let (a, deb) = arch_names(arch)?;
-    Some(match (os, kind) {
+/// The exact names of the release file of `version` that updates a copy
+/// installed as `kind` on `os` (as `std::env::consts::OS`) and `arch`,
+/// the preferred one first. Empty when the release builds no such file.
+/// The names are the ones the release workflow gives its files. The
+/// x86_64 AppImage is `linux-amd64` from 0.19.9 on, so that it sorts
+/// before the arm64 one for updaters of 0.19.8 and earlier, which take
+/// the first AppImage listed (#1038); older releases name it `linux-x86_64`.
+pub fn asset_names(version: &str, os: &str, arch: &str, kind: Kind) -> Vec<String> {
+    let Some((a, deb)) = arch_names(arch) else {
+        return Vec::new();
+    };
+    let one = match (os, kind) {
+        ("linux", Kind::AppImage) if arch == "x86_64" => {
+            return vec![
+                format!("tracedraw-{version}-linux-amd64.AppImage"),
+                format!("tracedraw-{version}-linux-x86_64.AppImage"),
+            ];
+        }
         ("linux", Kind::AppImage) => format!("tracedraw-{version}-linux-{a}.AppImage"),
         ("linux", Kind::Tarball) => format!("tracedraw-{version}-linux-{a}.tar.gz"),
         ("linux", Kind::Deb) => format!("tracedraw_{version}_{deb}.deb"),
         ("windows", Kind::Setup) => format!("tracedraw-{version}-windows-{a}-setup.exe"),
         ("windows", Kind::Portable) => format!("tracedraw-{version}-windows-{a}-portable.zip"),
         ("macos", Kind::Dmg) => format!("tracedraw-{version}-macos-{a}.dmg"),
-        _ => return None,
-    })
+        _ => return Vec::new(),
+    };
+    vec![one]
 }
 
 /// How a Linux copy was installed: run as an AppImage, inside a sandbox
@@ -218,8 +230,9 @@ pub fn parse_latest(
     }
     let version = r.tag_name.trim_start_matches(['v', 'V']).to_string();
     let find = |kind: Kind| {
-        let name = asset_name(&version, os, arch, kind)?;
-        r.assets.iter().find(|a| a.name == name)
+        asset_names(&version, os, arch, kind)
+            .into_iter()
+            .find_map(|name| r.assets.iter().find(|a| a.name == name))
     };
     let download = find(kind).map(|a| a.browser_download_url.clone());
     let appimage = if kind == Kind::AppImage {
@@ -712,6 +725,80 @@ mod tests {
         assert_eq!(pick_in(&lookalike, "linux", "x86_64", AppImage), None);
     }
 
+    /// From 0.19.9 on the x86_64 AppImage is named `linux-amd64`, which
+    /// sorts before `linux-arm64`: updaters of 0.19.8 and earlier take the
+    /// first AppImage of GitHub's list (sorted by name) and so get the
+    /// x86_64 file. This version looks for `linux-amd64` first and still
+    /// finds `linux-x86_64` in older releases (#1038).
+    #[test]
+    fn the_x86_64_appimage_is_named_amd64_from_0_19_9() {
+        use Kind::*;
+        let renamed = SAMPLE.replace("linux-x86_64.AppImage", "linux-amd64.AppImage");
+        assert_eq!(
+            pick_in(&renamed, "linux", "x86_64", AppImage).as_deref(),
+            Some("tracedraw-0.5.0-linux-amd64.AppImage")
+        );
+        let p = parse_latest(&renamed, "0.4.0", "linux", "x86_64", AppImage)
+            .expect("parses")
+            .expect("newer")
+            .appimage
+            .expect("appimage");
+        assert_eq!(p.url, "https://x/tracedraw-0.5.0-linux-amd64.AppImage");
+        assert_eq!(p.size, 5);
+        // The tar.gz keeps its name; arm64 is unchanged.
+        assert_eq!(
+            pick_in(&renamed, "linux", "x86_64", Tarball).as_deref(),
+            Some("tracedraw-0.5.0-linux-x86_64.tar.gz")
+        );
+        assert_eq!(
+            pick_in(&renamed, "linux", "aarch64", AppImage).as_deref(),
+            Some("tracedraw-0.5.0-linux-arm64.AppImage")
+        );
+        // With both names in a release the amd64 one wins, in any order.
+        let both = SAMPLE.replace(
+            r#"{"name": "tracedraw-0.5.0-linux-x86_64.tar.gz""#,
+            r#"{"name": "tracedraw-0.5.0-linux-amd64.AppImage", "browser_download_url": "https://x/tracedraw-0.5.0-linux-amd64.AppImage"},
+            {"name": "tracedraw-0.5.0-linux-x86_64.tar.gz""#,
+        );
+        assert_eq!(
+            pick_in(&both, "linux", "x86_64", AppImage).as_deref(),
+            Some("tracedraw-0.5.0-linux-amd64.AppImage")
+        );
+        let reversed = {
+            let mut v: serde_json::Value = serde_json::from_str(&both).expect("json");
+            v["assets"].as_array_mut().expect("assets").reverse();
+            v.to_string()
+        };
+        assert_eq!(
+            pick_in(&reversed, "linux", "x86_64", AppImage).as_deref(),
+            Some("tracedraw-0.5.0-linux-amd64.AppImage")
+        );
+        // Names that only end like the file do not count.
+        let lookalike = renamed.replace(
+            "tracedraw-0.5.0-linux-amd64.AppImage\", \"browser",
+            "tracedraw-0.5.0-linux-amd64.AppImage.zsync\", \"browser",
+        );
+        assert_eq!(pick_in(&lookalike, "linux", "x86_64", AppImage), None);
+        // What an updater of 0.19.8 does: the first AppImage of the list
+        // sorted by name is the x86_64 one now.
+        let v: serde_json::Value = serde_json::from_str(&renamed).expect("json");
+        let mut names: Vec<&str> = v["assets"]
+            .as_array()
+            .expect("assets")
+            .iter()
+            .filter_map(|a| a["name"].as_str())
+            .collect();
+        names.sort_unstable();
+        assert_eq!(
+            names.iter().find(|n| n.ends_with(".AppImage")).copied(),
+            Some("tracedraw-0.5.0-linux-amd64.AppImage")
+        );
+        // The release script gives the x86_64 AppImage that name.
+        let script = include_str!("../../../packaging/linux/build-appimage.sh");
+        assert!(script.contains("NAME=amd64"), "build-appimage.sh");
+        assert!(script.contains("linux-$NAME.AppImage"), "build-appimage.sh");
+    }
+
     #[test]
     fn how_a_linux_copy_was_installed() {
         use std::path::Path;
@@ -847,7 +934,12 @@ mod tests {
             .expect("parses")
             .expect("newer");
         let p = r.appimage.expect("appimage with digest");
-        assert!(p.url.ends_with("-linux-x86_64.AppImage"), "{}", p.url);
+        // v0.19.8 and earlier name it linux-x86_64, later ones linux-amd64.
+        assert!(
+            p.url.ends_with("-linux-x86_64.AppImage") || p.url.ends_with("-linux-amd64.AppImage"),
+            "{}",
+            p.url
+        );
         let dir = std::env::temp_dir().join(format!("td-live-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
         let target = dir.join("TraceDraw.AppImage");
