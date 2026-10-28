@@ -59,6 +59,15 @@ pub fn parse(bytes: &[u8], ids: &mut IdSource) -> Result<Imported, String> {
     }
 }
 
+/// Register this player as the core's metafile player (call once at
+/// startup), so pictures embedded in other files as metafiles are drawn.
+pub fn install() {
+    tracedraw_core::document::metafile::set(|bytes, ids| {
+        let imp = parse(bytes, ids).ok()?;
+        (!imp.shapes.is_empty()).then_some((imp.shapes, imp.size))
+    });
+}
+
 /// Build a document with every imported object on one layer.
 pub fn to_document(imp: Imported, title: &str) -> tracedraw_core::Document {
     let mut doc = tracedraw_core::Document::new(title, imp.size);
@@ -1543,6 +1552,7 @@ impl Player<'_> {
 
 fn parse_wmf(b: &[u8], ids: &mut IdSource) -> Result<Imported, String> {
     let mut off = 0;
+    let (mut window, mut viewport_set) = ((0.0, 0.0), false);
     // Placeable header: key, handle, bbox (4 x i16), inch, reserved, checksum.
     let placeable = if u32_at(b, 0) == 0x9AC6_CDD7 {
         let bbox = [i16_at(b, 6), i16_at(b, 8), i16_at(b, 10), i16_at(b, 12)];
@@ -1578,7 +1588,7 @@ fn parse_wmf(b: &[u8], ids: &mut IdSource) -> Result<Imported, String> {
             )
         }
         None => {
-            let (mut ext, mut org) = ((0i16, 0i16), (0i16, 0i16));
+            let mut ext = (0i16, 0i16);
             let mut o = off;
             let mut n = 0;
             while o + 6 <= b.len() && n < 64 {
@@ -1591,20 +1601,23 @@ fn parse_wmf(b: &[u8], ids: &mut IdSource) -> Result<Imported, String> {
                 if fnc == 0x020C {
                     ext = (i16_at(b, o + 8), i16_at(b, o + 6));
                 }
-                if fnc == 0x020B {
-                    org = (i16_at(b, o + 8), i16_at(b, o + 6));
+                if fnc == 0x020E {
+                    viewport_set = true;
                 }
                 o += size;
             }
             let (w, h) = ((ext.0 as f64).abs().max(1.0), (ext.1 as f64).abs().max(1.0));
-            // Assume 96 dpi logical pixels.
+            window = (ext.0 as f64, ext.1 as f64);
+            // Assume 96 dpi logical pixels. The window origin is taken
+            // off when logical units become device pixels, so the device
+            // starts at 0 (it was taken off twice).
             let k = 25.4 / 96.0;
             (
                 w * k,
                 h * k,
                 Device {
-                    left: org.0 as f64,
-                    top: org.1 as f64,
+                    left: 0.0,
+                    top: 0.0,
                     sx: k,
                     sy: k,
                     page_h: h * k,
@@ -1614,6 +1627,14 @@ fn parse_wmf(b: &[u8], ids: &mut IdSource) -> Result<Imported, String> {
         }
     };
     let mut pl = Player::new(ids, dev);
+    // A metafile without a frame that scales its window but sets no
+    // viewport (the pictures objects embedded in other files keep, #1131)
+    // is drawn the size of its window, as the program showing it would
+    // stretch it over the object; the default viewport of one pixel made
+    // it a speck.
+    if placeable.is_none() && !viewport_set && window.0 != 0.0 && window.1 != 0.0 {
+        pl.dc.viewport_ext = window;
+    }
     // WMF logical units map straight to the placeable units: the window
     // transform is applied by SETWINDOWORG/EXT when present.
     let mut n = 0;
@@ -2180,6 +2201,39 @@ mod tests {
         match &imp.shapes[1].kind {
             ShapeKind::Text { spans, .. } => assert_eq!(spans[0].text, "ok"),
             k => panic!("{k:?}"),
+        }
+    }
+
+    /// The picture an embedded object keeps (#1131): no placeable
+    /// header, MM_ANISOTROPIC with a window of 1500 by 1092 units at
+    /// origin (100, 50) and no viewport.
+    #[test]
+    fn a_wmf_without_a_viewport_is_drawn_the_size_of_its_window() {
+        let mut ids = IdSource::default();
+        let mut f = Vec::new();
+        le16(&mut f, 1);
+        le16(&mut f, 9);
+        le16(&mut f, 0x300);
+        le32(&mut f, 0);
+        le16(&mut f, 1);
+        le32(&mut f, 0);
+        le16(&mut f, 0);
+        f.extend_from_slice(&wmf_rec(0x0103, &[8]));
+        f.extend_from_slice(&wmf_rec(0x020B, &[50, 100]));
+        f.extend_from_slice(&wmf_rec(0x020C, &[1092, 1500]));
+        f.extend_from_slice(&wmf_rec(0x02FC, &[0, 0, 0, 0]));
+        f.extend_from_slice(&wmf_rec(0x012D, &[0]));
+        // The left half of the window, its top 546 units.
+        f.extend_from_slice(&wmf_rec(0x041B, &[50 + 546, 100 + 750, 50, 100]));
+        f.extend_from_slice(&wmf_rec(0, &[]));
+        let imp = parse(&f, &mut ids).expect("parse");
+        let k = 25.4 / 96.0;
+        let (w, h) = (1500.0 * k, 1092.0 * k);
+        assert!((imp.size.width - w).abs() < 1e-6 && (imp.size.height - h).abs() < 1e-6);
+        assert_eq!(imp.shapes.len(), 1, "{:?}", imp.warnings);
+        let b = imp.shapes[0].bounds();
+        for (got, want) in [(b.x0, 0.0), (b.x1, w / 2.0), (b.y0, h / 2.0), (b.y1, h)] {
+            assert!((got - want).abs() < 1e-6, "{b:?}");
         }
     }
 

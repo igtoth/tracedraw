@@ -350,6 +350,7 @@ fn read_document(
 fn main() -> ExitCode {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
     tracedraw_text::install();
+    tracedraw_io::emf::install();
     let args: Vec<String> = std::env::args().collect();
     match args.get(1).map(String::as_str) {
         Some("inspect") => {

@@ -368,6 +368,12 @@ struct Ctx<'a> {
     /// Pictures of objects embedded from other programs, by storage name
     /// (`ole2` chunks).
     embedded: HashMap<String, crate::ole::Picture>,
+    /// The metafile pictures embedded objects were last drawn as, by
+    /// storage name (`ole2` chunks), for those without a picture above.
+    embedded_metafiles: HashMap<String, Vec<u8>>,
+    /// The object just read drew a metafile: its objects need ids from
+    /// the document's source.
+    pending_renumber: bool,
     /// Two-colour pattern tiles (`bmpf`), 1 bit per pixel: true = front.
     pattern_tiles: HashMap<u32, PatternBits>,
     /// Vector pattern drawings (`vpat`): an id, then a CMX file.
@@ -455,6 +461,8 @@ impl<'a> Ctx<'a> {
             outlines: HashMap::new(),
             bitmaps: HashMap::new(),
             embedded: HashMap::new(),
+            embedded_metafiles: HashMap::new(),
+            pending_renumber: false,
             pattern_tiles: HashMap::new(),
             vector_patterns: HashMap::new(),
             fonts: HashMap::new(),
@@ -557,6 +565,8 @@ pub fn parse_document_with(
         } else if c.is(b"ole2") {
             let pictures = crate::ole::embedded_pictures(ctx.data(c));
             ctx.embedded.extend(pictures);
+            let metafiles = crate::ole::embedded_metafiles(ctx.data(c));
+            ctx.embedded_metafiles.extend(metafiles);
         }
     });
     ctx.read_bitmaps(&bitmaps);
@@ -2245,18 +2255,38 @@ impl<'a> Ctx<'a> {
                 .warn("an object embedded from another program is not shown");
             return None;
         };
-        let Some((w, h, png)) = self.embedded.get(name).cloned() else {
-            self.report.warn(format!(
-                "embedded object \"{name}\" has no picture we can show"
-            ));
-            return None;
+        let rect = || -> Option<Rect> {
+            let mut r = self.reader_at(d, coords?.off + 8);
+            let (x0, y0, x1, y1) = (r.coord()?, r.coord()?, r.coord()?, r.coord()?);
+            let rect = Rect::new(x0.min(x1), y0.min(y1), x0.max(x1), y0.max(y1));
+            (rect.width() > 0.0 && rect.height() > 0.0).then_some(rect)
         };
-        let mut r = self.reader_at(d, coords?.off + 8);
-        let (x0, y0, x1, y1) = (r.coord()?, r.coord()?, r.coord()?, r.coord()?);
-        let rect = Rect::new(x0.min(x1), y0.min(y1), x0.max(x1), y0.max(y1));
-        if !(rect.width() > 0.0 && rect.height() > 0.0) {
-            return None;
-        }
+        let Some((w, h, png)) = self.embedded.get(name).cloned() else {
+            // The picture the object's program last drew, a metafile
+            // (barcodes, #1131), stretched over the object's rectangle.
+            let drawn = self.embedded_metafiles.get(name).and_then(|m| {
+                let mut ids = tracedraw_core::id::IdSource::default();
+                tracedraw_core::document::metafile::play(m, &mut ids)
+            });
+            let Some((mut shapes, size)) = drawn else {
+                self.report.warn(format!(
+                    "embedded object \"{name}\" has no picture we can show"
+                ));
+                return None;
+            };
+            let rect = rect()?;
+            if !(size.width > 0.0 && size.height > 0.0) {
+                return None;
+            }
+            let fit = Affine::translate((rect.x0, rect.y0))
+                * Affine::scale_non_uniform(rect.width() / size.width, rect.height() / size.height);
+            for s in &mut shapes {
+                s.absorb(fit);
+            }
+            self.pending_renumber = true;
+            return Some(ShapeKind::Group { children: shapes });
+        };
+        let rect = rect()?;
         Some(ShapeKind::Bitmap {
             rect,
             width_px: w,
@@ -3007,7 +3037,10 @@ impl<'a> Ctx<'a> {
                 self.build_text(kind_code, d, coords, oc, style_id, &fill, frame)
             }
             OBJ_CONNECTOR => self.read_connector(oc),
-            OBJ_EMBEDDED => self.read_embedded(d, coords, name.as_deref()),
+            OBJ_EMBEDDED => {
+                let storage = name.clone().or_else(|| ole_link_storage(self, oc));
+                self.read_embedded(d, coords, storage.as_deref())
+            }
             // A mesh fill object's outline is a curve.
             OBJ_MESH => coords.and_then(|a| self.read_geometry(OBJ_CURVE, d, a, polygon)),
             _ => coords.and_then(|a| self.read_geometry(kind_code, d, a, polygon)),
@@ -3103,6 +3136,11 @@ impl<'a> Ctx<'a> {
         shape.visible = !hidden;
         shape.fill = fill;
         shape.stroke = stroke;
+        // A drawn embedded object's objects carry their own colours.
+        if matches!(shape.kind, ShapeKind::Group { .. }) {
+            shape.fill = Fill::None;
+            shape.stroke = None;
+        }
         // Rounded corners keep their size when the rectangle is resized,
         // as new rectangles do, rather than stretch with it (#619); after
         // the outline, which decides whether the stretch may move.
@@ -3232,6 +3270,9 @@ impl<'a> Ctx<'a> {
                 let id = ids.shape();
                 match self.read_object(c, id, page_size) {
                     Some(mut shape) => {
+                        if std::mem::take(&mut self.pending_renumber) {
+                            renumber(&mut shape, ids);
+                        }
                         if let Some(crop) = self.pending_crop.take() {
                             shape = crop_to_clip_frame(shape, crop, ids);
                         }
@@ -4071,6 +4112,38 @@ fn cmyk_pixel(ink: [u8; 4], lut: Option<&tracedraw_core::icc::CmykLut>) -> [u8; 
 
 /// A bitmap with a crop outline becomes a clip frame whose frame is that
 /// outline.
+/// The storage of an embedded object named by its `olel` chunk (version
+/// 26: no name argument): byte 4 holds n of "Embedding n". The u32 before
+/// it (256) and the bytes after it are not known.
+fn ole_link_storage(ctx: &Ctx, oc: &Chunk) -> Option<String> {
+    let mut found = None;
+    oc.walk(&mut |c, _| {
+        if c.is(b"olel") && found.is_none() {
+            found = Some(c);
+        }
+    });
+    let mut r = ctx.reader(ctx.data(found?));
+    r.skip(4);
+    let n = r.u32()?;
+    Some(format!("Embedding {n}"))
+}
+
+/// New ids for the objects inside a shape, from the document's source.
+fn renumber(shape: &mut Shape, ids: &mut tracedraw_core::id::IdSource) {
+    let mut each = |c: &mut Shape| {
+        c.id = ids.shape();
+        renumber(c, ids);
+    };
+    match &mut shape.kind {
+        ShapeKind::Group { children } => children.iter_mut().for_each(&mut each),
+        ShapeKind::ClipFrame { frame, contents } => {
+            each(frame);
+            contents.iter_mut().for_each(each);
+        }
+        _ => {}
+    }
+}
+
 fn crop_to_clip_frame(
     mut shape: Shape,
     crop: BezPath,
@@ -9519,5 +9592,60 @@ mod tests {
         let (_, rep) = parse(&riff(b"CDRC", &body), 12);
         assert!(rep.warnings.iter().any(|w| w.contains("not shown")));
         assert!(!rep.warnings.iter().any(|w| w.contains("0x0a")));
+    }
+
+    #[test]
+    fn embedded_metafile_pictures_are_drawn_over_their_objects_rectangle() {
+        // A player drawing every metafile as a 10 by 5 frame filled by
+        // one rectangle (the import crate's player is registered by the
+        // app).
+        tracedraw_core::document::metafile::set(|_, ids| {
+            let path = Rect::new(0.0, 0.0, 10.0, 5.0).to_path(0.1);
+            let mut bar = Shape::new(ids.shape(), ShapeKind::Path { path, closed: true });
+            bar.fill = Fill::Solid(tracedraw_core::Color::BLACK);
+            Some((vec![bar], Size::new(10.0, 5.0)))
+        });
+        let mut stream = crate::ole::tests::presentation(&[1, 0, 9, 0, 0, 3]);
+        stream.resize(4096, 0);
+        let ole = crate::ole::tests::compound_named("\u{2}OlePres000", &stream);
+        // A version 26 barcode (#1131): no name argument; its `olel`
+        // names storage 3. 20 by 10 mm around the page centre.
+        let mut coords = i32s(&[200_000, 100_000]);
+        coords.extend_from_slice(&i32s(&[-100_000, 50_000, 100_000, -50_000]));
+        let mut olel = vec![0, 1, 0, 0, 3, 0, 0, 0, 1, 0, 0, 0];
+        olel.extend_from_slice(&[0, 0, 1, 0, 0, 0]);
+        let obj = list(
+            b"obj ",
+            &[
+                chunk(b"loda", &loda(OBJ_EMBEDDED, &[(ARG_COORDS, coords)])),
+                chunk(b"olel", &olel),
+            ]
+            .concat(),
+        );
+        let body = [
+            chunk(b"mcfg", &mcfg(12, 2_540_000, 2_540_000)),
+            chunk(b"ole2", &ole),
+            list(b"page", &list(b"layr", &obj)),
+        ]
+        .concat();
+        let (doc, rep) = parse(&riff(b"CDRC", &body), 12);
+        assert_eq!(rep.skipped_objects, 0, "{:?}", rep.warnings);
+        let shape = first_shape(&doc);
+        let ShapeKind::Group { children } = &shape.kind else {
+            panic!("{:?}", shape.kind);
+        };
+        assert_eq!(children.len(), 1);
+        assert!(matches!(shape.fill, Fill::None) && shape.stroke.is_none());
+        assert_ne!(children[0].id, shape.id);
+        let b = shape.transform.transform_rect_bbox(children[0].bounds());
+        let c = 127.0;
+        for (got, want) in [
+            (b.x0, c - 10.0),
+            (b.x1, c + 10.0),
+            (b.y0, c - 5.0),
+            (b.y1, c + 5.0),
+        ] {
+            assert!((got - want).abs() < 1e-6, "{b:?}");
+        }
     }
 }

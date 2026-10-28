@@ -190,6 +190,30 @@ pub mod text_outline {
     }
 }
 
+/// Hook for a metafile player. Readers of other formats meet Windows
+/// metafiles (WMF or EMF) as the pictures of embedded objects; the player
+/// lives in the import crate, so the app registers it here.
+pub mod metafile {
+    use super::Shape;
+    use crate::geometry::Size;
+    use crate::id::IdSource;
+    use std::sync::OnceLock;
+
+    /// A metafile's objects (mm, y up, origin at the bottom left of its
+    /// frame) and the size of that frame, `None` when it cannot be read.
+    pub type Player = fn(&[u8], &mut IdSource) -> Option<(Vec<Shape>, Size)>;
+    static PLAYER: OnceLock<Player> = OnceLock::new();
+
+    pub fn set(f: Player) {
+        let _ = PLAYER.set(f);
+    }
+
+    /// The objects a metafile draws, when a player is registered.
+    pub fn play(bytes: &[u8], ids: &mut IdSource) -> Option<(Vec<Shape>, Size)> {
+        PLAYER.get().and_then(|f| f(bytes, ids))
+    }
+}
+
 /// The glyphs of a text object in its local space (apply its transform),
 /// placed as [`Shape::local_path`] places its outline. `None` for other
 /// shapes and without a text engine.

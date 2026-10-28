@@ -194,6 +194,7 @@ fn main() -> eframe::Result<()> {
     // console to show them (#570).
     startup_log::init();
     tracedraw_text::install();
+    tracedraw_io::emf::install();
     // `tracedraw --mcp`: no window, a Model Context Protocol server on
     // stdin/stdout (see mcp.rs and docs/behavior/mcp.md).
     if args.iter().any(|a| a == "--mcp") {
