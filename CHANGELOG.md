@@ -9,6 +9,8 @@ full, row-by-row status.
 - Objects panel: selecting an object on the page scrolls the list to its row, so an object far down a long list comes into view; a selection that stays the same leaves the scroll alone (#1044).
 - Envelope: Copy Envelope Properties (and Object > Copy Effect > Envelope From) picking an object with no envelope, such as a circle, a star or a drawn curve, now fits the selected text or objects into that object's shape. It said the object had no envelope, so text could not be fitted into a drawn shape (#993).
 - Hints panel: every tool's page now walks through the tool in steps, each with a picture of the object, its handles or nodes, the drag and the tool's cursor (181 steps for 64 tools, in all 18 languages). It showed only the one-line status bar hint.
+- Pen: while a curve is drawn, new or going on from an end, every click places the next node, also on a segment or a node of that curve or of another one. Automatic adding and deleting of nodes works only when no curve is being drawn, so drawing no longer changes other curves by accident (#1143).
+- Pen: going on from the end of a curve, a second click on that end node makes it a cusp, so the new segment leaves it straight; the curved, mirrored start stays the default (#1138).
 - Dropping files: a `.cdr` (or any drawing File > Open reads) let go over the title, menus, toolbars or document tabs opens in a tab of its own, and only one let go over the drawing window is imported into it; the frame and label while dragging show which. Before, a `.cdr` dropped anywhere on an open drawing was imported. Where the system does not say where the pointer is (Linux, macOS), drawings open in a tab like a `.tdraw` and pictures are imported (#1142).
 
 ## 0.19.10 (2026-10-28)
@@ -36,6 +38,8 @@ full, row-by-row status.
 - Status bar in a narrow window: the fill and outline parts keep room for their swatches and values and move left as the window narrows, the tool hints and object information giving way first and ending in an ellipsis. The outline's colour and width were cut off at the right, and the parts could not be read or double-clicked (#1004).
 - Area Fill: areas filled side by side now meet exactly, with no hairline gap between their colours where curves cross or shapes overlap. A corner where two outlines cross was placed where their flattened outlines cross, up to 0.02 mm off the curves, so neighbouring areas could leave a thin gap or a missed corner when zoomed in; the same holds for the results of Weld, Trim and Intersect (#1065).
 - Distort: the Twister spirals smoothly all the way to the ends of a shape, and the Zipper teeth run through the nodes, also on closed shapes; the first node no longer stays locked (#1108).
+- Smudge and Twirl: a long stroke stays quick and no longer freezes or closes TraceDraw. The curve under the nib is rebuilt with TraceDraw's own curve fitter; the one used before could take ever longer, hang or crash partway through a stroke on a simple shape (#1133).
+- Shape tool: dragging a curve segment between two nodes made cusp keeps them cusp. Their other handles stay where they are; when a node's handles happened to line up, they turned along with the dragged segment, as if the node were smooth or symmetrical (#1140).
 
 ## 0.19.9 (2026-10-28)
 
