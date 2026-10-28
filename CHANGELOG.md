@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Saving as .cdr: text in a SemiBold face (or a Light, Medium, Black ...) is saved as its family at that weight ("Titillium Web" at SemiBold), as the file it came from names it. It was saved under the name "Titillium Web SemiBold", which no installed font goes by, so the saved file opened elsewhere in a substituted font (#892, #624).
 - Dimensions without arrowheads (or with open, tick or no heads): the selection box and its handles wrap the dimension's lines and label. Their empty arrowhead curve counted as a point at the page's lower left corner, so the box stretched from the dimension down to that corner, and a moved dimension seemed to leave its box behind (#996).
 
 ## 0.19.9 (2026-10-28)
