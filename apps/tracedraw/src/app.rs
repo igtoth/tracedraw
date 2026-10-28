@@ -1331,6 +1331,9 @@ pub struct App {
     pub navigator_tex: Option<egui::TextureHandle>,
     pub options_label_index: usize,
     pub options_current_only: bool,
+    /// Document Options > Page Size: the name being typed for a page
+    /// size to save (Some while the field is shown).
+    pub options_page_size_name: Option<String>,
     /// Selected custom anchor index (Anchor Editing tool).
     pub anchor_sel: Option<usize>,
     /// Object > Order > In Front Of / Behind is waiting for a click: Some(in_front).
@@ -2358,6 +2361,7 @@ impl App {
             navigator_tex: None,
             options_label_index: 0,
             options_current_only: false,
+            options_page_size_name: None,
             anchor_sel: None,
             pending_order: None,
             repeatables: Vec::new(),

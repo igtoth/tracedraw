@@ -1518,30 +1518,25 @@ pub fn guide_bar(app: &mut App, ui: &mut Ui) {
     }
 }
 
-/// The page bar's list of sizes: the presets, then Custom (#650), which
-/// is the one ticked when the page matches no preset and opens the Page
-/// Size dialog with the page's width and height to type any size.
-fn page_size_list(
-    app: &mut App,
-    ui: &mut Ui,
-    presets: &[(&'static str, Size)],
-    current: &str,
-    size: Size,
-) {
-    for (n, s) in presets {
-        if ui.selectable_label(current == *n, *n).clicked() {
-            let landscape = size.width > size.height;
-            let s = if landscape {
-                Size::new(s.height.max(s.width), s.height.min(s.width))
-            } else {
-                Size::new(s.width.min(s.height), s.width.max(s.height))
-            };
-            resize_pages(app, s);
-            app.fit_pending = true;
-        }
+/// The page bar's list of sizes: the presets by group, then Custom
+/// (#650), which is the one ticked when the page matches no preset and
+/// opens the Page Size dialog with the page's width and height to type
+/// any size, and Edit This List, which opens Document Options > Page Size
+/// to save or delete sizes.
+fn page_size_list(app: &mut App, ui: &mut Ui, current: &str, size: Size) {
+    let saved = app.settings.page_sizes.clone();
+    if let Some((_, s)) = crate::ui::dialogs::paper_preset_menu(ui, current, &saved) {
+        let landscape = size.width > size.height;
+        let s = if landscape {
+            Size::new(s.height.max(s.width), s.height.min(s.width))
+        } else {
+            Size::new(s.width.min(s.height), s.width.max(s.height))
+        };
+        resize_pages(app, s);
+        app.fit_pending = true;
     }
     ui.separator();
-    let custom = !presets.iter().any(|(n, _)| current == *n);
+    let custom = crate::ui::dialogs::paper_name(size, &saved).is_none();
     if ui
         .selectable_label(custom, tr("toolbar.custom_page"))
         .clicked()
@@ -1552,6 +1547,11 @@ fn page_size_list(
             all_pages: app.page_size_all,
         };
     }
+    if ui.button(tr("toolbar.edit_page_sizes")).clicked() {
+        app.dialog = crate::ui::dialogs::Dialog::Options;
+        app.options_page = crate::ui::dialogs::OptionsPage::PageSize;
+        ui.close();
+    }
 }
 
 /// Autofit Page's popup (there is one property bar).
@@ -1561,14 +1561,7 @@ pub(crate) fn autofit_popup_id() -> egui::Id {
 
 pub fn page_bar(app: &mut App, ui: &mut Ui) {
     let size = app.page_size();
-    let presets = crate::ui::dialogs::paper_presets();
-    let current = presets
-        .iter()
-        .find(|(_, s)| {
-            ((s.width - size.width).abs() < 0.05 && (s.height - size.height).abs() < 0.05)
-                || ((s.height - size.width).abs() < 0.05 && (s.width - size.height).abs() < 0.05)
-        })
-        .map(|(n, _)| n.to_string())
+    let current = crate::ui::dialogs::paper_name(size, &app.settings.page_sizes)
         .unwrap_or_else(|| tr("toolbar.custom"));
     ui.allocate_ui_with_layout(
         Vec2::new(200.0, BAR_H),
@@ -1578,7 +1571,7 @@ pub fn page_bar(app: &mut App, ui: &mut Ui) {
                 .selected_text(current.clone())
                 .width(192.0)
                 .height(400.0)
-                .show_ui(ui, |ui| page_size_list(app, ui, &presets, &current, size))
+                .show_ui(ui, |ui| page_size_list(app, ui, &current, size))
                 .response
                 .rich_tip(crate::ui::tips::keyed("toolbar.page_size"));
         },
@@ -3490,7 +3483,6 @@ mod tests {
         let ctx = crate::theme::ui_context();
         let mut app = App::headless();
         let size = Size::new(123.0, 45.0);
-        let presets = crate::ui::dialogs::paper_presets();
         let custom = tr("toolbar.custom_page");
         let run = |app: &mut App, events: Vec<egui::Event>| -> Option<egui::Rect> {
             let mut out = ctx.run_ui(
@@ -3498,7 +3490,7 @@ mod tests {
                     events,
                     ..Default::default()
                 },
-                |ui| page_size_list(app, ui, &presets, "Custom", size),
+                |ui| page_size_list(app, ui, "Custom", size),
             );
             out.textures_delta.clear();
             out.shapes.iter().find_map(|c| match &c.shape {
