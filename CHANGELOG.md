@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Shape tool: end nodes of two different objects are no longer joined, by Join or by dropping one on the other; the status bar says to combine the objects first (Object > Combine, Ctrl+L), after which their ends join as before (#1007).
 - Zoom: F2 picks the Zoom tool for one zoom. After a click, a right click or a marquee the tool used before comes back (the Pick tool, most of the time); it stayed on the Zoom tool. Z and the toolbox button still pick the Zoom tool until another one is chosen (#1039).
 - Saving as .cdr: text in a SemiBold face (or a Light, Medium, Black ...) is saved as its family at that weight ("Titillium Web" at SemiBold), as the file it came from names it. It was saved under the name "Titillium Web SemiBold", which no installed font goes by, so the saved file opened elsewhere in a substituted font (#892, #624).
 - Start: when the first renderer failed at once and TraceDraw opened with the next one, a second, empty TraceDraw window no longer opens 20 seconds later (the start that handed over still counted the time).
