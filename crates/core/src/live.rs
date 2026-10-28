@@ -744,6 +744,7 @@ impl Shape {
             if let ShapeKind::Group { children } = &self.kind {
                 return children
                     .iter()
+                    .filter(|c| !c.is_empty_path())
                     .map(|c| {
                         let mut c = c.clone();
                         c.transform_by(self.transform);

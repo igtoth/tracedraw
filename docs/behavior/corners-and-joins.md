@@ -23,6 +23,12 @@ Fillets, scallops or chamfers the corners of the selected objects.
   `r / tan(theta / 2)` from the corner on each side; on curved sides the
   distance is measured along the curve and the arc leaves along the
   curve's direction. Arcs are cubic Beziers, one per quarter turn.
+- Corners are cut on the page: on a stretched or skewed object a fillet
+  or scallop is round and the sizes are page millimetres, and the curve
+  keeps its transform (#1002,
+  `corners::tests::fillets_on_a_stretched_object_are_round`). The cut is
+  part of the curve: it is not live and does not change if the object
+  is stretched later.
 - While the panel is open, the result is previewed on the drawing as a
   dashed outline in the selection colour.
 - One undo step ("Fillet", "Scallop" or "Chamfer").
