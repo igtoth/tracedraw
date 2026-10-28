@@ -301,7 +301,9 @@ fn root_frame(app: &mut App, ui: &mut Ui) {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
     }
-    if !app.has_document() {
+    // With no drawing open the Welcome Screen shows, unless its tab was
+    // closed: then the workspace stays empty (#1081).
+    if !app.has_document() && !app.settings.welcome_tab_closed {
         app.show_welcome = true;
     }
     // Files dropped on the window, and what a drop would do while they
@@ -564,6 +566,14 @@ fn root_frame(app: &mut App, ui: &mut Ui) {
         egui::CentralPanel::default()
             .frame(Frame::new().fill(Tokens::panel()))
             .show(ui, |ui| welcome::welcome_screen(app, ui));
+        dialogs::show(app, &ctx);
+        return;
+    }
+    // The Welcome Screen closed and no drawing open: an empty workspace.
+    if !app.has_document() {
+        egui::CentralPanel::default()
+            .frame(Frame::new().fill(Tokens::panel()))
+            .show(ui, |_| {});
         dialogs::show(app, &ctx);
         return;
     }
