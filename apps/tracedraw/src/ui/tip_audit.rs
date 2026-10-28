@@ -93,16 +93,18 @@ fn mixed_app() -> App {
 
 /// The controls of the last frame that a pointer can use, with the
 /// texts drawn around them.
-fn controls(ctx: &Context) -> (Vec<(Id, Rect, String, String)>, Vec<(Rect, String)>) {
+fn controls(
+    ctx: &Context,
+    dialogs: bool,
+) -> (Vec<(Id, Rect, String, String)>, Vec<(Rect, String)>) {
     ctx.viewport(|v| {
         let w = &v.prev_pass.widgets;
         let mut out = Vec::new();
         let mut texts = Vec::new();
         for (layer, rects) in w.layers() {
-            if matches!(
-                layer.order,
-                Order::Tooltip | Order::Debug | Order::Foreground
-            ) {
+            if matches!(layer.order, Order::Tooltip | Order::Debug)
+                || (layer.order == Order::Foreground && !dialogs)
+            {
                 continue;
             }
             for r in rects {
@@ -125,6 +127,13 @@ fn controls(ctx: &Context) -> (Vec<(Id, Rect, String, String)>, Vec<(Rect, Strin
                 // A link or other text that reads as what it does, and
                 // the menu bar's titles, name themselves.
                 if kind == WidgetType::Label && !label.is_empty() {
+                    continue;
+                }
+                // A window's title bar and resize corner are not controls,
+                // and its close cross is the toolkit's own.
+                if matches!(kind, WidgetType::Window | WidgetType::ResizeHandle)
+                    || (kind == WidgetType::Button && label == "Close window")
+                {
                     continue;
                 }
                 if r.interact_rect.max.y <= MENU_BAR_BOTTOM {
@@ -178,7 +187,8 @@ fn check_state(
     d.frame(app, vec![Event::PointerGone]);
     prepare(app);
     d.frame(app, vec![]);
-    let (list, texts) = controls(&d.ctx);
+    let in_dialog = !matches!(app.dialog, crate::ui::dialogs::Dialog::None);
+    let (list, texts) = controls(&d.ctx, in_dialog);
     for (_, rect, kind, label) in list {
         let key = (
             kind.clone(),
@@ -196,7 +206,7 @@ fn check_state(
             // in the background): find the control again and retry.
             prepare(app);
             d.frame(app, vec![Event::PointerGone]);
-            let (again, _) = controls(&d.ctx);
+            let (again, _) = controls(&d.ctx, in_dialog);
             if let Some((_, r, _, _)) = again
                 .iter()
                 .filter(|(_, _, k, l)| *k == kind && *l == label)
@@ -291,11 +301,11 @@ pub fn audit(dockers: bool, dialogs: bool) -> Vec<Missing> {
 
 /// Every control of the bars, tabs, rulers, palette and status bar shows
 /// a tip, for every tool with nothing, one and every object selected, and
-/// every control in every docker tab.
+/// every control in every docker tab and every dialog.
 #[test]
-fn every_bar_and_docker_control_has_a_tip() {
+fn every_bar_docker_and_dialog_control_has_a_tip() {
     crate::i18n::set_language("en");
-    let missing = audit(true, false);
+    let missing = audit(true, true);
     assert!(missing.is_empty(), "controls without a tip: {missing:#?}");
 }
 

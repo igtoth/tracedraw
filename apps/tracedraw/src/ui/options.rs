@@ -441,7 +441,7 @@ pub fn options_dialog(app: &mut App, ctx: &Context, close: &mut bool) {
                 ui.horizontal(|ui| {
                     if ui
                         .add_sized([27.0, 27.0], egui::Button::new("?"))
-                        .rich_tip(tr("dialog.help"))
+                        .rich_tip(crate::ui::tips::keyed("dialog.help_button"))
                         .clicked()
                     {
                         app.open_help(crate::help::options_topic(app.options_page));
@@ -452,6 +452,7 @@ pub fn options_dialog(app: &mut App, ctx: &Context, close: &mut bool) {
                                 [150.0, 27.0],
                                 egui::Button::new(tr("options.save_as_default")),
                             )
+                            .rich_tip(crate::ui::tips::keyed("options.save_as_default"))
                             .clicked()
                     {
                         app.settings.document_defaults =
@@ -500,7 +501,9 @@ fn set_tabs(app: &mut App, ui: &mut Ui, rect: egui::Rect, set: OptionsSet) {
                 if s == OptionsSet::Document && !app.has_document() {
                     continue;
                 }
-                let tab = ui.selectable_label(s == set, s.tab_label());
+                let tab = ui
+                    .selectable_label(s == set, s.tab_label())
+                    .rich_tip_with(|| format!("{}\n{}", s.tab_label(), tr("options.set_tab_desc")));
                 ui.ctx()
                     .data_mut(|d| d.insert_temp(tab_rect_id(s), tab.rect));
                 if tab.clicked() && s != set {
@@ -541,11 +544,13 @@ fn page_list(app: &mut App, ui: &mut Ui, rect: egui::Rect, set: OptionsSet) {
             rect.min + egui::vec2(5.0, 5.0 + i as f32 * 23.0),
             egui::vec2(rect.width() - 10.0, 22.0),
         );
-        let resp = ui.interact(
-            row,
-            egui::Id::new(("options_list", p.key(), i)),
-            egui::Sense::click(),
-        );
+        let resp = ui
+            .interact(
+                row,
+                egui::Id::new(("options_list", p.key(), i)),
+                egui::Sense::click(),
+            )
+            .rich_tip_with(|| format!("{}\n{}", tr(p.key()), tr("options.page_desc")));
         let selected = app.options_page == *p;
         if selected {
             ui.painter()
@@ -678,7 +683,11 @@ fn general_page(app: &mut App, ui: &mut Ui) {
         grid("startup").show(ui, |ui| {
             row_label(ui, &trf("options.on_startup", &[("app", "TraceDraw")]));
             let mut s = app.settings.startup;
-            if combo(ui, "startup", &mut s, &Startup::ALL, |v| tr(v.key()), 240.0) {
+            let tip = crate::ui::tips::pair("options.startup", "options.startup_desc");
+            let changed = crate::ui::tips::tip_over(ui, tip, |ui| {
+                combo(ui, "startup", &mut s, &Startup::ALL, |v| tr(v.key()), 240.0)
+            });
+            if changed {
                 app.settings.startup = s;
                 app.settings.show_welcome_on_start = s == Startup::WelcomeScreen;
             }
@@ -687,9 +696,11 @@ fn general_page(app: &mut App, ui: &mut Ui) {
         ui.checkbox(
             &mut app.settings.show_new_document_dialog,
             tr("options.show_new_document_dialog"),
-        );
+        )
+        .rich_tip(crate::ui::tips::keyed("options.show_new_document_dialog"));
         if !crate::files::WEB {
-            ui.checkbox(&mut app.settings.show_splash, tr("options.show_splash"));
+            ui.checkbox(&mut app.settings.show_splash, tr("options.show_splash"))
+                .rich_tip(crate::ui::tips::keyed("options.show_splash"));
         }
         #[cfg(not(target_arch = "wasm32"))]
         hardware_acceleration(app, ui);
@@ -701,7 +712,11 @@ fn general_page(app: &mut App, ui: &mut Ui) {
             ui.add_sized(
                 [70.0, 22.0],
                 crate::ui::field::NumField::new(&mut app.settings.undo_levels).range(1..=99_999),
-            );
+            )
+            .rich_tip(crate::ui::tips::pair(
+                "options.undo_levels",
+                "options.undo_levels_desc",
+            ));
             ui.end_row();
         });
     });
@@ -720,7 +735,8 @@ fn hardware_acceleration(app: &mut App, ui: &mut Ui) {
         ui.checkbox(
             &mut app.settings.hardware_acceleration,
             tr("options.hardware_acceleration"),
-        );
+        )
+        .rich_tip(crate::ui::tips::keyed("options.hardware_acceleration"));
         let on = app.settings.hardware_acceleration;
         let chosen = &mut app.settings.gpu_adapter;
         let shown = if chosen.is_empty() {
@@ -737,7 +753,9 @@ fn hardware_acceleration(app: &mut App, ui: &mut Ui) {
                     for name in crate::gpu::adapters() {
                         ui.selectable_value(chosen, name.clone(), name);
                     }
-                });
+                })
+                .response
+                .rich_tip_always(crate::ui::tips::keyed("options.gpu_adapter"));
         });
     });
     let dim = |ui: &mut Ui, text: String| {
@@ -930,7 +948,11 @@ fn edit_page(app: &mut App, ui: &mut Ui) {
         {
             app.settings.focus_visibility = v.round() as u8;
         }
-        if ui.button(tr("dialog.reset")).clicked() {
+        if ui
+            .button(tr("dialog.reset"))
+            .rich_tip(crate::ui::tips::keyed("dialog.reset"))
+            .clicked()
+        {
             app.settings.focus_visibility = 20;
         }
     });
@@ -2502,13 +2524,21 @@ fn command_keys(app: &mut App, ui: &mut Ui, c: &CommandItem) {
     if app.shortcut_editor.confirm_reset_all {
         ui.label(tr("options.reset_all_shortcuts_question"));
         ui.horizontal(|ui| {
-            if ui.button(tr("dialog.reset")).clicked() {
+            if ui
+                .button(tr("dialog.reset"))
+                .rich_tip(crate::ui::tips::keyed("dialog.reset"))
+                .clicked()
+            {
                 app.settings.shortcuts.clear();
                 app.shortcut_editor.note = None;
                 app.shortcut_editor.capture = None;
                 app.shortcut_editor.confirm_reset_all = false;
             }
-            if ui.button(tr("dialog.cancel")).clicked() {
+            if ui
+                .button(tr("dialog.cancel"))
+                .rich_tip(crate::ui::tips::keyed("dialog.cancel"))
+                .clicked()
+            {
                 app.shortcut_editor.confirm_reset_all = false;
             }
         });

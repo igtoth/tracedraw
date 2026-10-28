@@ -3234,14 +3234,30 @@ impl FontSystem {
                         if c >= columns || guard > 20_000 {
                             break vec![(lo + cap_w, hi.max(lo + cap_w + 1.0))];
                         }
+                        // The first line's indent counts from where its
+                        // first part starts, also beside an object that
+                        // pushes it in (#1110); a hanging indent only
+                        // reaches back at the column's edge.
+                        let lo_rest = col_x + indent_rest;
                         let mut segs = free_segments(
-                            lo,
+                            lo_rest.min(lo),
                             hi,
                             ty - m_est.descent,
                             ty + m_est.ascent,
                             wrap,
                             min_w,
                         );
+                        if first {
+                            let fli = indent - indent_rest;
+                            if let Some(s0) = segs.first_mut() {
+                                if fli > 0.0 {
+                                    s0.0 += fli;
+                                } else if s0.0 > lo + 1e-9 {
+                                    s0.0 = s0.0.max(lo_rest);
+                                }
+                            }
+                            segs.retain(|(s, e)| e - s >= min_w);
+                        }
                         if cap_w > 0.0 {
                             segs.retain(|(s, e)| e - s >= cap_w + min_w);
                             if let Some(first) = segs.first_mut() {
@@ -5520,6 +5536,50 @@ mod tests {
         );
         // Above and below: no line at the square's height at all.
         assert!(band(tracedraw_core::WrapSide::AboveBelow).is_empty());
+    }
+
+    /// The first line's indent counts from where the line starts, also
+    /// beside an object the text wraps around (#1110).
+    #[test]
+    fn the_first_line_indent_holds_beside_a_wrap_object() {
+        if !has_fonts() {
+            return;
+        }
+        let f = fonts();
+        let s = words(120);
+        let starts = |square: (f64, f64), side, indent: f64| {
+            let mut para = ParagraphStyle {
+                first_line_indent: indent,
+                ..ParagraphStyle::default()
+            };
+            para.flow = tracedraw_core::text_flow::FrameFlow::new(
+                vec![wrap_square(square.0, -15.0, square.1, 5.0, side)],
+                None,
+            );
+            let l = frame_layout(f, std::slice::from_ref(&s), &para, 100.0);
+            l.lines
+                .iter()
+                .take(3)
+                .map(|l| l.edges[0])
+                .collect::<Vec<_>>()
+        };
+        let close = |a: f64, b: f64| (a - b).abs() < 0.05;
+        // An object at the left: the lines start past it (and the 1 mm
+        // offset), the first one 10 mm further in.
+        let left = starts((-5.0, 20.0), tracedraw_core::WrapSide::Straddle, 10.0);
+        assert!(close(left[0], 31.0) && close(left[1], 21.0), "{left:?}");
+        // Text on the right of an object in the middle: the same.
+        let right = starts((40.0, 60.0), tracedraw_core::WrapSide::Right, 10.0);
+        assert!(close(right[0], 71.0) && close(right[1], 61.0), "{right:?}");
+        // Beside it on both sides only the first part is indented.
+        let both = starts((40.0, 60.0), tracedraw_core::WrapSide::Straddle, 10.0);
+        assert!(
+            close(both[0], 10.0) && close(both[1], 61.0) && close(both[2], 0.0),
+            "{both:?}"
+        );
+        // A hanging indent does not reach back over the object.
+        let hanging = starts((-5.0, 20.0), tracedraw_core::WrapSide::Straddle, -5.0);
+        assert!(close(hanging[0], 21.0), "{hanging:?}");
     }
 
     #[test]

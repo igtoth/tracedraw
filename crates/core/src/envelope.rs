@@ -418,6 +418,176 @@ impl Frame {
         path
     }
 
+    /// The frame shaped like a closed outline (its largest closed part),
+    /// so an object mapped into it fills that shape (#993). The corners
+    /// are the outline's points nearest the corners of its bounding box;
+    /// a node goes in where such a point falls inside a segment. None when
+    /// the outline has no closed part with an area, more nodes than
+    /// [`MAX_NODES`], or corners that do not run round it in order.
+    pub fn from_outline(path: &BezPath) -> Option<Frame> {
+        use crate::geometry::Shape as _;
+        // The closed parts as cubic segments.
+        let mut parts: Vec<Vec<CubicBez>> = Vec::new();
+        let mut cur: Vec<CubicBez> = Vec::new();
+        let (mut start, mut last) = (Point::ZERO, Point::ZERO);
+        let mut closed = false;
+        let mut finish = |cur: &mut Vec<CubicBez>, closed: bool, start: Point, last: Point| {
+            if closed || (!cur.is_empty() && (last - start).hypot() < 1e-9) {
+                if (last - start).hypot() > 1e-9 {
+                    cur.push(CubicBez::new(
+                        last,
+                        last.lerp(start, 1.0 / 3.0),
+                        last.lerp(start, 2.0 / 3.0),
+                        start,
+                    ));
+                }
+                if !cur.is_empty() {
+                    parts.push(std::mem::take(cur));
+                }
+            }
+            cur.clear();
+        };
+        for el in path.elements() {
+            match *el {
+                PathEl::MoveTo(p) => {
+                    finish(&mut cur, closed, start, last);
+                    closed = false;
+                    start = p;
+                    last = p;
+                }
+                PathEl::LineTo(p) => {
+                    if (p - last).hypot() > 1e-12 {
+                        cur.push(CubicBez::new(
+                            last,
+                            last.lerp(p, 1.0 / 3.0),
+                            last.lerp(p, 2.0 / 3.0),
+                            p,
+                        ));
+                    }
+                    last = p;
+                }
+                PathEl::QuadTo(c, p) => {
+                    cur.push(kurbo::QuadBez::new(last, c, p).raise());
+                    last = p;
+                }
+                PathEl::CurveTo(a, b, p) => {
+                    cur.push(CubicBez::new(last, a, b, p));
+                    last = p;
+                }
+                PathEl::ClosePath => {
+                    closed = true;
+                    finish(&mut cur, closed, start, last);
+                    closed = false;
+                    last = start;
+                }
+            }
+        }
+        finish(&mut cur, closed, start, last);
+        let area = |segs: &[CubicBez]| {
+            let mut p = BezPath::new();
+            if let Some(f) = segs.first() {
+                p.move_to(f.p0);
+            }
+            for c in segs {
+                p.curve_to(c.p1, c.p2, c.p3);
+            }
+            p.close_path();
+            p.area()
+        };
+        let mut segs = parts
+            .into_iter()
+            .map(|s| (area(&s), s))
+            .filter(|(a, _)| a.is_finite() && a.abs() > 1e-9)
+            .max_by(|a, b| a.0.abs().total_cmp(&b.0.abs()))?;
+        // Anticlockwise (y up), as the frame runs.
+        if segs.0 < 0.0 {
+            segs.1 = segs
+                .1
+                .iter()
+                .rev()
+                .map(|c| CubicBez::new(c.p3, c.p2, c.p1, c.p0))
+                .collect();
+        }
+        let mut segs = segs.1;
+        let mut outline = BezPath::new();
+        if let Some(f) = segs.first() {
+            outline.move_to(f.p0);
+        }
+        for c in &segs {
+            outline.curve_to(c.p1, c.p2, c.p3);
+        }
+        let b = outline.bounding_box();
+        if b.width() < 1e-9 || b.height() < 1e-9 {
+            return None;
+        }
+        // Each corner of the box: the nearest point of the outline, as a
+        // node (the segment it falls in split there).
+        let corner_at = |q: Point, segs: &mut Vec<CubicBez>| -> Option<usize> {
+            let (i, t, _) = segs
+                .iter()
+                .enumerate()
+                .map(|(i, c)| {
+                    let n = c.nearest(q, 1e-9);
+                    (i, n.t, n.distance_sq)
+                })
+                .min_by(|a, b| a.2.total_cmp(&b.2))?;
+            let c = *segs.get(i)?;
+            let near = |p: Point| (p - c.eval(t)).hypot() < 1e-6 * b.width().max(b.height());
+            if t < 1e-6 || near(c.p0) {
+                Some(i)
+            } else if t > 1.0 - 1e-6 || near(c.p3) {
+                Some((i + 1) % segs.len())
+            } else {
+                *segs.get_mut(i)? = c.subsegment(0.0..t);
+                segs.insert(i + 1, c.subsegment(t..1.0));
+                Some(i + 1)
+            }
+        };
+        let targets = [
+            Point::new(b.x0, b.y0),
+            Point::new(b.x1, b.y0),
+            Point::new(b.x1, b.y1),
+            Point::new(b.x0, b.y1),
+        ];
+        let mut points = Vec::new();
+        for q in targets {
+            let i = corner_at(q, &mut segs)?;
+            points.push(segs.get(i)?.p0);
+        }
+        // Start at the bottom-left corner. Two box corners at one point
+        // (the apex of a triangle) become two nodes there, joined by a
+        // side of no length.
+        let first = segs.iter().position(|c| c.p0 == points[0])?;
+        segs.rotate_left(first);
+        let mut corners = [0usize; 4];
+        for k in 1..4 {
+            let prev = corners[k - 1];
+            let found = segs
+                .iter()
+                .enumerate()
+                .skip(prev + 1)
+                .find(|(_, c)| c.p0 == points[k])
+                .map(|(i, _)| i);
+            corners[k] = match found {
+                Some(i) => i,
+                None if points[k] == points[k - 1] => {
+                    let p = points[k];
+                    segs.insert(prev, CubicBez::new(p, p, p, p));
+                    prev + 1
+                }
+                None => return None,
+            };
+        }
+        if segs.len() > MAX_NODES {
+            return None;
+        }
+        Some(Frame {
+            nodes: segs.iter().map(|c| c.p0).collect(),
+            handles: segs.iter().map(|c| [c.p1, c.p2]).collect(),
+            corners,
+        })
+    }
+
     /// The frame moved through `m` (nodes and handles alike).
     pub fn transformed(&self, m: crate::geometry::Affine) -> Frame {
         Frame {
@@ -736,6 +906,73 @@ mod tests {
 
     fn close(a: Point, b: Point) -> bool {
         (a - b).hypot() < 1e-6
+    }
+
+    /// A frame made from an outline follows it (#993): a rectangle drawn
+    /// either way round gives its own box, a circle its circle with the
+    /// corners at the diagonals, a triangle is filled by the box; an open
+    /// line gives none.
+    #[test]
+    fn frames_are_made_from_outlines() {
+        // A rectangle, clockwise: the frame of its box, mapping changes
+        // nothing.
+        let mut cw = BezPath::new();
+        cw.move_to((0.0, 20.0));
+        cw.line_to((40.0, 20.0));
+        cw.line_to((40.0, 0.0));
+        cw.line_to((0.0, 0.0));
+        cw.close_path();
+        let f = Frame::from_outline(&cw).expect("a frame");
+        assert_eq!(f.nodes.len(), 4);
+        assert!(close(f.nodes[f.corners[0]], Point::new(0.0, 0.0)));
+        assert!(close(f.nodes[f.corners[1]], Point::new(40.0, 0.0)));
+        assert!(close(f.nodes[f.corners[2]], Point::new(40.0, 20.0)));
+        assert!(close(f.nodes[f.corners[3]], Point::new(0.0, 20.0)));
+        let mapped = apply(&square(), &f, false, Mapping::Putty);
+        assert!((mapped.area().abs() - 800.0).abs() < 1e-3);
+
+        // A circle: the object's box fills the circle.
+        let circle = crate::geometry::Circle::new((50.0, 50.0), 10.0).to_path(0.01);
+        let f = Frame::from_outline(&circle).expect("a frame");
+        let d = 10.0 / 2f64.sqrt();
+        let near = |a: Point, b: Point| (a - b).hypot() < 0.01;
+        assert!(near(f.nodes[f.corners[0]], Point::new(50.0 - d, 50.0 - d)));
+        assert!(near(f.nodes[f.corners[2]], Point::new(50.0 + d, 50.0 + d)));
+        let box40 = Rect::new(50.0 - d, 50.0 - d, 50.0 + d, 50.0 + d).to_path(0.01);
+        let round = apply(&box40, &f, false, Mapping::Putty);
+        let area = std::f64::consts::PI * 100.0;
+        assert!(
+            (round.area().abs() - area).abs() < area * 0.01,
+            "{}",
+            round.area()
+        );
+        assert!((round.bounding_box().width() - 20.0).abs() < 0.05);
+
+        // A triangle: its box fills it.
+        let mut tri = BezPath::new();
+        tri.move_to((0.0, 0.0));
+        tri.line_to((30.0, 0.0));
+        tri.line_to((15.0, 30.0));
+        tri.close_path();
+        let f = Frame::from_outline(&tri).expect("a frame");
+        let mapped = apply(
+            &Rect::new(0.0, 0.0, 30.0, 30.0).to_path(0.01),
+            &f,
+            false,
+            Mapping::Putty,
+        );
+        assert!(
+            (mapped.area().abs() - 450.0).abs() < 1.0,
+            "{}",
+            mapped.area()
+        );
+
+        // An open line, or nothing: no frame.
+        let mut line = BezPath::new();
+        line.move_to((0.0, 0.0));
+        line.line_to((10.0, 5.0));
+        assert!(Frame::from_outline(&line).is_none());
+        assert!(Frame::from_outline(&BezPath::new()).is_none());
     }
 
     /// A fresh frame leaves the object where it is, whatever the mapping.

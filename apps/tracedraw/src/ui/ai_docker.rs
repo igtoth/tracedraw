@@ -44,7 +44,11 @@ pub fn ai_drawing(app: &mut App, ui: &mut Ui) {
     ui.horizontal(|ui| {
         if app.ai.busy() {
             ui.spinner();
-            if ui.button(tr("dialog.cancel")).clicked() {
+            if ui
+                .button(tr("dialog.cancel"))
+                .rich_tip(crate::ui::tips::keyed("dialog.cancel"))
+                .clicked()
+            {
                 app.ai_cancel();
             }
         } else if ui

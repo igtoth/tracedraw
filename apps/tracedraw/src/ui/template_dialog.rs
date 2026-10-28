@@ -223,6 +223,7 @@ pub fn dialog(app: &mut App, ctx: &Context, st: &mut TemplateState, close: &mut 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui
                     .add_sized([100.0, 27.0], egui::Button::new(tr("dialog.cancel")))
+                    .rich_tip(crate::ui::tips::keyed("dialog.cancel"))
                     .clicked()
                 {
                     *close = true;

@@ -388,12 +388,15 @@ pub fn count_dialog(app: &mut App, ctx: &Context, st: &mut TableCountState, clos
             ui.add_sized(
                 [90.0, 22.0],
                 crate::ui::field::NumField::new(&mut st.count).range(min..=100),
-            );
+            )
+            .rich_tip(crate::ui::tips::pair(label, &format!("{title}_count_desc")));
         });
         if let Some((before, after)) = sides {
             ui.add_space(4.0);
-            ui.radio_value(&mut st.after, false, tr(before));
-            ui.radio_value(&mut st.after, true, tr(after));
+            ui.radio_value(&mut st.after, false, tr(before))
+                .rich_tip(crate::ui::tips::keyed(before));
+            ui.radio_value(&mut st.after, true, tr(after))
+                .rich_tip(crate::ui::tips::keyed(after));
         }
         ui.add_space(8.0);
         if ok_cancel(ui, close) {

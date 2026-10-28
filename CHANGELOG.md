@@ -7,7 +7,14 @@ full, row-by-row status.
 ## Unreleased
 
 - Objects panel: selecting an object on the page scrolls the list to its row, so an object far down a long list comes into view; a selection that stays the same leaves the scroll alone (#1044).
+- Envelope: Copy Envelope Properties (and Object > Copy Effect > Envelope From) picking an object with no envelope, such as a circle, a star or a drawn curve, now fits the selected text or objects into that object's shape. It said the object had no envelope, so text could not be fitted into a drawn shape (#993).
+## 0.19.10 (2026-10-28)
+
+- New Document: the RGB, CMYK and grayscale profile lists of Color Settings offer the ICC profiles installed on this computer, as Color Management does; they held only sRGB and Generic CMYK. A CMYK profile picked there goes with the new drawing, so its colours show through it, and the grayscale profile chosen is kept in the drawing (#1033).
+- Snapping: with only the baseline grid turned on in Snap To, nodes dragged with the Shape tool, drawing tools and moved objects snap to its lines. Snapping counted as off unless another target was on, so the baseline grid alone did nothing; a node that lands on a baseline is now marked like a grid line (#3).
+- Paragraph text wrapped around an object keeps the first-line indent: when the object pushes the first line in (an object at the left, or text flowing on its right), the line now starts the indent past the object's edge. The indent was lost there, so the first line started flush with the lines under it (#1110).
 - Drawing tools: the tool's icon beside the cross hair (the small rectangle of the Rectangle tool, the ellipse of the Ellipse tool, and so on) sits close to the cross hair's middle. It was 9 points off each way, so it looked like a shape trailing the pointer (#493).
+- Blend of two open lines (two arcs, one mirrored): the steps are open lines that run end to end, top to top and bottom to bottom, with as few nodes as the lines. Each step was closed back to its start and, when the second line was drawn the other way, crossed through the middle, so the blend came out as a dark tangle instead of a fan of curves (#1024).
 - Page sizes: the page size lists offer about 130 sizes in groups (ISO A, ISO B and JIS B, North American, Print shop, Posters and banners, Envelopes, Cards and postcards, Photo, Screen and social media, Web ads), with A4, Letter, A5, A3 and Legal first. Edit This List... at the foot of the property bar's list opens Document Options > Page Size, where a custom size can be saved under a name and deleted again; saved sizes show in every page size list (#1092).
 - Windows: a tool picked with its shortcut shows its pointer at once, with the mouse still. Windows changed or hid the pointer only once the mouse moved, so the old pointer stayed until then (#1026).
 - Shape tool: on a stretched curve, the corner rounding rings now round corners on the page, so a new rounding comes out round, also after other corners were rounded. A corner rounded before the stretch keeps its stretched arc and its ring: dragging it changes that corner alone, and once it is dragged back to sharp it rounds round again (#1000).
@@ -25,6 +32,7 @@ full, row-by-row status.
 - Dimensions without arrowheads (or with open, tick or no heads): the selection box and its handles wrap the dimension's lines and label. Their empty arrowhead curve counted as a point at the page's lower left corner, so the box stretched from the dimension down to that corner, and a moved dimension seemed to leave its box behind (#996).
 - Status bar in a narrow window: the fill and outline parts keep room for their swatches and values and move left as the window narrows, the tool hints and object information giving way first and ending in an ellipsis. The outline's colour and width were cut off at the right, and the parts could not be read or double-clicked (#1004).
 - Area Fill: areas filled side by side now meet exactly, with no hairline gap between their colours where curves cross or shapes overlap. A corner where two outlines cross was placed where their flattened outlines cross, up to 0.02 mm off the curves, so neighbouring areas could leave a thin gap or a missed corner when zoomed in; the same holds for the results of Weld, Trim and Intersect (#1065).
+- Distort: the Twister spirals smoothly all the way to the ends of a shape, and the Zipper teeth run through the nodes, also on closed shapes; the first node no longer stays locked (#1108).
 
 ## 0.19.9 (2026-10-28)
 
