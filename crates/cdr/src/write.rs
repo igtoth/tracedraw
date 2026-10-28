@@ -100,6 +100,7 @@ pub struct Png {
 pub fn document_to_cdr_version_with(doc: &Document, version: u16, previews: &Previews) -> Vec<u8> {
     let v = Ver(version.clamp(OLDEST_VERSION, NEWEST_VERSION));
     let mut w = Writer::new(v, &doc.symbols, &doc.title);
+    w.faces = &previews.fonts;
     let mut tree = w.document(doc);
     let font_ids = w.fonts.clone();
     if !v.zip() {
@@ -2774,6 +2775,15 @@ struct Writer<'a> {
     /// which each page's entries for them repeat.
     master_guids: [[u8; 16]; 3],
     has_text: bool,
+    /// The faces the text uses, with their font files (see
+    /// [`Previews::fonts`]), and what [`fonts::split_family`] said for
+    /// each family named with a weight.
+    faces: &'a [FontFace],
+    split_families: HashMap<String, Option<(String, u16)>>,
+    /// The faces the runs of version 16+ text use (font id, face bits of
+    /// the style flags), for the font table as [`Writer::text_formats`]
+    /// gives them before.
+    run_faces: Vec<(u16, u32)>,
 }
 
 /// The master page's layers, in the order of `Writer::master_guids`.
@@ -2844,7 +2854,41 @@ impl<'a> Writer<'a> {
             guids: master_guids.len() as u64,
             master_guids,
             has_text: false,
+            faces: &[],
+            split_families: HashMap::new(),
+            run_faces: Vec::new(),
         }
+    }
+
+    /// `spans` with their faces named as files name them, `None` when
+    /// every span keeps its own: a span in a family named with its weight
+    /// ("Titillium Web SemiBold", how text in a semibold face reads) is
+    /// written as the family ("Titillium Web") at that weight, carried
+    /// as the weight axis value the style codes are taken from (#892).
+    fn file_spans(&mut self, spans: &[TextSpan]) -> Option<Vec<TextSpan>> {
+        let mut out: Option<Vec<TextSpan>> = None;
+        for (i, sp) in spans.iter().enumerate() {
+            if sp.bold || sp.variation("wght").is_some() {
+                continue;
+            }
+            let split = match self.split_families.get(&sp.font_family) {
+                Some(s) => s.clone(),
+                None => {
+                    let s = fonts::split_family(&sp.font_family, false, self.faces);
+                    self.split_families
+                        .insert(sp.font_family.clone(), s.clone());
+                    s
+                }
+            };
+            let Some((family, weight)) = split else {
+                continue;
+            };
+            if let Some(file_sp) = out.get_or_insert_with(|| spans.to_vec()).get_mut(i) {
+                file_sp.font_family = family;
+                file_sp.set_variation("wght", Some(f64::from(weight)));
+            }
+        }
+        out
     }
 
     fn guid(&mut self) -> [u8; 16] {
@@ -2943,6 +2987,7 @@ impl<'a> Writer<'a> {
             .text_formats
             .iter()
             .map(|f| (f.font, f.flags & 0x3_ffff))
+            .chain(self.run_faces.iter().copied())
             .collect();
         let mut out = Vec::new();
         if v.redirects() {
@@ -3617,6 +3662,8 @@ impl<'a> Writer<'a> {
                 // spacing from version 16); the object takes the first
                 // paragraph's.
                 let own_align = *align;
+                let file_spans = self.file_spans(spans);
+                let spans = file_spans.as_deref().unwrap_or(spans);
                 let first_align = paragraph_aligns(spans, own_align)
                     .first()
                     .copied()
@@ -3955,7 +4002,11 @@ impl<'a> Writer<'a> {
             let format = formats.get(pi);
             let align = format.map_or(align, |f| f.align);
             for sp in runs {
-                self.font_id(&sp.font_family);
+                let id = self.font_id(&sp.font_family);
+                let face = (id, style_flags(sp) & 0x3_ffff);
+                if !self.run_faces.contains(&face) {
+                    self.run_faces.push(face);
+                }
             }
             let first = runs.first().or(spans.first());
             let leading = format.map_or(1.0, |f| {
