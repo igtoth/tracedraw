@@ -8,6 +8,7 @@ use crate::i18n::tr;
 use crate::straighten::{straighten, turned, Straighten};
 use crate::theme::Tokens;
 use crate::ui::bitmap_preview::{cached, copy_of, settings_key, Source};
+use crate::ui::tips::RichTip;
 use egui::{Color32, Context, Painter, Pos2, Rect, Sense, Stroke, Ui, Vec2};
 
 /// The preview copy's largest side, pixels.
@@ -66,7 +67,7 @@ fn icon_button(
         Tokens::icon(),
     );
     let clicked = resp.clicked();
-    resp.on_hover_text(tip);
+    resp.rich_tip(tip);
     clicked
 }
 
@@ -208,7 +209,7 @@ pub fn straighten_dialog(app: &mut App, ctx: &Context, st: &mut StraightenState,
                         (ViewTool::ZoomOut, "dialog.lab_zoom_out"),
                     ] {
                         let on = st.tool == tool;
-                        if icon_button(ui, &tr(key), on, |p, r, c| {
+                        if icon_button(ui, &crate::ui::tips::keyed(key), on, |p, r, c| {
                             crate::ui::icons::draw(p, r, crate::tools::Tool::Zoom, c);
                             let m = r.min + Vec2::new(6.8, 6.8) * (r.width() / 16.0);
                             let s = Stroke::new(1.2, c);
@@ -225,7 +226,7 @@ pub fn straighten_dialog(app: &mut App, ctx: &Context, st: &mut StraightenState,
                     }
                     if icon_button(
                         ui,
-                        &tr("dialog.lab_zoom_fit"),
+                        &crate::ui::tips::keyed("dialog.lab_zoom_fit"),
                         st.zoom.is_none(),
                         |p, r, c| {
                             p.rect_stroke(
@@ -242,7 +243,7 @@ pub fn straighten_dialog(app: &mut App, ctx: &Context, st: &mut StraightenState,
                     let actual = 1.0 / copy.scale.max(1e-6);
                     if icon_button(
                         ui,
-                        &tr("dialog.lab_actual_size"),
+                        &crate::ui::tips::keyed("dialog.lab_actual_size"),
                         st.zoom == Some(actual),
                         |p, r, c| {
                             p.text(
@@ -258,22 +259,28 @@ pub fn straighten_dialog(app: &mut App, ctx: &Context, st: &mut StraightenState,
                     }
                     if icon_button(
                         ui,
-                        &tr("dialog.lab_pan"),
+                        &crate::ui::tips::keyed("dialog.lab_pan"),
                         st.tool == ViewTool::Pan,
                         |p, r, c| crate::ui::icons::draw(p, r, crate::tools::Tool::Pan, c),
                     ) {
                         st.tool = ViewTool::Pan;
                     }
                     ui.add_space(8.0);
-                    if icon_button(ui, &tr("dialog.rotate_ccw"), false, |p, r, c| {
-                        crate::ui::lab_dialog::draw_rotate(p, r, c, true)
-                    }) {
+                    if icon_button(
+                        ui,
+                        &crate::ui::tips::keyed("dialog.rotate_ccw"),
+                        false,
+                        |p, r, c| crate::ui::lab_dialog::draw_rotate(p, r, c, true),
+                    ) {
                         st.s.turns = (st.s.turns + 3) % 4;
                         st.centre = None;
                     }
-                    if icon_button(ui, &tr("dialog.rotate_cw"), false, |p, r, c| {
-                        crate::ui::lab_dialog::draw_rotate(p, r, c, false)
-                    }) {
+                    if icon_button(
+                        ui,
+                        &crate::ui::tips::keyed("dialog.rotate_cw"),
+                        false,
+                        |p, r, c| crate::ui::lab_dialog::draw_rotate(p, r, c, false),
+                    ) {
                         st.s.turns = (st.s.turns + 1) % 4;
                         st.centre = None;
                     }
@@ -290,9 +297,11 @@ pub fn straighten_dialog(app: &mut App, ctx: &Context, st: &mut StraightenState,
                               range: std::ops::RangeInclusive<f32>,
                               step: f64| {
                     ui.label(tr(key));
-                    ui.add(crate::ui::Rail(
-                        egui::Slider::new(v, range).step_by(step).max_decimals(1),
-                    ));
+                    crate::ui::tips::tip_over(ui, crate::ui::tips::keyed(key), |ui| {
+                        ui.add(crate::ui::Rail(
+                            egui::Slider::new(v, range).step_by(step).max_decimals(1),
+                        ))
+                    });
                 };
                 slider(
                     ui,
@@ -327,21 +336,36 @@ pub fn straighten_dialog(app: &mut App, ctx: &Context, st: &mut StraightenState,
                 );
                 ui.separator();
                 ui.horizontal(|ui| {
-                    ui.checkbox(&mut st.grid, tr("dialog.straighten_grid"));
+                    ui.checkbox(&mut st.grid, tr("dialog.straighten_grid"))
+                        .rich_tip(crate::ui::tips::keyed("dialog.straighten_grid"));
                     ui.color_edit_button_srgb(&mut st.grid_color)
-                        .on_hover_text(tr("dialog.straighten_grid_color"));
+                        .rich_tip(crate::ui::tips::keyed("dialog.straighten_grid_color"));
                 });
-                ui.add_enabled(
-                    st.grid,
-                    crate::ui::Rail(egui::Slider::new(&mut st.grid_size, 8.0..=80.0).integer()),
+                crate::ui::tips::tip_over(
+                    ui,
+                    crate::ui::tips::keyed("dialog.straighten_grid_size"),
+                    |ui| {
+                        ui.add_enabled(
+                            st.grid,
+                            crate::ui::Rail(
+                                egui::Slider::new(&mut st.grid_size, 8.0..=80.0).integer(),
+                            ),
+                        )
+                    },
                 );
                 ui.separator();
-                ui.checkbox(&mut st.s.crop, tr("dialog.straighten_crop"));
+                ui.checkbox(&mut st.s.crop, tr("dialog.straighten_crop"))
+                    .rich_tip(crate::ui::tips::keyed("dialog.straighten_crop"));
                 ui.add_enabled_ui(st.s.crop, |ui| {
-                    ui.checkbox(&mut st.s.resample, tr("dialog.straighten_resample"));
+                    ui.checkbox(&mut st.s.resample, tr("dialog.straighten_resample"))
+                        .rich_tip_always(crate::ui::tips::keyed("dialog.straighten_resample"));
                 });
                 ui.add_space(6.0);
-                if ui.button(tr("dialog.reset")).clicked() {
+                if ui
+                    .button(tr("dialog.reset"))
+                    .rich_tip(crate::ui::tips::keyed("dialog.reset"))
+                    .clicked()
+                {
                     st.s = Straighten::default();
                     st.zoom = None;
                     st.centre = None;

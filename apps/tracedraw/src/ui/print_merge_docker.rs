@@ -11,6 +11,7 @@ use crate::i18n::tr;
 use crate::print_merge::{Scale, ANCHOR_DATA, SCALE_DATA};
 use crate::theme::Tokens;
 use crate::ui::dialogs::Dialog;
+use crate::ui::tips::RichTip;
 use egui::{Rect as ERect, Sense, Stroke, Ui, Vec2};
 use tracedraw_core::geometry::Rect;
 use tracedraw_core::{Command, Fill, Shape, ShapeId, ShapeKind};
@@ -477,6 +478,23 @@ impl App {
         cmds
     }
 
+    /// The shape a click at `p` makes the picture's frame while Place
+    /// Inside Frame waits for one: the object under the pointer, also one
+    /// inside a group, but for anything a clip frame holds (the picture
+    /// already in it) the outermost clip frame holding it, the shape the
+    /// user sees. Taking the picture inside made the merge put each
+    /// record's photo in that picture's box, the old picture still
+    /// showing next to it (#596).
+    pub fn merge_frame_at(&self, p: tracedraw_core::geometry::Point) -> Option<ShapeId> {
+        let id = self.hits_at(p, true).first().copied()?;
+        let doc = self.doc();
+        let clip = doc.ancestors(id).into_iter().find(|a| {
+            doc.find_shape(*a)
+                .is_some_and(|s| matches!(s.kind, ShapeKind::ClipFrame { .. }))
+        });
+        Some(clip.unwrap_or(id))
+    }
+
     /// The selected placeholders (see [`field_of`]).
     pub fn selected_merge_fields(&self) -> Vec<ShapeId> {
         self.selected_rc()
@@ -639,7 +657,7 @@ fn anchor_grid(ui: &mut Ui, anchor: &mut u8) {
         let cell = ERect::from_center_size(c, Vec2::splat(CELL - 3.0));
         let resp = ui
             .interact(cell, ui.id().with(("merge_anchor", i)), Sense::click())
-            .on_hover_text(tr("merge.anchor"));
+            .rich_tip(tr("merge.anchor"));
         if resp.clicked() {
             *anchor = i;
         }
@@ -665,7 +683,7 @@ pub fn print_merge(app: &mut App, ui: &mut Ui) {
                 !loaded,
                 egui::Button::new(tr("merge.create")).min_size(Vec2::new(w, 26.0)),
             )
-            .on_hover_text(tr("menu.file.print_merge_create"))
+            .rich_tip(tr("menu.file.print_merge_create"))
             .clicked()
         {
             app.dialog = Dialog::PrintMerge(Default::default());
@@ -675,7 +693,7 @@ pub fn print_merge(app: &mut App, ui: &mut Ui) {
                 loaded,
                 egui::Button::new(tr("merge.edit")).min_size(Vec2::new(w, 26.0)),
             )
-            .on_hover_text(tr("menu.file.print_merge_edit"))
+            .rich_tip(tr("menu.file.print_merge_edit"))
             .clicked()
         {
             if let Some(st) = app.merge_state.clone() {
@@ -733,7 +751,7 @@ pub fn print_merge(app: &mut App, ui: &mut Ui) {
             ui.horizontal(|ui| {
                 pick_folder = ui
                     .button("\u{1F4C2}")
-                    .on_hover_text(tr("merge.pictures_folder_tip"))
+                    .rich_tip(tr("merge.pictures_folder_tip"))
                     .clicked();
                 let shown = folder
                     .clone()
@@ -752,7 +770,7 @@ pub fn print_merge(app: &mut App, ui: &mut Ui) {
             ui.horizontal(|ui| {
                 browse = ui
                     .button("\u{1F4C2}")
-                    .on_hover_text(tr("merge.placeholder_tip"))
+                    .rich_tip(tr("merge.placeholder_tip"))
                     .clicked();
                 ui.add(
                     egui::TextEdit::singleline(&mut d.placeholder)
@@ -777,7 +795,7 @@ pub fn print_merge(app: &mut App, ui: &mut Ui) {
         // every page, Create Merged Document fills the drawing's own
         // pages instead of making a new drawing (#598, #618, #793).
         ui.checkbox(&mut d.all_pages, tr("merge.all_pages"))
-            .on_hover_text(tr(if d.kind == 1 {
+            .rich_tip(tr(if d.kind == 1 {
                 "merge.all_pages_tip"
             } else {
                 "merge.all_pages_text_tip"
@@ -800,7 +818,7 @@ pub fn print_merge(app: &mut App, ui: &mut Ui) {
                         .min_size(wide)
                         .selected(app.pending_merge_frame),
                 )
-                .on_hover_text(tr("merge.place_inside_tip"))
+                .rich_tip(tr("merge.place_inside_tip"))
                 .clicked()
             {
                 if app.selection.is_empty() {
@@ -1741,6 +1759,94 @@ mod tests {
         );
         assert!(matches!(&f.kind, ShapeKind::ClipFrame { contents, .. }
             if contents.iter().any(|c| matches!(c.kind, ShapeKind::Bitmap { .. }))));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Place Inside Frame waiting for a click: a click on a shape that
+    /// already holds a picture takes the shape, not the picture, so the
+    /// merge puts each record's photo in the shape and nothing else
+    /// (#596).
+    #[test]
+    fn a_click_on_a_framed_shape_takes_the_frame_not_its_picture() {
+        let dir = std::env::temp_dir().join(format!("td_merge_596_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        image::RgbaImage::from_pixel(96, 48, image::Rgba([0, 0, 200, 255]))
+            .save(dir.join("wide.png"))
+            .unwrap();
+        let mut app = App::headless();
+        app.merge_state = Some(data(&dir));
+        let oval = Rect::new(10.0, 10.0, 50.0, 40.0);
+        let frame = app
+            .new_shape(ShapeKind::Ellipse {
+                rect: oval,
+                arc: None,
+            })
+            .expect("ellipse");
+        // The user's own picture, larger than the oval, inside it.
+        let mut png = Vec::new();
+        image::RgbaImage::from_pixel(4, 3, image::Rgba([200, 0, 0, 255]))
+            .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+            .unwrap();
+        let old = app
+            .new_shape(ShapeKind::Bitmap {
+                rect: Rect::new(0.0, 0.0, 80.0, 60.0),
+                width_px: 4,
+                height_px: 3,
+                png: png.into(),
+                fx: None,
+            })
+            .expect("picture");
+        app.place_inside(vec![old], frame);
+        app.select(Vec::new());
+        app.merge_docker.kind = 1;
+        app.merge_docker.column = 1;
+        let at = oval.center();
+        assert_eq!(
+            app.hits_at(at, true).first(),
+            Some(&old),
+            "the picture is on top"
+        );
+        assert_eq!(app.merge_frame_at(at), Some(frame));
+        app.select(vec![frame]);
+        app.place_merge_field_inside();
+        assert_eq!(
+            app.doc()
+                .find_shape(frame)
+                .and_then(|s| s.name.clone())
+                .as_deref(),
+            Some("<Photo>")
+        );
+        assert_eq!(app.doc().find_shape(old).and_then(|s| s.name.clone()), None);
+        app.create_merged_document(false);
+        let doc = app.doc().clone();
+        assert_eq!(doc.pages.len(), 2);
+        fn bitmaps(s: &Shape, out: &mut Vec<Rect>) {
+            match &s.kind {
+                ShapeKind::Bitmap { .. } => out.push(s.bounds()),
+                ShapeKind::Group { children } => children.iter().for_each(|c| bitmaps(c, out)),
+                ShapeKind::ClipFrame { frame, contents } => {
+                    bitmaps(frame, out);
+                    contents.iter().for_each(|c| bitmaps(c, out));
+                }
+                _ => {}
+            }
+        }
+        for page in &doc.pages {
+            let mut pics = Vec::new();
+            for s in page.layers.iter().flat_map(|l| &l.shapes) {
+                bitmaps(s, &mut pics);
+            }
+            // One picture, the record's, fitted in the oval's box.
+            assert_eq!(pics.len(), 1, "{pics:?}");
+            let b = pics[0];
+            assert!(
+                b.x0 >= oval.x0 - 1e-6
+                    && b.x1 <= oval.x1 + 1e-6
+                    && b.y0 >= oval.y0 - 1e-6
+                    && b.y1 <= oval.y1 + 1e-6,
+                "{b:?}"
+            );
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

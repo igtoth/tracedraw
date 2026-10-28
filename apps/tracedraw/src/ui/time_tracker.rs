@@ -7,6 +7,7 @@ use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
 use crate::time_tracker::{self as tt, hms};
 use crate::ui::dialogs::Dialog;
+use crate::ui::tips::RichTip;
 use egui::{pos2, vec2, Color32, Painter, Rect, RichText, Sense, Stroke, Ui};
 
 /// What the clock is doing, for its light and tooltip.
@@ -147,7 +148,7 @@ pub fn toolbar(app: &mut App, ui: &mut Ui) {
                     }
                 })
                 .response
-                .on_hover_text(tr("tracker.task"));
+                .rich_tip(tr("tracker.task"));
             if let Some(i) = pick {
                 app.edit_time_tracker(|t| t.active = Some(i));
             }
@@ -180,7 +181,7 @@ pub fn toolbar(app: &mut App, ui: &mut Ui) {
                 Tokens::icon_off()
             };
             paint_play_pause(ui.painter(), r, running, color);
-            let resp = resp.on_hover_text(tr(if running {
+            let resp = resp.rich_tip(tr(if running {
                 "tracker.pause"
             } else {
                 "tracker.record"
@@ -191,7 +192,7 @@ pub fn toolbar(app: &mut App, ui: &mut Ui) {
             let state = ClockState::of(app, now);
             let (dot, dot_resp) = ui.allocate_exact_size(vec2(12.0, 22.0), Sense::hover());
             ui.painter().circle_filled(dot.center(), 4.0, state.color());
-            dot_resp.on_hover_text(tr(state.key()));
+            dot_resp.rich_tip(tr(state.key()));
             ui.add(egui::Separator::default().vertical().spacing(10.0));
             let total = if doc {
                 let t = &app.doc().time_tracker;
@@ -419,6 +420,7 @@ pub fn dialog(app: &mut App, ctx: &egui::Context, st: &mut TrackerDialog, close:
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui
                     .add_sized([100.0, 27.0], egui::Button::new(tr("dialog.close")))
+                    .rich_tip(crate::ui::tips::keyed("dialog.close"))
                     .clicked()
                 {
                     *close = true;

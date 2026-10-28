@@ -10,6 +10,7 @@
 use crate::app::App;
 use crate::i18n::tr;
 use crate::theme::Tokens;
+use crate::ui::tips::RichTip;
 use egui::{Color32, Pos2, Rect, Sense, Stroke as EStroke, Ui, Vec2};
 use tracedraw_core::patch::{StrokeField, StrokeMix};
 use tracedraw_core::{LineCap, LineJoin, OutlinePosition, Stroke, WidthNode};
@@ -195,7 +196,7 @@ pub fn dialog(app: &mut App, ctx: &egui::Context, st: &mut OutlinePenState, clos
         ui.horizontal(|ui| {
             help = ui
                 .add_sized([27.0, 27.0], egui::Button::new("?"))
-                .on_hover_text(tr("dialog.help"))
+                .rich_tip(crate::ui::tips::keyed("dialog.help_button"))
                 .clicked();
             if !st.defaults {
                 let mut on = st.overprint.unwrap_or(false);
@@ -354,7 +355,7 @@ fn general(ui: &mut Ui, st: &mut OutlinePenState, lib: &crate::ui::line_style::O
         }
         if ui
             .button("\u{2026}")
-            .on_hover_text(tr("docker.edit_line_style"))
+            .rich_tip(tr("docker.edit_line_style"))
             .clicked()
         {
             crate::ui::line_style::request(ui);
@@ -375,7 +376,7 @@ fn general(ui: &mut Ui, st: &mut OutlinePenState, lib: &crate::ui::line_style::O
                     .width(70.0)
                     .mixed(limit_mixed),
             )
-            .on_hover_text(tr("docker.miter_limit_tip"))
+            .rich_tip(tr("docker.miter_limit_tip"))
             .changed()
         {
             touch(st, StrokeField::MiterLimit);
@@ -822,7 +823,7 @@ enum Pic {
 /// A 28 x 24 button with a picture; true when clicked.
 fn pic_button(ui: &mut Ui, pic: Pic, on: bool, enabled: bool, tip: &str) -> bool {
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(28.0, 24.0), Sense::click());
-    let resp = resp.on_hover_text(tr(tip));
+    let resp = resp.rich_tip(tr(tip));
     let p = ui.painter();
     if on {
         p.rect_filled(rect, 3.0, Tokens::ACCENT.gamma_multiply(0.35));

@@ -8,6 +8,7 @@ use crate::i18n::tr;
 use crate::theme::Tokens;
 use crate::ui::dialogs::{Dialog, OptionsPage};
 use crate::ui::options::{grid, row_label};
+use crate::ui::tips::RichTip;
 use egui::{Color32, RichText, Ui};
 const OK: Color32 = Color32::from_rgb(0x2E, 0x7D, 0x32);
 const ERROR: Color32 = Color32::from_rgb(0xC4, 0x2B, 0x1C);
@@ -71,7 +72,11 @@ pub fn banner(app: &mut App, ui: &mut Ui, need: Need) -> bool {
                     ui.label(RichText::new(tr("aiui.banner_title")).strong());
                     ui.label(text);
                     ui.add_space(4.0);
-                    if ui.button(tr("aiui.set_up")).clicked() {
+                    if ui
+                        .button(tr("aiui.set_up"))
+                        .rich_tip(crate::ui::tips::keyed("aiui.set_up"))
+                        .clicked()
+                    {
                         let page = if !app.ai_features_on() {
                             OptionsPage::AiGeneral
                         } else {
@@ -118,7 +123,8 @@ fn service_state(app: &App, ui: &mut Ui) {
 /// Tools > Options > AI > General: the switch for all AI features and
 /// where the service stands.
 pub fn general_page(app: &mut App, ui: &mut Ui) {
-    ui.checkbox(&mut app.settings.ai_enabled, tr("aiui.enable"));
+    ui.checkbox(&mut app.settings.ai_enabled, tr("aiui.enable"))
+        .rich_tip(crate::ui::tips::pair("aiui.enable", "aiui.enable_tip"));
     dim(ui, "aiui.enable_hint");
     crate::ui::chrome::section(ui, &tr("aiui.services"));
     service_state(app, ui);
@@ -156,7 +162,7 @@ pub fn service_page(app: &mut App, ui: &mut Ui) {
         let busy = app.ai.busy() || app.ai_image.busy();
         if ui
             .add_enabled(!busy, egui::Button::new(tr("aiui.test")))
-            .on_hover_text(tr("aiui.test_hint"))
+            .rich_tip(tr("aiui.test_hint"))
             .clicked()
         {
             app.ai_fetch_models();

@@ -10,6 +10,7 @@ use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
 use crate::ui::bitmap_preview::{cached, copy_of, settings_key, Source};
 use crate::ui::effect_dialog::{param_widget, EffectState};
+use crate::ui::tips::RichTip;
 use egui::{epaint, Color32, Context, Painter, Pos2, Rect, Sense, Stroke, Ui, Vec2};
 use image::RgbaImage;
 use std::collections::BTreeMap;
@@ -287,7 +288,7 @@ fn icon_button(
         color,
     );
     let clicked = enabled && resp.clicked();
-    resp.on_hover_text(tip);
+    resp.rich_tip(tip);
     clicked
 }
 
@@ -688,15 +689,19 @@ pub fn lab_dialog(app: &mut App, ctx: &Context, st: &mut EffectState, close: &mu
             ui.vertical(|ui| {
                 ui.horizontal(|ui| {
                     let lab = &mut st.lab;
-                    if icon_button(ui, &tr("dialog.lab_rotate_left"), true, false, |p, r, c| {
-                        draw_rotate(p, r, c, true)
-                    }) {
+                    if icon_button(
+                        ui,
+                        &crate::ui::tips::keyed("dialog.lab_rotate_left"),
+                        true,
+                        false,
+                        |p, r, c| draw_rotate(p, r, c, true),
+                    ) {
                         lab.turns = (lab.turns + 3) % 4;
                         lab.centre = None;
                     }
                     if icon_button(
                         ui,
-                        &tr("dialog.lab_rotate_right"),
+                        &crate::ui::tips::keyed("dialog.lab_rotate_right"),
                         true,
                         false,
                         |p, r, c| draw_rotate(p, r, c, false),
@@ -711,18 +716,20 @@ pub fn lab_dialog(app: &mut App, ctx: &Context, st: &mut EffectState, close: &mu
                         (LabTool::ZoomOut, "dialog.lab_zoom_out"),
                     ] {
                         let on = lab.tool == tool;
-                        if icon_button(ui, &tr(key), true, on, |p, r, c| match tool {
-                            LabTool::Pan => {
-                                crate::ui::icons::draw(p, r, crate::tools::Tool::Pan, c)
+                        if icon_button(ui, &crate::ui::tips::keyed(key), true, on, |p, r, c| {
+                            match tool {
+                                LabTool::Pan => {
+                                    crate::ui::icons::draw(p, r, crate::tools::Tool::Pan, c)
+                                }
+                                _ => draw_zoom(p, r, c, tool == LabTool::ZoomIn),
                             }
-                            _ => draw_zoom(p, r, c, tool == LabTool::ZoomIn),
                         }) {
                             lab.tool = tool;
                         }
                     }
                     if icon_button(
                         ui,
-                        &tr("dialog.lab_zoom_fit"),
+                        &crate::ui::tips::keyed("dialog.lab_zoom_fit"),
                         true,
                         lab.zoom.is_none(),
                         draw_fit,
@@ -733,7 +740,7 @@ pub fn lab_dialog(app: &mut App, ctx: &Context, st: &mut EffectState, close: &mu
                     let actual = 1.0 / copy.scale.max(1e-6);
                     if icon_button(
                         ui,
-                        &tr("dialog.lab_actual_size"),
+                        &crate::ui::tips::keyed("dialog.lab_actual_size"),
                         true,
                         lab.zoom == Some(actual),
                         draw_actual,
@@ -746,9 +753,13 @@ pub fn lab_dialog(app: &mut App, ctx: &Context, st: &mut EffectState, close: &mu
                         (LabView::BeforeAfter, "dialog.lab_before_after"),
                         (LabView::Split, "dialog.lab_split_preview"),
                     ] {
-                        if icon_button(ui, &tr(key), true, lab.view == view, |p, r, c| {
-                            draw_view(p, r, c, view)
-                        }) {
+                        if icon_button(
+                            ui,
+                            &crate::ui::tips::keyed(key),
+                            true,
+                            lab.view == view,
+                            |p, r, c| draw_view(p, r, c, view),
+                        ) {
                             lab.view = view;
                         }
                     }
@@ -759,7 +770,7 @@ pub fn lab_dialog(app: &mut App, ctx: &Context, st: &mut EffectState, close: &mu
                     let lab = &mut st.lab;
                     if icon_button(
                         ui,
-                        &tr("dialog.lab_undo"),
+                        &crate::ui::tips::keyed("dialog.lab_undo"),
                         lab.can_undo(),
                         false,
                         |p, r, c| {
@@ -773,7 +784,7 @@ pub fn lab_dialog(app: &mut App, ctx: &Context, st: &mut EffectState, close: &mu
                     let lab = &mut st.lab;
                     if icon_button(
                         ui,
-                        &tr("dialog.lab_redo"),
+                        &crate::ui::tips::keyed("dialog.lab_redo"),
                         lab.can_redo(),
                         false,
                         |p, r, c| {
@@ -784,13 +795,20 @@ pub fn lab_dialog(app: &mut App, ctx: &Context, st: &mut EffectState, close: &mu
                             st.effect.params = v;
                         }
                     }
-                    if ui.button(tr("dialog.lab_reset")).clicked() {
+                    if ui
+                        .button(tr("dialog.lab_reset"))
+                        .rich_tip(crate::ui::tips::keyed("dialog.lab_reset"))
+                        .clicked()
+                    {
                         st.effect.params.clear();
                     }
                     ui.add_space(12.0);
                     if ui
                         .add(egui::Button::new(tr("dialog.lab_snapshot")))
-                        .on_hover_text(tr("dialog.lab_snapshot_tip"))
+                        .rich_tip(crate::ui::tips::pair(
+                            "dialog.lab_snapshot",
+                            "dialog.lab_snapshot_tip",
+                        ))
                         .clicked()
                     {
                         st.lab.snapshot(&st.effect.params);
@@ -802,7 +820,11 @@ pub fn lab_dialog(app: &mut App, ctx: &Context, st: &mut EffectState, close: &mu
             ui.vertical(|ui| {
                 ui.set_width(300.0);
                 ui.horizontal(|ui| {
-                    if ui.button(tr("dialog.lab_auto_adjust")).clicked() {
+                    if ui
+                        .button(tr("dialog.lab_auto_adjust"))
+                        .rich_tip(crate::ui::tips::keyed("dialog.lab_auto_adjust"))
+                        .clicked()
+                    {
                         let (bp, wp) = auto_points(&copy.img);
                         st.effect.params.insert("black_point".into(), bp);
                         st.effect.params.insert("white_point".into(), wp);
@@ -812,9 +834,13 @@ pub fn lab_dialog(app: &mut App, ctx: &Context, st: &mut EffectState, close: &mu
                         (LabTool::WhitePoint, "dialog.lab_white_point", true),
                         (LabTool::BlackPoint, "dialog.lab_black_point", false),
                     ] {
-                        if icon_button(ui, &tr(key), true, lab.tool == tool, |p, r, c| {
-                            draw_picker(p, r, c, white)
-                        }) {
+                        if icon_button(
+                            ui,
+                            &crate::ui::tips::keyed(key),
+                            true,
+                            lab.tool == tool,
+                            |p, r, c| draw_picker(p, r, c, white),
+                        ) {
                             lab.tool = if lab.tool == tool { LabTool::Pan } else { tool };
                         }
                     }
@@ -886,7 +912,7 @@ fn snapshots(ui: &mut Ui, app: &App, ctx: &Context, st: &mut EffectState, src: &
                             ui.label(trf("dialog.lab_snapshot_n", &[("n", &n.to_string())]));
                             if ui
                                 .small_button("\u{00D7}")
-                                .on_hover_text(tr("dialog.lab_delete_snapshot"))
+                                .rich_tip(crate::ui::tips::keyed("dialog.lab_delete_snapshot"))
                                 .clicked()
                             {
                                 remove = Some(*n);
@@ -909,7 +935,10 @@ fn snapshots(ui: &mut Ui, app: &App, ctx: &Context, st: &mut EffectState, src: &
                             Stroke::new(1.0, Tokens::border()),
                             egui::StrokeKind::Inside,
                         );
-                        if resp.on_hover_text(tr("dialog.lab_show_snapshot")).clicked() {
+                        if resp
+                            .rich_tip(crate::ui::tips::keyed("dialog.lab_show_snapshot"))
+                            .clicked()
+                        {
                             restore = Some(params.clone());
                         }
                     });

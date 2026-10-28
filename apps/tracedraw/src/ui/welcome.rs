@@ -5,6 +5,7 @@ use crate::app::{App, WelcomeTab};
 use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
 use crate::ui::icons;
+use crate::ui::tips::RichTip;
 use egui::Ui;
 
 const NEWS: &[(&str, &str)] = &[
@@ -230,7 +231,7 @@ fn recent_row(app: &mut App, ui: &mut Ui, path: &std::path::Path) -> bool {
         egui::FontId::proportional(11.0),
         Tokens::text_dim(),
     );
-    resp.on_hover_text(path.display().to_string()).clicked()
+    resp.rich_tip(path.display().to_string()).clicked()
 }
 
 fn workspace(app: &mut App, ui: &mut Ui) {

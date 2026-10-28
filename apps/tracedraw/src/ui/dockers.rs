@@ -3,6 +3,7 @@
 use crate::app::{App, DockerDrag, DockerPlace, DockerTab};
 use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
+use crate::ui::tips::RichTip;
 use egui::Ui;
 use tracedraw_core::patch::{FillField, FillMix, StrokeField, StrokeMix};
 use tracedraw_core::{
@@ -49,162 +50,170 @@ pub fn tab_strip(app: &mut App, ui: &mut Ui, place: DockerPlace) {
     );
     ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
     ui.add_space(TITLE_H);
-    let (tabs, front, shown) = app.docker_column(place);
-    let tabs = tabs.to_vec();
-    for tab in tabs {
-        let name = tr(tab.key());
-        let active = shown && front == tab;
-        let galley = ui.painter().layout_no_wrap(
-            name.clone(),
-            egui::FontId::proportional(12.0),
-            Tokens::text(),
-        );
-        let w = galley.size().x;
-        let gh = galley.size().y;
-        let icon_h = if tab_icon(tab).is_some() { 24.0 } else { 0.0 };
-        // A slot at the top of the tab for the close cross, shown while
-        // the pointer is over the tab.
-        let h = CLOSE_SLOT + 14.0 + icon_h + w;
-        let (r, resp) =
-            ui.allocate_exact_size(egui::vec2(full.width(), h), egui::Sense::click_and_drag());
-        let bg = if strip_at_left(place) {
-            egui::Rect::from_min_max(r.min, egui::pos2(r.max.x - 1.0, r.max.y))
-        } else {
-            egui::Rect::from_min_max(egui::pos2(r.min.x + 1.0, r.min.y), r.max)
-        };
-        let fill = if active {
-            crate::theme::Tokens::window_border()
-        } else if resp.hovered() {
-            crate::theme::Tokens::icon_off()
-        } else {
-            crate::theme::Tokens::tab()
-        };
-        ui.painter().rect_filled(bg, 0.0, fill);
-        let close = tab_close_rect(bg);
-        let over_close = resp.hover_pos().is_some_and(|p| close.contains(p));
-        if resp.hovered() {
-            let col = if over_close {
-                Tokens::text()
-            } else {
-                Tokens::text_dim()
-            };
-            let c = close.center();
-            let s = egui::Stroke::new(1.3, col);
-            ui.painter()
-                .line_segment([c + egui::vec2(-3.5, -3.5), c + egui::vec2(3.5, 3.5)], s);
-            ui.painter()
-                .line_segment([c + egui::vec2(3.5, -3.5), c + egui::vec2(-3.5, 3.5)], s);
-        }
-        let resp = if over_close {
-            resp.on_hover_text(tr("docker.close_docker"))
-        } else {
-            resp
-        };
-        if let Some(icon) = tab_icon(tab) {
-            let ir = egui::Rect::from_center_size(
-                egui::pos2(bg.center().x, r.min.y + CLOSE_SLOT + 7.0 + icon_h / 2.0),
-                egui::vec2(16.0, 16.0),
+    // More tabs than the column's height: the column slides, with
+    // arrows at its ends and the mouse wheel over it, so the last tabs
+    // and the add button stay in reach (#950).
+    let salt = format!("docker_tabs_{}", place as u8);
+    crate::ui::overflow::column(ui, &salt, |ui| {
+        ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
+        let (tabs, front, shown) = app.docker_column(place);
+        let tabs = tabs.to_vec();
+        for tab in tabs {
+            let name = tr(tab.key());
+            let active = shown && front == tab;
+            let galley = ui.painter().layout_no_wrap(
+                name.clone(),
+                egui::FontId::proportional(12.0),
+                Tokens::text(),
             );
-            icon(ui.painter(), ir);
-        }
-        let text_top = r.min.y + CLOSE_SLOT + 7.0 + icon_h;
-        let mut ts = egui::epaint::TextShape::new(
-            egui::pos2(bg.center().x + gh / 2.0, text_top),
-            galley,
-            Tokens::text(),
-        );
-        if active && crate::theme::theme() == crate::theme::Theme::HighContrast {
-            ts.override_text_color = Some(crate::theme::on_highlight());
-        }
-        ts.angle = std::f32::consts::FRAC_PI_2;
-        ui.painter().add(ts);
-        if resp.drag_started_by(egui::PointerButton::Primary) {
-            let grab = resp
-                .interact_pointer_pos()
-                .map(|p| p - r.min)
-                .unwrap_or(egui::vec2(12.0, 12.0));
-            app.docker_drag = Some(DockerDrag {
-                tab,
-                grab: egui::vec2(grab.x.min(60.0), grab.y.min(TITLE_H)),
-                last: None,
-            });
-        }
-        if resp.clicked() {
-            let on_close = resp
-                .interact_pointer_pos()
-                .is_some_and(|p| close.contains(p));
-            if on_close {
-                app.close_docker(tab);
-            } else if active {
-                app.set_docker_column(place, false, None);
+            let w = galley.size().x;
+            let gh = galley.size().y;
+            let icon_h = if tab_icon(tab).is_some() { 24.0 } else { 0.0 };
+            // A slot at the top of the tab for the close cross, shown while
+            // the pointer is over the tab.
+            let h = CLOSE_SLOT + 14.0 + icon_h + w;
+            let (r, resp) =
+                ui.allocate_exact_size(egui::vec2(full.width(), h), egui::Sense::click_and_drag());
+            let bg = if strip_at_left(place) {
+                egui::Rect::from_min_max(r.min, egui::pos2(r.max.x - 1.0, r.max.y))
             } else {
-                app.set_docker_column(place, true, Some(tab));
+                egui::Rect::from_min_max(egui::pos2(r.min.x + 1.0, r.min.y), r.max)
+            };
+            let fill = if active {
+                crate::theme::Tokens::window_border()
+            } else if resp.hovered() {
+                crate::theme::Tokens::icon_off()
+            } else {
+                crate::theme::Tokens::tab()
+            };
+            ui.painter().rect_filled(bg, 0.0, fill);
+            let close = tab_close_rect(bg);
+            let over_close = resp.hover_pos().is_some_and(|p| close.contains(p));
+            if resp.hovered() {
+                let col = if over_close {
+                    Tokens::text()
+                } else {
+                    Tokens::text_dim()
+                };
+                let c = close.center();
+                let s = egui::Stroke::new(1.3, col);
+                ui.painter()
+                    .line_segment([c + egui::vec2(-3.5, -3.5), c + egui::vec2(3.5, 3.5)], s);
+                ui.painter()
+                    .line_segment([c + egui::vec2(3.5, -3.5), c + egui::vec2(-3.5, 3.5)], s);
             }
+            let resp = if over_close {
+                resp.rich_tip(tr("docker.close_docker"))
+            } else {
+                resp.rich_tip(format!("{name}\n{}", tr("docker.tab_desc")))
+            };
+            if let Some(icon) = tab_icon(tab) {
+                let ir = egui::Rect::from_center_size(
+                    egui::pos2(bg.center().x, r.min.y + CLOSE_SLOT + 7.0 + icon_h / 2.0),
+                    egui::vec2(16.0, 16.0),
+                );
+                icon(ui.painter(), ir);
+            }
+            let text_top = r.min.y + CLOSE_SLOT + 7.0 + icon_h;
+            let mut ts = egui::epaint::TextShape::new(
+                egui::pos2(bg.center().x + gh / 2.0, text_top),
+                galley,
+                Tokens::text(),
+            );
+            if active && crate::theme::theme() == crate::theme::Theme::HighContrast {
+                ts.override_text_color = Some(crate::theme::on_highlight());
+            }
+            ts.angle = std::f32::consts::FRAC_PI_2;
+            ui.painter().add(ts);
+            if resp.drag_started_by(egui::PointerButton::Primary) {
+                let grab = resp
+                    .interact_pointer_pos()
+                    .map(|p| p - r.min)
+                    .unwrap_or(egui::vec2(12.0, 12.0));
+                app.docker_drag = Some(DockerDrag {
+                    tab,
+                    grab: egui::vec2(grab.x.min(60.0), grab.y.min(TITLE_H)),
+                    last: None,
+                });
+            }
+            if resp.clicked() {
+                let on_close = resp
+                    .interact_pointer_pos()
+                    .is_some_and(|p| close.contains(p));
+                if on_close {
+                    app.close_docker(tab);
+                } else if active {
+                    app.set_docker_column(place, false, None);
+                } else {
+                    app.set_docker_column(place, true, Some(tab));
+                }
+            }
+            egui::Popup::context_menu(&resp)
+                .id(egui::Id::new(("docker_tab_menu", tab.key())))
+                .style(crate::ui::menus::menu_popup_style)
+                .show(|ui| {
+                    crate::ui::menus::body(ui, |ui| {
+                        place_menu(app, ui, tab);
+                        crate::ui::menus::sep(ui);
+                        if crate::ui::menus::item(ui, "docker.close_docker", "", true) {
+                            app.close_docker(tab);
+                        }
+                    })
+                });
         }
-        egui::Popup::context_menu(&resp)
-            .id(egui::Id::new(("docker_tab_menu", tab.key())))
+        // Add a docker.
+        ui.add_space(8.0);
+        let (r, resp) =
+            ui.allocate_exact_size(egui::vec2(full.width(), 22.0), egui::Sense::click());
+        let c = r.center() + egui::vec2(0.5, 0.0);
+        if resp.hovered() {
+            ui.painter().rect_filled(
+                egui::Rect::from_center_size(c, egui::vec2(18.0, 18.0)),
+                0.0,
+                crate::theme::Tokens::icon_off(),
+            );
+        }
+        let s = egui::Stroke::new(1.5, crate::theme::Tokens::text_dim());
+        ui.painter()
+            .line_segment([c + egui::vec2(-5.0, 0.0), c + egui::vec2(5.0, 0.0)], s);
+        ui.painter()
+            .line_segment([c + egui::vec2(0.0, -5.0), c + egui::vec2(0.0, 5.0)], s);
+        let resp = resp.rich_tip(tr("docker.add_docker"));
+        // The panels in the groups of the Window menu, a box ticked at each
+        // one open anywhere: ticking opens it in front of this column,
+        // unticking closes it.
+        egui::Popup::menu(&resp)
+            .id(egui::Id::new(("docker_add_menu", place as u8)))
             .style(crate::ui::menus::menu_popup_style)
             .show(|ui| {
                 crate::ui::menus::body(ui, |ui| {
-                    place_menu(app, ui, tab);
-                    crate::ui::menus::sep(ui);
-                    if crate::ui::menus::item(ui, "docker.close_docker", "", true) {
-                        app.close_docker(tab);
+                    let row = |ui: &mut Ui, app: &mut App, tab: DockerTab| {
+                        let open = app.docker_open(tab);
+                        if crate::ui::menus::check(ui, tab.key(), "", open) {
+                            if open {
+                                app.close_docker(tab);
+                            } else {
+                                app.move_docker(tab, place, None);
+                            }
+                        }
+                    };
+                    for (i, group) in DockerTab::MENU_GROUPS.iter().enumerate() {
+                        if i > 0 {
+                            crate::ui::menus::sep(ui);
+                        }
+                        for tab in group.iter() {
+                            row(ui, app, *tab);
+                        }
+                        if i == 5 {
+                            crate::ui::menus::sep(ui);
+                            for tab in DockerTab::EFFECTS_MENU {
+                                row(ui, app, tab);
+                            }
+                        }
                     }
                 })
             });
-    }
-    // Add a docker.
-    ui.add_space(8.0);
-    let (r, resp) = ui.allocate_exact_size(egui::vec2(full.width(), 22.0), egui::Sense::click());
-    let c = r.center() + egui::vec2(0.5, 0.0);
-    if resp.hovered() {
-        ui.painter().rect_filled(
-            egui::Rect::from_center_size(c, egui::vec2(18.0, 18.0)),
-            0.0,
-            crate::theme::Tokens::icon_off(),
-        );
-    }
-    let s = egui::Stroke::new(1.5, crate::theme::Tokens::text_dim());
-    ui.painter()
-        .line_segment([c + egui::vec2(-5.0, 0.0), c + egui::vec2(5.0, 0.0)], s);
-    ui.painter()
-        .line_segment([c + egui::vec2(0.0, -5.0), c + egui::vec2(0.0, 5.0)], s);
-    let resp = resp.on_hover_text(tr("docker.add_docker"));
-    // The panels in the groups of the Window menu, a box ticked at each
-    // one open anywhere: ticking opens it in front of this column,
-    // unticking closes it.
-    egui::Popup::menu(&resp)
-        .id(egui::Id::new(("docker_add_menu", place as u8)))
-        .style(crate::ui::menus::menu_popup_style)
-        .show(|ui| {
-            crate::ui::menus::body(ui, |ui| {
-                let row = |ui: &mut Ui, app: &mut App, tab: DockerTab| {
-                    let open = app.docker_open(tab);
-                    if crate::ui::menus::check(ui, tab.key(), "", open) {
-                        if open {
-                            app.close_docker(tab);
-                        } else {
-                            app.move_docker(tab, place, None);
-                        }
-                    }
-                };
-                for (i, group) in DockerTab::MENU_GROUPS.iter().enumerate() {
-                    if i > 0 {
-                        crate::ui::menus::sep(ui);
-                    }
-                    for tab in group.iter() {
-                        row(ui, app, *tab);
-                    }
-                    if i == 5 {
-                        crate::ui::menus::sep(ui);
-                        for tab in DockerTab::EFFECTS_MENU {
-                            row(ui, app, tab);
-                        }
-                    }
-                }
-            })
-        });
+    });
 }
 
 /// The places a docker can go, a dot at the one it has (a tab's menu and
@@ -490,6 +499,7 @@ fn docker_title(app: &mut App, ui: &mut Ui, tab: DockerTab, place: DockerPlace) 
         egui::vec2(full.width(), TITLE_H),
         egui::Sense::click_and_drag(),
     );
+    let resp = resp.rich_tip(format!("{}\n{}", tr(tab.key()), tr("docker.title_desc")));
     ui.painter()
         .rect_filled(bar, 0.0, crate::theme::Tokens::tab_strip());
     ui.painter().text(
@@ -534,7 +544,7 @@ fn docker_title(app: &mut App, ui: &mut Ui, tab: DockerTab, place: DockerPlace) 
             egui::Id::new(("docker_close", tab.key())),
             egui::Sense::click(),
         )
-        .on_hover_text(tr("docker.close_docker"));
+        .rich_tip(tr("docker.close_docker"));
     let col = if resp.hovered() { Tokens::text() } else { grey };
     let c = close.center();
     let s = egui::Stroke::new(1.5, col);
@@ -559,7 +569,7 @@ fn docker_title(app: &mut App, ui: &mut Ui, tab: DockerTab, place: DockerPlace) 
             egui::Id::new(("docker_fold", place as u8)),
             egui::Sense::click(),
         )
-        .on_hover_text(tr("docker.collapse"));
+        .rich_tip(tr("docker.collapse"));
     let col = if resp.hovered() { Tokens::text() } else { grey };
     for dx in [-3.5f32, 3.0] {
         let c = fold.center() + egui::vec2(dx, 0.0);
@@ -659,7 +669,7 @@ fn extra_fills(app: &mut App, ui: &mut Ui, first: &tracedraw_core::Shape, has_fi
             ui.strong(trf("docker.fill_n", &[("n", &(i + 2).to_string())]));
             if ui
                 .small_button("\u{00D7}")
-                .on_hover_text(tr("docker.remove_fill"))
+                .rich_tip(tr("docker.remove_fill"))
                 .clicked()
             {
                 remove = Some(i);
@@ -679,7 +689,7 @@ fn extra_fills(app: &mut App, ui: &mut Ui, first: &tracedraw_core::Shape, has_fi
     if has_fill
         && ui
             .button(tr("docker.add_fill"))
-            .on_hover_text(tr("docker.add_fill_tip"))
+            .rich_tip(tr("docker.add_fill_tip"))
             .clicked()
     {
         fills.push(first.fill.clone());
@@ -704,7 +714,7 @@ fn extra_strokes(app: &mut App, ui: &mut Ui, first: &tracedraw_core::Shape, has_
             ui.strong(trf("docker.outline_n", &[("n", &(i + 2).to_string())]));
             if ui
                 .small_button("\u{00D7}")
-                .on_hover_text(tr("docker.remove_outline"))
+                .rich_tip(tr("docker.remove_outline"))
                 .clicked()
             {
                 remove = Some(i);
@@ -730,7 +740,7 @@ fn extra_strokes(app: &mut App, ui: &mut Ui, first: &tracedraw_core::Shape, has_
     if has_outline
         && ui
             .button(tr("docker.add_outline"))
-            .on_hover_text(tr("docker.add_outline_tip"))
+            .rich_tip(tr("docker.add_outline_tip"))
             .clicked()
     {
         let base = first
@@ -879,7 +889,7 @@ fn properties(app: &mut App, ui: &mut Ui) {
                 ui.painter(),
                 egui::Rect::from_center_size(rect.center(), egui::vec2(18.0, 18.0)),
             );
-            if resp.on_hover_text(tr(key)).clicked() {
+            if resp.rich_tip(tr(key)).clicked() {
                 toggle_section(app, id);
             }
         }
@@ -1274,6 +1284,7 @@ fn section_header(app: &mut App, ui: &mut Ui, id: &str, title: &str) -> bool {
         crate::theme::bold(12.5),
         Tokens::text(),
     );
+    let resp = resp.rich_tip_with(|| format!("{title}\n{}", tr("docker.section_desc")));
     if resp.clicked() {
         toggle_section(app, id);
         return !open;
@@ -1504,7 +1515,7 @@ fn fill_editor_mixed(
                 egui::Rect::from_center_size(rect.center(), egui::vec2(16.0, 16.0)),
                 i,
             );
-            if resp.on_hover_text(tr(n)).clicked() && shown_kind != Some(i) {
+            if resp.rich_tip(tr(n)).clicked() && shown_kind != Some(i) {
                 if kind == i {
                     // The type the first object has, picked for objects
                     // of other types: they all take its fill.
@@ -1699,7 +1710,7 @@ fn fountain_editor(ui: &mut Ui, f: &mut Fountain) -> bool {
                     egui::Stroke::new(1.0, line),
                     egui::StrokeKind::Inside,
                 );
-                if resp.on_hover_text(tr("grad.current_colors")).clicked() {
+                if resp.rich_tip(tr("grad.current_colors")).clicked() {
                     f.stops = current;
                     changed = true;
                 }
@@ -1725,7 +1736,7 @@ fn fountain_editor(ui: &mut Ui, f: &mut Fountain) -> bool {
                             egui::Stroke::new(1.0, line),
                             egui::StrokeKind::Inside,
                         );
-                        if resp.on_hover_text(tr(key)).clicked() {
+                        if resp.rich_tip(tr(key)).clicked() {
                             f.stops = stops;
                             if let Some(a) = angle.filter(|_| f.kind == FountainKind::Linear) {
                                 f.angle = a;
@@ -1761,7 +1772,7 @@ fn fountain_editor(ui: &mut Ui, f: &mut Fountain) -> bool {
             }
             if ui
                 .small_button("+")
-                .on_hover_text(tr("docker.add_stop"))
+                .rich_tip(tr("docker.add_stop"))
                 .clicked()
             {
                 insert = Some(i);
@@ -1769,7 +1780,7 @@ fn fountain_editor(ui: &mut Ui, f: &mut Fountain) -> bool {
             if n > 2
                 && ui
                     .small_button("x")
-                    .on_hover_text(tr("docker.remove_stop"))
+                    .rich_tip(tr("docker.remove_stop"))
                     .clicked()
             {
                 remove = Some(i);
@@ -1781,7 +1792,7 @@ fn fountain_editor(ui: &mut Ui, f: &mut Fountain) -> bool {
     let ggr_key = format!("fountain_ggr{:?}", ui.id());
     if ui
         .button(tr("docker.import_gradient"))
-        .on_hover_text(tr("docker.import_gradient_tip"))
+        .rich_tip(tr("docker.import_gradient_tip"))
         .clicked()
     {
         crate::files::Dialog::new()
@@ -1892,11 +1903,11 @@ fn fountain_spread_editor(ui: &mut Ui, f: &mut Fountain) -> bool {
     ui.horizontal_wrapped(|ui| {
         changed |= ui
             .checkbox(&mut f.bilinear, tr("docker.bilinear"))
-            .on_hover_text(tr("docker.bilinear_tip"))
+            .rich_tip(tr("docker.bilinear_tip"))
             .changed();
         changed |= ui
             .checkbox(&mut f.invert, tr("docker.invert_colours"))
-            .on_hover_text(tr("docker.invert_colours_tip"))
+            .rich_tip(tr("docker.invert_colours_tip"))
             .changed();
     });
     changed
@@ -2036,6 +2047,11 @@ pub(crate) fn arrow_combo(
     } else {
         format!("{label}: {}", a.name())
     };
+    let tip = if id.to_lowercase().ends_with("end") {
+        "toolbar.end_arrow"
+    } else {
+        "toolbar.start_arrow"
+    };
     egui::ComboBox::from_id_salt(id)
         .selected_text(shown)
         .show_ui(ui, |ui| {
@@ -2056,7 +2072,9 @@ pub(crate) fn arrow_combo(
                     changed = true;
                 }
             }
-        });
+        })
+        .response
+        .rich_tip(crate::ui::tips::keyed(tip));
     changed
 }
 
@@ -2113,6 +2131,7 @@ fn outline_editor_mixed(
     let mut has = stroke.is_some();
     if ui
         .add(egui::Checkbox::new(&mut has, tr("docker.outline")).indeterminate(mix.presence))
+        .rich_tip(crate::ui::tips::keyed("docker.outline"))
         .changed()
     {
         *stroke = if has {
@@ -2161,6 +2180,7 @@ fn outline_editor_mixed(
         let mut hair = s.width <= Stroke::HAIRLINE + 1e-9;
         if ui
             .add(egui::Checkbox::new(&mut hair, tr("docker.hairline")).indeterminate(width_mixed))
+            .rich_tip(crate::ui::tips::keyed("docker.hairline"))
             .changed()
         {
             s.width = if hair { Stroke::HAIRLINE } else { 0.5 };
@@ -2171,11 +2191,15 @@ fn outline_editor_mixed(
             // The slider applies when let go; the box takes any width
             // typed (Enter or leaving it applies).
             ui.horizontal_wrapped(|ui| {
-                let r = ui.add(crate::ui::Rail(
-                    egui::Slider::new(&mut s.width, 0.1..=25.0)
-                        .logarithmic(true)
-                        .show_value(false),
-                ));
+                let width_tip =
+                    crate::ui::tips::pair("toolbar.outline_width", "docker.outline_width_desc");
+                let r = ui
+                    .add(crate::ui::Rail(
+                        egui::Slider::new(&mut s.width, 0.1..=25.0)
+                            .logarithmic(true)
+                            .show_value(false),
+                    ))
+                    .rich_tip(width_tip.clone());
                 let mut w = r.drag_stopped() || (r.changed() && !r.dragged());
                 // The width in the outline unit; the model keeps mm.
                 let u = lib.units;
@@ -2189,6 +2213,7 @@ fn outline_editor_mixed(
                             .width(56.0)
                             .mixed(width_mixed),
                     )
+                    .rich_tip(width_tip)
                     .changed()
                 {
                     s.width = u.to_mm(v).clamp(0.001, 1000.0);
@@ -2213,7 +2238,14 @@ fn outline_editor_mixed(
                 (tracedraw_core::LineCap::Round, "docker.cap_round"),
                 (tracedraw_core::LineCap::Square, "docker.cap_square"),
             ] {
-                if ui.selectable_label(!mixed && s.cap == c, tr(n)).clicked() {
+                if ui
+                    .selectable_label(!mixed && s.cap == c, tr(n))
+                    .rich_tip(crate::ui::tips::pair(
+                        &format!("{n}_tip"),
+                        &format!("{n}_desc"),
+                    ))
+                    .clicked()
+                {
                     s.cap = c;
                     touched.push(StrokeField::Cap);
                     changed = true;
@@ -2228,7 +2260,14 @@ fn outline_editor_mixed(
                 (tracedraw_core::LineJoin::Round, "docker.join_round"),
                 (tracedraw_core::LineJoin::Bevel, "docker.join_bevel"),
             ] {
-                if ui.selectable_label(!mixed && s.join == j, tr(n)).clicked() {
+                if ui
+                    .selectable_label(!mixed && s.join == j, tr(n))
+                    .rich_tip(crate::ui::tips::pair(
+                        &format!("{n}_tip"),
+                        &format!("{n}_desc"),
+                    ))
+                    .clicked()
+                {
                     s.join = j;
                     touched.push(StrokeField::Join);
                     changed = true;
@@ -2260,7 +2299,14 @@ fn outline_editor_mixed(
                 (vec![1.0, 1.0], "docker.dash_dotted"),
                 (vec![6.0, 2.0, 1.0, 2.0], "docker.dash_dash_dot"),
             ] {
-                if ui.selectable_label(!mixed && s.dash == d, tr(n)).clicked() {
+                if ui
+                    .selectable_label(!mixed && s.dash == d, tr(n))
+                    .rich_tip(crate::ui::tips::pair(
+                        &format!("{n}_tip"),
+                        &format!("{n}_desc"),
+                    ))
+                    .clicked()
+                {
                     s.dash = d;
                     touched.push(StrokeField::Dash);
                     changed = true;
@@ -2303,13 +2349,17 @@ fn outline_editor_mixed(
                     !s.dash.is_empty(),
                     egui::Checkbox::new(&mut s.align_dashes, tr("docker.align_dashes")),
                 )
-                .on_hover_text(tr("docker.align_dashes_tip"))
+                .rich_tip(tr("docker.align_dashes_tip"))
                 .changed()
             {
                 touched.push(StrokeField::AlignDashes);
                 changed = true;
             }
-            if ui.button(tr("docker.edit_line_style")).clicked() {
+            if ui
+                .button(tr("docker.edit_line_style"))
+                .rich_tip(crate::ui::tips::keyed("docker.edit_line_style"))
+                .clicked()
+            {
                 crate::ui::line_style::request(ui);
             }
         });
@@ -2330,7 +2380,14 @@ fn outline_editor_mixed(
                 ),
             ] {
                 let shown = !mix.has(StrokeField::Position) && s.position == pos;
-                if ui.selectable_label(shown, tr(n)).clicked() {
+                if ui
+                    .selectable_label(shown, tr(n))
+                    .rich_tip(crate::ui::tips::pair(
+                        &format!("{n}_tip"),
+                        &format!("{n}_desc"),
+                    ))
+                    .clicked()
+                {
                     s.position = pos;
                     touched.push(StrokeField::Position);
                     changed = true;
@@ -2348,6 +2405,7 @@ fn outline_editor_mixed(
             };
             if ui
                 .add(egui::Checkbox::new(v, tr(key)).indeterminate(mix.has(field)))
+                .rich_tip(crate::ui::tips::keyed(key))
                 .changed()
             {
                 touched.push(field);
@@ -2368,7 +2426,7 @@ fn outline_editor_mixed(
             ]
             .iter()
             .any(|f| mix.has(*f));
-        egui::CollapsingHeader::new(tr("docker.outline_advanced"))
+        let advanced = egui::CollapsingHeader::new(tr("docker.outline_advanced"))
             .id_salt("docker_outline_advanced")
             .default_open(advanced_set)
             .show(ui, |ui| {
@@ -2385,7 +2443,7 @@ fn outline_editor_mixed(
                                     .width(56.0)
                                     .mixed(mix.has(StrokeField::MiterLimit)),
                             )
-                            .on_hover_text(tr("docker.miter_limit_tip"))
+                            .rich_tip(tr("docker.miter_limit_tip"))
                             .changed()
                         {
                             touched.push(StrokeField::MiterLimit);
@@ -2417,6 +2475,14 @@ fn outline_editor_mixed(
                         .add(crate::ui::Rail(
                             egui::Slider::new(v, range).text(text).suffix(suffix),
                         ))
+                        .rich_tip(if field == StrokeField::Stretch {
+                            crate::ui::tips::pair(
+                                "docker.nib_stretch_tip",
+                                "docker.nib_stretch_desc",
+                            )
+                        } else {
+                            crate::ui::tips::pair("docker.nib_angle", "docker.nib_angle_desc")
+                        })
                         .drag_stopped()
                     {
                         touched.push(field);
@@ -2424,6 +2490,10 @@ fn outline_editor_mixed(
                     }
                 }
             });
+        advanced.header_response.rich_tip(crate::ui::tips::pair(
+            "docker.outline_advanced",
+            "docker.outline_advanced_desc",
+        ));
     }
     changed
 }
@@ -2520,7 +2590,17 @@ fn undo_docker(app: &mut App, ui: &mut Ui) {
     let mut goto: Option<usize> = None;
     for (i, l) in undo.iter().enumerate() {
         let is_last = i + 1 == n;
-        if ui.selectable_label(is_last, l.to_string()).clicked() && !is_last {
+        let desc = if is_last {
+            "docker.undo_row_last_desc"
+        } else {
+            "docker.undo_row_desc"
+        };
+        if ui
+            .selectable_label(is_last, l.to_string())
+            .rich_tip_with(|| format!("{l}\n{}", tr(desc)))
+            .clicked()
+            && !is_last
+        {
             goto = Some(n - 1 - i);
         }
     }
@@ -2530,21 +2610,25 @@ fn undo_docker(app: &mut App, ui: &mut Ui) {
         }
     }
     for l in redo.iter().rev() {
-        let _ = ui.selectable_label(
-            false,
-            egui::RichText::new(l.to_string()).color(Tokens::text_dim()),
-        );
+        let _ = ui
+            .selectable_label(
+                false,
+                egui::RichText::new(l.to_string()).color(Tokens::text_dim()),
+            )
+            .rich_tip_with(|| format!("{l}\n{}", tr("docker.redo_row_desc")));
     }
     ui.add_space(6.0);
     ui.horizontal(|ui| {
         if ui
             .add_enabled(n > 0, egui::Button::new(tr("docker.undo")))
+            .rich_tip(crate::ui::tips::keyed("docker.undo"))
             .clicked()
         {
             app.undo();
         }
         if ui
             .add_enabled(!redo.is_empty(), egui::Button::new(tr("docker.redo")))
+            .rich_tip(crate::ui::tips::keyed("docker.redo"))
             .clicked()
         {
             app.redo();
@@ -2618,6 +2702,82 @@ mod tests {
         // On the cross: closed.
         click(&mut app, cross);
         assert!(!app.open_dockers.contains(&first), "{:?}", app.open_dockers);
+    }
+
+    /// More docker tabs than the column's height: the mouse wheel over
+    /// the column slides it, so the last tab can be clicked to the
+    /// front. It lay past the window's bottom edge, out of reach (#950).
+    #[test]
+    fn docker_tabs_past_the_column_bottom_come_into_reach() {
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        for tab in DockerTab::MENU_GROUPS[0].iter() {
+            if !app.open_dockers.contains(tab) {
+                app.move_docker(*tab, DockerPlace::Right, None);
+            }
+        }
+        let first = app.open_dockers[0];
+        app.docker_tab = first;
+        let last = *app.open_dockers.last().unwrap();
+        let height = 400.0;
+        let run = |app: &mut App, events: Vec<egui::Event>| {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(27.0, height),
+                )),
+                events,
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| tab_strip(app, ui, DockerPlace::Right));
+            out.textures_delta.clear();
+        };
+        let click = |app: &mut App, at: egui::Pos2| {
+            run(app, vec![egui::Event::PointerMoved(at)]);
+            for pressed in [true, false] {
+                run(
+                    app,
+                    vec![egui::Event::PointerButton {
+                        pos: at,
+                        button: egui::PointerButton::Primary,
+                        pressed,
+                        modifiers: egui::Modifiers::NONE,
+                    }],
+                );
+            }
+            run(app, Vec::new());
+        };
+        run(&mut app, Vec::new());
+        run(&mut app, Vec::new());
+        // Wheel down over the column until it slides no further.
+        let over = egui::pos2(13.5, height / 2.0);
+        for _ in 0..200 {
+            run(
+                &mut app,
+                vec![
+                    egui::Event::PointerMoved(over),
+                    egui::Event::MouseWheel {
+                        unit: egui::MouseWheelUnit::Point,
+                        delta: egui::vec2(0.0, -200.0),
+                        modifiers: egui::Modifiers::NONE,
+                        phase: egui::TouchPhase::Move,
+                    },
+                ],
+            );
+        }
+        for _ in 0..60 {
+            run(&mut app, vec![egui::Event::PointerMoved(over)]);
+        }
+        // The last tab lies just above the add button and the down arrow
+        // at the column's foot: a click there brings it to the front.
+        click(
+            &mut app,
+            egui::pos2(
+                13.5,
+                height - crate::ui::overflow::BUTTON - 22.0 - 8.0 - 30.0,
+            ),
+        );
+        assert_eq!(app.docker_tab, last, "{:?}", app.open_dockers);
     }
 
     /// A docker dragged by its tab (or its title) and dropped near the

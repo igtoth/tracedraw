@@ -954,6 +954,41 @@ impl App {
         }
     }
 
+    /// A selection box or freehand selection of the Pick tools is being
+    /// dragged.
+    pub fn selecting(&self) -> bool {
+        matches!(self.drag, Drag::Marquee { .. } | Drag::Lasso { .. })
+            && matches!(self.tool, Tool::Pick | Tool::FreeformPick)
+    }
+
+    /// A selection box (or freehand selection) runs from the press until
+    /// the left button goes up, whatever the right button does meanwhile:
+    /// a right press is ignored. egui takes the right press for the start
+    /// of a new click or drag and never reported the left release as the
+    /// end of the drag, so the box stayed on the canvas, frozen, until the
+    /// next one replaced it (#1015). While the left button is held the box
+    /// follows the latest pointer position even when egui reports no
+    /// hover after the right press.
+    fn selection_drag_input(
+        &mut self,
+        response: &Response,
+        hover: Option<egui::Pos2>,
+        mods: Modifiers,
+    ) {
+        let held = response.ctx.input(|i| i.pointer.primary_down());
+        let at = hover.or(if held { self.pointer_screen } else { None });
+        if let Some(s) = at {
+            let p = self.view.to_page(s);
+            self.pointer_page = Some(p);
+            if held {
+                self.pick_drag_to(p, mods);
+            }
+        }
+        if !held {
+            self.end_drag();
+        }
+    }
+
     pub(crate) fn handle_at(&self, screen: egui::Pos2) -> Option<Handle> {
         let b = self.selection_bounds()?;
         let reach = if self.rotate_mode {
@@ -974,9 +1009,11 @@ impl App {
         // egui ends a drag when the right button of a right click goes up
         // and then hovers nothing while the left one is held: the
         // transform goes on with the latest pointer position.
+        // A Pen or Bezier handle pulled out of the drawing window goes on
+        // following the pointer, and its release ends it there (#1014).
         let hover = response.hover_pos().or_else(|| {
             let held = response.ctx.input(|i| i.pointer.primary_down());
-            if self.transforming() && held {
+            if (self.transforming() && held) || self.curve_drag_running(response) {
                 self.pointer_screen
             } else {
                 None
@@ -999,10 +1036,18 @@ impl App {
             }
             return;
         }
+        if self.selecting() {
+            self.selection_drag_input(response, hover, mods);
+            return;
+        }
         let Some(p) = pointer else {
-            let released = self.transforming() && !response.ctx.input(|i| i.pointer.primary_down());
+            let up = !response.ctx.input(|i| i.pointer.primary_down());
+            let released = self.transforming() && up;
             if response.drag_stopped() || released {
                 self.end_drag();
+            }
+            if up {
+                self.end_curve_drag_outside();
             }
             return;
         };
@@ -1066,6 +1111,7 @@ impl App {
             && self.settings.zoom_right_click_out
         {
             self.view.zoom_at(screen, 0.5);
+            self.end_zoom_one_shot();
             return;
         }
         // Right click: context menu (drawn by the UI at this position);
@@ -1906,6 +1952,19 @@ impl App {
         if response.clicked_by(PointerButton::Primary) {
             self.view
                 .zoom_at(screen, if mods.shift { 0.5 } else { 2.0 });
+            self.end_zoom_one_shot();
+        }
+    }
+
+    /// After a zoom with the Zoom tool picked by F2, the tool before it
+    /// comes back.
+    fn end_zoom_one_shot(&mut self) {
+        if self.zoom_one_shot && self.tool == Tool::Zoom {
+            let back = match self.previous_tool {
+                Tool::Zoom => Tool::Pick,
+                t => t,
+            };
+            self.set_tool(back);
         }
     }
 
@@ -2242,6 +2301,36 @@ impl App {
                 c.dragging_handle = false;
                 c.alt_from = None;
             }
+        }
+    }
+
+    /// A handle of the curve being drawn is pulled (or its closing
+    /// segment shaped) by the drawing window's own primary drag, this
+    /// frame or in the release that ends it.
+    fn curve_drag_running(&self, response: &Response) -> bool {
+        self.curve
+            .as_ref()
+            .is_some_and(|c| c.dragging_handle || c.closing.is_some())
+            && (response.dragged_by(PointerButton::Primary)
+                || response.drag_stopped_by(PointerButton::Primary))
+    }
+
+    /// The button went up with the pointer nowhere over the drawing (out
+    /// of the window): a handle pull of the curve being drawn ends where
+    /// it was last seen, and a closing drag closes the curve. Otherwise
+    /// the curve waited for a release it never saw, the preview stopped
+    /// following the pointer and the next click only ended the pull
+    /// instead of placing a node (#1014).
+    pub(crate) fn end_curve_drag_outside(&mut self) {
+        if self.curve.as_ref().is_some_and(|c| c.closing.is_some()) {
+            if let Some(c) = self.curve.take() {
+                self.close_curve(c);
+            }
+            return;
+        }
+        if let Some(c) = &mut self.curve {
+            c.dragging_handle = false;
+            c.alt_from = None;
         }
     }
 
@@ -2663,6 +2752,7 @@ impl App {
                 let r = Rect::from_points(start, current);
                 if r.width() > 0.5 && r.height() > 0.5 {
                     self.view.fit(r, self.canvas_rect);
+                    self.end_zoom_one_shot();
                 }
             }
             Drag::NodeMarquee { start, current } => self.finish_node_marquee(start, current),
@@ -3318,8 +3408,11 @@ impl App {
         if pressed(Key::F2, Modifiers::SHIFT) {
             self.zoom_to_selection();
         }
-        if pressed(Key::F2, Modifiers::NONE) {
+        if pressed(Key::F2, Modifiers::NONE) && self.tool != Tool::Zoom {
+            // One zoom, then back to the tool before (#1039); Z keeps
+            // the Zoom tool.
             self.set_tool(Tool::Zoom);
+            self.zoom_one_shot = true;
         }
         // + and -: with the Shape tool and nodes chosen, a node in the
         // middle of each segment ending at them, and deleting them; with a

@@ -9,6 +9,7 @@
 use crate::app::App;
 use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
+use crate::ui::tips::RichTip;
 use egui::{Color32, Mesh, Painter, Pos2, Rect, Response, Sense, Shape, Stroke, Ui, Vec2};
 use tracedraw_core::{Color, Command, Fill, ShapeId};
 
@@ -147,7 +148,7 @@ fn view_button(ui: &mut Ui, view: View, tip: &str, on: bool) -> Response {
             }
         }
     }
-    resp.on_hover_text(tip)
+    resp.rich_tip(tip)
 }
 
 fn to32(c: [f32; 3]) -> Color32 {
@@ -357,6 +358,7 @@ pub(crate) fn viewer(ui: &mut Ui, hue: f32, color: Color) -> Option<(f32, f32, f
 fn slider(
     ui: &mut Ui,
     label: &str,
+    name: &str,
     value: &mut f32,
     range: std::ops::RangeInclusive<f32>,
     scale: f32,
@@ -370,6 +372,7 @@ fn slider(
                     .show_value(true)
                     .max_decimals(1),
             ))
+            .rich_tip(crate::ui::tips::pair(name, "color.channel_desc"))
             .changed();
         if changed {
             *value = x / scale;
@@ -384,39 +387,39 @@ pub(crate) fn sliders(ui: &mut Ui, c: &mut Color) -> bool {
     let mut changed = false;
     match c {
         Color::Rgb { r, g, b } => {
-            changed |= slider(ui, "R", r, 0.0..=255.0, 255.0);
-            changed |= slider(ui, "G", g, 0.0..=255.0, 255.0);
-            changed |= slider(ui, "B", b, 0.0..=255.0, 255.0);
+            changed |= slider(ui, "R", "color.channel_red", r, 0.0..=255.0, 255.0);
+            changed |= slider(ui, "G", "color.channel_green", g, 0.0..=255.0, 255.0);
+            changed |= slider(ui, "B", "color.channel_blue", b, 0.0..=255.0, 255.0);
         }
         Color::Cmyk { c, m, y, k } => {
-            changed |= slider(ui, "C", c, 0.0..=100.0, 100.0);
-            changed |= slider(ui, "M", m, 0.0..=100.0, 100.0);
-            changed |= slider(ui, "Y", y, 0.0..=100.0, 100.0);
-            changed |= slider(ui, "K", k, 0.0..=100.0, 100.0);
+            changed |= slider(ui, "C", "color.channel_cyan", c, 0.0..=100.0, 100.0);
+            changed |= slider(ui, "M", "color.channel_magenta", m, 0.0..=100.0, 100.0);
+            changed |= slider(ui, "Y", "color.channel_yellow", y, 0.0..=100.0, 100.0);
+            changed |= slider(ui, "K", "color.channel_black", k, 0.0..=100.0, 100.0);
         }
         // Hues are degrees already.
         Color::Hsb { h, s, b } => {
-            changed |= slider(ui, "H", h, 0.0..=360.0, 1.0);
-            changed |= slider(ui, "S", s, 0.0..=100.0, 100.0);
-            changed |= slider(ui, "B", b, 0.0..=100.0, 100.0);
+            changed |= slider(ui, "H", "color.channel_hue", h, 0.0..=360.0, 1.0);
+            changed |= slider(ui, "S", "color.channel_saturation", s, 0.0..=100.0, 100.0);
+            changed |= slider(ui, "B", "color.channel_brightness", b, 0.0..=100.0, 100.0);
         }
         Color::Hsl { h, s, l } => {
-            changed |= slider(ui, "H", h, 0.0..=360.0, 1.0);
-            changed |= slider(ui, "S", s, 0.0..=100.0, 100.0);
-            changed |= slider(ui, "L", l, 0.0..=100.0, 100.0);
+            changed |= slider(ui, "H", "color.channel_hue", h, 0.0..=360.0, 1.0);
+            changed |= slider(ui, "S", "color.channel_saturation", s, 0.0..=100.0, 100.0);
+            changed |= slider(ui, "L", "color.channel_lightness", l, 0.0..=100.0, 100.0);
         }
         Color::Lab { l, a, b } => {
-            changed |= slider(ui, "L", l, 0.0..=100.0, 1.0);
-            changed |= slider(ui, "a", a, -128.0..=127.0, 1.0);
-            changed |= slider(ui, "b", b, -128.0..=127.0, 1.0);
+            changed |= slider(ui, "L", "color.channel_lightness", l, 0.0..=100.0, 1.0);
+            changed |= slider(ui, "a", "color.channel_lab_a", a, -128.0..=127.0, 1.0);
+            changed |= slider(ui, "b", "color.channel_lab_b", b, -128.0..=127.0, 1.0);
         }
         Color::Gray { v } => {
-            changed |= slider(ui, "L", v, 0.0..=100.0, 100.0);
+            changed |= slider(ui, "L", "color.channel_gray", v, 0.0..=100.0, 100.0);
         }
         Color::Yiq { y, i, q } => {
-            changed |= slider(ui, "Y", y, 0.0..=255.0, 255.0);
-            changed |= slider(ui, "I", i, 0.0..=255.0, 255.0);
-            changed |= slider(ui, "Q", q, 0.0..=255.0, 255.0);
+            changed |= slider(ui, "Y", "color.channel_luma", y, 0.0..=255.0, 255.0);
+            changed |= slider(ui, "I", "color.channel_yiq_i", i, 0.0..=255.0, 255.0);
+            changed |= slider(ui, "Q", "color.channel_yiq_q", q, 0.0..=255.0, 255.0);
         }
         // A spot ink's tint is set where the inks are listed.
         Color::Registration | Color::Spot { .. } => {}
@@ -486,7 +489,7 @@ pub fn color(app: &mut App, ui: &mut Ui) {
                 }
             })
             .response
-            .on_hover_text(tr("docker.model"));
+            .rich_tip(tr("docker.model"));
     });
     ui.add_space(4.0);
     let old = selected_fill(app);
@@ -497,6 +500,7 @@ pub fn color(app: &mut App, ui: &mut Ui) {
         let mut hex = c.to_hex();
         if ui
             .add(egui::TextEdit::singleline(&mut hex).desired_width(70.0))
+            .rich_tip(crate::ui::tips::keyed("docker.hex_color"))
             .lost_focus()
         {
             if let Some(nc) = Color::from_hex(&hex) {
@@ -507,7 +511,7 @@ pub fn color(app: &mut App, ui: &mut Ui) {
             }
         }
         if !c.in_cmyk_gamut(6.0) {
-            gamut_warning(ui).on_hover_text(tr("docker.gamut_warning"));
+            gamut_warning(ui).rich_tip(tr("docker.gamut_warning"));
         }
         if crate::ui::propbar::pic_button(
             ui,
@@ -524,6 +528,7 @@ pub fn color(app: &mut App, ui: &mut Ui) {
     if let Some(ec) = app.eyedropper_color {
         if ui
             .button(trf("docker.use_sampled", &[("c", &ec.to_hex())]))
+            .rich_tip(crate::ui::tips::keyed("docker.use_sampled_tip"))
             .clicked()
         {
             c = ec;
@@ -567,17 +572,37 @@ pub fn color(app: &mut App, ui: &mut Ui) {
         let has = !app.selection.is_empty();
         if ui
             .add_enabled(has, egui::Button::new(tr("docker.fill")))
+            .rich_tip(crate::ui::tips::pair(
+                "docker.fill",
+                "docker.color_fill_desc",
+            ))
+            .rich_disabled_tip(crate::ui::tips::pair(
+                "docker.fill",
+                "docker.color_fill_desc",
+            ))
             .clicked()
         {
             app.apply_fill(Fill::Solid(c));
         }
         if ui
             .add_enabled(has, egui::Button::new(tr("docker.outline")))
+            .rich_tip(crate::ui::tips::pair(
+                "docker.outline",
+                "docker.color_outline_desc",
+            ))
+            .rich_disabled_tip(crate::ui::tips::pair(
+                "docker.outline",
+                "docker.color_outline_desc",
+            ))
             .clicked()
         {
             app.apply_outline_color(Some(c));
         }
-        if ui.button(tr("docker.add_to_palette")).clicked() {
+        if ui
+            .button(tr("docker.add_to_palette"))
+            .rich_tip(crate::ui::tips::keyed("docker.add_to_palette"))
+            .clicked()
+        {
             let mut colors = app.doc().palette.clone();
             if !colors.contains(&c) {
                 colors.push(c);
@@ -642,19 +667,24 @@ fn spot_inks(app: &mut App, ui: &mut Ui, current: Color) {
             ui.label(&ink.name);
             if ui
                 .add_enabled(has, egui::Button::new(tr("docker.fill")).small())
+                .rich_tip(crate::ui::tips::pair("docker.fill", "docker.ink_fill_desc"))
                 .clicked()
             {
                 app.apply_fill(Fill::Solid(ink.color(tint)));
             }
             if ui
                 .add_enabled(has, egui::Button::new(tr("docker.outline")).small())
+                .rich_tip(crate::ui::tips::pair(
+                    "docker.outline",
+                    "docker.ink_outline_desc",
+                ))
                 .clicked()
             {
                 app.apply_outline_color(Some(ink.color(tint)));
             }
             if ui
                 .small_button(REMOVE_INK.to_string())
-                .on_hover_text(tr("docker.remove_ink"))
+                .rich_tip(tr("docker.remove_ink"))
                 .clicked()
             {
                 remove = Some(ink.id);
@@ -671,7 +701,8 @@ fn spot_inks(app: &mut App, ui: &mut Ui, current: Color) {
                 egui::Slider::new(&mut app.color_docker.tint, 0.0..=100.0)
                     .suffix(" %")
                     .max_decimals(0),
-            ));
+            ))
+            .rich_tip(crate::ui::tips::pair("docker.tint", "docker.tint_desc"));
         });
     }
     ui.horizontal(|ui| {
@@ -679,7 +710,11 @@ fn spot_inks(app: &mut App, ui: &mut Ui, current: Color) {
             egui::TextEdit::singleline(&mut app.color_docker.new_ink)
                 .hint_text(tr("docker.ink_name"))
                 .desired_width(120.0),
-        );
+        )
+        .rich_tip(crate::ui::tips::pair(
+            "docker.ink_name",
+            "docker.ink_name_desc",
+        ));
         let name = app.color_docker.new_ink.trim().to_string();
         let taken = inks.iter().any(|i| i.name == name);
         if ui
@@ -687,7 +722,7 @@ fn spot_inks(app: &mut App, ui: &mut Ui, current: Color) {
                 !name.is_empty() && !taken,
                 egui::Button::new(tr("docker.new_ink")),
             )
-            .on_hover_text(tr("docker.new_ink_tip"))
+            .rich_tip(tr("docker.new_ink_tip"))
             .clicked()
         {
             add_ink(app, name, current);
@@ -749,7 +784,7 @@ fn palette_view(app: &mut App, ui: &mut Ui) -> Option<Color> {
                 Stroke::new(if resp.hovered() { 1.5 } else { 0.5 }, Tokens::icon()),
                 egui::StrokeKind::Inside,
             );
-            if resp.on_hover_text(name).clicked() {
+            if resp.rich_tip(name).clicked() {
                 out = Some(*c);
             }
         }
@@ -758,7 +793,7 @@ fn palette_view(app: &mut App, ui: &mut Ui) -> Option<Color> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use tracedraw_core::ShapeKind;
 
@@ -782,7 +817,7 @@ mod tests {
 
     /// The characters `src` writes as `\u{...}` escapes or as non-ASCII
     /// characters outside comments: its text icons.
-    fn source_glyphs(src: &str) -> Vec<char> {
+    pub(crate) fn source_glyphs(src: &str) -> Vec<char> {
         let mut out = Vec::new();
         for line in src.lines() {
             let code = line.trim_start();

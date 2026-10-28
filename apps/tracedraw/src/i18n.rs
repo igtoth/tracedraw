@@ -178,8 +178,7 @@ pub fn tr(key: &str) -> String {
     key.rsplit('.').next().unwrap_or(key).to_string()
 }
 
-/// Whether the English table has `key` (tests of generated keys).
-#[cfg(test)]
+/// Whether the English table has `key` (generated keys, optional texts).
 pub fn has_english(key: &str) -> bool {
     state()
         .read()

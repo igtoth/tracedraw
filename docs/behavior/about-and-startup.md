@@ -214,6 +214,11 @@ and `--reset-settings` starts open windows of their own.
   first start opens too, not only the one after it (#570,
   `gpu::tests::a_start_hung_without_its_window_goes_on_with_the_next_renderer`,
   `instance::tests::a_start_without_its_window_declines_files`).
+  A start that already handed the window to the next renderer (that
+  renderer failed at once and it waits for the new start) is settled:
+  its watch stops, so no second TraceDraw opens 20 seconds later beside
+  the one in use
+  (`gpu::tests::a_start_that_handed_over_is_not_started_again`).
 - The log names every graphics adapter wgpu offers (backend, type,
   vendor and device ids, driver) with why it was taken or left, the
   renderer each start tries and the one that opened the window; an
@@ -296,6 +301,17 @@ the maximize left the window at its normal size in the corner of the
 screen with the maximized button state (#787, seen with the interface
 in Chinese and a new drawing at start, whose slow first frames change
 the timing).
+
+Without the splash screen the main window is made at its kept size and
+maximized from the start when it was left maximized, and it opens at the
+screen's size with no step in between. The kept size is the size it
+restores to. The patched eframe (`vendor/README.md`) does not ask for the
+size and position again once it has made a maximized window: egui-winit
+did, and on Windows a size asked for after the maximize clears it, so
+the window was restored to its normal size (shown while it was) and then
+maximized again, and it opened at that size first and grew to the screen
+after (#787, seen with the splash screen turned off in Options,
+`splash::tests::without_the_splash_a_maximized_window_opens_at_the_screen_size`).
 
 For the first 30 frames of the main window and at least its first 3
 seconds (`splash::SETTLE_FRAMES`, `splash::SETTLE_SECONDS`) its state is

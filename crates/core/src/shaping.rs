@@ -177,6 +177,149 @@ pub fn cut_open(path: &BezPath, regions: &[BezPath], keep: Keep) -> BezPath {
     out
 }
 
+/// The open subpaths of `path` flattened into polylines of two points or
+/// more (closed subpaths are left out).
+fn open_polylines(path: &BezPath) -> Vec<Vec<[f64; 2]>> {
+    let mut out: Vec<Vec<[f64; 2]>> = Vec::new();
+    let mut cur: Vec<[f64; 2]> = Vec::new();
+    let mut flush = |cur: &mut Vec<[f64; 2]>, closed: bool| {
+        if !closed && cur.len() >= 2 {
+            out.push(std::mem::take(cur));
+        } else {
+            cur.clear();
+        }
+    };
+    kurbo::flatten(path.elements().iter().copied(), TOL, &mut |el| match el {
+        PathEl::MoveTo(p) => {
+            flush(&mut cur, false);
+            cur.push([p.x, p.y]);
+        }
+        PathEl::LineTo(p) => {
+            if cur.last() != Some(&[p.x, p.y]) {
+                cur.push([p.x, p.y]);
+            }
+        }
+        PathEl::ClosePath => flush(&mut cur, true),
+        _ => {}
+    });
+    flush(&mut cur, false);
+    out
+}
+
+/// The closed `region` split along the open `cutters` (all in one
+/// space), each separate piece (its outline with its holes) a path of its
+/// own, the curves of the region and of the cutters kept (#1005). Only a
+/// stretch of a cutter that runs from one edge of the region to another
+/// splits it: a cutter that ends inside or only touches it leaves it
+/// whole, so then there is one piece. Nothing of the region is lost: the
+/// pieces' areas add up to its own.
+pub fn slice_open(region: &BezPath, cutters: &[BezPath]) -> Vec<BezPath> {
+    use i_overlay::float::slice::FloatSlice;
+    use kurbo::{Line, ParamCurve as _, PathSeg, Shape as _};
+    let lines: Vec<Vec<[f64; 2]>> = cutters.iter().flat_map(open_polylines).collect();
+    let edges: Vec<(usize, usize, Line)> = lines
+        .iter()
+        .enumerate()
+        .flat_map(|(k, l)| {
+            l.windows(2)
+                .enumerate()
+                .map(move |(i, w)| (k, i, Line::new((w[0][0], w[0][1]), (w[1][0], w[1][1]))))
+        })
+        .collect();
+    // Where the cutters cross the outline: put in both the region's
+    // flattening and the cutter's as the same vertex, a point on the
+    // region's own curve, so the pieces on either side of a cut meet
+    // exactly (the crossing of two flattenings lies up to the tolerance
+    // off the curve, and each piece would put it back elsewhere).
+    let mut on_cutter: Vec<(usize, usize, f64, Point)> = Vec::new();
+    let mut shape: Vec<Vec<[f64; 2]>> = Vec::new();
+    for (mut segs, closed) in subpath_segments(region) {
+        // A region counts as closed, closed or not.
+        if let (false, Some(first), Some(last)) = (closed, segs.first(), segs.last()) {
+            let (a, b) = (last.end(), first.start());
+            if (a - b).hypot() > 1e-9 {
+                segs.push(PathSeg::Line(Line::new(a, b)));
+            }
+        }
+        let mut contour: Vec<[f64; 2]> = Vec::new();
+        for seg in &segs {
+            let mut ts: Vec<f64> = vec![0.0, 1.0];
+            for (k, i, e) in &edges {
+                for hit in seg.intersect_line(*e) {
+                    if (0.0..=1.0).contains(&hit.line_t) {
+                        let t = hit.segment_t.clamp(0.0, 1.0);
+                        ts.push(t);
+                        on_cutter.push((*k, *i, hit.line_t, seg.eval(t)));
+                    }
+                }
+            }
+            ts.sort_by(f64::total_cmp);
+            ts.dedup_by(|a, b| (*a - *b).abs() < 1e-12);
+            for w in ts.windows(2) {
+                let piece = seg.subsegment(w[0]..w[1]);
+                let start = seg.eval(w[0]);
+                if contour.last() != Some(&[start.x, start.y]) {
+                    contour.push([start.x, start.y]);
+                }
+                kurbo::flatten(piece.path_elements(TOL), TOL, &mut |el| {
+                    if let PathEl::LineTo(p) = el {
+                        contour.push([p.x, p.y]);
+                    }
+                });
+                // The flattening ends at the subsegment's end, a hair off
+                // the exact crossing: use the crossing itself.
+                let end = seg.eval(w[1]);
+                if let Some(last) = contour.last_mut() {
+                    *last = [end.x, end.y];
+                }
+            }
+        }
+        if contour.len() >= 2 && contour.first() == contour.last() {
+            contour.pop();
+        }
+        if contour.len() >= 3 {
+            shape.push(contour);
+        }
+    }
+    if shape.is_empty() {
+        return Vec::new();
+    }
+    let mut sources: Vec<&BezPath> = vec![region];
+    sources.extend(cutters);
+    let shapes = if lines.is_empty() {
+        shape.overlay(
+            &Vec::<Vec<[f64; 2]>>::new(),
+            OverlayRule::Subject,
+            IFill::EvenOdd,
+        )
+    } else {
+        // The crossings put into the cutters too, in order along them.
+        on_cutter.sort_by(|a, b| (a.0, a.1).cmp(&(b.0, b.1)).then(a.2.total_cmp(&b.2)));
+        let lines: Vec<Vec<[f64; 2]>> = lines
+            .iter()
+            .enumerate()
+            .map(|(k, l)| {
+                let mut out: Vec<[f64; 2]> = Vec::with_capacity(l.len());
+                for (i, p) in l.iter().enumerate() {
+                    out.push(*p);
+                    for (_, _, _, q) in on_cutter.iter().filter(|c| c.0 == k && c.1 == i) {
+                        if out.last() != Some(&[q.x, q.y]) {
+                            out.push([q.x, q.y]);
+                        }
+                    }
+                }
+                out
+            })
+            .collect();
+        shape.slice_by(&lines, IFill::EvenOdd)
+    };
+    shapes
+        .into_iter()
+        .map(|s| recover_curves(&from_shapes(vec![s]), &sources))
+        .filter(|p| !p.elements().is_empty())
+        .collect()
+}
+
 /// Combine `subject` and `clip` as [`overlay`] does, each separate piece
 /// of the result (its outline with its holes) a path of its own.
 pub fn overlay_parts(subject: &BezPath, clip: &BezPath, op: Op) -> Vec<BezPath> {
@@ -338,6 +481,64 @@ impl SourceSub {
     }
 }
 
+/// Where the outlines through a vertex at `p` with `places` on them
+/// really cross: a source's own node there (exact already), else the
+/// crossing nearest `p` of two of the segments, found by Newton steps
+/// from the places. `None` when nothing settles within reach of `p`
+/// (one outline alone, or two running along each other).
+fn exact_crossing(subs: &[SourceSub], places: &[Place], p: Point) -> Option<Point> {
+    use kurbo::{ParamCurveDeriv as _, PathSeg};
+    let reach = 2.0 * ON_SOURCE;
+    let mut inner: Vec<(PathSeg, f64)> = Vec::new();
+    for q in places {
+        let Some(sub) = subs.get(q.sub) else {
+            continue;
+        };
+        let Some(last) = sub.segs.len().checked_sub(1) else {
+            continue;
+        };
+        if (q.u - q.u.round()).abs() <= 1e-6 {
+            let node = sub.at(q.u, 0.0);
+            if (node - p).hypot() <= reach {
+                return Some(node);
+            }
+            continue;
+        }
+        let i = (q.u.floor() as usize).min(last);
+        if let Some(seg) = sub.segs.get(i) {
+            inner.push((*seg, q.u - i as f64));
+        }
+    }
+    let mut best: Option<Point> = None;
+    for (n, (a, s0)) in inner.iter().enumerate() {
+        for (b, t0) in inner.iter().skip(n + 1) {
+            let (a, b) = (a.to_cubic(), b.to_cubic());
+            let (da, db) = (a.deriv(), b.deriv());
+            let (mut s, mut t) = (*s0, *t0);
+            for _ in 0..20 {
+                let f = a.eval(s) - b.eval(t);
+                if f.hypot() < 1e-10 {
+                    let q = a.eval(s);
+                    let d = (q - p).hypot();
+                    if d <= reach && best.is_none_or(|b| d < (b - p).hypot()) {
+                        best = Some(q);
+                    }
+                    break;
+                }
+                // Solve [a'(s), -b'(t)] (ds, dt) = -f.
+                let (ja, jb) = (da.eval(s).to_vec2(), -db.eval(t).to_vec2());
+                let det = ja.cross(jb);
+                if det.abs() < 1e-12 {
+                    break;
+                }
+                s = (s - f.cross(jb) / det).clamp(0.0, 1.0);
+                t = (t - ja.cross(f) / det).clamp(0.0, 1.0);
+            }
+        }
+    }
+    best
+}
+
 /// A stretch of the result lying along one source subpath: where it
 /// started on it, how far it has come, and which way.
 struct Run {
@@ -488,6 +689,20 @@ fn recover_curves(result: &BezPath, sources: &[&BezPath]) -> BezPath {
                 v
             })
             .collect();
+        // A vertex where two outlines cross is the crossing of their
+        // flattenings, up to TOL off the curves: put it on the crossing of
+        // the curves themselves, so the areas on either side of an outline
+        // meet there exactly and leave no gap between them (#1065).
+        for k in 0..n {
+            if let Some(q) = exact_crossing(&subs, &places[k], pts[k]) {
+                pts[k] = q;
+                let mut v = Vec::new();
+                for (s, i) in grid.near(q) {
+                    subs[*s].place_on(*s, *i, q, &mut v);
+                }
+                places[k] = v;
+            }
+        }
         // The contour starts where a run would end anyway (a crossing, a
         // vertex on no source, or a source's own node), so a stretch of
         // one source is not cut in two at an arbitrary vertex.
@@ -2122,6 +2337,69 @@ mod tests {
         assert_eq!(enclosed_area(&[], Point::new(5.0, 5.0)), Enclosed::Open);
     }
 
+    /// Areas filled side by side meet with no gap (#1065): every side of
+    /// each area lies on the outlines themselves, crossings included,
+    /// whether the areas around it were filled first (their objects
+    /// count as outlines too) or not.
+    #[test]
+    fn enclosed_areas_meet_exactly_on_the_outlines() {
+        use super::{enclosed_area, Enclosed};
+        use crate::geometry::{BezPath, Point, Rect};
+        use kurbo::ParamCurveNearest as _;
+        let rect = crate::geometry::rect_path(Rect::new(0.0, 0.0, 30.0, 40.0), 0.0);
+        let circle = crate::geometry::ellipse_path(Rect::new(20.0, 25.0, 50.0, 55.0));
+        let mut wave = BezPath::new();
+        wave.move_to((-5.0, 10.0));
+        wave.curve_to((10.0, -5.0), (30.0, 30.0), (60.0, 20.0));
+        wave.line_to((60.0, 45.0));
+        wave.curve_to((40.0, 60.0), (10.0, 20.0), (-5.0, 30.0));
+        wave.close_path();
+        let mut diagonal = BezPath::new();
+        diagonal.move_to((-10.0, 50.0));
+        diagonal.line_to((70.0, 3.0));
+        let sources = vec![rect, circle, wave, diagonal];
+        let segs: Vec<kurbo::PathSeg> = sources.iter().flat_map(|p| p.segments()).collect();
+        // How far the area's sides stray from the outlines, mm.
+        let stray = |area: &BezPath| {
+            let mut worst: f64 = 0.0;
+            for s in area.segments() {
+                for i in 0..=32 {
+                    let q = s.eval(i as f64 / 32.0);
+                    let d = segs
+                        .iter()
+                        .map(|g| g.nearest(q, 1e-12).distance_sq)
+                        .fold(f64::MAX, f64::min);
+                    worst = worst.max(d.sqrt());
+                }
+            }
+            worst
+        };
+        let clicks = [
+            (5.0, 2.0),
+            (25.0, 35.0),
+            (10.0, 20.0),
+            (40.0, 40.0),
+            (25.0, 28.0),
+            (2.0, 35.0),
+            (28.0, 2.0),
+            (45.0, 20.0),
+        ];
+        let mut walls = sources.clone();
+        let mut found = 0;
+        for c in clicks {
+            let at = Point::new(c.0, c.1);
+            if let Enclosed::Area(a) = enclosed_area(&sources, at) {
+                assert!(stray(&a) < 1e-6, "{c:?} alone: {}", stray(&a));
+                found += 1;
+            }
+            if let Enclosed::Area(a) = enclosed_area(&walls, at) {
+                assert!(stray(&a) < 1e-6, "{c:?} after the others: {}", stray(&a));
+                walls.push(a);
+            }
+        }
+        assert!(found >= 6, "{found}");
+    }
+
     /// Lines that stop a hair short of the next outline still close the
     /// area (#899): a frame cut in two by a line ending 0.0002 mm from
     /// the frame, as files carry from rounding, gives the half under the
@@ -2371,6 +2649,109 @@ mod tests {
         let area = band.area().abs();
         let want = std::f64::consts::PI * 49.0;
         assert!((area - want).abs() < want * 0.02, "{area} against {want}");
+    }
+
+    /// #1005: a closed region split along open cutters: a line across a
+    /// circle halves it, two lines make three pieces, a polyline and a
+    /// curve cut off exactly what they enclose, and a cutter that ends
+    /// inside or misses leaves one piece. The areas always add up.
+    #[test]
+    fn closed_regions_are_split_along_open_cutters() {
+        use super::slice_open;
+        use crate::geometry::{BezPath, PathEl, Rect, Shape as _};
+        use std::f64::consts::PI;
+        let area = |p: &BezPath| p.area().abs();
+        let total = |ps: &[BezPath]| ps.iter().map(area).sum::<f64>();
+        let line = |pts: &[(f64, f64)]| {
+            let mut p = BezPath::new();
+            p.move_to(pts[0]);
+            for q in &pts[1..] {
+                p.line_to(*q);
+            }
+            p
+        };
+        let r = 20.0;
+        let circle = kurbo::Circle::new((0.0, 0.0), r).to_path(1e-4);
+        let full = area(&circle);
+        assert!((full - PI * r * r).abs() < 0.01, "{full}");
+        // A line through the centre: two halves, each keeping its arc.
+        let halves = slice_open(&circle, &[line(&[(-30.0, 0.0), (30.0, 0.0)])]);
+        assert_eq!(halves.len(), 2, "{halves:?}");
+        for h in &halves {
+            assert!((area(h) - full / 2.0).abs() < 1e-3, "{}", area(h));
+            assert!(h
+                .elements()
+                .iter()
+                .any(|e| matches!(e, PathEl::CurveTo(..))));
+        }
+        // The issue's slanted line, past the outline at both ends.
+        let slanted = slice_open(&circle, &[line(&[(-25.0, -18.0), (22.0, 15.0)])]);
+        assert_eq!(slanted.len(), 2);
+        assert!(
+            (total(&slanted) - full).abs() < 1e-4,
+            "{} {full}",
+            total(&slanted)
+        );
+        // Two lines 5 mm either side of the centre: three pieces, the
+        // outer two circular segments (430.42 mm2 each, the circle drawn
+        // with curves a hair larger than the true one), the middle band
+        // the rest (395.79 mm2).
+        let d: f64 = 5.0;
+        let segment = r * r * (d / r).acos() - d * (r * r - d * d).sqrt();
+        let three = slice_open(
+            &circle,
+            &[
+                line(&[(-30.0, -d), (30.0, -d)]),
+                line(&[(-30.0, d), (30.0, d)]),
+            ],
+        );
+        assert_eq!(three.len(), 3, "{three:?}");
+        let mut areas: Vec<f64> = three.iter().map(area).collect();
+        areas.sort_by(f64::total_cmp);
+        assert!(
+            (areas[0] - (full - 2.0 * segment)).abs() < 0.01,
+            "{areas:?}"
+        );
+        assert!((areas[1] - segment).abs() < 0.005, "{areas:?}");
+        assert!((areas[2] - segment).abs() < 0.005, "{areas:?}");
+        assert!((total(&three) - full).abs() < 1e-4);
+        // A line that ends inside, or misses: one piece, the whole.
+        for cutter in [
+            line(&[(-30.0, 0.0), (0.0, 0.0)]),
+            line(&[(-30.0, 30.0), (30.0, 30.0)]),
+        ] {
+            let one = slice_open(&circle, &[cutter]);
+            assert_eq!(one.len(), 1, "{one:?}");
+            assert!((area(&one[0]) - full).abs() < 1e-3);
+        }
+        // A polyline entering on the left and leaving at the top cuts off
+        // a 10 by 10 corner of a 40 by 20 rectangle.
+        let rect = Rect::new(0.0, 0.0, 40.0, 20.0).to_path(0.01);
+        let corner = slice_open(&rect, &[line(&[(-10.0, 10.0), (10.0, 10.0), (10.0, 30.0)])]);
+        assert_eq!(corner.len(), 2);
+        let mut areas: Vec<f64> = corner.iter().map(area).collect();
+        areas.sort_by(f64::total_cmp);
+        assert!((areas[0] - 100.0).abs() < 1e-6, "{areas:?}");
+        assert!((areas[1] - 700.0).abs() < 1e-6, "{areas:?}");
+        // A curved cutter: a half circle of radius 10 standing on the
+        // bottom edge cuts off a half disc, its arc kept as curves.
+        let mut bump = line(&[(10.0, -5.0), (10.0, 0.0)]);
+        let arc = kurbo::Arc::new((20.0, 0.0), (10.0, 10.0), PI, -PI, 0.0);
+        arc.to_cubic_beziers(1e-4, |a, b, p| bump.curve_to(a, b, p));
+        bump.line_to((30.0, -5.0));
+        let cut = slice_open(&rect, &[bump]);
+        assert_eq!(cut.len(), 2, "{cut:?}");
+        let mut areas: Vec<f64> = cut.iter().map(area).collect();
+        areas.sort_by(f64::total_cmp);
+        let disc = PI * 100.0 / 2.0;
+        assert!((areas[0] - disc).abs() < 0.01, "{areas:?}");
+        assert!((areas[1] - (800.0 - disc)).abs() < 0.01, "{areas:?}");
+        assert!(cut.iter().all(|p| p
+            .elements()
+            .iter()
+            .any(|e| matches!(e, PathEl::CurveTo(..)))));
+        // No cutter: the region as it is.
+        assert_eq!(slice_open(&rect, &[]).len(), 1);
     }
 
     /// #828: an open path cut by closed regions keeps its pieces outside

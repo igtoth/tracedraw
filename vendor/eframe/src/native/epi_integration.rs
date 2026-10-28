@@ -89,6 +89,31 @@ pub fn viewport_builder(
     }
 }
 
+/// TraceDraw: `egui_winit::create_window`, with what is applied again to
+/// the new window taken from [`super::window_start::after_creation`]: a
+/// window made maximized is not given its size again, which un-maximized
+/// it on Windows before it was maximized again (#787).
+#[cfg(feature = "wgpu_no_default_features")]
+pub fn create_window(
+    egui_ctx: &egui::Context,
+    event_loop: &ActiveEventLoop,
+    viewport_builder: &ViewportBuilder,
+) -> Result<winit::window::Window, winit::error::OsError> {
+    profiling::function_scope!();
+    let window_attributes = egui_winit::apply_monitor_to_window_attributes(
+        egui_winit::create_winit_window_attributes(egui_ctx, viewport_builder.clone()),
+        viewport_builder,
+        event_loop,
+    );
+    let window = event_loop.create_window(window_attributes)?;
+    egui_winit::apply_viewport_builder_to_window(
+        egui_ctx,
+        &window,
+        &super::window_start::after_creation(viewport_builder),
+    );
+    Ok(window)
+}
+
 pub fn apply_window_settings(
     window: &winit::window::Window,
     window_settings: Option<WindowSettings>,

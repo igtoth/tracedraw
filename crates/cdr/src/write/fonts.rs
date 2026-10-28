@@ -50,6 +50,65 @@ fn be32(b: &[u8], at: usize) -> u32 {
         .map_or(0, |s| u32::from_be_bytes([s[0], s[1], s[2], s[3]]))
 }
 
+/// The English (United States) name `id` of the Windows records first, as
+/// files have them (a bold face that also names itself in other languages
+/// keeps "Bold"), then any name that reads; empty when none does.
+fn english_name(f: &ttf_parser::Face, id: u16) -> String {
+    let of_id = || f.names().into_iter().filter(move |n| n.name_id == id);
+    of_id()
+        .filter(|n| n.platform_id == ttf_parser::PlatformId::Windows && n.language_id == 0x0409)
+        .find_map(|n| n.to_string())
+        .or_else(|| of_id().find_map(|n| n.to_string()))
+        .unwrap_or_default()
+}
+
+/// The family a font names itself under: its typographic family (name
+/// ID 16) when it has one, else its family (name ID 1). A static face of
+/// a large family ("Khand SemiBold", ID 1) gives the family ("Khand").
+fn typographic_family(f: &ttf_parser::Face) -> String {
+    let t = english_name(f, 16);
+    if t.trim().is_empty() {
+        english_name(f, 1)
+    } else {
+        t
+    }
+}
+
+/// The family and weight a face of `family` is written under when the
+/// family is named with its weight ("Titillium Web SemiBold", as text
+/// set in a semibold face reads): the family without the weight's name
+/// and that weight ("Titillium Web" at 600), the way files name such a
+/// face (#892). `None` keeps the name: bold text, a name with no weight
+/// in it, or a font whose own family (its typographic family, else its
+/// name ID 1) is the whole name. A font that names the whole name only
+/// in ID 1 and the family in ID 16 ("Khand SemiBold" and "Khand") is
+/// split: a file naming the whole name at the regular weight asked for
+/// a font that is missing where the face is only embedded (#1055).
+pub(crate) fn split_family(family: &str, bold: bool, faces: &[FontFace]) -> Option<(String, u16)> {
+    if bold {
+        return None;
+    }
+    let (head, weight) = crate::parse::family_weight(family)?;
+    let named_so = faces
+        .iter()
+        .filter(|f| f.family == family)
+        .filter_map(|f| f.data.as_deref())
+        .filter_map(|d| ttf_parser::Face::parse(d, 0).ok())
+        .any(|f| {
+            typographic_family(&f)
+                .trim()
+                .eq_ignore_ascii_case(family.trim())
+        });
+    (!named_so).then(|| (head.to_string(), weight))
+}
+
+/// The style flags of a face of `weight` (one bit per 100 from 1 for
+/// 100: 64 = 400, 1024 = 600, 4096 = 700), its italic the bit above.
+fn weight_flags(weight: u16, italic: bool) -> u32 {
+    let step = u32::from(weight.clamp(100, 900) / 100 - 1);
+    1 << (2 * step + u32::from(italic))
+}
+
 fn info(face: &FontFace) -> FaceInfo {
     let style_name = match (face.bold, face.italic) {
         (false, false) => "Regular",
@@ -73,17 +132,7 @@ fn info(face: &FontFace) -> FaceInfo {
     let Ok(f) = ttf_parser::Face::parse(data, 0) else {
         return out;
     };
-    // The English (United States) name of the Windows records first, as
-    // files have them (a bold face that also names itself in other
-    // languages keeps "Bold"), then any name that reads.
-    let name = |id: u16| {
-        let of_id = || f.names().into_iter().filter(move |n| n.name_id == id);
-        of_id()
-            .filter(|n| n.platform_id == ttf_parser::PlatformId::Windows && n.language_id == 0x0409)
-            .find_map(|n| n.to_string())
-            .or_else(|| of_id().find_map(|n| n.to_string()))
-            .unwrap_or_default()
-    };
+    let name = |id: u16| english_name(&f, id);
     let raw = f.raw_face();
     let os2 = raw
         .table(ttf_parser::Tag::from_bytes(b"OS/2"))
@@ -106,7 +155,11 @@ fn info(face: &FontFace) -> FaceInfo {
         out.postscript = ps;
     }
     out.version = name(5);
-    let style = name(2);
+    // The typographic subfamily ("SemiBold") when the font has one, as
+    // the font table names a face; else the subfamily (name ID 2).
+    let style = Some(name(17))
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| name(2));
     if !style.is_empty() {
         out.style = style;
     }
@@ -132,7 +185,11 @@ fn info(face: &FontFace) -> FaceInfo {
         },
         checksum_adjustment: be32(head, 8),
         family,
-        style: out.style.clone(),
+        // The EOT names are the font's own family and subfamily (ID 1
+        // and 2), as the format defines them.
+        style: Some(name(2))
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| out.style.clone()),
         version: out.version.clone(),
         full: name(4),
     });
@@ -140,13 +197,21 @@ fn info(face: &FontFace) -> FaceInfo {
 }
 
 /// The bytes the faces that may be embedded add to a file (their font
-/// files), 0 when none may be.
+/// files, each once), 0 when none may be.
 pub fn embedded_size(faces: &[FontFace]) -> u64 {
-    faces
+    let mut seen: Vec<&Arc<Vec<u8>>> = Vec::new();
+    for d in faces
         .iter()
         .filter_map(|f| f.data.as_ref().filter(|_| info(f).embeddable))
-        .map(|d| d.len() as u64)
-        .sum()
+    {
+        if !seen
+            .iter()
+            .any(|s| Arc::ptr_eq(s, d) || s.as_slice() == d.as_slice())
+        {
+            seen.push(d);
+        }
+    }
+    seen.iter().map(|d| d.len() as u64).sum()
 }
 
 /// A string as the font table stores it: its length in UTF-16 units with
@@ -163,24 +228,24 @@ fn string(b: &mut Buf, s: &str) {
 /// in the drawing (`ids`, as the text refers to it), shared by the faces
 /// of a family; a family the drawing does not name gets a number after
 /// those.
-fn font_numbers(faces: &[FontFace], ids: &[(u16, String)]) -> Vec<u16> {
+fn font_numbers(families: &[String], ids: &[(u16, String)]) -> Vec<u16> {
     let mut extra: Vec<(u16, &str)> = Vec::new();
     let mut next = ids.iter().map(|(id, _)| *id).max().unwrap_or(0);
-    faces
+    families
         .iter()
-        .map(|face| {
-            let known = ids.iter().find(|(_, f)| *f == face.family).or_else(|| {
-                ids.iter()
-                    .find(|(_, f)| f.eq_ignore_ascii_case(&face.family))
-            });
+        .map(|family| {
+            let known = ids
+                .iter()
+                .find(|(_, f)| f == family)
+                .or_else(|| ids.iter().find(|(_, f)| f.eq_ignore_ascii_case(family)));
             if let Some((id, _)) = known {
                 return *id;
             }
-            if let Some((id, _)) = extra.iter().find(|(_, f)| *f == face.family) {
+            if let Some((id, _)) = extra.iter().find(|(_, f)| f == family) {
                 return *id;
             }
             next = next.saturating_add(1);
-            extra.push((next, &face.family));
+            extra.push((next, family));
             next
         })
         .collect()
@@ -195,16 +260,52 @@ pub fn members(faces: &[FontFace], embed: bool, ids: &[(u16, String)]) -> Vec<(S
     if faces.is_empty() {
         return Vec::new();
     }
-    let numbers = font_numbers(faces, ids);
+    // A face of a family named with its weight is listed under the
+    // family, with the flags of its weight, as the text names it.
+    let splits: Vec<Option<(String, u16)>> = faces
+        .iter()
+        .map(|f| split_family(&f.family, f.bold, faces))
+        .collect();
+    let families: Vec<String> = faces
+        .iter()
+        .zip(&splits)
+        .map(|(f, s)| {
+            s.as_ref()
+                .map_or_else(|| f.family.clone(), |(h, _)| h.clone())
+        })
+        .collect();
+    let numbers = font_numbers(&families, ids);
     let mut order: Vec<usize> = (0..faces.len()).collect();
     order.sort_by_key(|&i| numbers[i]);
-    let infos: Vec<FaceInfo> = faces.iter().map(info).collect();
+    let infos: Vec<FaceInfo> = faces
+        .iter()
+        .zip(&splits)
+        .map(|(f, s)| {
+            let mut inf = info(f);
+            if let Some((_, w)) = s {
+                inf.flags = weight_flags(*w, f.italic);
+            }
+            inf
+        })
+        .collect();
     let mut table = Buf::default();
     table.u32(0).u32(0).u32(faces.len() as u32);
     let mut embeddings = Vec::new();
+    // The font files embedded so far: a face drawn with another face's
+    // file (italic text in a family without an italic face) is listed,
+    // and its file embedded once.
+    let mut embedded_files: Vec<&Arc<Vec<u8>>> = Vec::new();
     for i in order {
         let (face, inf) = (&faces[i], &infos[i]);
-        let embedded = embed && inf.embeddable && face.data.is_some();
+        let new_file = face.data.as_ref().filter(|d| {
+            !embedded_files
+                .iter()
+                .any(|e| Arc::ptr_eq(e, d) || e.as_slice() == d.as_slice())
+        });
+        let embedded = embed && inf.embeddable && new_file.is_some();
+        if let (true, Some(d)) = (embedded, new_file) {
+            embedded_files.push(d);
+        }
         let mut e = Buf::default();
         // The face's font number (its family's font id), then the
         // character set (Western).
@@ -212,7 +313,7 @@ pub fn members(faces: &[FontFace], embed: bool, ids: &[(u16, String)]) -> Vec<(S
         for p in inf.panose {
             e.u8(p);
         }
-        string(&mut e, &face.family);
+        string(&mut e, &families[i]);
         e.u8(0);
         string(&mut e, "Western");
         e.u32(u32::from(embedded)).u32(inf.kind);

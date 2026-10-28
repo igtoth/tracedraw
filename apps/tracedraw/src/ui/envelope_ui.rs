@@ -248,7 +248,8 @@ pub fn envelope_docker(app: &mut App, ui: &mut Ui) {
         .selection
         .iter()
         .any(|id| app.envelope_of(*id).is_some());
-    if crate::ui::docker_form::wide_button(ui, &tr("envelope.add_new"), selected) {
+    let tip = crate::ui::tips::keyed("envelope.add_new");
+    if crate::ui::docker_form::wide_button(ui, &tr("envelope.add_new"), selected, &tip) {
         app.add_new_envelope();
         app.set_tool(Tool::Envelope);
     }

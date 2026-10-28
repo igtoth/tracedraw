@@ -7,6 +7,7 @@
 use crate::app::{App, Units};
 use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
+use crate::ui::tips::RichTip;
 use egui::{Context, Ui};
 use tracedraw_core::{
     document::ShapeKind,
@@ -937,6 +938,7 @@ fn convert_fields(app: &App, ui: &mut Ui, o: &mut crate::bitmap_modes::ConvertOp
         .show(ui, |ui| {
             ui.label(tr("dialog.resolution"));
             ui.horizontal(|ui| {
+                let tip = crate::ui::tips::pair("dialog.resolution", "dialog.convert_dpi_desc");
                 egui::ComboBox::from_id_salt("convert_dpi")
                     .selected_text(format!("{:.0}", o.dpi))
                     .width(70.0)
@@ -944,12 +946,15 @@ fn convert_fields(app: &App, ui: &mut Ui, o: &mut crate::bitmap_modes::ConvertOp
                         for d in [72.0, 96.0, 150.0, 200.0, 300.0, 400.0, 600.0] {
                             ui.selectable_value(&mut o.dpi, d, format!("{d:.0}"));
                         }
-                    });
+                    })
+                    .response
+                    .rich_tip(&tip);
                 ui.add(
                     crate::ui::field::NumField::new(&mut o.dpi)
                         .range(36.0..=2400.0)
                         .suffix(" dpi"),
-                );
+                )
+                .rich_tip(&tip);
             });
             ui.end_row();
             ui.label(tr("dialog.color_mode"));
@@ -960,17 +965,37 @@ fn convert_fields(app: &App, ui: &mut Ui, o: &mut crate::bitmap_modes::ConvertOp
                     for m in ConvertMode::ALL {
                         ui.selectable_value(&mut o.mode, m, tr(m.key()));
                     }
-                });
+                })
+                .response
+                .rich_tip(crate::ui::tips::pair(
+                    "dialog.color_mode",
+                    "dialog.convert_mode_desc",
+                ));
             ui.end_row();
         });
     ui.add_space(4.0);
+    let tip = crate::ui::tips::pair("dialog.dithered", "dialog.convert_dithered_desc");
     ui.add_enabled(
         o.mode.can_dither(),
         egui::Checkbox::new(&mut o.dithered, tr("dialog.dithered")),
-    );
-    ui.checkbox(&mut o.overprint_black, tr("dialog.overprint_black"));
-    ui.checkbox(&mut o.anti_alias, tr("dialog.anti_aliasing"));
-    ui.checkbox(&mut o.transparent, tr("dialog.transparent_background"));
+    )
+    .rich_tip(&tip)
+    .rich_disabled_tip(&tip);
+    ui.checkbox(&mut o.overprint_black, tr("dialog.overprint_black"))
+        .rich_tip(crate::ui::tips::pair(
+            "dialog.overprint_black",
+            "dialog.convert_overprint_desc",
+        ));
+    ui.checkbox(&mut o.anti_alias, tr("dialog.anti_aliasing"))
+        .rich_tip(crate::ui::tips::pair(
+            "dialog.anti_aliasing",
+            "dialog.convert_anti_alias_desc",
+        ));
+    ui.checkbox(&mut o.transparent, tr("dialog.transparent_background"))
+        .rich_tip(crate::ui::tips::pair(
+            "dialog.transparent_background",
+            "dialog.convert_transparent_desc",
+        ));
     if let Some(b) = app.selection_bounds() {
         let w = (b.width() / 25.4 * o.dpi).ceil().max(1.0) as u64;
         let h = (b.height() / 25.4 * o.dpi).ceil().max(1.0) as u64;
@@ -1076,6 +1101,10 @@ fn inflate_fields(ui: &mut Ui, st: &mut InflateState) {
                             .range(base as f64..=base as f64 * 10.0)
                             .speed(1.0),
                     )
+                    .rich_tip(crate::ui::tips::pair(
+                        "dialog.inflate_to",
+                        "dialog.inflate_to_desc",
+                    ))
                     .changed()
                 {
                     let pct = p / base.max(1) as f64 * 100.0;
@@ -1094,6 +1123,10 @@ fn inflate_fields(ui: &mut Ui, st: &mut InflateState) {
                             .speed(0.5)
                             .max_decimals(1),
                     )
+                    .rich_tip(crate::ui::tips::pair(
+                        "dialog.inflate_by",
+                        "dialog.inflate_by_desc",
+                    ))
                     .changed()
                 {
                     if row == 0 {
@@ -1108,6 +1141,10 @@ fn inflate_fields(ui: &mut Ui, st: &mut InflateState) {
         });
     if ui
         .checkbox(&mut st.keep, tr("dialog.maintain_aspect"))
+        .rich_tip(crate::ui::tips::pair(
+            "dialog.maintain_aspect",
+            "dialog.keep_aspect_desc",
+        ))
         .changed()
         && st.keep
     {
@@ -1163,7 +1200,7 @@ pub(crate) fn help_ok_cancel(ui: &mut Ui, close: &mut bool) -> (bool, bool) {
     ui.horizontal(|ui| {
         help = ui
             .add_sized([27.0, 27.0], egui::Button::new("?"))
-            .on_hover_text(tr("dialog.help"))
+            .rich_tip(crate::ui::tips::keyed("dialog.help_button"))
             .clicked();
         ok = ok_cancel(ui, close);
     });
@@ -1186,10 +1223,10 @@ pub(crate) fn enter_pressed(ui: &Ui) -> bool {
         })
 }
 
-fn unit_value(ui: &mut Ui, label: &str, mm: &mut f64, units: Units) -> bool {
+fn unit_value(ui: &mut Ui, label: &str, tip: &str, mm: &mut f64, units: Units) -> bool {
     let mut v = units.from_mm(*mm);
-    let r = ui
-        .horizontal(|ui| {
+    let r = crate::ui::tips::tip_over(ui, tip, |ui| {
+        ui.horizontal(|ui| {
             ui.label(label);
             ui.add(
                 crate::ui::field::NumField::new(&mut v)
@@ -1198,7 +1235,8 @@ fn unit_value(ui: &mut Ui, label: &str, mm: &mut f64, units: Units) -> bool {
             )
             .changed()
         })
-        .inner;
+        .inner
+    });
     if r {
         *mm = units.to_mm(v);
     }
@@ -1277,8 +1315,10 @@ pub fn show(app: &mut App, ctx: &Context) {
             vertical,
         } => {
             window(ctx, tr("dialog.node_align")).show(ctx, |ui| {
-                ui.checkbox(horizontal, tr("dialog.align_horizontal"));
-                ui.checkbox(vertical, tr("dialog.align_vertical"));
+                ui.checkbox(horizontal, tr("dialog.align_horizontal"))
+                    .rich_tip(crate::ui::tips::keyed("dialog.align_horizontal"));
+                ui.checkbox(vertical, tr("dialog.align_vertical"))
+                    .rich_tip(crate::ui::tips::keyed("dialog.align_vertical"));
                 if ok_cancel(ui, &mut close) && (*horizontal || *vertical) {
                     let (h, v) = (*horizontal, *vertical);
                     app.align_selected_nodes(h, v);
@@ -1289,7 +1329,8 @@ pub fn show(app: &mut App, ctx: &Context) {
             window(ctx, tr("dialog.rename_page")).show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.label(tr("dialog.page_name"));
-                    ui.text_edit_singleline(name);
+                    ui.text_edit_singleline(name)
+                        .rich_tip(crate::ui::tips::keyed("dialog.page_name"));
                 });
                 if ok_cancel(ui, &mut close) {
                     let page = app.page;
@@ -1305,7 +1346,11 @@ pub fn show(app: &mut App, ctx: &Context) {
             window(ctx, tr("dialog.go_to_page")).show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.label(trf("dialog.go_to_page_range", &[("n", &n.to_string())]));
-                    ui.add(crate::ui::field::NumField::new(page).range(1..=n.max(1)));
+                    ui.add(crate::ui::field::NumField::new(page).range(1..=n.max(1)))
+                        .rich_tip(crate::ui::tips::pair(
+                            "dialog.go_to_page",
+                            "dialog.go_to_page_desc",
+                        ));
                 });
                 if ok_cancel(ui, &mut close) {
                     app.goto_page(page.saturating_sub(1));
@@ -1316,11 +1361,16 @@ pub fn show(app: &mut App, ctx: &Context) {
             window(ctx, tr("dialog.insert_page")).show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.label(tr("dialog.number_of_pages"));
-                    ui.add(crate::ui::field::NumField::new(count).range(1..=999));
+                    ui.add(crate::ui::field::NumField::new(count).range(1..=999))
+                        .rich_tip(crate::ui::tips::keyed("dialog.number_of_pages"));
                 });
                 ui.horizontal(|ui| {
-                    ui.radio_value(after, false, tr("dialog.before"));
-                    ui.radio_value(after, true, tr("dialog.after"));
+                    ui.radio_value(after, false, tr("dialog.before")).rich_tip(
+                        crate::ui::tips::pair("dialog.before", "dialog.insert_before_desc"),
+                    );
+                    ui.radio_value(after, true, tr("dialog.after")).rich_tip(
+                        crate::ui::tips::pair("dialog.after", "dialog.insert_after_desc"),
+                    );
                 });
                 let s = app.page_size();
                 ui.label(format!(
@@ -1365,13 +1415,22 @@ pub fn show(app: &mut App, ctx: &Context) {
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
                         ui.label(tr("dialog.delete_page_from"));
-                        ui.add(crate::ui::field::NumField::new(from).range(1..=n.max(1)));
+                        ui.add(crate::ui::field::NumField::new(from).range(1..=n.max(1)))
+                            .rich_tip(crate::ui::tips::pair(
+                                "dialog.delete_page_from",
+                                "dialog.delete_from_desc",
+                            ));
                         ui.end_row();
-                        ui.checkbox(through, tr("dialog.delete_through"));
+                        ui.checkbox(through, tr("dialog.delete_through"))
+                            .rich_tip(crate::ui::tips::keyed("dialog.delete_through"));
+                        let tip =
+                            crate::ui::tips::pair("dialog.delete_through", "dialog.delete_to_desc");
                         ui.add_enabled(
                             *through,
                             crate::ui::field::NumField::new(to).range(1..=n.max(1)),
-                        );
+                        )
+                        .rich_tip(&tip)
+                        .rich_disabled_tip(&tip);
                         ui.end_row();
                     });
                 let (a, b) = delete_page_range(*from, *to, *through, n);
@@ -1389,12 +1448,16 @@ pub fn show(app: &mut App, ctx: &Context) {
             window(ctx, tr("dialog.duplicate_page")).show(ctx, |ui| {
                 ui.label(tr("dialog.insert_new_page"));
                 ui.indent("duplicate_page_where", |ui| {
-                    ui.radio_value(before, true, tr("dialog.before_selected_page"));
-                    ui.radio_value(before, false, tr("dialog.after_selected_page"));
+                    ui.radio_value(before, true, tr("dialog.before_selected_page"))
+                        .rich_tip(crate::ui::tips::keyed("dialog.before_selected_page"));
+                    ui.radio_value(before, false, tr("dialog.after_selected_page"))
+                        .rich_tip(crate::ui::tips::keyed("dialog.after_selected_page"));
                 });
                 ui.add_space(6.0);
-                ui.radio_value(contents, false, tr("dialog.copy_layers_only"));
-                ui.radio_value(contents, true, tr("dialog.copy_layers_and_contents"));
+                ui.radio_value(contents, false, tr("dialog.copy_layers_only"))
+                    .rich_tip(crate::ui::tips::keyed("dialog.copy_layers_only"));
+                ui.radio_value(contents, true, tr("dialog.copy_layers_and_contents"))
+                    .rich_tip(crate::ui::tips::keyed("dialog.copy_layers_and_contents"));
                 let (ok, h) = help_ok_cancel(ui, &mut close);
                 help = h;
                 if ok {
@@ -1413,20 +1476,40 @@ pub fn show(app: &mut App, ctx: &Context) {
         } => {
             window(ctx, tr("dialog.page_size")).show(ctx, |ui| {
                 let u = app.units;
-                unit_value(ui, &tr("dialog.width"), width, u);
-                unit_value(ui, &tr("dialog.height"), height, u);
-                ui.horizontal_wrapped(|ui| {
-                    for (n, s) in paper_presets() {
-                        if ui.button(n).clicked() {
-                            *width = s.width;
-                            *height = s.height;
-                        }
-                    }
-                    if ui.button(tr("dialog.swap")).clicked() {
+                let tip = crate::ui::tips::pair("dialog.width", "dialog.page_width_desc");
+                unit_value(ui, &tr("dialog.width"), &tip, width, u);
+                let tip = crate::ui::tips::pair("dialog.height", "dialog.page_height_desc");
+                unit_value(ui, &tr("dialog.height"), &tip, height, u);
+                ui.horizontal(|ui| {
+                    let saved = &app.settings.page_sizes;
+                    let current = paper_name(Size::new(*width, *height), saved)
+                        .unwrap_or_else(|| tr("toolbar.custom"));
+                    crate::ui::tips::tip_over(
+                        ui,
+                        crate::ui::tips::pair("dialog.page_size", "toolbar.page_size_desc"),
+                        |ui| {
+                            egui::ComboBox::from_id_salt("page_size_dialog_preset")
+                                .selected_text(current.clone())
+                                .width(200.0)
+                                .height(400.0)
+                                .show_ui(ui, |ui| {
+                                    if let Some((_, s)) = paper_preset_menu(ui, &current, saved) {
+                                        *width = s.width;
+                                        *height = s.height;
+                                    }
+                                });
+                        },
+                    );
+                    if ui
+                        .button(tr("dialog.swap"))
+                        .rich_tip(crate::ui::tips::keyed("dialog.swap"))
+                        .clicked()
+                    {
                         std::mem::swap(width, height);
                     }
                 });
-                ui.checkbox(all_pages, tr("dialog.apply_all_pages"));
+                ui.checkbox(all_pages, tr("dialog.apply_all_pages"))
+                    .rich_tip(crate::ui::tips::keyed("dialog.apply_all_pages"));
                 if ok_cancel(ui, &mut close) {
                     let size = Size::new(width.max(1.0), height.max(1.0));
                     let pages: Vec<_> = if *all_pages {
@@ -1447,7 +1530,8 @@ pub fn show(app: &mut App, ctx: &Context) {
             window(ctx, tr("dialog.rename_layer")).show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.label(tr("dialog.layer_name"));
-                    ui.text_edit_singleline(name);
+                    ui.text_edit_singleline(name)
+                        .rich_tip(crate::ui::tips::keyed("dialog.layer_name"));
                 });
                 if ok_cancel(ui, &mut close) {
                     app.run(Command::RenameLayer {
@@ -1841,8 +1925,10 @@ pub fn show(app: &mut App, ctx: &Context) {
         Dialog::CreatePattern { vector } => {
             window(ctx, tr("dialog.create_pattern")).show(ctx, |ui| {
                 ui.label(tr("dialog.create_pattern_type"));
-                ui.radio_value(vector, true, tr("dialog.create_pattern_vector"));
-                ui.radio_value(vector, false, tr("dialog.create_pattern_bitmap"));
+                ui.radio_value(vector, true, tr("dialog.create_pattern_vector"))
+                    .rich_tip(crate::ui::tips::keyed("dialog.create_pattern_vector"));
+                ui.radio_value(vector, false, tr("dialog.create_pattern_bitmap"))
+                    .rich_tip(crate::ui::tips::keyed("dialog.create_pattern_bitmap"));
                 if ok_cancel(ui, &mut close) {
                     if *vector {
                         app.create_vector_pattern_from_selection();
@@ -1877,13 +1963,21 @@ pub fn show(app: &mut App, ctx: &Context) {
                         ui.add_sized(
                             [120.0, 22.0],
                             crate::ui::field::NumField::new(rows).range(1..=200),
-                        );
+                        )
+                        .rich_tip(crate::ui::tips::pair(
+                            "dialog.table_rows",
+                            "dialog.new_table_rows_desc",
+                        ));
                         ui.end_row();
                         label(ui, "dialog.table_columns");
                         ui.add_sized(
                             [120.0, 22.0],
                             crate::ui::field::NumField::new(cols).range(1..=200),
-                        );
+                        )
+                        .rich_tip(crate::ui::tips::pair(
+                            "dialog.table_columns",
+                            "dialog.new_table_columns_desc",
+                        ));
                         ui.end_row();
                         for (key, mm) in [
                             ("dialog.height", &mut *height),
@@ -1900,6 +1994,9 @@ pub fn show(app: &mut App, ctx: &Context) {
                                         .range(units.from_mm(1.0)..=units.from_mm(5000.0))
                                         .suffix(format!(" {}", units.short())),
                                 )
+                                .rich_tip_with(|| {
+                                    crate::ui::tips::pair(key, "dialog.new_table_size_desc")
+                                })
                                 .changed()
                             {
                                 *mm = units.to_mm(v);
@@ -2027,6 +2124,10 @@ pub fn show(app: &mut App, ctx: &Context) {
                                     .suffix(" px")
                                     .width(90.0),
                             )
+                            .rich_tip(crate::ui::tips::pair(
+                                "resample.width",
+                                "resample.width_px_desc",
+                            ))
                             .changed()
                         {
                             st.set_w(w.round() as u32);
@@ -2039,6 +2140,10 @@ pub fn show(app: &mut App, ctx: &Context) {
                                     .suffix(" px")
                                     .width(90.0),
                             )
+                            .rich_tip(crate::ui::tips::pair(
+                                "resample.height",
+                                "resample.height_px_desc",
+                            ))
                             .changed()
                         {
                             st.set_h(h.round() as u32);
@@ -2054,6 +2159,10 @@ pub fn show(app: &mut App, ctx: &Context) {
                                     .suffix(" %")
                                     .width(90.0),
                             )
+                            .rich_tip(crate::ui::tips::pair(
+                                "resample.width",
+                                "resample.width_pct_desc",
+                            ))
                             .changed();
                         let cy = ui
                             .add(
@@ -2063,6 +2172,10 @@ pub fn show(app: &mut App, ctx: &Context) {
                                     .suffix(" %")
                                     .width(90.0),
                             )
+                            .rich_tip(crate::ui::tips::pair(
+                                "resample.height",
+                                "resample.height_pct_desc",
+                            ))
                             .changed();
                         if cx {
                             st.set_percent(px, if st.keep_aspect { px } else { py });
@@ -2084,13 +2197,21 @@ pub fn show(app: &mut App, ctx: &Context) {
                                     .suffix(" dpi")
                                     .width(90.0),
                             )
+                            .rich_tip(crate::ui::tips::pair(
+                                "dialog.resolution",
+                                "resample.dpi_desc",
+                            ))
                             .changed()
                         {
                             st.set_dpi(dpi);
                         }
                         ui.end_row();
                     });
-                ui.checkbox(&mut st.keep_aspect, tr("resample.keep_aspect"));
+                ui.checkbox(&mut st.keep_aspect, tr("resample.keep_aspect"))
+                    .rich_tip(crate::ui::tips::pair(
+                        "resample.keep_aspect",
+                        "dialog.keep_aspect_desc",
+                    ));
                 ui.horizontal(|ui| {
                     ui.label(tr("resample.method"));
                     egui::ComboBox::from_id_salt("resample_method")
@@ -2098,9 +2219,14 @@ pub fn show(app: &mut App, ctx: &Context) {
                         .width(200.0)
                         .show_ui(ui, |ui| {
                             for m in crate::resample::Method::ALL {
-                                ui.selectable_value(&mut st.method, m, tr(m.key()));
+                                ui.selectable_value(&mut st.method, m, tr(m.key()))
+                                    .rich_tip_with(|| {
+                                        crate::ui::tips::pair(m.key(), &format!("{}_tip", m.key()))
+                                    });
                             }
-                        });
+                        })
+                        .response
+                        .rich_tip(crate::ui::tips::keyed("resample.method"));
                 });
                 ui.label(
                     egui::RichText::new(tr(&format!("{}_tip", st.method.key())))
@@ -2156,7 +2282,8 @@ pub fn show(app: &mut App, ctx: &Context) {
                     ("menu.text.case_title", CaseMode::Title),
                     ("menu.text.case_toggle", CaseMode::Toggle),
                 ] {
-                    ui.radio_value(mode, m, tr(key));
+                    ui.radio_value(mode, m, tr(key))
+                        .rich_tip_with(|| crate::ui::tips::keyed(key));
                 }
                 ui.add_space(8.0);
                 apply = ok_cancel(ui, &mut close);
@@ -2230,13 +2357,25 @@ pub fn show(app: &mut App, ctx: &Context) {
                         ui.label(tr("dialog.start_at"));
                         ui.add(
                             crate::ui::field::NumField::new(&mut pn.start_at).range(-999..=9999),
-                        );
+                        )
+                        .rich_tip(crate::ui::tips::pair(
+                            "dialog.start_at",
+                            "dialog.pn_start_desc",
+                        ));
                         ui.end_row();
                         ui.label(tr("dialog.prefix"));
-                        ui.text_edit_singleline(&mut pn.prefix);
+                        ui.text_edit_singleline(&mut pn.prefix)
+                            .rich_tip(crate::ui::tips::pair(
+                                "dialog.prefix",
+                                "dialog.pn_prefix_desc",
+                            ));
                         ui.end_row();
                         ui.label(tr("dialog.suffix"));
-                        ui.text_edit_singleline(&mut pn.suffix);
+                        ui.text_edit_singleline(&mut pn.suffix)
+                            .rich_tip(crate::ui::tips::pair(
+                                "dialog.suffix",
+                                "dialog.pn_suffix_desc",
+                            ));
                         ui.end_row();
                         ui.label(tr("dialog.number_style"));
                         let styles = [
@@ -2252,7 +2391,12 @@ pub fn show(app: &mut App, ctx: &Context) {
                                 for (i, s) in styles.iter().enumerate() {
                                     ui.selectable_value(&mut pn.style, i as u8, s);
                                 }
-                            });
+                            })
+                            .response
+                            .rich_tip(crate::ui::tips::pair(
+                                "dialog.number_style",
+                                "dialog.pn_style_desc",
+                            ));
                         ui.end_row();
                         ui.label(tr("dialog.page_number_position"));
                         let positions = [
@@ -2267,14 +2411,20 @@ pub fn show(app: &mut App, ctx: &Context) {
                                 for (i, s) in positions.iter().enumerate() {
                                     ui.selectable_value(&mut pn.position, i as u8, s);
                                 }
-                            });
+                            })
+                            .response
+                            .rich_tip(crate::ui::tips::pair(
+                                "dialog.page_number_position",
+                                "dialog.pn_position_desc",
+                            ));
                         ui.end_row();
                         ui.label(tr("dialog.size"));
                         ui.add(
                             crate::ui::field::NumField::new(&mut pn.size_pt)
                                 .range(4.0..=200.0)
                                 .suffix(" pt"),
-                        );
+                        )
+                        .rich_tip(crate::ui::tips::pair("dialog.size", "dialog.pn_size_desc"));
                         ui.end_row();
                     });
                 ui.label(
@@ -2339,28 +2489,275 @@ pub fn show(app: &mut App, ctx: &Context) {
     }
 }
 
-pub fn paper_presets() -> Vec<(&'static str, Size)> {
+/// Inches to millimetres.
+fn inch(w: f64, h: f64) -> Size {
+    Size::new(w * 25.4, h * 25.4)
+}
+
+/// Screen pixels (96 per inch) to millimetres.
+fn px(w: f64, h: f64) -> Size {
+    Size::new(w * 25.4 / 96.0, h * 25.4 / 96.0)
+}
+
+/// Centimetres to millimetres.
+fn cm(w: f64, h: f64) -> Size {
+    Size::new(w * 10.0, h * 10.0)
+}
+
+/// The sizes listed first in every page size list, the most used ones.
+pub const FAVOURITE_PAPERS: [&str; 5] = ["A4", "Letter", "A5", "A3", "Legal"];
+
+/// The page size presets under their group headings (i18n keys), in the
+/// order the page size lists show them. No two presets share a size in
+/// either orientation, so a page's size always finds one name. The names
+/// of the presets that came first (A4 ... Square 1080) are kept: saved
+/// New Document settings refer to them.
+pub fn paper_preset_groups() -> Vec<(&'static str, Vec<(&'static str, Size)>)> {
+    use tracedraw_core::document::paper;
     vec![
-        ("A4", tracedraw_core::document::paper::A4),
-        ("A3", tracedraw_core::document::paper::A3),
-        ("A5", Size::new(148.0, 210.0)),
-        ("Letter", tracedraw_core::document::paper::LETTER),
-        ("Legal", Size::new(215.9, 355.6)),
-        ("Tabloid", Size::new(279.4, 431.8)),
-        ("Business card", Size::new(90.0, 50.0)),
         (
-            "Web 1920x1080",
-            Size::new(1920.0 * 25.4 / 96.0, 1080.0 * 25.4 / 96.0),
+            "paper.group_iso_a",
+            vec![
+                ("A0", Size::new(841.0, 1189.0)),
+                ("A1", Size::new(594.0, 841.0)),
+                ("A2", Size::new(420.0, 594.0)),
+                ("A3", paper::A3),
+                ("A4", paper::A4),
+                ("A5", Size::new(148.0, 210.0)),
+                ("A6", Size::new(105.0, 148.0)),
+                ("A7", Size::new(74.0, 105.0)),
+                ("RA2", Size::new(430.0, 610.0)),
+                ("RA3", Size::new(305.0, 430.0)),
+                ("RA4", Size::new(215.0, 305.0)),
+                ("SRA2", Size::new(450.0, 640.0)),
+                ("SRA3", Size::new(320.0, 450.0)),
+                ("SRA4", Size::new(225.0, 320.0)),
+                ("F4", Size::new(210.0, 330.0)),
+            ],
         ),
         (
-            "Web 1280x720",
-            Size::new(1280.0 * 25.4 / 96.0, 720.0 * 25.4 / 96.0),
+            "paper.group_iso_b",
+            vec![
+                ("B0", Size::new(1000.0, 1414.0)),
+                ("B1", Size::new(707.0, 1000.0)),
+                ("B2", Size::new(500.0, 707.0)),
+                ("B3", Size::new(353.0, 500.0)),
+                ("B4", Size::new(250.0, 353.0)),
+                ("B5", Size::new(176.0, 250.0)),
+                ("B6", Size::new(125.0, 176.0)),
+                ("B0 (JIS)", Size::new(1030.0, 1456.0)),
+                ("B1 (JIS)", Size::new(728.0, 1030.0)),
+                ("B2 (JIS)", Size::new(515.0, 728.0)),
+                ("B3 (JIS)", Size::new(364.0, 515.0)),
+                ("B4 (JIS)", Size::new(257.0, 364.0)),
+                ("B5 (JIS)", Size::new(182.0, 257.0)),
+                ("B6 (JIS)", Size::new(128.0, 182.0)),
+            ],
         ),
         (
-            "Square 1080",
-            Size::new(1080.0 * 25.4 / 96.0, 1080.0 * 25.4 / 96.0),
+            "paper.group_north_america",
+            vec![
+                ("Letter", paper::LETTER),
+                ("Legal", Size::new(215.9, 355.6)),
+                ("Tabloid", Size::new(279.4, 431.8)),
+                ("Executive", inch(7.25, 10.5)),
+                ("Half Letter", inch(5.5, 8.5)),
+                ("Government Letter", inch(8.0, 10.5)),
+                ("ANSI C", inch(17.0, 22.0)),
+                ("ANSI D", inch(22.0, 34.0)),
+                ("ANSI E", inch(34.0, 44.0)),
+                ("Arch A", inch(9.0, 12.0)),
+                ("Arch B", inch(12.0, 18.0)),
+                ("Arch C", inch(18.0, 24.0)),
+                ("Arch D", inch(24.0, 36.0)),
+                ("Fanfold", inch(14.875, 11.0)),
+                ("German Fanfold", inch(8.5, 12.0)),
+            ],
+        ),
+        (
+            "paper.group_print_shop",
+            vec![
+                ("Ofício 2", Size::new(216.0, 330.0)),
+                ("2A 64x88 cm", cm(64.0, 88.0)),
+                ("BB 66x96 cm", cm(66.0, 96.0)),
+                ("AA 76x112 cm", cm(76.0, 112.0)),
+                ("Flyer 15x21 cm", cm(15.0, 21.0)),
+                ("Flyer 10x14 cm", cm(10.0, 14.0)),
+                ("Folder 30x21 cm", cm(30.0, 21.0)),
+                ("Menu 23x33 cm", cm(23.0, 33.0)),
+                ("Sticker 5x5 cm", cm(5.0, 5.0)),
+                ("Sticker 10x10 cm", cm(10.0, 10.0)),
+            ],
+        ),
+        (
+            "paper.group_posters",
+            vec![
+                ("Poster 30x40 cm", cm(30.0, 40.0)),
+                ("Poster 50x70 cm", cm(50.0, 70.0)),
+                ("Poster 70x100 cm", cm(70.0, 100.0)),
+                ("Banner 60x90 cm", cm(60.0, 90.0)),
+                ("Banner 90x120 cm", cm(90.0, 120.0)),
+                ("Banner 100x200 cm", cm(100.0, 200.0)),
+                ("Roll-up 85x200 cm", cm(85.0, 200.0)),
+            ],
+        ),
+        (
+            "paper.group_envelopes",
+            vec![
+                ("DL", Size::new(110.0, 220.0)),
+                ("C3", Size::new(324.0, 458.0)),
+                ("C4", Size::new(229.0, 324.0)),
+                ("C5", Size::new(162.0, 229.0)),
+                ("C6", Size::new(114.0, 162.0)),
+                ("Envelope #9", inch(3.875, 8.875)),
+                ("Envelope #10", inch(4.125, 9.5)),
+                ("Envelope #11", inch(4.5, 10.375)),
+                ("Envelope #12", inch(4.75, 11.0)),
+                ("Envelope #14", inch(5.0, 11.5)),
+                ("Envelope Monarch", inch(3.875, 7.5)),
+                ("Envelope 11.4x22.9 cm", cm(11.4, 22.9)),
+                ("Envelope 24x34 cm", cm(24.0, 34.0)),
+            ],
+        ),
+        (
+            "paper.group_cards",
+            vec![
+                ("Business card", Size::new(90.0, 50.0)),
+                ("Business card 85x55 mm", Size::new(85.0, 55.0)),
+                ("Business card 3.5x2 in", inch(3.5, 2.0)),
+                ("Business card 91x55 mm", Size::new(91.0, 55.0)),
+                ("ID card", Size::new(85.6, 53.98)),
+                ("Postcard 4.25x6 in", inch(4.25, 6.0)),
+                ("Postcard 6x9 in", inch(6.0, 9.0)),
+                ("Postcard 100x148 mm", Size::new(100.0, 148.0)),
+                ("Double postcard 200x148 mm", Size::new(200.0, 148.0)),
+            ],
+        ),
+        (
+            "paper.group_photo",
+            vec![
+                ("Photo 3.5x5 in", inch(3.5, 5.0)),
+                ("Photo 4x6 in", inch(4.0, 6.0)),
+                ("Photo 5x7 in", inch(5.0, 7.0)),
+                ("Photo 8x10 in", inch(8.0, 10.0)),
+                ("Photo 10x15 cm", cm(10.0, 15.0)),
+                ("Photo 13x18 cm", cm(13.0, 18.0)),
+                ("Photo 20x30 cm", cm(20.0, 30.0)),
+            ],
+        ),
+        (
+            "paper.group_screen",
+            vec![
+                ("Web 1280x720", px(1280.0, 720.0)),
+                ("Web 1366x768", px(1366.0, 768.0)),
+                ("Web 1920x1080", px(1920.0, 1080.0)),
+                ("Web 2560x1440", px(2560.0, 1440.0)),
+                ("4K 3840x2160", px(3840.0, 2160.0)),
+                ("Web page 960x960", px(960.0, 960.0)),
+                ("Square 1080", px(1080.0, 1080.0)),
+                ("Social post 1080x1350", px(1080.0, 1350.0)),
+                ("Social cover 820x312", px(820.0, 312.0)),
+                ("Social banner 1500x500", px(1500.0, 500.0)),
+                ("Slide 16:9", inch(10.0, 5.625)),
+                ("Slide 4:3", inch(10.0, 7.5)),
+            ],
+        ),
+        (
+            "paper.group_web_ads",
+            vec![
+                ("Ad 120x60", px(120.0, 60.0)),
+                ("Ad 120x90", px(120.0, 90.0)),
+                ("Ad 125x125", px(125.0, 125.0)),
+                ("Ad 250x250", px(250.0, 250.0)),
+                ("Ad 468x60", px(468.0, 60.0)),
+                ("Skyscraper 120x600", px(120.0, 600.0)),
+                ("Wide skyscraper 160x600", px(160.0, 600.0)),
+                ("Medium rectangle 300x250", px(300.0, 250.0)),
+                ("Large rectangle 336x280", px(336.0, 280.0)),
+                ("Leaderboard 728x90", px(728.0, 90.0)),
+                ("Billboard 970x250", px(970.0, 250.0)),
+            ],
         ),
     ]
+}
+
+/// Every built-in page size preset, in list order.
+pub fn paper_presets() -> Vec<(&'static str, Size)> {
+    paper_preset_groups()
+        .into_iter()
+        .flat_map(|(_, sizes)| sizes)
+        .collect()
+}
+
+/// The sizes are the same in either orientation (to 0.05 mm).
+fn same_size(a: Size, b: Size) -> bool {
+    let close = |x: f64, y: f64| (x - y).abs() < 0.05;
+    (close(a.width, b.width) && close(a.height, b.height))
+        || (close(a.width, b.height) && close(a.height, b.width))
+}
+
+/// The name of the preset a page of `size` matches, the user's saved
+/// sizes first, or None (a custom size).
+pub fn paper_name(size: Size, saved: &[crate::settings::PageSizePreset]) -> Option<String> {
+    saved
+        .iter()
+        .find(|p| same_size(Size::new(p.width_mm, p.height_mm), size))
+        .map(|p| p.name.clone())
+        .or_else(|| {
+            paper_presets()
+                .into_iter()
+                .find(|(_, s)| same_size(*s, size))
+                .map(|(n, _)| n.to_string())
+        })
+}
+
+/// The page size presets as a dropdown's rows: the favourites, the
+/// user's saved sizes, then every group under its heading; `ticked`
+/// names the row shown selected. Returns the clicked one.
+pub fn paper_preset_menu(
+    ui: &mut Ui,
+    ticked: &str,
+    saved: &[crate::settings::PageSizePreset],
+) -> Option<(String, Size)> {
+    let mut pick = None;
+    let groups = paper_preset_groups();
+    let heading = |ui: &mut Ui, key: &str| {
+        ui.label(
+            egui::RichText::new(tr(key))
+                .small()
+                .color(Tokens::text_dim()),
+        );
+    };
+    let mut row = |ui: &mut Ui, n: &str, s: Size| {
+        if ui.selectable_label(ticked == n, n).clicked() {
+            pick = Some((n.to_string(), s));
+        }
+    };
+    for fav in FAVOURITE_PAPERS {
+        if let Some(s) = groups
+            .iter()
+            .flat_map(|(_, sizes)| sizes)
+            .find(|(n, _)| *n == fav)
+            .map(|(_, s)| *s)
+        {
+            row(ui, fav, s);
+        }
+    }
+    if !saved.is_empty() {
+        ui.separator();
+        heading(ui, "paper.group_saved");
+        for p in saved {
+            row(ui, &p.name, Size::new(p.width_mm, p.height_mm));
+        }
+    }
+    for (group, sizes) in &groups {
+        ui.separator();
+        heading(ui, group);
+        for (n, s) in sizes {
+            row(ui, n, *s);
+        }
+    }
+    pick
 }
 
 /// A QR code as one even-odd path of module squares.
@@ -2441,6 +2838,27 @@ const LABEL_PRESETS: [(&str, Size, u32, u32, Size, f64, f64, f64, f64); 4] = [
     ),
 ];
 
+/// Saves the page size under `name` (replacing a saved size of that
+/// name) so every page size list offers it.
+pub(crate) fn save_page_size(app: &mut App, name: &str, size: Size) {
+    let preset = crate::settings::PageSizePreset {
+        name: name.to_string(),
+        width_mm: size.width,
+        height_mm: size.height,
+    };
+    match app.settings.page_sizes.iter_mut().find(|p| p.name == name) {
+        Some(p) => *p = preset,
+        None => app.settings.page_sizes.push(preset),
+    }
+    app.save_settings();
+}
+
+/// Forgets the saved page size `name`.
+pub(crate) fn delete_page_size(app: &mut App, name: &str) {
+    app.settings.page_sizes.retain(|p| p.name != name);
+    app.save_settings();
+}
+
 /// Document Options > Page Size, laid out.
 pub(crate) fn page_size_page(app: &mut App, ui: &mut Ui) {
     ui.horizontal(|ui| {
@@ -2448,8 +2866,16 @@ pub(crate) fn page_size_page(app: &mut App, ui: &mut Ui) {
             &mut app.options_labels,
             false,
             tr("options.page_size_radio"),
-        );
-        ui.radio_value(&mut app.options_labels, true, tr("options.label_presets"));
+        )
+        .rich_tip(crate::ui::tips::pair(
+            "options.page_size_radio",
+            "options.page_size_radio_tip",
+        ));
+        ui.radio_value(&mut app.options_labels, true, tr("options.label_presets"))
+            .rich_tip(crate::ui::tips::pair(
+                "options.label_presets",
+                "options.label_presets_tip",
+            ));
     });
     ui.add_space(4.0);
     if app.options_labels {
@@ -2468,8 +2894,20 @@ pub(crate) fn page_size_page(app: &mut App, ui: &mut Ui) {
                 for (i, p) in LABEL_PRESETS.iter().enumerate() {
                     ui.selectable_value(&mut app.options_label_index, i, p.0);
                 }
-            });
-        if ui.button(tr("options.apply_labels")).clicked() {
+            })
+            .response
+            .rich_tip(crate::ui::tips::pair(
+                "options.label_presets",
+                "options.label_preset_tip",
+            ));
+        if ui
+            .button(tr("options.apply_labels"))
+            .rich_tip(crate::ui::tips::pair(
+                "options.apply_labels",
+                "options.apply_labels_tip",
+            ))
+            .clicked()
+        {
             let (_, sheet, cols, rows, label, left, top, px, py) =
                 LABEL_PRESETS[app.options_label_index.min(3)];
             let page = app.page;
@@ -2495,15 +2933,9 @@ pub(crate) fn page_size_page(app: &mut App, ui: &mut Ui) {
     let s = app.page_size();
     let (mut w, mut h) = (s.width, s.height);
     let mut changed = false;
-    let presets = paper_presets();
-    let current = presets
-        .iter()
-        .find(|(_, ps)| {
-            ((ps.width - w).abs() < 0.05 && (ps.height - h).abs() < 0.05)
-                || ((ps.width - h).abs() < 0.05 && (ps.height - w).abs() < 0.05)
-        })
-        .map(|(n, _)| n.to_string())
-        .unwrap_or_else(|| tr("options.custom_size"));
+    let saved = app.settings.page_sizes.clone();
+    let named = paper_name(s, &saved);
+    let current = named.clone().unwrap_or_else(|| tr("options.custom_size"));
     egui::Grid::new("page_size_grid")
         .num_columns(3)
         .spacing([8.0, 6.0])
@@ -2512,24 +2944,49 @@ pub(crate) fn page_size_page(app: &mut App, ui: &mut Ui) {
                 ui.label(tr("options.size"));
             });
             egui::ComboBox::from_id_salt("page_size_preset")
-                .selected_text(current)
+                .selected_text(current.clone())
                 .width(230.0)
+                .height(400.0)
                 .show_ui(ui, |ui| {
-                    for (n, ps) in &presets {
-                        if ui.selectable_label(false, *n).clicked() {
-                            let landscape = w > h;
-                            if landscape {
-                                w = ps.width.max(ps.height);
-                                h = ps.width.min(ps.height);
-                            } else {
-                                w = ps.width;
-                                h = ps.height;
-                            }
-                            changed = true;
+                    if let Some((_, ps)) = paper_preset_menu(ui, &current, &saved) {
+                        let landscape = w > h;
+                        if landscape {
+                            w = ps.width.max(ps.height);
+                            h = ps.width.min(ps.height);
+                        } else {
+                            w = ps.width;
+                            h = ps.height;
                         }
+                        changed = true;
                     }
-                });
-            ui.label("");
+                })
+                .response
+                .rich_tip(crate::ui::tips::pair("options.size", "options.size_tip"));
+            ui.horizontal(|ui| {
+                if ui
+                    .add_enabled(named.is_none(), egui::Button::new("\u{1f4be}"))
+                    .rich_tip_always(crate::ui::tips::pair(
+                        "options.save_page_size",
+                        "options.save_page_size_tip",
+                    ))
+                    .clicked()
+                {
+                    app.options_page_size_name = Some(String::new());
+                }
+                let user_size = saved.iter().any(|p| Some(&p.name) == named.as_ref());
+                if ui
+                    .add_enabled(user_size, egui::Button::new("\u{1f5d1}"))
+                    .rich_tip_always(crate::ui::tips::pair(
+                        "options.delete_page_size",
+                        "options.delete_page_size_tip",
+                    ))
+                    .clicked()
+                {
+                    if let Some(n) = &named {
+                        delete_page_size(app, n);
+                    }
+                }
+            });
             ui.end_row();
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.label(tr("dialog.width"));
@@ -2542,6 +2999,10 @@ pub(crate) fn page_size_page(app: &mut App, ui: &mut Ui) {
                         .speed(0.5)
                         .max_decimals(3),
                 )
+                .rich_tip(crate::ui::tips::pair(
+                    "dialog.width",
+                    "dialog.page_width_desc",
+                ))
                 .changed()
             {
                 w = app.units.to_mm(wv);
@@ -2556,7 +3017,12 @@ pub(crate) fn page_size_page(app: &mut App, ui: &mut Ui) {
                             app.units = u;
                         }
                     }
-                });
+                })
+                .response
+                .rich_tip(crate::ui::tips::pair(
+                    "options.page_units",
+                    "options.page_units_tip",
+                ));
             ui.end_row();
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.label(tr("dialog.height"));
@@ -2569,6 +3035,10 @@ pub(crate) fn page_size_page(app: &mut App, ui: &mut Ui) {
                         .speed(0.5)
                         .max_decimals(3),
                 )
+                .rich_tip(crate::ui::tips::pair(
+                    "dialog.height",
+                    "dialog.page_height_desc",
+                ))
                 .changed()
             {
                 h = app.units.to_mm(hv);
@@ -2578,7 +3048,10 @@ pub(crate) fn page_size_page(app: &mut App, ui: &mut Ui) {
                 let portrait = h >= w;
                 if ui
                     .add(egui::Button::new("\u{25af}").selected(portrait))
-                    .on_hover_text(tr("options.portrait"))
+                    .rich_tip(crate::ui::tips::pair(
+                        "options.portrait",
+                        "options.portrait_tip",
+                    ))
                     .clicked()
                     && !portrait
                 {
@@ -2587,7 +3060,10 @@ pub(crate) fn page_size_page(app: &mut App, ui: &mut Ui) {
                 }
                 if ui
                     .add(egui::Button::new("\u{25ad}").selected(!portrait))
-                    .on_hover_text(tr("options.landscape"))
+                    .rich_tip(crate::ui::tips::pair(
+                        "options.landscape",
+                        "options.landscape_tip",
+                    ))
                     .clicked()
                     && portrait
                 {
@@ -2597,6 +3073,43 @@ pub(crate) fn page_size_page(app: &mut App, ui: &mut Ui) {
             });
             ui.end_row();
         });
+    if let Some(mut name) = app.options_page_size_name.take() {
+        let mut keep = true;
+        ui.horizontal(|ui| {
+            ui.label(tr("options.page_size_name"));
+            let r = ui
+                .add(egui::TextEdit::singleline(&mut name).desired_width(180.0))
+                .rich_tip(crate::ui::tips::pair(
+                    "options.page_size_name",
+                    "options.page_size_name_tip",
+                ));
+            if name.is_empty() && !r.has_focus() {
+                r.request_focus();
+            }
+            let enter =
+                (r.lost_focus() || r.has_focus()) && ui.input(|i| i.key_pressed(egui::Key::Enter));
+            if (ui
+                .button(tr("dialog.ok"))
+                .rich_tip(crate::ui::tips::keyed("dialog.ok"))
+                .clicked()
+                || enter)
+                && !name.trim().is_empty()
+            {
+                save_page_size(app, name.trim(), Size::new(w, h));
+                keep = false;
+            }
+            if ui
+                .button(tr("dialog.cancel"))
+                .rich_tip(crate::ui::tips::keyed("dialog.cancel"))
+                .clicked()
+            {
+                keep = false;
+            }
+        });
+        if keep {
+            app.options_page_size_name = Some(name);
+        }
+    }
     ui.add_space(4.0);
     ui.horizontal(|ui| {
         ui.label(tr("options.fit_page"));
@@ -2605,6 +3118,10 @@ pub(crate) fn page_size_page(app: &mut App, ui: &mut Ui) {
                 !app.selection.is_empty(),
                 egui::Button::new(tr("options.fit_page_selection")),
             )
+            .rich_tip_always(crate::ui::tips::pair(
+                "options.fit_page_selection",
+                "options.fit_page_selection_tip",
+            ))
             .clicked()
         {
             app.fit_page_to_selection();
@@ -2614,6 +3131,10 @@ pub(crate) fn page_size_page(app: &mut App, ui: &mut Ui) {
                 app.drawing_bounds().is_some(),
                 egui::Button::new(tr("options.fit_page_drawing")),
             )
+            .rich_tip_always(crate::ui::tips::pair(
+                "options.fit_page_drawing",
+                "options.fit_page_drawing_tip",
+            ))
             .clicked()
         {
             app.fit_page_to_drawing();
@@ -2624,14 +3145,26 @@ pub(crate) fn page_size_page(app: &mut App, ui: &mut Ui) {
         ui.checkbox(
             &mut app.options_current_only,
             tr("options.apply_current_only"),
-        );
-        ui.checkbox(&mut app.show_page_border, tr("options.show_page_border"));
+        )
+        .rich_tip(crate::ui::tips::pair(
+            "options.apply_current_only",
+            "options.apply_current_only_tip",
+        ));
+        ui.checkbox(&mut app.show_page_border, tr("options.show_page_border"))
+            .rich_tip(crate::ui::tips::pair(
+                "options.show_page_border",
+                "options.show_page_border_tip",
+            ));
         ui.add_space(6.0);
         if ui
             .add_sized(
                 [150.0, 26.0],
                 egui::Button::new(tr("options.add_page_frame")),
             )
+            .rich_tip(crate::ui::tips::pair(
+                "options.add_page_frame",
+                "options.add_page_frame_tip",
+            ))
             .clicked()
         {
             let r = app.page_rect();
@@ -2678,7 +3211,12 @@ pub(crate) fn page_size_page(app: &mut App, ui: &mut Ui) {
                         dpi = d;
                     }
                 }
-            });
+            })
+            .response
+            .rich_tip(crate::ui::tips::pair(
+                "options.rendering_resolution",
+                "options.rendering_resolution_tip",
+            ));
         ui.label("dpi");
         if (dpi - md.resolution_dpi).abs() > 0.5 {
             md.resolution_dpi = dpi;
@@ -2700,6 +3238,7 @@ pub(crate) fn page_size_page(app: &mut App, ui: &mut Ui) {
                     .speed(0.1)
                     .max_decimals(2),
             )
+            .rich_tip(crate::ui::tips::pair("options.bleed", "options.bleed_tip"))
             .changed()
         {
             md.bleed = app.units.to_mm(b).max(0.0);
@@ -2708,7 +3247,11 @@ pub(crate) fn page_size_page(app: &mut App, ui: &mut Ui) {
     });
     ui.indent("bleed_checks", |ui| {
         ui.add_space(2.0);
-        ui.checkbox(&mut app.show_bleed, tr("options.show_bleed"));
+        ui.checkbox(&mut app.show_bleed, tr("options.show_bleed"))
+            .rich_tip(crate::ui::tips::pair(
+                "options.show_bleed",
+                "options.show_bleed_tip",
+            ));
     });
 }
 
@@ -2906,12 +3449,17 @@ fn export_presets_row(app: &mut App, ui: &mut Ui, st: &mut ExportState) {
                         p.apply(st);
                     }
                 }
-            });
+            })
+            .response
+            .rich_tip(crate::ui::tips::pair(
+                "dialog.export_preset",
+                "dialog.export_preset_desc",
+            ));
         // A script filter has no presets: "+" would save under the last
         // built-in format, out of sight.
         if ui
             .add_enabled(st.script.is_none(), egui::Button::new("+").small())
-            .on_hover_text(tr("dialog.export_preset_add"))
+            .rich_tip(crate::ui::tips::keyed("dialog.export_preset_add"))
             .clicked()
         {
             st.preset_name = Some((String::new(), false));
@@ -2919,14 +3467,14 @@ fn export_presets_row(app: &mut App, ui: &mut Ui, st: &mut ExportState) {
         let chosen = !st.preset.is_empty();
         if ui
             .add_enabled(chosen, egui::Button::new("\u{270e}").small())
-            .on_hover_text(tr("dialog.export_preset_rename"))
+            .rich_tip(crate::ui::tips::keyed("dialog.export_preset_rename"))
             .clicked()
         {
             st.preset_name = Some((st.preset.clone(), true));
         }
         if ui
             .add_enabled(chosen, egui::Button::new("\u{2212}").small())
-            .on_hover_text(tr("dialog.export_preset_delete"))
+            .rich_tip(crate::ui::tips::keyed("dialog.export_preset_delete"))
             .clicked()
         {
             app.settings.formats.delete_preset(&st.preset, st.format);
@@ -2945,10 +3493,19 @@ fn export_presets_row(app: &mut App, ui: &mut Ui, st: &mut ExportState) {
                 r.request_focus();
             }
             let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-            if ui.small_button(tr("dialog.ok")).clicked() || enter {
+            if ui
+                .small_button(tr("dialog.ok"))
+                .rich_tip(crate::ui::tips::keyed("dialog.ok"))
+                .clicked()
+                || enter
+            {
                 done = Some(true);
             }
-            if ui.small_button(tr("dialog.cancel")).clicked() {
+            if ui
+                .small_button(tr("dialog.cancel"))
+                .rich_tip(crate::ui::tips::keyed("dialog.cancel"))
+                .clicked()
+            {
                 done = Some(false);
             }
         });
@@ -3056,7 +3613,12 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
                                     st.script = Some(f.name.clone());
                                 }
                             }
-                        });
+                        })
+                        .response
+                        .rich_tip(crate::ui::tips::pair(
+                            "dialog.format",
+                            "dialog.export_format_desc",
+                        ));
                 });
                 let scripted = st.script.is_some();
                 let raster = !scripted && ((2..=7).contains(&st.format) || st.format == 15);
@@ -3067,23 +3629,39 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
                             crate::ui::field::NumField::new(&mut st.dpi)
                                 .range(MIN_EXPORT_DPI..=2400.0)
                                 .suffix(" dpi"),
-                        );
+                        )
+                        .rich_tip(crate::ui::tips::pair(
+                            "dialog.resolution",
+                            "dialog.export_dpi_desc",
+                        ));
                         for d in [72.0, 96.0, 150.0, 300.0] {
-                            if ui.small_button(format!("{d:.0}")).clicked() {
+                            if ui
+                                .small_button(format!("{d:.0}"))
+                                .rich_tip_with(|| {
+                                    format!("{d:.0} dpi\n{}", tr("dialog.export_dpi_preset_desc"))
+                                })
+                                .clicked()
+                            {
                                 st.dpi = d;
                             }
                         }
                     });
                     if st.format == 2 || st.format == 6 || st.format == 7 {
-                        ui.checkbox(&mut st.transparent, tr("dialog.transparent_background"));
+                        ui.checkbox(&mut st.transparent, tr("dialog.transparent_background"))
+                            .rich_tip(crate::ui::tips::pair(
+                                "dialog.transparent_background",
+                                "dialog.export_transparent_desc",
+                            ));
                     }
                     if st.format == 6 {
-                        ui.checkbox(&mut st.webp_lossless, tr("dialog.webp_lossless"));
+                        ui.checkbox(&mut st.webp_lossless, tr("dialog.webp_lossless"))
+                            .rich_tip(crate::ui::tips::keyed("dialog.webp_lossless"));
                     }
                     if st.format == 3 || st.format == 6 {
                         ui.add(crate::ui::Rail(
                             egui::Slider::new(&mut st.quality, 1..=100).text(tr("dialog.quality")),
-                        ));
+                        ))
+                        .rich_tip(crate::ui::tips::keyed("dialog.quality"));
                     }
                     let b = if st.selection_only {
                         app.selection_bounds().unwrap_or(app.page_rect())
@@ -3106,6 +3684,10 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
                                     .speed(step)
                                     .width(70.0),
                             )
+                            .rich_tip(crate::ui::tips::pair(
+                                "dialog.width",
+                                "dialog.export_width_desc",
+                            ))
                             .changed();
                         ui.label("x");
                         let hc = ui
@@ -3116,6 +3698,10 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
                                     .speed(step)
                                     .width(70.0),
                             )
+                            .rich_tip(crate::ui::tips::pair(
+                                "dialog.height",
+                                "dialog.export_height_desc",
+                            ))
                             .changed();
                         if wc {
                             set_export_size(st, b.width(), w);
@@ -3129,12 +3715,14 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
                                 for (i, (name, _)) in EXPORT_SIZE_UNITS.iter().enumerate() {
                                     ui.selectable_value(&mut st.size_unit, i, *name);
                                 }
-                            });
+                            })
+                            .response
+                            .rich_tip(crate::ui::tips::keyed("dialog.export_size_unit"));
                         let scale = st.scale_or_one();
                         if (scale - 1.0).abs() > 1e-9
                             && ui
                                 .small_button(format!("{:.0} %", scale * 100.0))
-                                .on_hover_text(tr("dialog.export_scale_reset"))
+                                .rich_tip(crate::ui::tips::keyed("dialog.export_scale_reset"))
                                 .clicked()
                         {
                             st.scale = 1.0;
@@ -3167,7 +3755,9 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
                                 for (i, n) in PDF_STANDARDS.iter().enumerate() {
                                     ui.selectable_value(&mut st.pdf_standard, i, *n);
                                 }
-                            });
+                            })
+                            .response
+                            .rich_tip(crate::ui::tips::keyed("dialog.pdf_standard"));
                     });
                     ui.horizontal(|ui| {
                         ui.label(tr("dialog.bleed"));
@@ -3176,12 +3766,14 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
                                 .range(0.0..=50.0)
                                 .speed(0.5)
                                 .suffix(" mm"),
-                        );
+                        )
+                        .rich_tip(crate::ui::tips::keyed("dialog.bleed"));
                     });
                     if st.pdf_standard > 0 {
                         ui.horizontal(|ui| {
                             ui.label(tr("dialog.output_condition"));
-                            ui.text_edit_singleline(&mut st.output_condition);
+                            ui.text_edit_singleline(&mut st.output_condition)
+                                .rich_tip(crate::ui::tips::keyed("dialog.output_condition"));
                         });
                         ui.label(
                             egui::RichText::new(tr("dialog.pdfx_profile_note"))
@@ -3190,25 +3782,40 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
                         );
                     }
                 }
-                ui.checkbox(&mut st.selection_only, tr("dialog.selected_only"));
+                ui.checkbox(&mut st.selection_only, tr("dialog.selected_only"))
+                    .rich_tip(crate::ui::tips::pair(
+                        "dialog.selected_only",
+                        "dialog.export_selected_desc",
+                    ));
                 if !st.selection_only && st.format != 1 && st.format != 11 {
-                    ui.checkbox(&mut st.all_pages, tr("dialog.all_pages"));
+                    ui.checkbox(&mut st.all_pages, tr("dialog.all_pages"))
+                        .rich_tip(crate::ui::tips::pair(
+                            "dialog.all_pages",
+                            "dialog.export_all_pages_desc",
+                        ));
                 }
                 if !st.web {
                     ui.checkbox(
                         &mut app.settings.formats.skip_export_dialog,
                         tr("dialog.skip_export_dialog"),
                     )
-                    .on_hover_text(tr("dialog.skip_export_dialog_tip"));
+                    .rich_tip(crate::ui::tips::pair(
+                        "dialog.skip_export_dialog",
+                        "dialog.skip_export_dialog_tip",
+                    ));
                 }
                 if !scripted && export_keeps_properties(EXPORT_FORMATS[st.format].1) {
                     egui::Grid::new("exp_props").num_columns(2).show(ui, |ui| {
                         ui.label(tr("dialog.title"));
-                        ui.add_sized([200.0, 20.0], egui::TextEdit::singleline(&mut st.title));
+                        ui.add_sized([200.0, 20.0], egui::TextEdit::singleline(&mut st.title))
+                            .rich_tip(crate::ui::tips::pair(
+                                "dialog.title",
+                                "dialog.export_title_desc",
+                            ));
                         ui.end_row();
                         ui.label(tr("dialog.tags"));
                         ui.add_sized([200.0, 20.0], egui::TextEdit::singleline(&mut st.tags))
-                            .on_hover_text(tr("dialog.tags_tip"));
+                            .rich_tip(crate::ui::tips::pair("dialog.tags", "dialog.tags_tip"));
                         ui.end_row();
                     });
                 }
@@ -3300,7 +3907,7 @@ pub(crate) fn margin_fields(ui: &mut Ui, margins: &mut [f64; 4]) {
                     .suffix(" mm")
                     .width(62.0),
             )
-            .on_hover_text(tr(key));
+            .rich_tip(tr(key));
         }
     });
 }
@@ -3412,7 +4019,7 @@ pub(crate) fn print_layout_fields(app: &App, ui: &mut Ui, st: &mut PrintState) {
                     if st.sheet > 0 {
                         ui.label("");
                         ui.checkbox(&mut st.stretch_fit, tr("print.stretch_fit"))
-                            .on_hover_text(tr("print.stretch_fit_tip"));
+                            .rich_tip(tr("print.stretch_fit_tip"));
                         ui.end_row();
                     }
                     if matches!(st.layout_kind, 1 | 3) {
@@ -3426,20 +4033,20 @@ pub(crate) fn print_layout_fields(app: &App, ui: &mut Ui, st: &mut PrintState) {
                         ui.end_row();
                         ui.label("");
                         ui.checkbox(&mut st.back_side, tr("print.back_side"))
-                            .on_hover_text(tr("print.back_side_tip"));
+                            .rich_tip(tr("print.back_side_tip"));
                         ui.end_row();
                     }
                     if st.sheet > 0 {
                         ui.label("");
                         ui.checkbox(&mut st.keep_size, tr("print.keep_size"))
-                            .on_hover_text(tr("print.keep_size_tip"));
+                            .rich_tip(tr("print.keep_size_tip"));
                         ui.end_row();
                     }
                     // The paper's margins kept clear: typed here, or in
                     // Print Preview their dashed lines dragged on the
                     // sheet (#580, #582, #909).
                     ui.label(tr("print.paper_margins"))
-                        .on_hover_text(tr("print.margins"));
+                        .rich_tip(tr("print.margins"));
                     margin_fields(ui, &mut st.margins);
                     ui.end_row();
                 });
@@ -3549,12 +4156,22 @@ fn print_dialog(app: &mut App, ctx: &Context, st: &mut PrintState, close: &mut b
             tr("print.tab_postscript"),
             issues_tab,
         ];
+        const TAB_DESCS: [&str; 7] = [
+            "print.tab_general_desc",
+            "print.tab_color_desc",
+            "print.tab_composite_desc",
+            "print.tab_layout_desc",
+            "print.tab_prepress_desc",
+            "print.tab_postscript_desc",
+            "print.tab_issues_desc",
+        ];
         ui.horizontal(|ui| {
             for (i, t) in tabs.iter().enumerate() {
                 if i == 6 && !app.settings.printing.preflight {
                     continue;
                 }
-                ui.selectable_value(&mut st.tab, i, t.as_str());
+                ui.selectable_value(&mut st.tab, i, t.as_str())
+                    .rich_tip_with(|| format!("{t}\n{}", tr(TAB_DESCS[i])));
             }
         });
         ui.separator();
@@ -3579,16 +4196,31 @@ fn print_dialog(app: &mut App, ctx: &Context, st: &mut PrintState, close: &mut b
         });
         ui.separator();
         ui.horizontal(|ui| {
-            if ui.button(tr("menu.file.print_preview")).clicked() {
+            if ui
+                .button(tr("menu.file.print_preview"))
+                .rich_tip(crate::ui::tips::pair(
+                    "menu.file.print_preview",
+                    "print.preview_desc",
+                ))
+                .clicked()
+            {
                 app.print_preview(Some(st.clone()));
                 *close = true;
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button(tr("print.apply")).clicked() {
+                if ui
+                    .button(tr("print.apply"))
+                    .rich_tip(crate::ui::tips::keyed("print.apply"))
+                    .clicked()
+                {
                     app.settings.printing.remember(st);
                     app.settings.save();
                 }
-                if ui.button(tr("dialog.cancel")).clicked() {
+                if ui
+                    .button(tr("dialog.cancel"))
+                    .rich_tip(crate::ui::tips::keyed("dialog.cancel"))
+                    .clicked()
+                {
                     *close = true;
                 }
                 // While the first printer list is read, a print to a
@@ -3597,6 +4229,8 @@ fn print_dialog(app: &mut App, ctx: &Context, st: &mut PrintState, close: &mut b
                     st.destination == 0 && st.looking_for_printers && st.printers.is_empty();
                 if ui
                     .add_enabled(!waiting, egui::Button::new(tr("dialog.print")))
+                    .rich_tip(crate::ui::tips::pair("dialog.print", "print.print_desc"))
+                    .rich_disabled_tip(crate::ui::tips::pair("dialog.print", "print.print_desc"))
                     .clicked()
                 {
                     match crate::export::print(app, st) {
@@ -3654,14 +4288,17 @@ pub fn destination_row(ui: &mut Ui, st: &mut PrintState, width: f32) -> Option<S
                         }
                     }
                 }
-            });
+            })
+            .response
+            .rich_tip(crate::ui::tips::keyed("print.printer"));
         // The printer's own settings (#614).
         let gear = ui
             .add_enabled(
                 on_printer,
                 egui::Button::new("").min_size(egui::vec2(24.0, 22.0)),
             )
-            .on_hover_text(tr("print.properties"));
+            .rich_tip(crate::ui::tips::keyed("print.properties"))
+            .rich_disabled_tip(crate::ui::tips::keyed("print.properties"));
         crate::ui::icons::draw_action(
             ui.painter(),
             egui::Rect::from_center_size(gear.rect.center(), egui::vec2(16.0, 16.0)),
@@ -3706,7 +4343,10 @@ pub fn parity_combo(ui: &mut Ui, st: &mut PrintState, id: &str) {
                 for (i, n) in names.iter().enumerate() {
                     ui.selectable_value(&mut st.parity, i, n.clone());
                 }
-            });
+            })
+            .response
+            .rich_tip(crate::ui::tips::pair("print.parity", "print.parity_desc"))
+            .rich_disabled_tip(crate::ui::tips::pair("print.parity", "print.parity_desc"));
     });
 }
 
@@ -3739,7 +4379,9 @@ fn print_tab_general(app: &App, ui: &mut Ui, st: &mut PrintState) -> Option<Stri
                                 st.landscape = i == 2;
                             }
                         }
-                    });
+                    })
+                    .response
+                    .rich_tip(crate::ui::tips::keyed("print.orientation"));
                 ui.end_row();
                 // What the system says of the printer chosen (#614).
                 let on_printer = st.destination == 0 && st.printer.is_some();
@@ -3764,43 +4406,73 @@ fn print_tab_general(app: &App, ui: &mut Ui, st: &mut PrintState) -> Option<Stri
         ui.vertical(|ui| {
             ui.set_width(270.0);
             print_group(ui, &tr("print.range"), |ui| {
-                ui.radio_value(&mut st.range, 0, tr("print.range_document"));
-                ui.radio_value(&mut st.range, 1, tr("print.range_page"));
+                ui.radio_value(&mut st.range, 0, tr("print.range_document"))
+                    .rich_tip(crate::ui::tips::keyed("print.range_document"));
+                ui.radio_value(&mut st.range, 1, tr("print.range_page"))
+                    .rich_tip(crate::ui::tips::keyed("print.range_page"));
                 ui.horizontal(|ui| {
-                    ui.radio_value(&mut st.range, 2, tr("print.range_pages"));
+                    ui.radio_value(&mut st.range, 2, tr("print.range_pages"))
+                        .rich_tip(crate::ui::tips::keyed("print.range_pages"));
                     ui.add_enabled(
                         st.range == 2,
                         egui::TextEdit::singleline(&mut st.pages)
                             .hint_text(format!("1-{}", app.doc().pages.len()))
                             .desired_width(110.0),
-                    );
+                    )
+                    .rich_tip(crate::ui::tips::pair(
+                        "print.page_list",
+                        "print.page_list_desc",
+                    ))
+                    .rich_disabled_tip(crate::ui::tips::pair(
+                        "print.page_list",
+                        "print.page_list_desc",
+                    ));
                 });
                 ui.add_enabled_ui(!app.selection.is_empty(), |ui| {
-                    ui.radio_value(&mut st.range, 3, tr("print.range_selection"));
+                    ui.radio_value(&mut st.range, 3, tr("print.range_selection"))
+                        .rich_tip(crate::ui::tips::keyed("print.range_selection"))
+                        .rich_disabled_tip(crate::ui::tips::keyed("print.range_selection"));
                 });
                 parity_combo(ui, st, "print_parity");
             });
         });
         ui.vertical(|ui| {
             print_group(ui, &tr("print.copies"), |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(tr("print.number_of_copies"));
-                    ui.add(crate::ui::field::NumField::new(&mut st.copies).range(1..=999));
-                });
+                crate::ui::tips::tip_over(
+                    ui,
+                    crate::ui::tips::keyed("print.number_of_copies"),
+                    |ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(tr("print.number_of_copies"));
+                            ui.add(crate::ui::field::NumField::new(&mut st.copies).range(1..=999));
+                        })
+                    },
+                );
                 ui.add_enabled(
                     st.copies > 1,
                     egui::Checkbox::new(&mut st.collate, tr("print.collate")),
-                );
+                )
+                .rich_tip(crate::ui::tips::keyed("print.collate"))
+                .rich_disabled_tip(crate::ui::tips::keyed("print.collate"));
             });
             ui.add_space(6.0);
             ui.horizontal(|ui| {
-                ui.checkbox(&mut st.as_bitmap, tr("print.as_bitmap"));
+                ui.checkbox(&mut st.as_bitmap, tr("print.as_bitmap"))
+                    .rich_tip(crate::ui::tips::keyed("print.as_bitmap"));
                 ui.add_enabled(
                     st.as_bitmap,
                     crate::ui::field::NumField::new(&mut st.bitmap_dpi)
                         .range(36.0..=1200.0)
                         .suffix(" dpi"),
-                );
+                )
+                .rich_tip(crate::ui::tips::pair(
+                    "print.bitmap_dpi",
+                    "print.bitmap_dpi_desc",
+                ))
+                .rich_disabled_tip(crate::ui::tips::pair(
+                    "print.bitmap_dpi",
+                    "print.bitmap_dpi_desc",
+                ));
             });
         });
     });
@@ -4021,7 +4693,9 @@ fn merge_number_format(
                 for (i, key) in NumberFormat::KEYS.iter().enumerate() {
                     ui.selectable_value(&mut pick, i, tr(key));
                 }
-            });
+            })
+            .response
+            .rich_tip(crate::ui::tips::keyed("merge.format"));
     });
     if pick != cur {
         *format = NumberFormat::from_index(pick);
@@ -4029,11 +4703,13 @@ fn merge_number_format(
     if let NumberFormat::Custom { prefix, suffix } = format {
         ui.horizontal(|ui| {
             ui.label(tr("merge.prefix"));
-            ui.add(egui::TextEdit::singleline(prefix).desired_width(90.0));
+            ui.add(egui::TextEdit::singleline(prefix).desired_width(90.0))
+                .rich_tip(crate::ui::tips::keyed("merge.prefix"));
         });
         ui.horizontal(|ui| {
             ui.label(tr("merge.suffix"));
-            ui.add(egui::TextEdit::singleline(suffix).desired_width(90.0));
+            ui.add(egui::TextEdit::singleline(suffix).desired_width(90.0))
+                .rich_tip(crate::ui::tips::keyed("merge.suffix"));
         });
     }
 }
@@ -4054,7 +4730,11 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
         ui.horizontal(|ui| {
             ui.label(tr("merge.hint"));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button(tr("merge.import_file")).clicked() {
+                if ui
+                    .button(tr("merge.import_file"))
+                    .rich_tip(crate::ui::tips::keyed("merge.import_file"))
+                    .clicked()
+                {
                     crate::files::Dialog::new()
                         .add_filter("CSV, Excel", &["csv", "txt", "xlsx"])
                         .add_filter("Excel", &["xlsx"])
@@ -4080,7 +4760,11 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
         ui.add_space(4.0);
         ui.strong(tr("merge.add_or_edit"));
         ui.horizontal(|ui| {
-            if ui.button(tr("merge.add_column")).clicked() {
+            if ui
+                .button(tr("merge.add_column"))
+                .rich_tip(crate::ui::tips::keyed("merge.add_column"))
+                .clicked()
+            {
                 st.adding = Some((String::new(), 0));
                 ui.memory_mut(|m| m.request_focus(egui::Id::new("merge_add_name")));
             }
@@ -4089,6 +4773,7 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
                     !st.headers.is_empty(),
                     egui::Button::new(tr("merge.configure")).selected(st.configure),
                 )
+                .rich_tip_always(crate::ui::tips::keyed("merge.configure"))
                 .clicked()
             {
                 st.configure = !st.configure;
@@ -4099,8 +4784,14 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
                 } else {
                     tr("merge.view_single")
                 };
+                let tip = if st.single {
+                    crate::ui::tips::keyed("merge.view_all")
+                } else {
+                    crate::ui::tips::keyed("merge.view_single")
+                };
                 if ui
                     .add_enabled(!st.rows.is_empty(), egui::Button::new(label))
+                    .rich_tip_always(tip)
                     .clicked()
                 {
                     st.single = !st.single;
@@ -4117,11 +4808,13 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
                     egui::TextEdit::singleline(name)
                         .id(egui::Id::new("merge_add_name"))
                         .desired_width(320.0),
-                );
+                )
+                .rich_tip(crate::ui::tips::pair("merge.name", "merge.new_name_desc"));
                 ui.label(tr("merge.type"));
                 ui.horizontal(|ui| {
                     for (i, n) in merge_kind_names().iter().enumerate() {
-                        ui.radio_value(kind, i, n.as_str());
+                        ui.radio_value(kind, i, n.as_str())
+                            .rich_tip(crate::ui::tips::pair("merge.type", "merge.type_desc"));
                     }
                 });
                 // A number field: its counter, and an end value that makes
@@ -4135,35 +4828,46 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
                             crate::ui::field::NumField::new(&mut f.digits)
                                 .range(1..=12)
                                 .prefix(tr("merge.digits")),
-                        );
+                        )
+                        .rich_tip_always(crate::ui::tips::keyed("merge.digits"));
                         ui.add(
                             crate::ui::field::NumField::new(&mut f.start).prefix(tr("merge.start")),
-                        );
+                        )
+                        .rich_tip(crate::ui::tips::keyed("merge.start"));
                     });
                     ui.horizontal(|ui| {
-                        ui.checkbox(&mut f.increment, tr("merge.increment"));
+                        ui.checkbox(&mut f.increment, tr("merge.increment"))
+                            .rich_tip(crate::ui::tips::keyed("merge.increment"));
                         ui.add_enabled(
                             f.increment,
                             crate::ui::field::NumField::new(&mut f.step).prefix(tr("merge.step")),
-                        );
+                        )
+                        .rich_tip_always(crate::ui::tips::keyed("merge.step"));
                     });
                     ui.horizontal(|ui| {
-                        ui.checkbox(&mut f.use_end, tr("merge.end_value"));
+                        ui.checkbox(&mut f.use_end, tr("merge.end_value"))
+                            .rich_tip(crate::ui::tips::keyed("merge.end_value"));
                         ui.add_enabled(
                             f.use_end && f.increment,
                             crate::ui::field::NumField::new(&mut f.end),
-                        );
+                        )
+                        .rich_tip_always(crate::ui::tips::keyed("merge.end_value"));
                     });
                 }
                 ui.horizontal(|ui| {
                     let ok = !name.trim().is_empty();
                     if ui
                         .add_enabled(ok, egui::Button::new(tr("merge.add")))
+                        .rich_tip_always(crate::ui::tips::keyed("merge.add"))
                         .clicked()
                     {
                         add_done = Some(Some((name.trim().to_string(), *kind)));
                     }
-                    if ui.button(tr("dialog.cancel")).clicked() {
+                    if ui
+                        .button(tr("dialog.cancel"))
+                        .rich_tip(crate::ui::tips::keyed("dialog.cancel"))
+                        .clicked()
+                    {
                         add_done = Some(None);
                     }
                 });
@@ -4208,10 +4912,16 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
                                         ui.add(
                                             egui::TextEdit::singleline(&mut st.headers[i])
                                                 .desired_width(110.0),
+                                        )
+                                        .rich_tip(
+                                            crate::ui::tips::pair(
+                                                "merge.name",
+                                                "merge.field_name_desc",
+                                            ),
                                         );
                                         if ui
                                             .small_button("x")
-                                            .on_hover_text(tr("merge.delete_field"))
+                                            .rich_tip(crate::ui::tips::keyed("merge.delete_field"))
                                             .clicked()
                                         {
                                             remove_field = Some(i);
@@ -4232,7 +4942,12 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
                                             for (k, n) in names.iter().enumerate() {
                                                 ui.selectable_value(&mut pick, k, n.as_str());
                                             }
-                                        });
+                                        })
+                                        .response
+                                        .rich_tip(crate::ui::tips::pair(
+                                            "merge.type",
+                                            "merge.type_desc",
+                                        ));
                                     if pick != cur {
                                         st.kinds[i] = merge_kind_of(pick);
                                     }
@@ -4247,17 +4962,20 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
                                         ui.add(
                                             crate::ui::field::NumField::new(start)
                                                 .prefix(tr("merge.start")),
-                                        );
+                                        )
+                                        .rich_tip(crate::ui::tips::keyed("merge.start"));
                                         ui.add(
                                             crate::ui::field::NumField::new(step)
                                                 .prefix(tr("merge.step")),
-                                        );
+                                        )
+                                        .rich_tip(crate::ui::tips::keyed("merge.step"));
                                         ui.add_enabled(
                                             merge_format_has_digits(format),
                                             crate::ui::field::NumField::new(digits)
                                                 .range(1..=12)
                                                 .prefix(tr("merge.digits")),
-                                        );
+                                        )
+                                        .rich_tip_always(crate::ui::tips::keyed("merge.digits"));
                                     }
                                 });
                                 ui.separator();
@@ -4443,7 +5161,7 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
         ui.horizontal(|ui| {
             if ui
                 .add_enabled(!st.headers.is_empty(), egui::Button::new("+"))
-                .on_hover_text(tr("merge.add_record"))
+                .rich_tip_always(crate::ui::tips::keyed("merge.add_record"))
                 .clicked()
             {
                 pm::add_record(st);
@@ -4451,7 +5169,7 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
             }
             if ui
                 .add_enabled(!st.rows.is_empty(), egui::Button::new("\u{2212}"))
-                .on_hover_text(tr("merge.delete_record"))
+                .rich_tip_always(crate::ui::tips::keyed("merge.delete_record"))
                 .clicked()
                 && st.current < st.rows.len()
             {
@@ -4465,7 +5183,7 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
             ui.separator();
             if ui
                 .add_enabled(sel.is_some(), egui::Button::new(tr("merge.sel_add")))
-                .on_hover_text(tr("merge.sel_add_tip"))
+                .rich_tip_always(crate::ui::tips::pair("merge.sel_add", "merge.sel_add_tip"))
                 .clicked()
             {
                 if let Some(sel) = sel {
@@ -4479,7 +5197,10 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
             }
             if ui
                 .add_enabled(sel.is_some(), egui::Button::new(tr("merge.sel_delete")))
-                .on_hover_text(tr("merge.sel_delete_tip"))
+                .rich_tip_always(crate::ui::tips::pair(
+                    "merge.sel_delete",
+                    "merge.sel_delete_tip",
+                ))
                 .clicked()
             {
                 if let Some(sel) = sel {
@@ -4491,7 +5212,10 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
                 && ui.input(|i| i.key_pressed(egui::Key::Delete));
             if ui
                 .add_enabled(sel.is_some(), egui::Button::new(tr("merge.sel_clear")))
-                .on_hover_text(tr("merge.sel_clear_tip"))
+                .rich_tip_always(crate::ui::tips::pair(
+                    "merge.sel_clear",
+                    "merge.sel_clear_tip",
+                ))
                 .clicked()
                 || (clear_key && sel.is_some())
             {
@@ -4503,6 +5227,7 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
                 let n = st.rows.len();
                 if ui
                     .add_enabled(n > 0, egui::Button::new(tr("merge.go_to")))
+                    .rich_tip_always(crate::ui::tips::keyed("merge.go_to"))
                     .clicked()
                 {
                     if let Ok(k) = st.go_to.trim().parse::<usize>() {
@@ -4513,27 +5238,35 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
                     egui::TextEdit::singleline(&mut st.go_to)
                         .desired_width(60.0)
                         .hint_text(format!("{}", st.current + 1)),
-                );
+                )
+                .rich_tip(crate::ui::tips::pair(
+                    "merge.go_to",
+                    "merge.go_to_field_desc",
+                ));
                 if ui
                     .add_enabled(n > 0 && st.current + 1 < n, egui::Button::new(">|"))
+                    .rich_tip_always(crate::ui::tips::keyed("merge.last_record"))
                     .clicked()
                 {
                     st.current = n - 1;
                 }
                 if ui
                     .add_enabled(n > 0 && st.current + 1 < n, egui::Button::new(">"))
+                    .rich_tip_always(crate::ui::tips::keyed("merge.next_record"))
                     .clicked()
                 {
                     st.current += 1;
                 }
                 if ui
                     .add_enabled(st.current > 0, egui::Button::new("<"))
+                    .rich_tip_always(crate::ui::tips::keyed("merge.previous_record"))
                     .clicked()
                 {
                     st.current -= 1;
                 }
                 if ui
                     .add_enabled(st.current > 0, egui::Button::new("|<"))
+                    .rich_tip_always(crate::ui::tips::keyed("merge.first_record"))
                     .clicked()
                 {
                     st.current = 0;
@@ -4548,7 +5281,11 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
             );
             ui.horizontal_wrapped(|ui| {
                 for h in st.headers.clone() {
-                    if ui.small_button(format!("<{h}>")).clicked() {
+                    if ui
+                        .small_button(format!("<{h}>"))
+                        .rich_tip_with(|| format!("<{h}>\n{}", tr("merge.insert_field_desc")))
+                        .clicked()
+                    {
                         app.insert_text(&format!("<{h}>"));
                     }
                 }
@@ -4561,6 +5298,7 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
                     !st.headers.is_empty(),
                     egui::Button::new(tr("merge.save_data")),
                 )
+                .rich_tip_always(crate::ui::tips::keyed("merge.save_data"))
                 .clicked()
             {
                 let text = pm::to_csv(st);
@@ -4574,7 +5312,11 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
                     });
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button(tr("dialog.cancel")).clicked() {
+                if ui
+                    .button(tr("dialog.cancel"))
+                    .rich_tip(crate::ui::tips::keyed("dialog.cancel"))
+                    .clicked()
+                {
                     *close = true;
                 }
                 // Finish keeps the data source and opens the Print Merge
@@ -4585,6 +5327,7 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
                         !st.headers.is_empty(),
                         egui::Button::new(tr("merge.finish")),
                     )
+                    .rich_tip_always(crate::ui::tips::keyed("merge.finish"))
                     .clicked()
                 {
                     app.merge_state = Some(st.clone());
@@ -4622,7 +5365,11 @@ fn trace_dialog(app: &mut App, ctx: &Context, st: &mut TraceState, close: &mut b
         ui.add_space(4.0);
         ui.horizontal_wrapped(|ui| {
             for p in crate::trace::Preset::ALL {
-                if ui.selectable_label(st.preset == p, tr(p.key())).clicked() {
+                if ui
+                    .selectable_label(st.preset == p, tr(p.key()))
+                    .rich_tip(crate::ui::tips::keyed(p.key()))
+                    .clicked()
+                {
                     st.preset = p;
                     st.settings = app.settings.tracing.settings(p);
                     st.preview_count = None;
@@ -4630,29 +5377,65 @@ fn trace_dialog(app: &mut App, ctx: &Context, st: &mut TraceState, close: &mut b
             }
         });
         let s = &mut st.settings;
-        ui.add(crate::ui::Rail(
-            egui::Slider::new(&mut s.detail, 0.0..=100.0).text(tr("dialog.detail")),
-        ));
-        ui.add(crate::ui::Rail(
-            egui::Slider::new(&mut s.smoothing, 0.0..=100.0).text(tr("dialog.smoothing")),
-        ));
-        ui.add(crate::ui::Rail(
-            egui::Slider::new(&mut s.corner_smoothness, 0.0..=100.0)
-                .text(tr("dialog.corner_smoothness")),
-        ));
+        crate::ui::tips::tip_over(ui, crate::ui::tips::keyed("dialog.detail"), |ui| {
+            ui.add(crate::ui::Rail(
+                egui::Slider::new(&mut s.detail, 0.0..=100.0).text(tr("dialog.detail")),
+            ))
+        });
+        crate::ui::tips::tip_over(ui, crate::ui::tips::keyed("dialog.smoothing"), |ui| {
+            ui.add(crate::ui::Rail(
+                egui::Slider::new(&mut s.smoothing, 0.0..=100.0).text(tr("dialog.smoothing")),
+            ))
+        });
+        crate::ui::tips::tip_over(
+            ui,
+            crate::ui::tips::keyed("dialog.corner_smoothness"),
+            |ui| {
+                ui.add(crate::ui::Rail(
+                    egui::Slider::new(&mut s.corner_smoothness, 0.0..=100.0)
+                        .text(tr("dialog.corner_smoothness")),
+                ))
+            },
+        );
         if !s.centerline {
             ui.horizontal(|ui| {
-                ui.checkbox(&mut s.black_white, tr("dialog.black_and_white"));
+                ui.checkbox(&mut s.black_white, tr("dialog.black_and_white"))
+                    .rich_tip(crate::ui::tips::pair(
+                        "dialog.black_and_white",
+                        "dialog.trace_bw_desc",
+                    ));
                 if !s.black_white {
-                    ui.label(tr("dialog.colors"));
-                    ui.add(crate::ui::field::NumField::new(&mut s.colors).range(2..=256));
+                    crate::ui::tips::tip_over(
+                        ui,
+                        crate::ui::tips::pair("dialog.colors", "dialog.trace_colors_desc"),
+                        |ui| {
+                            ui.horizontal(|ui| {
+                                ui.label(tr("dialog.colors"));
+                                ui.add(
+                                    crate::ui::field::NumField::new(&mut s.colors).range(2..=256),
+                                );
+                            })
+                        },
+                    );
                 }
             });
-            ui.checkbox(&mut s.remove_background, tr("dialog.remove_background"));
+            ui.checkbox(&mut s.remove_background, tr("dialog.remove_background"))
+                .rich_tip(crate::ui::tips::pair(
+                    "dialog.remove_background",
+                    "dialog.trace_remove_background_desc",
+                ));
         }
-        ui.checkbox(&mut s.delete_original, tr("dialog.delete_original"));
+        ui.checkbox(&mut s.delete_original, tr("dialog.delete_original"))
+            .rich_tip(crate::ui::tips::keyed("dialog.delete_original"));
         ui.horizontal(|ui| {
-            if ui.button(tr("dialog.preview")).clicked() {
+            if ui
+                .button(tr("dialog.preview"))
+                .rich_tip(crate::ui::tips::pair(
+                    "dialog.preview",
+                    "dialog.trace_preview_desc",
+                ))
+                .clicked()
+            {
                 let mut count = 0;
                 for sh in app.selected_shapes() {
                     if let ShapeKind::Bitmap { png, .. } = &sh.kind {
@@ -4699,8 +5482,13 @@ fn paragraph_dialog(app: &mut App, ctx: &Context, which: &Dialog, close: &mut bo
                 let mut remove = None;
                 for (i, t) in p.tabs.iter_mut().enumerate() {
                     ui.horizontal(|ui| {
-                        changed |= unit_value(ui, &format!("{}", i + 1), t, u);
-                        if ui.small_button("x").clicked() {
+                        let tip = crate::ui::tips::pair("dialog.tab_stop", "dialog.tab_stop_desc");
+                        changed |= unit_value(ui, &format!("{}", i + 1), &tip, t, u);
+                        if ui
+                            .small_button("x")
+                            .rich_tip(crate::ui::tips::keyed("dialog.remove_tab"))
+                            .clicked()
+                        {
                             remove = Some(i);
                         }
                     });
@@ -4709,54 +5497,83 @@ fn paragraph_dialog(app: &mut App, ctx: &Context, which: &Dialog, close: &mut bo
                     p.tabs.remove(i);
                     changed = true;
                 }
-                if ui.button(tr("dialog.add_tab")).clicked() {
+                if ui
+                    .button(tr("dialog.add_tab"))
+                    .rich_tip(crate::ui::tips::keyed("dialog.add_tab"))
+                    .clicked()
+                {
                     let last = p.tabs.last().copied().unwrap_or(0.0);
                     p.tabs.push(last + 12.7);
                     changed = true;
                 }
             }
             Dialog::TextColumns => {
-                ui.horizontal(|ui| {
-                    ui.label(tr("dialog.columns"));
-                    changed |= ui
-                        .add(crate::ui::field::NumField::new(&mut p.columns).range(1..=8))
-                        .changed();
+                crate::ui::tips::tip_over(ui, crate::ui::tips::keyed("dialog.columns"), |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(tr("dialog.columns"));
+                        changed |= ui
+                            .add(crate::ui::field::NumField::new(&mut p.columns).range(1..=8))
+                            .changed();
+                    })
                 });
-                changed |= unit_value(ui, &tr("dialog.gutter"), &mut p.gutter, u);
+                let tip = crate::ui::tips::keyed("dialog.gutter");
+                changed |= unit_value(ui, &tr("dialog.gutter"), &tip, &mut p.gutter, u);
             }
             Dialog::TextBullets => {
                 changed |= ui
                     .checkbox(&mut p.bullets, tr("dialog.use_bullets"))
+                    .rich_tip(crate::ui::tips::keyed("dialog.use_bullets"))
                     .changed();
                 ui.horizontal(|ui| {
                     ui.label(tr("dialog.bullet_symbol"));
                     for b in [
                         "\u{2022}", "\u{25E6}", "\u{25AA}", "\u{2013}", "\u{2713}", "\u{27A4}",
                     ] {
-                        if ui.selectable_label(p.bullet_char == b, b).clicked() {
+                        if ui
+                            .selectable_label(p.bullet_char == b, b)
+                            .rich_tip(crate::ui::tips::keyed("dialog.bullet_symbol"))
+                            .clicked()
+                        {
                             p.bullet_char = b.to_string();
                             changed = true;
                         }
                     }
                 });
-                changed |= unit_value(ui, &tr("dialog.bullet_indent"), &mut p.bullet_indent, u);
+                let tip = crate::ui::tips::keyed("dialog.bullet_indent");
+                changed |= unit_value(
+                    ui,
+                    &tr("dialog.bullet_indent"),
+                    &tip,
+                    &mut p.bullet_indent,
+                    u,
+                );
             }
             _ => {
                 let mut on = p.drop_cap_lines > 1;
-                if ui.checkbox(&mut on, tr("dialog.use_drop_cap")).changed() {
+                if ui
+                    .checkbox(&mut on, tr("dialog.use_drop_cap"))
+                    .rich_tip(crate::ui::tips::keyed("dialog.use_drop_cap"))
+                    .changed()
+                {
                     p.drop_cap_lines = if on { 3 } else { 0 };
                     changed = true;
                 }
                 if on {
-                    ui.horizontal(|ui| {
-                        ui.label(tr("dialog.lines_dropped"));
-                        changed |= ui
-                            .add(
-                                crate::ui::field::NumField::new(&mut p.drop_cap_lines)
-                                    .range(2..=10),
-                            )
-                            .changed();
-                    });
+                    crate::ui::tips::tip_over(
+                        ui,
+                        crate::ui::tips::keyed("dialog.lines_dropped"),
+                        |ui| {
+                            ui.horizontal(|ui| {
+                                ui.label(tr("dialog.lines_dropped"));
+                                changed |= ui
+                                    .add(
+                                        crate::ui::field::NumField::new(&mut p.drop_cap_lines)
+                                            .range(2..=10),
+                                    )
+                                    .changed();
+                            })
+                        },
+                    );
                 }
             }
         }
@@ -4780,20 +5597,22 @@ fn encode_dialog(app: &mut App, ctx: &Context, st: &mut EncodeState, close: &mut
         ui.set_min_width(420.0);
         ui.label(egui::RichText::new(tr("dialog.encode_hint")).color(Tokens::text_dim()));
         ui.add_space(4.0);
-        let combo = |ui: &mut Ui, id: &str, label: &str, v: &mut Encoding| {
+        let combo = |ui: &mut Ui, id: &str, id_key: &str, v: &mut Encoding| {
             ui.horizontal(|ui| {
-                ui.label(label);
+                ui.label(tr(id_key));
                 egui::ComboBox::from_id_salt(id)
                     .selected_text(v.name())
                     .show_ui(ui, |ui| {
                         for e in Encoding::ALL {
                             ui.selectable_value(v, e, e.name());
                         }
-                    });
+                    })
+                    .response
+                    .rich_tip(crate::ui::tips::keyed(id_key));
             });
         };
-        combo(ui, "encode_from", &tr("dialog.encode_from"), &mut st.from);
-        combo(ui, "encode_to", &tr("dialog.encode_to"), &mut st.to);
+        combo(ui, "encode_from", "dialog.encode_from", &mut st.from);
+        combo(ui, "encode_to", "dialog.encode_to", &mut st.to);
         ui.separator();
         ui.label(tr("dialog.preview"));
         let preview = crate::encode::reinterpret(&original, st.from, st.to);
@@ -4811,13 +5630,18 @@ fn encode_dialog(app: &mut App, ctx: &Context, st: &mut EncodeState, close: &mut
             let can = !original.is_empty() && st.from != st.to;
             if ui
                 .add_enabled(can, egui::Button::new(tr("dialog.ok")))
+                .rich_tip_always(crate::ui::tips::keyed("dialog.ok"))
                 .clicked()
                 || (can && enter_pressed(ui))
             {
                 apply = true;
                 *close = true;
             }
-            if ui.button(tr("dialog.cancel")).clicked() {
+            if ui
+                .button(tr("dialog.cancel"))
+                .rich_tip(crate::ui::tips::keyed("dialog.cancel"))
+                .clicked()
+            {
                 *close = true;
             }
         });
@@ -4842,7 +5666,7 @@ fn border_grommet_dialog(
     let area = crate::border_grommet::source_area(app, st.source);
     let mut ok = false;
     let mut help = false;
-    let length = |ui: &mut Ui, mm: &mut f64, min: f64| {
+    let length = |ui: &mut Ui, mm: &mut f64, min: f64, tip: &str| {
         let mut v = units.from_mm(*mm);
         if ui
             .add_sized(
@@ -4852,6 +5676,7 @@ fn border_grommet_dialog(
                     .max_decimals(3)
                     .suffix(format!(" {}", units.short())),
             )
+            .rich_tip_always(tip)
             .changed()
         {
             *mm = units.to_mm(v).max(min);
@@ -4868,18 +5693,23 @@ fn border_grommet_dialog(
                             &mut st.source,
                             Source::Page,
                             tr("border_grommet.source_page"),
-                        );
+                        )
+                        .rich_tip(crate::ui::tips::keyed("border_grommet.source_page"));
                         ui.add_enabled_ui(has_selection, |ui| {
                             ui.radio_value(
                                 &mut st.source,
                                 Source::Selection,
                                 tr("border_grommet.source_selection"),
-                            );
+                            )
+                            .rich_tip_always(crate::ui::tips::keyed(
+                                "border_grommet.source_selection",
+                            ));
                         });
                     });
                 });
                 group(ui, &tr("border_grommet.border"), |ui| {
-                    ui.checkbox(&mut st.add_border, tr("border_grommet.add_border"));
+                    ui.checkbox(&mut st.add_border, tr("border_grommet.add_border"))
+                        .rich_tip(crate::ui::tips::keyed("border_grommet.add_border"));
                     ui.add_enabled_ui(st.add_border, |ui| {
                         egui::Grid::new("bg_border").num_columns(2).show(ui, |ui| {
                             ui.label(tr("border_grommet.type"));
@@ -4889,10 +5719,19 @@ fn border_grommet_dialog(
                                     for k in BorderKind::ALL {
                                         ui.selectable_value(&mut st.border, k, tr(k.key()));
                                     }
-                                });
+                                })
+                                .response
+                                .rich_tip_always(crate::ui::tips::pair(
+                                    "border_grommet.type",
+                                    "border_grommet.border_type_desc",
+                                ));
                             ui.end_row();
                             ui.label(tr("border_grommet.size"));
-                            length(ui, &mut st.width_mm, 0.0);
+                            let tip = crate::ui::tips::pair(
+                                "border_grommet.size",
+                                "border_grommet.border_size_desc",
+                            );
+                            length(ui, &mut st.width_mm, 0.0, &tip);
                             ui.end_row();
                             if st.border == BorderKind::Solid {
                                 ui.label(tr("border_grommet.border_color"));
@@ -4903,19 +5742,28 @@ fn border_grommet_dialog(
                     });
                 });
                 group(ui, &tr("border_grommet.grommet"), |ui| {
-                    ui.checkbox(&mut st.grommets, tr("border_grommet.add_grommets"));
+                    ui.checkbox(&mut st.grommets, tr("border_grommet.add_grommets"))
+                        .rich_tip(crate::ui::tips::keyed("border_grommet.add_grommets"));
                     ui.add_enabled_ui(st.grommets, |ui| {
                         let g = &mut st.grommet;
                         ui.add_enabled_ui(st.add_border, |ui| {
-                            ui.checkbox(&mut g.use_border, tr("border_grommet.use_border"));
+                            ui.checkbox(&mut g.use_border, tr("border_grommet.use_border"))
+                                .rich_tip_always(crate::ui::tips::keyed(
+                                    "border_grommet.use_border",
+                                ));
                         });
                         egui::Grid::new("bg_grommet").num_columns(2).show(ui, |ui| {
                             ui.label(tr("border_grommet.size"));
-                            length(ui, &mut g.diameter_mm, 0.1);
+                            let tip = crate::ui::tips::pair(
+                                "border_grommet.size",
+                                "border_grommet.grommet_size_desc",
+                            );
+                            length(ui, &mut g.diameter_mm, 0.1, &tip);
                             ui.end_row();
                             ui.label(tr("border_grommet.margin"));
                             ui.add_enabled_ui(!(g.use_border && st.add_border), |ui| {
-                                length(ui, &mut g.margin_mm, 0.0);
+                                let tip = crate::ui::tips::keyed("border_grommet.margin");
+                                length(ui, &mut g.margin_mm, 0.0, &tip);
                             });
                             ui.end_row();
                         });
@@ -4933,7 +5781,7 @@ fn border_grommet_dialog(
                             .enumerate()
                             {
                                 if placement_button(ui, i, *on)
-                                    .on_hover_text(tr(key))
+                                    .rich_tip_always(crate::ui::tips::keyed(key))
                                     .clicked()
                                 {
                                     *on = !*on;
@@ -4941,18 +5789,22 @@ fn border_grommet_dialog(
                             }
                         });
                         ui.horizontal(|ui| {
-                            ui.radio_value(&mut g.by_count, true, tr("border_grommet.number"));
+                            ui.radio_value(&mut g.by_count, true, tr("border_grommet.number"))
+                                .rich_tip_always(crate::ui::tips::keyed("border_grommet.number"));
                             ui.add_enabled_ui(g.by_count, |ui| {
                                 ui.add(
                                     crate::ui::field::NumField::new(&mut g.count_per_edge)
                                         .range(2..=200),
-                                );
+                                )
+                                .rich_tip_always(crate::ui::tips::keyed("border_grommet.number"));
                             });
                         });
                         ui.horizontal(|ui| {
-                            ui.radio_value(&mut g.by_count, false, tr("border_grommet.spacing"));
+                            ui.radio_value(&mut g.by_count, false, tr("border_grommet.spacing"))
+                                .rich_tip_always(crate::ui::tips::keyed("border_grommet.spacing"));
                             ui.add_enabled_ui(!g.by_count, |ui| {
-                                length(ui, &mut g.spacing_mm, 1.0);
+                                let tip = crate::ui::tips::keyed("border_grommet.spacing");
+                                length(ui, &mut g.spacing_mm, 1.0, &tip);
                             });
                         });
                     });
@@ -4963,10 +5815,11 @@ fn border_grommet_dialog(
         ui.horizontal(|ui| {
             help = ui
                 .add_sized([27.0, 27.0], egui::Button::new("?"))
-                .on_hover_text(tr("dialog.help"))
+                .rich_tip(crate::ui::tips::keyed("dialog.help_button"))
                 .clicked();
             if ui
                 .add_sized([100.0, 27.0], egui::Button::new(tr("dialog.reset")))
+                .rich_tip(crate::ui::tips::keyed("dialog.reset"))
                 .clicked()
             {
                 *st = Default::default();
@@ -4975,6 +5828,7 @@ fn border_grommet_dialog(
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui
                     .add_sized([100.0, 27.0], egui::Button::new(tr("dialog.cancel")))
+                    .rich_tip(crate::ui::tips::keyed("dialog.cancel"))
                     .clicked()
                 {
                     *close = true;
@@ -4984,6 +5838,7 @@ fn border_grommet_dialog(
                         can,
                         egui::Button::new(tr("dialog.ok")).min_size(egui::vec2(100.0, 27.0)),
                     )
+                    .rich_tip_always(crate::ui::tips::keyed("dialog.ok"))
                     .clicked()
                     || (can && enter_pressed(ui))
                 {
@@ -5177,8 +6032,20 @@ fn palette_editor_dialog(
                             st.selected = None;
                         }
                     }
-                });
-            if ui.button(tr("dialog.new_palette")).clicked() {
+                })
+                .response
+                .rich_tip(crate::ui::tips::pair(
+                    "dialog.palette",
+                    "dialog.palette_pick_desc",
+                ));
+            if ui
+                .button(tr("dialog.new_palette"))
+                .rich_tip(crate::ui::tips::pair(
+                    "dialog.new_palette_tip",
+                    "dialog.new_palette_desc",
+                ))
+                .clicked()
+            {
                 app.palettes.push(crate::palette::Palette {
                     name: format!("Palette {}", app.palettes.len() + 1),
                     key: "",
@@ -5196,7 +6063,11 @@ fn palette_editor_dialog(
         if !pal.builtin {
             ui.horizontal(|ui| {
                 ui.label(tr("dialog.name"));
-                ui.text_edit_singleline(&mut pal.name);
+                ui.text_edit_singleline(&mut pal.name)
+                    .rich_tip(crate::ui::tips::pair(
+                        "dialog.name",
+                        "dialog.palette_name_desc",
+                    ));
             });
         }
         let cols = 12;
@@ -5220,6 +6091,9 @@ fn palette_editor_dialog(
                                     egui::StrokeKind::Outside,
                                 );
                             }
+                            let resp = resp.rich_tip_with(|| {
+                                format!("{}\n{}", pal.colors[i].0, tr("dialog.palette_swatch_desc"))
+                            });
                             if resp.clicked() {
                                 st.selected = Some(i);
                             }
@@ -5232,9 +6106,18 @@ fn palette_editor_dialog(
         if let Some(i) = st.selected {
             if let Some((name, c)) = pal.colors.get_mut(i) {
                 ui.horizontal(|ui| {
-                    ui.text_edit_singleline(name);
+                    ui.text_edit_singleline(name)
+                        .rich_tip(crate::ui::tips::pair(
+                            "dialog.color_name",
+                            "dialog.color_name_desc",
+                        ));
                     let mut edited = *c;
-                    if crate::ui::color_picker::color_button(ui, &mut edited) && !pal.builtin {
+                    let changed = crate::ui::tips::tip_over(
+                        ui,
+                        crate::ui::tips::pair("dialog.color_value", "dialog.color_value_desc"),
+                        |ui| crate::ui::color_picker::color_button(ui, &mut edited),
+                    );
+                    if changed && !pal.builtin {
                         *c = edited;
                     }
                     ui.label(crate::app::color_description(*c));
@@ -5243,19 +6126,32 @@ fn palette_editor_dialog(
         }
         if !pal.builtin {
             ui.horizontal(|ui| {
-                if ui.button(tr("dialog.add_color")).clicked() {
+                if ui
+                    .button(tr("dialog.add_color"))
+                    .rich_tip(crate::ui::tips::keyed("dialog.add_color"))
+                    .clicked()
+                {
                     let n = pal.colors.len() + 1;
                     pal.colors
                         .push((format!("Color {n}"), Color::rgb8(128, 128, 128)));
                     st.selected = Some(pal.colors.len() - 1);
                 }
                 if let Some(i) = st.selected {
-                    if ui.button(tr("dialog.remove_color")).clicked() && i < pal.colors.len() {
+                    if ui
+                        .button(tr("dialog.remove_color"))
+                        .rich_tip(crate::ui::tips::keyed("dialog.remove_color"))
+                        .clicked()
+                        && i < pal.colors.len()
+                    {
                         pal.colors.remove(i);
                         st.selected = None;
                     }
                 }
-                if ui.button(tr("dialog.save_palette")).clicked() {
+                if ui
+                    .button(tr("dialog.save_palette"))
+                    .rich_tip(crate::ui::tips::keyed("dialog.save_palette"))
+                    .clicked()
+                {
                     if let Some(p) = crate::files::Dialog::new()
                         .add_filter(
                             crate::palette::filter_label(&tr("file.palettes"), &["tdpal", "gpl"]),
@@ -5279,7 +6175,11 @@ fn palette_editor_dialog(
                     .size(11.0),
             );
         }
-        if ui.button(tr("dialog.close")).clicked() {
+        if ui
+            .button(tr("dialog.close"))
+            .rich_tip(crate::ui::tips::keyed("dialog.close"))
+            .clicked()
+        {
             app.rebuild_palette();
             *close = true;
         }
@@ -5287,7 +6187,66 @@ fn palette_editor_dialog(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
+
+    /// Every page size preset has its own name and size (in either
+    /// orientation), so a page's size names one preset; the favourites
+    /// and the names saved settings refer to are all there.
+    #[test]
+    fn page_size_presets_are_distinct_and_keep_their_names() {
+        use std::collections::HashSet;
+        let all = paper_presets();
+        assert!(all.len() > 100, "{}", all.len());
+        let names: HashSet<_> = all.iter().map(|(n, _)| *n).collect();
+        assert_eq!(names.len(), all.len(), "duplicate names");
+        for (i, (a, sa)) in all.iter().enumerate() {
+            assert!(sa.width > 0.0 && sa.height > 0.0, "{a}");
+            for (b, sb) in &all[i + 1..] {
+                assert!(!same_size(*sa, *sb), "{a} and {b} share a size");
+            }
+        }
+        for n in FAVOURITE_PAPERS.iter().chain(&[
+            "Tabloid",
+            "Business card",
+            "Web 1920x1080",
+            "Web 1280x720",
+            "Square 1080",
+        ]) {
+            assert!(names.contains(n), "{n}");
+        }
+        for (key, _) in paper_preset_groups() {
+            assert_ne!(crate::i18n::tr(key), key.rsplit('.').next().unwrap_or(key));
+        }
+    }
+
+    /// A page size finds its preset in either orientation, a saved size
+    /// first, and a size no preset has is custom.
+    #[test]
+    fn a_page_size_finds_its_name() {
+        let none: &[crate::settings::PageSizePreset] = &[];
+        assert_eq!(
+            paper_name(Size::new(210.0, 297.0), none).as_deref(),
+            Some("A4")
+        );
+        assert_eq!(
+            paper_name(Size::new(1189.0, 841.0), none).as_deref(),
+            Some("A0")
+        );
+        assert_eq!(
+            paper_name(Size::new(104.775, 241.3), none).as_deref(),
+            Some("Envelope #10")
+        );
+        assert_eq!(paper_name(Size::new(123.0, 45.0), none), None);
+        let saved = vec![crate::settings::PageSizePreset {
+            name: "My label".into(),
+            width_mm: 45.0,
+            height_mm: 123.0,
+        }];
+        assert_eq!(
+            paper_name(Size::new(123.0, 45.0), &saved).as_deref(),
+            Some("My label")
+        );
+    }
 
     #[test]
     fn a_pixel_size_sets_the_resolution_that_gives_it() {
@@ -5308,7 +6267,7 @@ mod tests {
     use super::*;
 
     /// Every dialog, as the menus open it.
-    fn all_dialogs(app: &App) -> Vec<Dialog> {
+    pub(crate) fn all_dialogs(app: &App) -> Vec<Dialog> {
         let layer = app.active_layer().unwrap_or(tracedraw_core::LayerId(1));
         vec![
             Dialog::NodeAlign {

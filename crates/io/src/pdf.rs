@@ -796,11 +796,21 @@ impl PageWriter<'_> {
             }
             let mut fill = shape.clone();
             fill.stroke = None;
+            // The shadow goes once, beneath the outline drawn first.
+            fill.shadow = None;
             self.shape(&outline, parent);
             self.shape(&fill, parent);
             return;
         }
         let transform = parent * shape.transform;
+        // A group's or a clip frame's own shadow, beneath all it holds (a
+        // clip frame with an opacity mask goes in as a picture, shadow
+        // and all).
+        if matches!(shape.kind, ShapeKind::Group { .. })
+            || matches!(shape.kind, ShapeKind::ClipFrame { .. }) && shape.opacity_mask.is_none()
+        {
+            self.drop_shadow(shape, parent);
+        }
         if let ShapeKind::Group { children } = &shape.kind {
             for c in children {
                 self.shape(c, transform);
@@ -872,6 +882,8 @@ impl PageWriter<'_> {
                 return;
             }
         }
+        // Drop shadow: the blurred silhouette behind the object.
+        self.drop_shadow(shape, parent);
         self.content.push_str("q\n");
         if shape.opacity < 1.0 && self.pdf.allow_alpha {
             let name = format!("GS{}", self.gstates.len());
@@ -1021,6 +1033,63 @@ impl PageWriter<'_> {
     }
 
     /// Set the outline's colour, width, caps, joins and dashes.
+    /// The drop shadow of `shape` (placed by `parent`) as the drawing
+    /// window draws it: the blurred silhouette in the shadow's colour and
+    /// opacity, as a picture with a soft mask at [`SHADOW_DPI`] (PDF has
+    /// no blur of its own), merged by the shadow's merge mode. The object
+    /// itself is drawn over it by the caller. Without transparency in the
+    /// file (PDF/X-1a, X-3) the page flattening has drawn it already.
+    fn drop_shadow(&mut self, shape: &Shape, parent: Affine) {
+        let Some(sh) = shape.shadow.filter(|sh| sh.opacity > 0.0) else {
+            return;
+        };
+        if !self.pdf.allow_alpha || shape.opacity <= 0.0 {
+            return;
+        }
+        let mut placed = shape.clone();
+        placed.transform = parent * shape.transform;
+        let area = sh.bounds(placed.bounds());
+        if misses(area, self.media) {
+            return;
+        }
+        // Within 40 million pixels, as the other pictures drawn here.
+        let area_in2 = (area.width() / 25.4) * (area.height() / 25.4);
+        let dpi = SHADOW_DPI
+            .min((40.0e6 / area_in2.max(1e-9)).sqrt())
+            .max(1.0);
+        let Some((rect, pm)) = tracedraw_render::render_shadow_image(&placed, dpi) else {
+            return;
+        };
+        let Ok(png) = pm.encode_png() else {
+            return;
+        };
+        let mut pic = Shape::new(
+            shape.id,
+            ShapeKind::Bitmap {
+                rect,
+                width_px: pm.width(),
+                height_px: pm.height(),
+                png: png.into(),
+                fx: None,
+            },
+        );
+        pic.fill = Fill::None;
+        pic.stroke = None;
+        let blend = pdf_blend_mode(sh.merge);
+        if blend != "Normal" {
+            let name = format!("GS{}", self.gstates.len());
+            let id = self
+                .pdf
+                .add_str(format!("<< /Type /ExtGState /BM /{blend} >>"));
+            self.gstates.push((name.clone(), id));
+            let _ = writeln!(self.content, "q\n/{name} gs");
+            self.shape(&pic, Affine::IDENTITY);
+            self.content.push_str("Q\n");
+        } else {
+            self.shape(&pic, Affine::IDENTITY);
+        }
+    }
+
     fn stroke_state(&mut self, s: &tracedraw_core::Stroke) {
         let width = if s.width <= tracedraw_core::Stroke::HAIRLINE + 1e-9 {
             0.0
@@ -1586,6 +1655,10 @@ fn needs_flattening(s: &Shape) -> bool {
     if s.opacity < 1.0 || s.opacity_mask.is_some() {
         return true;
     }
+    // A drop shadow is a soft, see-through picture.
+    if s.shadow.is_some_and(|sh| sh.opacity > 0.0) {
+        return true;
+    }
     if s.effects.iter().any(|e| {
         matches!(
             e,
@@ -1627,7 +1700,12 @@ fn flatten_page(doc: &Document, page: &tracedraw_core::document::Page, dpi: f64)
             out.push(s.clone());
             continue;
         }
-        let b = s.bounds().intersect(page_rect);
+        // With the drop shadow, which reaches past the object.
+        let mut b = s.bounds();
+        if let Some(sh) = &s.shadow {
+            b = b.union(sh.bounds(b));
+        }
+        let b = b.intersect(page_rect);
         if b.width() <= 0.0 || b.height() <= 0.0 {
             continue;
         }
@@ -1685,6 +1763,28 @@ fn flatten_page(doc: &Document, page: &tracedraw_core::document::Page, dpi: f64)
 
 /// The resolution opacity masks are drawn at in PDF output.
 const MASK_DPI: f64 = 300.0;
+
+/// The resolution drop shadows are drawn at in PDF output.
+const SHADOW_DPI: f64 = 300.0;
+
+/// The PDF blend mode closest to a shadow's merge mode (the drawing
+/// window's blend for it, see `tracedraw_render::merge_blend`). Modes
+/// with no PDF blend draw normally.
+fn pdf_blend_mode(merge: tracedraw_core::live::MergeMode) -> &'static str {
+    use tracedraw_core::live::MergeMode as M;
+    match merge {
+        M::Multiply => "Multiply",
+        M::Subtract | M::Difference => "Difference",
+        M::Divide => "Screen",
+        M::IfLighter => "Lighten",
+        M::IfDarker => "Darken",
+        M::Hue => "Hue",
+        M::Saturation => "Saturation",
+        M::Color => "Color",
+        M::Invert => "Exclusion",
+        M::Normal | M::Add | M::And | M::Or | M::Xor | M::Red | M::Green | M::Blue => "Normal",
+    }
+}
 
 /// `shape` (placed by `parent`) drawn on its own as a bitmap object with
 /// its transparency, covering its bounds; the resolution drops so the
@@ -2798,6 +2898,135 @@ mod tests {
             !text.contains("/ShadingType"),
             "the frame's gradient is not drawn"
         );
+    }
+
+    /// The image streams of `bytes` with their dictionaries, inflated.
+    fn image_streams(bytes: &[u8]) -> Vec<(String, Vec<u8>)> {
+        let mut out = Vec::new();
+        let mut rest: &[u8] = bytes;
+        while let Some(i) = rest.windows(7).position(|w| w == b"stream\n") {
+            let dict_start = rest[..i].windows(2).rposition(|w| w == b"<<").unwrap_or(0);
+            let dict = String::from_utf8_lossy(&rest[dict_start..i]).into_owned();
+            let data = &rest[i + 7..];
+            if dict.contains("/Subtype /Image") {
+                use std::io::Read;
+                let mut px = Vec::new();
+                if flate2::read::ZlibDecoder::new(data)
+                    .read_to_end(&mut px)
+                    .is_ok()
+                {
+                    out.push((dict, px));
+                }
+            }
+            rest = data;
+        }
+        out
+    }
+
+    /// A drop shadow reaches the PDF: a blurred picture in the shadow's
+    /// colour with its opacity in a soft mask, under the object, over the
+    /// shadow's area, multiplied (#1029: the shadow showed only once
+    /// broken apart into a bitmap).
+    #[test]
+    fn a_drop_shadow_goes_in_beneath_its_object() {
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        let id = doc.ids_mut().shape();
+        let mut s = Shape::new(
+            id,
+            ShapeKind::Rect {
+                rect: Rect::new(20.0, 20.0, 60.0, 40.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        s.fill = Fill::Solid(Color::rgb8(255, 0, 0));
+        s.stroke = None;
+        s.shadow = Some(tracedraw_core::Shadow {
+            offset: tracedraw_core::geometry::Vec2::new(3.0, -3.0),
+            opacity: 0.6,
+            blur: 1.0,
+            color: Color::rgb8(0, 0, 255),
+            ..Default::default()
+        });
+        doc.layer_mut(layer).unwrap().shapes.push(s.clone());
+        let bytes = document_to_pdf(&doc);
+        let text = String::from_utf8_lossy(&bytes).into_owned();
+        assert!(text.contains("/BM /Multiply"), "merged as it asks");
+        let content = page_content(&bytes);
+        let draw = content.find(" cm /Im0 Do").expect("the shadow's picture");
+        let fill = content.find("1 0 0 rg").expect("the object's fill");
+        assert!(draw < fill, "the shadow beneath the object");
+        // Placed over the moved box grown by three times the feathering.
+        let line = content[..draw].lines().last().unwrap_or_default();
+        let m: Vec<f64> = line
+            .split_whitespace()
+            .filter_map(|v| v.parse().ok())
+            .collect();
+        assert_eq!(m.len(), 6, "{line}");
+        let (x0, y0) = (m[4] / MM_PT, m[5] / MM_PT);
+        let (x1, y1) = (x0 + m[0] / MM_PT, y0 + m[3] / MM_PT);
+        for (got, want) in [(x0, 20.0), (y0, 14.0), (x1, 66.0), (y1, 40.0)] {
+            assert!((got - want).abs() < 0.2, "{x0} {y0} {x1} {y1}");
+        }
+        // Blue, at most the shadow's opacity, solid in the middle.
+        let images = image_streams(&bytes);
+        let mask = images
+            .iter()
+            .find(|(d, _)| d.contains("/DeviceGray"))
+            .expect("a soft mask");
+        let picture = images
+            .iter()
+            .find(|(d, _)| d.contains("/SMask"))
+            .expect("the picture");
+        let top = mask.1.iter().copied().max().unwrap_or(0);
+        assert!((150..=156).contains(&top), "opacity 0.6: {top}");
+        let at = mask.1.iter().position(|a| *a == top).unwrap();
+        assert_eq!(&picture.1[at * 3..at * 3 + 3], &[0, 0, 255]);
+        assert!(mask.1.contains(&0), "feathered to nothing");
+
+        // No shadow, no picture.
+        s.shadow = None;
+        doc.layer_mut(layer).unwrap().shapes = vec![s];
+        assert!(!page_content(&document_to_pdf(&doc)).contains("/Im0 Do"));
+    }
+
+    /// PDF/X-1a keeps no transparency: the shadow is flattened into the
+    /// page picture with its object, over the shadow's area too.
+    #[test]
+    fn a_drop_shadow_is_flattened_for_x1a() {
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        let id = doc.ids_mut().shape();
+        let mut s = Shape::new(
+            id,
+            ShapeKind::Rect {
+                rect: Rect::new(20.0, 20.0, 60.0, 40.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        s.fill = Fill::Solid(Color::rgb8(255, 0, 0));
+        s.shadow = Some(tracedraw_core::Shadow::default());
+        doc.layer_mut(layer).unwrap().shapes.push(s);
+        let opts = PdfOptions {
+            standard: PdfStandard::X1a,
+            flatten_dpi: 72.0,
+            ..Default::default()
+        };
+        let bytes = document_to_pdf_with(&doc, &opts);
+        let text = String::from_utf8_lossy(&bytes).into_owned();
+        assert!(!text.contains("/SMask") && !text.contains("/BM"));
+        let content = page_content(&bytes);
+        let draw = content.find(" cm /Im0 Do").expect("the flattened picture");
+        let line = content[..draw].lines().last().unwrap_or_default();
+        let m: Vec<f64> = line
+            .split_whitespace()
+            .filter_map(|v| v.parse().ok())
+            .collect();
+        assert_eq!(m.len(), 6, "{line}");
+        // Down to the shadow's lower edge (2 mm down, 4.5 mm feathering).
+        assert!(m[5] / MM_PT < 14.0, "{line}");
     }
 
     #[test]

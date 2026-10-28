@@ -3,6 +3,7 @@
 //! details pane at the right, a thumbnail size slider and Show template
 //! details at the bottom. See docs/behavior/new-from-template.md.
 
+use crate::ui::tips::RichTip;
 use egui::{Color32, Context, Sense, Ui, Vec2};
 
 use crate::app::App;
@@ -192,7 +193,7 @@ pub fn dialog(app: &mut App, ctx: &Context, st: &mut TemplateState, close: &mut 
         ui.horizontal(|ui| {
             if ui
                 .button("\u{1f4c2}")
-                .on_hover_text(match user_dir().filter(|_| !crate::files::WEB) {
+                .rich_tip(match user_dir().filter(|_| !crate::files::WEB) {
                     Some(dir) => format!(
                         "{}\n{}",
                         tr("welcome.open_template"),
@@ -213,7 +214,7 @@ pub fn dialog(app: &mut App, ctx: &Context, st: &mut TemplateState, close: &mut 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.spacing_mut().slider_width = 120.0;
                 ui.add(egui::Slider::new(&mut st.size, 40.0..=160.0).show_value(false))
-                    .on_hover_text(tr("tpl.thumbnail_size"));
+                    .rich_tip(tr("tpl.thumbnail_size"));
             });
         });
         ui.separator();
@@ -222,6 +223,7 @@ pub fn dialog(app: &mut App, ctx: &Context, st: &mut TemplateState, close: &mut 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui
                     .add_sized([100.0, 27.0], egui::Button::new(tr("dialog.cancel")))
+                    .rich_tip(crate::ui::tips::keyed("dialog.cancel"))
                     .clicked()
                 {
                     *close = true;
@@ -311,7 +313,7 @@ fn cell(ui: &mut Ui, ctx: &Context, st: &TemplateState, i: usize) -> Option<bool
     ui.painter()
         .with_clip_rect(name_rect)
         .galley(pos, galley, Tokens::text());
-    let resp = resp.on_hover_text(&t.name);
+    let resp = resp.rich_tip(&t.name);
     if resp.double_clicked() {
         Some(true)
     } else if resp.clicked() {

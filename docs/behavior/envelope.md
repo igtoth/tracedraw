@@ -111,7 +111,16 @@ nothing selected, how to start.
 - Copy Envelope Properties (also Object > Copy Effect > Envelope From):
   the next click picks the object to copy from; the selected objects take
   its last envelope, stretched from its box to theirs, with its mapping
-  and Keep Lines. A right click cancels.
+  and Keep Lines. A right click cancels. An object with no envelope gives
+  the shape of its outline instead (its largest closed part, as drawn on
+  the page), so text or any object is fitted into a drawn shape: the
+  frame's nodes are the outline's, its corners the outline's points
+  nearest the corners of its box (a node goes in there), stretched from
+  that box to each object's, with the mapping and Keep Lines new
+  envelopes take (#993, `tracedraw_core::envelope::tests::frames_are_made_from_outlines`,
+  `text_effect_tests::text_takes_the_shape_of_an_object_as_its_envelope`).
+  An open line, or an outline with more than 96 nodes, gives nothing and
+  the status bar says so.
 - Clear Envelope removes each selected object's last envelope.
 - Convert to Curves (Ctrl+Q) and Break Apart (Ctrl+K) make the envelope
   permanent: the object becomes curves drawn as the envelope drew it, and

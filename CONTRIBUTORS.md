@@ -26,9 +26,15 @@ to the project too:
 | [@LaMka21](https://github.com/LaMka21) | traceCUT sign making and cutting tools (#170, #245; kept for later), page tab right-click menu (#186; covered by #199 and #210) |
 | [@belchiordameao-cmd](https://github.com/belchiordameao-cmd) | PDF/X with the drawing's CMYK profile (#649), outlines that scale with their object in PDF and SVG (#656), `.cdr` point lists of type 0x26 (#657); in review |
 
+## Testing and reports
+
 People who report bugs, send sample files and test against the reference
 program help just as much; they are thanked in the issues and in
-[`CHANGELOG.md`](CHANGELOG.md).
+[`CHANGELOG.md`](CHANGELOG.md). Some went well beyond one report:
+
+| Contributor | Help |
+|---|---|
+| [@2CLC](https://github.com/2CLC) | Tested build after build on a 2010 office PC (Intel HD Graphics, OpenGL 2.1) with logs and screenshots until TraceDraw ran on it with its own card, which is why older PCs are supported (#616) |
 
 To contribute, read [`CONTRIBUTING.md`](CONTRIBUTING.md). When your pull
 request is merged, you are added here.

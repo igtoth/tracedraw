@@ -1128,7 +1128,12 @@ impl GlutinWindowContext {
                 .map_err(|e| crate::Error::NoGlutinConfigs(config_template_builder.build(), e))?
         };
         if let Some(window) = &window {
-            egui_winit::apply_viewport_builder_to_window(egui_ctx, window, &viewport_builder);
+            // TraceDraw: a maximized window is not given its size again (#787).
+            egui_winit::apply_viewport_builder_to_window(
+                egui_ctx,
+                window,
+                &super::window_start::after_creation(&viewport_builder),
+            );
         }
 
         let gl_display = gl_config.display();
@@ -1299,10 +1304,11 @@ impl GlutinWindowContext {
                     glutin_winit::finalize_window(event_loop, window_attributes, &self.gl_config)?
                 }
             };
+            // TraceDraw: a maximized window is not given its size again (#787).
             egui_winit::apply_viewport_builder_to_window(
                 &self.egui_ctx,
                 &window,
-                &viewport.builder,
+                &super::window_start::after_creation(&viewport.builder),
             );
 
             egui_winit::update_viewport_info(&mut viewport.info, &self.egui_ctx, &window, true);

@@ -9,6 +9,7 @@ use crate::bitmap_modes::{
 };
 use crate::i18n::tr;
 use crate::ui::bitmap_preview::{before_after, settings_key};
+use crate::ui::tips::RichTip;
 use egui::{Color32, Context, Ui};
 
 /// The Duotone dialog's state: the settings, the ink whose curve is shown
@@ -30,6 +31,7 @@ fn combo<T: Copy + PartialEq>(
     value: &mut T,
     all: &[T],
     key: impl Fn(T) -> &'static str,
+    tip: &str,
 ) -> bool {
     let mut changed = false;
     egui::ComboBox::from_id_salt(id)
@@ -42,7 +44,9 @@ fn combo<T: Copy + PartialEq>(
                     changed = true;
                 }
             }
-        });
+        })
+        .response
+        .rich_tip(crate::ui::tips::keyed(tip));
     changed
 }
 
@@ -66,15 +70,22 @@ pub fn bw_dialog(app: &mut App, ctx: &Context, s: &mut BwSettings, close: &mut b
                 &mut s.method,
                 &BwMethod::ALL,
                 BwMethod::key,
+                "dialog.conversion_method",
             );
             ui.end_row();
             match s.method {
                 BwMethod::LineArt => {
                     ui.label(tr("dialog.threshold"));
-                    ui.add(crate::ui::Rail(egui::Slider::new(
-                        &mut s.threshold,
-                        0..=255,
-                    )));
+                    crate::ui::tips::tip_over(
+                        ui,
+                        crate::ui::tips::keyed("dialog.threshold"),
+                        |ui| {
+                            ui.add(crate::ui::Rail(egui::Slider::new(
+                                &mut s.threshold,
+                                0..=255,
+                            )))
+                        },
+                    );
                     ui.end_row();
                 }
                 BwMethod::Halftone => {
@@ -85,23 +96,37 @@ pub fn bw_dialog(app: &mut App, ctx: &Context, s: &mut BwSettings, close: &mut b
                             for sc in [Screen::Round, Screen::Line, Screen::Square] {
                                 ui.selectable_value(&mut s.screen, sc, tr(screen_key(sc)));
                             }
-                        });
+                        })
+                        .response
+                        .rich_tip(crate::ui::tips::keyed("dialog.screen_type"));
                     ui.end_row();
                     ui.label(tr("dialog.angle"));
-                    ui.add(crate::ui::Rail(
-                        egui::Slider::new(&mut s.angle, -180.0..=180.0).suffix(" \u{b0}"),
-                    ));
+                    crate::ui::tips::tip_over(ui, crate::ui::tips::keyed("dialog.angle"), |ui| {
+                        ui.add(crate::ui::Rail(
+                            egui::Slider::new(&mut s.angle, -180.0..=180.0).suffix(" \u{b0}"),
+                        ))
+                    });
                     ui.end_row();
                     ui.label(tr("dialog.lines_per_inch"));
-                    ui.add(crate::ui::Rail(egui::Slider::new(&mut s.lpi, 1.0..=300.0)));
+                    crate::ui::tips::tip_over(
+                        ui,
+                        crate::ui::tips::keyed("dialog.lines_per_inch"),
+                        |ui| ui.add(crate::ui::Rail(egui::Slider::new(&mut s.lpi, 1.0..=300.0))),
+                    );
                     ui.end_row();
                 }
                 _ => {
                     ui.label(tr("dialog.intensity"));
-                    ui.add(crate::ui::Rail(egui::Slider::new(
-                        &mut s.intensity,
-                        0.0..=100.0,
-                    )));
+                    crate::ui::tips::tip_over(
+                        ui,
+                        crate::ui::tips::keyed("dialog.intensity"),
+                        |ui| {
+                            ui.add(crate::ui::Rail(egui::Slider::new(
+                                &mut s.intensity,
+                                0.0..=100.0,
+                            )))
+                        },
+                    );
                     ui.end_row();
                 }
             }
@@ -153,6 +178,7 @@ pub fn duotone_dialog(app: &mut App, ctx: &Context, st: &mut DuotoneState, close
                         &mut st.settings.kind,
                         &DuotoneType::ALL,
                         DuotoneType::key,
+                        "dialog.duotone_type",
                     );
                 });
                 let n = st.settings.kind.inks();
@@ -160,23 +186,55 @@ pub fn duotone_dialog(app: &mut App, ctx: &Context, st: &mut DuotoneState, close
                 for i in 0..n {
                     ui.horizontal(|ui| {
                         let mut rgb = st.settings.inks[i].rgb;
-                        if ui.color_edit_button_srgb(&mut rgb).changed() {
+                        if ui
+                            .color_edit_button_srgb(&mut rgb)
+                            .rich_tip(crate::ui::tips::keyed("dialog.ink_color"))
+                            .changed()
+                        {
                             st.settings.inks[i].rgb = rgb;
                         }
                         let name = crate::i18n::trf("dialog.ink_n", &[("n", &(i + 1).to_string())]);
-                        if ui.selectable_label(st.ink == i, name).clicked() {
+                        if ui
+                            .selectable_label(st.ink == i, name)
+                            .rich_tip_with(|| {
+                                let name = crate::i18n::trf(
+                                    "dialog.ink_n",
+                                    &[("n", &(i + 1).to_string())],
+                                );
+                                format!("{name}\n{}", tr("dialog.ink_pick_desc"))
+                            })
+                            .clicked()
+                        {
                             st.ink = i;
                         }
                     });
                 }
-                ui.checkbox(&mut st.show_all, tr("dialog.show_all"));
+                ui.checkbox(&mut st.show_all, tr("dialog.show_all"))
+                    .rich_tip(crate::ui::tips::pair(
+                        "dialog.show_all",
+                        "dialog.duotone_show_all_desc",
+                    ));
                 ui.horizontal(|ui| {
-                    if ui.button(tr("dialog.load")).clicked() {
+                    if ui
+                        .button(tr("dialog.load"))
+                        .rich_tip(crate::ui::tips::pair(
+                            "dialog.load",
+                            "dialog.duotone_load_desc",
+                        ))
+                        .clicked()
+                    {
                         crate::files::Dialog::new()
                             .add_filter(tr("dialog.duotone_inks"), &["json"])
                             .pick_into("duotone_inks");
                     }
-                    if ui.button(tr("dialog.save")).clicked() {
+                    if ui
+                        .button(tr("dialog.save"))
+                        .rich_tip(crate::ui::tips::pair(
+                            "dialog.save",
+                            "dialog.duotone_save_desc",
+                        ))
+                        .clicked()
+                    {
                         if let Some(path) = crate::files::Dialog::new()
                             .add_filter(tr("dialog.duotone_inks"), &["json"])
                             .set_file_name("inks.json")
@@ -256,22 +314,38 @@ pub fn paletted_dialog(app: &mut App, ctx: &Context, s: &mut PalettedSettings, c
                 &mut s.palette,
                 &PaletteType::ALL,
                 PaletteType::key,
+                "dialog.palette",
             );
             ui.end_row();
             if s.palette.counts() {
                 ui.label(tr("dialog.colors"));
-                ui.add(crate::ui::Rail(egui::Slider::new(&mut s.colors, 2..=256)));
+                crate::ui::tips::tip_over(ui, crate::ui::tips::keyed("dialog.colors"), |ui| {
+                    ui.add(crate::ui::Rail(egui::Slider::new(&mut s.colors, 2..=256)))
+                });
                 ui.end_row();
             }
             ui.label(tr("dialog.dithering"));
-            combo(ui, "pal_dither", &mut s.dither, &Dither::ALL, Dither::key);
+            combo(
+                ui,
+                "pal_dither",
+                &mut s.dither,
+                &Dither::ALL,
+                Dither::key,
+                "dialog.dithering",
+            );
             ui.end_row();
             if s.dither != Dither::None {
                 ui.label(tr("dialog.dither_intensity"));
-                ui.add(crate::ui::Rail(egui::Slider::new(
-                    &mut s.intensity,
-                    0.0..=100.0,
-                )));
+                crate::ui::tips::tip_over(
+                    ui,
+                    crate::ui::tips::keyed("dialog.dither_intensity"),
+                    |ui| {
+                        ui.add(crate::ui::Rail(egui::Slider::new(
+                            &mut s.intensity,
+                            0.0..=100.0,
+                        )))
+                    },
+                );
                 ui.end_row();
             }
         });
@@ -387,7 +461,10 @@ pub fn remove_background_dialog(
                             egui::StrokeKind::Inside,
                         );
                         if resp
-                            .on_hover_text(tr("dialog.bg_color_remove_tip"))
+                            .rich_tip(crate::ui::tips::pair(
+                                "dialog.bg_color_remove",
+                                "dialog.bg_color_remove_tip",
+                            ))
                             .clicked()
                         {
                             gone = Some(i);
@@ -405,13 +482,22 @@ pub fn remove_background_dialog(
                         crate::tools::Tool::ColorEyedropper,
                         crate::theme::Tokens::icon(),
                     );
-                    if resp.on_hover_text(tr("dialog.bg_pick_tip")).clicked() {
+                    if resp
+                        .rich_tip(crate::ui::tips::pair(
+                            "dialog.bg_pick",
+                            "dialog.bg_pick_tip",
+                        ))
+                        .clicked()
+                    {
                         st.picking = !st.picking;
                     }
                     if !st.settings.colors.is_empty()
                         && ui
                             .small_button(tr("dialog.bg_colors_auto_button"))
-                            .on_hover_text(tr("dialog.bg_colors_auto_tip"))
+                            .rich_tip(crate::ui::tips::pair(
+                                "dialog.bg_colors_auto_button",
+                                "dialog.bg_colors_auto_tip",
+                            ))
                             .clicked()
                     {
                         st.settings.colors.clear();
@@ -419,24 +505,45 @@ pub fn remove_background_dialog(
                 });
                 ui.end_row();
                 ui.label(tr("dialog.tolerance"));
-                ui.add(crate::ui::Rail(egui::Slider::new(
-                    &mut st.settings.tolerance,
-                    0.0..=100.0,
-                )));
+                crate::ui::tips::tip_over(ui, crate::ui::tips::keyed("dialog.tolerance"), |ui| {
+                    ui.add(crate::ui::Rail(egui::Slider::new(
+                        &mut st.settings.tolerance,
+                        0.0..=100.0,
+                    )))
+                });
                 ui.end_row();
                 ui.label(tr("dialog.edge_softness"));
-                ui.add(crate::ui::Rail(
-                    egui::Slider::new(&mut st.settings.softness, 0.0..=20.0).suffix(" px"),
-                ));
+                crate::ui::tips::tip_over(
+                    ui,
+                    crate::ui::tips::keyed("dialog.edge_softness"),
+                    |ui| {
+                        ui.add(crate::ui::Rail(
+                            egui::Slider::new(&mut st.settings.softness, 0.0..=20.0).suffix(" px"),
+                        ))
+                    },
+                );
                 ui.end_row();
             });
         ui.checkbox(&mut st.settings.contiguous, tr("dialog.bg_contiguous"))
-            .on_hover_text(tr("dialog.bg_contiguous_tip"));
+            .rich_tip(crate::ui::tips::pair(
+                "dialog.bg_contiguous",
+                "dialog.bg_contiguous_tip",
+            ));
         ui.checkbox(&mut st.settings.despeckle, tr("dialog.bg_despeckle"))
-            .on_hover_text(tr("dialog.bg_despeckle_tip"));
+            .rich_tip(crate::ui::tips::pair(
+                "dialog.bg_despeckle",
+                "dialog.bg_despeckle_tip",
+            ));
         ui.checkbox(&mut st.settings.clean_edges, tr("dialog.bg_clean_edges"))
-            .on_hover_text(tr("dialog.bg_clean_edges_tip"));
-        if ui.button(tr("dialog.reset")).clicked() {
+            .rich_tip(crate::ui::tips::pair(
+                "dialog.bg_clean_edges",
+                "dialog.bg_clean_edges_tip",
+            ));
+        if ui
+            .button(tr("dialog.reset"))
+            .rich_tip(crate::ui::tips::keyed("dialog.reset"))
+            .clicked()
+        {
             st.settings = Default::default();
             st.picking = false;
         }

@@ -649,8 +649,18 @@ face: the family takes the weight's name ("Titillium Web" at 600 opens
 as "Titillium Web SemiBold", not bold), so editing, the PDF and the
 saved file keep the face. A family already named with a weight keeps
 its name, and is not bold when its name gives the run's weight
-("Segoe UI Semibold" at 600). The saved file names the family as it is
-shown, at regular or bold weight, and opens the same.
+("Segoe UI Semibold" at 600). The saved file names such a face as the
+opened one did: the family without the weight, at the weight's style
+code ("Titillium Web SemiBold" is saved as "Titillium Web" at 1024, its
+italic at 2048), in the run styles, the font records and the font
+table, so the face is found where the font is installed under the
+family's name, and it opens the same (#892,
+`write::tests::faces_named_with_their_weight_round_trip`,
+`write::tests::the_font_table_lists_weight_named_faces_under_their_family`).
+Bold text keeps its name at the bold code, and so does a family whose
+font names itself with the weight (its name ID 1, as "Segoe UI
+Semibold" can), saved at regular weight as before; with no font file
+found the name is split.
 
 A drawing that carries several faces of one family (regular and bold)
 has each face serve its text; an installed face of the same family,
@@ -752,8 +762,13 @@ draws as before. A weight set this way replaces synthetic bold, and a
 slant or italic value replaces synthetic italic
 (`tests::variable_font_axes_set_on_the_text_draw_it_there`,
 `ui::text_docker::tests::variable_font_axes_show_and_set_on_the_text`).
-The sliders do not preview while dragged; `.cdr` files do not keep the
-values.
+The sliders do not preview while dragged. `.cdr` files keep only the
+weight (#1013), in the steps of 100 their style codes count: text at
+600 is saved as the family's 600 face and reopens as the family named
+with the weight ("MiSans VF SemiBold"), which draws the variable font at
+600 (`write::tests::variable_font_weight_axis_round_trips`); a weight
+between steps is rounded to the nearest, and the other axes are not
+kept.
 
 The browser build offers the families of its font folder (see
 `web/FONTS.md`): the font lists show them, and text asks for one the
@@ -953,7 +968,10 @@ stand-in next to each missing family: "Arial (Liberation Sans)".
   the path's highest point, outside and upright, both mirrors off, or
   on its lowest point, inside and reading left to right, both mirrors
   on; the list shows these while the text is so placed,
-  `text_path::tests::top_and_bottom_placement_on_a_closed_path`),
+  `text_path::tests::top_and_bottom_placement_on_a_closed_path`; text
+  set off the path keeps its distance and is centred on the line its
+  letters stand on, half that line's length round,
+  `text_path::tests::bottom_placement_centres_text_set_off_the_path`),
   Distance from path and Offset along path in the document's units
   (a new distance, from the bar or a drag across the path, keeps the
   text where it is along the path: the offset, measured along the

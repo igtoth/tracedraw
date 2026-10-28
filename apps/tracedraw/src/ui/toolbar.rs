@@ -196,52 +196,56 @@ fn zoom_box(app: &mut App, ui: &mut Ui, id: &str, width: f32) {
         .fill(crate::theme::Tokens::field())
         .stroke(egui::Stroke::new(1.0, Tokens::control_border()))
         .inner_margin(egui::Margin::ZERO);
-    field.show(ui, |ui| {
-        ui.spacing_mut().item_spacing.x = 0.0;
-        ui.horizontal(|ui| {
-            let r = ui.add_sized(
-                [width - 22.0, 24.0],
-                egui::TextEdit::singleline(&mut text)
-                    .frame(egui::Frame::NONE)
-                    .vertical_align(egui::Align::Center)
-                    .margin(egui::Margin::symmetric(4, 2)),
-            );
-            if r.has_focus() {
-                ui.data_mut(|d| d.insert_temp(edit_id, text.clone()));
-            } else {
-                ui.data_mut(|d| d.remove::<String>(edit_id));
-            }
-            if r.lost_focus() {
-                if let Ok(v) = text.trim().trim_end_matches('%').trim().parse::<f32>() {
-                    if v > 0.0 {
-                        app.set_zoom_percent(v);
+    let tip = crate::ui::tips::keyed("toolbar.zoom_levels");
+    crate::ui::tips::tip_over(ui, tip, |ui| {
+        field.show(ui, |ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            ui.horizontal(|ui| {
+                let r = ui.add_sized(
+                    [width - 22.0, 24.0],
+                    egui::TextEdit::singleline(&mut text)
+                        .frame(egui::Frame::NONE)
+                        .vertical_align(egui::Align::Center)
+                        .margin(egui::Margin::symmetric(4, 2)),
+                );
+                if r.has_focus() {
+                    ui.data_mut(|d| d.insert_temp(edit_id, text.clone()));
+                } else {
+                    ui.data_mut(|d| d.remove::<String>(edit_id));
+                }
+                if r.lost_focus() {
+                    if let Ok(v) = text.trim().trim_end_matches('%').trim().parse::<f32>() {
+                        if v > 0.0 {
+                            app.set_zoom_percent(v);
+                        }
                     }
                 }
-            }
-            let (arrow, resp) = ui.allocate_exact_size(Vec2::new(22.0, 24.0), egui::Sense::click());
-            ui.painter().rect_filled(
-                arrow,
-                0.0,
-                if resp.hovered() {
-                    crate::theme::Tokens::hovered_row()
-                } else {
-                    Tokens::panel_dark()
-                },
-            );
-            let c = arrow.center();
-            ui.painter().add(egui::epaint::PathShape::convex_polygon(
-                vec![
-                    c + Vec2::new(-4.0, -2.0),
-                    c + Vec2::new(4.0, -2.0),
-                    c + Vec2::new(0.0, 2.5),
-                ],
-                Tokens::text_dim(),
-                egui::Stroke::NONE,
-            ));
-            egui::Popup::menu(&resp)
-                .id(egui::Id::new((id, "levels")))
-                .show(|ui| zoom_level_menu(app, ui));
-        });
+                let (arrow, resp) =
+                    ui.allocate_exact_size(Vec2::new(22.0, 24.0), egui::Sense::click());
+                ui.painter().rect_filled(
+                    arrow,
+                    0.0,
+                    if resp.hovered() {
+                        crate::theme::Tokens::hovered_row()
+                    } else {
+                        Tokens::panel_dark()
+                    },
+                );
+                let c = arrow.center();
+                ui.painter().add(egui::epaint::PathShape::convex_polygon(
+                    vec![
+                        c + Vec2::new(-4.0, -2.0),
+                        c + Vec2::new(4.0, -2.0),
+                        c + Vec2::new(0.0, 2.5),
+                    ],
+                    Tokens::text_dim(),
+                    egui::Stroke::NONE,
+                ));
+                egui::Popup::menu(&resp)
+                    .id(egui::Id::new((id, "levels")))
+                    .show(|ui| zoom_level_menu(app, ui));
+            });
+        })
     });
 }
 
@@ -787,6 +791,10 @@ fn snap_to_button(app: &mut App, ui: &mut Ui, bar: &str, doc: bool) {
         egui::Sense::hover()
     };
     let (rect, snap_resp) = ui.allocate_exact_size(Vec2::new(width, std_btn()), sense);
+    let snap_resp = snap_resp.rich_tip(crate::ui::tips::pair(
+        "menu.view.snap_to",
+        "toolbar.snap_to_desc",
+    ));
     std_frame(ui, rect, doc && snap_resp.hovered(), false);
     ui.painter().text(
         egui::pos2(rect.left() + 6.0, rect.center().y),
@@ -848,6 +856,7 @@ fn snap_to_button(app: &mut App, ui: &mut Ui, bar: &str, doc: bool) {
 fn launch_button(app: &mut App, ui: &mut Ui, bar: &str) {
     // Launch: the other tools that come with the editor.
     let (rect, launch) = ui.allocate_exact_size(Vec2::new(108.0, std_btn()), egui::Sense::click());
+    let launch = launch.rich_tip(crate::ui::tips::keyed("toolbar.launch"));
     std_frame(ui, rect, launch.hovered(), false);
     icons::draw_action(
         ui.painter(),
@@ -941,11 +950,16 @@ fn ai_button(app: &mut App, ui: &mut Ui) {
     // The arrow is a button of its own: it opens the list.
     let arrow_rect =
         egui::Rect::from_min_max(egui::pos2(rect.right() - 18.0, rect.top()), rect.max);
-    let arrow = ui.interact(
-        arrow_rect,
-        egui::Id::new("ai_menu_arrow"),
-        egui::Sense::click(),
-    );
+    let arrow = ui
+        .interact(
+            arrow_rect,
+            egui::Id::new("ai_menu_arrow"),
+            egui::Sense::click(),
+        )
+        .rich_tip(crate::ui::tips::pair(
+            "toolbar.more",
+            "toolbar.ai_more_desc",
+        ));
     if resp.clicked() && !arrow.clicked() && !arrow.hovered() {
         app.open_ai_generate();
     }
@@ -1047,6 +1061,31 @@ pub fn transform_toolbar(app: &mut App, ui: &mut Ui) {
             ));
         }
     });
+}
+
+/// A dim label and the control `add` draws after it, both showing the
+/// tip of `key`: the label's text in bold and the `key_desc` description.
+pub(crate) fn dim_labelled<R>(ui: &mut Ui, key: &str, add: impl FnOnce(&mut Ui) -> R) -> R {
+    dim_labelled_as(ui, key, &format!("{key}_desc"), add)
+}
+
+/// [`dim_labelled`] with the description kept under `desc_key`.
+pub(crate) fn dim_labelled_as<R>(
+    ui: &mut Ui,
+    key: &str,
+    desc_key: &str,
+    add: impl FnOnce(&mut Ui) -> R,
+) -> R {
+    let name = tr(key);
+    let tip = format!("{}\n{}", name.trim_end_matches(':'), tr(desc_key));
+    crate::ui::tips::tip_over(ui, tip, |ui| {
+        ui.label(
+            egui::RichText::new(&name)
+                .color(Tokens::text_dim())
+                .size(11.0),
+        );
+        add(ui)
+    })
 }
 
 fn unit_value(ui: &mut Ui, app: &App, label: &str, mm: &mut f64, speed: f64) -> bool {
@@ -1220,20 +1259,16 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
             Tool::Envelope => crate::ui::envelope_ui::envelope_bar(app, ui),
             Tool::Distort => crate::ui::distort_bar::distort_bar(app, ui),
             Tool::Eraser => {
-                ui.label(
-                    egui::RichText::new(tr("toolbar.eraser_thickness"))
-                        .color(Tokens::text_dim())
-                        .size(11.0),
-                );
                 let mut w = app.units.from_mm(app.eraser_width);
-                if ui
-                    .add(
+                if dim_labelled(ui, "toolbar.eraser_thickness", |ui| {
+                    ui.add(
                         crate::ui::field::NumField::new(&mut w)
                             .speed(0.1)
                             .range(0.01..=1000.0)
                             .suffix(format!(" {}", app.units.short())),
                     )
-                    .changed()
+                })
+                .changed()
                 {
                     app.eraser_width = app.units.to_mm(w).max(0.01);
                 }
@@ -1275,54 +1310,50 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 );
             }
             Tool::Spiral => {
-                ui.label(
-                    egui::RichText::new(tr("toolbar.revolutions"))
-                        .color(Tokens::text_dim())
-                        .size(11.0),
-                );
-                ui.add(crate::ui::field::NumField::new(&mut app.spiral_revolutions).range(1..=100));
+                dim_labelled(ui, "toolbar.revolutions", |ui| {
+                    ui.add(
+                        crate::ui::field::NumField::new(&mut app.spiral_revolutions).range(1..=100),
+                    )
+                });
                 if ui
                     .selectable_label(!app.spiral_logarithmic, tr("toolbar.symmetrical"))
+                    .rich_tip(crate::ui::tips::keyed("toolbar.symmetrical"))
                     .clicked()
                 {
                     app.spiral_logarithmic = false;
                 }
                 if ui
                     .selectable_label(app.spiral_logarithmic, tr("toolbar.logarithmic"))
+                    .rich_tip(crate::ui::tips::keyed("toolbar.logarithmic"))
                     .clicked()
                 {
                     app.spiral_logarithmic = true;
                 }
             }
             Tool::GraphPaper => {
-                ui.label(
-                    egui::RichText::new(tr("toolbar.rows"))
-                        .color(Tokens::text_dim())
-                        .size(11.0),
-                );
-                ui.add(crate::ui::field::NumField::new(&mut app.graph_rows).range(1..=99));
-                ui.label(
-                    egui::RichText::new(tr("toolbar.columns"))
-                        .color(Tokens::text_dim())
-                        .size(11.0),
-                );
-                ui.add(crate::ui::field::NumField::new(&mut app.graph_cols).range(1..=99));
+                dim_labelled(ui, "toolbar.rows", |ui| {
+                    ui.add(crate::ui::field::NumField::new(&mut app.graph_rows).range(1..=99))
+                });
+                dim_labelled(ui, "toolbar.columns", |ui| {
+                    ui.add(crate::ui::field::NumField::new(&mut app.graph_cols).range(1..=99))
+                });
             }
             Tool::ActionLines => {
-                ui.label(
-                    egui::RichText::new(tr("toolbar.lines"))
-                        .color(Tokens::text_dim())
-                        .size(11.0),
-                );
-                ui.add(crate::ui::field::NumField::new(&mut app.action_lines_count).range(2..=500));
+                dim_labelled(ui, "toolbar.lines", |ui| {
+                    ui.add(
+                        crate::ui::field::NumField::new(&mut app.action_lines_count).range(2..=500),
+                    )
+                });
                 if ui
                     .selectable_label(!app.action_lines_radial, tr("toolbar.parallel"))
+                    .rich_tip(crate::ui::tips::keyed("toolbar.parallel"))
                     .clicked()
                 {
                     app.action_lines_radial = false;
                 }
                 if ui
                     .selectable_label(app.action_lines_radial, tr("toolbar.radial"))
+                    .rich_tip(crate::ui::tips::keyed("toolbar.radial"))
                     .clicked()
                 {
                     app.action_lines_radial = true;
@@ -1337,28 +1368,22 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                         .color(Tokens::text_dim())
                         .size(11.0),
                 );
-                ui.label(
-                    egui::RichText::new(tr("toolbar.width"))
-                        .color(Tokens::text_dim())
-                        .size(11.0),
-                );
-                ui.add(
-                    crate::ui::field::NumField::new(&mut app.media_width)
-                        .speed(0.1)
-                        .range(0.2..=50.0)
-                        .suffix(" mm"),
-                );
-                ui.label(
-                    egui::RichText::new(tr("docker.nib_angle"))
-                        .color(Tokens::text_dim())
-                        .size(11.0),
-                );
-                ui.add(
-                    crate::ui::field::NumField::new(&mut app.media_angle)
-                        .speed(1.0)
-                        .range(0.0..=180.0)
-                        .suffix("°"),
-                );
+                dim_labelled_as(ui, "toolbar.width", "toolbar.media_width_desc", |ui| {
+                    ui.add(
+                        crate::ui::field::NumField::new(&mut app.media_width)
+                            .speed(0.1)
+                            .range(0.2..=50.0)
+                            .suffix(" mm"),
+                    )
+                });
+                dim_labelled(ui, "docker.nib_angle", |ui| {
+                    ui.add(
+                        crate::ui::field::NumField::new(&mut app.media_angle)
+                            .speed(1.0)
+                            .range(0.0..=180.0)
+                            .suffix("°"),
+                    )
+                });
             }
             Tool::ParallelDimension
             | Tool::HorizontalVerticalDimension
@@ -1417,6 +1442,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 for m in crate::app::FreeTransformMode::ALL {
                     if ui
                         .selectable_label(app.free_transform_mode == m, tr(m.label_key()))
+                        .rich_tip(crate::ui::tips::keyed(m.label_key()))
                         .clicked()
                     {
                         app.free_transform_mode = m;
@@ -1426,7 +1452,8 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 ui.checkbox(
                     &mut app.free_transform_duplicate,
                     tr("toolbar.apply_to_duplicate"),
-                );
+                )
+                .rich_tip(crate::ui::tips::keyed("toolbar.apply_to_duplicate"));
                 vsep(ui);
                 if !shapes.is_empty() {
                     object_properties(app, ui);
@@ -1442,6 +1469,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 let has = app.eyedropper_color.is_some();
                 if ui
                     .selectable_label(!app.eyedropper_apply, tr("toolbar.select_color"))
+                    .rich_tip(crate::ui::tips::keyed("toolbar.select_color"))
                     .clicked()
                 {
                     app.eyedropper_apply = false;
@@ -1451,24 +1479,23 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                         has,
                         egui::Button::selectable(app.eyedropper_apply, tr("toolbar.apply_color")),
                     )
+                    .rich_tip(crate::ui::tips::keyed("toolbar.apply_color"))
+                    .rich_disabled_tip(crate::ui::tips::keyed("toolbar.apply_color"))
                     .clicked()
                 {
                     app.eyedropper_apply = true;
                 }
                 vsep(ui);
-                ui.label(
-                    egui::RichText::new(tr("toolbar.sample_size"))
-                        .color(Tokens::text_dim())
-                        .size(11.0),
-                );
-                for n in [1u32, 2, 5] {
-                    if ui
-                        .selectable_label(app.eyedropper_sample == n, format!("{n}x{n}"))
-                        .clicked()
-                    {
-                        app.eyedropper_sample = n;
+                dim_labelled(ui, "toolbar.sample_size", |ui| {
+                    for n in [1u32, 2, 5] {
+                        if ui
+                            .selectable_label(app.eyedropper_sample == n, format!("{n}x{n}"))
+                            .clicked()
+                        {
+                            app.eyedropper_sample = n;
+                        }
                     }
-                }
+                });
                 vsep(ui);
                 if let Some(c) = app.eyedropper_color {
                     let (r, _) =
@@ -1499,6 +1526,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 let has = app.eyedropper_attrs.is_some();
                 if ui
                     .selectable_label(!app.eyedropper_apply, tr("toolbar.select_attrs"))
+                    .rich_tip(crate::ui::tips::keyed("toolbar.select_attrs"))
                     .clicked()
                 {
                     app.eyedropper_apply = false;
@@ -1508,6 +1536,8 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                         has,
                         egui::Button::selectable(app.eyedropper_apply, tr("toolbar.apply_attrs")),
                     )
+                    .rich_tip(crate::ui::tips::keyed("toolbar.apply_attrs"))
+                    .rich_disabled_tip(crate::ui::tips::keyed("toolbar.apply_attrs"))
                     .clicked()
                 {
                     app.eyedropper_apply = true;
@@ -1518,13 +1548,18 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                     ui.checkbox(&mut g.outline, tr("toolbar.attr_outline"));
                     ui.checkbox(&mut g.fill, tr("toolbar.attr_fill"));
                     ui.checkbox(&mut g.text, tr("toolbar.attr_text"));
-                });
+                })
+                .response
+                .rich_tip(crate::ui::tips::keyed("toolbar.attr_properties"));
                 ui.menu_button(tr("toolbar.attr_transformations"), |ui| {
                     ui.checkbox(&mut g.size, tr("toolbar.attr_size"));
                     ui.checkbox(&mut g.rotation, tr("toolbar.attr_rotation"));
                     ui.checkbox(&mut g.position, tr("toolbar.attr_position"));
-                });
-                ui.checkbox(&mut g.effects, tr("toolbar.attr_effects"));
+                })
+                .response
+                .rich_tip(crate::ui::tips::keyed("toolbar.attr_transformations"));
+                ui.checkbox(&mut g.effects, tr("toolbar.attr_effects"))
+                    .rich_tip(crate::ui::tips::keyed("toolbar.attr_effects"));
                 vsep(ui);
                 ui.label(
                     egui::RichText::new(if has {
@@ -1553,34 +1588,31 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 let mut changed = false;
                 let mut depth = offset.hypot();
                 let mut dir = offset.y.atan2(offset.x).to_degrees();
-                ui.label(
-                    egui::RichText::new(tr("toolbar.depth"))
-                        .color(Tokens::text_dim())
-                        .size(11.0),
-                );
-                changed |= ui
-                    .add(
+                changed |= dim_labelled_as(ui, "toolbar.depth", "toolbar.block_depth_desc", |ui| {
+                    ui.add(
                         crate::ui::field::NumField::new(&mut depth)
                             .speed(0.1)
                             .range(0.0..=500.0)
                             .fixed_decimals(2)
                             .suffix(" mm"),
                     )
-                    .changed();
-                ui.label(
-                    egui::RichText::new(tr("toolbar.direction"))
-                        .color(Tokens::text_dim())
-                        .size(11.0),
-                );
-                changed |= ui
-                    .add(
-                        crate::ui::field::NumField::new(&mut dir)
-                            .speed(1.0)
-                            .range(-180.0..=180.0)
-                            .fixed_decimals(1)
-                            .suffix("°"),
-                    )
-                    .changed();
+                })
+                .changed();
+                changed |= dim_labelled_as(
+                    ui,
+                    "toolbar.direction",
+                    "toolbar.block_direction_desc",
+                    |ui| {
+                        ui.add(
+                            crate::ui::field::NumField::new(&mut dir)
+                                .speed(1.0)
+                                .range(-180.0..=180.0)
+                                .fixed_decimals(1)
+                                .suffix("°"),
+                        )
+                    },
+                )
+                .changed();
                 if changed {
                     let a = dir.to_radians();
                     offset = CVec2::new(depth * a.cos(), depth * a.sin());
@@ -1588,20 +1620,16 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                 if crate::ui::color_picker::color_button(ui, &mut color) {
                     changed = true;
                 }
-                ui.label(
-                    egui::RichText::new(tr("toolbar.gap"))
-                        .color(Tokens::text_dim())
-                        .size(11.0),
-                );
-                changed |= ui
-                    .add(
+                changed |= dim_labelled_as(ui, "toolbar.gap", "toolbar.block_gap_desc", |ui| {
+                    ui.add(
                         crate::ui::field::NumField::new(&mut gap)
                             .speed(0.05)
                             .range(0.0..=50.0)
                             .fixed_decimals(2)
                             .suffix(" mm"),
                     )
-                    .changed();
+                })
+                .changed();
                 if changed {
                     app.block_shadow_color = color;
                     app.block_shadow_gap = gap;
@@ -1615,6 +1643,7 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
                         current.is_some(),
                         egui::Button::new(tr("toolbar.clear_block_shadow")),
                     )
+                    .rich_tip(crate::ui::tips::keyed("toolbar.clear_block_shadow"))
                     .clicked()
                 {
                     app.remove_effects_of_kind(&Effect::BlockShadow {
@@ -1746,10 +1775,19 @@ fn object_properties(app: &mut App, ui: &mut Ui) {
 /// Bitmaps menu that act on the selected bitmap.
 fn bitmap_properties(app: &mut App, ui: &mut Ui) {
     use crate::ui::dialogs::{Dialog, TraceState};
-    if ui.button(tr("toolbar.edit_bitmap")).clicked() {
+    use crate::ui::tips::keyed;
+    if ui
+        .button(tr("toolbar.edit_bitmap"))
+        .rich_tip(keyed("toolbar.edit_bitmap"))
+        .clicked()
+    {
         app.edit_bitmap_externally();
     }
-    if ui.button(tr("toolbar.crop_bitmap")).clicked() {
+    if ui
+        .button(tr("toolbar.crop_bitmap"))
+        .rich_tip(keyed("toolbar.crop_bitmap"))
+        .clicked()
+    {
         app.set_tool(Tool::Crop);
     }
     ui.menu_button(tr("toolbar.trace_bitmap"), |ui| {
@@ -1788,16 +1826,26 @@ fn bitmap_properties(app: &mut App, ui: &mut Ui) {
                 ui.close();
             }
         }
-    });
-    if ui.button(tr("menu.bitmaps.straighten_image")).clicked() {
+    })
+    .response
+    .rich_tip(keyed("toolbar.trace_bitmap"));
+    if ui
+        .button(tr("menu.bitmaps.straighten_image"))
+        .rich_tip(keyed("menu.bitmaps.straighten_image"))
+        .clicked()
+    {
         app.dialog = Dialog::StraightenImage(Default::default());
     }
-    if ui.button(tr("menu.bitmaps.resample")).clicked() {
+    if ui
+        .button(tr("menu.bitmaps.resample"))
+        .rich_tip(keyed("menu.bitmaps.resample"))
+        .clicked()
+    {
         app.open_resample();
     }
     if ui
         .button(tr("menu.bitmaps.remove_background_local"))
-        .on_hover_text(tr("dialog.bg_contiguous_tip"))
+        .rich_tip(tr("dialog.bg_contiguous_tip"))
         .clicked()
     {
         app.dialog = crate::ui::dialogs::Dialog::RemoveBackground(Default::default());
@@ -1865,7 +1913,9 @@ fn text_properties(app: &mut App, ui: &mut Ui) {
         app.text_font = app.text_default_font.clone();
         app.text_size_pt = app.text_default_size;
     }
-    let mut changed = crate::ui::font_list::text_font_list(app, ui, "propbar_font", 180.0);
+    let mut changed = crate::ui::tips::tip_over(ui, crate::ui::tips::keyed("toolbar.font"), |ui| {
+        crate::ui::font_list::text_font_list(app, ui, "propbar_font", 180.0)
+    });
     changed |= text_size_list(app, ui);
     // The axes of a variable font, beside its size (#870).
     crate::ui::text_docker::font_axes_button(app, ui, "propbar");
@@ -2061,7 +2111,9 @@ fn transparency_controls(app: &mut App, ui: &mut Ui, stacked: bool) {
                             *field = Some(F::Target);
                         }
                     }
-                });
+                })
+                .response
+                .rich_tip(crate::ui::tips::keyed("toolbar.transparency_target"));
         };
     part_row(ui, stacked, |ui| {
         egui::ComboBox::from_id_salt("transparency_kind")
@@ -2082,7 +2134,9 @@ fn transparency_controls(app: &mut App, ui: &mut Ui, stacked: bool) {
                         }
                     }
                 }
-            });
+            })
+            .response
+            .rich_tip(crate::ui::tips::keyed("toolbar.transparency_kind"));
         // In the docker, what it applies to goes beside the kind.
         if stacked {
             target_list(ui, &mut set, &mut field);
@@ -2099,6 +2153,7 @@ fn transparency_controls(app: &mut App, ui: &mut Ui, stacked: bool) {
             }
             if ui
                 .add_enabled(has_selection, crate::ui::Rail(slider))
+                .rich_tip(crate::ui::tips::keyed("toolbar.transparency_amount"))
                 .changed()
             {
                 set.amount = amount;
@@ -2114,6 +2169,10 @@ fn transparency_controls(app: &mut App, ui: &mut Ui, stacked: bool) {
                             .speed(1.0)
                             .mixed(mixed.contains(&F::MaskAngle)),
                     )
+                    .rich_tip(crate::ui::tips::pair(
+                        "toolbar.angle",
+                        "toolbar.fill_angle_desc",
+                    ))
                     .changed()
                 {
                     f.angle = angle;
@@ -2140,7 +2199,9 @@ fn transparency_controls(app: &mut App, ui: &mut Ui, stacked: bool) {
                                 field = Some(F::MaskKind);
                             }
                         }
-                    });
+                    })
+                    .response
+                    .rich_tip(crate::ui::tips::keyed("toolbar.transparency_fountain_kind"));
             }
         }
     });
@@ -2174,7 +2235,9 @@ fn transparency_controls(app: &mut App, ui: &mut Ui, stacked: bool) {
                         field = Some(F::Merge);
                     }
                 }
-            });
+            })
+            .response
+            .rich_tip(crate::ui::tips::keyed("transparency.merge_mode"));
         if !stacked {
             target_list(ui, &mut set, &mut field);
         }
@@ -2196,10 +2259,11 @@ pub(crate) fn text_size_list(app: &mut App, ui: &mut Ui) -> bool {
     let mut picked: Option<f64> = None;
     let ctx = ui.ctx().clone();
     let popup_id = ui.make_persistent_id("text_size_list");
-    let inner = ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 0.0;
-        let field = ui
-            .add(
+    let tip = crate::ui::tips::keyed("toolbar.font_size");
+    let inner = crate::ui::tips::tip_over(ui, tip, |ui| {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            let field = ui.add(
                 crate::ui::field::NumField::new(&mut shown_size)
                     .speed(u.from_pt(0.5))
                     .range(u.from_pt(1.0)..=u.from_pt(3000.0))
@@ -2207,29 +2271,29 @@ pub(crate) fn text_size_list(app: &mut App, ui: &mut Ui) -> bool {
                     .unit_mm(u.mm())
                     .suffix(format!(" {}", u.short()))
                     .width(62.0),
-            )
-            .rich_tip(tr("toolbar.font_size"));
-        let (arrow_rect, arrow) =
-            ui.allocate_exact_size(egui::vec2(16.0, field.rect.height()), egui::Sense::click());
-        if arrow.hovered() {
-            ui.painter()
-                .rect_filled(arrow_rect.shrink(1.0), 1.0, Tokens::tool_hover());
-        }
-        let c = arrow_rect.center();
-        ui.painter().add(egui::epaint::PathShape::convex_polygon(
-            vec![
-                c + egui::vec2(-4.0, -2.0),
-                c + egui::vec2(4.0, -2.0),
-                c + egui::vec2(0.0, 3.0),
-            ],
-            Tokens::icon(),
-            egui::Stroke::NONE,
-        ));
-        if arrow.clicked() {
-            egui::Popup::toggle_id(&ctx, popup_id);
-        }
-        let anchor = field.rect.union(arrow_rect);
-        (field, anchor)
+            );
+            let (arrow_rect, arrow) =
+                ui.allocate_exact_size(egui::vec2(16.0, field.rect.height()), egui::Sense::click());
+            if arrow.hovered() {
+                ui.painter()
+                    .rect_filled(arrow_rect.shrink(1.0), 1.0, Tokens::tool_hover());
+            }
+            let c = arrow_rect.center();
+            ui.painter().add(egui::epaint::PathShape::convex_polygon(
+                vec![
+                    c + egui::vec2(-4.0, -2.0),
+                    c + egui::vec2(4.0, -2.0),
+                    c + egui::vec2(0.0, 3.0),
+                ],
+                Tokens::icon(),
+                egui::Stroke::NONE,
+            ));
+            if arrow.clicked() {
+                egui::Popup::toggle_id(&ctx, popup_id);
+            }
+            let anchor = field.rect.union(arrow_rect);
+            (field, anchor)
+        })
     });
     let (field, anchor) = inner.inner;
     let size = u.to_pt(shown_size);
@@ -2449,7 +2513,12 @@ fn shape_tool_bar(app: &mut App, ui: &mut Ui) {
             for lasso in [false, true] {
                 ui.selectable_value(&mut app.node_lasso, lasso, mode_text(lasso));
             }
-        });
+        })
+        .response
+        .rich_tip(crate::ui::tips::pair(
+            "toolbar.selection_mode_tip",
+            "toolbar.selection_mode_desc",
+        ));
     sep(ui);
     let button = |ui: &mut Ui, pic: Pic, tip: &str, enabled: bool, pressed: bool| -> bool {
         pic_button(ui, pic, &tr(tip), enabled, pressed).clicked()
@@ -2694,6 +2763,7 @@ fn interactive_fill_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::do
     {
         let clicked = ui
             .selectable_label(shown_kind == Some(i), tr(key))
+            .rich_tip(crate::ui::tips::keyed(key))
             .clicked();
         if clicked && kind == i && mix.kind {
             // The first object's type, picked for objects of other types.
@@ -2776,6 +2846,7 @@ fn interactive_fill_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::do
                 let key = crate::ui::dockers::fountain_kind_key(k);
                 if ui
                     .selectable_label(kind_shown && f.kind == k, tr(key))
+                    .rich_tip(crate::ui::tips::keyed(key))
                     .clicked()
                     && (f.kind != k || !kind_shown)
                 {
@@ -2793,36 +2864,29 @@ fn interactive_fill_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::do
                 if crate::ui::color_picker::color_button(ui, &mut c) {
                     node_edit = Some((i, Some(c), None, None));
                 }
-                ui.label(
-                    egui::RichText::new(tr("toolbar.node_transparency"))
-                        .color(Tokens::text_dim())
-                        .size(11.0),
-                );
                 let mut tr_pct = ((1.0 - st.opacity) * 100.0).round() as f64;
-                if ui
-                    .add(
+                if dim_labelled(ui, "toolbar.node_transparency", |ui| {
+                    ui.add(
                         crate::ui::field::NumField::new(&mut tr_pct)
                             .speed(1.0)
                             .range(0.0..=100.0)
                             .suffix(" %"),
                     )
-                    .changed()
+                })
+                .changed()
                 {
                     node_edit = Some((i, None, Some(1.0 - tr_pct as f32 / 100.0), None));
                 }
-                ui.label(
-                    egui::RichText::new(tr("toolbar.node_position"))
-                        .color(Tokens::text_dim())
-                        .size(11.0),
-                );
                 let mut pos = st.pos * 100.0;
-                let r = ui.add_enabled(
-                    i > 0 && i + 1 < n,
-                    crate::ui::field::NumField::new(&mut pos)
-                        .speed(1.0)
-                        .range(0.0..=100.0)
-                        .suffix(" %"),
-                );
+                let r = dim_labelled(ui, "toolbar.node_position", |ui| {
+                    ui.add_enabled(
+                        i > 0 && i + 1 < n,
+                        crate::ui::field::NumField::new(&mut pos)
+                            .speed(1.0)
+                            .range(0.0..=100.0)
+                            .suffix(" %"),
+                    )
+                });
                 if r.changed() {
                     node_edit = Some((i, None, None, Some(pos / 100.0)));
                 }
@@ -2838,13 +2902,8 @@ fn interactive_fill_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::do
                     }
                 }
             }
-            ui.label(
-                egui::RichText::new(tr("toolbar.angle"))
-                    .color(Tokens::text_dim())
-                    .size(11.0),
-            );
-            if ui
-                .add(
+            if dim_labelled_as(ui, "toolbar.angle", "toolbar.fill_angle_desc", |ui| {
+                ui.add(
                     crate::ui::field::NumField::new(&mut f.angle)
                         .speed(1.0)
                         .range(-360.0..=360.0)
@@ -2852,25 +2911,22 @@ fn interactive_fill_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::do
                         .suffix("°")
                         .mixed(mix.has(FillField::Angle)),
                 )
-                .changed()
+            })
+            .changed()
             {
                 set(FillField::Angle, &mut changed);
             }
-            ui.label(
-                egui::RichText::new(tr("docker.edge_pad"))
-                    .color(Tokens::text_dim())
-                    .size(11.0),
-            );
             let mut pad = f.edge_pad * 100.0;
-            if ui
-                .add(
+            if dim_labelled(ui, "docker.edge_pad", |ui| {
+                ui.add(
                     crate::ui::field::NumField::new(&mut pad)
                         .speed(1.0)
                         .range(0.0..=49.0)
                         .suffix(" %")
                         .mixed(mix.has(FillField::EdgePad)),
                 )
-                .changed()
+            })
+            .changed()
             {
                 f.edge_pad = pad / 100.0;
                 set(FillField::EdgePad, &mut changed);
@@ -2906,21 +2962,17 @@ fn interactive_fill_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::do
 /// thumbnails, set by set.
 fn common_shapes_bar(app: &mut App, ui: &mut Ui) {
     use crate::common_shapes::{Category, CommonShape};
-    ui.label(
-        egui::RichText::new(tr("toolbar.shape"))
-            .color(Tokens::text_dim())
-            .size(11.0),
-    );
     let popup = egui::Id::new("common_shapes_popup");
-    let resp = ui
-        .horizontal(|ui| {
+    let resp = dim_labelled(ui, "toolbar.shape", |ui| {
+        ui.horizontal(|ui| {
             let thumb = shape_thumbnail(ui, app.common_shape, false, true);
             let name = ui.add(
                 egui::Button::new(format!("{} \u{25BE}", app.common_shape.name())).frame(false),
             );
             thumb.union(name)
         })
-        .inner;
+        .inner
+    });
     egui::Popup::menu(&resp)
         .id(popup)
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
@@ -3035,6 +3087,10 @@ fn shadow_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::Shape]) {
             !shapes.is_empty() && first.is_none(),
             egui::Button::new(tr("docker.apply")),
         )
+        .rich_tip(crate::ui::tips::pair(
+            "docker.apply",
+            "toolbar.apply_shadow_desc",
+        ))
         .clicked()
     {
         app.set_shadow(Some(sh), false);
@@ -3052,7 +3108,9 @@ fn shadow_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::Shape]) {
                     preset = Some(key);
                 }
             }
-        });
+        })
+        .response
+        .rich_tip(crate::ui::tips::keyed("shadow.presets"));
     if let Some(key) = preset {
         app.apply_shadow_preset(key);
         return;
@@ -3086,30 +3144,35 @@ fn shadow_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::Shape]) {
                     changed = true;
                 }
             }
-        });
-    dim(ui, "toolbar.opacity");
+        })
+        .response
+        .rich_tip(crate::ui::tips::pair(
+            "toolbar.shadow_kind",
+            "toolbar.shadow_kind_desc",
+        ));
     let mut opacity = (sh.opacity * 100.0).round();
-    if ui
-        .add(
+    if dim_labelled_as(ui, "toolbar.opacity", "toolbar.shadow_opacity_desc", |ui| {
+        ui.add(
             crate::ui::field::NumField::new(&mut opacity)
                 .range(0.0..=100.0)
                 .suffix(" %"),
         )
-        .changed()
+    })
+    .changed()
     {
         sh.opacity = opacity / 100.0;
         changed = true;
     }
-    dim(ui, "toolbar.feathering");
     let mut blur = sh.blur;
-    if ui
-        .add(
+    if dim_labelled(ui, "toolbar.feathering", |ui| {
+        ui.add(
             crate::ui::field::NumField::new(&mut blur)
                 .speed(0.1)
                 .range(0.0..=50.0)
                 .suffix(" mm"),
         )
-        .changed()
+    })
+    .changed()
     {
         sh.blur = blur;
         changed = true;
@@ -3158,71 +3221,76 @@ fn shadow_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::Shape]) {
         })
         .response
         .rich_tip(tr("shadow.feather_edges"));
-    dim(ui, "transparency.merge_mode");
-    egui::ComboBox::from_id_salt("shadow_merge")
-        .selected_text(sh.merge.name())
-        .width(90.0)
-        .show_ui(ui, |ui| {
-            for m in tracedraw_core::live::MergeMode::ALL {
-                if ui.selectable_label(sh.merge == m, m.name()).clicked() {
-                    sh.merge = m;
-                    changed = true;
+    dim_labelled(ui, "transparency.merge_mode", |ui| {
+        egui::ComboBox::from_id_salt("shadow_merge")
+            .selected_text(sh.merge.name())
+            .width(90.0)
+            .show_ui(ui, |ui| {
+                for m in tracedraw_core::live::MergeMode::ALL {
+                    if ui.selectable_label(sh.merge == m, m.name()).clicked() {
+                        sh.merge = m;
+                        changed = true;
+                    }
                 }
-            }
-        });
+            })
+    });
     vsep(ui);
     match sh.perspective.as_mut() {
         None => {
             let mut dx = sh.offset.x;
             let mut dy = sh.offset.y;
-            dim(ui, "docker.offset");
-            changed |= ui
-                .add(
+            changed |= dim_labelled_as(ui, "docker.offset", "toolbar.shadow_offset_desc", |ui| {
+                ui.add(
                     crate::ui::field::NumField::new(&mut dx)
                         .speed(0.1)
                         .suffix(" mm"),
                 )
-                .changed();
+            })
+            .changed();
             changed |= ui
                 .add(
                     crate::ui::field::NumField::new(&mut dy)
                         .speed(0.1)
                         .suffix(" mm"),
                 )
+                .rich_tip(crate::ui::tips::pair(
+                    "docker.offset",
+                    "toolbar.shadow_offset_desc",
+                ))
                 .changed();
             sh.offset = tracedraw_core::geometry::Vec2::new(dx, dy);
         }
         Some(per) => {
-            dim(ui, "shadow.angle");
-            changed |= ui
-                .add(
+            changed |= dim_labelled_as(ui, "shadow.angle", "toolbar.shadow_angle_desc", |ui| {
+                ui.add(
                     crate::ui::field::NumField::new(&mut per.angle)
                         .range(-360.0..=360.0)
                         .suffix("°"),
                 )
-                .changed();
-            dim(ui, "shadow.stretch");
+            })
+            .changed();
             let mut stretch = (per.stretch * 100.0).round();
-            if ui
-                .add(
+            if dim_labelled(ui, "shadow.stretch", |ui| {
+                ui.add(
                     crate::ui::field::NumField::new(&mut stretch)
                         .range(0.0..=1000.0)
                         .suffix(" %"),
                 )
-                .changed()
+            })
+            .changed()
             {
                 per.stretch = stretch / 100.0;
                 changed = true;
             }
-            dim(ui, "shadow.fade");
             let mut fade = (per.fade * 100.0).round();
-            if ui
-                .add(
+            if dim_labelled(ui, "shadow.fade", |ui| {
+                ui.add(
                     crate::ui::field::NumField::new(&mut fade)
                         .range(0.0..=100.0)
                         .suffix(" %"),
                 )
-                .changed()
+            })
+            .changed()
             {
                 per.fade = fade / 100.0;
                 changed = true;
@@ -3254,6 +3322,7 @@ fn shadow_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::Shape]) {
             first.is_some(),
             egui::Button::new(tr("toolbar.clear_shadow")),
         )
+        .rich_tip(crate::ui::tips::keyed("toolbar.clear_shadow"))
         .clicked()
     {
         app.set_shadow(None, false);

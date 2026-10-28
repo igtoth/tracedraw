@@ -242,11 +242,7 @@ fn main() -> eframe::Result<()> {
             .with_resizable(true)
             .with_title("TraceDraw")
     } else {
-        egui::ViewportBuilder::default()
-            .with_inner_size(splash::main_window_size(settings.window_size, None))
-            .with_min_inner_size(splash::MIN_SIZE)
-            .with_maximized(settings.window_maximized && !plain)
-            .with_title("TraceDraw")
+        splash::main_window_builder(&settings, plain)
     };
     // The graphics card, or its software adapter with hardware
     // acceleration off; `--renderer=` when a start before could not open

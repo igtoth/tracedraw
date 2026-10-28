@@ -23,6 +23,10 @@ Layer and New Master Layer at the left and Delete at the right.
   imported). Click a layer to make it active (the selection is cleared).
   Click an object to select it and make its layer active; Shift+click
   adds it to the selection.
+- When the selection changes (picked on the page, Select All, an undo),
+  the list scrolls just enough to show the first selected object's row,
+  if its layer and groups are open; a selection that stays the same
+  leaves the scroll where it is (#1044).
 - A layer that is hidden or locked, or a master layer that does not show
   on the current page, cannot be active: new objects then go to the
   page's topmost visible, unlocked layer, as they do before any layer is
@@ -58,4 +62,5 @@ Layer and New Master Layer at the left and Delete at the right.
 - `ui::objects_docker::tests::master_layer_objects_are_picked_where_their_layer_shows`
 - `ui::objects_docker::tests::delete_takes_the_selection_else_the_active_layer`
 - `ui::objects_docker::tests::clicking_an_object_in_the_docker_makes_its_layer_active`
+- `ui::objects_docker::tests::the_list_scrolls_to_an_object_selected_on_the_page`
 - `command::tests::master_layers_reorder_and_delete_down_to_none` (core)

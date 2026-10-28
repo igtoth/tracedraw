@@ -15,6 +15,7 @@
 use crate::app::App;
 use crate::i18n::tr;
 use crate::theme::Tokens;
+use crate::ui::tips::RichTip;
 use egui::{pos2, vec2, Color32, Pos2, Rect, Sense, Stroke, Ui, Vec2};
 use serde::{Deserialize, Serialize};
 
@@ -615,7 +616,14 @@ pub fn grip(app: &mut App, ui: &mut Ui, bar: Bar, horizontal: bool) {
 /// `salt` tells apart several grips of one bar (the palette's rows).
 pub fn grip_zone(app: &mut App, ui: &mut Ui, bar: Bar, r: Rect, salt: u8) {
     let id = egui::Id::new(("bar_grip", bar as u8, salt));
-    let resp = ui.interact(r, id, Sense::click_and_drag());
+    let desc = if app.settings.bars.locked {
+        "bars.grip_locked_desc"
+    } else {
+        "bars.grip_desc"
+    };
+    let resp = ui
+        .interact(r, id, Sense::click_and_drag())
+        .rich_tip(crate::ui::tips::pair(bar.key(), desc));
     let resp = if app.settings.bars.locked {
         resp
     } else {
@@ -635,30 +643,42 @@ pub fn grip_zone(app: &mut App, ui: &mut Ui, bar: Bar, r: Rect, salt: u8) {
 
 /// A background response for the empty part of a bar: a right click there
 /// opens the bar's menu. Call before drawing the bar's controls.
-pub fn background(app: &mut App, ui: &mut Ui, bar: Bar) {
+pub fn background(app: &mut App, ui: &mut Ui, bar: Bar) -> egui::Response {
     let id = egui::Id::new(("bar_background", bar as u8));
     let resp = ui.interact(ui.max_rect(), id, Sense::click());
     bar_menu(app, &resp, bar);
+    resp
 }
 
 /// A right click anywhere in `rect`, the part of the window the bar
-/// takes, on its buttons and boxes too, opens the bar's menu (the one its
-/// background opens), as the toolbox does (#835). Call after drawing the
-/// bar's controls.
-fn menu_anywhere(app: &mut App, ui: &mut Ui, bar: Bar, rect: Rect) {
-    let hit = ui.input(|i| {
-        i.pointer.secondary_clicked() && i.pointer.interact_pos().is_some_and(|p| rect.contains(p))
-    });
-    if !hit {
+/// takes, on its buttons and boxes too, opens the bar's menu, as the
+/// toolbox does (#835). Call after drawing the bar's controls, every
+/// frame: the menu keeps a popup of its own, shown here for as long as it
+/// is open. `opened` says a menu of the bar opened from this click
+/// already (its background got it): showing a second menu then, or one
+/// popup twice in a frame, would take the opening click for a click
+/// outside and close it at once (#994).
+fn menu_anywhere(app: &mut App, ui: &mut Ui, bar: Bar, rect: Rect, opened: bool) {
+    let id = anywhere_menu_id(bar);
+    let hit = !opened
+        && ui.input(|i| {
+            i.pointer.secondary_clicked()
+                && i.pointer.interact_pos().is_some_and(|p| rect.contains(p))
+        });
+    if !hit && !egui::Popup::is_id_open(ui.ctx(), id) {
         return;
     }
-    let background = egui::Id::new(("bar_background", bar as u8));
     egui::Popup::menu(&ui.response())
-        .id(background.with("bar_menu"))
-        .open_memory(Some(egui::SetOpenCommand::Bool(true)))
+        .id(id)
+        .open_memory(hit.then_some(egui::SetOpenCommand::Bool(true)))
         .at_pointer_fixed()
         .style(crate::ui::menus::menu_popup_style)
         .show(|ui| crate::ui::menus::body(ui, |ui| menu_body(app, ui, bar)));
+}
+
+/// The popup of [`menu_anywhere`] for `bar`.
+fn anywhere_menu_id(bar: Bar) -> egui::Id {
+    egui::Id::new(("bar_anywhere", bar as u8))
 }
 
 /// The bar's context menu on `resp`. Each place that opens it (a grip, the
@@ -943,7 +963,7 @@ pub fn docked_rows(app: &mut App, ui: &mut Ui, dock: Dock) {
                             .id_salt(("bar_slot", *bar as u8)),
                     );
                     child.set_clip_rect(slot.intersect(ui.clip_rect()));
-                    background(app, &mut child, *bar);
+                    let back = background(app, &mut child, *bar);
                     let mut body_ui = child.new_child(
                         egui::UiBuilder::new()
                             .max_rect(
@@ -963,7 +983,7 @@ pub fn docked_rows(app: &mut App, ui: &mut Ui, dock: Dock) {
                         ui.data_mut(|d| d.insert_temp(key, natural));
                         ui.ctx().request_repaint();
                     }
-                    menu_anywhere(app, &mut child, *bar, slot);
+                    menu_anywhere(app, &mut child, *bar, slot, back.secondary_clicked());
                 }
                 app.bar_rows.push(RowSpot {
                     dock,
@@ -1046,7 +1066,12 @@ pub fn floating_bars(app: &mut App, ctx: &egui::Context) {
                     .show(ui, |ui| {
                         ui.set_width(size.x);
                         title_strip(app, ui, bar, size.x);
-                        floating_body(app, ui, bar, size);
+                        let body = ui.scope(|ui| floating_body(app, ui, bar, size)).response;
+                        // The toolbox's buttons and the palette's colors
+                        // open menus of their own.
+                        if !matches!(bar, Bar::Toolbox | Bar::Palette) {
+                            menu_anywhere(app, ui, bar, body.rect, false);
+                        }
                     });
             });
     }

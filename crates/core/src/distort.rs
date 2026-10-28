@@ -21,8 +21,8 @@
 //!   into short steps so the turn bends it smoothly.
 
 use crate::geometry::{
-    BezPath, CubicBez, Line, ParamCurve, ParamCurveArclen, PathEl, PathSeg, Point, Rect,
-    Shape as _, Vec2,
+    BezPath, CubicBez, Line, ParamCurve, ParamCurveArclen, ParamCurveDeriv, PathEl, PathSeg, Point,
+    Rect, Shape as _, Vec2,
 };
 use kurbo::QuadBez;
 
@@ -317,6 +317,18 @@ fn normal(seg: &PathSeg, t: f64) -> Vec2 {
     Vec2::new(-d.y / len, d.x / len)
 }
 
+/// The unit normal between two normals (the direction a node moves
+/// where two segments meet); `b` alone when they cancel out.
+fn between(a: Vec2, b: Vec2) -> Vec2 {
+    let m = a + b;
+    let len = m.hypot();
+    if len < 1e-9 {
+        b
+    } else {
+        m / len
+    }
+}
+
 fn zipper(
     path: &BezPath,
     c: Point,
@@ -341,11 +353,41 @@ fn zipper(
     let mut out = BezPath::new();
     let mut seg_index = 0usize;
     for sub in subs {
-        let mut pts = vec![sub.start];
-        for seg in &sub.segs {
-            for k in 1..steps {
+        let count = sub.segs.len();
+        if count == 0 {
+            out.move_to(sub.start);
+            continue;
+        }
+        let mut pts = Vec::with_capacity(count * steps + 1);
+        for (i, seg) in sub.segs.iter().enumerate() {
+            // The teeth run through the nodes: every point of the zigzag,
+            // the nodes included, is a tooth's tip, so the ends of an open
+            // curve are tips too and the pattern goes on unbroken from
+            // one segment to the next (#1108). An open curve's last node
+            // comes with its last segment; a closed one's start is its
+            // end.
+            let last = if !sub.closed && i + 1 == count {
+                steps
+            } else {
+                steps - 1
+            };
+            for k in 0..=last {
                 let t = k as f64 / steps as f64;
                 let p = seg.eval(t);
+                let mut n = normal(seg, t);
+                if k == 0 {
+                    // A node moves between the normals of its two segments.
+                    let before = if i > 0 {
+                        sub.segs.get(i - 1)
+                    } else if sub.closed {
+                        sub.segs.last()
+                    } else {
+                        None
+                    };
+                    if let Some(b) = before {
+                        n = between(normal(b, 1.0), n);
+                    }
+                }
                 let sign = if k % 2 == 1 { 1.0 } else { -1.0 };
                 let mut a = amplitude;
                 if random {
@@ -354,14 +396,9 @@ fn zipper(
                 if local {
                     a *= (1.0 - (p - c).hypot() / far).clamp(0.0, 1.0);
                 }
-                pts.push(p + normal(seg, t) * (sign * a));
+                pts.push(p + n * (sign * a));
             }
-            pts.push(seg.end());
             seg_index += 1;
-        }
-        if sub.closed && pts.len() > 1 {
-            // The closing point is the start again.
-            pts.pop();
         }
         if smooth {
             out.extend(
@@ -382,53 +419,93 @@ fn zipper(
     out
 }
 
+/// The most a point's turn changes from one step of a twisted segment
+/// to the next (radians): 24 steps to a turn keep a cubic through the
+/// steps, with their true directions, within a few hundredths of a
+/// percent of the size of the true curve.
+const TWIST_STEP: f64 = std::f64::consts::PI / 12.0;
+
+/// The most steps one segment is cut into.
+const MAX_STEPS: usize = 2048;
+
 fn twister(path: &BezPath, c: Point, angle: f64) -> BezPath {
     if angle == 0.0 {
         return path.clone();
     }
     let subs = subpaths(path);
     let b = path.bounding_box();
-    // Steps short enough for the turn to bend the outline smoothly.
     let size = b.width().max(b.height()).max(1e-6);
     let step = size / 64.0;
-    let mut all: Vec<(Vec<Point>, bool)> = Vec::new();
-    for sub in &subs {
-        let mut pts = vec![sub.start];
-        for seg in &sub.segs {
-            let len = seg.arclen(1e-3);
-            let n = ((len / step).ceil() as usize).clamp(1, 400);
-            for k in 1..=n {
-                pts.push(seg.eval(k as f64 / n as f64));
-            }
-        }
-        if sub.closed && pts.len() > 1 {
-            pts.pop();
-        }
-        all.push((pts, sub.closed));
-    }
-    let far = all
+    // The farthest point from the centre turns by the whole angle
+    // (measured on points along the segments; the turn is clamped at
+    // the whole angle for the little a curve may reach beyond them).
+    let far = subs
         .iter()
-        .flat_map(|(p, _)| p.iter())
-        .map(|p| (*p - c).hypot())
+        .flat_map(|s| {
+            std::iter::once(s.start).chain(s.segs.iter().flat_map(|g| {
+                let n = ((g.arclen(1e-3) / step).ceil() as usize).clamp(1, 64);
+                (1..=n).map(move |k| g.eval(k as f64 / n as f64))
+            }))
+        })
+        .map(|p| (p - c).hypot())
         .fold(0.0f64, f64::max)
         .max(1e-9);
+    let rate = angle / far;
+    // A point and the direction a curve through it goes after the turn:
+    // `p` turned about `c` by `angle * |p - c| / far`, and its tangent
+    // `d` turned the same with the extra swing of the turn growing with
+    // the distance (the derivative of the turn along the curve).
+    let turn = |p: Point, d: Vec2| -> (Point, Vec2) {
+        let v = p - c;
+        let r = v.hypot();
+        let a = (rate * r).clamp(-angle.abs(), angle.abs());
+        let (sin, cos) = a.sin_cos();
+        let rot = |w: Vec2| Vec2::new(w.x * cos - w.y * sin, w.x * sin + w.y * cos);
+        let swing = if r < 1e-12 || r > far {
+            Vec2::ZERO
+        } else {
+            Vec2::new(-v.y, v.x) * (rate * v.dot(d) / r)
+        };
+        (c + rot(v), rot(d + swing))
+    };
     let mut out = BezPath::new();
-    for (pts, closed) in all {
-        let turned: Vec<Point> = pts
-            .iter()
-            .map(|p| {
-                let v = *p - c;
-                let a = angle * v.hypot() / far;
-                let (sin, cos) = a.sin_cos();
-                c + Vec2::new(v.x * cos - v.y * sin, v.x * sin + v.y * cos)
-            })
-            .collect();
-        out.extend(
-            crate::geometry::smooth_path(&turned, closed)
-                .elements()
-                .iter()
-                .copied(),
-        );
+    for sub in &subs {
+        let (p0, _) = turn(sub.start, Vec2::ZERO);
+        out.move_to(p0);
+        for seg in &sub.segs {
+            let cubic = match *seg {
+                PathSeg::Line(l) => {
+                    let (a, b, c2, d) = as_cubic(&PathSeg::Line(l));
+                    CubicBez::new(a, b, c2, d)
+                }
+                PathSeg::Quad(q) => q.raise(),
+                PathSeg::Cubic(cb) => cb,
+            };
+            // Steps along which the turn changes by at most `TWIST_STEP`
+            // (the distance from the centre, so the turn, changes by at
+            // most the length walked). A cubic through each step's ends
+            // with their true directions follows the turned curve; where
+            // the turn does not change (a circle about its middle) the
+            // segment turns whole, exactly.
+            let len = seg.arclen(1e-3);
+            let n = ((rate.abs() * len / TWIST_STEP).ceil() as usize).clamp(1, MAX_STEPS);
+            let h = 1.0 / n as f64;
+            let deriv = cubic.deriv();
+            let mut prev = turn(cubic.eval(0.0), deriv.eval(0.0).to_vec2());
+            for k in 1..=n {
+                let t = k as f64 * h;
+                let next = turn(cubic.eval(t), deriv.eval(t).to_vec2());
+                // A cubic through the two points with their directions
+                // (Hermite), the handles a third of the step along them.
+                let c1 = prev.0 + prev.1 * (h / 3.0);
+                let c2 = next.0 - next.1 * (h / 3.0);
+                out.curve_to(c1, c2, next.0);
+                prev = next;
+            }
+        }
+        if sub.closed {
+            out.close_path();
+        }
     }
     out
 }
@@ -564,13 +641,20 @@ mod tests {
         // 4 sides of 6 steps, one point each, closed.
         assert_eq!(nodes(&out).len(), 24);
         assert_eq!(closes(&out), 1);
-        // The corners stay, the teeth reach 2 mm out and in.
+        // The teeth reach 2 mm out and in along the sides; the corners
+        // are tips too, moved between the normals of their sides.
         let b = out.bounding_box();
         assert!(
             (b.x0 + 2.0).abs() < 1e-6 && (b.x1 - 22.0).abs() < 1e-6,
             "{b:?}"
         );
-        assert!(nodes(&out).contains(&Point::new(20.0, 0.0)));
+        let corner = Point::new(20.0, 0.0);
+        assert!(!nodes(&out).contains(&corner));
+        let moved = nodes(&out)
+            .into_iter()
+            .map(|p| (p - corner).hypot())
+            .fold(f64::INFINITY, f64::min);
+        assert!((moved - 2.0).abs() < 1e-6, "{moved}");
         // No frequency: unchanged.
         let none = Distort::Zipper {
             amplitude: 2.0,
@@ -594,6 +678,130 @@ mod tests {
             .elements()
             .iter()
             .any(|e| matches!(e, PathEl::CurveTo(..))));
+    }
+
+    /// A straight line with the Zipper (#1108): every point of the
+    /// zigzag, the two ends included, is a tooth's tip, alternately on
+    /// each side; no node is left on the line.
+    #[test]
+    fn a_zipped_line_starts_and_ends_on_tips() {
+        let mut line = BezPath::new();
+        line.move_to((10.0, 0.0));
+        line.line_to((10.0, 60.0));
+        let out = distort(
+            &line,
+            Distort::Zipper {
+                amplitude: 3.0,
+                frequency: 6,
+                center: None,
+                random: false,
+                smooth: false,
+                local: false,
+            },
+        );
+        let n = nodes(&out);
+        assert_eq!(n.len(), 13);
+        assert_eq!((subpath_count(&out), closes(&out)), (1, 0));
+        for (i, p) in n.iter().enumerate() {
+            assert!(((p.x - 10.0).abs() - 3.0).abs() < 1e-9, "{i}: {p:?}");
+            assert!((p.y - 5.0 * i as f64).abs() < 1e-9, "{i}: {p:?}");
+            if i > 0 {
+                assert!((p.x - 10.0) * (n[i - 1].x - 10.0) < 0.0, "alternate");
+            }
+        }
+        // Two segments: the pattern goes on through the middle node, no
+        // two neighbouring tips on the same side.
+        let mut bent = BezPath::new();
+        bent.move_to((0.0, 0.0));
+        bent.line_to((30.0, 0.0));
+        bent.line_to((30.0, 30.0));
+        let out = distort(
+            &bent,
+            Distort::Zipper {
+                amplitude: 1.0,
+                frequency: 3,
+                center: None,
+                random: false,
+                smooth: true,
+                local: false,
+            },
+        );
+        let n = nodes(&out);
+        assert_eq!(n.len(), 13);
+        let side = |p: &Point| -> f64 {
+            // Signed distance from the nearer side of the bent line,
+            // outside positive.
+            if p.y.abs() <= (p.x - 30.0).abs() {
+                -p.y
+            } else {
+                p.x - 30.0
+            }
+        };
+        for i in 1..n.len() {
+            assert!(
+                side(&n[i]) * side(&n[i - 1]) < 0.0,
+                "{i}: {:?}",
+                &n[i - 1..=i]
+            );
+        }
+    }
+
+    /// A straight line with the Twister (#1108) is a smooth spiral from
+    /// end to end: every step lies on the true turned curve and the ends
+    /// leave along its direction, not along a straight tail.
+    #[test]
+    fn a_twisted_line_is_a_smooth_spiral_to_its_ends() {
+        let mut line = BezPath::new();
+        line.move_to((0.0, -50.0));
+        line.line_to((0.0, 50.0));
+        let turns = 4.0;
+        let out = distort(
+            &line,
+            Distort::Twister {
+                angle_deg: -360.0 * turns,
+                center: None,
+            },
+        );
+        assert_eq!((subpath_count(&out), closes(&out)), (1, 0));
+        // Fine enough: a step at most a 24th of a turn, each half of
+        // the line turning four times.
+        let segs: Vec<PathSeg> = out.segments().collect();
+        assert!(segs.len() >= 2 * 24 * turns as usize, "{}", segs.len());
+        // The true curve: a point at distance r from the middle turned
+        // by r / 50 of the angle.
+        let angle = (-360.0f64 * turns).to_radians();
+        let truth = |y: f64| -> Point {
+            let a = angle * y.abs() / 50.0;
+            Point::new(-y * a.sin(), y * a.cos())
+        };
+        for seg in &segs {
+            for k in 0..=4 {
+                let p = seg.eval(k as f64 / 4.0);
+                let r = p.to_vec2().hypot();
+                // The point is on the spiral: at its distance the curve
+                // passes through the same angle.
+                let want = truth(r);
+                let want2 = truth(-r);
+                let off = (p - want).hypot().min((p - want2).hypot());
+                assert!(off < 0.03, "{p:?} off by {off}");
+            }
+        }
+        // The end leaves tangent to the spiral (the derivative of the
+        // turn), not along the chord to the next step.
+        let first = segs[0];
+        let d0 = (first.eval(1e-3) - first.eval(0.0)).normalize();
+        let want = (truth(-50.0 + 1e-4) - truth(-50.0)).normalize();
+        assert!(d0.dot(want) > 0.999, "{d0:?} vs {want:?}");
+        let last = segs[segs.len() - 1];
+        let d1 = (last.eval(1.0) - last.eval(1.0 - 1e-3)).normalize();
+        let want = (truth(50.0) - truth(50.0 - 1e-4)).normalize();
+        assert!(d1.dot(want) > 0.999, "{d1:?} vs {want:?}");
+        // No two neighbouring steps meet at a corner.
+        for w in segs.windows(2) {
+            let a = (w[0].eval(1.0) - w[0].eval(0.999)).normalize();
+            let b = (w[1].eval(0.001) - w[1].eval(0.0)).normalize();
+            assert!(a.dot(b) > 0.99, "corner between steps: {a:?} {b:?}");
+        }
     }
 
     #[test]

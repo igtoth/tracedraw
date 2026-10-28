@@ -38,16 +38,32 @@ is one undo step.
 
 Open curves (#828, `ops::curves_and_target_tests::open_targets_are_cut_and_open_cutters_leave_shapes_alone`,
 `shaping::tests::open_paths_are_cut_by_closed_regions`): an open curve as
-the target of Weld, Trim or Intersect is cut where it crosses the closed
-sources and stays an open curve with the target's attributes: Trim keeps
-its parts outside every source, Intersect its parts inside every source,
-Weld the sources welded together with the curve's parts outside them,
-as one open curve. Each part is a piece of the curve's own line or
-curve segment (`shaping::cut_open`). An open curve as a source takes no
-part in Weld, Trim or Intersect and stays as it is: cutting a closed
-object in two along a line is the Knife tool's job. With no closed
-source left the operation does nothing and the status bar points to the
-Knife.
+the target of Weld, Trim or Intersect (or the object kept by Front Minus
+Back and Back Minus Front) is cut where it crosses the closed sources and
+stays an open curve with the target's attributes: Trim and the Minus
+operations keep its parts outside every source, Intersect its parts
+inside every source, Weld the sources welded together with the curve's
+parts outside them, as one open curve. Each part is a piece of the
+curve's own line or curve segment (`shaping::cut_open`).
+
+An open curve acting on a closed object (#1005,
+`ops::curves_and_target_tests::open_curves_split_closed_targets_into_pieces`,
+`shaping::tests::closed_regions_are_split_along_open_cutters`): Trim,
+Front Minus Back and Back Minus Front split the object along the curve,
+after any closed sources have cut it. Each piece the curves divide it
+into becomes an object of its own with the object's fill, outline and
+opacity, and all of them are selected; nothing is lost, the pieces'
+areas add up to the object's. A straight line, a polyline and a curve
+cut alike, the pieces keeping the curves of both the object and the cut
+(`shaping::slice_open`); several curves, or one crossing several times,
+make more pieces. Only a stretch of a curve that runs from one edge of
+the object to another cuts: a curve that ends inside or only touches it
+cuts nothing there, and when that leaves the object whole and no closed
+source cut it, nothing changes and the status bar says so. In a group
+each object is split on its own. The open curves go or stay as the other
+sources do (Trim keeps them). Weld and Intersect leave open sources out:
+they stay as they are, and with no closed source left the operation does
+nothing and the status bar says so. Simplify leaves open curves alone.
 
 When the object whose attributes the result takes is a group: Trim, Front
 Minus Back and Back Minus Front cut each object of the group on its own,

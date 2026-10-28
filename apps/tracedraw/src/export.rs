@@ -1885,6 +1885,34 @@ mod tests {
         assert_eq!(st.page_indexes(5, 0), vec![0]);
     }
 
+    /// A drop shadow prints: the print PDF holds its picture with its soft
+    /// mask, as the exported PDF does (#1029).
+    #[test]
+    fn a_drop_shadow_prints() {
+        let mut app = App::headless();
+        let id = app
+            .new_shape(ShapeKind::Rect {
+                rect: tracedraw_core::geometry::Rect::new(20.0, 20.0, 60.0, 40.0),
+                radius: 0.0,
+                corners: None,
+            })
+            .expect("rect");
+        let pdf_text = |app: &App| {
+            let bytes =
+                tracedraw_io::pdf::document_to_pdf(&print_sheets(app, &PrintState::default()));
+            String::from_utf8_lossy(&bytes).into_owned()
+        };
+        assert!(!pdf_text(&app).contains("/SMask"));
+        app.run(tracedraw_core::Command::SetShadow {
+            shapes: vec![id],
+            shadow: Some(tracedraw_core::Shadow::default()),
+        });
+        let text = pdf_text(&app);
+        assert!(text.contains("/Subtype /Image"), "the shadow's picture");
+        assert!(text.contains("/SMask"), "with its transparency");
+        assert!(text.contains("/BM /Multiply"), "multiplied");
+    }
+
     /// Black text prints black, and a negative (Invert) prints it as the
     /// clear part of a black sheet rather than white on white paper.
     #[test]

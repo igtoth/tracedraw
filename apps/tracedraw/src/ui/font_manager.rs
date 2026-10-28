@@ -10,6 +10,7 @@
 use crate::app::App;
 use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
+use crate::ui::tips::RichTip;
 use egui::{Color32, Context, Rect, Sense, Stroke, Ui, Vec2};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap};
@@ -860,7 +861,9 @@ fn menu_row(
                 actions.push(Action::AddFont);
                 ui.close();
             }
-        });
+        })
+        .response
+        .rich_tip(crate::ui::tips::keyed("font_manager.menu_file"));
         ui.menu_button(tr("font_manager.menu_edit"), |ui| {
             ui.add_enabled_ui(any, |ui| {
                 ui.menu_button(tr("font_manager.add_to_collection"), |ui| {
@@ -895,7 +898,9 @@ fn menu_row(
                 st.selected.clear();
                 ui.close();
             }
-        });
+        })
+        .response
+        .rich_tip(crate::ui::tips::keyed("font_manager.menu_edit"));
         ui.menu_button(tr("font_manager.menu_font"), |ui| {
             let can_install = selected.iter().any(|r| !r.installed && r.path.is_some());
             if ui
@@ -929,7 +934,9 @@ fn menu_row(
                 }
                 ui.close();
             }
-        });
+        })
+        .response
+        .rich_tip(crate::ui::tips::keyed("font_manager.menu_font"));
         ui.menu_button(tr("font_manager.menu_view"), |ui| {
             let mut details = prefs.details;
             if ui
@@ -940,13 +947,17 @@ fn menu_row(
                 st.collapsed.insert("__toggle_details");
                 ui.close();
             }
-        });
+        })
+        .response
+        .rich_tip(crate::ui::tips::keyed("font_manager.menu_view"));
         ui.menu_button(tr("font_manager.menu_help"), |ui| {
             if ui.button(tr("font_manager.help")).clicked() {
                 actions.push(Action::Help);
                 ui.close();
             }
-        });
+        })
+        .response
+        .rich_tip(crate::ui::tips::keyed("font_manager.menu_help"));
     });
 }
 
@@ -1146,7 +1157,7 @@ fn icon_button(ui: &mut Ui, icon: Icon, tip: &str, enabled: bool, on: bool) -> e
             }
         }
     }
-    resp.on_hover_text(tip)
+    resp.rich_tip(tip)
 }
 
 fn toolbar(
@@ -1349,6 +1360,7 @@ fn section(
         ]
     };
     p.add(egui::Shape::line(pts, Stroke::new(1.5, SECTION_BLUE)));
+    let resp = resp.rich_tip_with(|| format!("{title}\n{}", tr("docker.section_desc")));
     if resp.clicked() {
         if open {
             st.collapsed.insert(id);
@@ -1384,7 +1396,7 @@ fn library_row(ui: &mut Ui, label: &str, picked: bool) -> egui::Response {
         egui::FontId::proportional(13.0),
         Tokens::text(),
     );
-    resp
+    resp.rich_tip_with(|| format!("{label}\n{}", tr("font_manager.library_desc")))
 }
 
 fn left_panes(
@@ -1431,7 +1443,7 @@ fn left_panes(
                                 name
                             };
                             let r = library_row(ui, &label, st.library == lib)
-                                .on_hover_text(dir.display().to_string());
+                                .rich_tip(dir.display().to_string());
                             if r.clicked() {
                                 st.library = lib;
                             }
@@ -1505,7 +1517,11 @@ fn left_panes(
                                     }
                                 });
                             }
-                            if ui.small_button(tr("font_manager.new_collection")).clicked() {
+                            if ui
+                                .small_button(tr("font_manager.new_collection"))
+                                .rich_tip(crate::ui::tips::keyed("font_manager.new_collection"))
+                                .clicked()
+                            {
                                 actions.push(Action::NewCollection);
                             }
                         },
@@ -1530,6 +1546,8 @@ fn left_panes(
                             !st.filters.is_empty(),
                             egui::Button::new(tr("font_manager.clear_filters")).small(),
                         )
+                        .rich_tip(crate::ui::tips::keyed("font_manager.clear_filters"))
+                        .rich_disabled_tip(crate::ui::tips::keyed("font_manager.clear_filters"))
                         .clicked()
                     {
                         st.filters.clear();
@@ -1543,7 +1561,8 @@ fn left_panes(
                         |ui: &mut Ui, st: &mut FontManagerState, items: Vec<(Filter, String)>| {
                             for (f, label) in items {
                                 let mut on = st.filters.contains(&f);
-                                if ui.checkbox(&mut on, label).changed() {
+                                let tip = format!("{label}\n{}", tr("font_manager.filter_desc"));
+                                if ui.checkbox(&mut on, label).rich_tip(tip).changed() {
                                     if on {
                                         st.filters.insert(f);
                                     } else {
@@ -1741,8 +1760,14 @@ fn sample_and_search(ui: &mut Ui, st: &mut FontManagerState, prefs: &mut FontMan
             egui::TextEdit::singleline(&mut prefs.sample)
                 .hint_text(tr("font_manager.sample_hint"))
                 .desired_width(w - 28.0),
-        );
-        let arrow = ui.add_sized([22.0, 20.0], egui::Button::new("\u{25BE}"));
+        )
+        .rich_tip(crate::ui::tips::pair(
+            "font_manager.sample_tip",
+            "font_manager.sample_desc",
+        ));
+        let arrow = ui
+            .add_sized([22.0, 20.0], egui::Button::new("\u{25BE}"))
+            .rich_tip(crate::ui::tips::keyed("font_manager.sample_presets"));
         egui::Popup::menu(&arrow)
             .id(egui::Id::new("font_manager_samples"))
             .show(|ui| {
@@ -1757,7 +1782,8 @@ fn sample_and_search(ui: &mut Ui, st: &mut FontManagerState, prefs: &mut FontMan
             egui::TextEdit::singleline(&mut st.search)
                 .hint_text(tr("font_manager.search"))
                 .desired_width(ui.available_width()),
-        );
+        )
+        .rich_tip(crate::ui::tips::keyed("font_manager.search"));
     });
 }
 
@@ -2115,7 +2141,7 @@ fn status_line(
             let mut px = prefs.sample_px();
             if ui
                 .add(egui::Slider::new(&mut px, SAMPLE_PX).show_value(false))
-                .on_hover_text(tr("font_manager.sample_size"))
+                .rich_tip(tr("font_manager.sample_size"))
                 .changed()
             {
                 prefs.sample_px = px;
