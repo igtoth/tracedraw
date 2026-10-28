@@ -6,6 +6,9 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Color palettes: every palette ticked in Window > Color Palettes or the Palette Manager shows, each in a strip of its own next to the default palette, with Close Palette in its menu. Only the first palette ticked was shown, so a second or third one stayed in the menu with a tick but never appeared (#1164).
+- Options > Customization > Commands: the bars' buttons that run a menu command (New, Open, Save, Undo, Zoom In, Rulers and others) take shortcuts on their Shortcut Keys tab, the same keys as their menu command; they had no Shortcut Keys tab. Rows the menus show only at times (Finish Editing Contents, Vertical Text) are listed and take shortcuts too (#1148).
+
 ## 0.19.12 (2026-10-28)
 
 - Blend tool: the squares at the ends of a picked blend's line (text blends too) now work: dragging one moves its object, so the blend changes direction, and dropping it on another object makes that object the new start or end with the blend's settings. They were only shown (#965).
@@ -15,8 +18,6 @@ full, row-by-row status.
 - Pick tool: Ctrl+click on a clip frame starts editing its contents (as Edit Contents does), with the object under the pointer selected; Finish puts them back. Ctrl+click picked the object inside the frame and left it there, so it was moved and changed while still clipped (#982).
 - Multipage View: the pages always sit in four columns, so a page added goes at the next place and the pages before it stay where they were. The number of columns followed the page count (2 columns for 2 and 3 pages, 3 for 4 to 9, 4 from 10), so adding the 4th or the 10th page moved every page (#1018).
 - Perspective: two corners dragged onto one point (the frame a triangle) now bend the object to a tip there, so an ellipse becomes a drop. The object stayed flat when the corners met exactly, and when they ended a little past each other it came out as a thin sliver running off past the frame. The outline's nodes and handles are now mapped, so each segment stays one segment and the outline is drawn faster (#879).
-- Color palettes: every palette ticked in Window > Color Palettes or the Palette Manager shows, each in a strip of its own next to the default palette, with Close Palette in its menu. Only the first palette ticked was shown, so a second or third one stayed in the menu with a tick but never appeared (#1164).
-- Options > Customization > Commands: the bars' buttons that run a menu command (New, Open, Save, Undo, Zoom In, Rulers and others) take shortcuts on their Shortcut Keys tab, the same keys as their menu command; they had no Shortcut Keys tab. Rows the menus show only at times (Finish Editing Contents, Vertical Text) are listed and take shortcuts too (#1148).
 
 ## 0.19.11 (2026-10-28)
 
