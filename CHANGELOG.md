@@ -6,12 +6,17 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Text panel: the Fit Text to Frame button in the Text Box section shows its icon, now drawn: it was an arrow character the bundled interface font lacks, so on Windows the button was blank (#1041).
+- Text on a path: Top and Bottom in the placement list centre text that is set off its circle (a Distance from path), as a stamp's bottom line. The text landed an eighth of the way round, because it was centred on the path's length rather than on the longer or shorter line the letters stand on (#193).
 - Corners panel: on a stretched object a fillet or scallop comes out round, with the radius in page millimetres. The corners were cut in the object's own space, so the stretch made them oval (#1002).
 - Zoom: F2 picks the Zoom tool for one zoom. After a click, a right click or a marquee the tool used before comes back (the Pick tool, most of the time); it stayed on the Zoom tool. Z and the toolbox button still pick the Zoom tool until another one is chosen (#1039).
 - Blend: the steps between two objects are clean shapes with few nodes. Each step has the nodes of the two objects paired by their place along the outlines, with straight sides where both objects are straight and smooth curves elsewhere: a square blended into a circle gives steps of eight nodes that round off evenly. Each step was a polygon of 120 points, with corners cut off and lumpy outlines, heavy to edit after Convert to Curves (#1020).
 - Saving as .cdr: text in a SemiBold face (or a Light, Medium, Black ...) is saved as its family at that weight ("Titillium Web" at SemiBold), as the file it came from names it. It was saved under the name "Titillium Web SemiBold", which no installed font goes by, so the saved file opened elsewhere in a substituted font (#892, #624).
+- Saving as .cdr: a paragraph written in one colour keeps it. In a text of several lines, a line in one colour of its own (one red line among black ones) came back black when the file was opened again, here and in other programs (#1057, #1055).
+- Saving as .cdr with Embed fonts: a static face of a large family ("Khand SemiBold") is saved as its family at its weight ("Khand", SemiBold), the names the font gives itself, also when its old-style family name is the whole name. It was saved as "Khand SemiBold" Regular, which another program reported as a missing font on a computer where the face was only embedded in the file (#1055, #1009).
 - Start: when the first renderer failed at once and TraceDraw opened with the next one, a second, empty TraceDraw window no longer opens 20 seconds later (the start that handed over still counted the time).
 - Dimensions without arrowheads (or with open, tick or no heads): the selection box and its handles wrap the dimension's lines and label. Their empty arrowhead curve counted as a point at the page's lower left corner, so the box stretched from the dimension down to that corner, and a moved dimension seemed to leave its box behind (#996).
+- Status bar in a narrow window: the fill and outline parts keep room for their swatches and values and move left as the window narrows, the tool hints and object information giving way first and ending in an ellipsis. The outline's colour and width were cut off at the right, and the parts could not be read or double-clicked (#1004).
 
 ## 0.19.9 (2026-10-28)
 
