@@ -42,6 +42,10 @@ Choose the [[tool.zoom]] tool (<kbd>Z</kbd> or <kbd>F2</kbd>), then:
 - <kbd>Shift</kbd>+click or right-click to zoom out by two;
 - drag a rectangle to zoom so the rectangle fills the window.
 
+With <kbd>F2</kbd> the tool zooms once: after the click or the
+rectangle, the tool you had before comes back. With <kbd>Z</kbd> it stays
+until you choose another tool.
+
 Double-click the tool's button to zoom to fit all objects.
 
 ## Panning {#pan}

@@ -9,7 +9,11 @@
   that rectangle in the window, wherever it lies on the page, with a
   40 px margin: `zoom = min((W - 80) / w, (H - 80) / h)`.
 - Double-clicking the tool button zooms to fit all objects (F4).
-- F2 picks the tool; Shift+F2 zooms to the selection; F4 zooms to fit
+- F2 picks the tool for one zoom: after a click, a right click or a
+  marquee the tool before it comes back (#1039,
+  `pick_drag_tests::f2_zooms_once_and_gives_the_tool_back`); Z or the
+  toolbox button keeps it until another tool is chosen. Shift+F2 zooms
+  to the selection; F4 zooms to fit
   all objects; Shift+F4 zooms to the page.
 - `+`/`=` and `-` zoom by 1.25 about the canvas centre (except that `+`
   duplicates the selection in place with a Pick tool, and with the Shape
