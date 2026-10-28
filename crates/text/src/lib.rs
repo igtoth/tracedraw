@@ -4342,6 +4342,8 @@ impl ttf_parser::OutlineBuilder for OutlineSink {
 
 #[cfg(test)]
 mod devanagari_tests;
+#[cfg(test)]
+mod tamil_tests;
 
 /// `line` (an underline or a strike line) wound the same way as the
 /// letters it crosses, whose summed signed area is `glyph_area`: text is

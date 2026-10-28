@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Text tool on Windows: input methods that type by sending characters (Keyman, NHM Writer and other keyboards for Tamil and Indic scripts) now type into artistic and paragraph text and into fields; the windowing layer dropped characters sent with no key press before them and the characters of a key the input method took, so nothing was typed (#1151).
+
 ## 0.19.12 (2026-10-28)
 
 - Blend tool: the squares at the ends of a picked blend's line (text blends too) now work: dragging one moves its object, so the blend changes direction, and dropping it on another object makes that object the new start or end with the blend's settings. They were only shown (#965).

@@ -4139,6 +4139,7 @@ dependencies = [
  "web-time",
  "webp",
  "windows-sys 0.52.0",
+ "winit",
  "winresource",
 ]
 

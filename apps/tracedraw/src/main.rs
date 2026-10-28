@@ -80,6 +80,8 @@ mod hunspell;
 mod i18n;
 mod image_dpi;
 mod imposition;
+#[cfg(test)]
+mod input_method_tests;
 #[cfg(not(target_arch = "wasm32"))]
 mod instance;
 mod interaction;
@@ -143,6 +145,7 @@ mod straighten;
 mod styles;
 mod symbol_paste;
 mod symmetry_edit;
+mod system_chars;
 mod system_prefs;
 mod table;
 mod table_tool;
@@ -276,6 +279,10 @@ fn main() -> eframe::Result<()> {
         centered: splash,
         renderer,
         wgpu_options,
+        // Characters keyboard programs send that the windowing layer
+        // would lose (#1151).
+        #[cfg(windows)]
+        event_loop_builder: Some(Box::new(system_chars::install)),
         ..Default::default()
     };
     // A panic before the window opens is this renderer failing (eframe's
@@ -288,6 +295,7 @@ fn main() -> eframe::Result<()> {
             options,
             Box::new(move |cc| {
                 gpu::note_renderer(cc, mode);
+                system_chars::set_context(&cc.egui_ctx);
                 if let Some(w) = &wake {
                     let _ = w.set(cc.egui_ctx.clone());
                 }
@@ -561,6 +569,12 @@ fn paint_probe(ctx: &egui::Context) -> [usize; 2] {
 const RENDERER_CHECK: &str = "renderer-check";
 
 impl eframe::App for Shell {
+    /// Characters the windowing layer lost (input methods on Windows,
+    /// #1151) join the frame's input as typed text.
+    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        system_chars::take_into(raw_input);
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         #[cfg(not(target_arch = "wasm32"))]
         self.pacer.pace();
