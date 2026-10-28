@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Saving as .cdr: text in a SemiBold face (or a Light, Medium, Black ...) is saved as its family at that weight ("Titillium Web" at SemiBold), as the file it came from names it. It was saved under the name "Titillium Web SemiBold", which no installed font goes by, so the saved file opened elsewhere in a substituted font (#892, #624).
+
 ## 0.19.9 (2026-10-28)
 
 - Docker tabs: when more dockers are open than the column of tabs has room for, the column slides, with arrows at its top and foot and the mouse wheel over it, so every tab and the add button can be reached. The tabs past the window's bottom edge could not be clicked (#950).
