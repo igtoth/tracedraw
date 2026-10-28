@@ -307,6 +307,9 @@ impl App {
         self.docs.push(DocSlot::default());
         self.active_doc = self.docs.len() - 1;
         self.show_welcome = false;
+        // The status bar's message was about the drawing before, such as
+        // where it was saved (#1128); who opens a file says so after.
+        self.status.clear();
     }
 
     /// Fonts a drawing carries serve its text (and the font lists) for the
@@ -383,6 +386,8 @@ impl App {
         self.park_active();
         self.unpark(i);
         self.active_doc = i;
+        // The status bar's message was about the other drawing (#1128).
+        self.status.clear();
     }
 
     /// Window > New Window: another window (tab) of the active drawing,
@@ -470,6 +475,8 @@ impl App {
         self.picked_layer = None;
         *self.raster.get_mut() = Default::default();
         self.view_anchor = None;
+        // Its message in the status bar goes with it (#1128).
+        self.status.clear();
         if self.docs.is_empty() {
             self.active_doc = 0;
             // The Welcome Screen comes back unless its tab was closed:
@@ -605,6 +612,36 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).expect("temp dir");
         d
+    }
+
+    /// The status bar does not keep naming a drawing's file once another
+    /// drawing is shown: after closing it and making a new one (by the
+    /// New Document dialog's way too), or switching tabs (#1128).
+    #[test]
+    fn the_status_bar_forgets_the_file_of_the_drawing_before() {
+        let dir = temp_dir("status-path");
+        let mut app = App::headless();
+        app.open_document(
+            tracedraw_core::Document::new("Art", Size::new(100.0, 100.0)),
+            None,
+        );
+        add_rect(&mut app);
+        app.save_to(dir.join("art.tdraw"));
+        assert!(app.status.contains("art.tdraw"), "{}", app.status);
+        app.close_active_document();
+        assert!(app.status.is_empty(), "{}", app.status);
+        app.open_path(dir.join("art.tdraw"));
+        assert!(app.status.contains("art.tdraw"), "opening says so");
+        app.open_document(
+            tracedraw_core::Document::new("Untitled-1", Size::new(50.0, 50.0)),
+            None,
+        );
+        assert!(app.status.is_empty(), "{}", app.status);
+        app.switch_document(0);
+        app.save_to(dir.join("art.tdraw"));
+        assert!(app.status.contains("art.tdraw"));
+        app.switch_document(1);
+        assert!(app.status.is_empty(), "{}", app.status);
     }
 
     /// Opening a file that is open already shows its tab instead of a
