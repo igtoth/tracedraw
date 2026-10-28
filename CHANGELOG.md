@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Text panel: the Fit Text to Frame button in the Text Box section shows its icon, now drawn: it was an arrow character the bundled interface font lacks, so on Windows the button was blank (#1041).
+
 ## 0.19.9 (2026-10-28)
 
 - Docker tabs: when more dockers are open than the column of tabs has room for, the column slides, with arrows at its top and foot and the mouse wheel over it, so every tab and the add button can be reached. The tabs past the window's bottom edge could not be clicked (#950).

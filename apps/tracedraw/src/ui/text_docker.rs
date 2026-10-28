@@ -385,6 +385,30 @@ fn paint_vertical_align(p: &egui::Painter, r: Rect, v: VerticalAlign, color: Col
     }
 }
 
+/// The picture of Fit Text to Frame: a frame with a letter scaled up to
+/// it, arrows from the letter to the frame's top and bottom.
+fn paint_fit_to_frame(p: &egui::Painter, r: Rect, color: Color32) {
+    let f = r.shrink(1.0);
+    let thin = Stroke::new(1.0, color);
+    p.rect_stroke(f, 0.0, thin, egui::StrokeKind::Inside);
+    // An "A" from the frame's bottom to below its top.
+    let (base, apex) = (f.bottom() - 2.5, f.top() + 2.5);
+    let cx = f.left() + 6.5;
+    let st = Stroke::new(1.3, color);
+    p.line_segment([egui::pos2(cx - 4.0, base), egui::pos2(cx, apex)], st);
+    p.line_segment([egui::pos2(cx, apex), egui::pos2(cx + 4.0, base)], st);
+    let bar = base - (base - apex) * 0.38;
+    p.line_segment([egui::pos2(cx - 2.5, bar), egui::pos2(cx + 2.5, bar)], thin);
+    // A double arrow from top to bottom beside it.
+    let x = f.right() - 3.5;
+    let (t, b) = (f.top() + 2.0, f.bottom() - 2.0);
+    p.line_segment([egui::pos2(x, t), egui::pos2(x, b)], thin);
+    for (tip, d) in [(t, 2.5), (b, -2.5)] {
+        p.line_segment([egui::pos2(x, tip), egui::pos2(x - 2.0, tip + d)], thin);
+        p.line_segment([egui::pos2(x, tip), egui::pos2(x + 2.0, tip + d)], thin);
+    }
+}
+
 /// The style list's entries: regular, italic, bold, bold italic.
 const STYLES: [(bool, bool, &str); 4] = [
     (false, false, "docker.style_normal"),
@@ -1330,12 +1354,16 @@ fn frame(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) {
                     }
                 }
             });
-        // Fit the text to the frame.
-        if ui
-            .selectable_label(p.fit_to_frame, egui::RichText::new("\u{2922}").size(14.0))
-            .on_hover_text(tr("menu.text.frame_fit_text"))
-            .clicked()
-        {
+        // Fit the text to the frame, a drawn picture: the arrow it had
+        // is in no bundled font and showed as nothing on Windows (#1041).
+        let (rect, resp) = ui.allocate_exact_size(Vec2::new(28.0, 26.0), Sense::click());
+        crate::ui::propbar::frame(ui, rect, resp.hovered(), p.fit_to_frame);
+        paint_fit_to_frame(
+            ui.painter(),
+            Rect::from_center_size(rect.center(), Vec2::splat(18.0)),
+            Tokens::icon(),
+        );
+        if resp.on_hover_text(tr("menu.text.frame_fit_text")).clicked() {
             p.fit_to_frame = !p.fit_to_frame;
             pc = true;
         }
@@ -1474,6 +1502,30 @@ fn para_icon_shapes(icon: ParaIcon, r: egui::Rect, color: egui::Color32) -> Vec<
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every text icon of the panel is in the fonts the app bundles, so
+    /// none draws as an empty box or nothing where no system font has it:
+    /// the Fit Text to Frame arrow did (#1041), as the indent and spacing
+    /// arrows had (#863).
+    #[test]
+    fn every_text_icon_is_in_the_bundled_fonts() {
+        let ctx = egui::Context::default();
+        crate::theme::install_fonts_bundled(&ctx);
+        let mut out = ctx.run_ui(Default::default(), |_| {});
+        out.textures_delta.clear();
+        let font = egui::FontId::proportional(12.0);
+        let missing: Vec<String> =
+            crate::ui::color_docker::tests::source_glyphs(include_str!("text_docker.rs"))
+                .into_iter()
+                // The full-width colon is trimmed off labels, not drawn.
+                .filter(|c| *c != '\u{FF1A}')
+                .filter(|c| !ctx.fonts_mut(|f| f.has_glyph(&font, *c)))
+                .map(|c| format!("U+{:04X}", c as u32))
+                .collect();
+        assert!(missing.is_empty(), "not in the bundled fonts: {missing:?}");
+        let arrow = char::from_u32(0x2922).expect("a char");
+        assert!(!ctx.fonts_mut(|f| f.has_glyph(&font, arrow)));
+    }
 
     /// The paragraph icons are drawn lines inside their box, not font
     /// arrows, which the interface fonts of some systems do not have and

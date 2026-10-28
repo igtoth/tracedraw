@@ -758,7 +758,7 @@ fn palette_view(app: &mut App, ui: &mut Ui) -> Option<Color> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use tracedraw_core::ShapeKind;
 
@@ -782,7 +782,7 @@ mod tests {
 
     /// The characters `src` writes as `\u{...}` escapes or as non-ASCII
     /// characters outside comments: its text icons.
-    fn source_glyphs(src: &str) -> Vec<char> {
+    pub(crate) fn source_glyphs(src: &str) -> Vec<char> {
         let mut out = Vec::new();
         for line in src.lines() {
             let code = line.trim_start();
