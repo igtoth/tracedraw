@@ -11,7 +11,13 @@ Updates opens the releases page).
   Close. Download opens the link of the release file named exactly for
   this system, its processor (x86_64, or arm64 for aarch64) and how this
   copy was installed; the system's installer does the installing:
-  - Linux run as an AppImage (`APPIMAGE` set): `tracedraw-<v>-linux-<arch>.AppImage`;
+  - Linux run as an AppImage (`APPIMAGE` set): `tracedraw-<v>-linux-<arch>.AppImage`,
+    where x86_64 looks for `linux-amd64` first and then `linux-x86_64`
+    (releases up to 0.19.8). From 0.19.9 on the release names the x86_64
+    AppImage `linux-amd64`, which sorts before `linux-arm64`: updaters of
+    0.19.8 and earlier take the first AppImage in GitHub's list, sorted
+    by name, and so get the x86_64 file (#1038). The tar.gz keeps
+    `linux-x86_64`;
   - Linux installed from the `.deb` (dpkg's list for `tracedraw` names
     the running program): `tracedraw_<v>_<amd64|arm64>.deb`;
   - Linux unpacked from the tar.gz (a program outside `/usr`):
@@ -47,6 +53,9 @@ Updates opens the releases page).
 - `updates::tests::the_download_fits_the_system` (the file names of the
   v0.19.8 release, in GitHub's order and reversed)
 - `updates::tests::no_file_of_another_system_is_offered`
+- `updates::tests::the_x86_64_appimage_is_named_amd64_from_0_19_9` (the new
+  name, the old one as fallback, the order an 0.19.8 updater sees, and the
+  name in `build-appimage.sh`)
 - `updates::tests::how_a_linux_copy_was_installed`
 - `updates::tests::the_same_or_older_drafts_and_pre_releases_are_not_offered`
 - `ui::dialogs::tests::every_dialog_draws_and_accepts_enter` (the dialog)

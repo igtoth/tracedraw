@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Updates on Linux x86_64: the release's x86_64 AppImage is now named `tracedraw-<version>-linux-amd64.AppImage`, so that updating from 0.19.8 or earlier downloads it instead of the arm64 one, which those versions took because it came first in the list. TraceDraw looks for the new name and still finds the old one in earlier releases; the tar.gz names are unchanged (#1038).
 - Distort: a value changed on the property bar (Amplitude, Frequency, Random, Smooth, Local, direction, Rotations, Degrees) shows on the selected object at once, also when it has no distortion yet. It changed only objects already distorted, so with a plain object selected the bar seemed to do nothing until Apply (#1030).
 - Print Merge: Place Inside Frame, picking the shape with a click, takes a shape that already holds a picture, not the picture inside it. The merge then put each record's photo in that picture's box, with the old picture still showing next to the shape (#596).
 - Web version: a notch of the mouse wheel zooms 15 % about the pointer, as on the desktop. The browser sends a notch as 100 pixels or three lines, which the canvas read as several notches, so every notch zoomed far more than that at once (#1016).
