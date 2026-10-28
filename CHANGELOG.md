@@ -12,6 +12,7 @@ full, row-by-row status.
 - Pen: while a curve is drawn, new or going on from an end, every click places the next node, also on a segment or a node of that curve or of another one. Automatic adding and deleting of nodes works only when no curve is being drawn, so drawing no longer changes other curves by accident (#1143).
 - Pen: going on from the end of a curve, a second click on that end node makes it a cusp, so the new segment leaves it straight; the curved, mirrored start stays the default (#1138).
 - Dropping files: a `.cdr` (or any drawing File > Open reads) let go over the title, menus, toolbars or document tabs opens in a tab of its own, and only one let go over the drawing window is imported into it; the frame and label while dragging show which. Before, a `.cdr` dropped anywhere on an open drawing was imported. Where the system does not say where the pointer is (Linux, macOS), drawings open in a tab like a `.tdraw` and pictures are imported (#1142).
+- Status bar: it no longer keeps showing the path of a drawing that was closed (or of another tab) after making a new drawing or switching tabs; the message about a file now goes when another drawing is shown (#1128).
 
 ## 0.19.10 (2026-10-28)
 
