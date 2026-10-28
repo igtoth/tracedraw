@@ -968,7 +968,10 @@ stand-in next to each missing family: "Arial (Liberation Sans)".
   the path's highest point, outside and upright, both mirrors off, or
   on its lowest point, inside and reading left to right, both mirrors
   on; the list shows these while the text is so placed,
-  `text_path::tests::top_and_bottom_placement_on_a_closed_path`),
+  `text_path::tests::top_and_bottom_placement_on_a_closed_path`; text
+  set off the path keeps its distance and is centred on the line its
+  letters stand on, half that line's length round,
+  `text_path::tests::bottom_placement_centres_text_set_off_the_path`),
   Distance from path and Offset along path in the document's units
   (a new distance, from the bar or a drag across the path, keeps the
   text where it is along the path: the offset, measured along the
