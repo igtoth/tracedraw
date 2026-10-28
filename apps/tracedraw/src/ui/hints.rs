@@ -270,6 +270,9 @@ fn title(ui: &mut Ui, text: &str) {
     ui.add_space(6.0);
 }
 
+/// The widest a step's picture grows, in points.
+const PICTURE_MAX_W: f32 = 320.0;
+
 /// The panel's text: 14 px on 21 px lines.
 const TEXT_SIZE: f32 = 14.0;
 const LINE_HEIGHT: f32 = 21.0;
@@ -450,12 +453,21 @@ fn tool_row(ui: &mut Ui, tool: Tool) -> bool {
 fn tool_page(app: &mut App, ui: &mut Ui, tool: Tool) -> Option<HintPage> {
     title(ui, &tr(&format!("hinttitle.{}", tool.id())));
     tool_row(ui, tool);
-    ui.add_space(6.0);
-    // The status bar hint, one bullet per instruction, keys in bold.
-    let hint = crate::ui::status::tool_hint_for(tool, app.selection.is_empty());
-    for part in split_hint(&hint) {
-        bullet_row(ui, |ui| rich(ui, &emphasize_keys(&part)));
-        ui.add_space(4.0);
+    ui.add_space(8.0);
+    // The steps, keys in bold, each with its picture under it.
+    for (i, pic) in crate::ui::hint_pics::steps(tool).iter().enumerate() {
+        let text = tr(&format!("hintstep.{}.{}", tool.id(), i + 1));
+        bullet_row(ui, |ui| {
+            rich(ui, &emphasize_keys(&text));
+            if let Some(pic) = pic {
+                ui.add_space(6.0);
+                let w = ui.available_width().min(PICTURE_MAX_W);
+                let h = w * crate::ui::hint_pics::H / crate::ui::hint_pics::W;
+                let (r, _) = ui.allocate_exact_size(Vec2::new(w, h), Sense::hover());
+                crate::ui::hint_pics::draw(ui.painter(), r, *pic);
+            }
+        });
+        ui.add_space(10.0);
     }
     learn_more(
         app,
@@ -476,25 +488,9 @@ fn tool_page(app: &mut App, ui: &mut Ui, tool: Tool) -> Option<HintPage> {
     go
 }
 
-/// Split a hint into its instructions (separated by semicolons in every
-/// script the interface uses).
-pub fn split_hint(hint: &str) -> Vec<String> {
-    hint.split([';', '；', '؛', '。'])
-        .map(|s| s.trim().trim_end_matches('.').trim().to_string())
-        .filter(|s| !s.is_empty())
-        .map(|s| {
-            let mut c = s.chars();
-            match c.next() {
-                Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
-                None => s,
-            }
-        })
-        .collect()
-}
-
 /// Put the modifier and special key names of a hint in bold.
 pub fn emphasize_keys(text: &str) -> String {
-    const KEYS: [&str; 16] = [
+    const KEYS: [&str; 27] = [
         "Ctrl",
         "Shift",
         "Alt",
@@ -511,6 +507,17 @@ pub fn emphasize_keys(text: &str) -> String {
         "Espaço",
         "Espace",
         "Leertaste",
+        "Espacio",
+        "Spazio",
+        "Delete",
+        "Entf",
+        "Suppr",
+        "Supr",
+        "Canc",
+        "Échap",
+        "Eingabetaste",
+        "Invio",
+        "Maiusc",
     ];
     let mut out = String::with_capacity(text.len() + 16);
     let mut word = String::new();
@@ -524,8 +531,17 @@ pub fn emphasize_keys(text: &str) -> String {
         }
         word.clear();
     };
+    // Key names are Latin; a change of script ends a word, so "Ctrlキー" still finds Ctrl.
+    let latin = |c: char| (c as u32) < 0x0250;
     for ch in text.chars() {
         if ch.is_alphanumeric() {
+            if word
+                .chars()
+                .last()
+                .is_some_and(|last| latin(last) != latin(ch))
+            {
+                flush(&mut word, &mut out);
+            }
             word.push(ch);
         } else {
             flush(&mut word, &mut out);
@@ -708,13 +724,9 @@ mod tests {
     }
 
     #[test]
-    fn hints_split_into_instructions_with_keys_in_bold() {
-        let parts = split_hint("Ctrl+drag constrains; Shift+drag draws from center");
-        assert_eq!(
-            parts,
-            vec!["Ctrl+drag constrains", "Shift+drag draws from center"]
-        );
+    fn step_keys_are_in_bold() {
         assert_eq!(emphasize_keys("Ctrl+drag"), "**Ctrl**+drag");
-        assert_eq!(split_hint("单击放大；右键单击缩小").len(), 2);
+        assert_eq!(emphasize_keys("Hold Alt"), "Hold **Alt**");
+        assert_eq!(emphasize_keys("Ctrlキーを押す"), "**Ctrl**キーを押す");
     }
 }
