@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+## 0.19.9 (2026-10-28)
+
 - Docker tabs: when more dockers are open than the column of tabs has room for, the column slides, with arrows at its top and foot and the mouse wheel over it, so every tab and the add button can be reached. The tabs past the window's bottom edge could not be clicked (#950).
 - Updates on Linux x86_64: the release's x86_64 AppImage is now named `tracedraw-<version>-linux-amd64.AppImage`, so that updating from 0.19.8 or earlier downloads it instead of the arm64 one, which those versions took because it came first in the list. TraceDraw looks for the new name and still finds the old one in earlier releases; the tar.gz names are unchanged (#1038).
 - Distort: a value changed on the property bar (Amplitude, Frequency, Random, Smooth, Local, direction, Rotations, Degrees) shows on the selected object at once, also when it has no distortion yet. It changed only objects already distorted, so with a plain object selected the bar seemed to do nothing until Apply (#1030).
