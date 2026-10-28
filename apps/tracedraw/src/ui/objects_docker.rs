@@ -16,6 +16,7 @@ use crate::app::App;
 use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
 use crate::ui::dockers::kind_name;
+use crate::ui::tips::RichTip;
 use egui::{Color32, Painter, Pos2, Rect, Sense, Stroke, Ui, Vec2};
 use tracedraw_core::{Command, Layer, LayerId, MasterScope, Page, Shape, ShapeId, ShapeKind};
 
@@ -57,6 +58,8 @@ struct Actions {
     toggle_guides: bool,
     toggle_grid: bool,
     lock_guides: Option<bool>,
+    /// Not an action: the object whose row is scrolled into view.
+    scroll_to: Option<ShapeId>,
 }
 
 /// Where a layer sits: its index in its list (0 at the bottom), how many
@@ -432,9 +435,24 @@ pub fn objects_docker(app: &mut App, ui: &mut Ui) {
     bottom_bar(app, ui);
 }
 
+/// The object whose row the list scrolls to this frame: the first
+/// selected one, when the selection is not the one the list last showed
+/// (a pick on the page, a Select All, an undo), so a selection far down a
+/// long list comes into view (#1044).
+fn scroll_target(app: &App, ui: &Ui) -> Option<ShapeId> {
+    let seen = egui::Id::new("objects_seen_selection");
+    let changed = ui.data_mut(|d| {
+        let last = d.get_temp::<Vec<ShapeId>>(seen);
+        d.insert_temp(seen, app.selection.clone());
+        last.as_ref() != Some(&app.selection)
+    });
+    changed.then(|| app.selection.first().copied()).flatten()
+}
+
 /// The tree: the page and its layers, then the Master Page.
 pub fn objects(app: &mut App, ui: &mut Ui) {
     let mut act = Actions::default();
+    act.scroll_to = scroll_target(app, ui);
     {
         let doc = app.doc();
         let Ok(page) = doc.page(app.page) else { return };
@@ -503,8 +521,10 @@ fn node_row(
     master: bool,
 ) -> (bool, egui::Response) {
     let (rect, resp) = row(ui, Look::Node);
+    let resp = resp.rich_tip_with(|| format!("{title}\n{}", tr("docker.page_row_desc")));
     let x = rect.left() + 3.0;
     let (ar, a) = hot(ui, rect, x, 14.0, egui::Id::new((id, "arrow")));
+    let a = a.rich_tip_with(|| crate::ui::tips::keyed("docker.expand_row"));
     paint_arrow(ui, ar, open);
     paint_page_icon(ui.painter(), square(rect, x + 16.0, 16.0), master);
     ui.painter().text(
@@ -531,9 +551,11 @@ fn layer_rows(
     let open = !app.objects_collapsed.contains(&layer.id);
     let is_active = active == Some(layer.id);
     let (rect, resp) = row(ui, Look::Layer { active: is_active });
+    let resp = resp.rich_tip_with(|| format!("{}\n{}", layer.name, tr("docker.layer_row_desc")));
     let base = egui::Id::new(("objects_layer", layer.id.raw()));
     let mut x = rect.left() + 3.0 + INDENT;
     let (ar, a) = hot(ui, rect, x, 14.0, base.with("arrow"));
+    let a = a.rich_tip_with(|| crate::ui::tips::keyed("docker.expand_row"));
     paint_arrow(ui, ar, open);
     if a.clicked() {
         act.collapse = Some(layer.id);
@@ -541,19 +563,19 @@ fn layer_rows(
     x += 16.0;
     let (er, e) = hot(ui, rect, x, 18.0, base.with("eye"));
     paint_eye(ui, er, layer.visible);
-    if e.on_hover_text(tr("docker.show_hide")).clicked() {
+    if e.rich_tip(tr("docker.show_hide")).clicked() {
         act.visible = Some((layer.id, !layer.visible));
     }
     x += 20.0;
     let (pr, p) = hot(ui, rect, x, 18.0, base.with("print"));
     paint_printer(ui, pr, layer.printable);
-    if p.on_hover_text(tr("docker.print_layer")).clicked() {
+    if p.rich_tip(tr("docker.print_layer")).clicked() {
         act.printable = Some((layer.id, !layer.printable));
     }
     x += 20.0;
     let (lr, l) = hot(ui, rect, x, 18.0, base.with("lock"));
     paint_lock(ui, lr, layer.locked);
-    if l.on_hover_text(tr("docker.lock_layer")).clicked() {
+    if l.rich_tip(tr("docker.lock_layer")).clicked() {
         act.locked = Some((layer.id, !layer.locked));
     }
     x += 22.0;
@@ -656,12 +678,13 @@ fn scope_key(scope: MasterScope) -> &'static str {
 /// guidelines, the padlock locks or unlocks all of the page's; guidelines
 /// never print.
 fn guides_row(app: &App, ui: &mut Ui, page: &Page, act: &mut Actions) {
-    let (rect, _) = row(ui, Look::Layer { active: false });
+    let (rect, resp) = row(ui, Look::Layer { active: false });
+    resp.rich_tip_with(|| crate::ui::tips::pair("docker.guides", "docker.guides_row_desc"));
     let base = egui::Id::new("objects_guides");
     let mut x = rect.left() + 3.0 + INDENT + 16.0;
     let (er, e) = hot(ui, rect, x, 18.0, base.with("eye"));
     paint_eye(ui, er, app.show_guides);
-    if e.on_hover_text(tr("docker.show_hide")).clicked() {
+    if e.rich_tip(tr("docker.show_hide")).clicked() {
         act.toggle_guides = true;
     }
     x += 20.0;
@@ -671,7 +694,7 @@ fn guides_row(app: &App, ui: &mut Ui, page: &Page, act: &mut Actions) {
     let locked = any && page.guides.iter().all(|g| g.locked);
     let (lr, l) = hot(ui, rect, x, 18.0, base.with("lock"));
     paint_lock(ui, lr, locked);
-    if l.on_hover_text(tr("docker.lock_guides")).clicked() && any {
+    if l.rich_tip(tr("docker.lock_guides")).clicked() && any {
         act.lock_guides = Some(!locked);
     }
     x += 22.0;
@@ -689,11 +712,12 @@ fn guides_row(app: &App, ui: &mut Ui, page: &Page, act: &mut Actions) {
 /// The Document Grid row of the Master Page: the eye shows or hides the
 /// grid, which never prints and cannot be edited.
 fn grid_row(app: &App, ui: &mut Ui, act: &mut Actions) {
-    let (rect, _) = row(ui, Look::Layer { active: false });
+    let (rect, resp) = row(ui, Look::Layer { active: false });
+    resp.rich_tip_with(|| crate::ui::tips::pair("menu.view.document_grid", "docker.grid_row_desc"));
     let mut x = rect.left() + 3.0 + INDENT + 16.0;
     let (er, e) = hot(ui, rect, x, 18.0, egui::Id::new("objects_grid_eye"));
     paint_eye(ui, er, app.show_grid);
-    if e.on_hover_text(tr("docker.show_hide")).clicked() {
+    if e.rich_tip(tr("docker.show_hide")).clicked() {
         act.toggle_grid = true;
     }
     x += 20.0;
@@ -722,6 +746,9 @@ fn grid_row(app: &App, ui: &mut Ui, act: &mut Actions) {
 fn object_rows(app: &App, ui: &mut Ui, s: &Shape, depth: usize, act: &mut Actions) {
     let selected = app.selection.contains(&s.id);
     let (rect, resp) = row(ui, Look::Object { selected });
+    if act.scroll_to == Some(s.id) {
+        ui.scroll_to_rect(rect, None);
+    }
     let mut x = rect.left() + 3.0 + depth as f32 * INDENT;
     let children: Option<&Vec<Shape>> = match &s.kind {
         ShapeKind::Group { children } => Some(children),
@@ -736,6 +763,7 @@ fn object_rows(app: &App, ui: &mut Ui, s: &Shape, depth: usize, act: &mut Action
             14.0,
             egui::Id::new(("objects_group", s.id.raw())),
         );
+        let a = a.rich_tip_with(|| crate::ui::tips::keyed("docker.expand_row"));
         paint_arrow(ui, ar, expanded);
         if a.clicked() {
             act.expand_group = Some(s.id);
@@ -749,6 +777,7 @@ fn object_rows(app: &App, ui: &mut Ui, s: &Shape, depth: usize, act: &mut Action
     );
     x += 19.0;
     let label = object_label(s);
+    let resp = resp.rich_tip_with(|| format!("{label}\n{}", tr("docker.object_row_desc")));
     let color = if s.visible {
         Tokens::text()
     } else {
@@ -770,7 +799,7 @@ fn object_rows(app: &App, ui: &mut Ui, s: &Shape, depth: usize, act: &mut Action
     let eye_x = lock_x - 20.0;
     let (er, e) = hot(ui, rect, eye_x, 18.0, base.with("eye"));
     paint_eye(ui, er, s.visible);
-    if e.on_hover_text(tr("docker.show_hide")).clicked() {
+    if e.rich_tip(tr("docker.show_hide")).clicked() {
         act.object_visible = Some((s.id, !s.visible));
     }
     let (lr, l) = hot(ui, rect, lock_x, 18.0, base.with("lock"));
@@ -780,7 +809,7 @@ fn object_rows(app: &App, ui: &mut Ui, s: &Shape, depth: usize, act: &mut Action
     } else {
         "menu.object.lock_object"
     };
-    if l.on_hover_text(tr(lock_tip)).clicked() {
+    if l.rich_tip(tr(lock_tip)).clicked() {
         act.object_locked = Some((s.id, !s.locked));
     }
     if resp.double_clicked() {
@@ -809,14 +838,14 @@ fn bottom_bar(app: &mut App, ui: &mut Ui) {
     let can_delete = !app.selection.is_empty() || deletable_layer(app).is_some();
     let new = ui
         .interact(new_r, egui::Id::new("objects_new_layer"), Sense::click())
-        .on_hover_text(tr("docker.new_layer"));
+        .rich_tip(tr("docker.new_layer"));
     let master = ui
         .interact(
             master_r,
             egui::Id::new("objects_new_master"),
             Sense::click(),
         )
-        .on_hover_text(tr("docker.new_master_layer"));
+        .rich_tip(tr("docker.new_master_layer"));
     let delete = ui
         .interact(
             delete_r,
@@ -827,7 +856,7 @@ fn bottom_bar(app: &mut App, ui: &mut Ui) {
                 Sense::hover()
             },
         )
-        .on_hover_text(tr("docker.delete_hint"));
+        .rich_tip(tr("docker.delete_hint"));
     let p = ui.painter();
     for (r, resp, on) in [
         (new_r, &new, true),
@@ -1112,6 +1141,67 @@ mod tests {
         assert!(app.doc().find_shape(id).expect("shape").locked);
         app.undo();
         assert!(!app.doc().find_shape(id).expect("shape").locked);
+    }
+
+    /// Selecting an object on the page scrolls the list to its row when
+    /// it is out of view, as when it lies far down a long list (#1044).
+    /// A selection that stays the same leaves the scroll alone.
+    #[test]
+    fn the_list_scrolls_to_an_object_selected_on_the_page() {
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        let ids: Vec<ShapeId> = (0..80)
+            .map(|_| app.new_shape(rect_kind()).expect("shape"))
+            .collect();
+        app.selection.clear();
+        // The scroll lands in one frame.
+        ctx.all_styles_mut(|s| s.scroll_animation = egui::style::ScrollAnimation::none());
+        let run = |app: &mut App, scroll: f32| {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(300.0, 300.0),
+                )),
+                events: if scroll != 0.0 {
+                    vec![
+                        egui::Event::PointerMoved(Pos2::new(150.0, 100.0)),
+                        egui::Event::MouseWheel {
+                            unit: egui::MouseWheelUnit::Point,
+                            delta: Vec2::new(0.0, scroll),
+                            phase: egui::TouchPhase::Move,
+                            modifiers: egui::Modifiers::NONE,
+                        },
+                    ]
+                } else {
+                    Vec::new()
+                },
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| objects_docker(app, ui));
+            out.textures_delta.clear();
+        };
+        let row_of = |id: ShapeId| {
+            ctx.read_response(egui::Id::new(("objects_object", id.raw())).with("eye"))
+                .map(|r| r.rect)
+        };
+        let shown =
+            |r: Option<egui::Rect>| r.is_some_and(|r| r.top() >= 0.0 && r.bottom() <= 300.0);
+        for _ in 0..4 {
+            run(&mut app, 0.0);
+        }
+        // The first object drawn is the bottom of the list.
+        let far = ids[0];
+        assert!(!shown(row_of(far)), "{:?}", row_of(far));
+        app.select(vec![far]);
+        for _ in 0..4 {
+            run(&mut app, 0.0);
+        }
+        assert!(shown(row_of(far)), "{:?}", row_of(far));
+        // Scrolled away by hand, the unchanged selection stays out of view.
+        for _ in 0..4 {
+            run(&mut app, 2000.0);
+        }
+        assert!(!shown(row_of(far)), "{:?}", row_of(far));
     }
 
     #[test]

@@ -12,6 +12,7 @@
 //! focus from the box) and then none.
 
 use crate::app::Units;
+use crate::ui::tips::RichTip;
 use egui::{emath::Numeric, Response, TextEdit, Ui, Widget};
 use std::ops::RangeInclusive;
 
@@ -304,10 +305,10 @@ impl<N: Numeric> NumField<'_, N> {
                 *self.value = N::from_f64(v);
                 resp.mark_changed();
             }
-            return resp;
+            return with_arrows(resp, spin_resp);
         }
         if self.mixed {
-            resp = resp.on_hover_text(crate::i18n::tr("docker.mixed_tip"));
+            resp = resp.rich_tip(crate::i18n::tr("docker.mixed_tip"));
         }
         // Typing does not change the value; applying it does.
         resp.flags.set(egui::response::Flags::CHANGED, false);
@@ -343,8 +344,19 @@ impl<N: Numeric> NumField<'_, N> {
                 }
             }
         }
-        resp
+        with_arrows(resp, spin_resp)
     }
+}
+
+/// The box's response, also hovered over its spin arrows: a tip given
+/// to the field shows over the arrows too. The focus stays the box's.
+fn with_arrows(mut resp: Response, arrows: Response) -> Response {
+    // Only the hover joins: a click on an arrow is a step, not a click
+    // on the box.
+    if arrows.hovered() {
+        resp.flags.set(egui::response::Flags::HOVERED, true);
+    }
+    resp
 }
 
 /// The points a wheel or touchpad sends for one notch when it counts in
@@ -457,7 +469,7 @@ pub fn mixed_note(ui: &mut Ui) -> Response {
             .color(crate::theme::Tokens::text_dim())
             .italics(),
     )
-    .on_hover_text(crate::i18n::tr("docker.mixed_tip"))
+    .rich_tip(crate::i18n::tr("docker.mixed_tip"))
 }
 
 /// Millimetres per unit for a unit name typed after a value.

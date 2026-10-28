@@ -10,6 +10,7 @@
 
 use crate::app::{App, Drag};
 use crate::theme::Tokens;
+use crate::ui::tips::RichTip;
 use egui::{epaint, Color32, FontId, Painter, Pos2, Rect, Sense, Stroke, Ui};
 use tracedraw_core::geometry::Point;
 
@@ -162,7 +163,7 @@ pub fn rulers(app: &mut App, ui: &mut Ui, full: Rect) {
             egui::Id::new("ruler_corner"),
             Sense::click_and_drag(),
         )
-        .on_hover_text(crate::i18n::tr("rulers.origin_tip"));
+        .rich_tip(crate::i18n::tr("rulers.origin_tip"));
     if top_resp.drag_started() {
         app.drag = Drag::NewGuide {
             horizontal: true,

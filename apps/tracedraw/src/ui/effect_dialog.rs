@@ -8,6 +8,7 @@ use crate::app::App;
 use crate::fx::{new_effect, ParamKind, ParamSpec};
 use crate::i18n::tr;
 use crate::ui::bitmap_preview::{before_after_pick, settings_key, Source};
+use crate::ui::tips::RichTip;
 use egui::{Color32, Context, Rect, Sense, Stroke, Ui, Vec2};
 use std::collections::BTreeMap;
 use tracedraw_core::{BitmapEffect, ShapeId};
@@ -81,6 +82,22 @@ pub fn param_widget(
     pick: Option<&mut Option<String>>,
 ) -> bool {
     let key = format!("fxp.{}", spec.name);
+    // The setting's own description, or what every setting of its kind does.
+    let tip = || {
+        let own = format!("{key}_desc");
+        let desc = if crate::i18n::has_english(&own) {
+            tr(&own)
+        } else {
+            tr(match spec.kind {
+                ParamKind::Range { .. } => "fx.param_range_desc",
+                ParamKind::Angle { .. } => "fx.param_angle_desc",
+                ParamKind::Choice { .. } => "fx.param_choice_desc",
+                ParamKind::Check { .. } => "fx.param_check_desc",
+                ParamKind::Color { .. } => "fx.param_color_desc",
+            })
+        };
+        format!("{}\n{desc}", tr(&key))
+    };
     let mut changed = false;
     match spec.kind {
         ParamKind::Range {
@@ -102,7 +119,8 @@ pub fn param_widget(
             if min > 0.0 && max / min >= 100.0 {
                 s = s.logarithmic(true);
             }
-            if ui.add(crate::ui::Rail(s)).changed() {
+            let resp = crate::ui::tips::tip_over(ui, tip(), |ui| ui.add(crate::ui::Rail(s)));
+            if resp.changed() {
                 values.insert(spec.name.to_string(), v);
                 changed = true;
             }
@@ -110,15 +128,17 @@ pub fn param_widget(
         ParamKind::Angle { default } => {
             ui.label(tr(&key));
             let mut v = values.get(spec.name).copied().unwrap_or(default);
-            ui.horizontal(|ui| {
-                changed |= dial(ui, &mut v);
-                changed |= ui
-                    .add(
-                        crate::ui::field::NumField::new(&mut v)
-                            .range(-360.0..=360.0)
-                            .suffix(" \u{b0}"),
-                    )
-                    .changed();
+            crate::ui::tips::tip_over(ui, tip(), |ui| {
+                ui.horizontal(|ui| {
+                    changed |= dial(ui, &mut v);
+                    changed |= ui
+                        .add(
+                            crate::ui::field::NumField::new(&mut v)
+                                .range(-360.0..=360.0)
+                                .suffix(" \u{b0}"),
+                        )
+                        .changed();
+                })
             });
             if changed {
                 values.insert(spec.name.to_string(), v);
@@ -144,12 +164,14 @@ pub fn param_widget(
                             changed = true;
                         }
                     }
-                });
+                })
+                .response
+                .rich_tip_with(tip);
         }
         ParamKind::Check { default } => {
             ui.label("");
             let mut on = values.get(spec.name).map(|v| *v != 0.0).unwrap_or(default);
-            if ui.checkbox(&mut on, tr(&key)).changed() {
+            if ui.checkbox(&mut on, tr(&key)).rich_tip_with(tip).changed() {
                 values.insert(spec.name.to_string(), if on { 1.0 } else { 0.0 });
                 changed = true;
             }
@@ -163,7 +185,11 @@ pub fn param_widget(
                 .max(0.0) as u32;
             let mut rgb = crate::fx::util::rgb(c);
             ui.horizontal(|ui| {
-                if ui.color_edit_button_srgb(&mut rgb).changed() {
+                if ui
+                    .color_edit_button_srgb(&mut rgb)
+                    .rich_tip_with(tip)
+                    .changed()
+                {
                     let v = ((rgb[0] as u32) << 16) | ((rgb[1] as u32) << 8) | rgb[2] as u32;
                     values.insert(spec.name.to_string(), v as f64);
                     changed = true;
@@ -180,7 +206,7 @@ pub fn param_widget(
                             crate::tools::Tool::ColorEyedropper,
                             crate::theme::Tokens::icon(),
                         );
-                        if resp.on_hover_text(tr("dialog.pick_from_image")).clicked() {
+                        if resp.rich_tip(tr("dialog.pick_from_image")).clicked() {
                             *pick = if on {
                                 None
                             } else {
@@ -260,7 +286,12 @@ fn tone_curve_part(
                 for (i, (_, key)) in CURVE_CHANNELS.iter().enumerate() {
                     ui.selectable_value(&mut st.channel, i, tr(key));
                 }
-            });
+            })
+            .response
+            .rich_tip(crate::ui::tips::pair(
+                "fxp.channel",
+                "dialog.curve_channel_desc",
+            ));
         ui.add_space(10.0);
         ui.label(tr("dialog.curve_style"));
         egui::ComboBox::from_id_salt("tone_curve_style")
@@ -289,7 +320,9 @@ fn tone_curve_part(
                         style = i;
                     }
                 }
-            });
+            })
+            .response
+            .rich_tip(crate::ui::tips::keyed("dialog.curve_style"));
     });
     // The pixel the eyedropper took becomes a node (curve and straight).
     if let Some(px) = picked {
@@ -375,7 +408,7 @@ fn tone_curve_part(
                     crate::theme::Tokens::border()
                 },
             );
-            if resp.on_hover_text(tr("dialog.curve_eyedropper")).clicked() && style < 2 {
+            if resp.rich_tip(tr("dialog.curve_eyedropper")).clicked() && style < 2 {
                 st.pick = if on {
                     None
                 } else {
@@ -384,6 +417,8 @@ fn tone_curve_part(
             }
             if ui
                 .add_enabled(style == 2, egui::Button::new(tr("dialog.smooth")))
+                .rich_tip(crate::ui::tips::keyed("dialog.smooth"))
+                .rich_disabled_tip(crate::ui::tips::keyed("dialog.smooth"))
                 .clicked()
             {
                 let lut = smoothed(&curve_from(params, ch));
@@ -399,6 +434,8 @@ fn tone_curve_part(
             }
             if ui
                 .add_enabled(style != 3, egui::Button::new(tr("dialog.invert")))
+                .rich_tip(crate::ui::tips::keyed("dialog.invert"))
+                .rich_disabled_tip(crate::ui::tips::keyed("dialog.invert"))
                 .clicked()
             {
                 let c = curve_from(params, ch);
@@ -413,10 +450,18 @@ fn tone_curve_part(
                 curve_into(params, ch, &inverted);
                 set_curve_style(params, ch, style);
             }
-            if ui.button(tr("dialog.reset_active_channel")).clicked() {
+            if ui
+                .button(tr("dialog.reset_active_channel"))
+                .rich_tip(crate::ui::tips::keyed("dialog.reset_active_channel"))
+                .clicked()
+            {
                 params.retain(|k, _| !(k.starts_with(ch) && channel_key_of(k, ch)));
             }
-            if ui.button(tr("dialog.reset")).clicked() {
+            if ui
+                .button(tr("dialog.reset"))
+                .rich_tip(crate::ui::tips::keyed("dialog.reset"))
+                .clicked()
+            {
                 params.clear();
             }
             if ui
@@ -424,7 +469,7 @@ fn tone_curve_part(
                     image.is_some(),
                     egui::Button::new(tr("dialog.auto_balance_tone")),
                 )
-                .on_hover_text(tr("dialog.auto_balance_tone_tip"))
+                .rich_tip(tr("dialog.auto_balance_tone_tip"))
                 .clicked()
             {
                 if let Some(img) = image {
@@ -438,18 +483,33 @@ fn tone_curve_part(
             let mut all = show_all;
             if ui
                 .checkbox(&mut all, tr("dialog.display_all_channels"))
+                .rich_tip(crate::ui::tips::keyed("dialog.display_all_channels"))
                 .changed()
             {
                 ui.data_mut(|d| d.insert_temp(egui::Id::new("tone_curve_all"), all));
             }
             // Presets: the curves of every channel in a JSON file.
             ui.horizontal(|ui| {
-                if ui.button(tr("dialog.load")).clicked() {
+                if ui
+                    .button(tr("dialog.load"))
+                    .rich_tip(crate::ui::tips::pair(
+                        "dialog.load",
+                        "dialog.curve_load_desc",
+                    ))
+                    .clicked()
+                {
                     crate::files::Dialog::new()
                         .add_filter(tr("dialog.tone_curve_preset"), &["json"])
                         .pick_into(PRESET_PICK);
                 }
-                if ui.button(tr("dialog.save")).clicked() {
+                if ui
+                    .button(tr("dialog.save"))
+                    .rich_tip(crate::ui::tips::pair(
+                        "dialog.save",
+                        "dialog.curve_save_desc",
+                    ))
+                    .clicked()
+                {
                     if let Some(path) = crate::files::Dialog::new()
                         .add_filter(tr("dialog.tone_curve_preset"), &["json"])
                         .set_file_name("tone curve.json")
@@ -674,7 +734,7 @@ fn levels_part(
             } else {
                 "dialog.pick_input_low"
             };
-            if resp.on_hover_text(tr(tip)).clicked() {
+            if resp.rich_tip(tr(tip)).clicked() {
                 st.pick = if on { None } else { Some(name.to_string()) };
             }
         }
@@ -683,6 +743,14 @@ fn levels_part(
                 image.is_some(),
                 egui::Button::new(tr("dialog.lab_auto_adjust")),
             )
+            .rich_tip(crate::ui::tips::pair(
+                "dialog.lab_auto_adjust",
+                "dialog.levels_auto_desc",
+            ))
+            .rich_disabled_tip(crate::ui::tips::pair(
+                "dialog.lab_auto_adjust",
+                "dialog.levels_auto_desc",
+            ))
             .clicked()
         {
             if let Some(img) = image {
@@ -854,7 +922,11 @@ pub fn effect_dialog(app: &mut App, ctx: &Context, st: &mut EffectState, close: 
                             }
                         });
                 });
-            if ui.button(tr("dialog.reset")).clicked() {
+            if ui
+                .button(tr("dialog.reset"))
+                .rich_tip(crate::ui::tips::keyed("dialog.reset"))
+                .clicked()
+            {
                 st.effect.params.clear();
             }
         }
@@ -902,7 +974,7 @@ pub fn fx_section(app: &mut App, ui: &mut Ui, id: ShapeId) {
             let mut vis = e.visible;
             if ui
                 .checkbox(&mut vis, "")
-                .on_hover_text(tr("docker.show_hide_effect"))
+                .rich_tip(tr("docker.show_hide_effect"))
                 .changed()
             {
                 app.edit_bitmap_effects(id, "Show or Hide Effect", move |l| {
@@ -914,7 +986,7 @@ pub fn fx_section(app: &mut App, ui: &mut Ui, id: ShapeId) {
             ui.label(tr(&format!("fx.{}", e.id)));
             if ui
                 .small_button("\u{270E}")
-                .on_hover_text(tr("docker.edit_effect"))
+                .rich_tip(tr("docker.edit_effect"))
                 .clicked()
             {
                 app.dialog = crate::ui::dialogs::Dialog::Effect(EffectState {
@@ -927,21 +999,21 @@ pub fn fx_section(app: &mut App, ui: &mut Ui, id: ShapeId) {
             }
             if ui
                 .add_enabled(i > 0, egui::Button::new("\u{25B2}").small())
-                .on_hover_text(tr("docker.move_up"))
+                .rich_tip(tr("docker.move_up"))
                 .clicked()
             {
                 app.edit_bitmap_effects(id, "Reorder Effects", move |l| l.swap(i, i - 1));
             }
             if ui
                 .add_enabled(i + 1 < n, egui::Button::new("\u{25BC}").small())
-                .on_hover_text(tr("docker.move_down"))
+                .rich_tip(tr("docker.move_down"))
                 .clicked()
             {
                 app.edit_bitmap_effects(id, "Reorder Effects", move |l| l.swap(i, i + 1));
             }
             if ui
                 .small_button("\u{00D7}")
-                .on_hover_text(tr("docker.delete_effect"))
+                .rich_tip(tr("docker.delete_effect"))
                 .clicked()
             {
                 app.edit_bitmap_effects(id, "Delete Effect", move |l| {
@@ -952,7 +1024,9 @@ pub fn fx_section(app: &mut App, ui: &mut Ui, id: ShapeId) {
             }
         });
     }
-    let resp = ui.button(tr("docker.add_effect"));
+    let resp = ui
+        .button(tr("docker.add_effect"))
+        .rich_tip(crate::ui::tips::keyed("docker.add_effect"));
     egui::Popup::menu(&resp)
         .id(egui::Id::new("fx_add_menu"))
         .style(crate::ui::menus::menu_popup_style)

@@ -8,6 +8,7 @@ use crate::app::App;
 use crate::i18n::tr;
 use crate::theme::Tokens;
 use crate::ui::dialogs::window;
+use crate::ui::tips::RichTip;
 use egui::{Context, Sense, Ui};
 
 /// The most cells a pattern has.
@@ -288,7 +289,11 @@ pub fn dialog(app: &mut App, ctx: &Context, st: &mut State, close: &mut bool) {
                     app.delete_custom_dash(i);
                 }
             }
-            if ui.button(tr("dialog.close")).clicked() {
+            if ui
+                .button(tr("dialog.close"))
+                .rich_tip(crate::ui::tips::keyed("dialog.close"))
+                .clicked()
+            {
                 *close = true;
             }
         });

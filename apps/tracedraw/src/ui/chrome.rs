@@ -514,6 +514,7 @@ pub fn button_row(ui: &mut Ui, labels: &[&str], access_keys: bool) -> Option<usi
                     ui.add_sized([100.0, 27.0], egui::Button::new(text))
                 })
                 .inner;
+            let resp = crate::ui::tips::named(resp, label);
             if resp.clicked() {
                 picked = Some(i);
             }
@@ -631,6 +632,8 @@ fn title_bar(ui: &mut Ui, bar: Rect, title: &str, id: &str) -> bool {
         bar.right_bottom(),
     );
     let resp = ui.interact(close, egui::Id::new((id, "close")), Sense::click());
+    let resp =
+        crate::ui::tips::RichTip::rich_tip(resp, crate::ui::tips::keyed("dialog.close_window"));
     let color = if resp.hovered() {
         ui.painter().rect_filled(close, 0.0, CLOSE_HOVER);
         Color32::WHITE
@@ -708,7 +711,8 @@ pub fn section(ui: &mut Ui, text: &str) {
 
 /// A push button of the standard dialog size (100 x 27).
 pub fn button(ui: &mut Ui, text: &str) -> egui::Response {
-    ui.add_sized([100.0, 27.0], egui::Button::new(text))
+    let resp = ui.add_sized([100.0, 27.0], egui::Button::new(text));
+    crate::ui::tips::named(resp, text)
 }
 
 // ----- absolute form layout ---------------------------------------------------
@@ -759,7 +763,8 @@ pub fn text_field(ui: &mut Ui, rect: Rect, text: &mut String) -> egui::Response 
 
 /// A push button filling `rect`.
 pub fn button_at(ui: &mut Ui, rect: Rect, text: &str) -> egui::Response {
-    ui.put(rect, egui::Button::new(text))
+    let resp = ui.put(rect, egui::Button::new(text));
+    crate::ui::tips::named(resp, text)
 }
 
 /// A list (combo box) filling `rect`.

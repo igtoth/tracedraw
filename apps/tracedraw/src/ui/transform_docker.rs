@@ -22,6 +22,7 @@ use crate::app::{App, TransformTab, Units};
 use crate::i18n::tr;
 use crate::theme::Tokens;
 use crate::ui::propbar::{origin_point, pic_button, Pic};
+use crate::ui::tips::RichTip;
 use egui::{Color32, Rect, Sense, Stroke, Ui, Vec2};
 use tracedraw_core::geometry::{Affine, Point, Rect as PageRect, Vec2 as PageVec};
 use tracedraw_core::{Command, ShapeId};
@@ -374,6 +375,24 @@ fn number(ui: &mut Ui, id: &str, value: &mut f64, suffix: &str, step: f64) -> bo
     }
 }
 
+/// The tip of the field `id`: its name over what it sets.
+fn field_tip(id: &str) -> String {
+    use crate::ui::tips::{keyed, pair};
+    match id {
+        "tf_pos_x" => pair("toolbar.object_x", "docker.tf_position_desc"),
+        "tf_pos_y" => pair("toolbar.object_y", "docker.tf_position_desc"),
+        "tf_angle" => keyed("docker.tf_angle"),
+        "tf_cx" => pair("docker.tf_center_x", "docker.tf_center_desc"),
+        "tf_cy" => pair("docker.tf_center_y", "docker.tf_center_desc"),
+        "tf_sx" => keyed("toolbar.scale_x"),
+        "tf_sy" => keyed("toolbar.scale_y"),
+        "tf_w" => pair("toolbar.object_width", "docker.tf_width_desc"),
+        "tf_h" => pair("toolbar.object_height", "docker.tf_height_desc"),
+        "tf_kx" => pair("docker.tf_skew_x", "docker.tf_skew_desc"),
+        _ => pair("docker.tf_skew_y", "docker.tf_skew_desc"),
+    }
+}
+
 /// A spin box and, right after it, the unit's name.
 fn spin_with_unit(
     ui: &mut Ui,
@@ -387,6 +406,7 @@ fn spin_with_unit(
     let rect = Rect::from_min_size(cell.min, Vec2::new(FIELD_W, 22.0));
     let got =
         crate::ui::chrome::spin_field(ui, id, rect, value, decimals, "", step, -1.0e6..=1.0e6);
+    crate::ui::tips::cover(ui, cell, egui::Id::new((id, "tip")), field_tip(id));
     ui.painter().text(
         egui::pos2(rect.right() + 6.0, rect.center().y),
         egui::Align2::LEFT_CENTER,
@@ -407,7 +427,7 @@ fn anchor_grid(ui: &mut Ui, anchor: &mut (u8, u8), direction: bool) -> bool {
     let step = 22.0;
     let size = Vec2::splat(step * 2.0 + cell + 2.0);
     let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
-    let resp = resp.on_hover_text(tr(if direction {
+    let resp = resp.rich_tip(tr(if direction {
         "docker.direction"
     } else {
         "docker.reference_point"
@@ -648,6 +668,7 @@ pub fn transformations(app: &mut App, ui: &mut Ui) {
                 TransformTab::Position => {
                     resync |= ui
                         .checkbox(&mut form.relative_position, tr("docker.relative_position"))
+                        .rich_tip(crate::ui::tips::keyed("docker.relative_position"))
                         .changed();
                     if resync && form.relative_position {
                         form.position = [0.0; 2];
@@ -657,6 +678,7 @@ pub fn transformations(app: &mut App, ui: &mut Ui) {
                 TransformTab::Rotate => {
                     resync |= ui
                         .checkbox(&mut form.relative_center, tr("docker.relative_center"))
+                        .rich_tip(crate::ui::tips::keyed("docker.relative_center"))
                         .changed();
                     if resync && form.relative_center {
                         form.center = [0.0; 2];
@@ -676,6 +698,10 @@ pub fn transformations(app: &mut App, ui: &mut Ui) {
                     });
                     if ui
                         .checkbox(&mut form.scale_proportional, tr("docker.proportional"))
+                        .rich_tip(crate::ui::tips::pair(
+                            "docker.proportional",
+                            "docker.scale_proportional_desc",
+                        ))
                         .changed()
                         && form.scale_proportional
                     {
@@ -683,10 +709,15 @@ pub fn transformations(app: &mut App, ui: &mut Ui) {
                     }
                 }
                 TransformTab::Size => {
-                    ui.checkbox(&mut form.size_proportional, tr("docker.proportional"));
+                    ui.checkbox(&mut form.size_proportional, tr("docker.proportional"))
+                        .rich_tip(crate::ui::tips::pair(
+                            "docker.proportional",
+                            "docker.size_proportional_desc",
+                        ));
                 }
                 TransformTab::Skew => {
-                    ui.checkbox(&mut form.use_anchor, tr("docker.use_anchor_point"));
+                    ui.checkbox(&mut form.use_anchor, tr("docker.use_anchor_point"))
+                        .rich_tip(crate::ui::tips::keyed("docker.use_anchor_point"));
                 }
             }
         }
@@ -735,12 +766,22 @@ pub fn transformations(app: &mut App, ui: &mut Ui) {
         ) {
             form.copies = n.round().clamp(0.0, MAX_COPIES as f64) as u32;
         }
+        crate::ui::tips::cover(
+            ui,
+            rect,
+            egui::Id::new("tf_copies_tip"),
+            crate::ui::tips::keyed("docker.tf_copies"),
+        );
     });
     ui.add_space(8.0);
     let width = ui.available_width();
     let clicked = ui
         .add_enabled_ui(has, |ui| {
             ui.add_sized([width, 26.0], egui::Button::new(tr("docker.apply")))
+                .rich_tip(crate::ui::tips::pair(
+                    "docker.apply",
+                    "docker.tf_apply_desc",
+                ))
                 .clicked()
         })
         .inner;

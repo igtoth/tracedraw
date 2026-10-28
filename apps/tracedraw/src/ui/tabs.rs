@@ -7,6 +7,7 @@
 use crate::app::App;
 use crate::i18n::tr;
 use crate::theme::Tokens;
+use crate::ui::tips::RichTip;
 use egui::{Color32, Pos2, Rect, Sense, Stroke, Ui, Vec2};
 
 /// Height of a tab; the blue line adds one pixel under it.
@@ -113,7 +114,10 @@ fn welcome_tab(ui: &mut Ui, active: bool, closed: bool) -> TabClick {
             rect.center() - Vec2::splat(icon / 2.0),
             crate::theme::Tokens::icon(),
         );
-        return if resp.on_hover_text(tr("welcome.title")).clicked() {
+        return if resp
+            .rich_tip(crate::ui::tips::keyed("welcome.title"))
+            .clicked()
+        {
             TabClick::Select
         } else {
             TabClick::None
@@ -132,7 +136,9 @@ fn welcome_tab(ui: &mut Ui, active: bool, closed: bool) -> TabClick {
         Pos2::new(rect.right() - 6.0 - CLOSE / 2.0, rect.center().y),
         Vec2::splat(CLOSE),
     );
-    let close_resp = ui.interact(close_rect, egui::Id::new(WELCOME_CLOSE), Sense::click());
+    let close_resp = ui
+        .interact(close_rect, egui::Id::new(WELCOME_CLOSE), Sense::click())
+        .rich_tip(crate::ui::tips::keyed("tabs.close_welcome"));
     let close_hovered = close_resp.hovered();
     let painter = ui.painter();
     painter.rect_filled(rect, 0.0, tab_fill(active, resp.hovered()));
@@ -152,6 +158,7 @@ fn welcome_tab(ui: &mut Ui, active: bool, closed: bool) -> TabClick {
     if resp.hovered() || close_hovered {
         close_mark(painter, close_rect, close_hovered);
     }
+    let resp = resp.rich_tip(crate::ui::tips::keyed("welcome.title"));
     if close_resp.clicked() || resp.middle_clicked() {
         TabClick::Close
     } else if resp.clicked() {
@@ -212,7 +219,7 @@ fn new_tab(ui: &mut Ui) -> bool {
     let s = Stroke::new(2.0, crate::theme::Tokens::text_dim());
     painter.line_segment([c - Vec2::new(7.0, 0.0), c + Vec2::new(7.0, 0.0)], s);
     painter.line_segment([c - Vec2::new(0.0, 7.0), c + Vec2::new(0.0, 7.0)], s);
-    resp.on_hover_text(tr("menu.file.new")).clicked()
+    resp.rich_tip(tr("menu.file.new")).clicked()
 }
 
 enum TabClick {
@@ -234,7 +241,9 @@ fn doc_tab(ui: &mut Ui, i: usize, title: &str, active: bool) -> TabClick {
         Vec2::splat(CLOSE),
     );
     let close_id = ui.id().with(("doc_tab_close", i));
-    let close_resp = ui.interact(close_rect, close_id, Sense::click());
+    let close_resp = ui
+        .interact(close_rect, close_id, Sense::click())
+        .rich_tip(crate::ui::tips::keyed("tabs.close_drawing"));
     let painter = ui.painter();
     painter.rect_filled(rect, 0.0, tab_fill(active, resp.hovered()));
     painter.galley(
@@ -248,7 +257,7 @@ fn doc_tab(ui: &mut Ui, i: usize, title: &str, active: bool) -> TabClick {
     if resp.hovered() || close_resp.hovered() {
         close_mark(painter, close_rect, close_resp.hovered());
     }
-    let resp = resp.on_hover_text(title);
+    let resp = resp.rich_tip(format!("{title}\n{}", tr("tabs.drawing_desc")));
     if close_resp.clicked() || resp.middle_clicked() {
         TabClick::Close
     } else if resp.clicked() {

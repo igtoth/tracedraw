@@ -6,6 +6,7 @@ use crate::github::GithubForm;
 use crate::i18n::tr;
 use crate::theme::Tokens;
 use crate::ui::dialogs::{ok_cancel, window};
+use crate::ui::tips::RichTip;
 use egui::{Color32, Context, RichText, Ui};
 
 const ERROR: Color32 = Color32::from_rgb(0xC4, 0x2B, 0x1C);
@@ -21,21 +22,25 @@ fn fields(ui: &mut Ui, f: &mut GithubForm, message: bool) {
                 egui::TextEdit::singleline(&mut f.repo)
                     .hint_text("owner/name")
                     .desired_width(280.0),
-            );
+            )
+            .rich_tip(crate::ui::tips::keyed("github.repository"));
             ui.end_row();
             ui.label(tr("github.branch"));
-            ui.add(egui::TextEdit::singleline(&mut f.branch).desired_width(280.0));
+            ui.add(egui::TextEdit::singleline(&mut f.branch).desired_width(280.0))
+                .rich_tip(crate::ui::tips::keyed("github.branch"));
             ui.end_row();
             ui.label(tr("github.path"));
             ui.add(
                 egui::TextEdit::singleline(&mut f.path)
                     .hint_text("drawings/logo.tdraw")
                     .desired_width(280.0),
-            );
+            )
+            .rich_tip(crate::ui::tips::keyed("github.path"));
             ui.end_row();
             if message {
                 ui.label(tr("github.message"));
-                ui.add(egui::TextEdit::singleline(&mut f.message).desired_width(280.0));
+                ui.add(egui::TextEdit::singleline(&mut f.message).desired_width(280.0))
+                    .rich_tip(crate::ui::tips::keyed("github.message"));
                 ui.end_row();
             }
             ui.label(tr("github.token"));
@@ -43,10 +48,12 @@ fn fields(ui: &mut Ui, f: &mut GithubForm, message: bool) {
                 egui::TextEdit::singleline(&mut f.token)
                     .password(true)
                     .desired_width(280.0),
-            );
+            )
+            .rich_tip(crate::ui::tips::pair("github.token", "github.token_hint"));
             ui.end_row();
         });
-    ui.checkbox(&mut f.remember_token, tr("github.remember_token"));
+    ui.checkbox(&mut f.remember_token, tr("github.remember_token"))
+        .rich_tip(crate::ui::tips::keyed("github.remember_token"));
     ui.label(
         RichText::new(tr("github.token_hint"))
             .color(Tokens::text_dim())
@@ -138,6 +145,9 @@ pub fn history_dialog(app: &mut App, ctx: &Context, close: &mut bool) {
                                             !app.github.busy(),
                                             egui::Button::new(tr("github.open_version")),
                                         )
+                                        .rich_tip_always(crate::ui::tips::keyed(
+                                            "github.open_version",
+                                        ))
                                         .clicked()
                                     {
                                         app.github_open_version(remote, &c.sha);
@@ -154,7 +164,11 @@ pub fn history_dialog(app: &mut App, ctx: &Context, close: &mut bool) {
             }
         }
         status(app, ui);
-        if ui.button(tr("dialog.close")).clicked() {
+        if ui
+            .button(tr("dialog.close"))
+            .rich_tip(crate::ui::tips::keyed("dialog.close"))
+            .clicked()
+        {
             *close = true;
         }
     });

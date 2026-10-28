@@ -9,6 +9,7 @@ use crate::macro_forms::{LiveControl, LiveForm};
 use crate::macros::Prompt;
 use crate::scripting::vba_run::Input;
 use crate::theme::Tokens;
+use crate::ui::tips::RichTip;
 use egui::{Color32, Context, Pos2, Rect, RichText, Sense, Stroke, Ui, Vec2};
 use serde_json::{json, Value};
 use tracedraw_vba_project::ControlKind;
@@ -1031,7 +1032,7 @@ fn draw_controls(ui: &mut Ui, form: &LiveForm, origin: Pos2, acts: &mut FormActi
             .inner;
         let Some(r) = resp else { continue };
         if !c.tip.is_empty() {
-            r.clone().on_hover_text(c.tip.as_str());
+            r.clone().rich_tip(c.tip.as_str());
         }
         // Focus: Enter and Exit, and SetFocus from the macro.
         if r.gained_focus() {
@@ -1365,7 +1366,7 @@ pub fn manager(app: &mut App, ui: &mut Ui) {
     ui.horizontal_wrapped(|ui| {
         if ui
             .button(tr("macros.load"))
-            .on_hover_text(tr("macros.load_hint"))
+            .rich_tip(tr("macros.load_hint"))
             .clicked()
         {
             act = Some("load");
@@ -1375,21 +1376,32 @@ pub fn manager(app: &mut App, ui: &mut Ui) {
                 chosen_macro.is_some() && !running,
                 egui::Button::new(tr("macros.run")),
             )
+            .rich_tip(crate::ui::tips::keyed("macros.run"))
+            .rich_disabled_tip(crate::ui::tips::keyed("macros.run"))
             .clicked()
         {
             act = Some("run");
         }
-        if running && ui.button(tr("macros.stop")).clicked() {
+        if running
+            && ui
+                .button(tr("macros.stop"))
+                .rich_tip(crate::ui::tips::keyed("macros.stop"))
+                .clicked()
+        {
             act = Some("stop");
         }
         if ui
             .add_enabled(chosen.is_some(), egui::Button::new(tr("macros.edit")))
+            .rich_tip(crate::ui::tips::keyed("macros.edit"))
+            .rich_disabled_tip(crate::ui::tips::keyed("macros.edit"))
             .clicked()
         {
             act = Some("edit");
         }
         if ui
             .add_enabled(chosen.is_some(), egui::Button::new(tr("macros.rename")))
+            .rich_tip(crate::ui::tips::keyed("macros.rename"))
+            .rich_disabled_tip(crate::ui::tips::keyed("macros.rename"))
             .clicked()
         {
             act = Some("rename");
@@ -1399,12 +1411,16 @@ pub fn manager(app: &mut App, ui: &mut Ui) {
                 chosen.is_some() && !running,
                 egui::Button::new(tr("macros.unload")),
             )
+            .rich_tip(crate::ui::tips::keyed("macros.unload"))
+            .rich_disabled_tip(crate::ui::tips::keyed("macros.unload"))
             .clicked()
         {
             act = Some("unload");
         }
         if ui
             .add_enabled(chosen.is_some(), egui::Button::new(tr("macros.export")))
+            .rich_tip(crate::ui::tips::keyed("macros.export"))
+            .rich_disabled_tip(crate::ui::tips::keyed("macros.export"))
             .clicked()
         {
             act = Some("export");
@@ -1414,13 +1430,22 @@ pub fn manager(app: &mut App, ui: &mut Ui) {
         let i = *i;
         let mut done = None;
         ui.horizontal(|ui| {
-            let r = ui.add(egui::TextEdit::singleline(text).desired_width(160.0));
-            if ui.button(tr("dialog.ok")).clicked()
+            let r = ui
+                .add(egui::TextEdit::singleline(text).desired_width(160.0))
+                .rich_tip(crate::ui::tips::keyed("macros.rename_field"));
+            if ui
+                .button(tr("dialog.ok"))
+                .rich_tip(crate::ui::tips::keyed("macros.rename_ok"))
+                .clicked()
                 || (r.lost_focus() && ui.input(|k| k.key_pressed(egui::Key::Enter)))
             {
                 done = Some(true);
             }
-            if ui.button(tr("dialog.cancel")).clicked() {
+            if ui
+                .button(tr("dialog.cancel"))
+                .rich_tip(crate::ui::tips::keyed("macros.rename_cancel"))
+                .clicked()
+            {
                 done = Some(false);
             }
         });
@@ -1453,93 +1478,109 @@ pub fn manager(app: &mut App, ui: &mut Ui) {
                     ui.id().with(("macro_project", pi)),
                     true,
                 );
-                head.show_header(ui, |ui| {
-                    let on = chosen.as_ref().is_some_and(|c| c.0 == pi && c.1.is_none());
-                    if p.project.protected {
-                        let (r, _) = ui.allocate_exact_size(Vec2::splat(14.0), Sense::hover());
-                        paint_lock(ui, r, Tokens::text_dim());
-                    }
-                    if ui
-                        .add(egui::Button::selectable(
-                            on,
-                            RichText::new(p.name()).strong(),
-                        ))
-                        .clicked()
-                    {
-                        pick = Some((pi, None, None));
-                    }
-                    if !p.warnings.is_empty() {
-                        ui.label(
-                            RichText::new("!")
-                                .color(Color32::from_rgb(0xC0, 0x80, 0x00))
-                                .strong(),
-                        )
-                        .on_hover_text(p.warnings.join("\n"));
-                    }
-                })
-                .body(|ui| {
-                    for m in &p.project.modules {
-                        let kind = match m.kind {
-                            tracedraw_vba_project::ModuleKind::Standard => tr("macros.kind_module"),
-                            tracedraw_vba_project::ModuleKind::Class => tr("macros.kind_class"),
-                            tracedraw_vba_project::ModuleKind::Form => tr("macros.kind_form"),
-                            tracedraw_vba_project::ModuleKind::Document => {
-                                tr("macros.kind_document")
-                            }
-                        };
-                        ui.horizontal(|ui| {
-                            let on = chosen.as_ref().is_some_and(|c| {
-                                c.0 == pi
-                                    && c.1.as_deref() == Some(m.name.as_str())
-                                    && c.2.is_none()
-                            });
-                            if !m.has_source {
-                                let (r, _) =
-                                    ui.allocate_exact_size(Vec2::splat(14.0), Sense::hover());
-                                paint_lock(ui, r, Tokens::text_dim());
-                            }
-                            let r = ui
-                                .add(egui::Button::selectable(
-                                    on,
-                                    format!("{}  ({kind})", m.name),
-                                ))
-                                .on_hover_text(if m.has_source {
-                                    String::new()
-                                } else {
-                                    tr("macros.no_source")
-                                });
-                            if r.clicked() {
-                                pick = Some((pi, Some(m.name.clone()), None));
-                            }
-                        });
-                        for (_, n) in macros
-                            .iter()
-                            .filter(|(mm, _)| mm.eq_ignore_ascii_case(&m.name))
+                let (toggle, _, _) = head
+                    .show_header(ui, |ui| {
+                        let on = chosen.as_ref().is_some_and(|c| c.0 == pi && c.1.is_none());
+                        if p.project.protected {
+                            let (r, _) = ui.allocate_exact_size(Vec2::splat(14.0), Sense::hover());
+                            paint_lock(ui, r, Tokens::text_dim());
+                        }
+                        if ui
+                            .add(egui::Button::selectable(
+                                on,
+                                RichText::new(p.name()).strong(),
+                            ))
+                            .rich_tip_with(|| {
+                                crate::ui::tips::pair("macros.project_tip", "macros.project_desc")
+                            })
+                            .clicked()
                         {
+                            pick = Some((pi, None, None));
+                        }
+                        if !p.warnings.is_empty() {
+                            ui.label(
+                                RichText::new("!")
+                                    .color(Color32::from_rgb(0xC0, 0x80, 0x00))
+                                    .strong(),
+                            )
+                            .rich_tip(p.warnings.join("\n"));
+                        }
+                    })
+                    .body(|ui| {
+                        for m in &p.project.modules {
+                            let kind = match m.kind {
+                                tracedraw_vba_project::ModuleKind::Standard => {
+                                    tr("macros.kind_module")
+                                }
+                                tracedraw_vba_project::ModuleKind::Class => tr("macros.kind_class"),
+                                tracedraw_vba_project::ModuleKind::Form => tr("macros.kind_form"),
+                                tracedraw_vba_project::ModuleKind::Document => {
+                                    tr("macros.kind_document")
+                                }
+                            };
                             ui.horizontal(|ui| {
-                                ui.add_space(18.0);
                                 let on = chosen.as_ref().is_some_and(|c| {
                                     c.0 == pi
                                         && c.1.as_deref() == Some(m.name.as_str())
-                                        && c.2.as_deref() == Some(n.as_str())
+                                        && c.2.is_none()
                                 });
-                                let r = ui.add(egui::Button::selectable(on, format!("▸ {n}")));
-                                if r.clicked() {
-                                    pick = Some((pi, Some(m.name.clone()), Some(n.clone())));
+                                if !m.has_source {
+                                    let (r, _) =
+                                        ui.allocate_exact_size(Vec2::splat(14.0), Sense::hover());
+                                    paint_lock(ui, r, Tokens::text_dim());
                                 }
-                                if r.double_clicked() && !running {
-                                    run = Some((pi, m.name.clone(), n.clone()));
+                                let r = ui
+                                    .add(egui::Button::selectable(
+                                        on,
+                                        format!("{}  ({kind})", m.name),
+                                    ))
+                                    .rich_tip_with(|| {
+                                        let desc = if m.has_source {
+                                            tr("macros.module_desc")
+                                        } else {
+                                            tr("macros.no_source")
+                                        };
+                                        format!("{}\n{desc}", m.name)
+                                    });
+                                if r.clicked() {
+                                    pick = Some((pi, Some(m.name.clone()), None));
                                 }
                             });
+                            for (_, n) in macros
+                                .iter()
+                                .filter(|(mm, _)| mm.eq_ignore_ascii_case(&m.name))
+                            {
+                                ui.horizontal(|ui| {
+                                    ui.add_space(18.0);
+                                    let on = chosen.as_ref().is_some_and(|c| {
+                                        c.0 == pi
+                                            && c.1.as_deref() == Some(m.name.as_str())
+                                            && c.2.as_deref() == Some(n.as_str())
+                                    });
+                                    let r = ui
+                                        .add(egui::Button::selectable(on, format!("▸ {n}")))
+                                        .rich_tip_with(|| {
+                                            format!("{n}\n{}", tr("macros.macro_desc"))
+                                        });
+                                    if r.clicked() {
+                                        pick = Some((pi, Some(m.name.clone()), Some(n.clone())));
+                                    }
+                                    if r.double_clicked() && !running {
+                                        run = Some((pi, m.name.clone(), n.clone()));
+                                    }
+                                });
+                            }
                         }
-                    }
-                    for w in &p.warnings {
-                        ui.add(
-                            egui::Label::new(RichText::new(w).small().color(Tokens::text_dim()))
+                        for w in &p.warnings {
+                            ui.add(
+                                egui::Label::new(
+                                    RichText::new(w).small().color(Tokens::text_dim()),
+                                )
                                 .wrap(),
-                        );
-                    }
-                });
+                            );
+                        }
+                    });
+                toggle.rich_tip_with(|| crate::ui::tips::keyed("docker.expand_row"));
             }
         });
     if let Some(p) = pick {
@@ -1812,14 +1853,14 @@ fn editor(app: &mut App, ctx: &Context) {
             ui.horizontal(|ui| {
                 if ui
                     .add_enabled(ed.dirty, egui::Button::new(tr("macros.save")))
-                    .on_hover_text("Ctrl+S")
+                    .rich_tip("Ctrl+S")
                     .clicked()
                 {
                     act = Some("save");
                 }
                 if ui
                     .add_enabled(!running, egui::Button::new(tr("macros.run_sub")))
-                    .on_hover_text(tr("macros.run_sub_hint"))
+                    .rich_tip(tr("macros.run_sub_hint"))
                     .clicked()
                 {
                     act = Some("run");

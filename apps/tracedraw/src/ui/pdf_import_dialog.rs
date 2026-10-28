@@ -6,6 +6,7 @@
 use crate::app::App;
 use crate::i18n::{tr, trf};
 use crate::ui::dialogs::{ok_cancel, window};
+use crate::ui::tips::RichTip;
 use egui::Context;
 use std::path::PathBuf;
 
@@ -91,9 +92,9 @@ pub fn dialog(app: &mut App, ctx: &Context, st: &mut PdfTextState, close: &mut b
         ui.add_space(6.0);
         ui.label(tr("pdf_import.text_as"));
         ui.radio_value(&mut st.curves, false, tr("pdf_import.text"))
-            .on_hover_text(tr("pdf_import.text_tip"));
+            .rich_tip(tr("pdf_import.text_tip"));
         ui.radio_value(&mut st.curves, true, tr("pdf_import.curves"))
-            .on_hover_text(tr("pdf_import.curves_tip"));
+            .rich_tip(tr("pdf_import.curves_tip"));
         ui.add_space(4.0);
         ui.checkbox(&mut st.dont_ask, tr("pdf_import.dont_ask"));
         if ok_cancel(ui, close) {

@@ -8,6 +8,7 @@
 use crate::app::App;
 use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
+use crate::ui::tips::RichTip;
 use egui::{Color32, CursorIcon, Pos2, Rect, Sense, Stroke, Ui, Vec2};
 
 /// The picture's side, points.
@@ -28,14 +29,14 @@ pub fn shelf(app: &mut App, ui: &mut Ui) {
     ui.horizontal_wrapped(|ui| {
         if ui
             .add_enabled(has_selection, egui::Button::new(tr("shelf.add_selection")))
-            .on_hover_text(tr("shelf.add_selection_tip"))
+            .rich_tip(tr("shelf.add_selection_tip"))
             .clicked()
         {
             app.shelf_add_selection();
         }
         if ui
             .add_enabled(drawing, egui::Button::new(tr("shelf.add_colors")))
-            .on_hover_text(tr("shelf.add_colors_tip"))
+            .rich_tip(tr("shelf.add_colors_tip"))
             .clicked()
         {
             app.shelf_add_colors();
@@ -198,7 +199,7 @@ fn tile(app: &mut App, ui: &mut Ui, uid: u64, name: &str, budget: &mut usize) ->
         );
         painter.galley(at, galley, Tokens::text());
     }
-    let resp = resp.on_hover_text(trf("shelf.item_tip", &[("name", name)]));
+    let resp = resp.rich_tip(trf("shelf.item_tip", &[("name", name)]));
     if resp.clicked() || resp.secondary_clicked() || resp.drag_started() {
         app.shelf.selected = Some(uid);
     }

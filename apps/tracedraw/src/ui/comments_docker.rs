@@ -8,6 +8,7 @@ use crate::app::App;
 use crate::comments::{MarkKind, MARK};
 use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
+use crate::ui::tips::RichTip;
 use egui::{RichText, Ui};
 
 fn dim(ui: &mut Ui, text: String) {
@@ -23,7 +24,8 @@ pub fn comments_docker(app: &mut App, ui: &mut Ui) {
             egui::TextEdit::singleline(&mut app.settings.comment_author)
                 .hint_text(hint)
                 .desired_width(140.0),
-        );
+        )
+        .rich_tip(crate::ui::tips::pair("comments.name", "comments.name_desc"));
     });
     ui.horizontal_wrapped(|ui| {
         dim(ui, tr("comments.add"));
@@ -35,7 +37,7 @@ pub fn comments_docker(app: &mut App, ui: &mut Ui) {
             let on = app.comments.placing == Some(kind);
             if ui
                 .add_enabled(drawing, egui::Button::new(tr(key)).selected(on))
-                .on_hover_text(tr(tip))
+                .rich_tip(tr(tip))
                 .clicked()
             {
                 app.comments.placing = if on { None } else { Some(kind) };
@@ -49,8 +51,10 @@ pub fn comments_docker(app: &mut App, ui: &mut Ui) {
         ui.checkbox(
             &mut app.comments.show_resolved,
             tr("comments.show_resolved"),
-        );
-        ui.checkbox(&mut app.comments.hidden, tr("comments.hide_marks"));
+        )
+        .rich_tip(crate::ui::tips::keyed("comments.show_resolved"));
+        ui.checkbox(&mut app.comments.hidden, tr("comments.hide_marks"))
+            .rich_tip(crate::ui::tips::keyed("comments.hide_marks"));
     });
     ui.separator();
 
@@ -130,12 +134,14 @@ pub fn comments_docker(app: &mut App, ui: &mut Ui) {
                             .get(&c.id)
                             .cloned()
                             .unwrap_or_else(|| c.text.clone());
-                        let r = ui.add(
-                            egui::TextEdit::multiline(&mut text)
-                                .hint_text(tr("comments.text_hint"))
-                                .desired_rows(2)
-                                .desired_width(f32::INFINITY),
-                        );
+                        let r = ui
+                            .add(
+                                egui::TextEdit::multiline(&mut text)
+                                    .hint_text(tr("comments.text_hint"))
+                                    .desired_rows(2)
+                                    .desired_width(f32::INFINITY),
+                            )
+                            .rich_tip(crate::ui::tips::keyed("comments.text"));
                         if r.changed() {
                             app.comments.drafts.insert(c.id, text);
                         }
@@ -170,14 +176,20 @@ pub fn comments_docker(app: &mut App, ui: &mut Ui) {
                     }
                     if picked {
                         ui.horizontal(|ui| {
-                            let r = ui.add(
-                                egui::TextEdit::singleline(&mut app.comments.reply)
-                                    .hint_text(tr("comments.reply_hint"))
-                                    .desired_width(ui.available_width() - 60.0),
-                            );
+                            let r = ui
+                                .add(
+                                    egui::TextEdit::singleline(&mut app.comments.reply)
+                                        .hint_text(tr("comments.reply_hint"))
+                                        .desired_width(ui.available_width() - 60.0),
+                                )
+                                .rich_tip(crate::ui::tips::keyed("comments.reply_field"));
                             let enter =
                                 r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-                            if (ui.button(tr("comments.reply")).clicked() || enter)
+                            if (ui
+                                .button(tr("comments.reply"))
+                                .rich_tip(crate::ui::tips::keyed("comments.reply"))
+                                .clicked()
+                                || enter)
                                 && !app.comments.reply.trim().is_empty()
                             {
                                 reply = Some(c.id);
@@ -190,10 +202,18 @@ pub fn comments_docker(app: &mut App, ui: &mut Ui) {
                         } else {
                             "comments.resolve"
                         };
-                        if ui.small_button(tr(key)).clicked() {
+                        if ui
+                            .small_button(tr(key))
+                            .rich_tip(crate::ui::tips::keyed(key))
+                            .clicked()
+                        {
                             resolve = Some((c.id, !c.resolved));
                         }
-                        if ui.small_button(tr("comments.delete")).clicked() {
+                        if ui
+                            .small_button(tr("comments.delete"))
+                            .rich_tip(crate::ui::tips::keyed("comments.delete"))
+                            .clicked()
+                        {
                             delete = Some(c.id);
                         }
                     });

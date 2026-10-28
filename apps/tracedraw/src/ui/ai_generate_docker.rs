@@ -11,6 +11,7 @@ use crate::app::App;
 use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
 use crate::ui::ai_ui::{banner, Need};
+use crate::ui::tips::RichTip;
 use egui::{Color32, RichText, Sense, Ui, Vec2};
 
 const ERROR: Color32 = Color32::from_rgb(0xC4, 0x2B, 0x1C);
@@ -26,7 +27,7 @@ fn heading(ui: &mut Ui, key: &str, reset: bool) -> bool {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 pressed = ui
                     .small_button("\u{21BA}")
-                    .on_hover_text(tr("aigen.reset"))
+                    .rich_tip(tr("aigen.reset"))
                     .clicked();
             });
         }
@@ -62,7 +63,7 @@ pub fn ai_generate(app: &mut App, ui: &mut Ui) {
             let on = app.ai_image.mode == mode && !app.ai_image.info;
             if ui
                 .selectable_label(on, RichText::new(glyph).size(16.0))
-                .on_hover_text(tr(key))
+                .rich_tip(tr(key))
                 .clicked()
             {
                 app.ai_image.mode = mode;
@@ -72,7 +73,7 @@ pub fn ai_generate(app: &mut App, ui: &mut Ui) {
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if ui
                 .selectable_label(app.ai_image.info, RichText::new("\u{2139}").size(16.0))
-                .on_hover_text(tr("aigen.info"))
+                .rich_tip(tr("aigen.info"))
                 .clicked()
             {
                 app.ai_image.info = !app.ai_image.info;
@@ -157,13 +158,13 @@ fn body(app: &mut App, ui: &mut Ui, mode: Mode, svg: bool) {
                 VectorEngine::Trace,
                 tr("aigen.engine_trace"),
             )
-            .on_hover_text(tr("aigen.engine_trace_tip"));
+            .rich_tip(tr("aigen.engine_trace_tip"));
             ui.selectable_value(
                 &mut app.ai_image.vector_engine,
                 VectorEngine::Svg,
                 tr("aigen.engine_svg"),
             )
-            .on_hover_text(tr("aigen.engine_svg_tip"));
+            .rich_tip(tr("aigen.engine_svg_tip"));
         });
     }
     // The model in use, from the service's list, and its notes.
@@ -222,7 +223,7 @@ fn body(app: &mut App, ui: &mut Ui, mode: Mode, svg: bool) {
                     ui.add_space(3.0);
                 }
             });
-        ui.small_button("?").on_hover_text(model_note(&current));
+        ui.small_button("?").rich_tip(model_note(&current));
     });
     // The reference picture: needed to remix, optional otherwise.
     if !svg {
@@ -259,7 +260,7 @@ fn body(app: &mut App, ui: &mut Ui, mode: Mode, svg: bool) {
         // Ready-made requests for the usual remixes.
         ui.horizontal_wrapped(|ui| {
             for (key, prompt) in REMIX_IDEAS {
-                if ui.small_button(tr(key)).on_hover_text(prompt).clicked() {
+                if ui.small_button(tr(key)).rich_tip(prompt).clicked() {
                     app.ai_image.remix_prompt = prompt.to_string();
                 }
             }
@@ -301,7 +302,7 @@ fn body(app: &mut App, ui: &mut Ui, mode: Mode, svg: bool) {
     ui.vertical_centered(|ui| {
         if ui
             .small_button(if folded { "\u{2304}" } else { "\u{2303}" })
-            .on_hover_text(tr(if folded { "aigen.unfold" } else { "aigen.fold" }))
+            .rich_tip(tr(if folded { "aigen.unfold" } else { "aigen.fold" }))
             .clicked()
         {
             app.ai_image.folded = !folded;
@@ -416,14 +417,14 @@ fn source(app: &mut App, ui: &mut Ui, mode: Mode) {
             ui.add_space((ui.available_width() - 64.0).max(0.0) / 2.0);
             if ui
                 .small_button("\u{2B1A}")
-                .on_hover_text(tr("aigen.use_selection"))
+                .rich_tip(tr("aigen.use_selection"))
                 .clicked()
             {
                 app.ai_source_from_selection();
             }
             if ui
                 .small_button("\u{1F4C2}")
-                .on_hover_text(tr("aigen.import_source"))
+                .rich_tip(tr("aigen.import_source"))
                 .clicked()
             {
                 app.ai_source_from_file();
@@ -455,7 +456,7 @@ fn results(app: &mut App, ui: &mut Ui) {
                         let scale = side / s.x.max(s.y);
                         let resp = ui
                             .add(egui::Image::new((tex.id(), s * scale)).sense(Sense::click()))
-                            .on_hover_text(tr("aigen.place_again"));
+                            .rich_tip(tr("aigen.place_again"));
                         if resp.clicked() {
                             place = Some(i);
                         }
@@ -487,7 +488,7 @@ fn footer(app: &mut App, ui: &mut Ui, mode: Mode, ready: bool) {
                 );
             }
             ui.checkbox(&mut app.ai_image.auto_place, tr("aigen.auto_place"))
-                .on_hover_text(tr("aigen.auto_place_tip"));
+                .rich_tip(tr("aigen.auto_place_tip"));
         });
     });
     let service = match app.ai_image_prefs() {
@@ -523,7 +524,11 @@ fn footer(app: &mut App, ui: &mut Ui, mode: Mode, ready: bool) {
                 egui::Button::new(format!("\u{2726} {label}")).min_size(Vec2::new(w, 30.0)),
             );
             ui.spinner();
-            if ui.button(tr("dialog.cancel")).clicked() {
+            if ui
+                .button(tr("dialog.cancel"))
+                .rich_tip(crate::ui::tips::keyed("dialog.cancel"))
+                .clicked()
+            {
                 app.ai_image_cancel();
             }
         });
@@ -611,7 +616,11 @@ fn info_page(app: &mut App, ui: &mut Ui) {
     ui.label(RichText::new(tr("aiui.privacy_title")).strong());
     ui.label(RichText::new(tr("aiui.privacy")).color(Tokens::text_dim()));
     ui.add_space(6.0);
-    if ui.button(tr("aiui.set_up")).clicked() {
+    if ui
+        .button(tr("aiui.set_up"))
+        .rich_tip(crate::ui::tips::keyed("aiui.set_up"))
+        .clicked()
+    {
         crate::ui::ai_ui::open_options(app, crate::ui::dialogs::OptionsPage::AiService);
     }
 }
@@ -673,7 +682,7 @@ fn tile(
         egui::FontId::proportional(10.0),
         if on { Tokens::ACCENT } else { Tokens::text() },
     );
-    resp.on_hover_text(name)
+    resp.rich_tip(name)
 }
 
 fn rgb(c: u32) -> Color32 {

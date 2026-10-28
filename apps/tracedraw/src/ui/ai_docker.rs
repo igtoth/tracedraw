@@ -7,6 +7,7 @@ use crate::app::{App, DockerTab};
 use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
 use crate::ui::options::{combo, grid, row_label};
+use crate::ui::tips::RichTip;
 use egui::{RichText, Ui};
 
 const ERROR: egui::Color32 = egui::Color32::from_rgb(0xC4, 0x2B, 0x1C);
@@ -43,7 +44,11 @@ pub fn ai_drawing(app: &mut App, ui: &mut Ui) {
     ui.horizontal(|ui| {
         if app.ai.busy() {
             ui.spinner();
-            if ui.button(tr("dialog.cancel")).clicked() {
+            if ui
+                .button(tr("dialog.cancel"))
+                .rich_tip(crate::ui::tips::keyed("dialog.cancel"))
+                .clicked()
+            {
                 app.ai_cancel();
             }
         } else if ui
@@ -130,18 +135,21 @@ pub fn connection(app: &mut App, ui: &mut Ui) {
                 }
             })
             .response
-            .on_hover_text(tr("aipreset.tip"));
+            .rich_tip(tr("aipreset.tip"));
         ui.end_row();
         row_label(ui, &tr("ai.provider"));
         let mut provider = prefs.provider;
-        if combo(
-            ui,
-            "ai_provider",
-            &mut provider,
-            &Provider::ALL,
-            |p| tr(p.key()),
-            FIELD_W,
-        ) {
+        let tip = crate::ui::tips::pair("ai.provider", "ai.provider_tip");
+        if crate::ui::tips::tip_over(ui, tip, |ui| {
+            combo(
+                ui,
+                "ai_provider",
+                &mut provider,
+                &Provider::ALL,
+                |p| tr(p.key()),
+                FIELD_W,
+            )
+        }) {
             // Another kind of service: its own address and model.
             prefs.provider = provider;
             prefs.endpoint.clear();
@@ -155,7 +163,8 @@ pub fn connection(app: &mut App, ui: &mut Ui) {
             egui::TextEdit::singleline(&mut prefs.endpoint)
                 .hint_text(prefs.provider.default_endpoint())
                 .desired_width(FIELD_W),
-        );
+        )
+        .rich_tip(crate::ui::tips::pair("ai.endpoint", "ai.endpoint_tip"));
         ui.end_row();
         row_label(ui, &tr("ai.model"));
         let model_hint = match prefs.provider.default_model() {
@@ -168,7 +177,8 @@ pub fn connection(app: &mut App, ui: &mut Ui) {
                 egui::TextEdit::singleline(&mut prefs.model)
                     .hint_text(model_hint)
                     .desired_width(FIELD_W - 26.0),
-            );
+            )
+            .rich_tip(crate::ui::tips::pair("ai.model", "ai.model_tip"));
             ui.menu_button("\u{25BE}", |ui| {
                 for m in &choices {
                     if ui.selectable_label(prefs.model == *m, m).clicked() {
@@ -185,15 +195,17 @@ pub fn connection(app: &mut App, ui: &mut Ui) {
                 }
             })
             .response
-            .on_hover_text(tr("ai.model"));
+            .rich_tip(crate::ui::tips::pair("ai.model", "ai.model_list_tip"));
         });
         ui.end_row();
         row_label(ui, &tr("ai.key"));
-        let key = ui.add(
-            egui::TextEdit::singleline(&mut app.ai.key)
-                .password(true)
-                .desired_width(FIELD_W),
-        );
+        let key = ui
+            .add(
+                egui::TextEdit::singleline(&mut app.ai.key)
+                    .password(true)
+                    .desired_width(FIELD_W),
+            )
+            .rich_tip(crate::ui::tips::pair("ai.key", "ai.key_tip"));
         if key.changed() && prefs.remember_key {
             prefs.key = app.ai.key.clone();
         }
@@ -208,9 +220,14 @@ pub fn connection(app: &mut App, ui: &mut Ui) {
     if !prefs.can_make_pictures() {
         dim(ui, tr("aiui.drawings_only"));
     }
-    ui.checkbox(&mut prefs.show_bar, tr("ai.show_bar"));
+    ui.checkbox(&mut prefs.show_bar, tr("ai.show_bar"))
+        .rich_tip(crate::ui::tips::pair("ai.show_bar", "ai.show_bar_tip"));
     if ui
         .checkbox(&mut prefs.remember_key, tr("ai.remember_key"))
+        .rich_tip(crate::ui::tips::pair(
+            "ai.remember_key",
+            "ai.remember_key_tip",
+        ))
         .changed()
     {
         prefs.key = if prefs.remember_key {
@@ -255,7 +272,7 @@ fn image_model_field(prefs: &mut crate::ai::AiPrefs, listed: &[String], ui: &mut
                 .hint_text(hint)
                 .desired_width(FIELD_W - 26.0),
         )
-        .on_hover_text(tr("ai.image_model_tip"));
+        .rich_tip(tr("ai.image_model_tip"));
         ui.add_enabled_ui(!choices.is_empty(), |ui| {
             ui.menu_button("\u{25BE}", |ui| {
                 for m in &choices {

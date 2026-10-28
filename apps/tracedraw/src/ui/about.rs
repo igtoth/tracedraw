@@ -8,6 +8,7 @@ use crate::app::App;
 use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
 use crate::ui::brand;
+use crate::ui::tips::RichTip;
 use egui::{
     Color32, Context, CornerRadius, FontId, Pos2, Rect, RichText, Sense, Stroke, TextureHandle, Ui,
     Vec2,
@@ -91,7 +92,7 @@ fn banner(ui: &mut Ui, icon: Option<&TextureHandle>) {
     );
     painter.galley(badge.min + Vec2::new(8.0, 3.0), alpha, Color32::WHITE);
     ui.interact(badge, ui.id().with("about_alpha"), Sense::hover())
-        .on_hover_text(tr("dialog.alpha_tip"));
+        .rich_tip(tr("dialog.alpha_tip"));
 }
 
 /// One row of the facts list: a dim label and its value.
@@ -138,7 +139,14 @@ pub fn about_dialog(app: &mut App, ctx: &Context, close: &mut bool) {
                 });
                 fact(ui, &tr("dialog.about_source_label"), |ui| {
                     let repo = env!("CARGO_PKG_REPOSITORY");
-                    if ui.link(repo).clicked() {
+                    if ui
+                        .link(repo)
+                        .rich_tip(crate::ui::tips::pair(
+                            "dialog.about_source_label",
+                            "dialog.about_source_desc",
+                        ))
+                        .clicked()
+                    {
                         app.open_url(repo);
                     }
                 });

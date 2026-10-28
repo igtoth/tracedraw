@@ -31,6 +31,7 @@ use crate::i18n::tr;
 use crate::theme::Tokens;
 use crate::ui::field::NumField;
 use crate::ui::propbar::{pic_button, Pic};
+use crate::ui::tips::RichTip;
 use egui::{Color32, Rect, Sense, Stroke, Ui, Vec2};
 use tracedraw_core::{
     Color, Fill, LeadingUnit, ParagraphStyle, ShapeKind, TextAlign, TextSpan, VerticalAlign,
@@ -79,7 +80,7 @@ fn row_check(app: &mut App, ui: &mut Ui, key: &str) {
     let mut on = ticked(app, key);
     if ui
         .add_sized([CHECK_W, 18.0], egui::Checkbox::without_text(&mut on))
-        .on_hover_text(tr("docker.text_tick_tip"))
+        .rich_tip(tr("docker.text_tick_tip"))
         .changed()
     {
         let list = &mut app.settings.text_docker_ticked;
@@ -194,7 +195,7 @@ fn picture_button(
         ui.painter(),
         Rect::from_center_size(rect.center(), Vec2::splat(18.0)),
     );
-    resp.on_hover_text(tip).clicked()
+    resp.rich_tip(tip).clicked()
 }
 
 /// A section's header bar; a click opens or closes it. True when open.
@@ -204,6 +205,7 @@ fn header(app: &mut App, ui: &mut Ui, id: &str, title: &str, gear: bool) -> (boo
     let open = is_open(app, id);
     let (rect, resp) =
         ui.allocate_exact_size(Vec2::new(ui.available_width(), 24.0), Sense::click());
+    let resp = resp.rich_tip_with(|| format!("{title}\n{}", tr("docker.section_desc")));
     let fill = if resp.hovered() {
         Tokens::tool_hover()
     } else {
@@ -247,7 +249,7 @@ fn header(app: &mut App, ui: &mut Ui, id: &str, title: &str, gear: bool) -> (boo
             ui.painter().rect_filled(g, 2.0, Tokens::tool_active());
         }
         gear_picture(ui.painter(), g.shrink(2.0));
-        gear_clicked = gr.on_hover_text(tr("docker.paragraph_settings")).clicked();
+        gear_clicked = gr.rich_tip(tr("docker.paragraph_settings")).clicked();
     }
     if resp.clicked() && !gear_clicked {
         toggle(app, id);
@@ -301,7 +303,7 @@ fn expander(ui: &mut Ui, id: &str) -> bool {
         Stroke::NONE,
     ));
     if resp
-        .on_hover_text(tr(if open {
+        .rich_tip(tr(if open {
             "docker.show_less"
         } else {
             "docker.show_more"
@@ -622,8 +624,7 @@ fn fill_row(
 ) -> Option<Option<Fill>> {
     let mut out = None;
     let color = fill.and_then(|f| f.preview_color());
-    ui.label(egui::RichText::new(icon).strong())
-        .on_hover_text(tip);
+    ui.label(egui::RichText::new(icon).strong()).rich_tip(tip);
     let uniform = color.is_some();
     let names = [tr("docker.no_fill"), tr("docker.uniform_fill")];
     egui::ComboBox::from_id_salt(id)
@@ -636,7 +637,9 @@ fn fill_row(
             if ui.selectable_label(uniform, &names[1]).clicked() && !uniform {
                 out = Some(Some(Fill::Solid(Color::BLACK)));
             }
-        });
+        })
+        .response
+        .rich_tip(format!("{tip}\n{}", tr("docker.text_paint_desc")));
     let mut c = color.unwrap_or(Color::BLACK);
     ui.add_enabled_ui(uniform, |ui| {
         if crate::ui::color_picker::color_button(ui, &mut c) {
@@ -645,7 +648,7 @@ fn fill_row(
     });
     if ui
         .small_button("\u{2022}\u{2022}\u{2022}")
-        .on_hover_text(tr("docker.more_settings"))
+        .rich_tip(tr("docker.more_settings"))
         .clicked()
     {
         *more = true;
@@ -700,7 +703,9 @@ fn style_list(app: &mut App, ui: &mut Ui) -> bool {
                 app.text_italic = italic;
                 changed = true;
             }
-        });
+        })
+        .response
+        .rich_tip(crate::ui::tips::keyed("docker.font_style"));
     changed
 }
 
@@ -740,7 +745,9 @@ fn character(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) 
             } else {
                 0.0
             };
-        changed |= crate::ui::font_list::text_font_list(app, ui, "docker_text_font", w.max(120.0));
+        changed |= crate::ui::tips::tip_over(ui, crate::ui::tips::keyed("toolbar.font"), |ui| {
+            crate::ui::font_list::text_font_list(app, ui, "docker_text_font", w.max(120.0))
+        });
         row_check(app, ui, "font");
     });
     ui.horizontal(|ui| {
@@ -757,7 +764,7 @@ fn character(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) 
     // Range kerning and underline.
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new("AV").strong().size(11.0))
-            .on_hover_text(tr("docker.tracking"));
+            .rich_tip(tr("docker.tracking"));
         let mut kern = span.as_ref().map_or(0.0, |s| s.tracking_pct);
         let enabled = span.is_some();
         let mut kc = false;
@@ -774,7 +781,7 @@ fn character(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) 
                 [26.0, 22.0],
                 egui::Button::selectable(on, egui::RichText::new("U").underline().size(14.0)),
             )
-            .on_hover_text(tr("toolbar.underline"))
+            .rich_tip(tr("toolbar.underline"))
             .clicked()
         {
             app.text_underline = !on;
@@ -825,7 +832,7 @@ fn character(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) 
     }
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new("A").strong().color(Tokens::text_dim()))
-            .on_hover_text(tr("docker.text_outline"));
+            .rich_tip(tr("docker.text_outline"));
         let stroke = first.and_then(|t| t.stroke.clone());
         let pt = stroke.as_ref().map_or(0.0, |s| s.width * 72.0 / 25.4);
         egui::ComboBox::from_id_salt("docker_text_outline")
@@ -848,7 +855,12 @@ fn character(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) 
                         }
                     }
                 }
-            });
+            })
+            .response
+            .rich_tip(crate::ui::tips::pair(
+                "docker.text_outline",
+                "docker.text_outline_width_desc",
+            ));
         let mut c = stroke.as_ref().map_or(Color::BLACK, |s| s.color);
         ui.add_enabled_ui(stroke.is_some(), |ui| {
             if crate::ui::color_picker::color_button(ui, &mut c) {
@@ -857,7 +869,7 @@ fn character(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) 
         });
         if ui
             .small_button("\u{2022}\u{2022}\u{2022}")
-            .on_hover_text(tr("docker.more_settings"))
+            .rich_tip(tr("docker.more_settings"))
             .clicked()
         {
             app.open_outline_editor();
@@ -958,7 +970,7 @@ fn font_axes(app: &mut App, ui: &mut Ui, sp: &TextSpan) {
     }
     ui.horizontal(|ui| {
         ui.label(tr("docker.font_axes"))
-            .on_hover_text(tr("docker.font_axes_tip"));
+            .rich_tip(tr("docker.font_axes_tip"));
         if ui
             .add_enabled(
                 !sp.variations.is_empty(),
@@ -972,7 +984,7 @@ fn font_axes(app: &mut App, ui: &mut Ui, sp: &TextSpan) {
     for axis in &axes {
         ui.horizontal(|ui| {
             ui.add_sized([72.0, 18.0], egui::Label::new(axis_name(axis)).truncate())
-                .on_hover_text(&axis.tag);
+                .rich_tip(&axis.tag);
             let id = ui.id().with(("font_axis", &axis.tag));
             let held = sp
                 .variation(&axis.tag)
@@ -1182,7 +1194,7 @@ fn paragraph(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) 
         for shape in para_icon_shapes(icon, r, ui.visuals().text_color()) {
             ui.painter().add(shape);
         }
-        resp.on_hover_text(tr(key));
+        resp.rich_tip(tr(key));
     };
     ui.horizontal(|ui| {
         line_icon(ui, ParaIcon::Leading, "docker.leading");
@@ -1311,7 +1323,7 @@ fn frame(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) {
             .unwrap_or(Color::WHITE);
         if ui
             .selectable_label(has, egui::RichText::new("\u{25A3}").size(15.0))
-            .on_hover_text(tr("docker.frame_background"))
+            .rich_tip(tr("docker.frame_background"))
             .clicked()
         {
             p.frame_fill = if has { None } else { Some(Fill::Solid(c)) };
@@ -1335,7 +1347,7 @@ fn frame(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) {
             p.vertical_align,
             Tokens::icon(),
         );
-        let resp = resp.on_hover_text(tr("docker.vertical_align"));
+        let resp = resp.rich_tip(tr("docker.vertical_align"));
         egui::Popup::menu(&resp)
             .id(egui::Id::new("docker_valign"))
             .show(|ui| {
@@ -1363,7 +1375,7 @@ fn frame(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) {
             Rect::from_center_size(rect.center(), Vec2::splat(18.0)),
             Tokens::icon(),
         );
-        if resp.on_hover_text(tr("menu.text.frame_fit_text")).clicked() {
+        if resp.rich_tip(tr("menu.text.frame_fit_text")).clicked() {
             p.fit_to_frame = !p.fit_to_frame;
             pc = true;
         }

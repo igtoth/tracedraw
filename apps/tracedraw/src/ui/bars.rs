@@ -15,6 +15,7 @@
 use crate::app::App;
 use crate::i18n::tr;
 use crate::theme::Tokens;
+use crate::ui::tips::RichTip;
 use egui::{pos2, vec2, Color32, Pos2, Rect, Sense, Stroke, Ui, Vec2};
 use serde::{Deserialize, Serialize};
 
@@ -615,7 +616,14 @@ pub fn grip(app: &mut App, ui: &mut Ui, bar: Bar, horizontal: bool) {
 /// `salt` tells apart several grips of one bar (the palette's rows).
 pub fn grip_zone(app: &mut App, ui: &mut Ui, bar: Bar, r: Rect, salt: u8) {
     let id = egui::Id::new(("bar_grip", bar as u8, salt));
-    let resp = ui.interact(r, id, Sense::click_and_drag());
+    let desc = if app.settings.bars.locked {
+        "bars.grip_locked_desc"
+    } else {
+        "bars.grip_desc"
+    };
+    let resp = ui
+        .interact(r, id, Sense::click_and_drag())
+        .rich_tip(crate::ui::tips::pair(bar.key(), desc));
     let resp = if app.settings.bars.locked {
         resp
     } else {
