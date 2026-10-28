@@ -5323,6 +5323,18 @@ fn frame_times_on_a_heavy_page() {
             Modifiers::NONE,
         );
     });
+    // A colour dragged in a picker: an Undo and a step per pointer move.
+    let one = app.doc().pages[0].layers[0].shapes.last().map(|s| s.id);
+    app.select(one.into_iter().collect());
+    let mut k = 0u8;
+    time("live fill drag", &mut app, &mut |app| {
+        k = k.wrapping_add(7);
+        app.apply_fill_live(tracedraw_core::Fill::Solid(tracedraw_core::Color::rgb8(
+            k, 40, 90,
+        )));
+        frame(&ctx, app, Vec::new(), Modifiers::NONE);
+    });
+    app.end_live_fill();
 }
 
 /// A symmetry made from one object, edited: a click on the object shows
@@ -8338,9 +8350,13 @@ fn the_edge_of_the_shape_being_drawn_shows_over_a_wide_outline() {
     }
 }
 
+/// The Export dialog lists every saved preset, with its format, from
+/// the start; changing the format leaves the chosen preset unchosen
+/// while the list stays whole, and choosing a preset of another format
+/// switches to that format (#612, the reporter's second request).
 #[test]
-fn the_export_dialog_lists_only_the_presets_of_its_format() {
-    use crate::ui::dialogs::{presets_for, Dialog, ExportState};
+fn the_export_dialog_lists_every_preset_and_a_format_change_unchooses() {
+    use crate::ui::dialogs::{preset_label, presets_for, Dialog, ExportState};
     let (ctx, mut app, _) = setup();
     let f = &mut app.settings.formats;
     for (name, format) in [("Web PNG", 2), ("Print JPG", 3), ("Big PNG", 2)] {
@@ -8353,19 +8369,26 @@ fn the_export_dialog_lists_only_the_presets_of_its_format() {
     let names = |st: &ExportState, app: &App| {
         presets_for(&app.settings.formats.export_presets, st)
             .into_iter()
-            .map(|p| p.name)
+            .map(|p| preset_label(&p))
             .collect::<Vec<_>>()
     };
+    let all = vec!["Web PNG (PNG)", "Print JPG (JPEG)", "Big PNG (PNG)"];
     app.export();
-    // A PNG preset chosen, then the format changed to JPEG: the list holds
-    // only the JPEG preset and the PNG one is no longer chosen.
+    // The dialog opens at SVG, which has no preset of its own: the list
+    // still holds every preset.
+    let Dialog::Export(st) = &app.dialog else {
+        panic!("no Export dialog");
+    };
+    let opened = st.clone();
+    assert_eq!(names(&opened, &app), all);
+    // A PNG preset chosen, then the format changed to JPEG: the PNG one
+    // is no longer chosen and the list is still whole.
     let Dialog::Export(st) = &mut app.dialog else {
         panic!("no Export dialog");
     };
     st.format = 2;
     st.preset = "Web PNG".into();
     let png = st.clone();
-    assert_eq!(names(&png, &app), vec!["Web PNG", "Big PNG"]);
     frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
     let Dialog::Export(st) = &mut app.dialog else {
         panic!("no Export dialog");
@@ -8377,16 +8400,37 @@ fn the_export_dialog_lists_only_the_presets_of_its_format() {
         panic!("no Export dialog");
     };
     assert!(st.preset.is_empty(), "{:?}", st.preset);
+    assert_eq!(st.format, 3);
     let jpg = st.clone();
-    assert_eq!(names(&jpg, &app), vec!["Print JPG"]);
-    // Saving a PNG preset under the hidden JPEG preset's name keeps the
-    // JPEG one: each format has its own names.
+    assert_eq!(names(&jpg, &app), all);
+    // Choosing a preset of another format brings that format along.
+    let Dialog::Export(st) = &mut app.dialog else {
+        panic!("no Export dialog");
+    };
+    let web_png = app.settings.formats.export_presets[0].clone();
+    web_png.apply(st);
+    assert_eq!((st.format, st.preset.as_str()), (2, "Web PNG"));
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let Dialog::Export(st) = &app.dialog else {
+        panic!("no Export dialog");
+    };
+    assert_eq!(st.preset, "Web PNG");
+    // Saving a PNG preset under the JPEG preset's name keeps the JPEG
+    // one: each format has its own names.
     assert!(app.settings.formats.save_preset("Print JPG", &png));
-    assert_eq!(names(&jpg, &app), vec!["Print JPG"]);
-    assert_eq!(names(&png, &app), vec!["Web PNG", "Big PNG", "Print JPG"]);
+    assert_eq!(
+        names(&jpg, &app),
+        vec![
+            "Web PNG (PNG)",
+            "Print JPG (JPEG)",
+            "Big PNG (PNG)",
+            "Print JPG (PNG)"
+        ]
+    );
     assert_eq!(app.settings.formats.export_presets.len(), 4);
-    // An installed script filter chosen: no presets, and nothing typed
-    // for "+" is saved under the last built-in format, out of sight.
+    // An installed script filter chosen: the list stays, none is chosen,
+    // and nothing typed for "+" is saved under the last built-in format,
+    // out of sight.
     app.settings
         .script_filters
         .push(crate::scripting::ScriptFilter {
@@ -8404,13 +8448,14 @@ fn the_export_dialog_lists_only_the_presets_of_its_format() {
     st.script = Some("Plotter".into());
     st.preset_name = Some(("Web PNG".into(), false));
     let scripted = st.clone();
-    assert!(names(&scripted, &app).is_empty());
+    assert_eq!(names(&scripted, &app).len(), 4);
     frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
     frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
     let Dialog::Export(st) = &app.dialog else {
         panic!("no Export dialog");
     };
     assert_eq!(st.script.as_deref(), Some("Plotter"));
+    assert!(st.preset.is_empty(), "{:?}", st.preset);
     assert!(st.preset_name.is_none());
     assert_eq!(app.settings.formats.export_presets, before);
 }

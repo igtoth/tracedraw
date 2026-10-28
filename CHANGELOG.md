@@ -6,6 +6,14 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Blend tool: the squares at the ends of a picked blend's line (text blends too) now work: dragging one moves its object, so the blend changes direction, and dropping it on another object makes that object the new start or end with the blend's settings. They were only shown (#965).
+- Opening .cdr: blends saved by version 25 read their real step counts (the count is the low half of the field; every one read as 20 with a warning), a record the file counts as an object no longer makes a 150-step blend that floods the drawing, and blends between two open arcs draw open arcs end to end instead of closed shapes crossed through the middle, so the reporter's file opens as the program that saved it shows it (#980).
+- Export: the Preset list holds every saved preset from the moment the dialog opens, each with its format in brackets; choosing one of another format switches to that format, and changing the format leaves the preset unchosen while the list stays whole. Since 0.18.0 the list shrank to the chosen format's presets, so a dialog opening at a format without presets showed none (#612).
+- Export: Remember the settings of the last export (Options > Global > File Formats) is switched on once for preferences saved by versions before 0.19.4, which stored it off, so File > Export starts with the last export's format, resolution and quality in the next session too; since 0.19.4 only new preferences had it on, and anyone who had used an earlier version still saw the dialog start at SVG each session (#691, #617).
+
+## 0.19.11 (2026-10-28)
+
+- Undo keeps to a memory limit as well as to its number of steps: past 1 GB of a drawing's own undo data (256 MB in the browser) the oldest steps go, and the newest always stays; a copy made with a right click during a drag stays one step. An undo-heavy session on a drawing of 40,000 curves and six 40 MB pictures held 6.9 GB after 72 steps and now stays at 1.35 GB. Slow pages are drawn in the background one at a time, the page being edited first: Multipage View could run a render for every other page at once, each with its own band threads and picture buffers, and a render made stale kept running beside the next one.
 - Document palette: a colour picked with its eyedropper that the palette has already gets the white frame of the last colour used, so it shows where it is; a new colour takes the frame as it joins, and applying a colour of the palette moves the frame to it (#1125).
 - Status bar: a tool hint or message cut off at the right shows whole in a tip on hover, so a long path before the hint no longer hides it for good (#1126).
 - Pages added to a drawing (Layout > Insert Page, the + beside the page tabs, the navigator's insert buttons) are named in the interface's language, as the first page is, and so is their first layer. They were named "Page 2", "Layer 1" and so on in English whatever the language (#1127).
@@ -23,9 +31,12 @@ full, row-by-row status.
 - Dropping files: a `.cdr` (or any drawing File > Open reads) let go over the title, menus, toolbars or document tabs opens in a tab of its own, and only one let go over the drawing window is imported into it; the frame and label while dragging show which. Before, a `.cdr` dropped anywhere on an open drawing was imported. Where the system does not say where the pointer is (Linux, macOS), drawings open in a tab like a `.tdraw` and pictures are imported (#1142).
 - Status bar: it no longer keeps showing the path of a drawing that was closed (or of another tab) after making a new drawing or switching tabs; the message about a file now goes when another drawing is shown (#1128).
 - Saving `.cdr`: blends, text blends too, open again in TraceDraw as live blends to their end object, with their steps, accelerations and options, so they can be changed and follow the end object as before saving (files of version 14 and later). They came back as loose steps that could not be edited; other programs still see the blend as a group of its start object and its steps (#986).
-
 - Saving as .cdr: curves whose outline ends back at its start, such as text fitted to a path (written as its letters' outlines), close on their last node instead of adding a closing line of no length after it. The other program that opened such a file closed when the text was clicked; lines of no length and empty subpaths are also left out (#1130).
 - Opening .cdr: objects embedded from another program that keep their picture as a Windows metafile, such as barcodes, are drawn, also inside clip containers. Version 26 files name such an object's data in a link record instead of a name, so the objects were skipped; the metafile is now played and stretched over the object's rectangle, and a metafile that sets no viewport (as these pictures do) is drawn at its window's size instead of shrinking to a speck (#1131).
+- Smudge and Twirl no longer slow the app down until it hangs or crashes on a long drag, and dragging a segment with the Shape tool keeps its cusp nodes cusp instead of turning them smooth (#1133, #1140).
+- Distort: the Zipper draws frequency + 1 lines, and the amount, amplitude, frequency and angle have handles on the page to drag (#1122).
+- Tips: every control of the bars, dockers, dialogs and Options pages shows a title and a description on hover (#1106).
+
 - Variable fonts: the text follows the axis sliders (Text docker, and the button beside the font size) while they are dragged, so the weight, width or any other axis can be judged on the page. The text changed only when the slider was released. Releasing still keeps the value as one undo step (#870).
 ## 0.19.10 (2026-10-28)
 

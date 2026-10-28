@@ -800,6 +800,13 @@ pub const IMPORT_EXTENSIONS: &[&str] = &[
     "gif", "webp", "tif", "tiff",
 ];
 
+/// The memory the undo steps of one drawing may hold before the oldest
+/// go (the newest always stays), next to Undo levels' step count.
+#[cfg(not(target_arch = "wasm32"))]
+pub const UNDO_MEMORY: usize = 1 << 30;
+#[cfg(target_arch = "wasm32")]
+pub const UNDO_MEMORY: usize = 256 << 20;
+
 /// Auto-backups being written on a thread: the folder, and each file's
 /// name with how its write went.
 struct AutoBackupJob {
@@ -963,8 +970,10 @@ pub struct App {
     /// The Contour tool's and panel's values and the tool's drag.
     pub contour: crate::contour_tool::ContourSettings,
     pub contour_drag: Option<crate::contour_tool::ContourDrag>,
-    /// The Blend tool's slider being dragged on the canvas.
+    /// The Blend tool's control being dragged on the canvas, and the
+    /// start or end square's drag of its object.
     pub blend_handle_drag: Option<crate::blend_tool::BlendHandle>,
+    pub blend_end_drag: Option<crate::blend_tool::EndDrag>,
     pub spiral_revolutions: u32,
     pub spiral_logarithmic: bool,
     pub common_shape: crate::tools2::CommonShape,
@@ -2173,6 +2182,7 @@ impl App {
             contour: Default::default(),
             contour_drag: None,
             blend_handle_drag: None,
+            blend_end_drag: None,
             spiral_revolutions: 4,
             spiral_logarithmic: false,
             common_shape: crate::tools2::CommonShape::RightArrow,
@@ -2613,9 +2623,12 @@ impl App {
         }
         self.raster.borrow_mut().invalidate();
         let levels = self.settings.undo_levels.max(1);
+        let bytes = UNDO_MEMORY;
         self.engine.set_max_history(levels);
+        self.engine.set_max_history_bytes(bytes);
         for slot in &mut self.docs {
             slot.engine.set_max_history(levels);
+            slot.engine.set_max_history_bytes(bytes);
         }
     }
 
@@ -3734,10 +3747,10 @@ impl App {
             return;
         }
         // One step: the copies and their move (#471).
-        let depth = self.engine.history_labels().0.len();
+        let mark = self.engine.begin_group();
         self.duplicate_in_place();
         self.transform_selection(t);
-        self.engine.squash_since(depth, "Duplicate");
+        self.engine.end_group(mark, "Duplicate");
         self.note_repeatable(Repeatable::Copy(t));
     }
 

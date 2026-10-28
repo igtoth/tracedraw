@@ -4097,7 +4097,7 @@ checksum = "06bdbd8cfc056b8d2e2e85f29b56a3bdbecb527cef81eb39e3e7b98af4652770"
 
 [[package]]
 name = "tracedraw"
-version = "0.19.10"
+version = "0.19.11"
 dependencies = [
  "arboard",
  "base64 0.22.1",
@@ -4144,7 +4144,7 @@ dependencies = [
 
 [[package]]
 name = "tracedraw-cdr"
-version = "0.19.10"
+version = "0.19.11"
 dependencies = [
  "encoding_rs",
  "flate2",
@@ -4160,7 +4160,7 @@ dependencies = [
 
 [[package]]
 name = "tracedraw-cli"
-version = "0.19.10"
+version = "0.19.11"
 dependencies = [
  "env_logger",
  "flate2",
@@ -4176,7 +4176,7 @@ dependencies = [
 
 [[package]]
 name = "tracedraw-core"
-version = "0.19.10"
+version = "0.19.11"
 dependencies = [
  "base64 0.22.1",
  "i_overlay",
@@ -4188,7 +4188,7 @@ dependencies = [
 
 [[package]]
 name = "tracedraw-io"
-version = "0.19.10"
+version = "0.19.11"
 dependencies = [
  "aes",
  "base64 0.22.1",
@@ -4214,7 +4214,7 @@ dependencies = [
 
 [[package]]
 name = "tracedraw-render"
-version = "0.19.10"
+version = "0.19.11"
 dependencies = [
  "log",
  "tiny-skia",
@@ -4223,7 +4223,7 @@ dependencies = [
 
 [[package]]
 name = "tracedraw-text"
-version = "0.19.10"
+version = "0.19.11"
 dependencies = [
  "encoding_rs",
  "fontdb",
@@ -4239,14 +4239,14 @@ dependencies = [
 
 [[package]]
 name = "tracedraw-vba"
-version = "0.19.10"
+version = "0.19.11"
 dependencies = [
  "boa_engine",
 ]
 
 [[package]]
 name = "tracedraw-vba-project"
-version = "0.19.10"
+version = "0.19.11"
 dependencies = [
  "cfb",
  "chardetng",

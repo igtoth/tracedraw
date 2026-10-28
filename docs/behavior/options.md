@@ -112,8 +112,10 @@ resolution, quality, transparency, WebP lossless, all pages, PDF choices
 and preset; not Selected only, which starts off again, nor the file's
 title and tags), which then take the place of the ones set here until
 the program is closed. Remember the
-settings of the last export (on in new preferences; preferences saved
-before keep their own value): exporting also keeps the format,
+settings of the last export (on; preferences saved by versions before
+0.19.4 stored it off, so they are brought up to date once when first
+read by a newer version, #691, `settings::tests::older_preferences_get_the_last_export_remembered_once`;
+switched off afterwards it stays off): exporting also keeps the format,
 resolution, quality, transparency, WebP lossless and PDF choices here
 for the next session (#617). Export for Web and Export for Office keep
 their own presets and never change these

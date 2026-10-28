@@ -59,20 +59,24 @@ Office presets start with their own (see `options.md`).
 
 ## Presets
 
-Above the format: Preset, a list of the presets saved for the chosen
-format, by name, "(none)" first; "+" to save the dialog's choices under
-a name (typed in a field that opens below, OK or Enter; the same name
-replaces that preset), a pencil to rename the chosen preset (a name
-another preset of the format has is refused) and "−" to delete it.
+Above the format: Preset, a list of every saved preset, each with the
+format it was saved for in brackets ("Web PNG (PNG)"), "(none)" first,
+whole from the moment the dialog opens whatever format it opens at; "+"
+to save the dialog's choices under a name (typed in a field that opens
+below, OK or Enter; the same name replaces that preset of the format), a
+pencil to rename the chosen preset (a name another preset of the format
+has is refused) and "−" to delete it.
 
-Each format has its own presets (#612): a preset chosen before the
-format changed is no longer chosen, and saving, renaming and deleting
-act on the presets of the chosen format only, so a preset of another
-format with the same name is kept. A script filter lists none and "+"
-is greyed while one is chosen. A preset of a format this version does
-not know shows with every format; its name must be free in all of them
+Choosing a preset of another format switches the dialog to that format.
+Changing the format leaves the chosen preset unchosen ("(none)") while
+the list stays whole (#612, the reporter's second request: the list
+used to shrink to the chosen format's presets). Saving, renaming and
+deleting act on the presets of the chosen format only, so a preset of
+another format with the same name is kept. With a script filter chosen
+none is chosen and "+" is greyed. A preset of a format this version does
+not know shows by its name alone; its name must be free in every format
 (`prefs::tests::export_presets_save_apply_rename_and_delete`,
-`pick_drag_tests::the_export_dialog_lists_only_the_presets_of_its_format`).
+`pick_drag_tests::the_export_dialog_lists_every_preset_and_a_format_change_unchooses`).
 
 Choosing a preset
 puts back its format, resolution, quality, transparent background,
@@ -96,7 +100,8 @@ File > Export starts with the choices of the last export of the session
 (Selected only off again, the file's title and tags empty), else those
 of Options > Global > File Formats, which keep the last
 export's choices for the next session while Remember the settings of the
-last export is on (on in new preferences; `options.md`, #617).
+last export is on (on; preferences from before 0.19.4 are brought up to
+date once, #691; `options.md`, #617).
 
 Each format also keeps how it was exported last: choosing a format in the
 dialog brings back its resolution, quality, transparent background,
@@ -113,7 +118,7 @@ dialog's choices, and Export for Web and Office keep their own (#617,
 - `pick_drag_tests::the_export_dialog_starts_with_the_last_exports_choices`
 - `export::tests::sizes_read_in_kilobytes_and_megabytes`
 - `ui::dialogs::tests::a_pixel_size_sets_the_resolution_that_gives_it`
-- `pick_drag_tests::the_export_dialog_lists_only_the_presets_of_its_format`
+- `pick_drag_tests::the_export_dialog_lists_every_preset_and_a_format_change_unchooses`
 - `export::tests::bitmap_exports_record_their_resolution_and_scale`
 - `export::tests::the_export_size_is_typed_in_pixels_or_lengths`
 - `prefs::tests::each_export_format_comes_back_as_it_was_last_exported`

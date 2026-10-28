@@ -2868,10 +2868,13 @@ impl<'a> Ctx<'a> {
     }
 
     /// The step count of a blend's linked group (`LIST lnkg` whose own
-    /// `lgob` holds a `loda` of object type 7): the first u32 of its
-    /// argument of type 3000. `None` for other linked groups (a contour's
-    /// is of type 15). Read from two files saved by versions 9 and 13 with
-    /// the default 20 steps (see CLEANROOM.md).
+    /// `lgob` holds a `loda` of object type 7): the first u16 of its
+    /// argument of type 3000 (the u16 after it is 0 in versions 9 and 13
+    /// and holds another value in version 25). `None` for other linked
+    /// groups (a contour's is of type 15, and a type 7 record with a style
+    /// string is an object of its own). Read from two files saved by
+    /// versions 9 and 13 with the default 20 steps and the version 25 file
+    /// of #980 (see CLEANROOM.md).
     ///
     /// A value outside 1..=999 is no step count the program can save: the
     /// field holds something else in this file (another version's layout),
@@ -2886,8 +2889,17 @@ impl<'a> Ctx<'a> {
         if l.kind != 7 {
             return None;
         }
+        // A record with a style string of its own, as the drawing's
+        // objects have, is an object the file counts, not the record of a
+        // blend between its neighbours: drawn as one, it floods the
+        // picture (a version 25 file, #980).
+        if l.args.iter().any(|a| a.ty == ARG_STYLE_STRING) {
+            return None;
+        }
         let arg = l.args.iter().find(|a| a.ty == 3000)?;
-        let raw = self.reader_at(d, arg.off).uint();
+        // The count is the low 16 bits: versions 9 and 13 leave the high
+        // ones 0, version 25 keeps another value there (#980).
+        let raw = self.reader_at(d, arg.off).u16().map(u32::from);
         Some(match raw {
             Some(n @ 1..=tracedraw_core::live::MAX_BLEND_STEPS) => n,
             other => {
@@ -7305,6 +7317,16 @@ mod tests {
     /// object type 7 with the given first u32 of its 3000 argument each:
     /// the step count of each live blend read, and the report.
     fn read_blends(v: u16, counts: &[u32]) -> (Vec<u32>, ParseReport) {
+        read_blends_with(v, counts, &[])
+    }
+
+    /// [`read_blends`] with `extra` arguments added to every blend
+    /// record's `loda`.
+    fn read_blends_with(
+        v: u16,
+        counts: &[u32],
+        extra: &[(u32, Vec<u8>)],
+    ) -> (Vec<u32>, ParseReport) {
         let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
         let ellipse = |x: i32| {
             let mut c = i32s(&[x, -100_000, x + 200_000, 100_000]);
@@ -7321,13 +7343,9 @@ mod tests {
         let group = |steps: u32| {
             let mut a = u32s(&[steps, 254_000]);
             a.extend_from_slice(&[0; 80]);
-            list(
-                b"lnkg",
-                &list(
-                    b"lgob",
-                    &chunk(b"loda", &loda(7, &[(12020, u32s(&[2, 0, 0])), (3000, a)])),
-                ),
-            )
+            let mut args = vec![(12020, u32s(&[2, 0, 0])), (3000, a)];
+            args.extend_from_slice(extra);
+            list(b"lnkg", &list(b"lgob", &chunk(b"loda", &loda(7, &args))))
         };
         let mut objects = Vec::new();
         for &n in counts {
@@ -7356,18 +7374,18 @@ mod tests {
         (steps, rep)
     }
 
-    /// A step count field holding no count a blend can have (0, or the
-    /// 254000 that follows it in the sample files, as another layout
-    /// would put there) gives the default 20 steps and a warning naming
-    /// the value; it was kept to 999, so such files drew every blend with
-    /// 999 steps (#980). Counts of 1 to 999 are kept as read.
+    /// A step count field holding no count a blend can have (0, or a
+    /// value past 999, as another layout would put there) gives the
+    /// default 20 steps and a warning naming the value; it was kept to
+    /// 999, so such files drew every blend with 999 steps (#980). Counts
+    /// of 1 to 999 are kept as read.
     #[test]
     fn a_blend_step_count_out_of_range_gives_the_default() {
         for v in [9u16, 13, 15] {
-            let (steps, rep) = read_blends(v, &[254_000, 0, u32::MAX, 1, 999, 35]);
+            let (steps, rep) = read_blends(v, &[60_000, 0, 65_535, 1, 999, 35]);
             assert_eq!(steps, [20, 20, 20, 1, 999, 35], "version {v}");
             assert!(
-                rep.warnings.iter().any(|w| w.contains("254000")),
+                rep.warnings.iter().any(|w| w.contains("60000")),
                 "{:?}",
                 rep.warnings
             );
@@ -7378,6 +7396,32 @@ mod tests {
                 rep.warnings
             );
         }
+    }
+
+    /// Version 25 keeps the step count in the first u16 of the 3000
+    /// argument and another value in the u16 after it (the file of #980:
+    /// 0x3a05_0004 for 4 steps, 0x28ae_0096 for 150). Read as one u32 the
+    /// count fell out of range and every blend got 20 steps.
+    #[test]
+    fn a_version_25_blend_keeps_its_count_in_the_low_half() {
+        let (steps, rep) = read_blends(25, &[0x3a05_0004, 0x28ae_0096, 0x40fa_000f, 20]);
+        assert_eq!(steps, [4, 150, 15, 20]);
+        assert!(rep.warnings.is_empty(), "{:?}", rep.warnings);
+    }
+
+    /// A type 7 record with a style string of its own, as the drawing's
+    /// objects carry (the version 25 file of #980 counts it among its
+    /// objects), is no blend between its neighbours: drawn as one with its
+    /// 150 steps, it flooded the picture the file's program shows as a
+    /// grid. Its neighbours stay plain objects.
+    #[test]
+    fn a_counted_linked_group_record_makes_no_blend() {
+        let style = (ARG_STYLE_STRING, [u32s(&[1, 2]), b"{}".to_vec()].concat());
+        let (steps, rep) = read_blends_with(25, &[150], &[style]);
+        assert!(steps.is_empty(), "{steps:?}");
+        assert!(rep.warnings.is_empty(), "{:?}", rep.warnings);
+        let (steps, _) = read_blends_with(25, &[150], &[]);
+        assert_eq!(steps, [150]);
     }
 
     /// The blends of one file take at most `FILE_BLEND_STEPS` steps
