@@ -372,8 +372,7 @@ mod tests {
         app.select(vec![start, end]);
         app.blend_selection(20, 0.0, 0.0, 0.0);
         app.refresh_blends();
-        let drawn: Vec<Rect> = steps_of(&app, start).iter().map(|s| s.bounds()).collect();
-        assert_eq!(drawn.len(), 20);
+        assert_eq!(steps_of(&app, start).len(), 20);
         let bytes = tracedraw_cdr::write::document_to_cdr(app.doc());
         let (doc, _) = tracedraw_cdr::open_bytes(&bytes, "t").expect("read back");
         let mut back = App::headless();
@@ -381,10 +380,20 @@ mod tests {
         let shapes = back.doc().pages[0].layers[0].shapes.clone();
         assert_eq!(shapes.len(), 2, "{shapes:?}");
         let (a, b) = (shapes[0].id, shapes[1].id);
+        // The steps run from the start text to the end text, each a bit
+        // further right than the one before. (Their exact places are
+        // checked in the cdr crate: here other tests of the run carry
+        // fonts in, which changes what "Sans" draws with meanwhile.)
         let again: Vec<Rect> = steps_of(&back, a).iter().map(|s| s.bounds()).collect();
         assert_eq!(again.len(), 20);
-        for (x, y) in again.iter().zip(&drawn) {
-            assert!((x.center() - y.center()).hypot() < 0.05, "{x:?} {y:?}");
+        let first = back.doc().find_shape(a).expect("start").bounds();
+        let last = back.doc().find_shape(b).expect("end").bounds();
+        assert!(
+            first.x0 < again[0].x0 && again[19].x1 < last.x1,
+            "{first:?} {again:?} {last:?}"
+        );
+        for w in again.windows(2) {
+            assert!(w[0].x0 < w[1].x0, "{again:?}");
         }
         back.select(vec![b]);
         assert_eq!(back.selected_blends().len(), 1);
