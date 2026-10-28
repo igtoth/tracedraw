@@ -29,7 +29,9 @@ fn format_combo(ui: &mut Ui, salt: impl std::hash::Hash + std::fmt::Debug, forma
             for (i, (name, _)) in EXPORT_FORMATS.iter().enumerate() {
                 ui.selectable_value(format, i, *name);
             }
-        });
+        })
+        .response
+        .rich_tip(crate::ui::tips::keyed("export_docker.format"));
 }
 
 pub fn export_docker(app: &mut App, ui: &mut Ui) {
@@ -67,7 +69,8 @@ pub fn export_docker(app: &mut App, ui: &mut Ui) {
                     .range(crate::ui::dialogs::MIN_EXPORT_DPI..=2400.0)
                     .suffix(" dpi")
                     .width(64.0),
-            );
+            )
+            .rich_tip(crate::ui::tips::keyed("export_docker.dpi"));
         }
     });
     ui.separator();
@@ -95,8 +98,10 @@ pub fn export_docker(app: &mut App, ui: &mut Ui) {
             for (i, asset) in app.export_assets.assets.iter_mut().enumerate() {
                 ui.push_id(i, |ui| {
                     ui.horizontal(|ui| {
-                        ui.checkbox(&mut asset.checked, "");
-                        ui.add(egui::TextEdit::singleline(&mut asset.name).desired_width(110.0));
+                        ui.checkbox(&mut asset.checked, "")
+                            .rich_tip(crate::ui::tips::keyed("export_docker.checked"));
+                        ui.add(egui::TextEdit::singleline(&mut asset.name).desired_width(110.0))
+                            .rich_tip(crate::ui::tips::keyed("export_docker.name"));
                         if ui
                             .small_button("\u{00D7}")
                             .rich_tip(tr("export_docker.remove"))
@@ -114,7 +119,8 @@ pub fn export_docker(app: &mut App, ui: &mut Ui) {
                                     .range(crate::ui::dialogs::MIN_EXPORT_DPI..=2400.0)
                                     .suffix(" dpi")
                                     .width(64.0),
-                            );
+                            )
+                            .rich_tip(crate::ui::tips::keyed("export_docker.dpi"));
                         }
                         let what = match &asset.source {
                             AssetSource::Page(p) => trf(
@@ -176,7 +182,11 @@ pub fn export_docker(app: &mut App, ui: &mut Ui) {
                 .unwrap_or_else(|| tr("export_docker.no_folder"));
             ui.label(egui::RichText::new(folder).size(11.0))
                 .rich_tip(tr("export_docker.folder"));
-            if ui.button(tr("export_docker.browse")).clicked() {
+            if ui
+                .button(tr("export_docker.browse"))
+                .rich_tip(crate::ui::tips::keyed("export_docker.browse"))
+                .clicked()
+            {
                 if let Some(f) = crate::files::pick_folder() {
                     app.export_assets.folder = Some(f);
                 }
@@ -194,6 +204,14 @@ pub fn export_docker(app: &mut App, ui: &mut Ui) {
             count > 0,
             egui::Button::new(trf("export_docker.export", &[("n", &count.to_string())])),
         )
+        .rich_tip(crate::ui::tips::pair(
+            "export_docker.export_tip",
+            "export_docker.export_tip_desc",
+        ))
+        .rich_disabled_tip(crate::ui::tips::pair(
+            "export_docker.export_tip",
+            "export_docker.export_tip_desc",
+        ))
         .clicked()
     {
         app.export_assets();

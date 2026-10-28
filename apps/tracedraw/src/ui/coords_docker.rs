@@ -206,6 +206,7 @@ fn length_row(ui: &mut Ui, app_units: crate::app::Units, key: &str, mm: &mut f64
                 .suffix(format!(" {}", u.short()))
                 .unit_mm(u.mm()),
         )
+        .rich_tip(crate::ui::tips::pair(key, &format!("{key}_desc")))
         .changed()
     {
         *mm = u.world_to_mm(v);
@@ -230,6 +231,11 @@ fn point_fields(ui: &mut Ui, u: crate::app::Units, o: Point, p: &mut Point) -> b
                     .suffix(format!(" {}", u.short()))
                     .unit_mm(u.mm()),
             )
+            .rich_tip(if axis == 0 {
+                crate::ui::tips::pair("toolbar.object_x", "coords.point_x_desc")
+            } else {
+                crate::ui::tips::pair("toolbar.object_y", "coords.point_y_desc")
+            })
             .changed()
         {
             let mm = u.world_to_mm(v);
@@ -252,6 +258,7 @@ fn angle_field(ui: &mut Ui, deg: &mut f64) -> bool {
             .max_decimals(1)
             .suffix(" °"),
     )
+    .rich_tip(crate::ui::tips::keyed("coords.angle_field"))
     .changed()
 }
 
@@ -375,7 +382,8 @@ pub fn coordinates(app: &mut App, ui: &mut Ui) {
                 }
             });
             if !k.is_uniform() {
-                ui.checkbox(&mut c.proportional, tr("coords.proportional"));
+                ui.checkbox(&mut c.proportional, tr("coords.proportional"))
+                    .rich_tip(crate::ui::tips::keyed("coords.proportional"));
             }
             section(ui, "coords.angle");
             ui.horizontal(|ui| {
@@ -424,7 +432,8 @@ pub fn coordinates(app: &mut App, ui: &mut Ui) {
                 ui.add_sized(
                     [FIELD_W, 20.0],
                     NumField::new(&mut c.points).range(min..=500),
-                );
+                )
+                .rich_tip(crate::ui::tips::keyed("toolbar.points_tip"));
                 ui.end_row();
                 match k {
                     CoordKind::Star => {
@@ -432,6 +441,7 @@ pub fn coordinates(app: &mut App, ui: &mut Ui) {
                         let mut pct = (c.sharpness * 100.0).round();
                         if ui
                             .add_sized([FIELD_W, 20.0], NumField::new(&mut pct).range(1.0..=99.0))
+                            .rich_tip(crate::ui::tips::keyed("toolbar.sharpness_tip"))
                             .changed()
                         {
                             c.sharpness = (pct / 100.0).clamp(0.01, 0.99);
@@ -444,7 +454,8 @@ pub fn coordinates(app: &mut App, ui: &mut Ui) {
                         ui.add_sized(
                             [FIELD_W, 20.0],
                             NumField::new(&mut c.complex_sharpness).range(1..=max),
-                        );
+                        )
+                        .rich_tip(crate::ui::tips::keyed("toolbar.complex_sharpness_tip"));
                         c.complex_sharpness = c.complex_sharpness.clamp(1, max);
                         ui.end_row();
                     }
@@ -493,7 +504,8 @@ pub fn coordinates(app: &mut App, ui: &mut Ui) {
                 }
             });
             if !k.is_uniform() {
-                ui.checkbox(&mut c.proportional, tr("coords.proportional"));
+                ui.checkbox(&mut c.proportional, tr("coords.proportional"))
+                    .rich_tip(crate::ui::tips::keyed("coords.proportional"));
             }
         }
         CoordKind::Line => {
@@ -564,6 +576,8 @@ pub fn coordinates(app: &mut App, ui: &mut Ui) {
     ui.horizontal(|ui| {
         if ui
             .add_enabled(can, egui::Button::new(tr("coords.create")))
+            .rich_tip(crate::ui::tips::keyed("coords.create"))
+            .rich_disabled_tip(crate::ui::tips::keyed("coords.create"))
             .clicked()
         {
             app.create_from_coords();
@@ -573,6 +587,8 @@ pub fn coordinates(app: &mut App, ui: &mut Ui) {
                 can && app.coords_target().is_some(),
                 egui::Button::new(tr("coords.replace")),
             )
+            .rich_tip(crate::ui::tips::keyed("coords.replace"))
+            .rich_disabled_tip(crate::ui::tips::keyed("coords.replace"))
             .clicked()
         {
             app.replace_from_coords();
@@ -596,6 +612,11 @@ fn point_fields_grid(ui: &mut Ui, u: crate::app::Units, o: Point, p: &mut Point)
                     .suffix(format!(" {}", u.short()))
                     .unit_mm(u.mm()),
             )
+            .rich_tip(if axis == 0 {
+                crate::ui::tips::pair("toolbar.object_x", "coords.point_x_desc")
+            } else {
+                crate::ui::tips::pair("toolbar.object_y", "coords.point_y_desc")
+            })
             .changed()
         {
             let mm = u.world_to_mm(v);

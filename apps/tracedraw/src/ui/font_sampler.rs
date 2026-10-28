@@ -80,7 +80,8 @@ pub fn font_sampler(app: &mut App, ui: &mut Ui) {
             .hint_text(tr("font_sampler.default_text"))
             .desired_rows(2)
             .desired_width(f32::INFINITY),
-    );
+    )
+    .rich_tip(crate::ui::tips::keyed("font_sampler.text"));
     ui.horizontal(|ui| {
         ui.label(
             egui::RichText::new(tr("font_sampler.size"))
@@ -89,6 +90,10 @@ pub fn font_sampler(app: &mut App, ui: &mut Ui) {
         );
         ui.add(crate::ui::Rail(
             egui::Slider::new(&mut app.font_sampler.size, 10.0..=96.0).suffix(" px"),
+        ))
+        .rich_tip(crate::ui::tips::pair(
+            "font_sampler.size",
+            "font_sampler.size_desc",
         ));
     });
     // Add a font: type to narrow the list, click to add.
@@ -102,7 +107,11 @@ pub fn font_sampler(app: &mut App, ui: &mut Ui) {
             egui::TextEdit::singleline(&mut app.font_sampler.filter)
                 .hint_text(tr("font_sampler.find"))
                 .desired_width(150.0),
-        );
+        )
+        .rich_tip(crate::ui::tips::pair(
+            "font_sampler.add",
+            "font_sampler.add_desc",
+        ));
     });
     let q = app.font_sampler.filter.trim().to_lowercase();
     if !q.is_empty() {
@@ -114,7 +123,11 @@ pub fn font_sampler(app: &mut App, ui: &mut Ui) {
             .cloned()
             .collect();
         for f in matches {
-            if ui.selectable_label(false, format!("+ {f}")).clicked() {
+            if ui
+                .selectable_label(false, format!("+ {f}"))
+                .rich_tip_with(|| format!("{f}\n{}", tr("font_sampler.add_one_desc")))
+                .clicked()
+            {
                 app.font_sampler.add(&f);
                 app.font_sampler.filter.clear();
             }

@@ -290,11 +290,12 @@ pub fn audit(dockers: bool, dialogs: bool) -> Vec<Missing> {
 }
 
 /// Every control of the bars, tabs, rulers, palette and status bar shows
-/// a tip, for every tool with nothing, one and every object selected.
+/// a tip, for every tool with nothing, one and every object selected, and
+/// every control in every docker tab.
 #[test]
-fn every_bar_control_has_a_tip() {
+fn every_bar_and_docker_control_has_a_tip() {
     crate::i18n::set_language("en");
-    let missing = audit(false, false);
+    let missing = audit(true, false);
     assert!(missing.is_empty(), "controls without a tip: {missing:#?}");
 }
 

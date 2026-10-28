@@ -1284,6 +1284,7 @@ fn section_header(app: &mut App, ui: &mut Ui, id: &str, title: &str) -> bool {
         crate::theme::bold(12.5),
         Tokens::text(),
     );
+    let resp = resp.rich_tip_with(|| format!("{title}\n{}", tr("docker.section_desc")));
     if resp.clicked() {
         toggle_section(app, id);
         return !open;
@@ -2046,6 +2047,11 @@ pub(crate) fn arrow_combo(
     } else {
         format!("{label}: {}", a.name())
     };
+    let tip = if id.to_lowercase().ends_with("end") {
+        "toolbar.end_arrow"
+    } else {
+        "toolbar.start_arrow"
+    };
     egui::ComboBox::from_id_salt(id)
         .selected_text(shown)
         .show_ui(ui, |ui| {
@@ -2066,7 +2072,9 @@ pub(crate) fn arrow_combo(
                     changed = true;
                 }
             }
-        });
+        })
+        .response
+        .rich_tip(crate::ui::tips::keyed(tip));
     changed
 }
 
@@ -2123,6 +2131,7 @@ fn outline_editor_mixed(
     let mut has = stroke.is_some();
     if ui
         .add(egui::Checkbox::new(&mut has, tr("docker.outline")).indeterminate(mix.presence))
+        .rich_tip(crate::ui::tips::keyed("docker.outline"))
         .changed()
     {
         *stroke = if has {
@@ -2171,6 +2180,7 @@ fn outline_editor_mixed(
         let mut hair = s.width <= Stroke::HAIRLINE + 1e-9;
         if ui
             .add(egui::Checkbox::new(&mut hair, tr("docker.hairline")).indeterminate(width_mixed))
+            .rich_tip(crate::ui::tips::keyed("docker.hairline"))
             .changed()
         {
             s.width = if hair { Stroke::HAIRLINE } else { 0.5 };
@@ -2181,11 +2191,15 @@ fn outline_editor_mixed(
             // The slider applies when let go; the box takes any width
             // typed (Enter or leaving it applies).
             ui.horizontal_wrapped(|ui| {
-                let r = ui.add(crate::ui::Rail(
-                    egui::Slider::new(&mut s.width, 0.1..=25.0)
-                        .logarithmic(true)
-                        .show_value(false),
-                ));
+                let width_tip =
+                    crate::ui::tips::pair("toolbar.outline_width", "docker.outline_width_desc");
+                let r = ui
+                    .add(crate::ui::Rail(
+                        egui::Slider::new(&mut s.width, 0.1..=25.0)
+                            .logarithmic(true)
+                            .show_value(false),
+                    ))
+                    .rich_tip(width_tip.clone());
                 let mut w = r.drag_stopped() || (r.changed() && !r.dragged());
                 // The width in the outline unit; the model keeps mm.
                 let u = lib.units;
@@ -2199,6 +2213,7 @@ fn outline_editor_mixed(
                             .width(56.0)
                             .mixed(width_mixed),
                     )
+                    .rich_tip(width_tip)
                     .changed()
                 {
                     s.width = u.to_mm(v).clamp(0.001, 1000.0);
@@ -2223,7 +2238,14 @@ fn outline_editor_mixed(
                 (tracedraw_core::LineCap::Round, "docker.cap_round"),
                 (tracedraw_core::LineCap::Square, "docker.cap_square"),
             ] {
-                if ui.selectable_label(!mixed && s.cap == c, tr(n)).clicked() {
+                if ui
+                    .selectable_label(!mixed && s.cap == c, tr(n))
+                    .rich_tip(crate::ui::tips::pair(
+                        &format!("{n}_tip"),
+                        &format!("{n}_desc"),
+                    ))
+                    .clicked()
+                {
                     s.cap = c;
                     touched.push(StrokeField::Cap);
                     changed = true;
@@ -2238,7 +2260,14 @@ fn outline_editor_mixed(
                 (tracedraw_core::LineJoin::Round, "docker.join_round"),
                 (tracedraw_core::LineJoin::Bevel, "docker.join_bevel"),
             ] {
-                if ui.selectable_label(!mixed && s.join == j, tr(n)).clicked() {
+                if ui
+                    .selectable_label(!mixed && s.join == j, tr(n))
+                    .rich_tip(crate::ui::tips::pair(
+                        &format!("{n}_tip"),
+                        &format!("{n}_desc"),
+                    ))
+                    .clicked()
+                {
                     s.join = j;
                     touched.push(StrokeField::Join);
                     changed = true;
@@ -2270,7 +2299,14 @@ fn outline_editor_mixed(
                 (vec![1.0, 1.0], "docker.dash_dotted"),
                 (vec![6.0, 2.0, 1.0, 2.0], "docker.dash_dash_dot"),
             ] {
-                if ui.selectable_label(!mixed && s.dash == d, tr(n)).clicked() {
+                if ui
+                    .selectable_label(!mixed && s.dash == d, tr(n))
+                    .rich_tip(crate::ui::tips::pair(
+                        &format!("{n}_tip"),
+                        &format!("{n}_desc"),
+                    ))
+                    .clicked()
+                {
                     s.dash = d;
                     touched.push(StrokeField::Dash);
                     changed = true;
@@ -2319,7 +2355,11 @@ fn outline_editor_mixed(
                 touched.push(StrokeField::AlignDashes);
                 changed = true;
             }
-            if ui.button(tr("docker.edit_line_style")).clicked() {
+            if ui
+                .button(tr("docker.edit_line_style"))
+                .rich_tip(crate::ui::tips::keyed("docker.edit_line_style"))
+                .clicked()
+            {
                 crate::ui::line_style::request(ui);
             }
         });
@@ -2340,7 +2380,14 @@ fn outline_editor_mixed(
                 ),
             ] {
                 let shown = !mix.has(StrokeField::Position) && s.position == pos;
-                if ui.selectable_label(shown, tr(n)).clicked() {
+                if ui
+                    .selectable_label(shown, tr(n))
+                    .rich_tip(crate::ui::tips::pair(
+                        &format!("{n}_tip"),
+                        &format!("{n}_desc"),
+                    ))
+                    .clicked()
+                {
                     s.position = pos;
                     touched.push(StrokeField::Position);
                     changed = true;
@@ -2358,6 +2405,7 @@ fn outline_editor_mixed(
             };
             if ui
                 .add(egui::Checkbox::new(v, tr(key)).indeterminate(mix.has(field)))
+                .rich_tip(crate::ui::tips::keyed(key))
                 .changed()
             {
                 touched.push(field);
@@ -2378,7 +2426,7 @@ fn outline_editor_mixed(
             ]
             .iter()
             .any(|f| mix.has(*f));
-        egui::CollapsingHeader::new(tr("docker.outline_advanced"))
+        let advanced = egui::CollapsingHeader::new(tr("docker.outline_advanced"))
             .id_salt("docker_outline_advanced")
             .default_open(advanced_set)
             .show(ui, |ui| {
@@ -2427,6 +2475,14 @@ fn outline_editor_mixed(
                         .add(crate::ui::Rail(
                             egui::Slider::new(v, range).text(text).suffix(suffix),
                         ))
+                        .rich_tip(if field == StrokeField::Stretch {
+                            crate::ui::tips::pair(
+                                "docker.nib_stretch_tip",
+                                "docker.nib_stretch_desc",
+                            )
+                        } else {
+                            crate::ui::tips::pair("docker.nib_angle", "docker.nib_angle_desc")
+                        })
                         .drag_stopped()
                     {
                         touched.push(field);
@@ -2434,6 +2490,10 @@ fn outline_editor_mixed(
                     }
                 }
             });
+        advanced.header_response.rich_tip(crate::ui::tips::pair(
+            "docker.outline_advanced",
+            "docker.outline_advanced_desc",
+        ));
     }
     changed
 }
@@ -2530,7 +2590,17 @@ fn undo_docker(app: &mut App, ui: &mut Ui) {
     let mut goto: Option<usize> = None;
     for (i, l) in undo.iter().enumerate() {
         let is_last = i + 1 == n;
-        if ui.selectable_label(is_last, l.to_string()).clicked() && !is_last {
+        let desc = if is_last {
+            "docker.undo_row_last_desc"
+        } else {
+            "docker.undo_row_desc"
+        };
+        if ui
+            .selectable_label(is_last, l.to_string())
+            .rich_tip_with(|| format!("{l}\n{}", tr(desc)))
+            .clicked()
+            && !is_last
+        {
             goto = Some(n - 1 - i);
         }
     }
@@ -2540,21 +2610,25 @@ fn undo_docker(app: &mut App, ui: &mut Ui) {
         }
     }
     for l in redo.iter().rev() {
-        let _ = ui.selectable_label(
-            false,
-            egui::RichText::new(l.to_string()).color(Tokens::text_dim()),
-        );
+        let _ = ui
+            .selectable_label(
+                false,
+                egui::RichText::new(l.to_string()).color(Tokens::text_dim()),
+            )
+            .rich_tip_with(|| format!("{l}\n{}", tr("docker.redo_row_desc")));
     }
     ui.add_space(6.0);
     ui.horizontal(|ui| {
         if ui
             .add_enabled(n > 0, egui::Button::new(tr("docker.undo")))
+            .rich_tip(crate::ui::tips::keyed("docker.undo"))
             .clicked()
         {
             app.undo();
         }
         if ui
             .add_enabled(!redo.is_empty(), egui::Button::new(tr("docker.redo")))
+            .rich_tip(crate::ui::tips::keyed("docker.redo"))
             .clicked()
         {
             app.redo();
