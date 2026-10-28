@@ -71,3 +71,7 @@ opt-level = 2
 # vendor/README.md. Drop it when moving to egui 0.37 or later.
 [patch.crates-io]
 eframe = { path = "vendor/eframe" }
+# winit 0.30.13 reporting a graphics tablet's pen pressure on X11 and
+# macOS as a touch with a force (#850); see vendor/README.md. Drop it
+# when a winit release carries pen pressure on those platforms.
+winit = { path = "vendor/winit" }

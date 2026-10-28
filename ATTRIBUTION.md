@@ -27,6 +27,7 @@ libwebp (Copyright Google Inc., BSD 3-Clause licence, through the
 | Hyphenation patterns | `crates/text/src/hyphen.rs` | Made for TraceDraw (a small Liang-style set) | MIT OR Apache-2.0 |
 | Interface translations | `apps/tracedraw/lang/*.toml` | Made for TraceDraw | MIT OR Apache-2.0 |
 | eframe 0.36.2 (patched copy of the crate, its OpenGL context fallback backported from 0.37.0, #616) | `vendor/eframe/` | Copyright Emil Ernerfeldt and the egui contributors, from crates.io; the change is listed in `vendor/README.md` | MIT OR Apache-2.0 |
+| winit 0.30.13 (patched copy of the crate, a pen's pressure on X11 and macOS, #850) | `vendor/winit/` | Copyright the winit contributors, from crates.io; the change is listed in `vendor/README.md` | Apache-2.0 |
 | Sample drawing | `sample.tdraw` | Made for TraceDraw | MIT OR Apache-2.0 |
 | Screenshots | `docs/images/` | TraceDraw itself, captured with `scripts/visual/readme_shots.sh` from drawings made for TraceDraw by `apps/tracedraw-cli/examples/showcase.rs`; their text is set in Inter and Lora (SIL Open Font License 1.1), fonts installed on the capture machine and not bundled | MIT OR Apache-2.0 |
 

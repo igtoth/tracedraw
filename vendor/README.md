@@ -60,3 +60,39 @@ change marked `TraceDraw:` in a comment.
   API migration across the app. The fixed-function painter has no
   upstream counterpart: carry it over, or drop it once no supported card
   needs it.
+
+## winit 0.30.13
+
+- Change: a graphics tablet's pen reports its pressure on X11 and macOS
+  (#850). winit 0.30 carries pen pressure on Windows only, as a
+  `WindowEvent::Touch` with a `force`, which egui-winit hands to egui as
+  `Event::Touch { force }` and TraceDraw reads (`apps/tracedraw/src/pen.rs`,
+  `docs/behavior/pen-pressure.md`). The copy does the same on the two
+  other desktops:
+  - X11 (`platform_impl/linux/x11/mod.rs`, `event_processor.rs`,
+    `atoms.rs`): a slave device's valuator labelled `Abs Pressure` is
+    remembered with its range when the device is listed
+    (`Device::pressure_axis`); a motion event carrying that valuator
+    sends, besides the `AxisMotion` it always sent, a
+    `WindowEvent::Touch` of phase `Moved` at the pointer's place with the
+    reading as a share of the axis (`Force::Normalized`), or no force at
+    the axis's minimum (the pen lifted).
+  - macOS (`platform_impl/macos/view.rs`): a mouse move or drag whose
+    `NSEvent` subtype is a tablet point sends the same `Touch` with the
+    event's `pressure` (already 0 to 1).
+  - `src/pen_pressure.rs`: the shared arithmetic, with its tests; it
+    depends on nothing in the crate, and TraceDraw's tests include and
+    run it (`winit_pen_pressure::tests`).
+  - Only `Moved` touches are sent, never `Started` or `Ended`: egui-winit
+    turns those into presses and releases of the primary button, which
+    the pen's real button events already send. A `Moved` touch of an
+    unknown id changes nothing in egui's touch state (no gesture starts
+    from it), and the pointer move it also makes repeats the one just
+    sent. Wayland is unchanged: winit does not bind the tablet protocol
+    (`zwp_tablet_v2`), so a pen reaches the window there only through
+    XWayland (`tracedraw --x11`).
+- The published crate's `examples/` and `tests/` stay as downloaded (the
+  manifest lists them); they build in no gate.
+- Drop the copy and the `[patch.crates-io]` entry when a winit release
+  carries pen pressure on X11 and macOS (rust-windowing/winit#99), and
+  check that egui-winit still maps `Touch` forces the same way.

@@ -13,27 +13,35 @@ a touch with a force in 0..1 (`egui::Event::Touch { force }`), and at the
 same time moves the pointer and presses its primary button. TraceDraw
 reads the force of the touch events of each frame (`pen.rs`,
 `pressure_after`) before the tools see the pointer; a touch that ends, or
-one with no force, clears it. What each platform gives today:
+one with no force, clears it. The published winit does this on Windows
+only; TraceDraw's patched copy (`vendor/winit`, see `vendor/README.md`)
+adds X11 and macOS. What each platform gives:
 
 | Platform | Pointer from the pen | Pressure |
 |---|---|---|
 | Windows (8 and later) | yes (`WM_POINTER` pen events) | yes, 0..1 from the pen's 0..1024 |
-| Linux, X11 (also XWayland) | yes (XInput 2 motion) | no: the windowing layer ignores the pressure axis |
+| Linux, X11 (also XWayland) | yes (XInput 2 motion) | yes: the pen's valuator labelled `Abs Pressure`, as a share of its range (patched copy) |
 | Linux, Wayland | no: the windowing layer does not speak the tablet protocol (`zwp_tablet_v2`), and GNOME's compositor does not turn pen input into pointer input for clients that do not (its issue 2226 is open); KDE's did until Plasma 6.3 and now needs `KWIN_WAYLAND_EMULATE_TABLET=1` | no |
-| macOS | yes | no: the windowing layer forwards only the trackpad's force (`TouchpadPressure`), not the tablet's |
+| macOS | yes | yes: the `pressure` of mouse events of the tablet point subtype (patched copy) |
 | Browser | yes (pointer events) | no: the web layer sends pointer events without their pressure |
+
+On X11 and macOS the patched copy sends the pressure as a touch of phase
+Move only, never Start or End (those would press the button a second
+time through egui-winit), with no force once the reading is at the
+axis's minimum, so a lifted pen leaves no stale pressure.
 
 So on a Wayland desktop (Ubuntu's default) the stylus does nothing until
 the window runs through X11: `tracedraw --x11` unsets `WAYLAND_DISPLAY`
 for the start, so the window opens on XWayland, where the pen moves the
-pointer and clicks (still without pressure). The same happens with
-`env -u WAYLAND_DISPLAY tracedraw`.
+pointer, clicks and reports its pressure (XWayland lists the pen as an
+XInput 2 device with the same `Abs Pressure` valuator). The same happens
+with `env -u WAYLAND_DISPLAY tracedraw`.
 
-Full pressure on Linux and macOS needs the windowing layer to carry it:
-the tablet protocol on Wayland, the pressure valuator on X11 and the
-tablet events of AppKit on macOS. None of these needs a new native
-library of TraceDraw's own; they are changes to winit (or an egui-winit
-that reads them) that TraceDraw picks up by upgrading.
+A pen on Wayland itself needs the tablet protocol in winit; the browser
+needs the pointer events' pressure in eframe's web layer. Neither needs a
+native library of TraceDraw's own. An X11 touchpad driver that exposes
+an `Abs Pressure` valuator for a finger (the old synaptics driver) would
+drive the width too; the option below turns it off.
 
 ## What the pressure does
 

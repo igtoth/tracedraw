@@ -112,6 +112,8 @@ mod package;
 mod painterly_tool;
 mod palette;
 mod pen;
+// The pen pressure helper of the patched winit copy, with its tests
+// (vendor/README.md), so that the gate runs them.
 mod pen_look;
 mod perspective_draw;
 #[cfg(test)]
@@ -179,6 +181,9 @@ mod view;
 mod web;
 #[cfg(any(target_arch = "wasm32", test))]
 mod web_page;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+#[path = "../../../vendor/winit/src/pen_pressure.rs"]
+mod winit_pen_pressure;
 mod workspace_file;
 
 #[cfg(not(target_arch = "wasm32"))]
