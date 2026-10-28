@@ -7,6 +7,7 @@ full, row-by-row status.
 ## Unreleased
 
 - Variable fonts: the text follows the axis sliders (Text docker, and the button beside the font size) while they are dragged, so the weight, width or any other axis can be judged on the page. The text changed only when the slider was released. Releasing still keeps the value as one undo step (#870).
+- Dimensions: a dimension placed between two edges of an object (the sides of a rectangle, say, not its corners) now holds to them like one placed on nodes: moving, resizing, turning or reshaping the object takes the dimension along, each end keeping its place along its edge, and the value follows. Only ends on nodes were held, so a dimension between two sides stayed where it was (#1178).
 
 ## 0.19.12 (2026-10-28)
 

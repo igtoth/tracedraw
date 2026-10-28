@@ -164,6 +164,27 @@ into its measured points and it is drawn again in the same undo step: a
 dimension scaled by 2 reads twice the length, its label stays upright,
 undistorted text of its size, and the group keeps no transform.
 
+## Held to the object it measures
+
+A measured point placed within 3 pixels of an object's node, or else of
+a point along one of its segments (an edge, its midpoint or any point on
+it), holds to it (#838, #1178). Each anchor notes the object, and either
+the node's place among its nodes or the segment's place among the
+outline's segments with the point's share of its length (0 at the
+segment's start, 1 at its end); a node wins over a segment, so a corner
+stays a corner. The anchors are kept in the object data, so they
+survive the file; older files hold node anchors only.
+
+When the object is moved, resized, turned or reshaped (its outline
+replaced, a node dragged), the step is followed up in the same undo
+step: each held point goes to its node or to the same share of its
+segment, the dimension line or arc moves as far as the held points
+moved on average, and the label reads the new value. A point on a
+stretched edge keeps its share of the edge, so a dimension between two
+sides of a rectangle grows with it. A dimension moved by itself lets go
+of the object, as does one whose object, node or segment is gone
+(deleted, or the outline now has fewer segments).
+
 ## Convert to Curves
 
 Convert to Curves (Ctrl+Q) on a dimension makes it a group of plain
@@ -241,6 +262,11 @@ ones made next; the style is kept in the preferences
   `25` bare; a right angle `90.0°`)
 - `dimensions::tests::dimensions_redraw_for_their_style_and_their_size`
 - `dimensions::tests::previews_and_segments`
+- `dimensions::tests::a_dimension_follows_the_object_it_measures` (two
+  corners of a rectangle; moved by itself it lets go)
+- `dimensions::tests::a_dimension_between_two_edges_follows_the_object`
+  (two sides of a rectangle: moved, scaled, given a new size, saved)
+- `dimensions::tests::a_dimension_lets_go_of_a_deleted_object`
 - `dimensions::tests::convert_to_curves_makes_a_dimension_plain_curves`
 - `dimensions::tests::break_apart_frees_the_lines_heads_and_label`
 - `dimensions::tests::a_label_edited_in_place_stays_linked`
