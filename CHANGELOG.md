@@ -7,6 +7,7 @@ full, row-by-row status.
 ## Unreleased
 
 - Saving as .cdr: text in a SemiBold face (or a Light, Medium, Black ...) is saved as its family at that weight ("Titillium Web" at SemiBold), as the file it came from names it. It was saved under the name "Titillium Web SemiBold", which no installed font goes by, so the saved file opened elsewhere in a substituted font (#892, #624).
+- Page sizes: the page size lists offer about 130 sizes in groups (ISO A, ISO B and JIS B, North American, Print shop, Posters and banners, Envelopes, Cards and postcards, Photo, Screen and social media, Web ads), with A4, Letter, A5, A3 and Legal first. Edit This List... at the foot of the property bar's list opens Document Options > Page Size, where a custom size can be saved under a name and deleted again; saved sizes show in every page size list (#1092).
 
 ## 0.19.9 (2026-10-28)
 

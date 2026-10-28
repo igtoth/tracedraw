@@ -29,15 +29,26 @@ Tests: `command::tests::duplicate_page_goes_before_or_after_with_or_without_cont
 ## Page size on the property bar
 
 With nothing selected the property bar starts with the page size list:
-the presets (A4, A3, A5, Letter, Legal, Tabloid, Business card, the web
-sizes and Square 1080), a line, then Custom.... The list shows the
+the favourites (A4, Letter, A5, A3, Legal), the sizes the user saved,
+then every preset under its group heading (ISO A, ISO B and JIS B,
+North American, Print shop, Posters and banners, Envelopes, Cards and
+postcards, Photo, Screen and social media, Web ads), a line, then
+Custom... and Edit This List.... No two presets share a size in either
+orientation. The list shows the
 preset the page matches (either way round) or Custom when it matches
 none, and Custom... is then the entry ticked. A preset keeps the page's
 orientation. Custom... opens the Page Size dialog with the page's width
-and height, to type any size (#650); the page width and height fields
+and height, to type any size (#650, #1092); the page width and height fields
 next to the list also take any size at once. Both resize the current
 page or every page as the All Pages / Current Page buttons say.
-Checked by `ui::propbar::tests::the_page_size_list_offers_a_custom_size`.
+Edit This List... opens Document Options > Page Size, where the
+save button next to Size keeps a custom size under a typed name and the
+delete button forgets the saved size shown; saved sizes are kept in the
+preferences and listed in every page size list (the property bar, the
+Page Size dialog, Document Options and Create a New Document).
+Checked by `ui::propbar::tests::the_page_size_list_offers_a_custom_size`,
+`ui::dialogs::tests::page_size_presets_are_distinct_and_keep_their_names`,
+`ui::dialogs::tests::a_page_size_finds_its_name`.
 
 ## Fit Page to Selection, Fit Page to Drawing
 

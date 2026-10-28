@@ -1415,13 +1415,20 @@ pub fn show(app: &mut App, ctx: &Context) {
                 let u = app.units;
                 unit_value(ui, &tr("dialog.width"), width, u);
                 unit_value(ui, &tr("dialog.height"), height, u);
-                ui.horizontal_wrapped(|ui| {
-                    for (n, s) in paper_presets() {
-                        if ui.button(n).clicked() {
-                            *width = s.width;
-                            *height = s.height;
-                        }
-                    }
+                ui.horizontal(|ui| {
+                    let saved = &app.settings.page_sizes;
+                    let current = paper_name(Size::new(*width, *height), saved)
+                        .unwrap_or_else(|| tr("toolbar.custom"));
+                    egui::ComboBox::from_id_salt("page_size_dialog_preset")
+                        .selected_text(current.clone())
+                        .width(200.0)
+                        .height(400.0)
+                        .show_ui(ui, |ui| {
+                            if let Some((_, s)) = paper_preset_menu(ui, &current, saved) {
+                                *width = s.width;
+                                *height = s.height;
+                            }
+                        });
                     if ui.button(tr("dialog.swap")).clicked() {
                         std::mem::swap(width, height);
                     }
@@ -2339,28 +2346,275 @@ pub fn show(app: &mut App, ctx: &Context) {
     }
 }
 
-pub fn paper_presets() -> Vec<(&'static str, Size)> {
+/// Inches to millimetres.
+fn inch(w: f64, h: f64) -> Size {
+    Size::new(w * 25.4, h * 25.4)
+}
+
+/// Screen pixels (96 per inch) to millimetres.
+fn px(w: f64, h: f64) -> Size {
+    Size::new(w * 25.4 / 96.0, h * 25.4 / 96.0)
+}
+
+/// Centimetres to millimetres.
+fn cm(w: f64, h: f64) -> Size {
+    Size::new(w * 10.0, h * 10.0)
+}
+
+/// The sizes listed first in every page size list, the most used ones.
+pub const FAVOURITE_PAPERS: [&str; 5] = ["A4", "Letter", "A5", "A3", "Legal"];
+
+/// The page size presets under their group headings (i18n keys), in the
+/// order the page size lists show them. No two presets share a size in
+/// either orientation, so a page's size always finds one name. The names
+/// of the presets that came first (A4 ... Square 1080) are kept: saved
+/// New Document settings refer to them.
+pub fn paper_preset_groups() -> Vec<(&'static str, Vec<(&'static str, Size)>)> {
+    use tracedraw_core::document::paper;
     vec![
-        ("A4", tracedraw_core::document::paper::A4),
-        ("A3", tracedraw_core::document::paper::A3),
-        ("A5", Size::new(148.0, 210.0)),
-        ("Letter", tracedraw_core::document::paper::LETTER),
-        ("Legal", Size::new(215.9, 355.6)),
-        ("Tabloid", Size::new(279.4, 431.8)),
-        ("Business card", Size::new(90.0, 50.0)),
         (
-            "Web 1920x1080",
-            Size::new(1920.0 * 25.4 / 96.0, 1080.0 * 25.4 / 96.0),
+            "paper.group_iso_a",
+            vec![
+                ("A0", Size::new(841.0, 1189.0)),
+                ("A1", Size::new(594.0, 841.0)),
+                ("A2", Size::new(420.0, 594.0)),
+                ("A3", paper::A3),
+                ("A4", paper::A4),
+                ("A5", Size::new(148.0, 210.0)),
+                ("A6", Size::new(105.0, 148.0)),
+                ("A7", Size::new(74.0, 105.0)),
+                ("RA2", Size::new(430.0, 610.0)),
+                ("RA3", Size::new(305.0, 430.0)),
+                ("RA4", Size::new(215.0, 305.0)),
+                ("SRA2", Size::new(450.0, 640.0)),
+                ("SRA3", Size::new(320.0, 450.0)),
+                ("SRA4", Size::new(225.0, 320.0)),
+                ("F4", Size::new(210.0, 330.0)),
+            ],
         ),
         (
-            "Web 1280x720",
-            Size::new(1280.0 * 25.4 / 96.0, 720.0 * 25.4 / 96.0),
+            "paper.group_iso_b",
+            vec![
+                ("B0", Size::new(1000.0, 1414.0)),
+                ("B1", Size::new(707.0, 1000.0)),
+                ("B2", Size::new(500.0, 707.0)),
+                ("B3", Size::new(353.0, 500.0)),
+                ("B4", Size::new(250.0, 353.0)),
+                ("B5", Size::new(176.0, 250.0)),
+                ("B6", Size::new(125.0, 176.0)),
+                ("B0 (JIS)", Size::new(1030.0, 1456.0)),
+                ("B1 (JIS)", Size::new(728.0, 1030.0)),
+                ("B2 (JIS)", Size::new(515.0, 728.0)),
+                ("B3 (JIS)", Size::new(364.0, 515.0)),
+                ("B4 (JIS)", Size::new(257.0, 364.0)),
+                ("B5 (JIS)", Size::new(182.0, 257.0)),
+                ("B6 (JIS)", Size::new(128.0, 182.0)),
+            ],
         ),
         (
-            "Square 1080",
-            Size::new(1080.0 * 25.4 / 96.0, 1080.0 * 25.4 / 96.0),
+            "paper.group_north_america",
+            vec![
+                ("Letter", paper::LETTER),
+                ("Legal", Size::new(215.9, 355.6)),
+                ("Tabloid", Size::new(279.4, 431.8)),
+                ("Executive", inch(7.25, 10.5)),
+                ("Half Letter", inch(5.5, 8.5)),
+                ("Government Letter", inch(8.0, 10.5)),
+                ("ANSI C", inch(17.0, 22.0)),
+                ("ANSI D", inch(22.0, 34.0)),
+                ("ANSI E", inch(34.0, 44.0)),
+                ("Arch A", inch(9.0, 12.0)),
+                ("Arch B", inch(12.0, 18.0)),
+                ("Arch C", inch(18.0, 24.0)),
+                ("Arch D", inch(24.0, 36.0)),
+                ("Fanfold", inch(14.875, 11.0)),
+                ("German Fanfold", inch(8.5, 12.0)),
+            ],
+        ),
+        (
+            "paper.group_print_shop",
+            vec![
+                ("Ofício 2", Size::new(216.0, 330.0)),
+                ("2A 64x88 cm", cm(64.0, 88.0)),
+                ("BB 66x96 cm", cm(66.0, 96.0)),
+                ("AA 76x112 cm", cm(76.0, 112.0)),
+                ("Flyer 15x21 cm", cm(15.0, 21.0)),
+                ("Flyer 10x14 cm", cm(10.0, 14.0)),
+                ("Folder 30x21 cm", cm(30.0, 21.0)),
+                ("Menu 23x33 cm", cm(23.0, 33.0)),
+                ("Sticker 5x5 cm", cm(5.0, 5.0)),
+                ("Sticker 10x10 cm", cm(10.0, 10.0)),
+            ],
+        ),
+        (
+            "paper.group_posters",
+            vec![
+                ("Poster 30x40 cm", cm(30.0, 40.0)),
+                ("Poster 50x70 cm", cm(50.0, 70.0)),
+                ("Poster 70x100 cm", cm(70.0, 100.0)),
+                ("Banner 60x90 cm", cm(60.0, 90.0)),
+                ("Banner 90x120 cm", cm(90.0, 120.0)),
+                ("Banner 100x200 cm", cm(100.0, 200.0)),
+                ("Roll-up 85x200 cm", cm(85.0, 200.0)),
+            ],
+        ),
+        (
+            "paper.group_envelopes",
+            vec![
+                ("DL", Size::new(110.0, 220.0)),
+                ("C3", Size::new(324.0, 458.0)),
+                ("C4", Size::new(229.0, 324.0)),
+                ("C5", Size::new(162.0, 229.0)),
+                ("C6", Size::new(114.0, 162.0)),
+                ("Envelope #9", inch(3.875, 8.875)),
+                ("Envelope #10", inch(4.125, 9.5)),
+                ("Envelope #11", inch(4.5, 10.375)),
+                ("Envelope #12", inch(4.75, 11.0)),
+                ("Envelope #14", inch(5.0, 11.5)),
+                ("Envelope Monarch", inch(3.875, 7.5)),
+                ("Envelope 11.4x22.9 cm", cm(11.4, 22.9)),
+                ("Envelope 24x34 cm", cm(24.0, 34.0)),
+            ],
+        ),
+        (
+            "paper.group_cards",
+            vec![
+                ("Business card", Size::new(90.0, 50.0)),
+                ("Business card 85x55 mm", Size::new(85.0, 55.0)),
+                ("Business card 3.5x2 in", inch(3.5, 2.0)),
+                ("Business card 91x55 mm", Size::new(91.0, 55.0)),
+                ("ID card", Size::new(85.6, 53.98)),
+                ("Postcard 4.25x6 in", inch(4.25, 6.0)),
+                ("Postcard 6x9 in", inch(6.0, 9.0)),
+                ("Postcard 100x148 mm", Size::new(100.0, 148.0)),
+                ("Double postcard 200x148 mm", Size::new(200.0, 148.0)),
+            ],
+        ),
+        (
+            "paper.group_photo",
+            vec![
+                ("Photo 3.5x5 in", inch(3.5, 5.0)),
+                ("Photo 4x6 in", inch(4.0, 6.0)),
+                ("Photo 5x7 in", inch(5.0, 7.0)),
+                ("Photo 8x10 in", inch(8.0, 10.0)),
+                ("Photo 10x15 cm", cm(10.0, 15.0)),
+                ("Photo 13x18 cm", cm(13.0, 18.0)),
+                ("Photo 20x30 cm", cm(20.0, 30.0)),
+            ],
+        ),
+        (
+            "paper.group_screen",
+            vec![
+                ("Web 1280x720", px(1280.0, 720.0)),
+                ("Web 1366x768", px(1366.0, 768.0)),
+                ("Web 1920x1080", px(1920.0, 1080.0)),
+                ("Web 2560x1440", px(2560.0, 1440.0)),
+                ("4K 3840x2160", px(3840.0, 2160.0)),
+                ("Web page 960x960", px(960.0, 960.0)),
+                ("Square 1080", px(1080.0, 1080.0)),
+                ("Social post 1080x1350", px(1080.0, 1350.0)),
+                ("Social cover 820x312", px(820.0, 312.0)),
+                ("Social banner 1500x500", px(1500.0, 500.0)),
+                ("Slide 16:9", inch(10.0, 5.625)),
+                ("Slide 4:3", inch(10.0, 7.5)),
+            ],
+        ),
+        (
+            "paper.group_web_ads",
+            vec![
+                ("Ad 120x60", px(120.0, 60.0)),
+                ("Ad 120x90", px(120.0, 90.0)),
+                ("Ad 125x125", px(125.0, 125.0)),
+                ("Ad 250x250", px(250.0, 250.0)),
+                ("Ad 468x60", px(468.0, 60.0)),
+                ("Skyscraper 120x600", px(120.0, 600.0)),
+                ("Wide skyscraper 160x600", px(160.0, 600.0)),
+                ("Medium rectangle 300x250", px(300.0, 250.0)),
+                ("Large rectangle 336x280", px(336.0, 280.0)),
+                ("Leaderboard 728x90", px(728.0, 90.0)),
+                ("Billboard 970x250", px(970.0, 250.0)),
+            ],
         ),
     ]
+}
+
+/// Every built-in page size preset, in list order.
+pub fn paper_presets() -> Vec<(&'static str, Size)> {
+    paper_preset_groups()
+        .into_iter()
+        .flat_map(|(_, sizes)| sizes)
+        .collect()
+}
+
+/// The sizes are the same in either orientation (to 0.05 mm).
+fn same_size(a: Size, b: Size) -> bool {
+    let close = |x: f64, y: f64| (x - y).abs() < 0.05;
+    (close(a.width, b.width) && close(a.height, b.height))
+        || (close(a.width, b.height) && close(a.height, b.width))
+}
+
+/// The name of the preset a page of `size` matches, the user's saved
+/// sizes first, or None (a custom size).
+pub fn paper_name(size: Size, saved: &[crate::settings::PageSizePreset]) -> Option<String> {
+    saved
+        .iter()
+        .find(|p| same_size(Size::new(p.width_mm, p.height_mm), size))
+        .map(|p| p.name.clone())
+        .or_else(|| {
+            paper_presets()
+                .into_iter()
+                .find(|(_, s)| same_size(*s, size))
+                .map(|(n, _)| n.to_string())
+        })
+}
+
+/// The page size presets as a dropdown's rows: the favourites, the
+/// user's saved sizes, then every group under its heading; `ticked`
+/// names the row shown selected. Returns the clicked one.
+pub fn paper_preset_menu(
+    ui: &mut Ui,
+    ticked: &str,
+    saved: &[crate::settings::PageSizePreset],
+) -> Option<(String, Size)> {
+    let mut pick = None;
+    let groups = paper_preset_groups();
+    let heading = |ui: &mut Ui, key: &str| {
+        ui.label(
+            egui::RichText::new(tr(key))
+                .small()
+                .color(Tokens::text_dim()),
+        );
+    };
+    let mut row = |ui: &mut Ui, n: &str, s: Size| {
+        if ui.selectable_label(ticked == n, n).clicked() {
+            pick = Some((n.to_string(), s));
+        }
+    };
+    for fav in FAVOURITE_PAPERS {
+        if let Some(s) = groups
+            .iter()
+            .flat_map(|(_, sizes)| sizes)
+            .find(|(n, _)| *n == fav)
+            .map(|(_, s)| *s)
+        {
+            row(ui, fav, s);
+        }
+    }
+    if !saved.is_empty() {
+        ui.separator();
+        heading(ui, "paper.group_saved");
+        for p in saved {
+            row(ui, &p.name, Size::new(p.width_mm, p.height_mm));
+        }
+    }
+    for (group, sizes) in &groups {
+        ui.separator();
+        heading(ui, group);
+        for (n, s) in sizes {
+            row(ui, n, *s);
+        }
+    }
+    pick
 }
 
 /// A QR code as one even-odd path of module squares.
@@ -2441,6 +2695,27 @@ const LABEL_PRESETS: [(&str, Size, u32, u32, Size, f64, f64, f64, f64); 4] = [
     ),
 ];
 
+/// Saves the page size under `name` (replacing a saved size of that
+/// name) so every page size list offers it.
+pub(crate) fn save_page_size(app: &mut App, name: &str, size: Size) {
+    let preset = crate::settings::PageSizePreset {
+        name: name.to_string(),
+        width_mm: size.width,
+        height_mm: size.height,
+    };
+    match app.settings.page_sizes.iter_mut().find(|p| p.name == name) {
+        Some(p) => *p = preset,
+        None => app.settings.page_sizes.push(preset),
+    }
+    app.save_settings();
+}
+
+/// Forgets the saved page size `name`.
+pub(crate) fn delete_page_size(app: &mut App, name: &str) {
+    app.settings.page_sizes.retain(|p| p.name != name);
+    app.save_settings();
+}
+
 /// Document Options > Page Size, laid out.
 pub(crate) fn page_size_page(app: &mut App, ui: &mut Ui) {
     ui.horizontal(|ui| {
@@ -2495,15 +2770,9 @@ pub(crate) fn page_size_page(app: &mut App, ui: &mut Ui) {
     let s = app.page_size();
     let (mut w, mut h) = (s.width, s.height);
     let mut changed = false;
-    let presets = paper_presets();
-    let current = presets
-        .iter()
-        .find(|(_, ps)| {
-            ((ps.width - w).abs() < 0.05 && (ps.height - h).abs() < 0.05)
-                || ((ps.width - h).abs() < 0.05 && (ps.height - w).abs() < 0.05)
-        })
-        .map(|(n, _)| n.to_string())
-        .unwrap_or_else(|| tr("options.custom_size"));
+    let saved = app.settings.page_sizes.clone();
+    let named = paper_name(s, &saved);
+    let current = named.clone().unwrap_or_else(|| tr("options.custom_size"));
     egui::Grid::new("page_size_grid")
         .num_columns(3)
         .spacing([8.0, 6.0])
@@ -2512,24 +2781,41 @@ pub(crate) fn page_size_page(app: &mut App, ui: &mut Ui) {
                 ui.label(tr("options.size"));
             });
             egui::ComboBox::from_id_salt("page_size_preset")
-                .selected_text(current)
+                .selected_text(current.clone())
                 .width(230.0)
+                .height(400.0)
                 .show_ui(ui, |ui| {
-                    for (n, ps) in &presets {
-                        if ui.selectable_label(false, *n).clicked() {
-                            let landscape = w > h;
-                            if landscape {
-                                w = ps.width.max(ps.height);
-                                h = ps.width.min(ps.height);
-                            } else {
-                                w = ps.width;
-                                h = ps.height;
-                            }
-                            changed = true;
+                    if let Some((_, ps)) = paper_preset_menu(ui, &current, &saved) {
+                        let landscape = w > h;
+                        if landscape {
+                            w = ps.width.max(ps.height);
+                            h = ps.width.min(ps.height);
+                        } else {
+                            w = ps.width;
+                            h = ps.height;
                         }
+                        changed = true;
                     }
                 });
-            ui.label("");
+            ui.horizontal(|ui| {
+                if ui
+                    .add_enabled(named.is_none(), egui::Button::new("\u{1f4be}"))
+                    .on_hover_text(tr("options.save_page_size"))
+                    .clicked()
+                {
+                    app.options_page_size_name = Some(String::new());
+                }
+                let user_size = saved.iter().any(|p| Some(&p.name) == named.as_ref());
+                if ui
+                    .add_enabled(user_size, egui::Button::new("\u{1f5d1}"))
+                    .on_hover_text(tr("options.delete_page_size"))
+                    .clicked()
+                {
+                    if let Some(n) = &named {
+                        delete_page_size(app, n);
+                    }
+                }
+            });
             ui.end_row();
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.label(tr("dialog.width"));
@@ -2597,6 +2883,28 @@ pub(crate) fn page_size_page(app: &mut App, ui: &mut Ui) {
             });
             ui.end_row();
         });
+    if let Some(mut name) = app.options_page_size_name.take() {
+        let mut keep = true;
+        ui.horizontal(|ui| {
+            ui.label(tr("options.page_size_name"));
+            let r = ui.add(egui::TextEdit::singleline(&mut name).desired_width(180.0));
+            if name.is_empty() && !r.has_focus() {
+                r.request_focus();
+            }
+            let enter = (r.lost_focus() || r.has_focus())
+                && ui.input(|i| i.key_pressed(egui::Key::Enter));
+            if (ui.button(tr("dialog.ok")).clicked() || enter) && !name.trim().is_empty() {
+                save_page_size(app, name.trim(), Size::new(w, h));
+                keep = false;
+            }
+            if ui.button(tr("dialog.cancel")).clicked() {
+                keep = false;
+            }
+        });
+        if keep {
+            app.options_page_size_name = Some(name);
+        }
+    }
     ui.add_space(4.0);
     ui.horizontal(|ui| {
         ui.label(tr("options.fit_page"));
@@ -5288,6 +5596,65 @@ fn palette_editor_dialog(
 
 #[cfg(test)]
 mod tests {
+
+    /// Every page size preset has its own name and size (in either
+    /// orientation), so a page's size names one preset; the favourites
+    /// and the names saved settings refer to are all there.
+    #[test]
+    fn page_size_presets_are_distinct_and_keep_their_names() {
+        use std::collections::HashSet;
+        let all = paper_presets();
+        assert!(all.len() > 100, "{}", all.len());
+        let names: HashSet<_> = all.iter().map(|(n, _)| *n).collect();
+        assert_eq!(names.len(), all.len(), "duplicate names");
+        for (i, (a, sa)) in all.iter().enumerate() {
+            assert!(sa.width > 0.0 && sa.height > 0.0, "{a}");
+            for (b, sb) in &all[i + 1..] {
+                assert!(!same_size(*sa, *sb), "{a} and {b} share a size");
+            }
+        }
+        for n in FAVOURITE_PAPERS.iter().chain(&[
+            "Tabloid",
+            "Business card",
+            "Web 1920x1080",
+            "Web 1280x720",
+            "Square 1080",
+        ]) {
+            assert!(names.contains(n), "{n}");
+        }
+        for (key, _) in paper_preset_groups() {
+            assert_ne!(crate::i18n::tr(key), key.rsplit('.').next().unwrap_or(key));
+        }
+    }
+
+    /// A page size finds its preset in either orientation, a saved size
+    /// first, and a size no preset has is custom.
+    #[test]
+    fn a_page_size_finds_its_name() {
+        let none: &[crate::settings::PageSizePreset] = &[];
+        assert_eq!(
+            paper_name(Size::new(210.0, 297.0), none).as_deref(),
+            Some("A4")
+        );
+        assert_eq!(
+            paper_name(Size::new(1189.0, 841.0), none).as_deref(),
+            Some("A0")
+        );
+        assert_eq!(
+            paper_name(Size::new(104.775, 241.3), none).as_deref(),
+            Some("Envelope #10")
+        );
+        assert_eq!(paper_name(Size::new(123.0, 45.0), none), None);
+        let saved = vec![crate::settings::PageSizePreset {
+            name: "My label".into(),
+            width_mm: 45.0,
+            height_mm: 123.0,
+        }];
+        assert_eq!(
+            paper_name(Size::new(123.0, 45.0), &saved).as_deref(),
+            Some("My label")
+        );
+    }
 
     #[test]
     fn a_pixel_size_sets_the_resolution_that_gives_it() {
