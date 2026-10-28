@@ -1,4 +1,4 @@
-//! The Distort tool's property bar and the centre markers of the selected
+//! The Distort tool's property bar and the handles of the selected
 //! distortions. Bar: Push and Pull, Zipper, Twister; the values of the
 //! kind shown (the selected object's distortion, else the tool's); Center
 //! Distortion, Clear Distortion, Convert to Curves; Apply for selected
@@ -169,25 +169,66 @@ pub fn distort_bar(app: &mut App, ui: &mut Ui) {
     dim(ui, tr("distort.hint"));
 }
 
-/// The centre of each selected distortion, a diamond to drag.
-pub fn draw_centers(app: &App, painter: &Painter) {
+/// The handles of each selected distortion: the centre (a diamond), a
+/// line to the end handle (a square for the amount or amplitude, a
+/// circle for the Twister's angle) and the Zipper's frequency slider on
+/// the line (#1122).
+pub fn draw_handles(app: &App, painter: &Painter) {
     if app.tool != crate::tools::Tool::Distort {
         return;
     }
-    for (_, c) in app.distortion_centers() {
-        let p = app.view.to_screen(c);
-        let r = 5.0;
+    let stroke = Stroke::new(1.0, Tokens::SELECTION);
+    let r = 5.0;
+    for h in app.distortion_handles() {
+        let c = app.view.to_screen(h.center);
+        let e = app.view.to_screen(h.end);
+        if (e - c).length() > 1.0 {
+            painter.line_segment([c, e], stroke);
+            // The arrow head toward the end.
+            let dir = (e - c).normalized();
+            let side = egui::vec2(-dir.y, dir.x);
+            let tip = e - dir * r;
+            painter.add(egui::Shape::convex_polygon(
+                vec![
+                    e - dir * 1.0,
+                    tip - dir * 6.0 + side * 3.5,
+                    tip - dir * 6.0 - side * 3.5,
+                ],
+                Tokens::SELECTION,
+                Stroke::NONE,
+            ));
+        }
+        if let Some(sl) = h.slider {
+            let p = app.view.to_screen(sl);
+            painter.rect_filled(
+                egui::Rect::from_center_size(p, egui::vec2(3.0, 2.0 * r + 2.0)),
+                0.0,
+                Color32::WHITE,
+            );
+            painter.rect_stroke(
+                egui::Rect::from_center_size(p, egui::vec2(3.0, 2.0 * r + 2.0)),
+                0.0,
+                stroke,
+                egui::StrokeKind::Middle,
+            );
+        }
+        match h.mode {
+            DistortMode::Twister => {
+                painter.circle(e, r, Color32::WHITE, stroke);
+            }
+            DistortMode::PushPull | DistortMode::Zipper => {
+                let sq = egui::Rect::from_center_size(e, egui::vec2(2.0 * r, 2.0 * r));
+                painter.rect_filled(sq, 0.0, Color32::WHITE);
+                painter.rect_stroke(sq, 0.0, stroke, egui::StrokeKind::Middle);
+            }
+        }
         let pts = vec![
-            p + egui::vec2(0.0, -r),
-            p + egui::vec2(r, 0.0),
-            p + egui::vec2(0.0, r),
-            p + egui::vec2(-r, 0.0),
+            c + egui::vec2(0.0, -r),
+            c + egui::vec2(r, 0.0),
+            c + egui::vec2(0.0, r),
+            c + egui::vec2(-r, 0.0),
         ];
-        painter.add(egui::Shape::convex_polygon(
-            pts,
-            Color32::WHITE,
-            Stroke::new(1.0, Tokens::SELECTION),
-        ));
+        painter.add(egui::Shape::convex_polygon(pts, Color32::WHITE, stroke));
     }
 }
 
@@ -218,7 +259,7 @@ mod tests {
             };
             let mut out = ctx.run_ui(input, |ui| {
                 ui.horizontal(|ui| distort_bar(app, ui));
-                draw_centers(app, ui.painter());
+                draw_handles(app, ui.painter());
             });
             out.textures_delta.clear();
         };
@@ -237,5 +278,11 @@ mod tests {
             app.selected_distortion(),
             Some(Distort::Twister { .. })
         ));
+        // The handles draw for every kind.
+        for m in DistortMode::ALL {
+            app.set_distort_mode(m);
+            frame(&mut app);
+            assert_eq!(app.distortion_handles().len(), 1);
+        }
     }
 }
