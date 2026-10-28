@@ -57,7 +57,11 @@ pub fn ai_bar(app: &mut App, ui: &mut Ui) {
         let enter = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
         if busy {
             ui.spinner();
-            if ui.button(tr("dialog.cancel")).clicked() {
+            if ui
+                .button(tr("dialog.cancel"))
+                .rich_tip(crate::ui::tips::keyed("dialog.cancel"))
+                .clicked()
+            {
                 app.ai_cancel();
             }
         } else if ui.button(tr("ai.draw")).clicked() || enter {

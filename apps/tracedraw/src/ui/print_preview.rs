@@ -241,7 +241,11 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 // Close at the bar's right end, where windows keep it
                 // (#534).
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button(tr("dialog.close")).clicked() {
+                    if ui
+                        .button(tr("dialog.close"))
+                        .rich_tip(crate::ui::tips::keyed("dialog.close"))
+                        .clicked()
+                    {
                         close = true;
                     }
                 });

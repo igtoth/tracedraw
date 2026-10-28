@@ -139,7 +139,14 @@ pub fn about_dialog(app: &mut App, ctx: &Context, close: &mut bool) {
                 });
                 fact(ui, &tr("dialog.about_source_label"), |ui| {
                     let repo = env!("CARGO_PKG_REPOSITORY");
-                    if ui.link(repo).clicked() {
+                    if ui
+                        .link(repo)
+                        .rich_tip(crate::ui::tips::pair(
+                            "dialog.about_source_label",
+                            "dialog.about_source_desc",
+                        ))
+                        .clicked()
+                    {
                         app.open_url(repo);
                     }
                 });

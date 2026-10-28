@@ -8,6 +8,8 @@ full, row-by-row status.
 
 ## 0.19.10 (2026-10-28)
 
+- New Document: the RGB, CMYK and grayscale profile lists of Color Settings offer the ICC profiles installed on this computer, as Color Management does; they held only sRGB and Generic CMYK. A CMYK profile picked there goes with the new drawing, so its colours show through it, and the grayscale profile chosen is kept in the drawing (#1033).
+- Snapping: with only the baseline grid turned on in Snap To, nodes dragged with the Shape tool, drawing tools and moved objects snap to its lines. Snapping counted as off unless another target was on, so the baseline grid alone did nothing; a node that lands on a baseline is now marked like a grid line (#3).
 - Paragraph text wrapped around an object keeps the first-line indent: when the object pushes the first line in (an object at the left, or text flowing on its right), the line now starts the indent past the object's edge. The indent was lost there, so the first line started flush with the lines under it (#1110).
 - Drawing tools: the tool's icon beside the cross hair (the small rectangle of the Rectangle tool, the ellipse of the Ellipse tool, and so on) sits close to the cross hair's middle. It was 9 points off each way, so it looked like a shape trailing the pointer (#493).
 - Blend of two open lines (two arcs, one mirrored): the steps are open lines that run end to end, top to top and bottom to bottom, with as few nodes as the lines. Each step was closed back to its start and, when the second line was drawn the other way, crossed through the middle, so the blend came out as a dark tangle instead of a fan of curves (#1024).

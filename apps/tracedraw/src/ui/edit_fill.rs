@@ -182,7 +182,7 @@ pub fn dialog(app: &mut App, ctx: &egui::Context, st: &mut EditFillState, close:
         ui.horizontal(|ui| {
             help = ui
                 .add_sized([27.0, 27.0], egui::Button::new("?"))
-                .rich_tip(tr("dialog.help"))
+                .rich_tip(crate::ui::tips::keyed("dialog.help_button"))
                 .clicked();
             if !st.defaults {
                 let mut on = st.overprint.unwrap_or(false);

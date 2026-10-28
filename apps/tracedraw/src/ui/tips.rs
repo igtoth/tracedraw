@@ -83,6 +83,8 @@ pub trait RichTip {
     fn rich_disabled_tip(self, tip: impl AsRef<str>) -> Response;
     /// A tip built only when it shows, for rows drawn by the thousand.
     fn rich_tip_with(self, tip: impl FnOnce() -> String) -> Response;
+    /// The same tip whether the control is enabled or not.
+    fn rich_tip_always(self, tip: impl AsRef<str>) -> Response;
 }
 
 impl RichTip for Response {
@@ -102,6 +104,22 @@ impl RichTip for Response {
 
     fn rich_tip_with(self, tip: impl FnOnce() -> String) -> Response {
         self.on_hover_ui(|ui| show(ui, &tip()))
+    }
+
+    fn rich_tip_always(self, tip: impl AsRef<str>) -> Response {
+        let tip = tip.as_ref();
+        self.rich_tip(tip).rich_disabled_tip(tip)
+    }
+}
+
+/// A button named `name` gets its tip when a description goes by that
+/// name (OK, Cancel, Close and the like in the dialogs' button rows).
+pub fn named(resp: Response, name: &str) -> Response {
+    if description_of(name).is_some() {
+        let name = name.to_string();
+        resp.rich_tip_with(|| name)
+    } else {
+        resp
     }
 }
 

@@ -893,12 +893,19 @@ fn general(app: &App, ui: &mut Ui, st: &mut PublishState) {
         let mut done = None;
         row(ui, &tr("publish.preset_name"), |ui| {
             let r = ui.add_sized([180.0, 20.0], egui::TextEdit::singleline(name));
-            if ui.button(tr("dialog.ok")).clicked()
+            if ui
+                .button(tr("dialog.ok"))
+                .rich_tip(crate::ui::tips::keyed("dialog.ok"))
+                .clicked()
                 || (r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
             {
                 done = Some(true);
             }
-            if ui.button(tr("dialog.cancel")).clicked() {
+            if ui
+                .button(tr("dialog.cancel"))
+                .rich_tip(crate::ui::tips::keyed("dialog.cancel"))
+                .clicked()
+            {
                 done = Some(false);
             }
         });
