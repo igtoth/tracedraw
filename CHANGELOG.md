@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Drawing tools: the tool's icon beside the cross hair (the small rectangle of the Rectangle tool, the ellipse of the Ellipse tool, and so on) sits close to the cross hair's middle. It was 9 points off each way, so it looked like a shape trailing the pointer (#493).
+
 - Page sizes: the page size lists offer about 130 sizes in groups (ISO A, ISO B and JIS B, North American, Print shop, Posters and banners, Envelopes, Cards and postcards, Photo, Screen and social media, Web ads), with A4, Letter, A5, A3 and Legal first. Edit This List... at the foot of the property bar's list opens Document Options > Page Size, where a custom size can be saved under a name and deleted again; saved sizes show in every page size list (#1092).
 - Windows: a tool picked with its shortcut shows its pointer at once, with the mouse still. Windows changed or hid the pointer only once the mouse moved, so the old pointer stayed until then (#1026).
 - Shape tool: on a stretched curve, the corner rounding rings now round corners on the page, so a new rounding comes out round, also after other corners were rounded. A corner rounded before the stretch keeps its stretched arc and its ring: dragging it changes that corner alone, and once it is dragged back to sharp it rounds round again (#1000).
