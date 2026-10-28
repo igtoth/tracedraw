@@ -539,9 +539,14 @@ impl App {
             (moved_x && on(q.x, grid.spacing_x, rulers.origin_x))
                 || (moved_y && on(q.y, grid.spacing_y, rulers.origin_y))
         };
+        let on_baseline = || {
+            self.snap.baseline_grid
+                && moved_y
+                && self.baseline_ys().iter().any(|y| (y - q.y).abs() < 1e-9)
+        };
         let mode = if on_guide {
             SnapMode::Guideline
-        } else if on_grid() {
+        } else if on_grid() || on_baseline() {
             SnapMode::Grid
         } else {
             return;
@@ -993,7 +998,8 @@ impl App {
                 || self.snap.guides
                 || self.snap.objects
                 || self.snap.page
-                || self.snap.pixels)
+                || self.snap.pixels
+                || self.snap.baseline_grid)
     }
 }
 

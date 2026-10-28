@@ -1665,6 +1665,36 @@ mod constrain_tests {
     }
 
     #[test]
+    fn a_grabbed_node_snaps_to_the_document_grid() {
+        let mut app = App::headless();
+        app.view.zoom = 1.0;
+        app.snap.grid = true;
+        app.snap.guides = false;
+        app.snap.objects = false;
+        app.snap.page = false;
+        assert_eq!(app.doc().metadata.grid.spacing_x, 10.0);
+        let origin = app.doc().metadata.rulers.origin_x;
+        let grab = Point::new(origin + 31.0, 20.0);
+        let d = app.snapped_node_move(grab, Vec2::new(7.0, 0.0), None, &[], &[]);
+        assert!((grab.x + d.x - (origin + 40.0)).abs() < 1e-9, "{d:?}");
+    }
+
+    #[test]
+    fn a_grabbed_node_snaps_to_the_baseline_grid_alone() {
+        // Only the baseline grid is on: snapping still works (#3).
+        let mut app = App::headless();
+        app.view.zoom = 1.0;
+        app.snap.guides = false;
+        app.snap.objects = false;
+        app.snap.page = false;
+        app.snap.baseline_grid = true;
+        let y = app.baseline_ys()[2];
+        let grab = Point::new(30.0, y + 6.0);
+        let d = app.snapped_node_move(grab, Vec2::new(0.0, -4.0), None, &[], &[]);
+        assert!((grab.y + d.y - y).abs() < 1e-9, "{d:?}");
+    }
+
+    #[test]
     fn a_constrained_move_keeps_one_axis() {
         let mut d = Vec2::new(3.0, 4.0);
         constrain_axis(&mut d, Some(true));
