@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Print and Print Preview, Selection: only the selected objects print (objects on master layers and the page background printed too), and the area they cover is the page printed: with the sheet sized to the page the paper is that area, on a fixed sheet they are centred at their size, the layouts (several per sheet, step and repeat) repeat that area and Keep page size keeps them at their size. Before, they printed where they stood on the whole page (#1001).
+
 - Dimensions: a dimension placed between two edges of an object (the sides of a rectangle, say, not its corners) now holds to them like one placed on nodes: moving, resizing, turning or reshaping the object takes the dimension along, each end keeping its place along its edge, and the value follows. Only ends on nodes were held, so a dimension between two sides stayed where it was (#1178).
 
 ## 0.19.12 (2026-10-28)

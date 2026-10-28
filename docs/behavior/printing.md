@@ -82,7 +82,14 @@ has one.
     time (Options keeps them, #591).
   - Print range: Current document, Current page, Pages (a list such as
     `1-3, 5, 8-`; an empty or unusable list prints them all), Selection
-    (the selected objects of the current page); and Odd and even pages,
+    (the selected objects of the current page, alone: no other object,
+    nothing of the master layers, no page background; the area they cover,
+    outlines and live effects included, becomes the page printed, so the
+    sheet sized to the page is that area, a fixed sheet gets it centred
+    at its size, shrunk only when it does not fit and Keep page size is off,
+    and the layouts repeat it; #1001, `selection_as_page`,
+    `export::tests::the_selection_prints_alone_on_a_page_of_its_size`,
+    `export::tests::keep_size_keeps_the_selection_at_its_size`); and Odd and even pages,
     Odd pages or Even pages of the document or the list (#951).
   - Copies: a file gets its copies inside, as whole sets (Collate) or
     each sheet repeated.

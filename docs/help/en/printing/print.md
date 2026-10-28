@@ -11,7 +11,12 @@ printer and print. In the browser version, the PDF is downloaded.
 - **Destination**: the printer, a PDF file or a PostScript file.
 - **Orientation**: match the layout, portrait or landscape.
 - **Print range**: the whole document, the current page, a list of pages
-  (such as `1-3, 5, 8-`), or the selected objects.
+  (such as `1-3, 5, 8-`), or the selected objects. The selected objects
+  print alone (nothing else of the page, its master layers or its
+  background), on a page the size of the area they cover: with the sheet
+  set to the page's size the paper is that area, on a fixed sheet they are
+  centred at their size (smaller only when they do not fit, unless
+  **Keep page size** is ticked), and the layouts repeat that area.
 - **Copies**, collated as whole sets or not.
 - **Print as bitmap**: each sheet becomes one picture at the resolution you
   give.

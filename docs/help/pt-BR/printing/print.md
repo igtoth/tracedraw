@@ -11,7 +11,12 @@ impressora e imprime. Na versão para navegador, o PDF é baixado.
 - **Destino**: a impressora, um arquivo PDF ou um arquivo PostScript.
 - **Orientação**: igual ao layout, retrato ou paisagem.
 - **Intervalo de impressão**: o documento inteiro, a página atual, uma lista de
-  páginas (como `1-3, 5, 8-`) ou os objetos selecionados.
+  páginas (como `1-3, 5, 8-`) ou os objetos selecionados. Os objetos
+  selecionados saem sozinhos (nada mais da página, das camadas mestras ou do
+  fundo), numa página do tamanho da área que ocupam: com a folha no tamanho
+  da página o papel é essa área, numa folha fixa eles ficam centralizados no
+  seu tamanho (menores só quando não cabem, a não ser que **Manter tamanho da página**
+  esteja marcado), e os layouts repetem essa área.
 - **Cópias**, agrupadas em conjuntos inteiros ou não.
 - **Imprimir como bitmap**: cada folha vira uma imagem na resolução que você
   der.

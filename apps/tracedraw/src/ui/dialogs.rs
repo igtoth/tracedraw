@@ -4072,6 +4072,13 @@ pub(crate) fn print_layout_fields(app: &App, ui: &mut Ui, st: &mut PrintState) {
         if !st.all_pages {
             doc_pages = vec![app.page_size()];
         }
+        // The selection prints as a page the size of the area it covers
+        // (#1001).
+        if st.range == 3 {
+            if let Some(size) = selection_print_size(app) {
+                doc_pages = vec![size];
+            }
+        }
         let options = crate::export::print_layout(app, st, app.doc());
         let plan = crate::imposition::plan(&doc_pages, &options);
         ui.vertical_centered(|ui| {
@@ -6694,4 +6701,31 @@ pub(crate) mod tests {
             }
         }
     }
+}
+
+/// The size of the area the selection prints on (#1001), worked out once
+/// for a drawing, its revision and the selection (the Print dialog's
+/// sketch asks every frame, and text has to be laid out for it).
+fn selection_print_size(app: &App) -> Option<Size> {
+    type Key = (u64, u64, Vec<tracedraw_core::ShapeId>);
+    thread_local! {
+        static CACHE: std::cell::RefCell<Option<(Key, Option<Size>)>> =
+            const { std::cell::RefCell::new(None) };
+    }
+    let key: Key = (
+        app.engine.instance(),
+        app.engine.revision(),
+        app.selection.clone(),
+    );
+    CACHE.with(|c| {
+        if let Some((k, size)) = c.borrow().as_ref() {
+            if *k == key {
+                return *size;
+            }
+        }
+        let selected = app.selected_rc();
+        let size = crate::export::print_area(selected.iter()).map(|r| r.size());
+        *c.borrow_mut() = Some((key, size));
+        size
+    })
 }
