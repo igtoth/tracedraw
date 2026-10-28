@@ -3410,9 +3410,11 @@ pub fn export_with_file_dialog(app: &mut App, st: &ExportState) {
         });
 }
 
-/// The Export dialog's presets (#547): a list of the saved ones of the
-/// chosen format (#612), "+" to save the choices under a name, rename and
-/// delete for the chosen one.
+/// The Export dialog's presets (#547): a list of every saved one, each
+/// with its format, "+" to save the choices under a name, rename and
+/// delete for the chosen one. Choosing a preset brings its format along;
+/// changing the format leaves the preset unchosen while the whole list
+/// stays (#612).
 fn export_presets_row(app: &mut App, ui: &mut Ui, st: &mut ExportState) {
     // A preset of another format no longer describes the choices.
     if !st.preset.is_empty()
@@ -3428,11 +3430,10 @@ fn export_presets_row(app: &mut App, ui: &mut Ui, st: &mut ExportState) {
     ui.horizontal(|ui| {
         ui.label(tr("dialog.export_preset"));
         let presets = presets_for(&app.settings.formats.export_presets, st);
-        // Every preset listed is of the chosen format: its name says it.
-        let label = |p: &crate::prefs::ExportPreset| p.name.clone();
+        let label = preset_label;
         let shown = presets
             .iter()
-            .find(|p| p.name == st.preset)
+            .find(|p| p.name == st.preset && preset_fits(p, st))
             .map(label)
             .unwrap_or_else(|| tr("dialog.export_preset_none"));
         egui::ComboBox::from_id_salt("export_preset")
@@ -3446,7 +3447,8 @@ fn export_presets_row(app: &mut App, ui: &mut Ui, st: &mut ExportState) {
                     st.preset.clear();
                 }
                 for p in &presets {
-                    if ui.selectable_label(p.name == st.preset, label(p)).clicked() {
+                    let chosen = p.name == st.preset && preset_fits(p, st);
+                    if ui.selectable_label(chosen, label(p)).clicked() {
                         p.apply(st);
                     }
                 }
@@ -3534,18 +3536,30 @@ fn export_presets_row(app: &mut App, ui: &mut Ui, st: &mut ExportState) {
     }
 }
 
-/// Whether the Export dialog lists `p`: it was saved for the format
-/// chosen (a script filter has none).
+/// Whether the preset `p` describes the dialog's format: it was saved
+/// for the format chosen (a script filter fits none). The list shows
+/// every preset; this says which one can be the chosen one.
 fn preset_fits(p: &crate::prefs::ExportPreset, st: &ExportState) -> bool {
     st.script.is_none() && p.fits(st.format)
 }
 
-/// The presets the Export dialog lists for its chosen format.
+/// The presets the Export dialog lists: every saved one, whatever its
+/// format, so they are all in sight from the start and choosing one
+/// of another format switches to it (#612).
 pub(crate) fn presets_for(
     all: &[crate::prefs::ExportPreset],
-    st: &ExportState,
+    _st: &ExportState,
 ) -> Vec<crate::prefs::ExportPreset> {
-    all.iter().filter(|p| preset_fits(p, st)).cloned().collect()
+    all.to_vec()
+}
+
+/// A preset as the list shows it: its name and, in brackets, the format
+/// it was saved for (a format this version does not know: the name).
+pub(crate) fn preset_label(p: &crate::prefs::ExportPreset) -> String {
+    match EXPORT_FORMATS.get(p.format) {
+        Some((name, _)) => format!("{} ({name})", p.name),
+        None => p.name.clone(),
+    }
 }
 
 fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut bool) {

@@ -61,8 +61,14 @@ follow either slider. Each drag is one undo step and the bar shows the
 new values; a press on a slider never starts a new blend
 (`blend_tool.rs`, `text_effect_tests::the_blend_tool_picks_a_text_blend_and_its_sliders_tune_it`).
 
-Not yet on the canvas: dragging the start or end square to another
-object, and dropping colours on them.
+Dragging the start or end square moves that object (one undo step for
+the drag, the steps and the line following), so the blend's direction
+changes; let go on another object of the page (not the blend's own two),
+the move is taken back and that object becomes the new start or end
+with the blend's settings, the old start staying a plain object and the
+selection moving to the new start (#965,
+`text_effect_tests::the_blend_tool_s_end_squares_move_and_pick_the_end_objects`).
+Not yet on the canvas: dropping colours on the squares.
 
 The steps lie between the two objects in the stacking order: with the
 end object below the start one (a front object blended to one behind

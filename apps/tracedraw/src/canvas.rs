@@ -1181,9 +1181,15 @@ fn draw_blend_controls(app: &App, painter: &Painter) {
             ));
         }
     }
-    for p in [a, z] {
+    for (h, p) in [(BlendHandle::Start, a), (BlendHandle::End, z)] {
         let rect = ERect::from_center_size(p, egui::vec2(9.0, 9.0));
-        painter.rect_filled(rect, 0.0, Color32::WHITE);
+        // The square being dragged is filled in the selection colour.
+        let fill = if app.blend_handle_drag == Some(h) {
+            Tokens::SELECTION
+        } else {
+            Color32::WHITE
+        };
+        painter.rect_filled(rect, 0.0, fill);
         painter.rect_stroke(
             rect,
             0.0,

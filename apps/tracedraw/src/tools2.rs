@@ -727,6 +727,7 @@ impl App {
                     }
                 }
                 if response.drag_stopped() {
+                    self.finish_blend_end_drag(p);
                     self.blend_handle_drag = None;
                 }
             }
