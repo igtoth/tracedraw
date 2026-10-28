@@ -61,3 +61,5 @@
 1122 https://github.com/user-attachments/assets/f5caab26-41f9-4947-b687-79e0178bd882
 1122 https://github.com/user-attachments/assets/cae3722b-fd5a-44b8-8121-08dbcc8ebc30
 1122 https://github.com/user-attachments/assets/146edf12-8eb3-4a10-982f-6b22de48f1d9
+1130 https://github.com/user-attachments/files/34074542/Fit.to.Path.Text.Crash.zip
+1131 https://github.com/user-attachments/files/34074758/palack.kodok.zip
