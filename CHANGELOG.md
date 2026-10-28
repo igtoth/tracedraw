@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+## 0.19.11 (2026-10-28)
+
 - Document palette: a colour picked with its eyedropper that the palette has already gets the white frame of the last colour used, so it shows where it is; a new colour takes the frame as it joins, and applying a colour of the palette moves the frame to it (#1125).
 - Status bar: a tool hint or message cut off at the right shows whole in a tip on hover, so a long path before the hint no longer hides it for good (#1126).
 - Pages added to a drawing (Layout > Insert Page, the + beside the page tabs, the navigator's insert buttons) are named in the interface's language, as the first page is, and so is their first layer. They were named "Page 2", "Layer 1" and so on in English whatever the language (#1127).
@@ -23,9 +25,12 @@ full, row-by-row status.
 - Dropping files: a `.cdr` (or any drawing File > Open reads) let go over the title, menus, toolbars or document tabs opens in a tab of its own, and only one let go over the drawing window is imported into it; the frame and label while dragging show which. Before, a `.cdr` dropped anywhere on an open drawing was imported. Where the system does not say where the pointer is (Linux, macOS), drawings open in a tab like a `.tdraw` and pictures are imported (#1142).
 - Status bar: it no longer keeps showing the path of a drawing that was closed (or of another tab) after making a new drawing or switching tabs; the message about a file now goes when another drawing is shown (#1128).
 - Saving `.cdr`: blends, text blends too, open again in TraceDraw as live blends to their end object, with their steps, accelerations and options, so they can be changed and follow the end object as before saving (files of version 14 and later). They came back as loose steps that could not be edited; other programs still see the blend as a group of its start object and its steps (#986).
-
 - Saving as .cdr: curves whose outline ends back at its start, such as text fitted to a path (written as its letters' outlines), close on their last node instead of adding a closing line of no length after it. The other program that opened such a file closed when the text was clicked; lines of no length and empty subpaths are also left out (#1130).
 - Opening .cdr: objects embedded from another program that keep their picture as a Windows metafile, such as barcodes, are drawn, also inside clip containers. Version 26 files name such an object's data in a link record instead of a name, so the objects were skipped; the metafile is now played and stretched over the object's rectangle, and a metafile that sets no viewport (as these pictures do) is drawn at its window's size instead of shrinking to a speck (#1131).
+- Smudge and Twirl no longer slow the app down until it hangs or crashes on a long drag, and dragging a segment with the Shape tool keeps its cusp nodes cusp instead of turning them smooth (#1133, #1140).
+- Distort: the Zipper draws frequency + 1 lines, and the amount, amplitude, frequency and angle have handles on the page to drag (#1122).
+- Tips: every control of the bars, dockers, dialogs and Options pages shows a title and a description on hover (#1106).
+
 ## 0.19.10 (2026-10-28)
 
 - New Document: the RGB, CMYK and grayscale profile lists of Color Settings offer the ICC profiles installed on this computer, as Color Management does; they held only sRGB and Generic CMYK. A CMYK profile picked there goes with the new drawing, so its colours show through it, and the grayscale profile chosen is kept in the drawing (#1033).
