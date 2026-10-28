@@ -2141,11 +2141,14 @@ impl App {
             .curve
             .as_ref()
             .is_some_and(|c| c.closes_at_first() && c.nodes.first().is_some_and(|n| near(n.0)));
+        // The last node, or the one a curve going on from an end starts
+        // at with that end's mirrored handle (#1138).
         let on_last = smooth
-            && self
-                .curve
-                .as_ref()
-                .is_some_and(|c| c.nodes.len() >= 2 && c.nodes.last().is_some_and(|n| near(n.0)));
+            && self.curve.as_ref().is_some_and(|c| {
+                c.nodes
+                    .last()
+                    .is_some_and(|n| near(n.0) && (c.nodes.len() >= 2 || n.1.is_some()))
+            });
         if response.clicked_by(PointerButton::Primary) {
             // A line going on from an end of the selected curve: a click
             // on that curve's other end closes it (#631).
@@ -2175,22 +2178,9 @@ impl App {
                 }
                 return;
             }
-            // The Pen's automatic adding and deleting: a click on a node of
-            // the curve being drawn deletes it, on a segment adds a node.
-            if let Some(auto) = self.pen_auto_at(raw) {
-                if let Some(c) = &mut self.curve {
-                    match auto {
-                        crate::pen_look::PenAuto::Delete(i) => {
-                            c.delete_node(i);
-                        }
-                        crate::pen_look::PenAuto::Add(k, t) => {
-                            c.insert_node(k, t);
-                        }
-                    }
-                    c.dragging_handle = false;
-                }
-                return;
-            }
+            // While a curve is drawn the Pen's automatic adding and
+            // deleting is off: a click on a node or a segment, of this
+            // curve or another, places the next node there (#1143).
         }
         if response.drag_started_by(PointerButton::Primary) && start_close {
             // Dragging from the first node shapes the closing segment.

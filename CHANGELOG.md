@@ -8,6 +8,9 @@ full, row-by-row status.
 
 - Objects panel: selecting an object on the page scrolls the list to its row, so an object far down a long list comes into view; a selection that stays the same leaves the scroll alone (#1044).
 - Envelope: Copy Envelope Properties (and Object > Copy Effect > Envelope From) picking an object with no envelope, such as a circle, a star or a drawn curve, now fits the selected text or objects into that object's shape. It said the object had no envelope, so text could not be fitted into a drawn shape (#993).
+- Pen: while a curve is drawn, new or going on from an end, every click places the next node, also on a segment or a node of that curve or of another one. Automatic adding and deleting of nodes works only when no curve is being drawn, so drawing no longer changes other curves by accident (#1143).
+- Pen: going on from the end of a curve, a second click on that end node makes it a cusp, so the new segment leaves it straight; the curved, mirrored start stays the default (#1138).
+
 ## 0.19.10 (2026-10-28)
 
 - New Document: the RGB, CMYK and grayscale profile lists of Color Settings offer the ICC profiles installed on this computer, as Color Management does; they held only sRGB and Generic CMYK. A CMYK profile picked there goes with the new drawing, so its colours show through it, and the grayscale profile chosen is kept in the drawing (#1033).

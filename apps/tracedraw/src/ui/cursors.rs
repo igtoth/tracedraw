@@ -395,14 +395,15 @@ fn curve_mark(app: &App, pos: Option<Pos2>) -> Option<CurveMark> {
         if c.closes_at_first() && c.nodes.first().is_some_and(|(f, _)| near(f)) {
             return Some(CurveMark::Close);
         }
-        if pen && c.nodes.len() >= 2 && c.nodes.last().is_some_and(|(l, _)| near(l)) {
+        if pen
+            && c.nodes
+                .last()
+                .is_some_and(|(l, h)| near(l) && (c.nodes.len() >= 2 || h.is_some()))
+        {
             return Some(CurveMark::EditNode);
         }
-        return match app.pen_auto_at(p) {
-            Some(crate::pen_look::PenAuto::Delete(_)) => Some(CurveMark::DeleteNode),
-            Some(crate::pen_look::PenAuto::Add(..)) => Some(CurveMark::AddNode),
-            None => None,
-        };
+        // No adding or deleting while a curve is drawn (#1143).
+        return None;
     }
     if app.on_join_end(p) {
         return Some(CurveMark::Join);
