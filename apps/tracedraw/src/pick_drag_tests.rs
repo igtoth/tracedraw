@@ -1443,33 +1443,65 @@ fn curve_path(app: &App, id: ShapeId) -> tracedraw_core::BezPath {
     }
 }
 
+/// Join does not join end nodes of two objects (#1007): nothing changes
+/// and the status says to combine them; once combined into one curve
+/// the same two ends join into one node, with no line between them. An
+/// end node dropped on another object's end node is not joined either.
 #[test]
-fn join_fuses_two_end_nodes_of_two_curves_without_a_line() {
+fn join_takes_end_nodes_of_one_object_only() {
     use tracedraw_core::geometry::PathEl;
     let (ctx, mut app, id) = setup();
     let (a, b) = two_open_curves(&ctx, &mut app, id);
+    let before = (curve_path(&app, a), curve_path(&app, b));
     // The end of a (element 1) and the start of b (element 0).
     app.node_selection = vec![(a, 1), (b, 0)];
     app.join_selected_nodes();
-    // One curve is left, one subpath through the joined node, no line.
-    assert!(app.doc().find_shape(b).is_none());
-    let p = curve_path(&app, a);
+    assert_eq!((curve_path(&app, a), curve_path(&app, b)), before);
+    assert_eq!(app.status, crate::i18n::tr("status.join_other_object"));
+    // Dropping a's end on the start of a curve there does not join them.
+    let mut touching = tracedraw_core::BezPath::new();
+    touching.move_to((30.0, 10.0));
+    touching.line_to((40.0, 0.0));
+    let t = app
+        .new_shape(ShapeKind::Path {
+            path: touching.clone(),
+            closed: false,
+        })
+        .expect("curve");
+    app.select(vec![a, t]);
+    app.node_selection = vec![(a, 1)];
+    app.join_dropped_end_node();
+    assert_eq!(curve_path(&app, a), before.0);
+    assert_eq!(curve_path(&app, t), touching);
+    app.select(vec![t]);
+    app.delete_selection();
+    // Combined, the two ends join.
+    app.select(vec![a, b]);
+    app.combine();
+    let [c] = app.selection[..] else {
+        panic!("not one curve: {:?}", app.selection);
+    };
+    let p = curve_path(&app, c);
+    let end_of_a = tracedraw_core::nodes::nodes(&p)
+        .into_iter()
+        .find(|n| n.pos == Point::new(30.0, 10.0))
+        .expect("end of a");
+    let start_of_b = tracedraw_core::nodes::nodes(&p)
+        .into_iter()
+        .find(|n| n.pos == Point::new(44.0, 10.0))
+        .expect("start of b");
+    app.node_selection = vec![(c, end_of_a.index), (c, start_of_b.index)];
+    app.join_selected_nodes();
+    let p = curve_path(&app, c);
     assert_eq!(
-        p.elements(),
-        &[
-            PathEl::MoveTo(Point::new(10.0, 10.0)),
-            PathEl::CurveTo(
-                Point::new(15.0, 20.0),
-                Point::new(32.0, 20.0),
-                Point::new(37.0, 10.0)
-            ),
-            PathEl::LineTo(Point::new(60.0, 30.0)),
-        ]
+        p.elements()
+            .iter()
+            .filter(|e| matches!(e, PathEl::MoveTo(_)))
+            .count(),
+        1,
+        "{p:?}"
     );
-    // One undo step brings both curves back.
-    app.undo();
-    assert!(app.doc().find_shape(b).is_some());
-    assert_eq!(tracedraw_core::nodes::nodes(&curve_path(&app, a)).len(), 2);
+    assert!(p.elements().iter().all(|e| !matches!(e, PathEl::ClosePath)));
 }
 
 #[test]
@@ -1597,14 +1629,25 @@ fn a_dragged_node_does_not_snap_to_itself_or_its_moving_segments() {
 fn dropping_an_end_node_on_another_end_node_joins_them() {
     let (ctx, mut app, id) = setup();
     let (a, b) = two_open_curves(&ctx, &mut app, id);
-    // Drag the start of b onto the end of a.
+    // Two objects: dragging the start of b onto the end of a leaves them
+    // two objects (#1007).
     let from = app.view.to_screen(Point::new(44.0, 10.0));
     let to = app.view.to_screen(Point::new(30.0, 10.0));
     click_at(&ctx, &mut app, from, Modifiers::NONE);
     drag(&ctx, &mut app, from, to, Modifiers::NONE, Vec::new());
-    assert!(app.doc().find_shape(b).is_none(), "b was not joined");
-    let p = curve_path(&app, a);
-    assert_eq!(tracedraw_core::nodes::nodes(&p).len(), 3);
+    assert!(app.doc().find_shape(a).is_some() && app.doc().find_shape(b).is_some());
+    app.undo();
+    // Combined into one curve, the same drag joins the two ends.
+    app.select(vec![a, b]);
+    app.combine();
+    let [c] = app.selection[..] else {
+        panic!("not one curve: {:?}", app.selection);
+    };
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    click_at(&ctx, &mut app, from, Modifiers::NONE);
+    drag(&ctx, &mut app, from, to, Modifiers::NONE, Vec::new());
+    let p = curve_path(&app, c);
+    assert_eq!(tracedraw_core::nodes::nodes(&p).len(), 3, "{p:?}");
     assert_eq!(
         p.elements()
             .iter()
