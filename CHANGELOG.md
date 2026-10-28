@@ -8,7 +8,9 @@ full, row-by-row status.
 
 - Objects panel: selecting an object on the page scrolls the list to its row, so an object far down a long list comes into view; a selection that stays the same leaves the scroll alone (#1044).
 - Envelope: Copy Envelope Properties (and Object > Copy Effect > Envelope From) picking an object with no envelope, such as a circle, a star or a drawn curve, now fits the selected text or objects into that object's shape. It said the object had no envelope, so text could not be fitted into a drawn shape (#993).
+- Hints panel: every tool's page now walks through the tool in steps, each with a picture of the object, its handles or nodes, the drag and the tool's cursor (181 steps for 64 tools, in all 18 languages). It showed only the one-line status bar hint.
 - Dropping files: a `.cdr` (or any drawing File > Open reads) let go over the title, menus, toolbars or document tabs opens in a tab of its own, and only one let go over the drawing window is imported into it; the frame and label while dragging show which. Before, a `.cdr` dropped anywhere on an open drawing was imported. Where the system does not say where the pointer is (Linux, macOS), drawings open in a tab like a `.tdraw` and pictures are imported (#1142).
+
 ## 0.19.10 (2026-10-28)
 
 - New Document: the RGB, CMYK and grayscale profile lists of Color Settings offer the ICC profiles installed on this computer, as Color Management does; they held only sRGB and Generic CMYK. A CMYK profile picked there goes with the new drawing, so its colours show through it, and the grayscale profile chosen is kept in the drawing (#1033).
