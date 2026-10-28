@@ -569,7 +569,9 @@ pub fn extrude_docker(app: &mut App, ui: &mut Ui) {
                             changed = true;
                         }
                     }
-                });
+                })
+                .response
+                .rich_tip(crate::ui::tips::pair("extrude.kind", "extrude.kind_desc"));
             let vp = !s.kind.parallel();
             ui.label(tr("docker.vanishing_point"));
             ui.add_enabled_ui(vp, |ui| {
@@ -592,7 +594,16 @@ pub fn extrude_docker(app: &mut App, ui: &mut Ui) {
                                 changed = true;
                             }
                         }
-                    });
+                    })
+                    .response
+                    .rich_tip(crate::ui::tips::pair(
+                        "extrude.locked_tip",
+                        "extrude.locked_desc",
+                    ))
+                    .rich_disabled_tip(crate::ui::tips::pair(
+                        "extrude.locked_tip",
+                        "extrude.locked_desc",
+                    ));
             });
             ui.label(tr("docker.depth"));
             ui.add_enabled_ui(vp, |ui| {
@@ -638,12 +649,14 @@ pub fn extrude_docker(app: &mut App, ui: &mut Ui) {
                     &mut app.extrude_measure_object,
                     false,
                     tr("extrude.measure_page"),
-                );
+                )
+                .rich_tip(crate::ui::tips::keyed("extrude.measure_page"));
                 ui.radio_value(
                     &mut app.extrude_measure_object,
                     true,
                     tr("extrude.measure_object"),
-                );
+                )
+                .rich_tip(crate::ui::tips::keyed("extrude.measure_object"));
             });
         }
         1 => {

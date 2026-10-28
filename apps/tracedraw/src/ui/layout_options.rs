@@ -945,7 +945,9 @@ pub fn guidelines_docker(app: &mut App, ui: &mut Ui) {
                 for k in GuideKind::ALL {
                     ui.selectable_value(&mut form.kind, k, tr(k.key()));
                 }
-            });
+            })
+            .response
+            .rich_tip(crate::ui::tips::pair("guides.type", "guides.type_desc"));
     });
     let units = app.units;
     egui::Grid::new("guide_form")
@@ -954,7 +956,12 @@ pub fn guidelines_docker(app: &mut App, ui: &mut Ui) {
         .show(ui, |ui| {
             if form.kind != GuideKind::Horizontal {
                 row_label(ui, "guides.x");
-                if let Some(v) = distance_field(ui, units, form.x, 0.1) {
+                let x = crate::ui::tips::tip_over(
+                    ui,
+                    crate::ui::tips::pair("toolbar.object_x", "guides.x_desc"),
+                    |ui| distance_field(ui, units, form.x, 0.1),
+                );
+                if let Some(v) = x {
                     form.x = v;
                     moved = true;
                 }
@@ -962,7 +969,12 @@ pub fn guidelines_docker(app: &mut App, ui: &mut Ui) {
             }
             if form.kind != GuideKind::Vertical {
                 row_label(ui, "guides.y");
-                if let Some(v) = distance_field(ui, units, form.y, 0.1) {
+                let y = crate::ui::tips::tip_over(
+                    ui,
+                    crate::ui::tips::pair("toolbar.object_y", "guides.y_desc"),
+                    |ui| distance_field(ui, units, form.y, 0.1),
+                );
+                if let Some(v) = y {
                     form.y = v;
                     moved = true;
                 }
@@ -978,6 +990,7 @@ pub fn guidelines_docker(app: &mut App, ui: &mut Ui) {
                             .max_decimals(2)
                             .suffix("°"),
                     )
+                    .rich_tip(crate::ui::tips::pair("guides.angle", "guides.angle_desc"))
                     .changed()
                 {
                     moved = true;
@@ -991,7 +1004,11 @@ pub fn guidelines_docker(app: &mut App, ui: &mut Ui) {
         app.set_selected_guide_line(line);
     }
     ui.horizontal(|ui| {
-        if ui.button(tr("guides.add")).clicked() {
+        if ui
+            .button(tr("guides.add"))
+            .rich_tip(crate::ui::tips::pair("guides.add", "guides.add_desc"))
+            .clicked()
+        {
             let line = form.line(app);
             app.add_guide(Guide::from(line));
             app.selected_guides = vec![app.page_guides().len().saturating_sub(1)];
@@ -1002,6 +1019,8 @@ pub fn guidelines_docker(app: &mut App, ui: &mut Ui) {
         };
         if ui
             .add_enabled(single.is_some(), egui::Button::new(tr("guides.modify")))
+            .rich_tip(crate::ui::tips::pair("guides.modify", "guides.modify_desc"))
+            .rich_disabled_tip(crate::ui::tips::pair("guides.modify", "guides.modify_desc"))
             .clicked()
         {
             if let Some(i) = single {
@@ -1023,6 +1042,8 @@ pub fn guidelines_docker(app: &mut App, ui: &mut Ui) {
     ui.horizontal(|ui| {
         if ui
             .add_enabled(any, egui::Button::new(tr("guides.delete")))
+            .rich_tip(crate::ui::tips::pair("guides.delete", "guides.delete_desc"))
+            .rich_disabled_tip(crate::ui::tips::pair("guides.delete", "guides.delete_desc"))
             .clicked()
             && !app.delete_selected_guides()
         {
@@ -1059,7 +1080,13 @@ pub fn guidelines_docker(app: &mut App, ui: &mut Ui) {
         } else {
             tr("guides.lock")
         };
-        if ui.add_enabled(any, egui::Button::new(label)).clicked() {
+        let lock_tip = crate::ui::tips::pair("guides.lock_tip", "guides.lock_desc");
+        if ui
+            .add_enabled(any, egui::Button::new(label))
+            .rich_tip(&lock_tip)
+            .rich_disabled_tip(&lock_tip)
+            .clicked()
+        {
             let sel = app.selected_guides.clone();
             app.set_guides_locked(&sel, !all_locked);
         }
@@ -1080,7 +1107,12 @@ pub fn guidelines_docker(app: &mut App, ui: &mut Ui) {
             let current = first
                 .map(|g| app.guide_color(&g))
                 .unwrap_or(app.doc().metadata.guides.color);
-            if let Some(c) = color_button(ui, current) {
+            let picked = crate::ui::tips::tip_over(
+                ui,
+                crate::ui::tips::pair("guides.color", "guides.color_desc"),
+                |ui| color_button(ui, current),
+            );
+            if let Some(c) = picked {
                 if any {
                     let mut gs = guides.clone();
                     for i in &app.selected_guides {
@@ -1114,7 +1146,10 @@ pub fn guidelines_docker(app: &mut App, ui: &mut Ui) {
                                 app.set_guides(gs, "Guideline Style");
                             }
                         }
-                    });
+                    })
+                    .response
+                    .rich_tip(crate::ui::tips::pair("guides.style", "guides.style_desc"))
+                    .rich_disabled_tip(crate::ui::tips::pair("guides.style", "guides.style_desc"));
             });
             ui.end_row();
         });

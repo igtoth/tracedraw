@@ -651,10 +651,21 @@ fn badge_ink() -> Color32 {
     INK
 }
 
+/// Where the tool's icon goes for the hot spot `p`: in the quarter below
+/// and to the right of the cross hair, close to its middle, clear of the
+/// arms and their halo. It sat 9 points off each way, which read as a
+/// shape trailing the pointer (#493).
+pub fn badge_rect(p: Pos2) -> Rect {
+    Rect::from_min_size(p + Vec2::splat(BADGE_GAP), Vec2::splat(15.0))
+}
+
+/// The gap between the cross hair's arms and the badge's icon, points.
+const BADGE_GAP: f32 = 4.0;
+
 /// The tool's icon below and to the right of the cross hair, on a light
 /// patch so it reads on any drawing.
 fn badge(painter: &Painter, p: Pos2, tool: Tool) {
-    let r = Rect::from_min_size(p + Vec2::new(9.0, 9.0), Vec2::splat(15.0));
+    let r = badge_rect(p);
     painter.rect_filled(
         r.expand(1.0),
         CornerRadius::same(3),
@@ -1222,6 +1233,21 @@ mod tests {
         let [h, v] = cross_hair_lines(Pos2::new(10.2, 20.7), 1.0);
         assert_eq!((h[0].y, v[0].x), (20.5, 10.5));
         assert_eq!(h[1].x - 10.5, 10.5 - h[0].x);
+    }
+
+    /// The tool's icon sits close to the cross hair's middle, in its lower
+    /// right quarter, its patch clear of the arms and their halo (#493).
+    #[test]
+    fn the_badge_sits_close_to_the_cross_hair() {
+        let p = Pos2::new(200.5, 150.5);
+        let r = badge_rect(p);
+        assert!(r.min.x - p.x <= 5.0 && r.min.y - p.y <= 5.0, "{r:?}");
+        let patch = r.expand(1.0);
+        // The halo is 3 points wide, centred on the arms.
+        assert!(
+            patch.min.x > p.x + 1.5 && patch.min.y > p.y + 1.5,
+            "{patch:?}"
+        );
     }
 
     /// The badge's icon reads on its light patch under every theme: the
