@@ -93,14 +93,22 @@ only inside the effect; such a blend draws its end with the steps.
 ## Formulas
 
 For step `k` of `n` (`t = (k) / (n + 1)` with acceleration `t' = t ^ (1 + 2*acc)`):
-- Geometry: both paths are resampled to the same node count
-  (the larger of the two, nodes mapped by arc length, or by the user's
-  node map), then interpolated node by node, including control points.
-  Before that the end outline is wound the way the start outline is,
-  and its first node is the one whose direction from its own centre is
-  closest to the start outline's first node's direction from its centre,
-  so equal shapes blend without twisting through the middle whatever
-  their relative position.
+- Geometry: the end outline is wound the way the start outline is and
+  started where it best fits the start outline's first node (the two
+  outlines compared as 120 points each, about their own centres and at
+  their own sizes, over every place the end outline could start), so
+  equal shapes blend without twisting through the middle whatever their
+  relative position. Then each outline gains a node where the other has
+  one at the same share of its length (nodes less than half of one
+  120th of the length apart pair up instead), and the steps are
+  interpolated node by node, control points included: a step's side is
+  straight where both paired sides are straight. So a square into a
+  circle gives steps of eight nodes that round off evenly, and two
+  rectangles give rectangles with their corners kept (#1020). Open
+  outlines, and closed ones with more than 512 nodes together, are
+  paired as 120 points spread evenly along their length, each step a
+  polygon through them. Outlines of several parts (letters, holes)
+  blend part by part, the n-th into the n-th, the same way.
   A blend read from a `.cdr` file (versions 9 and 13) pairs the two
   outlines node for node instead, each run from its first node as the
   file gives it: every node of a step lies on the straight line between
