@@ -197,6 +197,14 @@ const OBJ_CONNECTOR: u32 = 0x26;
 /// its name argument names the storage of an `ole2` chunk, its coordinates
 /// hold its size and two opposite corners.
 const OBJ_EMBEDDED: u32 = 0x0a;
+/// A mesh fill object (seen in a version 11 file, #896): a curve (its
+/// coordinates argument) filled with the colour grid of [`ARG_MESH`].
+const OBJ_MESH: u32 = 0x20;
+/// The mesh of an [`OBJ_MESH`] object: its grid lines and node colours
+/// (see [`Ctx::read_mesh`]).
+const ARG_MESH: u32 = 19150;
+/// The largest mesh read, in nodes.
+const MESH_MAX_NODES: usize = 250_000;
 /// The tag of records added by version 24 and later at the start of fill
 /// records (a 16-byte id), which files saved for older versions carry too.
 const NEWER_RECORD_TAG: u32 = 2400;
@@ -2658,6 +2666,119 @@ impl<'a> Ctx<'a> {
         Some(Loda { kind, args })
     }
 
+    /// The mesh of a mesh fill object (argument 19150, a version 11 file,
+    /// #896): its byte length, 100, the number of column lines `C` and of
+    /// row lines `R`; the `C + R` grid lines, each 100, a point count `n`,
+    /// the `n` points and their `n` node types as a curve has them, then
+    /// for each point the (row, column) of the mesh node it is (-1, -1
+    /// for control points and points between nodes), for each point its
+    /// place along the line (0 to 1, -1 for control points), the line's
+    /// place across the grid (f64) and 1 for a column line, 0 for a row
+    /// line; the object's transform (six f64, as in its `trfd`); then
+    /// 100, `R`, `C` and the `R x C` node colours, row by row (12-byte
+    /// colour records). Nodes take their places from the lines through
+    /// them; the cells between are drawn with straight sides (the lines'
+    /// curves are not kept). Also the mesh's edge (the first and last row
+    /// and column lines), the object's outline.
+    fn read_mesh(
+        &mut self,
+        d: &'a [u8],
+        arg: Arg,
+    ) -> Option<(tracedraw_core::Mesh, Option<BezPath>)> {
+        let data = d.get(..arg.end)?;
+        let mut r = self.reader_at(data, arg.off);
+        let _len = r.u32()?;
+        let _tag = r.u32()?;
+        let cols = r.u32()? as usize;
+        let rows = r.u32()? as usize;
+        if cols < 2 || rows < 2 || cols.saturating_mul(rows) > MESH_MAX_NODES {
+            return None;
+        }
+        let mut pos: Vec<Option<Point>> = vec![None; rows * cols];
+        // Each line's curve, and whether it runs from its last node back
+        // to its first.
+        let mut lines: Vec<(BezPath, bool)> = Vec::with_capacity(rows + cols);
+        for _ in 0..rows + cols {
+            let _tag = r.u32()?;
+            let n = r.u32()? as usize;
+            // Each point takes 8 bytes, a type byte, 8 for its node and 8
+            // for its place.
+            if n == 0 || n > r.remaining() / 25 {
+                return None;
+            }
+            let (pts, types) = self.read_points(&mut r, n)?;
+            let mut first: Option<usize> = None;
+            let mut last: Option<usize> = None;
+            for p in &pts {
+                let row = r.i32()?;
+                let col = r.i32()?;
+                if (0..rows as i32).contains(&row) && (0..cols as i32).contains(&col) {
+                    let i = row as usize * cols + col as usize;
+                    pos.get_mut(i)?.get_or_insert(*p);
+                    first.get_or_insert(i);
+                    last = Some(i);
+                }
+            }
+            r.skip(8 * n + 8 + 4);
+            lines.push((build_path(&pts, &types).0, first > last));
+        }
+        // The colour grid closes the record.
+        let grid = arg.end.checked_sub(12 + rows * cols * 12)?;
+        if grid < r.pos {
+            return None;
+        }
+        let mut g = self.reader_at(data, grid);
+        let _tag = g.u32()?;
+        if g.u32()? as usize != rows || g.u32()? as usize != cols {
+            return None;
+        }
+        let mut nodes = Vec::with_capacity(rows * cols);
+        for p in pos {
+            let color = self.read_color(&mut g)?;
+            nodes.push(tracedraw_core::MeshNode {
+                pos: p?,
+                color,
+                alpha: 1.0,
+            });
+        }
+        // The edge: the first row, the last column, the last row and the
+        // first column, round in that order (rows follow the columns).
+        let edge = [
+            (lines.get(cols), false),
+            (lines.get(cols - 1), false),
+            (lines.get(cols + rows - 1), true),
+            (lines.first(), true),
+        ];
+        let mut path = BezPath::new();
+        for (line, back) in edge {
+            let (curve, reversed) = line?;
+            let mut segs: Vec<tracedraw_core::geometry::PathSeg> = curve.segments().collect();
+            if back != *reversed {
+                segs.reverse();
+                for s in segs.iter_mut() {
+                    *s = s.reverse();
+                }
+            }
+            for s in segs {
+                if path.elements().is_empty() {
+                    path.move_to(tracedraw_core::geometry::ParamCurve::start(&s));
+                }
+                path.push(s.as_path_el());
+            }
+        }
+        path.close_path();
+        let edge = (path.elements().len() > 2).then_some(path);
+        Some((
+            tracedraw_core::Mesh {
+                rows: rows as u32 - 1,
+                cols: cols as u32 - 1,
+                nodes,
+                smooth: false,
+            },
+            edge,
+        ))
+    }
+
     fn read_polygon_info(&mut self, d: &'a [u8], arg: Arg) -> Option<PolygonInfo> {
         let mut r = self.reader_at(d, arg.off);
         if self.v < 13 {
@@ -2805,6 +2926,7 @@ impl<'a> Ctx<'a> {
         let mut style_string: Option<String> = None;
         let mut opacity = 1.0;
         let mut lens: Option<tracedraw_core::live::Lens> = None;
+        let mut mesh: Option<Arg> = None;
 
         for arg in &l.args {
             match arg.ty {
@@ -2853,6 +2975,7 @@ impl<'a> Ctx<'a> {
                 ARG_POLYGON => polygon = self.read_polygon_info(d, *arg),
                 ARG_CLIP_CONTENTS => self.pending_clip = self.reader_at(d, arg.off).u32(),
                 ARG_HIDDEN => hidden = self.reader_at(d, arg.off).u32().is_some_and(|h| h != 0),
+                ARG_MESH if kind_code == OBJ_MESH => mesh = Some(*arg),
                 _ => {}
             }
         }
@@ -2873,7 +2996,7 @@ impl<'a> Ctx<'a> {
                 stroke = o.stroke.clone();
             }
         }
-        let kind = match kind_code {
+        let mut kind = match kind_code {
             OBJ_ARTISTIC_TEXT if self.v < 4 => coords.and_then(|a| self.read_text_v3(d, a)),
             OBJ_ARTISTIC_TEXT | OBJ_PARAGRAPH_TEXT => {
                 let frame = FrameHints {
@@ -2885,8 +3008,28 @@ impl<'a> Ctx<'a> {
             }
             OBJ_CONNECTOR => self.read_connector(oc),
             OBJ_EMBEDDED => self.read_embedded(d, coords, name.as_deref()),
+            // A mesh fill object's outline is a curve.
+            OBJ_MESH => coords.and_then(|a| self.read_geometry(OBJ_CURVE, d, a, polygon)),
             _ => coords.and_then(|a| self.read_geometry(kind_code, d, a, polygon)),
         };
+        // Its fill is the mesh and its outline the mesh's edge (the
+        // coordinates can keep the outline the object had before its
+        // nodes were moved); one that cannot be read keeps the curve and
+        // the fill record's colour.
+        if kind_code == OBJ_MESH && kind.is_some() {
+            match mesh.and_then(|a| self.read_mesh(d, a)) {
+                Some((m, edge)) => {
+                    fill = Fill::Mesh(m);
+                    if let Some(path) = edge {
+                        self.pending_node_types.clear();
+                        kind = Some(ShapeKind::Path { path, closed: true });
+                    }
+                }
+                None => self
+                    .report
+                    .warn("a mesh fill could not be read; the object keeps a plain fill"),
+            }
+        }
         let mut kind = match kind {
             Some(k) => k,
             None => {
@@ -5091,6 +5234,115 @@ mod tests {
         // Page is 254 mm square; the rectangle sits at the centre.
         let p = s.transform * Point::ZERO;
         assert!((p.x - 127.0).abs() < 1e-9 && (p.y - 127.0).abs() < 1e-9);
+    }
+
+    /// A mesh fill object (type 0x20, a version 11 file, #896): a curve
+    /// whose fill is the grid of argument 19150, its outline the mesh's
+    /// edge, not the coordinates' stale curve.
+    #[test]
+    fn mesh_fill_objects_are_read_with_their_grid() {
+        let unit = 100_000; // 10 mm
+                            // A line through nodes (row, col) at (col, row) * 10 mm.
+        let line = |nodes: &[(i32, i32)], column: bool| -> Vec<u8> {
+            let mut v = u32s(&[100, nodes.len() as u32]);
+            for (r, c) in nodes {
+                v.extend_from_slice(&i32s(&[c * unit, r * unit]));
+            }
+            v.push(0x04);
+            v.extend(std::iter::repeat_n(0x44, nodes.len() - 1));
+            for (r, c) in nodes {
+                v.extend_from_slice(&i32s(&[*r, *c]));
+            }
+            let n = (nodes.len() - 1).max(1) as f64;
+            v.extend_from_slice(&f64s(
+                &(0..nodes.len()).map(|i| i as f64 / n).collect::<Vec<_>>(),
+            ));
+            v.extend_from_slice(&f64s(&[0.0]));
+            v.extend_from_slice(&u32s(&[u32::from(column)]));
+            v
+        };
+        let mut body = u32s(&[100, 2, 2]);
+        body.extend(line(&[(0, 0), (1, 0)], true));
+        body.extend(line(&[(1, 1), (0, 1)], true));
+        body.extend(line(&[(0, 0), (0, 1)], false));
+        body.extend(line(&[(1, 0), (1, 1)], false));
+        body.extend(f64s(&[1.0, 0.0, 0.0, 0.0, 1.0, 0.0]));
+        body.extend(u32s(&[100, 2, 2]));
+        for (r, g, b) in [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 255)] {
+            body.extend(color_bgr(r, g, b));
+        }
+        let mut mesh = u32s(&[body.len() as u32 + 4]);
+        mesh.extend(body);
+        // The coordinates' curve: a triangle far from the mesh.
+        let mut coords = u32s(&[3]);
+        coords.extend(i32s(&[
+            5 * unit,
+            5 * unit,
+            6 * unit,
+            5 * unit,
+            5 * unit,
+            6 * unit,
+        ]));
+        coords.extend([0x04, 0x44, 0x4c]);
+        let obj = |mesh: Vec<u8>| {
+            list(
+                b"obj ",
+                &chunk(
+                    b"loda",
+                    &loda(OBJ_MESH, &[(ARG_MESH, mesh), (ARG_COORDS, coords.clone())]),
+                ),
+            )
+        };
+        let doc_of = |obj: Vec<u8>| {
+            let body = [
+                chunk(b"mcfg", &mcfg(11, 2_540_000, 2_540_000)),
+                list(b"page", &list(b"layr", &obj)),
+            ]
+            .concat();
+            parse(&riff(b"CDRB", &body), 11)
+        };
+        let (doc, rep) = doc_of(obj(mesh.clone()));
+        assert_eq!(rep.shapes, 1, "{:?}", rep.warnings);
+        assert_eq!(rep.skipped_objects, 0);
+        let s = first_shape(&doc);
+        let Fill::Mesh(m) = &s.fill else {
+            panic!("{:?}", s.fill)
+        };
+        assert_eq!((m.rows, m.cols), (1, 1));
+        let at = |r, c| m.node(r, c).map(|n| (n.pos, n.color));
+        assert_eq!(
+            at(0, 0),
+            Some((Point::new(0.0, 0.0), Color::rgb8(255, 0, 0)))
+        );
+        assert_eq!(
+            at(0, 1),
+            Some((Point::new(10.0, 0.0), Color::rgb8(0, 255, 0)))
+        );
+        assert_eq!(
+            at(1, 0),
+            Some((Point::new(0.0, 10.0), Color::rgb8(0, 0, 255)))
+        );
+        assert_eq!(
+            at(1, 1),
+            Some((Point::new(10.0, 10.0), Color::rgb8(255, 255, 255)))
+        );
+        // The outline is the mesh's edge, round the square.
+        let ShapeKind::Path { path, closed } = &s.kind else {
+            panic!("{:?}", s.kind)
+        };
+        assert!(closed);
+        let b = path.bounding_box();
+        assert!(b.x0.abs() < 1e-9 && (b.x1 - 10.0).abs() < 1e-9, "{b:?}");
+        assert!(b.y0.abs() < 1e-9 && (b.y1 - 10.0).abs() < 1e-9, "{b:?}");
+        // A mesh cut short keeps the curve, with a warning.
+        let (doc, rep) = doc_of(obj(mesh[..mesh.len() - 20].to_vec()));
+        assert_eq!(rep.shapes, 1);
+        assert!(rep.warnings.iter().any(|w| w.contains("mesh")));
+        assert!(!matches!(first_shape(&doc).fill, Fill::Mesh(_)));
+        // Every shorter cut opens without a panic.
+        for cut in 0..mesh.len() {
+            let _ = doc_of(obj(mesh[..cut].to_vec()));
+        }
     }
 
     #[test]

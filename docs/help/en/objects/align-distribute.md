@@ -53,3 +53,25 @@ needed. Each align or distribute is one undo step.
 
 To place copies at even distances in one step, see
 [Step and repeat](step-and-repeat.md).
+
+## Fit objects to a path {#fit-to-path}
+
+The [[docker.fit_to_path]] panel places objects along a line, a curve or the
+outline of a shape. Open it with
+[[menu.object > menu.object.fit_objects_to_path]].
+
+1. Select the objects to place, then the path last (Shift+click).
+2. Under [[docker.fit_to_path_spacing]], choose
+   [[docker.fit_to_path_even]] to spread the objects over the whole path, or
+   [[docker.fit_to_path_distance]] and type the [[docker.fit_to_path_distance_value]]
+   between the centers of neighbouring objects.
+3. [[docker.fit_to_path_offset]] moves the first object along the path from
+   its start.
+4. Tick [[docker.fit_to_path_rotate]] to turn each object with the direction
+   of the path, and [[docker.fit_to_path_reverse]] to start from the other
+   end.
+5. The outlines on the canvas show where the objects will go. Click
+   [[docker.apply]].
+
+On a closed shape the objects go all the way round without the first and
+last meeting. Fitting is one undo step.

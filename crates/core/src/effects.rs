@@ -109,12 +109,17 @@ pub fn blend(a: &BezPath, b: &BezPath, steps: usize, samples: usize) -> Vec<BezP
 /// [`blend`], but with one-part outlines paired from given nodes:
 /// `nodes` holds, in page space, the first node of `a` and a point after
 /// it along `a`, then the same for `b`. Each outline is run from the
-/// sample nearest its first node, the way that reaches the second point
-/// sooner, and the two are paired point by point without matching them
+/// node nearest its first node, the way that reaches the second point
+/// sooner, and the two are paired node for node without matching them
 /// by shape: when the nodes sit at different places on the two outlines
 /// the steps turn, and when the outlines run opposite ways they fold
 /// through the middle, as blends read from `.cdr` files draw (#597).
-/// Outlines of several parts, or `None`, blend as [`blend`] does.
+/// Each step's nodes lie on the straight lines between paired nodes, so
+/// a step between a pentagon and a rectangle is a pentagon with sharp
+/// corners (see [`paired_nodes`] for outlines with different node
+/// counts). Open or very large outlines are paired point by point along
+/// their length instead. Outlines of several parts, or `None`, blend as
+/// [`blend`] does.
 pub fn blend_from_nodes(
     a: &BezPath,
     b: &BezPath,
@@ -134,6 +139,25 @@ pub fn blend_from_nodes(
     };
     if !one_part(a) || !one_part(b) {
         return blend(a, b, steps, samples);
+    }
+    if let Some((sa, sb)) = paired_nodes(a, b, [a0, a1, b0, b1]) {
+        return (1..=steps)
+            .map(|k| {
+                let t = k as f64 / (steps + 1) as f64;
+                let mut out = BezPath::new();
+                out.move_to(sa[0].p0.lerp(sb[0].p0, t));
+                for (x, y) in sa.iter().zip(&sb) {
+                    let end = x.p3.lerp(y.p3, t);
+                    if x.line && y.line {
+                        out.line_to(end);
+                    } else {
+                        out.curve_to(x.c1.lerp(y.c1, t), x.c2.lerp(y.c2, t), end);
+                    }
+                }
+                out.close_path();
+                out
+            })
+            .collect();
     }
     let (Some(pa), Some(pb)) = (
         run_from(&resample(a, samples), a0, a1),
@@ -155,6 +179,178 @@ pub fn blend_from_nodes(
             )
         })
         .collect()
+}
+
+/// One segment of an outline as a cubic (a line has its control points
+/// on itself, a third of the way from each end).
+#[derive(Debug, Clone, Copy)]
+struct Seg {
+    p0: Point,
+    c1: Point,
+    c2: Point,
+    p3: Point,
+    line: bool,
+}
+
+impl Seg {
+    fn line(p0: Point, p3: Point) -> Seg {
+        Seg {
+            p0,
+            c1: p0.lerp(p3, 1.0 / 3.0),
+            c2: p0.lerp(p3, 2.0 / 3.0),
+            p3,
+            line: true,
+        }
+    }
+
+    fn reversed(self) -> Seg {
+        Seg {
+            p0: self.p3,
+            c1: self.c2,
+            c2: self.c1,
+            p3: self.p0,
+            line: self.line,
+        }
+    }
+
+    /// The part of the segment between parameters `t0` and `t1`.
+    fn part(self, t0: f64, t1: f64) -> Seg {
+        if self.line {
+            return Seg::line(self.p0.lerp(self.p3, t0), self.p0.lerp(self.p3, t1));
+        }
+        use kurbo::ParamCurve;
+        let c = kurbo::CubicBez::new(self.p0, self.c1, self.c2, self.p3).subsegment(t0..t1);
+        Seg {
+            p0: c.p0,
+            c1: c.p1,
+            c2: c.p2,
+            p3: c.p3,
+            line: false,
+        }
+    }
+}
+
+/// The most nodes an outline may have to be paired node for node; larger
+/// ones are paired point by point along their length, so a blend of huge
+/// outlines with many steps stays small.
+const MAX_PAIRED_NODES: usize = 4096;
+
+/// The segments of a closed one-part outline (the closing line included,
+/// segments of no length left out; an outline ending on its first node
+/// is closed). `None` for an open outline, one of
+/// more than [`MAX_PAIRED_NODES`] nodes or of fewer than two segments.
+fn closed_segments(path: &BezPath) -> Option<Vec<Seg>> {
+    let els = path.elements();
+    if els.len() > MAX_PAIRED_NODES + 2 {
+        return None;
+    }
+    let mut segs = Vec::new();
+    let (mut start, mut cur, mut closed) = (None, Point::ZERO, false);
+    for el in els {
+        let seg = match *el {
+            PathEl::MoveTo(p) => {
+                if start.is_some() {
+                    return None;
+                }
+                start = Some(p);
+                cur = p;
+                continue;
+            }
+            PathEl::LineTo(p) => Seg::line(cur, p),
+            PathEl::QuadTo(c, p) => Seg {
+                p0: cur,
+                c1: cur.lerp(c, 2.0 / 3.0),
+                c2: p.lerp(c, 2.0 / 3.0),
+                p3: p,
+                line: false,
+            },
+            PathEl::CurveTo(c1, c2, p) => Seg {
+                p0: cur,
+                c1,
+                c2,
+                p3: p,
+                line: false,
+            },
+            PathEl::ClosePath => {
+                closed = true;
+                Seg::line(cur, start?)
+            }
+        };
+        cur = seg.p3;
+        let still = |q: Point| (q - seg.p0).hypot() <= 1e-9;
+        if !(still(seg.c1) && still(seg.c2) && still(seg.p3)) {
+            segs.push(seg);
+        }
+        if closed {
+            break;
+        }
+    }
+    // A run that comes back to its first node without a close is closed.
+    if let (false, Some(s)) = (closed, start) {
+        closed = (cur - s).hypot() <= 1e-9;
+    }
+    let finite = segs.iter().all(|s| {
+        [s.p0, s.c1, s.c2, s.p3]
+            .iter()
+            .all(|p| p.x.is_finite() && p.y.is_finite())
+    });
+    (closed && finite && segs.len() >= 2).then_some(segs)
+}
+
+/// The segments of `segs` run from the node nearest `first`, the way that
+/// reaches the node nearest `next` sooner.
+fn run_segments_from(segs: &[Seg], first: Point, next: Point) -> Vec<Seg> {
+    let n = segs.len();
+    let nearest = |q: Point| {
+        (0..n)
+            .min_by(|i, j| {
+                (segs[*i].p0 - q)
+                    .hypot()
+                    .partial_cmp(&(segs[*j].p0 - q).hypot())
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .unwrap_or(0)
+    };
+    let (i0, i1) = (nearest(first), nearest(next));
+    if (i1 + n - i0) % n <= n / 2 {
+        (0..n).map(|k| segs[(i0 + k) % n]).collect()
+    } else {
+        // Backward: the segment ending at node i0 first, reversed.
+        (0..n)
+            .map(|k| segs[(i0 + n - 1 - k) % n].reversed())
+            .collect()
+    }
+}
+
+/// The two closed one-part outlines `a` and `b` as runs of segments to
+/// pair one for one, from the nodes given as in [`blend_from_nodes`].
+/// When one has fewer nodes, its last segment (the one closing the run
+/// back to its first node) is cut into equal parts until the counts
+/// match: a rectangle blended with a pentagon gains a node halfway along
+/// that segment, as the steps of the two blends attached to issue #597
+/// show. `None` when either outline cannot be paired node for node.
+fn paired_nodes(a: &BezPath, b: &BezPath, nodes: [Point; 4]) -> Option<(Vec<Seg>, Vec<Seg>)> {
+    if !nodes.iter().all(|p| p.x.is_finite() && p.y.is_finite()) {
+        return None;
+    }
+    let [a0, a1, b0, b1] = nodes;
+    let mut sa = run_segments_from(&closed_segments(a)?, a0, a1);
+    let mut sb = run_segments_from(&closed_segments(b)?, b0, b1);
+    let fewer = if sa.len() < sb.len() {
+        Some((&mut sa, sb.len()))
+    } else if sb.len() < sa.len() {
+        Some((&mut sb, sa.len()))
+    } else {
+        None
+    };
+    if let Some((short, want)) = fewer {
+        let parts = want - short.len() + 1;
+        let last = short.pop()?;
+        for k in 0..parts {
+            short.push(last.part(k as f64 / parts as f64, (k + 1) as f64 / parts as f64));
+        }
+    }
+    Some((sa, sb))
 }
 
 /// The closed run of `pts` (the last point repeating the first) started at
@@ -981,6 +1177,120 @@ mod tests {
             blend_from_nodes(&sq, &sq, 1, 64, Some([nan, x, o, x])),
             plain
         );
+    }
+
+    /// Paired from given nodes, a rectangle and a pentagon blend node for
+    /// node: every step is a pentagon with sharp corners (straight sides
+    /// between the paired nodes, nothing cut off), the rectangle gaining
+    /// its fifth node halfway along the side that closes its run back to
+    /// its first node, as the blends attached to #597 draw.
+    #[test]
+    fn blend_from_nodes_pairs_a_rectangle_and_a_pentagon_node_for_node() {
+        let rect = Rect::new(0.0, 0.0, 70.0, 60.0).to_path(0.01);
+        // A pentagon away to the left, from its top vertex clockwise.
+        let pent: Vec<Point> = (0..5)
+            .map(|i| {
+                let a = std::f64::consts::FRAC_PI_2 - i as f64 * std::f64::consts::TAU / 5.0;
+                Point::new(-200.0 + 50.0 * a.cos(), 50.0 * a.sin())
+            })
+            .collect();
+        let pentagon = polygon(&pent);
+        // The rectangle from its upper right corner, down its height first.
+        let (r0, r1) = (Point::new(70.0, 60.0), Point::new(70.0, 0.0));
+        let steps = blend_from_nodes(&rect, &pentagon, 3, 64, Some([r0, r1, pent[0], pent[1]]));
+        assert_eq!(steps.len(), 3);
+        for s in &steps {
+            let els = s.elements();
+            assert_eq!(els.len(), 7, "{els:?}");
+            assert!(els[1..6].iter().all(|e| matches!(e, PathEl::LineTo(_))));
+        }
+        let nodes: Vec<Point> = steps[1]
+            .elements()
+            .iter()
+            .filter_map(|e| match e {
+                PathEl::MoveTo(p) | PathEl::LineTo(p) => Some(*p),
+                _ => None,
+            })
+            .collect();
+        // The rectangle runs (70,60), (70,0), (0,0), (0,60), then the
+        // middle of its closing side, (35,60), paired with the pentagon's
+        // fifth vertex.
+        let want = [
+            Point::new(70.0, 60.0),
+            Point::new(70.0, 0.0),
+            Point::new(0.0, 0.0),
+            Point::new(0.0, 60.0),
+            Point::new(35.0, 60.0),
+        ];
+        for (i, (got, r)) in nodes.iter().zip(want).enumerate() {
+            let w = r.midpoint(pent[i]);
+            assert!((*got - w).hypot() < 1e-9, "node {i}: {got:?} vs {w:?}");
+        }
+        // Run the other way, the rectangle starts down its other side.
+        let back = blend_from_nodes(
+            &rect,
+            &pentagon,
+            1,
+            64,
+            Some([r0, Point::new(0.0, 60.0), pent[0], pent[1]]),
+        );
+        let second = match back[0].elements()[1] {
+            PathEl::LineTo(p) => p,
+            ref e => panic!("{e:?}"),
+        };
+        assert!((second - Point::new(0.0, 60.0).midpoint(pent[1])).hypot() < 1e-9);
+    }
+
+    /// Curved outlines pair node for node too, their control points
+    /// blended: an ellipse (four curves) and a triangle give steps of four
+    /// curves, the triangle's closing side cut in two. Open outlines and
+    /// outlines of very many nodes are paired along their length.
+    #[test]
+    fn blend_from_nodes_pairs_curves_and_falls_back_for_others() {
+        let ellipse =
+            crate::geometry::Ellipse::from_rect(Rect::new(0.0, 0.0, 40.0, 20.0)).to_path(0.01);
+        let tri = polygon(&[
+            Point::new(100.0, 0.0),
+            Point::new(140.0, 0.0),
+            Point::new(120.0, 30.0),
+        ]);
+        let first = match ellipse.elements()[0] {
+            PathEl::MoveTo(p) => p,
+            ref e => panic!("{e:?}"),
+        };
+        let next = match ellipse.elements()[1] {
+            PathEl::CurveTo(_, _, p) => p,
+            ref e => panic!("{e:?}"),
+        };
+        let nodes = [first, next, Point::new(100.0, 0.0), Point::new(140.0, 0.0)];
+        let steps = blend_from_nodes(&ellipse, &tri, 2, 64, Some(nodes));
+        assert_eq!(steps.len(), 2);
+        let curves = steps[0]
+            .elements()
+            .iter()
+            .filter(|e| matches!(e, PathEl::CurveTo(..)))
+            .count();
+        assert_eq!(curves, 4, "{:?}", steps[0].elements());
+        for s in &steps {
+            let c = s.bounding_box().center();
+            assert!(c.x > 20.0 && c.x < 120.0, "{c:?}");
+        }
+        // An open outline: paired along its length, still steps.
+        let mut open = BezPath::new();
+        open.move_to((0.0, 0.0));
+        open.line_to((10.0, 0.0));
+        open.line_to((10.0, 10.0));
+        assert_eq!(blend_from_nodes(&open, &tri, 2, 64, Some(nodes)).len(), 2);
+        // Many nodes: paired along the length (no blow-up), still steps.
+        let many: Vec<Point> = (0..MAX_PAIRED_NODES + 10)
+            .map(|i| {
+                let a = i as f64 * std::f64::consts::TAU / (MAX_PAIRED_NODES + 10) as f64;
+                Point::new(10.0 * a.cos(), 10.0 * a.sin())
+            })
+            .collect();
+        let big = blend_from_nodes(&polygon(&many), &tri, 2, 64, Some(nodes));
+        assert_eq!(big.len(), 2);
+        assert!(big[0].elements().len() < 200);
     }
 
     #[test]

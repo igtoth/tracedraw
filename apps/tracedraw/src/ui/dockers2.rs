@@ -53,6 +53,7 @@ pub fn show(app: &mut App, ui: &mut Ui, tab: DockerTab) {
         DockerTab::FontSampler => crate::ui::font_sampler::font_sampler(app, ui),
         DockerTab::Corners => corners(app, ui),
         DockerTab::JoinCurves => join_curves(app, ui),
+        DockerTab::FitToPath => fit_to_path(app, ui),
         DockerTab::Coordinates => crate::ui::coords_docker::coordinates(app, ui),
         DockerTab::VectorMosaic => crate::ui::vector_mosaic_docker::vector_mosaic(app, ui),
         DockerTab::PictureMosaic => crate::ui::picture_mosaic_docker::picture_mosaic(app, ui),
@@ -2069,6 +2070,70 @@ fn join_curves(app: &mut App, ui: &mut Ui) {
         .clicked()
     {
         app.join_curves();
+    }
+}
+
+/// Fit Objects to Path: spacing (even or a fixed distance), the start
+/// offset, turning the objects with the path and the direction, with a
+/// preview of where the objects go; the last selected object is the path
+/// (#1027).
+fn fit_to_path(app: &mut App, ui: &mut Ui) {
+    use crate::ops2::FitSpacing;
+    let u = app.units;
+    let mut f = app.fit_path;
+    let field = |ui: &mut Ui, key: &str, mm: &mut f64, min: f64| {
+        ui.horizontal(|ui| {
+            ui.label(tr(key));
+            let mut v = u.world_from_mm(*mm);
+            if ui
+                .add_sized(
+                    [90.0, 22.0],
+                    crate::ui::field::NumField::new(&mut v)
+                        .range(min..=100_000.0)
+                        .max_decimals(3)
+                        .suffix(format!(" {}", u.short()))
+                        .unit_mm(u.mm()),
+                )
+                .changed()
+            {
+                *mm = u.world_to_mm(v);
+            }
+        });
+    };
+    dim(ui, tr("docker.fit_to_path_hint"));
+    ui.strong(tr("docker.fit_to_path_spacing"));
+    ui.radio_value(
+        &mut f.spacing,
+        FitSpacing::Even,
+        tr("docker.fit_to_path_even"),
+    );
+    ui.radio_value(
+        &mut f.spacing,
+        FitSpacing::Distance,
+        tr("docker.fit_to_path_distance"),
+    );
+    if f.spacing == FitSpacing::Distance {
+        field(
+            ui,
+            "docker.fit_to_path_distance_value",
+            &mut f.distance,
+            0.0,
+        );
+    }
+    field(ui, "docker.fit_to_path_offset", &mut f.offset, -100_000.0);
+    ui.checkbox(&mut f.rotate, tr("docker.fit_to_path_rotate"));
+    ui.checkbox(&mut f.reverse, tr("docker.fit_to_path_reverse"));
+    app.fit_path = f;
+    let preview = app.fit_objects_to_path_preview();
+    let valid = app.selection.len() >= 2;
+    app.docker_preview.extend(preview);
+    ui.add_space(8.0);
+    if ui
+        .add_enabled(valid, egui::Button::new(tr("docker.apply")))
+        .clicked()
+    {
+        app.fit_objects_to_path();
+        app.docker_preview.clear();
     }
 }
 
