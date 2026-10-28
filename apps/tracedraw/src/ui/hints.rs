@@ -405,7 +405,11 @@ fn ai_topic(app: &mut App, ui: &mut Ui) {
         ui.add_space(4.0);
     }
     ui.add_space(4.0);
-    if ui.button(tr("aiui.set_up")).clicked() {
+    if ui
+        .button(tr("aiui.set_up"))
+        .rich_tip(crate::ui::tips::keyed("aiui.set_up"))
+        .clicked()
+    {
         crate::ui::ai_ui::open_options(app, crate::ui::dialogs::OptionsPage::AiGeneral);
     }
 }

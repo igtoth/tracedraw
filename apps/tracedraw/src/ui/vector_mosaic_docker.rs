@@ -7,7 +7,7 @@
 use crate::app::App;
 use crate::i18n::tr;
 use crate::theme::Tokens;
-use crate::ui::docker_form::{indented, row, section, wide_button};
+use crate::ui::docker_form::{indented, row, section};
 use crate::ui::tips::RichTip;
 use crate::vector_mosaic::{unit_tile, TileShape, TrackMethod};
 use egui::{Color32, Sense, Stroke, Ui, Vec2};
@@ -80,14 +80,16 @@ pub fn vector_mosaic(app: &mut App, ui: &mut Ui) {
         row(ui, &tr("docker.vector_mosaic_density"), |ui| {
             ui.add(crate::ui::Rail(
                 egui::Slider::new(&mut s.density, 1.0..=100.0).max_decimals(1),
-            ));
+            ))
+            .rich_tip(crate::ui::tips::keyed("docker.vector_mosaic_density"));
         });
         row(ui, &tr("docker.vector_mosaic_scale"), |ui| {
             ui.add(crate::ui::Rail(
                 egui::Slider::new(&mut s.scale, 0.1..=5.0)
                     .step_by(0.05)
                     .max_decimals(2),
-            ));
+            ))
+            .rich_tip(crate::ui::tips::keyed("docker.vector_mosaic_scale"));
         });
         row(ui, &tr("docker.vector_mosaic_angle"), |ui| {
             ui.add(
@@ -96,21 +98,32 @@ pub fn vector_mosaic(app: &mut App, ui: &mut Ui) {
                     .speed(0.5)
                     .max_decimals(1)
                     .suffix("\u{b0}"),
-            );
+            )
+            .rich_tip(crate::ui::tips::keyed("docker.vector_mosaic_angle"));
         });
         indented(ui, |ui| {
             ui.checkbox(
                 &mut s.keep_original,
                 tr("docker.vector_mosaic_keep_original"),
-            );
+            )
+            .rich_tip(crate::ui::tips::keyed("docker.vector_mosaic_keep_original"));
         });
         section(ui, None);
         ui.horizontal(|ui| {
-            ui.checkbox(&mut s.limit_colors, tr("docker.vector_mosaic_limit_colors"));
+            ui.checkbox(&mut s.limit_colors, tr("docker.vector_mosaic_limit_colors"))
+                .rich_tip(crate::ui::tips::keyed("docker.vector_mosaic_limit_colors"));
             ui.add_enabled(
                 s.limit_colors,
                 crate::ui::field::NumField::new(&mut s.colors).range(2..=256),
-            );
+            )
+            .rich_tip(crate::ui::tips::pair(
+                "docker.vector_mosaic_colors",
+                "docker.vector_mosaic_colors_desc",
+            ))
+            .rich_disabled_tip(crate::ui::tips::pair(
+                "docker.vector_mosaic_colors",
+                "docker.vector_mosaic_colors_desc",
+            ));
         });
         section(ui, Some(&tr("docker.vector_mosaic_tracking")));
         row(ui, &tr("docker.vector_mosaic_method"), |ui| {
@@ -121,12 +134,16 @@ pub fn vector_mosaic(app: &mut App, ui: &mut Ui) {
                     for m in TrackMethod::ALL {
                         ui.selectable_value(&mut s.method, m, tr(m.key()));
                     }
-                });
+                })
+                .response
+                .rich_tip(crate::ui::tips::keyed("docker.vector_mosaic_method"));
         });
         row(ui, &tr("docker.vector_mosaic_merge"), |ui| {
-            ui.add(crate::ui::field::NumField::new(&mut s.merge).range(1..=36));
+            ui.add(crate::ui::field::NumField::new(&mut s.merge).range(1..=36))
+                .rich_tip(crate::ui::tips::keyed("docker.vector_mosaic_merge"));
         });
-        ui.checkbox(&mut s.weld, tr("docker.vector_mosaic_weld"));
+        ui.checkbox(&mut s.weld, tr("docker.vector_mosaic_weld"))
+            .rich_tip(crate::ui::tips::keyed("docker.vector_mosaic_weld"));
     }
     // Shape: the list, Select (a custom curve from the selection) beside
     // it, and the preview under them.
@@ -141,7 +158,9 @@ pub fn vector_mosaic(app: &mut App, ui: &mut Ui) {
                 for t in TileShape::ALL {
                     ui.selectable_value(&mut s.shape, t, tr(t.key()));
                 }
-            });
+            })
+            .response
+            .rich_tip(crate::ui::tips::keyed("docker.vector_mosaic_shape"));
         select = ui
             .add_enabled(
                 custom && !app.selection.is_empty(),
@@ -165,7 +184,8 @@ pub fn vector_mosaic(app: &mut App, ui: &mut Ui) {
     }
     let custom = app.vector_mosaic.shape == TileShape::Custom;
     let ready = !app.selection.is_empty() && (!custom || app.vector_mosaic.custom.is_some());
-    if wide_button(ui, &tr("docker.apply"), ready) {
+    let tip = crate::ui::tips::pair("docker.apply", "docker.vector_mosaic_apply_desc");
+    if crate::ui::docker_form::wide_button(ui, &tr("docker.apply"), ready, &tip) {
         let s = app.vector_mosaic.clone();
         app.apply_vector_mosaic(&s);
     }

@@ -72,7 +72,11 @@ pub fn banner(app: &mut App, ui: &mut Ui, need: Need) -> bool {
                     ui.label(RichText::new(tr("aiui.banner_title")).strong());
                     ui.label(text);
                     ui.add_space(4.0);
-                    if ui.button(tr("aiui.set_up")).clicked() {
+                    if ui
+                        .button(tr("aiui.set_up"))
+                        .rich_tip(crate::ui::tips::keyed("aiui.set_up"))
+                        .clicked()
+                    {
                         let page = if !app.ai_features_on() {
                             OptionsPage::AiGeneral
                         } else {

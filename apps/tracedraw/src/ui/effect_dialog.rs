@@ -953,7 +953,9 @@ pub fn fx_section(app: &mut App, ui: &mut Ui, id: ShapeId) {
             }
         });
     }
-    let resp = ui.button(tr("docker.add_effect"));
+    let resp = ui
+        .button(tr("docker.add_effect"))
+        .rich_tip(crate::ui::tips::keyed("docker.add_effect"));
     egui::Popup::menu(&resp)
         .id(egui::Id::new("fx_add_menu"))
         .style(crate::ui::menus::menu_popup_style)

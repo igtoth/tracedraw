@@ -205,6 +205,7 @@ fn header(app: &mut App, ui: &mut Ui, id: &str, title: &str, gear: bool) -> (boo
     let open = is_open(app, id);
     let (rect, resp) =
         ui.allocate_exact_size(Vec2::new(ui.available_width(), 24.0), Sense::click());
+    let resp = resp.rich_tip_with(|| format!("{title}\n{}", tr("docker.section_desc")));
     let fill = if resp.hovered() {
         Tokens::tool_hover()
     } else {
@@ -636,7 +637,9 @@ fn fill_row(
             if ui.selectable_label(uniform, &names[1]).clicked() && !uniform {
                 out = Some(Some(Fill::Solid(Color::BLACK)));
             }
-        });
+        })
+        .response
+        .rich_tip(format!("{tip}\n{}", tr("docker.text_paint_desc")));
     let mut c = color.unwrap_or(Color::BLACK);
     ui.add_enabled_ui(uniform, |ui| {
         if crate::ui::color_picker::color_button(ui, &mut c) {
@@ -700,7 +703,9 @@ fn style_list(app: &mut App, ui: &mut Ui) -> bool {
                 app.text_italic = italic;
                 changed = true;
             }
-        });
+        })
+        .response
+        .rich_tip(crate::ui::tips::keyed("docker.font_style"));
     changed
 }
 
@@ -740,7 +745,9 @@ fn character(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) 
             } else {
                 0.0
             };
-        changed |= crate::ui::font_list::text_font_list(app, ui, "docker_text_font", w.max(120.0));
+        changed |= crate::ui::tips::tip_over(ui, crate::ui::tips::keyed("toolbar.font"), |ui| {
+            crate::ui::font_list::text_font_list(app, ui, "docker_text_font", w.max(120.0))
+        });
         row_check(app, ui, "font");
     });
     ui.horizontal(|ui| {
@@ -848,7 +855,12 @@ fn character(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) 
                         }
                     }
                 }
-            });
+            })
+            .response
+            .rich_tip(crate::ui::tips::pair(
+                "docker.text_outline",
+                "docker.text_outline_width_desc",
+            ));
         let mut c = stroke.as_ref().map_or(Color::BLACK, |s| s.color);
         ui.add_enabled_ui(stroke.is_some(), |ui| {
             if crate::ui::color_picker::color_button(ui, &mut c) {
