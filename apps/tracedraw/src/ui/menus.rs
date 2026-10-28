@@ -2450,11 +2450,15 @@ fn object_menu(app: &mut App, ui: &mut Ui) {
                 app.run(Command::ExtractContents { clip: c });
             }
         }
-        if app.clip_frame_edit.is_some() {
-            if item(ui, "menu.object.clip_frame_finish", "", true) {
-                app.finish_clip_frame_edit();
-            }
-        } else if item(ui, "menu.object.clip_frame_edit", "", is_clip) {
+        // Walked for the list of commands (Options > Customization >
+        // Commands) both rows count, so each can take a shortcut (#1148).
+        let editing = app.clip_frame_edit.is_some();
+        if (editing || invoke::active()) && item(ui, "menu.object.clip_frame_finish", "", editing) {
+            app.finish_clip_frame_edit();
+        }
+        if (!editing || invoke::active())
+            && item(ui, "menu.object.clip_frame_edit", "", is_clip && !editing)
+        {
             app.edit_clip_frame();
         }
         let locked = app
@@ -3055,9 +3059,12 @@ fn text_menu(app: &mut App, ui: &mut Ui) {
     sep(ui);
     // Vertical text, offered with a CJK interface language or for text
     // in those scripts (#257).
-    if app.vertical_text_offered() {
+    // (Listed in Options > Customization > Commands all the same, so it
+    // can take a shortcut, #1148.)
+    let offered = app.vertical_text_offered();
+    if offered || invoke::active() {
         let on = app.vertical_text_on();
-        if check(ui, "menu.text.vertical_text", "", on) {
+        if mark_item_if(ui, "menu.text.vertical_text", "", Mark::Check(on), offered) {
             app.set_vertical_text(!on);
         }
     }

@@ -144,8 +144,21 @@ name.
   letter you give a command or tool runs it instead of opening the
   menu with that access letter, and while the page waits for keys no
   menu opens.
+- Rows a menu shows only at times are listed all the same and take keys
+  (Object > Clip to Frame > Finish Editing Contents beside Edit Contents,
+  Text > Vertical Text), #1148.
+- The bars' own buttons (listed under Toolbar Buttons) that run a menu
+  command show that command's keys on their Shortcut Keys tab and set
+  them: New, Open, Save, Print, Cut, Copy, Paste, Undo, Redo, Import,
+  Export, Publish to PDF, Full-screen Preview, Rulers, Grid,
+  Guidelines, Snap Off, Zoom In, Zoom Out and Zoom to Fit
+  (`bar_items::menu_command`, #1148). The buttons the menus lack (the
+  zoom levels list, Snap To, the other zoom buttons, Options, Launch)
+  have no Shortcut Keys tab.
 
 ## Checks
+
+- `ui::options::tests::bar_buttons_and_rows_shown_at_times_take_shortcuts`
 
 - Given a dialog open, when Esc is pressed, then the dialog is closed
   and the tool and selection are unchanged.

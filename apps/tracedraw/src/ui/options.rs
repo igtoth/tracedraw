@@ -2903,7 +2903,9 @@ fn commands_page(app: &mut App, ui: &mut Ui) {
                 .as_ref()
                 .and_then(|s| items.iter().find(|c| &c.id == s))
                 .cloned();
-            // A bar's own button runs no command a key could take.
+            // A bar's button takes the keys of the menu command it runs
+            // (#1148); one the menus lack runs no command a key could take.
+            let selected = selected.map(|c| keys_target(app, c));
             let button = selected
                 .as_ref()
                 .is_some_and(|c| c.tool.is_none() && crate::ui::bar_items::is_button(&c.id));
@@ -2937,6 +2939,27 @@ fn commands_page(app: &mut App, ui: &mut Ui) {
             }
         });
     });
+}
+
+/// The command whose keys `c` shows and sets: a bar button that runs a
+/// menu command stands for that command (its keys are the button's),
+/// keeping its own name; anything else is itself.
+fn keys_target(app: &App, c: CommandItem) -> CommandItem {
+    if c.tool.is_some() {
+        return c;
+    }
+    let entry = crate::ui::bar_items::menu_command(&c.id)
+        .and_then(|key| app.shortcut_editor.entries.iter().find(|e| e.key == key));
+    match entry {
+        Some(e) => CommandItem {
+            id: e.key.clone(),
+            name: c.name,
+            place: command_label(e),
+            built_in: e.shortcut.clone(),
+            tool: None,
+        },
+        None => c,
+    }
 }
 
 /// One row of the list: the command's picture and name.
@@ -4227,6 +4250,64 @@ fn bleed_page(app: &mut App, ui: &mut Ui) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #1148: every command can take a shortcut. A bar button that runs
+    /// a menu command shows that command's keys; rows the menus show only
+    /// at times (Finish Editing Contents, Vertical Text) are listed too.
+    #[test]
+    fn bar_buttons_and_rows_shown_at_times_take_shortcuts() {
+        let mut app = App::headless();
+        let ctx = egui::Context::default();
+        let mut entries = Vec::new();
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            entries = crate::ui::menus::commands(&mut app, ui.ctx());
+        });
+        out.textures_delta.clear();
+        app.shortcut_editor.entries = entries;
+        for key in [
+            "menu.object.clip_frame_finish",
+            "menu.object.clip_frame_edit",
+            "menu.text.vertical_text",
+        ] {
+            assert!(
+                app.shortcut_editor.entries.iter().any(|e| e.key == key),
+                "{key} is not listed"
+            );
+        }
+        // Each button's menu command is one the menus have.
+        for id in crate::ui::bar_items::all_buttons() {
+            if let Some(key) = crate::ui::bar_items::menu_command(id) {
+                assert!(
+                    app.shortcut_editor.entries.iter().any(|e| e.key == key),
+                    "{id}: {key} is not a menu command"
+                );
+            }
+        }
+        let buttons = command_items(&app, Some(BUTTONS), "");
+        let zoom_in = buttons
+            .iter()
+            .find(|c| c.id == "zoom_in")
+            .cloned()
+            .expect("zoom in button");
+        let target = keys_target(&app, zoom_in);
+        assert_eq!(target.id, "menu.view.zoom_in");
+        assert!(!crate::ui::bar_items::is_button(&target.id));
+        // A key set through the button runs the menu command.
+        set_menu_shortcut(&mut app, &target.id, "Alt+Shift+Z");
+        assert!(current_keys(&app, &target).contains(&"Alt+Shift+Z".to_string()));
+        assert!(app
+            .settings
+            .shortcuts
+            .iter()
+            .any(|(k, v)| k == "menu.view.zoom_in" && v == "Alt+Shift+Z"));
+        // A button the menus lack stays without keys.
+        let levels = buttons
+            .iter()
+            .find(|c| c.id == "zoom_levels")
+            .cloned()
+            .expect("zoom levels");
+        assert_eq!(keys_target(&app, levels).id, "zoom_levels");
+    }
 
     #[test]
     fn command_list_filters_by_menu_toolbox_and_text() {

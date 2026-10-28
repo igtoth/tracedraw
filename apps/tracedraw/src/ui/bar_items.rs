@@ -110,6 +110,34 @@ pub fn is_button(id: &str) -> bool {
     all_buttons().contains(&id)
 }
 
+/// The menu command a bar button runs, when the menus have one: its
+/// shortcut is the button's (Options > Customization > Commands, #1148).
+pub fn menu_command(id: &str) -> Option<&'static str> {
+    Some(match id {
+        "new" => "menu.file.new",
+        "open" => "menu.file.open",
+        "save" => "menu.file.save",
+        "print" => "menu.file.print",
+        "cut" => "menu.edit.cut",
+        "copy" => "menu.edit.copy",
+        "paste" => "menu.edit.paste",
+        "undo" => "menu.edit.undo",
+        "redo" => "menu.edit.redo",
+        "import" => "menu.file.import",
+        "export" => "menu.file.export",
+        "publish_pdf" => "menu.file.publish_to_pdf",
+        "fullscreen" => "menu.view.fullscreen_preview",
+        "rulers" => "menu.view.rulers",
+        "grid" => "menu.view.document_grid",
+        "guidelines" => "menu.view.guidelines",
+        "snap_off" => "menu.view.snap_off",
+        "zoom_in" => "menu.view.zoom_in",
+        "zoom_out" => "menu.view.zoom_out",
+        "zoom_fit" => "menu.view.zoom_to_fit",
+        _ => return None,
+    })
+}
+
 /// The bar's buttons, in order.
 pub fn items(app: &App, bar: ItemBar) -> Vec<String> {
     match app.settings.bar_items.get(bar.id()) {
