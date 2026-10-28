@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Colour palette: on the Welcome Screen (no drawing shown) the swatches keep their colours at full strength instead of showing faded; a click there still does nothing, and hovering a swatch shows its tooltip. Every palette tooltip gives the colour's name in bold and its values one per line (C: 0, M: 60, Y: 100, K: 0) (#1082).
 - Saving as .cdr: text in a SemiBold face (or a Light, Medium, Black ...) is saved as its family at that weight ("Titillium Web" at SemiBold), as the file it came from names it. It was saved under the name "Titillium Web SemiBold", which no installed font goes by, so the saved file opened elsewhere in a substituted font (#892, #624).
 
 ## 0.19.9 (2026-10-28)
