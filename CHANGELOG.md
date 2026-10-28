@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Windows: a tool picked with its shortcut shows its pointer at once, with the mouse still. Windows changed or hid the pointer only once the mouse moved, so the old pointer stayed until then (#1026).
 - Saving as .cdr: text in a SemiBold face (or a Light, Medium, Black ...) is saved as its family at that weight ("Titillium Web" at SemiBold), as the file it came from names it. It was saved under the name "Titillium Web SemiBold", which no installed font goes by, so the saved file opened elsewhere in a substituted font (#892, #624).
 
 ## 0.19.9 (2026-10-28)
