@@ -42,10 +42,12 @@ fn length(ui: &mut Ui, app: &App, mm: f64, min_mm: f64) -> Option<f64> {
 
 /// The Table tool's bar.
 pub fn table_bar(app: &mut App, ui: &mut Ui) {
-    dim(ui, "toolbar.rows");
-    ui.add(crate::ui::field::NumField::new(&mut app.table_rows).range(1..=100));
-    dim(ui, "toolbar.columns");
-    ui.add(crate::ui::field::NumField::new(&mut app.table_cols).range(1..=100));
+    crate::ui::toolbar::dim_labelled_as(ui, "toolbar.rows", "table.rows_desc", |ui| {
+        ui.add(crate::ui::field::NumField::new(&mut app.table_rows).range(1..=100))
+    });
+    crate::ui::toolbar::dim_labelled_as(ui, "toolbar.columns", "table.columns_desc", |ui| {
+        ui.add(crate::ui::field::NumField::new(&mut app.table_cols).range(1..=100))
+    });
     vsep(ui);
     let target = app.table_target();
     let cells = app.table_edit.is_some() && target.is_some();
@@ -58,7 +60,9 @@ pub fn table_bar(app: &mut App, ui: &mut Ui) {
     borders(app, ui, cells);
     if target.is_some() {
         vsep(ui);
-        ui.menu_button(tr("table.options"), |ui| table_options(app, ui));
+        ui.menu_button(tr("table.options"), |ui| table_options(app, ui))
+            .response
+            .rich_tip(crate::ui::tips::keyed("table.options"));
     }
     if cells {
         vsep(ui);
@@ -73,12 +77,18 @@ fn cell_size(app: &mut App, ui: &mut Ui) {
     let Some((w, h)) = app.table_cell_size() else {
         return;
     };
-    dim(ui, "table.cell_width");
-    if let Some(v) = length(ui, app, w, 1.0) {
+    let tip = crate::ui::tips::pair("table.cell_width_tip", "table.cell_width_desc");
+    if let Some(v) = crate::ui::tips::tip_over(ui, tip, |ui| {
+        dim(ui, "table.cell_width");
+        length(ui, app, w, 1.0)
+    }) {
         app.table_set_cell_size(Some(v), None);
     }
-    dim(ui, "table.cell_height");
-    if let Some(v) = length(ui, app, h, 1.0) {
+    let tip = crate::ui::tips::pair("table.cell_height_tip", "table.cell_height_desc");
+    if let Some(v) = crate::ui::tips::tip_over(ui, tip, |ui| {
+        dim(ui, "table.cell_height");
+        length(ui, app, h, 1.0)
+    }) {
         app.table_set_cell_size(None, Some(v));
     }
 }
@@ -105,7 +115,11 @@ fn background(app: &mut App, ui: &mut Ui, cells: bool) {
     );
     let mut new = None;
     let mut has_fill = !matches!(fill, Fill::None);
-    if ui.checkbox(&mut has_fill, "").changed() {
+    if ui
+        .checkbox(&mut has_fill, "")
+        .rich_tip(crate::ui::tips::keyed("table.has_background"))
+        .changed()
+    {
         new = Some(if has_fill {
             Fill::Solid(Color::WHITE)
         } else {
@@ -170,6 +184,7 @@ fn borders(app: &mut App, ui: &mut Ui, cells: bool) {
             .fixed_decimals(3)
             .suffix(" mm"),
     );
+    let r = r.rich_tip(crate::ui::tips::keyed("table.border_width"));
     if r.changed() {
         border = if width <= 0.0 {
             None
@@ -196,7 +211,9 @@ fn borders(app: &mut App, ui: &mut Ui, cells: bool) {
                         b.dash = dash.to_vec();
                     }
                 }
-            });
+            })
+            .response
+            .rich_tip(crate::ui::tips::keyed("table.border_style"));
     }
     if border == shown {
         return;

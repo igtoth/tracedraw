@@ -446,17 +446,18 @@ fn nib_px(mm: f64, zoom: f32) -> f32 {
 /// Show `cursor` at `pos` (the pointer): set the system cursor, or hide it
 /// and paint the drawn one on top of everything.
 pub fn show(ctx: &egui::Context, cursor: ToolCursor, pos: Option<Pos2>) {
-    if let ToolCursor::System(icon) = cursor {
-        ctx.set_cursor_icon(icon);
+    let icon = match cursor {
+        ToolCursor::System(icon) => icon,
+        // On a software adapter a drawn pointer trails the real one by a
+        // slow frame: the system's nearest instead (#616).
+        _ if crate::ui::software_renderer() => system_icon(cursor),
+        _ => egui::CursorIcon::None,
+    };
+    ctx.set_cursor_icon(icon);
+    refresh_still_pointer(ctx, icon, pos);
+    if icon != egui::CursorIcon::None {
         return;
     }
-    // On a software adapter a drawn pointer trails the real one by a slow
-    // frame: the system's nearest instead (#616).
-    if crate::ui::software_renderer() {
-        ctx.set_cursor_icon(system_icon(cursor));
-        return;
-    }
-    ctx.set_cursor_icon(egui::CursorIcon::None);
     if let Some(p) = pos {
         let painter = ctx.layer_painter(egui::LayerId::new(
             egui::Order::Tooltip,
@@ -464,6 +465,32 @@ pub fn show(ctx: &egui::Context, cursor: ToolCursor, pos: Option<Pos2>) {
         ));
         paint(&painter, cursor, p);
     }
+}
+
+/// Windows shows a new system pointer, or hides or shows the pointer,
+/// only when the mouse next moves, so a tool picked with its shortcut
+/// kept the old pointer over a still mouse (#1026). When the pointer's
+/// system icon changes while the mouse stays still, it is put back where
+/// it is, which Windows takes as a move and updates the pointer.
+fn refresh_still_pointer(ctx: &egui::Context, icon: egui::CursorIcon, pos: Option<Pos2>) {
+    let id = egui::Id::new("tool_cursor_icon");
+    let last = ctx.data_mut(|d| {
+        let last = d.get_temp::<egui::CursorIcon>(id);
+        d.insert_temp(id, icon);
+        last
+    });
+    let still = ctx.input(|i| i.pointer.delta() == Vec2::ZERO && !i.pointer.any_down());
+    if let Some(p) = pos.filter(|_| needs_refresh(last, icon, still)) {
+        if cfg!(target_os = "windows") {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CursorPosition(p));
+        }
+    }
+}
+
+/// Whether the pointer must be refreshed: its icon changed from the one
+/// shown last frame while the mouse did not move.
+fn needs_refresh(last: Option<egui::CursorIcon>, now: egui::CursorIcon, still: bool) -> bool {
+    still && last.is_some_and(|l| l != now)
 }
 
 /// The system pointer nearest to a drawn one.
@@ -1085,6 +1112,44 @@ mod tests {
         ] {
             assert_ne!(system_icon(c), C::None);
         }
+    }
+
+    /// A tool picked by its shortcut over a still mouse changes the
+    /// system pointer at once on Windows too: the pointer is put back
+    /// where it is, which Windows takes as a move (#1026). Nothing happens
+    /// when the pointer moved, a button is held or the icon stayed.
+    #[test]
+    fn a_new_pointer_over_a_still_mouse_is_refreshed() {
+        use egui::CursorIcon as C;
+        assert!(needs_refresh(Some(C::Default), C::None, true));
+        assert!(needs_refresh(Some(C::None), C::Text, true));
+        assert!(!needs_refresh(Some(C::Default), C::None, false));
+        assert!(!needs_refresh(Some(C::Text), C::Text, true));
+        assert!(!needs_refresh(None, C::Text, true));
+
+        let ctx = crate::theme::ui_context();
+        let at = Pos2::new(120.0, 80.0);
+        let frame = |cursor: ToolCursor| {
+            let input = egui::RawInput {
+                events: vec![egui::Event::PointerMoved(at)],
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| show(ui.ctx(), cursor, Some(at)));
+            out.textures_delta.clear();
+            out.viewport_output
+                .get(&egui::ViewportId::ROOT)
+                .is_some_and(|v| {
+                    v.commands
+                        .iter()
+                        .any(|c| *c == egui::ViewportCommand::CursorPosition(at))
+                })
+        };
+        assert!(!frame(ToolCursor::System(C::Default)));
+        assert!(!frame(ToolCursor::System(C::Default)));
+        // The Pen tool picked by its shortcut: the drawn nib hides the
+        // system arrow, and the same frame puts the pointer back.
+        assert_eq!(frame(ToolCursor::PenNib(None)), cfg!(target_os = "windows"));
+        assert!(!frame(ToolCursor::PenNib(None)));
     }
 
     /// The cross hair (alone, with a tool's badge, with a nib) and the

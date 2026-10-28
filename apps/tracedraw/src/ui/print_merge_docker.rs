@@ -11,6 +11,7 @@ use crate::i18n::tr;
 use crate::print_merge::{Scale, ANCHOR_DATA, SCALE_DATA};
 use crate::theme::Tokens;
 use crate::ui::dialogs::Dialog;
+use crate::ui::tips::RichTip;
 use egui::{Rect as ERect, Sense, Stroke, Ui, Vec2};
 use tracedraw_core::geometry::Rect;
 use tracedraw_core::{Command, Fill, Shape, ShapeId, ShapeKind};
@@ -656,7 +657,7 @@ fn anchor_grid(ui: &mut Ui, anchor: &mut u8) {
         let cell = ERect::from_center_size(c, Vec2::splat(CELL - 3.0));
         let resp = ui
             .interact(cell, ui.id().with(("merge_anchor", i)), Sense::click())
-            .on_hover_text(tr("merge.anchor"));
+            .rich_tip(tr("merge.anchor"));
         if resp.clicked() {
             *anchor = i;
         }
@@ -682,7 +683,7 @@ pub fn print_merge(app: &mut App, ui: &mut Ui) {
                 !loaded,
                 egui::Button::new(tr("merge.create")).min_size(Vec2::new(w, 26.0)),
             )
-            .on_hover_text(tr("menu.file.print_merge_create"))
+            .rich_tip(tr("menu.file.print_merge_create"))
             .clicked()
         {
             app.dialog = Dialog::PrintMerge(Default::default());
@@ -692,7 +693,7 @@ pub fn print_merge(app: &mut App, ui: &mut Ui) {
                 loaded,
                 egui::Button::new(tr("merge.edit")).min_size(Vec2::new(w, 26.0)),
             )
-            .on_hover_text(tr("menu.file.print_merge_edit"))
+            .rich_tip(tr("menu.file.print_merge_edit"))
             .clicked()
         {
             if let Some(st) = app.merge_state.clone() {
@@ -750,7 +751,7 @@ pub fn print_merge(app: &mut App, ui: &mut Ui) {
             ui.horizontal(|ui| {
                 pick_folder = ui
                     .button("\u{1F4C2}")
-                    .on_hover_text(tr("merge.pictures_folder_tip"))
+                    .rich_tip(tr("merge.pictures_folder_tip"))
                     .clicked();
                 let shown = folder
                     .clone()
@@ -769,7 +770,7 @@ pub fn print_merge(app: &mut App, ui: &mut Ui) {
             ui.horizontal(|ui| {
                 browse = ui
                     .button("\u{1F4C2}")
-                    .on_hover_text(tr("merge.placeholder_tip"))
+                    .rich_tip(tr("merge.placeholder_tip"))
                     .clicked();
                 ui.add(
                     egui::TextEdit::singleline(&mut d.placeholder)
@@ -794,7 +795,7 @@ pub fn print_merge(app: &mut App, ui: &mut Ui) {
         // every page, Create Merged Document fills the drawing's own
         // pages instead of making a new drawing (#598, #618, #793).
         ui.checkbox(&mut d.all_pages, tr("merge.all_pages"))
-            .on_hover_text(tr(if d.kind == 1 {
+            .rich_tip(tr(if d.kind == 1 {
                 "merge.all_pages_tip"
             } else {
                 "merge.all_pages_text_tip"
@@ -817,7 +818,7 @@ pub fn print_merge(app: &mut App, ui: &mut Ui) {
                         .min_size(wide)
                         .selected(app.pending_merge_frame),
                 )
-                .on_hover_text(tr("merge.place_inside_tip"))
+                .rich_tip(tr("merge.place_inside_tip"))
                 .clicked()
             {
                 if app.selection.is_empty() {

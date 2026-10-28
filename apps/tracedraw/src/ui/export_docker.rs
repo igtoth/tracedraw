@@ -10,6 +10,7 @@ use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
 use crate::ui::dialogs::EXPORT_FORMATS;
 use crate::ui::field::NumField;
+use crate::ui::tips::RichTip;
 use egui::Ui;
 
 /// Formats drawn as pixels, which take a resolution.
@@ -37,7 +38,7 @@ pub fn export_docker(app: &mut App, ui: &mut Ui) {
     ui.horizontal_wrapped(|ui| {
         if ui
             .add_enabled(drawing, egui::Button::new(tr("export_docker.add_pages")))
-            .on_hover_text(tr("export_docker.add_pages_tip"))
+            .rich_tip(tr("export_docker.add_pages_tip"))
             .clicked()
         {
             app.add_page_assets();
@@ -47,7 +48,7 @@ pub fn export_docker(app: &mut App, ui: &mut Ui) {
                 drawing && !app.selection.is_empty(),
                 egui::Button::new(tr("export_docker.add_selection")),
             )
-            .on_hover_text(tr("export_docker.add_selection_tip"))
+            .rich_tip(tr("export_docker.add_selection_tip"))
             .clicked()
         {
             app.add_selection_asset();
@@ -98,7 +99,7 @@ pub fn export_docker(app: &mut App, ui: &mut Ui) {
                         ui.add(egui::TextEdit::singleline(&mut asset.name).desired_width(110.0));
                         if ui
                             .small_button("\u{00D7}")
-                            .on_hover_text(tr("export_docker.remove"))
+                            .rich_tip(tr("export_docker.remove"))
                             .clicked()
                         {
                             remove = Some(i);
@@ -134,7 +135,7 @@ pub fn export_docker(app: &mut App, ui: &mut Ui) {
                         };
                         if ui
                             .link(egui::RichText::new(what).size(11.0))
-                            .on_hover_text(tr("export_docker.show_tip"))
+                            .rich_tip(tr("export_docker.show_tip"))
                             .clicked()
                         {
                             show = Some(asset.source.clone());
@@ -174,7 +175,7 @@ pub fn export_docker(app: &mut App, ui: &mut Ui) {
                 .map(|f| f.display().to_string())
                 .unwrap_or_else(|| tr("export_docker.no_folder"));
             ui.label(egui::RichText::new(folder).size(11.0))
-                .on_hover_text(tr("export_docker.folder"));
+                .rich_tip(tr("export_docker.folder"));
             if ui.button(tr("export_docker.browse")).clicked() {
                 if let Some(f) = crate::files::pick_folder() {
                     app.export_assets.folder = Some(f);

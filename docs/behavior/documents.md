@@ -10,18 +10,19 @@ rulers:
   With no drawing open it is the only tab, and the menu bar shows only
   File, Tools, Window and Help; File commands that need a drawing are
   disabled. While it is shown (with drawings open too) the toolbox and the
-  property bar show pale, the colour palette shows pale and takes no
-  clicks, and the dockers that work on a drawing say "Open or create a
+  property bar show pale, the colour palette keeps its colours and
+  tooltips but takes no clicks (#1082), and the dockers that work on a drawing say "Open or create a
   drawing to use this docker." instead of showing the hidden drawing's
   selection; Hints still shows (#482,
   `ui::palette::tests::the_palette_rests_on_the_welcome_screen`).
-- With a drawing open, the Welcome Screen tab has a close button on
-  hover (a middle click also closes it): the tab shrinks to its house
-  alone (a 26 px square, the title as its tip) and the active drawing
-  shows. A click on the house, Window > Welcome Screen or Help > Welcome
-  Screen shows the Welcome Screen again with its whole tab. The closed
-  tab is remembered with the settings; with no drawing open it cannot
-  be closed (#677).
+- The Welcome Screen tab has a close button on hover (a middle click
+  also closes it): the tab shrinks to its house alone (a 26 px square,
+  the title as its tip) and the active drawing shows. With no drawing
+  open the workspace stays empty and grey, the toolbox and property bar
+  stay pale, and the Hints docker comes to the front at its Home topics
+  (#1081). A click on the house, Window > Welcome Screen or Help >
+  Welcome Screen shows the Welcome Screen again with its whole tab. The
+  closed tab is remembered with the settings (#677).
 - Each drawing's tab (at least 116 px wide) shows its file name, or its
   document name when it has never been saved, followed by `*` while it has
   unsaved changes. A close button shows on the hovered tab; a middle click
@@ -53,7 +54,7 @@ files). Window > New Window gives a second window on an open drawing
 Closing a tab
 (File > Close, Ctrl+F4, the tab's close button) asks to save unsaved
 changes, then shows the tab to its right, else the one to its left, else
-the Welcome Screen. Window > Close All closes every drawing, asking about
+the Welcome Screen (the empty workspace when its tab is closed). Window > Close All closes every drawing, asking about
 each one with unsaved changes; Cancel stops. File > Exit, Alt+F4 and the
 window's close button do the same and quit when every drawing is closed.
 
@@ -68,5 +69,9 @@ active one.
 - Given a drawing open and the Welcome Screen shown, when its tab's
   close button is clicked, then the drawing shows and the tab is a house
   half as wide or less; a click on the house shows the Welcome Screen
-  with its whole tab; with no drawing open the tab has no close button
+  with its whole tab; with no drawing open it closes to the empty
+  workspace with Hints at Home
   (`pick_drag_tests::the_welcome_tab_closes_to_its_house`).
+- Given the Welcome Screen tab closed, when the last drawing closes, then
+  the workspace stays empty
+  (`pick_drag_tests::closing_the_last_drawing_keeps_the_welcome_tab_choice`).

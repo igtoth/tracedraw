@@ -11,6 +11,7 @@ use crate::app::App;
 use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
 use crate::ui::dialogs::{window, ExportState, PDF_STANDARDS};
+use crate::ui::tips::RichTip;
 use egui::{Color32, Context, RichText, Ui};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -870,7 +871,7 @@ fn general(app: &App, ui: &mut Ui, st: &mut PublishState) {
         }
         if ui
             .button(RichText::new("+").size(16.0))
-            .on_hover_text(tr("publish.preset_add"))
+            .rich_tip(tr("publish.preset_add"))
             .clicked()
         {
             st.new_preset = Some(String::new());
@@ -882,7 +883,7 @@ fn general(app: &App, ui: &mut Ui, st: &mut PublishState) {
             .any(|p| p.name == st.prefs.preset);
         if ui
             .add_enabled(user, egui::Button::new(RichText::new("-").size(16.0)))
-            .on_hover_text(tr("publish.preset_delete"))
+            .rich_tip(tr("publish.preset_delete"))
             .clicked()
         {
             st.delete_preset();

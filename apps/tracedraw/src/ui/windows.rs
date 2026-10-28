@@ -12,6 +12,7 @@
 use crate::app::{App, Drag};
 use crate::i18n::tr;
 use crate::theme::Tokens;
+use crate::ui::tips::RichTip;
 use egui::{Color32, Pos2, Rect, Sense, Stroke, Ui, Vec2};
 
 /// How the drawings' windows are arranged.
@@ -120,7 +121,7 @@ fn title_button(
         ui.painter().rect_filled(rect, 2.0, Tokens::tool_hover());
     }
     paint(ui.painter(), rect.shrink(6.0), Tokens::icon());
-    resp.on_hover_text(tip).clicked()
+    resp.rich_tip(tip).clicked()
 }
 
 /// A window's frame and title bar; returns the rectangle left for its

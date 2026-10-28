@@ -13,6 +13,7 @@ use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
 use crate::ui::dialogs::{enter_pressed, window};
 use crate::ui::options::{combo, grid, row_label};
+use crate::ui::tips::RichTip;
 use egui::{Context, RichText, Ui};
 use std::path::{Path, PathBuf};
 use tracedraw_core::document::{TDRAW_FORMAT_VERSION, TDRAW_RELEASES};
@@ -606,7 +607,7 @@ fn folder_bar(ui: &mut Ui, st: &mut SaveAsState) {
                 up.is_some(),
                 egui::Button::new("  ").min_size(egui::vec2(24.0, 20.0)),
             )
-            .on_hover_text(tr("dialog.up_folder"));
+            .rich_tip(tr("dialog.up_folder"));
         // An arrow pointing up.
         let c = resp.rect.center();
         let colour = if up.is_some() {
@@ -660,7 +661,7 @@ fn places(ui: &mut Ui, st: &mut SaveAsState) {
             let name = place_name(place, &path);
             if ui
                 .selectable_label(st.dir == path, name)
-                .on_hover_text(path.display().to_string())
+                .rich_tip(path.display().to_string())
                 .clicked()
             {
                 st.open_dir(path);
@@ -1006,7 +1007,7 @@ fn fields(ui: &mut Ui, st: &mut SaveAsState) {
                     let mut on = st.embed_fonts && can;
                     if ui
                         .checkbox(&mut on, text)
-                        .on_disabled_hover_text(tr("dialog.embed_fonts_later"))
+                        .rich_disabled_tip(tr("dialog.embed_fonts_later"))
                         .changed()
                     {
                         st.embed_fonts = on;
@@ -1032,7 +1033,7 @@ fn fields(ui: &mut Ui, st: &mut SaveAsState) {
                 let mut on = st.tdraw_embed_fonts && can;
                 if ui
                     .checkbox(&mut on, text)
-                    .on_disabled_hover_text(tr("dialog.embed_fonts_none"))
+                    .rich_disabled_tip(tr("dialog.embed_fonts_none"))
                     .changed()
                 {
                     st.tdraw_embed_fonts = on;

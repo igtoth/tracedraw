@@ -25,11 +25,12 @@ fn dim(ui: &mut Ui, text: String) {
 
 /// An acceleration slider, -100 to 100 %.
 fn accel(ui: &mut Ui, key: &str, v: &mut f64) -> bool {
-    dim(ui, tr(key));
     let mut p = (*v * 100.0).round() as i32;
-    let r = ui.add(crate::ui::Rail(
-        egui::Slider::new(&mut p, -100..=100).suffix(" %"),
-    ));
+    let r = crate::ui::toolbar::dim_labelled(ui, key, |ui| {
+        ui.add(crate::ui::Rail(
+            egui::Slider::new(&mut p, -100..=100).suffix(" %"),
+        ))
+    });
     if r.changed() {
         *v = p as f64 / 100.0;
     }
@@ -44,23 +45,28 @@ pub fn contour_controls(app: &mut App, ui: &mut Ui) {
     let mut changed = false;
     ui.horizontal(|ui| {
         for d in ContourDirection::ALL {
-            if ui.selectable_label(s.direction == d, tr(d.key())).clicked() && s.direction != d {
+            if ui
+                .selectable_label(s.direction == d, tr(d.key()))
+                .rich_tip(crate::ui::tips::keyed(d.key()))
+                .clicked()
+                && s.direction != d
+            {
                 s.direction = d;
                 changed = true;
             }
         }
     });
     ui.horizontal(|ui| {
-        dim(ui, tr("docker.steps"));
-        ui.add_enabled_ui(s.direction != ContourDirection::ToCenter, |ui| {
-            changed |= ui
-                .add(NumField::new(&mut s.steps).range(1..=999).width(44.0))
-                .changed();
+        crate::ui::toolbar::dim_labelled_as(ui, "docker.steps", "contour.steps_desc", |ui| {
+            ui.add_enabled_ui(s.direction != ContourDirection::ToCenter, |ui| {
+                changed |= ui
+                    .add(NumField::new(&mut s.steps).range(1..=999).width(44.0))
+                    .changed();
+            });
         });
-        dim(ui, tr("docker.offset"));
         let mut o = app.units.world_from_mm(s.offset);
-        if ui
-            .add(
+        if crate::ui::toolbar::dim_labelled_as(ui, "docker.offset", "contour.offset_desc", |ui| {
+            ui.add(
                 NumField::new(&mut o)
                     .range(0.0..=app.units.world_from_mm(1000.0))
                     .fixed_decimals(app.settings.precision.min(10) as usize)
@@ -68,7 +74,8 @@ pub fn contour_controls(app: &mut App, ui: &mut Ui) {
                     .suffix(format!(" {}", app.units.short()))
                     .width(76.0),
             )
-            .changed()
+        })
+        .changed()
         {
             s.offset = app.units.world_to_mm(o);
             changed = true;
@@ -150,17 +157,27 @@ pub fn contour_actions(app: &mut App, ui: &mut Ui) {
             )
     });
     ui.horizontal(|ui| {
-        if bare && ui.button(tr("docker.apply")).clicked() {
+        if bare
+            && ui
+                .button(tr("docker.apply"))
+                .rich_tip(crate::ui::tips::pair("docker.apply", "contour.apply_desc"))
+                .clicked()
+        {
             app.add_contour();
         }
         if ui
             .add_enabled(has, egui::Button::new(tr("contour.clear")))
+            .rich_tip(crate::ui::tips::keyed("contour.clear"))
             .clicked()
         {
             app.clear_contour();
         }
         if ui
             .add_enabled(has, egui::Button::new(tr("docker.break_apart")))
+            .rich_tip(crate::ui::tips::pair(
+                "docker.break_apart",
+                "toolbar.effect_break_apart_desc",
+            ))
             .clicked()
         {
             app.break_effect_groups();

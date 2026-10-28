@@ -7,6 +7,7 @@
 use crate::app::{App, DockerTab};
 use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
+use crate::ui::tips::RichTip;
 use egui::Ui;
 use tracedraw_core::{document::ShapeKind, live::Effect, Color, Command, Fill, ShapeId};
 
@@ -278,7 +279,7 @@ fn default_properties(app: &mut App, ui: &mut Ui) {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui
                     .small_button(tr("docker.reset"))
-                    .on_hover_text(tr("defaults.reset_hint"))
+                    .rich_tip(tr("defaults.reset_hint"))
                     .clicked()
                 {
                     let fresh = ObjectDefaults::default().get(kind).clone();
@@ -289,7 +290,7 @@ fn default_properties(app: &mut App, ui: &mut Ui) {
                         first.is_some(),
                         egui::Button::new(tr("docker.from_selection")).small(),
                     )
-                    .on_hover_text(tr("defaults.from_selection_hint"));
+                    .rich_tip(tr("defaults.from_selection_hint"));
                 if from.clicked() {
                     if let Some(s) = &first {
                         let (fill, stroke) = (s.fill.clone(), s.stroke.clone());
@@ -360,7 +361,7 @@ fn styles_list(app: &mut App, ui: &mut Ui) {
                     !app.selection.is_empty(),
                     egui::Button::new(tr("docker.apply")).small(),
                 )
-                .on_hover_text(tr("docker.style_apply_hint"))
+                .rich_tip(tr("docker.style_apply_hint"))
                 .clicked()
             {
                 apply = Some(i);
@@ -370,7 +371,7 @@ fn styles_list(app: &mut App, ui: &mut Ui) {
                     first.is_some(),
                     egui::Button::new(tr("docker.update_from_selection")).small(),
                 )
-                .on_hover_text(tr("docker.style_update_hint"))
+                .rich_tip(tr("docker.style_update_hint"))
                 .clicked()
             {
                 if let Some(s) = &first {
@@ -382,7 +383,7 @@ fn styles_list(app: &mut App, ui: &mut Ui) {
             }
             if ui
                 .small_button(tr("docker.delete"))
-                .on_hover_text(tr("docker.style_delete_hint"))
+                .rich_tip(tr("docker.style_delete_hint"))
                 .clicked()
             {
                 remove = Some(i);
@@ -479,7 +480,7 @@ fn scripts(app: &mut App, ui: &mut Ui) {
         let js_r = ui.selectable_label(!vba, "JavaScript");
         let vba_r = ui
             .add_enabled(!crate::files::WEB, egui::Button::selectable(vba, "VBA"))
-            .on_hover_text(tr("docker.vba_hint"));
+            .rich_tip(tr("docker.vba_hint"));
         if (js_r.clicked() && vba) || (vba_r.clicked() && !vba) {
             std::mem::swap(&mut app.script_source, &mut app.macros.other_source);
             app.macros.scripts_vba = !vba;
@@ -508,7 +509,7 @@ fn scripts(app: &mut App, ui: &mut Ui) {
             && !vba
             && ui
                 .add_enabled(!debugging, egui::Button::new(tr("docker.debug")))
-                .on_hover_text(tr("docker.debug_hint"))
+                .rich_tip(tr("docker.debug_hint"))
                 .clicked()
         {
             app.start_script_debug();
@@ -548,7 +549,7 @@ fn scripts(app: &mut App, ui: &mut Ui) {
         if !vba
             && ui
                 .button(tr("docker.install_filter"))
-                .on_hover_text(tr("docker.install_filter_hint"))
+                .rich_tip(tr("docker.install_filter_hint"))
                 .clicked()
         {
             let src = app.script_source.clone();
@@ -934,7 +935,7 @@ fn blend_pic(
     draw: impl Fn(&egui::Painter, egui::Rect, Color32),
 ) -> bool {
     let (r, resp) = ui.allocate_exact_size(egui::vec2(26.0, 24.0), egui::Sense::click());
-    let resp = resp.on_hover_text(tip);
+    let resp = resp.rich_tip(tip);
     let p = ui.painter();
     if on {
         p.rect_filled(r, 2.0, crate::theme::Tokens::tool_hover());
@@ -1453,7 +1454,7 @@ fn icon_btn(
         crate::theme::Tokens::icon_off()
     };
     paint(ui.painter(), r.shrink(5.0), color);
-    resp.on_hover_text(tip)
+    resp.rich_tip(tip)
 }
 
 /// Bitmaps > Bitmap Mask: ten colour slots (in use, colour, tolerance),
@@ -1890,11 +1891,11 @@ fn fonts(app: &mut App, ui: &mut Ui) {
                     let label = ui
                         .colored_label(egui::Color32::from_rgb(200, 100, 0), tr("docker.missing"));
                     if let Some(s) = tracedraw_text::fonts().substitute(f) {
-                        label.on_hover_text(trf("docker.missing_hint", &[("f", &s)]));
+                        label.rich_tip(trf("docker.missing_hint", &[("f", &s)]));
                     }
                 } else if carried {
                     ui.weak(tr("docker.embedded"))
-                        .on_hover_text(tr("docker.embedded_hint"));
+                        .rich_tip(tr("docker.embedded_hint"));
                 }
             });
         }
@@ -1911,7 +1912,7 @@ fn fonts(app: &mut App, ui: &mut Ui) {
         for f in families {
             if ui
                 .selectable_label(app.text_font == f, &f)
-                .on_hover_text(tr("docker.font_apply_hint"))
+                .rich_tip(tr("docker.font_apply_hint"))
                 .clicked()
             {
                 app.apply_text_font(&f);

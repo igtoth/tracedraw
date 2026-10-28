@@ -10,6 +10,7 @@ use crate::i18n::{tr, trf};
 use crate::settings::{AutoCenter, NodeShape, NodeSize, Startup};
 use crate::theme::Tokens;
 use crate::ui::chrome;
+use crate::ui::tips::RichTip;
 use egui::{Context, Ui};
 use tracedraw_core::{geometry::Size, Color, Command, Fill};
 
@@ -440,7 +441,7 @@ pub fn options_dialog(app: &mut App, ctx: &Context, close: &mut bool) {
                 ui.horizontal(|ui| {
                     if ui
                         .add_sized([27.0, 27.0], egui::Button::new("?"))
-                        .on_hover_text(tr("dialog.help"))
+                        .rich_tip(tr("dialog.help"))
                         .clicked()
                     {
                         app.open_help(crate::help::options_topic(app.options_page));
@@ -1002,7 +1003,7 @@ fn nodes_page(app: &mut App, ui: &mut Ui) {
     });
     ui.checkbox(&mut n.show_direction, tr("options.show_curve_direction"));
     ui.checkbox(&mut n.corner_widgets, tr("options.corner_widgets"))
-        .on_hover_text(tr("options.corner_widgets_tip"));
+        .rich_tip(tr("options.corner_widgets_tip"));
     ui.horizontal(|ui| {
         ui.label(tr("options.node_pick_distance"));
         ui.add(
@@ -1012,7 +1013,7 @@ fn nodes_page(app: &mut App, ui: &mut Ui) {
                 .max_decimals(0)
                 .suffix(" px"),
         )
-        .on_hover_text(tr("options.node_pick_distance_tip"));
+        .rich_tip(tr("options.node_pick_distance_tip"));
     });
     chrome::section(ui, &tr("options.colors"));
     grid("node_colors").show(ui, |ui| {
@@ -1250,7 +1251,7 @@ fn dynamic_guides_page(app: &mut App, ui: &mut Ui) {
                     for a in others {
                         if ui
                             .button(format!("{a:.1}\u{00B0} \u{00D7}"))
-                            .on_hover_text(tr("options.dynamic_remove_angle"))
+                            .rich_tip(tr("options.dynamic_remove_angle"))
                             .clicked()
                         {
                             angles.retain(|b| (b - a).abs() >= 1e-6);
@@ -1499,7 +1500,7 @@ fn paragraph_text_tab(app: &mut App, ui: &mut Ui) {
                         d.name.clone(),
                         shown(&d.name),
                     )
-                    .on_hover_text(d.dic.display().to_string());
+                    .rich_tip(d.dic.display().to_string());
                 }
             });
         ui.end_row();
@@ -1581,7 +1582,7 @@ fn spelling_tab(app: &mut App, ui: &mut Ui) {
                         };
                         if ui
                             .checkbox(&mut on, label)
-                            .on_hover_text(d.dic.display().to_string())
+                            .rich_tip(d.dic.display().to_string())
                             .changed()
                         {
                             p.disabled_dictionaries.retain(|n| *n != d.name);
@@ -1865,9 +1866,9 @@ fn appearance_page(app: &mut App, ui: &mut Ui) {
         tr("options.center_dialogs"),
     );
     ui.checkbox(&mut app.settings.ui_shadows, tr("options.ui_shadows"))
-        .on_hover_text(tr("options.ui_shadows_tip"));
+        .rich_tip(tr("options.ui_shadows_tip"));
     ui.checkbox(&mut app.settings.colored_icons, tr("options.colored_icons"))
-        .on_hover_text(tr("options.colored_icons_tip"));
+        .rich_tip(tr("options.colored_icons_tip"));
     crate::ui::chrome::section(ui, &tr("options.ui_size"));
     // The size takes effect when the slider is let go or the field is
     // left, so the page does not grow under the pointer.
@@ -2389,7 +2390,7 @@ fn command_list_row(app: &mut App, ui: &mut Ui, c: &CommandItem) {
         galley,
         Tokens::text(),
     );
-    let resp = resp.on_hover_text(&c.place);
+    let resp = resp.rich_tip(&c.place);
     if resp.clicked() {
         app.shortcut_editor.selected = Some(c.id.clone());
         app.shortcut_editor.capture = None;
@@ -2435,7 +2436,7 @@ fn command_keys(app: &mut App, ui: &mut Ui, c: &CommandItem) {
     };
     let button = ui
         .add_sized([200.0, 24.0], egui::Button::new(text).selected(capturing))
-        .on_hover_text(tr("options.set_shortcut_hint"));
+        .rich_tip(tr("options.set_shortcut_hint"));
     if button.clicked() {
         app.shortcut_editor.capture = (!capturing).then(|| c.id.clone());
         app.shortcut_editor.note = None;
@@ -2466,7 +2467,7 @@ fn command_keys(app: &mut App, ui: &mut Ui, c: &CommandItem) {
                     }
                     if ui
                         .small_button(tr("options.delete"))
-                        .on_hover_text(tr("options.clear_shortcut"))
+                        .rich_tip(tr("options.clear_shortcut"))
                         .clicked()
                     {
                         delete_key = Some(k.clone());
@@ -2481,7 +2482,7 @@ fn command_keys(app: &mut App, ui: &mut Ui, c: &CommandItem) {
     ui.horizontal(|ui| {
         if ui
             .add_enabled(has_keys, egui::Button::new(tr("options.delete")))
-            .on_hover_text(tr("options.clear_shortcut"))
+            .rich_tip(tr("options.clear_shortcut"))
             .clicked()
         {
             remove_shortcut(app, c);
@@ -2669,7 +2670,7 @@ fn pick_page(app: &mut App, ui: &mut Ui) {
         &mut app.settings.marquee_touching,
         tr("options.marquee_touching"),
     )
-    .on_hover_text(tr("options.marquee_touching_tip"));
+    .rich_tip(tr("options.marquee_touching_tip"));
 }
 
 fn zoom_pan_page(app: &mut App, ui: &mut Ui) {
@@ -2989,7 +2990,7 @@ fn global_general_page(app: &mut App, ui: &mut Ui) {
     });
     #[cfg(not(target_arch = "wasm32"))]
     ui.checkbox(&mut app.settings.check_updates, tr("options.check_updates"))
-        .on_hover_text(tr("options.check_updates_tip"));
+        .rich_tip(tr("options.check_updates_tip"));
     // AI agents on this computer and the open drawing (desktop only).
     #[cfg(not(target_arch = "wasm32"))]
     {
