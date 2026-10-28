@@ -7,6 +7,7 @@ use crate::app::{App, DockerTab};
 use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
 use crate::ui::options::{combo, grid, row_label};
+use crate::ui::tips::RichTip;
 use egui::{RichText, Ui};
 
 const ERROR: egui::Color32 = egui::Color32::from_rgb(0xC4, 0x2B, 0x1C);
@@ -130,7 +131,7 @@ pub fn connection(app: &mut App, ui: &mut Ui) {
                 }
             })
             .response
-            .on_hover_text(tr("aipreset.tip"));
+            .rich_tip(tr("aipreset.tip"));
         ui.end_row();
         row_label(ui, &tr("ai.provider"));
         let mut provider = prefs.provider;
@@ -185,7 +186,7 @@ pub fn connection(app: &mut App, ui: &mut Ui) {
                 }
             })
             .response
-            .on_hover_text(tr("ai.model"));
+            .rich_tip(tr("ai.model"));
         });
         ui.end_row();
         row_label(ui, &tr("ai.key"));
@@ -255,7 +256,7 @@ fn image_model_field(prefs: &mut crate::ai::AiPrefs, listed: &[String], ui: &mut
                 .hint_text(hint)
                 .desired_width(FIELD_W - 26.0),
         )
-        .on_hover_text(tr("ai.image_model_tip"));
+        .rich_tip(tr("ai.image_model_tip"));
         ui.add_enabled_ui(!choices.is_empty(), |ui| {
             ui.menu_button("\u{25BE}", |ui| {
                 for m in &choices {

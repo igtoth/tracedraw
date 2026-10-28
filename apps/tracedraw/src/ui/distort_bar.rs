@@ -31,7 +31,12 @@ pub fn distort_bar(app: &mut App, ui: &mut Ui) {
     }
     let shown = app.distort.mode;
     for m in DistortMode::ALL {
-        if ui.selectable_label(shown == m, tr(m.key())).clicked() && m != shown {
+        if ui
+            .selectable_label(shown == m, tr(m.key()))
+            .rich_tip(crate::ui::tips::keyed(m.key()))
+            .clicked()
+            && m != shown
+        {
             app.set_distort_mode(m);
         }
     }
@@ -59,6 +64,10 @@ pub fn distort_bar(app: &mut App, ui: &mut Ui) {
                         .unit_mm(1.0)
                         .suffix(" mm"),
                 )
+                .rich_tip(crate::ui::tips::pair(
+                    "toolbar.amplitude",
+                    "distort.zipper_amplitude_desc",
+                ))
                 .changed();
             dim(ui, tr("toolbar.frequency"));
             changed |= ui
@@ -89,7 +98,12 @@ pub fn distort_bar(app: &mut App, ui: &mut Ui) {
                 (true, "distort.clockwise"),
                 (false, "distort.counterclockwise"),
             ] {
-                if ui.selectable_label(s.clockwise == cw, tr(key)).clicked() && s.clockwise != cw {
+                if ui
+                    .selectable_label(s.clockwise == cw, tr(key))
+                    .rich_tip(crate::ui::tips::keyed(key))
+                    .clicked()
+                    && s.clockwise != cw
+                {
                     s.clockwise = cw;
                     changed = true;
                 }
@@ -97,6 +111,7 @@ pub fn distort_bar(app: &mut App, ui: &mut Ui) {
             dim(ui, tr("distort.rotations"));
             changed |= ui
                 .add(NumField::new(&mut s.turns).range(0..=MAX_TURNS).width(36.0))
+                .rich_tip(crate::ui::tips::keyed("distort.rotations"))
                 .changed();
             dim(ui, tr("distort.degrees"));
             changed |= ui
@@ -107,6 +122,7 @@ pub fn distort_bar(app: &mut App, ui: &mut Ui) {
                         .suffix("\u{b0}")
                         .width(52.0),
                 )
+                .rich_tip(crate::ui::tips::keyed("distort.degrees"))
                 .changed();
         }
     }

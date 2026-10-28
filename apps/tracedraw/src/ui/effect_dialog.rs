@@ -8,6 +8,7 @@ use crate::app::App;
 use crate::fx::{new_effect, ParamKind, ParamSpec};
 use crate::i18n::tr;
 use crate::ui::bitmap_preview::{before_after_pick, settings_key, Source};
+use crate::ui::tips::RichTip;
 use egui::{Color32, Context, Rect, Sense, Stroke, Ui, Vec2};
 use std::collections::BTreeMap;
 use tracedraw_core::{BitmapEffect, ShapeId};
@@ -180,7 +181,7 @@ pub fn param_widget(
                             crate::tools::Tool::ColorEyedropper,
                             crate::theme::Tokens::icon(),
                         );
-                        if resp.on_hover_text(tr("dialog.pick_from_image")).clicked() {
+                        if resp.rich_tip(tr("dialog.pick_from_image")).clicked() {
                             *pick = if on {
                                 None
                             } else {
@@ -375,7 +376,7 @@ fn tone_curve_part(
                     crate::theme::Tokens::border()
                 },
             );
-            if resp.on_hover_text(tr("dialog.curve_eyedropper")).clicked() && style < 2 {
+            if resp.rich_tip(tr("dialog.curve_eyedropper")).clicked() && style < 2 {
                 st.pick = if on {
                     None
                 } else {
@@ -424,7 +425,7 @@ fn tone_curve_part(
                     image.is_some(),
                     egui::Button::new(tr("dialog.auto_balance_tone")),
                 )
-                .on_hover_text(tr("dialog.auto_balance_tone_tip"))
+                .rich_tip(tr("dialog.auto_balance_tone_tip"))
                 .clicked()
             {
                 if let Some(img) = image {
@@ -674,7 +675,7 @@ fn levels_part(
             } else {
                 "dialog.pick_input_low"
             };
-            if resp.on_hover_text(tr(tip)).clicked() {
+            if resp.rich_tip(tr(tip)).clicked() {
                 st.pick = if on { None } else { Some(name.to_string()) };
             }
         }
@@ -902,7 +903,7 @@ pub fn fx_section(app: &mut App, ui: &mut Ui, id: ShapeId) {
             let mut vis = e.visible;
             if ui
                 .checkbox(&mut vis, "")
-                .on_hover_text(tr("docker.show_hide_effect"))
+                .rich_tip(tr("docker.show_hide_effect"))
                 .changed()
             {
                 app.edit_bitmap_effects(id, "Show or Hide Effect", move |l| {
@@ -914,7 +915,7 @@ pub fn fx_section(app: &mut App, ui: &mut Ui, id: ShapeId) {
             ui.label(tr(&format!("fx.{}", e.id)));
             if ui
                 .small_button("\u{270E}")
-                .on_hover_text(tr("docker.edit_effect"))
+                .rich_tip(tr("docker.edit_effect"))
                 .clicked()
             {
                 app.dialog = crate::ui::dialogs::Dialog::Effect(EffectState {
@@ -927,21 +928,21 @@ pub fn fx_section(app: &mut App, ui: &mut Ui, id: ShapeId) {
             }
             if ui
                 .add_enabled(i > 0, egui::Button::new("\u{25B2}").small())
-                .on_hover_text(tr("docker.move_up"))
+                .rich_tip(tr("docker.move_up"))
                 .clicked()
             {
                 app.edit_bitmap_effects(id, "Reorder Effects", move |l| l.swap(i, i - 1));
             }
             if ui
                 .add_enabled(i + 1 < n, egui::Button::new("\u{25BC}").small())
-                .on_hover_text(tr("docker.move_down"))
+                .rich_tip(tr("docker.move_down"))
                 .clicked()
             {
                 app.edit_bitmap_effects(id, "Reorder Effects", move |l| l.swap(i, i + 1));
             }
             if ui
                 .small_button("\u{00D7}")
-                .on_hover_text(tr("docker.delete_effect"))
+                .rich_tip(tr("docker.delete_effect"))
                 .clicked()
             {
                 app.edit_bitmap_effects(id, "Delete Effect", move |l| {

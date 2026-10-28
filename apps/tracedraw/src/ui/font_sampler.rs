@@ -7,6 +7,7 @@
 use crate::app::App;
 use crate::i18n::tr;
 use crate::theme::Tokens;
+use crate::ui::tips::RichTip;
 use egui::{Sense, Ui, Vec2};
 
 /// The docker's choices.
@@ -140,7 +141,7 @@ pub fn font_sampler(app: &mut App, ui: &mut Ui) {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui
                             .small_button("\u{00D7}")
-                            .on_hover_text(tr("font_sampler.remove"))
+                            .rich_tip(tr("font_sampler.remove"))
                             .clicked()
                         {
                             remove = Some(i);
@@ -211,7 +212,7 @@ pub fn font_sampler(app: &mut App, ui: &mut Ui) {
                             .italics(),
                     ),
                 };
-                if resp.on_hover_text(tr("font_sampler.apply_tip")).clicked() {
+                if resp.rich_tip(tr("font_sampler.apply_tip")).clicked() {
                     apply = Some(family.clone());
                 }
                 ui.separator();

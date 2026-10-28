@@ -9,6 +9,7 @@
 use crate::app::App;
 use crate::i18n::tr;
 use crate::theme::Tokens;
+use crate::ui::tips::RichTip;
 use egui::{Sense, Ui, Vec2};
 use std::sync::Arc;
 
@@ -314,10 +315,7 @@ fn cell(
         ));
         ui.interact(a, resp.id.with("alt"), Sense::click())
     });
-    (
-        resp.on_hover_text(format!("{ch}  U+{:04X}", ch as u32)),
-        arrow,
-    )
+    (resp.rich_tip(format!("{ch}  U+{:04X}", ch as u32)), arrow)
 }
 
 /// Draw the docker.

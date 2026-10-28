@@ -10,6 +10,7 @@ use crate::color_policy::{FoundOrName, FoundProfile, Space, PRESETS};
 use crate::i18n::{tr, trf};
 use crate::settings::{ColorPrefs, ColorPreset};
 use crate::theme::Tokens;
+use crate::ui::tips::RichTip;
 use egui::{Context, RichText, Ui};
 
 const INTENTS: [&str; 4] = [
@@ -178,7 +179,7 @@ fn profile_combo(
             for p in found.iter().filter(|p| p.space == space) {
                 if ui
                     .selectable_label(shown == p.name, p.name.as_str())
-                    .on_hover_text(p.path.as_str())
+                    .rich_tip(p.path.as_str())
                     .clicked()
                 {
                     *choice = Some(FoundOrName::Found(p.clone()));
@@ -288,7 +289,7 @@ pub fn dialog(app: &mut App, ctx: &Context, st: &mut ColorManagementState, close
                 ui.horizontal(|ui| {
                     help = ui
                         .add_sized([27.0, 27.0], egui::Button::new("?"))
-                        .on_hover_text(tr("dialog.help"))
+                        .rich_tip(tr("dialog.help"))
                         .clicked();
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui
@@ -455,7 +456,7 @@ fn default_tab(ui: &mut Ui, st: &mut ColorManagementState, load: &mut Option<Spa
             });
         if ui
             .button("\u{1F4BE}")
-            .on_hover_text(tr("color_mgmt.save_preset"))
+            .rich_tip(tr("color_mgmt.save_preset"))
             .clicked()
         {
             st.new_preset = Some(String::new());
@@ -463,7 +464,7 @@ fn default_tab(ui: &mut Ui, st: &mut ColorManagementState, load: &mut Option<Spa
         let user = d.presets.iter().any(|p| p.name == d.preset);
         if ui
             .add_enabled(user, egui::Button::new("\u{1F5D1}"))
-            .on_hover_text(tr("color_mgmt.delete_preset"))
+            .rich_tip(tr("color_mgmt.delete_preset"))
             .clicked()
         {
             let name = d.preset.clone();

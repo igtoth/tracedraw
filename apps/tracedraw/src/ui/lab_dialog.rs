@@ -10,6 +10,7 @@ use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
 use crate::ui::bitmap_preview::{cached, copy_of, settings_key, Source};
 use crate::ui::effect_dialog::{param_widget, EffectState};
+use crate::ui::tips::RichTip;
 use egui::{epaint, Color32, Context, Painter, Pos2, Rect, Sense, Stroke, Ui, Vec2};
 use image::RgbaImage;
 use std::collections::BTreeMap;
@@ -287,7 +288,7 @@ fn icon_button(
         color,
     );
     let clicked = enabled && resp.clicked();
-    resp.on_hover_text(tip);
+    resp.rich_tip(tip);
     clicked
 }
 
@@ -790,7 +791,7 @@ pub fn lab_dialog(app: &mut App, ctx: &Context, st: &mut EffectState, close: &mu
                     ui.add_space(12.0);
                     if ui
                         .add(egui::Button::new(tr("dialog.lab_snapshot")))
-                        .on_hover_text(tr("dialog.lab_snapshot_tip"))
+                        .rich_tip(tr("dialog.lab_snapshot_tip"))
                         .clicked()
                     {
                         st.lab.snapshot(&st.effect.params);
@@ -886,7 +887,7 @@ fn snapshots(ui: &mut Ui, app: &App, ctx: &Context, st: &mut EffectState, src: &
                             ui.label(trf("dialog.lab_snapshot_n", &[("n", &n.to_string())]));
                             if ui
                                 .small_button("\u{00D7}")
-                                .on_hover_text(tr("dialog.lab_delete_snapshot"))
+                                .rich_tip(tr("dialog.lab_delete_snapshot"))
                                 .clicked()
                             {
                                 remove = Some(*n);
@@ -909,7 +910,7 @@ fn snapshots(ui: &mut Ui, app: &App, ctx: &Context, st: &mut EffectState, src: &
                             Stroke::new(1.0, Tokens::border()),
                             egui::StrokeKind::Inside,
                         );
-                        if resp.on_hover_text(tr("dialog.lab_show_snapshot")).clicked() {
+                        if resp.rich_tip(tr("dialog.lab_show_snapshot")).clicked() {
                             restore = Some(params.clone());
                         }
                     });

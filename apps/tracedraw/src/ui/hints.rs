@@ -8,6 +8,7 @@ use crate::app::App;
 use crate::i18n::tr;
 use crate::theme::{self, Tokens};
 use crate::tools::Tool;
+use crate::ui::tips::RichTip;
 use egui::text::{LayoutJob, TextFormat};
 use egui::{Color32, FontId, Pos2, Rect, Sense, Stroke, Ui, Vec2};
 
@@ -421,6 +422,7 @@ fn tool_row(ui: &mut Ui, tool: Tool) -> bool {
     let galley = ui.painter().layout_job(job);
     let h = galley.size().y.max(20.0);
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(width, h), Sense::click());
+    let resp = resp.rich_tip(format!("{}\n{}", tool.name(), tr("hint.tool_row_desc")));
     let icon = Rect::from_min_size(rect.min + Vec2::new(0.0, 0.0), Vec2::splat(20.0));
     if resp.hovered() {
         ui.painter()
@@ -575,13 +577,13 @@ fn nav_bar(app: &mut App, ui: &mut Ui) {
     let back_r = fwd_r.translate(Vec2::new(-28.0, 0.0));
     let home = ui
         .interact(home_r, egui::Id::new("hints_home"), Sense::click())
-        .on_hover_text(tr("hint.home"));
+        .rich_tip(tr("hint.home"));
     let back = ui
         .interact(back_r, egui::Id::new("hints_back"), Sense::click())
-        .on_hover_text(tr("hint.back"));
+        .rich_tip(tr("hint.back"));
     let fwd = ui
         .interact(fwd_r, egui::Id::new("hints_forward"), Sense::click())
-        .on_hover_text(tr("hint.forward"));
+        .rich_tip(tr("hint.forward"));
     let p = ui.painter();
     for (r, resp) in [(home_r, &home), (back_r, &back), (fwd_r, &fwd)] {
         if resp.hovered() {

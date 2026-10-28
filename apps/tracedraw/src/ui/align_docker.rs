@@ -12,6 +12,7 @@ use crate::i18n::tr;
 use crate::ops::{Align, Distribute, DistributeTo};
 use crate::ops2::AlignTo;
 use crate::theme::Tokens;
+use crate::ui::tips::RichTip;
 use egui::{Color32, Painter, Pos2, Rect, Response, Sense, Stroke, Ui, Vec2};
 
 /// The blue of the boxes in the pictures.
@@ -280,7 +281,7 @@ fn button(ui: &mut Ui, icon: Icon, tip: &str, enabled: bool, pressed: bool) -> R
             Tokens::icon_off()
         },
     );
-    resp.on_hover_text(tip)
+    resp.rich_tip(tip)
 }
 
 /// A small gap between groups of buttons.

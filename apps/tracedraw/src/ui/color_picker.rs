@@ -11,6 +11,7 @@
 
 use crate::i18n::tr;
 use crate::theme::Tokens;
+use crate::ui::tips::RichTip;
 use egui::{Color32, Id, Pos2, Rect, Sense, Stroke, Ui, Vec2};
 use tracedraw_core::Color;
 
@@ -157,7 +158,7 @@ pub fn model_list(ui: &mut Ui, id: Id, c: &mut Color) -> bool {
             let reg = shown == REGISTRATION;
             if ui
                 .selectable_label(reg, tr("docker.registration"))
-                .on_hover_text(tr("docker.registration_tip"))
+                .rich_tip(tr("docker.registration_tip"))
                 .clicked()
                 && !reg
             {
@@ -298,7 +299,7 @@ pub fn eyedropper(ui: &mut Ui, id: Id, c: &mut Color) -> bool {
         Tokens::icon(),
     );
     if resp
-        .on_hover_text(crate::tools::Tool::ColorEyedropper.name())
+        .rich_tip(crate::tools::Tool::ColorEyedropper.name())
         .clicked()
     {
         if waiting {
@@ -313,6 +314,7 @@ pub fn eyedropper(ui: &mut Ui, id: Id, c: &mut Color) -> bool {
 /// A colour swatch that opens the picker. True when the colour changed.
 pub fn color_button(ui: &mut Ui, c: &mut Color) -> bool {
     let (swatch, resp) = ui.allocate_exact_size(Vec2::new(40.0, 18.0), Sense::click());
+    let resp = resp.rich_tip(crate::ui::tips::keyed("color_picker.button"));
     let id = resp.id.with("color_picker");
     let [r, g, b] = c.to_rgb8();
     ui.painter()
