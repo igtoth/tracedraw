@@ -1,9 +1,10 @@
 //! Files dropped on the window from the desktop or a file manager (or
-//! from the computer onto the page, in a browser). With a drawing open,
-//! what File > Import reads goes into it, in the middle of the view
-//! (the windowing layer does not say where the pointer let go);
-//! otherwise each file opens like File > Open, and a picture without a
-//! drawing gets a new one. See `docs/behavior/drop-files.md`.
+//! from the computer onto the page, in a browser). Let go over the
+//! drawing window of an open drawing, what File > Import reads goes into
+//! it, in the middle of the view; let go over the title, menus, toolbars
+//! or document tabs, the file opens in a tab of its own like File >
+//! Open (#1142). Without a drawing each file opens like File > Open,
+//! and a picture gets a new drawing. See `docs/behavior/drop-files.md`.
 
 use crate::app::{App, IMPORT_EXTENSIONS, OPEN_EXTENSIONS};
 use std::path::{Path, PathBuf};
@@ -21,14 +22,30 @@ pub enum Dropped {
     Unsupported,
 }
 
+/// Where files are let go.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DropOn {
+    /// The drawing window of the drawing shown.
+    Drawing,
+    /// Elsewhere on the window while a drawing is shown: its title,
+    /// menus, toolbars, document tabs, dockers.
+    Frame,
+    /// A drawing is shown but the windowing layer does not say where
+    /// the pointer is (Linux, macOS).
+    Unknown,
+    /// No drawing is shown (Welcome Screen, or no drawing open).
+    NoDrawing,
+}
+
 impl App {
-    /// Files dropped on the window this frame; the open drawing (or none)
-    /// at the moment of the drop decides for all of them.
+    /// Files dropped on the window this frame; where they were let go
+    /// decides for all of them.
     pub fn take_dropped_files(&mut self, ctx: &egui::Context) {
-        let into_drawing = self.drawing_shown();
-        crate::files::take_dropped(ctx, self, move |app, path| {
-            app.drop_file(&path, into_drawing)
-        });
+        if ctx.input(|i| i.raw.dropped_files.is_empty()) {
+            return;
+        }
+        let on = self.drop_on(drop_pointer(ctx));
+        crate::files::take_dropped(ctx, self, move |app, path| app.drop_file(&path, on));
     }
 
     /// A drawing is open and shown (not the Welcome Screen); without one
@@ -37,8 +54,21 @@ impl App {
         self.has_document() && !self.show_welcome
     }
 
-    /// What dropping `path` does, `into_drawing` when a drawing is shown.
-    pub fn dropped_kind(&self, path: &Path, into_drawing: bool) -> Dropped {
+    /// Where files let go with the pointer at `pointer` (window points,
+    /// when known) land.
+    pub fn drop_on(&self, pointer: Option<egui::Pos2>) -> DropOn {
+        if !self.drawing_shown() {
+            return DropOn::NoDrawing;
+        }
+        match pointer {
+            Some(p) if self.canvas_rect.contains(p) => DropOn::Drawing,
+            Some(_) => DropOn::Frame,
+            None => DropOn::Unknown,
+        }
+    }
+
+    /// What dropping `path` on `on` does.
+    pub fn dropped_kind(&self, path: &Path, on: DropOn) -> Dropped {
         let ext = path
             .extension()
             .and_then(|e| e.to_str())
@@ -47,17 +77,21 @@ impl App {
         let importable =
             IMPORT_EXTENSIONS.contains(&ext.as_str()) || self.import_filter_for(&ext).is_some();
         let openable = OPEN_EXTENSIONS.contains(&ext.as_str());
-        match (into_drawing, importable, openable) {
-            (true, true, _) => Dropped::Import,
-            (_, _, true) => Dropped::Open,
-            (false, true, false) => Dropped::NewWithImport,
+        match on {
+            DropOn::Drawing if importable => Dropped::Import,
+            // Where the pointer is not known, a drawing File > Open reads
+            // (.cdr, .svg, .tdraw...) opens in its own tab like a .tdraw
+            // always did, and only pictures go into the drawing (#1142).
+            DropOn::Unknown if importable && !openable => Dropped::Import,
+            _ if openable => Dropped::Open,
+            DropOn::Frame | DropOn::NoDrawing if importable => Dropped::NewWithImport,
             _ => Dropped::Unsupported,
         }
     }
 
     /// Open or import one dropped file.
-    pub fn drop_file(&mut self, path: &Path, into_drawing: bool) {
-        match self.dropped_kind(path, into_drawing) {
+    pub fn drop_file(&mut self, path: &Path, on: DropOn) {
+        match self.dropped_kind(path, on) {
             Dropped::Import => {
                 let at = self.view_center();
                 self.import_path_placed(path, Some(at));
@@ -78,13 +112,26 @@ impl App {
         }
     }
 
-    /// While files are dragged over the window: a frame round it and what
-    /// a drop would do.
+    /// While files are dragged over the window: a frame round where they
+    /// would go (the drawing window, or the whole window) and what a drop
+    /// there would do.
     pub fn draw_drop_hint(&self, ctx: &egui::Context) {
-        if ctx.input(|i| i.raw.hovered_files.is_empty()) {
+        let hovered: Vec<Option<PathBuf>> =
+            ctx.input(|i| i.raw.hovered_files.iter().map(|f| f.path.clone()).collect());
+        if hovered.is_empty() {
             return;
         }
-        let hint = crate::i18n::tr(if self.drawing_shown() {
+        let on = self.drop_on(drop_pointer(ctx));
+        // Without paths (some browsers) the hint follows the place alone.
+        let imports = match on {
+            DropOn::Drawing => true,
+            DropOn::Unknown => hovered.iter().all(|p| {
+                p.as_deref()
+                    .is_some_and(|p| self.dropped_kind(p, on) == Dropped::Import)
+            }),
+            DropOn::Frame | DropOn::NoDrawing => false,
+        };
+        let hint = crate::i18n::tr(if imports {
             "hint.drop_import"
         } else {
             "hint.drop_open"
@@ -93,10 +140,14 @@ impl App {
             egui::Order::Tooltip,
             egui::Id::new("drop_files_hint"),
         ));
-        let screen = ctx.content_rect();
+        let area = if on == DropOn::Drawing {
+            self.canvas_rect
+        } else {
+            ctx.content_rect()
+        };
         let accent = crate::theme::Tokens::ACCENT;
         painter.rect(
-            screen.shrink(2.0),
+            area.shrink(2.0),
             4.0,
             accent.gamma_multiply(0.12),
             egui::Stroke::new(3.0, accent),
@@ -104,7 +155,7 @@ impl App {
         );
         let font = egui::FontId::proportional(18.0);
         let galley = painter.layout_no_wrap(hint, font, egui::Color32::WHITE);
-        let label = egui::Rect::from_center_size(screen.center(), galley.size())
+        let label = egui::Rect::from_center_size(area.center(), galley.size())
             .expand2(egui::vec2(16.0, 10.0));
         painter.rect_filled(label, 6.0, accent);
         painter.galley(
@@ -114,6 +165,29 @@ impl App {
         );
         ctx.request_repaint();
     }
+}
+
+/// The pointer over the window, in points, while files are dragged over
+/// it or let go. On Windows the system drag sends the window no pointer
+/// moves, so the cursor is asked for; elsewhere it is what egui last
+/// saw, which is nothing during a desktop drag on Linux and macOS.
+fn drop_pointer(ctx: &egui::Context) -> Option<egui::Pos2> {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::{Foundation::POINT, UI::WindowsAndMessaging::GetCursorPos};
+        let inner = ctx.input(|i| i.viewport().inner_rect);
+        let mut p = POINT { x: 0, y: 0 };
+        // SAFETY: GetCursorPos writes the cursor's screen position, in
+        // physical pixels, into `p`.
+        if let Some(inner) = inner {
+            if unsafe { GetCursorPos(&mut p) } != 0 {
+                let ppp = ctx.pixels_per_point();
+                let at = egui::pos2(p.x as f32 / ppp, p.y as f32 / ppp);
+                return Some(at - inner.min.to_vec2());
+            }
+        }
+    }
+    ctx.input(|i| i.pointer.hover_pos())
 }
 
 #[cfg(test)]
@@ -136,7 +210,22 @@ mod tests {
     }
 
     fn frame(ctx: &egui::Context, app: &mut App, dropped: Vec<PathBuf>, hovered: bool) {
+        frame_at(ctx, app, dropped, hovered, None);
+    }
+
+    /// A frame with the pointer at `pointer` (none: not known, as in a
+    /// desktop drag on Linux).
+    fn frame_at(
+        ctx: &egui::Context,
+        app: &mut App,
+        dropped: Vec<PathBuf>,
+        hovered: bool,
+        pointer: Option<egui::Pos2>,
+    ) {
         let input = egui::RawInput {
+            events: pointer
+                .map(|p| vec![egui::Event::PointerMoved(p)])
+                .unwrap_or_default(),
             screen_rect: Some(egui::Rect::from_min_size(
                 egui::Pos2::ZERO,
                 egui::vec2(1600.0, 1000.0),
@@ -201,19 +290,82 @@ mod tests {
     }
 
     #[test]
-    fn what_a_drop_does_by_kind_and_open_drawing() {
+    fn what_a_drop_does_by_kind_and_place() {
+        use DropOn::*;
         let app = App::headless();
-        let kind = |p: &str, drawing| app.dropped_kind(Path::new(p), drawing);
-        assert_eq!(kind("a.svg", true), Dropped::Import);
-        assert_eq!(kind("a.PSD", true), Dropped::Import);
-        assert_eq!(kind("a.png", true), Dropped::Import);
-        assert_eq!(kind("a.tdraw", true), Dropped::Open, "not importable");
-        assert_eq!(kind("a.svg", false), Dropped::Open);
-        assert_eq!(kind("a.cdr", false), Dropped::Open);
-        assert_eq!(kind("a.psd", false), Dropped::Open);
-        assert_eq!(kind("a.jpg", false), Dropped::NewWithImport);
-        assert_eq!(kind("a.zip", true), Dropped::Unsupported);
-        assert_eq!(kind("noextension", false), Dropped::Unsupported);
+        let kind = |p: &str, on| app.dropped_kind(Path::new(p), on);
+        assert_eq!(kind("a.svg", Drawing), Dropped::Import);
+        assert_eq!(kind("a.cdr", Drawing), Dropped::Import);
+        assert_eq!(kind("a.PSD", Drawing), Dropped::Import);
+        assert_eq!(kind("a.png", Drawing), Dropped::Import);
+        assert_eq!(kind("a.tdraw", Drawing), Dropped::Open, "not importable");
+        // On the title, menus or tabs a drawing opens in its own tab and
+        // a picture gets a drawing of its own (#1142).
+        assert_eq!(kind("a.cdr", Frame), Dropped::Open);
+        assert_eq!(kind("a.svg", Frame), Dropped::Open);
+        assert_eq!(kind("a.tdraw", Frame), Dropped::Open);
+        assert_eq!(kind("a.png", Frame), Dropped::NewWithImport);
+        // Where the pointer is not known, drawings open like a .tdraw
+        // and pictures go into the drawing.
+        assert_eq!(kind("a.cdr", Unknown), Dropped::Open);
+        assert_eq!(kind("a.tdraw", Unknown), Dropped::Open);
+        assert_eq!(kind("a.png", Unknown), Dropped::Import);
+        assert_eq!(kind("a.svg", NoDrawing), Dropped::Open);
+        assert_eq!(kind("a.cdr", NoDrawing), Dropped::Open);
+        assert_eq!(kind("a.psd", NoDrawing), Dropped::Open);
+        assert_eq!(kind("a.jpg", NoDrawing), Dropped::NewWithImport);
+        assert_eq!(kind("a.zip", Drawing), Dropped::Unsupported);
+        assert_eq!(kind("a.zip", Frame), Dropped::Unsupported);
+        assert_eq!(kind("noextension", NoDrawing), Dropped::Unsupported);
+    }
+
+    #[test]
+    fn the_pointer_decides_between_the_drawing_window_and_the_rest() {
+        let (_ctx, mut app) = setup();
+        let inside = app.canvas_rect.center();
+        assert_eq!(app.drop_on(Some(inside)), DropOn::Drawing);
+        assert_eq!(app.drop_on(Some(egui::pos2(5.0, 5.0))), DropOn::Frame);
+        assert_eq!(app.drop_on(None), DropOn::Unknown);
+        app.show_welcome = true;
+        assert_eq!(app.drop_on(Some(inside)), DropOn::NoDrawing);
+    }
+
+    #[test]
+    fn a_drawing_dropped_on_the_menus_opens_in_a_tab_of_its_own() {
+        let (ctx, mut app) = setup();
+        let dir = dir("frame");
+        let docs = app.docs.len();
+        frame_at(
+            &ctx,
+            &mut app,
+            vec![svg(&dir)],
+            false,
+            Some(egui::pos2(5.0, 5.0)),
+        );
+        assert_eq!(app.docs.len(), docs + 1, "opened in a tab of its own");
+        assert_eq!(shape_count(&app), 1);
+        // A picture there gets a drawing of its own too.
+        frame_at(
+            &ctx,
+            &mut app,
+            vec![png(&dir)],
+            false,
+            Some(egui::pos2(5.0, 5.0)),
+        );
+        assert_eq!(app.docs.len(), docs + 2, "a new drawing");
+        assert_eq!(shape_count(&app), 1);
+    }
+
+    #[test]
+    fn where_the_pointer_is_unknown_a_drawing_opens_and_a_picture_is_imported() {
+        let (ctx, mut app) = setup();
+        let dir = dir("unknown-place");
+        let docs = app.docs.len();
+        frame(&ctx, &mut app, vec![png(&dir)], false);
+        assert_eq!(app.docs.len(), docs, "imported, no new tab");
+        assert_eq!(shape_count(&app), 1);
+        frame(&ctx, &mut app, vec![svg(&dir)], false);
+        assert_eq!(app.docs.len(), docs + 1, "opened in a tab of its own");
     }
 
     #[test]
@@ -221,7 +373,8 @@ mod tests {
         let (ctx, mut app) = setup();
         let path = svg(&dir("import"));
         let docs = app.docs.len();
-        frame(&ctx, &mut app, vec![path], false);
+        let inside = app.canvas_rect.center();
+        frame_at(&ctx, &mut app, vec![path], false, Some(inside));
         assert_eq!(app.docs.len(), docs, "no new tab");
         assert_eq!(shape_count(&app), 1);
         assert_eq!(app.selection.len(), 1, "what came is selected");

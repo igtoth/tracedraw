@@ -99,19 +99,18 @@ meets the start) `Path` objects with the toolbox defaults.
   continue the curve, see below); with the Pen and Auto add/delete on a
   click on such a node deletes it (one undo step, Delete Node; a curve
   keeps at least two nodes).
-- Auto add/delete (Pen, on by default): also on the curve being drawn, a
-  click on a segment (within the pick distance) adds a node there,
-  splitting the segment so the curve keeps its shape, and a click on a
-  node deletes it, its neighbours joined with their handles. The last
-  node (a click makes it a cusp) and the first once the curve has three
-  nodes (a click closes it) keep their meaning. A drag from a node or a
-  segment places a node as usual. The Bezier tool has no Auto
+- Auto add/delete (Pen, on by default) works only with no curve being
+  drawn. While a curve is drawn, new or going on from an end, every
+  click places the next node, also on a segment or a node of that curve
+  or of another one, which stays as it is (#1143). The last node (a
+  click makes it a cusp) and the first once the curve has three nodes
+  (a click closes it) keep their meaning. The Bezier tool has no Auto
   add/delete.
 - The pointer: the cross hair with the tool's sign to start a new
   curve; with a node and a line going on from it over an end node of the
   selected curve (continue it); a ring over the first node (close); a
   plus over a segment where a click adds a node; a minus over a node a
-  click deletes (Pen, Auto add/delete); a hollow node over a node of the
+  click deletes (Pen, Auto add/delete, no curve being drawn); a hollow node over a node of the
   selected curve otherwise, or over the last node of the curve being
   drawn (edit the node, or make it a cusp). The Pen tool shows a pen
   nib instead of the cross hair (#362): black on a white halo, leaning
@@ -207,7 +206,8 @@ curve and starts the new line on the end node, as if drawing had never
 stopped. The next segment leaves along the mirror of the handle the
 curve arrives at that end with, so the dashed preview curves and the
 join is smooth; after a straight segment it leaves straight. A drag
-from the end node pulls a new handle instead (#630).
+from the end node pulls a new handle instead (#630). A second click on
+that node makes it a cusp: the next segment leaves it straight (#1138).
 
 The pointer shows a node with a line going on from it over such an end
 node, and a ring over the first node of a curve being drawn when a
@@ -297,14 +297,16 @@ Medium (first), High, Highest; kept in the preferences
 - `pick_drag_tests::dragging_from_the_first_node_shapes_only_the_closing_segment`
 - `pick_drag_tests::the_pen_adds_a_node_on_a_segment_and_drags_a_node_of_the_selected_curve`
 - `pick_drag_tests::the_pen_deletes_a_node_of_the_selected_curve_and_the_toggle_turns_it_off`
-- `pick_drag_tests::the_pen_adds_and_deletes_nodes_on_the_curve_being_drawn`
+- `pick_drag_tests::the_pen_places_nodes_on_the_curve_being_drawn` (#1143)
+- `pick_drag_tests::the_pen_never_edits_another_curve_while_drawing` (#1143)
 - `pick_drag_tests::c_held_while_pulling_makes_a_cusp_that_stays_and_does_not_align`
 - `pick_drag_tests::the_snap_tip_shows_while_placing_and_pulling_with_the_pen`
 - `pen_look::tests` (preview geometry, colours and node marks, the
-  closing preview, splitting and deleting nodes of the curve being
-  drawn, the defaults)
+  closing preview, the defaults)
 - `pick_drag_tests::the_pen_continues_an_unselected_curve_with_the_mirrored_handle`
   (#630)
+- `pick_drag_tests::the_pen_makes_the_start_of_a_continued_curve_a_cusp`
+  (#1138)
 - `pick_drag_tests::undoing_pen_steps_goes_back_to_drawing_the_curve`
   (#631)
 - `pick_drag_tests::redo_keeps_the_curve_being_drawn` (#631)

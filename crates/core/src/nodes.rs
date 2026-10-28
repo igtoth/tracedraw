@@ -928,12 +928,28 @@ pub fn add_node(path: &BezPath, index: usize, t: f64) -> BezPath {
 /// stays so (its other handle turns along). Paths whose segment cannot be
 /// bent come back unchanged.
 pub fn bend_segment(path: &BezPath, index: usize, t: f64, d: Vec2) -> BezPath {
+    bend_segment_with(path, index, t, d, &std::collections::BTreeMap::new())
+}
+
+/// [`bend_segment`] with the node types the user chose (see
+/// [`node_type_with`]): a node chosen cusp keeps its other handle where it
+/// is even when its handles happen to line up (#1140).
+pub fn bend_segment_with(
+    path: &BezPath,
+    index: usize,
+    t: f64,
+    d: Vec2,
+    chosen: &std::collections::BTreeMap<usize, NodeType>,
+) -> BezPath {
     let n = normalize(path);
     let mut els: Vec<PathEl> = n.elements().to_vec();
     if !(d.x.is_finite() && d.y.is_finite()) || index == 0 || index >= els.len() {
         return n;
     }
-    let types_before = (node_type(&n, index - 1), node_type(&n, index));
+    let types_before = (
+        node_type_with(&n, index - 1, chosen),
+        node_type_with(&n, index, chosen),
+    );
     let prev = prev_point(&els, index);
     // The node the segment ends at: itself, or for a closing segment the
     // subpath's start.
@@ -977,7 +993,7 @@ pub fn bend_segment(path: &BezPath, index: usize, t: f64, d: Vec2) -> BezPath {
     let end_type = if end_node == index {
         types_before.1
     } else {
-        node_type(&n, end_node)
+        node_type_with(&n, end_node, chosen)
     };
     let bent = move_handle(&bent, index - 1, Which::Out, n1, start_type);
     move_handle(&bent, end_node, Which::In, n2, end_type)
@@ -1827,6 +1843,33 @@ mod tests {
             bend_segment(&s, 1, 0.5, Vec2::new(f64::NAN, 1.0)),
             normalize(&s)
         );
+    }
+
+    /// #1140: nodes chosen cusp whose handles happen to line up keep their
+    /// other handle when the segment between them is dragged.
+    #[test]
+    fn bending_a_segment_keeps_chosen_cusp_nodes_cusp() {
+        let mut s = BezPath::new();
+        s.move_to((-10.0, 0.0));
+        s.curve_to((-8.0, 0.0), (-5.0, 0.0), (0.0, 0.0));
+        s.curve_to((5.0, 0.0), (15.0, 0.0), (20.0, 0.0));
+        s.curve_to((25.0, 0.0), (28.0, 0.0), (30.0, 0.0));
+        // Both ends read symmetrical from their handles.
+        assert_eq!(node_type(&s, 1), NodeType::Symmetrical);
+        assert_eq!(node_type(&s, 2), NodeType::Symmetrical);
+        let mut chosen = std::collections::BTreeMap::new();
+        chosen.insert(1, NodeType::Cusp);
+        chosen.insert(2, NodeType::Cusp);
+        let b = bend_segment_with(&s, 2, 0.5, Vec2::new(0.0, 8.0), &chosen);
+        let els = b.elements();
+        // The outer handles stay where they were.
+        assert!(matches!(els[1], PathEl::CurveTo(_, c2, _) if c2 == Point::new(-5.0, 0.0)));
+        assert!(matches!(els[3], PathEl::CurveTo(c1, _, _) if c1 == Point::new(25.0, 0.0)));
+        // The segment itself bent.
+        assert!(matches!(els[2], PathEl::CurveTo(c1, c2, _) if c1.y > 0.0 && c2.y > 0.0));
+        // Without a chosen type the ends turn along, as before.
+        let b2 = bend_segment(&s, 2, 0.5, Vec2::new(0.0, 8.0));
+        assert!(matches!(b2.elements()[1], PathEl::CurveTo(_, c2, _) if c2.y < 0.0));
     }
 
     #[test]
