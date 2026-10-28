@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Saving as .cdr: text in a SemiBold face (or a Light, Medium, Black ...) is saved as its family at that weight ("Titillium Web" at SemiBold), as the file it came from names it. It was saved under the name "Titillium Web SemiBold", which no installed font goes by, so the saved file opened elsewhere in a substituted font (#892, #624).
 - Start: when the first renderer failed at once and TraceDraw opened with the next one, a second, empty TraceDraw window no longer opens 20 seconds later (the start that handed over still counted the time).
 
 ## 0.19.9 (2026-10-28)
