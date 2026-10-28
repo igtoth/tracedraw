@@ -13326,3 +13326,166 @@ fn the_split_views_divider_drags() {
         assert!((st.lab.view.split - split.split).abs() < 1e-6);
     }
 }
+
+/// A primary drag from `from` to `to` with a graphics tablet's pen: the
+/// windowing layer reports the pen as a touch with a force (its pressure,
+/// `pressure(t)` for `t` 0 to 1 along the drag) and also moves the
+/// pointer and presses its button, as egui-winit does.
+fn pen_drag(
+    ctx: &egui::Context,
+    app: &mut App,
+    from: Pos2,
+    to: Pos2,
+    pressure: &dyn Fn(f32) -> f32,
+) {
+    let touch = |phase: egui::TouchPhase, pos: Pos2, force: f32| Event::Touch {
+        device_id: egui::TouchDeviceId(1),
+        id: egui::TouchId(3),
+        phase,
+        pos,
+        force: Some(force),
+    };
+    let mods = Modifiers::NONE;
+    frame(
+        ctx,
+        app,
+        vec![
+            touch(egui::TouchPhase::Start, from, pressure(0.0)),
+            Event::PointerMoved(from),
+            button(from, true, PointerButton::Primary, mods),
+        ],
+        mods,
+    );
+    let steps = 20;
+    for i in 1..=steps {
+        let t = i as f32 / steps as f32;
+        let p = from + (to - from) * t;
+        frame(
+            ctx,
+            app,
+            vec![
+                touch(egui::TouchPhase::Move, p, pressure(t)),
+                Event::PointerMoved(p),
+            ],
+            mods,
+        );
+    }
+    frame(
+        ctx,
+        app,
+        vec![
+            touch(egui::TouchPhase::End, to, pressure(1.0)),
+            button(to, false, PointerButton::Primary, mods),
+            Event::PointerGone,
+        ],
+        mods,
+    );
+    frame(ctx, app, Vec::new(), mods);
+}
+
+/// The outline of the last curve drawn.
+fn last_stroke(app: &App) -> tracedraw_core::Stroke {
+    app.doc()
+        .all_layers()
+        .flat_map(|l| &l.shapes)
+        .filter(|s| matches!(s.kind, ShapeKind::Path { .. }))
+        .last()
+        .and_then(|s| s.stroke.clone())
+        .expect("a curve with an outline")
+}
+
+/// The mean width of `widths` nodes in the first and in the last third of
+/// the stroke.
+fn end_widths(widths: &[tracedraw_core::style::WidthNode]) -> (f64, f64) {
+    let mean = |pred: &dyn Fn(f64) -> bool| {
+        let v: Vec<f64> = widths
+            .iter()
+            .filter(|n| pred(n.at))
+            .map(|n| n.left + n.right)
+            .collect();
+        assert!(!v.is_empty(), "{widths:?}");
+        v.iter().sum::<f64>() / v.len() as f64
+    };
+    (mean(&|t| t < 0.34), mean(&|t| t > 0.66))
+}
+
+/// A stylus pressed hard at first and lightly at the end draws a Freehand
+/// line wide where it was pressed and thin where it was not (#850); the
+/// mouse draws an even outline; Options > Tools > Curve tools turns the
+/// pressure off.
+#[test]
+fn pen_pressure_sets_the_width_of_a_freehand_line() {
+    let (ctx, mut app, _) = setup();
+    app.set_tool(Tool::Freehand);
+    app.select(Vec::new());
+    let from = app.view.to_screen(Point::new(80.0, 100.0));
+    let to = app.view.to_screen(Point::new(180.0, 100.0));
+    let hard_then_light = |t: f32| if t < 0.5 { 0.9 } else { 0.2 };
+    let before = shape_count(&app);
+    pen_drag(&ctx, &mut app, from, to, &hard_then_light);
+    assert_eq!(shape_count(&app), before + 1);
+    let st = last_stroke(&app);
+    assert!(!st.widths.is_empty(), "the outline follows the pressure");
+    let (start, end) = end_widths(&st.widths);
+    assert!(start > end * 2.0, "{start} vs {end}");
+    assert!(
+        start <= st.width + 1e-9 && end > 0.0,
+        "{start} {end} {}",
+        st.width
+    );
+    assert!(app.pen_pressure.is_none(), "the pen was lifted");
+
+    // The mouse: the same drag, an even outline.
+    let (from, to) = (
+        app.view.to_screen(Point::new(80.0, 120.0)),
+        app.view.to_screen(Point::new(180.0, 120.0)),
+    );
+    drag(&ctx, &mut app, from, to, Modifiers::NONE, Vec::new());
+    assert_eq!(shape_count(&app), before + 2);
+    assert!(last_stroke(&app).widths.is_empty());
+
+    // The option off: the pen draws like the mouse.
+    app.settings.curves.pen_pressure = false;
+    let (from, to) = (
+        app.view.to_screen(Point::new(80.0, 140.0)),
+        app.view.to_screen(Point::new(180.0, 140.0)),
+    );
+    pen_drag(&ctx, &mut app, from, to, &hard_then_light);
+    assert_eq!(shape_count(&app), before + 3);
+    assert!(last_stroke(&app).widths.is_empty());
+}
+
+/// Brush Strokes in Expression mode: a pen's pressure takes the place of
+/// the drawing speed, so an even drag pressed hard then lightly is wide
+/// then thin; the mouse's even drag stays even (#850).
+#[test]
+fn pen_pressure_drives_an_expression_stroke() {
+    let (ctx, mut app, _) = setup();
+    app.set_tool(Tool::BrushStrokes);
+    app.select(Vec::new());
+    app.media_mode = crate::media::MediaMode::Expression;
+    app.media_width = 6.0;
+    app.media_pressure = 1.0;
+    let from = app.view.to_screen(Point::new(80.0, 100.0));
+    let to = app.view.to_screen(Point::new(180.0, 100.0));
+    pen_drag(&ctx, &mut app, from, to, &|t| {
+        if t < 0.5 {
+            1.0
+        } else {
+            0.25
+        }
+    });
+    let st = last_stroke(&app);
+    let (start, end) = end_widths(&st.widths);
+    assert!(start > end * 2.5, "{start} vs {end}");
+    assert!((start - 6.0).abs() < 0.3, "{start}");
+    // The mouse: the speed stands in for the pressure, as before.
+    let (from, to) = (
+        app.view.to_screen(Point::new(80.0, 120.0)),
+        app.view.to_screen(Point::new(180.0, 120.0)),
+    );
+    drag(&ctx, &mut app, from, to, Modifiers::NONE, Vec::new());
+    let mouse = last_stroke(&app);
+    assert!(!mouse.widths.is_empty());
+    assert_ne!(mouse.widths, st.widths);
+}

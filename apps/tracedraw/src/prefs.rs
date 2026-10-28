@@ -598,6 +598,11 @@ pub struct CurvePrefs {
     /// steps of the constrain angle while a curve is drawn.
     #[serde(default)]
     pub constrain_key: ConstrainKey,
+    /// A graphics tablet's pen: its pressure along a Freehand or Brush
+    /// Strokes drag sets the stroke's width (#850). The mouse, and a pen
+    /// whose platform gives no pressure, draw an even width either way.
+    #[serde(default = "yes")]
+    pub pen_pressure: bool,
 }
 
 /// The modifier key that constrains the angle while drawing curves.
@@ -639,6 +644,7 @@ impl Default for CurvePrefs {
             pen_preview: true,
             pen_auto_add_delete: true,
             constrain_key: ConstrainKey::Ctrl,
+            pen_pressure: true,
         }
     }
 }

@@ -20,7 +20,7 @@ Pages: `ai-drawing.md`, `align-distribute.md`, `brush-strokes.md`, `before-after
 `emf-wmf.md`, `envelope.md`, `eps-import.md`, `extrude.md`,
 `eyedroppers.md`, `files.md`, `find-replace.md`, `fit-to-path.md`, `font-manager.md`, `gradient-fill.md`, `free-transform.md`, `hints.md`,
 `lens.md`, `live-guides.md`, `mcp.md`, `mesh-fill.md`, `new-document.md`, `options.md`,
-`outline-pen.md`, `package.md`, `pdf-import.md`, `picture-mosaic.md`, `pick-tool.md`,
+`outline-pen.md`, `package.md`, `pdf-import.md`, `pen-pressure.md`, `picture-mosaic.md`, `pick-tool.md`,
 `eyedroppers.md`, `files.md`, `font-manager.md`, `gradient-fill.md`, `free-transform.md`, `hints.md`,
 `lens.md`, `live-guides.md`, `mcp.md`, `missing-fonts.md`, `mesh-fill.md`, `new-document.md`, `options.md`,
 `outline-pen.md`, `pdf-import.md`, `picture-mosaic.md`, `pick-tool.md`,

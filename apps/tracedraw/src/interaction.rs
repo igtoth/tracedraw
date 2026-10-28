@@ -2114,6 +2114,7 @@ impl App {
         if response.drag_started_by(PointerButton::Primary) {
             self.curve = None;
             self.drag = Drag::Freehand { points: vec![p] };
+            self.pen_stroke = crate::pen::PenStroke::start(self.pen_pressure);
         }
         if response.dragged_by(PointerButton::Primary) {
             if let Drag::Freehand { points } = &mut self.drag {
@@ -2123,9 +2124,21 @@ impl App {
                     .unwrap_or(true)
                 {
                     points.push(p);
+                    let n = points.len();
+                    self.pen_stroke.record(n, self.pen_pressure);
                 }
             }
         }
+    }
+
+    /// The pressures a pen recorded along the freehand drag of `points`,
+    /// when it had one at every point and Options > Tools > Curve tools
+    /// lets the pressure set the width (#850).
+    pub fn pen_pressures(&self, points: &[Point]) -> Option<&[f32]> {
+        if !self.settings.curves.pen_pressure {
+            return None;
+        }
+        self.pen_stroke.pressures(points.len())
     }
 
     /// Bezier/Pen: click places a node without a handle (the segment to
@@ -2747,7 +2760,11 @@ impl App {
                 self.add_painterly_stroke(&points);
             }
             Drag::Freehand { points } if self.tool == Tool::BrushStrokes => {
-                let shapes = self.media_shapes(&points);
+                // A pen's pressure along the drag sets the width (#850).
+                let pen = self
+                    .pen_pressures(&points)
+                    .and_then(|pr| crate::pen::PressureProfile::new(&points, pr));
+                let shapes = self.media_shapes_pen(&points, pen.as_ref());
                 if let Some(layer) = self.active_layer() {
                     let ids: Vec<ShapeId> = shapes.iter().map(|s| s.id).collect();
                     let cmds: Vec<Command> = shapes
@@ -2767,7 +2784,22 @@ impl App {
                 let pts = tracedraw_core::geometry::simplify(&points, tol.max(0.02));
                 if pts.len() >= 2 {
                     let path = tracedraw_core::geometry::smooth_path(&pts, false);
-                    self.add_drawn_line(path);
+                    // Drawn with a pen: the outline follows its pressure
+                    // along the stroke (#850); the mouse keeps it even.
+                    let widths = self
+                        .pen_pressures(&points)
+                        .and_then(|pr| crate::pen::PressureProfile::new(&points, pr))
+                        .zip(self.default_stroke())
+                        .map(|(pen, st)| {
+                            pen.width_nodes(
+                                crate::pen::FREEHAND_NODES,
+                                st.width,
+                                crate::pen::FREEHAND_FLOOR,
+                                &|_| 1.0,
+                            )
+                        })
+                        .unwrap_or_default();
+                    self.add_drawn_line_with_widths(path, widths);
                 }
             }
             Drag::FillGradient {
@@ -2931,6 +2963,9 @@ impl App {
     }
 
     pub fn keyboard(&mut self, ctx: &egui::Context) {
+        // The pen's pressure, from this frame's touch events, before the
+        // tools see the pointer (#850).
+        self.pen_pressure = ctx.input(|i| crate::pen::pressure_after(&i.events, self.pen_pressure));
         // A macro's message, input box, modal form or error owns the
         // keyboard (see ui/macros_ui.rs); Esc stops a running macro.
         if self.macros.modal() {

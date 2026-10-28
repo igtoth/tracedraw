@@ -68,7 +68,9 @@ off by default: a marquee or freehand selection takes what it touches and
 Alt only what lies wholly inside), Zoom/Pan (right mouse button of the Zoom tool:
 zoom out or context menu; mouse wheel action), Curve tools (Freehand
 smoothing, 0 to 100, 50 by default; Join and close within, 1 to 50
-screen pixels, 5 by default; see `curve-tools.md`), Rectangle (Rectangle
+screen pixels, 5 by default; Graphics tablet: pen pressure sets the
+width of Freehand and Brush Strokes drags, on; see `curve-tools.md` and
+`pen-pressure.md`), Rectangle (Rectangle
 corners: style, the four sizes, Edit corners together; Scale corners:
 Relative corner scaling, off by default so that new rectangles keep
 their corner size when resized; see `shape-tools.md`),
@@ -159,9 +161,10 @@ message never replaces another dialog that is open.
 ### Pages with no equivalent
 
 Pen settings (pressure curves for tablets), Tablet Mode, VBA and
-plug-ins have no page: TraceDraw reads no pen pressure, has its own
-workspaces instead of a tablet mode, scripts in JavaScript (Scripts
-panel) and hosts no plug-ins.
+plug-ins have no page: a pen's pressure sets widths as it comes, with
+one checkbox under Curve tools (see `pen-pressure.md`); TraceDraw has
+its own workspaces instead of a tablet mode, scripts in JavaScript
+(Scripts panel) and hosts no plug-ins.
 
 ## Interface size
 

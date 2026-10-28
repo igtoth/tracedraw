@@ -111,6 +111,7 @@ mod ops2;
 mod package;
 mod painterly_tool;
 mod palette;
+mod pen;
 mod pen_look;
 mod perspective_draw;
 #[cfg(test)]
@@ -221,6 +222,14 @@ fn main() -> eframe::Result<()> {
     // checks): straight into a plain window at the default size.
     let plain = args.iter().any(|a| a == "--no-splash")
         || std::env::var("TRACEDRAW_NO_SPLASH").is_ok_and(|v| !v.is_empty() && v != "0");
+    // `tracedraw --x11`: the window opens through X11 (XWayland on a
+    // Wayland desktop), where a graphics tablet's pen moves the pointer;
+    // Wayland compositors send pens only over a protocol the windowing
+    // layer does not speak yet (#850, see docs/behavior/pen-pressure.md).
+    #[cfg(target_os = "linux")]
+    if args.iter().any(|a| a == "--x11") {
+        std::env::remove_var("WAYLAND_DISPLAY");
+    }
     // The first file opens as the window starts, the others after it.
     let mut files = files.into_iter();
     let open_path = files.next();

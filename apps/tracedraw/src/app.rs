@@ -1482,6 +1482,12 @@ pub struct App {
     pub media_spacing: f64,
     pub media_pressure: f64,
     pub media_smoothing: f64,
+    /// The pen's pressure right now (0 to 1), from the stylus of a
+    /// graphics tablet; `None` with the mouse, or where the platform
+    /// gives no pressure (#850, see `pen.rs`).
+    pub pen_pressure: Option<f32>,
+    /// The pressures along the freehand drag in progress.
+    pub pen_stroke: crate::pen::PenStroke,
     /// The Bitmap Mask docker: its colour slots, the slot picked, hide or
     /// show the colours, and the eyedropper filling the picked slot.
     pub mask: crate::bitmap_fx::MaskSettings,
@@ -2484,6 +2490,8 @@ impl App {
             media_preset: 0,
             media_spacing: 8.0,
             media_pressure: 0.5,
+            pen_pressure: None,
+            pen_stroke: crate::pen::PenStroke::default(),
             media_smoothing: 25.0,
             mask: Default::default(),
             font_filter: String::new(),
@@ -4288,11 +4296,22 @@ impl App {
     // ----- object creation ---------------------------------------------------
 
     pub fn new_shape(&mut self, kind: ShapeKind) -> Option<ShapeId> {
+        self.new_shape_styled(kind, |_| {})
+    }
+
+    /// `new_shape`, with `style` applied to the shape after its default
+    /// fill and outline, before it is added (one undo step).
+    pub fn new_shape_styled(
+        &mut self,
+        kind: ShapeKind,
+        style: impl FnOnce(&mut Shape),
+    ) -> Option<ShapeId> {
         let layer = self.active_layer()?;
         let id = self.engine.new_shape_id();
         let mut shape = Shape::new(id, kind);
         // The fill and outline of its kind (Default Properties).
         self.doc().defaults.apply_to(&mut shape);
+        style(&mut shape);
         self.run(Command::AddShape { layer, shape });
         // Drawn while a symmetry is edited: part of it.
         if self.symmetry_edit.is_some() {

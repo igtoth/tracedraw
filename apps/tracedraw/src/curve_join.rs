@@ -345,6 +345,17 @@ impl App {
     }
 
     pub fn add_drawn_line(&mut self, line: BezPath) -> Option<ShapeId> {
+        self.add_drawn_line_with_widths(line, Vec::new())
+    }
+
+    /// `add_drawn_line`, with `widths` along the new line's outline (a
+    /// pen's pressure, #850); a line that continues a curve keeps that
+    /// curve's outline.
+    pub fn add_drawn_line_with_widths(
+        &mut self,
+        line: BezPath,
+        widths: Vec<tracedraw_core::style::WidthNode>,
+    ) -> Option<ShapeId> {
         if let Some(curve) = self.join_candidate() {
             if let Some(path) = joined(&curve.page_path(), &line, self.join_tolerance()) {
                 let det = curve.transform.determinant();
@@ -363,10 +374,17 @@ impl App {
                 }
             }
         }
-        let id = self.new_shape(ShapeKind::Path {
-            path: line,
-            closed: false,
-        })?;
+        let id = self.new_shape_styled(
+            ShapeKind::Path {
+                path: line,
+                closed: false,
+            },
+            |shape| {
+                if let Some(st) = shape.stroke.as_mut().filter(|_| !widths.is_empty()) {
+                    st.widths = widths;
+                }
+            },
+        )?;
         self.select(vec![id]);
         Some(id)
     }

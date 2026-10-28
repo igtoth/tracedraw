@@ -18,6 +18,11 @@ meets the start) `Path` objects with the toolbox defaults.
   drag in between draws freehand instead.
 - While dragging, the stroke shows as a black hairline on a white line
   twice as wide, so it shows over any colour, a black fill too (#672).
+- Drawn with a graphics tablet's pen where the platform reports its
+  pressure, the line's outline follows the pressure along the stroke
+  (width nodes, `0.05 + 0.95 x pressure` of the outline width); the
+  mouse draws an even outline. Options > Tools > Curve tools > Graphics
+  tablet turns it off (#850, see `pen-pressure.md`).
 
 ## Bezier and Pen
 

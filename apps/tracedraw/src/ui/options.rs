@@ -3743,6 +3743,13 @@ fn curves_page(app: &mut App, ui: &mut Ui) {
             "options.pen_auto_add_delete_tip",
         ));
         ui.end_row();
+        row_label(ui, &tr("options.pen_tablet"));
+        ui.checkbox(&mut c.pen_pressure, tr("options.pen_pressure"))
+            .rich_tip(crate::ui::tips::pair(
+                "options.pen_pressure",
+                "options.pen_pressure_tip",
+            ));
+        ui.end_row();
         row_label(ui, &tr("options.constrain_key"));
         crate::ui::tips::tip_over(
             ui,

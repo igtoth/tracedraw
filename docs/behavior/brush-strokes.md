@@ -27,7 +27,15 @@ pressure 0.5, sprayer spacing 8 mm.
   for a dry-brush look.
 - Expression: pen-pressure simulation; the speed between samples stands
   in for pressure (slow strokes are wide), scaled by the pressure
-  setting (0.5 = half the width at full speed).
+  setting (0.5 = half the width at full speed). Drawn with a graphics
+  tablet's pen whose pressure the platform reports, the real pressure
+  takes the speed's place.
+- Pen pressure (#850, see `pen-pressure.md`): with a pen that reports
+  it, the Preset, Brush and Expression widths are scaled by
+  `(1 - p) + p x pressure`, `p` the Pressure setting (0.5 by default:
+  half the width at no pressure, the full width at full pressure); the
+  calligraphic nib and the sprayer keep their size. Options > Tools >
+  Curve tools > Graphics tablet turns it off.
 - Sprayer: objects (circles, squares, stars, hearts, leaves) placed
   from the start every `spacing` mm along the path (so a 40 mm path at
   8 mm gets 6 objects, at 0, 8, ... 40), each sized between 70 % and
