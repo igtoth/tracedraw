@@ -6,6 +6,7 @@
 //! toolbox on a side does the same up and down. See
 //! docs/behavior/toolbars.md.
 
+use crate::ui::tips::RichTip;
 use egui::{Align, Layout, Pos2, Rect, Sense, Ui, UiBuilder, Vec2};
 
 /// The size of the « and » buttons across the bar.
@@ -240,7 +241,7 @@ fn strip(ui: &mut Ui, id_salt: &str, horizontal: bool, add: impl FnOnce(&mut Ui)
                     Sense::hover()
                 }),
             )
-            .on_hover_text(back_tip)
+            .rich_tip(back_tip)
             .clicked()
             && can_back
         {
@@ -257,7 +258,7 @@ fn strip(ui: &mut Ui, id_salt: &str, horizontal: bool, add: impl FnOnce(&mut Ui)
                         Sense::hover()
                     }),
             )
-            .on_hover_text(forward_tip)
+            .rich_tip(forward_tip)
             .clicked()
             && can_forward
         {

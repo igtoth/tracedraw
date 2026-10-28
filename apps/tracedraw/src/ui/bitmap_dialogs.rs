@@ -9,6 +9,7 @@ use crate::bitmap_modes::{
 };
 use crate::i18n::tr;
 use crate::ui::bitmap_preview::{before_after, settings_key};
+use crate::ui::tips::RichTip;
 use egui::{Color32, Context, Ui};
 
 /// The Duotone dialog's state: the settings, the ink whose curve is shown
@@ -386,10 +387,7 @@ pub fn remove_background_dialog(
                             egui::Stroke::new(1.0, crate::theme::Tokens::border()),
                             egui::StrokeKind::Inside,
                         );
-                        if resp
-                            .on_hover_text(tr("dialog.bg_color_remove_tip"))
-                            .clicked()
-                        {
+                        if resp.rich_tip(tr("dialog.bg_color_remove_tip")).clicked() {
                             gone = Some(i);
                         }
                     }
@@ -405,13 +403,13 @@ pub fn remove_background_dialog(
                         crate::tools::Tool::ColorEyedropper,
                         crate::theme::Tokens::icon(),
                     );
-                    if resp.on_hover_text(tr("dialog.bg_pick_tip")).clicked() {
+                    if resp.rich_tip(tr("dialog.bg_pick_tip")).clicked() {
                         st.picking = !st.picking;
                     }
                     if !st.settings.colors.is_empty()
                         && ui
                             .small_button(tr("dialog.bg_colors_auto_button"))
-                            .on_hover_text(tr("dialog.bg_colors_auto_tip"))
+                            .rich_tip(tr("dialog.bg_colors_auto_tip"))
                             .clicked()
                     {
                         st.settings.colors.clear();
@@ -431,11 +429,11 @@ pub fn remove_background_dialog(
                 ui.end_row();
             });
         ui.checkbox(&mut st.settings.contiguous, tr("dialog.bg_contiguous"))
-            .on_hover_text(tr("dialog.bg_contiguous_tip"));
+            .rich_tip(tr("dialog.bg_contiguous_tip"));
         ui.checkbox(&mut st.settings.despeckle, tr("dialog.bg_despeckle"))
-            .on_hover_text(tr("dialog.bg_despeckle_tip"));
+            .rich_tip(tr("dialog.bg_despeckle_tip"));
         ui.checkbox(&mut st.settings.clean_edges, tr("dialog.bg_clean_edges"))
-            .on_hover_text(tr("dialog.bg_clean_edges_tip"));
+            .rich_tip(tr("dialog.bg_clean_edges_tip"));
         if ui.button(tr("dialog.reset")).clicked() {
             st.settings = Default::default();
             st.picking = false;

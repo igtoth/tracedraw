@@ -11,6 +11,7 @@ use crate::i18n::tr;
 use crate::theme::Tokens;
 use crate::ui::field::NumField;
 use crate::ui::propbar::{draw_pic, Pic};
+use crate::ui::tips::RichTip;
 use egui::{epaint, Color32, Key, Modifiers, Pos2, Rect, Sense, Stroke, Ui, Vec2};
 use tracedraw_core::geometry::{
     complex_star_max_sharpness, BezPath, Point, COMPLEX_STAR_MIN_POINTS,
@@ -93,7 +94,7 @@ fn kind_button(ui: &mut Ui, kind: CoordKind, pressed: bool, flyout: bool) -> egu
             Stroke::NONE,
         ));
     }
-    resp.on_hover_text(tr(kind.key()))
+    resp.rich_tip(tr(kind.key()))
 }
 
 /// A flyout of two objects: the button shows the chosen one (or the
@@ -185,7 +186,7 @@ fn pick_button(
     } else {
         "coords.set_click_tip"
     };
-    if resp.on_hover_text(tr(key)).clicked() {
+    if resp.rich_tip(tr(key)).clicked() {
         *out = Some(pick);
     }
 }
@@ -257,7 +258,7 @@ fn angle_field(ui: &mut Ui, deg: &mut f64) -> bool {
 /// The 3 x 3 origin point selector; the chosen point when clicked.
 fn origin_grid(ui: &mut Ui, origin: usize) -> Option<usize> {
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(34.0, 34.0), Sense::click());
-    let resp = resp.on_hover_text(tr("coords.origin_tip"));
+    let resp = resp.rich_tip(tr("coords.origin_tip"));
     let frame = rect.shrink(6.0);
     ui.painter().rect_stroke(
         frame,
@@ -740,16 +741,12 @@ fn multipoint(
         });
     }
     ui.horizontal(|ui| {
-        if ui
-            .button("+")
-            .on_hover_text(tr("coords.add_point"))
-            .clicked()
-        {
+        if ui.button("+").rich_tip(tr("coords.add_point")).clicked() {
             c.add_point();
         }
         if ui
             .add_enabled(c.current.is_some(), egui::Button::new("-"))
-            .on_hover_text(tr("coords.delete_point"))
+            .rich_tip(tr("coords.delete_point"))
             .clicked()
         {
             c.delete_point();

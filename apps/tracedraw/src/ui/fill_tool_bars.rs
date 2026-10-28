@@ -201,7 +201,12 @@ pub fn smart_fill_bar(app: &mut App, ui: &mut Ui) {
             for (i, key) in SMART_CHOICES.iter().enumerate() {
                 ui.selectable_value(&mut mode, i as u8, tr(key));
             }
-        });
+        })
+        .response
+        .rich_tip(crate::ui::tips::pair(
+            "toolbar.smart_fill_mode",
+            "toolbar.smart_fill_mode_desc",
+        ));
     app.area_fill_mode = mode;
     color_pick(
         ui,
@@ -221,7 +226,12 @@ pub fn smart_fill_bar(app: &mut App, ui: &mut Ui) {
             for (i, key) in SMART_CHOICES.iter().enumerate() {
                 ui.selectable_value(&mut omode, i as u8, tr(key));
             }
-        });
+        })
+        .response
+        .rich_tip(crate::ui::tips::pair(
+            "toolbar.smart_outline_mode",
+            "toolbar.smart_outline_mode_desc",
+        ));
     app.area_outline_mode = omode;
     let mut w = app.units.from_mm(app.area_outline_width);
     let r = ui.add_enabled(
@@ -231,6 +241,8 @@ pub fn smart_fill_bar(app: &mut App, ui: &mut Ui) {
             .range(0.0..=1000.0)
             .suffix(format!(" {}", app.units.short())),
     );
+    let tip = crate::ui::tips::pair("toolbar.outline_width", "toolbar.smart_outline_width_desc");
+    let r = r.rich_tip(&tip).rich_disabled_tip(&tip);
     if r.changed() {
         app.area_outline_width = app.units.to_mm(w).max(0.0);
     }

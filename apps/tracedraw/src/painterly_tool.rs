@@ -7,6 +7,7 @@
 
 use crate::app::App;
 use crate::i18n::tr;
+use crate::ui::tips::RichTip;
 use tracedraw_core::geometry::{BezPath, Point};
 use tracedraw_core::painterly::{Painterly, PainterlyBrush};
 use tracedraw_core::{Color, Command, Fill, Shape, ShapeId, ShapeKind, Stroke};
@@ -168,8 +169,10 @@ pub fn painterly_bar(app: &mut App, ui: &mut egui::Ui) {
                     ui.selectable_value(&mut app.painterly.brush.brush, b, brush_name(b));
                 }
             }
-        });
-    ui.label("⬤").on_hover_text(tr("painterly.size"));
+        })
+        .response
+        .rich_tip(crate::ui::tips::keyed("painterly.brush_tip"));
+    ui.label("⬤").rich_tip(tr("painterly.size"));
     let mut size = app.units.world_from_mm(app.painterly.size);
     if ui
         .add(
@@ -180,12 +183,12 @@ pub fn painterly_bar(app: &mut App, ui: &mut egui::Ui) {
                 .suffix(format!(" {}", app.units.short()))
                 .width(76.0),
         )
-        .on_hover_text(tr("painterly.size"))
+        .rich_tip(tr("painterly.size"))
         .changed()
     {
         app.painterly.size = app.units.world_to_mm(size).max(0.1);
     }
-    ui.label("▦").on_hover_text(tr("painterly.transparency"));
+    ui.label("▦").rich_tip(tr("painterly.transparency"));
     let mut pct = (app.painterly.brush.transparency * 100.0).round();
     if ui
         .add(
@@ -194,7 +197,7 @@ pub fn painterly_bar(app: &mut App, ui: &mut egui::Ui) {
                 .suffix(" %")
                 .width(56.0),
         )
-        .on_hover_text(tr("painterly.transparency"))
+        .rich_tip(tr("painterly.transparency"))
         .changed()
     {
         app.painterly.brush.transparency = (pct / 100.0).clamp(0.0, 1.0);

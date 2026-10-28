@@ -10932,3 +10932,112 @@ fn f2_zooms_once_and_gives_the_tool_back() {
     click_at(&ctx, &mut app, at, Modifiers::SHIFT);
     assert_eq!(app.tool, Tool::Zoom);
 }
+
+/// Corner widgets on a stretched curve (#1000): a corner rounded after
+/// the stretch is round on the page; one rounded before keeps its
+/// stretched arc and its widget, goes sharp when dragged out, and rounds
+/// on the page from then on.
+#[test]
+fn corner_widgets_round_stretched_curves_on_the_page() {
+    use tracedraw_core::corner_cut::fillets;
+    use tracedraw_core::geometry::{BezPath, Shape as _};
+    use tracedraw_core::Command;
+    let (ctx, mut app, rect) = setup();
+    app.select(vec![rect]);
+    app.delete_selection();
+    app.settings.nodes.corner_widgets = true;
+    let square = || {
+        let mut p = BezPath::new();
+        p.move_to((20.0, 20.0));
+        p.line_to((60.0, 20.0));
+        p.line_to((60.0, 60.0));
+        p.line_to((20.0, 60.0));
+        p.close_path();
+        p
+    };
+    // Twice as wide, about its left side: 80 by 40 on the page.
+    let stretch = Affine::translate((20.0, 0.0))
+        * Affine::scale_non_uniform(2.0, 1.0)
+        * Affine::translate((-20.0, 0.0));
+    let page_of = |app: &App, id: ShapeId| app.doc().find_shape(id).expect("curve").page_path();
+    let local_of = |app: &App, id: ShapeId| match &app.doc().find_shape(id).expect("curve").kind {
+        ShapeKind::Path { path, .. } => path.clone(),
+        _ => panic!("a curve"),
+    };
+    let drag_widget = |ctx: &egui::Context, app: &mut App, toward: Point, mm: f32| {
+        frame(ctx, app, Vec::new(), Modifiers::NONE);
+        let w = app.corner_widgets()[0];
+        let dir = (app.view.to_screen(toward) - w.at).normalized();
+        let zoom = app.view.zoom;
+        drag(
+            ctx,
+            app,
+            w.at,
+            w.at + dir * (mm * zoom),
+            Modifiers::NONE,
+            Vec::new(),
+        );
+    };
+    let centre = Point::new(60.0, 40.0);
+
+    // Stretched, then rounded: round on the page.
+    let id = app
+        .new_shape(ShapeKind::Path {
+            path: square(),
+            closed: true,
+        })
+        .expect("square");
+    app.run(Command::TransformShapes {
+        shapes: vec![id],
+        transform: stretch,
+    });
+    app.select(vec![id]);
+    app.set_tool(Tool::Shape);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    assert_eq!(app.corner_widgets().len(), 4);
+    drag_widget(&ctx, &mut app, centre, 5.0);
+    let found = fillets(&page_of(&app, id));
+    assert_eq!(found.len(), 4, "round on the page: {found:?}");
+    assert!(found
+        .iter()
+        .all(|f| (f.radius - found[0].radius).abs() < 1e-6));
+    let b = page_of(&app, id).bounding_box();
+    assert!((b.width() - 80.0).abs() < 1e-6 && (b.height() - 40.0).abs() < 1e-6);
+    // Selected again, its round corners keep their widgets.
+    app.select(Vec::new());
+    app.select(vec![id]);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    assert_eq!(app.corner_widgets().len(), 4);
+
+    // Rounded, then stretched: the stretched arcs keep their widgets.
+    app.set_tool(Tool::Pick);
+    let id = app
+        .new_shape(ShapeKind::Path {
+            path: square(),
+            closed: true,
+        })
+        .expect("square");
+    app.select(vec![id]);
+    app.set_tool(Tool::Shape);
+    drag_widget(&ctx, &mut app, Point::new(40.0, 40.0), 7.0);
+    assert_eq!(fillets(&local_of(&app, id)).len(), 4);
+    app.run(Command::TransformShapes {
+        shapes: vec![id],
+        transform: stretch,
+    });
+    app.select(Vec::new());
+    app.select(vec![id]);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let widgets = app.corner_widgets();
+    assert_eq!(widgets.len(), 4, "{widgets:?}");
+    assert!(widgets.iter().all(|w| w.stretched));
+    assert!(fillets(&page_of(&app, id)).is_empty(), "stretched arcs");
+    // Dragged out past the corner: every corner sharp again.
+    drag_widget(&ctx, &mut app, centre, -25.0);
+    assert!(fillets(&local_of(&app, id)).is_empty());
+    assert!((page_of(&app, id).area().abs() - 3200.0).abs() < 1e-6);
+    // Rounded again: round on the page.
+    drag_widget(&ctx, &mut app, centre, 5.0);
+    let found = fillets(&page_of(&app, id));
+    assert_eq!(found.len(), 4, "{found:?}");
+}

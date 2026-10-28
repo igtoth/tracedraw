@@ -6,7 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
-- Area Fill: areas filled side by side now meet exactly, with no hairline gap between their colours where curves cross or shapes overlap. A corner where two outlines cross was placed where their flattened outlines cross, up to 0.02 mm off the curves, so neighbouring areas could leave a thin gap or a missed corner when zoomed in; the same holds for the results of Weld, Trim and Intersect (#1065).
+- Shape tool: on a stretched curve, the corner rounding rings now round corners on the page, so a new rounding comes out round, also after other corners were rounded. A corner rounded before the stretch keeps its stretched arc and its ring: dragging it changes that corner alone, and once it is dragged back to sharp it rounds round again (#1000).
 - Shape tool: end nodes of two different objects are no longer joined, by Join or by dropping one on the other; the status bar says to combine the objects first (Object > Combine, Ctrl+L), after which their ends join as before (#1007).
 - Text panel: the Fit Text to Frame button in the Text Box section shows its icon, now drawn: it was an arrow character the bundled interface font lacks, so on Windows the button was blank (#1041).
 - Text on a path: Top and Bottom in the placement list centre text that is set off its circle (a Distance from path), as a stamp's bottom line. The text landed an eighth of the way round, because it was centred on the path's length rather than on the longer or shorter line the letters stand on (#193).
@@ -20,6 +20,7 @@ full, row-by-row status.
 - Start: when the first renderer failed at once and TraceDraw opened with the next one, a second, empty TraceDraw window no longer opens 20 seconds later (the start that handed over still counted the time).
 - Dimensions without arrowheads (or with open, tick or no heads): the selection box and its handles wrap the dimension's lines and label. Their empty arrowhead curve counted as a point at the page's lower left corner, so the box stretched from the dimension down to that corner, and a moved dimension seemed to leave its box behind (#996).
 - Status bar in a narrow window: the fill and outline parts keep room for their swatches and values and move left as the window narrows, the tool hints and object information giving way first and ending in an ellipsis. The outline's colour and width were cut off at the right, and the parts could not be read or double-clicked (#1004).
+- Area Fill: areas filled side by side now meet exactly, with no hairline gap between their colours where curves cross or shapes overlap. A corner where two outlines cross was placed where their flattened outlines cross, up to 0.02 mm off the curves, so neighbouring areas could leave a thin gap or a missed corner when zoomed in; the same holds for the results of Weld, Trim and Intersect (#1065).
 
 ## 0.19.9 (2026-10-28)
 

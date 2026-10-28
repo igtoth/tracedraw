@@ -8,6 +8,7 @@ use crate::i18n::tr;
 use crate::theme::Tokens;
 use crate::ui::dialogs::{Dialog, OptionsPage};
 use crate::ui::options::{grid, row_label};
+use crate::ui::tips::RichTip;
 use egui::{Color32, RichText, Ui};
 const OK: Color32 = Color32::from_rgb(0x2E, 0x7D, 0x32);
 const ERROR: Color32 = Color32::from_rgb(0xC4, 0x2B, 0x1C);
@@ -156,7 +157,7 @@ pub fn service_page(app: &mut App, ui: &mut Ui) {
         let busy = app.ai.busy() || app.ai_image.busy();
         if ui
             .add_enabled(!busy, egui::Button::new(tr("aiui.test")))
-            .on_hover_text(tr("aiui.test_hint"))
+            .rich_tip(tr("aiui.test_hint"))
             .clicked()
         {
             app.ai_fetch_models();

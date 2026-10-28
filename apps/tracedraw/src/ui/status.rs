@@ -10,6 +10,7 @@ use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
 use crate::tools::Tool;
 use crate::ui::dockers::kind_name;
+use crate::ui::tips::RichTip;
 use egui::{Color32, Pos2, Rect, Sense, Stroke, Ui, Vec2};
 use serde::{Deserialize, Serialize};
 use tracedraw_core::document::ShapeKind;
@@ -319,7 +320,7 @@ pub fn status_bar(app: &mut App, ui: &mut Ui) {
     let gear = Rect::from_center_size(Pos2::new(row.min.x + 14.0, cy), Vec2::splat(26.0));
     let gear_resp = ui
         .interact(gear, egui::Id::new("status_settings"), Sense::click())
-        .on_hover_text(tr("status.bar_options"));
+        .rich_tip(tr("status.bar_options"));
     if gear_resp.hovered() {
         painter.rect_filled(gear, 2.0, Tokens::tool_hover());
     }
@@ -532,7 +533,7 @@ pub fn status_bar(app: &mut App, ui: &mut Ui) {
     // Proof colours.
     let proof_resp = ui
         .interact(proof, egui::Id::new("status_proof"), Sense::click())
-        .on_hover_text(if app.proof_colors {
+        .rich_tip(if app.proof_colors {
             tr("status.proof_on")
         } else {
             tr("status.proof_off")
@@ -552,7 +553,7 @@ pub fn status_bar(app: &mut App, ui: &mut Ui) {
     let dark = crate::theme::theme().is_dark();
     let theme_resp = ui
         .interact(theme_btn, egui::Id::new("status_theme"), Sense::click())
-        .on_hover_text(if dark {
+        .rich_tip(if dark {
             tr("status.theme_to_light")
         } else {
             tr("status.theme_to_dark")
@@ -597,7 +598,7 @@ impl Indicator<'_> {
     fn show(&self, ui: &mut Ui, painter: &egui::Painter, part: Rect) -> bool {
         let resp = ui
             .interact(part, egui::Id::new(self.id), Sense::click())
-            .on_hover_text(self.tip);
+            .rich_tip(self.tip);
         let cy = part.center().y;
         let icon_r = Rect::from_center_size(Pos2::new(part.min.x + 11.0, cy), Vec2::splat(20.0));
         crate::ui::icons::draw(painter, icon_r, self.icon, Tokens::icon());

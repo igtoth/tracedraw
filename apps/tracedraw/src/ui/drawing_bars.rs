@@ -69,6 +69,9 @@ pub fn drawing_bar(app: &mut App, ui: &mut Ui) {
                     .range(0.0..=1000.0)
                     .suffix(format!(" {}", app.units.short())),
             );
+            let r = r
+                .rich_tip(crate::ui::tips::keyed("sketch.join_distance"))
+                .rich_disabled_tip(crate::ui::tips::keyed("sketch.join_distance"));
             if r.changed() {
                 app.sketch.join_distance = app.units.to_mm(d).clamp(0.0, 1000.0);
             }
@@ -95,6 +98,7 @@ pub fn knife_bar(app: &mut App, ui: &mut Ui) {
     ] {
         if ui
             .selectable_label(app.knife.mode == mode, tr(key))
+            .rich_tip(crate::ui::tips::keyed(key))
             .clicked()
         {
             app.knife.mode = mode;
@@ -125,6 +129,9 @@ pub fn knife_bar(app: &mut App, ui: &mut Ui) {
             .range(0.0..=1000.0)
             .suffix(format!(" {}", app.units.short())),
     );
+    let r = r
+        .rich_tip(crate::ui::tips::keyed("knife.gap_width"))
+        .rich_disabled_tip(crate::ui::tips::keyed("knife.gap_width"));
     if r.changed() {
         app.knife.gap = app.units.to_mm(w).clamp(0.0, 1000.0);
     }

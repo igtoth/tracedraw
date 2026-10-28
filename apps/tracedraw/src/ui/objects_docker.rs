@@ -16,6 +16,7 @@ use crate::app::App;
 use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
 use crate::ui::dockers::kind_name;
+use crate::ui::tips::RichTip;
 use egui::{Color32, Painter, Pos2, Rect, Sense, Stroke, Ui, Vec2};
 use tracedraw_core::{Command, Layer, LayerId, MasterScope, Page, Shape, ShapeId, ShapeKind};
 
@@ -541,19 +542,19 @@ fn layer_rows(
     x += 16.0;
     let (er, e) = hot(ui, rect, x, 18.0, base.with("eye"));
     paint_eye(ui, er, layer.visible);
-    if e.on_hover_text(tr("docker.show_hide")).clicked() {
+    if e.rich_tip(tr("docker.show_hide")).clicked() {
         act.visible = Some((layer.id, !layer.visible));
     }
     x += 20.0;
     let (pr, p) = hot(ui, rect, x, 18.0, base.with("print"));
     paint_printer(ui, pr, layer.printable);
-    if p.on_hover_text(tr("docker.print_layer")).clicked() {
+    if p.rich_tip(tr("docker.print_layer")).clicked() {
         act.printable = Some((layer.id, !layer.printable));
     }
     x += 20.0;
     let (lr, l) = hot(ui, rect, x, 18.0, base.with("lock"));
     paint_lock(ui, lr, layer.locked);
-    if l.on_hover_text(tr("docker.lock_layer")).clicked() {
+    if l.rich_tip(tr("docker.lock_layer")).clicked() {
         act.locked = Some((layer.id, !layer.locked));
     }
     x += 22.0;
@@ -661,7 +662,7 @@ fn guides_row(app: &App, ui: &mut Ui, page: &Page, act: &mut Actions) {
     let mut x = rect.left() + 3.0 + INDENT + 16.0;
     let (er, e) = hot(ui, rect, x, 18.0, base.with("eye"));
     paint_eye(ui, er, app.show_guides);
-    if e.on_hover_text(tr("docker.show_hide")).clicked() {
+    if e.rich_tip(tr("docker.show_hide")).clicked() {
         act.toggle_guides = true;
     }
     x += 20.0;
@@ -671,7 +672,7 @@ fn guides_row(app: &App, ui: &mut Ui, page: &Page, act: &mut Actions) {
     let locked = any && page.guides.iter().all(|g| g.locked);
     let (lr, l) = hot(ui, rect, x, 18.0, base.with("lock"));
     paint_lock(ui, lr, locked);
-    if l.on_hover_text(tr("docker.lock_guides")).clicked() && any {
+    if l.rich_tip(tr("docker.lock_guides")).clicked() && any {
         act.lock_guides = Some(!locked);
     }
     x += 22.0;
@@ -693,7 +694,7 @@ fn grid_row(app: &App, ui: &mut Ui, act: &mut Actions) {
     let mut x = rect.left() + 3.0 + INDENT + 16.0;
     let (er, e) = hot(ui, rect, x, 18.0, egui::Id::new("objects_grid_eye"));
     paint_eye(ui, er, app.show_grid);
-    if e.on_hover_text(tr("docker.show_hide")).clicked() {
+    if e.rich_tip(tr("docker.show_hide")).clicked() {
         act.toggle_grid = true;
     }
     x += 20.0;
@@ -770,7 +771,7 @@ fn object_rows(app: &App, ui: &mut Ui, s: &Shape, depth: usize, act: &mut Action
     let eye_x = lock_x - 20.0;
     let (er, e) = hot(ui, rect, eye_x, 18.0, base.with("eye"));
     paint_eye(ui, er, s.visible);
-    if e.on_hover_text(tr("docker.show_hide")).clicked() {
+    if e.rich_tip(tr("docker.show_hide")).clicked() {
         act.object_visible = Some((s.id, !s.visible));
     }
     let (lr, l) = hot(ui, rect, lock_x, 18.0, base.with("lock"));
@@ -780,7 +781,7 @@ fn object_rows(app: &App, ui: &mut Ui, s: &Shape, depth: usize, act: &mut Action
     } else {
         "menu.object.lock_object"
     };
-    if l.on_hover_text(tr(lock_tip)).clicked() {
+    if l.rich_tip(tr(lock_tip)).clicked() {
         act.object_locked = Some((s.id, !s.locked));
     }
     if resp.double_clicked() {
@@ -809,14 +810,14 @@ fn bottom_bar(app: &mut App, ui: &mut Ui) {
     let can_delete = !app.selection.is_empty() || deletable_layer(app).is_some();
     let new = ui
         .interact(new_r, egui::Id::new("objects_new_layer"), Sense::click())
-        .on_hover_text(tr("docker.new_layer"));
+        .rich_tip(tr("docker.new_layer"));
     let master = ui
         .interact(
             master_r,
             egui::Id::new("objects_new_master"),
             Sense::click(),
         )
-        .on_hover_text(tr("docker.new_master_layer"));
+        .rich_tip(tr("docker.new_master_layer"));
     let delete = ui
         .interact(
             delete_r,
@@ -827,7 +828,7 @@ fn bottom_bar(app: &mut App, ui: &mut Ui) {
                 Sense::hover()
             },
         )
-        .on_hover_text(tr("docker.delete_hint"));
+        .rich_tip(tr("docker.delete_hint"));
     let p = ui.painter();
     for (r, resp, on) in [
         (new_r, &new, true),
