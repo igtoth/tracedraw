@@ -1102,6 +1102,8 @@ pub struct App {
     pub corners: crate::corners::CornersSettings,
     /// The Join Curves docker's joint, gap tolerance and radius.
     pub join_settings: crate::corners::JoinSettings,
+    /// The Fit Objects to Path docker's spacing, offset and turning.
+    pub fit_path: crate::ops2::FitPathSettings,
     /// Outlines a docker previews on the canvas this frame (page space).
     pub docker_preview: Vec<tracedraw_core::geometry::BezPath>,
     /// A point a docker marks on the drawing (the Coordinates docker's
@@ -1708,6 +1710,7 @@ pub enum DockerTab {
     FontSampler,
     Corners,
     JoinCurves,
+    FitToPath,
     Coordinates,
     VectorMosaic,
     PictureMosaic,
@@ -1721,7 +1724,7 @@ pub enum DockerTab {
 }
 
 impl DockerTab {
-    pub const ALL: [DockerTab; 43] = [
+    pub const ALL: [DockerTab; 44] = [
         DockerTab::Properties,
         DockerTab::Objects,
         DockerTab::Hints,
@@ -1758,6 +1761,7 @@ impl DockerTab {
         DockerTab::FontSampler,
         DockerTab::Corners,
         DockerTab::JoinCurves,
+        DockerTab::FitToPath,
         DockerTab::Coordinates,
         DockerTab::VectorMosaic,
         DockerTab::PictureMosaic,
@@ -1786,7 +1790,11 @@ impl DockerTab {
         ],
         &[DockerTab::Transformations, DockerTab::Coordinates],
         &[DockerTab::Guidelines],
-        &[DockerTab::AlignDistribute, DockerTab::StepAndRepeat],
+        &[
+            DockerTab::AlignDistribute,
+            DockerTab::StepAndRepeat,
+            DockerTab::FitToPath,
+        ],
         &[
             DockerTab::Shaping,
             DockerTab::Corners,
@@ -1863,6 +1871,7 @@ impl DockerTab {
             DockerTab::FontSampler => "docker.font_sampler",
             DockerTab::Corners => "docker.corners_docker",
             DockerTab::JoinCurves => "docker.join_curves",
+            DockerTab::FitToPath => "docker.fit_to_path",
             DockerTab::Coordinates => "docker.coordinates",
             DockerTab::VectorMosaic => "docker.vector_mosaic",
             DockerTab::PictureMosaic => "docker.picture_mosaic",
@@ -2235,6 +2244,7 @@ impl App {
             align_cache: Default::default(),
             corners: Default::default(),
             join_settings: Default::default(),
+            fit_path: Default::default(),
             docker_preview: Vec::new(),
             docker_preview_point: None,
             dialog: crate::ui::dialogs::Dialog::None,

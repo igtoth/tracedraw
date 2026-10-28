@@ -6,6 +6,9 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Distort: a value changed on the property bar (Amplitude, Frequency, Random, Smooth, Local, direction, Rotations, Degrees) shows on the selected object at once, also when it has no distortion yet. It changed only objects already distorted, so with a plain object selected the bar seemed to do nothing until Apply (#1030).
+- Print Merge: Place Inside Frame, picking the shape with a click, takes a shape that already holds a picture, not the picture inside it. The merge then put each record's photo in that picture's box, with the old picture still showing next to the shape (#596).
+- Web version: a notch of the mouse wheel zooms 15 % about the pointer, as on the desktop. The browser sends a notch as 100 pixels or three lines, which the canvas read as several notches, so every notch zoomed far more than that at once (#1016).
 - Saving as .cdr in version 7 or 8: the file carries the whole document settings record files of those versions hold (ruler origin, grid, units, nudge, page colour). It held only the page size followed by zeros, and version 7 files crashed the program that wrote the samples, even with only shapes in them (#98).
 - Pick and Freehand Pick: a right click while dragging a selection box no longer leaves the box frozen on the canvas. The right button is ignored: the box goes on with the pointer and selects when the left button goes up, whichever button is released first (#1015).
 - Pen and Bezier: a handle pulled out of the drawing window (over a docker or a toolbar) and let go there ends the pull. The preview stayed stuck where the pointer left the drawing, and the first click back on it only brought the preview back instead of placing a node (#1014).
@@ -22,6 +25,8 @@ full, row-by-row status.
 - Shaping: Trim with an open curve (a line, a polyline or a curve) crossing a closed object cuts the object along it into separate pieces, each keeping the object's fill and outline; several curves make more pieces, and a curve that ends inside cuts nothing and the status bar says so. The object came back whole. Front Minus Back and Back Minus Front split along open curves the same way (#1005).
 - Tracing: the grain of photos and compressed images is taken out before the colours are picked (more at lower detail, none at the highest), so flat colours no longer come out full of white holes, scratches and specks, and the trace has far fewer curves; edges and corners keep their place (#611).
 - Text fitted to a path: with the Pick tool the property bar shows the path's own fields (placement with Top centre and Bottom centre, distance from the path, the two mirrors, Straighten Text) before the text fields, so text on the bottom of a circle can be turned to read left to right, as on a stamp. The text fields came first and hid them (#193).
+- Blend: a bitmap effect (such as Add Noise) on the blend's start object keeps the blend drawn. The start object shows with its effect and the steps and the end object stay as they were; the effect's picture held the start object together with its steps, placed wrongly and cut off, so the blend fell apart (#1043).
+- `.cdr` mesh fills: objects filled with a mesh open with their colour grid instead of being left out. In a version 11 drawing of 412 objects, 62 mesh fill objects (the skin, the jacket and skirt shading) were skipped and now show; each takes its outline from the mesh's edge, which is where the program that saved the file draws it. The grid's cells are drawn with straight sides between the nodes (#896).
 
 ## 0.19.8 (2026-10-27)
 
