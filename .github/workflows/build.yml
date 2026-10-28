@@ -365,6 +365,20 @@ jobs:
           grep -q "data-wasm-size=\"$size\"" site/index.html
           if grep -q "@VERSION@" site/index.html; then exit 1; fi
           cp assets/icon/tracedraw-256.png site/icon-256.png
+          # The installable app (docs/behavior/web.md, "Installing on a
+          # tablet"): the manifest, its icons and the service worker, whose
+          # cache is named after the version and a digest of the page,
+          # script and module, so every deploy is a new worker and a new
+          # cache (never a stale module against a new script).
+          cp web/manifest.webmanifest site/
+          cp assets/icon/tracedraw-192.png site/icon-192.png
+          cp assets/icon/tracedraw-512.png site/icon-512.png
+          build=$(cat site/index.html site/tracedraw.js site/tracedraw_bg.wasm site/manifest.webmanifest | sha256sum | cut -c1-16)
+          sed -e "s/@VERSION@/${{ steps.ver.outputs.version }}/" -e "s/@BUILD@/$build/" web/sw.js > site/sw.js
+          # The module loads, the page links the manifest and registers the
+          # worker, the manifest and the worker are valid and name files the
+          # site holds (Node, no packages, no network).
+          node scripts/web/check_pwa.mjs site
           (cd site && zip -r "../dist/tracedraw-${{ steps.ver.outputs.version }}-web.zip" .)
 
       # The font folder of the published page (web/fonts.txt): free fonts

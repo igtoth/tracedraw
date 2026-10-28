@@ -1,0 +1,19 @@
+{
+  "id": "./",
+  "name": "TraceDraw",
+  "short_name": "TraceDraw",
+  "description": "Open-source vector editor that opens .cdr files, written in Rust and running in the browser.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#d4d4d4",
+  "theme_color": "#1a3158",
+  "lang": "en",
+  "categories": ["graphics", "productivity"],
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-256.png", "sizes": "256x256", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

@@ -45,7 +45,10 @@ memory, processor and disk lines are measured or estimated, and say so.
   programs has them. The open and save dialogs use the desktop portal
   (`xdg-desktop-portal`) or, without it, `zenity`.
 - **Browser:** a browser with WebGL 2 (the page says so when it is
-  missing).
+  missing). On an Android tablet or an iPad the page can be installed
+  as an app from the browser; a tablet with a mouse and keyboard, or
+  the Touch workspace, suits editing best (`docs/behavior/web.md`,
+  Installing on a tablet).
 
 ## Graphics
 

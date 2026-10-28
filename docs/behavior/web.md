@@ -65,6 +65,64 @@ for download size (`profile.web`, `opt-level = "s"`), runs on one thread
 (effects, tracing, mosaics and large exports keep the page busy until
 they finish) and a page has less memory than a program.
 
+## Installing on a tablet
+
+The page is an installable web app (#893): a browser that supports web
+apps offers to put it on the home screen or in the app list, and from
+there it opens full screen, without the browser's address bar and tabs,
+with the TraceDraw icon and name, in any orientation. There is no native
+Android or iPadOS program and no app store listing: the installed app is
+the same WebAssembly build, run by the system's browser engine.
+
+- Android tablet (Chrome, Edge, Samsung Internet): open
+  `https://igtoth.github.io/tracedraw/`, then the browser's menu and
+  "Install app" or "Add to Home screen". Chrome may also show an install
+  bar under the address bar.
+- iPad (Safari): open the page, tap Share, then "Add to Home Screen".
+- Desktop (Chrome, Edge): the install icon at the right end of the
+  address bar, or the menu's "Install TraceDraw".
+
+Once opened, choose Window > Workspace > Touch for the larger interface
+(`workspaces.md`). The installed app stays at the version it was last
+opened with and starts without a network connection (the font folder's
+families still need one the first time text uses them); a new deploy is
+taken the next time the app starts after every TraceDraw page or window
+has been closed.
+
+How it works: `web/manifest.webmanifest` (name, icons of 192, 256 and
+512 px from `assets/icon/`, standalone display, any orientation, the
+page's grey as the background colour and the splash's dark blue as the
+theme colour, `start_url` and `scope` relative because the site is served
+under a path) is linked from the page, which also carries the mobile
+tags (`viewport-fit=cover`, `theme-color`, `apple-mobile-web-app-capable`,
+`apple-touch-icon`) and keeps the canvas clear of a notch or rounded
+corners with the safe-area insets. `web/sw.js` is a service worker that
+stores the app shell (the page, `tracedraw.js`, `tracedraw_bg.wasm`, the
+manifest and the icons) in a cache named after the version and a digest
+of the page, script and module that the build fills in; it stores all of
+them or none, serves them from that cache only, keeps font folder files
+in a cache of their own once fetched, and leaves every other address
+(the Help pages, `FONTS.md`) to the network. A new deploy changes
+`sw.js`, so the browser installs a new worker with a new cache and drops
+the old one when it takes over; the new worker waits until the old one's
+pages are closed, so a page that is up never gets the new deploy's
+script with the old module or the other way round. The page registers
+the worker after it has loaded, so the module's download comes first;
+served from disk or over plain http away from localhost the page has no
+worker and works as before.
+Checks: `web_page::tests::the_page_is_installable_as_an_app`,
+`web_page::tests::the_builds_install_the_app_files`, and on the built
+site `scripts/web/check_pwa.mjs` (Node, no packages: the module
+validates, the page links the manifest and registers the worker, the
+manifest is JSON with icons of the sizes it gives, the worker is valid
+JavaScript listing files the site holds, no placeholder left), run by CI
+and by `scripts/web/build.sh` when Node is installed. Checked in
+Chromium against a stand-in site served under a path: the worker caches
+the shell with the module's `application/wasm` type, an offline reload
+serves the page, script and module, a Help page is not replaced by the
+shell, and a changed `sw.js` installs a waiting worker that takes over
+with its own cache once the pages close.
+
 ## Mouse
 
 A right click during a move, scale, rotation or skew with the Pick tool
@@ -103,6 +161,15 @@ size=$(wc -c < site/tracedraw_bg.wasm | tr -d ' ')
 sed -e "s/data-wasm-size=\"0\"/data-wasm-size=\"$size\"/" -e "s/@VERSION@/0.4.0/" \
     web/index.html > site/index.html
 cp assets/icon/tracedraw-256.png site/icon-256.png
+# The installable app: manifest, icons and the service worker, whose
+# cache is named after the version and a digest of the page, script and
+# module (see "Installing on a tablet").
+cp web/manifest.webmanifest site/
+cp assets/icon/tracedraw-192.png site/icon-192.png
+cp assets/icon/tracedraw-512.png site/icon-512.png
+build=$(cat site/index.html site/tracedraw.js site/tracedraw_bg.wasm site/manifest.webmanifest | sha256sum | cut -c1-16)
+sed -e "s/@VERSION@/0.4.0/" -e "s/@BUILD@/$build/" web/sw.js > site/sw.js
+node scripts/web/check_pwa.mjs site   # optional: Node, no packages
 python3 -m http.server -d site 8080   # then open http://localhost:8080
 ```
 
