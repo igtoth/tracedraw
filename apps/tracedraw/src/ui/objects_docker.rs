@@ -504,8 +504,10 @@ fn node_row(
     master: bool,
 ) -> (bool, egui::Response) {
     let (rect, resp) = row(ui, Look::Node);
+    let resp = resp.rich_tip_with(|| format!("{title}\n{}", tr("docker.page_row_desc")));
     let x = rect.left() + 3.0;
     let (ar, a) = hot(ui, rect, x, 14.0, egui::Id::new((id, "arrow")));
+    let a = a.rich_tip_with(|| crate::ui::tips::keyed("docker.expand_row"));
     paint_arrow(ui, ar, open);
     paint_page_icon(ui.painter(), square(rect, x + 16.0, 16.0), master);
     ui.painter().text(
@@ -532,9 +534,11 @@ fn layer_rows(
     let open = !app.objects_collapsed.contains(&layer.id);
     let is_active = active == Some(layer.id);
     let (rect, resp) = row(ui, Look::Layer { active: is_active });
+    let resp = resp.rich_tip_with(|| format!("{}\n{}", layer.name, tr("docker.layer_row_desc")));
     let base = egui::Id::new(("objects_layer", layer.id.raw()));
     let mut x = rect.left() + 3.0 + INDENT;
     let (ar, a) = hot(ui, rect, x, 14.0, base.with("arrow"));
+    let a = a.rich_tip_with(|| crate::ui::tips::keyed("docker.expand_row"));
     paint_arrow(ui, ar, open);
     if a.clicked() {
         act.collapse = Some(layer.id);
@@ -657,7 +661,8 @@ fn scope_key(scope: MasterScope) -> &'static str {
 /// guidelines, the padlock locks or unlocks all of the page's; guidelines
 /// never print.
 fn guides_row(app: &App, ui: &mut Ui, page: &Page, act: &mut Actions) {
-    let (rect, _) = row(ui, Look::Layer { active: false });
+    let (rect, resp) = row(ui, Look::Layer { active: false });
+    resp.rich_tip_with(|| crate::ui::tips::pair("docker.guides", "docker.guides_row_desc"));
     let base = egui::Id::new("objects_guides");
     let mut x = rect.left() + 3.0 + INDENT + 16.0;
     let (er, e) = hot(ui, rect, x, 18.0, base.with("eye"));
@@ -690,7 +695,8 @@ fn guides_row(app: &App, ui: &mut Ui, page: &Page, act: &mut Actions) {
 /// The Document Grid row of the Master Page: the eye shows or hides the
 /// grid, which never prints and cannot be edited.
 fn grid_row(app: &App, ui: &mut Ui, act: &mut Actions) {
-    let (rect, _) = row(ui, Look::Layer { active: false });
+    let (rect, resp) = row(ui, Look::Layer { active: false });
+    resp.rich_tip_with(|| crate::ui::tips::pair("menu.view.document_grid", "docker.grid_row_desc"));
     let mut x = rect.left() + 3.0 + INDENT + 16.0;
     let (er, e) = hot(ui, rect, x, 18.0, egui::Id::new("objects_grid_eye"));
     paint_eye(ui, er, app.show_grid);
@@ -737,6 +743,7 @@ fn object_rows(app: &App, ui: &mut Ui, s: &Shape, depth: usize, act: &mut Action
             14.0,
             egui::Id::new(("objects_group", s.id.raw())),
         );
+        let a = a.rich_tip_with(|| crate::ui::tips::keyed("docker.expand_row"));
         paint_arrow(ui, ar, expanded);
         if a.clicked() {
             act.expand_group = Some(s.id);
@@ -750,6 +757,7 @@ fn object_rows(app: &App, ui: &mut Ui, s: &Shape, depth: usize, act: &mut Action
     );
     x += 19.0;
     let label = object_label(s);
+    let resp = resp.rich_tip_with(|| format!("{label}\n{}", tr("docker.object_row_desc")));
     let color = if s.visible {
         Tokens::text()
     } else {

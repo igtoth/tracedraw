@@ -612,7 +612,11 @@ fn info_page(app: &mut App, ui: &mut Ui) {
     ui.label(RichText::new(tr("aiui.privacy_title")).strong());
     ui.label(RichText::new(tr("aiui.privacy")).color(Tokens::text_dim()));
     ui.add_space(6.0);
-    if ui.button(tr("aiui.set_up")).clicked() {
+    if ui
+        .button(tr("aiui.set_up"))
+        .rich_tip(crate::ui::tips::keyed("aiui.set_up"))
+        .clicked()
+    {
         crate::ui::ai_ui::open_options(app, crate::ui::dialogs::OptionsPage::AiService);
     }
 }
