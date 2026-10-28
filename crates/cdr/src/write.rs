@@ -100,6 +100,7 @@ pub fn document_to_cdr_version_with(doc: &Document, version: u16, previews: &Pre
     let v = Ver(version.clamp(OLDEST_VERSION, NEWEST_VERSION));
     let mut w = Writer::new(v, &doc.symbols, &doc.title);
     w.faces = &previews.fonts;
+    w.embed_fonts = previews.embed_fonts;
     let mut tree = w.document(doc);
     let font_ids = w.fonts.clone();
     if !v.zip() {
@@ -2227,15 +2228,42 @@ fn mcfg_21(w_mm: f64, h_mm: f64) -> Vec<u8> {
 /// then the name. Files list a record for each face their styles use
 /// (two for Arial when text is set in Arial and Arial bold); a style
 /// naming a face without its record was drawn in a stand-in font.
-fn font_record(v: Ver, id: u16, family: &str, flags: u32) -> Vec<u8> {
+/// From version 16 the record also carries what the package's font table
+/// says about the face (`face`, when the package lists it): the PANOSE
+/// bytes at 8, the character set at 86 and the script name at 88
+/// ("Western"), u32 1 at 156 when the face is embedded, and the
+/// PostScript name at 164 (files of versions 19 to 27, #1009).
+fn font_record(
+    v: Ver,
+    id: u16,
+    family: &str,
+    flags: u32,
+    face: Option<&fonts::FaceRecord>,
+) -> Vec<u8> {
     let mut b = Buf::default();
-    b.u16(id).u16(0).u32(flags).zeros(10);
+    b.u16(id).u16(0).u32(flags);
+    match face {
+        Some(f) if v.redirects() => b.bytes(&f.panose),
+        _ => b.zeros(10),
+    };
     if v.unicode() {
         let name: Vec<u16> = family.encode_utf16().take(31).collect();
         for u in &name {
             b.u16(*u);
         }
-        b.pad_to(160).u32(2).pad_to(296);
+        if let (Some(f), true) = (face, v.redirects()) {
+            b.pad_to(86).u16(0);
+            for u in "Western".encode_utf16() {
+                b.u16(u);
+            }
+            b.pad_to(156).u32(u32::from(f.embedded)).u32(2);
+            for u in f.postscript.encode_utf16().take(65) {
+                b.u16(u);
+            }
+        } else {
+            b.pad_to(160).u32(2);
+        }
+        b.pad_to(296);
     } else {
         let mut name =
             cp1252(family).unwrap_or_else(|| family.bytes().filter(|c| c.is_ascii()).collect());
@@ -3059,6 +3087,9 @@ struct Writer<'a> {
     /// [`Previews::fonts`]), and what [`fonts::split_family`] said for
     /// each family named with a weight.
     faces: &'a [FontFace],
+    /// Embed the faces whose licence allows it (see
+    /// [`Previews::embed_fonts`]).
+    embed_fonts: bool,
     split_families: HashMap<String, Option<(String, u16)>>,
     /// The faces the runs of version 16+ text use (font id, face bits of
     /// the style flags), for the font table as [`Writer::text_formats`]
@@ -3187,6 +3218,7 @@ impl<'a> Writer<'a> {
             master_guids,
             has_text: false,
             faces: &[],
+            embed_fonts: false,
             split_families: HashMap::new(),
             run_faces: Vec::new(),
             layer_slots: Vec::new(),
@@ -3353,9 +3385,21 @@ impl<'a> Writer<'a> {
             self.font_id("Arial");
         }
         if !self.fonts.is_empty() {
+            // What the package's font table says about each face, for
+            // the records of version 16 and later.
+            let records = if v.redirects() {
+                fonts::records(self.faces, self.embed_fonts, &self.fonts)
+            } else {
+                Vec::new()
+            };
+            let record_of =
+                |id: u16, flags: u32| records.iter().find(|r| r.number == id && r.flags == flags);
             let mut fonts = Vec::new();
             for (id, f) in &self.fonts {
-                fonts.push(chunk(b"font", font_record(v, *id, f, 0x40)));
+                fonts.push(chunk(
+                    b"font",
+                    font_record(v, *id, f, 0x40, record_of(*id, 0x40)),
+                ));
                 let mut faces: Vec<u32> = format_faces
                     .iter()
                     .filter(|(fid, flags)| fid == id && *flags != 0x40)
@@ -3364,7 +3408,10 @@ impl<'a> Writer<'a> {
                 faces.sort_unstable();
                 faces.dedup();
                 for flags in faces {
-                    fonts.push(chunk(b"font", font_record(v, *id, f, flags)));
+                    fonts.push(chunk(
+                        b"font",
+                        font_record(v, *id, f, flags, record_of(*id, flags)),
+                    ));
                 }
             }
             docl.push(list(b"fntt", fonts));

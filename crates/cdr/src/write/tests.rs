@@ -1279,7 +1279,7 @@ fn records_have_the_sizes_of_the_versions_files() {
         );
         assert_eq!(fild(Ver(v), 1, &Fill::None).len(), none, "{v}");
         assert_eq!(
-            font_record(Ver(v), 1, "Arial", 0x40).len(),
+            font_record(Ver(v), 1, "Arial", 0x40, None).len(),
             if v >= 12 { 296 } else { 92 },
             "{v}"
         );
@@ -3161,6 +3161,118 @@ fn embedded_fonts_carry_the_drawings_font_ids() {
         assert_eq!(back.fonts[0].data.as_slice(), REGULAR, "{v}");
         assert_eq!(back.fonts[1].data.as_slice(), BOLD, "{v}");
         assert!(back.fonts.iter().all(|f| f.family == "Selawik"), "{v}");
+    }
+}
+
+/// An embedded face is named where the files that embed fonts name it
+/// (#1009): the embedding header's face block at 2063 (its size, the
+/// family in UTF-16 and single bytes, the style flags, the PANOSE bytes,
+/// the licence level and u32 1), and the drawing's `font` record (PANOSE
+/// bytes, "Western", u32 1 at 156, the PostScript name at 164). A face
+/// the package does not embed has 0 at 156; files before 16 keep their
+/// short records.
+#[test]
+fn embedded_faces_are_named_in_the_header_and_the_font_record() {
+    const REGULAR: &[u8] =
+        include_bytes!("../../../../apps/tracedraw/assets/fonts/Selawik-Regular.ttf");
+    const BOLD: &[u8] = include_bytes!("../../../../apps/tracedraw/assets/fonts/Selawik-Bold.ttf");
+    let mut ids = tracedraw_core::id::IdSource::default();
+    let plain = TextSpan::new("plain", "Selawik", 12.0);
+    let mut bold = TextSpan::new("bold", "Selawik", 12.0);
+    bold.bold = true;
+    let doc = doc_with(vec![text_shape(
+        &mut ids,
+        vec![plain, bold],
+        TextAlign::Left,
+    )]);
+    let face = |bold: bool, data: &[u8]| FontFace {
+        family: "Selawik".into(),
+        bold,
+        italic: false,
+        data: Some(std::sync::Arc::new(data.to_vec())),
+    };
+    let u16_at = |b: &[u8], at: usize| u16::from_le_bytes([b[at], b[at + 1]]);
+    let u32_at = |b: &[u8], at: usize| u32::from_le_bytes(b[at..at + 4].try_into().expect("u32"));
+    let selawik_panose = {
+        let f = ttf_parser::Face::parse(REGULAR, 0).expect("font");
+        let os2 = f
+            .raw_face()
+            .table(ttf_parser::Tag::from_bytes(b"OS/2"))
+            .expect("OS/2");
+        let mut p = [0u8; 10];
+        p.copy_from_slice(&os2[32..42]);
+        p
+    };
+    let utf16 = |s: &str| -> Vec<u8> { s.encode_utf16().flat_map(|u| u.to_le_bytes()).collect() };
+    for embed in [true, false] {
+        let previews = Previews {
+            fonts: vec![face(false, REGULAR), face(true, BOLD)],
+            embed_fonts: embed,
+            ..Default::default()
+        };
+        for v in [15, 16, 19, NEWEST_VERSION] {
+            let bytes = document_to_cdr_version_with(&doc, v, &previews);
+            let (_, tree, riff) = chunk_ids(&bytes);
+            let mut records: Vec<Vec<u8>> = Vec::new();
+            tree.root.walk(&mut |ch, _| {
+                if ch.id_str() == "font" {
+                    records.push(tree.data(&riff, ch).to_vec());
+                }
+            });
+            if v < 16 {
+                // Files before 16 keep their short records (the bold
+                // face is a text style there).
+                for r in &records {
+                    assert_eq!(r.len(), 296, "{v}");
+                    assert!(r[8..18].iter().all(|&b| b == 0), "{v}");
+                    assert!(r[86..160].iter().all(|&b| b == 0), "{v}");
+                    assert!(r[164..].iter().all(|&b| b == 0), "{v}");
+                }
+                continue;
+            }
+            assert_eq!(records.len(), 2, "{v} {embed}");
+            for (r, (flags, ps)) in records
+                .iter()
+                .zip([(0x40, "Selawik-Regular"), (0x1000, "Selawik-Bold")])
+            {
+                assert_eq!(r.len(), 296, "{v}");
+                assert_eq!(u32_at(r, 4), flags, "{v}");
+                assert_eq!(&r[18..18 + 14], &utf16("Selawik"), "{v}");
+                assert_eq!(u32_at(r, 160), 2, "{v}");
+                assert_eq!(&r[8..18], &selawik_panose, "{v}");
+                assert_eq!(u16_at(r, 86), 0, "{v}");
+                assert_eq!(&r[88..88 + 14], &utf16("Western"), "{v}");
+                assert_eq!(u32_at(r, 156), u32::from(embed), "{v} {embed}");
+                assert_eq!(&r[164..164 + 2 * ps.len()], &utf16(ps), "{v}");
+            }
+            if !embed {
+                continue;
+            }
+            let mut z = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).expect("zip");
+            for (n, flags) in [(0, 0x40u32), (1, 0x1000)] {
+                let mut m = Vec::new();
+                std::io::Read::read_to_end(
+                    &mut z.by_name(&format!("embed/embedding{n}")).expect("member"),
+                    &mut m,
+                )
+                .expect("read");
+                assert_eq!(u32_at(&m, 2063), 638, "{v}: block size");
+                assert_eq!(&m[2067..2067 + 14], &utf16("Selawik"), "{v}");
+                assert!(m[2081..2131].iter().all(|&b| b == 0), "{v}");
+                assert_eq!(&m[2131..2131 + 7], b"Selawik", "{v}");
+                assert!(m[2138..2163].iter().all(|&b| b == 0), "{v}");
+                assert_eq!(u32_at(&m, 2163), flags, "{v}");
+                assert_eq!(m[2167], 0, "{v}");
+                assert_eq!(&m[2168..2178], &selawik_panose, "{v}");
+                // Selawik allows editable embedding (fsType 8): level 2.
+                assert_eq!(m[2178], 2, "{v}");
+                assert!(m[2179..2184].iter().all(|&b| b == 0), "{v}");
+                assert_eq!(u32_at(&m, 2184), 1, "{v}");
+                assert!(m[2188..2705].iter().all(|&b| b == 0), "{v}");
+                // The EOT structure still starts at 2705 and reads.
+                assert_eq!(crate::eot::find(&m), Some(2705), "{v}");
+            }
+        }
     }
 }
 

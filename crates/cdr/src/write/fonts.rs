@@ -251,15 +251,39 @@ fn font_numbers(families: &[String], ids: &[(u16, String)]) -> Vec<u16> {
         .collect()
 }
 
-/// The fonts members of a package: the font table, and an embedding per
-/// face that may be embedded when `embed` is set. `ids` are the drawing's
-/// font ids by family. Entries and embeddings follow the font numbers
-/// (faces of one family in the order given), as files order their
-/// embeddings.
-pub fn members(faces: &[FontFace], embed: bool, ids: &[(u16, String)]) -> Vec<(String, Vec<u8>)> {
-    if faces.is_empty() {
-        return Vec::new();
-    }
+/// What the drawing's `font` records (version 16 and later) say about a
+/// face, as the font table does: its font number and style flags, the
+/// PANOSE bytes and PostScript name of its font, the kind, and whether
+/// the package embeds it. Files mark an embedded face in its `font`
+/// record too; a face marked there as not embedded asked for the font to
+/// be installed even with its embedding in the package (#1009).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FaceRecord {
+    pub number: u16,
+    pub flags: u32,
+    pub panose: [u8; 10],
+    pub kind: u32,
+    pub postscript: String,
+    pub embedded: bool,
+}
+
+/// A face in the order the package lists it: its index in `faces`, what
+/// the table says about it, the family it is listed under, its font
+/// number and whether its file is embedded (once per file).
+struct Planned {
+    face: usize,
+    info: FaceInfo,
+    family: String,
+    number: u16,
+    embedded: bool,
+}
+
+/// The faces as the package lists them, in ascending font numbers
+/// (faces of one family in the order given), with the file of each face
+/// that may be embedded marked once: a face drawn with another face's
+/// file (italic text in a family without an italic face) is listed, and
+/// its file embedded once.
+fn plan(faces: &[FontFace], embed: bool, ids: &[(u16, String)]) -> Vec<Planned> {
     // A face of a family named with its weight is listed under the
     // family, with the flags of its weight, as the text names it.
     let splits: Vec<Option<(String, u16)>> = faces
@@ -277,26 +301,14 @@ pub fn members(faces: &[FontFace], embed: bool, ids: &[(u16, String)]) -> Vec<(S
     let numbers = font_numbers(&families, ids);
     let mut order: Vec<usize> = (0..faces.len()).collect();
     order.sort_by_key(|&i| numbers[i]);
-    let infos: Vec<FaceInfo> = faces
-        .iter()
-        .zip(&splits)
-        .map(|(f, s)| {
-            let mut inf = info(f);
-            if let Some((_, w)) = s {
-                inf.flags = weight_flags(*w, f.italic);
-            }
-            inf
-        })
-        .collect();
-    let mut table = Buf::default();
-    table.u32(0).u32(0).u32(faces.len() as u32);
-    let mut embeddings = Vec::new();
-    // The font files embedded so far: a face drawn with another face's
-    // file (italic text in a family without an italic face) is listed,
-    // and its file embedded once.
     let mut embedded_files: Vec<&Arc<Vec<u8>>> = Vec::new();
-    for i in order {
-        let (face, inf) = (&faces[i], &infos[i]);
+    let mut out = Vec::with_capacity(faces.len());
+    for (i, family) in order.into_iter().map(|i| (i, families[i].clone())) {
+        let face = &faces[i];
+        let mut inf = info(face);
+        if let Some((_, w)) = &splits[i] {
+            inf.flags = weight_flags(*w, face.italic);
+        }
         let new_file = face.data.as_ref().filter(|d| {
             !embedded_files
                 .iter()
@@ -306,26 +318,73 @@ pub fn members(faces: &[FontFace], embed: bool, ids: &[(u16, String)]) -> Vec<(S
         if let (true, Some(d)) = (embedded, new_file) {
             embedded_files.push(d);
         }
+        out.push(Planned {
+            face: i,
+            info: inf,
+            family,
+            number: numbers[i],
+            embedded,
+        });
+    }
+    out
+}
+
+/// What the `font` records of the drawing say about each face (see
+/// [`FaceRecord`]), with `embed` and `ids` as [`members`] takes them.
+pub fn records(faces: &[FontFace], embed: bool, ids: &[(u16, String)]) -> Vec<FaceRecord> {
+    plan(faces, embed, ids)
+        .into_iter()
+        .map(|p| FaceRecord {
+            number: p.number,
+            flags: p.info.flags,
+            panose: p.info.panose,
+            kind: p.info.kind,
+            postscript: p.info.postscript,
+            embedded: p.embedded,
+        })
+        .collect()
+}
+
+/// The fonts members of a package: the font table, and an embedding per
+/// face that may be embedded when `embed` is set. `ids` are the drawing's
+/// font ids by family. Entries and embeddings follow the font numbers
+/// (faces of one family in the order given), as files order their
+/// embeddings.
+pub fn members(faces: &[FontFace], embed: bool, ids: &[(u16, String)]) -> Vec<(String, Vec<u8>)> {
+    if faces.is_empty() {
+        return Vec::new();
+    }
+    let mut table = Buf::default();
+    table.u32(0).u32(0).u32(faces.len() as u32);
+    let mut embeddings = Vec::new();
+    for p in plan(faces, embed, ids) {
+        let (face, inf) = (&faces[p.face], &p.info);
         let mut e = Buf::default();
         // The face's font number (its family's font id), then the
         // character set (Western).
-        e.u16(numbers[i]).u16(0).u32(inf.flags);
-        for p in inf.panose {
-            e.u8(p);
+        e.u16(p.number).u16(0).u32(inf.flags);
+        for b in inf.panose {
+            e.u8(b);
         }
-        string(&mut e, &families[i]);
+        string(&mut e, &p.family);
         e.u8(0);
         string(&mut e, "Western");
-        e.u32(u32::from(embedded)).u32(inf.kind);
+        e.u32(u32::from(p.embedded)).u32(inf.kind);
         string(&mut e, &inf.postscript);
         string(&mut e, &inf.version);
         string(&mut e, &inf.style);
         let e = e.done();
         table.u32(0).u32(e.len() as u32);
         table.bytes(&e);
-        if embedded {
+        if p.embedded {
             if let (Some(data), Some(names)) = (&face.data, &inf.eot) {
-                embeddings.push(embedding(inf.kind, &inf.version, data, names));
+                let block = FaceBlock {
+                    family: &p.family,
+                    flags: inf.flags,
+                    panose: inf.panose,
+                    fs_type: names.fs_type,
+                };
+                embeddings.push(embedding(inf.kind, &inf.version, &block, data, names));
             }
         }
     }
@@ -340,19 +399,77 @@ pub fn members(faces: &[FontFace], embed: bool, ids: &[(u16, String)]) -> Vec<(S
 }
 
 /// An `embed/` member: u32 1, u32 0x803, the face's kind byte, its
-/// version string in UTF-16 with a closing zero, zeros up to 2705 bytes,
-/// then the EOT structure.
+/// version string in UTF-16 with a closing zero, then at 2063 the face
+/// block (below), which runs to 2705 bytes, then the EOT structure.
 const EMBEDDING_HEADER: usize = 2705;
+/// Where the face block starts in the header: its u32 size (638, the
+/// rest of the header), then the block.
+const FACE_BLOCK_AT: usize = 2063;
+/// The version string field ends before the face block: 1026 UTF-16
+/// units at most (2052 bytes from offset 9, then zeros).
+const VERSION_UNITS: usize = 1026;
 
-fn embedding(kind: u32, version: &str, data: &[u8], names: &EotNames) -> Vec<u8> {
+/// The face block of an embedding header, which names the face the
+/// member holds: the family in UTF-16 (32 units) and then in single
+/// bytes (32), the style flags of the font table, a zero byte, the
+/// PANOSE bytes, the embedding level of the font's licence, five zero
+/// bytes and u32 1. Files hold it in every member seen (versions 19 to
+/// 27); members without it (written before 2026-10-28) asked for the
+/// font to be installed (#1009).
+struct FaceBlock<'a> {
+    family: &'a str,
+    flags: u32,
+    panose: [u8; 10],
+    fs_type: u16,
+}
+
+/// The embedding level byte of the face block from the font's OS/2
+/// `fsType`: 3 for installable fonts (0, and the reserved 1 old fonts
+/// carry), 2 for editable embedding (8), as the files seen pair them;
+/// 1 for preview and print (4) is taken to continue the ladder.
+fn embedding_level(fs_type: u16) -> u8 {
+    match fs_type & 0x000f {
+        0 | 1 => 3,
+        8 => 2,
+        _ => 1,
+    }
+}
+
+fn embedding(kind: u32, version: &str, face: &FaceBlock, data: &[u8], names: &EotNames) -> Vec<u8> {
     let mut m = Vec::with_capacity(EMBEDDING_HEADER + data.len() + 256);
     m.extend_from_slice(&1u32.to_le_bytes());
     m.extend_from_slice(&0x803u32.to_le_bytes());
     m.push(kind as u8);
-    for u in version.encode_utf16().chain(std::iter::once(0)) {
+    for u in version
+        .encode_utf16()
+        .take(VERSION_UNITS - 1)
+        .chain(std::iter::once(0))
+    {
         m.extend_from_slice(&u.to_le_bytes());
     }
-    m.truncate(EMBEDDING_HEADER);
+    m.resize(FACE_BLOCK_AT, 0);
+    m.extend_from_slice(&((EMBEDDING_HEADER - FACE_BLOCK_AT - 4) as u32).to_le_bytes());
+    let units: Vec<u16> = face.family.encode_utf16().take(31).collect();
+    for u in &units {
+        m.extend_from_slice(&u.to_le_bytes());
+    }
+    m.resize(FACE_BLOCK_AT + 4 + 64, 0);
+    // The single-byte name: the characters of the family that fit a
+    // byte, as files name Western faces.
+    let bytes: Vec<u8> = face
+        .family
+        .chars()
+        .filter_map(|c| u8::try_from(u32::from(c)).ok())
+        .take(31)
+        .collect();
+    m.extend_from_slice(&bytes);
+    m.resize(FACE_BLOCK_AT + 4 + 96, 0);
+    m.extend_from_slice(&face.flags.to_le_bytes());
+    m.push(0);
+    m.extend_from_slice(&face.panose);
+    m.push(embedding_level(face.fs_type));
+    m.extend_from_slice(&[0; 5]);
+    m.extend_from_slice(&1u32.to_le_bytes());
     m.resize(EMBEDDING_HEADER, 0);
     m.extend(eot::encode(data, names));
     m
