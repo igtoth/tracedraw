@@ -96,7 +96,8 @@ File > Export starts with the choices of the last export of the session
 (Selected only off again, the file's title and tags empty), else those
 of Options > Global > File Formats, which keep the last
 export's choices for the next session while Remember the settings of the
-last export is on (on in new preferences; `options.md`, #617).
+last export is on (on; preferences from before 0.19.4 are brought up to
+date once, #691; `options.md`, #617).
 
 Each format also keeps how it was exported last: choosing a format in the
 dialog brings back its resolution, quality, transparent background,
