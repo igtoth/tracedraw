@@ -143,6 +143,12 @@ pub fn blend_from_nodes(
     if let Some((sa, sb)) = paired_nodes(a, b, [a0, a1, b0, b1]) {
         return node_steps(&sa, &sb, steps);
     }
+    // Two open lines (arcs blended in a .cdr file) morph end to end and
+    // stay open: run as a ring and closed, each step gained a chord back
+    // to its start and the steps crossed over (#980).
+    if let Some((sa, sb)) = open_paired_nodes(a, b) {
+        return open_node_steps(&sa, &sb, steps);
+    }
     let (Some(pa), Some(pb)) = (
         run_from(&resample(a, samples), a0, a1),
         run_from(&resample(b, samples), b0, b1),
@@ -1719,6 +1725,45 @@ mod tests {
         c.line_to((40.0, 0.0));
         let steps = blend(&a, &c, 1, 120);
         assert_eq!(steps[0].elements().len(), 3, "{:?}", steps[0]);
+    }
+
+    /// The same two arcs paired from their first nodes, as a blend read
+    /// from a .cdr file is: the steps are open arcs too, end to end. They
+    /// were run as rings and closed, so each step carried a straight chord
+    /// back to its start and the steps crossed over (#980).
+    #[test]
+    fn blend_of_two_open_arcs_from_nodes_stays_open() {
+        let mut a = BezPath::new();
+        a.move_to((0.0, 100.0));
+        a.curve_to((-30.0, 70.0), (-30.0, 30.0), (0.0, 0.0));
+        let mut b = BezPath::new();
+        b.move_to((40.0, 0.0));
+        b.curve_to((70.0, 30.0), (70.0, 70.0), (40.0, 100.0));
+        let nodes = [
+            Point::new(0.0, 100.0),
+            Point::new(-10.0, 80.0),
+            Point::new(40.0, 0.0),
+            Point::new(50.0, 20.0),
+        ];
+        let steps = blend_from_nodes(&a, &b, 3, 120, Some(nodes));
+        assert_eq!(steps.len(), 3);
+        for (k, p) in steps.iter().enumerate() {
+            let els = p.elements();
+            assert!(!els.iter().any(|e| matches!(e, PathEl::ClosePath)), "{p:?}");
+            assert_eq!(els.len(), 2, "one curve, as the arcs: {p:?}");
+            let t = (k + 1) as f64 / 4.0;
+            let (PathEl::MoveTo(top), PathEl::CurveTo(_, _, bottom)) = (els[0], els[1]) else {
+                panic!("{p:?}");
+            };
+            assert!(
+                (top - Point::new(40.0 * t, 100.0)).hypot() < 1e-9,
+                "{top:?}"
+            );
+            assert!(
+                (bottom - Point::new(40.0 * t, 0.0)).hypot() < 1e-9,
+                "{bottom:?}"
+            );
+        }
     }
 
     #[test]
