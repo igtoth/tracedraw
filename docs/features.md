@@ -62,7 +62,7 @@ Counts: works 189, partial 6 (`.cdr` content coverage; CMX import; print preview
 
 | Capability | Status |
 |---|---|
-| Shape tool: move nodes and handles, marquee select nodes, Elastic mode (farther nodes move less) | works |
+| Shape tool: move nodes and handles, marquee select nodes, Elastic mode (farther nodes move less); with several objects selected the one picked last has a blue outline and the others red (#1007) | works |
 | Shape tool node selection (Ctrl+click toggles, Shift+click selects a run, Tab and Shift+Tab, rectangular or freehand marquee, double-click the tool selects all) | works (see `behavior/shape-tool.md`) |
 | Shape tool node transforms: Stretch and Scale, Rotate and Skew handles around the selected nodes; Reflect nodes horizontally and vertically | works (see `behavior/shape-tool.md`) |
 | Shape tool segments: a click chooses a segment and Delete removes it; Ctrl+C, Ctrl+X, Ctrl+D copy, cut and duplicate the segments between selected nodes; Extend Curve to Close; Curve smoothness slider | works (see `behavior/shape-tool.md`) |

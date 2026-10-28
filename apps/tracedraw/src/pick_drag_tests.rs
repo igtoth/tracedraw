@@ -1436,6 +1436,118 @@ fn two_open_curves(ctx: &egui::Context, app: &mut App, id: ShapeId) -> (ShapeId,
     (a, b)
 }
 
+/// The colours of the outlines one frame draws through `point` (screen),
+/// with `events` sent in that frame.
+fn outline_colors_through(
+    ctx: &egui::Context,
+    app: &mut App,
+    events: Vec<Event>,
+    point: Pos2,
+) -> Vec<egui::Color32> {
+    let input = egui::RawInput {
+        screen_rect: Some(egui::Rect::from_min_size(
+            Pos2::ZERO,
+            egui::vec2(1600.0, 1000.0),
+        )),
+        events,
+        ..Default::default()
+    };
+    let mut out = ctx.run_ui(input, |ui| crate::ui::root(app, ui));
+    out.textures_delta.clear();
+    let mut found = Vec::new();
+    fn walk(s: &egui::Shape, point: Pos2, found: &mut Vec<egui::Color32>) {
+        match s {
+            egui::Shape::Vec(v) => v.iter().for_each(|s| walk(s, point, found)),
+            egui::Shape::Path(p) if !p.closed && p.points.len() >= 2 => {
+                if p.points.iter().any(|q| q.distance(point) < 0.5) {
+                    if let egui::epaint::ColorMode::Solid(c) = p.stroke.color {
+                        found.push(c);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    out.shapes
+        .iter()
+        .for_each(|c| walk(&c.shape, point, &mut found));
+    found
+}
+
+/// Shape tool with several objects selected (#1007): the object picked
+/// last has its outline in the node colour (blue), the others in the
+/// second node colour (red), also while a node of the red one is being
+/// dragged; that node moves and the other object stays as it was.
+#[test]
+fn shape_tool_marks_the_last_picked_object_blue_and_the_others_red() {
+    let (ctx, mut app, id) = setup();
+    let (a, b) = two_open_curves(&ctx, &mut app, id);
+    let blue = {
+        let [r, g, b] = app.settings.nodes.main_rgb;
+        egui::Color32::from_rgb(r, g, b)
+    };
+    let red = {
+        let [r, g, b] = app.settings.nodes.secondary_rgb;
+        egui::Color32::from_rgb(r, g, b)
+    };
+    assert_ne!(blue, red);
+    let at = |app: &App, x: f64, y: f64| app.view.to_screen(Point::new(x, y));
+    let start_a = at(&app, 10.0, 10.0);
+    let start_b = at(&app, 44.0, 10.0);
+    let colors = outline_colors_through(&ctx, &mut app, Vec::new(), start_a);
+    assert_eq!(colors, vec![red], "a, picked first");
+    let colors = outline_colors_through(&ctx, &mut app, Vec::new(), start_b);
+    assert_eq!(colors, vec![blue], "b, picked last");
+    // Drag the start node of a: while dragging it stays red and b blue.
+    let b_before = curve_path(&app, b);
+    let to = start_a + egui::vec2(0.0, 40.0);
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::PointerMoved(start_a)],
+        Modifiers::NONE,
+    );
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(
+            start_a,
+            true,
+            PointerButton::Primary,
+            Modifiers::NONE,
+        )],
+        Modifiers::NONE,
+    );
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::PointerMoved(start_a + egui::vec2(0.0, 20.0))],
+        Modifiers::NONE,
+    );
+    let colors = outline_colors_through(&ctx, &mut app, vec![Event::PointerMoved(to)], start_b);
+    assert_eq!(colors, vec![blue], "b while a node of a is dragged");
+    let colors = outline_colors_through(&ctx, &mut app, Vec::new(), to);
+    assert_eq!(colors, vec![red], "a while its node is dragged");
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(to, false, PointerButton::Primary, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    let moved = tracedraw_core::nodes::nodes(&curve_path(&app, a))[0].pos;
+    assert!(
+        (moved.y - 10.0).abs() > 1.0,
+        "the node of a moved: {moved:?}"
+    );
+    assert_eq!(curve_path(&app, b), b_before);
+    // One object alone: its outline in the node colour.
+    app.select(vec![a]);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let p = app.view.to_screen(moved);
+    let colors = outline_colors_through(&ctx, &mut app, Vec::new(), p);
+    assert_eq!(colors, vec![blue], "a alone");
+}
+
 fn curve_path(app: &App, id: ShapeId) -> tracedraw_core::BezPath {
     match app.doc().find_shape(id).map(|s| s.kind.clone()) {
         Some(ShapeKind::Path { path, .. }) => path,

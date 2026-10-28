@@ -21,6 +21,13 @@ each ending in a solid arrow head with a white edge at its control point
 being drawn the same way). The arrow showing the curve's
 direction is off by default (Options > Nodes and Handles).
 
+With several objects selected, the one picked last shows its outline in
+the node colour and the others in the secondary node colour (red by
+default), also while their nodes are dragged, so the objects can be told
+apart; the nodes of all of them can be chosen and moved, but end nodes of
+two objects are not joined (#1007,
+`pick_drag_tests::shape_tool_marks_the_last_picked_object_blue_and_the_others_red`).
+
 ## Taking nodes and handles
 
 A press takes the nearest node, or the nearest control handle of a

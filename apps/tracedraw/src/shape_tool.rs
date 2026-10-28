@@ -157,6 +157,18 @@ impl App {
         }
     }
 
+    /// With more than one object selected, the curve the Shape tool marks
+    /// as the one picked last: its outline shows in the node colour (blue)
+    /// and the outlines of the other selected objects in the second node
+    /// colour (red), so the objects can be told apart (#1007). `None`
+    /// with one object or none.
+    pub(crate) fn shape_tool_key_curve(&self) -> Option<ShapeId> {
+        if self.selection.len() < 2 {
+            return None;
+        }
+        self.selection.last().map(|id| self.node_target(*id))
+    }
+
     /// The selected objects as the Shape tool sees them: a clip frame
     /// gives way to its frame, on the page (an old file whose frame shares
     /// the clip frame's id shows the clip frame itself, which has no

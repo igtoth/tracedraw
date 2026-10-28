@@ -2090,6 +2090,13 @@ fn draw_nodes(app: &App, painter: &Painter) {
     let [r, g, b] = prefs.secondary_rgb;
     let secondary = Color32::from_rgb(r, g, b);
     let size = prefs.size.px();
+    // Several objects: the one picked last has its outline in the node
+    // colour, the others in the second colour (#1007).
+    let key = app.shape_tool_key_curve();
+    let outline_of = |id: tracedraw_core::ShapeId| match key {
+        Some(k) if k != id => secondary,
+        _ => main,
+    };
     // A clip frame shows its frame's nodes.
     for s in app.shape_tool_shapes() {
         // A picture shows a node at each corner; dragging one crops it.
@@ -2125,7 +2132,7 @@ fn draw_nodes(app: &App, painter: &Painter) {
         // control points as nodes; the curve's own nodes do not show.
         if s.spline.is_some() {
             for (pts, _) in flatten(&s.page_path(), view) {
-                painter.add(egui::Shape::line(pts, EStroke::new(1.0, main)));
+                painter.add(egui::Shape::line(pts, EStroke::new(1.0, outline_of(s.id))));
             }
             let own = crate::kind_nodes::nodes(&s);
             let poly: Vec<Pos2> = own.iter().map(|(_, p)| view.to_screen(*p)).collect();
@@ -2182,14 +2189,16 @@ fn draw_nodes(app: &App, painter: &Painter) {
             }
             continue;
         };
-        // The curve being edited shows its outline in the node colour.
+        // The curve being edited shows its outline in the node colour
+        // (the second colour for the objects picked before the last one).
+        let outline = outline_of(s.id);
         for (mut pts, closed) in flatten(&s.page_path(), view) {
             if closed {
                 if let Some(first) = pts.first().copied() {
                     pts.push(first);
                 }
             }
-            painter.add(egui::Shape::line(pts, EStroke::new(1.0, main)));
+            painter.add(egui::Shape::line(pts, EStroke::new(1.0, outline)));
         }
         let all = nodes::nodes(path);
         if prefs.show_direction {
