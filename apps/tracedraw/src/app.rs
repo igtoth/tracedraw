@@ -970,8 +970,10 @@ pub struct App {
     /// The Contour tool's and panel's values and the tool's drag.
     pub contour: crate::contour_tool::ContourSettings,
     pub contour_drag: Option<crate::contour_tool::ContourDrag>,
-    /// The Blend tool's slider being dragged on the canvas.
+    /// The Blend tool's control being dragged on the canvas, and the
+    /// start or end square's drag of its object.
     pub blend_handle_drag: Option<crate::blend_tool::BlendHandle>,
+    pub blend_end_drag: Option<crate::blend_tool::EndDrag>,
     pub spiral_revolutions: u32,
     pub spiral_logarithmic: bool,
     pub common_shape: crate::tools2::CommonShape,
@@ -2177,6 +2179,7 @@ impl App {
             contour: Default::default(),
             contour_drag: None,
             blend_handle_drag: None,
+            blend_end_drag: None,
             spiral_revolutions: 4,
             spiral_logarithmic: false,
             common_shape: crate::tools2::CommonShape::RightArrow,

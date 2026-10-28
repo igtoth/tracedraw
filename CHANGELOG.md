@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Blend tool: the squares at the ends of a picked blend's line (text blends too) now work: dragging one moves its object, so the blend changes direction, and dropping it on another object makes that object the new start or end with the blend's settings. They were only shown (#965).
 - Undo keeps to a memory limit as well as to its number of steps: past 1 GB of a drawing's own undo data (256 MB in the browser) the oldest steps go, and the newest always stays; a copy made with a right click during a drag stays one step. An undo-heavy session on a drawing of 40,000 curves and six 40 MB pictures held 6.9 GB after 72 steps and now stays at 1.35 GB. Slow pages are drawn in the background one at a time, the page being edited first: Multipage View could run a render for every other page at once, each with its own band threads and picture buffers, and a render made stale kept running beside the next one.
 - Document palette: a colour picked with its eyedropper that the palette has already gets the white frame of the last colour used, so it shows where it is; a new colour takes the frame as it joins, and applying a colour of the palette moves the frame to it (#1125).
 - Status bar: a tool hint or message cut off at the right shows whole in a tip on hover, so a long path before the hint no longer hides it for good (#1126).
