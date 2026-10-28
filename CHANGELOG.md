@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Pick tool: Ctrl+click on a clip frame starts editing its contents (as Edit Contents does), with the object under the pointer selected; Finish puts them back. Ctrl+click picked the object inside the frame and left it there, so it was moved and changed while still clipped (#982).
 - Document palette: a colour picked with its eyedropper that the palette has already gets the white frame of the last colour used, so it shows where it is; a new colour takes the frame as it joins, and applying a colour of the palette moves the frame to it (#1125).
 - Status bar: a tool hint or message cut off at the right shows whole in a tip on hover, so a long path before the hint no longer hides it for good (#1126).
 - Pages added to a drawing (Layout > Insert Page, the + beside the page tabs, the navigator's insert buttons) are named in the interface's language, as the first page is, and so is their first layer. They were named "Page 2", "Layer 1" and so on in English whatever the language (#1127).
