@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Blend of two open lines (two arcs, one mirrored): the steps are open lines that run end to end, top to top and bottom to bottom, with as few nodes as the lines. Each step was closed back to its start and, when the second line was drawn the other way, crossed through the middle, so the blend came out as a dark tangle instead of a fan of curves (#1024).
+
 - Page sizes: the page size lists offer about 130 sizes in groups (ISO A, ISO B and JIS B, North American, Print shop, Posters and banners, Envelopes, Cards and postcards, Photo, Screen and social media, Web ads), with A4, Letter, A5, A3 and Legal first. Edit This List... at the foot of the property bar's list opens Document Options > Page Size, where a custom size can be saved under a name and deleted again; saved sizes show in every page size list (#1092).
 - Windows: a tool picked with its shortcut shows its pointer at once, with the mouse still. Windows changed or hid the pointer only once the mouse moved, so the old pointer stayed until then (#1026).
 - Shape tool: on a stretched curve, the corner rounding rings now round corners on the page, so a new rounding comes out round, also after other corners were rounded. A corner rounded before the stretch keeps its stretched arc and its ring: dragging it changes that corner alone, and once it is dragged back to sharp it rounds round again (#1000).
