@@ -25,22 +25,31 @@ pub fn fit_path(path: &BezPath, tolerance: f64) -> BezPath {
     fit_path_with_nodes(path, tolerance, &[])
 }
 
-/// [`fit_path`], with a smooth node wherever a vertex lies within the
-/// tolerance of one of `nodes`, its tangent along the node's direction
-/// (either way round): the places where a stroke's round end meets its
-/// sides, which a curve would otherwise run across.
-pub fn fit_path_with_nodes(path: &BezPath, tolerance: f64, nodes: &[(Point, Vec2)]) -> BezPath {
+/// A node the fitted path must have: where, the direction the path runs
+/// there (either way round), and how far from it a vertex may lie to
+/// take it (the tolerance when less).
+pub type Node = (Point, Vec2, f64);
+
+/// [`fit_path`], with a smooth node at the vertex nearest each of
+/// `nodes`, its tangent along the node's direction: the places where a
+/// stroke's round end meets its sides, which a curve would otherwise run
+/// across. A node's reach lets it take a vertex further away than the
+/// tolerance, when the polygon has no vertex right there (the tip of a
+/// wide round end lies between two vertices of its fan).
+pub fn fit_path_with_nodes(path: &BezPath, tolerance: f64, nodes: &[Node]) -> BezPath {
     let tol = if tolerance.is_finite() && tolerance > 0.0 {
         tolerance
     } else {
         0.01
     };
-    let mut nodes: Vec<(Point, Vec2)> = nodes
+    let mut list: Vec<Node> = nodes
         .iter()
-        .filter(|(p, t)| p.is_finite() && unit(*t).is_some())
-        .copied()
+        .filter(|(p, t, _)| p.is_finite() && unit(*t).is_some())
+        .map(|&(p, t, r)| (p, t, if r.is_finite() { r.max(tol) } else { tol }))
         .collect();
-    nodes.sort_by(|a, b| a.0.x.total_cmp(&b.0.x));
+    list.sort_by(|a, b| a.0.x.total_cmp(&b.0.x));
+    let reach = list.iter().map(|n| n.2).fold(tol, f64::max);
+    let nodes = Nodes { list, reach };
     let mut out = BezPath::new();
     for (pts, closed) in subpaths(path, tol) {
         fit_subpath(&pts, closed, tol, &nodes, &mut out);
@@ -48,14 +57,25 @@ pub fn fit_path_with_nodes(path: &BezPath, tolerance: f64, nodes: &[(Point, Vec2
     out
 }
 
-/// The node of `nodes` (sorted by x) within `tol` of `p`.
-fn node_at(nodes: &[(Point, Vec2)], p: Point, tol: f64) -> Option<(Point, Vec2)> {
-    let from = nodes.partition_point(|n| n.0.x < p.x - tol);
-    nodes[from..]
-        .iter()
-        .take_while(|n| n.0.x <= p.x + tol)
-        .find(|n| (n.0 - p).hypot() <= tol)
-        .and_then(|n| Some((n.0, unit(n.1)?)))
+/// Given nodes sorted by x, and the largest reach among them.
+struct Nodes {
+    list: Vec<Node>,
+    reach: f64,
+}
+
+impl Nodes {
+    /// The nearest node within its reach of `p`: where it is and its
+    /// direction.
+    fn at(&self, p: Point) -> Option<(Point, Vec2)> {
+        let from = self.list.partition_point(|n| n.0.x < p.x - self.reach);
+        self.list[from..]
+            .iter()
+            .take_while(|n| n.0.x <= p.x + self.reach)
+            .map(|n| ((n.0 - p).hypot(), n))
+            .filter(|(d, n)| *d <= n.2)
+            .min_by(|a, b| a.0.total_cmp(&b.0))
+            .and_then(|(_, n)| Some((n.0, unit(n.1)?)))
+    }
 }
 
 /// The subpaths of `path` as vertex lists without repeated points, with a
@@ -214,8 +234,10 @@ fn thin(pts: &[Point], closed: bool, tol: f64, keep: &dyn Fn(Point) -> bool) -> 
     out
 }
 
-fn fit_subpath(pts: &[Point], closed: bool, tol: f64, nodes: &[(Point, Vec2)], out: &mut BezPath) {
-    let keep = |p: Point| node_at(nodes, p, tol).is_some();
+/// Fit one subpath; the vertex nearest each of `nodes`, within its
+/// reach, becomes a smooth node.
+fn fit_subpath(pts: &[Point], closed: bool, tol: f64, nodes: &Nodes, out: &mut BezPath) {
+    let keep = |p: Point| nodes.at(p).is_some();
     let merged = merge_close(pts, closed, tol, &keep);
     let thinned = thin(&merged, closed, tol * 0.25, &keep);
     let pts = &thinned[..];
@@ -279,7 +301,7 @@ fn fit_subpath(pts: &[Point], closed: bool, tol: f64, nodes: &[(Point, Vec2)], o
             }
             // A given node, at the vertex nearest to it: its direction,
             // the way the path runs.
-            let (q, t) = node_at(nodes, at(i), tol)?;
+            let (q, t) = nodes.at(at(i))?;
             let d = (at(i) - q).hypot();
             let nearer = |j: Option<usize>| j.is_some_and(|j| (at(j) - q).hypot() < d);
             let prev = (i > 0 || closed).then(|| (i + n - 1) % n);
@@ -804,10 +826,10 @@ mod tests {
         p.close_path();
         let x = Vec2::new(1.0, 0.0);
         let nodes = [
-            (Point::new(0.0, -1.0), x),
-            (Point::new(0.0, 1.0), x),
-            (Point::new(40.0, -1.0), x),
-            (Point::new(40.0, 1.0), x),
+            (Point::new(0.0, -1.0), x, 0.0),
+            (Point::new(0.0, 1.0), x, 0.0),
+            (Point::new(40.0, -1.0), x, 0.0),
+            (Point::new(40.0, 1.0), x, 0.0),
         ];
         let fit = super::fit_path_with_nodes(&p, 0.01, &nodes);
         // Two straight sides, each end two curves meeting at its tip.
@@ -825,6 +847,47 @@ mod tests {
         ] {
             assert!(ends.iter().any(|p| (*p - q).hypot() < 0.02), "{q:?}");
         }
+    }
+
+    #[test]
+    fn a_node_between_two_vertices_takes_the_nearest() {
+        use crate::geometry::Vec2;
+        // An open 240 degree arc of radius 10, a vertex every 3 degrees
+        // from 1.5: none at 90 degrees, where the node is given.
+        let at = |deg: f64| {
+            let a = deg.to_radians();
+            Point::new(10.0 * a.cos(), 10.0 * a.sin())
+        };
+        let mut p = BezPath::new();
+        p.move_to(at(0.0));
+        for k in 0..80 {
+            p.line_to(at(1.5 + 3.0 * k as f64));
+        }
+        p.line_to(at(240.0));
+        let node = |reach| [(at(90.0), Vec2::new(-1.0, 0.0), reach)];
+        let near_90 = |fit: &BezPath| {
+            fit.elements()
+                .iter()
+                .filter_map(|e| e.end_point())
+                .any(|q| (q - at(90.0)).hypot() < 0.3)
+        };
+        // Within the tolerance of no vertex: no node there.
+        assert!(!near_90(&super::fit_path_with_nodes(&p, 0.01, &node(0.0))));
+        // Reaching half a step: the nearest vertex is the node.
+        let fit = super::fit_path_with_nodes(&p, 0.01, &node(0.3));
+        assert!(near_90(&fit), "{:?}", fit.elements());
+        // Two nodes within reach of the same vertex: the nearer one takes
+        // it, with its own direction.
+        let nodes = [
+            (at(89.0), Vec2::new(-1.0, 0.0), 0.3),
+            (at(87.0), Vec2::new(0.0, 1.0), 0.3),
+        ];
+        let near = super::Nodes {
+            list: nodes.to_vec(),
+            reach: 0.3,
+        };
+        let (q, _) = near.at(at(88.4)).expect("a node");
+        assert!((q - at(89.0)).hypot() < 1e-9);
     }
 
     #[test]

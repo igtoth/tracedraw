@@ -40,7 +40,10 @@ One undo step, and the new objects are selected.
 - Round ends and round corners are real curves: each round end is two
   curves meeting at its tip, with smooth nodes where it meets the sides,
   and a round corner one or two curves between nodes where it meets
-  them; straight sides stay single lines (#623).
+  them; straight sides stay single lines (#623). The fans of round
+  parts step by 0.05 rad, so the node at an end's tip goes to the fan
+  vertex nearest to it, up to one step away; the nodes where ends and
+  corners meet the sides take only a vertex within the tolerance.
 
 ## Checks
 
@@ -85,6 +88,13 @@ One undo step, and the new objects are selected.
   ends; along an arch, two straight ends and at most 16 curves, with the
   area of the band drawn within 0.2 %
   (`tools2::tests::a_variable_outline_becomes_a_band_of_few_curves`).
+- The fitting: a given node with no vertex within the tolerance goes to
+  the nearest vertex within its reach
+  (`tracedraw_core::fit::tests::a_node_between_two_vertices_takes_the_nearest`);
+  of two nodes within reach, the nearer one.
+- Given 10 mm and 17 mm lines with round ends, each tip has a node half
+  a fan step from it at most, each end two curves
+  (`tools2::tests::wide_round_ends_have_a_node_at_each_tip`).
 - The fitting: given nodes where a stadium's ends meet its sides, it
   becomes two lines and four curves with nodes at the tips
   (`tracedraw_core::fit::tests::given_nodes_split_a_stadium_where_its_ends_meet_its_sides`);
