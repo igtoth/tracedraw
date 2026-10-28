@@ -21,13 +21,15 @@ curve stays open.
   (petals). Straight segments become curves with their control points
   at a third and two thirds; quadratic ones are raised to cubic.
 - Zipper, `amplitude` (mm, 0 to 100) and `frequency` (0 to 100): each
-  segment is cut into `2 * frequency` equal steps of its parameter; the
-  points move off the segment along its normal, alternately
-  `-amplitude` and `+amplitude`, the nodes included (a node moves
-  between the normals of its two segments), so every point of the
-  zigzag is a tooth's tip, the pattern runs unbroken through the nodes
-  and the ends of an open curve are tips too, not points left on the
-  curve (#1108). Random scales each tooth by a fixed pseudo-random
+  segment is cut into `frequency + 1` equal steps of its parameter, so
+  it carries `frequency + 1` lines (#1122); the points move off the
+  segment along its normal, alternately `-amplitude` and `+amplitude`
+  along the whole subpath, the nodes included (a node moves between the
+  normals of its two segments), so every point of the zigzag is a
+  tooth's tip, the pattern runs unbroken through the nodes and the ends
+  of an open curve are tips too, not points left on the curve (#1108).
+  A closed outline whose count of tips would be odd takes one line more
+  on its last segment, so the last tip alternates with the first. Random scales each tooth by a fixed pseudo-random
   share of its height (the same every time it is drawn); Local scales
   it by `1 - d / d_max`, `d` its distance from the centre and `d_max`
   the farthest node's; Smooth draws a smooth curve through the points
@@ -58,8 +60,20 @@ curve stays open.
   percents. Zipper: `amplitude = |drag| / 4`, the bar's frequency and
   options. Twister: the angle the pointer turned about the start, whole
   turns counted.
-- The centre of each selected distortion is drawn as a diamond; a drag
-  that starts on it (within 6 pixels) moves the centre.
+- Each selected distortion shows its handles (#1122): the centre as a
+  diamond, a line with an arrow to the end handle, and for the Zipper a
+  slider on the line. A drag that starts on one (within 6 pixels; the
+  centre first, then the slider, then the end) takes it: the diamond
+  moves the centre; the end handle is a square to the right of the
+  centre at `amount / 100` of `r` for Push and Pull (to the left when
+  negative; dragging it sets the amount from its distance) and at four
+  times the amplitude for the Zipper (the drag's own measure; dragging
+  it sets the amplitude from its distance), or a circle for the Twister
+  `r` from the centre in the direction of the angle (dragging it round
+  turns the angle, whole turns counted); the slider sits
+  `frequency / 100` of the way from the centre to the Zipper's end and
+  dragging it along the line sets the frequency. A handle drag edits the
+  object's distortion in place (its centre kept) as one undo step.
 - A drag replaces the object's distortion (an object has at most one;
   it stays in its place among the object's other effects).
 - A click selects the object under the pointer (or nothing).
@@ -72,7 +86,7 @@ curve stays open.
 | Push and Pull, Zipper, Twister | Push and Pull | with a distorted object selected, turn its distortion into that kind with the bar's values for it |
 | Amplitude (Push and Pull) | 20 | -200 to 200 |
 | Amplitude (Zipper) | 2 mm | 0 to 100 mm |
-| Frequency | 6 | 0 to 100 teeth per segment |
+| Frequency | 6 | 0 to 100; `frequency + 1` lines per segment |
 | Random, Smooth, Local | off | toggles |
 | Clockwise, Counterclockwise | Clockwise | |
 | Rotations | 0 | 0 to 9 |
@@ -107,6 +121,7 @@ curve stays open.
 - `distort_tool::tests::the_bar_edits_the_selected_distortion`
 - `distort_tool::tests::settings_round_trip_and_stay_in_range`
 - `distort_tool::tests::a_bar_edit_previews_on_an_undistorted_selection`
+- `distort_tool::tests::the_handles_set_the_values_by_dragging`
 - `ui::distort_bar::tests::the_bar_draws_for_every_kind_and_shows_the_selection`
 - Given a 20 mm square about its middle and Push and Pull 50, then a
   corner node is 1.5 times as far from the middle and the middle of a
@@ -118,6 +133,9 @@ curve stays open.
   point of every step lies on the turned curve within 0.03 mm, the two
   ends leave along the spiral's own direction, and no two steps meet at
   a corner.
-- Given a straight line and Zipper with frequency 6, then its 13 points
-  are all teeth's tips, the two ends included, alternately on each side
-  of the line.
+- Given a straight line and Zipper with frequency 6, then it is seven
+  lines between eight points, all teeth's tips, the two ends included,
+  alternately on each side of the line.
+- Given a 20 mm square with Push and Pull 50 selected, then its end
+  handle sits 5 mm right of the centre, and dragged to 10 mm left of it
+  the amount is -100.

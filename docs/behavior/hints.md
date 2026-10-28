@@ -13,10 +13,12 @@ is tinted with an accent line).
 - **Topic**: a title, an introduction with the keys in bold, and the
   tools that serve it, each with its icon, its name in bold and what it
   does; a tool opens its page.
-- **Tool**: a task title, the tool row, one bullet per instruction of the
-  tool's status bar hint (split at semicolons, key names in bold), "Learn
-  more" with the help topic (the tool's behaviour notes), and "See also"
-  linking the topic that lists the tool.
+- **Tool**: a task title, the tool row, then the tool's steps: one bullet
+  per step (key names in bold), most with a picture under it that shows
+  the object, its handles or nodes, the drag and the tool's cursor (drawn
+  in `ui/hint_pics.rs`, at most 320 points wide, on a white page), then
+  "Learn more" with the help topic (the tool's behaviour notes) and "See
+  also" linking the topic that lists the tool.
 
 Every page ends with "Learn more" and its help topic link.
 
@@ -29,11 +31,13 @@ Every page ends with "Learn more" and its help topic link.
   the pages ahead of the current one.
 
 All titles, descriptions and introductions are in the language files
-(`hinttitle.*`, `tooldesc.*`, `hinttopic.*`, `status_hint.*`). The tool
+(`hinttitle.*`, `tooldesc.*`, `hinttopic.*`, `hintstep.<tool>.<n>`). The tool
 descriptions are the same ones the toolbox tooltips show.
 
 ## Checks
 
 - `ui::hints::tests::history_goes_back_and_forward_and_drops_the_future`
 - `ui::hints::tests::every_tool_has_a_page_title_description_and_topic`
-- `ui::hints::tests::hints_split_into_instructions_with_keys_in_bold`
+- `ui::hints::tests::step_keys_are_in_bold`
+- `ui::hint_pics::tests::every_tool_has_steps_with_text_and_pictures`
+- `ui::hint_pics::tests::every_picture_draws_on_a_page`
