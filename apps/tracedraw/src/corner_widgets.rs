@@ -4,7 +4,11 @@
 //! only their corners show a widget and round; with none, every corner
 //! rounds together. Open curves round their inner corners too. A corner
 //! already rounded (an arc tangent to two straight sides) keeps a widget
-//! on its arc, so its radius can change again (#872). They show only
+//! on its arc, so its radius can change again (#872). Corners round on
+//! the page, so on a stretched curve a new rounding is round; a corner
+//! rounded before the stretch keeps its stretched arc and its widget,
+//! and rounds in the curve's own space until it is sharp again (#1000).
+//! They show only
 //! with Options > Nodes and Handles > corner widgets on (#884). See
 //! docs/behavior/shape-tool.md, Corner widgets.
 
@@ -37,6 +41,13 @@ pub struct CornerCache {
 /// A corner that takes a widget: a sharp one, or one already rounded
 /// (#872), whose `corner` is the sharp corner its sides meet at.
 struct Spot {
+    /// From the curve's own space to the space the corner was found in:
+    /// the page, or the curve's own space for a rounding made before the
+    /// curve was stretched (#1000).
+    space: Affine,
+    /// A rounding made before the curve was stretched, found in its own
+    /// space.
+    stretched: bool,
     corner: Corner,
     /// How far the rounded corner's arc lies into the corner (0 when
     /// sharp).
@@ -50,6 +61,9 @@ struct Spot {
 #[derive(Debug, Clone, Copy)]
 pub struct Widget {
     pub shape: ShapeId,
+    /// See `Spot::space`; `corner` is in that space.
+    pub space: Affine,
+    pub stretched: bool,
     pub corner: Corner,
     pub depth: f64,
     pub at: egui::Pos2,
@@ -57,12 +71,14 @@ pub struct Widget {
 
 /// The drag of a corner widget: the curve as it was, with the rounded
 /// corners the drag changes made sharp again, the corners it rounds
-/// (`None`: every corner), the grabbed corner (local space), how far its
-/// arc lay into it when the drag began, the largest radius they all take,
-/// and where the drag began (local).
+/// (`None`: every corner), the grabbed corner, how far its arc lay into
+/// it when the drag began, the largest radius they all take, and where
+/// the drag began. The path, corner and points are in `space` (see
+/// `Spot::space`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct CornerDrag {
     pub shape: ShapeId,
+    pub space: Affine,
     pub path: BezPath,
     pub closed: bool,
     pub only: Option<Vec<usize>>,
@@ -116,18 +132,33 @@ impl App {
                         return None;
                     }
                     let t = self.doc().parent_transform(*id)? * s.transform;
-                    let (sharp, rounded) = corners_and_fillets(path);
+                    if t.determinant().abs() < 1e-12 {
+                        return None;
+                    }
+                    // Corners and roundings on the page, then the roundings
+                    // made before a stretch, round in the curve's own space.
+                    let (sharp, rounded) = corners_and_fillets(&(t * path.clone()));
                     let mut spots: Vec<Spot> = sharp
                         .into_iter()
                         .map(|c| Spot {
+                            space: t,
+                            stretched: false,
                             corner: c,
                             depth: 0.0,
                             nodes: vec![c.node],
                         })
                         .collect();
-                    spots.extend(rounded.into_iter().filter_map(|f| {
+                    let taken: Vec<usize> = rounded.iter().flat_map(|f| f.nodes.clone()).collect();
+                    let stretched = fillets(path)
+                        .into_iter()
+                        .filter(|f| !f.nodes.iter().any(|n| taken.contains(n)))
+                        .map(|f| (Affine::IDENTITY, true, f));
+                    let rounded = rounded.into_iter().map(|f| (t, false, f)).chain(stretched);
+                    spots.extend(rounded.filter_map(|(space, stretched, f)| {
                         let depth = f.depth();
                         Some(Spot {
+                            space,
+                            stretched,
                             corner: Corner {
                                 node: *f.nodes.first()?,
                                 at: f.corner,
@@ -159,16 +190,19 @@ impl App {
                     continue;
                 }
                 let c = &spot.corner;
+                let to_page = *t * spot.space.inverse();
                 // A rounded corner's widget sits off the middle of its arc.
                 let mid = c.at + c.inside * spot.depth;
-                let node = self.view.to_screen(*t * mid);
-                let toward = self.view.to_screen(*t * (mid + c.inside));
+                let node = self.view.to_screen(to_page * mid);
+                let toward = self.view.to_screen(to_page * (mid + c.inside));
                 let d = toward - node;
                 if d.length() < 1e-6 || !d.x.is_finite() || !d.y.is_finite() {
                     continue;
                 }
                 out.push(Widget {
                     shape: *id,
+                    space: spot.space,
+                    stretched: spot.stretched,
                     corner: *c,
                     depth: spot.depth,
                     at: node + d.normalized() * WIDGET_OFFSET_PX,
@@ -204,9 +238,12 @@ impl App {
         else {
             return false;
         };
-        if t.determinant().abs() < 1e-12 {
+        if t.determinant().abs() < 1e-12 || w.space.determinant().abs() < 1e-12 {
             return false;
         }
+        // On the page, or in the curve's own space for a corner rounded
+        // before the curve was stretched (#1000).
+        let path = &(w.space * path.clone());
         let chosen: Vec<usize> = self
             .node_selection
             .iter()
@@ -223,31 +260,50 @@ impl App {
             .filter(|(_, f)| chosen.is_empty() || f.nodes.iter().any(|n| chosen.contains(n)))
             .map(|(i, _)| i)
             .collect();
-        let (base, chosen) = if which.is_empty() {
-            (path.clone(), chosen)
+        let (base, map) = if which.is_empty() {
+            (path.clone(), Vec::new())
         } else {
-            let (base, map) = unround(path, Some(&which));
-            let mut renumbered: Vec<usize> = chosen
-                .iter()
-                .filter_map(|i| map.get(*i).copied().flatten())
-                .collect();
-            renumbered.sort_unstable();
-            renumbered.dedup();
-            (base, renumbered)
+            unround(path, Some(&which))
         };
-        let only = (!chosen.is_empty()).then_some(chosen);
+        let renumber = |nodes: &mut dyn Iterator<Item = usize>| -> Vec<usize> {
+            let mut out: Vec<usize> = if which.is_empty() {
+                nodes.collect()
+            } else {
+                nodes
+                    .filter_map(|i| map.get(i).copied().flatten())
+                    .collect()
+            };
+            out.sort_unstable();
+            out.dedup();
+            out
+        };
+        let chosen = renumber(&mut chosen.into_iter());
+        // A stretched rounding changes on its own, never with the sharp
+        // corners, which round on the page.
+        let only = if !chosen.is_empty() {
+            Some(chosen)
+        } else if !w.stretched {
+            None
+        } else {
+            let mut own = which
+                .iter()
+                .filter_map(|i| rounded.get(*i))
+                .flat_map(|f| f.nodes.iter().copied());
+            Some(renumber(&mut own))
+        };
         let Some(max) = max_fillet(&base, only.as_deref()) else {
             return false;
         };
         self.drag = Drag::CornerWidget(Box::new(CornerDrag {
             shape: w.shape,
+            space: w.space,
             path: base,
             closed: *closed,
             only,
             corner: w.corner,
             depth: w.depth,
             max,
-            from: t.inverse() * p,
+            from: w.space * t.inverse() * p,
             begun: false,
         }));
         // The cut renumbers the nodes.
@@ -267,10 +323,10 @@ impl App {
         else {
             return;
         };
-        if t.determinant().abs() < 1e-12 {
+        if t.determinant().abs() < 1e-12 || d.space.determinant().abs() < 1e-12 {
             return;
         }
-        let lp = t.inverse() * p;
+        let lp = d.space * t.inverse() * p;
         // A rounded corner's arc starts where it was (#872).
         let along: f64 = d.depth + (lp - d.from).dot(d.corner.inside);
         let r = radius_for(along, d.corner.theta).min(d.max * 0.999);
@@ -279,6 +335,7 @@ impl App {
         } else {
             d.path.clone()
         };
+        let path = d.space.inverse() * path;
         let cmd = Command::SetShapeKind {
             shape: d.shape,
             kind: ShapeKind::Path {
