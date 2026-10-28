@@ -472,7 +472,9 @@ impl App {
         self.view_anchor = None;
         if self.docs.is_empty() {
             self.active_doc = 0;
-            self.show_welcome = true;
+            // The Welcome Screen comes back unless its tab was closed:
+            // then the workspace stays empty.
+            self.show_welcome = !self.settings.welcome_tab_closed;
             return;
         }
         let next = i.min(self.docs.len() - 1);
