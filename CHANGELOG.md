@@ -7,6 +7,8 @@ full, row-by-row status.
 ## Unreleased
 
 - Saving as .cdr: text in a SemiBold face (or a Light, Medium, Black ...) is saved as its family at that weight ("Titillium Web" at SemiBold), as the file it came from names it. It was saved under the name "Titillium Web SemiBold", which no installed font goes by, so the saved file opened elsewhere in a substituted font (#892, #624).
+- Saving as .cdr: a paragraph written in one colour keeps it. In a text of several lines, a line in one colour of its own (one red line among black ones) came back black when the file was opened again, here and in other programs (#1057, #1055).
+- Saving as .cdr with Embed fonts: a static face of a large family ("Khand SemiBold") is saved as its family at its weight ("Khand", SemiBold), the names the font gives itself, also when its old-style family name is the whole name. It was saved as "Khand SemiBold" Regular, which another program reported as a missing font on a computer where the face was only embedded in the file (#1055, #1009).
 
 ## 0.19.9 (2026-10-28)
 

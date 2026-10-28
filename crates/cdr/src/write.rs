@@ -3690,7 +3690,7 @@ impl<'a> Writer<'a> {
                     r#"{},"frame":{{"equalWidthColumns":"1","rtlColumns":"0","columns":"{},0"}},"paragraph":{{"justify":"{}"}}"#,
                     spans
                         .first()
-                        .map(|sp| character_json(sp, Some(&s.fill)))
+                        .map(|sp| character_json(sp, Some(sp.fill.as_ref().unwrap_or(&s.fill))))
                         .unwrap_or_else(|| r#""character":{}"#.to_string()),
                     units(if width.is_finite() { width } else { 0.0 }).max(0),
                     justify_code(*align)
@@ -4015,7 +4015,10 @@ impl<'a> Writer<'a> {
             // The paragraph's default style is complete, as files hold it:
             // a style that leaves out the spacings makes the program that
             // opens the file hang.
-            let default = full_text_style(first, Some(fill), align, leading);
+            // The colour is the first run's own when it has one: a
+            // paragraph of one run keeps its colour only here (#1057).
+            let first_fill = first.and_then(|sp| sp.fill.as_ref()).unwrap_or(fill);
+            let default = full_text_style(first, Some(first_fill), align, leading);
             t.u32(style_for(align))
                 .zeros(1)
                 .u8(0)
