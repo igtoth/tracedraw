@@ -420,6 +420,7 @@ pub fn dialog(app: &mut App, ctx: &egui::Context, st: &mut TrackerDialog, close:
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui
                     .add_sized([100.0, 27.0], egui::Button::new(tr("dialog.close")))
+                    .rich_tip(crate::ui::tips::keyed("dialog.close"))
                     .clicked()
                 {
                     *close = true;

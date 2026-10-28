@@ -376,7 +376,12 @@ pub fn dialog(app: &mut App, ctx: &Context, st: &mut DocPropsState, close: &mut 
                                 for (tag, name) in LANGUAGES {
                                     ui.selectable_value(&mut st.language, tag.to_string(), name);
                                 }
-                            });
+                            })
+                            .response
+                            .rich_tip(crate::ui::tips::pair(
+                                "options.language",
+                                "docprops.language_desc",
+                            ));
                         ui.end_row();
                         for (key, v) in [
                             ("dialog.title", &mut st.title),
@@ -386,7 +391,10 @@ pub fn dialog(app: &mut App, ctx: &Context, st: &mut DocPropsState, close: &mut 
                             ("docprops.tags", &mut st.tags),
                         ] {
                             ui.label(tr(key));
-                            ui.add(egui::TextEdit::singleline(v).desired_width(w));
+                            let desc =
+                                format!("docprops.{}_desc", key.rsplit('.').next().unwrap_or(key));
+                            ui.add(egui::TextEdit::singleline(v).desired_width(w))
+                                .rich_tip(crate::ui::tips::pair(key, &desc));
                             ui.end_row();
                         }
                         ui.label(tr("dialog.notes"));
@@ -395,7 +403,8 @@ pub fn dialog(app: &mut App, ctx: &Context, st: &mut DocPropsState, close: &mut 
                                 .id(crate::ui::dialogs::multiline_id(1))
                                 .desired_rows(3)
                                 .desired_width(w),
-                        );
+                        )
+                        .rich_tip(crate::ui::tips::pair("dialog.notes", "docprops.notes_desc"));
                         ui.end_row();
                         ui.label(tr("dialog.rating"));
                         egui::ComboBox::from_id_salt("docprops_rating")
@@ -405,7 +414,12 @@ pub fn dialog(app: &mut App, ctx: &Context, st: &mut DocPropsState, close: &mut 
                                 for r in 0..=5u8 {
                                     ui.selectable_value(&mut st.rating, r, rating_label(r));
                                 }
-                            });
+                            })
+                            .response
+                            .rich_tip(crate::ui::tips::pair(
+                                "dialog.rating",
+                                "docprops.rating_desc",
+                            ));
                         ui.end_row();
                     });
                 ui.add_space(6.0);
@@ -428,17 +442,19 @@ pub fn dialog(app: &mut App, ctx: &Context, st: &mut DocPropsState, close: &mut 
                 ui.horizontal(|ui| {
                     help = ui
                         .add_sized([27.0, 27.0], egui::Button::new("?"))
-                        .rich_tip(tr("dialog.help"))
+                        .rich_tip(crate::ui::tips::keyed("dialog.help_button"))
                         .clicked();
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui
                             .add_sized([100.0, 27.0], egui::Button::new(tr("dialog.cancel")))
+                            .rich_tip(crate::ui::tips::keyed("dialog.cancel"))
                             .clicked()
                         {
                             *close = true;
                         }
                         if ui
                             .add_sized([100.0, 27.0], egui::Button::new(tr("dialog.ok")))
+                            .rich_tip(crate::ui::tips::keyed("dialog.ok"))
                             .clicked()
                             || crate::ui::dialogs::enter_pressed(ui)
                         {

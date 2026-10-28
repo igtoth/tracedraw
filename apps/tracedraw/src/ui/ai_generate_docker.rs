@@ -524,7 +524,11 @@ fn footer(app: &mut App, ui: &mut Ui, mode: Mode, ready: bool) {
                 egui::Button::new(format!("\u{2726} {label}")).min_size(Vec2::new(w, 30.0)),
             );
             ui.spinner();
-            if ui.button(tr("dialog.cancel")).clicked() {
+            if ui
+                .button(tr("dialog.cancel"))
+                .rich_tip(crate::ui::tips::keyed("dialog.cancel"))
+                .clicked()
+            {
                 app.ai_image_cancel();
             }
         });

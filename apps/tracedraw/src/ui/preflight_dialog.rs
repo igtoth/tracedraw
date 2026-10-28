@@ -5,6 +5,7 @@ use crate::app::App;
 use crate::i18n::{tr, trf};
 use crate::preflight::{self, Check, Issue, PreflightPrefs, Severity};
 use crate::theme::Tokens;
+use crate::ui::tips::RichTip;
 use egui::{pos2, vec2, Color32, Painter, Pos2, Rect, RichText, Sense, Stroke, Ui};
 
 /// The dialog's state: what the last run found and the row picked.
@@ -218,6 +219,7 @@ pub fn dialog(app: &mut App, ctx: &egui::Context, st: &mut PreflightState, close
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui
                     .add_sized([100.0, 27.0], egui::Button::new(tr("dialog.close")))
+                    .rich_tip(crate::ui::tips::keyed("dialog.close"))
                     .clicked()
                 {
                     *close = true;

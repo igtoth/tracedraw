@@ -1381,10 +1381,12 @@ fn blend(
             }
         }
         geo = extra * geo;
-        s.kind = ShapeKind::Path {
-            path: geo,
-            closed: true,
-        };
+        // The steps of two open lines are open lines (#1024).
+        let closed = geo
+            .elements()
+            .iter()
+            .any(|e| matches!(e, PathEl::ClosePath));
+        s.kind = ShapeKind::Path { path: geo, closed };
         if let (Some(x), Some(y)) = (fa, fb) {
             s.fill = Fill::Solid(blend_color(x, y, tc as f32, options.color_blend));
         }

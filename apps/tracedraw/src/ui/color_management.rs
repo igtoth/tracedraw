@@ -98,11 +98,43 @@ pub(crate) fn tab_header(ui: &mut Ui, tab: &mut usize, labels: &[String]) {
                 .stroke(egui::Stroke::new(1.0, Tokens::border()))
                 .corner_radius(0.0)
                 .min_size(egui::vec2(80.0, 26.0));
-            if ui.add(b).clicked() {
+            if ui
+                .add(b)
+                .rich_tip_with(|| format!("{l}\n{}", tr("dialog.tab_desc")))
+                .clicked()
+            {
                 *tab = i;
             }
         }
     });
+}
+
+/// The tip of the combo `id`: what it sets.
+fn combo_tip(id: &str) -> String {
+    let (title, desc) = match id {
+        "cm_doc_rgb" | "cm_def_rgb" => ("color_mgmt.rgb_profile", "color_mgmt.rgb_profile_desc"),
+        "cm_doc_cmyk" | "cm_def_cmyk" => {
+            ("color_mgmt.cmyk_profile", "color_mgmt.cmyk_profile_desc")
+        }
+        "cm_doc_gray" | "cm_def_gray" => {
+            ("color_mgmt.gray_profile", "color_mgmt.gray_profile_desc")
+        }
+        "cm_doc_mode" | "cm_def_mode" => {
+            ("color_mgmt.primary_mode", "color_mgmt.primary_mode_desc")
+        }
+        "cm_doc_intent" | "cm_def_intent" => ("color_mgmt.intent", "color_mgmt.intent_desc"),
+        "cm_open_rgb" | "cm_open_cmyk" | "cm_open_gray" => {
+            ("color_mgmt.open_policy", "color_mgmt.open_policy_desc")
+        }
+        "cm_imp_rgb" | "cm_imp_cmyk" | "cm_imp_gray" => {
+            ("color_mgmt.import_policy", "color_mgmt.import_policy_desc")
+        }
+        _ => (
+            "color_mgmt.spot_definition",
+            "color_mgmt.spot_definition_desc",
+        ),
+    };
+    crate::ui::tips::pair(title, desc)
 }
 
 /// A titled divider: the title, then a line to the right edge.
@@ -185,7 +217,9 @@ fn profile_combo(
                     *choice = Some(FoundOrName::Found(p.clone()));
                 }
             }
-        });
+        })
+        .response
+        .rich_tip(combo_tip(id));
     load
 }
 
@@ -197,7 +231,9 @@ fn combo_u8(ui: &mut Ui, id: &str, v: &mut u8, keys: &[&str]) {
             for (i, k) in keys.iter().enumerate() {
                 ui.selectable_value(v, i as u8, tr(k));
             }
-        });
+        })
+        .response
+        .rich_tip(combo_tip(id));
 }
 
 fn intent_combo(ui: &mut Ui, id: &str, v: &mut String) {
@@ -210,7 +246,9 @@ fn intent_combo(ui: &mut Ui, id: &str, v: &mut String) {
                     *v = i.to_string();
                 }
             }
-        });
+        })
+        .response
+        .rich_tip(combo_tip(id));
 }
 
 fn intent_label(name: &str) -> String {
@@ -229,7 +267,9 @@ fn mode_combo(ui: &mut Ui, id: &str, rgb: &mut bool) {
         .show_ui(ui, |ui| {
             ui.selectable_value(rgb, false, "CMYK");
             ui.selectable_value(rgb, true, "RGB");
-        });
+        })
+        .response
+        .rich_tip(combo_tip(id));
 }
 
 /// Right-aligned labels in a two-column grid.
@@ -289,17 +329,19 @@ pub fn dialog(app: &mut App, ctx: &Context, st: &mut ColorManagementState, close
                 ui.horizontal(|ui| {
                     help = ui
                         .add_sized([27.0, 27.0], egui::Button::new("?"))
-                        .rich_tip(tr("dialog.help"))
+                        .rich_tip(crate::ui::tips::keyed("dialog.help_button"))
                         .clicked();
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui
                             .add_sized([100.0, 27.0], egui::Button::new(tr("dialog.cancel")))
+                            .rich_tip(crate::ui::tips::keyed("dialog.cancel"))
                             .clicked()
                         {
                             *close = true;
                         }
                         if ui
                             .add_sized([100.0, 27.0], egui::Button::new(tr("dialog.ok")))
+                            .rich_tip(crate::ui::tips::keyed("dialog.ok"))
                             .clicked()
                             || crate::ui::dialogs::enter_pressed(ui)
                         {
@@ -356,8 +398,10 @@ fn document_tab(app: &App, ui: &mut Ui, st: &mut ColorManagementState, load: &mu
     });
     ui.separator();
     ui.vertical_centered(|ui| {
-        ui.radio_value(&mut st.convert, false, tr("color_mgmt.assign"));
-        ui.radio_value(&mut st.convert, true, tr("color_mgmt.convert"));
+        ui.radio_value(&mut st.convert, false, tr("color_mgmt.assign"))
+            .rich_tip(crate::ui::tips::keyed("color_mgmt.assign"));
+        ui.radio_value(&mut st.convert, true, tr("color_mgmt.convert"))
+            .rich_tip(crate::ui::tips::keyed("color_mgmt.convert"));
     });
     egui::Grid::new("cm_doc")
         .num_columns(2)
@@ -453,10 +497,12 @@ fn default_tab(ui: &mut Ui, st: &mut ColorManagementState, load: &mut Option<Spa
                         }
                     }
                 }
-            });
+            })
+            .response
+            .rich_tip(crate::ui::tips::keyed("color_mgmt.preset"));
         if ui
             .button("\u{1F4BE}")
-            .rich_tip(tr("color_mgmt.save_preset"))
+            .rich_tip(crate::ui::tips::keyed("color_mgmt.save_preset"))
             .clicked()
         {
             st.new_preset = Some(String::new());
@@ -464,7 +510,7 @@ fn default_tab(ui: &mut Ui, st: &mut ColorManagementState, load: &mut Option<Spa
         let user = d.presets.iter().any(|p| p.name == d.preset);
         if ui
             .add_enabled(user, egui::Button::new("\u{1F5D1}"))
-            .rich_tip(tr("color_mgmt.delete_preset"))
+            .rich_tip_always(crate::ui::tips::keyed("color_mgmt.delete_preset"))
             .clicked()
         {
             let name = d.preset.clone();
@@ -476,8 +522,14 @@ fn default_tab(ui: &mut Ui, st: &mut ColorManagementState, load: &mut Option<Spa
         let mut done = false;
         ui.horizontal(|ui| {
             ui.label(tr("color_mgmt.preset_name"));
-            ui.text_edit_singleline(name);
-            if ui.button(tr("dialog.ok")).clicked() && !name.trim().is_empty() {
+            ui.text_edit_singleline(name)
+                .rich_tip(crate::ui::tips::keyed("color_mgmt.preset_name"));
+            if ui
+                .button(tr("dialog.ok"))
+                .rich_tip(crate::ui::tips::keyed("dialog.ok"))
+                .clicked()
+                && !name.trim().is_empty()
+            {
                 done = true;
             }
         });
@@ -570,13 +622,21 @@ fn default_tab(ui: &mut Ui, st: &mut ColorManagementState, load: &mut Option<Spa
                         true,
                         tr("color_mgmt.engine_builtin"),
                     );
-                });
+                })
+                .response
+                .rich_tip(crate::ui::tips::keyed("color_mgmt.engine"));
             ui.end_row();
             ui.label("");
             ui.vertical(|ui| {
-                ui.checkbox(&mut d.preserve_pure_black, tr("color_mgmt.preserve_black"));
-                ui.checkbox(&mut d.map_gray_to_black, tr("color_mgmt.map_gray"));
-                ui.checkbox(&mut d.black_point_compensation, tr("dialog.black_point"));
+                ui.checkbox(&mut d.preserve_pure_black, tr("color_mgmt.preserve_black"))
+                    .rich_tip(crate::ui::tips::keyed("color_mgmt.preserve_black"));
+                ui.checkbox(&mut d.map_gray_to_black, tr("color_mgmt.map_gray"))
+                    .rich_tip(crate::ui::tips::keyed("color_mgmt.map_gray"));
+                ui.checkbox(&mut d.black_point_compensation, tr("dialog.black_point"))
+                    .rich_tip(crate::ui::tips::pair(
+                        "dialog.black_point",
+                        "color_mgmt.black_point_desc",
+                    ));
             });
             ui.end_row();
         });
@@ -604,8 +664,10 @@ fn default_tab(ui: &mut Ui, st: &mut ColorManagementState, load: &mut Option<Spa
                 ui.checkbox(
                     &mut d.warn_open_mismatch,
                     tr("color_mgmt.warn_mismatch_box"),
-                );
-                ui.checkbox(&mut d.warn_open_missing, tr("color_mgmt.warn_missing_box"));
+                )
+                .rich_tip(crate::ui::tips::keyed("color_mgmt.warn_mismatch_box"));
+                ui.checkbox(&mut d.warn_open_missing, tr("color_mgmt.warn_missing_box"))
+                    .rich_tip(crate::ui::tips::keyed("color_mgmt.warn_missing_box"));
             });
             ui.end_row();
         });
@@ -629,11 +691,13 @@ fn default_tab(ui: &mut Ui, st: &mut ColorManagementState, load: &mut Option<Spa
                 ui.checkbox(
                     &mut d.warn_import_mismatch,
                     tr("color_mgmt.warn_mismatch_box"),
-                );
+                )
+                .rich_tip(crate::ui::tips::keyed("color_mgmt.warn_mismatch_box"));
                 ui.checkbox(
                     &mut d.warn_import_missing,
                     tr("color_mgmt.warn_missing_box"),
-                );
+                )
+                .rich_tip(crate::ui::tips::keyed("color_mgmt.warn_missing_box"));
             });
             ui.end_row();
         });
