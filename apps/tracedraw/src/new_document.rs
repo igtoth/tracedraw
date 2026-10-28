@@ -340,6 +340,12 @@ pub fn new_document_dialog(app: &mut App, ctx: &Context, st: &mut NewDocState, c
                 &tr("dialog.name"),
             );
             chrome::text_field(ui, field(FIELD_X, y, WIDE), &mut st.name);
+            tip(
+                ui,
+                field(FIELD_X, y, WIDE),
+                "newdoc_name",
+                &crate::ui::tips::pair("dialog.name", "newdoc.name_desc"),
+            );
             y += ROW_PITCH;
             // Preset and its menu.
             chrome::label_right(
@@ -360,6 +366,12 @@ pub fn new_document_dialog(app: &mut App, ctx: &Context, st: &mut NewDocState, c
                 let mut done = None;
                 if let Some(name) = &mut st.saving_preset {
                     chrome::text_field(ui, field(FIELD_X, y, 160.0), name);
+                    tip(
+                        ui,
+                        field(FIELD_X, y, 160.0),
+                        "newdoc_preset_name",
+                        &crate::ui::tips::keyed("newdoc.preset_name"),
+                    );
                     if chrome::button_at(ui, field(FIELD_X + 166.0, y, 65.0), &tr("dialog.ok"))
                         .clicked()
                         && !name.trim().is_empty()
@@ -398,6 +410,12 @@ pub fn new_document_dialog(app: &mut App, ctx: &Context, st: &mut NewDocState, c
             ) {
                 st.settings.pages = v.round() as u32;
             }
+            tip(
+                ui,
+                field(FIELD_X, y, 62.0),
+                "newdoc_pages",
+                &crate::ui::tips::keyed("newdoc.pages"),
+            );
             y += ROW_PITCH;
             // Primary colour mode.
             chrome::label_right(
@@ -413,8 +431,10 @@ pub fn new_document_dialog(app: &mut App, ctx: &Context, st: &mut NewDocState, c
                         ui.spacing_mut().item_spacing.x = 16.0;
                         let v = &mut st.settings.values;
                         let mut rgb = v.rgb;
-                        ui.radio_value(&mut rgb, false, "CMYK");
-                        ui.radio_value(&mut rgb, true, "RGB");
+                        ui.radio_value(&mut rgb, false, "CMYK")
+                            .rich_tip(crate::ui::tips::pair("newdoc.cmyk_tip", "newdoc.cmyk_desc"));
+                        ui.radio_value(&mut rgb, true, "RGB")
+                            .rich_tip(crate::ui::tips::pair("newdoc.rgb_tip", "newdoc.rgb_desc"));
                         if rgb != v.rgb {
                             v.rgb = rgb;
                             st.settings.refresh_preset();
@@ -456,6 +476,7 @@ pub fn new_document_dialog(app: &mut App, ctx: &Context, st: &mut NewDocState, c
             chrome::heading(ui, at(45.0, y + 1.0), &tr("newdoc.color_settings"));
             if resp
                 .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .rich_tip(crate::ui::tips::keyed("newdoc.color_settings"))
                 .clicked()
             {
                 st.color_settings_open = !st.color_settings_open;
@@ -480,7 +501,8 @@ pub fn new_document_dialog(app: &mut App, ctx: &Context, st: &mut NewDocState, c
                 )),
                 |ui| {
                     ui.horizontal_centered(|ui| {
-                        ui.checkbox(&mut st.dont_show, tr("newdoc.dont_show"));
+                        ui.checkbox(&mut st.dont_show, tr("newdoc.dont_show"))
+                            .rich_tip(crate::ui::tips::keyed("newdoc.dont_show"));
                     });
                 },
             );
@@ -529,6 +551,7 @@ pub fn create(app: &mut App, st: &NewDocState) {
 fn preset_row(ui: &mut Ui, st: &mut NewDocState, rect: egui::Rect, menu_at: egui::Pos2) {
     let current = st.settings.preset_label(&st.settings.preset);
     let mut chosen = None;
+    let combo_rect = rect;
     crate::ui::chrome::combo(ui, "newdoc_preset", rect, current, |ui| {
         for d in Destination::ALL {
             if ui
@@ -554,9 +577,17 @@ fn preset_row(ui: &mut Ui, st: &mut NewDocState, rect: egui::Rect, menu_at: egui
     if let Some(name) = chosen {
         st.apply_preset(&name);
     }
+    tip(
+        ui,
+        combo_rect,
+        "newdoc_preset",
+        &crate::ui::tips::keyed("newdoc.preset"),
+    );
     // The preset menu: three bold dots.
     let r = egui::Rect::from_min_size(menu_at, egui::vec2(24.0, crate::ui::chrome::FIELD_H));
-    let resp = ui.interact(r, egui::Id::new("newdoc_preset_menu"), egui::Sense::click());
+    let resp = ui
+        .interact(r, egui::Id::new("newdoc_preset_menu"), egui::Sense::click())
+        .rich_tip(crate::ui::tips::keyed("newdoc.preset_menu"));
     if resp.hovered() {
         ui.painter()
             .rect_filled(r, 0.0, crate::theme::Tokens::tool_hover());
@@ -627,6 +658,12 @@ fn dimensions(ui: &mut Ui, st: &mut NewDocState, body: egui::Rect, top: f32) {
     if let Some((n, s)) = pick {
         st.set_page_size(n, s);
     }
+    tip(
+        ui,
+        field(FIELD_X, y, WIDE),
+        "newdoc_page_size",
+        &crate::ui::tips::keyed("newdoc.page_size"),
+    );
     y += ROW_PITCH;
     // Width and the units.
     label(ui, y, "newdoc.width");
@@ -639,6 +676,12 @@ fn dimensions(ui: &mut Ui, st: &mut NewDocState, body: egui::Rect, top: f32) {
     ) {
         st.match_page_size();
     }
+    tip(
+        ui,
+        field(FIELD_X, y, NUMBER_W),
+        "newdoc_width",
+        &crate::ui::tips::keyed("newdoc.width"),
+    );
     let mut u = units;
     chrome::combo(
         ui,
@@ -650,6 +693,12 @@ fn dimensions(ui: &mut Ui, st: &mut NewDocState, body: egui::Rect, top: f32) {
                 ui.selectable_value(&mut u, x, x.label());
             }
         },
+    );
+    tip(
+        ui,
+        field(300.0, y, 123.0),
+        "newdoc_units",
+        &crate::ui::tips::keyed("newdoc.units"),
     );
     if u != units {
         st.settings.values.units = u.id().into();
@@ -667,6 +716,12 @@ fn dimensions(ui: &mut Ui, st: &mut NewDocState, body: egui::Rect, top: f32) {
     ) {
         st.match_page_size();
     }
+    tip(
+        ui,
+        field(FIELD_X, y, NUMBER_W),
+        "newdoc_height",
+        &crate::ui::tips::keyed("newdoc.height"),
+    );
     y += ROW_PITCH;
     // Orientation.
     label(ui, y, "newdoc.orientation");
@@ -715,6 +770,12 @@ fn dimensions(ui: &mut Ui, st: &mut NewDocState, body: egui::Rect, top: f32) {
                 ui.selectable_value(&mut dpi, r, format!("{}", r as i64));
             }
         },
+    );
+    tip(
+        ui,
+        field(FIELD_X, y, NUMBER_W),
+        "newdoc_dpi",
+        &crate::ui::tips::keyed("newdoc.resolution"),
     );
     chrome::label_at(
         ui,
@@ -771,7 +832,13 @@ fn color_settings(ui: &mut Ui, st: &mut NewDocState, body: egui::Rect, top: f32)
                 ui.selectable_value(value, o.clone(), o);
             }
         });
+        tip(ui, rect, id, &crate::ui::tips::keyed(key));
     }
+}
+
+/// The tip over a field drawn at `rect` (its box, arrows and list).
+fn tip(ui: &mut Ui, rect: egui::Rect, id: &str, tip: &str) {
+    crate::ui::tips::cover(ui, rect, egui::Id::new((id, "tip")), tip);
 }
 
 /// A length field in the drawing units with its spin arrows; true when

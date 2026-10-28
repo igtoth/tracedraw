@@ -10,6 +10,7 @@ use crate::barcode::{self, BarcodeSpec, Symbology, TextAlignment, TextOption};
 use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
 use crate::ui::dialogs::{enter_pressed, window};
+use crate::ui::tips::RichTip;
 use egui::{Color32, Context, Pos2, Rect as UiRect, Stroke, Ui, Vec2};
 use tracedraw_core::{
     document::{Shape, ShapeKind},
@@ -85,26 +86,37 @@ pub fn dialog(app: &mut App, ctx: &Context, st: &mut BarcodeState, close: &mut b
         ui.separator();
         ui.horizontal(|ui| {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let button = |ui: &mut Ui, text: String, enabled: bool| {
+                let button = |ui: &mut Ui, text: String, enabled: bool, tip: String| {
                     ui.add_enabled(
                         enabled,
                         egui::Button::new(text).min_size(egui::vec2(90.0, 27.0)),
                     )
+                    .rich_tip_always(tip)
                     .clicked()
                 };
-                if button(ui, tr("dialog.help"), true) {
+                if button(
+                    ui,
+                    tr("dialog.help"),
+                    true,
+                    crate::ui::tips::keyed("dialog.help_button"),
+                ) {
                     help = true;
                 }
-                if button(ui, tr("dialog.cancel"), true) {
+                if button(
+                    ui,
+                    tr("dialog.cancel"),
+                    true,
+                    crate::ui::tips::keyed("dialog.cancel"),
+                ) {
                     *close = true;
                 }
                 let last = st.step + 1 == STEPS;
-                let next_label = if last {
-                    tr("barcode.finish")
+                let next = if last {
+                    "barcode.finish"
                 } else {
-                    tr("barcode.next")
+                    "barcode.next"
                 };
-                if button(ui, next_label, true) || enter_pressed(ui) {
+                if button(ui, tr(next), true, crate::ui::tips::keyed(next)) || enter_pressed(ui) {
                     match barcode::build(&st.spec) {
                         Ok(_) if last => finish = true,
                         Ok(_) => {
@@ -114,7 +126,12 @@ pub fn dialog(app: &mut App, ctx: &Context, st: &mut BarcodeState, close: &mut b
                         Err(key) => st.error = tr(key),
                     }
                 }
-                if button(ui, tr("barcode.back"), st.step > 0) {
+                if button(
+                    ui,
+                    tr("barcode.back"),
+                    st.step > 0,
+                    crate::ui::tips::keyed("barcode.back"),
+                ) {
                     st.error.clear();
                     st.step -= 1;
                 }
@@ -145,7 +162,12 @@ fn step_standard(ui: &mut Ui, st: &mut BarcodeState) {
             for s in Symbology::ALL {
                 ui.selectable_value(&mut st.spec.symbology, s, s.name());
             }
-        });
+        })
+        .response
+        .rich_tip(crate::ui::tips::pair(
+            "barcode.standard",
+            "barcode.standard_desc",
+        ));
     if st.spec.symbology != before {
         // Data of one symbology rarely suits another: start from a sample.
         st.spec.data = st.spec.symbology.sample().into();
@@ -155,6 +177,7 @@ fn step_standard(ui: &mut Ui, st: &mut BarcodeState) {
     ui.label(tr(st.spec.symbology.hint_key()));
     if ui
         .add(egui::TextEdit::singleline(&mut st.spec.data).desired_width(FORM_W))
+        .rich_tip_with(|| crate::ui::tips::pair("barcode.data", st.spec.symbology.hint_key()))
         .changed()
     {
         st.error.clear();
@@ -179,7 +202,9 @@ fn step_printer(ui: &mut Ui, st: &mut BarcodeState) {
                     for d in DPI {
                         ui.selectable_value(&mut spec.dpi, d, d.to_string());
                     }
-                });
+                })
+                .response
+                .rich_tip(crate::ui::tips::keyed("barcode.printer"));
             ui.label(tr("barcode.dpi"));
             ui.end_row();
             ui.label(tr("barcode.units"));
@@ -190,7 +215,9 @@ fn step_printer(ui: &mut Ui, st: &mut BarcodeState) {
                     for u in UNITS {
                         ui.selectable_value(&mut st.units, u, u.label());
                     }
-                });
+                })
+                .response
+                .rich_tip(crate::ui::tips::keyed("barcode.units"));
             ui.label("");
             ui.end_row();
             ui.label(tr("barcode.reduction"));
@@ -198,7 +225,8 @@ fn step_printer(ui: &mut Ui, st: &mut BarcodeState) {
                 crate::ui::field::NumField::new(&mut spec.reduction_px)
                     .range(0.0..=10.0)
                     .speed(0.1),
-            );
+            )
+            .rich_tip(crate::ui::tips::keyed("barcode.reduction"));
             ui.label(tr("barcode.pixels"));
             ui.end_row();
             ui.label(tr("barcode.magnification"));
@@ -207,7 +235,8 @@ fn step_printer(ui: &mut Ui, st: &mut BarcodeState) {
                     .range(25.0..=1000.0)
                     .speed(1.0)
                     .max_decimals(1),
-            );
+            )
+            .rich_tip(crate::ui::tips::keyed("barcode.magnification"));
             ui.label("%");
             ui.end_row();
             ui.label(tr("barcode.bar"));
@@ -219,6 +248,7 @@ fn step_printer(ui: &mut Ui, st: &mut BarcodeState) {
                         .max_decimals(3)
                         .range(units.from_mm(1.0)..=units.from_mm(500.0)),
                 )
+                .rich_tip(crate::ui::tips::keyed("barcode.bar"))
                 .changed()
             {
                 spec.bar_height_mm = units.to_mm(h);
@@ -236,11 +266,16 @@ fn step_printer(ui: &mut Ui, st: &mut BarcodeState) {
                         .range(2.0..=3.0)
                         .speed(0.05)
                         .max_decimals(2),
-                );
+                )
+                .rich_tip_always(crate::ui::tips::keyed("barcode.ratio"));
             });
             ui.horizontal(|ui| {
                 ui.label(tr("barcode.to_one"));
-                if ui.button(tr("barcode.advanced")).clicked() {
+                if ui
+                    .button(tr("barcode.advanced"))
+                    .rich_tip(crate::ui::tips::keyed("barcode.advanced"))
+                    .clicked()
+                {
                     st.advanced = !st.advanced;
                 }
             });
@@ -249,11 +284,13 @@ fn step_printer(ui: &mut Ui, st: &mut BarcodeState) {
     if st.advanced {
         ui.group(|ui| {
             ui.add_enabled_ui(st.spec.symbology.optional_check(), |ui| {
-                ui.checkbox(&mut st.spec.check_digit, tr("barcode.check_digit"));
+                ui.checkbox(&mut st.spec.check_digit, tr("barcode.check_digit"))
+                    .rich_tip_always(crate::ui::tips::keyed("barcode.check_digit"));
             });
             ui.horizontal(|ui| {
                 ui.label(tr("barcode.quiet_zone"));
-                ui.add(crate::ui::field::NumField::new(&mut st.spec.quiet_zone).range(0..=50));
+                ui.add(crate::ui::field::NumField::new(&mut st.spec.quiet_zone).range(0..=50))
+                    .rich_tip(crate::ui::tips::keyed("barcode.quiet_zone"));
                 ui.label(tr("barcode.modules"));
             });
         });
@@ -281,13 +318,16 @@ fn step_text(ui: &mut Ui, st: &mut BarcodeState) {
                                 spec.font = f;
                             }
                         }
-                    });
+                    })
+                    .response
+                    .rich_tip(crate::ui::tips::keyed("barcode.font"));
                 ui.label(tr("barcode.size"));
                 ui.add(
                     crate::ui::field::NumField::new(&mut spec.size_pt)
                         .range(4.0..=72.0)
                         .speed(0.5),
-                );
+                )
+                .rich_tip(crate::ui::tips::keyed("barcode.size"));
                 ui.label(tr("barcode.pts"));
             });
             ui.end_row();
@@ -315,7 +355,9 @@ fn step_text(ui: &mut Ui, st: &mut BarcodeState) {
                             spec.italic = i;
                         }
                     }
-                });
+                })
+                .response
+                .rich_tip(crate::ui::tips::keyed("barcode.weight"));
             ui.end_row();
             ui.label(tr("barcode.alignment"));
             let aligns = [
@@ -334,7 +376,9 @@ fn step_text(ui: &mut Ui, st: &mut BarcodeState) {
                     for (a, key) in aligns {
                         ui.selectable_value(&mut spec.alignment, a, tr(key));
                     }
-                });
+                })
+                .response
+                .rich_tip(crate::ui::tips::keyed("barcode.alignment"));
             ui.end_row();
         });
     ui.add_space(4.0);
@@ -343,7 +387,8 @@ fn step_text(ui: &mut Ui, st: &mut BarcodeState) {
     let readable = spec.human_readable;
     let option = |ui: &mut Ui, on: &mut bool, o: TextOption, key: &str| {
         ui.add_enabled_ui(readable && sym.supports(o, check), |ui| {
-            ui.checkbox(on, tr(key));
+            ui.checkbox(on, tr(key))
+                .rich_tip_always(crate::ui::tips::keyed(key));
         });
     };
     egui::Grid::new("barcode_options")
@@ -404,7 +449,11 @@ fn step_text(ui: &mut Ui, st: &mut BarcodeState) {
             ui.end_row();
         });
     ui.add_space(4.0);
-    ui.checkbox(&mut spec.human_readable, tr("barcode.human_readable"));
+    ui.checkbox(&mut spec.human_readable, tr("barcode.human_readable"))
+        .rich_tip(crate::ui::tips::pair(
+            "barcode.human_readable_title",
+            "barcode.human_readable_desc",
+        ));
 }
 
 /// The picture on the left: digits running up a page, with a small symbol.
