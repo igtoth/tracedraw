@@ -107,8 +107,8 @@ Properties.
 | Home, End (with nodes chosen) | the first or last node of the curve |
 | Arrow keys (with nodes chosen) | move the chosen nodes by the nudge distance (Shift: super nudge, Ctrl: micro nudge), one undo step per press |
 | Break (property bar) | split the subpath at the node |
-| Join (property bar) | join two selected end nodes into one node halfway between them, their handles moving along and no segment added: the two ends of one open subpath close it there, ends of two subpaths make one subpath, and ends on two curves make one curve (the first chosen keeps its place and look); one undo step (Join Nodes) |
-| Drop an end node on another | dragging one end node and letting go within the pick distance of an end node of a selected curve joins the two as Join does; the curve dropped onto keeps its place and look |
+| Join (property bar) | join two selected end nodes of one curve into one node halfway between them, their handles moving along and no segment added: the two ends of one open subpath close it there, ends of two subpaths make one subpath; one undo step (Join Nodes). End nodes of two objects are not joined: the status bar says to combine them first (Object > Combine, Ctrl+L), after which they are two subpaths of one curve (#1007, `pick_drag_tests::join_takes_end_nodes_of_one_object_only`) |
+| Drop an end node on another | dragging one end node and letting go within the pick distance of another end node of the same curve joins the two as Join does; on an end node of another object it only snaps there (#1007) |
 | Extend Curve to Close | two selected end nodes are joined by a straight segment: the ends of one subpath close it, ends of two subpaths make one |
 | Extract Subpath | the subpath of the selected node becomes its own curve |
 | Reduce nodes | RDP simplification (0.3 screen pixels) of the curves with selected nodes, else of every selected curve |
