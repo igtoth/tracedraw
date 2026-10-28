@@ -93,7 +93,8 @@ pub mod template_dialog;
 pub mod text_docker;
 pub mod text_path_bar;
 pub mod time_tracker;
-#[cfg(test)]
+// The audit reads widget names, which egui keeps only in debug builds.
+#[cfg(all(test, debug_assertions))]
 mod tip_audit;
 pub mod tips;
 pub mod toolbar;
