@@ -8,6 +8,7 @@
 use crate::app::App;
 use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
+use crate::ui::tips::RichTip;
 use egui::{Color32, Key, Rect, Sense, Ui, Vec2};
 use std::collections::HashMap;
 use tracedraw_core::document::TextSpan;
@@ -885,7 +886,7 @@ fn list_body(
                 .show_value(false)
                 .clamping(egui::SliderClamping::Always),
         )
-        .on_hover_text(tr("font_list.sample_size"));
+        .rich_tip(tr("font_list.sample_size"));
         app.settings.font_sample_px = s;
         ui.label(
             egui::RichText::new("A")
@@ -968,7 +969,7 @@ fn filter_button(ui: &mut Ui, st: &mut ListState) {
     }
     let r = ui
         .add(egui::Button::selectable(st.filter_open, text))
-        .on_hover_text(tr("font_list.filter_tip"));
+        .rich_tip(tr("font_list.filter_tip"));
     st.filter_hits.clear();
     st.filter_hits.push(r.rect);
     if r.clicked() {
@@ -1086,7 +1087,7 @@ fn draw_row(
         let icon = Rect::from_min_size(egui::pos2(left, rect.center().y - 8.0), Vec2::splat(16.0));
         let tip = kind_icon(&painter, icon, info.as_ref());
         if ui.rect_contains_pointer(icon) {
-            resp.clone().on_hover_text(tip);
+            resp.clone().rich_tip(tip);
         }
         left = icon.right() + 8.0;
     }
@@ -1121,7 +1122,7 @@ fn draw_row(
         ));
         if hot {
             resp.clone()
-                .on_hover_text(trf("font_list.styles", &[("n", &faces.to_string())]));
+                .rich_tip(trf("font_list.styles", &[("n", &faces.to_string())]));
         }
         if resp.clicked() && hot {
             out.toggled = true;

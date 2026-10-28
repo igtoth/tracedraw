@@ -5,6 +5,7 @@ use crate::app::{App, DockerTab};
 use crate::i18n::tr;
 use crate::theme::Tokens;
 use crate::ui::dialogs::Dialog;
+use crate::ui::tips::RichTip;
 use egui::Ui;
 use tracedraw_core::document::ShapeKind;
 use tracedraw_core::Command;
@@ -410,7 +411,7 @@ fn item_text_tip(
     let shortcut = invoke::shown_shortcut(id, shortcut);
     let (r, _) = menu_row(ui, label, &shortcut, enabled, Mark::None);
     let r = match tip {
-        Some(t) if !enabled => r.on_hover_text(t),
+        Some(t) if !enabled => r.rich_tip(t),
         _ => r,
     };
     if marked_new(id) {
@@ -1870,7 +1871,7 @@ fn file_menu(app: &mut App, ui: &mut Ui) {
                 .unwrap_or_default();
             if menu_row(ui, &name, "", true, Mark::None)
                 .0
-                .on_hover_text(p.display().to_string())
+                .rich_tip(p.display().to_string())
                 .clicked()
             {
                 ui.close();

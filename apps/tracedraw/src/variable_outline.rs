@@ -8,6 +8,7 @@
 //! nodes' reach and removes nodes.
 
 use crate::app::App;
+use crate::ui::tips::RichTip;
 use egui::{Color32, Modifiers, Painter, PointerButton, Response, Stroke as EStroke};
 use tracedraw_core::geometry::{Affine, BezPath, Point};
 use tracedraw_core::{Command, ShapeId, Stroke, WidthNode};
@@ -735,7 +736,7 @@ pub fn variable_outline_bar(app: &mut App, ui: &mut egui::Ui) {
     }
     if ui
         .add_enabled(has_nodes, egui::Button::new(tr("vo.clear")))
-        .on_hover_text(tr("vo.clear_hint"))
+        .rich_tip(tr("vo.clear_hint"))
         .clicked()
     {
         app.clear_variable_outline();

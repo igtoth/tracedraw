@@ -1289,6 +1289,45 @@ pub(crate) fn label_pic(ui: &mut Ui, pic: Pic, tip: &str) {
     resp.rich_tip(tip);
 }
 
+/// A row with a label picture and what follows it (a field), all of it
+/// showing the tip of `key` (its name and the `key_desc` description).
+pub(crate) fn tip_row<R>(ui: &mut Ui, pic: Pic, key: &str, add: impl FnOnce(&mut Ui) -> R) -> R {
+    let tip = crate::ui::tips::keyed(key);
+    crate::ui::tips::tip_over(ui, &tip, |ui| {
+        row(ui, |ui| {
+            draw_label_pic(ui, pic);
+            add(ui)
+        })
+    })
+}
+
+/// [`tip_row`] with a text label ("X:") in place of the picture.
+pub(crate) fn tip_text_row<R>(
+    ui: &mut Ui,
+    label: &str,
+    key: &str,
+    add: impl FnOnce(&mut Ui) -> R,
+) -> R {
+    let tip = crate::ui::tips::keyed(key);
+    crate::ui::tips::tip_over(ui, &tip, |ui| {
+        row(ui, |ui| {
+            label_text(ui, label);
+            add(ui)
+        })
+    })
+}
+
+/// A label picture without a tip of its own.
+fn draw_label_pic(ui: &mut Ui, pic: Pic) {
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(16.0, ROW), Sense::hover());
+    draw_pic(
+        ui.painter(),
+        Rect::from_center_size(rect.center(), Vec2::splat(13.0)),
+        pic,
+        Tokens::icon(),
+    );
+}
+
 /// A text label before a field ("X:", "Units:").
 pub(crate) fn label_text(ui: &mut Ui, text: &str) {
     ui.add_sized(
@@ -1479,30 +1518,25 @@ pub fn guide_bar(app: &mut App, ui: &mut Ui) {
     }
 }
 
-/// The page bar's list of sizes: the presets, then Custom (#650), which
-/// is the one ticked when the page matches no preset and opens the Page
-/// Size dialog with the page's width and height to type any size.
-fn page_size_list(
-    app: &mut App,
-    ui: &mut Ui,
-    presets: &[(&'static str, Size)],
-    current: &str,
-    size: Size,
-) {
-    for (n, s) in presets {
-        if ui.selectable_label(current == *n, *n).clicked() {
-            let landscape = size.width > size.height;
-            let s = if landscape {
-                Size::new(s.height.max(s.width), s.height.min(s.width))
-            } else {
-                Size::new(s.width.min(s.height), s.width.max(s.height))
-            };
-            resize_pages(app, s);
-            app.fit_pending = true;
-        }
+/// The page bar's list of sizes: the presets by group, then Custom
+/// (#650), which is the one ticked when the page matches no preset and
+/// opens the Page Size dialog with the page's width and height to type
+/// any size, and Edit This List, which opens Document Options > Page Size
+/// to save or delete sizes.
+fn page_size_list(app: &mut App, ui: &mut Ui, current: &str, size: Size) {
+    let saved = app.settings.page_sizes.clone();
+    if let Some((_, s)) = crate::ui::dialogs::paper_preset_menu(ui, current, &saved) {
+        let landscape = size.width > size.height;
+        let s = if landscape {
+            Size::new(s.height.max(s.width), s.height.min(s.width))
+        } else {
+            Size::new(s.width.min(s.height), s.width.max(s.height))
+        };
+        resize_pages(app, s);
+        app.fit_pending = true;
     }
     ui.separator();
-    let custom = !presets.iter().any(|(n, _)| current == *n);
+    let custom = crate::ui::dialogs::paper_name(size, &saved).is_none();
     if ui
         .selectable_label(custom, tr("toolbar.custom_page"))
         .clicked()
@@ -1513,6 +1547,11 @@ fn page_size_list(
             all_pages: app.page_size_all,
         };
     }
+    if ui.button(tr("toolbar.edit_page_sizes")).clicked() {
+        app.dialog = crate::ui::dialogs::Dialog::Options;
+        app.options_page = crate::ui::dialogs::OptionsPage::PageSize;
+        ui.close();
+    }
 }
 
 /// Autofit Page's popup (there is one property bar).
@@ -1522,14 +1561,7 @@ pub(crate) fn autofit_popup_id() -> egui::Id {
 
 pub fn page_bar(app: &mut App, ui: &mut Ui) {
     let size = app.page_size();
-    let presets = crate::ui::dialogs::paper_presets();
-    let current = presets
-        .iter()
-        .find(|(_, s)| {
-            ((s.width - size.width).abs() < 0.05 && (s.height - size.height).abs() < 0.05)
-                || ((s.height - size.width).abs() < 0.05 && (s.width - size.height).abs() < 0.05)
-        })
-        .map(|(n, _)| n.to_string())
+    let current = crate::ui::dialogs::paper_name(size, &app.settings.page_sizes)
         .unwrap_or_else(|| tr("toolbar.custom"));
     ui.allocate_ui_with_layout(
         Vec2::new(200.0, BAR_H),
@@ -1539,19 +1571,19 @@ pub fn page_bar(app: &mut App, ui: &mut Ui) {
                 .selected_text(current.clone())
                 .width(192.0)
                 .height(400.0)
-                .show_ui(ui, |ui| page_size_list(app, ui, &presets, &current, size));
+                .show_ui(ui, |ui| page_size_list(app, ui, &current, size))
+                .response
+                .rich_tip(crate::ui::tips::keyed("toolbar.page_size"));
         },
     );
     let mut new_size = None;
     stacked(ui, |ui| {
-        row(ui, |ui| {
-            label_pic(ui, Pic::PageWidth, &tr("toolbar.page_width"));
+        tip_row(ui, Pic::PageWidth, "toolbar.page_width", |ui| {
             if let Some(w) = paper_distance(ui, app, size.width, 92.0, Some(1.0)) {
                 new_size = Some(Size::new(w, size.height));
             }
         });
-        row(ui, |ui| {
-            label_pic(ui, Pic::PageHeight, &tr("toolbar.page_height"));
+        tip_row(ui, Pic::PageHeight, "toolbar.page_height", |ui| {
             if let Some(h) = paper_distance(ui, app, size.height, 92.0, Some(1.0)) {
                 new_size = Some(Size::new(size.width, h));
             }
@@ -1678,27 +1710,28 @@ pub fn page_bar(app: &mut App, ui: &mut Ui) {
             for v in Units::ALL {
                 ui.selectable_value(&mut u, v, v.label());
             }
-        });
+        })
+        .response
+        .rich_tip(crate::ui::tips::keyed("toolbar.units"));
     app.units = u;
     sep(ui);
-    label_pic(ui, Pic::Nudge, &tr("toolbar.nudge_tip"));
-    if let Some(n) = distance(ui, app, app.nudge_mm, 84.0, Some(0.1)) {
-        if n > 0.0 {
-            app.nudge_mm = n;
+    tip_row(ui, Pic::Nudge, "toolbar.nudge_tip", |ui| {
+        if let Some(n) = distance(ui, app, app.nudge_mm, 84.0, Some(0.1)) {
+            if n > 0.0 {
+                app.nudge_mm = n;
+            }
         }
-    }
+    });
     sep(ui);
     let dup = app.duplicate_offset;
     let mut new_dup = None;
     stacked(ui, |ui| {
-        row(ui, |ui| {
-            label_pic(ui, Pic::DupX, &tr("toolbar.duplicate_x_tip"));
+        tip_row(ui, Pic::DupX, "toolbar.duplicate_x_tip", |ui| {
             if let Some(x) = distance(ui, app, dup.x, 92.0, Some(0.1)) {
                 new_dup = Some(tracedraw_core::geometry::Vec2::new(x, dup.y));
             }
         });
-        row(ui, |ui| {
-            label_pic(ui, Pic::DupY, &tr("toolbar.duplicate_y_tip"));
+        tip_row(ui, Pic::DupY, "toolbar.duplicate_y_tip", |ui| {
             if let Some(y) = distance(ui, app, dup.y, 92.0, Some(0.1)) {
                 new_dup = Some(tracedraw_core::geometry::Vec2::new(dup.x, y));
             }
@@ -1846,14 +1879,12 @@ pub fn object_bar(app: &mut App, ui: &mut Ui) {
     let refp = origin_point(b, app.object_origin);
     let mut moved: Option<Point> = None;
     stacked(ui, |ui| {
-        row(ui, |ui| {
-            label_text(ui, "X:");
+        tip_text_row(ui, "X:", "toolbar.object_x", |ui| {
             if let Some(x) = distance(ui, app, refp.x - o.x, 100.0, None) {
                 moved = Some(Point::new(x + o.x, refp.y));
             }
         });
-        row(ui, |ui| {
-            label_text(ui, "Y:");
+        tip_text_row(ui, "Y:", "toolbar.object_y", |ui| {
             if let Some(y) = distance(ui, app, refp.y - o.y, 100.0, None) {
                 moved = Some(Point::new(refp.x, y + o.y));
             }
@@ -1867,15 +1898,13 @@ pub fn object_bar(app: &mut App, ui: &mut Ui) {
     let mut size: Option<(f64, f64)> = None;
     let locked = app.scale_locked;
     stacked(ui, |ui| {
-        row(ui, |ui| {
-            label_pic(ui, Pic::Width, &tr("toolbar.object_width"));
+        tip_row(ui, Pic::Width, "toolbar.object_width", |ui| {
             if let Some(nw) = distance(ui, app, w, 92.0, None) {
                 let nh = if locked && w > 1e-9 { h * nw / w } else { h };
                 size = Some((nw, nh));
             }
         });
-        row(ui, |ui| {
-            label_pic(ui, Pic::Height, &tr("toolbar.object_height"));
+        tip_row(ui, Pic::Height, "toolbar.object_height", |ui| {
             if let Some(nh) = distance(ui, app, h, 92.0, None) {
                 let nw = if locked && h > 1e-9 { w * nh / h } else { w };
                 size = Some((nw, nh));
@@ -1886,25 +1915,32 @@ pub fn object_bar(app: &mut App, ui: &mut Ui) {
     let mut scale: Option<(f64, f64)> = None;
     stacked(ui, |ui| {
         for horizontal in [true, false] {
-            row(ui, |ui| {
-                let mut pct = 100.0f64;
-                let r = ui.add_sized(
-                    [64.0, ROW],
-                    crate::ui::field::NumField::new(&mut pct)
-                        .speed(0.5)
-                        .fixed_decimals(1)
-                        .suffix(" %"),
-                );
-                if r.changed() && (pct - 100.0).abs() > 1e-9 && pct > 0.0 {
-                    let f = pct / 100.0;
-                    scale = Some(if locked {
-                        (f, f)
-                    } else if horizontal {
-                        (f, 1.0)
-                    } else {
-                        (1.0, f)
-                    });
-                }
+            let key = if horizontal {
+                "toolbar.scale_x"
+            } else {
+                "toolbar.scale_y"
+            };
+            crate::ui::tips::tip_over(ui, crate::ui::tips::keyed(key), |ui| {
+                row(ui, |ui| {
+                    let mut pct = 100.0f64;
+                    let r = ui.add_sized(
+                        [64.0, ROW],
+                        crate::ui::field::NumField::new(&mut pct)
+                            .speed(0.5)
+                            .fixed_decimals(1)
+                            .suffix(" %"),
+                    );
+                    if r.changed() && (pct - 100.0).abs() > 1e-9 && pct > 0.0 {
+                        let f = pct / 100.0;
+                        scale = Some(if locked {
+                            (f, f)
+                        } else if horizontal {
+                            (f, 1.0)
+                        } else {
+                            (1.0, f)
+                        });
+                    }
+                })
             });
         }
     });
@@ -1932,8 +1968,10 @@ pub fn object_bar(app: &mut App, ui: &mut Ui) {
         );
     }
     sep(ui);
-    label_pic(ui, Pic::Rotate, &tr("toolbar.rotation_angle"));
-    rotation_field(app, ui, refp);
+    crate::ui::tips::tip_over(ui, crate::ui::tips::keyed("toolbar.rotation_angle"), |ui| {
+        draw_label_pic(ui, Pic::Rotate);
+        rotation_field(app, ui, refp);
+    });
     sep(ui);
     if pic_button(ui, Pic::MirrorH, &tr("toolbar.mirror_h"), true, false).clicked() {
         app.mirror(true);
@@ -2128,6 +2166,10 @@ fn outline_width_box(
         }
         let (arrow_rect, arrow) =
             ui.allocate_exact_size(egui::vec2(16.0, resp.rect.height()), egui::Sense::click());
+        let arrow = arrow.rich_tip(crate::ui::tips::pair(
+            "toolbar.outline_width",
+            "toolbar.outline_widths_desc",
+        ));
         if arrow.hovered() {
             ui.painter().rect_filled(
                 arrow_rect.shrink(1.0),
@@ -2284,7 +2326,9 @@ pub fn outline_part(app: &mut App, ui: &mut Ui) {
             if ui.button(tr("docker.edit_line_style")).clicked() {
                 crate::ui::line_style::request(ui);
             }
-        });
+        })
+        .response
+        .rich_tip(crate::ui::tips::keyed("toolbar.line_style"));
     // Arrowheads at the start and the end.
     for start in [true, false] {
         let current = stroke
@@ -2342,7 +2386,13 @@ pub fn outline_part(app: &mut App, ui: &mut Ui) {
                     }
                 }
             }
-        });
+        })
+        .response
+        .rich_tip(crate::ui::tips::keyed(if start {
+            "toolbar.start_arrow"
+        } else {
+            "toolbar.end_arrow"
+        }));
     }
 }
 
@@ -2440,23 +2490,30 @@ pub fn ellipse_part(app: &mut App, ui: &mut Ui) {
     let angles_on = mode != 0;
     stacked(ui, |ui| {
         for start in [true, false] {
-            row(ui, |ui| {
-                let mut v = if start { arc.start_deg } else { arc.end_deg };
-                let r = ui.add_enabled(
-                    angles_on,
-                    crate::ui::field::NumField::new(&mut v)
-                        .speed(1.0)
-                        .fixed_decimals(1)
-                        .suffix(" \u{00B0}"),
-                );
-                if angles_on && r.changed() {
-                    if start {
-                        arc.start_deg = v;
-                    } else {
-                        arc.end_deg = v;
+            let key = if start {
+                "toolbar.arc_start"
+            } else {
+                "toolbar.arc_end"
+            };
+            crate::ui::tips::tip_over(ui, crate::ui::tips::keyed(key), |ui| {
+                row(ui, |ui| {
+                    let mut v = if start { arc.start_deg } else { arc.end_deg };
+                    let r = ui.add_enabled(
+                        angles_on,
+                        crate::ui::field::NumField::new(&mut v)
+                            .speed(1.0)
+                            .fixed_decimals(1)
+                            .suffix(" \u{00B0}"),
+                    );
+                    if angles_on && r.changed() {
+                        if start {
+                            arc.start_deg = v;
+                        } else {
+                            arc.end_deg = v;
+                        }
+                        new = Some(arc);
                     }
-                    new = Some(arc);
-                }
+                })
             });
         }
     });
@@ -2541,16 +2598,24 @@ pub fn polygon_part(app: &mut App, ui: &mut Ui, star: bool) {
             .map(|s| (s.2, s.4.unwrap_or(1)))
             .unwrap_or((app.complex_points, app.complex_sharpness));
         let (n0, k0) = (n, k);
-        ui.label(tr("toolbar.points_sides"));
-        ui.add_sized(
-            [56.0, ROW + 4.0],
-            crate::ui::field::NumField::new(&mut n).range(COMPLEX_STAR_MIN_POINTS..=500),
-        );
-        ui.label(tr("toolbar.sharpness"));
+        crate::ui::tips::tip_over(ui, crate::ui::tips::keyed("toolbar.points_tip"), |ui| {
+            ui.label(tr("toolbar.points_sides"));
+            ui.add_sized(
+                [56.0, ROW + 4.0],
+                crate::ui::field::NumField::new(&mut n).range(COMPLEX_STAR_MIN_POINTS..=500),
+            );
+        });
         let max = complex_star_max_sharpness(n);
-        ui.add_sized(
-            [56.0, ROW + 4.0],
-            crate::ui::field::NumField::new(&mut k).range(1..=max),
+        crate::ui::tips::tip_over(
+            ui,
+            crate::ui::tips::keyed("toolbar.complex_sharpness_tip"),
+            |ui| {
+                ui.label(tr("toolbar.sharpness"));
+                ui.add_sized(
+                    [56.0, ROW + 4.0],
+                    crate::ui::field::NumField::new(&mut k).range(1..=max),
+                );
+            },
         );
         let k = k.clamp(1, complex_star_max_sharpness(n));
         if n != n0 || k != k0 {
@@ -2584,23 +2649,27 @@ pub fn polygon_part(app: &mut App, ui: &mut Ui, star: bool) {
         .unwrap_or((app.polygon_points, app.star_sharpness));
     let star = star || selected.first().is_some_and(|s| s.3 > 0.0);
     let (n0, s0) = (n, sharp);
-    ui.label(tr("toolbar.points_sides"));
-    ui.add_sized(
-        [56.0, ROW + 4.0],
-        crate::ui::field::NumField::new(&mut n).range(3..=500),
-    );
+    crate::ui::tips::tip_over(ui, crate::ui::tips::keyed("toolbar.points_tip"), |ui| {
+        ui.label(tr("toolbar.points_sides"));
+        ui.add_sized(
+            [56.0, ROW + 4.0],
+            crate::ui::field::NumField::new(&mut n).range(3..=500),
+        );
+    });
     if star {
-        ui.label(tr("toolbar.sharpness"));
-        let mut pct = (sharp * 100.0).round();
-        if ui
-            .add_sized(
-                [56.0, ROW + 4.0],
-                crate::ui::field::NumField::new(&mut pct).range(1.0..=99.0),
-            )
-            .changed()
-        {
-            sharp = (pct / 100.0).clamp(0.01, 0.99);
-        }
+        crate::ui::tips::tip_over(ui, crate::ui::tips::keyed("toolbar.sharpness_tip"), |ui| {
+            ui.label(tr("toolbar.sharpness"));
+            let mut pct = (sharp * 100.0).round();
+            if ui
+                .add_sized(
+                    [56.0, ROW + 4.0],
+                    crate::ui::field::NumField::new(&mut pct).range(1.0..=99.0),
+                )
+                .changed()
+            {
+                sharp = (pct / 100.0).clamp(0.01, 0.99);
+            }
+        });
     }
     if n != n0 || (sharp - s0).abs() > 1e-9 {
         app.polygon_points = n;
@@ -2643,15 +2712,16 @@ pub fn char_offset_part(app: &mut App, ui: &mut Ui) {
                  val: &mut f64,
                  range: std::ops::RangeInclusive<f64>,
                  suffix: &str| {
-        ui.label(label).rich_tip(tr(tip));
-        ui.add_sized(
-            [72.0, ROW + 4.0],
-            crate::ui::field::NumField::new(val)
-                .range(range)
-                .max_decimals(1)
-                .suffix(suffix),
-        )
-        .rich_tip(tr(tip));
+        crate::ui::tips::tip_over(ui, crate::ui::tips::keyed(tip), |ui| {
+            ui.label(label);
+            ui.add_sized(
+                [72.0, ROW + 4.0],
+                crate::ui::field::NumField::new(val)
+                    .range(range)
+                    .max_decimals(1)
+                    .suffix(suffix),
+            );
+        });
     };
     field(
         ui,
@@ -2788,11 +2858,19 @@ pub fn rectangle_part(app: &mut App, ui: &mut Ui) {
     ] {
         stacked(ui, |ui| {
             for i in column {
-                row(ui, |ui| {
-                    let mixed = mix.get(i + 1).copied().unwrap_or(false);
-                    if let Some(v) = distance_mixed(ui, app, current.radii[i], 66.0, mixed) {
-                        edit = Some(CornerEdit::Size(i, v));
-                    }
+                let key = match i {
+                    Corners::TOP_LEFT => "toolbar.corner_top_left",
+                    Corners::TOP_RIGHT => "toolbar.corner_top_right",
+                    Corners::BOTTOM_LEFT => "toolbar.corner_bottom_left",
+                    _ => "toolbar.corner_bottom_right",
+                };
+                crate::ui::tips::tip_over(ui, crate::ui::tips::keyed(key), |ui| {
+                    row(ui, |ui| {
+                        let mixed = mix.get(i + 1).copied().unwrap_or(false);
+                        if let Some(v) = distance_mixed(ui, app, current.radii[i], 66.0, mixed) {
+                            edit = Some(CornerEdit::Size(i, v));
+                        }
+                    })
                 });
             }
         });
@@ -3405,7 +3483,6 @@ mod tests {
         let ctx = crate::theme::ui_context();
         let mut app = App::headless();
         let size = Size::new(123.0, 45.0);
-        let presets = crate::ui::dialogs::paper_presets();
         let custom = tr("toolbar.custom_page");
         let run = |app: &mut App, events: Vec<egui::Event>| -> Option<egui::Rect> {
             let mut out = ctx.run_ui(
@@ -3413,7 +3490,7 @@ mod tests {
                     events,
                     ..Default::default()
                 },
-                |ui| page_size_list(app, ui, &presets, "Custom", size),
+                |ui| page_size_list(app, ui, "Custom", size),
             );
             out.textures_delta.clear();
             out.shapes.iter().find_map(|c| match &c.shape {

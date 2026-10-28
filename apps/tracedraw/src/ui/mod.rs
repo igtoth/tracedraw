@@ -93,6 +93,8 @@ pub mod template_dialog;
 pub mod text_docker;
 pub mod text_path_bar;
 pub mod time_tracker;
+#[cfg(test)]
+mod tip_audit;
 pub mod tips;
 pub mod toolbar;
 pub mod toolbox;
@@ -107,6 +109,7 @@ use crate::app::App;
 use crate::canvas;
 use crate::i18n::tr;
 use crate::theme::Tokens;
+use crate::ui::tips::RichTip;
 use egui::{Frame, Panel, Sense, Ui};
 use tracedraw_core::geometry::Point;
 
@@ -301,7 +304,9 @@ fn root_frame(app: &mut App, ui: &mut Ui) {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
     }
-    if !app.has_document() {
+    // With no drawing open the Welcome Screen shows, unless its tab was
+    // closed: then the workspace stays empty (#1081).
+    if !app.has_document() && !app.settings.welcome_tab_closed {
         app.show_welcome = true;
     }
     // Files dropped on the window, and what a drop would do while they
@@ -564,6 +569,14 @@ fn root_frame(app: &mut App, ui: &mut Ui) {
         egui::CentralPanel::default()
             .frame(Frame::new().fill(Tokens::panel()))
             .show(ui, |ui| welcome::welcome_screen(app, ui));
+        dialogs::show(app, &ctx);
+        return;
+    }
+    // The Welcome Screen closed and no drawing open: an empty workspace.
+    if !app.has_document() {
+        egui::CentralPanel::default()
+            .frame(Frame::new().fill(Tokens::panel()))
+            .show(ui, |_| {});
         dialogs::show(app, &ctx);
         return;
     }
@@ -835,7 +848,7 @@ pub(crate) fn view_navigator(app: &mut App, ui: &mut Ui, corner: egui::Rect, can
     painter.line_segment([c + egui::vec2(3.3, 3.3), c + egui::vec2(6.5, 6.5)], s);
     painter.line_segment([c + egui::vec2(-2.5, 0.0), c + egui::vec2(2.5, 0.0)], s);
     painter.line_segment([c + egui::vec2(0.0, -2.5), c + egui::vec2(0.0, 2.5)], s);
-    let resp = resp.on_hover_text(crate::i18n::tr("status.navigator"));
+    let resp = resp.rich_tip(crate::i18n::tr("status.navigator"));
     let down = ui.input(|i| i.pointer.primary_down());
     if resp.drag_started() || resp.is_pointer_button_down_on() {
         app.navigator_open = true;

@@ -10,6 +10,7 @@ use crate::i18n::{tr, trf};
 use crate::picture_mosaic::{grid, tile_pixels, Composition, Edges, Priority};
 use crate::theme::Tokens;
 use crate::ui::docker_form::{indented, row, section, wide_button};
+use crate::ui::tips::RichTip;
 use egui::{RichText, Ui};
 
 /// The library section: the picture count, the folder, Browse and the
@@ -49,7 +50,7 @@ fn library(app: &mut App, ui: &mut Ui) {
     row(ui, &tr("docker.picture_mosaic_path"), |ui| {
         let r = ui.add(egui::Label::new(name).truncate());
         if !full.is_empty() {
-            r.on_hover_text(full);
+            r.rich_tip(full);
         }
     });
     let busy = app.picture_mosaic_job.is_some();
@@ -60,7 +61,7 @@ fn library(app: &mut App, ui: &mut Ui) {
                 egui::Button::new(tr("docker.picture_mosaic_browse"))
                     .min_size(egui::vec2(100.0, 24.0)),
             )
-            .on_hover_text(tr("docker.picture_mosaic_browse_tip"))
+            .rich_tip(tr("docker.picture_mosaic_browse_tip"))
             .clicked()
         {
             if let Some(dir) = crate::files::pick_folder() {
@@ -145,7 +146,7 @@ pub fn picture_mosaic(app: &mut App, ui: &mut Ui) {
             s.duplicates,
             crate::ui::field::NumField::new(&mut s.spacing).range(0..=20),
         )
-        .on_hover_text(tr("docker.picture_mosaic_spacing_tip"));
+        .rich_tip(tr("docker.picture_mosaic_spacing_tip"));
     });
     section(ui, Some(&tr("docker.form_output")));
     let combo = |ui: &mut Ui, id: &str, text: String, add: &mut dyn FnMut(&mut Ui)| {

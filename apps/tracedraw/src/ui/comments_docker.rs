@@ -8,6 +8,7 @@ use crate::app::App;
 use crate::comments::{MarkKind, MARK};
 use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
+use crate::ui::tips::RichTip;
 use egui::{RichText, Ui};
 
 fn dim(ui: &mut Ui, text: String) {
@@ -35,7 +36,7 @@ pub fn comments_docker(app: &mut App, ui: &mut Ui) {
             let on = app.comments.placing == Some(kind);
             if ui
                 .add_enabled(drawing, egui::Button::new(tr(key)).selected(on))
-                .on_hover_text(tr(tip))
+                .rich_tip(tr(tip))
                 .clicked()
             {
                 app.comments.placing = if on { None } else { Some(kind) };

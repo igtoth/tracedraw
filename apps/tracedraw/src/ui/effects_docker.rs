@@ -6,6 +6,7 @@
 use crate::app::App;
 use crate::i18n::tr;
 use crate::theme::Tokens;
+use crate::ui::tips::RichTip;
 use egui::Ui;
 use tracedraw_core::live::Effect;
 use tracedraw_core::{Command, Shape};
@@ -68,7 +69,7 @@ pub fn effects_docker(app: &mut App, ui: &mut Ui) {
             let mut shown = *on;
             if ui
                 .checkbox(&mut shown, "")
-                .on_hover_text(tr("effects.toggle"))
+                .rich_tip(tr("effects.toggle"))
                 .changed()
             {
                 change = Some(Change::Toggle(i));
@@ -82,21 +83,21 @@ pub fn effects_docker(app: &mut App, ui: &mut Ui) {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui
                     .small_button("\u{00D7}")
-                    .on_hover_text(tr("effects.remove"))
+                    .rich_tip(tr("effects.remove"))
                     .clicked()
                 {
                     change = Some(Change::Remove(i));
                 }
                 if ui
                     .add_enabled(i + 1 < n, egui::Button::new("\u{25BC}").small())
-                    .on_hover_text(tr("effects.down"))
+                    .rich_tip(tr("effects.down"))
                     .clicked()
                 {
                     change = Some(Change::Down(i));
                 }
                 if ui
                     .add_enabled(i > 0, egui::Button::new("\u{25B2}").small())
-                    .on_hover_text(tr("effects.up"))
+                    .rich_tip(tr("effects.up"))
                     .clicked()
                 {
                     change = Some(Change::Up(i));

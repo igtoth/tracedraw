@@ -9,6 +9,7 @@
 
 use crate::app::App;
 use crate::tools::Tool;
+use crate::ui::tips::RichTip;
 use egui::{Color32, Painter, Pos2, Stroke as EStroke};
 use std::collections::HashSet;
 use tracedraw_core::geometry::{Affine, Point, Rect};
@@ -620,7 +621,7 @@ pub fn show_bar(app: &mut App, ctx: &egui::Context) {
                     let some = !app.selection.is_empty();
                     if ui
                         .add_enabled(some, egui::Button::new(tr("perspective.put_on_plane")))
-                        .on_hover_text(tr("perspective.put_on_plane_tip"))
+                        .rich_tip(tr("perspective.put_on_plane_tip"))
                         .clicked()
                     {
                         app.lay_selection_onto_plane();

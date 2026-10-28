@@ -12,6 +12,7 @@
 use crate::app::{App, Units};
 use crate::i18n::tr;
 use crate::theme::Tokens;
+use crate::ui::tips::RichTip;
 use egui::{Context, Ui};
 use serde::{Deserialize, Serialize};
 use tracedraw_core::geometry::Size;
@@ -265,17 +266,9 @@ impl NewDocState {
 
     /// After a typed width or height: the page size name that matches, in
     /// either orientation, or Custom.
-    fn match_page_size(&mut self) {
+    fn match_page_size(&mut self, saved: &[crate::settings::PageSizePreset]) {
         let v = &mut self.settings.values;
-        let (w, h) = (v.width_mm, v.height_mm);
-        v.page_size = crate::ui::dialogs::paper_presets()
-            .iter()
-            .find(|(_, s)| {
-                let close = |a: f64, b: f64| (a - b).abs() < 0.05;
-                (close(s.width, w) && close(s.height, h))
-                    || (close(s.width, h) && close(s.height, w))
-            })
-            .map(|(n, _)| n.to_string())
+        v.page_size = crate::ui::dialogs::paper_name(Size::new(v.width_mm, v.height_mm), saved)
             .unwrap_or_else(|| CUSTOM.into());
         self.settings.refresh_preset();
     }
@@ -306,6 +299,7 @@ pub fn new_document_dialog(app: &mut App, ctx: &Context, st: &mut NewDocState, c
     let outer_dpi = crate::app::pixel_dpi();
     crate::app::set_pixel_dpi(st.settings.values.dpi);
     let mut ok = false;
+    let saved_sizes = app.settings.page_sizes.clone();
     let extra = if st.color_settings_open {
         COLOR_ROWS * ROW_PITCH
     } else {
@@ -423,7 +417,7 @@ pub fn new_document_dialog(app: &mut App, ctx: &Context, st: &mut NewDocState, c
             );
             y += ROW_PITCH + 42.0;
             chrome::heading(ui, at(14.0, y - 16.0), &tr("newdoc.dimensions"));
-            dimensions(ui, st, body, y);
+            dimensions(ui, st, body, y, &saved_sizes);
             y += 5.0 * ROW_PITCH + 26.0;
             // Colour settings: a bold header with a triangle; open, the
             // profiles and the intent.
@@ -467,7 +461,7 @@ pub fn new_document_dialog(app: &mut App, ctx: &Context, st: &mut NewDocState, c
             // The bottom row.
             let help = egui::Rect::from_min_size(at(14.0, y), egui::vec2(FIELD_H, FIELD_H));
             if chrome::button_at(ui, help, "?")
-                .on_hover_text(tr("menu.help.product_help"))
+                .rich_tip(tr("menu.help.product_help"))
                 .clicked()
             {
                 app.open_dialog_help();
@@ -589,7 +583,13 @@ fn preset_row(ui: &mut Ui, st: &mut NewDocState, rect: egui::Rect, menu_at: egui
         });
 }
 
-fn dimensions(ui: &mut Ui, st: &mut NewDocState, body: egui::Rect, top: f32) {
+fn dimensions(
+    ui: &mut Ui,
+    st: &mut NewDocState,
+    body: egui::Rect,
+    top: f32,
+    saved: &[crate::settings::PageSizePreset],
+) {
     use crate::ui::chrome::{self, FIELD_H, ROW_PITCH};
     let units = st.units();
     let at = |x: f32, y: f32| body.min + egui::vec2(x, y);
@@ -613,18 +613,11 @@ fn dimensions(ui: &mut Ui, st: &mut NewDocState, body: egui::Rect, top: f32) {
         field(FIELD_X, y, WIDE),
         shown,
         |ui| {
-            for (n, s) in crate::ui::dialogs::paper_presets() {
-                if ui
-                    .selectable_label(st.settings.values.page_size == n, n)
-                    .clicked()
-                {
-                    pick = Some((n, s));
-                }
-            }
+            pick = crate::ui::dialogs::paper_preset_menu(ui, &st.settings.values.page_size, saved);
         },
     );
     if let Some((n, s)) = pick {
-        st.set_page_size(n, s);
+        st.set_page_size(&n, s);
     }
     y += ROW_PITCH;
     // Width and the units.
@@ -636,7 +629,7 @@ fn dimensions(ui: &mut Ui, st: &mut NewDocState, body: egui::Rect, top: f32) {
         &mut st.settings.values.width_mm,
         units,
     ) {
-        st.match_page_size();
+        st.match_page_size(saved);
     }
     let mut u = units;
     chrome::combo(
@@ -664,7 +657,7 @@ fn dimensions(ui: &mut Ui, st: &mut NewDocState, body: egui::Rect, top: f32) {
         &mut st.settings.values.height_mm,
         units,
     ) {
-        st.match_page_size();
+        st.match_page_size(saved);
     }
     y += ROW_PITCH;
     // Orientation.
@@ -672,7 +665,7 @@ fn dimensions(ui: &mut Ui, st: &mut NewDocState, body: egui::Rect, top: f32) {
     let v = &mut st.settings.values;
     let landscape = v.width_mm > v.height_mm;
     if orientation_button(ui, field(FIELD_X, y, FIELD_H), false, !landscape)
-        .on_hover_text(tr("dialog.portrait"))
+        .rich_tip(tr("dialog.portrait"))
         .clicked()
         && landscape
     {
@@ -681,7 +674,7 @@ fn dimensions(ui: &mut Ui, st: &mut NewDocState, body: egui::Rect, top: f32) {
     }
     let v = &mut st.settings.values;
     if orientation_button(ui, field(FIELD_X + 33.0, y, FIELD_H), true, landscape)
-        .on_hover_text(tr("dialog.landscape"))
+        .rich_tip(tr("dialog.landscape"))
         .clicked()
         && !landscape
     {
@@ -881,10 +874,10 @@ mod tests {
         assert!((st.settings.values.width_mm - 420.0).abs() < 1e-9);
         st.settings.values.width_mm = 279.4;
         st.settings.values.height_mm = 215.9;
-        st.match_page_size();
+        st.match_page_size(&[]);
         assert_eq!(st.settings.values.page_size, "Letter");
         st.settings.values.width_mm = 100.0;
-        st.match_page_size();
+        st.match_page_size(&[]);
         assert_eq!(st.settings.values.page_size, CUSTOM);
     }
 

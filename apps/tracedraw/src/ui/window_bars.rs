@@ -209,7 +209,15 @@ enum Dir {
 
 /// A scroll arrow; repeats while held (after a short delay).
 fn arrow_button(ui: &mut Ui, r: Rect, id: &str, dir: Dir) -> bool {
-    let resp = ui.interact(r, egui::Id::new(id), Sense::click_and_drag());
+    let key = match dir {
+        Dir::Left => "view.scroll_left",
+        Dir::Right => "view.scroll_right",
+        Dir::Up => "view.scroll_up",
+        Dir::Down => "view.scroll_down",
+    };
+    let resp = ui
+        .interact(r, egui::Id::new(id), Sense::click_and_drag())
+        .rich_tip(crate::ui::tips::keyed(key));
     let p = ui.painter();
     if resp.is_pointer_button_down_on() {
         p.rect_filled(r, 0.0, crate::theme::Tokens::control_border());
@@ -273,7 +281,9 @@ fn chevron(p: &egui::Painter, c: Pos2, dir: Dir, color: Color32) {
 /// The dotted grip between the page tabs and the horizontal scrollbar;
 /// dragging it shares the row between them.
 fn splitter(app: &mut App, ui: &mut Ui, grip: Rect, rest: Rect) {
-    let resp = ui.interact(grip, egui::Id::new("page_tabs_splitter"), Sense::drag());
+    let resp = ui
+        .interact(grip, egui::Id::new("page_tabs_splitter"), Sense::drag())
+        .rich_tip(crate::ui::tips::keyed("view.page_tabs_splitter"));
     if resp.hovered() || resp.dragged() {
         ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::ResizeHorizontal);
     }
@@ -457,7 +467,9 @@ fn page_tabs(app: &mut App, ui: &mut Ui, area: Rect) {
         if r.min.x > area.max.x {
             break;
         }
-        let resp = ui.interact(r, egui::Id::new(("page_tab", i)), Sense::click());
+        let resp = ui
+            .interact(r, egui::Id::new(("page_tab", i)), Sense::click())
+            .rich_tip(format!("{name}\n{}", tr("view.page_tab_desc")));
         let selected = i == current;
         let slant = SLANT;
         let shape = vec![

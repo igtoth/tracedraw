@@ -63,7 +63,9 @@ pub fn callout_bar(app: &mut App, ui: &mut Ui) {
                     width = Some(w);
                 }
             }
-        });
+        })
+        .response
+        .rich_tip(crate::ui::tips::keyed("toolbar.outline_width"));
     if let Some(w) = width {
         app.set_callout_style(|s| s.width = w);
     }
@@ -115,7 +117,9 @@ pub fn callout_bar(app: &mut App, ui: &mut Ui) {
             for s in CalloutShape::ALL {
                 ui.selectable_value(&mut shape, s, tr(s.key()));
             }
-        });
+        })
+        .response
+        .rich_tip(crate::ui::tips::keyed("callout.shape"));
     if shape != style.shape {
         app.set_callout_style(|s| s.shape = shape);
     }

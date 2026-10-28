@@ -1443,33 +1443,65 @@ fn curve_path(app: &App, id: ShapeId) -> tracedraw_core::BezPath {
     }
 }
 
+/// Join does not join end nodes of two objects (#1007): nothing changes
+/// and the status says to combine them; once combined into one curve
+/// the same two ends join into one node, with no line between them. An
+/// end node dropped on another object's end node is not joined either.
 #[test]
-fn join_fuses_two_end_nodes_of_two_curves_without_a_line() {
+fn join_takes_end_nodes_of_one_object_only() {
     use tracedraw_core::geometry::PathEl;
     let (ctx, mut app, id) = setup();
     let (a, b) = two_open_curves(&ctx, &mut app, id);
+    let before = (curve_path(&app, a), curve_path(&app, b));
     // The end of a (element 1) and the start of b (element 0).
     app.node_selection = vec![(a, 1), (b, 0)];
     app.join_selected_nodes();
-    // One curve is left, one subpath through the joined node, no line.
-    assert!(app.doc().find_shape(b).is_none());
-    let p = curve_path(&app, a);
+    assert_eq!((curve_path(&app, a), curve_path(&app, b)), before);
+    assert_eq!(app.status, crate::i18n::tr("status.join_other_object"));
+    // Dropping a's end on the start of a curve there does not join them.
+    let mut touching = tracedraw_core::BezPath::new();
+    touching.move_to((30.0, 10.0));
+    touching.line_to((40.0, 0.0));
+    let t = app
+        .new_shape(ShapeKind::Path {
+            path: touching.clone(),
+            closed: false,
+        })
+        .expect("curve");
+    app.select(vec![a, t]);
+    app.node_selection = vec![(a, 1)];
+    app.join_dropped_end_node();
+    assert_eq!(curve_path(&app, a), before.0);
+    assert_eq!(curve_path(&app, t), touching);
+    app.select(vec![t]);
+    app.delete_selection();
+    // Combined, the two ends join.
+    app.select(vec![a, b]);
+    app.combine();
+    let [c] = app.selection[..] else {
+        panic!("not one curve: {:?}", app.selection);
+    };
+    let p = curve_path(&app, c);
+    let end_of_a = tracedraw_core::nodes::nodes(&p)
+        .into_iter()
+        .find(|n| n.pos == Point::new(30.0, 10.0))
+        .expect("end of a");
+    let start_of_b = tracedraw_core::nodes::nodes(&p)
+        .into_iter()
+        .find(|n| n.pos == Point::new(44.0, 10.0))
+        .expect("start of b");
+    app.node_selection = vec![(c, end_of_a.index), (c, start_of_b.index)];
+    app.join_selected_nodes();
+    let p = curve_path(&app, c);
     assert_eq!(
-        p.elements(),
-        &[
-            PathEl::MoveTo(Point::new(10.0, 10.0)),
-            PathEl::CurveTo(
-                Point::new(15.0, 20.0),
-                Point::new(32.0, 20.0),
-                Point::new(37.0, 10.0)
-            ),
-            PathEl::LineTo(Point::new(60.0, 30.0)),
-        ]
+        p.elements()
+            .iter()
+            .filter(|e| matches!(e, PathEl::MoveTo(_)))
+            .count(),
+        1,
+        "{p:?}"
     );
-    // One undo step brings both curves back.
-    app.undo();
-    assert!(app.doc().find_shape(b).is_some());
-    assert_eq!(tracedraw_core::nodes::nodes(&curve_path(&app, a)).len(), 2);
+    assert!(p.elements().iter().all(|e| !matches!(e, PathEl::ClosePath)));
 }
 
 #[test]
@@ -1597,14 +1629,25 @@ fn a_dragged_node_does_not_snap_to_itself_or_its_moving_segments() {
 fn dropping_an_end_node_on_another_end_node_joins_them() {
     let (ctx, mut app, id) = setup();
     let (a, b) = two_open_curves(&ctx, &mut app, id);
-    // Drag the start of b onto the end of a.
+    // Two objects: dragging the start of b onto the end of a leaves them
+    // two objects (#1007).
     let from = app.view.to_screen(Point::new(44.0, 10.0));
     let to = app.view.to_screen(Point::new(30.0, 10.0));
     click_at(&ctx, &mut app, from, Modifiers::NONE);
     drag(&ctx, &mut app, from, to, Modifiers::NONE, Vec::new());
-    assert!(app.doc().find_shape(b).is_none(), "b was not joined");
-    let p = curve_path(&app, a);
-    assert_eq!(tracedraw_core::nodes::nodes(&p).len(), 3);
+    assert!(app.doc().find_shape(a).is_some() && app.doc().find_shape(b).is_some());
+    app.undo();
+    // Combined into one curve, the same drag joins the two ends.
+    app.select(vec![a, b]);
+    app.combine();
+    let [c] = app.selection[..] else {
+        panic!("not one curve: {:?}", app.selection);
+    };
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    click_at(&ctx, &mut app, from, Modifiers::NONE);
+    drag(&ctx, &mut app, from, to, Modifiers::NONE, Vec::new());
+    let p = curve_path(&app, c);
+    assert_eq!(tracedraw_core::nodes::nodes(&p).len(), 3, "{p:?}");
     assert_eq!(
         p.elements()
             .iter()
@@ -8005,15 +8048,61 @@ fn the_welcome_tab_closes_to_its_house() {
         (back.width() - wide.width()).abs() < 0.5,
         "{back:?} {wide:?}"
     );
-    // With no drawing open there is nothing else to show: no close button.
+    // With no drawing open it closes too: the workspace stays empty, the
+    // Hints docker shows its Home topics, and the house brings the
+    // Welcome Screen back (#1081).
     let ctx = crate::theme::ui_context();
     let mut app = App::headless();
     app.close_active_document();
     assert!(!app.has_document());
+    app.hints.go(crate::ui::hints::HintPage::Topic(
+        crate::ui::hints::Topic::Fill,
+    ));
     frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
     frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
-    assert!(rect_of(&ctx, WELCOME_TAB).is_some());
-    assert!(rect_of(&ctx, WELCOME_CLOSE).is_none());
+    assert!(app.show_welcome);
+    let wide = rect_of(&ctx, WELCOME_TAB).expect("welcome tab");
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::PointerMoved(wide.center())],
+        Modifiers::NONE,
+    );
+    let close = rect_of(&ctx, WELCOME_CLOSE).expect("close button");
+    press(&ctx, &mut app, close.center());
+    assert!(!app.show_welcome, "the empty workspace shows");
+    assert!(app.settings.welcome_tab_closed);
+    assert_eq!(app.docker_tab, crate::app::DockerTab::Hints);
+    assert!(app.show_dockers);
+    assert_eq!(app.hints.current(), crate::ui::hints::HintPage::Home);
+    // It stays empty over more frames, and the property bar rests.
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    assert!(!app.show_welcome);
+    assert!(!app.drawing_shown());
+    let house = rect_of(&ctx, WELCOME_TAB).expect("house");
+    press(&ctx, &mut app, house.center());
+    assert!(app.show_welcome);
+    assert!(!app.settings.welcome_tab_closed);
+}
+
+/// Closing the last drawing with the Welcome Screen tab closed leaves the
+/// empty workspace; with the tab open the Welcome Screen comes back.
+#[test]
+fn closing_the_last_drawing_keeps_the_welcome_tab_choice() {
+    let ctx = crate::theme::ui_context();
+    let mut app = App::headless();
+    app.show_welcome = false;
+    app.settings.welcome_tab_closed = true;
+    app.close_active_document();
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    assert!(!app.has_document());
+    assert!(!app.show_welcome);
+    let mut app = App::headless();
+    app.show_welcome = false;
+    app.close_active_document();
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    assert!(app.show_welcome);
 }
 
 #[test]
@@ -10734,4 +10823,221 @@ fn a_right_click_on_any_toolbar_keeps_the_bar_menu_open() {
         !bar_menu_shown(&ctx, &mut app, Vec::new()),
         "and the menu closed"
     );
+}
+
+/// A dimension without arrowheads drawn across the page with its tool
+/// and dragged with the Pick tool keeps its selection box around its
+/// line and label, moved sideways and upwards (#996).
+#[test]
+fn a_moved_dimension_keeps_its_selection_box_around_it() {
+    let (ctx, mut app, rect) = setup();
+    app.run(tracedraw_core::Command::DeleteShapes { shapes: vec![rect] });
+    app.select(Vec::new());
+    // No arrowheads: their curve is empty, and its box was the origin's.
+    app.dimension_style.arrows = crate::dimensions::ArrowStyle::None;
+    app.set_tool(Tool::ParallelDimension);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    for p in [
+        Point::new(0.0, 297.0),
+        Point::new(210.0, 297.0),
+        Point::new(105.0, 312.0),
+    ] {
+        let at = app.view.to_screen(p);
+        click_at(&ctx, &mut app, at, Modifiers::NONE);
+    }
+    app.bake_dimensions();
+    let g = *app.selection.first().expect("a dimension");
+    app.set_tool(Tool::Pick);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    app.bake_dimensions();
+    let check = |app: &App, what: &str| {
+        let label = match &app.doc().find_shape(g).expect("dimension").kind {
+            ShapeKind::Group { children } => children[2].bounds(),
+            other => panic!("{other:?}"),
+        };
+        let got = app.selection_bounds().expect("selected");
+        assert!(
+            got.contains(label.center()),
+            "{what}: box {got:?}, label {label:?}"
+        );
+        assert!(got.height() < 30.0, "{what}: box {got:?}, label {label:?}");
+        assert!(got.width() < 230.0, "{what}: box {got:?}, label {label:?}");
+        label.center()
+    };
+    let mut label = check(&app, "drawn");
+    for step in [egui::vec2(-150.0, 0.0), egui::vec2(0.0, -120.0)] {
+        let from = app.view.to_screen(label);
+        drag(
+            &ctx,
+            &mut app,
+            from,
+            from + step,
+            Modifiers::NONE,
+            Vec::new(),
+        );
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+        app.bake_dimensions();
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+        label = check(&app, &format!("{step:?}"));
+    }
+}
+
+/// F2 picks the Zoom tool for one zoom: after a click or a marquee the
+/// tool before it comes back; Z keeps it (#1039).
+#[test]
+fn f2_zooms_once_and_gives_the_tool_back() {
+    let (ctx, mut app, _id) = setup();
+    let at = app.view.to_screen(Point::new(35.0, 25.0));
+    // A marquee.
+    frame(
+        &ctx,
+        &mut app,
+        vec![key(egui::Key::F2, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    assert_eq!(app.tool, Tool::Zoom);
+    let zoom = app.view.zoom;
+    drag(
+        &ctx,
+        &mut app,
+        at,
+        at + egui::vec2(60.0, 40.0),
+        Modifiers::NONE,
+        Vec::new(),
+    );
+    for _ in 0..3 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    assert!(app.view.zoom > zoom * 1.5, "{} {}", app.view.zoom, zoom);
+    assert_eq!(app.tool, Tool::Pick);
+
+    // A click, from another tool.
+    app.set_tool(Tool::Freehand);
+    frame(
+        &ctx,
+        &mut app,
+        vec![key(egui::Key::F2, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    assert_eq!(app.tool, Tool::Zoom);
+    let zoom = app.view.zoom;
+    let at = app.view.to_screen(Point::new(35.0, 25.0));
+    click_at(&ctx, &mut app, at, Modifiers::NONE);
+    assert!((app.view.zoom / zoom - 2.0).abs() < 1e-6);
+    assert_eq!(app.tool, Tool::Freehand);
+
+    // The Zoom tool picked for good stays after a zoom.
+    app.set_tool(Tool::Zoom);
+    let at = app.view.to_screen(Point::new(35.0, 25.0));
+    click_at(&ctx, &mut app, at, Modifiers::SHIFT);
+    assert_eq!(app.tool, Tool::Zoom);
+}
+
+/// Corner widgets on a stretched curve (#1000): a corner rounded after
+/// the stretch is round on the page; one rounded before keeps its
+/// stretched arc and its widget, goes sharp when dragged out, and rounds
+/// on the page from then on.
+#[test]
+fn corner_widgets_round_stretched_curves_on_the_page() {
+    use tracedraw_core::corner_cut::fillets;
+    use tracedraw_core::geometry::{BezPath, Shape as _};
+    use tracedraw_core::Command;
+    let (ctx, mut app, rect) = setup();
+    app.select(vec![rect]);
+    app.delete_selection();
+    app.settings.nodes.corner_widgets = true;
+    let square = || {
+        let mut p = BezPath::new();
+        p.move_to((20.0, 20.0));
+        p.line_to((60.0, 20.0));
+        p.line_to((60.0, 60.0));
+        p.line_to((20.0, 60.0));
+        p.close_path();
+        p
+    };
+    // Twice as wide, about its left side: 80 by 40 on the page.
+    let stretch = Affine::translate((20.0, 0.0))
+        * Affine::scale_non_uniform(2.0, 1.0)
+        * Affine::translate((-20.0, 0.0));
+    let page_of = |app: &App, id: ShapeId| app.doc().find_shape(id).expect("curve").page_path();
+    let local_of = |app: &App, id: ShapeId| match &app.doc().find_shape(id).expect("curve").kind {
+        ShapeKind::Path { path, .. } => path.clone(),
+        _ => panic!("a curve"),
+    };
+    let drag_widget = |ctx: &egui::Context, app: &mut App, toward: Point, mm: f32| {
+        frame(ctx, app, Vec::new(), Modifiers::NONE);
+        let w = app.corner_widgets()[0];
+        let dir = (app.view.to_screen(toward) - w.at).normalized();
+        let zoom = app.view.zoom;
+        drag(
+            ctx,
+            app,
+            w.at,
+            w.at + dir * (mm * zoom),
+            Modifiers::NONE,
+            Vec::new(),
+        );
+    };
+    let centre = Point::new(60.0, 40.0);
+
+    // Stretched, then rounded: round on the page.
+    let id = app
+        .new_shape(ShapeKind::Path {
+            path: square(),
+            closed: true,
+        })
+        .expect("square");
+    app.run(Command::TransformShapes {
+        shapes: vec![id],
+        transform: stretch,
+    });
+    app.select(vec![id]);
+    app.set_tool(Tool::Shape);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    assert_eq!(app.corner_widgets().len(), 4);
+    drag_widget(&ctx, &mut app, centre, 5.0);
+    let found = fillets(&page_of(&app, id));
+    assert_eq!(found.len(), 4, "round on the page: {found:?}");
+    assert!(found
+        .iter()
+        .all(|f| (f.radius - found[0].radius).abs() < 1e-6));
+    let b = page_of(&app, id).bounding_box();
+    assert!((b.width() - 80.0).abs() < 1e-6 && (b.height() - 40.0).abs() < 1e-6);
+    // Selected again, its round corners keep their widgets.
+    app.select(Vec::new());
+    app.select(vec![id]);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    assert_eq!(app.corner_widgets().len(), 4);
+
+    // Rounded, then stretched: the stretched arcs keep their widgets.
+    app.set_tool(Tool::Pick);
+    let id = app
+        .new_shape(ShapeKind::Path {
+            path: square(),
+            closed: true,
+        })
+        .expect("square");
+    app.select(vec![id]);
+    app.set_tool(Tool::Shape);
+    drag_widget(&ctx, &mut app, Point::new(40.0, 40.0), 7.0);
+    assert_eq!(fillets(&local_of(&app, id)).len(), 4);
+    app.run(Command::TransformShapes {
+        shapes: vec![id],
+        transform: stretch,
+    });
+    app.select(Vec::new());
+    app.select(vec![id]);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let widgets = app.corner_widgets();
+    assert_eq!(widgets.len(), 4, "{widgets:?}");
+    assert!(widgets.iter().all(|w| w.stretched));
+    assert!(fillets(&page_of(&app, id)).is_empty(), "stretched arcs");
+    // Dragged out past the corner: every corner sharp again.
+    drag_widget(&ctx, &mut app, centre, -25.0);
+    assert!(fillets(&local_of(&app, id)).is_empty());
+    assert!((page_of(&app, id).area().abs() - 3200.0).abs() < 1e-6);
+    // Rounded again: round on the page.
+    drag_widget(&ctx, &mut app, centre, 5.0);
+    let found = fillets(&page_of(&app, id));
+    assert_eq!(found.len(), 4, "{found:?}");
 }

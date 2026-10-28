@@ -481,6 +481,64 @@ impl SourceSub {
     }
 }
 
+/// Where the outlines through a vertex at `p` with `places` on them
+/// really cross: a source's own node there (exact already), else the
+/// crossing nearest `p` of two of the segments, found by Newton steps
+/// from the places. `None` when nothing settles within reach of `p`
+/// (one outline alone, or two running along each other).
+fn exact_crossing(subs: &[SourceSub], places: &[Place], p: Point) -> Option<Point> {
+    use kurbo::{ParamCurveDeriv as _, PathSeg};
+    let reach = 2.0 * ON_SOURCE;
+    let mut inner: Vec<(PathSeg, f64)> = Vec::new();
+    for q in places {
+        let Some(sub) = subs.get(q.sub) else {
+            continue;
+        };
+        let Some(last) = sub.segs.len().checked_sub(1) else {
+            continue;
+        };
+        if (q.u - q.u.round()).abs() <= 1e-6 {
+            let node = sub.at(q.u, 0.0);
+            if (node - p).hypot() <= reach {
+                return Some(node);
+            }
+            continue;
+        }
+        let i = (q.u.floor() as usize).min(last);
+        if let Some(seg) = sub.segs.get(i) {
+            inner.push((*seg, q.u - i as f64));
+        }
+    }
+    let mut best: Option<Point> = None;
+    for (n, (a, s0)) in inner.iter().enumerate() {
+        for (b, t0) in inner.iter().skip(n + 1) {
+            let (a, b) = (a.to_cubic(), b.to_cubic());
+            let (da, db) = (a.deriv(), b.deriv());
+            let (mut s, mut t) = (*s0, *t0);
+            for _ in 0..20 {
+                let f = a.eval(s) - b.eval(t);
+                if f.hypot() < 1e-10 {
+                    let q = a.eval(s);
+                    let d = (q - p).hypot();
+                    if d <= reach && best.is_none_or(|b| d < (b - p).hypot()) {
+                        best = Some(q);
+                    }
+                    break;
+                }
+                // Solve [a'(s), -b'(t)] (ds, dt) = -f.
+                let (ja, jb) = (da.eval(s).to_vec2(), -db.eval(t).to_vec2());
+                let det = ja.cross(jb);
+                if det.abs() < 1e-12 {
+                    break;
+                }
+                s = (s - f.cross(jb) / det).clamp(0.0, 1.0);
+                t = (t - ja.cross(f) / det).clamp(0.0, 1.0);
+            }
+        }
+    }
+    best
+}
+
 /// A stretch of the result lying along one source subpath: where it
 /// started on it, how far it has come, and which way.
 struct Run {
@@ -631,6 +689,20 @@ fn recover_curves(result: &BezPath, sources: &[&BezPath]) -> BezPath {
                 v
             })
             .collect();
+        // A vertex where two outlines cross is the crossing of their
+        // flattenings, up to TOL off the curves: put it on the crossing of
+        // the curves themselves, so the areas on either side of an outline
+        // meet there exactly and leave no gap between them (#1065).
+        for k in 0..n {
+            if let Some(q) = exact_crossing(&subs, &places[k], pts[k]) {
+                pts[k] = q;
+                let mut v = Vec::new();
+                for (s, i) in grid.near(q) {
+                    subs[*s].place_on(*s, *i, q, &mut v);
+                }
+                places[k] = v;
+            }
+        }
         // The contour starts where a run would end anyway (a crossing, a
         // vertex on no source, or a source's own node), so a stretch of
         // one source is not cut in two at an arbitrary vertex.
@@ -2263,6 +2335,69 @@ mod tests {
             Enclosed::Open
         );
         assert_eq!(enclosed_area(&[], Point::new(5.0, 5.0)), Enclosed::Open);
+    }
+
+    /// Areas filled side by side meet with no gap (#1065): every side of
+    /// each area lies on the outlines themselves, crossings included,
+    /// whether the areas around it were filled first (their objects
+    /// count as outlines too) or not.
+    #[test]
+    fn enclosed_areas_meet_exactly_on_the_outlines() {
+        use super::{enclosed_area, Enclosed};
+        use crate::geometry::{BezPath, Point, Rect};
+        use kurbo::ParamCurveNearest as _;
+        let rect = crate::geometry::rect_path(Rect::new(0.0, 0.0, 30.0, 40.0), 0.0);
+        let circle = crate::geometry::ellipse_path(Rect::new(20.0, 25.0, 50.0, 55.0));
+        let mut wave = BezPath::new();
+        wave.move_to((-5.0, 10.0));
+        wave.curve_to((10.0, -5.0), (30.0, 30.0), (60.0, 20.0));
+        wave.line_to((60.0, 45.0));
+        wave.curve_to((40.0, 60.0), (10.0, 20.0), (-5.0, 30.0));
+        wave.close_path();
+        let mut diagonal = BezPath::new();
+        diagonal.move_to((-10.0, 50.0));
+        diagonal.line_to((70.0, 3.0));
+        let sources = vec![rect, circle, wave, diagonal];
+        let segs: Vec<kurbo::PathSeg> = sources.iter().flat_map(|p| p.segments()).collect();
+        // How far the area's sides stray from the outlines, mm.
+        let stray = |area: &BezPath| {
+            let mut worst: f64 = 0.0;
+            for s in area.segments() {
+                for i in 0..=32 {
+                    let q = s.eval(i as f64 / 32.0);
+                    let d = segs
+                        .iter()
+                        .map(|g| g.nearest(q, 1e-12).distance_sq)
+                        .fold(f64::MAX, f64::min);
+                    worst = worst.max(d.sqrt());
+                }
+            }
+            worst
+        };
+        let clicks = [
+            (5.0, 2.0),
+            (25.0, 35.0),
+            (10.0, 20.0),
+            (40.0, 40.0),
+            (25.0, 28.0),
+            (2.0, 35.0),
+            (28.0, 2.0),
+            (45.0, 20.0),
+        ];
+        let mut walls = sources.clone();
+        let mut found = 0;
+        for c in clicks {
+            let at = Point::new(c.0, c.1);
+            if let Enclosed::Area(a) = enclosed_area(&sources, at) {
+                assert!(stray(&a) < 1e-6, "{c:?} alone: {}", stray(&a));
+                found += 1;
+            }
+            if let Enclosed::Area(a) = enclosed_area(&walls, at) {
+                assert!(stray(&a) < 1e-6, "{c:?} after the others: {}", stray(&a));
+                walls.push(a);
+            }
+        }
+        assert!(found >= 6, "{found}");
     }
 
     /// Lines that stop a hair short of the next outline still close the
