@@ -10,6 +10,7 @@ full, row-by-row status.
 - Opening .cdr: blends saved by version 25 read their real step counts (the count is the low half of the field; every one read as 20 with a warning), a record the file counts as an object no longer makes a 150-step blend that floods the drawing, and blends between two open arcs draw open arcs end to end instead of closed shapes crossed through the middle, so the reporter's file opens as the program that saved it shows it (#980).
 - Export: the Preset list holds every saved preset from the moment the dialog opens, each with its format in brackets; choosing one of another format switches to that format, and changing the format leaves the preset unchosen while the list stays whole. Since 0.18.0 the list shrank to the chosen format's presets, so a dialog opening at a format without presets showed none (#612).
 - Export: Remember the settings of the last export (Options > Global > File Formats) is switched on once for preferences saved by versions before 0.19.4, which stored it off, so File > Export starts with the last export's format, resolution and quality in the next session too; since 0.19.4 only new preferences had it on, and anyone who had used an earlier version still saw the dialog start at SVG each session (#691, #617).
+- Variable fonts: the text follows the axis sliders (Text docker, and the button beside the font size) while they are dragged, so the weight, width or any other axis can be judged on the page. The text changed only when the slider was released. Releasing still keeps the value as one undo step (#870).
 
 ## 0.19.11 (2026-10-28)
 
@@ -37,7 +38,6 @@ full, row-by-row status.
 - Distort: the Zipper draws frequency + 1 lines, and the amount, amplitude, frequency and angle have handles on the page to drag (#1122).
 - Tips: every control of the bars, dockers, dialogs and Options pages shows a title and a description on hover (#1106).
 
-- Variable fonts: the text follows the axis sliders (Text docker, and the button beside the font size) while they are dragged, so the weight, width or any other axis can be judged on the page. The text changed only when the slider was released. Releasing still keeps the value as one undo step (#870).
 ## 0.19.10 (2026-10-28)
 
 - New Document: the RGB, CMYK and grayscale profile lists of Color Settings offer the ICC profiles installed on this computer, as Color Management does; they held only sRGB and Generic CMYK. A CMYK profile picked there goes with the new drawing, so its colours show through it, and the grayscale profile chosen is kept in the drawing (#1033).
