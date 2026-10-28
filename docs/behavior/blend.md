@@ -101,6 +101,15 @@ For step `k` of `n` (`t = (k) / (n + 1)` with acceleration `t' = t ^ (1 + 2*acc)
   closest to the start outline's first node's direction from its centre,
   so equal shapes blend without twisting through the middle whatever
   their relative position.
+  A blend read from a `.cdr` file (versions 9 and 13) pairs the two
+  outlines node for node instead, each run from its first node as the
+  file gives it: every node of a step lies on the straight line between
+  its two paired nodes (control points too), so a step between a
+  rectangle and a pentagon is a pentagon with sharp corners. When one
+  outline has fewer nodes, its last segment (the one closing back to its
+  first node) is cut into equal parts until the counts match. Open
+  outlines, and outlines of more than 4096 nodes, are paired by arc
+  length.
 - Transform: interpolated as translation + rotation + scale (not matrix
   entries), so blends rotate the short way unless "rotation" adds turns.
 - Colour: mixed directly (each colour's values from start to end).
