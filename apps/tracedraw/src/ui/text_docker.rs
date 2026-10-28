@@ -960,9 +960,10 @@ fn axis_name(axis: &tracedraw_text::VariationAxis) -> String {
 /// The axes of the selected text's variable font (#870): a slider for
 /// each (weight, width, slant, optical size and the font's own axes),
 /// showing the value set on the text or, with none set, the one its
-/// weight and slant give. Releasing a slider (or typing a value) sets it
-/// on the selected characters, one undo step; Default axes takes every
-/// value off again. Nothing shows for a static font.
+/// weight and slant give. The text follows a slider while it is dragged;
+/// releasing it (or typing a value) sets the value on the selected
+/// characters, one undo step; Default axes takes every value off again.
+/// Nothing shows for a static font.
 fn font_axes(app: &mut App, ui: &mut Ui, sp: &TextSpan) {
     let axes = axes_of(ui.ctx(), sp);
     if axes.is_empty() {
@@ -999,13 +1000,40 @@ fn font_axes(app: &mut App, ui: &mut Ui, sp: &TextSpan) {
             ));
             if r.dragged() {
                 ui.data_mut(|d| d.insert_temp(id, v));
+                if r.changed() {
+                    preview_axis(app, &axis.tag, v);
+                }
             }
             if r.drag_stopped() || r.changed() && !r.dragged() {
                 ui.data_mut(|d| d.remove::<f64>(id));
-                let tag = axis.tag.clone();
-                edit_spans(app, move |s| s.set_variation(&tag, Some(v)));
+                set_axis(app, &axis.tag, v);
             }
         });
+    }
+}
+
+/// Show the selected text with `tag` at `v` while its slider is dragged
+/// (#870): a preview the history does not keep, replaced at each value.
+fn preview_axis(app: &mut App, tag: &str, v: f64) {
+    end_axis_preview(app);
+    app.engine.begin_preview();
+    app.live_axis = true;
+    let tag = tag.to_string();
+    edit_spans(app, move |s| s.set_variation(&tag, Some(v)));
+}
+
+/// Set `tag` to `v` on the selected text, one undo step, the preview of
+/// a drag taken back first.
+fn set_axis(app: &mut App, tag: &str, v: f64) {
+    end_axis_preview(app);
+    let tag = tag.to_string();
+    edit_spans(app, move |s| s.set_variation(&tag, Some(v)));
+}
+
+/// The text as it was before an axis slider was dragged.
+fn end_axis_preview(app: &mut App) {
+    if std::mem::take(&mut app.live_axis) {
+        app.engine.withdraw_preview();
     }
 }
 
@@ -1630,6 +1658,20 @@ mod tests {
         out.textures_delta.clear();
         edit_spans(&mut app, |s| s.variations.clear());
         assert_eq!(wght(&app), None);
+        app.undo();
+        assert_eq!(wght(&app), Some(650.0));
+
+        // Dragged, the text follows each value; released, the last one is
+        // kept in one undo step that takes it back to where it was.
+        let steps = app.engine.history_labels().0.len();
+        for v in [400.0, 500.0, 600.0] {
+            preview_axis(&mut app, "wght", v);
+            assert_eq!(wght(&app), Some(v));
+        }
+        set_axis(&mut app, "wght", 600.0);
+        assert!(!app.live_axis && !app.engine.in_preview());
+        assert_eq!(wght(&app), Some(600.0));
+        assert_eq!(app.engine.history_labels().0.len(), steps + 1);
         app.undo();
         assert_eq!(wght(&app), Some(650.0));
     }

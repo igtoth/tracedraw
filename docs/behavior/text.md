@@ -751,7 +751,9 @@ for each axis the font does not hide (flag
 the font's own axes by the names its `name` table gives them, each over
 the font's range. A slider shows the value set on the text, else the one
 the text's weight and slant give (the font's default for other axes).
-Releasing it, or typing a value, sets that axis on the selected
+While a slider is dragged the text shows each value at once, as a
+preview the history does not keep. Releasing it, or typing a value,
+sets that axis on the selected
 characters (every character of the selected text objects when not
 editing), one undo step; Default axes takes the values off. The values
 are kept on the characters (`TextSpan::variations`: tag and value),

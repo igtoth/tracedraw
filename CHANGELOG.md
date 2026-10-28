@@ -26,6 +26,7 @@ full, row-by-row status.
 
 - Saving as .cdr: curves whose outline ends back at its start, such as text fitted to a path (written as its letters' outlines), close on their last node instead of adding a closing line of no length after it. The other program that opened such a file closed when the text was clicked; lines of no length and empty subpaths are also left out (#1130).
 - Opening .cdr: objects embedded from another program that keep their picture as a Windows metafile, such as barcodes, are drawn, also inside clip containers. Version 26 files name such an object's data in a link record instead of a name, so the objects were skipped; the metafile is now played and stretched over the object's rectangle, and a metafile that sets no viewport (as these pictures do) is drawn at its window's size instead of shrinking to a speck (#1131).
+- Variable fonts: the text follows the axis sliders (Text docker, and the button beside the font size) while they are dragged, so the weight, width or any other axis can be judged on the page. The text changed only when the slider was released. Releasing still keeps the value as one undo step (#870).
 ## 0.19.10 (2026-10-28)
 
 - New Document: the RGB, CMYK and grayscale profile lists of Color Settings offer the ICC profiles installed on this computer, as Color Management does; they held only sRGB and Generic CMYK. A CMYK profile picked there goes with the new drawing, so its colours show through it, and the grayscale profile chosen is kept in the drawing (#1033).
