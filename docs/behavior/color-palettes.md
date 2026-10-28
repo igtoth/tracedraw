@@ -81,7 +81,8 @@ management converts. A CMYK drawing keeps them CMYK (#483, #620,
 | While dragging a swatch | A chip of the colour follows the pointer: filled over a fill, a ring over an outline; the pointer shows whether letting go changes anything; Esc drops nothing |
 | Scroll arrows, wheel | One swatch at a time (every row moves by one); holding an arrow keeps scrolling |
 | The show-all button | Every colour of the row in a grid above it; click to apply, click elsewhere or Esc to close |
-| Tooltip | The colour's name, then its values: `C: 60 M: 0 Y: 40 K: 20`, `R: 255 G: 0 B: 0` |
+| Tooltip | The colour's name in bold, then its values one per line (`C: 60`, `M: 0`, `Y: 40`, `K: 20`; `R: 255`, `G: 0`, `B: 0`) |
+| No drawing shown (Welcome Screen, or none open) | The swatches keep their colours and their tooltips; clicks and drags do nothing and the eyedropper is off (#1082) |
 
 ## Document palette
 
