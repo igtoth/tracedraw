@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Zoom: F2 picks the Zoom tool for one zoom. After a click, a right click or a marquee the tool used before comes back (the Pick tool, most of the time); it stayed on the Zoom tool. Z and the toolbox button still pick the Zoom tool until another one is chosen (#1039).
 - Saving as .cdr: text in a SemiBold face (or a Light, Medium, Black ...) is saved as its family at that weight ("Titillium Web" at SemiBold), as the file it came from names it. It was saved under the name "Titillium Web SemiBold", which no installed font goes by, so the saved file opened elsewhere in a substituted font (#892, #624).
 
 ## 0.19.9 (2026-10-28)
