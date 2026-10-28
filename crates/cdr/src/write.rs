@@ -1613,10 +1613,10 @@ fn ftil() -> Vec<u8> {
     identity_matrix()
 }
 
-/// `mcfg`: the document configuration. Versions before 21 get the page
-/// size and the length files of the version have; from 21 the record has
-/// the layout of those files with the fields that are understood (see
-/// `docs/cdr-format.md`, Writing).
+/// `mcfg`: the document configuration. Versions 7, 8 and 12 to 27 get
+/// the record of files of their version, with the fields that are
+/// understood (see `docs/cdr-format.md`, Writing); versions 9 to 11 get
+/// the page size and zeros up to 4088 bytes.
 fn mcfg(v: Ver, w_mm: f64, h_mm: f64) -> Vec<u8> {
     if v.0 >= 21 {
         return mcfg_21(w_mm, h_mm);
@@ -1626,6 +1626,9 @@ fn mcfg(v: Ver, w_mm: f64, h_mm: f64) -> Vec<u8> {
     }
     if v.0 == 12 {
         return mcfg_12(w_mm, h_mm);
+    }
+    if v.0 <= 8 {
+        return mcfg_7_8(v, w_mm, h_mm);
     }
     let mut b = Buf::default();
     let size: usize = if v.0 >= 15 {
@@ -1779,6 +1782,91 @@ fn mcfg_12(w_mm: f64, h_mm: f64) -> Vec<u8> {
     }
     out.resize(8152, 0);
     out
+}
+
+/// The configuration record of version 8 (656 bytes, no tag) and of
+/// version 7 (536 bytes), with the values files saved for those versions
+/// hold: the page size, the paper (A4 code as before), the ruler origin
+/// at the page's bottom-left corner, a grid of 0.2 across and down, the
+/// units, a scale of 1, the 46.5 inch square twice, the nudge (1000) and
+/// the flags and default colour records after them. Version 7 holds the
+/// same fields with the page colour (white) inserted after the paper and
+/// 4 more bytes after the ruler origin, and stops 120 bytes earlier. A
+/// record holding only the page size, followed by zeros, was what these
+/// versions got before (every version 7 file written so crashed the
+/// program that wrote the samples, issue #98).
+fn mcfg_7_8(v: Ver, w_mm: f64, h_mm: f64) -> Vec<u8> {
+    const SIZE_8: usize = 656;
+    let (w, h) = (units(w_mm), units(h_mm));
+    let mut r = vec![0u8; SIZE_8];
+    put(&mut r, 0, &w.to_le_bytes());
+    put(&mut r, 4, &h.to_le_bytes());
+    put(&mut r, 8, &0x0fu32.to_le_bytes());
+    put(&mut r, 12, &1u32.to_le_bytes());
+    // Ruler origin: the page's bottom-left corner, from the page centre.
+    put(&mut r, 24, &(-(w / 2)).to_le_bytes());
+    put(&mut r, 28, &(-(h / 2)).to_le_bytes());
+    put(&mut r, 32, &0.2f64.to_le_bytes());
+    put(&mut r, 40, &0.2f64.to_le_bytes());
+    put(&mut r, 48, &2u16.to_le_bytes());
+    put(&mut r, 50, &2u16.to_le_bytes());
+    put(&mut r, 56, &1.0f64.to_le_bytes());
+    for (at, x) in [
+        (64, 2i32),
+        (68, 11_811_024),
+        (72, 11_811_024),
+        (76, 3),
+        (88, 1_000),
+        (92, 10_000),
+        (100, 2),
+        (444, 1),
+        (448, 1),
+        (452, 1),
+        (456, 1),
+        (460, 2),
+        (468, 1),
+        (476, 1),
+        (500, 1),
+        (504, 1),
+        (512, 1),
+        (524, 1),
+        (528, 1),
+        (532, 1),
+        (536, 1),
+        (592, 3),
+        (600, 1),
+        (604, 1),
+        (608, 1),
+        (616, 1),
+        (636, 2),
+        (644, 4),
+        (648, 100),
+        (652, 1),
+    ] {
+        put(&mut r, at, &x.to_le_bytes());
+    }
+    // Colour records (model 5, palette 5, black) and the values between.
+    for at in [484, 552, 564, 576] {
+        put(&mut r, at, &[5, 0, 5, 0]);
+    }
+    for (at, x) in [(560, 196u16), (572, 32), (574, 196), (584, 196), (586, 196)] {
+        put(&mut r, at, &x.to_le_bytes());
+    }
+    if v.0 >= 8 {
+        return r;
+    }
+    // Version 7: the page colour (model 5, palette 5, white) after the
+    // paper, 4 bytes more after the ruler origin, a flag the version 8
+    // record leaves zero (its byte 464) and 536 bytes in all.
+    let mut r7 = Vec::with_capacity(536);
+    r7.extend_from_slice(r.get(..12).unwrap_or_default());
+    r7.extend_from_slice(&[5, 0, 5, 0, 0, 0, 0, 0, 0xff, 0xff, 0xff, 0]);
+    r7.extend_from_slice(r.get(12..32).unwrap_or_default());
+    r7.extend_from_slice(&[0; 4]);
+    r7.extend_from_slice(r.get(32..520).unwrap_or_default());
+    r7.resize(536, 0);
+    put(&mut r7, 464 + 16, &1u32.to_le_bytes());
+    r7
 }
 
 /// Write `bytes` into `rec` at `at` (records are built to their size

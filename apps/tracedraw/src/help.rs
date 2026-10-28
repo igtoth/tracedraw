@@ -205,6 +205,7 @@ pub fn docker_topic(t: DockerTab) -> &'static str {
         DockerTab::FontSampler => "text/fonts#font-sampler",
         DockerTab::Corners => "lines-shapes/rectangles-and-ellipses#corners",
         DockerTab::JoinCurves => "lines-shapes/join-curves",
+        DockerTab::FitToPath => "objects/align-distribute#fit-to-path",
         DockerTab::Coordinates => "objects/transforming#coordinates",
         DockerTab::VectorMosaic => "effects/mosaics#vector-mosaic",
         DockerTab::PictureMosaic => "effects/mosaics#picture-mosaic",

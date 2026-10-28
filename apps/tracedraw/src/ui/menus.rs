@@ -2623,8 +2623,8 @@ fn object_menu(app: &mut App, ui: &mut Ui) {
             app.docker_tab = DockerTab::AlignDistribute;
         }
     });
-    if item(ui, "menu.object.fit_objects_to_path", "", many) {
-        app.fit_objects_to_path();
+    if item(ui, "menu.object.fit_objects_to_path", "", true) {
+        app.open_docker(crate::app::DockerTab::FitToPath);
     }
     sub(ui, "menu.object.order", |ui| {
         if item(ui, "menu.object.to_front_of_page", "Ctrl+Home", has) {
