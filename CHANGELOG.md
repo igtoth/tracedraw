@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Color palette with 2 or 3 rows: the window showing every colour opens clear of all the rows. Docked along the top or at a side it was placed as for one row and covered rows 2 and 3 (#610).
 - Pen: the preview segment from the last node to the pointer is a solid blue line on a white line twice as wide instead of dashes, so it shows over any colour; the handle lines are dashed in blue and white in turn, as thin as the preview's blue line (#670).
 - Save As of a drawing opened from a `.cdr` file (or any other format TraceDraw reads) starts in that file's folder with its name, so saving over it replaces it. It started in the folder any dialog used last, so with another file opened from Downloads the save went there and the original stayed as it was. A folder typed in the path bar now takes the file without pressing Enter first (#900).
 - Objects panel: selecting an object on the page scrolls the list to its row, so an object far down a long list comes into view; a selection that stays the same leaves the scroll alone (#1044).

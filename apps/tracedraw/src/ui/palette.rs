@@ -965,6 +965,8 @@ pub fn popups(app: &mut App, ctx: &egui::Context) {
         let strip = ctx
             .data(|d| d.get_temp::<Pos2>(egui::Id::new(("palette_strip", which as u8))))
             .unwrap_or(pos2(screen.left() + LEAD, screen.bottom() - 3.0 * ROW_H));
+        // Clear of every row of the strip.
+        let thick = thickness(app, which);
         let vertical = ctx
             .data(|d| d.get_temp::<bool>(egui::Id::new(("palette_strip_vertical", which as u8))))
             .unwrap_or(false);
@@ -976,7 +978,7 @@ pub fn popups(app: &mut App, ctx: &egui::Context) {
             let x = if strip.x > screen.center().x {
                 strip.x - size.x - 24.0
             } else {
-                strip.x + ROW_H + 8.0
+                strip.x + thick + 8.0
             };
             let y = strip
                 .y
@@ -990,7 +992,7 @@ pub fn popups(app: &mut App, ctx: &egui::Context) {
             // Above the row, or below it when it is docked at the top.
             let above = strip.y - size.y - 16.0;
             let y = if above < screen.top() {
-                strip.y + ROW_H + 8.0
+                strip.y + thick + 8.0
             } else {
                 above
             };
@@ -1334,6 +1336,40 @@ mod tests {
         let welcome = fills(&mut app);
         assert!(shown.len() > 10, "{shown:?}");
         assert_eq!(welcome, shown);
+    }
+
+    /// Every colour at once, for a palette of three rows along the top:
+    /// the window opens below all three rows, not over them (#610).
+    #[test]
+    fn every_colour_opens_clear_of_all_the_rows() {
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        app.settings.palette.rows = 3;
+        let run = |app: &mut App| {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(900.0, 700.0),
+                )),
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| {
+                palette_row(app, ui);
+                popups(app, ui.ctx());
+            });
+            out.textures_delta.clear();
+        };
+        run(&mut app);
+        app.palette_expanded = Some(Row::Main);
+        run(&mut app);
+        run(&mut app);
+        let area = ctx
+            .memory(|m| m.area_rect(egui::Id::new("palette_expanded")))
+            .expect("every colour shown");
+        assert!(
+            area.top() >= thickness(&app, Row::Main),
+            "{area:?} over the rows"
+        );
     }
 
     /// With two rows the default palette is twice as thick and fills line
