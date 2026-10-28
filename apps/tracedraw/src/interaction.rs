@@ -1111,6 +1111,7 @@ impl App {
             && self.settings.zoom_right_click_out
         {
             self.view.zoom_at(screen, 0.5);
+            self.end_zoom_one_shot();
             return;
         }
         // Right click: context menu (drawn by the UI at this position);
@@ -1951,6 +1952,19 @@ impl App {
         if response.clicked_by(PointerButton::Primary) {
             self.view
                 .zoom_at(screen, if mods.shift { 0.5 } else { 2.0 });
+            self.end_zoom_one_shot();
+        }
+    }
+
+    /// After a zoom with the Zoom tool picked by F2, the tool before it
+    /// comes back.
+    fn end_zoom_one_shot(&mut self) {
+        if self.zoom_one_shot && self.tool == Tool::Zoom {
+            let back = match self.previous_tool {
+                Tool::Zoom => Tool::Pick,
+                t => t,
+            };
+            self.set_tool(back);
         }
     }
 
@@ -2738,6 +2752,7 @@ impl App {
                 let r = Rect::from_points(start, current);
                 if r.width() > 0.5 && r.height() > 0.5 {
                     self.view.fit(r, self.canvas_rect);
+                    self.end_zoom_one_shot();
                 }
             }
             Drag::NodeMarquee { start, current } => self.finish_node_marquee(start, current),
@@ -3393,8 +3408,11 @@ impl App {
         if pressed(Key::F2, Modifiers::SHIFT) {
             self.zoom_to_selection();
         }
-        if pressed(Key::F2, Modifiers::NONE) {
+        if pressed(Key::F2, Modifiers::NONE) && self.tool != Tool::Zoom {
+            // One zoom, then back to the tool before (#1039); Z keeps
+            // the Zoom tool.
             self.set_tool(Tool::Zoom);
+            self.zoom_one_shot = true;
         }
         // + and -: with the Shape tool and nodes chosen, a node in the
         // middle of each segment ending at them, and deleting them; with a

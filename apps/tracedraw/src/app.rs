@@ -813,6 +813,9 @@ pub struct App {
     pub view: View,
     pub tool: Tool,
     pub previous_tool: Tool,
+    /// The Zoom tool was picked with F2: after one zoom (a click, a
+    /// right click or a marquee) the tool before it comes back (#1039).
+    pub zoom_one_shot: bool,
     pub selection: Vec<ShapeId>,
     /// Focus mode: the object being edited on its own (see `focus.rs`).
     pub focus: Vec<ShapeId>,
@@ -2103,6 +2106,7 @@ impl App {
             view: View::default(),
             tool: Tool::Pick,
             previous_tool: Tool::Pick,
+            zoom_one_shot: false,
             selection: Vec::new(),
             focus: Vec::new(),
             rotate_mode: false,
@@ -4160,6 +4164,7 @@ impl App {
 
     pub fn set_tool(&mut self, tool: Tool) {
         if self.tool != tool {
+            self.zoom_one_shot = false;
             self.finish_curve();
             self.finish_text();
             self.table_edit = None;
