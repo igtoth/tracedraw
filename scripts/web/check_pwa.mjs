@@ -38,7 +38,9 @@ if (need("tracedraw_bg.wasm")) {
     problem("tracedraw_bg.wasm is not a valid WebAssembly module");
   }
 }
-if (need("tracedraw.js") && !text("tracedraw.js").includes("export default")) {
+// wasm-bindgen writes the default export as `export default init` or as
+// `export { initSync, __wbg_init as default }`, depending on the version.
+if (need("tracedraw.js") && !/export default|as default\s*[},]/.test(text("tracedraw.js"))) {
   problem("tracedraw.js has no default export (the page's init)");
 }
 
