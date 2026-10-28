@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Perspective: two corners dragged onto one point (the frame a triangle) now bend the object to a tip there, so an ellipse becomes a drop. The object stayed flat when the corners met exactly, and when they ended a little past each other it came out as a thin sliver running off past the frame. The outline's nodes and handles are now mapped, so each segment stays one segment and the outline is drawn faster (#879).
 - Document palette: a colour picked with its eyedropper that the palette has already gets the white frame of the last colour used, so it shows where it is; a new colour takes the frame as it joins, and applying a colour of the palette moves the frame to it (#1125).
 - Status bar: a tool hint or message cut off at the right shows whole in a tip on hover, so a long path before the hint no longer hides it for good (#1126).
 - Pages added to a drawing (Layout > Insert Page, the + beside the page tabs, the navigator's insert buttons) are named in the interface's language, as the first page is, and so is their first layer. They were named "Page 2", "Layer 1" and so on in English whatever the language (#1127).
