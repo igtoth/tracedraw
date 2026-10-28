@@ -388,10 +388,16 @@ mod tests {
             frame_at(&ctx, &mut app, t);
         }
         assert_eq!(renders(&app), at_rest, "no render while zooming");
-        // At rest: each page rendered again.
-        for _ in 0..20 {
+        // At rest: each page rendered again, one render on a thread at a
+        // time in the whole program (other tests' renders may hold the
+        // turn for a moment).
+        for _ in 0..400 {
             t += 0.02;
             frame_at(&ctx, &mut app, t);
+            if renders(&app) >= at_rest + 3 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
         }
         assert!(renders(&app) >= at_rest + 3);
     }

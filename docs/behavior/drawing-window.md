@@ -161,10 +161,26 @@ window shows.
   with a copy of the drawing, and the last render stays on screen
   until it is ready; the window keeps answering the pointer and the
   keyboard meanwhile. A render made stale by a newer change is
-  dropped.
+  dropped. One such render runs at a time in the whole program (each
+  has its own band threads and picture buffers): while one runs, other
+  pages show their last picture, and the render repaints when it ends.
+  The page being edited goes first: Multipage View draws the other
+  pages each frame too, so when the current page had to wait, the freed
+  turn is kept for it for a second and the other pages wait.
 - Undo keeps one copy of the drawing per step (the state the step
   replaced) and swaps it in and out, instead of a copy before and one
   after; a command costs one copy of the drawing instead of two.
+- Undo also keeps to a memory limit (`app::UNDO_MEMORY`: 1 GB, 256 MB
+  in the browser; no Options field, Undo levels keeps its step count).
+  Each step records about how much memory its copy holds of its own:
+  every object and its path points, and the pictures the drawing does
+  not share with it (a step that replaced or deleted a picture holds
+  the old one). Past the limit the oldest steps go; the newest always
+  stays. Nothing is measured per pointer move: a step recorded right
+  after an Undo (a live colour drag) takes the undone step's size, and
+  steps recorded during a preview are measured only if it is kept.
+  `Engine::begin_group` and `end_group` keep a group of steps (a right
+  click copy during a drag and its move) from being cut by the limit.
 
 ## Checks
 
@@ -172,6 +188,11 @@ window shows.
 - `raster::tests::a_moving_view_shows_the_last_render_until_it_rests`
 - `raster::tests::a_canvas_that_moves_renders_again`
 - `raster::tests::a_slow_page_is_drawn_on_its_own_thread`
+- `raster::tests::one_render_job_runs_at_a_time_and_the_current_page_goes_first`
+- `raster::tests::the_current_page_gets_the_next_turn`
+- `tracedraw_core::engine::tests::the_history_keeps_to_its_memory_limit`
+- `tracedraw_core::engine::tests::a_group_stays_one_step_at_the_memory_limit`
+- `tracedraw_core::engine::tests::live_steps_are_not_measured_again`
 
 - `ui::windows::tests::windows_tile_and_cascade_inside_the_area`
 - `ui::windows::tests::tiled_windows_draw_every_drawing_and_switch`

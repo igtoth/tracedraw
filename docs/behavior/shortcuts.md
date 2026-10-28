@@ -33,8 +33,10 @@ from the new selection). Each action is kept with the undo step it made
 repeated, the one before it is (#366); redone, it is the last again; and
 an undone step replaced by another change is gone for good. A copy made
 by a right click during a drag, or by its Repeat, is one undo step, the
-copies and their move together (`Engine::squash_since`; it was two, the
-first Undo only moving the copy back onto the original, #471). Checks:
+copies and their move together (`Engine::begin_group` and
+`end_group`, which also keep the undo memory limit from splitting
+them; it was two, the first Undo only moving the copy back onto the
+original, #471). Checks:
 `pick_drag_tests::repeat_after_an_undo_takes_the_last_action_still_in_effect`,
 `pick_drag_tests::repeat_after_a_right_click_copy_makes_another_copy` (#363),
 `engine::tests::steps_have_ids_that_follow_undo_and_redo`.

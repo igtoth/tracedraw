@@ -5323,6 +5323,18 @@ fn frame_times_on_a_heavy_page() {
             Modifiers::NONE,
         );
     });
+    // A colour dragged in a picker: an Undo and a step per pointer move.
+    let one = app.doc().pages[0].layers[0].shapes.last().map(|s| s.id);
+    app.select(one.into_iter().collect());
+    let mut k = 0u8;
+    time("live fill drag", &mut app, &mut |app| {
+        k = k.wrapping_add(7);
+        app.apply_fill_live(tracedraw_core::Fill::Solid(tracedraw_core::Color::rgb8(
+            k, 40, 90,
+        )));
+        frame(&ctx, app, Vec::new(), Modifiers::NONE);
+    });
+    app.end_live_fill();
 }
 
 /// A symmetry made from one object, edited: a click on the object shows
