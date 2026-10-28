@@ -12,9 +12,14 @@ use tracedraw_core::PageId;
 /// Space between pages, in millimetres.
 pub const GAP_MM: f64 = 30.0;
 
+/// Columns of the grid: always this many (fewer pages fill one row), so
+/// a page added goes at the next place and the pages before it stay
+/// where they were (#1018).
+pub const COLUMNS: usize = 4;
+
 /// The pages' places in the current page's coordinates (mm, Y up): a grid
-/// with as many columns as the square root of the page count (rounded
-/// up), left to right then down, each page at the top left of its cell.
+/// of [`COLUMNS`] columns, left to right then down, each page at the top
+/// left of its cell.
 /// The current page is at the origin; an unknown `active` keeps the grid
 /// where the first page is at the origin.
 pub fn layout(pages: &[(PageId, Size)], active: PageId) -> Vec<(PageId, Rect)> {
@@ -22,7 +27,7 @@ pub fn layout(pages: &[(PageId, Size)], active: PageId) -> Vec<(PageId, Rect)> {
     if n == 0 {
         return Vec::new();
     }
-    let cols = ((n as f64).sqrt().ceil() as usize).max(1);
+    let cols = n.clamp(1, COLUMNS);
     let rows = n.div_ceil(cols);
     let mut col_w = vec![0.0f64; cols];
     let mut row_h = vec![0.0f64; rows];
@@ -291,20 +296,38 @@ mod tests {
 
     #[test]
     fn pages_sit_in_a_grid_with_the_current_one_at_the_origin() {
-        let ps = pages(4);
+        let ps = pages(6);
         let placed = layout(&ps, PageId(1));
-        // Two columns, two rows, 30 mm apart, rows going down.
+        // Four columns, 30 mm apart, then the next row going down.
         assert_eq!(placed[0].1, Rect::new(0.0, 0.0, 100.0, 50.0));
         assert_eq!(placed[1].1, Rect::new(130.0, 0.0, 230.0, 50.0));
-        assert_eq!(placed[2].1, Rect::new(0.0, -80.0, 100.0, -30.0));
+        assert_eq!(placed[3].1, Rect::new(390.0, 0.0, 490.0, 50.0));
+        assert_eq!(placed[4].1, Rect::new(0.0, -80.0, 100.0, -30.0));
         // Another page current: the same grid, moved so it is at the origin.
-        let placed = layout(&ps, PageId(4));
-        assert_eq!(placed[3].1, Rect::new(0.0, 0.0, 100.0, 50.0));
+        let placed = layout(&ps, PageId(6));
+        assert_eq!(placed[5].1, Rect::new(0.0, 0.0, 100.0, 50.0));
         assert_eq!(placed[0].1, Rect::new(-130.0, 80.0, -30.0, 130.0));
         assert_eq!(page_at(&placed, Point::new(-50.0, 100.0)), Some(PageId(1)));
         assert_eq!(page_at(&placed, Point::new(-20.0, 100.0)), None);
-        assert_eq!(bounds(&placed), Some(Rect::new(-130.0, 0.0, 100.0, 130.0)));
+        assert_eq!(bounds(&placed), Some(Rect::new(-130.0, 0.0, 360.0, 130.0)));
         assert!(layout(&[], PageId(1)).is_empty());
+    }
+
+    /// Pages added one by one go at the next place of a grid of four
+    /// columns; the pages before never move (#1018). The grid used to have
+    /// as many columns as the square root of the page count, so the 4th
+    /// and the 10th page rearranged every page.
+    #[test]
+    fn adding_pages_never_moves_the_pages_before() {
+        for n in 1..=13 {
+            let before = layout(&pages(n), PageId(1));
+            let after = layout(&pages(n + 1), PageId(1));
+            assert_eq!(after[..n], before[..], "page {} added", n + 1);
+            let (r, c) = (n / COLUMNS, n % COLUMNS);
+            let x0 = c as f64 * 130.0;
+            let y0 = -(r as f64) * 80.0;
+            assert_eq!(after[n].1, Rect::new(x0, y0, x0 + 100.0, y0 + 50.0));
+        }
     }
 
     #[test]
@@ -315,10 +338,19 @@ mod tests {
             (PageId(3), Size::new(150.0, 30.0)),
         ];
         let placed = layout(&ps, PageId(1));
-        // Column 0 is as wide as page 3; row 0 as tall as page 2, whose
-        // top lines up with page 1's.
+        // One row: each column as wide as its page, every top lined up
+        // with page 1's; the next row (page 5 on) would start below the
+        // tallest, page 2.
+        assert_eq!(placed[1].1, Rect::new(130.0, -30.0, 170.0, 50.0));
+        assert_eq!(placed[2].1, Rect::new(200.0, 20.0, 350.0, 50.0));
+        let mut five = ps.clone();
+        five.push((PageId(4), Size::new(10.0, 10.0)));
+        five.push((PageId(5), Size::new(150.0, 30.0)));
+        let placed = layout(&five, PageId(1));
+        // Column 0 is now as wide as page 5, which sits a row below page
+        // 2's bottom.
         assert_eq!(placed[1].1, Rect::new(180.0, -30.0, 220.0, 50.0));
-        assert_eq!(placed[2].1, Rect::new(0.0, -90.0, 150.0, -60.0));
+        assert_eq!(placed[4].1, Rect::new(0.0, -90.0, 150.0, -60.0));
     }
 
     #[test]

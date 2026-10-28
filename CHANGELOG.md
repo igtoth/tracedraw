@@ -6,11 +6,17 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Variable fonts: the text follows the axis sliders (Text docker, and the button beside the font size) while they are dragged, so the weight, width or any other axis can be judged on the page. The text changed only when the slider was released. Releasing still keeps the value as one undo step (#870).
+
+## 0.19.12 (2026-10-28)
+
 - Blend tool: the squares at the ends of a picked blend's line (text blends too) now work: dragging one moves its object, so the blend changes direction, and dropping it on another object makes that object the new start or end with the blend's settings. They were only shown (#965).
 - Opening .cdr: blends saved by version 25 read their real step counts (the count is the low half of the field; every one read as 20 with a warning), a record the file counts as an object no longer makes a 150-step blend that floods the drawing, and blends between two open arcs draw open arcs end to end instead of closed shapes crossed through the middle, so the reporter's file opens as the program that saved it shows it (#980).
 - Export: the Preset list holds every saved preset from the moment the dialog opens, each with its format in brackets; choosing one of another format switches to that format, and changing the format leaves the preset unchosen while the list stays whole. Since 0.18.0 the list shrank to the chosen format's presets, so a dialog opening at a format without presets showed none (#612).
 - Export: Remember the settings of the last export (Options > Global > File Formats) is switched on once for preferences saved by versions before 0.19.4, which stored it off, so File > Export starts with the last export's format, resolution and quality in the next session too; since 0.19.4 only new preferences had it on, and anyone who had used an earlier version still saw the dialog start at SVG each session (#691, #617).
-- Variable fonts: the text follows the axis sliders (Text docker, and the button beside the font size) while they are dragged, so the weight, width or any other axis can be judged on the page. The text changed only when the slider was released. Releasing still keeps the value as one undo step (#870).
+- Pick tool: Ctrl+click on a clip frame starts editing its contents (as Edit Contents does), with the object under the pointer selected; Finish puts them back. Ctrl+click picked the object inside the frame and left it there, so it was moved and changed while still clipped (#982).
+- Multipage View: the pages always sit in four columns, so a page added goes at the next place and the pages before it stay where they were. The number of columns followed the page count (2 columns for 2 and 3 pages, 3 for 4 to 9, 4 from 10), so adding the 4th or the 10th page moved every page (#1018).
+- Perspective: two corners dragged onto one point (the frame a triangle) now bend the object to a tip there, so an ellipse becomes a drop. The object stayed flat when the corners met exactly, and when they ended a little past each other it came out as a thin sliver running off past the frame. The outline's nodes and handles are now mapped, so each segment stays one segment and the outline is drawn faster (#879).
 
 ## 0.19.11 (2026-10-28)
 

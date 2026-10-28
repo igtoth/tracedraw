@@ -5,9 +5,10 @@ at once, so pages can be compared and edited side by side.
 
 ## Layout
 
-- Pages sit in a grid with as many columns as the square root of the
-  page count, rounded up (4 pages: 2 x 2; 5 to 9 pages: 3 columns),
-  left to right, then down, in page order.
+- Pages sit in a grid of four columns, whatever the page count (fewer
+  pages fill one row), left to right, then down, in page order. A page
+  added goes at the next place and the pages before it stay where they
+  were (#1018, `multipage::tests::adding_pages_never_moves_the_pages_before`).
 - Each column is as wide as its widest page and each row as tall as its
   tallest; a page sits at the top left of its cell. Cells are 30 mm
   apart.
@@ -39,7 +40,7 @@ at once, so pages can be compared and edited side by side.
 
 ## Formula
 
-With `cols = ceil(sqrt(n))`, page `i` is in row `i / cols`, column
+With `cols = min(n, 4)`, page `i` is in row `i / cols`, column
 `i % cols`; its left edge is the sum of the earlier column widths plus
 `column * 30` mm, its top edge the sum of the earlier row heights plus
 `row * 30` mm below the first row's top. The grid is then moved so the

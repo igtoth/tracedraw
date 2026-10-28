@@ -501,6 +501,39 @@ impl App {
         }
     }
 
+    /// Ctrl+click with the Pick tool on a clip frame on a layer: its
+    /// contents are taken out for editing (Edit Contents), the object of
+    /// the contents under the pointer selected (all of them when the
+    /// click is off them). Nothing happens while contents are edited
+    /// already, or off a clip frame; then `false` (#982).
+    pub fn ctrl_click_edits_clip_frame(&mut self, p: Point) -> bool {
+        if self.clip_frame_edit.is_some() {
+            return false;
+        }
+        let chain = self.hit_chain(p);
+        let Some(&clip) = chain.first() else {
+            return false;
+        };
+        let doc = self.doc();
+        let on_layer = doc.top_level_of(clip) == Some(clip);
+        let is_clip = doc
+            .find_shape(clip)
+            .is_some_and(|s| matches!(s.kind, ShapeKind::ClipFrame { .. }));
+        if !on_layer || !is_clip {
+            return false;
+        }
+        let under = chain.get(1).copied();
+        self.select(vec![clip]);
+        self.edit_clip_frame();
+        if self.clip_frame_edit.is_none() {
+            return false;
+        }
+        if let Some(id) = under.filter(|id| self.doc().find_shape(*id).is_some()) {
+            self.select(vec![id]);
+        }
+        true
+    }
+
     /// Ctrl+click: one group level further in at `p` than what is selected
     /// there (the first level inside the topmost group when nothing of it
     /// is), down to the innermost object.
@@ -1614,6 +1647,10 @@ impl App {
                     }
                     return;
                 }
+            }
+            // Ctrl+click on a clip frame: editing its contents (#982).
+            if mods.ctrl && !mods.shift && self.ctrl_click_edits_clip_frame(p) {
+                return;
             }
             // Ctrl: one group level further in.
             let hit = if mods.ctrl {

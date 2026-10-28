@@ -3938,8 +3938,12 @@ fn dropping_on_a_clip_frame_with_w_or_k_puts_the_objects_in() {
     assert_eq!(app.tool, Tool::Pick);
 }
 
+/// Ctrl+click on a clip frame edits its contents (#982): the contents
+/// come out of the frame, the one under the pointer selected, and only
+/// they can be picked; Finish puts them back. Off the contents the click
+/// edits too, with all of them selected. A plain click selects the frame.
 #[test]
-fn ctrl_click_takes_the_contents_of_a_clip_frame() {
+fn ctrl_click_on_a_clip_frame_edits_its_contents() {
     let (ctx, mut app, first) = setup();
     app.select(vec![first]);
     app.delete_selection();
@@ -3949,15 +3953,47 @@ fn ctrl_click_takes_the_contents_of_a_clip_frame() {
     let inside = app.view.to_screen(text_middle(&app, text));
     click_at(&ctx, &mut app, inside, Modifiers::NONE);
     assert_eq!(app.selection, vec![clip]);
-    click_at(&ctx, &mut app, inside, Modifiers::CTRL);
-    assert_eq!(app.selection, vec![text]);
+    assert!(app.clip_frame_edit.is_none());
     // Ctrl+Alt digs through the contents to the frame.
     assert_eq!(app.hits_at(text_middle(&app, text), true), vec![text, clip]);
-    // Inside the frame but off the text: the frame.
+    click_at(&ctx, &mut app, inside, Modifiers::CTRL);
+    assert_eq!(app.clip_frame_edit.as_ref().map(|e| e.0), Some(clip));
+    assert_eq!(app.selection, vec![text]);
+    assert_eq!(app.doc().top_level_of(text), Some(text), "out of the frame");
+    assert!(app.outside_clip_edit(clip));
+    // A second Ctrl+click while editing picks among the contents.
+    click_at(&ctx, &mut app, inside, Modifiers::CTRL);
+    assert_eq!(app.selection, vec![text]);
+    app.finish_clip_frame_edit();
+    assert!(app.clip_frame_edit.is_none());
+    assert_eq!(app.doc().top_level_of(text), Some(clip), "back inside");
+    // Inside the frame but off the text: editing, every content selected.
     app.select(Vec::new());
     let off = app.view.to_screen(Point::new(12.0, 12.0));
     click_at(&ctx, &mut app, off, Modifiers::CTRL);
-    assert_eq!(app.selection, vec![clip]);
+    assert_eq!(app.clip_frame_edit.as_ref().map(|e| e.0), Some(clip));
+    assert_eq!(app.selection, vec![text]);
+    app.finish_clip_frame_edit();
+    // On an ordinary group Ctrl+click still takes the member.
+    let r = |app: &mut App, x: f64| {
+        app.new_shape(ShapeKind::Rect {
+            rect: Rect::new(x, 100.0, x + 20.0, 120.0),
+            radius: 0.0,
+            corners: None,
+        })
+        .expect("rect")
+    };
+    let (a, b) = (r(&mut app, 100.0), r(&mut app, 130.0));
+    app.select(vec![a, b]);
+    app.apply_fill(tracedraw_core::Fill::Solid(tracedraw_core::Color::rgb8(
+        0, 0, 200,
+    )));
+    app.group_selection();
+    app.select(Vec::new());
+    let on_a = app.view.to_screen(Point::new(110.0, 110.0));
+    click_at(&ctx, &mut app, on_a, Modifiers::CTRL);
+    assert!(app.clip_frame_edit.is_none());
+    assert_eq!(app.selection, vec![a]);
 }
 
 #[test]

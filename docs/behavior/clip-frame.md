@@ -93,11 +93,14 @@ no tool during the move (`App::frame_under_pointer`, `drop_frame`,
 
 ## Picking
 
-A click selects the clip frame (anywhere in its box). Ctrl+click
-selects the object of the contents under the pointer, only inside the
-frame where the contents show; further Ctrl+clicks go into a group
-among the contents. Ctrl+Alt+click digs through the contents and then
-the clip frame (see `pick-tool.md`).
+A click selects the clip frame (anywhere in its box). Ctrl+click on a
+clip frame lying on a layer starts Edit Contents: the contents come out
+of the frame with the object under the pointer selected (every content
+when the click is off them, inside the frame's box), and while they are
+edited Ctrl+click goes into a group among them as anywhere else (#982,
+`pick_drag_tests::ctrl_click_on_a_clip_frame_edits_its_contents`).
+Ctrl+Alt+click digs through the contents and then the clip frame (see
+`pick-tool.md`).
 
 ## Opacity mask
 

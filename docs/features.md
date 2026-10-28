@@ -12,7 +12,7 @@ Counts: works 189, partial 6 (`.cdr` content coverage; CMX import; print preview
 
 | Capability | Status |
 |---|---|
-| Pick: click, shift-click, marquee, Alt-marquee (touch), Alt-click dig, Ctrl-click inside groups and clip frames (round handles; move, colour and delete one object of a group; the chosen object drags alone from anywhere on it, #849), Tab cycling | works (see `behavior/pick-tool.md`) |
+| Pick: click, shift-click, marquee, Alt-marquee (touch), Alt-click dig, Ctrl-click inside groups (round handles; move, colour and delete one object of a group; the chosen object drags alone from anywhere on it, #849), Tab cycling; Ctrl-click on a clip frame edits its contents (#982) | works (see `behavior/pick-tool.md`) |
 | Second click rotate/skew handles: rotate about a movable centre of rotation, skew with the side handles, Ctrl steps, Shift about the centre line | works (see `behavior/pick-tool.md`) |
 | Handle modifiers: Shift scales from the centre, Ctrl in 100 % steps (mirror at the same size), Alt frees a corner; Ctrl keeps a move straight; right click during a drag leaves the original; Space drops a copy; Esc cancels | works |
 | Drag a palette colour onto an object (inside: fill, on the outline: outline colour, No Color removes) or onto the document palette (see `behavior/color-palettes.md`) | works |
@@ -71,7 +71,7 @@ Counts: works 189, partial 6 (`.cdr` content coverage; CMX import; print preview
 | Add, delete, join, break, extract subpath, close curve, align nodes, reduce nodes | works |
 | Weld, Trim, Intersect, Simplify, Front minus back, Back minus front, Boundary (menu, panel and the property bar with several objects selected); Trim keeps the sources, Intersect keeps both; the panel's leave-original choices per operation; results keep the objects' curve segments, with new nodes only where the outlines cross; an open curve as the target is cut and stays open; Trim, Front minus back and Back minus front split a closed object along open curves into pieces (see `behavior/shaping.md`) | works |
 | Combine, Break apart (an envelope, perspective or distortion becomes part of the pieces; warped text breaks into one curve per letter), Group, Ungroup, Ungroup all | works |
-| Multipage View (View menu): every page in a grid with its name, a press on another page makes it current in place, Zoom to Fit shows all pages | works (see `behavior/multipage-view.md`) |
+| Multipage View (View menu): every page in a grid of four columns with its name (pages added never move the ones before, #1018), a press on another page makes it current in place, Zoom to Fit shows all pages | works (see `behavior/multipage-view.md`) |
 | Focus mode: double-click a group or clip frame (or Bring into Focus) to edit its members with the rest faded; breadcrumb, Esc goes up, visibility setting | works (see `behavior/focus-mode.md`) |
 | Join Curves panel: Extend, Chamfer, Fillet, Bezier Curve joints, gap tolerance, nearest ends first, closes subpaths | works (see `behavior/corners-and-joins.md`) |
 | Corners panel: fillet, scallop, chamfer (A and B distances) the corners of curves or of chosen nodes, with preview; corners that do not fit are skipped | works (see `behavior/corners-and-joins.md`) |
@@ -143,7 +143,7 @@ Counts: works 189, partial 6 (`.cdr` content coverage; CMX import; print preview
 | Blend (steps or spacing along a path, rotation with loop, along the full path, accelerations with sizing and link, direct or clockwise or counterclockwise colours), live, both objects kept and the steps following either (see `behavior/blend.md`) | works |
 | Distort (push and pull of the nodes, zipper with random, smooth and local, twister with turns and direction), live; a drag centred where it starts, the handles dragged (centre, amount or amplitude or angle, zipper frequency slider), the bar editing the selected distortion; Center, Clear, Convert to Curves (see `behavior/distort.md`) | works |
 | Envelope, live: Envelope tool and panel; modes Straight Line, Single Arc, Double Arc, Unconstrained (handles); mappings Horizontal, Original, Putty, Vertical; Keep Lines; presets; nodes added and removed; Add New, Copy, Clear (see `behavior/envelope.md`) | works |
-| Perspective (Add Perspective, node drag) | works |
+| Perspective (Add Perspective, node drag; nodes and handles mapped, two corners dragged together make a tip, #879, see `behavior/draw-in-perspective.md`) | works |
 | Draw in Perspective: 1-, 2- and 3-point grids with draggable vanishing points and corners, ground, wall and ceiling planes; objects drawn with the drawing tools are laid onto the active plane (an exact Perspective effect, one undo step) | works (see `behavior/draw-in-perspective.md`) |
 | Extrude, live: six types (small and big back and front toward a vanishing point locked to the object or the page, back and front parallel), depth, colour from the object, solid or a shade, up to three lights with their elevation, the body turned in space, a bevel on the front edge; hidden faces left out, curved sides as one outlined surface, every subpath extruded; the tool's drag and handle, a bar (3D menu) and the panel (camera, rotation, lighting, colour and bevel pages; vanishing point measured from the page origin or the object centre) editing the selected extrusion (see `behavior/extrude.md`) | works |
 | Bevel (soft edge, emboss) | works |

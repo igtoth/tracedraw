@@ -1882,6 +1882,15 @@ pub fn perspective(path: &BezPath, corners: &[Point; 4]) -> BezPath {
 
 /// As [`perspective`], with the box `b` mapped onto the corners instead
 /// of the path's own bounding box.
+///
+/// The nodes and the control points of the outline are mapped, so a
+/// segment stays one segment: a straight side stays straight (a projective
+/// map keeps lines), and a curve bends as its handles do, so a side of the
+/// box pulled to a point brings the handles along it to that point too
+/// and the outline comes to a tip there (an ellipse in a triangle is a
+/// drop, #879). Only where some of the outline lies past the horizon (a
+/// frame folded over itself) is the outline flattened and mapped point by
+/// point instead.
 pub fn perspective_in(path: &BezPath, b: Rect, corners: &[Point; 4]) -> BezPath {
     if b.width() < 1e-9 || b.height() < 1e-9 {
         return path.clone();
@@ -1892,18 +1901,82 @@ pub fn perspective_in(path: &BezPath, b: Rect, corners: &[Point; 4]) -> BezPath 
         Point::new(b.x1, b.y1),
         Point::new(b.x0, b.y1),
     ];
-    let Some(h) = homography(&src, corners) else {
+    let corners = corners_apart(corners);
+    let Some(h) = homography(&src, &corners) else {
         return path.clone();
     };
-    let map = |p: Point| -> Point {
-        let w = h[6] * p.x + h[7] * p.y + 1.0;
-        let w = if w.abs() < 1e-12 { 1e-12 } else { w };
-        Point::new(
-            (h[0] * p.x + h[1] * p.y + h[2]) / w,
-            (h[3] * p.x + h[4] * p.y + h[5]) / w,
-        )
-    };
-    warp(path, b, map)
+    let w = |p: Point| h[6] * p.x + h[7] * p.y + 1.0;
+    // The side of the horizon the box's middle is on; a point closer to
+    // the horizon than a billionth of that counts as past it.
+    let wc = w(b.center());
+    let near = wc.abs() * 1e-9;
+    let map = |p: Point| map_homography(&h, p);
+    let before_horizon = path.elements().iter().all(|e| {
+        let pts: &[Point] = match e {
+            PathEl::MoveTo(p) | PathEl::LineTo(p) => std::slice::from_ref(p),
+            PathEl::QuadTo(a, p) => &[*a, *p][..],
+            PathEl::CurveTo(a, c, p) => &[*a, *c, *p][..],
+            PathEl::ClosePath => &[],
+        };
+        pts.iter().all(|p| w(*p) * wc.signum() > near)
+    });
+    if !before_horizon {
+        return warp(path, b, map);
+    }
+    let mut out = BezPath::new();
+    for e in path.elements() {
+        match *e {
+            PathEl::MoveTo(p) => out.move_to(map(p)),
+            PathEl::LineTo(p) => out.line_to(map(p)),
+            PathEl::QuadTo(a, p) => out.quad_to(map(a), map(p)),
+            PathEl::CurveTo(a, c, p) => out.curve_to(map(a), map(c), map(p)),
+            PathEl::ClosePath => out.close_path(),
+        }
+    }
+    out
+}
+
+/// Perspective corners (BL, BR, TR, TL) with two neighbours that meet (a
+/// side pulled to a point), or that were dragged a little past each other
+/// on the way there, set a hair apart along the side across from them, in
+/// its direction: the frame stays a quadrilateral a projective map can take
+/// the box to, and the outline comes to a tip there (#879). Corners that
+/// crossed by more than a fiftieth of the frame (a frame folded on
+/// purpose) and all others stay as given.
+fn corners_apart(corners: &[Point; 4]) -> [Point; 4] {
+    let mut c = *corners;
+    let span = c
+        .iter()
+        .flat_map(|p| c.iter().map(move |q| (*p - *q).hypot()))
+        .fold(0.0f64, f64::max);
+    if !(span.is_finite() && span > 0.0) {
+        return c;
+    }
+    let eps = span * 1e-4;
+    for i in 0..4 {
+        let j = (i + 1) % 4;
+        let gap = c[j] - c[i];
+        if gap.hypot() > span * 0.02 {
+            continue;
+        }
+        // The side across, in the same direction (TL to TR across from
+        // BL to BR).
+        let along = c[(i + 2) % 4] - c[(i + 3) % 4];
+        let len = along.hypot();
+        let d = if len > 1e-12 {
+            along / len
+        } else {
+            Vec2::new(1.0, 0.0)
+        };
+        let crossed = gap.dot(d) < 0.0;
+        if gap.hypot() > eps * 0.5 && !crossed {
+            continue;
+        }
+        let mid = c[i].midpoint(c[j]);
+        c[i] = mid - d * eps;
+        c[j] = mid + d * eps;
+    }
+    c
 }
 
 /// Give a group's `member` the group's perspectives as it is ungrouped
@@ -2800,6 +2873,99 @@ mod tests {
         let b = p.bounding_box();
         assert!((b.x0 - 0.0).abs() < 1e-6 && (b.x1 - 20.0).abs() < 1e-6);
         assert!((b.y1 - 20.0).abs() < 1e-6);
+    }
+
+    /// A perspective whose top corners meet (the frame a triangle) still
+    /// warps the outline, and an ellipse comes to a tip there, a drop:
+    /// its top node and the handles beside it all go to the point where
+    /// the corners meet (#879). It was left as it was, since no projective
+    /// map takes a box to a triangle; corners a hair apart, or a hair past
+    /// each other, give the same.
+    #[test]
+    fn a_perspective_with_two_corners_together_makes_a_tip() {
+        let ellipse = Shape::new(
+            crate::ShapeId(3),
+            ShapeKind::Ellipse {
+                rect: Rect::new(0.0, 0.0, 20.0, 40.0),
+                arc: None,
+            },
+        )
+        .local_path();
+        let apex = Point::new(10.0, 60.0);
+        let corners = [Point::new(-20.0, 0.0), Point::new(40.0, 0.0), apex, apex];
+        let p = perspective(&ellipse, &corners);
+        assert_ne!(p, ellipse);
+        assert_eq!(p.elements().len(), ellipse.elements().len());
+        let b = p.bounding_box();
+        assert!((b.y1 - 60.0).abs() < 0.05, "{b:?}");
+        assert!(b.y0.abs() < 0.05, "{b:?}");
+        // The top node and both handles beside it at the tip.
+        let els = p.elements();
+        let k = els
+            .iter()
+            .position(|e| matches!(e, PathEl::CurveTo(_, _, q) if (*q - apex).hypot() < 0.05))
+            .expect("a node at the tip");
+        let PathEl::CurveTo(_, c2, _) = els[k] else {
+            unreachable!()
+        };
+        let next = els[k + 1..]
+            .iter()
+            .chain(els.iter())
+            .find_map(|e| match e {
+                PathEl::CurveTo(c1, _, _) => Some(*c1),
+                _ => None,
+            })
+            .expect("the next curve");
+        assert!((c2 - apex).hypot() < 0.05, "{c2:?}");
+        assert!((next - apex).hypot() < 0.05, "{next:?}");
+        // Corners nearly together give nearly the same drop.
+        let close = [
+            corners[0],
+            corners[1],
+            apex + Vec2::new(0.001, 0.0),
+            apex - Vec2::new(0.001, 0.0),
+        ];
+        let q = perspective(&ellipse, &close).bounding_box();
+        for (a, b) in [(q.x0, b.x0), (q.y0, b.y0), (q.x1, b.x1), (q.y1, b.y1)] {
+            assert!((a - b).abs() < 0.05, "{q:?} {b:?}");
+        }
+        // Dragged together by hand, the two corners end a little past
+        // each other (as in the drawing of the report): the same drop, not
+        // a sliver running off past the frame.
+        let crossed = [
+            corners[0],
+            corners[1],
+            apex - Vec2::new(0.05, 0.0),
+            apex + Vec2::new(0.05, 0.0),
+        ];
+        let q = perspective(&ellipse, &crossed).bounding_box();
+        for (a, b) in [(q.x0, b.x0), (q.y0, b.y0), (q.x1, b.x1), (q.y1, b.y1)] {
+            assert!((a - b).abs() < 0.05, "{q:?} {b:?}");
+        }
+    }
+
+    /// A frame folded over itself puts part of the outline past the
+    /// horizon: it is mapped point by point there and stays finite.
+    #[test]
+    fn a_folded_perspective_stays_finite() {
+        let ellipse = Shape::new(
+            crate::ShapeId(3),
+            ShapeKind::Ellipse {
+                rect: Rect::new(0.0, 0.0, 20.0, 20.0),
+                arc: None,
+            },
+        )
+        .local_path();
+        let corners = [
+            Point::new(0.0, 0.0),
+            Point::new(20.0, 0.0),
+            Point::new(-30.0, 5.0),
+            Point::new(0.0, 20.0),
+        ];
+        let p = perspective(&ellipse, &corners);
+        assert!(p.elements().iter().all(|e| e
+            .end_point()
+            .is_none_or(|q| q.x.is_finite() && q.y.is_finite())));
     }
 
     /// Convert to Curves of a square in perspective gives its four
