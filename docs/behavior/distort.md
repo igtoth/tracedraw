@@ -22,17 +22,29 @@ curve stays open.
   at a third and two thirds; quadratic ones are raised to cubic.
 - Zipper, `amplitude` (mm, 0 to 100) and `frequency` (0 to 100): each
   segment is cut into `2 * frequency` equal steps of its parameter; the
-  inner points move off the segment along its normal, alternately
-  `+amplitude` and `-amplitude`; the nodes stay. Random scales each
-  tooth by a fixed pseudo-random share of its height (the same every
-  time it is drawn); Local scales it by `1 - d / d_max`, `d` its
-  distance from the centre and `d_max` the farthest node's; Smooth
-  draws a smooth curve through the points instead of straight teeth.
+  points move off the segment along its normal, alternately
+  `-amplitude` and `+amplitude`, the nodes included (a node moves
+  between the normals of its two segments), so every point of the
+  zigzag is a tooth's tip, the pattern runs unbroken through the nodes
+  and the ends of an open curve are tips too, not points left on the
+  curve (#1108). Random scales each tooth by a fixed pseudo-random
+  share of its height (the same every time it is drawn); Local scales
+  it by `1 - d / d_max`, `d` its distance from the centre and `d_max`
+  the farthest node's; Smooth draws a smooth curve through the points
+  instead of straight teeth.
 - Twister, `angle` (degrees; whole turns times 360 plus degrees,
-  clockwise negative): the outline is cut into steps of at most 1/64 of
-  its larger side, every point `p` is turned about `c` by
-  `angle * |p - c| / d_max` and a smooth curve goes through them, so the
-  centre stays and the farthest point turns by the whole angle.
+  clockwise negative): every point `p` is turned about `c` by
+  `angle * |p - c| / d_max`, so the centre stays and the farthest point
+  turns by the whole angle. Each segment is cut into steps along which
+  that turn changes by at most 15 degrees (the distance from the
+  centre changes by at most the length walked), and a cubic joins each
+  step's ends with the true directions of the turned curve there (the
+  segment's direction turned, plus the swing of the turn growing with
+  the distance). The result follows the turned curve to within a few
+  hundredths of a percent of its size, with no straight tails at the
+  ends of an open curve and no corners between the steps (#1108); a
+  segment whose points keep their distance (a circle about its middle)
+  turns whole.
 - A centre that is not a number or lies over 100 m from the outline is
   replaced by the middle; values out of range are brought in; a result
   that is not finite leaves the outline as it was.
@@ -88,6 +100,8 @@ curve stays open.
 - `distort::tests::push_and_pull_move_nodes_and_bow_the_sides`
 - `distort::tests::zipper_teeth_on_every_segment`
 - `distort::tests::twister_turns_the_far_points_by_the_angle`
+- `distort::tests::a_zipped_line_starts_and_ends_on_tips`
+- `distort::tests::a_twisted_line_is_a_smooth_spiral_to_its_ends`
 - `distort::tests::older_files_and_odd_values_read`
 - `distort_tool::tests::a_drag_distorts_about_where_it_started`
 - `distort_tool::tests::the_bar_edits_the_selected_distortion`
@@ -99,3 +113,11 @@ curve stays open.
   side is nearer the middle than 10 mm.
 - Given Twister 90 on a 20 mm square about its middle, then the corner
   (10, 10) is at (-10, 10).
+- Given a straight 100 mm line and Twister of four turns about its
+  middle, then the result is one smooth spiral from end to end: every
+  point of every step lies on the turned curve within 0.03 mm, the two
+  ends leave along the spiral's own direction, and no two steps meet at
+  a corner.
+- Given a straight line and Zipper with frequency 6, then its 13 points
+  are all teeth's tips, the two ends included, alternately on each side
+  of the line.

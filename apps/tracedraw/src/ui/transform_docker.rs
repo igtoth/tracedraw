@@ -22,6 +22,7 @@ use crate::app::{App, TransformTab, Units};
 use crate::i18n::tr;
 use crate::theme::Tokens;
 use crate::ui::propbar::{origin_point, pic_button, Pic};
+use crate::ui::tips::RichTip;
 use egui::{Color32, Rect, Sense, Stroke, Ui, Vec2};
 use tracedraw_core::geometry::{Affine, Point, Rect as PageRect, Vec2 as PageVec};
 use tracedraw_core::{Command, ShapeId};
@@ -407,7 +408,7 @@ fn anchor_grid(ui: &mut Ui, anchor: &mut (u8, u8), direction: bool) -> bool {
     let step = 22.0;
     let size = Vec2::splat(step * 2.0 + cell + 2.0);
     let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
-    let resp = resp.on_hover_text(tr(if direction {
+    let resp = resp.rich_tip(tr(if direction {
         "docker.direction"
     } else {
         "docker.reference_point"

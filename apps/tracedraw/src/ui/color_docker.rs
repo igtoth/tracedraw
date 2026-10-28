@@ -9,6 +9,7 @@
 use crate::app::App;
 use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
+use crate::ui::tips::RichTip;
 use egui::{Color32, Mesh, Painter, Pos2, Rect, Response, Sense, Shape, Stroke, Ui, Vec2};
 use tracedraw_core::{Color, Command, Fill, ShapeId};
 
@@ -147,7 +148,7 @@ fn view_button(ui: &mut Ui, view: View, tip: &str, on: bool) -> Response {
             }
         }
     }
-    resp.on_hover_text(tip)
+    resp.rich_tip(tip)
 }
 
 fn to32(c: [f32; 3]) -> Color32 {
@@ -486,7 +487,7 @@ pub fn color(app: &mut App, ui: &mut Ui) {
                 }
             })
             .response
-            .on_hover_text(tr("docker.model"));
+            .rich_tip(tr("docker.model"));
     });
     ui.add_space(4.0);
     let old = selected_fill(app);
@@ -507,7 +508,7 @@ pub fn color(app: &mut App, ui: &mut Ui) {
             }
         }
         if !c.in_cmyk_gamut(6.0) {
-            gamut_warning(ui).on_hover_text(tr("docker.gamut_warning"));
+            gamut_warning(ui).rich_tip(tr("docker.gamut_warning"));
         }
         if crate::ui::propbar::pic_button(
             ui,
@@ -654,7 +655,7 @@ fn spot_inks(app: &mut App, ui: &mut Ui, current: Color) {
             }
             if ui
                 .small_button(REMOVE_INK.to_string())
-                .on_hover_text(tr("docker.remove_ink"))
+                .rich_tip(tr("docker.remove_ink"))
                 .clicked()
             {
                 remove = Some(ink.id);
@@ -687,7 +688,7 @@ fn spot_inks(app: &mut App, ui: &mut Ui, current: Color) {
                 !name.is_empty() && !taken,
                 egui::Button::new(tr("docker.new_ink")),
             )
-            .on_hover_text(tr("docker.new_ink_tip"))
+            .rich_tip(tr("docker.new_ink_tip"))
             .clicked()
         {
             add_ink(app, name, current);
@@ -749,7 +750,7 @@ fn palette_view(app: &mut App, ui: &mut Ui) -> Option<Color> {
                 Stroke::new(if resp.hovered() { 1.5 } else { 0.5 }, Tokens::icon()),
                 egui::StrokeKind::Inside,
             );
-            if resp.on_hover_text(name).clicked() {
+            if resp.rich_tip(name).clicked() {
                 out = Some(*c);
             }
         }

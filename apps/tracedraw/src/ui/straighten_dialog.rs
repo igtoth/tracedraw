@@ -8,6 +8,7 @@ use crate::i18n::tr;
 use crate::straighten::{straighten, turned, Straighten};
 use crate::theme::Tokens;
 use crate::ui::bitmap_preview::{cached, copy_of, settings_key, Source};
+use crate::ui::tips::RichTip;
 use egui::{Color32, Context, Painter, Pos2, Rect, Sense, Stroke, Ui, Vec2};
 
 /// The preview copy's largest side, pixels.
@@ -66,7 +67,7 @@ fn icon_button(
         Tokens::icon(),
     );
     let clicked = resp.clicked();
-    resp.on_hover_text(tip);
+    resp.rich_tip(tip);
     clicked
 }
 
@@ -329,7 +330,7 @@ pub fn straighten_dialog(app: &mut App, ctx: &Context, st: &mut StraightenState,
                 ui.horizontal(|ui| {
                     ui.checkbox(&mut st.grid, tr("dialog.straighten_grid"));
                     ui.color_edit_button_srgb(&mut st.grid_color)
-                        .on_hover_text(tr("dialog.straighten_grid_color"));
+                        .rich_tip(tr("dialog.straighten_grid_color"));
                 });
                 ui.add_enabled(
                     st.grid,

@@ -10,6 +10,7 @@
 use crate::app::App;
 use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
+use crate::ui::tips::RichTip;
 use egui::{Color32, Context, Rect, Sense, Stroke, Ui, Vec2};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap};
@@ -1146,7 +1147,7 @@ fn icon_button(ui: &mut Ui, icon: Icon, tip: &str, enabled: bool, on: bool) -> e
             }
         }
     }
-    resp.on_hover_text(tip)
+    resp.rich_tip(tip)
 }
 
 fn toolbar(
@@ -1431,7 +1432,7 @@ fn left_panes(
                                 name
                             };
                             let r = library_row(ui, &label, st.library == lib)
-                                .on_hover_text(dir.display().to_string());
+                                .rich_tip(dir.display().to_string());
                             if r.clicked() {
                                 st.library = lib;
                             }
@@ -2115,7 +2116,7 @@ fn status_line(
             let mut px = prefs.sample_px();
             if ui
                 .add(egui::Slider::new(&mut px, SAMPLE_PX).show_value(false))
-                .on_hover_text(tr("font_manager.sample_size"))
+                .rich_tip(tr("font_manager.sample_size"))
                 .changed()
             {
                 prefs.sample_px = px;

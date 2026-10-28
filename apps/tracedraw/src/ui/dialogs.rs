@@ -7,6 +7,7 @@
 use crate::app::{App, Units};
 use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
+use crate::ui::tips::RichTip;
 use egui::{Context, Ui};
 use tracedraw_core::{
     document::ShapeKind,
@@ -1163,7 +1164,7 @@ pub(crate) fn help_ok_cancel(ui: &mut Ui, close: &mut bool) -> (bool, bool) {
     ui.horizontal(|ui| {
         help = ui
             .add_sized([27.0, 27.0], egui::Button::new("?"))
-            .on_hover_text(tr("dialog.help"))
+            .rich_tip(tr("dialog.help"))
             .clicked();
         ok = ok_cancel(ui, close);
     });
@@ -2864,7 +2865,7 @@ pub(crate) fn page_size_page(app: &mut App, ui: &mut Ui) {
                 let portrait = h >= w;
                 if ui
                     .add(egui::Button::new("\u{25af}").selected(portrait))
-                    .on_hover_text(tr("options.portrait"))
+                    .rich_tip(tr("options.portrait"))
                     .clicked()
                     && !portrait
                 {
@@ -2873,7 +2874,7 @@ pub(crate) fn page_size_page(app: &mut App, ui: &mut Ui) {
                 }
                 if ui
                     .add(egui::Button::new("\u{25ad}").selected(!portrait))
-                    .on_hover_text(tr("options.landscape"))
+                    .rich_tip(tr("options.landscape"))
                     .clicked()
                     && portrait
                 {
@@ -2891,8 +2892,8 @@ pub(crate) fn page_size_page(app: &mut App, ui: &mut Ui) {
             if name.is_empty() && !r.has_focus() {
                 r.request_focus();
             }
-            let enter = (r.lost_focus() || r.has_focus())
-                && ui.input(|i| i.key_pressed(egui::Key::Enter));
+            let enter =
+                (r.lost_focus() || r.has_focus()) && ui.input(|i| i.key_pressed(egui::Key::Enter));
             if (ui.button(tr("dialog.ok")).clicked() || enter) && !name.trim().is_empty() {
                 save_page_size(app, name.trim(), Size::new(w, h));
                 keep = false;
@@ -3219,7 +3220,7 @@ fn export_presets_row(app: &mut App, ui: &mut Ui, st: &mut ExportState) {
         // built-in format, out of sight.
         if ui
             .add_enabled(st.script.is_none(), egui::Button::new("+").small())
-            .on_hover_text(tr("dialog.export_preset_add"))
+            .rich_tip(tr("dialog.export_preset_add"))
             .clicked()
         {
             st.preset_name = Some((String::new(), false));
@@ -3227,14 +3228,14 @@ fn export_presets_row(app: &mut App, ui: &mut Ui, st: &mut ExportState) {
         let chosen = !st.preset.is_empty();
         if ui
             .add_enabled(chosen, egui::Button::new("\u{270e}").small())
-            .on_hover_text(tr("dialog.export_preset_rename"))
+            .rich_tip(tr("dialog.export_preset_rename"))
             .clicked()
         {
             st.preset_name = Some((st.preset.clone(), true));
         }
         if ui
             .add_enabled(chosen, egui::Button::new("\u{2212}").small())
-            .on_hover_text(tr("dialog.export_preset_delete"))
+            .rich_tip(tr("dialog.export_preset_delete"))
             .clicked()
         {
             app.settings.formats.delete_preset(&st.preset, st.format);
@@ -3442,7 +3443,7 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
                         if (scale - 1.0).abs() > 1e-9
                             && ui
                                 .small_button(format!("{:.0} %", scale * 100.0))
-                                .on_hover_text(tr("dialog.export_scale_reset"))
+                                .rich_tip(tr("dialog.export_scale_reset"))
                                 .clicked()
                         {
                             st.scale = 1.0;
@@ -3507,7 +3508,7 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
                         &mut app.settings.formats.skip_export_dialog,
                         tr("dialog.skip_export_dialog"),
                     )
-                    .on_hover_text(tr("dialog.skip_export_dialog_tip"));
+                    .rich_tip(tr("dialog.skip_export_dialog_tip"));
                 }
                 if !scripted && export_keeps_properties(EXPORT_FORMATS[st.format].1) {
                     egui::Grid::new("exp_props").num_columns(2).show(ui, |ui| {
@@ -3516,7 +3517,7 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
                         ui.end_row();
                         ui.label(tr("dialog.tags"));
                         ui.add_sized([200.0, 20.0], egui::TextEdit::singleline(&mut st.tags))
-                            .on_hover_text(tr("dialog.tags_tip"));
+                            .rich_tip(tr("dialog.tags_tip"));
                         ui.end_row();
                     });
                 }
@@ -3608,7 +3609,7 @@ pub(crate) fn margin_fields(ui: &mut Ui, margins: &mut [f64; 4]) {
                     .suffix(" mm")
                     .width(62.0),
             )
-            .on_hover_text(tr(key));
+            .rich_tip(tr(key));
         }
     });
 }
@@ -3720,7 +3721,7 @@ pub(crate) fn print_layout_fields(app: &App, ui: &mut Ui, st: &mut PrintState) {
                     if st.sheet > 0 {
                         ui.label("");
                         ui.checkbox(&mut st.stretch_fit, tr("print.stretch_fit"))
-                            .on_hover_text(tr("print.stretch_fit_tip"));
+                            .rich_tip(tr("print.stretch_fit_tip"));
                         ui.end_row();
                     }
                     if matches!(st.layout_kind, 1 | 3) {
@@ -3734,20 +3735,20 @@ pub(crate) fn print_layout_fields(app: &App, ui: &mut Ui, st: &mut PrintState) {
                         ui.end_row();
                         ui.label("");
                         ui.checkbox(&mut st.back_side, tr("print.back_side"))
-                            .on_hover_text(tr("print.back_side_tip"));
+                            .rich_tip(tr("print.back_side_tip"));
                         ui.end_row();
                     }
                     if st.sheet > 0 {
                         ui.label("");
                         ui.checkbox(&mut st.keep_size, tr("print.keep_size"))
-                            .on_hover_text(tr("print.keep_size_tip"));
+                            .rich_tip(tr("print.keep_size_tip"));
                         ui.end_row();
                     }
                     // The paper's margins kept clear: typed here, or in
                     // Print Preview their dashed lines dragged on the
                     // sheet (#580, #582, #909).
                     ui.label(tr("print.paper_margins"))
-                        .on_hover_text(tr("print.margins"));
+                        .rich_tip(tr("print.margins"));
                     margin_fields(ui, &mut st.margins);
                     ui.end_row();
                 });
@@ -3969,7 +3970,7 @@ pub fn destination_row(ui: &mut Ui, st: &mut PrintState, width: f32) -> Option<S
                 on_printer,
                 egui::Button::new("").min_size(egui::vec2(24.0, 22.0)),
             )
-            .on_hover_text(tr("print.properties"));
+            .rich_tip(tr("print.properties"));
         crate::ui::icons::draw_action(
             ui.painter(),
             egui::Rect::from_center_size(gear.rect.center(), egui::vec2(16.0, 16.0)),
@@ -4519,7 +4520,7 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
                                         );
                                         if ui
                                             .small_button("x")
-                                            .on_hover_text(tr("merge.delete_field"))
+                                            .rich_tip(tr("merge.delete_field"))
                                             .clicked()
                                         {
                                             remove_field = Some(i);
@@ -4751,7 +4752,7 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
         ui.horizontal(|ui| {
             if ui
                 .add_enabled(!st.headers.is_empty(), egui::Button::new("+"))
-                .on_hover_text(tr("merge.add_record"))
+                .rich_tip(tr("merge.add_record"))
                 .clicked()
             {
                 pm::add_record(st);
@@ -4759,7 +4760,7 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
             }
             if ui
                 .add_enabled(!st.rows.is_empty(), egui::Button::new("\u{2212}"))
-                .on_hover_text(tr("merge.delete_record"))
+                .rich_tip(tr("merge.delete_record"))
                 .clicked()
                 && st.current < st.rows.len()
             {
@@ -4773,7 +4774,7 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
             ui.separator();
             if ui
                 .add_enabled(sel.is_some(), egui::Button::new(tr("merge.sel_add")))
-                .on_hover_text(tr("merge.sel_add_tip"))
+                .rich_tip(tr("merge.sel_add_tip"))
                 .clicked()
             {
                 if let Some(sel) = sel {
@@ -4787,7 +4788,7 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
             }
             if ui
                 .add_enabled(sel.is_some(), egui::Button::new(tr("merge.sel_delete")))
-                .on_hover_text(tr("merge.sel_delete_tip"))
+                .rich_tip(tr("merge.sel_delete_tip"))
                 .clicked()
             {
                 if let Some(sel) = sel {
@@ -4799,7 +4800,7 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
                 && ui.input(|i| i.key_pressed(egui::Key::Delete));
             if ui
                 .add_enabled(sel.is_some(), egui::Button::new(tr("merge.sel_clear")))
-                .on_hover_text(tr("merge.sel_clear_tip"))
+                .rich_tip(tr("merge.sel_clear_tip"))
                 .clicked()
                 || (clear_key && sel.is_some())
             {
@@ -5240,10 +5241,7 @@ fn border_grommet_dialog(
                             .into_iter()
                             .enumerate()
                             {
-                                if placement_button(ui, i, *on)
-                                    .on_hover_text(tr(key))
-                                    .clicked()
-                                {
+                                if placement_button(ui, i, *on).rich_tip(tr(key)).clicked() {
                                     *on = !*on;
                                 }
                             }
@@ -5271,7 +5269,7 @@ fn border_grommet_dialog(
         ui.horizontal(|ui| {
             help = ui
                 .add_sized([27.0, 27.0], egui::Button::new("?"))
-                .on_hover_text(tr("dialog.help"))
+                .rich_tip(tr("dialog.help"))
                 .clicked();
             if ui
                 .add_sized([100.0, 27.0], egui::Button::new(tr("dialog.reset")))
@@ -5595,7 +5593,7 @@ fn palette_editor_dialog(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
 
     /// Every page size preset has its own name and size (in either
     /// orientation), so a page's size names one preset; the favourites
@@ -5675,7 +5673,7 @@ mod tests {
     use super::*;
 
     /// Every dialog, as the menus open it.
-    fn all_dialogs(app: &App) -> Vec<Dialog> {
+    pub(crate) fn all_dialogs(app: &App) -> Vec<Dialog> {
         let layer = app.active_layer().unwrap_or(tracedraw_core::LayerId(1));
         vec![
             Dialog::NodeAlign {

@@ -9,6 +9,7 @@ use crate::macro_forms::{LiveControl, LiveForm};
 use crate::macros::Prompt;
 use crate::scripting::vba_run::Input;
 use crate::theme::Tokens;
+use crate::ui::tips::RichTip;
 use egui::{Color32, Context, Pos2, Rect, RichText, Sense, Stroke, Ui, Vec2};
 use serde_json::{json, Value};
 use tracedraw_vba_project::ControlKind;
@@ -1031,7 +1032,7 @@ fn draw_controls(ui: &mut Ui, form: &LiveForm, origin: Pos2, acts: &mut FormActi
             .inner;
         let Some(r) = resp else { continue };
         if !c.tip.is_empty() {
-            r.clone().on_hover_text(c.tip.as_str());
+            r.clone().rich_tip(c.tip.as_str());
         }
         // Focus: Enter and Exit, and SetFocus from the macro.
         if r.gained_focus() {
@@ -1365,7 +1366,7 @@ pub fn manager(app: &mut App, ui: &mut Ui) {
     ui.horizontal_wrapped(|ui| {
         if ui
             .button(tr("macros.load"))
-            .on_hover_text(tr("macros.load_hint"))
+            .rich_tip(tr("macros.load_hint"))
             .clicked()
         {
             act = Some("load");
@@ -1474,7 +1475,7 @@ pub fn manager(app: &mut App, ui: &mut Ui) {
                                 .color(Color32::from_rgb(0xC0, 0x80, 0x00))
                                 .strong(),
                         )
-                        .on_hover_text(p.warnings.join("\n"));
+                        .rich_tip(p.warnings.join("\n"));
                     }
                 })
                 .body(|ui| {
@@ -1503,7 +1504,7 @@ pub fn manager(app: &mut App, ui: &mut Ui) {
                                     on,
                                     format!("{}  ({kind})", m.name),
                                 ))
-                                .on_hover_text(if m.has_source {
+                                .rich_tip(if m.has_source {
                                     String::new()
                                 } else {
                                     tr("macros.no_source")
@@ -1812,14 +1813,14 @@ fn editor(app: &mut App, ctx: &Context) {
             ui.horizontal(|ui| {
                 if ui
                     .add_enabled(ed.dirty, egui::Button::new(tr("macros.save")))
-                    .on_hover_text("Ctrl+S")
+                    .rich_tip("Ctrl+S")
                     .clicked()
                 {
                     act = Some("save");
                 }
                 if ui
                     .add_enabled(!running, egui::Button::new(tr("macros.run_sub")))
-                    .on_hover_text(tr("macros.run_sub_hint"))
+                    .rich_tip(tr("macros.run_sub_hint"))
                     .clicked()
                 {
                     act = Some("run");

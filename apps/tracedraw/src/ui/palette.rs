@@ -13,6 +13,7 @@ use crate::app::App;
 use crate::i18n::tr;
 use crate::theme::Tokens;
 use crate::ui::rulers::Pixels;
+use crate::ui::tips::RichTip;
 use egui::{pos2, vec2, Align2, Color32, FontId, Pos2, Rect, Sense, Stroke, Ui};
 use tracedraw_core::{Color, Command, Fill};
 
@@ -323,7 +324,7 @@ fn row(app: &mut App, ui: &mut Ui, which: Row, vertical: bool) {
         crate::theme::Tokens::text_dim(),
         Stroke::NONE,
     ));
-    let menu_resp = menu_resp.on_hover_text(tr("palette.menu_tip"));
+    let menu_resp = menu_resp.rich_tip(tr("palette.menu_tip"));
     egui::Popup::menu(&menu_resp)
         .id(egui::Id::new(("palette_menu_popup", which as u8)))
         .style(crate::ui::menus::menu_popup_style)
@@ -371,7 +372,7 @@ fn row(app: &mut App, ui: &mut Ui, which: Row, vertical: bool) {
         },
     );
     if can_sample {
-        let drop_resp = drop_resp.on_hover_text(tr("palette.eyedropper_tip"));
+        let drop_resp = drop_resp.rich_tip(tr("palette.eyedropper_tip"));
         if drop_resp.clicked() {
             app.pending_palette_sample = !app.pending_palette_sample;
             if app.pending_palette_sample {
@@ -396,7 +397,7 @@ fn row(app: &mut App, ui: &mut Ui, which: Row, vertical: bool) {
             ui.id().with(("palette_expand", which as u8)),
             Sense::click(),
         )
-        .on_hover_text(tr("palette.expand_tip"));
+        .rich_tip(tr("palette.expand_tip"));
     double_chevron(
         &painter,
         expand.center(),
@@ -568,7 +569,7 @@ fn swatch(
         px.paint(painter);
     }
     let resp = match entry {
-        None => resp.on_hover_text(tr("palette.no_color_tip")),
+        None => resp.rich_tip(tr("palette.no_color_tip")),
         Some((name, c)) => resp.on_hover_ui(|ui| swatch_tip_ui(ui, name, *c)),
     };
 
@@ -739,7 +740,14 @@ fn chevron(
     vertical: bool,
 ) -> bool {
     let id = ui.id().with(("palette_chevron", which as u8, dir));
-    let resp = ui.interact(r, id, Sense::click());
+    let key = if dir < 0 {
+        "palette.scroll_back"
+    } else {
+        "palette.scroll_forward"
+    };
+    let resp = ui
+        .interact(r, id, Sense::click())
+        .rich_tip(crate::ui::tips::keyed(key));
     let color = if enabled {
         crate::theme::Tokens::text_dim()
     } else {
@@ -921,7 +929,7 @@ pub fn popups(app: &mut App, ctx: &egui::Context) {
                     painter.rect_filled(cell, 0.0, crate::canvas::to_color32(*c));
                     let resp = ui
                         .interact(cell, id.with(i), Sense::click())
-                        .on_hover_text(color_values(*c));
+                        .rich_tip(color_values(*c));
                     if resp.hovered() {
                         painter.rect_stroke(
                             cell.expand(1.0),
@@ -1006,7 +1014,7 @@ pub fn popups(app: &mut App, ctx: &egui::Context) {
                         painter.rect_filled(cell, 0.0, crate::canvas::to_color32(*c));
                         let resp = ui
                             .interact(cell, id.with(i), Sense::click())
-                            .on_hover_text(swatch_tip(name, *c));
+                            .rich_tip(swatch_tip(name, *c));
                         if resp.hovered() {
                             painter.rect_stroke(
                                 cell.expand(1.0),

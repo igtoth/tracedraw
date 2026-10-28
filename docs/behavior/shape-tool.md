@@ -185,6 +185,13 @@ round their corners with their own handles either way.
   nodes chosen only theirs (a rounded corner is chosen by any node of
   its arc). Dragging back past the corner makes it sharp. Arcs between
   curved sides, scallops and chamfers are not found again.
+- On a stretched or skewed curve corners round on the page, so a new
+  rounding is round, also on a curve stretched after other corners were
+  rounded. A corner rounded before the stretch keeps its stretched arc
+  and its widget: dragging it changes that arc in the curve's own space,
+  that corner on its own, until it is dragged back to sharp; rounded
+  again, it is round (#1000,
+  `pick_drag_tests::corner_widgets_round_stretched_curves_on_the_page`).
 - The arcs are found from the curve itself, so a drawing saved and
   opened again, or a curve rounded with the Corners panel, keeps its
   widgets too; no extra data is stored.
