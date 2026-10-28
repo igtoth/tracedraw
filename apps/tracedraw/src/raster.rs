@@ -823,10 +823,16 @@ mod tests {
     /// the new picture is taken once it is ready (#345).
     #[test]
     fn a_slow_page_is_drawn_on_its_own_thread() {
+        // Turns of its own: the program's are shared with the other tests
+        // running at the same time, whose jobs could keep it waiting.
+        static TURNS: Turns = Turns::new();
         let ctx = Context::default();
         let doc = Document::new("t", Size::new(100.0, 50.0));
         let rect = Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(320.0, 200.0));
-        let mut raster = Raster::default();
+        let mut raster = Raster {
+            turns: Some(&TURNS),
+            ..Default::default()
+        };
         let view = View::default();
         let (first, _) = pass(&ctx, &mut raster, &doc, &view, rect, 0.0);
         let key = raster.key.clone();
@@ -837,8 +843,6 @@ mod tests {
         let t = SETTLE_SECONDS + 0.01;
         pass(&ctx, &mut raster, &doc, &zoomed, rect, 0.0);
         let (mut tex, mut screen) = pass(&ctx, &mut raster, &doc, &zoomed, rect, t);
-        // One page job runs at a time in the whole program: another
-        // test's job may hold the turn for a moment.
         for _ in 0..500 {
             if raster.job.is_some() {
                 break;
@@ -873,10 +877,14 @@ mod tests {
     /// until the view rests (#902, #903).
     #[test]
     fn a_picture_that_follows_the_zoom_keeps_its_place_while_resized() {
+        // Turns of its own, as above: a turn kept for another test's
+        // current page would defer this page's render.
+        static TURNS: Turns = Turns::new();
         let ctx = Context::default();
         let doc = Document::new("t", Size::new(100.0, 50.0));
         let mut raster = Raster {
             follows_zoom: true,
+            turns: Some(&TURNS),
             ..Default::default()
         };
         let view = View {
@@ -909,7 +917,10 @@ mod tests {
         );
         assert_eq!(raster.render_count(), renders + 1);
         // The main canvas keeps rendering when its size changes.
-        let mut main = Raster::default();
+        let mut main = Raster {
+            turns: Some(&TURNS),
+            ..Default::default()
+        };
         let rect = Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(320.0, 200.0));
         pass(&ctx, &mut main, &doc, &view, rect, 0.0);
         let wider = Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(330.0, 200.0));
