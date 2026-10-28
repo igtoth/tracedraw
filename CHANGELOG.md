@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Dimensions: a dimension placed between two edges of an object (the sides of a rectangle, say, not its corners) now holds to them like one placed on nodes: moving, resizing, turning or reshaping the object takes the dimension along, each end keeping its place along its edge, and the value follows. Only ends on nodes were held, so a dimension between two sides stayed where it was (#1178).
+
 ## 0.19.12 (2026-10-28)
 
 - Blend tool: the squares at the ends of a picked blend's line (text blends too) now work: dragging one moves its object, so the blend changes direction, and dropping it on another object makes that object the new start or end with the blend's settings. They were only shown (#965).
