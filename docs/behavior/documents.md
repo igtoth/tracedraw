@@ -10,8 +10,8 @@ rulers:
   With no drawing open it is the only tab, and the menu bar shows only
   File, Tools, Window and Help; File commands that need a drawing are
   disabled. While it is shown (with drawings open too) the toolbox and the
-  property bar show pale, the colour palette shows pale and takes no
-  clicks, and the dockers that work on a drawing say "Open or create a
+  property bar show pale, the colour palette keeps its colours and
+  tooltips but takes no clicks (#1082), and the dockers that work on a drawing say "Open or create a
   drawing to use this docker." instead of showing the hidden drawing's
   selection; Hints still shows (#482,
   `ui::palette::tests::the_palette_rests_on_the_welcome_screen`).
