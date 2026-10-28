@@ -55,3 +55,25 @@ necessários. Cada alinhamento ou distribuição é um passo de desfazer.
 
 Para colocar cópias a distâncias iguais de uma vez, veja
 [Duplicar e repetir](step-and-repeat.md).
+
+## Encaixar objetos num caminho {#fit-to-path}
+
+O painel [[docker.fit_to_path]] coloca objetos ao longo de uma linha, de uma
+curva ou do contorno de uma forma. Abra-o com
+[[menu.object > menu.object.fit_objects_to_path]].
+
+1. Selecione os objetos a colocar e, por último, o caminho (Shift+clique).
+2. Em [[docker.fit_to_path_spacing]], escolha
+   [[docker.fit_to_path_even]] para espalhar os objetos pelo caminho inteiro, ou
+   [[docker.fit_to_path_distance]] e digite a [[docker.fit_to_path_distance_value]]
+   entre os centros de objetos vizinhos.
+3. [[docker.fit_to_path_offset]] afasta o primeiro objeto do início do
+   caminho.
+4. Marque [[docker.fit_to_path_rotate]] para girar cada objeto com a direção
+   do caminho, e [[docker.fit_to_path_reverse]] para começar pela outra
+   ponta.
+5. Os contornos na tela mostram onde os objetos vão ficar. Clique em
+   [[docker.apply]].
+
+Numa forma fechada, os objetos dão a volta inteira sem que o primeiro e o
+último se encontrem. Encaixar é um passo de desfazer.

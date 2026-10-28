@@ -178,6 +178,31 @@ pub fn swatch_tip(name: &str, c: Color) -> String {
     }
 }
 
+/// A swatch's tooltip: the colour's name in bold, then its values one
+/// per line (#1082).
+pub fn swatch_tip_ui(ui: &mut Ui, name: &str, c: Color) {
+    ui.spacing_mut().item_spacing.y = 1.0;
+    let size = ui.style().text_styles[&egui::TextStyle::Body].size;
+    if !name.is_empty() {
+        ui.label(egui::RichText::new(name).font(crate::theme::bold(size)));
+    }
+    ui.label(color_lines(c));
+}
+
+/// A colour's values one per line ("C: 0", "M: 60", ...).
+pub fn color_lines(c: Color) -> String {
+    match c {
+        Color::Cmyk { .. } | Color::Rgb { .. } => color_values(c)
+            .split(' ')
+            .collect::<Vec<_>>()
+            .chunks(2)
+            .map(|p| p.join(" "))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        _ => color_values(c),
+    }
+}
+
 /// Values as the palette tooltips show them.
 pub fn color_values(c: Color) -> String {
     let pct = |v: f32| (v * 100.0).round() as i32;
@@ -220,12 +245,6 @@ pub fn visible_slots(width: f32) -> usize {
 }
 
 fn row(app: &mut App, ui: &mut Ui, which: Row, vertical: bool) {
-    // Nothing to colour on the Welcome Screen: the swatches show pale
-    // and take no clicks (#482).
-    if !app.drawing_shown() {
-        ui.disable();
-        ui.multiply_opacity(0.4);
-    }
     let lines = lines_of(app, which);
     let thick = thickness(app, which);
     let size = if vertical {
@@ -317,7 +336,7 @@ fn row(app: &mut App, ui: &mut Ui, which: Row, vertical: bool) {
 
     // The eyedropper: only the document palette takes new colours.
     let drop_rect = ax.rect(34.0, EDGE + 2.0, 18.0, 18.0);
-    let can_sample = which == Row::Document && app.has_document();
+    let can_sample = which == Row::Document && app.drawing_shown();
     let drop_resp = ui.interact(
         drop_rect,
         ui.id().with(("palette_dropper", which as u8)),
@@ -500,7 +519,15 @@ fn swatch(
     color_index: Option<usize>,
 ) {
     let id = ui.id().with(("swatch", which as u8, index));
-    let resp = ui.interact(cell, id, Sense::click_and_drag());
+    // Nothing to colour on the Welcome Screen or with no drawing open:
+    // the swatches keep their colours and their tooltips but take no
+    // clicks or drags (#482, #1082).
+    let sense = if app.drawing_shown() {
+        Sense::click_and_drag()
+    } else {
+        Sense::hover()
+    };
+    let resp = ui.interact(cell, id, sense);
     match entry {
         None => {
             painter.rect_filled(cell, 0.0, Color32::WHITE);
@@ -540,11 +567,10 @@ fn swatch(
         );
         px.paint(painter);
     }
-    let tip = match entry {
-        None => tr("palette.no_color_tip"),
-        Some((name, c)) => swatch_tip(name, *c),
+    let resp = match entry {
+        None => resp.on_hover_text(tr("palette.no_color_tip")),
+        Some((name, c)) => resp.on_hover_ui(|ui| swatch_tip_ui(ui, name, *c)),
     };
-    let resp = resp.on_hover_text(tip);
 
     // Dragging the colour: inside an object it fills it, on its outline
     // it colours the outline, on the document palette it joins it.
@@ -1134,6 +1160,11 @@ mod tests {
             "Light Green\nC: 60 M: 0 Y: 40 K: 20"
         );
         assert_eq!(swatch_tip("", Color::rgb8(255, 0, 10)), "R: 255 G: 0 B: 10");
+        assert_eq!(
+            color_lines(Color::cmyk_pct(0.0, 60.0, 100.0, 0.0)),
+            "C: 0\nM: 60\nY: 100\nK: 0"
+        );
+        assert_eq!(color_lines(Color::rgb8(255, 0, 10)), "R: 255\nG: 0\nB: 10");
     }
 
     #[test]
@@ -1271,6 +1302,30 @@ mod tests {
         app.show_welcome = false;
         click(&mut app, x);
         assert_ne!(fill(&app), before);
+        // The swatches keep their full colours on the Welcome Screen
+        // (#1082): the row paints the same colours as with the drawing.
+        let fills = |app: &mut App| {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(800.0, 100.0),
+                )),
+                ..Default::default()
+            };
+            let out = ctx.run_ui(input, |ui| palette_row(app, ui));
+            out.shapes
+                .iter()
+                .filter_map(|s| match &s.shape {
+                    egui::Shape::Rect(r) => Some(r.fill),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        let shown = fills(&mut app);
+        app.show_welcome = true;
+        let welcome = fills(&mut app);
+        assert!(shown.len() > 10, "{shown:?}");
+        assert_eq!(welcome, shown);
     }
 
     /// With two rows the default palette is twice as thick and fills line
