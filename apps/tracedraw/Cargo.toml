@@ -58,6 +58,11 @@ ureq = { version = "3", features = ["platform-verifier"] }
 # lossless files only (#592).
 webp = { version = "0.3", default-features = false }
 
+# Where the pointer is while files are dragged over the window: the
+# system drag sends no pointer moves (#1142).
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.52", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
+
 # The browser build: WebGL canvas, file pickers and downloads through the
 # DOM, randomness and time from JavaScript.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
