@@ -2511,6 +2511,56 @@ mod tests {
         println!("keystroke: dimension label {label:.3} ms, plain text {plain:.3} ms");
     }
 
+    /// What a drag step of a rectangle costs on a page of 400 objects
+    /// when 50 dimensions hold to it: on its edges (#1178) against on its
+    /// corners (#838) and against 50 loose dimensions:
+    /// `cargo test --release -- --ignored frame_times_dragging_an_object_with_dimensions --nocapture`.
+    #[test]
+    #[ignore]
+    fn frame_times_dragging_an_object_with_dimensions() {
+        let mut page = |place: fn(i: f64) -> (Point, Point)| {
+            let mut app = App::headless();
+            app.view.zoom = 1.0;
+            for i in 0..400 {
+                let x = (i % 20) as f64 * 10.0;
+                let y = (i / 20) as f64 * 10.0;
+                app.new_shape(ShapeKind::Rect {
+                    rect: Rect::new(x, y, x + 8.0, y + 8.0),
+                    radius: 0.0,
+                    corners: None,
+                })
+                .expect("rect");
+            }
+            let rect = app
+                .new_shape(ShapeKind::Rect {
+                    rect: Rect::new(300.0, 300.0, 400.0, 400.0),
+                    radius: 0.0,
+                    corners: None,
+                })
+                .expect("rect");
+            for i in 0..50 {
+                let (a, b) = place(i as f64);
+                app.create_dimension(a, b, Point::new(350.0, 420.0 + i as f64 * 2.0));
+            }
+            app.bake_dimensions();
+            let start = web_time::Instant::now();
+            for _ in 0..100 {
+                app.run(Command::TransformShapes {
+                    shapes: vec![rect],
+                    transform: Affine::translate((0.5, 0.25)),
+                });
+                app.bake_dimensions();
+            }
+            start.elapsed().as_secs_f64() * 1000.0 / 100.0
+        };
+        let edges = page(|i| (Point::new(300.0, 310.0 + i), Point::new(400.0, 320.0 + i)));
+        let nodes = page(|_| (Point::new(300.0, 300.0), Point::new(400.0, 300.0)));
+        let loose = page(|i| (Point::new(100.0, 310.0 + i), Point::new(200.0, 320.0 + i)));
+        println!(
+            "drag step with 50 dimensions: on edges {edges:.3} ms, on corners {nodes:.3} ms, loose {loose:.3} ms"
+        );
+    }
+
     /// Joined, the extension lines run into the dimension line (or arc)
     /// in one curve with corners, nothing past them, the corners rounded
     /// by the corner radius; a centred label breaks it in two (#641).
