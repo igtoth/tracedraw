@@ -77,7 +77,9 @@ show white on a white page (#655,
 `cursors::tests::the_cross_hair_and_the_i_beam_are_drawn_black_on_white`).
 The cross hair's lines cross on the middle of the pixel under the hot
 spot; the icons, nibs and drawn pointers are painted beside it, above
-the drawing. The window keeps one frame queued, not two, so what is
+the drawing. A tool's icon sits 4 points below and right of the cross
+hair's middle, clear of its arms, so the pointer reads as one piece
+(#493, `cursors::tests::the_badge_sits_close_to_the_cross_hair`). The window keeps one frame queued, not two, so what is
 drawn under the pointer trails it as little as the screen allows, and a
 shape being drawn has its corner where the pointer is from the first
 frame of the drag (it waited at the press point for one frame,
