@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Tracing (Quick Trace and Outline Trace) of flat art saved as a compressed image or a screenshot: each colour comes out as one region with smooth edges. Noise split one colour into several shades that each became regions of their own, the anti-aliased edge pixels were handed out unevenly, so edges came out notched and stepped with pale flecks along them, and small letters lost their thin strokes. On a cartoon bee the Clipart preset now gives 109 curves where it gave 1353. Photos trace as before (#611).
+
 - Browser version on Windows: AltGr types its characters (€, @, [ ], { }, \ and the letters of Polish, Czech, German and other keyboards) in text and in fields. Windows browsers report AltGr as Ctrl and Alt held together, so the page kept these keys from the browser as Ctrl shortcuts and nothing was typed, and AltGr+A selected all or AltGr+E exported instead (#1408).
 
 - Browser version: closing or reloading the tab, going back or leaving the page with unsaved drawings asks first with the browser's own question, and auto-backup and session recovery now work in the browser too. Backups are kept in the browser's storage for the site (a folder of their own per tab), written every few minutes, when the question shows and when the page is hidden, and the next visit offers what a closed, reloaded or crashed tab left. Before, the page closed at once and the work was lost (#1395).
