@@ -141,23 +141,7 @@ pub fn blend_from_nodes(
         return blend(a, b, steps, samples);
     }
     if let Some((sa, sb)) = paired_nodes(a, b, [a0, a1, b0, b1]) {
-        return (1..=steps)
-            .map(|k| {
-                let t = k as f64 / (steps + 1) as f64;
-                let mut out = BezPath::new();
-                out.move_to(sa[0].p0.lerp(sb[0].p0, t));
-                for (x, y) in sa.iter().zip(&sb) {
-                    let end = x.p3.lerp(y.p3, t);
-                    if x.line && y.line {
-                        out.line_to(end);
-                    } else {
-                        out.curve_to(x.c1.lerp(y.c1, t), x.c2.lerp(y.c2, t), end);
-                    }
-                }
-                out.close_path();
-                out
-            })
-            .collect();
+        return node_steps(&sa, &sb, steps);
     }
     let (Some(pa), Some(pb)) = (
         run_from(&resample(a, samples), a0, a1),
@@ -180,6 +164,36 @@ pub fn blend_from_nodes(
         })
         .collect()
 }
+
+/// The `steps` steps between two runs of segments paired one for one:
+/// each node and control point of a step lies on the straight line
+/// between its two paired points, and a step's segment is a line where
+/// both paired segments are lines.
+fn node_steps(sa: &[Seg], sb: &[Seg], steps: usize) -> Vec<BezPath> {
+    let (Some(fa), Some(fb)) = (sa.first(), sb.first()) else {
+        return Vec::new();
+    };
+    (1..=steps)
+        .map(|k| {
+            let t = k as f64 / (steps + 1) as f64;
+            let mut out = BezPath::with_capacity(sa.len() + 2);
+            out.move_to(fa.p0.lerp(fb.p0, t));
+            for (x, y) in sa.iter().zip(sb) {
+                let end = x.p3.lerp(y.p3, t);
+                if x.line && y.line {
+                    out.line_to(end);
+                } else {
+                    out.curve_to(x.c1.lerp(y.c1, t), x.c2.lerp(y.c2, t), end);
+                }
+            }
+            out.close_path();
+            out
+        })
+        .collect()
+}
+
+/// The chords a curved segment is measured over (see [`Seg::lengths`]).
+const CHORDS: usize = 8;
 
 /// One segment of an outline as a cubic (a line has its control points
 /// on itself, a third of the way from each end).
@@ -210,6 +224,43 @@ impl Seg {
             c2: self.c1,
             p3: self.p0,
             line: self.line,
+        }
+    }
+
+    /// The lengths along the segment at the parameters 0, 1/8, ...,
+    /// 1, measured over chords (close enough to pair nodes by share of
+    /// length, and much cheaper than solving for exact lengths).
+    fn lengths(self) -> [f64; CHORDS + 1] {
+        let mut out = [0.0; CHORDS + 1];
+        if self.line {
+            let l = (self.p3 - self.p0).hypot();
+            for (k, o) in out.iter_mut().enumerate() {
+                *o = l * k as f64 / CHORDS as f64;
+            }
+            return out;
+        }
+        use kurbo::ParamCurve;
+        let c = kurbo::CubicBez::new(self.p0, self.c1, self.c2, self.p3);
+        let mut prev = self.p0;
+        for k in 1..=CHORDS {
+            let q = c.eval(k as f64 / CHORDS as f64);
+            out[k] = out[k - 1] + (q - prev).hypot();
+            prev = q;
+        }
+        out
+    }
+
+    /// The parameter `len` along a segment whose [`Seg::lengths`] are
+    /// `table`.
+    fn param_at(table: &[f64; CHORDS + 1], len: f64) -> f64 {
+        let k = table.partition_point(|l| *l < len).clamp(1, CHORDS);
+        let (l0, l1) = (table[k - 1], table[k]);
+        let u = if l1 > l0 { (len - l0) / (l1 - l0) } else { 0.0 };
+        let t = (k as f64 - 1.0 + u) / CHORDS as f64;
+        if t.is_finite() {
+            t.clamp(0.0, 1.0)
+        } else {
+            0.0
         }
     }
 
@@ -411,13 +462,24 @@ fn point_path(p: &BezPath) -> BezPath {
     out
 }
 
-/// The morph of one outline into another (each taken as one closed run of
-/// points).
+/// The most nodes a step of a blend paired by shape may have (both
+/// outlines' nodes together); with more, the steps are polygons through
+/// points spread along the outlines, so huge outlines keep blends light.
+const MAX_SHAPE_NODES: usize = 512;
+
+/// The morph of one outline into another. Closed outlines are paired
+/// node for node (see [`shape_paired_nodes`]), so the steps keep few
+/// nodes, straight sides where both outlines are straight and smooth
+/// curves elsewhere (#1020). Open or very large outlines are taken as one
+/// closed run of points each.
 fn blend_one(a: &BezPath, b: &BezPath, steps: usize, samples: usize) -> Vec<BezPath> {
     let pa = resample(a, samples);
     let pb = resample(b, samples);
     if pa.len() != pb.len() || pa.is_empty() {
         return Vec::new();
+    }
+    if let Some((sa, sb)) = shape_paired_nodes(a, b, &pa, &pb) {
+        return node_steps(&sa, &sb, steps);
     }
     // Match the two outlines by shape, not by position: wind b the way a
     // is wound, then start b at the point whose direction from b's centre
@@ -463,6 +525,208 @@ fn blend_one(a: &BezPath, b: &BezPath, steps: usize, samples: usize) -> Vec<BezP
             )
         })
         .collect()
+}
+
+/// Twice the signed area of the closed run of points `pts`.
+fn ring_area(pts: &[Point]) -> f64 {
+    pts.iter()
+        .zip(pts.iter().cycle().skip(1))
+        .map(|(p, q)| p.x * q.y - q.x * p.y)
+        .sum()
+}
+
+/// A run of segments measured: where each one starts, as a share of
+/// their whole length (the first 0), that length, and each one's
+/// [`Seg::lengths`].
+struct Measured {
+    shares: Vec<f64>,
+    total: f64,
+    tables: Vec<[f64; CHORDS + 1]>,
+}
+
+fn measure(segs: &[Seg]) -> Measured {
+    let tables: Vec<[f64; CHORDS + 1]> = segs.iter().map(|s| s.lengths()).collect();
+    let total: f64 = tables.iter().map(|t| t[CHORDS]).sum();
+    let mut at = 0.0;
+    let shares = tables
+        .iter()
+        .map(|t| {
+            let s = at / total;
+            at += t[CHORDS];
+            s
+        })
+        .collect();
+    Measured {
+        shares,
+        total,
+        tables,
+    }
+}
+
+/// `segs` (measured as `m`) cut at each of `cuts` (shares of the whole
+/// length, rising, from 0 to below 1) that is not one of its nodes
+/// already.
+fn cut_at(segs: &[Seg], m: &Measured, cuts: &[f64]) -> Vec<Seg> {
+    let mut out = Vec::with_capacity(segs.len() + cuts.len());
+    let mut c = 0;
+    for (i, seg) in segs.iter().enumerate() {
+        let from = m.shares.get(i).copied().unwrap_or(0.0);
+        let to = m.shares.get(i + 1).copied().unwrap_or(1.0);
+        let mut ts = vec![0.0];
+        while let Some(&f) = cuts.get(c) {
+            if f >= to {
+                break;
+            }
+            if let (true, Some(table)) = (f > from, m.tables.get(i)) {
+                ts.push(Seg::param_at(table, (f - from) * m.total));
+            }
+            c += 1;
+        }
+        ts.push(1.0);
+        for w in ts.windows(2) {
+            out.push(seg.part(w[0], w[1].max(w[0])));
+        }
+    }
+    out
+}
+
+/// The two closed one-part outlines `a` and `b` as runs of segments to
+/// pair one for one, matched by shape: `b` wound the way `a` is and
+/// started at the place of its outline that best fits `a`'s first node
+/// (the two outlines compared as point runs `pa` and `pb`, the resampled
+/// outlines with the first point repeated last, each about its own
+/// centre and at its own size, so the steps do not twist). Then each
+/// outline gains a node where the other has one at the same share of
+/// its length and has none itself (nodes closer than half a sample
+/// apart pair up), so a square and a circle pair corner with the
+/// circle's point halfway between its nodes, and the steps are rounded
+/// squares of eight nodes. `None` for open outlines, outlines of no
+/// length, or more than [`MAX_SHAPE_NODES`] nodes together.
+fn shape_paired_nodes(
+    a: &BezPath,
+    b: &BezPath,
+    pa: &[Point],
+    pb: &[Point],
+) -> Option<(Vec<Seg>, Vec<Seg>)> {
+    let sa = closed_segments(a)?;
+    let mut sb = closed_segments(b)?;
+    if sa.len() + sb.len() > MAX_SHAPE_NODES {
+        return None;
+    }
+    // The resampled runs without the repeated point.
+    let ring = |p: &[Point]| -> Vec<Point> {
+        let mut r = p.to_vec();
+        if r.len() > 1 && (r[0] - r[r.len() - 1]).hypot() < 1e-9 {
+            r.pop();
+        }
+        r
+    };
+    let (ra, mut rb) = (ring(pa), ring(pb));
+    let m = ra.len();
+    if m < 3 || rb.len() != m {
+        return None;
+    }
+    if ring_area(&ra) * ring_area(&rb) < 0.0 {
+        sb = sb.iter().rev().map(|s| s.reversed()).collect();
+        // Reversed, the run still starts at the first node.
+        rb[1..].reverse();
+    }
+    // Each run about its centre, at unit size.
+    let normal = |r: &[Point]| -> Option<Vec<Vec2>> {
+        let n = r.len() as f64;
+        let c = Point::new(
+            r.iter().map(|p| p.x).sum::<f64>() / n,
+            r.iter().map(|p| p.y).sum::<f64>() / n,
+        );
+        let size = (r.iter().map(|p| (*p - c).hypot2()).sum::<f64>() / n).sqrt();
+        let size = if size.is_finite() && size > 1e-12 {
+            size
+        } else {
+            1.0
+        };
+        let v: Vec<Vec2> = r.iter().map(|p| (*p - c) / size).collect();
+        v.iter()
+            .all(|q| q.x.is_finite() && q.y.is_finite())
+            .then_some(v)
+    };
+    let (na, nb) = (normal(&ra)?, normal(&rb)?);
+    // The best shift: every fourth one on every fourth point first, then
+    // the shifts around that one on all points (cheap enough to run on
+    // every move of a drag).
+    const STRIDE: usize = 4;
+    let cost = |k: usize, by: usize| -> f64 {
+        (0..m)
+            .step_by(by)
+            .map(|i| (na[i] - nb[(i + k) % m]).hypot2())
+            .sum()
+    };
+    let best = |ks: &mut dyn Iterator<Item = usize>, by: usize| {
+        ks.map(|k| (k, cost(k, by)))
+            .min_by(|x, y| x.1.partial_cmp(&y.1).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|(k, _)| k)
+            .unwrap_or(0)
+    };
+    let rough = best(&mut (0..m).step_by(STRIDE), STRIDE);
+    let shift = best(
+        &mut (0..=2 * STRIDE).map(|d| (rough + m + d - STRIDE) % m),
+        1,
+    );
+    let snap = 0.5 / m as f64;
+    // Start b at the share `shift / m` of its length: at its node there
+    // when one is that close, otherwise at a new node.
+    let mb = measure(&sb);
+    let ma = measure(&sa);
+    let long = |m: &Measured| m.total.is_finite() && m.total > 1e-9;
+    if !(long(&ma) && long(&mb)) {
+        return None;
+    }
+    let start = shift as f64 / m as f64;
+    let near = mb
+        .shares
+        .iter()
+        .enumerate()
+        .map(|(i, s)| (i, (s - start).abs().min(1.0 - (s - start).abs())))
+        .min_by(|x, y| x.1.partial_cmp(&y.1).unwrap_or(std::cmp::Ordering::Equal));
+    let first = match near {
+        Some((i, d)) if d < snap => i,
+        _ => {
+            sb = cut_at(&sb, &mb, &[start]);
+            // The new node is the start of the segment after the cut.
+            mb.shares.iter().take_while(|s| **s < start).count()
+        }
+    };
+    let first = first.min(sb.len().saturating_sub(1));
+    sb.rotate_left(first);
+    let mb = measure(&sb);
+    let (shares_a, shares_b) = (&ma.shares, &mb.shares);
+    // Pair the nodes by share of length; a node without a partner within
+    // `snap` gets one cut into the other outline.
+    let (mut cut_a, mut cut_b) = (Vec::new(), Vec::new());
+    let (mut i, mut j) = (0, 0);
+    while i < shares_a.len() || j < shares_b.len() {
+        match (shares_a.get(i), shares_b.get(j)) {
+            (Some(x), Some(y)) if (x - y).abs() < snap => {
+                i += 1;
+                j += 1;
+            }
+            (Some(x), Some(y)) if x < y => {
+                cut_b.push(*x);
+                i += 1;
+            }
+            (Some(x), None) => {
+                cut_b.push(*x);
+                i += 1;
+            }
+            (_, Some(y)) => {
+                cut_a.push(*y);
+                j += 1;
+            }
+            (None, None) => break,
+        }
+    }
+    let sa = cut_at(&sa, &ma, &cut_a);
+    let sb = cut_at(&sb, &mb, &cut_b);
+    (sa.len() == sb.len()).then_some((sa, sb))
 }
 
 /// Parallel extrusion: side faces from each edge toward `depth` offset.
@@ -1141,6 +1405,67 @@ mod tests {
         assert_eq!(mid.len(), 1);
         let c = mid[0].bounding_box().center();
         assert!((c.x - 15.0).abs() < 0.5, "{c:?}");
+    }
+
+    /// A square blended into a circle (#1020): each step has eight nodes
+    /// (the square's four corners and the circle's four nodes, each
+    /// paired with the other outline's point at the same share of its
+    /// length), not a polygon of a hundred points, and its outline is
+    /// even: convex, and between the two shapes in size.
+    #[test]
+    fn blend_of_a_square_and_a_circle_has_few_nodes_and_even_outlines() {
+        let square = Rect::new(0.0, 0.0, 40.0, 40.0).to_path(0.01);
+        let circle =
+            crate::geometry::Ellipse::from_rect(Rect::new(100.0, 0.0, 140.0, 40.0)).to_path(0.01);
+        let steps = blend(&square, &circle, 5, 120);
+        assert_eq!(steps.len(), 5);
+        let mut last_area = square.area().abs();
+        for s in &steps {
+            let els = s.elements();
+            let nodes = els
+                .iter()
+                .filter(|e| !matches!(e, PathEl::MoveTo(_) | PathEl::ClosePath))
+                .count();
+            assert_eq!(nodes, 8, "{els:?}");
+            // Convex all round: every turn of its flattened outline the
+            // same way, no lumps or dents.
+            let pts = flat_points(s);
+            let turns: Vec<f64> = pts
+                .windows(3)
+                .map(|w| (w[1] - w[0]).cross(w[2] - w[1]))
+                .filter(|c| c.abs() > 1e-9)
+                .collect();
+            assert!(
+                turns.iter().all(|c| *c > 0.0) || turns.iter().all(|c| *c < 0.0),
+                "{turns:?}"
+            );
+            // Rounder step by step: the area falls from the square's to
+            // the circle's, the size stays the same.
+            let area = s.area().abs();
+            assert!(area < last_area + 1e-6, "{area} after {last_area}");
+            last_area = area;
+            let bb = s.bounding_box();
+            assert!((bb.width() - 40.0).abs() < 0.5, "{bb:?}");
+            assert!((bb.height() - 40.0).abs() < 0.5, "{bb:?}");
+        }
+        assert!(last_area > circle.area().abs());
+    }
+
+    /// Two squares of different size blend into squares: four straight
+    /// sides each, the corners kept exactly where they lie between the
+    /// two squares' corners.
+    #[test]
+    fn blend_of_two_squares_keeps_straight_sides_and_corners() {
+        let a = Rect::new(0.0, 0.0, 10.0, 10.0).to_path(0.01);
+        let b = Rect::new(50.0, 0.0, 80.0, 30.0).to_path(0.01);
+        let mid = blend(&a, &b, 1, 120);
+        let els = mid[0].elements();
+        assert_eq!(els.len(), 6, "{els:?}");
+        assert!(els[1..5].iter().all(|e| matches!(e, PathEl::LineTo(_))));
+        let bb = mid[0].bounding_box();
+        assert!((bb.x0 - 25.0).abs() < 1e-6 && (bb.x1 - 45.0).abs() < 1e-6);
+        assert!((bb.y0).abs() < 1e-6 && (bb.y1 - 20.0).abs() < 1e-6);
+        assert!((mid[0].area().abs() - 400.0).abs() < 1e-6);
     }
 
     /// Paired from given nodes, a square blends into the same square as
