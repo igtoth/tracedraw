@@ -123,7 +123,8 @@ fn service_state(app: &App, ui: &mut Ui) {
 /// Tools > Options > AI > General: the switch for all AI features and
 /// where the service stands.
 pub fn general_page(app: &mut App, ui: &mut Ui) {
-    ui.checkbox(&mut app.settings.ai_enabled, tr("aiui.enable"));
+    ui.checkbox(&mut app.settings.ai_enabled, tr("aiui.enable"))
+        .rich_tip(crate::ui::tips::pair("aiui.enable", "aiui.enable_tip"));
     dim(ui, "aiui.enable_hint");
     crate::ui::chrome::section(ui, &tr("aiui.services"));
     service_state(app, ui);

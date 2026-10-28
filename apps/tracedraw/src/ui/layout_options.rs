@@ -290,30 +290,39 @@ fn row_label(ui: &mut Ui, key: &str) {
 /// A distance field in the ruler unit through the drawing scale (a
 /// position, an offset, a spacing); returns the new value in mm when it
 /// changed.
-fn distance_field(ui: &mut Ui, units: Units, mm: f64, speed: f64) -> Option<f64> {
-    unit_field(ui, units, units.world_mm(), mm, speed)
+fn distance_field(ui: &mut Ui, tip: &str, units: Units, mm: f64, speed: f64) -> Option<f64> {
+    unit_field(ui, tip, units, units.world_mm(), mm, speed)
 }
 
 /// A distance field in the ruler unit as printed (page margins, columns,
 /// the baseline grid), not through the drawing scale.
-fn paper_field(ui: &mut Ui, units: Units, mm: f64, speed: f64) -> Option<f64> {
-    unit_field(ui, units, units.mm(), mm, speed)
+fn paper_field(ui: &mut Ui, tip: &str, units: Units, mm: f64, speed: f64) -> Option<f64> {
+    unit_field(ui, tip, units, units.mm(), mm, speed)
 }
 
-fn unit_field(ui: &mut Ui, units: Units, unit_mm: f64, mm: f64, speed: f64) -> Option<f64> {
+fn unit_field(
+    ui: &mut Ui,
+    tip: &str,
+    units: Units,
+    unit_mm: f64,
+    mm: f64,
+    speed: f64,
+) -> Option<f64> {
     let unit_mm = if unit_mm.is_finite() && unit_mm > 0.0 {
         unit_mm
     } else {
         1.0
     };
     let mut v = mm / unit_mm;
-    let r = ui.add_sized(
-        [110.0, 20.0],
-        crate::ui::field::NumField::new(&mut v)
-            .speed(speed)
-            .max_decimals(4)
-            .suffix(format!(" {}", units.short())),
-    );
+    let r = ui
+        .add_sized(
+            [110.0, 20.0],
+            crate::ui::field::NumField::new(&mut v)
+                .speed(speed)
+                .max_decimals(4)
+                .suffix(format!(" {}", units.short())),
+        )
+        .rich_tip(crate::ui::tips::pair(tip, &format!("{tip}_tip")));
     r.changed().then_some(v * unit_mm)
 }
 
@@ -334,10 +343,11 @@ fn units_combo(ui: &mut Ui, id: &str, units: &mut Units) -> bool {
 }
 
 /// A colour button; returns the new colour when it changed.
-fn color_button(ui: &mut Ui, c: Color) -> Option<Color> {
+fn color_button(ui: &mut Ui, tip: &str, c: Color) -> Option<Color> {
     let [r, g, b] = c.to_rgb8();
     let mut rgb = [r, g, b];
     ui.color_edit_button_srgb(&mut rgb)
+        .rich_tip(crate::ui::tips::pair(tip, &format!("{tip}_tip")))
         .changed()
         .then(|| Color::rgb8(rgb[0], rgb[1], rgb[2]))
 }
@@ -358,10 +368,17 @@ pub fn rulers_page(app: &mut App, ui: &mut Ui) {
         .spacing([8.0, 6.0])
         .show(ui, |ui| {
             row_label(ui, "options.units");
-            let mut u = app.units;
-            if units_combo(ui, "ruler_units", &mut u) {
-                app.units = u;
-            }
+            crate::ui::tips::tip_over(
+                ui,
+                crate::ui::tips::pair("options.units", "options.units_tip"),
+                |ui| {
+                    let mut u = app.units;
+                    if units_combo(ui, "ruler_units", &mut u) {
+                        app.units = u;
+                    };
+                },
+            );
+
             ui.end_row();
         });
     section(ui, "options.drawing_scale");
@@ -372,12 +389,24 @@ pub fn rulers_page(app: &mut App, ui: &mut Ui) {
         .spacing([8.0, 6.0])
         .show(ui, |ui| {
             row_label(ui, "options.horizontal_origin");
-            if let Some(v) = distance_field(ui, units, meta.rulers.origin_x, 0.1) {
+            if let Some(v) = distance_field(
+                ui,
+                "options.horizontal_origin",
+                units,
+                meta.rulers.origin_x,
+                0.1,
+            ) {
                 meta.rulers.origin_x = v;
             }
             ui.end_row();
             row_label(ui, "options.vertical_origin");
-            if let Some(v) = distance_field(ui, units, meta.rulers.origin_y, 0.1) {
+            if let Some(v) = distance_field(
+                ui,
+                "options.vertical_origin",
+                units,
+                meta.rulers.origin_y,
+                0.1,
+            ) {
                 meta.rulers.origin_y = v;
             }
             ui.end_row();
@@ -391,6 +420,10 @@ pub fn rulers_page(app: &mut App, ui: &mut Ui) {
                 [70.0, 20.0],
                 crate::ui::field::NumField::new(&mut n).range(1..=100),
             )
+            .rich_tip(crate::ui::tips::pair(
+                "options.tick_divisions",
+                "options.tick_divisions_tip",
+            ))
             .changed()
         {
             meta.rulers.tick_divisions = n;
@@ -403,21 +436,33 @@ pub fn rulers_page(app: &mut App, ui: &mut Ui) {
         .spacing([8.0, 6.0])
         .show(ui, |ui| {
             row_label(ui, "options.nudge_label");
-            if let Some(v) = distance_field(ui, units, app.nudge_mm, 0.01) {
+            if let Some(v) = distance_field(ui, "options.nudge_label", units, app.nudge_mm, 0.01) {
                 if v > 0.0 {
                     app.nudge_mm = v;
                 }
             }
             ui.end_row();
             row_label(ui, "options.super_nudge");
-            if let Some(v) = distance_field(ui, units, app.settings.super_nudge_mm, 0.01) {
+            if let Some(v) = distance_field(
+                ui,
+                "options.super_nudge",
+                units,
+                app.settings.super_nudge_mm,
+                0.01,
+            ) {
                 if v > 0.0 {
                     app.settings.super_nudge_mm = v;
                 }
             }
             ui.end_row();
             row_label(ui, "options.micro_nudge");
-            if let Some(v) = distance_field(ui, units, app.settings.micro_nudge_mm, 0.001) {
+            if let Some(v) = distance_field(
+                ui,
+                "options.micro_nudge",
+                units,
+                app.settings.micro_nudge_mm,
+                0.001,
+            ) {
                 if v > 0.0 {
                     app.settings.micro_nudge_mm = v;
                 }
@@ -425,8 +470,19 @@ pub fn rulers_page(app: &mut App, ui: &mut Ui) {
             ui.end_row();
         });
     ui.add_space(8.0);
-    ui.checkbox(&mut app.show_rulers, tr("options.show_rulers"));
-    if ui.button(tr("options.reset_origin")).clicked() {
+    ui.checkbox(&mut app.show_rulers, tr("options.show_rulers"))
+        .rich_tip(crate::ui::tips::pair(
+            "options.show_rulers",
+            "options.show_rulers_tip",
+        ));
+    if ui
+        .button(tr("options.reset_origin"))
+        .rich_tip(crate::ui::tips::pair(
+            "options.reset_origin",
+            "options.reset_origin_tip",
+        ))
+        .clicked()
+    {
         meta.rulers.origin_x = 0.0;
         meta.rulers.origin_y = 0.0;
     }
@@ -462,7 +518,12 @@ fn drawing_scale_fields(app: &mut App, ui: &mut Ui, meta: &mut Metadata) {
                             pick = Some(*p);
                         }
                     }
-                });
+                })
+                .response
+                .rich_tip(crate::ui::tips::pair(
+                    "options.typical_scales",
+                    "options.typical_scales_tip",
+                ));
             if let Some(p) = pick {
                 // A ratio keeps the units in use; inch and foot scales
                 // bring theirs.
@@ -479,49 +540,63 @@ fn drawing_scale_fields(app: &mut App, ui: &mut Ui, meta: &mut Metadata) {
             }
             ui.end_row();
             row_label(ui, "options.page_distance");
-            ui.horizontal(|ui| {
-                let world = world_unit.from_mm(r.scale_world);
-                let mut v = page_unit.from_mm(r.scale_page);
-                if ui
-                    .add_sized(
-                        [90.0, 20.0],
-                        crate::ui::field::NumField::new(&mut v)
-                            .speed(0.1)
-                            .max_decimals(4)
-                            .range(0.0001..=1_000_000.0),
-                    )
-                    .changed()
-                {
-                    ds::set(r, v, page_unit, world, world_unit);
-                }
-                let mut u = page_unit;
-                if units_combo(ui, "scale_page_unit", &mut u) {
-                    ds::set(r, u.from_mm(r.scale_page), u, world, world_unit);
-                }
-            });
+            crate::ui::tips::tip_over(
+                ui,
+                crate::ui::tips::pair("options.page_distance", "options.page_distance_tip"),
+                |ui| {
+                    ui.horizontal(|ui| {
+                        let world = world_unit.from_mm(r.scale_world);
+                        let mut v = page_unit.from_mm(r.scale_page);
+                        if ui
+                            .add_sized(
+                                [90.0, 20.0],
+                                crate::ui::field::NumField::new(&mut v)
+                                    .speed(0.1)
+                                    .max_decimals(4)
+                                    .range(0.0001..=1_000_000.0),
+                            )
+                            .changed()
+                        {
+                            ds::set(r, v, page_unit, world, world_unit);
+                        }
+                        let mut u = page_unit;
+                        if units_combo(ui, "scale_page_unit", &mut u) {
+                            ds::set(r, u.from_mm(r.scale_page), u, world, world_unit);
+                        }
+                    });
+                },
+            );
+
             ui.end_row();
             row_label(ui, "options.world_distance");
-            ui.horizontal(|ui| {
-                let page = page_unit.from_mm(r.scale_page);
-                let mut v = world_unit.from_mm(r.scale_world);
-                if ui
-                    .add_sized(
-                        [90.0, 20.0],
-                        crate::ui::field::NumField::new(&mut v)
-                            .speed(0.1)
-                            .max_decimals(4)
-                            .range(0.0001..=1_000_000_000.0),
-                    )
-                    .changed()
-                {
-                    ds::set(r, page, page_unit, v, world_unit);
-                }
-                let mut u = world_unit;
-                if units_combo(ui, "scale_world_unit", &mut u) {
-                    ds::set(r, page, page_unit, u.from_mm(r.scale_world), u);
-                    new_units = Some(u);
-                }
-            });
+            crate::ui::tips::tip_over(
+                ui,
+                crate::ui::tips::pair("options.world_distance", "options.world_distance_tip"),
+                |ui| {
+                    ui.horizontal(|ui| {
+                        let page = page_unit.from_mm(r.scale_page);
+                        let mut v = world_unit.from_mm(r.scale_world);
+                        if ui
+                            .add_sized(
+                                [90.0, 20.0],
+                                crate::ui::field::NumField::new(&mut v)
+                                    .speed(0.1)
+                                    .max_decimals(4)
+                                    .range(0.0001..=1_000_000_000.0),
+                            )
+                            .changed()
+                        {
+                            ds::set(r, page, page_unit, v, world_unit);
+                        }
+                        let mut u = world_unit;
+                        if units_combo(ui, "scale_world_unit", &mut u) {
+                            ds::set(r, page, page_unit, u.from_mm(r.scale_world), u);
+                            new_units = Some(u);
+                        }
+                    });
+                },
+            );
+
             ui.end_row();
         });
     ui.label(
@@ -540,17 +615,35 @@ pub fn grid_page(app: &mut App, ui: &mut Ui) {
     let units = app.units;
     section(ui, "options.document_grid");
     ui.horizontal(|ui| {
-        ui.checkbox(&mut app.show_grid, tr("options.show_grid"));
+        ui.checkbox(&mut app.show_grid, tr("options.show_grid"))
+            .rich_tip(crate::ui::tips::pair(
+                "options.show_grid",
+                "options.show_grid_tip",
+            ));
         ui.add_space(24.0);
-        ui.checkbox(&mut app.snap.grid, tr("options.snap_to_grid"));
+        ui.checkbox(&mut app.snap.grid, tr("options.snap_to_grid"))
+            .rich_tip(crate::ui::tips::pair(
+                "options.snap_to_grid",
+                "options.snap_to_grid_tip",
+            ));
     });
     egui::Grid::new("grid_spacing")
         .num_columns(3)
         .spacing([8.0, 6.0])
         .show(ui, |ui| {
-            for (key, value, salt) in [
-                ("options.horizontal", &mut meta.grid.spacing_x, "gx"),
-                ("options.vertical", &mut meta.grid.spacing_y, "gy"),
+            for (key, value, salt, tip) in [
+                (
+                    "options.horizontal",
+                    &mut meta.grid.spacing_x,
+                    "gx",
+                    "options.grid_horizontal",
+                ),
+                (
+                    "options.vertical",
+                    &mut meta.grid.spacing_y,
+                    "gy",
+                    "options.grid_vertical",
+                ),
             ] {
                 row_label(ui, key);
                 if app.grid_frequency {
@@ -564,12 +657,13 @@ pub fn grid_page(app: &mut App, ui: &mut Ui) {
                                 .max_decimals(4)
                                 .range(0.0001..=10_000.0),
                         )
+                        .rich_tip(crate::ui::tips::pair(tip, &format!("{tip}_tip")))
                         .changed()
                         && f > 0.0
                     {
                         *value = units.world_mm() / f;
                     }
-                } else if let Some(v) = distance_field(ui, units, *value, 0.1) {
+                } else if let Some(v) = distance_field(ui, tip, units, *value, 0.1) {
                     if v > 0.0 {
                         *value = v;
                     }
@@ -587,7 +681,12 @@ pub fn grid_page(app: &mut App, ui: &mut Ui) {
                     .show_ui(ui, |ui| {
                         ui.selectable_value(&mut app.grid_frequency, false, spacing);
                         ui.selectable_value(&mut app.grid_frequency, true, frequency);
-                    });
+                    })
+                    .response
+                    .rich_tip(crate::ui::tips::pair(
+                        "options.grid_measure",
+                        "options.grid_measure_tip",
+                    ));
                 ui.end_row();
             }
             row_label(ui, "options.show_grid_as");
@@ -596,50 +695,79 @@ pub fn grid_page(app: &mut App, ui: &mut Ui) {
                     &mut meta.grid.display,
                     GridDisplay::Lines,
                     tr("options.grid_lines"),
-                );
+                )
+                .rich_tip(crate::ui::tips::pair(
+                    "options.grid_lines",
+                    "options.grid_lines_tip",
+                ));
                 ui.radio_value(
                     &mut meta.grid.display,
                     GridDisplay::Dots,
                     tr("options.grid_dots"),
-                );
+                )
+                .rich_tip(crate::ui::tips::pair(
+                    "options.grid_dots",
+                    "options.grid_dots_tip",
+                ));
             });
             ui.end_row();
         });
 
     section(ui, "options.baseline_grid");
     ui.horizontal(|ui| {
-        ui.checkbox(&mut app.show_baseline_grid, tr("options.show_grid"));
+        ui.checkbox(&mut app.show_baseline_grid, tr("options.show_grid"))
+            .rich_tip(crate::ui::tips::pair(
+                "options.show_grid",
+                "options.show_grid_tip",
+            ));
         ui.add_space(24.0);
-        ui.checkbox(&mut app.snap.baseline_grid, tr("options.snap_to_grid"));
+        ui.checkbox(&mut app.snap.baseline_grid, tr("options.snap_to_grid"))
+            .rich_tip(crate::ui::tips::pair(
+                "options.snap_to_grid",
+                "options.snap_to_grid_tip",
+            ));
     });
     egui::Grid::new("baseline_grid")
         .num_columns(2)
         .spacing([8.0, 6.0])
         .show(ui, |ui| {
             row_label(ui, "options.baseline_spacing");
-            // Spacing in points, as text leading is.
-            let mut pt = meta.grid.baseline_spacing * 72.0 / 25.4;
-            if ui
-                .add_sized(
-                    [110.0, 20.0],
-                    crate::ui::field::NumField::new(&mut pt)
-                        .speed(0.1)
-                        .max_decimals(2)
-                        .range(0.1..=1000.0)
-                        .suffix(" pt"),
-                )
-                .changed()
-            {
-                meta.grid.baseline_spacing = pt * 25.4 / 72.0;
-            }
+            crate::ui::tips::tip_over(
+                ui,
+                crate::ui::tips::pair("options.baseline_spacing", "options.baseline_spacing_tip"),
+                |ui| {
+                    // Spacing in points, as text leading is.
+                    let mut pt = meta.grid.baseline_spacing * 72.0 / 25.4;
+                    if ui
+                        .add_sized(
+                            [110.0, 20.0],
+                            crate::ui::field::NumField::new(&mut pt)
+                                .speed(0.1)
+                                .max_decimals(2)
+                                .range(0.1..=1000.0)
+                                .suffix(" pt"),
+                        )
+                        .changed()
+                    {
+                        meta.grid.baseline_spacing = pt * 25.4 / 72.0;
+                    };
+                },
+            );
+
             ui.end_row();
             row_label(ui, "options.baseline_start");
-            if let Some(v) = paper_field(ui, units, meta.grid.baseline_start, 0.1) {
+            if let Some(v) = paper_field(
+                ui,
+                "options.baseline_start",
+                units,
+                meta.grid.baseline_start,
+                0.1,
+            ) {
                 meta.grid.baseline_start = v.max(0.0);
             }
             ui.end_row();
             row_label(ui, "options.line_color");
-            if let Some(c) = color_button(ui, meta.grid.baseline_color) {
+            if let Some(c) = color_button(ui, "options.line_color", meta.grid.baseline_color) {
                 meta.grid.baseline_color = c;
             }
             ui.end_row();
@@ -652,24 +780,39 @@ pub fn grid_page(app: &mut App, ui: &mut Ui) {
         .spacing([8.0, 6.0])
         .show(ui, |ui| {
             row_label(ui, "options.color");
-            if let Some(c) = color_button(ui, meta.grid.pixel_color) {
+            if let Some(c) = color_button(ui, "options.color", meta.grid.pixel_color) {
                 meta.grid.pixel_color = c;
             }
             ui.end_row();
             row_label(ui, "options.opacity");
-            let mut o = meta.grid.pixel_opacity * 100.0;
-            if ui
-                .add(crate::ui::Rail(
-                    egui::Slider::new(&mut o, 0.0..=100.0).suffix(" %"),
-                ))
-                .changed()
-            {
-                meta.grid.pixel_opacity = (o / 100.0).clamp(0.0, 1.0);
-            }
+            crate::ui::tips::tip_over(
+                ui,
+                crate::ui::tips::pair("options.opacity", "options.opacity_tip"),
+                |ui| {
+                    let mut o = meta.grid.pixel_opacity * 100.0;
+                    if ui
+                        .add(crate::ui::Rail(
+                            egui::Slider::new(&mut o, 0.0..=100.0).suffix(" %"),
+                        ))
+                        .changed()
+                    {
+                        meta.grid.pixel_opacity = (o / 100.0).clamp(0.0, 1.0);
+                    };
+                },
+            );
+
             ui.end_row();
         });
-    ui.checkbox(&mut app.show_pixel_grid, tr("options.pixel_grid_800"));
-    ui.checkbox(&mut app.snap.pixels, tr("options.snap_to_pixels"));
+    ui.checkbox(&mut app.show_pixel_grid, tr("options.pixel_grid_800"))
+        .rich_tip(crate::ui::tips::pair(
+            "options.pixel_grid_800",
+            "options.pixel_grid_800_tip",
+        ));
+    ui.checkbox(&mut app.snap.pixels, tr("options.snap_to_pixels"))
+        .rich_tip(crate::ui::tips::pair(
+            "options.snap_to_pixels",
+            "options.snap_to_pixels_tip",
+        ));
     set_metadata(app, meta);
 }
 
@@ -678,21 +821,33 @@ pub fn grid_page(app: &mut App, ui: &mut Ui) {
 pub fn guidelines_page(app: &mut App, ui: &mut Ui) {
     let mut meta = app.doc().metadata.clone();
     ui.horizontal(|ui| {
-        ui.checkbox(&mut app.show_guides, tr("options.show_guidelines"));
+        ui.checkbox(&mut app.show_guides, tr("options.show_guidelines"))
+            .rich_tip(crate::ui::tips::pair(
+                "options.show_guidelines",
+                "options.show_guidelines_tip",
+            ));
         ui.add_space(24.0);
-        ui.checkbox(&mut app.snap.guides, tr("options.snap_to_guidelines"));
+        ui.checkbox(&mut app.snap.guides, tr("options.snap_to_guidelines"))
+            .rich_tip(crate::ui::tips::pair(
+                "options.snap_to_guidelines",
+                "options.snap_to_guidelines_tip",
+            ));
     });
     egui::Grid::new("guide_colors")
         .num_columns(2)
         .spacing([8.0, 6.0])
         .show(ui, |ui| {
             row_label(ui, "options.default_guide_color");
-            if let Some(c) = color_button(ui, meta.guides.color) {
+            if let Some(c) = color_button(ui, "options.default_guide_color", meta.guides.color) {
                 meta.guides.color = c;
             }
             ui.end_row();
             row_label(ui, "options.default_preset_guide_color");
-            if let Some(c) = color_button(ui, meta.guides.preset_color) {
+            if let Some(c) = color_button(
+                ui,
+                "options.default_preset_guide_color",
+                meta.guides.preset_color,
+            ) {
                 meta.guides.preset_color = c;
             }
             ui.end_row();
@@ -702,80 +857,136 @@ pub fn guidelines_page(app: &mut App, ui: &mut Ui) {
     section(ui, "options.guide_presets");
     let mut form = std::mem::take(&mut app.guide_presets);
     ui.horizontal(|ui| {
-        ui.radio_value(&mut form.user_defined, false, tr("guides.presets"));
-        ui.radio_value(&mut form.user_defined, true, tr("guides.user_defined"));
+        ui.radio_value(&mut form.user_defined, false, tr("guides.presets"))
+            .rich_tip(crate::ui::tips::pair(
+                "guides.presets",
+                "guides.presets_tip",
+            ));
+        ui.radio_value(&mut form.user_defined, true, tr("guides.user_defined"))
+            .rich_tip(crate::ui::tips::pair(
+                "guides.user_defined",
+                "guides.user_defined_tip",
+            ));
     });
     let units = app.units;
     if form.user_defined {
-        ui.checkbox(&mut form.margins, tr("guides.margins"));
+        ui.checkbox(&mut form.margins, tr("guides.margins"))
+            .rich_tip(crate::ui::tips::pair(
+                "guides.margins",
+                "guides.margins_tip",
+            ));
         ui.add_enabled_ui(form.margins, |ui| {
             egui::Grid::new("preset_margins")
                 .num_columns(4)
                 .spacing([8.0, 4.0])
                 .show(ui, |ui| {
                     row_label(ui, "guides.top");
-                    if let Some(v) = paper_field(ui, units, form.margin_top, 0.1) {
+                    if let Some(v) = paper_field(ui, "guides.top", units, form.margin_top, 0.1) {
                         form.margin_top = v;
                     }
                     row_label(ui, "guides.left");
-                    if let Some(v) = paper_field(ui, units, form.margin_left, 0.1) {
+                    if let Some(v) = paper_field(ui, "guides.left", units, form.margin_left, 0.1) {
                         form.margin_left = v;
                     }
                     ui.end_row();
                     row_label(ui, "guides.bottom");
-                    if let Some(v) = paper_field(ui, units, form.margin_bottom, 0.1) {
+                    if let Some(v) =
+                        paper_field(ui, "guides.bottom", units, form.margin_bottom, 0.1)
+                    {
                         form.margin_bottom = v;
                     }
                     row_label(ui, "guides.right");
-                    if let Some(v) = paper_field(ui, units, form.margin_right, 0.1) {
+                    if let Some(v) = paper_field(ui, "guides.right", units, form.margin_right, 0.1)
+                    {
                         form.margin_right = v;
                     }
                     ui.end_row();
                 });
         });
-        ui.checkbox(&mut form.columns, tr("guides.columns"));
+        ui.checkbox(&mut form.columns, tr("guides.columns"))
+            .rich_tip(crate::ui::tips::pair(
+                "guides.columns",
+                "guides.columns_tip",
+            ));
         ui.add_enabled_ui(form.columns, |ui| {
             egui::Grid::new("preset_columns")
                 .num_columns(2)
                 .spacing([8.0, 4.0])
                 .show(ui, |ui| {
                     row_label(ui, "guides.number_of_columns");
-                    ui.add_sized(
-                        [70.0, 20.0],
-                        crate::ui::field::NumField::new(&mut form.column_count).range(1..=100),
+                    crate::ui::tips::tip_over(
+                        ui,
+                        crate::ui::tips::pair(
+                            "guides.number_of_columns",
+                            "guides.number_of_columns_tip",
+                        ),
+                        |ui| {
+                            ui.add_sized(
+                                [70.0, 20.0],
+                                crate::ui::field::NumField::new(&mut form.column_count)
+                                    .range(1..=100),
+                            );
+                        },
                     );
+
                     ui.end_row();
                     row_label(ui, "guides.distance_between");
-                    if let Some(v) = paper_field(ui, units, form.column_gutter, 0.1) {
+                    if let Some(v) = paper_field(
+                        ui,
+                        "guides.distance_between",
+                        units,
+                        form.column_gutter,
+                        0.1,
+                    ) {
                         form.column_gutter = v.max(0.0);
                     }
                     ui.end_row();
                 });
         });
-        ui.checkbox(&mut form.grid, tr("guides.grid"));
+        ui.checkbox(&mut form.grid, tr("guides.grid"))
+            .rich_tip(crate::ui::tips::pair("guides.grid", "guides.grid_tip"));
         ui.add_enabled_ui(form.grid, |ui| {
             egui::Grid::new("preset_grid")
                 .num_columns(2)
                 .spacing([8.0, 4.0])
                 .show(ui, |ui| {
                     row_label(ui, "guides.rows");
-                    ui.add_sized(
-                        [70.0, 20.0],
-                        crate::ui::field::NumField::new(&mut form.grid_rows).range(1..=200),
+                    crate::ui::tips::tip_over(
+                        ui,
+                        crate::ui::tips::pair("guides.rows", "guides.rows_tip"),
+                        |ui| {
+                            ui.add_sized(
+                                [70.0, 20.0],
+                                crate::ui::field::NumField::new(&mut form.grid_rows).range(1..=200),
+                            );
+                        },
                     );
+
                     ui.end_row();
                     row_label(ui, "guides.columns_count");
-                    ui.add_sized(
-                        [70.0, 20.0],
-                        crate::ui::field::NumField::new(&mut form.grid_columns).range(1..=200),
+                    crate::ui::tips::tip_over(
+                        ui,
+                        crate::ui::tips::pair("guides.columns_count", "guides.columns_count_tip"),
+                        |ui| {
+                            ui.add_sized(
+                                [70.0, 20.0],
+                                crate::ui::field::NumField::new(&mut form.grid_columns)
+                                    .range(1..=200),
+                            );
+                        },
                     );
+
                     ui.end_row();
                 });
         });
     } else {
         for p in NamedPreset::ALL {
             let mut on = form.named.contains(&p);
-            if ui.checkbox(&mut on, tr(p.key())).changed() {
+            if ui
+                .checkbox(&mut on, tr(p.key()))
+                .rich_tip_with(|| format!("{}\n{}", tr(p.key()), tr(&format!("{}_tip", p.key()))))
+                .changed()
+            {
                 if on {
                     form.named.push(p);
                 } else {
@@ -784,7 +995,14 @@ pub fn guidelines_page(app: &mut App, ui: &mut Ui) {
             }
         }
     }
-    if ui.button(tr("guides.apply_presets")).clicked() {
+    if ui
+        .button(tr("guides.apply_presets"))
+        .rich_tip(crate::ui::tips::pair(
+            "guides.apply_presets",
+            "guides.apply_presets_tip",
+        ))
+        .clicked()
+    {
         apply_presets(app, &form);
     }
     app.guide_presets = form;
@@ -959,7 +1177,7 @@ pub fn guidelines_docker(app: &mut App, ui: &mut Ui) {
                 let x = crate::ui::tips::tip_over(
                     ui,
                     crate::ui::tips::pair("toolbar.object_x", "guides.x_desc"),
-                    |ui| distance_field(ui, units, form.x, 0.1),
+                    |ui| distance_field(ui, "guides.x", units, form.x, 0.1),
                 );
                 if let Some(v) = x {
                     form.x = v;
@@ -972,7 +1190,7 @@ pub fn guidelines_docker(app: &mut App, ui: &mut Ui) {
                 let y = crate::ui::tips::tip_over(
                     ui,
                     crate::ui::tips::pair("toolbar.object_y", "guides.y_desc"),
-                    |ui| distance_field(ui, units, form.y, 0.1),
+                    |ui| distance_field(ui, "guides.y", units, form.y, 0.1),
                 );
                 if let Some(v) = y {
                     form.y = v;
@@ -1110,7 +1328,7 @@ pub fn guidelines_docker(app: &mut App, ui: &mut Ui) {
             let picked = crate::ui::tips::tip_over(
                 ui,
                 crate::ui::tips::pair("guides.color", "guides.color_desc"),
-                |ui| color_button(ui, current),
+                |ui| color_button(ui, "guides.color", current),
             );
             if let Some(c) = picked {
                 if any {

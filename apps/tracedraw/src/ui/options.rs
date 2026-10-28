@@ -460,11 +460,17 @@ pub fn options_dialog(app: &mut App, ctx: &Context, close: &mut bool) {
                         app.status = tr("status.settings_saved");
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if chrome::button(ui, &tr("dialog.cancel")).clicked() {
+                        if chrome::button(ui, &tr("dialog.cancel"))
+                            .rich_tip(crate::ui::tips::keyed("dialog.cancel"))
+                            .clicked()
+                        {
                             cancel = true;
                         }
                         ui.add_space(5.0);
-                        if chrome::button(ui, &tr("dialog.ok")).clicked() {
+                        if chrome::button(ui, &tr("dialog.ok"))
+                            .rich_tip(crate::ui::tips::keyed("dialog.ok"))
+                            .clicked()
+                        {
                             ok = true;
                         }
                     });
@@ -749,7 +755,11 @@ fn hardware_acceleration(app: &mut App, ui: &mut Ui) {
                 .width(260.0)
                 .selected_text(shown)
                 .show_ui(ui, |ui| {
-                    ui.selectable_value(chosen, String::new(), tr("options.gpu_automatic"));
+                    ui.selectable_value(chosen, String::new(), tr("options.gpu_automatic"))
+                        .rich_tip(crate::ui::tips::pair(
+                            "options.gpu_automatic",
+                            "options.gpu_automatic_tip",
+                        ));
                     for name in crate::gpu::adapters() {
                         ui.selectable_value(chosen, name.clone(), name);
                     }
@@ -780,41 +790,67 @@ fn hardware_acceleration(app: &mut App, ui: &mut Ui) {
 }
 
 fn display_page(app: &mut App, ui: &mut Ui) {
-    ui.checkbox(&mut app.proof_colors, tr("menu.view.proof_colors"));
+    ui.checkbox(&mut app.proof_colors, tr("menu.view.proof_colors"))
+        .rich_tip(crate::ui::tips::pair(
+            "menu.view.proof_colors",
+            "menu.view.proof_colors_tip",
+        ));
     chrome::section(ui, &tr("options.other_controls"));
     ui.indent("oc", |ui| {
-        ui.checkbox(&mut app.settings.show_tooltips, tr("options.show_tooltips"));
+        ui.checkbox(&mut app.settings.show_tooltips, tr("options.show_tooltips"))
+            .rich_tip(crate::ui::tips::pair(
+                "options.show_tooltips",
+                "options.show_tooltips_tip",
+            ));
         ui.checkbox(
             &mut app.settings.hide_bbox_curve_tools,
             tr("options.hide_bbox_curve_tools"),
-        );
-        ui.checkbox(&mut app.settings.node_tracking, tr("options.node_tracking"));
+        )
+        .rich_tip(crate::ui::tips::pair(
+            "options.hide_bbox_curve_tools",
+            "options.hide_bbox_curve_tools_tip",
+        ));
+        ui.checkbox(&mut app.settings.node_tracking, tr("options.node_tracking"))
+            .rich_tip(crate::ui::tips::pair(
+                "options.node_tracking",
+                "options.node_tracking_tip",
+            ));
     });
     chrome::section(ui, &tr("options.full_screen_preview"));
     ui.indent("fsp", |ui| {
         ui.checkbox(
             &mut app.settings.preview_page_border,
             tr("options.show_page_border"),
-        );
+        )
+        .rich_tip(crate::ui::tips::pair(
+            "options.show_page_border",
+            "options.show_page_border_tip",
+        ));
     });
     ui.separator();
     grid("display_wheel").show(ui, |ui| {
         row_label(ui, &tr("options.wheel_default_action"));
         let mut zoom = app.settings.wheel_zooms;
-        combo(
-            ui,
-            "wheel",
-            &mut zoom,
-            &[true, false],
-            |v| {
-                tr(if v {
-                    "options.wheel_zoom"
-                } else {
-                    "options.wheel_scroll"
-                })
-            },
-            120.0,
+        let tip = crate::ui::tips::pair(
+            "options.wheel_default_action",
+            "options.wheel_default_action_tip",
         );
+        crate::ui::tips::tip_over(ui, tip, |ui| {
+            combo(
+                ui,
+                "wheel",
+                &mut zoom,
+                &[true, false],
+                |v| {
+                    tr(if v {
+                        "options.wheel_zoom"
+                    } else {
+                        "options.wheel_scroll"
+                    })
+                },
+                120.0,
+            );
+        });
         app.settings.wheel_zooms = zoom;
         ui.end_row();
     });
@@ -835,12 +871,20 @@ fn display_page(app: &mut App, ui: &mut Ui) {
                     .speed(0.1)
                     .max_decimals(1),
             )
+            .rich_tip(crate::ui::tips::pair(
+                "options.screen_resolution",
+                "options.screen_resolution_tip",
+            ))
             .changed()
         {
             app.settings.screen_ppi = ppi;
         }
         ui.label(tr("options.points_per_inch"));
-        if ui.button(tr("options.reset")).clicked() {
+        if ui
+            .button(tr("options.reset"))
+            .rich_tip(crate::ui::tips::pair("options.reset", "dialog.reset_desc"))
+            .clicked()
+        {
             app.settings.screen_ppi = 96.0;
         }
     });
@@ -913,25 +957,39 @@ fn calibration_rulers(ui: &mut Ui, ppi: f32) {
 fn edit_page(app: &mut App, ui: &mut Ui) {
     grid("edit").show(ui, |ui| {
         row_label(ui, &tr("options.constrain_angle"));
-        ui.horizontal(|ui| {
-            ui.add_sized(
-                [80.0, 22.0],
-                crate::ui::field::NumField::new(&mut app.settings.constrain_angle)
-                    .range(0.1..=90.0)
-                    .max_decimals(1)
-                    .speed(0.5),
-            );
-            ui.label(tr("options.degrees"));
-        });
+        crate::ui::tips::tip_over(
+            ui,
+            crate::ui::tips::pair("options.constrain_angle", "options.constrain_angle_tip"),
+            |ui| {
+                ui.horizontal(|ui| {
+                    ui.add_sized(
+                        [80.0, 22.0],
+                        crate::ui::field::NumField::new(&mut app.settings.constrain_angle)
+                            .range(0.1..=90.0)
+                            .max_decimals(1)
+                            .speed(0.5),
+                    );
+                    ui.label(tr("options.degrees"));
+                });
+            },
+        );
+
         ui.end_row();
         row_label(ui, &tr("options.drawing_precision"));
-        ui.horizontal(|ui| {
-            ui.add_sized(
-                [80.0, 22.0],
-                crate::ui::field::NumField::new(&mut app.settings.precision).range(0..=10),
-            );
-            ui.label(tr("options.decimal_places"));
-        });
+        crate::ui::tips::tip_over(
+            ui,
+            crate::ui::tips::pair("options.drawing_precision", "options.drawing_precision_tip"),
+            |ui| {
+                ui.horizontal(|ui| {
+                    ui.add_sized(
+                        [80.0, 22.0],
+                        crate::ui::field::NumField::new(&mut app.settings.precision).range(0..=10),
+                    );
+                    ui.label(tr("options.decimal_places"));
+                });
+            },
+        );
+
         ui.end_row();
     });
     // Focus mode.
@@ -944,6 +1002,10 @@ fn edit_page(app: &mut App, ui: &mut Ui) {
                     .suffix(" %")
                     .integer(),
             )
+            .rich_tip(crate::ui::tips::pair(
+                "options.focus_inactive",
+                "options.focus_inactive_tip",
+            ))
             .changed()
         {
             app.settings.focus_visibility = v.round() as u8;
@@ -964,7 +1026,11 @@ fn edit_page(app: &mut App, ui: &mut Ui) {
     ui.checkbox(
         &mut app.settings.focus_double_click,
         tr("options.focus_double_click"),
-    );
+    )
+    .rich_tip(crate::ui::tips::pair(
+        "options.focus_double_click",
+        "options.focus_double_click_tip",
+    ));
 }
 
 fn shape_label(s: NodeShape) -> String {
@@ -979,43 +1045,74 @@ fn nodes_page(app: &mut App, ui: &mut Ui) {
     let n = &mut app.settings.nodes;
     grid("node_size").show(ui, |ui| {
         row_label(ui, &tr("options.node_size"));
-        combo(
+        crate::ui::tips::tip_over(
             ui,
-            "node_size",
-            &mut n.size,
-            &NodeSize::ALL,
-            |v| tr(v.key()),
-            100.0,
+            crate::ui::tips::pair("options.node_size", "options.node_size_tip"),
+            |ui| {
+                combo(
+                    ui,
+                    "node_size",
+                    &mut n.size,
+                    &NodeSize::ALL,
+                    |v| tr(v.key()),
+                    100.0,
+                );
+            },
         );
+
         ui.end_row();
     });
     chrome::section(ui, &tr("options.node_shape"));
     grid("node_shapes").show(ui, |ui| {
         row_label(ui, &tr("options.node_cusp"));
-        combo(ui, "cusp", &mut n.cusp, &NodeShape::ALL, shape_label, 50.0);
+        crate::ui::tips::tip_over(
+            ui,
+            crate::ui::tips::pair("options.node_cusp", "options.node_cusp_tip"),
+            |ui| {
+                combo(ui, "cusp", &mut n.cusp, &NodeShape::ALL, shape_label, 50.0);
+            },
+        );
+
         ui.end_row();
         row_label(ui, &tr("options.node_smooth"));
-        combo(
+        crate::ui::tips::tip_over(
             ui,
-            "smooth",
-            &mut n.smooth,
-            &NodeShape::ALL,
-            shape_label,
-            50.0,
+            crate::ui::tips::pair("options.node_smooth", "options.node_smooth_tip"),
+            |ui| {
+                combo(
+                    ui,
+                    "smooth",
+                    &mut n.smooth,
+                    &NodeShape::ALL,
+                    shape_label,
+                    50.0,
+                );
+            },
         );
+
         ui.end_row();
         row_label(ui, &tr("options.node_symmetrical"));
-        combo(
+        crate::ui::tips::tip_over(
             ui,
-            "symmetrical",
-            &mut n.symmetrical,
-            &NodeShape::ALL,
-            shape_label,
-            50.0,
+            crate::ui::tips::pair("options.node_symmetrical", "options.node_symmetrical_tip"),
+            |ui| {
+                combo(
+                    ui,
+                    "symmetrical",
+                    &mut n.symmetrical,
+                    &NodeShape::ALL,
+                    shape_label,
+                    50.0,
+                );
+            },
         );
+
         ui.end_row();
         ui.label("");
-        if chrome::button(ui, &tr("options.reset")).clicked() {
+        if chrome::button(ui, &tr("options.reset"))
+            .rich_tip(crate::ui::tips::pair("options.reset", "dialog.reset_desc"))
+            .clicked()
+        {
             let d = crate::settings::NodePrefs::default();
             n.cusp = d.cusp;
             n.smooth = d.smooth;
@@ -1023,7 +1120,11 @@ fn nodes_page(app: &mut App, ui: &mut Ui) {
         }
         ui.end_row();
     });
-    ui.checkbox(&mut n.show_direction, tr("options.show_curve_direction"));
+    ui.checkbox(&mut n.show_direction, tr("options.show_curve_direction"))
+        .rich_tip(crate::ui::tips::pair(
+            "options.show_curve_direction",
+            "options.show_curve_direction_tip",
+        ));
     ui.checkbox(&mut n.corner_widgets, tr("options.corner_widgets"))
         .rich_tip(tr("options.corner_widgets_tip"));
     ui.horizontal(|ui| {
@@ -1040,26 +1141,52 @@ fn nodes_page(app: &mut App, ui: &mut Ui) {
     chrome::section(ui, &tr("options.colors"));
     grid("node_colors").show(ui, |ui| {
         row_label(ui, &tr("options.main_color"));
-        ui.horizontal(|ui| {
-            rgb_button(ui, &mut n.main_rgb);
-            if ui.button(tr("options.reset")).clicked() {
-                n.main_rgb = crate::settings::NodePrefs::default().main_rgb;
-            }
-        });
+        crate::ui::tips::tip_over(
+            ui,
+            crate::ui::tips::pair("options.main_color", "options.main_color_tip"),
+            |ui| {
+                ui.horizontal(|ui| {
+                    rgb_button(ui, &mut n.main_rgb);
+                    if ui
+                        .button(tr("options.reset"))
+                        .rich_tip(crate::ui::tips::pair("options.reset", "dialog.reset_desc"))
+                        .clicked()
+                    {
+                        n.main_rgb = crate::settings::NodePrefs::default().main_rgb;
+                    }
+                });
+            },
+        );
+
         ui.end_row();
         row_label(ui, &tr("options.secondary_color"));
-        ui.horizontal(|ui| {
-            rgb_button(ui, &mut n.secondary_rgb);
-            if ui.button(tr("options.reset")).clicked() {
-                n.secondary_rgb = crate::settings::NodePrefs::default().secondary_rgb;
-            }
-        });
+        crate::ui::tips::tip_over(
+            ui,
+            crate::ui::tips::pair("options.secondary_color", "options.secondary_color_tip"),
+            |ui| {
+                ui.horizontal(|ui| {
+                    rgb_button(ui, &mut n.secondary_rgb);
+                    if ui
+                        .button(tr("options.reset"))
+                        .rich_tip(crate::ui::tips::pair("options.reset", "dialog.reset_desc"))
+                        .clicked()
+                    {
+                        n.secondary_rgb = crate::settings::NodePrefs::default().secondary_rgb;
+                    }
+                });
+            },
+        );
+
         ui.end_row();
     });
     ui.checkbox(
         &mut n.unselected_filled,
         tr("options.unselected_nodes_filled"),
-    );
+    )
+    .rich_tip(crate::ui::tips::pair(
+        "options.unselected_nodes_filled",
+        "options.unselected_nodes_filled_tip",
+    ));
 }
 
 fn clip_frame_page(app: &mut App, ui: &mut Ui) {
@@ -1071,36 +1198,73 @@ fn clip_frame_page(app: &mut App, ui: &mut Ui) {
             (AutoCenter::Always, "options.auto_center_always"),
             (AutoCenter::Never, "options.auto_center_never"),
         ] {
-            ui.radio_value(&mut p.auto_center, v, tr(key));
+            ui.radio_value(&mut p.auto_center, v, tr(key))
+                .rich_tip_with(|| format!("{}\n{}", tr(key), tr(&format!("{key}_tip"))));
         }
     });
     ui.separator();
-    ui.checkbox(&mut p.empty_lines, tr("options.empty_frame_lines"));
+    ui.checkbox(&mut p.empty_lines, tr("options.empty_frame_lines"))
+        .rich_tip(crate::ui::tips::pair(
+            "options.empty_frame_lines",
+            "options.empty_frame_lines_tip",
+        ));
 }
 
 fn snapping_page(app: &mut App, ui: &mut Ui) {
-    ui.checkbox(&mut app.snap.objects, tr("options.snap_to_objects"));
-    ui.checkbox(&mut app.snap.page, tr("options.snap_to_page"));
+    ui.checkbox(&mut app.snap.objects, tr("options.snap_to_objects"))
+        .rich_tip(crate::ui::tips::pair(
+            "options.snap_to_objects",
+            "options.snap_to_objects_tip",
+        ));
+    ui.checkbox(&mut app.snap.page, tr("options.snap_to_page"))
+        .rich_tip(crate::ui::tips::pair(
+            "options.snap_to_page",
+            "options.snap_to_page_tip",
+        ));
     ui.horizontal(|ui| {
         ui.add_space(16.0);
         ui.label(tr("options.snapping_radius"));
         ui.add_sized(
             [70.0, 22.0],
             crate::ui::field::NumField::new(&mut app.settings.snap.threshold_px).range(1.0..=100.0),
-        );
+        )
+        .rich_tip(crate::ui::tips::pair(
+            "options.snapping_radius",
+            "options.snapping_radius_tip",
+        ));
         ui.label(tr("options.pixels"));
     });
-    ui.checkbox(&mut app.snap.guides, tr("options.snap_to_guidelines"));
-    ui.checkbox(&mut app.snap.grid, tr("options.snap_to_grid"));
+    ui.checkbox(&mut app.snap.guides, tr("options.snap_to_guidelines"))
+        .rich_tip(crate::ui::tips::pair(
+            "options.snap_to_guidelines",
+            "options.snap_to_guidelines_tip",
+        ));
+    ui.checkbox(&mut app.snap.grid, tr("options.snap_to_grid"))
+        .rich_tip(crate::ui::tips::pair(
+            "options.snap_to_grid",
+            "options.snap_to_grid_tip",
+        ));
     ui.checkbox(
         &mut app.snap.baseline_grid,
         tr("menu.view.snap_baseline_grid"),
-    );
-    ui.checkbox(&mut app.snap.pixels, tr("options.snap_to_pixels"));
+    )
+    .rich_tip(crate::ui::tips::pair(
+        "menu.view.snap_baseline_grid",
+        "menu.view.snap_baseline_grid_tip",
+    ));
+    ui.checkbox(&mut app.snap.pixels, tr("options.snap_to_pixels"))
+        .rich_tip(crate::ui::tips::pair(
+            "options.snap_to_pixels",
+            "options.snap_to_pixels_tip",
+        ));
     ui.checkbox(
         &mut app.settings.snap.show_marks,
         tr("options.show_snap_marks"),
-    );
+    )
+    .rich_tip(crate::ui::tips::pair(
+        "options.show_snap_marks",
+        "options.show_snap_marks_tip",
+    ));
     ui.horizontal(|ui| {
         ui.add_space(16.0);
         ui.add_enabled(
@@ -1109,7 +1273,11 @@ fn snapping_page(app: &mut App, ui: &mut Ui) {
                 &mut app.settings.snap.screen_tips,
                 tr("options.snap_screen_tip"),
             ),
-        );
+        )
+        .rich_tip_always(crate::ui::tips::pair(
+            "options.snap_screen_tip",
+            "options.snap_screen_tip_desc",
+        ));
     });
     chrome::section(ui, &tr("options.snap_modes"));
     ui.indent("snap_modes", |ui| {
@@ -1117,7 +1285,11 @@ fn snapping_page(app: &mut App, ui: &mut Ui) {
         for m in crate::snap_points::SnapMode::ALL {
             ui.horizontal(|ui| {
                 let mut on = modes.get(m);
-                if ui.checkbox(&mut on, "").changed() {
+                if ui
+                    .checkbox(&mut on, "")
+                    .rich_tip_with(|| format!("{}\n{}", tr(m.key()), tr("options.snap_mode_tip")))
+                    .changed()
+                {
                     modes.set(m, on);
                 }
                 let (r, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
@@ -1126,10 +1298,24 @@ fn snapping_page(app: &mut App, ui: &mut Ui) {
             });
         }
         ui.horizontal(|ui| {
-            if ui.button(tr("options.select_all")).clicked() {
+            if ui
+                .button(tr("options.select_all"))
+                .rich_tip(crate::ui::tips::pair(
+                    "options.select_all",
+                    "options.select_all_tip",
+                ))
+                .clicked()
+            {
                 *modes = crate::snap_points::SnapModes::default();
             }
-            if ui.button(tr("options.deselect_all")).clicked() {
+            if ui
+                .button(tr("options.deselect_all"))
+                .rich_tip(crate::ui::tips::pair(
+                    "options.deselect_all",
+                    "options.deselect_all_tip",
+                ))
+                .clicked()
+            {
                 *modes = crate::snap_points::SnapModes::none();
             }
         });
@@ -1161,17 +1347,31 @@ fn guide_look(
 ) {
     grid(id).show(ui, |ui| {
         row_label(ui, &tr("options.guide_color"));
-        rgb_button(ui, color);
+        crate::ui::tips::tip_over(
+            ui,
+            crate::ui::tips::pair("options.guide_color", "options.guide_color_tip"),
+            |ui| {
+                rgb_button(ui, color);
+            },
+        );
+
         ui.end_row();
         row_label(ui, &tr("options.guide_style"));
-        combo(
+        crate::ui::tips::tip_over(
             ui,
-            &format!("{id}_style"),
-            style,
-            &crate::live_guides::GuideStyle::ALL,
-            |v| tr(v.key()),
-            140.0,
+            crate::ui::tips::pair("options.guide_style", "options.guide_style_tip"),
+            |ui| {
+                combo(
+                    ui,
+                    &format!("{id}_style"),
+                    style,
+                    &crate::live_guides::GuideStyle::ALL,
+                    |v| tr(v.key()),
+                    140.0,
+                );
+            },
         );
+
         ui.end_row();
     });
 }
@@ -1182,7 +1382,11 @@ fn alignment_guides_page(app: &mut App, ui: &mut Ui) {
     ui.checkbox(
         &mut app.snap.alignment_guides,
         tr("options.alignment_guides_on"),
-    );
+    )
+    .rich_tip(crate::ui::tips::pair(
+        "options.alignment_guides_on",
+        "options.alignment_guides_on_tip",
+    ));
     let units = app.units;
     let on = app.snap.alignment_guides;
     let a = &mut app.settings.snap.align;
@@ -1193,34 +1397,84 @@ fn alignment_guides_page(app: &mut App, ui: &mut Ui) {
                 &mut a.each_object,
                 false,
                 tr("options.align_selection_as_one"),
-            );
-            ui.radio_value(&mut a.each_object, true, tr("options.align_each_object"));
+            )
+            .rich_tip(crate::ui::tips::pair(
+                "options.align_selection_as_one",
+                "options.align_selection_as_one_tip",
+            ));
+            ui.radio_value(&mut a.each_object, true, tr("options.align_each_object"))
+                .rich_tip(crate::ui::tips::pair(
+                    "options.align_each_object",
+                    "options.align_each_object_tip",
+                ));
         });
         chrome::section(ui, &tr("options.align_what"));
         ui.indent("align_what", |ui| {
-            ui.checkbox(&mut a.edges, tr("options.align_edges"));
-            ui.checkbox(&mut a.centers, tr("options.align_centers"));
-            ui.checkbox(&mut a.page, tr("options.align_page"));
-            ui.checkbox(&mut a.equal_spacing, tr("options.align_equal_spacing"));
-            ui.checkbox(&mut a.equal_size, tr("options.align_equal_size"));
+            ui.checkbox(&mut a.edges, tr("options.align_edges"))
+                .rich_tip(crate::ui::tips::pair(
+                    "options.align_edges",
+                    "options.align_edges_tip",
+                ));
+            ui.checkbox(&mut a.centers, tr("options.align_centers"))
+                .rich_tip(crate::ui::tips::pair(
+                    "options.align_centers",
+                    "options.align_centers_tip",
+                ));
+            ui.checkbox(&mut a.page, tr("options.align_page"))
+                .rich_tip(crate::ui::tips::pair(
+                    "options.align_page",
+                    "options.align_page_tip",
+                ));
+            ui.checkbox(&mut a.equal_spacing, tr("options.align_equal_spacing"))
+                .rich_tip(crate::ui::tips::pair(
+                    "options.align_equal_spacing",
+                    "options.align_equal_spacing_tip",
+                ));
+            ui.checkbox(&mut a.equal_size, tr("options.align_equal_size"))
+                .rich_tip(crate::ui::tips::pair(
+                    "options.align_equal_size",
+                    "options.align_equal_size_tip",
+                ));
         });
         chrome::section(ui, &tr("options.align_margins"));
         ui.indent("align_margins", |ui| {
-            ui.checkbox(&mut a.margins, tr("options.align_margins_on"));
+            ui.checkbox(&mut a.margins, tr("options.align_margins_on"))
+                .rich_tip(crate::ui::tips::pair(
+                    "options.align_margins_on",
+                    "options.align_margins_on_tip",
+                ));
             ui.add_enabled_ui(a.margins, |ui| {
                 grid("align_margin_values").show(ui, |ui| {
                     row_label(ui, &tr("options.align_offset"));
-                    ui.horizontal(|ui| length_field(ui, units, &mut a.offset_mm, 1000.0));
+                    crate::ui::tips::tip_over(
+                        ui,
+                        crate::ui::tips::pair("options.align_offset", "options.align_offset_tip"),
+                        |ui| {
+                            ui.horizontal(|ui| length_field(ui, units, &mut a.offset_mm, 1000.0));
+                        },
+                    );
+
                     ui.end_row();
                     row_label(ui, &tr("options.align_inset"));
-                    ui.horizontal(|ui| length_field(ui, units, &mut a.inset_mm, 1000.0));
+                    crate::ui::tips::tip_over(
+                        ui,
+                        crate::ui::tips::pair("options.align_inset", "options.align_inset_tip"),
+                        |ui| {
+                            ui.horizontal(|ui| length_field(ui, units, &mut a.inset_mm, 1000.0));
+                        },
+                    );
+
                     ui.end_row();
                 });
             });
         });
         chrome::section(ui, &tr("options.guide_look"));
         guide_look(ui, "align_look", &mut a.color, &mut a.style);
-        if ui.button(tr("options.reset")).clicked() {
+        if ui
+            .button(tr("options.reset"))
+            .rich_tip(crate::ui::tips::pair("options.reset", "dialog.reset_desc"))
+            .clicked()
+        {
             *a = crate::live_guides::AlignOptions::default();
         }
     });
@@ -1237,7 +1491,11 @@ fn dynamic_guides_page(app: &mut App, ui: &mut Ui) {
     ui.checkbox(
         &mut app.snap.dynamic_guides,
         tr("options.dynamic_guides_on"),
-    );
+    )
+    .rich_tip(crate::ui::tips::pair(
+        "options.dynamic_guides_on",
+        "options.dynamic_guides_on_tip",
+    ));
     let units = app.units;
     let on = app.snap.dynamic_guides;
     let d = &mut app.settings.snap.dynamic;
@@ -1289,9 +1547,21 @@ fn dynamic_guides_page(app: &mut App, ui: &mut Ui) {
                     crate::ui::field::NumField::new(&mut v)
                         .range(0.0..=179.9)
                         .max_decimals(1),
-                );
+                )
+                .rich_tip(crate::ui::tips::pair(
+                    "options.dynamic_new_angle",
+                    "options.dynamic_new_angle_tip",
+                ));
                 ui.label(tr("options.degrees"));
-                if ui.button(tr("options.dynamic_add_angle")).clicked() && v.is_finite() {
+                if ui
+                    .button(tr("options.dynamic_add_angle"))
+                    .rich_tip(crate::ui::tips::pair(
+                        "options.dynamic_add_angle",
+                        "options.dynamic_add_angle_tip",
+                    ))
+                    .clicked()
+                    && v.is_finite()
+                {
                     angles.push(v);
                 }
                 ui.data_mut(|m| m.insert_temp(id, v));
@@ -1303,20 +1573,46 @@ fn dynamic_guides_page(app: &mut App, ui: &mut Ui) {
         });
         chrome::section(ui, &tr("options.dynamic_display"));
         ui.indent("dyn_display", |ui| {
-            ui.checkbox(&mut d.tooltip, tr("options.dynamic_tooltip"));
-            ui.checkbox(&mut d.ticks, tr("options.dynamic_ticks"));
+            ui.checkbox(&mut d.tooltip, tr("options.dynamic_tooltip"))
+                .rich_tip(crate::ui::tips::pair(
+                    "options.dynamic_tooltip",
+                    "options.dynamic_tooltip_tip",
+                ));
+            ui.checkbox(&mut d.ticks, tr("options.dynamic_ticks"))
+                .rich_tip(crate::ui::tips::pair(
+                    "options.dynamic_ticks",
+                    "options.dynamic_ticks_tip",
+                ));
             ui.add_enabled_ui(d.ticks, |ui| {
                 grid("dyn_ticks").show(ui, |ui| {
                     row_label(ui, &tr("options.dynamic_tick_spacing"));
-                    ui.horizontal(|ui| length_field(ui, units, &mut d.tick_mm, 10_000.0));
+                    crate::ui::tips::tip_over(
+                        ui,
+                        crate::ui::tips::pair(
+                            "options.dynamic_tick_spacing",
+                            "options.dynamic_tick_spacing_tip",
+                        ),
+                        |ui| {
+                            ui.horizontal(|ui| length_field(ui, units, &mut d.tick_mm, 10_000.0));
+                        },
+                    );
+
                     ui.end_row();
                 });
-                ui.checkbox(&mut d.snap_ticks, tr("options.dynamic_snap_ticks"));
+                ui.checkbox(&mut d.snap_ticks, tr("options.dynamic_snap_ticks"))
+                    .rich_tip(crate::ui::tips::pair(
+                        "options.dynamic_snap_ticks",
+                        "options.dynamic_snap_ticks_tip",
+                    ));
             });
         });
         chrome::section(ui, &tr("options.guide_look"));
         guide_look(ui, "dyn_look", &mut d.color, &mut d.style);
-        if ui.button(tr("options.reset")).clicked() {
+        if ui
+            .button(tr("options.reset"))
+            .rich_tip(crate::ui::tips::pair("options.reset", "dialog.reset_desc"))
+            .clicked()
+        {
             *d = crate::live_guides::DynamicOptions::default();
         }
     });
@@ -1332,9 +1628,17 @@ fn path_field(ui: &mut Ui, dir: &mut Option<std::path::PathBuf>, fallback: Strin
         ui.add_enabled(
             false,
             egui::TextEdit::singleline(&mut text.clone()).desired_width(320.0),
-        );
+        )
+        .rich_tip_always(crate::ui::tips::pair(
+            "options.folder",
+            "options.folder_tip",
+        ));
         if ui
             .add_enabled(!crate::files::WEB, egui::Button::new(tr("options.browse")))
+            .rich_tip(crate::ui::tips::pair(
+                "options.browse",
+                "options.browse_tip",
+            ))
             .clicked()
         {
             if let Some(p) = crate::files::pick_folder() {
@@ -1348,14 +1652,26 @@ fn save_page(app: &mut App, ui: &mut Ui) {
     let b = &mut app.settings.backup;
     chrome::section(ui, &tr("options.backup"));
     ui.indent("bk", |ui| {
-        ui.checkbox(&mut b.before_save, tr("options.backup_before_save"));
+        ui.checkbox(&mut b.before_save, tr("options.backup_before_save"))
+            .rich_tip(crate::ui::tips::pair(
+                "options.backup_before_save",
+                "options.backup_before_save_tip",
+            ));
         ui.add_enabled_ui(b.before_save, |ui| {
             let mut choose = b.before_save_dir.is_some();
             ui.horizontal(|ui| {
                 ui.label(tr("options.backup_to"));
                 ui.vertical(|ui| {
-                    ui.radio_value(&mut choose, false, tr("options.same_folder"));
-                    ui.radio_value(&mut choose, true, tr("options.choose_location"));
+                    ui.radio_value(&mut choose, false, tr("options.same_folder"))
+                        .rich_tip(crate::ui::tips::pair(
+                            "options.same_folder",
+                            "options.same_folder_tip",
+                        ));
+                    ui.radio_value(&mut choose, true, tr("options.choose_location"))
+                        .rich_tip(crate::ui::tips::pair(
+                            "options.choose_location",
+                            "options.choose_location_tip",
+                        ));
                 });
             });
             if choose && b.before_save_dir.is_none() {
@@ -1371,11 +1687,19 @@ fn save_page(app: &mut App, ui: &mut Ui) {
     chrome::section(ui, &tr("options.auto_backup"));
     ui.indent("ab", |ui| {
         ui.horizontal(|ui| {
-            ui.checkbox(&mut b.auto, tr("options.backup_every"));
+            ui.checkbox(&mut b.auto, tr("options.backup_every"))
+                .rich_tip(crate::ui::tips::pair(
+                    "options.backup_every",
+                    "options.backup_every_tip",
+                ));
             ui.add_enabled(
                 b.auto,
                 crate::ui::field::NumField::new(&mut b.minutes).range(1..=999),
-            );
+            )
+            .rich_tip_always(crate::ui::tips::pair(
+                "options.backup_every",
+                "options.backup_minutes_tip",
+            ));
             ui.label(tr("options.minutes"));
         });
         ui.add_enabled_ui(b.auto, |ui| {
@@ -1409,6 +1733,7 @@ fn text_page(app: &mut App, ui: &mut Ui) {
         for (i, key) in TEXT_TABS.iter().enumerate() {
             if ui
                 .selectable_label(app.options_text_tab == i, tr(key))
+                .rich_tip_with(|| format!("{}\n{}", tr(key), tr("options.set_tab_desc")))
                 .clicked()
             {
                 app.options_text_tab = i;
@@ -1428,34 +1753,54 @@ fn text_page(app: &mut App, ui: &mut Ui) {
 fn text_display_tab(app: &mut App, ui: &mut Ui) {
     grid("text_display").show(ui, |ui| {
         row_label(ui, &tr("options.keyboard_text_increment"));
-        ui.horizontal(|ui| {
-            ui.add_sized(
-                [70.0, 22.0],
-                crate::ui::field::NumField::new(&mut app.settings.text_increment_pt)
-                    .range(0.1..=100.0)
-                    .max_decimals(1),
-            );
-            ui.label(tr("options.points"));
-        });
+        crate::ui::tips::tip_over(
+            ui,
+            crate::ui::tips::pair(
+                "options.keyboard_text_increment",
+                "options.keyboard_text_increment_tip",
+            ),
+            |ui| {
+                ui.horizontal(|ui| {
+                    ui.add_sized(
+                        [70.0, 22.0],
+                        crate::ui::field::NumField::new(&mut app.settings.text_increment_pt)
+                            .range(0.1..=100.0)
+                            .max_decimals(1),
+                    );
+                    ui.label(tr("options.points"));
+                });
+            },
+        );
+
         ui.end_row();
         // The font and size of new text, whatever text is selected (#449).
         // The unit of font sizes everywhere (#529): points, or millimetres
         // and the like for large work.
         row_label(ui, &tr("options.text_units"));
         let u = app.text_units();
-        egui::ComboBox::from_id_salt("options_text_units")
-            .selected_text(u.label())
-            .width(160.0)
-            .show_ui(ui, |ui| {
-                for v in Units::ALL {
-                    if ui.selectable_label(v == u, v.label()).clicked() {
-                        app.settings.text_units = v.id().to_string();
+        let tip = crate::ui::tips::pair("options.text_units", "options.text_units_tip");
+        crate::ui::tips::tip_over(ui, tip, |ui| {
+            egui::ComboBox::from_id_salt("options_text_units")
+                .selected_text(u.label())
+                .width(160.0)
+                .show_ui(ui, |ui| {
+                    for v in Units::ALL {
+                        if ui.selectable_label(v == u, v.label()).clicked() {
+                            app.settings.text_units = v.id().to_string();
+                        }
                     }
-                }
-            });
+                });
+        });
         ui.end_row();
         row_label(ui, &tr("options.default_font"));
-        crate::ui::font_list::default_font_list(app, ui, "options_default_font", 220.0);
+        crate::ui::tips::tip_over(
+            ui,
+            crate::ui::tips::pair("options.default_font", "options.default_font_tip"),
+            |ui| {
+                crate::ui::font_list::default_font_list(app, ui, "options_default_font", 220.0);
+            },
+        );
+
         ui.end_row();
         row_label(ui, &tr("options.default_size"));
         let u = app.text_units();
@@ -1468,6 +1813,10 @@ fn text_display_tab(app: &mut App, ui: &mut Ui) {
                     .unit_mm(u.mm())
                     .suffix(format!(" {}", u.short())),
             )
+            .rich_tip(crate::ui::tips::pair(
+                "options.default_size",
+                "options.default_size_tip",
+            ))
             .changed()
         {
             app.text_default_size = u.to_pt(shown);
@@ -1480,15 +1829,27 @@ fn text_display_tab(app: &mut App, ui: &mut Ui) {
     ui.checkbox(
         &mut app.show_non_printing,
         tr("menu.text.show_non_printing"),
-    );
+    )
+    .rich_tip(crate::ui::tips::pair(
+        "menu.text.show_non_printing",
+        "menu.text.show_non_printing_tip",
+    ));
 }
 
 fn paragraph_text_tab(app: &mut App, ui: &mut Ui) {
     ui.checkbox(
         &mut app.settings.show_text_frames,
         tr("menu.text.show_text_frames"),
-    );
-    ui.checkbox(&mut app.text_hyphenation, tr("menu.text.use_hyphenation"));
+    )
+    .rich_tip(crate::ui::tips::pair(
+        "menu.text.show_text_frames",
+        "menu.text.show_text_frames_tip",
+    ));
+    ui.checkbox(&mut app.text_hyphenation, tr("menu.text.use_hyphenation"))
+        .rich_tip(crate::ui::tips::pair(
+            "menu.text.use_hyphenation",
+            "menu.text.use_hyphenation_tip",
+        ));
     // The pattern files, read when the tab shows a new folder.
     type Found = (
         Option<std::path::PathBuf>,
@@ -1524,7 +1885,12 @@ fn paragraph_text_tab(app: &mut App, ui: &mut Ui) {
                     )
                     .rich_tip(d.dic.display().to_string());
                 }
-            });
+            })
+            .response
+            .rich_tip(crate::ui::tips::pair(
+                "options.hyphenation_patterns",
+                "options.hyphenation_patterns_tip",
+            ));
         ui.end_row();
     });
     ui.label(egui::RichText::new(tr("options.hyphenation_note")).color(Tokens::text_dim()));
@@ -1537,14 +1903,22 @@ fn fonts_tab(app: &mut App, ui: &mut Ui) {
     ui.checkbox(
         &mut app.settings.show_recent_fonts,
         tr("options.show_recent_fonts"),
-    );
+    )
+    .rich_tip(crate::ui::tips::pair(
+        "options.show_recent_fonts",
+        "options.show_recent_fonts_tip",
+    ));
     ui.add_enabled_ui(app.settings.show_recent_fonts, |ui| {
         ui.horizontal(|ui| {
             ui.label(tr("options.recent_font_count"));
             ui.add(
                 crate::ui::field::NumField::new(&mut app.settings.recent_font_count)
                     .range(1..=crate::ui::font_list::RECENT_MAX),
-            );
+            )
+            .rich_tip_always(crate::ui::tips::pair(
+                "options.recent_font_count",
+                "options.recent_font_count_tip",
+            ));
         });
     });
     ui.horizontal(|ui| {
@@ -1554,15 +1928,31 @@ fn fonts_tab(app: &mut App, ui: &mut Ui) {
                 .range(crate::ui::font_list::SAMPLE_SIZES)
                 .max_decimals(0)
                 .suffix(" pt"),
-        );
+        )
+        .rich_tip(crate::ui::tips::pair(
+            "options.font_sample_size",
+            "options.font_sample_size_tip",
+        ));
     });
 }
 
 fn spelling_tab(app: &mut App, ui: &mut Ui) {
     let p = &mut app.settings.spelling;
-    ui.checkbox(&mut p.ignore_digits, tr("writing.ignore_digits"));
-    ui.checkbox(&mut p.ignore_capitals, tr("writing.ignore_capitals"));
-    ui.checkbox(&mut p.add_to_autocorrect, tr("options.add_to_autocorrect"));
+    ui.checkbox(&mut p.ignore_digits, tr("writing.ignore_digits"))
+        .rich_tip(crate::ui::tips::pair(
+            "writing.ignore_digits",
+            "writing.ignore_digits_tip",
+        ));
+    ui.checkbox(&mut p.ignore_capitals, tr("writing.ignore_capitals"))
+        .rich_tip(crate::ui::tips::pair(
+            "writing.ignore_capitals",
+            "writing.ignore_capitals_tip",
+        ));
+    ui.checkbox(&mut p.add_to_autocorrect, tr("options.add_to_autocorrect"))
+        .rich_tip(crate::ui::tips::pair(
+            "options.add_to_autocorrect",
+            "options.add_to_autocorrect_tip",
+        ));
     ui.add_space(4.0);
     ui.label(egui::RichText::new(tr("options.spelling_note")).color(Tokens::text_dim()));
     chrome::section(ui, &tr("options.dictionaries"));
@@ -1618,48 +2008,72 @@ fn spelling_tab(app: &mut App, ui: &mut Ui) {
     let own = crate::spell::own_folder();
     grid("dictionary_folders").show(ui, |ui| {
         row_label(ui, &tr("options.dictionaries_folder"));
-        ui.horizontal(|ui| {
-            let mut text = own
-                .as_ref()
-                .map(|p| p.display().to_string())
-                .unwrap_or_default();
-            ui.add_enabled(
-                false,
-                egui::TextEdit::singleline(&mut text).desired_width(320.0),
-            );
-            if ui
-                .add_enabled(
-                    own.is_some() && !crate::files::WEB,
-                    egui::Button::new(tr("options.open_folder")),
-                )
-                .clicked()
-            {
-                if let Some(dir) = &own {
-                    let _ = std::fs::create_dir_all(dir);
-                    if let Err(e) = crate::export::open_with_system(dir) {
-                        app.status = e;
+        crate::ui::tips::tip_over(
+            ui,
+            crate::ui::tips::pair(
+                "options.dictionaries_folder",
+                "options.dictionaries_folder_tip",
+            ),
+            |ui| {
+                ui.horizontal(|ui| {
+                    let mut text = own
+                        .as_ref()
+                        .map(|p| p.display().to_string())
+                        .unwrap_or_default();
+                    ui.add_enabled(
+                        false,
+                        egui::TextEdit::singleline(&mut text).desired_width(320.0),
+                    );
+                    if ui
+                        .add_enabled(
+                            own.is_some() && !crate::files::WEB,
+                            egui::Button::new(tr("options.open_folder")),
+                        )
+                        .clicked()
+                    {
+                        if let Some(dir) = &own {
+                            let _ = std::fs::create_dir_all(dir);
+                            if let Err(e) = crate::export::open_with_system(dir) {
+                                app.status = e;
+                            }
+                        }
                     }
-                }
-            }
-        });
+                });
+            },
+        );
+
         ui.end_row();
         let p = &mut app.settings.spelling;
         row_label(ui, &tr("options.more_dictionaries"));
-        ui.horizontal(|ui| {
-            path_field(ui, &mut p.dictionary_folder, String::new());
-            if ui
-                .add_enabled(
-                    p.dictionary_folder.is_some(),
-                    egui::Button::new(tr("options.clear_folder")),
-                )
-                .clicked()
-            {
-                p.dictionary_folder = None;
-            }
-        });
+        crate::ui::tips::tip_over(
+            ui,
+            crate::ui::tips::pair("options.more_dictionaries", "options.more_dictionaries_tip"),
+            |ui| {
+                ui.horizontal(|ui| {
+                    path_field(ui, &mut p.dictionary_folder, String::new());
+                    if ui
+                        .add_enabled(
+                            p.dictionary_folder.is_some(),
+                            egui::Button::new(tr("options.clear_folder")),
+                        )
+                        .clicked()
+                    {
+                        p.dictionary_folder = None;
+                    }
+                });
+            },
+        );
+
         ui.end_row();
     });
-    if ui.button(tr("options.refresh_dictionaries")).clicked() {
+    if ui
+        .button(tr("options.refresh_dictionaries"))
+        .rich_tip(crate::ui::tips::pair(
+            "options.refresh_dictionaries",
+            "options.refresh_dictionaries_tip",
+        ))
+        .clicked()
+    {
         found = None;
         crate::spell::reload();
         let hyph = ui.id().with("hyphenation_found");
@@ -1676,7 +2090,7 @@ fn spelling_tab(app: &mut App, ui: &mut Ui) {
 }
 
 /// A quotation mark list (one of [`crate::autocorrect::QUOTE_CHOICES`]).
-fn quote_combo(ui: &mut Ui, id: &str, value: &mut char) -> bool {
+fn quote_combo(ui: &mut Ui, id: &str, tip: String, value: &mut char) -> bool {
     let mut changed = false;
     egui::ComboBox::from_id_salt(id)
         .width(48.0)
@@ -1685,20 +2099,38 @@ fn quote_combo(ui: &mut Ui, id: &str, value: &mut char) -> bool {
             for q in crate::autocorrect::QUOTE_CHOICES {
                 changed |= ui.selectable_value(value, q, q.to_string()).changed();
             }
-        });
+        })
+        .response
+        .rich_tip(tip);
     changed
 }
 
 fn autocorrect_tab(app: &mut App, ui: &mut Ui) {
     let style = app.settings.autocorrect.style();
     let p = &mut app.settings.autocorrect;
-    ui.checkbox(&mut p.capitalize_sentences, tr("autocorrect.capitalize"));
+    ui.checkbox(&mut p.capitalize_sentences, tr("autocorrect.capitalize"))
+        .rich_tip(crate::ui::tips::pair(
+            "autocorrect.capitalize",
+            "autocorrect.capitalize_tip",
+        ));
     ui.checkbox(
         &mut p.fix_two_initial_capitals,
         tr("autocorrect.two_capitals"),
-    );
-    ui.checkbox(&mut p.capitalize_days, tr("autocorrect.days"));
-    ui.checkbox(&mut p.auto_hyperlinks, tr("autocorrect.hyperlinks"));
+    )
+    .rich_tip(crate::ui::tips::pair(
+        "autocorrect.two_capitals",
+        "autocorrect.two_capitals_tip",
+    ));
+    ui.checkbox(&mut p.capitalize_days, tr("autocorrect.days"))
+        .rich_tip(crate::ui::tips::pair(
+            "autocorrect.days",
+            "autocorrect.days_tip",
+        ));
+    ui.checkbox(&mut p.auto_hyperlinks, tr("autocorrect.hyperlinks"))
+        .rich_tip(crate::ui::tips::pair(
+            "autocorrect.hyperlinks",
+            "autocorrect.hyperlinks_tip",
+        ));
     ui.separator();
     grid("autocorrect_language").show(ui, |ui| {
         row_label(ui, &tr("autocorrect.language"));
@@ -1716,11 +2148,20 @@ fn autocorrect_tab(app: &mut App, ui: &mut Ui) {
                     &mut p.quote_language,
                     String::new(),
                     tr("autocorrect.interface_language"),
-                );
+                )
+                .rich_tip(crate::ui::tips::pair(
+                    "autocorrect.interface_language",
+                    "autocorrect.interface_language_tip",
+                ));
                 for (code, name) in crate::i18n::LANGUAGES {
                     ui.selectable_value(&mut p.quote_language, code.to_string(), name);
                 }
-            });
+            })
+            .response
+            .rich_tip(crate::ui::tips::pair(
+                "autocorrect.language",
+                "autocorrect.language_tip",
+            ));
         // Another language brings its own quotation marks.
         if p.quote_language != before {
             p.single_quotes = None;
@@ -1728,11 +2169,19 @@ fn autocorrect_tab(app: &mut App, ui: &mut Ui) {
         }
         ui.end_row();
     });
-    ui.checkbox(&mut p.typographic_quotes, tr("autocorrect.quotes"));
+    ui.checkbox(&mut p.typographic_quotes, tr("autocorrect.quotes"))
+        .rich_tip(crate::ui::tips::pair(
+            "autocorrect.quotes",
+            "autocorrect.quotes_tip",
+        ));
     ui.checkbox(
         &mut p.straight_after_numbers,
         tr("autocorrect.straight_after_numbers"),
-    );
+    )
+    .rich_tip(crate::ui::tips::pair(
+        "autocorrect.straight_after_numbers",
+        "autocorrect.straight_after_numbers_tip",
+    ));
     let style = if p.quote_language.is_empty() {
         style
     } else {
@@ -1753,10 +2202,12 @@ fn autocorrect_tab(app: &mut App, ui: &mut Ui) {
                 let mut changed = false;
                 ui.horizontal(|ui| {
                     ui.label(tr("autocorrect.open"));
-                    changed |= quote_combo(ui, &format!("{label}_open"), &mut o);
+                    let tip = crate::ui::tips::pair("autocorrect.open", "autocorrect.open_tip");
+                    changed |= quote_combo(ui, &format!("{label}_open"), tip, &mut o);
                     ui.add_space(12.0);
                     ui.label(tr("autocorrect.close"));
-                    changed |= quote_combo(ui, &format!("{label}_close"), &mut c);
+                    let tip = crate::ui::tips::pair("autocorrect.close", "autocorrect.close_tip");
+                    changed |= quote_combo(ui, &format!("{label}_close"), tip, &mut c);
                 });
                 if changed {
                     if single {
@@ -1774,7 +2225,11 @@ fn autocorrect_tab(app: &mut App, ui: &mut Ui) {
     ui.checkbox(
         &mut p.replace_while_typing,
         tr("autocorrect.replace_while_typing"),
-    );
+    )
+    .rich_tip(crate::ui::tips::pair(
+        "autocorrect.replace_while_typing",
+        "autocorrect.replace_while_typing_tip",
+    ));
     let from_id = ui.id().with("autocorrect_from");
     let to_id = ui.id().with("autocorrect_to");
     let row_id = ui.id().with("autocorrect_row");
@@ -1789,10 +2244,18 @@ fn autocorrect_tab(app: &mut App, ui: &mut Ui) {
     let usable = !key.is_empty() && !key.contains(char::is_whitespace);
     ui.horizontal(|ui| {
         ui.label(tr("autocorrect.replace_col"));
-        ui.add(egui::TextEdit::singleline(&mut from).desired_width(130.0));
+        ui.add(egui::TextEdit::singleline(&mut from).desired_width(130.0))
+            .rich_tip(crate::ui::tips::pair(
+                "autocorrect.replace_col",
+                "autocorrect.replace_col_tip",
+            ));
         ui.add_space(10.0);
         ui.label(tr("autocorrect.with_col"));
-        ui.add(egui::TextEdit::singleline(&mut to).desired_width(130.0));
+        ui.add(egui::TextEdit::singleline(&mut to).desired_width(130.0))
+            .rich_tip(crate::ui::tips::pair(
+                "autocorrect.with_col",
+                "autocorrect.with_col_tip",
+            ));
     });
     ui.horizontal(|ui| {
         if ui
@@ -1800,6 +2263,10 @@ fn autocorrect_tab(app: &mut App, ui: &mut Ui) {
                 usable && existing.is_none(),
                 egui::Button::new(tr("autocorrect.add")),
             )
+            .rich_tip_always(crate::ui::tips::pair(
+                "autocorrect.add",
+                "autocorrect.add_tip",
+            ))
             .clicked()
         {
             p.replacements.push((key.clone(), to.clone()));
@@ -1811,6 +2278,10 @@ fn autocorrect_tab(app: &mut App, ui: &mut Ui) {
                 picked.is_some(),
                 egui::Button::new(tr("autocorrect.delete")),
             )
+            .rich_tip_always(crate::ui::tips::pair(
+                "autocorrect.delete",
+                "autocorrect.delete_tip",
+            ))
             .clicked()
         {
             if let Some(i) = picked.take() {
@@ -1824,6 +2295,10 @@ fn autocorrect_tab(app: &mut App, ui: &mut Ui) {
                 usable && existing.is_some(),
                 egui::Button::new(tr("autocorrect.replace")),
             )
+            .rich_tip_always(crate::ui::tips::pair(
+                "autocorrect.replace",
+                "autocorrect.replace_tip",
+            ))
             .clicked()
         {
             if let Some(i) = existing {
@@ -1847,8 +2322,14 @@ fn autocorrect_tab(app: &mut App, ui: &mut Ui) {
                         .show(ui, |ui| {
                             for (i, (f, t)) in p.replacements.iter().enumerate() {
                                 let on = picked == Some(i);
-                                let a = ui.selectable_label(on, f.as_str());
-                                let b = ui.selectable_label(on, t.as_str());
+                                let tip = || {
+                                    crate::ui::tips::pair(
+                                        "autocorrect.replacement",
+                                        "autocorrect.replacement_tip",
+                                    )
+                                };
+                                let a = ui.selectable_label(on, f.as_str()).rich_tip(tip());
+                                let b = ui.selectable_label(on, t.as_str()).rich_tip(tip());
                                 if a.clicked() || b.clicked() {
                                     picked = Some(i);
                                     from = f.clone();
@@ -1865,7 +2346,14 @@ fn autocorrect_tab(app: &mut App, ui: &mut Ui) {
         d.insert_temp(row_id, picked);
     });
     ui.add_space(4.0);
-    if ui.button(tr("autocorrect.apply_selection")).clicked() {
+    if ui
+        .button(tr("autocorrect.apply_selection"))
+        .rich_tip(crate::ui::tips::pair(
+            "autocorrect.apply_selection",
+            "autocorrect.apply_selection_tip",
+        ))
+        .clicked()
+    {
         if app.text_shapes().is_empty() {
             app.status = tr("autocorrect.no_selection");
         } else {
@@ -1886,7 +2374,11 @@ fn appearance_page(app: &mut App, ui: &mut Ui) {
     ui.checkbox(
         &mut app.settings.center_dialogs,
         tr("options.center_dialogs"),
-    );
+    )
+    .rich_tip(crate::ui::tips::pair(
+        "options.center_dialogs",
+        "options.center_dialogs_tip",
+    ));
     ui.checkbox(&mut app.settings.ui_shadows, tr("options.ui_shadows"))
         .rich_tip(tr("options.ui_shadows_tip"));
     ui.checkbox(&mut app.settings.colored_icons, tr("options.colored_icons"))
@@ -1916,15 +2408,30 @@ fn appearance_page(app: &mut App, ui: &mut Ui) {
                             .trailing_fill(true),
                     )
                 })
-                .inner;
-            let field = ui.add(
-                crate::ui::field::NumField::new(&mut pct)
-                    .range(UI_SIZE_RANGE)
-                    .speed(1.0)
-                    .max_decimals(0)
-                    .suffix(" %"),
-            );
-            reset = ui.button(tr("options.reset_to_default")).clicked();
+                .inner
+                .rich_tip(crate::ui::tips::pair(
+                    "options.interface_size",
+                    "options.ui_size_tip",
+                ));
+            let field = ui
+                .add(
+                    crate::ui::field::NumField::new(&mut pct)
+                        .range(UI_SIZE_RANGE)
+                        .speed(1.0)
+                        .max_decimals(0)
+                        .suffix(" %"),
+                )
+                .rich_tip(crate::ui::tips::pair(
+                    "options.interface_size",
+                    "options.ui_size_tip",
+                ));
+            reset = ui
+                .button(tr("options.reset_to_default"))
+                .rich_tip(crate::ui::tips::pair(
+                    "options.reset_to_default",
+                    "options.reset_to_default_tip",
+                ))
+                .clicked();
             slider.dragged() || field.dragged() || field.has_focus()
         })
         .inner;
@@ -1947,21 +2454,31 @@ fn appearance_page(app: &mut App, ui: &mut Ui) {
             "options.follow_text_size",
             &[("n", &format!("{:.0}", sys.text_scale * 100.0))],
         ),
-    );
+    )
+    .rich_tip_with(|| {
+        format!(
+            "{}\n{}",
+            tr("options.follow_text_size_title"),
+            tr("options.follow_text_size_tip")
+        )
+    });
     crate::ui::chrome::section(ui, &tr("options.color_section"));
     grid("appearance_color").show(ui, |ui| {
         row_label(ui, &tr("options.theme"));
         let current = crate::theme::Theme::from_id(&app.settings.theme);
-        egui::ComboBox::from_id_salt("ui_theme")
-            .selected_text(tr(current.key()))
-            .width(170.0)
-            .show_ui(ui, |ui| {
-                for t in crate::theme::Theme::ALL {
-                    if ui.selectable_label(t == current, tr(t.key())).clicked() {
-                        app.settings.theme = t.id().to_string();
+        let tip = crate::ui::tips::pair("options.theme", "options.theme_tip");
+        crate::ui::tips::tip_over(ui, tip, |ui| {
+            egui::ComboBox::from_id_salt("ui_theme")
+                .selected_text(tr(current.key()))
+                .width(170.0)
+                .show_ui(ui, |ui| {
+                    for t in crate::theme::Theme::ALL {
+                        if ui.selectable_label(t == current, tr(t.key())).clicked() {
+                            app.settings.theme = t.id().to_string();
+                        }
                     }
-                }
-            });
+                });
+        });
         ui.end_row();
         row_label(ui, "");
         let on = sys.high_contrast.is_some();
@@ -1972,23 +2489,38 @@ fn appearance_page(app: &mut App, ui: &mut Ui) {
             } else {
                 "options.follow_high_contrast"
             }),
-        );
+        )
+        .rich_tip(crate::ui::tips::pair(
+            "options.follow_high_contrast_title",
+            "options.follow_high_contrast_tip",
+        ));
         ui.end_row();
         row_label(ui, &tr("options.desktop_color"));
-        ui.horizontal(|ui| {
-            // The colour shown is the one around the page, the theme's
-            // until one is picked; any pick counts, white too (#530).
-            let [r, g, b, _] = app.desktop_color().to_array();
-            let mut rgb = [r, g, b];
-            if rgb_button(ui, &mut rgb) {
-                app.settings.desktop_rgb = rgb;
-                app.settings.desktop_custom = true;
-            }
-            if ui.button(tr("options.reset")).clicked() {
-                app.settings.desktop_rgb = [255, 255, 255];
-                app.settings.desktop_custom = false;
-            }
-        });
+        crate::ui::tips::tip_over(
+            ui,
+            crate::ui::tips::pair("options.desktop_color", "options.desktop_color_tip"),
+            |ui| {
+                ui.horizontal(|ui| {
+                    // The colour shown is the one around the page, the theme's
+                    // until one is picked; any pick counts, white too (#530).
+                    let [r, g, b, _] = app.desktop_color().to_array();
+                    let mut rgb = [r, g, b];
+                    if rgb_button(ui, &mut rgb) {
+                        app.settings.desktop_rgb = rgb;
+                        app.settings.desktop_custom = true;
+                    }
+                    if ui
+                        .button(tr("options.reset"))
+                        .rich_tip(crate::ui::tips::pair("options.reset", "dialog.reset_desc"))
+                        .clicked()
+                    {
+                        app.settings.desktop_rgb = [255, 255, 255];
+                        app.settings.desktop_custom = false;
+                    }
+                });
+            },
+        );
+
         ui.end_row();
     });
 }
@@ -2000,22 +2532,41 @@ fn color_palette_page(app: &mut App, ui: &mut Ui) {
     ui.checkbox(
         &mut p.auto_update_document,
         tr("options.palette_auto_update"),
-    );
-    ui.checkbox(&mut p.show_document, tr("options.palette_show_document"));
+    )
+    .rich_tip(crate::ui::tips::pair(
+        "options.palette_auto_update",
+        "options.palette_auto_update_tip",
+    ));
+    ui.checkbox(&mut p.show_document, tr("options.palette_show_document"))
+        .rich_tip(crate::ui::tips::pair(
+            "options.palette_show_document",
+            "options.palette_show_document_tip",
+        ));
     crate::ui::chrome::section(ui, &tr("options.palette_swatches"));
-    ui.checkbox(&mut p.show_no_color, tr("options.palette_no_color"));
+    ui.checkbox(&mut p.show_no_color, tr("options.palette_no_color"))
+        .rich_tip(crate::ui::tips::pair(
+            "options.palette_no_color",
+            "options.palette_no_color_tip",
+        ));
     // Rows of the default palette (columns docked on a side, #610).
     p.rows = p.rows.clamp(1, 3);
     grid("palette_rows").show(ui, |ui| {
         row_label(ui, &tr("options.palette_rows"));
-        combo(
+        crate::ui::tips::tip_over(
             ui,
-            "opt_palette_rows",
-            &mut p.rows,
-            &[1, 2, 3],
-            |n| n.to_string(),
-            60.0,
+            crate::ui::tips::pair("options.palette_rows", "options.palette_rows_tip"),
+            |ui| {
+                combo(
+                    ui,
+                    "opt_palette_rows",
+                    &mut p.rows,
+                    &[1, 2, 3],
+                    |n| n.to_string(),
+                    60.0,
+                );
+            },
         );
+
         ui.end_row();
     });
     crate::ui::chrome::section(ui, &tr("options.palette_right_button"));
@@ -2023,12 +2574,20 @@ fn color_palette_page(app: &mut App, ui: &mut Ui) {
         &mut p.right_click_outline,
         false,
         tr("options.palette_context_menu"),
-    );
+    )
+    .rich_tip(crate::ui::tips::pair(
+        "options.palette_context_menu",
+        "options.palette_context_menu_tip",
+    ));
     ui.radio_value(
         &mut p.right_click_outline,
         true,
         tr("options.palette_set_outline"),
-    );
+    )
+    .rich_tip(crate::ui::tips::pair(
+        "options.palette_set_outline",
+        "options.palette_set_outline_tip",
+    ));
     if p.right_click_outline {
         ui.horizontal(|ui| {
             ui.add_space(22.0);
@@ -2288,10 +2847,19 @@ fn commands_page(app: &mut App, ui: &mut Ui) {
                     category_name(Some(BUTTONS)),
                 );
                 app.shortcut_editor.category = pick;
-            });
+            })
+            .response
+            .rich_tip(crate::ui::tips::pair(
+                "options.command_category",
+                "options.command_category_tip",
+            ));
         ui.add_space(12.0);
         ui.label(tr("options.find_command"));
-        ui.add(egui::TextEdit::singleline(&mut app.shortcut_editor.filter).desired_width(180.0));
+        ui.add(egui::TextEdit::singleline(&mut app.shortcut_editor.filter).desired_width(180.0))
+            .rich_tip(crate::ui::tips::pair(
+                "options.find_command",
+                "options.find_command_tip",
+            ));
     });
     ui.add_space(4.0);
     let filter = app.shortcut_editor.filter.trim().to_lowercase();
@@ -2344,9 +2912,17 @@ fn commands_page(app: &mut App, ui: &mut Ui) {
             }
             ui.horizontal(|ui| {
                 let keys = &mut app.shortcut_editor.keys_tab;
-                ui.selectable_value(keys, false, tr("options.general"));
+                ui.selectable_value(keys, false, tr("options.general"))
+                    .rich_tip(crate::ui::tips::pair(
+                        "options.general",
+                        "options.general_tip",
+                    ));
                 if !button {
-                    ui.selectable_value(keys, true, tr("options.shortcut_keys"));
+                    ui.selectable_value(keys, true, tr("options.shortcut_keys"))
+                        .rich_tip(crate::ui::tips::pair(
+                            "options.shortcut_keys",
+                            "options.shortcut_keys_tip",
+                        ));
                 }
             });
             ui.separator();
@@ -2424,10 +3000,24 @@ fn command_list_row(app: &mut App, ui: &mut Ui, c: &CommandItem) {
 fn command_general(app: &App, ui: &mut Ui, c: &CommandItem) {
     grid("command_general").show(ui, |ui| {
         row_label(ui, &tr("options.command_name"));
-        ui.add(egui::Label::new(egui::RichText::new(&c.name).strong()).wrap());
+        crate::ui::tips::tip_over(
+            ui,
+            crate::ui::tips::pair("options.command_name", "options.command_name_tip"),
+            |ui| {
+                ui.add(egui::Label::new(egui::RichText::new(&c.name).strong()).wrap());
+            },
+        );
+
         ui.end_row();
         row_label(ui, &tr("options.available_on"));
-        ui.add(egui::Label::new(&c.place).wrap());
+        crate::ui::tips::tip_over(
+            ui,
+            crate::ui::tips::pair("options.available_on", "options.available_on_tip"),
+            |ui| {
+                ui.add(egui::Label::new(&c.place).wrap());
+            },
+        );
+
         ui.end_row();
         row_label(ui, &format!("{}:", tr("options.shortcut_keys")));
         let keys = current_keys(app, c);
@@ -2511,14 +3101,28 @@ fn command_keys(app: &mut App, ui: &mut Ui, c: &CommandItem) {
         }
         // The commands of the category shown; with every command shown,
         // the same as resetting all, so it asks first.
-        if ui.button(tr("options.reset_shortcuts")).clicked() {
+        if ui
+            .button(tr("options.reset_shortcuts"))
+            .rich_tip(crate::ui::tips::pair(
+                "options.reset_shortcuts",
+                "options.reset_shortcuts_tip",
+            ))
+            .clicked()
+        {
             match app.shortcut_editor.category.clone() {
                 Some(category) => reset_category_shortcuts(app, &category),
                 None => app.shortcut_editor.confirm_reset_all = true,
             }
         }
     });
-    if ui.button(tr("options.reset_all_shortcuts")).clicked() {
+    if ui
+        .button(tr("options.reset_all_shortcuts"))
+        .rich_tip(crate::ui::tips::pair(
+            "options.reset_all_shortcuts",
+            "options.reset_all_shortcuts_tip",
+        ))
+        .clicked()
+    {
         app.shortcut_editor.confirm_reset_all = true;
     }
     if app.shortcut_editor.confirm_reset_all {
@@ -2645,7 +3249,11 @@ fn command_bars_page(app: &mut App, ui: &mut Ui) {
                     ui.add_enabled(
                         false,
                         egui::Checkbox::new(&mut true, tr("menu.window.toolbar_menu_bar")),
-                    );
+                    )
+                    .rich_disabled_tip(crate::ui::tips::pair(
+                        "menu.window.toolbar_menu_bar",
+                        "options.menu_bar_always_tip",
+                    ));
                     let palette = &mut app.settings.palette.show_palette;
                     for (flag, key) in [
                         (
@@ -2666,21 +3274,32 @@ fn command_bars_page(app: &mut App, ui: &mut Ui) {
                             "menu.window.toolbar_transform",
                         ),
                     ] {
-                        ui.checkbox(flag, tr(key));
+                        ui.checkbox(flag, tr(key)).rich_tip_with(|| {
+                            format!("{}\n{}", tr(key), tr("options.show_bar_tip"))
+                        });
                     }
                 });
-            if ui.button(tr("options.reset")).clicked() {
+            if ui
+                .button(tr("options.reset"))
+                .rich_tip(crate::ui::tips::pair("options.reset", "dialog.reset_desc"))
+                .clicked()
+            {
                 app.reset_command_bars();
             }
         });
         ui.add_space(16.0);
         ui.vertical(|ui| {
             crate::ui::chrome::section(ui, &tr("options.other"));
-            ui.checkbox(&mut app.settings.bars.locked, tr("bars.lock"));
+            ui.checkbox(&mut app.settings.bars.locked, tr("bars.lock"))
+                .rich_tip(crate::ui::tips::pair("bars.lock", "bars.lock_tip"));
             ui.checkbox(
                 &mut app.settings.show_outline_flyout,
                 tr("options.show_outline_flyout"),
-            );
+            )
+            .rich_tip(crate::ui::tips::pair(
+                "options.show_outline_flyout",
+                "options.show_outline_flyout_tip",
+            ));
         });
     });
 }
@@ -2691,11 +3310,16 @@ fn pick_page(app: &mut App, ui: &mut Ui) {
     ui.checkbox(
         &mut app.settings.crosshair_cursor,
         tr("options.crosshair_cursor"),
-    );
+    )
+    .rich_tip(crate::ui::tips::pair(
+        "options.crosshair_cursor",
+        "options.crosshair_cursor_tip",
+    ));
     ui.checkbox(
         &mut app.settings.treat_all_filled,
         tr("options.treat_all_filled"),
-    );
+    )
+    .rich_tip(crate::ui::tips::keyed("options.treat_all_filled"));
     ui.checkbox(
         &mut app.settings.marquee_touching,
         tr("options.marquee_touching"),
@@ -2710,12 +3334,20 @@ fn zoom_pan_page(app: &mut App, ui: &mut Ui) {
             &mut app.settings.zoom_right_click_out,
             true,
             tr("options.zoom_out"),
-        );
+        )
+        .rich_tip(crate::ui::tips::pair(
+            "options.zoom_out",
+            "options.zoom_out_tip",
+        ));
         ui.radio_value(
             &mut app.settings.zoom_right_click_out,
             false,
             tr("options.context_menu"),
-        );
+        )
+        .rich_tip(crate::ui::tips::pair(
+            "options.context_menu",
+            "options.context_menu_tip",
+        ));
     });
     ui.separator();
     ui.label(tr("options.wheel_action"));
@@ -2724,12 +3356,20 @@ fn zoom_pan_page(app: &mut App, ui: &mut Ui) {
             &mut app.settings.wheel_zooms,
             true,
             tr("options.wheel_zoom"),
-        );
+        )
+        .rich_tip(crate::ui::tips::pair(
+            "options.wheel_zoom",
+            "options.wheel_zoom_tip",
+        ));
         ui.radio_value(
             &mut app.settings.wheel_zooms,
             false,
             tr("options.wheel_scroll"),
-        );
+        )
+        .rich_tip(crate::ui::tips::pair(
+            "options.wheel_scroll",
+            "options.wheel_scroll_tip",
+        ));
     });
 }
 
@@ -2746,7 +3386,8 @@ fn rectangle_page(app: &mut App, ui: &mut Ui) {
                 (CornerKind::Scallop, "toolbar.corner_scallop"),
                 (CornerKind::Chamfer, "toolbar.corner_chamfer"),
             ] {
-                ui.radio_value(&mut c.kind, kind, tr(key));
+                ui.radio_value(&mut c.kind, kind, tr(key))
+                    .rich_tip(crate::ui::tips::keyed(key));
             }
         });
         egui::Grid::new("rect_corners_grid")
@@ -2774,6 +3415,7 @@ fn rectangle_page(app: &mut App, ui: &mut Ui) {
                                     .speed(0.1)
                                     .suffix(format!(" {}", u.short())),
                             )
+                            .rich_tip(crate::ui::tips::keyed(key))
                             .changed()
                         {
                             let v = u.world_to_mm(v).max(0.0);
@@ -2787,13 +3429,15 @@ fn rectangle_page(app: &mut App, ui: &mut Ui) {
                     ui.end_row();
                 }
             });
-        ui.checkbox(&mut app.corners_together, tr("toolbar.corners_together"));
+        ui.checkbox(&mut app.corners_together, tr("toolbar.corners_together"))
+            .rich_tip(crate::ui::tips::keyed("toolbar.corners_together"));
     });
     chrome::section(ui, &tr("options.scale_corners"));
     ui.indent("scale_corners", |ui| {
         let mut relative = !c.fixed;
         if ui
             .checkbox(&mut relative, tr("toolbar.relative_corners"))
+            .rich_tip(crate::ui::tips::keyed("toolbar.relative_corners"))
             .changed()
         {
             c.fixed = !relative;
@@ -2809,9 +3453,15 @@ fn ellipse_page(app: &mut App, ui: &mut Ui) {
         Some(_) => 2,
     };
     let before = kind;
-    ui.radio_value(&mut kind, 0, tr("options.ellipse"));
-    ui.radio_value(&mut kind, 1, tr("options.pie"));
-    ui.radio_value(&mut kind, 2, tr("options.arc"));
+    ui.radio_value(&mut kind, 0, tr("options.ellipse"))
+        .rich_tip(crate::ui::tips::pair(
+            "options.ellipse",
+            "options.ellipse_tip",
+        ));
+    ui.radio_value(&mut kind, 1, tr("options.pie"))
+        .rich_tip(crate::ui::tips::pair("options.pie", "options.pie_tip"));
+    ui.radio_value(&mut kind, 2, tr("options.arc"))
+        .rich_tip(crate::ui::tips::pair("options.arc", "options.arc_tip"));
     let mut arc = app.ellipse_arc.unwrap_or(tracedraw_core::EllipseArc {
         start_deg: 0.0,
         end_deg: 270.0,
@@ -2829,18 +3479,32 @@ fn ellipse_page(app: &mut App, ui: &mut Ui) {
     if let Some(a) = &mut app.ellipse_arc {
         grid("arc").show(ui, |ui| {
             row_label(ui, &tr("options.starting_angle"));
-            ui.add(
-                crate::ui::field::NumField::new(&mut a.start_deg)
-                    .range(-360.0..=360.0)
-                    .suffix("°"),
+            crate::ui::tips::tip_over(
+                ui,
+                crate::ui::tips::pair("options.starting_angle", "options.starting_angle_tip"),
+                |ui| {
+                    ui.add(
+                        crate::ui::field::NumField::new(&mut a.start_deg)
+                            .range(-360.0..=360.0)
+                            .suffix("°"),
+                    );
+                },
             );
+
             ui.end_row();
             row_label(ui, &tr("options.ending_angle"));
-            ui.add(
-                crate::ui::field::NumField::new(&mut a.end_deg)
-                    .range(-360.0..=360.0)
-                    .suffix("°"),
+            crate::ui::tips::tip_over(
+                ui,
+                crate::ui::tips::pair("options.ending_angle", "options.ending_angle_tip"),
+                |ui| {
+                    ui.add(
+                        crate::ui::field::NumField::new(&mut a.end_deg)
+                            .range(-360.0..=360.0)
+                            .suffix("°"),
+                    );
+                },
             );
+
             ui.end_row();
         });
     }
@@ -2849,21 +3513,35 @@ fn ellipse_page(app: &mut App, ui: &mut Ui) {
 fn polygon_page(app: &mut App, ui: &mut Ui) {
     grid("polygon").show(ui, |ui| {
         row_label(ui, &tr("options.number_of_points"));
-        ui.add(crate::ui::field::NumField::new(&mut app.polygon_points).range(3..=500));
+        crate::ui::tips::tip_over(
+            ui,
+            crate::ui::tips::pair("options.number_of_points", "options.number_of_points_tip"),
+            |ui| {
+                ui.add(crate::ui::field::NumField::new(&mut app.polygon_points).range(3..=500));
+            },
+        );
+
         ui.end_row();
         row_label(ui, &tr("options.sharpness"));
-        // Stored as a fraction, shown in percent like the property bar.
-        let mut pct = (app.star_sharpness * 100.0).round();
-        if ui
-            .add(
-                crate::ui::field::NumField::new(&mut pct)
-                    .range(1.0..=99.0)
-                    .suffix("%"),
-            )
-            .changed()
-        {
-            app.star_sharpness = (pct / 100.0).clamp(0.01, 0.99);
-        }
+        crate::ui::tips::tip_over(
+            ui,
+            crate::ui::tips::pair("options.sharpness", "options.sharpness_tip"),
+            |ui| {
+                // Stored as a fraction, shown in percent like the property bar.
+                let mut pct = (app.star_sharpness * 100.0).round();
+                if ui
+                    .add(
+                        crate::ui::field::NumField::new(&mut pct)
+                            .range(1.0..=99.0)
+                            .suffix("%"),
+                    )
+                    .changed()
+                {
+                    app.star_sharpness = (pct / 100.0).clamp(0.01, 0.99);
+                };
+            },
+        );
+
         ui.end_row();
     });
 }
@@ -2871,28 +3549,57 @@ fn polygon_page(app: &mut App, ui: &mut Ui) {
 fn spiral_page(app: &mut App, ui: &mut Ui) {
     grid("spiral").show(ui, |ui| {
         row_label(ui, &tr("options.revolutions"));
-        ui.add(crate::ui::field::NumField::new(&mut app.spiral_revolutions).range(1..=100));
+        crate::ui::tips::tip_over(
+            ui,
+            crate::ui::tips::pair("options.revolutions", "options.revolutions_tip"),
+            |ui| {
+                ui.add(crate::ui::field::NumField::new(&mut app.spiral_revolutions).range(1..=100));
+            },
+        );
+
         ui.end_row();
     });
     ui.radio_value(
         &mut app.spiral_logarithmic,
         false,
         tr("options.symmetrical_spiral"),
-    );
+    )
+    .rich_tip(crate::ui::tips::pair(
+        "options.symmetrical_spiral",
+        "options.symmetrical_spiral_tip",
+    ));
     ui.radio_value(
         &mut app.spiral_logarithmic,
         true,
         tr("options.logarithmic_spiral"),
-    );
+    )
+    .rich_tip(crate::ui::tips::pair(
+        "options.logarithmic_spiral",
+        "options.logarithmic_spiral_tip",
+    ));
 }
 
 fn graph_paper_page(app: &mut App, ui: &mut Ui) {
     grid("graph").show(ui, |ui| {
         row_label(ui, &tr("options.rows"));
-        ui.add(crate::ui::field::NumField::new(&mut app.graph_rows).range(1..=99));
+        crate::ui::tips::tip_over(
+            ui,
+            crate::ui::tips::pair("options.rows", "options.rows_tip"),
+            |ui| {
+                ui.add(crate::ui::field::NumField::new(&mut app.graph_rows).range(1..=99));
+            },
+        );
+
         ui.end_row();
         row_label(ui, &tr("options.columns"));
-        ui.add(crate::ui::field::NumField::new(&mut app.graph_cols).range(1..=99));
+        crate::ui::tips::tip_over(
+            ui,
+            crate::ui::tips::pair("options.columns", "options.columns_tip"),
+            |ui| {
+                ui.add(crate::ui::field::NumField::new(&mut app.graph_cols).range(1..=99));
+            },
+        );
+
         ui.end_row();
     });
 }
@@ -2900,27 +3607,57 @@ fn graph_paper_page(app: &mut App, ui: &mut Ui) {
 fn table_page(app: &mut App, ui: &mut Ui) {
     grid("table").show(ui, |ui| {
         row_label(ui, &tr("options.rows"));
-        ui.add(crate::ui::field::NumField::new(&mut app.table_rows).range(1..=99));
+        crate::ui::tips::tip_over(
+            ui,
+            crate::ui::tips::pair("options.rows", "options.rows_tip"),
+            |ui| {
+                ui.add(crate::ui::field::NumField::new(&mut app.table_rows).range(1..=99));
+            },
+        );
+
         ui.end_row();
         row_label(ui, &tr("options.columns"));
-        ui.add(crate::ui::field::NumField::new(&mut app.table_cols).range(1..=99));
+        crate::ui::tips::tip_over(
+            ui,
+            crate::ui::tips::pair("options.columns", "options.columns_tip"),
+            |ui| {
+                ui.add(crate::ui::field::NumField::new(&mut app.table_cols).range(1..=99));
+            },
+        );
+
         ui.end_row();
         row_label(ui, &tr("options.table_tab_key"));
         ui.vertical(|ui| {
             let p = &mut app.settings.table;
-            ui.radio_value(&mut p.tab_inserts_tab, false, tr("options.table_tab_moves"));
+            ui.radio_value(&mut p.tab_inserts_tab, false, tr("options.table_tab_moves"))
+                .rich_tip(crate::ui::tips::pair(
+                    "options.table_tab_moves",
+                    "options.table_tab_moves_tip",
+                ));
             ui.radio_value(
                 &mut p.tab_inserts_tab,
                 true,
                 tr("options.table_tab_inserts"),
-            );
+            )
+            .rich_tip(crate::ui::tips::pair(
+                "options.table_tab_inserts",
+                "options.table_tab_inserts_tip",
+            ));
         });
         ui.end_row();
         row_label(ui, &tr("options.table_tab_order"));
         ui.vertical(|ui| {
             let p = &mut app.settings.table;
-            ui.radio_value(&mut p.tab_by_columns, false, tr("options.table_tab_rows"));
-            ui.radio_value(&mut p.tab_by_columns, true, tr("options.table_tab_columns"));
+            ui.radio_value(&mut p.tab_by_columns, false, tr("options.table_tab_rows"))
+                .rich_tip(crate::ui::tips::pair(
+                    "options.table_tab_rows",
+                    "options.table_tab_rows_tip",
+                ));
+            ui.radio_value(&mut p.tab_by_columns, true, tr("options.table_tab_columns"))
+                .rich_tip(crate::ui::tips::pair(
+                    "options.table_tab_columns",
+                    "options.table_tab_columns_tip",
+                ));
         });
         ui.end_row();
     });
@@ -2935,7 +3672,11 @@ fn curves_page(app: &mut App, ui: &mut Ui) {
     grid("curves").show(ui, |ui| {
         row_label(ui, &tr("options.freehand_smoothing"));
         let mut v = c.smoothing.min(100);
-        ui.add(egui::Slider::new(&mut v, 0..=100));
+        ui.add(egui::Slider::new(&mut v, 0..=100))
+            .rich_tip(crate::ui::tips::pair(
+                "options.freehand_smoothing",
+                "options.freehand_smoothing_tip",
+            ));
         c.smoothing = v;
         ui.end_row();
         row_label(ui, &tr("options.join_within"));
@@ -2949,24 +3690,46 @@ fn curves_page(app: &mut App, ui: &mut Ui) {
                 .range(1.0..=50.0)
                 .speed(0.2)
                 .suffix(" px"),
-        );
+        )
+        .rich_tip(crate::ui::tips::pair(
+            "options.join_within",
+            "options.join_within_tip",
+        ));
         c.join_px = px;
         ui.end_row();
         row_label(ui, &tr("options.pen"));
-        ui.checkbox(&mut c.pen_preview, tr("options.pen_preview"));
+        ui.checkbox(&mut c.pen_preview, tr("options.pen_preview"))
+            .rich_tip(crate::ui::tips::pair(
+                "options.pen_preview",
+                "options.pen_preview_tip",
+            ));
         ui.end_row();
         ui.label("");
         ui.checkbox(
             &mut c.pen_auto_add_delete,
             tr("options.pen_auto_add_delete"),
-        );
+        )
+        .rich_tip(crate::ui::tips::pair(
+            "options.pen_auto_add_delete",
+            "options.pen_auto_add_delete_tip",
+        ));
         ui.end_row();
         row_label(ui, &tr("options.constrain_key"));
-        ui.horizontal(|ui| {
-            for k in crate::prefs::ConstrainKey::ALL {
-                ui.radio_value(&mut c.constrain_key, k, tr(k.i18n_key()));
-            }
-        });
+        crate::ui::tips::tip_over(
+            ui,
+            crate::ui::tips::pair("options.constrain_key", "options.constrain_key_tip"),
+            |ui| {
+                ui.horizontal(|ui| {
+                    for k in crate::prefs::ConstrainKey::ALL {
+                        ui.radio_value(&mut c.constrain_key, k, tr(k.i18n_key()))
+                            .rich_tip_with(|| {
+                                format!("{}\n{}", tr(k.i18n_key()), tr("options.constrain_key_tip"))
+                            });
+                    }
+                });
+            },
+        );
+
         ui.end_row();
     });
     ui.add_space(4.0);
@@ -2984,14 +3747,26 @@ fn eraser_page(app: &mut App, ui: &mut Ui) {
                     .speed(0.1)
                     .suffix(format!(" {}", u.short())),
             )
+            .rich_tip(crate::ui::tips::pair(
+                "options.eraser_width",
+                "options.eraser_width_tip",
+            ))
             .changed()
         {
             app.eraser_width = u.to_mm(v).max(0.01);
         }
         ui.end_row();
     });
-    ui.radio_value(&mut app.eraser_square, false, tr("options.eraser_round"));
-    ui.radio_value(&mut app.eraser_square, true, tr("options.eraser_square"));
+    ui.radio_value(&mut app.eraser_square, false, tr("options.eraser_round"))
+        .rich_tip(crate::ui::tips::pair(
+            "options.eraser_round",
+            "options.eraser_round_tip",
+        ));
+    ui.radio_value(&mut app.eraser_square, true, tr("options.eraser_square"))
+        .rich_tip(crate::ui::tips::pair(
+            "options.eraser_square",
+            "options.eraser_square_tip",
+        ));
 }
 
 // ----- Global ------------------------------------------------------------
@@ -3015,7 +3790,12 @@ fn global_general_page(app: &mut App, ui: &mut Ui) {
                         app.settings.language = code.to_string();
                     }
                 }
-            });
+            })
+            .response
+            .rich_tip(crate::ui::tips::pair(
+                "options.language",
+                "options.language_tip",
+            ));
         ui.end_row();
     });
     #[cfg(not(target_arch = "wasm32"))]
@@ -3025,7 +3805,11 @@ fn global_general_page(app: &mut App, ui: &mut Ui) {
     #[cfg(not(target_arch = "wasm32"))]
     {
         chrome::section(ui, &tr("options.agents"));
-        ui.checkbox(&mut app.settings.mcp_window, tr("options.mcp_window"));
+        ui.checkbox(&mut app.settings.mcp_window, tr("options.mcp_window"))
+            .rich_tip(crate::ui::tips::pair(
+                "options.mcp_window",
+                "options.mcp_window_tip",
+            ));
         ui.label(egui::RichText::new(tr("options.mcp_window_hint")).color(Tokens::text_dim()));
         if let Some(link) = &app.mcp_link {
             ui.label(
@@ -3039,7 +3823,14 @@ fn global_general_page(app: &mut App, ui: &mut Ui) {
     }
     ui.add_space(10.0);
     ui.label(egui::RichText::new(tr("options.reset_all_hint")).color(Tokens::text_dim()));
-    if ui.button(tr("options.reset_all")).clicked() {
+    if ui
+        .button(tr("options.reset_all"))
+        .rich_tip(crate::ui::tips::pair(
+            "options.reset_all",
+            "options.reset_all_tip",
+        ))
+        .clicked()
+    {
         // The question replaces the options; nothing changes unless it is
         // answered Reset.
         if let Some(snapshot) = app.options_snapshot.take() {
@@ -3058,8 +3849,19 @@ fn file_locations_page(app: &mut App, ui: &mut Ui) {
                 egui::TextEdit::singleline(&mut app.settings.bitmap_editor)
                     .desired_width(300.0)
                     .hint_text(tr("options.bitmap_editor_system")),
-            );
-            if ui.button(tr("options.browse")).clicked() {
+            )
+            .rich_tip(crate::ui::tips::pair(
+                "options.bitmap_editor",
+                "options.bitmap_editor_tip",
+            ));
+            if ui
+                .button(tr("options.browse"))
+                .rich_tip(crate::ui::tips::pair(
+                    "options.browse",
+                    "options.browse_tip",
+                ))
+                .clicked()
+            {
                 crate::files::Dialog::new().pick_file(app, |app, path| {
                     app.settings.bitmap_editor = path.display().to_string();
                 });
@@ -3113,6 +3915,13 @@ fn workspace_page(app: &mut App, ui: &mut Ui) {
                     app.workspace == ws,
                     tr(&format!("menu.window.workspace_{}", ws.id())),
                 )
+                .rich_tip_with(|| {
+                    format!(
+                        "{}\n{}",
+                        tr(&format!("menu.window.workspace_{}", ws.id())),
+                        tr("options.workspace_pick_tip")
+                    )
+                })
                 .clicked()
             {
                 app.set_workspace(ws);
@@ -3124,13 +3933,18 @@ fn workspace_page(app: &mut App, ui: &mut Ui) {
     ui.label(egui::RichText::new(tr("options.workspace_transfer_hint")).color(Tokens::text_dim()));
     let mut parts = app.settings.workspace_parts;
     for (on, key) in parts.flags_mut() {
-        ui.checkbox(on, tr(key));
+        ui.checkbox(on, tr(key))
+            .rich_tip_with(|| format!("{}\n{}", tr(key), tr("options.workspace_part_tip")));
     }
     app.settings.workspace_parts = parts;
     ui.horizontal(|ui| {
         let any = parts.any();
         if ui
             .add_enabled(any, egui::Button::new(tr("options.workspace_export")))
+            .rich_tip_always(crate::ui::tips::pair(
+                "options.workspace_export",
+                "options.workspace_export_tip",
+            ))
             .clicked()
         {
             app.export_workspace_dialog(parts);
@@ -3138,6 +3952,10 @@ fn workspace_page(app: &mut App, ui: &mut Ui) {
         // Imported parts stay until OK; Cancel puts the old ones back.
         if ui
             .add_enabled(any, egui::Button::new(tr("options.workspace_import")))
+            .rich_tip_always(crate::ui::tips::pair(
+                "options.workspace_import",
+                "options.workspace_import_tip",
+            ))
             .clicked()
         {
             app.import_workspace_dialog(parts, false);
@@ -3154,25 +3972,47 @@ fn document_general_page(app: &mut App, ui: &mut Ui) {
     let mut meta = app.doc().metadata.clone();
     grid("doc_general").show(ui, |ui| {
         row_label(ui, &tr("options.rendering_resolution"));
-        ui.horizontal(|ui| {
-            let mut dpi = app.document_dpi();
-            if ui
-                .add_sized(
-                    [80.0, 22.0],
-                    crate::ui::field::NumField::new(&mut dpi).range(36.0..=2400.0),
-                )
-                .changed()
-            {
-                meta.resolution_dpi = dpi;
-            }
-            ui.label("dpi");
-        });
+        crate::ui::tips::tip_over(
+            ui,
+            crate::ui::tips::pair(
+                "options.rendering_resolution",
+                "options.rendering_resolution_tip",
+            ),
+            |ui| {
+                ui.horizontal(|ui| {
+                    let mut dpi = app.document_dpi();
+                    if ui
+                        .add_sized(
+                            [80.0, 22.0],
+                            crate::ui::field::NumField::new(&mut dpi).range(36.0..=2400.0),
+                        )
+                        .rich_tip(crate::ui::tips::pair(
+                            "options.rendering_resolution",
+                            "options.rendering_resolution_tip",
+                        ))
+                        .changed()
+                    {
+                        meta.resolution_dpi = dpi;
+                    }
+                    ui.label("dpi");
+                });
+            },
+        );
+
         ui.end_row();
     });
-    ui.checkbox(&mut meta.fill_open_curves, tr("options.fill_open_curves"));
+    ui.checkbox(&mut meta.fill_open_curves, tr("options.fill_open_curves"))
+        .rich_tip(crate::ui::tips::pair(
+            "options.fill_open_curves",
+            "options.fill_open_curves_tip",
+        ));
     let mut inflate = !meta.no_auto_inflate;
     if ui
         .checkbox(&mut inflate, tr("options.auto_inflate_bitmaps"))
+        .rich_tip(crate::ui::tips::pair(
+            "options.auto_inflate_bitmaps",
+            "options.auto_inflate_bitmaps_tip",
+        ))
         .changed()
     {
         meta.no_auto_inflate = !inflate;
@@ -3190,16 +4030,26 @@ fn document_general_page(app: &mut App, ui: &mut Ui) {
             u.world_from_mm(app.duplicate_offset.y),
         );
         ui.horizontal(|ui| {
-            let a = ui.add(
-                crate::ui::field::NumField::new(&mut dx)
-                    .speed(0.1)
-                    .suffix(format!(" {}", u.short())),
-            );
-            let b = ui.add(
-                crate::ui::field::NumField::new(&mut dy)
-                    .speed(0.1)
-                    .suffix(format!(" {}", u.short())),
-            );
+            let a = ui
+                .add(
+                    crate::ui::field::NumField::new(&mut dx)
+                        .speed(0.1)
+                        .suffix(format!(" {}", u.short())),
+                )
+                .rich_tip(crate::ui::tips::pair(
+                    "options.duplicate_offset_x",
+                    "options.duplicate_offset_x_tip",
+                ));
+            let b = ui
+                .add(
+                    crate::ui::field::NumField::new(&mut dy)
+                        .speed(0.1)
+                        .suffix(format!(" {}", u.short())),
+                )
+                .rich_tip(crate::ui::tips::pair(
+                    "options.duplicate_offset_y",
+                    "options.duplicate_offset_y_tip",
+                ));
             if a.changed() || b.changed() {
                 app.duplicate_offset =
                     tracedraw_core::geometry::Vec2::new(u.world_to_mm(dx), u.world_to_mm(dy));
@@ -3212,8 +4062,16 @@ fn document_general_page(app: &mut App, ui: &mut Ui) {
 fn layout_page(app: &mut App, ui: &mut Ui) {
     let n = app.doc().pages.len();
     ui.label(trf("options.pages_count", &[("n", &n.to_string())]));
-    ui.checkbox(&mut app.page_sorter, tr("menu.view.page_sorter"));
-    if ui.button(tr("menu.layout.switch_orientation")).clicked() {
+    ui.checkbox(&mut app.page_sorter, tr("menu.view.page_sorter"))
+        .rich_tip(crate::ui::tips::keyed("menu.view.page_sorter"));
+    if ui
+        .button(tr("menu.layout.switch_orientation"))
+        .rich_tip(crate::ui::tips::pair(
+            "menu.layout.switch_orientation",
+            "menu.layout.switch_orientation_tip",
+        ))
+        .clicked()
+    {
         let s = app.page_size();
         let page = app.page;
         app.run(Command::ResizePage {
@@ -3238,7 +4096,11 @@ fn layout_page(app: &mut App, ui: &mut Ui) {
                 (tracedraw_core::MasterScope::Odd, "options.scope_odd"),
                 (tracedraw_core::MasterScope::Even, "options.scope_even"),
             ] {
-                if ui.selectable_label(scope == s, tr(k)).clicked() {
+                if ui
+                    .selectable_label(scope == s, tr(k))
+                    .rich_tip_with(|| format!("{}\n{}", tr(k), tr(&format!("{k}_tip"))))
+                    .clicked()
+                {
                     app.run(Command::SetLayerScope {
                         layer: id,
                         scope: s,
@@ -3253,7 +4115,11 @@ fn layout_page(app: &mut App, ui: &mut Ui) {
             (tracedraw_core::MasterScope::Odd, "options.new_master_odd"),
             (tracedraw_core::MasterScope::Even, "options.new_master_even"),
         ] {
-            if ui.button(tr(k)).clicked() {
+            if ui
+                .button(tr(k))
+                .rich_tip_with(|| format!("{}\n{}", tr(k), tr(&format!("{k}_tip"))))
+                .clicked()
+            {
                 crate::ui::objects_docker::new_master_layer(app, s);
             }
         }
@@ -3269,9 +4135,18 @@ fn background_page(app: &mut App, ui: &mut Ui) {
         Some(_) => 2,
     };
     ui.horizontal(|ui| {
-        ui.radio_value(&mut kind, 0, tr("options.no_background"));
-        ui.radio_value(&mut kind, 1, tr("options.solid"));
-        ui.radio_value(&mut kind, 2, tr("options.bitmap"));
+        ui.radio_value(&mut kind, 0, tr("options.no_background"))
+            .rich_tip(crate::ui::tips::pair(
+                "options.no_background",
+                "options.no_background_tip",
+            ));
+        ui.radio_value(&mut kind, 1, tr("options.solid"))
+            .rich_tip(crate::ui::tips::pair("options.solid", "options.solid_tip"));
+        ui.radio_value(&mut kind, 2, tr("options.bitmap"))
+            .rich_tip(crate::ui::tips::pair(
+                "options.bitmap",
+                "options.bitmap_tip",
+            ));
     });
     match kind {
         0 => {
@@ -3296,7 +4171,14 @@ fn background_page(app: &mut App, ui: &mut Ui) {
             }
         }
         _ => {
-            if ui.button(tr("options.choose_bitmap")).clicked() {
+            if ui
+                .button(tr("options.choose_bitmap"))
+                .rich_tip(crate::ui::tips::pair(
+                    "options.choose_bitmap",
+                    "options.choose_bitmap_tip",
+                ))
+                .clicked()
+            {
                 crate::files::Dialog::new()
                     .add_filter(
                         "Images",
@@ -3312,23 +4194,34 @@ fn bleed_page(app: &mut App, ui: &mut Ui) {
     let mut md = app.doc().metadata.clone();
     grid("bleed").show(ui, |ui| {
         row_label(ui, &tr("options.bleed"));
-        let mut b = app.units.from_mm(md.bleed);
-        if ui
-            .add_sized(
-                [100.0, 22.0],
-                crate::ui::field::NumField::new(&mut b)
-                    .speed(0.1)
-                    .max_decimals(3)
-                    .suffix(format!(" {}", app.units.short())),
-            )
-            .changed()
-        {
-            md.bleed = app.units.to_mm(b).max(0.0);
-            app.run(Command::SetMetadata { metadata: md });
-        }
+        crate::ui::tips::tip_over(
+            ui,
+            crate::ui::tips::pair("options.bleed", "options.bleed_tip"),
+            |ui| {
+                let mut b = app.units.from_mm(md.bleed);
+                if ui
+                    .add_sized(
+                        [100.0, 22.0],
+                        crate::ui::field::NumField::new(&mut b)
+                            .speed(0.1)
+                            .max_decimals(3)
+                            .suffix(format!(" {}", app.units.short())),
+                    )
+                    .changed()
+                {
+                    md.bleed = app.units.to_mm(b).max(0.0);
+                    app.run(Command::SetMetadata { metadata: md });
+                };
+            },
+        );
+
         ui.end_row();
     });
-    ui.checkbox(&mut app.show_bleed, tr("options.show_bleed"));
+    ui.checkbox(&mut app.show_bleed, tr("options.show_bleed"))
+        .rich_tip(crate::ui::tips::pair(
+            "options.show_bleed",
+            "options.show_bleed_tip",
+        ));
 }
 
 #[cfg(test)]

@@ -174,6 +174,17 @@ fn hover(d: &mut Driver, app: &mut App, prepare: &mut dyn FnMut(&mut App), at: P
     d.tip_shown()
 }
 
+/// Whether `id` is a piece of the cover that keeps the window behind a
+/// dialog from being used (or the piece's own area): not a control.
+fn is_modal_blocker(id: Id) -> bool {
+    let first = Id::new("modal_blocker");
+    let pieces =
+        std::iter::once(first).chain((1..64).map(|i: usize| Id::new(("modal_blocker", i))));
+    pieces
+        .into_iter()
+        .any(|p| id == p || id == p.with("cover") || id == p.with("move"))
+}
+
 /// Rest the pointer on every new control of the current state.
 fn check_state(
     d: &mut Driver,
@@ -189,7 +200,10 @@ fn check_state(
     d.frame(app, vec![]);
     let in_dialog = !matches!(app.dialog, crate::ui::dialogs::Dialog::None);
     let (list, texts) = controls(&d.ctx, in_dialog);
-    for (_, rect, kind, label) in list {
+    for (id, rect, kind, label) in list {
+        if is_modal_blocker(id) {
+            continue;
+        }
         let key = (
             kind.clone(),
             label.clone(),
@@ -237,7 +251,7 @@ fn check_state(
 /// bars, tabs, rulers, palette and status bar for every tool and
 /// selection; with `dockers` every docker tab's contents too, with
 /// `dialogs` every dialog.
-pub fn audit(dockers: bool, dialogs: bool) -> Vec<Missing> {
+pub fn audit(dockers: bool, dialogs: bool, options: bool) -> Vec<Missing> {
     let mut d = Driver::new();
     let mut app = mixed_app();
     app.show_welcome = false;
@@ -296,16 +310,44 @@ pub fn audit(dockers: bool, dialogs: bool) -> Vec<Missing> {
             app.select_all();
         }
     }
+    if options {
+        for set in crate::ui::options::OptionsSet::ALL {
+            for &page in set.pages() {
+                app.options_page = page;
+                app.dialog = crate::ui::dialogs::Dialog::Options;
+                // Options > Text has tabs of its own.
+                let tabs = if page == crate::ui::options::OptionsPage::Text {
+                    crate::ui::options::TEXT_TABS.len()
+                } else {
+                    1
+                };
+                for tab in 0..tabs {
+                    app.options_text_tab = tab;
+                    check_state(
+                        &mut d,
+                        &mut app,
+                        &format!("options {page:?} {tab}"),
+                        &mut seen,
+                        &mut missing,
+                        &mut none,
+                    );
+                }
+                app.options_text_tab = 0;
+            }
+        }
+        app.dialog = crate::ui::dialogs::Dialog::None;
+    }
     missing
 }
 
 /// Every control of the bars, tabs, rulers, palette and status bar shows
 /// a tip, for every tool with nothing, one and every object selected, and
-/// every control in every docker tab and every dialog.
+/// every control in every docker tab, every dialog and every page of
+/// the options.
 #[test]
-fn every_bar_docker_and_dialog_control_has_a_tip() {
+fn every_bar_docker_dialog_and_options_control_has_a_tip() {
     crate::i18n::set_language("en");
-    let missing = audit(true, true);
+    let missing = audit(true, true, true);
     assert!(missing.is_empty(), "controls without a tip: {missing:#?}");
 }
 
@@ -316,7 +358,7 @@ fn report_controls_without_tips() {
     let Some(out) = std::env::var_os("TIPS_AUDIT") else {
         return;
     };
-    let missing = audit(true, true);
+    let missing = audit(true, true, true);
     let lines: Vec<String> = missing
         .iter()
         .map(|m| {

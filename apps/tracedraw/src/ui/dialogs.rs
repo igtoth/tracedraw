@@ -2866,8 +2866,16 @@ pub(crate) fn page_size_page(app: &mut App, ui: &mut Ui) {
             &mut app.options_labels,
             false,
             tr("options.page_size_radio"),
-        );
-        ui.radio_value(&mut app.options_labels, true, tr("options.label_presets"));
+        )
+        .rich_tip(crate::ui::tips::pair(
+            "options.page_size_radio",
+            "options.page_size_radio_tip",
+        ));
+        ui.radio_value(&mut app.options_labels, true, tr("options.label_presets"))
+            .rich_tip(crate::ui::tips::pair(
+                "options.label_presets",
+                "options.label_presets_tip",
+            ));
     });
     ui.add_space(4.0);
     if app.options_labels {
@@ -2886,8 +2894,20 @@ pub(crate) fn page_size_page(app: &mut App, ui: &mut Ui) {
                 for (i, p) in LABEL_PRESETS.iter().enumerate() {
                     ui.selectable_value(&mut app.options_label_index, i, p.0);
                 }
-            });
-        if ui.button(tr("options.apply_labels")).clicked() {
+            })
+            .response
+            .rich_tip(crate::ui::tips::pair(
+                "options.label_presets",
+                "options.label_preset_tip",
+            ));
+        if ui
+            .button(tr("options.apply_labels"))
+            .rich_tip(crate::ui::tips::pair(
+                "options.apply_labels",
+                "options.apply_labels_tip",
+            ))
+            .clicked()
+        {
             let (_, sheet, cols, rows, label, left, top, px, py) =
                 LABEL_PRESETS[app.options_label_index.min(3)];
             let page = app.page;
@@ -2939,11 +2959,16 @@ pub(crate) fn page_size_page(app: &mut App, ui: &mut Ui) {
                         }
                         changed = true;
                     }
-                });
+                })
+                .response
+                .rich_tip(crate::ui::tips::pair("options.size", "options.size_tip"));
             ui.horizontal(|ui| {
                 if ui
                     .add_enabled(named.is_none(), egui::Button::new("\u{1f4be}"))
-                    .on_hover_text(tr("options.save_page_size"))
+                    .rich_tip_always(crate::ui::tips::pair(
+                        "options.save_page_size",
+                        "options.save_page_size_tip",
+                    ))
                     .clicked()
                 {
                     app.options_page_size_name = Some(String::new());
@@ -2951,7 +2976,10 @@ pub(crate) fn page_size_page(app: &mut App, ui: &mut Ui) {
                 let user_size = saved.iter().any(|p| Some(&p.name) == named.as_ref());
                 if ui
                     .add_enabled(user_size, egui::Button::new("\u{1f5d1}"))
-                    .on_hover_text(tr("options.delete_page_size"))
+                    .rich_tip_always(crate::ui::tips::pair(
+                        "options.delete_page_size",
+                        "options.delete_page_size_tip",
+                    ))
                     .clicked()
                 {
                     if let Some(n) = &named {
@@ -2971,6 +2999,10 @@ pub(crate) fn page_size_page(app: &mut App, ui: &mut Ui) {
                         .speed(0.5)
                         .max_decimals(3),
                 )
+                .rich_tip(crate::ui::tips::pair(
+                    "dialog.width",
+                    "dialog.page_width_desc",
+                ))
                 .changed()
             {
                 w = app.units.to_mm(wv);
@@ -2985,7 +3017,12 @@ pub(crate) fn page_size_page(app: &mut App, ui: &mut Ui) {
                             app.units = u;
                         }
                     }
-                });
+                })
+                .response
+                .rich_tip(crate::ui::tips::pair(
+                    "options.page_units",
+                    "options.page_units_tip",
+                ));
             ui.end_row();
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.label(tr("dialog.height"));
@@ -2998,6 +3035,10 @@ pub(crate) fn page_size_page(app: &mut App, ui: &mut Ui) {
                         .speed(0.5)
                         .max_decimals(3),
                 )
+                .rich_tip(crate::ui::tips::pair(
+                    "dialog.height",
+                    "dialog.page_height_desc",
+                ))
                 .changed()
             {
                 h = app.units.to_mm(hv);
@@ -3007,7 +3048,10 @@ pub(crate) fn page_size_page(app: &mut App, ui: &mut Ui) {
                 let portrait = h >= w;
                 if ui
                     .add(egui::Button::new("\u{25af}").selected(portrait))
-                    .rich_tip(tr("options.portrait"))
+                    .rich_tip(crate::ui::tips::pair(
+                        "options.portrait",
+                        "options.portrait_tip",
+                    ))
                     .clicked()
                     && !portrait
                 {
@@ -3016,7 +3060,10 @@ pub(crate) fn page_size_page(app: &mut App, ui: &mut Ui) {
                 }
                 if ui
                     .add(egui::Button::new("\u{25ad}").selected(!portrait))
-                    .rich_tip(tr("options.landscape"))
+                    .rich_tip(crate::ui::tips::pair(
+                        "options.landscape",
+                        "options.landscape_tip",
+                    ))
                     .clicked()
                     && portrait
                 {
@@ -3030,17 +3077,32 @@ pub(crate) fn page_size_page(app: &mut App, ui: &mut Ui) {
         let mut keep = true;
         ui.horizontal(|ui| {
             ui.label(tr("options.page_size_name"));
-            let r = ui.add(egui::TextEdit::singleline(&mut name).desired_width(180.0));
+            let r = ui
+                .add(egui::TextEdit::singleline(&mut name).desired_width(180.0))
+                .rich_tip(crate::ui::tips::pair(
+                    "options.page_size_name",
+                    "options.page_size_name_tip",
+                ));
             if name.is_empty() && !r.has_focus() {
                 r.request_focus();
             }
             let enter =
                 (r.lost_focus() || r.has_focus()) && ui.input(|i| i.key_pressed(egui::Key::Enter));
-            if (ui.button(tr("dialog.ok")).clicked() || enter) && !name.trim().is_empty() {
+            if (ui
+                .button(tr("dialog.ok"))
+                .rich_tip(crate::ui::tips::keyed("dialog.ok"))
+                .clicked()
+                || enter)
+                && !name.trim().is_empty()
+            {
                 save_page_size(app, name.trim(), Size::new(w, h));
                 keep = false;
             }
-            if ui.button(tr("dialog.cancel")).clicked() {
+            if ui
+                .button(tr("dialog.cancel"))
+                .rich_tip(crate::ui::tips::keyed("dialog.cancel"))
+                .clicked()
+            {
                 keep = false;
             }
         });
@@ -3056,6 +3118,10 @@ pub(crate) fn page_size_page(app: &mut App, ui: &mut Ui) {
                 !app.selection.is_empty(),
                 egui::Button::new(tr("options.fit_page_selection")),
             )
+            .rich_tip_always(crate::ui::tips::pair(
+                "options.fit_page_selection",
+                "options.fit_page_selection_tip",
+            ))
             .clicked()
         {
             app.fit_page_to_selection();
@@ -3065,6 +3131,10 @@ pub(crate) fn page_size_page(app: &mut App, ui: &mut Ui) {
                 app.drawing_bounds().is_some(),
                 egui::Button::new(tr("options.fit_page_drawing")),
             )
+            .rich_tip_always(crate::ui::tips::pair(
+                "options.fit_page_drawing",
+                "options.fit_page_drawing_tip",
+            ))
             .clicked()
         {
             app.fit_page_to_drawing();
@@ -3075,14 +3145,26 @@ pub(crate) fn page_size_page(app: &mut App, ui: &mut Ui) {
         ui.checkbox(
             &mut app.options_current_only,
             tr("options.apply_current_only"),
-        );
-        ui.checkbox(&mut app.show_page_border, tr("options.show_page_border"));
+        )
+        .rich_tip(crate::ui::tips::pair(
+            "options.apply_current_only",
+            "options.apply_current_only_tip",
+        ));
+        ui.checkbox(&mut app.show_page_border, tr("options.show_page_border"))
+            .rich_tip(crate::ui::tips::pair(
+                "options.show_page_border",
+                "options.show_page_border_tip",
+            ));
         ui.add_space(6.0);
         if ui
             .add_sized(
                 [150.0, 26.0],
                 egui::Button::new(tr("options.add_page_frame")),
             )
+            .rich_tip(crate::ui::tips::pair(
+                "options.add_page_frame",
+                "options.add_page_frame_tip",
+            ))
             .clicked()
         {
             let r = app.page_rect();
@@ -3129,7 +3211,12 @@ pub(crate) fn page_size_page(app: &mut App, ui: &mut Ui) {
                         dpi = d;
                     }
                 }
-            });
+            })
+            .response
+            .rich_tip(crate::ui::tips::pair(
+                "options.rendering_resolution",
+                "options.rendering_resolution_tip",
+            ));
         ui.label("dpi");
         if (dpi - md.resolution_dpi).abs() > 0.5 {
             md.resolution_dpi = dpi;
@@ -3151,6 +3238,7 @@ pub(crate) fn page_size_page(app: &mut App, ui: &mut Ui) {
                     .speed(0.1)
                     .max_decimals(2),
             )
+            .rich_tip(crate::ui::tips::pair("options.bleed", "options.bleed_tip"))
             .changed()
         {
             md.bleed = app.units.to_mm(b).max(0.0);
@@ -3159,7 +3247,11 @@ pub(crate) fn page_size_page(app: &mut App, ui: &mut Ui) {
     });
     ui.indent("bleed_checks", |ui| {
         ui.add_space(2.0);
-        ui.checkbox(&mut app.show_bleed, tr("options.show_bleed"));
+        ui.checkbox(&mut app.show_bleed, tr("options.show_bleed"))
+            .rich_tip(crate::ui::tips::pair(
+                "options.show_bleed",
+                "options.show_bleed_tip",
+            ));
     });
 }
 

@@ -186,6 +186,10 @@ pub fn draw_bar(app: &mut App, ui: &mut Ui, bar: ItemBar, draw: fn(&mut App, &mu
                 egui::Id::new(("bar_item", bar.id(), i)),
                 Sense::click_and_drag(),
             );
+            let resp = crate::ui::tips::RichTip::rich_tip(
+                resp,
+                crate::ui::tips::pair("options.bar_item_move", "options.bar_item_move_tip"),
+            );
             if resp.hovered() {
                 ui.painter().rect_stroke(
                     rect.shrink(0.5),
