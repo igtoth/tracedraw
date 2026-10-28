@@ -349,7 +349,9 @@ fn zipper(
         .map(|p| (p - c).hypot())
         .fold(0.0f64, f64::max)
         .max(1e-9);
-    let steps = 2 * frequency as usize;
+    // `frequency + 1` lines on every segment, so a line with frequency 5
+    // is six lines between seven tips (#1122).
+    let steps = frequency as usize + 1;
     let mut out = BezPath::new();
     let mut seg_index = 0usize;
     for sub in subs {
@@ -358,15 +360,25 @@ fn zipper(
             out.move_to(sub.start);
             continue;
         }
-        let mut pts = Vec::with_capacity(count * steps + 1);
+        // A closed outline needs an even number of tips for the last to
+        // alternate with the first: its last segment takes one line more
+        // when the count would be odd.
+        let odd_closed = sub.closed && (count * steps) % 2 == 1;
+        let mut pts = Vec::with_capacity(count * steps + 2);
         for (i, seg) in sub.segs.iter().enumerate() {
+            let last_seg = i + 1 == count;
+            let steps = if odd_closed && last_seg {
+                steps + 1
+            } else {
+                steps
+            };
             // The teeth run through the nodes: every point of the zigzag,
             // the nodes included, is a tooth's tip, so the ends of an open
             // curve are tips too and the pattern goes on unbroken from
             // one segment to the next (#1108). An open curve's last node
             // comes with its last segment; a closed one's start is its
             // end.
-            let last = if !sub.closed && i + 1 == count {
+            let last = if !sub.closed && last_seg {
                 steps
             } else {
                 steps - 1
@@ -388,7 +400,8 @@ fn zipper(
                         n = between(normal(b, 1.0), n);
                     }
                 }
-                let sign = if k % 2 == 1 { 1.0 } else { -1.0 };
+                // Tips alternate along the whole subpath.
+                let sign = if pts.len() % 2 == 1 { 1.0 } else { -1.0 };
                 let mut a = amplitude;
                 if random {
                     a *= share(seg_index, k);
@@ -513,7 +526,7 @@ fn twister(path: &BezPath, c: Point, angle: f64) -> BezPath {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::geometry::Rect;
+    use crate::geometry::{ParamCurveNearest, Rect};
 
     fn square(x: f64, y: f64, s: f64) -> BezPath {
         let mut p = BezPath::new();
@@ -638,8 +651,8 @@ mod tests {
     fn zipper_teeth_on_every_segment() {
         let sq = square(0.0, 0.0, 20.0);
         let out = distort(&sq, zip(false, false, false));
-        // 4 sides of 6 steps, one point each, closed.
-        assert_eq!(nodes(&out).len(), 24);
+        // 4 sides of 4 lines (frequency 3 plus one), one tip each, closed.
+        assert_eq!(nodes(&out).len(), 16);
         assert_eq!(closes(&out), 1);
         // The teeth reach 2 mm out and in along the sides; the corners
         // are tips too, moved between the normals of their sides.
@@ -680,14 +693,15 @@ mod tests {
             .any(|e| matches!(e, PathEl::CurveTo(..))));
     }
 
-    /// A straight line with the Zipper (#1108): every point of the
-    /// zigzag, the two ends included, is a tooth's tip, alternately on
-    /// each side; no node is left on the line.
+    /// A straight line with the Zipper (#1108, #1122): every point of
+    /// the zigzag, the two ends included, is a tooth's tip, alternately
+    /// on each side; no node is left on the line; frequency 6 gives
+    /// seven lines.
     #[test]
     fn a_zipped_line_starts_and_ends_on_tips() {
         let mut line = BezPath::new();
         line.move_to((10.0, 0.0));
-        line.line_to((10.0, 60.0));
+        line.line_to((10.0, 70.0));
         let out = distort(
             &line,
             Distort::Zipper {
@@ -700,11 +714,11 @@ mod tests {
             },
         );
         let n = nodes(&out);
-        assert_eq!(n.len(), 13);
+        assert_eq!(n.len(), 8, "seven lines");
         assert_eq!((subpath_count(&out), closes(&out)), (1, 0));
         for (i, p) in n.iter().enumerate() {
             assert!(((p.x - 10.0).abs() - 3.0).abs() < 1e-9, "{i}: {p:?}");
-            assert!((p.y - 5.0 * i as f64).abs() < 1e-9, "{i}: {p:?}");
+            assert!((p.y - 10.0 * i as f64).abs() < 1e-9, "{i}: {p:?}");
             if i > 0 {
                 assert!((p.x - 10.0) * (n[i - 1].x - 10.0) < 0.0, "alternate");
             }
@@ -727,7 +741,7 @@ mod tests {
             },
         );
         let n = nodes(&out);
-        assert_eq!(n.len(), 13);
+        assert_eq!(n.len(), 9, "two segments of four lines");
         let side = |p: &Point| -> f64 {
             // Signed distance from the nearer side of the bent line,
             // outside positive.
@@ -743,6 +757,50 @@ mod tests {
                 "{i}: {:?}",
                 &n[i - 1..=i]
             );
+        }
+        // A closed outline with an odd count of tips (a triangle with
+        // frequency 2: three sides of three lines) takes one line more
+        // on its last side, so the last tip alternates with the first.
+        let mut tri = BezPath::new();
+        tri.move_to((0.0, 0.0));
+        tri.line_to((40.0, 0.0));
+        tri.line_to((20.0, 30.0));
+        tri.close_path();
+        let out = distort(
+            &tri,
+            Distort::Zipper {
+                amplitude: 1.0,
+                frequency: 2,
+                center: None,
+                random: false,
+                smooth: false,
+                local: false,
+            },
+        );
+        let n = nodes(&out);
+        assert_eq!(n.len(), 10);
+        let c = Point::new(20.0, 10.0);
+        let outward = |p: &Point| -> bool {
+            // Farther from the middle than the nearest point of the
+            // triangle's own outline: the tip points out.
+            let (on, _) = tri
+                .segments()
+                .map(|s| {
+                    let q = s.nearest(*p, 1e-6);
+                    (s.eval(q.t), q.distance_sq)
+                })
+                .fold((Point::ZERO, f64::INFINITY), |best, cur| {
+                    if cur.1 < best.1 {
+                        cur
+                    } else {
+                        best
+                    }
+                });
+            (*p - c).hypot() > (on - c).hypot()
+        };
+        for i in 0..n.len() {
+            let j = (i + 1) % n.len();
+            assert_ne!(outward(&n[i]), outward(&n[j]), "{i}: {:?} {:?}", n[i], n[j]);
         }
     }
 
