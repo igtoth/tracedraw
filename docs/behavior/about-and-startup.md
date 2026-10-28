@@ -214,6 +214,11 @@ and `--reset-settings` starts open windows of their own.
   first start opens too, not only the one after it (#570,
   `gpu::tests::a_start_hung_without_its_window_goes_on_with_the_next_renderer`,
   `instance::tests::a_start_without_its_window_declines_files`).
+  A start that already handed the window to the next renderer (that
+  renderer failed at once and it waits for the new start) is settled:
+  its watch stops, so no second TraceDraw opens 20 seconds later beside
+  the one in use
+  (`gpu::tests::a_start_that_handed_over_is_not_started_again`).
 - The log names every graphics adapter wgpu offers (backend, type,
   vendor and device ids, driver) with why it was taken or left, the
   renderer each start tries and the one that opened the window; an
