@@ -51,6 +51,10 @@ pub struct StepRepeat {
     /// 0 = offset, 1 = spacing between copies (uses object size).
     pub mode_x: u8,
     pub mode_y: u8,
+    /// The objects these values were set for, in id order. Another
+    /// selection, the copies an Apply made among them, starts again from
+    /// the defaults (#1032).
+    pub for_selection: Vec<ShapeId>,
 }
 
 impl Default for StepRepeat {
@@ -61,6 +65,7 @@ impl Default for StepRepeat {
             dy: 0.0,
             mode_x: 0,
             mode_y: 0,
+            for_selection: Vec::new(),
         }
     }
 }
@@ -2950,7 +2955,25 @@ impl App {
 
     // ----- step and repeat ---------------------------------------------------------------
 
+    /// The Step and Repeat values belong to the objects they were set
+    /// for: when the selection is other objects (a new object picked, or
+    /// the copies the last Apply made), the copies, distances and modes go
+    /// back to their defaults, so a count or a distance typed for one
+    /// object is never used again on the next one (#1032).
+    pub fn step_repeat_follow_selection(&mut self) {
+        let mut sel = self.selection.clone();
+        sel.sort();
+        sel.dedup();
+        if self.step_repeat.for_selection != sel {
+            self.step_repeat = StepRepeat {
+                for_selection: sel,
+                ..StepRepeat::default()
+            };
+        }
+    }
+
     pub fn step_and_repeat_apply(&mut self) {
+        self.step_repeat_follow_selection();
         let shapes = self.selected_shapes();
         if shapes.is_empty() {
             return;
@@ -3543,6 +3566,61 @@ mod tests {
             ShapeKind::SymbolInstance { index } => index,
             ref k => panic!("{k:?}"),
         }
+    }
+
+    /// Step and Repeat values set for one object are not used on the next
+    /// one: a new selection, or the copies an Apply made, starts again
+    /// from the defaults, so the next Apply makes one copy (#1032).
+    #[test]
+    fn step_and_repeat_starts_fresh_for_each_object() {
+        let mut app = App::headless();
+        let rect = |x: f64| ShapeKind::Rect {
+            rect: kurbo::Rect::new(x, 0.0, x + 10.0, 10.0),
+            radius: 0.0,
+            corners: None,
+        };
+        let a = app.new_shape(rect(0.0)).expect("a");
+        let b = app.new_shape(rect(100.0)).expect("b");
+        let count = |app: &App| {
+            app.doc()
+                .all_layers()
+                .map(|l| l.shapes.len())
+                .sum::<usize>()
+        };
+        let before = count(&app);
+        app.select(vec![a]);
+        app.step_repeat_follow_selection();
+        app.step_repeat.copies = 3;
+        app.step_repeat.dx = 20.0;
+        app.step_repeat.mode_x = 1;
+        app.step_and_repeat_apply();
+        assert_eq!(count(&app), before + 3);
+        assert_eq!(app.selection.len(), 3);
+        // The copies are selected: the values went back to the defaults.
+        app.step_repeat_follow_selection();
+        assert_eq!(
+            app.step_repeat,
+            StepRepeat {
+                for_selection: {
+                    let mut s = app.selection.clone();
+                    s.sort();
+                    s
+                },
+                ..StepRepeat::default()
+            }
+        );
+        // A new object picked gets one copy at the default offset.
+        app.select(vec![b]);
+        app.step_and_repeat_apply();
+        assert_eq!(count(&app), before + 4);
+        let copy = app
+            .doc()
+            .find_shape(app.selection[0])
+            .expect("copy")
+            .bounds();
+        let orig = app.doc().find_shape(b).expect("b").bounds();
+        assert!((copy.x0 - orig.x0 - StepRepeat::default().dx).abs() < 1e-9);
+        assert!((copy.y0 - orig.y0).abs() < 1e-9);
     }
 
     /// New Symbol is one step to undo: the symbol goes with its instance.

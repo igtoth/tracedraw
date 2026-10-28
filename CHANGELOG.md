@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Step and Repeat: the number of copies, the distances and the modes start from the defaults for each new selection, and again after an Apply (the copies it made are selected). The values of the last object stayed, so the next object got the old count and distances and came out with the wrong number of copies; with nothing selected the fields are greyed out (#1032).
 - Pen: the preview segment from the last node to the pointer is a solid blue line on a white line twice as wide instead of dashes, so it shows over any colour; the handle lines are dashed in blue and white in turn, as thin as the preview's blue line (#670).
 - Save As of a drawing opened from a `.cdr` file (or any other format TraceDraw reads) starts in that file's folder with its name, so saving over it replaces it. It started in the folder any dialog used last, so with another file opened from Downloads the save went there and the original stayed as it was. A folder typed in the path bar now takes the file without pressing Enter first (#900).
 - Objects panel: selecting an object on the page scrolls the list to its row, so an object far down a long list comes into view; a selection that stays the same leaves the scroll alone (#1044).

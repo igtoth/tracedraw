@@ -70,8 +70,26 @@ pub fn show(app: &mut App, ui: &mut Ui, tab: DockerTab) {
 }
 
 fn step_and_repeat(app: &mut App, ui: &mut Ui) {
+    app.step_repeat_follow_selection();
     let u = app.units;
-    let sr = &mut app.step_repeat;
+    let has = !app.selection.is_empty();
+    // With nothing selected the values stay at their defaults (#1032).
+    ui.add_enabled_ui(has, |ui| {
+        step_and_repeat_fields(&mut app.step_repeat, u, ui)
+    });
+    if ui
+        .add_enabled(has, egui::Button::new(tr("docker.apply")))
+        .rich_tip(crate::ui::tips::pair(
+            "docker.apply",
+            "docker.sr_apply_desc",
+        ))
+        .clicked()
+    {
+        app.step_and_repeat_apply();
+    }
+}
+
+fn step_and_repeat_fields(sr: &mut crate::ops2::StepRepeat, u: crate::app::Units, ui: &mut Ui) {
     ui.horizontal(|ui| {
         ui.label(tr("docker.copies"));
         ui.add(crate::ui::field::NumField::new(&mut sr.copies).range(1..=999))
@@ -126,17 +144,6 @@ fn step_and_repeat(app: &mut App, ui: &mut Ui) {
         .changed()
     {
         sr.dy = u.world_to_mm(dy);
-    }
-    let has = !app.selection.is_empty();
-    if ui
-        .add_enabled(has, egui::Button::new(tr("docker.apply")))
-        .rich_tip(crate::ui::tips::pair(
-            "docker.apply",
-            "docker.sr_apply_desc",
-        ))
-        .clicked()
-    {
-        app.step_and_repeat_apply();
     }
 }
 

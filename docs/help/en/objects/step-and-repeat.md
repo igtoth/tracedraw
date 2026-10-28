@@ -22,7 +22,14 @@ column of lines, a grid of tiles. Open it with
 4. Do the same under [[docker.vertical_settings]].
 5. Click [[docker.apply]].
 
-The copies are added to the active layer. Distances are in the drawing units.
+The copies are added to the active layer and selected. Distances are in the
+drawing units.
+
+The values are for the objects selected when they were typed. Selecting
+other objects, or the copies an Apply just made, puts the number of copies,
+the distances and the modes back to their defaults, so the next Apply never
+reuses a count meant for another object. With nothing selected the fields
+wait at their defaults.
 
 To copy with a rotation or a scale at each step, use the [[dialog.copies]]
 field of the [[docker.transformations]] panel; see
