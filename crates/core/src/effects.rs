@@ -170,6 +170,13 @@ pub fn blend_from_nodes(
 /// between its two paired points, and a step's segment is a line where
 /// both paired segments are lines.
 fn node_steps(sa: &[Seg], sb: &[Seg], steps: usize) -> Vec<BezPath> {
+    let mut out = open_node_steps(sa, sb, steps);
+    out.iter_mut().for_each(|p| p.close_path());
+    out
+}
+
+/// [`node_steps`] left open: the steps of two open outlines.
+fn open_node_steps(sa: &[Seg], sb: &[Seg], steps: usize) -> Vec<BezPath> {
     let (Some(fa), Some(fb)) = (sa.first(), sb.first()) else {
         return Vec::new();
     };
@@ -186,7 +193,6 @@ fn node_steps(sa: &[Seg], sb: &[Seg], steps: usize) -> Vec<BezPath> {
                     out.curve_to(x.c1.lerp(y.c1, t), x.c2.lerp(y.c2, t), end);
                 }
             }
-            out.close_path();
             out
         })
         .collect()
@@ -291,6 +297,19 @@ const MAX_PAIRED_NODES: usize = 4096;
 /// is closed). `None` for an open outline, one of
 /// more than [`MAX_PAIRED_NODES`] nodes or of fewer than two segments.
 fn closed_segments(path: &BezPath) -> Option<Vec<Seg>> {
+    path_segments(path).and_then(|(segs, closed)| (closed && segs.len() >= 2).then_some(segs))
+}
+
+/// The segments of an open one-part line (segments of no length left
+/// out). `None` for a closed outline, or one of more than
+/// [`MAX_PAIRED_NODES`] nodes or with no segment.
+fn open_segments(path: &BezPath) -> Option<Vec<Seg>> {
+    path_segments(path).and_then(|(segs, closed)| (!closed && !segs.is_empty()).then_some(segs))
+}
+
+/// The segments of a one-part outline and whether it is closed; `None`
+/// for several parts, too many nodes or points that are not finite.
+fn path_segments(path: &BezPath) -> Option<(Vec<Seg>, bool)> {
     let els = path.elements();
     if els.len() > MAX_PAIRED_NODES + 2 {
         return None;
@@ -345,7 +364,41 @@ fn closed_segments(path: &BezPath) -> Option<Vec<Seg>> {
             .iter()
             .all(|p| p.x.is_finite() && p.y.is_finite())
     });
-    (closed && finite && segs.len() >= 2).then_some(segs)
+    finite.then_some((segs, closed))
+}
+
+/// Two open lines as runs of segments to pair one for one: the second
+/// runs the other way when that brings each end nearer its partner (a
+/// line drawn upwards blends with one drawn downwards end to end, not
+/// crossed over, #1024), and the line with fewer nodes has its longest
+/// segments halved until the counts match.
+fn open_paired_nodes(a: &BezPath, b: &BezPath) -> Option<(Vec<Seg>, Vec<Seg>)> {
+    let mut sa = open_segments(a)?;
+    let mut sb = open_segments(b)?;
+    if sa.len() + sb.len() > MAX_SHAPE_NODES {
+        return None;
+    }
+    let ends = |s: &[Seg]| Some((s.first()?.p0, s.last()?.p3));
+    let ((a0, a1), (b0, b1)) = (ends(&sa)?, ends(&sb)?);
+    if (a0 - b1).hypot() + (a1 - b0).hypot() < (a0 - b0).hypot() + (a1 - b1).hypot() {
+        sb = sb.iter().rev().map(|s| s.reversed()).collect();
+    }
+    let want = sa.len().max(sb.len());
+    for short in [&mut sa, &mut sb] {
+        while short.len() < want {
+            let longest = (0..short.len())
+                .max_by(|i, j| {
+                    let l = |k: usize| short[k].lengths()[CHORDS];
+                    l(*i)
+                        .partial_cmp(&l(*j))
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .unwrap_or(0);
+            let seg = short[longest];
+            short.splice(longest..=longest, [seg.part(0.0, 0.5), seg.part(0.5, 1.0)]);
+        }
+    }
+    Some((sa, sb))
 }
 
 /// The segments of `segs` run from the node nearest `first`, the way that
@@ -470,7 +523,9 @@ const MAX_SHAPE_NODES: usize = 512;
 /// The morph of one outline into another. Closed outlines are paired
 /// node for node (see [`shape_paired_nodes`]), so the steps keep few
 /// nodes, straight sides where both outlines are straight and smooth
-/// curves elsewhere (#1020). Open or very large outlines are taken as one
+/// curves elsewhere (#1020). Two open lines are paired end to end and
+/// node for node, and their steps stay open lines (#1024). Very large
+/// outlines, or an open line with a closed outline, are taken as one
 /// closed run of points each.
 fn blend_one(a: &BezPath, b: &BezPath, steps: usize, samples: usize) -> Vec<BezPath> {
     let pa = resample(a, samples);
@@ -480,6 +535,10 @@ fn blend_one(a: &BezPath, b: &BezPath, steps: usize, samples: usize) -> Vec<BezP
     }
     if let Some((sa, sb)) = shape_paired_nodes(a, b, &pa, &pb) {
         return node_steps(&sa, &sb, steps);
+    }
+    // Two open lines morph end to end and stay open lines.
+    if let Some((sa, sb)) = open_paired_nodes(a, b) {
+        return open_node_steps(&sa, &sb, steps);
     }
     // Match the two outlines by shape, not by position: wind b the way a
     // is wound, then start b at the point whose direction from b's centre
@@ -1616,6 +1675,49 @@ mod tests {
         let big = blend_from_nodes(&polygon(&many), &tri, 2, 64, Some(nodes));
         assert_eq!(big.len(), 2);
         assert!(big[0].elements().len() < 200);
+    }
+
+    /// Two arcs, the second turned half round so it runs the other way
+    /// (the drawing in #1024): the steps are open arcs joining top to top
+    /// and bottom to bottom, not closed outlines crossed through the middle.
+    #[test]
+    fn blend_of_two_open_arcs_runs_end_to_end() {
+        let mut a = BezPath::new();
+        a.move_to((0.0, 100.0));
+        a.curve_to((-30.0, 70.0), (-30.0, 30.0), (0.0, 0.0));
+        // The mirror image, drawn from its bottom end.
+        let mut b = BezPath::new();
+        b.move_to((40.0, 0.0));
+        b.curve_to((70.0, 30.0), (70.0, 70.0), (40.0, 100.0));
+        let steps = blend(&a, &b, 3, 120);
+        assert_eq!(steps.len(), 3);
+        for (k, p) in steps.iter().enumerate() {
+            let els = p.elements();
+            assert!(!els.iter().any(|e| matches!(e, PathEl::ClosePath)), "{p:?}");
+            assert_eq!(els.len(), 2, "one curve, as the arcs: {p:?}");
+            let t = (k + 1) as f64 / 4.0;
+            let (PathEl::MoveTo(top), PathEl::CurveTo(_, _, bottom)) = (els[0], els[1]) else {
+                panic!("{p:?}");
+            };
+            assert!(
+                (top - Point::new(40.0 * t, 100.0)).hypot() < 1e-9,
+                "{top:?}"
+            );
+            assert!(
+                (bottom - Point::new(40.0 * t, 0.0)).hypot() < 1e-9,
+                "{bottom:?}"
+            );
+        }
+        // The middle step is straight up and down: the two bows cancel.
+        let mid = steps[1].bounding_box();
+        assert!(mid.width() < 1e-9, "{mid:?}");
+        // A line with more nodes pairs with one of fewer.
+        let mut c = BezPath::new();
+        c.move_to((40.0, 100.0));
+        c.line_to((60.0, 50.0));
+        c.line_to((40.0, 0.0));
+        let steps = blend(&a, &c, 1, 120);
+        assert_eq!(steps[0].elements().len(), 3, "{:?}", steps[0]);
     }
 
     #[test]

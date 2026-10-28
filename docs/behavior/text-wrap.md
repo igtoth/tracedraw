@@ -74,6 +74,12 @@ band's height:
   than one em of the line's first letter are dropped. Each part takes a
   line of text of its own, in reading order: the left part first, then
   the right one at the same baseline, then the next line.
+- A paragraph's first line keeps its first-line indent from where its
+  first part starts, also when an object pushes that part in: beside an
+  object at the left the first line starts the indent past the object's
+  edge, as the next lines start at the edge. A negative (hanging) indent
+  reaches back only at the column's edge, never over an object (#1110,
+  `tracedraw_text::tests::the_first_line_indent_holds_beside_a_wrap_object`).
 - With no part left the line moves down (a quarter of the line spacing,
   at least 0.25 mm, or to the next baseline grid line) until one shows,
   then to the next column, and the text overflows past the last column
