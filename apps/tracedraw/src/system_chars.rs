@@ -16,6 +16,9 @@
 //! as typed text ([`merge`]), less any of them that did arrive (so a
 //! character is never typed twice).
 
+// Off Windows only the frame side runs (nothing is ever kept).
+#![cfg_attr(not(windows), allow(dead_code))]
+
 use std::sync::Mutex;
 
 pub const WM_KEYDOWN: u32 = 0x0100;
@@ -148,7 +151,6 @@ pub fn take_into(raw: &mut egui::RawInput) {
 }
 
 /// Keep what `tracker` found lost and ask for a frame to type it.
-#[cfg_attr(not(windows), allow(dead_code))]
 pub(crate) fn hand_over(tracker: &mut CharTracker) {
     if tracker.lost.is_empty() {
         return;
