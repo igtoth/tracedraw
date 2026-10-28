@@ -126,7 +126,18 @@ impl App {
                 && matches!(s.kind, ShapeKind::Path { .. })
                 && !chosen.is_empty())
             .then_some(chosen.as_slice());
-            let (path, corners) = cut_corners(&path, cut, only);
+            // The cut is made on the page, so a fillet or scallop on a
+            // stretched object is round and the sizes are page millimetres;
+            // the result goes back to the object's own space (#1002).
+            let t = self
+                .doc()
+                .parent_transform(s.id)
+                .map_or(s.transform, |pt| pt * s.transform);
+            if t.determinant().abs() < 1e-12 {
+                continue;
+            }
+            let (path, corners) = cut_corners(&(t * path), cut, only);
+            let path = t.inverse() * path;
             if corners > 0 {
                 out.push(CutResult {
                     shape: s.id,
@@ -146,7 +157,8 @@ impl App {
             .into_iter()
             .filter_map(|r| {
                 let s = self.doc().find_shape(r.shape)?;
-                Some(s.transform * r.path)
+                let pt = self.doc().parent_transform(r.shape)?;
+                Some(pt * s.transform * r.path)
             })
             .collect()
     }
@@ -240,6 +252,48 @@ mod tests {
         app.tool = Tool::Pick;
         app.select(vec![id]);
         assert!(app.apply_corners() >= 3);
+    }
+
+    /// On a stretched object the docker's fillet is round on the page,
+    /// with the radius in page millimetres (#1002).
+    #[test]
+    fn fillets_on_a_stretched_object_are_round() {
+        use tracedraw_core::corner_cut::fillets;
+        use tracedraw_core::geometry::Affine;
+        let mut app = App::headless();
+        let id = app
+            .new_shape(ShapeKind::Path {
+                path: Rect::new(0.0, 0.0, 10.0, 10.0).to_path(0.01),
+                closed: true,
+            })
+            .expect("a curve");
+        app.run(Command::TransformShapes {
+            shapes: vec![id],
+            transform: Affine::scale_non_uniform(4.0, 1.0),
+        });
+        let stretched = app.doc().find_shape(id).expect("curve").transform;
+        assert!(
+            (stretched.as_coeffs()[0] - 4.0).abs() < 1e-9,
+            "{stretched:?}"
+        );
+        app.select(vec![id]);
+        app.corners.radius = 3.0;
+        // The preview is the result, on the page.
+        let preview = app.corner_preview();
+        assert_eq!(preview.len(), 1);
+        assert!(fillets(&preview[0])
+            .iter()
+            .all(|f| (f.radius - 3.0).abs() < 1e-6));
+        assert_eq!(app.apply_corners(), 4);
+        let s = app.doc().find_shape(id).expect("curve");
+        let found = fillets(&s.page_path());
+        assert_eq!(found.len(), 4, "{found:?}");
+        for f in &found {
+            assert!((f.radius - 3.0).abs() < 1e-6, "{}", f.radius);
+        }
+        // The sides keep their place: 40 by 10 on the page.
+        let b = s.page_path().bounding_box();
+        assert!((b.width() - 40.0).abs() < 1e-6 && (b.height() - 10.0).abs() < 1e-6);
     }
 
     #[test]
