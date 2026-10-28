@@ -10,6 +10,7 @@
 //! again", OK and Cancel.
 
 use crate::app::{App, Units};
+use crate::color_policy::{FoundProfile, Space};
 use crate::i18n::tr;
 use crate::theme::Tokens;
 use egui::{Context, Ui};
@@ -183,6 +184,7 @@ impl NewDocSettings {
         m.resolution_dpi = self.values.dpi;
         m.rgb_profile = self.rgb_profile.clone();
         m.cmyk_profile = self.cmyk_profile.clone();
+        m.gray_profile = self.gray_profile.clone();
         m.primary_color_mode = if self.values.rgb {
             tracedraw_core::document::PrimaryColorMode::Rgb
         } else {
@@ -236,6 +238,9 @@ pub struct NewDocState {
     pub color_settings_open: bool,
     /// Typing a name for Save Preset (Some while the field is shown).
     pub saving_preset: Option<String>,
+    /// The ICC profiles installed on this computer, looked up once the
+    /// colour settings are first shown (#1033).
+    pub found: Option<Vec<FoundProfile>>,
 }
 
 impl NewDocState {
@@ -246,6 +251,7 @@ impl NewDocState {
             dont_show: false,
             color_settings_open: false,
             saving_preset: None,
+            found: None,
         }
     }
 
@@ -514,6 +520,16 @@ pub fn create(app: &mut App, st: &NewDocState) {
         st.name.trim().to_string()
     };
     let mut doc = st.settings.build(name);
+    // A CMYK profile installed here goes with the drawing, so its colours
+    // show through it (a built-in name only names the formulas).
+    let found = st.found.clone().unwrap_or_else(|| {
+        if st.settings.cmyk_profile == NewDocSettings::default().cmyk_profile {
+            Vec::new()
+        } else {
+            crate::color_policy::system_profiles()
+        }
+    });
+    doc.cmyk_profile = cmyk_profile_file(&st.settings.cmyk_profile, &found);
     app.settings.document_defaults.apply(&mut doc);
     // The name shown was the next Untitled-N: use it up.
     app.untitled_counter += 1;
@@ -732,13 +748,54 @@ fn dimensions(ui: &mut Ui, st: &mut NewDocState, body: egui::Rect, top: f32) {
     }
 }
 
+/// The file of the CMYK profile `name` when it is installed here.
+fn cmyk_profile_file(
+    name: &str,
+    found: &[FoundProfile],
+) -> Option<tracedraw_core::DocumentProfile> {
+    let p = found
+        .iter()
+        .find(|p| p.space == Space::Cmyk && p.name == name)?;
+    let data = crate::files::read(std::path::Path::new(&p.path)).ok()?;
+    tracedraw_core::icc::Profile::parse(&data).ok()?;
+    Some(tracedraw_core::DocumentProfile::new(name.to_string(), data))
+}
+
+/// The choices of a profile list: the current one, the built-in ones,
+/// then those of `space` installed on this computer.
+fn profile_choices(
+    current: &str,
+    builtin: &[&str],
+    found: &[FoundProfile],
+    space: Space,
+) -> Vec<String> {
+    std::iter::once(current)
+        .chain(builtin.iter().copied())
+        .chain(
+            found
+                .iter()
+                .filter(|p| p.space == space)
+                .map(|p| p.name.as_str()),
+        )
+        .map(String::from)
+        .collect()
+}
+
 fn color_settings(ui: &mut Ui, st: &mut NewDocState, body: egui::Rect, top: f32) {
     use crate::ui::chrome::{self, FIELD_H, ROW_PITCH};
     let at = |x: f32, y: f32| body.min + egui::vec2(x, y);
+    let found = st
+        .found
+        .get_or_insert_with(crate::color_policy::system_profiles);
     let s = &mut st.settings;
-    let rgb = [s.rgb_profile.clone(), "sRGB IEC61966-2.1".to_string()];
-    let cmyk = [s.cmyk_profile.clone(), "Generic CMYK (open)".to_string()];
-    let gray = GRAY_PROFILES.map(String::from);
+    let rgb = profile_choices(&s.rgb_profile, &["sRGB IEC61966-2.1"], found, Space::Rgb);
+    let cmyk = profile_choices(
+        &s.cmyk_profile,
+        &["Generic CMYK (open)"],
+        found,
+        Space::Cmyk,
+    );
+    let gray = profile_choices(&s.gray_profile, &GRAY_PROFILES, found, Space::Gray);
     let intents = INTENTS.map(String::from);
     let rows: [(&str, &str, &mut String, &[String]); 4] = [
         ("newdoc_rgb", "newdoc.rgb_profile", &mut s.rgb_profile, &rgb),
@@ -855,6 +912,51 @@ mod tests {
             doc.metadata.primary_color_mode,
             tracedraw_core::document::PrimaryColorMode::Rgb
         );
+    }
+
+    #[test]
+    fn the_profile_lists_offer_the_installed_profiles() {
+        // #1033: profiles installed here are listed by their colour space.
+        let found = vec![
+            FoundProfile {
+                name: "Coated FOGRA39".into(),
+                path: "fogra39.icc".into(),
+                space: Space::Cmyk,
+            },
+            FoundProfile {
+                name: "Adobe RGB (1998)".into(),
+                path: "adobergb.icc".into(),
+                space: Space::Rgb,
+            },
+        ];
+        let cmyk = profile_choices(
+            "Generic CMYK (open)",
+            &["Generic CMYK (open)"],
+            &found,
+            Space::Cmyk,
+        );
+        assert!(cmyk.iter().any(|n| n == "Coated FOGRA39"), "{cmyk:?}");
+        assert!(!cmyk.iter().any(|n| n == "Adobe RGB (1998)"), "{cmyk:?}");
+        let rgb = profile_choices(
+            "sRGB IEC61966-2.1",
+            &["sRGB IEC61966-2.1"],
+            &found,
+            Space::Rgb,
+        );
+        assert!(rgb.iter().any(|n| n == "Adobe RGB (1998)"), "{rgb:?}");
+        // A profile that is not installed carries no file.
+        assert!(cmyk_profile_file("Coated FOGRA39", &[]).is_none());
+    }
+
+    #[test]
+    fn build_names_the_chosen_profiles() {
+        let s = NewDocSettings {
+            gray_profile: "Gray Gamma 2.2".into(),
+            ..Default::default()
+        };
+        let doc = s.build("U".into());
+        assert_eq!(doc.metadata.gray_profile, "Gray Gamma 2.2");
+        assert_eq!(doc.metadata.cmyk_profile, "Generic CMYK (open)");
     }
 
     #[test]

@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- New Document: the RGB, CMYK and grayscale profile lists of Color Settings offer the ICC profiles installed on this computer, as Color Management does; they held only sRGB and Generic CMYK. A CMYK profile picked there goes with the new drawing, so its colours show through it, and the grayscale profile chosen is kept in the drawing (#1033).
+
 ## 0.19.9 (2026-10-28)
 
 - Docker tabs: when more dockers are open than the column of tabs has room for, the column slides, with arrows at its top and foot and the mouse wheel over it, so every tab and the add button can be reached. The tabs past the window's bottom edge could not be clicked (#950).
