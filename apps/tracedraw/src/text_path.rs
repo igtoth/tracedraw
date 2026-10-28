@@ -331,11 +331,13 @@ impl App {
             return;
         }
         let local = ft.to_page.inverse() * started;
-        let (_, offset) = crate::ops2::placement_on(&local, true, TextAlign::Center);
         self.edit_fitted_text(|t, align| {
             t.path = local;
-            t.offset = offset;
             t.set_mirrors(bottom, bottom);
+            // Half the baseline the letters stand on, which is longer or
+            // shorter than the path when the text is set off it: half the
+            // path put text with a distance off the middle (#193).
+            t.offset = t.baseline().length() / 2.0;
             *align = TextAlign::Center;
         });
     }
@@ -352,7 +354,7 @@ impl App {
         let page = ft.to_page * tp.path.clone();
         let start = ft.to_page * tp.path.segments().next()?.start();
         let b = page.bounding_box();
-        let length = tp.guide().length();
+        let length = tp.baseline().length();
         let half = (tp.offset.abs() - length / 2.0).abs() < 0.05;
         match tp.mirrors() {
             (false, false) if half && (start.y - b.y1).abs() < 0.05 => Some(false),
@@ -775,5 +777,43 @@ mod tests {
         let b = bottom_bounds;
         assert!((b.center().x - 90.0).abs() < 1.0, "{b:?}");
         assert!(b.y0 > 99.0 && b.y1 < 130.0, "{b:?}");
+    }
+
+    /// Bottom (and Top) centre text set off the path: the offset is half
+    /// the baseline the letters stand on, not half the path, so text with
+    /// a distance lands in the middle of the bottom, not an eighth of the
+    /// way round (#193, the reporter's stamp had a distance of -8.4 mm).
+    #[test]
+    fn bottom_placement_centres_text_set_off_the_path() {
+        tracedraw_text::install();
+        let mut app = App::headless();
+        let e = app
+            .new_shape(ShapeKind::Ellipse {
+                rect: Rect::new(40.0, 100.0, 140.0, 200.0),
+                arc: None,
+            })
+            .expect("ellipse");
+        app.start_text(Point::new(10.0, 20.0), None);
+        app.text_insert("ERNAKULAM");
+        app.finish_text();
+        let t = app.selection[0];
+        app.selection = vec![t, e];
+        app.fit_text_to_path();
+        app.selection = vec![t];
+        app.edit_fitted_text(|tp, _| tp.set_distance(-8.0));
+        for bottom in [true, false] {
+            app.place_fitted_text_round(bottom);
+            assert_eq!(app.fitted_text_round_placement(), Some(bottom));
+            let tp = app.fitted_text().expect("fitted").on_path;
+            assert!((tp.distance + 8.0).abs() < 1e-9);
+            let half = tp.baseline().length() / 2.0;
+            assert!((tp.offset - half).abs() < 1e-6, "{} {half}", tp.offset);
+            if tracedraw_text::fonts().families().is_empty() {
+                continue;
+            }
+            let sh = app.doc().shape(t).expect("text").1.clone();
+            let b = app.visual_bounds(&sh);
+            assert!((b.center().x - 90.0).abs() < 1.0, "{bottom} {b:?}");
+        }
     }
 }

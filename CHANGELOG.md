@@ -7,6 +7,7 @@ full, row-by-row status.
 ## Unreleased
 
 - Text panel: the Fit Text to Frame button in the Text Box section shows its icon, now drawn: it was an arrow character the bundled interface font lacks, so on Windows the button was blank (#1041).
+- Text on a path: Top and Bottom in the placement list centre text that is set off its circle (a Distance from path), as a stamp's bottom line. The text landed an eighth of the way round, because it was centred on the path's length rather than on the longer or shorter line the letters stand on (#193).
 - Saving as .cdr in version 9, 10 or 11: the file carries the whole document settings record files of those versions hold (ruler origin, grid, units, nudge, drawing scale). It held only the page size followed by zeros, a zero grid and scale (#98).
 - Corners panel: on a stretched object a fillet or scallop comes out round, with the radius in page millimetres. The corners were cut in the object's own space, so the stretch made them oval (#1002).
 - Zoom: F2 picks the Zoom tool for one zoom. After a click, a right click or a marquee the tool used before comes back (the Pick tool, most of the time); it stayed on the Zoom tool. Z and the toolbox button still pick the Zoom tool until another one is chosen (#1039).
