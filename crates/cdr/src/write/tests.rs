@@ -3417,6 +3417,52 @@ fn the_font_table_lists_weight_named_faces_under_their_family() {
     );
 }
 
+#[test]
+fn versions_9_to_11_carry_a_whole_configuration_record() {
+    let r9 = mcfg(Ver(9), 210.0, 297.0);
+    let r10 = mcfg(Ver(10), 210.0, 297.0);
+    let r11 = mcfg(Ver(11), 210.0, 297.0);
+    assert_eq!((r9.len(), r10.len(), r11.len()), (848, 4096, 4088));
+    let i32_at =
+        |r: &[u8], at: usize| i32::from_le_bytes(r[at..at + 4].try_into().unwrap_or([0; 4]));
+    let f64_at =
+        |r: &[u8], at: usize| f64::from_le_bytes(r[at..at + 8].try_into().unwrap_or([0; 8]));
+    // Page size after 4 zero bytes, the ruler origin at the bottom-left
+    // corner, a grid and scale that are not zero.
+    for r in [&r9, &r10, &r11] {
+        assert_eq!(i32_at(r, 0), 0);
+        assert_eq!((i32_at(r, 4), i32_at(r, 8)), (2_100_000, 2_970_000));
+        assert_eq!((i32_at(r, 372), i32_at(r, 376)), (-1_050_000, -1_485_000));
+        assert_eq!((f64_at(r, 384), f64_at(r, 392)), (0.2, 0.2));
+        assert_eq!(f64_at(r, 408), 1.0);
+        assert_eq!((i32_at(r, 428), i32_at(r, 448)), (11_811_024, 11_811_024));
+        assert_eq!(i32_at(r, 520), 1_000);
+    }
+    // Version 11 scales of 2.54, version 10 the same record with smaller
+    // scales and 8 bytes more at 940, ending with 12.0.
+    assert_eq!(f64_at(&r11, 848), 2.54);
+    assert_eq!(f64_at(&r10, 848), 0.000_254);
+    assert_eq!(&r10[..848], &r11[..848]);
+    assert_eq!(&r10[896..940], &r11[896..940]);
+    assert_eq!((i32_at(&r10, 940), i32_at(&r10, 944)), (0, 1));
+    assert_eq!(&r10[948..], &r11[940..]);
+    assert_eq!(f64_at(&r11, 4080), 12.0);
+    // Version 9: version 10 without the bytes after the nudge, the name
+    // fields and the last flag.
+    assert_eq!(&r9[..528], &r10[..528]);
+    assert_eq!(&r9[528..612], &r10[536..620]);
+    assert_eq!(&r9[616..764], &r10[700..848]);
+    assert_eq!(&r9[768..844], &r10[848..924]);
+    assert_eq!(i32_at(&r9, 536), 10_000);
+    // Each version reads its page size back.
+    for v in [9, 10, 11] {
+        let doc = Document::new("t", Size::new(210.0, 297.0));
+        let (back, _) = crate::open_bytes(&document_to_cdr_version(&doc, v), "t").expect("opens");
+        assert!((back.pages[0].size.width - 210.0).abs() < 0.01, "{v}");
+        assert!((back.pages[0].size.height - 297.0).abs() < 0.01, "{v}");
+    }
+}
+
 /// A text whose only run has a colour of its own, and a text of several
 /// paragraphs, one run each, in different colours, keep their colours in
 /// every version (#1057: they came back black).
