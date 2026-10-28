@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Blend: the steps between two objects are clean shapes with few nodes. Each step has the nodes of the two objects paired by their place along the outlines, with straight sides where both objects are straight and smooth curves elsewhere: a square blended into a circle gives steps of eight nodes that round off evenly. Each step was a polygon of 120 points, with corners cut off and lumpy outlines, heavy to edit after Convert to Curves (#1020).
 ## 0.19.9 (2026-10-28)
 
 - Docker tabs: when more dockers are open than the column of tabs has room for, the column slides, with arrows at its top and foot and the mouse wheel over it, so every tab and the add button can be reached. The tabs past the window's bottom edge could not be clicked (#950).
