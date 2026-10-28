@@ -21,25 +21,7 @@ fn std_btn() -> f32 {
 const STD_ICON: f32 = 20.0;
 
 fn std_frame(ui: &Ui, rect: egui::Rect, hovered: bool, pressed: bool) {
-    if pressed {
-        ui.painter()
-            .rect_filled(rect, 0.0, crate::theme::Tokens::field());
-        ui.painter().rect_stroke(
-            rect.shrink(0.5),
-            0.0,
-            egui::Stroke::new(1.0, Tokens::control_border()),
-            egui::StrokeKind::Middle,
-        );
-    } else if hovered {
-        ui.painter()
-            .rect_filled(rect, 0.0, crate::theme::Tokens::hovered_row());
-        ui.painter().rect_stroke(
-            rect.shrink(0.5),
-            0.0,
-            egui::Stroke::new(1.0, crate::theme::Tokens::selected_row()),
-            egui::StrokeKind::Middle,
-        );
-    }
+    crate::theme::paint_icon_button(ui.painter(), rect, hovered, pressed);
 }
 
 /// A standard toolbar button; `pressed` draws it pushed in (toggles).

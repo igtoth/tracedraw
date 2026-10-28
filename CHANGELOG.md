@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Icon buttons (toolbox, standard toolbar, property bar): a button that is on, such as the active tool or Portrait or Landscape, now stands out with a sharp blue frame, and a hovered button shows a clearer blue fill and frame; on and hovered together look different again. The pressed look was white with a grey frame and the hover a faint tint, hard to tell apart from the panel. The same looks apply in the light, dark and high contrast themes.
 - Saving as .cdr: text in a SemiBold face (or a Light, Medium, Black ...) is saved as its family at that weight ("Titillium Web" at SemiBold), as the file it came from names it. It was saved under the name "Titillium Web SemiBold", which no installed font goes by, so the saved file opened elsewhere in a substituted font (#892, #624).
 
 ## 0.19.9 (2026-10-28)

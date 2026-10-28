@@ -515,6 +515,65 @@ impl Tokens {
     pub fn prop_button() -> f32 {
         (28.0 * button_scale(&BAR_SCALE)).round()
     }
+
+    /// The fill and frame of an icon button (toolbox, standard toolbar,
+    /// property bar toggles) in each of its states, or None when it is
+    /// plain. Hovering tints it blue with a blue frame; a button that is
+    /// on (the active tool, a toggle pressed in) stands out from the panel
+    /// with a sharp accent frame, on the field colour when light and on
+    /// the picked row's blue when dark; hovering it too deepens the fill.
+    pub fn icon_button(hovered: bool, on: bool) -> Option<(Color32, egui::Stroke)> {
+        icon_button_in(theme(), hovered, on)
+    }
+}
+
+/// [`Tokens::icon_button`] under theme `t`.
+fn icon_button_in(t: Theme, hovered: bool, on: bool) -> Option<(Color32, egui::Stroke)> {
+    let p = t.palette();
+    let stroke = |c: Color32| egui::Stroke::new(1.0, c);
+    if t == Theme::HighContrast {
+        let [r, g, b] = contrast_colors().hot_light;
+        let hot = Color32::from_rgb(r, g, b);
+        return match (hovered, on) {
+            (false, false) => None,
+            (true, false) => Some((p.hovered_row, stroke(p.selected_row))),
+            (false, true) => Some((p.selected_row, egui::Stroke::new(2.0, hot))),
+            (true, true) => Some((p.hovered_row, egui::Stroke::new(2.0, hot))),
+        };
+    }
+    let dark = t.is_dark();
+    // The frame of a button that is on: the accent, a lighter blue
+    // where the accent would not read on a dark panel.
+    let on_line = if dark {
+        Color32::from_rgb(0x5C, 0xB2, 0xFF)
+    } else {
+        Tokens::ACCENT
+    };
+    let hover_fill = if dark {
+        p.panel.lerp_to_gamma(p.selected_row, 0.6)
+    } else {
+        p.selected_row
+    };
+    match (hovered, on) {
+        (false, false) => None,
+        (true, false) => Some((hover_fill, stroke(p.selected_row_line))),
+        (false, true) if dark => Some((p.selected_row, stroke(on_line))),
+        (false, true) => Some((p.field, stroke(on_line))),
+        (true, true) if dark => Some((
+            p.selected_row.lerp_to_gamma(Color32::WHITE, 0.15),
+            stroke(on_line),
+        )),
+        (true, true) => Some((p.selected_row, stroke(on_line))),
+    }
+}
+
+/// Paint an icon button's background and frame for its state (see
+/// [`Tokens::icon_button`]) under the icon.
+pub fn paint_icon_button(painter: &egui::Painter, rect: egui::Rect, hovered: bool, on: bool) {
+    if let Some((fill, line)) = Tokens::icon_button(hovered, on) {
+        painter.rect_filled(rect, 2.0, fill);
+        painter.rect_stroke(rect, 2.0, line, egui::StrokeKind::Inside);
+    }
 }
 
 /// The default button size's scale and the toolbox's, as f32 bits.
@@ -904,5 +963,45 @@ mod shadow_tests {
         assert_eq!(visuals().window_shadow, egui::epaint::Shadow::NONE);
         set_shadows(true);
         assert_eq!(shadow(s), s);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Plain, hovered, on and on while hovered look different from each
+    /// other in every theme, and a button that is on stands out from the
+    /// panel with a frame unlike the hover's.
+    #[test]
+    fn icon_buttons_have_four_distinct_looks() {
+        for t in Theme::ALL {
+            assert_eq!(icon_button_in(t, false, false), None, "{t:?}");
+            let hover = icon_button_in(t, true, false).expect("hover look");
+            let on = icon_button_in(t, false, true).expect("on look");
+            let both = icon_button_in(t, true, true).expect("on and hovered look");
+            assert_ne!(hover, on, "{t:?}");
+            assert_ne!(on, both, "{t:?}");
+            assert_ne!(hover, both, "{t:?}");
+            assert_ne!(on.1.color, hover.1.color, "{t:?}");
+            assert_ne!(on.0, t.palette().panel, "{t:?}");
+            assert_ne!(hover.0, t.palette().panel, "{t:?}");
+        }
+    }
+
+    /// A button that is on has a frame that contrasts with the panel.
+    #[test]
+    fn the_on_frame_contrasts_with_the_panel() {
+        let luma = |c: Color32| 0.299 * c.r() as f32 + 0.587 * c.g() as f32 + 0.114 * c.b() as f32;
+        for t in [
+            Theme::Light,
+            Theme::MediumLight,
+            Theme::MediumDark,
+            Theme::Dark,
+        ] {
+            let (_, line) = icon_button_in(t, false, true).expect("on look");
+            let gap = (luma(line.color) - luma(t.palette().panel)).abs();
+            assert!(gap > 50.0, "{t:?}: {gap}");
+        }
     }
 }

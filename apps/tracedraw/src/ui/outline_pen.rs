@@ -824,11 +824,7 @@ fn pic_button(ui: &mut Ui, pic: Pic, on: bool, enabled: bool, tip: &str) -> bool
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(28.0, 24.0), Sense::click());
     let resp = resp.on_hover_text(tr(tip));
     let p = ui.painter();
-    if on {
-        p.rect_filled(rect, 3.0, Tokens::ACCENT.gamma_multiply(0.35));
-    } else if resp.hovered() && enabled {
-        p.rect_filled(rect, 3.0, Tokens::tool_hover());
-    }
+    crate::theme::paint_icon_button(p, rect, resp.hovered() && enabled, on);
     let ink = if enabled {
         Tokens::text()
     } else {
