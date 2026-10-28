@@ -63,6 +63,8 @@ pub fn show(ui: &mut Ui, tip: &str) {
     let (title, desc) = parts(tip);
     // A menu name's "..." says a dialog opens; the tip names the command.
     let title = title.trim_end_matches("...").trim_end_matches('\u{2026}');
+    // A field's label ends with a colon; its tip's name does not.
+    let title = title.trim_end_matches([':', '\u{FF1A}']).trim_end();
     ui.set_max_width(280.0);
     // A tip that is already a sentence (no name above it) reads as one.
     if desc.is_none() && title.chars().count() > 45 {
@@ -79,6 +81,8 @@ pub fn show(ui: &mut Ui, tip: &str) {
 pub trait RichTip {
     fn rich_tip(self, tip: impl AsRef<str>) -> Response;
     fn rich_disabled_tip(self, tip: impl AsRef<str>) -> Response;
+    /// A tip built only when it shows, for rows drawn by the thousand.
+    fn rich_tip_with(self, tip: impl FnOnce() -> String) -> Response;
 }
 
 impl RichTip for Response {
@@ -94,6 +98,10 @@ impl RichTip for Response {
         #[cfg(test)]
         record(&tip);
         self.on_disabled_hover_ui(|ui| show(ui, &tip))
+    }
+
+    fn rich_tip_with(self, tip: impl FnOnce() -> String) -> Response {
+        self.on_hover_ui(|ui| show(ui, &tip()))
     }
 }
 

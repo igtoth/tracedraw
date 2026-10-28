@@ -10,6 +10,7 @@ use crate::i18n::tr;
 use crate::ops::Shaping;
 use crate::theme::Tokens;
 use crate::ui::propbar::{draw_pic, pic_button, Pic};
+use crate::ui::tips::RichTip;
 use egui::{Rect, Sense, Ui, Vec2};
 
 /// The picture, name and description of an operation.
@@ -118,11 +119,13 @@ pub fn shaping(app: &mut App, ui: &mut Ui) {
         ui.checkbox(
             &mut app.shaping_leave[i][0],
             tr("docker.leave_original_source"),
-        );
+        )
+        .rich_tip(crate::ui::tips::keyed("docker.leave_original_source"));
         ui.checkbox(
             &mut app.shaping_leave[i][1],
             tr("docker.leave_original_target"),
-        );
+        )
+        .rich_tip(crate::ui::tips::keyed("docker.leave_original_target"));
         ui.add_space(6.0);
     }
     let enough = op.ready(app.selection.len());
@@ -130,6 +133,7 @@ pub fn shaping(app: &mut App, ui: &mut Ui) {
     let clicked = ui
         .add_enabled_ui(enough, |ui| {
             ui.add_sized([width, 26.0], egui::Button::new(tr(key)))
+                .rich_tip_with(|| format!("{}\n{}", tr(key), tr("docker.shaping_apply_desc")))
                 .clicked()
         })
         .inner;
