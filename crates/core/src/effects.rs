@@ -1088,11 +1088,12 @@ const SMOOTH_SPAN: f64 = 0.25;
 const SMOOTH_EASE: f64 = 0.75;
 
 /// `path` fitted with as few curves as keep within `accuracy` mm of it
-/// (kurbo's fitter); the path itself when the fit fails.
+/// (our own fitter, [`crate::fit::fit_path`], which is bounded: a
+/// general-purpose fitter tried before could hang or panic on the
+/// tight curves a long brush stroke builds up, #1133); the path itself
+/// when the fit fails.
 fn fit_within(path: &BezPath, accuracy: f64) -> BezPath {
-    use kurbo::simplify::{simplify_bezpath, SimplifyOptLevel, SimplifyOptions};
-    let options = SimplifyOptions::default().opt_level(SimplifyOptLevel::Optimize);
-    let fitted = simplify_bezpath(path.elements().iter().copied(), accuracy, &options);
+    let fitted = crate::fit::fit_path(path, accuracy);
     let sane = !fitted.elements().is_empty()
         && fitted.elements().iter().all(|e| match *e {
             PathEl::MoveTo(p) | PathEl::LineTo(p) => p.is_finite(),
@@ -1766,5 +1767,37 @@ mod tests {
         let (sides, back) = extrude(&a, Vec2::new(5.0, 5.0));
         assert!(!sides.is_empty());
         assert!((back.bounding_box().x0 - 5.0).abs() < 1e-6);
+    }
+
+    /// #1133: a long Smudge or Twirl stroke circling a square ends, keeps
+    /// a handful of nodes and stays finite. The curve fitter used before
+    /// hung or panicked partway through such a stroke.
+    #[test]
+    fn long_smudge_and_twirl_strokes_stay_light() {
+        let mut square = BezPath::new();
+        square.move_to((0.0, 0.0));
+        square.line_to((40.0, 0.0));
+        square.line_to((40.0, 40.0));
+        square.line_to((0.0, 40.0));
+        square.close_path();
+        for smudge in [true, false] {
+            let mut q = square.clone();
+            for k in 0..600 {
+                let a = k as f64 * 0.05;
+                let at = Point::new(20.0 + 22.0 * a.cos(), 20.0 + 22.0 * a.sin());
+                q = if smudge {
+                    let d = Vec2::new(-0.55 * a.sin(), 0.55 * a.cos());
+                    smear(&smooth(&q, at, 10.0, 0.2), at, d, 10.0)
+                } else {
+                    twirl(&q, at, 0.1, 10.0)
+                };
+                assert!(q.elements().len() < 200, "step {k}: {}", q.elements().len());
+            }
+            assert!(q.elements().iter().all(|e| match *e {
+                PathEl::MoveTo(p) | PathEl::LineTo(p) => p.is_finite(),
+                PathEl::CurveTo(a, b, p) => a.is_finite() && b.is_finite() && p.is_finite(),
+                _ => true,
+            }));
+        }
     }
 }

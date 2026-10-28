@@ -1748,6 +1748,83 @@ fn curve_nodes_carry_the_marks_of_version_16_files() {
 }
 
 #[test]
+fn subpaths_back_at_their_start_close_on_their_last_node() {
+    // Letters' outlines (#1130): a curve back to the start, then the
+    // close; a line back to the start; lone moves around them.
+    let mut p = BezPath::new();
+    p.move_to((5.0, 5.0));
+    p.move_to((0.0, 0.0));
+    p.curve_to((0.0, 10.0), (10.0, 10.0), (10.0, 0.0));
+    p.curve_to((10.0, -10.0), (0.0, -10.0), (0.0, 0.0));
+    p.close_path();
+    p.move_to((20.0, 0.0));
+    p.line_to((30.0, 0.0));
+    p.line_to((30.0, 10.0));
+    p.line_to((30.0, 10.0));
+    p.line_to((20.0, 0.0));
+    p.line_to((20.0, 0.0));
+    p.close_path();
+    p.move_to((40.0, 0.0));
+    p.line_to((50.0, 0.0));
+    p.line_to((50.0, 10.0));
+    p.close_path();
+    p.move_to((60.0, 0.0));
+    p.close_path();
+    p.move_to((70.0, 0.0));
+    let coords = curve_coords(&p).expect("coords");
+    let n = u32::from_le_bytes([coords[0], coords[1], coords[2], coords[3]]) as usize;
+    let types: Vec<u8> = coords[4 + 8 * n..].iter().map(|t| t & !0x30).collect();
+    assert_eq!(
+        types,
+        [
+            0x00, 0xc0, 0xc0, 0x80, 0xc0, 0xc0, 0x88, 0x00, 0x40, 0x40, 0x48, 0x00, 0x40, 0x40,
+            0x48
+        ]
+    );
+    // No segment of no length.
+    let pt = |i: usize| {
+        let at = 4 + 8 * i;
+        coords[at..at + 8].to_vec()
+    };
+    for i in 1..n {
+        if types[i] & 0xc0 != 0 && types[i] != 0xc0 && types[i - 1] & 0xc0 != 0xc0 {
+            assert_ne!(pt(i), pt(i - 1), "node {i}");
+        }
+    }
+    // Read back closed, with as many nodes.
+    let mut doc = Document::new("w", Size::new(200.0, 100.0));
+    let mut ids = doc.ids().clone();
+    let c = Shape::new(
+        ids.shape(),
+        ShapeKind::Path {
+            path: p.clone(),
+            closed: true,
+        },
+    );
+    doc.pages[0].layers[0].shapes = vec![c];
+    doc.set_ids(ids);
+    for v in versions() {
+        let bytes = document_to_cdr_version(&doc, v);
+        let (back, rep) = crate::open_bytes(&bytes, "back").expect("reads back");
+        let s = &back.pages[0].layers[0].shapes[0];
+        let ShapeKind::Path { path, .. } = &s.kind else {
+            panic!("{v}: {:?}", rep.warnings);
+        };
+        let els = path.elements();
+        let count = |f: fn(&PathEl) -> bool| els.iter().filter(|e| f(e)).count();
+        assert_eq!(count(|e| matches!(e, PathEl::MoveTo(_))), 3, "{v}: {els:?}");
+        assert_eq!(count(|e| matches!(e, PathEl::ClosePath)), 3, "{v}: {els:?}");
+        assert_eq!(
+            count(|e| matches!(e, PathEl::CurveTo(..))),
+            2,
+            "{v}: {els:?}"
+        );
+        let b = s.bounds();
+        assert!((b.width() - 50.0).abs() < 1e-3, "{v}: {b:?}");
+    }
+}
+
+#[test]
 fn version_21_text_records_are_numbered_and_complete() {
     let mut ids = Document::new("w", Size::new(200.0, 100.0)).ids().clone();
     let a = text_shape(

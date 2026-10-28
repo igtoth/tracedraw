@@ -3982,16 +3982,18 @@ fn the_pen_deletes_a_node_of_the_selected_curve_and_the_toggle_turns_it_off() {
     assert!(node_count(&app, id) >= 3);
 }
 
+/// Pen with automatic adding and deleting on: a click on a segment or a
+/// middle node of the curve being drawn places the next node there, it
+/// neither adds on the segment nor deletes the node (#1143).
 #[test]
-fn the_pen_adds_and_deletes_nodes_on_the_curve_being_drawn() {
-    use crate::ui::cursors::CurveMark;
+fn the_pen_places_nodes_on_the_curve_being_drawn() {
     let (ctx, mut app, _) = setup();
     app.select(Vec::new());
     app.set_tool(Tool::Pen);
+    app.settings.curves.pen_auto_add_delete = true;
     for x in [100.0, 140.0, 180.0] {
         click_page(&ctx, &mut app, Point::new(x, 150.0));
     }
-    assert_eq!(app.curve.as_ref().map(|c| c.nodes.len()), Some(3));
     let on_segment = app.view.to_screen(Point::new(120.0, 150.0));
     let on_node = app.view.to_screen(Point::new(140.0, 150.0));
     frame(
@@ -4002,30 +4004,20 @@ fn the_pen_adds_and_deletes_nodes_on_the_curve_being_drawn() {
     );
     assert_eq!(
         for_tool(&app, false, false, false, Some(on_segment)),
-        ToolCursor::PenNib(Some(CurveMark::AddNode))
+        ToolCursor::PenNib(None)
     );
     assert_eq!(
         for_tool(&app, false, false, false, Some(on_node)),
-        ToolCursor::PenNib(Some(CurveMark::DeleteNode))
+        ToolCursor::PenNib(None)
     );
     click_page(&ctx, &mut app, Point::new(120.0, 150.0));
-    let xs: Vec<f64> = app
-        .curve
-        .as_ref()
-        .map(|c| c.nodes.iter().map(|n| n.0.x.round()).collect())
-        .unwrap_or_default();
-    assert_eq!(xs, vec![100.0, 120.0, 140.0, 180.0]);
     click_page(&ctx, &mut app, Point::new(140.0, 150.0));
     let xs: Vec<f64> = app
         .curve
         .as_ref()
         .map(|c| c.nodes.iter().map(|n| n.0.x.round()).collect())
         .unwrap_or_default();
-    assert_eq!(xs, vec![100.0, 120.0, 180.0]);
-    // Off: a click there places a node.
-    app.settings.curves.pen_auto_add_delete = false;
-    click_page(&ctx, &mut app, Point::new(110.0, 150.0));
-    assert_eq!(app.curve.as_ref().map(|c| c.nodes.len()), Some(4));
+    assert_eq!(xs, vec![100.0, 140.0, 180.0, 120.0, 140.0]);
 }
 
 #[test]
@@ -11040,4 +11032,99 @@ fn corner_widgets_round_stretched_curves_on_the_page() {
     drag_widget(&ctx, &mut app, centre, 5.0);
     let found = fillets(&page_of(&app, id));
     assert_eq!(found.len(), 4, "{found:?}");
+}
+
+/// Pen with automatic adding and deleting on: once a curve is being
+/// drawn (new or going on from an end), a click on another curve's
+/// segment or node places the next node there and leaves that curve as
+/// it is (#1143).
+#[test]
+fn the_pen_never_edits_another_curve_while_drawing() {
+    let (ctx, mut app, _) = setup();
+    let other = line_curve(&ctx, &mut app);
+    app.settings.curves.pen_auto_add_delete = true;
+    app.set_tool(Tool::Pen);
+    // A new curve.
+    click_page(&ctx, &mut app, Point::new(100.0, 160.0));
+    assert_eq!(app.curve.as_ref().map(|c| c.nodes.len()), Some(1));
+    click_page(&ctx, &mut app, Point::new(125.0, 100.0));
+    assert_eq!(
+        node_count(&app, other),
+        3,
+        "nothing added to the other curve"
+    );
+    click_page(&ctx, &mut app, Point::new(150.0, 100.0));
+    assert_eq!(
+        node_count(&app, other),
+        3,
+        "nothing deleted from the other curve"
+    );
+    assert_eq!(app.curve.as_ref().map(|c| c.nodes.len()), Some(3));
+    // Going on from the end of a curve: the same.
+    app.finish_curve();
+    let drawn = app.selection[0];
+    click_page(&ctx, &mut app, Point::new(150.0, 100.0));
+    assert_eq!(
+        app.curve.as_ref().map(|c| c.nodes.len()),
+        Some(1),
+        "goes on"
+    );
+    assert_eq!(app.selection, vec![drawn]);
+    click_page(&ctx, &mut app, Point::new(175.0, 100.0));
+    click_page(&ctx, &mut app, Point::new(100.0, 100.0));
+    assert_eq!(
+        node_count(&app, other),
+        3,
+        "the other curve is left as it is"
+    );
+    assert_eq!(app.curve.as_ref().map(|c| c.nodes.len()), Some(3));
+}
+
+/// Pen going on from the end of a curve: the start keeps the mirrored
+/// handle, and a second click on that node makes it a cusp, so the new
+/// segment leaves it straight (#1138).
+#[test]
+fn the_pen_makes_the_start_of_a_continued_curve_a_cusp() {
+    use crate::ui::cursors::CurveMark;
+    let (ctx, mut app, first) = setup();
+    app.select(vec![first]);
+    app.delete_selection();
+    app.set_tool(Tool::Pen);
+    let a = Point::new(100.0, 150.0);
+    let b = Point::new(140.0, 150.0);
+    pull(&ctx, &mut app, a, Point::new(110.0, 140.0));
+    pull(&ctx, &mut app, b, Point::new(150.0, 160.0));
+    app.finish_curve();
+    let before = shape_count(&app);
+    app.set_tool(Tool::Pen);
+    click_page(&ctx, &mut app, b);
+    let c = app.curve.clone().expect("a curve going on");
+    assert!(c.nodes[0].1.is_some(), "smooth by default: {c:?}");
+    let at_b = app.view.to_screen(b);
+    assert_eq!(
+        for_tool(&app, false, false, false, Some(at_b)),
+        ToolCursor::PenNib(Some(CurveMark::EditNode))
+    );
+    // Not a double click: the second click comes later.
+    for _ in 0..30 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    click_page(&ctx, &mut app, b);
+    let c = app.curve.clone().expect("still going on");
+    assert_eq!(c.nodes.len(), 1, "no node added: {c:?}");
+    assert_eq!(c.nodes[0].1, None, "a cusp: {c:?}");
+    let pointer = Point::new(180.0, 150.0);
+    click_page(&ctx, &mut app, pointer);
+    app.finish_curve();
+    assert_eq!(shape_count(&app), before, "no new object");
+    let segs: Vec<_> = last_path(&app).segments().collect();
+    assert_eq!(segs.len(), 2, "{segs:?}");
+    // The new segment leaves b straight.
+    match segs[1] {
+        tracedraw_core::geometry::PathSeg::Line(l) => assert!(near(l.p0, b), "{l:?}"),
+        tracedraw_core::geometry::PathSeg::Cubic(k) => {
+            assert!(near(k.p1, b) || near(k.p1, k.p0), "{k:?}")
+        }
+        other => panic!("{other:?}"),
+    }
 }

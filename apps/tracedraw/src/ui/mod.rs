@@ -56,6 +56,7 @@ pub mod font_sampler;
 pub mod fx_icons;
 pub mod github_dialogs;
 pub mod glyphs_docker;
+pub mod hint_pics;
 pub mod hints;
 pub mod icons;
 pub mod lab_dialog;
@@ -786,7 +787,7 @@ pub(crate) fn drawing_window(app: &mut App, ui: &mut Ui, full: egui::Rect) {
     envelope_ui::draw_envelopes(app, &painter);
     dimension_bar::draw_preview(app, &painter);
     callout_bar::draw_preview(app, &painter);
-    distort_bar::draw_centers(app, &painter);
+    distort_bar::draw_handles(app, &painter);
     extrude_bar::draw_handles(app, &painter);
     crop_bar::draw_area(app, &painter, canvas_rect);
     canvas::draw_docker_preview(app, &painter);

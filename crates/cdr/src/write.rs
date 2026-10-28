@@ -2503,16 +2503,31 @@ fn curve_coords_typed(
     let mut types: Vec<u8> = Vec::new();
     let mut last_start = 0usize;
     let mut last = Point::ZERO;
+    // A subpath that is only its move draws nothing: dropped.
+    let drop_lone_move = |pts: &mut Vec<(i32, i32)>, types: &mut Vec<u8>, start: usize| {
+        if pts.len() == start + 1 && types.get(start).is_some_and(|t| t & 0xc0 == 0) {
+            pts.pop();
+            types.pop();
+        }
+    };
     for (i, el) in path.elements().iter().enumerate() {
         match el {
             PathEl::MoveTo(p) => {
+                drop_lone_move(&mut pts, &mut types, last_start);
                 pts.push((units(p.x), units(p.y)));
                 types.push(node_bits(i));
                 last_start = pts.len() - 1;
                 last = *p;
             }
             PathEl::LineTo(p) => {
-                pts.push((units(p.x), units(p.y)));
+                // A line of no length (a file of an earlier version read
+                // back: a curve to the start, then the closing line) is
+                // left out.
+                let q = (units(p.x), units(p.y));
+                if pts.len() > last_start && pts.last() == Some(&q) {
+                    continue;
+                }
+                pts.push(q);
                 types.push(0x40 | node_bits(i));
                 last = *p;
             }
@@ -2538,13 +2553,30 @@ fn curve_coords_typed(
                 last = *p;
             }
             PathEl::ClosePath => {
-                // A closing line back to the subpath start, flagged.
+                // A closing line back to the subpath start, flagged. A
+                // subpath already back at its start (letters' outlines
+                // end so) closes on its last node instead: a closing
+                // line of no length beside a smooth start node made the
+                // program that opens the file close when the curve was
+                // clicked (#1130).
                 let s = pts.get(last_start).copied().unwrap_or((0, 0));
-                pts.push(s);
-                types.push(0x48);
+                if pts.len() <= last_start + 1 {
+                    drop_lone_move(&mut pts, &mut types, last_start);
+                    last_start = pts.len();
+                    continue;
+                }
+                let back = pts.last() == Some(&s) && types.last().is_some_and(|t| t & 0xc0 != 0xc0);
+                match types.last_mut() {
+                    Some(t) if back => *t |= 0x08,
+                    _ => {
+                        pts.push(s);
+                        types.push(0x48);
+                    }
+                }
             }
         }
     }
+    drop_lone_move(&mut pts, &mut types, last_start);
     if pts.is_empty() {
         return None;
     }

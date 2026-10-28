@@ -701,7 +701,11 @@ impl App {
                         if det.is_finite() && det.abs() > 1e-12 {
                             let inv = tf.inverse();
                             let d = (inv * p) - (inv * from);
-                            let bent = nodes::bend_segment(&path, index, t, d);
+                            let chosen = match self.doc().shape(shape) {
+                                Ok((_, s)) => s.node_types.clone(),
+                                Err(_) => Default::default(),
+                            };
+                            let bent = nodes::bend_segment_with(&path, index, t, d, &chosen);
                             let cmd = Command::SetShapeKind {
                                 shape,
                                 kind: ShapeKind::Path { path: bent, closed },
