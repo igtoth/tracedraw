@@ -62,13 +62,28 @@ fn english_name(f: &ttf_parser::Face, id: u16) -> String {
         .unwrap_or_default()
 }
 
+/// The family a font names itself under: its typographic family (name
+/// ID 16) when it has one, else its family (name ID 1). A static face of
+/// a large family ("Khand SemiBold", ID 1) gives the family ("Khand").
+fn typographic_family(f: &ttf_parser::Face) -> String {
+    let t = english_name(f, 16);
+    if t.trim().is_empty() {
+        english_name(f, 1)
+    } else {
+        t
+    }
+}
+
 /// The family and weight a face of `family` is written under when the
 /// family is named with its weight ("Titillium Web SemiBold", as text
 /// set in a semibold face reads): the family without the weight's name
 /// and that weight ("Titillium Web" at 600), the way files name such a
 /// face (#892). `None` keeps the name: bold text, a name with no weight
-/// in it, or a font whose own family name (name ID 1) is the whole name
-/// ("Segoe UI Semibold" when that font is the one found).
+/// in it, or a font whose own family (its typographic family, else its
+/// name ID 1) is the whole name. A font that names the whole name only
+/// in ID 1 and the family in ID 16 ("Khand SemiBold" and "Khand") is
+/// split: a file naming the whole name at the regular weight asked for
+/// a font that is missing where the face is only embedded (#1055).
 pub(crate) fn split_family(family: &str, bold: bool, faces: &[FontFace]) -> Option<(String, u16)> {
     if bold {
         return None;
@@ -80,7 +95,7 @@ pub(crate) fn split_family(family: &str, bold: bool, faces: &[FontFace]) -> Opti
         .filter_map(|f| f.data.as_deref())
         .filter_map(|d| ttf_parser::Face::parse(d, 0).ok())
         .any(|f| {
-            english_name(&f, 1)
+            typographic_family(&f)
                 .trim()
                 .eq_ignore_ascii_case(family.trim())
         });
@@ -140,7 +155,11 @@ fn info(face: &FontFace) -> FaceInfo {
         out.postscript = ps;
     }
     out.version = name(5);
-    let style = name(2);
+    // The typographic subfamily ("SemiBold") when the font has one, as
+    // the font table names a face; else the subfamily (name ID 2).
+    let style = Some(name(17))
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| name(2));
     if !style.is_empty() {
         out.style = style;
     }
@@ -166,7 +185,11 @@ fn info(face: &FontFace) -> FaceInfo {
         },
         checksum_adjustment: be32(head, 8),
         family,
-        style: out.style.clone(),
+        // The EOT names are the font's own family and subfamily (ID 1
+        // and 2), as the format defines them.
+        style: Some(name(2))
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| out.style.clone()),
         version: out.version.clone(),
         full: name(4),
     });

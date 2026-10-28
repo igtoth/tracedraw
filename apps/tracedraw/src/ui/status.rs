@@ -352,97 +352,6 @@ pub fn status_bar(app: &mut App, ui: &mut Ui) {
             }
         });
 
-    // Positions of the right-hand parts, as fractions of the bar (fill
-    // about 70 %, outline about 82 %).
-    let fill_x = row.min.x + row.width() * 0.685;
-    let outline_x = row.min.x + row.width() * 0.818;
-    let proof = Rect::from_center_size(Pos2::new(row.max.x - 17.0, cy), Vec2::splat(26.0));
-    // The light and dark interface button, left of it.
-    let theme_btn = proof.translate(Vec2::new(-30.0, 0.0));
-    // A line sets the two buttons apart.
-    let sep_x = (theme_btn.min.x - 8.0).round() + 0.5;
-    painter.line_segment(
-        [
-            Pos2::new(sep_x, row.min.y + 7.0),
-            Pos2::new(sep_x, row.max.y - 7.0),
-        ],
-        Stroke::new(1.0, Tokens::border()),
-    );
-
-    // The status message can be a link to Options > General (the note
-    // that hardware acceleration is off), while it is the one shown.
-    let drag = if doc { drag_info(app) } else { None };
-    let linked = doc
-        && drag.is_none()
-        && app.settings.status_info == StatusInfo::ToolHints
-        && !app.status.is_empty()
-        && app.status_opens_options.as_deref() == Some(app.status.as_str());
-    // Left field and object information.
-    let (left, info) = if !doc {
-        (tr("status.tool_hints"), tr("status.object_information"))
-    } else if let Some(drag) = drag {
-        (drag, object_info(app))
-    } else {
-        let left = match app.settings.status_info {
-            StatusInfo::ToolHints => {
-                let hint = tool_hint(app);
-                if app.status.is_empty() {
-                    hint
-                } else {
-                    format!("{}    {hint}", app.status)
-                }
-            }
-            StatusInfo::ObjectDetails => object_details(app),
-            StatusInfo::CursorCoordinates => cursor_coordinates(app),
-            StatusInfo::DocumentColor => document_color(app),
-        };
-        (left, object_info(app))
-    };
-    let text_x = gear.max.x + 3.0;
-    let info_w = if info.is_empty() {
-        0.0
-    } else {
-        painter
-            .layout_no_wrap(info.clone(), font.clone(), Tokens::text())
-            .size()
-            .x
-            .min((fill_x - text_x) * 0.45)
-    };
-    let left_max = fill_x - 16.0 - if info_w > 0.0 { info_w + 24.0 } else { 0.0 };
-    let left_galley = painter.layout_no_wrap(left, font.clone(), Tokens::text());
-    let left_w = left_galley.size().x.min(left_max - text_x).max(0.0);
-    let clip = Rect::from_min_max(Pos2::new(text_x, row.min.y), Pos2::new(left_max, row.max.y));
-    painter.with_clip_rect(clip).galley(
-        Pos2::new(text_x, cy - left_galley.size().y / 2.0),
-        left_galley,
-        Tokens::text(),
-    );
-    if linked {
-        let r = Rect::from_min_max(
-            Pos2::new(text_x, row.min.y),
-            Pos2::new(text_x + left_w, row.max.y),
-        );
-        let resp = ui
-            .interact(r, egui::Id::new("status_opens_options"), Sense::click())
-            .on_hover_cursor(egui::CursorIcon::PointingHand);
-        if resp.clicked() {
-            app.status_opens_options = None;
-            app.status.clear();
-            app.open_general_options();
-        }
-    }
-    if info_w > 0.0 {
-        // After the left field, never closer than a placeholder's width.
-        let x = (text_x + left_w + 24.0)
-            .max(text_x + 156.0)
-            .min(left_max + 24.0);
-        let g = painter.layout_no_wrap(info, font.clone(), Tokens::text());
-        let clip = Rect::from_min_max(Pos2::new(x, row.min.y), Pos2::new(fill_x - 8.0, row.max.y));
-        painter
-            .with_clip_rect(clip)
-            .galley(Pos2::new(x, cy - g.size().y / 2.0), g, Tokens::text());
-    }
-
     // Fill and outline of the selection, or of new objects.
     let shapes = app.selected_rc();
     // A clip frame shows its frame's, a group its first member's.
@@ -486,6 +395,107 @@ pub fn status_bar(app: &mut App, ui: &mut Ui) {
             None,
         )
     };
+    let proof = Rect::from_center_size(Pos2::new(row.max.x - 17.0, cy), Vec2::splat(26.0));
+    // The light and dark interface button, left of it.
+    let theme_btn = proof.translate(Vec2::new(-30.0, 0.0));
+    // A line sets the two buttons apart.
+    let sep_x = (theme_btn.min.x - 8.0).round() + 0.5;
+    painter.line_segment(
+        [
+            Pos2::new(sep_x, row.min.y + 7.0),
+            Pos2::new(sep_x, row.max.y - 7.0),
+        ],
+        Stroke::new(1.0, Tokens::border()),
+    );
+
+    // Positions of the fill and outline parts: fractions of the bar (fill
+    // about 70 %, outline about 82 %) while their swatches and values fit
+    // there, else further left, so a narrow window cuts the hints before
+    // them (#1004).
+    let outline_end = theme_btn.min.x - 8.0;
+    let gear_end = gear.max.x + 3.0;
+    let (fill_x, outline_x) = part_positions(
+        row,
+        gear_end,
+        outline_end,
+        Indicator::width_for(&painter, &fill_text),
+        Indicator::width_for(&painter, &outline_label),
+    );
+
+    // The status message can be a link to Options > General (the note
+    // that hardware acceleration is off), while it is the one shown.
+    let drag = if doc { drag_info(app) } else { None };
+    let linked = doc
+        && drag.is_none()
+        && app.settings.status_info == StatusInfo::ToolHints
+        && !app.status.is_empty()
+        && app.status_opens_options.as_deref() == Some(app.status.as_str());
+    // Left field and object information.
+    let (left, info) = if !doc {
+        (tr("status.tool_hints"), tr("status.object_information"))
+    } else if let Some(drag) = drag {
+        (drag, object_info(app))
+    } else {
+        let left = match app.settings.status_info {
+            StatusInfo::ToolHints => {
+                let hint = tool_hint(app);
+                if app.status.is_empty() {
+                    hint
+                } else {
+                    format!("{}    {hint}", app.status)
+                }
+            }
+            StatusInfo::ObjectDetails => object_details(app),
+            StatusInfo::CursorCoordinates => cursor_coordinates(app),
+            StatusInfo::DocumentColor => document_color(app),
+        };
+        (left, object_info(app))
+    };
+    let text_x = gear_end;
+    let info_w = if info.is_empty() {
+        0.0
+    } else {
+        painter
+            .layout_no_wrap(info.clone(), font.clone(), Tokens::text())
+            .size()
+            .x
+            .min((fill_x - text_x) * 0.45)
+    };
+    let left_max = fill_x - 16.0 - if info_w > 0.0 { info_w + 24.0 } else { 0.0 };
+    let left_galley = elided(&painter, left, left_max - text_x);
+    let left_w = left_galley.size().x.min(left_max - text_x).max(0.0);
+    let clip = Rect::from_min_max(Pos2::new(text_x, row.min.y), Pos2::new(left_max, row.max.y));
+    painter.with_clip_rect(clip).galley(
+        Pos2::new(text_x, cy - left_galley.size().y / 2.0),
+        left_galley,
+        Tokens::text(),
+    );
+    if linked {
+        let r = Rect::from_min_max(
+            Pos2::new(text_x, row.min.y),
+            Pos2::new(text_x + left_w, row.max.y),
+        );
+        let resp = ui
+            .interact(r, egui::Id::new("status_opens_options"), Sense::click())
+            .on_hover_cursor(egui::CursorIcon::PointingHand);
+        if resp.clicked() {
+            app.status_opens_options = None;
+            app.status.clear();
+            app.open_general_options();
+        }
+    }
+    if info_w > 0.0 {
+        // After the left field, never closer than a placeholder's width.
+        let x = (text_x + left_w + 24.0)
+            .max(text_x + 156.0)
+            .min(left_max + 24.0);
+        let g = elided(&painter, info, fill_x - 8.0 - x);
+        let clip = Rect::from_min_max(Pos2::new(x, row.min.y), Pos2::new(fill_x - 8.0, row.max.y));
+        painter
+            .with_clip_rect(clip)
+            .galley(Pos2::new(x, cy - g.size().y / 2.0), g, Tokens::text());
+    }
+
     let fill_part = Rect::from_min_max(
         Pos2::new(fill_x, row.min.y),
         Pos2::new(outline_x - 8.0, row.max.y),
@@ -597,15 +607,62 @@ impl Indicator<'_> {
         );
         draw_swatch(painter, sw, self.swatch);
         let clip = Rect::from_min_max(Pos2::new(sw.max.x + 5.0, part.min.y), part.max);
-        painter.with_clip_rect(clip).text(
-            Pos2::new(sw.max.x + 5.0, cy),
-            egui::Align2::LEFT_CENTER,
-            self.text,
-            egui::FontId::proportional(TEXT),
+        let g = elided(painter, self.text.to_owned(), part.max.x - sw.max.x - 5.0);
+        painter.with_clip_rect(clip).galley(
+            Pos2::new(sw.max.x + 5.0, cy - g.size().y / 2.0),
+            g,
             Tokens::text(),
         );
         resp.double_clicked()
     }
+
+    /// The width of the part without its text: icon, swatch and gaps.
+    const MIN_W: f32 = 22.0 + 3.0 + 26.0 + 5.0;
+
+    /// The width a part needs to show `text` whole.
+    fn width_for(painter: &egui::Painter, text: &str) -> f32 {
+        let w = painter
+            .layout_no_wrap(
+                text.to_owned(),
+                egui::FontId::proportional(TEXT),
+                Tokens::text(),
+            )
+            .size()
+            .x;
+        Self::MIN_W + w.ceil() + 2.0
+    }
+}
+
+/// Where the fill and outline parts of bar `row` start: at about 70 %
+/// and 82 % of it, or further left when the part (`fill_w`, `outline_w`
+/// wide with its text) would not fit before the next one or before
+/// `outline_end`; never left of `gear_end`, the end of the settings button.
+fn part_positions(
+    row: Rect,
+    gear_end: f32,
+    outline_end: f32,
+    fill_w: f32,
+    outline_w: f32,
+) -> (f32, f32) {
+    let outline_x = (row.min.x + row.width() * 0.818)
+        .min(outline_end - outline_w)
+        .max(gear_end + Indicator::MIN_W + 8.0);
+    let fill_x = (row.min.x + row.width() * 0.685)
+        .min(outline_x - 8.0 - fill_w)
+        .max(gear_end);
+    (fill_x, outline_x)
+}
+
+/// `text` on one line in the bar's font, cut with an ellipsis when it is
+/// wider than `width`.
+fn elided(painter: &egui::Painter, text: String, width: f32) -> std::sync::Arc<egui::Galley> {
+    let mut job = egui::text::LayoutJob::simple_singleline(
+        text,
+        egui::FontId::proportional(TEXT),
+        Tokens::text(),
+    );
+    job.wrap = egui::text::TextWrapping::truncate_at_width(width.max(0.0));
+    painter.layout_job(job)
 }
 
 /// A colour swatch; no colour is a white box crossed by a red line.
@@ -693,6 +750,32 @@ fn proof_icon(painter: &egui::Painter, r: Rect) {
 mod tests {
     use super::*;
     use tracedraw_core::geometry::Rect as PRect;
+
+    /// On a wide bar the fill and outline sit at their usual places; on a
+    /// narrow one they move left so their swatches and values stay whole
+    /// before the buttons, and the hints give way (#1004).
+    #[test]
+    fn fill_and_outline_stay_whole_on_a_narrow_bar() {
+        let bar = |w: f32| Rect::from_min_size(Pos2::new(4.0, 0.0), Vec2::new(w, 41.0));
+        let (fill_w, outline_w) = (110.0, 190.0);
+        let wide = bar(1600.0);
+        let end = wide.max.x - 68.0;
+        let (f, o) = part_positions(wide, 31.0, end, fill_w, outline_w);
+        assert!((f - (4.0 + 1600.0 * 0.685)).abs() < 1e-3);
+        assert!((o - (4.0 + 1600.0 * 0.818)).abs() < 1e-3);
+        for w in [500.0, 700.0, 900.0] {
+            let row = bar(w);
+            let end = row.max.x - 68.0;
+            let (f, o) = part_positions(row, 31.0, end, fill_w, outline_w);
+            assert!(o + outline_w <= end + 1e-3, "{w}: outline cut");
+            assert!(f + fill_w <= o - 8.0 + 1e-3, "{w}: fill cut");
+            assert!(f >= 31.0, "{w}");
+        }
+        // Too narrow for both: they keep at least their swatches, in order.
+        let row = bar(200.0);
+        let (f, o) = part_positions(row, 31.0, row.max.x - 68.0, fill_w, outline_w);
+        assert!(f >= 31.0 && o >= f + Indicator::MIN_W, "{f} {o}");
+    }
 
     #[test]
     fn every_tool_has_its_own_hint() {
