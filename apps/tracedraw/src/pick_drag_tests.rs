@@ -10735,3 +10735,60 @@ fn a_right_click_on_any_toolbar_keeps_the_bar_menu_open() {
         "and the menu closed"
     );
 }
+
+/// A dimension without arrowheads drawn across the page with its tool
+/// and dragged with the Pick tool keeps its selection box around its
+/// line and label, moved sideways and upwards (#996).
+#[test]
+fn a_moved_dimension_keeps_its_selection_box_around_it() {
+    let (ctx, mut app, rect) = setup();
+    app.run(tracedraw_core::Command::DeleteShapes { shapes: vec![rect] });
+    app.select(Vec::new());
+    // No arrowheads: their curve is empty, and its box was the origin's.
+    app.dimension_style.arrows = crate::dimensions::ArrowStyle::None;
+    app.set_tool(Tool::ParallelDimension);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    for p in [
+        Point::new(0.0, 297.0),
+        Point::new(210.0, 297.0),
+        Point::new(105.0, 312.0),
+    ] {
+        let at = app.view.to_screen(p);
+        click_at(&ctx, &mut app, at, Modifiers::NONE);
+    }
+    app.bake_dimensions();
+    let g = *app.selection.first().expect("a dimension");
+    app.set_tool(Tool::Pick);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    app.bake_dimensions();
+    let check = |app: &App, what: &str| {
+        let label = match &app.doc().find_shape(g).expect("dimension").kind {
+            ShapeKind::Group { children } => children[2].bounds(),
+            other => panic!("{other:?}"),
+        };
+        let got = app.selection_bounds().expect("selected");
+        assert!(
+            got.contains(label.center()),
+            "{what}: box {got:?}, label {label:?}"
+        );
+        assert!(got.height() < 30.0, "{what}: box {got:?}, label {label:?}");
+        assert!(got.width() < 230.0, "{what}: box {got:?}, label {label:?}");
+        label.center()
+    };
+    let mut label = check(&app, "drawn");
+    for step in [egui::vec2(-150.0, 0.0), egui::vec2(0.0, -120.0)] {
+        let from = app.view.to_screen(label);
+        drag(
+            &ctx,
+            &mut app,
+            from,
+            from + step,
+            Modifiers::NONE,
+            Vec::new(),
+        );
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+        app.bake_dimensions();
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+        label = check(&app, &format!("{step:?}"));
+    }
+}
