@@ -51,6 +51,24 @@ drawn past a plane's vanishing line is pulled towards the grid until it
 fits, and one that lies wholly beyond it stays flat. Drawing the object
 and laying it down are one undo step.
 
+## How the Perspective effect maps an outline
+
+The object's box goes onto the four corners by the projective map that
+takes its corners there (`live::perspective_in`). The nodes and control
+points of the outline are mapped, so every segment stays one segment:
+straight sides stay straight and a curve bends as its handles do. Two
+neighbouring corners dragged onto one point (a triangle) bring the
+handles along that side to the point too, so the outline comes to a tip
+there: an ellipse becomes a drop. Corners that meet, or that were dragged
+a little past each other (within a fiftieth of the frame), are set a
+hair apart in the order of the side across from them; the box could not
+be mapped onto three points, and the object stayed flat or, with the
+corners crossed, came out as a sliver running off past the frame (#879,
+`live::tests::a_perspective_with_two_corners_together_makes_a_tip`). A
+frame folded over itself on purpose puts part of the outline past the
+horizon: that outline is flattened and mapped point by point instead
+(`a_folded_perspective_stays_finite`).
+
 ## The Perspective effect on a group
 
 Object > Add Perspective on a group warps every object in it with the
