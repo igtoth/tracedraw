@@ -1134,7 +1134,8 @@ mod tests {
                 events: vec![egui::Event::PointerMoved(at)],
                 ..Default::default()
             };
-            let out = ctx.run_ui(input, |ui| show(ui.ctx(), cursor, Some(at)));
+            let mut out = ctx.run_ui(input, |ui| show(ui.ctx(), cursor, Some(at)));
+            out.textures_delta.clear();
             out.viewport_output
                 .get(&egui::ViewportId::ROOT)
                 .is_some_and(|v| {
