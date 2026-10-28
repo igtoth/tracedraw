@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Snapping: with only the baseline grid turned on in Snap To, nodes dragged with the Shape tool, drawing tools and moved objects snap to its lines. Snapping counted as off unless another target was on, so the baseline grid alone did nothing; a node that lands on a baseline is now marked like a grid line (#3).
+
 ## 0.19.9 (2026-10-28)
 
 - Docker tabs: when more dockers are open than the column of tabs has room for, the column slides, with arrows at its top and foot and the mouse wheel over it, so every tab and the add button can be reached. The tabs past the window's bottom edge could not be clicked (#950).
