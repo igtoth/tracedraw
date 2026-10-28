@@ -140,6 +140,12 @@ pub fn blend_from_nodes(
     if !one_part(a) || !one_part(b) {
         return blend(a, b, steps, samples);
     }
+    // Two open lines run from the ends given and their steps stay open
+    // lines; taken as closed runs they went back on themselves and drew a
+    // line between their ends (#980).
+    if let Some((sa, sb)) = open_nodes_from(a, b, a0, b0) {
+        return open_node_steps(&sa, &sb, steps);
+    }
     if let Some((sa, sb)) = paired_nodes(a, b, [a0, a1, b0, b1]) {
         return node_steps(&sa, &sb, steps);
     }
@@ -381,10 +387,56 @@ fn open_paired_nodes(a: &BezPath, b: &BezPath) -> Option<(Vec<Seg>, Vec<Seg>)> {
     let ends = |s: &[Seg]| Some((s.first()?.p0, s.last()?.p3));
     let ((a0, a1), (b0, b1)) = (ends(&sa)?, ends(&sb)?);
     if (a0 - b1).hypot() + (a1 - b0).hypot() < (a0 - b0).hypot() + (a1 - b1).hypot() {
-        sb = sb.iter().rev().map(|s| s.reversed()).collect();
+        sb = reversed(&sb);
     }
+    same_counts(&mut sa, &mut sb);
+    Some((sa, sb))
+}
+
+/// A run of segments the other way.
+fn reversed(segs: &[Seg]) -> Vec<Seg> {
+    segs.iter().rev().map(|s| s.reversed()).collect()
+}
+
+/// Two open lines as runs of segments to pair one for one, each from its
+/// end nearest the node given for it (`first_a`, `first_b`), as in
+/// [`blend_from_nodes`]; the counts are matched as in
+/// [`open_paired_nodes`]. `None` unless both are open one-part lines.
+fn open_nodes_from(
+    a: &BezPath,
+    b: &BezPath,
+    first_a: Point,
+    first_b: Point,
+) -> Option<(Vec<Seg>, Vec<Seg>)> {
+    if ![first_a, first_b]
+        .iter()
+        .all(|p| p.x.is_finite() && p.y.is_finite())
+    {
+        return None;
+    }
+    let from = |path: &BezPath, first: Point| {
+        let segs = open_segments(path)?;
+        let (s, e) = (segs.first()?.p0, segs.last()?.p3);
+        Some(if (e - first).hypot() < (s - first).hypot() {
+            reversed(&segs)
+        } else {
+            segs
+        })
+    };
+    let mut sa = from(a, first_a)?;
+    let mut sb = from(b, first_b)?;
+    if sa.len() + sb.len() > MAX_SHAPE_NODES {
+        return None;
+    }
+    same_counts(&mut sa, &mut sb);
+    Some((sa, sb))
+}
+
+/// Halve the longest segments of the run with fewer until both runs have
+/// as many segments.
+fn same_counts(sa: &mut Vec<Seg>, sb: &mut Vec<Seg>) {
     let want = sa.len().max(sb.len());
-    for short in [&mut sa, &mut sb] {
+    for short in [sa, sb] {
         while short.len() < want {
             let longest = (0..short.len())
                 .max_by(|i, j| {
@@ -398,7 +450,6 @@ fn open_paired_nodes(a: &BezPath, b: &BezPath) -> Option<(Vec<Seg>, Vec<Seg>)> {
             short.splice(longest..=longest, [seg.part(0.0, 0.5), seg.part(0.5, 1.0)]);
         }
     }
-    Some((sa, sb))
 }
 
 /// The segments of `segs` run from the node nearest `first`, the way that
@@ -1681,6 +1732,46 @@ mod tests {
     /// Two arcs, the second turned half round so it runs the other way
     /// (the drawing in #1024): the steps are open arcs joining top to top
     /// and bottom to bottom, not closed outlines crossed through the middle.
+    /// Two open lines paired from given nodes stay open lines from those
+    /// ends: taken as closed runs, a step went back from its first point
+    /// to the far end and closed with a line across (#980).
+    #[test]
+    fn blend_from_nodes_keeps_two_open_lines_open() {
+        let mut a = BezPath::new();
+        a.move_to((0.0, 0.0));
+        a.curve_to((30.0, 0.0), (60.0, 20.0), (100.0, 20.0));
+        let mut b = BezPath::new();
+        b.move_to((0.0, 50.0));
+        b.line_to((50.0, 50.0));
+        b.curve_to((70.0, 50.0), (80.0, 70.0), (100.0, 70.0));
+        // The given next points are control points far along, as a file
+        // gives them; and b is paired from its far end.
+        for (b0, from_b) in [
+            (Point::new(0.0, 50.0), 0.0),
+            (Point::new(100.0, 70.0), 100.0),
+        ] {
+            let nodes = [
+                Point::new(0.0, 0.0),
+                Point::new(60.0, 20.0),
+                b0,
+                Point::new(80.0, 70.0),
+            ];
+            let steps = blend_from_nodes(&a, &b, 3, 120, Some(nodes));
+            assert_eq!(steps.len(), 3);
+            for (k, p) in steps.iter().enumerate() {
+                let els = p.elements();
+                assert!(!els.iter().any(|e| matches!(e, PathEl::ClosePath)), "{p:?}");
+                assert_eq!(els.len(), 3, "two segments, as b: {p:?}");
+                let PathEl::MoveTo(first) = els[0] else {
+                    panic!("{p:?}");
+                };
+                let t = (k + 1) as f64 / 4.0;
+                let want = Point::new(0.0, 0.0).lerp(Point::new(from_b, b0.y), t);
+                assert!((first - want).hypot() < 1e-9, "{first:?} {want:?}");
+            }
+        }
+    }
+
     #[test]
     fn blend_of_two_open_arcs_runs_end_to_end() {
         let mut a = BezPath::new();

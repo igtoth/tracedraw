@@ -2868,10 +2868,12 @@ impl<'a> Ctx<'a> {
     }
 
     /// The step count of a blend's linked group (`LIST lnkg` whose own
-    /// `lgob` holds a `loda` of object type 7): the first u32 of its
+    /// `lgob` holds a `loda` of object type 7): the first u16 of its
     /// argument of type 3000. `None` for other linked groups (a contour's
     /// is of type 15). Read from two files saved by versions 9 and 13 with
-    /// the default 20 steps (see CLEANROOM.md).
+    /// the default 20 steps, where the next u16 is 0, and from a version
+    /// 25 file whose nine blends hold 2 to 150 there with other bits in
+    /// the next u16 (#980, see CLEANROOM.md).
     ///
     /// A value outside 1..=999 is no step count the program can save: the
     /// field holds something else in this file (another version's layout),
@@ -2887,7 +2889,7 @@ impl<'a> Ctx<'a> {
             return None;
         }
         let arg = l.args.iter().find(|a| a.ty == 3000)?;
-        let raw = self.reader_at(d, arg.off).uint();
+        let raw = self.reader_at(d, arg.off).u16().map(u32::from);
         Some(match raw {
             Some(n @ 1..=tracedraw_core::live::MAX_BLEND_STEPS) => n,
             other => {
@@ -7302,7 +7304,7 @@ mod tests {
     }
 
     /// Blends between ellipses in a version `v` file, one linked group of
-    /// object type 7 with the given first u32 of its 3000 argument each:
+    /// object type 7 with the given first u32 of its 3000 argument each (its first u16 the step count):
     /// the step count of each live blend read, and the report.
     fn read_blends(v: u16, counts: &[u32]) -> (Vec<u32>, ParseReport) {
         let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
@@ -7356,18 +7358,17 @@ mod tests {
         (steps, rep)
     }
 
-    /// A step count field holding no count a blend can have (0, or the
-    /// 254000 that follows it in the sample files, as another layout
-    /// would put there) gives the default 20 steps and a warning naming
-    /// the value; it was kept to 999, so such files drew every blend with
-    /// 999 steps (#980). Counts of 1 to 999 are kept as read.
+    /// A step count field holding no count a blend can have (0, or more
+    /// than 999) gives the default 20 steps and a warning naming the
+    /// value; it was kept to 999, so such files drew every blend with 999
+    /// steps (#980). Counts of 1 to 999 are kept as read.
     #[test]
     fn a_blend_step_count_out_of_range_gives_the_default() {
         for v in [9u16, 13, 15] {
-            let (steps, rep) = read_blends(v, &[254_000, 0, u32::MAX, 1, 999, 35]);
+            let (steps, rep) = read_blends(v, &[1000, 0, u32::MAX, 1, 999, 35]);
             assert_eq!(steps, [20, 20, 20, 1, 999, 35], "version {v}");
             assert!(
-                rep.warnings.iter().any(|w| w.contains("254000")),
+                rep.warnings.iter().any(|w| w.contains("1000")),
                 "{:?}",
                 rep.warnings
             );
@@ -7378,6 +7379,21 @@ mod tests {
                 rep.warnings
             );
         }
+    }
+
+    /// The step count is the field's first u16: a version 25 file keeps
+    /// other bits in the u16 after it, which read as part of a u32 gave
+    /// counts in the hundreds of millions and every blend the default 20
+    /// steps (#980).
+    #[test]
+    fn a_blend_step_count_is_the_first_u16_of_its_field() {
+        let (steps, rep) = read_blends(25, &[0x6b93_0002, 0x6798_0004, 0x28ae_0096, 0x40fa_000f]);
+        assert_eq!(steps, [2, 4, 150, 15]);
+        assert!(
+            !rep.warnings.iter().any(|w| w.contains("blend")),
+            "{:?}",
+            rep.warnings
+        );
     }
 
     /// The blends of one file take at most `FILE_BLEND_STEPS` steps
