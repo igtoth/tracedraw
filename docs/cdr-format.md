@@ -311,6 +311,8 @@ show. Values are little-endian; lengths in thousandths of an inch.
 
 Which programs open which versions (from a public page about the format, 2026-10-18, not checked here): releases up to the 2019 one open version 7 and newer, the 2020 one (version 22) version 11 and newer, and 2021 to 2026 (versions 23 to 27) version 15 and newer. Files TraceDraw writes in versions 7 to 14 therefore cannot open in current releases whatever their content; testing those versions needs an older release. A user's test with release 25.2 (issue #98) is consistent with this.
 
+What users saw (issues #98 and #1139): in release 25.2 (2026-10-16 and 2026-10-20) and in a 2010 release (2026-10-28) the files of the `interop-0001` and `interop-0002` bundles of 2026-10-16 and 2026-10-17 opened for versions 14 and 15 but showed their shapes without fills (an ellipse without an outline not at all); text of versions 7 to 14 crashed those releases and version 15 text was "an invalid object"; versions 7 to 13 crashed the 2010 release even for an empty page. Those files, inspected here, hold their curves without the node marks (bits 2 and 3) and without the 8 bytes after the node bytes that the Shapes row below describes (both written since 0.9.4, 2026-10-19: the owner's own tests of 2026-10-15 and 2026-10-16 had shown curves without the marks drawn without their fill), rectangles and ellipses of versions 14 and 15 as curves, text with a zero header, and the configuration records of versions 7 to 13 holding the page size alone (the rows above). The `interop-0003` bundle of 2026-10-29 carries all of these; whether it opens with its fills has not been reported yet. Against files saved by that 2010 release and by newer releases for versions 13 to 15 (issues #67, #116, #187 and #955), the records written now match field by field, except that those files also hold a `pref` chunk after `mcfg` (the 4462-byte list of that release's preferences, the same in every file of versions 12 to 15 saved by it) and, in version 14 files of newer releases, no style argument (200) on their objects; both are left as they are until a test shows they matter.
+
 `crates/cdr/src/write.rs` writes versions 7 to 27 (23 to 27 with the records of 22: one drawing saved by a user in each of versions 23 to 27 has the same records in all, only the form letter, `fver`, `vrsn`, `CoreVersion` and the style sheet's version differing; files written here in versions 24 and 27 opened with their images in that program's 2026 release, a user's test of 2026-10-18)
 (`document_to_cdr_version`; `document_to_cdr` writes version 12). The
 app asks for the version when saving a `.cdr` file
@@ -360,11 +362,39 @@ the values those files have.
 | Version 16+ package members | `mimetype` first and stored (the package's media type, nothing else); `content/` as above; `previews/thumbnail.png` and `previews/page<n>.png` (256 pixels on the longer side); `color/color.xml` (document colour model, rendering intent, which colour kinds objects use); `META-INF/textinfo.xml` (object and layer names), `META-INF/metadata.xml` (format, `CoreVersion` = version x 100, title), `META-INF/links.xml` (empty `linkInfo`) and `META-INF/container.xml`, an open container format manifest naming `content/root.dat` as the main root file and each picture with its size (pages by index and caption) | files of versions 17 to 26 (owned by the author and public tutorial files, compared member by member); all hold these members, `mimetype` first and stored. Files written without them (before 2026-10-15) were reported not to open in another program (a version 17 file, "error reading file"). Members files also hold that are not written: `styles/document.cdss`, `color/docPalette.xml`, colour profiles, `font/` and `embed/` |
 | `tracedraw/blends.json` (versions 14+, TraceDraw's own member) | JSON written by TraceDraw only, not part of the format: `format` (1) and `blends`, each with `group` (the static id, `usdn`, of the group a blend is drawn as), `count` (the objects in that group) and `start` (which of them, bottom to top, is the start object), `end` (the end object's static id, when it is an object of the drawing) and `blend` (the blend's settings as TraceDraw keeps them; the end's copy left empty when `end` is given). Reading such a file, each group that still holds `count` objects gives way to its start object with the blend to its end object; a group that changed, a missing end or an unreadable member leaves the drawn group as it is | our own design (#986) | Other readers see the plain group; RIFF files (before 14) have no place for it and keep the group only. |
 | Not written | Text fitted to a path (its letters are written as curves), effects (evaluated first and written as what they draw; a blend as one plain group of its start object and its steps as curves, the end object staying an object of its own, #946; from version 14 the package's `tracedraw/blends.json` lets TraceDraw open such a group as the live blend again, #986), embedded fonts before version 16, the document palette, the style sheet member, outline fills (the outline colour is written) | |
+| Drop shadows | Written as what they draw: the object's outline at the shadow's place (moved by its offset, or laid from the object's edge for a perspective shadow), filled with the shadow's colour at the shadow's opacity, with no outline, beneath the object, which goes out without its shadow. The feathering, the merge mode and a perspective shadow's fade have no record and are lost; the shadow is a plain curve when the file is opened again | our own model; no file knowledge involved |
 | Gradient options with no field in `fild` (repeat, cycles, bilinear, invert, the shaped type) | written as the closest plain gradient (`Fountain::to_plain`): the options worked into at most 64 stops and edge pad 0; a shaped gradient as type 4 (square) with its stops reversed. The record layout is unchanged; a gradient without the options is written byte for byte as before | our own model; no file knowledge involved |
 
 Every version written opens again in this crate (`write/tests.rs`:
 shapes, groups, bitmaps, clipped bitmaps, pages, text runs, alignment,
 corner shapes and stars in each version, and the record sizes above).
+The round-trip conformance suite, `crates/cdr/tests/conformance.rs`
+(`cargo test -p tracedraw-cdr --test conformance`, part of `cargo test
+--workspace`), writes every object kind the writer handles in every
+version from 7 to 27 and reads each file back: rectangles (plain, round,
+turned), ellipses, pies and arcs, curves with several subpaths, polygons
+and stars, artistic text with runs and lines, paragraph text, nested
+groups, clip frames (a cropped bitmap and a frame around shapes),
+bitmaps with and without see-through pixels, uniform, fountain, pattern,
+texture and mesh fills, outlines (widths, caps, joins, dashes, scale
+with object, behind fill, calligraphic nib, hairline, none), uniform and
+graded transparency, drop shadows, blends, contours, envelopes,
+extrusions, several pages and layers, hidden objects, page backgrounds
+and names. What each version keeps is stated in the suite's `keeps_*`
+helpers (transparency lost in 13 to 15, native rectangles before 15,
+hidden objects and backgrounds from 21, live blends from 14, pages of
+their own size from 16), so a change of those limits is a change of the
+suite. Every written file also passes its structural checks: the checker
+above, chunk sizes that add up and lists that nest in the raw stream and
+in the parsed tree, the chunks each list must hold (`doc `, pages, layers,
+groups, objects, text records), bitmap ids that name a picture, the
+members of the version 14 and 15 package, and for version 16 on the
+`mimetype` member first and stored, the manifest naming the root file,
+every data file listed and every redirect record inside the data file it
+names. The suite found and fixed (2026-10-29): group names were not
+written (nor read), drop shadows were dropped, and a page of another
+size than the first lost its size (and its objects moved) in every
+version.
 Every file those tests write also passes the checker of `check.rs`
 (`tracedraw-cli check file.cdr`), which walks the chunk tree and reports
 what the program that reads the file would stumble on: a subpath that

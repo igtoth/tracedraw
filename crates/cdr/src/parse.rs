@@ -867,6 +867,17 @@ impl<'a> Ctx<'a> {
         }
     }
 
+    /// A group's name from its own `lgob` (not a child object's).
+    fn group_name(&mut self, gc: &Chunk) -> Option<String> {
+        let lgob = gc.children.iter().find(|k| k.is(b"lgob"))?;
+        let loda = lgob.children.iter().find(|k| k.is(b"loda"))?;
+        let d = self.data(loda);
+        let l = self.read_loda(d)?;
+        let arg = l.args.iter().find(|a| a.ty == ARG_NAME)?;
+        let name = self.read_name(d.get(arg.off..arg.end)?);
+        (!name.is_empty()).then_some(name)
+    }
+
     fn page_own_size(&mut self, pc: &Chunk) -> Option<Size> {
         let loda = self.own_loda(pc)?;
         let d = self.data(loda);
@@ -3464,6 +3475,9 @@ impl<'a> Ctx<'a> {
                         let mut g = Shape::new(ids.shape(), ShapeKind::Group { children });
                         g.fill = Fill::None;
                         g.stroke = None;
+                        // The group's own name (argument 1000 of its
+                        // `loda`), as objects carry theirs.
+                        g.name = self.group_name(c);
                         self.note_static_id(c, g.id);
                         out.push(g);
                     }

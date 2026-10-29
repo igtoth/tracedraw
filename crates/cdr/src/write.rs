@@ -177,6 +177,9 @@ const ARG_PROPS: u32 = 12000;
 /// versions 7 to 12: 0, the transform holding any turn.
 const ARG_ROTATION: u32 = 12030;
 const ARG_GUID: u32 = 40050;
+/// A page's own size (width and height in coordinate units) in its
+/// `lgob`, when it differs from the document's (version 16+ files).
+const ARG_PAGE_SIZE: u32 = 19130;
 /// On text objects of version 16 and later: 1.
 const ARG_TEXT_LINK: u32 = 16015;
 /// Version 21: 1 hides the object (it is kept but not drawn).
@@ -2795,6 +2798,29 @@ fn mark_nodes(coords: &mut [u8]) {
     }
 }
 
+/// The object a drop shadow draws: the shape's outline (page space) at
+/// the shadow's place, in its colour and opacity, without an outline;
+/// `None` for a shape that draws no outline.
+fn shadow_silhouette(s: &Shape, shadow: &tracedraw_core::Shadow) -> Option<Shape> {
+    let outline = s.page_path();
+    if outline.elements().is_empty() {
+        return None;
+    }
+    let mut sh = Shape::new(
+        s.id,
+        ShapeKind::Path {
+            path: outline,
+            closed: true,
+        },
+    );
+    sh.transform = shadow.silhouette_transform(s.bounds());
+    sh.fill = Fill::Solid(shadow.color);
+    sh.stroke = None;
+    sh.opacity = (shadow.opacity * s.opacity).clamp(0.0, 1.0);
+    sh.visible = s.visible;
+    Some(sh)
+}
+
 /// A box as `bbox` stores it: top left, then bottom right (file units,
 /// y up).
 fn box_bytes(r: Rect) -> Vec<u8> {
@@ -3101,6 +3127,9 @@ struct Writer<'a> {
     /// The drawing's layers as the master page and every page list them
     /// before version 14 (see [`layer_slots`]).
     layer_slots: Vec<LayerSlot>,
+    /// The document's page size (`mcfg`): the first page's. A page of
+    /// another size carries its own from version 16.
+    doc_size: tracedraw_core::geometry::Size,
 }
 
 /// One of the drawing's layers as files before version 14 list them: by
@@ -3225,6 +3254,7 @@ impl<'a> Writer<'a> {
             split_families: HashMap::new(),
             run_faces: Vec::new(),
             layer_slots: Vec::new(),
+            doc_size: tracedraw_core::geometry::Size::new(210.0, 297.0),
         }
     }
 
@@ -3338,6 +3368,7 @@ impl<'a> Writer<'a> {
             .first()
             .map(|p| p.size)
             .unwrap_or(tracedraw_core::geometry::Size::new(210.0, 297.0));
+        self.doc_size = first;
         // Pages first: they fill the tables.
         self.layer_slots = layer_slots(doc);
         let mut pages = Vec::new();
@@ -3586,7 +3617,16 @@ impl<'a> Writer<'a> {
     /// slot of [`layer_slots`], empty where the page has no such layer.
     fn page(&mut self, page: &tracedraw_core::document::Page) -> (Node, Option<Rect>) {
         let v = self.v;
-        let centre = Point::new(page.size.width / 2.0, page.size.height / 2.0);
+        // A page of another size than the document's keeps its own in its
+        // `lgob` (argument 19130), as version 16+ files hold it; files of
+        // earlier versions give every page the document's size, so their
+        // objects are placed from that page's centre, where a reader puts
+        // them again.
+        let own_size = (page.size.width - self.doc_size.width).abs() > 1e-6
+            || (page.size.height - self.doc_size.height).abs() > 1e-6;
+        let own_size = own_size && v.redirects();
+        let size = if own_size { page.size } else { self.doc_size };
+        let centre = Point::new(size.width / 2.0, size.height / 2.0);
         let mut layers = vec![
             self.master_layer(MasterLayer::Guides, true),
             self.master_layer(MasterLayer::Desktop, true),
@@ -3628,6 +3668,15 @@ impl<'a> Writer<'a> {
         children.push(chunk(b"bbox", box_bytes(page_box)));
         children.push(chunk(b"obbx", obbx_bytes(page_box, 0.0)));
         children.push(list(b"gobj", layers));
+        if own_size {
+            let mut size = Buf::default();
+            size.i32(units(page.size.width))
+                .i32(units(page.size.height));
+            children.push(list(
+                b"lgob",
+                vec![chunk(b"loda", loda(0, vec![(ARG_PAGE_SIZE, size.done())]))],
+            ));
+        }
         (list(b"page", children), content)
     }
 
@@ -3686,7 +3735,15 @@ impl<'a> Writer<'a> {
         ]
     }
 
-    fn group(&mut self, children: &[Shape], centre: Point, depth: usize) -> Placed {
+    /// A group list of `children`, named `name` (argument 1000 of its
+    /// `loda`, as files name groups).
+    fn group(
+        &mut self,
+        children: &[Shape],
+        name: Option<&str>,
+        centre: Point,
+        depth: usize,
+    ) -> Placed {
         let inner = self.objects(children, centre, depth + 1);
         let Some(b) = inner.bounds else {
             return Placed {
@@ -3707,6 +3764,9 @@ impl<'a> Writer<'a> {
                         vec![(ARG_ID, id.to_le_bytes().to_vec()), (ARG_PROPS, vec![0; 4])];
                     if self.v.rotation_arg() {
                         args.push((ARG_ROTATION, vec![0; 4]));
+                    }
+                    if let Some(n) = name.filter(|n| !n.is_empty()) {
+                        args.push((ARG_NAME, name_bytes(self.v, n)));
                     }
                     loda(0, args)
                 }),
@@ -3976,6 +4036,26 @@ impl<'a> Writer<'a> {
         if !s.visible && !keeps_hidden {
             return none();
         }
+        // A drop shadow goes out as what it draws: the object's outline
+        // moved by the shadow's offset (a perspective shadow laid from
+        // its edge), filled with the shadow's colour at its opacity,
+        // beneath the object. The feathering has no record here.
+        if let Some(shadow) = &s.shadow {
+            let silhouette =
+                shadow_silhouette(s, shadow).map(|sh| self.object(&sh, centre, depth + 1));
+            let mut rest = s.clone();
+            rest.shadow = None;
+            let mut placed = self.object(&rest, centre, depth);
+            if let Some(under) = silhouette {
+                // Front to back: the object, then its shadow.
+                placed.nodes.extend(under.nodes);
+                placed.bounds = match (placed.bounds, under.bounds) {
+                    (Some(a), Some(b)) => Some(a.union(b)),
+                    (a, b) => a.or(b),
+                };
+            }
+            return placed;
+        }
         // Paragraph text goes out as a group of artistic texts, one a line
         // placed where its frame put it (frames are not written yet), so it
         // keeps its look.
@@ -4039,7 +4119,7 @@ impl<'a> Writer<'a> {
             if blends && all.len() > 1 {
                 let start = ev.below.len();
                 let before = self.next_usdn;
-                let placed = self.group(&all, centre, depth + 1);
+                let placed = self.group(&all, s.name.as_deref(), centre, depth + 1);
                 // A blend that is the object's only effect opens live
                 // again in TraceDraw: the package names the group (#986).
                 if let [blend @ tracedraw_core::live::Effect::Blend { end_id, .. }] =
@@ -4070,7 +4150,7 @@ impl<'a> Writer<'a> {
                         c
                     })
                     .collect();
-                return self.group(&kids, centre, depth);
+                return self.group(&kids, s.name.as_deref(), centre, depth);
             }
             ShapeKind::Table(_) | ShapeKind::SymbolInstance { .. } => {
                 let kids: Vec<Shape> = s
@@ -4081,7 +4161,7 @@ impl<'a> Writer<'a> {
                         c
                     })
                     .collect();
-                return self.group(&kids, centre, depth);
+                return self.group(&kids, s.name.as_deref(), centre, depth);
             }
             ShapeKind::ClipFrame { frame, contents }
                 if contents.len() == 1
@@ -4115,7 +4195,7 @@ impl<'a> Writer<'a> {
                     f.fill = Fill::None;
                     kids.push(f);
                 }
-                return self.group(&kids, centre, depth);
+                return self.group(&kids, s.name.as_deref(), centre, depth);
             }
             ShapeKind::Bitmap { .. } => return self.bitmap_object(s, centre, None),
             _ => {}
