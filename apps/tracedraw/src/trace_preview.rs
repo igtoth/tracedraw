@@ -116,6 +116,7 @@ struct Job {
 pub const DEFER_FULL_OVER: u64 = 400_000;
 
 /// The live preview's state, kept on the app while the dialog is open.
+#[derive(Default)]
 pub struct Live {
     pub shown: Option<Shown>,
     /// A request waiting for the debounce or for the running job to stop.
@@ -127,27 +128,13 @@ pub struct Live {
     /// not started again until the settings change.
     failed: Option<(u64, u64)>,
     /// Large pictures get the quick look only; the whole picture is
-    /// traced on OK. On where there are no threads (the browser).
+    /// traced on OK. Always so where there are no threads (the
+    /// browser); tests force it on the desktop.
     pub defer_full: bool,
     /// How many traces were started, for tests and timings.
     pub started: usize,
     /// How many times a trace on show was only given new colours.
     pub recolored: usize,
-}
-
-impl Default for Live {
-    fn default() -> Self {
-        Live {
-            shown: None,
-            pending: None,
-            job: None,
-            decoded: None,
-            failed: None,
-            defer_full: cfg!(target_arch = "wasm32"),
-            started: 0,
-            recolored: 0,
-        }
-    }
 }
 
 impl Live {
@@ -302,7 +289,7 @@ impl Live {
         let (key, look) = (req.key, req.look);
         let flag = cancel.clone();
         let repaint = ctx.clone();
-        let defer_full = self.defer_full;
+        let defer_full = self.defer_full || cfg!(target_arch = "wasm32");
         let work = move || {
             let send = |o| {
                 let _ = tx.send(o);
