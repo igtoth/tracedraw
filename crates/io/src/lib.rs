@@ -370,6 +370,50 @@ mod tests {
         assert_eq!(back, doc);
     }
 
+    /// Every merge mode of a transparency survives the native format, the
+    /// new ones under their lower-case names (#1203).
+    #[test]
+    fn transparency_merge_modes_round_trip_in_native_files() {
+        use tracedraw_core::live::{Effect, MergeMode};
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        for merge in MergeMode::ALL {
+            let id = doc.ids_mut().shape();
+            let mut s = Shape::new(
+                id,
+                ShapeKind::Rect {
+                    rect: tracedraw_core::Rect::new(10.0, 10.0, 40.0, 30.0),
+                    radius: 0.0,
+                    corners: None,
+                },
+            );
+            s.effects.push(Effect::Transparency {
+                mask: Fill::linear(Color::WHITE, Color::BLACK, 0.0),
+                merge,
+                target: 2,
+            });
+            doc.layer_mut(layer).unwrap().shapes.push(s);
+        }
+        let json = doc.to_json().unwrap();
+        for name in [
+            "\"texturize\"",
+            "\"lightness\"",
+            "\"behind\"",
+            "\"screen\"",
+            "\"overlay\"",
+            "\"softlight\"",
+            "\"hardlight\"",
+            "\"colordodge\"",
+            "\"colorburn\"",
+            "\"exclusion\"",
+            "\"iflighter\"",
+        ] {
+            assert!(json.contains(name), "{name}");
+        }
+        let back = Document::from_json(&json).unwrap();
+        assert_eq!(back, doc);
+    }
+
     #[test]
     fn corners_that_keep_their_size_survive_native_svg_and_pdf() {
         use tracedraw_core::geometry::{Affine, Shape as _};

@@ -133,11 +133,14 @@ fn write_unlinked(
         let mut main = ev.main.clone();
         main.effects.clear();
         // Lens and non-uniform transparency have no SVG equivalent here;
-        // approximate with the average opacity of the mask.
+        // approximate with the average opacity of the mask. The merge
+        // mode goes out as the CSS blend mode when one matches it.
+        let mut blend = None;
         for e in &shape.effects {
             match e {
-                tracedraw_core::live::Effect::Transparency { mask, .. } => {
+                tracedraw_core::live::Effect::Transparency { mask, merge, .. } => {
                     main.opacity *= average_luminance(mask) as f64;
+                    blend = svg_blend_mode(*merge);
                 }
                 tracedraw_core::live::Effect::Lens(tracedraw_core::live::Lens::Transparency {
                     rate,
@@ -152,7 +155,14 @@ fn write_unlinked(
                 _ => {}
             }
         }
-        write_shape(&main, symbols, parent, out, defs, next_grad, indent + 1);
+        match blend {
+            Some(b) => {
+                let _ = writeln!(out, "{pad}  <g style=\"mix-blend-mode:{b}\">");
+                write_shape(&main, symbols, parent, out, defs, next_grad, indent + 2);
+                let _ = writeln!(out, "{pad}  </g>");
+            }
+            None => write_shape(&main, symbols, parent, out, defs, next_grad, indent + 1),
+        }
         for a in &ev.above {
             let mut a = a.clone();
             a.effects.clear();
@@ -656,6 +666,33 @@ fn fmt(v: f64) -> String {
     }
 }
 
+/// The CSS `mix-blend-mode` that draws a merge mode as the drawing
+/// window does (see `tracedraw_render::merge_blend`); None for the modes
+/// CSS has no blend for, which draw normally.
+pub fn svg_blend_mode(merge: tracedraw_core::live::MergeMode) -> Option<&'static str> {
+    use tracedraw_core::live::MergeMode as M;
+    Some(match merge {
+        M::Multiply | M::Texturize => "multiply",
+        M::Subtract | M::Difference => "difference",
+        M::Divide | M::Screen => "screen",
+        M::IfLighter => "lighten",
+        M::IfDarker => "darken",
+        M::Hue => "hue",
+        M::Saturation => "saturation",
+        M::Color => "color",
+        M::Lightness => "luminosity",
+        M::Invert | M::Exclusion => "exclusion",
+        M::Overlay => "overlay",
+        M::SoftLight => "soft-light",
+        M::HardLight => "hard-light",
+        M::ColorDodge => "color-dodge",
+        M::ColorBurn => "color-burn",
+        M::Normal | M::Add | M::And | M::Or | M::Xor | M::Red | M::Green | M::Blue | M::Behind => {
+            return None
+        }
+    })
+}
+
 /// Mean luminance (0..1) of a mask fill, for exporters without masks.
 pub fn average_luminance(fill: &Fill) -> f32 {
     match fill {
@@ -1139,6 +1176,56 @@ mod tests {
         assert!(pattern.contains("M0 10L5 10L5 5L0 5Z"), "{pattern}");
         assert!(!pattern.contains("<image"));
         assert!(svg.contains("fill=\"url(#pat1)\""));
+    }
+
+    /// A transparency's merge mode goes out as the CSS blend mode on a
+    /// group around the object; modes CSS has no blend for draw normally
+    /// (#1203).
+    #[test]
+    fn merge_modes_go_out_as_mix_blend_mode() {
+        use tracedraw_core::live::{Effect, MergeMode};
+        let svg_with = |merge: MergeMode| {
+            let mut doc = Document::default();
+            let layer = doc.pages[0].layers[0].id;
+            let id = doc.ids_mut().shape();
+            let mut s = Shape::new(
+                id,
+                ShapeKind::Rect {
+                    rect: Rect::new(10.0, 10.0, 60.0, 40.0),
+                    radius: 0.0,
+                    corners: None,
+                },
+            );
+            s.fill = Fill::Solid(Color::rgb8(255, 0, 0));
+            s.effects.push(Effect::Transparency {
+                mask: Fill::Solid(Color::WHITE),
+                merge,
+                target: 2,
+            });
+            doc.layer_mut(layer).unwrap().shapes.push(s);
+            page_to_svg(&doc, 0)
+        };
+        for (merge, css) in [
+            (MergeMode::Screen, "screen"),
+            (MergeMode::Overlay, "overlay"),
+            (MergeMode::SoftLight, "soft-light"),
+            (MergeMode::HardLight, "hard-light"),
+            (MergeMode::ColorDodge, "color-dodge"),
+            (MergeMode::ColorBurn, "color-burn"),
+            (MergeMode::Exclusion, "exclusion"),
+            (MergeMode::Multiply, "multiply"),
+            (MergeMode::IfLighter, "lighten"),
+        ] {
+            let svg = svg_with(merge);
+            assert!(
+                svg.contains(&format!("style=\"mix-blend-mode:{css}\"")),
+                "{merge:?}: {svg}"
+            );
+            assert!(svg.contains("fill=\"#ff0000\""), "{merge:?}");
+        }
+        for merge in [MergeMode::Normal, MergeMode::Behind, MergeMode::Xor] {
+            assert!(!svg_with(merge).contains("mix-blend-mode"), "{merge:?}");
+        }
     }
 
     fn one_shape_svg(fill: Fill, stroke: Option<Stroke>) -> String {

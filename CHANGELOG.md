@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Transparency: ten more merge modes, Texturize, Lightness, Behind, Screen, Overlay, Soft Light, Hard Light, Color Dodge, Color Burn and Exclusion (28 in all), drawn by their formulas, kept in `.tdraw` files and carried into SVG and PDF exports as their blend modes where those exist. The Transparency section of the Properties docker lists a gradient mask's stops with their opacity and position, with Add stop and Remove stop, and shows a pattern or texture mask's Foreground and Background opacity with a Swap button; until now the stops could be edited only with the Transparency tool on the page and the two greys not at all. The Freeze setting the documentation listed, which never existed, is gone from it (#1203).
+
 ## 0.20.0 (2026-10-28)
 
 - Variable fonts: the text follows the axis sliders (Text docker, and the button beside the font size) while they are dragged, so the weight, width or any other axis can be judged on the page. The text changed only when the slider was released. Releasing still keeps the value as one undo step (#870).

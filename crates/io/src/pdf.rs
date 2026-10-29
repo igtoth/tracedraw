@@ -753,10 +753,14 @@ impl PageWriter<'_> {
             }
             let mut main = ev.main.clone();
             main.effects.clear();
+            // The merge mode goes out as the PDF blend mode when one
+            // matches it.
+            let mut blend = "Normal";
             for e in &shape.effects {
                 match e {
-                    tracedraw_core::live::Effect::Transparency { mask, .. } => {
+                    tracedraw_core::live::Effect::Transparency { mask, merge, .. } => {
                         main.opacity *= crate::svg::average_luminance(mask) as f64;
+                        blend = pdf_blend_mode(*merge);
                     }
                     tracedraw_core::live::Effect::Lens(
                         tracedraw_core::live::Lens::Transparency { rate, color },
@@ -768,7 +772,18 @@ impl PageWriter<'_> {
                     _ => {}
                 }
             }
-            self.shape(&main, parent);
+            if blend != "Normal" && self.pdf.allow_alpha {
+                let name = format!("GS{}", self.gstates.len());
+                let id = self
+                    .pdf
+                    .add_str(format!("<< /Type /ExtGState /BM /{blend} >>"));
+                self.gstates.push((name.clone(), id));
+                let _ = writeln!(self.content, "q\n/{name} gs");
+                self.shape(&main, parent);
+                self.content.push_str("Q\n");
+            } else {
+                self.shape(&main, parent);
+            }
             for a in &ev.above {
                 let mut a = a.clone();
                 a.effects.clear();
@@ -1767,22 +1782,30 @@ const MASK_DPI: f64 = 300.0;
 /// The resolution drop shadows are drawn at in PDF output.
 const SHADOW_DPI: f64 = 300.0;
 
-/// The PDF blend mode closest to a shadow's merge mode (the drawing
-/// window's blend for it, see `tracedraw_render::merge_blend`). Modes
-/// with no PDF blend draw normally.
+/// The PDF blend mode closest to a merge mode (the drawing window's blend
+/// for it, see `tracedraw_render::merge_blend`), of a shadow or a
+/// transparency. Modes with no PDF blend draw normally.
 fn pdf_blend_mode(merge: tracedraw_core::live::MergeMode) -> &'static str {
     use tracedraw_core::live::MergeMode as M;
     match merge {
-        M::Multiply => "Multiply",
+        M::Multiply | M::Texturize => "Multiply",
         M::Subtract | M::Difference => "Difference",
-        M::Divide => "Screen",
+        M::Divide | M::Screen => "Screen",
         M::IfLighter => "Lighten",
         M::IfDarker => "Darken",
         M::Hue => "Hue",
         M::Saturation => "Saturation",
         M::Color => "Color",
-        M::Invert => "Exclusion",
-        M::Normal | M::Add | M::And | M::Or | M::Xor | M::Red | M::Green | M::Blue => "Normal",
+        M::Lightness => "Luminosity",
+        M::Invert | M::Exclusion => "Exclusion",
+        M::Overlay => "Overlay",
+        M::SoftLight => "SoftLight",
+        M::HardLight => "HardLight",
+        M::ColorDodge => "ColorDodge",
+        M::ColorBurn => "ColorBurn",
+        M::Normal | M::Add | M::And | M::Or | M::Xor | M::Red | M::Green | M::Blue | M::Behind => {
+            "Normal"
+        }
     }
 }
 
@@ -3087,6 +3110,57 @@ mod pdfx_tests {
         doc.pages[0].layers[0].shapes = vec![base, top];
         doc.set_ids(ids);
         doc
+    }
+
+    /// A transparency's merge mode goes out as the PDF blend mode in a
+    /// graphics state around the object; modes PDF has no blend for draw
+    /// normally, and PDF/X-1a flattens the object instead (#1203).
+    #[test]
+    fn transparency_merge_modes_go_out_as_blend_modes() {
+        use tracedraw_core::live::{Effect, MergeMode};
+        let doc_with = |merge: MergeMode| {
+            let mut doc = doc_with_transparent_rect();
+            let top = &mut doc.pages[0].layers[0].shapes[1];
+            top.opacity = 1.0;
+            top.effects.push(Effect::Transparency {
+                mask: Fill::Solid(Color::WHITE),
+                merge,
+                target: 2,
+            });
+            doc
+        };
+        for (merge, name) in [
+            (MergeMode::Screen, "Screen"),
+            (MergeMode::Overlay, "Overlay"),
+            (MergeMode::SoftLight, "SoftLight"),
+            (MergeMode::HardLight, "HardLight"),
+            (MergeMode::ColorDodge, "ColorDodge"),
+            (MergeMode::ColorBurn, "ColorBurn"),
+            (MergeMode::Exclusion, "Exclusion"),
+            (MergeMode::Multiply, "Multiply"),
+        ] {
+            let bytes = document_to_pdf(&doc_with(merge));
+            let text = String::from_utf8_lossy(&bytes).into_owned();
+            assert!(text.contains(&format!("/BM /{name}")), "{merge:?}");
+            let content = page_content(&bytes);
+            let gs = content.find(" gs").expect("the state is set");
+            let fill = content.find("0 0 1 rg").expect("the blue fill");
+            assert!(gs < fill, "{merge:?}: the state before the object");
+        }
+        for merge in [MergeMode::Normal, MergeMode::Behind, MergeMode::Add] {
+            let bytes = document_to_pdf(&doc_with(merge));
+            assert!(
+                !String::from_utf8_lossy(&bytes).contains("/BM"),
+                "{merge:?}"
+            );
+        }
+        let opts = PdfOptions {
+            standard: PdfStandard::X1a,
+            flatten_dpi: 72.0,
+            ..Default::default()
+        };
+        let bytes = document_to_pdf_with(&doc_with(MergeMode::Screen), &opts);
+        assert!(!String::from_utf8_lossy(&bytes).contains("/BM"));
     }
 
     #[test]

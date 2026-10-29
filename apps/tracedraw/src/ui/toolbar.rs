@@ -2203,8 +2203,23 @@ fn transparency_controls(app: &mut App, ui: &mut Ui, stacked: bool) {
                     .response
                     .rich_tip(crate::ui::tips::keyed("toolbar.transparency_fountain_kind"));
             }
+        } else if (set.kind == 2 || set.kind == 3)
+            && !kind_mixed
+            && mask_greys_fields(ui, &mut set.mask, mixed.contains(&F::MaskGreys), stacked)
+        {
+            field = Some(F::MaskGreys);
         }
     });
+    // The docker lists a fountain mask's stops under the angle and kind.
+    if stacked && set.kind == 1 && !mixed.contains(&F::Kind) {
+        if let Fill::Fountain(f) = &mut set.mask {
+            if mixed.contains(&F::MaskStops) {
+                crate::ui::field::mixed_note(ui);
+            } else if mask_stops_rows(ui, f) {
+                field = Some(F::MaskStops);
+            }
+        }
+    }
     part_row(ui, stacked, |ui| {
         if !stacked {
             vsep(ui);
@@ -2248,6 +2263,207 @@ fn transparency_controls(app: &mut App, ui: &mut Ui, stacked: bool) {
             app.patch_transparency(&set, &[f]);
         }
     }
+}
+
+/// The text of a small dim label of the Transparency section.
+fn dim_text(key: &str) -> egui::RichText {
+    egui::RichText::new(tr(key))
+        .color(Tokens::text_dim())
+        .size(11.0)
+}
+
+/// A small dim label of the Transparency section.
+fn dim_label(ui: &mut Ui, key: &str) {
+    ui.add(egui::Label::new(dim_text(key)).extend());
+}
+
+/// The least width of the opacity and position fields of a mask.
+const MASK_FIELD_W: f32 = 58.0;
+
+/// A column of the stop list: as wide as its heading or the field,
+/// whichever is more.
+fn mask_column_width(ui: &Ui, key: &str) -> f32 {
+    let w = ui
+        .painter()
+        .layout_no_wrap(
+            tr(key),
+            egui::FontId::proportional(11.0),
+            Tokens::text_dim(),
+        )
+        .size()
+        .x;
+    (w + 4.0).max(MASK_FIELD_W)
+}
+
+/// A fountain mask's stops, one row each: the stop's opacity (its grey,
+/// white 100 %), its position, Add stop (after it, half way to the next)
+/// and Remove stop (two stops stay). True when a stop changed.
+fn mask_stops_rows(ui: &mut Ui, f: &mut tracedraw_core::Fountain) -> bool {
+    let mut changed = false;
+    let cols = [
+        (
+            "transparency.opacity",
+            mask_column_width(ui, "transparency.opacity"),
+        ),
+        (
+            "transparency.position",
+            mask_column_width(ui, "transparency.position"),
+        ),
+    ];
+    ui.horizontal(|ui| {
+        for (key, w) in cols {
+            ui.allocate_ui_with_layout(
+                egui::vec2(w, 14.0),
+                egui::Layout::left_to_right(egui::Align::Center),
+                |ui| dim_label(ui, key),
+            );
+        }
+    });
+    let mut insert = None;
+    let mut remove = None;
+    let n = f.stops.len();
+    for (i, stop) in f.stops.iter_mut().enumerate() {
+        ui.horizontal(|ui| {
+            let mut opacity = crate::mixed::grey_opacity(stop.color).round();
+            if ui
+                .add(
+                    crate::ui::field::NumField::new(&mut opacity)
+                        .range(0.0..=100.0)
+                        .suffix(" %")
+                        .width(cols[0].1),
+                )
+                .rich_tip(tr("transparency.stop_opacity_tip"))
+                .changed()
+            {
+                stop.color = crate::mixed::opacity_grey(opacity);
+                changed = true;
+            }
+            let mut pos = (stop.pos * 100.0).round();
+            if ui
+                .add(
+                    crate::ui::field::NumField::new(&mut pos)
+                        .range(0.0..=100.0)
+                        .suffix(" %")
+                        .width(cols[1].1),
+                )
+                .rich_tip(tr("transparency.stop_position_tip"))
+                .changed()
+            {
+                stop.pos = pos / 100.0;
+                changed = true;
+            }
+            if ui
+                .small_button("+")
+                .rich_tip(tr("docker.add_stop"))
+                .clicked()
+            {
+                insert = Some(i);
+            }
+            if n > 2
+                && ui
+                    .small_button("x")
+                    .rich_tip(tr("docker.remove_stop"))
+                    .clicked()
+            {
+                remove = Some(i);
+            }
+        });
+    }
+    if let Some(i) = insert {
+        let here = f.stops.get(i).map(|s| s.pos).unwrap_or(0.0);
+        let next = f.stops.get(i + 1).map(|s| s.pos).unwrap_or(1.0);
+        let pos = (here + next) / 2.0;
+        let color = tracedraw_core::style::sample_stops(&f.sorted_stops(), pos);
+        f.stops.insert(
+            (i + 1).min(f.stops.len()),
+            tracedraw_core::Stop::new(pos, color),
+        );
+        changed = true;
+    }
+    if let Some(i) = remove.filter(|i| *i < f.stops.len()) {
+        f.stops.remove(i);
+        changed = true;
+    }
+    changed
+}
+
+/// The foreground and background opacity of a pattern or texture mask
+/// (their greys, white 100 %) and a button swapping them; in the docker
+/// (`stacked`) on two rows. True when a grey changed.
+fn mask_greys_fields(ui: &mut Ui, mask: &mut Fill, mixed: bool, stacked: bool) -> bool {
+    let Some((front, back)) = crate::mixed::mask_greys(mask) else {
+        return false;
+    };
+    let mut front_pct = crate::mixed::grey_opacity(front).round();
+    let mut back_pct = crate::mixed::grey_opacity(back).round();
+    let grey_field = |ui: &mut Ui, key: &str, tip: &str, v: &mut f64| {
+        dim_label(ui, key);
+        ui.add(
+            crate::ui::field::NumField::new(v)
+                .range(0.0..=100.0)
+                .suffix(" %")
+                .width(MASK_FIELD_W)
+                .mixed(mixed),
+        )
+        .rich_tip(tr(tip))
+        .changed()
+    };
+    let swap_button = |ui: &mut Ui| {
+        ui.button(tr("dialog.swap"))
+            .rich_tip(tr("transparency.swap_greys"))
+            .clicked()
+    };
+    let (mut changed, swap) = if stacked {
+        ui.vertical(|ui| {
+            let front = ui
+                .horizontal(|ui| {
+                    grey_field(
+                        ui,
+                        "transparency.foreground",
+                        "transparency.foreground_tip",
+                        &mut front_pct,
+                    )
+                })
+                .inner;
+            ui.horizontal(|ui| {
+                let back = grey_field(
+                    ui,
+                    "transparency.background",
+                    "transparency.background_tip",
+                    &mut back_pct,
+                );
+                (front || back, swap_button(ui))
+            })
+            .inner
+        })
+        .inner
+    } else {
+        let front = grey_field(
+            ui,
+            "transparency.foreground",
+            "transparency.foreground_tip",
+            &mut front_pct,
+        );
+        let back = grey_field(
+            ui,
+            "transparency.background",
+            "transparency.background_tip",
+            &mut back_pct,
+        );
+        (front || back, swap_button(ui))
+    };
+    if swap {
+        std::mem::swap(&mut front_pct, &mut back_pct);
+        changed = true;
+    }
+    if changed {
+        crate::mixed::set_mask_greys(
+            mask,
+            crate::mixed::opacity_grey(front_pct),
+            crate::mixed::opacity_grey(back_pct),
+        );
+    }
+    changed
 }
 
 /// The font size: a field and an arrow dropping the usual sizes.

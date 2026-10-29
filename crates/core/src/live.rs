@@ -143,6 +143,10 @@ pub enum Effect {
     },
 }
 
+/// How a transparency (or a drop shadow) mixes with what lies beneath.
+/// The names in `.tdraw` files are the variants in lower case
+/// (`softlight`, `colordodge`); `docs/behavior/transparency.md` has the
+/// formulas the renderer uses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum MergeMode {
@@ -155,9 +159,13 @@ pub enum MergeMode {
     Divide,
     IfLighter,
     IfDarker,
+    /// The backdrop darkened by the source's lightness (a grey multiply).
+    Texturize,
     Hue,
     Saturation,
     Color,
+    /// The source's HSL lightness with the backdrop's hue and saturation.
+    Lightness,
     Invert,
     And,
     Or,
@@ -165,10 +173,19 @@ pub enum MergeMode {
     Red,
     Green,
     Blue,
+    /// The source shows only where the backdrop is clear.
+    Behind,
+    Screen,
+    Overlay,
+    SoftLight,
+    HardLight,
+    ColorDodge,
+    ColorBurn,
+    Exclusion,
 }
 
 impl MergeMode {
-    pub const ALL: [MergeMode; 18] = [
+    pub const ALL: [MergeMode; 28] = [
         MergeMode::Normal,
         MergeMode::Add,
         MergeMode::Subtract,
@@ -177,9 +194,11 @@ impl MergeMode {
         MergeMode::Divide,
         MergeMode::IfLighter,
         MergeMode::IfDarker,
+        MergeMode::Texturize,
         MergeMode::Hue,
         MergeMode::Saturation,
         MergeMode::Color,
+        MergeMode::Lightness,
         MergeMode::Invert,
         MergeMode::And,
         MergeMode::Or,
@@ -187,6 +206,14 @@ impl MergeMode {
         MergeMode::Red,
         MergeMode::Green,
         MergeMode::Blue,
+        MergeMode::Behind,
+        MergeMode::Screen,
+        MergeMode::Overlay,
+        MergeMode::SoftLight,
+        MergeMode::HardLight,
+        MergeMode::ColorDodge,
+        MergeMode::ColorBurn,
+        MergeMode::Exclusion,
     ];
     pub fn name(self) -> &'static str {
         match self {
@@ -198,9 +225,11 @@ impl MergeMode {
             MergeMode::Divide => "Divide",
             MergeMode::IfLighter => "If Lighter",
             MergeMode::IfDarker => "If Darker",
+            MergeMode::Texturize => "Texturize",
             MergeMode::Hue => "Hue",
             MergeMode::Saturation => "Saturation",
             MergeMode::Color => "Color",
+            MergeMode::Lightness => "Lightness",
             MergeMode::Invert => "Invert",
             MergeMode::And => "And",
             MergeMode::Or => "Or",
@@ -208,6 +237,14 @@ impl MergeMode {
             MergeMode::Red => "Red",
             MergeMode::Green => "Green",
             MergeMode::Blue => "Blue",
+            MergeMode::Behind => "Behind",
+            MergeMode::Screen => "Screen",
+            MergeMode::Overlay => "Overlay",
+            MergeMode::SoftLight => "Soft Light",
+            MergeMode::HardLight => "Hard Light",
+            MergeMode::ColorDodge => "Color Dodge",
+            MergeMode::ColorBurn => "Color Burn",
+            MergeMode::Exclusion => "Exclusion",
         }
     }
 }
