@@ -4292,6 +4292,54 @@ impl Document {
             .chain(self.pages.iter_mut().flat_map(|p| &mut p.layers))
     }
 
+    /// Set the spans in family `from` in family `to`: text and table cells
+    /// on every layer, in groups, clip frames and symbols. The number of
+    /// spans changed.
+    pub fn replace_font_family(&mut self, from: &str, to: &str) -> usize {
+        fn spans(spans: &mut [TextSpan], from: &str, to: &str) -> usize {
+            let mut n = 0;
+            for sp in spans.iter_mut().filter(|sp| sp.font_family == from) {
+                sp.font_family = to.to_string();
+                n += 1;
+            }
+            n
+        }
+        fn walk(s: &mut Shape, from: &str, to: &str) -> usize {
+            match &mut s.kind {
+                ShapeKind::Text { spans: sp, .. } => spans(sp, from, to),
+                ShapeKind::Table(t) => t
+                    .cells
+                    .iter_mut()
+                    .map(|c| spans(&mut c.text, from, to))
+                    .sum(),
+                ShapeKind::Group { children } => {
+                    children.iter_mut().map(|c| walk(c, from, to)).sum()
+                }
+                ShapeKind::ClipFrame { frame, contents } => {
+                    walk(frame, from, to)
+                        + contents
+                            .iter_mut()
+                            .map(|c| walk(c, from, to))
+                            .sum::<usize>()
+                }
+                _ => 0,
+            }
+        }
+        if from == to || to.is_empty() {
+            return 0;
+        }
+        let mut n = 0;
+        for l in self.all_layers_mut() {
+            for s in l.shapes.iter_mut() {
+                n += walk(s, from, to);
+            }
+        }
+        for sym in self.symbols.iter_mut() {
+            n += walk(&mut sym.shape, from, to);
+        }
+        n
+    }
+
     /// The font families the drawing's text uses, sorted: text on layers,
     /// inside groups and clip frames, in table cells and in symbols.
     pub fn font_families_used(&self) -> Vec<String> {

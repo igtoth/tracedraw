@@ -24,6 +24,11 @@ nakłada. Obrazy podają swój kolor także w grupie lub ramce.
 
 Pasek właściwości pokazuje pobrany kolor.
 
+Gdy przesuwasz wskaźnik, aby pobrać kolor, małe pole obok pokazuje kolor pod
+nim: próbkę, nazwę koloru, jeśli jest kolorem palety lub farbą dodatkową, jego
+wartości w trybie kolorów rysunku (CMYK lub RGB) i wartość szesnastkową.
+Kroplomierz próbnika kolorów pokazuje to samo pole.
+
 ## Kroplomierz atrybutów {#attributes-eyedropper}
 
 Narzędzie [[tool.attributes_eyedropper]] kopiuje naraz kilka właściwości

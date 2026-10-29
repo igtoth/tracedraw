@@ -10,6 +10,7 @@
 #![allow(clippy::should_implement_trait)]
 pub mod bytes;
 pub mod color;
+pub mod color_convert;
 pub mod command;
 pub mod corner_cut;
 pub mod distort;
@@ -19,6 +20,7 @@ pub mod engine;
 pub mod envelope;
 pub mod extrude;
 pub mod extrude3d;
+pub mod find;
 pub mod fit;
 pub mod geometry;
 pub mod icc;

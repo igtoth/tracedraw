@@ -3,11 +3,9 @@
   xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
   xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
-  xmlns:uap5="http://schemas.microsoft.com/appx/manifest/uap/windows10/5"
   xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
-  xmlns:desktop4="http://schemas.microsoft.com/appx/manifest/desktop/windows10/4"
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
-  IgnorableNamespaces="uap uap3 uap5 desktop desktop4 rescap">
+  IgnorableNamespaces="uap uap3 desktop rescap">
 
   <Identity Name="{IDENTITY}" Publisher="{PUBLISHER}" Version="{VERSION}" ProcessorArchitecture="x64" />
 
@@ -63,28 +61,16 @@
             </uap:SupportedFileTypes>
           </uap:FileTypeAssociation>
         </uap:Extension>
-        <uap3:Extension Category="windows.appExecutionAlias" Executable="tracedraw.exe" EntryPoint="Windows.FullTrustApplication">
+        <!-- The command-line alias runs tracedraw-cli.exe, a console program,
+             so it keeps its terminal input and output. It hangs on the main
+             app because the Store refuses a second application hidden from
+             the Start menu (a "headless app") without a waiver, and an
+             application may declare only one alias extension. -->
+        <uap3:Extension Category="windows.appExecutionAlias" Executable="tracedraw-cli.exe" EntryPoint="Windows.FullTrustApplication">
           <uap3:AppExecutionAlias>
-            <desktop:ExecutionAlias Alias="tracedraw.exe" />
+            <desktop:ExecutionAlias Alias="tracedraw-cli.exe" />
           </uap3:AppExecutionAlias>
         </uap3:Extension>
-      </Extensions>
-    </Application>
-    <Application Id="TraceDrawCli" Executable="tracedraw-cli.exe" EntryPoint="Windows.FullTrustApplication"
-      desktop4:Subsystem="console" desktop4:SupportsMultipleInstances="true">
-      <uap:VisualElements
-        DisplayName="TraceDraw command line"
-        Description="TraceDraw command line"
-        BackgroundColor="transparent"
-        Square150x150Logo="Assets\Square150x150Logo.png"
-        Square44x44Logo="Assets\Square44x44Logo.png"
-        AppListEntry="none" />
-      <Extensions>
-        <uap5:Extension Category="windows.appExecutionAlias" Executable="tracedraw-cli.exe" EntryPoint="Windows.FullTrustApplication">
-          <uap5:AppExecutionAlias desktop4:Subsystem="console">
-            <uap5:ExecutionAlias Alias="tracedraw-cli.exe" />
-          </uap5:AppExecutionAlias>
-        </uap5:Extension>
       </Extensions>
     </Application>
   </Applications>

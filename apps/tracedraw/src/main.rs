@@ -107,6 +107,7 @@ mod node_edit;
 mod object_clone;
 mod ops;
 mod ops2;
+mod package;
 mod painterly_tool;
 mod palette;
 mod pen_look;
