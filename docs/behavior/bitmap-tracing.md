@@ -90,6 +90,14 @@ pane, the wireframe and the counts take the result when it comes in.
   once with each result, not every frame.
 - In the browser (no threads) the quick look is made in the frame; the
   whole picture is traced on OK when it is larger than 400 000 pixels.
+  The quick look is then the request's last result: the preview rests
+  on it (nothing is traced again while the settings stand, the spinner
+  stops, an idle dialog asks for no frames) and the counts show it
+  without the dots sign. Every result says whether it is the last of
+  its request (`Shown::done`), so a result that will be followed by
+  another never counts as the end.
+- A trace whose thread ended without a result is not started again:
+  the preview keeps what it shows until a setting changes.
 
 ### Remove
 
@@ -227,14 +235,27 @@ width equal to the mean local thickness.
   it back with the step to redo kept, redo goes forward again.
 - `trace_dialog::tests::only_settings_that_change_the_trace_change_its_key`.
 - `pick_drag_tests::frame_times_of_the_trace_dialog` (ignored): frame
-  times of a slider drag with a 2000 x 2000 picture in the dialog, and
-  how long the whole picture's trace takes to show.
+  times of a slider drag with a 2000 x 2000 picture in the dialog, how
+  long the whole picture's trace takes to show, and the idle dialog's
+  frames once it is in (how many ask for another frame).
+- `pick_drag_tests::frame_times_of_the_trace_dialog_resting_on_the_quick_look`
+  (ignored): the same where the whole picture waits for OK (the
+  browser's way), idle on the quick look and dragging Detail.
+- `pick_drag_tests::the_trace_dialog_rests_once_the_trace_is_in`: with
+  the trace in, on the desktop and where the whole picture waits for
+  OK, idle frames ask for no frame, start no trace and draw no spinner;
+  a change traces once more and the dialog rests again.
 - `trace_preview::tests`: a request gives the quick look then the whole
   trace, a cancelled one nothing, and the live preview traces each
   distinct request once, debounced while the pointer is held; new
   colours alone are not traced again
   (`new_colours_alone_are_not_traced_again`); closing the dialog ends
-  the running trace soon (`clearing_stops_the_running_trace`).
+  the running trace soon (`clearing_stops_the_running_trace`); with the
+  whole picture deferred the quick look is the last result
+  (`with_the_whole_picture_deferred_the_quick_look_is_the_last_result`)
+  and the preview rests on it (`a_deferred_request_rests_on_its_quick_look`);
+  a trace that died is not started again
+  (`a_trace_that_died_is_not_started_again`).
 - `trace::tests::removing_the_background_or_the_entire_colour_or_nothing`,
   `trace::tests::merge_adjacent_off_makes_a_curve_per_patch`,
   `trace::tests::remove_overlap_keeps_regions_to_their_pixels`,

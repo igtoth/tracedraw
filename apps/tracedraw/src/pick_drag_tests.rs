@@ -12643,6 +12643,214 @@ fn frame_times_of_the_trace_dialog() {
         app.trace_live.started,
         direct
     );
+    let (idle, asked, started) = trace_idle_frames(&ctx, &mut app, 60);
+    eprintln!(
+        "dialog open and idle, the trace in: {idle:?} per frame, {asked} of 60 frames asked for another, {started} traces started"
+    );
+}
+
+/// `n` frames with no input, the dialog open: the mean frame time, how
+/// many frames asked for another frame, and how many traces started.
+fn trace_idle_frames(
+    ctx: &egui::Context,
+    app: &mut App,
+    n: u32,
+) -> (std::time::Duration, u32, usize) {
+    let started = app.trace_live.started;
+    let mut asked = 0;
+    let t = std::time::Instant::now();
+    for _ in 0..n {
+        if trace_frame_asks_for_another(ctx, app) {
+            asked += 1;
+        }
+    }
+    (t.elapsed() / n, asked, app.trace_live.started - started)
+}
+
+/// A frame with no input (the clock moving on a sixtieth of a second);
+/// whether it asked for another frame.
+fn trace_frame_asks_for_another(ctx: &egui::Context, app: &mut App) -> bool {
+    let input = egui::RawInput {
+        screen_rect: Some(egui::Rect::from_min_size(
+            Pos2::ZERO,
+            egui::vec2(1600.0, 1000.0),
+        )),
+        ..Default::default()
+    };
+    let mut out = ctx.run_ui(input, |ui| crate::ui::root(app, ui));
+    out.textures_delta.clear();
+    out.viewport_output
+        .get(&egui::ViewportId::ROOT)
+        .map(|v| v.repaint_delay)
+        .unwrap_or(std::time::Duration::MAX)
+        != std::time::Duration::MAX
+}
+
+/// Frame times of the Trace dialog where the whole picture waits for OK
+/// (the browser's way, forced on the desktop): idle with the quick look
+/// in, and while the Detail slider is dragged. Run with
+/// `cargo test --release -p tracedraw -- --ignored frame_times_of_the_trace_dialog_resting_on_the_quick_look --nocapture`.
+#[test]
+#[ignore]
+fn frame_times_of_the_trace_dialog_resting_on_the_quick_look() {
+    let n = 1000;
+    let img = image::RgbaImage::from_fn(n, n, |x, y| {
+        let v = ((x + y) * 255 / (2 * n)) as u8;
+        image::Rgba([v, v, v, 255])
+    });
+    let (ctx, mut app, _) = trace_setup(img);
+    app.trace_live.clear();
+    app.trace_live.defer_full = true;
+    // The quick look, the request's last result here.
+    let t = std::time::Instant::now();
+    while app.trace_live.shown.is_none() || app.trace_live.busy() {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+        std::thread::sleep(std::time::Duration::from_millis(3));
+        assert!(t.elapsed() < std::time::Duration::from_secs(60));
+    }
+    let (idle, asked, started) = trace_idle_frames(&ctx, &mut app, 120);
+    eprintln!(
+        "dialog open and idle on the quick look: {idle:?} per frame, {asked} of 120 frames asked for another, {started} traces started, busy {}",
+        app.trace_live.busy()
+    );
+    let detail = trace_rect(&ctx, "detail");
+    let from = egui::pos2(detail.left() + detail.width() * 0.5, detail.center().y);
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::PointerMoved(from)],
+        Modifiers::NONE,
+    );
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(from, true, PointerButton::Primary, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    let steps = 30;
+    let mut worst = std::time::Duration::ZERO;
+    let started = app.trace_live.started;
+    let t = std::time::Instant::now();
+    for i in 1..=steps {
+        let p = from + egui::vec2(detail.width() * 0.2 * i as f32 / steps as f32, 0.0);
+        let f = std::time::Instant::now();
+        frame(
+            &ctx,
+            &mut app,
+            vec![Event::PointerMoved(p)],
+            Modifiers::NONE,
+        );
+        worst = worst.max(f.elapsed());
+    }
+    eprintln!(
+        "Detail slider drag: {:?} per frame, worst {:?}, {} traces started during the drag",
+        t.elapsed() / steps,
+        worst,
+        app.trace_live.started - started
+    );
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(
+            from + egui::vec2(detail.width() * 0.2, 0.0),
+            false,
+            PointerButton::Primary,
+            Modifiers::NONE,
+        )],
+        Modifiers::NONE,
+    );
+    let t = std::time::Instant::now();
+    while app.trace_live.busy() && t.elapsed() < std::time::Duration::from_secs(60) {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+        std::thread::sleep(std::time::Duration::from_millis(3));
+    }
+    let (idle, asked, started) = trace_idle_frames(&ctx, &mut app, 120);
+    eprintln!(
+        "idle again after the drag: {idle:?} per frame, {asked} of 120 frames asked for another, {started} traces started, {} in all",
+        app.trace_live.started
+    );
+}
+
+/// Once the trace of the settings on show is in, the open dialog rests:
+/// frames with no input ask for no frame, start no trace and show no
+/// spinner, on the desktop (the whole picture traced) and where the
+/// whole picture waits for OK (the quick look is the last result; before,
+/// the picture was traced again every frame and the spinner never
+/// stopped). A change traces again, once, and the dialog rests again.
+#[test]
+fn the_trace_dialog_rests_once_the_trace_is_in() {
+    for defer_full in [false, true] {
+        let n = 800;
+        let img = image::RgbaImage::from_fn(n, n, |x, y| {
+            let v = ((x + y) * 255 / (2 * n)) as u8;
+            image::Rgba([v, v, v, 255])
+        });
+        let (ctx, mut app, _) = trace_setup(img);
+        // The dialog opened with the whole picture traced: start over
+        // the browser's way.
+        app.trace_live.clear();
+        app.trace_live.defer_full = defer_full;
+        let t = std::time::Instant::now();
+        while app.trace_live.shown.is_none() || app.trace_live.busy() {
+            frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+            std::thread::sleep(std::time::Duration::from_millis(3));
+            assert!(
+                t.elapsed() < std::time::Duration::from_secs(60),
+                "the trace never came"
+            );
+        }
+        let shown = app.trace_live.shown.as_ref().expect("the trace");
+        assert!(shown.done);
+        assert_eq!(
+            shown.stage,
+            if defer_full {
+                crate::trace_preview::Stage::Quick
+            } else {
+                crate::trace_preview::Stage::Full
+            }
+        );
+        let started = app.trace_live.started;
+        // Settled: the frames after the result's own repaint ask for none.
+        let mut asked = Vec::new();
+        for i in 0..20 {
+            asked.push(trace_frame_asks_for_another(&ctx, &mut app));
+            assert!(!app.trace_live.busy(), "defer {defer_full}, frame {i}");
+        }
+        assert!(
+            asked[5..].iter().all(|a| !a),
+            "defer {defer_full}: idle frames asked for another: {asked:?} ({:?})",
+            ctx.repaint_causes()
+        );
+        assert_eq!(app.trace_live.started, started, "nothing traced again");
+        // No spinner beside the pan button.
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+        assert!(
+            !crate::ui::trace_dialog::rects(&ctx)
+                .0
+                .contains_key("spinner"),
+            "defer {defer_full}: the spinner still turns"
+        );
+        // A change: traced once more, then rest again.
+        let detail = trace_rect(&ctx, "detail");
+        click_at(
+            &ctx,
+            &mut app,
+            egui::pos2(detail.left() + detail.width() * 0.8, detail.center().y),
+            Modifiers::NONE,
+        );
+        let t = std::time::Instant::now();
+        while app.trace_live.busy() && t.elapsed() < std::time::Duration::from_secs(60) {
+            frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+            std::thread::sleep(std::time::Duration::from_millis(3));
+        }
+        assert_eq!(app.trace_live.started, started + 1, "defer {defer_full}");
+        for _ in 0..20 {
+            trace_frame_asks_for_another(&ctx, &mut app);
+        }
+        assert!(!trace_frame_asks_for_another(&ctx, &mut app));
+        assert_eq!(app.trace_live.started, started + 1);
+        assert!(app.trace_live.shown.as_ref().is_some_and(|s| s.done));
+    }
 }
 
 /// The Colour panel open, drawn; the centres of its Fill and Outline

@@ -9,7 +9,7 @@ use crate::app::App;
 use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
 use crate::trace::{ColorMode, Preset, Remove, Settings};
-use crate::trace_preview::{Request, Stage};
+use crate::trace_preview::Request;
 use crate::ui::bitmap_preview::{copy_of, selected_bitmap, settings_key, Source};
 use crate::ui::tips::RichTip;
 use egui::{Color32, Context, Painter, Pos2, Rect, Sense, Stroke, Ui, Vec2};
@@ -445,6 +445,9 @@ pub fn trace_dialog(app: &mut App, ctx: &Context, st: &mut TraceState, close: &m
     let mut help = false;
     let mut options = false;
     let dragging = ctx.input(|i| i.pointer.any_down());
+    // The controls' places are this frame's only.
+    #[cfg(test)]
+    ctx.data_mut(|d| d.remove::<Rects>(egui::Id::new("trace_dialog_rects")));
     super::dialogs::window(ctx, tr("dialog.trace"))
         .resizable(DEFAULT_SIZE, MIN_SIZE)
         .show(ctx, |ui| {
@@ -609,7 +612,8 @@ fn preview_column(app: &mut App, ui: &mut Ui, st: &mut TraceState, dragging: boo
             |p, r, c| crate::ui::icons::draw(p, r, crate::tools::Tool::Pan, c),
         );
         if app.trace_live.busy() {
-            ui.add(egui::Spinner::new().size(16.0));
+            let r = ui.add(egui::Spinner::new().size(16.0));
+            mark(ui, "spinner", r.rect);
         }
     });
     let status_h = 22.0;
@@ -716,10 +720,10 @@ fn preview_column(app: &mut App, ui: &mut Ui, st: &mut TraceState, dragging: boo
                     ("colors", &s.stats.colors.to_string()),
                 ],
             );
-            let text = if s.stage == Stage::Quick {
-                format!("{text} \u{2026}")
-            } else {
+            let text = if s.done {
                 text
+            } else {
+                format!("{text} \u{2026}")
             };
             ui.label(text);
         }

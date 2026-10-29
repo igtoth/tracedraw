@@ -78,6 +78,10 @@ pub struct Outcome {
     pub stats: Stats,
     pub after: ColorImage,
     pub wire: ColorImage,
+    /// The last result of its request: nothing more comes for it (the
+    /// whole picture's trace, or the quick look where the whole picture
+    /// waits for OK).
+    pub done: bool,
 }
 
 /// The result on show: its textures and counts.
@@ -94,6 +98,8 @@ pub struct Shown {
     pub stats: Stats,
     pub after: TextureHandle,
     pub wire: TextureHandle,
+    /// Nothing more comes for this request: the preview rests on it.
+    pub done: bool,
 }
 
 struct Job {
@@ -101,10 +107,15 @@ struct Job {
     look: u64,
     cancel: Arc<AtomicBool>,
     rx: Receiver<Outcome>,
+    /// Whether a last result (`done`) came in from it.
+    finished: bool,
 }
 
+/// Pictures larger than this (pixels) are not traced whole for the
+/// preview where the whole picture waits for OK (the browser).
+pub const DEFER_FULL_OVER: u64 = 400_000;
+
 /// The live preview's state, kept on the app while the dialog is open.
-#[derive(Default)]
 pub struct Live {
     pub shown: Option<Shown>,
     /// A request waiting for the debounce or for the running job to stop.
@@ -112,10 +123,31 @@ pub struct Live {
     job: Option<Job>,
     /// The whole picture decoded once per bitmap: (shape, PNG length).
     decoded: Option<((ShapeId, usize), Arc<RgbaImage>)>,
+    /// A request whose trace ended without a result (its thread died):
+    /// not started again until the settings change.
+    failed: Option<(u64, u64)>,
+    /// Large pictures get the quick look only; the whole picture is
+    /// traced on OK. On where there are no threads (the browser).
+    pub defer_full: bool,
     /// How many traces were started, for tests and timings.
     pub started: usize,
     /// How many times a trace on show was only given new colours.
     pub recolored: usize,
+}
+
+impl Default for Live {
+    fn default() -> Self {
+        Live {
+            shown: None,
+            pending: None,
+            job: None,
+            decoded: None,
+            failed: None,
+            defer_full: cfg!(target_arch = "wasm32"),
+            started: 0,
+            recolored: 0,
+        }
+    }
 }
 
 impl Live {
@@ -137,15 +169,21 @@ impl Live {
     /// drag), so the request waits [`DEBOUNCE`] for the value to rest.
     pub fn want(&mut self, ctx: &egui::Context, req: Request, dragging: bool) {
         let same = |key: u64, look: u64| key == req.key && look == req.look;
+        // The last result of this request is on show: nothing to do,
+        // frame after frame.
         if self
             .shown
             .as_ref()
-            .is_some_and(|s| same(s.key, s.look) && s.stage == Stage::Full)
+            .is_some_and(|s| same(s.key, s.look) && s.done)
         {
             self.pending = None;
             return;
         }
         if self.job.as_ref().is_some_and(|j| same(j.key, j.look)) {
+            self.pending = None;
+            return;
+        }
+        if self.failed.is_some_and(|(k, l)| same(k, l)) {
             self.pending = None;
             return;
         }
@@ -175,29 +213,37 @@ impl Live {
     /// open; returns whether a result arrived this frame.
     pub fn poll(&mut self, ctx: &egui::Context) -> bool {
         let mut arrived = false;
-        if let Some(job) = &self.job {
-            let mut done = false;
+        if let Some(job) = &mut self.job {
+            let mut ended = false;
             let mut results = Vec::new();
             // A cancelled trace's results are stale: not shown.
             let stale = job.cancel.load(Ordering::Relaxed);
             loop {
                 match job.rx.try_recv() {
                     Ok(o) => {
+                        job.finished |= o.done;
                         if !stale {
                             results.push(o);
                         }
                     }
                     Err(TryRecvError::Empty) => break,
                     Err(TryRecvError::Disconnected) => {
-                        done = true;
+                        ended = true;
                         break;
                     }
                 }
             }
-            if done {
-                self.job = None;
+            if ended {
+                // A trace that ended with no last result and was not
+                // stopped died on the way: asking again every frame
+                // would only repeat that.
+                let job = self.job.take();
+                if let Some(j) = job.filter(|j| !j.finished && !stale) {
+                    self.failed = Some((j.key, j.look));
+                }
             }
             for o in results {
+                self.failed = None;
                 self.show(ctx, o);
                 arrived = true;
             }
@@ -234,6 +280,7 @@ impl Live {
             stats: o.stats,
             after,
             wire,
+            done: o.done,
         });
     }
 
@@ -255,6 +302,7 @@ impl Live {
         let (key, look) = (req.key, req.look);
         let flag = cancel.clone();
         let repaint = ctx.clone();
+        let defer_full = self.defer_full;
         let work = move || {
             let send = |o| {
                 let _ = tx.send(o);
@@ -262,7 +310,7 @@ impl Live {
             };
             match base {
                 Some((raw, stroke_px)) => recolor_only(req, raw, stroke_px, &flag, send),
-                None => run(req, &flag, send),
+                None => run(req, &flag, send, defer_full),
             }
         };
         #[cfg(not(target_arch = "wasm32"))]
@@ -274,6 +322,7 @@ impl Live {
             look,
             cancel,
             rx,
+            finished: false,
         });
     }
 
@@ -300,6 +349,7 @@ impl Live {
         self.pending = None;
         self.shown = None;
         self.decoded = None;
+        self.failed = None;
     }
 
     /// Whether anything is kept.
@@ -337,6 +387,7 @@ fn outcome(
     (tw, th): (u32, u32),
     stroke_px: f64,
     cancel: &AtomicBool,
+    done: bool,
 ) -> Option<Outcome> {
     let (w, _) = req.image.dimensions();
     // The preview pictures come out at the copy's size.
@@ -368,6 +419,7 @@ fn outcome(
         stats,
         after: color_image(&after),
         wire: color_image(&wire),
+        done,
     })
 }
 
@@ -380,18 +432,20 @@ fn recolor_only(
     mut send: impl FnMut(Outcome),
 ) {
     let size = req.image.dimensions();
-    if let Some(o) = outcome(&req, Stage::Full, raw, size, stroke_px, cancel) {
+    if let Some(o) = outcome(&req, Stage::Full, raw, size, stroke_px, cancel, true) {
         send(o);
     }
 }
 
 /// Trace `req` in two stages, `send` taking each result; stops once
-/// `cancel` is set.
-fn run(req: Request, cancel: &AtomicBool, mut send: impl FnMut(Outcome)) {
+/// `cancel` is set. With `defer_full` a large picture (over
+/// [`DEFER_FULL_OVER`] pixels) gets the quick look only, as its last
+/// result; the whole picture waits for OK.
+fn run(req: Request, cancel: &AtomicBool, mut send: impl FnMut(Outcome), defer_full: bool) {
     let (w, h) = req.image.dimensions();
     // What changes the trace; the colour edits are put on after.
     let settings = req.settings.traced_part();
-    let stage = |img: &RgbaImage, stage: Stage| -> Option<Outcome> {
+    let stage = |img: &RgbaImage, stage: Stage, done: bool| -> Option<Outcome> {
         let raw = trace::trace_unless(img, &settings, Some(cancel))?;
         let stroke_px = trace::last_stroke_width_px();
         outcome(
@@ -401,23 +455,23 @@ fn run(req: Request, cancel: &AtomicBool, mut send: impl FnMut(Outcome)) {
             img.dimensions(),
             stroke_px,
             cancel,
+            done,
         )
     };
     // The quick look only when the picture is bigger than the copy.
-    if w.max(h) > QUICK_SIDE {
+    let quick = w.max(h) > QUICK_SIDE;
+    let full = !(defer_full && quick && (w as u64) * (h as u64) > DEFER_FULL_OVER);
+    if quick {
         let (small, _) = shrink(&req.image, QUICK_SIDE);
-        match stage(&small, Stage::Quick) {
+        match stage(&small, Stage::Quick, !full) {
             Some(o) => send(o),
             None => return,
         }
     }
-    // In a browser the whole picture waits for OK; the preview shows the
-    // quick trace.
-    #[cfg(target_arch = "wasm32")]
-    if w.max(h) > QUICK_SIDE && (w as u64) * (h as u64) > 400_000 {
+    if !full {
         return;
     }
-    if let Some(o) = stage(&req.image, Stage::Full) {
+    if let Some(o) = stage(&req.image, Stage::Full, true) {
         send(o);
     }
 }
@@ -457,7 +511,7 @@ mod tests {
     fn a_request_gives_a_quick_look_then_the_whole_trace() {
         let mut got = Vec::new();
         let cancel = AtomicBool::new(false);
-        run(request(disc(600), 1), &cancel, |o| got.push(o));
+        run(request(disc(600), 1), &cancel, |o| got.push(o), false);
         assert_eq!(
             got.iter().map(|o| o.stage).collect::<Vec<_>>(),
             vec![Stage::Quick, Stage::Full]
@@ -467,10 +521,117 @@ mod tests {
             assert_eq!(o.wire.size, [400, 400]);
             assert_eq!(o.stats.curves, 1);
         }
+        assert_eq!(
+            got.iter().map(|o| o.done).collect::<Vec<_>>(),
+            vec![false, true]
+        );
         let mut got = Vec::new();
-        run(request(disc(100), 2), &cancel, |o| got.push(o));
+        run(request(disc(100), 2), &cancel, |o| got.push(o), false);
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].stage, Stage::Full);
+        assert!(got[0].done);
+    }
+
+    /// Where the whole picture waits for OK (the browser), a large
+    /// picture's request ends with its quick look, marked as the last
+    /// result; a small one is still traced whole.
+    #[test]
+    fn with_the_whole_picture_deferred_the_quick_look_is_the_last_result() {
+        let mut got = Vec::new();
+        let cancel = AtomicBool::new(false);
+        run(request(disc(700), 1), &cancel, |o| got.push(o), true);
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].stage, Stage::Quick);
+        assert!(got[0].done);
+        let mut got = Vec::new();
+        run(request(disc(300), 2), &cancel, |o| got.push(o), true);
+        assert_eq!(
+            got.iter().map(|o| (o.stage, o.done)).collect::<Vec<_>>(),
+            vec![(Stage::Quick, false), (Stage::Full, true)]
+        );
+    }
+
+    /// The live preview rests once a request's last result is on show,
+    /// also when that is the quick look (the whole picture deferred):
+    /// asking for the same settings frame after frame starts nothing
+    /// and the preview is not busy. Before, the preview waited for a
+    /// whole picture's trace that never came and traced the picture
+    /// again every frame, with the spinner never stopping.
+    #[test]
+    fn a_deferred_request_rests_on_its_quick_look() {
+        let ctx = egui::Context::default();
+        let mut live = Live {
+            defer_full: true,
+            ..Live::default()
+        };
+        let img = Arc::new(disc(700));
+        let req = || Request {
+            shape: ShapeId(1),
+            key: 8,
+            look: 0,
+            settings: trace::Preset::Logo.settings(),
+            image: img.clone(),
+            copy_scale: 0.5,
+        };
+        live.want(&ctx, req(), false);
+        live.poll(&ctx);
+        assert_eq!(live.started, 1);
+        let t0 = Instant::now();
+        while live.busy() && t0.elapsed() < Duration::from_secs(20) {
+            std::thread::sleep(Duration::from_millis(2));
+            live.poll(&ctx);
+        }
+        let shown = live.shown.as_ref().expect("the quick look");
+        assert_eq!(shown.stage, Stage::Quick);
+        assert!(shown.done);
+        assert!(live.full(8, 0).is_none(), "the whole picture waits for OK");
+        for _ in 0..10 {
+            live.want(&ctx, req(), false);
+            live.poll(&ctx);
+            assert!(!live.busy());
+        }
+        assert_eq!(live.started, 1, "traced once");
+    }
+
+    /// A trace whose thread ended without a result (it died) is not
+    /// started again every frame: the same settings are asked for in
+    /// vain until they change.
+    #[test]
+    fn a_trace_that_died_is_not_started_again() {
+        let ctx = egui::Context::default();
+        let mut live = Live::default();
+        let (tx, rx) = mpsc::channel::<Outcome>();
+        drop(tx);
+        live.job = Some(Job {
+            key: 4,
+            look: 0,
+            cancel: Arc::new(AtomicBool::new(false)),
+            rx,
+            finished: false,
+        });
+        live.poll(&ctx);
+        assert!(!live.busy());
+        assert_eq!(live.failed, Some((4, 0)));
+        let img = Arc::new(disc(120));
+        let req = |key: u64| Request {
+            shape: ShapeId(1),
+            key,
+            look: 0,
+            settings: trace::Preset::Logo.settings(),
+            image: img.clone(),
+            copy_scale: 1.0,
+        };
+        live.want(&ctx, req(4), false);
+        live.poll(&ctx);
+        assert_eq!(live.started, 0);
+        assert!(!live.busy());
+        // Other settings are traced, and a result forgets the failure.
+        live.want(&ctx, req(5), false);
+        live.poll(&ctx);
+        assert_eq!(live.started, 1);
+        settle(&mut live, &ctx, 5, 0);
+        assert!(live.full(5, 0).is_some());
+        assert_eq!(live.failed, None);
     }
 
     /// A cancelled request gives nothing back.
@@ -478,7 +639,7 @@ mod tests {
     fn a_cancelled_request_gives_nothing() {
         let mut got = Vec::new();
         let cancel = AtomicBool::new(true);
-        run(request(disc(300), 3), &cancel, |o| got.push(o));
+        run(request(disc(300), 3), &cancel, |o| got.push(o), false);
         assert!(got.is_empty());
     }
 
