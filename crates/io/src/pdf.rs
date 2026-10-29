@@ -895,6 +895,18 @@ impl PageWriter<'_> {
             self.gstates.push((name.clone(), id));
             let _ = writeln!(self.content, "/{name} gs");
         }
+        // Overprint: the outline (`OP`) and the fill (`op`) print over
+        // the inks beneath where the object says so; characters with
+        // their own overprint come here as parts of their text (#1209).
+        if shape.overprint_fill || shape.overprint_outline {
+            let name = format!("GS{}", self.gstates.len());
+            let id = self.pdf.add_str(format!(
+                "<< /Type /ExtGState /OP {} /op {} /OPM 1 >>",
+                shape.overprint_outline, shape.overprint_fill
+            ));
+            self.gstates.push((name.clone(), id));
+            let _ = writeln!(self.content, "/{name} gs");
+        }
 
         if let ShapeKind::Bitmap {
             rect,
@@ -3605,7 +3617,7 @@ mod text_tests {
                     / upem
                     * size;
             }
-            if span.underline {
+            if span.underline.is_on() {
                 out.rest.move_to((0.0, -1.0));
                 out.rest.line_to((pen, -1.0));
                 out.rest.line_to((pen, -1.3));
@@ -3639,6 +3651,61 @@ mod text_tests {
 
     fn black() -> Fill {
         Fill::Solid(Color::BLACK)
+    }
+
+    /// Overprint goes to the file as a graphics state with `OP` (the
+    /// outline) and `op` (the fill); characters with their own overprint
+    /// (#1209) get one of their own, as the object's where they say
+    /// nothing; text without any gets none.
+    #[test]
+    fn overprint_is_written_for_objects_and_for_characters() {
+        let plain = TextSpan::new("ab", "Quicksand", 24.0);
+        let doc = doc_with(vec![plain.clone()], black(), None);
+        let text = inflated(&document_to_pdf(&doc));
+        assert!(!text.contains("/OPM"), "{text}");
+
+        let mut over = TextSpan::new("cd", "Quicksand", 24.0);
+        over.overprint_fill = Some(true);
+        let doc = doc_with(vec![plain.clone(), over.clone()], black(), None);
+        let text = inflated(&document_to_pdf(&doc));
+        assert!(text.contains("/OP false /op true /OPM 1"), "{text}");
+        assert!(!text.contains("/OP true"), "{text}");
+        // Shown twice: the plain part has no overprint state.
+        assert_eq!(text.matches("/OPM 1").count(), 1, "{text}");
+
+        // The object overprints its outline; the characters that say
+        // nothing take that, the ones that say no do not.
+        let mut doc = doc_with(
+            vec![plain, over],
+            black(),
+            Some(Stroke::new(Color::BLACK, 0.5)),
+        );
+        let shape = &mut doc.pages[0].layers[0].shapes[0];
+        shape.overprint_outline = true;
+        if let ShapeKind::Text { spans, .. } = &mut shape.kind {
+            spans[0].overprint_outline = Some(false);
+        }
+        let text = inflated(&document_to_pdf(&doc));
+        assert!(text.contains("/OP true /op true /OPM 1"), "{text}");
+        assert!(!text.contains("/OP true /op false"), "{text}");
+        assert_eq!(text.matches("/OPM 1").count(), 1, "{text}");
+
+        // A plain object marked to overprint its fill.
+        let mut doc = Document::new("t", tracedraw_core::Size::new(100.0, 50.0));
+        let layer = doc.pages[0].layers[0].id;
+        let id = doc.ids_mut().shape();
+        let mut s = Shape::new(
+            id,
+            ShapeKind::Rect {
+                rect: Rect::new(10.0, 10.0, 60.0, 40.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        s.overprint_fill = true;
+        doc.layer_mut(layer).unwrap().shapes.push(s);
+        let text = inflated(&document_to_pdf(&doc));
+        assert!(text.contains("/OP false /op true /OPM 1"), "{text}");
     }
 
     /// The file as text with every zlib stream inflated after it.
@@ -4023,7 +4090,7 @@ mod text_tests {
         assert!(extract(&all).contains("abc"));
         // Underlines and the like stay curves.
         let mut u = TextSpan::new("u", "Quicksand", 24.0);
-        u.underline = true;
+        u.underline = tracedraw_core::LineStyle::SingleThin;
         let text = inflated(&document_to_pdf(&doc_with(vec![u], black(), None)));
         assert!(text.contains("BT\n0 Tr") && text.contains("\nf\n"));
     }

@@ -2708,7 +2708,7 @@ impl App {
             let set_size = differs(&|s| ((s.size_pt - size) * scale).abs() > 0.005);
             let set_bold = differs(&|s| s.bold != bold);
             let set_italic = differs(&|s| s.italic != italic);
-            let set_underline = differs(&|s| s.underline != underline);
+            let set_underline = differs(&|s| s.underline.is_on() != underline);
             self.text_apply_style(move |sp| {
                 if set_font {
                     sp.font_family = font.clone();
@@ -2723,7 +2723,7 @@ impl App {
                     sp.italic = italic;
                 }
                 if set_underline {
-                    sp.underline = underline;
+                    sp.underline = underline.into();
                 }
             });
             return;
@@ -2752,7 +2752,10 @@ impl App {
                         }
                         sp.bold = self.text_bold;
                         sp.italic = self.text_italic;
-                        sp.underline = self.text_underline;
+                        // A styled underline stays while the button shows it on.
+                        if sp.underline.is_on() != self.text_underline {
+                            sp.underline = self.text_underline.into();
+                        }
                     }
                     Some(Command::SetShapeKind {
                         shape: s.id,

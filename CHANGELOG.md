@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Text docker, Character: the underline and the strikethrough are lists of styles (none, single thin, single thick, double thin, and each of those under the words only, skipping the spaces); All caps draws the characters as capitals while the text keeps the case typed; Enclosed draws the font's enclosed forms, or a ring round each character where the font has none; Overprint fill and Overprint outline mark characters of their own, used by Simulate Overprints and the PDF export like the object's. All are drawn on the page and in every export and kept in `.tdraw` files, which still write a plain underline as before (#1209).
+
 ## 0.20.0 (2026-10-28)
 
 - Variable fonts: the text follows the axis sliders (Text docker, and the button beside the font size) while they are dragged, so the weight, width or any other axis can be judged on the page. The text changed only when the slider was released. Releasing still keeps the value as one undo step (#870).

@@ -4739,7 +4739,7 @@ impl App {
                 self.text_size_pt = (seen * 100.0).round() / 100.0;
                 self.text_bold = sp.bold;
                 self.text_italic = sp.italic;
-                self.text_underline = sp.underline;
+                self.text_underline = sp.underline.is_on();
             }
             // The alignment of the paragraph at the caret.
             let index = self.paragraph_range(id).map_or(0, |(a, _)| {
@@ -8809,7 +8809,10 @@ mod tests {
         app.settings.check_updates = true;
         app.dialog = crate::ui::dialogs::Dialog::ConfirmClose;
         app.update_tick_desktop(10 * crate::updates::DAILY, None);
-        assert!(matches!(app.dialog, crate::ui::dialogs::Dialog::ConfirmClose));
+        assert!(matches!(
+            app.dialog,
+            crate::ui::dialogs::Dialog::ConfirmClose
+        ));
         app.dialog = crate::ui::dialogs::Dialog::None;
         app.update_tick_desktop(10 * crate::updates::DAILY, None);
         assert!(matches!(

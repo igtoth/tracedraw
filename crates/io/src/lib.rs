@@ -331,6 +331,60 @@ mod tests {
         assert_eq!(spans[0].variation("wdth"), Some(87.5));
     }
 
+    /// Character styles (#1209) are kept in the native file: the
+    /// underline and strike line styles, all caps, enclosed and the
+    /// overprints; a single thin underline is still written as `true`.
+    #[test]
+    fn character_styles_round_trip_in_native_files() {
+        use tracedraw_core::LineStyle;
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        let id = doc.ids_mut().shape();
+        let mut a = tracedraw_core::TextSpan::new("Styled ", "Selawik", 24.0);
+        a.underline = LineStyle::DoubleThinWord;
+        a.strikethrough = LineStyle::SingleThick;
+        a.all_caps = true;
+        a.enclosed = true;
+        a.overprint_fill = Some(true);
+        a.overprint_outline = Some(false);
+        let mut b = tracedraw_core::TextSpan::new("plain", "Selawik", 24.0);
+        b.underline = LineStyle::SingleThin;
+        let s = Shape::new(
+            id,
+            ShapeKind::Text {
+                spans: vec![a, b],
+                origin: tracedraw_core::geometry::Point::new(10.0, 20.0),
+                frame: None,
+                align: tracedraw_core::TextAlign::Left,
+                para: tracedraw_core::document::ParagraphStyle::default(),
+                on_path: None,
+            },
+        );
+        doc.layer_mut(layer).unwrap().shapes.push(s);
+        let path = std::env::temp_dir().join(format!(
+            "tracedraw-character-styles-{}-{:?}.tdraw",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        save_native(&doc, &path).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        let back = load_native(&path).unwrap();
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(back, doc);
+        assert!(text.contains("\"double_thin_word\""), "{text}");
+        assert!(text.contains("\"underline\": true"), "{text}");
+        let ShapeKind::Text { spans, .. } = &back.pages[0].layers[0].shapes[0].kind else {
+            panic!("not text");
+        };
+        assert_eq!(spans[0].underline, LineStyle::DoubleThinWord);
+        assert_eq!(spans[0].strikethrough, LineStyle::SingleThick);
+        assert!(spans[0].all_caps && spans[0].enclosed);
+        assert_eq!(spans[0].overprint_fill, Some(true));
+        assert_eq!(spans[0].overprint_outline, Some(false));
+        assert_eq!(spans[1].underline, LineStyle::SingleThin);
+        assert_eq!(spans[1].strikethrough, LineStyle::None);
+    }
+
     #[test]
     fn outline_position_mitre_limit_dashes_and_shadows_round_trip() {
         use tracedraw_core::shadow::{FeatherDirection, FeatherEdges, Perspective, ShadowEdge};

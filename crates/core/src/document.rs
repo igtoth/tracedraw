@@ -912,6 +912,126 @@ pub struct FontVariation {
     pub value: f64,
 }
 
+/// The look of an underline or a strike line (#1209). A thin line is a
+/// fourteenth of the font size thick, a thick one a seventh; a double
+/// line is two thin lines a thin line apart; a word-only line skips the
+/// spaces between the words.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LineStyle {
+    #[default]
+    None,
+    SingleThin,
+    SingleThick,
+    DoubleThin,
+    SingleThinWord,
+    SingleThickWord,
+    DoubleThinWord,
+}
+
+impl LineStyle {
+    /// Every style, in the order the lists show them.
+    pub const ALL: [LineStyle; 7] = [
+        LineStyle::None,
+        LineStyle::SingleThin,
+        LineStyle::SingleThick,
+        LineStyle::DoubleThin,
+        LineStyle::SingleThinWord,
+        LineStyle::SingleThickWord,
+        LineStyle::DoubleThinWord,
+    ];
+
+    /// A line is drawn.
+    pub fn is_on(self) -> bool {
+        self != LineStyle::None
+    }
+
+    /// No line (serde and the lists).
+    pub fn is_none(&self) -> bool {
+        *self == LineStyle::None
+    }
+
+    /// The spaces between words are left out.
+    pub fn word_only(self) -> bool {
+        matches!(
+            self,
+            LineStyle::SingleThinWord | LineStyle::SingleThickWord | LineStyle::DoubleThinWord
+        )
+    }
+
+    /// Two thin lines, a thin line apart.
+    pub fn double(self) -> bool {
+        matches!(self, LineStyle::DoubleThin | LineStyle::DoubleThinWord)
+    }
+
+    /// The thickness of each line drawn, as a share of the font size: a
+    /// fourteenth for a thin line, a seventh for a thick one, nothing for
+    /// no line.
+    pub fn thickness_share(self) -> f64 {
+        match self {
+            LineStyle::None => 0.0,
+            LineStyle::SingleThick | LineStyle::SingleThickWord => 1.0 / 7.0,
+            _ => 1.0 / 14.0,
+        }
+    }
+
+    /// The style with the same line, drawn over the spaces too or only
+    /// under the words.
+    pub fn with_word_only(self, word_only: bool) -> LineStyle {
+        match (self, word_only) {
+            (LineStyle::SingleThin, true) => LineStyle::SingleThinWord,
+            (LineStyle::SingleThick, true) => LineStyle::SingleThickWord,
+            (LineStyle::DoubleThin, true) => LineStyle::DoubleThinWord,
+            (LineStyle::SingleThinWord, false) => LineStyle::SingleThin,
+            (LineStyle::SingleThickWord, false) => LineStyle::SingleThick,
+            (LineStyle::DoubleThinWord, false) => LineStyle::DoubleThin,
+            (s, _) => s,
+        }
+    }
+}
+
+/// The underline button and older files: on is a single thin line.
+impl From<bool> for LineStyle {
+    fn from(on: bool) -> Self {
+        if on {
+            LineStyle::SingleThin
+        } else {
+            LineStyle::None
+        }
+    }
+}
+
+/// Serde for [`LineStyle`] fields: files written before the styles hold
+/// `true` or `false`, which read as a single thin line and no line, and
+/// those two are still written that way, so a file with only them stays
+/// as it was; the other styles are written by name.
+pub mod line_style_serde {
+    use super::LineStyle;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Repr {
+        Flag(bool),
+        Style(LineStyle),
+    }
+
+    pub fn serialize<S: Serializer>(v: &LineStyle, s: S) -> Result<S::Ok, S::Error> {
+        match v {
+            LineStyle::None => false.serialize(s),
+            LineStyle::SingleThin => true.serialize(s),
+            other => other.serialize(s),
+        }
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<LineStyle, D::Error> {
+        Ok(match Repr::deserialize(d)? {
+            Repr::Flag(on) => LineStyle::from(on),
+            Repr::Style(s) => s,
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TextSpan {
     pub text: String,
@@ -935,10 +1055,32 @@ pub struct TextSpan {
     /// character's origin on its (shifted) baseline.
     #[serde(default)]
     pub angle_deg: f64,
-    #[serde(default)]
-    pub underline: bool,
-    #[serde(default)]
-    pub strikethrough: bool,
+    /// The underline (#1209): drawn by the text layout from the face's
+    /// underline position down.
+    #[serde(default, with = "line_style_serde")]
+    pub underline: LineStyle,
+    /// The strike line (#1209), centred on the face's strikeout position.
+    #[serde(default, with = "line_style_serde")]
+    pub strikethrough: LineStyle,
+    /// Drawn as capitals (#1209): the shaper gets the Unicode uppercase
+    /// of each letter; the text keeps the case typed. A letter whose
+    /// capital is more than one letter stays as typed.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub all_caps: bool,
+    /// Enclosed characters (#1209): the font's `nalt` forms when the face
+    /// has them, else a circle drawn round each glyph (a stroke of a
+    /// fourteenth of the size, radius 0.6 of the size, centred on the
+    /// glyph's advance).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub enclosed: bool,
+    /// These characters' fill overprints what lies beneath (#1209);
+    /// `None` = as the object's `overprint_fill`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub overprint_fill: Option<bool>,
+    /// These characters' outline overprints (#1209); `None` = as the
+    /// object's `overprint_outline`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub overprint_outline: Option<bool>,
     /// Per-span fill override (character colour); `None` = object fill.
     #[serde(default)]
     pub fill: Option<Fill>,
@@ -976,6 +1118,21 @@ fn is_zero(v: &f64) -> bool {
     *v == 0.0
 }
 
+/// Serde: leave a flag that is off out of the file.
+fn is_false(v: &bool) -> bool {
+    !*v
+}
+
+/// One look of a text's characters (see [`Shape::text_parts`]): the fill,
+/// outline and overprints they are drawn with.
+#[derive(Clone, PartialEq)]
+struct TextLook {
+    fill: Fill,
+    stroke: Option<Stroke>,
+    overprint_fill: bool,
+    overprint_outline: bool,
+}
+
 impl TextSpan {
     pub fn new(text: impl Into<String>, font_family: impl Into<String>, size_pt: f64) -> Self {
         TextSpan {
@@ -988,8 +1145,12 @@ impl TextSpan {
             baseline_shift_pt: 0.0,
             offset_x_pct: 0.0,
             angle_deg: 0.0,
-            underline: false,
-            strikethrough: false,
+            underline: LineStyle::None,
+            strikethrough: LineStyle::None,
+            all_caps: false,
+            enclosed: false,
+            overprint_fill: None,
+            overprint_outline: None,
             fill: None,
             background: None,
             outline: None,
@@ -2231,35 +2392,45 @@ impl Shape {
         Some(s)
     }
 
-    /// A text whose characters have their own fill or outline, as the
-    /// texts it is drawn in: one per look (fill and outline), in the order
-    /// the looks first appear, each laid out as the whole text with the
-    /// other characters left undrawn (`TextSpan::layout_only`). The
-    /// character backgrounds and the frame background are left out of the
-    /// parts (they are drawn once under the text) and only the first part
-    /// keeps the shadow. `None` for other shapes and for text whose
-    /// characters all take the object's fill and outline.
+    /// A text whose characters have their own fill, outline or overprint,
+    /// as the texts it is drawn in: one per look (fill, outline and the
+    /// two overprints), in the order the looks first appear, each laid
+    /// out as the whole text with the other characters left undrawn
+    /// (`TextSpan::layout_only`). The character backgrounds and the frame
+    /// background are left out of the parts (they are drawn once under
+    /// the text) and only the first part keeps the shadow. `None` for
+    /// other shapes and for text whose characters all take the object's
+    /// fill, outline and overprint.
     pub fn text_parts(&self) -> Option<Vec<Shape>> {
         let ShapeKind::Text { spans, .. } = &self.kind else {
             return None;
         };
         if spans.iter().any(|s| s.layout_only)
-            || spans
-                .iter()
-                .all(|s| s.fill.is_none() && s.outline.is_none())
+            || spans.iter().all(|s| {
+                s.fill.is_none()
+                    && s.outline.is_none()
+                    && s.overprint_fill.is_none_or(|o| o == self.overprint_fill)
+                    && s.overprint_outline
+                        .is_none_or(|o| o == self.overprint_outline)
+            })
         {
             return None;
         }
-        let look = |s: &TextSpan| -> (Fill, Option<Stroke>) {
+        let look = |s: &TextSpan| -> TextLook {
             let fill = s.fill.clone().unwrap_or_else(|| self.fill.clone());
             let stroke = match &s.outline {
                 Some(o) if o.width > 0.0 => Some(o.clone()),
                 Some(_) => None,
                 None => self.stroke.clone(),
             };
-            (fill, stroke)
+            TextLook {
+                fill,
+                stroke,
+                overprint_fill: s.overprint_fill.unwrap_or(self.overprint_fill),
+                overprint_outline: s.overprint_outline.unwrap_or(self.overprint_outline),
+            }
         };
-        let mut looks: Vec<(Fill, Option<Stroke>)> = Vec::new();
+        let mut looks: Vec<TextLook> = Vec::new();
         for s in spans.iter().filter(|s| s.char_count() > 0) {
             let l = look(s);
             if !looks.contains(&l) {
@@ -2269,19 +2440,23 @@ impl Shape {
         let parts = looks
             .into_iter()
             .enumerate()
-            .map(|(i, (fill, stroke))| {
+            .map(|(i, l)| {
                 let mut part = self.clone();
                 if let ShapeKind::Text { spans, para, .. } = &mut part.kind {
                     for s in spans.iter_mut() {
-                        s.layout_only = look(s) != (fill.clone(), stroke.clone());
+                        s.layout_only = look(s) != l;
                         s.background = None;
                         s.fill = None;
                         s.outline = None;
+                        s.overprint_fill = None;
+                        s.overprint_outline = None;
                     }
                     para.frame_fill = None;
                 }
-                part.fill = fill;
-                part.stroke = stroke;
+                part.fill = l.fill;
+                part.stroke = l.stroke;
+                part.overprint_fill = l.overprint_fill;
+                part.overprint_outline = l.overprint_outline;
                 if i > 0 {
                     part.shadow = None;
                 }
@@ -6238,5 +6413,145 @@ mod tests {
         )
         .expect("old");
         assert_eq!(old.outline, None);
+    }
+
+    /// Underline and strike line styles (#1209): `true` and `false` of
+    /// older files read as a single thin line and no line and are written
+    /// back as they were; the other styles go by name; all caps, enclosed
+    /// and the overprints are kept only when set.
+    #[test]
+    fn line_styles_read_the_old_flags_and_write_them_back() {
+        let old: TextSpan = serde_json::from_str(
+            r#"{"text":"a","font_family":"Arial","size_pt":12.0,"bold":false,"italic":false,"underline":true,"strikethrough":false}"#,
+        )
+        .expect("old");
+        assert_eq!(old.underline, LineStyle::SingleThin);
+        assert_eq!(old.strikethrough, LineStyle::None);
+        assert!(!old.all_caps && !old.enclosed);
+        assert_eq!(old.overprint_fill, None);
+        assert_eq!(old.overprint_outline, None);
+        let json = serde_json::to_string(&old).expect("json");
+        assert!(json.contains("\"underline\":true"), "{json}");
+        assert!(json.contains("\"strikethrough\":false"), "{json}");
+        for key in [
+            "all_caps",
+            "enclosed",
+            "overprint_fill",
+            "overprint_outline",
+        ] {
+            assert!(!json.contains(key), "{key}: {json}");
+        }
+        // A file without the two fields at all: no lines.
+        let none: TextSpan = serde_json::from_str(
+            r#"{"text":"a","font_family":"Arial","size_pt":12.0,"bold":false,"italic":false}"#,
+        )
+        .expect("none");
+        assert_eq!(none.underline, LineStyle::None);
+        assert_eq!(none.strikethrough, LineStyle::None);
+
+        let mut s = TextSpan::new("a", "Arial", 12.0);
+        for style in LineStyle::ALL {
+            s.underline = style;
+            s.strikethrough = style;
+            let json = serde_json::to_string(&s).expect("json");
+            let back: TextSpan = serde_json::from_str(&json).expect("back");
+            assert_eq!(back, s, "{json}");
+        }
+        s.underline = LineStyle::DoubleThinWord;
+        s.strikethrough = LineStyle::SingleThick;
+        let json = serde_json::to_string(&s).expect("json");
+        assert!(
+            json.contains("\"underline\":\"double_thin_word\""),
+            "{json}"
+        );
+        assert!(
+            json.contains("\"strikethrough\":\"single_thick\""),
+            "{json}"
+        );
+        s.all_caps = true;
+        s.enclosed = true;
+        s.overprint_fill = Some(true);
+        s.overprint_outline = Some(false);
+        let json = serde_json::to_string(&s).expect("json");
+        let back: TextSpan = serde_json::from_str(&json).expect("back");
+        assert_eq!(back, s);
+        assert!(json.contains("\"overprint_outline\":false"), "{json}");
+
+        assert_eq!(LineStyle::from(true), LineStyle::SingleThin);
+        assert_eq!(LineStyle::from(false), LineStyle::None);
+        assert!(!LineStyle::None.is_on() && LineStyle::None.is_none());
+        assert!(LineStyle::SingleThinWord.word_only());
+        assert!(!LineStyle::SingleThin.word_only());
+        assert!(LineStyle::DoubleThinWord.double() && LineStyle::DoubleThin.double());
+        assert_eq!(LineStyle::None.thickness_share(), 0.0);
+        assert!((LineStyle::SingleThin.thickness_share() - 1.0 / 14.0).abs() < 1e-12);
+        assert!((LineStyle::SingleThickWord.thickness_share() - 1.0 / 7.0).abs() < 1e-12);
+        assert_eq!(
+            LineStyle::DoubleThin.with_word_only(true),
+            LineStyle::DoubleThinWord
+        );
+        assert_eq!(
+            LineStyle::SingleThickWord.with_word_only(false),
+            LineStyle::SingleThick
+        );
+        assert_eq!(LineStyle::None.with_word_only(true), LineStyle::None);
+    }
+
+    /// Characters with their own overprint (#1209) are drawn as parts of
+    /// their own, each part marked as its characters say (the object's
+    /// overprint where they say nothing); characters that agree with the
+    /// object make no parts.
+    #[test]
+    fn text_parts_carry_the_characters_overprint() {
+        let mut plain = TextSpan::new("ab", "Arial", 12.0);
+        let mut over = TextSpan::new("cd", "Arial", 12.0);
+        let mut s = Shape::new(
+            ShapeId(1),
+            ShapeKind::Text {
+                spans: vec![plain.clone(), over.clone()],
+                origin: Point::ZERO,
+                frame: None,
+                align: TextAlign::Left,
+                para: ParagraphStyle::default(),
+                on_path: None,
+            },
+        );
+        assert!(s.text_parts().is_none());
+        over.overprint_fill = Some(true);
+        over.overprint_outline = Some(true);
+        plain.overprint_outline = Some(false);
+        s.kind = ShapeKind::Text {
+            spans: vec![plain.clone(), over.clone()],
+            origin: Point::ZERO,
+            frame: None,
+            align: TextAlign::Left,
+            para: ParagraphStyle::default(),
+            on_path: None,
+        };
+        let parts = s.text_parts().expect("parts");
+        assert_eq!(parts.len(), 2);
+        assert!(!parts[0].overprint_fill && !parts[0].overprint_outline);
+        assert!(parts[1].overprint_fill && parts[1].overprint_outline);
+        for p in &parts {
+            let ShapeKind::Text { spans, .. } = &p.kind else {
+                panic!("text");
+            };
+            assert!(spans
+                .iter()
+                .all(|sp| sp.overprint_fill.is_none() && sp.overprint_outline.is_none()));
+        }
+        // The same overprint as the object: nothing to split.
+        s.overprint_fill = true;
+        s.overprint_outline = true;
+        plain.overprint_outline = None;
+        s.kind = ShapeKind::Text {
+            spans: vec![plain, over],
+            origin: Point::ZERO,
+            frame: None,
+            align: TextAlign::Left,
+            para: ParagraphStyle::default(),
+            on_path: None,
+        };
+        assert!(s.text_parts().is_none());
     }
 }

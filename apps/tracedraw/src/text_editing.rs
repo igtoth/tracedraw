@@ -388,7 +388,7 @@ impl App {
                         Key::U if ctrl => {
                             let on = !self.text_underline;
                             self.text_underline = on;
-                            self.text_apply_style(move |s| s.underline = on);
+                            self.text_apply_style(move |s| s.underline = on.into());
                         }
                         Key::Escape => {
                             self.finish_text();
