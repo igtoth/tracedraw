@@ -471,20 +471,32 @@ enum LineSpacing {
 /// intervals, set5, tabs, bullets, indents, hyphens, drop caps, set11),
 /// then the style records. Returns (style id, record).
 pub(crate) fn read_stlt(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Vec<(u32, StyleRec)> {
+    let mut exact = false;
     if v != 8 {
-        return read_stlt_set11(d, v, v >= 9, warn);
+        return read_stlt_set11(d, v, v >= 9, warn, &mut exact);
     }
     // Version 8 has two layouts (800 and the bidirectional 801, which has
-    // the set11 table) that the major version cannot tell apart: without
-    // it first, and with it when that reads with complaints.
+    // the set11 table) that the major version cannot tell apart, and
+    // files saved for 800 by newer releases hold the table too (both
+    // version 8 saves of issue #1139, 2026-10-29). Both readings are
+    // tried: the one that ends where the table ends without complaint
+    // wins, else the one without complaint, else the one without the
+    // table, with its complaints.
     let mut notes = Vec::new();
-    let without = read_stlt_set11(d, v, false, &mut |m| notes.push(m));
-    if notes.is_empty() && !without.is_empty() {
-        return without;
-    }
+    let mut exact_without = false;
+    let without = read_stlt_set11(d, v, false, &mut |m| notes.push(m), &mut exact_without);
     let mut notes_with = Vec::new();
-    let with = read_stlt_set11(d, v, true, &mut |m| notes_with.push(m));
-    let use_with = notes_with.is_empty() && !with.is_empty();
+    let mut exact_with = false;
+    let with = read_stlt_set11(d, v, true, &mut |m| notes_with.push(m), &mut exact_with);
+    let score = |styles: &[(u32, StyleRec)], notes: &[String], exact: bool| -> u8 {
+        match (styles.is_empty(), notes.is_empty(), exact) {
+            (true, _, _) => 0,
+            (false, true, true) => 3,
+            (false, true, false) => 2,
+            (false, false, _) => 1,
+        }
+    };
+    let use_with = score(&with, &notes_with, exact_with) > score(&without, &notes, exact_without);
     for m in if use_with { notes_with } else { notes } {
         warn(m);
     }
@@ -495,12 +507,15 @@ pub(crate) fn read_stlt(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Vec<(
     }
 }
 
-/// [`read_stlt`] with the set11 table present or not.
+/// [`read_stlt`] with the set11 table present or not. `exact` tells
+/// whether every record was read and the last one ended where the table
+/// ends.
 fn read_stlt_set11(
     d: &[u8],
     v: u16,
     has_set11: bool,
     warn: &mut dyn FnMut(String),
+    exact: &mut bool,
 ) -> Vec<(u32, StyleRec)> {
     let v16 = v < 6;
     let coord_size = if v16 { 2 } else { 4 };
@@ -534,11 +549,15 @@ fn read_stlt_set11(
     };
     // Fonts: id, unknown 12 (before 10) / 20, then three scripts (Latin,
     // East Asian, other): font id u16 and encoding u16 each, a size
-    // coord each, and style flags u32 each (one for all before 10). A
+    // coord each (one for all before 10) and style flags u32 each. A
     // version 14 file (#955) sets Chinese titles in the East Asian slot
-    // (a script font at 54 pt) with Arial at 12 pt in the Latin one.
+    // (a script font at 54 pt) with Arial at 12 pt in the Latin one; a
+    // real version 9 file and the version 7 to 9 saves of the program
+    // that reads them hold one size and three flags (read as three sizes
+    // and one flags word before 2026-10-29).
     let font_gap = if v < 10 { 12 } else { 20 };
-    let font_size = 4 + font_gap + 3 * 4 + 3 * coord_size + if v >= 10 { 12 } else { 4 };
+    let size_slots = if v >= 10 { 3 } else { 1 };
+    let font_size = 4 + font_gap + 3 * 4 + size_slots * coord_size + 12;
     let Some(nf) = r.u32() else {
         return Vec::new();
     };
@@ -559,25 +578,21 @@ fn read_stlt_set11(
             *slot = (font_id, enc);
         }
         let mut sizes = [0.0f64; 3];
-        for s in &mut sizes {
+        for s in sizes.iter_mut().take(size_slots) {
             let Some(size) = r.sint() else {
                 return Vec::new();
             };
             *s = size as f64 * pt_per_unit;
         }
+        if size_slots == 1 {
+            sizes = [sizes[0]; 3];
+        }
         let mut flags = [0u32; 3];
-        if v >= 10 {
-            for f in &mut flags {
-                let Some(x) = r.u32() else {
-                    return Vec::new();
-                };
-                *f = x;
-            }
-        } else {
+        for f in &mut flags {
             let Some(x) = r.u32() else {
                 return Vec::new();
             };
-            flags = [x; 3];
+            *f = x;
         }
         let latin = (
             ids[0].0,
@@ -783,6 +798,7 @@ fn read_stlt_set11(
         }
         out.push((style_id, StyleRec { parent, style }));
     }
+    *exact = out.len() == num_records as usize && r.remaining() == 0;
     out
 }
 

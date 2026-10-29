@@ -16,6 +16,7 @@ encoding_rs.workspace = true
 flate2 = "1"
 ttf-parser.workspace = true
 tiny-skia.workspace = true
+web-time = "1"
 
 [dev-dependencies]
 tracedraw-core = { workspace = true, features = ["test-profiles"] }

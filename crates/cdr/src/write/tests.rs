@@ -261,7 +261,13 @@ fn groups_bitmaps_and_pages(doc: &Document, v: u16) {
     let (back, rep) = crate::open_bytes(&bytes, "back").expect("reads back");
     assert_eq!(back.pages.len(), 2, "{v}: {:?}", rep.warnings);
     assert_eq!(rep.skipped_objects, 0, "{:?}", rep.warnings);
-    let l = &back.pages[0].layers[0];
+    // Before version 14 every page lists every layer of the drawing (the
+    // master page's order), so the first page also has an empty "Second".
+    let l = back.pages[0]
+        .layers
+        .iter()
+        .find(|l| l.name == "Ink")
+        .unwrap_or_else(|| panic!("{v}: no Ink layer"));
     assert_eq!(l.shapes.len(), 2, "{v}: {:?}", rep.warnings);
     match &l.shapes[0].kind {
         ShapeKind::Group { children } => {
@@ -297,8 +303,25 @@ fn groups_bitmaps_and_pages(doc: &Document, v: u16) {
         (bb.x0 - 100.0).abs() < 0.01 && (bb.y1 - 90.0).abs() < 0.01,
         "{bb:?}"
     );
-    assert_eq!(back.pages[1].layers[0].name, "Second");
-    assert_eq!(back.pages[1].layers[0].shapes.len(), 1);
+    let second = back.pages[1]
+        .layers
+        .iter()
+        .find(|l| l.name == "Second")
+        .unwrap_or_else(|| panic!("{v}: no Second layer"));
+    assert_eq!(second.shapes.len(), 1, "{v}");
+    let names = |page: &Page| {
+        page.layers
+            .iter()
+            .map(|l| l.name.clone())
+            .collect::<Vec<_>>()
+    };
+    if v >= 14 {
+        assert_eq!(names(&back.pages[0]), ["Ink"], "{v}");
+        assert_eq!(names(&back.pages[1]), ["Second"], "{v}");
+    } else {
+        assert_eq!(names(&back.pages[0]), ["Second", "Ink"], "{v}");
+        assert_eq!(names(&back.pages[1]), ["Second", "Ink"], "{v}");
+    }
 }
 
 #[test]
@@ -795,9 +818,10 @@ fn files_are_laid_out_as_the_versions_have_them() {
         let pages = ids.iter().filter(|i| i.trim() == "page").count();
         assert_eq!(pages, 2, "{v}: master page and page");
         // A page lists the master's guides and desktop layers, from 14 its
-        // own guides, then the drawing's layer and the master's grid.
+        // own guides, then the drawing's layer and the master's grid; before
+        // 14 the master page lists the drawing's layer too.
         let layers = ids.iter().filter(|i| i.trim() == "layr").count();
-        assert_eq!(layers, if v >= 14 { 3 + 5 } else { 3 + 4 }, "{v}: {ids:?}");
+        assert_eq!(layers, if v >= 14 { 3 + 5 } else { 4 + 4 }, "{v}: {ids:?}");
         // Every object: flags, boxes, static id, attributes with the
         // transform; the text starts with its number and ends with its
         // record.
@@ -809,11 +833,12 @@ fn files_are_laid_out_as_the_versions_have_them() {
             "{v}: the text comes first, front to back"
         );
         assert!(ids.iter().any(|i| i.trim() == "txsm"), "{v}");
-        // From 11 the text record is followed by its line breaking tables.
+        // The text record is followed by its line breaking tables in every
+        // version.
         let txsm = at("txsm").expect("txsm");
         assert_eq!(
-            ids.get(txsm + 1).map(|i| i.trim()) == Some("txtj"),
-            v >= 11,
+            ids.get(txsm + 1).map(|i| i.trim()),
+            Some("txtj"),
             "{v}: {ids:?}"
         );
         let mut flags = Vec::new();
@@ -822,8 +847,13 @@ fn files_are_laid_out_as_the_versions_have_them() {
                 flags.push(tree.data(&riff, ch).to_vec());
             }
         });
-        // Text is flagged 9 before version 18, 8 (as other objects) after.
-        assert_eq!(flags.contains(&vec![0, 2, 0, 9]), v < 18, "{v}: text flags");
+        // Text is flagged 8 like the shapes, except in versions 14 to 17,
+        // which keep the 9 their files opened with.
+        assert_eq!(
+            flags.contains(&vec![0, 2, 0, 9]),
+            (14..18).contains(&v),
+            "{v}: text flags"
+        );
         assert!(flags.contains(&vec![0, 2, 0, 8]), "{v}: object flags");
         assert!(
             flags.iter().any(|f| f.get(2..4) == Some(&[1, 0x90])),
@@ -874,7 +904,9 @@ fn layer_args(
 /// Pages list the master page's guides, desktop and grid layers by the
 /// master's GUIDs, as every sample file of versions 14 to 22 does (entries
 /// with GUIDs of their own are the likeliest reason earlier files closed
-/// the program that opened them; not confirmed yet).
+/// the program that opened them; not confirmed yet). Before 14 the master
+/// page lists the drawing's layers too and every page lists them all in
+/// the master's order (#1139).
 #[test]
 fn pages_refer_to_the_master_layers_by_their_guids() {
     let mut doc = doc_with(Vec::new());
@@ -905,11 +937,21 @@ fn pages_refer_to_the_master_layers_by_their_guids() {
         };
         let master = entries(pages[0]);
         let master_flags: Vec<[u8; 4]> = master.iter().map(|(f, _)| *f).collect();
-        assert_eq!(
-            master_flags,
-            [[0x0a, 0, 1, 0x98], [0x08, 0, 1, 0x98], [0x1a, 1, 1, 0x98]],
-            "{v}"
-        );
+        let mut expect_master = vec![[0x0a, 0, 1, 0x98], [0x08, 0, 1, 0x98]];
+        if v < 14 {
+            expect_master.push([0, 0, 0, 0x98]);
+            expect_master.push([0, 0, 0, 0x98]);
+        }
+        expect_master.push([0x1a, 1, 1, 0x98]);
+        assert_eq!(master_flags, expect_master, "{v}");
+        // The master's entries for the drawing's layers are named and
+        // hold no objects.
+        for (l, (f, args)) in pages[0].find_all(b"layr").zip(&master) {
+            if *f == [0, 0, 0, 0x98] {
+                assert!(arg(args, ARG_NAME).is_some(), "{v}");
+                assert!(l.find(b"obj ").is_none(), "{v}");
+            }
+        }
         // The master page closes with an empty object list from 16; pages
         // do not.
         assert_eq!(pages[0].find(b"lgob").is_some(), v >= 16, "{v}");
@@ -921,10 +963,23 @@ fn pages_refer_to_the_master_layers_by_their_guids() {
             let mut expect = vec![[0x0a, 0, 1, 0x98], [0x08, 0, 1, 0x98]];
             if v >= 14 {
                 expect.push([0x0a, 0, 0, 0x98]);
+            } else {
+                // Both drawing layers on both pages, as on the master.
+                expect.push([0, 0, 0, 0x98]);
             }
             expect.push([0, 0, 0, 0x98]);
             expect.push([0x1a, 1, 1, 0x98]);
             assert_eq!(flags, expect, "{v}");
+            if v < 14 {
+                let kinds = |entries: &[([u8; 4], Args)]| -> Vec<[u8; 4]> {
+                    entries.iter().map(|(f, _)| *f).collect()
+                };
+                assert_eq!(kinds(&layers), kinds(&master), "{v}: the master's order");
+                let names = |entries: &[([u8; 4], Args)]| -> Vec<Option<Vec<u8>>> {
+                    entries.iter().map(|(_, a)| arg(a, ARG_NAME)).collect()
+                };
+                assert_eq!(names(&layers), names(&master), "{v}: the master's names");
+            }
             for (f, args) in &layers {
                 let guid = arg(args, ARG_GUID);
                 let name = arg(args, ARG_NAME);
@@ -961,16 +1016,20 @@ fn pages_refer_to_the_master_layers_by_their_guids() {
                 );
             }
         }
-        // It still reads back as two pages of one layer each.
+        // It still reads back as two pages; before 14 each page lists both
+        // layers (the one it lacks empty), from 14 its own alone.
         let (back, _) = crate::open_bytes(&bytes, "t").expect("opens");
         assert_eq!(back.pages.len(), 2, "{v}");
-        let names: Vec<&str> = back
+        let names: Vec<Vec<&str>> = back
             .pages
             .iter()
-            .map(|p| p.layers[0].name.as_str())
+            .map(|p| p.layers.iter().map(|l| l.name.as_str()).collect())
             .collect();
-        assert_eq!(names, ["Ink", "Second"], "{v}");
-        assert!(back.pages.iter().all(|p| p.layers.len() == 1), "{v}");
+        if v >= 14 {
+            assert_eq!(names, [vec!["Ink"], vec!["Second"]], "{v}");
+        } else {
+            assert_eq!(names, [vec!["Second", "Ink"], vec!["Second", "Ink"]], "{v}");
+        }
     }
 }
 
@@ -1020,16 +1079,28 @@ fn the_style_table_numbers_its_entries_once_and_styles_name_them() {
         assert_eq!(fills, [7, 8], "{v}");
         let n = u();
         assert_eq!(entry(n, 0, &mut ids, &mut u), [9], "{v}");
-        // One font: three scripts in font 3 at 12 pt.
+        // One font: three scripts in font 3 at 12 pt. Before 10 the entry
+        // holds 0, 0xffff, 1, one size and three style flags; from 10 0,
+        // three masks, 1, three sizes and three style flags.
         assert_eq!(u(), 1, "{v}");
         ids.push(u());
         let mask: Vec<u32> = (0..if v >= 10 { 5 } else { 3 }).map(|_| u()).collect();
         assert_eq!(mask[0], 0, "{v}");
+        assert_eq!(mask[1], if v >= 16 { 0xff } else { 0xffff }, "{v}");
+        assert_eq!(
+            mask.last().copied(),
+            Some(if v >= 16 { u32::MAX } else { 1 }),
+            "{v}"
+        );
         assert_eq!(u(), 3, "{v}: font 3, character set 0");
         assert_eq!((u(), u()), (3, 3), "{v}: the other scripts' fonts");
-        assert_eq!((u(), u(), u()), (42333, 42333, 42333), "{v}: sizes");
-        for _ in 0..if v >= 10 { 3 } else { 1 } {
-            assert_eq!(u(), 0x40, "{v}");
+        if v >= 10 {
+            assert_eq!((u(), u(), u()), (42333, 42333, 42333), "{v}: sizes");
+        } else {
+            assert_eq!(u(), 42333, "{v}: one size");
+        }
+        for _ in 0..3 {
+            assert_eq!(u(), 0x40, "{v}: style flags");
         }
         let n = u();
         assert_eq!(
@@ -1050,11 +1121,11 @@ fn the_style_table_numbers_its_entries_once_and_styles_name_them() {
         for (pos, thick) in DECORATION_LINES {
             assert_eq!((u(), u() as i32, u() as i32), (0, pos, thick), "{v}");
         }
-        // No tabs, bullets, indents, hyphenation or drop caps; set11 from 9.
+        // No tabs, bullets, indents, hyphenation or drop caps; set11 from 8.
         for _ in 0..5 {
             assert_eq!(u(), 0, "{v}");
         }
-        if v >= 9 {
+        if v >= 8 {
             assert_eq!(u(), 1, "{v}");
             ids.push(u());
             assert_eq!((u(), u()), (0, 0));
@@ -1072,12 +1143,26 @@ fn the_style_table_numbers_its_entries_once_and_styles_name_them() {
             u();
             u();
             let len = u() as usize;
+            let label = [
+                "Default",
+                "Centred",
+                "Right",
+                "Justified",
+                "Default Graphic",
+            ][style as usize - 1];
             if v >= 16 {
                 assert_eq!(len, 0, "{v}: no names from 16");
+            } else if v >= 12 {
+                assert_eq!(len, label.len(), "{v}: UTF-16 names count their letters");
+            } else {
+                // 8-bit names end with a NUL that the length counts.
+                assert_eq!(len, label.len() + 1, "{v}");
+                let bytes = &d[at.get()..at.get() + len];
+                assert_eq!(bytes, [label.as_bytes(), &[0]].concat(), "{v}");
             }
             at.set(at.get() + len * if v >= 12 { 2 } else { 1 });
             let refs = if style < 5 {
-                6 + usize::from(v >= 9)
+                6 + usize::from(v >= 8)
             } else {
                 2
             };
@@ -1198,9 +1283,12 @@ fn records_have_the_sizes_of_the_versions_files() {
             if v >= 12 { 296 } else { 92 },
             "{v}"
         );
+        // The transform: 184 bytes before 13 (the 160-byte record of the
+        // files of versions 7 to 12), 96 from 13.
         assert_eq!(
             trfd(Ver(v), Affine::IDENTITY).len(),
-            if v >= 13 { 96 } else { 80 }
+            if v >= 13 { 96 } else { 184 },
+            "{v}"
         );
     }
     // Two-stop gradients: stops of 16 bytes before version 13, 24 in 13,
@@ -1289,11 +1377,11 @@ fn colours_carry_the_palette_id_of_their_model_from_version_14() {
     assert_eq!(v14, v15, "versions 14 and 15 share the solid fill record");
 }
 
-/// Objects of versions 9 to 15 carry argument 19170 (1, 1, 0), as every
-/// shape, text and picture of files of those versions does; files of 8
-/// and of 16 on have none.
+/// Objects of versions 7 to 15 carry argument 19170 (1, 1, 0), as every
+/// shape, text and picture of files of those versions saved by the
+/// program that reads them does; files of 16 on have none.
 #[test]
-fn objects_of_versions_9_to_15_carry_argument_19170() {
+fn objects_of_versions_7_to_15_carry_argument_19170() {
     let mut doc = doc_with(Vec::new());
     let mut ids = doc.ids().clone();
     let r = Shape::new(
@@ -1329,7 +1417,7 @@ fn objects_of_versions_9_to_15_carry_argument_19170() {
             }
         });
         assert_eq!(flags.len(), 2, "{v}");
-        let want = (9..=15).contains(&v).then(|| {
+        let want = (7..=15).contains(&v).then(|| {
             [1u32, 1, 0]
                 .iter()
                 .flat_map(|x| x.to_le_bytes())
@@ -1610,8 +1698,11 @@ fn every_version_writes_what_files_of_that_version_hold() {
             let side = if v >= 13 { 128 } else { 96 };
             assert_eq!(u32::from_le_bytes(disp[0..4].try_into().unwrap()), 8);
             assert_eq!(i32::from_le_bytes(disp[8..12].try_into().unwrap()), side);
+            // 8 bits with a palette in every version (the version 13 files
+            // of the program that reads them hold an 8-bit picture too).
             let bpp = u16::from_le_bytes(disp[18..20].try_into().unwrap());
-            assert_eq!(bpp, if v >= 13 { 24 } else { 8 }, "{v}");
+            assert_eq!(bpp, 8, "{v}");
+            assert_eq!(u32::from_le_bytes(disp[36..40].try_into().unwrap()), 256);
             assert!(!has("pref"));
             continue;
         }
@@ -1714,14 +1805,11 @@ fn riff_streams_are_compressed_and_end_with_a_summary() {
         let (back, _) = crate::open_bytes(&bytes, "back").expect("reads");
         assert_eq!(back.pages[0].layers[0].shapes.len(), 1, "{v}");
         if v < 14 {
+            // 60 bytes in every version: the box, 1, 1, 0, the time, 0, 0,
+            // the version, the build, 0, the locale, 0, the version.
             let sumi = tree.root.find(b"sumi").expect("sumi");
             let d = tree.data(&riff, sumi);
-            let len = match v {
-                0..=9 => 44,
-                10 | 11 => 56,
-                _ => 60,
-            };
-            assert_eq!(d.len(), len, "{v}");
+            assert_eq!(d.len(), 60, "{v}");
             let word = |i: usize| i32::from_le_bytes(d[i * 4..i * 4 + 4].try_into().unwrap());
             // The rectangle's box from the page centre, in units.
             let size = doc.pages[0].size;
@@ -1731,7 +1819,13 @@ fn riff_streams_are_compressed_and_end_with_a_summary() {
             assert_eq!(word(1), u(50.0 - cy), "{v}");
             assert_eq!(word(2), u(30.0 - cx), "{v}");
             assert_eq!(word(3), u(20.0 - cy), "{v}");
+            assert_eq!((word(4), word(5)), (0x1_0001, 0), "{v}");
+            assert!(word(6) > 1_700_000_000, "{v}: the time saved");
+            assert_eq!((word(7), word(8)), (0, 0), "{v}");
             assert_eq!(word(9), i32::from(v) * 100, "{v}");
+            assert!(word(10) > 0, "{v}: a build number");
+            assert_eq!((word(11), word(12), word(13)), (0, 1033, 0), "{v}");
+            assert_eq!(word(14), i32::from(v) * 100, "{v}");
         }
     }
 }
@@ -2281,7 +2375,8 @@ fn layers_go_out_front_to_back_and_come_back_bottom_to_top() {
             .collect();
         assert_eq!(names, ["Ink", "Front"], "{v}: {:?}", rep.warnings);
     }
-    // In the file the front layer is listed first.
+    // In the file the front layer is listed first: on the master page,
+    // which lists the drawing's layers before version 14, then on the page.
     let (_, tree, riff) = chunk_ids(&document_to_cdr_version(&doc, 12));
     let mut names = Vec::new();
     tree.root.walk(&mut |c, _| {
@@ -2295,7 +2390,7 @@ fn layers_go_out_front_to_back_and_come_back_bottom_to_top() {
             }
         }
     });
-    assert_eq!(names, ["Front", "Ink"]);
+    assert_eq!(names, ["Front", "Ink", "Front", "Ink"]);
 }
 
 #[test]
@@ -2523,8 +2618,9 @@ fn version_15_objects_carry_the_arguments_its_files_have() {
         let has = |kind: u32, arg: u32| seen.iter().any(|(k, a)| *k == kind && a.contains(&arg));
         // No bare transparency value where these versions keep a record.
         assert_eq!(has(3, 8000) || has(1, 8000), v < 13, "{v}");
-        // Text: 16015 from version 15.
-        assert_eq!(has(4, 16015), v >= 15, "{v}");
+        // Text: 16015 in every version but 14 (its files, which open, were
+        // written without it and stay so).
+        assert_eq!(has(4, 16015), v != 14, "{v}");
     }
 }
 
@@ -2539,7 +2635,8 @@ fn artistic_text_records_before_16_open_as_files_have_them() {
     let doc = doc_with(vec![t]);
     for (v, layout) in [
         (7u16, 2u32),
-        (8, 3),
+        (8, 4),
+        (9, 4),
         (10, 5),
         (11, 5),
         (12, 6),
@@ -3999,5 +4096,538 @@ fn a_kept_blend_that_no_longer_matches_opens_as_drawn() {
     ));
     for junk in [&b""[..], b"{", b"{\"format\":2,\"blends\":[]}", b"[1,2]"] {
         assert!(crate::kept_blends::decode(junk).is_empty());
+    }
+}
+
+// ---- the interoperability drawing (issue #1139) --------------------------
+
+/// The drawing of the interoperability bundles
+/// (`apps/tracedraw-cli/examples/interop.rs`): a rectangle with a fill and
+/// an outline, an ellipse, a filled curve, a line, a gradient, a group of
+/// two shapes, an open polyline and four artistic texts (plain with
+/// accents, runs with a colour of their own, right aligned and centred) on
+/// an A5 landscape page.
+fn interop_document() -> Document {
+    let hex = |s: &str| Color::from_hex(s).unwrap_or(Color::BLACK);
+    let mut doc = Document::new("interop", Size::new(210.0, 148.0));
+    let mut ids = doc.ids().clone();
+    let styled = |mut s: Shape, fill: Option<Color>, stroke: Option<(Color, f64)>, name: &str| {
+        s.fill = fill.map(Fill::Solid).unwrap_or(Fill::None);
+        s.stroke = stroke.map(|(c, w)| Stroke::new(c, w));
+        s.name = Some(name.into());
+        s
+    };
+    let rect = |ids: &mut tracedraw_core::id::IdSource, x: f64, top: f64, w: f64, h: f64| {
+        Shape::new(
+            ids.shape(),
+            ShapeKind::Rect {
+                rect: Rect::new(x, top - h, x + w, top),
+                radius: 0.0,
+                corners: None,
+            },
+        )
+    };
+    let ellipse = |ids: &mut tracedraw_core::id::IdSource, cx: f64, cy: f64, rx: f64, ry: f64| {
+        Shape::new(
+            ids.shape(),
+            ShapeKind::Ellipse {
+                rect: Rect::new(cx - rx, cy - ry, cx + rx, cy + ry),
+                arc: None,
+            },
+        )
+    };
+    let path = |ids: &mut tracedraw_core::id::IdSource, p: BezPath, closed: bool| {
+        Shape::new(ids.shape(), ShapeKind::Path { path: p, closed })
+    };
+    let text = |ids: &mut tracedraw_core::id::IdSource,
+                spans: Vec<TextSpan>,
+                x: f64,
+                y: f64,
+                align: TextAlign| {
+        let mut s = Shape::new(
+            ids.shape(),
+            ShapeKind::Text {
+                spans,
+                origin: Point::ZERO,
+                frame: None,
+                align,
+                para: ParagraphStyle::default(),
+                on_path: None,
+            },
+        );
+        s.transform = Affine::translate((x, y));
+        s.fill = Fill::Solid(Color::BLACK);
+        s.stroke = None;
+        s
+    };
+    let mut shapes = Vec::new();
+    let r = rect(&mut ids, 15.0, 133.0, 40.0, 30.0);
+    shapes.push(styled(
+        r,
+        Some(hex("#3366cc")),
+        Some((Color::BLACK, 0.5)),
+        "rectangle",
+    ));
+    let e = ellipse(&mut ids, 90.0, 118.0, 20.0, 15.0);
+    shapes.push(styled(
+        e,
+        Some(hex("#33cc33")),
+        Some((hex("#003300"), 1.0)),
+        "ellipse",
+    ));
+    let mut curve = BezPath::new();
+    curve.move_to((120.0, 133.0));
+    curve.curve_to((135.0, 143.0), (150.0, 103.0), (165.0, 133.0));
+    curve.line_to((180.0, 108.0));
+    curve.curve_to((160.0, 98.0), (140.0, 98.0), (120.0, 108.0));
+    curve.close_path();
+    let c = path(&mut ids, curve, true);
+    shapes.push(styled(c, Some(hex("#cc3399")), None, "curve"));
+    let mut line = BezPath::new();
+    line.move_to((15.0, 88.0));
+    line.line_to((80.0, 73.0));
+    let l = path(&mut ids, line, false);
+    shapes.push(styled(l, None, Some((Color::BLACK, 1.5)), "line"));
+    let mut g = rect(&mut ids, 95.0, 93.0, 50.0, 25.0);
+    g.fill = Fill::Fountain(tracedraw_core::Fountain::two(
+        FountainKind::Linear,
+        hex("#ffcc00"),
+        hex("#cc0000"),
+        0.0,
+    ));
+    g.stroke = Some(Stroke::new(Color::BLACK, 0.25));
+    g.name = Some("gradient".into());
+    shapes.push(g);
+    let a = rect(&mut ids, 155.0, 93.0, 20.0, 20.0);
+    let a = styled(a, Some(hex("#ff9900")), None, "group square");
+    let b = ellipse(&mut ids, 185.0, 83.0, 10.0, 10.0);
+    let b = styled(b, Some(hex("#0099cc")), None, "group circle");
+    let mut group = Shape::new(
+        ids.shape(),
+        ShapeKind::Group {
+            children: vec![a, b],
+        },
+    );
+    group.name = Some("group".into());
+    shapes.push(group);
+    let mut poly = BezPath::new();
+    poly.move_to((15.0, 58.0));
+    poly.line_to((40.0, 63.0));
+    poly.line_to((65.0, 53.0));
+    poly.line_to((80.0, 60.0));
+    let p = path(&mut ids, poly, false);
+    shapes.push(styled(p, None, Some((hex("#660066"), 0.75)), "polyline"));
+    shapes.push(text(
+        &mut ids,
+        vec![TextSpan::new("Interop test 0003 éàü", "Arial", 9.0)],
+        15.0,
+        33.0,
+        TextAlign::Left,
+    ));
+    let mut bold = TextSpan::new("bold red", "Arial", 8.0);
+    bold.bold = true;
+    bold.fill = Some(Fill::Solid(hex("#cc0000")));
+    let mut italic = TextSpan::new("italic", "Arial", 8.0);
+    italic.italic = true;
+    shapes.push(text(
+        &mut ids,
+        vec![
+            TextSpan::new("Runs: ", "Arial", 8.0),
+            bold,
+            TextSpan::new(" and ", "Arial", 8.0),
+            italic,
+        ],
+        15.0,
+        16.0,
+        TextAlign::Left,
+    ));
+    shapes.push(text(
+        &mut ids,
+        vec![TextSpan::new("right aligned", "Arial", 7.0)],
+        195.0,
+        33.0,
+        TextAlign::Right,
+    ));
+    shapes.push(text(
+        &mut ids,
+        vec![TextSpan::new("centred", "Arial", 7.0)],
+        150.0,
+        16.0,
+        TextAlign::Center,
+    ));
+    doc.pages[0].layers[0].shapes = shapes;
+    doc.set_ids(ids);
+    doc
+}
+
+fn fnv1a(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(0xcbf2_9ce4_8422_2325u64, |h, b| {
+        (h ^ u64::from(*b)).wrapping_mul(0x100_0000_01b3)
+    })
+}
+
+/// Files of versions 14 and 15 open with their fills in the program that
+/// reads them (a user's test of 2026-10-29, issue #1139), so the RIFF
+/// stream of the interoperability drawing stays byte for byte what it was
+/// when versions 7 to 13 were corrected. The hashes are of that stream
+/// (`content/riffData.cdr`, with no save time in it); they move only with
+/// a change to these versions made on purpose.
+#[test]
+fn versions_14_and_15_are_written_as_before() {
+    use std::io::Read as _;
+    let doc = interop_document();
+    for (v, want) in [
+        (14u16, 0x7e7f_3330_76ad_70a3u64),
+        (15, 0x88ab_5fb3_28ef_43e3),
+    ] {
+        let bytes = document_to_cdr_version(&doc, v);
+        let mut z = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).expect("zip");
+        let mut riff = Vec::new();
+        z.by_name("content/riffData.cdr")
+            .expect("riff stream")
+            .read_to_end(&mut riff)
+            .expect("read");
+        assert_eq!(fnv1a(&riff), want, "{v}: hash {:#018x}", fnv1a(&riff));
+    }
+}
+
+/// Files of versions 7 to 13 hold what the files of those versions saved
+/// by the program that reads them hold (one drawing saved by it in each
+/// version, issue #1139, 2026-10-29; a real version 9 file and two
+/// releases' version 13 files agree on the layers, the master page and the
+/// layer arguments): the chunk layout, the record sizes, the arguments of
+/// every object, group and layer, the text records with their tables and
+/// the summary; and the drawing reads back whole.
+#[test]
+fn versions_7_to_13_hold_the_records_their_files_have() {
+    let doc = interop_document();
+    for v in 7u16..=13 {
+        let bytes = document_to_cdr_version(&doc, v);
+        let (_, tree, riff) = chunk_ids(&bytes);
+        let name = |c: &crate::riff::Chunk| {
+            c.list_type_str()
+                .unwrap_or_else(|| c.id_str())
+                .trim()
+                .to_string()
+        };
+        assert_eq!(&bytes[8..12], &Ver(v).form(), "{v}");
+        let vrsn = tree.root.find(b"vrsn").expect("vrsn");
+        assert_eq!(tree.data(&riff, vrsn), (v * 100).to_le_bytes(), "{v}");
+        // The top level and the document tables, in order.
+        let top: Vec<String> = tree.root.children.iter().map(name).collect();
+        assert_eq!(top, ["vrsn", "INFO", "cmpr", "cmpr", "sumi"], "{v}");
+        let mut by_name: std::collections::HashMap<String, Vec<&crate::riff::Chunk>> =
+            std::collections::HashMap::new();
+        tree.root
+            .walk(&mut |c, _| by_name.entry(name(c)).or_default().push(c));
+        let only = |n: &str| -> &crate::riff::Chunk {
+            let found = by_name.get(n).unwrap_or_else(|| panic!("{v}: no {n}"));
+            assert_eq!(found.len(), 1, "{v}: one {n}");
+            found[0]
+        };
+        let tables: Vec<String> = only("doc").children.iter().map(name).collect();
+        assert_eq!(
+            tables,
+            ["pfrd", "mcfg", "ptrt", "fntt", "filt", "otlt", "stlt", "uil"],
+            "{v}"
+        );
+        let sizes = |n: &str| -> Vec<usize> {
+            let mut s: Vec<usize> = by_name
+                .get(n)
+                .map(|cs| cs.iter().map(|c| tree.data(&riff, c).len()).collect())
+                .unwrap_or_default();
+            s.sort_unstable();
+            s.dedup();
+            s
+        };
+        let mcfg_len = [536, 656, 848, 4096, 4088, 8152, 8323][usize::from(v - 7)];
+        assert_eq!(sizes("mcfg"), [mcfg_len], "{v}");
+        assert_eq!(sizes("pfrd"), [if v >= 13 { 2 } else { 1 }], "{v}");
+        assert_eq!(sizes("sumi"), [60], "{v}");
+        assert_eq!(sizes("trfd"), [if v >= 13 { 96 } else { 184 }], "{v}");
+        assert_eq!(sizes("outl"), [if v >= 13 { 192 } else { 140 }], "{v}");
+        assert_eq!(
+            sizes("fild"),
+            if v >= 13 { [22, 76, 128] } else { [8, 36, 88] },
+            "{v}: no fill, solid and two-stop fountain"
+        );
+        assert_eq!(sizes("txtj"), [528], "{v}");
+        assert_eq!(by_name["txsm"].len(), 4, "{v}: four texts");
+        assert_eq!(by_name["txtj"].len(), 4, "{v}: each with its tables");
+        // Objects: flags [0, 2, 0, 8] (texts too), their text record followed
+        // by its tables; the arguments every object of those files carries.
+        let mut objects = 0;
+        for obj in &by_name["obj"] {
+            objects += 1;
+            let kids: Vec<String> = obj.children.iter().map(name).collect();
+            let flags = tree.data(&riff, obj.find(b"flgs").expect("flgs"));
+            assert_eq!(flags, [0, 2, 0, 8], "{v}: {kids:?}");
+            if let Some(i) = kids.iter().position(|k| k == "txsm") {
+                assert_eq!(kids.get(i + 1).map(String::as_str), Some("txtj"), "{v}");
+                assert_eq!(kids[0], "spnd", "{v}");
+            }
+            let loda = obj
+                .find(b"lgob")
+                .and_then(|l| l.find(b"loda"))
+                .map(|l| tree.data(&riff, l))
+                .expect("loda");
+            let kind = u32::from_le_bytes(loda[16..20].try_into().expect("kind"));
+            let types: Vec<u32> = loda_args(loda).iter().map(|(t, _)| *t).collect();
+            for t in [19170, 12000, 200, 100, 30, 20, 10] {
+                assert!(types.contains(&t), "{v}: kind {kind}: {types:?} lacks {t}");
+            }
+            assert_eq!(types.contains(&12030), v <= 12, "{v}: {types:?}");
+            assert_eq!(types.contains(&16015), kind == 4, "{v}: {types:?}");
+            assert!(!types.contains(&40050) && !types.contains(&201), "{v}");
+            // Highest type first, as files order them.
+            let mut sorted = types.clone();
+            sorted.sort_unstable_by(|a, b| b.cmp(a));
+            assert_eq!(types, sorted, "{v}");
+        }
+        assert_eq!(objects, 12, "{v}: 8 shapes and 4 texts");
+        for grp in &by_name["grp"] {
+            let loda = grp
+                .find(b"lgob")
+                .and_then(|l| l.find(b"loda"))
+                .map(|l| tree.data(&riff, l))
+                .expect("loda");
+            let types: Vec<u32> = loda_args(loda).iter().map(|(t, _)| *t).collect();
+            let mut want = vec![12000, 100];
+            if v <= 12 {
+                want.insert(0, 12030);
+            }
+            assert_eq!(types, want, "{v}");
+        }
+        assert_eq!(by_name["grp"].len(), 1, "{v}");
+        // Layers: no 12000, rotation or GUID before 14; a colour and a name.
+        let layer_kinds = |page: &crate::riff::Chunk| -> Vec<u32> {
+            page.find(b"gobj")
+                .expect("gobj")
+                .find_all(b"layr")
+                .map(|l| {
+                    let (_, args) = layer_args(&tree, &riff, l);
+                    let loda = l
+                        .find(b"lgob")
+                        .and_then(|g| g.find(b"loda"))
+                        .map(|c| tree.data(&riff, c))
+                        .expect("loda");
+                    let types: Vec<u32> = args.iter().map(|(t, _)| *t).collect();
+                    for t in [12000, 12030, 40050] {
+                        assert!(!types.contains(&t), "{v}: layer {types:?}");
+                    }
+                    assert!(types.contains(&2000) && types.contains(&1000), "{v}");
+                    u32::from_le_bytes(loda[16..20].try_into().expect("kind"))
+                })
+                .collect()
+        };
+        let pages = &by_name["page"];
+        assert_eq!(pages.len(), 2, "{v}");
+        let (master, page) = (pages[0], pages[1]);
+        // The master page: flags [0, 0, 1, 0x90], a zero box, no object box,
+        // the same layers as the page in the same order and no objects.
+        assert_eq!(
+            tree.data(&riff, master.find(b"flgs").expect("flgs")),
+            [0, 0, 1, 0x90],
+            "{v}"
+        );
+        assert_eq!(
+            tree.data(&riff, master.find(b"bbox").expect("bbox")),
+            [0; 16],
+            "{v}"
+        );
+        assert!(master.find(b"obbx").is_none(), "{v}");
+        assert!(master.find(b"lgob").is_none(), "{v}");
+        assert_eq!(layer_kinds(master), [0x0c, 0x11, 0, 0x0b], "{v}");
+        assert_eq!(layer_kinds(page), layer_kinds(master), "{v}");
+        let mut master_objects = 0;
+        master.walk(&mut |c, _| {
+            if c.is(b"obj ") {
+                master_objects += 1;
+            }
+        });
+        assert_eq!(master_objects, 0, "{v}");
+        assert_eq!(
+            tree.data(&riff, page.find(b"flgs").expect("flgs")),
+            [0, 0, 0, 0x90],
+            "{v}"
+        );
+        assert!(page.find(b"obbx").is_some(), "{v}");
+        // The drawing reads back whole.
+        let (back, rep) = crate::open_bytes(&bytes, "interop").expect("reads back");
+        assert_eq!(rep.skipped_objects, 0, "{v}: {:?}", rep.warnings);
+        assert_eq!(back.pages.len(), 1, "{v}");
+        assert_eq!(back.pages[0].layers.len(), 1, "{v}");
+        let shapes = &back.pages[0].layers[0].shapes;
+        assert_eq!(shapes.len(), 11, "{v}: {:?}", rep.warnings);
+        let texts: Vec<String> = shapes
+            .iter()
+            .filter_map(|s| match &s.kind {
+                ShapeKind::Text { spans, .. } => {
+                    Some(spans.iter().map(|sp| sp.text.as_str()).collect())
+                }
+                _ => None,
+            })
+            .collect();
+        for t in [
+            "Interop test 0003 éàü",
+            "Runs: bold red and italic",
+            "right aligned",
+            "centred",
+        ] {
+            assert!(texts.iter().any(|x| x == t), "{v}: {texts:?}");
+        }
+        assert!(
+            shapes.iter().any(
+                |s| matches!(s.kind, ShapeKind::Group { ref children } if children.len() == 2)
+            ),
+            "{v}"
+        );
+        assert!(
+            shapes.iter().any(|s| matches!(s.fill, Fill::Fountain(_))),
+            "{v}"
+        );
+    }
+}
+
+/// The records and letter descriptions of the first paragraph of a text
+/// record of versions 7 to 15: (letters, flags) of each record, and each
+/// letter's record number.
+fn txsm_first_paragraph(d: &[u8], v: u16) -> (Vec<(u16, u8)>, Vec<u8>) {
+    let u32_at = |at: usize| u32::from_le_bytes(d[at..at + 4].try_into().expect("4 bytes"));
+    let u16_at = |at: usize| u16::from_le_bytes(d[at..at + 2].try_into().expect("2 bytes"));
+    let mut at = 36 + usize::from(v >= 15) + if v < 8 { 4 } else { 0 };
+    let frames = u32_at(at) as usize;
+    at += 4;
+    for _ in 0..frames {
+        at += 4 + 48;
+        if v >= 8 {
+            at += 4;
+            if v >= 15 {
+                at += 12;
+            }
+        }
+    }
+    at += 4; // the paragraph count
+    at += 4 + 1 + usize::from(v >= 13);
+    let n = u32_at(at) as usize;
+    at += 4;
+    let mut records = Vec::new();
+    for _ in 0..n {
+        let (count, flags) = (u16_at(at), d[at + 2]);
+        at += 3 + usize::from(v >= 8);
+        if flags & 0x04 != 0 {
+            at += 4;
+        }
+        if flags & 0x40 != 0 {
+            at += 4 + if v >= 13 { 48 } else { 0 };
+        }
+        records.push((count, flags));
+    }
+    let chars = u32_at(at) as usize;
+    at += 4;
+    let rec = if v >= 12 { 8 } else { 4 };
+    let numbers = (0..chars).map(|i| d[at + i * rec + 2] >> 1).collect();
+    (records, numbers)
+}
+
+/// Before version 14 a paragraph's records list its distinct looks (size
+/// and fill), the paragraph's own first with the paragraph end counted,
+/// and every letter numbers its record in its description (the 4-byte
+/// descriptions of versions 7 to 11 too), as the files of those versions
+/// saved by the program that reads them have it: "Runs: bold red and
+/// italic" is two records, 17 (18 here, with the end) and 8 letters, the
+/// red ones numbered 1. Versions 14 and 15 keep one record per run, which
+/// opens there.
+#[test]
+fn text_records_before_14_list_the_looks_and_number_the_letters() {
+    let mut ids = tracedraw_core::id::IdSource::default();
+    let mut bold = TextSpan::new("bold red", "Arial", 8.0);
+    bold.bold = true;
+    bold.fill = Some(Fill::Solid(Color::rgb8(204, 0, 0)));
+    let mut italic = TextSpan::new("italic", "Arial", 8.0);
+    italic.italic = true;
+    let t = text_shape(
+        &mut ids,
+        vec![
+            TextSpan::new("Runs: ", "Arial", 8.0),
+            bold,
+            TextSpan::new(" and ", "Arial", 8.0),
+            italic,
+        ],
+        TextAlign::Left,
+    );
+    let doc = doc_with(vec![t]);
+    for v in 7u16..=15 {
+        let (_, tree, riff) = chunk_ids(&document_to_cdr_version(&doc, v));
+        let mut rec = None;
+        tree.root.walk(&mut |c, _| {
+            if c.is(b"txsm") && rec.is_none() {
+                rec = Some(tree.data(&riff, c).to_vec());
+            }
+        });
+        let (records, numbers) = txsm_first_paragraph(&rec.expect("a text record"), v);
+        let repeat = |n: u8, k: usize| std::iter::repeat_n(n, k);
+        if v < 14 {
+            assert_eq!(records, [(18, 0x00), (8, 0x40)], "{v}");
+            let want: Vec<u8> = repeat(0, 6)
+                .chain(repeat(1, 8))
+                .chain(repeat(0, 11))
+                .collect();
+            assert_eq!(numbers, want, "{v}");
+        } else {
+            assert_eq!(records, [(6, 0x00), (8, 0x40), (5, 0x00), (7, 0x00)], "{v}");
+            let want: Vec<u8> = repeat(0, 6)
+                .chain(repeat(1, 8))
+                .chain(repeat(2, 5))
+                .chain(repeat(3, 6))
+                .collect();
+            assert_eq!(numbers, want, "{v}");
+        }
+        // It reads back as one text with the red letters red.
+        let (back, rep) = crate::open_bytes(&document_to_cdr_version(&doc, v), "t").expect("opens");
+        let ShapeKind::Text { spans, .. } = &back.pages[0].layers[0].shapes[0].kind else {
+            panic!("{v}: {:?}", rep.warnings);
+        };
+        let text: String = spans.iter().map(|s| s.text.as_str()).collect();
+        assert_eq!(text, "Runs: bold red and italic", "{v}");
+        let red = spans
+            .iter()
+            .find(|s| s.fill == Some(Fill::Solid(Color::rgb8(204, 0, 0))))
+            .unwrap_or_else(|| panic!("{v}: no red run in {spans:?}"));
+        assert_eq!(red.text, "bold red", "{v}");
+    }
+}
+
+/// The configuration records of versions 7 to 11 carry the paper preset
+/// (0x0f A4, 3 Letter, 0 another size) and the orientation, and in 9 to
+/// 11 the 1/8 inch value a page of its own size holds, as the files of
+/// those versions saved by the program that reads them have them.
+#[test]
+fn configuration_records_before_12_carry_the_paper_code_and_orientation() {
+    assert_eq!(paper_code(210.0, 297.0), (0x0f, 0));
+    assert_eq!(paper_code(297.0, 210.0), (0x0f, 1));
+    assert_eq!(paper_code(215.9, 279.4), (3, 0));
+    assert_eq!(paper_code(210.0, 148.0), (0, 1));
+    assert_eq!(paper_code(148.0, 210.0), (0, 0));
+    let u16_at = |r: &[u8], at: usize| u16::from_le_bytes(r[at..at + 2].try_into().expect("2"));
+    let u32_at = |r: &[u8], at: usize| u32::from_le_bytes(r[at..at + 4].try_into().expect("4"));
+    for v in 7u16..=11 {
+        let a5 = mcfg(Ver(v), 210.0, 148.0);
+        let a4 = mcfg(Ver(v), 210.0, 297.0);
+        let paper_at = if v <= 8 { 8 } else { 12 };
+        assert_eq!(
+            (u16_at(&a5, paper_at), u16_at(&a5, paper_at + 2)),
+            (0, 1),
+            "{v}"
+        );
+        assert_eq!(
+            (u16_at(&a4, paper_at), u16_at(&a4, paper_at + 2)),
+            (0x0f, 0),
+            "{v}"
+        );
+        if v >= 9 {
+            assert_eq!(u32_at(&a5, 36), 31750, "{v}");
+            assert_eq!(u32_at(&a4, 36), 0, "{v}");
+        }
     }
 }

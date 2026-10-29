@@ -10,7 +10,9 @@
 //! with the origin at the page centre.
 //!
 //! What is written: pages (after a master page with the guide, desktop and
-//! grid layers files carry), layers with names, rectangles, ellipses (with
+//! grid layers files carry, and before version 14 the drawing's own
+//! layers too, which pages then list in the master's order), layers with
+//! names, rectangles, ellipses (with
 //! arcs), curves for every other outline (polygons, paths, tables, symbols,
 //! expanded effects), groups, artistic text with one font, size and style
 //! per run, bitmaps (24-bit), solid and fountain fills, outlines (width,
@@ -173,6 +175,9 @@ const FULL_ELLIPSE_ANGLE: i32 = 270_000_000;
 const ARG_ID: u32 = 100;
 const ARG_LAYER_COLOR: u32 = 2000;
 const ARG_PROPS: u32 = 12000;
+/// The rotation angle (millionths of a degree) of objects and groups in
+/// versions 7 to 12: 0, the transform holding any turn.
+const ARG_ROTATION: u32 = 12030;
 const ARG_GUID: u32 = 40050;
 /// On text objects of version 16 and later: 1.
 const ARG_TEXT_LINK: u32 = 16015;
@@ -180,6 +185,9 @@ const ARG_TEXT_LINK: u32 = 16015;
 const ARG_HIDDEN: u32 = 16016;
 /// On guides layers of version 17 and later: 2.
 const ARG_GUIDES_MODE: u32 = 16001;
+/// The flags of a drawing's own layer (byte 3: a layer; byte 0 the kind,
+/// byte 2 set on a master layer).
+const PLAIN_LAYER_FLAGS: [u8; 4] = [0, 0, 0, 0x98];
 /// Layer kinds stored as the `loda` object type of a layer.
 const LAYER_PLAIN: u32 = 0;
 const LAYER_GRID: u32 = 0x0b;
@@ -242,12 +250,23 @@ impl Ver {
     fn tagged(self) -> bool {
         self.0 >= 13
     }
-    /// The zero 12000 on layers, groups and objects, flag 0x40 on pages
-    /// and a master page with an object box, as files from version 13 on
-    /// have them (a version 13 file without them closed the program that
-    /// wrote the samples).
-    fn props(self) -> bool {
-        self.0 >= 13
+    /// The zero 12000 on layers, flag 0x40 on pages and a master page with
+    /// an object box, as files from version 14 on have them. Version 13
+    /// files saved by three releases of the program that reads them have
+    /// none of the three (the master page is flagged [0, 0, 1, 0x90] with
+    /// a zero box and no `obbx`, and only objects and groups carry the
+    /// 12000); they were written from 13 until 2026-10-29, after a test
+    /// whose file differed from those releases' in many other ways too.
+    fn page_props(self) -> bool {
+        self.0 >= 14
+    }
+    /// Objects and groups carry argument 12030 (the rotation angle, 0),
+    /// as every object and group of files of versions 7 to 12 does (two
+    /// drawings saved in each of those versions by the program that reads
+    /// them, a real version 11 file with 550 such records and the shapes
+    /// of a real version 9 file); no file from 13 on has it.
+    fn rotation_arg(self) -> bool {
+        (7..=12).contains(&self.0)
     }
     /// A ZIP archive around the RIFF stream.
     fn zip(self) -> bool {
@@ -261,9 +280,11 @@ impl Ver {
         self.0 >= 14
     }
     /// Objects carry argument 19170 (1, 1, 0), as every shape, text and
-    /// picture of files of versions 9 to 15 does; from 16 none has it.
+    /// picture of files of versions 7 to 15 saved by the program that
+    /// reads them does (versions 7 and 8 since 2026-10-29: two drawings
+    /// saved in them, issue #1139); from 16 none has it.
     fn draw_flags(self) -> bool {
-        (9..=15).contains(&self.0)
+        (7..=15).contains(&self.0)
     }
     /// Payloads in data files, reached through redirect records.
     fn redirects(self) -> bool {
@@ -542,11 +563,14 @@ fn cmpr(nodes: &[Node]) -> Node {
 
 /// `sumi`, the last chunk of RIFF files (before version 14): the box of
 /// the first page's drawing (left, top, right, bottom in coordinate units
-/// from the page centre), two u16 1, a flag (0), the time saved (0 here),
-/// two zero words, the version x 100, a build number (0), from version
-/// 10 a zero word, the locale (1033) and a zero word, and from 12 the
-/// version again: 44, 56 or 60 bytes as files of versions 8, 10 and 12 to
-/// 13 hold.
+/// from the page centre), two u16 1, a flag (0), the time saved (Unix
+/// seconds), two zero words, the version x 100, a build number, a zero
+/// word, the locale (1033), a zero word and the version again: 60 bytes
+/// in every version 7 to 13, as the files of those versions saved by the
+/// program that reads them and a real version 11 file hold (a real
+/// version 9 file stops after 52). Shorter records (44 bytes up to 9 and
+/// 56 in 10 and 11, with a zero time and build) were written until
+/// 2026-10-29 (#1139).
 fn sumi(v: Ver, doc: &Document) -> Vec<u8> {
     let (bbox, centre) = doc
         .pages
@@ -566,15 +590,34 @@ fn sumi(v: Ver, doc: &Document) -> Vec<u8> {
         .i32(u(bbox.y1 - centre.y))
         .i32(u(bbox.x1 - centre.x))
         .i32(u(bbox.y0 - centre.y));
-    b.u16(1).u16(1).u32(0).u32(0).u32(0).u32(0);
-    b.u32(u32::from(v.0) * 100).u32(0);
-    if v.0 >= 10 {
-        b.u32(0).u32(1033).u32(0);
-    }
-    if v.0 >= 12 {
-        b.u32(u32::from(v.0) * 100);
-    }
+    b.u16(1).u16(1).u32(0).u32(save_time()).u32(0).u32(0);
+    b.u32(u32::from(v.0) * 100).u32(build_number());
+    b.u32(0).u32(1033).u32(0);
+    b.u32(u32::from(v.0) * 100);
     b.done()
+}
+
+/// The time a file is saved, in Unix seconds (`web_time`: the browser
+/// build has no system clock in `std`).
+fn save_time() -> u32 {
+    web_time::SystemTime::now()
+        .duration_since(web_time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs().min(u64::from(u32::MAX)) as u32)
+}
+
+/// The build number `sumi` carries: TraceDraw's version as one number
+/// (0.24.1 is 2401), never 0 as the files of the program that reads them
+/// never hold 0 there.
+fn build_number() -> u32 {
+    let mut parts = env!("CARGO_PKG_VERSION")
+        .split('.')
+        .map(|p| p.parse::<u32>().unwrap_or(0));
+    let (major, minor, patch) = (
+        parts.next().unwrap_or(0),
+        parts.next().unwrap_or(0),
+        parts.next().unwrap_or(0),
+    );
+    ((major * 100 + minor) * 100 + patch).max(1)
 }
 
 /// RIFF streams before version 16 keep their contents in two compressed
@@ -701,13 +744,14 @@ fn redirect(nodes: &[Node], file: Option<usize>, files: &mut DataFiles, out: &mu
 
 /// `DISP`: the picture of a RIFF file (before version 14): a u32 8, then a
 /// device-independent bitmap of the drawing fitted into a square on white,
-/// 96 pixels and 8 bits with a 256-colour palette before version 13, 128
-/// pixels and 24 bits from 13, as files of those versions hold.
+/// 8 bits with a 256-colour palette in every version, 96 pixels before
+/// version 13 and 128 in 13, as the files of those versions saved by the
+/// program that reads them hold (its version 13 files hold an 8-bit
+/// picture too; a 24-bit one was written in 13 until 2026-10-29).
 fn disp(v: Ver, png: &[u8]) -> Option<Vec<u8>> {
     let pm = tiny_skia::Pixmap::decode_png(png).ok()?;
     let (sw, sh) = (pm.width() as f64, pm.height() as f64);
-    let true_colour = v.0 >= 13;
-    let side: usize = if true_colour { 128 } else { 96 };
+    let side: usize = if v.0 >= 13 { 128 } else { 96 };
     let scale = (side as f64 / sw).min(side as f64 / sh);
     let (dw, dh) = (sw * scale, sh * scale);
     let (ox, oy) = ((side as f64 - dw) / 2.0, (side as f64 - dh) / 2.0);
@@ -730,9 +774,9 @@ fn disp(v: Ver, png: &[u8]) -> Option<Vec<u8>> {
             None => [255, 255, 255],
         }
     };
-    let bpp: u16 = if true_colour { 24 } else { 8 };
+    let bpp: u16 = 8;
     let row = (side * usize::from(bpp) / 8).div_ceil(4) * 4;
-    let colours: u32 = if true_colour { 0 } else { 256 };
+    let colours: u32 = 256;
     let mut b = Vec::new();
     b.extend_from_slice(&8u32.to_le_bytes());
     b.extend_from_slice(&40u32.to_le_bytes());
@@ -748,15 +792,13 @@ fn disp(v: Ver, png: &[u8]) -> Option<Vec<u8>> {
     b.extend_from_slice(&0u32.to_le_bytes());
     // The 8-bit palette: a 6 x 6 x 6 colour cube, then 40 greys.
     let level = |i: usize| (i * 51) as u8;
-    if !true_colour {
-        for i in 0..216 {
-            let (r, g, bl) = (level(i / 36), level(i / 6 % 6), level(i % 6));
-            b.extend_from_slice(&[bl, g, r, 0]);
-        }
-        for i in 0..40u32 {
-            let g = (i * 255 / 39) as u8;
-            b.extend_from_slice(&[g, g, g, 0]);
-        }
+    for i in 0..216 {
+        let (r, g, bl) = (level(i / 36), level(i / 6 % 6), level(i % 6));
+        b.extend_from_slice(&[bl, g, r, 0]);
+    }
+    for i in 0..40u32 {
+        let g = (i * 255 / 39) as u8;
+        b.extend_from_slice(&[g, g, g, 0]);
     }
     let nearest = |c: [u8; 3]| -> u8 {
         let cube = |v: u8| (u32::from(v) + 25) / 51;
@@ -776,12 +818,7 @@ fn disp(v: Ver, png: &[u8]) -> Option<Vec<u8>> {
     for y in (0..side).rev() {
         let start = b.len();
         for x in 0..side {
-            let c = sample(x, y);
-            if true_colour {
-                b.extend_from_slice(&[c[2], c[1], c[0]]);
-            } else {
-                b.push(nearest(c));
-            }
+            b.push(nearest(sample(x, y)));
         }
         b.resize(start + row, 0);
     }
@@ -1598,7 +1635,12 @@ fn outl(v: Ver, id: u32, s: Option<&Stroke>) -> Vec<u8> {
 ///
 /// The record opens with a tag from version 13: [1300, 0] up to version
 /// 17, [1740, 56] from 18 (56 = the matrix and the 8 bytes after it).
-/// Files of every version accept either tag when they are read.
+/// Files of every version accept either tag when they are read. Before
+/// 13 the record is 160 bytes (the chunk 184): the matrix and 104 more
+/// bytes, which the program that reads these files and a real version 11
+/// program leave uninitialised and TraceDraw leaves zero (a real version
+/// 9 program stops after the matrix: 56 and 80 bytes, what TraceDraw
+/// wrote until 2026-10-29).
 fn trfd(v: Ver, m: Affine) -> Vec<u8> {
     let c = m.as_coeffs();
     let mut rec = Buf::default();
@@ -1618,9 +1660,7 @@ fn trfd(v: Ver, m: Affine) -> Vec<u8> {
     ] {
         rec.f64(if x.is_finite() { x } else { 0.0 });
     }
-    if v.tagged() {
-        rec.zeros(8);
-    }
+    rec.zeros(if v.tagged() { 8 } else { 104 });
     let rec = rec.done();
     let start = 24u32;
     let end = start + rec.len() as u32;
@@ -1841,10 +1881,12 @@ fn mcfg_12(w_mm: f64, h_mm: f64) -> Vec<u8> {
 fn mcfg_7_8(v: Ver, w_mm: f64, h_mm: f64) -> Vec<u8> {
     const SIZE_8: usize = 656;
     let (w, h) = (units(w_mm), units(h_mm));
+    let (paper, landscape) = paper_code(w_mm, h_mm);
     let mut r = vec![0u8; SIZE_8];
     put(&mut r, 0, &w.to_le_bytes());
     put(&mut r, 4, &h.to_le_bytes());
-    put(&mut r, 8, &0x0fu32.to_le_bytes());
+    put(&mut r, 8, &paper.to_le_bytes());
+    put(&mut r, 10, &landscape.to_le_bytes());
     put(&mut r, 12, &1u32.to_le_bytes());
     // Ruler origin: the page's bottom-left corner, from the page centre.
     put(&mut r, 24, &(-(w / 2)).to_le_bytes());
@@ -1928,10 +1970,17 @@ fn mcfg_7_8(v: Ver, w_mm: f64, h_mm: f64) -> Vec<u8> {
 fn mcfg_9_11(v: Ver, w_mm: f64, h_mm: f64) -> Vec<u8> {
     const SIZE_11: usize = 4088;
     let (w, h) = (units(w_mm), units(h_mm));
+    let (paper, landscape) = paper_code(w_mm, h_mm);
     let mut r = vec![0u8; SIZE_11];
     put(&mut r, 4, &w.to_le_bytes());
     put(&mut r, 8, &h.to_le_bytes());
-    put(&mut r, 12, &0x0fu32.to_le_bytes());
+    put(&mut r, 12, &paper.to_le_bytes());
+    put(&mut r, 14, &landscape.to_le_bytes());
+    // 1/8 inch for a page of its own size (0 for a preset), as the
+    // version 9 to 11 files of the program that reads them hold.
+    if paper == 0 {
+        put(&mut r, 36, &31750u32.to_le_bytes());
+    }
     // Ruler origin: the page's bottom-left corner, from the page centre.
     put(&mut r, 372, &(-(w / 2)).to_le_bytes());
     put(&mut r, 376, &(-(h / 2)).to_le_bytes());
@@ -2032,6 +2081,25 @@ fn mcfg_9_11(v: Ver, w_mm: f64, h_mm: f64) -> Vec<u8> {
     r9.extend_from_slice(r10.get(848..924).unwrap_or_default());
     r9.resize(848, 0);
     r9
+}
+
+/// The paper preset of a `mcfg` record before version 12 and whether the
+/// page is landscape (u16 each): 0x0f for A4 and 3 for Letter, the two
+/// codes files of versions 7 to 11 show (A4 portrait saves of the program
+/// that reads them, a real version 9 Letter file), 0 for a page of any
+/// other size (the saves of a 210 x 148 mm page, which hold 1 for its
+/// orientation). A preset in landscape is assumed to keep its code.
+fn paper_code(w_mm: f64, h_mm: f64) -> (u16, u16) {
+    let (short, long) = (w_mm.min(h_mm), w_mm.max(h_mm));
+    let near = |a: f64, b: f64| (a - b).abs() < 0.1;
+    let code = if near(short, 210.0) && near(long, 297.0) {
+        0x0f
+    } else if near(short, 215.9) && near(long, 279.4) {
+        3
+    } else {
+        0
+    };
+    (code, u16::from(w_mm > h_mm))
 }
 
 /// Write `bytes` into `rec` at `at` (records are built to their size
@@ -2274,22 +2342,31 @@ fn stlt(v: Ver, uses: StyleUses) -> Vec<u8> {
     }
     // Outlines: id, 4 unknown, the outline record.
     t.u32(1).u32(outline).u32(0).u32(uses.outline);
-    // Fonts: id, a mask (12 bytes before 10, 20 after), then the font,
-    // size and style of the three scripts (Latin, Asian, other), all in
-    // the one font: font id u16 and character set u16, two more font
-    // references, sizes, style flags (one before 10).
+    // Fonts: id, a mask (0, 0xffff, 1 before 10; 0, 0xffff three times
+    // and 1 after), then the font, size and style of the three scripts
+    // (Latin, Asian, other), all in the one font: font id u16 and
+    // character set u16, two more font references, then one size and
+    // three style flags before 10 (a real version 9 file and the version
+    // 7 to 9 saves of the program that reads them), three sizes and three
+    // style flags from 10.
     let mask = if v.redirects() { 0xff } else { 0xffff };
     let font_entry = |t: &mut Buf, entry: u32, face: u16, size: i32, flags: u32| {
         let script_font = u32::from(face);
-        t.u32(entry).u32(0).u32(mask).u32(mask);
+        t.u32(entry).u32(0).u32(mask);
         if n >= 10 {
-            t.u32(mask).u32(if v.redirects() { u32::MAX } else { 1 });
+            t.u32(mask)
+                .u32(mask)
+                .u32(if v.redirects() { u32::MAX } else { 1 });
+        } else {
+            t.u32(1);
         }
         t.u16(face).u16(0).u32(script_font).u32(script_font);
-        t.i32(size).i32(size).i32(size).u32(flags);
         if n >= 10 {
-            t.u32(flags).u32(flags);
+            t.i32(size).i32(size).i32(size);
+        } else {
+            t.i32(size);
         }
+        t.u32(flags).u32(flags).u32(flags);
     };
     t.u32(1 + uses.formats.len() as u32);
     font_entry(
@@ -2321,23 +2398,28 @@ fn stlt(v: Ver, uses: StyleUses) -> Vec<u8> {
     for (position, thickness) in DECORATION_LINES {
         t.u32(0).i32(position).i32(thickness);
     }
-    // Tabs, bullets, indents, hyphenation, drop caps: none; set11 from 9.
+    // Tabs, bullets, indents, hyphenation, drop caps: none; set11 from 8
+    // (both version 8 variants saved by the program that reads them hold
+    // it, its version 7 saves do not).
     for _ in 0..5 {
         t.u32(0);
     }
-    if n >= 9 {
+    if n >= 8 {
         t.u32(1).u32(set11).u32(0).u32(0);
     }
     // The records: sections (1: fill and outline; 2: also the character
     // and paragraph settings), id, no parent, 8 unknown, the name (none
-    // from 16, as files have it), then the entries they use.
+    // from 16, as files have it), then the entries they use. Before 12
+    // the name ends with a NUL that its length counts ("Default Graphic"
+    // is 16 in every 8-bit file seen); from 12 (UTF-16) the length is the
+    // characters alone.
     let name = |t: &mut Buf, s: &str| {
         let s = if v.redirects() { "" } else { s };
-        t.u32(s.chars().count() as u32);
         if v.unicode() {
-            t.bytes(&utf16(s));
+            t.u32(s.chars().count() as u32).bytes(&utf16(s));
         } else {
-            t.bytes(s.as_bytes());
+            let b = cp1252(s).unwrap_or_else(|| s.bytes().filter(|c| c.is_ascii()).collect());
+            t.u32(b.len() as u32 + 1).bytes(&b).u8(0);
         }
     };
     let labels = ["Default", "Centred", "Right", "Justified"];
@@ -2346,7 +2428,7 @@ fn stlt(v: Ver, uses: StyleUses) -> Vec<u8> {
         name(&mut t, label);
         t.u32(text_fill).u32(outline);
         t.u32(font).u32(*align).u32(interval).u32(set5);
-        if n >= 9 {
+        if n >= 8 {
             t.u32(set11);
         }
     }
@@ -2363,7 +2445,7 @@ fn stlt(v: Ver, uses: StyleUses) -> Vec<u8> {
         t.u32(*fill).u32(outline);
         let align = aligns.get(f.align).copied().unwrap_or(aligns[0]);
         t.u32(*font).u32(align).u32(interval).u32(set5);
-        if n >= 9 {
+        if n >= 8 {
             t.u32(set11);
         }
     }
@@ -2985,6 +3067,56 @@ struct Writer<'a> {
     /// the style flags), for the font table as [`Writer::text_formats`]
     /// gives them before.
     run_faces: Vec<(u16, u32)>,
+    /// The drawing's layers as the master page and every page list them
+    /// before version 14 (see [`layer_slots`]).
+    layer_slots: Vec<LayerSlot>,
+}
+
+/// One of the drawing's layers as files before version 14 list them: by
+/// name, and by rank among the layers of a page sharing that name (two
+/// layers named "Layer 1" on one page take two slots). The master page
+/// lists every slot without objects and every page lists them all in the
+/// same order, with its own layer's objects or none, so a page's entry
+/// stands for the master's entry of the same rank (positional pairing:
+/// a real version 9 file, two version 13 files of other releases and the
+/// version 7 to 13 saves of the program that reads them all list the same
+/// layers in the same order on both).
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LayerSlot {
+    name: String,
+    nth: usize,
+}
+
+/// The slots of a page's layers, front to back as files list them.
+fn slots_of(page: &tracedraw_core::document::Page) -> Vec<LayerSlot> {
+    let mut seen: HashMap<&str, usize> = HashMap::new();
+    page.layers
+        .iter()
+        .rev()
+        .map(|l| {
+            let nth = seen.entry(l.name.as_str()).or_insert(0);
+            let slot = LayerSlot {
+                name: l.name.clone(),
+                nth: *nth,
+            };
+            *nth += 1;
+            slot
+        })
+        .collect()
+}
+
+/// The slots of every page of the document in one order: the first page's
+/// front to back, then those later pages add.
+fn layer_slots(doc: &Document) -> Vec<LayerSlot> {
+    let mut slots: Vec<LayerSlot> = Vec::new();
+    for page in &doc.pages {
+        for slot in slots_of(page) {
+            if !slots.contains(&slot) {
+                slots.push(slot);
+            }
+        }
+    }
+    slots
 }
 
 /// The master page's layers, in the order of `Writer::master_guids`.
@@ -3060,6 +3192,7 @@ impl<'a> Writer<'a> {
             faces: &[],
             split_families: HashMap::new(),
             run_faces: Vec::new(),
+            layer_slots: Vec::new(),
         }
     }
 
@@ -3174,6 +3307,7 @@ impl<'a> Writer<'a> {
             .map(|p| p.size)
             .unwrap_or(tracedraw_core::geometry::Size::new(210.0, 297.0));
         // Pages first: they fill the tables.
+        self.layer_slots = layer_slots(doc);
         let mut pages = Vec::new();
         let mut content: Option<Rect> = None;
         for page in &doc.pages {
@@ -3306,9 +3440,10 @@ impl<'a> Writer<'a> {
         } else {
             args.push((ARG_LAYER_COLOR, colour(colour_bytes).to_vec()));
         }
-        // A zero 12000 from version 13, as layers of files of versions 13
-        // to 27 have it (it was written from 17 only).
-        if v.props() {
+        // A zero 12000 from version 14, as layers of files of versions 14
+        // to 27 have it; no layer of a version 7 to 13 file saved by four
+        // different writers has one (objects and groups have it).
+        if v.page_props() {
             args.push((ARG_PROPS, vec![0; 4]));
         }
         if v.0 >= 17 && kind == LAYER_GUIDES {
@@ -3341,25 +3476,42 @@ impl<'a> Writer<'a> {
 
     /// The master page: guides, desktop and grid layers, no objects; from
     /// version 21 the page background colour in its `loda`.
+    ///
+    /// Before version 14 the drawing's own layers stand between the
+    /// desktop and the grid, named and empty: files of versions 7 to 13
+    /// put the same layers in the same order on the master page and on
+    /// every page (a real version 9 file, two releases' version 13 files
+    /// and the version 7 to 13 saves of the program that reads them all
+    /// list guides, desktop, "Layer 1", grid on both), the master defining
+    /// each layer and a page's entry of the same rank carrying its
+    /// objects. From 14 pages list their own layers by GUID and the master
+    /// keeps only its three.
     fn master_page(&mut self, background: Option<Color>) -> Node {
         let v = self.v;
         let mut children = vec![chunk(
             b"flgs",
-            vec![if v.props() { 0x40 } else { 0 }, 0, 1, 0x90],
+            vec![if v.page_props() { 0x40 } else { 0 }, 0, 1, 0x90],
         )];
         let unit = 1.0 / UNITS_PER_MM;
         let tiny = Rect::new(-2.0 * unit, -2.0 * unit, 2.0 * unit, 2.0 * unit);
-        if v.props() {
+        if v.page_props() {
             children.push(chunk(b"bbox", box_bytes(tiny)));
             children.push(chunk(b"obbx", obbx_bytes(tiny, 0.0)));
         } else {
             children.push(chunk(b"bbox", vec![0; 16]));
         }
-        let layers = vec![
+        let mut layers = vec![
             self.master_layer(MasterLayer::Guides, false),
             self.master_layer(MasterLayer::Desktop, false),
-            self.master_layer(MasterLayer::Grid, false),
         ];
+        if !v.zip() {
+            let slots = std::mem::take(&mut self.layer_slots);
+            for slot in &slots {
+                layers.push(self.layer(PLAIN_LAYER_FLAGS, LAYER_PLAIN, &slot.name, Vec::new()));
+            }
+            self.layer_slots = slots;
+        }
+        layers.push(self.master_layer(MasterLayer::Grid, false));
         children.push(list(b"gobj", layers));
         match background {
             Some(c) if v.0 >= 21 => {
@@ -3379,6 +3531,8 @@ impl<'a> Writer<'a> {
     /// A page: its flags, the box of its objects, its entries for the
     /// master's guides and desktop layers, its own guides layer (from
     /// version 14), its layers and its entry for the master's grid layer.
+    /// Before 14 the layers come in the master page's order, one entry per
+    /// slot of [`layer_slots`], empty where the page has no such layer.
     fn page(&mut self, page: &tracedraw_core::document::Page) -> (Node, Option<Rect>) {
         let v = self.v;
         let centre = Point::new(page.size.width / 2.0, page.size.height / 2.0);
@@ -3390,29 +3544,58 @@ impl<'a> Writer<'a> {
             layers.push(self.layer([0x0a, 0, 0, 0x98], LAYER_GUIDES, "Guides", Vec::new()));
         }
         let mut content: Option<Rect> = None;
-        // Front to back, as files list them.
-        for layer in page.layers.iter().rev() {
-            let objects = if layer.visible {
-                let placed = self.objects(&layer.shapes, centre, 0);
-                if let Some(b) = placed.bounds {
-                    content = Some(content.map_or(b, |c| c.union(b)));
+        if v.zip() {
+            // Front to back, as files list them.
+            for layer in page.layers.iter().rev() {
+                let objects = self.layer_objects(layer, centre, &mut content);
+                layers.push(self.layer(PLAIN_LAYER_FLAGS, LAYER_PLAIN, &layer.name, objects));
+            }
+        } else {
+            let slots = std::mem::take(&mut self.layer_slots);
+            let mut by_slot: Vec<Option<&tracedraw_core::document::Layer>> =
+                vec![None; slots.len()];
+            for (layer, slot) in page.layers.iter().rev().zip(slots_of(page)) {
+                if let Some(i) = slots.iter().position(|s| *s == slot) {
+                    by_slot[i] = Some(layer);
                 }
-                placed.nodes
-            } else {
-                Vec::new()
-            };
-            layers.push(self.layer([0, 0, 0, 0x98], LAYER_PLAIN, &layer.name, objects));
+            }
+            for (slot, layer) in slots.iter().zip(by_slot) {
+                let objects = match layer {
+                    Some(layer) => self.layer_objects(layer, centre, &mut content),
+                    None => Vec::new(),
+                };
+                layers.push(self.layer(PLAIN_LAYER_FLAGS, LAYER_PLAIN, &slot.name, objects));
+            }
+            self.layer_slots = slots;
         }
         layers.push(self.master_layer(MasterLayer::Grid, true));
         let page_box = content.map(|c| c - centre.to_vec2()).unwrap_or(Rect::ZERO);
         let mut children = vec![chunk(
             b"flgs",
-            vec![if v.props() { 0x40 } else { 0 }, 0, 0, 0x90],
+            vec![if v.page_props() { 0x40 } else { 0 }, 0, 0, 0x90],
         )];
         children.push(chunk(b"bbox", box_bytes(page_box)));
         children.push(chunk(b"obbx", obbx_bytes(page_box, 0.0)));
         children.push(list(b"gobj", layers));
         (list(b"page", children), content)
+    }
+
+    /// The objects of a layer (none when it is hidden), widening `content`
+    /// by their box.
+    fn layer_objects(
+        &mut self,
+        layer: &tracedraw_core::document::Layer,
+        centre: Point,
+        content: &mut Option<Rect>,
+    ) -> Vec<Node> {
+        if !layer.visible {
+            return Vec::new();
+        }
+        let placed = self.objects(&layer.shapes, centre, 0);
+        if let Some(b) = placed.bounds {
+            *content = Some(content.map_or(b, |c| c.union(b)));
+        }
+        placed.nodes
     }
 
     /// Objects of a layer or group, front to back as files store them.
@@ -3467,10 +3650,12 @@ impl<'a> Writer<'a> {
             b"lgob",
             vec![
                 chunk(b"loda", {
-                    // Groups carry a zero 12000 from version 13 as well.
-                    let mut args = vec![(ARG_ID, id.to_le_bytes().to_vec())];
-                    if self.v.props() {
-                        args.push((ARG_PROPS, vec![0; 4]));
+                    // Groups carry a zero 12000 in every version, and the
+                    // zero rotation (12030) in 7 to 12, as objects do.
+                    let mut args =
+                        vec![(ARG_ID, id.to_le_bytes().to_vec()), (ARG_PROPS, vec![0; 4])];
+                    if self.v.rotation_arg() {
+                        args.push((ARG_ROTATION, vec![0; 4]));
                     }
                     loda(0, args)
                 }),
@@ -3616,9 +3801,10 @@ impl<'a> Writer<'a> {
             a.u32(1).bytes(&style_string(v, &json));
             args.push((ARG_STYLE_STRING, a.done()));
         } else {
-            // Version 15 text carries 1 in argument 16015 as from 16 (every
-            // text object of the version 15 files seen).
-            if text.is_some() && v.0 == 15 {
+            // Text carries 1 in argument 16015 as from 16: every text
+            // object of the version 7 to 13 and 15 files seen (the version
+            // 14 files, which open, were written without it and stay so).
+            if text.is_some() && v.0 != 14 {
                 args.push((ARG_TEXT_LINK, 1u32.to_le_bytes().to_vec()));
             }
             // Text refers to the style of its alignment, as its paragraphs;
@@ -3628,8 +3814,12 @@ impl<'a> Writer<'a> {
                 .map_or(GRAPHIC_STYLE_ID, |(_, _, style)| *style);
             args.push((ARG_STYLE, style.to_le_bytes().to_vec()));
         }
-        if v.props() {
-            args.push((ARG_PROPS, vec![0; 4]));
+        // A zero 12000 in every version and, in 7 to 12, the zero
+        // rotation angle (12030), as every object of the files of those
+        // versions has them.
+        args.push((ARG_PROPS, vec![0; 4]));
+        if v.rotation_arg() {
+            args.push((ARG_ROTATION, vec![0; 4]));
         }
         if v.draw_flags() {
             args.push((
@@ -3650,14 +3840,17 @@ impl<'a> Writer<'a> {
         }
         let outline = s.stroke.as_ref().map(|st| st.width / 2.0).unwrap_or(0.0);
         // Text objects start with a number of their own (`spnd`: 1, 2, ...
-        // in the order written, as files number them) and before version
-        // 18 are flagged 9 instead of 8.
+        // in the order written, as files number them). Every text of the
+        // files of versions 7 to 15 saved by the program that reads them
+        // is flagged 8 like the shapes; 9 was seen in one version 17 file,
+        // and the version 14 and 15 files written with 9 open, so 14 to 17
+        // keep it.
         let mut body = Vec::new();
         let mut flags = [0, 2, 0, 8];
         if text.is_some() {
             body.push(chunk(b"spnd", self.next_spnd.to_le_bytes().to_vec()));
             self.next_spnd += 1;
-            if v.0 < 18 {
+            if (14..18).contains(&v.0) {
                 flags[3] = 9;
             }
         }
@@ -3672,10 +3865,11 @@ impl<'a> Writer<'a> {
             ],
         ));
         if let Some((t, _, _)) = text {
+            // The line breaking tables follow every text record in every
+            // version (the saves of versions 7 to 10 of the program that
+            // reads them hold them too; they were written from 11 only).
             body.push(chunk(b"txsm", t));
-            if v.0 >= 11 {
-                body.push(chunk(b"txtj", txtj()));
-            }
+            body.push(chunk(b"txtj", txtj()));
         }
         Placed {
             nodes: vec![list(b"obj ", body)],
@@ -4020,15 +4214,15 @@ impl<'a> Writer<'a> {
         let v = self.v;
         let n = v.0;
         // As files of versions 7 to 15 hold artistic text: -1, -1, 0, -1,
-        // 8, a number growing with the version (2 in 7, 3 in 8, 5 in 10
-        // and 11, 6 in 12, 8 in 13, 9 in 14, 11 in 15), 0, 3, 0; one frame
-        // with an identity matrix (six f64). A header of zeros and a zero
-        // matrix made the program that wrote the samples drop the text of
-        // a version 15 file as an invalid object.
+        // 8, a number growing with the version (2 in 7, 4 in 8 (both
+        // variants), 4 in 9, 5 in 10 and 11, 6 in 12, 8 in 13, 9 in 14, 11
+        // in 15), 0, 3, 0; one frame with an identity matrix (six f64). A
+        // header of zeros and a zero matrix made the program that wrote
+        // the samples drop the text of a version 15 file as an invalid
+        // object.
         let layout = match n {
             0..=7 => 2,
-            8 => 3,
-            9 => 4,
+            8 | 9 => 4,
             10 | 11 => 5,
             12 => 6,
             13 => 8,
@@ -4090,67 +4284,90 @@ impl<'a> Writer<'a> {
             if n >= 13 {
                 t.zeros(1);
             }
-            t.u32(runs.len() as u32);
-            let mut text = String::new();
+            // The records: before 14 one per distinct look of the paragraph
+            // (its size and fill, what a record carries), the paragraph's
+            // own look first, each counting the letters that wear it and
+            // the first the paragraph's end too; every letter names its
+            // record. The files of versions 7 to 13 saved by the program
+            // that reads them are so ("Runs: bold red and italic" as
+            // records of 17 and 8 letters, the red letters numbered 1), and
+            // its 14 and 15 saves too, but the files of 14 and 15 written
+            // with one record per run open there and stay as they were.
+            // Overrides of the font and the style flags are written in no
+            // version: no file of 7 to 15 shows them, so a run whose weight
+            // or slant differs from the paragraph's takes the paragraph's.
+            let by_look = n < 14;
             let last_run = runs.len().saturating_sub(1);
+            // (size, fill, letters) of each record, and each run's record.
+            let mut records: Vec<(i32, u32, usize)> = Vec::new();
+            let mut record_of_run: Vec<usize> = Vec::with_capacity(runs.len());
+            if by_look {
+                records.push((base.size, base.fill, 1));
+            }
             for (ri, sp) in runs.iter().enumerate() {
                 let look = format_of(self, sp);
-                // The last run counts the paragraph's end too, as files
-                // count it.
-                let chars =
-                    (sp.text.chars().count() + usize::from(ri == last_run)).min(65535) as u16;
+                let same = |r: &(i32, u32, usize)| (r.0, r.1) == (look.size, look.fill);
+                let index = match records.iter().position(same).filter(|_| by_look) {
+                    Some(i) => i,
+                    None => {
+                        // The last run counts the paragraph's end too, as
+                        // files count it.
+                        let end = usize::from(!by_look && ri == last_run);
+                        records.push((look.size, look.fill, end));
+                        records.len() - 1
+                    }
+                };
+                if let Some(r) = records.get_mut(index) {
+                    r.2 += sp.text.chars().count();
+                }
+                record_of_run.push(index);
+            }
+            t.u32(records.len() as u32);
+            for (size, fill_id, letters) in &records {
                 let mut flags = 0u8;
-                if look.font != base.font && n < 13 {
-                    flags |= 0x01;
-                }
-                if look.flags != base.flags && n < 13 {
-                    flags |= 0x02;
-                }
-                if look.size != base.size {
+                if *size != base.size {
                     flags |= 0x04;
                 }
-                if look.fill != base.fill {
+                if *fill_id != base.fill {
                     flags |= 0x40;
                 }
-                t.u16(chars).u8(flags);
+                t.u16((*letters).min(65535) as u16).u8(flags);
                 if n >= 8 {
                     t.u8(0);
                 }
-                if flags & 0x01 != 0 {
-                    t.u16(look.font).u16(0);
-                }
-                if flags & 0x02 != 0 {
-                    t.u32(look.flags);
-                }
                 if flags & 0x04 != 0 {
-                    t.i32(look.size);
+                    t.i32(*size);
                 }
                 if flags & 0x40 != 0 {
-                    t.u32(look.fill);
+                    t.u32(*fill_id);
                     if v.tagged() {
                         t.zeros(48);
                     }
                 }
+            }
+            // The letters, each description numbering its record times 2
+            // in its third byte (4 bytes before 12, 8 from 12).
+            let mut text = String::new();
+            let mut record_of_letter: Vec<u8> = Vec::new();
+            for (ri, sp) in runs.iter().enumerate() {
                 text.push_str(&sp.text);
+                let number = record_of_run.get(ri).copied().unwrap_or(0).min(127) as u8;
+                record_of_letter.extend(std::iter::repeat_n(number, sp.text.chars().count()));
             }
             let chars = text.chars().count();
             if v.unicode() {
                 // From version 12 a letter is one byte in Windows-1252
                 // unless bit 0 of the first byte of its 8-byte record marks
-                // it as a UTF-16 unit in two bytes; the third byte numbers
-                // its run, times 2. Text all in UTF-16 with no letter
-                // marked made the program that wrote the samples crash.
-                let mut records = Buf::default();
+                // it as a UTF-16 unit in two bytes. Text all in UTF-16 with
+                // no letter marked made the program that wrote the samples
+                // crash.
+                let mut descriptions = Buf::default();
                 let mut bytes = Vec::new();
-                let mut run_of = Vec::with_capacity(chars);
-                for (ri, sp) in runs.iter().enumerate() {
-                    run_of.extend(std::iter::repeat_n(ri, sp.text.chars().count()));
-                }
                 for (i, c) in text.chars().enumerate() {
-                    let run = run_of.get(i).copied().unwrap_or(0).min(127) as u8;
+                    let number = record_of_letter.get(i).copied().unwrap_or(0);
                     match cp1252(&c.to_string()) {
                         Some(b) => {
-                            records.u8(0).u8(0).u8(run << 1).zeros(5);
+                            descriptions.u8(0).u8(0).u8(number << 1).zeros(5);
                             bytes.extend_from_slice(&b);
                         }
                         None => {
@@ -4159,15 +4376,21 @@ impl<'a> Writer<'a> {
                             } else {
                                 b'?' as u16
                             };
-                            records.u8(1).u8(0).u8(run << 1).zeros(5);
+                            descriptions.u8(1).u8(0).u8(number << 1).zeros(5);
                             bytes.extend_from_slice(&unit.to_le_bytes());
                         }
                     }
                 }
-                t.u32(chars as u32).bytes(&records.done());
+                t.u32(chars as u32).bytes(&descriptions.done());
                 t.u32(bytes.len() as u32).bytes(&bytes);
             } else {
-                t.u32(chars as u32).zeros(chars * 4);
+                // Before 12: 4-byte descriptions (the saves of versions 7
+                // to 11 number the letters so; zeros were written until
+                // 2026-10-29) and one byte per letter in Windows-1252.
+                t.u32(chars as u32);
+                for number in &record_of_letter {
+                    t.u8(0).u8(0).u8(number << 1).u8(0);
+                }
                 let bytes = cp1252(&text).unwrap_or_else(|| {
                     text.chars()
                         .map(|c| if c.is_ascii() { c as u8 } else { b'?' })

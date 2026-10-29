@@ -4156,6 +4156,7 @@ dependencies = [
  "tracedraw-cdr-format",
  "tracedraw-core",
  "ttf-parser",
+ "web-time",
  "zip",
 ]
 
