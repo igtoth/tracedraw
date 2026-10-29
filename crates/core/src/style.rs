@@ -1333,6 +1333,116 @@ impl Arrowhead {
     }
 }
 
+/// How an arrowhead sits on its end of the line: its size, where it is
+/// along the line, which way it faces and how far it is turned. The
+/// Arrowhead editor sets one per end; untouched placements are not
+/// written to files.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ArrowheadPlacement {
+    /// Size as a percentage of the preset head size ([`HEAD_SIZE_PER_WIDTH`]
+    /// outline widths, at least 1 mm): 100 is the preset size, 200 twice
+    /// as long and tall. Kept in [`ArrowheadPlacement::SIZE_RANGE`].
+    #[serde(default = "hundred", skip_serializing_if = "is_hundred")]
+    pub size: f64,
+    /// Offset along the line in millimetres: positive moves the head
+    /// outwards, past the end point; negative back along the line.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub offset: f64,
+    /// Mirror along the line: the head faces back along the line.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub mirror_h: bool,
+    /// Mirror across the line: the head's two sides change places.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub mirror_v: bool,
+    /// Rotation about the tip in degrees, counter-clockwise positive on
+    /// the page.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub rotation: f64,
+}
+
+fn hundred() -> f64 {
+    100.0
+}
+
+fn is_hundred(v: &f64) -> bool {
+    *v == 100.0
+}
+
+fn is_zero(v: &f64) -> bool {
+    *v == 0.0
+}
+
+impl Default for ArrowheadPlacement {
+    fn default() -> Self {
+        ArrowheadPlacement {
+            size: 100.0,
+            offset: 0.0,
+            mirror_h: false,
+            mirror_v: false,
+            rotation: 0.0,
+        }
+    }
+}
+
+impl ArrowheadPlacement {
+    /// The range the size percentage is kept in.
+    pub const SIZE_RANGE: std::ops::RangeInclusive<f64> = 10.0..=1000.0;
+
+    /// Nothing set away from the defaults (the file need not hold it).
+    pub fn is_default(&self) -> bool {
+        *self == ArrowheadPlacement::default()
+    }
+
+    /// The size as a factor of the preset size: the percentage kept in
+    /// [`Self::SIZE_RANGE`] over 100; a value that is not a number counts
+    /// as 100 %.
+    pub fn scale(&self) -> f64 {
+        let pct = if self.size.is_finite() {
+            self.size
+                .clamp(*Self::SIZE_RANGE.start(), *Self::SIZE_RANGE.end())
+        } else {
+            100.0
+        };
+        pct / 100.0
+    }
+
+    /// The offset along the line, 0 when it is not a number.
+    pub fn offset_mm(&self) -> f64 {
+        if self.offset.is_finite() {
+            self.offset
+        } else {
+            0.0
+        }
+    }
+
+    /// The rotation in radians, 0 when it is not a number.
+    pub fn rotation_rad(&self) -> f64 {
+        if self.rotation.is_finite() {
+            self.rotation.to_radians()
+        } else {
+            0.0
+        }
+    }
+
+    /// The transform from the head's own frame (tip at the origin, the
+    /// line's direction along +x, its left normal along +y, the preset
+    /// head one unit) to the frame of the line's end at `tip` with
+    /// direction `dir` (a unit vector pointing out of the line) and left
+    /// normal `n`: the head is scaled by `size`, mirrored, turned about
+    /// its tip and moved along the line by the offset.
+    pub fn place(&self, tip: Point, dir: Vec2, n: Vec2) -> Affine {
+        let tip = tip + dir * self.offset_mm();
+        let mirror = Affine::scale_non_uniform(
+            if self.mirror_h { -1.0 } else { 1.0 },
+            if self.mirror_v { -1.0 } else { 1.0 },
+        );
+        Affine::new([dir.x, dir.y, n.x, n.y, tip.x, tip.y])
+            * Affine::rotate(self.rotation_rad())
+            * mirror
+            * Affine::scale(self.scale())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Stroke {
     pub color: Color,
@@ -1352,6 +1462,17 @@ pub struct Stroke {
     pub start_arrow: Arrowhead,
     #[serde(default)]
     pub end_arrow: Arrowhead,
+    /// How the start head sits on the line (size, offset, mirror,
+    /// rotation).
+    #[serde(default, skip_serializing_if = "ArrowheadPlacement::is_default")]
+    pub start_head: ArrowheadPlacement,
+    /// How the end head sits on the line.
+    #[serde(default, skip_serializing_if = "ArrowheadPlacement::is_default")]
+    pub end_head: ArrowheadPlacement,
+    /// Share attributes: the end takes the start's head and placement
+    /// and follows it while this is on.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub share_arrowheads: bool,
     /// Calligraphic nib stretch 0..1 and angle (1.0 = round nib).
     #[serde(default = "one")]
     pub stretch: f64,
@@ -1548,6 +1669,9 @@ impl Default for Stroke {
             behind_fill: false,
             start_arrow: Arrowhead::None,
             end_arrow: Arrowhead::None,
+            start_head: ArrowheadPlacement::default(),
+            end_head: ArrowheadPlacement::default(),
+            share_arrowheads: false,
             stretch: 1.0,
             nib_angle: 0.0,
             fill: None,
@@ -1557,6 +1681,24 @@ impl Default for Stroke {
             miter_limit: Self::DEFAULT_MITER_LIMIT,
             align_dashes: false,
         }
+    }
+}
+
+impl Stroke {
+    /// The head drawn at the end of the line and its placement: the end's
+    /// own, or the start's with Share attributes on.
+    pub fn end_head_drawn(&self) -> (&Arrowhead, &ArrowheadPlacement) {
+        if self.share_arrowheads {
+            (&self.start_arrow, &self.start_head)
+        } else {
+            (&self.end_arrow, &self.end_head)
+        }
+    }
+
+    /// Give the end the start's head and placement (Share attributes).
+    pub fn share_start_head(&mut self) {
+        self.end_arrow = self.start_arrow.clone();
+        self.end_head = self.start_head;
     }
 }
 
@@ -2035,19 +2177,94 @@ mod tests {
     }
 }
 
+/// The outline of a preset head in the head's own frame: the tip at the
+/// origin, the line's direction along +x (the body extends towards -x),
+/// its left normal along +y, `size` the preset head size in millimetres
+/// and `w` the outline width the thin parts are drawn with. A custom
+/// head's own outline is scaled to `size`. `None` for no head.
+fn head_outline(kind: &Arrowhead, size: f64, w: f64) -> Option<crate::geometry::BezPath> {
+    use crate::geometry::{BezPath, Shape as _};
+    let mut p = BezPath::new();
+    match kind {
+        Arrowhead::None => return None,
+        Arrowhead::Custom { path: outline, .. } => {
+            // Head space (unit tall, tip at the origin, body towards -x)
+            // scaled to the preset size.
+            p = Affine::scale(size) * outline.clone();
+        }
+        Arrowhead::Arrow => {
+            p.move_to((0.0, 0.0));
+            p.line_to((-size, size * 0.4));
+            p.line_to((-size * 0.7, 0.0));
+            p.line_to((-size, -size * 0.4));
+            p.close_path();
+        }
+        Arrowhead::OpenArrow => {
+            let t = w.max(0.2);
+            p.move_to((0.0, 0.0));
+            p.line_to((-size, size * 0.45));
+            p.line_to((-size - t, size * 0.45 - t));
+            p.line_to((-t * 1.4, 0.0));
+            p.line_to((-size - t, -size * 0.45 + t));
+            p.line_to((-size, -size * 0.45));
+            p.close_path();
+        }
+        Arrowhead::Circle => {
+            let r = size * 0.35;
+            p = crate::geometry::Circle::new((-r, 0.0), r).to_path(0.01);
+        }
+        Arrowhead::Square => {
+            let h = size * 0.35;
+            let cx = -h;
+            p.move_to((cx + h, h));
+            p.line_to((cx - h, h));
+            p.line_to((cx - h, -h));
+            p.line_to((cx + h, -h));
+            p.close_path();
+        }
+        Arrowhead::Bar => {
+            let t = w.max(0.2);
+            p.move_to((0.0, size * 0.5));
+            p.line_to((-t, size * 0.5));
+            p.line_to((-t, -size * 0.5));
+            p.line_to((0.0, -size * 0.5));
+            p.close_path();
+        }
+        Arrowhead::Diamond => {
+            let h = size * 0.5;
+            p.move_to((0.0, 0.0));
+            p.line_to((-h, h * 0.6));
+            p.line_to((-h * 2.0, 0.0));
+            p.line_to((-h, -h * 0.6));
+            p.close_path();
+        }
+    }
+    Some(p)
+}
+
+/// The preset head size in millimetres for an outline `width`:
+/// [`HEAD_SIZE_PER_WIDTH`] widths, hairlines counting as 0.25 mm, at least
+/// 1 mm. The second value is the width the thin parts of a head are
+/// drawn with.
+pub fn head_size_for_width(width: f64) -> (f64, f64) {
+    let w = if width <= Stroke::HAIRLINE + 1e-9 {
+        0.25
+    } else {
+        width
+    };
+    ((w * HEAD_SIZE_PER_WIDTH).max(1.0), w)
+}
+
 /// Arrowhead outlines (page space) for an open path's ends, sized by the
-/// outline width (hairlines use 0.25 mm). Filled with the outline colour.
+/// outline width (hairlines use 0.25 mm) and each end's placement (size,
+/// offset, mirror, rotation; the end takes the start's head and
+/// placement with Share attributes on). Filled with the outline colour.
 pub fn arrowhead_paths(
     path: &crate::geometry::BezPath,
     stroke: &Stroke,
 ) -> Vec<crate::geometry::BezPath> {
     use crate::geometry::{BezPath, PathEl, Vec2};
-    let w = if stroke.width <= Stroke::HAIRLINE + 1e-9 {
-        0.25
-    } else {
-        stroke.width
-    };
-    let size = (w * HEAD_SIZE_PER_WIDTH).max(1.0);
+    let (size, w) = head_size_for_width(stroke.width);
     let mut pts: Vec<Point> = Vec::new();
     let mut closed = false;
     kurbo::flatten(path.elements().iter().copied(), 0.05, &mut |el| match el {
@@ -2063,79 +2280,30 @@ pub fn arrowhead_paths(
     if closed || pts.len() < 2 {
         return Vec::new();
     }
-    let head = |tip: Point, dir: Vec2, kind: &Arrowhead| -> Option<BezPath> {
-        let dir = dir.normalize();
-        if !dir.x.is_finite() {
-            return None;
-        }
-        let n = Vec2::new(-dir.y, dir.x);
-        let mut p = BezPath::new();
-        match kind {
-            Arrowhead::None => return None,
-            Arrowhead::Custom { path: outline, .. } => {
-                // Head space (unit tall, tip at the origin, body towards -x)
-                // to page space: x along the curve direction, y along its
-                // left normal, scaled to the preset size.
-                let place =
-                    Affine::new([dir.x, dir.y, n.x, n.y, tip.x, tip.y]) * Affine::scale(size);
-                p = place * outline.clone();
+    // A head in its own frame, placed at `tip` with the line's outward
+    // direction `dir`: x along the direction, y along its left normal.
+    let head =
+        |tip: Point, dir: Vec2, kind: &Arrowhead, at: &ArrowheadPlacement| -> Option<BezPath> {
+            let dir = dir.normalize();
+            if !dir.x.is_finite() {
+                return None;
             }
-            Arrowhead::Arrow => {
-                p.move_to(tip);
-                p.line_to(tip - dir * size + n * (size * 0.4));
-                p.line_to(tip - dir * size * 0.7);
-                p.line_to(tip - dir * size - n * (size * 0.4));
-                p.close_path();
-            }
-            Arrowhead::OpenArrow => {
-                let t = w.max(0.2);
-                p.move_to(tip);
-                p.line_to(tip - dir * size + n * (size * 0.45));
-                p.line_to(tip - dir * size + n * (size * 0.45) - dir * 0.0 + n * (-t) - dir * t);
-                p.line_to(tip - dir * (t * 1.4));
-                p.line_to(tip - dir * size - n * (size * 0.45) + n * t - dir * t);
-                p.line_to(tip - dir * size - n * (size * 0.45));
-                p.close_path();
-            }
-            Arrowhead::Circle => {
-                let c = tip - dir * (size * 0.35);
-                p = crate::geometry::Circle::new(c, size * 0.35).to_path(0.01);
-            }
-            Arrowhead::Square => {
-                let c = tip - dir * (size * 0.35);
-                let h = size * 0.35;
-                p.move_to(c + dir * h + n * h);
-                p.line_to(c - dir * h + n * h);
-                p.line_to(c - dir * h - n * h);
-                p.line_to(c + dir * h - n * h);
-                p.close_path();
-            }
-            Arrowhead::Bar => {
-                let t = w.max(0.2);
-                p.move_to(tip + n * (size * 0.5));
-                p.line_to(tip - dir * t + n * (size * 0.5));
-                p.line_to(tip - dir * t - n * (size * 0.5));
-                p.line_to(tip - n * (size * 0.5));
-                p.close_path();
-            }
-            Arrowhead::Diamond => {
-                let h = size * 0.5;
-                p.move_to(tip);
-                p.line_to(tip - dir * h + n * (h * 0.6));
-                p.line_to(tip - dir * h * 2.0);
-                p.line_to(tip - dir * h - n * (h * 0.6));
-                p.close_path();
-            }
-        }
-        Some(p)
-    };
-    use crate::geometry::Shape as _;
+            let n = Vec2::new(-dir.y, dir.x);
+            let outline = head_outline(kind, size, w)?;
+            Some(at.place(tip, dir, n) * outline)
+        };
     let mut out = Vec::new();
     let n = pts.len();
-    if let Some(p) = head(pts[0], pts[0] - pts[1.min(n - 1)], &stroke.start_arrow) {
+    if let Some(p) = head(
+        pts[0],
+        pts[0] - pts[1.min(n - 1)],
+        &stroke.start_arrow,
+        &stroke.start_head,
+    ) {
         out.push(p);
     }
-    if let Some(p) = head(pts[n - 1], pts[n - 1] - pts[n - 2], &stroke.end_arrow) {
+    let (end_kind, end_at) = stroke.end_head_drawn();
+    if let Some(p) = head(pts[n - 1], pts[n - 1] - pts[n - 2], end_kind, end_at) {
         out.push(p);
     }
     out
@@ -2348,5 +2516,208 @@ mod arrowhead_tests {
         assert_eq!(heads.len(), 1);
         let b = heads[0].bounding_box();
         assert!(b.x0.abs() < 1e-6 && (b.x1 - 4.0).abs() < 1e-6, "{b:?}");
+    }
+
+    fn line() -> BezPath {
+        let mut line = BezPath::new();
+        line.move_to((0.0, 0.0));
+        line.line_to((50.0, 0.0));
+        line
+    }
+
+    fn end_head_bounds(stroke: &Stroke) -> Rect {
+        let heads = arrowhead_paths(&line(), stroke);
+        assert_eq!(heads.len(), 1, "{heads:?}");
+        heads[0].bounding_box()
+    }
+
+    fn near(a: f64, b: f64) -> bool {
+        (a - b).abs() < 1e-6
+    }
+
+    /// #1210: the Arrowhead editor's settings move the head geometry.
+    /// A 1 mm line's preset arrow is 4 mm long, 3.2 mm tall, tip at the
+    /// end point: at 200 % it is twice as long and tall; an offset moves
+    /// it along the line; mirrored along the line it faces back; a
+    /// rotation turns it about its tip, counter-clockwise positive.
+    #[test]
+    fn head_size_offset_mirror_and_rotation_place_the_head() {
+        let base = Stroke {
+            end_arrow: Arrowhead::Arrow,
+            ..Stroke::new(Color::BLACK, 1.0)
+        };
+        let b = end_head_bounds(&base);
+        assert!(near(b.x0, 46.0) && near(b.x1, 50.0), "{b:?}");
+        assert!(near(b.y0, -1.6) && near(b.y1, 1.6), "{b:?}");
+
+        // 200 %: twice as long and tall, the tip where it was.
+        let mut twice = base.clone();
+        twice.end_head.size = 200.0;
+        let b = end_head_bounds(&twice);
+        assert!(near(b.x0, 42.0) && near(b.x1, 50.0), "{b:?}");
+        assert!(near(b.y0, -3.2) && near(b.y1, 3.2), "{b:?}");
+
+        // The size stays in 10 to 1000 %; a size that is not a number is 100 %.
+        let mut huge = base.clone();
+        huge.end_head.size = 5000.0;
+        assert!(near(end_head_bounds(&huge).x0, 10.0));
+        let mut nan = base.clone();
+        nan.end_head.size = f64::NAN;
+        assert!(near(end_head_bounds(&nan).x0, 46.0));
+
+        // Offset: 3 mm out past the end, -3 mm back along the line.
+        let mut out = base.clone();
+        out.end_head.offset = 3.0;
+        let b = end_head_bounds(&out);
+        assert!(near(b.x0, 49.0) && near(b.x1, 53.0), "{b:?}");
+        out.end_head.offset = -3.0;
+        let b = end_head_bounds(&out);
+        assert!(near(b.x0, 43.0) && near(b.x1, 47.0), "{b:?}");
+
+        // Mirrored along the line: the head faces back along it, its tip
+        // still at the end point.
+        let mut back = base.clone();
+        back.end_head.mirror_h = true;
+        let b = end_head_bounds(&back);
+        assert!(near(b.x0, 50.0) && near(b.x1, 54.0), "{b:?}");
+
+        // Turned a quarter counter-clockwise: the body points down (-y).
+        let mut turned = base.clone();
+        turned.end_head.rotation = 90.0;
+        let b = end_head_bounds(&turned);
+        assert!(near(b.x0, 48.4) && near(b.x1, 51.6), "{b:?}");
+        assert!(near(b.y0, -4.0) && near(b.y1, 0.0), "{b:?}");
+
+        // The same settings on the start head, in the start's frame: the
+        // offset moves it out past the start.
+        let mut start = Stroke {
+            start_arrow: Arrowhead::Arrow,
+            ..Stroke::new(Color::BLACK, 1.0)
+        };
+        start.start_head.offset = 2.0;
+        start.start_head.size = 50.0;
+        let heads = arrowhead_paths(&line(), &start);
+        let b = heads[0].bounding_box();
+        assert!(near(b.x0, -2.0) && near(b.x1, 0.0), "{b:?}");
+        assert!(near(b.y0, -0.8) && near(b.y1, 0.8), "{b:?}");
+    }
+
+    /// A head mirrored across the line is the mirror image of the plain
+    /// one: an asymmetric custom head (one side only) changes sides.
+    #[test]
+    fn a_vertically_mirrored_head_is_the_mirror_image() {
+        // A half arrow: tip at (20, 10), body above the line only.
+        let mut half = BezPath::new();
+        half.move_to((0.0, 10.0));
+        half.line_to((20.0, 10.0));
+        half.line_to((0.0, 20.0));
+        half.close_path();
+        // Head space is normalised to one unit tall over the whole box,
+        // centred on y = 0, so the plain head lies on both sides; the
+        // mirrored one must be its exact mirror image.
+        let base = Stroke {
+            end_arrow: Arrowhead::from_shape_path(&half, "Half"),
+            ..Stroke::new(Color::BLACK, 1.0)
+        };
+        let plain = arrowhead_paths(&line(), &base);
+        let mut mirrored = base.clone();
+        mirrored.end_head.mirror_v = true;
+        let flipped = arrowhead_paths(&line(), &mirrored);
+        assert_eq!(plain.len(), 1);
+        assert_eq!(flipped.len(), 1);
+        let mirror = Affine::scale_non_uniform(1.0, -1.0);
+        let want = mirror * plain[0].clone();
+        let got = &flipped[0];
+        let a: Vec<_> = want.elements().to_vec();
+        let b: Vec<_> = got.elements().to_vec();
+        assert_eq!(a.len(), b.len());
+        for (x, y) in a.iter().zip(&b) {
+            match (x, y) {
+                (crate::geometry::PathEl::MoveTo(p), crate::geometry::PathEl::MoveTo(q))
+                | (crate::geometry::PathEl::LineTo(p), crate::geometry::PathEl::LineTo(q)) => {
+                    assert!((*p - *q).hypot() < 1e-9, "{p:?} vs {q:?}");
+                }
+                (crate::geometry::PathEl::ClosePath, crate::geometry::PathEl::ClosePath) => {}
+                other => panic!("{other:?}"),
+            }
+        }
+        // Mirrored along and across: the point on the line's far side.
+        let plain_b = plain[0].bounding_box();
+        assert!(
+            near(plain_b.x1, 50.0) && near(plain_b.x0, 42.0),
+            "{plain_b:?}"
+        );
+    }
+
+    /// Share attributes: the end is drawn with the start's head and its
+    /// placement, whatever the end's own fields hold, and
+    /// `share_start_head` copies them into the end's fields.
+    #[test]
+    fn share_attributes_gives_the_end_the_start_head() {
+        let mut stroke = Stroke {
+            start_arrow: Arrowhead::Diamond,
+            end_arrow: Arrowhead::None,
+            share_arrowheads: true,
+            ..Stroke::new(Color::BLACK, 1.0)
+        };
+        stroke.start_head.size = 200.0;
+        stroke.start_head.offset = 1.0;
+        let heads = arrowhead_paths(&line(), &stroke);
+        assert_eq!(heads.len(), 2, "both ends drawn");
+        let s = heads[0].bounding_box();
+        let e = heads[1].bounding_box();
+        // A diamond is one size long: 8 mm at 200 %, its tip 1 mm out past
+        // each end and its body back along the line.
+        assert!(near(s.x0, -1.0) && near(s.x1, 7.0), "{s:?}");
+        assert!(near(e.x0, 43.0) && near(e.x1, 51.0), "{e:?}");
+        assert!(near(s.height(), e.height()));
+        assert_eq!(
+            stroke.end_head_drawn(),
+            (&Arrowhead::Diamond, &stroke.start_head)
+        );
+        // Off: the end's own (none) is drawn again.
+        stroke.share_arrowheads = false;
+        assert_eq!(arrowhead_paths(&line(), &stroke).len(), 1);
+        stroke.share_start_head();
+        assert_eq!(stroke.end_arrow, Arrowhead::Diamond);
+        assert_eq!(stroke.end_head, stroke.start_head);
+        assert_eq!(arrowhead_paths(&line(), &stroke).len(), 2);
+    }
+
+    /// Placements and Share attributes round trip through JSON; untouched
+    /// ones are not written, so files stay as they were, and files
+    /// without them load with the defaults.
+    #[test]
+    fn head_placements_round_trip_and_defaults_are_not_written() {
+        let plain = serde_json::to_string(&Stroke::new(Color::BLACK, 1.0)).unwrap();
+        assert!(
+            !plain.contains("start_head")
+                && !plain.contains("end_head")
+                && !plain.contains("share_arrowheads"),
+            "{plain}"
+        );
+        let mut stroke = Stroke {
+            start_arrow: Arrowhead::Arrow,
+            share_arrowheads: true,
+            ..Stroke::new(Color::BLACK, 1.0)
+        };
+        stroke.start_head = ArrowheadPlacement {
+            size: 150.0,
+            offset: -2.5,
+            mirror_h: true,
+            mirror_v: false,
+            rotation: 30.0,
+        };
+        stroke.end_head.mirror_v = true;
+        let json = serde_json::to_string(&stroke).unwrap();
+        assert!(json.contains("\"start_head\":{\"size\":150.0,\"offset\":-2.5,\"mirror_h\":true,\"rotation\":30.0}"), "{json}");
+        assert!(json.contains("\"end_head\":{\"mirror_v\":true}"), "{json}");
+        assert!(json.contains("\"share_arrowheads\":true"), "{json}");
+        let back: Stroke = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, stroke);
+        let old: Stroke = serde_json::from_str(&plain).unwrap();
+        assert!(old.start_head.is_default() && old.end_head.is_default());
+        assert!(!old.share_arrowheads);
+        assert_eq!(ArrowheadPlacement::default().scale(), 1.0);
     }
 }
