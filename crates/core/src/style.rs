@@ -1011,8 +1011,8 @@ impl ProceduralParams {
     /// The same numbers within their ranges (a file may hold anything).
     pub fn clamped(self) -> ProceduralParams {
         let finite = |v: f64, d: f64| if v.is_finite() { v } else { d };
-        let size_mm = finite(self.size_mm, Self::default_size())
-            .clamp(Self::MIN_SIZE_MM, Self::MAX_SIZE_MM);
+        let size_mm =
+            finite(self.size_mm, Self::default_size()).clamp(Self::MIN_SIZE_MM, Self::MAX_SIZE_MM);
         ProceduralParams {
             size_mm,
             line_width_mm: finite(self.line_width_mm, Self::default_line_width())

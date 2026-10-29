@@ -683,9 +683,15 @@ mod tests {
         assert_eq!(p.params.size_mm, 30.0);
         assert_eq!(p.params.line_width_mm, 1.5);
         // The whole fill when the field says so, or into another kind.
-        assert_eq!(patch_fill(&Fill::Procedural(big), &wide, &[FillField::All]), wide);
+        assert_eq!(
+            patch_fill(&Fill::Procedural(big), &wide, &[FillField::All]),
+            wide
+        );
         let red = Fill::Solid(Color::rgb8(255, 0, 0));
-        assert_eq!(patch_fill(&red, &wide, &[FillField::ProceduralLineWidth]), wide);
+        assert_eq!(
+            patch_fill(&red, &wide, &[FillField::ProceduralLineWidth]),
+            wide
+        );
         // Mixed: the width differs, nothing else.
         let m = fill_mixed([&plain, &wide]);
         assert_eq!(m.fields, vec![FillField::ProceduralLineWidth]);

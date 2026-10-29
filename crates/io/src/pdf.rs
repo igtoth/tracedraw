@@ -830,7 +830,11 @@ impl PageWriter<'_> {
                 f(h)
             );
         }
-        let _ = writeln!(body, "{}", color_op_in(plain(p.foreground), true, cmyk_only));
+        let _ = writeln!(
+            body,
+            "{}",
+            color_op_in(plain(p.foreground), true, cmyk_only)
+        );
         // The tile's paths through `path_ops`, which writes in points.
         let saved = std::mem::take(&mut self.content);
         for path in &tile.paths {
@@ -2775,17 +2779,25 @@ mod tests {
         let mut p = Procedural::new(ProceduralPattern::Bricks, Color::rgb8(255, 0, 0));
         p.params.size_mm = 10.0;
         let text = one_rect_pdf(Fill::Procedural(p.clone()), None);
-        assert!(text.contains("/PatternType 1 /PaintType 1 /TilingType 1"), "{text}");
+        assert!(
+            text.contains("/PatternType 1 /PaintType 1 /TilingType 1"),
+            "{text}"
+        );
         // The cell is the tile in points, stepping its own size.
         let step = f(10.0 * MM_PT);
         assert!(
-            text.contains(&format!("/BBox [0 0 {step} {step}] /XStep {step} /YStep {step}")),
+            text.contains(&format!(
+                "/BBox [0 0 {step} {step}] /XStep {step} /YStep {step}"
+            )),
             "{text}"
         );
         assert!(text.contains("/Pattern << /P0 "), "{text}");
         assert!(text.contains("/Pattern cs /P0 scn"), "{text}");
         // The background rectangle, then the bricks in the foreground.
-        assert!(text.contains(&format!("1 1 1 rg 0 0 {step} {step} re f")), "{text}");
+        assert!(
+            text.contains(&format!("1 1 1 rg 0 0 {step} {step} re f")),
+            "{text}"
+        );
         assert!(text.contains("1 0 0 rg\n"), "{text}");
         assert!(!text.contains("/Subtype /Image"), "{text}");
         // Two objects with the same fill share one pattern.

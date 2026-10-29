@@ -3888,8 +3888,8 @@ mod tests {
         let mut p = Procedural::new(ProceduralPattern::Dots, Color::rgb8(0, 0, 0));
         p.params.share = 0.5;
         p.background = Some(Color::rgb8(255, 255, 255));
-        let img =
-            render_fill_image(&Fill::Procedural(p), Rect::new(0.0, 0.0, 10.0, 10.0), 254.0).unwrap();
+        let img = render_fill_image(&Fill::Procedural(p), Rect::new(0.0, 0.0, 10.0, 10.0), 254.0)
+            .unwrap();
         assert_eq!((img.width(), img.height()), (100, 100));
         let dark = img
             .pixels()
@@ -3917,7 +3917,10 @@ mod tests {
         assert_eq!(a.data(), b.data());
         let painted = a.pixels().iter().filter(|c| c.alpha() > 0).count();
         let clear = a.pixels().iter().filter(|c| c.alpha() == 0).count();
-        assert!(painted > 50 && clear > painted, "{painted} painted, {clear} clear");
+        assert!(
+            painted > 50 && clear > painted,
+            "{painted} painted, {clear} clear"
+        );
         p.seed = 6;
         let c = render_fill_image(&Fill::Procedural(p), Rect::new(0.0, 0.0, 20.0, 20.0), 101.6)
             .unwrap();

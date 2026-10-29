@@ -2757,6 +2757,7 @@ fn interactive_fill_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::do
         "docker.fill_pattern",
         "docker.fill_texture",
         "docker.fill_mesh",
+        "docker.fill_procedural",
     ]
     .iter()
     .enumerate()
@@ -2791,13 +2792,17 @@ fn interactive_fill_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::do
                     scale: 20.0,
                     seed: 1,
                 }),
-                _ => Fill::Mesh(tracedraw_core::Mesh::new(
+                5 => Fill::Mesh(tracedraw_core::Mesh::new(
                     shapes
                         .first()
                         .map(|s| s.bounds())
                         .unwrap_or(Rect::new(0.0, 0.0, 100.0, 100.0)),
                     2,
                     2,
+                    base,
+                )),
+                _ => Fill::Procedural(tracedraw_core::Procedural::new(
+                    tracedraw_core::ProceduralPattern::Octagons,
                     base,
                 )),
             };

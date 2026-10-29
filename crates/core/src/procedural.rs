@@ -408,9 +408,8 @@ mod tests {
     /// spiral's turns and the speckle's density.
     #[test]
     fn parameters_change_the_tile() {
-        let area = |tile: &ProceduralTile| -> f64 {
-            tile.paths.iter().map(|p| p.area().abs()).sum()
-        };
+        let area =
+            |tile: &ProceduralTile| -> f64 { tile.paths.iter().map(|p| p.area().abs()).sum() };
         let mut p = fill(ProceduralPattern::Crosshatch);
         let thin = build_tile(&p);
         p.params.line_width_mm = 1.5;

@@ -180,6 +180,7 @@ fn solid_of(fill: &Fill) -> Color {
         Fill::Pattern(tracedraw_core::Pattern::TwoColor { front, .. }) => *front,
         Fill::Pattern(_) => Color::BLACK,
         Fill::Texture(t) => t.color_a,
+        Fill::Procedural(p) => p.foreground,
         Fill::Mesh(m) => m.nodes.first().map(|n| n.color).unwrap_or(Color::BLACK),
     }
 }

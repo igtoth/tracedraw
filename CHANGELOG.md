@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Procedural fill: a new fill kind in the Properties panel (Fill > Procedural), the Edit Fill dialog and the Interactive Fill tool's bar, with a library of nine patterns drawn from a few numbers (octagons and squares, triangles, bricks, honeycomb, crosshatch, dots, waves, spirals, speckle): tile size, line width, cover, amplitude, turns, specks per tile and a seed, a foreground colour and an optional background colour, with a preview. The pattern is a vector tile repeated from the page origin on screen, a `<pattern>` with the tile's paths in SVG and a tiling pattern in PDF, kept in `.tdraw`; each setting is one undo step and goes into every selected object's own fill (#1212).
+
 ## 0.21.0 (2026-10-29)
 
 - Publish to PDF, Prepress tab: crop marks, registration marks, colour bars and file information can be added around every page, drawn by the same code as the Print dialog's marks. The page grows by a 12 mm margin outside the bleed to hold them; the TrimBox stays the page, the BleedBox the page and its bleed and the MediaBox takes in the marks, and the drawing is clipped to the bleed. Marks in registration colour print on every plate (the All separation), in printed files too. A page background now covers the bleed in PDF files (#789).

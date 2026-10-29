@@ -248,6 +248,10 @@ fn page_contents(ui: &mut Ui, st: &mut EditFillState) {
                 ui.vertical(|ui| crate::ui::dockers::texture_editor(ui, t));
             });
         }
+        // The editor has a preview of its own.
+        Fill::Procedural(p) => {
+            crate::ui::dockers::procedural_editor(ui, p);
+        }
         Fill::Mesh(_) => {
             ui.label(egui::RichText::new(tr("docker.mesh_hint")).color(Tokens::text_dim()));
         }
@@ -255,7 +259,7 @@ fn page_contents(ui: &mut Ui, st: &mut EditFillState) {
 }
 
 /// The fill types as pictures: none, uniform, gradient, pattern, texture,
-/// mesh.
+/// mesh, procedural.
 fn kinds(ui: &mut Ui, st: &mut EditFillState) {
     let kind = tracedraw_core::patch::fill_kind(&st.fill);
     let shown = (!st.mix.kind || !st.touched.is_empty()).then_some(kind);
@@ -268,6 +272,7 @@ fn kinds(ui: &mut Ui, st: &mut EditFillState) {
             "docker.fill_pattern",
             "docker.fill_texture",
             "docker.fill_mesh",
+            "docker.fill_procedural",
         ]
         .iter()
         .enumerate()
@@ -315,10 +320,14 @@ pub fn new_of_kind(from: &Fill, i: usize) -> Fill {
             scale: 20.0,
             seed: 1,
         }),
-        _ => Fill::Mesh(tracedraw_core::Mesh::new(
+        5 => Fill::Mesh(tracedraw_core::Mesh::new(
             tracedraw_core::geometry::Rect::new(0.0, 0.0, 100.0, 100.0),
             2,
             2,
+            base,
+        )),
+        _ => Fill::Procedural(tracedraw_core::Procedural::new(
+            tracedraw_core::ProceduralPattern::Octagons,
             base,
         )),
     }
@@ -436,6 +445,13 @@ fn preview(ui: &mut Ui, fill: &Fill) {
 /// `fill` rendered on the page box `b` and drawn on `rect`, with a
 /// checker behind what is clear.
 fn draw_fill(ui: &mut Ui, rect: Rect, fill: &Fill, b: GRect) {
+    draw_fill_in(ui, rect, fill, b, egui::Id::new("edit_fill_preview_tex"));
+}
+
+/// [`draw_fill`] keeping its texture in `slot`: a preview shown
+/// elsewhere (the Properties panel's) keeps one of its own, so the two
+/// are not made anew every frame.
+pub(crate) fn draw_fill_in(ui: &mut Ui, rect: Rect, fill: &Fill, b: GRect, slot: egui::Id) {
     let size = rect.size();
     let key = egui::Id::new((
         "edit_fill_preview",
@@ -445,7 +461,6 @@ fn draw_fill(ui: &mut Ui, rect: Rect, fill: &Fill, b: GRect) {
     ));
     // One texture kept, made anew when the fill or the box changes (a
     // drag in the preview changes it every frame).
-    let slot = egui::Id::new("edit_fill_preview_tex");
     let kept: Option<(egui::Id, egui::TextureHandle)> = ui.data(|d| d.get_temp(slot));
     let tex = kept.filter(|(k, _)| *k == key).map(|(_, t)| t);
     let tex = tex.or_else(|| {

@@ -1567,7 +1567,7 @@ impl HostInner {
             }
             "fill_type" => {
                 let s = self.shape(id_arg(a, "id")?)?;
-                json!({"type": match s.fill { Fill::None => "none", Fill::Solid(_) => "uniform", Fill::Fountain(_) => "fountain", Fill::Pattern(_) => "pattern", Fill::Texture(_) => "texture", Fill::Mesh(_) => "mesh" }})
+                json!({"type": match s.fill { Fill::None => "none", Fill::Solid(_) => "uniform", Fill::Fountain(_) => "fountain", Fill::Pattern(_) => "pattern", Fill::Texture(_) => "texture", Fill::Mesh(_) => "mesh", Fill::Procedural(_) => "procedural" }})
             }
             "fill_color" => {
                 let s = self.shape(id_arg(a, "id")?)?;
