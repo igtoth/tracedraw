@@ -101,35 +101,58 @@ Text and Glyphs dockers and Options (default font):
   rather than ask for the font of new text (#665,
   `ui::font_list::live_tests::the_wheel_over_the_font_list_steps_the_font`).
 - At the top of the list, the number of families shown and the Filter
-  button (#867). It shows or hides the filter's choices inside the list,
-  under its top row: what to show (all fonts, installed fonts, the fonts
-  in this drawing, or, in the browser, the fonts to download), boxes for
-  the kind of letters (Serif, Sans serif, Script, Decorative) and for
-  what a family has (Monospaced, Symbol, Variable, OpenType features).
-  They are part of the list, not a menu of their own (only one menu is
-  open at a time, so a menu opened from the list closed it): a click
-  there filters at once and leaves the list open
-  (`ui::font_list::live_tests::the_filter_opens_inside_the_font_list`).
-  The button counts the choices made ("Filter (2)"). A family shows
-  when it has one of the kinds ticked (if any) and every other box
-  ticked; Clear filter shows all fonts again. What a family is comes from its
-  faces' tables as the OpenType specification defines them: the OS/2
+  button (#867). It shows or hides the filter's choices beside the list,
+  in the same popup (only one menu is open at a time, so a menu opened
+  from the list closed it): a click there filters at once and leaves the
+  list open (`ui::font_list::live_tests::the_filter_opens_inside_the_font_list`).
+  The choices, Clear filter at the top, in sections that fold:
+  - Fonts shown: all fonts, installed fonts, the fonts in this drawing,
+    or, in the browser, the fonts to download.
+  - Style: Serif, Sans serif, Script, Decorative, Monospaced, Symbol.
+  - Weight: Light (below 350), Regular (350 to 599), Bold (600 and up),
+    from each face's OS/2 `usWeightClass`; a variable font counts for
+    every group its `wght` axis reaches.
+  - Width: Condensed (OS/2 `usWidthClass` 1 to 4), Normal (5), Expanded
+    (6 to 9); a variable font by its `wdth` axis (below, at and above
+    100 %).
+  - Technology: TrueType (`glyf`), OpenType with PostScript outlines
+    (`CFF `, `CFF2`), Variable (`fvar`), by the family's faces.
+  - Scripts: Latin, Greek, Cyrillic, Hebrew, Arabic, Devanagari, Bengali,
+    Thai, Korean, Japanese, Chinese and Symbols, from the OS/2 Unicode
+    range bits (as the Font Manager reads them; Latin for a font without
+    ranges that maps Latin letters, Symbols for a symbol character map).
+  - OpenType features: standard and discretionary ligatures, kerning,
+    small capitals, capitals to small capitals, old-style, lining,
+    proportional and tabular figures, fractions, superscripts,
+    subscripts, ordinals, slashed zero, swashes, stylistic and
+    contextual alternates, and stylistic sets (any of `ss01` to `ss20`),
+    from the feature lists of GSUB and GPOS (and a `kern` table).
+  - Embedding rights: Installable, Editable, Preview and print,
+    Restricted, Bitmap only, from OS/2 `fsType`; a family counts by its
+    most restrictive face.
+  - Folders: the folders the installed font files are in (the folder's
+    name, its path as the tip).
+
+  In each section a family needs one of the choices ticked; of the
+  OpenType features it needs every one ticked; it needs what every
+  section with a choice asks. The button counts the choices made
+  ("Filter (2)"). The style comes from the faces' tables as the OpenType
+  specification defines them: the OS/2
   `sFamilyClass` class ID (1 to 5 and 7 serif, 8 sans serif, 9
   ornamental, 10 script, 12 symbolic), else the PANOSE family kind (2
   text, 3 handwritten, 4 decorative, 5 symbol) and, for text, the serif
   style digit (2 to 10 serif, 11 to 15 sans serif); monospaced from the
   `post` table's `isFixedPitch` or PANOSE (proportion 9, or spacing 3
-  for handwritten); variable from `fvar`; OpenType features when GSUB or
-  GPOS lists one of liga, dlig, hlig, smcp, c2sc, onum, lnum, pnum, tnum,
-  frac, swsh, salt, calt, ss01, ordn or zero; symbol from the symbol
-  character map or the class. A family whose tables say nothing is
-  judged by the words of its name ("Sans", "Serif", "Script", "Symbol";
-  "Mono", "Monospace", "Code" for monospaced). Families to download are
-  not read until fetched and show only with no box ticked. The used-last
-  rows hide while a box is ticked. Families are read once for the fonts
-  as they are now and at most 8 ms a frame, so the list opens as fast
-  with thousands of fonts and fills in over the next frames ("Reading
-  fonts..." until it is done); with no box ticked nothing is read
+  for handwritten); symbol from the symbol character map or the class.
+  A family whose tables say nothing is judged by the words of its name
+  ("Sans", "Serif", "Script", "Symbol"; "Mono", "Monospace", "Code" for
+  monospaced). Families to download are not read until fetched and show
+  only with nothing ticked. The used-last rows hide while a box is
+  ticked. Families are read once for the fonts as they are now (every
+  value in one pass over each face, kept in the list's cache until fonts
+  are added) and at most 8 ms a frame, so the list opens as fast with
+  thousands of fonts and fills in over the next frames ("Reading
+  fonts..." until it is done); with nothing ticked nothing is read
   (`tracedraw_text::traits`,
   `ui::font_list::tests::the_filter_keeps_the_families_with_what_it_asks`).
 - "Used last": the last five families picked in any font list, newest

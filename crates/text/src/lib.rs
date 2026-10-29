@@ -466,9 +466,10 @@ fn legacy_families(db: &fontdb::Database, id: fontdb::ID) -> Vec<String> {
 }
 
 /// How a family's fonts are built, for the icons of font lists.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
 pub enum FontKind {
     /// TrueType outlines.
+    #[default]
     TrueType,
     /// OpenType with PostScript (CFF) outlines.
     OpenType,
@@ -491,7 +492,7 @@ pub struct FaceStyle {
 
 /// What a font list shows about a family (see
 /// [`FontSystem::family_info`]).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct FamilyInfo {
     pub kind: FontKind,
     /// Its faces, upright first, by weight; empty for an offered family.
@@ -508,6 +509,74 @@ pub struct FamilyInfo {
     pub monospace: bool,
     /// A face has OpenType layout features beyond kerning.
     pub features: bool,
+    /// How its faces are built: [`traits::Technology::bit`]s (#867).
+    pub kinds: u8,
+    /// The weights its faces (or `wght` axis) reach:
+    /// [`traits::WeightClass::bit`]s.
+    pub weights: u8,
+    /// The widths its faces (or `wdth` axis) reach:
+    /// [`traits::WidthClass::bit`]s.
+    pub widths: u8,
+    /// The most restrictive embedding rights of its faces (OS/2 `fsType`).
+    pub embedding: Option<catalog::Embedding>,
+    /// The writing systems its faces cover: [`traits::script_bit`]s.
+    pub scripts: u16,
+    /// The OpenType feature tags of its faces (GSUB, GPOS, and `kern`
+    /// for a `kern` table), sorted, each once.
+    pub feature_tags: Vec<[u8; 4]>,
+    /// The folders its font files are in, sorted.
+    pub folders: Vec<std::path::PathBuf>,
+}
+
+/// What a font list's filter reads of one face (#867).
+struct FilterFacts {
+    weights: u8,
+    widths: u8,
+    scripts: u16,
+    embedding: catalog::Embedding,
+    tags: Vec<[u8; 4]>,
+}
+
+/// The weights, widths, scripts, embedding rights and feature tags of
+/// face `f` (`weight` its OS/2 weight class), from its OS/2 table, its
+/// variation axes, its character map and its GSUB and GPOS tables.
+fn filter_facts(f: &ttf_parser::Face, symbol: bool, weight: u16) -> FilterFacts {
+    let raw = f.raw_face();
+    let os2 = raw
+        .table(ttf_parser::Tag::from_bytes(b"OS/2"))
+        .unwrap_or(&[]);
+    let be16 = |at: usize| {
+        os2.get(at..at + 2)
+            .map_or(0, |b| u16::from_be_bytes([b[0], b[1]]))
+    };
+    let mut weights = traits::WeightClass::bits_of(weight as f32, weight as f32);
+    let mut widths = traits::WidthClass::of_class(be16(6)).bit();
+    for axis in f.variation_axes() {
+        if axis.tag == ttf_parser::Tag::from_bytes(b"wght") {
+            weights |= traits::WeightClass::bits_of(axis.min_value, axis.max_value);
+        } else if axis.tag == ttf_parser::Tag::from_bytes(b"wdth") {
+            widths |= traits::WidthClass::bits_of_axis(axis.min_value, axis.max_value);
+        }
+    }
+    let scripts = catalog::face_scripts(f, os2, symbol)
+        .into_iter()
+        .fold(0u16, |b, s| b | traits::script_bit(s));
+    let mut tags = Vec::new();
+    for t in [b"GSUB", b"GPOS"] {
+        if let Some(table) = raw.table(ttf_parser::Tag::from_bytes(t)) {
+            tags.extend(catalog::feature_tags(table));
+        }
+    }
+    if f.tables().kern.is_some() {
+        tags.push(*b"kern");
+    }
+    FilterFacts {
+        weights,
+        widths,
+        scripts,
+        embedding: catalog::Embedding::from_fs_type(be16(8)),
+        tags,
+    }
 }
 
 /// A face's style name: the typographic subfamily (name ID 17), else the
@@ -2016,12 +2085,7 @@ impl FontSystem {
                 .is_ok();
             return offered.then(|| FamilyInfo {
                 kind: FontKind::Offered,
-                faces: Vec::new(),
-                embedded: false,
-                symbol: false,
-                class: traits::FontClass::Unknown,
-                monospace: false,
-                features: false,
+                ..Default::default()
             });
         }
         let db = self.db();
@@ -2031,6 +2095,11 @@ impl FontSystem {
         let mut monospace = false;
         let mut features = false;
         let mut faces: Vec<FaceStyle> = Vec::new();
+        // What the filter reads (#867).
+        let (mut kinds, mut weights, mut widths, mut scripts) = (0u8, 0u8, 0u8, 0u16);
+        let mut embedding: Option<catalog::Embedding> = None;
+        let mut feature_tags: Vec<[u8; 4]> = Vec::new();
+        let mut folders: Vec<std::path::PathBuf> = Vec::new();
         for id in ids {
             let Some(info) = db.face(id) else {
                 continue;
@@ -2051,11 +2120,31 @@ impl FontSystem {
                     })
                 });
                 let style = face_style_name(&f);
-                Some((face_kind, symbol, style, traits::face_traits(&f)))
+                Some((
+                    face_kind,
+                    symbol,
+                    style,
+                    traits::face_traits(&f),
+                    filter_facts(&f, symbol, info.weight.0),
+                ))
             });
-            let Some(Some((face_kind, face_symbol, style, face_traits))) = read else {
+            let Some(Some((face_kind, face_symbol, style, face_traits, facts))) = read else {
                 continue;
             };
+            if let Some(t) = traits::Technology::of(face_kind) {
+                kinds |= t.bit();
+            }
+            weights |= facts.weights;
+            widths |= facts.widths;
+            scripts |= facts.scripts;
+            embedding = embedding.max(Some(facts.embedding));
+            feature_tags.extend(facts.tags);
+            #[cfg(not(target_arch = "wasm32"))]
+            if let fontdb::Source::File(p) | fontdb::Source::SharedFile(p, _) = &info.source {
+                if let Some(dir) = p.parent() {
+                    folders.push(dir.to_path_buf());
+                }
+            }
             if class == traits::FontClass::Unknown {
                 class = face_traits.class;
             }
@@ -2098,7 +2187,41 @@ impl FontSystem {
             class,
             monospace: monospace || traits::name_monospace(family),
             features,
+            kinds,
+            weights,
+            widths,
+            embedding,
+            scripts,
+            feature_tags: {
+                feature_tags.sort();
+                feature_tags.dedup();
+                feature_tags
+            },
+            folders: {
+                folders.sort();
+                folders.dedup();
+                folders
+            },
         })
+    }
+
+    /// The folders the installed font files are in, sorted, each once
+    /// (a font list's filter offers them, #867).
+    pub fn font_folders(&self) -> Vec<std::path::PathBuf> {
+        let db = self.db();
+        let mut out: Vec<std::path::PathBuf> = db
+            .faces()
+            .filter_map(|face| match &face.source {
+                #[cfg(not(target_arch = "wasm32"))]
+                fontdb::Source::File(p) | fontdb::Source::SharedFile(p, _) => {
+                    p.parent().map(std::path::Path::to_path_buf)
+                }
+                _ => None,
+            })
+            .collect();
+        out.sort();
+        out.dedup();
+        out
     }
 
     /// The axes of the variable font text in `family` (bold and italic as
@@ -6574,19 +6697,55 @@ mod tests {
         assert_eq!(info.class, FontClass::Serif);
         assert!(info.monospace);
 
-        let mut filter = FontFilter::default();
-        filter.set(FontTrait::Variable, true);
+        let mut filter = FontFilter {
+            tech: traits::Technology::Variable.bit(),
+            ..Default::default()
+        };
         assert!(filter.matches(Some(&quicksand)));
         assert!(!filter.matches(Some(&selawik)));
+        // Weights, widths, rights, scripts and features from the files.
+        use traits::{script_bit, Technology, WeightClass, WidthClass};
+        assert_eq!(quicksand.kinds, Technology::Variable.bit());
+        assert_ne!(
+            quicksand.weights & WeightClass::Light.bit(),
+            0,
+            "wght axis from 300"
+        );
+        assert_ne!(quicksand.weights & WeightClass::Bold.bit(), 0, "to 700");
+        assert_eq!(selawik.weights, WeightClass::Normal.bit());
+        assert_eq!(selawik.widths, WidthClass::Normal.bit());
+        assert_ne!(selawik.scripts & script_bit(catalog::Script::Latin), 0);
+        assert!(selawik.embedding.is_some());
+        assert!(
+            selawik.feature_tags.windows(2).all(|w| w[0] < w[1]),
+            "sorted once"
+        );
+        assert!(selawik.folders.is_empty(), "loaded from memory");
+        let condensed = with_os2(SELAWIK, 6, &[0, 3]);
+        let c = system_with(&[&condensed]);
+        let ci = c.family_info("Selawik").expect("installed");
+        assert_eq!(ci.widths, WidthClass::Condensed.bit());
+        let restricted = with_os2(SELAWIK, 8, &[0, 2]);
+        let r = system_with(&[&restricted]);
+        assert_eq!(
+            r.family_info("Selawik").and_then(|i| i.embedding),
+            Some(catalog::Embedding::Restricted)
+        );
+        filter = FontFilter {
+            widths: WidthClass::Condensed.bit(),
+            ..Default::default()
+        };
+        assert!(filter.matches(Some(&ci)) && !filter.matches(Some(&selawik)));
         filter = FontFilter::default();
         filter.set(FontTrait::SansSerif, true);
         assert!(filter.matches(Some(&selawik)));
         assert!(!filter.matches(Some(&quicksand)));
-        filter.set(FontTrait::Monospace, true);
-        assert!(!filter.matches(Some(&selawik)));
         assert!(!filter.matches(Some(&info)));
-        filter.set(FontTrait::Serif, true);
+        // Styles widen: sans serif or monospaced.
+        filter.set(FontTrait::Monospace, true);
+        assert!(filter.matches(Some(&selawik)));
         assert!(filter.matches(Some(&info)));
+        assert!(!filter.matches(Some(&quicksand)));
     }
 
     /// Reading what the filter needs for every installed family stays
