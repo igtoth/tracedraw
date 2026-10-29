@@ -221,9 +221,7 @@ pub fn insert_glyph(app: &mut App, font: &str, ch: char, feature: Option<&str>) 
     let style = |sp: &mut tracedraw_core::TextSpan, font: &str, feature: Option<&str>| {
         sp.font_family = font.to_string();
         if let Some(f) = feature {
-            if !sp.features.iter().any(|x| x == f) {
-                sp.features.push(f.to_string());
-            }
+            sp.set_feature(f, Some(true));
         }
     };
     if app.text_edit.is_some() {

@@ -448,4 +448,63 @@ mod tests {
         assert_eq!(st.end_arrow.name(), "My head");
         assert_eq!(st.start_arrow, tracedraw_core::Arrowhead::Circle);
     }
+
+    /// A feature switched off ("-liga") and a superscript are kept in the
+    /// native file (#1201); a file written without them reads as before.
+    #[test]
+    fn switched_off_features_and_superscripts_round_trip_in_native_files() {
+        use tracedraw_core::TextPosition;
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        let id = doc.ids_mut().shape();
+        let mut span = tracedraw_core::TextSpan::new("fi", "Quicksand", 24.0);
+        span.set_feature("liga", Some(false));
+        span.set_feature("smcp", Some(true));
+        let mut sup = tracedraw_core::TextSpan::new("2", "Quicksand", 24.0);
+        sup.position = TextPosition::Superscript;
+        let mut sub = tracedraw_core::TextSpan::new("3", "Quicksand", 24.0);
+        sub.position = TextPosition::Subscript;
+        let s = Shape::new(
+            id,
+            ShapeKind::Text {
+                spans: vec![span, sup, sub],
+                origin: tracedraw_core::geometry::Point::new(10.0, 20.0),
+                frame: None,
+                align: tracedraw_core::TextAlign::Left,
+                para: tracedraw_core::document::ParagraphStyle::default(),
+                on_path: None,
+            },
+        );
+        doc.layer_mut(layer).unwrap().shapes.push(s);
+        let path = std::env::temp_dir().join(format!(
+            "tracedraw-features-{}-{:?}.tdraw",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        save_native(&doc, &path).unwrap();
+        let back = load_native(&path).unwrap();
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(back, doc);
+        let ShapeKind::Text { spans, .. } = &back.pages[0].layers[0].shapes[0].kind else {
+            panic!("not text");
+        };
+        assert!(!spans[0].feature_on("liga"));
+        assert!(spans[0].feature_on("smcp"));
+        assert_eq!(
+            spans[0].features,
+            vec!["-liga".to_string(), "smcp".to_string()]
+        );
+        assert_eq!(spans[1].position, TextPosition::Superscript);
+        assert_eq!(spans[2].position, TextPosition::Subscript);
+        // Written by a version before #1201: the features as they were,
+        // the characters on the baseline.
+        let json = doc.to_json().unwrap();
+        let old = json.replace("\"position\": \"superscript\"", "\"features\": []");
+        assert_ne!(old, json);
+        let back = Document::from_json(&old).unwrap();
+        let ShapeKind::Text { spans, .. } = &back.pages[0].layers[0].shapes[0].kind else {
+            panic!("not text");
+        };
+        assert_eq!(spans[1].position, TextPosition::Normal);
+    }
 }

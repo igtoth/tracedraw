@@ -912,6 +912,77 @@ pub struct FontVariation {
     pub value: f64,
 }
 
+/// Where characters sit on the line (#1201): on the baseline, raised as
+/// superscript or lowered as subscript. A font with the `sups` or `subs`
+/// feature draws its own forms; otherwise the characters are drawn at
+/// [`TextPosition::SYNTHETIC_SCALE`] of their size, shifted by
+/// [`TextPosition::synthetic_shift`] of the size.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TextPosition {
+    #[default]
+    Normal,
+    Superscript,
+    Subscript,
+}
+
+impl TextPosition {
+    /// The size of synthetic superscripts and subscripts, as a fraction
+    /// of the characters' size.
+    pub const SYNTHETIC_SCALE: f64 = 0.58;
+
+    /// Serde: a normal position is left out of the file.
+    pub fn is_normal(&self) -> bool {
+        *self == TextPosition::Normal
+    }
+
+    /// The OpenType feature that draws this position, if any.
+    pub fn feature(self) -> Option<&'static str> {
+        match self {
+            TextPosition::Normal => None,
+            TextPosition::Superscript => Some("sups"),
+            TextPosition::Subscript => Some("subs"),
+        }
+    }
+
+    /// The baseline shift of the synthetic form as a fraction of the
+    /// characters' size, positive up: superscripts rise by a third of
+    /// the size, subscripts drop by 15 % of it.
+    pub fn synthetic_shift(self) -> f64 {
+        match self {
+            TextPosition::Normal => 0.0,
+            TextPosition::Superscript => 0.33,
+            TextPosition::Subscript => -0.15,
+        }
+    }
+}
+
+/// The OpenType features a shaper applies without being asked, so a
+/// span that lists none of them still gets them: a span switches one off
+/// with a `-` before its tag ("-liga", see [`TextSpan::set_feature`]).
+pub const DEFAULT_ON_FEATURES: [&str; 10] = [
+    "liga", "clig", "calt", "kern", "rlig", "ccmp", "locl", "mark", "mkmk", "curs",
+];
+
+/// A feature entry of [`TextSpan::features`] as its tag and whether it
+/// is on: "liga", "+liga" and "liga=1" turn it on, "-liga" and "liga=0"
+/// off. `None` for an entry that is not a feature.
+pub fn parse_feature(entry: &str) -> Option<(&str, bool)> {
+    let entry = entry.trim();
+    let (body, on) = if let Some(rest) = entry.strip_prefix('-') {
+        (rest, false)
+    } else if let Some(rest) = entry.strip_prefix('+') {
+        (rest, true)
+    } else {
+        (entry, true)
+    };
+    let (tag, on) = match body.split_once('=') {
+        Some((tag, value)) => (tag.trim(), value.trim() != "0"),
+        None => (body, on),
+    };
+    (!tag.is_empty() && tag.len() <= 4).then_some((tag, on))
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TextSpan {
     pub text: String,
@@ -956,9 +1027,15 @@ pub struct TextSpan {
     /// saved.
     #[serde(skip)]
     pub layout_only: bool,
-    /// OpenType features to enable, e.g. "liga", "smcp", "frac".
+    /// OpenType features set on these characters: a tag turns the
+    /// feature on ("smcp", "frac"), a tag after a `-` turns one the
+    /// shaper applies by default off ("-liga"); see
+    /// [`TextSpan::feature_on`] and [`TextSpan::set_feature`].
     #[serde(default)]
     pub features: Vec<String>,
+    /// Superscript or subscript (#1201).
+    #[serde(default, skip_serializing_if = "TextPosition::is_normal")]
+    pub position: TextPosition,
     /// Axis values of a variable font set for these characters (#870);
     /// an axis not listed takes the value the text's weight and slant
     /// give, else the font's default.
@@ -995,8 +1072,46 @@ impl TextSpan {
             outline: None,
             layout_only: false,
             features: Vec::new(),
+            position: TextPosition::Normal,
             variations: Vec::new(),
             paragraph: None,
+        }
+    }
+
+    /// What these characters say about feature `tag`: `Some(true)` when
+    /// they turn it on, `Some(false)` when they turn it off, `None` when
+    /// they leave it to the shaper. The last entry for the tag wins.
+    pub fn feature_setting(&self, tag: &str) -> Option<bool> {
+        self.features
+            .iter()
+            .rev()
+            .filter_map(|f| parse_feature(f))
+            .find(|(t, _)| *t == tag)
+            .map(|(_, on)| on)
+    }
+
+    /// Feature `tag` is applied to these characters: as they say, else
+    /// when the shaper applies it by default ([`DEFAULT_ON_FEATURES`]).
+    /// Whether the font has the feature is another matter.
+    pub fn feature_on(&self, tag: &str) -> bool {
+        self.feature_setting(tag)
+            .unwrap_or_else(|| DEFAULT_ON_FEATURES.contains(&tag))
+    }
+
+    /// Set feature `tag` on (`Some(true)`), off (`Some(false)`) or leave
+    /// it to the shaper (`None`); the earlier entries for the tag go.
+    /// A setting that is what the shaper does anyway is not stored.
+    pub fn set_feature(&mut self, tag: &str, on: Option<bool>) {
+        self.features
+            .retain(|f| parse_feature(f).is_none_or(|(t, _)| t != tag));
+        match on {
+            Some(true) if !DEFAULT_ON_FEATURES.contains(&tag) => {
+                self.features.push(tag.to_string());
+            }
+            Some(false) if DEFAULT_ON_FEATURES.contains(&tag) => {
+                self.features.push(format!("-{tag}"));
+            }
+            _ => {}
         }
     }
 
@@ -6286,5 +6401,74 @@ mod tests {
         )
         .expect("old");
         assert_eq!(old.outline, None);
+    }
+
+    /// OpenType features on and off (#1201): a tag turns a feature on, a
+    /// tag after a `-` turns a default feature off, and what the shaper
+    /// does anyway is not stored; superscript and subscript are kept
+    /// only when set, and older files read as plain text.
+    #[test]
+    fn features_switch_on_and_off_and_positions_round_trip() {
+        use super::{parse_feature, TextPosition, DEFAULT_ON_FEATURES};
+        assert_eq!(parse_feature("liga"), Some(("liga", true)));
+        assert_eq!(parse_feature("+liga"), Some(("liga", true)));
+        assert_eq!(parse_feature("-liga"), Some(("liga", false)));
+        assert_eq!(parse_feature("liga=0"), Some(("liga", false)));
+        assert_eq!(parse_feature("liga=1"), Some(("liga", true)));
+        assert_eq!(parse_feature(""), None);
+        assert_eq!(parse_feature("-"), None);
+        assert_eq!(parse_feature("toolong"), None);
+
+        let mut s = TextSpan::new("fi", "Quicksand", 12.0);
+        assert!(DEFAULT_ON_FEATURES.contains(&"liga"));
+        assert!(s.feature_on("liga"));
+        assert!(!s.feature_on("smcp"));
+        assert_eq!(s.feature_setting("liga"), None);
+        s.set_feature("liga", Some(false));
+        assert_eq!(s.features, vec!["-liga".to_string()]);
+        assert!(!s.feature_on("liga"));
+        assert_eq!(s.feature_setting("liga"), Some(false));
+        // Back on: nothing is stored, the shaper applies it anyway.
+        s.set_feature("liga", Some(true));
+        assert!(s.features.is_empty());
+        assert!(s.feature_on("liga"));
+        // A feature off by default is stored only when on.
+        s.set_feature("smcp", Some(true));
+        s.set_feature("onum", Some(true));
+        assert_eq!(s.features, vec!["smcp".to_string(), "onum".to_string()]);
+        s.set_feature("smcp", Some(false));
+        assert_eq!(s.features, vec!["onum".to_string()]);
+        s.set_feature("onum", None);
+        assert!(s.features.is_empty());
+        // The last entry for a tag wins, and an entry that is no feature
+        // is left alone.
+        s.features = vec!["liga".into(), "-liga".into(), "no feature".into()];
+        assert!(!s.feature_on("liga"));
+        s.set_feature("liga", None);
+        assert_eq!(s.features, vec!["no feature".to_string()]);
+
+        // Superscript and subscript.
+        assert_eq!(TextPosition::Superscript.feature(), Some("sups"));
+        assert_eq!(TextPosition::Subscript.feature(), Some("subs"));
+        assert_eq!(TextPosition::Normal.feature(), None);
+        assert!(TextPosition::Superscript.synthetic_shift() > 0.0);
+        assert!(TextPosition::Subscript.synthetic_shift() < 0.0);
+        let mut s = TextSpan::new("2", "Arial", 12.0);
+        s.features = vec!["-liga".into()];
+        let json = serde_json::to_string(&s).expect("json");
+        assert!(!json.contains("position"), "{json}");
+        assert!(json.contains("\"-liga\""), "{json}");
+        s.position = TextPosition::Superscript;
+        let json = serde_json::to_string(&s).expect("json");
+        assert!(json.contains("\"position\":\"superscript\""), "{json}");
+        let back: TextSpan = serde_json::from_str(&json).expect("back");
+        assert_eq!(back, s);
+        // Older files: no position, and features as they were written.
+        let old: TextSpan = serde_json::from_str(
+            r#"{"text":"a","font_family":"Arial","size_pt":12.0,"bold":false,"italic":false,"features":["liga","smcp"]}"#,
+        )
+        .expect("old");
+        assert_eq!(old.position, TextPosition::Normal);
+        assert!(old.feature_on("liga") && old.feature_on("smcp"));
     }
 }
