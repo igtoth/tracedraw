@@ -12162,3 +12162,485 @@ fn the_three_dot_button_lists_the_panels_with_their_pictures() {
     assert_eq!(app.docker_place(first), Some(place));
     assert_eq!(app.docker_tab, first);
 }
+
+// ----- the Trace Bitmap dialog -----------------------------------------------------
+
+/// A drawing with `img` placed and selected, the Trace dialog open on
+/// the Logo preset and its first frames run.
+fn trace_setup(img: image::RgbaImage) -> (egui::Context, App, ShapeId) {
+    let ctx = crate::theme::ui_context();
+    let mut app = App::headless();
+    app.show_welcome = false;
+    let bmp = app.place_image(img, Some("Art".into())).expect("bitmap");
+    app.select(vec![bmp]);
+    for _ in 0..3 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    app.open_trace(crate::trace::Preset::Logo);
+    for _ in 0..3 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    (ctx, app, bmp)
+}
+
+/// Run frames until the whole picture's trace for the settings as they
+/// stand is on show (the live preview, no button), or give up.
+fn trace_wait(ctx: &egui::Context, app: &mut App) -> crate::trace_preview::Shown {
+    let t0 = std::time::Instant::now();
+    loop {
+        frame(ctx, app, Vec::new(), Modifiers::NONE);
+        let key = trace_state(app).settings.clone();
+        if let Some(s) = app.trace_live.shown.as_ref() {
+            if s.stage == crate::trace_preview::Stage::Full && !app.trace_live.busy() {
+                let _ = key;
+                return s.clone();
+            }
+        }
+        assert!(
+            t0.elapsed() < std::time::Duration::from_secs(60),
+            "the trace never came"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(3));
+    }
+}
+
+fn trace_state(app: &App) -> &crate::ui::dialogs::TraceState {
+    match &app.dialog {
+        crate::ui::dialogs::Dialog::Trace(st) => st,
+        other => panic!("the Trace dialog, not {other:?}"),
+    }
+}
+
+fn trace_rect(ctx: &egui::Context, name: &str) -> egui::Rect {
+    *crate::ui::trace_dialog::rects(ctx)
+        .0
+        .get(name)
+        .unwrap_or_else(|| panic!("no control {name}"))
+}
+
+/// Where the text `text` is drawn this frame (its middle).
+fn trace_text_at(ctx: &egui::Context, app: &mut App, text: &str) -> Option<Pos2> {
+    frame_shapes(ctx, app, Vec::new())
+        .into_iter()
+        .find_map(|s| match s {
+            egui::Shape::Text(t) if t.galley.text() == text => Some(t.pos + t.galley.size() / 2.0),
+            _ => None,
+        })
+}
+
+fn black_white_image(n: u32, black: impl Fn(u32, u32) -> bool) -> image::RgbaImage {
+    image::RgbaImage::from_fn(n, n, |x, y| {
+        if black(x, y) {
+            image::Rgba([0, 0, 0, 255])
+        } else {
+            image::Rgba([255, 255, 255, 255])
+        }
+    })
+}
+
+/// The Trace dialog's preview follows the settings by itself: a click on
+/// the Detail slider changes the value and the trace shown is made again
+/// off the interface thread, with no Preview button to press.
+#[test]
+fn the_trace_preview_follows_a_slider_without_a_button() {
+    let (ctx, mut app, _) = trace_setup(black_white_image(160, |x, y| {
+        ((x as f32 - 80.0).powi(2) + (y as f32 - 80.0).powi(2)).sqrt() < 50.0
+    }));
+    let first = trace_wait(&ctx, &mut app);
+    assert_eq!(first.stats.curves, 1);
+    assert_eq!(first.stats.colors, 1);
+    let started = app.trace_live.started;
+    assert!(
+        trace_text_at(&ctx, &mut app, &crate::i18n::tr("dialog.preview")).is_none(),
+        "no Preview button"
+    );
+    let detail = trace_rect(&ctx, "detail");
+    let at = egui::pos2(detail.left() + detail.width() * 0.95, detail.center().y);
+    click_at(&ctx, &mut app, at, Modifiers::NONE);
+    let d = trace_state(&app).settings.detail;
+    assert!(d > 85.0, "detail {d}");
+    let second = trace_wait(&ctx, &mut app);
+    assert_ne!(second.key, first.key, "traced again for the new detail");
+    assert!(app.trace_live.started > started);
+    // A settings step the arrows can undo.
+    assert!(trace_state(&app).can_undo());
+}
+
+/// The Trace type list swaps the Image type list: Centerline offers the
+/// centreline presets, with the first chosen.
+#[test]
+fn changing_the_trace_type_swaps_the_image_types() {
+    let (ctx, mut app, _) = trace_setup(black_white_image(120, |x, _| x > 60));
+    assert!(!trace_state(&app).settings.centerline);
+    let r = trace_rect(&ctx, "trace_type");
+    click_at(&ctx, &mut app, r.center(), Modifiers::NONE);
+    let item = trace_text_at(
+        &ctx,
+        &mut app,
+        &crate::i18n::tr("dialog.trace_type_centerline"),
+    )
+    .expect("the Centerline item");
+    click_at(&ctx, &mut app, item, Modifiers::NONE);
+    let st = trace_state(&app);
+    assert!(st.settings.centerline);
+    assert_eq!(st.preset, crate::trace::Preset::Technical);
+    // The image types are now the centreline ones.
+    let r = trace_rect(&ctx, "image_type");
+    click_at(&ctx, &mut app, r.center(), Modifiers::NONE);
+    let name = |key: &str| {
+        crate::i18n::tr(key)
+            .trim_end_matches("...")
+            .trim_end_matches('\u{2026}')
+            .to_string()
+    };
+    assert!(trace_text_at(&ctx, &mut app, &name("menu.bitmaps.trace_logo")).is_none());
+    let item = trace_text_at(&ctx, &mut app, &name("menu.bitmaps.trace_line_drawing"))
+        .expect("the Line Drawing item");
+    click_at(&ctx, &mut app, item, Modifiers::NONE);
+    assert_eq!(trace_state(&app).preset, crate::trace::Preset::LineDrawing);
+    assert!(trace_state(&app).settings.centerline);
+}
+
+/// Specify with the eyedropper: a click on the preview takes the
+/// background colour from the picture, and the trace leaves that colour
+/// out instead of the colour found by itself.
+#[test]
+fn the_eyedropper_specifies_the_background_colour() {
+    // Black at the left (60 columns), white at the right (100): white is
+    // the background found by itself.
+    let (ctx, mut app, _) = trace_setup(black_white_image(160, |x, _| x < 60));
+    let auto = trace_wait(&ctx, &mut app);
+    assert_eq!(auto.stats.colors, 1);
+    assert_eq!(auto.traced[0].color.to_rgb8(), [0, 0, 0]);
+    click_at(
+        &ctx,
+        &mut app,
+        trace_rect(&ctx, "remove_specify").center(),
+        Modifiers::NONE,
+    );
+    assert!(trace_state(&app).settings.background.is_some());
+    click_at(
+        &ctx,
+        &mut app,
+        trace_rect(&ctx, "eyedropper").center(),
+        Modifiers::NONE,
+    );
+    assert!(trace_state(&app).picking);
+    let img = trace_rect(&ctx, "view_image");
+    let at = egui::pos2(img.left() + img.width() * 0.15, img.center().y);
+    click_at(&ctx, &mut app, at, Modifiers::NONE);
+    let st = trace_state(&app);
+    assert_eq!(st.settings.background, Some([0, 0, 0]));
+    assert!(!st.picking);
+    let picked = trace_wait(&ctx, &mut app);
+    assert_eq!(picked.stats.colors, 1);
+    assert_eq!(picked.traced[0].color.to_rgb8(), [255, 255, 255]);
+}
+
+/// Merge adjacent off makes a curve of each separate patch; Group by
+/// color puts the curves of a colour in a group of their own when OK
+/// places the trace.
+#[test]
+fn merge_adjacent_and_group_by_color_change_the_result() {
+    let (ctx, mut app, bmp) = trace_setup(black_white_image(160, |x, y| {
+        (20..60).contains(&x) && (20..60).contains(&y)
+            || (100..140).contains(&x) && (100..140).contains(&y)
+    }));
+    let merged = trace_wait(&ctx, &mut app);
+    assert_eq!(merged.stats.curves, 1, "one curve for the colour");
+    click_at(
+        &ctx,
+        &mut app,
+        trace_rect(&ctx, "merge_adjacent").center(),
+        Modifiers::NONE,
+    );
+    assert!(!trace_state(&app).settings.merge_adjacent);
+    let apart = trace_wait(&ctx, &mut app);
+    assert_eq!(apart.stats.curves, 2, "a curve per patch");
+    assert_eq!(apart.stats.colors, 1);
+    click_at(
+        &ctx,
+        &mut app,
+        trace_rect(&ctx, "group_by_color").center(),
+        Modifiers::NONE,
+    );
+    assert!(trace_state(&app).settings.group_by_color);
+    trace_wait(&ctx, &mut app);
+    let ok = trace_text_at(&ctx, &mut app, &crate::i18n::tr("dialog.ok")).expect("OK");
+    click_at(&ctx, &mut app, ok, Modifiers::NONE);
+    assert!(matches!(app.dialog, crate::ui::dialogs::Dialog::None));
+    // The trace: a group holding one group (the black curves) of two.
+    let shapes = &app.doc().pages[0].layers[0].shapes;
+    let result = shapes
+        .iter()
+        .find(|s| s.id != bmp && matches!(s.kind, ShapeKind::Group { .. }))
+        .expect("the trace");
+    let ShapeKind::Group { children } = &result.kind else {
+        unreachable!()
+    };
+    assert_eq!(children.len(), 1, "a group per colour");
+    let ShapeKind::Group { children: curves } = &children[0].kind else {
+        panic!("a group, not {:?}", children[0].kind)
+    };
+    assert_eq!(curves.len(), 2);
+    assert!(curves
+        .iter()
+        .all(|c| matches!(c.kind, ShapeKind::Path { closed: true, .. })));
+}
+
+/// Reset takes the settings back to the image type's; the arrows undo
+/// and redo the steps, Reset included.
+#[test]
+fn reset_and_the_arrows_undo_the_settings() {
+    let (ctx, mut app, _) = trace_setup(black_white_image(100, |x, y| x > 30 && y > 30));
+    let defaults = app.settings.tracing.settings(crate::trace::Preset::Logo);
+    assert_eq!(trace_state(&app).settings, defaults);
+    let detail = trace_rect(&ctx, "detail");
+    click_at(
+        &ctx,
+        &mut app,
+        egui::pos2(detail.left() + detail.width() * 0.9, detail.center().y),
+        Modifiers::NONE,
+    );
+    let changed = trace_state(&app).settings.clone();
+    assert!(changed.detail > 80.0, "{}", changed.detail);
+    click_at(
+        &ctx,
+        &mut app,
+        trace_rect(&ctx, "reset").center(),
+        Modifiers::NONE,
+    );
+    assert_eq!(trace_state(&app).settings, defaults);
+    click_at(
+        &ctx,
+        &mut app,
+        trace_rect(&ctx, "undo").center(),
+        Modifiers::NONE,
+    );
+    assert_eq!(trace_state(&app).settings, changed, "the Reset undone");
+    click_at(
+        &ctx,
+        &mut app,
+        trace_rect(&ctx, "redo").center(),
+        Modifiers::NONE,
+    );
+    assert_eq!(trace_state(&app).settings, defaults, "and redone");
+    click_at(
+        &ctx,
+        &mut app,
+        trace_rect(&ctx, "undo").center(),
+        Modifiers::NONE,
+    );
+    click_at(
+        &ctx,
+        &mut app,
+        trace_rect(&ctx, "undo").center(),
+        Modifiers::NONE,
+    );
+    assert_eq!(trace_state(&app).settings, defaults, "back at the start");
+    assert!(!trace_state(&app).can_undo());
+    assert!(trace_state(&app).can_redo());
+}
+
+/// The arrows keep the Colors tab's work: a change of detail forgets the
+/// colours merged, but undoing it brings them back with the step to
+/// redo kept, and redo goes forward again.
+#[test]
+fn the_arrows_keep_merged_colours_and_the_steps_to_redo() {
+    let img = image::RgbaImage::from_fn(160, 160, |x, y| {
+        if (20..70).contains(&x) && (20..140).contains(&y) {
+            image::Rgba([0, 0, 0, 255])
+        } else if (90..140).contains(&x) && (20..140).contains(&y) {
+            image::Rgba([220, 20, 20, 255])
+        } else {
+            image::Rgba([255, 255, 255, 255])
+        }
+    });
+    let (ctx, mut app, _) = trace_setup(img);
+    trace_wait(&ctx, &mut app);
+    click_at(
+        &ctx,
+        &mut app,
+        trace_rect(&ctx, "tab_colors").center(),
+        Modifiers::NONE,
+    );
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    for name in ["color_0", "color_1"] {
+        click_at(
+            &ctx,
+            &mut app,
+            trace_rect(&ctx, name).center(),
+            Modifiers::NONE,
+        );
+    }
+    click_at(
+        &ctx,
+        &mut app,
+        trace_rect(&ctx, "merge_colors").center(),
+        Modifiers::NONE,
+    );
+    let merged = trace_state(&app).settings.clone();
+    assert_eq!(merged.merged.len(), 1, "two colours merged");
+    click_at(
+        &ctx,
+        &mut app,
+        trace_rect(&ctx, "tab_settings").center(),
+        Modifiers::NONE,
+    );
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let detail = trace_rect(&ctx, "detail");
+    click_at(
+        &ctx,
+        &mut app,
+        egui::pos2(detail.left() + detail.width() * 0.9, detail.center().y),
+        Modifiers::NONE,
+    );
+    let retraced = trace_state(&app).settings.clone();
+    assert!(retraced.merged.is_empty(), "a new detail forgets the merge");
+    assert_ne!(retraced.detail, merged.detail);
+    click_at(
+        &ctx,
+        &mut app,
+        trace_rect(&ctx, "undo").center(),
+        Modifiers::NONE,
+    );
+    for _ in 0..3 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    assert_eq!(trace_state(&app).settings, merged, "the merge is back");
+    assert!(trace_state(&app).can_redo(), "the step to redo is kept");
+    click_at(
+        &ctx,
+        &mut app,
+        trace_rect(&ctx, "redo").center(),
+        Modifiers::NONE,
+    );
+    for _ in 0..3 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    assert_eq!(trace_state(&app).settings, retraced);
+    click_at(
+        &ctx,
+        &mut app,
+        trace_rect(&ctx, "undo").center(),
+        Modifiers::NONE,
+    );
+    assert_eq!(trace_state(&app).settings, merged);
+}
+
+/// Frame times with the Trace dialog open on a large picture while the
+/// Detail slider is dragged, and how long the live preview takes to show
+/// the whole picture's trace: run with
+/// `cargo test --release -p tracedraw -- --ignored frame_times_of_the_trace_dialog --nocapture`.
+#[test]
+#[ignore]
+fn frame_times_of_the_trace_dialog() {
+    let n: u32 = std::env::var("TRACE_N")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(2000);
+    let mut seed = 99u32;
+    let img = image::RgbaImage::from_fn(n, n, |x, y| {
+        seed = seed.wrapping_mul(1103515245).wrapping_add(12345);
+        let noise = ((seed >> 16) % 9) as i32 - 4;
+        let c = n as f32 / 2.0;
+        let d = ((x as f32 - c).powi(2) + (y as f32 - c).powi(2)).sqrt();
+        let base: [i32; 3] = if d < c * 0.3 {
+            [240, 200, 40]
+        } else if d < c * 0.6 {
+            [30, 30, 30]
+        } else if (x / 50 + y / 50) % 2 == 0 {
+            [60, 120, 220]
+        } else {
+            [250, 250, 250]
+        };
+        let v = |k: i32| (k + noise).clamp(0, 255) as u8;
+        image::Rgba([v(base[0]), v(base[1]), v(base[2]), 255])
+    });
+    let direct = {
+        let t = std::time::Instant::now();
+        let traced = crate::trace::trace(&img, &crate::trace::Preset::Clipart.settings());
+        eprintln!(
+            "trace of {n} x {n} on this thread: {:?} ({} curves)",
+            t.elapsed(),
+            traced.len()
+        );
+        t.elapsed()
+    };
+    let (ctx, mut app, _) = trace_setup(img);
+    let t = std::time::Instant::now();
+    let first = trace_wait(&ctx, &mut app);
+    eprintln!(
+        "dialog open to the whole picture's trace on show: {:?} ({} curves)",
+        t.elapsed(),
+        first.stats.curves
+    );
+    let detail = trace_rect(&ctx, "detail");
+    let from = egui::pos2(detail.left() + detail.width() * 0.5, detail.center().y);
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::PointerMoved(from)],
+        Modifiers::NONE,
+    );
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(from, true, PointerButton::Primary, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    let mut worst = std::time::Duration::ZERO;
+    let t = std::time::Instant::now();
+    let steps = 30;
+    // Detail 50 to 70: at the highest detail the noise of the picture
+    // stays and its thousands of specks take the tracer minutes.
+    for i in 1..=steps {
+        let p = from + egui::vec2(detail.width() * 0.2 * i as f32 / steps as f32, 0.0);
+        let f = std::time::Instant::now();
+        frame(
+            &ctx,
+            &mut app,
+            vec![Event::PointerMoved(p)],
+            Modifiers::NONE,
+        );
+        worst = worst.max(f.elapsed());
+    }
+    eprintln!(
+        "slider drag with the dialog open: {:?} per frame, worst {:?}",
+        t.elapsed() / steps,
+        worst
+    );
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(
+            from + egui::vec2(detail.width() * 0.2, 0.0),
+            false,
+            PointerButton::Primary,
+            Modifiers::NONE,
+        )],
+        Modifiers::NONE,
+    );
+    let t = std::time::Instant::now();
+    let key_before = first.key;
+    let mut quick = None;
+    while quick.is_none() && t.elapsed() < std::time::Duration::from_secs(60) {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+        if let Some(s) = app.trace_live.shown.as_ref() {
+            if s.key != key_before {
+                quick = Some((t.elapsed(), s.stage));
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(3));
+    }
+    eprintln!("slider released to the first look at the new trace: {quick:?}");
+    let after = trace_wait(&ctx, &mut app);
+    eprintln!(
+        "slider released to the whole picture's new trace on show: {:?} (detail {}, {} curves, {} traces started, direct trace {:?})",
+        t.elapsed(),
+        trace_state(&app).settings.detail,
+        after.stats.curves,
+        app.trace_live.started,
+        direct
+    );
+}

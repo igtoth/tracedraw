@@ -51,6 +51,14 @@ impl Preset {
             Preset::HighQualityImage => "menu.bitmaps.trace_high_quality",
         }
     }
+    /// The presets of one trace type, in the order the dialog lists them.
+    pub fn of_type(centerline: bool) -> &'static [Preset] {
+        if centerline {
+            &Preset::ALL[..2]
+        } else {
+            &Preset::ALL[2..]
+        }
+    }
     pub fn settings(self) -> Settings {
         let (detail, smoothing, colors, bw) = match self {
             Preset::Technical => (60.0, 30.0, 2, true),
@@ -67,11 +75,69 @@ impl Preset {
             smoothing,
             corner_smoothness: 0.0,
             colors,
-            black_white: bw,
-            remove_background: true,
-            merge_adjacent: false,
+            mode: if bw {
+                ColorMode::BlackWhite
+            } else {
+                ColorMode::Rgb
+            },
+            remove: Remove::Background,
+            background: None,
+            merge_adjacent: true,
+            remove_overlap: false,
+            group_by_color: false,
             centerline: self.is_centerline(),
             delete_original: false,
+            merged: Vec::new(),
+            recolored: Vec::new(),
+        }
+    }
+}
+
+/// The colours a trace works in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ColorMode {
+    #[default]
+    Rgb,
+    /// The picture's greys, as many as Colors asks for.
+    Grayscale,
+    /// Two colours, by brightness.
+    BlackWhite,
+}
+
+impl ColorMode {
+    pub const ALL: [ColorMode; 3] = [ColorMode::Rgb, ColorMode::Grayscale, ColorMode::BlackWhite];
+    pub fn key(self) -> &'static str {
+        match self {
+            ColorMode::Rgb => "dialog.trace_mode_rgb",
+            ColorMode::Grayscale => "dialog.trace_mode_grayscale",
+            ColorMode::BlackWhite => "dialog.black_and_white",
+        }
+    }
+}
+
+/// What a trace leaves out (the Remove list of the dialog).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Remove {
+    /// The background: the regions of the background colour that touch
+    /// the picture's edge. Patches of the same colour inside the picture
+    /// stay.
+    #[default]
+    Background,
+    /// Every region of the background colour, inside the picture too.
+    EntireColor,
+    /// Nothing: the background is traced like any colour.
+    None,
+}
+
+impl Remove {
+    pub const ALL: [Remove; 3] = [Remove::Background, Remove::EntireColor, Remove::None];
+    pub fn key(self) -> &'static str {
+        match self {
+            Remove::Background => "dialog.trace_remove_background_color",
+            Remove::EntireColor => "dialog.trace_remove_entire_color",
+            Remove::None => "dialog.trace_remove_none",
         }
     }
 }
@@ -82,35 +148,293 @@ pub struct Settings {
     pub smoothing: f64,
     pub corner_smoothness: f64,
     pub colors: u32,
-    pub black_white: bool,
-    pub remove_background: bool,
+    pub mode: ColorMode,
+    pub remove: Remove,
+    /// The background colour `remove` takes out; `None` finds it (the
+    /// commonest colour on the picture's edge).
+    pub background: Option<[u8; 3]>,
+    /// One curve per colour (every region of a colour combined); off,
+    /// each separate patch of a colour is a curve of its own.
     pub merge_adjacent: bool,
+    /// Each region exactly its own pixels; off, a region reaches a little
+    /// under the regions drawn over it, so no page shows between them.
+    pub remove_overlap: bool,
+    /// The result holds a group per colour.
+    pub group_by_color: bool,
     pub centerline: bool,
     pub delete_original: bool,
+    /// Colours of the trace joined into one, the first of each group
+    /// (the Colors tab's Merge).
+    pub merged: Vec<Vec<[u8; 3]>>,
+    /// Colours of the trace drawn as another colour (the Colors tab's
+    /// colour buttons): (traced, shown).
+    pub recolored: Vec<([u8; 3], [u8; 3])>,
+}
+
+impl Settings {
+    /// Whether the background is removed at all.
+    pub fn removes_background(&self) -> bool {
+        self.remove != Remove::None
+    }
+    /// The colour `c` is shown as (the Colors tab's edits).
+    pub fn shown_color(&self, c: [u8; 3]) -> [u8; 3] {
+        self.recolored
+            .iter()
+            .find(|(from, _)| *from == c)
+            .map(|(_, to)| *to)
+            .unwrap_or(c)
+    }
+
+    /// Only what changes the traced curves and the colours they are
+    /// traced as: the Colors tab's recolouring (see [`recolor`]),
+    /// grouping and deleting the original are left at rest, and so are
+    /// the values the trace type or mode does not use, so settings that
+    /// trace alike compare (and hash) alike.
+    pub fn traced_part(&self) -> Settings {
+        let mut t = self.clone();
+        t.recolored.clear();
+        t.group_by_color = false;
+        t.delete_original = false;
+        if t.remove == Remove::None {
+            t.background = None;
+        }
+        if t.mode == ColorMode::BlackWhite {
+            t.colors = 2;
+        }
+        if t.centerline {
+            // A centreline trace reads the detail and the smoothing only.
+            t.corner_smoothness = 0.0;
+            t.colors = 2;
+            t.mode = ColorMode::BlackWhite;
+            t.remove = Remove::None;
+            t.background = None;
+            t.merge_adjacent = false;
+            t.remove_overlap = false;
+            t.merged.clear();
+        }
+        t
+    }
+}
+
+/// `traced` (made with [`Settings::traced_part`]) in the colours the
+/// Colors tab gave them: the same as tracing with `s` itself.
+pub fn recolor(traced: &mut [Traced], s: &Settings) {
+    if s.recolored.is_empty() {
+        return;
+    }
+    for t in traced {
+        let c = t.color.to_rgb8();
+        let to = s.shown_color(c);
+        if to != c {
+            t.color = Color::rgb8(to[0], to[1], to[2]);
+        }
+    }
 }
 
 /// One traced region or stroke.
+#[derive(Debug, Clone, PartialEq)]
 pub struct Traced {
     pub path: BezPath,
     pub color: Color,
     pub closed: bool,
 }
 
+/// What the dialog's status line says of a trace.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Stats {
+    pub curves: usize,
+    pub nodes: usize,
+    pub colors: usize,
+}
+
+/// The counts of `traced`: curves (one per object), their nodes and the
+/// distinct colours.
+pub fn stats(traced: &[Traced]) -> Stats {
+    let mut colors: Vec<[u8; 3]> = Vec::new();
+    let mut nodes = 0;
+    for t in traced {
+        nodes += tracedraw_core::nodes::nodes(&t.path).len();
+        let c = t.color.to_rgb8();
+        if !colors.contains(&c) {
+            colors.push(c);
+        }
+    }
+    Stats {
+        curves: traced.len(),
+        nodes,
+        colors: colors.len(),
+    }
+}
+
+/// The distinct colours of `traced`, each with its number of curves, in
+/// the order the regions stack (darkest first).
+pub fn color_counts(traced: &[Traced]) -> Vec<([u8; 3], usize)> {
+    let mut out: Vec<([u8; 3], usize)> = Vec::new();
+    for t in traced {
+        let c = t.color.to_rgb8();
+        match out.iter_mut().find(|(k, _)| *k == c) {
+            Some((_, n)) => *n += 1,
+            None => out.push((c, 1)),
+        }
+    }
+    out
+}
+
+/// A flag a trace running on another thread looks at between its steps:
+/// set, the trace stops and gives nothing back.
+pub type Cancel = std::sync::atomic::AtomicBool;
+
+/// The flood fills look at the flag once per this many pixels.
+const CANCEL_EVERY: usize = 4096;
+
+fn cancelled(c: Option<&Cancel>) -> bool {
+    c.is_some_and(|c| c.load(std::sync::atomic::Ordering::Relaxed))
+}
+
 /// Trace `img` into shapes whose coordinates are in pixel space (y down).
 /// The caller maps them into the bitmap's rectangle.
 pub fn trace(img: &RgbaImage, s: &Settings) -> Vec<Traced> {
+    trace_unless(img, s, None).unwrap_or_default()
+}
+
+/// [`trace`], giving up (`None`) once `cancel` is set.
+pub fn trace_unless(img: &RgbaImage, s: &Settings, cancel: Option<&Cancel>) -> Option<Vec<Traced>> {
     if s.centerline {
-        return centerline(img, s);
+        return centerline(img, s, cancel);
     }
-    outline(img, s)
+    outline(img, s, cancel)
+}
+
+/// The palette index nearest `c` (none for an empty palette).
+fn palette_index(palette: &[[u8; 3]], c: [u8; 3]) -> Option<usize> {
+    (!palette.is_empty()).then(|| nearest(palette, c))
+}
+
+/// `labels` with the colours of each group of `merged` relabelled to the
+/// group's first colour; a colour matches the palette entry nearest it
+/// when within `reach` (RGB distance, squared).
+fn merge_colors(labels: &mut [usize], palette: &[[u8; 3]], merged: &[Vec<[u8; 3]>], reach: u32) {
+    let mut alias: Vec<usize> = (0..palette.len()).collect();
+    for group in merged {
+        let Some(first) = group.first() else {
+            continue;
+        };
+        let Some(to) = palette_index(palette, *first) else {
+            continue;
+        };
+        if distance2(palette[to], *first) > reach {
+            continue;
+        }
+        for c in &group[1..] {
+            if let Some(from) = palette_index(palette, *c) {
+                if distance2(palette[from], *c) <= reach && from != to {
+                    alias[from] = to;
+                }
+            }
+        }
+    }
+    if alias.iter().enumerate().all(|(i, a)| i == *a) {
+        return;
+    }
+    for l in labels.iter_mut() {
+        if let Some(a) = alias.get(*l) {
+            *l = *a;
+        }
+    }
+}
+
+/// Set the pixels of label `bg` that reach the picture's edge (through
+/// pixels of that label, 4-connected) to transparent, so only the patches
+/// of that colour inside the picture are left to trace.
+fn clear_border_region(labels: &mut [usize], w: usize, h: usize, bg: usize) {
+    if labels.len() != w * h {
+        return;
+    }
+    let mut stack: Vec<usize> = Vec::new();
+    let push = |i: usize, labels: &mut [usize], stack: &mut Vec<usize>| {
+        if labels[i] == bg {
+            labels[i] = usize::MAX;
+            stack.push(i);
+        }
+    };
+    for x in 0..w {
+        push(x, labels, &mut stack);
+        push((h - 1) * w + x, labels, &mut stack);
+    }
+    for y in 0..h {
+        push(y * w, labels, &mut stack);
+        push(y * w + w - 1, labels, &mut stack);
+    }
+    while let Some(i) = stack.pop() {
+        let (x, y) = (i % w, i / w);
+        if x > 0 {
+            push(i - 1, labels, &mut stack);
+        }
+        if x + 1 < w {
+            push(i + 1, labels, &mut stack);
+        }
+        if y > 0 {
+            push(i - w, labels, &mut stack);
+        }
+        if y + 1 < h {
+            push(i + w, labels, &mut stack);
+        }
+    }
+}
+
+/// The 8-connected patches of `mask` (`w` x `h`), each as the box of its
+/// pixels (x0, y0, x1, y1, inclusive) and its own mask over that box.
+fn patches(mask: &[bool], w: usize, h: usize) -> Vec<((usize, usize, usize, usize), Vec<bool>)> {
+    let mut out = Vec::new();
+    if mask.len() != w * h {
+        return out;
+    }
+    let mut seen = vec![false; w * h];
+    let mut stack: Vec<usize> = Vec::new();
+    let mut pixels: Vec<usize> = Vec::new();
+    for start in 0..w * h {
+        if seen[start] || !mask[start] {
+            continue;
+        }
+        seen[start] = true;
+        stack.push(start);
+        pixels.clear();
+        let (mut x0, mut y0, mut x1, mut y1) = (w, h, 0, 0);
+        while let Some(i) = stack.pop() {
+            pixels.push(i);
+            let (x, y) = (i % w, i / w);
+            (x0, y0, x1, y1) = (x0.min(x), y0.min(y), x1.max(x), y1.max(y));
+            for dy in -1i64..=1 {
+                for dx in -1i64..=1 {
+                    let (nx, ny) = (x as i64 + dx, y as i64 + dy);
+                    if nx < 0 || ny < 0 || nx >= w as i64 || ny >= h as i64 {
+                        continue;
+                    }
+                    let j = ny as usize * w + nx as usize;
+                    if mask[j] && !seen[j] {
+                        seen[j] = true;
+                        stack.push(j);
+                    }
+                }
+            }
+        }
+        let (pw, ph) = (x1 - x0 + 1, y1 - y0 + 1);
+        let mut own = vec![false; pw * ph];
+        for &i in &pixels {
+            let (x, y) = (i % w, i / w);
+            own[(y - y0) * pw + (x - x0)] = true;
+        }
+        out.push(((x0, y0, x1, y1), own));
+    }
+    out
 }
 
 // ----- outline mode -----------------------------------------------------------
 
-fn outline(img: &RgbaImage, s: &Settings) -> Vec<Traced> {
+fn outline(img: &RgbaImage, s: &Settings, cancel: Option<&Cancel>) -> Option<Vec<Traced>> {
     let (w, h) = (img.width() as usize, img.height() as usize);
     if w == 0 || h == 0 {
-        return Vec::new();
+        return Some(Vec::new());
     }
     // 1. Take out the noise of photos and compressed images below the
     // highest detail, so it makes no specks, holes and seams of its own
@@ -118,23 +442,38 @@ fn outline(img: &RgbaImage, s: &Settings) -> Vec<Traced> {
     // low, then quantise.
     let mut quiet = img.clone();
     for _ in 0..denoise_passes(s.detail) {
-        quiet = denoise(&quiet);
+        quiet = denoise(&quiet, cancel)?;
     }
-    let src = if s.detail < 50.0 {
+    let mut src = if s.detail < 50.0 {
         image::imageops::blur(&quiet, (50.0 - s.detail as f32) / 25.0)
     } else {
         quiet
     };
-    let palette: Vec<[u8; 3]> = if s.black_white {
+    if cancelled(cancel) {
+        return None;
+    }
+    if s.mode == ColorMode::Grayscale {
+        for p in src.pixels_mut() {
+            let l = luma(*p).round().clamp(0.0, 255.0) as u8;
+            *p = Rgba([l, l, l, p[3]]);
+        }
+    }
+    let black_white = s.mode == ColorMode::BlackWhite;
+    let palette: Vec<[u8; 3]> = if black_white {
         vec![[0, 0, 0], [255, 255, 255]]
     } else {
-        median_cut(&src, s.colors.clamp(2, 256) as usize)
+        median_cut(&src, s.colors.clamp(2, 256) as usize, cancel)?
     };
     let mut labels = vec![0usize; w * h];
     for (x, y, p) in src.enumerate_pixels() {
+        // Up to 256 colours to compare each pixel with: look at the flag
+        // every few rows.
+        if x == 0 && y % 32 == 0 && cancelled(cancel) {
+            return None;
+        }
         let idx = if p[3] < 128 {
             usize::MAX
-        } else if s.black_white {
+        } else if black_white {
             if luma(*p) < 128.0 {
                 0
             } else {
@@ -148,13 +487,16 @@ fn outline(img: &RgbaImage, s: &Settings) -> Vec<Traced> {
     // Specks: patches of one colour smaller than the detail allows take
     // the colour around them, so stray dots and the fringes of soft edges
     // do not become curves of their own (#611).
-    despeckle(&mut labels, w, h, speck_area(s.detail));
+    despeckle(&mut labels, w, h, speck_area(s.detail), cancel);
     // Thin bands of an in-between colour along the edge of two others
     // (the anti-aliasing of a black and yellow edge) go to the colours on
     // either side, so they do not become slivers of their own (#611).
     // Like the specks, kept at the highest detail.
     if speck_area(s.detail) > 1 {
-        despeckle_bands(&mut labels, w, h, &palette);
+        despeckle_bands(&mut labels, w, h, &palette, cancel);
+    }
+    if cancelled(cancel) {
+        return None;
     }
     // 2. Background: the most common colour touching the border.
     let mut border_counts = vec![0usize; palette.len()];
@@ -174,15 +516,37 @@ fn outline(img: &RgbaImage, s: &Settings) -> Vec<Traced> {
             }
         }
     }
-    let background = if s.remove_background {
-        border_counts
-            .iter()
-            .enumerate()
-            .max_by_key(|(_, c)| **c)
-            .map(|(i, _)| i)
-    } else {
-        None
+    if cancelled(cancel) {
+        return None;
+    }
+    // Colours the Colors tab joined are one colour from here on; the
+    // match must be close, so a palette that changed with the settings
+    // does not join colours never meant to be.
+    if !s.merged.is_empty() {
+        merge_colors(&mut labels, &palette, &s.merged, MERGE_REACH * MERGE_REACH);
+        if cancelled(cancel) {
+            return None;
+        }
+    }
+    let mut background = match s.remove {
+        Remove::None => None,
+        Remove::Background | Remove::EntireColor => match s.background {
+            // The colour chosen: the palette colour nearest it.
+            Some(c) => palette_index(&palette, c),
+            None => border_counts
+                .iter()
+                .enumerate()
+                .max_by_key(|(_, c)| **c)
+                .map(|(i, _)| i),
+        },
     };
+    // Removing the background (not the entire colour) takes out the
+    // patches of that colour reaching the picture's edge; patches of it
+    // inside the picture (the white of an eye) are traced like any colour.
+    if let (Remove::Background, Some(bg)) = (s.remove, background) {
+        clear_border_region(&mut labels, w, h, bg);
+        background = None;
+    }
     // 3. Per colour, darkest first (so lighter regions stack on top),
     // extract the boundary contours of the mask.
     let mut order: Vec<usize> = (0..palette.len()).collect();
@@ -209,13 +573,18 @@ fn outline(img: &RgbaImage, s: &Settings) -> Vec<Traced> {
         if Some(ci) == background || !present[ci] {
             continue;
         }
+        if cancelled(cancel) {
+            return None;
+        }
         // Each region reaches a little under the regions drawn above it,
         // so their curves, fitted each on its own, leave no page showing
         // between neighbours (#611). Only the box of its pixels, grown by
         // that much, is looked at, and nothing grows with no lighter
-        // region drawn above it.
-        let above =
-            (0..palette.len()).any(|l| present[l] && Some(l) != background && rank[l] > rank[ci]);
+        // region drawn above it. Remove overlap keeps every region to its
+        // own pixels.
+        let above = !s.remove_overlap
+            && (0..palette.len())
+                .any(|l| present[l] && Some(l) != background && rank[l] > rank[ci]);
         let grow = if above { UNDERLAP } else { 0 };
         let (bx0, by0, bx1, by1) = boxes[ci];
         let (x0, y0) = (bx0.saturating_sub(grow), by0.saturating_sub(grow));
@@ -238,37 +607,76 @@ fn outline(img: &RgbaImage, s: &Settings) -> Vec<Traced> {
         } else {
             own
         };
-        let offset = tracedraw_core::geometry::Vec2::new(x0 as f64, y0 as f64);
-        let contours: Vec<Vec<Point>> = contours(&mask, cw, ch)
-            .into_iter()
-            .map(|ring| ring.into_iter().map(|p| p + offset).collect())
-            .collect();
-        let mut path = BezPath::new();
-        for ring in contours {
-            if ring.len() < 3 {
+        // One curve for the colour (every region combined), or one per
+        // separate patch of it.
+        let pieces: Vec<((usize, usize), usize, usize, Vec<bool>)> = if s.merge_adjacent {
+            vec![((x0, y0), cw, ch, mask)]
+        } else {
+            patches(&mask, cw, ch)
+                .into_iter()
+                .map(|((px0, py0, px1, py1), own)| {
+                    ((x0 + px0, y0 + py0), px1 - px0 + 1, py1 - py0 + 1, own)
+                })
+                .collect()
+        };
+        let c = s.shown_color(palette[ci]);
+        for ((ox, oy), pw, ph, piece) in pieces {
+            if cancelled(cancel) {
+                return None;
+            }
+            let offset = tracedraw_core::geometry::Vec2::new(ox as f64, oy as f64);
+            let path = rings_path(&piece, pw, ph, offset, tolerance, s, cancel)?;
+            if path.elements().is_empty() {
                 continue;
             }
-            // Without smoothing the pixels' own edges, steps and all.
-            if s.smoothing <= 0.0 {
-                let simplified = tracedraw_core::geometry::simplify(&ring, tolerance);
-                if simplified.len() >= 3 {
-                    path.extend(polyline_closed(&simplified));
-                }
-                continue;
-            }
-            path.extend(fit_ring(&ring, s));
+            out.push(Traced {
+                path,
+                color: Color::rgb8(c[0], c[1], c[2]),
+                closed: true,
+            });
         }
-        if path.elements().is_empty() {
+    }
+    Some(out)
+}
+
+/// How near (RGB distance) a colour of the Colors tab must come to a
+/// palette colour to stand for it.
+const MERGE_REACH: u32 = 12;
+
+/// The boundary rings of `mask` (`w` x `h`, at `offset` in the picture)
+/// as one path: each ring fitted, or simplified to straight lines without
+/// smoothing.
+fn rings_path(
+    mask: &[bool],
+    w: usize,
+    h: usize,
+    offset: tracedraw_core::geometry::Vec2,
+    tolerance: f64,
+    s: &Settings,
+    cancel: Option<&Cancel>,
+) -> Option<BezPath> {
+    let mut path = BezPath::new();
+    for ring in contours(mask, w, h) {
+        // One colour merged into a single piece can hold thousands of
+        // rings: look at the flag between them.
+        if cancelled(cancel) {
+            return None;
+        }
+        if ring.len() < 3 {
             continue;
         }
-        let c = palette[ci];
-        out.push(Traced {
-            path,
-            color: Color::rgb8(c[0], c[1], c[2]),
-            closed: true,
-        });
+        let ring: Vec<Point> = ring.into_iter().map(|p| p + offset).collect();
+        // Without smoothing the pixels' own edges, steps and all.
+        if s.smoothing <= 0.0 {
+            let simplified = tracedraw_core::geometry::simplify(&ring, tolerance);
+            if simplified.len() >= 3 {
+                path.extend(polyline_closed(&simplified));
+            }
+            continue;
+        }
+        path.extend(fit_ring(&ring, s));
     }
-    out
+    Some(path)
 }
 
 /// How far, in pixels, a region reaches under its neighbours drawn above
@@ -358,7 +766,13 @@ fn between(c: [u8; 3], a: [u8; 3], b: [u8; 3]) -> bool {
 /// takes the colour most of its neighbours outside the patch have, else
 /// the nearer of the two. Patches touching one colour only, such as a
 /// hairline drawn on a fill, stay.
-fn despeckle_bands(labels: &mut [usize], w: usize, h: usize, palette: &[[u8; 3]]) {
+fn despeckle_bands(
+    labels: &mut [usize],
+    w: usize,
+    h: usize,
+    palette: &[[u8; 3]],
+    cancel: Option<&Cancel>,
+) {
     if labels.len() != w * h {
         return;
     }
@@ -385,6 +799,9 @@ fn despeckle_bands(labels: &mut [usize], w: usize, h: usize, palette: &[[u8; 3]]
         near
     };
     for start in 0..w * h {
+        if start % CANCEL_EVERY == 0 && cancelled(cancel) {
+            return;
+        }
         if seen[start] || labels[start] == usize::MAX {
             continue;
         }
@@ -469,13 +886,17 @@ fn despeckle_bands(labels: &mut [usize], w: usize, h: usize, palette: &[[u8; 3]]
 /// or columns keep their place (a line's end pixels go), unlike a blur
 /// that softens every edge.
 /// Alpha is left as it is, and transparent pixels take no part.
-fn denoise(img: &RgbaImage) -> RgbaImage {
+/// `None` once `cancel` is set (looked at every few rows).
+fn denoise(img: &RgbaImage, cancel: Option<&Cancel>) -> Option<RgbaImage> {
     let (w, h) = (img.width(), img.height());
     let mut out = img.clone();
     if w < 3 || h < 3 {
-        return out;
+        return Some(out);
     }
     for y in 0..h {
+        if y % 32 == 0 && cancelled(cancel) {
+            return None;
+        }
         for x in 0..w {
             let at = |dx: i64, dy: i64| {
                 let px = (x as i64 + dx).clamp(0, w as i64 - 1) as u32;
@@ -508,7 +929,7 @@ fn denoise(img: &RgbaImage) -> RgbaImage {
             out.put_pixel(x, y, p);
         }
     }
-    out
+    Some(out)
 }
 
 /// How many times noise is taken out: none at the highest detail (where
@@ -533,7 +954,8 @@ fn speck_area(detail: f64) -> usize {
 /// Give every 4-connected patch of one label smaller than `min_area`
 /// pixels the label most of its neighbours outside it have (transparent
 /// pixels are left alone and never spread).
-fn despeckle(labels: &mut [usize], w: usize, h: usize, min_area: usize) {
+/// Stops part way once `cancel` is set (the caller looks at it after).
+fn despeckle(labels: &mut [usize], w: usize, h: usize, min_area: usize, cancel: Option<&Cancel>) {
     if min_area <= 1 || labels.len() != w * h {
         return;
     }
@@ -542,6 +964,9 @@ fn despeckle(labels: &mut [usize], w: usize, h: usize, min_area: usize) {
     let mut stack: Vec<usize> = Vec::new();
     let mut counts: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
     for start in 0..w * h {
+        if start % CANCEL_EVERY == 0 && cancelled(cancel) {
+            return;
+        }
         if seen[start] || labels[start] == usize::MAX {
             continue;
         }
@@ -891,15 +1316,16 @@ fn nearest(palette: &[[u8; 3]], c: [u8; 3]) -> usize {
     best.1
 }
 
-/// Median cut colour quantisation to `n` colours.
-pub fn median_cut(img: &RgbaImage, n: usize) -> Vec<[u8; 3]> {
+/// Median cut colour quantisation to `n` colours, giving up (`None`)
+/// once `cancel` is set.
+pub fn median_cut(img: &RgbaImage, n: usize, cancel: Option<&Cancel>) -> Option<Vec<[u8; 3]>> {
     let mut pixels: Vec<[u8; 3]> = img
         .pixels()
         .filter(|p| p[3] >= 128)
         .map(|p| [p[0], p[1], p[2]])
         .collect();
     if pixels.is_empty() {
-        return vec![[0, 0, 0]];
+        return Some(vec![[0, 0, 0]]);
     }
     // Subsample large images.
     if pixels.len() > 200_000 {
@@ -908,6 +1334,9 @@ pub fn median_cut(img: &RgbaImage, n: usize) -> Vec<[u8; 3]> {
     }
     let mut buckets: Vec<Vec<[u8; 3]>> = vec![pixels.clone()];
     while buckets.len() < n {
+        if cancelled(cancel) {
+            return None;
+        }
         // Split the bucket with the largest range.
         let mut best: Option<(usize, usize, i32)> = None; // (bucket, channel, range)
         for (bi, b) in buckets.iter().enumerate() {
@@ -957,14 +1386,21 @@ pub fn median_cut(img: &RgbaImage, n: usize) -> Vec<[u8; 3]> {
             [(s[0] / n) as u8, (s[1] / n) as u8, (s[2] / n) as u8]
         })
         .collect();
-    refine(&pixels, start)
+    refine(&pixels, start, cancel)
 }
 
 /// A few rounds of k-means from the median cut's colours: each colour
 /// moves to the mean of the pixels nearest it, so the palette lands on
 /// the colours the picture really has.
-fn refine(pixels: &[[u8; 3]], mut palette: Vec<[u8; 3]>) -> Vec<[u8; 3]> {
+fn refine(
+    pixels: &[[u8; 3]],
+    mut palette: Vec<[u8; 3]>,
+    cancel: Option<&Cancel>,
+) -> Option<Vec<[u8; 3]>> {
     for _ in 0..6 {
+        if cancelled(cancel) {
+            return None;
+        }
         let mut sums = vec![[0u64; 4]; palette.len()];
         for p in pixels {
             let i = nearest(&palette, *p);
@@ -991,7 +1427,7 @@ fn refine(pixels: &[[u8; 3]], mut palette: Vec<[u8; 3]>) -> Vec<[u8; 3]> {
         }
     }
     palette.dedup();
-    palette
+    Some(palette)
 }
 
 /// Boundary rings of a binary mask (pixel-edge following). Outer rings are
@@ -1085,10 +1521,10 @@ pub fn contours(mask: &[bool], w: usize, h: usize) -> Vec<Vec<Point>> {
 
 // ----- centreline mode --------------------------------------------------------
 
-fn centerline(img: &RgbaImage, s: &Settings) -> Vec<Traced> {
+fn centerline(img: &RgbaImage, s: &Settings, cancel: Option<&Cancel>) -> Option<Vec<Traced>> {
     let (w, h) = (img.width() as usize, img.height() as usize);
     if w == 0 || h == 0 {
-        return Vec::new();
+        return Some(Vec::new());
     }
     let mut mask: Vec<bool> = img
         .pixels()
@@ -1096,7 +1532,9 @@ fn centerline(img: &RgbaImage, s: &Settings) -> Vec<Traced> {
         .collect();
     // Mean stroke thickness before thinning: area / skeleton length later.
     let area = mask.iter().filter(|m| **m).count() as f64;
-    thin(&mut mask, w, h);
+    if !thin_unless(&mut mask, w, h, cancel) {
+        return None;
+    }
     let skeleton = mask.iter().filter(|m| **m).count().max(1) as f64;
     let width = (area / skeleton).clamp(1.0, 50.0);
     // Trace skeleton pixels into polylines by walking neighbours.
@@ -1160,8 +1598,12 @@ fn centerline(img: &RgbaImage, s: &Settings) -> Vec<Traced> {
             lines.push(line);
         }
     }
+    if cancelled(cancel) {
+        return None;
+    }
     let tolerance = 0.5 + (100.0 - s.detail) / 100.0 * 2.0;
     let mut out = Vec::new();
+    let c = s.shown_color([0, 0, 0]);
     for l in lines {
         let simplified = tracedraw_core::geometry::simplify(&l, tolerance);
         if simplified.len() < 2 {
@@ -1174,14 +1616,14 @@ fn centerline(img: &RgbaImage, s: &Settings) -> Vec<Traced> {
         };
         out.push(Traced {
             path,
-            color: Color::BLACK,
+            color: Color::rgb8(c[0], c[1], c[2]),
             closed: false,
         });
     }
     // Encode the stroke width in the first result's colour alpha? No: the
     // caller reads `stroke_width` through the returned tuple below.
     STROKE_WIDTH.with(|c| c.set(width));
-    out
+    Some(out)
 }
 
 thread_local! {
@@ -1193,12 +1635,16 @@ pub fn last_stroke_width_px() -> f64 {
     STROKE_WIDTH.with(|c| c.get())
 }
 
-/// Zhang-Suen thinning.
-pub fn thin(mask: &mut [bool], w: usize, h: usize) {
+/// Zhang-Suen thinning, stopping between passes once `cancel` is set;
+/// whether it finished.
+fn thin_unless(mask: &mut [bool], w: usize, h: usize, cancel: Option<&Cancel>) -> bool {
     let at = |m: &[bool], x: i64, y: i64| -> bool {
         x >= 0 && y >= 0 && (x as usize) < w && (y as usize) < h && m[y as usize * w + x as usize]
     };
     loop {
+        if cancelled(cancel) {
+            return false;
+        }
         let mut changed = false;
         for pass in 0..2 {
             let mut remove = Vec::new();
@@ -1243,19 +1689,64 @@ pub fn thin(mask: &mut [bool], w: usize, h: usize) {
             }
         }
         if !changed {
-            break;
+            return true;
         }
     }
 }
 
-/// Map traced pixel-space paths into a rectangle (page mm, Y up).
 /// Draw traced shapes (pixel space, y down) into a transparent image of
 /// `w` x `h`: closed shapes filled with their colour, centrelines stroked
-/// `stroke_px` wide. The trace dialog previews a trace this way.
+/// `stroke_px` wide (the tests draw traces back this way; the dialog's
+/// preview is [`render_traced_scaled`]).
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn render_traced(traced: &[Traced], w: u32, h: u32, stroke_px: f64) -> RgbaImage {
-    let Some(mut pm) = tiny_skia::Pixmap::new(w.max(1), h.max(1)) else {
-        return RgbaImage::new(w.max(1), h.max(1));
+    paint_traced(traced, w, h, 1.0, Paint::Filled(stroke_px))
+}
+
+/// [`render_traced`] into an image `scale` times the trace's pixel space
+/// (`w` x `h` is the trace's size): the dialog's preview of a trace made
+/// on the whole picture.
+pub fn render_traced_scaled(
+    traced: &[Traced],
+    w: u32,
+    h: u32,
+    scale: f32,
+    stroke_px: f64,
+) -> RgbaImage {
+    paint_traced(traced, w, h, scale, Paint::Filled(stroke_px))
+}
+
+/// The curves of `traced` as thin lines of one colour on a transparent
+/// image `scale` times the trace's `w` x `h`: the dialog's wireframe,
+/// laid over the picture.
+pub fn render_wireframe(traced: &[Traced], w: u32, h: u32, scale: f32) -> RgbaImage {
+    paint_traced(traced, w, h, scale, Paint::Wire)
+}
+
+enum Paint {
+    /// Fills and centrelines (this wide, pixels) in their colours.
+    Filled(f64),
+    /// Every curve as a one point line in the wireframe colour.
+    Wire,
+}
+
+/// The colour of the wireframe's lines.
+const WIRE: [u8; 4] = [0x1E, 0x5A, 0xC8, 0xFF];
+
+fn paint_traced(traced: &[Traced], w: u32, h: u32, scale: f32, how: Paint) -> RgbaImage {
+    let scale = if scale.is_finite() && scale > 0.0 {
+        scale
+    } else {
+        1.0
     };
+    let (pw, ph) = (
+        ((w as f32 * scale).round() as u32).max(1),
+        ((h as f32 * scale).round() as u32).max(1),
+    );
+    let Some(mut pm) = tiny_skia::Pixmap::new(pw, ph) else {
+        return RgbaImage::new(pw, ph);
+    };
+    let transform = tiny_skia::Transform::from_scale(scale, scale);
     for t in traced {
         let mut pb = tiny_skia::PathBuilder::new();
         for el in t.path.elements() {
@@ -1278,28 +1769,30 @@ pub fn render_traced(traced: &[Traced], w: u32, h: u32, stroke_px: f64) -> RgbaI
         let mut paint = tiny_skia::Paint::default();
         paint.set_color_rgba8(r, g, b, 255);
         paint.anti_alias = true;
-        if t.closed {
-            pm.fill_path(
-                &path,
-                &paint,
-                tiny_skia::FillRule::EvenOdd,
-                tiny_skia::Transform::identity(),
-                None,
-            );
-        } else {
-            let stroke = tiny_skia::Stroke {
-                width: stroke_px.max(0.5) as f32,
-                line_cap: tiny_skia::LineCap::Round,
-                line_join: tiny_skia::LineJoin::Round,
-                ..Default::default()
-            };
-            pm.stroke_path(
-                &path,
-                &paint,
-                &stroke,
-                tiny_skia::Transform::identity(),
-                None,
-            );
+        match how {
+            Paint::Wire => {
+                paint.set_color_rgba8(WIRE[0], WIRE[1], WIRE[2], WIRE[3]);
+                // About a pixel of the image, whatever the scale (the
+                // curves run along pixel edges, so a line of exactly one
+                // pixel would half cover two).
+                let stroke = tiny_skia::Stroke {
+                    width: 1.25 / scale,
+                    ..Default::default()
+                };
+                pm.stroke_path(&path, &paint, &stroke, transform, None);
+            }
+            Paint::Filled(_) if t.closed => {
+                pm.fill_path(&path, &paint, tiny_skia::FillRule::EvenOdd, transform, None);
+            }
+            Paint::Filled(stroke_px) => {
+                let stroke = tiny_skia::Stroke {
+                    width: stroke_px.max(0.5) as f32,
+                    line_cap: tiny_skia::LineCap::Round,
+                    line_join: tiny_skia::LineJoin::Round,
+                    ..Default::default()
+                };
+                pm.stroke_path(&path, &paint, &stroke, transform, None);
+            }
         }
     }
     let mut out = RgbaImage::new(pm.width(), pm.height());
@@ -1310,6 +1803,7 @@ pub fn render_traced(traced: &[Traced], w: u32, h: u32, stroke_px: f64) -> RgbaI
     out
 }
 
+/// Map traced pixel-space paths into a rectangle (page mm, Y up).
 pub fn to_rect(path: &BezPath, img_w: u32, img_h: u32, rect: Rect) -> BezPath {
     let sx = rect.width() / img_w.max(1) as f64;
     let sy = rect.height() / img_h.max(1) as f64;
@@ -1421,7 +1915,7 @@ mod tests {
                 white
             }
         });
-        let out = denoise(&img);
+        let out = denoise(&img, None).expect("not cancelled");
         assert_eq!(*out.get_pixel(16, 4), white, "the lone pixel goes");
         for (x, y) in [
             (5, 5),
@@ -1441,7 +1935,7 @@ mod tests {
         assert_eq!(*out.get_pixel(0, 0), Rgba([9, 9, 9, 0]));
         // Nothing to do on a tiny image.
         let tiny = RgbaImage::new(2, 1);
-        assert_eq!(denoise(&tiny), tiny);
+        assert_eq!(denoise(&tiny, None), Some(tiny));
     }
 
     fn circle_image() -> RgbaImage {
@@ -1484,7 +1978,7 @@ mod tests {
                 "{colors} colours: {r},{g},{b}"
             );
         }
-        let pal = median_cut(&img, 2);
+        let pal = median_cut(&img, 2, None).expect("not cancelled");
         assert!(
             pal.contains(&[0, 0, 0]) && pal.iter().any(|c| c[0] > 245),
             "{pal:?}"
@@ -1689,7 +2183,7 @@ mod tests {
             ImageBuffer::from_fn(256, 8, |x, _| Rgba([x as u8, x as u8, x as u8, 255]));
         let mut s = Preset::HighQualityImage.settings();
         s.colors = 96;
-        s.remove_background = false;
+        s.remove = Remove::None;
         let n = trace(&ramp, &s).len();
         assert!(n > 24, "{n} colours of 96");
     }
@@ -1705,7 +2199,7 @@ mod tests {
         });
         let mut s = Preset::Logo.settings();
         s.detail = 100.0;
-        s.remove_background = false;
+        s.remove = Remove::None;
         let colours: Vec<[u8; 3]> = trace(&img, &s).iter().map(|t| t.color.to_rgb8()).collect();
         assert!(
             colours.iter().any(|c| c[1] > 90 && c[1] < 160),
@@ -1747,11 +2241,11 @@ mod tests {
                 _ => 1,
             })
             .collect();
-        despeckle_bands(&mut labels, w, h, &palette);
+        despeckle_bands(&mut labels, w, h, &palette, None);
         assert!(labels.iter().all(|l| *l != 2), "{labels:?}");
         // An olive hairline on yellow alone stays.
         let mut labels: Vec<usize> = (0..w * h).map(|i| if i / w == 2 { 2 } else { 1 }).collect();
-        despeckle_bands(&mut labels, w, h, &palette);
+        despeckle_bands(&mut labels, w, h, &palette, None);
         assert_eq!(labels.iter().filter(|l| **l == 2).count(), w);
     }
 
@@ -1765,7 +2259,7 @@ mod tests {
             labels[4 * w + x] = 2; // a row of six
         }
         labels[0] = usize::MAX; // transparent stays
-        despeckle(&mut labels, w, h, 3);
+        despeckle(&mut labels, w, h, 3, None);
         assert_eq!(labels[2 * w + 2], 0);
         assert!(labels[4 * w..].iter().all(|l| *l == 2));
         assert_eq!(labels[0], usize::MAX);
@@ -1789,5 +2283,285 @@ mod tests {
         }
         let rings = contours(&mask, w, 10);
         assert_eq!(rings.len(), 2);
+    }
+
+    /// A disc on white with white patches inside it (the whites of eyes):
+    /// Remove Background takes out the white reaching the edge and traces
+    /// the patches inside as white curves, Entire color takes every
+    /// white out, None traces the white too; a colour given is removed
+    /// instead of the one found; a colour given that is not the picture's
+    /// takes the palette colour nearest it.
+    #[test]
+    fn removing_the_background_or_the_entire_colour_or_nothing() {
+        let img: RgbaImage = ImageBuffer::from_fn(120, 120, |x, y| {
+            let d = ((x as f32 - 60.0).powi(2) + (y as f32 - 60.0).powi(2)).sqrt();
+            let eye = ((x as f32 - 45.0).powi(2) + (y as f32 - 50.0).powi(2)).sqrt() < 6.0
+                || ((x as f32 - 75.0).powi(2) + (y as f32 - 50.0).powi(2)).sqrt() < 6.0;
+            if d < 45.0 && !eye {
+                Rgba([0, 0, 0, 255])
+            } else {
+                Rgba([255, 255, 255, 255])
+            }
+        });
+        let mut s = Preset::Logo.settings();
+        s.remove = Remove::Background;
+        let t = trace(&img, &s);
+        let colours: Vec<[u8; 3]> = t.iter().map(|t| t.color.to_rgb8()).collect();
+        assert_eq!(colours, vec![[0, 0, 0], [255, 255, 255]], "the eyes stay");
+        let white_rings = t[1]
+            .path
+            .elements()
+            .iter()
+            .filter(|e| matches!(e, tracedraw_core::geometry::PathEl::MoveTo(_)))
+            .count();
+        assert_eq!(white_rings, 2, "two eyes, no outer white");
+        s.remove = Remove::EntireColor;
+        let t = trace(&img, &s);
+        assert_eq!(t.len(), 1);
+        assert_eq!(t[0].color.to_rgb8(), [0, 0, 0]);
+        s.remove = Remove::None;
+        let t = trace(&img, &s);
+        assert_eq!(t.len(), 2);
+        // The black given as the background: the disc goes, the white stays
+        // whole (it reaches the edge, and is not the background now).
+        s.remove = Remove::EntireColor;
+        s.background = Some([0, 0, 0]);
+        let t = trace(&img, &s);
+        assert_eq!(t.len(), 1);
+        assert_eq!(t[0].color.to_rgb8(), [255, 255, 255]);
+        // A colour picked a little off (the anti-aliasing) still means
+        // the nearest palette colour.
+        s.background = Some([20, 20, 20]);
+        assert_eq!(trace(&img, &s)[0].color.to_rgb8(), [255, 255, 255]);
+        // Removing the background with a colour whose patches do not reach
+        // the edge takes nothing out.
+        s.remove = Remove::Background;
+        s.background = Some([0, 0, 0]);
+        assert_eq!(trace(&img, &s).len(), 2);
+    }
+
+    /// Merge adjacent off: each separate patch of a colour is a curve of
+    /// its own, with its holes; on, one curve per colour.
+    #[test]
+    fn merge_adjacent_off_makes_a_curve_per_patch() {
+        let img: RgbaImage = ImageBuffer::from_fn(100, 100, |x, y| {
+            let a = (10..40).contains(&x) && (10..40).contains(&y);
+            let hole = (20..30).contains(&x) && (20..30).contains(&y);
+            let b = (60..90).contains(&x) && (60..90).contains(&y);
+            if (a && !hole) || b {
+                Rgba([200, 0, 0, 255])
+            } else {
+                Rgba([255, 255, 255, 255])
+            }
+        });
+        let mut s = Preset::Logo.settings();
+        // The hole's white does not reach the edge: Entire color, so the
+        // red is all there is.
+        s.remove = Remove::EntireColor;
+        assert_eq!(trace(&img, &s).len(), 1);
+        s.merge_adjacent = false;
+        let t = trace(&img, &s);
+        assert_eq!(t.len(), 2);
+        let rings = |p: &BezPath| {
+            p.elements()
+                .iter()
+                .filter(|e| matches!(e, tracedraw_core::geometry::PathEl::MoveTo(_)))
+                .count()
+        };
+        let mut counts: Vec<usize> = t.iter().map(|t| rings(&t.path)).collect();
+        counts.sort();
+        assert_eq!(counts, vec![1, 2], "the square with the hole has two rings");
+        // The patches of a mask, each in its own box.
+        let mask: Vec<bool> = (0..6 * 4)
+            .map(|i| matches!(i % 6, 0 | 1) && i / 6 < 2 || i == 6 * 3 + 5)
+            .collect();
+        let p = patches(&mask, 6, 4);
+        assert_eq!(p.len(), 2);
+        assert_eq!(p[0].0, (0, 0, 1, 1));
+        assert_eq!(p[0].1, vec![true; 4]);
+        assert_eq!(p[1].0, (5, 3, 5, 3));
+    }
+
+    /// Remove overlap keeps each region to its own pixels: the lower
+    /// region no longer reaches under the one drawn over it.
+    #[test]
+    fn remove_overlap_keeps_regions_to_their_pixels() {
+        let img: RgbaImage = ImageBuffer::from_fn(80, 80, |x, y| {
+            let d = ((x as f32 - 40.0).powi(2) + (y as f32 - 40.0).powi(2)).sqrt();
+            if d < 30.0 {
+                if y < 40 {
+                    Rgba([0, 0, 0, 255])
+                } else {
+                    Rgba([250, 200, 40, 255])
+                }
+            } else {
+                Rgba([255, 255, 255, 255])
+            }
+        });
+        let mut s = Preset::Logo.settings();
+        s.smoothing = 0.0;
+        let area = |t: &[Traced]| -> f64 {
+            t.iter()
+                .find(|t| t.color.to_rgb8()[0] < 50)
+                .map(|t| t.path.area().abs())
+                .unwrap_or(0.0)
+        };
+        let under = area(&trace(&img, &s));
+        s.remove_overlap = true;
+        let own = area(&trace(&img, &s));
+        assert!(under > own + 20.0, "under {under}, own {own}");
+    }
+
+    /// The Colors tab: colours merged into one trace as one; colours
+    /// edited are drawn in the new colour; grey mode traces greys.
+    #[test]
+    fn merged_and_edited_colours_and_grey_mode() {
+        let img: RgbaImage = ImageBuffer::from_fn(90, 30, |x, _| match x / 30 {
+            0 => Rgba([200, 0, 0, 255]),
+            1 => Rgba([0, 0, 200, 255]),
+            _ => Rgba([255, 255, 255, 255]),
+        });
+        let mut s = Preset::Logo.settings();
+        s.remove = Remove::None;
+        let t = trace(&img, &s);
+        assert_eq!(t.len(), 3);
+        s.merged = vec![vec![[200, 0, 0], [0, 0, 200]]];
+        let t = trace(&img, &s);
+        assert_eq!(t.len(), 2, "red and blue are one");
+        assert!(t.iter().any(|t| t.color.to_rgb8() == [200, 0, 0]));
+        // A colour that is not in the palette merges nothing.
+        s.merged = vec![vec![[0, 200, 0], [0, 0, 200]]];
+        assert_eq!(trace(&img, &s).len(), 3);
+        s.merged.clear();
+        s.recolored = vec![([0, 0, 200], [0, 120, 0])];
+        let t = trace(&img, &s);
+        assert!(t.iter().any(|t| t.color.to_rgb8() == [0, 120, 0]));
+        assert!(!t.iter().any(|t| t.color.to_rgb8() == [0, 0, 200]));
+        s.recolored.clear();
+        s.mode = ColorMode::Grayscale;
+        let t = trace(&img, &s);
+        assert!(t.iter().all(|t| {
+            let c = t.color.to_rgb8();
+            c[0] == c[1] && c[1] == c[2]
+        }));
+        assert_eq!(stats(&t).colors, 3);
+        assert_eq!(color_counts(&t).len(), 3);
+    }
+
+    /// A trace stops once cancelled, in both modes.
+    #[test]
+    fn a_cancelled_trace_gives_nothing() {
+        let img: RgbaImage = ImageBuffer::from_fn(60, 60, |x, y| {
+            if (x / 10 + y / 10) % 2 == 0 {
+                Rgba([0, 0, 0, 255])
+            } else {
+                Rgba([255, 255, 255, 255])
+            }
+        });
+        let cancel = Cancel::new(true);
+        assert!(trace_unless(&img, &Preset::Logo.settings(), Some(&cancel)).is_none());
+        assert!(trace_unless(&img, &Preset::Technical.settings(), Some(&cancel)).is_none());
+        let go = Cancel::new(false);
+        assert!(trace_unless(&img, &Preset::Logo.settings(), Some(&go)).is_some());
+    }
+
+    /// Every long stage of the outline trace looks at the flag: noise
+    /// removal, colour reduction, despeckling and the fitting of each
+    /// patch's rings.
+    #[test]
+    fn every_stage_stops_at_the_flag() {
+        let raised = Cancel::new(true);
+        let img: RgbaImage = ImageBuffer::from_fn(40, 40, |x, y| {
+            Rgba([(x * 6) as u8, (y * 6) as u8, ((x + y) * 3) as u8, 255])
+        });
+        assert!(denoise(&img, Some(&raised)).is_none());
+        assert!(denoise(&img, None).is_some());
+        assert!(median_cut(&img, 8, Some(&raised)).is_none());
+        assert!(median_cut(&img, 8, None).is_some_and(|p| !p.is_empty()));
+        let (w, h) = (6, 5);
+        let mut labels = vec![0usize; w * h];
+        labels[2 * w + 2] = 1;
+        despeckle(&mut labels, w, h, 3, Some(&raised));
+        assert_eq!(labels[2 * w + 2], 1, "stopped before any change");
+        let mask: Vec<bool> = (0..w * h).map(|i| i % w > 1).collect();
+        let s = Preset::Logo.settings();
+        let zero = tracedraw_core::geometry::Vec2::new(0.0, 0.0);
+        assert!(rings_path(&mask, w, h, zero, 0.5, &s, Some(&raised)).is_none());
+        assert!(rings_path(&mask, w, h, zero, 0.5, &s, None).is_some());
+    }
+
+    /// A trace of a large noisy picture whose flag is raised while it
+    /// runs ends soon after, wherever it was.
+    #[test]
+    fn a_trace_cancelled_while_it_runs_ends_soon() {
+        let img: RgbaImage = ImageBuffer::from_fn(1200, 900, |x, y| {
+            let n = (x.wrapping_mul(7919) ^ y.wrapping_mul(104_729)) % 23;
+            let base = if (x / 60 + y / 60) % 2 == 0 { 40 } else { 200 };
+            let v = (base + n) as u8;
+            Rgba([v, v / 2, 255 - v, 255])
+        });
+        let mut s = Preset::Logo.settings();
+        s.detail = 40.0;
+        s.colors = 64;
+        for wait_ms in [5u64, 60, 250] {
+            let cancel = std::sync::Arc::new(Cancel::new(false));
+            let flag = cancel.clone();
+            let raise = std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(wait_ms));
+                flag.store(true, std::sync::atomic::Ordering::Relaxed);
+                std::time::Instant::now()
+            });
+            let out = trace_unless(&img, &s, Some(&cancel));
+            let done = std::time::Instant::now();
+            let raised_at = raise.join().expect("the thread");
+            if out.is_some() {
+                // Done before the flag went up (a fast build).
+                assert!(
+                    wait_ms > 5 && done <= raised_at,
+                    "cancelled after {wait_ms} ms"
+                );
+                continue;
+            }
+            let late = done.saturating_duration_since(raised_at);
+            assert!(
+                late < std::time::Duration::from_millis(1500),
+                "ended {late:?} after the flag (raised after {wait_ms} ms)"
+            );
+        }
+    }
+
+    /// The preview pictures: a trace drawn at another scale fills the
+    /// scaled picture, the wireframe draws lines of its colour only
+    /// along the curves; the counts of a trace.
+    #[test]
+    fn scaled_renders_and_wireframes_and_stats() {
+        let img: RgbaImage = ImageBuffer::from_fn(40, 40, |x, y| {
+            if (10..30).contains(&x) && (10..30).contains(&y) {
+                Rgba([0, 0, 0, 255])
+            } else {
+                Rgba([255, 255, 255, 255])
+            }
+        });
+        let t = trace(&img, &Preset::Logo.settings());
+        let st = stats(&t);
+        assert_eq!((st.curves, st.colors), (1, 1));
+        assert!(st.nodes >= 4, "{st:?}");
+        let big = render_traced_scaled(&t, 40, 40, 3.0, 1.0);
+        assert_eq!(big.dimensions(), (120, 120));
+        assert_eq!(big.get_pixel(60, 60).0, [0, 0, 0, 255]);
+        assert_eq!(big.get_pixel(5, 5)[3], 0, "outside is clear");
+        let wire = render_wireframe(&t, 40, 40, 2.0);
+        assert_eq!(wire.dimensions(), (80, 80));
+        assert_eq!(wire.get_pixel(40, 40)[3], 0, "the inside is clear");
+        let on_edge = (0..80).any(|x| wire.get_pixel(x, 20)[3] > 0);
+        assert!(on_edge, "the line along the top edge");
+        // The wireframe colour (the edges' half covered pixels within
+        // rounding).
+        let coloured = wire
+            .pixels()
+            .filter(|p| p[3] >= 128)
+            .all(|p| (0..3).all(|k| (p[k] as i32 - WIRE[k] as i32).abs() <= 2));
+        assert!(coloured);
+        assert!(wire.pixels().any(|p| p[3] >= 128));
     }
 }

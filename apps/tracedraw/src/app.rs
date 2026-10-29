@@ -863,6 +863,9 @@ pub struct App {
     /// The last trace made (its preset and settings), for Repeat Last
     /// Trace and Open Last Trace Settings (#452).
     pub last_trace: Option<(crate::trace::Preset, crate::trace::Settings)>,
+    /// The Trace dialog's live preview: the trace of the selected bitmap
+    /// worked out off the interface thread as the settings change.
+    pub trace_live: crate::trace_preview::Live,
     /// The digits typed with Alt held while editing text, for a character
     /// by its number (#447; the system does it on Windows).
     pub alt_code: String,
@@ -2166,6 +2169,7 @@ impl App {
             text_edit: None,
             ime_preedit: String::new(),
             last_trace: None,
+            trace_live: Default::default(),
             alt_code: String::new(),
             alt_composed: None,
             current_colors: (Color::BLACK, Color::WHITE),

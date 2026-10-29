@@ -1928,12 +1928,22 @@ impl App {
         let Some((preset, settings)) = self.last_trace.clone() else {
             return;
         };
-        let mut st = crate::ui::dialogs::TraceState::new(preset, &self.settings.tracing);
-        st.settings = settings;
+        let st = crate::ui::dialogs::TraceState::with_settings(preset, settings);
         self.dialog = crate::ui::dialogs::Dialog::Trace(st);
     }
 
     pub fn trace_bitmaps(&mut self, settings: &crate::trace::Settings) {
+        self.trace_bitmaps_using(settings, None);
+    }
+
+    /// [`trace_bitmaps`](Self::trace_bitmaps) with `ready`, the trace of
+    /// one of the bitmaps made already (the dialog's live preview of the
+    /// whole picture): that bitmap is not traced again.
+    pub fn trace_bitmaps_using(
+        &mut self,
+        settings: &crate::trace::Settings,
+        ready: Option<(ShapeId, std::sync::Arc<Vec<crate::trace::Traced>>, f64)>,
+    ) {
         let bitmaps = self.bitmap_shapes();
         if bitmaps.is_empty() {
             return;
@@ -1944,15 +1954,20 @@ impl App {
         let mut cmds = Vec::new();
         let mut new_sel = Vec::new();
         for (id, rect, w, h, png) in bitmaps {
-            let Some(img) = crate::bitmap_fx::decode(&png) else {
-                continue;
-            };
             let Ok((_, src)) = self.doc().shape(id) else {
                 continue;
             };
             let transform = src.transform;
-            let traced = crate::trace::trace(&img, settings);
-            let stroke_px = crate::trace::last_stroke_width_px();
+            let (traced, stroke_px): (Vec<crate::trace::Traced>, f64) = match &ready {
+                Some((rid, t, px)) if *rid == id => (t.as_ref().clone(), *px),
+                _ => {
+                    let Some(img) = crate::bitmap_fx::decode(&png) else {
+                        continue;
+                    };
+                    let traced = crate::trace::trace(&img, settings);
+                    (traced, crate::trace::last_stroke_width_px())
+                }
+            };
             let mut children = Vec::new();
             for t in traced {
                 let sid = self.engine.new_shape_id();
@@ -1976,6 +1991,26 @@ impl App {
             }
             if children.is_empty() {
                 continue;
+            }
+            // Group by color: the curves of each colour in a group of their
+            // own, in the order the colours stack.
+            if settings.group_by_color {
+                let mut by_color: Vec<(Color, Vec<Shape>)> = Vec::new();
+                for s in children.drain(..) {
+                    let c = match (&s.fill, &s.stroke) {
+                        (Fill::Solid(c), _) => *c,
+                        (_, Some(st)) => st.color,
+                        _ => Color::BLACK,
+                    };
+                    match by_color.iter_mut().find(|(k, _)| *k == c) {
+                        Some((_, v)) => v.push(s),
+                        None => by_color.push((c, vec![s])),
+                    }
+                }
+                for (_, shapes) in by_color {
+                    let gid = self.engine.new_shape_id();
+                    children.push(Shape::new(gid, ShapeKind::Group { children: shapes }));
+                }
             }
             let gid = self.engine.new_shape_id();
             let mut group = Shape::new(gid, ShapeKind::Group { children });

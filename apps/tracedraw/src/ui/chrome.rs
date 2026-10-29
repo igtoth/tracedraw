@@ -194,13 +194,31 @@ fn placed<'a>(window: egui::Window<'a>, ctx: &Context, id: egui::Id) -> egui::Wi
 pub struct Window {
     title: String,
     id: egui::Id,
+    /// A window the user sizes: its first size and the smallest, with a
+    /// maximize button in the title bar.
+    resize: Option<(Vec2, Vec2)>,
 }
 
 /// The chrome window for a dialog titled `title`.
 pub fn window(title: impl Into<String>) -> Window {
     let title = title.into();
     let id = egui::Id::new(("chrome_dialog", title.clone()));
-    Window { title, id }
+    Window {
+        title,
+        id,
+        resize: None,
+    }
+}
+
+/// Whether the resizable dialog `id` fills the main window.
+pub fn maximized(ctx: &Context, id: egui::Id) -> bool {
+    ctx.data(|d| d.get_temp::<bool>(id.with("chrome_maximized")))
+        .unwrap_or(false)
+}
+
+/// Maximize the resizable dialog `id`, or put it back to its size.
+pub fn set_maximized(ctx: &Context, id: egui::Id, on: bool) {
+    ctx.data_mut(|d| d.insert_temp(id.with("chrome_maximized"), on));
 }
 
 /// The widest a dialog's title bar must be for its title and close button.
@@ -214,8 +232,18 @@ fn title_width(ui: &Ui, title: &str) -> f32 {
 }
 
 impl Window {
+    /// The window the user sizes, from `default` down to `min` (its body
+    /// gets the whole room, nothing scrolls), with a maximize button.
+    pub fn resizable(mut self, default: Vec2, min: Vec2) -> Self {
+        self.resize = Some((default, min));
+        self
+    }
+
     /// Draw the window with `add` as its body. Returns what `add` returned.
     pub fn show<R>(self, ctx: &Context, add: impl FnOnce(&mut Ui) -> R) -> Option<R> {
+        if self.resize.is_some() {
+            return self.show_resizable(ctx, add);
+        }
         let mut out = None;
         let mut closed = false;
         let window = egui::Window::new(&self.title)
@@ -267,6 +295,96 @@ impl Window {
                 closed = true;
             }
         });
+        if closed {
+            request_close(ctx);
+        }
+        out
+    }
+
+    /// [`Window::show`] for a window the user sizes: the body fills the
+    /// window under the title bar; maximized, the window fills the main
+    /// window.
+    fn show_resizable<R>(self, ctx: &Context, add: impl FnOnce(&mut Ui) -> R) -> Option<R> {
+        let (default, min) = self
+            .resize
+            .unwrap_or((Vec2::new(900.0, 600.0), Vec2::new(600.0, 400.0)));
+        let mut out = None;
+        let mut closed = false;
+        let mut toggle_max = false;
+        let screen = ctx.content_rect();
+        let max = maximized(ctx, self.id);
+        let room = (screen.size() - Vec2::splat(8.0)).max(Vec2::splat(200.0));
+        let min = min.min(room);
+        let mut window = egui::Window::new(&self.title)
+            .id(self.id)
+            .order(egui::Order::Foreground)
+            .title_bar(false)
+            .collapsible(false)
+            .frame(window_frame());
+        // The size and place it had before it was maximized, to put back.
+        let restore_key = self.id.with("chrome_restore");
+        if max {
+            if ctx.data(|d| d.get_temp::<Rect>(restore_key)).is_none() {
+                if let Some(r) = ctx
+                    .memory(|m| m.area_rect(self.id))
+                    .filter(|r| r.is_finite())
+                {
+                    ctx.data_mut(|d| d.insert_temp(restore_key, r));
+                }
+            }
+            window = window.resizable(false).movable(false).fixed_rect(screen);
+        } else if let Some(r) = ctx.data(|d| d.get_temp::<Rect>(restore_key)) {
+            // Restored: this frame puts it back, the next ones size it
+            // again as the user likes.
+            ctx.data_mut(|d| d.remove::<Rect>(restore_key));
+            window = window.resizable(false).fixed_rect(r);
+        } else {
+            window = placed(
+                window
+                    .resizable(true)
+                    .default_size(default.min(room))
+                    .min_size(min)
+                    .max_size(room),
+                ctx,
+                self.id,
+            );
+        }
+        window.show(ctx, |ui| {
+            ui.spacing_mut().item_spacing.y = 6.0;
+            let min_w = title_width(ui, &self.title).max(min.x);
+            ui.set_min_width(min_w);
+            // The window's own rect, as the resize handles size it: the
+            // body is drawn inside it and never grows it (content that
+            // reaches past it is clipped, not taken as the size wanted).
+            let full = ui.available_rect_before_wrap();
+            let bar = Rect::from_min_size(full.min, Vec2::new(full.width(), TITLE_BAR));
+            let panel = Rect::from_min_max(
+                Pos2::new(full.left() + EDGE, bar.bottom()),
+                Pos2::new(full.right() - EDGE, full.bottom() - EDGE),
+            );
+            ui.painter().rect_filled(panel, 0.0, Tokens::panel());
+            let body = Rect::from_min_max(
+                panel.min + Vec2::new(14.0, 12.0),
+                panel.max - Vec2::new(14.0, 12.0),
+            );
+            let mut child = ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(body)
+                    .layout(egui::Layout::top_down(egui::Align::Min)),
+            );
+            child.set_clip_rect(panel);
+            child.spacing_mut().item_spacing.y = 6.0;
+            form_style(&mut child);
+            out = Some(add(&mut child));
+            ui.allocate_rect(full, Sense::hover());
+            let (close, maximize) =
+                title_bar_with(ui, bar, &self.title, &format!("{:?}", self.id), Some(max));
+            closed = close;
+            toggle_max = maximize;
+        });
+        if toggle_max {
+            set_maximized(ctx, self.id, !max);
+        }
         if closed {
             request_close(ctx);
         }
@@ -618,6 +736,19 @@ fn message_box_with(
 /// The white title bar: title at the left, the close button at the right.
 /// Returns true when the close button was clicked.
 fn title_bar(ui: &mut Ui, bar: Rect, title: &str, id: &str) -> bool {
+    title_bar_with(ui, bar, title, id, None).0
+}
+
+/// [`title_bar`] with a maximize button (showing `maximized`) before the
+/// close button when `maximized` is given. Returns (close clicked,
+/// maximize clicked).
+fn title_bar_with(
+    ui: &mut Ui,
+    bar: Rect,
+    title: &str,
+    id: &str,
+    maximized: Option<bool>,
+) -> (bool, bool) {
     let painter = ui.painter();
     painter.rect_filled(bar, 0.0, crate::theme::Tokens::title_bar());
     painter.text(
@@ -647,7 +778,52 @@ fn title_bar(ui: &mut Ui, bar: Rect, title: &str, id: &str) -> bool {
         .line_segment([c + Vec2::new(-d, -d), c + Vec2::new(d, d)], s);
     ui.painter()
         .line_segment([c + Vec2::new(d, -d), c + Vec2::new(-d, d)], s);
-    resp.clicked()
+    let mut max_clicked = false;
+    if let Some(max) = maximized {
+        let rect = Rect::from_min_max(
+            Pos2::new(close.left() - CLOSE_W, bar.top()),
+            Pos2::new(close.left(), bar.bottom()),
+        );
+        let resp = ui.interact(rect, egui::Id::new((id, "maximize")), Sense::click());
+        let key = if max {
+            "dialog.restore_window"
+        } else {
+            "dialog.maximize_window"
+        };
+        let resp = crate::ui::tips::RichTip::rich_tip(resp, crate::ui::tips::keyed(key));
+        let color = if resp.hovered() {
+            ui.painter()
+                .rect_filled(rect, 0.0, crate::theme::Tokens::panel());
+            crate::theme::Tokens::text()
+        } else {
+            crate::theme::Tokens::text()
+        };
+        let s = Stroke::new(1.2, color);
+        let c = rect.center();
+        if max {
+            // Two squares, one behind the other.
+            let a = Rect::from_center_size(c + Vec2::new(-1.5, 1.5), Vec2::splat(8.0));
+            let b = Rect::from_center_size(c + Vec2::new(1.5, -1.5), Vec2::splat(8.0));
+            ui.painter()
+                .rect_stroke(a, 0.0, s, egui::StrokeKind::Middle);
+            ui.painter().line_segment([b.left_top(), b.right_top()], s);
+            ui.painter()
+                .line_segment([b.right_top(), b.right_bottom()], s);
+            ui.painter()
+                .line_segment([b.right_bottom(), Pos2::new(a.right(), b.bottom())], s);
+            ui.painter()
+                .line_segment([b.left_top(), Pos2::new(b.left(), a.top())], s);
+        } else {
+            ui.painter().rect_stroke(
+                Rect::from_center_size(c, Vec2::splat(10.0)),
+                0.0,
+                s,
+                egui::StrokeKind::Middle,
+            );
+        }
+        max_clicked = resp.clicked();
+    }
+    (resp.clicked(), max_clicked)
 }
 
 /// Controls inside a dialog body: square corners, grey borders, the blue
@@ -999,6 +1175,58 @@ mod tests {
             (again.center() - screen.center()).length() < 2.0,
             "{again:?}"
         );
+    }
+
+    /// A resizable dialog keeps its size from frame to frame (its body
+    /// never grows it), fills the main window when maximized and comes
+    /// back to its size when restored.
+    #[test]
+    fn a_resizable_dialog_keeps_its_size_and_maximizes() {
+        let ctx = crate::theme::ui_context();
+        let screen = Rect::from_min_size(Pos2::ZERO, Vec2::new(1600.0, 1000.0));
+        let id = egui::Id::new(("chrome_dialog", "Sized".to_string()));
+        let run = |ctx: &Context| -> Option<Rect> {
+            let input = egui::RawInput {
+                screen_rect: Some(screen),
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| {
+                window("Sized")
+                    .resizable(Vec2::new(900.0, 600.0), Vec2::new(500.0, 400.0))
+                    .show(ui.ctx(), |ui| {
+                        // A body that takes all the room it is given.
+                        let size = ui.available_size();
+                        ui.allocate_exact_size(size, egui::Sense::hover());
+                        ui.label("more");
+                    });
+            });
+            out.textures_delta.clear();
+            ctx.memory(|m| m.area_rect(id))
+        };
+        let mut last = None;
+        for _ in 0..6 {
+            last = run(&ctx);
+        }
+        let r = last.expect("shown");
+        assert!(
+            (r.width() - 900.0).abs() < 1.0 && (r.height() - 600.0).abs() < 1.0,
+            "{r:?}"
+        );
+        assert!((r.center() - screen.center()).length() < 2.0, "{r:?}");
+        set_maximized(&ctx, id, true);
+        for _ in 0..3 {
+            last = run(&ctx);
+        }
+        let big = last.expect("shown");
+        assert!((big.size() - screen.size()).length() < 2.0, "{big:?}");
+        assert!(maximized(&ctx, id));
+        set_maximized(&ctx, id, false);
+        for _ in 0..4 {
+            last = run(&ctx);
+        }
+        let back = last.expect("shown");
+        assert!((back.size() - r.size()).length() < 2.0, "{back:?}");
+        assert!((back.min - r.min).length() < 2.0, "{back:?} vs {r:?}");
     }
 
     /// A dialog nearly as tall as the window moves down and sideways

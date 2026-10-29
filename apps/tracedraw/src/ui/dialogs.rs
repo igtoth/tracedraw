@@ -787,24 +787,7 @@ pub struct PasteSpecialState {
 
 pub use crate::ui::barcode_wizard::BarcodeState;
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct TraceState {
-    pub preset: crate::trace::Preset,
-    pub settings: crate::trace::Settings,
-    pub preview_count: Option<usize>,
-}
-
-impl TraceState {
-    /// The Trace dialog on `preset`, with the choices every trace starts
-    /// with (Options > Global > Bitmap Tracing).
-    pub fn new(preset: crate::trace::Preset, prefs: &crate::prefs::TracePrefs) -> Self {
-        TraceState {
-            preset,
-            settings: prefs.settings(preset),
-            preview_count: None,
-        }
-    }
-}
+pub use crate::ui::trace_dialog::TraceState;
 
 /// What the message after opening a drawing says.
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -1372,6 +1355,10 @@ pub fn show(app: &mut App, ctx: &Context) {
     // from it takes the preview back, which comes again on the return.
     if app.outline_preview && !matches!(app.dialog, Dialog::OutlinePen(_)) {
         app.end_outline_pen_preview();
+    }
+    // The Trace dialog's live preview goes with the dialog.
+    if !matches!(app.dialog, Dialog::Trace(_)) && app.trace_live.is_active() {
+        app.trace_live.clear();
     }
     // And for a bitmap effect's dialog: the effect leaves the drawing.
     if (app.fx_preview.shown.is_some() || app.fx_preview.busy())
@@ -2392,7 +2379,7 @@ pub fn show(app: &mut App, ctx: &Context) {
                 }
             });
         }
-        Dialog::Trace(st) => trace_dialog(app, ctx, st, &mut close),
+        Dialog::Trace(st) => crate::ui::trace_dialog::trace_dialog(app, ctx, st, &mut close),
         Dialog::NewFromTemplate(st) => crate::ui::template_dialog::dialog(app, ctx, st, &mut close),
         Dialog::Effect(st) => crate::ui::effect_dialog::effect_dialog(app, ctx, st, &mut close),
         Dialog::TextTabs | Dialog::TextColumns | Dialog::TextBullets | Dialog::TextDropCap => {
@@ -5644,122 +5631,6 @@ fn print_merge_dialog(app: &mut App, ctx: &Context, st: &mut PrintMergeState, cl
         });
         if !st.headers.is_empty() {
             app.merge_state = Some(st.clone());
-        }
-    });
-}
-
-fn trace_dialog(app: &mut App, ctx: &Context, st: &mut TraceState, close: &mut bool) {
-    window(ctx, tr("dialog.trace")).show(ctx, |ui| {
-        // Before and after: the bitmap and its trace, worked out on a small
-        // copy whenever the settings change.
-        let key = {
-            use std::hash::{Hash, Hasher};
-            let mut h = std::collections::hash_map::DefaultHasher::new();
-            format!("{:?}", st.settings).hash(&mut h);
-            h.finish()
-        };
-        let settings = st.settings.clone();
-        crate::ui::bitmap_preview::before_after(ui, app, key, 200.0, |img, _| {
-            let traced = crate::trace::trace(img, &settings);
-            crate::trace::render_traced(
-                &traced,
-                img.width(),
-                img.height(),
-                crate::trace::last_stroke_width_px(),
-            )
-        });
-        ui.add_space(4.0);
-        ui.horizontal_wrapped(|ui| {
-            for p in crate::trace::Preset::ALL {
-                if ui
-                    .selectable_label(st.preset == p, tr(p.key()))
-                    .rich_tip(crate::ui::tips::keyed(p.key()))
-                    .clicked()
-                {
-                    st.preset = p;
-                    st.settings = app.settings.tracing.settings(p);
-                    st.preview_count = None;
-                }
-            }
-        });
-        let s = &mut st.settings;
-        crate::ui::tips::tip_over(ui, crate::ui::tips::keyed("dialog.detail"), |ui| {
-            ui.add(crate::ui::Rail(
-                egui::Slider::new(&mut s.detail, 0.0..=100.0).text(tr("dialog.detail")),
-            ))
-        });
-        crate::ui::tips::tip_over(ui, crate::ui::tips::keyed("dialog.smoothing"), |ui| {
-            ui.add(crate::ui::Rail(
-                egui::Slider::new(&mut s.smoothing, 0.0..=100.0).text(tr("dialog.smoothing")),
-            ))
-        });
-        crate::ui::tips::tip_over(
-            ui,
-            crate::ui::tips::keyed("dialog.corner_smoothness"),
-            |ui| {
-                ui.add(crate::ui::Rail(
-                    egui::Slider::new(&mut s.corner_smoothness, 0.0..=100.0)
-                        .text(tr("dialog.corner_smoothness")),
-                ))
-            },
-        );
-        if !s.centerline {
-            ui.horizontal(|ui| {
-                ui.checkbox(&mut s.black_white, tr("dialog.black_and_white"))
-                    .rich_tip(crate::ui::tips::pair(
-                        "dialog.black_and_white",
-                        "dialog.trace_bw_desc",
-                    ));
-                if !s.black_white {
-                    crate::ui::tips::tip_over(
-                        ui,
-                        crate::ui::tips::pair("dialog.colors", "dialog.trace_colors_desc"),
-                        |ui| {
-                            ui.horizontal(|ui| {
-                                ui.label(tr("dialog.colors"));
-                                ui.add(
-                                    crate::ui::field::NumField::new(&mut s.colors).range(2..=256),
-                                );
-                            })
-                        },
-                    );
-                }
-            });
-            ui.checkbox(&mut s.remove_background, tr("dialog.remove_background"))
-                .rich_tip(crate::ui::tips::pair(
-                    "dialog.remove_background",
-                    "dialog.trace_remove_background_desc",
-                ));
-        }
-        ui.checkbox(&mut s.delete_original, tr("dialog.delete_original"))
-            .rich_tip(crate::ui::tips::keyed("dialog.delete_original"));
-        ui.horizontal(|ui| {
-            if ui
-                .button(tr("dialog.preview"))
-                .rich_tip(crate::ui::tips::pair(
-                    "dialog.preview",
-                    "dialog.trace_preview_desc",
-                ))
-                .clicked()
-            {
-                let mut count = 0;
-                for sh in app.selected_shapes() {
-                    if let ShapeKind::Bitmap { png, .. } = &sh.kind {
-                        if let Some(img) = crate::bitmap_fx::decode(png) {
-                            count += crate::trace::trace(&img, &st.settings).len();
-                        }
-                    }
-                }
-                st.preview_count = Some(count);
-            }
-            if let Some(n) = st.preview_count {
-                ui.label(trf("dialog.trace_preview_n", &[("n", &n.to_string())]));
-            }
-        });
-        if ok_cancel(ui, close) {
-            let settings = st.settings.clone();
-            app.trace_bitmaps(&settings);
-            app.last_trace = Some((st.preset, settings));
         }
     });
 }

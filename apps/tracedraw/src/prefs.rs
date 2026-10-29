@@ -533,7 +533,7 @@ impl Default for TracePrefs {
         let s = crate::trace::Preset::Clipart.settings();
         TracePrefs {
             quick_preset: crate::trace::Preset::Clipart,
-            remove_background: s.remove_background,
+            remove_background: s.removes_background(),
             delete_original: s.delete_original,
         }
     }
@@ -543,7 +543,11 @@ impl TracePrefs {
     /// The settings of `preset` with the choices every trace starts with.
     pub fn settings(&self, preset: crate::trace::Preset) -> crate::trace::Settings {
         crate::trace::Settings {
-            remove_background: self.remove_background,
+            remove: if self.remove_background {
+                crate::trace::Remove::Background
+            } else {
+                crate::trace::Remove::None
+            },
             delete_original: self.delete_original,
             ..preset.settings()
         }
@@ -1036,7 +1040,7 @@ mod tests {
         };
         let s = t.settings(crate::trace::Preset::HighQualityImage);
         let p = crate::trace::Preset::HighQualityImage.settings();
-        assert!(!s.remove_background && s.delete_original);
+        assert!(s.remove == crate::trace::Remove::None && s.delete_original);
         assert_eq!((s.detail, s.colors), (p.detail, p.colors));
         // Preferences written before these existed read as the defaults.
         let old: crate::settings::Settings = serde_json::from_str("{}").expect("settings");

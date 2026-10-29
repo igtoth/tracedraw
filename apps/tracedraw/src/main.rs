@@ -168,6 +168,7 @@ mod time_tracker;
 mod tools;
 mod tools2;
 mod trace;
+mod trace_preview;
 mod ui;
 mod updates;
 mod variable_outline;
