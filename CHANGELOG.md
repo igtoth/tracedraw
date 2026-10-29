@@ -6,7 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
-- Windows installer: the setup now asks which language to run its wizard in and ships English, Brazilian Portuguese, Czech, Dutch, French, German, Italian, Japanese, Polish, Russian, Spanish and Turkish. It offered only English and Brazilian Portuguese and picked one by the system locale without asking. It has always created an uninstaller (Start menu "Uninstall TraceDraw" and Windows "Apps & features").
+- Windows installer: the setup now asks which language to run its wizard in and ships English, Brazilian Portuguese, Czech, Dutch, French, German, Italian, Japanese, Polish, Russian, Spanish and Turkish. It offered only English and Brazilian Portuguese. The command line option and the Start menu uninstall entry are in the chosen language too. It has always created an uninstaller (Start menu "Uninstall TraceDraw" and Windows "Apps & features").
 
 ## 0.25.0 (2026-10-29)
 

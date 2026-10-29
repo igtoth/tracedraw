@@ -1,4 +1,4 @@
-; Inno Setup script for TraceDraw. Built by CI on windows-latest.
+﻿; Inno Setup script for TraceDraw. Built by CI on windows-latest.
 ; Variables: /DVersion=x.y.z /DSrcDir=<dir with tracedraw.exe and tracedraw-cli.exe>
 
 #ifndef Version
@@ -29,8 +29,7 @@ ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequiredOverridesAllowed=dialog
 ChangesAssociations=yes
 ChangesEnvironment=yes
-; Always ask which language the wizard runs in, even when the system
-; locale matches one of them, so the choice is offered on every machine.
+; Ask which language the wizard runs in (the system's is selected).
 ShowLanguageDialog=yes
 
 [Languages]
@@ -52,9 +51,35 @@ Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
 Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
 Name: "turkish"; MessagesFile: "compiler:Languages\Turkish.isl"
 
+[CustomMessages]
+english.AddToPath=Add tracedraw-cli to PATH
+english.CommandLine=Command line:
+brazilianportuguese.AddToPath=Adicionar tracedraw-cli ao PATH
+brazilianportuguese.CommandLine=Linha de comando:
+czech.AddToPath=Přidat tracedraw-cli do proměnné PATH
+czech.CommandLine=Příkazový řádek:
+dutch.AddToPath=tracedraw-cli aan PATH toevoegen
+dutch.CommandLine=Opdrachtregel:
+french.AddToPath=Ajouter tracedraw-cli au PATH
+french.CommandLine=Ligne de commande :
+german.AddToPath=tracedraw-cli zum PATH hinzufügen
+german.CommandLine=Befehlszeile:
+italian.AddToPath=Aggiungi tracedraw-cli al PATH
+italian.CommandLine=Riga di comando:
+japanese.AddToPath=tracedraw-cli を PATH に追加する
+japanese.CommandLine=コマンドライン:
+polish.AddToPath=Dodaj tracedraw-cli do zmiennej PATH
+polish.CommandLine=Wiersz poleceń:
+russian.AddToPath=Добавить tracedraw-cli в PATH
+russian.CommandLine=Командная строка:
+spanish.AddToPath=Añadir tracedraw-cli al PATH
+spanish.CommandLine=Línea de comandos:
+turkish.AddToPath=tracedraw-cli'yi PATH'e ekle
+turkish.CommandLine=Komut satırı:
+
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
-Name: "addtopath"; Description: "Add tracedraw-cli to PATH"; GroupDescription: "Command line:"
+Name: "addtopath"; Description: "{cm:AddToPath}"; GroupDescription: "{cm:CommandLine}"
 
 [Files]
 Source: "{#SrcDir}\tracedraw.exe"; DestDir: "{app}"; Flags: ignoreversion
@@ -65,7 +90,7 @@ Source: "..\..\LICENSE-APACHE"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\TraceDraw"; Filename: "{app}\tracedraw.exe"
-Name: "{group}\Uninstall TraceDraw"; Filename: "{uninstallexe}"
+Name: "{group}\{cm:UninstallProgram,TraceDraw}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\TraceDraw"; Filename: "{app}\tracedraw.exe"; Tasks: desktopicon
 
 [Registry]
