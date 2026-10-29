@@ -3,9 +3,9 @@
 //! builds the sheets with [`impose`] and writes them as one PDF.
 //!
 //! Layouts: as in the document (one page per sheet), n-up (several pages
-//! per sheet in reading order), booklet (two pages per sheet side in
-//! saddle-stitch order) and step and repeat (one page repeated over the
-//! sheet). On a fixed sheet the pages are scaled down to fit their cells;
+//! per sheet in reading order), booklet (two pages per sheet side, bound
+//! by saddle stitch or perfect binding, see [`Booklet`]) and step and
+//! repeat (one page repeated over the sheet). On a fixed sheet the pages are scaled down to fit their cells;
 //! on a fitted sheet they keep their size and the sheet grows. Marks sit
 //! in the margin around the pages: crop marks at every cut, registration
 //! targets, colour bars, a densitometer scale and a line of page
@@ -25,8 +25,9 @@ pub enum Layout {
     AsIs,
     /// Several pages per sheet, left to right and top to bottom.
     NUp { cols: u32, rows: u32 },
-    /// Two pages per sheet side in the order a folded, stapled booklet
-    /// needs (the page count is rounded up to a multiple of four).
+    /// Two pages per sheet side in the order a folded booklet needs (the
+    /// page count is rounded up to a multiple of four); how the sheets
+    /// are bound is in [`Options::booklet`].
     Booklet,
     /// Each page repeated over the sheet (cards, labels).
     Repeat { cols: u32, rows: u32 },
@@ -41,6 +42,150 @@ impl Layout {
                 (cols.clamp(1, 20), rows.clamp(1, 20))
             }
             Layout::Booklet => (2, 1),
+        }
+    }
+}
+
+/// How the folded sheets of a booklet are bound.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Binding {
+    /// Saddle stitch: every sheet folded inside the one before and
+    /// stapled through the fold (8 pages: 8 1, 2 7 on the outer sheet).
+    #[default]
+    SaddleStitch,
+    /// Perfect bound: the sheets go in signatures of
+    /// [`Booklet::signature_sheets`] sheets, each signature folded on its
+    /// own, the signatures stacked and glued at the spine (one sheet per
+    /// signature: 4 1, 2 3 on the first sheet, 8 5, 6 7 on the second).
+    PerfectBound,
+}
+
+/// The booklet's binding and the room it needs.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Booklet {
+    pub binding: Binding,
+    /// Sheets in each signature of a perfect-bound booklet (1 to 32).
+    pub signature_sheets: u32,
+    /// Creep compensation of a saddle-stitched booklet, mm: how far the
+    /// pages of the innermost sheet move toward the spine. The outer
+    /// sheet stays, the sheets between move in proportion, so the fore
+    /// edges line up once the sheets are nested and trimmed.
+    pub creep: f64,
+    /// The space between the two pages of a spread, mm, centred on the
+    /// fold.
+    pub gap: f64,
+}
+
+impl Default for Booklet {
+    fn default() -> Self {
+        Booklet {
+            binding: Binding::SaddleStitch,
+            signature_sheets: 4,
+            creep: 0.0,
+            gap: 0.0,
+        }
+    }
+}
+
+impl Booklet {
+    /// Sheets per signature, clamped to 1..=32.
+    pub fn sheets_per_signature(&self) -> usize {
+        self.signature_sheets.clamp(1, 32) as usize
+    }
+
+    fn safe(v: f64, max: f64) -> f64 {
+        if v.is_finite() {
+            v.clamp(0.0, max)
+        } else {
+            0.0
+        }
+    }
+
+    /// The gap, clamped to 0..=100 mm.
+    pub fn gap_mm(&self) -> f64 {
+        Self::safe(self.gap, 100.0)
+    }
+
+    /// The creep at the innermost sheet, clamped to 0..=20 mm.
+    pub fn creep_mm(&self) -> f64 {
+        Self::safe(self.creep, 20.0)
+    }
+}
+
+/// The page count of a booklet and what it takes to print it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BookletInfo {
+    /// The pages printed.
+    pub pages: usize,
+    /// Blank pages added at the end to reach a multiple of four.
+    pub blanks: usize,
+    /// Sheets of paper, each printed on both sides.
+    pub sheets: usize,
+    /// Signatures (1 for saddle stitch).
+    pub signatures: usize,
+}
+
+/// What a booklet of `pages` pages bound as `b` says takes.
+pub fn booklet_info(pages: usize, b: &Booklet) -> BookletInfo {
+    let padded = pages.div_ceil(4).max(1) * 4;
+    let sheets = padded / 4;
+    let signatures = match b.binding {
+        Binding::SaddleStitch => 1,
+        Binding::PerfectBound => sheets.div_ceil(b.sheets_per_signature()),
+    };
+    BookletInfo {
+        pages,
+        blanks: padded - pages,
+        sheets,
+        signatures,
+    }
+}
+
+/// One side of a booklet sheet: the left and right page (`None` blank),
+/// and how deep its sheet sits in its fold (0 outermost) of how many.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BookletSide {
+    pub left: Option<usize>,
+    pub right: Option<usize>,
+    pub depth: usize,
+    pub nested: usize,
+}
+
+/// The sides of the sheets folded together for the pages `first ..
+/// first + n` (`n` a multiple of four), outer sheet first, front then
+/// back. Pages from `pages` on are blank.
+fn nested_sides(first: usize, n: usize, pages: usize) -> Vec<BookletSide> {
+    let page = |i: usize| (first + i < pages).then_some(first + i);
+    (0..n / 2)
+        .map(|side| {
+            let (a, b) = (n - 1 - side, side);
+            let (left, right) = if side % 2 == 0 {
+                (page(a), page(b))
+            } else {
+                (page(b), page(a))
+            };
+            BookletSide {
+                left,
+                right,
+                depth: side / 2,
+                nested: n / 4,
+            }
+        })
+        .collect()
+}
+
+/// The sides of every sheet of a booklet of `pages` pages bound as `b`,
+/// in printing order.
+pub fn booklet_sides(pages: usize, b: &Booklet) -> Vec<BookletSide> {
+    let padded = pages.div_ceil(4).max(1) * 4;
+    match b.binding {
+        Binding::SaddleStitch => nested_sides(0, padded, pages),
+        Binding::PerfectBound => {
+            let per = 4 * b.sheets_per_signature();
+            (0..padded)
+                .step_by(per)
+                .flat_map(|first| nested_sides(first, per.min(padded - first), pages))
+                .collect()
         }
     }
 }
@@ -102,6 +247,8 @@ pub struct Options {
     /// On a fixed sheet the pages stretch to fill the room inside the
     /// margins, width and height each on its own (#591).
     pub stretch_fit: bool,
+    /// The binding, creep and gap of the Booklet layout.
+    pub booklet: Booklet,
     pub marks: Marks,
     /// The drawing's name and the moment, for the page information.
     pub title: String,
@@ -123,6 +270,7 @@ impl Default for Options {
             page_offset: (0.0, 0.0),
             page_stretch: (1.0, 1.0),
             stretch_fit: false,
+            booklet: Booklet::default(),
             marks: Marks::default(),
             title: String::new(),
             when: String::new(),
@@ -150,20 +298,14 @@ pub struct SheetPlan {
     pub cells: Vec<Cell>,
 }
 
-/// The order of the pages of a booklet, two per sheet side (left, right):
-/// for eight pages 8 1, 2 7, 6 3, 4 5. Pages past the end are blank.
+/// The order of the pages of a saddle-stitched booklet, two per sheet
+/// side (left, right): for eight pages 8 1, 2 7, 6 3, 4 5. Pages past the
+/// end are blank.
+#[cfg(test)]
 pub fn booklet_order(pages: usize) -> Vec<(Option<usize>, Option<usize>)> {
-    let n = pages.div_ceil(4).max(1) * 4;
-    let page = |i: usize| (i < pages).then_some(i);
-    (0..n / 2)
-        .map(|side| {
-            let (a, b) = (n - 1 - side, side);
-            if side % 2 == 0 {
-                (page(a), page(b))
-            } else {
-                (page(b), page(a))
-            }
-        })
+    booklet_sides(pages, &Booklet::default())
+        .into_iter()
+        .map(|s| (s.left, s.right))
         .collect()
 }
 
@@ -173,6 +315,22 @@ pub fn plan(sizes: &[Size], o: &Options) -> Vec<SheetPlan> {
         return Vec::new();
     }
     let (cols, rows) = o.layout.grid();
+    // A booklet's sides, and how far creep moves each side's pages
+    // toward the spine.
+    let sides = match o.layout {
+        Layout::Booklet => booklet_sides(sizes.len(), &o.booklet),
+        _ => Vec::new(),
+    };
+    let creep: Vec<f64> = sides
+        .iter()
+        .map(|s| {
+            if o.booklet.binding != Binding::SaddleStitch || s.nested < 2 {
+                0.0
+            } else {
+                o.booklet.creep_mm() * s.depth as f64 / (s.nested - 1) as f64
+            }
+        })
+        .collect();
     // Which page goes in each cell, sheet by sheet.
     let sheets: Vec<Vec<Option<usize>>> = match o.layout {
         Layout::AsIs => (0..sizes.len()).map(|i| vec![Some(i)]).collect(),
@@ -188,10 +346,7 @@ pub fn plan(sizes: &[Size], o: &Options) -> Vec<SheetPlan> {
                 })
                 .collect()
         }
-        Layout::Booklet => booklet_order(sizes.len())
-            .into_iter()
-            .map(|(a, b)| vec![a, b])
-            .collect(),
+        Layout::Booklet => sides.iter().map(|s| vec![s.left, s.right]).collect(),
         Layout::Repeat { .. } => (0..sizes.len())
             .map(|i| vec![Some(i); (cols * rows) as usize])
             .collect(),
@@ -201,14 +356,17 @@ pub fn plan(sizes: &[Size], o: &Options) -> Vec<SheetPlan> {
         .paper_margins
         .map(|m| if m.is_finite() { m.max(0.0) } else { 0.0 });
     let [ml, mr, mt, mb] = pm;
-    // Booklet pages share the spine: no gutter or bleed between them.
+    // Booklet pages share the spine: no bleed between them, only the
+    // booklet's gap.
     let (gutter, inner_bleed) = match o.layout {
-        Layout::Booklet => (0.0, 0.0),
+        Layout::Booklet => (o.booklet.gap_mm(), 0.0),
         _ => (o.gutter.max(0.0), o.bleed.max(0.0)),
     };
     sheets
         .iter()
-        .map(|cells| {
+        .enumerate()
+        .map(|(side, cells)| {
+            let creep = creep.get(side).copied().unwrap_or(0.0);
             // The cell size: the largest page on this sheet.
             let cell = cells
                 .iter()
@@ -277,8 +435,12 @@ pub fn plan(sizes: &[Size], o: &Options) -> Vec<SheetPlan> {
                     let col = if o.back_side { cols - 1 - col } else { col } as f64;
                     let row = (n as u32 / cols) as f64;
                     let ps = page.and_then(|i| sizes.get(i)).copied().unwrap_or(cell);
+                    // Creep: the left page moves right, the right page left.
+                    let toward_spine = if col == 0.0 { creep } else { -creep };
                     // The page centred in its cell (y up: row 0 at the top).
-                    let cx = x0 + (col * step_x + inner_bleed + cell.width / 2.0) * sx + ox;
+                    let cx = x0
+                        + (col * step_x + inner_bleed + cell.width / 2.0 + toward_spine) * sx
+                        + ox;
                     let cy = y_top - (row * step_y + inner_bleed + cell.height / 2.0) * sy + oy;
                     let (w, h) = (ps.width * sx * kx, ps.height * sy * ky);
                     let trim = Rect::new(cx - w / 2.0, cy - h / 2.0, cx + w / 2.0, cy + h / 2.0);
@@ -413,8 +575,10 @@ pub fn marks(
         ));
         // A fold mark at a booklet's spine.
         if o.layout == Layout::Booklet {
-            if let (Some(a), Some(_)) = (sheet.cells.first(), sheet.cells.get(1)) {
-                let x = a.trim.x1;
+            if let (Some(a), Some(b)) = (sheet.cells.first(), sheet.cells.get(1)) {
+                // The fold: half way between the pages (creep moves them
+                // toward it by the same amount).
+                let x = (a.trim.x1 + b.trim.x0) / 2.0;
                 let mut p = BezPath::new();
                 for (y0, y1) in [
                     (content.y1 + bleed + 1.5, content.y1 + bleed + 6.5),
@@ -552,6 +716,40 @@ pub fn marks(
         ));
     }
     out
+}
+
+/// The marks of every page printed on its own (the layout as in the
+/// document, the sheet fitted to the page), in each page's own
+/// coordinates: they lie outside the page, in its bleed and the
+/// [`MARK_MARGIN`] around it. A PDF export draws them there (#789).
+/// `names` are the pages' names for the page information.
+pub fn page_marks(sizes: &[Size], names: &[String], o: &Options) -> Vec<Vec<Shape>> {
+    let o = Options {
+        layout: Layout::AsIs,
+        sheet: None,
+        scale: 1.0,
+        page_offset: (0.0, 0.0),
+        page_stretch: (1.0, 1.0),
+        paper_margins: [0.0; 4],
+        ..o.clone()
+    };
+    let plans = plan(sizes, &o);
+    let total = plans.len();
+    plans
+        .iter()
+        .enumerate()
+        .map(|(n, sheet)| {
+            let Some(cell) = sheet.cells.first() else {
+                return Vec::new();
+            };
+            let to_page = Affine::translate((-cell.trim.x0, -cell.trim.y0));
+            let mut shapes = marks(sheet, &o, n, total, names);
+            for s in &mut shapes {
+                s.transform = to_page * s.transform;
+            }
+            shapes
+        })
+        .collect()
 }
 
 /// Build the printed sheets of `doc` as a new document: each sheet one
@@ -762,6 +960,122 @@ mod tests {
         height: 210.0,
     };
 
+    /// Perfect binding folds each signature on its own: with one sheet
+    /// per signature the first sheet holds pages 1 to 4 and the second 5
+    /// to 8; with two sheets per signature the sixteen pages go 1 to 8,
+    /// then 9 to 16 (#788, #947).
+    #[test]
+    fn perfect_binding_folds_each_signature_on_its_own() {
+        let pairs = |n, sheets| {
+            let b = Booklet {
+                binding: Binding::PerfectBound,
+                signature_sheets: sheets,
+                ..Default::default()
+            };
+            booklet_sides(n, &b)
+                .into_iter()
+                .map(|s| (s.left.map(|i| i + 1), s.right.map(|i| i + 1)))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            pairs(8, 1),
+            vec![
+                (Some(4), Some(1)),
+                (Some(2), Some(3)),
+                (Some(8), Some(5)),
+                (Some(6), Some(7))
+            ]
+        );
+        let two = pairs(16, 2);
+        assert_eq!(two.len(), 8);
+        assert_eq!(two[0], (Some(8), Some(1)));
+        assert_eq!(two[3], (Some(4), Some(5)));
+        assert_eq!(two[4], (Some(16), Some(9)));
+        // Ten pages in signatures of two sheets: twelve pages, the last
+        // signature of one sheet, two blanks at the back.
+        let ten = pairs(10, 2);
+        assert_eq!(ten.len(), 6);
+        assert_eq!(ten[4], (None, Some(9)));
+        assert_eq!(ten[5], (Some(10), None));
+        let info = booklet_info(
+            10,
+            &Booklet {
+                binding: Binding::PerfectBound,
+                signature_sheets: 2,
+                ..Default::default()
+            },
+        );
+        assert_eq!(
+            info,
+            BookletInfo {
+                pages: 10,
+                blanks: 2,
+                sheets: 3,
+                signatures: 2
+            }
+        );
+        let saddle = booklet_info(6, &Booklet::default());
+        assert_eq!((saddle.blanks, saddle.sheets, saddle.signatures), (2, 2, 1));
+    }
+
+    /// The gap opens between the two pages of a spread, centred on the
+    /// fold; creep moves the pages of the inner sheets toward the spine,
+    /// the innermost by the creep, the outer one not at all (#788).
+    #[test]
+    fn booklet_gap_and_creep_move_the_pages() {
+        let page = Size::new(100.0, 150.0);
+        let o = Options {
+            layout: Layout::Booklet,
+            booklet: Booklet {
+                gap: 10.0,
+                creep: 2.0,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        // 12 pages: three sheets, six sides.
+        let p = plan(&[page; 12], &o);
+        assert_eq!(p.len(), 6);
+        assert!((p[0].size.width - 210.0).abs() < 1e-9, "{:?}", p[0].size);
+        let spine = p[0].size.width / 2.0;
+        let gap_of = |s: &SheetPlan| s.cells[1].trim.x0 - s.cells[0].trim.x1;
+        assert!((gap_of(&p[0]) - 10.0).abs() < 1e-9, "outer sheet: no creep");
+        // The middle sheet moves by 1 mm a page, the inner by 2 mm.
+        assert!((gap_of(&p[2]) - 8.0).abs() < 1e-9, "{}", gap_of(&p[2]));
+        assert!((gap_of(&p[5]) - 6.0).abs() < 1e-9, "{}", gap_of(&p[5]));
+        for s in &p {
+            let mid = (s.cells[0].trim.x1 + s.cells[1].trim.x0) / 2.0;
+            assert!((mid - spine).abs() < 1e-9, "pages centred on the fold");
+            // The page drawn where its trim is.
+            let c = &s.cells[0];
+            let at = c.transform * Point::new(0.0, 0.0);
+            assert!((at.x - c.trim.x0).abs() < 1e-9);
+        }
+        // Perfect binding takes no creep.
+        let o = Options {
+            booklet: Booklet {
+                binding: Binding::PerfectBound,
+                ..o.booklet
+            },
+            ..o
+        };
+        let p = plan(&[page; 12], &o);
+        assert!(p.iter().all(|s| (gap_of(s) - 10.0).abs() < 1e-9));
+        // Nonsense values stay harmless.
+        let o = Options {
+            booklet: Booklet {
+                gap: f64::NAN,
+                creep: -3.0,
+                signature_sheets: 0,
+                binding: Binding::PerfectBound,
+            },
+            ..o
+        };
+        let p = plan(&[page; 5], &o);
+        assert_eq!(p.len(), 4);
+        assert!(p.iter().all(|s| gap_of(s).abs() < 1e-9));
+    }
+
     #[test]
     fn booklets_pair_the_pages_for_folding() {
         let pairs = |n| {
@@ -912,6 +1226,64 @@ mod tests {
         // A sheet the PDF writer accepts.
         let pdf = tracedraw_io::pdf::document_to_pdf(&out);
         assert!(pdf.starts_with(b"%PDF"));
+    }
+
+    /// The marks of each page on its own, in the page's coordinates: crop
+    /// marks start beyond the bleed and stay inside the marks margin, the
+    /// page information names the page (#789).
+    #[test]
+    fn page_marks_sit_around_each_page_in_its_own_coordinates() {
+        let sizes = [Size::new(100.0, 50.0), Size::new(60.0, 60.0)];
+        let names = vec!["Front".to_string(), "Back".to_string()];
+        let o = Options {
+            bleed: 3.0,
+            // Ignored: each page is on its own sheet at its own size.
+            layout: Layout::NUp { cols: 2, rows: 2 },
+            page_offset: (40.0, 40.0),
+            marks: Marks {
+                crop: true,
+                registration: true,
+                color_bars: true,
+                page_info: true,
+                ..Default::default()
+            },
+            title: "Card".into(),
+            when: "today".into(),
+            ..Default::default()
+        };
+        let all = page_marks(&sizes, &names, &o);
+        assert_eq!(all.len(), 2);
+        for (marks, size) in all.iter().zip(sizes) {
+            // Crop marks, registration, 11 colour patches, the text.
+            assert_eq!(marks.len(), 1 + 1 + 11 + 1);
+            let page = Rect::from_origin_size((0.0, 0.0), size);
+            let room = page.inflate(3.0 + MARK_MARGIN, 3.0 + MARK_MARGIN);
+            let bleed = page.inflate(3.0, 3.0);
+            let crop = marks[0]
+                .transform
+                .transform_rect_bbox(match &marks[0].kind {
+                    ShapeKind::Path { path, .. } => kurbo::Shape::bounding_box(path),
+                    _ => panic!("crop marks are a path"),
+                });
+            assert!(
+                crop.x0 >= room.x0 - 1e-9 && crop.x1 <= room.x1 + 1e-9,
+                "{crop:?}"
+            );
+            assert!(
+                crop.y0 >= room.y0 - 1e-9 && crop.y1 <= room.y1 + 1e-9,
+                "{crop:?}"
+            );
+            assert!(crop.x0 < bleed.x0 && crop.y1 > bleed.y1);
+        }
+        let ShapeKind::Text { spans, origin, .. } = &all[1][13].kind else {
+            panic!("the page information is text");
+        };
+        assert!(spans[0].text.contains("Card") && spans[0].text.contains("Back"));
+        let at = all[1][13].transform * *origin;
+        assert!(at.y < -3.0 && at.y > -3.0 - MARK_MARGIN, "{at:?}");
+        // No marks asked for: none.
+        let none = page_marks(&sizes, &names, &Options::default());
+        assert!(none.iter().all(|m| m.is_empty()));
     }
 
     /// The back of a double-sided sheet: the columns run right to left so

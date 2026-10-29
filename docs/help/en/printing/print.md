@@ -50,6 +50,25 @@ printer and print. In the browser version, the PDF is downloaded.
   columns and rows you ask for. In Print
   Preview, drag on the sheet to move the page information.
 
+## Booklets {#booklet}
+
+Choose **Booklet** as the imposition to print two pages on each side of
+a sheet, ready to fold. The page count is rounded up to a multiple of
+four with blank pages at the back, and the summary under the sketch says
+how many pages, blanks and sheets of paper it takes. To print only some
+of the pages, list them in **Pages** first.
+
+- [[print.binding]]: [[print.saddle_stitch]] nests every sheet inside the one
+  before and staples them through the fold (8 pages: 8 1, 2 7 on the outer
+  sheet). [[print.perfect_bound]] folds the sheets in signatures of
+  [[print.signature_sheets]], stacks the signatures and glues them at the
+  spine (one sheet per signature: 4 1, 2 3, then 8 5, 6 7).
+- [[print.creep]] (saddle stitch): how far the pages of the innermost sheet
+  move toward the spine, so the fore edges line up after trimming; the
+  sheets between move in proportion, the outer one not at all.
+- [[print.booklet_gap]]: the space between the two pages of a spread,
+  centred on the fold.
+
 ## Prepress {#prepress}
 
 - **Invert** and **Mirror** the whole sheet, for film.
