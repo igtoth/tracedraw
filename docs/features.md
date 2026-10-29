@@ -122,6 +122,7 @@ Counts: works 189, partial 6 (`.cdr` content coverage; CMX import; print preview
 
 | Capability | Status |
 |---|---|
+| Fill winding: the non-zero or even-odd rule per object (text non-zero and other curves even-odd by default), drawn, exported to SVG and PDF, kept in `.tdraw` | works (see `behavior/fill-winding.md`) |
 | Uniform fill in RGB, CMYK, Gray, HSB, HSL, Lab, YIQ, registration (the colour picker's and Edit Fill's Model list offer the registration colour after the models, #286) | works |
 | Gradient fill: linear, radial, conical, square, shaped (follows the object's outline); multi-stop; angle, offset, edge pad; repeat (sawtooth, mirror) with a cycle count, bilinear, invert colours; the current colours (last fill to last outline colour) and 29 built-in gradients (five landscapes); interactive drag; the start, end and skew nodes dragged in the Edit Fill preview | works (see `behavior/gradient-fill.md`; `.cdr` gets the closest plain gradient) |
 | Pattern fill: two-colour (8 tiles), bitmap, full-colour vector (tile from the selection); texture fill (clouds, marble, noise, wood) | works; PostScript fills not planned (legacy) |

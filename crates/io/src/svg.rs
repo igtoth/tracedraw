@@ -371,8 +371,9 @@ fn write_unlinked(
         .map(|n| format!(" data-name=\"{}\"", escape(n)))
         .unwrap_or_default();
     // Shapes fill even-odd, as the renderer draws them (holes in combined
-    // curves, the middle of a complex star); text keeps the default.
-    let rule = if matches!(shape.kind, ShapeKind::Text { .. }) {
+    // curves, the middle of a complex star); text, and an object with Fill
+    // winding set, keep the default non-zero rule (#1211).
+    let rule = if shape.fills_nonzero() {
         ""
     } else {
         " fill-rule=\"evenodd\""
@@ -944,6 +945,36 @@ mod tests {
             .find(|l| l.contains("fill=\"#ff0000\""))
             .expect("the star");
         assert!(line.contains("fill-rule=\"evenodd\""), "{line}");
+    }
+
+    /// Fill winding on an object keeps SVG's default non-zero rule
+    /// (#1211).
+    #[test]
+    fn fill_winding_drops_the_even_odd_rule() {
+        let mut doc = Document::new("t", tracedraw_core::geometry::Size::new(100.0, 100.0));
+        let layer = doc.pages[0].layers[0].id;
+        let mut p = tracedraw_core::BezPath::new();
+        p.move_to((10.0, 10.0));
+        p.line_to((90.0, 90.0));
+        p.line_to((10.0, 90.0));
+        p.line_to((90.0, 10.0));
+        p.close_path();
+        let mut s = Shape::new(
+            tracedraw_core::ShapeId(7),
+            ShapeKind::Path {
+                path: p,
+                closed: true,
+            },
+        );
+        s.fill = Fill::Solid(Color::rgb8(0, 0, 255));
+        s.fill_rule = tracedraw_core::FillRule::NonZero;
+        doc.layer_mut(layer).unwrap().shapes.push(s);
+        let svg = page_to_svg(&doc, 0);
+        let line = svg
+            .lines()
+            .find(|l| l.contains("fill=\"#0000ff\""))
+            .expect("the bow tie");
+        assert!(!line.contains("fill-rule"), "{line}");
     }
 
     #[test]

@@ -1805,6 +1805,11 @@ pub struct Shape {
     pub overprint_fill: bool,
     #[serde(default)]
     pub overprint_outline: bool,
+    /// How the inside of the fill is found where the path crosses
+    /// itself (#1211); `Auto` follows the kind (see
+    /// [`Shape::fills_nonzero`]).
+    #[serde(default, skip_serializing_if = "crate::style::FillRule::is_auto")]
+    pub fill_rule: crate::style::FillRule,
     /// Hyperlink attached to the object (exported to PDF and SVG).
     #[serde(default)]
     pub link: Option<String>,
@@ -2159,6 +2164,7 @@ impl Shape {
             shadow: None,
             overprint_fill: false,
             overprint_outline: false,
+            fill_rule: crate::style::FillRule::Auto,
             link: None,
             data: Vec::new(),
             page_number: None,
@@ -6286,5 +6292,56 @@ mod tests {
         )
         .expect("old");
         assert_eq!(old.outline, None);
+    }
+}
+
+impl Shape {
+    /// Whether the fill is found with the non-zero rule (`true`) or
+    /// even-odd (`false`): as set on the object, else non-zero for text
+    /// and even-odd for every other kind (#1211).
+    pub fn fills_nonzero(&self) -> bool {
+        match self.fill_rule {
+            crate::style::FillRule::NonZero => true,
+            crate::style::FillRule::EvenOdd => false,
+            crate::style::FillRule::Auto => matches!(self.kind, ShapeKind::Text { .. }),
+        }
+    }
+}
+
+#[cfg(test)]
+mod fill_rule_tests {
+    use super::*;
+
+    /// Text fills non-zero and a curve even-odd unless the object says
+    /// otherwise; the setting is kept in the native format only when it
+    /// is set (#1211).
+    #[test]
+    fn the_fill_rule_follows_the_kind_unless_set() {
+        let mut curve = Shape::new(
+            ShapeId(1),
+            ShapeKind::Path {
+                path: crate::geometry::BezPath::new(),
+                closed: true,
+            },
+        );
+        assert!(!curve.fills_nonzero());
+        curve.fill_rule = crate::style::FillRule::NonZero;
+        assert!(curve.fills_nonzero());
+        let json = serde_json::to_string(&curve).expect("json");
+        assert!(json.contains("\"fill_rule\":\"nonzero\""), "{json}");
+        let back: Shape = serde_json::from_str(&json).expect("back");
+        assert!(back.fills_nonzero());
+        curve.fill_rule = crate::style::FillRule::Auto;
+        let json = serde_json::to_string(&curve).expect("json");
+        assert!(!json.contains("fill_rule"), "{json}");
+        let mut text = Shape::new(
+            ShapeId(2),
+            ShapeKind::Group {
+                children: Vec::new(),
+            },
+        );
+        assert!(!text.fills_nonzero());
+        text.fill_rule = crate::style::FillRule::EvenOdd;
+        assert!(!text.fills_nonzero());
     }
 }

@@ -254,6 +254,11 @@ pub enum Command {
         fill: Option<bool>,
         outline: Option<bool>,
     },
+    /// How the fill is found where the path crosses itself (#1211).
+    SetFillRule {
+        shapes: Vec<ShapeId>,
+        rule: crate::style::FillRule,
+    },
     SetLink {
         shapes: Vec<ShapeId>,
         link: Option<String>,
@@ -454,6 +459,7 @@ impl Command {
             Command::SetEffectStack { .. } => "Effects",
             Command::SetExtraPaint { .. } => "Fills and Outlines",
             Command::SetOverprint { .. } => "Overprint",
+            Command::SetFillRule { .. } => "Fill Winding",
             Command::SetLink { .. } => "Hyperlink",
             Command::SetWrapText { .. } => "Wrap Paragraph Text",
             Command::SetWrapStyle { .. } => "Wrap Style",
@@ -909,6 +915,14 @@ impl Command {
                     if let Some(o) = outline {
                         s.overprint_outline = *o;
                     }
+                }
+            }
+            Command::SetFillRule { shapes, rule } => {
+                for id in shapes {
+                    any(doc, *id)?;
+                }
+                for id in shapes {
+                    any_mut(doc, *id)?.fill_rule = *rule;
                 }
             }
             Command::SetWrapText { shapes, wrap } => {
