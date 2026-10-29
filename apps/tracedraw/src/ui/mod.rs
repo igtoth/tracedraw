@@ -843,6 +843,18 @@ pub(crate) fn drawing_window(app: &mut App, ui: &mut Ui, full: egui::Rect) {
         });
         let cursor = cursors::for_tool(app, shift, primary, middle, pos);
         cursors::show(ui.ctx(), cursor, pos);
+        // A colour eyedropper waiting to sample: the colour under the
+        // pointer beside it (#990).
+        let picker = crate::ui::color_picker::picking(ui.ctx());
+        if let (true, Some(at), Some(p)) = (
+            (picker || app.eyedropper_sampling()) && !primary && !middle,
+            pos,
+            app.pointer_page,
+        ) {
+            if let Some(r) = app.hover_reading(p, shift, picker) {
+                cursors::paint_color_readout(ui.ctx(), at, r);
+            }
+        }
         // A scale, turn or slant that leaves the original (after a right
         // click): the plus a move's pointer carries, beside the pointer.
         if app.drag_copy && app.transforming() && !matches!(app.drag, crate::app::Drag::Move { .. })

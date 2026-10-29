@@ -24,6 +24,12 @@ enquanto aplica. Imagens dão a cor mesmo dentro de um grupo ou de uma moldura.
 
 A barra de propriedades mostra a cor amostrada.
 
+Enquanto você move o ponteiro para pegar uma cor, uma pequena caixa ao lado
+mostra a cor embaixo dele: uma amostra, o nome da cor quando é uma cor da
+paleta ou uma tinta especial, seus valores no modo de cor do desenho (CMYK ou
+RGB) e seu valor hexadecimal. O conta-gotas de um seletor de cores mostra a
+mesma caixa.
+
 ## Conta-gotas de atributos {#attributes-eyedropper}
 
 A ferramenta [[tool.attributes_eyedropper]] copia várias propriedades de uma vez

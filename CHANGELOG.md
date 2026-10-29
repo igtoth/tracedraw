@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Color Eyedropper and the eyedropper of the color pickers: while the pointer hovers to take a color, a box beside it shows that color with a swatch, its name when it is a palette color or a spot ink, its values in the drawing's color mode (CMYK or RGB) and its hex value, so a color can be checked before it is taken. Before, its values only showed after the click (#990).
+
 ## 0.20.0 (2026-10-28)
 
 - Variable fonts: the text follows the axis sliders (Text docker, and the button beside the font size) while they are dragged, so the weight, width or any other axis can be judged on the page. The text changed only when the slider was released. Releasing still keeps the value as one undo step (#870).

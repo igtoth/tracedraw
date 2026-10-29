@@ -26,6 +26,12 @@ un marco.
 
 La barra de propiedades muestra el color tomado.
 
+Mientras mueve el puntero para tomar un color, un pequeño cuadro a su lado
+muestra el color que hay debajo: una muestra, el nombre del color si es un
+color de la paleta o una tinta plana, sus valores en el modo de color del
+dibujo (CMYK o RGB) y su valor hexadecimal. El cuentagotas de un selector de
+color muestra el mismo cuadro.
+
 ## Cuentagotas de atributos {#attributes-eyedropper}
 
 La herramienta [[tool.attributes_eyedropper]] copia varias propiedades a la

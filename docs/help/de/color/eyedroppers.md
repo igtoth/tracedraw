@@ -27,6 +27,12 @@ oder einem Rahmen.
 
 Die Eigenschaftsleiste zeigt die aufgenommene Farbe.
 
+Während Sie den Zeiger bewegen, um eine Farbe aufzunehmen, zeigt ein kleines
+Feld daneben die Farbe darunter: ein Farbfeld, den Namen der Farbe, wenn sie
+eine Palettenfarbe oder eine Schmuckfarbe ist, ihre Werte im Farbmodus der
+Zeichnung (CMYK oder RGB) und ihren Hex-Wert. Die Pipette einer Farbauswahl
+zeigt dasselbe Feld.
+
 ## Attributpipette {#attributes-eyedropper}
 
 Das Werkzeug [[tool.attributes_eyedropper]] kopiert mehrere Eigenschaften auf

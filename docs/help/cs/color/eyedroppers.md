@@ -24,6 +24,11 @@ používá. Obrázky dávají svou barvu i ve skupině nebo v rámečku.
 
 Lišta vlastností ukazuje nabranou barvu.
 
+Když pohybujete ukazatelem, abyste vzali barvu, malé pole vedle něj ukazuje
+barvu pod ním: vzorek, název barvy, je-li to barva palety nebo přímá barva,
+její hodnoty v barevném režimu kresby (CMYK nebo RGB) a její hexadecimální
+hodnotu. Kapátko výběru barvy ukazuje totéž pole.
+
 ## Kapátko atributů {#attributes-eyedropper}
 
 Nástroj [[tool.attributes_eyedropper]] kopíruje několik vlastností najednou z
