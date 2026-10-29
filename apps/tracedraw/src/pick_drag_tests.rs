@@ -11468,3 +11468,256 @@ fn added_pages_are_named_in_the_interface_language() {
         assert_eq!(app.doc().pages.len(), 2);
     });
 }
+
+/// One frame, returning the texts drawn when the readout shows (none
+/// when it does not).
+fn readout_texts(ctx: &egui::Context, app: &mut App, events: Vec<Event>) -> Vec<String> {
+    let input = egui::RawInput {
+        screen_rect: Some(egui::Rect::from_min_size(
+            Pos2::ZERO,
+            egui::vec2(1600.0, 1000.0),
+        )),
+        events,
+        ..Default::default()
+    };
+    let mut out = ctx.run_ui(input, |ui| crate::ui::root(app, ui));
+    out.textures_delta.clear();
+    // The readout's texts: its hex value and the lines of values ("C: 0",
+    // one pair a line), which nothing else on the screen shows; and the
+    // name, which the caller looks for next to them.
+    let mut all = Vec::new();
+    for s in &out.shapes {
+        if let egui::Shape::Text(t) = &s.shape {
+            all.push(t.galley.text().to_string());
+        }
+    }
+    let readout = all.iter().any(|t| {
+        t.len() == 7 && t.starts_with('#') && t[1..].chars().all(|c| c.is_ascii_hexdigit())
+    });
+    if readout {
+        all
+    } else {
+        Vec::new()
+    }
+}
+
+/// The Colour Eyedropper shows the colour under the pointer beside it
+/// while it hovers in Select mode: the palette name and the values and
+/// hex; nothing off the objects, nor in Apply mode. A colour picker's
+/// eyedropper shows it too, white over the empty page (#990).
+#[test]
+fn the_colour_eyedropper_reads_out_the_colour_under_the_pointer() {
+    let (ctx, mut app, id) = setup();
+    let (name, c) = app
+        .palette
+        .iter()
+        .find(|(n, c)| !n.is_empty() && matches!(c, tracedraw_core::Color::Cmyk { .. }))
+        .cloned()
+        .expect("a named colour");
+    app.select(vec![id]);
+    app.apply_fill(tracedraw_core::Fill::Solid(c));
+    app.set_tool(Tool::ColorEyedropper);
+    let over = app.view.to_screen(Point::new(35.0, 25.0));
+    readout_texts(&ctx, &mut app, vec![Event::PointerMoved(over)]);
+    let texts = readout_texts(&ctx, &mut app, Vec::new());
+    let hex = c.to_hex().to_uppercase();
+    assert!(texts.contains(&name), "{texts:?}");
+    assert!(texts.contains(&hex), "{texts:?}");
+    assert!(texts.iter().any(|t| t.starts_with("C:")), "{texts:?}");
+    // Off the objects: nothing to read.
+    let off = app.view.to_screen(Point::new(150.0, 200.0));
+    let texts = readout_texts(&ctx, &mut app, vec![Event::PointerMoved(off)]);
+    assert!(texts.is_empty(), "{texts:?}");
+    // A sample taken: Apply mode shows no readout.
+    readout_texts(&ctx, &mut app, vec![Event::PointerMoved(over)]);
+    readout_texts(
+        &ctx,
+        &mut app,
+        vec![button(over, true, PointerButton::Primary, Modifiers::NONE)],
+    );
+    readout_texts(
+        &ctx,
+        &mut app,
+        vec![button(over, false, PointerButton::Primary, Modifiers::NONE)],
+    );
+    assert_eq!(app.eyedropper_color, Some(c));
+    let texts = readout_texts(
+        &ctx,
+        &mut app,
+        vec![Event::PointerMoved(over + egui::vec2(2.0, 0.0))],
+    );
+    assert!(texts.is_empty(), "{texts:?}");
+    // A picker's eyedropper, with the Pick tool.
+    app.eyedropper_reset();
+    app.set_tool(Tool::Pick);
+    crate::ui::color_picker::start_pick(&ctx, egui::Id::new("some picker"));
+    let texts = readout_texts(&ctx, &mut app, vec![Event::PointerMoved(off)]);
+    assert!(texts.contains(&"#FFFFFF".to_string()), "{texts:?}");
+    let texts = readout_texts(&ctx, &mut app, vec![Event::PointerMoved(over)]);
+    assert!(texts.contains(&hex), "{texts:?}");
+    crate::ui::color_picker::finish_pick(&ctx, None);
+    let texts = readout_texts(
+        &ctx,
+        &mut app,
+        vec![Event::PointerMoved(over + egui::vec2(2.0, 0.0))],
+    );
+    assert!(texts.is_empty(), "{texts:?}");
+}
+
+/// Frame times of the eyedropper readout (#990): hovering a heavy page
+/// with the Pick tool and with the Colour Eyedropper, over objects and
+/// over a picture. Run with `cargo test --release -p tracedraw --
+/// --ignored frame_times_of_the_eyedropper_readout --nocapture`.
+#[test]
+#[ignore]
+fn frame_times_of_the_eyedropper_readout() {
+    let (ctx, mut app, _) = setup();
+    let mut s = 11u64;
+    let mut r = || {
+        s = s
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        ((s >> 33) as f64) / (1u64 << 31) as f64
+    };
+    for _ in 0..3000 {
+        let (x, y) = (r() * 200.0, r() * 280.0);
+        let id = app.new_shape(ShapeKind::Rect {
+            rect: Rect::new(x, y, x + 8.0, y + 6.0),
+            radius: 0.0,
+            corners: None,
+        });
+        if let Some(id) = id {
+            app.select(vec![id]);
+            app.apply_fill(tracedraw_core::Fill::Solid(tracedraw_core::Color::rgb8(
+                (r() * 255.0) as u8,
+                90,
+                30,
+            )));
+        }
+    }
+    let img = image::RgbaImage::from_fn(1200, 900, |x, y| {
+        image::Rgba([(x % 256) as u8, (y % 256) as u8, 128, 255])
+    });
+    // 50.8 x 38.1 mm in the middle of the page, clear of (40, 60).
+    app.place_image_at(img, None, Some((600.0, 600.0)))
+        .expect("picture");
+    app.select(Vec::new());
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let pic = app
+        .doc()
+        .pages
+        .first()
+        .and_then(|p| p.layers.first())
+        .and_then(|l| l.shapes.last())
+        .map(|s| s.bounds())
+        .expect("picture bounds");
+    let n = 40;
+    let time = |label: &str, app: &mut App, from: Pos2| {
+        frame(&ctx, app, vec![Event::PointerMoved(from)], Modifiers::NONE);
+        let t = std::time::Instant::now();
+        for i in 0..n {
+            let p = from + egui::vec2(i as f32 * 2.0, (i % 5) as f32);
+            frame(&ctx, app, vec![Event::PointerMoved(p)], Modifiers::NONE);
+        }
+        let per = t.elapsed() / n;
+        eprintln!("{label}: {per:?} per frame");
+        per
+    };
+    let objects = app.view.to_screen(Point::new(40.0, 60.0));
+    let picture = app.view.to_screen(Point::new(pic.x0 + 5.0, pic.center().y));
+    app.set_tool(Tool::Pick);
+    let pick = time("pick tool, hover over objects", &mut app, objects);
+    let pick_pic = time("pick tool, hover over the picture", &mut app, picture);
+    app.set_tool(Tool::ColorEyedropper);
+    let eye = time("colour eyedropper, hover over objects", &mut app, objects);
+    let decoded = app.eyedropper_hover.decoded;
+    let eye_pic = time(
+        "colour eyedropper, hover over the picture",
+        &mut app,
+        picture,
+    );
+    eprintln!(
+        "readouts worked out: {}, pictures decoded while hovering the picture: {}",
+        app.eyedropper_hover.computed,
+        app.eyedropper_hover.decoded - decoded
+    );
+    // The picture was read (its blue channel is 128) and decoded once.
+    let last = app
+        .eyedropper_hover
+        .reading
+        .as_ref()
+        .map(|r| r.color.to_rgb8());
+    assert_eq!(last.map(|c| c[2]), Some(128), "{last:?}");
+    assert_eq!(app.eyedropper_hover.decoded - decoded, 1);
+    let _ = (pick, pick_pic, eye, eye_pic);
+}
+
+/// Segment Delete: with Alt held a drag is a freehand stroke and takes
+/// only the stretches it crosses; the bar's Freehand makes that the plain
+/// drag, and Alt then drags the box, which takes every stretch it touches
+/// (#1150).
+#[test]
+fn segment_delete_drags_a_freehand_stroke_with_alt_or_the_bar() {
+    use tracedraw_core::geometry::{ParamCurve as _, Shape as _};
+    let lines = |app: &mut App| -> ShapeId {
+        let mut ids = Vec::new();
+        for (a, b) in [
+            ((0.0, 0.0), (30.0, 0.0)),
+            ((10.0, -5.0), (10.0, 5.0)),
+            ((20.0, -5.0), (20.0, 5.0)),
+        ] {
+            let mut p = tracedraw_core::BezPath::new();
+            p.move_to(a);
+            p.line_to(b);
+            ids.push(
+                app.new_shape(ShapeKind::Path {
+                    path: p,
+                    closed: false,
+                })
+                .expect("line"),
+            );
+        }
+        ids[0]
+    };
+    let has_middle = |app: &App, h: ShapeId| {
+        app.doc().find_shape(h).is_some_and(|s| {
+            s.page_path().segments().any(|seg| {
+                let (x0, x1) = (
+                    seg.start().x.min(seg.end().x),
+                    seg.start().x.max(seg.end().x),
+                );
+                x0 < 15.0 && x1 > 15.0
+            })
+        })
+    };
+    for (bar_freehand, mods, freehand) in [
+        (false, Modifiers::ALT, true),
+        (true, Modifiers::NONE, true),
+        (true, Modifiers::ALT, false),
+        (false, Modifiers::NONE, false),
+    ] {
+        let (ctx, mut app, rect) = setup();
+        app.run(tracedraw_core::Command::DeleteShapes { shapes: vec![rect] });
+        let h = lines(&mut app);
+        app.set_tool(Tool::SegmentDelete);
+        app.segment_freehand = bar_freehand;
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+        // From above left of the first upright, down across h left of it
+        // and across the upright's lower arm.
+        let from = app.view.to_screen(Point::new(4.0, 4.0));
+        let to = app.view.to_screen(Point::new(14.0, -4.0));
+        drag(&ctx, &mut app, from, to, mods, Vec::new());
+        let b = app
+            .doc()
+            .find_shape(h)
+            .map(|s| s.page_path().bounding_box())
+            .expect("h keeps its right end");
+        assert!(
+            (b.x0 - 10.0).abs() < 1e-6 || (b.x0 - 20.0).abs() < 1e-6,
+            "{b:?}"
+        );
+        // The stroke leaves the stretch between the uprights; the box
+        // reaches into it and takes it.
+        assert_eq!(has_middle(&app, h), freehand, "{bar_freehand} {mods:?}");
+    }
+}

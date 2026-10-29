@@ -101,7 +101,7 @@ pub fn dialog_topic(d: &Dialog, options: OptionsPage) -> &'static str {
         Dialog::CustomHyphens(_) => "text/writing-tools#custom-hyphens",
         Dialog::Encode(_) => "text/writing-tools#encode",
         Dialog::BorderGrommet(_) => "printing/border-and-grommet",
-        Dialog::ColorManagement(_) => "color/color-management",
+        Dialog::ColorManagement(_) | Dialog::ConvertColors(_) => "color/color-management",
         Dialog::FontManager(_) => "text/fonts#font-manager",
         Dialog::PaletteEditor(_) => "color/palettes#palette-editor",
         Dialog::NewDocument(_) => "get-started/new-document",
