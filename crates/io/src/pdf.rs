@@ -1577,13 +1577,7 @@ fn stitching_function_in(ft: &tracedraw_core::Fountain, cmyk_only: bool) -> Stri
 fn outline_paint(s: &tracedraw_core::Stroke, transform: Affine) -> Option<Fill> {
     match s.fill.as_deref()? {
         Fill::None | Fill::Solid(_) => None,
-        Fill::Mesh(m) => {
-            let mut m = m.clone();
-            for n in m.nodes.iter_mut() {
-                n.pos = transform * n.pos;
-            }
-            Some(Fill::Mesh(m))
-        }
+        Fill::Mesh(m) => Some(Fill::Mesh(m.transformed(transform))),
         other => Some(other.clone()),
     }
 }

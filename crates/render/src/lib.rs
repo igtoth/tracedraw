@@ -972,11 +972,7 @@ impl Renderer<'_> {
             let blend = self.blend_for(shape.overprint_fill);
             if let Fill::Mesh(m) = &shape.fill {
                 // Mesh nodes are local: bring them to page space first.
-                let mut pm = m.clone();
-                for n in pm.nodes.iter_mut() {
-                    n.pos = transform * n.pos;
-                }
-                self.fill_mesh(&pm, &sk, rule, blend);
+                self.fill_mesh(&m.transformed(transform), &sk, rule, blend);
             } else if !self.flags.fill_open_curves
                 && matches!(shape.kind, ShapeKind::Path { closed: false, .. })
                 && !matches!(shape.fill, Fill::None)
@@ -1580,11 +1576,16 @@ impl Renderer<'_> {
         }
     }
 
-    /// Mesh fill (nodes in page space): each cell is split into small
-    /// flat-coloured quads, clipped by the path. Colours mix from the
-    /// cell's four nodes (bilinear), or with Smooth colour from the sixteen
-    /// around it (Catmull-Rom across the grid), so they flow through the
-    /// nodes without creases.
+    /// Mesh fill (nodes in page space): each cell is the Coons patch
+    /// bounded by its four grid lines (cubic curves where the nodes carry
+    /// handles), cut into small triangles whose colour and opacity are
+    /// mixed pixel by pixel from the cell's four nodes (bilinear), or
+    /// with Smooth colour from the sixteen around it (Catmull-Rom across
+    /// the grid), so they flow through the nodes without creases. The
+    /// picture is worked out in the screen's scale and turn without its
+    /// pan and kept (`procedural_cache`), so panning, a selection change
+    /// or another object dragged do not compute it again; it is drawn
+    /// through the path with bilinear sampling.
     fn fill_mesh(
         &mut self,
         m: &tracedraw_core::Mesh,
@@ -1592,127 +1593,102 @@ impl Renderer<'_> {
         rule: FillRule,
         blend: tiny_skia::BlendMode,
     ) {
-        let (w, h) = (self.pixmap.width(), self.pixmap.height());
-        let (Some(mut layer), Some(mut mask)) = (Pixmap::new(w, h), tiny_skia::Mask::new(w, h))
-        else {
+        let [a, b, c, d, tx, ty] = self.screen.as_coeffs();
+        let lm = m.transformed(Affine::new([a, b, c, d, 0.0, 0.0]));
+        let Some(bounds) = mesh_bounds(&lm) else {
             return;
         };
-        mask.fill_path(sk, rule, true, Transform::identity());
-        let cols = m.cols as usize + 1;
-        let node = |r: usize, c: usize| m.nodes.get(r * cols + c).copied();
-        let lerp = |a: tracedraw_core::MeshNode, b: tracedraw_core::MeshNode, t: f64| {
-            tracedraw_core::MeshNode {
-                pos: a.pos + (b.pos - a.pos) * t,
-                color: tracedraw_core::style::lerp_color(a.color, b.color, t as f32),
-                alpha: a.alpha + (b.alpha - a.alpha) * t as f32,
+        // The picture starts a pixel before the mesh's corner, wherever
+        // that falls, so a moved mesh is the same picture (the pattern's
+        // transform carries the fraction of a pixel).
+        let x0 = bounds.x0 - 1.0;
+        let y0 = bounds.y0 - 1.0;
+        let full_w = (bounds.width() + 3.0).ceil().max(1.0);
+        let full_h = (bounds.height() + 3.0).ceil().max(1.0);
+        if !(full_w.is_finite() && full_h.is_finite()) {
+            return;
+        }
+        // A mesh far larger than the canvas is worked out for the part on
+        // it only, and not kept.
+        let (cw, ch) = (self.pixmap.width() as f64, self.pixmap.height() as f64);
+        let visible = Rect::new(x0, y0, x0 + full_w, y0 + full_h).intersect(Rect::new(
+            -tx - 2.0,
+            -ty - 2.0,
+            cw - tx + 2.0,
+            ch - ty + 2.0,
+        ));
+        let huge = full_w * full_h > MESH_RASTER_PIXELS as f64;
+        let (x0, y0, full_w, full_h) = if huge {
+            if visible.is_zero_area() {
+                return;
             }
+            (
+                visible.x0.floor(),
+                visible.y0.floor(),
+                visible.width().ceil() + 1.0,
+                visible.height().ceil() + 1.0,
+            )
+        } else {
+            (x0, y0, full_w, full_h)
         };
-        // Smooth colour: each channel through the 4 x 4 nodes around the
-        // cell with Catmull-Rom weights (rows and columns past the edge
-        // repeat the edge).
-        let rgb: Vec<[f32; 3]> = m.nodes.iter().map(|n| n.color.to_rgb_f32()).collect();
-        let weights = |t: f64| {
-            let (t2, t3) = (t * t, t * t * t);
-            [
-                (-t3 + 2.0 * t2 - t) / 2.0,
-                (3.0 * t3 - 5.0 * t2 + 2.0) / 2.0,
-                (-3.0 * t3 + 4.0 * t2 + t) / 2.0,
-                (t3 - t2) / 2.0,
-            ]
+        let step = if self.flags.draft {
+            procedural_step(full_w as u32, full_h as u32)
+        } else {
+            1
         };
-        let smooth_at = |r: usize, c: usize, u: f64, v: f64| -> Option<([u8; 3], f32)> {
-            let (wu, wv) = (weights(u), weights(v));
-            let mut acc = [0.0f64; 3];
-            let mut alpha = 0.0f64;
-            for (j, wj) in wv.iter().enumerate() {
-                let rr = (r + j).saturating_sub(1).min(m.rows as usize);
-                for (i, wi) in wu.iter().enumerate() {
-                    let cc = (c + i).saturating_sub(1).min(m.cols as usize);
-                    let k = rr * cols + cc;
-                    let (n, c3) = (m.nodes.get(k)?, rgb.get(k)?);
-                    let w = wi * wj;
-                    for ch in 0..3 {
-                        acc[ch] += w * c3[ch] as f64;
+        let w = (full_w as u32).div_ceil(step).max(1);
+        let h = (full_h as u32).div_ceil(step).max(1);
+        let key = if huge {
+            None
+        } else {
+            use std::hash::{Hash, Hasher};
+            let mut hs = std::collections::hash_map::DefaultHasher::new();
+            let q = |p: Point| {
+                (
+                    ((p.x - x0) * 64.0).round() as i64,
+                    ((p.y - y0) * 64.0).round() as i64,
+                )
+            };
+            for n in &lm.nodes {
+                q(n.pos).hash(&mut hs);
+                n.color.to_rgb8().hash(&mut hs);
+                n.alpha.to_bits().hash(&mut hs);
+                if let Some(hd) = n.handles {
+                    for p in hd {
+                        q(p).hash(&mut hs);
                     }
-                    alpha += w * n.alpha as f64;
                 }
             }
-            let byte = |x: f64| (x.clamp(0.0, 1.0) * 255.0).round() as u8;
-            Some((
-                [byte(acc[0]), byte(acc[1]), byte(acc[2])],
-                alpha.clamp(0.0, 1.0) as f32,
-            ))
+            (lm.rows, lm.cols, lm.smooth).hash(&mut hs);
+            Some(format!("mesh|{:x}|{w},{h},{step}", hs.finish()))
+        };
+        let pm = match key.as_deref().and_then(procedural_cache_get) {
+            Some(pm) => pm,
+            None => {
+                let Some(mut pm) = Pixmap::new(w, h) else {
+                    return;
+                };
+                let to_raster = Affine::scale(1.0 / step as f64) * Affine::translate((-x0, -y0));
+                rasterise_mesh(&lm, to_raster, &mut pm);
+                if let Some(key) = key {
+                    procedural_cache_put(key, pm.clone());
+                }
+                pm
+            }
         };
         let mut paint = Paint::default();
-        paint.anti_alias = false;
-        for r in 0..m.rows as usize {
-            for c in 0..m.cols as usize {
-                let (Some(n00), Some(n10), Some(n01), Some(n11)) = (
-                    node(r, c),
-                    node(r, c + 1),
-                    node(r + 1, c),
-                    node(r + 1, c + 1),
-                ) else {
-                    continue;
-                };
-                // Subdivisions from the cell's screen size.
-                let p00 = self.screen * n00.pos;
-                let p11 = self.screen * n11.pos;
-                let size = (p11 - p00).hypot();
-                let k = ((size / 6.0).ceil() as usize).clamp(2, 24);
-                for i in 0..k {
-                    for j in 0..k {
-                        let (u0, u1) = (i as f64 / k as f64, (i + 1) as f64 / k as f64);
-                        let (v0, v1) = (j as f64 / k as f64, (j + 1) as f64 / k as f64);
-                        let at = |u: f64, v: f64| lerp(lerp(n00, n10, u), lerp(n01, n11, u), v);
-                        let q = [at(u0, v0), at(u1, v0), at(u1, v1), at(u0, v1)];
-                        let mid = at((u0 + u1) / 2.0, (v0 + v1) / 2.0);
-                        let mut pb = tiny_skia::PathBuilder::new();
-                        for (idx, n) in q.iter().enumerate() {
-                            let sp = self.screen * n.pos;
-                            if idx == 0 {
-                                pb.move_to(sp.x as f32, sp.y as f32);
-                            } else {
-                                pb.line_to(sp.x as f32, sp.y as f32);
-                            }
-                        }
-                        pb.close();
-                        let Some(path) = pb.finish() else { continue };
-                        let smooth = m
-                            .smooth
-                            .then(|| smooth_at(r, c, (u0 + u1) / 2.0, (v0 + v1) / 2.0))
-                            .flatten();
-                        let ([cr, cg, cb], a) = smooth.unwrap_or((mid.color.to_rgb8(), mid.alpha));
-                        paint.set_color_rgba8(cr, cg, cb, (a.clamp(0.0, 1.0) * 255.0) as u8);
-                        // Slightly overdraw to hide seams between quads.
-                        layer.fill_path(
-                            &path,
-                            &paint,
-                            FillRule::Winding,
-                            Transform::identity(),
-                            None,
-                        );
-                        let s = tiny_skia::Stroke {
-                            width: 0.7,
-                            ..Default::default()
-                        };
-                        layer.stroke_path(&path, &paint, &s, Transform::identity(), None);
-                    }
-                }
-            }
-        }
-        let pp = tiny_skia::PixmapPaint {
-            blend_mode: blend,
-            ..Default::default()
-        };
-        self.pixmap.draw_pixmap(
-            0,
-            0,
-            layer.as_ref(),
-            &pp,
-            Transform::identity(),
-            Some(&mask),
+        paint.anti_alias = self.flags.anti_alias;
+        paint.blend_mode = blend;
+        paint.shader = tiny_skia::Pattern::new(
+            pm.as_ref(),
+            SpreadMode::Pad,
+            tiny_skia::FilterQuality::Bilinear,
+            1.0,
+            Transform::from_translate((tx + x0) as f32, (ty + y0) as f32)
+                .pre_scale(step as f32, step as f32),
         );
+        self.pixmap
+            .fill_path(sk, &paint, rule, Transform::identity(), None);
     }
 
     /// Fill with a per-pixel function over the path's bounding box
@@ -2423,13 +2399,7 @@ fn blur_pass(src: &[u8], dst: &mut [u8], w: usize, h: usize, r: usize, horizonta
 fn outline_paint(stroke: &Stroke, transform: Affine) -> Option<Fill> {
     match stroke.fill.as_deref()? {
         Fill::None | Fill::Solid(_) => None,
-        Fill::Mesh(m) => {
-            let mut m = m.clone();
-            for n in m.nodes.iter_mut() {
-                n.pos = transform * n.pos;
-            }
-            Some(Fill::Mesh(m))
-        }
+        Fill::Mesh(m) => Some(Fill::Mesh(m.transformed(transform))),
         other => Some(other.clone()),
     }
 }
@@ -2557,10 +2527,303 @@ fn for_rows(
     }
 }
 
+/// The largest mesh picture kept, in pixels; past it only the part on
+/// the canvas is worked out, and not kept.
+const MESH_RASTER_PIXELS: u32 = 16_000_000;
+
+/// The box round a mesh's nodes and handles.
+fn mesh_bounds(m: &tracedraw_core::Mesh) -> Option<Rect> {
+    m.nodes
+        .iter()
+        .flat_map(|n| std::iter::once(n.pos).chain(n.handles.into_iter().flatten()))
+        .filter(|p| p.x.is_finite() && p.y.is_finite())
+        .map(|p| Rect::from_points(p, p))
+        .reduce(|a, b| a.union(b))
+}
+
+/// A corner of a mesh triangle: its place in the picture and its colour
+/// and opacity (0 to 1).
+#[derive(Clone, Copy)]
+struct MeshVertex {
+    x: f64,
+    y: f64,
+    rgba: [f32; 4],
+}
+
+/// Draw the mesh `m` (its nodes taken through `to_raster`, which maps
+/// them to the picture's pixels) into `pm`: every cell as a grid of
+/// triangles small enough for the curves to look smooth, the colour mixed
+/// per pixel (on several threads, each painting a band of rows); then the
+/// picture's edge is grown by a pixel so the path it is drawn through
+/// finds colour under its smoothed edge.
+fn rasterise_mesh(m: &tracedraw_core::Mesh, to_raster: Affine, pm: &mut Pixmap) {
+    let (w, h) = (pm.width() as usize, pm.height() as usize);
+    let mut buf: Vec<[f32; 4]> = vec![[0.0; 4]; w * h];
+    let cols = m.cols as usize + 1;
+    let rgb: Vec<[f32; 3]> = m.nodes.iter().map(|n| n.color.to_rgb_f32()).collect();
+    // Smooth colour: each channel through the 4 x 4 nodes around the
+    // cell with Catmull-Rom weights (rows and columns past the edge
+    // repeat the edge).
+    let weights = |t: f64| {
+        let (t2, t3) = (t * t, t * t * t);
+        [
+            (-t3 + 2.0 * t2 - t) / 2.0,
+            (3.0 * t3 - 5.0 * t2 + 2.0) / 2.0,
+            (-3.0 * t3 + 4.0 * t2 + t) / 2.0,
+            (t3 - t2) / 2.0,
+        ]
+    };
+    let smooth_at = |r: usize, c: usize, u: f64, v: f64| -> Option<[f32; 4]> {
+        let (wu, wv) = (weights(u), weights(v));
+        let mut acc = [0.0f64; 4];
+        for (j, wj) in wv.iter().enumerate() {
+            let rr = (r + j).saturating_sub(1).min(m.rows as usize);
+            for (i, wi) in wu.iter().enumerate() {
+                let cc = (c + i).saturating_sub(1).min(m.cols as usize);
+                let k = rr * cols + cc;
+                let (n, c3) = (m.nodes.get(k)?, rgb.get(k)?);
+                let wgt = wi * wj;
+                for ch in 0..3 {
+                    acc[ch] += wgt * c3[ch] as f64;
+                }
+                acc[3] += wgt * n.alpha as f64;
+            }
+        }
+        Some([
+            acc[0].clamp(0.0, 1.0) as f32,
+            acc[1].clamp(0.0, 1.0) as f32,
+            acc[2].clamp(0.0, 1.0) as f32,
+            acc[3].clamp(0.0, 1.0) as f32,
+        ])
+    };
+    let bilinear = |r: usize, c: usize, u: f64, v: f64| -> Option<[f32; 4]> {
+        let at = |rr: usize, cc: usize| {
+            let k = rr * cols + cc;
+            let n = m.nodes.get(k)?;
+            let c3 = rgb.get(k)?;
+            Some([c3[0], c3[1], c3[2], n.alpha])
+        };
+        let (a, b, d, e) = (at(r, c)?, at(r, c + 1)?, at(r + 1, c)?, at(r + 1, c + 1)?);
+        let (u, v) = (u as f32, v as f32);
+        let mut out = [0.0f32; 4];
+        for (ch, o) in out.iter_mut().enumerate() {
+            let top = a[ch] + (b[ch] - a[ch]) * u;
+            let bottom = d[ch] + (e[ch] - d[ch]) * u;
+            *o = top + (bottom - top) * v;
+        }
+        Some(out)
+    };
+    // Every cell's triangles, in picture pixels.
+    let mut tris: Vec<[MeshVertex; 3]> = Vec::new();
+    let mut grid: Vec<MeshVertex> = Vec::new();
+    for r in 0..m.rows {
+        for c in 0..m.cols {
+            let (Some(n00), Some(n10), Some(n01), Some(n11)) = (
+                m.node(r, c),
+                m.node(r, c + 1),
+                m.node(r + 1, c),
+                m.node(r + 1, c + 1),
+            ) else {
+                continue;
+            };
+            // Subdivisions from the cell's size in pixels: a chord every
+            // few pixels keeps the curves and the colour smooth.
+            let px = |n: &tracedraw_core::MeshNode| to_raster * n.pos;
+            let (p00, p10, p01, p11) = (px(n00), px(n10), px(n01), px(n11));
+            let size = (p00 - p10)
+                .hypot()
+                .max((p01 - p11).hypot())
+                .max((p00 - p01).hypot())
+                .max((p10 - p11).hypot());
+            let k = ((size / 4.0).ceil() as usize).clamp(1, 96);
+            grid.clear();
+            let mut ok = true;
+            'cell: for j in 0..=k {
+                for i in 0..=k {
+                    let (u, v) = (i as f64 / k as f64, j as f64 / k as f64);
+                    let colour = if m.smooth {
+                        smooth_at(r as usize, c as usize, u, v)
+                    } else {
+                        bilinear(r as usize, c as usize, u, v)
+                    };
+                    let (Some(p), Some(rgba)) = (m.patch_point(r, c, u, v), colour) else {
+                        ok = false;
+                        break 'cell;
+                    };
+                    let p = to_raster * p;
+                    grid.push(MeshVertex {
+                        x: p.x,
+                        y: p.y,
+                        rgba,
+                    });
+                }
+            }
+            if !ok {
+                continue;
+            }
+            for j in 0..k {
+                for i in 0..k {
+                    let at = |ii: usize, jj: usize| grid.get(jj * (k + 1) + ii).copied();
+                    let (Some(v00), Some(v10), Some(v01), Some(v11)) =
+                        (at(i, j), at(i + 1, j), at(i, j + 1), at(i + 1, j + 1))
+                    else {
+                        continue;
+                    };
+                    tris.push([v00, v10, v11]);
+                    tris.push([v00, v11, v01]);
+                }
+            }
+        }
+    }
+    raster_triangles(&mut buf, w, &tris);
+    // Grow the edge by a pixel: an empty pixel next to a painted one takes
+    // its colour, so the smoothed edge of the path samples colour, not
+    // transparency.
+    let mut grown = buf.clone();
+    for y in 0..h {
+        for x in 0..w {
+            let i = y * w + x;
+            if buf[i][3] > 0.0 {
+                continue;
+            }
+            let mut best: Option<[f32; 4]> = None;
+            for (dx, dy) in [(1i64, 0i64), (-1, 0), (0, 1), (0, -1)] {
+                let (nx, ny) = (x as i64 + dx, y as i64 + dy);
+                if nx < 0 || ny < 0 || nx >= w as i64 || ny >= h as i64 {
+                    continue;
+                }
+                let n = buf[ny as usize * w + nx as usize];
+                if n[3] > best.map_or(0.0, |b| b[3]) {
+                    best = Some(n);
+                }
+            }
+            if let Some(b) = best {
+                grown[i] = b;
+            }
+        }
+    }
+    for (px, c) in pm.pixels_mut().iter_mut().zip(&grown) {
+        let byte = |x: f32| (x.clamp(0.0, 1.0) * 255.0).round() as u8;
+        *px = tiny_skia::ColorU8::from_rgba(byte(c[0]), byte(c[1]), byte(c[2]), byte(c[3]))
+            .premultiply();
+    }
+}
+
+/// Paint the triangles into `buf` (`w` pixels wide): the rows are cut
+/// into bands, one thread each, and every band paints the triangles that
+/// reach it.
+fn raster_triangles(buf: &mut [[f32; 4]], w: usize, tris: &[[MeshVertex; 3]]) {
+    if w == 0 || tris.is_empty() {
+        return;
+    }
+    let rows = buf.len() / w;
+    let paint_band = |band: &mut [[f32; 4]], y0: usize| {
+        let band_rows = band.len() / w;
+        for t in tris {
+            raster_triangle(band, w, y0, band_rows, *t);
+        }
+    };
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let threads = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1)
+            .min(8);
+        if threads > 1 && rows >= 64 && tris.len() >= 256 {
+            let per = rows.div_ceil(threads);
+            std::thread::scope(|scope| {
+                for (k, band) in buf.chunks_mut(per * w).enumerate() {
+                    scope.spawn(move || paint_band(band, k * per));
+                }
+            });
+            return;
+        }
+    }
+    paint_band(buf, 0);
+}
+
+/// Paint a triangle into the band `buf` of `band_rows` rows (`w` pixels
+/// wide, starting at row `y0` of the picture), the colour of each pixel
+/// mixed from the corners by where it lies; the edges reach half a pixel
+/// out so neighbouring triangles leave no gaps between them.
+fn raster_triangle(
+    buf: &mut [[f32; 4]],
+    w: usize,
+    y0: usize,
+    band_rows: usize,
+    v: [MeshVertex; 3],
+) {
+    let area = (v[1].x - v[0].x) * (v[2].y - v[0].y) - (v[2].x - v[0].x) * (v[1].y - v[0].y);
+    if !area.is_finite() || area.abs() < 1e-12 {
+        return;
+    }
+    const REACH: f64 = 0.55;
+    let min_x = v.iter().map(|p| p.x).fold(f64::INFINITY, f64::min);
+    let max_x = v.iter().map(|p| p.x).fold(f64::NEG_INFINITY, f64::max);
+    let min_y = v.iter().map(|p| p.y).fold(f64::INFINITY, f64::min);
+    let max_y = v.iter().map(|p| p.y).fold(f64::NEG_INFINITY, f64::max);
+    if !(min_x.is_finite() && max_x.is_finite() && min_y.is_finite() && max_y.is_finite()) {
+        return;
+    }
+    // The pixels whose centres can be within reach of the triangle, in
+    // this band.
+    let x_start = (min_x - REACH - 0.5).ceil().max(0.0) as usize;
+    let x_end = (max_x + REACH - 0.5).floor().min(w as f64 - 1.0);
+    let y_start = (min_y - REACH - 0.5).ceil().max(y0 as f64) as usize;
+    let y_end = (max_y + REACH - 0.5)
+        .floor()
+        .min((y0 + band_rows) as f64 - 1.0);
+    if x_end < x_start as f64 || y_end < y_start as f64 {
+        return;
+    }
+    let (x_end, y_end) = (x_end as usize, y_end as usize);
+    // Edge functions, signed by the triangle's turn, in pixels (divided
+    // by the edge's length), and their change per pixel across.
+    let sign = area.signum();
+    let aa = area.abs();
+    let edge_len = |i: usize, j: usize| ((v[j].x - v[i].x).hypot(v[j].y - v[i].y)).max(1e-9);
+    let lens = [edge_len(1, 2), edge_len(2, 0), edge_len(0, 1)];
+    let at = |px: f64, py: f64| {
+        [
+            ((v[1].x - px) * (v[2].y - py) - (v[2].x - px) * (v[1].y - py)) * sign,
+            ((v[2].x - px) * (v[0].y - py) - (v[0].x - px) * (v[2].y - py)) * sign,
+            ((v[0].x - px) * (v[1].y - py) - (v[1].x - px) * (v[0].y - py)) * sign,
+        ]
+    };
+    let dx = [
+        (v[1].y - v[2].y) * sign,
+        (v[2].y - v[0].y) * sign,
+        (v[0].y - v[1].y) * sign,
+    ];
+    let limits = [-REACH * lens[0], -REACH * lens[1], -REACH * lens[2]];
+    for y in y_start..=y_end {
+        let py = y as f64 + 0.5;
+        let mut wgt = at(x_start as f64 + 0.5, py);
+        let row = &mut buf[(y - y0) * w..(y - y0 + 1) * w];
+        for out in &mut row[x_start..=x_end] {
+            if wgt[0] >= limits[0] && wgt[1] >= limits[1] && wgt[2] >= limits[2] {
+                let (b0, b1, b2) = (
+                    (wgt[0] / aa).clamp(0.0, 1.0),
+                    (wgt[1] / aa).clamp(0.0, 1.0),
+                    (wgt[2] / aa).clamp(0.0, 1.0),
+                );
+                let sum = (b0 + b1 + b2).max(1e-9);
+                let (b0, b1, b2) = ((b0 / sum) as f32, (b1 / sum) as f32, (b2 / sum) as f32);
+                for (ch, o) in out.iter_mut().enumerate() {
+                    *o = v[0].rgba[ch] * b0 + v[1].rgba[ch] * b1 + v[2].rgba[ch] * b2;
+                }
+            }
+            wgt[0] += dx[0];
+            wgt[1] += dx[1];
+            wgt[2] += dx[2];
+        }
+    }
+}
+
 /// The last procedural fills worked out, newest last: up to this many,
 /// and up to this many pixels together.
-const PROCEDURAL_CACHE: usize = 12;
-const PROCEDURAL_CACHE_PIXELS: usize = 12_000_000;
+const PROCEDURAL_CACHE: usize = 256;
+const PROCEDURAL_CACHE_PIXELS: usize = 24_000_000;
 
 thread_local! {
     static PROCEDURAL: std::cell::RefCell<Vec<(String, Pixmap)>> =
@@ -3551,6 +3814,57 @@ mod tests {
         assert!(g > f + 8, "smooth {g} should be brighter than bilinear {f}");
         // Next to the middle node it is nearly white either way.
         assert!(px(&smooth, 50, 50).0 > 200 && px(&flat, 50, 50).0 > 200);
+    }
+
+    /// A mesh whose grid line bends (the nodes carry handles) fills the
+    /// bulge, and a pan reuses the picture worked out before (#896).
+    #[test]
+    fn curved_mesh_cells_follow_their_handles() {
+        use tracedraw_core::MeshHandle;
+        let area = Rect::new(0.0, 0.0, 100.0, 100.0);
+        let mut m = tracedraw_core::Mesh::new(Rect::new(0.0, 0.0, 50.0, 100.0), 1, 1, Color::BLACK);
+        // The right edge bows out to x = 80 in the middle.
+        m.nodes[1].set_handle(MeshHandle::Down, Point::new(90.0, 33.0));
+        m.nodes[3].set_handle(MeshHandle::Up, Point::new(90.0, 67.0));
+        let mut s = rect(1, area, Color::WHITE);
+        s.kind = ShapeKind::Path {
+            path: {
+                let mut p = BezPath::new();
+                p.move_to((0.0, 0.0));
+                p.line_to((50.0, 0.0));
+                p.curve_to((90.0, 33.0), (90.0, 67.0), (50.0, 100.0));
+                p.line_to((0.0, 100.0));
+                p.close_path();
+                p
+            },
+            closed: true,
+        };
+        s.fill = Fill::Mesh(m.clone());
+        let (doc, page) = doc_with(vec![s.clone()]);
+        let pm = render_page_image(&doc, page, 25.4).unwrap();
+        // Inside the bulge the mesh is black; the straight grid would
+        // leave it to the path's white.
+        let (r, g, b) = px(&pm, 70, 50);
+        assert!(
+            r < 40 && g < 40 && b < 40,
+            "bulge should be black: {r} {g} {b}"
+        );
+        let (r, _, _) = px(&pm, 95, 50);
+        assert!(r > 200, "outside the bulge is white: {r}");
+        let p = m.patch_point(0, 0, 1.0, 0.5).unwrap();
+        assert!(
+            (p.x - 80.0).abs() < 1e-6 && (p.y - 50.0).abs() < 1e-6,
+            "{p:?}"
+        );
+        // The same mesh moved: the picture is found in the cache.
+        let mut moved = s.clone();
+        moved.transform = tracedraw_core::geometry::Affine::translate((10.0, 0.0));
+        let (doc2, page2) = doc_with(vec![moved]);
+        let n = PROCEDURAL.with(|c| c.borrow().len());
+        let pm2 = render_page_image(&doc2, page2, 25.4).unwrap();
+        assert_eq!(PROCEDURAL.with(|c| c.borrow().len()), n);
+        let (r, _, _) = px(&pm2, 80, 50);
+        assert!(r < 40, "moved bulge should be black: {r}");
     }
 
     #[test]

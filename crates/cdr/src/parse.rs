@@ -21,7 +21,10 @@ use tracedraw_core::{
         Corners, EllipseArc, Layer, Page, ParagraphStyle, Shape, ShapeKind, TextAlign, TextSpan,
     },
     geometry::{Affine, BezPath, Point, Rect, Size},
-    style::{Arrowhead, Fountain, FountainKind, Pattern, PatternTile, Stop, Texture, TextureKind},
+    style::{
+        Arrowhead, Fountain, FountainKind, MeshHandle, Pattern, PatternTile, Stop, Texture,
+        TextureKind,
+    },
     Color, Document, Fill, LineCap, LineJoin, Stroke,
 };
 
@@ -2772,11 +2775,13 @@ impl<'a> Ctx<'a> {
     /// place along the line (0 to 1, -1 for control points), the line's
     /// place across the grid (f64) and 1 for a column line, 0 for a row
     /// line; the object's transform (six f64, as in its `trfd`); then
-    /// 100, `R`, `C` and the `R x C` node colours, row by row (12-byte
-    /// colour records). Nodes take their places from the lines through
-    /// them; the cells between are drawn with straight sides (the lines'
-    /// curves are not kept). Also the mesh's edge (the first and last row
-    /// and column lines), the object's outline.
+    /// 100, `R`, `C` and the `R x C` node colours, column by column
+    /// (12-byte colour records: the `R` colours of the first column, then
+    /// the next column's). Nodes take their places from the lines
+    /// through them and their handles from the control points next to
+    /// them on those lines, so the cells keep the lines' curves. Also the
+    /// mesh's edge (the first and last row and column lines), the
+    /// object's outline.
     fn read_mesh(
         &mut self,
         d: &'a [u8],
@@ -2784,7 +2789,9 @@ impl<'a> Ctx<'a> {
     ) -> Option<(tracedraw_core::Mesh, Option<BezPath>)> {
         let data = d.get(..arg.end)?;
         let mut r = self.reader_at(data, arg.off);
-        let _len = r.u32()?;
+        // The record's own length: the argument may run a little past it.
+        let len = r.u32()? as usize;
+        let end = arg.off.checked_add(len)?.min(arg.end);
         let _tag = r.u32()?;
         let cols = r.u32()? as usize;
         let rows = r.u32()? as usize;
@@ -2792,6 +2799,9 @@ impl<'a> Ctx<'a> {
             return None;
         }
         let mut pos: Vec<Option<Point>> = vec![None; rows * cols];
+        // The handles of the grid lines at each node (see
+        // `MeshNode::handles`), from the control points next to it.
+        let mut handles: Vec<Option<[Point; 4]>> = vec![None; rows * cols];
         // Each line's curve, and whether it runs from its last node back
         // to its first.
         let mut lines: Vec<(BezPath, bool)> = Vec::with_capacity(rows + cols);
@@ -2806,7 +2816,9 @@ impl<'a> Ctx<'a> {
             let (pts, types) = self.read_points(&mut r, n)?;
             let mut first: Option<usize> = None;
             let mut last: Option<usize> = None;
-            for p in &pts {
+            // The nodes along the line: (point index, row, column).
+            let mut nodes_on_line: Vec<(usize, usize, usize)> = Vec::new();
+            for (k, p) in pts.iter().enumerate() {
                 let row = r.i32()?;
                 let col = r.i32()?;
                 if (0..rows as i32).contains(&row) && (0..cols as i32).contains(&col) {
@@ -2814,13 +2826,44 @@ impl<'a> Ctx<'a> {
                     pos.get_mut(i)?.get_or_insert(*p);
                     first.get_or_insert(i);
                     last = Some(i);
+                    nodes_on_line.push((k, row as usize, col as usize));
                 }
             }
             r.skip(8 * n + 8 + 4);
+            // Between two nodes in a row the control points next to each
+            // are its handles towards the other (a segment of one cubic
+            // in the file; a longer run keeps the outer control points).
+            let is_control = |k: usize| types.get(k).is_some_and(|t| t >> 6 == 0b11);
+            for pair in nodes_on_line.windows(2) {
+                let ((i, r0, c0), (j, r1, c1)) = (pair[0], pair[1]);
+                if j < i + 2 || !is_control(i + 1) || !is_control(j - 1) {
+                    continue;
+                }
+                let (fwd, back) = match (r1 as i64 - r0 as i64, c1 as i64 - c0 as i64) {
+                    (0, 1) => (MeshHandle::Right, MeshHandle::Left),
+                    (0, -1) => (MeshHandle::Left, MeshHandle::Right),
+                    (1, 0) => (MeshHandle::Down, MeshHandle::Up),
+                    (-1, 0) => (MeshHandle::Up, MeshHandle::Down),
+                    _ => continue,
+                };
+                let (Some(&h0), Some(&h1)) = (pts.get(i + 1), pts.get(j - 1)) else {
+                    continue;
+                };
+                let set = |hs: &mut Option<[Point; 4]>, at: Point, h: MeshHandle, p: Point| {
+                    hs.get_or_insert([at; 4])[h as usize] = p;
+                };
+                let (Some(&Some(p0)), Some(&Some(p1))) =
+                    (pos.get(r0 * cols + c0), pos.get(r1 * cols + c1))
+                else {
+                    continue;
+                };
+                set(handles.get_mut(r0 * cols + c0)?, p0, fwd, h0);
+                set(handles.get_mut(r1 * cols + c1)?, p1, back, h1);
+            }
             lines.push((build_path(&pts, &types).0, first > last));
         }
         // The colour grid closes the record.
-        let grid = arg.end.checked_sub(12 + rows * cols * 12)?;
+        let grid = end.checked_sub(12 + rows * cols * 12)?;
         if grid < r.pos {
             return None;
         }
@@ -2829,13 +2872,19 @@ impl<'a> Ctx<'a> {
         if g.u32()? as usize != rows || g.u32()? as usize != cols {
             return None;
         }
+        let mut colours = Vec::with_capacity(rows * cols);
+        for _ in 0..rows * cols {
+            colours.push(self.read_color(&mut g)?);
+        }
         let mut nodes = Vec::with_capacity(rows * cols);
-        for p in pos {
-            let color = self.read_color(&mut g)?;
+        for (i, handles) in handles.into_iter().enumerate() {
+            // A node with handles on some lines only (the others left on
+            // the node) draws straight thirds on the others.
             nodes.push(tracedraw_core::MeshNode {
-                pos: p?,
-                color,
+                pos: (*pos.get(i)?)?,
+                color: *colours.get((i % cols) * rows + i / cols)?,
                 alpha: 1.0,
+                handles,
             });
         }
         // The edge: the first row, the last column, the last row and the
@@ -3053,6 +3102,8 @@ impl<'a> Ctx<'a> {
         let mut opacity = 1.0;
         let mut lens: Option<tracedraw_core::live::Lens> = None;
         let mut mesh: Option<Arg> = None;
+        // A graded transparency of a version 11 file (a mask and its target).
+        let mut v11_mask: Option<(Fill, u8)> = None;
 
         for arg in &l.args {
             match arg.ty {
@@ -3061,6 +3112,9 @@ impl<'a> Ctx<'a> {
                 ARG_OPACITY => {
                     if let Some(l) = self.read_lens(d, *arg) {
                         lens = Some(l);
+                    } else if let Some((o, m)) = self.read_transparency_v11(d, *arg) {
+                        opacity = o;
+                        v11_mask = m;
                     } else if let Some(o) = self.read_opacity(d, *arg) {
                         opacity = o;
                     }
@@ -3209,9 +3263,11 @@ impl<'a> Ctx<'a> {
 
         // Version 16+: a graded transparency in the object's style string
         // becomes a mask; otherwise its uniform transparency an opacity.
-        let mask = style_string
-            .as_deref()
-            .and_then(text::object_transparency_mask);
+        let mask = v11_mask.or_else(|| {
+            style_string
+                .as_deref()
+                .and_then(text::object_transparency_mask)
+        });
         if opacity >= 1.0 && mask.is_none() {
             if let Some(o) = style_string.as_deref().and_then(text::object_opacity) {
                 opacity = o;
@@ -3592,6 +3648,63 @@ impl<'a> Ctx<'a> {
                 None
             }
         }
+    }
+
+    /// The 120-byte transparency record of a version 11 file (#896): u32
+    /// 5, the record's number, 8 zero bytes, the object's box (four i32,
+    /// zeros for a uniform transparency), u32 1 for a graded transparency
+    /// (0 uniform), the fountain's number and type and its start and end
+    /// points (two i32 pairs), u32 0, the start and end transparency in
+    /// percent (two f64; the end 100 in every record seen), u32 0 or 9,
+    /// u32 2, 24 zero bytes, a fill id and u32 0. The fill id names a
+    /// `fild` record of the fill table: for a uniform transparency the
+    /// object's own fill; for a graded one a fountain fill whose grey
+    /// stops are the transparency (model 9: 255 opaque, 0 see-through,
+    /// as the reporter's screenshot of the drawing's shadow shows), read
+    /// here as a mask whose luminance is the opacity. Returns the opacity
+    /// and the mask.
+    fn read_transparency_v11(
+        &mut self,
+        d: &'a [u8],
+        arg: Arg,
+    ) -> Option<(f64, Option<(Fill, u8)>)> {
+        if self.v >= 13 || arg.end.checked_sub(arg.off)? != 120 {
+            return None;
+        }
+        let data = d.get(..arg.end)?;
+        let mut r = self.reader_at(data, arg.off);
+        if r.u32()? != 5 {
+            return None;
+        }
+        r.skip(28);
+        let graded = r.u32()? == 1;
+        r.skip(28);
+        let start = r.f64()?;
+        let _end = r.f64()?;
+        r.skip(32);
+        let fill_id = r.u32()?;
+        if !graded {
+            if !(0.0..=100.0).contains(&start) {
+                self.report.warn(format!(
+                    "transparency value {start} out of range; object drawn opaque"
+                ));
+                return None;
+            }
+            return Some((1.0 - start / 100.0, None));
+        }
+        let Some(Fill::Fountain(f)) = self.fills.get(&fill_id).map(|f| &f.fill) else {
+            self.report.warn(format!(
+                "graded transparency names fill {fill_id}, not a fountain fill; object drawn opaque"
+            ));
+            return None;
+        };
+        let mut mask = f.clone();
+        for s in &mut mask.stops {
+            let [red, g, b] = s.color.to_rgb_f32_builtin();
+            let grey = (red * 0.2126 + g * 0.7152 + b * 0.0722).clamp(0.0, 1.0);
+            s.color = Color::Gray { v: grey };
+        }
+        Some((1.0, Some((Fill::Fountain(mask), 2))))
     }
 
     fn read_opacity(&mut self, d: &'a [u8], arg: Arg) -> Option<f64> {
@@ -5490,14 +5603,26 @@ pub(crate) mod tests {
             v.extend_from_slice(&u32s(&[u32::from(column)]));
             v
         };
+        // The second column line runs back from (1, 1) to (0, 1) and
+        // bends: two control points between its nodes.
+        let curved = |v: &mut Vec<u8>| {
+            v.extend_from_slice(&u32s(&[100, 4]));
+            v.extend_from_slice(&i32s(&[unit, unit, 2 * unit, 7 * unit / 10]));
+            v.extend_from_slice(&i32s(&[2 * unit, 3 * unit / 10, unit, 0]));
+            v.extend_from_slice(&[0x04, 0xc0, 0xc0, 0x84]);
+            v.extend_from_slice(&i32s(&[1, 1, -1, -1, -1, -1, 0, 1]));
+            v.extend_from_slice(&f64s(&[0.0, -1.0, -1.0, 1.0, 1.0]));
+            v.extend_from_slice(&u32s(&[1]));
+        };
         let mut body = u32s(&[100, 2, 2]);
         body.extend(line(&[(0, 0), (1, 0)], true));
-        body.extend(line(&[(1, 1), (0, 1)], true));
+        curved(&mut body);
         body.extend(line(&[(0, 0), (0, 1)], false));
         body.extend(line(&[(1, 0), (1, 1)], false));
         body.extend(f64s(&[1.0, 0.0, 0.0, 0.0, 1.0, 0.0]));
         body.extend(u32s(&[100, 2, 2]));
-        for (r, g, b) in [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 255)] {
+        // Column by column: (0, 0), (1, 0), (0, 1), (1, 1).
+        for (r, g, b) in [(255, 0, 0), (0, 0, 255), (0, 255, 0), (255, 255, 255)] {
             body.extend(color_bgr(r, g, b));
         }
         let mut mesh = u32s(&[body.len() as u32 + 4]);
@@ -5535,7 +5660,7 @@ pub(crate) mod tests {
         assert_eq!(rep.skipped_objects, 0);
         let s = first_shape(&doc);
         let Fill::Mesh(m) = &s.fill else {
-            panic!("{:?}", s.fill)
+            panic!("{:?} {:?}", s.fill, rep.warnings)
         };
         assert_eq!((m.rows, m.cols), (1, 1));
         let at = |r, c| m.node(r, c).map(|n| (n.pos, n.color));
@@ -5555,13 +5680,35 @@ pub(crate) mod tests {
             at(1, 1),
             Some((Point::new(10.0, 10.0), Color::rgb8(255, 255, 255)))
         );
-        // The outline is the mesh's edge, round the square.
+        // The curved column line's control points are the handles of
+        // its nodes towards each other; the straight lines leave the
+        // other handles a third of the way to the neighbours.
+        use tracedraw_core::MeshHandle;
+        let n01 = m.node(0, 1).unwrap();
+        let n11 = m.node(1, 1).unwrap();
+        let near = |p: Point, q: Point| (p - q).hypot() < 1e-6;
+        assert!(near(
+            n11.handle(MeshHandle::Up, n01.pos),
+            Point::new(20.0, 7.0)
+        ));
+        assert!(near(
+            n01.handle(MeshHandle::Down, n11.pos),
+            Point::new(20.0, 3.0)
+        ));
+        assert!(near(
+            n01.handle(MeshHandle::Left, Point::new(0.0, 0.0)),
+            Point::new(10.0 - 10.0 / 3.0, 0.0)
+        ));
+        assert!(m.node(0, 0).unwrap().handles.is_none());
+        assert!(m.is_curved());
+        // The outline is the mesh's edge, round the square, bulging with
+        // the curved line.
         let ShapeKind::Path { path, closed } = &s.kind else {
             panic!("{:?}", s.kind)
         };
         assert!(closed);
         let b = path.bounding_box();
-        assert!(b.x0.abs() < 1e-9 && (b.x1 - 10.0).abs() < 1e-9, "{b:?}");
+        assert!(b.x0.abs() < 1e-9 && (b.x1 - 17.5).abs() < 1e-6, "{b:?}");
         assert!(b.y0.abs() < 1e-9 && (b.y1 - 10.0).abs() < 1e-9, "{b:?}");
         // A mesh cut short keeps the curve, with a warning.
         let (doc, rep) = doc_of(obj(mesh[..mesh.len() - 20].to_vec()));
@@ -9143,6 +9290,107 @@ pub(crate) mod tests {
             }
             other => panic!("{other:?}"),
         }
+    }
+
+    /// The 120-byte transparency record of a version 11 file (#896):
+    /// uniform when its flag at byte 32 is 0, with the percent as an f64
+    /// at byte 64; graded when 1, the fill id at byte 112 naming a
+    /// fountain fill of greys that is the mask (255 opaque).
+    #[test]
+    fn version_11_transparency_records_uniform_and_graded() {
+        use tracedraw_core::live::Effect;
+        // A linear fountain of greys: 255 at the start, 0 at the end.
+        let mut g = vec![0u8; 2];
+        g.push(1);
+        g.extend_from_slice(&[0; 19]);
+        g.extend_from_slice(&i32s(&[0, 90_000_000, 0, 0]));
+        g.extend_from_slice(&[0; 2]);
+        g.extend_from_slice(&u32s(&[0]));
+        g.extend_from_slice(&[50, 0]);
+        g.extend_from_slice(&u32s(&[2]));
+        for (grey, pos) in [(255u8, 0u32), (0, 100)] {
+            g.extend_from_slice(&u16s(&[9, 5]));
+            g.extend_from_slice(&[0; 4]);
+            g.extend_from_slice(&[grey, 0, 0, 0]);
+            g.extend_from_slice(&u32s(&[pos]));
+        }
+        let mut ramp = u32s(&[7]);
+        ramp.extend_from_slice(&u16s(&[2]));
+        ramp.extend_from_slice(&g);
+        let record = |graded: u32, percent: f64, fill: u32| {
+            let mut t = u32s(&[5, 1, 0, 0, 0, 0, 0, 0, graded, 0, 0, 0, 0, 0, 0, 0]);
+            t.extend_from_slice(&f64s(&[percent, 100.0]));
+            t.extend_from_slice(&u32s(&[0, 2, 0, 0, 0, 0, 0, 0, fill, 0]));
+            assert_eq!(t.len(), 120);
+            t
+        };
+        let doc_of = |t: Vec<u8>| {
+            let obj = list(
+                b"obj ",
+                &chunk(
+                    b"loda",
+                    &loda(
+                        OBJ_RECT,
+                        &[
+                            (ARG_COORDS, i32s(&[254000, 254000, 0])),
+                            (ARG_FILL, u32s(&[3])),
+                            (ARG_OPACITY, t),
+                        ],
+                    ),
+                ),
+            );
+            let body = [
+                chunk(b"fild", &solid_fild(3, (255, 255, 255))),
+                chunk(b"fild", &ramp),
+                chunk(b"mcfg", &mcfg(11, 2_540_000, 2_540_000)),
+                list(b"page", &list(b"layr", &obj)),
+            ]
+            .concat();
+            parse(&riff(b"CDRB", &body), 11)
+        };
+        // Uniform: 60 % transparent.
+        let (doc, rep) = doc_of(record(0, 60.0, 3));
+        assert_eq!(rep.shapes, 1, "{:?}", rep.warnings);
+        let s = first_shape(&doc);
+        assert!((s.opacity - 0.4).abs() < 1e-9);
+        assert!(s.effects.is_empty());
+        assert!(rep.warnings.is_empty(), "{:?}", rep.warnings);
+        // Graded: the fountain's greys as the mask, opaque where white.
+        let (doc, rep) = doc_of(record(1, 0.0, 7));
+        let s = first_shape(&doc);
+        assert_eq!(s.opacity, 1.0);
+        match s.effects.as_slice() {
+            [Effect::Transparency {
+                mask: Fill::Fountain(f),
+                target: 2,
+                ..
+            }] => {
+                assert_eq!(f.kind, FountainKind::Linear);
+                assert!((f.angle - 90.0).abs() < 1e-9);
+                assert_eq!(f.stops.len(), 2);
+                assert_eq!(f.stops[0].color, Color::Gray { v: 1.0 });
+                assert_eq!(f.stops[1].color, Color::Gray { v: 0.0 });
+            }
+            other => panic!("{other:?}"),
+        }
+        assert!(rep.warnings.is_empty(), "{:?}", rep.warnings);
+        // Graded with a fill that is not a fountain: opaque, with a warning.
+        let (doc, rep) = doc_of(record(1, 0.0, 3));
+        assert!(first_shape(&doc).effects.is_empty());
+        assert_eq!(first_shape(&doc).opacity, 1.0);
+        assert!(rep
+            .warnings
+            .iter()
+            .any(|w| w.contains("graded transparency")));
+        // A value out of range: opaque, with a warning.
+        let (doc, rep) = doc_of(record(0, 140.0, 3));
+        assert_eq!(first_shape(&doc).opacity, 1.0);
+        assert!(rep.warnings.iter().any(|w| w.contains("out of range")));
+        // A record of another length reads as before (the u16 at byte 10).
+        let mut op = vec![0u8; 10];
+        op.extend_from_slice(&u16s(&[250]));
+        let (doc, _) = doc_of(op);
+        assert!((first_shape(&doc).opacity - 0.75).abs() < 1e-9);
     }
 
     #[test]

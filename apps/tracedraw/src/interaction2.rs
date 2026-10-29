@@ -623,7 +623,7 @@ fn move_effect_node(effects: &mut [Effect], fill: &mut Fill, index: usize, d: Ve
     if let Fill::Mesh(m) = fill {
         if index >= 200 {
             if let Some(n) = m.nodes.get_mut(index - 200) {
-                n.pos += d;
+                n.translate(d);
             }
         }
     }

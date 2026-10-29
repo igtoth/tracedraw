@@ -6,6 +6,9 @@ full, row-by-row status.
 
 ## Unreleased
 
+- `.cdr` mesh fills: the node colours of a version 11 mesh are read column by column, as the file stores them, so the skin, face and clothes of the drawing in #896 show their shading where the program that saved it puts it, instead of dark streaks across them; the grid lines keep their curves (every node keeps its handles, `MeshNode::handles`) and the cells are drawn as curved (Coons) patches with the colour mixed pixel by pixel, no longer as flat quads with straight sides. The mesh's picture is worked out once per zoom and kept, so panning or dragging another object does not compute it again, and dragging a node moves its handles with it; a column or row added through a curved cell cuts the curve where the new node is (#896).
+- `.cdr` version 11 transparencies: the 120-byte transparency records of such files are read, uniform ones as the object's opacity (they were read as opaque) and graded ones as a transparency mask from the fountain fill of greys the record names; the drawing's shadow fades out, the eye highlights and the white highlights on the jacket show through (#896).
+
 ## 0.24.0 (2026-10-29)
 
 - Fit Objects to Path panel: Keep originals places copies and leaves the selected objects where they are; Group all objects groups what was placed; Treat subpaths as contiguous walks every subpath of the path one after another (on at first; off, only the first subpath, as before); Reference and Origin choose the point of each object that goes on the path (its center of rotation, or one of nine points of its bounding box, with or without the outline); Ignore initial rotation takes the objects' turn off them first; Modify rotation adds a uniform, progressive, jittered or progressive jittered turn, with a start angle, spin angle, revolutions, range and direction. The panel shows how many objects are selected and what the path is (#1091, #1196).

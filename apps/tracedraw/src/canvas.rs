@@ -2906,22 +2906,32 @@ pub fn draw_effect_nodes(app: &App, painter: &Painter) {
             pts.push(persp[0]);
             painter.add(egui::Shape::line(pts, egui::Stroke::new(1.0, blue)));
         }
-        // Mesh grid lines.
+        // Mesh grid lines: the curves between the nodes, as a few
+        // straight pieces each when they bend (plain segments stay cheap
+        // in an overlay redrawn every frame).
         if let tracedraw_core::Fill::Mesh(m) = &s.fill {
-            let cols = m.cols as usize + 1;
-            for r in 0..=m.rows as usize {
-                let pts: Vec<egui::Pos2> = (0..cols)
-                    .filter_map(|c| m.nodes.get(r * cols + c))
-                    .map(|n| app.view.to_screen(s.transform * n.pos))
+            use tracedraw_core::geometry::ParamCurve;
+            let curved = m.is_curved();
+            let line = |r: u32, c: u32, across: bool| {
+                let Some(edge) = m.edge(r, c, across) else {
+                    return;
+                };
+                let pieces = if curved { 8 } else { 1 };
+                let pts: Vec<egui::Pos2> = (0..=pieces)
+                    .map(|i| edge.eval(i as f64 / pieces as f64))
+                    .map(|p| app.view.to_screen(s.transform * p))
                     .collect();
                 painter.add(egui::Shape::line(pts, egui::Stroke::new(1.0, blue)));
+            };
+            for r in 0..=m.rows {
+                for c in 0..m.cols {
+                    line(r, c, true);
+                }
             }
-            for c in 0..cols {
-                let pts: Vec<egui::Pos2> = (0..=m.rows as usize)
-                    .filter_map(|r| m.nodes.get(r * cols + c))
-                    .map(|n| app.view.to_screen(s.transform * n.pos))
-                    .collect();
-                painter.add(egui::Shape::line(pts, egui::Stroke::new(1.0, blue)));
+            for c in 0..=m.cols {
+                for r in 0..m.rows {
+                    line(r, c, false);
+                }
             }
         }
         for (i, p) in nodes {
