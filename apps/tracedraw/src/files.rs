@@ -35,9 +35,121 @@ thread_local! {
 /// True in the browser build: no file system, downloads instead of saves.
 pub const WEB: bool = cfg!(target_arch = "wasm32");
 
-/// True in the Android app: no file picker yet, saves go to the app's
-/// documents folder (`android.rs`, docs/behavior/android.md).
+/// True in the Android app: files come and go through the system's
+/// document picker, named by [`document_path`] (`android.rs`,
+/// docs/behavior/android.md).
 pub const ANDROID: bool = cfg!(target_os = "android");
+
+/// The folder under which a document the Android picker returned is
+/// named: `/content/<its URI, escaped>/<its display name>`. The name
+/// gives the title and the type (its extension), the URI the bytes.
+pub const DOCUMENT_ROOT: &str = "/content";
+
+/// The path naming the document at the content URI `uri` shown as
+/// `name`: `/content/<uri escaped>/<name>`, so that `file_name` and
+/// `extension` work as for any file and [`read`] and [`write`] find the
+/// URI again with [`document_uri`].
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub fn document_path(uri: &str, name: &str) -> PathBuf {
+    let mut escaped = String::with_capacity(uri.len());
+    for c in uri.chars() {
+        match c {
+            '%' => escaped.push_str("%25"),
+            '/' => escaped.push_str("%2F"),
+            c => escaped.push(c),
+        }
+    }
+    let name = name.replace(['/', '\\'], "_");
+    let name = if name.trim().is_empty() {
+        "document".to_string()
+    } else {
+        name
+    };
+    PathBuf::from(DOCUMENT_ROOT).join(escaped).join(name)
+}
+
+/// The content URI of a path made by [`document_path`]; `None` for any
+/// other path.
+pub fn document_uri(path: &Path) -> Option<String> {
+    let rest = path
+        .to_str()?
+        .strip_prefix(DOCUMENT_ROOT)?
+        .strip_prefix('/')?;
+    let (escaped, _name) = rest.split_once('/')?;
+    let mut uri = String::with_capacity(escaped.len());
+    let mut chars = escaped.chars();
+    while let Some(c) = chars.next() {
+        if c == '%' {
+            let code: String = chars.by_ref().take(2).collect();
+            match code.as_str() {
+                "25" => uri.push('%'),
+                "2F" => uri.push('/'),
+                other => {
+                    uri.push('%');
+                    uri.push_str(other);
+                }
+            }
+        } else {
+            uri.push(c);
+        }
+    }
+    Some(uri)
+}
+
+/// True for a path made by [`document_path`].
+pub fn is_document_path(path: &Path) -> bool {
+    document_uri(path).is_some()
+}
+
+/// A picked document's name with an extension: its own, else one for the
+/// MIME type its provider gave (a photo called "IMG_1" of type image/jpeg
+/// becomes "IMG_1.jpg"), so the editor can tell the type.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub fn name_with_extension(name: &str, mime: &str) -> String {
+    if Path::new(name).extension().is_some() {
+        return name.to_string();
+    }
+    let ext = match mime.trim().to_ascii_lowercase().as_str() {
+        "application/pdf" => "pdf",
+        "image/png" => "png",
+        "image/jpeg" => "jpg",
+        "image/gif" => "gif",
+        "image/bmp" => "bmp",
+        "image/webp" => "webp",
+        "image/tiff" => "tiff",
+        "image/svg+xml" => "svg",
+        "text/plain" => "txt",
+        "text/csv" => "csv",
+        "application/json" => "json",
+        "application/postscript" => "eps",
+        _ => return name.to_string(),
+    };
+    format!("{name}.{ext}")
+}
+
+/// The MIME type the system's save picker is told for a file with the
+/// extension `ext` (any case); a plain byte stream for the formats it
+/// does not know, which keeps the name as typed.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub fn mime_for_extension(ext: &str) -> &'static str {
+    match ext.trim_start_matches('.').to_ascii_lowercase().as_str() {
+        "pdf" => "application/pdf",
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "bmp" => "image/bmp",
+        "webp" => "image/webp",
+        "tif" | "tiff" => "image/tiff",
+        "svg" => "image/svg+xml",
+        "txt" => "text/plain",
+        "csv" => "text/csv",
+        "html" | "htm" => "text/html",
+        "json" => "application/json",
+        "zip" => "application/zip",
+        "eps" | "ps" => "application/postscript",
+        _ => "application/octet-stream",
+    }
+}
 
 /// The folder the Save Drawing dialog starts in when the platform fixes
 /// it: the Android app's documents folder; `None` elsewhere (the last
@@ -70,7 +182,7 @@ fn android_documents_dir() -> PathBuf {
 /// and `..`); the absolute path when that fails (the file is gone);
 /// `path` as it is in a browser.
 pub fn canonical(path: &Path) -> PathBuf {
-    if WEB {
+    if WEB || is_document_path(path) {
         return path.to_path_buf();
     }
     std::fs::canonicalize(path)
@@ -119,6 +231,10 @@ pub fn read(path: impl AsRef<Path>) -> std::io::Result<Vec<u8>> {
                 )
             });
     }
+    #[cfg(target_os = "android")]
+    if let Some(uri) = document_uri(path) {
+        return crate::android::documents::read(&uri);
+    }
     std::fs::read(path)
 }
 
@@ -139,6 +255,10 @@ pub fn write(path: impl AsRef<Path>, bytes: impl AsRef<[u8]>) -> std::io::Result
             .unwrap_or_else(|| "download".into());
         return download(&name, bytes.as_ref());
     }
+    #[cfg(target_os = "android")]
+    if let Some(uri) = document_uri(path) {
+        return crate::android::documents::write(&uri, bytes.as_ref());
+    }
     std::fs::write(path, bytes)
 }
 
@@ -149,7 +269,9 @@ pub fn write_with(
     fill: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) -> std::io::Result<()> {
     let path = path.as_ref();
-    if WEB {
+    // A download, or a document the Android picker returned: gathered,
+    // then handed over whole.
+    if WEB || is_document_path(path) {
         let mut bytes = Vec::new();
         fill(&mut bytes)?;
         return write(path, bytes);
@@ -203,9 +325,15 @@ pub fn copy(from: impl AsRef<Path>, to: impl AsRef<Path>) -> std::io::Result<()>
     std::fs::copy(from, to).map(|_| ())
 }
 
-/// True when a file exists on disk (never in a browser).
+/// True when a file exists on disk (never in a browser). A document the
+/// Android picker returned counts as existing: the system holds it and
+/// asked about replacing it already.
 pub fn exists(path: impl AsRef<Path>) -> bool {
-    !WEB && path.as_ref().is_file()
+    if WEB {
+        return false;
+    }
+    let path = path.as_ref();
+    (ANDROID && is_document_path(path)) || path.is_file()
 }
 
 /// Write a file, creating its folder first (auto-backups).
@@ -228,7 +356,7 @@ pub fn remove(path: impl AsRef<Path>) -> std::io::Result<()> {
 }
 
 /// Choose a folder (desktop only; `None` when cancelled, in a browser or
-/// on Android, which has no folder picker yet).
+/// on Android, where the editor never needs a folder of its own).
 pub fn pick_folder() -> Option<PathBuf> {
     #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
     {
@@ -467,13 +595,124 @@ pub fn forget(path: &Path) {
     });
 }
 
-/// Run the dialogs that finished since the last frame (browser). Called
-/// once per frame before the interface is drawn.
+/// Run the dialogs that finished since the last frame (browser, Android).
+/// Called once per frame before the interface is drawn.
 pub fn run_finished(app: &mut App) {
+    #[cfg(target_os = "android")]
+    android_pickers::run_answers(app);
     let jobs: Vec<(Job, PathBuf)> = FINISHED.with(|f| std::mem::take(&mut *f.borrow_mut()));
     for (job, path) in jobs {
         job(app, path.clone());
         forget(&path);
+    }
+}
+
+/// The Android document picker (Storage Access Framework): a request
+/// shows the system's picker and remembers what to do with the answer,
+/// which the activity hands back on a later frame (`android.rs`).
+#[cfg(target_os = "android")]
+mod android_pickers {
+    use super::*;
+    use crate::android::documents;
+
+    /// What a request waits to do with the picked documents.
+    enum Waiting {
+        /// Run with the first document.
+        One(Job),
+        /// Run with every document.
+        Many(Box<dyn FnOnce(&mut App, Vec<PathBuf>)>),
+        /// Keep the first document for [`take_picked`] under this key.
+        Into(String),
+    }
+
+    thread_local! {
+        static WAITING: RefCell<HashMap<i32, Waiting>> = RefCell::new(HashMap::new());
+    }
+
+    fn wait(request: i32, waiting: Waiting) {
+        WAITING.with(|w| {
+            w.borrow_mut().insert(request, waiting);
+        });
+    }
+
+    fn forget(request: i32) {
+        WAITING.with(|w| {
+            w.borrow_mut().remove(&request);
+        });
+    }
+
+    /// Show the picker for one document (or several) and run `then`.
+    fn pick(multiple: bool, then: Waiting) {
+        let request = documents::next_request();
+        wait(request, then);
+        if !documents::open(request, multiple) {
+            forget(request);
+        }
+    }
+
+    pub fn pick_one(then: Job) {
+        pick(false, Waiting::One(then));
+    }
+
+    pub fn pick_many(then: Box<dyn FnOnce(&mut App, Vec<PathBuf>)>) {
+        pick(true, Waiting::Many(then));
+    }
+
+    pub fn pick_into(key: String) {
+        pick(false, Waiting::Into(key));
+    }
+
+    /// Show the picker for a place to save `name` and run `then` with the
+    /// document made there.
+    pub fn save(name: &str, then: Job) {
+        let ext = Path::new(name)
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("");
+        let request = documents::next_request();
+        wait(request, Waiting::One(then));
+        if !documents::create(request, mime_for_extension(ext), name) {
+            forget(request);
+        }
+    }
+
+    /// The paths of an answer's documents.
+    fn paths(answer: &documents::Answer) -> Vec<PathBuf> {
+        answer
+            .picked
+            .iter()
+            .map(|p| document_path(&p.uri, &name_with_extension(&p.name, &p.mime)))
+            .collect()
+    }
+
+    /// Run what the answers that arrived since the last frame were
+    /// waited for; a cancelled picker runs nothing.
+    pub fn run_answers(app: &mut App) {
+        for answer in documents::take_answers() {
+            let Some(waiting) = WAITING.with(|w| w.borrow_mut().remove(&answer.request)) else {
+                continue;
+            };
+            let paths = paths(&answer);
+            match waiting {
+                Waiting::One(job) => {
+                    if let Some(path) = paths.into_iter().next() {
+                        job(app, path);
+                    }
+                }
+                Waiting::Many(job) => {
+                    if !paths.is_empty() {
+                        job(app, paths);
+                    }
+                }
+                Waiting::Into(key) => {
+                    if let Some(path) = paths.into_iter().next() {
+                        PICKED.with(|p| {
+                            p.borrow_mut().insert(key, path);
+                        });
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -552,11 +791,11 @@ impl Dialog {
             let _ = app;
             self.web_pick(Box::new(then));
         }
-        // No file picker on Android yet: nothing is picked.
+        // The system's document picker; `then` runs when it answers.
         #[cfg(target_os = "android")]
         {
-            let _ = (app, then);
-            log::warn!("file dialogs are not available in the Android app yet");
+            let _ = app;
+            android_pickers::pick_one(Box::new(then));
         }
     }
 
@@ -574,18 +813,20 @@ impl Dialog {
                 then(app, paths);
             }
         }
-        #[cfg(any(target_arch = "wasm32", target_os = "android"))]
+        #[cfg(target_arch = "wasm32")]
         self.pick_file(app, move |app, p| then(app, vec![p]));
+        #[cfg(target_os = "android")]
+        {
+            let _ = app;
+            android_pickers::pick_many(Box::new(then));
+        }
     }
 
     /// Pick a file and keep its path for [`take_picked`]`(key)`.
     pub fn pick_into(self, key: &str) {
         let key = key.to_string();
         #[cfg(target_os = "android")]
-        {
-            let _ = key;
-            log::warn!("file dialogs are not available in the Android app yet");
-        }
+        android_pickers::pick_into(key);
         #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
         if let Some(path) = self.native_pick() {
             PICKED.with(|p| {
@@ -603,31 +844,59 @@ impl Dialog {
     }
 
     /// Choose where to save and run `then` with that path; `then` writes
-    /// with [`write`]. In a browser there is no dialog: the path is
-    /// `/download/<file name>` and the write becomes a download.
-    pub fn save_file(self, app: &mut App, then: impl FnOnce(&mut App, PathBuf)) {
+    /// with [`write`]. A save dialog natively, at once; in a browser there
+    /// is no dialog: the path is `/download/<file name>` and the write
+    /// becomes a download; on Android the system's picker asks where,
+    /// and `then` runs on a later frame with the document it made.
+    pub fn save_file(self, app: &mut App, then: impl FnOnce(&mut App, PathBuf) + 'static) {
+        #[cfg(target_os = "android")]
+        {
+            let _ = app;
+            let name = self.suggested_name();
+            android_pickers::save(&name, Box::new(then));
+        }
+        #[cfg(not(target_os = "android"))]
         if let Some(path) = self.save_path() {
             then(app, path);
         }
     }
 
+    /// The name offered for a new file: the one set, with the first
+    /// filter's extension when it has none.
+    #[cfg_attr(not(target_os = "android"), allow(dead_code))]
+    fn suggested_name(&self) -> String {
+        let name = self
+            .file_name
+            .clone()
+            .filter(|n| !n.trim().is_empty())
+            .unwrap_or_else(|| "drawing".into());
+        if Path::new(&name).extension().is_some() {
+            return name;
+        }
+        match self.filters.first().and_then(|(_, exts)| exts.first()) {
+            Some(ext) => format!("{name}.{ext}"),
+            None => name,
+        }
+    }
+
     /// The path to save to, or `None` when the user cancels: a save
     /// dialog natively, `/download/<file name>` in a browser (write it with
-    /// [`write`] to download it).
+    /// [`write`] to download it). On Android, where the picker answers on
+    /// a later frame (see [`Dialog::save_file`]), the few callers that
+    /// need a path at once get one in the app's own documents folder.
     pub fn save_path(self) -> Option<PathBuf> {
         if WEB {
             let name = self.file_name.unwrap_or_else(|| "download".into());
             return Some(PathBuf::from("/download").join(name));
         }
-        // No save dialog on Android yet: the file goes to the app's
-        // documents folder under the name the dialog would offer.
         #[cfg(target_os = "android")]
         {
-            let name = self.file_name.unwrap_or_else(|| "drawing".into());
+            let name = self.suggested_name();
             let dir = android_documents_dir();
             if let Err(e) = std::fs::create_dir_all(&dir) {
                 log::warn!("cannot create {}: {e}", dir.display());
             }
+            log::info!("saved without a picker to {}", dir.display());
             return Some(dir.join(name));
         }
         #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
@@ -719,6 +988,67 @@ mod tests {
         run_finished(&mut app);
         assert_eq!(app.status, "got /upload/t.txt");
         assert!(STORE.with(|s| s.borrow().get(&path).is_none()));
+    }
+
+    /// A document the Android picker returned is named by its URI and its
+    /// display name: the name gives the title and the type, the URI comes
+    /// back whole from the path, however many slashes and percent signs
+    /// it holds (#893).
+    #[test]
+    fn a_picked_document_keeps_its_uri_and_shows_its_name() {
+        let uri = "content://com.android.externalstorage.documents/document/primary%3ADrawings%2Flogo.cdr";
+        let path = document_path(uri, "logo.cdr");
+        assert_eq!(path.file_name().unwrap(), "logo.cdr");
+        assert_eq!(path.extension().unwrap(), "cdr");
+        assert!(path.starts_with(DOCUMENT_ROOT));
+        assert!(is_document_path(&path));
+        assert_eq!(document_uri(&path).as_deref(), Some(uri));
+        assert_eq!(canonical(&path), path);
+        // A name with a slash cannot become a folder; an empty one is named.
+        assert_eq!(
+            document_path(uri, "a/b.svg").file_name().unwrap(),
+            "a_b.svg"
+        );
+        assert_eq!(document_path(uri, "  ").file_name().unwrap(), "document");
+        // Ordinary paths are not documents.
+        assert_eq!(document_uri(Path::new("/home/a/content/x")), None);
+        assert_eq!(document_uri(Path::new("/content")), None);
+        assert!(!is_document_path(Path::new("/tmp/logo.cdr")));
+    }
+
+    /// A picked document without an extension gets one from its MIME
+    /// type, and the save picker is told the type of the name it saves.
+    #[test]
+    fn names_and_mime_types_follow_each_other() {
+        assert_eq!(name_with_extension("IMG_1", "image/jpeg"), "IMG_1.jpg");
+        assert_eq!(
+            name_with_extension("report", "application/pdf"),
+            "report.pdf"
+        );
+        assert_eq!(name_with_extension("logo.cdr", ""), "logo.cdr");
+        assert_eq!(
+            name_with_extension("notes", "application/x-unknown"),
+            "notes"
+        );
+        assert_eq!(mime_for_extension("pdf"), "application/pdf");
+        assert_eq!(mime_for_extension(".SVG"), "image/svg+xml");
+        assert_eq!(mime_for_extension("tdraw"), "application/octet-stream");
+        assert_eq!(mime_for_extension("cdr"), "application/octet-stream");
+        assert_eq!(
+            Dialog::new()
+                .add_filter("PDF", &["pdf"])
+                .set_file_name("Graphic1")
+                .suggested_name(),
+            "Graphic1.pdf"
+        );
+        assert_eq!(
+            Dialog::new()
+                .add_filter("PDF", &["pdf"])
+                .set_file_name("Graphic1.pdf")
+                .suggested_name(),
+            "Graphic1.pdf"
+        );
+        assert_eq!(Dialog::new().suggested_name(), "drawing");
     }
 
     #[test]

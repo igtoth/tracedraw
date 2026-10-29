@@ -4142,6 +4142,7 @@ dependencies = [
  "i_overlay",
  "image",
  "jiff",
+ "jni",
  "js-sys",
  "kurbo",
  "log",

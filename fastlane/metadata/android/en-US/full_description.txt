@@ -1,0 +1,17 @@
+TraceDraw is a free, open-source vector editor for illustration, page layout and print, written from scratch in Rust. This is the same editor as the desktop program, built for Android tablets: it works with a finger, a stylus, or a mouse and keyboard.
+
+Draw with rectangles, ellipses, polygons, stars, spirals, 71 common shapes, freehand, Bezier, pen, B-spline and calligraphic brush tools. Edit curves node by node, weld, trim and intersect shapes, and round, scallop or chamfer corners one by one.
+
+Set artistic and paragraph text with real fonts, text on a path, columns, tabs, bullets and drop caps, and fit paragraphs around objects.
+
+Fill with solid colours, linear, radial, conical and square gradients, patterns, textures and mesh fills; give outlines any width, dash and arrowhead. Work in RGB or CMYK with colour palettes and colour styles.
+
+Live effects stay editable: blends, contours, drop and block shadows, envelopes, extrusions, bevels, lenses, transparency and distortions.
+
+Lay out multi-page documents with layers, master layers, guides at any angle, grids and snapping, then export PDF (PDF/X-1a, X-3, X-4), SVG, EPS, DXF, EMF, PNG, JPEG, WebP and more. Opens and saves .cdr files, and imports PDF, AI, SVG, EPS, DXF, PSD, EMF and WMF. Files open and save through the system's file picker, so your drawings stay in your own folders or cloud storage.
+
+Make it yours: dock the toolbox, palette and bars on any side, set your own keyboard shortcuts, keep objects on the Shelf for any drawing. The interface speaks 18 languages.
+
+TraceDraw collects nothing and needs no account. It is free software under the MIT or Apache-2.0 license; the source code, the feature status and the issue tracker are at github.com/igtoth/tracedraw.
+
+This is an early release of the Android version: some features of the desktop program (printing, external bitmap editors) are not available, and bugs are expected. Please report them on the project's issue tracker.

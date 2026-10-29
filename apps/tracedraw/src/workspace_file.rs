@@ -391,7 +391,7 @@ impl App {
         crate::files::Dialog::new()
             .add_filter(tr("workspace.file_filter"), &[EXTENSION])
             .set_file_name(format!("workspace.{EXTENSION}"))
-            .save_file(self, |app, path| {
+            .save_file(self, move |app, path| {
                 let path = with_extension(path);
                 app.export_workspace_to(&path, parts);
             });

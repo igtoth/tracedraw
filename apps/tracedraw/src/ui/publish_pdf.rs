@@ -830,6 +830,26 @@ pub fn dialog(app: &mut App, ctx: &Context, st: &mut PublishState, close: &mut b
             return;
         }
         app.settings.publish_pdf = st.prefs.clone();
+        // On Android the system's picker asks where the PDF goes, with
+        // the file name of the form; it answers on a later frame.
+        if crate::files::ANDROID {
+            let name = st
+                .file
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| "Graphic1.pdf".into());
+            let st = st.clone();
+            crate::files::Dialog::new()
+                .add_filter("PDF (*.pdf)", &["pdf"])
+                .set_file_name(name)
+                .save_file(app, move |app, path| {
+                    app.status = match publish(app, &st, &path) {
+                        Ok(msg) => msg,
+                        Err(e) => trf("status.export_failed", &[("e", &e)]),
+                    };
+                });
+            return;
+        }
         if !crate::files::WEB {
             if let Some(dir) = st.file.parent() {
                 app.settings.last_dir = Some(dir.to_path_buf());
@@ -882,7 +902,10 @@ fn general(app: &App, ui: &mut Ui, st: &mut PublishState) {
     }
     row(ui, &tr("publish.file_name"), |ui| {
         ui.label(st.file.display().to_string());
-        if !crate::files::WEB && ui.button(tr("publish.browse")).clicked() {
+        // On Android the system's picker asks where the file goes when OK
+        // is pressed, so there is nothing to browse first.
+        if !crate::files::WEB && !crate::files::ANDROID && ui.button(tr("publish.browse")).clicked()
+        {
             let name = st
                 .file
                 .file_name()

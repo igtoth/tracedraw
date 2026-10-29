@@ -433,7 +433,7 @@ names is the version number.
 | macOS (Apple silicon, Intel) | `tracedraw-<version>-macos-arm64.dmg`, `tracedraw-<version>-macos-x86_64.dmg` (unsigned for now: right-click, Open) |
 | Linux (x86_64, arm64) | `.deb` (`_amd64` or `_arm64`), `tracedraw-<version>-linux-amd64.AppImage` or `-linux-arm64.AppImage`, `tracedraw-<version>-linux-x86_64.tar.gz` or `-linux-arm64.tar.gz` |
 | Web | no download: [open it in the browser](https://igtoth.github.io/tracedraw/), nothing to install |
-| Android (64-bit ARM) | not in the releases yet: `scripts/android/build.sh` builds a debug-signed APK, and CI keeps one with each run as the `android-apk` artifact (see [`docs/behavior/android.md`](docs/behavior/android.md): no file picker yet) |
+| Android (64-bit ARM) | not in the releases yet: `scripts/android/build.sh` builds a debug-signed APK and an App Bundle for Google Play, and CI keeps them with each run as the `android-apk` and `android-aab` artifacts (see [`docs/behavior/android.md`](docs/behavior/android.md) and [`docs/android-play.md`](docs/android-play.md)) |
 
 Each download includes `tracedraw-cli` next to the editor. Packaging sources
 are in [`packaging/`](packaging/); the browser build is described in

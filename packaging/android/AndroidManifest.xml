@@ -1,13 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The Android app (docs/behavior/android.md): the system's NativeActivity
-     loads libtracedraw.so, the editor compiled as a shared library, which
-     draws and reads touch input itself. The version code and name are
-     filled in by scripts/android/build.sh from Cargo.toml. -->
+<!-- The Android app (docs/behavior/android.md): TraceDrawActivity, a
+     NativeActivity written in packaging/android/java, loads libtracedraw.so,
+     the editor compiled as a shared library, which draws and reads touch
+     input itself; the activity's Java methods reach the system's document
+     picker and clipboard for it. The version code and name are filled in
+     by scripts/android/build.sh from Cargo.toml. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="dev.tracedraw.app">
 
-    <!-- Android 7.0 (API 24) and later; the build sets the target too. -->
-    <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="34" />
+    <!-- Android 7.0 (API 24) and later, built for Android 16 (API 36), the
+         level Google Play asks of new apps; the build links against the
+         same platform. -->
+    <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="36" />
 
     <!-- Tablets, phones, Chromebooks: a touch screen is not required (a
          mouse and keyboard work as on the desktop). -->
@@ -16,18 +20,20 @@
     <uses-feature android:glEsVersion="0x00030000" android:required="true" />
 
     <!-- Updates and the AI Drawing service (ureq) need the network;
-         nothing else does. -->
+         nothing else does. Files come and go through the system's document
+         picker (Storage Access Framework), which needs no storage
+         permission. -->
     <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:label="TraceDraw"
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="true"
-        android:hasCode="false"
+        android:hasCode="true"
         android:extractNativeLibs="true"
         android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen">
         <activity
-            android:name="android.app.NativeActivity"
+            android:name="dev.tracedraw.app.TraceDrawActivity"
             android:label="TraceDraw"
             android:exported="true"
             android:launchMode="singleTask"

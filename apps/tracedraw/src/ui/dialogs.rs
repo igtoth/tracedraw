@@ -3515,11 +3515,12 @@ pub fn export_with_file_dialog(app: &mut App, st: &ExportState) {
         .as_ref()
         .and_then(|p| p.file_stem().map(|s| s.to_string_lossy().to_string()))
         .unwrap_or_else(|| "Graphic1".into());
+    let st = st.clone();
     crate::files::Dialog::new()
         .add_filter(name, &[ext])
         .set_file_name(format!("{stem}.{ext}"))
-        .save_file(app, |app, path| {
-            match crate::export::export(app, &path, st) {
+        .save_file(app, move |app, path| {
+            match crate::export::export(app, &path, &st) {
                 Ok(msg) => app.status = msg,
                 Err(e) => app.status = format!("{}: {e}", tr("dialog.export_failed")),
             }

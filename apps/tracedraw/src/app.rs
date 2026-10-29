@@ -6250,7 +6250,9 @@ impl App {
     /// `backup_of_<name>`, next to it or in the chosen folder.
     fn backup_before_save(&mut self, path: &std::path::Path) {
         let b = &self.settings.backup;
-        if !b.before_save || !crate::files::exists(path) {
+        // A document the Android picker returned has no folder to copy
+        // into (the system holds it).
+        if !b.before_save || !crate::files::exists(path) || crate::files::is_document_path(path) {
             return;
         }
         let Some(name) = path.file_name() else {

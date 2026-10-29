@@ -1,0 +1,1 @@
+First release on Google Play: the editor for tablets, with files through the system picker and the system clipboard.

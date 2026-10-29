@@ -52,7 +52,8 @@ web-time = "1"
 jiff = "0.2"
 
 # The file dialogs: the system's natively, the browser's in the browser.
-# Android has no file picker yet (src/android.rs, docs/behavior/android.md).
+# Android uses the system's document picker through JNI (src/android.rs,
+# docs/behavior/android.md).
 [target.'cfg(not(target_os = "android"))'.dependencies]
 rfd.workspace = true
 
@@ -69,18 +70,20 @@ webp = { version = "0.3", default-features = false }
 
 # The system clipboard (text, images, copied files): the desktop builds;
 # a browser hands over clipboard contents in paste events only and
-# Android keeps the clipboard inside the app for now.
+# Android reaches the system's clipboard service through JNI.
 [target.'cfg(not(any(target_arch = "wasm32", target_os = "android")))'.dependencies]
 arboard = { version = "3", default-features = false, features = ["wayland-data-control"] }
 
 # The Android app (docs/behavior/android.md): the system loads the library
-# into its NativeActivity, eframe drives egui through winit's Android
-# backend and draws with wgpu. Exact versions: the glue must match the
-# one winit was built with.
+# into the app's activity, eframe drives egui through winit's Android
+# backend and draws with wgpu; the document picker, content URIs and the
+# clipboard are reached through JNI. Exact versions: the glue must match
+# the one winit was built with, and jni the one android-activity uses.
 [target.'cfg(target_os = "android")'.dependencies]
 eframe = { workspace = true, features = ["wgpu", "android-native-activity"] }
 android-activity = { version = "=0.6.1", features = ["native-activity"] }
 android_logger = "=0.15.1"
+jni = "=0.22.4"
 
 # Where the pointer is while files are dragged over the window: the
 # system drag sends no pointer moves (#1142).

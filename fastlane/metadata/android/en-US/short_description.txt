@@ -1,0 +1,1 @@
+Open-source vector editor: pages, curves, text, fills, effects, PDF and .cdr.

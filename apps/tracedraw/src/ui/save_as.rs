@@ -495,7 +495,7 @@ impl App {
         }
         // A folder typed in the path bar counts without Enter: Save
         // writes where the bar says (#900).
-        if !files::WEB {
+        if !files::WEB && !files::ANDROID {
             let typed = PathBuf::from(st.dir_text.trim());
             if st.dir_text.trim() != st.dir.display().to_string() && !st.dir_text.trim().is_empty()
             {
@@ -506,29 +506,42 @@ impl App {
                     return false;
                 }
             }
+            if !files::is_dir(&st.dir) {
+                st.note = Some(tr("dialog.no_such_folder"));
+                return false;
+            }
         }
-        if !files::WEB && !files::is_dir(&st.dir) {
-            st.note = Some(tr("dialog.no_such_folder"));
-            return false;
+        // On Android the system's picker chooses the place (and asks
+        // about replacing): the drawing is written when it answers, on
+        // a later frame, with the name and type chosen here.
+        if files::ANDROID {
+            self.apply_save_as_properties(st);
+            let cdr = st.cdr;
+            let version = st.version;
+            let (embed_profile, embed_fonts) = (st.embed_profile, st.embed_fonts);
+            let (tdraw_embed_fonts, tdraw_version) = (st.tdraw_embed_fonts, st.tdraw_version);
+            files::Dialog::new()
+                .add_filter(st.extension().to_uppercase(), &[st.extension()])
+                .set_file_name(st.file_name())
+                .save_file(self, move |app, path| {
+                    if cdr {
+                        app.cdr_embed_profile = embed_profile;
+                        app.cdr_embed_fonts = embed_fonts;
+                        app.save_cdr_to(path, version);
+                    } else {
+                        app.tdraw_embed_fonts = tdraw_embed_fonts;
+                        app.tdraw_version = Some(tdraw_version);
+                        app.save_to(path);
+                    }
+                });
+            return true;
         }
         let path = st.target();
         if files::exists(&path) && st.replace.as_ref() != Some(&path) {
             st.replace = Some(path);
             return false;
         }
-        // The properties go with the file (one undo step each).
-        if st.title.trim() != self.doc().title {
-            self.run(Command::SetTitle {
-                title: st.title.trim().to_string(),
-            });
-        }
-        let md = &self.doc().metadata;
-        if md.subject != st.subject || md.rating != st.rating {
-            let mut metadata = md.clone();
-            metadata.subject = st.subject.clone();
-            metadata.rating = st.rating.min(5);
-            self.run(Command::SetMetadata { metadata });
-        }
+        self.apply_save_as_properties(st);
         if !files::WEB {
             self.settings.last_dir = Some(st.dir.clone());
         }
@@ -546,6 +559,23 @@ impl App {
             }
         }
         true
+    }
+
+    /// The properties of the Save Drawing dialog go with the file (one
+    /// undo step each).
+    fn apply_save_as_properties(&mut self, st: &SaveAsState) {
+        if st.title.trim() != self.doc().title {
+            self.run(Command::SetTitle {
+                title: st.title.trim().to_string(),
+            });
+        }
+        let md = &self.doc().metadata;
+        if md.subject != st.subject || md.rating != st.rating {
+            let mut metadata = md.clone();
+            metadata.subject = st.subject.clone();
+            metadata.rating = st.rating.min(5);
+            self.run(Command::SetMetadata { metadata });
+        }
     }
 }
 
@@ -573,8 +603,8 @@ pub fn size_text(bytes: u64) -> String {
 pub fn dialog(app: &mut App, ctx: &Context, st: &mut SaveAsState, close: &mut bool) {
     window(ctx, tr("dialog.save_drawing")).show(ctx, |ui| {
         ui.set_width(WIDTH);
-        // No folders in a browser (a download) or on Android (the app's
-        // documents folder, named under the note).
+        // No folders in a browser (a download) or on Android (the
+        // system's picker chooses the place when Save is pressed).
         if !files::WEB && !files::ANDROID {
             folder_bar(ui, st);
             ui.add_space(4.0);
@@ -599,7 +629,7 @@ pub fn dialog(app: &mut App, ctx: &Context, st: &mut SaveAsState, close: &mut bo
             ui.label(RichText::new(tr("dialog.download_hint")).color(Tokens::text_dim()));
         }
         if files::ANDROID {
-            ui.label(RichText::new(st.dir.display().to_string()).color(Tokens::text_dim()));
+            ui.label(RichText::new(tr("dialog.android_save_hint")).color(Tokens::text_dim()));
         }
         ui.add_space(6.0);
         if let Some(path) = st.replace.clone() {

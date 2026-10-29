@@ -131,9 +131,19 @@ fn read_system_text_and_files() -> ClipboardContent {
     read_text_and_files()
 }
 
-#[cfg(any(target_arch = "wasm32", target_os = "android"))]
+#[cfg(target_arch = "wasm32")]
 fn read_system_text_and_files() -> ClipboardContent {
     ClipboardContent::default()
+}
+
+/// The system clipboard's text on Android, through the activity's
+/// clipboard service (files and pictures are not read there yet).
+#[cfg(target_os = "android")]
+fn read_system_text_and_files() -> ClipboardContent {
+    ClipboardContent {
+        text: crate::android::clipboard::text(),
+        ..Default::default()
+    }
 }
 
 #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
@@ -147,11 +157,16 @@ fn read_system_image() -> Option<image::RgbaImage> {
 }
 
 /// The system clipboard as seen by the browser build: empty, because
-/// browsers only hand clipboard contents to paste events. Empty on
-/// Android too, where the clipboard stays inside the app for now.
-#[cfg(any(target_arch = "wasm32", target_os = "android"))]
+/// browsers only hand clipboard contents to paste events.
+#[cfg(target_arch = "wasm32")]
 pub fn read_system() -> ClipboardContent {
     ClipboardContent::default()
+}
+
+/// The system clipboard on Android: its text (`android.rs`).
+#[cfg(target_os = "android")]
+pub fn read_system() -> ClipboardContent {
+    read_system_text_and_files()
 }
 
 /// Read text, files and image from the system clipboard; failures yield
@@ -210,11 +225,11 @@ pub fn write_text(text: &str) -> bool {
     arboard::Clipboard::new().is_ok_and(|mut cb| cb.set_text(text.to_string()).is_ok())
 }
 
-/// Nothing reaches the system clipboard on Android yet: text copied in
-/// the editor stays in egui's own clipboard, for pasting in the editor.
+/// Put text on the system clipboard through the activity's clipboard
+/// service (Android); whether it went there.
 #[cfg(target_os = "android")]
-pub fn write_text(_text: &str) -> bool {
-    false
+pub fn write_text(text: &str) -> bool {
+    crate::android::clipboard::set_text(text)
 }
 
 /// Put text on the system clipboard through egui (browser build).

@@ -403,10 +403,14 @@ jobs:
         with:
           path: site
 
-  # The Android app (docs/behavior/android.md): the editor as a shared
-  # library for 64-bit ARM in a debug-signed APK, built with the NDK and
-  # build tools the runner has. Kept with the run, not attached to the
-  # releases (its name does not match tracedraw-*).
+  # The Android app (docs/behavior/android.md, docs/android-play.md): the
+  # editor as a shared library for 64-bit ARM, built with the NDK and
+  # build tools the runner has, as a debug-signed APK to install by hand
+  # and as an App Bundle (.aab) for Google Play. The bundle is signed with
+  # the upload key when the ANDROID_KEYSTORE_* secrets are set (Play App
+  # Signing) and with the debug key otherwise. Both are kept with the
+  # run only, never attached to the releases (their names do not match
+  # tracedraw-*): uploading to Play is the owner's step.
   android:
     needs: test
     runs-on: ubuntu-latest
@@ -419,16 +423,30 @@ jobs:
         with:
           key: android
       - name: Build
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          # The newest NDK the runner has, the SDK's build tools and platform.
+          # The newest NDK the runner has, the SDK's build tools and the
+          # platform the app targets (installed when the runner lacks it).
           export ANDROID_NDK_HOME="${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}"
           echo "NDK $ANDROID_NDK_HOME, SDK $ANDROID_HOME"
+          if [ ! -f "$ANDROID_HOME/platforms/android-36/android.jar" ]; then
+            yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" >/dev/null
+          fi
           scripts/android/build.sh
-          ls -la dist-android/*.apk
+          ls -la dist-android/*.apk dist-android/*.aab
       - uses: actions/upload-artifact@v4
         with:
           name: android-apk
           path: dist-android/*.apk
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-aab
+          path: dist-android/*.aab
           if-no-files-found: error
 
   # GitHub Pages must be set to "GitHub Actions" (Settings > Pages); the

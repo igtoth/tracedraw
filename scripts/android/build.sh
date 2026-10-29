@@ -1,13 +1,24 @@
 #!/bin/sh
-# Build the Android app, a debug-signed APK for 64-bit ARM tablets and
-# phones, into ./dist-android (see docs/behavior/android.md).
+# Build the Android app for 64-bit ARM tablets and phones into
+# ./dist-android (see docs/behavior/android.md and docs/android-play.md):
+# a debug-signed APK to install by hand, and an Android App Bundle (.aab)
+# for Google Play, signed with the upload key when the release signing
+# variables are set and with the debug key otherwise.
 #
 # Needs: the Rust target (rustup target add aarch64-linux-android), an
 # Android NDK (r26 or later) in ANDROID_NDK_HOME, the Android build tools
-# (aapt2, zipalign, apksigner: an Android SDK in ANDROID_HOME, or the
-# android-sdk-build-tools and apksigner packages), an android.jar (the
-# SDK's newest platform, ANDROID_PLATFORM_JAR, or the android-sdk-platform-23
-# package) and keytool from a JDK for the debug key.
+# (aapt2, zipalign, apksigner, d8: an Android SDK in ANDROID_HOME, or the
+# packages on PATH), the android.jar of platform 36 (the SDK's
+# platforms/android-36, or ANDROID_PLATFORM_JAR), a JDK (javac, keytool,
+# jarsigner) and bundletool (BUNDLETOOL_JAR, `bundletool` on PATH, or it
+# is downloaded once into dist-android/tools).
+#
+# Release signing (Play App Signing, the upload key): set
+#   ANDROID_KEYSTORE_BASE64  the upload keystore (.jks or .p12), base64
+#   ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD
+# or ANDROID_KEYSTORE with the path of the keystore file instead of the
+# base64 text. Without them the bundle is signed with the debug key and
+# is for testing only (Play rejects it).
 set -e
 cd "$(dirname "$0")/../.."
 
@@ -20,8 +31,10 @@ fi
 host=$(ls "$NDK/toolchains/llvm/prebuilt" | head -n 1)
 TC="$NDK/toolchains/llvm/prebuilt/$host/bin"
 # The lowest Android version the app runs on (Android 7.0); the manifest
-# says the same.
+# says the same. PLATFORM is the version the app is built for
+# (targetSdkVersion in the manifest) and the android.jar it links against.
 API=24
+PLATFORM=36
 TARGET=aarch64-linux-android
 ABI=arm64-v8a
 
@@ -51,33 +64,51 @@ fi
 tool() {
     if [ -n "$bt" ] && [ -x "$bt/$1" ]; then echo "$bt/$1"; else command -v "$1"; fi
 }
-AAPT2=$(tool aapt2); ZIPALIGN=$(tool zipalign); APKSIGNER=$(tool apksigner)
-for t in "$AAPT2" "$ZIPALIGN" "$APKSIGNER"; do
-    [ -n "$t" ] || { echo "scripts/android/build.sh: aapt2, zipalign and apksigner are needed (Android build tools)" >&2; exit 1; }
+AAPT2=$(tool aapt2); ZIPALIGN=$(tool zipalign); APKSIGNER=$(tool apksigner); D8=$(tool d8)
+for t in "$AAPT2" "$ZIPALIGN" "$APKSIGNER" "$D8"; do
+    [ -n "$t" ] || { echo "scripts/android/build.sh: aapt2, zipalign, apksigner and d8 are needed (Android build tools)" >&2; exit 1; }
 done
-# The framework's resource table the manifest's attributes resolve against.
+for t in javac keytool jarsigner; do
+    command -v "$t" >/dev/null || { echo "scripts/android/build.sh: $t is needed (a JDK)" >&2; exit 1; }
+done
+# The framework the manifest's attributes resolve against and the Java
+# code compiles against: the platform the app targets.
 jar="${ANDROID_PLATFORM_JAR:-}"
 if [ -z "$jar" ] && [ -n "${sdk:-}" ]; then
-    jar=$(ls "$sdk"/platforms/android-*/android.jar 2>/dev/null | sort -V | tail -n 1)
+    jar="$sdk/platforms/android-$PLATFORM/android.jar"
 fi
-[ -n "$jar" ] || jar=/usr/lib/android-sdk/platforms/android-23/android.jar
-[ -f "$jar" ] || { echo "scripts/android/build.sh: no android.jar (ANDROID_PLATFORM_JAR)" >&2; exit 1; }
+[ -f "$jar" ] || { echo "scripts/android/build.sh: no android.jar for platform $PLATFORM (ANDROID_PLATFORM_JAR)" >&2; exit 1; }
 
 # The version from Cargo.toml: 0.19.10 is version code 19010.
 version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
 code=$(echo "$version" | awk -F. '{ printf "%d", $1 * 1000000 + $2 * 1000 + $3 }')
 
 out=dist-android
-rm -rf "$out/build" && mkdir -p "$out/build/lib/$ABI"
+rm -rf "$out/build" && mkdir -p "$out/build/lib/$ABI" "$out/build/classes" "$out/tools"
 # The library, without its symbol table (a third smaller).
 "$TC/llvm-strip" --strip-unneeded -o "$out/build/lib/$ABI/libtracedraw.so" "$so"
-# The icons and the manifest into an APK, then the library beside them.
+# The activity (packaging/android/java): Java 8 class files, then one
+# classes.dex for API 24 and later.
+javac -source 8 -target 8 -Xlint:-options -encoding UTF-8 -bootclasspath "$jar" \
+    -d "$out/build/classes" $(find packaging/android/java -name '*.java')
+"$D8" --release --min-api "$API" --lib "$jar" --output "$out/build" \
+    $(find "$out/build/classes" -name '*.class')
+[ -f "$out/build/classes.dex" ] || { echo "no classes.dex" >&2; exit 1; }
+# The icons and the manifest.
 "$AAPT2" compile --dir packaging/android/res -o "$out/build/res.zip"
-"$AAPT2" link -o "$out/build/unsigned.apk" -I "$jar" \
-    --manifest packaging/android/AndroidManifest.xml \
-    --version-code "$code" --version-name "$version" \
-    "$out/build/res.zip"
-(cd "$out/build" && zip -q -r unsigned.apk lib)
+link() {
+    # $1: the output, then the extra flags (--proto-format for the bundle).
+    o="$1"; shift
+    "$AAPT2" link -o "$o" -I "$jar" \
+        --manifest packaging/android/AndroidManifest.xml \
+        --min-sdk-version "$API" --target-sdk-version "$PLATFORM" \
+        --version-code "$code" --version-name "$version" \
+        "$@" "$out/build/res.zip"
+}
+
+# ----- the APK: resources, the code, the library; aligned; debug-signed -----
+link "$out/build/unsigned.apk"
+(cd "$out/build" && zip -q -r unsigned.apk lib classes.dex)
 "$ZIPALIGN" -f -p 4 "$out/build/unsigned.apk" "$out/build/aligned.apk"
 
 # A debug key, as the Android tools make for development builds: the APK
@@ -95,3 +126,71 @@ apk="$out/tracedraw-$version-android-$ABI-debug.apk"
     --ks-key-alias androiddebugkey --min-sdk-version "$API" --out "$apk" "$out/build/aligned.apk"
 "$APKSIGNER" verify --min-sdk-version "$API" "$apk"
 echo "Built $apk; install it with: adb install -r $apk"
+
+# ----- the App Bundle: the same parts laid out as bundletool wants them -----
+# bundletool: the jar given, the command on PATH, or the pinned release
+# downloaded once (checked against its SHA-256).
+BUNDLETOOL_VERSION=1.18.1
+BUNDLETOOL_SHA256=675786493983787ffa11550bdb7c0715679a44e1643f3ff980a529e9c822595c
+bundletool() {
+    if [ -n "${BUNDLETOOL_JAR:-}" ]; then
+        java -jar "$BUNDLETOOL_JAR" "$@"
+    elif command -v bundletool >/dev/null; then
+        command bundletool "$@"
+    else
+        local_jar="$out/tools/bundletool-all-$BUNDLETOOL_VERSION.jar"
+        if [ ! -f "$local_jar" ]; then
+            curl -sSL -o "$local_jar" \
+                "https://github.com/google/bundletool/releases/download/$BUNDLETOOL_VERSION/bundletool-all-$BUNDLETOOL_VERSION.jar"
+            echo "$BUNDLETOOL_SHA256  $local_jar" | sha256sum -c - >/dev/null \
+                || { echo "bundletool download does not match its checksum" >&2; rm -f "$local_jar"; exit 1; }
+        fi
+        java -jar "$local_jar" "$@"
+    fi
+}
+# The base module: the manifest and resources in protocol buffer form
+# (aapt2 --proto-format), the code under dex/, the library under lib/.
+mod="$out/build/module"
+rm -rf "$mod" && mkdir -p "$mod/manifest" "$mod/dex" "$mod/lib/$ABI"
+link "$out/build/proto.apk" --proto-format
+(cd "$out/build" && rm -rf proto && mkdir proto && cd proto && unzip -q ../proto.apk)
+mv "$out/build/proto/AndroidManifest.xml" "$mod/manifest/AndroidManifest.xml"
+mv "$out/build/proto/resources.pb" "$mod/resources.pb"
+[ -d "$out/build/proto/res" ] && mv "$out/build/proto/res" "$mod/res"
+cp "$out/build/classes.dex" "$mod/dex/classes.dex"
+cp "$out/build/lib/$ABI/libtracedraw.so" "$mod/lib/$ABI/libtracedraw.so"
+(cd "$mod" && zip -q -r ../base.zip .)
+aab_unsigned="$out/build/unsigned.aab"
+rm -f "$aab_unsigned"
+bundletool build-bundle --modules="$out/build/base.zip" --output="$aab_unsigned"
+
+# The signature: the upload key from the environment (Play App Signing),
+# else the debug key (a bundle for local testing with bundletool
+# build-apks, not for the store).
+rks=""; rks_pass=""; rks_alias=""; rks_key_pass=""; signed_with="debug key"
+if [ -n "${ANDROID_KEYSTORE_BASE64:-}" ] || [ -n "${ANDROID_KEYSTORE:-}" ]; then
+    if [ -n "${ANDROID_KEYSTORE:-}" ]; then
+        rks="$ANDROID_KEYSTORE"
+    else
+        rks="$out/build/upload.keystore"
+        echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$rks"
+    fi
+    rks_pass="${ANDROID_KEYSTORE_PASSWORD:-}"
+    rks_alias="${ANDROID_KEY_ALIAS:-}"
+    rks_key_pass="${ANDROID_KEY_PASSWORD:-$rks_pass}"
+    if [ -z "$rks_pass" ] || [ -z "$rks_alias" ]; then
+        echo "scripts/android/build.sh: ANDROID_KEYSTORE_PASSWORD and ANDROID_KEY_ALIAS go with the keystore" >&2
+        exit 1
+    fi
+    signed_with="upload key ($rks_alias)"
+    aab="$out/tracedraw-$version-android-release.aab"
+else
+    rks="$ks"; rks_pass=android; rks_alias=androiddebugkey; rks_key_pass=android
+    aab="$out/tracedraw-$version-android-debug.aab"
+fi
+cp "$aab_unsigned" "$aab"
+jarsigner -sigalg SHA256withRSA -digestalg SHA-256 \
+    -keystore "$rks" -storepass "$rks_pass" -keypass "$rks_key_pass" "$aab" "$rks_alias" >/dev/null
+rm -f "$out/build/upload.keystore"
+bundletool validate --bundle="$aab" >/dev/null
+echo "Built $aab (signed with the $signed_with)"

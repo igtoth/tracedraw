@@ -195,7 +195,7 @@ fn recent_row(app: &mut App, ui: &mut Ui, path: &std::path::Path) -> RecentActio
     const ROW: egui::Vec2 = egui::vec2(380.0, 56.0);
     const THUMB: egui::Vec2 = egui::vec2(64.0, 48.0);
     const X: f32 = 20.0;
-    let exists = path.exists();
+    let exists = crate::files::exists(path);
     let thumb = if exists {
         app.recent_thumbnail(ui.ctx(), path)
     } else {
@@ -231,8 +231,10 @@ fn recent_row(app: &mut App, ui: &mut Ui, path: &std::path::Path) -> RecentActio
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_default();
+    // A document the Android picker returned has a URI, not a folder.
     let folder = path
         .parent()
+        .filter(|_| !crate::files::is_document_path(path))
         .map(|d| d.display().to_string())
         .unwrap_or_default();
     let text_x = frame.right() + 10.0;
