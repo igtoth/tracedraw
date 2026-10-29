@@ -5586,6 +5586,11 @@ impl App {
     /// Open `path`; `password` opens a protected PDF (empty: none).
     pub fn open_path_with_password(&mut self, path: PathBuf, password: &str) {
         let ext = Self::file_kind(&path);
+        // A package's fonts, beside the drawing, before its text is laid
+        // out (#852).
+        if ext == "tdraw" {
+            self.load_package_fonts(&path);
+        }
         // Objects of a `.cdr` file left out because they could not be read.
         let mut unread = 0usize;
         // The version of an opened `.cdr` file: saving keeps it.
@@ -7271,6 +7276,12 @@ impl App {
     }
 
     /// File > Publish to PDF: the dialog for the active drawing.
+    /// File > Package: the Package Drawing dialog (#852).
+    pub fn package_dialog(&mut self) {
+        self.dialog =
+            crate::ui::dialogs::Dialog::Package(crate::ui::package_dialog::PackageState::new(self));
+    }
+
     pub fn publish_pdf(&mut self) {
         self.dialog = crate::ui::dialogs::Dialog::PublishPdf(Box::new(
             crate::ui::publish_pdf::PublishState::new(self),
@@ -8809,7 +8820,10 @@ mod tests {
         app.settings.check_updates = true;
         app.dialog = crate::ui::dialogs::Dialog::ConfirmClose;
         app.update_tick_desktop(10 * crate::updates::DAILY, None);
-        assert!(matches!(app.dialog, crate::ui::dialogs::Dialog::ConfirmClose));
+        assert!(matches!(
+            app.dialog,
+            crate::ui::dialogs::Dialog::ConfirmClose
+        ));
         app.dialog = crate::ui::dialogs::Dialog::None;
         app.update_tick_desktop(10 * crate::updates::DAILY, None);
         assert!(matches!(

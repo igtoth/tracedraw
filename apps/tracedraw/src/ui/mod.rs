@@ -71,6 +71,7 @@ pub mod options;
 pub mod options_global;
 pub mod outline_pen;
 pub mod overflow;
+pub mod package_dialog;
 pub mod palette;
 pub mod pdf_import_dialog;
 pub mod pdf_password;

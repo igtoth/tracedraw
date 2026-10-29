@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Package: File > Package, and a Package choice in Save As for TraceDraw files, put the drawing, the pictures it links to (in Pictures, with the copy's links pointing to them) and the font files its text uses (in Fonts, only fonts whose licence allows them to go with a document) into one folder, with a report of what went in and what could not and, if asked, a PDF. Links relative to the drawing are now read from its folder, so a package can move, and a drawing opened from a package uses the fonts of its Fonts folder for the session (#852).
+
 ## 0.20.0 (2026-10-28)
 
 - Variable fonts: the text follows the axis sliders (Text docker, and the button beside the font size) while they are dragged, so the weight, width or any other axis can be judged on the page. The text changed only when the slider was released. Releasing still keeps the value as one undo step (#870).

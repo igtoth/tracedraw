@@ -1962,6 +1962,10 @@ fn file_menu(app: &mut App, ui: &mut Ui) {
     if item(ui, "menu.file.publish_to_pdf", "", doc) {
         app.publish_pdf();
     }
+    // Folders are a desktop thing (#852).
+    if item(ui, "menu.file.package", "", doc && !crate::files::WEB) {
+        app.package_dialog();
+    }
     sep(ui);
     sub(ui, "menu.file.print_merge", |ui| {
         if item(ui, "menu.file.print_merge_create", "", doc) {

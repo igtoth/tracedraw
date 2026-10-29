@@ -1754,6 +1754,21 @@ impl FontSystem {
         std::borrow::Cow::Owned(out)
     }
 
+    /// The installed font file of the face that draws text set in
+    /// `family` in that weight and slant, found as [`FontSystem::face_file`]
+    /// finds it (any file, collections too): for copying the drawing's
+    /// fonts into a package (#852). `None` when only a stand-in draws the
+    /// text or the face did not come from a file.
+    pub fn face_path(&self, family: &str, bold: bool, italic: bool) -> Option<std::path::PathBuf> {
+        let db = self.db();
+        let (id, _) = self.own_face(&db, family, bold, italic)?;
+        match &db.face(id)?.source {
+            #[cfg(not(target_arch = "wasm32"))]
+            fontdb::Source::File(p) | fontdb::Source::SharedFile(p, _) => Some(p.clone()),
+            _ => None,
+        }
+    }
+
     /// The family came with a document (it is not installed).
     pub fn is_document_family(&self, family: &str) -> bool {
         self.document_families
@@ -6817,6 +6832,24 @@ mod tests {
         assert_eq!(file("Quicksand", true, false), Some(QUICKSAND.len()));
         assert_eq!(file("Quicksand Light", false, false), Some(QUICKSAND.len()));
         assert_eq!(file("Nowhere Sans", false, false), None);
+    }
+
+    /// A package copies the file a face came from (#852): the path of
+    /// the face that draws the text, none for a stand-in or a font loaded
+    /// from memory.
+    #[test]
+    fn the_path_of_a_face_is_the_file_it_came_from() {
+        let dir = std::env::temp_dir().join(format!("tracedraw-facepath-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("Selawik-Regular.ttf");
+        std::fs::write(&path, SELAWIK).expect("written");
+        let f = system_with(&[QUICKSAND]);
+        f.install_paths(std::slice::from_ref(&path));
+        assert_eq!(f.face_path("Selawik", false, false), Some(path.clone()));
+        assert_eq!(f.face_path("Selawik", true, true), Some(path));
+        assert_eq!(f.face_path("Quicksand", false, false), None, "from memory");
+        assert_eq!(f.face_path("Nowhere Sans", false, false), None);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Save As's Embed fonts: the installed faces the text uses go with
