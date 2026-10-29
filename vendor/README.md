@@ -79,18 +79,28 @@ change marked `TraceDraw:` in a comment.
     the axis's minimum (the pen lifted).
   - macOS (`platform_impl/macos/view.rs`): a mouse move or drag whose
     `NSEvent` subtype is a tablet point sends the same `Touch` with the
-    event's `pressure` (already 0 to 1).
+    event's `pressure` (already 0 to 1). `subtype` and `pressure` are
+    read only when the event's type is a mouse down, up, move or drag
+    (left, right, other) or a tablet point: the scroll wheel and the
+    magnify, smart magnify and rotate gestures go through the same
+    `mouse_motion`, and AppKit raises an exception for `subtype` on them.
   - `src/pen_pressure.rs`: the shared arithmetic, with its tests; it
     depends on nothing in the crate, and TraceDraw's tests include and
     run it (`winit_pen_pressure::tests`).
   - Only `Moved` touches are sent, never `Started` or `Ended`: egui-winit
     turns those into presses and releases of the primary button, which
-    the pen's real button events already send. A `Moved` touch of an
-    unknown id changes nothing in egui's touch state (no gesture starts
-    from it), and the pointer move it also makes repeats the one just
-    sent. Wayland is unchanged: winit does not bind the tablet protocol
+    the pen's real button events already send. The pointer move
+    egui-winit also makes of a `Moved` touch repeats the one just sent.
+    egui itself would still take any `Event::Touch` for a touch screen
+    for the rest of the session (it makes a touch state for the device,
+    and `has_touch_screen` turns on: lists scroll by dragging, windows
+    move from anywhere, labels lose drag selection), so TraceDraw's raw
+    input hook reads the force and then takes out every `Moved` touch
+    whose id never had a `Started` one (`pen::filter_raw_input`); a real
+    touch screen's touches start, move and end, and pass as they came.
+    Wayland is unchanged: winit does not bind the tablet protocol
     (`zwp_tablet_v2`), so a pen reaches the window there only through
-    XWayland (`tracedraw --x11`).
+    XWayland (`tracedraw --x11`, which picks winit's X11 backend).
 - The published crate's `examples/` and `tests/` stay as downloaded (the
   manifest lists them); they build in no gate.
 - Drop the copy and the `[patch.crates-io]` entry when a winit release

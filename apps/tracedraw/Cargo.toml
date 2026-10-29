@@ -66,6 +66,11 @@ windows-sys = { version = "0.52", features = ["Win32_Foundation", "Win32_UI_Wind
 # windowing layer drops (#1151). The same winit eframe uses.
 winit = { version = "0.30", default-features = false }
 
+# `--x11`: the window opened through X11 on a Wayland desktop (#850). The
+# same winit eframe uses.
+[target.'cfg(target_os = "linux")'.dependencies]
+winit = { version = "0.30", default-features = false, features = ["x11"] }
+
 # The browser build: WebGL canvas, file pickers and downloads through the
 # DOM, randomness and time from JavaScript.
 [target.'cfg(target_arch = "wasm32")'.dependencies]

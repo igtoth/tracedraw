@@ -2790,14 +2790,7 @@ impl App {
                         .pen_pressures(&points)
                         .and_then(|pr| crate::pen::PressureProfile::new(&points, pr))
                         .zip(self.default_stroke())
-                        .map(|(pen, st)| {
-                            pen.width_nodes(
-                                crate::pen::FREEHAND_NODES,
-                                st.width,
-                                crate::pen::FREEHAND_FLOOR,
-                                &|_| 1.0,
-                            )
-                        })
+                        .map(|(pen, st)| pen.freehand_widths(st.width))
                         .unwrap_or_default();
                     self.add_drawn_line_with_widths(path, widths);
                 }
@@ -2963,9 +2956,9 @@ impl App {
     }
 
     pub fn keyboard(&mut self, ctx: &egui::Context) {
-        // The pen's pressure, from this frame's touch events, before the
-        // tools see the pointer (#850).
-        self.pen_pressure = ctx.input(|i| crate::pen::pressure_after(&i.events, self.pen_pressure));
+        // The pen's pressure, which the raw input hook read from this
+        // frame's touch events, before the tools see the pointer (#850).
+        self.pen_pressure = crate::pen::pressure(ctx);
         // A macro's message, input box, modal form or error owns the
         // keyboard (see ui/macros_ui.rs); Esc stops a running macro.
         if self.macros.modal() {

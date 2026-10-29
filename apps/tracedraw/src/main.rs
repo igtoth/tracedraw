@@ -112,8 +112,6 @@ mod package;
 mod painterly_tool;
 mod palette;
 mod pen;
-// The pen pressure helper of the patched winit copy, with its tests
-// (vendor/README.md), so that the gate runs them.
 mod pen_look;
 mod perspective_draw;
 #[cfg(test)]
@@ -181,6 +179,8 @@ mod view;
 mod web;
 #[cfg(any(target_arch = "wasm32", test))]
 mod web_page;
+// The pen pressure helper of the patched winit copy, with its tests
+// (vendor/README.md), so that the gate runs them.
 #[cfg(all(test, not(target_arch = "wasm32")))]
 #[path = "../../../vendor/winit/src/pen_pressure.rs"]
 mod winit_pen_pressure;
@@ -219,6 +219,24 @@ fn main() -> eframe::Result<()> {
         mcp_link::bridge();
         return Ok(());
     }
+    // `tracedraw --x11`: the window opens through X11 (XWayland on a
+    // Wayland desktop), where a graphics tablet's pen moves the pointer;
+    // Wayland compositors send pens only over a protocol the windowing
+    // layer does not speak yet (#850, see docs/behavior/pen-pressure.md).
+    // Without an X server there is no window to open: say so and stop,
+    // rather than let every renderer fail in turn.
+    #[cfg(target_os = "linux")]
+    let x11 = args.iter().any(|a| a == "--x11");
+    #[cfg(target_os = "linux")]
+    if x11 && std::env::var_os("DISPLAY").is_none_or(|d| d.is_empty()) {
+        // The log writes to stderr as well as to its file.
+        log::error!(
+            "tracedraw --x11: DISPLAY is not set, so there is no X server to open the window \
+             on. --x11 needs XWayland (on a Wayland desktop) or an X11 session; start \
+             TraceDraw without --x11 to use Wayland."
+        );
+        std::process::exit(2);
+    }
     // The system font list is read while the window and the graphics
     // driver start up, not after them: the editor needs it (the font
     // lists, the text in drawings) and used to wait for it alone.
@@ -227,14 +245,6 @@ fn main() -> eframe::Result<()> {
     // checks): straight into a plain window at the default size.
     let plain = args.iter().any(|a| a == "--no-splash")
         || std::env::var("TRACEDRAW_NO_SPLASH").is_ok_and(|v| !v.is_empty() && v != "0");
-    // `tracedraw --x11`: the window opens through X11 (XWayland on a
-    // Wayland desktop), where a graphics tablet's pen moves the pointer;
-    // Wayland compositors send pens only over a protocol the windowing
-    // layer does not speak yet (#850, see docs/behavior/pen-pressure.md).
-    #[cfg(target_os = "linux")]
-    if args.iter().any(|a| a == "--x11") {
-        std::env::remove_var("WAYLAND_DISPLAY");
-    }
     // The first file opens as the window starts, the others after it.
     let mut files = files.into_iter();
     let open_path = files.next();
@@ -304,6 +314,15 @@ fn main() -> eframe::Result<()> {
         // would lose (#1151).
         #[cfg(windows)]
         event_loop_builder: Some(Box::new(system_chars::install)),
+        // `--x11`: the window through X11, chosen from the windowing
+        // layer, so the environment children inherit stays as it was.
+        #[cfg(target_os = "linux")]
+        event_loop_builder: x11.then(|| -> eframe::EventLoopBuilderHook {
+            Box::new(|builder| {
+                use winit::platform::x11::EventLoopBuilderExtX11 as _;
+                builder.with_x11();
+            })
+        }),
         ..Default::default()
     };
     // A panic before the window opens is this renderer failing (eframe's
@@ -617,9 +636,13 @@ const RENDERER_CHECK: &str = "renderer-check";
 
 impl eframe::App for Shell {
     /// Characters the windowing layer lost (input methods on Windows,
-    /// #1151) join the frame's input as typed text.
-    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+    /// #1151) join the frame's input as typed text. A graphics tablet's
+    /// pressure is read from the touch events, and the pen's touches that
+    /// only move are taken out, so egui never takes the pen for a touch
+    /// screen (#850, see `pen.rs`).
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
         system_chars::take_into(raw_input);
+        pen::filter_raw_input(ctx, raw_input);
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {

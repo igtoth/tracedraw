@@ -11,8 +11,72 @@
 //! pressures recorded along a freehand drag into width nodes of the
 //! stroke's outline.
 
+use std::collections::HashSet;
+
 use tracedraw_core::geometry::Point;
-use tracedraw_core::style::WidthNode;
+use tracedraw_core::style::{Stroke, WidthNode};
+
+/// The pen's touches, kept between frames in the context's memory: the
+/// pressure they carried last, and the touches that began with a start
+/// (a finger on a touch screen, a pen on Windows).
+#[derive(Debug, Clone, Default)]
+struct PenInput {
+    pressure: Option<f32>,
+    started: HashSet<(u64, u64)>,
+}
+
+fn pen_input_id() -> egui::Id {
+    egui::Id::new("tracedraw-pen-input")
+}
+
+/// Read the pen's pressure from the touch events of a frame's raw input,
+/// before egui sees them (the app's raw input hook), and take out the
+/// touches that only ever move: a pen on X11 and macOS (see
+/// `vendor/README.md`). egui counts any touch as a touch screen for the
+/// rest of the session (drag-scrolled lists, windows dragged anywhere, no
+/// text selection by dragging), and the pen already moves the pointer and
+/// presses its button. A touch that started passes as it came, so a real
+/// touch screen still reaches egui. A frame without touches costs one
+/// scan of its events.
+pub fn filter_raw_input(ctx: &egui::Context, raw: &mut egui::RawInput) {
+    if !raw
+        .events
+        .iter()
+        .any(|e| matches!(e, egui::Event::Touch { .. }))
+    {
+        return;
+    }
+    ctx.data_mut(|d| {
+        let state = d.get_temp_mut_or_default::<PenInput>(pen_input_id());
+        state.pressure = pressure_after(&raw.events, state.pressure);
+        raw.events.retain(|e| match e {
+            egui::Event::Touch {
+                device_id,
+                id,
+                phase,
+                ..
+            } => {
+                let key = (device_id.0, id.0);
+                match phase {
+                    egui::TouchPhase::Start => {
+                        state.started.insert(key);
+                        true
+                    }
+                    egui::TouchPhase::Move => state.started.contains(&key),
+                    egui::TouchPhase::End | egui::TouchPhase::Cancel => state.started.remove(&key),
+                }
+            }
+            _ => true,
+        });
+    });
+}
+
+/// The pen's pressure as of the last frame's touch events (see
+/// `filter_raw_input`), 0 to 1; `None` with the mouse.
+pub fn pressure(ctx: &egui::Context) -> Option<f32> {
+    ctx.data(|d| d.get_temp::<PenInput>(pen_input_id()))
+        .and_then(|s| s.pressure)
+}
 
 /// The pen pressure after `events`, starting from `current`: a touch
 /// that begins or moves with a force sets it, a touch that ends or is
@@ -34,10 +98,11 @@ pub fn pressure_after(events: &[egui::Event], current: Option<f32>) -> Option<f3
     pressure
 }
 
-/// The pressures recorded along a freehand drag, one per point. They are
-/// only kept while every point of the drag had one: a drag that starts
-/// without pressure (the mouse) records nothing, and one that loses it
-/// midway drops what it had, so the stroke falls back to its usual width.
+/// The pressures recorded along a freehand drag, one per point. A drag
+/// that starts without pressure (the mouse) records nothing. Once a drag
+/// has pressure, a point that comes without a reading (a frame with no
+/// pen event, the pen lifting off) repeats the last one, so a single
+/// missing reading never takes the pressure off the whole stroke.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct PenStroke {
     pressures: Vec<f32>,
@@ -52,11 +117,16 @@ impl PenStroke {
     }
 
     /// Another point was added to the drag, which now has `points`
-    /// points, with `pressure` at it.
+    /// points, with `pressure` at it (the last reading when `None`).
     pub fn record(&mut self, points: usize, pressure: Option<f32>) {
-        match pressure {
-            Some(p) if self.pressures.len() + 1 == points => self.pressures.push(p),
-            _ => self.pressures.clear(),
+        let Some(&last) = self.pressures.last() else {
+            return;
+        };
+        if self.pressures.len() + 1 == points {
+            self.pressures.push(pressure.unwrap_or(last));
+        } else {
+            // Points the record missed: it no longer matches the drag.
+            self.pressures.clear();
         }
     }
 
@@ -145,6 +215,21 @@ impl PressureProfile {
             })
             .collect()
     }
+
+    /// The width nodes of a Freehand line drawn with the pen, `width` its
+    /// outline width: `FREEHAND_NODES + 1` nodes from `FREEHAND_FLOOR` of
+    /// the width at no pressure to the full width, never thinner than a
+    /// hairline (or than `width`, when the outline is thinner still).
+    pub fn freehand_widths(&self, width: f64) -> Vec<WidthNode> {
+        let min = Stroke::HAIRLINE.min(width).max(0.0);
+        let mut nodes = self.width_nodes(FREEHAND_NODES, width, FREEHAND_FLOOR, &|_| 1.0);
+        for n in &mut nodes {
+            if n.left + n.right < min {
+                *n = WidthNode::symmetric(n.at, min);
+            }
+        }
+        nodes
+    }
 }
 
 /// Width nodes a freehand pen stroke gets along its path: enough to
@@ -152,7 +237,8 @@ impl PressureProfile {
 pub const FREEHAND_NODES: usize = 24;
 
 /// How wide a freehand pen stroke is at no pressure, as a share of the
-/// outline width: a touch so light leaves a hairline, not nothing.
+/// outline width; `freehand_widths` keeps it at a hairline at least, so a
+/// touch so light leaves a line, not nothing.
 pub const FREEHAND_FLOOR: f64 = 0.05;
 
 #[cfg(test)]
@@ -196,22 +282,134 @@ mod tests {
     }
 
     #[test]
-    fn a_stroke_keeps_pressures_only_while_every_point_has_one() {
+    fn a_stroke_repeats_the_last_pressure_for_a_point_without_one() {
         let mut s = PenStroke::start(Some(0.5));
         s.record(2, Some(0.6));
         s.record(3, Some(0.7));
         assert_eq!(s.pressures(3), Some(&[0.5, 0.6, 0.7][..]));
         assert_eq!(s.pressures(2), None, "a count that does not match");
-        // A point without pressure drops the record for good.
+        // A point without a reading (the pen lifting, a frame with no pen
+        // event) keeps the pressure the stroke had.
         s.record(4, None);
-        assert_eq!(s.pressures(4), None);
+        assert_eq!(s.pressures(4), Some(&[0.5, 0.6, 0.7, 0.7][..]));
         s.record(5, Some(0.9));
-        assert_eq!(s.pressures(5), None);
+        assert_eq!(s.pressures(5), Some(&[0.5, 0.6, 0.7, 0.7, 0.9][..]));
+        // Points the record missed: it no longer matches the drag.
+        s.record(7, Some(0.4));
+        assert_eq!(s.pressures(7), None);
         // The mouse never records anything.
         let mut m = PenStroke::start(None);
         m.record(2, Some(0.5));
         assert_eq!(m.pressures(2), None);
         assert_eq!(PenStroke::start(Some(0.5)).pressures(1), None);
+    }
+
+    #[test]
+    fn a_freehand_line_is_never_thinner_than_a_hairline() {
+        let points: Vec<Point> = (0..=10).map(|i| Point::new(i as f64 * 10.0, 0.0)).collect();
+        let pressures = vec![0.0; points.len()];
+        let prof = PressureProfile::new(&points, &pressures).expect("profile");
+        // 5 % of a 0.2 mm outline would be 0.01 mm.
+        let nodes = prof.freehand_widths(0.2);
+        assert_eq!(nodes.len(), FREEHAND_NODES + 1);
+        for n in &nodes {
+            assert!((n.left + n.right - Stroke::HAIRLINE).abs() < 1e-12, "{n:?}");
+            assert!((n.left - n.right).abs() < 1e-12);
+        }
+        // Wide outlines keep the 5 % floor, full pressure the full width.
+        let nodes = prof.freehand_widths(4.0);
+        assert!((nodes[0].left + nodes[0].right - 0.2).abs() < 1e-9);
+        let full = PressureProfile::new(&points, &vec![1.0; points.len()]).expect("profile");
+        assert!(full
+            .freehand_widths(0.2)
+            .iter()
+            .all(|n| (n.left + n.right - 0.2).abs() < 1e-9));
+        // An outline thinner than a hairline is not made wider.
+        let thin = prof.freehand_widths(0.05);
+        assert!(thin.iter().all(|n| (n.left + n.right - 0.05).abs() < 1e-12));
+    }
+
+    fn touch_at(phase: egui::TouchPhase, id: u64, force: Option<f32>) -> egui::Event {
+        egui::Event::Touch {
+            device_id: egui::TouchDeviceId(2),
+            id: egui::TouchId(id),
+            phase,
+            pos: egui::pos2(40.0, 40.0),
+            force,
+        }
+    }
+
+    /// One frame of `events` through the raw input hook's filter, as the
+    /// window runs it; the events that reached egui.
+    fn run(ctx: &egui::Context, events: Vec<egui::Event>) -> Vec<egui::Event> {
+        let mut raw = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(200.0, 200.0),
+            )),
+            events,
+            ..Default::default()
+        };
+        filter_raw_input(ctx, &mut raw);
+        let passed = raw.events.clone();
+        let mut out = ctx.run_ui(raw, |_| {});
+        out.textures_delta.clear();
+        passed
+    }
+
+    /// A pen on X11 and macOS sends touches that only move: its pressure
+    /// is read, and egui never sees them, so it does not switch to touch
+    /// screen mode for the session (#850).
+    #[test]
+    fn pen_touches_that_only_move_give_pressure_and_never_reach_egui() {
+        use egui::TouchPhase::*;
+        let ctx = egui::Context::default();
+        assert_eq!(pressure(&ctx), None);
+        for f in [0.2, 0.6, 0.8] {
+            let passed = run(
+                &ctx,
+                vec![
+                    egui::Event::PointerMoved(egui::pos2(40.0, 40.0)),
+                    touch_at(Move, 0, Some(f)),
+                ],
+            );
+            assert_eq!(
+                passed,
+                vec![egui::Event::PointerMoved(egui::pos2(40.0, 40.0))]
+            );
+            assert_eq!(pressure(&ctx), Some(f));
+            assert!(!ctx.input(|i| i.any_touches()));
+            assert!(!ctx.input(|i| i.has_touch_screen()));
+        }
+        // The pen lifted: no force, no pressure.
+        run(&ctx, vec![touch_at(Move, 0, None)]);
+        assert_eq!(pressure(&ctx), None);
+        assert!(!ctx.input(|i| i.has_touch_screen()));
+        // A frame without touches changes nothing.
+        run(&ctx, vec![touch_at(Move, 0, Some(0.4))]);
+        run(&ctx, Vec::new());
+        assert_eq!(pressure(&ctx), Some(0.4));
+    }
+
+    /// A real touch screen's touches start, move and end: they reach egui
+    /// as they came, and a pen's moving touches beside them still do not.
+    #[test]
+    fn a_touch_screen_still_reaches_egui() {
+        use egui::TouchPhase::*;
+        let ctx = egui::Context::default();
+        let start = touch_at(Start, 5, None);
+        assert_eq!(run(&ctx, vec![start.clone()]), vec![start]);
+        assert!(ctx.input(|i| i.has_touch_screen()));
+        assert!(ctx.input(|i| i.any_touches()));
+        let moved = touch_at(Move, 5, None);
+        let pen = touch_at(Move, 0, Some(0.5));
+        assert_eq!(run(&ctx, vec![moved.clone(), pen]), vec![moved]);
+        assert!(ctx.input(|i| i.any_touches()));
+        let end = touch_at(End, 5, None);
+        assert_eq!(run(&ctx, vec![end.clone()]), vec![end]);
+        assert!(!ctx.input(|i| i.any_touches()));
+        // The touch is over: a stray move of its id no longer passes.
+        assert!(run(&ctx, vec![touch_at(Move, 5, None)]).is_empty());
     }
 
     #[test]

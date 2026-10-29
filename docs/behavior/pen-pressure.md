@@ -10,10 +10,10 @@ platform gives no pressure, draw exactly as before: an even width.
 
 The windowing layer (winit 0.30 through egui-winit 0.36) reports a pen as
 a touch with a force in 0..1 (`egui::Event::Touch { force }`), and at the
-same time moves the pointer and presses its primary button. TraceDraw
-reads the force of the touch events of each frame (`pen.rs`,
-`pressure_after`) before the tools see the pointer; a touch that ends, or
-one with no force, clears it. The published winit does this on Windows
+same time moves the pointer and presses its primary button. TraceDraw's
+raw input hook reads the force of the touch events of each frame
+(`pen.rs`, `filter_raw_input`) before egui and the tools see them; a
+touch that ends, or one with no force, clears it. The published winit does this on Windows
 only; TraceDraw's patched copy (`vendor/winit`, see `vendor/README.md`)
 adds X11 and macOS. What each platform gives:
 
@@ -28,14 +28,23 @@ adds X11 and macOS. What each platform gives:
 On X11 and macOS the patched copy sends the pressure as a touch of phase
 Move only, never Start or End (those would press the button a second
 time through egui-winit), with no force once the reading is at the
-axis's minimum, so a lifted pen leaves no stale pressure.
+axis's minimum, so a lifted pen leaves no stale pressure. The hook then
+takes out every moving touch whose id never started, so egui never sees
+the pen as a touch: egui switches to touch screen mode for the whole
+session on any touch (lists scroll by dragging, windows move from
+anywhere, text in labels cannot be selected by dragging). A real touch
+screen's touches start, move and end, and reach egui as before.
 
 So on a Wayland desktop (Ubuntu's default) the stylus does nothing until
-the window runs through X11: `tracedraw --x11` unsets `WAYLAND_DISPLAY`
-for the start, so the window opens on XWayland, where the pen moves the
-pointer, clicks and reports its pressure (XWayland lists the pen as an
-XInput 2 device with the same `Abs Pressure` valuator). The same happens
-with `env -u WAYLAND_DISPLAY tracedraw`.
+the window runs through X11: `tracedraw --x11` asks the windowing layer
+for its X11 backend, so the window opens on XWayland, where the pen moves
+the pointer, clicks and reports its pressure (XWayland lists the pen as
+an XInput 2 device with the same `Abs Pressure` valuator). The
+environment is left as it is, so programs TraceDraw starts (a browser
+for a link) still run on Wayland. Without `DISPLAY` (no XWayland, no X
+server) `--x11` stops at once with a message saying it needs XWayland or
+an X11 session, and exits with status 2. `env -u WAYLAND_DISPLAY
+tracedraw` opens the window on XWayland too.
 
 A pen on Wayland itself needs the tablet protocol in winit; the browser
 needs the pointer events' pressure in eframe's web layer. Neither needs a
@@ -50,17 +59,19 @@ drive the width too; the option below turns it off.
   draws like the mouse.
 - Along a Freehand or Brush Strokes drag, the pressure at every sampled
   point is recorded with it. A drag that starts without pressure records
-  nothing; one whose pressure stops partway drops its record, so the
-  stroke gets its usual even width.
+  nothing, so the stroke gets its usual even width. Once a drag has
+  pressure, a point that comes without a reading (a move with no force,
+  the pen lifting off) takes the last reading again.
 - The recorded pressures are read by distance along the drawn polyline
   (before smoothing), and each width node averages the samples within
   half a node spacing of it, so the jitter of the pen's readings does
   not reach the outline; a node with no sample that close takes the
   nearest one.
 - Freehand: the new line's outline gets 25 width nodes (`t` = 0, 1/24,
-  ..., 1), each `w x (0.05 + 0.95 x pressure)` wide, `w` the default
-  outline width: a feather-light touch leaves a hairline, full pressure
-  the full width. A line that continues a selected curve keeps that
+  ..., 1), each `w x (0.05 + 0.95 x pressure)` wide and never less than
+  a hairline (0.0762 mm, or `w` when the outline is thinner still), `w`
+  the default outline width: a feather-light touch leaves a hairline,
+  full pressure the full width. A line that continues a selected curve keeps that
   curve's outline. The width nodes are the outline's variable width:
   the Shape tool edits the curve, and the Properties panel the outline,
   as for any variable-width line.
@@ -74,8 +85,9 @@ drive the width too; the option below turns it off.
   calligraphic nib and the sprayer's objects keep their size.
 - Apply to curve (Brush Strokes panel) has no pen: it builds the stroke
   as before.
-- Nothing is done per frame beyond reading the frame's touch events and
-  pushing one number per sampled point: the stroke's preview stays the
+- Nothing is done per frame beyond reading the frame's touch events (a
+  frame without any costs one scan of its events) and pushing one number
+  per sampled point: the stroke's preview stays the
   thin line, and the widths are built once, on release.
 
 ## Checks
@@ -91,9 +103,17 @@ drive the width too; the option below turns it off.
   is 6 mm wide at the start and less than 2/5 of that at the end; the
   mouse's stroke takes its widths from the speed, as before (test
   `pen_pressure_drives_an_expression_stroke`).
+- Given a pen that sends only moving touches (X11, macOS), pressed at
+  0.9 then 0.2 with one reading without a force in the middle and none
+  as it lifts, then the Freehand line is still wide then thin, no width
+  node is below a hairline, and egui reports no touch screen (test
+  `a_pen_that_only_sends_moving_touches_sets_the_width`).
 - The pressure follows the touch events (a start or move with a force
   sets it, a move without one, an end or a cancel clears it, readings
-  are clamped to 0..1), a stroke keeps its pressures only while every
-  point has one, and the profile averages the samples within the window
-  and scales the width between the floor and the full width (tests in
-  `pen.rs`).
+  are clamped to 0..1); moving touches that never started give their
+  pressure and never reach egui, whose `has_touch_screen` stays off,
+  while a touch screen's start, moves and end reach it; a stroke repeats
+  its last pressure at a point without one; a Freehand line is never
+  thinner than a hairline; and the profile averages the samples within
+  the window and scales the width between the floor and the full width
+  (tests in `pen.rs`).

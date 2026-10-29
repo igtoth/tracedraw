@@ -17,7 +17,7 @@ fn frame(ctx: &egui::Context, app: &mut App, events: Vec<Event>, modifiers: Modi
     // The keys held come first, as the windowing layer sends them.
     let mut all = vec![Event::ModifiersChanged(modifiers)];
     all.extend(events);
-    let input = egui::RawInput {
+    let mut input = egui::RawInput {
         screen_rect: Some(egui::Rect::from_min_size(
             Pos2::ZERO,
             egui::vec2(1600.0, 1000.0),
@@ -25,6 +25,8 @@ fn frame(ctx: &egui::Context, app: &mut App, events: Vec<Event>, modifiers: Modi
         events: all,
         ..Default::default()
     };
+    // As the window's raw input hook does (main.rs).
+    crate::pen::filter_raw_input(ctx, &mut input);
     let mut out = ctx.run_ui(input, |ui| crate::ui::root(app, ui));
     out.textures_delta.clear();
 }
@@ -13488,4 +13490,98 @@ fn pen_pressure_drives_an_expression_stroke() {
     let mouse = last_stroke(&app);
     assert!(!mouse.widths.is_empty());
     assert_ne!(mouse.widths, st.widths);
+}
+
+/// A primary drag from `from` to `to` with a graphics tablet's pen on X11
+/// or macOS: the patched windowing layer sends the pressure as touches
+/// that only move (never a start or an end), beside the pointer's own
+/// moves and button; `pressure(t)` is the reading at `t` along the drag,
+/// `None` where the pen gives none (the reading at the axis's minimum).
+/// The last frame lifts the pen: a touch without a force, then the
+/// button's release.
+fn pen_drag_moves_only(
+    ctx: &egui::Context,
+    app: &mut App,
+    from: Pos2,
+    to: Pos2,
+    pressure: &dyn Fn(f32) -> Option<f32>,
+) {
+    let touch = |pos: Pos2, force: Option<f32>| Event::Touch {
+        device_id: egui::TouchDeviceId(9),
+        id: egui::TouchId(14),
+        phase: egui::TouchPhase::Move,
+        pos,
+        force,
+    };
+    let mods = Modifiers::NONE;
+    frame(
+        ctx,
+        app,
+        vec![
+            Event::PointerMoved(from),
+            touch(from, pressure(0.0)),
+            button(from, true, PointerButton::Primary, mods),
+        ],
+        mods,
+    );
+    let steps = 20;
+    for i in 1..=steps {
+        let t = i as f32 / steps as f32;
+        let p = from + (to - from) * t;
+        frame(
+            ctx,
+            app,
+            vec![Event::PointerMoved(p), touch(p, pressure(t))],
+            mods,
+        );
+    }
+    frame(
+        ctx,
+        app,
+        vec![
+            touch(to, None),
+            button(to, false, PointerButton::Primary, mods),
+        ],
+        mods,
+    );
+    frame(ctx, app, Vec::new(), mods);
+}
+
+/// A pen on X11 or macOS reports its pressure through touches that only
+/// move, and no force as it lifts (#850): the Freehand line still follows
+/// the pressure, a single reading without a force in the middle keeps
+/// the stroke's pressure, and egui never takes the pen for a touch screen
+/// (its lists would then scroll by dragging for the rest of the session).
+#[test]
+fn a_pen_that_only_sends_moving_touches_sets_the_width() {
+    let (ctx, mut app, _) = setup();
+    app.set_tool(Tool::Freehand);
+    app.select(Vec::new());
+    let from = app.view.to_screen(Point::new(80.0, 100.0));
+    let to = app.view.to_screen(Point::new(180.0, 100.0));
+    let before = shape_count(&app);
+    pen_drag_moves_only(&ctx, &mut app, from, to, &|t| {
+        if (t - 0.5).abs() < 1e-3 {
+            None
+        } else if t < 0.5 {
+            Some(0.9)
+        } else {
+            Some(0.2)
+        }
+    });
+    assert_eq!(shape_count(&app), before + 1);
+    let st = last_stroke(&app);
+    assert!(!st.widths.is_empty(), "the outline follows the pressure");
+    let (start, end) = end_widths(&st.widths);
+    assert!(start > end * 2.0, "{start} vs {end}");
+    assert!(
+        st.widths
+            .iter()
+            .all(|n| n.left + n.right >= tracedraw_core::Stroke::HAIRLINE.min(st.width) - 1e-12),
+        "{:?}",
+        st.widths
+    );
+    assert!(app.pen_pressure.is_none(), "the pen was lifted");
+    assert!(!ctx.input(|i| i.has_touch_screen()));
+    assert!(!ctx.input(|i| i.any_touches()));
 }

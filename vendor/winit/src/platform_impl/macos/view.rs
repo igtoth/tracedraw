@@ -7,7 +7,7 @@ use objc2::rc::{Retained, WeakId};
 use objc2::runtime::{AnyObject, Sel};
 use objc2::{declare_class, msg_send_id, mutability, sel, ClassType, DeclaredClass};
 use objc2_app_kit::{
-    NSApplication, NSCursor, NSEvent, NSEventPhase, NSEventSubtype, NSResponder,
+    NSApplication, NSCursor, NSEvent, NSEventPhase, NSEventSubtype, NSEventType, NSResponder,
     NSTextInputClient, NSTrackingRectTag, NSView, NSViewFrameDidChangeNotification,
 };
 use objc2_foundation::{
@@ -1089,8 +1089,24 @@ impl WinitView {
         // goes out as a touch that moves with a force, as the Windows
         // backend reports a pen; never as a touch that starts or ends,
         // which egui-winit would turn into a second press of the button
-        // (vendor/README.md).
-        if unsafe { event.subtype() } == NSEventSubtype::TabletPoint {
+        // (vendor/README.md). `subtype` and `pressure` are read only from
+        // mouse and tablet events: AppKit raises an exception for them on
+        // the scroll and gesture events that also come through here.
+        let pointer = matches!(
+            unsafe { event.r#type() },
+            NSEventType::LeftMouseDown
+                | NSEventType::LeftMouseUp
+                | NSEventType::RightMouseDown
+                | NSEventType::RightMouseUp
+                | NSEventType::OtherMouseDown
+                | NSEventType::OtherMouseUp
+                | NSEventType::MouseMoved
+                | NSEventType::LeftMouseDragged
+                | NSEventType::RightMouseDragged
+                | NSEventType::OtherMouseDragged
+                | NSEventType::TabletPoint
+        );
+        if pointer && unsafe { event.subtype() } == NSEventSubtype::TabletPoint {
             let pressure = f64::from(unsafe { event.pressure() });
             let force = crate::pen_pressure::normalized(pressure, 0.0, 1.0).map(Force::Normalized);
             self.queue_event(WindowEvent::Touch(Touch {

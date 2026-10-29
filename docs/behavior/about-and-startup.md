@@ -69,10 +69,12 @@ the version on the right).
 - Options > General > Show the splash screen at start-up turns it off.
   `--no-splash` or `TRACEDRAW_NO_SPLASH=1` skip it for one run and open a
   plain 1600 x 950 window (automation and the visual checks use this).
-- `--x11` (Linux) unsets `WAYLAND_DISPLAY` for the start, so the window
-  opens through X11 (XWayland on a Wayland desktop), where a graphics
-  tablet's pen moves the pointer and reports its pressure (#850, see
-  `pen-pressure.md`).
+- `--x11` (Linux) opens the window through the windowing layer's X11
+  backend (XWayland on a Wayland desktop), where a graphics tablet's pen
+  moves the pointer and reports its pressure (#850, see
+  `pen-pressure.md`); the environment is left unchanged. With no
+  `DISPLAY` it prints that `--x11` needs XWayland or an X11 session and
+  exits with status 2 instead of trying every renderer.
 - The browser build has no splash: the page shows its own loader.
 
 ## One window for every start (#646)
