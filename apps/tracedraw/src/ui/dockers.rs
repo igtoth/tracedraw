@@ -989,8 +989,42 @@ fn properties(app: &mut App, ui: &mut Ui) {
                     let chosen = app.text_selection_span();
                     if let Some(sp) = chosen.as_ref().or(spans.first()) {
                         let u = app.text_units();
+                        // The styles set on the characters, after the
+                        // weight and slant (#1209).
+                        let mut styles: Vec<String> = Vec::new();
+                        if sp.bold {
+                            styles.push(tr("docker.bold"));
+                        }
+                        if sp.italic {
+                            styles.push(tr("docker.italic"));
+                        }
+                        for (style, key) in [
+                            (sp.underline, "docker.underline"),
+                            (sp.strikethrough, "docker.strikethrough"),
+                        ] {
+                            if style.is_on() {
+                                styles.push(format!(
+                                    "{} ({})",
+                                    tr(key),
+                                    crate::ui::text_docker::line_style_name(style)
+                                ));
+                            }
+                        }
+                        if sp.all_caps {
+                            styles.push(tr("docker.all_caps"));
+                        }
+                        if sp.enclosed {
+                            styles.push(tr("docker.enclosed"));
+                        }
+                        if sp.overprint_fill.unwrap_or(first.overprint_fill) {
+                            styles.push(tr("docker.overprint_fill"));
+                        }
+                        if sp.overprint_outline.unwrap_or(first.overprint_outline) {
+                            styles.push(tr("docker.overprint_outline"));
+                        }
+                        let styles = styles.iter().map(|s| format!(" {s}")).collect::<String>();
                         ui.label(format!(
-                            "{} {} {}{}{}",
+                            "{} {} {}{}",
                             sp.font_family,
                             crate::ui::field::format_number(
                                 u.from_pt(sp.size_pt),
@@ -999,16 +1033,7 @@ fn properties(app: &mut App, ui: &mut Ui) {
                                 Some(2)
                             ),
                             u.short(),
-                            if sp.bold {
-                                format!(" {}", tr("docker.bold"))
-                            } else {
-                                String::new()
-                            },
-                            if sp.italic {
-                                format!(" {}", tr("docker.italic"))
-                            } else {
-                                String::new()
-                            }
+                            styles
                         ));
                     }
                     ui.label(

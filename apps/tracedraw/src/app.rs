@@ -4755,7 +4755,7 @@ impl App {
                 self.text_size_pt = (seen * 100.0).round() / 100.0;
                 self.text_bold = sp.bold;
                 self.text_italic = sp.italic;
-                self.text_underline = sp.underline;
+                self.text_underline = sp.underline.is_on();
             }
             // The alignment of the paragraph at the caret.
             let index = self.paragraph_range(id).map_or(0, |(a, _)| {

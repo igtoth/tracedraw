@@ -2743,10 +2743,10 @@ fn object_style_json(
 /// next bit up its italic.
 fn style_flags(sp: &TextSpan) -> u32 {
     let mut f = weight_code(sp);
-    if sp.underline {
+    if sp.underline.is_on() {
         f |= 1 << 18;
     }
-    if sp.strikethrough {
+    if sp.strikethrough.is_on() {
         f |= 1 << 24;
     }
     f
@@ -2791,8 +2791,8 @@ fn character_json(sp: &TextSpan, fill: Option<&Fill>) -> String {
     let font = format!(
         r#"{{"font":"{family}","size":"{size}","weight":"{weight}","italic":"{}","underline":"{}","strikeout":"{}"}}"#,
         u8::from(sp.italic),
-        u8::from(sp.underline),
-        u8::from(sp.strikethrough)
+        u8::from(sp.underline.is_on()),
+        u8::from(sp.strikethrough.is_on())
     );
     let fill = match fill.and_then(fill_colour) {
         Some(c) => format!(
@@ -2842,8 +2842,8 @@ fn full_text_style(
             (sp.size_pt * 254000.0 / 72.0).round() as i64,
             weight_member(sp),
             u8::from(sp.italic),
-            u8::from(sp.underline),
-            u8::from(sp.strikethrough),
+            u8::from(sp.underline.is_on()),
+            u8::from(sp.strikethrough.is_on()),
         ),
         None => ("Arial".to_string(), 254000 * 24 / 72, 64, 0, 0, 0),
     };

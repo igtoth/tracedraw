@@ -1746,8 +1746,8 @@ impl<'a> Ctx<'a> {
         if let Some(f) = style.flags {
             span.bold = f.bold();
             span.italic = f.italic();
-            span.underline = f.underline();
-            span.strikethrough = f.strikethrough();
+            span.underline = f.underline().into();
+            span.strikethrough = f.strikethrough().into();
             weight = f.weight();
         }
         if let Some(b) = style.bold {
@@ -1759,10 +1759,10 @@ impl<'a> Ctx<'a> {
             span.italic = i;
         }
         if let Some(u) = style.underline {
-            span.underline = u;
+            span.underline = u.into();
         }
         if let Some(t) = style.strikethrough {
-            span.strikethrough = t;
+            span.strikethrough = t.into();
         }
         if let Some(cs) = style.char_spacing {
             if cs != 0.0 {

@@ -183,7 +183,7 @@ pub fn parse_rtf(bytes: &[u8]) -> Result<ImportedText, String> {
         let style = TextSpan {
             bold: st.bold,
             italic: st.italic,
-            underline: st.underline,
+            underline: st.underline.into(),
             ..TextSpan::new("", family, st.size_pt)
         };
         match out.spans.last_mut() {
@@ -489,8 +489,8 @@ pub fn parse_docx_xml(xml: &str) -> Result<ImportedText, String> {
                     match prop.tag_name().name() {
                         "b" => span.bold = on,
                         "i" => span.italic = on,
-                        "u" => span.underline = on,
-                        "strike" => span.strikethrough = on,
+                        "u" => span.underline = on.into(),
+                        "strike" => span.strikethrough = on.into(),
                         "sz" => {
                             if let Some(v) = val.and_then(|v| v.parse::<f64>().ok()) {
                                 span.size_pt = (v / 2.0).max(1.0);

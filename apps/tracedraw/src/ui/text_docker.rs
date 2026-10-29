@@ -7,10 +7,11 @@
 //!   the settings of the selected text (the rows ticked, when the boxes
 //!   are shown), and the eye shows or hides the boxes at the right of the
 //!   rows.
-//! - Character: font, style and size; range kerning and underline; the
-//!   text fill, the characters' background and the text outline, each a
-//!   kind, a colour and "..." for its full settings; the expander shows
-//!   strikethrough, the characters' offsets and angle, the OpenType
+//! - Character: font, style and size; range kerning and the underline
+//!   style; the text fill, the characters' background and the text
+//!   outline, each a kind, a colour and "..." for its full settings; the
+//!   expander shows the characters' offsets and angle, the strikethrough
+//!   style, All caps, Enclosed, the overprints (#1209), the OpenType
 //!   features and, for a variable font, a slider for each of its axes.
 //! - Paragraph: the six alignments (none, left, centre, right, full and
 //!   forced justification), line spacing in % of the character height,
@@ -34,7 +35,8 @@ use crate::ui::propbar::{pic_button, Pic};
 use crate::ui::tips::RichTip;
 use egui::{Color32, Rect, Sense, Stroke, Ui, Vec2};
 use tracedraw_core::{
-    Color, Fill, LeadingUnit, ParagraphStyle, ShapeKind, TextAlign, TextSpan, VerticalAlign,
+    Color, Fill, LeadingUnit, LineStyle, ParagraphStyle, Shape, ShapeKind, TextAlign, TextSpan,
+    VerticalAlign,
 };
 
 /// The sections, by the names kept in the preferences.
@@ -545,7 +547,7 @@ pub(crate) fn apply_to_default(app: &mut App) {
         app.text_size_pt = sp.size_pt * app.text_scale(t.id);
     }
     if underline {
-        app.text_underline = sp.underline;
+        app.text_underline = sp.underline.is_on();
     }
     if alignment {
         app.text_align = align;
@@ -775,19 +777,20 @@ fn character(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) 
             edit_spans(app, move |sp| sp.tracking_pct = kern);
         }
         row_check(app, ui, "kerning");
-        let on = app.text_underline;
-        if ui
-            .add_sized(
-                [26.0, 22.0],
-                egui::Button::selectable(on, egui::RichText::new("U").underline().size(14.0)),
-            )
-            .rich_tip(tr("toolbar.underline"))
-            .clicked()
-        {
-            app.text_underline = !on;
-            let u = !on;
+        // The underline style (#1209); with no text selected, the list
+        // sets whether new text is underlined.
+        let style = span
+            .as_ref()
+            .map_or(LineStyle::from(app.text_underline), |s| s.underline);
+        ui.label(egui::RichText::new("U").underline().size(14.0))
+            .rich_tip(crate::ui::tips::pair(
+                "toolbar.underline",
+                "toolbar.underline_desc",
+            ));
+        if let Some(picked) = line_style_list(ui, "docker_underline", style, "toolbar.underline") {
+            app.text_underline = picked.is_on();
             if span.is_some() {
-                edit_spans(app, move |sp| sp.underline = u);
+                edit_spans(app, move |sp| sp.underline = picked);
             }
         }
         row_check(app, ui, "underline");
@@ -888,9 +891,7 @@ fn character(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) 
     ui.horizontal_wrapped(|ui| {
         crate::ui::propbar::char_offset_part(app, ui);
     });
-    sc |= ui
-        .checkbox(&mut sp.strikethrough, tr("docker.strikethrough"))
-        .changed();
+    character_styles(app, ui, &sp, first);
     // Wrapped, so the feature buttons never widen the docker.
     ui.horizontal_wrapped(|ui| {
         ui.label(tr("docker.opentype"));
@@ -914,12 +915,137 @@ fn character(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) 
     });
     font_axes(app, ui, &sp);
     if sc {
-        let (strike, features) = (sp.strikethrough, sp.features.clone());
-        edit_spans(app, move |s| {
-            s.strikethrough = strike;
-            s.features = features.clone();
-        });
+        let features = sp.features.clone();
+        edit_spans(app, move |s| s.features = features.clone());
     }
+}
+
+/// The name of an underline or strike line style (#1209).
+pub(crate) fn line_style_name(s: LineStyle) -> String {
+    tr(match s {
+        LineStyle::None => "docker.line_none",
+        LineStyle::SingleThin => "docker.line_single_thin",
+        LineStyle::SingleThick => "docker.line_single_thick",
+        LineStyle::DoubleThin => "docker.line_double_thin",
+        LineStyle::SingleThinWord => "docker.line_single_thin_word",
+        LineStyle::SingleThickWord => "docker.line_single_thick_word",
+        LineStyle::DoubleThinWord => "docker.line_double_thin_word",
+    })
+}
+
+/// A list of the line styles (#1209) showing `current`, with the tip of
+/// `tip_key`; the style picked, if one was.
+fn line_style_list(ui: &mut Ui, id: &str, current: LineStyle, tip_key: &str) -> Option<LineStyle> {
+    let mut picked = None;
+    egui::ComboBox::from_id_salt(id)
+        .width(150.0)
+        .selected_text(line_style_name(current))
+        .show_ui(ui, |ui| {
+            for s in LineStyle::ALL {
+                if ui
+                    .selectable_label(s == current, line_style_name(s))
+                    .clicked()
+                    && s != current
+                {
+                    picked = Some(s);
+                }
+            }
+        })
+        .response
+        .rich_tip(crate::ui::tips::pair(tip_key, &format!("{tip_key}_desc")));
+    picked
+}
+
+/// Where the control `name` of the character styles was drawn last, for
+/// tests.
+#[cfg(test)]
+pub(crate) fn style_control_rect(ctx: &egui::Context, name: &str) -> Option<Rect> {
+    ctx.data(|d| d.get_temp(egui::Id::new(("style_control_rect", name.to_string()))))
+}
+
+#[cfg(test)]
+fn record_style_control(ui: &Ui, name: &str, rect: Rect) {
+    ui.ctx().data_mut(|d| {
+        d.insert_temp(
+            egui::Id::new(("style_control_rect", name.to_string())),
+            rect,
+        )
+    });
+}
+
+#[cfg(not(test))]
+fn record_style_control(_ui: &Ui, _name: &str, _rect: Rect) {}
+
+/// The character styles of the Character expander (#1209): the strike
+/// line list, the All caps and Enclosed buttons and the two overprint
+/// boxes. Each change is one undo step on the selected text; an overprint
+/// box set as the object's overprint leaves the characters following
+/// the object.
+fn character_styles(app: &mut App, ui: &mut Ui, sp: &TextSpan, first: Option<&Shape>) {
+    ui.horizontal(|ui| {
+        ui.label(tr("docker.strikethrough"));
+        if let Some(picked) = line_style_list(
+            ui,
+            "docker_strikethrough",
+            sp.strikethrough,
+            "docker.strikethrough",
+        ) {
+            edit_spans(app, move |s| s.strikethrough = picked);
+        }
+    });
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing.x = 2.0;
+        let caps = ui
+            .add(
+                egui::Button::selectable(sp.all_caps, egui::RichText::new("AB").size(12.0))
+                    .min_size(Vec2::new(26.0, 22.0)),
+            )
+            .rich_tip(crate::ui::tips::keyed("docker.all_caps"));
+        record_style_control(ui, "all_caps", caps.rect);
+        if caps.clicked() {
+            let on = !sp.all_caps;
+            edit_spans(app, move |s| s.all_caps = on);
+        }
+        let enclosed = ui
+            .add(
+                egui::Button::selectable(sp.enclosed, egui::RichText::new("A").size(11.0))
+                    .min_size(Vec2::new(26.0, 22.0)),
+            )
+            .rich_tip(crate::ui::tips::keyed("docker.enclosed"));
+        // The ring of the enclosed button, round its letter.
+        ui.painter().circle_stroke(
+            enclosed.rect.center(),
+            8.0,
+            Stroke::new(1.0, ui.visuals().text_color()),
+        );
+        record_style_control(ui, "enclosed", enclosed.rect);
+        if enclosed.clicked() {
+            let on = !sp.enclosed;
+            edit_spans(app, move |s| s.enclosed = on);
+        }
+    });
+    ui.horizontal_wrapped(|ui| {
+        let object_fill = first.is_some_and(|t| t.overprint_fill);
+        let object_outline = first.is_some_and(|t| t.overprint_outline);
+        let mut fill = sp.overprint_fill.unwrap_or(object_fill);
+        let resp = ui
+            .checkbox(&mut fill, tr("docker.overprint_fill"))
+            .rich_tip(crate::ui::tips::keyed("docker.overprint_fill"));
+        record_style_control(ui, "overprint_fill", resp.rect);
+        if resp.changed() {
+            let v = (fill != object_fill).then_some(fill);
+            edit_spans(app, move |s| s.overprint_fill = v);
+        }
+        let mut outline = sp.overprint_outline.unwrap_or(object_outline);
+        let resp = ui
+            .checkbox(&mut outline, tr("docker.overprint_outline"))
+            .rich_tip(crate::ui::tips::keyed("docker.overprint_outline"));
+        record_style_control(ui, "overprint_outline", resp.rect);
+        if resp.changed() {
+            let v = (outline != object_outline).then_some(outline);
+            edit_spans(app, move |s| s.overprint_outline = v);
+        }
+    });
 }
 
 /// The axes of a variable font (cached for the fonts as they are now).
@@ -1674,6 +1800,115 @@ mod tests {
         assert_eq!(app.engine.history_labels().0.len(), steps + 1);
         app.undo();
         assert_eq!(wght(&app), Some(650.0));
+    }
+
+    /// A press and release of the pointer at `pos` on the docker, over
+    /// the frames egui needs, then a frame that settles.
+    fn press_at(ctx: &egui::Context, app: &mut App, pos: egui::Pos2) {
+        let input = |events: Vec<egui::Event>| egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(360.0, 900.0),
+            )),
+            events,
+            ..Default::default()
+        };
+        let button = |pressed: bool| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        for events in [
+            vec![egui::Event::PointerMoved(pos)],
+            vec![button(true)],
+            vec![button(false)],
+            Vec::new(),
+        ] {
+            let mut out = ctx.run_ui(input(events), |ui| text_docker(app, ui));
+            out.textures_delta.clear();
+        }
+    }
+
+    /// The character styles (#1209): All caps and Enclosed switch on and
+    /// off with a click each, the overprint boxes set the characters'
+    /// own overprint (none again when set as the object's), the line
+    /// style lists name every style and set it through the span edit,
+    /// and each change is one undo step.
+    #[test]
+    fn character_styles_switch_on_the_selected_text() {
+        let mut app = App::headless();
+        let id = app
+            .new_shape(ShapeKind::Text {
+                spans: vec![TextSpan::new("Styled", "Selawik", 24.0)],
+                origin: Point::new(10.0, 10.0),
+                frame: None,
+                align: TextAlign::Left,
+                para: ParagraphStyle::default(),
+                on_path: None,
+            })
+            .expect("text");
+        app.select(vec![id]);
+        let ctx = crate::theme::ui_context();
+        ctx.data_mut(|d| d.insert_temp(egui::Id::new(("text_docker_more", "character")), true));
+        press_at(&ctx, &mut app, egui::pos2(-10.0, -10.0));
+        let span = |app: &App| match app.doc().find_shape(id).map(|s| s.kind.clone()) {
+            Some(ShapeKind::Text { spans, .. }) => spans[0].clone(),
+            _ => panic!("text"),
+        };
+        let rect = |name: &str| style_control_rect(&ctx, name).expect(name);
+        let steps = app.engine.history_labels().0.len();
+
+        press_at(&ctx, &mut app, rect("all_caps").center());
+        assert!(span(&app).all_caps);
+        assert_eq!(app.engine.history_labels().0.len(), steps + 1);
+        press_at(&ctx, &mut app, rect("all_caps").center());
+        assert!(!span(&app).all_caps);
+        press_at(&ctx, &mut app, rect("enclosed").center());
+        assert!(span(&app).enclosed);
+        assert_eq!(app.engine.history_labels().0.len(), steps + 3);
+
+        // Overprint: the box sets the characters' own value; back as the
+        // object's, they follow the object again.
+        let fill_box = rect("overprint_fill");
+        press_at(
+            &ctx,
+            &mut app,
+            fill_box.left_center() + egui::vec2(8.0, 0.0),
+        );
+        assert_eq!(span(&app).overprint_fill, Some(true));
+        press_at(
+            &ctx,
+            &mut app,
+            fill_box.left_center() + egui::vec2(8.0, 0.0),
+        );
+        assert_eq!(span(&app).overprint_fill, None);
+        let outline_box = rect("overprint_outline");
+        press_at(
+            &ctx,
+            &mut app,
+            outline_box.left_center() + egui::vec2(8.0, 0.0),
+        );
+        assert_eq!(span(&app).overprint_outline, Some(true));
+        assert_eq!(app.engine.history_labels().0.len(), steps + 6);
+        app.undo();
+        assert_eq!(span(&app).overprint_outline, None);
+
+        // The line styles: every one named, set through the span edit.
+        let mut names: Vec<String> = LineStyle::ALL.iter().map(|s| line_style_name(*s)).collect();
+        names.sort();
+        names.dedup();
+        assert_eq!(names.len(), LineStyle::ALL.len());
+        assert_eq!(line_style_name(LineStyle::None), tr("docker.line_none"));
+        edit_spans(&mut app, |s| s.strikethrough = LineStyle::DoubleThinWord);
+        edit_spans(&mut app, |s| s.underline = LineStyle::SingleThick);
+        assert_eq!(span(&app).strikethrough, LineStyle::DoubleThinWord);
+        assert_eq!(span(&app).underline, LineStyle::SingleThick);
+        // The docker draws the styled text, and the underline shown for
+        // new text follows the text selected: on, whatever its style.
+        press_at(&ctx, &mut app, egui::pos2(-10.0, -10.0));
+        app.sync_text_defaults_from(id);
+        assert!(app.text_underline);
     }
 
     #[test]

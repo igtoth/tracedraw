@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Text docker, Character: the underline and the strikethrough are lists of styles (none, single thin, single thick, double thin, and each of those under the words only, skipping the spaces); All caps draws the characters as capitals while the text keeps the case typed; Enclosed draws the font's enclosed forms, or a ring round each character where the font has none; Overprint fill and Overprint outline mark characters of their own, used by Simulate Overprints and the PDF export like the object's. All are drawn on the page and in every export and kept in `.tdraw` files, which still write a plain underline as before (#1209).
+
 ## 0.23.0 (2026-10-29)
 
 - Font list filter: the choices now open beside the list, in sections: fonts shown, style (serif, sans serif, script, decorative, monospaced, symbol), weight (light, regular, bold), width (condensed, normal, expanded), technology (TrueType, OpenType, variable), scripts (Latin, Greek, Cyrillic, Arabic, Devanagari, CJK and more), each OpenType feature on its own, embedding rights and the folders the fonts are in. Every value is read from the font files once (OS/2 weight and width classes, embedding bits, Unicode ranges, variation axes, GSUB and GPOS feature lists). Monospaced and Symbol now widen the style choices like the other styles instead of narrowing them (#867).

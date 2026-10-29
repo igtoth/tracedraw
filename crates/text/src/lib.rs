@@ -13,7 +13,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, RwLock, RwLockReadGuard};
 use tracedraw_core::{
     document::{
-        text_outline::TextRequest, DocumentFont, ParagraphStyle, PathTextOrientation,
+        text_outline::TextRequest, DocumentFont, LineStyle, ParagraphStyle, PathTextOrientation,
         PathTextVertical, TextAlign, TextOnPath, TextSpan, VerticalAlign,
     },
     geometry::{Affine, BezPath, Point, Rect, Shape as _, Size},
@@ -1034,6 +1034,8 @@ fn shapes_alike(a: &TextSpan, b: &TextSpan) -> bool {
         && a.offset_x_pct == b.offset_x_pct
         && a.angle_deg == b.angle_deg
         && a.features == b.features
+        && a.all_caps == b.all_caps
+        && a.enclosed == b.enclosed
         && a.variations == b.variations
 }
 
@@ -1210,7 +1212,7 @@ struct HyphenGlyph {
 }
 
 /// Vertical metrics of a span's face at its size, mm.
-#[derive(Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 struct Metrics {
     /// The font size, mm.
     size: f64,
@@ -1218,7 +1220,6 @@ struct Metrics {
     descent: f64,
     line_height: f64,
     underline_pos: f64,
-    underline_thick: f64,
     strike_pos: f64,
 }
 
@@ -2460,7 +2461,7 @@ impl FontSystem {
             req.spans
                 .iter()
                 .map(|s| format!(
-                    "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{:?}|{:?}|{:?}|{}",
+                    "{}|{}|{}|{}|{}|{}|{}|{}|{}|{:?}|{:?}|{}|{}|{:?}|{:?}|{:?}|{}",
                     s.layout_only,
                     s.font_family,
                     s.size_pt,
@@ -2472,6 +2473,8 @@ impl FontSystem {
                     s.angle_deg,
                     s.underline,
                     s.strikethrough,
+                    s.all_caps,
+                    s.enclosed,
                     s.features,
                     s.variations,
                     s.paragraph,
@@ -2549,7 +2552,6 @@ impl FontSystem {
                 descent: s * 0.2,
                 line_height: s * 1.2,
                 underline_pos: -s * 0.1,
-                underline_thick: s * 0.05,
                 strike_pos: s * 0.3,
             };
         };
@@ -2571,9 +2573,6 @@ impl FontSystem {
             descent: desc,
             line_height: asc + desc + gap,
             underline_pos: ul.map(|u| u.position as f64 * scale).unwrap_or(-desc * 0.5),
-            underline_thick: ul
-                .map(|u| u.thickness as f64 * scale)
-                .unwrap_or(span.size_pt * PT_MM * 0.05),
             strike_pos: st.map(|s| s.position as f64 * scale).unwrap_or(asc * 0.35),
         }
     }
@@ -2607,6 +2606,15 @@ impl FontSystem {
         let text = if symbol_encoded(&span.font_family) && !self.has_symbol_cmap(id) {
             mapped = text.chars().map(symbol_to_unicode).collect();
             mapped.as_str()
+        } else {
+            text
+        };
+        // All caps (#1209): the shaper sees capitals, the text stays as
+        // typed.
+        let caps: String;
+        let text = if span.all_caps {
+            caps = capitals(text);
+            caps.as_str()
         } else {
             text
         };
@@ -2905,6 +2913,22 @@ impl FontSystem {
                 ..,
             ));
         }
+        // Enclosed characters (#1209): the font's enclosed forms where it
+        // has them, else a ring drawn round each glyph below.
+        let nalt = span.enclosed
+            && face.tables().gsub.is_some_and(|g| {
+                g.features
+                    .index(ttf_parser::Tag::from_bytes(b"nalt"))
+                    .is_some()
+            });
+        if nalt {
+            features.push(rustybuzz::Feature::new(
+                rustybuzz::ttf_parser::Tag::from_bytes(b"nalt"),
+                1,
+                ..,
+            ));
+        }
+        let ring = span.enclosed && !nalt;
         let mut buffer = rustybuzz::UnicodeBuffer::new();
         buffer.push_str(text);
         buffer.guess_segment_properties();
@@ -2966,6 +2990,29 @@ impl FontSystem {
                 let g2 = Affine::translate((off, 0.0)) * gp.clone();
                 gp.extend(g2.elements().iter().copied());
             }
+            let cluster = chars.iter().position(|(i, _)| *i == info.cluster as usize);
+            let ch = cluster
+                .and_then(|k| chars.get(k))
+                .map(|(_, c)| *c)
+                .unwrap_or(' ');
+            let mut adv = pos.x_advance as f64 * scale;
+            if ch == ' ' {
+                adv *= word_scale;
+            }
+            // The ring round an enclosed glyph (#1209), centred on its
+            // advance, which grows to the ring's room when it is narrower;
+            // the glyph moves to the middle of that room.
+            let mut ring_shift = 0.0;
+            if ring && !ch.is_whitespace() {
+                let room = ENCLOSURE_ADVANCE * size_mm;
+                if adv < room {
+                    ring_shift = (room - adv) / 2.0;
+                    adv = room;
+                    gp = Affine::translate((ring_shift, 0.0)) * gp;
+                }
+                let ring_path = enclosure_ring(adv, baseline + size_mm * 0.35, size_mm, gp.area());
+                gp.extend(ring_path.elements().iter().copied());
+            }
             if let Some(a) = place {
                 gp = a * gp;
             }
@@ -2992,7 +3039,7 @@ impl FontSystem {
                 claimed.push(start);
                 text.get(start..cluster_end).unwrap_or("").to_string()
             };
-            let mut local = Affine::translate((0.0, baseline)) * Affine::scale(size_mm);
+            let mut local = Affine::translate((ring_shift, baseline)) * Affine::scale(size_mm);
             if synth_italic {
                 local = Affine::new([1.0, 0.0, 0.2, 1.0, 0.0, 0.0]) * local;
             }
@@ -3004,17 +3051,9 @@ impl FontSystem {
                 gid: gid.0,
                 local,
                 text: cluster_text,
-                exact: !synth_bold,
+                // A ring drawn round the glyph goes with it as curves.
+                exact: !synth_bold && !(ring && !ch.is_whitespace()),
             });
-            let cluster = chars.iter().position(|(i, _)| *i == info.cluster as usize);
-            let ch = cluster
-                .and_then(|k| chars.get(k))
-                .map(|(_, c)| *c)
-                .unwrap_or(' ');
-            let mut adv = pos.x_advance as f64 * scale;
-            if ch == ' ' {
-                adv *= word_scale;
-            }
             out.push(Glyph {
                 path: Arc::new(gp),
                 advance: adv + tracking + char_spacing,
@@ -3655,7 +3694,10 @@ impl FontSystem {
             // Emit glyphs.
             let mut pen = x0 + dx;
             let line_start = pen;
+            // The stretches of underline and of strike line on this line:
+            // (span, from x, to x).
             let mut underline_runs: Vec<(usize, f64, f64)> = Vec::new();
+            let mut strike_runs: Vec<(usize, f64, f64)> = Vec::new();
             let end_char = line_ends.get(li).copied().unwrap_or(total_chars);
             let n_chars = end_char.saturating_sub(line.start_char);
             // Pen x before each character; clusters of several characters
@@ -3738,13 +3780,22 @@ impl FontSystem {
                 }
                 let adv = g.advance + extras.get(gi).copied().unwrap_or(0.0);
                 let span = &spans[g.span];
-                if (span.underline || span.strikethrough) && !span.layout_only {
-                    match underline_runs.last_mut() {
-                        Some((s, _, end)) if *s == g.span && (*end - pen).abs() < 1e-6 => {
-                            *end = pen + adv
+                if !span.layout_only {
+                    // A word-only line skips the spaces (#1209).
+                    let space = g.ch.is_whitespace();
+                    let extend = |runs: &mut Vec<(usize, f64, f64)>, style: LineStyle| {
+                        if !style.is_on() || (space && style.word_only()) {
+                            return;
                         }
-                        _ => underline_runs.push((g.span, pen, pen + adv)),
-                    }
+                        match runs.last_mut() {
+                            Some((s, _, end)) if *s == g.span && (*end - pen).abs() < 1e-6 => {
+                                *end = pen + adv
+                            }
+                            _ => runs.push((g.span, pen, pen + adv)),
+                        }
+                    };
+                    extend(&mut underline_runs, span.underline);
+                    extend(&mut strike_runs, span.strikethrough);
                 }
                 if g.rtl {
                     let x0 = match rtl_cluster {
@@ -3791,34 +3842,25 @@ impl FontSystem {
                 pen += h.advance;
             }
             // The letters' winding, so the lines below go round the same way.
-            let glyph_area = if underline_runs.is_empty() {
+            let glyph_area = if underline_runs.is_empty() && strike_runs.is_empty() {
                 0.0
             } else {
                 line_path.area()
             };
-            for (si, a, b) in underline_runs {
-                let span = &spans[si];
+            // Underlines hang from the face's underline position, strike
+            // lines are centred on its strikeout position (#1209).
+            let lines = underline_runs
+                .into_iter()
+                .map(|(si, a, b)| (si, a, b, true))
+                .chain(strike_runs.into_iter().map(|(si, a, b)| (si, a, b, false)));
+            for (si, a, b, under) in lines {
                 let sm = metrics[si];
-                if span.underline {
-                    let r = Rect::new(
-                        a,
-                        y + sm.underline_pos - sm.underline_thick,
-                        b,
-                        y + sm.underline_pos,
-                    );
-                    let rp = wound_like(orient_rest(r.to_path(0.01)), glyph_area);
-                    line_path.extend(rp.elements().iter().copied());
-                    if collect {
-                        line_glyphs.rest.extend(rp.elements().iter().copied());
-                    }
-                }
-                if span.strikethrough {
-                    let r = Rect::new(
-                        a,
-                        y + sm.strike_pos - sm.underline_thick / 2.0,
-                        b,
-                        y + sm.strike_pos + sm.underline_thick / 2.0,
-                    );
+                let (style, anchor) = if under {
+                    (spans[si].underline, y + sm.underline_pos)
+                } else {
+                    (spans[si].strikethrough, y + sm.strike_pos)
+                };
+                for r in decoration_rects(style, a, b, anchor, sm.size, under) {
                     let rp = wound_like(orient_rest(r.to_path(0.01)), glyph_area);
                     line_path.extend(rp.elements().iter().copied());
                     if collect {
@@ -4536,6 +4578,81 @@ fn wound_like(line: BezPath, glyph_area: f64) -> BezPath {
     }
 }
 
+/// `text` as capitals for an all-caps span (#1209): each letter's Unicode
+/// uppercase when that is one letter, else the letter as typed, so the
+/// characters still count one for one with the text stored.
+fn capitals(text: &str) -> String {
+    text.chars()
+        .map(|c| {
+            let mut up = c.to_uppercase();
+            match (up.next(), up.next()) {
+                (Some(u), None) => u,
+                _ => c,
+            }
+        })
+        .collect()
+}
+
+/// The size, in shares of the font size, of the circle drawn round an
+/// enclosed character where the font has no enclosed forms (#1209): its
+/// radius, its stroke, and the room the character takes at least.
+const ENCLOSURE_RADIUS: f64 = 0.6;
+const ENCLOSURE_STROKE: f64 = 1.0 / 14.0;
+const ENCLOSURE_ADVANCE: f64 = 1.3;
+
+/// The ring drawn round an enclosed glyph of `size` (mm) whose advance is
+/// `advance`, centred on the advance, its centre `centre_y` up from the
+/// pen: the outer circle wound like the glyph (`glyph_area`), the inner
+/// one the other way, so the ring fills under the nonzero rule with the
+/// letter inside it.
+fn enclosure_ring(advance: f64, centre_y: f64, size: f64, glyph_area: f64) -> BezPath {
+    use kurbo::Shape as _;
+    let c = Point::new(advance / 2.0, centre_y);
+    let r = ENCLOSURE_RADIUS * size;
+    let outer = wound_like(kurbo::Circle::new(c, r).to_path(0.01), glyph_area);
+    let inner = wound_like(
+        kurbo::Circle::new(c, r - ENCLOSURE_STROKE * size).to_path(0.01),
+        -outer.area(),
+    );
+    let mut ring = outer;
+    ring.extend(inner.elements().iter().copied());
+    ring
+}
+
+/// The rectangles of an underline or strike line in style `style` from
+/// `a` to `b` (mm): for an underline (`under`) they hang from `anchor`,
+/// the face's underline position; a strike line is centred on `anchor`,
+/// the face's strikeout position. Each line is `style.thickness_share()`
+/// of `size` thick; a double line is two thin lines a thin line apart.
+fn decoration_rects(
+    style: tracedraw_core::LineStyle,
+    a: f64,
+    b: f64,
+    anchor: f64,
+    size: f64,
+    under: bool,
+) -> Vec<Rect> {
+    let thin = size / 14.0;
+    let thick = style.thickness_share() * size;
+    if !style.is_on() {
+        return Vec::new();
+    }
+    if under {
+        let mut rects = vec![Rect::new(a, anchor - thick, b, anchor)];
+        if style.double() {
+            rects.push(Rect::new(a, anchor - 3.0 * thin, b, anchor - 2.0 * thin));
+        }
+        rects
+    } else if style.double() {
+        vec![
+            Rect::new(a, anchor + thin / 2.0, b, anchor + 1.5 * thin),
+            Rect::new(a, anchor - 1.5 * thin, b, anchor - thin / 2.0),
+        ]
+    } else {
+        vec![Rect::new(a, anchor - thick / 2.0, b, anchor + thick / 2.0)]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -4937,8 +5054,12 @@ mod tests {
             baseline_shift_pt: 0.0,
             offset_x_pct: 0.0,
             angle_deg: 0.0,
-            underline: false,
-            strikethrough: false,
+            underline: LineStyle::None,
+            strikethrough: LineStyle::None,
+            all_caps: false,
+            enclosed: false,
+            overprint_fill: None,
+            overprint_outline: None,
             fill: None,
             background: None,
             outline: None,
@@ -5447,8 +5568,8 @@ mod tests {
             plain.font_family = family.into();
             plain.size_pt = 72.0;
             let mut struck = plain.clone();
-            struck.strikethrough = true;
-            struck.underline = true;
+            struck.strikethrough = LineStyle::SingleThin;
+            struck.underline = LineStyle::SingleThin;
             let bare = f.outline(&[plain]);
             let lined = f.outline(&[struck]);
             if bare.glyphs != 1 {
@@ -5482,7 +5603,7 @@ mod tests {
         let mut hidden = span("ab");
         hidden.layout_only = true;
         let mut ul = span("cd");
-        ul.underline = true;
+        ul.underline = LineStyle::SingleThin;
         ul.layout_only = true;
         let part = f.outline(&[hidden, span("cd")]);
         let none = f.outline(&[span("ab"), ul]);
@@ -5883,7 +6004,7 @@ mod tests {
         let f = fonts();
         let a = span("aaaa bbbb ");
         let mut b = span("cccc dddd eeee");
-        b.underline = true;
+        b.underline = LineStyle::SingleThin;
         let spans = vec![a, b];
         let para = ParagraphStyle::default();
         let one_line = f.outline(&[span("aaaa bbbb")]);
@@ -5903,10 +6024,10 @@ mod tests {
         let (head, tail) = tracedraw_core::split_spans_at(&spans, l.fitted_chars);
         assert_eq!(head.len(), 2);
         assert_eq!(head[1].text, "cccc dddd ");
-        assert!(head[1].underline);
+        assert!(head[1].underline.is_on());
         assert_eq!(tail.len(), 1);
         assert_eq!(tail[0].text, "eeee");
-        assert!(tail[0].underline);
+        assert!(tail[0].underline.is_on());
     }
 
     #[test]
@@ -6166,6 +6287,227 @@ mod tests {
             db.load_font_data(f.to_vec());
         }
         FontSystem::from_db(db)
+    }
+
+    /// The bounding box of each subpath of `path`, in order.
+    fn subpath_boxes(path: &BezPath) -> Vec<Rect> {
+        let mut out = Vec::new();
+        let mut cur: Vec<kurbo::PathEl> = Vec::new();
+        for el in path.elements() {
+            if matches!(el, kurbo::PathEl::MoveTo(_)) && !cur.is_empty() {
+                out.push(BezPath::from_vec(std::mem::take(&mut cur)).bounding_box());
+            }
+            cur.push(*el);
+        }
+        if !cur.is_empty() {
+            out.push(BezPath::from_vec(cur).bounding_box());
+        }
+        out
+    }
+
+    /// The glyph layout of artistic text in `spans`.
+    fn marks_layout(f: &FontSystem, spans: &[TextSpan]) -> GlyphLayout {
+        let para = ParagraphStyle::default();
+        f.glyph_layout(&TextRequest {
+            spans,
+            frame: None,
+            align: TextAlign::Left,
+            para: &para,
+            on_path: None,
+        })
+    }
+
+    /// The marks of a text other than its letters (underlines, strike
+    /// lines, rings), as the glyph layout gives them.
+    fn marks(f: &FontSystem, spans: &[TextSpan]) -> BezPath {
+        marks_layout(f, spans).rest
+    }
+
+    /// Underline styles (#1209): a thin line is a fourteenth of the size
+    /// thick and hangs from the face's underline position, a thick one a
+    /// seventh, a double line is two thin lines a thin line apart; a
+    /// strike line is centred on the strikeout position.
+    #[test]
+    fn double_underlines_are_two_thin_lines_a_thin_line_apart() {
+        let f = system_with(&[SELAWIK]);
+        let plain = TextSpan::new("II", "Selawik", 70.0);
+        let m = f.metrics(&plain);
+        let size = 70.0 * PT_MM;
+        let thin = size / 14.0;
+        let close = |a: f64, b: f64| (a - b).abs() < 1e-6;
+        let letters = f.outline(&[plain.clone()]).path.bounding_box();
+
+        let mut single = plain.clone();
+        single.underline = LineStyle::SingleThin;
+        let lines = subpath_boxes(&marks(&f, &[single]));
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        assert!(close(lines[0].y1, m.underline_pos), "{lines:?} {m:?}");
+        assert!(close(lines[0].height(), thin), "{lines:?}");
+        assert!(close(lines[0].x0, letters.x0.min(0.0)) || lines[0].x0 <= letters.x0);
+        assert!(lines[0].x1 >= letters.x1 - 1e-6, "{lines:?} {letters:?}");
+
+        let mut thick = plain.clone();
+        thick.underline = LineStyle::SingleThick;
+        let lines = subpath_boxes(&marks(&f, &[thick]));
+        assert_eq!(lines.len(), 1);
+        assert!(close(lines[0].y1, m.underline_pos));
+        assert!(close(lines[0].height(), 2.0 * thin), "{lines:?}");
+
+        let mut double = plain.clone();
+        double.underline = LineStyle::DoubleThin;
+        let mut lines = subpath_boxes(&marks(&f, &[double]));
+        lines.sort_by(|a, b| b.y1.total_cmp(&a.y1));
+        assert_eq!(lines.len(), 2, "{lines:?}");
+        assert!(close(lines[0].y1, m.underline_pos));
+        assert!(close(lines[0].y0, m.underline_pos - thin));
+        assert!(close(lines[1].y1, m.underline_pos - 2.0 * thin));
+        assert!(close(lines[1].y0, m.underline_pos - 3.0 * thin));
+
+        // Strike lines: centred, double ones a thin line apart.
+        let mut struck = plain.clone();
+        struck.strikethrough = LineStyle::SingleThick;
+        let lines = subpath_boxes(&marks(&f, &[struck]));
+        assert_eq!(lines.len(), 1);
+        assert!(close(lines[0].center().y, m.strike_pos), "{lines:?} {m:?}");
+        assert!(close(lines[0].height(), 2.0 * thin));
+        let mut struck = plain.clone();
+        struck.strikethrough = LineStyle::DoubleThinWord;
+        let mut lines = subpath_boxes(&marks(&f, &[struck]));
+        lines.sort_by(|a, b| b.y1.total_cmp(&a.y1));
+        assert_eq!(lines.len(), 2);
+        assert!(close(lines[0].y0, m.strike_pos + thin / 2.0));
+        assert!(close(lines[1].y1, m.strike_pos - thin / 2.0));
+        assert!(close(lines[0].height(), thin) && close(lines[1].height(), thin));
+        // No style, no line; the outline itself holds the lines too.
+        assert!(marks(&f, &[plain.clone()]).elements().is_empty());
+        let mut both = plain;
+        both.underline = LineStyle::DoubleThin;
+        both.strikethrough = LineStyle::SingleThin;
+        let with = f.outline(&[both]).path;
+        assert_eq!(
+            subpath_boxes(&with).len(),
+            subpath_boxes(&f.outline(&[TextSpan::new("II", "Selawik", 70.0)]).path).len() + 3
+        );
+    }
+
+    /// A word-only underline (#1209) skips the space between two words:
+    /// two stretches with a gap where the space is, while the plain
+    /// underline runs through.
+    #[test]
+    fn word_only_underlines_skip_the_spaces() {
+        let f = system_with(&[SELAWIK]);
+        let mut through = TextSpan::new("ab cd", "Selawik", 40.0);
+        through.underline = LineStyle::SingleThin;
+        let lines = subpath_boxes(&marks(&f, &[through.clone()]));
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        let whole = lines[0];
+        let mut words = through.clone();
+        words.underline = LineStyle::SingleThinWord;
+        let mut lines = subpath_boxes(&marks(&f, &[words.clone()]));
+        lines.sort_by(|a, b| a.x0.total_cmp(&b.x0));
+        assert_eq!(lines.len(), 2, "{lines:?}");
+        assert!((lines[0].x0 - whole.x0).abs() < 1e-6);
+        assert!((lines[1].x1 - whole.x1).abs() < 1e-6);
+        // The gap is the space's width.
+        let layout = f.outline(&[words.clone()]);
+        let edges = &layout.lines[0].edges;
+        assert!((lines[0].x1 - edges[2]).abs() < 1e-6, "{lines:?} {edges:?}");
+        assert!((lines[1].x0 - edges[3]).abs() < 1e-6, "{lines:?} {edges:?}");
+        // Thick word-only lines are thick; a double one is two per word.
+        words.underline = LineStyle::SingleThickWord;
+        let lines = subpath_boxes(&marks(&f, &[words.clone()]));
+        assert_eq!(lines.len(), 2);
+        assert!((lines[0].height() - 40.0 * PT_MM / 7.0).abs() < 1e-6);
+        words.underline = LineStyle::DoubleThinWord;
+        assert_eq!(subpath_boxes(&marks(&f, &[words])).len(), 4);
+    }
+
+    /// All caps (#1209): "ab" is shaped as the glyphs of "AB" while the
+    /// text stays "ab"; a letter whose capital is two letters stays as it
+    /// is, so the characters still count one for one.
+    #[test]
+    fn all_caps_shapes_the_capitals_and_keeps_the_text() {
+        let f = system_with(&[SELAWIK]);
+        let mut caps = TextSpan::new("ab", "Selawik", 30.0);
+        caps.all_caps = true;
+        let shaped = f.outline(&[caps.clone()]);
+        let upper = f.outline(&[TextSpan::new("AB", "Selawik", 30.0)]);
+        let lower = f.outline(&[TextSpan::new("ab", "Selawik", 30.0)]);
+        assert_eq!(shaped.path.elements(), upper.path.elements());
+        assert_ne!(shaped.path.elements(), lower.path.elements());
+        assert_eq!(shaped.lines[0].edges, upper.lines[0].edges);
+        assert_eq!(caps.text, "ab");
+        // The glyph layout shows the capitals' glyphs too.
+        let a = marks_layout(&f, std::slice::from_ref(&caps));
+        let b = marks_layout(&f, &[TextSpan::new("AB", "Selawik", 30.0)]);
+        let ids = |l: &GlyphLayout| l.glyphs.iter().map(|g| g.glyph_id).collect::<Vec<_>>();
+        assert_eq!(ids(&a), ids(&b));
+        assert_eq!(capitals("straße 1"), "STRAßE 1");
+        assert_eq!(capitals("ab").chars().count(), 2);
+        // Two spans alike but for all caps are shaped apart.
+        let plain = TextSpan::new("ab", "Selawik", 30.0);
+        assert!(!shapes_alike(&plain, &caps));
+    }
+
+    /// Enclosed characters (#1209) in a font without enclosed forms: a
+    /// ring (two circles) round each glyph, none round a space, the
+    /// glyph's room grown to the ring; the glyph goes to exports as
+    /// curves.
+    #[test]
+    fn enclosed_characters_get_a_ring_each_where_the_font_has_no_forms() {
+        let f = system_with(&[SELAWIK]);
+        let size = 30.0 * PT_MM;
+        let plain = TextSpan::new("ab", "Selawik", 30.0);
+        let mut enclosed = plain.clone();
+        enclosed.enclosed = true;
+        let bare = f.outline(&[plain.clone()]);
+        let ringed = f.outline(&[enclosed.clone()]);
+        assert_eq!(ringed.glyphs, 2);
+        assert_eq!(
+            subpath_boxes(&ringed.path).len(),
+            subpath_boxes(&bare.path).len() + 4
+        );
+        // Each ring is 1.2 of the size across, centred on its glyph's room,
+        // which is at least 1.3 of the size.
+        let edges = &ringed.lines[0].edges;
+        assert!(
+            edges[1] - edges[0] >= ENCLOSURE_ADVANCE * size - 1e-6,
+            "{edges:?}"
+        );
+        assert!(edges[1] > bare.lines[0].edges[1]);
+        let boxes = subpath_boxes(&ringed.path);
+        let rings: Vec<&Rect> = boxes
+            .iter()
+            .filter(|b| (b.width() - 2.0 * ENCLOSURE_RADIUS * size).abs() < 1e-3)
+            .collect();
+        assert_eq!(rings.len(), 2, "{boxes:?}");
+        assert!((rings[0].center().x - (edges[0] + edges[1]) / 2.0).abs() < 1e-6);
+        // The ring is filled and the letter inside it stays filled too.
+        use kurbo::Shape as _;
+        let c = rings[0].center();
+        let on_ring = Point::new(
+            c.x + ENCLOSURE_RADIUS * size - ENCLOSURE_STROKE * size / 2.0,
+            c.y,
+        );
+        assert_ne!(ringed.path.winding(on_ring), 0);
+        let inside = Point::new(
+            c.x + ENCLOSURE_RADIUS * size - 2.0 * ENCLOSURE_STROKE * size,
+            c.y,
+        );
+        assert_eq!(ringed.path.winding(inside), 0);
+        // A space gets no ring.
+        let mut spaced = TextSpan::new("a b", "Selawik", 30.0);
+        spaced.enclosed = true;
+        let with_space = f.outline(&[spaced.clone()]);
+        assert_eq!(
+            subpath_boxes(&with_space.path).len(),
+            subpath_boxes(&f.outline(&[TextSpan::new("a b", "Selawik", 30.0)]).path).len() + 4
+        );
+        // Exports draw the ringed glyphs as curves.
+        let layout = marks_layout(&f, &[enclosed]);
+        assert!(layout.glyphs.iter().all(|g| !g.exact));
+        let plain_layout = marks_layout(&f, &[plain]);
+        assert!(plain_layout.glyphs.iter().all(|g| g.exact));
     }
 
     /// `font` with its `name` table replaced by one holding `records`

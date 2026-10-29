@@ -324,6 +324,45 @@ any other object; the steps and sides follow the letters' outlines
 (`text_effect_tests::the_blend_tool_blends_two_texts_and_a_text_with_a_shape`,
 `text_effect_tests::text_can_be_extruded`).
 
+### Character styles
+
+Each span of characters (`TextSpan`) carries, besides its weight and
+slant, the styles below (#1209). All are off by default and every one is
+drawn by the text layout, so the drawing window, bitmap exports, SVG and
+PDF show the same marks (PDF keeps the letters as text and the lines and
+rings as curves).
+
+- Underline and strikethrough styles (`LineStyle`): None, Single thin,
+  Single thick, Double thin, and the same three "word" styles, which skip
+  the spaces between words. A thin line is `size / 14` thick, a thick
+  line `size / 7`; a double line is two thin lines a thin line apart.
+  The underline hangs from the face's underline position down (the first
+  line from `pos - thin` to `pos`, the second from `pos - 3 thin` to
+  `pos - 2 thin`); a strike line is centred on the face's strikeout
+  position (a double one has its lines from `pos + thin / 2` up and
+  `pos - thin / 2` down). The underline button of the property bar and
+  Ctrl+U switch between None and Single thin and show on for any style.
+  In files the two styles are written as `true` (Single thin) and
+  `false` (None), as before, and by name otherwise, so files that use
+  only those stay unchanged; `.cdr` files set a single thin line where
+  their style tables carry an underline or strikeout flag.
+- All caps: the shaper gets the Unicode uppercase of each letter; the
+  text itself keeps the case typed, so editing and searching see it. A
+  letter whose capital is more than one letter (ß) stays as typed, so
+  the characters count one for one with the text.
+- Enclosed: the font's `nalt` feature (its enclosed forms) when the face
+  has it; otherwise a ring is drawn round each glyph, radius `0.6 size`,
+  stroke `size / 14`, centred on the glyph's advance and `0.35 size`
+  above the baseline, and the glyph's room grows to `1.3 size` when it is
+  narrower, the glyph moving to the middle of it; spaces get no ring.
+  Letters with a ring go to PDF as curves.
+- Overprint fill and Overprint outline per character: `None` (follow the
+  object's overprint, the default) or a value of their own. Characters
+  whose overprint differs from the object's are drawn as parts of their
+  own (`Shape::text_parts`, as character colours are), so Simulate
+  Overprints and the PDF export (`/OP` for the outline, `/op` for the
+  fill, `/OPM 1`) see them as the object's overprint is seen.
+
 ## Paragraph text frames
 
 - A paragraph text's bounds are its whole frame (with the letters, when
@@ -455,16 +494,23 @@ the preferences, `text_sections_closed`).
   Normal, Italic, Bold, Bold-Italic for a family whose faces are not
   known, and the weight of a family named with one, "SemiBold") and the
   size list; range kerning (-50 to
-  200 %) and the underline button; the text fill, the characters'
+  200 %) and the underline style list (None, Single thin, Single thick,
+  Double thin and their word-only forms, see Character styles); the text
+  fill, the characters'
   background and the text outline, each as a kind (No Fill or Uniform
   Fill; none, hairline or a width in points for the outline), a colour
   and "..." for the Properties docker's full fill or outline settings.
   The background is drawn behind each character's box, from its descent
   to its ascent (`TextSpan::background`). The expander under the section
-  shows the characters' offsets and angle, strikethrough and the
+  shows the characters' offsets and angle, the strikethrough style list,
+  the All caps and Enclosed buttons, the Overprint fill and Overprint
+  outline boxes (ticked as the object's overprint until the characters
+  get their own; a box set back as the object's lets them follow it
+  again), the
   OpenType features, and for text in a variable font a "Variable font"
   row with a slider for each axis the font shows (see Variable fonts
-  below).
+  below). The Properties docker's Character section names the styles set
+  after the font, size, weight and slant.
 - Paragraph: the gear opens Custom Optional Hyphens; six alignment
   buttons, no alignment (lines start at the left; characters keep their
   offsets), left, centre, right, full justification and forced
@@ -840,8 +886,27 @@ stand-in next to each missing family: "Arial (Liberation Sans)".
   path's end, letters mirrored; both together turn the text half round
   onto the other side, reading the other way (the older single mirror).
 - Fit text to frame: scale size so the paragraph fills the frame height.
+- Underline and strike lines: thin `= size / 14`, thick `= size / 7`;
+  a double line is two thin lines a thin line apart; the underline hangs
+  from the face's underline position, the strike line is centred on its
+  strikeout position; word-only styles leave out the whitespace glyphs.
+- Enclosed characters without the font's `nalt` forms: a ring of radius
+  `0.6 size` and stroke `size / 14`, centred on the glyph's advance,
+  `0.35 size` above the baseline; the advance grows to at least
+  `1.3 size`.
 
 ## Checks
+
+- Character styles (#1209):
+  `tracedraw_core` `document::tests::line_styles_read_the_old_flags_and_write_them_back`,
+  `document::tests::text_parts_carry_the_characters_overprint`;
+  `tracedraw_text` `tests::double_underlines_are_two_thin_lines_a_thin_line_apart`,
+  `tests::word_only_underlines_skip_the_spaces`,
+  `tests::all_caps_shapes_the_capitals_and_keeps_the_text`,
+  `tests::enclosed_characters_get_a_ring_each_where_the_font_has_no_forms`;
+  `tracedraw_io` `tests::character_styles_round_trip_in_native_files`,
+  `pdf::tests::overprint_is_written_for_objects_and_for_characters`;
+  `ui::text_docker::tests::character_styles_switch_on_the_selected_text`.
 
 - `tracedraw_text::tests::vertical_text_sets_columns_with_turned_and_upright_letters`,
   `tests::letters_that_stand_upright_in_columns`,

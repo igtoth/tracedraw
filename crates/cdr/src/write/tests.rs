@@ -548,7 +548,7 @@ fn runs_lines_and_alignment_round_trip() {
     red.fill = Some(Fill::Solid(Color::rgb8(255, 0, 0)));
     red.italic = true;
     let mut big = TextSpan::new("big\nline two", "Verdana", 30.0);
-    big.underline = true;
+    big.underline = tracedraw_core::LineStyle::SingleThin;
     let shapes = vec![
         text_shape(&mut ids, vec![red, big], TextAlign::Center),
         text_shape(
@@ -572,12 +572,12 @@ fn runs_lines_and_alignment_round_trip() {
         assert_eq!(text, "Red big\nline two", "{v}: {spans:?}");
         let first = &spans[0];
         assert_eq!(first.font_family, "Georgia", "{v}");
-        assert!(first.italic && !first.underline, "{v}");
+        assert!(first.italic && !first.underline.is_on(), "{v}");
         assert_eq!(first.fill, Some(Fill::Solid(Color::rgb8(255, 0, 0))), "{v}");
         let last = spans.last().expect("span");
         assert_eq!(last.font_family, "Verdana", "{v}");
         assert!((last.size_pt - 30.0).abs() < 0.01, "{v}");
-        assert!(last.underline && !last.italic, "{v}");
+        assert!(last.underline.is_on() && !last.italic, "{v}");
         let ShapeKind::Text { align, .. } = &read[1].kind else {
             panic!("{v}: {:?}", read[1].kind);
         };
