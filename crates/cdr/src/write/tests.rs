@@ -1179,7 +1179,8 @@ fn records_have_the_sizes_of_the_versions_files() {
     let s = Stroke::new(Color::BLACK, 0.5);
     for (v, outline, solid, none) in [
         (11u16, 140usize, 36usize, 8usize),
-        (14, 192, 76, 22),
+        (13, 192, 76, 22),
+        (14, 269, 97, 22),
         (15, 269, 97, 22),
         (17, 213, 97, 22),
         (21, 213, 97, 22),
@@ -1202,8 +1203,8 @@ fn records_have_the_sizes_of_the_versions_files() {
             if v >= 13 { 96 } else { 80 }
         );
     }
-    // Two-stop gradients: stops of 16 bytes before version 13, 24 in 13
-    // and 14, 45 from 15.
+    // Two-stop gradients: stops of 16 bytes before version 13, 24 in 13,
+    // 45 from 14 (with the palette id after each colour).
     let f = Fill::Fountain(tracedraw_core::Fountain::two(
         FountainKind::Linear,
         Color::BLACK,
@@ -1213,10 +1214,131 @@ fn records_have_the_sizes_of_the_versions_files() {
     let len = |v: u16| fild(Ver(v), 1, &f).len();
     assert_eq!(len(12), 56 + 2 * 16, "version 12");
     assert_eq!(
-        len(15) - len(14),
+        len(14) - len(13),
         2 * (45 - 24),
-        "a stop grows by 21 bytes in 15"
+        "a stop grows by 21 bytes in 14"
     );
+    assert_eq!(len(15), len(14), "version 15 stops are the version 14 ones");
+}
+
+/// From version 14 a colour's property list carries the id of the
+/// palette it comes from (property 7): one constant for CMYK colours,
+/// another for RGB ones, as files of versions 13 to 25 hold them; greys
+/// have no id. Version 13 writes the 76-byte record without the property.
+#[test]
+fn colours_carry_the_palette_id_of_their_model_from_version_14() {
+    let cmyk = [
+        0xcb, 0x19, 0xcd, 0xcc, 0x75, 0x46, 0x5e, 0x4a, 0x8b, 0xda, 0xd0, 0xbb, 0xba, 0xab, 0x8a,
+        0xf0,
+    ];
+    let rgb = [
+        0x5b, 0x96, 0x73, 0x82, 0xfd, 0xa0, 0x34, 0x4e, 0xa5, 0xc2, 0xa2, 0x97, 0x20, 0x14, 0x6c,
+        0xc3,
+    ];
+    let id_after_colour = |rec: &[u8]| -> Option<[u8; 16]> {
+        // The colour property (1, 12, record) then (7, 16, id).
+        let at = rec.windows(5).position(|w| w == [1, 12, 0, 0, 0])? + 5 + 12;
+        if rec.get(at..at + 5)? != [7, 16, 0, 0, 0] {
+            return None;
+        }
+        rec.get(at + 5..at + 21)?.try_into().ok()
+    };
+    for v in [14u16, 15, 17, 22] {
+        let solid = |c: Color| fild(Ver(v), 1, &Fill::Solid(c));
+        assert_eq!(
+            id_after_colour(&solid(Color::cmyk_pct(0.0, 100.0, 100.0, 0.0))),
+            Some(cmyk),
+            "{v}"
+        );
+        assert_eq!(
+            id_after_colour(&solid(Color::rgb8(10, 20, 30))),
+            Some(rgb),
+            "{v}"
+        );
+        assert_eq!(
+            id_after_colour(&solid(Color::Gray { v: 0.5 })),
+            Some([0; 16]),
+            "{v}"
+        );
+        // Gradient stops carry it too.
+        let f = Fill::Fountain(tracedraw_core::Fountain::two(
+            FountainKind::Linear,
+            Color::rgb8(1, 2, 3),
+            Color::rgb8(4, 5, 6),
+            0.0,
+        ));
+        let rec = fild(Ver(v), 2, &f);
+        let ids: Vec<usize> = rec
+            .windows(16)
+            .enumerate()
+            .filter(|(_, w)| *w == rgb)
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(ids.len(), 2, "{v}: one id per stop");
+        // The u32 at byte 67 of a solid record (byte 55 of its body) stays
+        // zero: files hold a different value there in a few fills only.
+        let rec = solid(Color::BLACK);
+        assert_eq!(&rec[67..71], &[0, 0, 0, 0], "{v}");
+    }
+    assert_eq!(
+        id_after_colour(&fild(Ver(13), 1, &Fill::Solid(Color::BLACK))),
+        None
+    );
+    let v15 = fild(Ver(15), 1, &Fill::Solid(Color::BLACK));
+    let v14 = fild(Ver(14), 1, &Fill::Solid(Color::BLACK));
+    assert_eq!(v14, v15, "versions 14 and 15 share the solid fill record");
+}
+
+/// Objects of versions 9 to 15 carry argument 19170 (1, 1, 0), as every
+/// shape, text and picture of files of those versions does; files of 8
+/// and of 16 on have none.
+#[test]
+fn objects_of_versions_9_to_15_carry_argument_19170() {
+    let mut doc = doc_with(Vec::new());
+    let mut ids = doc.ids().clone();
+    let r = Shape::new(
+        ids.shape(),
+        ShapeKind::Rect {
+            rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+            radius: 0.0,
+            corners: None,
+        },
+    );
+    let t = text_shape(
+        &mut ids,
+        vec![TextSpan::new("Hi", "Arial", 12.0)],
+        TextAlign::Left,
+    );
+    doc.pages[0].layers[0].shapes = vec![r, t];
+    doc.set_ids(ids);
+    for v in versions() {
+        let bytes = document_to_cdr_version(&doc, v);
+        let (_, tree, riff) = chunk_ids(&bytes);
+        let mut flags = Vec::new();
+        tree.root.walk(&mut |c, _| {
+            if c.is(b"obj ") {
+                if let Some(l) = c.find(b"lgob").and_then(|l| l.find(b"loda")) {
+                    let d = tree.data(&riff, l);
+                    flags.push(
+                        loda_args(d)
+                            .into_iter()
+                            .find(|(t, _)| *t == 19170)
+                            .map(|(_, b)| b),
+                    );
+                }
+            }
+        });
+        assert_eq!(flags.len(), 2, "{v}");
+        let want = (9..=15).contains(&v).then(|| {
+            [1u32, 1, 0]
+                .iter()
+                .flat_map(|x| x.to_le_bytes())
+                .collect::<Vec<u8>>()
+        });
+        for f in &flags {
+            assert_eq!(f, &want, "{v}");
+        }
+    }
 }
 
 #[test]

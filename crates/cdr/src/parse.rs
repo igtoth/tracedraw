@@ -1183,13 +1183,18 @@ impl<'a> Ctx<'a> {
         let mut stops = Vec::with_capacity(num_stops.min(64));
         for _ in 0..num_stops.min(64) {
             let color = self.read_color(&mut r)?;
-            r.skip(if v >= 15 {
-                26
-            } else if v >= 13 {
-                5
-            } else {
-                0
-            });
+            if v >= 13 {
+                // The colour's palette id (property 7, 16 bytes) follows
+                // in files of versions 14 and 15 saved by newer releases
+                // and in every file from 15; version 13 files and version
+                // 14 files of that version's own release have none.
+                let id_follows = r.b.get(r.pos) == Some(&7)
+                    && r.b.get(r.pos + 1..r.pos + 5) == Some(&[16, 0, 0, 0]);
+                if id_follows || v >= 15 {
+                    r.skip(21);
+                }
+                r.skip(5);
+            }
             let pos = (r.uint()? & 0xffff) as f64 / 100.0;
             if v >= 13 {
                 r.skip(3);
@@ -5681,6 +5686,56 @@ mod tests {
                 assert_eq!(f.stops[1].color, Color::rgb8(255, 255, 255));
             }
             other => panic!("{other:?}"),
+        }
+    }
+
+    /// Version 14 files saved by newer releases keep the palette id
+    /// (property 7) after each stop's colour, as version 15 files do;
+    /// version 14 files of that release's own writer leave it out. Both
+    /// read.
+    #[test]
+    fn fountain_fill_version_14_stops_with_or_without_the_palette_id() {
+        for with_id in [false, true] {
+            let v = 14u16;
+            let mut g = vec![0u8; 8];
+            g.push(1);
+            g.extend_from_slice(&[0; 17]);
+            g.extend_from_slice(&i16s(&[0]));
+            g.extend_from_slice(&i32s(&[90_000_000]));
+            g.extend_from_slice(&i32s(&[0, 0]));
+            g.extend_from_slice(&[0; 2]);
+            g.extend_from_slice(&u32s(&[0]));
+            g.extend_from_slice(&[50, 0]);
+            g.extend_from_slice(&u16s(&[2]));
+            for (c, pos) in [((0, 0, 0), 0u16), ((255, 255, 255), 100)] {
+                g.push(1);
+                g.extend_from_slice(&u32s(&[12]));
+                g.extend_from_slice(&color_bgr(c.0, c.1, c.2));
+                if with_id {
+                    g.push(7);
+                    g.extend_from_slice(&u32s(&[16]));
+                    g.extend_from_slice(&[0xcb; 16]);
+                }
+                g.extend_from_slice(&[0; 5]);
+                g.extend_from_slice(&u16s(&[pos]));
+            }
+            g.extend_from_slice(&[0; 8]); // the record's tail
+            let mut fild = u32s(&[1, 1300, (g.len() + 2) as u32]);
+            fild.extend_from_slice(&u16s(&[2]));
+            fild.extend_from_slice(&g);
+            let main = riff(b"CDRE", &chunk(b"fild", &fild));
+            let tree = crate::riff::parse(&main).unwrap();
+            let mut ctx = Ctx::new(&main, &tree, v);
+            ctx.read_fill(tree.root.find(b"fild").unwrap());
+            match &ctx.fills[&1].fill {
+                Fill::Fountain(f) => {
+                    assert_eq!(f.stops.len(), 2, "{with_id}");
+                    assert_eq!(f.stops[0].color, Color::rgb8(0, 0, 0), "{with_id}");
+                    assert_eq!(f.stops[1].color, Color::rgb8(255, 255, 255), "{with_id}");
+                    assert!((f.stops[1].pos - 1.0).abs() < 1e-9, "{with_id}");
+                }
+                other => panic!("{other:?}"),
+            }
         }
     }
 

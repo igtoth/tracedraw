@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Saving `.cdr` files in versions 9 to 15: every object carries the drawing flags argument (19170) files of those versions have on each shape; versions 14 and 15 write the fill and outline records as the newest releases save them for those versions, with the palette id after each colour (the CMYK or RGB constant such files hold), so version 14 solid fills, gradient stops and outlines have the sizes of version 15 instead of the shorter 2018 ones. Files of versions 14 and 15 saved by TraceDraw showed their shapes without fills in a user's test (#1139, #98); whether this is what was missing is not confirmed yet. Opening: a version 14 gradient whose stops carry the palette id (files saved for version 14 by newer releases) reads its colours, instead of one colour.
+
 ## 0.23.0 (2026-10-29)
 
 - Font list filter: the choices now open beside the list, in sections: fonts shown, style (serif, sans serif, script, decorative, monospaced, symbol), weight (light, regular, bold), width (condensed, normal, expanded), technology (TrueType, OpenType, variable), scripts (Latin, Greek, Cyrillic, Arabic, Devanagari, CJK and more), each OpenType feature on its own, embedding rights and the folders the fonts are in. Every value is read from the font files once (OS/2 weight and width classes, embedding bits, Unicode ranges, variation axes, GSUB and GPOS feature lists). Monospaced and Symbol now widen the style choices like the other styles instead of narrowing them (#867).
