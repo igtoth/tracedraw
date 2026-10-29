@@ -55,7 +55,7 @@ Then the four repository secrets:
 | `ANDROID_KEYSTORE_BASE64` | the content of `tracedraw-upload.jks.b64` |
 | `ANDROID_KEYSTORE_PASSWORD` | the keystore password |
 | `ANDROID_KEY_ALIAS` | `upload` (the alias above) |
-| `ANDROID_KEY_PASSWORD` | the key's password (the same as the keystore's unless you set another) |
+| `ANDROID_KEY_PASSWORD` | the key's password: the same as the keystore's for a `.jks` made by a current keytool (PKCS12 keystores have one password; keytool ignores a different `-keypass`), so this secret can be left out |
 
 When you create the app in the Console, choose Play App Signing with
 "Use a Google-generated key" and upload the first release bundle signed

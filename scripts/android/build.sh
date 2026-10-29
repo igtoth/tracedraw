@@ -172,7 +172,9 @@ if [ -n "${ANDROID_KEYSTORE_BASE64:-}" ] || [ -n "${ANDROID_KEYSTORE:-}" ]; then
     if [ -n "${ANDROID_KEYSTORE:-}" ]; then
         rks="$ANDROID_KEYSTORE"
     else
+        # Decoded for the signing only and removed however the script ends.
         rks="$out/build/upload.keystore"
+        trap 'rm -f "$out/build/upload.keystore"' EXIT
         echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$rks"
     fi
     rks_pass="${ANDROID_KEYSTORE_PASSWORD:-}"
@@ -189,8 +191,11 @@ else
     aab="$out/tracedraw-$version-android-debug.aab"
 fi
 cp "$aab_unsigned" "$aab"
+# (A PKCS12 keystore, keytool's default, has one password for the store
+# and the key: give ANDROID_KEY_PASSWORD the same value or leave it out.)
 jarsigner -sigalg SHA256withRSA -digestalg SHA-256 \
     -keystore "$rks" -storepass "$rks_pass" -keypass "$rks_key_pass" "$aab" "$rks_alias" >/dev/null
+jarsigner -verify "$aab" >/dev/null
 rm -f "$out/build/upload.keystore"
 bundletool validate --bundle="$aab" >/dev/null
 echo "Built $aab (signed with the $signed_with)"
