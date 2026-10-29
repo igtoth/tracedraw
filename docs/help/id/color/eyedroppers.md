@@ -24,6 +24,11 @@ menerapkan. Gambar memberikan warnanya meski di dalam grup atau bingkai.
 
 Bilah properti menampilkan warna sampel.
 
+Saat Anda menggerakkan penunjuk untuk mengambil warna, kotak kecil di
+sampingnya menampilkan warna di bawahnya: contoh warna, nama warna bila itu
+warna palet atau tinta spot, nilainya dalam mode warna gambar (CMYK atau RGB),
+dan nilai heksnya. Pipet pemilih warna menampilkan kotak yang sama.
+
 ## Pipet Atribut {#attributes-eyedropper}
 
 Alat [[tool.attributes_eyedropper]] menyalin beberapa properti sekaligus dari

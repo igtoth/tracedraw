@@ -205,7 +205,9 @@ fn in_rgb(c: Color) -> Color {
     }
 }
 
-fn name_of(app: &App, c: Color) -> String {
+/// The name of `c` in the default palette or the palettes shown; empty
+/// when it has none.
+pub fn name_of(app: &App, c: Color) -> String {
     app.palette
         .iter()
         .chain(app.palettes.iter().flat_map(|p| p.colors.iter()))

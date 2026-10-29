@@ -1303,10 +1303,29 @@ pub fn property_bar(app: &mut App, ui: &mut Ui) {
             Tool::Crop => crate::ui::crop_bar::crop_bar(app, ui),
             Tool::Knife => crate::ui::drawing_bars::knife_bar(app, ui),
             Tool::SegmentDelete => {
+                // How a drag picks the segments: a box, or a freehand
+                // stroke (Alt at the press takes the other, #1150).
+                for (freehand, key) in [
+                    (false, "segment_delete.marquee"),
+                    (true, "segment_delete.freehand"),
+                ] {
+                    if ui
+                        .selectable_label(app.segment_freehand == freehand, tr(key))
+                        .rich_tip(crate::ui::tips::keyed(key))
+                        .clicked()
+                    {
+                        app.segment_freehand = freehand;
+                    }
+                }
+                crate::ui::propbar::sep(ui);
                 ui.label(
-                    egui::RichText::new(tr("segment_delete.hint"))
-                        .color(Tokens::text_dim())
-                        .size(11.0),
+                    egui::RichText::new(tr(if app.segment_freehand {
+                        "segment_delete.hint_freehand"
+                    } else {
+                        "segment_delete.hint"
+                    }))
+                    .color(Tokens::text_dim())
+                    .size(11.0),
                 );
             }
             Tool::Spiral => {

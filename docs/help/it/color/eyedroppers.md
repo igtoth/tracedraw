@@ -26,6 +26,12 @@ applica. Le immagini danno il loro colore anche dentro un gruppo o una cornice.
 
 La barra delle proprietà mostra il colore campionato.
 
+Mentre sposti il puntatore per prendere un colore, un piccolo riquadro accanto
+mostra il colore sotto: un campione, il nome del colore se è un colore della
+tavolozza o un inchiostro spot, i suoi valori nel modello di colore del
+disegno (CMYK o RGB) e il suo valore esadecimale. Il contagocce di un
+selettore di colore mostra lo stesso riquadro.
+
 ## Contagocce attributi {#attributes-eyedropper}
 
 Lo strumento [[tool.attributes_eyedropper]] copia più proprietà
