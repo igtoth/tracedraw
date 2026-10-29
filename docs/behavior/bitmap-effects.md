@@ -47,7 +47,8 @@ later, and removing the last one gives the original back.
 ## Effect dialogs
 
 - Live preview on the drawing: while the dialog is open and its Preview
-  box is ticked (it starts ticked), every selected object shows the
+  box is ticked (it starts ticked on the desktop and cleared in the
+  browser), every selected object shows the
   effect with the values the dialog holds, from the moment it opens and
   again each time a value changes, without any button. The preview is
   made off the interface thread (the canvas keeps answering; a spinner
@@ -61,7 +62,13 @@ later, and removing the last one gives the original back.
   close button or clearing the box put the drawing and the history back
   exactly as they were (no undo step, redo kept). Editing from the FX
   section previews nothing until a value differs from the effect as it
-  is. In the browser the preview is made on the interface thread.
+  is. At most one preview is being made at a time: one dropped (the box
+  cleared, Cancel, the dialog closed) stops before its next effect and
+  the next one waits until it has, so toggling the box on a large
+  picture never runs several makings side by side. Values whose making
+  failed are not made again until a value changes. In the browser the
+  preview is made on the interface thread, so the box starts cleared
+  there and opening an effect never stalls the page.
 - Before and after previews of the first selected bitmap side by side:
   a copy at most 240 pixels across, worked out again only when a setting
   changes. Settings measured in pixels (radius, size, width, height,
@@ -425,7 +432,18 @@ through the master curve, then its channel's curve.
   (`editing_an_effect_previews_the_change_in_its_place`); a vector
   object previews as its picture and is itself again on Cancel
   (`a_vector_object_previews_its_picture`); a cancelled preview job
-  gives nothing (`a_cancelled_job_gives_nothing`).
+  gives nothing (`a_cancelled_job_gives_nothing`), and a raised flag
+  stops the render before its next effect
+  (`a_raised_flag_stops_the_render`).
+- Given a dropped preview whose thread still runs, then no second one
+  starts beside it until it has ended, also when the Preview box is
+  cleared and ticked again
+  (`a_dropped_preview_still_running_holds_the_next_one_back`); given a
+  preview whose thread died, then the same values are not made again
+  frame after frame, and a changed value is made
+  (`a_failed_preview_is_not_made_again_until_a_value_changes`); the
+  box starts cleared in the browser
+  (`the_preview_box_starts_cleared_in_the_browser`).
 - Given a preview at a quarter of the size, then pixel settings are a
   quarter, never below their minimum, and other settings stay
   (`previews_scale_pixel_sizes_only`).

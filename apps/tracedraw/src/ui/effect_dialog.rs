@@ -37,10 +37,15 @@ impl EffectState {
             channel: 0,
             lab: Default::default(),
             pick: None,
-            preview: true,
+            preview: PREVIEW_AT_START,
         }
     }
 }
+
+/// The Preview box as an effect dialog opens: ticked on the desktop; in
+/// the browser the preview is made on the interface thread, so it starts
+/// cleared there and opening an effect never stalls the page.
+pub const PREVIEW_AT_START: bool = !crate::files::WEB;
 
 /// A direction dial: click or drag around it to point it.
 fn dial(ui: &mut Ui, deg: &mut f64) -> bool {
@@ -1025,7 +1030,7 @@ pub fn fx_section(app: &mut App, ui: &mut Ui, id: ShapeId) {
                     channel: 0,
                     lab: Default::default(),
                     pick: None,
-                    preview: true,
+                    preview: PREVIEW_AT_START,
                 });
             }
             if ui

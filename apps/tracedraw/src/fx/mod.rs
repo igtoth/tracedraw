@@ -327,10 +327,14 @@ pub fn reach(e: &BitmapEffect, w: u32, h: u32) -> u32 {
 
 /// The result of a bitmap's effects: the image and its place. With
 /// `inflate` the original grows by what the visible effects reach first.
+/// With `cancel` raised it stops before the next effect and gives
+/// `None`, so a dropped live preview ends soon.
 pub fn render_stack(
     stack: &BitmapFxStack,
     inflate: bool,
+    cancel: Option<&std::sync::atomic::AtomicBool>,
 ) -> Option<(RgbaImage, tracedraw_core::Rect)> {
+    let cancelled = || cancel.is_some_and(|c| c.load(std::sync::atomic::Ordering::Relaxed));
     let mut img = crate::bitmap_fx::decode(&stack.png)?;
     let (w, h) = img.dimensions();
     let pad: u32 = if inflate {
@@ -352,6 +356,9 @@ pub fn render_stack(
         rect = tracedraw_core::Rect::new(rect.x0 - mx, rect.y0 - my, rect.x1 + mx, rect.y1 + my);
     }
     for e in stack.effects.iter().filter(|e| e.visible) {
+        if cancelled() {
+            return None;
+        }
         img = apply_effect(&img, e);
     }
     Some((img, rect))
@@ -466,6 +473,19 @@ pub fn vector_raster_fx(
     auto_inflate: bool,
     dpi: f64,
 ) -> Option<Box<tracedraw_core::document::RasterFx>> {
+    vector_raster_fx_until(shape, symbols, effects, auto_inflate, dpi, None)
+}
+
+/// [`vector_raster_fx`] that gives up (`None`) once `cancel` is raised,
+/// checked between the picture and each effect.
+pub fn vector_raster_fx_until(
+    shape: &tracedraw_core::Shape,
+    symbols: &[tracedraw_core::Symbol],
+    effects: Vec<BitmapEffect>,
+    auto_inflate: bool,
+    dpi: f64,
+    cancel: Option<&std::sync::atomic::AtomicBool>,
+) -> Option<Box<tracedraw_core::document::RasterFx>> {
     use tracedraw_core::document::RasterFx;
     let mut target = shape.clone();
     target.raster_fx = Some(Box::new(RasterFx {
@@ -485,7 +505,7 @@ pub fn vector_raster_fx(
         png: png.into(),
         effects: effects.clone(),
     };
-    let (img, rect) = render_stack(&stack, auto_inflate)?;
+    let (img, rect) = render_stack(&stack, auto_inflate, cancel)?;
     let png = crate::bitmap_fx::encode(&img)?;
     Some(Box::new(RasterFx {
         effects,
@@ -1016,14 +1036,14 @@ mod tests {
             png: png.into(),
             effects: vec![blur.clone()],
         };
-        let (out, rect) = render_stack(&stack, true).expect("renders");
+        let (out, rect) = render_stack(&stack, true, None).expect("renders");
         assert!(out.width() > 24 && rect.x0 < 0.0, "{:?}", rect);
-        let (flat, r2) = render_stack(&stack, false).expect("renders");
+        let (flat, r2) = render_stack(&stack, false, None).expect("renders");
         assert_eq!((flat.dimensions(), r2), ((24, 20), stack.rect));
         // Hidden effects do nothing.
         let mut hidden = stack.clone();
         hidden.effects[0].visible = false;
-        let (same, _) = render_stack(&hidden, true).expect("renders");
+        let (same, _) = render_stack(&hidden, true, None).expect("renders");
         assert_eq!(same, src);
     }
 

@@ -4,7 +4,11 @@
 //! time a value changes. The work runs off the interface thread (the
 //! canvas keeps answering; a busy mark shows in the dialog meanwhile),
 //! starts once a changed value has rested for a moment, and never twice
-//! for the same values. OK keeps what the drawing shows as one undo step
+//! for the same values. At most one preview is being made at any time: a
+//! dropped one (the box cleared, Cancel) stops at its next effect, and the
+//! next one waits until it has. Values whose making failed are not made
+//! again until a value changes. In the browser the work runs on the
+//! interface thread, so the box starts cleared there. OK keeps what the drawing shows as one undo step
 //! without making it again; Cancel, Esc, the close button or clearing the
 //! box put the drawing back exactly as it was, with no undo step.
 
@@ -56,8 +60,8 @@ impl FxTarget {
                 let fx = if effects.is_empty() {
                     None
                 } else {
-                    Some(super::vector_raster_fx(
-                        &shape, symbols, effects, inflate, dpi,
+                    Some(super::vector_raster_fx_until(
+                        &shape, symbols, effects, inflate, dpi, cancel,
                     )?)
                 };
                 if cancelled() {
@@ -79,7 +83,7 @@ impl FxTarget {
                         fx: None,
                     }
                 } else {
-                    let (img, r) = super::render_stack(&stack, inflate)?;
+                    let (img, r) = super::render_stack(&stack, inflate, cancel)?;
                     if cancelled() {
                         return None;
                     }
@@ -194,6 +198,12 @@ pub struct FxPreview {
     /// The objects as they are without the preview, gathered before it
     /// went on the drawing: what every preview starts from.
     base: Option<Vec<FxTarget>>,
+    /// A dropped job whose thread may still run: no new one starts until
+    /// it has ended, so dropped previews never pile up.
+    stale: Option<Job>,
+    /// The values whose making failed (its thread died): not made again
+    /// until a value changes.
+    failed: Option<u64>,
     /// How many previews were made, for tests.
     pub made: usize,
 }
@@ -212,8 +222,23 @@ impl FxPreview {
     fn cancel_job(&mut self) {
         if let Some(j) = self.job.take() {
             j.cancel.store(true, Ordering::Relaxed);
+            // Only one job can run at a time, so an older stale one has
+            // ended already.
+            self.stale = Some(j);
         }
         self.pending = None;
+    }
+
+    /// A dropped job's thread still runs.
+    fn stale_running(&mut self) -> bool {
+        let Some(j) = &self.stale else {
+            return false;
+        };
+        if let Err(TryRecvError::Empty) = j.rx.try_recv() {
+            return true;
+        }
+        self.stale = None;
+        false
     }
 }
 
@@ -292,11 +317,12 @@ impl App {
         }
         self.poll_fx_preview();
         let key = preview_key(st, &self.selection);
-        if self.fx_preview.shown == Some(key) {
+        if self.fx_preview.shown == Some(key) || self.fx_preview.failed == Some(key) {
             self.fx_preview.pending = None;
             self.fx_preview.last_start = None;
             return;
         }
+        self.fx_preview.failed = None;
         let now = Instant::now();
         let p = match self.fx_preview.pending {
             Some(p) if p.key == key => p,
@@ -323,6 +349,12 @@ impl App {
         }
         if !due {
             ctx.request_repaint_after(std::time::Duration::from_secs_f64(DEBOUNCE));
+            return;
+        }
+        if self.fx_preview.stale_running() {
+            // A dropped preview still ends its current effect; its thread
+            // repaints when done.
+            ctx.request_repaint_after(std::time::Duration::from_millis(50));
             return;
         }
         self.start_fx_preview(ctx, st, key);
@@ -384,6 +416,10 @@ impl App {
             Err(TryRecvError::Disconnected) => None,
         };
         let Some(cmds) = out else {
+            // The thread died (an effect failed): these values are not
+            // made again until one changes.
+            self.fx_preview.failed = Some(job.key);
+            self.fx_preview.last_start = None;
             return;
         };
         self.withdraw_fx_preview();
@@ -414,6 +450,7 @@ impl App {
         self.withdraw_fx_preview();
         self.fx_preview.base = None;
         self.fx_preview.last_start = None;
+        self.fx_preview.failed = None;
     }
 
     /// OK: the preview the drawing shows is kept as one undo step; with
@@ -712,6 +749,119 @@ mod tests {
         let cancel = AtomicBool::new(false);
         let cmds = fx_commands(vec![t], &change, &[], true, 300.0, &cancel).expect("made");
         assert_eq!(cmds.len(), 1);
+    }
+
+    /// The render itself stops at a raised flag (before its next effect),
+    /// so a dropped preview ends soon instead of finishing its work.
+    #[test]
+    fn a_raised_flag_stops_the_render() {
+        let (_, app, id) = bitmap_app(16, 16);
+        let Some(FxTarget::Bitmap { mut stack, .. }) = app.fx_target(id) else {
+            panic!("a bitmap target");
+        };
+        stack
+            .effects
+            .push(super::super::new_effect("gaussian_blur"));
+        let raised = AtomicBool::new(true);
+        assert!(super::super::render_stack(&stack, true, Some(&raised)).is_none());
+        let lowered = AtomicBool::new(false);
+        assert!(super::super::render_stack(&stack, true, Some(&lowered)).is_some());
+    }
+
+    /// Frames for a while, `n` of them `ms` apart.
+    fn frames(ctx: &egui::Context, app: &mut App, n: usize, ms: u64) {
+        for _ in 0..n {
+            frame(ctx, app, Vec::new());
+            std::thread::sleep(std::time::Duration::from_millis(ms));
+        }
+    }
+
+    /// A job whose thread has not answered yet, and its sender.
+    fn job(key: u64) -> (Job, std::sync::mpsc::Sender<Option<Vec<Command>>>) {
+        let (tx, rx) = channel();
+        let j = Job {
+            key,
+            label: "Add Effect",
+            cancel: Arc::new(AtomicBool::new(false)),
+            rx,
+        };
+        (j, tx)
+    }
+
+    /// At most one preview is made at a time: while a dropped one still
+    /// runs, the next one waits (no second full render beside it), and
+    /// starts once the dropped one has ended.
+    #[test]
+    fn a_dropped_preview_still_running_holds_the_next_one_back() {
+        let (ctx, mut app, id) = bitmap_app(40, 32);
+        crate::ui::effect_dialog::choose_effect(&mut app, "gaussian_blur");
+        let (stale, tx) = job(0);
+        app.fx_preview.stale = Some(stale);
+        frames(&ctx, &mut app, 8, 60);
+        assert!(app.fx_preview.job.is_none(), "no second job beside it");
+        assert_eq!(app.fx_preview.made, 0);
+        assert!(app.fx_preview.busy(), "the preview waits its turn");
+        drop(tx);
+        assert!(app.settle_fx_preview(&ctx, 10.0));
+        assert_eq!(app.fx_preview.made, 1);
+        assert_eq!(effects_of(&app, id).len(), 1);
+        // Clearing the box drops the job being made: it is kept as the
+        // stale one, so the box ticked again waits for it.
+        let toggle = |app: &mut App, on: bool| {
+            let Dialog::Effect(st) = &mut app.dialog else {
+                panic!("the dialog");
+            };
+            st.preview = on;
+        };
+        let (running, tx) = job(1);
+        app.fx_preview.job = Some(running);
+        toggle(&mut app, false);
+        frame(&ctx, &mut app, Vec::new());
+        assert!(app.fx_preview.job.is_none());
+        assert!(app.fx_preview.stale.is_some());
+        toggle(&mut app, true);
+        frames(&ctx, &mut app, 8, 60);
+        assert!(app.fx_preview.job.is_none());
+        drop(tx);
+        assert!(app.settle_fx_preview(&ctx, 10.0));
+        assert_eq!(app.fx_preview.made, 2);
+        assert_eq!(effects_of(&app, id).len(), 1);
+    }
+
+    /// A preview whose thread died (an effect failed) is not made again
+    /// for the same values, frame after frame; a changed value is made.
+    #[test]
+    fn a_failed_preview_is_not_made_again_until_a_value_changes() {
+        let (ctx, mut app, id) = bitmap_app(40, 32);
+        crate::ui::effect_dialog::choose_effect(&mut app, "gaussian_blur");
+        let key = {
+            let Dialog::Effect(st) = &app.dialog else {
+                panic!("the dialog");
+            };
+            preview_key(st, &app.selection)
+        };
+        let (dead, tx) = job(key);
+        drop(tx);
+        app.fx_preview.job = Some(dead);
+        frames(&ctx, &mut app, 10, 50);
+        assert_eq!(app.fx_preview.failed, Some(key));
+        assert!(app.fx_preview.job.is_none(), "not started again");
+        assert!(!app.fx_preview.busy());
+        assert_eq!(app.fx_preview.made, 0);
+        assert!(effects_of(&app, id).is_empty());
+        set_radius(&mut app, 4.0);
+        assert!(app.settle_fx_preview(&ctx, 10.0));
+        assert_eq!(app.fx_preview.made, 1);
+        assert_eq!(app.fx_preview.failed, None);
+        assert_eq!(effects_of(&app, id)[0].params.get("radius"), Some(&4.0));
+    }
+
+    /// In the browser the box starts cleared (the work would run on the
+    /// interface thread); on the desktop, ticked.
+    #[test]
+    fn the_preview_box_starts_cleared_in_the_browser() {
+        let st = crate::ui::effect_dialog::EffectState::new("gaussian_blur");
+        assert_eq!(st.preview, !crate::files::WEB);
     }
 
     /// `cargo test --release -p tracedraw -- --ignored frame_times_of_a_bitmap_effect_preview --nocapture`:
