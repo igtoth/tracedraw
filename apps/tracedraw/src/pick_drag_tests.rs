@@ -11721,3 +11721,81 @@ fn segment_delete_drags_a_freehand_stroke_with_alt_or_the_bar() {
         assert_eq!(has_middle(&app, h), freehand, "{bar_freehand} {mods:?}");
     }
 }
+
+/// What a frame costs with the Fit Objects to Path panel open and its
+/// preview on the canvas, while the pointer moves: three objects, then
+/// 150 copies (outlines) and 600 (boxes) (#1091):
+/// `cargo test --release -p tracedraw -- --ignored frame_times_of_the_fit_to_path_panel --nocapture`.
+#[test]
+#[ignore]
+fn frame_times_of_the_fit_to_path_panel() {
+    use crate::ops2::{FitCopies, FitPathSettings, FitSpacing};
+    let cases: [(&str, FitPathSettings); 3] = [
+        ("3 objects", FitPathSettings::default()),
+        (
+            "150 copies",
+            FitPathSettings {
+                copies: FitCopies::Count,
+                count: 150,
+                ..FitPathSettings::default()
+            },
+        ),
+        (
+            "600 copies",
+            FitPathSettings {
+                spacing: FitSpacing::Distance,
+                distance: 0.25,
+                copies: FitCopies::Fill,
+                ..FitPathSettings::default()
+            },
+        ),
+    ];
+    for (name, set) in cases {
+        let (ctx, mut app, a) = setup();
+        let mut sel = vec![a];
+        for i in 0..2 {
+            let x = 70.0 + 20.0 * i as f64;
+            sel.push(
+                app.new_shape(ShapeKind::Ellipse {
+                    rect: Rect::new(x, 10.0, x + 12.0, 22.0),
+                    arc: None,
+                })
+                .expect("ellipse"),
+            );
+        }
+        let mut path = tracedraw_core::BezPath::new();
+        path.move_to((10.0, 100.0));
+        path.curve_to((60.0, 180.0), (110.0, 20.0), (160.0, 100.0));
+        sel.push(
+            app.new_shape(ShapeKind::Path {
+                path,
+                closed: false,
+            })
+            .expect("path"),
+        );
+        app.select(sel);
+        app.open_docker(crate::app::DockerTab::FitToPath);
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+        app.fit_path = set;
+        app.fit_path_edited = true;
+        for _ in 0..3 {
+            frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+        }
+        let n = 100;
+        let t = std::time::Instant::now();
+        for i in 0..n {
+            let p = Pos2::new(500.0 + (i % 50) as f32 * 4.0, 500.0);
+            frame(
+                &ctx,
+                &mut app,
+                vec![Event::PointerMoved(p)],
+                Modifiers::NONE,
+            );
+        }
+        eprintln!(
+            "fit to path panel, {name}: {:?} per frame, {} outlines previewed",
+            t.elapsed() / n,
+            app.docker_preview.len()
+        );
+    }
+}

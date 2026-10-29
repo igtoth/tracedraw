@@ -62,16 +62,37 @@ outline of a shape. Open it with
 
 1. Select the objects to place, then the path last (Shift+click).
 2. Under [[docker.fit_to_path_spacing]], choose
-   [[docker.fit_to_path_even]] to spread the objects over the whole path, or
+   [[docker.fit_to_path_even]] to spread the objects over the path, or
    [[docker.fit_to_path_distance]] and type the [[docker.fit_to_path_distance_value]]
-   between the centers of neighbouring objects.
+   from one object to the next. [[docker.fit_to_path_measure]] measures it
+   between the [[docker.fit_to_path_centres]] of neighbouring objects, or
+   between their [[docker.fit_to_path_edges]], so that objects of different
+   sizes get the same gap.
 3. [[docker.fit_to_path_offset]] moves the first object along the path from
-   its start.
-4. Tick [[docker.fit_to_path_rotate]] to turn each object with the direction
-   of the path, and [[docker.fit_to_path_reverse]] to start from the other
-   end.
-5. Once you change a value, the outlines on the canvas show where the
-   objects will go. Click [[docker.apply]].
+   its start; [[docker.fit_to_path_end_offset]] keeps the objects away from
+   the end of an open path. With a fixed distance,
+   [[docker.fit_to_path_align]] puts the row at the
+   [[docker.fit_to_path_align_start]], in the
+   [[docker.fit_to_path_align_middle]] or at the
+   [[docker.fit_to_path_align_end]].
+4. Under [[docker.fit_to_path_copies]], [[docker.fit_to_path_copies_count]]
+   fills the path with that many objects: the ones you selected, then
+   copies of them in turn. With a fixed distance,
+   [[docker.fit_to_path_copies_fill]] makes as many copies as fit.
+5. Under [[docker.fit_to_path_place]], put the objects
+   [[docker.fit_to_path_on]], [[docker.fit_to_path_above]] or
+   [[docker.fit_to_path_below]], with a [[docker.fit_to_path_side]].
+6. Under [[docker.fit_to_path_rotation]], choose
+   [[docker.fit_to_path_rotate]] to turn each object with the direction of
+   the path, or [[docker.fit_to_path_fixed]] to turn them all alike; the
+   [[docker.fit_to_path_angle]] is added in either case.
+7. [[docker.fit_to_path_order]] sets which object goes first: as selected,
+   reversed, from left to right or right to left, by size, or large and
+   small in turn. [[docker.fit_to_path_reverse]] starts from the other end
+   of the path.
+8. Once you change a value, the outlines on the canvas show where the
+   objects and copies will go. Click [[docker.apply]]. Copies go into
+   the layer of the object they copy, and the objects placed are selected.
 
 The panel starts from its default values, with no outlines, each time you
 select other objects (or work in another drawing); the values you enter

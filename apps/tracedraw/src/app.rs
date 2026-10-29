@@ -1129,6 +1129,8 @@ pub struct App {
     /// with no preview (#1136).
     pub fit_path_for: Option<(Option<u64>, Vec<ShapeId>)>,
     pub fit_path_edited: bool,
+    /// The Fit Objects to Path preview and what it was worked out for.
+    pub fit_path_preview: Option<(crate::ops2::FitPreviewKey, Vec<tracedraw_core::BezPath>)>,
     /// Outlines a docker previews on the canvas this frame (page space).
     pub docker_preview: Vec<tracedraw_core::geometry::BezPath>,
     /// A point a docker marks on the drawing (the Coordinates docker's
@@ -2292,6 +2294,7 @@ impl App {
             fit_path: Default::default(),
             fit_path_for: None,
             fit_path_edited: false,
+            fit_path_preview: None,
             docker_preview: Vec::new(),
             docker_preview_point: None,
             dialog: crate::ui::dialogs::Dialog::None,

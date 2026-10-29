@@ -18,7 +18,7 @@ Pages: `ai-drawing.md`, `align-distribute.md`, `brush-strokes.md`, `bitmap-effec
 `crop-knife-eraser.md`, `curve-tools.md`, `dimensions.md`, `distort.md`,
 `document-properties.md`, `documents.md`, `drawing-window.md`, `drop-files.md`, `drop-shadow.md`, `dxf.md`,
 `emf-wmf.md`, `envelope.md`, `eps-import.md`, `extrude.md`,
-`eyedroppers.md`, `files.md`, `find-replace.md`, `font-manager.md`, `gradient-fill.md`, `free-transform.md`, `hints.md`,
+`eyedroppers.md`, `files.md`, `find-replace.md`, `fit-to-path.md`, `font-manager.md`, `gradient-fill.md`, `free-transform.md`, `hints.md`,
 `lens.md`, `live-guides.md`, `mcp.md`, `mesh-fill.md`, `new-document.md`, `options.md`,
 `outline-pen.md`, `package.md`, `pdf-import.md`, `picture-mosaic.md`, `pick-tool.md`,
 `eyedroppers.md`, `files.md`, `font-manager.md`, `gradient-fill.md`, `free-transform.md`, `hints.md`,

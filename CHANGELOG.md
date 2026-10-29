@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Fit Objects to Path panel: copies along the path (a number of objects, the selected ones and then copies of them in turn, or as many as fit at a fixed distance), spacing measured between centers or between edges, an end offset, a row at a fixed distance placed at the start, middle or end, the objects on, above or below the path at a set distance, turned with the path or all by a fixed angle, and the order (as selected, reversed, left to right, right to left, largest or smallest first, large and small in turn). Copies go into their original's layer and Apply stays one undo step; the preview is worked out only when a value, the selection or the drawing changes (#1091, #1196).
+
 ## 0.23.0 (2026-10-29)
 
 - Font list filter: the choices now open beside the list, in sections: fonts shown, style (serif, sans serif, script, decorative, monospaced, symbol), weight (light, regular, bold), width (condensed, normal, expanded), technology (TrueType, OpenType, variable), scripts (Latin, Greek, Cyrillic, Arabic, Devanagari, CJK and more), each OpenType feature on its own, embedding rights and the folders the fonts are in. Every value is read from the font files once (OS/2 weight and width classes, embedding bits, Unicode ranges, variation axes, GSUB and GPOS feature lists). Monospaced and Symbol now widen the style choices like the other styles instead of narrowing them (#867).

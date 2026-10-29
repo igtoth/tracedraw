@@ -2774,12 +2774,16 @@ fn join_curves(app: &mut App, ui: &mut Ui) {
     }
 }
 
-/// Fit Objects to Path: spacing (even or a fixed distance), the start
-/// offset, turning the objects with the path and the direction, with a
-/// preview of where the objects go; the last selected object is the path
-/// (#1027).
+/// Fit Objects to Path: spacing (even or a fixed distance, between
+/// centres or edges), the start and end offsets, copies (a number, or as
+/// many as fit), the placement on, above or below the path, the rotation
+/// (with the path or fixed), the order and the direction, with a preview
+/// of where the objects go; the last selected object is the path (#1027,
+/// #1091, #1196).
 fn fit_to_path(app: &mut App, ui: &mut Ui) {
-    use crate::ops2::FitSpacing;
+    use crate::ops2::{
+        FitAlign, FitCopies, FitMeasure, FitOrder, FitPlace, FitRotation, FitSpacing,
+    };
     let u = app.units;
     app.fit_path_follow_selection();
     let mut f = app.fit_path;
@@ -2803,20 +2807,37 @@ fn fit_to_path(app: &mut App, ui: &mut Ui) {
             }
         });
     };
+    let combo = |ui: &mut Ui, key: &str, id: &str, current: &str, add: &mut dyn FnMut(&mut Ui)| {
+        ui.horizontal(|ui| {
+            ui.label(tr(key));
+            egui::ComboBox::from_id_salt(id)
+                .selected_text(current)
+                .show_ui(ui, |ui| add(ui))
+                .response
+                .rich_tip(crate::ui::tips::pair(key, &format!("{key}_desc")));
+        });
+    };
+    let radio = |ui: &mut Ui, on: bool, key: &str| -> bool {
+        ui.radio(on, tr(key))
+            .rich_tip(crate::ui::tips::keyed(key))
+            .clicked()
+    };
     dim(ui, tr("docker.fit_to_path_hint"));
+
     ui.strong(tr("docker.fit_to_path_spacing"));
-    ui.radio_value(
-        &mut f.spacing,
-        FitSpacing::Even,
-        tr("docker.fit_to_path_even"),
-    )
-    .rich_tip(crate::ui::tips::keyed("docker.fit_to_path_even"));
-    ui.radio_value(
-        &mut f.spacing,
-        FitSpacing::Distance,
-        tr("docker.fit_to_path_distance"),
-    )
-    .rich_tip(crate::ui::tips::keyed("docker.fit_to_path_distance"));
+    if radio(ui, f.spacing == FitSpacing::Even, "docker.fit_to_path_even") {
+        f.spacing = FitSpacing::Even;
+        if f.copies == FitCopies::Fill {
+            f.copies = FitCopies::None;
+        }
+    }
+    if radio(
+        ui,
+        f.spacing == FitSpacing::Distance,
+        "docker.fit_to_path_distance",
+    ) {
+        f.spacing = FitSpacing::Distance;
+    }
     if f.spacing == FitSpacing::Distance {
         field(
             ui,
@@ -2825,17 +2846,179 @@ fn fit_to_path(app: &mut App, ui: &mut Ui) {
             0.0,
         );
     }
+    let measures = [
+        (FitMeasure::Centres, "docker.fit_to_path_centres"),
+        (FitMeasure::Edges, "docker.fit_to_path_edges"),
+    ];
+    let cur = measures
+        .iter()
+        .find(|(m, _)| *m == f.measure)
+        .map_or(String::new(), |(_, k)| tr(k));
+    combo(
+        ui,
+        "docker.fit_to_path_measure",
+        "fit_path_measure",
+        &cur,
+        &mut |ui| {
+            for (m, k) in measures {
+                ui.selectable_value(&mut f.measure, m, tr(k));
+            }
+        },
+    );
     field(ui, "docker.fit_to_path_offset", &mut f.offset, -100_000.0);
-    ui.checkbox(&mut f.rotate, tr("docker.fit_to_path_rotate"))
-        .rich_tip(crate::ui::tips::keyed("docker.fit_to_path_rotate"));
+    field(
+        ui,
+        "docker.fit_to_path_end_offset",
+        &mut f.end_offset,
+        -100_000.0,
+    );
+    if f.spacing == FitSpacing::Distance {
+        let aligns = [
+            (FitAlign::Start, "docker.fit_to_path_align_start"),
+            (FitAlign::Middle, "docker.fit_to_path_align_middle"),
+            (FitAlign::End, "docker.fit_to_path_align_end"),
+        ];
+        let cur = aligns
+            .iter()
+            .find(|(a, _)| *a == f.align)
+            .map_or(String::new(), |(_, k)| tr(k));
+        combo(
+            ui,
+            "docker.fit_to_path_align",
+            "fit_path_align",
+            &cur,
+            &mut |ui| {
+                for (a, k) in aligns {
+                    ui.selectable_value(&mut f.align, a, tr(k));
+                }
+            },
+        );
+    }
+
+    ui.add_space(4.0);
+    ui.strong(tr("docker.fit_to_path_copies"));
+    if radio(
+        ui,
+        f.copies == FitCopies::None,
+        "docker.fit_to_path_copies_none",
+    ) {
+        f.copies = FitCopies::None;
+    }
+    ui.horizontal(|ui| {
+        if radio(
+            ui,
+            f.copies == FitCopies::Count,
+            "docker.fit_to_path_copies_count",
+        ) {
+            f.copies = FitCopies::Count;
+        }
+        let mut c = f.count as f64;
+        if ui
+            .add_enabled(
+                f.copies == FitCopies::Count,
+                crate::ui::field::NumField::new(&mut c)
+                    .range(1.0..=crate::fit_path::MAX_PLACED as f64)
+                    .max_decimals(0),
+            )
+            .rich_tip(crate::ui::tips::keyed("docker.fit_to_path_copies_count"))
+            .changed()
+        {
+            f.count = c.round().clamp(1.0, crate::fit_path::MAX_PLACED as f64) as u32;
+        }
+    });
+    let fill_ok = f.spacing == FitSpacing::Distance;
+    if ui
+        .add_enabled(
+            fill_ok,
+            egui::RadioButton::new(
+                f.copies == FitCopies::Fill,
+                tr("docker.fit_to_path_copies_fill"),
+            ),
+        )
+        .rich_tip(crate::ui::tips::keyed("docker.fit_to_path_copies_fill"))
+        .rich_disabled_tip(crate::ui::tips::keyed("docker.fit_to_path_copies_fill"))
+        .clicked()
+    {
+        f.copies = FitCopies::Fill;
+    }
+
+    ui.add_space(4.0);
+    ui.strong(tr("docker.fit_to_path_place"));
+    let places = [
+        (FitPlace::On, "docker.fit_to_path_on"),
+        (FitPlace::Above, "docker.fit_to_path_above"),
+        (FitPlace::Below, "docker.fit_to_path_below"),
+    ];
+    for (p, k) in places {
+        if radio(ui, f.place == p, k) {
+            f.place = p;
+        }
+    }
+    if f.place != FitPlace::On {
+        field(ui, "docker.fit_to_path_side", &mut f.side, -100_000.0);
+    }
+
+    ui.add_space(4.0);
+    ui.strong(tr("docker.fit_to_path_rotation"));
+    if radio(
+        ui,
+        f.rotation == FitRotation::Follow,
+        "docker.fit_to_path_rotate",
+    ) {
+        f.rotation = FitRotation::Follow;
+    }
+    if radio(
+        ui,
+        f.rotation == FitRotation::Fixed,
+        "docker.fit_to_path_fixed",
+    ) {
+        f.rotation = FitRotation::Fixed;
+    }
+    ui.horizontal(|ui| {
+        ui.label(tr("docker.fit_to_path_angle"));
+        ui.add_sized(
+            [90.0, 22.0],
+            crate::ui::field::NumField::new(&mut f.angle)
+                .range(-360.0..=360.0)
+                .max_decimals(2)
+                .suffix("°"),
+        )
+        .rich_tip(crate::ui::tips::keyed("docker.fit_to_path_angle"));
+    });
+
+    ui.add_space(4.0);
+    let orders = [
+        (FitOrder::AsSelected, "docker.fit_to_path_order_selected"),
+        (FitOrder::Reversed, "docker.fit_to_path_order_reversed"),
+        (FitOrder::LeftToRight, "docker.fit_to_path_order_ltr"),
+        (FitOrder::RightToLeft, "docker.fit_to_path_order_rtl"),
+        (FitOrder::LargestFirst, "docker.fit_to_path_order_largest"),
+        (FitOrder::SmallestFirst, "docker.fit_to_path_order_smallest"),
+        (FitOrder::Alternate, "docker.fit_to_path_order_alternate"),
+    ];
+    let cur = orders
+        .iter()
+        .find(|(o, _)| *o == f.order)
+        .map_or(String::new(), |(_, k)| tr(k));
+    combo(
+        ui,
+        "docker.fit_to_path_order",
+        "fit_path_order",
+        &cur,
+        &mut |ui| {
+            for (o, k) in orders {
+                ui.selectable_value(&mut f.order, o, tr(k));
+            }
+        },
+    );
     ui.checkbox(&mut f.reverse, tr("docker.fit_to_path_reverse"))
         .rich_tip(crate::ui::tips::keyed("docker.fit_to_path_reverse"));
     if f != app.fit_path {
         app.fit_path_edited = true;
     }
     app.fit_path = f;
-    let preview = app.fit_objects_to_path_preview();
     let valid = app.selection.len() >= 2;
+    let preview = app.fit_objects_to_path_preview().to_vec();
     app.docker_preview.extend(preview);
     ui.add_space(8.0);
     if ui

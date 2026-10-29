@@ -64,16 +64,37 @@ curva ou do contorno de uma forma. Abra-o com
 
 1. Selecione os objetos a colocar e, por último, o caminho (Shift+clique).
 2. Em [[docker.fit_to_path_spacing]], escolha
-   [[docker.fit_to_path_even]] para espalhar os objetos pelo caminho inteiro, ou
+   [[docker.fit_to_path_even]] para espalhar os objetos pelo caminho, ou
    [[docker.fit_to_path_distance]] e digite a [[docker.fit_to_path_distance_value]]
-   entre os centros de objetos vizinhos.
+   de um objeto ao seguinte. [[docker.fit_to_path_measure]] mede essa
+   distância entre os [[docker.fit_to_path_centres]] dos objetos vizinhos ou
+   entre as [[docker.fit_to_path_edges]], para que objetos de tamanhos
+   diferentes fiquem com o mesmo vão.
 3. [[docker.fit_to_path_offset]] afasta o primeiro objeto do início do
-   caminho.
-4. Marque [[docker.fit_to_path_rotate]] para girar cada objeto com a direção
-   do caminho, e [[docker.fit_to_path_reverse]] para começar pela outra
-   ponta.
-5. Assim que você muda um valor, os contornos na tela mostram onde os
-   objetos vão ficar. Clique em [[docker.apply]].
+   caminho; [[docker.fit_to_path_end_offset]] mantém os objetos longe do fim
+   de um caminho aberto. Com distância fixa, [[docker.fit_to_path_align]]
+   põe a fileira no [[docker.fit_to_path_align_start]], no
+   [[docker.fit_to_path_align_middle]] ou no
+   [[docker.fit_to_path_align_end]].
+4. Em [[docker.fit_to_path_copies]], [[docker.fit_to_path_copies_count]]
+   enche o caminho com esse número de objetos: os que você selecionou e
+   depois cópias deles, um de cada vez. Com distância fixa,
+   [[docker.fit_to_path_copies_fill]] faz quantas cópias couberem.
+5. Em [[docker.fit_to_path_place]], coloque os objetos
+   [[docker.fit_to_path_on]], [[docker.fit_to_path_above]] ou
+   [[docker.fit_to_path_below]], com uma [[docker.fit_to_path_side]].
+6. Em [[docker.fit_to_path_rotation]], escolha
+   [[docker.fit_to_path_rotate]] para girar cada objeto com a direção do
+   caminho, ou [[docker.fit_to_path_fixed]] para girar todos igualmente; o
+   [[docker.fit_to_path_angle]] é somado nos dois casos.
+7. [[docker.fit_to_path_order]] define qual objeto vem primeiro: como
+   selecionados, invertida, da esquerda para a direita ou da direita para
+   a esquerda, por tamanho, ou grande e pequeno alternados.
+   [[docker.fit_to_path_reverse]] começa pela outra ponta do caminho.
+8. Assim que você muda um valor, os contornos na tela mostram onde os
+   objetos e as cópias vão ficar. Clique em [[docker.apply]]. As cópias
+   vão para a camada do objeto que copiam, e os objetos colocados ficam
+   selecionados.
 
 O painel começa com os valores padrão, sem contornos, sempre que você
 seleciona outros objetos (ou trabalha em outro desenho); os valores que

@@ -1363,22 +1363,58 @@ impl App {
 
     /// Object > Fit Objects to Path: the last selected object is the path;
     /// the others are placed along it with the Fit Objects to Path panel's
-    /// settings (#1027).
+    /// settings (#1027), with the copies the panel asks for (#1091,
+    /// #1196). Copies go into their original's layer and, with the
+    /// objects placed, become the selection.
     pub fn fit_objects_to_path(&mut self) {
         let shapes = self.selected_shapes();
-        let moves = fit_to_path_moves(&shapes, &self.fit_path);
-        if moves.is_empty() {
+        let plan = fit_to_path_plan(&shapes, &self.fit_path);
+        if plan.is_empty() {
             return;
         }
-        let cmds: Vec<Command> = moves
-            .into_iter()
-            .map(|(id, transform)| Command::TransformShapes {
-                shapes: vec![id],
-                transform,
-            })
-            .collect();
+        let mut cmds = Vec::with_capacity(plan.len());
+        let mut placed = Vec::with_capacity(plan.len());
+        let mut copied = false;
+        for p in &plan {
+            if !p.copy {
+                cmds.push(Command::TransformShapes {
+                    shapes: vec![p.source],
+                    transform: p.transform,
+                });
+                placed.push(p.source);
+                continue;
+            }
+            let Some(src) = shapes.iter().find(|s| s.id == p.source) else {
+                continue;
+            };
+            let top = self
+                .doc()
+                .ancestors(src.id)
+                .first()
+                .copied()
+                .unwrap_or(src.id);
+            let Some(layer) = self
+                .doc()
+                .locate(top)
+                .ok()
+                .map(|(l, _)| l)
+                .or_else(|| self.active_layer())
+            else {
+                continue;
+            };
+            let id = self.engine.new_shape_id();
+            let mut c = crate::app::reid_pub(src.clone(), id, &mut self.engine);
+            c.transform_by(p.transform);
+            cmds.push(Command::AddShape { layer, shape: c });
+            placed.push(id);
+            copied = true;
+        }
         if let Err(e) = self.engine.run_batch("Fit Objects to Path", &cmds) {
             self.status = e.to_string();
+            return;
+        }
+        if copied {
+            self.select(placed);
         }
     }
 
@@ -1399,23 +1435,48 @@ impl App {
         }
     }
 
-    /// The outlines the selected objects would have after
-    /// [`Self::fit_objects_to_path`], for the panel's preview; empty when
-    /// the selection cannot be fitted or is too large to preview cheaply,
-    /// and until a value was entered for these objects (#1136).
-    pub fn fit_objects_to_path_preview(&self) -> Vec<BezPath> {
+    /// The outlines the selected objects (and the copies) would have
+    /// after [`Self::fit_objects_to_path`], for the panel's preview; empty
+    /// when the selection cannot be fitted or is too large to preview
+    /// cheaply, and until a value was entered for these objects (#1136).
+    /// Worked out again only when the settings, the selection or the
+    /// drawing change; past [`FIT_PREVIEW_OUTLINES`] objects each shows
+    /// as its box.
+    pub fn fit_objects_to_path_preview(&mut self) -> &[BezPath] {
         if !self.fit_path_edited || self.selection.len() < 2 || self.selection.len() > 200 {
-            return Vec::new();
+            self.fit_path_preview = None;
+            return &[];
         }
-        let shapes = self.selected_shapes();
-        let moves = fit_to_path_moves(&shapes, &self.fit_path);
-        moves
-            .into_iter()
-            .filter_map(|(id, t)| {
-                let s = shapes.iter().find(|s| s.id == id)?;
-                Some(t * s.page_path())
-            })
-            .collect()
+        let key = FitPreviewKey {
+            settings: self.fit_path,
+            revision: self.engine.revision(),
+            drawing: self.docs.get(self.active_doc).map(|d| d.drawing),
+            selection: self.selection.clone(),
+        };
+        if self
+            .fit_path_preview
+            .as_ref()
+            .is_none_or(|(k, _)| *k != key)
+        {
+            let shapes = self.selected_shapes();
+            let plan = fit_to_path_plan(&shapes, &self.fit_path);
+            let boxes = plan.len() > FIT_PREVIEW_OUTLINES;
+            let paths = plan
+                .into_iter()
+                .filter_map(|p| {
+                    let s = shapes.iter().find(|s| s.id == p.source)?;
+                    Some(if boxes {
+                        p.transform * kurbo::Shape::to_path(&s.bounds(), 0.1)
+                    } else {
+                        p.transform * s.page_path()
+                    })
+                })
+                .collect();
+            self.fit_path_preview = Some((key, paths));
+        }
+        self.fit_path_preview
+            .as_ref()
+            .map_or(&[], |(_, p)| p.as_slice())
     }
 
     /// The Join Curves docker: join the open ends of the selected curves
@@ -3442,146 +3503,23 @@ pub(crate) fn with_stand_ins(missing: &[String]) -> String {
         .join(", ")
 }
 
-/// How Fit Objects to Path spaces the objects along the path.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FitSpacing {
-    /// Spread evenly over the whole path (after the start offset).
-    Even,
-    /// A fixed distance between the centres of neighbouring objects.
-    Distance,
+/// Past this many objects (copies included) the Fit Objects to Path
+/// preview shows each object as its box.
+pub const FIT_PREVIEW_OUTLINES: usize = 200;
+
+/// What the Fit Objects to Path preview was worked out for.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FitPreviewKey {
+    settings: FitPathSettings,
+    revision: u64,
+    drawing: Option<u64>,
+    selection: Vec<ShapeId>,
 }
 
-/// The Fit Objects to Path panel's settings (millimetres, #1027).
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct FitPathSettings {
-    pub spacing: FitSpacing,
-    /// Distance between object centres with [`FitSpacing::Distance`].
-    pub distance: f64,
-    /// Where along the path the first object goes.
-    pub offset: f64,
-    /// Turn each object to follow the direction of the path.
-    pub rotate: bool,
-    /// Start from the other end of the path.
-    pub reverse: bool,
-}
-
-impl Default for FitPathSettings {
-    fn default() -> Self {
-        FitPathSettings {
-            spacing: FitSpacing::Even,
-            distance: 10.0,
-            offset: 0.0,
-            rotate: false,
-            reverse: false,
-        }
-    }
-}
-
-/// The move (and turn) of each object for Fit Objects to Path: the last
-/// shape is the path, the others are centred on points along its first
-/// subpath, in selection order. Empty when there is nothing to fit.
-pub fn fit_to_path_moves(shapes: &[Shape], set: &FitPathSettings) -> Vec<(ShapeId, Affine)> {
-    let Some((path_shape, objects)) = shapes.split_last() else {
-        return Vec::new();
-    };
-    if objects.is_empty() {
-        return Vec::new();
-    }
-    // The first subpath, flattened; a closed one ends where it started.
-    let mut pts: Vec<Point> = Vec::new();
-    let mut closed = false;
-    let mut done = false;
-    kurbo::flatten(
-        path_shape.page_path().elements().iter().copied(),
-        0.05,
-        |el| match el {
-            _ if done => {}
-            kurbo::PathEl::MoveTo(p) => {
-                if pts.is_empty() {
-                    pts.push(p);
-                } else {
-                    done = true;
-                }
-            }
-            kurbo::PathEl::LineTo(p) => pts.push(p),
-            kurbo::PathEl::ClosePath => {
-                if let Some(&first) = pts.first() {
-                    pts.push(first);
-                }
-                closed = true;
-                done = true;
-            }
-            _ => {}
-        },
-    );
-    pts.dedup_by(|a, b| (*a - *b).hypot() < 1e-9);
-    if pts.len() < 2 {
-        return Vec::new();
-    }
-    if set.reverse {
-        pts.reverse();
-    }
-    let mut cum = vec![0.0];
-    for w in pts.windows(2) {
-        cum.push(cum.last().copied().unwrap_or(0.0) + (w[1] - w[0]).hypot());
-    }
-    let total = cum.last().copied().unwrap_or(0.0);
-    if total <= 1e-9 {
-        return Vec::new();
-    }
-    let n = objects.len();
-    let offset = if set.offset.is_finite() {
-        set.offset
-    } else {
-        0.0
-    };
-    let at = |i: usize| -> f64 {
-        let d = match set.spacing {
-            FitSpacing::Even => {
-                let start = offset.clamp(0.0, total);
-                let room = total - start;
-                if closed {
-                    offset + room * i as f64 / n as f64
-                } else if n == 1 {
-                    start + room / 2.0
-                } else {
-                    start + room * i as f64 / (n as f64 - 1.0)
-                }
-            }
-            FitSpacing::Distance => offset + set.distance.max(0.0) * i as f64,
-        };
-        if closed {
-            d.rem_euclid(total)
-        } else {
-            d.clamp(0.0, total)
-        }
-    };
-    objects
-        .iter()
-        .enumerate()
-        .map(|(i, s)| {
-            let target = at(i);
-            let k = cum
-                .partition_point(|c| *c <= target)
-                .saturating_sub(1)
-                .min(pts.len() - 2);
-            let seg = pts[k + 1] - pts[k];
-            let len = seg.hypot().max(1e-9);
-            let u = ((target - cum[k]) / len).clamp(0.0, 1.0);
-            let pos = pts[k] + seg * u;
-            let c = s.bounds().center();
-            let turn = if set.rotate {
-                Affine::rotate(seg.y.atan2(seg.x))
-            } else {
-                Affine::IDENTITY
-            };
-            (
-                s.id,
-                Affine::translate(pos.to_vec2()) * turn * Affine::translate(-c.to_vec2()),
-            )
-        })
-        .collect()
-}
+pub use crate::fit_path::{
+    fit_to_path_plan, FitAlign, FitCopies, FitMeasure, FitOrder, FitPathSettings, FitPlace,
+    FitRotation, FitSpacing,
+};
 
 #[cfg(test)]
 mod tests {
@@ -4387,8 +4325,8 @@ mod tests {
             spacing: FitSpacing::Distance,
             distance: 20.0,
             offset: 10.0,
-            rotate: false,
             reverse: true,
+            ..FitPathSettings::default()
         };
         app.fit_objects_to_path();
         for (id, x) in [(a, 90.0), (b, 70.0), (c, 50.0)] {
@@ -4426,8 +4364,9 @@ mod tests {
             spacing: FitSpacing::Distance,
             distance: 20.0,
             offset: 30.0,
-            rotate: true,
+            rotation: FitRotation::Follow,
             reverse: true,
+            ..FitPathSettings::default()
         };
         app.fit_path = entered;
         app.fit_path_edited = true;
@@ -4486,7 +4425,7 @@ mod tests {
             assert!((centre(&app, *id) - Point::from(p)).hypot() < 1e-6, "{p:?}");
         }
         // Turned: on the right side (going down) the 4 x 2 object stands up.
-        app.fit_path.rotate = true;
+        app.fit_path.rotation = FitRotation::Follow;
         app.fit_path.offset = 50.0;
         app.fit_objects_to_path();
         let s = app.doc().find_shape(ids[0]).expect("shape").clone();
@@ -4499,6 +4438,82 @@ mod tests {
             (r.width() - 2.0).abs() < 1e-6 && (r.height() - 4.0).abs() < 1e-6,
             "{r:?}"
         );
+    }
+
+    /// Copies along the path: a count makes the missing objects as
+    /// copies in the original's layer, below the path's selection; the
+    /// objects placed become the selection and one undo takes it all
+    /// back. The preview is worked out once while nothing changes, and
+    /// a long run previews as boxes (#1091, #1196).
+    #[test]
+    fn fit_objects_to_path_makes_copies_in_one_step() {
+        let mut app = App::headless();
+        let a = square_at(&mut app, 200.0, 0.0);
+        let line = line_path(&mut app, &[(0.0, 0.0), (100.0, 0.0)], false);
+        let before = app
+            .doc()
+            .all_layers()
+            .map(|l| l.shapes.len())
+            .sum::<usize>();
+        app.select(vec![a, line]);
+        app.fit_path_follow_selection();
+        app.fit_path = FitPathSettings {
+            copies: FitCopies::Count,
+            count: 5,
+            place: FitPlace::Above,
+            side: 1.0,
+            ..FitPathSettings::default()
+        };
+        app.fit_path_edited = true;
+        assert_eq!(app.fit_objects_to_path_preview().len(), 5);
+        let first = app.fit_objects_to_path_preview().as_ptr();
+        assert_eq!(app.fit_objects_to_path_preview().as_ptr(), first, "kept");
+        app.fit_objects_to_path();
+        let after = app
+            .doc()
+            .all_layers()
+            .map(|l| l.shapes.len())
+            .sum::<usize>();
+        assert_eq!(after, before + 4);
+        assert_eq!(app.selection.len(), 5);
+        assert_eq!(app.selection[0], a);
+        for (id, x) in app
+            .selection
+            .clone()
+            .iter()
+            .zip([0.0, 25.0, 50.0, 75.0, 100.0])
+        {
+            // 2 mm high, 1 mm above the line.
+            assert!(
+                (centre(&app, *id) - Point::new(x, 2.0)).hypot() < 1e-6,
+                "{x}"
+            );
+        }
+        assert_eq!(app.engine.undo_label(), Some("Fit Objects to Path"));
+        app.undo();
+        let undone = app
+            .doc()
+            .all_layers()
+            .map(|l| l.shapes.len())
+            .sum::<usize>();
+        assert_eq!(undone, before);
+        assert!((centre(&app, a) - Point::new(202.0, 1.0)).hypot() < 1e-6);
+        // Filling a long path: boxes instead of outlines in the preview.
+        app.select(vec![a, line]);
+        app.fit_path_follow_selection();
+        app.fit_path = FitPathSettings {
+            spacing: FitSpacing::Distance,
+            distance: 0.25,
+            copies: FitCopies::Fill,
+            ..FitPathSettings::default()
+        };
+        app.fit_path_edited = true;
+        let n = app.fit_objects_to_path_preview().len();
+        assert_eq!(n, 401);
+        assert!(app
+            .fit_objects_to_path_preview()
+            .iter()
+            .all(|p| p.elements().len() <= 6));
     }
 }
 
