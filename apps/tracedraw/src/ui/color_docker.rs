@@ -3,8 +3,11 @@
 //! a hue strip), the sliders of the chosen color model, and a palette's
 //! swatches. Above them the selected object's color sits beside the new
 //! one, with its hexadecimal code and the gamut warning; below them Fill
-//! and Outline apply the new color to the selection. When the selection
-//! changes, the new color becomes the selected object's fill.
+//! and Outline apply the new color to the selection (to both at once
+//! while the lock is on) and a "..." button drops the other actions (No
+//! Fill, No Outline, Swap Colors, Add to Document Palette, Add to Custom
+//! Spot Colors, Add to Color Styles Palette). When the selection changes,
+//! the new color becomes the selected object's fill.
 
 use crate::app::App;
 use crate::i18n::{tr, trf};
@@ -35,10 +38,14 @@ pub struct ColorDockerState {
     pub palette: usize,
     /// The selection the new color was last taken from.
     synced: Option<Vec<ShapeId>>,
-    /// Spot inks: the tint they are applied at (percent) and the name a
-    /// new ink gets.
+    /// Spot colours: the tint they are applied at (percent; the inks'
+    /// Fill and Outline, a spot swatch of the palette view) and the name
+    /// a new ink gets.
     pub tint: f32,
     pub new_ink: String,
+    /// Fill and outline locked together: Fill and Outline each give the
+    /// selection the new colour as both, in one step.
+    pub lock: bool,
 }
 
 impl Default for ColorDockerState {
@@ -50,13 +57,14 @@ impl Default for ColorDockerState {
             synced: None,
             tint: 100.0,
             new_ink: String::new(),
+            lock: false,
         }
     }
 }
 
 /// The solid color of the first selected object's fill, if it has one.
 fn selected_fill(app: &App) -> Option<Color> {
-    app.selected_shapes().first().and_then(|s| match &s.fill {
+    app.selected_rc().first().and_then(|s| match &s.fill {
         Fill::Solid(c) => Some(*c),
         _ => None,
     })
@@ -354,7 +362,146 @@ pub(crate) fn viewer(ui: &mut Ui, hue: f32, color: Color) -> Option<(f32, f32, f
     out
 }
 
-/// A slider with its letter; `value` scaled by `scale` to show.
+/// The colour `c` with its component `i` (in the order the sliders show
+/// them) set to `v`, in the component's own scale (0 to 1 for RGB, CMYK,
+/// saturation, brightness, lightness, grey and YIQ; degrees for a hue;
+/// Lab's own ranges).
+fn with_channel(c: Color, i: usize, v: f32) -> Color {
+    let mut c = c;
+    match (&mut c, i) {
+        (Color::Rgb { r, .. }, 0) => *r = v,
+        (Color::Rgb { g, .. }, 1) => *g = v,
+        (Color::Rgb { b, .. }, 2) => *b = v,
+        (Color::Cmyk { c, .. }, 0) => *c = v,
+        (Color::Cmyk { m, .. }, 1) => *m = v,
+        (Color::Cmyk { y, .. }, 2) => *y = v,
+        (Color::Cmyk { k, .. }, 3) => *k = v,
+        (Color::Hsb { h, .. }, 0) => *h = v,
+        (Color::Hsb { s, .. }, 1) => *s = v,
+        (Color::Hsb { b, .. }, 2) => *b = v,
+        (Color::Hsl { h, .. }, 0) => *h = v,
+        (Color::Hsl { s, .. }, 1) => *s = v,
+        (Color::Hsl { l, .. }, 2) => *l = v,
+        (Color::Lab { l, .. }, 0) => *l = v,
+        (Color::Lab { a, .. }, 1) => *a = v,
+        (Color::Lab { b, .. }, 2) => *b = v,
+        (Color::Gray { v: g }, 0) => *g = v,
+        (Color::Yiq { y, .. }, 0) => *y = v,
+        (Color::Yiq { i, .. }, 1) => *i = v,
+        (Color::Yiq { q, .. }, 2) => *q = v,
+        _ => {}
+    }
+    c
+}
+
+/// The components of `c` as bits, a key that tells colours apart.
+fn color_bits(c: Color) -> (u8, [u32; 4]) {
+    let b = |v: f32| v.to_bits();
+    match c {
+        Color::Rgb { r, g, b: bb } => (0, [b(r), b(g), b(bb), 0]),
+        Color::Cmyk { c, m, y, k } => (1, [b(c), b(m), b(y), b(k)]),
+        Color::Hsb { h, s, b: bb } => (2, [b(h), b(s), b(bb), 0]),
+        Color::Hsl { h, s, l } => (3, [b(h), b(s), b(l), 0]),
+        Color::Lab { l, a, b: bb } => (4, [b(l), b(a), b(bb), 0]),
+        Color::Gray { v } => (5, [b(v), 0, 0, 0]),
+        Color::Yiq { y, i, q } => (6, [b(y), b(i), b(q), 0]),
+        Color::Spot { ink, tint, .. } => (7, [ink, b(tint), 0, 0]),
+        Color::Registration => (8, [0; 4]),
+    }
+}
+
+/// Steps of a slider's gradient rail.
+const RAIL_STEPS: usize = 16;
+
+/// The screen colours along the rail of component `i` of `base`, from
+/// `lo` to `hi` in the component's scale: the colour each point of the
+/// rail would give, kept between frames while the other components stay
+/// the same (a CMYK look costs more than a frame should spend on it every
+/// time) and the colour profiles are the same.
+fn rail_colors(
+    ui: &Ui,
+    id: egui::Id,
+    base: Color,
+    i: usize,
+    lo: f32,
+    hi: f32,
+) -> std::sync::Arc<Vec<Color32>> {
+    use std::sync::Arc;
+    // RGB, CMYK and Lab (and a spot colour, shown by its CMYK) reach the
+    // screen through the profiles: their rails are kept for the engine
+    // they were worked out with. The cache holds that engine, so a new
+    // one can never get its address.
+    let engine = if matches!(
+        base,
+        Color::Rgb { .. } | Color::Cmyk { .. } | Color::Lab { .. } | Color::Spot { .. }
+    ) {
+        tracedraw_core::color::engine::icc()
+    } else {
+        None
+    };
+    type Key = ((u8, [u32; 4]), usize, u32, u32);
+    type Cached = (
+        Key,
+        Option<Arc<tracedraw_core::color::IccEngine>>,
+        Arc<Vec<Color32>>,
+    );
+    let key: Key = (color_bits(base), i, lo.to_bits(), hi.to_bits());
+    let id = id.with("rail");
+    if let Some((k, e, c)) = ui.data(|d| d.get_temp::<Cached>(id)) {
+        let same_engine = match (&e, &engine) {
+            (Some(a), Some(b)) => Arc::ptr_eq(a, b),
+            (None, None) => true,
+            _ => false,
+        };
+        if k == key && same_engine {
+            return c;
+        }
+    }
+    let colors: Vec<Color32> = (0..=RAIL_STEPS)
+        .map(|k| {
+            let t = k as f32 / RAIL_STEPS as f32;
+            to32(with_channel(base, i, lo + (hi - lo) * t).to_rgb_f32())
+        })
+        .collect();
+    let c = Arc::new(colors);
+    ui.data_mut(|d| d.insert_temp::<Cached>(id, (key, engine, c.clone())));
+    c
+}
+
+/// The gradient rail of a slider: `colors` left to right across `r`,
+/// with a thin border.
+fn gradient_rail(r: Rect, colors: &[Color32]) -> Shape {
+    let n = colors.len().saturating_sub(1).max(1) as u32;
+    let mut mesh = Mesh::default();
+    for (k, c) in colors.iter().enumerate() {
+        let x = r.left() + r.width() * k as f32 / n as f32;
+        mesh.colored_vertex(Pos2::new(x, r.top()), *c);
+        mesh.colored_vertex(Pos2::new(x, r.bottom()), *c);
+    }
+    for k in 0..n {
+        let a = k * 2;
+        mesh.add_triangle(a, a + 1, a + 2);
+        mesh.add_triangle(a + 1, a + 3, a + 2);
+    }
+    Shape::Vec(vec![
+        Shape::mesh(mesh),
+        Shape::rect_stroke(
+            r,
+            0.0,
+            Stroke::new(1.0, Tokens::control_border()),
+            egui::StrokeKind::Outside,
+        ),
+    ])
+}
+
+/// The height of a slider's gradient rail.
+const RAIL_HEIGHT: f32 = 8.0;
+
+/// A slider with its letter and its value box; `value` is component `i`
+/// of `base`, scaled by `scale` to show. The rail is the gradient of
+/// the colours the component gives (cyan for C, red for R, the spectrum
+/// for a hue), with the other components as they are.
+#[allow(clippy::too_many_arguments)]
 fn slider(
     ui: &mut Ui,
     label: &str,
@@ -362,18 +509,43 @@ fn slider(
     value: &mut f32,
     range: std::ops::RangeInclusive<f32>,
     scale: f32,
+    base: Color,
+    i: usize,
 ) -> bool {
     ui.horizontal(|ui| {
         ui.add_sized([14.0, 18.0], egui::Label::new(label));
         let mut x = *value * scale;
-        let changed = ui
-            .add(crate::ui::Rail(
-                egui::Slider::new(&mut x, range)
-                    .show_value(true)
-                    .max_decimals(1),
-            ))
-            .rich_tip(crate::ui::tips::pair(name, "color.channel_desc"))
-            .changed();
+        let width = (ui.available_width() - 64.0).clamp(60.0, 220.0);
+        // The rail goes under the slider: its shape is set once the
+        // slider says where it is.
+        let rail = ui.painter().add(Shape::Noop);
+        let resp = ui
+            .scope(|ui| {
+                ui.spacing_mut().slider_width = width;
+                ui.spacing_mut().slider_rail_height = RAIL_HEIGHT;
+                ui.visuals_mut().widgets.inactive.bg_fill = Color32::TRANSPARENT;
+                ui.add(
+                    egui::Slider::new(&mut x, range.clone())
+                        .show_value(true)
+                        .max_decimals(1),
+                )
+            })
+            .inner
+            .rich_tip(crate::ui::tips::pair(name, "color.channel_desc"));
+        let colors = rail_colors(
+            ui,
+            resp.id,
+            base,
+            i,
+            *range.start() / scale,
+            *range.end() / scale,
+        );
+        let r = Rect::from_min_size(
+            Pos2::new(resp.rect.left(), resp.rect.center().y - RAIL_HEIGHT / 2.0),
+            Vec2::new(width, RAIL_HEIGHT),
+        );
+        ui.painter().set(rail, gradient_rail(r, &colors));
+        let changed = resp.changed();
         if changed {
             *value = x / scale;
         }
@@ -385,41 +557,195 @@ fn slider(
 /// The sliders of the color's model. True when one moved.
 pub(crate) fn sliders(ui: &mut Ui, c: &mut Color) -> bool {
     let mut changed = false;
+    let base = *c;
     match c {
         Color::Rgb { r, g, b } => {
-            changed |= slider(ui, "R", "color.channel_red", r, 0.0..=255.0, 255.0);
-            changed |= slider(ui, "G", "color.channel_green", g, 0.0..=255.0, 255.0);
-            changed |= slider(ui, "B", "color.channel_blue", b, 0.0..=255.0, 255.0);
+            changed |= slider(ui, "R", "color.channel_red", r, 0.0..=255.0, 255.0, base, 0);
+            changed |= slider(
+                ui,
+                "G",
+                "color.channel_green",
+                g,
+                0.0..=255.0,
+                255.0,
+                base,
+                1,
+            );
+            changed |= slider(
+                ui,
+                "B",
+                "color.channel_blue",
+                b,
+                0.0..=255.0,
+                255.0,
+                base,
+                2,
+            );
         }
         Color::Cmyk { c, m, y, k } => {
-            changed |= slider(ui, "C", "color.channel_cyan", c, 0.0..=100.0, 100.0);
-            changed |= slider(ui, "M", "color.channel_magenta", m, 0.0..=100.0, 100.0);
-            changed |= slider(ui, "Y", "color.channel_yellow", y, 0.0..=100.0, 100.0);
-            changed |= slider(ui, "K", "color.channel_black", k, 0.0..=100.0, 100.0);
+            changed |= slider(
+                ui,
+                "C",
+                "color.channel_cyan",
+                c,
+                0.0..=100.0,
+                100.0,
+                base,
+                0,
+            );
+            changed |= slider(
+                ui,
+                "M",
+                "color.channel_magenta",
+                m,
+                0.0..=100.0,
+                100.0,
+                base,
+                1,
+            );
+            changed |= slider(
+                ui,
+                "Y",
+                "color.channel_yellow",
+                y,
+                0.0..=100.0,
+                100.0,
+                base,
+                2,
+            );
+            changed |= slider(
+                ui,
+                "K",
+                "color.channel_black",
+                k,
+                0.0..=100.0,
+                100.0,
+                base,
+                3,
+            );
         }
         // Hues are degrees already.
         Color::Hsb { h, s, b } => {
-            changed |= slider(ui, "H", "color.channel_hue", h, 0.0..=360.0, 1.0);
-            changed |= slider(ui, "S", "color.channel_saturation", s, 0.0..=100.0, 100.0);
-            changed |= slider(ui, "B", "color.channel_brightness", b, 0.0..=100.0, 100.0);
+            changed |= slider(ui, "H", "color.channel_hue", h, 0.0..=360.0, 1.0, base, 0);
+            changed |= slider(
+                ui,
+                "S",
+                "color.channel_saturation",
+                s,
+                0.0..=100.0,
+                100.0,
+                base,
+                1,
+            );
+            changed |= slider(
+                ui,
+                "B",
+                "color.channel_brightness",
+                b,
+                0.0..=100.0,
+                100.0,
+                base,
+                2,
+            );
         }
         Color::Hsl { h, s, l } => {
-            changed |= slider(ui, "H", "color.channel_hue", h, 0.0..=360.0, 1.0);
-            changed |= slider(ui, "S", "color.channel_saturation", s, 0.0..=100.0, 100.0);
-            changed |= slider(ui, "L", "color.channel_lightness", l, 0.0..=100.0, 100.0);
+            changed |= slider(ui, "H", "color.channel_hue", h, 0.0..=360.0, 1.0, base, 0);
+            changed |= slider(
+                ui,
+                "S",
+                "color.channel_saturation",
+                s,
+                0.0..=100.0,
+                100.0,
+                base,
+                1,
+            );
+            changed |= slider(
+                ui,
+                "L",
+                "color.channel_lightness",
+                l,
+                0.0..=100.0,
+                100.0,
+                base,
+                2,
+            );
         }
         Color::Lab { l, a, b } => {
-            changed |= slider(ui, "L", "color.channel_lightness", l, 0.0..=100.0, 1.0);
-            changed |= slider(ui, "a", "color.channel_lab_a", a, -128.0..=127.0, 1.0);
-            changed |= slider(ui, "b", "color.channel_lab_b", b, -128.0..=127.0, 1.0);
+            changed |= slider(
+                ui,
+                "L",
+                "color.channel_lightness",
+                l,
+                0.0..=100.0,
+                1.0,
+                base,
+                0,
+            );
+            changed |= slider(
+                ui,
+                "a",
+                "color.channel_lab_a",
+                a,
+                -128.0..=127.0,
+                1.0,
+                base,
+                1,
+            );
+            changed |= slider(
+                ui,
+                "b",
+                "color.channel_lab_b",
+                b,
+                -128.0..=127.0,
+                1.0,
+                base,
+                2,
+            );
         }
         Color::Gray { v } => {
-            changed |= slider(ui, "L", "color.channel_gray", v, 0.0..=100.0, 100.0);
+            changed |= slider(
+                ui,
+                "L",
+                "color.channel_gray",
+                v,
+                0.0..=100.0,
+                100.0,
+                base,
+                0,
+            );
         }
         Color::Yiq { y, i, q } => {
-            changed |= slider(ui, "Y", "color.channel_luma", y, 0.0..=255.0, 255.0);
-            changed |= slider(ui, "I", "color.channel_yiq_i", i, 0.0..=255.0, 255.0);
-            changed |= slider(ui, "Q", "color.channel_yiq_q", q, 0.0..=255.0, 255.0);
+            changed |= slider(
+                ui,
+                "Y",
+                "color.channel_luma",
+                y,
+                0.0..=255.0,
+                255.0,
+                base,
+                0,
+            );
+            changed |= slider(
+                ui,
+                "I",
+                "color.channel_yiq_i",
+                i,
+                0.0..=255.0,
+                255.0,
+                base,
+                1,
+            );
+            changed |= slider(
+                ui,
+                "Q",
+                "color.channel_yiq_q",
+                q,
+                0.0..=255.0,
+                255.0,
+                base,
+                2,
+            );
         }
         // A spot ink's tint is set where the inks are listed.
         Color::Registration | Color::Spot { .. } => {}
@@ -427,42 +753,108 @@ pub(crate) fn sliders(ui: &mut Ui, c: &mut Color) -> bool {
     changed
 }
 
-/// The old color (the selection's) beside the new one.
-fn swatches(ui: &mut Ui, old: Option<Color>, new: Color) {
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(64.0, 30.0), Sense::hover());
-    let half = rect.width() / 2.0;
-    let left = Rect::from_min_size(rect.min, Vec2::new(half, rect.height()));
-    let right = Rect::from_min_size(
-        rect.min + Vec2::new(half, 0.0),
-        Vec2::new(half, rect.height()),
-    );
-    let p = ui.painter();
-    match old {
+/// A swatch of `c` in `r`; a white square crossed by a red diagonal for
+/// no colour.
+fn swatch(p: &Painter, r: Rect, c: Option<Color>) {
+    match c {
         Some(c) => {
-            let [r, g, b] = c.to_rgb8();
-            p.rect_filled(left, 0.0, Color32::from_rgb(r, g, b));
+            let [cr, cg, cb] = c.to_rgb8();
+            p.rect_filled(r, 0.0, Color32::from_rgb(cr, cg, cb));
         }
         None => {
-            p.rect_filled(left, 0.0, Color32::WHITE);
+            p.rect_filled(r, 0.0, Color32::WHITE);
             p.line_segment(
-                [left.left_bottom(), left.right_top()],
+                [r.left_bottom(), r.right_top()],
                 Stroke::new(1.0, Color32::from_rgb(0xE0, 0x40, 0x40)),
             );
         }
     }
-    let [r, g, b] = new.to_rgb8();
-    p.rect_filled(right, 0.0, Color32::from_rgb(r, g, b));
     p.rect_stroke(
-        rect,
+        r,
         0.0,
         Stroke::new(1.0, Tokens::control_border()),
         egui::StrokeKind::Outside,
     );
 }
 
-/// Draw the docker.
-pub fn color(app: &mut App, ui: &mut Ui) {
-    follow_selection(app);
+/// The fill-over-outline swatch: the new colour as the fill in front of
+/// the selection's outline colour behind it.
+fn fill_outline_swatch(ui: &mut Ui, fill: Color, outline: Option<Color>) -> Response {
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(38.0, 34.0), Sense::hover());
+    let side = 24.0;
+    let p = ui.painter();
+    swatch(
+        p,
+        Rect::from_min_size(rect.min + Vec2::new(12.0, 8.0), Vec2::splat(side)),
+        outline,
+    );
+    swatch(
+        p,
+        Rect::from_min_size(rect.min + Vec2::new(1.0, 1.0), Vec2::splat(side)),
+        Some(fill),
+    );
+    resp
+}
+
+/// The colour of the first selected object's outline, else the outline
+/// colour new graphic objects get (none after No Outline asked for the
+/// defaults). The selection is the shared one gathered once a frame, not
+/// a copy of every selected object.
+fn selected_outline(app: &App) -> Option<Color> {
+    match app.selected_rc().first() {
+        Some(s) => s.stroke.as_ref().map(|st| st.color),
+        None => app
+            .doc()
+            .defaults
+            .graphic
+            .stroke
+            .as_ref()
+            .map(|st| st.color),
+    }
+}
+
+/// The reset of the panel: views, model, tint and lock back to their
+/// defaults.
+pub(crate) fn reset(app: &mut App) {
+    let d = ColorDockerState::default();
+    app.color_docker.shown = d.shown;
+    app.color_docker.tint = d.tint;
+    app.color_docker.lock = d.lock;
+    app.color_docker.hue = d.hue;
+    let model = MODELS.iter().position(|m| *m == "CMYK").unwrap_or(1);
+    if app.color_model != model {
+        app.color_model = model;
+        app.mixer_color = app.mixer_color.convert_to("CMYK");
+    }
+}
+
+/// The gear's menu: the views, the lock and the reset of the panel.
+fn options_menu(app: &mut App, ui: &mut Ui) {
+    for (i, key) in [
+        (0, "docker.color_viewers"),
+        (1, "docker.color_sliders"),
+        (2, "docker.color_palettes"),
+    ] {
+        let mut on = app.color_docker.shown[i];
+        if ui.checkbox(&mut on, tr(key)).changed() {
+            app.color_docker.shown[i] = on;
+        }
+    }
+    ui.separator();
+    let mut lock = app.color_docker.lock;
+    if ui.checkbox(&mut lock, tr("docker.lock_colors")).changed() {
+        app.color_docker.lock = lock;
+    }
+    ui.separator();
+    if ui.button(tr("docker.reset_panel")).clicked() {
+        reset(app);
+        ui.close();
+    }
+}
+
+/// The top row: the view buttons, the model list across the rest of the
+/// width, the gear.
+fn top_row(app: &mut App, ui: &mut Ui) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 2.0;
         for (i, view, key) in [
@@ -475,11 +867,13 @@ pub fn color(app: &mut App, ui: &mut Ui) {
                 app.color_docker.shown[i] = !on;
             }
         }
-        ui.add_space(8.0);
+        ui.add_space(6.0);
+        let gear = 28.0;
         let model = MODELS.get(app.color_model).copied().unwrap_or("CMYK");
+        let width = (ui.available_width() - gear - 10.0).clamp(80.0, 240.0);
         egui::ComboBox::from_id_salt("col_model")
             .selected_text(model)
-            .width(100.0)
+            .width(width)
             .show_ui(ui, |ui| {
                 for (i, m) in MODELS.iter().enumerate() {
                     if ui.selectable_label(app.color_model == i, *m).clicked() {
@@ -490,22 +884,39 @@ pub fn color(app: &mut App, ui: &mut Ui) {
             })
             .response
             .rich_tip(tr("docker.model"));
+        ui.add_space(4.0);
+        let (rect, resp) = ui.allocate_exact_size(Vec2::new(gear, 26.0), Sense::click());
+        if resp.hovered() {
+            ui.painter().rect_filled(rect, 2.0, Tokens::tool_hover());
+        }
+        crate::ui::icons::draw_action(
+            ui.painter(),
+            Rect::from_center_size(rect.center(), Vec2::splat(16.0)),
+            crate::ui::icons::Action::Options,
+            Tokens::icon(),
+        );
+        let resp = resp.rich_tip(crate::ui::tips::keyed("docker.panel_options"));
+        egui::Popup::menu(&resp)
+            .id(egui::Id::new("col_options_menu"))
+            .show(|ui| options_menu(app, ui));
     });
-    ui.add_space(4.0);
-    let old = selected_fill(app);
-    let mut c = app.mixer_color;
+}
+
+/// The hex row: the new colour's code, typed values applied when the
+/// field is left, and the gamut warning.
+fn hex_row(ui: &mut Ui, c: &mut Color) -> bool {
     let mut changed = false;
     ui.horizontal(|ui| {
-        swatches(ui, old, c);
+        ui.label(tr("docker.hex"));
         let mut hex = c.to_hex();
         if ui
-            .add(egui::TextEdit::singleline(&mut hex).desired_width(70.0))
+            .add(egui::TextEdit::singleline(&mut hex).desired_width(64.0))
             .rich_tip(crate::ui::tips::keyed("docker.hex_color"))
             .lost_focus()
         {
             if let Some(nc) = Color::from_hex(&hex) {
                 if nc.to_hex() != c.to_hex() {
-                    c = nc;
+                    *c = nc;
                     changed = true;
                 }
             }
@@ -513,29 +924,17 @@ pub fn color(app: &mut App, ui: &mut Ui) {
         if !c.in_cmyk_gamut(6.0) {
             gamut_warning(ui).rich_tip(tr("docker.gamut_warning"));
         }
-        if crate::ui::propbar::pic_button(
-            ui,
-            crate::ui::propbar::Pic::Pen,
-            &tr("docker.eyedropper"),
-            true,
-            app.tool == crate::tools::Tool::ColorEyedropper,
-        )
-        .clicked()
-        {
-            app.set_tool(crate::tools::Tool::ColorEyedropper);
-        }
     });
-    if let Some(ec) = app.eyedropper_color {
-        if ui
-            .button(trf("docker.use_sampled", &[("c", &ec.to_hex())]))
-            .rich_tip(crate::ui::tips::keyed("docker.use_sampled_tip"))
-            .clicked()
-        {
-            c = ec;
-            changed = true;
-        }
-    }
+    changed
+}
+
+/// Draw the docker.
+pub fn color(app: &mut App, ui: &mut Ui) {
+    follow_selection(app);
+    top_row(app, ui);
     ui.add_space(4.0);
+    let mut c = app.mixer_color;
+    let mut changed = false;
     if app.color_docker.shown[0] {
         if let Some((h, s, b)) = viewer(ui, app.color_docker.hue, c) {
             app.color_docker.hue = h;
@@ -555,8 +954,10 @@ pub fn color(app: &mut App, ui: &mut Ui) {
             c = m;
             changed = true;
         }
-        ui.add_space(6.0);
+        ui.add_space(2.0);
     }
+    changed |= hex_row(ui, &mut c);
+    ui.add_space(4.0);
     if app.color_docker.shown[2] {
         if let Some(pc) = palette_view(app, ui) {
             c = pc;
@@ -568,10 +969,79 @@ pub fn color(app: &mut App, ui: &mut Ui) {
         set_color(app, c);
         c = app.mixer_color;
     }
+    actions(app, ui, c);
+    ui.add_space(6.0);
+    // One Tint control: under the palette's swatches when they show.
+    let tint_shown = app.color_docker.shown[2] && !app.palettes.is_empty();
+    spot_inks(app, ui, c, !tint_shown);
+}
+
+/// The text of the button that drops the other actions.
+pub(crate) const MORE_ACTIONS: &str = "...";
+
+/// A small frameless text button; `enabled` or pale.
+fn small_action(ui: &mut Ui, enabled: bool, text: &str) -> Response {
+    ui.add_enabled(
+        enabled,
+        egui::Button::new(egui::RichText::new(text).small()).frame(false),
+    )
+}
+
+/// The bottom strip: the lock, the fill-over-outline swatch, the
+/// eyedropper and the button that drops the other actions (No Fill, No
+/// Outline, Swap Colors, and adding the new colour `c` to the document
+/// palette, the spot inks or the colour styles); under the swatch, Fill
+/// and Outline apply `c` to the selection (both at once while the lock
+/// is on).
+fn actions(app: &mut App, ui: &mut Ui, c: Color) {
+    let has = !app.selection.is_empty();
+    let lock = app.color_docker.lock;
+    let outline = selected_outline(app);
     ui.horizontal(|ui| {
-        let has = !app.selection.is_empty();
-        if ui
-            .add_enabled(has, egui::Button::new(tr("docker.fill")))
+        ui.spacing_mut().item_spacing.x = 4.0;
+        if crate::ui::propbar::pic_button(
+            ui,
+            crate::ui::propbar::Pic::Lock(lock),
+            &crate::ui::tips::keyed("docker.lock_colors"),
+            true,
+            lock,
+        )
+        .clicked()
+        {
+            app.color_docker.lock = !lock;
+        }
+        fill_outline_swatch(ui, c, outline).rich_tip_with(|| {
+            format!(
+                "{}\n{}",
+                trf("docker.swatch_fill", &[("c", &c.to_hex())]),
+                trf(
+                    "docker.swatch_outline",
+                    &[(
+                        "c",
+                        &outline.map_or_else(|| tr("docker.fill_none"), |o| o.to_hex())
+                    )],
+                ),
+            )
+        });
+        if crate::ui::propbar::pic_button(
+            ui,
+            crate::ui::propbar::Pic::Pen,
+            &tr("docker.eyedropper"),
+            true,
+            app.tool == crate::tools::Tool::ColorEyedropper,
+        )
+        .clicked()
+        {
+            app.set_tool(crate::tools::Tool::ColorEyedropper);
+        }
+        ui.menu_button(MORE_ACTIONS, |ui| more_actions(app, ui, c, has))
+            .response
+            .rich_tip(crate::ui::tips::keyed("docker.more_actions"));
+    });
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 12.0;
+        ui.add_space(30.0);
+        if small_action(ui, has, &tr("docker.fill"))
             .rich_tip(crate::ui::tips::pair(
                 "docker.fill",
                 "docker.color_fill_desc",
@@ -582,36 +1052,97 @@ pub fn color(app: &mut App, ui: &mut Ui) {
             ))
             .clicked()
         {
-            app.apply_fill(Fill::Solid(c));
-        }
-        if ui
-            .add_enabled(has, egui::Button::new(tr("docker.outline")))
-            .rich_tip(crate::ui::tips::pair(
-                "docker.outline",
-                "docker.color_outline_desc",
-            ))
-            .rich_disabled_tip(crate::ui::tips::pair(
-                "docker.outline",
-                "docker.color_outline_desc",
-            ))
-            .clicked()
-        {
-            app.apply_outline_color(Some(c));
-        }
-        if ui
-            .button(tr("docker.add_to_palette"))
-            .rich_tip(crate::ui::tips::keyed("docker.add_to_palette"))
-            .clicked()
-        {
-            let mut colors = app.doc().palette.clone();
-            if !colors.contains(&c) {
-                colors.push(c);
+            if lock {
+                app.apply_fill_and_outline(c);
+            } else {
+                app.apply_fill(Fill::Solid(c));
             }
-            app.run(Command::SetDocumentPalette { colors });
+        }
+        if small_action(ui, has, &tr("docker.outline"))
+            .rich_tip(crate::ui::tips::pair(
+                "docker.outline",
+                "docker.color_outline_desc",
+            ))
+            .rich_disabled_tip(crate::ui::tips::pair(
+                "docker.outline",
+                "docker.color_outline_desc",
+            ))
+            .clicked()
+        {
+            if lock {
+                app.apply_fill_and_outline(c);
+            } else {
+                app.apply_outline_color(Some(c));
+            }
         }
     });
-    ui.add_space(6.0);
-    spot_inks(app, ui, c);
+    if let Some(ec) = app.eyedropper_color {
+        if ui
+            .add(egui::Button::new(trf("docker.use_sampled", &[("c", &ec.to_hex())])).small())
+            .rich_tip(crate::ui::tips::keyed("docker.use_sampled_tip"))
+            .clicked()
+        {
+            set_color(app, ec);
+        }
+    }
+}
+
+/// The items of the "..." menu; `has`: something is selected.
+fn more_actions(app: &mut App, ui: &mut Ui, c: Color, has: bool) {
+    if ui
+        .add_enabled(has, egui::Button::new(tr("docker.no_fill")))
+        .clicked()
+    {
+        app.apply_fill(Fill::None);
+        ui.close();
+    }
+    if ui
+        .add_enabled(has, egui::Button::new(tr("docker.no_outline_action")))
+        .clicked()
+    {
+        app.apply_outline_color(None);
+        ui.close();
+    }
+    if ui
+        .add_enabled(has, egui::Button::new(tr("docker.swap_colors")))
+        .clicked()
+    {
+        app.swap_colors();
+        ui.close();
+    }
+    ui.separator();
+    if ui.button(tr("docker.add_to_document_palette")).clicked() {
+        app.add_to_document_palette(c);
+        ui.close();
+    }
+    if ui.button(tr("docker.add_to_spot_colors")).clicked() {
+        let name = spot_ink_name(app, c);
+        add_ink(app, name, c);
+        app.color_docker.new_ink.clear();
+        ui.close();
+    }
+    if ui.button(tr("docker.add_to_color_styles")).clicked() {
+        crate::ui::dockers2::add_color_style(app, c);
+        ui.close();
+    }
+}
+
+/// The name of a spot ink added from the "..." menu: the name typed in
+/// Ink name, else the colour's hexadecimal code; either made unique
+/// among the drawing's inks with a number.
+fn spot_ink_name(app: &App, c: Color) -> String {
+    let typed = app.color_docker.new_ink.trim();
+    let base = if typed.is_empty() {
+        c.to_hex()
+    } else {
+        typed.to_string()
+    };
+    let taken = |n: &str| app.doc().inks.iter().any(|i| i.name == n);
+    if !taken(&base) {
+        return base;
+    }
+    let numbered = (2..).map(|k| format!("{base} {k}")).find(|n| !taken(n));
+    numbered.unwrap_or(base)
 }
 
 /// The out-of-gamut sign: an orange triangle with an exclamation mark,
@@ -646,7 +1177,9 @@ const REMOVE_INK: char = '\u{00D7}';
 
 /// The drawing's spot inks: each applies as fill or outline at the tint;
 /// a new one takes the new color's process values and the name typed.
-fn spot_inks(app: &mut App, ui: &mut Ui, current: Color) {
+/// `with_tint`: the Tint control shows here (not when the palette view
+/// already shows it).
+fn spot_inks(app: &mut App, ui: &mut Ui, current: Color, with_tint: bool) {
     crate::ui::chrome::section(ui, &tr("docker.spot_inks"));
     let has = !app.selection.is_empty();
     let tint = app.color_docker.tint.clamp(0.0, 100.0) / 100.0;
@@ -691,19 +1224,8 @@ fn spot_inks(app: &mut App, ui: &mut Ui, current: Color) {
             }
         });
     }
-    if !inks.is_empty() {
-        ui.horizontal(|ui| {
-            ui.label(tr("docker.tint"));
-            ui.spacing_mut().slider_width = 140.0;
-            // A rail in the slider colour: a plain slider's groove has the
-            // white of fields and vanished on the panel (#949).
-            ui.add(crate::ui::Rail(
-                egui::Slider::new(&mut app.color_docker.tint, 0.0..=100.0)
-                    .suffix(" %")
-                    .max_decimals(0),
-            ))
-            .rich_tip(crate::ui::tips::pair("docker.tint", "docker.tint_desc"));
-        });
+    if with_tint && !inks.is_empty() {
+        tint_row(app, ui);
     }
     ui.horizontal(|ui| {
         ui.add(
@@ -748,8 +1270,29 @@ pub fn add_ink(app: &mut App, name: String, c: Color) -> u32 {
     id
 }
 
-/// The palette view: the palette chosen in the list, as swatches; a click
-/// takes the swatch's color.
+/// A palette swatch clicked: a spot colour at the tint `t` (0 to 1) of
+/// its ink, as the inks' Fill and Outline apply it; any other colour as
+/// it is, so a tint chosen for an ink never lightens a plain swatch.
+/// `t` 1 is the swatch itself.
+pub(crate) fn at_tint(c: Color, t: f32) -> Color {
+    match c {
+        Color::Spot {
+            ink, c, m, y, k, ..
+        } if t < 1.0 => Color::Spot {
+            ink,
+            tint: t.max(0.0),
+            c,
+            m,
+            y,
+            k,
+        },
+        other => other,
+    }
+}
+
+/// The palette view: the palette chosen in the list, as swatches, and
+/// the tint under them; a click takes the swatch's color (a spot colour
+/// at the tint).
 fn palette_view(app: &mut App, ui: &mut Ui) -> Option<Color> {
     if app.palettes.is_empty() {
         return None;
@@ -789,7 +1332,24 @@ fn palette_view(app: &mut App, ui: &mut Ui) -> Option<Color> {
             }
         }
     });
-    out
+    tint_row(app, ui);
+    out.map(|c| at_tint(c, app.color_docker.tint / 100.0))
+}
+
+/// The tint: a box and a slider, 0 to 100 %.
+fn tint_row(app: &mut App, ui: &mut Ui) {
+    ui.horizontal(|ui| {
+        ui.label(tr("docker.tint"));
+        ui.spacing_mut().slider_width = (ui.available_width() - 70.0).clamp(60.0, 140.0);
+        // A rail in the slider colour: a plain slider's groove has the
+        // white of fields and vanished on the panel (#949).
+        ui.add(crate::ui::Rail(
+            egui::Slider::new(&mut app.color_docker.tint, 0.0..=100.0)
+                .suffix(" %")
+                .max_decimals(0),
+        ))
+        .rich_tip(crate::ui::tips::pair("docker.tint", "docker.tint_desc"));
+    });
 }
 
 #[cfg(test)]
@@ -891,7 +1451,7 @@ pub(crate) mod tests {
             )),
             ..Default::default()
         };
-        let mut out = ctx.run_ui(input, |ui| spot_inks(&mut app, ui, Color::BLACK));
+        let mut out = ctx.run_ui(input, |ui| spot_inks(&mut app, ui, Color::BLACK, true));
         out.textures_delta.clear();
         let rail = Tokens::slider_rail();
         assert_ne!(rail, Tokens::field());
@@ -1000,7 +1560,7 @@ pub(crate) mod tests {
         // The docker draws with inks listed.
         let ctx = crate::theme::ui_context();
         let mut out = ctx.run_ui(Default::default(), |ui| {
-            spot_inks(&mut app, ui, Color::BLACK)
+            spot_inks(&mut app, ui, Color::BLACK, true)
         });
         out.textures_delta.clear();
         app.run(Command::SetInks { inks: Vec::new() });
@@ -1059,6 +1619,106 @@ pub(crate) mod tests {
         assert!(matches!(c, Color::Hsb { h, .. } if (h - 120.0).abs() < 1e-4));
     }
 
+    /// A slider's rail is the gradient of its component: the cyan rail
+    /// of a CMYK colour goes from no cyan to full cyan with the other inks
+    /// as they are, the red rail of an RGB colour from no red to full red.
+    #[test]
+    fn slider_rails_run_through_their_component() {
+        let c = Color::cmyk_pct(40.0, 10.0, 0.0, 0.0);
+        assert_eq!(
+            with_channel(c, 0, 0.0),
+            Color::cmyk_pct(0.0, 10.0, 0.0, 0.0)
+        );
+        assert_eq!(
+            with_channel(c, 0, 1.0),
+            Color::cmyk_pct(100.0, 10.0, 0.0, 0.0)
+        );
+        assert_eq!(
+            with_channel(c, 3, 0.5),
+            Color::cmyk_pct(40.0, 10.0, 0.0, 50.0)
+        );
+        let rgb = Color::rgb8(10, 200, 30);
+        assert_eq!(with_channel(rgb, 0, 1.0), Color::rgb8(255, 200, 30));
+        assert_eq!(with_channel(rgb, 2, 0.0), Color::rgb8(10, 200, 0));
+        // A hue rail runs through the spectrum.
+        let h = Color::Hsb {
+            h: 10.0,
+            s: 1.0,
+            b: 1.0,
+        };
+        assert!(
+            matches!(with_channel(h, 0, 240.0), Color::Hsb { h, .. } if (h - 240.0).abs() < 1e-6)
+        );
+        // Drawn: the rail of a slider is a gradient mesh as wide as the
+        // slider, not a plain groove.
+        let ctx = crate::theme::ui_context();
+        let mut m = rgb;
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(320.0, 400.0),
+            )),
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(input, |ui| {
+            sliders(ui, &mut m);
+        });
+        out.textures_delta.clear();
+        fn meshes(s: &egui::Shape, out: &mut Vec<egui::Rect>) {
+            match s {
+                egui::Shape::Mesh(m) => out.push(m.calc_bounds()),
+                egui::Shape::Vec(v) => v.iter().for_each(|s| meshes(s, out)),
+                _ => {}
+            }
+        }
+        let mut rails = Vec::new();
+        out.shapes.iter().for_each(|c| meshes(&c.shape, &mut rails));
+        let wide: Vec<_> = rails.iter().filter(|r| r.width() >= 60.0).collect();
+        assert_eq!(wide.len(), 3, "{rails:?}");
+    }
+
+    /// A palette colour clicked: a spot colour at the tint of its ink, a
+    /// process colour as it is whatever the tint (the tint set for an
+    /// ink does not lighten plain swatches).
+    #[test]
+    fn a_palette_colour_is_taken_at_the_tint() {
+        let c = Color::cmyk_pct(100.0, 0.0, 50.0, 20.0);
+        assert_eq!(at_tint(c, 1.0), c);
+        assert_eq!(at_tint(c, 0.5), c);
+        let rgb = Color::rgb8(0, 0, 255);
+        assert_eq!(at_tint(rgb, 0.3), rgb);
+        let spot = Color::Spot {
+            ink: 7,
+            tint: 1.0,
+            c: 0.0,
+            m: 0.2,
+            y: 0.8,
+            k: 0.1,
+        };
+        assert!(
+            matches!(at_tint(spot, 0.3), Color::Spot { ink: 7, tint, .. } if (tint - 0.3).abs() < 1e-6)
+        );
+    }
+
+    /// The gear's Reset panel: views, model, tint, lock and hue back to
+    /// their defaults, the new colour converted to CMYK.
+    #[test]
+    fn reset_panel_puts_the_defaults_back() {
+        let mut app = App::headless();
+        app.color_docker.shown = [false, false, true];
+        app.color_docker.tint = 30.0;
+        app.color_docker.lock = true;
+        app.color_model = 0;
+        app.mixer_color = Color::rgb8(255, 0, 0);
+        reset(&mut app);
+        let d = ColorDockerState::default();
+        assert_eq!(app.color_docker.shown, d.shown);
+        assert_eq!(app.color_docker.tint, d.tint);
+        assert!(!app.color_docker.lock);
+        assert_eq!(MODELS[app.color_model], "CMYK");
+        assert_eq!(app.mixer_color.model_name(), "CMYK");
+    }
+
     #[test]
     fn the_docker_draws_every_view_and_model() {
         let ctx = crate::theme::ui_context();
@@ -1077,5 +1737,63 @@ pub(crate) mod tests {
             let mut out = ctx.run_ui(input, |ui| color(&mut app, ui));
             out.textures_delta.clear();
         }
+    }
+
+    /// The texts of one frame of the whole panel.
+    fn panel_texts(app: &mut App) -> Vec<String> {
+        let ctx = crate::theme::ui_context();
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(320.0, 1400.0),
+            )),
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(input, |ui| color(app, ui));
+        out.textures_delta.clear();
+        let mut texts = Vec::new();
+        fn walk(s: &egui::Shape, texts: &mut Vec<String>) {
+            match s {
+                egui::Shape::Text(t) => texts.push(t.galley.text().to_string()),
+                egui::Shape::Vec(v) => v.iter().for_each(|s| walk(s, texts)),
+                _ => {}
+            }
+        }
+        out.shapes.iter().for_each(|c| walk(&c.shape, &mut texts));
+        texts
+    }
+
+    /// One Tint control in the panel: under the palette's swatches while
+    /// the palette view shows, else under the spot inks; never both.
+    #[test]
+    fn the_panel_shows_one_tint_control() {
+        let mut app = App::headless();
+        add_ink(
+            &mut app,
+            "Gold".into(),
+            Color::cmyk_pct(0.0, 20.0, 80.0, 10.0),
+        );
+        let tint = tr("docker.tint");
+        for shown in [[true, true, true], [true, true, false]] {
+            app.color_docker.shown = shown;
+            let n = panel_texts(&mut app).iter().filter(|t| **t == tint).count();
+            assert_eq!(n, 1, "{shown:?}");
+        }
+    }
+
+    /// With nothing selected the outline swatch shows the outline new
+    /// objects get, and none once the defaults have no outline.
+    #[test]
+    fn the_outline_swatch_shows_the_default_outline() {
+        let mut app = App::headless();
+        app.select(Vec::new());
+        app.current_colors.1 = Color::rgb8(1, 2, 3);
+        let default = app.default_stroke().map(|s| s.color);
+        assert!(default.is_some());
+        assert_eq!(selected_outline(&app), default);
+        let mut defaults = app.doc().defaults.clone();
+        defaults.graphic.stroke = None;
+        app.run(Command::SetObjectDefaults { defaults });
+        assert_eq!(selected_outline(&app), None);
     }
 }

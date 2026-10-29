@@ -5341,6 +5341,34 @@ impl App {
         }
     }
 
+    /// The Colour panel with its fill and outline locked together: the
+    /// selection gets `c` as its fill and as its outline colour, in one
+    /// undo step.
+    pub fn apply_fill_and_outline(&mut self, c: Color) {
+        if self.selection.is_empty() {
+            return;
+        }
+        let mark = self.engine.begin_group();
+        self.apply_fill(Fill::Solid(c));
+        self.apply_outline_color(Some(c));
+        self.engine.end_group(mark, "Fill and Outline");
+    }
+
+    /// Swap Colors (Colour panel): each selected object's fill colour
+    /// becomes its outline colour and its outline colour its solid fill,
+    /// objects inside groups each on their own, in one undo step (see
+    /// [`Command::SwapColors`], which walks the drawing once however many
+    /// objects there are). The panel's current colours are left alone:
+    /// they are not part of the drawing, so Undo could not give them back.
+    pub fn swap_colors(&mut self) {
+        // The objects of the selection that exist, gathered in one pass.
+        let shapes: Vec<ShapeId> = self.selected_rc().iter().map(|s| s.id).collect();
+        if shapes.is_empty() {
+            return;
+        }
+        self.run(Command::SwapColors { shapes });
+    }
+
     pub fn apply_outline_width(&mut self, width: f64) {
         let shapes = self.selected_shapes();
         if shapes.is_empty() {

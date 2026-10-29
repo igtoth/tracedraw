@@ -21,8 +21,12 @@ to the fill or outline of the selection. The [[tool.outline_color]] tool
    The three buttons at the top show or hide each view; any mix can show.
    You can also type a `#rrggbb` value.
 3. Click [[docker.fill]] or [[docker.outline]] at the bottom of the panel to
-   apply the new color. [[docker.add_to_palette]] adds it to the document
-   palette.
+   apply the new color.
+   The lock ([[docker.lock_colors]]) ties fill and outline together, so either
+   button applies the color as both. The "..." button ([[docker.more_actions]])
+   drops the other actions: [[docker.no_fill]], [[docker.no_outline_action]],
+   [[docker.swap_colors]], [[docker.add_to_document_palette]],
+   [[docker.add_to_spot_colors]] and [[docker.add_to_color_styles]].
 
 The old color and the new one show side by side. When the new color cannot
 be printed exactly with CMYK inks, the panel shows a warning.

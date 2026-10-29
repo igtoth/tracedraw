@@ -13,7 +13,7 @@
    - [[docker.color_palettes]]：調色盤的色樣。
 
    頂端的三個按鈕可顯示或隱藏各個檢視；可以任意組合顯示。您也可以輸入 `#rrggbb` 值。
-3. 按一下面板底部的 [[docker.fill]] 或 [[docker.outline]] 以套用新色彩。[[docker.add_to_palette]] 會將其加入文件調色盤。
+3. 按一下面板底部的 [[docker.fill]] 或 [[docker.outline]] 以套用新色彩。鎖（[[docker.lock_colors]]）把填色和外框綁在一起，任一按鈕都會把色彩同時套用到兩者。"..." 按鈕（[[docker.more_actions]]）展開其他動作：[[docker.no_fill]], [[docker.no_outline_action]], [[docker.swap_colors]], [[docker.add_to_document_palette]], [[docker.add_to_spot_colors]] 和 [[docker.add_to_color_styles]]。
 
 舊色彩和新色彩會並排顯示。當新色彩無法以 CMYK 油墨精確印出時，面板會顯示警告。
 

@@ -22,8 +22,13 @@ al relleno o al contorno de la selección. La herramienta
    Los tres botones de arriba muestran u ocultan cada vista; puede mostrarse
    cualquier combinación. También puede escribir un valor `#rrggbb`.
 3. Haga clic en [[docker.fill]] o [[docker.outline]], en la parte inferior del
-   panel, para aplicar el nuevo color. [[docker.add_to_palette]] lo añade a la
-   paleta del documento.
+   panel, para aplicar el nuevo color.
+   El candado ([[docker.lock_colors]]) une relleno y contorno, de modo que
+   cualquiera de los dos botones aplica el color a ambos. El botón "..."
+   ([[docker.more_actions]]) despliega las demás acciones: [[docker.no_fill]],
+   [[docker.no_outline_action]], [[docker.swap_colors]],
+   [[docker.add_to_document_palette]], [[docker.add_to_spot_colors]] y
+   [[docker.add_to_color_styles]].
 
 El color anterior y el nuevo se muestran uno al lado del otro. Cuando el nuevo
 color no se puede imprimir con exactitud con tintas CMYK, el panel muestra un

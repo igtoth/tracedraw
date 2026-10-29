@@ -23,8 +23,13 @@ applica al riempimento o al contorno della selezione. Anche lo strumento
    I tre pulsanti in alto mostrano o nascondono ciascuna vista; può comparire
    qualsiasi combinazione. Puoi anche digitare un valore `#rrggbb`.
 3. Fai clic su [[docker.fill]] o [[docker.outline]] in fondo al pannello per
-   applicare il nuovo colore. [[docker.add_to_palette]] lo aggiunge alla
-   tavolozza del documento.
+   applicare il nuovo colore.
+   Il lucchetto ([[docker.lock_colors]]) lega riempimento e contorno, così
+   ciascun pulsante applica il colore a entrambi. Il pulsante "..."
+   ([[docker.more_actions]]) apre le altre azioni: [[docker.no_fill]],
+   [[docker.no_outline_action]], [[docker.swap_colors]],
+   [[docker.add_to_document_palette]], [[docker.add_to_spot_colors]] e
+   [[docker.add_to_color_styles]].
 
 Il colore vecchio e quello nuovo appaiono affiancati. Quando il nuovo colore
 non può essere stampato esattamente con gli inchiostri CMYK, il pannello

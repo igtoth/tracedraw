@@ -12644,3 +12644,164 @@ fn frame_times_of_the_trace_dialog() {
         direct
     );
 }
+
+/// The Colour panel open, drawn; the centres of its Fill and Outline
+/// actions (the row under the swatch) and of the "..." button that drops
+/// the other actions, told from other dockers' texts by lying together.
+fn color_panel_row(ctx: &egui::Context, app: &mut App) -> (Pos2, Pos2, Pos2) {
+    app.open_docker(crate::app::DockerTab::Color);
+    frame(ctx, app, Vec::new(), Modifiers::NONE);
+    let texts = texts_drawn(ctx, app, Vec::new());
+    let more = crate::ui::color_docker::MORE_ACTIONS;
+    let outline = crate::i18n::tr("docker.outline");
+    let fill = crate::i18n::tr("docker.fill");
+    for (t, r) in &texts {
+        if t != more {
+            continue;
+        }
+        // The nearest one under the "..." row, left of it.
+        let find = |label: &str| {
+            texts
+                .iter()
+                .filter(|(tt, rr)| {
+                    tt == label
+                        && rr.center().y > r.center().y + 4.0
+                        && rr.center().y < r.center().y + 48.0
+                        && rr.center().x < r.center().x
+                })
+                .min_by(|(_, a), (_, b)| a.center().y.total_cmp(&b.center().y))
+                .map(|(_, rr)| rr.center())
+        };
+        if let (Some(f), Some(o)) = (find(&fill), find(&outline)) {
+            return (f, o, r.center());
+        }
+    }
+    panic!("no Colour panel action row: {texts:?}");
+}
+
+/// Open the Colour panel's "..." menu and click its item `key`.
+fn color_panel_action(ctx: &egui::Context, app: &mut App, key: &str) {
+    let (_, _, more) = color_panel_row(ctx, app);
+    click_at(ctx, app, more, Modifiers::NONE);
+    let texts = texts_drawn(ctx, app, Vec::new());
+    let at = text_at(&texts, &crate::i18n::tr(key)).expect("the menu item");
+    click_at(ctx, app, at, Modifiers::NONE);
+}
+
+/// The Colour panel's "..." menu, Swap Colors: the selection's fill colour
+/// becomes its outline colour and the outline colour its fill, in one
+/// undo step.
+#[test]
+fn the_color_panel_menu_swaps_fill_and_outline() {
+    let (ctx, mut app, id) = setup();
+    let red = tracedraw_core::Color::rgb8(200, 30, 30);
+    let black = app
+        .doc()
+        .find_shape(id)
+        .and_then(|s| s.stroke.as_ref().map(|st| st.color))
+        .expect("an outline");
+    assert_ne!(black, red);
+    let steps = app.engine.history_labels().0.len();
+    // The current colours are not part of the drawing: Swap Colors leaves
+    // them, so Undo has nothing of them to give back.
+    let current = app.current_colors;
+    color_panel_action(&ctx, &mut app, "docker.swap_colors");
+    let shape = app.doc().find_shape(id).expect("shape").clone();
+    assert_eq!(shape.fill, tracedraw_core::Fill::Solid(black));
+    assert_eq!(shape.stroke.as_ref().map(|s| s.color), Some(red));
+    assert_eq!(app.engine.history_labels().0.len(), steps + 1);
+    assert_eq!(app.engine.undo_label(), Some("Swap Colors"));
+    assert_eq!(app.current_colors, current);
+    app.undo();
+    let shape = app.doc().find_shape(id).expect("shape").clone();
+    assert_eq!(shape.fill, tracedraw_core::Fill::Solid(red));
+    assert_eq!(shape.stroke.as_ref().map(|s| s.color), Some(black));
+    assert_eq!(app.current_colors, current);
+    // An object with a fill and no outline ends with an outline and no fill.
+    app.apply_outline_color(None);
+    color_panel_action(&ctx, &mut app, "docker.swap_colors");
+    let shape = app.doc().find_shape(id).expect("shape").clone();
+    assert_eq!(shape.fill, tracedraw_core::Fill::None);
+    assert_eq!(shape.stroke.as_ref().map(|s| s.color), Some(red));
+}
+
+/// The Colour panel's "..." menu, No Fill and No Outline take the
+/// selection's fill and outline away.
+#[test]
+fn the_color_panel_menu_takes_the_fill_and_the_outline_away() {
+    let (ctx, mut app, id) = setup();
+    color_panel_action(&ctx, &mut app, "docker.no_fill");
+    let shape = app.doc().find_shape(id).expect("shape").clone();
+    assert_eq!(shape.fill, tracedraw_core::Fill::None);
+    assert!(shape.stroke.is_some());
+    color_panel_action(&ctx, &mut app, "docker.no_outline_action");
+    let shape = app.doc().find_shape(id).expect("shape").clone();
+    assert_eq!(shape.stroke, None);
+}
+
+/// The Colour panel's "..." menu adds the new colour to the document
+/// palette, to the spot inks (named by its code, or as typed in Ink name,
+/// unique) and to the colour styles.
+#[test]
+fn the_color_panel_menu_adds_the_new_color_to_the_palette_the_inks_and_the_styles() {
+    let (ctx, mut app, _) = setup();
+    let c = tracedraw_core::Color::rgb8(10, 20, 30);
+    app.open_docker(crate::app::DockerTab::Color);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    app.mixer_color = c;
+    assert!(!app.doc().palette.contains(&c));
+    color_panel_action(&ctx, &mut app, "docker.add_to_document_palette");
+    assert!(app.doc().palette.contains(&c));
+    color_panel_action(&ctx, &mut app, "docker.add_to_spot_colors");
+    color_panel_action(&ctx, &mut app, "docker.add_to_spot_colors");
+    app.color_docker.new_ink = "Night".into();
+    color_panel_action(&ctx, &mut app, "docker.add_to_spot_colors");
+    let names: Vec<&str> = app.doc().inks.iter().map(|i| i.name.as_str()).collect();
+    assert_eq!(names, ["#0a141e", "#0a141e 2", "Night"]);
+    let tracedraw_core::Color::Cmyk { c: cc, m, y, k } = c.convert_to("CMYK") else {
+        panic!("not CMYK");
+    };
+    assert!(app.doc().inks.iter().all(|i| i.cmyk == [cc, m, y, k]));
+    assert!(app.color_docker.new_ink.is_empty());
+    color_panel_action(&ctx, &mut app, "docker.add_to_color_styles");
+    assert_eq!(app.doc().color_styles.len(), 1);
+    assert_eq!(app.doc().color_styles[0].color, c);
+}
+
+/// The Colour panel's lock: with fill and outline locked, Fill (and
+/// Outline) give the selection the new colour as both, in one undo step.
+#[test]
+fn the_color_panel_lock_applies_the_color_to_fill_and_outline_at_once() {
+    let (ctx, mut app, id) = setup();
+    let blue = tracedraw_core::Color::rgb8(20, 40, 220);
+    // The new colour first: an RGB colour has three sliders where the
+    // CMYK one had four, so the action row moves up.
+    app.open_docker(crate::app::DockerTab::Color);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    app.mixer_color = blue;
+    app.color_docker.lock = true;
+    let (fill, outline, _) = color_panel_row(&ctx, &mut app);
+    let steps = app.engine.history_labels().0.len();
+    click_at(&ctx, &mut app, fill, Modifiers::NONE);
+    let shape = app.doc().find_shape(id).expect("shape").clone();
+    assert_eq!(shape.fill, tracedraw_core::Fill::Solid(blue));
+    assert_eq!(shape.stroke.as_ref().map(|s| s.color), Some(blue));
+    assert_eq!(app.engine.history_labels().0.len(), steps + 1);
+    assert_eq!(app.engine.undo_label(), Some("Fill and Outline"));
+    app.undo();
+    let shape = app.doc().find_shape(id).expect("shape").clone();
+    assert_eq!(
+        shape.fill,
+        tracedraw_core::Fill::Solid(tracedraw_core::Color::rgb8(200, 30, 30))
+    );
+    assert_ne!(shape.stroke.as_ref().map(|s| s.color), Some(blue));
+    // Unlocked, Outline changes the outline only.
+    app.color_docker.lock = false;
+    click_at(&ctx, &mut app, outline, Modifiers::NONE);
+    let shape = app.doc().find_shape(id).expect("shape").clone();
+    assert_eq!(shape.stroke.as_ref().map(|s| s.color), Some(blue));
+    assert_eq!(
+        shape.fill,
+        tracedraw_core::Fill::Solid(tracedraw_core::Color::rgb8(200, 30, 30))
+    );
+}

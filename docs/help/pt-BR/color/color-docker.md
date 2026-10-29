@@ -22,8 +22,13 @@ preenchimento ou ao contorno da seleção. A ferramenta [[tool.outline_color]]
    Os três botões no alto mostram ou ocultam cada vista; qualquer combinação
    pode aparecer. Você também pode digitar um valor `#rrggbb`.
 3. Clique em [[docker.fill]] ou [[docker.outline]] embaixo do painel para
-   aplicar a nova cor. [[docker.add_to_palette]] a acrescenta à paleta do
-   documento.
+   aplicar a nova cor.
+   A trava ([[docker.lock_colors]]) une preenchimento e contorno, de modo que
+   qualquer dos dois botões aplica a cor a ambos. O botão "..."
+   ([[docker.more_actions]]) abre as outras ações: [[docker.no_fill]],
+   [[docker.no_outline_action]], [[docker.swap_colors]],
+   [[docker.add_to_document_palette]], [[docker.add_to_spot_colors]] e
+   [[docker.add_to_color_styles]].
 
 A cor antiga e a nova aparecem lado a lado. Quando a nova cor não pode ser
 impressa exatamente com tintas CMYK, o painel mostra um aviso.

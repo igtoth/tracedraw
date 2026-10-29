@@ -21,8 +21,13 @@ seçimin dolgusuna veya anahattına uygular. [[tool.outline_color]] aracı
    Üstteki üç düğme her görünümü gösterir veya gizler; herhangi bir
    birleşim gösterilebilir. Bir `#rrggbb` değeri de yazabilirsiniz.
 3. Yeni rengi uygulamak için panelin altındaki [[docker.fill]] veya
-   [[docker.outline]] düğmesine tıklayın. [[docker.add_to_palette]] onu belge
-   paletine ekler.
+   [[docker.outline]] düğmesine tıklayın.
+   Kilit ([[docker.lock_colors]]) dolgu ile anahatı birbirine bağlar; böylece
+   iki düğmeden biri rengi her ikisine de uygular. "..." düğmesi
+   ([[docker.more_actions]]) diğer eylemleri açar: [[docker.no_fill]],
+   [[docker.no_outline_action]], [[docker.swap_colors]],
+   [[docker.add_to_document_palette]], [[docker.add_to_spot_colors]] ve
+   [[docker.add_to_color_styles]].
 
 Eski renk ile yenisi yan yana görünür. Yeni renk CMYK mürekkepleriyle tam
 olarak basılamıyorsa panel bir uyarı gösterir.

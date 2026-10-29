@@ -24,7 +24,12 @@ weist sie der Füllung oder dem Umriss der Auswahl zu. Auch das Werkzeug
    Kombination ist möglich. Sie können auch einen Wert `#rrggbb` eingeben.
 3. Klicken Sie unten im Andockfenster auf [[docker.fill]] oder
    [[docker.outline]], um die neue Farbe zuzuweisen.
-   [[docker.add_to_palette]] fügt sie der Dokumentpalette hinzu.
+   Das Schloss ([[docker.lock_colors]]) verbindet Füllung und Umriss, sodass
+   jede der beiden Schaltflächen die Farbe beiden zuweist. Die Schaltfläche
+   "..." ([[docker.more_actions]]) klappt die weiteren Aktionen auf:
+   [[docker.no_fill]], [[docker.no_outline_action]], [[docker.swap_colors]],
+   [[docker.add_to_document_palette]], [[docker.add_to_spot_colors]] und
+   [[docker.add_to_color_styles]].
 
 Die alte und die neue Farbe werden nebeneinander angezeigt. Kann die neue Farbe
 mit CMYK-Druckfarben nicht exakt gedruckt werden, zeigt das Andockfenster eine

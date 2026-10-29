@@ -24,8 +24,13 @@ depuis [[menu.window > menu.window.dockers]].
    combinaison peut être affichée. Vous pouvez aussi taper une valeur
    `#rrggbb`.
 3. Cliquez sur [[docker.fill]] ou [[docker.outline]] en bas du panneau pour
-   appliquer la nouvelle couleur. [[docker.add_to_palette]] l'ajoute à la
-   palette du document.
+   appliquer la nouvelle couleur.
+   Le verrou ([[docker.lock_colors]]) lie surface et contour, de sorte que l'un
+   ou l'autre bouton applique la couleur aux deux. Le bouton "..."
+   ([[docker.more_actions]]) déroule les autres actions : [[docker.no_fill]],
+   [[docker.no_outline_action]], [[docker.swap_colors]],
+   [[docker.add_to_document_palette]], [[docker.add_to_spot_colors]] et
+   [[docker.add_to_color_styles]].
 
 L'ancienne couleur et la nouvelle s'affichent côte à côte. Quand la nouvelle
 couleur ne peut pas être imprimée exactement avec des encres CMJN, le

@@ -23,8 +23,13 @@ menerapkannya ke isian atau garis luar pilihan. Alat [[tool.outline_color]]
    kombinasi apa pun dapat ditampilkan. Anda juga dapat mengetik nilai
    `#rrggbb`.
 3. Klik [[docker.fill]] atau [[docker.outline]] di bagian bawah panel untuk
-   menerapkan warna baru. [[docker.add_to_palette]] menambahkannya ke palet
-   dokumen.
+   menerapkan warna baru.
+   Kunci ([[docker.lock_colors]]) mengikat isian dan garis luar, sehingga salah
+   satu tombol menerapkan warna pada keduanya. Tombol "..."
+   ([[docker.more_actions]]) membuka tindakan lain: [[docker.no_fill]],
+   [[docker.no_outline_action]], [[docker.swap_colors]],
+   [[docker.add_to_document_palette]], [[docker.add_to_spot_colors]], dan
+   [[docker.add_to_color_styles]].
 
 Warna lama dan warna baru tampil berdampingan. Bila warna baru tidak dapat
 dicetak tepat dengan tinta CMYK, panel menampilkan peringatan.

@@ -13,7 +13,7 @@
    - [[docker.color_palettes]]: パレットの色見本。
 
    上部の三つのボタンで、各表示を表示または非表示にします。どの組み合わせでも表示できます。`#rrggbb` の値を入力することもできます。
-3. パネル下部の [[docker.fill]] または [[docker.outline]] をクリックすると、新しい色を適用します。[[docker.add_to_palette]] は、その色をドキュメントパレットに追加します。
+3. パネル下部の [[docker.fill]] または [[docker.outline]] をクリックすると、新しい色を適用します。ロック（[[docker.lock_colors]]）は塗りとアウトラインを結び付け、どちらのボタンでも色を両方に適用します。「...」ボタン（[[docker.more_actions]]）はその他の操作を開きます: [[docker.no_fill]], [[docker.no_outline_action]], [[docker.swap_colors]], [[docker.add_to_document_palette]], [[docker.add_to_spot_colors]]、[[docker.add_to_color_styles]]。
 
 古い色と新しい色が並んで表示されます。新しい色を CMYK インキで正確に印刷できない場合は、パネルに警告が表示されます。
 

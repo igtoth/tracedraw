@@ -22,7 +22,12 @@ wypełnienia lub konturu zaznaczenia. Otwiera go też narzędzie
    Trzy przyciski u góry pokazują lub ukrywają każdy widok; widoczna może być
    dowolna ich kombinacja. Możesz też wpisać wartość `#rrggbb`.
 3. Kliknij [[docker.fill]] lub [[docker.outline]] u dołu panelu, aby zastosować
-   nowy kolor. [[docker.add_to_palette]] dodaje go do palety dokumentu.
+   nowy kolor.
+   Zamek ([[docker.lock_colors]]) wiąże wypełnienie i kontur, więc każdy z
+   przycisków nadaje kolor obu. Przycisk "..." ([[docker.more_actions]]) rozwija
+   pozostałe działania: [[docker.no_fill]], [[docker.no_outline_action]],
+   [[docker.swap_colors]], [[docker.add_to_document_palette]],
+   [[docker.add_to_spot_colors]] oraz [[docker.add_to_color_styles]].
 
 Stary i nowy kolor są widoczne obok siebie. Gdy nowego koloru nie można
 dokładnie wydrukować farbami CMYK, panel wyświetla ostrzeżenie.

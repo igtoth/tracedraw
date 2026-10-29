@@ -190,6 +190,15 @@ pub enum Command {
         fill: Fill,
         fields: Vec<crate::patch::FillField>,
     },
+    /// Each object's fill colour becomes its outline colour and its
+    /// outline colour its solid fill; objects inside groups each on their
+    /// own. An object without an outline loses its fill, one without a
+    /// fill its outline; a fill that is not one colour (a gradient, a
+    /// pattern) gives the outline the colour it shows in previews. The
+    /// drawing is walked once whatever the number of objects.
+    SwapColors {
+        shapes: Vec<ShapeId>,
+    },
     SetShapeKind {
         shape: ShapeId,
         kind: ShapeKind,
@@ -447,6 +456,7 @@ impl Command {
             Command::SetStroke { .. } => "Outline",
             Command::PatchStroke { .. } => "Outline",
             Command::PatchFill { .. } => "Fill",
+            Command::SwapColors { .. } => "Swap Colors",
             Command::SetShapeKind { .. } => "Edit Object",
             Command::SetShapeName { .. } => "Rename Object",
             Command::SetSpline { .. } => "Edit B-Spline",
@@ -774,6 +784,19 @@ impl Command {
                     for_group_deep(any_mut(doc, *id)?, &mut |s| {
                         s.fill = crate::patch::patch_fill(&s.fill, fill, fields)
                     });
+                }
+            }
+            Command::SwapColors { shapes } => {
+                let wanted: std::collections::HashSet<ShapeId> = shapes.iter().copied().collect();
+                let mut found = std::collections::HashSet::with_capacity(wanted.len());
+                for layer in doc.all_layers_mut() {
+                    for s in &mut layer.shapes {
+                        swap_colors_under(s, &wanted, &mut found, false);
+                    }
+                }
+                // The engine puts the drawing back when this fails.
+                if let Some(id) = shapes.iter().find(|id| !found.contains(id)) {
+                    return Err(Error::ShapeNotFound(*id));
                 }
             }
             Command::SetShapeKind { shape, kind } => {
@@ -1354,6 +1377,90 @@ fn restyle(doc: &mut Document) {
 /// reaches its objects.
 /// `f` on `shape` and on everything a group holds; on a clip frame also on
 /// its frame (the object that is drawn), not on its contents.
+/// Swap Colors: swap the colours of the objects of `wanted` under
+/// `shape` (nested ones too; `on`: `shape` is inside one of them), each
+/// once, noting the ones met in `found`. A group's objects swap each on
+/// their own; a clip frame swaps its own colours (and its frame's, as a
+/// fill given to it would), and objects in it swap only when named.
+fn swap_colors_under(
+    shape: &mut Shape,
+    wanted: &std::collections::HashSet<ShapeId>,
+    found: &mut std::collections::HashSet<ShapeId>,
+    on: bool,
+) {
+    let named = wanted.contains(&shape.id);
+    if named {
+        found.insert(shape.id);
+    }
+    let on = on || named;
+    if on && !matches!(shape.kind, ShapeKind::Group { .. }) {
+        swap_own_colors(shape);
+    }
+    match &mut shape.kind {
+        ShapeKind::Group { children } => {
+            for c in children {
+                swap_colors_under(c, wanted, found, on);
+            }
+        }
+        ShapeKind::ClipFrame { frame, contents } => {
+            if on {
+                // Swapped with the clip frame already.
+                note_wanted(frame, wanted, found);
+            } else {
+                swap_colors_under(frame, wanted, found, false);
+            }
+            for c in contents {
+                swap_colors_under(c, wanted, found, false);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Note `shape` and the objects in it that are in `wanted`.
+fn note_wanted(
+    shape: &Shape,
+    wanted: &std::collections::HashSet<ShapeId>,
+    found: &mut std::collections::HashSet<ShapeId>,
+) {
+    if wanted.contains(&shape.id) {
+        found.insert(shape.id);
+    }
+    match &shape.kind {
+        ShapeKind::Group { children } => {
+            children.iter().for_each(|c| note_wanted(c, wanted, found))
+        }
+        ShapeKind::ClipFrame { frame, contents } => {
+            note_wanted(frame, wanted, found);
+            contents.iter().for_each(|c| note_wanted(c, wanted, found));
+        }
+        _ => {}
+    }
+}
+
+/// Swap the fill and outline colours of one object (not a group).
+fn swap_own_colors(shape: &mut Shape) {
+    let fill_color = shape.fill.preview_color();
+    let outline_color = shape.stroke.as_ref().map(|st| st.color);
+    if fill_color.is_none() && outline_color.is_none() {
+        return;
+    }
+    let fill = outline_color.map_or(Fill::None, Fill::Solid);
+    let paint = fill_color.map(|color| Stroke {
+        color,
+        ..Stroke::default()
+    });
+    let fields = [crate::patch::StrokeField::Paint];
+    // As a fill and an outline set on the object: a clip frame's frame
+    // takes them too.
+    for_group_deep(shape, &mut |s| {
+        s.fill = fill.clone();
+        s.stroke = paint
+            .as_ref()
+            .map(|p| crate::patch::patch_stroke(s.stroke.as_ref(), p, &fields));
+    });
+}
+
 fn for_group_deep(shape: &mut Shape, f: &mut dyn FnMut(&mut Shape)) {
     f(shape);
     match &mut shape.kind {
@@ -1369,6 +1476,118 @@ fn for_group_deep(shape: &mut Shape, f: &mut dyn FnMut(&mut Shape)) {
 
 #[cfg(test)]
 mod tests {
+    /// Swap Colors: fill and outline colours change places on each
+    /// object, inside groups each on its own; an object selected with its
+    /// group swaps once; others stay; one undo step; an unknown object
+    /// changes nothing.
+    #[test]
+    fn swap_colors_swaps_each_object_once() {
+        use crate::document::ShapeKind;
+        use crate::{Color, Fill};
+        let red = Color::rgb8(200, 0, 0);
+        let blue = Color::rgb8(0, 0, 200);
+        let green = Color::rgb8(0, 200, 0);
+        let mut doc = Document::new("t", Size::new(100.0, 100.0));
+        let mut ids = doc.ids().clone();
+        let mut rect = |fill: Option<Color>, stroke: Option<Color>| {
+            let mut s = Shape::new(
+                ids.shape(),
+                ShapeKind::Rect {
+                    rect: crate::Rect::new(0.0, 0.0, 10.0, 10.0),
+                    radius: 0.0,
+                    corners: None,
+                },
+            );
+            s.fill = fill.map_or(Fill::None, Fill::Solid);
+            s.stroke = stroke.map(|color| Stroke {
+                color,
+                width: 2.0,
+                ..Stroke::default()
+            });
+            s
+        };
+        let a = rect(Some(red), Some(blue));
+        let b = rect(Some(blue), None);
+        let c = rect(None, Some(green));
+        let d = rect(None, None);
+        let e = rect(Some(red), Some(blue));
+        let (a_id, b_id, c_id, d_id, e_id) = (a.id, b.id, c.id, d.id, e.id);
+        let group = Shape::new(
+            ids.shape(),
+            ShapeKind::Group {
+                children: vec![b, c, d],
+            },
+        );
+        let g_id = group.id;
+        doc.set_ids(ids);
+        doc.pages[0].layers[0].shapes = vec![a, group, e];
+        let mut engine = crate::Engine::new(doc);
+        let before = engine.document().clone();
+        let paint = |e: &crate::Engine, id| {
+            let s = e.document().find_shape(id).unwrap();
+            (
+                s.fill.clone(),
+                s.stroke.as_ref().map(|st| (st.color, st.width)),
+            )
+        };
+        engine
+            .run(&Command::SwapColors {
+                shapes: vec![a_id, g_id, b_id],
+            })
+            .unwrap();
+        // The outline keeps its width, only its colour changes.
+        assert_eq!(paint(&engine, a_id), (Fill::Solid(blue), Some((red, 2.0))));
+        let hairline = Stroke::default().width;
+        assert_eq!(paint(&engine, b_id), (Fill::None, Some((blue, hairline))));
+        assert_eq!(paint(&engine, c_id), (Fill::Solid(green), None));
+        assert_eq!(paint(&engine, d_id), (Fill::None, None));
+        assert_eq!(paint(&engine, e_id), (Fill::Solid(red), Some((blue, 2.0))));
+        assert!(engine.undo().is_ok());
+        assert_eq!(engine.document(), &before);
+        assert!(engine
+            .run(&Command::SwapColors {
+                shapes: vec![a_id, crate::ShapeId(9999)],
+            })
+            .is_err());
+        assert_eq!(engine.document(), &before);
+    }
+
+    /// Swap Colors on many objects is one walk of the drawing: twenty
+    /// thousand objects swap in one command (a search of the drawing per
+    /// object made this take minutes).
+    #[test]
+    fn swap_colors_handles_many_objects() {
+        use crate::document::ShapeKind;
+        use crate::{Color, Fill};
+        let mut doc = Document::new("t", Size::new(100.0, 100.0));
+        let mut ids = doc.ids().clone();
+        let shapes: Vec<Shape> = (0..20_000)
+            .map(|_| {
+                let mut s = Shape::new(
+                    ids.shape(),
+                    ShapeKind::Rect {
+                        rect: crate::Rect::new(0.0, 0.0, 1.0, 1.0),
+                        radius: 0.0,
+                        corners: None,
+                    },
+                );
+                s.fill = Fill::Solid(Color::WHITE);
+                s.stroke = Some(Stroke::default());
+                s
+            })
+            .collect();
+        let all: Vec<_> = shapes.iter().map(|s| s.id).collect();
+        doc.set_ids(ids);
+        doc.pages[0].layers[0].shapes = shapes;
+        let mut engine = crate::Engine::new(doc);
+        engine.run(&Command::SwapColors { shapes: all }).unwrap();
+        assert!(engine.document().pages[0].layers[0]
+            .shapes
+            .iter()
+            .all(|s| s.fill == Fill::Solid(Color::BLACK)
+                && s.stroke.as_ref().map(|st| st.color) == Some(Color::WHITE)));
+    }
+
     /// A missing font replaced for good (#936): every span in that family,
     /// in groups and symbols too, takes the new family; one undo step
     /// brings the old one back; other spans are left alone.

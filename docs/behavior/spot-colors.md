@@ -9,12 +9,15 @@ converts without the list).
 
 ## Colour panel
 
-Under Fill, Outline and Add to palette, Spot inks lists the drawing's
+Under Fill, Outline and the "..." menu, Spot inks lists the drawing's
 inks: a swatch at the tint, the name, Fill and Outline (apply the ink at
 the tint to the selection) and a cross that takes the ink off the list
 (objects keep its stand-in). Tint (0 to 100 %, 100 by default) sets the
-strength applied. A name typed in Ink name and New spot ink add an ink
-standing for the new colour (in process inks); names are unique.
+strength applied; while the palette view shows, the control sits under
+its swatches instead (one Tint control in the panel). A name typed in Ink name and New spot ink add an ink
+standing for the new colour (in process inks); names are unique. The
+"..." menu's Add to Custom Spot Colors does the same with the name typed,
+or with the colour's `#rrggbb` code when none is (see `color-docker.md`).
 
 ## Colour books
 

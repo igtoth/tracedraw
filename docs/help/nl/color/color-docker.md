@@ -22,8 +22,12 @@ toe op de vulling of omtrek van de selectie. Het gereedschap
    De drie knoppen bovenaan tonen of verbergen elke weergave; elke combinatie
    kan zichtbaar zijn. U kunt ook een waarde `#rrggbb` typen.
 3. Klik onderaan het paneel op [[docker.fill]] of [[docker.outline]] om de
-   nieuwe kleur toe te passen. [[docker.add_to_palette]] voegt haar toe aan het
-   documentpalet.
+   nieuwe kleur toe te passen.
+   Het slot ([[docker.lock_colors]]) koppelt vulling en omtrek, zodat elke knop
+   de kleur op beide toepast. De knop "..." ([[docker.more_actions]]) opent de
+   overige acties: [[docker.no_fill]], [[docker.no_outline_action]],
+   [[docker.swap_colors]], [[docker.add_to_document_palette]],
+   [[docker.add_to_spot_colors]] en [[docker.add_to_color_styles]].
 
 De oude en de nieuwe kleur staan naast elkaar. Als de nieuwe kleur niet exact
 met CMYK-inkten kan worden afgedrukt, toont het paneel een waarschuwing.

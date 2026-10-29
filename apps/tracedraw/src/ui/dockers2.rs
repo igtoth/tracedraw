@@ -147,6 +147,18 @@ fn step_and_repeat_fields(sr: &mut crate::ops2::StepRepeat, u: crate::app::Units
     }
 }
 
+/// A colour style of `c`, named after its place in the list (New color
+/// style, and the Colour panel's Add to Color Styles Palette).
+pub(crate) fn add_color_style(app: &mut App, c: Color) {
+    let mut st = app.doc().color_styles.clone();
+    st.push(tracedraw_core::ColorStyle {
+        name: format!("Color {}", st.len() + 1),
+        color: c,
+        harmony: None,
+    });
+    app.run(Command::SetColorStyles { styles: st });
+}
+
 fn color_styles(app: &mut App, ui: &mut Ui) {
     let styles = app.doc().color_styles.clone();
     ui.horizontal(|ui| {
@@ -177,13 +189,7 @@ fn color_styles(app: &mut App, ui: &mut Ui) {
             .rich_tip(crate::ui::tips::keyed("docker.new_color_style"))
             .clicked()
         {
-            let mut st = styles.clone();
-            st.push(tracedraw_core::ColorStyle {
-                name: format!("Color {}", st.len() + 1),
-                color: app.mixer_color,
-                harmony: None,
-            });
-            app.run(Command::SetColorStyles { styles: st });
+            add_color_style(app, app.mixer_color);
         }
     });
     let mut st = styles.clone();

@@ -21,7 +21,12 @@ výplň nebo obrys výběru. Otevře jej také nástroj [[tool.outline_color]]
    Tři tlačítka nahoře zobrazují nebo skrývají jednotlivá zobrazení; zobrazit
    lze libovolnou kombinaci. Můžete také zadat hodnotu `#rrggbb`.
 3. Kliknutím na [[docker.fill]] nebo [[docker.outline]] dole v panelu novou
-   barvu použijete. [[docker.add_to_palette]] ji přidá do palety dokumentu.
+   barvu použijete.
+   Zámek ([[docker.lock_colors]]) spojuje výplň a obrys, takže kterékoli z
+   tlačítek použije barvu na obojí. Tlačítko "..." ([[docker.more_actions]])
+   rozbalí další akce: [[docker.no_fill]], [[docker.no_outline_action]],
+   [[docker.swap_colors]], [[docker.add_to_document_palette]],
+   [[docker.add_to_spot_colors]] a [[docker.add_to_color_styles]].
 
 Stará a nová barva se zobrazují vedle sebe. Pokud novou barvu nelze přesně
 vytisknout barvami CMYK, panel zobrazí upozornění.
