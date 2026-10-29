@@ -2228,11 +2228,13 @@ fn mcfg_21(w_mm: f64, h_mm: f64) -> Vec<u8> {
 /// then the name. Files list a record for each face their styles use
 /// (two for Arial when text is set in Arial and Arial bold); a style
 /// naming a face without its record was drawn in a stand-in font.
-/// From version 16 the record also carries what the package's font table
-/// says about the face (`face`, when the package lists it): the PANOSE
-/// bytes at 8, the character set at 86 and the script name at 88
-/// ("Western"), u32 1 at 156 when the face is embedded, and the
-/// PostScript name at 164 (files of versions 19 to 27, #1009).
+/// From version 16 the record of a face the package embeds (`face`) also
+/// carries what the package's font table says about it: the PANOSE bytes
+/// at 8, the character set at 86 and the script name at 88 ("Western"),
+/// u32 1 at 156 and the PostScript name at 164 (the embedded faces of the
+/// version 19 file of #624 and the version 27 file of #313, #1009). The
+/// records of faces not embedded stay as before, so a drawing saved
+/// without Embed fonts writes the same bytes.
 fn font_record(
     v: Ver,
     id: u16,
@@ -2242,8 +2244,9 @@ fn font_record(
 ) -> Vec<u8> {
     let mut b = Buf::default();
     b.u16(id).u16(0).u32(flags);
+    let face = face.filter(|f| f.embedded && v.redirects());
     match face {
-        Some(f) if v.redirects() => b.bytes(&f.panose),
+        Some(f) => b.bytes(&f.panose),
         _ => b.zeros(10),
     };
     if v.unicode() {
@@ -2251,12 +2254,12 @@ fn font_record(
         for u in &name {
             b.u16(*u);
         }
-        if let (Some(f), true) = (face, v.redirects()) {
+        if let Some(f) = face {
             b.pad_to(86).u16(0);
             for u in "Western".encode_utf16() {
                 b.u16(u);
             }
-            b.pad_to(156).u32(u32::from(f.embedded)).u32(2);
+            b.pad_to(156).u32(1).u32(2);
             for u in f.postscript.encode_utf16().take(65) {
                 b.u16(u);
             }
@@ -3385,15 +3388,19 @@ impl<'a> Writer<'a> {
             self.font_id("Arial");
         }
         if !self.fonts.is_empty() {
-            // What the package's font table says about each face, for
-            // the records of version 16 and later.
-            let records = if v.redirects() {
+            // What the package's font table says about each embedded
+            // face, for the records of version 16 and later (faces not
+            // embedded keep their plain records).
+            let records = if v.redirects() && self.embed_fonts {
                 fonts::records(self.faces, self.embed_fonts, &self.fonts)
             } else {
                 Vec::new()
             };
-            let record_of =
-                |id: u16, flags: u32| records.iter().find(|r| r.number == id && r.flags == flags);
+            let record_of = |id: u16, flags: u32| {
+                records
+                    .iter()
+                    .find(|r| r.embedded && r.number == id && r.flags == flags)
+            };
             let mut fonts = Vec::new();
             for (id, f) in &self.fonts {
                 fonts.push(chunk(

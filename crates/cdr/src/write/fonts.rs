@@ -413,8 +413,9 @@ const VERSION_UNITS: usize = 1026;
 /// member holds: the family in UTF-16 (32 units) and then in single
 /// bytes (32), the style flags of the font table, a zero byte, the
 /// PANOSE bytes, the embedding level of the font's licence, five zero
-/// bytes and u32 1. Files hold it in every member seen (versions 19 to
-/// 27); members without it (written before 2026-10-28) asked for the
+/// bytes and u32 1. Files hold it in every member seen (the 14 members
+/// of the version 19 file of #624 and the version 27 file of #313);
+/// members without it (written before 2026-10-28) asked for the
 /// font to be installed (#1009).
 struct FaceBlock<'a> {
     family: &'a str,

@@ -3168,9 +3168,9 @@ fn embedded_fonts_carry_the_drawings_font_ids() {
 /// (#1009): the embedding header's face block at 2063 (its size, the
 /// family in UTF-16 and single bytes, the style flags, the PANOSE bytes,
 /// the licence level and u32 1), and the drawing's `font` record (PANOSE
-/// bytes, "Western", u32 1 at 156, the PostScript name at 164). A face
-/// the package does not embed has 0 at 156; files before 16 keep their
-/// short records.
+/// bytes, "Western", u32 1 at 156, the PostScript name at 164). Without
+/// Embed fonts the records stay plain (a drawing saved so writes what it
+/// wrote before); files before 16 keep their short records.
 #[test]
 fn embedded_faces_are_named_in_the_header_and_the_font_record() {
     const REGULAR: &[u8] =
@@ -3219,9 +3219,10 @@ fn embedded_faces_are_named_in_the_header_and_the_font_record() {
                     records.push(tree.data(&riff, ch).to_vec());
                 }
             });
-            if v < 16 {
+            if v < 16 || !embed {
                 // Files before 16 keep their short records (the bold
-                // face is a text style there).
+                // face is a text style there), and faces not embedded
+                // their plain ones.
                 for r in &records {
                     assert_eq!(r.len(), 296, "{v}");
                     assert!(r[8..18].iter().all(|&b| b == 0), "{v}");
@@ -3242,11 +3243,8 @@ fn embedded_faces_are_named_in_the_header_and_the_font_record() {
                 assert_eq!(&r[8..18], &selawik_panose, "{v}");
                 assert_eq!(u16_at(r, 86), 0, "{v}");
                 assert_eq!(&r[88..88 + 14], &utf16("Western"), "{v}");
-                assert_eq!(u32_at(r, 156), u32::from(embed), "{v} {embed}");
+                assert_eq!(u32_at(r, 156), 1, "{v}");
                 assert_eq!(&r[164..164 + 2 * ps.len()], &utf16(ps), "{v}");
-            }
-            if !embed {
-                continue;
             }
             let mut z = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).expect("zip");
             for (n, flags) in [(0, 0x40u32), (1, 0x1000)] {
