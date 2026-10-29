@@ -1073,6 +1073,9 @@ pub struct App {
     /// The Outline Pen dialog's outline is shown on the selection as an
     /// engine preview (#741).
     pub outline_preview: bool,
+    /// A bitmap effect dialog's effect shown on the selection while it is
+    /// open, made off the interface thread (see `fx::preview`).
+    pub fx_preview: crate::fx::preview::FxPreview,
     /// The selected objects in page space, for the drawing, its revision
     /// and the selection they were gathered for (see
     /// [`App::selected_rc`]).
@@ -2270,6 +2273,7 @@ impl App {
             visual_cache: std::cell::RefCell::new((u64::MAX, Default::default())),
             fill_preview: false,
             outline_preview: false,
+            fx_preview: Default::default(),
             selected_cache: std::cell::RefCell::new(None),
             outline_cache: std::cell::RefCell::new(None),
             view_anchor: None,

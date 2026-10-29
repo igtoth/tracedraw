@@ -1373,6 +1373,12 @@ pub fn show(app: &mut App, ctx: &Context) {
     if app.outline_preview && !matches!(app.dialog, Dialog::OutlinePen(_)) {
         app.end_outline_pen_preview();
     }
+    // And for a bitmap effect's dialog: the effect leaves the drawing.
+    if (app.fx_preview.shown.is_some() || app.fx_preview.busy())
+        && !matches!(app.dialog, Dialog::Effect(_))
+    {
+        app.end_bitmap_effect_preview();
+    }
     let mut dialog = std::mem::replace(&mut app.dialog, Dialog::None);
     app.dialog_help = crate::help::dialog_topic(&dialog, app.options_page);
     if !matches!(dialog, Dialog::None) {

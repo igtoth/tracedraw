@@ -121,7 +121,14 @@ pub fn copy_of(app: &App, ctx: &egui::Context, src: &Source, side: u32) -> Optio
                 index,
             } => {
                 let before = &stack.effects[..(*index).min(stack.effects.len())];
-                let key = settings_key(&("stack", stack.png.len(), before, side));
+                // With no effects before, the same copy as the bitmap
+                // shown: the dialogs' live preview moves between the two
+                // without making it again.
+                let key = if before.is_empty() {
+                    settings_key(&("shown", stack.png.len(), side))
+                } else {
+                    settings_key(&("stack", stack.png.len(), before, side))
+                };
                 (*shape, key, stack.png.clone(), before)
             }
         };

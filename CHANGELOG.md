@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Bitmap effect dialogs (Blur, Adjust, Color Transform, Tone Curve, Contrast Enhancement and the rest): the effect shows on the drawing while the dialog is open and follows every value as it changes, with a Preview box to switch it off; the preview is made off the interface thread with a busy mark, so the canvas keeps answering on large pictures. Cancel or Esc put the drawing back exactly as it was with no undo step; OK keeps what the drawing shows as one step without making it again. Before, only the small before and after pictures in the dialog followed the values and the drawing changed on OK.
+
 - Panels: the button at the end of each tab column is now three small dots instead of a plus (tip: Show or hide panels), and each row of the list it opens shows the panel's picture between its check box and its name, as the tab does, with a blank slot where a panel has no picture so the names line up. What the list holds and what ticking does are unchanged.
 
 - Windows installer: the setup now asks which language to run its wizard in and ships English, Brazilian Portuguese, Czech, Dutch, French, German, Italian, Japanese, Polish, Russian, Spanish and Turkish. It offered only English and Brazilian Portuguese. The command line option and the Start menu uninstall entry are in the chosen language too. It has always created an uninstaller (Start menu "Uninstall TraceDraw" and Windows "Apps & features").

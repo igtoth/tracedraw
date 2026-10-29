@@ -24,6 +24,9 @@ pub struct EffectState {
     pub lab: crate::ui::lab_dialog::LabState,
     /// The colour setting an eyedropper is picking from the preview.
     pub pick: Option<String>,
+    /// The Preview box: the effect shows on the drawing while the dialog
+    /// is open (see `fx::preview`).
+    pub preview: bool,
 }
 
 impl EffectState {
@@ -34,6 +37,7 @@ impl EffectState {
             channel: 0,
             lab: Default::default(),
             pick: None,
+            preview: true,
         }
     }
 }
@@ -818,14 +822,22 @@ pub fn effect_dialog(app: &mut App, ctx: &Context, st: &mut EffectState, close: 
         }
     }
     let title = tr(&format!("fx.{}", spec.id));
+    let mut ok = false;
     super::dialogs::window(ctx, title).show(ctx, |ui| {
         let effect = st.effect.clone();
-        // Adding starts from what the bitmap shows now; editing, from what
-        // the effects before this one made, and the after view runs the
-        // ones after it too.
-        let stack = st
-            .edit
-            .and_then(|(id, i)| app.bitmap_fx_stack(id).map(|s| (id, i, s)));
+        // Adding starts from what the bitmap shows without this effect
+        // (its effects so far; the live preview puts this one last);
+        // editing, from what the effects before this one made, and the
+        // after view runs the ones after it too.
+        let stack = match st.edit {
+            Some((id, i)) => app.bitmap_fx_stack(id).map(|s| (id, i, s)),
+            None => crate::ui::bitmap_preview::selected_bitmap(app).and_then(|(id, _, _)| {
+                let s = app.bitmap_fx_stack(id)?;
+                let shown = usize::from(app.fx_preview.on_drawing());
+                let i = s.effects.len().saturating_sub(shown);
+                Some((id, i, s))
+            }),
+        };
         let after: Vec<BitmapEffect> = match &stack {
             Some((_, index, stack)) => stack.effects.iter().skip(index + 1).cloned().collect(),
             None => Vec::new(),
@@ -930,16 +942,34 @@ pub fn effect_dialog(app: &mut App, ctx: &Context, st: &mut EffectState, close: 
                 st.effect.params.clear();
             }
         }
-        if super::dialogs::ok_cancel(ui, close) {
-            let e = st.effect.clone();
-            match st.edit {
-                Some((id, i)) => app.edit_bitmap_effects(id, "Edit Effect", move |list| {
-                    if let Some(slot) = list.get_mut(i) {
-                        *slot = e;
-                    }
-                }),
-                None => app.add_bitmap_effect(e),
-            }
+        preview_row(ui, app, &mut st.preview);
+        ok = super::dialogs::ok_cancel(ui, close);
+    });
+    if ok {
+        app.commit_bitmap_effect(st);
+    } else if *close {
+        app.end_bitmap_effect_preview();
+    } else {
+        app.preview_bitmap_effect(ctx, st);
+    }
+}
+
+/// The Preview box (the effect on the drawing while the dialog is open)
+/// and, while a preview is being made, a busy mark beside it.
+pub fn preview_row(ui: &mut Ui, app: &App, preview: &mut bool) {
+    ui.horizontal(|ui| {
+        ui.checkbox(preview, tr("dialog.preview"))
+            .rich_tip(crate::ui::tips::pair(
+                "dialog.preview",
+                "dialog.live_preview_desc",
+            ));
+        if *preview && app.fx_preview.busy() {
+            ui.spinner();
+            ui.label(
+                egui::RichText::new(tr("dialog.preview_busy"))
+                    .size(11.0)
+                    .color(crate::theme::Tokens::text_dim()),
+            );
         }
     });
 }
@@ -995,6 +1025,7 @@ pub fn fx_section(app: &mut App, ui: &mut Ui, id: ShapeId) {
                     channel: 0,
                     lab: Default::default(),
                     pick: None,
+                    preview: true,
                 });
             }
             if ui
