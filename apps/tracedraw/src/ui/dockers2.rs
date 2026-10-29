@@ -1798,8 +1798,9 @@ fn extrude(app: &mut App, ui: &mut Ui) {
 
 fn bevel(app: &mut App, ui: &mut Ui) {
     let cur = current_effect(app, |e| matches!(e, Effect::Bevel { .. }));
-    // The panel shows the selected object's own bevel, so its sliders edit
-    // that bevel instead of replacing it with the last settings used.
+    // The panel shows the selected object's own bevel every frame, so its
+    // sliders edit that bevel (after Undo, or another object picked and
+    // picked back too) instead of the last settings used.
     if let Some(Effect::Bevel {
         distance,
         light_angle,
@@ -1811,7 +1812,7 @@ fn bevel(app: &mut App, ui: &mut Ui) {
         emboss_color,
     }) = &cur
     {
-        if app.bevel_synced_to != app.selection.first().copied() {
+        {
             app.bevel = crate::effects_ui::BevelSettings {
                 distance: *distance,
                 light_angle: *light_angle,
@@ -1825,6 +1826,15 @@ fn bevel(app: &mut App, ui: &mut Ui) {
             app.bevel_synced_to = app.selection.first().copied();
         }
     }
+    // The colour an own emboss colour starts from: the object's solid fill.
+    let fill_color = app
+        .selected_shapes()
+        .first()
+        .and_then(|s| match &s.fill {
+            tracedraw_core::Fill::Solid(c) => Some(*c),
+            _ => None,
+        })
+        .unwrap_or(Color::rgb8(128, 128, 128));
     use crate::ui::docker_form::{row, section};
     use crate::ui::tips::{keyed, pair};
     let b = &mut app.bevel;
@@ -1895,8 +1905,9 @@ fn bevel(app: &mut App, ui: &mut Ui) {
             .rich_tip(keyed("docker.emboss_color"))
             .changed()
         {
-            // Switched on, it starts from the shade the band had.
-            b.emboss_color = own.then_some(b.emboss_color.unwrap_or(Color::rgb8(128, 128, 128)));
+            // Switched on, it starts from the object's fill, the colour the
+            // band was toned from.
+            b.emboss_color = own.then_some(b.emboss_color.unwrap_or(fill_color));
             changed = true;
         }
         if let Some(c) = &mut b.emboss_color {
