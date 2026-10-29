@@ -971,6 +971,65 @@ pub fn paint_copy_plus(ctx: &egui::Context, p: Pos2) {
     copy_plus(&painter, p + Vec2::new(14.0, 16.0));
 }
 
+/// The colour eyedroppers' readout beside the pointer at `p` (#990): a
+/// swatch, the colour's name when it has one, and its values. It sits
+/// below and right of the pointer, and on the other side where the
+/// window ends. Plain rectangles and a few short texts, whose layout
+/// egui keeps from frame to frame.
+pub fn paint_color_readout(ctx: &egui::Context, p: Pos2, r: &crate::eyedropper::Reading) {
+    let painter = ctx.layer_painter(egui::LayerId::new(
+        egui::Order::Tooltip,
+        egui::Id::new("color_readout"),
+    ));
+    let font = egui::FontId::proportional(11.0);
+    let bold = crate::theme::bold(11.0);
+    let text = crate::theme::Tokens::text();
+    let mut galleys = Vec::with_capacity(r.lines.len() + 1);
+    if !r.name.is_empty() {
+        galleys.push(painter.layout_no_wrap(r.name.clone(), bold, text));
+    }
+    for l in &r.lines {
+        galleys.push(painter.layout_no_wrap(l.clone(), font.clone(), text));
+    }
+    const PAD: f32 = 5.0;
+    const SWATCH: f32 = 14.0;
+    let text_w = galleys.iter().map(|g| g.size().x).fold(0.0, f32::max);
+    let text_h: f32 = galleys.iter().map(|g| g.size().y).sum();
+    let size = Vec2::new(PAD * 3.0 + SWATCH + text_w, PAD * 2.0 + text_h.max(SWATCH));
+    let screen = ctx.content_rect();
+    let mut at = p + Vec2::new(18.0, 20.0);
+    if at.x + size.x > screen.right() {
+        at.x = p.x - 8.0 - size.x;
+    }
+    if at.y + size.y > screen.bottom() {
+        at.y = p.y - 8.0 - size.y;
+    }
+    let frame = Rect::from_min_size(at, size);
+    painter.rect(
+        frame,
+        CornerRadius::same(3),
+        crate::theme::Tokens::panel(),
+        Stroke::new(1.0, crate::theme::Tokens::control_border()),
+        egui::StrokeKind::Inside,
+    );
+    let [cr, cg, cb] = r.color.to_rgb8();
+    let swatch = Rect::from_min_size(at + Vec2::splat(PAD), Vec2::splat(SWATCH));
+    painter.rect(
+        swatch,
+        CornerRadius::ZERO,
+        Color32::from_rgb(cr, cg, cb),
+        Stroke::new(1.0, crate::theme::Tokens::control_border()),
+        egui::StrokeKind::Inside,
+    );
+    let mut y = at.y + PAD;
+    let x = swatch.right() + PAD;
+    for g in galleys {
+        let h = g.size().y;
+        painter.galley(Pos2::new(x, y), g, text);
+        y += h;
+    }
+}
+
 /// A 9-point square with a plus, its top left at `at`.
 fn copy_plus(painter: &Painter, at: Pos2) {
     let s = Rect::from_min_size(at, Vec2::splat(9.0));

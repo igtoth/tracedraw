@@ -199,27 +199,10 @@ pub(crate) fn feature_tags(table: &[u8]) -> Vec<[u8; 4]> {
         .collect()
 }
 
-/// What the manager knows of face `index` in font `data` (not yet marked
-/// installed or system).
-pub fn describe(data: &[u8], index: u32) -> Option<FaceRecord> {
-    let f = ttf_parser::Face::parse(data, index).ok()?;
-    let raw = f.raw_face();
-    let os2 = raw
-        .table(ttf_parser::Tag::from_bytes(b"OS/2"))
-        .unwrap_or(&[]);
-    let tables = f.tables();
-    let kind = if tables.fvar.is_some() {
-        FontKind::Variable
-    } else if tables.cff.is_some() || tables.cff2.is_some() {
-        FontKind::OpenType
-    } else {
-        FontKind::TrueType
-    };
-    let symbol = tables.cmap.is_some_and(|c| {
-        c.subtables
-            .into_iter()
-            .any(|s| s.platform_id == ttf_parser::PlatformId::Windows && s.encoding_id == 0)
-    });
+/// The writing systems face `f` covers: those its OS/2 Unicode ranges
+/// name (`os2` is the whole table), Latin for a font without ranges that
+/// maps Latin letters, and Symbols for a symbol font.
+pub(crate) fn face_scripts(f: &ttf_parser::Face, os2: &[u8], symbol: bool) -> Vec<Script> {
     let ranges = [be32(os2, 42), be32(os2, 46), be32(os2, 50), be32(os2, 54)];
     let bit = |n: usize| ranges[n / 32] & (1 << (n % 32)) != 0;
     let mut scripts = Vec::new();
@@ -247,6 +230,31 @@ pub fn describe(data: &[u8], index: u32) -> Option<FaceRecord> {
     if symbol {
         scripts.push(Script::Symbols);
     }
+    scripts
+}
+
+/// What the manager knows of face `index` in font `data` (not yet marked
+/// installed or system).
+pub fn describe(data: &[u8], index: u32) -> Option<FaceRecord> {
+    let f = ttf_parser::Face::parse(data, index).ok()?;
+    let raw = f.raw_face();
+    let os2 = raw
+        .table(ttf_parser::Tag::from_bytes(b"OS/2"))
+        .unwrap_or(&[]);
+    let tables = f.tables();
+    let kind = if tables.fvar.is_some() {
+        FontKind::Variable
+    } else if tables.cff.is_some() || tables.cff2.is_some() {
+        FontKind::OpenType
+    } else {
+        FontKind::TrueType
+    };
+    let symbol = tables.cmap.is_some_and(|c| {
+        c.subtables
+            .into_iter()
+            .any(|s| s.platform_id == ttf_parser::PlatformId::Windows && s.encoding_id == 0)
+    });
+    let scripts = face_scripts(&f, os2, symbol);
     let mut tags = Vec::new();
     for t in [b"GSUB", b"GPOS"] {
         if let Some(table) = raw.table(ttf_parser::Tag::from_bytes(t)) {

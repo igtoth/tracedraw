@@ -3365,6 +3365,9 @@ fn tools_menu(app: &mut App, ui: &mut Ui) {
     if item(ui, "menu.tools.color_management", "", true) {
         app.dialog = Dialog::ColorManagement(Default::default());
     }
+    if item(ui, "menu.tools.convert_colors", "", true) {
+        app.convert_colors_dialog();
+    }
     sep(ui);
     sub(ui, "menu.tools.scripts", |ui| {
         if item(ui, "menu.tools.scripts_docker", "", true) {
