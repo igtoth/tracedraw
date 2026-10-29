@@ -99,6 +99,21 @@
   at every object whose box meets the rectangle, a level or upright line
   (a box of no height or width) included, and takes the stretches of
   theirs the rectangle touches.
+- Freehand (#1150): the property bar's Box and Freehand choose what a
+  drag draws (Box at first, kept with the tool settings); Alt held at the
+  press takes the other one for that drag. A freehand stroke (points
+  kept a screen pixel apart, drawn as a black line on a white one)
+  removes every virtual segment it crosses or touches, whole, as far as
+  the crossings at its ends, on all objects at once, one undo step;
+  stretches it passes beside stay, so a stroke across a crowded spot
+  takes only what it goes through, where the box would take everything
+  in it (`segment_delete::tests::a_freehand_stroke_removes_the_stretches_it_crosses`,
+  `pick_drag_tests::segment_delete_drags_a_freehand_stroke_with_alt_or_the_bar`).
+  Only the objects whose box meets the stroke's box are looked at. A
+  click that slipped into a stroke of under 8 pixels that crosses
+  nothing deletes as a click at the press. Some Linux desktops move the
+  window on Alt+drag; there, the bar's Freehand does the same without
+  Alt.
 - Curves, rectangles, ellipses and polygons can lose segments; they
   become curves. A closed subpath that loses a stretch opens (what is
   left of it runs on over its start as one piece); an object with

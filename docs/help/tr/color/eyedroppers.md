@@ -23,6 +23,11 @@ grubun ya da çerçevenin içinde de renklerini verir.
 
 Özellik çubuğu örneklenen rengi gösterir.
 
+Bir renk almak için işaretçiyi hareket ettirirken yanındaki küçük bir kutu
+altındaki rengi gösterir: bir örnek, palet rengi veya spot mürekkep ise rengin
+adı, çizimin renk modundaki (CMYK veya RGB) değerleri ve onaltılık değeri. Bir
+renk seçicinin damlalığı da aynı kutuyu gösterir.
+
 ## Öznitelik Damlalığı {#attributes-eyedropper}
 
 [[tool.attributes_eyedropper]] aracı bir nesneden diğerlerine birkaç

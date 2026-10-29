@@ -1,12 +1,15 @@
 //! What a font list filters families by (#867): the kind of letters a
-//! family has (serif, sans serif, script, decorative), whether it is
-//! monospaced, a symbol font, a variable font or has OpenType layout
-//! features. Read from tables every face carries, as the OpenType
-//! specification defines them: the OS/2 table's `sFamilyClass` (class ID
-//! in the high byte) and PANOSE digits, the `post` table's `isFixedPitch`,
-//! `fvar`, and the feature lists of GSUB and GPOS. See
-//! docs/behavior/text.md, "Font list".
+//! family has (serif, sans serif, script, decorative, monospaced, symbol),
+//! how its outlines are stored, its weights and widths, its embedding
+//! rights, the scripts it covers, its OpenType layout features and the
+//! folders its files are in. Read from tables every face carries, as the
+//! OpenType specification defines them: the OS/2 table's `sFamilyClass`
+//! (class ID in the high byte), PANOSE digits, `usWeightClass`,
+//! `usWidthClass`, `fsType` and Unicode ranges, the `post` table's
+//! `isFixedPitch`, `fvar` and its axes, `cmap`, and the feature lists of
+//! GSUB and GPOS. See docs/behavior/text.md, "Font list".
 
+use crate::catalog::{Embedding, Script};
 use crate::{FamilyInfo, FontKind};
 
 /// The kind of letters a family has.
@@ -128,7 +131,8 @@ pub fn face_traits(f: &ttf_parser::Face) -> FaceTraits {
     }
 }
 
-/// One thing a font list can ask of a family.
+/// A kind of letters a font list's filter asks for (its Style section):
+/// of several checked, a family needs one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FontTrait {
     Serif,
@@ -137,32 +141,20 @@ pub enum FontTrait {
     Decorative,
     Monospace,
     Symbol,
-    Variable,
-    Features,
 }
 
 impl FontTrait {
-    pub const ALL: [FontTrait; 8] = [
+    pub const ALL: [FontTrait; 6] = [
         FontTrait::Serif,
         FontTrait::SansSerif,
         FontTrait::Script,
         FontTrait::Decorative,
         FontTrait::Monospace,
         FontTrait::Symbol,
-        FontTrait::Variable,
-        FontTrait::Features,
     ];
 
     fn bit(self) -> u16 {
         1 << self as u16
-    }
-
-    /// A kind of letters: of several checked, a family needs one.
-    pub fn is_class(self) -> bool {
-        matches!(
-            self,
-            FontTrait::Serif | FontTrait::SansSerif | FontTrait::Script | FontTrait::Decorative
-        )
     }
 
     /// `info` has this trait.
@@ -174,61 +166,251 @@ impl FontTrait {
             FontTrait::Decorative => info.class == FontClass::Decorative,
             FontTrait::Monospace => info.monospace,
             FontTrait::Symbol => info.symbol || info.class == FontClass::Symbol,
-            FontTrait::Variable => info.kind == FontKind::Variable,
-            FontTrait::Features => info.features,
         }
     }
 }
 
-/// The traits checked in a font list's filter. A family shows when it has
-/// one of the checked kinds of letters (if any is checked) and every other
-/// checked trait. Nothing checked shows every family.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub struct FontFilter(u16);
+/// How a face's outlines are stored: TrueType (`glyf`), OpenType with
+/// PostScript outlines (`CFF `, `CFF2`), or a variable font (`fvar`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Technology {
+    TrueType,
+    OpenType,
+    Variable,
+}
 
-impl FontFilter {
-    pub fn is_empty(self) -> bool {
-        self.0 == 0
+impl Technology {
+    pub const ALL: [Technology; 3] = [
+        Technology::TrueType,
+        Technology::OpenType,
+        Technology::Variable,
+    ];
+
+    pub fn bit(self) -> u8 {
+        1 << self as u8
     }
 
-    pub fn has(self, t: FontTrait) -> bool {
-        self.0 & t.bit() != 0
+    /// The technology of a face of `kind`.
+    pub fn of(kind: FontKind) -> Option<Technology> {
+        match kind {
+            FontKind::TrueType => Some(Technology::TrueType),
+            FontKind::OpenType => Some(Technology::OpenType),
+            FontKind::Variable => Some(Technology::Variable),
+            FontKind::Offered => None,
+        }
+    }
+}
+
+/// Weights as a font list groups them, from the OS/2 `usWeightClass`
+/// (or a variable font's `wght` axis): light below 350, bold from 600.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum WeightClass {
+    Light,
+    Normal,
+    Bold,
+}
+
+impl WeightClass {
+    pub const ALL: [WeightClass; 3] = [WeightClass::Light, WeightClass::Normal, WeightClass::Bold];
+
+    pub fn bit(self) -> u8 {
+        1 << self as u8
+    }
+
+    /// The groups the weights `min` to `max` reach (one weight: one group).
+    pub fn bits_of(min: f32, max: f32) -> u8 {
+        let (lo, hi) = (min.min(max), min.max(max));
+        let mut bits = 0;
+        if lo < 350.0 {
+            bits |= WeightClass::Light.bit();
+        }
+        if lo < 600.0 && hi >= 350.0 {
+            bits |= WeightClass::Normal.bit();
+        }
+        if hi >= 600.0 {
+            bits |= WeightClass::Bold.bit();
+        }
+        bits
+    }
+}
+
+/// Widths as a font list groups them, from the OS/2 `usWidthClass` (1 to
+/// 4 condensed, 5 normal, 6 to 9 expanded) or a variable font's `wdth`
+/// axis (percent of normal).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum WidthClass {
+    Condensed,
+    Normal,
+    Expanded,
+}
+
+impl WidthClass {
+    pub const ALL: [WidthClass; 3] = [
+        WidthClass::Condensed,
+        WidthClass::Normal,
+        WidthClass::Expanded,
+    ];
+
+    pub fn bit(self) -> u8 {
+        1 << self as u8
+    }
+
+    /// The group of an OS/2 width class (out of range reads as normal).
+    pub fn of_class(class: u16) -> WidthClass {
+        match class {
+            1..=4 => WidthClass::Condensed,
+            6..=9 => WidthClass::Expanded,
+            _ => WidthClass::Normal,
+        }
+    }
+
+    /// The groups a `wdth` axis from `min` to `max` percent reaches.
+    pub fn bits_of_axis(min: f32, max: f32) -> u8 {
+        let (lo, hi) = (min.min(max), min.max(max));
+        let mut bits = 0;
+        if lo < 100.0 {
+            bits |= WidthClass::Condensed.bit();
+        }
+        if lo <= 100.0 && hi >= 100.0 {
+            bits |= WidthClass::Normal.bit();
+        }
+        if hi > 100.0 {
+            bits |= WidthClass::Expanded.bit();
+        }
+        bits
+    }
+}
+
+/// The bit of embedding rights `e` in [`FontFilter::embedding`].
+pub fn embedding_bit(e: Embedding) -> u8 {
+    1 << Embedding::ALL.iter().position(|x| *x == e).unwrap_or(0)
+}
+
+/// The bit of script `s` in [`FamilyInfo::scripts`] and
+/// [`FontFilter::scripts`].
+pub fn script_bit(s: Script) -> u16 {
+    1 << Script::ALL.iter().position(|x| *x == s).unwrap_or(0)
+}
+
+/// The OpenType features a font list's filter offers, in its order.
+/// `ss01` stands for every stylistic set (`ss01` to `ss20`).
+pub const FILTER_FEATURES: [&[u8; 4]; 18] = [
+    b"liga", b"dlig", b"kern", b"smcp", b"c2sc", b"onum", b"lnum", b"pnum", b"tnum", b"frac",
+    b"sups", b"subs", b"ordn", b"zero", b"swsh", b"salt", b"calt", b"ss01",
+];
+
+/// A family whose faces have the feature tags `tags` has feature `want`
+/// (`ss01`: any stylistic set).
+pub fn has_feature(tags: &[[u8; 4]], want: &[u8; 4]) -> bool {
+    if want == b"ss01" {
+        return tags.iter().any(|t| {
+            t[0] == b's' && t[1] == b's' && t[2].is_ascii_digit() && t[3].is_ascii_digit()
+        });
+    }
+    tags.iter().any(|t| t == want)
+}
+
+/// What a font list's filter asks of a family (#867). Each section is a
+/// set of choices: of several checked in one section a family needs one
+/// (Style, Technology, Weight, Width, Embedding rights, Scripts,
+/// Folders), except OpenType features, of which it needs every one
+/// checked; it needs what every section with a choice asks. Nothing
+/// checked shows every family.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
+pub struct FontFilter {
+    /// [`FontTrait`] bits (see [`FontFilter::has`]).
+    pub styles: u16,
+    /// [`Technology::bit`]s.
+    pub tech: u8,
+    /// [`WeightClass::bit`]s.
+    pub weights: u8,
+    /// [`WidthClass::bit`]s.
+    pub widths: u8,
+    /// [`embedding_bit`]s: the family's most restrictive face counts.
+    pub embedding: u8,
+    /// [`script_bit`]s.
+    pub scripts: u16,
+    /// Feature tags the family must have, each.
+    pub features: Vec<[u8; 4]>,
+    /// Folders a face of the family must be in, one of them.
+    pub folders: Vec<std::path::PathBuf>,
+}
+
+impl FontFilter {
+    pub fn is_empty(&self) -> bool {
+        self.count() == 0
+    }
+
+    pub fn has(&self, t: FontTrait) -> bool {
+        self.styles & t.bit() != 0
     }
 
     pub fn set(&mut self, t: FontTrait, on: bool) {
         if on {
-            self.0 |= t.bit();
+            self.styles |= t.bit();
         } else {
-            self.0 &= !t.bit();
+            self.styles &= !t.bit();
         }
     }
 
-    /// The number of traits checked.
-    pub fn count(self) -> u32 {
-        self.0.count_ones()
+    /// Check or uncheck feature `tag`.
+    pub fn set_feature(&mut self, tag: [u8; 4], on: bool) {
+        self.features.retain(|t| *t != tag);
+        if on {
+            self.features.push(tag);
+        }
+    }
+
+    /// Check or uncheck folder `dir`.
+    pub fn set_folder(&mut self, dir: &std::path::Path, on: bool) {
+        self.folders.retain(|d| d != dir);
+        if on {
+            self.folders.push(dir.to_path_buf());
+        }
+    }
+
+    /// The number of choices checked.
+    pub fn count(&self) -> u32 {
+        self.styles.count_ones()
+            + self.tech.count_ones()
+            + self.weights.count_ones()
+            + self.widths.count_ones()
+            + self.embedding.count_ones()
+            + self.scripts.count_ones()
+            + self.features.len() as u32
+            + self.folders.len() as u32
     }
 
     /// A family with `info` shows (`None`: not installed nor offered,
     /// which shows only when nothing is checked; an offered family is not
-    /// read until fetched, so it has no trait).
-    pub fn matches(self, info: Option<&FamilyInfo>) -> bool {
+    /// read until fetched, so it has nothing to show by).
+    pub fn matches(&self, info: Option<&FamilyInfo>) -> bool {
         if self.is_empty() {
             return true;
         }
         let Some(info) = info else {
             return false;
         };
-        let mut any_class = false;
-        let mut class_held = false;
-        for t in FontTrait::ALL.into_iter().filter(|t| self.has(*t)) {
-            if t.is_class() {
-                any_class = true;
-                class_held |= t.holds(info);
-            } else if !t.holds(info) {
-                return false;
-            }
+        if info.kind == FontKind::Offered {
+            return false;
         }
-        !any_class || class_held
+        let any = |checked: u32, held: u32| checked == 0 || checked & held != 0;
+        let styles_held = FontTrait::ALL
+            .iter()
+            .filter(|t| t.holds(info))
+            .fold(0u16, |b, t| b | t.bit());
+        let embedding_held = info.embedding.map_or(0, embedding_bit);
+        any(self.styles.into(), styles_held.into())
+            && any(self.tech.into(), info.kinds.into())
+            && any(self.weights.into(), info.weights.into())
+            && any(self.widths.into(), info.widths.into())
+            && any(self.embedding.into(), embedding_held.into())
+            && any(self.scripts.into(), info.scripts.into())
+            && self
+                .features
+                .iter()
+                .all(|f| has_feature(&info.feature_tags, f))
+            && (self.folders.is_empty() || info.folders.iter().any(|d| self.folders.contains(d)))
     }
 }
 
@@ -246,12 +428,11 @@ mod tests {
     fn info(class: FontClass, kind: FontKind) -> FamilyInfo {
         FamilyInfo {
             kind,
-            faces: Vec::new(),
-            embedded: false,
-            symbol: false,
+            kinds: Technology::of(kind).map_or(0, Technology::bit),
             class,
-            monospace: false,
-            features: false,
+            weights: WeightClass::Normal.bit(),
+            widths: WidthClass::Normal.bit(),
+            ..Default::default()
         }
     }
 
@@ -305,7 +486,7 @@ mod tests {
     }
 
     #[test]
-    fn kinds_of_letters_widen_other_traits_narrow() {
+    fn choices_in_a_section_widen_sections_narrow() {
         let serif = info(FontClass::Serif, FontKind::TrueType);
         let sans = info(FontClass::SansSerif, FontKind::Variable);
         let mut mono_sans = info(FontClass::SansSerif, FontKind::OpenType);
@@ -323,16 +504,77 @@ mod tests {
         assert_eq!(f.count(), 2);
         assert!(f.matches(Some(&serif)) && f.matches(Some(&sans)));
         // ... and variable.
-        f.set(FontTrait::Variable, true);
+        f.tech = Technology::Variable.bit();
         assert!(!f.matches(Some(&serif)));
         assert!(f.matches(Some(&sans)));
         assert!(!f.matches(Some(&mono_sans)));
+        // Variable or OpenType.
+        f.tech |= Technology::OpenType.bit();
+        assert!(f.matches(Some(&mono_sans)));
+        assert_eq!(f.count(), 4);
         // Monospaced alone.
         let mut m = FontFilter::default();
         m.set(FontTrait::Monospace, true);
         assert!(m.matches(Some(&mono_sans)) && !m.matches(Some(&sans)));
         m.set(FontTrait::Monospace, false);
         assert!(m.is_empty());
+    }
+
+    #[test]
+    fn weights_widths_rights_scripts_features_and_folders() {
+        let mut fam = info(FontClass::SansSerif, FontKind::Variable);
+        fam.weights = WeightClass::bits_of(100.0, 900.0);
+        fam.widths = WidthClass::bits_of_axis(75.0, 100.0);
+        fam.embedding = Some(Embedding::PreviewPrint);
+        fam.scripts = script_bit(Script::Latin) | script_bit(Script::Cyrillic);
+        fam.feature_tags = vec![*b"liga", *b"smcp", *b"ss03"];
+        fam.folders = vec!["/fonts/a".into()];
+        let plain = info(FontClass::SansSerif, FontKind::TrueType);
+        let mut f = FontFilter::default();
+        f.weights = WeightClass::Bold.bit();
+        assert!(f.matches(Some(&fam)) && !f.matches(Some(&plain)));
+        f = FontFilter {
+            widths: WidthClass::Condensed.bit(),
+            ..Default::default()
+        };
+        assert!(f.matches(Some(&fam)) && !f.matches(Some(&plain)));
+        assert_eq!(
+            WidthClass::bits_of_axis(100.0, 100.0),
+            WidthClass::Normal.bit()
+        );
+        assert_eq!(WidthClass::of_class(3), WidthClass::Condensed);
+        assert_eq!(WidthClass::of_class(0), WidthClass::Normal);
+        assert_eq!(
+            WeightClass::bits_of(400.0, 400.0),
+            WeightClass::Normal.bit()
+        );
+        assert_eq!(WeightClass::bits_of(300.0, 300.0), WeightClass::Light.bit());
+        f = FontFilter {
+            embedding: embedding_bit(Embedding::PreviewPrint) | embedding_bit(Embedding::Editable),
+            ..Default::default()
+        };
+        assert!(f.matches(Some(&fam)) && !f.matches(Some(&plain)));
+        f = FontFilter {
+            scripts: script_bit(Script::Cyrillic),
+            ..Default::default()
+        };
+        assert!(f.matches(Some(&fam)) && !f.matches(Some(&plain)));
+        // Features: every one checked.
+        let mut f = FontFilter::default();
+        f.set_feature(*b"smcp", true);
+        f.set_feature(*b"ss01", true);
+        assert!(f.matches(Some(&fam)), "ss03 is a stylistic set");
+        f.set_feature(*b"onum", true);
+        assert!(!f.matches(Some(&fam)));
+        f.set_feature(*b"onum", false);
+        assert_eq!(f.count(), 2);
+        // Folders: one of them.
+        let mut f = FontFilter::default();
+        f.set_folder(std::path::Path::new("/fonts/b"), true);
+        assert!(!f.matches(Some(&fam)));
+        f.set_folder(std::path::Path::new("/fonts/a"), true);
+        assert!(f.matches(Some(&fam)) && !f.matches(Some(&plain)));
+        assert!(has_feature(&[*b"ss12"], b"ss01") && !has_feature(&[*b"salt"], b"ss01"));
     }
 
     #[test]
