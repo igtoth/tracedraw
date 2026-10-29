@@ -95,6 +95,58 @@ pub fn midpoint_curve(k: f64, mid: f64) -> f64 {
     k.clamp(0.0, 1.0).powf(0.5f64.ln() / m.ln())
 }
 
+/// The smooth transition's ease over a blend: `3w^2 - 2w^3`, flat at
+/// both ends, half way at the middle.
+pub fn smoothstep(w: f64) -> f64 {
+    let w = w.clamp(0.0, 1.0);
+    w * w * (3.0 - 2.0 * w)
+}
+
+/// How colours go from one to the next: straight through the colour
+/// space, or around the colour wheel one way or the other. The Blend
+/// effect's colour blend and a fountain fill's blend direction (#1208).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum ColorBlend {
+    /// Straight through the colour space.
+    #[default]
+    Direct,
+    /// Around the colour wheel, hue increasing.
+    Clockwise,
+    /// Around the colour wheel, hue decreasing.
+    CounterClockwise,
+}
+
+impl ColorBlend {
+    /// Every direction, in the order an editor lists them.
+    pub const ALL: [ColorBlend; 3] = [
+        ColorBlend::Direct,
+        ColorBlend::Clockwise,
+        ColorBlend::CounterClockwise,
+    ];
+}
+
+/// A colour between `a` and `b` at `t`, straight or around the wheel.
+pub fn blend_color(a: Color, b: Color, t: f32, how: ColorBlend) -> Color {
+    let turn = match how {
+        ColorBlend::Direct => return lerp_color(a, b, t),
+        ColorBlend::Clockwise => 1.0,
+        ColorBlend::CounterClockwise => -1.0,
+    };
+    let (ha, sa, va) = a.to_hsb();
+    let (hb, sb, vb) = b.to_hsb();
+    // The hue's way round in the chosen direction, in degrees.
+    let mut d = (hb - ha).rem_euclid(360.0);
+    if turn < 0.0 {
+        d -= 360.0;
+        if d <= -360.0 {
+            d += 360.0;
+        }
+    }
+    let t = t as f64;
+    let h = (ha + d * t).rem_euclid(360.0);
+    Color::from_hsb(h, sa + (sb - sa) * t, va + (vb - va) * t)
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Fountain {
     pub kind: FountainKind,
@@ -119,6 +171,24 @@ pub struct Fountain {
     /// Colours in reverse order.
     #[serde(default, skip_serializing_if = "is_default")]
     pub invert: bool,
+    /// How the colours go from each stop to the next (#1208): straight
+    /// through RGB, or around the colour wheel one way or the other.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub blend_direction: ColorBlend,
+    /// Colour bands the fill is drawn with, [`Self::MIN_STEPS`] to
+    /// [`Self::SMOOTH_STEPS`]; the top value means smooth (no bands).
+    #[serde(default = "smooth_steps", skip_serializing_if = "is_smooth_steps")]
+    pub steps: u32,
+    /// Smooth transition: the colour change over each blend eases in and
+    /// out ([`smoothstep`]) instead of running straight.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub smooth: bool,
+    /// Acceleration, -100 to 100: skews the midpoint of every blend, on
+    /// top of each stop's own `mid`. Positive pulls the midpoints toward
+    /// the start (the colours change fast at first), negative toward the
+    /// end; 0 leaves them.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub acceleration: i32,
     /// Where the Interactive Fill tool put the fill's nodes (#330): the
     /// start, the end and the skew handle, free of the object's box. When
     /// set they place the fill instead of `angle` and `offset` (which
@@ -158,6 +228,14 @@ fn is_one_u32(v: &u32) -> bool {
     *v == 1
 }
 
+fn smooth_steps() -> u32 {
+    Fountain::SMOOTH_STEPS
+}
+
+fn is_smooth_steps(v: &u32) -> bool {
+    *v >= Fountain::SMOOTH_STEPS
+}
+
 /// `t` only moves and scales along the page axes, without a mirror: a box
 /// stays a box with its sides in the same order.
 fn keeps_box_axes(t: Affine) -> bool {
@@ -177,6 +255,15 @@ impl Fountain {
     /// Most cycles a repeating fountain runs across its span.
     pub const MAX_REPEATS: u32 = 50;
 
+    /// Fewest colour bands a stepped fountain is drawn with.
+    pub const MIN_STEPS: u32 = 2;
+
+    /// The step count that means smooth: no bands at all.
+    pub const SMOOTH_STEPS: u32 = 256;
+
+    /// Furthest the acceleration goes either way.
+    pub const MAX_ACCELERATION: i32 = 100;
+
     pub fn two(kind: FountainKind, from: Color, to: Color, angle: f64) -> Self {
         Fountain {
             kind,
@@ -188,8 +275,97 @@ impl Fountain {
             repeats: 1,
             bilinear: false,
             invert: false,
+            blend_direction: ColorBlend::Direct,
+            steps: Self::SMOOTH_STEPS,
+            smooth: false,
+            acceleration: 0,
             handles: None,
         }
+    }
+
+    /// The colour bands the fill is drawn with (the step count within its
+    /// range; [`Self::SMOOTH_STEPS`] when smooth).
+    pub fn band_count(&self) -> u32 {
+        self.steps.clamp(Self::MIN_STEPS, Self::SMOOTH_STEPS)
+    }
+
+    /// Drawn as colour bands with hard edges (fewer steps than smooth).
+    pub fn stepped(&self) -> bool {
+        self.band_count() < Self::SMOOTH_STEPS
+    }
+
+    /// Any of the blend settings is off its default: a hue direction,
+    /// steps, the smooth transition or an acceleration.
+    pub fn has_blend_options(&self) -> bool {
+        self.blend_direction != ColorBlend::Direct
+            || self.stepped()
+            || self.smooth
+            || self.acceleration != 0
+    }
+
+    /// A stop's midpoint `mid` with the acceleration `a` (-1..1) worked
+    /// in: `a > 0` pulls it toward the start, `mid (1 - a)`; `a < 0`
+    /// pushes it toward the end, `mid + (1 - mid) (-a)`.
+    pub fn skewed_mid(mid: f64, a: f64) -> f64 {
+        let a = a.clamp(-1.0, 1.0);
+        let m = mid.clamp(0.0, 1.0);
+        if a >= 0.0 {
+            m * (1.0 - a)
+        } else {
+            m + (1.0 - m) * (-a)
+        }
+    }
+
+    /// The acceleration as a fraction, -1..1.
+    fn acceleration_fraction(&self) -> f64 {
+        self.acceleration
+            .clamp(-Self::MAX_ACCELERATION, Self::MAX_ACCELERATION) as f64
+            / Self::MAX_ACCELERATION as f64
+    }
+
+    /// The midpoint a blend starting at `stop` runs with: its own `mid`
+    /// skewed by the acceleration.
+    pub fn blend_mid(&self, stop: &Stop) -> f64 {
+        Self::skewed_mid(stop.mid, self.acceleration_fraction())
+    }
+
+    /// How far the colour has gone at `k` (0..1) of the way through a
+    /// blend with the midpoint `mid`: the midpoint curve, eased by the
+    /// smooth transition when on.
+    pub fn blend_weight(&self, k: f64, mid: f64) -> f64 {
+        let w = midpoint_curve(k, mid);
+        if self.smooth {
+            smoothstep(w)
+        } else {
+            w
+        }
+    }
+
+    /// The stop parameter `u` (0..1) as the one its colour band is
+    /// sampled at: with `n` bands the band `i = floor(u n)` (the last one
+    /// at the very end) takes the colour at `i / (n - 1)`, so the first
+    /// and last bands are the end colours. Smooth: `u` itself.
+    pub fn band_param(&self, u: f64) -> f64 {
+        let n = self.band_count();
+        if n >= Self::SMOOTH_STEPS {
+            return u;
+        }
+        let nf = n as f64;
+        let u = if u.is_finite() {
+            u.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let band = (u * nf).floor().min(nf - 1.0);
+        band / (nf - 1.0)
+    }
+
+    /// The colour and opacity at `t` (0..1 across the span) from this
+    /// fountain's [`Self::blended_stops`], computed once by the caller:
+    /// the stop parameter, its colour band when stepped, then the sample.
+    /// The one place every drawing of the fill takes its colours from.
+    pub fn sample_blended(&self, blended: &[Stop], t: f64) -> Stop {
+        sample_stop(blended, self.band_param(self.stop_param(t)))
     }
 
     /// A box-relative point (see [`FountainHandles`]) on the page, for the
@@ -404,10 +580,13 @@ impl Fountain {
             .any(|s| !is_half(&s.mid))
     }
 
-    /// The sorted stops with each blend whose midpoint is off the middle
-    /// drawn as [`Self::MID_STEPS`] straight pieces along its curve, so a
-    /// plain run of stops gives the same colours (the midpoints set back
-    /// to the middle).
+    /// The sorted stops with each blend that does not run straight (its
+    /// midpoint off the middle, the acceleration or the smooth transition
+    /// on, or a hue direction) drawn as [`Self::MID_STEPS`] straight
+    /// pieces along its curve, so a plain run of stops mixed in RGB gives
+    /// the same colours (the midpoints set back to the middle). The
+    /// colour bands of a stepped fountain are not in here: see
+    /// [`Self::band_param`] and [`Self::sample_blended`].
     pub fn blended_stops(&self) -> Vec<Stop> {
         let base = self.sorted_stops();
         let mut out: Vec<Stop> = Vec::with_capacity(base.len());
@@ -416,15 +595,18 @@ impl Fountain {
             let Some(next) = base.get(i + 1) else {
                 continue;
             };
-            if is_half(&s.mid) || next.pos - s.pos < 1e-9 {
+            let mid = self.blend_mid(s);
+            let straight =
+                is_half(&mid) && !self.smooth && self.blend_direction == ColorBlend::Direct;
+            if straight || next.pos - s.pos < 1e-9 {
                 continue;
             }
             for j in 1..Self::MID_STEPS {
                 let k = j as f64 / Self::MID_STEPS as f64;
-                let w = midpoint_curve(k, s.mid) as f32;
+                let w = self.blend_weight(k, mid) as f32;
                 out.push(Stop {
                     pos: s.pos + (next.pos - s.pos) * k,
-                    color: lerp_color(s.color, next.color, w),
+                    color: blend_color(s.color, next.color, w, self.blend_direction),
                     mid: 0.5,
                     opacity: s.opacity + (next.opacity - s.opacity) * w,
                 });
@@ -433,8 +615,9 @@ impl Fountain {
         out
     }
 
-    /// Pieces per blend with its midpoint off the middle (see
-    /// [`Self::blended_stops`]).
+    /// Pieces per blend that does not run straight (see
+    /// [`Self::blended_stops`]). A hue sweep is straight in RGB within
+    /// each sixth of the wheel, so sixteen pieces follow it closely.
     pub const MID_STEPS: usize = 16;
 
     /// Any stop is not fully opaque.
@@ -491,22 +674,27 @@ impl Fountain {
         u
     }
 
-    /// Colour at `t` in 0..1 (sRGB interpolation).
+    /// Colour at `t` in 0..1, with every setting in (one sample: drawing
+    /// many takes [`Self::blended_stops`] once and [`Self::sample_blended`]).
     pub fn color_at(&self, t: f64) -> Color {
-        sample_stops(&self.blended_stops(), self.stop_param(t))
+        self.sample_blended(&self.blended_stops(), t).color
     }
 
     /// The opacity at `t` (0 clear, 1 opaque).
     pub fn opacity_at(&self, t: f64) -> f32 {
-        sample_opacity(&self.blended_stops(), self.stop_param(t))
+        self.sample_blended(&self.blended_stops(), t).opacity
     }
 
     /// The fountain as plain stops over 0..1 that give the same colours
-    /// in one run, with the edge pad, repeat cycles, bilinear mirror and
-    /// inversion worked in (for gradient shaders and exports that only
-    /// know a single run of stops). Equal positions are hard edges.
+    /// in one run, with the edge pad, repeat cycles, bilinear mirror,
+    /// inversion, blend direction, smooth transition, acceleration and
+    /// colour bands worked in (for gradient shaders and exports that only
+    /// know a single run of stops). Equal positions are hard edges: a
+    /// sawtooth's jumps, and the edge between two bands of a stepped
+    /// fountain (two stops per band).
     pub fn resolved_stops(&self) -> Vec<Stop> {
         let base = self.blended_stops();
+        let band = |u: f64| sample_stop(&base, self.band_param(u));
         let cycles = self.cycles();
         let n = cycles as f64;
         let e = self.edge_pad.clamp(0.0, 0.49);
@@ -552,25 +740,45 @@ impl Fountain {
             let slope = (p3 - p1) / (q3 - q1);
             let pa = (p1 - slope * (q1 - a)).clamp(0.0, 1.0);
             let pb = (p3 + slope * (b - q3)).clamp(0.0, 1.0);
-            push(a, sample_stop(&base, pa));
+            push(a, band(pa));
             if (pb - pa).abs() > 1e-12 {
                 let (lo, hi) = (pa.min(pb), pa.max(pb));
-                let mut inner: Vec<Stop> = base
-                    .iter()
-                    .filter(|s| s.pos > lo + 1e-9 && s.pos < hi - 1e-9)
-                    .map(|s| Stop {
-                        pos: a + (s.pos - pa) / (pb - pa) * (b - a),
-                        ..*s
-                    })
-                    .collect();
-                if pb < pa {
-                    inner.reverse();
-                }
-                for s in inner {
-                    push(s.pos, s);
+                let to_t = |u: f64| a + (u - pa) / (pb - pa) * (b - a);
+                if self.stepped() {
+                    // The edges between bands inside this piece: a hard
+                    // edge each, the band on either side of it.
+                    let n = self.band_count();
+                    let mut edges: Vec<f64> = (1..n)
+                        .map(|k| k as f64 / n as f64)
+                        .filter(|u| *u > lo + 1e-9 && *u < hi - 1e-9)
+                        .collect();
+                    if pb < pa {
+                        edges.reverse();
+                    }
+                    let side = if pb > pa { 1e-7 } else { -1e-7 };
+                    for u in edges {
+                        let t = to_t(u);
+                        push(t, band(u - side));
+                        push(t, band(u + side));
+                    }
+                } else {
+                    let mut inner: Vec<Stop> = base
+                        .iter()
+                        .filter(|s| s.pos > lo + 1e-9 && s.pos < hi - 1e-9)
+                        .map(|s| Stop {
+                            pos: to_t(s.pos),
+                            ..*s
+                        })
+                        .collect();
+                    if pb < pa {
+                        inner.reverse();
+                    }
+                    for s in inner {
+                        push(s.pos, s);
+                    }
                 }
             }
-            push(b, sample_stop(&base, pb));
+            push(b, band(pb));
         }
         if out.len() < 2 {
             return base;
@@ -580,11 +788,16 @@ impl Fountain {
 
     /// The closest fountain that runs once with no edge pad and one of
     /// the four geometric kinds, for formats that know nothing more: the
-    /// options are worked into the stops (at most `max_stops`), and a
-    /// shaped fountain becomes a square one running from the centre out.
-    /// A fountain with none of the options comes back unchanged.
+    /// options (the blend settings too) are worked into the stops (at
+    /// most `max_stops`), and a shaped fountain becomes a square one
+    /// running from the centre out. A fountain with none of the options
+    /// comes back unchanged.
     pub fn to_plain(&self, max_stops: usize) -> Fountain {
-        if self.runs_once() && self.kind != FountainKind::Shaped && !self.has_midpoints() {
+        if self.runs_once()
+            && self.kind != FountainKind::Shaped
+            && !self.has_midpoints()
+            && !self.has_blend_options()
+        {
             return self.clone();
         }
         let mut stops = self.resolved_stops();
@@ -621,6 +834,10 @@ impl Fountain {
             repeats: 1,
             bilinear: false,
             invert: false,
+            blend_direction: ColorBlend::Direct,
+            steps: Self::SMOOTH_STEPS,
+            smooth: false,
+            acceleration: 0,
             handles: None,
         }
     }
@@ -629,20 +846,7 @@ impl Fountain {
 /// Colour at `t` along `stops` (sorted by position): the two around it
 /// mixed in sRGB, the end colours beyond them.
 pub fn sample_stops(stops: &[Stop], t: f64) -> Color {
-    let Some(first) = stops.first() else {
-        return Color::BLACK;
-    };
-    if t <= first.pos {
-        return first.color;
-    }
-    for w in stops.windows(2) {
-        if t <= w[1].pos {
-            let span = (w[1].pos - w[0].pos).max(1e-9);
-            let k = ((t - w[0].pos) / span).clamp(0.0, 1.0) as f32;
-            return lerp_color(w[0].color, w[1].color, k);
-        }
-    }
-    stops.last().map(|s| s.color).unwrap_or(first.color)
+    sample_stop(stops, t).color
 }
 
 /// Opacity at `t` along `stops` (sorted by position), as
@@ -652,7 +856,9 @@ pub fn sample_opacity(stops: &[Stop], t: f64) -> f32 {
 }
 
 /// The stop at `t` along `stops` (sorted by position): colour and opacity
-/// mixed from the two around it, its blend half way.
+/// mixed from the two around it, its blend half way. The stop after `t`
+/// is found by bisection (this runs once per pixel for the fills drawn
+/// pixel by pixel).
 pub fn sample_stop(stops: &[Stop], t: f64) -> Stop {
     let Some(first) = stops.first() else {
         return Stop::new(t, Color::BLACK);
@@ -664,23 +870,27 @@ pub fn sample_stop(stops: &[Stop], t: f64) -> Stop {
             ..*first
         };
     }
-    for w in stops.windows(2) {
-        if t <= w[1].pos {
-            let span = (w[1].pos - w[0].pos).max(1e-9);
-            let k = ((t - w[0].pos) / span).clamp(0.0, 1.0) as f32;
-            return Stop {
+    // The first stop at or after `t`; the one before it starts the blend.
+    let i = stops.partition_point(|s| s.pos < t);
+    match (stops.get(i.wrapping_sub(1)), stops.get(i)) {
+        (Some(a), Some(b)) => {
+            let span = (b.pos - a.pos).max(1e-9);
+            let k = ((t - a.pos) / span).clamp(0.0, 1.0) as f32;
+            Stop {
                 pos: t,
-                color: lerp_color(w[0].color, w[1].color, k),
+                color: lerp_color(a.color, b.color, k),
                 mid: 0.5,
-                opacity: w[0].opacity + (w[1].opacity - w[0].opacity) * k,
-            };
+                opacity: a.opacity + (b.opacity - a.opacity) * k,
+            }
         }
-    }
-    let last = stops.last().copied().unwrap_or(*first);
-    Stop {
-        pos: t,
-        mid: 0.5,
-        ..last
+        _ => {
+            let last = stops.last().copied().unwrap_or(*first);
+            Stop {
+                pos: t,
+                mid: 0.5,
+                ..last
+            }
+        }
     }
 }
 

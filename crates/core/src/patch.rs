@@ -200,6 +200,15 @@ pub enum FillField {
     Repeat,
     Bilinear,
     Invert,
+    /// How the colours go from stop to stop (straight or around the hue
+    /// circle).
+    BlendDirection,
+    /// The colour bands the fill is drawn with (256: smooth).
+    Steps,
+    /// The smooth transition over each blend.
+    Smooth,
+    /// The acceleration that skews every blend's midpoint.
+    Acceleration,
     /// Where the nodes are placed freely (see `Fountain::handles`), or
     /// none: the angle and the offset place the fill.
     Handles,
@@ -207,7 +216,7 @@ pub enum FillField {
 
 impl FillField {
     /// The gradient fields, in the order an editor shows them.
-    pub const FOUNTAIN: [FillField; 11] = [
+    pub const FOUNTAIN: [FillField; 15] = [
         FillField::FountainKind,
         FillField::StartColor,
         FillField::EndColor,
@@ -218,6 +227,10 @@ impl FillField {
         FillField::Repeat,
         FillField::Bilinear,
         FillField::Invert,
+        FillField::BlendDirection,
+        FillField::Steps,
+        FillField::Smooth,
+        FillField::Acceleration,
         FillField::Handles,
     ];
 
@@ -238,6 +251,10 @@ impl FillField {
             FillField::Repeat => a.repeat == b.repeat && a.repeats == b.repeats,
             FillField::Bilinear => a.bilinear == b.bilinear,
             FillField::Invert => a.invert == b.invert,
+            FillField::BlendDirection => a.blend_direction == b.blend_direction,
+            FillField::Steps => a.steps == b.steps,
+            FillField::Smooth => a.smooth == b.smooth,
+            FillField::Acceleration => a.acceleration == b.acceleration,
             FillField::Handles => a.handles == b.handles,
         }
     }
@@ -266,6 +283,10 @@ impl FillField {
             }
             FillField::Bilinear => to.bilinear = from.bilinear,
             FillField::Invert => to.invert = from.invert,
+            FillField::BlendDirection => to.blend_direction = from.blend_direction,
+            FillField::Steps => to.steps = from.steps,
+            FillField::Smooth => to.smooth = from.smooth,
+            FillField::Acceleration => to.acceleration = from.acceleration,
             FillField::Handles => to.handles = from.handles,
         }
     }

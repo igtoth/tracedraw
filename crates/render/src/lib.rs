@@ -1471,12 +1471,14 @@ impl Renderer<'_> {
                             | tracedraw_core::FountainKind::Square
                     ) {
                         let f2 = f.clone();
+                        // The blends once; per pixel only the parameter,
+                        // its band and a bisection in the stops.
                         let base = f.blended_stops();
                         let key = format!("{f:?}");
                         self.fill_procedural(page_path, sk, rule, &key, move |u, v| {
                             let p = Point::new(b.x0 + u * b.width(), b.y0 + v * b.height());
                             let t = f2.param_at(b, p).unwrap_or(0.0);
-                            let s = tracedraw_core::style::sample_stop(&base, f2.stop_param(t));
+                            let s = f2.sample_blended(&base, t);
                             (s.color, s.opacity)
                         });
                     }
@@ -1546,7 +1548,7 @@ impl Renderer<'_> {
                                 }
                                 _ => (dx.abs().max(dy.abs()) * 2.0).min(1.0),
                             };
-                            let s = tracedraw_core::style::sample_stop(&base, f2.stop_param(t));
+                            let s = f2.sample_blended(&base, t);
                             (s.color, s.opacity)
                         });
                     }
@@ -1774,7 +1776,7 @@ impl Renderer<'_> {
                     return;
                 };
                 for (px, d) in pm.pixels_mut().iter_mut().zip(&dist) {
-                    let s = tracedraw_core::style::sample_stop(&base, f.stop_param(d / deepest));
+                    let s = f.sample_blended(&base, d / deepest);
                     let [r, g, bb] = s.color.to_rgb8();
                     let a = (s.opacity.clamp(0.0, 1.0) * 255.0).round() as u8;
                     *px = tiny_skia::ColorU8::from_rgba(r, g, bb, a).premultiply();

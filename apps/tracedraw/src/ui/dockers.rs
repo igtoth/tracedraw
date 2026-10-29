@@ -7,8 +7,8 @@ use crate::ui::tips::RichTip;
 use egui::Ui;
 use tracedraw_core::patch::{FillField, FillMix, StrokeField, StrokeMix};
 use tracedraw_core::{
-    document::ShapeKind, Arrowhead, Color, Command, Fill, Fountain, FountainKind, FountainRepeat,
-    Pattern, PatternTile, Stop, Stroke, Texture, TextureKind,
+    document::ShapeKind, Arrowhead, Color, ColorBlend, Command, Fill, Fountain, FountainKind,
+    FountainRepeat, Pattern, PatternTile, Stop, Stroke, Texture, TextureKind,
 };
 
 /// The vertical strip of docker tabs on the right edge of the window.
@@ -1908,6 +1908,88 @@ fn fountain_spread_editor(ui: &mut Ui, f: &mut Fountain) -> bool {
         changed |= ui
             .checkbox(&mut f.invert, tr("docker.invert_colours"))
             .rich_tip(tr("docker.invert_colours_tip"))
+            .changed();
+    });
+    changed |= fountain_blend_editor(ui, f);
+    changed
+}
+
+/// The step count a fountain gets when Steps is first ticked.
+const FIRST_STEPS: u32 = 16;
+
+/// The i18n key of a blend direction's name (the Blend effect's words).
+pub fn blend_direction_key(how: ColorBlend) -> &'static str {
+    match how {
+        ColorBlend::Direct => "docker.blend_direct",
+        ColorBlend::Clockwise => "docker.blend_clockwise",
+        ColorBlend::CounterClockwise => "docker.blend_counterclockwise",
+    }
+}
+
+/// The blend direction, the steps, the smooth transition and the
+/// acceleration (#1208).
+fn fountain_blend_editor(ui: &mut Ui, f: &mut Fountain) -> bool {
+    let mut changed = false;
+    ui.horizontal_wrapped(|ui| {
+        ui.label(tr("docker.blend_direction"))
+            .rich_tip(tr("docker.blend_direction_tip"));
+        for how in ColorBlend::ALL {
+            if ui
+                .selectable_label(f.blend_direction == how, tr(blend_direction_key(how)))
+                .clicked()
+                && f.blend_direction != how
+            {
+                f.blend_direction = how;
+                changed = true;
+            }
+        }
+    });
+    ui.horizontal(|ui| {
+        // Unticked, the fill is smooth; the count last used comes back
+        // when it is ticked again.
+        let mut stepped = f.stepped();
+        let last_id = ui.id().with("fountain_steps");
+        if ui
+            .checkbox(&mut stepped, tr("docker.steps"))
+            .rich_tip(tr("docker.fountain_steps_tip"))
+            .changed()
+        {
+            if stepped {
+                f.steps = ui
+                    .data(|d| d.get_temp::<u32>(last_id))
+                    .unwrap_or(FIRST_STEPS);
+            } else {
+                ui.data_mut(|d| d.insert_temp(last_id, f.band_count()));
+                f.steps = Fountain::SMOOTH_STEPS;
+            }
+            changed = true;
+        }
+        if f.stepped() {
+            let mut n = f.band_count();
+            if ui
+                .add(
+                    crate::ui::field::NumField::new(&mut n)
+                        .range(Fountain::MIN_STEPS..=Fountain::SMOOTH_STEPS - 1),
+                )
+                .changed()
+            {
+                f.steps = n;
+                changed = true;
+            }
+        }
+    });
+    changed |= ui
+        .checkbox(&mut f.smooth, tr("docker.smooth_transition"))
+        .rich_tip(tr("docker.smooth_transition_tip"))
+        .changed();
+    ui.horizontal(|ui| {
+        ui.label(tr("docker.fountain_acceleration"))
+            .rich_tip(tr("docker.fountain_acceleration_tip"));
+        changed |= ui
+            .add(
+                crate::ui::field::NumField::new(&mut f.acceleration)
+                    .range(-Fountain::MAX_ACCELERATION..=Fountain::MAX_ACCELERATION),
+            )
             .changed();
     });
     changed

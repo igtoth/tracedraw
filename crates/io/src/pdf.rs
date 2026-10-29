@@ -603,6 +603,22 @@ impl PageWriter<'_> {
         }
     }
 
+    /// The colour function of a fountain's shading, as the shading
+    /// dictionary names it: a sampled function (type 0, a stream of
+    /// [`SAMPLED_FUNCTION_SIZE`] colours) when the colours follow a hue
+    /// path, a smooth transition or an acceleration, otherwise the
+    /// stitching function over the stops, inline. A stepped fountain
+    /// takes the stitching function too: its bands are the function's
+    /// constant segments, exact where a sampled function's values would
+    /// be interpolated between.
+    fn fountain_function(&mut self, ft: &tracedraw_core::Fountain) -> String {
+        if ft.has_blend_options() && !ft.stepped() {
+            let id = sampled_function_in(ft, &mut self.pdf);
+            return format!("{id} 0 R");
+        }
+        stitching_function_in(ft, self.pdf.cmyk_only)
+    }
+
     /// Paint `path` (page space, mm) with `fill` spread over `bounds`:
     /// a colour, a shading for a gradient, or the renderer's pixels
     /// clipped by the path for the rest. `nonzero` fills and clips with
@@ -624,7 +640,7 @@ impl PageWriter<'_> {
                 let _ = writeln!(self.content, "{fill_op}");
             }
             Fill::Fountain(ft) if ft.kind != FountainKind::Shaped => {
-                let func = stitching_function_in(ft, self.pdf.cmyk_only);
+                let func = self.fountain_function(ft);
                 // Nodes placed freely (Interactive Fill): a unit shading
                 // drawn through the fill's own frame.
                 if let Some(frame) = ft.frame(bounds) {
@@ -1470,6 +1486,43 @@ impl PageWriter<'_> {
 fn f6(v: f64) -> String {
     let s = format!("{v:.6}");
     s.trim_end_matches('0').trim_end_matches('.').to_string()
+}
+
+/// Colours in a fountain's sampled function (see `sampled_function_in`).
+pub const SAMPLED_FUNCTION_SIZE: usize = 64;
+
+/// A PDF sampled function (type 0) over the fountain's span, as a stream
+/// object: [`SAMPLED_FUNCTION_SIZE`] colours spaced evenly from 0 to 1,
+/// one byte per component, the viewer blending between them. Returns the
+/// object's number.
+fn sampled_function_in(ft: &tracedraw_core::Fountain, pdf: &mut Pdf) -> usize {
+    let stops = ft.resolved_stops();
+    let n = SAMPLED_FUNCTION_SIZE;
+    let byte = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+    let mut data = Vec::with_capacity(n * 4);
+    for i in 0..n {
+        let pos = i as f64 / (n - 1) as f64;
+        let c = tracedraw_core::style::sample_stop(&stops, pos).color;
+        if pdf.cmyk_only {
+            if let Color::Cmyk { c, m, y, k } = c.convert_to("CMYK") {
+                data.extend_from_slice(&[byte(c), byte(m), byte(y), byte(k)]);
+            } else {
+                let [r, g, b] = c.to_rgb8();
+                data.extend_from_slice(&rgb_to_cmyk_bytes(&[r, g, b]));
+            }
+        } else {
+            data.extend_from_slice(&c.to_rgb8());
+        }
+    }
+    let range = if pdf.cmyk_only {
+        "[0 1 0 1 0 1 0 1]"
+    } else {
+        "[0 1 0 1 0 1]"
+    };
+    pdf.stream(
+        &format!("/FunctionType 0 /Domain [0 1] /Range {range} /Size [{n}] /BitsPerSample 8"),
+        &data,
+    )
 }
 
 /// PDF stitching function over the fountain's stops (type 3 wrapping type 2

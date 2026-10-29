@@ -460,6 +460,29 @@ fn outline_paint_value(
     }
 }
 
+/// Most stops a gradient sampled along a hue path or a smooth transition
+/// is written with (a stepped gradient keeps a pair per band).
+pub const MAX_SAMPLED_STOPS: usize = 64;
+
+/// `stops` (sorted, over 0..1) as `n` stops spaced evenly, each the
+/// colour and opacity the run has there.
+pub(crate) fn resample_stops(
+    stops: &[tracedraw_core::Stop],
+    n: usize,
+) -> Vec<tracedraw_core::Stop> {
+    let n = n.max(2);
+    let k = (n - 1) as f64;
+    (0..n)
+        .map(|i| {
+            let pos = i as f64 / k;
+            tracedraw_core::Stop {
+                pos,
+                ..tracedraw_core::style::sample_stop(stops, pos)
+            }
+        })
+        .collect()
+}
+
 /// The SVG paint of `fill` over `bounds` (output space): `none`, a
 /// colour, or a reference to a gradient or pattern written into `defs`.
 /// Fills SVG cannot draw (textures, meshes) give a representative colour.
@@ -476,10 +499,16 @@ fn paint_value(
         Fill::Fountain(f) => {
             *next_grad += 1;
             let id = format!("grad{}", *next_grad);
-            // The edge pad, repeats, mirror and inversion as one run of
-            // stops; a shaped fountain (0 on the edge) runs from the
-            // centre out as a radial one.
+            // The edge pad, repeats, mirror, inversion and blend settings
+            // as one run of stops: a stepped fountain gets a pair of stops
+            // per band (hard edges), a hue path or a smooth transition is
+            // sampled, at most MAX_SAMPLED_STOPS of them; a shaped
+            // fountain (0 on the edge) runs from the centre out as a
+            // radial one.
             let mut stops = f.resolved_stops();
+            if !f.stepped() && stops.len() > MAX_SAMPLED_STOPS {
+                stops = resample_stops(&stops, MAX_SAMPLED_STOPS);
+            }
             if f.kind == tracedraw_core::FountainKind::Shaped {
                 stops.reverse();
                 for s in &mut stops {
