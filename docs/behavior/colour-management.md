@@ -135,6 +135,40 @@ installs the right one. `tracedraw-cli` renders and exports through the
 drawing's profile too (relative colorimetric, no black point
 compensation).
 
+## Convert Colors
+
+Tools > Convert Colors (#972) turns every colour of the selected objects,
+or of the whole drawing, into CMYK or into RGB, in one undo step
+("Convert Colors", `Command::ConvertColors`). The dialog: Convert to
+CMYK (default) or RGB; Colors of the selected objects (the default when
+something is selected) or the whole drawing (the pages' backgrounds and
+the symbols too); Convert spot colors too (off).
+
+- What converts: solid fills, gradient stops, mesh node colours,
+  pattern and texture colours, outlines, text, table cells, the colours
+  of effects (contour, blend, extrude, bevel, block shadow and the rest)
+  and drop shadows, in groups and clip frames at any depth
+  (`tracedraw_core::color_convert`: every colour of an object's saved
+  form is found by its model tag, so no part is missed).
+- How: `Color::convert_to`, so the conversion goes through the colour
+  engine with the profiles above (the drawing's own CMYK profile when it
+  carries one, else the settings' RGB and CMYK profiles, the rendering
+  intent and black point compensation; Map gray to black applies), and
+  through the built-in press model when no profile is loaded.
+- Registration colour never changes. Spot colours stay unless the box is
+  ticked; then each becomes its process stand-in at its tint in the model
+  asked for. A colour already in the model stays. Bitmaps keep their
+  pixels.
+- The status line says how many colours changed; with none to change (or
+  Selected objects with nothing selected) nothing is done and no undo
+  step is made.
+
+Checks: `color_convert::tests` (stops, outline, background, spots kept
+and converted when asked, registration kept, a selection only, effects
+and shadows), `ui::convert_colors::tests::colours_convert_for_the_selection_or_the_drawing`
+(the dialog by Enter, one undo step each, nothing to change makes no
+step).
+
 ## Proof colours
 
 View > Proof Colors, the status bar's proof button and Options > Display

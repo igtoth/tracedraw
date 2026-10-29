@@ -170,6 +170,7 @@ Counts: works 189, partial 6 (`.cdr` content coverage; CMX import; print preview
 | Proof colours (soft proofing: the page drawn through CMYK and back, with the CMYK profile in use or the built-in model; see `behavior/colour-management.md`) | works |
 | CMYK shown through a built-in press model of coated stock when no profile is loaded (default palette within 2.5 Delta E); RGB to CMYK with black-only greys and pure black | works |
 | ICC colour management (v2/v4 profiles, matrix/TRC and LUT, four intents, black point compensation, gamut check); PDF/X output intent embedding | works |
+| Convert Colors (Tools menu): every colour of the selection or of the whole drawing (fills, gradient stops, mesh, outlines, text, effects and shadows) to CMYK or RGB through the colour management profiles, spot colours kept unless asked, one undo step (#972) | works (see `behavior/colour-management.md`) |
 | A drawing's own CMYK profile (the one a `.cdr` file carries, saved in `.tdraw`): its CMYK colours shown through it while it is the active drawing | works (see `cdr-format.md`) |
 | Separations | works (PDF separations export) |
 

@@ -26,6 +26,7 @@ pub mod comments_docker;
 pub mod connector_bar;
 pub mod context;
 pub mod contour_bar;
+pub mod convert_colors;
 pub mod coords_docker;
 pub mod crop_bar;
 pub mod cursors;
