@@ -8809,7 +8809,10 @@ mod tests {
         app.settings.check_updates = true;
         app.dialog = crate::ui::dialogs::Dialog::ConfirmClose;
         app.update_tick_desktop(10 * crate::updates::DAILY, None);
-        assert!(matches!(app.dialog, crate::ui::dialogs::Dialog::ConfirmClose));
+        assert!(matches!(
+            app.dialog,
+            crate::ui::dialogs::Dialog::ConfirmClose
+        ));
         app.dialog = crate::ui::dialogs::Dialog::None;
         app.update_tick_desktop(10 * crate::updates::DAILY, None);
         assert!(matches!(

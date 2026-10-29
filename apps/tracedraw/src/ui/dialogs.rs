@@ -313,6 +313,14 @@ pub struct PrintState {
     pub landscape: bool,
     /// Space between pages on the sheet, mm.
     pub gutter: f64,
+    /// Booklet binding: 0 saddle stitch, 1 perfect bound (#788).
+    pub booklet_binding: usize,
+    /// Sheets in each signature of a perfect-bound booklet.
+    pub signature_sheets: u32,
+    /// Saddle-stitch creep compensation at the innermost sheet, mm.
+    pub creep: f64,
+    /// Space between the two pages of a booklet spread, mm (#947).
+    pub booklet_gap: f64,
     /// What the preflight found when the dialog opened.
     pub preflight: Option<Vec<crate::preflight::Issue>>,
     /// The dialog's tab: 0 General, 1 Color, 2 Composite, 3 Layout,
@@ -461,6 +469,21 @@ impl PrintState {
         }
     }
 
+    /// The booklet's binding, creep and gap.
+    pub fn booklet(&self) -> crate::imposition::Booklet {
+        use crate::imposition::{Binding, Booklet};
+        Booklet {
+            binding: if self.booklet_binding == 1 {
+                Binding::PerfectBound
+            } else {
+                Binding::SaddleStitch
+            },
+            signature_sheets: self.signature_sheets,
+            creep: self.creep,
+            gap: self.booklet_gap,
+        }
+    }
+
     /// The sheet for pages like `page`: portrait or landscape as the
     /// General tab's Orientation says, or as the Layout tab's Landscape box
     /// when it matches the layout.
@@ -585,6 +608,10 @@ impl Default for PrintState {
             sheet: 0,
             landscape: false,
             gutter: 5.0,
+            booklet_binding: 0,
+            signature_sheets: 4,
+            creep: 0.0,
+            booklet_gap: 0.0,
             preflight: None,
             tab: 0,
             destination: 0,
@@ -4086,6 +4113,10 @@ pub(crate) fn print_layout_fields(app: &App, ui: &mut Ui, st: &mut PrintState) {
                     margin_fields(ui, &mut st.margins);
                     ui.end_row();
                 });
+            if st.layout_kind == 2 {
+                ui.add_space(6.0);
+                booklet_fields(ui, st);
+            }
         });
         ui.add_space(8.0);
         // A sketch of the first sheet and the sheet count.
@@ -4155,11 +4186,162 @@ pub(crate) fn print_layout_fields(app: &App, ui: &mut Ui, st: &mut PrintState) {
                 egui::RichText::new(trf("print.sheets", &[("n", &plan.len().to_string())]))
                     .color(Tokens::text_dim()),
             );
+            if st.layout_kind == 2 {
+                ui.label(
+                    egui::RichText::new(booklet_summary(doc_pages.len(), &st.booklet()))
+                        .color(Tokens::text_dim()),
+                );
+            }
             if crate::imposition::overflows(&plan) {
                 ui.colored_label(ui.visuals().warn_fg_color, tr("print.keep_size_overflow"));
             }
         });
     });
+}
+
+/// The Booklet layout's fields under the layout grid: the binding (two
+/// pictured choices), sheets per signature or creep, and the gap between
+/// the pages of a spread (#788, #947).
+fn booklet_fields(ui: &mut Ui, st: &mut PrintState) {
+    ui.label(tr("print.binding"));
+    ui.horizontal(|ui| {
+        for (i, key) in ["print.saddle_stitch", "print.perfect_bound"]
+            .iter()
+            .enumerate()
+        {
+            if binding_choice(ui, st.booklet_binding == i, i == 1, &tr(key))
+                .rich_tip(crate::ui::tips::keyed(key))
+                .clicked()
+            {
+                st.booklet_binding = i;
+            }
+        }
+    });
+    egui::Grid::new("print_booklet")
+        .num_columns(2)
+        .spacing([8.0, 6.0])
+        .show(ui, |ui| booklet_rows(ui, st));
+}
+
+fn booklet_rows(ui: &mut Ui, st: &mut PrintState) {
+    if st.booklet_binding == 1 {
+        ui.label(tr("print.signature_sheets"))
+            .rich_tip(crate::ui::tips::keyed("print.signature_sheets"));
+        ui.add(crate::ui::field::NumField::new(&mut st.signature_sheets).range(1..=32))
+            .rich_tip(crate::ui::tips::keyed("print.signature_sheets"));
+        ui.end_row();
+    } else {
+        ui.label(tr("print.creep"))
+            .rich_tip(crate::ui::tips::keyed("print.creep"));
+        ui.add(
+            crate::ui::field::NumField::new(&mut st.creep)
+                .range(0.0..=20.0)
+                .speed(0.05)
+                .max_decimals(2)
+                .suffix(" mm"),
+        )
+        .rich_tip(crate::ui::tips::keyed("print.creep"));
+        ui.end_row();
+    }
+    ui.label(tr("print.booklet_gap"))
+        .rich_tip(crate::ui::tips::keyed("print.booklet_gap"));
+    ui.add(
+        crate::ui::field::NumField::new(&mut st.booklet_gap)
+            .range(0.0..=100.0)
+            .speed(0.5)
+            .suffix(" mm"),
+    )
+    .rich_tip(crate::ui::tips::keyed("print.booklet_gap"));
+    ui.end_row();
+}
+
+/// A binding choice: a small picture of the folded sheets seen from the
+/// top, the spine at the bottom, and its name under it. Saddle stitch
+/// nests the sheets inside one another with a staple through the fold;
+/// perfect bound stacks separate folded signatures on a glued spine.
+fn binding_choice(ui: &mut Ui, on: bool, perfect: bool, label: &str) -> egui::Response {
+    let (r, resp) = ui.allocate_exact_size(egui::vec2(96.0, 62.0), egui::Sense::click());
+    let p = ui.painter();
+    let fill = if on {
+        Tokens::ACCENT.gamma_multiply(0.18)
+    } else if resp.hovered() {
+        Tokens::control_fill()
+    } else {
+        egui::Color32::TRANSPARENT
+    };
+    let border = if on {
+        Tokens::ACCENT
+    } else {
+        Tokens::control_border()
+    };
+    p.rect(
+        r,
+        3.0,
+        fill,
+        egui::Stroke::new(1.0, border),
+        egui::StrokeKind::Inside,
+    );
+    let ink = egui::Stroke::new(1.3, Tokens::text());
+    let (top, spine_y) = (r.top() + 8.0, r.top() + 38.0);
+    if perfect {
+        // Three signatures side by side, each folded on its own, on a
+        // glued spine.
+        for k in 0..3 {
+            let x = r.center().x + (k as f32 - 1.0) * 16.0;
+            for a in [5.0, 8.0] {
+                p.line_segment([egui::pos2(x, spine_y), egui::pos2(x - a, top)], ink);
+                p.line_segment([egui::pos2(x, spine_y), egui::pos2(x + a, top)], ink);
+            }
+        }
+        p.line_segment(
+            [
+                egui::pos2(r.center().x - 22.0, spine_y + 2.5),
+                egui::pos2(r.center().x + 22.0, spine_y + 2.5),
+            ],
+            egui::Stroke::new(2.0, Tokens::text()),
+        );
+    } else {
+        // Sheets nested in one another, stapled through the fold.
+        let x = r.center().x;
+        for k in 0..3 {
+            let y = spine_y - 5.0 * k as f32;
+            p.line_segment([egui::pos2(x, y), egui::pos2(x - 22.0, top)], ink);
+            p.line_segment([egui::pos2(x, y), egui::pos2(x + 22.0, top)], ink);
+        }
+        p.line_segment(
+            [egui::pos2(x, spine_y - 9.0), egui::pos2(x, spine_y + 3.0)],
+            egui::Stroke::new(2.0, Tokens::text()),
+        );
+    }
+    p.text(
+        egui::pos2(r.center().x, r.bottom() - 4.0),
+        egui::Align2::CENTER_BOTTOM,
+        label,
+        egui::FontId::proportional(11.0),
+        Tokens::text(),
+    );
+    resp
+}
+
+/// The booklet's page count, the blanks added and the sheets it takes.
+pub fn booklet_summary(pages: usize, b: &crate::imposition::Booklet) -> String {
+    let info = crate::imposition::booklet_info(pages, b);
+    let mut s = trf(
+        "print.booklet_pages",
+        &[
+            ("n", &info.pages.to_string()),
+            ("blanks", &info.blanks.to_string()),
+            ("sheets", &info.sheets.to_string()),
+        ],
+    );
+    if b.binding == crate::imposition::Binding::PerfectBound {
+        s.push('\n');
+        s.push_str(&trf(
+            "print.booklet_signatures",
+            &[("n", &info.signatures.to_string())],
+        ));
+    }
+    s
 }
 
 /// A titled frame around a group of the Print dialog's options.
@@ -6750,4 +6932,81 @@ fn selection_print_size(app: &App) -> Option<Size> {
         *c.borrow_mut() = Some((key, size));
         size
     })
+}
+
+#[cfg(test)]
+mod booklet_fields_tests {
+    use super::*;
+
+    /// The Layout fields of a booklet: clicking the Perfect bound picture
+    /// chooses it and shows Sheets per signature instead of Creep; the
+    /// summary under the sketch counts the pages, the blanks added and the
+    /// sheets (#788, #947).
+    #[test]
+    fn the_binding_pictures_choose_and_the_summary_counts() {
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        for _ in 0..5 {
+            app.add_page();
+        }
+        assert_eq!(app.doc().pages.len(), 6);
+        let mut st = PrintState {
+            layout_kind: 2,
+            all_pages: true,
+            ..Default::default()
+        };
+        let run = |st: &mut PrintState, events: Vec<egui::Event>| {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(420.0, 900.0),
+                )),
+                events,
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| print_layout_fields(&app, ui, st));
+            out.textures_delta.clear();
+            out.shapes
+                .iter()
+                .filter_map(|s| match &s.shape {
+                    egui::Shape::Text(t) => {
+                        Some((t.galley.text().to_string(), t.visual_bounding_rect()))
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        run(&mut st, Vec::new());
+        let texts = run(&mut st, Vec::new());
+        let has = |texts: &[(String, egui::Rect)], t: &str| texts.iter().any(|(x, _)| x == t);
+        assert!(has(&texts, &tr("print.creep")), "saddle stitch: creep");
+        assert!(!has(&texts, &tr("print.signature_sheets")));
+        let summary = booklet_summary(6, &st.booklet());
+        assert!(has(&texts, &summary), "{summary}");
+        assert!(summary.contains('6') && summary.contains('2'), "{summary}");
+        let at = texts
+            .iter()
+            .find(|(t, _)| *t == tr("print.perfect_bound"))
+            .map(|(_, r)| r.center())
+            .expect("Perfect bound shown");
+        let button = |pressed| egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        run(&mut st, vec![egui::Event::PointerMoved(at)]);
+        run(&mut st, vec![button(true)]);
+        run(&mut st, vec![button(false)]);
+        assert_eq!(st.booklet_binding, 1);
+        let texts = run(&mut st, Vec::new());
+        assert!(has(&texts, &tr("print.signature_sheets")));
+        assert!(!has(&texts, &tr("print.creep")));
+        let summary = booklet_summary(6, &st.booklet());
+        assert!(has(&texts, &summary), "{summary}");
+        // The layout the print uses has the binding.
+        let o = crate::export::print_layout(&app, &st, app.doc());
+        assert_eq!(o.booklet.binding, crate::imposition::Binding::PerfectBound);
+        assert_eq!(o.layout, crate::imposition::Layout::Booklet);
+    }
 }

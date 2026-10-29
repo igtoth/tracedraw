@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Print and Print Preview, Booklet: the binding is chosen by two pictures, Saddle stitch (each sheet folded inside the one before) or Perfect bound (signatures of a chosen number of sheets, each folded on its own and stacked). Saddle stitch takes a creep compensation that moves the pages of the inner sheets toward the spine, and either binding a gap between the two pages of a spread. Under the sketch the Layout fields show the pages, the blank pages added to reach a multiple of four, the sheets of paper and the signatures. Booklets could only be saddle-stitched, with no gap (#788, #947).
+
 ## 0.20.0 (2026-10-28)
 
 - Variable fonts: the text follows the axis sliders (Text docker, and the button beside the font size) while they are dragged, so the weight, width or any other axis can be judged on the page. The text changed only when the slider was released. Releasing still keeps the value as one undo step (#870).

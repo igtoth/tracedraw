@@ -1091,6 +1091,7 @@ pub fn print_layout(app: &App, st: &PrintState, doc: &Document) -> crate::imposi
         page_offset: st.art_offset,
         page_stretch: st.art_stretch,
         stretch_fit: st.stretch_fit,
+        booklet: st.booklet(),
         marks: crate::imposition::Marks {
             crop: st.crop_marks,
             registration: st.registration_marks,
