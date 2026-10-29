@@ -1543,6 +1543,7 @@ fn fill_editor_mixed(
                 front: base,
                 back: Color::WHITE,
                 size_mm: 10.0,
+                placement: Default::default(),
             }),
             4 => Fill::Texture(Texture {
                 kind: TextureKind::Clouds,
@@ -1921,6 +1922,7 @@ pub(crate) fn pattern_editor(ui: &mut Ui, p: &mut Pattern) -> bool {
             front,
             back,
             size_mm,
+            ..
         } => {
             egui::ComboBox::from_label(tr("docker.tile"))
                 .selected_text(tile.name())
@@ -1960,7 +1962,7 @@ pub(crate) fn pattern_editor(ui: &mut Ui, p: &mut Pattern) -> bool {
                 ))
                 .drag_stopped();
         }
-        Pattern::Vector { shapes, tile } => {
+        Pattern::Vector { shapes, tile, .. } => {
             ui.label(trf(
                 "docker.vector_tile_n",
                 &[("n", &shapes.len().to_string())],
@@ -3112,6 +3114,7 @@ mod tests {
                 front: red,
                 back: tracedraw_core::Color::WHITE,
                 size_mm: 4.0,
+                placement: Default::default(),
             }),
             texture,
             Fill::Mesh(tracedraw_core::Mesh::new(
@@ -3462,6 +3465,7 @@ mod tests {
                 front: red,
                 back: Color::WHITE,
                 size_mm: 5.0,
+                placement: Default::default(),
             }),
             Fill::Texture(tracedraw_core::style::Texture {
                 kind: tracedraw_core::style::TextureKind::Wood,

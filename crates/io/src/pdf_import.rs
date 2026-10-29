@@ -2025,6 +2025,7 @@ impl<'a> Importer<'a> {
             return Some(Fill::Pattern(tracedraw_core::Pattern::Vector {
                 shapes,
                 tile: tile_size,
+                placement: Default::default(),
             }));
         }
         None

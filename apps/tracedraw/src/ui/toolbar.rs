@@ -2783,6 +2783,7 @@ fn interactive_fill_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::do
                     front: base,
                     back: tracedraw_core::Color::WHITE,
                     size_mm: 10.0,
+                    placement: Default::default(),
                 }),
                 4 => Fill::Texture(tracedraw_core::style::Texture {
                     kind: tracedraw_core::style::TextureKind::Clouds,

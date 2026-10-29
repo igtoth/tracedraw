@@ -3067,6 +3067,7 @@ impl<'a> Writer<'a> {
             width_px,
             height_px,
             size_mm,
+            ..
         }) = fill
         {
             let key = (*width_px, *height_px, size_mm.to_bits());

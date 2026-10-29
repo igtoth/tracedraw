@@ -2690,6 +2690,7 @@ mod tests {
             front: Color::BLACK,
             back: Color::WHITE,
             size_mm: 5.0,
+            placement: Default::default(),
         });
         s.stroke = Some(tracedraw_core::Stroke {
             end_arrow: tracedraw_core::Arrowhead::Arrow,
@@ -2727,6 +2728,7 @@ mod tests {
         s.fill = Fill::Pattern(tracedraw_core::Pattern::Vector {
             shapes: vec![tile_square],
             tile: tracedraw_core::geometry::Size::new(10.0, 10.0),
+            placement: Default::default(),
         });
         s.stroke = None;
         doc.layer_mut(layer).unwrap().shapes.push(s);

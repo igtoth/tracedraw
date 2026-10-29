@@ -845,6 +845,7 @@ fn fills(dir: &Path) {
                 front: hex("#3D7BFF"),
                 back: hex("#E8F0FF"),
                 size_mm: 8.0,
+                placement: Default::default(),
             }),
             6 => Fill::Texture(Texture {
                 kind: TextureKind::Marble,

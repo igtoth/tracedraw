@@ -307,6 +307,7 @@ pub fn new_of_kind(from: &Fill, i: usize) -> Fill {
             front: base,
             back: Color::WHITE,
             size_mm: 10.0,
+            placement: Default::default(),
         }),
         4 => Fill::Texture(Texture {
             kind: TextureKind::Clouds,

@@ -565,6 +565,7 @@ fn paint_value(
             front,
             back,
             size_mm,
+            ..
         }) => {
             *next_grad += 1;
             let id = format!("pat{}", *next_grad);
@@ -591,6 +592,7 @@ fn paint_value(
             width_px,
             height_px,
             size_mm,
+            ..
         }) => {
             *next_grad += 1;
             let id = format!("pat{}", *next_grad);
@@ -603,6 +605,7 @@ fn paint_value(
         Fill::Pattern(tracedraw_core::Pattern::Vector {
             shapes: tile_shapes,
             tile,
+            ..
         }) => {
             *next_grad += 1;
             let id = format!("pat{}", *next_grad);
@@ -1124,6 +1127,7 @@ mod tests {
         s.fill = Fill::Pattern(tracedraw_core::Pattern::Vector {
             shapes: vec![tile_square],
             tile: tracedraw_core::geometry::Size::new(10.0, 10.0),
+            placement: Default::default(),
         });
         s.stroke = None;
         doc.layer_mut(layer).unwrap().shapes.push(s);
@@ -1231,6 +1235,7 @@ mod tests {
             front: red,
             back: blue,
             size_mm: 5.0,
+            placement: Default::default(),
         })));
         let svg = one_shape_svg(Fill::None, Some(st.clone()));
         assert!(svg.contains("stroke=\"url(#pat1)\""), "{svg}");
