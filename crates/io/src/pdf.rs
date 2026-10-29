@@ -613,7 +613,7 @@ impl PageWriter<'_> {
     /// be interpolated between.
     fn fountain_function(&mut self, ft: &tracedraw_core::Fountain) -> String {
         if ft.has_blend_options() && !ft.stepped() {
-            let id = sampled_function_in(ft, &mut self.pdf);
+            let id = sampled_function_in(ft, self.pdf);
             return format!("{id} 0 R");
         }
         stitching_function_in(ft, self.pdf.cmyk_only)
