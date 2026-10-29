@@ -370,6 +370,65 @@ mod tests {
         assert_eq!(back, doc);
     }
 
+    /// A gradient's blend direction, steps, smooth transition and
+    /// acceleration are kept in the native file, and left out while they
+    /// are the defaults (#1208).
+    #[test]
+    fn gradient_blend_settings_round_trip_in_native_files() {
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        let id = doc.ids_mut().shape();
+        let mut s = Shape::new(
+            id,
+            ShapeKind::Rect {
+                rect: tracedraw_core::Rect::new(10.0, 10.0, 40.0, 30.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        let mut f = tracedraw_core::Fountain::two(
+            tracedraw_core::FountainKind::Radial,
+            Color::rgb8(255, 0, 0),
+            Color::rgb8(0, 0, 255),
+            0.0,
+        );
+        f.blend_direction = tracedraw_core::ColorBlend::Clockwise;
+        f.steps = 24;
+        f.smooth = true;
+        f.acceleration = 35;
+        s.fill = Fill::Fountain(f);
+        doc.layer_mut(layer).unwrap().shapes.push(s);
+        let json = doc.to_json().unwrap();
+        for what in [
+            "\"blend_direction\"",
+            "\"steps\": 24",
+            "\"smooth\": true",
+            "\"acceleration\": 35",
+        ] {
+            assert!(json.contains(what), "{what} in {json}");
+        }
+        let back = Document::from_json(&json).unwrap();
+        assert_eq!(back, doc);
+        // The defaults are not written.
+        let mut plain = Document::default();
+        let layer = plain.pages[0].layers[0].id;
+        let id = plain.ids_mut().shape();
+        let mut s = Shape::new(
+            id,
+            ShapeKind::Rect {
+                rect: tracedraw_core::Rect::new(10.0, 10.0, 40.0, 30.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        s.fill = Fill::linear(Color::BLACK, Color::WHITE, 0.0);
+        plain.layer_mut(layer).unwrap().shapes.push(s);
+        let json = plain.to_json().unwrap();
+        for what in ["blend_direction", "steps", "smooth", "acceleration"] {
+            assert!(!json.contains(what), "{what} in {json}");
+        }
+    }
+
     #[test]
     fn corners_that_keep_their_size_survive_native_svg_and_pdf() {
         use tracedraw_core::geometry::{Affine, Shape as _};

@@ -6800,3 +6800,11 @@ print.booklet_gap = "ফাঁক" # mt
 print.booklet_gap_desc = "পাশাপাশি দুই পৃষ্ঠার মাঝের জায়গা, ভাঁজের মাঝখানে।" # mt
 print.booklet_pages = "{n} পৃষ্ঠা, {blanks}টি ফাঁকা পৃষ্ঠা যোগ হয়েছে; দুই পাশে ছাপা {sheets}টি কাগজের শিট" # mt
 print.booklet_signatures = "{n}টি সিগনেচার" # mt
+
+docker.blend_direction = "মিশ্রণের দিক:" # mt
+docker.blend_direction_tip = "রং এক নোড থেকে পরেরটিতে কীভাবে যায়: সরাসরি RGB-এর মধ্য দিয়ে, অথবা রঙচক্র ধরে ঘড়ির কাঁটার দিকে (বর্ধমান হিউ) বা বিপরীত দিকে" # mt
+docker.fountain_steps_tip = "মসৃণ মিশ্রণের বদলে এতগুলি ধারালো প্রান্তের রঙের পটি দিয়ে গ্রেডিয়েন্ট আঁকুন (2 থেকে 255)" # mt
+docker.smooth_transition = "মসৃণ রূপান্তর" # mt
+docker.smooth_transition_tip = "প্রতিটি নোডে রঙের পরিবর্তন সরাসরি মেশানোর বদলে ধীরে শুরু ও শেষ করুন" # mt
+docker.fountain_acceleration = "ত্বরণ:" # mt
+docker.fountain_acceleration_tip = "প্রতিটি মিশ্রণের মধ্যবিন্দু সরান: ধনাত্মক মান শুরুর কাছে রং দ্রুত বদলায়, ঋণাত্মক শেষের কাছে (-100 থেকে 100)" # mt

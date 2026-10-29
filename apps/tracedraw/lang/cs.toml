@@ -6800,3 +6800,11 @@ print.booklet_gap = "Mezera" # mt
 print.booklet_gap_desc = "Mezera mezi dvěma stránkami dvojstrany, uprostřed na hřbetu." # mt
 print.booklet_pages = "Stránek: {n}, přidáno prázdných: {blanks}; archů papíru tištěných oboustranně: {sheets}" # mt
 print.booklet_signatures = "Složek: {n}" # mt
+
+docker.blend_direction = "Směr přechodu:" # mt
+docker.blend_direction_tip = "Jak barvy přecházejí od jednoho uzlu k dalšímu: přímo přes RGB, nebo po barevném kruhu po směru hodin (rostoucí odstín) či proti němu" # mt
+docker.fountain_steps_tip = "Kreslit přechod jako tento počet barevných pruhů s ostrými hranami místo plynulého přechodu (2 až 255)" # mt
+docker.smooth_transition = "Plynulý přechod" # mt
+docker.smooth_transition_tip = "Změnu barvy u každého uzlu pozvolna rozběhnout a dokončit místo přímého přechodu" # mt
+docker.fountain_acceleration = "Zrychlení:" # mt
+docker.fountain_acceleration_tip = "Posunout střed každého přechodu: kladné hodnoty mění barvy rychleji u začátku, záporné u konce (-100 až 100)" # mt

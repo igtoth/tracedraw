@@ -6800,3 +6800,11 @@ print.booklet_gap = "Espaço" # mt
 print.booklet_gap_desc = "O espaço entre as duas páginas de uma página dupla, centrado na dobra." # mt
 print.booklet_pages = "{n} páginas, {blanks} página(s) em branco adicionada(s); {sheets} folha(s) de papel impressa(s) frente e verso" # mt
 print.booklet_signatures = "{n} caderno(s)" # mt
+
+docker.blend_direction = "Direção da mistura:" # mt
+docker.blend_direction_tip = "Como as cores passam de um nó ao seguinte: em linha reta pelo RGB, ou ao longo do círculo cromático no sentido horário (matiz crescente) ou anti-horário" # mt
+docker.fountain_steps_tip = "Desenhar o gradiente com esta quantidade de faixas de cor com bordas duras em vez de uma mistura suave (2 a 255)" # mt
+docker.smooth_transition = "Transição suave" # mt
+docker.smooth_transition_tip = "Suavizar a mudança de cor na entrada e na saída de cada nó em vez de misturar em linha reta" # mt
+docker.fountain_acceleration = "Aceleração:" # mt
+docker.fountain_acceleration_tip = "Deslocar o ponto médio de cada mistura: valores positivos mudam as cores mais depressa perto do início, negativos perto do fim (-100 a 100)" # mt

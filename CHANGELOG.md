@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Gradient fills: the Properties docker gets Blend direction (straight through RGB, or clockwise or counterclockwise round the colour wheel), Steps (the fill drawn as 2 to 255 colour bands; unticked, smooth), Smooth transition (the colour change eases in and out at each node) and Acceleration (-100 to 100, skewing every blend's midpoint on top of the nodes' own). The screen, SVG (a pair of stops per band, a sampled run for a hue path) and PDF (a sampled function) draw them alike, each setting is one undo step and goes into each selected object's own gradient, and `.tdraw` files keep them while files without them read as before (#1208).
+
 ## 0.23.0 (2026-10-29)
 
 - Font list filter: the choices now open beside the list, in sections: fonts shown, style (serif, sans serif, script, decorative, monospaced, symbol), weight (light, regular, bold), width (condensed, normal, expanded), technology (TrueType, OpenType, variable), scripts (Latin, Greek, Cyrillic, Arabic, Devanagari, CJK and more), each OpenType feature on its own, embedding rights and the folders the fonts are in. Every value is read from the font files once (OS/2 weight and width classes, embedding bits, Unicode ranges, variation axes, GSUB and GPOS feature lists). Monospaced and Symbol now widen the style choices like the other styles instead of narrowing them (#867).

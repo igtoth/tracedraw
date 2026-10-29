@@ -1471,12 +1471,14 @@ impl Renderer<'_> {
                             | tracedraw_core::FountainKind::Square
                     ) {
                         let f2 = f.clone();
+                        // The blends once; per pixel only the parameter,
+                        // its band and a bisection in the stops.
                         let base = f.blended_stops();
                         let key = format!("{f:?}");
                         self.fill_procedural(page_path, sk, rule, &key, move |u, v| {
                             let p = Point::new(b.x0 + u * b.width(), b.y0 + v * b.height());
                             let t = f2.param_at(b, p).unwrap_or(0.0);
-                            let s = tracedraw_core::style::sample_stop(&base, f2.stop_param(t));
+                            let s = f2.sample_blended(&base, t);
                             (s.color, s.opacity)
                         });
                     }
@@ -1546,7 +1548,7 @@ impl Renderer<'_> {
                                 }
                                 _ => (dx.abs().max(dy.abs()) * 2.0).min(1.0),
                             };
-                            let s = tracedraw_core::style::sample_stop(&base, f2.stop_param(t));
+                            let s = f2.sample_blended(&base, t);
                             (s.color, s.opacity)
                         });
                     }
@@ -1774,7 +1776,7 @@ impl Renderer<'_> {
                     return;
                 };
                 for (px, d) in pm.pixels_mut().iter_mut().zip(&dist) {
-                    let s = tracedraw_core::style::sample_stop(&base, f.stop_param(d / deepest));
+                    let s = f.sample_blended(&base, d / deepest);
                     let [r, g, bb] = s.color.to_rgb8();
                     let a = (s.opacity.clamp(0.0, 1.0) * 255.0).round() as u8;
                     *px = tiny_skia::ColorU8::from_rgba(r, g, bb, a).premultiply();
@@ -3934,6 +3936,75 @@ mod tests {
         let img = strip(Fill::Fountain(sq));
         assert!(red_at(&img, 50) > 200, "{}", red_at(&img, 50));
         assert!(red_at(&img, 1) < 30, "{}", red_at(&img, 1));
+    }
+
+    /// A stepped fill is drawn as exactly `steps` colours, by the gradient
+    /// shader (linear) and pixel by pixel (square); a hue path and the
+    /// smooth transition show in the pixels too (#1208).
+    #[test]
+    fn stepped_and_hue_fountains_draw_their_colours() {
+        let bw = || Fountain::two(FountainKind::Linear, Color::BLACK, Color::WHITE, 0.0);
+        let row = |img: &Pixmap| -> Vec<u8> {
+            let mut v: Vec<u8> = (1..99).map(|x| img.pixel(x, 5).unwrap().red()).collect();
+            v.sort_unstable();
+            v.dedup();
+            v
+        };
+        for steps in [2u32, 4, 7] {
+            let mut f = bw();
+            f.steps = steps;
+            let greys = row(&strip(Fill::Fountain(f)));
+            assert_eq!(greys.len(), steps as usize, "{steps}: {greys:?}");
+            assert_eq!((greys[0], greys[greys.len() - 1]), (0, 255));
+            let mut sq = Fountain::two(FountainKind::Square, Color::BLACK, Color::WHITE, 0.0);
+            sq.steps = steps;
+            let greys = row(&strip(Fill::Fountain(sq)));
+            assert_eq!(greys.len(), steps as usize, "square {steps}: {greys:?}");
+        }
+        // Four bands: the left quarter black, the next 85.
+        let mut f = bw();
+        f.steps = 4;
+        let img = strip(Fill::Fountain(f));
+        assert_eq!(img.pixel(10, 5).unwrap().red(), 0);
+        assert_eq!(img.pixel(40, 5).unwrap().red(), 85);
+        assert_eq!(img.pixel(90, 5).unwrap().red(), 255);
+        // Red to blue clockwise: green in the middle; straight: purple.
+        let (red, blue) = (Color::rgb8(255, 0, 0), Color::rgb8(0, 0, 255));
+        let mut h = Fountain::two(FountainKind::Linear, red, blue, 0.0);
+        let mid = strip(Fill::Fountain(h.clone())).pixel(50, 5).unwrap();
+        assert!(
+            mid.green() < 10 && mid.red() > 100 && mid.blue() > 100,
+            "{mid:?}"
+        );
+        h.blend_direction = tracedraw_core::ColorBlend::Clockwise;
+        let mid = strip(Fill::Fountain(h.clone())).pixel(50, 5).unwrap();
+        assert!(
+            mid.green() > 240 && mid.red() < 20 && mid.blue() < 20,
+            "{mid:?}"
+        );
+        // Conical fills take the hue path too (drawn pixel by pixel):
+        // the colour half way round is green as well.
+        h.kind = FountainKind::Conical;
+        let img = strip(Fill::Fountain(h));
+        let mid = img.pixel(50, 9).unwrap();
+        assert!(mid.green() > 200, "{mid:?}");
+        // Smooth transition: darker early on, lighter late, grey in the middle.
+        let mut s = bw();
+        s.smooth = true;
+        let img = strip(Fill::Fountain(s));
+        let plain = strip(Fill::Fountain(bw()));
+        assert!(img.pixel(15, 5).unwrap().red() < plain.pixel(15, 5).unwrap().red() - 10);
+        assert!(img.pixel(85, 5).unwrap().red() > plain.pixel(85, 5).unwrap().red() + 10);
+        assert!((img.pixel(50, 5).unwrap().red() as i32 - 128).abs() <= 2);
+        // Acceleration +100: light almost from the start.
+        let mut a = bw();
+        a.acceleration = 100;
+        let img = strip(Fill::Fountain(a));
+        assert!(
+            img.pixel(10, 5).unwrap().red() > 150,
+            "{}",
+            img.pixel(10, 5).unwrap().red()
+        );
     }
 
     #[test]

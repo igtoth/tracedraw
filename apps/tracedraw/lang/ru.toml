@@ -6800,3 +6800,11 @@ print.booklet_gap = "Зазор" # mt
 print.booklet_gap_desc = "Расстояние между двумя страницами разворота, по центру сгиба." # mt
 print.booklet_pages = "Страниц: {n}, добавлено пустых: {blanks}; листов бумаги с двусторонней печатью: {sheets}" # mt
 print.booklet_signatures = "Тетрадей: {n}" # mt
+
+docker.blend_direction = "Направление перехода:" # mt
+docker.blend_direction_tip = "Как цвета переходят от одного узла к следующему: напрямую через RGB или по цветовому кругу по часовой стрелке (оттенок растёт) либо против" # mt
+docker.fountain_steps_tip = "Рисовать градиент этим числом цветных полос с резкими границами вместо плавного перехода (от 2 до 255)" # mt
+docker.smooth_transition = "Плавный переход" # mt
+docker.smooth_transition_tip = "Смягчать изменение цвета у каждого узла вместо прямого перехода" # mt
+docker.fountain_acceleration = "Ускорение:" # mt
+docker.fountain_acceleration_tip = "Сдвинуть середину каждого перехода: положительные значения меняют цвета быстрее у начала, отрицательные у конца (от -100 до 100)" # mt

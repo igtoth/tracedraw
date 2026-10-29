@@ -8,6 +8,10 @@
 use crate::document::{Shape, ShapeKind};
 use crate::geometry::{Affine, BezPath, PathEl, Point, Rect, Shape as _, Vec2};
 use crate::style::{lerp_color, Fill};
+// The colour blend lives with the fills now (fountain fills use it too,
+// #1208); it keeps its place here for the code that knows it as a blend
+// option.
+pub use crate::style::{blend_color, ColorBlend};
 use crate::Color;
 use serde::{Deserialize, Serialize};
 
@@ -1399,18 +1403,6 @@ fn blend(
     out
 }
 
-/// How a blend's colours go from the start colour to the end colour.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-pub enum ColorBlend {
-    /// Straight through the colour space.
-    #[default]
-    Direct,
-    /// Around the colour wheel, hue increasing.
-    Clockwise,
-    /// Around the colour wheel, hue decreasing.
-    CounterClockwise,
-}
-
 /// A blend's further options.
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -1454,28 +1446,6 @@ impl BlendOptions {
     pub fn is_default(&self) -> bool {
         *self == BlendOptions::default()
     }
-}
-
-/// A colour between `a` and `b` at `t`, straight or around the wheel.
-pub fn blend_color(a: Color, b: Color, t: f32, how: ColorBlend) -> Color {
-    let turn = match how {
-        ColorBlend::Direct => return lerp_color(a, b, t),
-        ColorBlend::Clockwise => 1.0,
-        ColorBlend::CounterClockwise => -1.0,
-    };
-    let (ha, sa, va) = a.to_hsb();
-    let (hb, sb, vb) = b.to_hsb();
-    // The hue's way round in the chosen direction, in degrees.
-    let mut d = (hb - ha).rem_euclid(360.0);
-    if turn < 0.0 {
-        d -= 360.0;
-        if d <= -360.0 {
-            d += 360.0;
-        }
-    }
-    let t = t as f64;
-    let h = (ha + d * t).rem_euclid(360.0);
-    Color::from_hsb(h, sa + (sb - sa) * t, va + (vb - va) * t)
 }
 
 /// The body an extrude effect on `main` describes (older files: Back

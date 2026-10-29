@@ -6800,3 +6800,11 @@ print.booklet_gap = "间距" # mt
 print.booklet_gap_desc = "对开两页之间的距离，以折缝为中心。" # mt
 print.booklet_pages = "{n} 页，添加了 {blanks} 个空白页；双面印刷的纸张 {sheets} 张" # mt
 print.booklet_signatures = "{n} 个书帖" # mt
+
+docker.blend_direction = "混合方向:" # mt
+docker.blend_direction_tip = "颜色如何从一个节点过渡到下一个: 直接经过 RGB, 或沿色轮顺时针(色相递增)或逆时针绕行" # mt
+docker.fountain_steps_tip = "用这么多条边缘清晰的色带绘制渐变, 而不是平滑过渡(2 到 255)" # mt
+docker.smooth_transition = "平滑过渡" # mt
+docker.smooth_transition_tip = "在每个节点处让颜色变化缓入缓出, 而不是直线混合" # mt
+docker.fountain_acceleration = "加速:" # mt
+docker.fountain_acceleration_tip = "偏移每段混合的中点: 正值使颜色在起点附近变化更快, 负值在终点附近(-100 到 100)" # mt

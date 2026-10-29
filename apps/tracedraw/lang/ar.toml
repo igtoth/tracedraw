@@ -6800,3 +6800,11 @@ print.booklet_gap = "الفجوة" # mt
 print.booklet_gap_desc = "المسافة بين صفحتي الصفحة المزدوجة، في منتصف الطية." # mt
 print.booklet_pages = "{n} صفحة، أُضيفت {blanks} صفحة فارغة؛ {sheets} ورقة مطبوعة على الوجهين" # mt
 print.booklet_signatures = "{n} ملزمة" # mt
+
+docker.blend_direction = "اتجاه المزج:" # mt
+docker.blend_direction_tip = "كيف تنتقل الألوان من عقدة إلى التالية: مباشرة عبر RGB، أو حول عجلة الألوان باتجاه عقارب الساعة (زيادة درجة اللون) أو عكسها" # mt
+docker.fountain_steps_tip = "رسم التدرج بهذا العدد من أشرطة الألوان ذات الحواف الحادة بدلاً من مزج سلس (من 2 إلى 255)" # mt
+docker.smooth_transition = "انتقال سلس" # mt
+docker.smooth_transition_tip = "تلطيف تغير اللون عند الدخول إلى كل عقدة والخروج منها بدلاً من المزج المستقيم" # mt
+docker.fountain_acceleration = "التسارع:" # mt
+docker.fountain_acceleration_tip = "إزاحة نقطة منتصف كل مزج: القيم الموجبة تغير الألوان أسرع قرب البداية، والسالبة قرب النهاية (من -100 إلى 100)" # mt

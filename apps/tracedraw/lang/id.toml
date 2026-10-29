@@ -6800,3 +6800,11 @@ print.booklet_gap = "Celah" # mt
 print.booklet_gap_desc = "Ruang di antara dua halaman satu bentangan, di tengah lipatan." # mt
 print.booklet_pages = "{n} halaman, {blanks} halaman kosong ditambahkan; {sheets} lembar kertas dicetak bolak-balik" # mt
 print.booklet_signatures = "{n} katern" # mt
+
+docker.blend_direction = "Arah campuran:" # mt
+docker.blend_direction_tip = "Cara warna berpindah dari satu simpul ke berikutnya: lurus melalui RGB, atau mengitari roda warna searah jarum jam (rona naik) atau berlawanan arah jarum jam" # mt
+docker.fountain_steps_tip = "Gambar gradien sebagai sejumlah pita warna bertepi tajam ini alih-alih campuran halus (2 sampai 255)" # mt
+docker.smooth_transition = "Transisi halus" # mt
+docker.smooth_transition_tip = "Perhalus perubahan warna saat masuk dan keluar di setiap simpul alih-alih mencampur lurus" # mt
+docker.fountain_acceleration = "Akselerasi:" # mt
+docker.fountain_acceleration_tip = "Geser titik tengah setiap campuran: nilai positif mengubah warna lebih cepat di dekat awal, nilai negatif di dekat akhir (-100 sampai 100)" # mt

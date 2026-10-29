@@ -7,8 +7,8 @@ use crate::ui::tips::RichTip;
 use egui::Ui;
 use tracedraw_core::patch::{FillField, FillMix, StrokeField, StrokeMix};
 use tracedraw_core::{
-    document::ShapeKind, Arrowhead, Color, Command, Fill, Fountain, FountainKind, FountainRepeat,
-    Pattern, PatternTile, Stop, Stroke, Texture, TextureKind,
+    document::ShapeKind, Arrowhead, Color, ColorBlend, Command, Fill, Fountain, FountainKind,
+    FountainRepeat, Pattern, PatternTile, Stop, Stroke, Texture, TextureKind,
 };
 
 /// The vertical strip of docker tabs on the right edge of the window.
@@ -1910,6 +1910,88 @@ fn fountain_spread_editor(ui: &mut Ui, f: &mut Fountain) -> bool {
             .rich_tip(tr("docker.invert_colours_tip"))
             .changed();
     });
+    changed |= fountain_blend_editor(ui, f);
+    changed
+}
+
+/// The step count a fountain gets when Steps is first ticked.
+const FIRST_STEPS: u32 = 16;
+
+/// The i18n key of a blend direction's name (the Blend effect's words).
+pub fn blend_direction_key(how: ColorBlend) -> &'static str {
+    match how {
+        ColorBlend::Direct => "docker.blend_direct",
+        ColorBlend::Clockwise => "docker.blend_clockwise",
+        ColorBlend::CounterClockwise => "docker.blend_counterclockwise",
+    }
+}
+
+/// The blend direction, the steps, the smooth transition and the
+/// acceleration (#1208).
+fn fountain_blend_editor(ui: &mut Ui, f: &mut Fountain) -> bool {
+    let mut changed = false;
+    ui.horizontal_wrapped(|ui| {
+        ui.label(tr("docker.blend_direction"))
+            .rich_tip(tr("docker.blend_direction_tip"));
+        for how in ColorBlend::ALL {
+            if ui
+                .selectable_label(f.blend_direction == how, tr(blend_direction_key(how)))
+                .clicked()
+                && f.blend_direction != how
+            {
+                f.blend_direction = how;
+                changed = true;
+            }
+        }
+    });
+    ui.horizontal(|ui| {
+        // Unticked, the fill is smooth; the count last used comes back
+        // when it is ticked again.
+        let mut stepped = f.stepped();
+        let last_id = ui.id().with("fountain_steps");
+        if ui
+            .checkbox(&mut stepped, tr("docker.steps"))
+            .rich_tip(tr("docker.fountain_steps_tip"))
+            .changed()
+        {
+            if stepped {
+                f.steps = ui
+                    .data(|d| d.get_temp::<u32>(last_id))
+                    .unwrap_or(FIRST_STEPS);
+            } else {
+                ui.data_mut(|d| d.insert_temp(last_id, f.band_count()));
+                f.steps = Fountain::SMOOTH_STEPS;
+            }
+            changed = true;
+        }
+        if f.stepped() {
+            let mut n = f.band_count();
+            if ui
+                .add(
+                    crate::ui::field::NumField::new(&mut n)
+                        .range(Fountain::MIN_STEPS..=Fountain::SMOOTH_STEPS - 1),
+                )
+                .changed()
+            {
+                f.steps = n;
+                changed = true;
+            }
+        }
+    });
+    changed |= ui
+        .checkbox(&mut f.smooth, tr("docker.smooth_transition"))
+        .rich_tip(tr("docker.smooth_transition_tip"))
+        .changed();
+    ui.horizontal(|ui| {
+        ui.label(tr("docker.fountain_acceleration"))
+            .rich_tip(tr("docker.fountain_acceleration_tip"));
+        changed |= ui
+            .add(
+                crate::ui::field::NumField::new(&mut f.acceleration)
+                    .range(-Fountain::MAX_ACCELERATION..=Fountain::MAX_ACCELERATION),
+            )
+            .changed();
+    });
     changed
 }
 
@@ -3035,6 +3117,96 @@ mod tests {
             walk(&c.shape, &mut texts);
         }
         texts
+    }
+
+    /// The Properties docker shows the gradient's blend direction, steps,
+    /// smooth transition and acceleration rows, with the values the fill
+    /// has; a change through the fill patching goes into each object's
+    /// own gradient as one undo step (#1208).
+    #[test]
+    fn gradient_blend_rows_show_and_patch() {
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        app.settings.autocorrect.enabled = false;
+        let mut ids = Vec::new();
+        for x in [10.0, 70.0] {
+            let id = app
+                .new_shape(ShapeKind::Rect {
+                    rect: tracedraw_core::geometry::Rect::new(x, 10.0, x + 40.0, 40.0),
+                    radius: 0.0,
+                    corners: None,
+                })
+                .expect("rect");
+            ids.push(id);
+        }
+        app.select(ids.clone());
+        let mut f = Fountain::two(
+            FountainKind::Linear,
+            tracedraw_core::Color::BLACK,
+            tracedraw_core::Color::WHITE,
+            0.0,
+        );
+        f.steps = 24;
+        f.acceleration = -37;
+        f.blend_direction = ColorBlend::CounterClockwise;
+        app.apply_fill(Fill::Fountain(f.clone()));
+        app.show_dockers = true;
+        app.docker_tab = DockerTab::Properties;
+        // The Outline section closed, so the fill's rows are in view (the
+        // docker paints only what its scroll area shows).
+        toggle_section(&mut app, "outline");
+        draw(&ctx, &mut app);
+        let texts = painted_texts(&ctx, &mut app);
+        let count = |s: &str| texts.iter().filter(|t| t.as_str() == s).count();
+        for key in [
+            "docker.blend_direction",
+            "docker.blend_direct",
+            "docker.blend_clockwise",
+            "docker.blend_counterclockwise",
+            "docker.steps",
+            "docker.smooth_transition",
+            "docker.fountain_acceleration",
+        ] {
+            assert!(count(&tr(key)) >= 1, "{key} shows: {texts:?}");
+        }
+        // The step count and the acceleration as the fill has them.
+        assert!(count("24") >= 1, "{texts:?}");
+        assert!(count("-37") >= 1, "{texts:?}");
+        // Unticked steps hide the count field.
+        let mut smooth = f.clone();
+        smooth.steps = Fountain::SMOOTH_STEPS;
+        app.apply_fill(Fill::Fountain(smooth.clone()));
+        draw(&ctx, &mut app);
+        let texts = painted_texts(&ctx, &mut app);
+        assert!(!texts.iter().any(|t| t == "24"), "{texts:?}");
+        // The second object gets its own angle; an edit of the smooth
+        // transition then changes only that on each, in one undo step.
+        let mut turned = smooth.clone();
+        turned.angle = 60.0;
+        app.run(Command::PatchFill {
+            shapes: vec![ids[1]],
+            fill: Fill::Fountain(turned),
+            fields: vec![FillField::Angle],
+        });
+        let steps = app.engine.history_labels().0.len();
+        let mut edited = smooth.clone();
+        edited.smooth = true;
+        edited.steps = 5;
+        app.patch_selection_fill(&Fill::Fountain(smooth), &Fill::Fountain(edited), &[]);
+        assert_eq!(app.engine.history_labels().0.len(), steps + 1);
+        for (i, angle) in [(0, 0.0), (1, 60.0)] {
+            let Fill::Fountain(g) = &app.doc().find_shape(ids[i]).expect("shape").fill else {
+                panic!("a gradient");
+            };
+            assert_eq!((g.smooth, g.steps, g.angle), (true, 5, angle));
+            assert_eq!(g.blend_direction, ColorBlend::CounterClockwise);
+            assert_eq!(g.acceleration, -37);
+        }
+        app.undo();
+        let Fill::Fountain(g) = &app.doc().find_shape(ids[1]).expect("shape").fill else {
+            panic!("a gradient");
+        };
+        assert_eq!((g.smooth, g.steps, g.angle), (false, 256, 60.0));
     }
 
     /// Two objects with different outline colours and widths: the panel

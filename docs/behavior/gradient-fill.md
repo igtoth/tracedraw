@@ -9,16 +9,29 @@
 | Angle (linear, conical, square) | 0 (left to right, counter-clockwise positive) | -360..360 |
 | Edge pad | 0% | 0..49% |
 | Centre offset (radial, conical, square) | 0, 0 | -100..100% of half the bounding box |
-| Steps (display) | 256 | 2..256 |
 | Repeat | None | None, Sawtooth, Mirror |
 | Cycles (with a repeat) | 2 when a repeat is first chosen | 1..50 |
 | Bilinear | off | |
 | Invert colours | off | |
+| Blend direction | Direct (straight through RGB) | Direct, Clockwise (hue increasing), Counterclockwise (hue decreasing) |
+| Steps | unticked (256, smooth) | ticked: 2..255 colour bands (16 when first ticked, then the count last used) |
+| Smooth transition | off | |
+| Acceleration | 0 | -100..100 |
 
-The editor shows the whole run as drawn (repeats, mirror and inversion
-in) in a strip under the type. The Interactive Fill property bar and the
-Transparency tool's gradient list offer the Shaped type too; a shaped
-gradient has no handles on the canvas.
+The editor shows the whole run as drawn (repeats, mirror, inversion and
+the blend settings in) in a strip under the type. The Interactive Fill
+property bar and the Transparency tool's gradient list offer the Shaped
+type too; a shaped gradient has no handles on the canvas.
+
+Blend settings (#1208, the rows after Bilinear and Invert colours in the
+Properties docker): Blend direction as three buttons (the Blend effect's
+words: Direct, Clockwise, Counterclockwise), Steps as a checkbox with
+the count beside it while ticked, Smooth transition as a checkbox, and
+Acceleration as a field. Each is a fill field of its own
+(`FillField::BlendDirection`, `Steps`, `Smooth`, `Acceleration`), so a
+change goes into each selected object's own gradient and is one undo
+step (`dockers::tests::gradient_blend_rows_show_and_patch`,
+`patch::tests::gradient_blend_settings_change_one_at_a_time`).
 
 Shortcut: F11 opens the Edit Fill dialog; G is the Interactive Fill tool.
 
@@ -182,19 +195,55 @@ Bounding box `b` of the object in page space, centre `c`.
      odd ones. No repeat: `n` is ignored.
   3. Edge pad `e`: `t = clamp((t - e) / (1 - 2e), 0, 1)` (per cycle).
   4. Invert colours: `s = 1 - t`.
-- Midpoint: between a stop with midpoint `m` and the next, at `k` of the
-  way (0..1) the blend is `k^g` with `m^g = 1/2` (`m = 0.5`: straight).
-  Shaders and exports get it as 16 straight pieces along the curve
-  (`Fountain::blended_stops`, `Fountain::MID_STEPS`).
+- Acceleration `a` (-100..100, as a fraction -1..1) skews every stop's
+  midpoint `m` (`Fountain::skewed_mid`): `a >= 0` gives `m (1 - a)`
+  (100 pulls it to the start: the colours change fast at first), `a < 0`
+  gives `m + (1 - m) (-a)` (-100 pushes it to the end). The stop's own
+  midpoint from the Interactive Fill tool stays as it is; the two
+  combine.
+- Midpoint: between a stop with (skewed) midpoint `m` and the next, at
+  `k` of the way (0..1) the blend weight is `w = k^g` with `m^g = 1/2`
+  (`m = 0.5`: straight), `m` kept within 0.01..0.99.
+- Smooth transition: the weight is eased, `w = 3w^2 - 2w^3`
+  (`style::smoothstep`), so the colour change is flat at both stops and
+  still half way at the midpoint. Black to white at 25 % is `0.15625`
+  of the way (grey 40).
+- Blend direction (`ColorBlend`, shared with the Blend effect): Direct
+  mixes the two stops' colours in RGB by `w`; Clockwise and
+  Counterclockwise go round the hue circle (`style::blend_color`): the
+  hue turns from the first colour's to the second's by the way round
+  that increases (Clockwise) or decreases (Counterclockwise) the hue,
+  the saturation and brightness blend straight. Red to blue clockwise
+  passes yellow and green (hue 0 to 240), counterclockwise magenta
+  (0 down to -120). Colours without a hue (greys) blend as greys.
+- Shaders and exports get every blend that does not run straight (a
+  midpoint off the middle, an acceleration, the smooth transition, a hue
+  direction) as 16 straight pieces along its curve
+  (`Fountain::blended_stops`, `Fountain::MID_STEPS`); a hue sweep is
+  straight in RGB within each sixth of the wheel, so the pieces follow
+  it closely.
+- Steps `n` (2..255; 256 means smooth): the stop parameter `s` is
+  replaced by its band's colour position, band `i = floor(s n)` (the
+  last band reaching to the very end) taking the colour at `i / (n - 1)`
+  (`Fountain::band_param`), so the first and last bands are the end
+  colours and a 4-step black to white fill is the greys 0, 85, 170, 255.
+  The bands sit inside each repeat cycle and follow the inversion, since
+  they are taken after the stop parameter.
 - Opacity: each stop has one (1 opaque); it blends from stop to stop
   as the colour does. The renderer and SVG (`stop-opacity`) use it;
   PDF, EPS, EMF and `.cdr` draw the colours opaque.
 - Colour at `s` is a linear interpolation in RGB between the two stops
-  around it; stops are sorted by position; equal positions give a hard
-  edge.
+  around it (found by bisection); stops are sorted by position; equal
+  positions give a hard edge.
+- Every drawing of the fill takes its colours through one method,
+  `Fountain::sample_blended` (the stop parameter, the band, the sample
+  in the blended stops computed once per fill), so the rasteriser's
+  pixel-by-pixel fills (conical, square, shaped), the gradient shaders,
+  the exports and the docker's strip agree.
 - Gradient shaders and exports that know one run of stops take
   `Fountain::resolved_stops`: the same colours as stops over 0..1, with
-  a sawtooth's jumps as hard edges (two stops at one position).
+  a sawtooth's jumps as hard edges (two stops at one position) and, when
+  stepped, a pair of stops per band (`2 n` stops for one run).
 
 ## Checks
 
@@ -251,19 +300,50 @@ Bounding box `b` of the object in page space, centre `c`.
 - `style::tests::resolved_stops_draw_the_same_colours_in_one_run` checks
   every combination of repeat, cycles, bilinear, invert and edge pad
   against `color_at`.
+- Given a 4-step black to white fill, then the colours are exactly the
+  greys 0, 85, 170 and 255, with hard edges at 25, 50 and 75 %, and the
+  resolved stops are a pair per band
+  (`style::tests::stepped_fountains_draw_as_bands`); drawn on the
+  100 x 10 mm strip (linear by the shader, square pixel by pixel) a
+  pixel row holds exactly `steps` colours
+  (`tests::stepped_and_hue_fountains_draw_their_colours`).
+- Given red to blue, then clockwise the middle is green and a quarter of
+  the way yellow, counterclockwise the middle is magenta
+  (`style::tests::hue_blends_go_round_the_wheel`); the middle pixel of
+  the strip is green, for a conical fill too.
+- Given smooth transition on black to white, then the colour at 25 % is
+  grey 40 (`smoothstep(0.25) = 0.15625`) and at 75 % grey 215
+  (`style::tests::smooth_transition_eases_each_blend`).
+- Given acceleration +100, then the colour is past half way at 6 %;
+  +50 halves every midpoint, so black to white is mid grey at 25 % and,
+  with a stop midpoint of 0.25, at 12.5 %
+  (`style::tests::acceleration_skews_every_midpoint`).
+- SVG: a 4-step fill is written with 8 stops, a hue blend of two
+  colours with 17 and a run of more than 64 sampled stops with 64
+  (`svg::tests::blend_settings_go_out_as_stops`). PDF: a hue blend is a
+  type 0 function of 64 samples (3 bytes each, 4 in PDF/X-1a), a 4-step
+  fill a stitching function of 4 constant segments
+  (`pdf::tests::blend_settings_shade_through_sampled_and_stepped_functions`).
+- The four settings round trip through `.tdraw` and are left out while
+  default (`style::tests::fountains_without_the_options_read_and_write_as_before`,
+  `tests::gradient_blend_settings_round_trip_in_native_files` in the io
+  crate).
 
 ## Files and exports
 
 The options are saved in `.tdraw` files (`repeat`, `repeats`,
-`bilinear`, `invert`, kind `shaped`); they are left out when off, so
-files without them read as before and the format version stays.
+`bilinear`, `invert`, kind `shaped`, and the blend settings
+`blend_direction` (`Direct`, `Clockwise`, `CounterClockwise`), `steps`,
+`smooth`, `acceleration`); they are left out when off or at their
+defaults, so files without them read as before and the format version
+stays.
 
-| Format | Repeat, bilinear, invert | Shaped |
-|---|---|---|
-| SVG | worked into the stops | a radial gradient from the centre to the nearer sides, the inside colour at the centre |
-| PDF | worked into the stitching function (hard edges leave out the empty segment) | the renderer's pixels at 150 dpi, clipped by the path |
-| EPS, EMF | worked into the stops | a square gradient from the centre out |
-| `.cdr` | the closest plain gradient (`Fountain::to_plain`): the options worked into at most 64 stops, edge pad 0 | written as a square gradient with the stops reversed (inside at the centre) |
+| Format | Repeat, bilinear, invert | Blend direction, steps, smooth transition, acceleration | Shaped |
+|---|---|---|---|
+| SVG | worked into the stops | worked into the stops: a pair per band when stepped, else a sampled run of at most 64 stops (`svg::MAX_SAMPLED_STOPS`) | a radial gradient from the centre to the nearer sides, the inside colour at the centre |
+| PDF | worked into the stitching function (hard edges leave out the empty segment) | stepped: the stitching function, one constant segment per band; a hue path, smooth transition or acceleration: a sampled function (type 0) of 64 colours (`pdf::SAMPLED_FUNCTION_SIZE`) | the renderer's pixels at 150 dpi, clipped by the path |
+| EPS, EMF | worked into the stops | worked into the stops (`Fountain::to_plain`) | a square gradient from the centre out |
+| `.cdr` | the closest plain gradient (`Fountain::to_plain`): the options worked into at most 64 stops, edge pad 0 | worked into the same stops | written as a square gradient with the stops reversed (inside at the centre) |
 
 The `.cdr` byte layout does not change; a gradient without the options
 is written exactly as before

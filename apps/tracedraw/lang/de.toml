@@ -6800,3 +6800,11 @@ print.booklet_gap = "Abstand" # mt
 print.booklet_gap_desc = "Der Abstand zwischen den beiden Seiten einer Doppelseite, mittig am Falz." # mt
 print.booklet_pages = "{n} Seiten, {blanks} leere Seite(n) ergänzt; {sheets} Bogen/Bögen Papier, beidseitig bedruckt" # mt
 print.booklet_signatures = "{n} Lage(n)" # mt
+
+docker.blend_direction = "Überblendrichtung:" # mt
+docker.blend_direction_tip = "Wie die Farben von einem Knoten zum nächsten verlaufen: gerade durch RGB oder entlang des Farbkreises im Uhrzeigersinn (steigender Farbton) oder gegen den Uhrzeigersinn" # mt
+docker.fountain_steps_tip = "Den Verlauf als so viele Farbstreifen mit harten Kanten statt als weichen Übergang zeichnen (2 bis 255)" # mt
+docker.smooth_transition = "Weicher Übergang" # mt
+docker.smooth_transition_tip = "Den Farbwechsel an jedem Knoten sanft ein- und ausklingen lassen statt gerade zu überblenden" # mt
+docker.fountain_acceleration = "Beschleunigung:" # mt
+docker.fountain_acceleration_tip = "Den Mittelpunkt jeder Überblendung verschieben: positive Werte ändern die Farben schneller am Anfang, negative am Ende (-100 bis 100)" # mt

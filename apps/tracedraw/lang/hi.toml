@@ -6800,3 +6800,11 @@ print.booklet_gap = "अंतर" # mt
 print.booklet_gap_desc = "आमने-सामने के दो पेजों के बीच की जगह, मोड़ के बीच में।" # mt
 print.booklet_pages = "{n} पेज, {blanks} खाली पेज जोड़े गए; दोनों ओर छपी {sheets} कागज़ की शीटें" # mt
 print.booklet_signatures = "{n} सिग्नेचर" # mt
+
+docker.blend_direction = "मिश्रण दिशा:" # mt
+docker.blend_direction_tip = "रंग एक नोड से अगले तक कैसे जाते हैं: सीधे RGB के माध्यम से, या रंग चक्र पर दक्षिणावर्त (बढ़ता रंगत) या वामावर्त" # mt
+docker.fountain_steps_tip = "ग्रेडिएंट को चिकने मिश्रण के बजाय इतनी कठोर किनारों वाली रंग पट्टियों में बनाएँ (2 से 255)" # mt
+docker.smooth_transition = "चिकना संक्रमण" # mt
+docker.smooth_transition_tip = "हर नोड पर रंग परिवर्तन को सीधे मिलाने के बजाय धीरे से शुरू और समाप्त करें" # mt
+docker.fountain_acceleration = "त्वरण:" # mt
+docker.fountain_acceleration_tip = "हर मिश्रण के मध्यबिंदु को खिसकाएँ: धनात्मक मान रंगों को शुरुआत के पास तेज़ी से बदलते हैं, ऋणात्मक अंत के पास (-100 से 100)" # mt

@@ -200,6 +200,15 @@ pub enum FillField {
     Repeat,
     Bilinear,
     Invert,
+    /// How the colours go from stop to stop (straight or around the hue
+    /// circle).
+    BlendDirection,
+    /// The colour bands the fill is drawn with (256: smooth).
+    Steps,
+    /// The smooth transition over each blend.
+    Smooth,
+    /// The acceleration that skews every blend's midpoint.
+    Acceleration,
     /// Where the nodes are placed freely (see `Fountain::handles`), or
     /// none: the angle and the offset place the fill.
     Handles,
@@ -207,7 +216,7 @@ pub enum FillField {
 
 impl FillField {
     /// The gradient fields, in the order an editor shows them.
-    pub const FOUNTAIN: [FillField; 11] = [
+    pub const FOUNTAIN: [FillField; 15] = [
         FillField::FountainKind,
         FillField::StartColor,
         FillField::EndColor,
@@ -218,6 +227,10 @@ impl FillField {
         FillField::Repeat,
         FillField::Bilinear,
         FillField::Invert,
+        FillField::BlendDirection,
+        FillField::Steps,
+        FillField::Smooth,
+        FillField::Acceleration,
         FillField::Handles,
     ];
 
@@ -238,6 +251,10 @@ impl FillField {
             FillField::Repeat => a.repeat == b.repeat && a.repeats == b.repeats,
             FillField::Bilinear => a.bilinear == b.bilinear,
             FillField::Invert => a.invert == b.invert,
+            FillField::BlendDirection => a.blend_direction == b.blend_direction,
+            FillField::Steps => a.steps == b.steps,
+            FillField::Smooth => a.smooth == b.smooth,
+            FillField::Acceleration => a.acceleration == b.acceleration,
             FillField::Handles => a.handles == b.handles,
         }
     }
@@ -266,6 +283,10 @@ impl FillField {
             }
             FillField::Bilinear => to.bilinear = from.bilinear,
             FillField::Invert => to.invert = from.invert,
+            FillField::BlendDirection => to.blend_direction = from.blend_direction,
+            FillField::Steps => to.steps = from.steps,
+            FillField::Smooth => to.smooth = from.smooth,
+            FillField::Acceleration => to.acceleration = from.acceleration,
             FillField::Handles => to.handles = from.handles,
         }
     }
@@ -538,5 +559,54 @@ mod tests {
         assert_eq!(m.fields, vec![FillField::Angle]);
         assert!(m.has(FillField::Angle) && !m.has(FillField::EdgePad));
         assert!(fill_mixed([&red, &red]).is_empty());
+    }
+
+    /// The blend direction, steps, smooth transition and acceleration are
+    /// fields of their own: an edit of one goes into each object's own
+    /// gradient and leaves the rest (#1208).
+    #[test]
+    fn gradient_blend_settings_change_one_at_a_time() {
+        use crate::ColorBlend;
+        let red = Color::rgb8(255, 0, 0);
+        let a = Fountain::two(crate::FountainKind::Linear, Color::BLACK, Color::WHITE, 0.0);
+        let mut b = a.clone();
+        b.angle = 45.0;
+        b.stops[1].color = red;
+        b.smooth = true;
+        let mut edited = a.clone();
+        edited.steps = 8;
+        let fields = fill_changes(&Fill::Fountain(a.clone()), &Fill::Fountain(edited.clone()));
+        assert_eq!(fields, vec![FillField::Steps]);
+        let Fill::Fountain(pb) =
+            patch_fill(&Fill::Fountain(b.clone()), &Fill::Fountain(edited), &fields)
+        else {
+            panic!("a gradient");
+        };
+        assert_eq!(pb.steps, 8);
+        assert_eq!((pb.angle, pb.stops[1].color, pb.smooth), (45.0, red, true));
+        let mut e2 = a.clone();
+        e2.blend_direction = ColorBlend::Clockwise;
+        e2.smooth = true;
+        e2.acceleration = -30;
+        let fields = fill_changes(&Fill::Fountain(a.clone()), &Fill::Fountain(e2.clone()));
+        assert_eq!(
+            fields,
+            vec![
+                FillField::BlendDirection,
+                FillField::Smooth,
+                FillField::Acceleration
+            ]
+        );
+        let Fill::Fountain(pb) =
+            patch_fill(&Fill::Fountain(b), &Fill::Fountain(e2.clone()), &fields)
+        else {
+            panic!("a gradient");
+        };
+        assert_eq!(
+            (pb.blend_direction, pb.smooth, pb.acceleration, pb.angle),
+            (ColorBlend::Clockwise, true, -30, 45.0)
+        );
+        let m = fill_mixed([&Fill::Fountain(a), &Fill::Fountain(e2)]);
+        assert!(m.has(FillField::Acceleration) && !m.has(FillField::Steps));
     }
 }
