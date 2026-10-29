@@ -11,6 +11,13 @@ reported in the issues the bundles are posted to and recorded in
   gradient, a group of two shapes, an open polyline, and artistic text
   (plain with accents, runs in bold and italic with a colour of their
   own, right aligned and centred), on an A5 landscape page.
+- `interop-0004/vNN_drawing.cdr`: that drawing saved as version NN (7 to
+  15) with `tracedraw-cli convert`, and `interop-0004.zip` holding all
+  9 files. Written on 2026-10-29 from the branch of pull request
+  `fix-1139-cdr-old-versions` (main at 21f22934 with its changes): the
+  versions 7 to 13 layout corrected record by record against the same
+  drawing saved by the program that reads those versions (issue #1139);
+  versions 14 and 15 are byte for byte the files of interop-0003.
 - `interop-0003/vNN_drawing.cdr`: that drawing saved as version NN (7 to
   27) with `tracedraw-cli convert`, and `interop-0003.zip` holding all
   21 files. Written on 2026-10-29 from `main` at 1c044358 (0.23.0) with
