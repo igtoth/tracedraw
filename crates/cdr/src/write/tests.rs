@@ -3977,7 +3977,7 @@ fn a_kept_blend_that_no_longer_matches_opens_as_drawn() {
     let externals = crate::container::external_streams(&bytes, &container);
     let root = crate::riff::parse_with_externals(&riff, externals, 27).expect("tree");
     let open = |kept: &[crate::kept_blends::KeptBlend]| {
-        crate::parse::parse_document_kept(&root, &riff, container.version, None, kept).0
+        crate::parse::parse_document_kept(&root, &riff, container.version, None, kept, &[]).0
     };
     let live = open(&kept);
     assert!(matches!(
@@ -4000,4 +4000,262 @@ fn a_kept_blend_that_no_longer_matches_opens_as_drawn() {
     for junk in [&b""[..], b"{", b"{\"format\":2,\"blends\":[]}", b"[1,2]"] {
         assert!(crate::kept_blends::decode(junk).is_empty());
     }
+}
+
+/// The coordinates argument of the first bitmap object of `bytes`.
+fn bitmap_coords(bytes: &[u8]) -> Vec<u8> {
+    let (_, tree, riff) = chunk_ids(bytes);
+    let mut coords = None;
+    tree.root.walk(&mut |c, _| {
+        if c.is(b"loda") && coords.is_none() {
+            let d = tree.data(&riff, c);
+            if d.get(16..20) == Some(&5u32.to_le_bytes()[..]) {
+                coords = loda_args(d)
+                    .into_iter()
+                    .find(|(t, _)| *t == 30)
+                    .map(|(_, b)| b);
+            }
+        }
+    });
+    coords.expect("a bitmap object")
+}
+
+/// A square with a drop shadow, for the shadow tests.
+fn shadowed_square(ids: &mut tracedraw_core::id::IdSource) -> Shape {
+    let mut s = Shape::new(
+        ids.shape(),
+        ShapeKind::Rect {
+            rect: Rect::new(20.0, 20.0, 60.0, 60.0),
+            radius: 0.0,
+            corners: None,
+        },
+    );
+    s.fill = Fill::Solid(Color::rgb8(200, 30, 30));
+    s.shadow = Some(tracedraw_core::Shadow {
+        offset: tracedraw_core::Vec2::new(4.0, -4.0),
+        opacity: 0.6,
+        blur: 2.0,
+        color: Color::rgb8(0, 0, 90),
+        ..tracedraw_core::Shadow::default()
+    });
+    s
+}
+
+/// A drop shadow is written as a group of the object and a picture of
+/// the shadow beneath it (a bitmap with see-through pixels covering where
+/// the shadow falls); from version 14 the package names the group so
+/// TraceDraw opens the object with its live shadow again, with the same
+/// settings. Shadows were not written at all before (#1193).
+#[test]
+fn drop_shadows_are_written_as_a_picture_under_the_object_and_open_live_again() {
+    let mut ids = tracedraw_core::id::IdSource::default();
+    let s = shadowed_square(&mut ids);
+    let shadow = s.shadow.expect("a shadow");
+    let doc = doc_with(vec![s.clone()]);
+    for v in versions() {
+        let bytes = document_to_cdr_version(&doc, v);
+        // The file holds one bitmap, the shadow's picture, where the
+        // shadow falls: the square moved by the offset, grown by three
+        // times the feathering.
+        let (ids_seen, tree, riff) = chunk_ids(&bytes);
+        assert_eq!(
+            ids_seen.iter().filter(|c| c.trim_start() == "bmp ").count(),
+            1,
+            "{v}"
+        );
+        let b = bitmap_coords(&bytes);
+        let i = |at: usize| i32::from_le_bytes(b[at..at + 4].try_into().expect("4 bytes"));
+        let (w, h) = (
+            (i(8) - i(0)) as f64 / 10_000.0,
+            (i(4) - i(12)) as f64 / 10_000.0,
+        );
+        assert!(
+            (w - 52.0).abs() < 1.0 && (h - 52.0).abs() < 1.0,
+            "{v}: {w} x {h}"
+        );
+        let mut groups = 0;
+        tree.root.walk(&mut |c, _| {
+            if c.list_type_str().as_deref() == Some("grp ") {
+                groups += 1;
+            }
+        });
+        let _ = riff;
+        assert_eq!(groups, 1, "{v}");
+        let (back, rep) = crate::open_bytes(&bytes, "back").expect("reads back");
+        assert_eq!(rep.skipped_objects, 0, "{v}: {:?}", rep.warnings);
+        let shapes = &back.pages[0].layers[0].shapes;
+        assert_eq!(shapes.len(), 1, "{v}: {:?}", rep.warnings);
+        if v >= 14 {
+            // Live again: the square with its shadow, the picture gone.
+            let got = &shapes[0];
+            // (A curve from version 15, which writes rectangles so.)
+            assert!(
+                matches!(got.kind, ShapeKind::Rect { .. } | ShapeKind::Path { .. }),
+                "{v}: {:?}",
+                got.kind
+            );
+            let sh = got.shadow.expect("the shadow came back");
+            assert_eq!(sh, shadow, "{v}");
+            let bb = got.bounds();
+            assert!(
+                (bb.x0 - 20.0).abs() < 0.05 && (bb.x1 - 60.0).abs() < 0.05,
+                "{v}: {bb:?}"
+            );
+        } else {
+            // A RIFF file has no member of ours: it opens as drawn, the
+            // picture under the square.
+            let ShapeKind::Group { children } = &shapes[0].kind else {
+                panic!("{v}: {:?}", shapes[0].kind);
+            };
+            assert_eq!(children.len(), 2, "{v}");
+            assert!(matches!(children[0].kind, ShapeKind::Bitmap { .. }), "{v}");
+            assert!(
+                matches!(
+                    children[1].kind,
+                    ShapeKind::Rect { .. } | ShapeKind::Path { .. }
+                ),
+                "{v}"
+            );
+            let sb = children[0].bounds();
+            assert!(
+                (sb.x0 - 18.0).abs() < 1.0 && (sb.x1 - 70.0).abs() < 1.0,
+                "{v}: {sb:?}"
+            );
+            assert!(
+                (sb.y0 - 10.0).abs() < 1.0 && (sb.y1 - 62.0).abs() < 1.0,
+                "{v}: {sb:?}"
+            );
+        }
+    }
+}
+
+/// The shadow's picture carries the shadow's colour where the shadow is
+/// solid and see-through pixels around it; the renderer the application
+/// gives the writer is what draws it, else the writer's own drawing.
+#[test]
+fn the_shadow_picture_is_the_shadow_alone_and_comes_from_the_renderer_given() {
+    let mut ids = tracedraw_core::id::IdSource::default();
+    let s = shadowed_square(&mut ids);
+    let doc = doc_with(vec![s]);
+    let bytes = document_to_cdr_version(&doc, 22);
+    let (back, _) = crate::open_bytes(&bytes, "back").expect("reads back");
+    // The group as drawn: read the file again as another reader would,
+    // without the member.
+    let plain = {
+        let mut z = zip::ZipArchive::new(std::io::Cursor::new(bytes.clone())).expect("zip");
+        let mut out = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        for k in 0..z.len() {
+            let mut f = z.by_index(k).expect("member");
+            if f.name() == crate::kept_shadows::MEMBER {
+                continue;
+            }
+            let mut data = Vec::new();
+            std::io::Read::read_to_end(&mut f, &mut data).expect("read");
+            out.start_file(
+                f.name().to_string(),
+                zip::write::SimpleFileOptions::default(),
+            )
+            .expect("start");
+            std::io::Write::write_all(&mut out, &data).expect("write");
+        }
+        out.finish().expect("finish").into_inner()
+    };
+    let (drawn, rep) = crate::open_bytes(&plain, "drawn").expect("reads back");
+    assert_eq!(rep.skipped_objects, 0, "{:?}", rep.warnings);
+    let ShapeKind::Group { children } = &drawn.pages[0].layers[0].shapes[0].kind else {
+        panic!("{:?}", drawn.pages[0].layers[0].shapes[0].kind);
+    };
+    let ShapeKind::Bitmap {
+        png,
+        width_px,
+        height_px,
+        ..
+    } = &children[0].kind
+    else {
+        panic!("{:?}", children[0].kind);
+    };
+    let pm = tiny_skia::Pixmap::decode_png(png).expect("png");
+    assert_eq!((pm.width(), pm.height()), (*width_px, *height_px));
+    // The middle of the shadow: the shadow colour at its opacity; a
+    // corner of the picture: clear.
+    let mid = pm
+        .pixel(pm.width() / 2, pm.height() / 2)
+        .expect("pixel")
+        .demultiply();
+    assert_eq!((mid.red(), mid.green(), mid.blue()), (0, 0, 90));
+    assert!((140..=165).contains(&mid.alpha()), "{}", mid.alpha());
+    let corner = pm.pixel(0, 0).expect("pixel");
+    assert_eq!(corner.alpha(), 0);
+    assert!(back.pages[0].layers[0].shapes[0].shadow.is_some());
+
+    // A renderer given to the writer draws the picture instead.
+    fn red_dot(_: &Shape, _: f64) -> Option<(Rect, tiny_skia::Pixmap)> {
+        let mut pm = tiny_skia::Pixmap::new(3, 3)?;
+        pm.fill(tiny_skia::Color::from_rgba8(255, 0, 0, 255));
+        Some((Rect::new(0.0, 0.0, 30.0, 30.0), pm))
+    }
+    let previews = Previews {
+        shadow_image: Some(red_dot),
+        ..Default::default()
+    };
+    let bytes = document_to_cdr_version_with(&doc, 22, &previews);
+    let b = bitmap_coords(&bytes);
+    let i = |at: usize| i32::from_le_bytes(b[at..at + 4].try_into().expect("4 bytes"));
+    assert_eq!(
+        [i(8) - i(0), i(4) - i(12), i(36), i(40)],
+        [300_000, 300_000, 3, 3]
+    );
+}
+
+/// A group whose member says one thing while the file holds another (a
+/// shadow group reordered or emptied by another program) stays as drawn.
+#[test]
+fn a_shadow_group_that_no_longer_matches_the_member_stays_as_drawn() {
+    let mut ids = tracedraw_core::id::IdSource::default();
+    let s = shadowed_square(&mut ids);
+    let doc = doc_with(vec![s]);
+    let bytes = document_to_cdr_version(&doc, 22);
+    let mut z = zip::ZipArchive::new(std::io::Cursor::new(bytes.clone())).expect("zip");
+    let mut out = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    for k in 0..z.len() {
+        let mut f = z.by_index(k).expect("member");
+        let mut data = Vec::new();
+        std::io::Read::read_to_end(&mut f, &mut data).expect("read");
+        if f.name() == crate::kept_shadows::MEMBER {
+            // Says the group holds three objects.
+            let text = String::from_utf8(data)
+                .expect("json")
+                .replace("\"count\":2", "\"count\":3");
+            data = text.into_bytes();
+        }
+        out.start_file(
+            f.name().to_string(),
+            zip::write::SimpleFileOptions::default(),
+        )
+        .expect("start");
+        std::io::Write::write_all(&mut out, &data).expect("write");
+    }
+    let changed = out.finish().expect("finish").into_inner();
+    let (back, _) = crate::open_bytes(&changed, "changed").expect("reads back");
+    let s = &back.pages[0].layers[0].shapes[0];
+    assert!(matches!(s.kind, ShapeKind::Group { .. }), "{:?}", s.kind);
+    assert!(s.shadow.is_none());
+}
+
+/// A hidden object with a shadow (kept from version 21 with its flag)
+/// goes out alone: no picture of a shadow shows where it is hidden.
+#[test]
+fn a_hidden_object_casts_no_shadow_picture() {
+    let mut ids = tracedraw_core::id::IdSource::default();
+    let mut s = shadowed_square(&mut ids);
+    s.visible = false;
+    let doc = doc_with(vec![s]);
+    let bytes = document_to_cdr_version(&doc, 22);
+    let (ids_seen, _, _) = chunk_ids(&bytes);
+    assert!(!ids_seen.iter().any(|c| c.trim_start() == "bmp "));
+    assert!(!ids_seen.iter().any(|c| c.trim_start() == "grp "));
+    let (back, _) = crate::open_bytes(&bytes, "back").expect("reads back");
+    let shapes = &back.pages[0].layers[0].shapes;
+    assert_eq!(shapes.len(), 1);
+    assert!(!shapes[0].visible);
 }

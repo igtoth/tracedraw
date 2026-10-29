@@ -763,6 +763,7 @@ fn main() -> ExitCode {
                                 .collect(),
                             embed_fonts: std::env::var("TRACEDRAW_CDR_EMBED_FONTS")
                                 .is_ok_and(|v| v.trim() == "1"),
+                            shadow_image: Some(tracedraw_render::render_shadow_image),
                         }
                     }),
                 )

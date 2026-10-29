@@ -64,6 +64,21 @@ wherever `t > 0.01`. The final alpha is `t * opacity * fade`, in the
 shadow colour, merged with what lies beneath by the merge mode
 (`Shadow::feather_value`; the renderer's `shadow_layer`).
 
+## Saving
+
+- `.tdraw` files keep the shadow as it is.
+- `.cdr` files hold no record of a drop shadow that TraceDraw knows
+  (no sample file of the program that saves them has one), so the
+  shadow is written as what it shows: a group of the object and, beneath
+  it, a picture of the shadow alone with see-through pixels, drawn by
+  the renderer at 150 dots per inch (the picture Break Drop Shadow Apart
+  makes). From version 14 the file also carries TraceDraw's own
+  `tracedraw/shadows.json`, naming each such group with the shadow's
+  settings, so the drawing opens in TraceDraw with its live shadow again
+  (every setting but the merge mode is also in the picture other
+  programs show). Versions 7 to 13 (RIFF files) have no place for the
+  member: the shadow opens as that group (#1193, `docs/cdr-format.md`).
+
 ## Handles
 
 With the Drop Shadow tool the selected object's shadow shows a white

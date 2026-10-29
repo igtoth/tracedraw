@@ -548,7 +548,7 @@ pub fn parse_document_with(
     version: Version,
     cmyk_profile: Option<&[u8]>,
 ) -> (Document, ParseReport) {
-    parse_document_kept(tree, main, version, cmyk_profile, &[])
+    parse_document_kept(tree, main, version, cmyk_profile, &[], &[])
 }
 
 /// [`parse_document_with`] that turns the groups `kept` names back into
@@ -559,9 +559,10 @@ pub(crate) fn parse_document_kept(
     version: Version,
     cmyk_profile: Option<&[u8]>,
     kept: &[crate::kept_blends::KeptBlend],
+    kept_shadows: &[crate::kept_shadows::KeptShadow],
 ) -> (Document, ParseReport) {
     let mut ctx = Ctx::new(main, tree, version.0);
-    if !kept.is_empty() {
+    if !kept.is_empty() || !kept_shadows.is_empty() {
         ctx.static_ids = Some(HashMap::new());
     }
     ctx.report.version = Some(version);
@@ -780,6 +781,14 @@ pub(crate) fn parse_document_kept(
                 "{} of the file's {} blends open as drawn: their groups changed",
                 kept.len() - n,
                 kept.len()
+            );
+        }
+        let n = crate::kept_shadows::restore(&mut doc, kept_shadows, &ids);
+        if n < kept_shadows.len() {
+            log::warn!(
+                "{} of the file's {} drop shadows open as drawn: their groups changed",
+                kept_shadows.len() - n,
+                kept_shadows.len()
             );
         }
     }

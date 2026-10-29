@@ -34,6 +34,11 @@ use tracedraw_core::{
     Color, Document, Fill, Pattern, SharedBytes, Stroke, TextAlign,
 };
 
+/// Dots per inch of the pictures drop shadows are written as (the
+/// resolution Break Drop Shadow Apart uses): a feathered shadow needs no
+/// more, and a page-wide one stays a few megabytes.
+pub const SHADOW_DPI: f64 = 150.0;
+
 /// The oldest version whose files written here are known to open in the
 /// program that wrote the samples (by a user's tests: text from 16 in
 /// files of versions 7 to 22, and every object and text look of files
@@ -85,7 +90,18 @@ pub struct Previews {
     pub fonts: Vec<FontFace>,
     /// Embed the faces whose licence allows it.
     pub embed_fonts: bool,
+    /// Draws the drop shadow of a shape alone as a picture at a
+    /// resolution in dots per inch, with the page rectangle it covers
+    /// (the renderer's shadow image): drop shadows are written as that
+    /// picture under their object (#1193). Without one the writer draws
+    /// the shadow from the object's outline ([`crate::shadow_image`]).
+    pub shadow_image: Option<ShadowImage>,
 }
+
+/// Draws a shape's drop shadow alone at a resolution in dots per inch,
+/// as a picture with the page rectangle it covers; `None` when there is
+/// none to draw (see [`Previews::shadow_image`]).
+pub type ShadowImage = fn(&Shape, f64) -> Option<(Rect, tiny_skia::Pixmap)>;
 
 /// A PNG file and its size in pixels.
 #[derive(Debug, Clone)]
@@ -101,6 +117,7 @@ pub fn document_to_cdr_version_with(doc: &Document, version: u16, previews: &Pre
     let v = Ver(version.clamp(OLDEST_VERSION, NEWEST_VERSION));
     let mut w = Writer::new(v, &doc.symbols, &doc.title);
     w.faces = &previews.fonts;
+    w.shadow_image = previews.shadow_image;
     let mut tree = w.document(doc);
     let font_ids = w.fonts.clone();
     if !v.zip() {
@@ -127,10 +144,17 @@ pub fn document_to_cdr_version_with(doc: &Document, version: u16, previews: &Pre
     if !v.zip() {
         tree.push(chunk(b"sumi", sumi(v, doc)));
     }
-    // Blends drawn as groups open live again in TraceDraw from the
-    // package's own member (#986); a RIFF file has no place for it.
-    let own = crate::kept_blends::encode(&w.blends, &w.static_ids);
-    let own = own.as_deref();
+    // Blends and drop shadows drawn as groups open live again in
+    // TraceDraw from the package's own members (#986, #1193); a RIFF file
+    // has no place for them.
+    let mut own: Vec<(&str, Vec<u8>)> = Vec::new();
+    if let Some(b) = crate::kept_blends::encode(&w.blends, &w.static_ids) {
+        own.push((crate::kept_blends::MEMBER, b));
+    }
+    if let Some(b) = crate::kept_shadows::encode(&w.shadows) {
+        own.push((crate::kept_shadows::MEMBER, b));
+    }
+    let own = own.as_slice();
     let out = if v.redirects() {
         let (root, files) = pack_redirected(v, &tree);
         zip_v16(v, doc, &root, &files, previews, &font_ids, own)
@@ -890,7 +914,7 @@ fn zip_v14(
     doc: &Document,
     riff: &[u8],
     previews: &Previews,
-    own: Option<&[u8]>,
+    own: &[(&str, Vec<u8>)],
 ) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
     let stored =
@@ -929,9 +953,8 @@ fn zip_v14(
     for (name, text) in members {
         ok &= zip.start_file(name, deflated).is_ok() && zip.write_all(text.as_bytes()).is_ok();
     }
-    if let Some(b) = own {
-        ok &= zip.start_file(crate::kept_blends::MEMBER, deflated).is_ok()
-            && zip.write_all(b).is_ok();
+    for (name, b) in own {
+        ok &= zip.start_file(*name, deflated).is_ok() && zip.write_all(b).is_ok();
     }
     match zip.finish() {
         Ok(c) if ok => c.into_inner(),
@@ -1130,7 +1153,7 @@ fn zip_v16(
     files: &DataFiles,
     previews: &Previews,
     font_ids: &[(u16, String)],
-    own: Option<&[u8]>,
+    own: &[(&str, Vec<u8>)],
 ) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
     let deflated = zip::write::SimpleFileOptions::default()
@@ -1183,9 +1206,8 @@ fn zip_v16(
     for (name, text) in members {
         ok &= zip.start_file(name, deflated).is_ok() && zip.write_all(text.as_bytes()).is_ok();
     }
-    if let Some(b) = own {
-        ok &= zip.start_file(crate::kept_blends::MEMBER, deflated).is_ok()
-            && zip.write_all(b).is_ok();
+    for (name, b) in own {
+        ok &= zip.start_file(*name, deflated).is_ok() && zip.write_all(b).is_ok();
     }
     match zip.finish() {
         Ok(c) if ok => c.into_inner(),
@@ -2976,6 +2998,11 @@ struct Writer<'a> {
     /// the package's own member names them (#986).
     static_ids: HashMap<tracedraw_core::ShapeId, u32>,
     blends: Vec<crate::kept_blends::Written>,
+    /// The drop shadows written as groups of a picture and the object,
+    /// which the package's own member names (#1193), and what draws the
+    /// pictures (see [`Previews::shadow_image`]).
+    shadows: Vec<crate::kept_shadows::KeptShadow>,
+    shadow_image: Option<ShadowImage>,
     /// The faces the text uses, with their font files (see
     /// [`Previews::fonts`]), and what [`fonts::split_family`] said for
     /// each family named with a weight.
@@ -3045,6 +3072,8 @@ impl<'a> Writer<'a> {
             next_usdn: 1,
             static_ids: HashMap::new(),
             blends: Vec::new(),
+            shadows: Vec::new(),
+            shadow_image: None,
             next_object: 1,
             graded: std::collections::HashMap::new(),
             next_fill: 1,
@@ -3454,6 +3483,11 @@ impl<'a> Writer<'a> {
 
     fn group(&mut self, children: &[Shape], centre: Point, depth: usize) -> Placed {
         let inner = self.objects(children, centre, depth + 1);
+        self.group_of(inner, centre)
+    }
+
+    /// A `grp ` list holding the objects already written in `inner`.
+    fn group_of(&mut self, inner: Placed, centre: Point) -> Placed {
         let Some(b) = inner.bounds else {
             return Placed {
                 nodes: Vec::new(),
@@ -3683,6 +3717,36 @@ impl<'a> Writer<'a> {
         }
     }
 
+    /// The bitmap shape that stands for the drop shadow of `s`: the shadow
+    /// alone, drawn by the renderer given to the writer or from the
+    /// object's outline, at [`SHADOW_DPI`], its see-through pixels kept.
+    fn shadow_picture(&self, s: &Shape) -> Option<Shape> {
+        let draw = self
+            .shadow_image
+            .unwrap_or(crate::shadow_image::shadow_image);
+        let (rect, pm) = draw(s, SHADOW_DPI)?;
+        if !(rect.width() > 0.0 && rect.height() > 0.0) {
+            return None;
+        }
+        let png = pm.encode_png().ok()?;
+        let mut picture = Shape::new(
+            s.id,
+            ShapeKind::Bitmap {
+                rect,
+                width_px: pm.width(),
+                height_px: pm.height(),
+                png: png.into(),
+                fx: None,
+            },
+        );
+        picture.fill = Fill::None;
+        picture.stroke = None;
+        picture.name = None;
+        picture.visible = true;
+        picture.opacity = 1.0;
+        Some(picture)
+    }
+
     fn object(&mut self, s: &Shape, centre: Point, depth: usize) -> Placed {
         let none = || Placed {
             nodes: Vec::new(),
@@ -3700,6 +3764,44 @@ impl<'a> Writer<'a> {
             );
         if !s.visible && !keeps_hidden {
             return none();
+        }
+        // A drop shadow goes out as what it shows: a group of the object
+        // and, beneath it, a picture of the shadow alone with see-through
+        // pixels. From version 14 the package's own member names the group
+        // so TraceDraw opens it as the live shadow again (#1193). A hidden
+        // object (kept from version 21) casts none.
+        if let Some(sh) = s.shadow.filter(|_| s.visible) {
+            let mut plain = s.clone();
+            plain.shadow = None;
+            let placed = self.object(&plain, centre, depth + 1);
+            if placed.nodes.is_empty() {
+                return placed;
+            }
+            let Some(picture) = self.shadow_picture(s) else {
+                return placed;
+            };
+            let shadow = self.bitmap_object(&picture, centre, None);
+            if shadow.nodes.is_empty() {
+                return placed;
+            }
+            let bounds = match (placed.bounds, shadow.bounds) {
+                (Some(a), Some(b)) => Some(a.union(b)),
+                (a, b) => a.or(b),
+            };
+            // Front to back as objects are stored: the shadow last.
+            let mut nodes = placed.nodes;
+            let count = nodes.len() + shadow.nodes.len();
+            nodes.extend(shadow.nodes);
+            let before = self.next_usdn;
+            let grouped = self.group_of(Placed { nodes, bounds }, centre);
+            if grouped.nodes.len() == 1 && self.next_usdn > before {
+                self.shadows.push(crate::kept_shadows::KeptShadow {
+                    group: self.next_usdn - 1,
+                    count,
+                    shadow: sh,
+                });
+            }
+            return grouped;
         }
         // Paragraph text goes out as a group of artistic texts, one a line
         // placed where its frame put it (frames are not written yet), so it

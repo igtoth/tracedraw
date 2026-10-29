@@ -7777,6 +7777,8 @@ pub(crate) fn cdr_previews(doc: &tracedraw_core::Document) -> tracedraw_cdr::wri
         pages,
         fonts: cdr_font_faces(doc),
         embed_fonts: false,
+        // Drop shadows go out as the picture the renderer draws (#1193).
+        shadow_image: Some(tracedraw_render::render_shadow_image),
     }
 }
 

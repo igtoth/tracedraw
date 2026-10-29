@@ -27,7 +27,9 @@ pub mod check;
 pub mod cmx;
 pub mod container;
 mod kept_blends;
+mod kept_shadows;
 pub mod parse;
+pub mod shadow_image;
 pub mod spot;
 mod text;
 pub mod wl;
@@ -102,12 +104,22 @@ pub fn open_bytes_keeping(
     )
     .map(|b| kept_blends::decode(&b))
     .unwrap_or_default();
+    // Drop shadows TraceDraw saved as groups open live again (#1193).
+    let kept_shadows = container::own_member(
+        bytes,
+        &container,
+        kept_shadows::MEMBER,
+        kept_shadows::MAX_MEMBER,
+    )
+    .map(|b| kept_shadows::decode(&b))
+    .unwrap_or_default();
     let mut doc_report = parse::parse_document_kept(
         &root,
         &riff,
         container.version,
         cmyk_profile.as_ref().map(|p| p.data.as_slice()),
         &kept,
+        &kept_shadows,
     );
     doc_report.0.title = title.to_string();
     doc_report.0.palette = container::document_palette(bytes, &container)

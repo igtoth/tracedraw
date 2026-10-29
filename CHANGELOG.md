@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Saving `.cdr` files: drop shadows are written. A shadow goes out as what it shows, a group of the object and, beneath it, a picture of the shadow alone with see-through pixels (the picture Break Drop Shadow Apart makes, 150 dots per inch), so other programs show it; from version 14 the file also carries TraceDraw's own `tracedraw/shadows.json`, naming each such group with the shadow's settings, so the drawing opens in TraceDraw with its live shadow again. Shadows were left out of `.cdr` files before and were gone when the file was reopened; in versions 7 to 13 (files without a package) the shadow now opens as that group (#1193).
+
 ## 0.24.0 (2026-10-29)
 
 - Fit Objects to Path panel: Keep originals places copies and leaves the selected objects where they are; Group all objects groups what was placed; Treat subpaths as contiguous walks every subpath of the path one after another (on at first; off, only the first subpath, as before); Reference and Origin choose the point of each object that goes on the path (its center of rotation, or one of nine points of its bounding box, with or without the outline); Ignore initial rotation takes the objects' turn off them first; Modify rotation adds a uniform, progressive, jittered or progressive jittered turn, with a start angle, spin angle, revolutions, range and direction. The panel shows how many objects are selected and what the path is (#1091, #1196).
