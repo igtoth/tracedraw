@@ -680,6 +680,71 @@ pub struct FindReplaceState {
     pub kind: usize,
     pub results: Vec<tracedraw_core::ShapeId>,
     pub cursor: usize,
+    /// Find by properties (kind 2).
+    pub props: PropertyFind,
+}
+
+/// Find and Replace by properties: what to look for, where, and what to
+/// put in its place. Each criterion is used only while ticked.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PropertyFind {
+    /// Every page and the master layers instead of the current page.
+    pub whole_drawing: bool,
+    pub use_type: bool,
+    /// Index into `ObjectType::ALL`.
+    pub object_type: usize,
+    pub use_fill: bool,
+    pub fill_none: bool,
+    pub fill: tracedraw_core::Color,
+    pub use_outline: bool,
+    pub outline_none: bool,
+    pub outline: tracedraw_core::Color,
+    pub use_width: bool,
+    /// Millimetres.
+    pub width: f64,
+    pub use_font: bool,
+    pub font: String,
+    pub set_fill: bool,
+    pub new_fill: tracedraw_core::Color,
+    pub set_outline: bool,
+    pub new_outline: tracedraw_core::Color,
+    pub set_width: bool,
+    /// Millimetres.
+    pub new_width: f64,
+    pub set_font: bool,
+    pub new_font: String,
+    /// The objects found last, page by page.
+    pub hits: Vec<tracedraw_core::find::Hit>,
+}
+
+impl Default for PropertyFind {
+    fn default() -> Self {
+        let black = tracedraw_core::Color::cmyk_pct(0.0, 0.0, 0.0, 100.0);
+        PropertyFind {
+            whole_drawing: false,
+            use_type: false,
+            object_type: 0,
+            use_fill: true,
+            fill_none: false,
+            fill: black,
+            use_outline: false,
+            outline_none: false,
+            outline: black,
+            use_width: false,
+            width: 0.2,
+            use_font: false,
+            font: String::new(),
+            set_fill: false,
+            new_fill: black,
+            set_outline: false,
+            new_outline: black,
+            set_width: false,
+            new_width: 0.2,
+            set_font: false,
+            new_font: String::new(),
+            hits: Vec::new(),
+        }
+    }
 }
 
 /// Paste Special: the system clipboard is read once when the dialog opens.

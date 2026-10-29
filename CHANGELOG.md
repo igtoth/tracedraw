@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Find and Replace: a Properties mode finds objects by type, fill colour (or no fill), outline colour (or no outline), outline width and font, on the current page or in the whole drawing. From Selection takes these from the selected object; Previous and Next step through the objects found, going to their page; Find All selects them. Replace All puts a new fill colour (in gradients too), outline colour, outline width or font in every object found, as one undo step. Only text and names could be searched (#1071).
+
 ## 0.20.0 (2026-10-28)
 
 - Variable fonts: the text follows the axis sliders (Text docker, and the button beside the font size) while they are dragged, so the weight, width or any other axis can be judged on the page. The text changed only when the slider was released. Releasing still keeps the value as one undo step (#870).

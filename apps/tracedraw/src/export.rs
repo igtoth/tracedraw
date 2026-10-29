@@ -3,8 +3,9 @@
 
 use crate::app::App;
 use crate::i18n::{tr, trf};
-use crate::ui::dialogs::{ExportState, PrintState, EXPORT_FORMATS};
+use crate::ui::dialogs::{ExportState, FindReplaceState, PrintState, PropertyFind, EXPORT_FORMATS};
 use std::path::Path;
+use tracedraw_core::find::{self as objfind, ColorQuery, Hit, ObjectQuery, ObjectType};
 use tracedraw_core::{
     document::ShapeKind,
     geometry::{Affine, Rect, Size},
@@ -1592,6 +1593,171 @@ fn replace_in(
     }
     out.push_str(&text[i..]);
     out
+}
+
+// ----- find and replace by properties -----------------------------------------
+
+impl PropertyFind {
+    /// The criteria ticked.
+    pub fn query(&self) -> ObjectQuery {
+        let color = |none: bool, c| {
+            if none {
+                ColorQuery::Nothing
+            } else {
+                ColorQuery::Color(c)
+            }
+        };
+        let font = self.font.trim();
+        ObjectQuery {
+            object_type: self
+                .use_type
+                .then(|| ObjectType::ALL.get(self.object_type).copied())
+                .flatten(),
+            fill: self.use_fill.then(|| color(self.fill_none, self.fill)),
+            outline: self
+                .use_outline
+                .then(|| color(self.outline_none, self.outline)),
+            outline_width: self.use_width.then_some(self.width),
+            font: (self.use_font && !font.is_empty()).then(|| font.to_string()),
+        }
+    }
+
+    /// The replacements ticked.
+    pub fn replacement(&self) -> objfind::Replacement {
+        let font = self.new_font.trim();
+        objfind::Replacement {
+            fill: self.set_fill.then_some(self.new_fill),
+            outline: self.set_outline.then_some(self.new_outline),
+            outline_width: self.set_width.then_some(self.new_width),
+            font: (self.set_font && !font.is_empty()).then(|| font.to_string()),
+        }
+    }
+
+    /// Fill in the criteria from `s` (From Selection): its type, fill,
+    /// outline, outline width and font, ticking the ones it has.
+    pub fn take_from(&mut self, s: &tracedraw_core::Shape) {
+        let q = objfind::query_from(s);
+        self.use_type = false;
+        if let Some(t) = q.object_type {
+            self.object_type = ObjectType::ALL.iter().position(|x| *x == t).unwrap_or(0);
+        }
+        self.use_fill = q.fill.is_some();
+        match q.fill {
+            Some(ColorQuery::Nothing) => self.fill_none = true,
+            Some(ColorQuery::Color(c)) => {
+                self.fill_none = false;
+                self.fill = c;
+            }
+            None => {}
+        }
+        self.use_outline = q.outline.is_some();
+        match q.outline {
+            Some(ColorQuery::Nothing) => self.outline_none = true,
+            Some(ColorQuery::Color(c)) => {
+                self.outline_none = false;
+                self.outline = c;
+            }
+            None => {}
+        }
+        self.use_width = false;
+        if let Some(w) = q.outline_width {
+            self.width = w;
+        }
+        self.use_font = q.font.is_some();
+        if let Some(f) = q.font {
+            self.font = f;
+        }
+    }
+}
+
+/// The objects that meet the ticked criteria, on the current page or in
+/// the whole drawing.
+pub fn find_by_properties(app: &App, pf: &PropertyFind) -> Vec<Hit> {
+    let scope = if pf.whole_drawing {
+        objfind::Scope::Document
+    } else {
+        objfind::Scope::Page
+    };
+    objfind::find(app.doc(), &pf.query(), scope, app.page_index())
+}
+
+/// Find All by properties: select the objects found on the current page.
+/// Returns how many of them are on it.
+pub fn select_found(app: &mut App, st: &mut FindReplaceState) -> usize {
+    st.props.hits = find_by_properties(app, &st.props);
+    // No object shown alone yet: Next starts at the first one.
+    st.cursor = st.props.hits.len();
+    let here = Some(app.page_index());
+    let ids: Vec<ShapeId> = st
+        .props
+        .hits
+        .iter()
+        .filter(|h| h.page.is_none_or(|p| Some(p) == here))
+        .map(|h| h.id)
+        .collect();
+    let n = ids.len();
+    app.select(ids);
+    n
+}
+
+/// The next (or previous) object found: its page comes into view and it
+/// is selected alone. The search runs again first, so it follows edits.
+pub fn step_found(app: &mut App, st: &mut FindReplaceState, forward: bool) {
+    let before = st.props.hits.get(st.cursor).copied();
+    st.props.hits = find_by_properties(app, &st.props);
+    let n = st.props.hits.len();
+    if n == 0 {
+        return;
+    }
+    // Carry on from the object shown last, wherever it is now.
+    let at = before.and_then(|b| st.props.hits.iter().position(|h| h.id == b.id));
+    st.cursor = match (at, forward) {
+        (None, true) => 0,
+        (None, false) => n - 1,
+        (Some(i), true) => (i + 1) % n,
+        (Some(i), false) => (i + n - 1) % n,
+    };
+    let Some(hit) = st.props.hits.get(st.cursor).copied() else {
+        return;
+    };
+    if let Some(p) = hit.page {
+        if p != app.page_index() {
+            app.goto_page(p);
+        }
+    }
+    app.select(vec![hit.id]);
+}
+
+/// Replace All by properties, as one undo step. Returns how many
+/// objects changed.
+pub fn replace_properties(app: &mut App, st: &mut FindReplaceState) -> usize {
+    st.props.hits = find_by_properties(app, &st.props);
+    let cmds = objfind::replace_commands(
+        app.doc(),
+        &st.props.hits,
+        &st.props.query(),
+        &st.props.replacement(),
+    );
+    if cmds.is_empty() {
+        return 0;
+    }
+    let changed: std::collections::HashSet<ShapeId> = cmds
+        .iter()
+        .filter_map(|c| match c {
+            Command::SetFill { shapes, .. } | Command::SetStroke { shapes, .. } => {
+                shapes.first().copied()
+            }
+            Command::SetShapeKind { shape, .. } => Some(*shape),
+            _ => None,
+        })
+        .collect();
+    match app.engine.run_batch("Replace", &cmds) {
+        Ok(()) => changed.len(),
+        Err(e) => {
+            app.status = e.to_string();
+            0
+        }
+    }
 }
 
 #[cfg(test)]
