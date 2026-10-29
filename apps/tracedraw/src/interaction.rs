@@ -2656,6 +2656,19 @@ impl App {
             } => self.finish_connector(from, start, current),
             Drag::Freehand { points } if self.tool == Tool::Eraser => self.erase_along(&points),
             Drag::Freehand { points } if self.tool == Tool::Knife => self.knife_cut(&points),
+            Drag::Freehand { points } if self.tool == Tool::SegmentDelete => {
+                // A click that slipped into a little stroke reaching
+                // nothing still deletes as a click at the press.
+                if !self.delete_virtual_segments_along(&points) {
+                    if let Some(first) = points.first().copied() {
+                        let zoom = self.view.zoom.max(1e-6) as f64;
+                        let far = points.iter().any(|q| (*q - first).hypot() * zoom >= 8.0);
+                        if !far {
+                            self.delete_virtual_segment_at(first);
+                        }
+                    }
+                }
+            }
             Drag::Freehand { points } if self.tool == Tool::ShapeRecognition => {
                 self.finish_shape_recognition(points)
             }

@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Segment Delete: besides the click and the box, a freehand stroke deletes every stretch it crosses, up to the crossings with other lines, in one step. Choose Freehand on the property bar, or hold Alt as the drag starts to take the other way for that drag (#1150).
+
 ## 0.21.0 (2026-10-29)
 
 - Publish to PDF, Prepress tab: crop marks, registration marks, colour bars and file information can be added around every page, drawn by the same code as the Print dialog's marks. The page grows by a 12 mm margin outside the bleed to hold them; the TrimBox stays the page, the BleedBox the page and its bleed and the MediaBox takes in the marks, and the drawing is clipped to the bleed. Marks in registration colour print on every plate (the All separation), in printed files too. A page background now covers the bleed in PDF files (#789).

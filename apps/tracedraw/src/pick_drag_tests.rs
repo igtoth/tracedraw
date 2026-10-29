@@ -11468,3 +11468,73 @@ fn added_pages_are_named_in_the_interface_language() {
         assert_eq!(app.doc().pages.len(), 2);
     });
 }
+
+/// Segment Delete: with Alt held a drag is a freehand stroke and takes
+/// only the stretches it crosses; the bar's Freehand makes that the plain
+/// drag, and Alt then drags the box, which takes every stretch it touches
+/// (#1150).
+#[test]
+fn segment_delete_drags_a_freehand_stroke_with_alt_or_the_bar() {
+    use tracedraw_core::geometry::{ParamCurve as _, Shape as _};
+    let lines = |app: &mut App| -> ShapeId {
+        let mut ids = Vec::new();
+        for (a, b) in [
+            ((0.0, 0.0), (30.0, 0.0)),
+            ((10.0, -5.0), (10.0, 5.0)),
+            ((20.0, -5.0), (20.0, 5.0)),
+        ] {
+            let mut p = tracedraw_core::BezPath::new();
+            p.move_to(a);
+            p.line_to(b);
+            ids.push(
+                app.new_shape(ShapeKind::Path {
+                    path: p,
+                    closed: false,
+                })
+                .expect("line"),
+            );
+        }
+        ids[0]
+    };
+    let has_middle = |app: &App, h: ShapeId| {
+        app.doc().find_shape(h).is_some_and(|s| {
+            s.page_path().segments().any(|seg| {
+                let (x0, x1) = (
+                    seg.start().x.min(seg.end().x),
+                    seg.start().x.max(seg.end().x),
+                );
+                x0 < 15.0 && x1 > 15.0
+            })
+        })
+    };
+    for (bar_freehand, mods, freehand) in [
+        (false, Modifiers::ALT, true),
+        (true, Modifiers::NONE, true),
+        (true, Modifiers::ALT, false),
+        (false, Modifiers::NONE, false),
+    ] {
+        let (ctx, mut app, rect) = setup();
+        app.run(tracedraw_core::Command::DeleteShapes { shapes: vec![rect] });
+        let h = lines(&mut app);
+        app.set_tool(Tool::SegmentDelete);
+        app.segment_freehand = bar_freehand;
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+        // From above left of the first upright, down across h left of it
+        // and across the upright's lower arm.
+        let from = app.view.to_screen(Point::new(4.0, 4.0));
+        let to = app.view.to_screen(Point::new(14.0, -4.0));
+        drag(&ctx, &mut app, from, to, mods, Vec::new());
+        let b = app
+            .doc()
+            .find_shape(h)
+            .map(|s| s.page_path().bounding_box())
+            .expect("h keeps its right end");
+        assert!(
+            (b.x0 - 10.0).abs() < 1e-6 || (b.x0 - 20.0).abs() < 1e-6,
+            "{b:?}"
+        );
+        // The stroke leaves the stretch between the uprights; the box
+        // reaches into it and takes it.
+        assert_eq!(has_middle(&app, h), freehand, "{bar_freehand} {mods:?}");
+    }
+}
