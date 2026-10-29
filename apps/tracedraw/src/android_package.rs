@@ -78,6 +78,17 @@ mod tests {
         assert!(BUILD.contains(
             "BUNDLETOOL_SHA256=675786493983787ffa11550bdb7c0715679a44e1643f3ff980a529e9c822595c"
         ));
+        // No shell function shadows a command the script looks up with
+        // `command -v`: the lookup would find the function and `command`
+        // then fail with exit code 127 (it did in CI).
+        for line in BUILD.lines() {
+            if let Some(name) = line.strip_suffix("() {") {
+                assert!(
+                    !BUILD.contains(&format!("command -v {name} ")),
+                    "the function {name} shadows the command it looks up"
+                );
+            }
+        }
         for needed in [
             "[lib]\ndoctest = false",
             "[target.'cfg(target_os = \"android\")'.dependencies]",

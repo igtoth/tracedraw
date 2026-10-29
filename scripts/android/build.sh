@@ -129,10 +129,12 @@ echo "Built $apk; install it with: adb install -r $apk"
 
 # ----- the App Bundle: the same parts laid out as bundletool wants them -----
 # bundletool: the jar given, the command on PATH, or the pinned release
-# downloaded once (checked against its SHA-256).
+# downloaded once (checked against its SHA-256). The function has a name
+# of its own: called `bundletool`, `command -v bundletool` would find the
+# function itself and `command bundletool` then fail with "not found".
 BUNDLETOOL_VERSION=1.18.1
 BUNDLETOOL_SHA256=675786493983787ffa11550bdb7c0715679a44e1643f3ff980a529e9c822595c
-bundletool() {
+run_bundletool() {
     if [ -n "${BUNDLETOOL_JAR:-}" ]; then
         java -jar "$BUNDLETOOL_JAR" "$@"
     elif command -v bundletool >/dev/null; then
@@ -162,7 +164,7 @@ cp "$out/build/lib/$ABI/libtracedraw.so" "$mod/lib/$ABI/libtracedraw.so"
 (cd "$mod" && zip -q -r ../base.zip .)
 aab_unsigned="$out/build/unsigned.aab"
 rm -f "$aab_unsigned"
-bundletool build-bundle --modules="$out/build/base.zip" --output="$aab_unsigned"
+run_bundletool build-bundle --modules="$out/build/base.zip" --output="$aab_unsigned"
 
 # The signature: the upload key from the environment (Play App Signing),
 # else the debug key (a bundle for local testing with bundletool
@@ -197,5 +199,5 @@ jarsigner -sigalg SHA256withRSA -digestalg SHA-256 \
     -keystore "$rks" -storepass "$rks_pass" -keypass "$rks_key_pass" "$aab" "$rks_alias" >/dev/null
 jarsigner -verify "$aab" >/dev/null
 rm -f "$out/build/upload.keystore"
-bundletool validate --bundle="$aab" >/dev/null
+run_bundletool validate --bundle="$aab" >/dev/null
 echo "Built $aab (signed with the $signed_with)"
