@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Pattern fills: every pattern kind (two-colour, bitmap, vector) takes a placement in the Properties panel: tile size with a lock, X and Y offset, rotation, skew, Mirror tiles (every second column or row flipped), row or column offset as a percentage of a tile, and Transform with object (the tiles follow the object instead of staying on the page). The panel has Vector pattern and Bitmap pattern buttons beside the two-colour one, with a picker over the drawing's patterns, the pictures on the page and a picture import, and New from selection running Object > Create > Pattern Fill. The placement draws on screen, goes out in SVG (`patternTransform`) and PDF (a tiling pattern with its `/Matrix`, where patterns were rasterised) and is kept in `.tdraw` files; tiles now anchor to the page origin rather than the window, so they no longer slide when the view pans (#1207).
+
 ## 0.23.0 (2026-10-29)
 
 - Font list filter: the choices now open beside the list, in sections: fonts shown, style (serif, sans serif, script, decorative, monospaced, symbol), weight (light, regular, bold), width (condensed, normal, expanded), technology (TrueType, OpenType, variable), scripts (Latin, Greek, Cyrillic, Arabic, Devanagari, CJK and more), each OpenType feature on its own, embedding rights and the folders the fonts are in. Every value is read from the font files once (OS/2 weight and width classes, embedding bits, Unicode ranges, variation axes, GSUB and GPOS feature lists). Monospaced and Symbol now widen the style choices like the other styles instead of narrowing them (#867).

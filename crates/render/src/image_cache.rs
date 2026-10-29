@@ -95,7 +95,7 @@ fn cache() -> std::sync::MutexGuard<'static, Cache> {
 
 /// A fingerprint of `png`: its length and bytes taken from its start, its
 /// end (the last chunks and their checksums) and evenly in between.
-fn fingerprint(png: &[u8]) -> u64 {
+pub(crate) fn fingerprint(png: &[u8]) -> u64 {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     let n = png.len();
     n.hash(&mut h);

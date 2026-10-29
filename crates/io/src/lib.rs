@@ -293,6 +293,66 @@ mod tests {
         ));
     }
 
+    /// A pattern's placement is kept in the native file, and a fill without
+    /// one writes as before (no `placement` key).
+    #[test]
+    fn pattern_placement_round_trips_through_the_native_format() {
+        use tracedraw_core::style::{PatternPlacement, PatternTile, TileShift};
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        let mut make = |x: f64, placement: PatternPlacement| {
+            let id = doc.ids_mut().shape();
+            let mut s = Shape::new(
+                id,
+                ShapeKind::Rect {
+                    rect: Rect::new(x, 10.0, x + 20.0, 30.0),
+                    radius: 0.0,
+                    corners: None,
+                },
+            );
+            s.fill = Fill::Pattern(Pattern::TwoColor {
+                tile: PatternTile::Bricks,
+                front: Color::rgb8(255, 0, 0),
+                back: Color::WHITE,
+                size_mm: 8.0,
+                placement,
+            });
+            doc.layer_mut(layer).unwrap().shapes.push(s);
+        };
+        make(10.0, PatternPlacement::default());
+        make(
+            40.0,
+            PatternPlacement {
+                mirror_horizontal: true,
+                mirror_vertical: true,
+                offset_x: 1.5,
+                offset_y: -2.0,
+                rotation: 15.0,
+                skew: 5.0,
+                shift_percent: 25.0,
+                shift: TileShift::Column,
+                size: Some(Size::new(8.0, 4.0)),
+                transform_with_object: true,
+            },
+        );
+        let path = std::env::temp_dir().join(format!(
+            "tracedraw-pattern-placement-{}-{:?}.tdraw",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        save_native(&doc, &path).unwrap();
+        let bytes = std::fs::read(&path).unwrap();
+        let back = load_native(&path).unwrap();
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(back, doc);
+        let text = String::from_utf8_lossy(&bytes);
+        assert_eq!(
+            text.matches("placement").count(),
+            1,
+            "only the placed fill writes one"
+        );
+    }
+
     /// The axis values of a variable font set on text are kept in the
     /// native file (#1013): a weight of 600 reopens at 600.
     #[test]

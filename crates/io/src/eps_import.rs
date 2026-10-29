@@ -3568,6 +3568,7 @@ impl<'a> Interp<'a> {
                 (xstep.abs() * scale).max(tracedraw_core::Pattern::MIN_TILE_MM),
                 (ystep.abs() * scale).max(tracedraw_core::Pattern::MIN_TILE_MM),
             ),
+            placement: Default::default(),
         }));
     }
 

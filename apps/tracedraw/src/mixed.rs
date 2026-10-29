@@ -347,7 +347,8 @@ impl App {
     /// A fill editor showed `old` and the user made it `new`: a new type
     /// or a uniform colour goes to every selected object as it is (as
     /// [`App::apply_fill`]), a gradient setting goes into each object's
-    /// own gradient. `touched` adds fields set to the value they showed.
+    /// own gradient and a pattern placement setting into each object's
+    /// own pattern. `touched` adds fields set to the value they showed.
     pub fn patch_selection_fill(&mut self, old: &Fill, new: &Fill, touched: &[FillField]) {
         if self.selection.is_empty() {
             return;
@@ -361,7 +362,12 @@ impl App {
         if fields.is_empty() {
             return;
         }
-        if fields.contains(&FillField::All) || !matches!(new, Fill::Fountain(_)) {
+        let own_fields = match new {
+            Fill::Fountain(_) => !fields.contains(&FillField::All),
+            Fill::Pattern(_) => fields.iter().all(|f| f.is_placement()),
+            _ => false,
+        };
+        if !own_fields {
             self.apply_fill(new.clone());
             return;
         }

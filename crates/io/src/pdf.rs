@@ -243,25 +243,41 @@ impl Pdf {
         self.add(s.into_bytes())
     }
     fn add_image(&mut self, w: u32, h: u32, rgb: &[u8]) -> usize {
+        self.add_image_masked(w, h, rgb, None)
+    }
+
+    /// An image with a soft mask (`alpha`, one byte per pixel) for its
+    /// transparent pixels, when it has any.
+    fn add_image_masked(&mut self, w: u32, h: u32, rgb: &[u8], alpha: Option<&[u8]>) -> usize {
+        let smask = alpha
+            .map(|a| {
+                let adata = flate(a);
+                let id = self.stream(
+                    &format!("/Type /XObject /Subtype /Image /Width {w} /Height {h} /ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /FlateDecode"),
+                    &adata,
+                );
+                format!(" /SMask {id} 0 R")
+            })
+            .unwrap_or_default();
         if self.cmyk_only {
             let cmyk = rgb_to_cmyk_bytes(rgb);
             let data = flate(&cmyk);
             return self.stream(
-                &format!("/Type /XObject /Subtype /Image /Width {w} /Height {h} /ColorSpace /DeviceCMYK /BitsPerComponent 8 /Filter /FlateDecode"),
+                &format!("/Type /XObject /Subtype /Image /Width {w} /Height {h} /ColorSpace /DeviceCMYK /BitsPerComponent 8 /Filter /FlateDecode{smask}"),
                 &data,
             );
         }
         if self.images.jpeg {
             if let Some(data) = jpeg_bytes(rgb, 3, w, h, self.images.jpeg_quality) {
                 return self.stream(
-                    &format!("/Type /XObject /Subtype /Image /Width {w} /Height {h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode"),
+                    &format!("/Type /XObject /Subtype /Image /Width {w} /Height {h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode{smask}"),
                     &data,
                 );
             }
         }
         let data = flate(rgb);
         self.stream(
-            &format!("/Type /XObject /Subtype /Image /Width {w} /Height {h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode"),
+            &format!("/Type /XObject /Subtype /Image /Width {w} /Height {h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode{smask}"),
             &data,
         )
     }
@@ -485,6 +501,8 @@ struct PageWriter<'a> {
     shadings: Vec<(String, usize)>,
     gstates: Vec<(String, usize)>,
     images: Vec<(String, usize)>,
+    /// The tiling patterns of the page's pattern fills (resource name, object).
+    patterns: Vec<(String, usize)>,
     symbols: &'a [tracedraw_core::Symbol],
     /// The drawing's spot inks, and the colour spaces this page uses.
     inks: &'a [tracedraw_core::document::Ink],
@@ -638,17 +656,26 @@ impl PageWriter<'_> {
     }
 
     /// Paint `path` (page space, mm) with `fill` spread over `bounds`:
-    /// a colour, a shading for a gradient, or the renderer's pixels
-    /// clipped by the path for the rest. `nonzero` fills and clips with
-    /// the non-zero rule (text, outline areas), otherwise even-odd.
+    /// a colour, a shading for a gradient, a tiling pattern for a
+    /// pattern, or the renderer's pixels clipped by the path for the
+    /// rest. `nonzero` fills and clips with the non-zero rule (text,
+    /// outline areas), otherwise even-odd. `object` is the object's
+    /// transform (page space): a pattern set to transform with its
+    /// object follows it.
     fn paint_area(
         &mut self,
         fill: &Fill,
         path: &tracedraw_core::BezPath,
         bounds: tracedraw_core::geometry::Rect,
         nonzero: bool,
+        object: Affine,
     ) {
         let (fill_op, clip) = if nonzero { ("f", "W") } else { ("f*", "W*") };
+        if let Fill::Pattern(p) = fill {
+            if self.tiling_pattern(p, path, fill_op, object) {
+                return;
+            }
+        }
         match fill {
             Fill::None => {}
             Fill::Solid(c) => {
@@ -768,6 +795,64 @@ impl PageWriter<'_> {
                 }
             }
         }
+    }
+
+    /// A pattern fill as a PDF tiling pattern: the block of tiles that
+    /// repeats (one tile, or the mirrored and shifted tiles of the
+    /// placement) is one image drawn over the pattern's unit cell, and
+    /// the pattern's `/Matrix` carries the placement (tile size, offset,
+    /// rotation, skew, the row or column lean) into the page, from the
+    /// page origin, or from the object when the pattern transforms with
+    /// it. False when the pattern could not be rasterised.
+    fn tiling_pattern(
+        &mut self,
+        p: &tracedraw_core::Pattern,
+        path: &tracedraw_core::BezPath,
+        fill_op: &str,
+        object: Affine,
+    ) -> bool {
+        let Some((pm, unit_to_page)) = tracedraw_render::render_pattern_cell(p, 150.0) else {
+            return false;
+        };
+        let (w, h) = (pm.width(), pm.height());
+        let mut rgb = Vec::with_capacity((w * h * 3) as usize);
+        let mut alpha = Vec::with_capacity((w * h) as usize);
+        let mut clear = false;
+        for px in pm.pixels() {
+            let c = px.demultiply();
+            rgb.extend_from_slice(&[c.red(), c.green(), c.blue()]);
+            alpha.push(c.alpha());
+            clear |= c.alpha() != 255;
+        }
+        let image = self
+            .pdf
+            .add_image_masked(w, h, &rgb, clear.then_some(alpha.as_slice()));
+        let to_page = if p.placement().transform_with_object {
+            object * unit_to_page
+        } else {
+            unit_to_page
+        };
+        let m = (Affine::scale(MM_PT) * to_page).as_coeffs();
+        if !m.iter().all(|v| v.is_finite()) {
+            return false;
+        }
+        let n = self.patterns.len();
+        let dict = format!(
+            "/PatternType 1 /PaintType 1 /TilingType 1 /BBox [0 0 1 1] /XStep 1 /YStep 1 /Resources << /XObject << /Im {image} 0 R >> >> /Matrix [{} {} {} {} {} {}]",
+            f(m[0]),
+            f(m[1]),
+            f(m[2]),
+            f(m[3]),
+            f(m[4]),
+            f(m[5])
+        );
+        let id = self.pdf.stream(&dict, b"/Im Do");
+        let name = format!("P{n}");
+        self.patterns.push((name.clone(), id));
+        let _ = writeln!(self.content, "/Pattern cs /{name} scn");
+        self.path_ops(path);
+        let _ = writeln!(self.content, "{fill_op}");
+        true
     }
 
     fn shape(&mut self, shape: &Shape, parent: Affine) {
@@ -1057,7 +1142,7 @@ impl PageWriter<'_> {
 
         // Fill.
         let text = matches!(shape.kind, ShapeKind::Text { .. });
-        self.paint_area(&shape.fill, &path, bounds, text);
+        self.paint_area(&shape.fill, &path, bounds, text, transform);
 
         // Outline.
         if let Some(s) = &shape.stroke {
@@ -1199,7 +1284,7 @@ impl PageWriter<'_> {
             let band = parent * band;
             if let Some(paint) = outline_paint(s, transform) {
                 let b = band.bounding_box();
-                self.paint_area(&paint, &band, b, true);
+                self.paint_area(&paint, &band, b, true, transform);
             } else {
                 let op = self.color_op(s.color, true);
                 let _ = writeln!(self.content, "{op}");
@@ -1213,7 +1298,7 @@ impl PageWriter<'_> {
             // The outline's own paint: the area it covers, painted
             // like a fill spread over the outline's bounds.
             let half = drawn.width / 2.0;
-            self.paint_area(&paint, &area, bounds.inflate(half, half), true);
+            self.paint_area(&paint, &area, bounds.inflate(half, half), true, transform);
         } else {
             self.path_ops(path);
             self.content.push_str("S\n");
@@ -1299,10 +1384,10 @@ impl PageWriter<'_> {
         // else on every outline.
         if solid_fill {
             if !curves.elements().is_empty() {
-                self.paint_area(&shape.fill, &curves, bounds, true);
+                self.paint_area(&shape.fill, &curves, bounds, true, transform);
             }
         } else {
-            self.paint_area(&shape.fill, full, bounds, true);
+            self.paint_area(&shape.fill, full, bounds, true, transform);
         }
         // The text, then the outline of the curves (or of everything).
         let render = match (solid_fill, plain_stroke.is_some()) {
@@ -1954,6 +2039,7 @@ pub fn document_to_pdf_report(doc: &Document, opts: &PdfOptions) -> (Vec<u8>, Pd
             shadings: Vec::new(),
             gstates: Vec::new(),
             images: Vec::new(),
+            patterns: Vec::new(),
             symbols: &doc.symbols,
             inks: &doc.inks,
             spaces: Vec::new(),
@@ -2019,6 +2105,7 @@ pub fn document_to_pdf_report(doc: &Document, opts: &PdfOptions) -> (Vec<u8>, Pd
             shadings,
             gstates,
             images,
+            patterns,
             spaces,
             fonts,
             ..
@@ -2061,6 +2148,13 @@ pub fn document_to_pdf_report(doc: &Document, opts: &PdfOptions) -> (Vec<u8>, Pd
         if !images.is_empty() {
             res.push_str("/XObject << ");
             for (n, id) in &images {
+                let _ = write!(res, "/{n} {id} 0 R ");
+            }
+            res.push_str(">> ");
+        }
+        if !patterns.is_empty() {
+            res.push_str("/Pattern << ");
+            for (n, id) in &patterns {
                 let _ = write!(res, "/{n} {id} 0 R ");
             }
             res.push_str(">> ");
@@ -2690,6 +2784,7 @@ mod tests {
             front: Color::BLACK,
             back: Color::WHITE,
             size_mm: 5.0,
+            placement: Default::default(),
         });
         s.stroke = Some(tracedraw_core::Stroke {
             end_arrow: tracedraw_core::Arrowhead::Arrow,
@@ -2697,8 +2792,86 @@ mod tests {
         });
         doc.layer_mut(layer).unwrap().shapes.push(s);
         let text = String::from_utf8_lossy(&document_to_pdf(&doc)).to_string();
+        // A tiling pattern whose cell is the tile's image.
         assert!(text.contains("/Subtype /Image"));
-        assert!(text.contains("/Im0 "));
+        assert!(
+            text.contains("/PatternType 1 /PaintType 1 /TilingType 1"),
+            "{text}"
+        );
+        assert!(text.contains("/Pattern << /P0 "), "{text}");
+        // The default placement: a 5 mm tile from the page origin.
+        let pt = 5.0 * MM_PT;
+        let matrix = format!("/Matrix [{} 0 0 {} 0 0]", f(pt), f(pt));
+        assert!(text.contains(&matrix), "{matrix}\n{text}");
+    }
+
+    /// The pattern's `/Matrix` carries the placement: mirrored tiles make
+    /// the cell two tiles wide, the offset moves it, the rotation turns
+    /// it, and Transform with object puts the object's transform in front.
+    #[test]
+    fn pattern_matrix_carries_the_placement() {
+        use tracedraw_core::style::PatternPlacement;
+        let pattern = |placement| {
+            Fill::Pattern(tracedraw_core::Pattern::TwoColor {
+                tile: tracedraw_core::PatternTile::Checker,
+                front: Color::BLACK,
+                back: Color::WHITE,
+                size_mm: 10.0,
+                placement,
+            })
+        };
+        let text = one_rect_pdf(
+            pattern(PatternPlacement {
+                mirror_horizontal: true,
+                offset_x: 2.0,
+                offset_y: 3.0,
+                ..PatternPlacement::default()
+            }),
+            None,
+        );
+        let matrix = format!(
+            "/Matrix [{} 0 0 {} {} {}]",
+            f(20.0 * MM_PT),
+            f(10.0 * MM_PT),
+            f(2.0 * MM_PT),
+            f(3.0 * MM_PT)
+        );
+        assert!(text.contains(&matrix), "{matrix}\n{text}");
+        assert!(text.contains("/Pattern cs /P0 scn"), "{text}");
+        let text = one_rect_pdf(
+            pattern(PatternPlacement {
+                rotation: 90.0,
+                ..PatternPlacement::default()
+            }),
+            None,
+        );
+        let pt = 10.0 * MM_PT;
+        let matrix = format!("/Matrix [0 {} {} 0 0 0]", f(pt), f(-pt));
+        assert!(text.contains(&matrix), "{matrix}\n{text}");
+
+        // Transform with object: the rectangle is moved 5 mm right, so
+        // its tiles start there.
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        let id = doc.ids_mut().shape();
+        let mut s = Shape::new(
+            id,
+            ShapeKind::Rect {
+                rect: Rect::new(10.0, 10.0, 60.0, 40.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        s.fill = pattern(PatternPlacement {
+            transform_with_object: true,
+            ..PatternPlacement::default()
+        });
+        s.stroke = None;
+        s.transform = Affine::translate((5.0, 0.0));
+        doc.layer_mut(layer).unwrap().shapes.push(s);
+        let text = String::from_utf8_lossy(&document_to_pdf(&doc)).to_string();
+        let matrix = format!("/Matrix [{} 0 0 {} {} 0]", f(pt), f(pt), f(5.0 * MM_PT));
+        assert!(text.contains(&matrix), "{matrix}\n{text}");
     }
 
     #[test]
@@ -2727,13 +2900,18 @@ mod tests {
         s.fill = Fill::Pattern(tracedraw_core::Pattern::Vector {
             shapes: vec![tile_square],
             tile: tracedraw_core::geometry::Size::new(10.0, 10.0),
+            placement: Default::default(),
         });
         s.stroke = None;
         doc.layer_mut(layer).unwrap().shapes.push(s);
         let text = String::from_utf8_lossy(&document_to_pdf(&doc)).to_string();
-        // The content stream is compressed; the image resource is not.
+        // The content stream is compressed; the image resource is not. The
+        // tile's image is the cell of a tiling pattern, with a soft mask
+        // for the clear part of the tile.
         assert!(text.contains("/Subtype /Image"));
-        assert!(text.contains("/XObject << /Im0 "));
+        assert!(text.contains("/SMask"), "{text}");
+        assert!(text.contains("/XObject << /Im "), "{text}");
+        assert!(text.contains("/PatternType 1"), "{text}");
     }
 
     #[test]
@@ -3947,6 +4125,7 @@ mod text_tests {
             shadings: Vec::new(),
             gstates: Vec::new(),
             images: Vec::new(),
+            patterns: Vec::new(),
             symbols: &[],
             inks: &[],
             spaces: Vec::new(),

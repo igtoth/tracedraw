@@ -10,7 +10,7 @@
 //! selection ([`stroke_mixed`], [`fill_mixed`]), so it can show them as
 //! mixed.
 
-use crate::style::{Fill, Fountain, Stroke};
+use crate::style::{Fill, Fountain, Pattern, Stroke};
 use serde::{Deserialize, Serialize};
 
 /// One attribute of an outline.
@@ -203,6 +203,18 @@ pub enum FillField {
     /// Where the nodes are placed freely (see `Fountain::handles`), or
     /// none: the angle and the offset place the fill.
     Handles,
+    /// A pattern's tile size on the page (see [`Pattern::tile_size`]).
+    TileSize,
+    /// A pattern's offset X and Y.
+    TileOffset,
+    TileRotation,
+    TileSkew,
+    /// Mirror tiles, horizontally and vertically.
+    TileMirror,
+    /// The row or column offset and which of the two.
+    TileShift,
+    /// A pattern's Transform with object.
+    TransformWithObject,
 }
 
 impl FillField {
@@ -220,6 +232,76 @@ impl FillField {
         FillField::Invert,
         FillField::Handles,
     ];
+
+    /// The pattern placement fields, in the order an editor shows them.
+    pub const PATTERN: [FillField; 7] = [
+        FillField::TileSize,
+        FillField::TileOffset,
+        FillField::TileRotation,
+        FillField::TileSkew,
+        FillField::TileMirror,
+        FillField::TileShift,
+        FillField::TransformWithObject,
+    ];
+
+    /// Whether this is one of the pattern placement fields.
+    pub fn is_placement(self) -> bool {
+        FillField::PATTERN.contains(&self)
+    }
+
+    fn same_pattern(self, a: &Pattern, b: &Pattern) -> bool {
+        let (pa, pb) = (a.placement(), b.placement());
+        match self {
+            FillField::TileSize => a.tile_size() == b.tile_size(),
+            FillField::TileOffset => pa.offset_x == pb.offset_x && pa.offset_y == pb.offset_y,
+            FillField::TileRotation => pa.rotation == pb.rotation,
+            FillField::TileSkew => pa.skew == pb.skew,
+            FillField::TileMirror => {
+                pa.mirror_horizontal == pb.mirror_horizontal
+                    && pa.mirror_vertical == pb.mirror_vertical
+            }
+            FillField::TileShift => pa.shift_percent == pb.shift_percent && pa.shift == pb.shift,
+            FillField::TransformWithObject => pa.transform_with_object == pb.transform_with_object,
+            _ => a == b,
+        }
+    }
+
+    fn copy_pattern(self, from: &Pattern, to: &mut Pattern) {
+        let f = *from.placement();
+        match self {
+            FillField::TileSize => to.set_tile_size(from.tile_size()),
+            FillField::TileOffset => {
+                let t = to.placement_mut();
+                t.offset_x = f.offset_x;
+                t.offset_y = f.offset_y;
+            }
+            FillField::TileRotation => to.placement_mut().rotation = f.rotation,
+            FillField::TileSkew => to.placement_mut().skew = f.skew,
+            FillField::TileMirror => {
+                let t = to.placement_mut();
+                t.mirror_horizontal = f.mirror_horizontal;
+                t.mirror_vertical = f.mirror_vertical;
+            }
+            FillField::TileShift => {
+                let t = to.placement_mut();
+                t.shift_percent = f.shift_percent;
+                t.shift = f.shift;
+            }
+            FillField::TransformWithObject => {
+                to.placement_mut().transform_with_object = f.transform_with_object
+            }
+            _ => *to = from.clone(),
+        }
+    }
+
+    /// Whether two patterns are the same tile: alike once their placements
+    /// and tile sizes are set aside.
+    fn same_tile(a: &Pattern, b: &Pattern) -> bool {
+        let mut a2 = a.clone();
+        a2.set_tile_size(b.tile_size());
+        *a2.placement_mut() = *b.placement();
+        a2 == *b
+    }
 
     fn same_fountain(self, a: &Fountain, b: &Fountain) -> bool {
         match self {
@@ -239,6 +321,7 @@ impl FillField {
             FillField::Bilinear => a.bilinear == b.bilinear,
             FillField::Invert => a.invert == b.invert,
             FillField::Handles => a.handles == b.handles,
+            _ => true,
         }
     }
 
@@ -267,6 +350,7 @@ impl FillField {
             FillField::Bilinear => to.bilinear = from.bilinear,
             FillField::Invert => to.invert = from.invert,
             FillField::Handles => to.handles = from.handles,
+            _ => {}
         }
     }
 }
@@ -284,12 +368,22 @@ pub fn fill_kind(f: &Fill) -> usize {
     }
 }
 
-/// What changed from `old` to `new`: nothing, the whole fill, or some
-/// gradient settings when both are gradients. A changed stop list counts
+/// What changed from `old` to `new`: nothing, the whole fill, some
+/// gradient settings when both are gradients, or some placement settings
+/// when both are patterns of the same tile. A changed stop list counts
 /// as a start or end colour when only that colour moved.
 pub fn fill_changes(old: &Fill, new: &Fill) -> Vec<FillField> {
     if old == new {
         return Vec::new();
+    }
+    if let (Fill::Pattern(a), Fill::Pattern(b)) = (old, new) {
+        if !FillField::same_tile(a, b) {
+            return vec![FillField::All];
+        }
+        return FillField::PATTERN
+            .into_iter()
+            .filter(|f| !f.same_pattern(a, b))
+            .collect();
     }
     let (Fill::Fountain(a), Fill::Fountain(b)) = (old, new) else {
         return vec![FillField::All];
@@ -319,8 +413,9 @@ pub fn fill_changes(old: &Fill, new: &Fill) -> Vec<FillField> {
 }
 
 /// `target` with `fields` taken from `from`. Gradient fields go into a
-/// gradient target; any other target, or [`FillField::All`], takes the
-/// whole of `from`.
+/// gradient target, placement fields into a pattern target (of any
+/// kind); any other target, or [`FillField::All`], takes the whole of
+/// `from`.
 pub fn patch_fill(target: &Fill, from: &Fill, fields: &[FillField]) -> Fill {
     if fields.is_empty() {
         return target.clone();
@@ -332,6 +427,13 @@ pub fn patch_fill(target: &Fill, from: &Fill, fields: &[FillField]) -> Fill {
                 field.copy_fountain(f, &mut out);
             }
             Fill::Fountain(out)
+        }
+        (Fill::Pattern(t), Fill::Pattern(f)) if fields.iter().all(|field| field.is_placement()) => {
+            let mut out = t.clone();
+            for field in fields {
+                field.copy_pattern(f, &mut out);
+            }
+            Fill::Pattern(out)
         }
         _ => from.clone(),
     }
@@ -375,6 +477,14 @@ pub fn fill_mixed<'a>(fills: impl IntoIterator<Item = &'a Fill>) -> FillMix {
             (Fill::Fountain(a), Fill::Fountain(b)) => FillField::FOUNTAIN
                 .into_iter()
                 .filter(|x| !x.same_fountain(a, b))
+                .collect(),
+            // Patterns of different tiles differ as a whole, and in the
+            // placement values that differ too, so the editor can show
+            // those fields as mixed.
+            (Fill::Pattern(a), Fill::Pattern(b)) => FillField::PATTERN
+                .into_iter()
+                .filter(|x| !x.same_pattern(a, b))
+                .chain((!FillField::same_tile(a, b)).then_some(FillField::All))
                 .collect(),
             _ if base != f => vec![FillField::All],
             _ => Vec::new(),
@@ -538,5 +648,76 @@ mod tests {
         assert_eq!(m.fields, vec![FillField::Angle]);
         assert!(m.has(FillField::Angle) && !m.has(FillField::EdgePad));
         assert!(fill_mixed([&red, &red]).is_empty());
+    }
+
+    fn checker(size_mm: f64, placement: crate::style::PatternPlacement) -> Fill {
+        Fill::Pattern(Pattern::TwoColor {
+            tile: crate::style::PatternTile::Checker,
+            front: Color::BLACK,
+            back: Color::WHITE,
+            size_mm,
+            placement,
+        })
+    }
+
+    /// A placement setting changes on its own, going into each object's
+    /// own pattern (a bitmap pattern keeps its picture); a new tile
+    /// replaces the fill.
+    #[test]
+    fn pattern_placement_changes_one_at_a_time() {
+        use crate::style::PatternPlacement;
+        let plain = checker(5.0, PatternPlacement::default());
+        let turned = checker(
+            5.0,
+            PatternPlacement {
+                rotation: 45.0,
+                ..PatternPlacement::default()
+            },
+        );
+        assert_eq!(fill_changes(&plain, &turned), vec![FillField::TileRotation]);
+        assert_eq!(
+            fill_changes(&plain, &checker(8.0, PatternPlacement::default())),
+            vec![FillField::TileSize]
+        );
+        // Another tile: the whole fill.
+        let dots = Fill::Pattern(Pattern::TwoColor {
+            tile: crate::style::PatternTile::Dots,
+            front: Color::BLACK,
+            back: Color::WHITE,
+            size_mm: 5.0,
+            placement: PatternPlacement::default(),
+        });
+        assert_eq!(fill_changes(&plain, &dots), vec![FillField::All]);
+
+        // The rotation goes into a bitmap pattern, which keeps its picture
+        // and its own size.
+        let bitmap = Fill::Pattern(Pattern::Bitmap {
+            png: vec![1, 2, 3].into(),
+            width_px: 2,
+            height_px: 1,
+            size_mm: 20.0,
+            placement: PatternPlacement {
+                offset_x: 3.0,
+                ..PatternPlacement::default()
+            },
+        });
+        let out = patch_fill(&bitmap, &turned, &[FillField::TileRotation]);
+        let Fill::Pattern(p) = &out else {
+            panic!("a pattern");
+        };
+        assert!(matches!(p, Pattern::Bitmap { size_mm, .. } if *size_mm == 20.0));
+        assert_eq!(p.placement().rotation, 45.0);
+        assert_eq!(p.placement().offset_x, 3.0);
+        // The whole fill when the field says so.
+        assert_eq!(patch_fill(&bitmap, &turned, &[FillField::All]), turned);
+
+        // Mixed: the rotation differs, the tiles are the same.
+        let m = fill_mixed([&plain, &turned]);
+        assert_eq!(m.fields, vec![FillField::TileRotation]);
+        assert!(!m.has(FillField::All));
+        // Different tiles with the same placement: the whole fill differs,
+        // no placement field does.
+        let m = fill_mixed([&plain, &dots]);
+        assert_eq!(m.fields, vec![FillField::All]);
     }
 }

@@ -988,6 +988,7 @@ mod tests {
             width_px: 8,
             height_px: 8,
             size_mm: 5.0,
+            placement: Default::default(),
         });
         e.run(&Command::AddShape { layer, shape }).unwrap();
         e.run(&Command::TransformShapes {

@@ -756,6 +756,224 @@ impl PatternTile {
     }
 }
 
+/// Which run of tiles a pattern's row or column offset shifts: every row
+/// against the one below it, or every column against the one left of it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum TileShift {
+    #[default]
+    Row,
+    Column,
+}
+
+/// How a pattern's tiles lie on the page, the same for every pattern
+/// kind. The defaults are today's tiling: tiles the kind's own size, the
+/// first tile's bottom-left corner on the page origin, upright, every
+/// tile the same way up, anchored to the page.
+///
+/// A placement is a transform from the tile to the page: tiles are laid
+/// out as a lattice (`cell`), mirrored tiles and the row or column shift
+/// worked into the block of tiles that repeats, then that block is scaled
+/// to `size` and moved, turned and skewed by `place`.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
+pub struct PatternPlacement {
+    /// Every second column of tiles is flipped left to right.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub mirror_horizontal: bool,
+    /// Every second row of tiles is flipped top to bottom.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub mirror_vertical: bool,
+    /// Where the first tile's bottom-left corner sits, from the page
+    /// origin (or the object's origin, see `transform_with_object`), mm.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub offset_x: f64,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub offset_y: f64,
+    /// The tiles turned around the offset point, degrees counter-clockwise.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub rotation: f64,
+    /// The tiles' vertical sides tilted by this angle, degrees (positive
+    /// leans the tops to the right).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub skew: f64,
+    /// Each row (or column, see `shift`) is moved along by this much of a
+    /// tile against the one before it, percent 0..100.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub shift_percent: f64,
+    /// Whether `shift_percent` moves the rows or the columns.
+    #[serde(default, skip_serializing_if = "is_default_shift")]
+    pub shift: TileShift,
+    /// The size of one tile on the page, mm; `None` keeps the kind's own
+    /// size (`Pattern::natural_tile`). The tile's content is stretched to
+    /// fit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<Size>,
+    /// The tiles follow the object's transformation (they move, scale and
+    /// turn with it) instead of staying anchored to the page.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub transform_with_object: bool,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
+fn is_zero(v: &f64) -> bool {
+    *v == 0.0
+}
+
+fn is_default_shift(s: &TileShift) -> bool {
+    *s == TileShift::Row
+}
+
+impl PatternPlacement {
+    /// Today's tiling: nothing set.
+    pub fn is_default(&self) -> bool {
+        *self == PatternPlacement::default()
+    }
+
+    /// A placement with every value usable: nothing infinite, the shift
+    /// within 0..100 percent, the tile size positive.
+    pub fn sanitized(mut self) -> PatternPlacement {
+        for v in [
+            &mut self.offset_x,
+            &mut self.offset_y,
+            &mut self.rotation,
+            &mut self.skew,
+            &mut self.shift_percent,
+        ] {
+            if !v.is_finite() {
+                *v = 0.0;
+            }
+        }
+        self.shift_percent = self.shift_percent.clamp(0.0, 100.0);
+        // A skew of 90 degrees would flatten the tiles to a line.
+        self.skew = self.skew.clamp(-89.0, 89.0);
+        if let Some(s) = self.size {
+            if !(s.width.is_finite() && s.height.is_finite()) || s.width <= 0.0 || s.height <= 0.0 {
+                self.size = None;
+            }
+        }
+        self
+    }
+
+    /// Whether the block that repeats holds more than one tile: mirrored
+    /// tiles or a row or column shift. Without, one tile is the block.
+    pub fn needs_cell(&self) -> bool {
+        self.mirror_horizontal || self.mirror_vertical || self.shift_percent != 0.0
+    }
+
+    /// Tiles across and down in the block that repeats (2 where mirrored).
+    pub fn cell_tiles(&self) -> (u32, u32) {
+        (
+            1 + u32::from(self.mirror_horizontal),
+            1 + u32::from(self.mirror_vertical),
+        )
+    }
+
+    /// The lattice of the block that repeats: the unit square (0..1, Y up)
+    /// to the block in tile millimetres (before `place`), for a tile of
+    /// `tile` mm. With a row shift the block is a parallelogram leaning
+    /// along X, with a column shift one leaning along Y, so the tiles of
+    /// each row (column) sit `shift_percent` of a tile further along.
+    pub fn cell(&self, tile: Size) -> Affine {
+        let (cols, rows) = self.cell_tiles();
+        let (w, h) = (tile.width, tile.height);
+        let (cw, ch) = (w * f64::from(cols), h * f64::from(rows));
+        let s = self.shift_percent / 100.0;
+        match self.shift {
+            TileShift::Row => Affine::new([cw, 0.0, s * w * f64::from(rows), ch, 0.0, 0.0]),
+            TileShift::Column => Affine::new([cw, s * h * f64::from(cols), 0.0, ch, 0.0, 0.0]),
+        }
+    }
+
+    /// Every copy of the tile that shows in the block that repeats: the
+    /// transform from one tile (mm, Y up, origin at its bottom-left) to
+    /// the block's millimetres (the space `cell` maps to), mirrored tiles
+    /// flipped in place. With a shift, the copies at the sides fill the
+    /// leaning edges of the block.
+    pub fn tile_copies(&self, tile: Size) -> Vec<Affine> {
+        let (cols, rows) = self.cell_tiles();
+        let (w, h) = (tile.width, tile.height);
+        let s = self.shift_percent / 100.0;
+        let shifted = s != 0.0;
+        let mut out = Vec::new();
+        let (i0, i1, j0, j1) = match (self.shift, shifted) {
+            (_, false) => (0, cols as i32 - 1, 0, rows as i32 - 1),
+            (TileShift::Row, true) => (-1, cols as i32 + 1, 0, rows as i32 - 1),
+            (TileShift::Column, true) => (0, cols as i32 - 1, -1, rows as i32 + 1),
+        };
+        for j in j0..=j1 {
+            for i in i0..=i1 {
+                let (dx, dy) = match self.shift {
+                    TileShift::Row => (f64::from(i) * w + f64::from(j) * s * w, f64::from(j) * h),
+                    TileShift::Column => {
+                        (f64::from(i) * w, f64::from(j) * h + f64::from(i) * s * h)
+                    }
+                };
+                let mut m = Affine::translate((dx, dy));
+                if self.mirror_horizontal && i.rem_euclid(2) == 1 {
+                    m *= Affine::new([-1.0, 0.0, 0.0, 1.0, w, 0.0]);
+                }
+                if self.mirror_vertical && j.rem_euclid(2) == 1 {
+                    m *= Affine::new([1.0, 0.0, 0.0, -1.0, 0.0, h]);
+                }
+                out.push(m);
+            }
+        }
+        out
+    }
+
+    /// The tile coordinates (u, v in 0..1, Y up) under a point of the
+    /// block's millimetres (the space `cell` maps to): which tile the point
+    /// is in, with the row or column shift and the mirroring of every
+    /// second tile applied. For patterns sampled per pixel.
+    pub fn tile_uv(&self, p: Point, tile: Size) -> (f64, f64) {
+        let (w, h) = (tile.width.max(1e-12), tile.height.max(1e-12));
+        let s = self.shift_percent / 100.0;
+        let (i, j, u, v) = match self.shift {
+            TileShift::Row => {
+                let j = (p.y / h).floor();
+                let x = p.x - j * s * w;
+                let i = (x / w).floor();
+                (i, j, x / w - i, p.y / h - j)
+            }
+            TileShift::Column => {
+                let i = (p.x / w).floor();
+                let y = p.y - i * s * h;
+                let j = (y / h).floor();
+                (i, j, p.x / w - i, y / h - j)
+            }
+        };
+        let odd = |k: f64| (k as i64).rem_euclid(2) == 1;
+        let u = if self.mirror_horizontal && odd(i) {
+            1.0 - u
+        } else {
+            u
+        };
+        let v = if self.mirror_vertical && odd(j) {
+            1.0 - v
+        } else {
+            v
+        };
+        (u, v)
+    }
+
+    /// The block's millimetres to the page (or the object, with
+    /// `transform_with_object`): skew, then rotation, then the offset.
+    pub fn place(&self) -> Affine {
+        Affine::translate((self.offset_x, self.offset_y))
+            * Affine::rotate(self.rotation.to_radians())
+            * Affine::skew(self.skew.to_radians().tan(), 0.0)
+    }
+
+    /// The whole placement: the unit square of the block that repeats to
+    /// the page, for a tile of `tile` mm (`place` after `cell`).
+    pub fn transform(&self, tile: Size) -> Affine {
+        self.place() * self.cell(tile)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "pattern", rename_all = "lowercase")]
 pub enum Pattern {
@@ -764,6 +982,8 @@ pub enum Pattern {
         front: Color,
         back: Color,
         size_mm: f64,
+        #[serde(default, skip_serializing_if = "PatternPlacement::is_default")]
+        placement: PatternPlacement,
     },
     /// Tiled PNG, `size_mm` is the tile width; height follows the aspect ratio.
     Bitmap {
@@ -771,22 +991,144 @@ pub enum Pattern {
         width_px: u32,
         height_px: u32,
         size_mm: f64,
+        #[serde(default, skip_serializing_if = "PatternPlacement::is_default")]
+        placement: PatternPlacement,
     },
     /// Full-colour vector tile (the vector pattern fill):
     /// `shapes` are in tile-local coordinates, origin at the bottom-left
     /// corner of the tile, Y up, and the tile repeats every `tile.width` by
     /// `tile.height` millimetres. The shapes carry their own transforms,
-    /// fills and outlines; there is no extra pattern transform.
+    /// fills and outlines; the placement is the only pattern transform.
     Vector {
         #[serde(default)]
         shapes: Vec<crate::document::Shape>,
         tile: Size,
+        #[serde(default, skip_serializing_if = "PatternPlacement::is_default")]
+        placement: PatternPlacement,
     },
 }
 
 impl Pattern {
     /// Smallest tile edge, in mm, so a degenerate selection still tiles.
     pub const MIN_TILE_MM: f64 = 0.01;
+
+    /// How the tiles lie on the page.
+    pub fn placement(&self) -> &PatternPlacement {
+        match self {
+            Pattern::TwoColor { placement, .. }
+            | Pattern::Bitmap { placement, .. }
+            | Pattern::Vector { placement, .. } => placement,
+        }
+    }
+
+    pub fn placement_mut(&mut self) -> &mut PatternPlacement {
+        match self {
+            Pattern::TwoColor { placement, .. }
+            | Pattern::Bitmap { placement, .. }
+            | Pattern::Vector { placement, .. } => placement,
+        }
+    }
+
+    /// The pattern with `placement`.
+    pub fn with_placement(mut self, placement: PatternPlacement) -> Pattern {
+        *self.placement_mut() = placement;
+        self
+    }
+
+    /// The tile size the kind carries: a two-colour tile is square, a
+    /// bitmap tile keeps its picture's proportions, a vector tile has its
+    /// own size. Degenerate sizes come back as `MIN_TILE_MM`.
+    pub fn natural_tile(&self) -> Size {
+        let ok = |v: f64| {
+            if v.is_finite() && v > 0.0 {
+                v.max(Self::MIN_TILE_MM)
+            } else {
+                Self::MIN_TILE_MM
+            }
+        };
+        match self {
+            Pattern::TwoColor { size_mm, .. } => Size::new(ok(*size_mm), ok(*size_mm)),
+            Pattern::Bitmap {
+                width_px,
+                height_px,
+                size_mm,
+                ..
+            } => {
+                let h = size_mm * f64::from(*height_px) / f64::from((*width_px).max(1));
+                Size::new(ok(*size_mm), ok(h))
+            }
+            Pattern::Vector { tile, .. } => Size::new(ok(tile.width), ok(tile.height)),
+        }
+    }
+
+    /// The size of one tile on the page, mm: the placement's size when
+    /// set, else the kind's own.
+    pub fn tile_size(&self) -> Size {
+        match self.placement().size {
+            Some(s)
+                if s.width.is_finite()
+                    && s.height.is_finite()
+                    && s.width > 0.0
+                    && s.height > 0.0 =>
+            {
+                s
+            }
+            _ => self.natural_tile(),
+        }
+    }
+
+    /// Give the tiles the size `size` (mm) on the page. The kind's own size
+    /// takes it where it can (a two-colour tile's edge, a bitmap tile's
+    /// width, a vector tile's size with its content scaled along); a
+    /// height the kind cannot hold goes to the placement's size.
+    pub fn set_tile_size(&mut self, size: Size) {
+        let w = if size.width.is_finite() {
+            size.width.max(Self::MIN_TILE_MM)
+        } else {
+            Self::MIN_TILE_MM
+        };
+        let h = if size.height.is_finite() {
+            size.height.max(Self::MIN_TILE_MM)
+        } else {
+            Self::MIN_TILE_MM
+        };
+        match self {
+            Pattern::TwoColor {
+                size_mm, placement, ..
+            } => {
+                *size_mm = w;
+                placement.size = ((h - w).abs() > 1e-9).then_some(Size::new(w, h));
+            }
+            Pattern::Bitmap {
+                width_px,
+                height_px,
+                size_mm,
+                placement,
+                ..
+            } => {
+                *size_mm = w;
+                let natural_h = w * f64::from(*height_px) / f64::from((*width_px).max(1));
+                placement.size = ((h - natural_h).abs() > 1e-9).then_some(Size::new(w, h));
+            }
+            Pattern::Vector {
+                shapes,
+                tile,
+                placement,
+            } => {
+                // The content scales with the tile so the drawing keeps
+                // its shape.
+                let sx = w / tile.width.max(1e-6);
+                let sy = h / tile.height.max(1e-6);
+                if sx.is_finite() && sy.is_finite() && (sx != 1.0 || sy != 1.0) {
+                    for s in shapes.iter_mut() {
+                        s.transform = Affine::scale_non_uniform(sx, sy) * s.transform;
+                    }
+                }
+                *tile = Size::new(w, h);
+                placement.size = None;
+            }
+        }
+    }
 
     /// Build a vector pattern from page-space shapes: the shapes are moved
     /// so their joint bounds start at the origin and the tile takes the
@@ -819,6 +1161,7 @@ impl Pattern {
                 bounds.width().max(Self::MIN_TILE_MM),
                 bounds.height().max(Self::MIN_TILE_MM),
             ),
+            placement: PatternPlacement::default(),
         }
     }
 }
@@ -1979,7 +2322,7 @@ mod tests {
             square(30.0, 40.0, 35.0, 45.0),
             square(35.0, 45.0, 40.0, 50.0),
         ];
-        let Pattern::Vector { shapes, tile } = Pattern::vector_from_shapes(&shapes) else {
+        let Pattern::Vector { shapes, tile, .. } = Pattern::vector_from_shapes(&shapes) else {
             panic!("expected a vector pattern");
         };
         assert_eq!(tile, Size::new(10.0, 10.0));
@@ -1999,7 +2342,7 @@ mod tests {
 
     #[test]
     fn vector_pattern_from_nothing_has_a_minimal_tile() {
-        let Pattern::Vector { shapes, tile } = Pattern::vector_from_shapes(&[]) else {
+        let Pattern::Vector { shapes, tile, .. } = Pattern::vector_from_shapes(&[]) else {
             panic!("expected a vector pattern");
         };
         assert!(shapes.is_empty());
@@ -2032,6 +2375,196 @@ mod tests {
         assert!(
             matches!(back, Fill::Pattern(Pattern::Vector { ref shapes, .. }) if shapes.is_empty())
         );
+    }
+
+    fn checker(size_mm: f64) -> Pattern {
+        Pattern::TwoColor {
+            tile: PatternTile::Checker,
+            front: Color::BLACK,
+            back: Color::WHITE,
+            size_mm,
+            placement: PatternPlacement::default(),
+        }
+    }
+
+    /// An untouched placement is left out of the file, so files written
+    /// before placements read the same and stay byte for byte the same.
+    #[test]
+    fn default_placement_is_not_written_and_a_set_one_round_trips() {
+        let fill = Fill::Pattern(checker(5.0));
+        let json = serde_json::to_string(&fill).unwrap();
+        assert!(!json.contains("placement"), "{json}");
+        let back: Fill = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, fill);
+
+        let placed = PatternPlacement {
+            mirror_horizontal: true,
+            offset_x: 2.5,
+            rotation: 30.0,
+            skew: -10.0,
+            shift_percent: 50.0,
+            shift: TileShift::Column,
+            size: Some(Size::new(4.0, 6.0)),
+            transform_with_object: true,
+            ..PatternPlacement::default()
+        };
+        let fill = Fill::Pattern(checker(5.0).with_placement(placed));
+        let json = serde_json::to_string(&fill).unwrap();
+        assert!(json.contains("\"placement\""), "{json}");
+        // Only the values set are written.
+        assert!(json.contains("\"mirror_horizontal\":true") && !json.contains("mirror_vertical"));
+        assert!(json.contains("\"shift\":\"column\"") && !json.contains("offset_y"));
+        let back: Fill = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, fill);
+    }
+
+    #[test]
+    fn tile_size_follows_the_kind_and_the_placement() {
+        let mut p = checker(5.0);
+        assert_eq!(p.tile_size(), Size::new(5.0, 5.0));
+        p.set_tile_size(Size::new(8.0, 8.0));
+        assert_eq!(p.tile_size(), Size::new(8.0, 8.0));
+        assert!(p.placement().size.is_none(), "a square tile needs no size");
+        p.set_tile_size(Size::new(8.0, 4.0));
+        assert_eq!(p.tile_size(), Size::new(8.0, 4.0));
+        assert_eq!(p.placement().size, Some(Size::new(8.0, 4.0)));
+
+        let mut v = Pattern::vector_from_shapes(&[square(0.0, 0.0, 5.0, 5.0)]);
+        v.set_tile_size(Size::new(10.0, 20.0));
+        let Pattern::Vector {
+            shapes,
+            tile,
+            placement,
+        } = &v
+        else {
+            panic!("expected a vector pattern");
+        };
+        assert_eq!(*tile, Size::new(10.0, 20.0));
+        assert!(placement.size.is_none());
+        let b = shapes[0].bounds();
+        assert!(
+            (b.x1 - 10.0).abs() < 1e-9 && (b.y1 - 20.0).abs() < 1e-9,
+            "{b:?}"
+        );
+    }
+
+    #[test]
+    fn default_placement_is_one_upright_tile_on_the_origin() {
+        let p = PatternPlacement::default();
+        let tile = Size::new(10.0, 5.0);
+        assert!(!p.needs_cell());
+        assert_eq!(p.cell(tile).as_coeffs(), [10.0, 0.0, 0.0, 5.0, 0.0, 0.0]);
+        assert_eq!(p.tile_copies(tile), vec![Affine::IDENTITY]);
+        assert_eq!(
+            p.transform(tile).as_coeffs(),
+            [10.0, 0.0, 0.0, 5.0, 0.0, 0.0]
+        );
+        assert_eq!(p.tile_uv(Point::new(12.5, 1.25), tile), (0.25, 0.25));
+    }
+
+    #[test]
+    fn mirrored_tiles_flip_every_second_one() {
+        let p = PatternPlacement {
+            mirror_horizontal: true,
+            mirror_vertical: true,
+            ..PatternPlacement::default()
+        };
+        let tile = Size::new(10.0, 10.0);
+        assert_eq!(p.cell_tiles(), (2, 2));
+        assert_eq!(p.cell(tile).as_coeffs(), [20.0, 0.0, 0.0, 20.0, 0.0, 0.0]);
+        let copies = p.tile_copies(tile);
+        assert_eq!(copies.len(), 4);
+        // The second column shows the tile flipped: its left edge is the
+        // tile's right edge.
+        let flipped = copies[1] * Point::new(0.0, 2.0);
+        assert!(
+            (flipped.x - 20.0).abs() < 1e-9 && (flipped.y - 2.0).abs() < 1e-9,
+            "{flipped:?}"
+        );
+        // Sampling agrees: a point a quarter into the second column reads
+        // the tile three quarters along.
+        let (u, v) = p.tile_uv(Point::new(12.5, 2.5), tile);
+        assert!(
+            (u - 0.75).abs() < 1e-9 && (v - 0.25).abs() < 1e-9,
+            "{u} {v}"
+        );
+        let (u, v) = p.tile_uv(Point::new(2.5, 12.5), tile);
+        assert!(
+            (u - 0.25).abs() < 1e-9 && (v - 0.75).abs() < 1e-9,
+            "{u} {v}"
+        );
+    }
+
+    #[test]
+    fn a_row_offset_shifts_every_row_by_that_part_of_a_tile() {
+        let p = PatternPlacement {
+            shift_percent: 50.0,
+            ..PatternPlacement::default()
+        };
+        let tile = Size::new(10.0, 10.0);
+        assert!(p.needs_cell());
+        // The block leans: its top edge starts half a tile along.
+        assert_eq!(p.cell(tile).as_coeffs(), [10.0, 0.0, 5.0, 10.0, 0.0, 0.0]);
+        // The second row's tile starts at x = 5: a point at x = 6 in that
+        // row is a tenth into a tile.
+        let (u, v) = p.tile_uv(Point::new(6.0, 15.0), tile);
+        assert!((u - 0.1).abs() < 1e-9 && (v - 0.5).abs() < 1e-9, "{u} {v}");
+        // The first row is not shifted.
+        let (u, _) = p.tile_uv(Point::new(6.0, 5.0), tile);
+        assert!((u - 0.6).abs() < 1e-9, "{u}");
+        // Copies at both sides cover the leaning edges.
+        assert_eq!(p.tile_copies(tile).len(), 4);
+
+        let c = PatternPlacement {
+            shift: TileShift::Column,
+            ..p
+        };
+        assert_eq!(c.cell(tile).as_coeffs(), [10.0, 5.0, 0.0, 10.0, 0.0, 0.0]);
+        let (u, v) = c.tile_uv(Point::new(15.0, 6.0), tile);
+        assert!((u - 0.5).abs() < 1e-9 && (v - 0.1).abs() < 1e-9, "{u} {v}");
+    }
+
+    #[test]
+    fn placement_moves_turns_and_skews_the_tiles() {
+        let p = PatternPlacement {
+            offset_x: 3.0,
+            offset_y: 4.0,
+            rotation: 90.0,
+            ..PatternPlacement::default()
+        };
+        // The tile's bottom-right corner (10, 0) turned a quarter turn
+        // counter-clockwise lands above the offset point.
+        let q = p.transform(Size::new(10.0, 10.0)) * Point::new(1.0, 0.0);
+        assert!(
+            (q.x - 3.0).abs() < 1e-9 && (q.y - 14.0).abs() < 1e-9,
+            "{q:?}"
+        );
+        let s = PatternPlacement {
+            skew: 45.0,
+            ..PatternPlacement::default()
+        };
+        // The top-left corner of a skewed tile leans one tile height right.
+        let q = s.transform(Size::new(10.0, 10.0)) * Point::new(0.0, 1.0);
+        assert!(
+            (q.x - 10.0).abs() < 1e-9 && (q.y - 10.0).abs() < 1e-9,
+            "{q:?}"
+        );
+    }
+
+    #[test]
+    fn sanitized_placement_has_usable_values() {
+        let p = PatternPlacement {
+            offset_x: f64::NAN,
+            skew: 400.0,
+            shift_percent: -20.0,
+            size: Some(Size::new(0.0, 5.0)),
+            ..PatternPlacement::default()
+        }
+        .sanitized();
+        assert_eq!(p.offset_x, 0.0);
+        assert_eq!(p.skew, 89.0);
+        assert_eq!(p.shift_percent, 0.0);
+        assert!(p.size.is_none());
     }
 }
 
