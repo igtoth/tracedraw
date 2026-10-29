@@ -279,6 +279,15 @@ pub enum Command {
         from: String,
         to: String,
     },
+    /// Convert every colour of `shapes` (empty: the whole drawing, with
+    /// the pages' backgrounds and the symbols) to `to` through the colour
+    /// engine; spot colours too when `spots` (#972).
+    ConvertColors {
+        shapes: Vec<ShapeId>,
+        to: crate::color_convert::ColorTarget,
+        #[serde(default)]
+        spots: bool,
+    },
     /// Move `shapes` directly in front of (or behind) `reference` in its layer.
     OrderRelative {
         shapes: Vec<ShapeId>,
@@ -449,6 +458,7 @@ impl Command {
             Command::SetWrapText { .. } => "Wrap Paragraph Text",
             Command::SetWrapStyle { .. } => "Wrap Style",
             Command::SetObjectData { .. } => "Object Data",
+            Command::ConvertColors { .. } => "Convert Colors",
             Command::ReplaceFontFamily { .. } => "Replace Font",
             Command::OrderRelative { in_front: true, .. } => "In Front Of",
             Command::OrderRelative { .. } => "Behind",
@@ -934,6 +944,12 @@ impl Command {
             }
             Command::SetObjectData { shape, data } => {
                 any_mut(doc, *shape)?.data = data.clone();
+            }
+            Command::ConvertColors { shapes, to, spots } => {
+                for id in shapes {
+                    any(doc, *id)?;
+                }
+                crate::color_convert::convert_document(doc, shapes, *to, *spots);
             }
             Command::ReplaceFontFamily { from, to } => {
                 doc.replace_font_family(from, to);

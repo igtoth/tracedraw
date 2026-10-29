@@ -7,6 +7,14 @@ full, row-by-row status.
 ## Unreleased
 
 - Text docker, Character section: the OpenType row now has a button for every common feature (ligatures, discretionary ligatures, small caps, capitals to small caps, case-sensitive forms, lining, old-style and tabular numerals, fractions, ordinals, slashed zero, stylistic alternates, swash), each enabled only when the font has the feature and greyed with a tip saying so when it does not; a feature the font applies by itself (ligatures) shows on and can be switched off; and Superscript and Subscript buttons use the font's own forms where it has them, else draw the characters at 58 % of the size raised by 33 % or lowered by 15 %. Settings are kept in .tdraw files, and files saved before open unchanged (#1201).
+- Font list filter: the choices now open beside the list, in sections: fonts shown, style (serif, sans serif, script, decorative, monospaced, symbol), weight (light, regular, bold), width (condensed, normal, expanded), technology (TrueType, OpenType, variable), scripts (Latin, Greek, Cyrillic, Arabic, Devanagari, CJK and more), each OpenType feature on its own, embedding rights and the folders the fonts are in. Every value is read from the font files once (OS/2 weight and width classes, embedding bits, Unicode ranges, variation axes, GSUB and GPOS feature lists). Monospaced and Symbol now widen the style choices like the other styles instead of narrowing them (#867).
+- Segment Delete: besides the click and the box, a freehand stroke deletes every stretch it crosses, up to the crossings with other lines, in one step. Choose Freehand on the property bar, or hold Alt as the drag starts to take the other way for that drag (#1150).
+- Tools > Convert Colors: every colour of the selected objects or of the whole drawing (fills, gradient stops, mesh colours, outlines, text, the colours of effects and shadows, the pages' backgrounds) goes to CMYK or to RGB through the colour management profiles, in one undo step. Spot colours stay unless asked; registration colour and bitmaps' pixels never change (#972).
+- Color Eyedropper and the eyedropper of the color pickers: while the pointer hovers to take a color, a box beside it shows that color with a swatch, its name when it is a palette color or a spot ink, its values in the drawing's color mode (CMYK or RGB) and its hex value, so a color can be checked before it is taken. Before, its values only showed after the click (#990).
+
+## 0.22.0 (2026-10-29)
+
+- Microsoft Store package: `tracedraw-cli` is now a command-line alias of the TraceDraw app instead of a second app hidden from the Start menu, which the Store refuses ("headless app"). The command works in a terminal as before and the Start menu still shows only TraceDraw; the `tracedraw` alias that opened the window from a terminal is not in the Store package (an app can declare only one alias). The installer and the portable zip are unchanged.
 
 ## 0.21.0 (2026-10-29)
 
