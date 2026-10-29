@@ -53,6 +53,25 @@ impressora e imprime. Na versão para navegador, o PDF é baixado.
   páginas encolhem para caber nas colunas e linhas pedidas. Na Visualização de impressão, arraste na folha para mover a
   informação da página.
 
+## Livretos {#booklet}
+
+Escolha **Livreto** como imposição para imprimir duas páginas em cada lado
+de uma folha, prontas para dobrar. O número de páginas é arredondado para
+um múltiplo de quatro com páginas em branco no fim, e o resumo sob o esboço
+diz quantas páginas, páginas em branco e folhas de papel são necessárias.
+Para imprimir só algumas páginas, liste-as antes em **Páginas**.
+
+- [[print.binding]]: [[print.saddle_stitch]] encaixa cada folha dentro da
+  anterior e as grampeia na dobra (8 páginas: 8 1, 2 7 na folha externa).
+  [[print.perfect_bound]] dobra as folhas em cadernos de
+  [[print.signature_sheets]], empilha os cadernos e os cola na lombada (uma
+  folha por caderno: 4 1, 2 3, depois 8 5, 6 7).
+- [[print.creep]] (grampo a cavalo): quanto as páginas da folha mais interna
+  se movem em direção à lombada, para que as bordas se alinhem depois do
+  refile; as folhas intermediárias se movem em proporção, a externa nada.
+- [[print.booklet_gap]]: o espaço entre as duas páginas de uma página dupla,
+  centrado na dobra.
+
 ## Pré-impressão {#prepress}
 
 - **Inverter** e **Espelhar** a folha inteira, para filme.
