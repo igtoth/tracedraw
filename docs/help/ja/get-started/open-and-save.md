@@ -7,7 +7,7 @@ TraceDraw は、すべてを保持する独自の形式 `.tdraw` で図面を保
 1. [[menu.file > menu.file.open]] (<kbd>Ctrl+O</kbd>) を選ぶか、標準ツールバーの「開く」をクリックします。
 2. ファイルを選んで確定します。
 
-図面は新しいタブで開きます。最近使った図面を開くには、[[menu.file > menu.file.open_recent]]、「開く」ボタンの矢印、またはようこそ画面の一覧を使います。[[menu.file.clear_recent]] は一覧を空にします。一方、[[menu.file > menu.file.import]] (<kbd>Ctrl+I</kbd>) は、ファイルの内容を開いている図面に追加します。[ファイルをインポートする](../file-formats/import.md) を参照してください。
+図面は新しいタブで開きます。最近使った図面を開くには、[[menu.file > menu.file.open_recent]]、「開く」ボタンの矢印、またはようこそ画面の一覧を使います。[[menu.file.clear_recent]] は一覧を空にします。ようこそ画面の一覧から図面を1つだけ外すには、その図面を指して右端の x をクリックするか、右クリックして [[welcome.remove_recent]] を選びます。ファイル自体はそのまま残ります。一方、[[menu.file > menu.file.import]] (<kbd>Ctrl+I</kbd>) は、ファイルの内容を開いている図面に追加します。[ファイルをインポートする](../file-formats/import.md) を参照してください。
 
 ### 開いた後のお知らせ {#open-notes}
 

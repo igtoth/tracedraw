@@ -11721,3 +11721,125 @@ fn segment_delete_drags_a_freehand_stroke_with_alt_or_the_bar() {
         assert_eq!(has_middle(&app, h), freehand, "{bar_freehand} {mods:?}");
     }
 }
+
+/// On the Welcome Screen a recent document comes off the list by the x
+/// that shows while the pointer is on its row, or by Remove from List in
+/// its right-click menu, missing files too; the others stay, and the
+/// document is not opened (#1152).
+#[test]
+fn a_recent_document_comes_off_the_list_by_itself() {
+    use crate::ui::welcome::{recent_row_id, remove_recent_id};
+    let (ctx, mut app, _) = setup();
+    let dir = std::env::temp_dir().join(format!("td-recent-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("dir");
+    let paths: Vec<std::path::PathBuf> = ["a", "b", "c"]
+        .iter()
+        .map(|n| dir.join(format!("{n}.tdraw")))
+        .collect();
+    for p in &paths[..2] {
+        tracedraw_io::save_native(app.doc(), p).expect("save");
+    }
+    // c is gone from the disk: it stays on the list, greyed out.
+    app.settings.recent_files = paths.clone();
+    app.show_welcome = true;
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let row = |ctx: &egui::Context, p: &std::path::Path| {
+        ctx.read_response(recent_row_id(p))
+            .map(|r| r.rect)
+            .expect("row")
+    };
+    let b = row(&ctx, &paths[1]);
+    assert!(
+        ctx.read_response(remove_recent_id(&paths[1])).is_none(),
+        "no x yet"
+    );
+    // On the row the x shows at its right; a click on it takes b off.
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::PointerMoved(b.center())],
+        Modifiers::NONE,
+    );
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let x = ctx
+        .read_response(remove_recent_id(&paths[1]))
+        .expect("the x")
+        .rect;
+    assert!(
+        b.contains(x.center()) && x.center().x > b.center().x,
+        "{x:?} {b:?}"
+    );
+    assert!(ctx.read_response(remove_recent_id(&paths[0])).is_none());
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::PointerMoved(x.center())],
+        Modifiers::NONE,
+    );
+    click_at(&ctx, &mut app, x.center(), Modifiers::NONE);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    assert_eq!(
+        app.settings.recent_files,
+        vec![paths[0].clone(), paths[2].clone()]
+    );
+    assert!(app.show_welcome && app.file.is_none(), "nothing opened");
+    // Right-click on the missing c: Remove from list.
+    let c = row(&ctx, &paths[2]);
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::PointerMoved(c.center())],
+        Modifiers::NONE,
+    );
+    frame(
+        &ctx,
+        &mut app,
+        vec![
+            button(c.center(), true, PointerButton::Secondary, Modifiers::NONE),
+            button(c.center(), false, PointerButton::Secondary, Modifiers::NONE),
+        ],
+        Modifiers::NONE,
+    );
+    let input = egui::RawInput {
+        screen_rect: Some(egui::Rect::from_min_size(
+            Pos2::ZERO,
+            egui::vec2(1600.0, 1000.0),
+        )),
+        ..Default::default()
+    };
+    let out = ctx.run_ui(input, |ui| crate::ui::root(&mut app, ui));
+    let label = crate::i18n::tr("welcome.remove_recent");
+    let at = out
+        .shapes
+        .iter()
+        .find_map(|s| match &s.shape {
+            egui::Shape::Text(t) if t.galley.text() == label => {
+                Some(t.pos + t.galley.rect.center().to_vec2())
+            }
+            _ => None,
+        })
+        .expect("the menu's Remove from list");
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::PointerMoved(at)],
+        Modifiers::NONE,
+    );
+    click_at(&ctx, &mut app, at, Modifiers::NONE);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    assert_eq!(app.settings.recent_files, vec![paths[0].clone()]);
+    assert!(app.show_welcome && app.file.is_none());
+    // A click on the row itself still opens it.
+    let a = row(&ctx, &paths[0]);
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::PointerMoved(a.center())],
+        Modifiers::NONE,
+    );
+    click_at(&ctx, &mut app, a.center(), Modifiers::NONE);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    assert_eq!(app.file.as_deref(), Some(paths[0].as_path()));
+    let _ = std::fs::remove_dir_all(&dir);
+}

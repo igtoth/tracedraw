@@ -146,9 +146,13 @@ fn get_started(app: &mut App, ui: &mut Ui) {
             }
             ui.add_space(4.0);
             for p in recent {
-                if recent_row(app, ui, &p) {
-                    app.open_path(p.clone());
-                    app.show_welcome = false;
+                match recent_row(app, ui, &p) {
+                    RecentAction::None => {}
+                    RecentAction::Open => {
+                        app.open_path(p.clone());
+                        app.show_welcome = false;
+                    }
+                    RecentAction::Remove => app.remove_recent(&p),
                 }
             }
             if !app.settings.recent_files.is_empty()
@@ -163,25 +167,45 @@ fn get_started(app: &mut App, ui: &mut Ui) {
     });
 }
 
+/// What a click on a recent document's row asks for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RecentAction {
+    None,
+    Open,
+    /// Take it off the list (the x on the row, or the row's right-click
+    /// menu), #1152.
+    Remove,
+}
+
+/// The id of the recent documents row of `path`.
+pub(crate) fn recent_row_id(path: &std::path::Path) -> egui::Id {
+    egui::Id::new(("welcome_recent_row", path))
+}
+
+/// The id of the x that takes `path` off the recent documents list.
+pub(crate) fn remove_recent_id(path: &std::path::Path) -> egui::Id {
+    egui::Id::new(("welcome_recent_remove", path))
+}
+
 /// One recent drawing: its thumbnail (a blank page when it has none), its
-/// name and folder. True when clicked; a missing file is greyed out.
-fn recent_row(app: &mut App, ui: &mut Ui, path: &std::path::Path) -> bool {
+/// name and folder; a missing file is greyed out. While the pointer is on
+/// the row an x at its right takes it off the list, as does Remove from
+/// List in its right-click menu (#1152).
+fn recent_row(app: &mut App, ui: &mut Ui, path: &std::path::Path) -> RecentAction {
     const ROW: egui::Vec2 = egui::vec2(380.0, 56.0);
     const THUMB: egui::Vec2 = egui::vec2(64.0, 48.0);
+    const X: f32 = 20.0;
     let exists = path.exists();
     let thumb = if exists {
         app.recent_thumbnail(ui.ctx(), path)
     } else {
         None
     };
-    let sense = if exists {
-        egui::Sense::click()
-    } else {
-        egui::Sense::hover()
-    };
-    let (rect, resp) = ui.allocate_exact_size(ROW, sense);
+    let (rect, _) = ui.allocate_exact_size(ROW, egui::Sense::hover());
+    let resp = ui.interact(rect, recent_row_id(path), egui::Sense::click());
+    let on_row = ui.rect_contains_pointer(rect);
     let painter = ui.painter();
-    if exists && resp.hovered() {
+    if exists && on_row {
         painter.rect_filled(rect, 2.0, Tokens::tool_hover());
     }
     let frame = egui::Rect::from_min_size(rect.min + egui::vec2(4.0, 4.0), THUMB);
@@ -217,21 +241,69 @@ fn recent_row(app: &mut App, ui: &mut Ui, path: &std::path::Path) -> bool {
     } else {
         Tokens::text_dim()
     };
-    painter.text(
+    // The texts stop short of the x.
+    let clip =
+        egui::Rect::from_min_max(rect.min, egui::pos2(rect.right() - X - 8.0, rect.bottom()));
+    let texts = painter.with_clip_rect(clip);
+    texts.text(
         egui::pos2(text_x, frame.top() + 6.0),
         egui::Align2::LEFT_TOP,
         name,
         egui::FontId::proportional(13.0),
         color,
     );
-    painter.text(
+    texts.text(
         egui::pos2(text_x, frame.top() + 26.0),
         egui::Align2::LEFT_TOP,
         folder,
         egui::FontId::proportional(11.0),
         Tokens::text_dim(),
     );
-    resp.rich_tip(path.display().to_string()).clicked()
+    let mut action = RecentAction::None;
+    // The x shows only while the pointer is on the row; added after the
+    // row, it takes the click before the row does.
+    if on_row {
+        let xr = egui::Rect::from_center_size(
+            egui::pos2(rect.right() - X / 2.0 - 4.0, rect.center().y),
+            egui::vec2(X, X),
+        );
+        let x = ui
+            .interact(xr, remove_recent_id(path), egui::Sense::click())
+            .rich_tip(crate::ui::tips::keyed("welcome.remove_recent"));
+        let p = ui.painter();
+        if x.hovered() {
+            p.rect_filled(xr, 3.0, Tokens::border());
+        }
+        let c = xr.center();
+        let s = egui::Stroke::new(
+            1.5,
+            if x.hovered() {
+                Tokens::text()
+            } else {
+                Tokens::text_dim()
+            },
+        );
+        p.line_segment([c + egui::vec2(-4.0, -4.0), c + egui::vec2(4.0, 4.0)], s);
+        p.line_segment([c + egui::vec2(-4.0, 4.0), c + egui::vec2(4.0, -4.0)], s);
+        if x.clicked() {
+            action = RecentAction::Remove;
+        }
+    }
+    resp.context_menu(|ui| {
+        if ui
+            .button(tr("welcome.remove_recent"))
+            .rich_tip(crate::ui::tips::keyed("welcome.remove_recent"))
+            .clicked()
+        {
+            action = RecentAction::Remove;
+            ui.close();
+        }
+    });
+    let resp = resp.rich_tip(path.display().to_string());
+    if action == RecentAction::None && exists && resp.clicked() {
+        action = RecentAction::Open;
+    }
+    action
 }
 
 fn workspace(app: &mut App, ui: &mut Ui) {

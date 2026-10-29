@@ -348,6 +348,13 @@ with a thumbnail of its first page, its name and its folder; a click
 opens it, a drawing whose file is gone is greyed out, and Clear list
 forgets them.
 
+- While the pointer is on a row an x shows at its right; a click on it
+  takes that drawing off the list, and so does Remove from list in the
+  row's right-click menu (for a drawing whose file is gone too). The
+  other drawings stay in their order, the drawing's thumbnail is
+  deleted, and the file itself is left alone (#1152).
+  `pick_drag_tests::a_recent_document_comes_off_the_list_by_itself`
+
 - The thumbnail is made when a drawing is opened or saved: the first
   page rendered with a white background, 160 pixels on its long side,
   kept as PNG in the preferences folder under `thumbnails/`, named by a

@@ -14,7 +14,10 @@ nombreux autres formats ; voir
 Le dessin s'ouvre dans un nouvel onglet. Pour ouvrir un dessin utilisé
 récemment, utilisez [[menu.file > menu.file.open_recent]], la flèche du
 bouton Ouvrir ou la liste de l'écran d'accueil ;
-[[menu.file.clear_recent]] vide la liste.
+[[menu.file.clear_recent]] vide la liste. Pour retirer un seul dessin de la
+liste de l'écran d'accueil, pointez-le et cliquez sur le x à sa droite, ou
+cliquez dessus avec le bouton droit et choisissez [[welcome.remove_recent]] ;
+le fichier lui-même reste à sa place.
 [[menu.file > menu.file.import]] (<kbd>Ctrl+I</kbd>) ajoute plutôt le contenu
 d'un fichier au dessin ouvert ; voir
 [Importer des fichiers](../file-formats/import.md).

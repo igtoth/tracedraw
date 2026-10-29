@@ -261,7 +261,7 @@ Counts: works 189, partial 6 (`.cdr` content coverage; CMX import; print preview
 | Options pages for pen pressure, tablet mode and plug-ins | not applicable: no pen pressure input, own workspaces, no plug-in host |
 | Save settings as default | works |
 | Preferences kept across restarts and saved as they change (desktop file, browser local storage): Options, bars, dockers, units, snapping, tool settings, what the window shows, dockers' choices (see `behavior/workspaces.md`, Kept across restarts) | works |
-| Hints panel with per-tool help; Welcome Screen (recent drawings with thumbnails, templates, news, learn) | works |
+| Hints panel with per-tool help; Welcome Screen (recent drawings with thumbnails, each taken off the list by its x or Remove from list (#1152), templates, news, learn) | works |
 | Help > Updates and a daily check at start (asked at first start, Always check / Never check; Options > Global > General): a newer release offers the file for this system, its processor and how it was installed (none rather than another one), its notes, or skipping it; a Linux AppImage installs it in place after checking its digest | works (see `behavior/updates.md`) |
 | Help > Highlight What's New: the menus mark the rows new in this version and the menus leading to them | works (see `behavior/whats-new.md`) |
 | Border and Grommet (large-format finishing) | works |

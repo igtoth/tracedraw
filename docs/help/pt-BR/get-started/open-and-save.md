@@ -12,7 +12,10 @@ também pode salvar arquivos `.cdr`. Ele abre muitos outros formatos; veja
 
 O desenho abre em uma nova guia. Para abrir um desenho usado recentemente, use
 [[menu.file > menu.file.open_recent]], a seta do botão Abrir ou a lista da Tela
-de boas-vindas; [[menu.file.clear_recent]] esvazia a lista.
+de boas-vindas; [[menu.file.clear_recent]] esvazia a lista. Para tirar só um
+desenho da lista da Tela de boas-vindas, aponte para ele e clique no x à
+direita, ou clique nele com o botão direito e escolha
+[[welcome.remove_recent]]; o arquivo continua onde está.
 [[menu.file > menu.file.import]] (<kbd>Ctrl+I</kbd>) acrescenta o conteúdo de
 um arquivo ao desenho aberto; veja [Importar arquivos](../file-formats/import.md).
 

@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Welcome Screen, Recent documents: one drawing comes off the list by the x that shows at the right of its row while the pointer is on it, or by Remove from list in its right-click menu, a drawing whose file is gone too; the others stay. Clear list still empties the whole list (#1152).
+
 ## 0.23.0 (2026-10-29)
 
 - Font list filter: the choices now open beside the list, in sections: fonts shown, style (serif, sans serif, script, decorative, monospaced, symbol), weight (light, regular, bold), width (condensed, normal, expanded), technology (TrueType, OpenType, variable), scripts (Latin, Greek, Cyrillic, Arabic, Devanagari, CJK and more), each OpenType feature on its own, embedding rights and the folders the fonts are in. Every value is read from the font files once (OS/2 weight and width classes, embedding bits, Unicode ranges, variation axes, GSUB and GPOS feature lists). Monospaced and Symbol now widen the style choices like the other styles instead of narrowing them (#867).

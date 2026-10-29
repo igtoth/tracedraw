@@ -7,7 +7,7 @@ TraceDraw 以自己的格式 `.tdraw` 儲存繪圖，這種格式會保留所有
 1. 選擇 [[menu.file > menu.file.open]]（<kbd>Ctrl+O</kbd>），或按一下標準工具列上的「開啟」。
 2. 選擇檔案並確認。
 
-繪圖會在新的分頁中開啟。若要開啟最近使用過的繪圖，請使用 [[menu.file > menu.file.open_recent]]、「開啟」按鈕的箭頭，或歡迎畫面上的清單；[[menu.file.clear_recent]] 會清空清單。[[menu.file > menu.file.import]]（<kbd>Ctrl+I</kbd>）則是將檔案的內容加入目前開啟的繪圖；請參閱[匯入檔案](../file-formats/import.md)。
+繪圖會在新的分頁中開啟。若要開啟最近使用過的繪圖，請使用 [[menu.file > menu.file.open_recent]]、「開啟」按鈕的箭頭，或歡迎畫面上的清單；[[menu.file.clear_recent]] 會清空清單。若只要從歡迎畫面的清單移除一個繪圖，請指向它並按一下右側的 x，或在它上面按右鍵並選擇 [[welcome.remove_recent]]；檔案本身會保留在原處。[[menu.file > menu.file.import]]（<kbd>Ctrl+I</kbd>）則是將檔案的內容加入目前開啟的繪圖；請參閱[匯入檔案](../file-formats/import.md)。
 
 ### 開啟後的通知 {#open-notes}
 

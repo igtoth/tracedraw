@@ -12,7 +12,10 @@ everything, and can also save `.cdr` files. It opens many other formats; see
 
 The drawing opens in a new tab. To open a drawing you used recently, use
 [[menu.file > menu.file.open_recent]], the arrow of the Open button, or the
-list on the Welcome Screen; [[menu.file.clear_recent]] empties the list.
+list on the Welcome Screen; [[menu.file.clear_recent]] empties the list. To
+take one drawing off the Welcome Screen list, point at it and click the x at
+its right, or right-click it and choose [[welcome.remove_recent]]; the file
+itself stays where it is.
 [[menu.file > menu.file.import]] (<kbd>Ctrl+I</kbd>) instead adds the
 content of a file to the drawing that is open; see
 [Importing files](../file-formats/import.md).
