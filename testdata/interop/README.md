@@ -1,0 +1,26 @@
+# Interoperability test files
+
+Synthetic drawings saved by TraceDraw in every `.cdr` version it writes,
+for testing in the programs that read those versions. The results are
+reported in the issues the bundles are posted to and recorded in
+`docs/cdr-format.md`.
+
+- `interop.tdraw`: the test drawing, made by
+  `cargo run -p tracedraw-cli --example interop -- <dir>`: a rectangle
+  with a fill and an outline, an ellipse, a filled curve, a line, a
+  gradient, a group of two shapes, an open polyline, and artistic text
+  (plain with accents, runs in bold and italic with a colour of their
+  own, right aligned and centred), on an A5 landscape page.
+- `interop-0003/vNN_drawing.cdr`: that drawing saved as version NN (7 to
+  27) with `tracedraw-cli convert`, and `interop-0003.zip` holding all
+  21 files. Written on 2026-10-29 from `main` at 1c044358 (0.23.0) with
+  the changes of pull request #1245 (palette ids after colours, the
+  version 15 fill and outline layouts in version 14, argument 19170 on
+  objects of versions 9 to 15).
+
+Earlier bundles (`interop-0001`, `interop-0002`) are on the `interop`
+branch.
+
+The files are made by TraceDraw's own code from a drawing made for this
+purpose; they belong to the project (MIT OR Apache-2.0, see
+`ATTRIBUTION.md`).
