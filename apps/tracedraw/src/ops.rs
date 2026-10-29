@@ -271,6 +271,20 @@ impl App {
         self.duplicate_offset = saved;
     }
 
+    /// Overprint the fill (`fill`) or the outline of the painted objects
+    /// of the selection (#1200).
+    pub fn set_overprint(&mut self, fill: bool, on: bool) {
+        let shapes: Vec<_> = self.paint_targets().iter().map(|s| s.id).collect();
+        if shapes.is_empty() {
+            return;
+        }
+        self.run(Command::SetOverprint {
+            shapes,
+            fill: fill.then_some(on),
+            outline: (!fill).then_some(on),
+        });
+    }
+
     pub fn set_locked(&mut self, locked: bool) {
         if self.selection.is_empty() {
             return;

@@ -659,6 +659,54 @@ fn set_extra_paint(app: &mut App, fills: Vec<Fill>, strokes: Vec<tracedraw_core:
 /// its editor and a cross; Add Fill puts a copy of the fill on top. It
 /// shows only while the object has a fill (`has_fill`): the first fill
 /// comes from the kinds above it, not from this button (#487).
+/// Whether the painted objects overprint their fill (`fill`) or their
+/// outline: `Some(true)` all of them, `Some(false)` none, `None` mixed or
+/// nothing selected.
+pub fn overprint_state(app: &App, fill: bool) -> Option<bool> {
+    let targets = app.paint_targets();
+    let on = targets
+        .iter()
+        .filter(|s| {
+            if fill {
+                s.overprint_fill
+            } else {
+                s.overprint_outline
+            }
+        })
+        .count();
+    if targets.is_empty() {
+        None
+    } else if on == targets.len() {
+        Some(true)
+    } else if on == 0 {
+        Some(false)
+    } else {
+        None
+    }
+}
+
+/// The Overprint fill or Overprint outline checkbox of the docker (#1200),
+/// as the Edit Fill and Outline Pen dialogs have it.
+fn overprint_row(app: &mut App, ui: &mut Ui, fill: bool) {
+    if app.selection.is_empty() {
+        return;
+    }
+    let state = overprint_state(app, fill);
+    let mut on = state.unwrap_or(false);
+    let key = if fill {
+        "edit_fill.overprint"
+    } else {
+        "outline_pen.overprint"
+    };
+    if ui
+        .add(egui::Checkbox::new(&mut on, tr(key)).indeterminate(state.is_none()))
+        .rich_tip(crate::ui::tips::pair(key, "docker.overprint_tip"))
+        .changed()
+    {
+        app.set_overprint(fill, on);
+    }
+}
+
 fn extra_fills(app: &mut App, ui: &mut Ui, first: &tracedraw_core::Shape, has_fill: bool) {
     let mut fills = first.extra_fills.clone();
     let mut changed = false;
@@ -940,6 +988,14 @@ fn properties(app: &mut App, ui: &mut Ui) {
                 }
                 let has = stroke.is_some() || mix.presence;
                 extra_strokes(app, ui, first, has);
+                overprint_row(app, ui, false);
+                if ui
+                    .button(tr("docker.outline_pen_dialog"))
+                    .rich_tip(tr("docker.outline_pen_dialog_tip"))
+                    .clicked()
+                {
+                    app.open_outline_pen();
+                }
             }
             "fill" if app.text_selection_active() => {
                 // Characters selected in the text being edited: their own
@@ -956,7 +1012,16 @@ fn properties(app: &mut App, ui: &mut Ui) {
                 let mix = app.selection_fill_mix();
                 let mut fill = old.clone();
                 let mut touched = Vec::new();
-                let edited = fill_editor_mixed(ui, &mut fill, &mix, &mut touched);
+                let mut edited = fill_editor_mixed(ui, &mut fill, &mix, &mut touched);
+                // Where a fountain's nodes sit, in numbers (#1200).
+                if let (Fill::Fountain(f), Some(b)) = (&mut fill, base.as_ref()) {
+                    if let Some(bounds) = app.doc().shape_on_page(b.id).map(|s| s.bounds()) {
+                        if crate::ui::fountain_place::placement_editor(ui, f, bounds) {
+                            touched.push(FillField::Handles);
+                            edited = true;
+                        }
+                    }
+                }
                 let has = !matches!(fill, Fill::None) || mix.kind;
                 if edited {
                     // Dragging in the picker: one step, and the colour
@@ -969,6 +1034,14 @@ fn properties(app: &mut App, ui: &mut Ui) {
                     }
                 }
                 extra_fills(app, ui, first, has);
+                overprint_row(app, ui, true);
+                if ui
+                    .button(tr("docker.edit_fill_dialog"))
+                    .rich_tip(tr("docker.edit_fill_dialog_tip"))
+                    .clicked()
+                {
+                    app.open_edit_fill();
+                }
             }
             "transparency" => {
                 crate::ui::toolbar::transparency_section(app, ui);
@@ -1950,6 +2023,22 @@ fn fountain_editor(ui: &mut Ui, f: &mut Fountain) -> bool {
                 stop.pos = pct / 100.0;
                 changed = true;
             }
+            // The stop's opacity (#1200).
+            let mut opacity = f64::from(stop.opacity) * 100.0;
+            if ui
+                .add(
+                    crate::ui::field::NumField::new(&mut opacity)
+                        .range(0.0..=100.0)
+                        .suffix("%")
+                        .speed(1.0)
+                        .width(52.0),
+                )
+                .rich_tip(tr("docker.stop_opacity"))
+                .changed()
+            {
+                stop.opacity = (opacity / 100.0).clamp(0.0, 1.0) as f32;
+                changed = true;
+            }
             if ui
                 .small_button("+")
                 .rich_tip(tr("docker.add_stop"))
@@ -2631,44 +2720,68 @@ fn outline_editor_mixed(
                         }
                     });
                 }
-                for (field, key, range, suffix) in [
-                    (StrokeField::Stretch, "docker.nib_stretch", 0.1..=1.0, ""),
-                    (
-                        StrokeField::NibAngle,
-                        "docker.nib_angle_lc",
-                        -90.0..=90.0,
-                        "°",
-                    ),
-                ] {
-                    let v = if field == StrokeField::Stretch {
-                        &mut s.stretch
-                    } else {
-                        &mut s.nib_angle
-                    };
-                    // A slider cannot be empty: a mixed one says so in its text.
-                    let text = if mix.has(field) {
-                        format!("{} ({})", tr(key), tr("docker.mixed"))
-                    } else {
-                        tr(key)
-                    };
-                    if ui
-                        .add(crate::ui::Rail(
-                            egui::Slider::new(v, range).text(text).suffix(suffix),
-                        ))
-                        .rich_tip(if field == StrokeField::Stretch {
-                            crate::ui::tips::pair(
-                                "docker.nib_stretch_tip",
-                                "docker.nib_stretch_desc",
-                            )
-                        } else {
-                            crate::ui::tips::pair("docker.nib_angle", "docker.nib_angle_desc")
-                        })
-                        .drag_stopped()
+                // The calligraphic nib (#1200): stretch as a percentage,
+                // the angle, and the nib itself, dragged to turn and
+                // flatten it, as in the Outline Pen dialog.
+                ui.horizontal_top(|ui| {
+                    ui.vertical(|ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(tr("docker.nib_stretch"));
+                            let mut pct = s.stretch * 100.0;
+                            if ui
+                                .add(
+                                    crate::ui::field::NumField::new(&mut pct)
+                                        .range(10.0..=100.0)
+                                        .speed(1.0)
+                                        .max_decimals(0)
+                                        .suffix(" %")
+                                        .width(60.0)
+                                        .mixed(mix.has(StrokeField::Stretch)),
+                                )
+                                .rich_tip(crate::ui::tips::pair(
+                                    "docker.nib_stretch_tip",
+                                    "docker.nib_stretch_desc",
+                                ))
+                                .changed()
+                            {
+                                s.stretch = (pct / 100.0).clamp(0.1, 1.0);
+                                touched.push(StrokeField::Stretch);
+                                changed = true;
+                            }
+                        });
+                        ui.horizontal(|ui| {
+                            ui.label(tr("docker.nib_angle_lc"));
+                            if ui
+                                .add(
+                                    crate::ui::field::NumField::new(&mut s.nib_angle)
+                                        .range(-90.0..=90.0)
+                                        .speed(1.0)
+                                        .max_decimals(1)
+                                        .suffix("°")
+                                        .width(60.0)
+                                        .mixed(mix.has(StrokeField::NibAngle)),
+                                )
+                                .rich_tip(crate::ui::tips::pair(
+                                    "docker.nib_angle",
+                                    "docker.nib_angle_desc",
+                                ))
+                                .changed()
+                            {
+                                touched.push(StrokeField::NibAngle);
+                                changed = true;
+                            }
+                        });
+                    });
+                    if let Some((stretch, angle)) =
+                        crate::ui::outline_pen::nib_picture(ui, s.stretch, s.nib_angle)
                     {
-                        touched.push(field);
+                        s.stretch = stretch;
+                        s.nib_angle = angle;
+                        touched.push(StrokeField::Stretch);
+                        touched.push(StrokeField::NibAngle);
                         changed = true;
                     }
-                }
+                });
             });
         advanced.header_response.rich_tip(crate::ui::tips::pair(
             "docker.outline_advanced",

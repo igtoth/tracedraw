@@ -297,3 +297,35 @@ bottom to top, and a click on a linear fill also sets the angle to 90
 degrees so the sky is on top. Checked by
 `gradient_presets::tests::every_preset_runs_from_0_to_1_in_order` and
 `gradient_presets::tests::landscapes_run_ground_to_sky_at_ninety_degrees`.
+
+## Placement in the Properties docker (#1200)
+
+Under a fountain fill's settings, Placement puts the fill's nodes (the
+start, end and skew nodes the Interactive Fill tool drags, `handles`) in
+numbers:
+
+- Rotate: the angle of the axis from the start to the end node, degrees,
+  -180 to 180.
+- W and H: the lengths of the axis and of the side (start to skew node)
+  as percentages of their lengths in the default placement at the same
+  rotation (`Fountain::default_handles`), 1 to 1000; a fresh fill reads
+  100 % and 100 % whatever the box's shape, and a rotation typed in keeps
+  the fill reaching across the box as the default does. The lock keeps W
+  and H in proportion.
+- Skew: how far the side leans from the axis's perpendicular, -89 to 89
+  degrees.
+- X and Y: the origin (the middle of the axis for a linear fill, the
+  start node for radial, conical and square fills) from the box's
+  centre, as percentages of the box's half width and half height.
+- A change sets the nodes (`Fountain::set_handles`), which also keeps the
+  angle and the centre offset the nearest the formats that know only
+  those can show. A shaped fill has no placement.
+- Each colour stop also has its opacity in the docker (0 to 100 %), as in
+  the Edit Fill dialog; Overprint fill and an Edit Fill... button that
+  opens the dialog sit under the fill section.
+
+Checks: a fill without nodes reads 100, 100, 0, 0, 0, 0 for every kind and
+its placement rebuilds the default nodes; W 50, H 120, rotate 30, skew 20,
+X 25, Y -10 round trip through the nodes, the axis is half the default's
+at 30 degrees and the fill's angle follows (tests in
+`ui/fountain_place.rs`).

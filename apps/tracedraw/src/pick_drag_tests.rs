@@ -11549,3 +11549,34 @@ fn the_summary_section_describes_the_selection() {
     app.select(Vec::new());
     assert!(crate::ui::dockers::summary_info(&app).is_none());
 }
+
+/// The docker's Overprint fill and Overprint outline checkboxes (#1200):
+/// one sets every painted object of the selection, the state reads all,
+/// none or mixed.
+#[test]
+fn overprint_is_set_from_the_docker() {
+    use crate::ui::dockers::overprint_state;
+    let (_, mut app, id) = setup();
+    assert_eq!(overprint_state(&app, true), Some(false));
+    app.set_overprint(true, true);
+    assert!(app.doc().find_shape(id).expect("rect").overprint_fill);
+    assert_eq!(overprint_state(&app, true), Some(true));
+    assert_eq!(overprint_state(&app, false), Some(false));
+    app.set_overprint(false, true);
+    assert!(app.doc().find_shape(id).expect("rect").overprint_outline);
+    // A second object without it: mixed.
+    let other = app
+        .new_shape(ShapeKind::Ellipse {
+            rect: Rect::new(70.0, 10.0, 90.0, 30.0),
+            arc: None,
+        })
+        .expect("ellipse");
+    app.select(vec![id, other]);
+    assert_eq!(overprint_state(&app, true), None);
+    app.set_overprint(true, false);
+    assert_eq!(overprint_state(&app, true), Some(false));
+    app.undo();
+    assert_eq!(overprint_state(&app, true), None);
+    app.select(Vec::new());
+    assert_eq!(overprint_state(&app, true), None);
+}

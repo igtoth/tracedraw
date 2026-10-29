@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Properties docker: a fountain fill's placement in numbers (W, H with a lock, X, Y, skew and rotate, setting the nodes the Interactive Fill tool drags), the opacity of each colour stop, Overprint fill and Overprint outline, and Edit Fill... and Outline Pen... buttons that open the dialogs; the calligraphic nib under Advanced is a percentage field, an angle field and the nib picture to drag, as in the dialog (#1200).
 - Properties docker: the Summary section now reports the selection's count, layer, kind, size, centre and centre of rotation, and holds Wrap paragraph text (style and offset) and Lock Object; it listed only each object's kind and id. Crop tool: Crop and Clear buttons float under the crop area on the canvas, so the area is applied or dropped without reaching the property bar (#1202).
 ## 0.20.0 (2026-10-28)
 

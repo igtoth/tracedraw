@@ -220,3 +220,10 @@ renderer, `svg::tests::outline_paints_are_written_as_the_stroke_paint`,
 `shaping::tests::stroke_area_covers_the_outline_and_hairlines_cover_nothing`
 and `ui::dockers::tests::outline_paint_offers_every_fill_kind`.
 
+## In the Properties docker (#1200)
+
+- Advanced > the calligraphic nib: stretch as a percentage field (10 to
+  100 %), the nib angle (-90 to 90 degrees) and the nib picture, dragged
+  to turn and flatten it, as in the dialog (`outline_pen::nib_picture`).
+- Overprint outline, under the outline section, and an Outline Pen...
+  button that opens the dialog.
