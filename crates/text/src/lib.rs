@@ -29,6 +29,15 @@ pub mod traits;
 /// Points to millimetres.
 pub const PT_MM: f64 = 25.4 / 72.0;
 
+/// An OpenType tag's four bytes, padded with spaces ("sups", "ss1 ").
+fn tag_bytes(tag: &str) -> [u8; 4] {
+    let mut out = *b"    ";
+    for (o, b) in out.iter_mut().zip(tag.bytes()) {
+        *o = b;
+    }
+    out
+}
+
 use tracedraw_core::document::text_outline::{GlyphLayout, PlacedGlyph};
 
 pub struct FontSystem {
@@ -961,6 +970,7 @@ fn shapes_alike(a: &TextSpan, b: &TextSpan) -> bool {
         && a.offset_x_pct == b.offset_x_pct
         && a.angle_deg == b.angle_deg
         && a.features == b.features
+        && a.position == b.position
         && a.variations == b.variations
 }
 
@@ -2108,6 +2118,32 @@ impl FontSystem {
             .collect()
     }
 
+    /// The OpenType layout features (GSUB and GPOS tags, sorted) of the
+    /// face text in `family` (bold and italic as given) is drawn with:
+    /// the stand-in's when the family is not here, since that is the face
+    /// the shaper applies them to (#1201). Empty when nothing can draw it.
+    pub fn face_features(&self, family: &str, bold: bool, italic: bool) -> Vec<String> {
+        let Some(id) = self.face_for(family, bold, italic) else {
+            return Vec::new();
+        };
+        let Some((data, index)) = self.face_data(id) else {
+            return Vec::new();
+        };
+        let Ok(face) = ttf_parser::Face::parse(&data, index) else {
+            return Vec::new();
+        };
+        let raw = face.raw_face();
+        let mut tags: Vec<String> = [b"GSUB", b"GPOS"]
+            .iter()
+            .filter_map(|t| raw.table(ttf_parser::Tag::from_bytes(t)))
+            .flat_map(catalog::feature_tags)
+            .map(|t| String::from_utf8_lossy(&t).to_string())
+            .collect();
+        tags.sort_unstable();
+        tags.dedup();
+        tags
+    }
+
     /// Ask for an offered family now (a font list showing it), as text set
     /// in it would; true when it is offered. The application fetches it
     /// after [`FontSystem::take_font_requests`].
@@ -2282,7 +2318,7 @@ impl FontSystem {
             req.spans
                 .iter()
                 .map(|s| format!(
-                    "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{:?}|{:?}|{:?}|{}",
+                    "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{:?}|{:?}|{:?}|{:?}|{}",
                     s.layout_only,
                     s.font_family,
                     s.size_pt,
@@ -2295,6 +2331,7 @@ impl FontSystem {
                     s.underline,
                     s.strikethrough,
                     s.features,
+                    s.position,
                     s.variations,
                     s.paragraph,
                     s.text
@@ -2659,15 +2696,34 @@ impl FontSystem {
             index,
             coords,
         };
-        let size_pt = span.size_pt * size_scale;
+        // Superscript and subscript (#1201): the font's own forms when it
+        // has the feature, else the characters drawn smaller and shifted
+        // off the baseline (`TextPosition::SYNTHETIC_SCALE`,
+        // `TextPosition::synthetic_shift`). The tracking, the baseline
+        // shift set by hand and the pen stay with the full size.
+        let position_feature = span.position.feature().filter(|tag| {
+            hb.raw_face()
+                .table(ttf_parser::Tag::from_bytes(b"GSUB"))
+                .is_some_and(|gsub| catalog::feature_tags(gsub).contains(&tag_bytes(tag)))
+        });
+        let synthetic = span.position.feature().is_some() && position_feature.is_none();
+        let full_size_pt = span.size_pt * size_scale;
+        let size_pt = if synthetic {
+            full_size_pt * tracedraw_core::TextPosition::SYNTHETIC_SCALE
+        } else {
+            full_size_pt
+        };
         let upem = face.units_per_em() as f64;
         let scale = size_pt * PT_MM / upem;
         // A heavy weight the face lacks is drawn thicker.
         // Not when the text sets the weight or slant axis itself (#870).
         let synth_bold = target >= 600 && weight < 600 && !own_weight;
         let synth_italic = span.italic && !slanted && !own_slant;
-        let tracking = span.tracking_pct / 100.0 * size_pt * PT_MM;
-        let baseline = span.baseline_shift_pt * PT_MM;
+        let tracking = span.tracking_pct / 100.0 * full_size_pt * PT_MM;
+        let mut baseline = span.baseline_shift_pt * PT_MM;
+        if synthetic {
+            baseline += span.position.synthetic_shift() * full_size_pt * PT_MM;
+        }
         // Character spacing counts in widths of a space; word spacing
         // scales the spaces themselves.
         let space_adv = face
@@ -2679,7 +2735,7 @@ impl FontSystem {
         let word_scale = para.word_spacing_pct.clamp(0.0, 2000.0) / 100.0;
         // Shifted and rotated characters: about the glyph's origin on its
         // shifted baseline; the pen does not move with them.
-        let shift_x = span.offset_x_pct / 100.0 * size_pt * PT_MM;
+        let shift_x = span.offset_x_pct / 100.0 * full_size_pt * PT_MM;
         let place = if span.angle_deg.abs() > 1e-9 || shift_x.abs() > 1e-12 {
             Some(
                 Affine::translate((shift_x, 0.0))
@@ -2689,14 +2745,25 @@ impl FontSystem {
             None
         };
 
+        // Each feature on or off as the span says ("smcp" on, "-liga"
+        // off, see `TextSpan::set_feature`); an entry that is no feature
+        // is skipped.
         let mut features: Vec<rustybuzz::Feature> = span
             .features
             .iter()
-            .map(|f| {
-                let tag = rustybuzz::ttf_parser::Tag::from_bytes_lossy(f.as_bytes());
-                rustybuzz::Feature::new(tag, 1, ..)
+            .filter_map(|f| tracedraw_core::document::parse_feature(f))
+            .map(|(tag, on)| {
+                let tag = rustybuzz::ttf_parser::Tag::from_bytes_lossy(tag.as_bytes());
+                rustybuzz::Feature::new(tag, u32::from(on), ..)
             })
             .collect();
+        if let Some(tag) = position_feature {
+            features.push(rustybuzz::Feature::new(
+                rustybuzz::ttf_parser::Tag::from_bytes_lossy(tag.as_bytes()),
+                1,
+                ..,
+            ));
+        }
         // Letters of two spans shaped together keep their own colours: no
         // ligature forms over the two letters either side of the change
         // (a font may form one from a lookahead past its first letter);
@@ -4766,6 +4833,7 @@ mod tests {
             outline: None,
             layout_only: false,
             features: Vec::new(),
+            position: tracedraw_core::TextPosition::Normal,
             variations: Vec::new(),
             paragraph: None,
         }
@@ -6461,6 +6529,108 @@ mod tests {
         big.size_pt = 200.0;
         let mixed = f.outline(&[a.clone(), big]);
         assert_eq!(mixed.glyphs, 5);
+    }
+
+    /// A feature switched off changes the glyphs (#1201): "fi" with
+    /// standard ligatures off is two glyphs where the font joins them by
+    /// default; a feature switched on changes them too (slashed zero);
+    /// the font's features are listed for the buttons.
+    #[test]
+    fn features_switched_off_and_on_change_the_glyphs() {
+        let f = system_with(&[QUICKSAND, SELAWIK]);
+        let quicksand = f.face_features("Quicksand", false, false);
+        for tag in ["liga", "dlig", "zero", "sups", "subs", "kern"] {
+            assert!(quicksand.iter().any(|t| t == tag), "{tag} {quicksand:?}");
+        }
+        assert!(!quicksand.iter().any(|t| t == "smcp"));
+        let selawik = f.face_features("Selawik", false, false);
+        assert!(selawik.iter().any(|t| t == "sups"), "{selawik:?}");
+        assert!(!selawik.iter().any(|t| t == "subs"), "{selawik:?}");
+        // A family that is not here: the stand-in's features.
+        assert!(!f.face_features("No Such Family", false, false).is_empty());
+
+        let plain = TextSpan::new("fi", "Quicksand", 100.0);
+        let joined = f.outline(&[plain.clone()]);
+        assert_eq!(joined.glyphs, 1, "the font joins fi by default");
+        let mut off = plain.clone();
+        off.set_feature("liga", Some(false));
+        let apart = f.outline(&[off]);
+        assert_eq!(apart.glyphs, 2);
+        assert_ne!(apart.path.bounding_box(), joined.path.bounding_box());
+        // The old spelling of a feature on still works, and an entry that
+        // is no feature is skipped.
+        let mut on = plain.clone();
+        on.features = vec!["liga".into(), "not a feature".into()];
+        assert_eq!(f.outline(&[on]).glyphs, 1);
+
+        let zero = TextSpan::new("0", "Quicksand", 100.0);
+        let round = f.outline(&[zero.clone()]);
+        let mut slashed = zero.clone();
+        slashed.set_feature("zero", Some(true));
+        let slashed = f.outline(&[slashed]);
+        assert_eq!((round.glyphs, slashed.glyphs), (1, 1));
+        assert_ne!(round.path.elements().len(), slashed.path.elements().len());
+    }
+
+    /// Superscript and subscript (#1201): the font's own forms where it
+    /// has the feature (Selawik has sups), else the characters at 58 % of
+    /// the size, shifted by 33 % up or 15 % down (Selawik has no subs);
+    /// the pen keeps the full size.
+    #[test]
+    fn superscripts_use_the_font_or_a_smaller_shifted_form() {
+        use tracedraw_core::TextPosition;
+        let f = system_with(&[SELAWIK]);
+        let plain = TextSpan::new("2", "Selawik", 100.0);
+        let normal = f.outline(&[plain.clone()]);
+        let mut sup = plain.clone();
+        sup.position = TextPosition::Superscript;
+        let sup = f.outline(&[sup]);
+        let (nb, sb) = (normal.path.bounding_box(), sup.path.bounding_box());
+        assert_eq!(sup.glyphs, 1);
+        // Smaller and raised (the outline's y grows upwards).
+        assert!(sb.height() < nb.height(), "{nb:?} {sb:?}");
+        assert!(sb.y0 > nb.y0, "{nb:?} {sb:?}");
+        // The font's form, not the synthetic one drawn by hand.
+        let mut by_hand = plain.clone();
+        by_hand.size_pt = 100.0 * TextPosition::SYNTHETIC_SCALE;
+        by_hand.baseline_shift_pt = 33.0;
+        let hb = f.outline(&[by_hand]).path.bounding_box();
+        assert!(
+            (sb.y0 - hb.y0).abs() > 1e-3 || (sb.y1 - hb.y1).abs() > 1e-3,
+            "{sb:?} {hb:?}"
+        );
+
+        let mut sub = plain.clone();
+        sub.position = TextPosition::Subscript;
+        let sub = f.outline(&[sub]);
+        // The same as the glyph at 58 % of the size, 15 % of the size
+        // lower, drawn by hand with the baseline shift.
+        let mut by_hand = plain.clone();
+        by_hand.size_pt = 100.0 * TextPosition::SYNTHETIC_SCALE;
+        by_hand.baseline_shift_pt = -15.0;
+        let by_hand = f.outline(&[by_hand]);
+        let (a, b) = (sub.path.bounding_box(), by_hand.path.bounding_box());
+        assert!(
+            (a.x0 - b.x0).abs() < 1e-6 && (a.y0 - b.y0).abs() < 1e-6,
+            "{a:?} {b:?}"
+        );
+        assert!(
+            (a.x1 - b.x1).abs() < 1e-6 && (a.y1 - b.y1).abs() < 1e-6,
+            "{a:?} {b:?}"
+        );
+        let (nb, lb) = (normal.path.bounding_box(), a);
+        assert!((lb.height() / nb.height() - TextPosition::SYNTHETIC_SCALE).abs() < 0.01);
+        // Its bottom below the plain glyph's bottom.
+        assert!(lb.y0 < nb.y0, "{nb:?} {lb:?}");
+        // After another letter the subscript keeps its form: the two are
+        // not shaped as one run, and the whole is narrower than with a
+        // plain "2".
+        let mut x2 = vec![TextSpan::new("x", "Selawik", 100.0), plain.clone()];
+        let plain_box = f.outline(&x2).path.bounding_box();
+        x2[1].position = TextPosition::Subscript;
+        let sub_box = f.outline(&x2).path.bounding_box();
+        assert!(sub_box.x1 < plain_box.x1, "{sub_box:?} {plain_box:?}");
+        assert!(sub_box.y0 < plain_box.y0, "{sub_box:?} {plain_box:?}");
     }
 
     /// No ligature joins letters of two colours: each keeps its glyph.

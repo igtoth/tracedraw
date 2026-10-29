@@ -438,10 +438,10 @@ the preferences, `text_sections_closed`).
   and "..." for the Properties docker's full fill or outline settings.
   The background is drawn behind each character's box, from its descent
   to its ascent (`TextSpan::background`). The expander under the section
-  shows the characters' offsets and angle, strikethrough and the
-  OpenType features, and for text in a variable font a "Variable font"
-  row with a slider for each axis the font shows (see Variable fonts
-  below).
+  shows the characters' offsets and angle, strikethrough, the OpenType
+  row (see OpenType features, superscript and subscript below), and for
+  text in a variable font a "Variable font" row with a slider for each
+  axis the font shows (see Variable fonts below).
 - Paragraph: the gear opens Custom Optional Hyphens; six alignment
   buttons, no alignment (lines start at the left; characters keep their
   offsets), left, centre, right, full justification and forced
@@ -519,6 +519,59 @@ Window > Panels > Glyphs. From the top:
 - A click inserts the glyph at the caret of the text being edited, in
   the docker's font (an alternate with its OpenType feature on), else as
   a new artistic text at the page centre.
+
+## OpenType features, superscript and subscript
+
+The OpenType row of the Text docker's Character section (#1201): small
+buttons, each a picture of what the feature does, with a tip that names
+it and says what it does. In order: Ligatures (`liga`), Discretionary
+ligatures (`dlig`), Small caps (`smcp`), Capitals to small caps
+(`c2sc`), Case-sensitive forms (`case`), Lining numerals (`lnum`),
+Old-style numerals (`onum`), Tabular numerals (`tnum`), Fractions
+(`frac`), Ordinals (`ordn`), Slashed zero (`zero`), Stylistic
+alternates (`salt`), Swash (`swsh`); then Superscript and Subscript.
+
+- A feature button is enabled only when the font the text is drawn with
+  has the feature in its GSUB or GPOS table (`FontSystem::face_features`,
+  the stand-in's features for a family that is not installed, since that
+  is the face the shaper applies them to); a disabled button's tip says
+  the font lacks it. The list is cached per font until the fonts change
+  (`features_of`), so drawing the row costs nothing per frame.
+- Defaults: every feature off, except the ones the shaper applies by
+  itself (`DEFAULT_ON_FEATURES`: liga, clig, calt, kern, rlig, ccmp,
+  locl, mark, mkmk, curs). Ligatures shows on while the font has `liga`
+  and the text has not switched it off.
+- Storage (`TextSpan::features`, a list of tags): a tag turns a feature
+  on ("smcp"); a tag after a `-` turns one off ("-liga"); "liga=0" and
+  "+liga" are read too (`parse_feature`). `TextSpan::set_feature` keeps
+  one entry per tag and stores nothing for what the shaper does anyway,
+  so a span with no entries draws as it always did and files written
+  before #1201 (plain tags, all on) read unchanged. The shaper passes
+  each entry to the font with value 1 or 0; an entry that is no feature
+  is skipped.
+- Lining and old-style numerals exclude each other: turning one on takes
+  the other off.
+- Superscript and Subscript set `TextSpan::position` (`normal`,
+  `superscript`, `subscript`; left out of the file when normal). A second
+  click returns to normal; the other button replaces the position. With
+  the font's `sups` or `subs` feature the font's own forms are drawn, at
+  the text's size (characters the feature has no form for stay as they
+  are, as the font decides). Without it the characters are drawn at 58 %
+  of the size (`TextPosition::SYNTHETIC_SCALE`), superscripts raised by
+  33 % of the size and subscripts lowered by 15 % of it
+  (`TextPosition::synthetic_shift`), on top of any baseline shift set by
+  hand; the tracking, the horizontal offset and the line's height keep
+  the full size, and the Character offset fields stay at 0, since the
+  position is its own attribute.
+- Every click is one undo step on the selected characters (while
+  editing with a selection) or the selected text objects, through
+  `edit_spans`; the Glyphs docker's alternates set their feature the same
+  way (`set_feature`).
+- Checks: `document::tests::features_switch_on_and_off_and_positions_round_trip`,
+  `tracedraw_text::tests::features_switched_off_and_on_change_the_glyphs`,
+  `tracedraw_text::tests::superscripts_use_the_font_or_a_smaller_shifted_form`,
+  `tracedraw_io::tests::switched_off_features_and_superscripts_round_trip_in_native_files`,
+  `text_docker::tests::opentype_buttons_follow_the_font_and_switch_features_on_and_off`.
 
 ## Character offsets, angle and spacing
 

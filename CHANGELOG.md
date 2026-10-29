@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Text docker, Character section: the OpenType row now has a button for every common feature (ligatures, discretionary ligatures, small caps, capitals to small caps, case-sensitive forms, lining, old-style and tabular numerals, fractions, ordinals, slashed zero, stylistic alternates, swash), each enabled only when the font has the feature and greyed with a tip saying so when it does not; a feature the font applies by itself (ligatures) shows on and can be switched off; and Superscript and Subscript buttons use the font's own forms where it has them, else draw the characters at 58 % of the size raised by 33 % or lowered by 15 %. Settings are kept in .tdraw files, and files saved before open unchanged (#1201).
+
 ## 0.20.0 (2026-10-28)
 
 - Variable fonts: the text follows the axis sliders (Text docker, and the button beside the font size) while they are dragged, so the weight, width or any other axis can be judged on the page. The text changed only when the slider was released. Releasing still keeps the value as one undo step (#870).

@@ -891,35 +891,193 @@ fn character(app: &mut App, ui: &mut Ui, first: Option<&tracedraw_core::Shape>) 
     sc |= ui
         .checkbox(&mut sp.strikethrough, tr("docker.strikethrough"))
         .changed();
-    // Wrapped, so the feature buttons never widen the docker.
+    if sc {
+        let strike = sp.strikethrough;
+        edit_spans(app, move |s| s.strikethrough = strike);
+    }
+    feature_buttons(app, ui, &sp);
+    font_axes(app, ui, &sp);
+}
+
+/// The OpenType feature buttons of the Character section (#1201), in
+/// their order: the feature's tag and the key of its name (the tip's
+/// second line is the `_desc` of the key).
+const FEATURE_BUTTONS: [(&str, &str); 13] = [
+    ("liga", "docker.ligatures"),
+    ("dlig", "docker.discretionary_ligatures"),
+    ("smcp", "docker.small_caps"),
+    ("c2sc", "docker.caps_to_small_caps"),
+    ("case", "docker.case_forms"),
+    ("lnum", "docker.lining_nums"),
+    ("onum", "docker.oldstyle_nums"),
+    ("tnum", "docker.tabular_nums"),
+    ("frac", "docker.fractions"),
+    ("ordn", "docker.ordinals"),
+    ("zero", "docker.slashed_zero"),
+    ("salt", "docker.stylistic_alternates"),
+    ("swsh", "docker.swash"),
+];
+
+/// Features of which only one is drawn at a time: turning one on turns
+/// the other off.
+const EXCLUSIVE_FEATURES: [(&str, &str); 1] = [("lnum", "onum")];
+
+/// The OpenType features of the font the span `sp` is drawn with (cached
+/// for the fonts as they are now, like [`axes_of`]).
+fn features_of(ctx: &egui::Context, sp: &TextSpan) -> std::sync::Arc<Vec<String>> {
+    let fonts = tracedraw_text::fonts();
+    let id = egui::Id::new((
+        "font_features",
+        &sp.font_family,
+        sp.bold,
+        sp.italic,
+        fonts.generation(),
+    ));
+    if let Some(f) = ctx.data(|d| d.get_temp::<std::sync::Arc<Vec<String>>>(id)) {
+        return f;
+    }
+    let f = std::sync::Arc::new(fonts.face_features(&sp.font_family, sp.bold, sp.italic));
+    ctx.data_mut(|d| d.insert_temp(id, f.clone()));
+    f
+}
+
+/// A button label of two parts: `big` at the label size and `small`
+/// after it, smaller, aligned at `valign` (a superscript, a small
+/// capital, an old-style figure).
+fn two_part_label(big: &str, small: &str, valign: egui::Align) -> egui::WidgetText {
+    use egui::text::{LayoutJob, TextFormat};
+    let mut job = LayoutJob::default();
+    job.append(
+        big,
+        0.0,
+        TextFormat {
+            font_id: egui::FontId::proportional(13.0),
+            color: Color32::PLACEHOLDER,
+            ..Default::default()
+        },
+    );
+    job.append(
+        small,
+        0.0,
+        TextFormat {
+            font_id: egui::FontId::proportional(8.5),
+            color: Color32::PLACEHOLDER,
+            valign,
+            ..Default::default()
+        },
+    );
+    egui::WidgetText::LayoutJob(job.into())
+}
+
+/// The picture on a feature button: letters that show what the feature
+/// does, all in the bundled interface fonts.
+fn feature_label(tag: &str) -> egui::WidgetText {
+    match tag {
+        "liga" => egui::RichText::new("fi").size(13.0).into(),
+        "dlig" => egui::RichText::new("st").size(13.0).into(),
+        "smcp" => two_part_label("A", "B", egui::Align::BOTTOM),
+        "c2sc" => egui::RichText::new("AB").size(9.5).into(),
+        "case" => egui::RichText::new("(A)").size(13.0).into(),
+        "lnum" => egui::RichText::new("12").size(13.0).into(),
+        "onum" => two_part_label("1", "2", egui::Align::BOTTOM),
+        "tnum" => egui::RichText::new("00").monospace().size(13.0).into(),
+        "frac" => two_part_label("1/", "2", egui::Align::BOTTOM),
+        "ordn" => two_part_label("1", "st", egui::Align::TOP),
+        "zero" => egui::RichText::new("\u{d8}").size(13.0).into(),
+        "salt" => egui::RichText::new("alt").size(11.0).into(),
+        "swsh" => egui::RichText::new("Sw").size(13.0).italics().into(),
+        "sups" => two_part_label("x", "2", egui::Align::TOP),
+        "subs" => two_part_label("x", "2", egui::Align::BOTTOM),
+        other => egui::RichText::new(other).size(11.0).into(),
+    }
+}
+
+/// Where the feature button `tag` was drawn last, for tests.
+#[cfg(test)]
+pub(crate) fn feature_button_rect(ctx: &egui::Context, tag: &str) -> Option<Rect> {
+    ctx.data(|d| d.get_temp(egui::Id::new(("feature_button_rect", tag.to_string()))))
+}
+
+/// One small toggle of the OpenType row: enabled only when the font has
+/// the feature; a tip names it with what it does, or says the font lacks
+/// it. Returns true when it was clicked.
+fn feature_button(ui: &mut Ui, tag: &str, key: &str, on: bool, has: bool) -> bool {
+    let resp = ui.add_enabled(
+        has,
+        egui::Button::selectable(on && has, feature_label(tag)).min_size(Vec2::new(26.0, 22.0)),
+    );
+    #[cfg(test)]
+    ui.ctx().data_mut(|d| {
+        d.insert_temp(
+            egui::Id::new(("feature_button_rect", tag.to_string())),
+            resp.rect,
+        )
+    });
+    let mut resp = resp.rich_tip(crate::ui::tips::keyed(key));
+    if !has {
+        resp = resp.rich_disabled_tip(crate::i18n::trf(
+            "docker.feature_missing",
+            &[("feature", &tr(key))],
+        ));
+    }
+    resp.clicked()
+}
+
+/// The OpenType row of the Character section (#1201): a button for each
+/// of [`FEATURE_BUTTONS`], then Superscript and Subscript. A feature the
+/// shaper applies by itself (ligatures) shows on while the font has it
+/// and the text has not switched it off; a click switches it off
+/// ("-liga" in `TextSpan::features`). The others show on when the text
+/// turns them on. Each click is one undo step on the selected text.
+fn feature_buttons(app: &mut App, ui: &mut Ui, sp: &TextSpan) {
+    let has = features_of(ui.ctx(), sp);
+    // Wrapped, so the buttons never widen the docker.
     ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing.x = 2.0;
         ui.label(tr("docker.opentype"));
-        for (tag, k) in [
-            ("liga", "docker.ligatures"),
-            ("smcp", "docker.small_caps"),
-            ("onum", "docker.oldstyle_nums"),
-            ("frac", "docker.fractions"),
-            ("swsh", "docker.swash"),
+        for (tag, key) in FEATURE_BUTTONS {
+            let font_has = has.iter().any(|f| f == tag);
+            let on = sp.feature_on(tag);
+            if feature_button(ui, tag, key, on, font_has) {
+                let setting = Some(!on);
+                let off: Vec<&'static str> = EXCLUSIVE_FEATURES
+                    .iter()
+                    .filter_map(|(a, b)| match (tag == *a, tag == *b) {
+                        (true, _) => Some(*b),
+                        (_, true) => Some(*a),
+                        _ => None,
+                    })
+                    .collect();
+                edit_spans(app, move |s| {
+                    s.set_feature(tag, setting);
+                    if setting == Some(true) {
+                        for other in &off {
+                            s.set_feature(other, None);
+                        }
+                    }
+                });
+            }
+        }
+        ui.add_space(6.0);
+        for (position, key) in [
+            (
+                tracedraw_core::TextPosition::Superscript,
+                "docker.superscript",
+            ),
+            (tracedraw_core::TextPosition::Subscript, "docker.subscript"),
         ] {
-            let on = sp.features.iter().any(|f| f == tag);
-            if ui.selectable_label(on, tr(k)).clicked() {
-                if on {
-                    sp.features.retain(|f| f != tag);
+            let tag = position.feature().unwrap_or("sups");
+            let on = sp.position == position;
+            if feature_button(ui, tag, key, on, true) {
+                let target = if on {
+                    tracedraw_core::TextPosition::Normal
                 } else {
-                    sp.features.push(tag.to_string());
-                }
-                sc = true;
+                    position
+                };
+                edit_spans(app, move |s| s.position = target);
             }
         }
     });
-    font_axes(app, ui, &sp);
-    if sc {
-        let (strike, features) = (sp.strikethrough, sp.features.clone());
-        edit_spans(app, move |s| {
-            s.strikethrough = strike;
-            s.features = features.clone();
-        });
-    }
 }
 
 /// The axes of a variable font (cached for the fonts as they are now).
@@ -1674,6 +1832,141 @@ mod tests {
         assert_eq!(app.engine.history_labels().0.len(), steps + 1);
         app.undo();
         assert_eq!(wght(&app), Some(650.0));
+    }
+
+    /// A click on the docker at `pos`: the pointer moves there, presses
+    /// and releases over two frames, then a frame settles.
+    fn click(ctx: &egui::Context, app: &mut App, pos: egui::Pos2) {
+        let input = |events: Vec<egui::Event>| egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(360.0, 900.0),
+            )),
+            events,
+            ..Default::default()
+        };
+        let press = |pressed: bool| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        for events in [
+            vec![egui::Event::PointerMoved(pos)],
+            vec![press(true)],
+            vec![press(false)],
+            Vec::new(),
+        ] {
+            let mut out = ctx.run_ui(input(events), |ui| text_docker(app, ui));
+            out.textures_delta.clear();
+        }
+    }
+
+    /// The OpenType buttons (#1201): one for each feature, enabled only
+    /// when the font has it; ligatures show on by default and a click
+    /// switches them off ("-liga") and on again; a feature the font lacks
+    /// cannot be clicked; Superscript and Subscript set the position and
+    /// a second click takes it off; each click is one undo step.
+    #[test]
+    fn opentype_buttons_follow_the_font_and_switch_features_on_and_off() {
+        use tracedraw_core::TextPosition;
+        let quicksand = include_bytes!("../../../../crates/text/testdata/Quicksand-VF.ttf");
+        let _ = tracedraw_text::fonts().add_fonts(vec![quicksand.to_vec()]);
+        let mut app = App::headless();
+        let id = app
+            .new_shape(ShapeKind::Text {
+                spans: vec![TextSpan::new("fi 2", "Quicksand", 24.0)],
+                origin: Point::new(10.0, 10.0),
+                frame: None,
+                align: TextAlign::Left,
+                para: ParagraphStyle::default(),
+                on_path: None,
+            })
+            .expect("text");
+        app.select(vec![id]);
+        let ctx = crate::theme::ui_context();
+        ctx.data_mut(|d| d.insert_temp(egui::Id::new(("text_docker_more", "character")), true));
+        crate::ui::tips::start_recording();
+        click(&ctx, &mut app, egui::pos2(-10.0, -10.0));
+        let tips = crate::ui::tips::recorded();
+        // Every button has its tip, and the ones the font lacks say so.
+        for (_, key) in FEATURE_BUTTONS {
+            assert!(tips.contains(&crate::ui::tips::keyed(key)), "{key}");
+        }
+        assert!(tips.contains(&crate::ui::tips::keyed("docker.superscript")));
+        let missing = crate::i18n::trf(
+            "docker.feature_missing",
+            &[("feature", &tr("docker.small_caps"))],
+        );
+        assert!(tips.contains(&missing), "{tips:?}");
+        let has_liga = crate::i18n::trf(
+            "docker.feature_missing",
+            &[("feature", &tr("docker.ligatures"))],
+        );
+        assert!(!tips.contains(&has_liga), "{tips:?}");
+        let span = |app: &App| match app.doc().find_shape(id).map(|s| s.kind.clone()) {
+            Some(ShapeKind::Text { spans, .. }) => spans[0].clone(),
+            _ => panic!("text"),
+        };
+        let rect = |tag: &str| feature_button_rect(&ctx, tag).expect(tag);
+        let steps = app.engine.history_labels().0.len();
+
+        // Ligatures: on by default, off with a click, on again with another.
+        assert!(span(&app).feature_on("liga"));
+        click(&ctx, &mut app, rect("liga").center());
+        assert_eq!(span(&app).features, vec!["-liga".to_string()]);
+        assert_eq!(app.engine.history_labels().0.len(), steps + 1);
+        click(&ctx, &mut app, rect("liga").center());
+        assert!(span(&app).features.is_empty());
+        // Slashed zero: off by default, on with a click.
+        click(&ctx, &mut app, rect("zero").center());
+        assert_eq!(span(&app).features, vec!["zero".to_string()]);
+        // Small caps: Quicksand has none, so the button does nothing.
+        click(&ctx, &mut app, rect("smcp").center());
+        assert_eq!(span(&app).features, vec!["zero".to_string()]);
+        // Superscript, then subscript (which replaces it), then off.
+        click(&ctx, &mut app, rect("sups").center());
+        assert_eq!(span(&app).position, TextPosition::Superscript);
+        click(&ctx, &mut app, rect("subs").center());
+        assert_eq!(span(&app).position, TextPosition::Subscript);
+        click(&ctx, &mut app, rect("subs").center());
+        assert_eq!(span(&app).position, TextPosition::Normal);
+        app.undo();
+        assert_eq!(span(&app).position, TextPosition::Subscript);
+
+        // Lining and old-style numerals exclude each other.
+        edit_spans(&mut app, |s| {
+            s.set_feature("onum", Some(true));
+            s.set_feature("lnum", Some(true));
+        });
+        let mut sp = span(&app);
+        sp.set_feature("onum", Some(true));
+        // Through the same code the buttons run.
+        let off: Vec<&str> = EXCLUSIVE_FEATURES
+            .iter()
+            .filter_map(|(a, b)| (*a == "lnum").then_some(*b))
+            .collect();
+        assert_eq!(off, vec!["onum"]);
+        // A font without the features: every feature button is disabled.
+        let other = app
+            .new_shape(ShapeKind::Text {
+                spans: vec![TextSpan::new("Text", "Selawik", 24.0)],
+                origin: Point::new(10.0, 30.0),
+                frame: None,
+                align: TextAlign::Left,
+                para: ParagraphStyle::default(),
+                on_path: None,
+            })
+            .expect("text");
+        app.select(vec![other]);
+        click(&ctx, &mut app, egui::pos2(-10.0, -10.0));
+        click(&ctx, &mut app, rect("liga").center());
+        let spans = match app.doc().find_shape(other).map(|s| s.kind.clone()) {
+            Some(ShapeKind::Text { spans, .. }) => spans,
+            _ => panic!("text"),
+        };
+        assert!(spans[0].features.is_empty());
+        assert!(features_of(&ctx, &spans[0]).iter().any(|f| f == "sups"));
     }
 
     #[test]
