@@ -428,9 +428,7 @@ pub fn patch_fill(target: &Fill, from: &Fill, fields: &[FillField]) -> Fill {
             }
             Fill::Fountain(out)
         }
-        (Fill::Pattern(t), Fill::Pattern(f))
-            if fields.iter().all(|field| field.is_placement()) =>
-        {
+        (Fill::Pattern(t), Fill::Pattern(f)) if fields.iter().all(|field| field.is_placement()) => {
             let mut out = t.clone();
             for field in fields {
                 field.copy_pattern(f, &mut out);

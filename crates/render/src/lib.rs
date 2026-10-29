@@ -2002,9 +2002,8 @@ impl Renderer<'_> {
                 ..
             } => {
                 let (tw, th) = size(1024);
-                let key = format!(
-                    "pat2|{kind:?}|{front:?}|{back:?}|{placement:?}|{tile:?}|{tw}x{th}"
-                );
+                let key =
+                    format!("pat2|{kind:?}|{front:?}|{back:?}|{placement:?}|{tile:?}|{tw}x{th}");
                 if let Some(pm) = procedural_cache_get(&key) {
                     return Some((Arc::new(pm), px_to_unit(tw, th)));
                 }
@@ -2945,7 +2944,8 @@ pub fn render_pattern_cell(p: &tracedraw_core::Pattern, dpi: f64) -> Option<(Pix
         symbols: &[],
         preview: None,
     };
-    let (pm, px_to_unit) = r.pattern_cell(p, &placement, tile, Affine::scale(zoom) * unit_to_page)?;
+    let (pm, px_to_unit) =
+        r.pattern_cell(p, &placement, tile, Affine::scale(zoom) * unit_to_page)?;
     // The picture's pixels (Y down) laid over the unit square: a decoded
     // bitmap is the block itself only when it covers the square exactly.
     let unit = px_to_unit.as_coeffs();
@@ -2959,14 +2959,7 @@ pub fn render_pattern_cell(p: &tracedraw_core::Pattern, dpi: f64) -> Option<(Pix
     // A bitmap tile stretched over the block: drawn into a pixmap of its own.
     let (tw, th) = (pm.width().clamp(1, 4096), pm.height().clamp(1, 4096));
     let mut out = Pixmap::new(tw, th)?;
-    let t = Affine::new([
-        f64::from(tw),
-        0.0,
-        0.0,
-        -f64::from(th),
-        0.0,
-        f64::from(th),
-    ]) * px_to_unit;
+    let t = Affine::new([f64::from(tw), 0.0, 0.0, -f64::from(th), 0.0, f64::from(th)]) * px_to_unit;
     let c = t.as_coeffs();
     out.draw_pixmap(
         0,
@@ -3967,6 +3960,292 @@ mod tests {
                 "({x}, {y}) must be page white"
             );
         }
+    }
+
+    fn checker(size_mm: f64, placement: tracedraw_core::style::PatternPlacement) -> Fill {
+        Fill::Pattern(Pattern::TwoColor {
+            tile: PatternTile::Checker,
+            front: Color::rgb8(0, 0, 0),
+            back: Color::rgb8(255, 255, 255),
+            size_mm,
+            placement,
+        })
+    }
+
+    /// Mirror tiles horizontally: the second column of tiles shows the
+    /// tile flipped, so a checker's black bottom-left cell sits at the
+    /// bottom right of the second tile.
+    #[test]
+    fn mirrored_checker_flips_the_second_column() {
+        use tracedraw_core::style::PatternPlacement;
+        let bounds = Rect::new(0.0, 0.0, 20.0, 10.0);
+        // 1 px per mm: the first tile covers columns 0..10, the second
+        // 10..20; the tile's bottom-left cell is image rows 5..10.
+        let plain =
+            render_fill_image(&checker(10.0, PatternPlacement::default()), bounds, 25.4).unwrap();
+        assert_eq!(px(&plain, 2, 7), (0, 0, 0));
+        assert_eq!(px(&plain, 12, 7), (0, 0, 0), "the same tile again");
+        assert_eq!(px(&plain, 17, 7), (255, 255, 255));
+        let mirrored = render_fill_image(
+            &checker(
+                10.0,
+                PatternPlacement {
+                    mirror_horizontal: true,
+                    ..PatternPlacement::default()
+                },
+            ),
+            bounds,
+            25.4,
+        )
+        .unwrap();
+        assert_eq!(px(&mirrored, 2, 7), (0, 0, 0), "the first tile as before");
+        assert_eq!(px(&mirrored, 12, 7), (255, 255, 255), "flipped");
+        assert_eq!(px(&mirrored, 17, 7), (0, 0, 0), "flipped");
+        // Vertically: the second row of tiles is turned upside down.
+        let upside = render_fill_image(
+            &checker(
+                10.0,
+                PatternPlacement {
+                    mirror_vertical: true,
+                    ..PatternPlacement::default()
+                },
+            ),
+            Rect::new(0.0, 0.0, 10.0, 20.0),
+            25.4,
+        )
+        .unwrap();
+        assert_eq!(px(&upside, 2, 17), (0, 0, 0), "the first row as before");
+        assert_eq!(px(&upside, 2, 7), (255, 255, 255), "the second row flipped");
+        assert_eq!(px(&upside, 2, 2), (0, 0, 0));
+    }
+
+    /// A row offset of 50 percent moves every other row half a tile along;
+    /// a column offset does the same to every other column.
+    #[test]
+    fn row_offset_shifts_every_other_row_by_half_a_tile() {
+        use tracedraw_core::style::{PatternPlacement, TileShift};
+        let bounds = Rect::new(0.0, 0.0, 20.0, 20.0);
+        let shifted = render_fill_image(
+            &checker(
+                10.0,
+                PatternPlacement {
+                    shift_percent: 50.0,
+                    ..PatternPlacement::default()
+                },
+            ),
+            bounds,
+            25.4,
+        )
+        .unwrap();
+        // The bottom row (image rows 10..20) is not shifted: black at the
+        // bottom left of each tile.
+        assert_eq!(px(&shifted, 2, 17), (0, 0, 0));
+        assert_eq!(px(&shifted, 7, 17), (255, 255, 255));
+        // The row above starts 5 mm along: its tiles' black cells sit at
+        // x 5..10 and 15..20 (image rows 5..10 are the tiles' lower halves).
+        assert_eq!(px(&shifted, 7, 7), (0, 0, 0));
+        assert_eq!(px(&shifted, 2, 7), (255, 255, 255));
+        assert_eq!(px(&shifted, 17, 7), (0, 0, 0));
+        let columns = render_fill_image(
+            &checker(
+                10.0,
+                PatternPlacement {
+                    shift_percent: 50.0,
+                    shift: TileShift::Column,
+                    ..PatternPlacement::default()
+                },
+            ),
+            bounds,
+            25.4,
+        )
+        .unwrap();
+        // The first column (x 0..10) stays; the second is 5 mm up, so its
+        // first tile's black cell covers y 5..10 (image rows 10..15).
+        assert_eq!(px(&columns, 2, 17), (0, 0, 0));
+        assert_eq!(px(&columns, 12, 12), (0, 0, 0));
+        assert_eq!(px(&columns, 12, 17), (255, 255, 255));
+    }
+
+    /// The offset moves the tiles, the rotation turns them and the tile
+    /// size scales them, the tiles still one pattern draw each.
+    #[test]
+    fn placement_offsets_turns_and_sizes_the_tiles() {
+        use tracedraw_core::style::PatternPlacement;
+        let bounds = Rect::new(0.0, 0.0, 20.0, 20.0);
+        let moved = render_fill_image(
+            &checker(
+                10.0,
+                PatternPlacement {
+                    offset_x: 5.0,
+                    ..PatternPlacement::default()
+                },
+            ),
+            bounds,
+            25.4,
+        )
+        .unwrap();
+        // The tile edge is now at x 5: black at x 5..10 in the bottom cell.
+        assert_eq!(px(&moved, 7, 17), (0, 0, 0));
+        assert_eq!(px(&moved, 2, 17), (255, 255, 255));
+        let sized = render_fill_image(
+            &checker(
+                10.0,
+                PatternPlacement {
+                    size: Some(tracedraw_core::geometry::Size::new(20.0, 20.0)),
+                    ..PatternPlacement::default()
+                },
+            ),
+            bounds,
+            25.4,
+        )
+        .unwrap();
+        // One 20 mm tile: its bottom-left cell is the whole bottom-left
+        // quarter.
+        assert_eq!(px(&sized, 7, 17), (0, 0, 0));
+        assert_eq!(px(&sized, 7, 7), (255, 255, 255));
+        let turned = render_fill_image(
+            &checker(
+                10.0,
+                PatternPlacement {
+                    rotation: 45.0,
+                    ..PatternPlacement::default()
+                },
+            ),
+            bounds,
+            25.4,
+        )
+        .unwrap();
+        // Turned by 45 degrees counter-clockwise around the origin, the
+        // tile's bottom edge runs along y = x: the page point (0.5, 3.5)
+        // lies 2.8 mm along the tile and 2.1 mm up it, in the black cell,
+        // and (3.5, 0.5) lies 2.1 mm below the edge, in the white cell
+        // of the tile row beneath.
+        assert_eq!(px(&turned, 0, 16), (0, 0, 0));
+        assert_eq!(px(&turned, 3, 19), (255, 255, 255));
+        // The skew leans the columns: at the top of the tile the edge has
+        // moved by tan(45) * 10 mm.
+        let skewed = render_fill_image(
+            &checker(
+                10.0,
+                PatternPlacement {
+                    skew: 45.0,
+                    ..PatternPlacement::default()
+                },
+            ),
+            bounds,
+            25.4,
+        )
+        .unwrap();
+        // Page (3.5, 1.5) is 2 mm into the first tile, black; (13.5,
+        // 11.5) is 2 mm into the tile above, which starts 10 mm right;
+        // (8.5, 11.5) is 7 mm into the tile left of that, white.
+        assert_eq!(px(&skewed, 3, 18), (0, 0, 0), "the bottom is as before");
+        assert_eq!(px(&skewed, 13, 8), (0, 0, 0), "a tile up, 10 mm right");
+        assert_eq!(px(&skewed, 8, 8), (255, 255, 255));
+    }
+
+    /// Transform with object: moving the object through the engine moves
+    /// its tiles along; without it they stay anchored to the page.
+    #[test]
+    fn transform_with_object_moves_the_tiles_with_the_object() {
+        use tracedraw_core::style::PatternPlacement;
+        use tracedraw_core::{Command, Engine};
+        let make = |with_object: bool| {
+            let tile_square = rect(7, Rect::new(0.0, 0.0, 5.0, 5.0), Color::rgb8(255, 0, 0));
+            let mut s = rect(1, Rect::new(0.0, 0.0, 20.0, 20.0), Color::WHITE);
+            s.fill = Fill::Pattern(Pattern::Vector {
+                shapes: vec![tile_square],
+                tile: tracedraw_core::geometry::Size::new(10.0, 10.0),
+                placement: PatternPlacement {
+                    transform_with_object: with_object,
+                    ..PatternPlacement::default()
+                },
+            });
+            let mut doc = Document::new("t", tracedraw_core::geometry::Size::new(30.0, 20.0));
+            let page = doc.pages[0].id;
+            let layer = doc.pages[0].layers[0].id;
+            doc.layer_mut(layer).unwrap().shapes.push(s);
+            let mut e = Engine::new(doc);
+            e.run(&Command::TransformShapes {
+                shapes: vec![tracedraw_core::ShapeId(1)],
+                transform: Affine::translate((5.0, 0.0)),
+            })
+            .unwrap();
+            render_page_image(e.document(), page, 25.4).unwrap()
+        };
+        // Anchored: the tiles stay on the page grid, the object now covers
+        // x 5..25, so red squares show at x 10..15 and 20..25 (rows 15..20).
+        let anchored = make(false);
+        assert_eq!(px(&anchored, 12, 17), (255, 0, 0));
+        assert_eq!(px(&anchored, 7, 17), (255, 255, 255));
+        // With the object: the tiles moved 5 mm right too, red at x 5..10
+        // and 15..20.
+        let along = make(true);
+        assert_eq!(px(&along, 7, 17), (255, 0, 0));
+        assert_eq!(px(&along, 12, 17), (255, 255, 255));
+        assert_eq!(px(&along, 17, 17), (255, 0, 0));
+    }
+
+    /// Mirrored and shifted bitmap tiles: the picture's block is built
+    /// once from the decoded picture; a two-by-two block holds the picture
+    /// four times, flipped in turn.
+    #[test]
+    fn bitmap_pattern_mirrors_its_picture() {
+        use tracedraw_core::style::PatternPlacement;
+        // A 2 x 1 picture: red left, blue right.
+        let mut pm = Pixmap::new(2, 1).unwrap();
+        pm.pixels_mut()[0] = tiny_skia::ColorU8::from_rgba(255, 0, 0, 255).premultiply();
+        pm.pixels_mut()[1] = tiny_skia::ColorU8::from_rgba(0, 0, 255, 255).premultiply();
+        let png = pm.encode_png().unwrap();
+        let fill = |placement| {
+            Fill::Pattern(Pattern::Bitmap {
+                png: png.clone().into(),
+                width_px: 2,
+                height_px: 1,
+                size_mm: 10.0,
+                placement,
+            })
+        };
+        let bounds = Rect::new(0.0, 0.0, 20.0, 5.0);
+        let plain = render_fill_image(&fill(PatternPlacement::default()), bounds, 25.4).unwrap();
+        assert_eq!(px(&plain, 2, 2), (255, 0, 0));
+        assert_eq!(px(&plain, 12, 2), (255, 0, 0));
+        let mirrored = render_fill_image(
+            &fill(PatternPlacement {
+                mirror_horizontal: true,
+                ..PatternPlacement::default()
+            }),
+            bounds,
+            25.4,
+        )
+        .unwrap();
+        assert_eq!(px(&mirrored, 2, 2), (255, 0, 0));
+        assert_eq!(px(&mirrored, 12, 2), (0, 0, 255), "the second tile flipped");
+        assert_eq!(px(&mirrored, 17, 2), (255, 0, 0));
+    }
+
+    /// The block exporters tile: one tile with its placement transform.
+    #[test]
+    fn pattern_cell_for_exporters_carries_the_placement() {
+        use tracedraw_core::style::PatternPlacement;
+        let p = Pattern::TwoColor {
+            tile: PatternTile::Checker,
+            front: Color::BLACK,
+            back: Color::WHITE,
+            size_mm: 10.0,
+            placement: PatternPlacement {
+                mirror_horizontal: true,
+                offset_x: 3.0,
+                ..PatternPlacement::default()
+            },
+        };
+        let (pm, to_page) = render_pattern_cell(&p, 25.4).unwrap();
+        assert_eq!((pm.width(), pm.height()), (20, 10));
+        let c = to_page.as_coeffs();
+        assert_eq!(c, [20.0, 0.0, 0.0, 10.0, 3.0, 0.0]);
+        // The second half is the mirrored tile.
+        assert_eq!(px(&pm, 2, 7), (0, 0, 0));
+        assert_eq!(px(&pm, 12, 7), (255, 255, 255));
     }
 
     #[test]

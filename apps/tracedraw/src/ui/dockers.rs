@@ -3,6 +3,7 @@
 use crate::app::{App, DockerDrag, DockerPlace, DockerTab};
 use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
+use crate::ui::pattern_pick::{PatternAction, PatternPickers};
 use crate::ui::tips::RichTip;
 use egui::Ui;
 use tracedraw_core::patch::{FillField, FillMix, StrokeField, StrokeMix};
@@ -956,8 +957,17 @@ fn properties(app: &mut App, ui: &mut Ui) {
                 let mix = app.selection_fill_mix();
                 let mut fill = old.clone();
                 let mut touched = Vec::new();
-                let edited = fill_editor_mixed(ui, &mut fill, &mix, &mut touched);
+                // The drawing's patterns, fetched only when a picker needs
+                // them (not every frame).
+                let fetch = || app.pattern_library();
+                let mut pickers = PatternPickers::new(&fetch);
+                let edited =
+                    fill_editor_mixed(ui, &mut fill, &mix, &mut touched, Some(&mut pickers));
+                let action = pickers.action;
                 let has = !matches!(fill, Fill::None) || mix.kind;
+                if let Some(action) = action {
+                    app.run_pattern_action(action);
+                }
                 if edited {
                     // Dragging in the picker: one step, and the colour
                     // joins the document palette on release.
@@ -1453,6 +1463,7 @@ pub(crate) fn fill_kind_picture(painter: &egui::Painter, r: egui::Rect, kind: us
             }
             painter.rect_stroke(sq, 0.0, edge, egui::StrokeKind::Inside);
         }
+        6 | 7 => crate::ui::pattern_pick::draw_pattern_kind(painter, r, kind),
         _ => {
             painter.rect_stroke(sq, 0.0, edge, egui::StrokeKind::Inside);
             for t in [1.0 / 3.0, 2.0 / 3.0] {
@@ -1471,8 +1482,31 @@ pub(crate) fn fill_kind_picture(painter: &egui::Painter, r: egui::Rect, kind: us
     }
 }
 
+/// The fill type shown in the type row: `fill_kind`, with a pattern's
+/// kind told apart (3 two-colour, 6 vector, 7 bitmap).
+pub(crate) fn fill_kind_shown(fill: &Fill) -> usize {
+    match fill {
+        Fill::Pattern(Pattern::Vector { .. }) => 6,
+        Fill::Pattern(Pattern::Bitmap { .. }) => 7,
+        _ => tracedraw_core::patch::fill_kind(fill),
+    }
+}
+
+/// The fill types of the type row, in order: none, uniform, gradient,
+/// two-colour pattern, vector pattern, bitmap pattern, texture, mesh.
+const FILL_KINDS: [(usize, &str); 8] = [
+    (0, "docker.fill_none"),
+    (1, "docker.fill_uniform"),
+    (2, "docker.fill_fountain"),
+    (3, "docker.fill_pattern"),
+    (6, "docker.fill_vector_pattern"),
+    (7, "docker.fill_bitmap_pattern"),
+    (4, "docker.fill_texture"),
+    (5, "docker.fill_mesh"),
+];
+
 fn fill_editor(ui: &mut Ui, fill: &mut Fill) -> bool {
-    fill_editor_mixed(ui, fill, &FillMix::default(), &mut Vec::new())
+    fill_editor_mixed(ui, fill, &FillMix::default(), &mut Vec::new(), None)
 }
 
 /// [`fill_editor`] for a selection whose fills differ as `mix` says: no
@@ -1485,25 +1519,16 @@ fn fill_editor_mixed(
     fill: &mut Fill,
     mix: &FillMix,
     touched: &mut Vec<FillField>,
+    mut pickers: Option<&mut PatternPickers>,
 ) -> bool {
     let mut changed = false;
-    let mut kind = tracedraw_core::patch::fill_kind(fill);
+    let mut kind = fill_kind_shown(fill);
     let shown_kind = (!mix.kind).then_some(kind);
-    // The kinds as pictures: none, uniform, gradient, pattern, texture,
-    // mesh.
+    // The kinds as pictures: none, uniform, gradient, two-colour, vector
+    // and bitmap pattern, texture, mesh.
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing.x = 2.0;
-        for (i, n) in [
-            "docker.fill_none",
-            "docker.fill_uniform",
-            "docker.fill_fountain",
-            "docker.fill_pattern",
-            "docker.fill_texture",
-            "docker.fill_mesh",
-        ]
-        .iter()
-        .enumerate()
-        {
+        for (i, n) in FILL_KINDS {
             let (rect, resp) = ui.allocate_exact_size(egui::vec2(28.0, 26.0), egui::Sense::click());
             if shown_kind == Some(i) {
                 ui.painter().rect_filled(rect, 2.0, Tokens::tool_active());
@@ -1530,10 +1555,15 @@ fn fill_editor_mixed(
         crate::ui::field::mixed_note(ui);
         return false;
     }
-    if changed && tracedraw_core::patch::fill_kind(fill) != kind {
+    if changed && fill_kind_shown(fill) != kind {
         let base = fill
             .preview_color()
             .unwrap_or(Color::cmyk_pct(0.0, 0.0, 0.0, 20.0));
+        // A pattern keeps its placement when its kind changes.
+        let placement = match fill {
+            Fill::Pattern(p) => *p.placement(),
+            _ => Default::default(),
+        };
         *fill = match kind {
             0 => Fill::None,
             1 => Fill::Solid(base),
@@ -1543,8 +1573,39 @@ fn fill_editor_mixed(
                 front: base,
                 back: Color::WHITE,
                 size_mm: 10.0,
-                placement: Default::default(),
+                placement,
             }),
+            // A vector or bitmap pattern the drawing holds (the first), or
+            // a bitmap pattern from a picture on the page; with none, the
+            // way to make one (Object > Create > Pattern Fill, or a picture
+            // file), the fill unchanged until then.
+            6 | 7 => {
+                let Some(pk) = pickers.as_deref_mut() else {
+                    return false;
+                };
+                let lib = pk.library();
+                let found = if kind == 6 {
+                    lib.vector.first().cloned()
+                } else {
+                    lib.bitmap
+                        .first()
+                        .cloned()
+                        .or_else(|| lib.picture_pattern(0))
+                };
+                match found {
+                    Some(p) => Fill::Pattern(p.with_placement(placement)),
+                    None => {
+                        pk.action = Some(if kind == 6 {
+                            PatternAction::CreateVector
+                        } else if crate::files::WEB {
+                            PatternAction::ImportBitmap
+                        } else {
+                            PatternAction::CreateBitmap
+                        });
+                        return false;
+                    }
+                }
+            }
             4 => Fill::Texture(Texture {
                 kind: TextureKind::Clouds,
                 color_a: base,
@@ -1575,7 +1636,7 @@ fn fill_editor_mixed(
             }
         }
         Fill::Fountain(f) => changed |= fountain_editor(ui, f),
-        Fill::Pattern(p) => changed |= pattern_editor(ui, p),
+        Fill::Pattern(p) => changed |= pattern_editor(ui, p, mix, touched, pickers),
         Fill::Texture(t) => changed |= texture_editor(ui, t),
         Fill::Mesh(m) => {
             ui.label(trf(
@@ -1914,15 +1975,27 @@ fn fountain_spread_editor(ui: &mut Ui, f: &mut Fountain) -> bool {
     changed
 }
 
-pub(crate) fn pattern_editor(ui: &mut Ui, p: &mut Pattern) -> bool {
+/// The settings of a pattern fill: the tile (a two-colour tile and its
+/// colours; a vector or bitmap pattern picked from the drawing's, with
+/// `pickers`), then the placement every kind shares: tile size (with a
+/// lock keeping the proportions), offset, rotation, skew, mirrored
+/// tiles, row or column offset, Transform with object. Values that
+/// differ across the selection (`mix`) show as mixed; a value set to
+/// what a mixed field shows goes into `touched`.
+pub(crate) fn pattern_editor(
+    ui: &mut Ui,
+    p: &mut Pattern,
+    mix: &FillMix,
+    touched: &mut Vec<FillField>,
+    pickers: Option<&mut PatternPickers>,
+) -> bool {
+    use crate::ui::field::NumField;
+    use crate::ui::pattern_pick::{draw_lock, draw_mirror, draw_shift, picture_button};
+    use tracedraw_core::style::TileShift;
     let mut changed = false;
     match p {
         Pattern::TwoColor {
-            tile,
-            front,
-            back,
-            size_mm,
-            ..
+            tile, front, back, ..
         } => {
             egui::ComboBox::from_label(tr("docker.tile"))
                 .selected_text(tile.name())
@@ -1936,64 +2009,265 @@ pub(crate) fn pattern_editor(ui: &mut Ui, p: &mut Pattern) -> bool {
                 });
             changed |= color_row(ui, &tr("docker.front"), front);
             changed |= color_row(ui, &tr("docker.back"), back);
-            changed |= ui
-                .add(crate::ui::Rail(
-                    egui::Slider::new(size_mm, 1.0..=100.0)
-                        .text(tr("docker.tile_size_mm"))
-                        .logarithmic(true),
-                ))
-                .drag_stopped();
         }
         Pattern::Bitmap {
             width_px,
             height_px,
-            size_mm,
             ..
         } => {
             ui.label(trf(
                 "docker.bitmap_tile_n",
                 &[("w", &width_px.to_string()), ("h", &height_px.to_string())],
             ));
-            changed |= ui
-                .add(crate::ui::Rail(
-                    egui::Slider::new(size_mm, 1.0..=200.0)
-                        .text(tr("docker.tile_size_mm"))
-                        .logarithmic(true),
-                ))
-                .drag_stopped();
         }
-        Pattern::Vector { shapes, tile, .. } => {
+        Pattern::Vector { shapes, .. } => {
             ui.label(trf(
                 "docker.vector_tile_n",
                 &[("n", &shapes.len().to_string())],
             ));
-            let (mut w, mut h) = (tile.width, tile.height);
-            changed |= ui
-                .add(crate::ui::Rail(
-                    egui::Slider::new(&mut w, 1.0..=200.0)
-                        .text(tr("docker.tile_width"))
-                        .logarithmic(true),
-                ))
-                .drag_stopped();
-            changed |= ui
-                .add(crate::ui::Rail(
-                    egui::Slider::new(&mut h, 1.0..=200.0)
-                        .text(tr("docker.tile_height"))
-                        .logarithmic(true),
-                ))
-                .drag_stopped();
-            if (w - tile.width).abs() > 1e-9 || (h - tile.height).abs() > 1e-9 {
-                // Scale the tile content with its size so the drawing keeps its shape.
-                let sx = w / tile.width.max(1e-6);
-                let sy = h / tile.height.max(1e-6);
-                for s in shapes.iter_mut() {
-                    s.transform =
-                        tracedraw_core::geometry::Affine::scale_non_uniform(sx, sy) * s.transform;
-                }
-                tile.width = w;
-                tile.height = h;
+        }
+    }
+    // The drawing's patterns of this kind, and the ways to a new one.
+    if let (Some(pk), false) = (pickers, matches!(p, Pattern::TwoColor { .. })) {
+        let vector = matches!(p, Pattern::Vector { .. });
+        let placement = *p.placement();
+        let mut pick: Option<Pattern> = None;
+        let mut action = None;
+        {
+            let lib = pk.library();
+            let list = if vector { &lib.vector } else { &lib.bitmap };
+            let current = lib.position(p);
+            let shown = current
+                .map(|i| crate::ui::pattern_pick::pattern_name(p, i))
+                .unwrap_or_else(|| tr("docker.pattern_pick"));
+            egui::ComboBox::from_id_salt("pattern_pick")
+                .selected_text(shown)
+                .width(ui.available_width().min(220.0))
+                .show_ui(ui, |ui| {
+                    for (i, lp) in list.iter().enumerate() {
+                        let name = crate::ui::pattern_pick::pattern_name(lp, i);
+                        if ui.selectable_label(current == Some(i), name).clicked()
+                            && current != Some(i)
+                        {
+                            pick = Some(lp.clone());
+                        }
+                    }
+                    if !vector {
+                        for (i, (w, h, _, _)) in lib.pictures.iter().enumerate() {
+                            let name = trf(
+                                "docker.pattern_from_picture",
+                                &[("w", &w.to_string()), ("h", &h.to_string())],
+                            );
+                            if ui.selectable_label(false, name).clicked() {
+                                pick = lib.picture_pattern(i);
+                            }
+                        }
+                    }
+                    ui.separator();
+                    if ui
+                        .selectable_label(false, tr("docker.pattern_new"))
+                        .rich_tip(tr("docker.pattern_new_tip"))
+                        .clicked()
+                    {
+                        action = Some(if vector {
+                            PatternAction::CreateVector
+                        } else {
+                            PatternAction::CreateBitmap
+                        });
+                    }
+                    if !vector
+                        && ui
+                            .selectable_label(false, tr("docker.pattern_import"))
+                            .rich_tip(tr("docker.pattern_import_tip"))
+                            .clicked()
+                    {
+                        action = Some(PatternAction::ImportBitmap);
+                    }
+                });
+        }
+        if let Some(np) = pick {
+            *p = np.with_placement(placement);
+            changed = true;
+            touched.push(FillField::All);
+        }
+        if action.is_some() {
+            pk.action = action;
+        }
+    }
+
+    // The placement, shared by every kind.
+    let differs = |f: FillField| mix.fields.contains(&f);
+    let mut pl = *p.placement();
+    fn field<'v>(
+        v: &'v mut f64,
+        mixed: bool,
+        range: std::ops::RangeInclusive<f64>,
+        suffix: &str,
+    ) -> NumField<'v, f64> {
+        NumField::new(v)
+            .range(range)
+            .speed(0.1)
+            .max_decimals(2)
+            .suffix(suffix)
+            .width(58.0)
+            .mixed(mixed)
+    }
+    fn mm(v: &mut f64, mixed: bool) -> NumField<'_, f64> {
+        field(v, mixed, -10000.0..=10000.0, " mm").unit_mm(1.0)
+    }
+    let lock_id = ui.id().with("pattern_wh_lock");
+    let mut locked = ui
+        .ctx()
+        .data(|d| d.get_temp::<bool>(lock_id))
+        .unwrap_or(true);
+    let size = p.tile_size();
+    let (mut w, mut h) = (size.width, size.height);
+    let size_mixed = differs(FillField::TileSize);
+    ui.horizontal(|ui| {
+        ui.label(tr("docker.tile_size"));
+        let wr = ui
+            .add(mm(&mut w, size_mixed).prefix(tr("docker.w")))
+            .rich_tip(tr("docker.tile_width"));
+        let hr = ui
+            .add(mm(&mut h, size_mixed).prefix(tr("docker.h")))
+            .rich_tip(tr("docker.tile_height"));
+        if picture_button(ui, locked, &tr("docker.tile_lock_tip"), |p, r| {
+            draw_lock(p, r, locked)
+        }) {
+            locked = !locked;
+            ui.ctx().data_mut(|d| d.insert_temp(lock_id, locked));
+        }
+        if wr.changed() || hr.changed() {
+            let (ow, oh) = (size.width.max(1e-9), size.height.max(1e-9));
+            if locked && wr.changed() {
+                h = (w * oh / ow).max(Pattern::MIN_TILE_MM);
+            } else if locked && hr.changed() {
+                w = (h * ow / oh).max(Pattern::MIN_TILE_MM);
+            }
+            let w = w.max(Pattern::MIN_TILE_MM);
+            let h = h.max(Pattern::MIN_TILE_MM);
+            p.set_tile_size(tracedraw_core::geometry::Size::new(w, h));
+            pl = *p.placement();
+            changed = true;
+            if size_mixed {
+                touched.push(FillField::TileSize);
             }
         }
+    });
+    let offset_mixed = differs(FillField::TileOffset);
+    ui.horizontal(|ui| {
+        ui.label(tr("docker.offset"));
+        let xr = ui
+            .add(mm(&mut pl.offset_x, offset_mixed).prefix(tr("docker.x")))
+            .rich_tip(tr("docker.tile_offset_x_tip"));
+        let yr = ui
+            .add(mm(&mut pl.offset_y, offset_mixed).prefix(tr("docker.y")))
+            .rich_tip(tr("docker.tile_offset_y_tip"));
+        if xr.changed() || yr.changed() {
+            changed = true;
+            if offset_mixed {
+                touched.push(FillField::TileOffset);
+            }
+        }
+    });
+    ui.horizontal(|ui| {
+        ui.label(tr("docker.rotation"));
+        let rot_mixed = differs(FillField::TileRotation);
+        if ui
+            .add(field(&mut pl.rotation, rot_mixed, -360.0..=360.0, "\u{b0}"))
+            .rich_tip(tr("docker.tile_rotation_tip"))
+            .changed()
+        {
+            changed = true;
+            if rot_mixed {
+                touched.push(FillField::TileRotation);
+            }
+        }
+        ui.label(tr("docker.skew"));
+        let skew_mixed = differs(FillField::TileSkew);
+        if ui
+            .add(field(&mut pl.skew, skew_mixed, -89.0..=89.0, "\u{b0}"))
+            .rich_tip(tr("docker.tile_skew_tip"))
+            .changed()
+        {
+            changed = true;
+            if skew_mixed {
+                touched.push(FillField::TileSkew);
+            }
+        }
+    });
+    ui.horizontal(|ui| {
+        ui.label(tr("docker.mirror_tiles"));
+        let mirror_mixed = differs(FillField::TileMirror);
+        if picture_button(
+            ui,
+            pl.mirror_horizontal && !mirror_mixed,
+            &tr("docker.mirror_horizontal_tip"),
+            |p, r| draw_mirror(p, r, false),
+        ) {
+            pl.mirror_horizontal = !pl.mirror_horizontal;
+            changed = true;
+            if mirror_mixed {
+                touched.push(FillField::TileMirror);
+            }
+        }
+        if picture_button(
+            ui,
+            pl.mirror_vertical && !mirror_mixed,
+            &tr("docker.mirror_vertical_tip"),
+            |p, r| draw_mirror(p, r, true),
+        ) {
+            pl.mirror_vertical = !pl.mirror_vertical;
+            changed = true;
+            if mirror_mixed {
+                touched.push(FillField::TileMirror);
+            }
+        }
+    });
+    ui.horizontal(|ui| {
+        ui.label(tr("docker.row_column_offset"));
+        let shift_mixed = differs(FillField::TileShift);
+        for (kind, tip) in [
+            (TileShift::Row, "docker.row_offset_tip"),
+            (TileShift::Column, "docker.column_offset_tip"),
+        ] {
+            if picture_button(ui, pl.shift == kind && !shift_mixed, &tr(tip), |p, r| {
+                draw_shift(p, r, kind == TileShift::Column)
+            }) && (pl.shift != kind || shift_mixed)
+            {
+                pl.shift = kind;
+                changed = true;
+                if shift_mixed {
+                    touched.push(FillField::TileShift);
+                }
+            }
+        }
+        if ui
+            .add(field(&mut pl.shift_percent, shift_mixed, 0.0..=100.0, " %"))
+            .rich_tip(tr("docker.row_column_offset_tip"))
+            .changed()
+        {
+            changed = true;
+            if shift_mixed {
+                touched.push(FillField::TileShift);
+            }
+        }
+    });
+    let two_mixed = differs(FillField::TransformWithObject);
+    let mut with_object = pl.transform_with_object && !two_mixed;
+    if ui
+        .checkbox(&mut with_object, tr("docker.transform_with_object"))
+        .rich_tip(tr("docker.transform_with_object_tip"))
+        .changed()
+    {
+        pl.transform_with_object = with_object;
+        changed = true;
+        if two_mixed {
+            touched.push(FillField::TransformWithObject);
+        }
+    }
+    if pl != *p.placement() {
+        *p.placement_mut() = pl.sanitized();
     }
     changed
 }
@@ -2165,7 +2439,7 @@ fn outline_editor_mixed(
         let mut paint_touched = Vec::new();
         let edited = ui
             .push_id("outline_paint", |ui| {
-                fill_editor_mixed(ui, &mut paint, &paint_mix, &mut paint_touched)
+                fill_editor_mixed(ui, &mut paint, &paint_mix, &mut paint_touched, None)
             })
             .inner;
         if edited {
@@ -3037,6 +3311,92 @@ mod tests {
             walk(&c.shape, &mut texts);
         }
         texts
+    }
+
+    /// The Fill part of a pattern fill shows the placement fields, with
+    /// one object's values, and the values that differ across two objects
+    /// as mixed; a placement change goes into each object's own pattern
+    /// (each keeps its tile) as one undo step.
+    #[test]
+    fn pattern_placement_fields_show_and_patch_each_pattern() {
+        use tracedraw_core::style::PatternPlacement;
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        app.settings.autocorrect.enabled = false;
+        let pattern = |tile: PatternTile, rotation: f64| {
+            Fill::Pattern(Pattern::TwoColor {
+                tile,
+                front: tracedraw_core::Color::BLACK,
+                back: tracedraw_core::Color::WHITE,
+                size_mm: 10.0,
+                placement: PatternPlacement {
+                    rotation,
+                    ..PatternPlacement::default()
+                },
+            })
+        };
+        let mut ids = Vec::new();
+        for (x, tile, rotation) in [
+            (10.0, PatternTile::Checker, 0.0),
+            (70.0, PatternTile::Dots, 33.0),
+        ] {
+            let id = app
+                .new_shape(ShapeKind::Rect {
+                    rect: tracedraw_core::geometry::Rect::new(x, 10.0, x + 40.0, 40.0),
+                    radius: 0.0,
+                    corners: None,
+                })
+                .expect("rect");
+            app.run(Command::SetFill {
+                shapes: vec![id],
+                fill: pattern(tile, rotation),
+            });
+            ids.push(id);
+        }
+        app.show_dockers = true;
+        app.docker_tab = DockerTab::Properties;
+        let mixed = tr("docker.mixed");
+        app.select(ids[1..].to_vec());
+        draw(&ctx, &mut app);
+        let texts = painted_texts(&ctx, &mut app);
+        for key in [
+            "docker.tile_size",
+            "docker.mirror_tiles",
+            "docker.row_column_offset",
+            "docker.transform_with_object",
+        ] {
+            assert!(texts.iter().any(|t| *t == tr(key)), "{key}: {texts:?}");
+        }
+        assert!(!texts.iter().any(|t| *t == mixed));
+        assert!(
+            texts.iter().any(|t| t.starts_with("33")),
+            "the rotation shows: {texts:?}"
+        );
+        // Both: the tiles differ, so do the rotations; the panel says so.
+        app.select(ids.clone());
+        draw(&ctx, &mut app);
+        let texts = painted_texts(&ctx, &mut app);
+        assert!(texts.iter().any(|t| *t == mixed), "{texts:?}");
+        assert!(!texts.iter().any(|t| t.starts_with("33")), "{texts:?}");
+        let mix = app.selection_fill_mix();
+        assert!(mix.fields.contains(&FillField::TileRotation) && mix.has(FillField::All));
+
+        // A rotation set on the selection: each object's own tile turned,
+        // one step.
+        let steps = |app: &App| app.engine.history_labels().0.len();
+        let n = steps(&app);
+        let old = pattern(PatternTile::Checker, 0.0);
+        let new = pattern(PatternTile::Checker, 45.0);
+        app.patch_selection_fill(&old, &new, &[]);
+        assert_eq!(steps(&app), n + 1);
+        for (id, tile) in ids.iter().zip([PatternTile::Checker, PatternTile::Dots]) {
+            let s = app.doc().find_shape(*id).expect("shape");
+            let Fill::Pattern(p) = &s.fill else {
+                panic!("a pattern");
+            };
+            assert!(matches!(p, Pattern::TwoColor { tile: t, .. } if *t == tile));
+            assert_eq!(p.placement().rotation, 45.0);
+        }
     }
 
     /// Two objects with different outline colours and widths: the panel

@@ -1065,7 +1065,14 @@ impl Pattern {
     /// set, else the kind's own.
     pub fn tile_size(&self) -> Size {
         match self.placement().size {
-            Some(s) if s.width.is_finite() && s.height.is_finite() && s.width > 0.0 && s.height > 0.0 => s,
+            Some(s)
+                if s.width.is_finite()
+                    && s.height.is_finite()
+                    && s.width > 0.0
+                    && s.height > 0.0 =>
+            {
+                s
+            }
             _ => self.natural_tile(),
         }
     }
@@ -2435,7 +2442,10 @@ mod tests {
         assert_eq!(*tile, Size::new(10.0, 20.0));
         assert!(placement.size.is_none());
         let b = shapes[0].bounds();
-        assert!((b.x1 - 10.0).abs() < 1e-9 && (b.y1 - 20.0).abs() < 1e-9, "{b:?}");
+        assert!(
+            (b.x1 - 10.0).abs() < 1e-9 && (b.y1 - 20.0).abs() < 1e-9,
+            "{b:?}"
+        );
     }
 
     #[test]
@@ -2445,7 +2455,10 @@ mod tests {
         assert!(!p.needs_cell());
         assert_eq!(p.cell(tile).as_coeffs(), [10.0, 0.0, 0.0, 5.0, 0.0, 0.0]);
         assert_eq!(p.tile_copies(tile), vec![Affine::IDENTITY]);
-        assert_eq!(p.transform(tile).as_coeffs(), [10.0, 0.0, 0.0, 5.0, 0.0, 0.0]);
+        assert_eq!(
+            p.transform(tile).as_coeffs(),
+            [10.0, 0.0, 0.0, 5.0, 0.0, 0.0]
+        );
         assert_eq!(p.tile_uv(Point::new(12.5, 1.25), tile), (0.25, 0.25));
     }
 
@@ -2464,13 +2477,22 @@ mod tests {
         // The second column shows the tile flipped: its left edge is the
         // tile's right edge.
         let flipped = copies[1] * Point::new(0.0, 2.0);
-        assert!((flipped.x - 20.0).abs() < 1e-9 && (flipped.y - 2.0).abs() < 1e-9, "{flipped:?}");
+        assert!(
+            (flipped.x - 20.0).abs() < 1e-9 && (flipped.y - 2.0).abs() < 1e-9,
+            "{flipped:?}"
+        );
         // Sampling agrees: a point a quarter into the second column reads
         // the tile three quarters along.
         let (u, v) = p.tile_uv(Point::new(12.5, 2.5), tile);
-        assert!((u - 0.75).abs() < 1e-9 && (v - 0.25).abs() < 1e-9, "{u} {v}");
+        assert!(
+            (u - 0.75).abs() < 1e-9 && (v - 0.25).abs() < 1e-9,
+            "{u} {v}"
+        );
         let (u, v) = p.tile_uv(Point::new(2.5, 12.5), tile);
-        assert!((u - 0.25).abs() < 1e-9 && (v - 0.75).abs() < 1e-9, "{u} {v}");
+        assert!(
+            (u - 0.25).abs() < 1e-9 && (v - 0.75).abs() < 1e-9,
+            "{u} {v}"
+        );
     }
 
     #[test]
@@ -2513,14 +2535,20 @@ mod tests {
         // The tile's bottom-right corner (10, 0) turned a quarter turn
         // counter-clockwise lands above the offset point.
         let q = p.transform(Size::new(10.0, 10.0)) * Point::new(1.0, 0.0);
-        assert!((q.x - 3.0).abs() < 1e-9 && (q.y - 14.0).abs() < 1e-9, "{q:?}");
+        assert!(
+            (q.x - 3.0).abs() < 1e-9 && (q.y - 14.0).abs() < 1e-9,
+            "{q:?}"
+        );
         let s = PatternPlacement {
             skew: 45.0,
             ..PatternPlacement::default()
         };
         // The top-left corner of a skewed tile leans one tile height right.
         let q = s.transform(Size::new(10.0, 10.0)) * Point::new(0.0, 1.0);
-        assert!((q.x - 10.0).abs() < 1e-9 && (q.y - 10.0).abs() < 1e-9, "{q:?}");
+        assert!(
+            (q.x - 10.0).abs() < 1e-9 && (q.y - 10.0).abs() < 1e-9,
+            "{q:?}"
+        );
     }
 
     #[test]

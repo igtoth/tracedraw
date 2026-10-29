@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Pattern fills: every pattern kind (two-colour, bitmap, vector) takes a placement in the Properties panel: tile size with a lock, X and Y offset, rotation, skew, Mirror tiles (every second column or row flipped), row or column offset as a percentage of a tile, and Transform with object (the tiles follow the object instead of staying on the page). The panel has Vector pattern and Bitmap pattern buttons beside the two-colour one, with a picker over the drawing's patterns, the pictures on the page and a picture import, and New from selection running Object > Create > Pattern Fill. The placement draws on screen, goes out in SVG (`patternTransform`) and PDF (a tiling pattern with its `/Matrix`, where patterns were rasterised) and is kept in `.tdraw` files; tiles now anchor to the page origin rather than the window, so they no longer slide when the view pans (#1207).
+
 ## 0.21.0 (2026-10-29)
 
 - Publish to PDF, Prepress tab: crop marks, registration marks, colour bars and file information can be added around every page, drawn by the same code as the Print dialog's marks. The page grows by a 12 mm margin outside the bleed to hold them; the TrimBox stays the page, the BleedBox the page and its bleed and the MediaBox takes in the marks, and the drawing is clipped to the bleed. Marks in registration colour print on every plate (the All separation), in printed files too. A page background now covers the bleed in PDF files (#789).

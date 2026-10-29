@@ -239,7 +239,15 @@ fn page_contents(ui: &mut Ui, st: &mut EditFillState) {
         Fill::Pattern(p) => {
             ui.horizontal_top(|ui| {
                 preview(ui, &Fill::Pattern(p.clone()));
-                ui.vertical(|ui| crate::ui::dockers::pattern_editor(ui, p));
+                ui.vertical(|ui| {
+                    crate::ui::dockers::pattern_editor(
+                        ui,
+                        p,
+                        &Default::default(),
+                        &mut Vec::new(),
+                        None,
+                    )
+                });
             });
         }
         Fill::Texture(t) => {
