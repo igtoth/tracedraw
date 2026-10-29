@@ -2798,29 +2798,6 @@ fn mark_nodes(coords: &mut [u8]) {
     }
 }
 
-/// The object a drop shadow draws: the shape's outline (page space) at
-/// the shadow's place, in its colour and opacity, without an outline;
-/// `None` for a shape that draws no outline.
-fn shadow_silhouette(s: &Shape, shadow: &tracedraw_core::Shadow) -> Option<Shape> {
-    let outline = s.page_path();
-    if outline.elements().is_empty() {
-        return None;
-    }
-    let mut sh = Shape::new(
-        s.id,
-        ShapeKind::Path {
-            path: outline,
-            closed: true,
-        },
-    );
-    sh.transform = shadow.silhouette_transform(s.bounds());
-    sh.fill = Fill::Solid(shadow.color);
-    sh.stroke = None;
-    sh.opacity = (shadow.opacity * s.opacity).clamp(0.0, 1.0);
-    sh.visible = s.visible;
-    Some(sh)
-}
-
 /// A box as `bbox` stores it: top left, then bottom right (file units,
 /// y up).
 fn box_bytes(r: Rect) -> Vec<u8> {
@@ -4037,26 +4014,6 @@ impl<'a> Writer<'a> {
             );
         if !s.visible && !keeps_hidden {
             return none();
-        }
-        // A drop shadow goes out as what it draws: the object's outline
-        // moved by the shadow's offset (a perspective shadow laid from
-        // its edge), filled with the shadow's colour at its opacity,
-        // beneath the object. The feathering has no record here.
-        if let Some(shadow) = &s.shadow {
-            let silhouette =
-                shadow_silhouette(s, shadow).map(|sh| self.object(&sh, centre, depth + 1));
-            let mut rest = s.clone();
-            rest.shadow = None;
-            let mut placed = self.object(&rest, centre, depth);
-            if let Some(under) = silhouette {
-                // Front to back: the object, then its shadow.
-                placed.nodes.extend(under.nodes);
-                placed.bounds = match (placed.bounds, under.bounds) {
-                    (Some(a), Some(b)) => Some(a.union(b)),
-                    (a, b) => a.or(b),
-                };
-            }
-            return placed;
         }
         // Paragraph text goes out as a group of artistic texts, one a line
         // placed where its frame put it (frames are not written yet), so it

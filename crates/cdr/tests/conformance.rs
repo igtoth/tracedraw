@@ -3,7 +3,7 @@
 //! Every object kind the writer handles (rectangles, ellipses, curves,
 //! polygons, artistic and paragraph text, groups, clip frames, bitmaps
 //! with and without see-through pixels, uniform, fountain, pattern,
-//! texture and mesh fills, outlines, transparency, shadows, blends,
+//! texture and mesh fills, outlines, transparency, blends,
 //! contours, envelopes and extrusions, pages, layers, hidden objects and
 //! page backgrounds) is written in every version the writer produces (7
 //! to 27), read back, and checked to survive as the writer promises for
@@ -28,7 +28,7 @@ use tracedraw_core::live::{Effect, MergeMode};
 use tracedraw_core::{
     document::EllipseArc, id::IdSource, Affine, BezPath, Color, Document, Fill, Fountain,
     FountainKind, LineCap, LineJoin, Mesh, ParagraphStyle, Pattern, PatternTile, Point, Rect,
-    Shadow, Shape, ShapeKind, Size, Stop, Stroke, TextAlign, TextSpan, Texture, TextureKind,
+    Shape, ShapeKind, Size, Stop, Stroke, TextAlign, TextSpan, Texture, TextureKind,
 };
 
 /// How far a coordinate may move through a round trip (the files round
@@ -68,6 +68,46 @@ fn keeps_group_names(v: u16) -> bool {
 /// A blend opens live again from the package member of versions 14+.
 fn keeps_live_blends(v: u16) -> bool {
     v >= 14
+}
+
+/// Pages list only their own layers from version 14; before it every page
+/// lists every layer of the drawing in the master page's order, empty
+/// where the page has none of that name (#1139).
+fn keeps_own_layers_only(v: u16) -> bool {
+    v >= 14
+}
+
+/// The layer of `page` named `name`.
+fn layer<'a>(v: u16, page: &'a tracedraw_core::Page, name: &str) -> &'a tracedraw_core::Layer {
+    page.layers
+        .iter()
+        .find(|l| l.name == name)
+        .unwrap_or_else(|| panic!("version {v}: no layer {name}"))
+}
+
+/// The page's layers are `names`, in that order, from version 14; before
+/// it the page lists them (in that order) among the drawing's other
+/// layers, which are empty there.
+fn page_layers(v: u16, page: &tracedraw_core::Page, names: &[&str]) {
+    let got: Vec<&str> = page.layers.iter().map(|l| l.name.as_str()).collect();
+    if keeps_own_layers_only(v) {
+        assert_eq!(got, names, "version {v}");
+        return;
+    }
+    let own: Vec<&str> = got.iter().copied().filter(|n| names.contains(n)).collect();
+    assert_eq!(own, names, "version {v}: {got:?}");
+    for l in page
+        .layers
+        .iter()
+        .filter(|l| !names.contains(&l.name.as_str()))
+    {
+        assert!(
+            l.shapes.is_empty(),
+            "version {v}: layer {} of another page holds {} objects",
+            l.name,
+            l.shapes.len()
+        );
+    }
 }
 
 /// A page of another size than the document's keeps it in its own
@@ -259,15 +299,47 @@ fn kind_name(k: &ShapeKind) -> &'static str {
     }
 }
 
+/// The package as the suite reads it: the file's own records, as any
+/// reader finds them, and of TraceDraw's own members only the blends'
+/// (`tracedraw/blends.json`, whose live blends the suite checks, #986).
+/// Other members of TraceDraw's own put objects back as TraceDraw keeps
+/// them and are checked by their own tests; left in, they would hide
+/// what the records hold. RIFF files (before 14) have no members.
+fn records_and_blends(bytes: &[u8]) -> Vec<u8> {
+    use std::io::{Read as _, Write as _};
+    let Ok(mut z) = zip::ZipArchive::new(std::io::Cursor::new(bytes)) else {
+        return bytes.to_vec();
+    };
+    let own = |name: &str| name.starts_with("tracedraw/") && name != "tracedraw/blends.json";
+    if !z.file_names().any(own) {
+        return bytes.to_vec();
+    }
+    let mut out = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let stored =
+        zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    for i in 0..z.len() {
+        let mut f = z.by_index(i).expect("member");
+        let name = f.name().to_string();
+        if own(&name) {
+            continue;
+        }
+        let mut data = Vec::new();
+        f.read_to_end(&mut data).expect("read member");
+        out.start_file(name, stored).expect("start member");
+        out.write_all(&data).expect("write member");
+    }
+    out.finish().expect("package").into_inner()
+}
+
 /// Write `doc` in every version, check each file's structure, read it
-/// back and hand it to `expect`.
+/// back (see [`records_and_blends`]) and hand it to `expect`.
 fn every_version(doc: &Document, mut expect: impl FnMut(&Read)) {
     for v in versions() {
         let bytes = document_to_cdr_version(doc, v);
         assert!(!bytes.is_empty(), "version {v}: nothing written");
         structure::verify(&bytes, v);
-        let (back, report) =
-            open_bytes(&bytes, "back").unwrap_or_else(|e| panic!("version {v}: {e}"));
+        let (back, report) = open_bytes(&records_and_blends(&bytes), "back")
+            .unwrap_or_else(|e| panic!("version {v}: {e}"));
         assert_eq!(report.version.map(|x| x.0), Some(v), "version {v}");
         assert_eq!(
             report.skipped_objects, 0,
@@ -1135,42 +1207,6 @@ fn transparency_uniform_and_graded() {
 }
 
 #[test]
-fn drop_shadows_go_out_as_what_they_draw() {
-    let doc = drawing(200.0, 100.0, |ids| {
-        let mut s = rect(ids, Rect::new(20.0, 30.0, 60.0, 70.0), 0.0);
-        s.shadow = Some(Shadow {
-            offset: tracedraw_core::Vec2::new(5.0, -5.0),
-            opacity: 0.6,
-            blur: 0.0,
-            color: Color::rgb8(20, 20, 80),
-            ..Shadow::default()
-        });
-        vec![s]
-    });
-    every_version(&doc, |r| {
-        // The shadow beneath the object: its outline moved by the offset,
-        // in the shadow's colour, at the shadow's opacity where the
-        // version keeps one; then the object itself, as it was.
-        r.count(2);
-        let shadow = r.shape(0);
-        same_box(r.v, shadow.bounds(), Rect::new(25.0, 25.0, 65.0, 65.0), EPS);
-        solid(r.v, shadow, Color::rgb8(20, 20, 80), "shadow");
-        assert!(shadow.stroke.is_none(), "version {}", r.v);
-        let want = if keeps_opacity(r.v) { 0.6 } else { 1.0 };
-        assert!(
-            near(shadow.opacity, want, 0.002),
-            "version {}: shadow opacity {}",
-            r.v,
-            shadow.opacity
-        );
-        let object = r.shape(1);
-        same_box(r.v, object.bounds(), Rect::new(20.0, 30.0, 60.0, 70.0), EPS);
-        solid(r.v, object, Color::rgb8(220, 40, 40), "object");
-        assert!(object.shadow.is_none(), "version {}", r.v);
-    });
-}
-
-#[test]
 fn blends_contours_envelopes_and_extrusions() {
     let doc = drawing(300.0, 150.0, |ids| {
         // A blend of a square into a circle, 3 steps, the end drawn by
@@ -1376,10 +1412,9 @@ fn pages_layers_hidden_objects_and_backgrounds() {
             r.v,
             first.size
         );
-        let names: Vec<&str> = first.layers.iter().map(|l| l.name.as_str()).collect();
-        assert_eq!(names, vec!["Back", "Front"], "version {}", r.v);
-        assert_eq!(first.layers[0].shapes.len(), 1, "version {}", r.v);
-        let front = &first.layers[1].shapes;
+        page_layers(r.v, first, &["Back", "Front"]);
+        assert_eq!(layer(r.v, first, "Back").shapes.len(), 1, "version {}", r.v);
+        let front = &layer(r.v, first, "Front").shapes;
         if keeps_hidden_and_background(r.v) {
             assert_eq!(front.len(), 2, "version {}", r.v);
             assert!(!front[1].visible, "version {}", r.v);
@@ -1409,9 +1444,8 @@ fn pages_layers_hidden_objects_and_backgrounds() {
             r.v,
             second.size
         );
-        assert_eq!(second.layers.len(), 1, "version {}", r.v);
-        assert_eq!(second.layers[0].name, "Only", "version {}", r.v);
-        let label = &second.layers[0].shapes;
+        page_layers(r.v, second, &["Only"]);
+        let label = &layer(r.v, second, "Only").shapes;
         assert_eq!(label.len(), 1, "version {}", r.v);
         assert_eq!(label[0].name.as_deref(), Some("label"), "version {}", r.v);
         let ShapeKind::Text { spans, .. } = &label[0].kind else {

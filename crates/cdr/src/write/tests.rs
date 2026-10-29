@@ -4525,13 +4525,19 @@ fn fnv1a(bytes: &[u8]) -> u64 {
 /// when versions 7 to 13 were corrected. The hashes are of that stream
 /// (`content/riffData.cdr`, with no save time in it); they move only with
 /// a change to these versions made on purpose.
+///
+/// Changed on purpose once since: groups carry their names (argument 1000
+/// of their own `loda`) from version 14, as a group in a version 14 file
+/// does (#98, #1139), and the interoperability drawing has named groups.
+/// Without the names the stream is what #1139 pinned (0x7e7f333076ad70a3
+/// for 14, 0x88ab5fb328ef43e3 for 15).
 #[test]
 fn versions_14_and_15_are_written_as_before() {
     use std::io::Read as _;
     let doc = interop_document();
     for (v, want) in [
-        (14u16, 0x7e7f_3330_76ad_70a3u64),
-        (15, 0x88ab_5fb3_28ef_43e3),
+        (14u16, 0x6f15_b56f_9563_faf2u64),
+        (15, 0x0128_bfec_cf21_449c),
     ] {
         let bytes = document_to_cdr_version(&doc, v);
         let mut z = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).expect("zip");
