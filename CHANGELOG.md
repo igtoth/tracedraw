@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Opening `.cdr` files of versions 7 to 15: text whose style sets another font or size for East Asian letters than for Latin ones (the style table's second script slot) now shows its Chinese, Japanese and Korean letters in that font and size. The Latin slot was used for every letter, so the titles of a version 14 certificate came out as 12 pt Arial instead of a 54 pt script font and a label at 21 pt instead of 26 pt. Version 16 and later style strings read their `farEast` section the same way (#955).
+
 ## 0.23.0 (2026-10-29)
 
 - Font list filter: the choices now open beside the list, in sections: fonts shown, style (serif, sans serif, script, decorative, monospaced, symbol), weight (light, regular, bold), width (condensed, normal, expanded), technology (TrueType, OpenType, variable), scripts (Latin, Greek, Cyrillic, Arabic, Devanagari, CJK and more), each OpenType feature on its own, embedding rights and the folders the fonts are in. Every value is read from the font files once (OS/2 weight and width classes, embedding bits, Unicode ranges, variation axes, GSUB and GPOS feature lists). Monospaced and Symbol now widen the style choices like the other styles instead of narrowing them (#867).

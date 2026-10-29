@@ -237,6 +237,109 @@ pub(crate) struct RunStyle {
     /// degrees counter-clockwise, horizontal shift and vertical shift in
     /// percent of the font size, up positive).
     pub char_shift: Option<CharShift>,
+    /// The font the style gives East Asian letters (the second script
+    /// slot of a style table font entry, the `farEast` section of a
+    /// version 16+ style string), when it is not the Latin one.
+    pub asian: Option<ScriptFont>,
+}
+
+/// The font settings of one script in a style: the style table's font
+/// entries hold three (Latin, East Asian, other), the version 16+ style
+/// strings `latin`, `farEast` and `RTL` sections.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct ScriptFont {
+    pub font_id: Option<u16>,
+    pub charset: Option<u8>,
+    pub family: Option<String>,
+    pub size_pt: Option<f64>,
+    pub flags: Option<StyleFlags>,
+    pub bold: Option<bool>,
+    pub weight: Option<u16>,
+    pub italic: Option<bool>,
+}
+
+impl ScriptFont {
+    /// The font settings of `s` as a script's font.
+    pub fn of(s: &RunStyle) -> ScriptFont {
+        ScriptFont {
+            font_id: s.font_id,
+            charset: s.charset,
+            family: s.family.clone(),
+            size_pt: s.size_pt,
+            flags: s.flags,
+            bold: s.bold,
+            weight: s.weight,
+            italic: s.italic,
+        }
+    }
+
+    /// Whether the font differs from the Latin settings of `s` in a way
+    /// that changes how letters are drawn.
+    pub fn differs_from(&self, s: &RunStyle) -> bool {
+        let font_set = self.font_id.is_some() || self.family.is_some();
+        (font_set && (self.font_id != s.font_id || self.family != s.family))
+            || (self.size_pt.is_some() && self.size_pt != s.size_pt)
+            || (self.flags.is_some() && self.flags != s.flags)
+            || (self.bold.is_some() && self.bold != s.bold)
+            || (self.italic.is_some() && self.italic != s.italic)
+    }
+}
+
+/// Whether a character is set in the East Asian font of a style: the
+/// ideographs, kana, hangul, bopomofo, the CJK symbols and punctuation,
+/// the enclosed and compatibility forms and the full-width forms.
+pub(crate) fn is_east_asian(c: char) -> bool {
+    matches!(
+        c as u32,
+        0x1100..=0x11FF
+            | 0x2E80..=0x2FDF
+            | 0x3000..=0x303F
+            | 0x3040..=0x30FF
+            | 0x3100..=0x312F
+            | 0x3130..=0x318F
+            | 0x3190..=0x31FF
+            | 0x3200..=0x33FF
+            | 0x3400..=0x4DBF
+            | 0x4E00..=0x9FFF
+            | 0xA960..=0xA97F
+            | 0xAC00..=0xD7FF
+            | 0xF900..=0xFAFF
+            | 0xFE30..=0xFE4F
+            | 0xFF00..=0xFFEF
+            | 0x20000..=0x3FFFF
+    )
+}
+
+/// `text` cut into runs of East Asian letters and of the rest, each with
+/// whether it is East Asian. Characters of neither kind (spaces, line
+/// breaks, common punctuation) go with the run before them, or with the
+/// run after them at the start.
+pub(crate) fn split_scripts(text: &str) -> Vec<(String, bool)> {
+    let mut out: Vec<(String, bool)> = Vec::new();
+    let mut pending = String::new();
+    for c in text.chars() {
+        let neutral = c.is_whitespace() || c.is_ascii_punctuation() || c.is_control();
+        if neutral {
+            match out.last_mut() {
+                Some(last) => last.0.push(c),
+                None => pending.push(c),
+            }
+            continue;
+        }
+        let asian = is_east_asian(c);
+        match out.last_mut() {
+            Some(last) if last.1 == asian => last.0.push(c),
+            _ => {
+                let mut s = std::mem::take(&mut pending);
+                s.push(c);
+                out.push((s, asian));
+            }
+        }
+    }
+    if !pending.is_empty() {
+        out.push((pending, false));
+    }
+    out
 }
 
 /// A character moved and turned on its own (style flags 0x08, 0x10 and
@@ -291,7 +394,55 @@ impl RunStyle {
             underline: self.underline.or(base.underline),
             strikethrough: self.strikethrough.or(base.strikethrough),
             char_shift: self.char_shift.or(base.char_shift),
+            // A style naming its own font sets it for every script; one
+            // that only changes the size or the face keeps the base's
+            // East Asian font at that size and face.
+            asian: if self.font_id.is_some() || self.family.is_some() {
+                self.asian.clone()
+            } else {
+                self.asian.clone().or_else(|| {
+                    base.asian.clone().map(|mut a| {
+                        if self.size_pt.is_some() {
+                            a.size_pt = self.size_pt;
+                        }
+                        if self.flags.is_some() {
+                            a.flags = self.flags;
+                        }
+                        if self.bold.is_some() {
+                            a.bold = self.bold;
+                            a.weight = self.weight;
+                        }
+                        if self.italic.is_some() {
+                            a.italic = self.italic;
+                        }
+                        a
+                    })
+                })
+            },
         }
+    }
+
+    /// The style with its East Asian font in place of the Latin one, for
+    /// the letters set in it.
+    pub fn for_east_asian(&self) -> RunStyle {
+        let Some(a) = &self.asian else {
+            return self.clone();
+        };
+        let mut s = self.clone();
+        if a.font_id.is_some() || a.family.is_some() {
+            s.font_id = a.font_id;
+            s.family = a.family.clone();
+            s.charset = a.charset.or(s.charset);
+        }
+        s.size_pt = a.size_pt.or(s.size_pt);
+        s.flags = a.flags.or(s.flags);
+        if a.bold.is_some() {
+            s.bold = a.bold;
+            s.weight = a.weight;
+        }
+        s.italic = a.italic.or(s.italic);
+        s.asian = None;
+        s
     }
 }
 
@@ -300,6 +451,13 @@ impl RunStyle {
 pub(crate) struct StyleRec {
     pub parent: u32,
     pub style: RunStyle,
+}
+
+/// A style table font entry's Latin and East Asian fonts: font id,
+/// character set, size in points and style flags.
+struct FontEntry {
+    latin: (u16, u8, f64, StyleFlags),
+    asian: (u16, u8, f64, StyleFlags),
 }
 
 /// A style's line spacing as the interval table gives it.
@@ -374,34 +532,66 @@ fn read_stlt_set11(
     let Some(outls) = read_entries(&mut r, 0) else {
         return Vec::new();
     };
-    // Fonts: id, unknown 12 (before 10) / 20, font id u16, encoding u16,
-    // 8 unknown, size coord, 8 unknown, style flags u32, 8 unknown (10+).
+    // Fonts: id, unknown 12 (before 10) / 20, then three scripts (Latin,
+    // East Asian, other): font id u16 and encoding u16 each, a size
+    // coord each, and style flags u32 each (one for all before 10). A
+    // version 14 file (#955) sets Chinese titles in the East Asian slot
+    // (a script font at 54 pt) with Arial at 12 pt in the Latin one.
     let font_gap = if v < 10 { 12 } else { 20 };
-    let font_size = 4 + font_gap + 2 + 2 + 8 + coord_size + 8 + 4 + if v >= 10 { 8 } else { 0 };
+    let font_size = 4 + font_gap + 3 * 4 + 3 * coord_size + if v >= 10 { 12 } else { 4 };
     let Some(nf) = r.u32() else {
         return Vec::new();
     };
     let nf = (nf as usize).min(r.remaining() / font_size);
-    let mut fonts: std::collections::HashMap<u32, (u16, u8, f64, StyleFlags)> =
+    let mut fonts: std::collections::HashMap<u32, FontEntry> =
         std::collections::HashMap::with_capacity(nf);
+    let pt_per_unit = if v16 { PT_PER_UNIT16 } else { PT_PER_UNIT };
     for _ in 0..nf {
-        let (Some(id), _, Some(font_id), Some(enc), _, Some(size), _, Some(flags)) = (
-            r.u32(),
-            r.skip(font_gap),
-            r.u16(),
-            r.u16(),
-            r.skip(8),
-            r.sint(),
-            r.skip(8),
-            r.u32(),
-        ) else {
+        let Some(id) = r.u32() else {
             return Vec::new();
         };
-        if v >= 10 {
-            r.skip(8);
+        r.skip(font_gap);
+        let mut ids = [(0u16, 0u16); 3];
+        for slot in &mut ids {
+            let (Some(font_id), Some(enc)) = (r.u16(), r.u16()) else {
+                return Vec::new();
+            };
+            *slot = (font_id, enc);
         }
-        let pt = size as f64 * if v16 { PT_PER_UNIT16 } else { PT_PER_UNIT };
-        fonts.insert(id, (font_id, (enc & 0xff) as u8, pt, StyleFlags(flags)));
+        let mut sizes = [0.0f64; 3];
+        for s in &mut sizes {
+            let Some(size) = r.sint() else {
+                return Vec::new();
+            };
+            *s = size as f64 * pt_per_unit;
+        }
+        let mut flags = [0u32; 3];
+        if v >= 10 {
+            for f in &mut flags {
+                let Some(x) = r.u32() else {
+                    return Vec::new();
+                };
+                *f = x;
+            }
+        } else {
+            let Some(x) = r.u32() else {
+                return Vec::new();
+            };
+            flags = [x; 3];
+        }
+        let latin = (
+            ids[0].0,
+            (ids[0].1 & 0xff) as u8,
+            sizes[0],
+            StyleFlags(flags[0]),
+        );
+        let asian = (
+            ids[1].0,
+            (ids[1].1 & 0xff) as u8,
+            sizes[1],
+            StyleFlags(flags[1]),
+        );
+        fonts.insert(id, FontEntry { latin, asian });
     }
     let Some(aligns) = read_entries(&mut r, 0) else {
         return Vec::new();
@@ -555,13 +745,26 @@ fn read_stlt_set11(
             if has_set11 {
                 r.skip(4);
             }
-            if let Some((font_id, charset, pt, flags)) = fonts.get(&font_ref) {
-                style.font_id = Some(*font_id);
-                style.charset = Some(*charset);
-                if *pt > 0.0 && pt.is_finite() {
-                    style.size_pt = Some(*pt);
+            if let Some(entry) = fonts.get(&font_ref) {
+                let (font_id, charset, pt, flags) = entry.latin;
+                style.font_id = Some(font_id);
+                style.charset = Some(charset);
+                if pt > 0.0 && pt.is_finite() {
+                    style.size_pt = Some(pt);
                 }
-                style.flags = Some(*flags);
+                style.flags = Some(flags);
+                // The East Asian slot, when it names another font, size
+                // or face than the Latin one.
+                let (a_id, a_charset, a_pt, a_flags) = entry.asian;
+                if a_id != 0 && (a_id != font_id || a_pt != pt || a_flags != flags) {
+                    style.asian = Some(ScriptFont {
+                        font_id: Some(a_id),
+                        charset: Some(a_charset),
+                        size_pt: (a_pt > 0.0 && a_pt.is_finite()).then_some(a_pt),
+                        flags: Some(a_flags),
+                        ..ScriptFont::default()
+                    });
+                }
             }
             style.align = aligns.get(&align_ref).copied();
         }
@@ -1635,9 +1838,17 @@ fn apply_style_object(s: &mut RunStyle, obj: &Json, depth: usize) {
                     }
                 }
                 // An inline outline, the frame and the settings for
-                // right-to-left and East Asian scripts are not read; only
-                // the Latin font settings apply to the text.
-                ("outline" | "frame" | "RTL" | "farEast", Json::Obj(_)) => {}
+                // right-to-left scripts are not read; the Latin font
+                // settings apply to the text, the East Asian ones to its
+                // East Asian letters.
+                ("outline" | "frame" | "RTL", Json::Obj(_)) => {}
+                ("farEast", Json::Obj(_)) => {
+                    let mut f = RunStyle::default();
+                    apply_style_object(&mut f, v, depth + 1);
+                    if f.font_id.is_some() || f.family.is_some() || f.size_pt.is_some() {
+                        s.asian = Some(ScriptFont::of(&f));
+                    }
+                }
                 ("paragraph", Json::Obj(p)) => apply_paragraph_object(s, p),
                 (_, Json::Obj(_)) => apply_style_object(s, v, depth + 1),
                 _ => apply_style_key(s, k, v),
@@ -2269,6 +2480,63 @@ mod tests {
         assert_eq!(s.bold, Some(true));
         assert_eq!(parse_style_string("").size_pt, None);
         assert_eq!(parse_style_string("{broken").size_pt, None);
+    }
+
+    #[test]
+    fn split_scripts_cuts_east_asian_runs() {
+        assert!(is_east_asian('荣') && is_east_asian('〇') && is_east_asian('ア'));
+        assert!(!is_east_asian('A') && !is_east_asian('é') && !is_east_asian('5'));
+        assert_eq!(
+            split_scripts("Ab 荣誉, 250g铜版纸\n"),
+            vec![
+                ("Ab ".to_string(), false),
+                ("荣誉, ".to_string(), true),
+                ("250g".to_string(), false),
+                ("铜版纸\n".to_string(), true),
+            ]
+        );
+        // Neutral characters at the start go with the first run.
+        assert_eq!(split_scripts(" 在"), vec![(" 在".to_string(), true)]);
+        assert_eq!(split_scripts(" \n"), vec![(" \n".to_string(), false)]);
+        assert!(split_scripts("").is_empty());
+    }
+
+    #[test]
+    fn style_string_far_east_section_is_the_east_asian_font() {
+        let s = parse_style_string(
+            r#"{"character":{"latin":{"font":"Arial","size":"42333"},"farEast":{"font":"Script Han","size":"190500","weight":"4096"}}}"#,
+        );
+        assert_eq!(s.family.as_deref(), Some("Arial"));
+        let a = s.asian.as_ref().expect("far east font");
+        assert_eq!(a.family.as_deref(), Some("Script Han"));
+        assert!(a.differs_from(&s));
+        let ea = s.for_east_asian();
+        assert_eq!(ea.family.as_deref(), Some("Script Han"));
+        assert!((ea.size_pt.unwrap() - 54.0).abs() < 1e-3);
+        assert_eq!(ea.bold, Some(true));
+        assert!(ea.asian.is_none());
+        // A run naming its own font sets it for every script; one that
+        // only changes the size keeps the East Asian font at that size.
+        let own = RunStyle {
+            family: Some("Verdana".into()),
+            ..RunStyle::default()
+        };
+        assert!(own.over(&s).asian.is_none());
+        let sized = RunStyle {
+            size_pt: Some(20.0),
+            ..RunStyle::default()
+        };
+        let o = sized.over(&s);
+        assert_eq!(o.asian.as_ref().and_then(|a| a.size_pt), Some(20.0));
+        assert_eq!(
+            o.asian.as_ref().and_then(|a| a.family.clone()).as_deref(),
+            Some("Script Han")
+        );
+        // Alike settings in both sections make no second run.
+        let same = parse_style_string(
+            r#"{"character":{"latin":{"font":"Arial","size":"42333"},"farEast":{"font":"Arial","size":"42333"}}}"#,
+        );
+        assert!(!same.asian.as_ref().unwrap().differs_from(&same));
     }
 
     #[test]
