@@ -2279,15 +2279,46 @@ fn outline_editor_mixed(
                 (StrokeField::StartArrow, "Start", "docker.arrow_start"),
                 (StrokeField::EndArrow, "End", "docker.arrow_end"),
             ] {
-                let a = if field == StrokeField::StartArrow {
-                    &mut s.start_arrow
-                } else {
-                    &mut s.end_arrow
-                };
-                if arrow_combo(ui, id, &tr(key), a, custom, mix.has(field)) {
-                    touched.push(field);
-                    changed = true;
+                let end = field == StrokeField::EndArrow;
+                // With Share attributes on the end follows the start.
+                let enabled = !end || !s.share_arrowheads;
+                ui.add_enabled_ui(enabled, |ui| {
+                    let a = if end {
+                        &mut s.end_arrow
+                    } else {
+                        &mut s.start_arrow
+                    };
+                    if arrow_combo(ui, id, &tr(key), a, custom, mix.has(field)) {
+                        if !end && s.share_arrowheads {
+                            s.share_start_head();
+                        }
+                        touched.push(field);
+                        changed = true;
+                    }
+                    // The Arrowhead editor (#1210): size, offset, mirror,
+                    // rotation of this end's head.
+                    if ui
+                        .small_button("...")
+                        .rich_tip(crate::ui::tips::keyed("arrowhead_editor.edit"))
+                        .clicked()
+                    {
+                        crate::ui::arrowhead_editor::request(ui, end);
+                    }
+                });
+            }
+            if ui
+                .add(
+                    egui::Checkbox::new(&mut s.share_arrowheads, tr("arrowhead_editor.share"))
+                        .indeterminate(mix.has(StrokeField::ShareArrowheads)),
+                )
+                .rich_tip(crate::ui::tips::keyed("arrowhead_editor.share"))
+                .changed()
+            {
+                if s.share_arrowheads {
+                    s.share_start_head();
                 }
+                touched.push(StrokeField::ShareArrowheads);
+                changed = true;
             }
         });
         ui.horizontal_wrapped(|ui| {
@@ -3089,6 +3120,121 @@ mod tests {
         );
         let mix = app.selection_stroke_mix();
         assert!(mix.has(StrokeField::Width) && mix.has(StrokeField::Paint));
+    }
+
+    /// #1210: the outline section has the Arrowhead editor's "..." after
+    /// each arrowhead list and Share attributes after the end's; a click
+    /// on Share attributes gives the end the start's head as one step.
+    #[test]
+    fn the_arrowhead_editor_and_share_attributes_sit_beside_the_lists() {
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        app.show_welcome = false;
+        let mut p = tracedraw_core::geometry::BezPath::new();
+        p.move_to((10.0, 50.0));
+        p.line_to((60.0, 50.0));
+        let id = app
+            .new_shape(ShapeKind::Path {
+                path: p,
+                closed: false,
+            })
+            .expect("line");
+        app.run(Command::SetStroke {
+            shapes: vec![id],
+            stroke: Some(Stroke {
+                start_arrow: tracedraw_core::Arrowhead::Diamond,
+                ..Stroke::new(tracedraw_core::Color::BLACK, 1.0)
+            }),
+        });
+        app.select(vec![id]);
+        app.show_dockers = true;
+        app.docker_tab = DockerTab::Properties;
+        let frame = |app: &mut App, events: Vec<egui::Event>| -> Vec<(String, egui::Rect)> {
+            fn walk(s: &egui::Shape, out: &mut Vec<(String, egui::Rect)>) {
+                match s {
+                    egui::Shape::Text(t) => out.push((
+                        t.galley.text().to_string(),
+                        egui::Rect::from_min_size(t.pos, t.galley.size()),
+                    )),
+                    egui::Shape::Vec(v) => v.iter().for_each(|s| walk(s, out)),
+                    _ => {}
+                }
+            }
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1400.0, 1900.0),
+                )),
+                events,
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| crate::ui::root(app, ui));
+            out.textures_delta.clear();
+            let mut texts = Vec::new();
+            out.shapes.iter().for_each(|c| walk(&c.shape, &mut texts));
+            texts
+        };
+        for _ in 0..3 {
+            frame(&mut app, Vec::new());
+        }
+        let texts = frame(&mut app, Vec::new());
+        let share = tr("arrowhead_editor.share");
+        assert_eq!(
+            texts.iter().filter(|(t, _)| *t == share).count(),
+            1,
+            "{texts:?}"
+        );
+        assert!(
+            texts.iter().filter(|(t, _)| t == "...").count() >= 2,
+            "the editor buttons: {texts:?}"
+        );
+        // Share attributes: the end takes the start's diamond, one step.
+        let at = texts
+            .iter()
+            .find(|(t, _)| *t == share)
+            .map(|(_, r)| r.center())
+            .expect("Share attributes");
+        let steps = app.engine.history_labels().0.len();
+        let press = |pressed| egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        frame(&mut app, vec![egui::Event::PointerMoved(at)]);
+        frame(&mut app, vec![press(true)]);
+        frame(&mut app, vec![press(false)]);
+        frame(&mut app, Vec::new());
+        let s = app
+            .doc()
+            .find_shape(id)
+            .and_then(|s| s.stroke.clone())
+            .expect("outline");
+        assert!(s.share_arrowheads);
+        assert_eq!(s.end_arrow, tracedraw_core::Arrowhead::Diamond);
+        assert_eq!(app.engine.history_labels().0.len(), steps + 1);
+        // The "..." asks for the editor on that end.
+        let dots: Vec<egui::Pos2> = texts
+            .iter()
+            .filter(|(t, _)| t == "...")
+            .map(|(_, r)| r.center())
+            .collect();
+        let first = dots[0];
+        let press = |pressed| egui::Event::PointerButton {
+            pos: first,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        frame(&mut app, vec![egui::Event::PointerMoved(first)]);
+        frame(&mut app, vec![press(true)]);
+        frame(&mut app, vec![press(false)]);
+        frame(&mut app, Vec::new());
+        assert!(
+            matches!(app.dialog, crate::ui::dialogs::Dialog::ArrowheadEditor(_)),
+            "{:?}",
+            app.dialog
+        );
     }
 
     /// The outline's paint editor works on the outline: uniform is its

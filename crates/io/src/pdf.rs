@@ -2793,6 +2793,46 @@ mod tests {
         assert!(!content.contains(&format!("{} {} l", f(60.0 * MM_PT), f(250.0 * MM_PT))));
     }
 
+    /// #1210: a head sized to 200 % and moved 5 mm out past the end lands
+    /// where the editor put it: the tip at (65, 150), the base corners
+    /// 16 mm back at x 49 and 6.4 mm either side of the line.
+    #[test]
+    fn a_moved_and_scaled_arrowhead_lands_where_the_editor_put_it() {
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        let mut line = Shape::new(
+            tracedraw_core::ShapeId(1),
+            ShapeKind::Path {
+                path: {
+                    let mut p = tracedraw_core::BezPath::new();
+                    p.move_to((10.0, 50.0));
+                    p.line_to((60.0, 50.0));
+                    p
+                },
+                closed: false,
+            },
+        );
+        line.fill = Fill::None;
+        let mut stroke = tracedraw_core::Stroke {
+            end_arrow: tracedraw_core::Arrowhead::Arrow,
+            ..tracedraw_core::Stroke::new(Color::BLACK, 2.0)
+        };
+        stroke.end_head.size = 200.0;
+        stroke.end_head.offset = 5.0;
+        line.stroke = Some(stroke);
+        line.transform = Affine::translate((0.0, 100.0));
+        doc.layer_mut(layer).unwrap().shapes.push(line);
+        let content = page_content(&document_to_pdf(&doc));
+        let tip = format!("{} {} m", f(65.0 * MM_PT), f(150.0 * MM_PT));
+        assert!(content.contains(&tip), "head tip: {content}");
+        for y in [156.4, 143.6] {
+            let corner = format!("{} {} l", f(49.0 * MM_PT), f(y * MM_PT));
+            assert!(content.contains(&corner), "head base corner {y}: {content}");
+        }
+        // The plain head's base is not there: the head moved.
+        assert!(!content.contains(&format!("{} {} l", f(52.0 * MM_PT), f(146.8 * MM_PT))));
+    }
+
     /// The page's content streams, inflated.
     fn page_content(bytes: &[u8]) -> String {
         let mut content = String::new();

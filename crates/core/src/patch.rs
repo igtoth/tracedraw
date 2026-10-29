@@ -41,10 +41,16 @@ pub enum StrokeField {
     MiterLimit,
     /// Dashes fitted to corners and ends.
     AlignDashes,
+    /// The start head's placement (size, offset, mirror, rotation).
+    StartHead,
+    /// The end head's placement.
+    EndHead,
+    /// Share attributes: the end follows the start's head and placement.
+    ShareArrowheads,
 }
 
 impl StrokeField {
-    pub const ALL: [StrokeField; 16] = [
+    pub const ALL: [StrokeField; 19] = [
         StrokeField::Paint,
         StrokeField::Width,
         StrokeField::Cap,
@@ -61,6 +67,9 @@ impl StrokeField {
         StrokeField::Position,
         StrokeField::MiterLimit,
         StrokeField::AlignDashes,
+        StrokeField::StartHead,
+        StrokeField::EndHead,
+        StrokeField::ShareArrowheads,
     ];
 
     /// True when `a` and `b` have the same value for this field.
@@ -82,10 +91,16 @@ impl StrokeField {
             StrokeField::Position => a.position == b.position,
             StrokeField::MiterLimit => a.miter_limit == b.miter_limit,
             StrokeField::AlignDashes => a.align_dashes == b.align_dashes,
+            StrokeField::StartHead => a.start_head == b.start_head,
+            StrokeField::EndHead => a.end_head == b.end_head,
+            StrokeField::ShareArrowheads => a.share_arrowheads == b.share_arrowheads,
         }
     }
 
     /// Copy this field of `from` into `to`, leaving the others alone.
+    /// With Share attributes on in `to`, a start head or its placement
+    /// copied in goes to the end as well, and turning Share on copies the
+    /// start to the end, so the end always holds what is drawn.
     pub fn copy(self, from: &Stroke, to: &mut Stroke) {
         match self {
             StrokeField::Paint => {
@@ -107,6 +122,17 @@ impl StrokeField {
             StrokeField::Position => to.position = from.position,
             StrokeField::MiterLimit => to.miter_limit = from.miter_limit,
             StrokeField::AlignDashes => to.align_dashes = from.align_dashes,
+            StrokeField::StartHead => to.start_head = from.start_head,
+            StrokeField::EndHead => to.end_head = from.end_head,
+            StrokeField::ShareArrowheads => to.share_arrowheads = from.share_arrowheads,
+        }
+        if to.share_arrowheads
+            && matches!(
+                self,
+                StrokeField::StartArrow | StrokeField::StartHead | StrokeField::ShareArrowheads
+            )
+        {
+            to.share_start_head();
         }
     }
 }
@@ -449,6 +475,45 @@ mod tests {
         assert!(out.align_dashes);
         a.position = crate::OutlinePosition::Outside;
         assert!(!StrokeField::Position.same(&a, &b));
+    }
+
+    /// #1210: the head placements and Share attributes are fields of
+    /// their own; with Share on, a start head patched in reaches the end
+    /// too, and turning Share on copies the start to the end.
+    #[test]
+    fn head_placements_patch_one_at_a_time_and_share_follows_the_start() {
+        let a = stroke(Color::rgb8(255, 0, 0), 1.0);
+        let mut b = stroke(Color::rgb8(0, 0, 255), 2.0);
+        b.end_arrow = crate::Arrowhead::Circle;
+        let mut new = a.clone();
+        new.start_head.size = 250.0;
+        new.end_head.offset = 1.5;
+        let fields = stroke_changes(&a, &new);
+        assert_eq!(fields, vec![StrokeField::StartHead, StrokeField::EndHead]);
+        let out = patch_stroke(Some(&b), &new, &fields);
+        assert_eq!(out.start_head.size, 250.0);
+        assert_eq!(out.end_head.offset, 1.5);
+        assert_eq!(out.end_arrow, crate::Arrowhead::Circle, "the head stays");
+        assert_eq!(out.width, 2.0);
+        // Share on: the end takes the start's head and placement.
+        let mut shared = new.clone();
+        shared.start_arrow = crate::Arrowhead::Diamond;
+        shared.share_arrowheads = true;
+        let out = patch_stroke(
+            Some(&b),
+            &shared,
+            &[StrokeField::StartArrow, StrokeField::ShareArrowheads],
+        );
+        assert!(out.share_arrowheads);
+        assert_eq!(out.end_arrow, crate::Arrowhead::Diamond);
+        assert_eq!(out.end_head, out.start_head);
+        // A later start placement on a shared outline reaches the end.
+        let mut later = shared.clone();
+        later.start_head.rotation = 45.0;
+        let out = patch_stroke(Some(&out), &later, &[StrokeField::StartHead]);
+        assert_eq!(out.end_head.rotation, 45.0);
+        assert!(StrokeField::ALL.contains(&StrokeField::ShareArrowheads));
+        assert_eq!(StrokeField::ALL.len(), 19);
     }
 
     #[test]

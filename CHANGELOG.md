@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Outline, Arrowhead editor: the "..." beside the start and end arrowhead lists (Properties docker, Outline Pen dialog) opens an editor for that end with the head list, Size (10 to 1000 % of the preset size), Offset along the line, Mirror horizontally and vertically, Rotation and a preview of the line's end; OK applies it to the selection as one undo step, to the default outline with nothing selected, or back into the Outline Pen dialog. Share attributes beside the End list copies the start arrowhead and its settings to the end and keeps them the same while on. The settings are drawn on the canvas and in SVG, PDF, EPS and EMF files alike and saved in `.tdraw` files (untouched files stay as they were). Arrowheads had a shape only (#1210).
+
 ## 0.23.0 (2026-10-29)
 
 - Font list filter: the choices now open beside the list, in sections: fonts shown, style (serif, sans serif, script, decorative, monospaced, symbol), weight (light, regular, bold), width (condensed, normal, expanded), technology (TrueType, OpenType, variable), scripts (Latin, Greek, Cyrillic, Arabic, Devanagari, CJK and more), each OpenType feature on its own, embedding rights and the folders the fonts are in. Every value is read from the font files once (OS/2 weight and width classes, embedding bits, Unicode ranges, variation axes, GSUB and GPOS feature lists). Monospaced and Symbol now widen the style choices like the other styles instead of narrowing them (#867).
