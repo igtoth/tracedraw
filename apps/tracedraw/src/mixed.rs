@@ -11,7 +11,7 @@ use tracedraw_core::patch::{
     fill_changes, fill_mixed, stroke_changes, stroke_mixed, FillField, FillMix, StrokeField,
     StrokeMix,
 };
-use tracedraw_core::{Command, Corners, Fill, Stroke};
+use tracedraw_core::{Command, Corners, Fill, Stop, Stroke};
 
 /// The objects a group stands for when its fill or outline is shown:
 /// everything inside it, at any depth; other objects stand for
@@ -73,10 +73,59 @@ pub fn uniform_mask(amount: f64) -> Fill {
 
 /// The amount (%) of a [`uniform_mask`] colour.
 fn uniform_amount(c: tracedraw_core::Color) -> f64 {
+    100.0 - grey_opacity(c)
+}
+
+/// The opacity (%) a mask colour stands for: its lightness, white 100 %
+/// (opaque) and black 0 % (clear).
+pub fn grey_opacity(c: tracedraw_core::Color) -> f64 {
     let [r, g, b] = c.to_rgb_f32();
     let v = 0.299 * r as f64 + 0.587 * g as f64 + 0.114 * b as f64;
     // The grey is kept in single precision: rounded back to what was set.
-    (((1.0 - v) * 100.0).clamp(0.0, 100.0) * 1e4).round() / 1e4
+    ((v * 100.0).clamp(0.0, 100.0) * 1e4).round() / 1e4
+}
+
+/// The mask colour of `opacity` % (see [`grey_opacity`]).
+pub fn opacity_grey(opacity: f64) -> tracedraw_core::Color {
+    tracedraw_core::Color::Gray {
+        v: (opacity / 100.0).clamp(0.0, 1.0) as f32,
+    }
+}
+
+/// The two greys of a pattern or texture mask (foreground, background);
+/// None for the other fills.
+pub fn mask_greys(mask: &Fill) -> Option<(tracedraw_core::Color, tracedraw_core::Color)> {
+    match mask {
+        Fill::Pattern(tracedraw_core::Pattern::TwoColor { front, back, .. }) => {
+            Some((*front, *back))
+        }
+        Fill::Texture(t) => Some((t.color_a, t.color_b)),
+        _ => None,
+    }
+}
+
+/// Set the two greys of a pattern or texture mask; false when `mask` has
+/// none.
+pub fn set_mask_greys(
+    mask: &mut Fill,
+    front: tracedraw_core::Color,
+    back: tracedraw_core::Color,
+) -> bool {
+    match mask {
+        Fill::Pattern(tracedraw_core::Pattern::TwoColor {
+            front: f, back: b, ..
+        }) => {
+            *f = front;
+            *b = back;
+            true
+        }
+        Fill::Texture(t) => {
+            t.color_a = front;
+            t.color_b = back;
+            true
+        }
+        _ => false,
+    }
 }
 
 /// The transparency effect and the opacity that stand for uniform
@@ -148,6 +197,10 @@ pub enum TransparencyField {
     MaskAngle,
     /// A fountain mask's type (linear, radial...).
     MaskKind,
+    /// A fountain mask's stops (their greys and positions).
+    MaskStops,
+    /// A pattern or texture mask's two greys.
+    MaskGreys,
     Merge,
     Target,
 }
@@ -158,10 +211,13 @@ pub fn transparency_mixed(ts: &[ShapeTransparency]) -> Vec<TransparencyField> {
     let Some(first) = ts.first() else {
         return out;
     };
-    let fountain = |t: &ShapeTransparency| match &t.mask {
-        Some(Fill::Fountain(f)) => Some((f.angle, f.kind)),
-        _ => None,
-    };
+    fn fountain(t: &ShapeTransparency) -> Option<(f64, tracedraw_core::FountainKind, &[Stop])> {
+        match &t.mask {
+            Some(Fill::Fountain(f)) => Some((f.angle, f.kind, &f.stops)),
+            _ => None,
+        }
+    }
+    let greys = |t: &ShapeTransparency| t.mask.as_ref().and_then(mask_greys);
     for t in &ts[1..] {
         let mut push = |f| {
             if !out.contains(&f) {
@@ -180,6 +236,14 @@ pub fn transparency_mixed(ts: &[ShapeTransparency]) -> Vec<TransparencyField> {
             }
             if a.1 != b.1 {
                 push(TransparencyField::MaskKind);
+            }
+            if a.2 != b.2 {
+                push(TransparencyField::MaskStops);
+            }
+        }
+        if let (Some(a), Some(b)) = (greys(first), greys(t)) {
+            if a != b {
+                push(TransparencyField::MaskGreys);
             }
         }
         if t.mask.is_some() && first.mask.is_some() {
@@ -429,6 +493,34 @@ impl App {
                                 t.kind = 2;
                                 t.mask = Some(settings.mask.clone());
                             }
+                        }
+                    }
+                    TransparencyField::MaskStops => {
+                        let Fill::Fountain(from) = &settings.mask else {
+                            continue;
+                        };
+                        match &mut t.mask {
+                            Some(Fill::Fountain(m)) => m.stops = from.stops.clone(),
+                            _ => {
+                                t.kind = 2;
+                                t.mask = Some(settings.mask.clone());
+                            }
+                        }
+                    }
+                    TransparencyField::MaskGreys => {
+                        let Some((front, back)) = mask_greys(&settings.mask) else {
+                            continue;
+                        };
+                        let set = match &mut t.mask {
+                            Some(m) => set_mask_greys(m, front, back),
+                            None => false,
+                        };
+                        if !set {
+                            t.kind = match settings.mask {
+                                Fill::Texture(_) => 4,
+                                _ => 3,
+                            };
+                            t.mask = Some(settings.mask.clone());
                         }
                     }
                     TransparencyField::Merge => t.merge = settings.merge,
@@ -753,6 +845,128 @@ mod tests {
             .iter()
             .all(|t| t.kind == 1 && (t.amount - 60.0).abs() < 1e-9));
         assert!(transparency_mixed(&ts).is_empty());
+    }
+
+    /// The Transparency section's stop list and foreground and background
+    /// fields: a stop change goes to each fountain mask (an object without
+    /// one gets the whole mask), a grey change to each pattern or texture
+    /// mask; stops and greys that differ show as mixed (#1203).
+    #[test]
+    fn transparency_stops_and_greys_change_one_setting_at_a_time() {
+        use tracedraw_core::{Pattern, PatternTile};
+        let mut app = App::headless();
+        let (a, b) = two_rects(&mut app);
+        let mut mask_a = Fill::linear(Color::WHITE, Color::BLACK, 30.0);
+        if let Fill::Fountain(f) = &mut mask_a {
+            f.edge_pad = 0.1;
+        }
+        app.run(Command::SetEffects {
+            shape: a,
+            effects: vec![Effect::Transparency {
+                mask: mask_a.clone(),
+                merge: MergeMode::Multiply,
+                target: 0,
+            }],
+        });
+        let mut mask_b = Fill::linear(Color::WHITE, Color::BLACK, 30.0);
+        if let Fill::Fountain(f) = &mut mask_b {
+            f.stops.push(Stop::new(0.5, Color::Gray { v: 0.5 }));
+        }
+        app.run(Command::SetEffects {
+            shape: b,
+            effects: vec![Effect::Transparency {
+                mask: mask_b,
+                merge: MergeMode::Normal,
+                target: 2,
+            }],
+        });
+        let ts = app.selection_transparency();
+        let mixed = transparency_mixed(&ts);
+        assert!(mixed.contains(&TransparencyField::MaskStops));
+        assert!(!mixed.contains(&TransparencyField::MaskAngle));
+        // New stops: a keeps its edge pad and merge mode, b its target.
+        let stops = vec![
+            Stop::new(0.0, opacity_grey(100.0)),
+            Stop::new(0.4, opacity_grey(25.0)),
+            Stop::new(1.0, opacity_grey(0.0)),
+        ];
+        let mut settings = TransparencySettings {
+            kind: 1,
+            ..Default::default()
+        };
+        if let Fill::Fountain(f) = &mut settings.mask {
+            f.stops = stops.clone();
+        }
+        app.patch_transparency(&settings, &[TransparencyField::MaskStops]);
+        assert_eq!(app.engine.undo_label(), Some("Transparency"));
+        let ts = app.selection_transparency();
+        assert!(!transparency_mixed(&ts).contains(&TransparencyField::MaskStops));
+        for (t, merge, target, pad) in [
+            (&ts[0], MergeMode::Multiply, 0, 0.1),
+            (&ts[1], MergeMode::Normal, 2, 0.0),
+        ] {
+            let Some(Fill::Fountain(f)) = &t.mask else {
+                panic!("a fountain mask");
+            };
+            assert_eq!(f.stops, stops);
+            assert_eq!((f.angle, f.edge_pad), (30.0, pad));
+            assert_eq!((t.merge, t.target), (merge, target));
+        }
+        assert!((grey_opacity(opacity_grey(25.0)) - 25.0).abs() < 1e-9);
+
+        // Greys: a gets a pattern mask (the whole one), b a texture; a
+        // change of the greys keeps each tile and texture.
+        let texture = TransparencySettings::default_mask(3, 0.0);
+        app.run(Command::SetEffects {
+            shape: b,
+            effects: vec![Effect::Transparency {
+                mask: texture.clone(),
+                merge: MergeMode::Normal,
+                target: 2,
+            }],
+        });
+        let mut pattern = TransparencySettings {
+            kind: 2,
+            mask: Fill::Pattern(Pattern::TwoColor {
+                tile: PatternTile::Dots,
+                front: opacity_grey(80.0),
+                back: opacity_grey(20.0),
+                size_mm: 7.0,
+            }),
+            ..Default::default()
+        };
+        app.patch_transparency(&pattern, &[TransparencyField::MaskGreys]);
+        let ts = app.selection_transparency();
+        assert_eq!((ts[0].kind, ts[1].kind), (3, 4));
+        assert_eq!(
+            ts[0].mask.as_ref().and_then(mask_greys),
+            Some((opacity_grey(80.0), opacity_grey(20.0)))
+        );
+        let Some(Fill::Texture(t)) = &ts[1].mask else {
+            panic!("the texture stays");
+        };
+        assert_eq!(t.kind, tracedraw_core::style::TextureKind::Clouds);
+        assert_eq!(
+            (t.color_a, t.color_b),
+            (opacity_grey(80.0), opacity_grey(20.0))
+        );
+        assert!(!transparency_mixed(&ts).contains(&TransparencyField::MaskGreys));
+        // Swapped greys on one object show as mixed.
+        assert!(set_mask_greys(
+            &mut pattern.mask,
+            opacity_grey(20.0),
+            opacity_grey(80.0)
+        ));
+        app.select(vec![a]);
+        app.patch_transparency(&pattern, &[TransparencyField::MaskGreys]);
+        app.select(vec![a, b]);
+        let ts = app.selection_transparency();
+        assert!(transparency_mixed(&ts).contains(&TransparencyField::MaskGreys));
+        let Some(Fill::Pattern(Pattern::TwoColor { tile, size_mm, .. })) = &ts[0].mask else {
+            panic!("the pattern stays");
+        };
+        assert_eq!((*tile, *size_mm), (PatternTile::Dots, 7.0));
+        assert!(!set_mask_greys(&mut Fill::None, Color::WHITE, Color::BLACK));
     }
 
     #[test]

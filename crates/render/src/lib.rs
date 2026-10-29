@@ -1151,12 +1151,7 @@ impl Renderer<'_> {
     /// Merge a finished shadow layer, its top left at `at` on the
     /// target, with what lies beneath.
     fn merge_shadow(&mut self, sh: &tracedraw_core::Shadow, layer: &Pixmap, at: (i32, i32)) {
-        let pp = tiny_skia::PixmapPaint {
-            blend_mode: merge_blend(sh.merge),
-            ..Default::default()
-        };
-        self.pixmap
-            .draw_pixmap(at.0, at.1, layer.as_ref(), &pp, Transform::identity(), None);
+        composite_layer(self.pixmap, layer, at, sh.merge);
     }
 
     /// A one pixel line along `sk` (the Wireframe view).
@@ -1374,13 +1369,7 @@ impl Renderer<'_> {
                 *px = np;
             }
         }
-        let blend = merge_blend(merge);
-        let paint = tiny_skia::PixmapPaint {
-            blend_mode: blend,
-            ..Default::default()
-        };
-        self.pixmap
-            .draw_pixmap(0, 0, layer.as_ref(), &paint, Transform::identity(), None);
+        composite_layer(self.pixmap, &layer, (0, 0), merge);
     }
 
     /// Fill a screen-space path with any fill type.
@@ -2336,7 +2325,9 @@ pub fn render_shadow_image(shape: &Shape, dpi: f64) -> Option<(Rect, Pixmap)> {
     Some((exact, pm))
 }
 
-/// The blend mode a merge mode draws with.
+/// The blend mode a merge mode draws with. Texturize and Lightness have
+/// no blend of their own and get the nearest; [`composite_layer`] draws
+/// them exactly.
 pub fn merge_blend(merge: tracedraw_core::live::MergeMode) -> tiny_skia::BlendMode {
     use tiny_skia::BlendMode as B;
     use tracedraw_core::live::MergeMode as M;
@@ -2345,16 +2336,143 @@ pub fn merge_blend(merge: tracedraw_core::live::MergeMode) -> tiny_skia::BlendMo
         M::Add => B::Plus,
         M::Subtract => B::Difference,
         M::Difference => B::Difference,
-        M::Multiply => B::Multiply,
+        M::Multiply | M::Texturize => B::Multiply,
         M::Divide => B::Screen,
         M::IfLighter => B::Lighten,
         M::IfDarker => B::Darken,
         M::Hue => B::Hue,
         M::Saturation => B::Saturation,
         M::Color => B::Color,
+        M::Lightness => B::Luminosity,
         M::Invert => B::Exclusion,
         M::And | M::Or | M::Xor => B::Xor,
+        M::Behind => B::DestinationOver,
+        M::Screen => B::Screen,
+        M::Overlay => B::Overlay,
+        M::SoftLight => B::SoftLight,
+        M::HardLight => B::HardLight,
+        M::ColorDodge => B::ColorDodge,
+        M::ColorBurn => B::ColorBurn,
+        M::Exclusion => B::Exclusion,
     }
+}
+
+/// Draw the premultiplied `layer`, its top left at `at`, over `target`
+/// with `merge`: the blend of [`merge_blend`], except Texturize (the
+/// backdrop multiplied by the source's lightness) and Lightness (the
+/// source's HSL lightness with the backdrop's hue and saturation), which
+/// are mixed pixel by pixel here.
+pub fn composite_layer(
+    target: &mut Pixmap,
+    layer: &Pixmap,
+    at: (i32, i32),
+    merge: tracedraw_core::live::MergeMode,
+) {
+    use tracedraw_core::live::MergeMode as M;
+    let mix: fn([f32; 3], [f32; 3]) -> [f32; 3] = match merge {
+        M::Texturize => |cb, cs| {
+            let l = 0.2126 * cs[0] + 0.7152 * cs[1] + 0.0722 * cs[2];
+            [cb[0] * l, cb[1] * l, cb[2] * l]
+        },
+        M::Lightness => |cb, cs| {
+            let l = (cs[0].max(cs[1]).max(cs[2]) + cs[0].min(cs[1]).min(cs[2])) / 2.0;
+            set_lightness(cb, l)
+        },
+        _ => {
+            let pp = tiny_skia::PixmapPaint {
+                blend_mode: merge_blend(merge),
+                ..Default::default()
+            };
+            target.draw_pixmap(at.0, at.1, layer.as_ref(), &pp, Transform::identity(), None);
+            return;
+        }
+    };
+    let (tw, th) = (target.width() as i32, target.height() as i32);
+    let (lw, lh) = (layer.width() as i32, layer.height() as i32);
+    let x0 = at.0.max(0);
+    let y0 = at.1.max(0);
+    let x1 = (at.0 + lw).min(tw);
+    let y1 = (at.1 + lh).min(th);
+    if x0 >= x1 || y0 >= y1 {
+        return;
+    }
+    let src = layer.pixels();
+    let dst = target.pixels_mut();
+    for y in y0..y1 {
+        let srow = ((y - at.1) * lw) as usize;
+        let drow = (y * tw) as usize;
+        for x in x0..x1 {
+            let (Some(s), Some(d)) = (
+                src.get(srow + (x - at.0) as usize),
+                dst.get_mut(drow + x as usize),
+            ) else {
+                continue;
+            };
+            let sa = s.alpha();
+            if sa == 0 {
+                continue;
+            }
+            let (s, d8) = (s.demultiply(), d.demultiply());
+            let (a_s, a_b) = (sa as f32 / 255.0, d8.alpha() as f32 / 255.0);
+            let cs = [
+                s.red() as f32 / 255.0,
+                s.green() as f32 / 255.0,
+                s.blue() as f32 / 255.0,
+            ];
+            let cb = [
+                d8.red() as f32 / 255.0,
+                d8.green() as f32 / 255.0,
+                d8.blue() as f32 / 255.0,
+            ];
+            let b = mix(cb, cs);
+            // The compositing formula: the source where only it is, the
+            // backdrop where only it is, the mix where both are.
+            let a_o = a_s + a_b - a_s * a_b;
+            let mut out = [0u8; 3];
+            for i in 0..3 {
+                let c = cs[i] * a_s * (1.0 - a_b) + cb[i] * a_b * (1.0 - a_s) + a_s * a_b * b[i];
+                out[i] = ((c / a_o.max(1e-6)).clamp(0.0, 1.0) * 255.0).round() as u8;
+            }
+            if let Some(np) =
+                tiny_skia::ColorU8::from_rgba(out[0], out[1], out[2], (a_o * 255.0).round() as u8)
+                    .premultiply()
+                    .into()
+            {
+                *d = np;
+            }
+        }
+    }
+}
+
+/// `c` with its HSL lightness set to `l`, its hue and saturation kept.
+fn set_lightness(c: [f32; 3], l: f32) -> [f32; 3] {
+    let max = c[0].max(c[1]).max(c[2]);
+    let min = c[0].min(c[1]).min(c[2]);
+    let lb = (max + min) / 2.0;
+    let d = max - min;
+    if d < 1e-6 {
+        return [l, l, l];
+    }
+    let s = d / (1.0 - (2.0 * lb - 1.0).abs()).max(1e-6);
+    let h = if max == c[0] {
+        ((c[1] - c[2]) / d).rem_euclid(6.0)
+    } else if max == c[1] {
+        (c[2] - c[0]) / d + 2.0
+    } else {
+        (c[0] - c[1]) / d + 4.0
+    };
+    let chroma = (1.0 - (2.0 * l - 1.0).abs()) * s.min(1.0);
+    let x = chroma * (1.0 - (h.rem_euclid(2.0) - 1.0).abs());
+    let (r, g, b) = match h as i32 {
+        0 => (chroma, x, 0.0),
+        1 => (x, chroma, 0.0),
+        2 => (0.0, chroma, x),
+        3 => (0.0, x, chroma),
+        4 => (x, 0.0, chroma),
+        _ => (chroma, 0.0, x),
+    };
+    let m = l - chroma / 2.0;
+    [r + m, g + m, b + m]
 }
 
 /// Three-pass box blur (approximates a Gaussian) on premultiplied RGBA.
@@ -3471,6 +3589,174 @@ mod tests {
             right > 215,
             "right should be transparent (white page): {right}"
         );
+    }
+
+    /// Each merge mode mixes a source drawn through an opaque mask with
+    /// the backdrop as its formula says (source and backdrop in 0..1).
+    #[test]
+    fn merge_modes_mix_with_the_backdrop_as_their_formulas_say() {
+        use tracedraw_core::live::MergeMode as M;
+        let cb = [0.6f32, 0.4, 0.2];
+        let cs = [0.5f32, 0.8, 0.25];
+        let to8 = |v: f32| (v * 255.0).round() as u8;
+        let backdrop = rect(
+            1,
+            Rect::new(0.0, 0.0, 100.0, 100.0),
+            Color::rgb8(to8(cb[0]), to8(cb[1]), to8(cb[2])),
+        );
+        let screen = |b: f32, s: f32| b + s - b * s;
+        let hard_light = |b: f32, s: f32| {
+            if s <= 0.5 {
+                b * 2.0 * s
+            } else {
+                screen(b, 2.0 * s - 1.0)
+            }
+        };
+        let soft_light = |b: f32, s: f32| {
+            if s <= 0.5 {
+                b - (1.0 - 2.0 * s) * b * (1.0 - b)
+            } else {
+                let d = if b <= 0.25 {
+                    ((16.0 * b - 12.0) * b + 4.0) * b
+                } else {
+                    b.sqrt()
+                };
+                b + (2.0 * s - 1.0) * (d - b)
+            }
+        };
+        let dodge = |b: f32, s: f32| {
+            if b <= 0.0 {
+                0.0
+            } else if s >= 1.0 {
+                1.0
+            } else {
+                (b / (1.0 - s)).min(1.0)
+            }
+        };
+        let burn = |b: f32, s: f32| {
+            if b >= 1.0 {
+                1.0
+            } else if s <= 0.0 {
+                0.0
+            } else {
+                1.0 - ((1.0 - b) / s).min(1.0)
+            }
+        };
+        let lum = 0.2126 * cs[0] + 0.7152 * cs[1] + 0.0722 * cs[2];
+        let per_channel =
+            |f: &dyn Fn(f32, f32) -> f32| [f(cb[0], cs[0]), f(cb[1], cs[1]), f(cb[2], cs[2])];
+        let cases: Vec<(M, [f32; 3])> = vec![
+            (M::Screen, per_channel(&screen)),
+            (M::Overlay, per_channel(&|b, s| hard_light(s, b))),
+            (M::SoftLight, per_channel(&soft_light)),
+            (M::HardLight, per_channel(&hard_light)),
+            (M::ColorDodge, per_channel(&dodge)),
+            (M::ColorBurn, per_channel(&burn)),
+            (M::Exclusion, per_channel(&|b, s| b + s - 2.0 * b * s)),
+            (M::Texturize, [cb[0] * lum, cb[1] * lum, cb[2] * lum]),
+            // Hue 30 degrees and saturation 0.5 of the backdrop at the
+            // source's lightness (0.8 + 0.25) / 2.
+            (M::Lightness, [0.7625, 0.525, 0.2875]),
+            // Nothing shows over an opaque backdrop.
+            (M::Behind, cb),
+        ];
+        for (merge, want) in cases {
+            let mut top = rect(
+                2,
+                Rect::new(20.0, 20.0, 80.0, 80.0),
+                Color::rgb8(to8(cs[0]), to8(cs[1]), to8(cs[2])),
+            );
+            top.effects
+                .push(tracedraw_core::live::Effect::Transparency {
+                    mask: Fill::Solid(Color::WHITE),
+                    merge,
+                    target: 2,
+                });
+            let (doc, page) = doc_with(vec![backdrop.clone(), top]);
+            let pm = render_page_image(&doc, page, 25.4).unwrap();
+            let got = px(&pm, 50, 50);
+            let want = (to8(want[0]), to8(want[1]), to8(want[2]));
+            for (g, w) in [got.0, got.1, got.2]
+                .into_iter()
+                .zip([want.0, want.1, want.2])
+            {
+                assert!(
+                    (g as i32 - w as i32).abs() <= 3,
+                    "{merge:?}: got {got:?}, want {want:?}"
+                );
+            }
+            // Outside the source the backdrop is untouched.
+            assert_eq!(
+                px(&pm, 5, 5),
+                (to8(cb[0]), to8(cb[1]), to8(cb[2])),
+                "{merge:?}"
+            );
+        }
+    }
+
+    /// Behind shows the source only where the backdrop is clear.
+    #[test]
+    fn behind_draws_only_where_the_backdrop_is_clear() {
+        let mut target = Pixmap::new(4, 1).unwrap();
+        let mut layer = Pixmap::new(4, 1).unwrap();
+        let red = tiny_skia::ColorU8::from_rgba(255, 0, 0, 255).premultiply();
+        let blue = tiny_skia::ColorU8::from_rgba(0, 0, 255, 255).premultiply();
+        let half_blue = tiny_skia::ColorU8::from_rgba(0, 0, 255, 128).premultiply();
+        target.pixels_mut()[0] = red;
+        target.pixels_mut()[2] = half_blue;
+        for p in layer.pixels_mut() {
+            *p = blue;
+        }
+        composite_layer(
+            &mut target,
+            &layer,
+            (0, 0),
+            tracedraw_core::live::MergeMode::Behind,
+        );
+        // Over the opaque red: red. Over nothing: the source. Over the half
+        // blue: blue filled in to opaque.
+        assert_eq!(px(&target, 0, 0), (255, 0, 0));
+        assert_eq!(px(&target, 1, 0), (0, 0, 255));
+        assert_eq!(target.pixel(2, 0).unwrap().alpha(), 255);
+        assert_eq!(px(&target, 2, 0), (0, 0, 255));
+    }
+
+    /// Texturize and Lightness, drawn pixel by pixel, keep the alpha
+    /// compositing of the blend modes: a half-clear source over a clear
+    /// backdrop is the source at half alpha, over an opaque one the mix.
+    #[test]
+    fn pixel_merges_composite_alpha_like_blend_modes() {
+        use tracedraw_core::live::MergeMode as M;
+        for merge in [M::Texturize, M::Lightness] {
+            let mut target = Pixmap::new(2, 1).unwrap();
+            let mut layer = Pixmap::new(2, 1).unwrap();
+            target.pixels_mut()[1] = tiny_skia::ColorU8::from_rgba(200, 100, 50, 255).premultiply();
+            for p in layer.pixels_mut() {
+                *p = tiny_skia::ColorU8::from_rgba(255, 255, 255, 128).premultiply();
+            }
+            composite_layer(&mut target, &layer, (0, 0), merge);
+            let clear = target.pixel(0, 0).unwrap();
+            assert_eq!(clear.alpha(), 128, "{merge:?}");
+            assert_eq!(px(&target, 0, 0), (255, 255, 255), "{merge:?}");
+            let over = target.pixel(1, 0).unwrap();
+            assert_eq!(over.alpha(), 255, "{merge:?}");
+            // White at half strength: Texturize leaves the backdrop (its
+            // lightness is 1), Lightness lifts it half way to white.
+            let got = px(&target, 1, 0);
+            let want = match merge {
+                M::Texturize => (200, 100, 50),
+                _ => (228, 178, 153),
+            };
+            for (g, w) in [got.0, got.1, got.2]
+                .into_iter()
+                .zip([want.0, want.1, want.2])
+            {
+                assert!(
+                    (g as i32 - w as i32).abs() <= 2,
+                    "{merge:?}: {got:?} vs {want:?}"
+                );
+            }
+        }
     }
 
     #[test]

@@ -37,6 +37,8 @@ The status bar's fill and outline read "Mixed" (no swatch) the same way.
 | Transparency type | that type with the default mask, unless it has that type already | its merge mode and target |
 | Uniform amount | uniform transparency at that amount | |
 | Transparency angle or gradient type | that setting in its own gradient mask | its other mask settings |
+| Transparency stops (the docker's list) | the whole run of stops in its own gradient mask (an object without one gets the whole mask) | its angle, type and other mask settings |
+| Transparency foreground or background | the two greys in its own pattern or texture mask (an object without one gets the whole mask) | its tile or texture |
 | Merge mode, applies to | that setting | its mask and amount |
 | Corner style, a corner size, relative scaling | that setting | its other corner values |
 

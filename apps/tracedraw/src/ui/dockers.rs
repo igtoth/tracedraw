@@ -3506,6 +3506,71 @@ mod tests {
         }
     }
 
+    /// The Transparency section lists a gradient mask's stops (opacity and
+    /// position, Add stop, Remove stop) and shows a pattern or texture
+    /// mask's foreground and background with Swap (#1203).
+    #[test]
+    fn transparency_section_lists_stops_and_greys() {
+        use tracedraw_core::live::{Effect, MergeMode};
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        app.show_welcome = false;
+        app.settings.autocorrect.enabled = false;
+        app.settings.properties_closed.clear();
+        app.show_dockers = true;
+        app.docker_tab = DockerTab::Properties;
+        let id = app
+            .new_shape(ShapeKind::Rect {
+                rect: tracedraw_core::geometry::Rect::new(10.0, 10.0, 60.0, 40.0),
+                radius: 0.0,
+                corners: None,
+            })
+            .expect("rect");
+        let mut mask = Fill::linear(Color::WHITE, Color::BLACK, 0.0);
+        if let Fill::Fountain(f) = &mut mask {
+            f.stops.push(Stop::new(0.5, Color::Gray { v: 0.5 }));
+        }
+        app.run(Command::SetEffects {
+            shape: id,
+            effects: vec![Effect::Transparency {
+                mask,
+                merge: MergeMode::Normal,
+                target: 2,
+            }],
+        });
+        app.select(vec![id]);
+        for _ in 0..3 {
+            draw(&ctx, &mut app);
+        }
+        let texts = painted_texts(&ctx, &mut app);
+        for key in ["transparency.opacity", "transparency.position"] {
+            assert!(texts.iter().any(|t| *t == tr(key)), "{key}: {texts:?}");
+        }
+        // Three stops: three Remove buttons, and an Add button each (the
+        // document palette's own + is on screen too when it fits).
+        assert!(texts.iter().filter(|t| *t == "+").count() >= 3, "{texts:?}");
+        assert_eq!(texts.iter().filter(|t| *t == "x").count(), 3, "{texts:?}");
+        assert!(!texts.iter().any(|t| *t == tr("dialog.swap")));
+
+        app.transparency_default.set_kind(2);
+        let t = app.transparency_default.clone();
+        app.patch_transparency(&t, &[crate::mixed::TransparencyField::Kind]);
+        for _ in 0..3 {
+            draw(&ctx, &mut app);
+        }
+        let texts = painted_texts(&ctx, &mut app);
+        for key in [
+            "transparency.foreground",
+            "transparency.background",
+            "dialog.swap",
+        ] {
+            assert!(texts.iter().any(|t| *t == tr(key)), "{key}: {texts:?}");
+        }
+        // No stop rows any more (the outline section has a Position label
+        // of its own, so the text alone would not tell).
+        assert_eq!(texts.iter().filter(|t| *t == "x").count(), 0, "{texts:?}");
+    }
+
     /// The Properties sections come open; a button or a header closes and
     /// opens one (kept in the preferences), and a jump to the fill or the
     /// outline opens it again.
