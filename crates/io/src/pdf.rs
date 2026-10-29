@@ -2565,6 +2565,77 @@ mod tests {
         assert!(text.contains("/Bounds [0.3]"));
     }
 
+    /// A gradient along a hue path or with a smooth transition is a
+    /// sampled function of SAMPLED_FUNCTION_SIZE colours; a stepped one
+    /// keeps the stitching function, one constant segment per band
+    /// (#1208).
+    #[test]
+    fn blend_settings_shade_through_sampled_and_stepped_functions() {
+        let shade = |f: tracedraw_core::Fountain, cmyk: bool| {
+            let mut doc = Document::default();
+            let layer = doc.pages[0].layers[0].id;
+            let id = doc.ids_mut().shape();
+            let mut s = Shape::new(
+                id,
+                ShapeKind::Rect {
+                    rect: Rect::new(10.0, 10.0, 60.0, 40.0),
+                    radius: 0.0,
+                    corners: None,
+                },
+            );
+            s.fill = Fill::Fountain(f);
+            doc.layer_mut(layer).unwrap().shapes.push(s);
+            let bytes = if cmyk {
+                document_to_pdf_with(
+                    &doc,
+                    &PdfOptions {
+                        standard: PdfStandard::X1a,
+                        ..Default::default()
+                    },
+                )
+            } else {
+                document_to_pdf(&doc)
+            };
+            String::from_utf8_lossy(&bytes).to_string()
+        };
+        let (red, blue) = (Color::rgb8(255, 0, 0), Color::rgb8(0, 0, 255));
+        let mut h = tracedraw_core::Fountain::two(FountainKind::Linear, red, blue, 0.0);
+        h.blend_direction = tracedraw_core::ColorBlend::Clockwise;
+        let text = shade(h.clone(), false);
+        assert!(text.contains("/FunctionType 0"), "{text}");
+        assert!(
+            text.contains(&format!(
+                "/Range [0 1 0 1 0 1] /Size [{SAMPLED_FUNCTION_SIZE}] /BitsPerSample 8 /Length {}",
+                SAMPLED_FUNCTION_SIZE * 3
+            )),
+            "{text}"
+        );
+        assert!(text.contains("/ShadingType 2"), "{text}");
+        // CMYK only: four bytes a colour.
+        let text = shade(h, true);
+        assert!(
+            text.contains(&format!(
+                "/Range [0 1 0 1 0 1 0 1] /Size [{SAMPLED_FUNCTION_SIZE}] /BitsPerSample 8 /Length {}",
+                SAMPLED_FUNCTION_SIZE * 4
+            )),
+            "{text}"
+        );
+        // Stepped: a stitching function with one segment per band, each
+        // from a colour to itself.
+        let mut s =
+            tracedraw_core::Fountain::two(FountainKind::Linear, Color::BLACK, Color::WHITE, 0.0);
+        s.steps = 4;
+        let text = shade(s, false);
+        assert!(!text.contains("/FunctionType 0"), "{text}");
+        assert!(text.contains("/FunctionType 3"), "{text}");
+        assert_eq!(text.matches("/FunctionType 2").count(), 4, "{text}");
+        assert!(
+            text.contains("/C0 [0.3333 0.3333 0.3333] /C1 [0.3333 0.3333 0.3333]"),
+            "{text}"
+        );
+        assert!(text.contains("/Bounds [0.25 0.5 0.75]"), "{text}");
+    }
+
     /// A fill whose nodes were placed freely is a unit shading drawn
     /// through its frame (#330).
     #[test]

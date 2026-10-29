@@ -1302,4 +1302,58 @@ mod tests {
         let svg = one_shape_svg(Fill::Fountain(saw), None);
         assert_eq!(svg.matches("<stop ").count(), 6, "{svg}");
     }
+
+    /// A stepped gradient goes out as a pair of stops per band; a hue
+    /// path or a smooth transition as a sampled run of stops, at most
+    /// MAX_SAMPLED_STOPS of them (#1208).
+    #[test]
+    fn blend_settings_go_out_as_stops() {
+        use tracedraw_core::style::{Fountain, FountainKind};
+        let (red, blue) = (Color::rgb8(255, 0, 0), Color::rgb8(0, 0, 255));
+        let mut f = Fountain::two(FountainKind::Linear, Color::BLACK, Color::WHITE, 0.0);
+        f.steps = 4;
+        let svg = one_shape_svg(Fill::Fountain(f), None);
+        assert_eq!(svg.matches("<stop ").count(), 8, "{svg}");
+        assert!(
+            svg.contains("<stop offset=\"0.25\" stop-color=\"#000000\""),
+            "{svg}"
+        );
+        assert!(
+            svg.contains("<stop offset=\"0.25\" stop-color=\"#555555\""),
+            "{svg}"
+        );
+        assert!(
+            svg.contains("<stop offset=\"0.5\" stop-color=\"#aaaaaa\""),
+            "{svg}"
+        );
+        // Two stops around the wheel: 17 sampled stops, green half way.
+        let mut h = Fountain::two(FountainKind::Linear, red, blue, 0.0);
+        h.blend_direction = tracedraw_core::ColorBlend::Clockwise;
+        let svg = one_shape_svg(Fill::Fountain(h), None);
+        assert_eq!(
+            svg.matches("<stop ").count(),
+            Fountain::MID_STEPS + 1,
+            "{svg}"
+        );
+        assert!(
+            svg.contains("<stop offset=\"0.5\" stop-color=\"#00ff00\""),
+            "{svg}"
+        );
+        // Many stops smoothed: sampled down to the cap.
+        let mut s = Fountain {
+            stops: (0..=6)
+                .map(|i| {
+                    tracedraw_core::Stop::new(i as f64 / 6.0, if i % 2 == 0 { red } else { blue })
+                })
+                .collect(),
+            ..Default::default()
+        };
+        s.smooth = true;
+        assert!(s.resolved_stops().len() > MAX_SAMPLED_STOPS);
+        let svg = one_shape_svg(Fill::Fountain(s), None);
+        assert_eq!(svg.matches("<stop ").count(), MAX_SAMPLED_STOPS, "{svg}");
+        // A plain gradient keeps its two stops.
+        let svg = one_shape_svg(Fill::linear(red, blue, 0.0), None);
+        assert_eq!(svg.matches("<stop ").count(), 2, "{svg}");
+    }
 }

@@ -2134,9 +2134,19 @@ mod tests {
         assert_eq!(f.kind, FountainKind::Radial);
         assert!(f.runs_once());
         assert_eq!((f.repeat, f.repeats), (FountainRepeat::None, 1));
+        assert!(!f.has_blend_options() && !f.stepped());
+        assert_eq!(f.steps, Fountain::SMOOTH_STEPS);
         // Defaults are not written, so files stay as they were.
         let json = serde_json::to_string(&black_white()).expect("json");
-        for field in ["repeat", "bilinear", "invert"] {
+        for field in [
+            "repeat",
+            "bilinear",
+            "invert",
+            "blend_direction",
+            "steps",
+            "smooth",
+            "acceleration",
+        ] {
             assert!(!json.contains(field), "{json}");
         }
         let mut g = black_white();
@@ -2145,13 +2155,181 @@ mod tests {
         g.repeats = 4;
         g.bilinear = true;
         g.invert = true;
+        g.blend_direction = ColorBlend::CounterClockwise;
+        g.steps = 12;
+        g.smooth = true;
+        g.acceleration = -40;
         let json = serde_json::to_string(&g).expect("json");
         assert!(
-            json.contains("\"shaped\"") && json.contains("\"mirror\""),
+            json.contains("\"shaped\"")
+                && json.contains("\"mirror\"")
+                && json.contains("\"CounterClockwise\"")
+                && json.contains("\"steps\":12")
+                && json.contains("\"acceleration\":-40"),
             "{json}"
         );
         let back: Fountain = serde_json::from_str(&json).expect("reads");
         assert_eq!(back, g);
+    }
+
+    /// A 4-step black to white fill is four greys with hard edges between
+    /// them, the end colours first and last; the resolved stops carry the
+    /// bands as a pair of stops each (#1208).
+    #[test]
+    fn stepped_fountains_draw_as_bands() {
+        let mut f = black_white();
+        f.steps = 4;
+        assert!(f.stepped() && f.has_blend_options());
+        let mut greys: Vec<u8> = (0..100)
+            .map(|i| grey(f.color_at((i as f64 + 0.5) / 100.0)))
+            .collect();
+        greys.dedup();
+        assert_eq!(greys, vec![0, 85, 170, 255]);
+        // Band `i` runs from i/n to (i+1)/n and has the colour at i/(n-1).
+        assert_eq!(grey(f.color_at(0.1)), 0);
+        assert_eq!(grey(f.color_at(0.3)), 85);
+        assert_eq!(grey(f.color_at(0.6)), 170);
+        assert_eq!(grey(f.color_at(0.9)), 255);
+        assert_eq!(grey(f.color_at(1.0)), 255);
+        // Two stops per band, the edges hard.
+        let r = f.resolved_stops();
+        assert_eq!(r.len(), 8);
+        assert!((r[1].pos - 0.25).abs() < 1e-12 && (r[2].pos - 0.25).abs() < 1e-12);
+        assert_eq!((grey(r[1].color), grey(r[2].color)), (0, 85));
+        let same = |f: &Fountain, r: &[Stop]| {
+            for k in 0..=200 {
+                let t = (k as f64 + 0.37) / 201.0;
+                assert_eq!(
+                    f.color_at(t).to_rgb8(),
+                    sample_stops(r, t).to_rgb8(),
+                    "{f:?} at {t}"
+                );
+            }
+        };
+        same(&f, &r);
+        // Smooth from 256 up; never fewer than two bands.
+        f.steps = Fountain::SMOOTH_STEPS;
+        assert!(!f.stepped() && !f.has_blend_options());
+        assert_eq!(grey(f.color_at(0.5)), 128);
+        f.steps = 0;
+        assert_eq!(f.band_count(), 2);
+        assert_eq!(grey(f.color_at(0.49)), 0);
+        assert_eq!(grey(f.color_at(0.51)), 255);
+        // The bands sit inside each cycle of a repeat, and inverted.
+        let mut s = black_white();
+        s.steps = 2;
+        s.repeat = FountainRepeat::Repeat;
+        s.repeats = 2;
+        s.invert = true;
+        for t in [0.1, 0.6] {
+            assert_eq!(grey(s.color_at(t)), 255);
+        }
+        for t in [0.4, 0.9] {
+            assert_eq!(grey(s.color_at(t)), 0);
+        }
+        let r = s.resolved_stops();
+        assert_eq!(r.len(), 8, "{r:?}");
+        same(&s, &r);
+        // The plain version for formats that know only stops.
+        let p = s.to_plain(64);
+        assert!(!p.has_blend_options() && p.runs_once());
+        assert_eq!(p.stops, r);
+    }
+
+    /// Red to blue clockwise (hue increasing) passes through green, the
+    /// other way through magenta; straight it is the RGB mix (#1208).
+    #[test]
+    fn hue_blends_go_round_the_wheel() {
+        let red = Color::rgb8(255, 0, 0);
+        let blue = Color::rgb8(0, 0, 255);
+        let mut f = Fountain::two(FountainKind::Linear, red, blue, 0.0);
+        assert_eq!(f.color_at(0.5).to_rgb8(), [128, 0, 128]);
+        f.blend_direction = ColorBlend::Clockwise;
+        assert!(f.has_blend_options());
+        assert_eq!(f.color_at(0.5).to_rgb8(), [0, 255, 0]);
+        assert_eq!(f.color_at(0.25).to_rgb8(), [255, 255, 0]);
+        assert_eq!(f.color_at(0.0).to_rgb8(), [255, 0, 0]);
+        assert_eq!(f.color_at(1.0).to_rgb8(), [0, 0, 255]);
+        // Between the sampled pieces the colour stays close to the wheel.
+        let [r, g, b] = f.color_at(0.125).to_rgb8();
+        assert!(
+            r == 255 && (g as i32 - 128).abs() <= 3 && b == 0,
+            "{r} {g} {b}"
+        );
+        f.blend_direction = ColorBlend::CounterClockwise;
+        assert_eq!(f.color_at(0.5).to_rgb8(), [255, 0, 255]);
+        // The resolved stops carry the path for shaders and exports.
+        let r = f.resolved_stops();
+        assert_eq!(r.len(), Fountain::MID_STEPS + 1);
+        assert_eq!(sample_stops(&r, 0.5).to_rgb8(), [255, 0, 255]);
+        // Greys have no hue: black to white stays grey either way.
+        let mut bw = black_white();
+        bw.blend_direction = ColorBlend::Clockwise;
+        assert_eq!(bw.color_at(0.5).to_rgb8(), [128, 128, 128]);
+    }
+
+    /// The smooth transition is a smoothstep over each blend: at a quarter
+    /// of the way the colour is `3/16 - 2/64` of the way (#1208).
+    #[test]
+    fn smooth_transition_eases_each_blend() {
+        assert!((smoothstep(0.25) - 0.15625).abs() < 1e-12);
+        assert_eq!(smoothstep(0.5), 0.5);
+        let mut f = black_white();
+        f.smooth = true;
+        assert!(f.has_blend_options());
+        assert_eq!(grey(f.color_at(0.25)), (255.0 * 0.15625f64).round() as u8);
+        assert_eq!(grey(f.color_at(0.5)), 128);
+        assert_eq!(grey(f.color_at(0.75)), (255.0 * 0.84375f64).round() as u8);
+        assert_eq!(grey(f.color_at(0.0)), 0);
+        assert_eq!(grey(f.color_at(1.0)), 255);
+        // Flat at the ends: darker than straight early on.
+        assert!(grey(f.color_at(0.0625)) < grey(black_white().color_at(0.0625)));
+        // With a midpoint off the middle the ease keeps it: half way at
+        // the midpoint.
+        f.stops[0].mid = 0.25;
+        assert_eq!(grey(f.color_at(0.25)), 128);
+    }
+
+    /// The acceleration skews every blend's midpoint, on top of the
+    /// stop's own: +100 pulls it to the start, -100 to the end (#1208).
+    #[test]
+    fn acceleration_skews_every_midpoint() {
+        assert_eq!(Fountain::skewed_mid(0.5, 1.0), 0.0);
+        assert_eq!(Fountain::skewed_mid(0.5, -1.0), 1.0);
+        assert!((Fountain::skewed_mid(0.5, 0.5) - 0.25).abs() < 1e-12);
+        assert!((Fountain::skewed_mid(0.2, -0.5) - 0.6).abs() < 1e-12);
+        assert_eq!(Fountain::skewed_mid(0.3, 0.0), 0.3);
+        let mut f = black_white();
+        f.acceleration = 100;
+        assert!(f.has_blend_options());
+        // Past half way almost at once.
+        assert!(
+            grey(f.color_at(0.0625)) > 128,
+            "{}",
+            grey(f.color_at(0.0625))
+        );
+        assert_eq!(grey(f.color_at(0.0)), 0);
+        f.acceleration = -100;
+        assert!(
+            grey(f.color_at(0.9375)) < 128,
+            "{}",
+            grey(f.color_at(0.9375))
+        );
+        assert_eq!(grey(f.color_at(1.0)), 255);
+        // +50 halves each midpoint: half way at a quarter.
+        f.acceleration = 50;
+        assert_eq!(grey(f.color_at(0.25)), 128);
+        // Combined with the stop's own midpoint (0.25 halved: 0.125).
+        f.stops[0].mid = 0.25;
+        assert_eq!(grey(f.color_at(0.125)), 128);
+        // Out of range values count as the ends of the range.
+        f.acceleration = 1000;
+        assert_eq!(f.blend_mid(&f.stops[0]), 0.0);
+        // The plain version carries it in the stops.
+        f.acceleration = 50;
+        let p = f.to_plain(64);
+        assert!(!p.has_blend_options() && !p.has_midpoints());
+        assert_eq!(grey(sample_stops(&p.stops, 0.125)), 128);
     }
 
     #[test]

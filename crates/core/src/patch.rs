@@ -560,4 +560,53 @@ mod tests {
         assert!(m.has(FillField::Angle) && !m.has(FillField::EdgePad));
         assert!(fill_mixed([&red, &red]).is_empty());
     }
+
+    /// The blend direction, steps, smooth transition and acceleration are
+    /// fields of their own: an edit of one goes into each object's own
+    /// gradient and leaves the rest (#1208).
+    #[test]
+    fn gradient_blend_settings_change_one_at_a_time() {
+        use crate::ColorBlend;
+        let red = Color::rgb8(255, 0, 0);
+        let a = Fountain::two(crate::FountainKind::Linear, Color::BLACK, Color::WHITE, 0.0);
+        let mut b = a.clone();
+        b.angle = 45.0;
+        b.stops[1].color = red;
+        b.smooth = true;
+        let mut edited = a.clone();
+        edited.steps = 8;
+        let fields = fill_changes(&Fill::Fountain(a.clone()), &Fill::Fountain(edited.clone()));
+        assert_eq!(fields, vec![FillField::Steps]);
+        let Fill::Fountain(pb) =
+            patch_fill(&Fill::Fountain(b.clone()), &Fill::Fountain(edited), &fields)
+        else {
+            panic!("a gradient");
+        };
+        assert_eq!(pb.steps, 8);
+        assert_eq!((pb.angle, pb.stops[1].color, pb.smooth), (45.0, red, true));
+        let mut e2 = a.clone();
+        e2.blend_direction = ColorBlend::Clockwise;
+        e2.smooth = true;
+        e2.acceleration = -30;
+        let fields = fill_changes(&Fill::Fountain(a.clone()), &Fill::Fountain(e2.clone()));
+        assert_eq!(
+            fields,
+            vec![
+                FillField::BlendDirection,
+                FillField::Smooth,
+                FillField::Acceleration
+            ]
+        );
+        let Fill::Fountain(pb) =
+            patch_fill(&Fill::Fountain(b), &Fill::Fountain(e2.clone()), &fields)
+        else {
+            panic!("a gradient");
+        };
+        assert_eq!(
+            (pb.blend_direction, pb.smooth, pb.acceleration, pb.angle),
+            (ColorBlend::Clockwise, true, -30, 45.0)
+        );
+        let m = fill_mixed([&Fill::Fountain(a), &Fill::Fountain(e2)]);
+        assert!(m.has(FillField::Acceleration) && !m.has(FillField::Steps));
+    }
 }
