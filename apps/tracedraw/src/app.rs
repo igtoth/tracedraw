@@ -3706,6 +3706,10 @@ impl App {
             return;
         }
         self.close_active_document();
+        // The last drawing gone: the kept fill pictures go with it.
+        if !self.has_document() {
+            tracedraw_render::clear_procedural_cache();
+        }
     }
 
     /// Tools > AI Generate: the AI Generate docker in front.

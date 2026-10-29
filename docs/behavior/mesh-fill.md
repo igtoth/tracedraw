@@ -66,16 +66,23 @@ corners:
   colours flow through the nodes without creases.
 
 The picture is worked out in the screen's scale and turn without its
-pan, its edge grown by one pixel (the outermost pixels left clear, so
-the path shows nothing outside the grid), and kept (the renderer's
-procedural fill cache, shared by every render thread: up to 256
-pictures and 24 million pixels), so panning, a selection change or
-another object dragged do not compute it again; it is drawn through the
-object's path with bilinear sampling. A mesh of more than 8 million
-pixels at the current zoom is worked out for the part on the canvas
-only, and not kept. The work is bounded by what shows: cells whose box
-misses the picture are skipped, pieces off the picture are not drawn,
-the triangles are painted in batches of at most 131 072 (12 MB) and the
+pan, with a margin of two picture pixels round the grid: its edge is
+grown by one pixel and the outermost ring is cleared, so the path shows
+nothing outside the grid, also on screen where a large picture is
+worked out on a coarser grid (one picture pixel for two or three screen
+pixels; the margin is in picture pixels). It is kept in the renderer's
+procedural fill cache, shared by every render thread (up to 256
+pictures and 24 million pixels; the band threads of one large render
+wait for the first to work a picture out rather than each working it
+out; the cache is emptied when the last drawing closes), so panning, a
+selection change or another object dragged do not compute it again; it
+is drawn through the object's path with bilinear sampling. A mesh of
+more than 8 million pixels at the current zoom is worked out for the
+part on the canvas only, and not kept. The work is bounded by what
+shows: cells whose side curves' box (grown by 5 % of the cell and a
+chord, as the patch can reach a little past its sides) misses the
+picture are skipped, pieces off the picture are not drawn, the
+triangles are painted in batches of at most 131 072 (12 MB) and the
 picture is one byte a channel, so a 30 x 30 mesh zoomed to 670-pixel
 cells on a 1920 x 1080 canvas takes a few hundred thousand triangles
 instead of fifty million. Batches of 4096 triangles or more are
@@ -97,6 +104,7 @@ straight grid anew.
 - `tracedraw_render::tests::curved_mesh_cells_follow_their_handles`
 - `tracedraw_render::tests::nothing_shows_outside_a_mesh_grid`
 - `tracedraw_render::tests::a_zoomed_mesh_costs_only_what_shows`
+- `tracedraw_render::tests::band_threads_share_one_mesh_picture`
 - `tracedraw_core::style::tests::a_double_click_puts_the_new_mesh_node_where_it_was`
 - `pick_drag_tests::mesh_nodes_land_where_they_are_clicked_and_dragged`
 - `tracedraw_render::tests::mesh_fill_blends_corner_colours`

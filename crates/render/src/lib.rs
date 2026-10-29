@@ -1598,47 +1598,40 @@ impl Renderer<'_> {
         let Some(bounds) = mesh_bounds(&lm) else {
             return;
         };
-        // The picture starts two pixels before the mesh's corner, wherever
-        // that falls, so a moved mesh is the same picture (the pattern's
-        // transform carries the fraction of a pixel); the outermost pixels
-        // stay clear, so the path shows nothing outside the grid.
-        let x0 = bounds.x0 - 2.0;
-        let y0 = bounds.y0 - 2.0;
-        let full_w = (bounds.width() + 5.0).ceil().max(1.0);
-        let full_h = (bounds.height() + 5.0).ceil().max(1.0);
-        if !(full_w.is_finite() && full_h.is_finite()) {
+        if !(bounds.width().is_finite() && bounds.height().is_finite()) {
             return;
         }
         // A mesh far larger than the canvas is worked out for the part on
         // it only, and not kept.
         let (cw, ch) = (self.pixmap.width() as f64, self.pixmap.height() as f64);
-        let visible = Rect::new(x0, y0, x0 + full_w, y0 + full_h).intersect(Rect::new(
-            -tx - 2.0,
-            -ty - 2.0,
-            cw - tx + 2.0,
-            ch - ty + 2.0,
-        ));
-        let huge = full_w * full_h > MESH_RASTER_PIXELS as f64;
-        let (x0, y0, full_w, full_h) = if huge {
+        let huge = bounds.width() * bounds.height() > MESH_RASTER_PIXELS as f64;
+        let area = if huge {
+            let visible = bounds.intersect(Rect::new(-tx, -ty, cw - tx, ch - ty));
             if visible.is_zero_area() {
                 return;
             }
-            (
-                visible.x0.floor(),
-                visible.y0.floor(),
-                visible.width().ceil() + 1.0,
-                visible.height().ceil() + 1.0,
-            )
+            visible
         } else {
-            (x0, y0, full_w, full_h)
+            bounds
         };
+        // On screen a large picture is worked out on a coarser grid (one
+        // picture pixel for `step` screen pixels).
         let step = if self.flags.draft {
-            procedural_step(full_w as u32, full_h as u32)
+            procedural_step(area.width().ceil() as u32, area.height().ceil() as u32)
         } else {
             1
         };
-        let w = (full_w as u32).div_ceil(step).max(1);
-        let h = (full_h as u32).div_ceil(step).max(1);
+        // The picture starts two of its pixels before the mesh's corner,
+        // wherever that falls, so a moved mesh is the same picture (the
+        // pattern's transform carries the fraction of a pixel); the
+        // outermost pixels stay clear (the edge is grown by one pixel
+        // only, and the ring is cleared besides), so the path shows
+        // nothing outside the grid, at every step.
+        let pad = 2.0 * step as f64;
+        let x0 = area.x0 - pad;
+        let y0 = area.y0 - pad;
+        let w = ((area.width() + 2.0 * pad) / step as f64).ceil().max(1.0) as u32 + 1;
+        let h = ((area.height() + 2.0 * pad) / step as f64).ceil().max(1.0) as u32 + 1;
         let key = if huge {
             None
         } else {
@@ -1663,20 +1656,17 @@ impl Renderer<'_> {
             (lm.rows, lm.cols, lm.smooth).hash(&mut hs);
             Some(format!("mesh|{:x}|{w},{h},{step}", hs.finish()))
         };
-        let pm = match key.as_deref().and_then(procedural_cache_get) {
-            Some(pm) => pm,
-            None => {
-                let Some(mut pm) = Pixmap::new(w, h) else {
-                    return;
-                };
-                let to_raster = Affine::scale(1.0 / step as f64) * Affine::translate((-x0, -y0));
-                rasterise_mesh(&lm, to_raster, &mut pm);
-                let pm = std::sync::Arc::new(pm);
-                if let Some(key) = key {
-                    procedural_cache_put(key, pm.clone());
-                }
-                pm
-            }
+        let compute = || {
+            let mut pm = Pixmap::new(w, h)?;
+            let to_raster = Affine::scale(1.0 / step as f64) * Affine::translate((-x0, -y0));
+            rasterise_mesh(&lm, to_raster, &mut pm);
+            Some(pm)
+        };
+        let Some(pm) = (match key {
+            Some(key) => procedural_cached(&key, compute),
+            None => compute().map(std::sync::Arc::new),
+        }) else {
+            return;
         };
         let mut paint = Paint::default();
         paint.anti_alias = self.flags.anti_alias;
@@ -2563,13 +2553,16 @@ struct MeshVertex {
 
 /// How many pieces the sides of a cell are cut into, from its size in
 /// pixels (`MESH_CHORD` pixels a piece, at most `MESH_MAX_SUBDIVISIONS`),
-/// or `None` for a cell whose box (nodes and handles) misses the picture
-/// of `w` x `h` pixels.
+/// or `None` for a cell that misses the picture of `w` x `h` pixels:
+/// `cell` is the box of its four side curves, grown by a few per cent
+/// of the cell's size and a chord, as the patch inside can reach a
+/// little past its sides.
 fn mesh_cell_subdivisions(cell: Rect, size: f64, w: usize, h: usize) -> Option<usize> {
-    if !(cell.x1 >= -1.0
-        && cell.y1 >= -1.0
-        && cell.x0 <= w as f64 + 1.0
-        && cell.y0 <= h as f64 + 1.0)
+    let grow = size * 0.05 + MESH_CHORD;
+    if !(cell.x1 + grow >= -1.0
+        && cell.y1 + grow >= -1.0
+        && cell.x0 - grow <= w as f64 + 1.0
+        && cell.y0 - grow <= h as f64 + 1.0)
     {
         return None;
     }
@@ -2766,8 +2759,8 @@ fn mesh_triangles(
 /// by batch (see [`mesh_triangles`]), the colour mixed per pixel, large
 /// batches on several threads, each painting a band of rows; then the
 /// picture's edge is grown by a pixel so the path it is drawn through
-/// finds colour under its smoothed edge, the outermost pixels staying
-/// clear so nothing shows outside the grid.
+/// finds colour under its smoothed edge, and the outermost ring of
+/// pixels is cleared so nothing spreads outside the grid.
 fn rasterise_mesh(m: &tracedraw_core::Mesh, to_raster: Affine, pm: &mut Pixmap) {
     let (w, h) = (pm.width() as usize, pm.height() as usize);
     let mut buf: Vec<[u8; 4]> = vec![[0; 4]; w * h];
@@ -2776,8 +2769,9 @@ fn rasterise_mesh(m: &tracedraw_core::Mesh, to_raster: Affine, pm: &mut Pixmap) 
     });
     for (i, px) in pm.pixels_mut().iter_mut().enumerate() {
         let (x, y) = (i % w, i / w);
-        let mut c = buf[i];
-        if c[3] == 0 && x > 0 && y > 0 && x + 1 < w && y + 1 < h {
+        let ring = x == 0 || y == 0 || x + 1 == w || y + 1 == h;
+        let mut c = if ring { [0; 4] } else { buf[i] };
+        if c[3] == 0 && !ring {
             for n in [buf[i + 1], buf[i - 1], buf[i + w], buf[i - w]] {
                 if n[3] > c[3] {
                     c = n;
@@ -2913,8 +2907,61 @@ fn procedural_cache_get(key: &str) -> Option<std::sync::Arc<Pixmap>> {
     Some(pm)
 }
 
+/// The keys of pictures being worked out, so that threads asking for the
+/// same picture at once (the bands of one render) wait for the first
+/// instead of each working it out.
+static IN_FLIGHT: std::sync::Mutex<Vec<(String, std::sync::Arc<std::sync::Mutex<()>>)>> =
+    std::sync::Mutex::new(Vec::new());
+
+/// The cached picture of `key`, or the one `compute` gives, kept under
+/// that key. A second thread asking for a key being worked out waits for
+/// it and takes the result.
+fn procedural_cached(
+    key: &str,
+    compute: impl FnOnce() -> Option<Pixmap>,
+) -> Option<std::sync::Arc<Pixmap>> {
+    if let Some(pm) = procedural_cache_get(key) {
+        return Some(pm);
+    }
+    let gate = {
+        let mut f = IN_FLIGHT.lock().unwrap_or_else(|e| e.into_inner());
+        match f.iter().find(|(k, _)| k == key) {
+            Some((_, g)) => g.clone(),
+            None => {
+                let g = std::sync::Arc::new(std::sync::Mutex::new(()));
+                f.push((key.to_string(), g.clone()));
+                g
+            }
+        }
+    };
+    let held = gate.lock().unwrap_or_else(|e| e.into_inner());
+    let pm = match procedural_cache_get(key) {
+        Some(pm) => Some(pm),
+        None => {
+            let pm = compute().map(std::sync::Arc::new);
+            if let Some(pm) = &pm {
+                procedural_cache_put(key.to_string(), pm.clone());
+            }
+            pm
+        }
+    };
+    {
+        let mut f = IN_FLIGHT.lock().unwrap_or_else(|e| e.into_inner());
+        f.retain(|(k, _)| k != key);
+    }
+    drop(held);
+    pm
+}
+
+/// Forget every kept procedural picture (when the last drawing closes,
+/// so the memory goes back).
+pub fn clear_procedural_cache() {
+    PROCEDURAL.lock().unwrap_or_else(|e| e.into_inner()).clear();
+}
+
 fn procedural_cache_put(key: String, pm: std::sync::Arc<Pixmap>) {
     let mut c = PROCEDURAL.lock().unwrap_or_else(|e| e.into_inner());
+    c.retain(|(k, _)| *k != key);
     c.push((key, pm));
     let mut total: usize = c
         .iter()
@@ -3958,7 +4005,8 @@ mod tests {
     }
 
     /// A mesh over part of its object leaves the rest of the path clear
-    /// (nothing is drawn outside the grid).
+    /// (nothing is drawn outside the grid), also on screen where a large
+    /// picture is worked out on a coarser grid (steps 2 and 3).
     #[test]
     fn nothing_shows_outside_a_mesh_grid() {
         let mut s = rect(1, Rect::new(0.0, 0.0, 100.0, 100.0), Color::WHITE);
@@ -3975,6 +4023,101 @@ mod tests {
             let (r, g, b) = px(&pm, x, 50);
             assert!(r > 250 && g > 250 && b > 250, "{x}: {r} {g} {b}");
         }
+        // A page of 200 x 150 mm with the grid over 20..100 x 20..130 mm
+        // of a path over the whole page: at 8 px/mm the picture is 640 x
+        // 880 px (step 2), at 14 px/mm 1120 x 1540 px (step 3).
+        for zoom in [8.0, 14.0] {
+            let mut s = rect(1, Rect::new(0.0, 0.0, 200.0, 150.0), Color::WHITE);
+            s.fill = Fill::Mesh(tracedraw_core::Mesh::new(
+                Rect::new(20.0, 20.0, 100.0, 130.0),
+                3,
+                3,
+                Color::BLACK,
+            ));
+            let (doc, page) = doc_with(vec![s]);
+            let (w, h) = ((200.0 * zoom) as u32, (150.0 * zoom) as u32);
+            let opts = RenderOptions {
+                width: w,
+                height: h,
+                view: ViewTransform {
+                    zoom,
+                    origin_x: 0.0,
+                    origin_y: h as f64,
+                },
+                draft: true,
+                ..Default::default()
+            };
+            let pm = render_page(&doc, page, &opts).unwrap();
+            // (No page is painted here: outside the grid the pixels stay
+            // clear.)
+            let at = |x_mm: f64, y_mm: f64| {
+                pm.pixel((x_mm * zoom) as u32, (h as f64 - y_mm * zoom) as u32)
+                    .unwrap()
+                    .demultiply()
+            };
+            let inside = at(60.0, 75.0);
+            assert!(
+                inside.alpha() == 255 && inside.red() < 40,
+                "zoom {zoom}: inside the grid {inside:?}"
+            );
+            for (x, y) in [
+                (10.0, 75.0),
+                (150.0, 75.0),
+                (60.0, 10.0),
+                (60.0, 140.0),
+                (3.0, 3.0),
+            ] {
+                let c = at(x, y);
+                assert!(
+                    c.alpha() == 0,
+                    "zoom {zoom}: ({x}, {y}) mm outside the grid is {c:?}"
+                );
+            }
+        }
+    }
+
+    /// A large render is drawn in bands on several threads: the bands
+    /// share one mesh picture (worked out once, one cache entry), rather
+    /// than each working it out.
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn band_threads_share_one_mesh_picture() {
+        let mut s = rect(1, Rect::new(0.0, 0.0, 180.0, 180.0), Color::WHITE);
+        s.fill = Fill::Mesh(tracedraw_core::Mesh::new(
+            Rect::new(0.0, 0.0, 180.0, 180.0),
+            4,
+            4,
+            Color::rgb8(10, 20, 30),
+        ));
+        let (doc, page) = doc_with(vec![s]);
+        let (w, h) = (1300u32, 1300u32);
+        let opts = RenderOptions {
+            width: w,
+            height: h,
+            view: ViewTransform {
+                zoom: 7.0,
+                origin_x: 20.0,
+                origin_y: 1280.0,
+            },
+            ..Default::default()
+        };
+        let before: Vec<String> = procedural_cache_keys();
+        let pm = render_page(&doc, page, &opts).unwrap();
+        assert_eq!(px(&pm, 650, 650), (10, 20, 30));
+        // (Other tests share the cache: this mesh's pictures are told by
+        // their size.)
+        let new: Vec<String> = procedural_cache_keys()
+            .into_iter()
+            .filter(|k| {
+                k.starts_with("mesh|") && k.ends_with("|1265,1265,1") && !before.contains(k)
+            })
+            .collect();
+        assert_eq!(new.len(), 1, "{new:?}");
+        let mut sorted = procedural_cache_keys();
+        let n = sorted.len();
+        sorted.sort();
+        sorted.dedup();
+        assert_eq!(sorted.len(), n, "a key kept twice");
     }
 
     /// A 30 x 30 mesh zoomed until each cell is 670 pixels across costs
