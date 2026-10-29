@@ -1021,8 +1021,9 @@ impl PageWriter<'_> {
             return;
         }
 
-        // Fill.
-        let text = matches!(shape.kind, ShapeKind::Text { .. });
+        // Fill: non-zero for text and for Fill winding, else even-odd
+        // (#1211).
+        let text = shape.fills_nonzero();
         self.paint_area(&shape.fill, &path, bounds, text);
 
         // Outline.
@@ -2787,6 +2788,42 @@ mod tests {
         assert!(s < f, "behind: the outline first ({s} {f})");
         let (s, f) = order(false);
         assert!(f < s, "in front: the fill first ({s} {f})");
+    }
+
+    /// A curve fills with the even-odd operator; Fill winding on it uses
+    /// the non-zero one (#1211).
+    #[test]
+    fn fill_winding_uses_the_non_zero_operator() {
+        let op = |rule: tracedraw_core::FillRule| {
+            let mut doc = Document::new("t", tracedraw_core::geometry::Size::new(100.0, 100.0));
+            let layer = doc.pages[0].layers[0].id;
+            let mut p = tracedraw_core::BezPath::new();
+            p.move_to((10.0, 10.0));
+            p.line_to((90.0, 90.0));
+            p.line_to((10.0, 90.0));
+            p.line_to((90.0, 10.0));
+            p.close_path();
+            let mut s = Shape::new(
+                tracedraw_core::ShapeId(7),
+                ShapeKind::Path {
+                    path: p,
+                    closed: true,
+                },
+            );
+            s.fill = Fill::Solid(Color::rgb8(0, 0, 0));
+            s.stroke = None;
+            s.fill_rule = rule;
+            doc.layer_mut(layer).unwrap().shapes.push(s);
+            let content = page_content(&document_to_pdf(&doc));
+            content
+                .lines()
+                .map(str::trim)
+                .find(|l| *l == "f" || *l == "f*")
+                .expect("a fill")
+                .to_string()
+        };
+        assert_eq!(op(tracedraw_core::FillRule::Auto), "f*");
+        assert_eq!(op(tracedraw_core::FillRule::NonZero), "f");
     }
 
     /// An outline that scales with its object is as wide in the PDF as in

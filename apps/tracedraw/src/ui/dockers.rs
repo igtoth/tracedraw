@@ -659,6 +659,41 @@ fn set_extra_paint(app: &mut App, fills: Vec<Fill>, strokes: Vec<tracedraw_core:
 /// its editor and a cross; Add Fill puts a copy of the fill on top. It
 /// shows only while the object has a fill (`has_fill`): the first fill
 /// comes from the kinds above it, not from this button (#487).
+/// Whether the painted objects fill with the non-zero rule: `Some(true)`
+/// all, `Some(false)` none, `None` mixed or nothing selected (#1211).
+pub fn fill_winding_state(app: &App) -> Option<bool> {
+    let targets = app.paint_targets();
+    let on = targets.iter().filter(|s| s.fills_nonzero()).count();
+    if targets.is_empty() {
+        None
+    } else if on == targets.len() {
+        Some(true)
+    } else if on == 0 {
+        Some(false)
+    } else {
+        None
+    }
+}
+
+/// The Fill winding checkbox of the Fill section (#1211).
+fn fill_winding_row(app: &mut App, ui: &mut Ui) {
+    if app.selection.is_empty() {
+        return;
+    }
+    let state = fill_winding_state(app);
+    let mut on = state.unwrap_or(false);
+    if ui
+        .add(egui::Checkbox::new(&mut on, tr("docker.fill_winding")).indeterminate(state.is_none()))
+        .rich_tip(crate::ui::tips::pair(
+            "docker.fill_winding",
+            "docker.fill_winding_tip",
+        ))
+        .changed()
+    {
+        app.set_fill_winding(on);
+    }
+}
+
 fn extra_fills(app: &mut App, ui: &mut Ui, first: &tracedraw_core::Shape, has_fill: bool) {
     let mut fills = first.extra_fills.clone();
     let mut changed = false;
@@ -969,6 +1004,7 @@ fn properties(app: &mut App, ui: &mut Ui) {
                     }
                 }
                 extra_fills(app, ui, first, has);
+                fill_winding_row(app, ui);
             }
             "transparency" => {
                 crate::ui::toolbar::transparency_section(app, ui);

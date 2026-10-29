@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Fill winding: a checkbox in the Properties docker's Fill section sets how a curve that crosses itself is filled, non-zero (the middle of a one-stroke star filled) or even-odd (holes kept), drawn on screen and written to SVG and PDF; text keeps non-zero and other curves even-odd unless set (#1211).
 ## 0.20.0 (2026-10-28)
 
 - Variable fonts: the text follows the axis sliders (Text docker, and the button beside the font size) while they are dragged, so the weight, width or any other axis can be judged on the page. The text changed only when the slider was released. Releasing still keeps the value as one undo step (#870).

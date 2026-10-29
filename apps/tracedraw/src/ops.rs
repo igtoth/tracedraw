@@ -271,6 +271,21 @@ impl App {
         self.duplicate_offset = saved;
     }
 
+    /// Fill winding (#1211): the painted objects of the selection find
+    /// their fill with the non-zero rule (`on`) or even-odd.
+    pub fn set_fill_winding(&mut self, on: bool) {
+        let shapes: Vec<_> = self.paint_targets().iter().map(|s| s.id).collect();
+        if shapes.is_empty() {
+            return;
+        }
+        let rule = if on {
+            tracedraw_core::FillRule::NonZero
+        } else {
+            tracedraw_core::FillRule::EvenOdd
+        };
+        self.run(Command::SetFillRule { shapes, rule });
+    }
+
     pub fn set_locked(&mut self, locked: bool) {
         if self.selection.is_empty() {
             return;

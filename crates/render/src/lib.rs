@@ -153,14 +153,15 @@ impl Default for Flags {
     }
 }
 
-/// How `kind` is filled: text, and the warped outline of a text
-/// (`text_outline`), with the nonzero rule, so overlapping strokes and
-/// letters stay filled (#647, #800); other curves with even-odd.
-fn fill_rule(kind: &ShapeKind, text_outline: bool) -> FillRule {
-    match kind {
-        ShapeKind::Text { .. } => FillRule::Winding,
-        _ if text_outline => FillRule::Winding,
-        _ => FillRule::EvenOdd,
+/// How `shape` is filled: the warped outline of a text (`text_outline`)
+/// with the nonzero rule, so overlapping strokes and letters stay filled
+/// (#647, #800); otherwise as the object says, text non-zero and other
+/// curves even-odd unless Fill winding is set (#1211).
+fn fill_rule(shape: &Shape, text_outline: bool) -> FillRule {
+    if text_outline || shape.fills_nonzero() {
+        FillRule::Winding
+    } else {
+        FillRule::EvenOdd
     }
 }
 
@@ -968,7 +969,7 @@ impl Renderer<'_> {
         }
 
         if !self.flags.wireframe {
-            let rule = fill_rule(&shape.kind, self.flags.text_outline);
+            let rule = fill_rule(shape, self.flags.text_outline);
             let blend = self.blend_for(shape.overprint_fill);
             if let Fill::Mesh(m) = &shape.fill {
                 // Mesh nodes are local: bring them to page space first.
@@ -2808,12 +2809,53 @@ mod tests {
     #[test]
     fn warped_text_fills_like_text() {
         use super::fill_rule;
-        let path = ShapeKind::Path {
-            path: BezPath::new(),
-            closed: true,
-        };
+        let mut path = Shape::new(
+            tracedraw_core::ShapeId(1),
+            ShapeKind::Path {
+                path: BezPath::new(),
+                closed: true,
+            },
+        );
         assert!(matches!(fill_rule(&path, false), FillRule::EvenOdd));
         assert!(matches!(fill_rule(&path, true), FillRule::Winding));
+        path.fill_rule = tracedraw_core::FillRule::NonZero;
+        assert!(matches!(fill_rule(&path, false), FillRule::Winding));
+    }
+
+    /// A five-pointed star drawn in one stroke crosses itself: even-odd
+    /// (a curve's rule) leaves its middle empty, Fill winding fills it
+    /// (#1211).
+    #[test]
+    fn fill_winding_fills_the_middle_of_a_crossing_star() {
+        let mut star = BezPath::new();
+        for i in 0..5 {
+            let a = std::f64::consts::TAU * (i * 2) as f64 / 5.0 - std::f64::consts::FRAC_PI_2;
+            let p = Point::new(50.0 + 40.0 * a.cos(), 50.0 + 40.0 * a.sin());
+            if i == 0 {
+                star.move_to(p);
+            } else {
+                star.line_to(p);
+            }
+        }
+        star.close_path();
+        let middle = |rule: tracedraw_core::FillRule| {
+            let mut s = Shape::new(
+                tracedraw_core::ShapeId(1),
+                ShapeKind::Path {
+                    path: star.clone(),
+                    closed: true,
+                },
+            );
+            s.fill = Fill::Solid(Color::BLACK);
+            s.stroke = None;
+            s.fill_rule = rule;
+            let (doc, page) = doc_with(vec![s]);
+            let pm = render_page_image(&doc, page, 25.4).expect("pixels");
+            px(&pm, 50, 50)
+        };
+        assert_eq!(middle(tracedraw_core::FillRule::Auto), (255, 255, 255));
+        assert_eq!(middle(tracedraw_core::FillRule::EvenOdd), (255, 255, 255));
+        assert_eq!(middle(tracedraw_core::FillRule::NonZero), (0, 0, 0));
     }
 
     use super::*;

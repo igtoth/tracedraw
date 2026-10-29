@@ -1185,6 +1185,26 @@ impl Fill {
     }
 }
 
+/// How a path's inside is found when it crosses itself or holds holes
+/// (#1211): `Auto` is the rule of the object's kind (non-zero for text,
+/// so overlapping letters stay filled; even-odd for every other curve,
+/// so a complex star has a hole in the middle), `NonZero` and `EvenOdd`
+/// are set on the object ("Fill winding" in the Properties docker).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum FillRule {
+    #[default]
+    Auto,
+    NonZero,
+    EvenOdd,
+}
+
+impl FillRule {
+    pub fn is_auto(&self) -> bool {
+        *self == FillRule::Auto
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum LineCap {
