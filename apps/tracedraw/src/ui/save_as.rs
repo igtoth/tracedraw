@@ -58,6 +58,11 @@ pub struct SaveAsState {
     pub tdraw_fonts_size: u64,
     /// The installed fonts the text uses go into the `.tdraw` file.
     pub tdraw_embed_fonts: bool,
+    /// Package (#852): the `.tdraw` file goes into a folder of its name,
+    /// with its linked pictures, its font files and a report.
+    pub package: bool,
+    /// A PDF of the drawing goes into the package too.
+    pub package_pdf: bool,
     pub title: String,
     pub subject: String,
     pub rating: u8,
@@ -158,6 +163,8 @@ impl SaveAsState {
                 .map(|f| f.data.len() as u64)
                 .sum(),
             tdraw_embed_fonts: app.tdraw_embed_fonts,
+            package: false,
+            package_pdf: false,
             title: doc.title.clone(),
             subject: doc.metadata.subject.clone(),
             rating: doc.metadata.rating,
@@ -202,13 +209,25 @@ impl SaveAsState {
     }
 
     /// The file to write: in the folder (desktop) or a download named so
-    /// (browser).
+    /// (browser); packaged, in a folder of its name in the folder.
     pub fn target(&self) -> PathBuf {
         if files::WEB {
             PathBuf::from("/download").join(self.file_name())
+        } else if self.packaged() {
+            let name = self.file_name();
+            let stem = name
+                .strip_suffix(&format!(".{TDRAW}"))
+                .unwrap_or(&name)
+                .to_string();
+            self.dir.join(stem).join(name)
         } else {
             self.dir.join(self.file_name())
         }
+    }
+
+    /// Saved as a package: asked for, a `.tdraw` file, on the desktop.
+    pub fn packaged(&self) -> bool {
+        self.package && !self.cdr && !files::WEB
     }
 
     /// Show `dir` (a folder that cannot be read shows empty).
@@ -528,7 +547,11 @@ impl App {
         } else {
             self.tdraw_embed_fonts = st.tdraw_embed_fonts;
             self.tdraw_version = Some(st.tdraw_version);
-            self.save_to(path);
+            if st.packaged() {
+                self.save_package(path, st.package_pdf);
+            } else {
+                self.save_to(path);
+            }
         }
         true
     }
@@ -1061,6 +1084,19 @@ fn fields(ui: &mut Ui, st: &mut SaveAsState) {
                 }
             });
             ui.end_row();
+            // Package (#852): a folder of the drawing's name with its
+            // pictures and fonts; folders are a desktop thing.
+            if !files::WEB {
+                ui.label("");
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut st.package, tr("dialog.save_package"))
+                        .rich_tip(tr("dialog.save_package_tip"));
+                    ui.add_enabled_ui(st.package, |ui| {
+                        ui.checkbox(&mut st.package_pdf, tr("package.pdf"));
+                    });
+                });
+                ui.end_row();
+            }
         }
         row_label(ui, &tr("dialog.title"));
         ui.horizontal(|ui| {
@@ -1666,6 +1702,103 @@ mod tests {
         // The choice stays for the next Save As.
         app.save_as_dialog();
         assert!(!state(&mut app).tdraw_embed_fonts);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+    /// Save As with Package ticked (#852): the drawing goes into a
+    /// folder of its name, its linked picture into Pictures with the
+    /// link pointing to the copy, and a report beside it; the drawing's
+    /// file is the package's from then on.
+    #[test]
+    fn save_as_package_puts_the_drawing_in_a_folder_with_its_pictures() {
+        let dir = temp_dir("save-as-package");
+        let src = dir.join("art.png");
+        image::RgbaImage::from_pixel(2, 2, image::Rgba([9, 9, 9, 255]))
+            .save(&src)
+            .expect("png");
+        let mut app = App::headless();
+        app.show_welcome = false;
+        let id = app
+            .new_shape(ShapeKind::Bitmap {
+                rect: tracedraw_core::geometry::Rect::new(0.0, 0.0, 10.0, 10.0),
+                width_px: 2,
+                height_px: 2,
+                png: Vec::new().into(),
+                fx: None,
+            })
+            .expect("bitmap");
+        app.run(tracedraw_core::Command::SetObjectData {
+            shape: id,
+            data: vec![("bitmap.link".into(), src.display().to_string())],
+        });
+        app.save_as_dialog();
+        let st = state(&mut app);
+        st.open_dir(dir.clone());
+        st.name = "Menu".into();
+        assert!(!st.package, "off by default");
+        // Tick Package in the dialog, as a user would.
+        let ctx = crate::theme::ui_context();
+        let mut at = None;
+        for _ in 0..3 {
+            let input = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1400.0, 900.0))),
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| crate::ui::dialogs::show(&mut app, ui.ctx()));
+            out.textures_delta.clear();
+            fn walk(s: &egui::Shape, label: &str, at: &mut Option<Pos2>) {
+                match s {
+                    egui::Shape::Text(t) if t.galley.text() == label => {
+                        *at = Some(t.visual_bounding_rect().center())
+                    }
+                    egui::Shape::Vec(v) => v.iter().for_each(|s| walk(s, label, at)),
+                    _ => {}
+                }
+            }
+            let label = tr("dialog.save_package");
+            out.shapes
+                .iter()
+                .for_each(|c| walk(&c.shape, &label, &mut at));
+        }
+        let at = at.expect("Package shown");
+        let press = |pressed| egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: Default::default(),
+        };
+        frame_with(&ctx, &mut app, vec![egui::Event::PointerMoved(at)]);
+        frame_with(&ctx, &mut app, vec![press(true)]);
+        frame_with(&ctx, &mut app, vec![press(false)]);
+        let st = state(&mut app);
+        assert!(st.package && st.packaged());
+        let folder = dir.join("Menu");
+        assert_eq!(st.target(), folder.join("Menu.tdraw"));
+        let mut st = st.clone();
+        assert!(app.finish_save_as(&mut st));
+        app.dialog = Dialog::None;
+        assert_eq!(
+            app.file.as_deref(),
+            Some(folder.join("Menu.tdraw").as_path())
+        );
+        assert!(
+            folder.join("Pictures").join("art.png").is_file(),
+            "{}",
+            app.status
+        );
+        let doc = tracedraw_io::load_native(&folder.join("Menu.tdraw")).expect("opens");
+        let link = doc
+            .find_shape(id)
+            .and_then(|s| s.data.iter().find(|(k, _)| k == "bitmap.link").cloned())
+            .map(|(_, v)| v);
+        assert_eq!(link.as_deref(), Some("Pictures/art.png"));
+        assert!(app.reload_linked_bitmap(id), "the relative link is read");
+        assert!(std::fs::read_dir(&folder)
+            .expect("folder")
+            .flatten()
+            .any(|e| e.path().extension().is_some_and(|x| x == "txt")));
+        // A .cdr file is never packaged.
+        st.cdr = true;
+        assert!(!st.packaged());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

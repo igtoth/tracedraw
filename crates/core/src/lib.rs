@@ -19,6 +19,7 @@ pub mod engine;
 pub mod envelope;
 pub mod extrude;
 pub mod extrude3d;
+pub mod find;
 pub mod fit;
 pub mod geometry;
 pub mod icc;

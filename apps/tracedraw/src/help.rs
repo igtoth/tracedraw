@@ -74,7 +74,7 @@ pub fn dialog_topic(d: &Dialog, options: OptionsPage) -> &'static str {
         Dialog::Recover(_) => "get-started/open-and-save#recovery",
         Dialog::Updates => "welcome/about-and-updates#updates",
         Dialog::UpdatePolicy => "welcome/about-and-updates#automatic-check",
-        Dialog::OpenNotes(_) => "get-started/open-and-save#open-notes",
+        Dialog::OpenNotes(_) | Dialog::MissingFonts(_) => "get-started/open-and-save#open-notes",
         Dialog::ConfirmShelfRemove { .. } => "objects/shelf#remove",
         Dialog::Export(_) => "file-formats/export",
         Dialog::Print(_) => "printing/print",
@@ -117,7 +117,7 @@ pub fn dialog_topic(d: &Dialog, options: OptionsPage) -> &'static str {
         Dialog::PdfPassword(_) => "file-formats/publish-pdf#password",
         Dialog::PdfText(_) => "file-formats/import#formats",
         Dialog::ChangeDefaults(_) => "templates-styles/object-styles#document-defaults",
-        Dialog::SaveAs(_) => "get-started/open-and-save#save-as",
+        Dialog::SaveAs(_) | Dialog::Package(_) => "get-started/open-and-save#save-as",
     }
 }
 
