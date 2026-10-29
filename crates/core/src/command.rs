@@ -271,6 +271,14 @@ pub enum Command {
         shape: ShapeId,
         data: Vec<(String, String)>,
     },
+    /// Set the text in font family `from` in family `to` throughout the
+    /// drawing: every span of every text and table cell, on every layer,
+    /// in groups, clip frames and symbols (a missing font replaced for
+    /// good, #936).
+    ReplaceFontFamily {
+        from: String,
+        to: String,
+    },
     /// Move `shapes` directly in front of (or behind) `reference` in its layer.
     OrderRelative {
         shapes: Vec<ShapeId>,
@@ -441,6 +449,7 @@ impl Command {
             Command::SetWrapText { .. } => "Wrap Paragraph Text",
             Command::SetWrapStyle { .. } => "Wrap Style",
             Command::SetObjectData { .. } => "Object Data",
+            Command::ReplaceFontFamily { .. } => "Replace Font",
             Command::OrderRelative { in_front: true, .. } => "In Front Of",
             Command::OrderRelative { .. } => "Behind",
             Command::ReverseOrder { .. } => "Reverse Order",
@@ -926,6 +935,9 @@ impl Command {
             Command::SetObjectData { shape, data } => {
                 any_mut(doc, *shape)?.data = data.clone();
             }
+            Command::ReplaceFontFamily { from, to } => {
+                doc.replace_font_family(from, to);
+            }
             Command::OrderRelative {
                 shapes,
                 reference,
@@ -1328,6 +1340,73 @@ fn for_group_deep(shape: &mut Shape, f: &mut dyn FnMut(&mut Shape)) {
 
 #[cfg(test)]
 mod tests {
+    /// A missing font replaced for good (#936): every span in that family,
+    /// in groups and symbols too, takes the new family; one undo step
+    /// brings the old one back; other spans are left alone.
+    #[test]
+    fn a_font_family_is_replaced_throughout_the_drawing() {
+        use crate::document::{ShapeKind, TextSpan};
+        use crate::geometry::Point;
+        let text = |spans: Vec<TextSpan>| {
+            Shape::new(
+                crate::ShapeId(0),
+                ShapeKind::Text {
+                    spans,
+                    origin: Point::new(1.0, 1.0),
+                    frame: None,
+                    align: Default::default(),
+                    para: Default::default(),
+                    on_path: None,
+                },
+            )
+        };
+        let mut doc = Document::new("t", Size::new(100.0, 100.0));
+        let mut ids = doc.ids().clone();
+        let mut a = text(vec![
+            TextSpan::new("Old", "Gone Sans", 12.0),
+            TextSpan::new("Kept", "Other", 12.0),
+        ]);
+        a.id = ids.shape();
+        let mut inner = text(vec![TextSpan::new("In", "Gone Sans", 12.0)]);
+        inner.id = ids.shape();
+        let mut group = Shape::new(
+            ids.shape(),
+            ShapeKind::Group {
+                children: vec![inner],
+            },
+        );
+        group.fill = crate::Fill::None;
+        let mut sym = text(vec![TextSpan::new("Sym", "Gone Sans", 12.0)]);
+        sym.id = ids.shape();
+        doc.set_ids(ids);
+        doc.pages[0].layers[0].shapes = vec![a, group];
+        doc.symbols.push(crate::document::Symbol {
+            name: "s".into(),
+            shape: sym,
+        });
+        let mut engine = crate::Engine::new(doc);
+        engine
+            .run(&Command::ReplaceFontFamily {
+                from: "Gone Sans".into(),
+                to: "Liberation Sans".into(),
+            })
+            .unwrap();
+        let fams = engine.document().font_families_used();
+        assert_eq!(
+            fams,
+            vec!["Liberation Sans".to_string(), "Other".to_string()]
+        );
+        assert!(engine.undo().is_ok());
+        assert!(engine
+            .document()
+            .font_families_used()
+            .contains(&"Gone Sans".to_string()));
+        // Nothing to replace with: nothing changes.
+        let mut d = engine.document().clone();
+        assert_eq!(d.replace_font_family("Gone Sans", ""), 0);
+        assert_eq!(d.replace_font_family("Gone Sans", "Other"), 3);
+    }
+
     #[test]
     fn comments_get_free_ids_and_go_with_their_page() {
         use crate::document::{Comment, CommentMark};

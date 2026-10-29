@@ -205,10 +205,28 @@ same function (`export::print_sheets`).
 - Pages keep their aspect ratio; each cell is as large as the largest
   page on its sheet and a smaller page sits in its middle.
 - A booklet's page count is rounded up to a multiple of four with blank
-  pages at the back. The sheet sides pair the pages as a folded booklet
-  needs: for eight pages 8 and 1, 2 and 7, 6 and 3, 4 and 5 (left and
-  right). Its two pages meet at the spine with no gap and no bleed between
-  them.
+  pages at the back. The Layout fields (Print dialog and Print Preview)
+  choose its binding by two pictures (#788, #947,
+  `imposition::Booklet`):
+  - Saddle stitch (default): every sheet folds inside the one before.
+    The sheet sides pair the pages: for eight pages 8 and 1, 2 and 7, 6
+    and 3, 4 and 5 (left and right).
+  - Perfect bound: the sheets go in signatures of Sheets per signature
+    (default 4, 1 to 32), each folded on its own as a small saddle
+    stitch; the last signature takes the sheets left. One sheet per
+    signature: 4 1, 2 3, 8 5, 6 7 (`imposition::booklet_sides`).
+  - Creep (saddle stitch only, default 0, 0 to 20 mm): the pages of the
+    sheet at depth d of n (0 the outer sheet) move toward the spine by
+    creep x d / (n - 1), the left page right and the right page left;
+    the outer sheet stays, the innermost moves by the creep. The page
+    and its trim box move together, so crop marks follow.
+  - Gap (default 0, 0 to 100 mm): the space between the two pages of a
+    spread, centred on the fold; a fitted sheet grows by it. No bleed is
+    kept between the two pages.
+  - Under the sketch: the pages, the blank pages added and the sheets of
+    paper (each printed on both sides), and for perfect binding the
+    signatures (`imposition::booklet_info`). The page range (Pages) picks
+    the pages that go into the booklet.
 - Back side (n-up and step and repeat, #387): the columns run right to
   left, so a page's place on the sheet mirrors its place on the front
   about the sheet's middle and it prints behind its front on a
@@ -237,7 +255,8 @@ With any mark on, a 12 mm margin (plus the bleed) surrounds the pages.
 
 - Crop marks: 5 mm lines in registration colour, 0.1 mm wide, starting
   1.5 mm beyond the bleed, at every cut line of the grid, outside the
-  pages only. A booklet also gets a dashed fold mark at the spine.
+  pages only. A booklet also gets a dashed fold mark at the spine, half way
+  between its two pages.
 - Registration marks: a target (circle and cross) centred on each side
   of the pages.
 - Color bars: patches of 4 mm of cyan, magenta, yellow, black, red,
@@ -262,6 +281,9 @@ With any mark on, a 12 mm margin (plus the bleed) surrounds the pages.
 - `ui::print_preview::tests::the_settings_key_ignores_copies_and_preflight`
 
 - `imposition::tests::booklets_pair_the_pages_for_folding`
+- `imposition::tests::perfect_binding_folds_each_signature_on_its_own`
+- `imposition::tests::booklet_gap_and_creep_move_the_pages`
+- `ui::dialogs::booklet_fields_tests::the_binding_pictures_choose_and_the_summary_counts`
 - `imposition::tests::n_up_fills_sheets_in_reading_order_and_scales_to_fit`
 - `imposition::tests::fitted_sheets_grow_with_marks_bleed_and_gutters`
 - `imposition::tests::imposing_places_and_clips_every_page`

@@ -172,8 +172,17 @@ pub struct PdfOptions {
     /// Output condition identifier, e.g. "FOGRA39" or "CGATS TR 001".
     /// Empty: the embedded profile's description, else "CGATS TR 001".
     pub output_condition: String,
-    /// Bleed added around every page (TrimBox = page, MediaBox = page + bleed).
+    /// Bleed added around every page (TrimBox = page, BleedBox = page +
+    /// bleed, MediaBox = page + bleed + `marks_margin_mm`).
     pub bleed_mm: f64,
+    /// Room beyond the bleed for printers' marks, in mm on every side (0
+    /// for none). The page and its bleed are clipped to the BleedBox so
+    /// nothing of the drawing reaches the marks.
+    pub marks_margin_mm: f64,
+    /// Printers' marks of each page (index as in the document), drawn on
+    /// top in page coordinates: they sit outside the page, in the bleed
+    /// and the marks margin.
+    pub page_marks: Vec<Vec<Shape>>,
     pub title: Option<String>,
     /// Flattening resolution for X-1a/X-3 transparency.
     pub flatten_dpi: f64,
@@ -205,6 +214,9 @@ pub struct PdfReport {
     /// as curves.
     pub restricted: Vec<String>,
 }
+
+/// The key of the registration colour's colour space among the spot inks'.
+const REGISTRATION_SPACE: u32 = u32::MAX;
 
 struct Pdf {
     objects: Vec<Vec<u8>>,
@@ -516,6 +528,28 @@ impl PageWriter<'_> {
     /// Separation colour space of its own (its name, its process stand-in
     /// as the alternate), the others as before.
     fn color_op(&mut self, c: Color, fill: bool) -> String {
+        if c == Color::Registration {
+            // Registration colour prints on every plate: the All separation.
+            let id = match self.pdf.spot_spaces.get(&REGISTRATION_SPACE) {
+                Some(id) => *id,
+                None => {
+                    let id = self.pdf.add_str(
+                        "[/Separation /All /DeviceCMYK << /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [1 1 1 1] /N 1 >>]".into(),
+                    );
+                    self.pdf.spot_spaces.insert(REGISTRATION_SPACE, id);
+                    id
+                }
+            };
+            let name = "CSAll".to_string();
+            if !self.spaces.iter().any(|(n, _)| *n == name) {
+                self.spaces.push((name.clone(), id));
+            }
+            return if fill {
+                format!("/{name} cs 1 scn")
+            } else {
+                format!("/{name} CS 1 SCN")
+            };
+        }
         if let Color::Spot { ink, tint, .. } = c {
             if let Some(i) = self.inks.iter().find(|i| i.id == ink) {
                 let id = match self.pdf.spot_spaces.get(&ink) {
@@ -1873,7 +1907,18 @@ pub fn document_to_pdf_report(doc: &Document, opts: &PdfOptions) -> (Vec<u8>, Pd
     });
     pdf.add_str(String::new()); // 1: catalog, filled at the end
     pdf.add_str(String::new()); // 2: pages
-    let bleed = opts.bleed_mm.max(0.0);
+    let bleed = if opts.bleed_mm.is_finite() {
+        opts.bleed_mm.max(0.0)
+    } else {
+        0.0
+    };
+    let slug = if opts.marks_margin_mm.is_finite() {
+        opts.marks_margin_mm.clamp(0.0, 100.0)
+    } else {
+        0.0
+    };
+    // From the media box's edge to the page: the marks margin and the bleed.
+    let edge = slug + bleed;
     let flatten_dpi = if opts.flatten_dpi > 0.0 {
         opts.flatten_dpi
     } else {
@@ -1883,11 +1928,11 @@ pub fn document_to_pdf_report(doc: &Document, opts: &PdfOptions) -> (Vec<u8>, Pd
     // Each page's link areas, made into annotations once every page has
     // its object (a link can go to a later page).
     let mut page_link_areas: Vec<Vec<(Rect, String)>> = Vec::new();
-    for page in &doc.pages {
+    for (page_no, page) in doc.pages.iter().enumerate() {
         let mut areas = Vec::new();
         // PDF/X allows no link annotations on the page.
         if std_ == PdfStandard::None {
-            let offset = Affine::translate((bleed, bleed));
+            let offset = Affine::translate((edge, edge));
             for layer in doc
                 .layers_drawn_for_page(page.id)
                 .unwrap_or_default()
@@ -1917,24 +1962,37 @@ pub fn document_to_pdf_report(doc: &Document, opts: &PdfOptions) -> (Vec<u8>, Pd
             media: Rect::new(
                 0.0,
                 0.0,
-                page.size.width + 2.0 * bleed,
-                page.size.height + 2.0 * bleed,
+                page.size.width + 2.0 * edge,
+                page.size.height + 2.0 * edge,
             ),
         };
+        let marks = opts.page_marks.get(page_no).filter(|m| !m.is_empty());
+        if slug > 0.0 {
+            // The drawing stops at the bleed: the marks margin stays clear.
+            let _ = writeln!(
+                w.content,
+                "q {} {} {} {} re W n",
+                f(slug * MM_PT),
+                f(slug * MM_PT),
+                f((page.size.width + 2.0 * bleed) * MM_PT),
+                f((page.size.height + 2.0 * bleed) * MM_PT)
+            );
+        }
+        let offset = Affine::translate((edge, edge));
         if let Some(bg) = &page.background {
+            // The page's background covers its bleed too.
             let mut bg_shape = Shape::new(
                 tracedraw_core::ShapeId(0),
                 ShapeKind::Rect {
-                    rect: page.rect(),
+                    rect: page.rect().inflate(bleed, bleed),
                     radius: 0.0,
                     corners: None,
                 },
             );
             bg_shape.fill = bg.clone();
             bg_shape.stroke = None;
-            w.shape(&bg_shape, Affine::IDENTITY);
+            w.shape(&bg_shape, offset);
         }
-        let offset = Affine::translate((bleed, bleed));
         match &flat {
             Some(shapes) => {
                 for s in shapes {
@@ -1949,6 +2007,12 @@ pub fn document_to_pdf_report(doc: &Document, opts: &PdfOptions) -> (Vec<u8>, Pd
                     }
                 }
             }
+        }
+        if slug > 0.0 {
+            w.content.push_str("Q\n");
+        }
+        for s in marks.into_iter().flatten() {
+            w.shape(s, offset);
         }
         let PageWriter {
             content,
@@ -2003,18 +2067,20 @@ pub fn document_to_pdf_report(doc: &Document, opts: &PdfOptions) -> (Vec<u8>, Pd
         }
         res.push_str(">>");
         let (mw, mh) = (
-            (page.size.width + 2.0 * bleed) * MM_PT,
-            (page.size.height + 2.0 * bleed) * MM_PT,
+            (page.size.width + 2.0 * edge) * MM_PT,
+            (page.size.height + 2.0 * edge) * MM_PT,
         );
-        let boxes = if std_ != PdfStandard::None || bleed > 0.0 {
+        let boxes = if std_ != PdfStandard::None || edge > 0.0 {
             format!(
-                " /TrimBox [{} {} {} {}] /BleedBox [0 0 {} {}]",
-                f(bleed * MM_PT),
-                f(bleed * MM_PT),
-                f((bleed + page.size.width) * MM_PT),
-                f((bleed + page.size.height) * MM_PT),
-                f(mw),
-                f(mh)
+                " /TrimBox [{} {} {} {}] /BleedBox [{} {} {} {}]",
+                f(edge * MM_PT),
+                f(edge * MM_PT),
+                f((edge + page.size.width) * MM_PT),
+                f((edge + page.size.height) * MM_PT),
+                f(slug * MM_PT),
+                f(slug * MM_PT),
+                f((edge + bleed + page.size.width) * MM_PT),
+                f((edge + bleed + page.size.height) * MM_PT)
             )
         } else {
             String::new()
@@ -2033,7 +2099,7 @@ pub fn document_to_pdf_report(doc: &Document, opts: &PdfOptions) -> (Vec<u8>, Pd
     for (areas, &page_id) in page_link_areas.iter().zip(&page_ids) {
         let mut annots = Vec::new();
         for (rect, link) in areas {
-            let Some(target) = link_target(link, &page_ids, doc, bleed) else {
+            let Some(target) = link_target(link, &page_ids, doc, edge) else {
                 continue;
             };
             let id = pdf.add_str(format!(
@@ -2123,7 +2189,7 @@ pub fn document_to_pdf_report(doc: &Document, opts: &PdfOptions) -> (Vec<u8>, Pd
             } else {
                 name.to_string()
             };
-            let top = (page.size.height + 2.0 * bleed) * MM_PT;
+            let top = (page.size.height + 2.0 * edge) * MM_PT;
             let mut item = format!(
                 "<< /Title {} /Parent {outlines} 0 R /Dest [{page_id} 0 R /XYZ 0 {} null]",
                 pdf_text_any(&title),
@@ -3128,6 +3194,92 @@ mod pdfx_tests {
         )));
         // The half-transparent rectangle became a CMYK image.
         assert!(text.contains("/Subtype /Image") && text.contains("/ColorSpace /DeviceCMYK"));
+    }
+
+    /// Room for printers' marks: the MediaBox grows by it on every side,
+    /// the BleedBox is the page and its bleed, the TrimBox the page; the
+    /// drawing is clipped to the bleed and the marks are drawn after, in
+    /// registration colour on the All separation.
+    #[test]
+    fn marks_margin_grows_the_media_box_and_keeps_trim_and_bleed() {
+        let doc = doc_with_transparent_rect();
+        let mut mark = Shape::new(
+            tracedraw_core::ShapeId(0),
+            ShapeKind::Path {
+                path: {
+                    let mut p = tracedraw_core::BezPath::new();
+                    p.move_to((-8.0, 0.0));
+                    p.line_to((-4.0, 0.0));
+                    p
+                },
+                closed: false,
+            },
+        );
+        mark.fill = Fill::None;
+        mark.stroke = Some(tracedraw_core::Stroke::new(Color::Registration, 0.1));
+        let opts = PdfOptions {
+            bleed_mm: 3.0,
+            marks_margin_mm: 12.0,
+            page_marks: vec![vec![mark]],
+            images: PdfImages {
+                compress_content: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let bytes = document_to_pdf_with(&doc, &opts);
+        let text = String::from_utf8_lossy(&bytes);
+        // The page is 100 x 50 mm: 15 mm of bleed and marks per side.
+        assert!(
+            text.contains(&format!(
+                "/MediaBox [0 0 {} {}]",
+                f(130.0 * MM_PT),
+                f(80.0 * MM_PT)
+            )),
+            "{text}"
+        );
+        assert!(text.contains(&format!(
+            "/TrimBox [{} {} {} {}]",
+            f(15.0 * MM_PT),
+            f(15.0 * MM_PT),
+            f(115.0 * MM_PT),
+            f(65.0 * MM_PT)
+        )));
+        assert!(text.contains(&format!(
+            "/BleedBox [{} {} {} {}]",
+            f(12.0 * MM_PT),
+            f(12.0 * MM_PT),
+            f(118.0 * MM_PT),
+            f(68.0 * MM_PT)
+        )));
+        // The clip to the bleed, closed before the marks.
+        let clip = format!(
+            "q {} {} {} {} re W n",
+            f(12.0 * MM_PT),
+            f(12.0 * MM_PT),
+            f(106.0 * MM_PT),
+            f(56.0 * MM_PT)
+        );
+        let at_clip = text.find(&clip).expect("clipped to the bleed");
+        let at_mark = text.find("/CSAll CS 1 SCN").expect("registration stroke");
+        assert!(at_clip < at_mark);
+        assert!(text.contains("/Separation /All /DeviceCMYK"));
+        // The mark at x = -8 mm sits 7 mm from the media box's edge.
+        assert!(text.contains(&format!("{} ", f(7.0 * MM_PT))));
+        // Without marks nothing changes: no clip, the bleed as before.
+        let plain = document_to_pdf_with(
+            &doc,
+            &PdfOptions {
+                bleed_mm: 3.0,
+                ..Default::default()
+            },
+        );
+        let plain = String::from_utf8_lossy(&plain);
+        assert!(plain.contains(&format!(
+            "/BleedBox [0 0 {} {}]",
+            f(106.0 * MM_PT),
+            f(56.0 * MM_PT)
+        )));
     }
 
     #[test]

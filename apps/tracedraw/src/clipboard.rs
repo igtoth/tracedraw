@@ -549,6 +549,10 @@ impl App {
         let Some(path) = self.bitmap_link(id) else {
             return false;
         };
+        // A package's links are relative to its drawing (#852).
+        let path = crate::package::resolve_link(&path, self.link_base().as_deref())
+            .display()
+            .to_string();
         let img = match crate::files::open_image(&path) {
             Ok(i) => i.to_rgba8(),
             Err(e) => {
@@ -623,7 +627,9 @@ impl App {
             .collect();
         self.linked_mtimes
             .retain(|id, _| linked.iter().any(|(l, _)| l == id));
+        let base = self.link_base();
         for (id, path) in linked {
+            let path = crate::package::resolve_link(&path, base.as_deref());
             let Ok(modified) = std::fs::metadata(&path).and_then(|m| m.modified()) else {
                 continue;
             };
