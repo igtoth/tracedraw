@@ -493,7 +493,17 @@ fn find_replace(app: &mut App, ui: &mut Ui) {
                 "dialog.find_objects",
                 "docker.find_objects_desc",
             ));
+        ui.radio_value(&mut st.kind, 2, tr("find.properties"))
+            .rich_tip(crate::ui::tips::pair(
+                "find.properties",
+                "find.properties_desc",
+            ));
     });
+    if st.kind == 2 {
+        find_properties(app, ui, &mut st);
+        app.find_state = st;
+        return;
+    }
     ui.horizontal(|ui| {
         ui.label(tr("dialog.find"));
         ui.text_edit_singleline(&mut st.find)
@@ -593,6 +603,222 @@ fn find_replace(app: &mut App, ui: &mut Ui) {
         &[("n", &st.results.len().to_string())],
     ));
     app.find_state = st;
+}
+
+/// Find and Replace by properties: fill, outline, outline width, font and
+/// object type, on the page or in the whole drawing (#1071).
+fn find_properties(app: &mut App, ui: &mut Ui, st: &mut crate::ui::dialogs::FindReplaceState) {
+    use crate::ui::color_picker::color_button;
+    use tracedraw_core::find::ObjectType;
+    let units = app.outline_units();
+    let width_field = |ui: &mut Ui, mm: &mut f64| {
+        let mut v = units.from_mm(*mm);
+        if ui
+            .add(
+                crate::ui::field::NumField::new(&mut v)
+                    .speed(0.05)
+                    .suffix(format!(" {}", units.short())),
+            )
+            .changed()
+        {
+            *mm = units.to_mm(v).max(0.0);
+        }
+    };
+    let pf = &mut st.props;
+    ui.horizontal(|ui| {
+        ui.label(tr("find.look_in"));
+        ui.radio_value(&mut pf.whole_drawing, false, tr("find.this_page"))
+            .rich_tip(crate::ui::tips::pair(
+                "find.this_page",
+                "find.this_page_desc",
+            ));
+        ui.radio_value(&mut pf.whole_drawing, true, tr("find.whole_drawing"))
+            .rich_tip(crate::ui::tips::pair(
+                "find.whole_drawing",
+                "find.whole_drawing_desc",
+            ));
+    });
+    ui.add_space(4.0);
+    ui.label(egui::RichText::new(tr("find.find_objects_with")).strong());
+    egui::Grid::new("find_props_grid")
+        .num_columns(2)
+        .spacing([6.0, 4.0])
+        .show(ui, |ui| {
+            ui.checkbox(&mut pf.use_type, tr("find.object_type"))
+                .rich_tip(crate::ui::tips::keyed("find.object_type"));
+            ui.add_enabled_ui(pf.use_type, |ui| {
+                let cur = ObjectType::ALL
+                    .get(pf.object_type)
+                    .map(|t| tr(&format!("find.type.{}", t.key())))
+                    .unwrap_or_default();
+                egui::ComboBox::from_id_salt("find_props_type")
+                    .selected_text(cur)
+                    .show_ui(ui, |ui| {
+                        for (i, t) in ObjectType::ALL.iter().enumerate() {
+                            ui.selectable_value(
+                                &mut pf.object_type,
+                                i,
+                                tr(&format!("find.type.{}", t.key())),
+                            );
+                        }
+                    });
+            });
+            ui.end_row();
+
+            ui.checkbox(&mut pf.use_fill, tr("find.fill"))
+                .rich_tip(crate::ui::tips::keyed("find.fill"));
+            ui.add_enabled_ui(pf.use_fill, |ui| {
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut pf.fill_none, tr("find.none"))
+                        .rich_tip(crate::ui::tips::pair("find.none", "find.no_fill_desc"));
+                    ui.add_enabled_ui(!pf.fill_none, |ui| color_button(ui, &mut pf.fill));
+                });
+            });
+            ui.end_row();
+
+            ui.checkbox(&mut pf.use_outline, tr("find.outline"))
+                .rich_tip(crate::ui::tips::keyed("find.outline"));
+            ui.add_enabled_ui(pf.use_outline, |ui| {
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut pf.outline_none, tr("find.none"))
+                        .rich_tip(crate::ui::tips::pair("find.none", "find.no_outline_desc"));
+                    ui.add_enabled_ui(!pf.outline_none, |ui| color_button(ui, &mut pf.outline));
+                });
+            });
+            ui.end_row();
+
+            ui.checkbox(&mut pf.use_width, tr("find.outline_width"))
+                .rich_tip(crate::ui::tips::keyed("find.outline_width"));
+            ui.add_enabled_ui(pf.use_width, |ui| width_field(ui, &mut pf.width));
+            ui.end_row();
+
+            ui.checkbox(&mut pf.use_font, tr("find.font"))
+                .rich_tip(crate::ui::tips::keyed("find.font"));
+            ui.add_enabled_ui(pf.use_font, |ui| {
+                ui.add(egui::TextEdit::singleline(&mut pf.font).desired_width(120.0))
+            });
+            ui.end_row();
+        });
+    ui.horizontal(|ui| {
+        let first = app
+            .selection
+            .first()
+            .and_then(|id| app.doc().find_shape(*id))
+            .cloned();
+        if ui
+            .add_enabled(
+                first.is_some(),
+                egui::Button::new(tr("find.from_selection")),
+            )
+            .rich_tip(crate::ui::tips::pair(
+                "find.from_selection",
+                "find.from_selection_desc",
+            ))
+            .clicked()
+        {
+            if let Some(s) = &first {
+                pf.take_from(s);
+            }
+        }
+        if ui
+            .button(tr("find.reset"))
+            .rich_tip(crate::ui::tips::pair("find.reset", "find.reset_desc"))
+            .clicked()
+        {
+            let whole = pf.whole_drawing;
+            *pf = Default::default();
+            pf.whole_drawing = whole;
+        }
+    });
+    ui.add_space(4.0);
+    ui.label(egui::RichText::new(tr("find.replace_with")).strong());
+    egui::Grid::new("find_props_replace")
+        .num_columns(2)
+        .spacing([6.0, 4.0])
+        .show(ui, |ui| {
+            ui.checkbox(&mut pf.set_fill, tr("find.fill"))
+                .rich_tip(crate::ui::tips::pair("find.fill", "find.set_fill_desc"));
+            ui.add_enabled_ui(pf.set_fill, |ui| color_button(ui, &mut pf.new_fill));
+            ui.end_row();
+            ui.checkbox(&mut pf.set_outline, tr("find.outline"))
+                .rich_tip(crate::ui::tips::pair(
+                    "find.outline",
+                    "find.set_outline_desc",
+                ));
+            ui.add_enabled_ui(pf.set_outline, |ui| color_button(ui, &mut pf.new_outline));
+            ui.end_row();
+            ui.checkbox(&mut pf.set_width, tr("find.outline_width"))
+                .rich_tip(crate::ui::tips::pair(
+                    "find.outline_width",
+                    "find.set_width_desc",
+                ));
+            ui.add_enabled_ui(pf.set_width, |ui| width_field(ui, &mut pf.new_width));
+            ui.end_row();
+            ui.checkbox(&mut pf.set_font, tr("find.font"))
+                .rich_tip(crate::ui::tips::pair("find.font", "find.set_font_desc"));
+            ui.add_enabled_ui(pf.set_font, |ui| {
+                ui.add(egui::TextEdit::singleline(&mut pf.new_font).desired_width(120.0))
+            });
+            ui.end_row();
+        });
+    let can_find = !pf.query().is_empty();
+    let can_replace = can_find && !pf.replacement().is_empty();
+    ui.add_space(4.0);
+    ui.horizontal_wrapped(|ui| {
+        if ui
+            .add_enabled(can_find, egui::Button::new(tr("find.previous")))
+            .rich_tip(crate::ui::tips::pair("find.previous", "find.previous_desc"))
+            .clicked()
+        {
+            crate::export::step_found(app, st, false);
+            st.results = st.props.hits.iter().map(|h| h.id).collect();
+        }
+        if ui
+            .add_enabled(can_find, egui::Button::new(tr("dialog.find_next")))
+            .rich_tip(crate::ui::tips::pair(
+                "dialog.find_next",
+                "docker.find_next_desc",
+            ))
+            .clicked()
+        {
+            crate::export::step_found(app, st, true);
+            st.results = st.props.hits.iter().map(|h| h.id).collect();
+        }
+        if ui
+            .add_enabled(can_find, egui::Button::new(tr("dialog.find_all")))
+            .rich_tip(crate::ui::tips::pair(
+                "dialog.find_all",
+                "docker.find_all_desc",
+            ))
+            .clicked()
+        {
+            let here = crate::export::select_found(app, st);
+            st.results = st.props.hits.iter().map(|h| h.id).collect();
+            app.status = trf(
+                "find.status_found",
+                &[
+                    ("n", &st.props.hits.len().to_string()),
+                    ("here", &here.to_string()),
+                ],
+            );
+        }
+        if ui
+            .add_enabled(can_replace, egui::Button::new(tr("dialog.replace_all")))
+            .rich_tip(crate::ui::tips::pair(
+                "dialog.replace_all",
+                "find.replace_all_desc",
+            ))
+            .clicked()
+        {
+            let n = crate::export::replace_properties(app, st);
+            st.results = st.props.hits.iter().map(|h| h.id).collect();
+            app.status = trf("find.status_replaced", &[("n", &n.to_string())]);
+        }
+    });
+    ui.label(trf(
+        "dialog.found_n",
+        &[("n", &st.props.hits.len().to_string())],
+    ));
 }
 
 fn scripts(app: &mut App, ui: &mut Ui) {
@@ -2697,5 +2923,111 @@ mod blend_docker_tests {
             "{:?}",
             s.effects
         );
+    }
+}
+
+#[cfg(test)]
+mod find_properties_tests {
+    use super::*;
+    use tracedraw_core::{Color, Fill};
+
+    /// The Find and Replace panel, Properties: Find All selects the red
+    /// objects of the page, Next goes to the red one on page 2, and
+    /// Replace All turns every red fill green in one undo step (#1071).
+    #[test]
+    fn find_and_replace_by_fill_color_across_pages() {
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        app.show_welcome = false;
+        let red = Color::cmyk_pct(0.0, 100.0, 100.0, 0.0);
+        let green = Color::rgb8(0, 200, 0);
+        let rect = |app: &mut App, x: f64, c: Color| {
+            let id = app
+                .new_shape(tracedraw_core::ShapeKind::Rect {
+                    rect: tracedraw_core::geometry::Rect::new(x, 10.0, x + 20.0, 30.0),
+                    radius: 0.0,
+                    corners: None,
+                })
+                .expect("rect");
+            app.select(vec![id]);
+            app.apply_fill(Fill::Solid(c));
+            id
+        };
+        let a = rect(&mut app, 10.0, red);
+        let b = rect(&mut app, 50.0, Color::rgb8(0, 0, 255));
+        app.add_page();
+        let c = rect(&mut app, 10.0, red);
+        app.goto_page(0);
+        app.select(vec![a]);
+        let run = |app: &mut App, events: Vec<egui::Event>| -> Vec<(String, egui::Rect)> {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(360.0, 900.0),
+                )),
+                events,
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| find_replace(app, ui));
+            out.textures_delta.clear();
+            out.shapes
+                .iter()
+                .filter_map(|s| match &s.shape {
+                    egui::Shape::Text(t) => {
+                        Some((t.galley.text().to_string(), t.visual_bounding_rect()))
+                    }
+                    _ => None,
+                })
+                .collect()
+        };
+        let click = |app: &mut App, key: &str| {
+            let texts = run(app, Vec::new());
+            let at = texts
+                .iter()
+                .find(|(t, _)| *t == tr(key))
+                .map(|(_, r)| r.center())
+                .unwrap_or_else(|| panic!("{key} shown"));
+            let button = |pressed| egui::Event::PointerButton {
+                pos: at,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            };
+            run(app, vec![egui::Event::PointerMoved(at)]);
+            run(app, vec![button(true)]);
+            run(app, vec![button(false)]);
+        };
+        app.find_state.kind = 2;
+        run(&mut app, Vec::new());
+        // From Selection takes the red fill of `a`.
+        click(&mut app, "find.from_selection");
+        assert!(app.find_state.props.use_fill);
+        assert_eq!(app.find_state.props.fill, red);
+        // Look for the fill only.
+        app.find_state.props.use_outline = false;
+        app.find_state.props.use_font = false;
+        click(&mut app, "dialog.find_all");
+        assert_eq!(app.selection, vec![a], "the red object of this page");
+        app.find_state.props.whole_drawing = true;
+        click(&mut app, "dialog.find_all");
+        assert_eq!(app.find_state.props.hits.len(), 2);
+        click(&mut app, "dialog.find_next");
+        click(&mut app, "dialog.find_next");
+        assert_eq!(app.page_index(), 1, "Next goes to the second page");
+        assert_eq!(app.selection, vec![c]);
+        click(&mut app, "find.previous");
+        assert_eq!(app.page_index(), 0);
+        assert_eq!(app.selection, vec![a]);
+        // Replace red with green everywhere.
+        app.find_state.props.set_fill = true;
+        app.find_state.props.new_fill = green;
+        click(&mut app, "dialog.replace_all");
+        let fill = |app: &App, id| app.doc().find_shape(id).map(|s| s.fill.clone());
+        assert_eq!(fill(&app, a), Some(Fill::Solid(green)));
+        assert_eq!(fill(&app, c), Some(Fill::Solid(green)));
+        assert_eq!(fill(&app, b), Some(Fill::Solid(Color::rgb8(0, 0, 255))));
+        app.undo();
+        assert_eq!(fill(&app, a), Some(Fill::Solid(red)), "one undo step");
+        assert_eq!(fill(&app, c), Some(Fill::Solid(red)));
     }
 }

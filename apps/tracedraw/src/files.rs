@@ -292,6 +292,14 @@ pub fn create_dir(path: impl AsRef<Path>) -> std::io::Result<()> {
     std::fs::create_dir(path)
 }
 
+/// Make a folder and the folders it is in (nothing in a browser).
+pub fn create_dir_all(path: impl AsRef<Path>) -> std::io::Result<()> {
+    if WEB {
+        return Ok(());
+    }
+    std::fs::create_dir_all(path)
+}
+
 /// Rename a file or folder; one already called `to` is never replaced
 /// (nothing in a browser).
 pub fn rename(from: impl AsRef<Path>, to: impl AsRef<Path>) -> std::io::Result<()> {
