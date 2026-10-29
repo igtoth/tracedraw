@@ -93,6 +93,63 @@ pub fn crop_bar(app: &mut App, ui: &mut Ui) {
     dim(ui, tr("crop.apply_hint"));
 }
 
+/// Where the Crop and Clear buttons sit on the canvas: just below the
+/// area's bottom-left corner, kept inside the canvas (#1202).
+pub fn buttons_anchor(app: &App, canvas: egui::Rect) -> Option<egui::Pos2> {
+    if app.tool != crate::tools::Tool::Crop {
+        return None;
+    }
+    let r = app.crop_area?;
+    let bottom_left = app.view.to_screen(Point::new(r.x0, r.y0));
+    let p = bottom_left + egui::vec2(0.0, 8.0);
+    Some(egui::pos2(
+        p.x.clamp(
+            canvas.min.x + 4.0,
+            (canvas.max.x - 160.0).max(canvas.min.x + 4.0),
+        ),
+        p.y.clamp(
+            canvas.min.y + 4.0,
+            (canvas.max.y - 32.0).max(canvas.min.y + 4.0),
+        ),
+    ))
+}
+
+/// Crop and Clear, floating under the area on the canvas, so the area is
+/// applied or dropped without reaching the bar (#1202). Their places are
+/// kept in `crop_button_rects` for the tests.
+pub fn canvas_buttons(app: &mut App, ui: &mut Ui, canvas: egui::Rect) {
+    let Some(anchor) = buttons_anchor(app, canvas) else {
+        app.crop_button_rects = None;
+        return;
+    };
+    let mut apply = false;
+    let mut clear = false;
+    let mut rects = None;
+    egui::Area::new(egui::Id::new("crop_canvas_buttons"))
+        .order(egui::Order::Foreground)
+        .fixed_pos(anchor)
+        .show(ui.ctx(), |ui| {
+            egui::Frame::popup(ui.style())
+                .inner_margin(egui::Margin::same(3))
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        let a = ui.button(format!("\u{2714} {}", tr("crop.apply")));
+                        let c = ui.button(format!("\u{2716} {}", tr("crop.clear_button")));
+                        apply = a.clicked();
+                        clear = c.clicked();
+                        rects = Some((a.rect, c.rect));
+                    });
+                });
+        });
+    app.crop_button_rects = rects;
+    if apply {
+        app.apply_crop();
+    } else if clear {
+        app.crop_area = None;
+        app.crop_drag = None;
+    }
+}
+
 /// The area: the drawing outside it dimmed, its edge and handles.
 pub fn draw_area(app: &App, painter: &Painter, canvas: egui::Rect) {
     if app.tool != crate::tools::Tool::Crop {

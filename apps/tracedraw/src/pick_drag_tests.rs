@@ -11468,3 +11468,84 @@ fn added_pages_are_named_in_the_interface_language() {
         assert_eq!(app.doc().pages.len(), 2);
     });
 }
+
+/// The Crop tool's area gets Crop and Clear buttons on the canvas, under
+/// its bottom-left corner (#1202): Clear drops the area, Crop applies it,
+/// and neither shows without an area.
+#[test]
+fn the_crop_area_has_crop_and_clear_buttons_on_the_canvas() {
+    let (ctx, mut app, id) = setup();
+    app.set_tool(Tool::Crop);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    assert!(app.crop_button_rects.is_none(), "no area, no buttons");
+    let area = |app: &App| {
+        (
+            app.view.to_screen(Point::new(20.0, 15.0)),
+            app.view.to_screen(Point::new(40.0, 35.0)),
+        )
+    };
+    let (from, to) = area(&app);
+    drag(&ctx, &mut app, from, to, Modifiers::NONE, Vec::new());
+    assert!(app.crop_area.is_some());
+    let (crop_btn, clear_btn) = app.crop_button_rects.expect("buttons on the canvas");
+    // Under the area's bottom-left corner, inside the canvas.
+    let corner = app.view.to_screen(Point::new(20.0, 15.0));
+    assert!(crop_btn.min.y > corner.y && (crop_btn.min.x - corner.x).abs() < 12.0);
+    assert!(app.canvas_rect.contains_rect(crop_btn.union(clear_btn)));
+    // Clear drops the area.
+    click_at(&ctx, &mut app, clear_btn.center(), Modifiers::NONE);
+    assert!(app.crop_area.is_none());
+    assert_eq!(bounds(&app, id), Rect::new(10.0, 10.0, 60.0, 40.0));
+    // Crop applies it: the rectangle is cut down to the area.
+    let (from, to) = area(&app);
+    drag(&ctx, &mut app, from, to, Modifiers::NONE, Vec::new());
+    let (crop_btn, _) = app.crop_button_rects.expect("buttons again");
+    click_at(&ctx, &mut app, crop_btn.center(), Modifiers::NONE);
+    assert!(app.crop_area.is_none());
+    let b = bounds(&app, id);
+    assert!(
+        close(b.x0, 20.0) && close(b.y0, 15.0) && close(b.x1, 40.0) && close(b.y1, 35.0),
+        "{b:?}"
+    );
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    assert!(app.crop_button_rects.is_none());
+}
+
+/// The Summary section's figures (#1202): how many objects, their layer
+/// and kind, the selection's size and centre and its centre of rotation,
+/// in ruler coordinates; nothing with nothing selected.
+#[test]
+fn the_summary_section_describes_the_selection() {
+    let (_, mut app, id) = setup();
+    let info = crate::ui::dockers::summary_info(&app).expect("a selection");
+    assert_eq!(info.objects, 1);
+    assert_eq!(info.layers.len(), 1);
+    assert_eq!(
+        info.kinds,
+        vec![crate::ui::dockers::kind_name(&ShapeKind::Rect {
+            rect: Rect::new(0.0, 0.0, 1.0, 1.0),
+            radius: 0.0,
+            corners: None,
+        })]
+    );
+    assert!(close(info.size.0, 50.0) && close(info.size.1, 30.0));
+    let centre = app.to_ruler(Point::new(35.0, 25.0));
+    assert!(close(info.center.x, centre.x) && close(info.center.y, centre.y));
+    assert_eq!(info.rotation_center, info.center, "not moved: the middle");
+    // A second object on the same layer: two objects, one layer, two kinds.
+    let other = app
+        .new_shape(ShapeKind::Ellipse {
+            rect: Rect::new(70.0, 10.0, 90.0, 30.0),
+            arc: None,
+        })
+        .expect("ellipse");
+    app.select(vec![id, other]);
+    let info = crate::ui::dockers::summary_info(&app).expect("a selection");
+    assert_eq!(
+        (info.objects, info.layers.len(), info.kinds.len()),
+        (2, 1, 2)
+    );
+    assert!(close(info.size.0, 80.0));
+    app.select(Vec::new());
+    assert!(crate::ui::dockers::summary_info(&app).is_none());
+}

@@ -1018,18 +1018,198 @@ fn properties(app: &mut App, ui: &mut Ui) {
                     );
                 }
             }
-            _ => {
-                for s in shapes.iter() {
-                    ui.label(format!(
-                        "{}  id {}  {}",
-                        kind_name(&s.kind),
-                        s.id.raw(),
-                        s.name.clone().unwrap_or_default()
-                    ));
-                }
-            }
+            "summary" => summary_section(app, ui, &shapes),
+            _ => {}
         }
         ui.add_space(6.0);
+    }
+}
+
+/// What the Summary section of the Properties docker says about the
+/// selection (#1202).
+#[derive(Debug, Clone, PartialEq)]
+pub struct SummaryInfo {
+    /// How many objects are selected.
+    pub objects: usize,
+    /// The names of the layers holding them, each once, in layer order.
+    pub layers: Vec<String>,
+    /// The kinds of the objects, each once.
+    pub kinds: Vec<String>,
+    /// Width and height of the selection, mm.
+    pub size: (f64, f64),
+    /// The middle of the selection, in ruler coordinates (mm).
+    pub center: tracedraw_core::geometry::Point,
+    /// The centre of rotation, in ruler coordinates (mm).
+    pub rotation_center: tracedraw_core::geometry::Point,
+}
+
+/// The Summary section's figures for the selection; `None` with nothing
+/// selected.
+pub fn summary_info(app: &App) -> Option<SummaryInfo> {
+    let shapes = app.selected_shapes();
+    if shapes.is_empty() {
+        return None;
+    }
+    let b = app.selection_bounds()?;
+    let doc = app.doc();
+    let mut layers = Vec::new();
+    for layer in doc.all_layers() {
+        if shapes.iter().any(|s| layer_holds(layer, s.id)) && !layers.contains(&layer.name) {
+            layers.push(layer.name.clone());
+        }
+    }
+    let mut kinds: Vec<String> = Vec::new();
+    for s in &shapes {
+        let k = kind_name(&s.kind);
+        if !kinds.contains(&k) {
+            kinds.push(k);
+        }
+    }
+    let rotation = app.rotation_center().unwrap_or(b.center());
+    Some(SummaryInfo {
+        objects: shapes.len(),
+        layers,
+        kinds,
+        size: (b.width(), b.height()),
+        center: app.to_ruler(b.center()),
+        rotation_center: app.to_ruler(rotation),
+    })
+}
+
+/// Whether `layer` holds the shape `id`, inside groups and clip frames too.
+fn layer_holds(layer: &tracedraw_core::document::Layer, id: tracedraw_core::ShapeId) -> bool {
+    fn walk(s: &tracedraw_core::Shape, id: tracedraw_core::ShapeId) -> bool {
+        if s.id == id {
+            return true;
+        }
+        match &s.kind {
+            ShapeKind::Group { children } => children.iter().any(|c| walk(c, id)),
+            ShapeKind::ClipFrame { frame, contents } => {
+                walk(frame, id) || contents.iter().any(|c| walk(c, id))
+            }
+            _ => false,
+        }
+    }
+    layer.shapes.iter().any(|s| walk(s, id))
+}
+
+/// The Summary section: the selection in figures (count, layer, kind,
+/// size, centre, centre of rotation), each object, Wrap paragraph text
+/// with its style and offset, and Lock Object (#1202).
+fn summary_section(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::Shape]) {
+    let Some(info) = summary_info(app) else {
+        return;
+    };
+    let value = |ui: &mut Ui, key: &str, text: String| {
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new(tr(key)).color(Tokens::text_dim()));
+            ui.label(text);
+        });
+    };
+    let u = &app.units;
+    value(
+        ui,
+        "docker.summary_selection",
+        trf(
+            "docker.summary_objects",
+            &[("n", &info.objects.to_string())],
+        ),
+    );
+    value(ui, "docker.summary_layer", info.layers.join(", "));
+    value(ui, "docker.summary_type", info.kinds.join(", "));
+    value(
+        ui,
+        "docker.summary_size",
+        format!(
+            "{:.2} x {:.2} {}",
+            u.world_from_mm(info.size.0),
+            u.world_from_mm(info.size.1),
+            u.short()
+        ),
+    );
+    value(
+        ui,
+        "docker.summary_center",
+        format!(
+            "({:.2}, {:.2}) {}",
+            u.world_from_mm(info.center.x),
+            u.world_from_mm(info.center.y),
+            u.short()
+        ),
+    );
+    value(
+        ui,
+        "docker.summary_rotation_center",
+        format!(
+            "({:.2}, {:.2}) {}",
+            u.world_from_mm(info.rotation_center.x),
+            u.world_from_mm(info.rotation_center.y),
+            u.short()
+        ),
+    );
+    for s in shapes.iter() {
+        ui.label(
+            egui::RichText::new(format!(
+                "{}  id {}  {}",
+                kind_name(&s.kind),
+                s.id.raw(),
+                s.name.clone().unwrap_or_default()
+            ))
+            .size(11.0)
+            .color(Tokens::text_dim()),
+        );
+    }
+    ui.add_space(4.0);
+    // Wrap paragraph text: None or a style; the offset while a style is on.
+    let (on, current) = app.wrap_state();
+    ui.label(tr("docker.summary_wrap"));
+    let chosen = if on {
+        tr(crate::ui::propbar::wrap_style_key(
+            current.mode,
+            current.side,
+        ))
+    } else {
+        tr("context.wrap_none")
+    };
+    egui::ComboBox::from_id_salt("summary_wrap_style")
+        .selected_text(chosen)
+        .width(200.0)
+        .show_ui(ui, |ui| {
+            if ui.selectable_label(!on, tr("context.wrap_none")).clicked() && on {
+                let shapes = app.selection.clone();
+                app.run(Command::SetWrapText {
+                    shapes,
+                    wrap: false,
+                });
+            }
+            for (mode, side) in tracedraw_core::TextWrap::STYLES {
+                let here = on && current.mode == mode && current.side == side;
+                if ui
+                    .selectable_label(here, tr(crate::ui::propbar::wrap_style_key(mode, side)))
+                    .clicked()
+                {
+                    app.set_wrap_style(mode, side);
+                }
+            }
+        })
+        .response
+        .rich_tip(crate::ui::tips::pair(
+            "docker.summary_wrap",
+            "context.wrap_style",
+        ));
+    ui.add_enabled_ui(on, |ui| {
+        crate::ui::propbar::wrap_offset_field(app, ui, current.offset)
+    });
+    ui.add_space(4.0);
+    if ui
+        .button(tr("menu.object.lock_object"))
+        .rich_tip(crate::ui::tips::pair(
+            "menu.object.lock_object",
+            "docker.lock_object_tip",
+        ))
+        .clicked()
+    {
+        app.set_locked(true);
     }
 }
 

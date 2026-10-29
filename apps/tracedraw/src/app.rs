@@ -1420,6 +1420,9 @@ pub struct App {
     /// drag.
     pub crop_area: Option<Rect>,
     pub crop_drag: Option<crate::crop_tool::CropDrag>,
+    /// Where the Crop and Clear buttons were drawn on the canvas this
+    /// frame (screen space), for the tests (#1202).
+    pub crop_button_rects: Option<(egui::Rect, egui::Rect)>,
     pub transparency_default: crate::effects_ui::TransparencySettings,
     /// The Glyphs docker's font and character range.
     pub glyph_font: String,
@@ -2431,6 +2434,7 @@ impl App {
             extrude: Default::default(),
             extrude_drag: None,
             crop_area: None,
+            crop_button_rects: None,
             crop_drag: None,
             transparency_default: Default::default(),
             glyph_font: String::new(),
@@ -8809,7 +8813,10 @@ mod tests {
         app.settings.check_updates = true;
         app.dialog = crate::ui::dialogs::Dialog::ConfirmClose;
         app.update_tick_desktop(10 * crate::updates::DAILY, None);
-        assert!(matches!(app.dialog, crate::ui::dialogs::Dialog::ConfirmClose));
+        assert!(matches!(
+            app.dialog,
+            crate::ui::dialogs::Dialog::ConfirmClose
+        ));
         app.dialog = crate::ui::dialogs::Dialog::None;
         app.update_tick_desktop(10 * crate::updates::DAILY, None);
         assert!(matches!(
