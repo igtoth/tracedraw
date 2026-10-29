@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Windows installer: the setup now asks which language to run its wizard in and ships English, Brazilian Portuguese, Czech, Dutch, French, German, Italian, Japanese, Polish, Russian, Spanish and Turkish. It offered only English and Brazilian Portuguese and picked one by the system locale without asking. It has always created an uninstaller (Start menu "Uninstall TraceDraw" and Windows "Apps & features").
+
 ## 0.25.0 (2026-10-29)
 
 - `.cdr` mesh fills: the node colours of a version 11 mesh are read column by column, as the file stores them, so the skin, face and clothes of the drawing in #896 show their shading where the program that saved it puts it, instead of dark streaks across them; the grid lines keep their curves (every node keeps its handles, `MeshNode::handles`) and the cells are drawn as curved (Coons) patches with the colour mixed pixel by pixel, no longer as flat quads with straight sides. The mesh's picture is worked out once per zoom and kept (the cache is shared by the render threads), so panning or dragging another object does not compute it again, and its work is bounded by what shows on the canvas (cells and pieces off it are skipped, triangles painted in bounded batches); dragging a node moves its handles with it; a column or row added through a curved cell cuts the curve where the new node is, and removing it restores the curve (#896).

@@ -29,10 +29,28 @@ ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequiredOverridesAllowed=dialog
 ChangesAssociations=yes
 ChangesEnvironment=yes
+; Always ask which language the wizard runs in, even when the system
+; locale matches one of them, so the choice is offered on every machine.
+ShowLanguageDialog=yes
 
 [Languages]
+; The wizard's own language. These are the translations that ship with
+; Inno Setup 6; the editor itself has more interface languages than this,
+; chosen in Options > Global > Language. The six the editor has but Inno
+; Setup does not ship (Arabic, Bengali, Hindi, Indonesian, Simplified and
+; Traditional Chinese) need their .isl committed here and are a follow-up.
 Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "brazilianportuguese"; MessagesFile: "compiler:Languages\BrazilianPortuguese.isl"
+Name: "czech"; MessagesFile: "compiler:Languages\Czech.isl"
+Name: "dutch"; MessagesFile: "compiler:Languages\Dutch.isl"
+Name: "french"; MessagesFile: "compiler:Languages\French.isl"
+Name: "german"; MessagesFile: "compiler:Languages\German.isl"
+Name: "italian"; MessagesFile: "compiler:Languages\Italian.isl"
+Name: "japanese"; MessagesFile: "compiler:Languages\Japanese.isl"
+Name: "polish"; MessagesFile: "compiler:Languages\Polish.isl"
+Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
+Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
+Name: "turkish"; MessagesFile: "compiler:Languages\Turkish.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
