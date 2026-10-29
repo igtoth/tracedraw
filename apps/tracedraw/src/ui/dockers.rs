@@ -970,9 +970,15 @@ fn properties(app: &mut App, ui: &mut Ui) {
                 }
                 if edited {
                     // Dragging in the picker: one step, and the colour
-                    // joins the document palette on release.
+                    // joins the document palette on release. A pattern's
+                    // placement goes into each object's own pattern.
                     let live = app.live_fill.is_some() || ui.input(|i| i.pointer.any_down());
-                    if live && !matches!(fill, Fill::Fountain(_)) {
+                    let placement_only = matches!(fill, Fill::Pattern(_))
+                        && !touched.contains(&FillField::All)
+                        && tracedraw_core::patch::fill_changes(&old, &fill)
+                            .iter()
+                            .all(|f| f.is_placement());
+                    if live && !matches!(fill, Fill::Fountain(_)) && !placement_only {
                         app.apply_fill_live(fill);
                     } else {
                         app.patch_selection_fill(&old, &fill, &touched);
@@ -2034,16 +2040,15 @@ pub(crate) fn pattern_editor(
         let mut pick: Option<Pattern> = None;
         let mut action = None;
         {
-            let lib = pk.library();
-            let list = if vector { &lib.vector } else { &lib.bitmap };
-            let current = lib.position(p);
-            let shown = current
-                .map(|i| crate::ui::pattern_pick::pattern_name(p, i))
-                .unwrap_or_else(|| tr("docker.pattern_pick"));
+            // The drawing is walked only while the list is open, not on
+            // every frame the panel shows a pattern.
             egui::ComboBox::from_id_salt("pattern_pick")
-                .selected_text(shown)
+                .selected_text(tr("docker.pattern_pick"))
                 .width(ui.available_width().min(220.0))
                 .show_ui(ui, |ui| {
+                    let lib = pk.library();
+                    let list = if vector { &lib.vector } else { &lib.bitmap };
+                    let current = lib.position(p);
                     for (i, lp) in list.iter().enumerate() {
                         let name = crate::ui::pattern_pick::pattern_name(lp, i);
                         if ui.selectable_label(current == Some(i), name).clicked()
@@ -2123,8 +2128,10 @@ pub(crate) fn pattern_editor(
     let size = p.tile_size();
     let (mut w, mut h) = (size.width, size.height);
     let size_mixed = differs(FillField::TileSize);
+    // The long labels (tile size, row or column offset) take a line of
+    // their own so the fields fit the panel in every language.
+    ui.label(tr("docker.tile_size"));
     ui.horizontal(|ui| {
-        ui.label(tr("docker.tile_size"));
         let wr = ui
             .add(mm(&mut w, size_mixed).prefix(tr("docker.w")))
             .rich_tip(tr("docker.tile_width"));
@@ -2224,8 +2231,8 @@ pub(crate) fn pattern_editor(
             }
         }
     });
+    ui.label(tr("docker.row_column_offset"));
     ui.horizontal(|ui| {
-        ui.label(tr("docker.row_column_offset"));
         let shift_mixed = differs(FillField::TileShift);
         for (kind, tip) in [
             (TileShift::Row, "docker.row_offset_tip"),
@@ -3355,6 +3362,8 @@ mod tests {
         }
         app.show_dockers = true;
         app.docker_tab = DockerTab::Properties;
+        // The Outline part closed, so the whole Fill part is in view.
+        app.settings.properties_closed = vec!["outline".into()];
         let mixed = tr("docker.mixed");
         app.select(ids[1..].to_vec());
         draw(&ctx, &mut app);
@@ -3367,7 +3376,7 @@ mod tests {
         ] {
             assert!(texts.iter().any(|t| *t == tr(key)), "{key}: {texts:?}");
         }
-        assert!(!texts.iter().any(|t| *t == mixed));
+        assert!(!texts.contains(&mixed));
         assert!(
             texts.iter().any(|t| t.starts_with("33")),
             "the rotation shows: {texts:?}"
@@ -3376,7 +3385,7 @@ mod tests {
         app.select(ids.clone());
         draw(&ctx, &mut app);
         let texts = painted_texts(&ctx, &mut app);
-        assert!(texts.iter().any(|t| *t == mixed), "{texts:?}");
+        assert!(texts.contains(&mixed), "{texts:?}");
         assert!(!texts.iter().any(|t| t.starts_with("33")), "{texts:?}");
         let mix = app.selection_fill_mix();
         assert!(mix.fields.contains(&FillField::TileRotation) && mix.has(FillField::All));
