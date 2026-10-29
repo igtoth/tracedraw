@@ -3,6 +3,7 @@
 use crate::app::{App, DockerDrag, DockerPlace, DockerTab};
 use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
+use crate::ui::slider::Settled;
 use crate::ui::tips::RichTip;
 use egui::Ui;
 use tracedraw_core::patch::{FillField, FillMix, StrokeField, StrokeMix};
@@ -1850,7 +1851,7 @@ fn fountain_editor(ui: &mut Ui, f: &mut Fountain) -> bool {
                     .text(tr("docker.angle_lc"))
                     .suffix("°"),
             )
-            .drag_stopped();
+            .settled();
     }
     if !matches!(f.kind, FountainKind::Linear | FountainKind::Shaped) {
         ui.horizontal(|ui| {
@@ -1878,7 +1879,7 @@ fn fountain_editor(ui: &mut Ui, f: &mut Fountain) -> bool {
                 .text(tr("docker.edge_pad"))
                 .suffix("%"),
         )
-        .drag_stopped()
+        .settled()
     {
         f.edge_pad = pad / 100.0;
         changed = true;
@@ -1957,7 +1958,7 @@ pub(crate) fn pattern_editor(ui: &mut Ui, p: &mut Pattern) -> bool {
                         .text(tr("docker.tile_size_mm"))
                         .logarithmic(true),
                 )
-                .drag_stopped();
+                .settled();
         }
         Pattern::Bitmap {
             width_px,
@@ -1975,7 +1976,7 @@ pub(crate) fn pattern_editor(ui: &mut Ui, p: &mut Pattern) -> bool {
                         .text(tr("docker.tile_size_mm"))
                         .logarithmic(true),
                 )
-                .drag_stopped();
+                .settled();
         }
         Pattern::Vector { shapes, tile } => {
             ui.label(trf(
@@ -1989,14 +1990,14 @@ pub(crate) fn pattern_editor(ui: &mut Ui, p: &mut Pattern) -> bool {
                         .text(tr("docker.tile_width"))
                         .logarithmic(true),
                 )
-                .drag_stopped();
+                .settled();
             changed |= ui
                 .add(
                     crate::ui::Slider::new(&mut h, 1.0..=200.0)
                         .text(tr("docker.tile_height"))
                         .logarithmic(true),
                 )
-                .drag_stopped();
+                .settled();
             if (w - tile.width).abs() > 1e-9 || (h - tile.height).abs() > 1e-9 {
                 // Scale the tile content with its size so the drawing keeps its shape.
                 let sx = w / tile.width.max(1e-6);
@@ -2036,7 +2037,7 @@ pub(crate) fn texture_editor(ui: &mut Ui, t: &mut Texture) -> bool {
                 .text(tr("docker.scale_mm"))
                 .logarithmic(true),
         )
-        .drag_stopped();
+        .settled();
     ui.horizontal(|ui| {
         ui.label(tr("docker.seed"));
         changed |= ui
@@ -2217,7 +2218,7 @@ fn outline_editor_mixed(
                             .show_value(false),
                     )
                     .rich_tip(width_tip.clone());
-                let mut w = r.drag_stopped() || (r.changed() && !r.dragged());
+                let mut w = r.settled();
                 // The width in the outline unit; the model keeps mm.
                 let u = lib.units;
                 let mut v = u.from_mm(s.width);
@@ -2498,7 +2499,7 @@ fn outline_editor_mixed(
                         } else {
                             crate::ui::tips::pair("docker.nib_angle", "docker.nib_angle_desc")
                         })
-                        .drag_stopped()
+                        .settled()
                     {
                         touched.push(field);
                         changed = true;
@@ -2665,6 +2666,80 @@ mod tests {
         };
         let mut out = ctx.run_ui(input, |ui| crate::ui::root(app, ui));
         out.textures_delta.clear();
+    }
+
+    /// The texture editor applies its Scale slider however the value
+    /// changes: a value typed in the slider's box and an arrow key with
+    /// the groove focused count, not only the end of a drag (they snapped
+    /// back before).
+    #[test]
+    fn the_fill_editor_sliders_apply_typed_and_stepped_values() {
+        let ctx = crate::theme::ui_context();
+        let mut t = Texture {
+            kind: Default::default(),
+            color_a: tracedraw_core::Color::BLACK,
+            color_b: tracedraw_core::Color::WHITE,
+            scale: 10.0,
+            seed: 1,
+        };
+        let run = |t: &mut Texture, events: Vec<egui::Event>| {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(320.0, 900.0),
+                )),
+                events,
+                ..Default::default()
+            };
+            let mut changed = false;
+            let mut out = ctx.run_ui(input, |ui| {
+                egui::CentralPanel::default().show(ui, |ui| changed = texture_editor(ui, t));
+            });
+            out.textures_delta.clear();
+            changed
+        };
+        let key = |key: egui::Key, pressed: bool| egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let press = |pos: egui::Pos2, pressed: bool| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        run(&mut t, Vec::new());
+        run(&mut t, Vec::new());
+        let rail = crate::ui::slider::rail_rect(&ctx, &tr("docker.scale_mm")).expect("drawn");
+        // Type 25 in the box.
+        let in_box = egui::pos2(rail.right() + 26.0, rail.center().y);
+        run(&mut t, vec![egui::Event::PointerMoved(in_box)]);
+        run(&mut t, vec![press(in_box, true)]);
+        run(&mut t, vec![press(in_box, false)]);
+        run(&mut t, Vec::new());
+        run(&mut t, vec![egui::Event::Text("25".into())]);
+        let applied = run(
+            &mut t,
+            vec![key(egui::Key::Enter, true), key(egui::Key::Enter, false)],
+        );
+        assert!(applied, "a typed value applies");
+        assert!((t.scale - 25.0).abs() < 1e-9, "{}", t.scale);
+        // Focus the groove (as Tab does) and step it with an arrow key.
+        let groove = crate::ui::slider::rail_id(&ctx, &tr("docker.scale_mm")).expect("drawn");
+        ctx.memory_mut(|m| m.request_focus(groove));
+        run(&mut t, Vec::new());
+        let applied = run(
+            &mut t,
+            vec![
+                key(egui::Key::ArrowRight, true),
+                key(egui::Key::ArrowRight, false),
+            ],
+        );
+        assert!(applied, "an arrow key step applies");
+        assert!(t.scale > 25.0, "{}", t.scale);
     }
 
     /// The pointer over a docker tab shows a close cross at its top; a

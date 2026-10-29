@@ -4,7 +4,8 @@
 //! `2*3,5` work, a comma or a point marks decimals, and a distance field
 //! takes a value in another unit (`1 in` in a millimetre field). The
 //! arrows and the mouse wheel over the box step the value (one unit, or
-//! the step the field was given; Ctrl a tenth, Shift ten times).
+//! the step the field was given; Ctrl a tenth or the fine step given,
+//! Shift ten times).
 //!
 //! `Response::changed()` is the one sign that the value was applied, typed
 //! or stepped: a step leaves the focus where it was, so a caller waiting
@@ -35,6 +36,12 @@ pub struct NumField<'a, N: Numeric> {
     /// What the spin arrows and the wheel add or take, in the field's
     /// unit (1 unless given).
     step: f64,
+    /// What they add or take with Ctrl (a tenth of the step unless
+    /// given).
+    fine_step: Option<f64>,
+    /// The wheel over the box steps it without the box having the focus
+    /// (on unless turned off).
+    wheel_on_hover: bool,
 }
 
 /// The width of the spin arrows at the right of a field, points.
@@ -56,7 +63,26 @@ impl<'a, N: Numeric> NumField<'a, N> {
             width: DEFAULT_WIDTH,
             mixed: false,
             step: 1.0,
+            fine_step: None,
+            wheel_on_hover: true,
         }
+    }
+
+    /// What the arrows and the wheel add or take with Ctrl (a tenth of
+    /// the step unless given).
+    pub fn fine_step(mut self, step: f64) -> Self {
+        if step.is_finite() && step > 0.0 {
+            self.fine_step = Some(step);
+        }
+        self
+    }
+
+    /// Whether the wheel over the box steps it while the box does not
+    /// have the focus (on by default). Off, the wheel scrolls the panel
+    /// around unless the box is being typed in.
+    pub fn wheel_on_hover(mut self, on: bool) -> Self {
+        self.wheel_on_hover = on;
+        self
     }
 
     /// What the spin arrows and the mouse wheel add or take (1 unless
@@ -260,7 +286,8 @@ impl<N: Numeric> NumField<'_, N> {
         }
         // The wheel over the box or the arrows, a step a notch; the bar or
         // panel around the field does not scroll with it (#783).
-        if ui.rect_contains_pointer(resp.rect) || ui.rect_contains_pointer(spin) {
+        let wheel_here = self.wheel_on_hover || resp.has_focus();
+        if wheel_here && (ui.rect_contains_pointer(resp.rect) || ui.rect_contains_pointer(spin)) {
             if let Some(steps) = wheel_steps(ui, id.with("wheel")) {
                 let mods = ui.input(|i| {
                     i.raw
@@ -281,14 +308,14 @@ impl<N: Numeric> NumField<'_, N> {
             ui.data_mut(|d| d.remove::<f32>(id.with("wheel")));
         }
         if let Some((dir, mods)) = stepped {
-            let factor = if mods.command {
-                0.1
+            let step = if mods.command {
+                self.fine_step.unwrap_or(self.step / 10.0)
             } else if mods.shift {
-                10.0
+                self.step * 10.0
             } else {
-                1.0
+                self.step
             };
-            let mut v = self.value.to_f64() + dir * self.step * factor;
+            let mut v = self.value.to_f64() + dir * step;
             if let Some((lo, hi)) = self.range {
                 v = v.clamp(lo.min(hi), hi.max(lo));
             }
@@ -367,6 +394,13 @@ pub const WHEEL_POINTS_PER_NOTCH: f32 = 50.0;
 /// scroll of that turn is still running.
 fn wheel_taken_id() -> egui::Id {
     egui::Id::new("field_wheel_taken")
+}
+
+/// Tests: whether a field took the wheel (see [`take_wheel`]).
+#[cfg(test)]
+pub fn wheel_taken(ctx: &egui::Context) -> bool {
+    ctx.data(|d| d.get_temp::<bool>(wheel_taken_id()))
+        .unwrap_or(false)
 }
 
 /// The wheel turned over a field, list or tab strip that steps with it:

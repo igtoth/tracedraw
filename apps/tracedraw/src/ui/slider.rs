@@ -7,13 +7,19 @@
 //! arrows or the wheel).
 //!
 //! The value changes by dragging the thumb, clicking on the groove (the
-//! thumb jumps there), the arrow keys while the groove has the focus
-//! (Page Up and Down step ten times, Home and End go to the ends), the
-//! wheel over the groove (Ctrl a tenth of a step, Shift ten steps) and
-//! the number box; the box and the thumb always show the same value. A
-//! step snaps every change to a multiple of it from the range's start;
-//! an integer slider steps by one. The value given is clamped to the
-//! range, as it is edited.
+//! thumb jumps there), the arrow keys while the groove has the keyboard
+//! focus (Page Up and Down step ten times, Home and End go to the ends),
+//! the wheel over the groove while it has the focus or is dragged (Ctrl
+//! a tenth of a step, Shift ten steps) and the number box; the box and
+//! the thumb always show the same value. A step snaps every change, a
+//! typed value too, to a multiple of it from the range's start; an
+//! integer slider steps by one. The value given is clamped to the range,
+//! as it is edited.
+//!
+//! The groove takes the keyboard focus only from Tab, as egui's own
+//! slider: a click or a drag leaves the keys to the canvas (Ctrl+Z,
+//! Delete, the tool keys and the arrows' nudge keep working), and the
+//! wheel over a slider it does not have scrolls the panel around it.
 //!
 //! Nothing is allocated for the ticks: they are computed from the range
 //! and the groove's width each frame and drawn as line segments.
@@ -191,6 +197,17 @@ impl<'a, N: Numeric> Slider<'a, N> {
         nice_near((self.max - self.min) / 100.0)
     }
 
+    /// The step of the wheel (and the box's arrows) with Ctrl: a tenth of
+    /// a step, or one step on an integer or stepped slider, which holds
+    /// nothing finer (a tenth would snap back to where it was).
+    fn fine_step(&self) -> f64 {
+        if self.step.is_some() || N::INTEGRAL {
+            self.key_step()
+        } else {
+            self.key_step() / 10.0
+        }
+    }
+
     /// `v` clamped to the range and snapped to the step.
     fn snapped(&self, v: f64) -> f64 {
         let mut v = v.clamp(self.min, self.max);
@@ -338,9 +355,35 @@ fn linear_spacing(span: f64, px: f64, step: Option<f64>) -> (f64, f64) {
     (major, minor)
 }
 
+/// A slider's response read by an editor that applies its value once
+/// (one undo step).
+pub trait Settled {
+    /// The value is set for good: a drag of the thumb ended, or it
+    /// changed by a click, a key, the wheel or the number box.
+    /// `drag_stopped()` alone misses every change made without a drag,
+    /// which then snaps back.
+    fn settled(&self) -> bool;
+}
+
+impl Settled for Response {
+    fn settled(&self) -> bool {
+        self.drag_stopped() || (self.changed() && !self.dragged())
+    }
+}
+
 #[cfg(test)]
-fn record_rail(ctx: &egui::Context, label: &str, rail: Rect) {
-    ctx.data_mut(|d| d.insert_temp(egui::Id::new(("ui_slider_rail", label)), rail));
+fn record_rail(ctx: &egui::Context, label: &str, rail: Rect, id: egui::Id) {
+    ctx.data_mut(|d| {
+        d.insert_temp(egui::Id::new(("ui_slider_rail", label)), rail);
+        d.insert_temp(egui::Id::new(("ui_slider_rail_id", label)), id);
+    });
+}
+
+/// Tests: the id of the groove of the slider labelled `label`, the one
+/// that takes the keyboard focus.
+#[cfg(test)]
+pub fn rail_id(ctx: &egui::Context, label: &str) -> Option<egui::Id> {
+    ctx.data(|d| d.get_temp(egui::Id::new(("ui_slider_rail_id", label))))
 }
 
 /// Tests: where the groove of the slider labelled `label` (`""` for an
@@ -406,13 +449,21 @@ impl<N: Numeric> Widget for Slider<'_, N> {
                 ui.spacing_mut().item_spacing.x = BOX_GAP;
                 let mut resp = self.rail(ui, egui::vec2(length, RAIL_H));
                 #[cfg(test)]
-                record_rail(ui.ctx(), label.as_deref().unwrap_or(""), resp.rect);
+                record_rail(ui.ctx(), label.as_deref().unwrap_or(""), resp.rect, resp.id);
                 if self.show_value {
-                    let (step, decimals) = (self.key_step(), self.box_decimals());
+                    let (step, fine, decimals) =
+                        (self.key_step(), self.fine_step(), self.box_decimals());
+                    let before = self.value.to_f64();
+                    // The wheel over the box steps it only while the
+                    // slider has the keyboard (or is dragged); otherwise
+                    // it scrolls the panel.
+                    let wheel = resp.has_focus() || resp.dragged();
                     let mut f = NumField::new(&mut *self.value)
                         .range(self.min..=self.max)
                         .suffix(&self.suffix)
                         .step(step)
+                        .fine_step(fine)
+                        .wheel_on_hover(wheel)
                         .mixed(self.mixed)
                         .width(BOX_W);
                     if self.min_decimals > 0 {
@@ -421,7 +472,19 @@ impl<N: Numeric> Widget for Slider<'_, N> {
                     if let Some(n) = decimals {
                         f = f.max_decimals(n);
                     }
-                    let field = ui.add(f);
+                    let mut field = ui.add(f);
+                    if field.changed() {
+                        // A typed value takes the step too (12.5 in a
+                        // whole-number box is 13, as it shows).
+                        let v = self.value.to_f64();
+                        let snapped = self.snapped(v);
+                        if snapped != v && snapped.is_finite() {
+                            *self.value = N::from_f64(snapped);
+                        }
+                        if self.value.to_f64() == before && !self.mixed {
+                            field.flags.set(egui::response::Flags::CHANGED, false);
+                        }
+                    }
                     resp = resp.union(field);
                 }
                 resp
@@ -450,14 +513,16 @@ impl<N: Numeric> Slider<'_, N> {
         };
         let len = (b - a) as f64;
         if enabled {
-            // The pointer: a press or a drag puts the thumb there.
+            // The pointer: a press or a drag puts the thumb there. It
+            // does not take the keyboard focus (and gives up one Tab
+            // gave), so the canvas keeps its shortcuts.
             if let Some(p) = resp.interact_pointer_pos() {
                 let along = if self.vertical { p.y } else { p.x };
                 if len.abs() > 0.0 {
                     v = self.snapped(self.value_at((along - a) as f64 / len));
                 }
-                if !resp.has_focus() {
-                    resp.request_focus();
+                if resp.has_focus() {
+                    resp.surrender_focus();
                 }
             }
             // The keys, with the focus (the arrows along the groove step
@@ -509,10 +574,12 @@ impl<N: Numeric> Slider<'_, N> {
                     v = self.max;
                 }
             }
-            // The wheel over the groove, a step a notch (Ctrl a tenth,
-            // Shift ten); the panel around does not scroll with it.
+            // The wheel over the groove while it has the keyboard focus
+            // or is dragged, a step a notch (Ctrl a tenth, Shift ten);
+            // the panel around does not scroll with it then. Hovering
+            // alone leaves the wheel to the panel.
             let wheel_id = resp.id.with("wheel");
-            if ui.rect_contains_pointer(rect) {
+            if ui.rect_contains_pointer(rect) && (resp.has_focus() || resp.dragged()) {
                 if let Some(notches) = field::wheel_steps(ui, wheel_id) {
                     if notches != 0 {
                         let mods = ui.input(|i| {
@@ -526,14 +593,14 @@ impl<N: Numeric> Slider<'_, N> {
                                 })
                                 .unwrap_or(i.modifiers)
                         });
-                        let factor = if mods.command {
-                            0.1
+                        let step = if mods.command {
+                            self.fine_step()
                         } else if mods.shift {
-                            10.0
+                            self.key_step() * 10.0
                         } else {
-                            1.0
+                            self.key_step()
                         };
-                        v = self.snapped(v + f64::from(notches) * self.key_step() * factor);
+                        v = self.snapped(v + f64::from(notches) * step);
                     }
                 }
             } else {
@@ -796,9 +863,20 @@ mod tests {
         assert_eq!(lines_in(&out, rail.expand(2.0)), 0);
     }
 
+    /// One notch of the wheel with `modifiers`, down when `down`.
+    fn wheel(down: bool, modifiers: egui::Modifiers) -> egui::Event {
+        egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Line,
+            phase: egui::TouchPhase::Move,
+            delta: egui::vec2(0.0, if down { -1.0 } else { 1.0 }),
+            modifiers,
+        }
+    }
+
     /// A press on the groove puts the thumb (and the value) there, a
-    /// drag moves it, the arrow keys step it with the focus, the wheel
-    /// steps it over the groove, and the box follows each change.
+    /// drag moves it, the arrow keys step it once Tab gave it the focus,
+    /// the wheel steps it over the groove with the focus, and the box
+    /// follows each change.
     #[test]
     fn the_pointer_the_keys_and_the_wheel_change_the_value() {
         let ctx = ctx();
@@ -819,9 +897,15 @@ mod tests {
         let (out, _) = frame(&ctx, &mut v, vec![press(to, false)]);
         assert_eq!(v, 20.0);
         assert!(texts(&out).iter().any(|t| t == "20 %"), "the box follows");
-        // The groove has the focus: arrows step by one, Page Up by ten,
-        // End goes to the end.
+        // Tab gives the groove the focus: arrows step by one, Page Up by
+        // ten, End goes to the end.
+        frame(
+            &ctx,
+            &mut v,
+            vec![key(egui::Key::Tab, true), key(egui::Key::Tab, false)],
+        );
         frame(&ctx, &mut v, Vec::new());
+        assert!(ctx.egui_wants_keyboard_input(), "Tab focuses the groove");
         frame(
             &ctx,
             &mut v,
@@ -950,6 +1034,133 @@ mod tests {
         });
         out.textures_delta.clear();
         assert_eq!(n, 255);
+    }
+
+    /// A click or a drag on the groove leaves the keyboard focus alone,
+    /// so the canvas keeps its shortcuts; the wheel over a slider without
+    /// the focus (its groove or its box) changes nothing and is left to
+    /// the panel around; once dragged or focused by Tab, it steps.
+    #[test]
+    fn a_click_leaves_the_keys_and_the_wheel_to_the_panel() {
+        let ctx = ctx();
+        let mut v = 40.0;
+        frame(&ctx, &mut v, Vec::new());
+        frame(&ctx, &mut v, Vec::new());
+        let rail = rail_rect(&ctx, "Detail").expect("drawn");
+        let at = egui::pos2(thumb_x(rail, 60.0), rail.center().y);
+        frame(&ctx, &mut v, vec![egui::Event::PointerMoved(at)]);
+        frame(&ctx, &mut v, vec![press(at, true)]);
+        frame(&ctx, &mut v, vec![press(at, false)]);
+        frame(&ctx, &mut v, Vec::new());
+        assert_eq!(v, 60.0);
+        assert!(
+            !ctx.egui_wants_keyboard_input(),
+            "a click does not keep the keyboard"
+        );
+        // An arrow key is the canvas's, not the slider's.
+        frame(
+            &ctx,
+            &mut v,
+            vec![
+                key(egui::Key::ArrowRight, true),
+                key(egui::Key::ArrowRight, false),
+            ],
+        );
+        assert_eq!(v, 60.0);
+        // The wheel over the groove, then over the box: nothing changes,
+        // and nothing takes the wheel from the panel.
+        let in_box = egui::pos2(rail.right() + BOX_GAP + 20.0, rail.center().y);
+        for over in [at, in_box] {
+            frame(&ctx, &mut v, vec![egui::Event::PointerMoved(over)]);
+            frame(&ctx, &mut v, vec![wheel(true, egui::Modifiers::NONE)]);
+            assert_eq!(v, 60.0, "{over:?}");
+            assert!(!crate::ui::field::wheel_taken(&ctx), "{over:?}");
+        }
+        // While the thumb is held, the wheel steps it.
+        frame(&ctx, &mut v, vec![egui::Event::PointerMoved(at)]);
+        frame(&ctx, &mut v, vec![press(at, true)]);
+        let near = at + egui::vec2(8.0, 0.0);
+        frame(&ctx, &mut v, vec![egui::Event::PointerMoved(near)]);
+        let held = v;
+        frame(&ctx, &mut v, vec![wheel(false, egui::Modifiers::NONE)]);
+        assert_eq!(v, held + 1.0, "the wheel steps a dragged slider");
+        frame(&ctx, &mut v, vec![press(near, false)]);
+        frame(&ctx, &mut v, Vec::new());
+        assert!(!ctx.egui_wants_keyboard_input());
+    }
+
+    /// Ctrl with the wheel: a tenth of a step on a slider without a
+    /// step, one step on a stepped (or integer) one, where a tenth would
+    /// snap back and do nothing.
+    #[test]
+    fn ctrl_wheel_steps_finely_or_by_the_smallest_step() {
+        let ctx = ctx();
+        let show = |ctx: &egui::Context, v: &mut f64, stepped: bool, events| {
+            let mut out = ctx.run_ui(input(events), |ui| {
+                egui::CentralPanel::default().show(ui, |ui| {
+                    column(ui, |ui| {
+                        let s = Slider::new(&mut *v, 0.0..=100.0).text("Fine");
+                        ui.add(if stepped { s.step_by(1.0) } else { s });
+                    });
+                });
+            });
+            out.textures_delta.clear();
+        };
+        for (stepped, expect) in [(false, 40.1), (true, 41.0)] {
+            let mut v = 40.0;
+            show(&ctx, &mut v, stepped, Vec::new());
+            show(&ctx, &mut v, stepped, Vec::new());
+            let rail = rail_rect(&ctx, "Fine").expect("drawn");
+            // Tab to the groove, then the wheel over it with Ctrl.
+            show(
+                &ctx,
+                &mut v,
+                stepped,
+                vec![key(egui::Key::Tab, true), key(egui::Key::Tab, false)],
+            );
+            show(
+                &ctx,
+                &mut v,
+                stepped,
+                vec![egui::Event::PointerMoved(rail.center())],
+            );
+            show(
+                &ctx,
+                &mut v,
+                stepped,
+                vec![wheel(false, egui::Modifiers::COMMAND)],
+            );
+            assert!((v - expect).abs() < 1e-9, "stepped {stepped}: {v}");
+            ctx.memory_mut(|m| m.stop_text_input());
+        }
+        let mut i = 3i32;
+        assert_eq!(Slider::new(&mut i, 0..=10).fine_step(), 1.0);
+    }
+
+    /// A value typed in the box takes the slider's step: 12.5 in a
+    /// whole-number slider is 13, the value the box shows.
+    #[test]
+    fn a_typed_value_snaps_to_the_step() {
+        let ctx = ctx();
+        let mut v = 40.0;
+        frame(&ctx, &mut v, Vec::new());
+        frame(&ctx, &mut v, Vec::new());
+        let rail = rail_rect(&ctx, "Detail").expect("drawn");
+        let in_box = egui::pos2(rail.right() + BOX_GAP + 20.0, rail.center().y);
+        frame(&ctx, &mut v, vec![egui::Event::PointerMoved(in_box)]);
+        frame(&ctx, &mut v, vec![press(in_box, true)]);
+        frame(&ctx, &mut v, vec![press(in_box, false)]);
+        frame(&ctx, &mut v, Vec::new());
+        frame(&ctx, &mut v, vec![egui::Event::Text("12.5".into())]);
+        let (_, resp) = frame(
+            &ctx,
+            &mut v,
+            vec![key(egui::Key::Enter, true), key(egui::Key::Enter, false)],
+        );
+        assert!(resp.changed());
+        assert_eq!(v, 13.0);
+        let (out, _) = frame(&ctx, &mut v, Vec::new());
+        assert!(texts(&out).iter().any(|t| t == "13 %"), "the box shows it");
     }
 
     /// A disabled slider takes no input.
