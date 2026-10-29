@@ -26,6 +26,11 @@ een kader.
 
 De eigenschappenbalk toont de opgenomen kleur.
 
+Terwijl u de aanwijzer beweegt om een kleur te nemen, toont een klein vak
+ernaast de kleur eronder: een staal, de naam van de kleur als het een
+paletkleur of steunkleur is, de waarden in de kleurmodus van de tekening (CMYK
+of RGB) en de hexwaarde. De pipet van een kleurkiezer toont hetzelfde vak.
+
 ## Kenmerkenpipet {#attributes-eyedropper}
 
 Het gereedschap [[tool.attributes_eyedropper]] kopieert meerdere eigenschappen

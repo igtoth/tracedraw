@@ -1001,6 +1001,8 @@ pub enum Dialog {
     Encode(EncodeState),
     BorderGrommet(crate::border_grommet::BorderGrommetState),
     ColorManagement(Box<crate::ui::color_management::ColorManagementState>),
+    /// Tools > Convert Colors (#972).
+    ConvertColors(crate::ui::convert_colors::ConvertColorsState),
     FontManager(FontManagerState),
     PaletteEditor(PaletteEditorState),
     NewDocument(crate::new_document::NewDocState),
@@ -2473,6 +2475,7 @@ pub fn show(app: &mut App, ctx: &Context) {
         }
         Dialog::Encode(st) => encode_dialog(app, ctx, st, &mut close),
         Dialog::BorderGrommet(st) => border_grommet_dialog(app, ctx, st, &mut close),
+        Dialog::ConvertColors(st) => crate::ui::convert_colors::dialog(app, ctx, st, &mut close),
         Dialog::ColorManagement(st) => {
             crate::ui::color_management::dialog(app, ctx, st, &mut close)
         }
