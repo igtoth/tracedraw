@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Properties docker: the Summary section now reports the selection's count, layer, kind, size, centre and centre of rotation, and holds Wrap paragraph text (style and offset) and Lock Object; it listed only each object's kind and id. Crop tool: Crop and Clear buttons float under the crop area on the canvas, so the area is applied or dropped without reaching the property bar (#1202).
+
 ## 0.23.0 (2026-10-29)
 
 - Font list filter: the choices now open beside the list, in sections: fonts shown, style (serif, sans serif, script, decorative, monospaced, symbol), weight (light, regular, bold), width (condensed, normal, expanded), technology (TrueType, OpenType, variable), scripts (Latin, Greek, Cyrillic, Arabic, Devanagari, CJK and more), each OpenType feature on its own, embedding rights and the folders the fonts are in. Every value is read from the font files once (OS/2 weight and width classes, embedding bits, Unicode ranges, variation axes, GSUB and GPOS feature lists). Monospaced and Symbol now widen the style choices like the other styles instead of narrowing them (#867).

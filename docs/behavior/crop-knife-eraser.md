@@ -8,9 +8,12 @@
   it, a drag on a handle (within 6 pixels) resizes it (past the
   opposite side it turns round), a drag outside draws a new one. Points
   snap as drawing does.
-- Applied by a double-click inside it, Enter or the bar's Crop button;
-  cleared by Escape (which then does nothing else), a click outside it,
-  Clear Crop Area, or another tool. An area smaller than 0.1 mm is
+- Applied by a double-click inside it, Enter, the bar's Crop button or
+  the Crop button floating on the canvas; cleared by Escape (which then
+  does nothing else), a click outside it, Clear Crop Area, the Clear
+  button on the canvas, or another tool. The two canvas buttons sit 8
+  screen pixels under the area's bottom-left corner, kept inside the
+  canvas, and show only while there is an area (#1202). An area smaller than 0.1 mm is
   dropped.
 - The objects cropped are the selection, or with nothing selected every
   unlocked object on the page's unlocked, visible layers (`crop_tool.rs`):
