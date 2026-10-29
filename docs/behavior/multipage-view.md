@@ -1,7 +1,9 @@
 # Multipage View
 
 View > Multipage View lays every page of the drawing out on the desktop
-at once, so pages can be compared and edited side by side.
+at once, so pages can be compared and edited side by side. The page
+bar's Multipage View button, after the page controls, turns it on and
+off too and is lit while it is on (#1019).
 
 ## Layout
 

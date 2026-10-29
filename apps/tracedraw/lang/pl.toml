@@ -5361,6 +5361,7 @@ status.first_page_desc = "Przejdź do pierwszej strony."
 status.insert_page_after_desc = "Dodaj nową stronę po tej."
 status.insert_page_before_desc = "Dodaj nową stronę przed tą."
 status.last_page_desc = "Przejdź do ostatniej strony."
+status.multipage_desc = "Pokazuje wszystkie strony obok siebie albo tylko bieżącą stronę. Przycisk jest podświetlony, dopóki widać wszystkie strony." # mt
 status.next_page_desc = "Przejdź do następnej strony."
 status.previous_page_desc = "Przejdź do poprzedniej strony."
 toolbar.add_node_tip_desc = "Dodaj węzeł w środku każdego zaznaczonego odcinka."

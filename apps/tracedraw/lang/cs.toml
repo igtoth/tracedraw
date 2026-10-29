@@ -5361,6 +5361,7 @@ status.first_page_desc = "Přejít na první stránku."
 status.insert_page_after_desc = "Přidat novou stránku za tuto."
 status.insert_page_before_desc = "Přidat novou stránku před tuto."
 status.last_page_desc = "Přejít na poslední stránku."
+status.multipage_desc = "Zobrazí všechny stránky vedle sebe, nebo jen aktuální stránku. Tlačítko svítí, dokud jsou zobrazené všechny stránky." # mt
 status.next_page_desc = "Přejít na další stránku."
 status.previous_page_desc = "Přejít na předchozí stránku."
 toolbar.add_node_tip_desc = "Přidat uzel doprostřed každého vybraného segmentu."

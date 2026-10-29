@@ -17,6 +17,9 @@ it; the current page's are in the normal text color, the others dimmed.
 - The page tabs and the navigator change the current page too.
 - [[menu.view.zoom_to_fit]] (<kbd>F4</kbd>) fits every page in the window.
 
+The button with four small pages in the page bar, right after the page
+controls, turns the view on and off too; it is lit while the view is on.
+
 Choose [[menu.view.multipage]] again to go back to one page at a time.
 [[menu.view.page_sorter]] shows the pages as thumbnails instead; the two views
 exclude each other.

@@ -5361,6 +5361,7 @@ status.first_page_desc = "移至第一頁。"
 status.insert_page_after_desc = "在此頁之後新增頁面。"
 status.insert_page_before_desc = "在此頁之前新增頁面。"
 status.last_page_desc = "移至最後一頁。"
+status.multipage_desc = "並排顯示所有頁面，或只顯示目前頁面。顯示所有頁面時按鈕亮起。" # mt
 status.next_page_desc = "移至下一頁。"
 status.previous_page_desc = "移至上一頁。"
 toolbar.add_node_tip_desc = "在每個所選線段的中間新增一個節點。"

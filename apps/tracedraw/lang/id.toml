@@ -5361,6 +5361,7 @@ status.first_page_desc = "Buka halaman pertama."
 status.insert_page_after_desc = "Tambahkan halaman baru setelah halaman ini."
 status.insert_page_before_desc = "Tambahkan halaman baru sebelum halaman ini."
 status.last_page_desc = "Buka halaman terakhir."
+status.multipage_desc = "Tampilkan semua halaman berdampingan, atau hanya halaman saat ini. Tombol menyala selama semua halaman tampil." # mt
 status.next_page_desc = "Buka halaman berikutnya."
 status.previous_page_desc = "Buka halaman sebelumnya."
 toolbar.add_node_tip_desc = "Tambahkan simpul di tengah setiap segmen yang dipilih."

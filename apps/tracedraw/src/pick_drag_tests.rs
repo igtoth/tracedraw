@@ -11721,3 +11721,61 @@ fn segment_delete_drags_a_freehand_stroke_with_alt_or_the_bar() {
         assert_eq!(has_middle(&app, h), freehand, "{bar_freehand} {mods:?}");
     }
 }
+
+/// The page bar has a Multipage View button after the page controls,
+/// before the page tabs: a click turns the view on and lights the
+/// button, another turns it off; it follows the View menu too (#1019).
+#[test]
+fn the_page_bar_turns_the_multipage_view_on_and_off() {
+    use crate::ui::window_bars::MULTIPAGE_BUTTON;
+    let (ctx, mut app, _) = setup();
+    app.add_page();
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let button = || {
+        ctx.read_response(egui::Id::new(MULTIPAGE_BUTTON))
+            .map(|r| r.rect)
+            .expect("the button")
+    };
+    let r = button();
+    // In the page bar at the bottom, left of the page tabs.
+    assert!(r.min.y > 850.0 && r.max.x < 400.0, "{r:?}");
+    assert!(!app.multipage);
+    let lit = |ctx: &egui::Context, app: &mut App| -> bool {
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                Pos2::ZERO,
+                egui::vec2(1600.0, 1000.0),
+            )),
+            ..Default::default()
+        };
+        let out = ctx.run_ui(input, |ui| crate::ui::root(app, ui));
+        let on = crate::theme::Tokens::tool_active();
+        out.shapes.iter().any(|s| match &s.shape {
+            egui::Shape::Rect(b) => b.fill == on && r.contains(b.rect.center()),
+            _ => false,
+        })
+    };
+    assert!(!lit(&ctx, &mut app));
+    click_at(&ctx, &mut app, r.center(), Modifiers::NONE);
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::PointerMoved(Pos2::new(800.0, 500.0))],
+        Modifiers::NONE,
+    );
+    assert!(app.multipage);
+    assert!(lit(&ctx, &mut app), "lit while on");
+    click_at(&ctx, &mut app, button().center(), Modifiers::NONE);
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::PointerMoved(Pos2::new(800.0, 500.0))],
+        Modifiers::NONE,
+    );
+    assert!(!app.multipage);
+    assert!(!lit(&ctx, &mut app));
+    // Turned on elsewhere (the View menu), the button shows it.
+    app.set_multipage(true);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    assert!(lit(&ctx, &mut app));
+}

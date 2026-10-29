@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Page bar: a Multipage View button (four small pages) after the page controls, before the page tabs, turns the Multipage View on and off in one click, and is lit while it is on, however it was turned on (#1019).
+
 ## 0.23.0 (2026-10-29)
 
 - Font list filter: the choices now open beside the list, in sections: fonts shown, style (serif, sans serif, script, decorative, monospaced, symbol), weight (light, regular, bold), width (condensed, normal, expanded), technology (TrueType, OpenType, variable), scripts (Latin, Greek, Cyrillic, Arabic, Devanagari, CJK and more), each OpenType feature on its own, embedding rights and the folders the fonts are in. Every value is read from the font files once (OS/2 weight and width classes, embedding bits, Unicode ranges, variation axes, GSUB and GPOS feature lists). Monospaced and Symbol now widen the style choices like the other styles instead of narrowing them (#867).

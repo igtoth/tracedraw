@@ -5361,6 +5361,7 @@ status.first_page_desc = "最初のページへ移動します。"
 status.insert_page_after_desc = "このページの後に新しいページを追加します。"
 status.insert_page_before_desc = "このページの前に新しいページを追加します。"
 status.last_page_desc = "最後のページへ移動します。"
+status.multipage_desc = "すべてのページを並べて表示するか、現在のページだけを表示します。すべてのページを表示している間はボタンが点灯します。" # mt
 status.next_page_desc = "次のページへ移動します。"
 status.previous_page_desc = "前のページへ移動します。"
 toolbar.add_node_tip_desc = "選択した各セグメントの中央にノードを追加します。"

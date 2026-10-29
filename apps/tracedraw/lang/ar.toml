@@ -5361,6 +5361,7 @@ status.first_page_desc = "انتقل إلى الصفحة الأولى."
 status.insert_page_after_desc = "أضف صفحة جديدة بعد هذه الصفحة."
 status.insert_page_before_desc = "أضف صفحة جديدة قبل هذه الصفحة."
 status.last_page_desc = "انتقل إلى الصفحة الأخيرة."
+status.multipage_desc = "اعرض كل الصفحات جنباً إلى جنب، أو الصفحة الحالية وحدها. يضيء الزر ما دامت كل الصفحات معروضة." # mt
 status.next_page_desc = "انتقل إلى الصفحة التالية."
 status.previous_page_desc = "انتقل إلى الصفحة السابقة."
 toolbar.add_node_tip_desc = "أضف عقدة في منتصف كل مقطع محدد."

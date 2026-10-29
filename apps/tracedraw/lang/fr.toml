@@ -5361,6 +5361,7 @@ status.first_page_desc = "Aller à la première page."
 status.insert_page_after_desc = "Ajouter une page après celle-ci."
 status.insert_page_before_desc = "Ajouter une page avant celle-ci."
 status.last_page_desc = "Aller à la dernière page."
+status.multipage_desc = "Affiche toutes les pages côte à côte, ou seulement la page courante. Le bouton est allumé tant que toutes les pages sont affichées." # mt
 status.next_page_desc = "Aller à la page suivante."
 status.previous_page_desc = "Aller à la page précédente."
 toolbar.add_node_tip_desc = "Ajouter un nœud au milieu de chaque segment sélectionné."

@@ -5361,6 +5361,7 @@ status.first_page_desc = "Naar de eerste pagina gaan."
 status.insert_page_after_desc = "Een nieuwe pagina na deze toevoegen."
 status.insert_page_before_desc = "Een nieuwe pagina voor deze toevoegen."
 status.last_page_desc = "Naar de laatste pagina gaan."
+status.multipage_desc = "Toont alle pagina's naast elkaar, of alleen de huidige pagina. De knop brandt zolang alle pagina's te zien zijn." # mt
 status.next_page_desc = "Naar de volgende pagina gaan."
 status.previous_page_desc = "Naar de vorige pagina gaan."
 toolbar.add_node_tip_desc = "Een knooppunt toevoegen in het midden van elk geselecteerd segment."

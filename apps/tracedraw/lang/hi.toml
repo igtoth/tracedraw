@@ -5361,6 +5361,7 @@ status.first_page_desc = "पहले पृष्ठ पर जाएँ।"
 status.insert_page_after_desc = "इसके बाद नया पृष्ठ जोड़ें।"
 status.insert_page_before_desc = "इससे पहले नया पृष्ठ जोड़ें।"
 status.last_page_desc = "अंतिम पृष्ठ पर जाएँ।"
+status.multipage_desc = "सभी पेज साथ-साथ दिखाएँ, या केवल मौजूदा पेज। सभी पेज दिखने तक बटन जला रहता है।" # mt
 status.next_page_desc = "अगले पृष्ठ पर जाएँ।"
 status.previous_page_desc = "पिछले पृष्ठ पर जाएँ।"
 toolbar.add_node_tip_desc = "हर चुने गए खंड के बीच में एक नोड जोड़ें।"

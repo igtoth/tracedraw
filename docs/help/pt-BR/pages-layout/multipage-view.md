@@ -19,6 +19,10 @@ esmaecidos.
 - As guias de página e o navegador também mudam a página atual.
 - [[menu.view.zoom_to_fit]] (<kbd>F4</kbd>) encaixa todas as páginas na janela.
 
+O botão com quatro páginas pequenas na barra de páginas, logo depois dos
+controles de página, também liga e desliga a exibição; ele fica aceso enquanto
+a exibição está ligada.
+
 Escolha [[menu.view.multipage]] de novo para voltar a uma página por vez.
 [[menu.view.page_sorter]] mostra as páginas em miniatura; as duas vistas se
 excluem.

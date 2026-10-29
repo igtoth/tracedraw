@@ -5361,6 +5361,7 @@ status.first_page_desc = "প্রথম পাতায় যান।"
 status.insert_page_after_desc = "এই পাতার পরে নতুন পাতা যোগ করুন।"
 status.insert_page_before_desc = "এই পাতার আগে নতুন পাতা যোগ করুন।"
 status.last_page_desc = "শেষ পাতায় যান।"
+status.multipage_desc = "সব পৃষ্ঠা পাশাপাশি দেখান, অথবা শুধু বর্তমান পৃষ্ঠা। সব পৃষ্ঠা দেখানোর সময় বোতামটি জ্বলে থাকে।" # mt
 status.next_page_desc = "পরের পাতায় যান।"
 status.previous_page_desc = "আগের পাতায় যান।"
 toolbar.add_node_tip_desc = "প্রতিটি নির্বাচিত অংশের মাঝখানে একটি নোড যোগ করুন।"

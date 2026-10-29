@@ -5361,6 +5361,7 @@ status.first_page_desc = "转到第一页。"
 status.insert_page_after_desc = "在此页之后添加新页面。"
 status.insert_page_before_desc = "在此页之前添加新页面。"
 status.last_page_desc = "转到最后一页。"
+status.multipage_desc = "并排显示所有页面，或只显示当前页面。显示所有页面时按钮点亮。" # mt
 status.next_page_desc = "转到下一页。"
 status.previous_page_desc = "转到上一页。"
 toolbar.add_node_tip_desc = "在每个所选线段的中间添加一个节点。"

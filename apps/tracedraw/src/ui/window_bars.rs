@@ -340,7 +340,45 @@ pub fn page_navigator(app: &mut App, ui: &mut Ui) {
         if nav_button(ui, Glyph::AddPage, &tr("status.insert_page_after")) {
             app.insert_page(true);
         }
+        // In the space before the page tabs: Multipage View on or off,
+        // lit while it is on (#1019).
+        ui.add_space(8.0);
+        if multipage_button(ui, app.multipage) {
+            app.set_multipage(!app.multipage);
+        }
     });
+}
+
+/// The id of the page bar's Multipage View button.
+pub const MULTIPAGE_BUTTON: &str = "page_bar_multipage";
+
+/// Multipage View on or off: four small pages, on a lit square while
+/// the view is on. True when clicked.
+fn multipage_button(ui: &mut Ui, on: bool) -> bool {
+    let (r, _) = ui.allocate_exact_size(Vec2::new(18.0, BAR - 1.0), Sense::hover());
+    let resp = ui.interact(r, egui::Id::new(MULTIPAGE_BUTTON), Sense::click());
+    let p = ui.painter();
+    if on {
+        p.rect_filled(r.shrink2(Vec2::new(0.0, 1.0)), 2.0, Tokens::tool_active());
+    } else if resp.hovered() {
+        p.rect_filled(r, 0.0, Tokens::tool_hover());
+    }
+    let color = if on {
+        Tokens::text()
+    } else {
+        Tokens::text_dim()
+    };
+    let s = Stroke::new(1.0, color);
+    let c = r.center();
+    for (dx, dy) in [(-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)] {
+        let page = Rect::from_center_size(c + Vec2::new(dx * 2.75, dy * 3.25), Vec2::new(4.5, 5.5));
+        p.rect_stroke(page, 0.0, s, egui::StrokeKind::Inside);
+    }
+    resp.rich_tip(crate::ui::tips::pair(
+        "menu.view.multipage",
+        "status.multipage_desc",
+    ))
+    .clicked()
 }
 
 #[derive(Clone, Copy)]

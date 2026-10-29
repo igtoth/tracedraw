@@ -20,6 +20,10 @@ anderen abgeblendet.
 - Auch die Seitenregister und der Navigator wechseln die aktuelle Seite.
 - [[menu.view.zoom_to_fit]] (<kbd>F4</kbd>) passt alle Seiten ins Fenster ein.
 
+Die Schaltfläche mit vier kleinen Seiten in der Seitenleiste, gleich nach den
+Seitensteuerelementen, schaltet die Ansicht ebenfalls ein und aus; sie
+leuchtet, solange die Ansicht an ist.
+
 Wählen Sie erneut [[menu.view.multipage]], um wieder zu einer Seite auf einmal
 zurückzukehren. [[menu.view.page_sorter]] zeigt die Seiten stattdessen als
 Miniaturen; die beiden Ansichten schließen einander aus.

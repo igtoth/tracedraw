@@ -5361,6 +5361,7 @@ status.first_page_desc = "Перейти на первую страницу."
 status.insert_page_after_desc = "Добавить новую страницу после этой."
 status.insert_page_before_desc = "Добавить новую страницу перед этой."
 status.last_page_desc = "Перейти на последнюю страницу."
+status.multipage_desc = "Показывает все страницы рядом или только текущую страницу. Кнопка подсвечена, пока видны все страницы." # mt
 status.next_page_desc = "Перейти на следующую страницу."
 status.previous_page_desc = "Перейти на предыдущую страницу."
 toolbar.add_node_tip_desc = "Добавить узел в середину каждого выбранного сегмента."

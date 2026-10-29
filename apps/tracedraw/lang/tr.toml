@@ -5361,6 +5361,7 @@ status.first_page_desc = "İlk sayfaya git."
 status.insert_page_after_desc = "Bundan sonra yeni bir sayfa ekle."
 status.insert_page_before_desc = "Bundan önce yeni bir sayfa ekle."
 status.last_page_desc = "Son sayfaya git."
+status.multipage_desc = "Tüm sayfaları yan yana ya da yalnızca geçerli sayfayı gösterir. Tüm sayfalar görünürken düğme yanar." # mt
 status.next_page_desc = "Sonraki sayfaya git."
 status.previous_page_desc = "Önceki sayfaya git."
 toolbar.add_node_tip_desc = "Seçili her parçanın ortasına bir düğüm ekle."
