@@ -53,6 +53,7 @@ pub mod focus_bar;
 pub mod font_list;
 pub mod font_manager;
 pub mod font_sampler;
+pub mod fountain_place;
 pub mod fx_icons;
 pub mod github_dialogs;
 pub mod glyphs_docker;

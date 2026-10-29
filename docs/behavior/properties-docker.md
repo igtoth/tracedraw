@@ -9,6 +9,15 @@ objects are shown; `outline-pen.md`, `gradient-fill.md`,
 `vector-pattern-fill.md` and `transparency.md` have the sections'
 controls.
 
+## Fill and Outline (#1200)
+
+Besides the editors described in `gradient-fill.md` and `outline-pen.md`,
+the Fill section ends with Overprint fill and Edit Fill..., the Outline
+section with Overprint outline and Outline Pen...; the checkboxes read
+all, none or mixed over the painted objects of the selection and set them
+all (`overprint_state`, `App::set_overprint`, test
+`overprint_is_set_from_the_docker`).
+
 ## Summary (#1202)
 
 Figures about the selection, read-only, in the drawing's units and ruler

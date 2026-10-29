@@ -526,34 +526,12 @@ fn calligraphy(ui: &mut Ui, st: &mut OutlinePenState) {
                 touch(st, StrokeField::NibAngle);
             }
         });
-        // The nib: a square stretched and turned as set; a drag on it
-        // turns and stretches it.
-        let (rect, resp) = ui.allocate_exact_size(Vec2::splat(64.0), Sense::drag());
-        let p = ui.painter();
-        p.rect_filled(rect, 2.0, Color32::WHITE);
-        p.rect_stroke(
-            rect,
-            2.0,
-            EStroke::new(1.0, Tokens::border()),
-            egui::StrokeKind::Inside,
-        );
-        if let Some(at) = resp.interact_pointer_pos().filter(|_| resp.dragged()) {
-            let d = at - rect.center();
-            if d.length() > 2.0 {
-                let a = (-d.y).atan2(d.x).to_degrees() as f64;
-                let a = ((a + 90.0).rem_euclid(180.0)) - 90.0;
-                st.stroke.nib_angle = a.round();
-                st.stroke.stretch = f64::from(d.length() / 28.0).clamp(0.1, 1.0);
-                touch(st, StrokeField::NibAngle);
-                touch(st, StrokeField::Stretch);
-            }
+        if let Some((stretch, angle)) = nib_picture(ui, st.stroke.stretch, st.stroke.nib_angle) {
+            st.stroke.nib_angle = angle;
+            st.stroke.stretch = stretch;
+            touch(st, StrokeField::NibAngle);
+            touch(st, StrokeField::Stretch);
         }
-        let corners = nib_corners(rect.center(), 24.0, st.stroke.stretch, st.stroke.nib_angle);
-        p.add(egui::Shape::convex_polygon(
-            corners.to_vec(),
-            Color32::BLACK,
-            EStroke::NONE,
-        ));
     });
     for (field, key) in [
         (StrokeField::BehindFill, "docker.behind_fill"),
@@ -572,6 +550,39 @@ fn calligraphy(ui: &mut Ui, st: &mut OutlinePenState) {
             touch(st, field);
         }
     }
+}
+
+/// The nib: a square stretched and turned as set, 64 points across; a
+/// drag on it turns and stretches it, and the new stretch and angle come
+/// back (the Outline Pen dialog and the Properties docker, #1200).
+pub fn nib_picture(ui: &mut Ui, stretch: f64, angle: f64) -> Option<(f64, f64)> {
+    let (rect, resp) = ui.allocate_exact_size(Vec2::splat(64.0), Sense::drag());
+    let p = ui.painter();
+    p.rect_filled(rect, 2.0, Color32::WHITE);
+    p.rect_stroke(
+        rect,
+        2.0,
+        EStroke::new(1.0, Tokens::border()),
+        egui::StrokeKind::Inside,
+    );
+    let mut dragged = None;
+    if let Some(at) = resp.interact_pointer_pos().filter(|_| resp.dragged()) {
+        let d = at - rect.center();
+        if d.length() > 2.0 {
+            let a = (-d.y).atan2(d.x).to_degrees() as f64;
+            let a = ((a + 90.0).rem_euclid(180.0)) - 90.0;
+            dragged = Some((f64::from(d.length() / 28.0).clamp(0.1, 1.0), a.round()));
+        }
+    }
+    let (stretch, angle) = dragged.unwrap_or((stretch, angle));
+    let corners = nib_corners(rect.center(), 24.0, stretch, angle);
+    p.add(egui::Shape::convex_polygon(
+        corners.to_vec(),
+        Color32::BLACK,
+        EStroke::NONE,
+    ));
+    resp.on_hover_text(tr("docker.nib_tip"));
+    dragged
 }
 
 /// The corners of the nib picture: a square of half side `r` at `c`,
