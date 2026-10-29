@@ -418,8 +418,9 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// A bitmap object's coordinates argument, as files of versions 14 to
-    /// 27 hold it: the image's box from the origin (top left, bottom
+    /// A bitmap object's coordinates argument, as files of versions 14,
+    /// 18, 19 and 27 hold it (the origin and the number checked only from 14): the
+    /// image's box from the origin (top left, bottom
     /// right) twice, 2 and the bits per pixel, the pixel size, the
     /// image's number (never 0), the id of a `bmp ` record, 0, 0, -1, 0,
     /// 0, then the crop outline (count, i32 points, a node byte each) and
@@ -434,7 +435,10 @@ impl<'a> Checker<'a> {
             self.note(place, "bitmap record shorter than its corners");
             return None;
         };
-        if corners[0] != 0 || corners[3] != 0 {
+        // Only files of versions 14, 18, 19 and 27 were seen to hold the box at
+        // the origin and a non-zero number; older ones are not held to it.
+        let seen = self.v >= 14;
+        if seen && (corners[0] != 0 || corners[3] != 0) {
             self.note(
                 place,
                 format!(
@@ -443,7 +447,7 @@ impl<'a> Checker<'a> {
                 ),
             );
         }
-        if corners[2] <= 0 || corners[1] <= 0 {
+        if corners[2] <= corners[0] || corners[1] <= corners[3] {
             self.note(place, "bitmap box has no size");
         }
         if (0..4).any(|k| i32_at(d, 16 + k * 4) != Some(corners[k])) {
@@ -452,7 +456,7 @@ impl<'a> Checker<'a> {
         if u32_at(d, 36).is_none_or(|w| w == 0) || u32_at(d, 40).is_none_or(|h| h == 0) {
             self.note(place, "bitmap pixel size is zero");
         }
-        if u32_at(d, 44) == Some(0) {
+        if seen && u32_at(d, 44) == Some(0) {
             self.note(place, "bitmap image number is 0");
         }
         match u32_at(d, 48) {

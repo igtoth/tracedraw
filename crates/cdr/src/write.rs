@@ -3726,11 +3726,14 @@ impl<'a> Writer<'a> {
     /// A bitmap object: image rectangle, image id and crop path (the whole
     /// rectangle, or `crop` in the bitmap's local space).
     ///
-    /// The record is laid out as the files of every version seen (14 to
-    /// 27) hold their bitmaps: the image's box starts at the origin and
-    /// spans its size, the object's transform placing it on the page; so
-    /// the shape's own `rect` offset moves into the transform here and
-    /// the crop path moves with it (#1226, #1268).
+    /// From version 14 the record is laid out as the files of every
+    /// version seen (14, 18, 19 and 27) hold their bitmaps: the image's box starts
+    /// at the origin and spans its size, the object's transform placing it
+    /// on the page; so the shape's own `rect` offset moves into the
+    /// transform here and the crop path moves with it (#1226, #1268). No
+    /// file of versions 7 to 13 with a bitmap was at hand to check, so
+    /// those versions keep the box where the picture lies on the page,
+    /// the shape's transform and the number 0.
     fn bitmap_object(&mut self, s: &Shape, centre: Point, crop: Option<&BezPath>) -> Placed {
         let ShapeKind::Bitmap { rect, png, .. } = &s.kind else {
             return Placed {
@@ -3763,9 +3766,17 @@ impl<'a> Writer<'a> {
             Some(p) => (s.transform * p.clone()).bounding_box(),
             None => (s.transform * rect.to_path(0.01)).bounding_box(),
         };
-        let shift = Affine::translate((rect.x0, rect.y0));
+        let from_origin = v.0 >= 14;
+        let (shift, local, number) = if from_origin {
+            (
+                Affine::translate((rect.x0, rect.y0)),
+                Rect::new(0.0, 0.0, rect.width(), rect.height()),
+                image,
+            )
+        } else {
+            (Affine::IDENTITY, *rect, 0)
+        };
         let transform = s.transform * shift;
-        let local = Rect::new(0.0, 0.0, rect.width(), rect.height());
         // As files of versions 7 to 27 hold it: the top-left and the
         // bottom-right corner, the image's own box the same way, 2 and
         // the bits per pixel (u16 each), the size in pixels, the image's
@@ -3773,7 +3784,8 @@ impl<'a> Writer<'a> {
         // in order of first use: files never hold 0 there), the image id,
         // then 0, 0, -1, 0, 0. The program that wrote the samples shows
         // no image when the pixel size is left at zero. Every image is
-        // written once per object here, so the number is the image id.
+        // written once per object here, so the number is the image id
+        // (from version 14; before it 0, as written before #1226).
         let corners = |c: &mut Buf| {
             c.i32(units(local.x0))
                 .i32(units(local.y1))
@@ -3787,7 +3799,7 @@ impl<'a> Writer<'a> {
             .u16(24)
             .u32(width_px)
             .u32(height_px)
-            .u32(image)
+            .u32(number)
             .u32(image)
             .u32(0)
             .u32(0)
@@ -3809,7 +3821,7 @@ impl<'a> Writer<'a> {
             None => curve_coords(&outline),
         };
         c.bytes(&path_bytes.unwrap_or_else(|| 0u32.to_le_bytes().to_vec()));
-        // Files of versions 14 to 27 end the record with 4 zero bytes
+        // Files of versions 14, 18, 19 and 27 end the record with 4 zero bytes
         // after the node types (none seen in older files).
         if v.0 >= 14 {
             c.zeros(4);
