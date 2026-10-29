@@ -65,6 +65,7 @@ pub fn check_bytes(bytes: &[u8]) -> Result<Vec<Finding>> {
         fills: HashSet::new(),
         outlines: HashSet::new(),
         styles: HashSet::new(),
+        images: HashSet::new(),
         usdn: HashMap::new(),
         spnd: HashMap::new(),
         objects: 0,
@@ -82,6 +83,8 @@ struct Checker<'a> {
     fills: HashSet<u32>,
     outlines: HashSet<u32>,
     styles: HashSet<u32>,
+    /// The ids of the `bmp ` records.
+    images: HashSet<u32>,
     /// `usdn` number to the place that holds it.
     usdn: HashMap<u32, String>,
     spnd: HashMap<u32, String>,
@@ -232,20 +235,32 @@ impl<'a> Checker<'a> {
         self.tree.data(self.main, c)
     }
 
-    /// The fill, outline and style tables.
+    /// The fill, outline, style and bitmap tables.
     fn tables(&mut self) {
         let mut fills = Vec::new();
         let mut outlines = Vec::new();
+        let mut images = Vec::new();
         let mut stlt = None;
         self.tree.root.walk(&mut |c, _| {
             if c.is(b"fild") {
                 fills.push(self.data(c));
             } else if c.is(b"outl") {
                 outlines.push(self.data(c));
+            } else if c.is(b"bmp ") {
+                images.push(self.data(c));
             } else if c.is(b"stlt") && stlt.is_none() {
                 stlt = Some(self.data(c));
             }
         });
+        for d in images {
+            match u32_at(d, 0) {
+                Some(id) if !self.images.insert(id) => {
+                    self.note("bmp ", format!("image id {id} used by two records"));
+                }
+                Some(_) => {}
+                None => self.note("bmp ", "record shorter than its id"),
+            }
+        }
         for (name, records) in [("fild", &fills), ("outl", &outlines)] {
             let mut seen = HashSet::new();
             for d in records {
@@ -367,6 +382,10 @@ impl<'a> Checker<'a> {
         // Geometry.
         // The box the object's nodes span (inside its bbox) and the box
         // all its points span (around its bbox); an arc has no node box.
+        // A bitmap's crop outline is taken through the matrix point by
+        // point (a turned outline's box is not its box's turn).
+        let identity = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
+        let mut through = &matrix;
         let geometry: Option<(Option<Box>, Box)> = match kind {
             crate::parse::OBJ_CURVE => coords
                 .and_then(|d| self.curve(d, place))
@@ -384,15 +403,104 @@ impl<'a> Checker<'a> {
                 let whole = i32_at(d, 8)? == i32_at(d, 12)?;
                 Some((whole.then_some(b), b))
             }),
+            crate::parse::OBJ_BITMAP => {
+                through = &identity;
+                coords.and_then(|d| self.bitmap(d, place, &matrix))
+            }
             _ => None,
         };
         if let Some((inner, outer)) = geometry {
-            self.boxes(c, place, &matrix, inner, outer, outline_mm);
+            self.boxes(c, place, through, inner, outer, outline_mm);
         }
         // Text.
         if kind == crate::parse::OBJ_ARTISTIC_TEXT || kind == crate::parse::OBJ_PARAGRAPH_TEXT {
             self.text(c, place);
         }
+    }
+
+    /// A bitmap object's coordinates argument, as files of versions 14 to
+    /// 27 hold it: the image's box from the origin (top left, bottom
+    /// right) twice, 2 and the bits per pixel, the pixel size, the
+    /// image's number (never 0), the id of a `bmp ` record, 0, 0, -1, 0,
+    /// 0, then the crop outline (count, i32 points, a node byte each) and
+    /// from version 14 four zero bytes. Returns the outline's boxes (the
+    /// nodes', the points') taken through `m`, which the object's `bbox`
+    /// holds, when the record reads.
+    fn bitmap(&mut self, d: &[u8], place: &str, m: &[f64; 6]) -> Option<(Option<Box>, Box)> {
+        let Some(corners) = (0..4)
+            .map(|k| i32_at(d, k * 4))
+            .collect::<Option<Vec<i32>>>()
+        else {
+            self.note(place, "bitmap record shorter than its corners");
+            return None;
+        };
+        if corners[0] != 0 || corners[3] != 0 {
+            self.note(
+                place,
+                format!(
+                    "bitmap box starts at ({}, {}), not at the origin",
+                    corners[0], corners[3]
+                ),
+            );
+        }
+        if corners[2] <= 0 || corners[1] <= 0 {
+            self.note(place, "bitmap box has no size");
+        }
+        if (0..4).any(|k| i32_at(d, 16 + k * 4) != Some(corners[k])) {
+            self.note(place, "bitmap image box differs from its corners");
+        }
+        if u32_at(d, 36).is_none_or(|w| w == 0) || u32_at(d, 40).is_none_or(|h| h == 0) {
+            self.note(place, "bitmap pixel size is zero");
+        }
+        if u32_at(d, 44) == Some(0) {
+            self.note(place, "bitmap image number is 0");
+        }
+        match u32_at(d, 48) {
+            Some(id) if !self.images.contains(&id) => {
+                self.note(
+                    place,
+                    format!("bitmap names image {id}, which has no record"),
+                );
+            }
+            Some(_) => {}
+            None => self.note(place, "bitmap record shorter than its image id"),
+        }
+        let tail_at = if self.v == 8 { 64 } else { 72 };
+        let Some(n) = u32_at(d, tail_at) else {
+            self.note(place, "bitmap record has no crop outline");
+            return None;
+        };
+        let n = n as usize;
+        if !(3..=100_000).contains(&n) {
+            self.note(place, format!("bitmap crop outline of {n} points"));
+            return None;
+        }
+        let points_at = tail_at + 4;
+        let types_at = points_at + n * 8;
+        let end = types_at + n + if self.v >= 14 { 4 } else { 0 };
+        if d.len() != end {
+            self.note(
+                place,
+                format!(
+                    "bitmap record is {} bytes, {end} expected for {n} points",
+                    d.len()
+                ),
+            );
+        } else if self.v >= 14 && u32_at(d, types_at + n) != Some(0) {
+            self.note(place, "bitmap record does not end with 4 zero bytes");
+        }
+        // Nodes inside the box, control points (type bits 7-6 set) around.
+        let point = |k: usize| {
+            Some(apply(
+                m,
+                i32_at(d, points_at + k * 8)? as f64 * MM_PER_UNIT,
+                i32_at(d, points_at + k * 8 + 4)? as f64 * MM_PER_UNIT,
+            ))
+        };
+        let control = |k: usize| d.get(types_at + k).is_some_and(|t| t >> 6 == 3);
+        let outer = Box::of((0..n).filter_map(point))?;
+        let inner = Box::of((0..n).filter(|k| !control(*k)).filter_map(point));
+        Some((inner, outer))
     }
 
     /// The width of an outline of the table, in millimetres (0 when it is

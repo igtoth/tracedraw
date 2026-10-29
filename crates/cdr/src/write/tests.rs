@@ -2580,7 +2580,135 @@ fn bitmap_objects_carry_their_pixel_size() {
             "{v}"
         );
         assert_eq!([i(32), i(36), i(40)], [24 << 16 | 2, 3, 2], "{v}");
-        assert_eq!(i(60), -1, "{v}");
+        // The image's number among the bitmap objects' images (never 0 in
+        // files) and its id; then 0, 0, -1, 0, 0.
+        assert_eq!([i(44), i(48), i(52), i(56), i(60)], [1, 1, 0, 0, -1], "{v}");
+        // The crop outline: the box as five points with a node byte each,
+        // then, from version 14, four zero bytes as files end the record.
+        let count_at = if v == 8 { 64 } else { 72 };
+        assert_eq!(i(count_at), 5, "{v}");
+        let types_at = count_at + 4 + 5 * 8;
+        let tail = if v >= 14 { 4 } else { 0 };
+        assert_eq!(b.len(), types_at + 5 + tail, "{v}");
+        if v >= 14 {
+            assert_eq!(&b[types_at + 5..], &[0, 0, 0, 0], "{v}");
+        }
+    }
+}
+
+/// The coordinates argument of the first bitmap object of `bytes`.
+fn bitmap_coords(bytes: &[u8]) -> Vec<u8> {
+    let (_, tree, riff) = chunk_ids(bytes);
+    let mut coords = None;
+    tree.root.walk(&mut |c, _| {
+        if c.is(b"loda") && coords.is_none() {
+            let d = tree.data(&riff, c);
+            if d.get(16..20) == Some(&5u32.to_le_bytes()[..]) {
+                coords = loda_args(d)
+                    .into_iter()
+                    .find(|(t, _)| *t == 30)
+                    .map(|(_, b)| b);
+            }
+        }
+    });
+    coords.expect("a bitmap object")
+}
+
+/// Files place a bitmap by its transform: the record's box starts at the
+/// origin and spans the image, whatever the shape's own rectangle and
+/// transform are, and a crop outline moves with it. A file saved with the
+/// box away from the origin showed no image and closed the program that
+/// read it when the image was clicked (#1226, #1268).
+#[test]
+fn bitmap_boxes_start_at_the_origin_and_their_transform_places_them() {
+    let png = {
+        let mut pm = tiny_skia::Pixmap::new(4, 2).expect("pixmap");
+        pm.fill(tiny_skia::Color::from_rgba8(10, 20, 30, 255));
+        pm.encode_png().expect("png")
+    };
+    let mut ids = tracedraw_core::id::IdSource::default();
+    let mut bm = Shape::new(
+        ids.shape(),
+        ShapeKind::Bitmap {
+            rect: Rect::new(100.0, 50.0, 140.0, 70.0),
+            width_px: 4,
+            height_px: 2,
+            png: png.into(),
+            fx: None,
+        },
+    );
+    bm.fill = Fill::None;
+    bm.stroke = None;
+    // Turned and moved: the record still speaks from the origin.
+    bm.transform = Affine::translate((7.0, -3.0)) * Affine::rotate(0.3);
+    let want = bm.bounds();
+    // An ellipse inside the picture, turned with it.
+    let mut frame = Shape::new(
+        ids.shape(),
+        ShapeKind::Ellipse {
+            rect: Rect::new(105.0, 52.0, 135.0, 68.0),
+            arc: None,
+        },
+    );
+    frame.transform = bm.transform;
+    frame.fill = Fill::None;
+    frame.stroke = None;
+    let mut clipped = Shape::new(
+        ids.shape(),
+        ShapeKind::ClipFrame {
+            frame: Box::new(frame.clone()),
+            contents: vec![bm.clone()],
+        },
+    );
+    clipped.fill = Fill::None;
+    clipped.stroke = None;
+    for v in versions() {
+        let plain = document_to_cdr_version(&doc_with(vec![bm.clone()]), v);
+        let b = bitmap_coords(&plain);
+        let i = |at: usize| i32::from_le_bytes(b[at..at + 4].try_into().expect("4 bytes"));
+        assert_eq!([i(0), i(4), i(8), i(12)], [0, 200_000, 400_000, 0], "{v}");
+        let (back, rep) = crate::open_bytes(&plain, "back").expect("reads back");
+        let got = back.pages[0].layers[0].shapes[0].bounds();
+        assert!(
+            (got.x0 - want.x0).abs() < 0.05
+                && (got.y0 - want.y0).abs() < 0.05
+                && (got.x1 - want.x1).abs() < 0.05
+                && (got.y1 - want.y1).abs() < 0.05,
+            "{v}: {got:?} for {want:?} {:?}",
+            rep.warnings
+        );
+        // The crop outline lies within the image's box from the origin.
+        let cut = document_to_cdr_version(&doc_with(vec![clipped.clone()]), v);
+        let b = bitmap_coords(&cut);
+        let i = |at: usize| i32::from_le_bytes(b[at..at + 4].try_into().expect("4 bytes"));
+        assert_eq!([i(0), i(4), i(8), i(12)], [0, 200_000, 400_000, 0], "{v}");
+        let count_at = if v == 8 { 64 } else { 72 };
+        let n = i(count_at) as usize;
+        assert!(n > 5, "{v}: {n} points");
+        for k in 0..n {
+            let (x, y) = (i(count_at + 4 + k * 8), i(count_at + 8 + k * 8));
+            assert!(
+                (-1..=400_001).contains(&x) && (-1..=200_001).contains(&y),
+                "{v}: point {k} at ({x}, {y}) outside the image box"
+            );
+        }
+        let (back, rep) = crate::open_bytes(&cut, "back").expect("reads back");
+        let s = &back.pages[0].layers[0].shapes[0];
+        assert!(
+            matches!(s.kind, ShapeKind::ClipFrame { .. }),
+            "{v}: {:?} {:?}",
+            s.kind,
+            rep.warnings
+        );
+        let got = s.bounds();
+        let want = frame.bounds();
+        assert!(
+            (got.x0 - want.x0).abs() < 0.1
+                && (got.y0 - want.y0).abs() < 0.1
+                && (got.x1 - want.x1).abs() < 0.1
+                && (got.y1 - want.y1).abs() < 0.1,
+            "{v}: {got:?} for {want:?}"
+        );
     }
 }
 

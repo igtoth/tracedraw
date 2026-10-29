@@ -3725,6 +3725,12 @@ impl<'a> Writer<'a> {
 
     /// A bitmap object: image rectangle, image id and crop path (the whole
     /// rectangle, or `crop` in the bitmap's local space).
+    ///
+    /// The record is laid out as the files of every version seen (14 to
+    /// 27) hold their bitmaps: the image's box starts at the origin and
+    /// spans its size, the object's transform placing it on the page; so
+    /// the shape's own `rect` offset moves into the transform here and
+    /// the crop path moves with it (#1226, #1268).
     fn bitmap_object(&mut self, s: &Shape, centre: Point, crop: Option<&BezPath>) -> Placed {
         let ShapeKind::Bitmap { rect, png, .. } = &s.kind else {
             return Placed {
@@ -3751,17 +3757,28 @@ impl<'a> Writer<'a> {
             } => (*width_px, *height_px),
             _ => (0, 0),
         };
+        // The page box is the shape's as it stands; the record then
+        // speaks in the image's own space, from the origin.
+        let page_box = match crop {
+            Some(p) => (s.transform * p.clone()).bounding_box(),
+            None => (s.transform * rect.to_path(0.01)).bounding_box(),
+        };
+        let shift = Affine::translate((rect.x0, rect.y0));
+        let transform = s.transform * shift;
+        let local = Rect::new(0.0, 0.0, rect.width(), rect.height());
         // As files of versions 7 to 27 hold it: the top-left and the
         // bottom-right corner, the image's own box the same way, 2 and
-        // the bits per pixel (u16 each), the size in pixels, 4 bytes the
-        // program fills with anything, the image id, then 0, 0, -1, 0, 0.
-        // The program that wrote the samples shows no image when the
-        // pixel size is left at zero.
+        // the bits per pixel (u16 each), the size in pixels, the image's
+        // number among the drawing's bitmap objects' images (1, 2, ...,
+        // in order of first use: files never hold 0 there), the image id,
+        // then 0, 0, -1, 0, 0. The program that wrote the samples shows
+        // no image when the pixel size is left at zero. Every image is
+        // written once per object here, so the number is the image id.
         let corners = |c: &mut Buf| {
-            c.i32(units(rect.x0))
-                .i32(units(rect.y1))
-                .i32(units(rect.x1))
-                .i32(units(rect.y0));
+            c.i32(units(local.x0))
+                .i32(units(local.y1))
+                .i32(units(local.x1))
+                .i32(units(local.y0));
         };
         let mut c = Buf::default();
         corners(&mut c);
@@ -3770,7 +3787,7 @@ impl<'a> Writer<'a> {
             .u16(24)
             .u32(width_px)
             .u32(height_px)
-            .u32(0)
+            .u32(image)
             .u32(image)
             .u32(0)
             .u32(0)
@@ -3780,28 +3797,29 @@ impl<'a> Writer<'a> {
         }
         let outline = {
             let mut p = BezPath::new();
-            p.move_to((rect.x0, rect.y1));
-            p.line_to((rect.x1, rect.y1));
-            p.line_to((rect.x1, rect.y0));
-            p.line_to((rect.x0, rect.y0));
+            p.move_to((local.x0, local.y1));
+            p.line_to((local.x1, local.y1));
+            p.line_to((local.x1, local.y0));
+            p.line_to((local.x0, local.y0));
             p.close_path();
             p
         };
         let path_bytes = match crop {
-            Some(p) => curve_coords(p),
+            Some(p) => curve_coords(&(shift.inverse() * p.clone())),
             None => curve_coords(&outline),
         };
         c.bytes(&path_bytes.unwrap_or_else(|| 0u32.to_le_bytes().to_vec()));
-        let page_box = match crop {
-            Some(p) => (s.transform * p.clone()).bounding_box(),
-            None => (s.transform * rect.to_path(0.01)).bounding_box(),
-        };
+        // Files of versions 14 to 27 end the record with 4 zero bytes
+        // after the node types (none seen in older files).
+        if v.0 >= 14 {
+            c.zeros(4);
+        }
         self.place(
             s,
             OBJ_BITMAP,
             c.done(),
             &Fill::None,
-            s.transform,
+            transform,
             page_box,
             None,
             centre,
