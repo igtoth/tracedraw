@@ -361,7 +361,6 @@ dialog.embed_fonts_later = "संस्करण 16 से फ़ॉन्ट �
 dialog.embed_fonts_none = "पाठ किसी ऐसे स्थापित फ़ॉन्ट का उपयोग नहीं करता जिसका लाइसेंस एम्बेड करने की अनुमति देता हो।" # mt
 dialog.color_profile = "रंग प्रोफ़ाइल: {name}"
 dialog.cdr_version_item = "v{v} ({name})"
-dialog.cdr_version_item_experimental = "v{v} ({name}), प्रायोगिक"
 dialog.clipboard_empty = "क्लिपबोर्ड खाली है"
 dialog.close = "बंद करें"
 dialog.cmyk_profile = "CMYK प्रोफ़ाइल"

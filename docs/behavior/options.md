@@ -126,10 +126,9 @@ Imported objects go (File > Import, Ctrl+I): where the file has them
 the import's undo step.
 
 Saving .cdr files: the Version Save As starts at and new drawings are
-saved in (`cdr_version`, 27 by default, 14 to 27; a value out of range
+saved in (`cdr_version`, 27 by default, 7 to 27; a value out of range
 from a file is brought into it); a drawing opened from (or saved to) a
-`.cdr` file keeps its own version for Save and Save As when TraceDraw
-saves that version, and a drawing started from a template takes this one
+`.cdr` file keeps its own version for Save and Save As, and a drawing started from a template takes this one
 (`files.md`, #613).
 Save new drawings as .cdr files (`save_new_as_cdr`, off): Save As
 starts at the CDR type for a drawing without a file (#613).

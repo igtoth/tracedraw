@@ -361,7 +361,6 @@ dialog.embed_fonts_later = "تُحفظ الخطوط بدءًا من الإصدا
 dialog.embed_fonts_none = "لا يستخدم النص أي خط مثبّت تسمح رخصته بالتضمين." # mt
 dialog.color_profile = "ملف تعريف الألوان: {name}"
 dialog.cdr_version_item = "v{v} ({name})"
-dialog.cdr_version_item_experimental = "v{v} ({name}), تجريبي"
 dialog.clipboard_empty = "الحافظة فارغة"
 dialog.close = "إغلاق"
 dialog.cmyk_profile = "ملف تعريف CMYK"

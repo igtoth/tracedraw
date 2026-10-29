@@ -97,23 +97,21 @@ version decides who can open a file:
   `pick_drag_tests::the_cdr_version_chosen_in_options_survives_a_restart_and_starts_save_as`).
 - The version chosen stays with the drawing: Save writes the same
   version again without asking. Each open drawing keeps its own.
-- TraceDraw saves only the versions checked in other programs, 14 to 27.
-  A drawing opened from an older `.cdr` (versions 1 to 13) keeps its
+- TraceDraw saves every version from 7 to 27 (#1139).
+  A drawing opened from an older `.cdr` (versions 1 to 6) keeps its
   file, but Save does not write that version: the status line says
-  which version Save writes ("Save writes version 14."), and Save opens
+  which version Save writes ("Save writes version 7."), and Save opens
   "Older file version": the drawing came from version N, TraceDraw does
-  not save in it, choose a version from 14 to 27; Choose Version...
-  (or Enter) opens Save As on version 14, Cancel saves nothing. Once
+  not save in it, choose a version from 7 to 27; Choose Version...
+  (or Enter) opens Save As on version 7, Cancel saves nothing. Once
   saved in a checked version, Save writes it without asking. A file
   newer than 27 is saved as 27. Options > Global > File Formats (version
   27 at first) is used for a drawing saved to a `.cdr` file without a
   version of its own.
 - `tracedraw-cli convert in.svg out.cdr` writes version 27, or the
-  version in `TRACEDRAW_CDR_VERSION` (14 to 27; another version is
-  refused with exit code 2). Versions 7 to 13 are experimental and are
-  written only with `TRACEDRAW_CDR_EXPERIMENTAL=1`, for testing them in
-  other programs. The MCP `save` tool takes an optional `version`, 14 to
-  27 (`mcp.md`).
+  version in `TRACEDRAW_CDR_VERSION` (7 to 27; another version is
+  refused with exit code 2). The MCP `save` tool takes an optional
+  `version`, 7 to 27 (`mcp.md`).
 
 What each version's file holds is in `docs/cdr-format.md`, Writing.
 

@@ -253,10 +253,7 @@ is confirmed and what is still assumed.
 - **Writing back, in the version you need:** drawings save as `.cdr` in
   any version from 7 to 27, as well as in TraceDraw's own JSON format. A
   drawing opened from a `.cdr` saves in its own version unless you pick
-  another. Save As offers versions 14 to 27, the ones checked to open in
-  the program that wrote the samples; versions 7 to 13 are experimental
-  and are not saved (a drawing opened from one asks which checked version
-  to save in). From version 16 the file can carry the drawing's CMYK
+  another. Save As offers every version from 7 to 27. From version 16 the file can carry the drawing's CMYK
   colour profile and the fonts its text uses (when their licence allows
   embedding).
 - **Never crashes on a file:** `tracedraw-cli stress` runs mutation tests
@@ -274,7 +271,7 @@ MCP server all go through it, so anything a click can do, a script can do.
 tracedraw-cli convert poster.cdr poster.pdf
 TRACEDRAW_DPI=300 tracedraw-cli convert poster.tdraw poster.png
 TRACEDRAW_PAGE=2 tracedraw-cli convert brochure.cdr page2.png
-TRACEDRAW_CDR_VERSION=15 tracedraw-cli convert logo.svg logo.cdr   # .cdr version 15 (14 to 27)
+TRACEDRAW_CDR_VERSION=15 tracedraw-cli convert logo.svg logo.cdr   # .cdr version 15 (7 to 27)
 
 # A PDF with a bookmark per page that cannot be printed or copied
 # without its permissions password

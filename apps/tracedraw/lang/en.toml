@@ -361,7 +361,6 @@ dialog.embed_fonts_later = "Fonts are stored from version 16, when the text uses
 dialog.embed_fonts_none = "The text uses no installed font whose licence allows embedding."
 dialog.color_profile = "Colour profile: {name}"
 dialog.cdr_version_item = "v{v} ({name})"
-dialog.cdr_version_item_experimental = "v{v} ({name}), experimental"
 dialog.clipboard_empty = "The clipboard is empty"
 dialog.close = "Close"
 dialog.cmyk_profile = "CMYK profile"

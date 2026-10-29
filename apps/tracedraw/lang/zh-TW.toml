@@ -361,7 +361,6 @@ dialog.embed_fonts_later = "從版本 16 起，當文字使用授權允許的字
 dialog.embed_fonts_none = "文字沒有使用任何授權允許嵌入的已安裝字型。" # mt
 dialog.color_profile = "色彩描述檔: {name}"
 dialog.cdr_version_item = "v{v} ({name})"
-dialog.cdr_version_item_experimental = "v{v} ({name}), 實驗性"
 dialog.clipboard_empty = "剪貼簿是空的"
 dialog.close = "關閉"
 dialog.cmyk_profile = "CMYK 描述檔"

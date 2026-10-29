@@ -406,17 +406,10 @@ impl SaveAsState {
 }
 
 /// "v22 (2020)" for the version lists: the file version and the release
-/// that writes it; versions whose files are not yet known to open in other
-/// programs say they are experimental.
+/// that writes it.
 pub fn version_label(version: u16) -> String {
-    let checked = tracedraw_cdr::write::CHECKED_SINCE..=tracedraw_cdr::write::CHECKED_UNTIL;
-    let key = if !checked.contains(&version) {
-        "dialog.cdr_version_item_experimental"
-    } else {
-        "dialog.cdr_version_item"
-    };
     trf(
-        key,
+        "dialog.cdr_version_item",
         &[("v", &version.to_string()), ("name", release_name(version))],
     )
 }
@@ -473,10 +466,8 @@ pub fn tdraw_version_label(version: u32) -> String {
     format!("v{version} (TraceDraw {release})")
 }
 
-/// The `.cdr` versions offered, newest first: from the oldest checked to
-/// open in other programs (14; the other program's own list stops at 15).
-/// Older versions are still written by the command line and the MCP
-/// server, and Save keeps the version of a drawing opened from one.
+/// The `.cdr` versions offered, newest first: every version saved, 27
+/// down to 7.
 pub fn version_choices() -> Vec<u16> {
     (tracedraw_cdr::write::CHECKED_SINCE..=tracedraw_cdr::write::NEWEST_VERSION)
         .rev()
@@ -1519,47 +1510,34 @@ mod tests {
         app.save(false);
         assert!(state(&mut app).cdr);
         app.dialog = Dialog::None;
-        // An older version: Save does not write it, it says so and Save As
-        // opens on the oldest version saved.
+        // Versions 7 to 13 are saved like the others: a version 9 drawing
+        // keeps its version and Save As offers it.
         let old = dir.join("old.cdr");
         std::fs::write(&old, tracedraw_cdr::write::document_to_cdr_version(&doc, 9))
             .expect("written");
         app.open_path(old.clone());
-        assert_eq!(app.cdr_unsaved_version, Some(9));
-        assert_eq!(app.cdr_version, Some(tracedraw_cdr::write::CHECKED_SINCE));
-        assert!(app.status.contains("14"), "{}", app.status);
-        app.save(false);
-        assert!(
-            matches!(app.dialog, Dialog::OldCdrVersion { version: 9 }),
-            "{:?}",
-            app.dialog
-        );
-        assert_eq!(version_of(&old), Some(9), "the file is not written");
-        app.save_as_from_old_cdr();
+        assert_eq!(app.cdr_unsaved_version, None);
+        assert_eq!(app.cdr_version, Some(9));
+        app.save_as_dialog();
         let st = state(&mut app);
-        assert!(st.cdr && st.version == 14, "{st:?}");
+        assert!(st.cdr && st.version == 9, "{st:?}");
         st.open_dir(dir.clone());
         st.name = "copy".into();
         let mut st = st.clone();
         assert!(app.finish_save_as(&mut st));
         app.dialog = Dialog::None;
-        assert_eq!(version_of(&dir.join("copy.cdr")), Some(14));
-        // From then on Save writes that version without asking.
-        assert_eq!(app.cdr_unsaved_version, None);
-        app.engine.mark_unsaved();
-        app.save(false);
-        assert!(matches!(app.dialog, Dialog::None));
+        assert_eq!(version_of(&dir.join("copy.cdr")), Some(9));
         // Versions too old or too new become the nearest saved.
         app.cdr_version = Some(3);
         assert_eq!(app.cdr_save_version(), tracedraw_cdr::write::CHECKED_SINCE);
         app.cdr_version = Some(99);
         assert_eq!(app.cdr_save_version(), tracedraw_cdr::write::CHECKED_UNTIL);
         assert_eq!(version_choices().first(), Some(&27));
-        assert_eq!(version_choices().last(), Some(&14));
+        assert_eq!(version_choices().last(), Some(&7));
         assert!(version_label(15).contains("15"));
         assert!(version_label(13).contains("X3"));
         assert!(version_label(27).contains("2026"));
-        // Versions not yet checked in other programs say so.
+        // Every version is labelled the same way.
         let plain = |v: u16| {
             version_label(21)
                 .replace("21", &v.to_string())
@@ -1569,7 +1547,8 @@ mod tests {
         assert_eq!(version_label(16), plain(16));
         assert_eq!(version_label(15), plain(15));
         assert_eq!(version_label(14), plain(14));
-        assert_ne!(version_label(13), plain(13));
+        assert_eq!(version_label(13), plain(13));
+        assert_eq!(version_label(7), plain(7));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

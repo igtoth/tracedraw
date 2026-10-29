@@ -361,7 +361,6 @@ dialog.embed_fonts_later = "Schriften werden ab Version 16 gespeichert, wenn der
 dialog.embed_fonts_none = "Der Text nutzt keine installierte Schrift, deren Lizenz das Einbetten erlaubt." # mt
 dialog.color_profile = "Farbprofil: {name}"
 dialog.cdr_version_item = "v{v} ({name})"
-dialog.cdr_version_item_experimental = "v{v} ({name}), experimentell"
 dialog.clipboard_empty = "Die Zwischenablage ist leer"
 dialog.close = "Schließen"
 dialog.cmyk_profile = "CMYK-Profil"

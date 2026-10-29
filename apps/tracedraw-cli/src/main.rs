@@ -705,30 +705,17 @@ fn main() -> ExitCode {
                 std::fs::write(output, tracedraw_io::eps::document_to_ps(&doc))
                     .map_err(tracedraw_io::Error::from)
             } else if output.to_ascii_lowercase().ends_with(".cdr") {
-                // TRACEDRAW_CDR_VERSION picks the version written (14 to
-                // 27, the versions checked to open in other programs; the
-                // experimental 7 to 13 only with TRACEDRAW_CDR_EXPERIMENTAL=1).
+                // TRACEDRAW_CDR_VERSION picks the version written (7 to 27).
                 let asked: u16 = std::env::var("TRACEDRAW_CDR_VERSION")
                     .ok()
                     .and_then(|v| v.trim().parse().ok())
                     .unwrap_or(tracedraw_cdr::write::DEFAULT_VERSION);
-                let experimental =
-                    std::env::var("TRACEDRAW_CDR_EXPERIMENTAL").is_ok_and(|v| v.trim() == "1");
-                let allowed = if experimental {
-                    tracedraw_cdr::write::versions()
-                } else {
-                    tracedraw_cdr::write::checked_versions()
-                };
+                let allowed = tracedraw_cdr::write::checked_versions();
                 if !allowed.contains(&asked) {
                     eprintln!(
-                        "cdr version {asked} is not saved: use {} to {}{}",
+                        "cdr version {asked} is not saved: use {} to {}",
                         allowed.start(),
-                        allowed.end(),
-                        if experimental {
-                            ""
-                        } else {
-                            " (7 to 13 are experimental: TRACEDRAW_CDR_EXPERIMENTAL=1)"
-                        }
+                        allowed.end()
                     );
                     std::process::exit(2);
                 }

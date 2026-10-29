@@ -5,7 +5,7 @@
 | Formato | Observações |
 |---|---|
 | TraceDraw (`.tdraw`) | o formato nativo; guarda tudo, inclusive efeitos, estilos, comentários e fontes |
-| CDR (`.cdr`) | versões 14 a 27 em Salvar como; guarda páginas, camadas, formas, curvas, grupos, texto, bitmaps, preenchimentos, contornos e transparência; os efeitos são gravados como objetos simples |
+| CDR (`.cdr`) | versões 7 a 27 em Salvar como; guarda páginas, camadas, formas, curvas, grupos, texto, bitmaps, preenchimentos, contornos e transparência; os efeitos são gravados como objetos simples |
 | Modelo do TraceDraw (`.tdt`) | em [[menu.file.save_as_template]] |
 
 ## Abrir e importar {#open}

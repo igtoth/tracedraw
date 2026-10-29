@@ -361,7 +361,6 @@ dialog.embed_fonts_later = "Yazı tipleri sürüm 16 ve sonrasında, metin lisan
 dialog.embed_fonts_none = "Metin, lisansı gömmeye izin veren yüklü bir yazı tipi kullanmıyor." # mt
 dialog.color_profile = "Renk profili: {name}"
 dialog.cdr_version_item = "v{v} ({name})"
-dialog.cdr_version_item_experimental = "v{v} ({name}), deneysel"
 dialog.clipboard_empty = "Pano boş"
 dialog.close = "Kapat"
 dialog.cmyk_profile = "CMYK profili"

@@ -361,7 +361,6 @@ dialog.embed_fonts_later = "Шрифты сохраняются начиная �
 dialog.embed_fonts_none = "Текст не использует установленных шрифтов, лицензия которых разрешает встраивание." # mt
 dialog.color_profile = "Цветовой профиль: {name}"
 dialog.cdr_version_item = "v{v} ({name})"
-dialog.cdr_version_item_experimental = "v{v} ({name}), экспериментальная"
 dialog.clipboard_empty = "Буфер обмена пуст"
 dialog.close = "Закрыть"
 dialog.cmyk_profile = "Профиль CMYK"

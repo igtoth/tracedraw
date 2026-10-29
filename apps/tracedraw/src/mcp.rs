@@ -431,7 +431,7 @@ mod tests {
         let (_, report) = tracedraw_cdr::open_bytes(&bytes, "v21").expect("opens");
         assert_eq!(report.version.map(|v| v.0), Some(21));
         assert_eq!(app.cdr_save_version(), 21);
-        for bad in [json!(3), json!(9), json!(28), json!("x"), json!(-1)] {
+        for bad in [json!(3), json!(6), json!(28), json!("x"), json!(-1)] {
             let r = call(
                 &mut app,
                 5,

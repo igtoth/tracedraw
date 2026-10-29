@@ -361,7 +361,6 @@ dialog.embed_fonts_later = "Lettertypen worden opgeslagen vanaf versie 16, als d
 dialog.embed_fonts_none = "De tekst gebruikt geen geïnstalleerd lettertype waarvan de licentie insluiten toestaat." # mt
 dialog.color_profile = "Kleurprofiel: {name}"
 dialog.cdr_version_item = "v{v} ({name})"
-dialog.cdr_version_item_experimental = "v{v} ({name}), experimenteel"
 dialog.clipboard_empty = "Het klembord is leeg"
 dialog.close = "Sluiten"
 dialog.cmyk_profile = "CMYK-profiel"

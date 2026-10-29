@@ -36,11 +36,10 @@ use tracedraw_core::{
     Color, Document, Fill, Pattern, SharedBytes, Stroke, TextAlign,
 };
 
-/// The oldest version whose files written here are known to open in the
-/// program that wrote the samples (by a user's tests: text from 16 in
-/// files of versions 7 to 22, and every object and text look of files
-/// of versions 14 and 15); older ones are offered as experimental.
-pub const CHECKED_SINCE: u16 = 14;
+/// The oldest version saved: every version the writer produces, from 7.
+/// Versions 7 to 13 are written as the files of those versions saved by
+/// the program that reads them are (#1139).
+pub const CHECKED_SINCE: u16 = OLDEST_VERSION;
 /// The newest version known to open there (versions 23 to 27, written
 /// with the records of version 22, opened with their images in that
 /// program's 2026 release, a user's test of 2026-10-18).
@@ -52,9 +51,7 @@ pub const NEWEST_VERSION: u16 = 27;
 /// The version [`document_to_cdr`] writes: the newest.
 pub const DEFAULT_VERSION: u16 = NEWEST_VERSION;
 
-/// The versions the app and the command line save in: those checked to
-/// open in other programs. The older ones the writer can produce stay
-/// for testing (`TRACEDRAW_CDR_EXPERIMENTAL=1` on the command line).
+/// The versions the app, the command line and the MCP server save in.
 pub fn checked_versions() -> std::ops::RangeInclusive<u16> {
     CHECKED_SINCE..=CHECKED_UNTIL
 }

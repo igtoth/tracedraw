@@ -5,7 +5,7 @@
 | Format | Notes |
 |---|---|
 | TraceDraw (`.tdraw`) | the native format; keeps everything, including effects, styles, comments and fonts |
-| CDR (`.cdr`) | versions 14 to 27 from Save As; keeps pages, layers, shapes, curves, groups, text, bitmaps, fills, outlines and transparency; effects are written as plain objects |
+| CDR (`.cdr`) | versions 7 to 27 from Save As; keeps pages, layers, shapes, curves, groups, text, bitmaps, fills, outlines and transparency; effects are written as plain objects |
 | TraceDraw template (`.tdt`) | from [[menu.file.save_as_template]] |
 
 ## Opening and importing {#open}

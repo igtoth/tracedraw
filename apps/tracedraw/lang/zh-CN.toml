@@ -361,7 +361,6 @@ dialog.embed_fonts_later = "从版本 16 起，当文本使用许可允许的字
 dialog.embed_fonts_none = "文本没有使用任何许可允许嵌入的已安装字体。" # mt
 dialog.color_profile = "颜色配置文件: {name}"
 dialog.cdr_version_item = "v{v} ({name})"
-dialog.cdr_version_item_experimental = "v{v} ({name}), 实验性"
 dialog.clipboard_empty = "剪贴板为空"
 dialog.close = "关闭"
 dialog.cmyk_profile = "CMYK 配置文件"

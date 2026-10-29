@@ -7205,7 +7205,13 @@ fn the_cdr_version_chosen_in_options_survives_a_restart_and_starts_save_as() {
             ],
         );
     }
-    let item = item.expect("v15 in the list");
+    item.expect("v15 in the list");
+    // The list goes on below v15 (down to v7): let the wheel's smooth
+    // scrolling settle before taking the item's place.
+    for _ in 0..30 {
+        texts = texts_drawn(&ctx, &mut app, Vec::new());
+    }
+    let item = text_at(&texts, &wanted).expect("v15 still in the list");
     click_at(&ctx, &mut app, item, Modifiers::NONE);
     assert_eq!(app.settings.formats.cdr_version, 15);
     texts = texts_drawn(&ctx, &mut app, Vec::new());

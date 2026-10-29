@@ -361,7 +361,6 @@ dialog.embed_fonts_later = "Písma se ukládají od verze 16, pokud text použí
 dialog.embed_fonts_none = "Text nepoužívá žádné nainstalované písmo, jehož licence dovoluje vložení." # mt
 dialog.color_profile = "Barevný profil: {name}"
 dialog.cdr_version_item = "v{v} ({name})"
-dialog.cdr_version_item_experimental = "v{v} ({name}), experimentální"
 dialog.clipboard_empty = "Schránka je prázdná"
 dialog.close = "Zavřít"
 dialog.cmyk_profile = "Profil CMYK"

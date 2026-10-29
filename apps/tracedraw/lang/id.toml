@@ -361,7 +361,6 @@ dialog.embed_fonts_later = "Font disimpan mulai versi 16, bila teks memakai font
 dialog.embed_fonts_none = "Teks tidak memakai font terpasang yang lisensinya mengizinkan penyematan." # mt
 dialog.color_profile = "Profil warna: {name}"
 dialog.cdr_version_item = "v{v} ({name})"
-dialog.cdr_version_item_experimental = "v{v} ({name}), eksperimental"
 dialog.clipboard_empty = "Papan klip kosong"
 dialog.close = "Tutup"
 dialog.cmyk_profile = "Profil CMYK"

@@ -361,7 +361,6 @@ dialog.embed_fonts_later = "সংস্করণ 16 থেকে ফন্ট �
 dialog.embed_fonts_none = "লেখাটি এমন কোনো ইনস্টল করা ফন্ট ব্যবহার করে না যার লাইসেন্স এমবেড করার অনুমতি দেয়।" # mt
 dialog.color_profile = "রঙের প্রোফাইল: {name}"
 dialog.cdr_version_item = "v{v} ({name})"
-dialog.cdr_version_item_experimental = "v{v} ({name}), পরীক্ষামূলক"
 dialog.clipboard_empty = "ক্লিপবোর্ড খালি"
 dialog.close = "বন্ধ করুন"
 dialog.cmyk_profile = "CMYK প্রোফাইল"

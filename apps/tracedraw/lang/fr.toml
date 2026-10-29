@@ -361,7 +361,6 @@ dialog.embed_fonts_later = "Les polices sont enregistrées à partir de la versi
 dialog.embed_fonts_none = "Le texte n'utilise aucune police installée dont la licence permet l'incorporation." # mt
 dialog.color_profile = "Profil de couleur : {name}"
 dialog.cdr_version_item = "v{v} ({name})"
-dialog.cdr_version_item_experimental = "v{v} ({name}), expérimentale"
 dialog.clipboard_empty = "Le presse-papiers est vide"
 dialog.close = "Fermer"
 dialog.cmyk_profile = "Profil CMJN"

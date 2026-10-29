@@ -7783,9 +7783,8 @@ pub(crate) fn is_cdr_path(path: &std::path::Path) -> bool {
         .is_some_and(|e| e.eq_ignore_ascii_case("cdr"))
 }
 
-/// The `.cdr` version saving writes for `version`: only versions checked
-/// to open in other programs are saved, so older ones become the oldest
-/// of those and newer ones the newest.
+/// The `.cdr` version saving writes for `version`: versions older than 7
+/// become 7 and newer than 27 become 27.
 pub(crate) fn writable_cdr_version(version: u16) -> u16 {
     version.clamp(
         tracedraw_cdr::write::CHECKED_SINCE,

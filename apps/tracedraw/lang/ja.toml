@@ -361,7 +361,6 @@ dialog.embed_fonts_later = "バージョン 16 以降、ライセンスが許可
 dialog.embed_fonts_none = "埋め込みをライセンスが許可するインストール済みフォントをテキストは使っていません。" # mt
 dialog.color_profile = "カラープロファイル: {name}"
 dialog.cdr_version_item = "v{v} ({name})"
-dialog.cdr_version_item_experimental = "v{v} ({name}), 試験的"
 dialog.clipboard_empty = "クリップボードは空です"
 dialog.close = "閉じる"
 dialog.cmyk_profile = "CMYKプロファイル"

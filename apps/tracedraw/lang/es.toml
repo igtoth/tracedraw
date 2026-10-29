@@ -361,7 +361,6 @@ dialog.embed_fonts_later = "Las fuentes se guardan desde la versión 16, cuando 
 dialog.embed_fonts_none = "El texto no usa ninguna fuente instalada cuya licencia permita incrustarla." # mt
 dialog.color_profile = "Perfil de color: {name}"
 dialog.cdr_version_item = "v{v} ({name})"
-dialog.cdr_version_item_experimental = "v{v} ({name}), experimental"
 dialog.clipboard_empty = "El portapapeles está vacío"
 dialog.close = "Cerrar"
 dialog.cmyk_profile = "Perfil CMYK"
