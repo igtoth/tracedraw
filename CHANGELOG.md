@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Publish to PDF, Prepress tab: crop marks, registration marks, colour bars and file information can be added around every page, drawn by the same code as the Print dialog's marks. The page grows by a 12 mm margin outside the bleed to hold them; the TrimBox stays the page, the BleedBox the page and its bleed and the MediaBox takes in the marks, and the drawing is clipped to the bleed. Marks in registration colour print on every plate (the All separation), in printed files too. A page background now covers the bleed in PDF files (#789).
+
 ## 0.20.0 (2026-10-28)
 
 - Variable fonts: the text follows the axis sliders (Text docker, and the button beside the font size) while they are dragged, so the weight, width or any other axis can be judged on the page. The text changed only when the slider was released. Releasing still keeps the value as one undo step (#870).

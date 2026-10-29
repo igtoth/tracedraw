@@ -24,7 +24,7 @@ is downloaded). The dialog is `ui/publish_pdf.rs`; the file comes from
   PDF/X-3, then the presets saved with "+" (it asks a name; a built-in
   name is not taken; the same name replaces the preset). "-" deletes the
   chosen saved preset. A preset sets the compatibility, output
-  condition, flattening resolution, bookmarks, bleed and the Bitmaps
+  condition, flattening resolution, bookmarks, bleed, printers' marks and the Bitmaps
   choices of Objects (Web: colour and gray pictures to 150 dpi, black and
   white to 300 dpi, JPEG at quality 75).
 - Compatibility: PDF 1.4, PDF/X-1a:2003, PDF/X-3:2003 or PDF/X-4.
@@ -123,6 +123,28 @@ Nothing is flattened into short lines.
 Bleed: the drawing's bleed (Document Properties) to start with, 0 to
 50 mm, around every page (trim box the page, media box the page and the
 bleed).
+
+Printers' marks (#789), off by default and kept with the preferences
+and in saved presets (the Prepress preset ticks Crop marks):
+
+- Crop marks: 5 mm lines at the page's edges, starting 1.5 mm outside
+  the bleed.
+- Registration marks: a target (2 mm circle with a cross) in the middle
+  of each side.
+- Color bars: the four process inks, their two-ink overprints and the
+  50 % tints, 4 mm patches left of the top target.
+- File information: the drawing's name, the page's name, the page and
+  page count and the date and time, under the page.
+
+The marks are the Print dialog's (`printing.md`), made by the same code
+(`imposition::page_marks`, each page on its own fitted sheet). With any
+mark ticked the page grows by a 12 mm margin outside the bleed on every
+side: the MediaBox is the page, the bleed and that margin; the BleedBox
+the page and its bleed; the TrimBox the page. The drawing is clipped to
+the BleedBox so nothing of it reaches the marks. The marks are in the
+registration colour, written on the `All` separation so they print on
+every plate. Links and bookmarks keep pointing at the page. Without
+marks the boxes are as before (BleedBox the media box).
 
 ## Issues
 

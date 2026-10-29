@@ -554,6 +554,40 @@ pub fn marks(
     out
 }
 
+/// The marks of every page printed on its own (the layout as in the
+/// document, the sheet fitted to the page), in each page's own
+/// coordinates: they lie outside the page, in its bleed and the
+/// [`MARK_MARGIN`] around it. A PDF export draws them there (#789).
+/// `names` are the pages' names for the page information.
+pub fn page_marks(sizes: &[Size], names: &[String], o: &Options) -> Vec<Vec<Shape>> {
+    let o = Options {
+        layout: Layout::AsIs,
+        sheet: None,
+        scale: 1.0,
+        page_offset: (0.0, 0.0),
+        page_stretch: (1.0, 1.0),
+        paper_margins: [0.0; 4],
+        ..o.clone()
+    };
+    let plans = plan(sizes, &o);
+    let total = plans.len();
+    plans
+        .iter()
+        .enumerate()
+        .map(|(n, sheet)| {
+            let Some(cell) = sheet.cells.first() else {
+                return Vec::new();
+            };
+            let to_page = Affine::translate((-cell.trim.x0, -cell.trim.y0));
+            let mut shapes = marks(sheet, &o, n, total, names);
+            for s in &mut shapes {
+                s.transform = to_page * s.transform;
+            }
+            shapes
+        })
+        .collect()
+}
+
 /// Build the printed sheets of `doc` as a new document: each sheet one
 /// page, the document's pages placed and clipped to their bleed, the marks
 /// on top. Hidden and non-printing layers are left out; master layers go
@@ -912,6 +946,64 @@ mod tests {
         // A sheet the PDF writer accepts.
         let pdf = tracedraw_io::pdf::document_to_pdf(&out);
         assert!(pdf.starts_with(b"%PDF"));
+    }
+
+    /// The marks of each page on its own, in the page's coordinates: crop
+    /// marks start beyond the bleed and stay inside the marks margin, the
+    /// page information names the page (#789).
+    #[test]
+    fn page_marks_sit_around_each_page_in_its_own_coordinates() {
+        let sizes = [Size::new(100.0, 50.0), Size::new(60.0, 60.0)];
+        let names = vec!["Front".to_string(), "Back".to_string()];
+        let o = Options {
+            bleed: 3.0,
+            // Ignored: each page is on its own sheet at its own size.
+            layout: Layout::NUp { cols: 2, rows: 2 },
+            page_offset: (40.0, 40.0),
+            marks: Marks {
+                crop: true,
+                registration: true,
+                color_bars: true,
+                page_info: true,
+                ..Default::default()
+            },
+            title: "Card".into(),
+            when: "today".into(),
+            ..Default::default()
+        };
+        let all = page_marks(&sizes, &names, &o);
+        assert_eq!(all.len(), 2);
+        for (marks, size) in all.iter().zip(sizes) {
+            // Crop marks, registration, 11 colour patches, the text.
+            assert_eq!(marks.len(), 1 + 1 + 11 + 1);
+            let page = Rect::from_origin_size((0.0, 0.0), size);
+            let room = page.inflate(3.0 + MARK_MARGIN, 3.0 + MARK_MARGIN);
+            let bleed = page.inflate(3.0, 3.0);
+            let crop = marks[0]
+                .transform
+                .transform_rect_bbox(match &marks[0].kind {
+                    ShapeKind::Path { path, .. } => kurbo::Shape::bounding_box(path),
+                    _ => panic!("crop marks are a path"),
+                });
+            assert!(
+                crop.x0 >= room.x0 - 1e-9 && crop.x1 <= room.x1 + 1e-9,
+                "{crop:?}"
+            );
+            assert!(
+                crop.y0 >= room.y0 - 1e-9 && crop.y1 <= room.y1 + 1e-9,
+                "{crop:?}"
+            );
+            assert!(crop.x0 < bleed.x0 && crop.y1 > bleed.y1);
+        }
+        let ShapeKind::Text { spans, origin, .. } = &all[1][13].kind else {
+            panic!("the page information is text");
+        };
+        assert!(spans[0].text.contains("Card") && spans[0].text.contains("Back"));
+        let at = all[1][13].transform * *origin;
+        assert!(at.y < -3.0 && at.y > -3.0 - MARK_MARGIN, "{at:?}");
+        // No marks asked for: none.
+        let none = page_marks(&sizes, &names, &Options::default());
+        assert!(none.iter().all(|m| m.is_empty()));
     }
 
     /// The back of a double-sided sheet: the columns run right to left so
