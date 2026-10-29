@@ -3765,7 +3765,9 @@ impl<'a> Writer<'a> {
                     if self.v.rotation_arg() {
                         args.push((ARG_ROTATION, vec![0; 4]));
                     }
-                    if let Some(n) = name.filter(|n| !n.is_empty()) {
+                    // From version 14, where a file's group carries one;
+                    // the records of older versions stay as they were.
+                    if let Some(n) = name.filter(|n| !n.is_empty() && self.v.zip()) {
                         args.push((ARG_NAME, name_bytes(self.v, n)));
                     }
                     loda(0, args)

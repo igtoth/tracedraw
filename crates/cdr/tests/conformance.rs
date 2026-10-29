@@ -59,6 +59,12 @@ fn keeps_hidden_and_background(v: u16) -> bool {
     v >= 21
 }
 
+/// Group names go into the group's own `loda` from version 14, where a
+/// file's group carries one; older records are left as they were.
+fn keeps_group_names(v: u16) -> bool {
+    v >= 14
+}
+
 /// A blend opens live again from the package member of versions 14+.
 fn keeps_live_blends(v: u16) -> bool {
     v >= 14
@@ -737,7 +743,8 @@ fn groups_nest() {
         let inner_box =
             (outer.transform * children[1].transform * inner[0].page_path()).bounding_box();
         same_box(r.v, inner_box, Rect::new(45.0, 15.0, 65.0, 35.0), EPS);
-        assert_eq!(outer.name.as_deref(), Some("outer"), "version {}", r.v);
+        let want = keeps_group_names(r.v).then_some("outer");
+        assert_eq!(outer.name.as_deref(), want, "version {}", r.v);
     });
 }
 
@@ -873,7 +880,7 @@ fn uniform_and_fountain_fills() {
         Color::rgb8(40, 40, 40),
         0.0,
     );
-    let fills = vec![
+    let fills = [
         Fill::Solid(Color::rgb8(10, 200, 100)),
         Fill::Solid(Color::cmyk_pct(0.0, 80.0, 100.0, 10.0)),
         Fill::Solid(Color::Gray { v: 0.5 }),
@@ -957,7 +964,7 @@ fn pattern_texture_and_mesh_fills_go_out_as_one_colour() {
         2,
         Color::rgb8(255, 128, 0),
     ));
-    let fills = vec![two_colour, bitmap_pattern, texture, mesh];
+    let fills = [two_colour, bitmap_pattern, texture, mesh];
     let doc = drawing(200.0, 100.0, |ids| {
         fills
             .iter()

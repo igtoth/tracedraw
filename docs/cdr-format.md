@@ -392,7 +392,7 @@ members of the version 14 and 15 package, and for version 16 on the
 `mimetype` member first and stored, the manifest naming the root file,
 every data file listed and every redirect record inside the data file it
 names. The suite found and fixed (2026-10-29): group names were not
-written (nor read), drop shadows were dropped, and a page of another
+written (nor read; written from version 14), drop shadows were dropped, and a page of another
 size than the first lost its size (and its objects moved) in every
 version.
 Every file those tests write also passes the checker of `check.rs`
