@@ -31,9 +31,10 @@ The product name is **TraceDraw** in prose; machine names are `tracedraw`
    Record each piece of format knowledge, its source and date in
    `CLEANROOM.md` and the details in `docs/cdr-format.md`. Bundle only
    original or openly licensed assets and list them in `ATTRIBUTION.md`.
-4. **Layering is enforced by review.** `core` has no workspace deps; `cdr`,
-   `text` and `render` depend on `core` only; `io` depends on `core` and
-   `render` (rasterised fills in exports); egui stays in `apps/`.
+4. **Layering is enforced by review.** `core` and `cdr-format` have no
+   workspace deps; `cdr` depends on `cdr-format` and `core`; `text` and
+   `render` depend on `core` only; `io` depends on `core` and `render`
+   (rasterised fills in exports); egui stays in `apps/`.
 5. **Tests are the gate.** Every change comes with tests. Format code
    gets round-trip and malformed-input tests.
 6. **Units.** Millimetres everywhere in the model. CDR files use
@@ -54,7 +55,9 @@ The product name is **TraceDraw** in prose; machine names are `tracedraw`
 ```text
 crates/core   geometry.rs, document.rs, command.rs, engine.rs, style.rs,
               color.rs, nodes.rs, shaping.rs, effects.rs, id.rs
-crates/cdr    container.rs (RIFF/ZIP), riff.rs (chunk tree), parse.rs
+crates/cdr-format  container.rs (RIFF/ZIP), riff.rs (chunk tree), eot.rs,
+                   ole.rs: the file structure, no document model
+crates/cdr    parse.rs (chunks to Document), write.rs, text.rs, cmx.rs
 crates/text   font database, shaping, outlines
 crates/render CPU rasteriser
 crates/io     svg.rs, pdf.rs, lib.rs (native format)

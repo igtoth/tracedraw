@@ -231,7 +231,8 @@ or the moon button at the right of the status bar).
 
 ## .cdr files, read and written independently
 
-TraceDraw's `.cdr` support lives in its own crate (`crates/cdr`), written
+TraceDraw's `.cdr` support lives in its own crates (`crates/cdr-format`
+for the file structure, `crates/cdr` for reading and writing drawings), written
 from public format notes and from files we own, never from decompiled
 programs or other implementations. `CLEANROOM.md` records where each piece
 of format knowledge comes from and when; `docs/cdr-format.md` records what

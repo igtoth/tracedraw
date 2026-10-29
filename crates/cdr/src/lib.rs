@@ -15,17 +15,18 @@
 //! 2. [`riff`]: walk the chunk tree without interpreting it.
 //! 3. [`parse`]: turn chunks into a [`tracedraw_core::Document`] (best effort).
 //!
+//! The first two, with the embedded font and compound file readers, live
+//! in the `tracedraw-cdr-format` crate, which knows no document model;
+//! they are re-exported here under their old paths.
+//!
 //! Anything we do not understand is skipped with a logged warning, never a
 //! failure: opening a file must always yield a document.
 #![forbid(unsafe_code)]
 
 pub mod cmx;
 pub mod container;
-pub mod eot;
 mod kept_blends;
-pub mod ole;
 pub mod parse;
-pub mod riff;
 pub mod spot;
 mod text;
 pub mod wl;
@@ -35,24 +36,7 @@ use std::path::Path;
 
 pub use container::{Container, Version};
 pub use parse::{parse_document, parse_document_with, ParseReport};
-
-#[derive(Debug, thiserror::Error)]
-pub enum Error {
-    #[error("not a CDR file")]
-    NotCdr,
-    #[error("not a CMX file")]
-    NotCmx,
-    #[error("unsupported container: {0}")]
-    UnsupportedContainer(String),
-    #[error("truncated data at offset {0}")]
-    Truncated(usize),
-    #[error("io error: {0}")]
-    Io(#[from] std::io::Error),
-    #[error("zip error: {0}")]
-    Zip(#[from] zip::result::ZipError),
-}
-
-pub type Result<T> = std::result::Result<T, Error>;
+pub use tracedraw_cdr_format::{eot, ole, riff, Error, Result};
 
 /// Files list a radial or square gradient's colours from its edge to its
 /// centre (a sun drawn red in the middle stores yellow first); ours run

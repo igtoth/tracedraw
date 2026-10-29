@@ -7,7 +7,7 @@ description = "Clean-room reader for .cdr files: RIFF and ZIP containers"
 
 [dependencies]
 tracedraw-core.workspace = true
-thiserror.workspace = true
+tracedraw-cdr-format.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 log.workspace = true
@@ -19,3 +19,4 @@ tiny-skia.workspace = true
 
 [dev-dependencies]
 tracedraw-core = { workspace = true, features = ["test-profiles"] }
+tracedraw-cdr-format = { workspace = true, features = ["test-support"] }

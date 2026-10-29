@@ -199,8 +199,8 @@ pub fn encode(font: &[u8], names: &EotNames) -> Vec<u8> {
 
 /// An EOT structure (version 2.2) around `font`, for tests: `flags` as
 /// given, the data XOR-ed when the flags say so.
-#[cfg(test)]
-pub(crate) fn wrap(font: &[u8], family: &str, flags: u32) -> Vec<u8> {
+#[cfg(any(test, feature = "test-support"))]
+pub fn wrap(font: &[u8], family: &str, flags: u32) -> Vec<u8> {
     let mut data = font.to_vec();
     if flags & FLAG_XOR != 0 {
         data.iter_mut().for_each(|b| *b ^= XOR_KEY);

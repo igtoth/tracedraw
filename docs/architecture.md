@@ -12,7 +12,13 @@ crates/io  ---------> crates/render
         |                   |
         v                   v
 crates/cdr, crates/text --> crates/core
+        |
+        v
+crates/cdr-format
 ```
+
+`core` and `cdr-format` depend on nothing in the workspace; `cdr` depends
+on `cdr-format` and `core`.
 
 ## core
 
@@ -58,11 +64,27 @@ drawing. Files written before it existed get identities on opening,
 kept from the next save on. Generator: SplitMix64 from a seed of std's
 per-run random hash keys (`engine.rs`, `Document::assign_uids`).
 
+## cdr-format
+
+The structure of `.cdr` files with no document model attached, so it can
+be used on its own and tested without the rest of the workspace.
+`container.rs` detects RIFF or ZIP and the version and hands back the
+RIFF stream and the external data streams, `riff.rs` walks chunks,
+inflates `cmpr` lists and follows the redirect records of version 16 and
+later, `eot.rs` reads and writes the Embedded OpenType structure around
+embedded fonts, `ole.rs` reads the compound files of embedded objects.
+It is being grown, step by step, into the home of a neutral document
+model in file units with readers and writers per version, so that what
+TraceDraw's model cannot hold survives a round trip.
+
 ## cdr
 
-Clean-room reader for `.cdr`. `container.rs` detects RIFF or ZIP and the
-version, `riff.rs` walks chunks and inflates `cmpr` lists, `parse.rs`
-builds a `Document` best effort. Every assumption is recorded in
+Clean-room reader and writer for `.cdr`, on top of `cdr-format` (whose
+modules it re-exports under their old paths). `parse.rs` builds a
+`Document` best effort from the chunk tree, `text.rs` reads the text
+records and style strings, `write.rs` writes a `Document` back in any
+version from 7 on, `cmx.rs` reads CMX exchange files and `wl.rs` the
+`WL` files of versions 1 and 2. Every assumption is recorded in
 `docs/cdr-format.md` with its confirmation status.
 
 ## text

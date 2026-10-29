@@ -4152,10 +4152,21 @@ dependencies = [
  "log",
  "serde",
  "serde_json",
- "thiserror 2.0.21",
  "tiny-skia",
+ "tracedraw-cdr-format",
  "tracedraw-core",
  "ttf-parser",
+ "zip",
+]
+
+[[package]]
+name = "tracedraw-cdr-format"
+version = "0.23.0"
+dependencies = [
+ "flate2",
+ "log",
+ "thiserror 2.0.21",
+ "tiny-skia",
  "zip",
 ]
 

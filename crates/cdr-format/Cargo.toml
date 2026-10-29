@@ -1,0 +1,19 @@
+[package]
+name = "tracedraw-cdr-format"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Clean-room `.cdr` file structure: containers, RIFF chunk trees, embedded fonts and compound files, with no document model"
+readme = "README.md"
+
+[dependencies]
+thiserror.workspace = true
+log.workspace = true
+zip.workspace = true
+flate2 = "1"
+tiny-skia.workspace = true
+
+[features]
+# Builders of small test files (compound files, embedded fonts) for the
+# tests of the crates above this one.
+test-support = []

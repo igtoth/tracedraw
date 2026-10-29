@@ -347,8 +347,10 @@ pub fn decode_bmp_file(b: &[u8]) -> Option<Picture> {
     Some((w, h, png))
 }
 
-#[cfg(test)]
-pub(crate) mod tests {
+/// Builders of small compound files, for tests here and in the crates
+/// above (feature `test-support`).
+#[cfg(any(test, feature = "test-support"))]
+pub mod tests {
     use super::*;
 
     /// A 2 by 2 bottom-up 24-bit `.bmp`: red, green / blue, white.
@@ -400,7 +402,7 @@ pub(crate) mod tests {
     }
 
     /// [`compound`] with the stream under another name.
-    pub(crate) fn compound_named(name: &str, stream: &[u8]) -> Vec<u8> {
+    pub fn compound_named(name: &str, stream: &[u8]) -> Vec<u8> {
         assert_eq!(stream.len(), 4096);
         let mut h = vec![0u8; 512];
         h[..8].copy_from_slice(&SIGNATURE);
@@ -421,8 +423,8 @@ pub(crate) mod tests {
         let mut fat = vec![FREE; 128];
         fat[0] = 0xFFFF_FFFD;
         fat[1] = END_OF_CHAIN;
-        for s in 2..9 {
-            fat[s] = s as u32 + 1;
+        for (s, next) in fat.iter_mut().enumerate().take(9).skip(2) {
+            *next = s as u32 + 1;
         }
         fat[9] = END_OF_CHAIN;
         let fat: Vec<u8> = fat.iter().flat_map(|v| v.to_le_bytes()).collect();
@@ -454,7 +456,7 @@ pub(crate) mod tests {
     }
 
     /// A compound file whose "Embedding 3" holds the 2 by 2 picture.
-    pub(crate) fn compound_with_picture() -> Vec<u8> {
+    pub fn compound_with_picture() -> Vec<u8> {
         let pic = bmp();
         let mut stream = (pic.len() as u32).to_le_bytes().to_vec();
         stream.extend_from_slice(&pic);
@@ -477,7 +479,7 @@ pub(crate) mod tests {
 
     /// A presentation stream holding `metafile` as a Windows metafile
     /// picture, as the barcodes of #1131 keep theirs.
-    pub(crate) fn presentation(metafile: &[u8]) -> Vec<u8> {
+    pub fn presentation(metafile: &[u8]) -> Vec<u8> {
         let mut p = Vec::new();
         for v in [
             0xFFFF_FFFFu32,
