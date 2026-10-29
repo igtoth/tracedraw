@@ -3789,9 +3789,10 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
                             .rich_tip(crate::ui::tips::keyed("dialog.webp_lossless"));
                     }
                     if st.format == 3 || st.format == 6 {
-                        ui.add(crate::ui::Rail(
-                            egui::Slider::new(&mut st.quality, 1..=100).text(tr("dialog.quality")),
-                        ))
+                        ui.add(
+                            crate::ui::Slider::new(&mut st.quality, 1..=100)
+                                .text(tr("dialog.quality")),
+                        )
                         .rich_tip(crate::ui::tips::keyed("dialog.quality"));
                     }
                     let b = if st.selection_only {

@@ -146,11 +146,11 @@ pub fn picture_mosaic(app: &mut App, ui: &mut Ui) {
             .rich_disabled_tip(crate::ui::tips::keyed("docker.picture_mosaic_rows"));
     });
     row(ui, &tr("docker.picture_mosaic_blending"), |ui| {
-        ui.add(crate::ui::Rail(
-            egui::Slider::new(&mut s.blending, 0.0..=100.0)
+        ui.add(
+            crate::ui::Slider::new(&mut s.blending, 0.0..=100.0)
                 .suffix(" %")
                 .max_decimals(0),
-        ))
+        )
         .rich_tip(crate::ui::tips::keyed("docker.picture_mosaic_blending"));
     });
     section(ui, None);

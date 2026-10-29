@@ -910,12 +910,8 @@ fn list_body(
         let mut s = app.settings.font_sample_px;
         // The slider fills the row between the small and the large A.
         ui.spacing_mut().slider_width = (ui.available_width() - 24.0).max(60.0);
-        ui.add(
-            egui::Slider::new(&mut s, SAMPLE_SIZES)
-                .show_value(false)
-                .clamping(egui::SliderClamping::Always),
-        )
-        .rich_tip(tr("font_list.sample_size"));
+        ui.add(crate::ui::Slider::new(&mut s, SAMPLE_SIZES).show_value(false))
+            .rich_tip(tr("font_list.sample_size"));
         app.settings.font_sample_px = s;
         ui.label(
             egui::RichText::new("A")

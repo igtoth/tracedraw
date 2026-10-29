@@ -1007,7 +1007,9 @@ fn draw_controls(ui: &mut Ui, form: &LiveForm, origin: Pos2, acts: &mut FormActi
                         let mut v = c.number;
                         let (lo, hi) = (c.min.min(c.max), c.min.max(c.max));
                         let vertical = rect.height() > rect.width();
-                        let mut s = egui::Slider::new(&mut v, lo..=hi).show_value(false);
+                        let mut s = crate::ui::Slider::new(&mut v, lo..=hi)
+                            .show_value(false)
+                            .ticks(false);
                         if vertical {
                             s = s.vertical();
                         }

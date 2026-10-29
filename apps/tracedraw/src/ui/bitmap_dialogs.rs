@@ -79,12 +79,7 @@ pub fn bw_dialog(app: &mut App, ctx: &Context, s: &mut BwSettings, close: &mut b
                     crate::ui::tips::tip_over(
                         ui,
                         crate::ui::tips::keyed("dialog.threshold"),
-                        |ui| {
-                            ui.add(crate::ui::Rail(egui::Slider::new(
-                                &mut s.threshold,
-                                0..=255,
-                            )))
-                        },
+                        |ui| ui.add(crate::ui::Slider::new(&mut s.threshold, 0..=255)),
                     );
                     ui.end_row();
                 }
@@ -102,16 +97,16 @@ pub fn bw_dialog(app: &mut App, ctx: &Context, s: &mut BwSettings, close: &mut b
                     ui.end_row();
                     ui.label(tr("dialog.angle"));
                     crate::ui::tips::tip_over(ui, crate::ui::tips::keyed("dialog.angle"), |ui| {
-                        ui.add(crate::ui::Rail(
-                            egui::Slider::new(&mut s.angle, -180.0..=180.0).suffix(" \u{b0}"),
-                        ))
+                        ui.add(
+                            crate::ui::Slider::new(&mut s.angle, -180.0..=180.0).suffix(" \u{b0}"),
+                        )
                     });
                     ui.end_row();
                     ui.label(tr("dialog.lines_per_inch"));
                     crate::ui::tips::tip_over(
                         ui,
                         crate::ui::tips::keyed("dialog.lines_per_inch"),
-                        |ui| ui.add(crate::ui::Rail(egui::Slider::new(&mut s.lpi, 1.0..=300.0))),
+                        |ui| ui.add(crate::ui::Slider::new(&mut s.lpi, 1.0..=300.0)),
                     );
                     ui.end_row();
                 }
@@ -120,12 +115,7 @@ pub fn bw_dialog(app: &mut App, ctx: &Context, s: &mut BwSettings, close: &mut b
                     crate::ui::tips::tip_over(
                         ui,
                         crate::ui::tips::keyed("dialog.intensity"),
-                        |ui| {
-                            ui.add(crate::ui::Rail(egui::Slider::new(
-                                &mut s.intensity,
-                                0.0..=100.0,
-                            )))
-                        },
+                        |ui| ui.add(crate::ui::Slider::new(&mut s.intensity, 0.0..=100.0)),
                     );
                     ui.end_row();
                 }
@@ -320,7 +310,7 @@ pub fn paletted_dialog(app: &mut App, ctx: &Context, s: &mut PalettedSettings, c
             if s.palette.counts() {
                 ui.label(tr("dialog.colors"));
                 crate::ui::tips::tip_over(ui, crate::ui::tips::keyed("dialog.colors"), |ui| {
-                    ui.add(crate::ui::Rail(egui::Slider::new(&mut s.colors, 2..=256)))
+                    ui.add(crate::ui::Slider::new(&mut s.colors, 2..=256))
                 });
                 ui.end_row();
             }
@@ -339,12 +329,7 @@ pub fn paletted_dialog(app: &mut App, ctx: &Context, s: &mut PalettedSettings, c
                 crate::ui::tips::tip_over(
                     ui,
                     crate::ui::tips::keyed("dialog.dither_intensity"),
-                    |ui| {
-                        ui.add(crate::ui::Rail(egui::Slider::new(
-                            &mut s.intensity,
-                            0.0..=100.0,
-                        )))
-                    },
+                    |ui| ui.add(crate::ui::Slider::new(&mut s.intensity, 0.0..=100.0)),
                 );
                 ui.end_row();
             }
@@ -506,10 +491,10 @@ pub fn remove_background_dialog(
                 ui.end_row();
                 ui.label(tr("dialog.tolerance"));
                 crate::ui::tips::tip_over(ui, crate::ui::tips::keyed("dialog.tolerance"), |ui| {
-                    ui.add(crate::ui::Rail(egui::Slider::new(
+                    ui.add(crate::ui::Slider::new(
                         &mut st.settings.tolerance,
                         0.0..=100.0,
-                    )))
+                    ))
                 });
                 ui.end_row();
                 ui.label(tr("dialog.edge_softness"));
@@ -517,9 +502,10 @@ pub fn remove_background_dialog(
                     ui,
                     crate::ui::tips::keyed("dialog.edge_softness"),
                     |ui| {
-                        ui.add(crate::ui::Rail(
-                            egui::Slider::new(&mut st.settings.softness, 0.0..=20.0).suffix(" px"),
-                        ))
+                        ui.add(
+                            crate::ui::Slider::new(&mut st.settings.softness, 0.0..=20.0)
+                                .suffix(" px"),
+                        )
                     },
                 );
                 ui.end_row();

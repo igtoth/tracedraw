@@ -201,11 +201,19 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 }
                 ui.separator();
                 ui.label(tr("print.zoom"));
-                ui.add(
-                    egui::Slider::new(&mut pv.zoom, 0.25..=4.0)
-                        .logarithmic(true)
-                        .custom_formatter(|v, _| format!("{:.0} %", v * 100.0)),
-                );
+                // The zoom in percent on the slider, a factor in the view.
+                let mut percent = pv.zoom * 100.0;
+                if ui
+                    .add(
+                        crate::ui::Slider::new(&mut percent, 25.0..=400.0)
+                            .logarithmic(true)
+                            .suffix(" %")
+                            .max_decimals(0),
+                    )
+                    .changed()
+                {
+                    pv.zoom = percent / 100.0;
+                }
                 if ui.button(tr("print.fit")).clicked() {
                     pv.zoom = 1.0;
                 }

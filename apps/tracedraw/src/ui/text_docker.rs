@@ -993,11 +993,7 @@ fn font_axes(app: &mut App, ui: &mut Ui, sp: &TextSpan) {
             let mut v = ui.data(|d| d.get_temp::<f64>(id)).unwrap_or(held);
             let step = if axis.max - axis.min > 20.0 { 1.0 } else { 0.1 };
             ui.spacing_mut().slider_width = (ui.available_width() - 70.0).max(60.0);
-            let r = ui.add(crate::ui::Rail(
-                egui::Slider::new(&mut v, axis.min..=axis.max)
-                    .step_by(step)
-                    .clamping(egui::SliderClamping::Always),
-            ));
+            let r = ui.add(crate::ui::Slider::new(&mut v, axis.min..=axis.max).step_by(step));
             if r.dragged() {
                 ui.data_mut(|d| d.insert_temp(id, v));
                 if r.changed() {

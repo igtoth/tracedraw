@@ -158,7 +158,7 @@ pub fn mesh_bar(app: &mut App, ui: &mut Ui) {
     let r = ui
         .add_enabled(
             node.is_some(),
-            egui::Slider::new(&mut transparency, 0..=100).suffix(" %"),
+            crate::ui::Slider::new(&mut transparency, 0..=100).suffix(" %"),
         )
         .rich_tip(tr("toolbar.mesh_node_transparency"));
     if r.changed() {

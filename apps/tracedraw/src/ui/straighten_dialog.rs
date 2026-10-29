@@ -298,9 +298,11 @@ pub fn straighten_dialog(app: &mut App, ctx: &Context, st: &mut StraightenState,
                               step: f64| {
                     ui.label(tr(key));
                     crate::ui::tips::tip_over(ui, crate::ui::tips::keyed(key), |ui| {
-                        ui.add(crate::ui::Rail(
-                            egui::Slider::new(v, range).step_by(step).max_decimals(1),
-                        ))
+                        ui.add(
+                            crate::ui::Slider::new(v, range)
+                                .step_by(step)
+                                .max_decimals(1),
+                        )
                     });
                 };
                 slider(
@@ -347,9 +349,7 @@ pub fn straighten_dialog(app: &mut App, ctx: &Context, st: &mut StraightenState,
                     |ui| {
                         ui.add_enabled(
                             st.grid,
-                            crate::ui::Rail(
-                                egui::Slider::new(&mut st.grid_size, 8.0..=80.0).integer(),
-                            ),
+                            crate::ui::Slider::new(&mut st.grid_size, 8.0..=80.0).integer(),
                         )
                     },
                 );

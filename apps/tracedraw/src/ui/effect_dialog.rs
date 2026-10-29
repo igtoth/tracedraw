@@ -117,7 +117,7 @@ pub fn param_widget(
         } => {
             ui.label(tr(&key));
             let mut v = values.get(spec.name).copied().unwrap_or(default);
-            let mut s = egui::Slider::new(&mut v, min..=max);
+            let mut s = crate::ui::Slider::new(&mut v, min..=max);
             if step >= 1.0 {
                 s = s.integer();
             } else {
@@ -128,7 +128,7 @@ pub fn param_widget(
             if min > 0.0 && max / min >= 100.0 {
                 s = s.logarithmic(true);
             }
-            let resp = crate::ui::tips::tip_over(ui, tip(), |ui| ui.add(crate::ui::Rail(s)));
+            let resp = crate::ui::tips::tip_over(ui, tip(), |ui| ui.add(s));
             if resp.changed() {
                 values.insert(spec.name.to_string(), v);
                 changed = true;

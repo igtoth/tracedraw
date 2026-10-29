@@ -1845,11 +1845,11 @@ fn fountain_editor(ui: &mut Ui, f: &mut Fountain) -> bool {
         FountainKind::Linear | FountainKind::Conical | FountainKind::Square
     ) {
         changed |= ui
-            .add(crate::ui::Rail(
-                egui::Slider::new(&mut f.angle, -180.0..=180.0)
+            .add(
+                crate::ui::Slider::new(&mut f.angle, -180.0..=180.0)
                     .text(tr("docker.angle_lc"))
                     .suffix("°"),
-            ))
+            )
             .drag_stopped();
     }
     if !matches!(f.kind, FountainKind::Linear | FountainKind::Shaped) {
@@ -1873,11 +1873,11 @@ fn fountain_editor(ui: &mut Ui, f: &mut Fountain) -> bool {
     }
     let mut pad = f.edge_pad * 100.0;
     if ui
-        .add(crate::ui::Rail(
-            egui::Slider::new(&mut pad, 0.0..=49.0)
+        .add(
+            crate::ui::Slider::new(&mut pad, 0.0..=49.0)
                 .text(tr("docker.edge_pad"))
                 .suffix("%"),
-        ))
+        )
         .drag_stopped()
     {
         f.edge_pad = pad / 100.0;
@@ -1952,11 +1952,11 @@ pub(crate) fn pattern_editor(ui: &mut Ui, p: &mut Pattern) -> bool {
             changed |= color_row(ui, &tr("docker.front"), front);
             changed |= color_row(ui, &tr("docker.back"), back);
             changed |= ui
-                .add(crate::ui::Rail(
-                    egui::Slider::new(size_mm, 1.0..=100.0)
+                .add(
+                    crate::ui::Slider::new(size_mm, 1.0..=100.0)
                         .text(tr("docker.tile_size_mm"))
                         .logarithmic(true),
-                ))
+                )
                 .drag_stopped();
         }
         Pattern::Bitmap {
@@ -1970,11 +1970,11 @@ pub(crate) fn pattern_editor(ui: &mut Ui, p: &mut Pattern) -> bool {
                 &[("w", &width_px.to_string()), ("h", &height_px.to_string())],
             ));
             changed |= ui
-                .add(crate::ui::Rail(
-                    egui::Slider::new(size_mm, 1.0..=200.0)
+                .add(
+                    crate::ui::Slider::new(size_mm, 1.0..=200.0)
                         .text(tr("docker.tile_size_mm"))
                         .logarithmic(true),
-                ))
+                )
                 .drag_stopped();
         }
         Pattern::Vector { shapes, tile } => {
@@ -1984,18 +1984,18 @@ pub(crate) fn pattern_editor(ui: &mut Ui, p: &mut Pattern) -> bool {
             ));
             let (mut w, mut h) = (tile.width, tile.height);
             changed |= ui
-                .add(crate::ui::Rail(
-                    egui::Slider::new(&mut w, 1.0..=200.0)
+                .add(
+                    crate::ui::Slider::new(&mut w, 1.0..=200.0)
                         .text(tr("docker.tile_width"))
                         .logarithmic(true),
-                ))
+                )
                 .drag_stopped();
             changed |= ui
-                .add(crate::ui::Rail(
-                    egui::Slider::new(&mut h, 1.0..=200.0)
+                .add(
+                    crate::ui::Slider::new(&mut h, 1.0..=200.0)
                         .text(tr("docker.tile_height"))
                         .logarithmic(true),
-                ))
+                )
                 .drag_stopped();
             if (w - tile.width).abs() > 1e-9 || (h - tile.height).abs() > 1e-9 {
                 // Scale the tile content with its size so the drawing keeps its shape.
@@ -2031,11 +2031,11 @@ pub(crate) fn texture_editor(ui: &mut Ui, t: &mut Texture) -> bool {
     changed |= color_row(ui, &tr("docker.colour_a"), &mut t.color_a);
     changed |= color_row(ui, &tr("docker.colour_b"), &mut t.color_b);
     changed |= ui
-        .add(crate::ui::Rail(
-            egui::Slider::new(&mut t.scale, 1.0..=200.0)
+        .add(
+            crate::ui::Slider::new(&mut t.scale, 1.0..=200.0)
                 .text(tr("docker.scale_mm"))
                 .logarithmic(true),
-        ))
+        )
         .drag_stopped();
     ui.horizontal(|ui| {
         ui.label(tr("docker.seed"));
@@ -2211,11 +2211,11 @@ fn outline_editor_mixed(
                 let width_tip =
                     crate::ui::tips::pair("toolbar.outline_width", "docker.outline_width_desc");
                 let r = ui
-                    .add(crate::ui::Rail(
-                        egui::Slider::new(&mut s.width, 0.1..=25.0)
+                    .add(
+                        crate::ui::Slider::new(&mut s.width, 0.1..=25.0)
                             .logarithmic(true)
                             .show_value(false),
-                    ))
+                    )
                     .rich_tip(width_tip.clone());
                 let mut w = r.drag_stopped() || (r.changed() && !r.dragged());
                 // The width in the outline unit; the model keeps mm.
@@ -2489,9 +2489,7 @@ fn outline_editor_mixed(
                         tr(key)
                     };
                     if ui
-                        .add(crate::ui::Rail(
-                            egui::Slider::new(v, range).text(text).suffix(suffix),
-                        ))
+                        .add(crate::ui::Slider::new(v, range).text(text).suffix(suffix))
                         .rich_tip(if field == StrokeField::Stretch {
                             crate::ui::tips::pair(
                                 "docker.nib_stretch_tip",
@@ -3399,8 +3397,11 @@ mod tests {
             draw(&ctx2, &mut app2);
         }
         let texts = painted_texts(&ctx2, &mut app2);
+        // The slider's label, with the colon the slider adds.
         assert!(
-            texts.iter().any(|t| *t == tr("docker.nib_angle_lc")),
+            texts
+                .iter()
+                .any(|t| t.trim_end_matches(':') == tr("docker.nib_angle_lc")),
             "{texts:?}"
         );
     }

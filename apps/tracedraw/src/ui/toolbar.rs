@@ -1733,10 +1733,8 @@ fn curve_tool_properties(app: &mut App, ui: &mut Ui) {
     if app.tool == Tool::Freehand {
         sep(ui);
         let mut v = app.settings.curves.smoothing.min(100);
-        ui.add(crate::ui::Rail(
-            egui::Slider::new(&mut v, 0..=100).show_value(true),
-        ))
-        .rich_tip(tr("toolbar.freehand_smoothing"));
+        ui.add(crate::ui::Slider::new(&mut v, 0..=100).show_value(true))
+            .rich_tip(tr("toolbar.freehand_smoothing"));
         app.settings.curves.smoothing = v;
     }
     if app.tool == Tool::Pen {
@@ -2166,12 +2164,11 @@ fn transparency_controls(app: &mut App, ui: &mut Ui, stacked: bool) {
         if set.kind == 0 && !kind_mixed {
             let amount_mixed = mixed.contains(&F::Amount);
             let mut amount = set.amount;
-            let mut slider = egui::Slider::new(&mut amount, 0.0..=100.0).suffix(" %");
-            if amount_mixed {
-                slider = slider.text(tr("docker.mixed"));
-            }
+            let slider = crate::ui::Slider::new(&mut amount, 0.0..=100.0)
+                .suffix(" %")
+                .mixed(amount_mixed);
             if ui
-                .add_enabled(has_selection, crate::ui::Rail(slider))
+                .add_enabled(has_selection, slider)
                 .rich_tip(crate::ui::tips::keyed("toolbar.transparency_amount"))
                 .changed()
             {
@@ -2693,11 +2690,9 @@ fn shape_tool_bar(app: &mut App, ui: &mut Ui) {
     let r = ui
         .add_enabled(
             has_curve,
-            crate::ui::Rail(
-                egui::Slider::new(&mut v, 0.0..=100.0)
-                    .show_value(true)
-                    .integer(),
-            ),
+            crate::ui::Slider::new(&mut v, 0.0..=100.0)
+                .show_value(true)
+                .integer(),
         )
         .rich_tip(tr("toolbar.curve_smoothness"));
     if r.changed() {

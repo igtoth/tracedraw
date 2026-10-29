@@ -88,6 +88,7 @@ pub mod rulers;
 pub mod save_as;
 pub mod shaping_docker;
 pub mod shelf_docker;
+pub mod slider;
 pub mod status;
 pub mod straighten_dialog;
 pub mod symmetry_bar;
@@ -117,6 +118,7 @@ use crate::i18n::tr;
 use crate::theme::Tokens;
 use crate::ui::tips::RichTip;
 use egui::{Frame, Panel, Sense, Ui};
+pub use slider::Slider;
 use tracedraw_core::geometry::Point;
 
 /// Customization > Appearance > Interface size: the size of the menus,

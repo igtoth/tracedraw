@@ -1114,7 +1114,7 @@ fn bitmaps(ui: &mut Ui, b: &mut BitmapPrefs) {
                 });
             ui.add_enabled_ui(b.jpeg, |ui| {
                 ui.label(tr("publish.jpeg_quality"));
-                ui.add(egui::Slider::new(&mut b.jpeg_quality, 1..=100));
+                ui.add(crate::ui::Slider::new(&mut b.jpeg_quality, 1..=100));
             });
         });
         ui.checkbox(&mut b.compress_content, tr("publish.compress_content"));

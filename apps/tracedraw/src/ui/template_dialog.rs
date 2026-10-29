@@ -213,7 +213,7 @@ pub fn dialog(app: &mut App, ctx: &Context, st: &mut TemplateState, close: &mut 
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.spacing_mut().slider_width = 120.0;
-                ui.add(egui::Slider::new(&mut st.size, 40.0..=160.0).show_value(false))
+                ui.add(crate::ui::Slider::new(&mut st.size, 40.0..=160.0).show_value(false))
                     .rich_tip(tr("tpl.thumbnail_size"));
             });
         });

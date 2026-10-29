@@ -573,7 +573,7 @@ pub fn node_bar(app: &mut App, ui: &mut egui::Ui) {
                         );
                         changed_opacity = ui
                             .add(
-                                egui::Slider::new(&mut transparency, 0.0..=100.0)
+                                crate::ui::Slider::new(&mut transparency, 0.0..=100.0)
                                     .suffix(" %")
                                     .fixed_decimals(0),
                             )

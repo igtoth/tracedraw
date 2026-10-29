@@ -791,9 +791,7 @@ pub fn grid_page(app: &mut App, ui: &mut Ui) {
                 |ui| {
                     let mut o = meta.grid.pixel_opacity * 100.0;
                     if ui
-                        .add(crate::ui::Rail(
-                            egui::Slider::new(&mut o, 0.0..=100.0).suffix(" %"),
-                        ))
+                        .add(crate::ui::Slider::new(&mut o, 0.0..=100.0).suffix(" %"))
                         .changed()
                     {
                         meta.grid.pixel_opacity = (o / 100.0).clamp(0.0, 1.0);

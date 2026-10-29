@@ -1249,22 +1249,18 @@ fn lens(app: &mut App, ui: &mut Ui) {
     let l = &mut app.lens;
     match l.kind {
         1 => {
-            ui.add(crate::ui::Rail(
-                egui::Slider::new(&mut l.rate, -100.0..=100.0).text(tr("docker.rate")),
-            ))
-            .rich_tip(crate::ui::tips::pair(
-                "docker.rate",
-                "docker.lens_rate_desc",
-            ));
+            ui.add(crate::ui::Slider::new(&mut l.rate, -100.0..=100.0).text(tr("docker.rate")))
+                .rich_tip(crate::ui::tips::pair(
+                    "docker.rate",
+                    "docker.lens_rate_desc",
+                ));
         }
         2 | 3 | 10 => {
-            ui.add(crate::ui::Rail(
-                egui::Slider::new(&mut l.rate, 0.0..=100.0).text(tr("docker.rate")),
-            ))
-            .rich_tip(crate::ui::tips::pair(
-                "docker.rate",
-                "docker.lens_rate_desc",
-            ));
+            ui.add(crate::ui::Slider::new(&mut l.rate, 0.0..=100.0).text(tr("docker.rate")))
+                .rich_tip(crate::ui::tips::pair(
+                    "docker.rate",
+                    "docker.lens_rate_desc",
+                ));
             ui.horizontal(|ui| {
                 ui.label(tr("docker.color"));
                 color_button(ui, &mut l.color);
@@ -1279,28 +1275,25 @@ fn lens(app: &mut App, ui: &mut Ui) {
             });
         }
         5 => {
-            ui.add(crate::ui::Rail(
-                egui::Slider::new(&mut l.rate, -100.0..=100.0).text(tr("docker.rate")),
-            ))
-            .rich_tip(crate::ui::tips::pair(
-                "docker.rate",
-                "docker.lens_rate_desc",
-            ));
+            ui.add(crate::ui::Slider::new(&mut l.rate, -100.0..=100.0).text(tr("docker.rate")))
+                .rich_tip(crate::ui::tips::pair(
+                    "docker.rate",
+                    "docker.lens_rate_desc",
+                ));
         }
         6 => {
-            ui.add(crate::ui::Rail(
-                egui::Slider::new(&mut l.rate, 0.0..=100.0).text(tr("docker.palette_rotation")),
-            ))
+            ui.add(
+                crate::ui::Slider::new(&mut l.rate, 0.0..=100.0)
+                    .text(tr("docker.palette_rotation")),
+            )
             .rich_tip(crate::ui::tips::keyed("docker.palette_rotation"));
         }
         8 => {
-            ui.add(crate::ui::Rail(
-                egui::Slider::new(&mut l.amount, 1.0..=10.0).text(tr("docker.amount")),
-            ))
-            .rich_tip(crate::ui::tips::pair(
-                "docker.amount",
-                "docker.lens_amount_desc",
-            ));
+            ui.add(crate::ui::Slider::new(&mut l.amount, 1.0..=10.0).text(tr("docker.amount")))
+                .rich_tip(crate::ui::tips::pair(
+                    "docker.amount",
+                    "docker.lens_amount_desc",
+                ));
         }
         9 | 11 => {
             ui.horizontal(|ui| {
@@ -1594,9 +1587,7 @@ fn blend(app: &mut App, ui: &mut Ui) {
     ui.horizontal(|ui| {
         ui.label(tr("docker.blend_object"));
         if ui
-            .add(crate::ui::Rail(
-                egui::Slider::new(&mut accel_o, -1.0..=1.0).show_value(false),
-            ))
+            .add(crate::ui::Slider::new(&mut accel_o, -1.0..=1.0).show_value(false))
             .rich_tip(crate::ui::tips::pair(
                 "docker.blend_object",
                 "docker.object_acceleration_desc",
@@ -1614,7 +1605,7 @@ fn blend(app: &mut App, ui: &mut Ui) {
         if ui
             .add_enabled(
                 !app.blend_link_accel,
-                crate::ui::Rail(egui::Slider::new(&mut accel_c, -1.0..=1.0).show_value(false)),
+                crate::ui::Slider::new(&mut accel_c, -1.0..=1.0).show_value(false),
             )
             .rich_tip(crate::ui::tips::pair(
                 "docker.blend_color",
@@ -1824,31 +1815,29 @@ fn bevel(app: &mut App, ui: &mut Ui) {
             .is_some();
     });
     changed |= ui
-        .add(crate::ui::Rail(
-            egui::Slider::new(&mut b.distance, 0.1..=50.0)
+        .add(
+            crate::ui::Slider::new(&mut b.distance, 0.1..=50.0)
                 .text(tr("docker.distance"))
                 .logarithmic(true),
-        ))
+        )
         .rich_tip(crate::ui::tips::pair(
             "docker.distance",
             "docker.bevel_distance_desc",
         ))
         .changed();
     changed |= ui
-        .add(crate::ui::Rail(
-            egui::Slider::new(&mut b.light_angle, 0.0..=360.0)
+        .add(
+            crate::ui::Slider::new(&mut b.light_angle, 0.0..=360.0)
                 .text(tr("docker.light_angle"))
                 .suffix("°"),
-        ))
+        )
         .rich_tip(crate::ui::tips::pair(
             "docker.light_angle",
             "extrude.light_angle_desc",
         ))
         .changed();
     changed |= ui
-        .add(crate::ui::Rail(
-            egui::Slider::new(&mut b.intensity, 0.0..=100.0).text(tr("docker.intensity")),
-        ))
+        .add(crate::ui::Slider::new(&mut b.intensity, 0.0..=100.0).text(tr("docker.intensity")))
         .rich_tip(crate::ui::tips::pair(
             "docker.intensity",
             "extrude.light_intensity_desc",
@@ -1914,11 +1903,11 @@ fn brush_strokes(app: &mut App, ui: &mut Ui) {
     let u = app.units;
     let mut w = u.from_mm(app.media_width);
     if ui
-        .add(crate::ui::Rail(
-            egui::Slider::new(&mut w, 0.1..=u.from_mm(50.0))
+        .add(
+            crate::ui::Slider::new(&mut w, 0.1..=u.from_mm(50.0))
                 .text(tr("docker.stroke_width"))
                 .logarithmic(true),
-        ))
+        )
         .rich_tip(crate::ui::tips::pair(
             "docker.stroke_width",
             "docker.media_width_desc",
@@ -1929,11 +1918,11 @@ fn brush_strokes(app: &mut App, ui: &mut Ui) {
     }
     match app.media_mode {
         crate::media::MediaMode::Calligraphic => {
-            ui.add(crate::ui::Rail(
-                egui::Slider::new(&mut app.media_angle, 0.0..=180.0)
+            ui.add(
+                crate::ui::Slider::new(&mut app.media_angle, 0.0..=180.0)
                     .text(tr("docker.nib_angle"))
                     .suffix("°"),
-            ))
+            )
             .rich_tip(crate::ui::tips::keyed("docker.nib_angle"));
         }
         crate::media::MediaMode::Preset | crate::media::MediaMode::Brush => {
@@ -1961,18 +1950,20 @@ fn brush_strokes(app: &mut App, ui: &mut Ui) {
                     }
                 }
             });
-            ui.add(crate::ui::Rail(
-                egui::Slider::new(&mut app.media_spacing, 1.0..=50.0).text(tr("docker.spacing")),
-            ))
+            ui.add(
+                crate::ui::Slider::new(&mut app.media_spacing, 1.0..=50.0)
+                    .text(tr("docker.spacing")),
+            )
             .rich_tip(crate::ui::tips::pair(
                 "docker.spacing",
                 "docker.spray_spacing_desc",
             ));
         }
         crate::media::MediaMode::Expression => {
-            ui.add(crate::ui::Rail(
-                egui::Slider::new(&mut app.media_pressure, 0.0..=1.0).text(tr("docker.pressure")),
-            ))
+            ui.add(
+                crate::ui::Slider::new(&mut app.media_pressure, 0.0..=1.0)
+                    .text(tr("docker.pressure")),
+            )
             .rich_tip(crate::ui::tips::pair(
                 "docker.pressure",
                 "docker.pressure_desc",
@@ -1981,10 +1972,10 @@ fn brush_strokes(app: &mut App, ui: &mut Ui) {
     }
     ui.horizontal(|ui| {
         ui.label(tr("docker.smoothing"));
-        ui.add(crate::ui::Rail(egui::Slider::new(
+        ui.add(crate::ui::Slider::new(
             &mut app.media_smoothing,
             0.0..=100.0,
-        )))
+        ))
         .rich_tip(crate::ui::tips::pair(
             "docker.smoothing",
             "docker.smoothing_desc",
@@ -2197,10 +2188,8 @@ fn bitmap_mask(app: &mut App, ui: &mut Ui) {
         let i = app.mask.picked.min(MASK_SLOTS - 1);
         let tol = &mut app.mask.slots[i].tolerance;
         let tip = crate::ui::tips::pair("docker.tolerance", "docker.mask_tolerance_desc");
-        ui.add(crate::ui::Rail(
-            egui::Slider::new(tol, 0..=100).show_value(false),
-        ))
-        .rich_tip(&tip);
+        ui.add(crate::ui::Slider::new(tol, 0..=100).show_value(false))
+            .rich_tip(&tip);
         ui.add(
             crate::ui::field::NumField::new(tol)
                 .range(0..=100)

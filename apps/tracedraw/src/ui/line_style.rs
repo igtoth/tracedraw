@@ -216,7 +216,10 @@ pub fn dialog(app: &mut App, ctx: &Context, st: &mut State, close: &mut bool) {
         let mut n = st.cells.len();
         ui.horizontal(|ui| {
             ui.label(tr("line_style.length"));
-            if ui.add(egui::Slider::new(&mut n, 2..=MAX_CELLS)).changed() {
+            if ui
+                .add(crate::ui::Slider::new(&mut n, 2..=MAX_CELLS))
+                .changed()
+            {
                 st.cells.resize(n, false);
             }
         });

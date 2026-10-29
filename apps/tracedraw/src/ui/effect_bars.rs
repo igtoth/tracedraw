@@ -65,9 +65,7 @@ pub fn blend_bar(app: &mut App, ui: &mut Ui) {
     let pct = |ui: &mut Ui, key: &str, v: &mut f64| {
         let mut p = (*v * 100.0).round() as i32;
         let r = crate::ui::toolbar::dim_labelled(ui, key, |ui| {
-            ui.add(crate::ui::Rail(
-                egui::Slider::new(&mut p, -100..=100).suffix(" %"),
-            ))
+            ui.add(crate::ui::Slider::new(&mut p, -100..=100).suffix(" %"))
         });
         if r.changed() {
             *v = p as f64 / 100.0;

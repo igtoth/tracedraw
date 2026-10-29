@@ -2140,7 +2140,7 @@ fn status_line(
             ui.label(egui::RichText::new("A").size(18.0));
             let mut px = prefs.sample_px();
             if ui
-                .add(egui::Slider::new(&mut px, SAMPLE_PX).show_value(false))
+                .add(crate::ui::Slider::new(&mut px, SAMPLE_PX).show_value(false))
                 .rich_tip(tr("font_manager.sample_size"))
                 .changed()
             {

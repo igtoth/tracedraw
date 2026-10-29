@@ -1013,7 +1013,7 @@ fn edit_page(app: &mut App, ui: &mut Ui) {
         let mut v = app.settings.focus_visibility as f32;
         if ui
             .add(
-                egui::Slider::new(&mut v, 0.0..=100.0)
+                crate::ui::Slider::new(&mut v, 0.0..=100.0)
                     .suffix(" %")
                     .integer(),
             )
@@ -2408,22 +2408,13 @@ fn appearance_page(app: &mut App, ui: &mut Ui) {
     let busy = ui
         .horizontal(|ui| {
             let slider = ui
-                .scope(|ui| {
-                    // The form style draws inputs white; the rail needs
-                    // to show on the page.
-                    ui.spacing_mut().slider_width = 220.0;
-                    let w = &mut ui.visuals_mut().widgets;
-                    w.inactive.bg_fill = crate::theme::Tokens::slider_rail();
-                    w.inactive.fg_stroke = egui::Stroke::new(1.0, Tokens::control_border());
-                    ui.visuals_mut().selection.bg_fill = Tokens::ACCENT;
-                    ui.add(
-                        egui::Slider::new(&mut pct, UI_SIZE_RANGE)
-                            .step_by(5.0)
-                            .show_value(false)
-                            .trailing_fill(true),
-                    )
-                })
-                .inner
+                .add(
+                    crate::ui::Slider::new(&mut pct, UI_SIZE_RANGE)
+                        .step_by(5.0)
+                        .show_value(false)
+                        .trailing_fill(true)
+                        .width(220.0),
+                )
                 .rich_tip(crate::ui::tips::pair(
                     "options.interface_size",
                     "options.ui_size_tip",
@@ -3710,7 +3701,7 @@ fn curves_page(app: &mut App, ui: &mut Ui) {
     grid("curves").show(ui, |ui| {
         row_label(ui, &tr("options.freehand_smoothing"));
         let mut v = c.smoothing.min(100);
-        ui.add(egui::Slider::new(&mut v, 0..=100))
+        ui.add(crate::ui::Slider::new(&mut v, 0..=100))
             .rich_tip(crate::ui::tips::pair(
                 "options.freehand_smoothing",
                 "options.freehand_smoothing_tip",
