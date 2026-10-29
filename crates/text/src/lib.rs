@@ -61,6 +61,10 @@ pub struct FontSystem {
     /// typographic family ("Arial"), with their faces: drawings name fonts
     /// that way.
     legacy: RwLock<HashMap<String, Vec<fontdb::ID>>>,
+    /// Stand-ins chosen by the user for families that are not installed
+    /// (the Missing Fonts dialog, this session only, #936): tried before
+    /// [`substitutes`].
+    chosen: RwLock<HashMap<String, String>>,
 }
 
 /// Register this engine as the core's text outliner (call once at startup).
@@ -1366,7 +1370,35 @@ impl FontSystem {
             fallbacks: Mutex::new(HashMap::new()),
             generation: AtomicU64::new(0),
             legacy: RwLock::new(legacy),
+            chosen: RwLock::new(HashMap::new()),
         }
+    }
+
+    /// Draw text set in `family`, while it is not installed, with
+    /// `with` (an installed family) for the rest of the session; `None`
+    /// goes back to the automatic choice (#936). Views redraw.
+    pub fn set_substitute(&self, family: &str, with: Option<&str>) {
+        {
+            let mut chosen = self.chosen.write().unwrap_or_else(|e| e.into_inner());
+            match with {
+                Some(w) if !w.is_empty() && w != family => {
+                    chosen.insert(family.to_string(), w.to_string());
+                }
+                _ => {
+                    chosen.remove(family);
+                }
+            }
+        }
+        self.fonts_changed();
+    }
+
+    /// The stand-in chosen for `family` with [`FontSystem::set_substitute`].
+    pub fn chosen_substitute(&self, family: &str) -> Option<String> {
+        self.chosen
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(family)
+            .cloned()
     }
 
     /// Note the legacy family names of faces just loaded (see
@@ -2149,10 +2181,18 @@ impl FontSystem {
         let target = target_weight(family, bold);
         let weight = fontdb::Weight(target);
         let base = split_weight(family).map(|(b, _)| b);
-        let mut fams: Vec<fontdb::Family> = substitutes(base.unwrap_or(family))
-            .into_iter()
+        // The stand-in the user chose comes first (#936).
+        let chosen = self.chosen_substitute(family);
+        let mut fams: Vec<fontdb::Family> = chosen
+            .as_deref()
             .map(fontdb::Family::Name)
+            .into_iter()
             .collect();
+        fams.extend(
+            substitutes(base.unwrap_or(family))
+                .into_iter()
+                .map(fontdb::Family::Name),
+        );
         fams.extend([
             fontdb::Family::Name("DejaVu Sans"),
             fontdb::Family::Name("Arial"),
@@ -6792,6 +6832,30 @@ mod tests {
         let junk = DocumentFont::new("Junk", vec![1, 2, 3]);
         assert!(f.add_document_fonts(&[restricted, junk]).is_empty());
         assert!(!f.has_family("Junk"));
+    }
+
+    /// A stand-in chosen for a missing family draws its text for the
+    /// session and goes back to the automatic one when cleared (#936).
+    #[test]
+    fn a_chosen_stand_in_draws_a_missing_family() {
+        let f = system_with(&[SELAWIK, QUICKSAND]);
+        let auto = f.substitute("Gone Grotesk").expect("a stand-in");
+        let other = if auto == "Quicksand" {
+            "Selawik"
+        } else {
+            "Quicksand"
+        };
+        let before = f.generation();
+        f.set_substitute("Gone Grotesk", Some(other));
+        assert!(f.generation() > before, "views redraw");
+        assert_eq!(f.chosen_substitute("Gone Grotesk").as_deref(), Some(other));
+        assert_eq!(f.substitute("Gone Grotesk").as_deref(), Some(other));
+        // Bold text of the family too, and other families are not touched.
+        assert!(f.face_for("Gone Grotesk", true, false).is_some());
+        assert_eq!(f.substitute("Other Gone").as_deref(), Some(auto.as_str()));
+        f.set_substitute("Gone Grotesk", None);
+        assert_eq!(f.substitute("Gone Grotesk"), Some(auto));
+        assert!(f.chosen_substitute("Gone Grotesk").is_none());
     }
 
     /// The file to embed for a face is the one that draws its text

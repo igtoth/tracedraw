@@ -1430,6 +1430,10 @@ pub struct App {
     /// The Table tool's drag and bar choices.
     pub table_ui: crate::table_tool::TableUi,
     pub missing_fonts: Vec<String>,
+    /// Ask which font draws each missing family after a drawing opens
+    /// (the Missing Fonts dialog, #936): the windowed application only;
+    /// automated opens (tests, scripts, the MCP server) keep the note.
+    pub ask_missing_fonts: bool,
     /// Thumbnails of recent drawings loaded for the Welcome Screen (none
     /// when a drawing has no thumbnail).
     pub recent_thumbs: std::collections::HashMap<PathBuf, Option<egui::TextureHandle>>,
@@ -2120,6 +2124,8 @@ impl App {
         app.show_welcome = false;
         // Tests read PDFs without the question in between.
         app.settings.formats.pdf_ask_text = false;
+        // Nor the fonts: automated opens are never stopped by a question.
+        app.ask_missing_fonts = false;
         app
     }
 
@@ -2439,6 +2445,7 @@ impl App {
             table_edit: None,
             table_ui: Default::default(),
             missing_fonts: Vec::new(),
+            ask_missing_fonts: true,
             shaping_op: crate::ops::Shaping::Weld,
             shaping_leave: crate::settings::PanelPrefs::default().shaping_leave,
             color_model: 1,
@@ -6578,6 +6585,18 @@ impl App {
             return;
         }
         let w = &self.settings.warnings;
+        // The windowed application asks which font draws each missing
+        // one (#936); the note about unread objects follows.
+        if self.ask_missing_fonts && w.missing_fonts && !self.missing_fonts.is_empty() {
+            self.dialog = crate::ui::dialogs::Dialog::MissingFonts(
+                crate::ui::missing_fonts::MissingFontsState::new(
+                    name,
+                    if w.unread_objects { unread } else { 0 },
+                    &self.missing_fonts,
+                ),
+            );
+            return;
+        }
         let notes = crate::ui::dialogs::OpenNotes {
             name,
             unread: if w.unread_objects { unread } else { 0 },
@@ -8809,7 +8828,10 @@ mod tests {
         app.settings.check_updates = true;
         app.dialog = crate::ui::dialogs::Dialog::ConfirmClose;
         app.update_tick_desktop(10 * crate::updates::DAILY, None);
-        assert!(matches!(app.dialog, crate::ui::dialogs::Dialog::ConfirmClose));
+        assert!(matches!(
+            app.dialog,
+            crate::ui::dialogs::Dialog::ConfirmClose
+        ));
         app.dialog = crate::ui::dialogs::Dialog::None;
         app.update_tick_desktop(10 * crate::updates::DAILY, None);
         assert!(matches!(

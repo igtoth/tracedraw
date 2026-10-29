@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Opening a drawing with fonts that are not installed shows a Missing Fonts dialog: each missing font with the installed font that draws it now (the automatic choice), and a list to choose another, either for this session only (the drawing keeps its font names) or replaced in the drawing for good (one undo step). Opens from tests, scripts and the MCP server are never stopped by it and keep the note (#936).
+
 ## 0.20.0 (2026-10-28)
 
 - Variable fonts: the text follows the axis sliders (Text docker, and the button beside the font size) while they are dragged, so the weight, width or any other axis can be judged on the page. The text changed only when the slider was released. Releasing still keeps the value as one undo step (#870).

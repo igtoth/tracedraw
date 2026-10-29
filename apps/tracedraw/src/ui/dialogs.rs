@@ -927,6 +927,9 @@ pub enum Dialog {
     ChangeDefaults(crate::ui::defaults_dialog::State),
     /// File > Save As: folder, name, type, `.cdr` version, properties.
     SaveAs(crate::ui::save_as::SaveAsState),
+    /// After opening a drawing with fonts that are not installed: the
+    /// font drawing each, to choose (#936).
+    MissingFonts(crate::ui::missing_fonts::MissingFontsState),
 }
 
 /// Convert to Bitmap: Resolution (a list and a value), Color mode,
@@ -1306,6 +1309,7 @@ pub fn show(app: &mut App, ctx: &Context) {
         Dialog::PdfPassword(st) => crate::ui::pdf_password::dialog(app, ctx, st, &mut close),
         Dialog::ChangeDefaults(st) => crate::ui::defaults_dialog::dialog(app, ctx, st, &mut close),
         Dialog::SaveAs(st) => crate::ui::save_as::dialog(app, ctx, st, &mut close),
+        Dialog::MissingFonts(st) => crate::ui::missing_fonts::dialog(app, ctx, st, &mut close),
         Dialog::BitmapDuotone(st) => {
             crate::ui::bitmap_dialogs::duotone_dialog(app, ctx, st, &mut close)
         }
