@@ -131,7 +131,7 @@ pub fn document_to_cdr_version_with(doc: &Document, version: u16, previews: &Pre
     // package's own member (#986); a RIFF file has no place for it.
     let own = crate::kept_blends::encode(&w.blends, &w.static_ids);
     let own = own.as_deref();
-    if v.redirects() {
+    let out = if v.redirects() {
         let (root, files) = pack_redirected(v, &tree);
         zip_v16(v, doc, &root, &files, previews, &font_ids, own)
     } else {
@@ -141,7 +141,11 @@ pub fn document_to_cdr_version_with(doc: &Document, version: u16, previews: &Pre
         } else {
             riff
         }
-    }
+    };
+    // Every file the tests write passes the checker (`check.rs`).
+    #[cfg(test)]
+    crate::check::assert_clean(&out, v.0);
+    out
 }
 
 /// Coordinate units per millimetre.

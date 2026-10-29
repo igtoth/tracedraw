@@ -361,6 +361,21 @@ the values those files have.
 Every version written opens again in this crate (`write/tests.rs`:
 shapes, groups, bitmaps, clipped bitmaps, pages, text runs, alignment,
 corner shapes and stars in each version, and the record sizes above).
+Every file those tests write also passes the checker of `check.rs`
+(`tracedraw-cli check file.cdr`), which walks the chunk tree and reports
+what the program that reads the file would stumble on: a subpath that
+ends back at its start without closing on its last node, segments and
+subpaths of no length (the cause inferred for #1130), a `bbox` that does
+not hold the object's nodes or reaches beyond its control points through
+its transform, `obbx` corners outside the box grown by half the outline,
+`usdn` or `spnd` numbers used twice, fill or outline ids used twice, text
+objects without a record or with paragraphs or runs of no letters, and
+fill, outline and style ids that name no record. It reads versions 7 to
+27. On files of other programs it reports things that are not faults
+there (their `obbx` holds the turned object's corners, a few of their
+curves hold segments of no length), so it is tuned to what this writer
+produces; the files TraceDraw wrote before the fixes of #1130 and #986
+show the segments of no length it was made to catch.
 Another open-source reader opened files of every version and drew their
 shapes, fills, outlines, bitmaps and text; there, version 14 gradients
 do not open (its version 14 stop size differs from the files, as the

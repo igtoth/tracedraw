@@ -188,7 +188,7 @@ pub(crate) const OBJ_ELLIPSE: u32 = 0x02;
 pub(crate) const OBJ_CURVE: u32 = 0x03;
 pub(crate) const OBJ_ARTISTIC_TEXT: u32 = 0x04;
 pub(crate) const OBJ_BITMAP: u32 = 0x05;
-const OBJ_PARAGRAPH_TEXT: u32 = 0x06;
+pub(crate) const OBJ_PARAGRAPH_TEXT: u32 = 0x06;
 const OBJ_POLYGON: u32 = 0x14;
 const OBJ_PATH: u32 = 0x25;
 /// A straight connector line whose ends are in its `ppdt` record.
@@ -5047,7 +5047,7 @@ fn paragraph_spacing(style: &text::RunStyle, base: &ParagraphStyle) -> Paragraph
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     #[test]
@@ -5106,7 +5106,7 @@ mod tests {
 
     // Byte-building helpers: RIFF chunks and typical payloads.
 
-    fn chunk(id: &[u8; 4], payload: &[u8]) -> Vec<u8> {
+    pub(crate) fn chunk(id: &[u8; 4], payload: &[u8]) -> Vec<u8> {
         let mut v = id.to_vec();
         v.extend_from_slice(&(payload.len() as u32).to_le_bytes());
         v.extend_from_slice(payload);
@@ -5116,25 +5116,25 @@ mod tests {
         v
     }
 
-    fn list(lt: &[u8; 4], body: &[u8]) -> Vec<u8> {
+    pub(crate) fn list(lt: &[u8; 4], body: &[u8]) -> Vec<u8> {
         let mut payload = lt.to_vec();
         payload.extend_from_slice(body);
         chunk(b"LIST", &payload)
     }
 
-    fn riff(form: &[u8; 4], body: &[u8]) -> Vec<u8> {
+    pub(crate) fn riff(form: &[u8; 4], body: &[u8]) -> Vec<u8> {
         let mut payload = form.to_vec();
         payload.extend_from_slice(body);
         chunk(b"RIFF", &payload)
     }
 
-    fn u16s(v: &[u16]) -> Vec<u8> {
+    pub(crate) fn u16s(v: &[u16]) -> Vec<u8> {
         v.iter().flat_map(|x| x.to_le_bytes()).collect()
     }
-    fn u32s(v: &[u32]) -> Vec<u8> {
+    pub(crate) fn u32s(v: &[u32]) -> Vec<u8> {
         v.iter().flat_map(|x| x.to_le_bytes()).collect()
     }
-    fn i32s(v: &[i32]) -> Vec<u8> {
+    pub(crate) fn i32s(v: &[i32]) -> Vec<u8> {
         v.iter().flat_map(|x| x.to_le_bytes()).collect()
     }
     fn f64s(v: &[f64]) -> Vec<u8> {
@@ -5142,7 +5142,7 @@ mod tests {
     }
 
     /// 12-byte colour record (version 5+): BGR model 5.
-    fn color_bgr(r: u8, g: u8, b: u8) -> Vec<u8> {
+    pub(crate) fn color_bgr(r: u8, g: u8, b: u8) -> Vec<u8> {
         let mut v = u16s(&[5, 0]);
         v.extend_from_slice(&[0xaa; 4]); // unknown bytes must be skipped
         v.extend_from_slice(&[b, g, r, 0]);
@@ -5158,7 +5158,7 @@ mod tests {
 
     /// A `loda` payload (32-bit header) with the given object type and
     /// arguments (type, body). Types are written reversed, as in files.
-    fn loda(kind: u32, args: &[(u32, Vec<u8>)]) -> Vec<u8> {
+    pub(crate) fn loda(kind: u32, args: &[(u32, Vec<u8>)]) -> Vec<u8> {
         let header = 20usize;
         let mut bodies = Vec::new();
         let mut offsets = Vec::new();
@@ -5235,7 +5235,7 @@ mod tests {
         out
     }
 
-    fn mcfg(v: u16, w: i32, h: i32) -> Vec<u8> {
+    pub(crate) fn mcfg(v: u16, w: i32, h: i32) -> Vec<u8> {
         let pad = if v >= 13 {
             12
         } else if v >= 9 {
@@ -7005,7 +7005,7 @@ mod tests {
     }
 
     /// version 13+ solid fill with a property list holding one colour.
-    fn solid_fild_v13(id: u32, rgb: (u8, u8, u8)) -> Vec<u8> {
+    pub(crate) fn solid_fild_v13(id: u32, rgb: (u8, u8, u8)) -> Vec<u8> {
         let mut props = vec![0x01u8];
         props.extend_from_slice(&12u32.to_le_bytes());
         props.extend_from_slice(&color_bgr(rgb.0, rgb.1, rgb.2));
@@ -7019,15 +7019,15 @@ mod tests {
     }
 
     /// One style record of the 7 to version 15 `txsm` layout.
-    struct Style7 {
-        chars: u16,
-        font: Option<u16>,
-        flags: Option<u32>,
-        size_units: Option<i32>,
-        fill: Option<u32>,
+    pub(crate) struct Style7 {
+        pub(crate) chars: u16,
+        pub(crate) font: Option<u16>,
+        pub(crate) flags: Option<u32>,
+        pub(crate) size_units: Option<i32>,
+        pub(crate) fill: Option<u32>,
     }
 
-    fn txsm7(v: u16, frame: bool, styles: &[Style7], text: &str) -> Vec<u8> {
+    pub(crate) fn txsm7(v: u16, frame: bool, styles: &[Style7], text: &str) -> Vec<u8> {
         txsm7_opt(v, frame, styles, text, false)
     }
 

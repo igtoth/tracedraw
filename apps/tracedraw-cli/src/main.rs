@@ -4,6 +4,7 @@
 //! tracedraw-cli inspect file.cdr          dump the RIFF chunk tree
 //! tracedraw-cli info file.cdr             version, pages, objects, warnings
 //! tracedraw-cli convert in.cdr out.svg    export the first page (or .tdraw)
+//! tracedraw-cli check file.cdr            findings of a written file
 //! ```
 
 use std::process::ExitCode;
@@ -80,7 +81,7 @@ fn mutate(data: &[u8], seed: u64) -> Vec<u8> {
 }
 
 fn usage() -> ExitCode {
-    eprintln!("usage:\n  tracedraw-cli inspect <file.cdr> [chunk id]\n  tracedraw-cli info <file.cdr|file.cmx|file.tdraw>\n  tracedraw-cli icc <profile.icc>\n  tracedraw-cli stress <file> [iterations]   mutation test of the file's reader\n  tracedraw-cli convert <in.cdr|in.cmx|in.tdraw|in.svg|in.pdf|in.ai|in.eps|in.ps|in.prn|in.dxf|in.psd|in.emf|in.wmf|in.plt|in.txt|in.rtf|in.docx> <out.svg|out.pdf|out.eps|out.ps|out.prn|out.dxf|out.emf|out.wmf|out.plt|out.psd|out.html|out.png|out.tdraw|out.cdr>");
+    eprintln!("usage:\n  tracedraw-cli inspect <file.cdr> [chunk id]\n  tracedraw-cli info <file.cdr|file.cmx|file.tdraw>\n  tracedraw-cli check <file.cdr>   findings of a written file (curves, boxes, ids, text, references)\n  tracedraw-cli icc <profile.icc>\n  tracedraw-cli stress <file> [iterations]   mutation test of the file's reader\n  tracedraw-cli convert <in.cdr|in.cmx|in.tdraw|in.svg|in.pdf|in.ai|in.eps|in.ps|in.prn|in.dxf|in.psd|in.emf|in.wmf|in.plt|in.txt|in.rtf|in.docx> <out.svg|out.pdf|out.eps|out.ps|out.prn|out.dxf|out.emf|out.wmf|out.plt|out.psd|out.html|out.png|out.tdraw|out.cdr>");
     ExitCode::from(2)
 }
 
@@ -413,6 +414,38 @@ fn main() -> ExitCode {
                 }
             }
             ExitCode::SUCCESS
+        }
+        Some("check") => {
+            // Checks a .cdr file for what a reader would stumble on
+            // (curves, boxes, ids, text records, references); one line per
+            // finding, exit code 1 when there are any.
+            let Some(path) = args.get(2) else {
+                return usage();
+            };
+            let bytes = match std::fs::read(path) {
+                Ok(b) => b,
+                Err(e) => {
+                    eprintln!("{path}: {e}");
+                    return ExitCode::FAILURE;
+                }
+            };
+            match tracedraw_cdr::check::check_bytes(&bytes) {
+                Ok(findings) if findings.is_empty() => {
+                    outln!("{path}: no findings");
+                    ExitCode::SUCCESS
+                }
+                Ok(findings) => {
+                    for f in &findings {
+                        outln!("{path}: {f}");
+                    }
+                    outln!("{path}: {} finding(s)", findings.len());
+                    ExitCode::FAILURE
+                }
+                Err(e) => {
+                    eprintln!("{path}: {e}");
+                    ExitCode::FAILURE
+                }
+            }
         }
         Some("info") => {
             let Some(path) = args.get(2) else {

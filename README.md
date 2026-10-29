@@ -284,6 +284,7 @@ TRACEDRAW_PDF_BOOKMARKS=1 TRACEDRAW_PDF_OWNER_PASSWORD=boss \
 tracedraw-cli inspect drawing.cdr
 tracedraw-cli info drawing.cdr
 TRACEDRAW_OBJECTS=1 tracedraw-cli info drawing.cdr   # every object
+tracedraw-cli check saved.cdr   # what a reader would stumble on in a file TraceDraw wrote
 
 # Serve the editor to an AI agent over the Model Context Protocol
 tracedraw --mcp

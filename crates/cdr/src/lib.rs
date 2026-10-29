@@ -19,6 +19,7 @@
 //! failure: opening a file must always yield a document.
 #![forbid(unsafe_code)]
 
+pub mod check;
 pub mod cmx;
 pub mod container;
 pub mod eot;
