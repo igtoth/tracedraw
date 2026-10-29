@@ -515,7 +515,12 @@ pub fn view(
         move |pos: Pos2| split_view && (pos.x - (first.left() + first.width() * split)).abs() < 6.0;
     let mut on_divider = ui.data(|d| d.get_temp::<bool>(divider_id)).unwrap_or(false);
     if resp.drag_started() {
-        on_divider = resp.interact_pointer_pos().is_some_and(near_divider);
+        // Where the button went down, not where the pointer is once the
+        // drag counts as one.
+        let origin = ui
+            .input(|i| i.pointer.press_origin())
+            .or_else(|| resp.interact_pointer_pos());
+        on_divider = origin.is_some_and(near_divider);
         ui.data_mut(|d| d.insert_temp(divider_id, on_divider));
     }
     if resp.dragged() && on_divider {

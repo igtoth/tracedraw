@@ -69,4 +69,7 @@ have a status line (Trace Bitmap's curves, nodes and colours).
   a drag pans (the place changes), and ten idle frames allocate no new
   texture and ask for no frame (nothing is worked out per frame).
 - `pick_drag_tests::the_remove_background_eyedropper_picks_on_the_shared_preview`:
-  the eyedropper's click on a pane adds the colour under it.
+  the eyedropper's click on a pane adds the colour under it, and the
+  pan button ends the picking.
+- `pick_drag_tests::the_split_views_divider_drags`: the divider drags
+  where the button went down on it; a drag elsewhere pans.

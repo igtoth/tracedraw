@@ -13062,3 +13062,53 @@ fn the_remove_background_eyedropper_picks_on_the_shared_preview() {
         assert_eq!(st.settings.colors.len(), 1);
     }
 }
+
+/// The split view's divider drags where the button went down on it,
+/// and a drag elsewhere pans the picture.
+#[test]
+fn the_split_views_divider_drags() {
+    let img = image::RgbaImage::from_fn(300, 200, |x, _| {
+        image::Rgba([(x * 255 / 300) as u8, 80, 80, 255])
+    });
+    let (ctx, mut app, _) = trace_setup(img);
+    let mut st = crate::ui::effect_dialog::EffectState::new("image_adjustments");
+    st.lab.view.view = crate::ui::before_after::View::Split;
+    app.dialog = crate::ui::dialogs::Dialog::Effect(st);
+    for _ in 0..3 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    let pane = preview_rect(&ctx, "view_pane");
+    let divider = egui::pos2(pane.left() + pane.width() * 0.5, pane.center().y);
+    drag(
+        &ctx,
+        &mut app,
+        divider,
+        divider + egui::vec2(-80.0, 0.0),
+        Modifiers::NONE,
+        Vec::new(),
+    );
+    let split = match &app.dialog {
+        crate::ui::dialogs::Dialog::Effect(st) => st.lab.view.clone(),
+        other => panic!("{other:?}"),
+    };
+    assert!(
+        (split.split - (0.5 - 80.0 / pane.width())).abs() < 0.02,
+        "{}",
+        split.split
+    );
+    assert_eq!(split.centre, None, "the picture did not pan");
+    // Away from the divider, a drag pans.
+    let from = egui::pos2(pane.left() + pane.width() * 0.8, pane.center().y);
+    drag(
+        &ctx,
+        &mut app,
+        from,
+        from + egui::vec2(-40.0, 0.0),
+        Modifiers::NONE,
+        Vec::new(),
+    );
+    if let crate::ui::dialogs::Dialog::Effect(st) = &app.dialog {
+        assert!(st.lab.view.centre.is_some());
+        assert!((st.lab.view.split - split.split).abs() < 1e-6);
+    }
+}
