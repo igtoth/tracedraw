@@ -3977,6 +3977,11 @@ pub struct Document {
     /// when the drawing's changes are undone.
     #[serde(default, skip_serializing_if = "TimeTracker::is_empty")]
     pub time_tracker: TimeTracker,
+    /// The view the drawing was last saved with, for Options > Display >
+    /// View when a drawing opens: As saved (#1134). Like the Time
+    /// Tracker it stays out of the undo history.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub saved_view: Option<SavedView>,
     /// Selection groups 0 to 9: objects stored under a number to be
     /// selected again with it, saved with the drawing.
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
@@ -4148,6 +4153,29 @@ mod shared_bytes {
     }
 }
 
+/// Where a drawing was viewed when it was saved: the page shown (its
+/// index), the page point in the middle of the window (mm) and the zoom
+/// in percent of real size (#1134).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct SavedView {
+    pub page: usize,
+    pub x: f64,
+    pub y: f64,
+    pub zoom_percent: f64,
+}
+
+impl SavedView {
+    /// Usable for a drawing of `pages` pages: the page is there and the
+    /// numbers are finite, the zoom above zero.
+    pub fn is_valid(&self, pages: usize) -> bool {
+        self.page < pages
+            && self.x.is_finite()
+            && self.y.is_finite()
+            && self.zoom_percent.is_finite()
+            && self.zoom_percent > 0.0
+    }
+}
+
 /// The Time Tracker's records, saved with the drawing: its tasks and the
 /// one being tracked (Window > Toolbars > Time Tracker).
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
@@ -4243,6 +4271,7 @@ impl Document {
             },
             palette: Vec::new(),
             time_tracker: TimeTracker::default(),
+            saved_view: None,
             selection_groups: std::collections::BTreeMap::new(),
             fonts: Vec::new(),
             cmyk_profile: None,

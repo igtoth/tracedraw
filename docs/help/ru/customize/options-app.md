@@ -27,6 +27,11 @@
 - [[options.full_screen_preview]]: [[options.show_page_border]].
 - [[options.wheel_default_action]]: [[options.wheel_zoom]] (по умолчанию) или
   [[options.wheel_scroll]].
+- [[options.open_view]]: [[options.open_view_page]] (по умолчанию),
+  [[options.open_view_objects]], [[options.open_view_width]],
+  [[options.open_view_height]], [[options.open_view_actual]] или
+  [[options.open_view_saved]] (страница, место и масштаб, запоминаемые при
+  каждом сохранении файла TraceDraw).
 - [[options.ruler_calibration]]: приложите линейку к экрану и меняйте
   [[options.screen_resolution]], пока деления не совпадут, чтобы масштаб 100%
   показывал реальные размеры. [[options.reset]] возвращает 96.

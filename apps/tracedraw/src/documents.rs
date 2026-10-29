@@ -51,6 +51,9 @@ pub struct DocSlot {
     pub cdr_unsaved_version: Option<u16>,
     pub tdraw_version: Option<u32>,
     pub fit_pending: bool,
+    /// The view of Options > Display > View when a drawing opens is
+    /// still to be set (#1134).
+    pub open_view_pending: bool,
     pub page_numbers: PageNumberSettings,
     pub missing_fonts: Vec<String>,
     /// Drawing units of this drawing (the property bar's Units).
@@ -85,6 +88,7 @@ impl Default for DocSlot {
             cdr_unsaved_version: None,
             tdraw_version: None,
             fit_pending: false,
+            open_view_pending: false,
             page_numbers: PageNumberSettings::default(),
             missing_fonts: Vec::new(),
             units: Default::default(),
@@ -113,6 +117,7 @@ impl App {
         std::mem::swap(&mut self.view, &mut slot.view);
         std::mem::swap(&mut self.selection, &mut slot.selection);
         std::mem::swap(&mut self.fit_pending, &mut slot.fit_pending);
+        std::mem::swap(&mut self.open_view_pending, &mut slot.open_view_pending);
         std::mem::swap(&mut self.picked_layer, &mut slot.picked_layer);
         std::mem::swap(self.raster.get_mut(), &mut slot.raster);
         std::mem::swap(&mut self.view_anchor, &mut slot.view_anchor);
@@ -298,6 +303,7 @@ impl App {
         self.tdraw_version = None;
         self.view = View::default();
         self.fit_pending = true;
+        self.open_view_pending = true;
         self.page_numbers = PageNumberSettings::default();
         self.missing_fonts.clear();
         self.units = units;
@@ -470,6 +476,7 @@ impl App {
         self.tdraw_version = None;
         self.view = View::default();
         self.fit_pending = true;
+        self.open_view_pending = false;
         self.page_numbers = PageNumberSettings::default();
         self.missing_fonts.clear();
         self.pivots = Default::default();

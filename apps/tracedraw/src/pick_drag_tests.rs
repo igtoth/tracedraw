@@ -11721,3 +11721,81 @@ fn segment_delete_drags_a_freehand_stroke_with_alt_or_the_bar() {
         assert_eq!(has_middle(&app, h), freehand, "{bar_freehand} {mods:?}");
     }
 }
+
+/// Options > Display > View when a drawing opens: the whole page, the
+/// objects, the page's width or height, real size, or the page, place
+/// and zoom the drawing was saved with; saving keeps that view with no
+/// undo step and no change mark, and a drawing saved without it opens
+/// fitted to the page (#1134).
+#[test]
+fn a_drawing_opens_in_the_view_chosen_in_options() {
+    use crate::settings::OpenView;
+    let (ctx, mut app, _) = setup();
+    let dir = std::env::temp_dir().join(format!("td-open-view-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("dir");
+    let path = dir.join("view.tdraw");
+    let plain = dir.join("plain.tdraw");
+    // A second page with a small object off to one side.
+    app.add_page();
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    app.new_shape(ShapeKind::Rect {
+        rect: Rect::new(150.0, 250.0, 170.0, 260.0),
+        radius: 0.0,
+        corners: None,
+    })
+    .expect("rect");
+    tracedraw_io::save_native(app.doc(), &plain).expect("save");
+    // Viewed at 250 % around (160, 255) on page 2, then saved.
+    app.set_zoom_percent(250.0);
+    let c = app.canvas_rect.center();
+    let at = app.view.to_screen(Point::new(160.0, 255.0));
+    app.view.origin += c - at;
+    let steps = app.engine.history_labels().0.len();
+    app.save_to(path.clone());
+    assert!(!app.engine.is_dirty(), "saving the view is no change");
+    assert_eq!(app.engine.history_labels().0.len(), steps, "and no step");
+    let open = |app: &mut App, view: OpenView, p: &std::path::Path| {
+        app.settings.open_view = view;
+        app.close_active_document();
+        app.open_path(p.to_path_buf());
+        for _ in 0..3 {
+            frame(&ctx, app, Vec::new(), Modifiers::NONE);
+        }
+    };
+    open(&mut app, OpenView::AsSaved, &path);
+    assert_eq!(app.page_index(), 1);
+    assert!(
+        (app.zoom_percent() - 250.0).abs() < 0.5,
+        "{}",
+        app.zoom_percent()
+    );
+    let mid = app.view.to_page(app.canvas_rect.center());
+    assert!((mid - Point::new(160.0, 255.0)).hypot() < 0.5, "{mid:?}");
+    // Saved without a view: the whole page, as Fit to page shows it.
+    open(&mut app, OpenView::AsSaved, &plain);
+    let as_saved = app.view;
+    open(&mut app, OpenView::FitPage, &plain);
+    assert_eq!(app.page_index(), 0);
+    assert!((app.view.zoom - as_saved.zoom).abs() < 1e-4);
+    let page = app.view.rect_to_screen(app.page_rect());
+    let canvas = app.canvas_rect;
+    assert!(canvas.contains_rect(page), "{page:?} {canvas:?}");
+    let fit = app.view.zoom;
+    // Page width: the page's width across the window (an A4 page in a
+    // wide window is shown taller than the window).
+    open(&mut app, OpenView::PageWidth, &plain);
+    let page = app.view.rect_to_screen(app.page_rect());
+    assert!(app.view.zoom > fit * 1.5, "{} {fit}", app.view.zoom);
+    assert!(page.width() <= canvas.width() + 0.5 && page.width() > canvas.width() * 0.8);
+    open(&mut app, OpenView::PageHeight, &plain);
+    let page = app.view.rect_to_screen(app.page_rect());
+    assert!(page.height() <= canvas.height() + 0.5 && page.height() > canvas.height() * 0.8);
+    open(&mut app, OpenView::Actual, &plain);
+    assert!((app.zoom_percent() - 100.0).abs() < 0.5);
+    // Fit to objects: page 1's 50 x 30 mm rectangle fills the window.
+    open(&mut app, OpenView::FitObjects, &plain);
+    assert!(app.view.zoom > fit * 2.0, "{} {fit}", app.view.zoom);
+    let mid = app.view.to_page(app.canvas_rect.center());
+    assert!((mid - Point::new(35.0, 25.0)).hypot() < 0.5, "{mid:?}");
+    let _ = std::fs::remove_dir_all(&dir);
+}

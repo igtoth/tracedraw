@@ -26,6 +26,11 @@ sets how the program works. Choose a page from the list on the left.
 - [[options.full_screen_preview]]: [[options.show_page_border]].
 - [[options.wheel_default_action]]: [[options.wheel_zoom]] (at first) or
   [[options.wheel_scroll]].
+- [[options.open_view]]: [[options.open_view_page]] (at first),
+  [[options.open_view_objects]], [[options.open_view_width]],
+  [[options.open_view_height]], [[options.open_view_actual]] or
+  [[options.open_view_saved]] (the page, place and zoom kept each time a
+  TraceDraw file is saved).
 - [[options.ruler_calibration]]: hold a ruler against the screen and change
   the [[options.screen_resolution]] until the marks match, so that zoom 100%
   shows real sizes. [[options.reset]] puts back 96.

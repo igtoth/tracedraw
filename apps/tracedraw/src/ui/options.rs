@@ -853,6 +853,21 @@ fn display_page(app: &mut App, ui: &mut Ui) {
         });
         app.settings.wheel_zooms = zoom;
         ui.end_row();
+        row_label(ui, &tr("options.open_view"));
+        let mut view = app.settings.open_view;
+        let tip = crate::ui::tips::pair("options.open_view", "options.open_view_tip");
+        crate::ui::tips::tip_over(ui, tip, |ui| {
+            combo(
+                ui,
+                "open_view",
+                &mut view,
+                &crate::settings::OpenView::ALL,
+                |v| tr(v.key()),
+                160.0,
+            );
+        });
+        app.settings.open_view = view;
+        ui.end_row();
     });
     chrome::section(ui, &tr("options.ruler_calibration"));
     ui.label(

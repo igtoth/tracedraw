@@ -40,7 +40,7 @@ was changed on every tab (#633).
 | Page | Settings (defaults) |
 |---|---|
 | General | On start-up: Welcome Screen, Start a new document, Open last edited document; Show New Document dialog box (on); Show the splash screen at start-up (on); Undo levels, Regular (150) |
-| Display | Proof colors; Show tooltips (on); Hide bounding box for curve tools (off); Enable node tracking (off, see `pick-tool.md`); Full-screen preview: Show page border (on); Default action for mouse wheel: Zoom or Scroll; Ruler calibration (below) |
+| Display | Proof colors; Show tooltips (on); Hide bounding box for curve tools (off); Enable node tracking (off, see `pick-tool.md`); Full-screen preview: Show page border (on); Default action for mouse wheel: Zoom or Scroll; View when a drawing opens (below); Ruler calibration (below) |
 | Edit | Constrain angle (15 degrees: Ctrl while rotating); Drawing precision (3 decimal places in the property bar and the status bar) |
 | Nodes and Handles | Node size Small, Medium, Large (7, 9, 11 px); node shape per type (cusp square, smooth circle, symmetrical diamond); Show curve direction (an arrow after the first node, secondary colour); main colour (selected nodes and handles, blue) and secondary colour (red); Show unselected nodes with fill (on, Ctrl+Shift+G) |
 | clip frame | Auto-center new content: when it lies completely outside the frame (default), always, never; Show lines in empty clip frame frames (on, on screen) |
@@ -190,6 +190,31 @@ it), applied when the slider is let go.
 - Preferences written before sizes were relative (`ui_scale`, an absolute
   size) are ignored: the size starts at 100 % (`ui_size`).
 - Ctrl+plus and Ctrl+minus zoom the drawing, never the interface.
+
+## View when a drawing opens
+
+Options > Display > View when a drawing opens (`open_view` in the
+preferences) sets the view of every drawing opened or made, once its
+window first shows it (#1134):
+
+| Choice | View |
+|---|---|
+| Fit to page (default) | the whole page (in Multipage View, all the pages), as before |
+| Fit to objects | the objects of the first page with a 5 % margin, as View > Zoom to Fit; an empty page stays fitted |
+| Page width | the page's width across the window, the page centred down it |
+| Page height | the page's height down the window |
+| 100% (real size) | real size (see Ruler calibration), the middle of the page in the middle of the window |
+| As saved | the page, the point in the middle of the window and the zoom the drawing had when it was last saved |
+
+Saving a TraceDraw file keeps its view in the file (`saved_view`: the
+page index, the middle point in mm and the zoom in percent of real
+size). Keeping it is no undo step and does not mark the drawing changed,
+and undo and redo leave it alone. A file saved without it (an older
+file, another format, a page that is gone, numbers that are not finite
+or a zoom of 0) opens fitted to the page. In Multipage View As saved
+shows the saved page and keeps the pages fitted.
+`pick_drag_tests::a_drawing_opens_in_the_view_chosen_in_options`,
+`engine::tests::the_saved_view_stays_out_of_the_history`.
 
 ## Ruler calibration
 

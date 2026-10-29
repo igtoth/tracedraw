@@ -20,6 +20,7 @@
 - [[options.show_tooltips]]（打开）、[[options.hide_bbox_curve_tools]] 和 [[options.node_tracking]]（关闭：打开时，[[tool.pick]] 工具可以拖动所选曲线的节点）。
 - [[options.full_screen_preview]]：[[options.show_page_border]]。
 - [[options.wheel_default_action]]：[[options.wheel_zoom]]（起初选用）或 [[options.wheel_scroll]]。
+- [[options.open_view]]：[[options.open_view_page]]（起初选用）、[[options.open_view_objects]]、[[options.open_view_width]]、[[options.open_view_height]]、[[options.open_view_actual]]或[[options.open_view_saved]]（每次保存 TraceDraw 文件时记下的页面、位置和缩放）。
 - [[options.ruler_calibration]]：将一把尺子贴在屏幕上，更改 [[options.screen_resolution]] 直到刻度吻合，使 100% 缩放显示真实尺寸。[[options.reset]] 恢复为 96。
 
 ## 编辑 {#edit}

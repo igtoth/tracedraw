@@ -122,6 +122,9 @@ pub struct Settings {
     /// Default action of the mouse wheel: zoom (the default) or scroll.
     #[serde(default = "default_true")]
     pub wheel_zooms: bool,
+    /// The view a drawing opens in (#1134).
+    #[serde(default)]
+    pub open_view: OpenView,
     /// Arrowheads created with Object > Create > Arrowhead.
     #[serde(default)]
     pub custom_arrowheads: Vec<tracedraw_core::Arrowhead>,
@@ -637,6 +640,48 @@ fn default_precision() -> u32 {
 
 fn default_text_increment() -> f64 {
     1.0
+}
+
+/// The view a drawing opens in (Options > Display, #1134).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum OpenView {
+    /// The whole page in the window.
+    #[default]
+    FitPage,
+    /// The objects on the page, or the page when it is empty.
+    FitObjects,
+    /// The page's width across the window.
+    PageWidth,
+    /// The page's height down the window.
+    PageHeight,
+    /// Real size, the page in the middle.
+    Actual,
+    /// The page, place and zoom it was saved with (TraceDraw files), else
+    /// the whole page.
+    AsSaved,
+}
+
+impl OpenView {
+    pub const ALL: [OpenView; 6] = [
+        OpenView::FitPage,
+        OpenView::FitObjects,
+        OpenView::PageWidth,
+        OpenView::PageHeight,
+        OpenView::Actual,
+        OpenView::AsSaved,
+    ];
+
+    pub fn key(self) -> &'static str {
+        match self {
+            OpenView::FitPage => "options.open_view_page",
+            OpenView::FitObjects => "options.open_view_objects",
+            OpenView::PageWidth => "options.open_view_width",
+            OpenView::PageHeight => "options.open_view_height",
+            OpenView::Actual => "options.open_view_actual",
+            OpenView::AsSaved => "options.open_view_saved",
+        }
+    }
 }
 
 /// What opens when the application starts (Options > General).
@@ -1354,6 +1399,7 @@ impl Default for Settings {
             color: ColorPrefs::default(),
             show_outline_flyout: false,
             wheel_zooms: true,
+            open_view: OpenView::default(),
             toolbox: Vec::new(),
             custom_arrowheads: Vec::new(),
             custom_dashes: Vec::new(),

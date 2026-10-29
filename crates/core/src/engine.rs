@@ -326,16 +326,19 @@ impl Engine {
         self.doc.ids_mut().shape()
     }
 
-    /// Put `snapshot` in place of the drawing, keeping the id counters and
-    /// the time tracker (they never rewind); the drawing it replaced is
+    /// Put `snapshot` in place of the drawing, keeping the id counters, the
+    /// time tracker and the saved view (they never rewind); the drawing it replaced is
     /// returned, for the other stack.
     fn swap_in(&mut self, snapshot: Document) -> Document {
         let ids = self.doc.ids().clone();
         let tracker = std::mem::take(&mut self.doc.time_tracker);
+        let saved_view = self.doc.saved_view.take();
         let mut was = std::mem::replace(&mut self.doc, snapshot);
         self.doc.set_ids(ids);
         self.doc.time_tracker = tracker;
+        self.doc.saved_view = saved_view;
         was.time_tracker = Default::default();
+        was.saved_view = None;
         self.revision += 1;
         was
     }
@@ -832,6 +835,61 @@ mod tests {
                 .unwrap();
         }
         assert_eq!(eng.history_labels().0.len(), 2);
+    }
+
+    /// The view a drawing is saved with is kept without an undo step,
+    /// without marking the drawing changed, through undo and redo, and
+    /// goes into the file and back (#1134).
+    #[test]
+    fn the_saved_view_stays_out_of_the_history() {
+        let mut eng = Engine::default();
+        let layer = eng.document().pages[0].layers[0].id;
+        let id = eng.new_shape_id();
+        let shape = Shape::new(
+            id,
+            ShapeKind::Ellipse {
+                rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+                arc: None,
+            },
+        );
+        eng.run(&Command::AddShape { layer, shape }).unwrap();
+        eng.mark_saved();
+        let rev = eng.revision();
+        let view = crate::document::SavedView {
+            page: 0,
+            x: 12.5,
+            y: -3.0,
+            zoom_percent: 250.0,
+        };
+        eng.run(&Command::SetSavedView { view: Some(view) })
+            .unwrap();
+        assert_eq!(eng.history_labels().0, vec!["Create Object"]);
+        assert_eq!(eng.revision(), rev);
+        assert!(!eng.is_dirty());
+        eng.undo().unwrap();
+        assert_eq!(eng.document().saved_view, Some(view));
+        eng.redo().unwrap();
+        assert_eq!(eng.document().saved_view, Some(view));
+        let mut json = Vec::new();
+        eng.document()
+            .write_json_version(&mut json, crate::document::TDRAW_FORMAT_VERSION)
+            .unwrap();
+        let back = crate::Document::from_json(std::str::from_utf8(&json).unwrap()).unwrap();
+        assert_eq!(back.saved_view, Some(view));
+        assert!(view.is_valid(1) && !view.is_valid(0));
+        assert!(!crate::document::SavedView {
+            zoom_percent: f64::NAN,
+            ..view
+        }
+        .is_valid(1));
+        // A file without one opens without one.
+        let plain = crate::Document::from_json(
+            &String::from_utf8(json.clone())
+                .unwrap()
+                .replace("\"saved_view\"", "\"unknown_saved_view\""),
+        )
+        .unwrap();
+        assert_eq!(plain.saved_view, None);
     }
 
     #[test]

@@ -26,6 +26,11 @@ określa sposób działania programu. Wybierz stronę z listy po lewej stronie.
 - [[options.full_screen_preview]]: [[options.show_page_border]].
 - [[options.wheel_default_action]]: [[options.wheel_zoom]] (domyślnie) lub
   [[options.wheel_scroll]].
+- [[options.open_view]]: [[options.open_view_page]] (domyślnie),
+  [[options.open_view_objects]], [[options.open_view_width]],
+  [[options.open_view_height]], [[options.open_view_actual]] lub
+  [[options.open_view_saved]] (strona, miejsce i powiększenie zapamiętane
+  przy każdym zapisie pliku TraceDraw).
 - [[options.ruler_calibration]]: przyłóż linijkę do ekranu i zmieniaj wartość
   [[options.screen_resolution]], aż podziałki się pokryją, aby powiększenie 100%
   pokazywało rzeczywiste rozmiary. [[options.reset]] przywraca 96.

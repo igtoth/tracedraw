@@ -923,6 +923,9 @@ pub struct App {
     /// it is the one shown: the hint that hardware acceleration is off.
     pub status_opens_options: Option<String>,
     pub fit_pending: bool,
+    /// Set the view of Options > Display > View when a drawing opens
+    /// with the next fit (a drawing just opened or made, #1134).
+    pub open_view_pending: bool,
     pub units: Units,
     pub nudge_mm: f64,
     pub show_rulers: bool,
@@ -2177,6 +2180,7 @@ impl App {
             status: String::new(),
             status_opens_options: None,
             fit_pending: true,
+            open_view_pending: true,
             units: Units::Millimeters,
             nudge_mm: 2.54,
             show_rulers: true,
@@ -6130,6 +6134,7 @@ impl App {
             let version = self
                 .tdraw_version
                 .unwrap_or(tracedraw_core::document::TDRAW_FORMAT_VERSION);
+            self.keep_saved_view();
             let fonts = tracedraw_text::fonts();
             let carried = fonts.with_carried_fonts(self.engine.document());
             let doc = if self.tdraw_embed_fonts {
@@ -7320,6 +7325,87 @@ impl App {
 
     pub fn zoom_to_page(&mut self) {
         self.fit_pending = true;
+    }
+
+    /// The view a drawing opens in, in a window showing `canvas`, after
+    /// the page was fitted to it: Options > Display > View when a drawing
+    /// opens (#1134). As saved takes the page, the point in the middle of
+    /// the window and the zoom the drawing was saved with; a drawing
+    /// saved without them (or with numbers that cannot be used) stays
+    /// fitted to the page.
+    pub fn apply_open_view(&mut self, canvas: egui::Rect) {
+        use crate::settings::OpenView;
+        let keep = self.canvas_rect;
+        self.canvas_rect = canvas;
+        match self.settings.open_view {
+            OpenView::FitPage => {}
+            OpenView::FitObjects => {
+                if !self.multipage {
+                    if let Some(b) = self.doc().content_bounds(self.page).ok().flatten() {
+                        self.view.fit(
+                            b.inflate(b.width() * 0.05 + 1.0, b.height() * 0.05 + 1.0),
+                            canvas,
+                        );
+                    }
+                }
+            }
+            OpenView::PageWidth => self.zoom_to_page_width(),
+            OpenView::PageHeight => self.zoom_to_page_height(),
+            OpenView::Actual => {
+                let c = self.page_rect().center();
+                self.centre_view_at(c, 100.0, canvas);
+            }
+            OpenView::AsSaved => {
+                let pages = self.doc().pages.len();
+                if let Some(v) = self.doc().saved_view.filter(|v| v.is_valid(pages)) {
+                    if let Some(id) = self.doc().pages.get(v.page).map(|p| p.id) {
+                        if self.multipage {
+                            self.multipage_activate(id);
+                        } else if id != self.page {
+                            self.page = id;
+                            self.view.fit(self.fit_rect(), canvas);
+                        }
+                        if !self.multipage {
+                            self.centre_view_at(
+                                Point::new(v.x, v.y),
+                                v.zoom_percent as f32,
+                                canvas,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        self.canvas_rect = keep;
+    }
+
+    /// Put page point `p` in the middle of `canvas` at `percent` zoom.
+    fn centre_view_at(&mut self, p: Point, percent: f32, canvas: egui::Rect) {
+        let zoom = (percent / 100.0 * self.zoom_100()).clamp(0.05, 400.0);
+        if !zoom.is_finite() {
+            return;
+        }
+        let c = canvas.center();
+        self.view.zoom = zoom;
+        self.view.origin = Pos2::new(c.x - p.x as f32 * zoom, c.y + p.y as f32 * zoom);
+    }
+
+    /// Keep the page, the point in the middle of the window and the zoom
+    /// in the drawing, for As saved (#1134); no undo step, no change mark.
+    pub fn keep_saved_view(&mut self) {
+        let c = self.view.to_page(self.canvas_rect.center());
+        let view = tracedraw_core::document::SavedView {
+            page: self.page_index(),
+            x: c.x,
+            y: c.y,
+            zoom_percent: self.zoom_percent() as f64,
+        };
+        let view = view.is_valid(self.doc().pages.len()).then_some(view);
+        if view != self.doc().saved_view {
+            if let Err(e) = self.engine.run(&Command::SetSavedView { view }) {
+                log::warn!("saved view: {e}");
+            }
+        }
     }
 
     /// Zoom so the page's width fills the window, keeping the vertical

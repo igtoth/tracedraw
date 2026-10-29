@@ -26,6 +26,11 @@ nastavuje, jak program pracuje. Stránku zvolte ze seznamu vlevo.
 - [[options.full_screen_preview]]: [[options.show_page_border]].
 - [[options.wheel_default_action]]: [[options.wheel_zoom]] (výchozí) nebo
   [[options.wheel_scroll]].
+- [[options.open_view]]: [[options.open_view_page]] (výchozí),
+  [[options.open_view_objects]], [[options.open_view_width]],
+  [[options.open_view_height]], [[options.open_view_actual]] nebo
+  [[options.open_view_saved]] (stránka, místo a zvětšení uložené s každým
+  uložením souboru TraceDraw).
 - [[options.ruler_calibration]]: přiložte k obrazovce pravítko a měňte
   [[options.screen_resolution]], dokud se značky neshodují, aby zvětšení
   100 % ukazovalo skutečné velikosti. [[options.reset]] vrátí hodnotu 96.

@@ -29,6 +29,11 @@ page dans la liste de gauche.
 - [[options.full_screen_preview]] : [[options.show_page_border]].
 - [[options.wheel_default_action]] : [[options.wheel_zoom]] (au départ) ou
   [[options.wheel_scroll]].
+- [[options.open_view]] : [[options.open_view_page]] (au départ),
+  [[options.open_view_objects]], [[options.open_view_width]],
+  [[options.open_view_height]], [[options.open_view_actual]] ou
+  [[options.open_view_saved]] (la page, l'endroit et le zoom gardés à chaque
+  enregistrement d'un fichier TraceDraw).
 - [[options.ruler_calibration]] : tenez une règle contre l'écran et changez
   la [[options.screen_resolution]] jusqu'à ce que les graduations
   correspondent, afin que le zoom à 100 % montre les tailles réelles.

@@ -82,6 +82,12 @@ pub enum Command {
     SetTimeTracker {
         tracker: crate::document::TimeTracker,
     },
+    /// Keep the view the drawing is saved with (#1134). Like
+    /// [`Command::SetTimeTracker`] it never becomes an undo step and does
+    /// not mark the drawing changed.
+    SetSavedView {
+        view: Option<crate::document::SavedView>,
+    },
     /// Replace the review comments. Comments on pages that are gone are
     /// dropped; ids are kept, and repeated or missing (0) ones get a free
     /// number.
@@ -395,7 +401,10 @@ impl Command {
     /// (the Time Tracker's records): the engine applies them without an
     /// undo step, and undo and redo leave that state alone.
     pub fn outside_history(&self) -> bool {
-        matches!(self, Command::SetTimeTracker { .. })
+        matches!(
+            self,
+            Command::SetTimeTracker { .. } | Command::SetSavedView { .. }
+        )
     }
 
     /// Short label for the History panel and the Edit menu ("Undo Move").
@@ -413,6 +422,7 @@ impl Command {
             Command::SetMetadata { .. } => "Document Properties",
             Command::SetCmykProfile { .. } => "Color Management",
             Command::SetTimeTracker { .. } => "Time Tracker",
+            Command::SetSavedView { .. } => "Saved View",
             Command::SetComments { .. } => "Comments",
             Command::SetSelectionGroup { .. } => "Selection Group",
             Command::SetNodeTypes { .. } => "Node Type",
@@ -539,6 +549,9 @@ impl Command {
             }
             Command::SetMetadata { metadata } => {
                 doc.metadata = metadata.clone();
+            }
+            Command::SetSavedView { view } => {
+                doc.saved_view = *view;
             }
             Command::SetCmykProfile { profile } => {
                 doc.cmyk_profile = profile.clone();

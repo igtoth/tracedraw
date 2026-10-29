@@ -27,6 +27,11 @@ mengatur cara kerja program. Pilih halaman dari daftar di sebelah kiri.
 - [[options.full_screen_preview]]: [[options.show_page_border]].
 - [[options.wheel_default_action]]: [[options.wheel_zoom]] (bawaan) atau
   [[options.wheel_scroll]].
+- [[options.open_view]]: [[options.open_view_page]] (bawaan),
+  [[options.open_view_objects]], [[options.open_view_width]],
+  [[options.open_view_height]], [[options.open_view_actual]] atau
+  [[options.open_view_saved]] (halaman, posisi, dan zoom yang disimpan
+  setiap kali berkas TraceDraw disimpan).
 - [[options.ruler_calibration]]: tempelkan penggaris ke layar dan ubah
   [[options.screen_resolution]] sampai tandanya cocok, agar zum 100%
   menampilkan ukuran sebenarnya. [[options.reset]] mengembalikan nilai 96.

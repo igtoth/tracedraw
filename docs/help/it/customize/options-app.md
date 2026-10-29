@@ -27,6 +27,11 @@ sinistra.
 - [[options.full_screen_preview]]: [[options.show_page_border]].
 - [[options.wheel_default_action]]: [[options.wheel_zoom]] (in partenza) o
   [[options.wheel_scroll]].
+- [[options.open_view]]: [[options.open_view_page]] (in partenza),
+  [[options.open_view_objects]], [[options.open_view_width]],
+  [[options.open_view_height]], [[options.open_view_actual]] o
+  [[options.open_view_saved]] (la pagina, il punto e lo zoom tenuti a ogni
+  salvataggio di un file TraceDraw).
 - [[options.ruler_calibration]]: tieni un righello contro lo schermo e cambia
   la [[options.screen_resolution]] finché le tacche coincidono, così lo zoom
   al 100% mostra le dimensioni reali. [[options.reset]] rimette 96.

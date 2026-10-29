@@ -28,6 +28,11 @@ izquierda.
 - [[options.full_screen_preview]]: [[options.show_page_border]].
 - [[options.wheel_default_action]]: [[options.wheel_zoom]] (opción
   predeterminada) o [[options.wheel_scroll]].
+- [[options.open_view]]: [[options.open_view_page]] (opción predeterminada),
+  [[options.open_view_objects]], [[options.open_view_width]],
+  [[options.open_view_height]], [[options.open_view_actual]] o
+  [[options.open_view_saved]] (la página, el lugar y el zoom que se guardan
+  cada vez que se guarda un archivo de TraceDraw).
 - [[options.ruler_calibration]]: sostenga una regla junto a la pantalla y
   cambie la [[options.screen_resolution]] hasta que las marcas coincidan, para
   que el zoom al 100% muestre los tamaños reales. [[options.reset]] vuelve a

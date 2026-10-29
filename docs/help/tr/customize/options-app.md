@@ -27,6 +27,11 @@ bir sayfa seçin.
 - [[options.full_screen_preview]]: [[options.show_page_border]].
 - [[options.wheel_default_action]]: [[options.wheel_zoom]] (başlangıçta)
   veya [[options.wheel_scroll]].
+- [[options.open_view]]: [[options.open_view_page]] (başlangıçta),
+  [[options.open_view_objects]], [[options.open_view_width]],
+  [[options.open_view_height]], [[options.open_view_actual]] veya
+  [[options.open_view_saved]] (her TraceDraw dosyası kaydedilişinde saklanan
+  sayfa, yer ve yakınlaştırma).
 - [[options.ruler_calibration]]: ekrana bir cetvel tutun ve işaretler
   eşleşene kadar [[options.screen_resolution]] değerini değiştirin; böylece
   %100 yakınlaştırma gerçek boyutları gösterir. [[options.reset]] 96 değerine

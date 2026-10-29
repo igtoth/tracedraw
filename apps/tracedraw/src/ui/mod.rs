@@ -689,6 +689,9 @@ pub(crate) fn drawing_window(app: &mut App, ui: &mut Ui, full: egui::Rect) {
     if app.fit_pending {
         app.view.fit(app.fit_rect(), canvas_rect);
         app.fit_pending = false;
+        if std::mem::take(&mut app.open_view_pending) {
+            app.apply_open_view(canvas_rect);
+        }
     }
 
     let response = ui.allocate_rect(canvas_rect, Sense::click_and_drag());

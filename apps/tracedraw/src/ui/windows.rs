@@ -237,6 +237,9 @@ fn paint_parked(app: &mut App, ui: &Ui, i: usize, rect: Rect) {
     if app.fit_pending {
         app.view.fit(app.page_rect(), rect);
         app.fit_pending = false;
+        if std::mem::take(&mut app.open_view_pending) {
+            app.apply_open_view(rect);
+        }
     }
     crate::canvas::draw_parked(app, &ui.painter_at(rect), rect);
     app.drag = drag;
