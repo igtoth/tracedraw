@@ -3152,6 +3152,9 @@ mod tests {
         app.apply_fill(Fill::Fountain(f.clone()));
         app.show_dockers = true;
         app.docker_tab = DockerTab::Properties;
+        // The Outline section closed, so the fill's rows are in view (the
+        // docker paints only what its scroll area shows).
+        toggle_section(&mut app, "outline");
         draw(&ctx, &mut app);
         let texts = painted_texts(&ctx, &mut app);
         let count = |s: &str| texts.iter().filter(|t| t.as_str() == s).count();
