@@ -3546,8 +3546,9 @@ mod tests {
         for key in ["transparency.opacity", "transparency.position"] {
             assert!(texts.iter().any(|t| *t == tr(key)), "{key}: {texts:?}");
         }
-        // Three stops: three Add buttons and three Remove buttons.
-        assert_eq!(texts.iter().filter(|t| *t == "+").count(), 3, "{texts:?}");
+        // Three stops: three Remove buttons, and an Add button each (the
+        // document palette's own + is on screen too when it fits).
+        assert!(texts.iter().filter(|t| *t == "+").count() >= 3, "{texts:?}");
         assert_eq!(texts.iter().filter(|t| *t == "x").count(), 3, "{texts:?}");
         assert!(!texts.iter().any(|t| *t == tr("dialog.swap")));
 
@@ -3565,7 +3566,9 @@ mod tests {
         ] {
             assert!(texts.iter().any(|t| *t == tr(key)), "{key}: {texts:?}");
         }
-        assert!(!texts.iter().any(|t| *t == tr("transparency.position")));
+        // No stop rows any more (the outline section has a Position label
+        // of its own, so the text alone would not tell).
+        assert_eq!(texts.iter().filter(|t| *t == "x").count(), 0, "{texts:?}");
     }
 
     /// The Properties sections come open; a button or a header closes and

@@ -2751,7 +2751,7 @@ mod tests {
     }
 
     /// The page's content streams, inflated.
-    fn page_content(bytes: &[u8]) -> String {
+    pub(super) fn page_content(bytes: &[u8]) -> String {
         let mut content = String::new();
         let mut rest: &[u8] = bytes;
         while let Some(i) = rest.windows(6).position(|w| w == b"stream") {
@@ -3080,6 +3080,7 @@ mod tests {
 
 #[cfg(test)]
 mod pdfx_tests {
+    use super::tests::page_content;
     use super::*;
     use tracedraw_core::geometry::Rect;
 
