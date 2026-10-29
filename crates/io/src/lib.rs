@@ -448,4 +448,55 @@ mod tests {
         assert_eq!(st.end_arrow.name(), "My head");
         assert_eq!(st.start_arrow, tracedraw_core::Arrowhead::Circle);
     }
+
+    /// #1210: the arrowhead placements and Share attributes round trip
+    /// through the native format, and a drawing without them is written
+    /// as before.
+    #[test]
+    fn arrowhead_placement_round_trips_through_the_native_format() {
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        let id = doc.ids_mut().shape();
+        let mut line = Shape::new(
+            id,
+            ShapeKind::Path {
+                path: {
+                    let mut p = tracedraw_core::BezPath::new();
+                    p.move_to((10.0, 50.0));
+                    p.line_to((60.0, 50.0));
+                    p
+                },
+                closed: false,
+            },
+        );
+        line.stroke = Some(Stroke {
+            start_arrow: tracedraw_core::Arrowhead::Arrow,
+            ..Stroke::new(Color::BLACK, 1.0)
+        });
+        doc.layer_mut(layer).unwrap().shapes.push(line);
+        let plain = doc.to_json().unwrap();
+        assert!(!plain.contains("start_head") && !plain.contains("share_arrowheads"));
+        let shape = &mut doc.layer_mut(layer).unwrap().shapes[0];
+        let st = shape.stroke.as_mut().unwrap();
+        st.start_head = tracedraw_core::ArrowheadPlacement {
+            size: 250.0,
+            offset: -1.25,
+            mirror_h: false,
+            mirror_v: true,
+            rotation: 12.5,
+        };
+        st.end_head.offset = 3.0;
+        st.share_arrowheads = true;
+        let json = doc.to_json().unwrap();
+        assert!(json.contains("\"start_head\""));
+        assert!(json.contains("\"share_arrowheads\""));
+        let back = Document::from_json(&json).unwrap();
+        assert_eq!(back, doc);
+        let s = back.pages[0].layers[0].shapes[0].stroke.as_ref().unwrap();
+        assert_eq!(s.start_head.size, 250.0);
+        assert_eq!(s.start_head.rotation, 12.5);
+        assert!(s.start_head.mirror_v);
+        assert_eq!(s.end_head.offset, 3.0);
+        assert!(s.share_arrowheads);
+    }
 }

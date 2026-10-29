@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Outline, Arrowhead editor: the "..." beside the start and end arrowhead lists (Properties docker, Outline Pen dialog) opens an editor for that end with the head list, Size (10 to 1000 % of the preset size), Offset along the line, Mirror horizontally and vertically, Rotation and a preview of the line's end; OK applies it to the selection as one undo step, to the default outline with nothing selected, or back into the Outline Pen dialog. Share attributes beside the End list copies the start arrowhead and its settings to the end and keeps them the same while on. The settings are drawn on the canvas and in SVG, PDF, EPS and EMF files alike and saved in `.tdraw` files (untouched files stay as they were). Arrowheads had a shape only (#1210).
+
 ## 0.21.0 (2026-10-29)
 
 - Publish to PDF, Prepress tab: crop marks, registration marks, colour bars and file information can be added around every page, drawn by the same code as the Print dialog's marks. The page grows by a 12 mm margin outside the bleed to hold them; the TrimBox stays the page, the BleedBox the page and its bleed and the MediaBox takes in the marks, and the drawing is clipped to the bleed. Marks in registration colour print on every plate (the All separation), in printed files too. A page background now covers the bleed in PDF files (#789).

@@ -1098,6 +1098,51 @@ mod tests {
         assert!(!svg.contains("fill=\"#0000ff\" stroke=\"none\""));
     }
 
+    /// #1210: a head sized to 200 % and moved 5 mm out past the end is
+    /// written where the editor put it: 16 mm long from x 49 to the tip
+    /// at 65, 12.8 mm tall about the line (page y 150, flipped against
+    /// the 297 mm page).
+    #[test]
+    fn a_moved_and_scaled_arrowhead_lands_where_the_editor_put_it() {
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        let mut line = arrow_line();
+        if let Some(st) = line.stroke.as_mut() {
+            st.end_arrow = tracedraw_core::Arrowhead::Arrow;
+            st.end_head.size = 200.0;
+            st.end_head.offset = 5.0;
+        }
+        doc.layer_mut(layer).unwrap().shapes.push(line);
+        let svg = page_to_svg(&doc, 0);
+        let head = svg
+            .lines()
+            .find(|l| l.contains("fill=\"#0000ff\" stroke=\"none\""))
+            .expect("head path");
+        let d = head
+            .split("d=\"")
+            .nth(1)
+            .and_then(|s| s.split('"').next())
+            .expect("path data");
+        let nums: Vec<f64> = d
+            .split(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-'))
+            .filter_map(|t| t.parse::<f64>().ok())
+            .collect();
+        assert!(nums.len() >= 8 && nums.len() % 2 == 0, "{d}");
+        let xs: Vec<f64> = nums.iter().step_by(2).copied().collect();
+        let ys: Vec<f64> = nums.iter().skip(1).step_by(2).copied().collect();
+        let (x0, x1) = xs
+            .iter()
+            .fold((f64::MAX, f64::MIN), |a, v| (a.0.min(*v), a.1.max(*v)));
+        let (y0, y1) = ys
+            .iter()
+            .fold((f64::MAX, f64::MIN), |a, v| (a.0.min(*v), a.1.max(*v)));
+        assert!((x0 - 49.0).abs() < 0.01 && (x1 - 65.0).abs() < 0.01, "{d}");
+        assert!(
+            (y0 - (297.0 - 156.4)).abs() < 0.01 && (y1 - (297.0 - 143.6)).abs() < 0.01,
+            "{d}"
+        );
+    }
+
     #[test]
     fn vector_pattern_exports_as_svg_pattern_with_vector_content() {
         let mut doc = Document::default();

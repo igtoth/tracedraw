@@ -16,7 +16,8 @@ outline when nothing is selected. Groups:
   comes back), Mitre limit (with mitred corners), Dashes (as they come,
   or aligned to corners and ends), Corners, Line caps and Position as
   picture buttons.
-- Arrowheads: start and end.
+- Arrowheads: start and end, each with a "..." that opens the Arrowhead
+  editor on that end, and Share attributes (see below).
 - Calligraphy: Stretch (10 to 100 %), Angle (-90 to 90 degrees), Default
   (100 %, 0), and a picture of the nib; dragging on it sets angle and
   stretch. Behind fill, Scale with object.
@@ -60,17 +61,90 @@ selected (the default outline) nothing is previewed.
 | Align dashes | off | fit the dashes to the corners and ends (with a dash pattern) |
 | Position | centred | outside, centred, inside |
 | Arrowheads | none / none | start and end; presets and custom heads, filled in the outline colour |
+| Arrowhead size | 100 % | per end, 10 to 1000 % of the preset head size |
+| Arrowhead offset | 0 | per end, mm along the line; positive out past the end |
+| Arrowhead mirror | off / off | per end, horizontally (along the line) and vertically (across it) |
+| Arrowhead rotation | 0 | per end, degrees about the tip, counter-clockwise positive |
+| Share attributes | off | the end takes the start's head and settings and follows them |
 | Nib stretch | 1.0 | 0.1 to 1: the calligraphic nib's thickness across its axis |
 | Nib angle | 0 | degrees |
 | Behind fill | off | the outline is drawn under the fill |
 | Scale with object | off | the width follows the object's scale factor `sqrt(|det|)` |
+
+## Arrowhead editor
+
+(#1210, `ui/arrowhead_editor.rs`) The "..." beside an end's arrowhead
+list, in the Properties docker's outline section and in the Outline Pen
+dialog, opens the Arrowhead editor on that end: a preview of the line's
+end with the head (drawn by the renderer, made again only when a value
+changes), the head list (presets and custom heads), Size, Offset (in
+the outline unit), Mirror horizontally, Mirror vertically, Rotation,
+Default (back to 100 %, 0, off, off, 0), OK and Cancel. The settings
+are kept per end in `Stroke::start_head` and `Stroke::end_head`
+(`ArrowheadPlacement`); a placement left at its defaults is not written
+to `.tdraw` files, so files saved before the editor existed read and
+write as they did.
+
+The head is built in its own frame (its tip at the origin, the line's
+direction out of the end along +x, the left normal along +y) and placed
+by `ArrowheadPlacement::place`:
+
+- Size `s` (10 to 1000 %): the head is scaled by `s / 100` about its
+  tip. 100 % is the preset size, four outline widths (hairlines count as
+  0.25 mm, at least 1 mm), so a head at 200 % is twice as long and tall.
+  A size that is not a number counts as 100 %.
+- Offset `d` (mm): the tip moves to `end + d * dir`, `dir` the unit
+  direction out of the line at that end: a positive offset moves the
+  head out past the end of the line, a negative one back along it.
+- Mirror horizontally: x is negated in the head's frame, so the head
+  faces back along the line. Mirror vertically: y is negated, so the two
+  sides change places (a mirrored head's path is the mirror image of the
+  plain one). Mirroring is applied before the rotation.
+- Rotation `a` (degrees): the head is turned about its tip by `a`,
+  counter-clockwise positive on the page (the same sense as the
+  Transform docker's angles).
+
+Because every head, preset or custom, goes through this one place
+(`style::arrowhead_paths`), the canvas, SVG, PDF, EPS and EMF exports
+all show the same head. `.cdr` files neither read nor write these
+settings (where they live in the outline record is not known).
+
+Share attributes (the check box beside the End list, `Stroke::
+share_arrowheads`) gives the end the start's head and placement when
+turned on and keeps them the same while on: the End list and its "..."
+are disabled, a change of the start head (in the lists or in the
+editor) reaches the end too, and the band is drawn with the start's head
+at both ends whatever the end's own fields hold. Turning it off leaves
+the end as the start's copy, to be changed on its own.
+
+The editor's OK sends the head and its placement to the selected
+objects as one undo step through `patch_selection_stroke`
+(`StrokeField::StartArrow` and `StartHead`, or `EndArrow` and
+`EndHead`; `ShareArrowheads` for the check box), so a selection whose
+other outline values differ keeps them; values that differ across the
+selection show as mixed in the editor. With nothing selected the editor
+sets the default outline; opened from the Outline Pen dialog it writes
+into that dialog's outline (marked as set) and the dialog comes back,
+its OK applying the change with the rest. Checks:
+`style::arrowhead_tests::head_size_offset_mirror_and_rotation_place_the_head`
+(200 % is twice as long, an offset moves the head, a mirrored head faces
+back, a quarter turn points it across the line),
+`a_vertically_mirrored_head_is_the_mirror_image`,
+`share_attributes_gives_the_end_the_start_head`,
+`head_placements_round_trip_and_defaults_are_not_written`,
+`patch::tests::head_placements_patch_one_at_a_time_and_share_follows_the_start`,
+`io::tests::arrowhead_placement_round_trips_through_the_native_format`,
+the SVG and PDF tests `a_moved_and_scaled_arrowhead_lands_where_the_editor_put_it`,
+`ui::arrowhead_editor::tests` and
+`ui::dockers::tests::the_arrowhead_editor_and_share_attributes_sit_beside_the_lists`.
 
 ## Properties docker
 
 The Properties docker's outline section (the default outline with
 nothing selected, the selection's outline otherwise) shows the common
 settings in view: Paint, Hairline and the width, Caps, Corners, the
-start and end arrowheads, Dash (and custom dashes), Align dashes, Edit
+start and end arrowheads (each with the Arrowhead editor's "..." and
+Share attributes after the end), Dash (and custom dashes), Align dashes, Edit
 Line Style, Position, Behind fill and Scale with object. The mitre limit
 (with mitred corners), the nib stretch and the nib angle sit under an
 Advanced header below them, closed at first unless one of them is set

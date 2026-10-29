@@ -462,14 +462,72 @@ fn arrowheads(ui: &mut Ui, st: &mut OutlinePenState, lib: &crate::ui::line_style
         ),
         (StrokeField::EndArrow, "outline_pen_end", "docker.arrow_end"),
     ] {
+        let end = field == StrokeField::EndArrow;
         let mixed = st.mix.has(field) && !st.touched.contains(&field);
-        let a = if field == StrokeField::StartArrow {
-            &mut st.stroke.start_arrow
-        } else {
-            &mut st.stroke.end_arrow
-        };
-        if crate::ui::dockers::arrow_combo(ui, id, &tr(key), a, &lib.arrows, mixed) {
-            touch(st, field);
+        // With Share attributes on the end follows the start.
+        let enabled = !end || !st.stroke.share_arrowheads;
+        ui.add_enabled_ui(enabled, |ui| {
+            ui.horizontal(|ui| {
+                let a = if end {
+                    &mut st.stroke.end_arrow
+                } else {
+                    &mut st.stroke.start_arrow
+                };
+                if crate::ui::dockers::arrow_combo(ui, id, &tr(key), a, &lib.arrows, mixed) {
+                    if !end && st.stroke.share_arrowheads {
+                        st.stroke.share_start_head();
+                    }
+                    touch(st, field);
+                }
+                // The Arrowhead editor (#1210); it comes back here after.
+                if ui
+                    .button("...")
+                    .rich_tip(crate::ui::tips::keyed("arrowhead_editor.edit"))
+                    .clicked()
+                {
+                    crate::ui::arrowhead_editor::request(ui, end);
+                }
+            });
+        });
+    }
+    let share_mixed = st.mix.has(StrokeField::ShareArrowheads)
+        && !st.touched.contains(&StrokeField::ShareArrowheads);
+    if ui
+        .add(
+            egui::Checkbox::new(
+                &mut st.stroke.share_arrowheads,
+                tr("arrowhead_editor.share"),
+            )
+            .indeterminate(share_mixed),
+        )
+        .rich_tip(crate::ui::tips::keyed("arrowhead_editor.share"))
+        .changed()
+    {
+        if st.stroke.share_arrowheads {
+            st.stroke.share_start_head();
+        }
+        touch(st, StrokeField::ShareArrowheads);
+    }
+}
+
+impl OutlinePenState {
+    /// The Arrowhead editor's result for one end: the head and its
+    /// placement, marked as set; with Share attributes on, the start
+    /// reaches the end too.
+    pub fn set_head(
+        &mut self,
+        end: bool,
+        head: tracedraw_core::Arrowhead,
+        at: tracedraw_core::ArrowheadPlacement,
+    ) {
+        crate::ui::arrowhead_editor::set_head(&mut self.stroke, end, head, at);
+        for f in crate::ui::arrowhead_editor::fields_of(end) {
+            touch(self, f);
+        }
+        if !end && self.stroke.share_arrowheads {
+            for f in crate::ui::arrowhead_editor::fields_of(true) {
+                touch(self, f);
+            }
         }
     }
 }

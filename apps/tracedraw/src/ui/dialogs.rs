@@ -922,6 +922,9 @@ pub enum Dialog {
     EditFill(Box<crate::ui::edit_fill::EditFillState>),
     /// The Outline Pen dialog (F12, #357).
     OutlinePen(Box<crate::ui::outline_pen::OutlinePenState>),
+    /// The Arrowhead editor: one end's head, size, offset, mirror and
+    /// rotation (#1210).
+    ArrowheadEditor(Box<crate::ui::arrowhead_editor::ArrowheadEditorState>),
     /// Text > Edit Text: the text of a text object in a box of its own
     /// (#355).
     EditText {
@@ -1362,6 +1365,12 @@ pub fn show(app: &mut App, ctx: &Context) {
             app.dialog = *back;
         }
     }
+    // The Arrowhead editor asked for beside an arrowhead list: on the
+    // Outline Pen dialog's outline when that dialog is open (it comes
+    // back after), else on the selection's.
+    if let Some(end) = crate::ui::arrowhead_editor::take_request(ctx) {
+        app.open_arrowhead_editor(end);
+    }
     // The Edit Fill dialog closed some other way (Esc): its preview goes.
     if app.fill_preview && !matches!(app.dialog, Dialog::EditFill(_)) {
         app.end_edit_fill_preview();
@@ -1679,6 +1688,9 @@ pub fn show(app: &mut App, ctx: &Context) {
         }
         Dialog::Options => crate::ui::options::options_dialog(app, ctx, &mut close),
         Dialog::OutlinePen(st) => crate::ui::outline_pen::dialog(app, ctx, st, &mut close),
+        Dialog::ArrowheadEditor(st) => {
+            crate::ui::arrowhead_editor::dialog(app, ctx, st, &mut close)
+        }
         Dialog::EditFill(st) => crate::ui::edit_fill::dialog(app, ctx, st, &mut close),
         Dialog::PdfText(st) => crate::ui::pdf_import_dialog::dialog(app, ctx, st, &mut close),
         Dialog::OldCdrVersion { version } => {
