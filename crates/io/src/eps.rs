@@ -439,7 +439,7 @@ impl Writer<'_> {
                     shading
                 );
             }
-            other @ (Fill::Pattern(_) | Fill::Texture(_) | Fill::Mesh(_)) => {
+            other @ (Fill::Pattern(_) | Fill::Texture(_) | Fill::Mesh(_) | Fill::Procedural(_)) => {
                 // Patterns, textures and meshes: rasterised by the renderer
                 // over the bounds and clipped by the path, so the file shows
                 // the same pixels as the screen. Average colour if that fails.

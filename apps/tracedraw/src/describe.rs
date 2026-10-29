@@ -15,6 +15,7 @@ fn fill_summary(f: &Fill) -> Value {
         Fill::Pattern(_) => json!("pattern"),
         Fill::Texture(_) => json!("texture"),
         Fill::Mesh(_) => json!("mesh"),
+        Fill::Procedural(_) => json!("procedural"),
     }
 }
 

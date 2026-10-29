@@ -294,6 +294,7 @@ fn report(app: &App, ui: &mut Ui, st: &DocStats) {
         "docprops.fill_pattern",
         "docprops.fill_texture",
         "docprops.fill_mesh",
+        "docprops.fill_procedural",
     ]
     .iter()
     .enumerate()

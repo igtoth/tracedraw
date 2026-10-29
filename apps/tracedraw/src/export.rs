@@ -1002,7 +1002,10 @@ pub fn plate_page(
         for s in layer.shapes.iter_mut() {
             // Fills the separations cannot split show as their average
             // colour.
-            if matches!(s.fill, Fill::Texture(_) | Fill::Pattern(_)) {
+            if matches!(
+                s.fill,
+                Fill::Texture(_) | Fill::Pattern(_) | Fill::Procedural(_)
+            ) {
                 if let Some(c) = s.fill.preview_color() {
                     s.fill = Fill::Solid(c);
                 }
@@ -1048,7 +1051,10 @@ pub fn inks_page(
     let mut p = page.clone();
     for layer in p.layers.iter_mut() {
         for s in layer.shapes.iter_mut() {
-            if matches!(s.fill, Fill::Texture(_) | Fill::Pattern(_)) {
+            if matches!(
+                s.fill,
+                Fill::Texture(_) | Fill::Pattern(_) | Fill::Procedural(_)
+            ) {
                 if let Some(c) = s.fill.preview_color() {
                     s.fill = Fill::Solid(c);
                 }

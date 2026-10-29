@@ -7582,6 +7582,13 @@ pub fn fill_description(fill: &Fill) -> String {
         Fill::Pattern(tracedraw_core::Pattern::Bitmap { .. }) => tr("fill.bitmap_pattern"),
         Fill::Pattern(tracedraw_core::Pattern::Vector { .. }) => tr("fill.vector_pattern"),
         Fill::Texture(_) => tr("fill.texture_fill"),
+        Fill::Procedural(p) => trf(
+            "fill.procedural_fill",
+            &[(
+                "p",
+                &tr(crate::ui::dockers::procedural_pattern_key(p.pattern)),
+            )],
+        ),
         Fill::Mesh(m) => trf(
             "fill.mesh_fill_n",
             &[("r", &m.rows.to_string()), ("c", &m.cols.to_string())],

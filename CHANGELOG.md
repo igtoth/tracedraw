@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Procedural fill: a new fill kind in the Properties panel (Fill > Procedural), the Edit Fill dialog and the Interactive Fill tool's bar, with a library of nine patterns drawn from a few numbers (octagons and squares, triangles, bricks, honeycomb, crosshatch, dots, waves, spirals, speckle): tile size, line width, cover, amplitude, turns, specks per tile and a seed, a foreground colour and an optional background colour, with a preview. The pattern is a vector tile repeated from the page origin on screen, a `<pattern>` with the tile's paths in SVG and a tiling pattern in PDF, kept in `.tdraw`; each setting is one undo step and goes into every selected object's own fill (#1212).
+
 ## 0.23.0 (2026-10-29)
 
 - Font list filter: the choices now open beside the list, in sections: fonts shown, style (serif, sans serif, script, decorative, monospaced, symbol), weight (light, regular, bold), width (condensed, normal, expanded), technology (TrueType, OpenType, variable), scripts (Latin, Greek, Cyrillic, Arabic, Devanagari, CJK and more), each OpenType feature on its own, embedding rights and the folders the fonts are in. Every value is read from the font files once (OS/2 weight and width classes, embedding bits, Unicode ranges, variation axes, GSUB and GPOS feature lists). Monospaced and Symbol now widen the style choices like the other styles instead of narrowing them (#867).

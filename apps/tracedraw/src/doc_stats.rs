@@ -40,7 +40,7 @@ pub struct DocStats {
     /// how many objects carry each.
     pub effects: BTreeMap<String, usize>,
     /// Fills by kind: none, uniform, fountain, pattern, texture, mesh.
-    pub fills: [usize; 6],
+    pub fills: [usize; 7],
     /// Outlines: none, solid, dashed.
     pub outlines: [usize; 3],
     /// Objects using each colour model in their fill or outline.
@@ -171,6 +171,7 @@ impl DocStats {
             Fill::Pattern(_) => 3,
             Fill::Texture(_) => 4,
             Fill::Mesh(_) => 5,
+            Fill::Procedural(_) => 6,
         };
         self.fills[kind] += 1;
         let mut colors = Vec::new();
@@ -264,7 +265,7 @@ mod tests {
         assert_eq!(st.rectangles, 1);
         assert_eq!((st.artistic_texts, st.characters, st.words), (1, 9, 2));
         assert!(st.fonts.contains("Selawik"));
-        assert_eq!(st.fills, [1, 2, 0, 0, 0, 0]);
+        assert_eq!(st.fills, [1, 2, 0, 0, 0, 0, 0]);
         assert_eq!(st.outlines, [2, 1, 0]);
         assert_eq!(st.color_models.get("CMYK"), Some(&1));
         assert_eq!(st.color_models.get("RGB"), Some(&2));

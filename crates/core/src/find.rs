@@ -256,6 +256,9 @@ pub fn fill_uses(fill: &Fill, c: Color) -> bool {
         Fill::Solid(x) => same_color(*x, c),
         Fill::Fountain(f) => f.stops.iter().any(|s| same_color(s.color, c)),
         Fill::Mesh(m) => m.nodes.iter().any(|n| same_color(n.color, c)),
+        Fill::Procedural(p) => {
+            same_color(p.foreground, c) || p.background.is_some_and(|b| same_color(b, c))
+        }
         _ => false,
     }
 }
@@ -348,6 +351,14 @@ fn replace_in_fill(fill: &Fill, from: Option<Color>, to: Color) -> Fill {
             .iter_mut()
             .filter(|n| same_color(n.color, from))
             .for_each(|n| n.color = to),
+        Fill::Procedural(p) => {
+            if same_color(p.foreground, from) {
+                p.foreground = to;
+            }
+            if let Some(b) = p.background.as_mut().filter(|b| same_color(**b, from)) {
+                *b = to;
+            }
+        }
         _ => {}
     }
     f

@@ -1553,6 +1553,7 @@ impl Renderer<'_> {
                 }
             }
             Fill::Pattern(p) => self.fill_pattern(p, sk, rule),
+            Fill::Procedural(p) => self.fill_procedural_tile(p, sk, rule),
             Fill::Mesh(m) => self.fill_mesh(m, sk, rule, tiny_skia::BlendMode::SourceOver),
             Fill::Texture(t) => {
                 let b = bbox(page_path);
@@ -1949,6 +1950,75 @@ impl Renderer<'_> {
                     .fill_path(sk, &paint, rule, Transform::identity(), None);
             }
         }
+    }
+
+    /// A procedural fill: its tile (core builds the paths once per set of
+    /// numbers) painted once at the current zoom, kept with the other
+    /// procedural pixmaps, and repeated from the page origin, so the
+    /// tiles stay in place when the object moves and match the exports.
+    /// No per-pixel work: the tile is drawn as paths and the pattern
+    /// shader repeats it.
+    fn fill_procedural_tile(
+        &mut self,
+        p: &tracedraw_core::Procedural,
+        sk: &SkPath,
+        rule: FillRule,
+    ) {
+        let tile = tracedraw_core::procedural::procedural_tile(p);
+        let (tw_mm, th_mm) = (tile.size.width, tile.size.height);
+        if !(tw_mm.is_finite() && th_mm.is_finite()) || tw_mm <= 0.0 || th_mm <= 0.0 {
+            return;
+        }
+        let tw = ((tw_mm * self.zoom).round() as u32).clamp(1, 2048);
+        let th = ((th_mm * self.zoom).round() as u32).clamp(1, 2048);
+        let key = format!("procedural|{p:?}|{tw}x{th}|{}", self.flags.anti_alias);
+        let pm = match procedural_cache_get(&key) {
+            Some(pm) => pm,
+            None => {
+                let Some(mut pm) = Pixmap::new(tw, th) else {
+                    return;
+                };
+                if let Some(bg) = p.background {
+                    pm.fill(sk_color(bg));
+                }
+                // Tile space (mm, Y up, origin bottom-left) to tile pixels.
+                let to_px = Affine::new([
+                    tw as f64 / tw_mm,
+                    0.0,
+                    0.0,
+                    -(th as f64) / th_mm,
+                    0.0,
+                    th as f64,
+                ]);
+                let mut paint = Paint::default();
+                paint.anti_alias = self.flags.anti_alias;
+                paint.set_color(sk_color(p.foreground));
+                for path in &tile.paths {
+                    if let Some(sp) = to_sk_path(&(to_px * path)) {
+                        pm.fill_path(&sp, &paint, FillRule::Winding, Transform::identity(), None);
+                    }
+                }
+                procedural_cache_put(key, pm.clone());
+                pm
+            }
+        };
+        // The tiles start at the page origin.
+        let o = self.screen * Point::new(0.0, 0.0);
+        let shift = Transform::from_translate(
+            o.x.rem_euclid(tw as f64) as f32,
+            o.y.rem_euclid(th as f64) as f32,
+        );
+        let mut paint = Paint::default();
+        paint.anti_alias = self.flags.anti_alias;
+        paint.shader = tiny_skia::Pattern::new(
+            pm.as_ref(),
+            SpreadMode::Repeat,
+            tiny_skia::FilterQuality::Bilinear,
+            1.0,
+            shift,
+        );
+        self.pixmap
+            .fill_path(sk, &paint, rule, Transform::identity(), None);
     }
 
     /// Rasterise a vector pattern tile at the current zoom. The tile's
@@ -3781,6 +3851,80 @@ mod tests {
         assert_eq!(a.data(), b.data());
         let v: std::collections::HashSet<u8> = (0..30).map(|x| px(&a, x, 15).0).collect();
         assert!(v.len() > 3, "texture should vary");
+    }
+
+    /// A bricks fill drawn at 4 px/mm: the mortar between the rows and
+    /// between the bricks shows the background colour, the bricks the
+    /// foreground.
+    #[test]
+    fn procedural_bricks_show_mortar_in_the_background_colour() {
+        use tracedraw_core::{Procedural, ProceduralPattern};
+        let mut p = Procedural::new(ProceduralPattern::Bricks, Color::rgb8(0, 0, 0));
+        p.params.line_width_mm = 1.0;
+        p.background = Some(Color::rgb8(255, 255, 255));
+        let img = render_fill_image(&Fill::Procedural(p), Rect::new(0.0, 0.0, 20.0, 20.0), 101.6)
+            .unwrap();
+        assert_eq!((img.width(), img.height()), (80, 80));
+        // Page y = 5 mm (row 60) is the mortar between the two rows.
+        assert_eq!(px(&img, 10, 60), (255, 255, 255));
+        assert_eq!(px(&img, 50, 60), (255, 255, 255));
+        // Page y = 7.5 mm (row 50): a brick at x = 2.5 mm, the joint at
+        // x = 5 mm, a brick again at 7.5 mm.
+        assert_eq!(px(&img, 10, 50), (0, 0, 0));
+        assert_eq!(px(&img, 20, 50), (255, 255, 255));
+        assert_eq!(px(&img, 30, 50), (0, 0, 0));
+        // The lower row's joint is half a brick along, at x = 0 and 10 mm.
+        assert_eq!(px(&img, 40, 70), (255, 255, 255));
+        assert_eq!(px(&img, 20, 70), (0, 0, 0));
+        // The second tile (y = 15 mm, row 20) repeats the first.
+        assert_eq!(px(&img, 10, 20), (255, 255, 255));
+        assert_eq!(px(&img, 10, 10), (0, 0, 0));
+    }
+
+    /// Dots covering half the tile paint about half of its pixels.
+    #[test]
+    fn procedural_dots_cover_their_share() {
+        use tracedraw_core::{Procedural, ProceduralPattern};
+        let mut p = Procedural::new(ProceduralPattern::Dots, Color::rgb8(0, 0, 0));
+        p.params.share = 0.5;
+        p.background = Some(Color::rgb8(255, 255, 255));
+        let img = render_fill_image(&Fill::Procedural(p), Rect::new(0.0, 0.0, 10.0, 10.0), 254.0)
+            .unwrap();
+        assert_eq!((img.width(), img.height()), (100, 100));
+        let dark = img
+            .pixels()
+            .iter()
+            .filter(|c| c.demultiply().red() < 128)
+            .count();
+        assert!((4800..=5200).contains(&dark), "{dark} dark pixels of 10000");
+        // The centre is in the dot, a corner is not.
+        assert_eq!(px(&img, 50, 50), (0, 0, 0));
+        assert_eq!(px(&img, 2, 2), (255, 255, 255));
+    }
+
+    /// The speckle is the same picture every time for a seed, another
+    /// picture for another seed, and without a background it leaves the
+    /// rest clear.
+    #[test]
+    fn procedural_speckle_is_deterministic_and_can_be_clear() {
+        use tracedraw_core::{Procedural, ProceduralPattern};
+        let mut p = Procedural::new(ProceduralPattern::Speckle, Color::rgb8(255, 0, 0));
+        p.seed = 5;
+        p.background = None;
+        let f = Fill::Procedural(p.clone());
+        let a = render_fill_image(&f, Rect::new(0.0, 0.0, 20.0, 20.0), 101.6).unwrap();
+        let b = render_fill_image(&f, Rect::new(0.0, 0.0, 20.0, 20.0), 101.6).unwrap();
+        assert_eq!(a.data(), b.data());
+        let painted = a.pixels().iter().filter(|c| c.alpha() > 0).count();
+        let clear = a.pixels().iter().filter(|c| c.alpha() == 0).count();
+        assert!(
+            painted > 50 && clear > painted,
+            "{painted} painted, {clear} clear"
+        );
+        p.seed = 6;
+        let c = render_fill_image(&Fill::Procedural(p), Rect::new(0.0, 0.0, 20.0, 20.0), 101.6)
+            .unwrap();
+        assert_ne!(a.data(), c.data());
     }
 
     #[test]

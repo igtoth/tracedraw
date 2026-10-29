@@ -361,7 +361,9 @@ impl App {
         if fields.is_empty() {
             return;
         }
-        if fields.contains(&FillField::All) || !matches!(new, Fill::Fountain(_)) {
+        if fields.contains(&FillField::All)
+            || !matches!(new, Fill::Fountain(_) | Fill::Procedural(_))
+        {
             self.apply_fill(new.clone());
             return;
         }

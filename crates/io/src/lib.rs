@@ -293,6 +293,52 @@ mod tests {
         ));
     }
 
+    /// A procedural fill with every number set, a seed and no background
+    /// comes back from the native file as it was (#1212).
+    #[test]
+    fn procedural_fill_round_trips_through_the_native_format() {
+        use tracedraw_core::{Procedural, ProceduralParams, ProceduralPattern};
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        let id = doc.ids_mut().shape();
+        let mut s = Shape::new(
+            id,
+            ShapeKind::Rect {
+                rect: Rect::new(10.0, 10.0, 60.0, 60.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        s.fill = Fill::Procedural(Procedural {
+            pattern: ProceduralPattern::Speckle,
+            params: ProceduralParams {
+                size_mm: 12.5,
+                line_width_mm: 0.75,
+                share: 0.4,
+                amplitude: 0.3,
+                turns: 4.5,
+                density: 55.0,
+            },
+            foreground: Color::cmyk_pct(0.0, 100.0, 100.0, 0.0),
+            background: None,
+            seed: 42,
+        });
+        doc.layer_mut(layer).unwrap().shapes.push(s);
+        let path = std::env::temp_dir().join(format!(
+            "tracedraw-procedural-{}-{:?}.tdraw",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        save_native(&doc, &path).unwrap();
+        let back = load_native(&path).unwrap();
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(back, doc);
+        assert!(matches!(
+            &back.pages[0].layers[0].shapes[0].fill,
+            Fill::Procedural(p) if p.seed == 42 && p.params.density == 55.0
+        ));
+    }
+
     /// The axis values of a variable font set on text are kept in the
     /// native file (#1013): a weight of 600 reopens at 600.
     #[test]
