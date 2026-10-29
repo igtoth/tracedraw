@@ -130,15 +130,28 @@ impl App {
                     self.delete_virtual_segment_at(p);
                 }
                 if response.drag_started_by(PointerButton::Primary) {
-                    self.drag = Drag::Box {
-                        start: p,
-                        current: p,
-                        from_center: false,
+                    // Freehand from the bar, or the other way round with
+                    // Alt held at the press (#1150).
+                    self.drag = if self.segment_freehand != mods.alt {
+                        Drag::Freehand { points: vec![p] }
+                    } else {
+                        Drag::Box {
+                            start: p,
+                            current: p,
+                            from_center: false,
+                        }
                     };
                 }
                 if response.dragged_by(PointerButton::Primary) {
-                    if let Drag::Box { current, .. } = &mut self.drag {
-                        *current = p;
+                    let step = 1.0 / self.view.zoom.max(1e-6) as f64;
+                    match &mut self.drag {
+                        Drag::Box { current, .. } => *current = p,
+                        Drag::Freehand { points }
+                            if points.last().is_none_or(|l| (*l - p).hypot() > step) =>
+                        {
+                            points.push(p);
+                        }
+                        _ => {}
                     }
                 }
             }

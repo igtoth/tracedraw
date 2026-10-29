@@ -35,6 +35,40 @@ sampled colour or attributes never changes a locked object.
   closed object whose interior contains the point, so an empty
   rectangle can be filled by clicking inside it.
 
+### Live readout (#990)
+
+While the Colour Eyedropper is in Select mode, and while a colour
+picker's eyedropper button waits for a click on the drawing, a box
+beside the pointer shows the colour a click would take
+(`App::hover_reading`, `ui::cursors::paint_color_readout`):
+
+- a 14-point swatch of the colour;
+- its name, in bold, when it has one: a spot colour's ink, else the first
+  colour of the default palette or the palettes shown that is exactly
+  equal (`ui::palette::name_of`);
+- its values in the drawing's primary colour mode (Document Options;
+  CMYK: C, M, Y, K in %, RGB: R, G, B 0 to 255), one per line, converted
+  when the colour is in another model; spot colours show their tint and
+  Registration its name;
+- its hex value, upper case (`#E02020`).
+
+The colour is the one the click would take: for the tool what
+`sample_color_at` reads (Shift: the outline first); for a picker the
+fill, else the outline, else white over empty paper. Off every object
+the tool shows no box (a click there takes nothing). Apply mode, a held
+button and the other tools show none.
+
+The box sits 18 points right of and 20 below the pointer, on the
+other side where the window ends, on the tooltip layer. Lag: the reading
+is worked out again only when the pointer moves (to 1/1000 mm), the zoom,
+page or drawing change, or Shift is pressed or released; the last
+picture read stays decoded, so a bitmap is decoded once while the
+pointer moves over it. The box is two rectangles and a few short texts,
+with no render of the page. In `frame_times_of_the_eyedropper_readout`
+(3000 objects and a 1200 x 900 picture, release build) a hover frame
+costs the same with the eyedropper as with the Pick tool (about 0.85
+ms on the test machine).
+
 ## Attributes Eyedropper
 
 - Property bar: Select Object Attributes, Apply Object Attributes, the
@@ -68,3 +102,9 @@ sampled colour or attributes never changes a locked object.
 - `eyedropper::tests::eyedroppers_read_from_locked_objects_but_never_write_to_them`
 - `eyedropper::tests::pictures_give_their_pixels_wherever_they_are` (alone,
   grouped, inside a clip frame, kept as JPEG)
+- `eyedropper::tests::the_hover_readout_names_the_colour_and_keeps_its_work`:
+  name, CMYK or RGB values and hex; nothing worked out again while
+  nothing changes; a picture decoded once; white for a picker over paper.
+- `pick_drag_tests::the_colour_eyedropper_reads_out_the_colour_under_the_pointer`:
+  the box drawn in the window over an object, not off the objects nor in
+  Apply mode; a picker's eyedropper shows it too.

@@ -1035,6 +1035,8 @@ pub struct App {
     pub eyedropper_apply: bool,
     /// Bitmap sample box side in pixels: 1, 2 or 5.
     pub eyedropper_sample: u32,
+    /// The colour eyedroppers' readout beside the pointer (#990).
+    pub eyedropper_hover: crate::eyedropper::HoverReadout,
     pub canvas_rect: egui::Rect,
     pub pointer_page: Option<Point>,
     /// The palette shown in the bottom strip (the first visible one).
@@ -1556,6 +1558,9 @@ pub struct App {
     pub blend_accel_colors: f64,
     /// The Knife's mode, gap and pieces (its bar).
     pub knife: crate::knife::KnifeSettings,
+    /// Segment Delete drags a freehand stroke rather than a box (its
+    /// bar; Alt at the press takes the other, #1150).
+    pub segment_freehand: bool,
     /// Properties docker section to expand: 0 fill, 1 outline.
     /// A section of the Properties docker to expand on the next frame
     /// (0 fill, 1 outline), set by F11 and F12.
@@ -2246,6 +2251,7 @@ impl App {
             eyedropper_groups: Default::default(),
             eyedropper_apply: false,
             eyedropper_sample: 1,
+            eyedropper_hover: Default::default(),
             canvas_rect: egui::Rect::NOTHING,
             pointer_page: None,
             palette: crate::palette::default_cmyk(),
@@ -2503,6 +2509,7 @@ impl App {
             blend_accel_objects: 0.0,
             blend_accel_colors: 0.0,
             knife: Default::default(),
+            segment_freehand: false,
             properties_open: None,
             area_fill_color: Color::cmyk_pct(0.0, 0.0, 100.0, 0.0),
             area_fill_mode: 0,
@@ -3053,6 +3060,7 @@ impl App {
             recognize: self.recognize,
             sketch: self.sketch,
             knife: self.knife,
+            segment_freehand: self.segment_freehand,
         }
     }
 
@@ -3124,6 +3132,7 @@ impl App {
             gap: finite(t.knife.gap, 0.0, 1000.0, 0.0),
             ..t.knife
         };
+        self.segment_freehand = t.segment_freehand;
         self.sketch = crate::recognize::SketchSettings {
             join_distance: finite(t.sketch.join_distance, 0.0, 1000.0, 5.0),
             smoothing: t.sketch.smoothing.min(5),

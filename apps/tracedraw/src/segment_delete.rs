@@ -2,7 +2,9 @@
 //! places it crosses another outline (or itself), its virtual segment;
 //! where nothing crosses, between its open ends, or a whole closed
 //! subpath. A click removes the virtual segment under the pointer; a drag
-//! removes every virtual segment the rectangle touches, whole (#528).
+//! removes every virtual segment the rectangle touches, whole (#528); a
+//! freehand drag (the bar's Freehand, or Alt held at the press) removes
+//! every virtual segment the stroke crosses, whole (#1150).
 //!
 //! Crossings are found against the outlines of every visible object on
 //! the page's unlocked layers (flattened to 0.02 mm), the object's other
@@ -542,6 +544,53 @@ pub fn stretch_touches(sub: &Sub, a: f64, b: f64, r: Rect) -> bool {
     })
 }
 
+/// The curve `seg` crosses or touches one of the stroke's `lines`.
+fn seg_crosses(seg: &PathSeg, lines: &[Line], stroke_box: Rect) -> bool {
+    let b = seg.bounding_box();
+    if b.x0 > stroke_box.x1 || b.x1 < stroke_box.x0 || b.y0 > stroke_box.y1 || b.y1 < stroke_box.y0
+    {
+        return false;
+    }
+    lines.iter().any(|l| {
+        let lb = Rect::from_points(l.p0, l.p1);
+        if b.x0 > lb.x1 || b.x1 < lb.x0 || b.y0 > lb.y1 || b.y1 < lb.y0 {
+            return false;
+        }
+        if l.p0 == l.p1 {
+            return seg.nearest(l.p0, 1e-9).distance_sq <= 1e-12;
+        }
+        !seg.intersect_line(*l).is_empty()
+    })
+}
+
+/// The virtual segment `a..b` of `sub` (wrapping when `a > b`) is crossed
+/// by the freehand stroke `lines` (its box `stroke_box`): the stroke takes
+/// it whole (#1150).
+pub fn stretch_crossed(sub: &Sub, a: f64, b: f64, lines: &[Line], stroke_box: Rect) -> bool {
+    let n = sub.segs.len() as f64;
+    let ranges = if a <= b {
+        vec![(a, b)]
+    } else {
+        vec![(a, n), (0.0, b)]
+    };
+    ranges.into_iter().any(|(a, b)| {
+        sub.segs.iter().enumerate().any(|(i, seg)| {
+            let (t0, t1) = ((a - i as f64).max(0.0), (b - i as f64).min(1.0));
+            t1 - t0 > 1e-9 && seg_crosses(&seg.subsegment(t0..t1), lines, stroke_box)
+        })
+    })
+}
+
+/// The lines of a freehand stroke through `points` (one point: a line of
+/// no length there).
+pub fn stroke_lines(points: &[Point]) -> Vec<Line> {
+    match points {
+        [] => Vec::new(),
+        [p] => vec![Line::new(*p, *p)],
+        _ => points.windows(2).map(|w| Line::new(w[0], w[1])).collect(),
+    }
+}
+
 fn cuttable(s: &Shape) -> bool {
     matches!(
         s.kind,
@@ -732,6 +781,76 @@ impl App {
             self.selection
                 .retain(|id| self.engine.document().find_shape(*id).is_some());
         }
+        true
+    }
+
+    /// Remove every virtual segment the freehand stroke through `points`
+    /// (page space) crosses, whole, as far as the crossings at its ends,
+    /// on all objects at once (#1150). True when something was removed.
+    pub fn delete_virtual_segments_along(&mut self, points: &[Point]) -> bool {
+        let points: Vec<Point> = points
+            .iter()
+            .copied()
+            .filter(|p| p.x.is_finite() && p.y.is_finite())
+            .collect();
+        let lines = stroke_lines(&points);
+        let Some(stroke_box) = points
+            .iter()
+            .map(|p| Rect::from_points(*p, *p))
+            .reduce(|a, b| a.union(b))
+        else {
+            return false;
+        };
+        let all = self.segment_leaves();
+        let outlines = outlines_of(&all);
+        let mut cmds = Vec::new();
+        for (s, o) in all.iter().zip(&outlines).filter(|(s, _)| cuttable(s)) {
+            let b = o.bounds;
+            if b.x0 > stroke_box.x1
+                || b.x1 < stroke_box.x0
+                || b.y0 > stroke_box.y1
+                || b.y1 < stroke_box.y0
+            {
+                continue;
+            }
+            let subs = subs_of(&o.path);
+            let reached: Vec<bool> = subs
+                .iter()
+                .map(|sub| {
+                    sub.segs
+                        .iter()
+                        .any(|seg| seg_crosses(seg, &lines, stroke_box))
+                })
+                .collect();
+            if !reached.contains(&true) {
+                continue;
+            }
+            let cutters = Self::cutters_near(&outlines, s.id, b);
+            let mut cut = vec![Vec::new(); subs.len()];
+            for (k, sub) in subs.iter().enumerate() {
+                if !reached[k] {
+                    continue;
+                }
+                let bounds = crossings(&subs, k, &cutters);
+                for (a, b) in pieces(sub, &bounds) {
+                    if stretch_crossed(sub, a, b, &lines, stroke_box) {
+                        cut[k].push((a, b));
+                    }
+                }
+            }
+            if let Some(cmd) = self.segment_delete_command(s, &subs, &cut) {
+                cmds.push(cmd);
+            }
+        }
+        if cmds.is_empty() {
+            return false;
+        }
+        if let Err(e) = self.engine.run_batch("Delete Segment", &cmds) {
+            self.status = e.to_string();
+            return false;
+        }
+        self.selection
+            .retain(|id| self.engine.document().find_shape(*id).is_some());
         true
     }
 
@@ -1281,6 +1400,46 @@ mod tests {
         let before = app.engine.history_labels().0.len();
         let start = Point::new(40.0, 10.0);
         app.finish_tools2_box(start, start + (60.0 * px, 60.0 * px));
+        assert_eq!(app.engine.history_labels().0.len(), before);
+    }
+
+    /// A freehand stroke removes every stretch it crosses, whole, and
+    /// nothing it passes beside (#1150).
+    #[test]
+    fn a_freehand_stroke_removes_the_stretches_it_crosses() {
+        let mut app = App::headless();
+        let h = line(&mut app, (0.0, 0.0), (30.0, 0.0));
+        let v1 = line(&mut app, (10.0, -5.0), (10.0, 5.0));
+        let v2 = line(&mut app, (20.0, -5.0), (20.0, 5.0));
+        let before = app.engine.history_labels().0.len();
+        // Down across the middle of h only: one stretch, one undo step.
+        assert!(app.delete_virtual_segments_along(&[
+            Point::new(15.0, 3.0),
+            Point::new(15.5, 0.5),
+            Point::new(15.0, -3.0),
+        ]));
+        assert_eq!(app.engine.history_labels().0.len(), before + 1);
+        let p = path_of(&app, h);
+        assert!(p
+            .segments()
+            .all(|s| s.eval(0.5).x < 10.0 + 1e-6 || s.eval(0.5).x > 20.0 - 1e-6));
+        assert_eq!(path_of(&app, h).bounding_box().x1, 30.0);
+        // Across the upper arms of both uprights at y = 3: each loses its
+        // arm above h, as far as the crossing.
+        assert!(app.delete_virtual_segments_along(&[Point::new(5.0, 3.0), Point::new(25.0, 3.0)]));
+        for v in [v1, v2] {
+            let b = path_of(&app, v).bounding_box();
+            assert!(
+                (b.y1 - 0.0).abs() < 1e-6 && (b.y0 + 5.0).abs() < 1e-6,
+                "{b:?}"
+            );
+        }
+        // A stroke passing beside every outline removes nothing.
+        let before = app.engine.history_labels().0.len();
+        assert!(
+            !app.delete_virtual_segments_along(&[Point::new(40.0, 10.0), Point::new(60.0, 12.0)])
+        );
+        assert!(!app.delete_virtual_segments_along(&[]));
         assert_eq!(app.engine.history_labels().0.len(), before);
     }
 
