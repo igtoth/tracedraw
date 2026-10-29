@@ -18,6 +18,11 @@
 //!   Kaitai Struct description of the format.
 
 use crate::{Error, Result};
+use std::sync::Arc;
+
+/// A buffer a tree reads from, shared with whoever keeps records of it
+/// (see [`crate::raw`]).
+pub type SharedBytes = Arc<Vec<u8>>;
 
 #[derive(Debug, Clone)]
 pub struct Chunk {
@@ -73,7 +78,7 @@ pub struct Tree {
     pub root: Chunk,
     /// Out-of-line buffers, indexed from 1 (0 is the main buffer): first the
     /// external data streams of version 16+ files, then inflated `cmpr` streams.
-    pub streams: Vec<Vec<u8>>,
+    pub streams: Vec<SharedBytes>,
 }
 
 /// Parsing context shared down the chunk tree.
@@ -148,6 +153,11 @@ pub fn parse(main: &[u8]) -> Result<Tree> {
 /// `version` is the major format version; redirects are only recognised
 /// from 16 on.
 pub fn parse_with_externals(main: &[u8], externals: Vec<Vec<u8>>, version: u16) -> Result<Tree> {
+    parse_with_shared(main, externals.into_iter().map(Arc::new).collect(), version)
+}
+
+/// [`parse_with_externals`] with the external streams already shared.
+pub fn parse_with_shared(main: &[u8], externals: Vec<SharedBytes>, version: u16) -> Result<Tree> {
     if main.len() < 12 || &main[0..4] != b"RIFF" {
         return Err(Error::NotCdr);
     }
@@ -185,7 +195,7 @@ fn parse_children(
     stream: usize,
     mut pos: usize,
     end: usize,
-    streams: &mut Vec<Vec<u8>>,
+    streams: &mut Vec<SharedBytes>,
     ctx: &Ctx,
     sizes: Option<&[u32]>,
 ) -> Vec<Chunk> {
@@ -236,12 +246,12 @@ fn parse_children(
         let (bstream, bstart, bend) = body;
         if is_list {
             // The list body may be in another buffer than the chunk header.
-            let taken = if bstream != stream && bstream > 0 {
-                Some(std::mem::take(&mut streams[bstream - 1]))
+            let shared = if bstream != stream && bstream > 0 {
+                streams.get(bstream - 1).cloned()
             } else {
                 None
             };
-            let bbuf: &[u8] = match &taken {
+            let bbuf: &[u8] = match &shared {
                 Some(t) => t,
                 None => buf,
             };
@@ -256,9 +266,6 @@ fn parse_children(
                 Some(_) => parse_children(bbuf, bstream, bstart + 4, bend, streams, ctx, sizes),
                 None => Vec::new(),
             };
-            if let Some(t) = taken {
-                streams[bstream - 1] = t;
-            }
             out.push(Chunk {
                 id,
                 list_type: lt,
@@ -292,7 +299,7 @@ fn inflate_cmpr(
     buf: &[u8],
     pos: usize,
     end: usize,
-    streams: &mut Vec<Vec<u8>>,
+    streams: &mut Vec<SharedBytes>,
     ctx: &Ctx,
 ) -> Vec<Chunk> {
     let (Some(c0), Some(c1)) = (u32le(buf, pos), u32le(buf, pos + 8)) else {
@@ -324,12 +331,11 @@ fn inflate_cmpr(
         log::warn!("cmpr sizes pool at {second} missing; chunk stream skipped");
         return Vec::new();
     }
-    streams.push(chunks);
+    let inflated = Arc::new(chunks);
+    streams.push(inflated.clone());
     let idx = streams.len();
-    let len = streams[idx - 1].len();
-    let inflated_ref = std::mem::take(&mut streams[idx - 1]);
-    let children = parse_children(&inflated_ref, idx, 0, len, streams, ctx, Some(&sizes));
-    streams[idx - 1] = inflated_ref;
+    let len = inflated.len();
+    let children = parse_children(&inflated, idx, 0, len, streams, ctx, Some(&sizes));
     vec![Chunk {
         id: *b"cmpr",
         list_type: Some(*b"cmpr"),

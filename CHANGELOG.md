@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Internal: while a `.cdr` file opens, the reader now keeps every chunk and `loda` argument it does not interpret in a side table keyed by object (bytes shared with the file's streams, so a large file costs no more memory), the first piece of the standalone `.cdr` library's lossless round trip; the writer does not use it yet. `tracedraw-cli info file.cdr --unknown` lists the unknown tags with their counts.
 - Internal: the `.cdr` container, chunk tree, embedded font and compound file readers moved to a crate of their own, `tracedraw-cdr-format`, which depends on nothing else in the workspace; `tracedraw-cdr` re-exports them, so nothing changes for users. First step of splitting the `.cdr` support into a standalone library with a neutral document model.
 
 - Fit Objects to Path panel: copies along the path (a number of objects, the selected ones and then copies of them in turn, or as many as fit at a fixed distance), spacing measured between centers or between edges, an end offset, a row at a fixed distance placed at the start, middle or end, the objects on, above or below the path at a set distance, turned with the path or all by a fixed angle, and the order (as selected, reversed, left to right, right to left, largest or smallest first, large and small in turn). Copies go into their original's layer and Apply stays one undo step; the preview is worked out only when a value, the selection or the drawing changes (#1091, #1196).

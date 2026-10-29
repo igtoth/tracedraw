@@ -10,6 +10,9 @@
 //!   RIFF stream and the external data streams.
 //! - [`riff`]: walk the chunk tree without interpreting it, inflate the
 //!   compressed lists, follow the redirect records of version 16 and later.
+//! - [`loda`]: the argument table of the record describing an object.
+//! - [`raw`]: the records a reader leaves uninterpreted, kept as bytes
+//!   shared with the tree, by the object they belong to.
 //! - [`eot`]: the Embedded OpenType structure around an embedded font.
 //! - [`ole`]: compound files holding embedded objects and their pictures.
 //!
@@ -19,7 +22,9 @@
 
 pub mod container;
 pub mod eot;
+pub mod loda;
 pub mod ole;
+pub mod raw;
 pub mod riff;
 
 pub use container::{Container, ContainerKind, Version};

@@ -33,10 +33,12 @@ pub mod wl;
 pub mod write;
 
 use std::path::Path;
+use std::sync::Arc;
 
 pub use container::{Container, Version};
 pub use parse::{parse_document, parse_document_with, ParseReport};
-pub use tracedraw_cdr_format::{eot, ole, riff, Error, Result};
+pub use tracedraw_cdr_format::raw::{self, RawTable};
+pub use tracedraw_cdr_format::{eot, loda, ole, riff, Error, Result};
 
 /// Files list a radial or square gradient's colours from its edge to its
 /// centre (a sun drawn red in the middle stores yellow first); ours run
@@ -67,14 +69,26 @@ pub fn open(path: impl AsRef<Path>) -> Result<(tracedraw_core::Document, ParseRe
 /// Same as [`open`], from memory. CMX exchange files (RIFF form `CMX1`)
 /// are read as well, by [`cmx::open_bytes`].
 pub fn open_bytes(bytes: &[u8], title: &str) -> Result<(tracedraw_core::Document, ParseReport)> {
+    open_bytes_keeping(bytes, title).map(|(doc, report, _)| (doc, report))
+}
+
+/// [`open_bytes`] that also hands back the records the reader left
+/// uninterpreted (the chunks and `loda` arguments it does not read),
+/// keyed by object, as bytes shared with the file's streams. Empty for
+/// CMX and `WL` files. The writer does not use it yet; it is what a
+/// later save will put back untouched.
+pub fn open_bytes_keeping(
+    bytes: &[u8],
+    title: &str,
+) -> Result<(tracedraw_core::Document, ParseReport, RawTable)> {
     if cmx::is_cmx(bytes) {
-        return cmx::open_bytes(bytes, title);
+        return cmx::open_bytes(bytes, title).map(|(d, r)| (d, r, RawTable::default()));
     }
     if wl::is_wl(bytes) {
-        return wl::open_bytes(bytes, title);
+        return wl::open_bytes(bytes, title).map(|(d, r)| (d, r, RawTable::default()));
     }
     let container = container::detect(bytes)?;
-    let riff = container::riff_stream(bytes, &container)?;
+    let riff = Arc::new(container::riff_stream(bytes, &container)?);
     let externals = container::external_streams(bytes, &container);
     let root = riff::parse_with_externals(&riff, externals, container.version.0)?;
     let cmyk_profile = container::cmyk_profile(bytes, &container);
@@ -135,5 +149,10 @@ pub fn open_bytes(bytes: &[u8], title: &str) -> Result<(tracedraw_core::Document
     for n in notes {
         doc_report.1.warn(n);
     }
-    Ok(doc_report)
+    // What the reader left, by object: the records a later save can put
+    // back. The version the report settled on reads the argument tables.
+    let version = doc_report.1.version.unwrap_or(container.version).0;
+    let kept = raw::collect(&root, riff, version, &parse::known());
+    doc_report.1.unknown = kept.summary();
+    Ok((doc_report.0, doc_report.1, kept))
 }

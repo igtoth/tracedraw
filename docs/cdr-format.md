@@ -368,6 +368,44 @@ public notes also say), version 12 text shows in part, and version 21
 text placement varies as it does for files of that version made
 elsewhere.
 
+## Unknown records
+
+What the reader does not interpret is not thrown away: while a RIFF
+file opens, `tracedraw_cdr_format::raw::collect` walks the chunk tree
+once more and keeps every leaf chunk whose tag the reader never reads
+(`parse::KNOWN_CHUNKS`) and every `loda` argument whose type it never
+reads (`parse::KNOWN_ARGS`). `tracedraw-cli info file.cdr --unknown`
+lists the tags and argument types with their counts and sizes, most
+frequent first, from `ParseReport::unknown`; the records themselves come
+back from `tracedraw_cdr::open_bytes_keeping` as a `RawTable`. The
+writer does not use the table yet; it is designed for the save that
+puts records back untouched.
+
+The table (`crates/cdr-format/src/raw.rs`):
+
+- `buffers`: the streams the records point into, shared (`Arc`) with the
+  chunk tree: the RIFF stream first, then the tree's out-of-line
+  streams (the external data streams of version 16 on, the inflated
+  compressed lists) in their order. Nothing is copied: a record is a
+  buffer number and a byte range, 36 bytes however large the chunk.
+- `records`: by owner, in file order. The owner of a record is the
+  nearest list around it holding a `usdn` chunk (an object, a group, a
+  page or a layer), named by the id in that chunk (`Owner::Object`);
+  records outside every numbered list belong to `Owner::Document`.
+- each record: its `key` (`Chunk(tag)` for a whole chunk, `Arg(type)`
+  for one argument of a `loda` or `lobj` table), the list `path` from
+  the root down to the list holding the chunk (interned in `paths`:
+  `CDRU/page/layr/obj `), the chunk's `index` among that list's
+  children and, for an argument, its `slot` in the table. A `loda` whose
+  table does not decode is kept whole as a chunk.
+- lists are structure, not records: an unknown list (`LIST uil `,
+  `LIST INFO`) is descended and its leaf chunks kept with their path,
+  so a writer can rebuild the list.
+
+The argument table itself is decoded by `tracedraw_cdr_format::loda`
+(the layout of the "`loda` argument table" section above), which the
+reader uses as well, so both see the same arguments.
+
 ## How to confirm an item on a file
 
 1. Take a small `.cdr` file of your own holding one object and note its

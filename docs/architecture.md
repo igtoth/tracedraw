@@ -71,7 +71,10 @@ be used on its own and tested without the rest of the workspace.
 `container.rs` detects RIFF or ZIP and the version and hands back the
 RIFF stream and the external data streams, `riff.rs` walks chunks,
 inflates `cmpr` lists and follows the redirect records of version 16 and
-later, `eot.rs` reads and writes the Embedded OpenType structure around
+later, `loda.rs` decodes the argument table of an object's record,
+`raw.rs` keeps the records a reader leaves uninterpreted (bytes shared
+with the tree, by object; `docs/cdr-format.md`, "Unknown records"),
+`eot.rs` reads and writes the Embedded OpenType structure around
 embedded fonts, `ole.rs` reads the compound files of embedded objects.
 It is being grown, step by step, into the home of a neutral document
 model in file units with readers and writers per version, so that what

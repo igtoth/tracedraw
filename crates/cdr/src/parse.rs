@@ -34,6 +34,10 @@ pub struct ParseReport {
     pub shapes: usize,
     pub skipped_objects: usize,
     pub warnings: Vec<String>,
+    /// The chunk tags and `loda` argument types the reader left
+    /// uninterpreted, with their counts (RIFF files only; see
+    /// [`crate::open_bytes_keeping`] for the records themselves).
+    pub unknown: tracedraw_cdr_format::raw::UnknownTags,
 }
 
 impl ParseReport {
@@ -69,6 +73,44 @@ const UNIT_MM: f64 = 25.4 / 254000.0;
 const UNIT16_MM: f64 = 25.4 / 1000.0;
 /// Byte offset of the point count in an `arrx` record.
 const ARRX_COUNT_AT: usize = 268;
+
+/// What this reader interprets, for the table of what it leaves (see
+/// [`tracedraw_cdr_format::raw`]): every chunk tag read anywhere in the
+/// tree, in any version. Lists are structure, not records, so they are
+/// not named here; `loda` and `lobj` are read argument by argument.
+pub(crate) const KNOWN_CHUNKS: &[[u8; 4]] = &[
+    *b"loda", *b"lobj", *b"trfd", *b"txsm", *b"flgs", *b"bbox", *b"spnd", *b"usdn", *b"ppdt",
+    *b"vrsn", *b"mcfg", *b"fild", *b"fill", *b"outl", *b"stlt", *b"bmp ", *b"bmpf", *b"arrw",
+    *b"arrx", *b"font", *b"ftbl", *b"ole2", *b"olel", *b"vpat", *b"imhd",
+];
+
+/// The `loda` argument types this reader interprets, in any version.
+pub(crate) const KNOWN_ARGS: &[u32] = &[
+    ARG_OUTLINE,
+    ARG_FILL,
+    ARG_COORDS,
+    ARG_LEGACY_TRANSFORM,
+    ARG_STYLE,
+    ARG_STYLE_STRING,
+    ARG_NAME,
+    ARG_OPACITY,
+    ARG_POLYGON,
+    ARG_CLIP_CONTENTS,
+    ARG_PAGE_SIZE,
+    ARG_PAGE_BACKGROUND,
+    ARG_HIDDEN,
+    ARG_MESH,
+    ARG_GUIDE_LINE,
+    ARG_BLEND_STEPS,
+];
+
+/// What this reader interprets, for [`tracedraw_cdr_format::raw::collect`].
+pub fn known() -> tracedraw_cdr_format::raw::Known<'static> {
+    tracedraw_cdr_format::raw::Known {
+        chunks: KNOWN_CHUNKS,
+        args: KNOWN_ARGS,
+    }
+}
 
 /// Argument types of the `loda` argument table.
 pub(crate) const ARG_OUTLINE: u32 = 0x0a;
@@ -215,6 +257,9 @@ const SPACE_EM: f64 = 0.25;
 const OBJ_GUIDE: u32 = 0x16;
 /// Argument of a guideline: its line (see [`Ctx::read_guide`]).
 const ARG_GUIDE_LINE: u32 = 16000;
+/// The step count of a blend's linked group (its `lgob` `loda`, object
+/// type 7): the first u32 of this argument.
+const ARG_BLEND_STEPS: u32 = 3000;
 
 /// Little-endian cursor over a chunk payload. `v16` selects the 16-bit
 /// layouts of versions before 6 for integers, coordinates and angles.
@@ -321,13 +366,9 @@ struct BitmapDef {
     png: tracedraw_core::SharedBytes,
 }
 
-/// One entry of a `loda` argument table: type, payload start and end.
-#[derive(Debug, Clone, Copy)]
-struct Arg {
-    ty: u32,
-    off: usize,
-    end: usize,
-}
+// One entry of a `loda` argument table (type, payload start and end) and
+// the table itself, decoded by the format crate.
+use tracedraw_cdr_format::loda::Arg;
 
 /// What a paragraph text's frame may be worked out from when its
 /// coordinates hold no size (version 16 and later).
@@ -341,10 +382,7 @@ struct FrameHints<'s> {
 }
 
 /// Decoded `loda` header and argument table.
-struct Loda {
-    kind: u32,
-    args: Vec<Arg>,
-}
+use tracedraw_cdr_format::loda::Table as Loda;
 
 /// Polygon parameters from the `loda` argument of type 11000.
 #[derive(Debug, Clone, Copy)]
@@ -2689,40 +2727,13 @@ impl<'a> Ctx<'a> {
     }
 
     fn read_loda(&mut self, d: &'a [u8]) -> Option<Loda> {
-        let mut r = self.reader(d);
-        let _len = r.uint()?;
-        let num_args = r.uint()? as usize;
-        let start_args = r.uint()? as usize;
-        let start_types = r.uint()? as usize;
-        let mut kind = r.uint()?;
+        let mut l = tracedraw_cdr_format::loda::table(d, self.v)?;
         // Version 3 numbers the object types from 0 (rectangle, ellipse,
         // curve, text, bitmap), one below the later codes.
-        if self.v < 4 && kind <= 4 {
-            kind += 1;
+        if self.v < 4 && l.kind <= 4 {
+            l.kind += 1;
         }
-        let step = if self.v16() { 2 } else { 4 };
-        let n = num_args.min(64);
-        let mut offsets = Vec::with_capacity(n + 1);
-        for i in 0..=n {
-            match self.reader_at(d, start_args + i * step).uint() {
-                Some(o) => offsets.push(o as usize),
-                None if i == n => offsets.push(d.len()),
-                None => return None,
-            }
-        }
-        let mut args = Vec::with_capacity(n);
-        for i in 0..n {
-            let ty = self.reader_at(d, start_types + (n - 1 - i) * step).uint()?;
-            let off = offsets[i].min(d.len());
-            let next = offsets[i + 1];
-            let end = if next > off && next <= d.len() {
-                next
-            } else {
-                d.len()
-            };
-            args.push(Arg { ty, off, end });
-        }
-        Some(Loda { kind, args })
+        Some(l)
     }
 
     /// The mesh of a mesh fill object (argument 19150, a version 11 file,
@@ -2896,7 +2907,7 @@ impl<'a> Ctx<'a> {
         if l.args.iter().any(|a| a.ty == ARG_STYLE_STRING) {
             return None;
         }
-        let arg = l.args.iter().find(|a| a.ty == 3000)?;
+        let arg = l.args.iter().find(|a| a.ty == ARG_BLEND_STEPS)?;
         // The count is the low 16 bits: versions 9 and 13 leave the high
         // ones 0, version 25 keeps another value there (#980).
         let raw = self.reader_at(d, arg.off).u16().map(u32::from);
@@ -5367,6 +5378,64 @@ mod tests {
         // Page is 254 mm square; the rectangle sits at the centre.
         let p = s.transform * Point::ZERO;
         assert!((p.x - 127.0).abs() < 1e-9 && (p.y - 127.0).abs() < 1e-9);
+    }
+
+    /// What the reader does not interpret is kept by object and listed in
+    /// the report: here an `obbx` chunk and an argument of type 12010 of
+    /// the object numbered 42 in its `usdn`, and a `sumi` chunk of the
+    /// document; what it reads (the coordinates, the `mcfg`) is not.
+    #[test]
+    fn unknown_records_are_kept_by_object_and_counted() {
+        let obj = list(
+            b"obj ",
+            &[
+                chunk(b"usdn", &u32s(&[42])),
+                chunk(
+                    b"loda",
+                    &loda(
+                        OBJ_RECT,
+                        &[
+                            (ARG_COORDS, i32s(&[254000, 127000, 0])),
+                            (12010, vec![8, 9, 10, 11]),
+                        ],
+                    ),
+                ),
+                chunk(b"obbx", &i32s(&[0; 8])),
+            ]
+            .concat(),
+        );
+        let body = [
+            chunk(b"vrsn", &u16s(&[900])),
+            chunk(b"sumi", &[3; 10]),
+            chunk(b"mcfg", &mcfg(9, 2_540_000, 2_540_000)),
+            list(b"page", &list(b"layr", &obj)),
+        ]
+        .concat();
+        let (doc, rep, kept) =
+            crate::open_bytes_keeping(&riff(b"CDR9", &body), "t").expect("opens");
+        assert_eq!(rep.shapes, 1, "{:?}", rep.warnings);
+        assert_eq!(doc.pages.len(), 1);
+        assert_eq!(
+            rep.unknown.lines(),
+            [
+                "chunk obbx: 1 record(s), 32 bytes",
+                "chunk sumi: 1 record(s), 10 bytes",
+                "argument 12010: 1 record(s), 4 bytes"
+            ]
+        );
+        use tracedraw_cdr_format::raw::{Key, Owner};
+        let of_object = &kept.records[&Owner::Object(42)];
+        assert_eq!(of_object.len(), 2);
+        assert_eq!(of_object[0].key, Key::Arg(12010));
+        assert_eq!(kept.bytes(&of_object[0]), &[8, 9, 10, 11]);
+        assert_eq!(of_object[1].key, Key::Chunk(*b"obbx"));
+        assert_eq!(kept.path_of(&of_object[1]), "CDR9/page/layr/obj ");
+        let of_document = &kept.records[&Owner::Document];
+        assert_eq!(of_document.len(), 1);
+        assert_eq!(kept.bytes(&of_document[0]), &[3; 10]);
+        // Without the table, the same document and report.
+        let (_, plain) = crate::open_bytes(&riff(b"CDR9", &body), "t").expect("opens");
+        assert_eq!(plain.unknown, rep.unknown);
     }
 
     /// A mesh fill object (type 0x20, a version 11 file, #896): a curve
