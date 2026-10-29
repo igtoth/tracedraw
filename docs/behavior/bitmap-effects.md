@@ -69,9 +69,14 @@ later, and removing the last one gives the original back.
   failed are not made again until a value changes. In the browser the
   preview is made on the interface thread, so the box starts cleared
   there and opening an effect never stalls the page.
-- Before and after previews of the first selected bitmap side by side:
-  a copy at most 240 pixels across, worked out again only when a setting
-  changes. Settings measured in pixels (radius, size, width, height,
+- Every effect dialog is a window the user sizes with the shared Before
+  and After preview of the first selected bitmap at the left
+  (`before-after-preview.md`: the Preview list with Before and After
+  stacked, side by side, Before or After, zoom and pan, the copy as
+  large as the panes show, at most 768 pixels across) and the settings
+  at the right; the result is worked out again only when a setting
+  changes (on a copy at most 240 pixels across while a slider is
+  dragged). Settings measured in pixels (radius, size, width, height,
   distance, period, amplitude, spacing and the like) are scaled with the
   copy, never below their minimum, so the preview looks like the result.
   The before view is the bitmap without the effect being set up (its
@@ -113,14 +118,13 @@ later, and removing the last one gives the original back.
 Effects > Adjust > Image Adjustments opens a larger dialog instead of
 the plain one:
 
-- A 600 x 420 preview of a copy at most 720 pixels across. Tools above
-  it: Rotate left and Rotate right (the view, a quarter turn), Pan (drag;
-  the default tool), Zoom in and Zoom out (click a point to zoom by 1.5
-  about it), Zoom to fit, 100% (one bitmap pixel per screen point); the
-  wheel zooms about the pointer with any tool. Preview modes: Full
-  preview, Before and after full preview (side by side, same view) and
-  Before and after split preview (the original left of a dashed divider,
-  the result right; drag the divider).
+- The shared Before and After preview (`before-after-preview.md`),
+  showing After at first, with Before and After stacked, side by side,
+  Before, and Before and After split (the original left of a dashed
+  divider, the result right; drag the divider) in its Preview list;
+  Zoom to fit, Zoom out, Zoom in and Pan, then Rotate left and Rotate
+  right (the view, a quarter turn) and 100% (one bitmap pixel per
+  screen point); the wheel zooms about the pointer.
 - Auto adjust sets the black and white points to the levels that cut
   0.5 % of the opaque pixels at either end. Select white point and Select
   black point turn the preview into a picker: a click sets that point

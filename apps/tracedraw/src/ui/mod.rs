@@ -12,6 +12,7 @@ pub mod align_docker;
 pub mod bar_items;
 pub mod barcode_wizard;
 pub mod bars;
+pub mod before_after;
 pub mod bitmap_dialogs;
 pub mod bitmap_preview;
 pub mod brand;

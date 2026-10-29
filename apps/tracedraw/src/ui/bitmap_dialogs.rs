@@ -1,6 +1,8 @@
 //! Bitmaps > Mode dialogs: Black and White (1-bit), Duotone (8-bit) and
-//! Paletted (8-bit), each with a before and after preview of the selected
-//! bitmap. OK converts every selected bitmap in one undo step.
+//! Paletted (8-bit), and Bitmaps > Remove Background, each a window the
+//! user sizes with the shared Before and After preview of the selected
+//! bitmap (`before_after.rs`) at the left and its settings at the right.
+//! OK converts every selected bitmap in one undo step.
 
 use crate::app::App;
 use crate::bitmap_modes::{
@@ -8,9 +10,42 @@ use crate::bitmap_modes::{
     DuotoneSettings, DuotoneType, PaletteType, PalettedSettings, Screen,
 };
 use crate::i18n::tr;
-use crate::ui::bitmap_preview::{before_after, settings_key};
+use crate::ui::before_after::{self, View, BOTTOM_H, RIGHT_W};
+use crate::ui::bitmap_preview::{settings_key, Source};
 use crate::ui::tips::RichTip;
 use egui::{Color32, Context, Ui};
+use image::RgbaImage;
+
+/// The shared preview of the selected bitmap through `f`, in the dialog
+/// `id` whose view state is kept between frames; the copy and the pixel
+/// picked (while `picking`) come back.
+fn preview(
+    ui: &mut Ui,
+    app: &App,
+    id: &'static str,
+    key: u64,
+    picking: &mut bool,
+    f: impl FnOnce(&RgbaImage, f32) -> RgbaImage,
+) -> Option<before_after::Live> {
+    let id = egui::Id::new(id);
+    let ctx = ui.ctx().clone();
+    let mut view = before_after::state(&ctx, id);
+    let out = before_after::live(
+        ui,
+        app,
+        id,
+        &mut view,
+        &Source::Shown,
+        key,
+        &View::PLAIN,
+        picking,
+        0.0,
+        |_, _, _| {},
+        f,
+    );
+    before_after::keep(&ctx, id, view);
+    out
+}
 
 /// The Duotone dialog's state: the settings, the ink whose curve is shown
 /// and whether every ink's curve is drawn.
@@ -53,15 +88,34 @@ fn combo<T: Copy + PartialEq>(
 /// Black and White (1-bit): conversion method, threshold or intensity,
 /// and the halftone screen.
 pub fn bw_dialog(app: &mut App, ctx: &Context, s: &mut BwSettings, close: &mut bool) {
-    super::dialogs::window(ctx, tr("dialog.mode_bw")).show(ctx, |ui| {
+    before_after::window(ctx, tr("dialog.mode_bw")).show(ctx, |ui| {
         let dpi = crate::ui::bitmap_preview::selected_bitmap(app)
             .map(|b| b.1)
             .unwrap_or(300.0);
         let settings = *s;
-        before_after(ui, app, settings_key(&settings), 220.0, |img, scale| {
-            black_and_white(img, &settings, dpi * scale)
+        before_after::columns(ui, RIGHT_W, BOTTOM_H, |left, right| {
+            preview(
+                left,
+                app,
+                "bw_preview",
+                settings_key(&settings),
+                &mut false,
+                |img, scale| black_and_white(img, &settings, dpi * scale),
+            );
+            bw_settings(right, s);
         });
-        ui.add_space(6.0);
+        if super::dialogs::ok_cancel(ui, close) {
+            let settings = *s;
+            app.apply_to_bitmaps("Black and White", move |img, dpi| {
+                black_and_white(img, &settings, dpi)
+            });
+        }
+    });
+}
+
+/// The Black and White settings: the method and what it needs.
+fn bw_settings(ui: &mut Ui, s: &mut BwSettings) {
+    {
         egui::Grid::new("bw_grid").num_columns(2).show(ui, |ui| {
             ui.label(tr("dialog.conversion_method"));
             combo(
@@ -121,13 +175,7 @@ pub fn bw_dialog(app: &mut App, ctx: &Context, s: &mut BwSettings, close: &mut b
                 }
             }
         });
-        if super::dialogs::ok_cancel(ui, close) {
-            let settings = *s;
-            app.apply_to_bitmaps("Black and White", move |img, dpi| {
-                black_and_white(img, &settings, dpi)
-            });
-        }
-    });
+    }
 }
 
 fn screen_key(s: Screen) -> &'static str {
@@ -150,7 +198,7 @@ pub fn duotone_dialog(app: &mut App, ctx: &Context, st: &mut DuotoneState, close
             st.ink = 0;
         }
     }
-    super::dialogs::window(ctx, tr("dialog.mode_duotone")).show(ctx, |ui| {
+    before_after::window(ctx, tr("dialog.mode_duotone")).show(ctx, |ui| {
         // Four inks always exist; the type uses the first ones.
         while st.settings.inks.len() < 4 {
             let d = DuotoneSettings::default();
@@ -158,7 +206,30 @@ pub fn duotone_dialog(app: &mut App, ctx: &Context, st: &mut DuotoneState, close
             st.settings.inks.push(d.inks[i].clone());
         }
         let settings = st.settings.clone();
-        ui.horizontal(|ui| {
+        before_after::columns(ui, RIGHT_W, BOTTOM_H, |left, right| {
+            preview(
+                left,
+                app,
+                "duotone_preview",
+                settings_key(&settings),
+                &mut false,
+                |img, _| duotone(img, &settings),
+            );
+            duotone_settings(right, app, st);
+        });
+        if super::dialogs::ok_cancel(ui, close) {
+            let settings = st.settings.clone();
+            app.apply_to_bitmaps("Duotone", move |img, _| duotone(img, &settings));
+        }
+    });
+}
+
+/// The Duotone settings: the type, the inks and their curves, Load and
+/// Save.
+fn duotone_settings(ui: &mut Ui, app: &mut App, st: &mut DuotoneState) {
+    egui::ScrollArea::vertical()
+        .id_salt("duotone_settings")
+        .show(ui, |ui| {
             ui.vertical(|ui| {
                 ui.horizontal(|ui| {
                     ui.label(tr("dialog.type"));
@@ -274,14 +345,6 @@ pub fn duotone_dialog(app: &mut App, ctx: &Context, st: &mut DuotoneState, close
                 );
             });
         });
-        before_after(ui, app, settings_key(&settings), 200.0, |img, _| {
-            duotone(img, &settings)
-        });
-        if super::dialogs::ok_cancel(ui, close) {
-            let settings = st.settings.clone();
-            app.apply_to_bitmaps("Duotone", move |img, _| duotone(img, &settings));
-        }
-    });
 }
 
 /// Paletted (8-bit): palette type and colour count, dithering and its
@@ -290,12 +353,30 @@ pub fn paletted_dialog(app: &mut App, ctx: &Context, s: &mut PalettedSettings, c
     if s.palette == PaletteType::Custom && s.custom.is_empty() {
         s.custom = app.document_palette_rgb();
     }
-    super::dialogs::window(ctx, tr("dialog.mode_paletted")).show(ctx, |ui| {
+    before_after::window(ctx, tr("dialog.mode_paletted")).show(ctx, |ui| {
         let settings = s.clone();
-        let thumb = before_after(ui, app, settings_key(&settings), 220.0, |img, _| {
-            paletted(img, &settings)
+        before_after::columns(ui, RIGHT_W, BOTTOM_H, |left, right| {
+            let thumb = preview(
+                left,
+                app,
+                "paletted_preview",
+                settings_key(&settings),
+                &mut false,
+                |img, _| paletted(img, &settings),
+            )
+            .map(|p| p.img);
+            paletted_settings(right, s, thumb.as_deref());
         });
-        ui.add_space(6.0);
+        if super::dialogs::ok_cancel(ui, close) {
+            let settings = s.clone();
+            app.apply_to_bitmaps("Paletted", move |img, _| paletted(img, &settings));
+        }
+    });
+}
+
+/// The Paletted settings and the processed palette of the copy `thumb`.
+fn paletted_settings(ui: &mut Ui, s: &mut PalettedSettings, thumb: Option<&RgbaImage>) {
+    {
         egui::Grid::new("pal_grid").num_columns(2).show(ui, |ui| {
             ui.label(tr("dialog.palette"));
             combo(
@@ -341,7 +422,7 @@ pub fn paletted_dialog(app: &mut App, ctx: &Context, s: &mut PalettedSettings, c
             let pal = match ui.ctx().data(|d| d.get_temp::<(u64, Vec<[u8; 3]>)>(id)) {
                 Some((k, p)) if k == key => p,
                 _ => {
-                    let p = build_palette(&t, s);
+                    let p = build_palette(t, s);
                     ui.ctx().data_mut(|d| d.insert_temp(id, (key, p.clone())));
                     p
                 }
@@ -365,11 +446,7 @@ pub fn paletted_dialog(app: &mut App, ctx: &Context, s: &mut PalettedSettings, c
                 ui.painter().rect_filled(r, 0.0, rgb32(*c));
             }
         }
-        if super::dialogs::ok_cancel(ui, close) {
-            let settings = s.clone();
-            app.apply_to_bitmaps("Paletted", move |img, _| paletted(img, &settings));
-        }
-    });
+    }
 }
 
 /// The Remove Background dialog's state: the settings and whether a click
@@ -390,30 +467,24 @@ pub fn remove_background_dialog(
     close: &mut bool,
 ) {
     use crate::bg_remove::remove_background;
-    super::dialogs::window(ctx, tr("dialog.remove_background_title")).show(ctx, |ui| {
+    before_after::window(ctx, tr("dialog.remove_background_title")).show(ctx, |ui| {
         let settings = st.settings.clone();
-        let preview = crate::ui::bitmap_preview::before_after_pick(
-            ui,
-            app,
-            &crate::ui::bitmap_preview::Source::Shown,
-            settings_key(&settings),
-            220.0,
-            st.picking,
-            |img, scale| remove_background(img, &settings, scale),
-        );
-        // A click on a picture adds the colour under it (taken from the
-        // picture as it was, so a removed pixel can be picked too).
-        if let (true, Some(p)) = (st.picking, preview.as_ref()) {
-            if let Some((x, y)) = p.picked {
-                let before = crate::ui::bitmap_preview::copy_of(
-                    app,
-                    ui.ctx(),
-                    &crate::ui::bitmap_preview::Source::Shown,
-                    crate::ui::bitmap_preview::THUMB,
-                );
-                if let Some(t) = before {
-                    let (w, h) = t.img.dimensions();
-                    let c = t
+        before_after::columns(ui, RIGHT_W, BOTTOM_H, |left, right| {
+            let p = preview(
+                left,
+                app,
+                "bg_remove_preview",
+                settings_key(&settings),
+                &mut st.picking,
+                |img, scale| remove_background(img, &settings, scale),
+            );
+            // A click on a picture adds the colour under it, taken from
+            // the picture as it was, so a removed pixel can be picked
+            // too.
+            if let (true, Some(p)) = (st.picking, p) {
+                if let Some((x, y)) = p.picked {
+                    let (w, h) = p.img.dimensions();
+                    let c = p
                         .img
                         .get_pixel(x.min(w.saturating_sub(1)), y.min(h.saturating_sub(1)))
                         .0;
@@ -421,11 +492,23 @@ pub fn remove_background_dialog(
                     if !st.settings.colors.contains(&c) {
                         st.settings.colors.push(c);
                     }
+                    st.picking = false;
                 }
-                st.picking = false;
             }
+            bg_remove_settings(right, st);
+        });
+        if super::dialogs::ok_cancel(ui, close) {
+            let settings = st.settings.clone();
+            app.apply_to_bitmaps("Remove Background", move |img, _| {
+                remove_background(img, &settings, 1.0)
+            });
         }
-        ui.add_space(6.0);
+    });
+}
+
+/// The Remove Background settings.
+fn bg_remove_settings(ui: &mut Ui, st: &mut BgRemoveState) {
+    {
         egui::Grid::new("bg_remove_grid")
             .num_columns(2)
             .show(ui, |ui| {
@@ -533,11 +616,5 @@ pub fn remove_background_dialog(
             st.settings = Default::default();
             st.picking = false;
         }
-        if super::dialogs::ok_cancel(ui, close) {
-            let settings = st.settings.clone();
-            app.apply_to_bitmaps("Remove Background", move |img, _| {
-                remove_background(img, &settings, 1.0)
-            });
-        }
-    });
+    }
 }

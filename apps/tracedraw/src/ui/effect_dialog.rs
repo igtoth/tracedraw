@@ -1,13 +1,15 @@
-//! The dialog of a bitmap effect: its settings (sliders, direction dials,
-//! lists, check boxes, colours) with a before and after preview. OK adds
-//! the effect to the selected bitmaps, or changes the one being edited
-//! from the Properties docker's FX section. The Tone Curve filter shows
-//! its curves instead of sliders.
+//! The dialog of a bitmap effect: a window the user sizes with the
+//! shared Before and After preview (`before_after.rs`) at the left and
+//! the settings (sliders, direction dials, lists, check boxes, colours)
+//! at the right. OK adds the effect to the selected bitmaps, or changes
+//! the one being edited from the Properties docker's FX section. The
+//! Tone Curve filter shows its curves instead of sliders.
 
 use crate::app::App;
 use crate::fx::{new_effect, ParamKind, ParamSpec};
 use crate::i18n::tr;
-use crate::ui::bitmap_preview::{before_after_pick, settings_key, Source};
+use crate::ui::before_after::{self, View, BOTTOM_H, RIGHT_W};
+use crate::ui::bitmap_preview::{settings_key, Source};
 use crate::ui::tips::RichTip;
 use egui::{Color32, Context, Rect, Sense, Stroke, Ui, Vec2};
 use std::collections::BTreeMap;
@@ -31,11 +33,17 @@ pub struct EffectState {
 
 impl EffectState {
     pub fn new(id: &str) -> Self {
+        let mut lab = crate::ui::lab_dialog::LabState::default();
+        // Image Adjustments shows the result alone at first; the other
+        // dialogs the picture over the result.
+        if id != "image_adjustments" {
+            lab.view = Default::default();
+        }
         EffectState {
             effect: new_effect(id),
             edit: None,
             channel: 0,
-            lab: Default::default(),
+            lab,
             pick: None,
             preview: PREVIEW_AT_START,
         }
@@ -828,7 +836,7 @@ pub fn effect_dialog(app: &mut App, ctx: &Context, st: &mut EffectState, close: 
     }
     let title = tr(&format!("fx.{}", spec.id));
     let mut ok = false;
-    super::dialogs::window(ctx, title).show(ctx, |ui| {
+    before_after::window(ctx, title).show(ctx, |ui| {
         let effect = st.effect.clone();
         // Adding starts from what the bitmap shows without this effect
         // (its effects so far; the live preview puts this one last);
@@ -855,21 +863,55 @@ pub fn effect_dialog(app: &mut App, ctx: &Context, st: &mut EffectState, close: 
             },
             None => Source::Shown,
         };
-        let preview = before_after_pick(
-            ui,
-            app,
-            &src,
-            settings_key(&(&effect, &after)),
-            220.0,
-            st.pick.is_some(),
-            |img, scale| {
-                let mut out = crate::fx::apply_effect(img, &crate::fx::scaled(&effect, scale));
-                for e in after.iter().filter(|e| e.visible) {
-                    out = crate::fx::apply_effect(&out, &crate::fx::scaled(e, scale));
-                }
-                out
-            },
-        );
+        before_after::columns(ui, RIGHT_W, BOTTOM_H, |left, right| {
+            let mut picking = st.pick.is_some();
+            let preview = before_after::live(
+                left,
+                app,
+                egui::Id::new("effect_preview"),
+                &mut st.lab.view,
+                &src,
+                settings_key(&(&effect, &after)),
+                &View::PLAIN,
+                &mut picking,
+                0.0,
+                |_, _, _| {},
+                |img, scale| {
+                    let mut out = crate::fx::apply_effect(img, &crate::fx::scaled(&effect, scale));
+                    for e in after.iter().filter(|e| e.visible) {
+                        out = crate::fx::apply_effect(&out, &crate::fx::scaled(e, scale));
+                    }
+                    out
+                },
+            );
+            if !picking {
+                st.pick = None;
+            }
+            effect_settings(right, app, st, spec, preview);
+        });
+        ok = super::dialogs::ok_cancel(ui, close);
+    });
+    if ok {
+        app.commit_bitmap_effect(st);
+    } else if *close {
+        app.end_bitmap_effect_preview();
+    } else {
+        app.preview_bitmap_effect(ctx, st);
+    }
+}
+
+/// The settings column: the effect's controls (the Tone Curve's curves,
+/// Contrast Enhancement's histogram), Reset and the Preview box.
+/// `preview` is what the shared preview made this frame: the copy for
+/// histograms and the pixel an eyedropper picked.
+fn effect_settings(
+    ui: &mut Ui,
+    app: &mut App,
+    st: &mut EffectState,
+    spec: &crate::fx::EffectSpec,
+    preview: Option<before_after::Live>,
+) {
+    {
         // An eyedropper picks the colour under a click on the preview (the
         // Tone Curve's adds a node instead).
         let mut node_pick = None;
@@ -899,7 +941,6 @@ pub fn effect_dialog(app: &mut App, ctx: &Context, st: &mut EffectState, close: 
             }
         }
         let thumb = preview.map(|p| p.img);
-        ui.add_space(6.0);
         if spec.id == "tone_curve" {
             let hist = thumb.as_ref().map(|t| histogram(t));
             tone_curve_part(
@@ -925,9 +966,11 @@ pub fn effect_dialog(app: &mut App, ctx: &Context, st: &mut EffectState, close: 
                 let hist = thumb.as_ref().map(|t| channel_histogram(t, ch));
                 levels_part(ui, st, hist.as_ref(), thumb.as_deref());
             }
-            ui.spacing_mut().slider_width = 200.0;
+            ui.spacing_mut().slider_width = 180.0;
+            let room = (ui.available_height() - 70.0).max(120.0);
             egui::ScrollArea::vertical()
-                .max_height(340.0)
+                .id_salt("fx_params_scroll")
+                .max_height(room)
                 .show(ui, |ui| {
                     egui::Grid::new("fx_params")
                         .num_columns(2)
@@ -948,14 +991,6 @@ pub fn effect_dialog(app: &mut App, ctx: &Context, st: &mut EffectState, close: 
             }
         }
         preview_row(ui, app, &mut st.preview);
-        ok = super::dialogs::ok_cancel(ui, close);
-    });
-    if ok {
-        app.commit_bitmap_effect(st);
-    } else if *close {
-        app.end_bitmap_effect_preview();
-    } else {
-        app.preview_bitmap_effect(ctx, st);
     }
 }
 

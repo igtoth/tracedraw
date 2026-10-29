@@ -23,7 +23,7 @@
 | Colors tab: Number of colors | per preset | 2..256 |
 | Colors tab: list | the trace's colours with their curve counts | tick two or more and Merge selected colors; the swatch of a row changes the colour its curves are drawn in |
 | Reset, undo, redo | | Reset: the image type's settings; the arrows step through every settings state of the dialog, Reset included |
-| Preview | Before and After | Before and After (the picture above, the trace below), Before, After, Wireframe overlay (the curves as blue lines over the picture); zoom to fit, zoom out, zoom in, the wheel zooms, a drag pans |
+| Preview | Before and After | the shared preview (`before-after-preview.md`): Before and After (the picture above, the trace below), Before and After side by side, Before, After, Wireframe overlay (the curves as blue lines over the picture); zoom to fit, zoom out, zoom in, pan, the wheel zooms, a drag pans |
 | Options... | | Options > Global > Bitmap Tracing, then back to the dialog |
 
 ## Commands
@@ -38,17 +38,19 @@ The last trace is kept for the session.
 
 A window the user sizes (1040 x 700 points at first, never under 780 x
 540; a maximize button in the title bar fills the main window, pressing
-it again restores the size). Left, the preview of the first selected
-bitmap: a Preview list (Before and After, Before, After, Wireframe
-overlay), zoom to fit, zoom out and zoom in buttons, a pan button, and a
-spinner while a trace is being made; under the preview the status line
-`Curves: N, Nodes: N, Colors: N` (the whole picture's trace; with a dots
-sign after it while only the quick look is in). Before and After stacks
-the picture over its trace, each in its own pane, with the same zoom and
-place; the wheel zooms about the pointer (fit / 10 to 64 points per
-preview pixel), a drag pans, the images sit on a checkerboard (one
-2 x 2 texture repeated, a single rectangle a frame). The
-preview copy is at most 1024 pixels on its longer side. Right, the
+it again restores the size). Left, the shared Before and After preview
+of the first selected bitmap (`before-after-preview.md`): a Preview
+list (Before and After, Before and After side by side, Before, After,
+Wireframe overlay), zoom to fit, zoom out and zoom in buttons, a pan
+button, and a spinner while a trace is being made; under the preview
+the status line `Curves: N, Nodes: N, Colors: N` (the whole picture's
+trace; with a dots sign after it while only the quick look is in).
+Before and After stacks the picture over its trace, each in its own
+pane, with the same zoom and place; the wheel zooms about the pointer
+(fit / 10 to 64 points per preview pixel), a drag pans, the images sit
+on a checkerboard (one 2 x 2 texture repeated, a single rectangle a
+frame). The preview copy is at most 1024 pixels on its longer side.
+Right, the
 Settings and Colors tabs over a Reset button with undo and redo arrows;
 bottom, the help button, Options..., OK and Cancel. Enter is OK, Esc and
 the close button cancel.

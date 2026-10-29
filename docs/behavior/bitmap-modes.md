@@ -1,9 +1,11 @@
 # Bitmap colour modes
 
 Bitmaps > Mode converts the selected bitmaps; every selected bitmap
-changes in one undo step. The dialogs show the first selected bitmap
-before and after (a copy at most 240 px across; the copy's pixel sizes
-follow its scale). Alpha is kept in every mode.
+changes in one undo step. The dialogs are windows the user sizes that
+show the first selected bitmap before and after in the shared preview
+(`before-after-preview.md`: the Preview list, zoom and pan, the copy as
+large as the panes show; the copy's pixel sizes follow its scale), the
+settings at the right. Alpha is kept in every mode.
 
 | Item | Result |
 |---|---|

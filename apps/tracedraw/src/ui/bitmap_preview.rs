@@ -1,10 +1,9 @@
-//! Before and after previews for the bitmap dialogs (colour modes and
-//! adjustments): a small copy of the selected bitmap and the dialog's
-//! result on it, worked out again only when the settings change.
+//! Copies of the selected bitmap for the dialogs' previews (see
+//! `before_after.rs`): a copy at most so many pixels across, made once
+//! per source and size, and results kept until their settings change.
 
 use crate::app::App;
-use crate::i18n::tr;
-use egui::{ColorImage, TextureHandle, TextureOptions, Ui};
+use egui::{ColorImage, TextureHandle, TextureOptions};
 use image::RgbaImage;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
@@ -98,12 +97,6 @@ fn shrink(img: RgbaImage, side: u32) -> (RgbaImage, f32) {
     (small, scale)
 }
 
-/// The preview copy (at most [`THUMB`] across) and its scale, made once
-/// per source.
-fn thumb(app: &App, ctx: &egui::Context, src: &Source) -> Option<Thumb> {
-    copy_of(app, ctx, src, THUMB)
-}
-
 /// A copy of the source at most `side` pixels across, made once per
 /// source and size.
 pub fn copy_of(app: &App, ctx: &egui::Context, src: &Source, side: u32) -> Option<Thumb> {
@@ -191,125 +184,4 @@ pub fn settings_key(v: &impl std::fmt::Debug) -> u64 {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     format!("{v:?}").hash(&mut h);
     h.finish()
-}
-
-/// Draw the before and after previews side by side, each in a `side` px
-/// square; `f` gets the copy and its scale against the bitmap (so pixel
-/// sizes can follow) and runs when `key` changes. Returns the copy, for
-/// histograms and eyedroppers.
-pub fn before_after(
-    ui: &mut Ui,
-    app: &App,
-    key: u64,
-    side: f32,
-    f: impl FnOnce(&RgbaImage, f32) -> RgbaImage,
-) -> Option<Arc<RgbaImage>> {
-    before_after_from(ui, app, &Source::Shown, key, side, f)
-}
-
-/// [`before_after`] starting from `src`.
-pub fn before_after_from(
-    ui: &mut Ui,
-    app: &App,
-    src: &Source,
-    key: u64,
-    side: f32,
-    f: impl FnOnce(&RgbaImage, f32) -> RgbaImage,
-) -> Option<Arc<RgbaImage>> {
-    before_after_pick(ui, app, src, key, side, false, f).map(|p| p.img)
-}
-
-/// What a preview gives back: the copy, and the copy's pixel under a
-/// click on either picture.
-pub struct Preview {
-    pub img: Arc<RgbaImage>,
-    pub picked: Option<(u32, u32)>,
-}
-
-/// [`before_after_from`] where a click on a picture picks a pixel; with
-/// `picking` the pointer shows a crosshair over the pictures.
-pub fn before_after_pick(
-    ui: &mut Ui,
-    app: &App,
-    src: &Source,
-    key: u64,
-    side: f32,
-    picking: bool,
-    f: impl FnOnce(&RgbaImage, f32) -> RgbaImage,
-) -> Option<Preview> {
-    let ctx = ui.ctx().clone();
-    let Some(t) = thumb(app, &ctx, src) else {
-        ui.label(tr("dialog.no_bitmap_preview"));
-        return None;
-    };
-    let full_key = key ^ (t.shape.raw().rotate_left(17)) ^ t.key.rotate_left(41);
-    let (after, _) = cached(&ctx, "bitmap_preview_after", full_key, || {
-        f(&t.img, t.scale)
-    });
-    let fit = |tex: &TextureHandle| {
-        let s = tex.size_vec2();
-        let k = (side / s.x.max(s.y).max(1.0)).min(1.0);
-        s * k
-    };
-    let (w, h) = t.img.dimensions();
-    let mut picked = None;
-    ui.horizontal(|ui| {
-        for (label, tex) in [(tr("dialog.before"), &t.tex), (tr("dialog.after"), &after)] {
-            ui.vertical(|ui| {
-                ui.label(egui::RichText::new(label).size(11.0));
-                let (rect, resp) =
-                    ui.allocate_exact_size(egui::vec2(side, side), egui::Sense::click());
-                // A checkerboard shows transparency.
-                let painter = ui.painter_at(rect);
-                let cell = 8.0;
-                let (nx, ny) = ((side / cell).ceil() as i32, (side / cell).ceil() as i32);
-                for j in 0..ny {
-                    for i in 0..nx {
-                        let c = if (i + j) % 2 == 0 { 0xFF } else { 0xE6 };
-                        painter.rect_filled(
-                            egui::Rect::from_min_size(
-                                rect.min + egui::vec2(i as f32 * cell, j as f32 * cell),
-                                egui::vec2(cell, cell),
-                            ),
-                            0.0,
-                            egui::Color32::from_gray(c),
-                        );
-                    }
-                }
-                let size = fit(tex);
-                let r = egui::Rect::from_center_size(rect.center(), size);
-                painter.image(
-                    tex.id(),
-                    r,
-                    egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-                    egui::Color32::WHITE,
-                );
-                painter.rect_stroke(
-                    rect,
-                    0.0,
-                    egui::Stroke::new(1.0, crate::theme::Tokens::border()),
-                    egui::StrokeKind::Inside,
-                );
-                if picking && resp.hovered() {
-                    crate::ui::cursors::show(
-                        ui.ctx(),
-                        crate::ui::cursors::ToolCursor::Cross,
-                        resp.hover_pos(),
-                    );
-                }
-                if resp.clicked() {
-                    if let Some(pos) = resp.interact_pointer_pos() {
-                        if r.contains(pos) && w > 0 && h > 0 {
-                            let u = (pos - r.min) / r.size();
-                            picked = Some((
-                                ((u.x * w as f32) as u32).min(w - 1),
-                                ((u.y * h as f32) as u32).min(h - 1),
-                            ));
-                        }
-                    }
-                }
-            });
-        }
-    });
-    Some(Preview { img: t.img, picked })
 }

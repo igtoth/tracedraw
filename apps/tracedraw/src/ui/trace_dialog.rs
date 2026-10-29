@@ -1,18 +1,20 @@
 //! Bitmaps > Trace Bitmap: a window the user sizes, with the picture and
-//! its trace large at the left (Before and After, Before, After or the
-//! wireframe over the picture; zoom and pan), the counts of the trace
-//! under them, and the Settings and Colors tabs at the right. The trace
-//! follows every change by itself (see `trace_preview.rs`): no Preview
-//! button. See docs/behavior/bitmap-tracing.md.
+//! its trace large at the left (the shared Before and After preview of
+//! `before_after.rs`, with the wireframe over the picture as a view of
+//! its own; zoom and pan), the counts of the trace under them, and the
+//! Settings and Colors tabs at the right. The trace follows every change
+//! by itself (see `trace_preview.rs`): no Preview button. See
+//! docs/behavior/bitmap-tracing.md.
 
 use crate::app::App;
 use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
 use crate::trace::{ColorMode, Preset, Remove, Settings};
 use crate::trace_preview::{Request, Stage};
+use crate::ui::before_after::{self, icon_button, mark, Pictures, View, ViewState};
 use crate::ui::bitmap_preview::{copy_of, selected_bitmap, settings_key, Source};
 use crate::ui::tips::RichTip;
-use egui::{Color32, Context, Painter, Pos2, Rect, Sense, Stroke, Ui, Vec2};
+use egui::{Context, Pos2, Rect, Sense, Stroke, Ui, Vec2};
 
 /// The longest side of the copy the preview shows, pixels.
 pub const PREVIEW_SIDE: u32 = 1024;
@@ -23,48 +25,15 @@ const MIN_SIZE: Vec2 = Vec2::new(780.0, 540.0);
 /// The settings column's width.
 const RIGHT_W: f32 = 320.0;
 
-/// What the preview shows.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum TracePreview {
-    /// The picture above, its trace below.
-    #[default]
-    BeforeAfter,
-    Before,
-    After,
-    /// The trace's curves as lines over the picture.
-    Wireframe,
-}
-
-impl TracePreview {
-    pub const ALL: [TracePreview; 4] = [
-        TracePreview::BeforeAfter,
-        TracePreview::Before,
-        TracePreview::After,
-        TracePreview::Wireframe,
-    ];
-    pub fn key(self) -> &'static str {
-        match self {
-            TracePreview::BeforeAfter => "dialog.trace_view_before_after",
-            TracePreview::Before => "dialog.before",
-            TracePreview::After => "dialog.after",
-            TracePreview::Wireframe => "dialog.trace_view_wireframe",
-        }
-    }
-}
-
 /// The dialog's state.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TraceState {
     pub preset: Preset,
     pub settings: Settings,
-    pub preview: TracePreview,
+    /// How the preview is looked at (the view, zoom and place).
+    pub view: ViewState,
     /// 0 Settings, 1 Colors.
     pub tab: usize,
-    /// Screen points per preview pixel; `None` fits the picture.
-    pub zoom: Option<f32>,
-    /// The point of the picture (as fractions of its size) at the middle
-    /// of the view; `None` its middle.
-    pub centre: Option<Vec2>,
     /// A click on the preview picks the background colour.
     pub picking: bool,
     /// Every settings state passed through, for the undo and redo arrows;
@@ -88,10 +57,8 @@ impl TraceState {
             preset,
             history: vec![settings.clone()],
             settings,
-            preview: TracePreview::BeforeAfter,
+            view: ViewState::default(),
             tab: 0,
-            zoom: None,
-            centre: None,
             picking: false,
             cursor: 0,
             selected_colors: Vec::new(),
@@ -154,227 +121,18 @@ impl TraceState {
     }
 }
 
-/// Where the dialog's controls are this frame, for the tests that drive
-/// it with the pointer.
-#[cfg(test)]
-#[derive(Clone, Default)]
-pub struct Rects(pub std::collections::HashMap<&'static str, Rect>);
+/// The views the Trace dialog offers: the shared ones and the wireframe
+/// over the picture.
+pub const VIEWS: [View; 5] = [
+    View::Stacked,
+    View::SideBySide,
+    View::Before,
+    View::After,
+    View::Overlay,
+];
 
 #[cfg(test)]
-pub fn rects(ctx: &Context) -> Rects {
-    ctx.data(|d| d.get_temp::<Rects>(egui::Id::new("trace_dialog_rects")))
-        .unwrap_or_default()
-}
-
-fn mark(ui: &Ui, name: &'static str, rect: Rect) {
-    #[cfg(test)]
-    ui.ctx().data_mut(|d| {
-        let r: &mut Rects = d.get_temp_mut_or_default(egui::Id::new("trace_dialog_rects"));
-        r.0.insert(name, rect);
-    });
-    #[cfg(not(test))]
-    let _ = (ui, name, rect);
-}
-
-fn icon_button(
-    ui: &mut Ui,
-    tip: &str,
-    pressed: bool,
-    enabled: bool,
-    draw: impl FnOnce(&Painter, Rect, Color32),
-) -> egui::Response {
-    let (rect, resp) = ui.allocate_exact_size(Vec2::splat(26.0), Sense::click());
-    crate::ui::propbar::frame(ui, rect, enabled && resp.hovered(), pressed);
-    let color = if enabled {
-        Tokens::icon()
-    } else {
-        Tokens::text_dim()
-    };
-    draw(
-        ui.painter(),
-        Rect::from_center_size(rect.center(), Vec2::splat(16.0)),
-        color,
-    );
-    resp.rich_tip(tip)
-}
-
-/// The view's picture: which texture, drawn where the picture is.
-struct Pane<'a> {
-    tex: Option<egui::TextureId>,
-    /// Drawn over `tex`: the wireframe.
-    over: Option<egui::TextureId>,
-    label: &'a str,
-}
-
-/// What a frame of the preview did.
-#[derive(Default)]
-struct ViewOut {
-    /// A click (while picking) on the picture, as a fraction of its size.
-    picked: Option<Vec2>,
-}
-
-/// Draw `panes` stacked in `area` with the one zoom and centre; drags pan,
-/// the wheel zooms, a click while `picking` picks a point.
-fn view(
-    ui: &mut Ui,
-    st: &mut TraceState,
-    area: Rect,
-    size: Vec2,
-    panes: &[Pane],
-    picking: bool,
-) -> ViewOut {
-    let mut out = ViewOut::default();
-    let painter = ui.painter_at(area);
-    painter.rect_filled(area, 0.0, Color32::from_gray(0xC8));
-    let n = panes.len().max(1) as f32;
-    let gap = 4.0;
-    let pane_h = (area.height() - gap * (n - 1.0)) / n;
-    let fit = ((area.width() - 2.0) / size.x.max(1.0)).min((pane_h - 2.0) / size.y.max(1.0));
-    let k = st.zoom.unwrap_or(fit).clamp(fit.min(1.0) * 0.1, 64.0);
-    let centre = st.centre.unwrap_or(Vec2::splat(0.5));
-    let resp = ui.interact(area, ui.id().with("trace_view"), Sense::click_and_drag());
-    let mut first_rect = None;
-    for (i, pane) in panes.iter().enumerate() {
-        let top = area.top() + i as f32 * (pane_h + gap);
-        let pane_rect = Rect::from_min_size(
-            area.left_top() + Vec2::new(0.0, top - area.top()),
-            Vec2::new(area.width(), pane_h),
-        );
-        let p = ui.painter_at(pane_rect);
-        p.rect_filled(pane_rect, 0.0, Color32::from_gray(0xC8));
-        let r = Rect::from_min_size(pane_rect.center() - centre * size * k, size * k);
-        if first_rect.is_none() {
-            first_rect = Some((pane_rect, r));
-        }
-        // A checkerboard shows transparency.
-        checkerboard(&p, r.intersect(pane_rect));
-        if let Some(tex) = pane.tex {
-            p.image(
-                tex,
-                r,
-                Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)),
-                Color32::WHITE,
-            );
-        }
-        if let Some(over) = pane.over {
-            p.image(
-                over,
-                r,
-                Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)),
-                Color32::WHITE,
-            );
-        }
-        if !pane.label.is_empty() {
-            let galley = p.layout_no_wrap(
-                pane.label.to_string(),
-                egui::FontId::proportional(11.0),
-                Tokens::text(),
-            );
-            let tag = Rect::from_min_size(
-                pane_rect.left_top() + Vec2::new(4.0, 4.0),
-                galley.size() + Vec2::new(8.0, 4.0),
-            );
-            p.rect_filled(tag, 2.0, Color32::from_white_alpha(200));
-            p.galley(tag.min + Vec2::new(4.0, 2.0), galley, Tokens::text());
-        }
-        p.rect_stroke(
-            pane_rect,
-            0.0,
-            Stroke::new(1.0, Tokens::border()),
-            egui::StrokeKind::Inside,
-        );
-    }
-    if let Some((pane_rect, r)) = first_rect {
-        mark(ui, "view_pane", pane_rect);
-        mark(ui, "view_image", r);
-    }
-    // Pan by dragging, zoom with the wheel about the pointer.
-    if resp.dragged() && !picking {
-        let d = resp.drag_delta();
-        if d != Vec2::ZERO {
-            st.centre = Some((centre - d / (size * k)).clamp(Vec2::ZERO, Vec2::splat(1.0)));
-            st.zoom = Some(k);
-        }
-    }
-    if resp.hovered() {
-        let (scroll, zoom_delta) = ui.input(|i| (i.smooth_scroll_delta.y, i.zoom_delta()));
-        let f = if zoom_delta != 1.0 {
-            zoom_delta
-        } else if scroll != 0.0 {
-            (scroll / 120.0).exp2()
-        } else {
-            1.0
-        };
-        if f != 1.0 {
-            st.zoom = Some((k * f).clamp(fit.min(1.0) * 0.1, 64.0));
-        }
-    }
-    if picking && resp.hovered() {
-        crate::ui::cursors::show(
-            ui.ctx(),
-            crate::ui::cursors::ToolCursor::Cross,
-            resp.hover_pos(),
-        );
-    }
-    if picking && resp.clicked() {
-        if let Some(pos) = resp.interact_pointer_pos() {
-            // Whichever pane was clicked: the same point of the picture.
-            for i in 0..panes.len() {
-                let top = area.top() + i as f32 * (pane_h + gap);
-                let pane_rect = Rect::from_min_size(
-                    Pos2::new(area.left(), top),
-                    Vec2::new(area.width(), pane_h),
-                );
-                let r = Rect::from_min_size(pane_rect.center() - centre * size * k, size * k);
-                if pane_rect.contains(pos) && r.contains(pos) {
-                    out.picked = Some((pos - r.min) / r.size());
-                }
-            }
-        }
-    }
-    out
-}
-
-/// The checkerboard's cell, points.
-const CHECKER_CELL: f32 = 8.0;
-
-/// A checkerboard showing transparency over `r`: one 2 x 2 texture made
-/// once and repeated across the rectangle, so a frame draws a single
-/// textured rectangle however large the view (the view is redrawn every
-/// frame).
-fn checkerboard(p: &Painter, r: Rect) {
-    if r.width() <= 0.0 || r.height() <= 0.0 {
-        return;
-    }
-    let tex = checker_texture(p.ctx());
-    let uv = Rect::from_min_max(
-        Pos2::ZERO,
-        Pos2::new(
-            r.width() / (2.0 * CHECKER_CELL),
-            r.height() / (2.0 * CHECKER_CELL),
-        ),
-    );
-    p.image(tex.id(), r, uv, Color32::WHITE);
-}
-
-/// The checkerboard's texture, loaded on first use and kept.
-fn checker_texture(ctx: &Context) -> egui::TextureHandle {
-    let id = egui::Id::new("trace_checkerboard");
-    if let Some(t) = ctx.data(|d| d.get_temp::<egui::TextureHandle>(id)) {
-        return t;
-    }
-    let (l, d) = (255u8, 0xE6u8);
-    let px = |v: u8| [v, v, v, 255];
-    let rgba: Vec<u8> = [px(l), px(d), px(d), px(l)].concat();
-    let img = egui::ColorImage::from_rgba_unmultiplied([2, 2], &rgba);
-    let t = ctx.load_texture(
-        "trace_checkerboard",
-        img,
-        egui::TextureOptions::NEAREST_REPEAT,
-    );
-    ctx.data_mut(|m| m.insert_temp(id, t.clone()));
-    t
-}
+pub use crate::ui::before_after::rects;
 
 /// A slider with the label above it, a colon after the label, tick marks
 /// under the rail, a slim upright thumb and the value box at the right.
@@ -448,29 +206,9 @@ pub fn trace_dialog(app: &mut App, ctx: &Context, st: &mut TraceState, close: &m
     super::dialogs::window(ctx, tr("dialog.trace"))
         .resizable(DEFAULT_SIZE, MIN_SIZE)
         .show(ctx, |ui| {
-            let total = ui.available_size();
-            let bottom_h = 46.0;
-            let body_h = (total.y - bottom_h).max(200.0);
-            let left_w = (total.x - RIGHT_W - 12.0).max(300.0);
-            ui.horizontal_top(|ui| {
-                ui.allocate_ui_with_layout(
-                    Vec2::new(left_w, body_h),
-                    egui::Layout::top_down(egui::Align::Min),
-                    |ui| {
-                        ui.set_width(left_w);
-                        ui.set_height(body_h);
-                        preview_column(app, ui, st, dragging);
-                    },
-                );
-                ui.add_space(8.0);
-                ui.allocate_ui_with_layout(
-                    Vec2::new(RIGHT_W, body_h),
-                    egui::Layout::top_down(egui::Align::Min),
-                    |ui| {
-                        ui.set_width(RIGHT_W);
-                        settings_column(app, ui, st);
-                    },
-                );
+            before_after::columns(ui, RIGHT_W, before_after::BOTTOM_H, |left, right| {
+                preview_column(app, left, st, dragging);
+                settings_column(app, right, st);
             });
             ui.horizontal(|ui| {
                 help = ui
@@ -546,85 +284,22 @@ pub fn trace_dialog(app: &mut App, ctx: &Context, st: &mut TraceState, close: &m
 /// The preview's row of controls, the view and the counts.
 fn preview_column(app: &mut App, ui: &mut Ui, st: &mut TraceState, dragging: bool) {
     let ctx = ui.ctx().clone();
-    ui.horizontal(|ui| {
-        ui.label(tr("dialog.trace_preview_label"));
-        crate::ui::tips::tip_over(
-            ui,
-            crate::ui::tips::keyed("dialog.trace_preview_label"),
-            |ui| {
-                combo(
-                    ui,
-                    "trace_view",
-                    170.0,
-                    &mut st.preview,
-                    &TracePreview::ALL,
-                    |v| tr(v.key()),
-                );
-            },
-        );
-        ui.add_space(8.0);
-        if icon_button(
-            ui,
-            &crate::ui::tips::keyed("dialog.lab_zoom_fit"),
-            st.zoom.is_none(),
-            true,
-            |p, r, c| {
-                p.rect_stroke(
-                    r.shrink(3.0),
-                    0.0,
-                    Stroke::new(1.2, c),
-                    egui::StrokeKind::Middle,
-                );
-            },
-        )
-        .clicked()
-        {
-            st.zoom = None;
-            st.centre = None;
-        }
-        for (zoom_in, key) in [(false, "dialog.lab_zoom_out"), (true, "dialog.lab_zoom_in")] {
-            let r = icon_button(ui, &crate::ui::tips::keyed(key), false, true, |p, r, c| {
-                crate::ui::icons::draw(p, r, crate::tools::Tool::Zoom, c);
-                let m = r.min + Vec2::new(6.8, 6.8) * (r.width() / 16.0);
-                let s = Stroke::new(1.2, c);
-                p.line_segment([m - Vec2::new(2.4, 0.0), m + Vec2::new(2.4, 0.0)], s);
-                if zoom_in {
-                    p.line_segment([m - Vec2::new(0.0, 2.4), m + Vec2::new(0.0, 2.4)], s);
-                }
-            });
-            mark(ui, if zoom_in { "zoom_in" } else { "zoom_out" }, r.rect);
-            if r.clicked() {
-                let k = st
-                    .zoom
-                    .or_else(|| ctx.data(|d| d.get_temp::<f32>(egui::Id::new("trace_view_fit"))))
-                    .unwrap_or(1.0);
-                st.zoom = Some((if zoom_in { k * 1.25 } else { k / 1.25 }).clamp(0.02, 64.0));
-            }
-        }
-        icon_button(
-            ui,
-            &crate::ui::tips::keyed("dialog.lab_pan"),
-            !st.picking,
-            true,
-            |p, r, c| crate::ui::icons::draw(p, r, crate::tools::Tool::Pan, c),
-        );
-        if app.trace_live.busy() {
-            ui.add(egui::Spinner::new().size(16.0));
-        }
-    });
-    let status_h = 22.0;
-    let area_h = (ui.available_height() - status_h - 4.0).max(100.0);
-    let (area, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), area_h), Sense::hover());
+    let id = egui::Id::new("trace_preview");
+    let bar = before_after::toolbar(
+        ui,
+        id,
+        &mut st.view,
+        &VIEWS,
+        app.trace_live.busy(),
+        st.picking,
+        |_, _| {},
+    );
+    if bar.pan {
+        st.picking = false;
+    }
+    let area = before_after::pane_area(ui, true);
     let Some((shape, _dpi, png)) = selected_bitmap(app) else {
-        ui.painter()
-            .rect_filled(area, 0.0, Color32::from_gray(0xC8));
-        ui.painter().text(
-            area.center(),
-            egui::Align2::CENTER_CENTER,
-            tr("dialog.no_bitmap_preview"),
-            egui::FontId::proportional(13.0),
-            Tokens::text(),
-        );
+        before_after::no_bitmap(ui, area);
         return;
     };
     let Some(copy) = copy_of(app, &ctx, &Source::Shown, PREVIEW_SIDE) else {
@@ -654,45 +329,13 @@ fn preview_column(app: &mut App, ui: &mut Ui, st: &mut TraceState, dragging: boo
         .as_ref()
         .filter(|s| s.shape == shape)
         .cloned();
-    let size = Vec2::new(copy.img.width() as f32, copy.img.height() as f32);
-    let after_tex = shown.as_ref().map(|s| s.after.id());
-    let wire_tex = shown.as_ref().map(|s| s.wire.id());
-    let (before_l, after_l) = (tr("dialog.before"), tr("dialog.after"));
-    let wire_l = tr("dialog.trace_view_wireframe");
-    let panes: Vec<Pane> = match st.preview {
-        TracePreview::BeforeAfter => vec![
-            Pane {
-                tex: Some(copy.tex.id()),
-                over: None,
-                label: &before_l,
-            },
-            Pane {
-                tex: after_tex,
-                over: None,
-                label: &after_l,
-            },
-        ],
-        TracePreview::Before => vec![Pane {
-            tex: Some(copy.tex.id()),
-            over: None,
-            label: "",
-        }],
-        TracePreview::After => vec![Pane {
-            tex: after_tex,
-            over: None,
-            label: "",
-        }],
-        TracePreview::Wireframe => vec![Pane {
-            tex: Some(copy.tex.id()),
-            over: wire_tex,
-            label: &wire_l,
-        }],
+    let pics = Pictures {
+        before: Some(copy.tex.id()),
+        after: shown.as_ref().map(|s| s.after.id()),
+        overlay: shown.as_ref().map(|s| s.wire.id()),
+        size: Vec2::new(copy.img.width() as f32, copy.img.height() as f32),
     };
-    let n = panes.len() as f32;
-    let fit = ((area.width() - 2.0) / size.x.max(1.0))
-        .min(((area.height() - 4.0 * (n - 1.0)) / n - 2.0) / size.y.max(1.0));
-    ctx.data_mut(|d| d.insert_temp(egui::Id::new("trace_view_fit"), fit));
-    let out = view(ui, st, area, size, &panes, st.picking);
+    let out = before_after::view(ui, id, &mut st.view, area, &pics, st.picking);
     if let Some(at) = out.picked {
         let (w, h) = copy.img.dimensions();
         let x = ((at.x * w as f32) as u32).min(w.saturating_sub(1));

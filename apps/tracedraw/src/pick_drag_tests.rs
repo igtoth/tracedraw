@@ -12805,3 +12805,260 @@ fn the_color_panel_lock_applies_the_color_to_fill_and_outline_at_once() {
         tracedraw_core::Fill::Solid(tracedraw_core::Color::rgb8(200, 30, 30))
     );
 }
+
+// ----- the shared Before and After preview ---------------------------------------
+
+/// Where the shared preview's control `name` is this frame.
+fn preview_rect(ctx: &egui::Context, name: &str) -> egui::Rect {
+    *crate::ui::before_after::rects(ctx)
+        .0
+        .get(name)
+        .unwrap_or_else(|| panic!("no control {name}"))
+}
+
+/// A frame with no input; whether it asked for another frame.
+fn idle_frame_asks_for_another(ctx: &egui::Context, app: &mut App) -> bool {
+    let input = egui::RawInput {
+        screen_rect: Some(egui::Rect::from_min_size(
+            Pos2::ZERO,
+            egui::vec2(1600.0, 1000.0),
+        )),
+        ..Default::default()
+    };
+    let mut out = ctx.run_ui(input, |ui| crate::ui::root(app, ui));
+    out.textures_delta.clear();
+    out.viewport_output
+        .get(&egui::ViewportId::ROOT)
+        .map(|v| v.repaint_delay)
+        .unwrap_or(std::time::Duration::MAX)
+        != std::time::Duration::MAX
+}
+
+/// Every dialog that changes a picture, as the menus open it.
+fn picture_dialogs(app: &App) -> Vec<(&'static str, crate::ui::dialogs::Dialog)> {
+    use crate::ui::dialogs::Dialog;
+    vec![
+        (
+            "remove_background",
+            Dialog::RemoveBackground(Default::default()),
+        ),
+        ("black_and_white", Dialog::BitmapBw(Default::default())),
+        ("duotone", Dialog::BitmapDuotone(Default::default())),
+        ("paletted", Dialog::BitmapPaletted(Default::default())),
+        (
+            "gaussian_blur",
+            Dialog::Effect(crate::ui::effect_dialog::EffectState::new("gaussian_blur")),
+        ),
+        (
+            "image_adjustments",
+            Dialog::Effect(crate::ui::effect_dialog::EffectState::new(
+                "image_adjustments",
+            )),
+        ),
+        (
+            "trace",
+            Dialog::Trace(crate::ui::dialogs::TraceState::new(
+                crate::trace::Preset::Logo,
+                &app.settings.tracing,
+            )),
+        ),
+    ]
+}
+
+/// Every dialog that changes a picture draws the shared preview: the
+/// Preview list, the zoom and pan buttons and the panes; the zoom buttons
+/// and the fit button change the zoom, the Preview list shows one pane
+/// for Before, a drag pans, and idle frames allocate no texture and ask
+/// for no frame (nothing is worked out per frame).
+#[test]
+fn every_picture_dialog_has_the_shared_preview() {
+    let img = image::RgbaImage::from_fn(300, 200, |x, y| {
+        let v = ((x + y) * 255 / 500) as u8;
+        image::Rgba([v, v, 255 - v, 255])
+    });
+    let (ctx, mut app, _) = trace_setup(img);
+    app.dialog = crate::ui::dialogs::Dialog::None;
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    for (name, dialog) in picture_dialogs(&app) {
+        app.dialog = dialog;
+        for _ in 0..3 {
+            frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+        }
+        for control in [
+            "trace_view",
+            "zoom_fit",
+            "zoom_out",
+            "zoom_in",
+            "pan",
+            "view_pane",
+            "view_image",
+        ] {
+            assert!(
+                crate::ui::before_after::rects(&ctx).0.contains_key(control),
+                "{name}: no {control}"
+            );
+        }
+        let before = preview_rect(&ctx, "view_image");
+        click_at(
+            &ctx,
+            &mut app,
+            preview_rect(&ctx, "zoom_in").center(),
+            Modifiers::NONE,
+        );
+        let zoomed = preview_rect(&ctx, "view_image");
+        assert!(
+            (zoomed.width() - before.width() * 1.25).abs() < 1.0,
+            "{name}: zoom in {} from {}",
+            zoomed.width(),
+            before.width()
+        );
+        click_at(
+            &ctx,
+            &mut app,
+            preview_rect(&ctx, "zoom_out").center(),
+            Modifiers::NONE,
+        );
+        assert!(
+            (preview_rect(&ctx, "view_image").width() - before.width()).abs() < 1.0,
+            "{name}: zoom out"
+        );
+        // A drag on the pane pans the picture.
+        let pane = preview_rect(&ctx, "view_pane");
+        click_at(
+            &ctx,
+            &mut app,
+            preview_rect(&ctx, "zoom_in").center(),
+            Modifiers::NONE,
+        );
+        click_at(
+            &ctx,
+            &mut app,
+            preview_rect(&ctx, "zoom_in").center(),
+            Modifiers::NONE,
+        );
+        let at_rest = preview_rect(&ctx, "view_image");
+        let from = pane.center();
+        let to = from + egui::vec2(-30.0, -20.0);
+        drag(&ctx, &mut app, from, to, Modifiers::NONE, Vec::new());
+        let panned = preview_rect(&ctx, "view_image");
+        assert!(
+            (panned.min - at_rest.min + egui::vec2(30.0, 20.0)).length() < 2.0,
+            "{name}: panned from {:?} to {:?}",
+            at_rest.min,
+            panned.min
+        );
+        // Zoom to fit puts the whole picture back.
+        click_at(
+            &ctx,
+            &mut app,
+            preview_rect(&ctx, "zoom_fit").center(),
+            Modifiers::NONE,
+        );
+        assert!(
+            (preview_rect(&ctx, "view_image").width() - before.width()).abs() < 1.0,
+            "{name}: fit"
+        );
+        // The Preview list: Before alone takes the whole area.
+        let stacked = preview_rect(&ctx, "view_pane");
+        let list = preview_rect(&ctx, "trace_view");
+        click_at(&ctx, &mut app, list.center(), Modifiers::NONE);
+        // The list's item (not the pane's label): under the list. Image
+        // Adjustments starts on After alone: Before and After splits it.
+        let single = name == "image_adjustments";
+        let before_label = crate::i18n::tr(if single {
+            "dialog.trace_view_before_after"
+        } else {
+            "dialog.before"
+        });
+        let item = texts_drawn(&ctx, &mut app, Vec::new())
+            .into_iter()
+            .filter(|(t, r)| {
+                *t == before_label
+                    && r.top() > list.bottom()
+                    && r.left() >= list.left()
+                    && r.left() < list.right()
+            })
+            .min_by(|a, b| a.1.top().total_cmp(&b.1.top()))
+            .map(|(_, r)| r.center())
+            .unwrap_or_else(|| panic!("{name}: the Before item"));
+        click_at(&ctx, &mut app, item, Modifiers::NONE);
+        let alone = preview_rect(&ctx, "view_pane");
+        let (big, small) = if single {
+            (stacked, alone)
+        } else {
+            (alone, stacked)
+        };
+        assert!(
+            big.height() > small.height() * 1.5 || big.width() > small.width() * 1.5,
+            "{name}: one pane {alone:?} vs {stacked:?}"
+        );
+        // Idle: nothing made again, no frame asked for.
+        for _ in 0..3 {
+            frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+        }
+        if name == "trace" {
+            trace_wait(&ctx, &mut app);
+        }
+        for _ in 0..5 {
+            idle_frame_asks_for_another(&ctx, &mut app);
+        }
+        let textures = ctx.tex_manager().read().num_allocated();
+        for i in 0..10 {
+            assert!(
+                !idle_frame_asks_for_another(&ctx, &mut app),
+                "{name}: idle frame {i} asked for another ({:?})",
+                ctx.repaint_causes()
+            );
+        }
+        assert_eq!(
+            ctx.tex_manager().read().num_allocated(),
+            textures,
+            "{name}: textures made while idle"
+        );
+        app.dialog = crate::ui::dialogs::Dialog::None;
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+}
+
+/// The Remove Background eyedropper picks on the shared preview: a click
+/// on a pane adds the colour under it, and the pan button ends picking.
+#[test]
+fn the_remove_background_eyedropper_picks_on_the_shared_preview() {
+    let img = image::RgbaImage::from_fn(200, 100, |x, _| {
+        if x < 100 {
+            image::Rgba([250, 250, 250, 255])
+        } else {
+            image::Rgba([200, 30, 30, 255])
+        }
+    });
+    let (ctx, mut app, _) = trace_setup(img);
+    let mut st = crate::ui::bitmap_dialogs::BgRemoveState::default();
+    st.picking = true;
+    app.dialog = crate::ui::dialogs::Dialog::RemoveBackground(st);
+    for _ in 0..3 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    let image = preview_rect(&ctx, "view_image");
+    let at = egui::pos2(image.left() + image.width() * 0.75, image.center().y);
+    click_at(&ctx, &mut app, at, Modifiers::NONE);
+    let st = match &app.dialog {
+        crate::ui::dialogs::Dialog::RemoveBackground(st) => st.clone(),
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(st.settings.colors, vec![[200, 30, 30]]);
+    assert!(!st.picking, "picking ends with the pick");
+    // Picking again, the pan button ends it without a pick.
+    if let crate::ui::dialogs::Dialog::RemoveBackground(st) = &mut app.dialog {
+        st.picking = true;
+    }
+    click_at(
+        &ctx,
+        &mut app,
+        preview_rect(&ctx, "pan").center(),
+        Modifiers::NONE,
+    );
+    if let crate::ui::dialogs::Dialog::RemoveBackground(st) = &app.dialog {
+        assert!(!st.picking);
+        assert_eq!(st.settings.colors.len(), 1);
+    }
+}

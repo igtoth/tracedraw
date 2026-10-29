@@ -9,7 +9,7 @@ wrong. Each page records:
 - checks written as "given, when, then", which are the unit tests that
   gate the feature's row in `docs/features.md`.
 
-Pages: `ai-drawing.md`, `align-distribute.md`, `brush-strokes.md`, `bitmap-effects.md`, `bitmap-modes.md`, `remove-background.md`, `blend.md`,
+Pages: `ai-drawing.md`, `align-distribute.md`, `brush-strokes.md`, `before-after-preview.md`, `bitmap-effects.md`, `bitmap-modes.md`, `remove-background.md`, `blend.md`,
 `block-shadow.md`,
 `barcode.md`, `bitmap-import.md`, `border-and-grommet.md`, `brushes.md`, `color-docker.md`, `color-palettes.md`,
 `clones.md`, `colour-management.md`, `connectors-and-anchors.md`, `contour.md`,

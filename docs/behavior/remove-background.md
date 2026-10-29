@@ -8,7 +8,9 @@ Background with AI (`menu.bitmaps.remove_background`).
 
 ## Dialog
 
-Before and after previews (checkerboard where transparent), then:
+A window the user sizes: the shared Before and After preview at the left
+(`before-after-preview.md`: the Preview list, zoom and pan, a
+checkerboard where transparent), and at the right:
 
 | Setting | Range | At first | Meaning |
 |---|---|---|---|
