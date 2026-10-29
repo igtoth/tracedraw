@@ -1066,6 +1066,8 @@ pub struct ToolPrefs {
     pub sketch: crate::recognize::SketchSettings,
     /// The Knife's mode, gap and pieces.
     pub knife: crate::knife::KnifeSettings,
+    /// Segment Delete's drag is a freehand stroke, not a box (#1150).
+    pub segment_freehand: bool,
 }
 
 impl Default for ToolPrefs {
@@ -1113,6 +1115,7 @@ impl Default for ToolPrefs {
             recognize: Default::default(),
             sketch: Default::default(),
             knife: Default::default(),
+            segment_freehand: false,
         }
     }
 }
