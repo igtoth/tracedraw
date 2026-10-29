@@ -128,6 +128,19 @@ fn menu_row(
     enabled: bool,
     mark: Mark,
 ) -> (egui::Response, egui::layers::ShapeIdx) {
+    menu_row_at(ui, label, shortcut, enabled, mark, LABEL_X)
+}
+
+/// [`menu_row`] with the label starting `label_x` from the row's left
+/// edge (further right than usual when a picture sits after the gutter).
+fn menu_row_at(
+    ui: &mut Ui,
+    label: &str,
+    shortcut: &str,
+    enabled: bool,
+    mark: Mark,
+    label_x: f32,
+) -> (egui::Response, egui::layers::ShapeIdx) {
     // Fixed width like a native menu; longer translations widen their row.
     let needed = ui.fonts_mut(|f| {
         let l = f
@@ -149,7 +162,7 @@ fn menu_row(
             .size()
             .x + 32.0
         };
-        LABEL_X + l + s + SHORTCUT_PAD
+        label_x + l + s + SHORTCUT_PAD
     });
     // As wide as the widest row (remembered by `body` from the last frame).
     let width = MENU_WIDTH.max(needed).max(ui.min_rect().width());
@@ -186,7 +199,7 @@ fn menu_row(
     if let Some((at, _)) = access {
         access::underline(
             painter,
-            egui::pos2(rect.left() + LABEL_X, rect.center().y),
+            egui::pos2(rect.left() + label_x, rect.center().y),
             label,
             at,
             FONT,
@@ -213,7 +226,7 @@ fn menu_row(
         _ => {}
     }
     painter.text(
-        egui::pos2(rect.left() + LABEL_X, rect.center().y),
+        egui::pos2(rect.left() + label_x, rect.center().y),
         egui::Align2::LEFT_CENTER,
         label,
         egui::FontId::proportional(FONT),
@@ -623,6 +636,56 @@ fn menu_pic(key: &str) -> Option<crate::ui::propbar::Pic> {
 /// A checkable item (check mark in the gutter when `on`).
 pub(crate) fn check(ui: &mut Ui, key: &str, shortcut: &str, on: bool) -> bool {
     mark_item(ui, key, shortcut, Mark::Check(on))
+}
+
+/// The width of the picture slot of a [`check_pic`] row, between the
+/// gutter and the label.
+const PIC_SLOT: f32 = 22.0;
+
+/// A checkable item with a picture after the gutter (check mark, picture,
+/// name): `pic` paints the picture in a 16 px square, `None` leaves the
+/// slot blank so the names of a list stay aligned.
+pub(crate) fn check_pic(
+    ui: &mut Ui,
+    key: &str,
+    on: bool,
+    pic: Option<&dyn Fn(&egui::Painter, egui::Rect)>,
+) -> bool {
+    if invoke::active() {
+        return invoke::hit(key, "", true);
+    }
+    let shortcut = invoke::shown_shortcut(key, "");
+    let (r, _) = menu_row_at(
+        ui,
+        &tr(key),
+        &shortcut,
+        true,
+        Mark::Check(on),
+        LABEL_X + PIC_SLOT,
+    );
+    if marked_new(key) {
+        paint_new_mark(ui, r.rect);
+    }
+    #[cfg(test)]
+    if replay::hit(key, true) {
+        return true;
+    }
+    if let Some(pic) = pic {
+        let ir = egui::Rect::from_center_size(
+            egui::pos2(
+                r.rect.left() + LABEL_X + PIC_SLOT / 2.0 - 2.0,
+                r.rect.center().y,
+            ),
+            egui::vec2(16.0, 16.0),
+        );
+        pic(ui.painter(), ir);
+    }
+    if r.clicked() {
+        ui.close();
+        true
+    } else {
+        false
+    }
 }
 
 /// One of a set of exclusive items (a dot in the gutter when `on`).

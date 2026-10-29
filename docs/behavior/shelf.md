@@ -7,7 +7,7 @@ restarts. Code: `shelf.rs` (items, file, placing, pictures) and
 
 ## Opening it
 
-- Window > Dockers > Shelf, the "+" under the docker tabs, or Add to
+- Window > Dockers > Shelf, the "..." under the docker tabs, or Add to
   Shelf on an object's menu (right click on the selection), which adds
   the selection and opens the docker.
 

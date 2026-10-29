@@ -12103,3 +12103,62 @@ fn the_fit_to_path_origin_grid_picks_a_point() {
         .expect("preview");
     assert!((b.y0 - 100.0).abs() < 1e-6, "{b:?}");
 }
+
+/// The three-dot button at the end of a docker column opens the panel
+/// list: a row per panel of the Window menu's groups (check box, picture,
+/// name), the list no taller than the window, so it scrolls; a click on
+/// an open panel's row closes it, the next click opens it in that column.
+#[test]
+fn the_three_dot_button_lists_the_panels_with_their_pictures() {
+    use crate::app::{DockerPlace, DockerTab};
+    use crate::ui::dockers::{more_button_id, more_menu_id};
+    use crate::ui::menus::replay;
+    let (ctx, mut app, _) = setup();
+    let place = DockerPlace::Right;
+    let menu = more_menu_id(place);
+    let first = DockerTab::MENU_GROUPS[0][0];
+    assert!(app.docker_open(first), "{first:?} starts open");
+    for _ in 0..2 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    assert!(!egui::Popup::is_id_open(&ctx, menu));
+    let button = |ctx: &egui::Context| {
+        ctx.read_response(more_button_id(place))
+            .expect("the three-dot button")
+            .rect
+            .center()
+    };
+    click_at(&ctx, &mut app, button(&ctx), Modifiers::NONE);
+    assert!(
+        egui::Popup::is_id_open(&ctx, menu),
+        "the click opens the list"
+    );
+    // Every panel has a row (the replay walk counts the rows drawn), and
+    // the list, taller than the window, is held within it.
+    replay::start(usize::MAX);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let (_, rows) = replay::finish();
+    assert_eq!(rows, DockerTab::ALL.len());
+    let area = ctx
+        .memory(|m| m.area_rect(menu))
+        .expect("the list is shown");
+    assert!(area.height() > 600.0, "{area:?}");
+    assert!(area.bottom() <= 1000.5 && area.top() >= -0.5, "{area:?}");
+    // The first row is the first panel of the first group, open: its
+    // click closes the panel and the list.
+    let row = Pos2::new(area.min.x + 60.0, area.min.y + 2.0 + 13.0);
+    click_at(&ctx, &mut app, row, Modifiers::NONE);
+    assert!(!app.docker_open(first), "{:?}", app.open_dockers);
+    assert!(!egui::Popup::is_id_open(&ctx, menu));
+    // Ticked again: open, in front of this column.
+    click_at(&ctx, &mut app, button(&ctx), Modifiers::NONE);
+    assert!(egui::Popup::is_id_open(&ctx, menu));
+    let area = ctx
+        .memory(|m| m.area_rect(menu))
+        .expect("the list is shown");
+    let row = Pos2::new(area.min.x + 60.0, area.min.y + 2.0 + 13.0);
+    click_at(&ctx, &mut app, row, Modifiers::NONE);
+    assert!(app.docker_open(first));
+    assert_eq!(app.docker_place(first), Some(place));
+    assert_eq!(app.docker_tab, first);
+}

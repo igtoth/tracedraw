@@ -161,10 +161,10 @@ pub fn tab_strip(app: &mut App, ui: &mut Ui, place: DockerPlace) {
                     })
                 });
         }
-        // Add a docker.
+        // The panel list: three dots.
         ui.add_space(8.0);
-        let (r, resp) =
-            ui.allocate_exact_size(egui::vec2(full.width(), 22.0), egui::Sense::click());
+        let (r, _) = ui.allocate_exact_size(egui::vec2(full.width(), 22.0), egui::Sense::hover());
+        let resp = ui.interact(r, more_button_id(place), egui::Sense::click());
         let c = r.center() + egui::vec2(0.5, 0.0);
         if resp.hovered() {
             ui.painter().rect_filled(
@@ -173,23 +173,30 @@ pub fn tab_strip(app: &mut App, ui: &mut Ui, place: DockerPlace) {
                 crate::theme::Tokens::icon_off(),
             );
         }
-        let s = egui::Stroke::new(1.5, crate::theme::Tokens::text_dim());
-        ui.painter()
-            .line_segment([c + egui::vec2(-5.0, 0.0), c + egui::vec2(5.0, 0.0)], s);
-        ui.painter()
-            .line_segment([c + egui::vec2(0.0, -5.0), c + egui::vec2(0.0, 5.0)], s);
+        for dx in [-4.5, 0.0, 4.5] {
+            ui.painter().circle_filled(
+                c + egui::vec2(dx, 0.0),
+                1.4,
+                crate::theme::Tokens::text_dim(),
+            );
+        }
         let resp = resp.rich_tip(tr("docker.add_docker"));
-        // The panels in the groups of the Window menu, a box ticked at each
-        // one open anywhere: ticking opens it in front of this column,
-        // unticking closes it.
+        // The panels in the groups of the Window menu, each row a box
+        // ticked at a panel open anywhere, the panel's picture (the one
+        // its tab shows, or a blank where it has none), its name: ticking
+        // opens it in front of this column, unticking closes it.
         egui::Popup::menu(&resp)
-            .id(egui::Id::new(("docker_add_menu", place as u8)))
+            .id(more_menu_id(place))
             .style(crate::ui::menus::menu_popup_style)
             .show(|ui| {
                 crate::ui::menus::body(ui, |ui| {
                     let row = |ui: &mut Ui, app: &mut App, tab: DockerTab| {
                         let open = app.docker_open(tab);
-                        if crate::ui::menus::check(ui, tab.key(), "", open) {
+                        let pic = tab_icon(tab);
+                        let pic = pic
+                            .as_ref()
+                            .map(|f| f as &dyn Fn(&egui::Painter, egui::Rect));
+                        if crate::ui::menus::check_pic(ui, tab.key(), open, pic) {
                             if open {
                                 app.close_docker(tab);
                             } else {
@@ -214,6 +221,16 @@ pub fn tab_strip(app: &mut App, ui: &mut Ui, place: DockerPlace) {
                 })
             });
     });
+}
+
+/// The three-dot button at the end of the tab column at `place`.
+pub fn more_button_id(place: DockerPlace) -> egui::Id {
+    egui::Id::new(("docker_more", place as u8))
+}
+
+/// The panel list the three-dot button of the column at `place` opens.
+pub fn more_menu_id(place: DockerPlace) -> egui::Id {
+    egui::Id::new(("docker_add_menu", place as u8))
 }
 
 /// The places a docker can go, a dot at the one it has (a tab's menu and

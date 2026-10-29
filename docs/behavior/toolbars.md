@@ -30,7 +30,7 @@ collapse and close in grey at the right) over a white page. The tab
 column to its right is 27 px wide: `#EAEAEA` under the title bar and
 below the tabs, a `#B2B2B2` line along the panel, grey `#D8D8D8` tabs
 with an icon and the name running downwards, the open panel's tab
-`#B2B2B2`; the plus button under the tabs lists every panel in the
+`#B2B2B2`; the three-dot button under the tabs lists every panel in the
 groups of Window > Panels with a box ticked at each one in the column
 (ticking opens the panel in front, unticking closes it). The pointer
 over a tab shows a close cross in a slot at the tab's top; a click on
@@ -40,6 +40,19 @@ a click lower on the tab brings the panel to the front
 
 ### Panels anywhere
 
+- The button at the end of each tab column is three small dots in a row
+  (22 px tall, an 18 px grey box behind it while the pointer is over it;
+  tip `docker.add_docker`, "Show or hide panels"). Its menu lists the
+  panels in the groups of Window > Panels, with separators between the
+  groups and the effect panels after the text group: each row is the
+  check box (ticked while the panel is open anywhere), then the panel's
+  picture (the one its tab shows; a blank slot of the same width where it
+  has none, so the names line up), then its name
+  (`ui::menus::check_pic`). Ticking a row opens the panel in front of
+  that column (`App::move_docker`), unticking closes it
+  (`App::close_docker`). Taller than the window, the list scrolls, as
+  every menu body does
+  (`pick_drag_tests::the_three_dot_button_lists_the_panels_with_their_pictures`).
 - Panels live in one of three places (`App::docker_place`): the default
   column at the right of the window (`open_dockers`, `docker_tab` in
   front, `show_dockers`; at the left in a right-to-left language), the

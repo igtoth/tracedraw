@@ -1,6 +1,6 @@
 # Effects docker
 
-Window > Dockers > Effects (or the "+" under the docker tabs) lists the
+Window > Dockers > Effects (or the "..." under the docker tabs) lists the
 effect stack of the first selected object: its live effects (contour,
 blend, distortion, envelope, perspective, extrude, bevel, block shadow,
 symmetry, lens, transparency) in the order they apply, from the top
