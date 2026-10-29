@@ -3668,7 +3668,8 @@ impl<'a> Ctx<'a> {
         d: &'a [u8],
         arg: Arg,
     ) -> Option<(f64, Option<(Fill, u8)>)> {
-        if self.v >= 13 || arg.end.checked_sub(arg.off)? != 120 {
+        // Seen in a version 11 file only; version 12 is not checked.
+        if self.v != 11 || arg.end.checked_sub(arg.off)? != 120 {
             return None;
         }
         let data = d.get(..arg.end)?;

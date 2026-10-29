@@ -54,8 +54,8 @@ Each cell is the Coons patch of its four grid lines (cubic curves between
 the nodes with their handles, straight thirds without): the point at
 `(u, v)` is `(1 - v) top(u) + v bottom(u) + (1 - u) left(v) + u right(v)`
 less the bilinear mix of the four corners. The patch is cut into a grid
-of small triangles (`k x k` cells, `k` from the cell's size on screen:
-one per 3 pixels of its longest side, 1 to 96), each corner given its
+of small triangles (`k x k` pieces, `k` from the cell's size on screen:
+one per 4 pixels of its longest side, 1 to 256), each corner given its
 colour and opacity, and every pixel takes the mix of its triangle's
 corners:
 
@@ -66,24 +66,37 @@ corners:
   colours flow through the nodes without creases.
 
 The picture is worked out in the screen's scale and turn without its
-pan, its edge grown by one pixel, and kept (the renderer's procedural
-fill cache, up to 256 pictures and 24 million pixels), so panning, a
-selection change or another object dragged do not compute it again; it
-is drawn through the object's path with bilinear sampling. A mesh of
-more than 16 million pixels at the current zoom is worked out for the
-part on the canvas only, and not kept.
+pan, its edge grown by one pixel (the outermost pixels left clear, so
+the path shows nothing outside the grid), and kept (the renderer's
+procedural fill cache, shared by every render thread: up to 256
+pictures and 24 million pixels), so panning, a selection change or
+another object dragged do not compute it again; it is drawn through the
+object's path with bilinear sampling. A mesh of more than 8 million
+pixels at the current zoom is worked out for the part on the canvas
+only, and not kept. The work is bounded by what shows: cells whose box
+misses the picture are skipped, pieces off the picture are not drawn,
+the triangles are painted in batches of at most 131 072 (12 MB) and the
+picture is one byte a channel, so a 30 x 30 mesh zoomed to 670-pixel
+cells on a 1920 x 1080 canvas takes a few hundred thousand triangles
+instead of fifty million. Batches of 4096 triangles or more are
+painted on several threads, each a band of rows.
 
 Dragging a node moves its handles with it. A grid line added through a
 curved cell cuts the curve at the new node (the neighbours' handles are
 shortened to the cut, so the line keeps its shape) and gives the new
-node handles across the line mixed from its neighbours'. Changing the
-rows and columns from the property bar spreads a straight grid anew.
+node handles across the line mixed from its neighbours'; removing the
+line stretches the neighbours' handles back, restoring the curve. The
+cell a double-click lands in, and where in it, are found on the curved
+patch. Changing the rows and columns from the property bar spreads a
+straight grid anew.
 
 ## Checks
 
 - `tracedraw_core::style::tests::meshes_regrid_and_lose_lines_keeping_their_colours`
 - `tracedraw_core::style::tests::mesh_handles_move_with_their_nodes_and_cut_at_new_lines`
 - `tracedraw_render::tests::curved_mesh_cells_follow_their_handles`
+- `tracedraw_render::tests::nothing_shows_outside_a_mesh_grid`
+- `tracedraw_render::tests::a_zoomed_mesh_costs_only_what_shows`
 - `tracedraw_core::style::tests::a_double_click_puts_the_new_mesh_node_where_it_was`
 - `pick_drag_tests::mesh_nodes_land_where_they_are_clicked_and_dragged`
 - `tracedraw_render::tests::mesh_fill_blends_corner_colours`
