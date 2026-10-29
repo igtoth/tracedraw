@@ -94,6 +94,36 @@ pub enum FitAlign {
     End,
 }
 
+/// Which point of each object goes on the path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FitReference {
+    /// The object's centre of rotation: the centre of its box, or where
+    /// it was moved to with the Pick tool.
+    CenterOfRotation,
+    /// One of nine points of the object's bounding box (the Origin).
+    BoundingBox,
+    /// One of nine points of the box with half the outline's width
+    /// around it.
+    OutlineBox,
+}
+
+/// Turns added to the objects one after another (Modify rotation).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FitSpin {
+    /// No turn added.
+    None,
+    /// Every object turned by the start angle.
+    Uniform,
+    /// From the start angle, each object a step further, the whole run
+    /// turning by the spin angle times the revolutions.
+    Progressive,
+    /// The start angle plus a turn of up to the range either way, the
+    /// same for the same object every time.
+    Jitter,
+    /// Progressive, with the jitter added.
+    ProgressiveJitter,
+}
+
 /// The Fit Objects to Path panel's settings (millimetres and degrees,
 /// #1027, #1091, #1196).
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -121,6 +151,44 @@ pub struct FitPathSettings {
     pub count: u32,
     /// Start from the path's last node.
     pub reverse: bool,
+    /// Leave the selected objects where they are and place copies.
+    pub keep_originals: bool,
+    /// Group the objects placed.
+    pub group: bool,
+    /// Walk every subpath of the path, one after another, as one path;
+    /// else only the first subpath.
+    pub contiguous: bool,
+    pub reference: FitReference,
+    /// The point of the box with [`FitReference::BoundingBox`] and
+    /// [`FitReference::OutlineBox`]: 0 to 8, left to right from the top
+    /// row; 4 is the centre.
+    pub origin: u8,
+    /// Take the turn the objects have off them before they are placed.
+    pub ignore_rotation: bool,
+    pub spin: FitSpin,
+    /// Degrees, for every style but [`FitSpin::None`].
+    pub start_angle: f64,
+    /// Degrees a revolution turns ([`FitSpin::Progressive`]).
+    pub spin_angle: f64,
+    pub revolutions: f64,
+    /// Degrees either way ([`FitSpin::Jitter`]).
+    pub range: f64,
+    /// The turns added go clockwise.
+    pub clockwise: bool,
+}
+
+impl FitPathSettings {
+    /// Which Modify rotation fields the style uses: start angle, spin
+    /// angle, revolutions, range and direction.
+    pub fn spin_fields(&self) -> [bool; 5] {
+        match self.spin {
+            FitSpin::None => [false; 5],
+            FitSpin::Uniform => [true, false, false, false, true],
+            FitSpin::Progressive => [true, true, true, false, true],
+            FitSpin::Jitter => [true, false, false, true, true],
+            FitSpin::ProgressiveJitter => [true; 5],
+        }
+    }
 }
 
 impl Default for FitPathSettings {
@@ -140,6 +208,18 @@ impl Default for FitPathSettings {
             copies: FitCopies::None,
             count: 10,
             reverse: false,
+            keep_originals: false,
+            group: false,
+            contiguous: true,
+            reference: FitReference::CenterOfRotation,
+            origin: 4,
+            ignore_rotation: false,
+            spin: FitSpin::None,
+            start_angle: 0.0,
+            spin_angle: 360.0,
+            revolutions: 1.0,
+            range: 15.0,
+            clockwise: false,
         }
     }
 }
@@ -153,54 +233,87 @@ pub struct Placement {
     pub copy: bool,
 }
 
-/// The first subpath of a path, flattened, with the distance walked to
-/// each point.
+/// A path flattened, with the distance walked to each point: its first
+/// subpath, or all of them one after another. The step from one subpath
+/// to the next is not walked (`jump`).
 struct Walk {
     pts: Vec<Point>,
     cum: Vec<f64>,
+    /// Per segment: the move to the next subpath.
+    jump: Vec<bool>,
     total: f64,
     closed: bool,
 }
 
 impl Walk {
-    fn new(path: &BezPath, reverse: bool) -> Option<Walk> {
-        let mut pts: Vec<Point> = Vec::new();
-        let mut closed = false;
+    fn new(path: &BezPath, reverse: bool, all: bool) -> Option<Walk> {
+        // Each subpath's points and whether it is closed.
+        let mut subs: Vec<(Vec<Point>, bool)> = Vec::new();
         let mut done = false;
         kurbo::flatten(path.elements().iter().copied(), 0.05, |el| match el {
             _ if done => {}
             kurbo::PathEl::MoveTo(p) => {
-                if pts.is_empty() {
-                    pts.push(p);
+                if !all && !subs.is_empty() {
+                    done = true;
                 } else {
+                    subs.push((vec![p], false));
+                }
+            }
+            kurbo::PathEl::LineTo(p) => {
+                if let Some(sub) = subs.last_mut() {
+                    sub.0.push(p);
+                }
+            }
+            kurbo::PathEl::ClosePath => {
+                if let Some(sub) = subs.last_mut() {
+                    if let Some(&first) = sub.0.first() {
+                        sub.0.push(first);
+                    }
+                    sub.1 = true;
+                }
+                if !all {
                     done = true;
                 }
             }
-            kurbo::PathEl::LineTo(p) => pts.push(p),
-            kurbo::PathEl::ClosePath => {
-                if let Some(&first) = pts.first() {
-                    pts.push(first);
-                }
-                closed = true;
-                done = true;
-            }
             _ => {}
         });
-        pts.dedup_by(|a, b| (*a - *b).hypot() < 1e-9);
-        if pts.len() < 2 {
+        for sub in &mut subs {
+            sub.0.dedup_by(|a, b| (*a - *b).hypot() < 1e-9);
+        }
+        subs.retain(|sub| sub.0.len() >= 2);
+        if subs.is_empty() {
             return None;
         }
+        let closed = subs.iter().all(|sub| sub.1);
         if reverse {
-            pts.reverse();
+            subs.reverse();
+            for sub in &mut subs {
+                sub.0.reverse();
+            }
+        }
+        let mut pts = Vec::new();
+        let mut jump = Vec::new();
+        for (sub, _) in subs {
+            if !pts.is_empty() {
+                jump.push(true);
+            }
+            for (k, p) in sub.into_iter().enumerate() {
+                if k > 0 {
+                    jump.push(false);
+                }
+                pts.push(p);
+            }
         }
         let mut cum = vec![0.0];
-        for w in pts.windows(2) {
-            cum.push(cum.last().copied().unwrap_or(0.0) + (w[1] - w[0]).hypot());
+        for (k, w) in pts.windows(2).enumerate() {
+            let step = if jump[k] { 0.0 } else { (w[1] - w[0]).hypot() };
+            cum.push(cum.last().copied().unwrap_or(0.0) + step);
         }
         let total = cum.last().copied().unwrap_or(0.0);
         (total > 1e-9).then_some(Walk {
             pts,
             cum,
+            jump,
             total,
             closed,
         })
@@ -220,16 +333,89 @@ impl Walk {
     fn at(&self, d: f64) -> (Point, Vec2) {
         let d = self.wrap(d);
         let last = self.pts.len() - 2;
-        let k = self
+        let mut k = self
             .cum
             .partition_point(|c| *c <= d)
             .saturating_sub(1)
             .min(last);
+        // On a move to the next subpath: the end of the one before.
+        while k > 0 && self.jump.get(k).copied().unwrap_or(false) {
+            k -= 1;
+        }
         let seg = self.pts[k + 1] - self.pts[k];
         let len = seg.hypot().max(1e-9);
         let u = ((d - self.cum[k]) / len).clamp(0.0, 1.0);
         (self.pts[k] + seg * u, seg / len)
     }
+}
+
+/// An object made ready to place: what takes its initial turn off (with
+/// Ignore initial rotation), its box after that, and the point of it that
+/// goes on the path, as an offset from the box's centre.
+struct Prepared<'a> {
+    shape: &'a Shape,
+    base: Affine,
+    centre: Point,
+    half_w: f64,
+    half_h: f64,
+    offset: Vec2,
+}
+
+fn prepare<'a>(
+    s: &'a Shape,
+    set: &FitPathSettings,
+    pivot: &dyn Fn(&Shape) -> Option<Point>,
+) -> Prepared<'a> {
+    let bounds = s.bounds();
+    let c = s.transform.as_coeffs();
+    let turn = c[1].atan2(c[0]);
+    let base = if set.ignore_rotation && turn.is_finite() && turn.abs() > 1e-9 {
+        Affine::rotate_about(-turn, bounds.center())
+    } else {
+        Affine::IDENTITY
+    };
+    let mut r = if base == Affine::IDENTITY {
+        bounds
+    } else {
+        kurbo::Shape::bounding_box(&(base * s.page_path()))
+    };
+    if set.reference == FitReference::OutlineBox {
+        if let Some(st) = &s.stroke {
+            let w = finite(st.width, 0.0).max(0.0) / 2.0;
+            r = r.inflate(w, w);
+        }
+    }
+    let centre = r.center();
+    let point = match set.reference {
+        FitReference::CenterOfRotation => pivot(s)
+            .filter(|p| p.x.is_finite() && p.y.is_finite())
+            .map(|p| base * p)
+            .unwrap_or(centre),
+        FitReference::BoundingBox | FitReference::OutlineBox => {
+            let o = set.origin.min(8);
+            let u = (o % 3) as f64 / 2.0;
+            // The top row first; the page's y axis points up.
+            let v = 1.0 - (o / 3) as f64 / 2.0;
+            Point::new(r.x0 + u * r.width(), r.y0 + v * r.height())
+        }
+    };
+    Prepared {
+        shape: s,
+        base,
+        centre,
+        half_w: r.width() / 2.0,
+        half_h: r.height() / 2.0,
+        offset: point - centre,
+    }
+}
+
+/// A number from -1 to 1 that is the same for the same `i` every time.
+fn jitter(i: usize) -> f64 {
+    let mut z = (i as u64).wrapping_add(0x9E37_79B9_7F4A_7C15);
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    z ^= z >> 31;
+    (z >> 11) as f64 / (1u64 << 53) as f64 * 2.0 - 1.0
 }
 
 /// The objects in the order they go along the path.
@@ -271,19 +457,33 @@ fn finite(v: f64, or: f64) -> f64 {
 }
 
 /// Where the objects (and copies) of a Fit Objects to Path go: the last
-/// shape is the path, the others are placed on its first subpath. Empty
-/// when there is nothing to fit.
+/// shape is the path, the others are placed on it. Empty when there is
+/// nothing to fit. Centres of rotation are the boxes' centres.
+#[cfg(test)]
 pub fn fit_to_path_plan(shapes: &[Shape], set: &FitPathSettings) -> Vec<Placement> {
+    fit_to_path_plan_with(shapes, set, &|_| None)
+}
+
+/// [`fit_to_path_plan`] with the centres of rotation moved by the user
+/// (`pivot`, in page space).
+pub fn fit_to_path_plan_with(
+    shapes: &[Shape],
+    set: &FitPathSettings,
+    pivot: &dyn Fn(&Shape) -> Option<Point>,
+) -> Vec<Placement> {
     let Some((path_shape, objects)) = shapes.split_last() else {
         return Vec::new();
     };
     if objects.is_empty() {
         return Vec::new();
     }
-    let Some(walk) = Walk::new(&path_shape.page_path(), set.reverse) else {
+    let Some(walk) = Walk::new(&path_shape.page_path(), set.reverse, set.contiguous) else {
         return Vec::new();
     };
-    let objs = ordered(objects, set.order);
+    let objs: Vec<Prepared> = ordered(objects, set.order)
+        .into_iter()
+        .map(|s| prepare(s, set, pivot))
+        .collect();
     let n = objs.len();
     let angle = finite(set.angle, 0.0).to_radians();
     let distance = finite(set.distance, 0.0).max(0.0);
@@ -294,21 +494,53 @@ pub fn fit_to_path_plan(shapes: &[Shape], set: &FitPathSettings) -> Vec<Placemen
     } else {
         walk.total - finite(set.end_offset, 0.0)
     };
-    // Half the object's length along the path and across it, turned as
-    // it will be where the path's direction is `phi`.
-    let half = |i: usize, phi: f64| -> (f64, f64) {
-        let r = objs[i % n].bounds();
-        let a = match set.rotation {
-            FitRotation::Follow => angle,
-            FitRotation::Fixed => angle - phi,
+    let start = finite(set.start_angle, 0.0).to_radians();
+    let spin_total = (finite(set.spin_angle, 0.0) * finite(set.revolutions, 0.0)).to_radians();
+    let range = finite(set.range, 0.0).to_radians();
+    let sign = if set.clockwise { -1.0 } else { 1.0 };
+    // The turn Modify rotation adds to object `i` of `m`.
+    let extra = |i: usize, m: usize| -> f64 {
+        let step = || {
+            let parts = if walk.closed { m } else { m.saturating_sub(1) };
+            if parts == 0 {
+                0.0
+            } else {
+                spin_total * i as f64 / parts as f64
+            }
         };
-        let (w, h) = (r.width() / 2.0, r.height() / 2.0);
-        let (s, c) = (a.sin().abs(), a.cos().abs());
-        (w * c + h * s, w * s + h * c)
+        sign * match set.spin {
+            FitSpin::None => 0.0,
+            FitSpin::Uniform => start,
+            FitSpin::Progressive => start + step(),
+            FitSpin::Jitter => start + range * jitter(i),
+            FitSpin::ProgressiveJitter => start + step() + range * jitter(i),
+        }
+    };
+    // Object `i` turned as it will be where the path's direction is `phi`,
+    // in the path's frame: its length along the path before and after its
+    // reference point, its half width across the path and where its
+    // reference point is from its centre.
+    let frame = |i: usize, m: usize, phi: f64| -> (f64, f64, f64, Vec2) {
+        let o = &objs[i % n];
+        let a = extra(i, m)
+            + match set.rotation {
+                FitRotation::Follow => angle,
+                FitRotation::Fixed => angle - phi,
+            };
+        let (sa, ca) = a.sin_cos();
+        let (s, c) = (sa.abs(), ca.abs());
+        let along = o.half_w * c + o.half_h * s;
+        let across = o.half_w * s + o.half_h * c;
+        let v = Vec2::new(
+            o.offset.x * ca - o.offset.y * sa,
+            o.offset.x * sa + o.offset.y * ca,
+        );
+        (along + v.x, along - v.x, across, v)
     };
     let edges = set.measure == FitMeasure::Edges;
-    // How many objects go on the path, given their half lengths.
-    let how_many = |al: &dyn Fn(usize) -> f64| -> usize {
+    // How many objects go on the path, given their lengths before and
+    // after their reference points.
+    let how_many = |ext: &dyn Fn(usize) -> (f64, f64)| -> usize {
         let count = match (set.copies, set.spacing) {
             (FitCopies::None, _) | (FitCopies::Fill, FitSpacing::Even) => n,
             (FitCopies::Count, _) => set.count as usize,
@@ -326,10 +558,14 @@ pub fn fit_to_path_plan(shapes: &[Shape], set: &FitPathSettings) -> Vec<Placemen
                     // A closed path also keeps the gap between the last
                     // object and the first.
                     let tail = if walk.closed { distance } else { 0.0 };
-                    let mut used = 2.0 * al(0);
+                    let width = |k: usize| {
+                        let (b, a) = ext(k);
+                        b + a
+                    };
+                    let mut used = width(0);
                     let mut k = 1;
-                    while k < MAX_PLACED && used + distance + 2.0 * al(k) + tail <= room + 1e-9 {
-                        used += distance + 2.0 * al(k);
+                    while k < MAX_PLACED && used + distance + width(k) + tail <= room + 1e-9 {
+                        used += distance + width(k);
                         k += 1;
                     }
                     k
@@ -338,9 +574,9 @@ pub fn fit_to_path_plan(shapes: &[Shape], set: &FitPathSettings) -> Vec<Placemen
         };
         count.clamp(n, MAX_PLACED.max(n))
     };
-    // The distance along the path of each object's centre.
-    let layout = |al: &[f64]| -> Vec<f64> {
-        let m = al.len();
+    // The distance along the path of each object's reference point.
+    let layout = |ext: &[(f64, f64)]| -> Vec<f64> {
+        let m = ext.len();
         let mut d = Vec::with_capacity(m);
         match set.spacing {
             FitSpacing::Even if !edges => {
@@ -355,36 +591,36 @@ pub fn fit_to_path_plan(shapes: &[Shape], set: &FitPathSettings) -> Vec<Placemen
                 }
             }
             FitSpacing::Even => {
-                let widths: f64 = al.iter().map(|a| 2.0 * a).sum();
+                let widths: f64 = ext.iter().map(|(b, a)| b + a).sum();
                 if !walk.closed && m == 1 {
                     d.push((s0 + s1) / 2.0);
                 } else {
                     let (gap, first) = if walk.closed {
                         ((walk.total - widths) / m as f64, s0)
                     } else {
-                        ((s1 - s0 - widths) / (m as f64 - 1.0), s0 + al[0])
+                        ((s1 - s0 - widths) / (m as f64 - 1.0), s0 + ext[0].0)
                     };
                     d.push(first);
                     for i in 1..m {
                         let prev = d[i - 1];
-                        d.push(prev + al[i - 1] + gap + al[i]);
+                        d.push(prev + ext[i - 1].1 + gap + ext[i].0);
                     }
                 }
             }
             FitSpacing::Distance => {
                 // The run from 0, then moved to its place.
-                let mut run = Vec::with_capacity(m);
+                let mut run: Vec<f64> = Vec::with_capacity(m);
                 for i in 0..m {
                     run.push(match (i, edges) {
                         (0, false) => 0.0,
-                        (0, true) => al[0],
+                        (0, true) => ext[0].0,
                         (_, false) => distance * i as f64,
-                        (_, true) => run[i - 1] + al[i - 1] + distance + al[i],
+                        (_, true) => run[i - 1] + ext[i - 1].1 + distance + ext[i].0,
                     });
                 }
                 let lo = 0.0;
                 let hi = match run.last() {
-                    Some(l) if edges => l + al[m - 1],
+                    Some(l) if edges => l + ext[m - 1].1,
                     Some(l) => *l,
                     None => 0.0,
                 };
@@ -403,17 +639,30 @@ pub fn fit_to_path_plan(shapes: &[Shape], set: &FitPathSettings) -> Vec<Placemen
     // directions there and lay them out again.
     let mut phis: Vec<f64> = Vec::new();
     let mut dist: Vec<f64> = Vec::new();
-    let passes = if set.rotation == FitRotation::Fixed && (edges || set.place != FitPlace::On) {
+    let mut m = n;
+    let passes = if set.rotation == FitRotation::Fixed
+        && (edges || set.place != FitPlace::On || objs.iter().any(|o| o.offset.hypot() > 1e-9))
+    {
         3
     } else {
         1
     };
     for _ in 0..passes {
         let phi_of = |i: usize| phis.get(i).copied().unwrap_or(0.0);
-        let al_of = |i: usize| half(i, phi_of(i)).0;
-        let m = how_many(&al_of);
-        let al: Vec<f64> = (0..m).map(al_of).collect();
-        dist = layout(&al);
+        // The count first, with the progressive turns of the last count.
+        let guess = m;
+        let ext_of = |i: usize| {
+            let (b, a, _, _) = frame(i, guess, phi_of(i));
+            (b, a)
+        };
+        m = how_many(&ext_of);
+        let ext: Vec<(f64, f64)> = (0..m)
+            .map(|i| {
+                let (b, a, _, _) = frame(i, m, phi_of(i));
+                (b, a)
+            })
+            .collect();
+        dist = layout(&ext);
         phis = dist
             .iter()
             .map(|d| {
@@ -422,30 +671,35 @@ pub fn fit_to_path_plan(shapes: &[Shape], set: &FitPathSettings) -> Vec<Placemen
             })
             .collect();
     }
+    let m = dist.len();
     dist.iter()
         .zip(&phis)
         .enumerate()
         .map(|(i, (d, phi))| {
-            let s = objs[i % n];
+            let o = &objs[i % n];
             let (pos, t) = walk.at(*d);
-            let across = half(i, *phi).1;
+            let (_, _, across, v) = frame(i, m, *phi);
+            // Above and below keep the reference point's place along the
+            // path and move the object off it by its edge.
             let shift = match set.place {
                 FitPlace::On => 0.0,
-                FitPlace::Above => across + side,
-                FitPlace::Below => -(across + side),
+                FitPlace::Above => across + side + v.y,
+                FitPlace::Below => -(across + side) + v.y,
             };
             let normal = Vec2::new(-t.y, t.x);
-            let turn = match set.rotation {
-                FitRotation::Follow => phi + angle,
-                FitRotation::Fixed => angle,
-            };
-            let c = s.bounds().center();
+            let turn = extra(i, m)
+                + match set.rotation {
+                    FitRotation::Follow => phi + angle,
+                    FitRotation::Fixed => angle,
+                };
+            let reference = o.centre + o.offset;
             Placement {
-                source: s.id,
+                source: o.shape.id,
                 transform: Affine::translate((pos + normal * shift).to_vec2())
                     * Affine::rotate(turn)
-                    * Affine::translate(-c.to_vec2()),
-                copy: i >= n,
+                    * Affine::translate(-reference.to_vec2())
+                    * o.base,
+                copy: set.keep_originals || i >= n,
             }
         })
         .collect()
@@ -736,5 +990,220 @@ mod tests {
         }
         assert!(fit_to_path_plan(&shapes[1..], &set).is_empty());
         assert!(fit_to_path_plan(&[], &set).is_empty());
+    }
+
+    fn turn_of(p: &Placement) -> f64 {
+        let c = p.transform.as_coeffs();
+        c[1].atan2(c[0]).to_degrees()
+    }
+
+    /// Keep originals places copies only; with Treat subpaths as
+    /// contiguous every subpath is walked one after another (the move
+    /// between them not counted), else only the first (#1091).
+    #[test]
+    fn originals_and_subpaths() {
+        let mut two = BezPath::new();
+        two.move_to((0.0, 0.0));
+        two.line_to((40.0, 0.0));
+        two.move_to((0.0, 10.0));
+        two.line_to((60.0, 10.0));
+        let shapes = vec![
+            rect(1, 200.0, 0.0, 4.0, 2.0),
+            rect(2, 300.0, 0.0, 4.0, 2.0),
+            rect(3, 400.0, 0.0, 4.0, 2.0),
+            Shape::new(
+                ShapeId(9),
+                ShapeKind::Path {
+                    path: two,
+                    closed: false,
+                },
+            ),
+        ];
+        let set = FitPathSettings::default();
+        let got = centres(&shapes, &fit_to_path_plan(&shapes, &set));
+        for (g, p) in got.iter().zip([(0.0, 0.0), (10.0, 10.0), (60.0, 10.0)]) {
+            assert!(near(g.1, p) && !g.2, "{got:?}");
+        }
+        let set = FitPathSettings {
+            contiguous: false,
+            keep_originals: true,
+            ..set
+        };
+        let got = centres(&shapes, &fit_to_path_plan(&shapes, &set));
+        for (g, p) in got.iter().zip([(0.0, 0.0), (20.0, 0.0), (40.0, 0.0)]) {
+            assert!(near(g.1, p) && g.2, "{got:?}");
+        }
+        // Reversed: from the end of the last subpath back.
+        let set = FitPathSettings {
+            reverse: true,
+            ..FitPathSettings::default()
+        };
+        let got = centres(&shapes, &fit_to_path_plan(&shapes, &set));
+        for (g, p) in got.iter().zip([(60.0, 10.0), (10.0, 10.0), (0.0, 0.0)]) {
+            assert!(near(g.1, p), "{got:?}");
+        }
+    }
+
+    /// The reference point goes on the path: the centre of rotation (moved
+    /// or not) or one of the nine points of the box, with or without half
+    /// the outline (#1091).
+    #[test]
+    fn the_reference_point_goes_on_the_path() {
+        let mut obj = rect(1, 200.0, 0.0, 4.0, 2.0);
+        obj.stroke = Some(tracedraw_core::Stroke::new(
+            tracedraw_core::Color::BLACK,
+            2.0,
+        ));
+        let shapes = vec![obj, line(9, &[(0.0, 0.0), (100.0, 0.0)], false)];
+        let at = |set: FitPathSettings, pivot: Option<Point>| -> Point {
+            let plan = fit_to_path_plan_with(&shapes, &set, &|_| pivot);
+            plan[0].transform * shapes[0].bounds().center()
+        };
+        let one = FitPathSettings {
+            spacing: FitSpacing::Distance,
+            offset: 50.0,
+            ..FitPathSettings::default()
+        };
+        assert!(near(at(one, None), (50.0, 0.0)));
+        // A centre of rotation moved to the left edge's middle.
+        assert!(near(at(one, Some(Point::new(200.0, 1.0))), (52.0, 0.0)));
+        let boxed = FitPathSettings {
+            reference: FitReference::BoundingBox,
+            ..one
+        };
+        // Bottom centre (7) on the path: the object sits on it.
+        assert!(near(
+            at(FitPathSettings { origin: 7, ..boxed }, None),
+            (50.0, 1.0)
+        ));
+        // Top left (0): the object hangs right of and below the point.
+        assert!(near(
+            at(FitPathSettings { origin: 0, ..boxed }, None),
+            (52.0, -1.0)
+        ));
+        // With half the 2 mm outline around the box.
+        let outline = FitPathSettings {
+            reference: FitReference::OutlineBox,
+            origin: 7,
+            ..one
+        };
+        assert!(near(at(outline, None), (50.0, 2.0)));
+        // Above the path the near edge stays the set distance off, the
+        // reference point keeping its place along the path.
+        let above = FitPathSettings {
+            reference: FitReference::BoundingBox,
+            origin: 5,
+            place: FitPlace::Above,
+            side: 1.0,
+            ..one
+        };
+        assert!(near(at(above, None), (48.0, 2.0)), "{:?}", at(above, None));
+        // Bad origins are held to the grid.
+        assert!(at(
+            FitPathSettings {
+                origin: 200,
+                ..boxed
+            },
+            None
+        )
+        .x
+        .is_finite());
+    }
+
+    /// Ignore initial rotation takes the turn an object has off it; Modify
+    /// rotation adds the same turn to all, a growing one, a jitter or
+    /// both, either way round (#1091).
+    #[test]
+    fn rotations_are_reset_and_modified() {
+        let mut turned = rect(1, 200.0, 0.0, 4.0, 2.0);
+        turned.transform_by(Affine::rotate_about(
+            30f64.to_radians(),
+            Point::new(202.0, 1.0),
+        ));
+        let shapes = vec![
+            turned,
+            rect(2, 300.0, 0.0, 4.0, 2.0),
+            rect(3, 400.0, 0.0, 4.0, 2.0),
+            line(9, &[(0.0, 0.0), (100.0, 0.0)], false),
+        ];
+        let plan = |set: FitPathSettings| fit_to_path_plan(&shapes, &set);
+        let kept = plan(FitPathSettings::default());
+        let reset = plan(FitPathSettings {
+            ignore_rotation: true,
+            ..FitPathSettings::default()
+        });
+        let b = |p: &Placement| kurbo::Shape::bounding_box(&(p.transform * shapes[0].page_path()));
+        assert!(
+            (b(&reset[0]).width() - 4.0).abs() < 1e-6 && (b(&reset[0]).height() - 2.0).abs() < 1e-6
+        );
+        assert!(b(&kept[0]).width() > 4.0);
+        assert!(near(
+            reset[0].transform * shapes[0].bounds().center(),
+            (0.0, 0.0)
+        ));
+        let turns = |set: FitPathSettings| -> Vec<f64> { plan(set).iter().map(turn_of).collect() };
+        let spin = FitPathSettings {
+            start_angle: 10.0,
+            spin_angle: 360.0,
+            revolutions: 0.5,
+            range: 0.0,
+            ..FitPathSettings::default()
+        };
+        let close = |a: &[f64], b: &[f64]| a.iter().zip(b).all(|(x, y)| (x - y).abs() < 1e-6);
+        assert!(close(&turns(spin)[1..], &[0.0, 0.0]), "None adds nothing");
+        let uniform = FitPathSettings {
+            spin: FitSpin::Uniform,
+            ..spin
+        };
+        assert!(close(&turns(uniform)[1..], &[10.0, 10.0]));
+        let prog = FitPathSettings {
+            spin: FitSpin::Progressive,
+            ..spin
+        };
+        assert!(
+            close(&turns(prog)[1..], &[100.0, -170.0]),
+            "{:?}",
+            turns(prog)
+        );
+        let cw = FitPathSettings {
+            clockwise: true,
+            ..prog
+        };
+        assert!(close(&turns(cw)[1..], &[-100.0, 170.0]), "{:?}", turns(cw));
+        let jit = FitPathSettings {
+            spin: FitSpin::Jitter,
+            range: 15.0,
+            ..spin
+        };
+        let j = turns(jit);
+        assert_eq!(j, turns(jit), "the same every time");
+        assert!(
+            j[1..].iter().all(|t| (t - 10.0).abs() <= 15.0 + 1e-9),
+            "{j:?}"
+        );
+        assert!((j[1] - j[2]).abs() > 1e-6, "{j:?}");
+        let both = FitPathSettings {
+            spin: FitSpin::ProgressiveJitter,
+            ..jit
+        };
+        let pj = turns(both);
+        assert!((pj[1] - j[1] - 90.0).abs() < 1e-6, "{pj:?} {j:?}");
+        // The fields each style uses.
+        assert_eq!(spin.spin_fields(), [false; 5]);
+        assert_eq!(uniform.spin_fields(), [true, false, false, false, true]);
+        assert_eq!(jit.spin_fields(), [true, false, false, true, true]);
+        assert_eq!(both.spin_fields(), [true; 5]);
+        // Numbers that cannot be used place nothing wrong.
+        let bad = FitPathSettings {
+            spin: FitSpin::ProgressiveJitter,
+            start_angle: f64::NAN,
+            spin_angle: f64::INFINITY,
+            revolutions: f64::NAN,
+            range: f64::NAN,
+            ..spin
+        };
+        for p in plan(bad) {
+            assert!(p.transform.as_coeffs().iter().all(|c| c.is_finite()));
+        }
     }
 }

@@ -12057,3 +12057,49 @@ fn the_page_bar_turns_the_multipage_view_on_and_off() {
     frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
     assert!(lit(&ctx, &mut app));
 }
+
+/// The Fit Objects to Path panel's Origin grid: a click on a square
+/// picks that point of the objects' boxes while the reference is a box;
+/// with Center of rotation the grid does nothing (#1091).
+#[test]
+fn the_fit_to_path_origin_grid_picks_a_point() {
+    use crate::fit_path::FitReference;
+    use crate::ui::dockers2::fit_origin_id;
+    let (ctx, mut app, a) = setup();
+    let mut path = tracedraw_core::BezPath::new();
+    path.move_to((10.0, 100.0));
+    path.line_to((160.0, 100.0));
+    let line = app
+        .new_shape(ShapeKind::Path {
+            path,
+            closed: false,
+        })
+        .expect("path");
+    app.select(vec![a, line]);
+    app.open_docker(crate::app::DockerTab::FitToPath);
+    for _ in 0..2 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    let square = |ctx: &egui::Context, i: u8| {
+        ctx.read_response(fit_origin_id(i))
+            .map(|r| r.rect.center())
+            .expect("origin square")
+    };
+    // Center of rotation: the grid is greyed and a click does nothing.
+    click_at(&ctx, &mut app, square(&ctx, 7), Modifiers::NONE);
+    assert_eq!(app.fit_path.origin, 4);
+    assert!(!app.fit_path_edited);
+    app.fit_path.reference = FitReference::BoundingBox;
+    app.fit_path_edited = true;
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    click_at(&ctx, &mut app, square(&ctx, 7), Modifiers::NONE);
+    assert_eq!(app.fit_path.origin, 7);
+    // The preview follows: the rectangle sits on the line.
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let b = app
+        .fit_objects_to_path_preview()
+        .first()
+        .map(kurbo::Shape::bounding_box)
+        .expect("preview");
+    assert!((b.y0 - 100.0).abs() < 1e-6, "{b:?}");
+}

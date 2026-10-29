@@ -2782,7 +2782,8 @@ fn join_curves(app: &mut App, ui: &mut Ui) {
 /// #1091, #1196).
 fn fit_to_path(app: &mut App, ui: &mut Ui) {
     use crate::ops2::{
-        FitAlign, FitCopies, FitMeasure, FitOrder, FitPlace, FitRotation, FitSpacing,
+        FitAlign, FitCopies, FitMeasure, FitOrder, FitPlace, FitReference, FitRotation, FitSpacing,
+        FitSpin,
     };
     let u = app.units;
     app.fit_path_follow_selection();
@@ -2823,6 +2824,58 @@ fn fit_to_path(app: &mut App, ui: &mut Ui) {
             .clicked()
     };
     dim(ui, tr("docker.fit_to_path_hint"));
+    let check = |ui: &mut Ui, on: &mut bool, key: &str| {
+        ui.checkbox(on, tr(key))
+            .rich_tip(crate::ui::tips::keyed(key));
+    };
+    let deg =
+        |ui: &mut Ui, key: &str, v: &mut f64, range: std::ops::RangeInclusive<f64>, on: bool| {
+            ui.horizontal(|ui| {
+                ui.add_enabled(on, egui::Label::new(tr(key)));
+                ui.add_enabled(
+                    on,
+                    crate::ui::field::NumField::new(v)
+                        .range(range)
+                        .max_decimals(2)
+                        .suffix("°"),
+                )
+                .rich_tip(crate::ui::tips::keyed(key))
+                .rich_disabled_tip(crate::ui::tips::keyed(key));
+            });
+        };
+
+    // What is fitted: the objects (all but the last selected) and the path.
+    ui.strong(tr("docker.fit_to_path_objects"));
+    let objects = app.selection.len().saturating_sub(1);
+    dim(
+        ui,
+        trf(
+            "docker.fit_to_path_selected",
+            &[("n", &objects.to_string())],
+        ),
+    );
+    check(
+        ui,
+        &mut f.keep_originals,
+        "docker.fit_to_path_keep_originals",
+    );
+    check(ui, &mut f.group, "docker.fit_to_path_group");
+    ui.add_space(4.0);
+    ui.strong(tr("docker.fit_to_path_path"));
+    if app.selection.len() >= 2 {
+        let used = app
+            .selection
+            .last()
+            .and_then(|id| app.doc().find_shape(*id))
+            .map(|s| crate::ui::dockers::kind_name(&s.kind))
+            .unwrap_or_default();
+        dim(
+            ui,
+            trf("docker.fit_to_path_object_used", &[("kind", &used)]),
+        );
+    }
+    check(ui, &mut f.contiguous, "docker.fit_to_path_contiguous");
+    ui.add_space(4.0);
 
     ui.strong(tr("docker.fit_to_path_spacing"));
     if radio(ui, f.spacing == FitSpacing::Even, "docker.fit_to_path_even") {
@@ -2959,6 +3012,36 @@ fn fit_to_path(app: &mut App, ui: &mut Ui) {
     }
 
     ui.add_space(4.0);
+    let refs = [
+        (
+            FitReference::CenterOfRotation,
+            "docker.fit_to_path_ref_pivot",
+        ),
+        (FitReference::BoundingBox, "docker.fit_to_path_ref_box"),
+        (FitReference::OutlineBox, "docker.fit_to_path_ref_outline"),
+    ];
+    let cur = refs
+        .iter()
+        .find(|(r, _)| *r == f.reference)
+        .map_or(String::new(), |(_, k)| tr(k));
+    combo(
+        ui,
+        "docker.fit_to_path_reference",
+        "fit_path_reference",
+        &cur,
+        &mut |ui| {
+            for (r, k) in refs {
+                ui.selectable_value(&mut f.reference, r, tr(k));
+            }
+        },
+    );
+    ui.horizontal(|ui| {
+        let boxed = f.reference != FitReference::CenterOfRotation;
+        ui.add_enabled(boxed, egui::Label::new(tr("docker.fit_to_path_origin")));
+        origin_grid(ui, &mut f.origin, boxed);
+    });
+
+    ui.add_space(4.0);
     ui.strong(tr("docker.fit_to_path_rotation"));
     if radio(
         ui,
@@ -2985,6 +3068,82 @@ fn fit_to_path(app: &mut App, ui: &mut Ui) {
         )
         .rich_tip(crate::ui::tips::keyed("docker.fit_to_path_angle"));
     });
+
+    check(
+        ui,
+        &mut f.ignore_rotation,
+        "docker.fit_to_path_ignore_rotation",
+    );
+
+    ui.add_space(4.0);
+    ui.strong(tr("docker.fit_to_path_modify_rotation"));
+    let styles = [
+        (FitSpin::None, "docker.fit_to_path_spin_none"),
+        (FitSpin::Uniform, "docker.fit_to_path_spin_uniform"),
+        (FitSpin::Progressive, "docker.fit_to_path_spin_progressive"),
+        (FitSpin::Jitter, "docker.fit_to_path_spin_jitter"),
+        (
+            FitSpin::ProgressiveJitter,
+            "docker.fit_to_path_spin_progressive_jitter",
+        ),
+    ];
+    let cur = styles
+        .iter()
+        .find(|(st, _)| *st == f.spin)
+        .map_or(String::new(), |(_, k)| tr(k));
+    combo(
+        ui,
+        "docker.fit_to_path_spin",
+        "fit_path_spin",
+        &cur,
+        &mut |ui| {
+            for (st, k) in styles {
+                ui.selectable_value(&mut f.spin, st, tr(k));
+            }
+        },
+    );
+    let [start_on, spin_on, revs_on, range_on, dir_on] = f.spin_fields();
+    deg(
+        ui,
+        "docker.fit_to_path_start_angle",
+        &mut f.start_angle,
+        -360.0..=360.0,
+        start_on,
+    );
+    deg(
+        ui,
+        "docker.fit_to_path_spin_angle",
+        &mut f.spin_angle,
+        -3600.0..=3600.0,
+        spin_on,
+    );
+    ui.horizontal(|ui| {
+        ui.add_enabled(
+            revs_on,
+            egui::Label::new(tr("docker.fit_to_path_revolutions")),
+        );
+        ui.add_enabled(
+            revs_on,
+            crate::ui::field::NumField::new(&mut f.revolutions)
+                .range(-100.0..=100.0)
+                .max_decimals(2),
+        )
+        .rich_tip(crate::ui::tips::keyed("docker.fit_to_path_revolutions"))
+        .rich_disabled_tip(crate::ui::tips::keyed("docker.fit_to_path_revolutions"));
+    });
+    deg(
+        ui,
+        "docker.fit_to_path_range",
+        &mut f.range,
+        0.0..=180.0,
+        range_on,
+    );
+    ui.add_enabled(
+        dir_on,
+        egui::Checkbox::new(&mut f.clockwise, tr("docker.fit_to_path_clockwise")),
+    )
+    .rich_tip(crate::ui::tips::keyed("docker.fit_to_path_clockwise"))
+    .rich_disabled_tip(crate::ui::tips::keyed("docker.fit_to_path_clockwise"));
 
     ui.add_space(4.0);
     let orders = [
@@ -3035,6 +3194,60 @@ fn fit_to_path(app: &mut App, ui: &mut Ui) {
     {
         app.fit_objects_to_path();
         app.docker_preview.clear();
+    }
+}
+
+/// The id of square `i` (0 to 8, left to right from the top row) of the
+/// Fit Objects to Path panel's Origin grid.
+pub(crate) fn fit_origin_id(i: u8) -> egui::Id {
+    egui::Id::new(("fit_path_origin", i))
+}
+
+/// Nine small squares, three by three, joined by lines: the point of each
+/// object's box that goes on the path. The chosen one is filled.
+fn origin_grid(ui: &mut Ui, origin: &mut u8, enabled: bool) {
+    const CELL: f32 = 12.0;
+    let (rect, _) =
+        ui.allocate_exact_size(egui::vec2(CELL * 3.0, CELL * 3.0), egui::Sense::hover());
+    let color = if enabled {
+        crate::theme::Tokens::text()
+    } else {
+        crate::theme::Tokens::text_dim()
+    };
+    let stroke = egui::Stroke::new(1.0, color);
+    let centre = |i: u8| {
+        rect.min
+            + egui::vec2(
+                (i % 3) as f32 * CELL + CELL / 2.0,
+                (i / 3) as f32 * CELL + CELL / 2.0,
+            )
+    };
+    let p = ui.painter().clone();
+    for row in 0..3u8 {
+        p.line_segment([centre(row * 3), centre(row * 3 + 2)], stroke);
+        p.line_segment([centre(row), centre(row + 6)], stroke);
+    }
+    let tip = crate::ui::tips::keyed("docker.fit_to_path_origin");
+    for i in 0..9u8 {
+        let r = egui::Rect::from_center_size(centre(i), egui::vec2(7.0, 7.0));
+        let sense = if enabled {
+            egui::Sense::click()
+        } else {
+            egui::Sense::hover()
+        };
+        let resp = ui.interact(r.expand(2.0), fit_origin_id(i), sense);
+        let fill = if *origin == i {
+            color
+        } else if resp.hovered() && enabled {
+            crate::theme::Tokens::tool_hover()
+        } else {
+            crate::theme::Tokens::panel()
+        };
+        p.rect_filled(r, 0.0, fill);
+        p.rect_stroke(r, 0.0, stroke, egui::StrokeKind::Inside);
+        if resp.rich_tip(tip.clone()).clicked() && enabled {
+            *origin = i;
+        }
     }
 }
 

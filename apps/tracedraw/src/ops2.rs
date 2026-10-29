@@ -1368,7 +1368,7 @@ impl App {
     /// objects placed, become the selection.
     pub fn fit_objects_to_path(&mut self) {
         let shapes = self.selected_shapes();
-        let plan = fit_to_path_plan(&shapes, &self.fit_path);
+        let plan = self.fit_path_plan(&shapes);
         if plan.is_empty() {
             return;
         }
@@ -1409,13 +1409,46 @@ impl App {
             placed.push(id);
             copied = true;
         }
+        // Group all objects: the ones placed that are not inside a group
+        // already, in the same step (#1091).
+        let grouped: Vec<ShapeId> = placed
+            .iter()
+            .copied()
+            .filter(|id| {
+                !shapes.iter().any(|s| s.id == *id) || self.doc().ancestors(*id).is_empty()
+            })
+            .collect();
+        let group = self.fit_path.group && grouped.len() >= 2;
+        if group {
+            cmds.push(Command::Group {
+                shapes: grouped.clone(),
+            });
+        }
         if let Err(e) = self.engine.run_batch("Fit Objects to Path", &cmds) {
             self.status = e.to_string();
             return;
         }
+        if group {
+            if let Some(g) = self.doc().ancestors(grouped[0]).first().copied() {
+                self.select(vec![g]);
+                return;
+            }
+        }
         if copied {
             self.select(placed);
         }
+    }
+
+    /// [`crate::fit_path::fit_to_path_plan_with`] for `shapes` with the panel's settings and the
+    /// centres of rotation moved with the Pick tool.
+    fn fit_path_plan(&self, shapes: &[Shape]) -> Vec<crate::fit_path::Placement> {
+        let pivot = |s: &Shape| {
+            self.pivots
+                .single
+                .get(&s.id)
+                .map(|local| s.transform * *local)
+        };
+        crate::fit_path::fit_to_path_plan_with(shapes, &self.fit_path, &pivot)
     }
 
     /// The Fit Objects to Path panel for the objects selected now: values
@@ -1459,7 +1492,7 @@ impl App {
             .is_none_or(|(k, _)| *k != key)
         {
             let shapes = self.selected_shapes();
-            let plan = fit_to_path_plan(&shapes, &self.fit_path);
+            let plan = self.fit_path_plan(&shapes);
             let boxes = plan.len() > FIT_PREVIEW_OUTLINES;
             let paths = plan
                 .into_iter()
@@ -3517,8 +3550,8 @@ pub struct FitPreviewKey {
 }
 
 pub use crate::fit_path::{
-    fit_to_path_plan, FitAlign, FitCopies, FitMeasure, FitOrder, FitPathSettings, FitPlace,
-    FitRotation, FitSpacing,
+    FitAlign, FitCopies, FitMeasure, FitOrder, FitPathSettings, FitPlace, FitReference,
+    FitRotation, FitSpacing, FitSpin,
 };
 
 #[cfg(test)]
@@ -4438,6 +4471,67 @@ mod tests {
             (r.width() - 2.0).abs() < 1e-6 && (r.height() - 4.0).abs() < 1e-6,
             "{r:?}"
         );
+    }
+
+    /// Keep originals leaves the objects where they were and places
+    /// copies; Group all objects puts what was placed in one group, which
+    /// is selected; one undo takes it all back (#1091).
+    #[test]
+    fn fit_objects_to_path_keeps_originals_and_groups() {
+        let mut app = App::headless();
+        let a = square_at(&mut app, 200.0, 0.0);
+        let b = square_at(&mut app, 210.0, 0.0);
+        let line = line_path(&mut app, &[(0.0, 0.0), (100.0, 0.0)], false);
+        let count = |app: &App| {
+            app.doc()
+                .all_layers()
+                .map(|l| l.shapes.len())
+                .sum::<usize>()
+        };
+        let before = count(&app);
+        app.select(vec![a, b, line]);
+        app.fit_path_follow_selection();
+        app.fit_path = FitPathSettings {
+            keep_originals: true,
+            group: true,
+            copies: FitCopies::Count,
+            count: 4,
+            ..FitPathSettings::default()
+        };
+        app.fit_objects_to_path();
+        // The originals stay; four copies in one group.
+        assert!((centre(&app, a) - Point::new(202.0, 1.0)).hypot() < 1e-9);
+        assert!((centre(&app, b) - Point::new(212.0, 1.0)).hypot() < 1e-9);
+        assert_eq!(count(&app), before + 1);
+        assert_eq!(app.selection.len(), 1);
+        let g = app
+            .doc()
+            .find_shape(app.selection[0])
+            .expect("group")
+            .clone();
+        match &g.kind {
+            ShapeKind::Group { children } => {
+                assert_eq!(children.len(), 4);
+                let xs: Vec<f64> = children.iter().map(|c| c.bounds().center().x).collect();
+                for (x, w) in xs.iter().zip([0.0, 100.0 / 3.0, 200.0 / 3.0, 100.0]) {
+                    assert!((x - w).abs() < 1e-6, "{xs:?}");
+                }
+            }
+            k => panic!("{k:?}"),
+        }
+        assert_eq!(app.engine.undo_label(), Some("Fit Objects to Path"));
+        app.undo();
+        assert_eq!(count(&app), before);
+        // Grouping the objects themselves.
+        app.select(vec![a, b, line]);
+        app.fit_path = FitPathSettings {
+            group: true,
+            ..FitPathSettings::default()
+        };
+        app.fit_objects_to_path();
+        assert_eq!(count(&app), before - 1);
+        let g = app.selection[0];
+        assert!(app.doc().ancestors(a).contains(&g));
     }
 
     /// Copies along the path: a count makes the missing objects as

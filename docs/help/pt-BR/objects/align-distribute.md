@@ -96,6 +96,35 @@ curva ou do contorno de uma forma. Abra-o com
    vão para a camada do objeto que copiam, e os objetos colocados ficam
    selecionados.
 
+Outras opções do painel:
+
+- [[docker.fit_to_path_keep_originals]] deixa os objetos selecionados onde
+  estão e posiciona cópias; [[docker.fit_to_path_group]] põe o que foi
+  posicionado em um só grupo.
+- [[docker.fit_to_path_contiguous]] percorre todas as partes de um caminho
+  feito de várias peças, uma após a outra; desligado, só a primeira peça é
+  usada.
+- [[docker.fit_to_path_reference]] escolhe o ponto de cada objeto que vai
+  sobre o caminho: seu [[docker.fit_to_path_ref_pivot]] (movido com a
+  ferramenta Seleção, se você o moveu), ou um ponto da sua
+  [[docker.fit_to_path_ref_box]] ou [[docker.fit_to_path_ref_outline]],
+  escolhido na grade [[docker.fit_to_path_origin]]. O ponto do meio embaixo
+  deixa os objetos em pé sobre o caminho.
+- [[docker.fit_to_path_ignore_rotation]] endireita objetos que estavam
+  girados antes de posicioná-los.
+- Em [[docker.fit_to_path_modify_rotation]], um
+  [[docker.fit_to_path_spin]] soma um giro a cada objeto:
+  [[docker.fit_to_path_spin_uniform]] gira todos pelo
+  [[docker.fit_to_path_start_angle]], [[docker.fit_to_path_spin_progressive]]
+  gira cada um um pouco mais que o anterior (o
+  [[docker.fit_to_path_spin_angle]] vezes as
+  [[docker.fit_to_path_revolutions]] ao longo da fileira inteira),
+  [[docker.fit_to_path_spin_jitter]] gira cada um de um valor diferente até a
+  [[docker.fit_to_path_range]], e
+  [[docker.fit_to_path_spin_progressive_jitter]] faz os dois. Marque
+  [[docker.fit_to_path_clockwise]] para girar no outro sentido. Só os campos
+  que o estilo usa podem ser mudados.
+
 O painel começa com os valores padrão, sem contornos, sempre que você
 seleciona outros objetos (ou trabalha em outro desenho); os valores que
 você digita ficam enquanto os mesmos objetos estão selecionados. Numa forma fechada, os objetos dão a volta inteira sem que o primeiro e o
