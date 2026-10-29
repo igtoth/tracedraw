@@ -7,6 +7,9 @@ full, row-by-row status.
 ## Unreleased
 
 - Fill winding: a checkbox in the Properties docker's Fill section sets how a curve that crosses itself is filled, non-zero (the middle of a one-stroke star filled) or even-odd (holes kept), drawn on screen and written to SVG and PDF; text keeps non-zero and other curves even-odd unless set (#1211).
+
+## 0.23.0 (2026-10-29)
+
 - Font list filter: the choices now open beside the list, in sections: fonts shown, style (serif, sans serif, script, decorative, monospaced, symbol), weight (light, regular, bold), width (condensed, normal, expanded), technology (TrueType, OpenType, variable), scripts (Latin, Greek, Cyrillic, Arabic, Devanagari, CJK and more), each OpenType feature on its own, embedding rights and the folders the fonts are in. Every value is read from the font files once (OS/2 weight and width classes, embedding bits, Unicode ranges, variation axes, GSUB and GPOS feature lists). Monospaced and Symbol now widen the style choices like the other styles instead of narrowing them (#867).
 - Segment Delete: besides the click and the box, a freehand stroke deletes every stretch it crosses, up to the crossings with other lines, in one step. Choose Freehand on the property bar, or hold Alt as the drag starts to take the other way for that drag (#1150).
 - Tools > Convert Colors: every colour of the selected objects or of the whole drawing (fills, gradient stops, mesh colours, outlines, text, the colours of effects and shadows, the pages' backgrounds) goes to CMYK or to RGB through the colour management profiles, in one undo step. Spot colours stay unless asked; registration colour and bitmaps' pixels never change (#972).
