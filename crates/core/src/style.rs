@@ -861,6 +861,226 @@ pub struct Texture {
     pub seed: u32,
 }
 
+/// The patterns of the procedural fill (the PostScript-style fill): each
+/// is a tile of filled paths drawn by our own code from a few numbers
+/// (see [`crate::procedural::procedural_tile`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ProceduralPattern {
+    /// Regular octagons on a square grid, the gaps between them squares
+    /// (the polygon tiling of octagons and squares).
+    #[default]
+    Octagons,
+    /// A grid of equilateral triangles: lines at 0, 60 and 120 degrees.
+    Triangles,
+    /// Bricks in rows, each row half a brick along from the one below;
+    /// the mortar shows the background.
+    Bricks,
+    /// Regular hexagons, point up, in staggered rows.
+    Honeycomb,
+    /// Two families of diagonal lines.
+    Crosshatch,
+    /// One dot per tile, its size from the share of the tile it covers.
+    Dots,
+    /// A sine wave across the tile.
+    Waves,
+    /// An evenly wound spiral in each tile.
+    Spirals,
+    /// Specks scattered by a pseudo-random sequence from the seed.
+    Speckle,
+}
+
+/// One number of the procedural fill's parameters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ProceduralParam {
+    /// The tile size (the frequency), in mm.
+    Size,
+    /// The width of the lines, in mm.
+    LineWidth,
+    /// The share of the tile a dot covers, 0 to 1.
+    Share,
+    /// A wave's amplitude as a share of the tile size.
+    Amplitude,
+    /// The turns of a spiral.
+    Turns,
+    /// Specks per tile.
+    Density,
+    /// The seed of the pseudo-random sequence.
+    Seed,
+}
+
+impl ProceduralPattern {
+    pub const ALL: [ProceduralPattern; 9] = [
+        ProceduralPattern::Octagons,
+        ProceduralPattern::Triangles,
+        ProceduralPattern::Bricks,
+        ProceduralPattern::Honeycomb,
+        ProceduralPattern::Crosshatch,
+        ProceduralPattern::Dots,
+        ProceduralPattern::Waves,
+        ProceduralPattern::Spirals,
+        ProceduralPattern::Speckle,
+    ];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            ProceduralPattern::Octagons => "Octagons and squares",
+            ProceduralPattern::Triangles => "Triangles",
+            ProceduralPattern::Bricks => "Bricks",
+            ProceduralPattern::Honeycomb => "Honeycomb",
+            ProceduralPattern::Crosshatch => "Crosshatch",
+            ProceduralPattern::Dots => "Dots",
+            ProceduralPattern::Waves => "Waves",
+            ProceduralPattern::Spirals => "Spirals",
+            ProceduralPattern::Speckle => "Speckle",
+        }
+    }
+
+    /// The parameters this pattern uses, in the order an editor shows
+    /// them (the tile size first).
+    pub fn params(self) -> &'static [ProceduralParam] {
+        use ProceduralParam as P;
+        match self {
+            ProceduralPattern::Octagons
+            | ProceduralPattern::Triangles
+            | ProceduralPattern::Honeycomb
+            | ProceduralPattern::Crosshatch => &[P::Size, P::LineWidth],
+            ProceduralPattern::Bricks => &[P::Size, P::LineWidth],
+            ProceduralPattern::Dots => &[P::Size, P::Share],
+            ProceduralPattern::Waves => &[P::Size, P::LineWidth, P::Amplitude],
+            ProceduralPattern::Spirals => &[P::Size, P::LineWidth, P::Turns],
+            ProceduralPattern::Speckle => &[P::Size, P::LineWidth, P::Density, P::Seed],
+        }
+    }
+}
+
+/// The numbers of a procedural fill. Every pattern reads the ones it uses
+/// ([`ProceduralPattern::params`]) and leaves the others as they are, so
+/// switching patterns keeps them.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ProceduralParams {
+    /// The tile size, in mm (the pattern's frequency).
+    #[serde(default = "ProceduralParams::default_size")]
+    pub size_mm: f64,
+    /// The width of the pattern's lines, in mm.
+    #[serde(default = "ProceduralParams::default_line_width")]
+    pub line_width_mm: f64,
+    /// Dots: the share of the tile's area the dot covers (0 to 0.78).
+    #[serde(default = "ProceduralParams::default_share")]
+    pub share: f64,
+    /// Waves: the amplitude as a share of the tile size (0 to 0.45).
+    #[serde(default = "ProceduralParams::default_amplitude")]
+    pub amplitude: f64,
+    /// Spirals: the turns from the centre to the edge.
+    #[serde(default = "ProceduralParams::default_turns")]
+    pub turns: f64,
+    /// Speckle: specks per tile.
+    #[serde(default = "ProceduralParams::default_density")]
+    pub density: f64,
+}
+
+impl ProceduralParams {
+    pub const MIN_SIZE_MM: f64 = 0.5;
+    pub const MAX_SIZE_MM: f64 = 200.0;
+    pub const MIN_LINE_WIDTH_MM: f64 = 0.02;
+    /// A dot can cover at most a disc inscribed in the tile.
+    pub const MAX_SHARE: f64 = 0.78;
+    pub const MAX_AMPLITUDE: f64 = 0.45;
+    pub const MAX_TURNS: f64 = 20.0;
+    pub const MAX_DENSITY: f64 = 1000.0;
+
+    fn default_size() -> f64 {
+        10.0
+    }
+    fn default_line_width() -> f64 {
+        0.5
+    }
+    fn default_share() -> f64 {
+        0.3
+    }
+    fn default_amplitude() -> f64 {
+        0.2
+    }
+    fn default_turns() -> f64 {
+        3.0
+    }
+    fn default_density() -> f64 {
+        40.0
+    }
+
+    /// The same numbers within their ranges (a file may hold anything).
+    pub fn clamped(self) -> ProceduralParams {
+        let finite = |v: f64, d: f64| if v.is_finite() { v } else { d };
+        let size_mm = finite(self.size_mm, Self::default_size())
+            .clamp(Self::MIN_SIZE_MM, Self::MAX_SIZE_MM);
+        ProceduralParams {
+            size_mm,
+            line_width_mm: finite(self.line_width_mm, Self::default_line_width())
+                .clamp(Self::MIN_LINE_WIDTH_MM, size_mm / 2.0),
+            share: finite(self.share, Self::default_share()).clamp(0.0, Self::MAX_SHARE),
+            amplitude: finite(self.amplitude, Self::default_amplitude())
+                .clamp(0.0, Self::MAX_AMPLITUDE),
+            turns: finite(self.turns, Self::default_turns()).clamp(0.5, Self::MAX_TURNS),
+            density: finite(self.density, Self::default_density()).clamp(1.0, Self::MAX_DENSITY),
+        }
+    }
+}
+
+impl Default for ProceduralParams {
+    fn default() -> Self {
+        ProceduralParams {
+            size_mm: Self::default_size(),
+            line_width_mm: Self::default_line_width(),
+            share: Self::default_share(),
+            amplitude: Self::default_amplitude(),
+            turns: Self::default_turns(),
+            density: Self::default_density(),
+        }
+    }
+}
+
+/// The procedural fill: a pattern from the library, its numbers, a
+/// foreground colour the paths are filled with, a background colour
+/// behind them (or none: what is beneath shows through), and the seed of
+/// the patterns that scatter.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Procedural {
+    #[serde(default)]
+    pub pattern: ProceduralPattern,
+    #[serde(default)]
+    pub params: ProceduralParams,
+    #[serde(default = "black")]
+    pub foreground: Color,
+    #[serde(default)]
+    pub background: Option<Color>,
+    #[serde(default)]
+    pub seed: u32,
+}
+
+impl Procedural {
+    /// `pattern` in `foreground` on a white background, with the default
+    /// numbers.
+    pub fn new(pattern: ProceduralPattern, foreground: Color) -> Self {
+        Procedural {
+            pattern,
+            params: ProceduralParams::default(),
+            foreground,
+            background: Some(Color::WHITE),
+            seed: 1,
+        }
+    }
+}
+
+impl Default for Procedural {
+    fn default() -> Self {
+        Procedural::new(ProceduralPattern::Octagons, Color::BLACK)
+    }
+}
+
+fn black() -> Color {
+    Color::BLACK
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[serde(tag = "fill", rename_all = "lowercase")]
 pub enum Fill {
@@ -871,6 +1091,7 @@ pub enum Fill {
     Pattern(Pattern),
     Texture(Texture),
     Mesh(Mesh),
+    Procedural(Procedural),
 }
 
 /// Mesh fill: a grid of (rows+1) x (cols+1) nodes with a colour each;
@@ -1181,6 +1402,7 @@ impl Fill {
             ),
             Fill::Texture(t) => Some(t.color_a),
             Fill::Mesh(m) => m.nodes.first().map(|n| n.color),
+            Fill::Procedural(p) => Some(p.foreground),
         }
     }
 }
@@ -1563,6 +1785,35 @@ impl Default for Stroke {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A procedural fill written without its numbers (an older or a
+    /// hand-made file) takes the defaults; one written whole reads back
+    /// as it was.
+    #[test]
+    fn procedural_fill_has_serde_defaults() {
+        let bare: Procedural =
+            serde_json::from_str(r#"{"pattern":"waves","foreground":{"model":"gray","v":0.2}}"#)
+                .unwrap();
+        assert_eq!(bare.pattern, ProceduralPattern::Waves);
+        assert_eq!(bare.params, ProceduralParams::default());
+        assert_eq!(bare.background, None);
+        assert_eq!(bare.seed, 0);
+        let fill: Fill = serde_json::from_str(r#"{"fill":"procedural"}"#).unwrap();
+        assert!(matches!(fill, Fill::Procedural(p) if p.foreground == Color::BLACK));
+        let mut p = Procedural::new(ProceduralPattern::Spirals, Color::rgb8(10, 20, 30));
+        p.params.turns = 7.5;
+        p.seed = 9;
+        let text = serde_json::to_string(&Fill::Procedural(p.clone())).unwrap();
+        assert!(text.contains("\"fill\":\"procedural\""), "{text}");
+        assert!(text.contains("\"pattern\":\"spirals\""), "{text}");
+        let back: Fill = serde_json::from_str(&text).unwrap();
+        assert_eq!(back, Fill::Procedural(p));
+        // Every pattern has a name and uses the tile size first.
+        for pattern in ProceduralPattern::ALL {
+            assert!(!pattern.name().is_empty());
+            assert_eq!(pattern.params().first(), Some(&ProceduralParam::Size));
+        }
+    }
 
     /// #804: a double-click inside a mesh puts a node exactly where it
     /// was, also in a cell pulled out of shape, its colour mixed from

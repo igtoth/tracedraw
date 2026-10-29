@@ -483,6 +483,14 @@ struct PageWriter<'a> {
     content: String,
     pdf: &'a mut Pdf,
     shadings: Vec<(String, usize)>,
+    /// The tiling patterns this page uses (resource name, object).
+    patterns: Vec<(String, usize)>,
+    /// Which procedural fill each tiling pattern holds (resource name,
+    /// the fill's debug text), so a fill used twice is written once.
+    pattern_keys: Vec<(String, String)>,
+    /// Where the page's origin is in the space the shapes are written in
+    /// (the bleed and the marks margin move it), in mm.
+    page_origin: tracedraw_core::geometry::Point,
     gstates: Vec<(String, usize)>,
     images: Vec<(String, usize)>,
     symbols: &'a [tracedraw_core::Symbol],
@@ -733,6 +741,22 @@ impl PageWriter<'_> {
                 self.path_ops(path);
                 let _ = writeln!(self.content, "{clip} n /{name} sh\nQ");
             }
+            // A procedural fill: a tiling pattern holding the tile's paths
+            // (and its background), the same vectors the screen draws.
+            Fill::Procedural(p) => {
+                let Some(name) = self.procedural_pattern(p) else {
+                    let op = self.color_op(p.foreground, true);
+                    let _ = writeln!(self.content, "{op}");
+                    self.path_ops(path);
+                    let _ = writeln!(self.content, "{fill_op}");
+                    return;
+                };
+                self.content.push_str("q\n/Pattern cs /");
+                self.content.push_str(&name);
+                self.content.push_str(" scn\n");
+                self.path_ops(path);
+                let _ = writeln!(self.content, "{fill_op}\nQ");
+            }
             // Patterns, textures, meshes and shaped gradients are
             // rasterised into an image clipped by the path; the renderer
             // produces the same pixels as the screen.
@@ -768,6 +792,65 @@ impl PageWriter<'_> {
                 }
             }
         }
+    }
+
+    /// The tiling pattern of a procedural fill, written once per fill on
+    /// this page: a coloured pattern (ISO 32000 section 8.7.3) whose cell
+    /// is the tile, its paths filled with the foreground over a rectangle
+    /// of the background, in points, placed from the page's origin. None
+    /// when the tile is degenerate.
+    fn procedural_pattern(&mut self, p: &tracedraw_core::Procedural) -> Option<String> {
+        let tile = tracedraw_core::procedural::procedural_tile(p);
+        let (w, h) = (tile.size.width * MM_PT, tile.size.height * MM_PT);
+        if !(w > 0.0 && h > 0.0 && w.is_finite() && h.is_finite()) {
+            return None;
+        }
+        let key = format!("{p:?}");
+        if let Some((name, _)) = self.pattern_keys.iter().find(|(_, k)| *k == key) {
+            return Some(name.clone());
+        }
+        // Spot and registration colours need colour spaces the pattern's
+        // own resources would have to carry: their process stand-ins go
+        // in instead.
+        let plain = |c: Color| match c {
+            Color::Spot { .. } | Color::Registration => {
+                let [r, g, b] = c.to_rgb8();
+                Color::rgb8(r, g, b)
+            }
+            c => c,
+        };
+        let cmyk_only = self.pdf.cmyk_only;
+        let mut body = String::new();
+        if let Some(bg) = p.background {
+            let _ = writeln!(
+                body,
+                "{} 0 0 {} {} re f",
+                color_op_in(plain(bg), true, cmyk_only),
+                f(w),
+                f(h)
+            );
+        }
+        let _ = writeln!(body, "{}", color_op_in(plain(p.foreground), true, cmyk_only));
+        // The tile's paths through `path_ops`, which writes in points.
+        let saved = std::mem::take(&mut self.content);
+        for path in &tile.paths {
+            self.path_ops(path);
+            self.content.push_str("f\n");
+        }
+        body.push_str(&std::mem::replace(&mut self.content, saved));
+        let origin = self.page_origin;
+        let dict = format!(
+            "/Type /Pattern /PatternType 1 /PaintType 1 /TilingType 1 /BBox [0 0 {w} {h}] /XStep {w} /YStep {h} /Resources << >> /Matrix [1 0 0 1 {} {}]",
+            f(origin.x * MM_PT),
+            f(origin.y * MM_PT),
+            w = f(w),
+            h = f(h)
+        );
+        let id = self.pdf.stream(&dict, body.as_bytes());
+        let name = format!("P{}", self.patterns.len());
+        self.patterns.push((name.clone(), id));
+        self.pattern_keys.push((name.clone(), key));
+        Some(name)
     }
 
     fn shape(&mut self, shape: &Shape, parent: Affine) {
@@ -1952,6 +2035,9 @@ pub fn document_to_pdf_report(doc: &Document, opts: &PdfOptions) -> (Vec<u8>, Pd
             content: String::new(),
             pdf: &mut pdf,
             shadings: Vec::new(),
+            patterns: Vec::new(),
+            pattern_keys: Vec::new(),
+            page_origin: tracedraw_core::geometry::Point::new(edge, edge),
             gstates: Vec::new(),
             images: Vec::new(),
             symbols: &doc.symbols,
@@ -2017,6 +2103,7 @@ pub fn document_to_pdf_report(doc: &Document, opts: &PdfOptions) -> (Vec<u8>, Pd
         let PageWriter {
             content,
             shadings,
+            patterns,
             gstates,
             images,
             spaces,
@@ -2033,6 +2120,13 @@ pub fn document_to_pdf_report(doc: &Document, opts: &PdfOptions) -> (Vec<u8>, Pd
         if !shadings.is_empty() {
             res.push_str("/Shading << ");
             for (n, id) in &shadings {
+                let _ = write!(res, "/{n} {id} 0 R ");
+            }
+            res.push_str(">> ");
+        }
+        if !patterns.is_empty() {
+            res.push_str("/Pattern << ");
+            for (n, id) in &patterns {
                 let _ = write!(res, "/{n} {id} 0 R ");
             }
             res.push_str(">> ");
@@ -2671,6 +2765,55 @@ mod tests {
         st.width = tracedraw_core::Stroke::HAIRLINE;
         let text = one_rect_pdf(Fill::None, Some(st));
         assert!(text.contains("\nS\n"), "{text}");
+    }
+
+    /// A procedural fill is a tiling pattern holding the tile's paths,
+    /// written once however many objects use it, never a picture (#1212).
+    #[test]
+    fn procedural_fill_is_a_tiling_pattern() {
+        use tracedraw_core::{Procedural, ProceduralPattern};
+        let mut p = Procedural::new(ProceduralPattern::Bricks, Color::rgb8(255, 0, 0));
+        p.params.size_mm = 10.0;
+        let text = one_rect_pdf(Fill::Procedural(p.clone()), None);
+        assert!(text.contains("/PatternType 1 /PaintType 1 /TilingType 1"), "{text}");
+        // The cell is the tile in points, stepping its own size.
+        let step = f(10.0 * MM_PT);
+        assert!(
+            text.contains(&format!("/BBox [0 0 {step} {step}] /XStep {step} /YStep {step}")),
+            "{text}"
+        );
+        assert!(text.contains("/Pattern << /P0 "), "{text}");
+        assert!(text.contains("/Pattern cs /P0 scn"), "{text}");
+        // The background rectangle, then the bricks in the foreground.
+        assert!(text.contains(&format!("1 1 1 rg 0 0 {step} {step} re f")), "{text}");
+        assert!(text.contains("1 0 0 rg\n"), "{text}");
+        assert!(!text.contains("/Subtype /Image"), "{text}");
+        // Two objects with the same fill share one pattern.
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        for x in [10.0, 80.0] {
+            let id = doc.ids_mut().shape();
+            let mut s = Shape::new(
+                id,
+                ShapeKind::Rect {
+                    rect: Rect::new(x, 10.0, x + 50.0, 40.0),
+                    radius: 0.0,
+                    corners: None,
+                },
+            );
+            s.fill = Fill::Procedural(p.clone());
+            doc.layer_mut(layer).unwrap().shapes.push(s);
+        }
+        let text = String::from_utf8_lossy(&document_to_pdf(&doc)).to_string();
+        assert_eq!(text.matches("/PatternType 1").count(), 1, "{text}");
+        assert_eq!(text.matches("/Pattern << /P0 ").count(), 1, "{text}");
+        assert!(!text.contains("/P1 "), "{text}");
+        // A procedural outline paint shades the outline's area with it.
+        let mut st = tracedraw_core::Stroke::new(Color::rgb8(0, 255, 0), 2.0);
+        st.fill = Some(Box::new(Fill::Procedural(p)));
+        let text = one_rect_pdf(Fill::None, Some(st));
+        assert!(text.contains("/Pattern cs /P0 scn"), "{text}");
+        assert!(!text.contains("\nS\n"), "{text}");
     }
 
     #[test]
@@ -3945,6 +4088,9 @@ mod text_tests {
             content: String::new(),
             pdf: &mut pdf,
             shadings: Vec::new(),
+            patterns: Vec::new(),
+            pattern_keys: Vec::new(),
+            page_origin: tracedraw_core::geometry::Point::ZERO,
             gstates: Vec::new(),
             images: Vec::new(),
             symbols: &[],

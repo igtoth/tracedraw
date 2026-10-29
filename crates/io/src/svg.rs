@@ -626,6 +626,41 @@ fn paint_value(
             // Approximate with the average of the two colours.
             tracedraw_core::style::lerp_color(t.color_a, t.color_b, 0.5).to_hex()
         }
+        Fill::Procedural(p) => {
+            *next_grad += 1;
+            let id = format!("pat{}", *next_grad);
+            // The tile's paths as they are (vector), with the tile's Y
+            // flip (tile space is Y up, origin bottom-left), over a
+            // rectangle of the background colour when there is one.
+            let tile = tracedraw_core::procedural::procedural_tile(p);
+            let (w, h) = (tile.size.width, tile.size.height);
+            let tile_flip = Affine::new([1.0, 0.0, 0.0, -1.0, 0.0, h]);
+            let mut inner = String::new();
+            if let Some(bg) = p.background {
+                let _ = writeln!(
+                    inner,
+                    "      <rect width=\"{}\" height=\"{}\" fill=\"{}\"/>",
+                    fmt(w),
+                    fmt(h),
+                    bg.to_hex()
+                );
+            }
+            let fg = p.foreground.to_hex();
+            for path in &tile.paths {
+                let _ = writeln!(
+                    inner,
+                    "      <path d=\"{}\" fill=\"{fg}\"/>",
+                    path_data(&(tile_flip * path))
+                );
+            }
+            let _ = writeln!(
+                defs,
+                "    <pattern id=\"{id}\" patternUnits=\"userSpaceOnUse\" width=\"{}\" height=\"{}\">\n{inner}    </pattern>",
+                fmt(w),
+                fmt(h)
+            );
+            format!("url(#{id})")
+        }
         Fill::Mesh(m) => {
             // Average of the node colours; the renderer image path is exact.
             let n = m.nodes.len().max(1) as f32;
@@ -670,6 +705,10 @@ pub fn average_luminance(fill: &Fill) -> f32 {
         }
         Fill::Pattern(_) => 0.5,
         Fill::Texture(t) => (t.color_a.luminance() + t.color_b.luminance()) / 2.0,
+        Fill::Procedural(p) => {
+            let back = p.background.map_or(1.0, |b| b.luminance());
+            (p.foreground.luminance() + back) / 2.0
+        }
         Fill::Mesh(m) => {
             let n = m.nodes.len().max(1) as f32;
             m.nodes.iter().map(|x| x.color.luminance()).sum::<f32>() / n
@@ -1157,6 +1196,33 @@ mod tests {
         s.stroke = stroke;
         doc.layer_mut(layer).unwrap().shapes.push(s);
         page_to_svg(&doc, 0)
+    }
+
+    /// A procedural fill is a `<pattern>` holding the tile's paths as
+    /// vectors over its background, never a picture (#1212).
+    #[test]
+    fn procedural_fill_is_a_vector_pattern() {
+        use tracedraw_core::{Procedural, ProceduralPattern};
+        let mut p = Procedural::new(ProceduralPattern::Honeycomb, Color::rgb8(255, 0, 0));
+        p.params.size_mm = 6.0;
+        let svg = one_shape_svg(Fill::Procedural(p.clone()), None);
+        assert!(svg.contains("fill=\"url(#pat1)\""), "{svg}");
+        let start = svg.find("<pattern id=\"pat1\"").expect("a pattern");
+        let end = svg[start..].find("</pattern>").expect("closed") + start;
+        let pat = &svg[start..end];
+        assert!(pat.contains("patternUnits=\"userSpaceOnUse\""), "{pat}");
+        assert!(pat.contains("width=\"6\""), "{pat}");
+        // Two rows of hexagons: the tile is sqrt(3) times as high.
+        assert!(pat.contains("height=\"10.3923\""), "{pat}");
+        assert!(pat.contains("<rect width=\"6\" height=\"10.3923\" fill=\"#ffffff\"/>"));
+        assert_eq!(pat.matches("<path d=\"").count(), 7, "{pat}");
+        assert!(pat.contains("fill=\"#ff0000\""), "{pat}");
+        assert!(!pat.contains("<image"), "{pat}");
+        // No background: no rectangle, what is beneath shows through.
+        p.background = None;
+        let svg = one_shape_svg(Fill::Procedural(p), None);
+        assert!(!svg.contains("<rect width=\"6\""), "{svg}");
+        assert!(svg.contains("<pattern id=\"pat1\""), "{svg}");
     }
 
     /// A fill whose nodes were placed freely goes out through a gradient

@@ -10,7 +10,7 @@
 //! selection ([`stroke_mixed`], [`fill_mixed`]), so it can show them as
 //! mixed.
 
-use crate::style::{Fill, Fountain, Stroke};
+use crate::style::{Fill, Fountain, Procedural, Stroke};
 use serde::{Deserialize, Serialize};
 
 /// One attribute of an outline.
@@ -203,9 +203,89 @@ pub enum FillField {
     /// Where the nodes are placed freely (see `Fountain::handles`), or
     /// none: the angle and the offset place the fill.
     Handles,
+    /// A procedural fill's pattern.
+    ProceduralPattern,
+    /// A procedural fill's tile size.
+    ProceduralSize,
+    ProceduralLineWidth,
+    /// The share of the tile a dot covers.
+    ProceduralShare,
+    ProceduralAmplitude,
+    ProceduralTurns,
+    ProceduralDensity,
+    ProceduralSeed,
+    /// A procedural fill's foreground colour.
+    Foreground,
+    /// A procedural fill's background colour, or none.
+    Background,
 }
 
 impl FillField {
+    /// The procedural fill's fields, in the order an editor shows them.
+    pub const PROCEDURAL: [FillField; 10] = [
+        FillField::ProceduralPattern,
+        FillField::ProceduralSize,
+        FillField::ProceduralLineWidth,
+        FillField::ProceduralShare,
+        FillField::ProceduralAmplitude,
+        FillField::ProceduralTurns,
+        FillField::ProceduralDensity,
+        FillField::ProceduralSeed,
+        FillField::Foreground,
+        FillField::Background,
+    ];
+
+    /// Whether this is one of the procedural fill's fields.
+    pub fn is_procedural(self) -> bool {
+        FillField::PROCEDURAL.contains(&self)
+    }
+
+    /// The field of a procedural parameter.
+    pub fn of_param(p: crate::style::ProceduralParam) -> FillField {
+        use crate::style::ProceduralParam as P;
+        match p {
+            P::Size => FillField::ProceduralSize,
+            P::LineWidth => FillField::ProceduralLineWidth,
+            P::Share => FillField::ProceduralShare,
+            P::Amplitude => FillField::ProceduralAmplitude,
+            P::Turns => FillField::ProceduralTurns,
+            P::Density => FillField::ProceduralDensity,
+            P::Seed => FillField::ProceduralSeed,
+        }
+    }
+
+    fn same_procedural(self, a: &Procedural, b: &Procedural) -> bool {
+        match self {
+            FillField::ProceduralPattern => a.pattern == b.pattern,
+            FillField::ProceduralSize => a.params.size_mm == b.params.size_mm,
+            FillField::ProceduralLineWidth => a.params.line_width_mm == b.params.line_width_mm,
+            FillField::ProceduralShare => a.params.share == b.params.share,
+            FillField::ProceduralAmplitude => a.params.amplitude == b.params.amplitude,
+            FillField::ProceduralTurns => a.params.turns == b.params.turns,
+            FillField::ProceduralDensity => a.params.density == b.params.density,
+            FillField::ProceduralSeed => a.seed == b.seed,
+            FillField::Foreground => a.foreground == b.foreground,
+            FillField::Background => a.background == b.background,
+            _ => a == b,
+        }
+    }
+
+    fn copy_procedural(self, from: &Procedural, to: &mut Procedural) {
+        match self {
+            FillField::ProceduralPattern => to.pattern = from.pattern,
+            FillField::ProceduralSize => to.params.size_mm = from.params.size_mm,
+            FillField::ProceduralLineWidth => to.params.line_width_mm = from.params.line_width_mm,
+            FillField::ProceduralShare => to.params.share = from.params.share,
+            FillField::ProceduralAmplitude => to.params.amplitude = from.params.amplitude,
+            FillField::ProceduralTurns => to.params.turns = from.params.turns,
+            FillField::ProceduralDensity => to.params.density = from.params.density,
+            FillField::ProceduralSeed => to.seed = from.seed,
+            FillField::Foreground => to.foreground = from.foreground,
+            FillField::Background => to.background = from.background,
+            _ => *to = from.clone(),
+        }
+    }
+
     /// The gradient fields, in the order an editor shows them.
     pub const FOUNTAIN: [FillField; 11] = [
         FillField::FountainKind,
@@ -239,6 +319,7 @@ impl FillField {
             FillField::Bilinear => a.bilinear == b.bilinear,
             FillField::Invert => a.invert == b.invert,
             FillField::Handles => a.handles == b.handles,
+            _ => true,
         }
     }
 
@@ -267,12 +348,13 @@ impl FillField {
             FillField::Bilinear => to.bilinear = from.bilinear,
             FillField::Invert => to.invert = from.invert,
             FillField::Handles => to.handles = from.handles,
+            _ => {}
         }
     }
 }
 
 /// The type of a fill: 0 none, 1 uniform, 2 fountain, 3 pattern,
-/// 4 texture, 5 mesh.
+/// 4 texture, 5 mesh, 6 procedural.
 pub fn fill_kind(f: &Fill) -> usize {
     match f {
         Fill::None => 0,
@@ -281,15 +363,23 @@ pub fn fill_kind(f: &Fill) -> usize {
         Fill::Pattern(_) => 3,
         Fill::Texture(_) => 4,
         Fill::Mesh(_) => 5,
+        Fill::Procedural(_) => 6,
     }
 }
 
-/// What changed from `old` to `new`: nothing, the whole fill, or some
-/// gradient settings when both are gradients. A changed stop list counts
+/// What changed from `old` to `new`: nothing, the whole fill, some
+/// gradient settings when both are gradients, or some procedural
+/// settings when both are procedural fills. A changed stop list counts
 /// as a start or end colour when only that colour moved.
 pub fn fill_changes(old: &Fill, new: &Fill) -> Vec<FillField> {
     if old == new {
         return Vec::new();
+    }
+    if let (Fill::Procedural(a), Fill::Procedural(b)) = (old, new) {
+        return FillField::PROCEDURAL
+            .into_iter()
+            .filter(|f| !f.same_procedural(a, b))
+            .collect();
     }
     let (Fill::Fountain(a), Fill::Fountain(b)) = (old, new) else {
         return vec![FillField::All];
@@ -319,8 +409,8 @@ pub fn fill_changes(old: &Fill, new: &Fill) -> Vec<FillField> {
 }
 
 /// `target` with `fields` taken from `from`. Gradient fields go into a
-/// gradient target; any other target, or [`FillField::All`], takes the
-/// whole of `from`.
+/// gradient target, procedural fields into a procedural target; any
+/// other target, or [`FillField::All`], takes the whole of `from`.
 pub fn patch_fill(target: &Fill, from: &Fill, fields: &[FillField]) -> Fill {
     if fields.is_empty() {
         return target.clone();
@@ -332,6 +422,15 @@ pub fn patch_fill(target: &Fill, from: &Fill, fields: &[FillField]) -> Fill {
                 field.copy_fountain(f, &mut out);
             }
             Fill::Fountain(out)
+        }
+        (Fill::Procedural(t), Fill::Procedural(f))
+            if fields.iter().all(|field| field.is_procedural()) =>
+        {
+            let mut out = t.clone();
+            for field in fields {
+                field.copy_procedural(f, &mut out);
+            }
+            Fill::Procedural(out)
         }
         _ => from.clone(),
     }
@@ -375,6 +474,10 @@ pub fn fill_mixed<'a>(fills: impl IntoIterator<Item = &'a Fill>) -> FillMix {
             (Fill::Fountain(a), Fill::Fountain(b)) => FillField::FOUNTAIN
                 .into_iter()
                 .filter(|x| !x.same_fountain(a, b))
+                .collect(),
+            (Fill::Procedural(a), Fill::Procedural(b)) => FillField::PROCEDURAL
+                .into_iter()
+                .filter(|x| !x.same_procedural(a, b))
                 .collect(),
             _ if base != f => vec![FillField::All],
             _ => Vec::new(),
@@ -538,5 +641,55 @@ mod tests {
         assert_eq!(m.fields, vec![FillField::Angle]);
         assert!(m.has(FillField::Angle) && !m.has(FillField::EdgePad));
         assert!(fill_mixed([&red, &red]).is_empty());
+    }
+
+    /// A procedural fill's settings change one at a time: the change is
+    /// named, goes into each object's own procedural fill (which keeps
+    /// its other numbers) and shows as mixed when objects differ in it.
+    #[test]
+    fn procedural_settings_change_one_at_a_time() {
+        use crate::style::{Procedural, ProceduralPattern};
+        let plain = Fill::Procedural(Procedural::new(ProceduralPattern::Bricks, Color::BLACK));
+        let mut wide = Procedural::new(ProceduralPattern::Bricks, Color::BLACK);
+        wide.params.line_width_mm = 1.5;
+        let wide = Fill::Procedural(wide);
+        assert_eq!(
+            fill_changes(&plain, &wide),
+            vec![FillField::ProceduralLineWidth]
+        );
+        let mut dots = Procedural::new(ProceduralPattern::Dots, Color::rgb8(255, 0, 0));
+        dots.background = None;
+        let dots = Fill::Procedural(dots);
+        assert_eq!(
+            fill_changes(&plain, &dots),
+            vec![
+                FillField::ProceduralPattern,
+                FillField::Foreground,
+                FillField::Background
+            ]
+        );
+        // The line width goes into a fill of another pattern and size.
+        let mut big = Procedural::new(ProceduralPattern::Spirals, Color::BLACK);
+        big.params.size_mm = 30.0;
+        let out = patch_fill(
+            &Fill::Procedural(big.clone()),
+            &wide,
+            &[FillField::ProceduralLineWidth],
+        );
+        let Fill::Procedural(p) = &out else {
+            panic!("a procedural fill");
+        };
+        assert_eq!(p.pattern, ProceduralPattern::Spirals);
+        assert_eq!(p.params.size_mm, 30.0);
+        assert_eq!(p.params.line_width_mm, 1.5);
+        // The whole fill when the field says so, or into another kind.
+        assert_eq!(patch_fill(&Fill::Procedural(big), &wide, &[FillField::All]), wide);
+        let red = Fill::Solid(Color::rgb8(255, 0, 0));
+        assert_eq!(patch_fill(&red, &wide, &[FillField::ProceduralLineWidth]), wide);
+        // Mixed: the width differs, nothing else.
+        let m = fill_mixed([&plain, &wide]);
+        assert_eq!(m.fields, vec![FillField::ProceduralLineWidth]);
+        assert!(!m.has(FillField::All) && !m.has(FillField::Foreground));
+        assert!(fill_mixed([&red, &wide]).kind);
     }
 }
