@@ -411,9 +411,10 @@ through the master curve, then its channel's curve.
 - Given the Image Adjustments, then undo and redo walk the recorded
   steps and a new change drops the undone ones, snapshots are numbered
   from 1, Auto adjust finds 60 and 200 on columns of grays from 60 to
-  200 with two outliers, the pickers keep the points apart, and every
-  quarter turn maps preview points back to the same pixel
-  (`ui::lab_dialog::tests`).
+  200 with two outliers, the pickers keep the points apart
+  (`ui::lab_dialog::tests`), and every quarter turn of the shared
+  preview maps preview points back to the same point of the picture
+  (`ui::before_after::tests::turned_points_map_back`).
 - Given gray 64, then Contrast Enhancement with input high 128 doubles
   only red when Red is chosen and every channel for Master, and
   Target Color Balance from 64 to 128 changes only green when Green is
