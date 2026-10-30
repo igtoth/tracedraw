@@ -151,13 +151,24 @@ pub fn tip_over<R>(ui: &mut Ui, tip: impl AsRef<str>, add: impl FnOnce(&mut Ui) 
 
 /// A rich tip over `rect`, already drawn: see [`tip_over`].
 pub fn cover(ui: &mut Ui, rect: egui::Rect, id: egui::Id, tip: impl AsRef<str>) {
+    // The pointer rests on the cover: in `rect`, on this layer (not on a
+    // popup over it) and within the clip.
+    let over = ui.rect_contains_pointer(rect);
     // A control inside already showed its own tip this frame.
-    let own_tip = ui.rect_contains_pointer(rect)
+    let own_tip = over
         && ui
             .ctx()
             .viewport(|v| !v.this_pass.tooltips.widget_tooltips.is_empty());
     if !own_tip {
-        ui.interact(rect, id, egui::Sense::hover()).rich_tip(tip);
+        let mut r = ui.interact(rect, id, egui::Sense::hover());
+        // The hover goes to a control inside that takes clicks (a value
+        // box's spin arrows) when it is not hovered as well; the pointer
+        // resting over the cover shows the tip all the same, never while
+        // a button is held (a drag on a slider inside).
+        if over && !r.hovered() && !ui.input(|i| i.pointer.any_down()) {
+            r.flags.set(egui::response::Flags::HOVERED, true);
+        }
+        r.rich_tip(tip);
     }
 }
 

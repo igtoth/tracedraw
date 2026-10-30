@@ -923,7 +923,11 @@ pub fn panel(ui: &mut Ui, id: &str, below: f32, body: impl FnOnce(&mut Ui)) {
                 .id_salt(id)
                 .max_height(body_h - m)
                 .show(ui, |ui| {
-                    ui.set_width(w - m - 16.0);
+                    // The width the scroll area leaves: less the scroll
+                    // bar when the contents do not fit, so the value
+                    // boxes at the right are never cut off (their spin
+                    // arrows were, and lost their tips).
+                    ui.set_width(ui.available_width().min(w - m));
                     body(ui);
                 });
         });
@@ -1167,12 +1171,12 @@ mod tests {
             made.set(made.get() + 1);
             RgbaImage::new(4, 4)
         };
-        cached(&ctx, name, 1, make);
-        cached(&ctx, name, 1, make);
+        let _ = cached(&ctx, name, 1, make);
+        let _ = cached(&ctx, name, 1, make);
         assert_eq!(made.get(), 1);
         assert!(peek(&ctx, name, 1).is_some());
         assert!(peek(&ctx, name, 2).is_none());
-        cached(&ctx, name, 2, make);
+        let _ = cached(&ctx, name, 2, make);
         assert_eq!(made.get(), 2);
     }
 }
