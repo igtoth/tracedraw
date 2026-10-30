@@ -55,7 +55,15 @@ One window, 760 px wide, the same on every system:
   faces drawn by a stand-in and faces in collection files are left out
   (before #1009 only a face of exactly that name, weight and slant was
   embedded, so most text kept no font). It is
-  greyed below version 16 and when no face may be embedded. Both
+  greyed below version 16 and when no face may be embedded. Under the
+  box a small note names the families the file will not carry and why
+  ("Not embedded: Raj 50 (its licence forbids embedding), Missing Sans
+  (no font file to embed)"): a font whose licence bits (OS/2 `fsType`)
+  are restricted or bitmaps only, a face drawn by a stand-in, a face in
+  a collection file; a family with one face that may be embedded is not
+  listed. No note when every face goes in. Before, the box simply showed
+  no size and the user took the font for lost (#1219;
+  `tracedraw_cdr::write::left_out`, `save_as::fonts_left_out_text`). Both
   choices stay for the next Save As and for Save. Embed fonts starts
   off, so that drawings saved one after another do not each carry a copy
   of the same fonts (#886).

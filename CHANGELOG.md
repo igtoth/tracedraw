@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Save Drawing dialog, `.cdr`: when a font the text uses cannot go into the file, a note under Embed fonts names it and says why ("Not embedded: Raj 50 (its licence forbids embedding)"): a licence that forbids embedding (the font's own embedding bits), or no font file to embed (a face drawn by a stand-in, or in a collection file). The box showed no size and nothing said that the font was left out on purpose (#1219). The fonts that may be embedded go in as before.
 - Browser version: its notice now opens with the warning that a browser is slower, marked in red and underlined, then says it is the same program compiled to WebAssembly, and last points to the desktop app, in every language.
 
 ## 0.27.0 (2026-10-30)

@@ -3202,6 +3202,55 @@ fn the_package_lists_the_text_faces_and_embeds_those_allowed() {
         .any(|n| n.starts_with("font/") || n.starts_with("embed/")));
 }
 
+/// The faces embedding leaves out, by family and reason (#1219): a font
+/// whose licence forbids embedding (OS/2 `fsType` restricted), a face
+/// without a font file (drawn by a stand-in, or in a collection); a
+/// family with one face that may be embedded is not listed, and a family
+/// is listed once.
+#[test]
+fn embedding_names_the_families_it_leaves_out_and_why() {
+    const REGULAR: &[u8] =
+        include_bytes!("../../../../apps/tracedraw/assets/fonts/Selawik-Regular.ttf");
+    const BOLD: &[u8] = include_bytes!("../../../../apps/tracedraw/assets/fonts/Selawik-Bold.ttf");
+    // Selawik Bold with its embedding bits set to "restricted".
+    let mut restricted = BOLD.to_vec();
+    let n = u16::from_be_bytes([restricted[4], restricted[5]]) as usize;
+    for i in 0..n {
+        let rec = 12 + i * 16;
+        if &restricted[rec..rec + 4] == b"OS/2" {
+            let off =
+                u32::from_be_bytes(restricted[rec + 8..rec + 12].try_into().expect("u32")) as usize;
+            restricted[off + 8..off + 10].copy_from_slice(&2u16.to_be_bytes());
+        }
+    }
+    let face = |family: &str, bold: bool, data: Option<&[u8]>| FontFace {
+        family: family.into(),
+        bold,
+        italic: false,
+        data: data.map(|d| std::sync::Arc::new(d.to_vec())),
+    };
+    let faces = vec![
+        face("Locked", false, Some(&restricted)),
+        face("Locked", true, Some(&restricted)),
+        face("Missing Sans", false, None),
+        face("Selawik", true, Some(&restricted)),
+        face("Selawik", false, Some(REGULAR)),
+    ];
+    assert_eq!(
+        left_out(&faces),
+        vec![
+            ("Locked".to_string(), LeftOut::Licence),
+            ("Missing Sans".to_string(), LeftOut::NoFile),
+        ]
+    );
+    assert_eq!(embedded_size(&faces), REGULAR.len() as u64);
+    // The other way round too: the embeddable face first.
+    let mut swapped = faces.clone();
+    swapped.swap(3, 4);
+    assert_eq!(left_out(&swapped).len(), 2);
+    assert!(left_out(&[face("Selawik", false, Some(REGULAR))]).is_empty());
+}
+
 /// Embedded fonts are written as files that embed them have them (#352):
 /// each font table entry carries its family's font id from the drawing
 /// (shared by the faces of a family), entries and embeddings follow

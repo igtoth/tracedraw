@@ -214,6 +214,41 @@ pub fn embedded_size(faces: &[FontFace]) -> u64 {
     seen.iter().map(|d| d.len() as u64).sum()
 }
 
+/// Why embedding leaves a face the text uses out of the file (#1219).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LeftOut {
+    /// The font's licence (its OS/2 `fsType`) forbids embedding, or the
+    /// font holds bitmaps only.
+    Licence,
+    /// No font file to embed: the face is drawn by a stand-in, or its
+    /// file is a collection (`.ttc`).
+    NoFile,
+}
+
+/// The families of `faces` that embedding leaves out, each once with the
+/// reason; a family with one face that may be embedded is not listed.
+pub fn left_out(faces: &[FontFace]) -> Vec<(String, LeftOut)> {
+    let mut out: Vec<(String, LeftOut)> = Vec::new();
+    for f in faces {
+        let why = match &f.data {
+            Some(_) if info(f).embeddable => {
+                out.retain(|(family, _)| family != &f.family);
+                continue;
+            }
+            Some(_) => LeftOut::Licence,
+            None => LeftOut::NoFile,
+        };
+        let embedded = faces
+            .iter()
+            .any(|g| g.family == f.family && g.data.as_ref().is_some_and(|_| info(g).embeddable));
+        if embedded || out.iter().any(|(family, _)| family == &f.family) {
+            continue;
+        }
+        out.push((f.family.clone(), why));
+    }
+    out
+}
+
 /// A string as the font table stores it: its length in UTF-16 units with
 /// the closing zero, then the units.
 fn string(b: &mut Buf, s: &str) {

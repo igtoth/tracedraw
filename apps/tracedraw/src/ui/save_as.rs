@@ -53,6 +53,10 @@ pub struct SaveAsState {
     pub fonts_size: u64,
     /// The fonts go into the file (`.cdr` from version 16).
     pub embed_fonts: bool,
+    /// The families embedding leaves out of a `.cdr` file, with the
+    /// reason, named under the box so the user knows why a font is not
+    /// in the file (#1219).
+    pub fonts_left_out: Vec<(String, tracedraw_cdr::write::LeftOut)>,
     /// What embedding the installed fonts the text uses adds to a
     /// `.tdraw` file, in bytes (0: none may be).
     pub tdraw_fonts_size: u64,
@@ -132,6 +136,7 @@ impl SaveAsState {
         let cdr = file.is_some_and(|f| crate::app::is_cdr_path(f))
             || app.cdr_version.is_some()
             || (file.is_none() && app.settings.formats.save_new_as_cdr);
+        let cdr_faces = crate::app::cdr_font_faces(doc);
         let mut st = SaveAsState {
             dir_text: dir.display().to_string(),
             dir: dir.clone(),
@@ -156,8 +161,9 @@ impl SaveAsState {
                 .map(|p| (p.name.clone(), p.data.len()))
                 .or_else(|| app.settings_cmyk_profile().map(|p| (p.name, p.data.len()))),
             embed_profile: app.cdr_embed_profile,
-            fonts_size: tracedraw_cdr::write::embedded_size(&crate::app::cdr_font_faces(doc)),
+            fonts_size: tracedraw_cdr::write::embedded_size(&cdr_faces),
             embed_fonts: app.cdr_embed_fonts,
+            fonts_left_out: tracedraw_cdr::write::left_out(&cdr_faces),
             tdraw_fonts_size: tracedraw_text::fonts()
                 .fonts_to_embed(doc)
                 .iter()
@@ -589,6 +595,29 @@ fn place_name(place: Place, path: &Path) -> String {
         Place::Pictures => tr("dialog.place_pictures"),
         Place::Root => path.display().to_string(),
     }
+}
+
+/// The note under Embed fonts naming the families the `.cdr` file will
+/// not carry and why ("Not embedded: Raj 50 (its licence forbids
+/// embedding)"); none when every face may be embedded (#1219).
+pub fn fonts_left_out_text(left_out: &[(String, tracedraw_cdr::write::LeftOut)]) -> Option<String> {
+    if left_out.is_empty() {
+        return None;
+    }
+    let fonts: Vec<String> = left_out
+        .iter()
+        .map(|(family, why)| {
+            let key = match why {
+                tracedraw_cdr::write::LeftOut::Licence => "dialog.embed_font_licence",
+                tracedraw_cdr::write::LeftOut::NoFile => "dialog.embed_font_no_file",
+            };
+            trf(key, &[("font", family)])
+        })
+        .collect();
+    Some(trf(
+        "dialog.embed_fonts_left_out",
+        &[("fonts", &fonts.join(", "))],
+    ))
 }
 
 /// A size as the list shows it: KB from 1 KB, MB from 1 MB.
@@ -1082,6 +1111,11 @@ fn fields(ui: &mut Ui, st: &mut SaveAsState) {
                         .changed()
                     {
                         st.embed_fonts = on;
+                    }
+                    // The fonts the file will not carry, and why, so a
+                    // box without a size is not a mystery (#1219).
+                    if let Some(note) = fonts_left_out_text(&st.fonts_left_out) {
+                        ui.label(RichText::new(note).small().color(Tokens::text_dim()));
                     }
                 });
             });
@@ -1815,5 +1849,27 @@ mod tests {
         st.cdr = true;
         assert!(!st.packaged());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The note under Embed fonts names each family left out with its
+    /// reason, and is absent when every face may be embedded (#1219).
+    #[test]
+    fn the_fonts_left_out_are_named_with_their_reason() {
+        use tracedraw_cdr::write::LeftOut;
+        assert_eq!(fonts_left_out_text(&[]), None);
+        let note = fonts_left_out_text(&[
+            ("Raj 50".to_string(), LeftOut::Licence),
+            ("Missing Sans".to_string(), LeftOut::NoFile),
+        ])
+        .expect("a note");
+        assert!(
+            note.contains("Raj 50 (its licence forbids embedding)"),
+            "{note}"
+        );
+        assert!(
+            note.contains("Missing Sans (no font file to embed)"),
+            "{note}"
+        );
+        assert!(note.starts_with("Not embedded: "), "{note}");
     }
 }

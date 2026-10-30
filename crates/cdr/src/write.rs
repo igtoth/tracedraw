@@ -4840,7 +4840,7 @@ impl<'a> Writer<'a> {
 }
 
 mod fonts;
-pub use fonts::{embedded_size, FontFace};
+pub use fonts::{embedded_size, left_out, FontFace, LeftOut};
 
 #[cfg(test)]
 mod tests;
