@@ -31,6 +31,14 @@ fn prepare_folders(app: &AndroidApp) {
     if let Some(dir) = app.internal_data_path() {
         std::env::set_var("TRACEDRAW_CONFIG_DIR", &dir);
         log::info!("settings in {}", dir.display());
+        // The temporary folder (auto-backups and the session marker of
+        // the crash recovery, files handed to other steps): the system's
+        // default, /data/local/tmp, is closed to apps.
+        let tmp = dir.join("tmp");
+        match std::fs::create_dir_all(&tmp) {
+            Ok(()) => std::env::set_var("TMPDIR", &tmp),
+            Err(e) => log::warn!("temporary folder {}: {e}", tmp.display()),
+        }
     }
     if let Some(dir) = app.external_data_path() {
         std::env::set_var("TRACEDRAW_DOCUMENTS_DIR", &dir);
@@ -78,6 +86,7 @@ fn android_main(app: AndroidApp) {
     let options = eframe::NativeOptions {
         android_app: Some(app),
         renderer: eframe::Renderer::Wgpu,
+        wgpu_options: wgpu_options(),
         ..Default::default()
     };
     let result = eframe::run_native(
@@ -90,6 +99,25 @@ fn android_main(app: AndroidApp) {
     );
     if let Err(e) = result {
         log::error!("TraceDraw could not open its window: {e}");
+    }
+}
+
+/// The wgpu set-up of the window: OpenGL ES only, the API the manifest
+/// requires (`android:glEsVersion` 3.0), so every device that installs
+/// the app has it. One API, never two: a window surface made for Vulkan
+/// holds the Android window, and OpenGL ES can then no longer draw into
+/// it (`eglCreateWindowSurface` fails "already connected" and wgpu stops
+/// the app on `Surface::configure`). With Vulkan and OpenGL ES both asked
+/// for, the app closed at once wherever wgpu picked OpenGL ES, as on an
+/// emulator.
+fn wgpu_options() -> eframe::egui_wgpu::WgpuConfiguration {
+    use eframe::egui_wgpu::{SurfaceConfig, WgpuConfiguration, WgpuSetup, WgpuSetupCreateNew};
+    let mut setup = WgpuSetupCreateNew::without_display_handle();
+    setup.instance_descriptor.backends = crate::gpu::ANDROID_BACKENDS;
+    WgpuConfiguration {
+        surface: SurfaceConfig::LOW_LATENCY,
+        wgpu_setup: WgpuSetup::CreateNew(setup),
+        ..Default::default()
     }
 }
 

@@ -10,11 +10,12 @@ field names as a guide.
 
 ## What the build gives you
 
-- `tracedraw-<version>-android-arm64-v8a-debug.apk`: debug-signed, for
-  `adb install` on a tablet with "install from unknown sources". Never
-  upload it.
+- `tracedraw-<version>-android-arm64-v8a-debug.apk` (tablets and
+  phones) and `tracedraw-<version>-android-x86_64-debug.apk` (Chromebooks
+  with Intel or AMD processors, emulators): debug-signed, for
+  `adb install` with "install from unknown sources". Never upload them.
 - `tracedraw-<version>-android-release.aab`: the Android App Bundle for
-  Play, signed with the upload key when the four secrets below are set in
+  Play, with both libraries (Play hands each device its own), signed with the upload key when the four secrets below are set in
   the repository (Settings > Secrets and variables > Actions). Without
   them the job makes `tracedraw-<version>-android-debug.aab`, signed with
   the debug key, which Play rejects; it is only for
@@ -125,9 +126,8 @@ with this key: Play registers its certificate as the upload certificate.
     certificate. Write the release notes (fastlane's
     `changelogs/<version code>.txt` holds them).
 13. **Device catalogue.** Release > Device catalogue: with
-    `arm64-v8a` only and OpenGL ES 3.0 required, phones and tablets
-    from 2016 on qualify; exclude nothing more. Chromebooks need an
-    x86_64 library, which the build does not make yet (`behavior/android.md`).
+    `arm64-v8a` and `x86_64` and OpenGL ES 3.0 required, phones and
+    tablets from 2016 on and Chromebooks qualify; exclude nothing more.
 14. **Review.** First reviews take up to a week. Common rejections to
     avoid: a privacy policy that does not match the Data safety form, a
     listing that names other products, screenshots that are not of the
@@ -135,9 +135,12 @@ with this key: Play registers its certificate as the upload certificate.
 
 ## Test on a real tablet before uploading
 
-The build machine cannot run an Android device or emulator, so these
-have never been exercised; they are the first things to check with the
-debug APK (`adb install -r`, then `adb logcat -s tracedraw`):
+CI starts the x86_64 build on Android 11 and 14 emulators on every push
+and checks that it comes up, stays up and draws the editor
+(`behavior/android.md`, "The emulator check"); nothing there taps,
+picks a file or uses the ARM64 library. These are the first things to
+check on a tablet with the debug APK (`adb install -r`, then
+`adb logcat -s tracedraw`):
 
 - The app starts into the Touch workspace and survives rotation and
   going to the background and back.

@@ -1,11 +1,17 @@
 #!/bin/sh
 # Build the Android app for 64-bit ARM tablets and phones into
 # ./dist-android (see docs/behavior/android.md and docs/android-play.md):
-# a debug-signed APK to install by hand, and an Android App Bundle (.aab)
-# for Google Play, signed with the upload key when the release signing
-# variables are set and with the debug key otherwise.
+# a debug-signed APK per ABI to install by hand, and an Android App
+# Bundle (.aab) with every ABI for Google Play, signed with the upload key
+# when the release signing variables are set and with the debug key
+# otherwise.
 #
-# Needs: the Rust target (rustup target add aarch64-linux-android), an
+# ANDROID_ABIS lists the ABIs: arm64-v8a (64-bit ARM, the default) and
+# x86_64 (Chromebooks with Intel or AMD processors, and the emulator),
+# e.g. ANDROID_ABIS="arm64-v8a x86_64".
+#
+# Needs: the Rust targets (rustup target add aarch64-linux-android, and
+# x86_64-linux-android for x86_64), an
 # Android NDK (r26 or later) in ANDROID_NDK_HOME, the Android build tools
 # (aapt2, zipalign, apksigner, d8: an Android SDK in ANDROID_HOME, or the
 # packages on PATH), the android.jar of platform 36 (the SDK's
@@ -35,25 +41,42 @@ TC="$NDK/toolchains/llvm/prebuilt/$host/bin"
 # (targetSdkVersion in the manifest) and the android.jar it links against.
 API=24
 PLATFORM=36
-TARGET=aarch64-linux-android
-ABI=arm64-v8a
-
-# The compiler and linker for the Rust target and for the C code of the
-# dependencies (cc).
-export CC_aarch64_linux_android="$TC/${TARGET}${API}-clang"
-export CXX_aarch64_linux_android="$TC/${TARGET}${API}-clang++"
-export AR_aarch64_linux_android="$TC/llvm-ar"
-export RANLIB_aarch64_linux_android="$TC/llvm-ranlib"
-export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$TC/${TARGET}${API}-clang"
+ABIS="${ANDROID_ABIS:-arm64-v8a}"
+# The Rust target of an ABI.
+rust_target() {
+    case "$1" in
+        arm64-v8a) echo aarch64-linux-android ;;
+        x86_64) echo x86_64-linux-android ;;
+        *) echo "scripts/android/build.sh: unknown ABI $1 (arm64-v8a, x86_64)" >&2; return 1 ;;
+    esac
+}
+for ABI in $ABIS; do rust_target "$ABI" >/dev/null || exit 1; done
 export ANDROID_NDK_HOME="$NDK"
 export ANDROID_NDK_ROOT="$NDK"
 
-# The editor as a shared library (the crate is a library plus a thin
-# program; the library's type is chosen here so the desktop build stays
-# an ordinary binary).
-cargo rustc -p tracedraw --lib --release --target "$TARGET" --crate-type cdylib
-so="${CARGO_TARGET_DIR:-target}/$TARGET/release/libtracedraw.so"
-[ -f "$so" ] || { echo "no $so" >&2; exit 1; }
+out=dist-android
+rm -rf "$out/build" && mkdir -p "$out/build/classes" "$out/tools"
+for ABI in $ABIS; do
+    TARGET=$(rust_target "$ABI")
+    # The compiler and linker for the Rust target and for the C code of
+    # the dependencies (cc), from the NDK.
+    t=$(echo "$TARGET" | tr - _)
+    T=$(echo "$t" | tr '[:lower:]' '[:upper:]')
+    export "CC_$t=$TC/${TARGET}${API}-clang"
+    export "CXX_$t=$TC/${TARGET}${API}-clang++"
+    export "AR_$t=$TC/llvm-ar"
+    export "RANLIB_$t=$TC/llvm-ranlib"
+    export "CARGO_TARGET_${T}_LINKER=$TC/${TARGET}${API}-clang"
+    # The editor as a shared library (the crate is a library plus a thin
+    # program; the library's type is chosen here so the desktop build
+    # stays an ordinary binary).
+    cargo rustc -p tracedraw --lib --release --target "$TARGET" --crate-type cdylib
+    so="${CARGO_TARGET_DIR:-target}/$TARGET/release/libtracedraw.so"
+    [ -f "$so" ] || { echo "no $so" >&2; exit 1; }
+    # The library, without its symbol table (a third smaller).
+    mkdir -p "$out/build/lib/$ABI"
+    "$TC/llvm-strip" --strip-unneeded -o "$out/build/lib/$ABI/libtracedraw.so" "$so"
+done
 
 # The build tools: an SDK's newest build-tools folder, else the ones on PATH.
 bt=""
@@ -83,10 +106,6 @@ fi
 version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
 code=$(echo "$version" | awk -F. '{ printf "%d", $1 * 1000000 + $2 * 1000 + $3 }')
 
-out=dist-android
-rm -rf "$out/build" && mkdir -p "$out/build/lib/$ABI" "$out/build/classes" "$out/tools"
-# The library, without its symbol table (a third smaller).
-"$TC/llvm-strip" --strip-unneeded -o "$out/build/lib/$ABI/libtracedraw.so" "$so"
 # The activity (packaging/android/java): Java 8 class files, then one
 # classes.dex for API 24 and later.
 javac -source 8 -target 8 -Xlint:-options -encoding UTF-8 -bootclasspath "$jar" \
@@ -106,10 +125,8 @@ link() {
         "$@" "$out/build/res.zip"
 }
 
-# ----- the APK: resources, the code, the library; aligned; debug-signed -----
-link "$out/build/unsigned.apk"
-(cd "$out/build" && zip -q -r unsigned.apk lib classes.dex)
-"$ZIPALIGN" -f -p 4 "$out/build/unsigned.apk" "$out/build/aligned.apk"
+# ----- the APKs: resources, the code, one ABI's library; aligned; debug-signed -----
+link "$out/build/resources.apk"
 
 # A debug key, as the Android tools make for development builds: the APK
 # installs on a device with "install from unknown sources" and is not for
@@ -121,11 +138,17 @@ if [ ! -f "$ks" ]; then
         -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 \
         -dname "CN=Android Debug,O=Android,C=US" >/dev/null 2>&1
 fi
-apk="$out/tracedraw-$version-android-$ABI-debug.apk"
-"$APKSIGNER" sign --ks "$ks" --ks-pass pass:android --key-pass pass:android \
-    --ks-key-alias androiddebugkey --min-sdk-version "$API" --out "$apk" "$out/build/aligned.apk"
-"$APKSIGNER" verify --min-sdk-version "$API" "$apk"
-echo "Built $apk; install it with: adb install -r $apk"
+for ABI in $ABIS; do
+    cp "$out/build/resources.apk" "$out/build/unsigned.apk"
+    (cd "$out/build" && zip -q -r unsigned.apk "lib/$ABI" classes.dex)
+    "$ZIPALIGN" -f -p 4 "$out/build/unsigned.apk" "$out/build/aligned.apk"
+    apk="$out/tracedraw-$version-android-$ABI-debug.apk"
+    "$APKSIGNER" sign --ks "$ks" --ks-pass pass:android --key-pass pass:android \
+        --ks-key-alias androiddebugkey --min-sdk-version "$API" --out "$apk" "$out/build/aligned.apk"
+    "$APKSIGNER" verify --min-sdk-version "$API" "$apk"
+    rm -f "$out/build/unsigned.apk" "$out/build/aligned.apk"
+    echo "Built $apk; install it with: adb install -r $apk"
+done
 
 # ----- the App Bundle: the same parts laid out as bundletool wants them -----
 # bundletool: the jar given, the command on PATH, or the pinned release
@@ -153,14 +176,14 @@ run_bundletool() {
 # The base module: the manifest and resources in protocol buffer form
 # (aapt2 --proto-format), the code under dex/, the library under lib/.
 mod="$out/build/module"
-rm -rf "$mod" && mkdir -p "$mod/manifest" "$mod/dex" "$mod/lib/$ABI"
+rm -rf "$mod" && mkdir -p "$mod/manifest" "$mod/dex"
 link "$out/build/proto.apk" --proto-format
 (cd "$out/build" && rm -rf proto && mkdir proto && cd proto && unzip -q ../proto.apk)
 mv "$out/build/proto/AndroidManifest.xml" "$mod/manifest/AndroidManifest.xml"
 mv "$out/build/proto/resources.pb" "$mod/resources.pb"
 [ -d "$out/build/proto/res" ] && mv "$out/build/proto/res" "$mod/res"
 cp "$out/build/classes.dex" "$mod/dex/classes.dex"
-cp "$out/build/lib/$ABI/libtracedraw.so" "$mod/lib/$ABI/libtracedraw.so"
+cp -R "$out/build/lib" "$mod/lib"
 (cd "$mod" && zip -q -r ../base.zip .)
 aab_unsigned="$out/build/unsigned.aab"
 rm -f "$aab_unsigned"

@@ -2,19 +2,20 @@
 
 The same editor built as an Android app for 64-bit ARM tablets and
 phones (#893): `libtracedraw.so`, the `tracedraw` crate compiled as a
-shared library for `aarch64-linux-android`, loaded by the app's activity
+shared library for `aarch64-linux-android` (and `x86_64-linux-android`
+for Chromebooks with Intel or AMD processors), loaded by the app's activity
 (`dev.tracedraw.app.TraceDrawActivity`, a `NativeActivity` with a page
 of Java in `packaging/android/java`) and packaged as an APK and as an
 App Bundle. eframe drives egui through winit's Android backend
-(`android-activity`, native activity) and draws with wgpu (Vulkan, or
-OpenGL ES through wgpu where Vulkan is missing); touch and stylus events
+(`android-activity`, native activity) and draws with wgpu through
+OpenGL ES 3, which the manifest requires; touch and stylus events
 reach egui as pointer and touch events, so the canvas, toolbox, property
 bar and menus work with a finger or a pen. Phase 2 (files and the
-clipboard through the system, a bundle for Google Play) builds and
-passes every check that can be made off a device; it has not been
-launched on a device or emulator yet, and it is not one of the release
-downloads. `docs/android-play.md` lists what the owner does to publish
-it and what to test on a tablet first.
+clipboard through the system, a bundle for Google Play) builds, and CI
+starts it on Android 11 and Android 14 emulators on every push, where
+it stays up and draws the editor (see "The emulator check" below). It
+is not one of the release downloads; `docs/android-play.md` lists what
+the owner does to publish it and what to test on a tablet first.
 
 ## What works and what does not yet
 
@@ -31,9 +32,11 @@ it and what to test on a tablet first.
 | Print, Send To, Edit Bitmap | system programs | not available (no printing service, no external programs) |
 | Clipboard | text, images and files through the system clipboard | text through the system's clipboard service: Copy puts the selection's SVG text there (other apps paste it as text, the editor as objects), Paste reads text copied elsewhere (artistic text, or objects when it is SVG). Pictures and files copied elsewhere are not read yet; copies inside the editor work as before |
 | Settings | `settings.json` in the configuration folder | `settings.json` in the app's private folder (`TRACEDRAW_CONFIG_DIR` set by `android_main`) |
-| Fonts | installed system fonts | the system's fonts (`/system/fonts`: Roboto, Noto and the rest) |
+| Fonts | installed system fonts | the system's fonts (`/system/fonts`, `/product/fonts` and `/vendor/fonts`: Roboto, Noto and the rest; the font database looks in no folder on Android by itself, so `tracedraw_text` names these) |
 | Keyboard | the physical keyboard | a physical or Bluetooth keyboard works; the on-screen keyboard is raised by the system when a text field has the focus (winit's IME), not checked on a device yet |
-| Updates, AI Drawing | HTTPS requests | the requests compile; the certificate check needs the Java side Android gives apps with code, so they are expected to fail until a later phase |
+| Updates | a check of GitHub's releases, asked about at the first start | none: Google Play updates the app (its policy refuses apps that download code of their own), so there is no first-start question and no daily check; Help > Updates opens the app's Play page (`updates::store_install`) |
+| AI Drawing | HTTPS requests | the requests compile; the certificate check needs the Java side Android gives apps with code, so they are expected to fail until a later phase |
+| Temporary files (auto-backups, crash recovery) | the system's temporary folder | `tmp` in the app's private folder (`TMPDIR` set by `android_main`: the system's default, `/data/local/tmp`, is closed to apps) |
 | Help | the user Help in the browser | the same pages open in the browser |
 | Errors | a message box and the log file | the system log only: `adb logcat -s tracedraw` |
 
@@ -91,8 +94,9 @@ editor is when it pastes.
 ## Building the APK and the bundle
 
 ```sh
-rustup target add aarch64-linux-android
+rustup target add aarch64-linux-android x86_64-linux-android
 export ANDROID_NDK_HOME=/path/to/android-ndk-r28   # r26 or later
+export ANDROID_ABIS="arm64-v8a x86_64"   # arm64-v8a alone by default
 # aapt2, zipalign, apksigner and d8 from an Android SDK (ANDROID_HOME)
 # with platforms/android-36 (or ANDROID_PLATFORM_JAR); a JDK (javac,
 # keytool, jarsigner); bundletool (BUNDLETOOL_JAR, on PATH, or
@@ -101,10 +105,11 @@ scripts/android/build.sh
 adb install -r dist-android/tracedraw-<version>-android-arm64-v8a-debug.apk
 ```
 
-The script builds the library (`cargo rustc -p tracedraw --lib --release
---target aarch64-linux-android --crate-type cdylib`, with the NDK's clang
-as the C compiler and linker for the Rust target and the dependencies'
-C code), strips it, compiles the activity (`javac -source 8 -target 8`
+The script builds the library for each ABI in `ANDROID_ABIS`
+(`cargo rustc -p tracedraw --lib --release --target
+aarch64-linux-android --crate-type cdylib`, and `x86_64-linux-android`
+for `x86_64`, with the NDK's clang as the C compiler and linker for the
+Rust target and the dependencies' C code), strips it, compiles the activity (`javac -source 8 -target 8`
 against the platform's `android.jar`, then `d8 --min-api 24` into one
 `classes.dex`), compiles the launcher icons (`packaging/android/res`,
 from the application icon), links them with the manifest
@@ -113,8 +118,10 @@ from the application icon), links them with the manifest
 Android 7.0 / API 24, target Android 16 / API 36, full-screen theme,
 every configuration change handled by the app, `INTERNET` the only
 permission) into an APK with the version code from `Cargo.toml`
-(0.19.10 is 19010), adds the code and the library
-(`lib/arm64-v8a/libtracedraw.so`), aligns it and signs it with a debug
+(0.19.10 is 19010), and makes one APK per ABI
+(`tracedraw-<version>-android-<abi>-debug.apk`): it adds the code and
+that ABI's library (`lib/arm64-v8a/libtracedraw.so`), aligns it and
+signs it with a debug
 key (`~/.android/debug.keystore`, made when missing, as the Android
 tools do). A debug-signed APK installs on a device that allows apps from
 unknown sources and is not for a store.
@@ -122,7 +129,8 @@ unknown sources and is not for a store.
 For the bundle the same parts are linked again in protocol buffer form
 (`aapt2 link --proto-format`) and laid out as a base module
 (`manifest/AndroidManifest.xml`, `resources.pb`, `res/`,
-`dex/classes.dex`, `lib/arm64-v8a/`), which `bundletool build-bundle`
+`dex/classes.dex`, `lib/<abi>/` for every ABI built; Play hands each
+device only its own), which `bundletool build-bundle`
 turns into the `.aab`; `jarsigner` signs it with the upload key when
 `ANDROID_KEYSTORE_BASE64` (or `ANDROID_KEYSTORE`), `ANDROID_KEYSTORE_PASSWORD`,
 `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD` are set
@@ -133,7 +141,8 @@ our upload key) and with the debug key otherwise
 bundletool 1.18.1 is pinned with its SHA-256 for the download.
 
 CI (`build.yml`, job `android`) builds both on every push with the NDK
-the GitHub runner has, installs platform 36 when the runner lacks it,
+the GitHub runner has, for `arm64-v8a` and `x86_64`, installs platform
+36 when the runner lacks it,
 passes the four signing secrets to the script (absent: the debug key)
 and keeps the `android-apk` and `android-aab` artifacts; nothing is
 attached to the releases, uploading to Play is the owner's step
@@ -147,17 +156,51 @@ at exact versions; CI passes the secrets and keeps both artifacts) and
 `the_activity_and_the_bridge_agree` (every Java method the Rust bridge
 calls exists with the signature the bridge names; the native method the
 activity declares is the one the bridge registers; every picker call
-ends in a result). `files::tests` cover the document paths and the MIME
+ends in a result), `ci_starts_the_apk_on_an_emulator` (the emulator job,
+its pinned action and what the check looks for) and
+`play_updates_the_android_app`; `gpu::tests::android_draws_with_one_graphics_api`
+(OpenGL ES only). `files::tests` cover the document paths and the MIME
 types. Built here on Linux x86_64 with NDK r28.2, build-tools 36.1.0 and
 the API 36 `android.jar`: the APK and both bundle variants come out,
 `aapt dump badging` gives the package, version code, minimum API 24,
 target 36, `native-code: arm64-v8a` and the launchable activity,
 `apksigner verify` passes with the v2 and v3 schemes, `bundletool
 validate` accepts the bundle and `bundletool build-apks` makes a
-universal APK from it. The APK installs and starts only on a device or
-an emulator, which this build machine has not had: launching it, the
-picker, the saves and the clipboard are the next checks, listed in
-`docs/android-play.md`.
+universal APK from it. The picker, the saves and the clipboard on a
+tablet are the next checks, listed in `docs/android-play.md`.
+
+## The emulator check
+
+CI's `android-emulator` job starts the app on Android emulators with
+KVM on every push, Android 11 (API 30) and Android 14 (API 34), through
+`scripts/android/emulator_check.sh`: it installs the x86_64 APK, starts
+the launcher activity and fails unless, 45 s later, the app's process is
+still the one that started, the app has the focus, the system log has
+no Java `FATAL EXCEPTION`, native crash (`Fatal signal`, a tombstone),
+Rust panic (`panicked at`, `RustPanic`, the app's own `panic:` line) or
+ANR, the app logged its first frame and did not find zero system fonts,
+and the screenshot shows a drawn window (`scripts/android/screen_check.py`:
+no colour on more than 97 % of the screen, at least 16 colours). The
+screenshot, the whole system log, the app's lines and the crash log are
+kept as the `android-emulator-api30` and `android-emulator-api34`
+artifacts; the screenshot shows the editor with its menus, toolbars,
+toolbox, the Welcome Screen and the docker tabs.
+
+The x86_64 library runs natively there. The ARM64 library cannot be
+checked this way: the emulator's ARM translation (Android 11 and 14
+images) stops it in the first JNI calls of the activity glue, before
+any TraceDraw code runs (the `jni` crate's exception check sees an
+exception flagged and none to fetch, and the glue aborts), while the
+same code compiled for x86_64 passes them. The ARM64 build is the same
+source; a device check (`docs/android-play.md`) covers it.
+
+The check found and the code now handles: the window drawn with both
+Vulkan and OpenGL ES asked for (a Vulkan surface holds the Android
+window, OpenGL ES could not draw into it and wgpu stopped the app;
+the app asks for OpenGL ES only, `gpu::ANDROID_BACKENDS`), no system
+fonts (the font database looks in no folder on Android), the temporary
+folder (`/data/local/tmp` is closed to apps) and the update question at
+the first start (Google Play updates the app).
 
 ## How it is wired
 
@@ -207,5 +250,5 @@ picker, the saves and the clipboard are the next checks, listed in
 3. Pen pressure and tilt (#850), palm rejection, a long press as the
    right click.
 4. Printing through the Android print service; the Help inside the app.
-5. 32-bit ARM and x86_64 libraries for Chromebooks; the store listing's
+5. A 32-bit ARM library for older devices; the store listing's
    screenshots from a device.

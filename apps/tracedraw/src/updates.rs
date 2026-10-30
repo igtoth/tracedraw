@@ -19,7 +19,12 @@ pub const LATEST_URL: &str = "https://api.github.com/repos/igtoth/tracedraw/rele
 pub const RELEASES_PAGE: &str = "https://github.com/igtoth/tracedraw/releases";
 /// TraceDraw's page in the Microsoft Store app, which Help > Updates opens
 /// in a copy installed from the Store.
+#[cfg(not(target_os = "android"))]
 pub const STORE_PAGE: &str = "ms-windows-store://pdp/?productid=9P50L12VHF33";
+/// TraceDraw's page on Google Play, which Help > Updates opens in the
+/// Android app.
+#[cfg(target_os = "android")]
+pub const STORE_PAGE: &str = "https://play.google.com/store/apps/details?id=dev.tracedraw.app";
 /// How often the check at start runs, seconds.
 pub const DAILY: u64 = 24 * 60 * 60;
 
@@ -212,7 +217,15 @@ pub fn store_install() -> bool {
     })
 }
 
-#[cfg(not(windows))]
+/// The Android app is updated by Google Play, whose policy refuses an app
+/// that downloads code of its own: it never asks GitHub for a release and
+/// never asks at its first start whether to.
+#[cfg(target_os = "android")]
+pub fn store_install() -> bool {
+    true
+}
+
+#[cfg(not(any(windows, target_os = "android")))]
 pub fn store_install() -> bool {
     false
 }

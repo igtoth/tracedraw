@@ -488,6 +488,10 @@ pub fn adapters() -> &'static [String] {
     })
 }
 
+/// The one graphics API the Android app draws its window with: OpenGL
+/// ES (`android.rs`, `wgpu_options` says why it is never two).
+pub const ANDROID_BACKENDS: eframe::wgpu::Backends = eframe::wgpu::Backends::GL;
+
 /// The order adapters are preferred in: separate cards, built-in ones,
 /// virtual ones, others, then software.
 fn rank(t: eframe::wgpu::DeviceType) -> u8 {
@@ -786,6 +790,18 @@ mod eframe_fixed_function_geometry;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The Android window is drawn with one graphics API, OpenGL ES, and
+    /// the Android entry asks for that one only.
+    #[test]
+    fn android_draws_with_one_graphics_api() {
+        assert_eq!(ANDROID_BACKENDS, eframe::wgpu::Backends::GL);
+        let entry = include_str!("android.rs");
+        assert!(
+            entry.contains("setup.instance_descriptor.backends = crate::gpu::ANDROID_BACKENDS;")
+        );
+        assert!(entry.contains("wgpu_options: wgpu_options(),"));
+    }
 
     /// The OpenGL renderer asks for a compatibility context of any version
     /// when OpenGL 3.3 core and OpenGL ES fail, so a card with OpenGL 2.1

@@ -1385,11 +1385,22 @@ impl TextLayout {
     }
 }
 
+/// The folders of the system fonts on Android: the system's own, then
+/// the ones a device maker or a product adds.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+const ANDROID_FONT_DIRS: [&str; 3] = ["/system/fonts", "/product/fonts", "/vendor/fonts"];
+
 impl FontSystem {
     fn load() -> Self {
         let mut db = fontdb::Database::new();
         #[cfg(not(target_arch = "wasm32"))]
         db.load_system_fonts();
+        // The font database looks in no folder on Android: the system's
+        // fonts (Roboto, Noto and the rest) are in these.
+        #[cfg(target_os = "android")]
+        for dir in ANDROID_FONT_DIRS {
+            db.load_fonts_dir(dir);
+        }
         #[cfg(windows)]
         installed::drop_unregistered(&mut db);
         if let Ok(extra) = EXTRA_FONTS.lock() {

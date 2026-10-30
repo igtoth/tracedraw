@@ -418,7 +418,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@1.97.0
         with:
-          targets: aarch64-linux-android
+          targets: aarch64-linux-android, x86_64-linux-android
       - uses: Swatinem/rust-cache@v2
         with:
           key: android
@@ -428,6 +428,9 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          # 64-bit ARM for tablets and phones; x86_64 for Chromebooks and
+          # the emulator check below.
+          ANDROID_ABIS: arm64-v8a x86_64
         run: |
           # The newest NDK the runner has, the SDK's build tools and the
           # platform the app targets (installed when the runner lacks it).
@@ -448,6 +451,52 @@ jobs:
           name: android-aab
           path: dist-android/*.aab
           if-no-files-found: error
+
+  # The app started on Android emulators, Android 11 and Android 14
+  # (scripts/android/emulator_check.sh): the x86_64 APK installed,
+  # launched from its launcher activity, still running 45 s later, nothing
+  # crashed in the system log, its first frame drawn with the system fonts
+  # loaded and the editor on the screenshot. The runner's KVM runs the
+  # emulator at full speed; the x86_64 library is the same code as the
+  # ARM64 one (the emulator's ARM translation stops the ARM64 library in
+  # the activity glue's first JNI calls, which the x86_64 one passes, so
+  # it cannot stand in for an ARM device). The screenshot and the logs
+  # are kept as the android-emulator-api* artifacts.
+  android-emulator:
+    needs: android
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [30, 34]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-apk
+          path: apk
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Start the app on an emulator
+        # v2.38.0
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
+        with:
+          api-level: ${{ matrix.api }}
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          script: scripts/android/emulator_check.sh "$(ls apk/*-x86_64-debug.apk | head -n 1)" dist-android/emulator-check
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-emulator-api${{ matrix.api }}
+          path: dist-android/emulator-check
+          if-no-files-found: warn
 
   # GitHub Pages must be set to "GitHub Actions" (Settings > Pages); the
   # job tries to enable it and does not fail the build when it cannot.

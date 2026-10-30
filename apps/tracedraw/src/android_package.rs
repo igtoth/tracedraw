@@ -41,8 +41,9 @@ mod tests {
         for needed in [
             "API=24",
             "PLATFORM=36",
-            "TARGET=aarch64-linux-android",
-            "ABI=arm64-v8a",
+            "ABIS=\"${ANDROID_ABIS:-arm64-v8a}\"",
+            "arm64-v8a) echo aarch64-linux-android ;;",
+            "x86_64) echo x86_64-linux-android ;;",
             "cargo rustc -p tracedraw --lib --release --target \"$TARGET\" --crate-type cdylib",
             "libtracedraw.so",
             "packaging/android/AndroidManifest.xml",
@@ -125,6 +126,80 @@ mod tests {
                 "../../packaging/android/res/mipmap-{density}/ic_launcher.png"
             ));
             assert!(path.is_file(), "no launcher icon for {density}");
+        }
+    }
+
+    /// Google Play updates the Android app: it never asks GitHub for a
+    /// release (nor asks at its first start whether to), and Help >
+    /// Updates opens its Play page, named by the manifest's package.
+    #[test]
+    fn play_updates_the_android_app() {
+        let updates = include_str!("updates.rs");
+        let android = updates
+            .split("#[cfg(target_os = \"android\")]\npub fn store_install() -> bool {")
+            .nth(1)
+            .expect("an Android store_install");
+        assert!(android.trim_start().starts_with("true"));
+        assert!(updates.contains(
+            "pub const STORE_PAGE: &str = \"https://play.google.com/store/apps/details?id=dev.tracedraw.app\";"
+        ));
+        assert!(MANIFEST.contains("package=\"dev.tracedraw.app\""));
+    }
+
+    const EMULATOR_CHECK: &str = include_str!("../../../scripts/android/emulator_check.sh");
+    const SCREEN_CHECK: &str = include_str!("../../../scripts/android/screen_check.py");
+
+    /// CI starts the APK it built on an emulator and fails when the app
+    /// does not stay up, crashed or left its window blank.
+    #[test]
+    fn ci_starts_the_apk_on_an_emulator() {
+        let job = CI
+            .split("\n  android-emulator:\n")
+            .nth(1)
+            .and_then(|rest| rest.split("\n\n  ").next())
+            .expect("build.yml has an android-emulator job");
+        for needed in [
+            "needs: android",
+            "name: android-apk",
+            "udevadm trigger --name-match=kvm",
+            "arch: x86_64",
+            "scripts/android/emulator_check.sh",
+            "name: android-emulator",
+        ] {
+            assert!(
+                job.contains(needed),
+                "the android-emulator job lacks {needed:?}"
+            );
+        }
+        // The emulator action is pinned to a commit, not a moving tag.
+        let pinned = job
+            .split("reactivecircus/android-emulator-runner@")
+            .nth(1)
+            .map(|rest| rest.chars().take_while(|c| c.is_ascii_hexdigit()).count());
+        assert_eq!(
+            pinned,
+            Some(40),
+            "the emulator action is pinned to a commit"
+        );
+        for needed in [
+            "pidof",
+            "FATAL EXCEPTION",
+            "Fatal signal",
+            "panicked at",
+            "ANR in",
+            "screencap -p",
+            "first frame",
+            "loaded 0 font faces",
+            "scripts/android/screen_check.py",
+        ] {
+            assert!(
+                EMULATOR_CHECK.contains(needed),
+                "scripts/android/emulator_check.sh lacks {needed:?}"
+            );
+        }
+        assert!(SCREEN_CHECK.contains("MAX_SHARE") && SCREEN_CHECK.contains("MIN_COLOURS"));
+        for text in [EMULATOR_CHECK, SCREEN_CHECK] {
+            assert!(!text.contains('\u{2014}'));
         }
     }
 
