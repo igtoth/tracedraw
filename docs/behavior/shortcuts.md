@@ -28,7 +28,13 @@ Edit > Repeat (Ctrl+R) does again, on the selection of the time, the
 last repeatable action still in effect: a move, scale, rotation or
 skew, a fill, an outline, a transparency, or a copy made with a right
 click during a drag (which makes another copy, transformed as far again
-from the new selection). Each action is kept with the undo step it made
+from the new selection). A move, scale, rotation or skew is kept with
+the box of what it was done to and repeated about the same place of the
+box of the selection of the time: a rotation about the old box's centre
+(or a centre of rotation moved inside it) turns about the new box's
+centre, a resize from a side or corner handle resizes from the same
+side or corner, and a move moves as far; the object it is repeated on
+no longer moves away (#1289, `app::repeated_transform`). Each action is kept with the undo step it made
 (`Engine::last_step_id`, `App::repeatables`): an action undone is never
 repeated, the one before it is (#366); redone, it is the last again; and
 an undone step replaced by another change is gone for good. A copy made

@@ -40,6 +40,11 @@ pub struct CharTracker {
     key: Option<u16>,
     /// The first half of a character outside the basic plane.
     high: Option<u16>,
+    /// Ctrl and Alt held, as their key presses and releases tell: both
+    /// at once are AltGr, whose characters the windowing layer drops as
+    /// the side effects of a Ctrl shortcut (#1271).
+    ctrl: bool,
+    alt: bool,
     /// Characters the windowing layer loses, in the order typed.
     pub lost: String,
 }
@@ -51,10 +56,17 @@ impl CharTracker {
     pub fn message(&mut self, msg: u32, wparam: usize) {
         match msg {
             WM_KEYDOWN | WM_SYSKEYDOWN => {
-                self.key = Some((wparam & 0xFFFF) as u16);
+                let vk = (wparam & 0xFFFF) as u16;
+                self.held(vk, true);
+                self.key = Some(vk);
                 self.high = None;
             }
-            WM_KEYUP | WM_SYSKEYUP | WM_DEADCHAR | WM_SYSDEADCHAR => {
+            WM_KEYUP | WM_SYSKEYUP => {
+                self.held((wparam & 0xFFFF) as u16, false);
+                self.key = None;
+                self.high = None;
+            }
+            WM_DEADCHAR | WM_SYSDEADCHAR => {
                 self.key = None;
                 self.high = None;
             }
@@ -66,7 +78,10 @@ impl CharTracker {
                 // frame later than the message: their scripts are not
                 // taken from a processed key, or they would type twice.
                 let processed = self.key == Some(VK_PROCESSKEY);
-                let lost = self.key.is_none() || processed;
+                // A character of AltGr (Ctrl and Alt held): Polish ą ę ł
+                // ś ż, German @ € { } and many more are dropped too.
+                let altgr = self.ctrl && self.alt;
+                let lost = self.key.is_none() || processed || altgr;
                 let unit = (wparam & 0xFFFF) as u16;
                 let ch = match unit {
                     0xD800..=0xDBFF => {
@@ -96,6 +111,24 @@ impl CharTracker {
         }
     }
 }
+
+impl CharTracker {
+    /// Follow Ctrl and Alt (either side) going down or up.
+    fn held(&mut self, vk: u16, down: bool) {
+        match vk {
+            VK_CONTROL | VK_LCONTROL | VK_RCONTROL => self.ctrl = down,
+            VK_MENU | VK_LMENU | VK_RMENU => self.alt = down,
+            _ => {}
+        }
+    }
+}
+
+pub const VK_CONTROL: u16 = 0x11;
+pub const VK_MENU: u16 = 0x12;
+pub const VK_LCONTROL: u16 = 0xA2;
+pub const VK_RCONTROL: u16 = 0xA3;
+pub const VK_LMENU: u16 = 0xA4;
+pub const VK_RMENU: u16 = 0xA5;
 
 /// A character of the scripts typed with a composing input method
 /// (Chinese, Japanese, Korean, and their full-width forms), which comes
@@ -297,6 +330,41 @@ mod tests {
             (WM_CHAR, 0xF728),
         ]);
         assert_eq!(lost, "");
+    }
+
+    /// #1271: the characters of AltGr (Windows holds Ctrl and Alt for
+    /// it) are kept, since the windowing layer drops the text of keys
+    /// pressed with Ctrl; once AltGr is let go, keys type as before.
+    #[test]
+    fn characters_typed_with_altgr_are_kept() {
+        let lost = feed(&[
+            // AltGr down: Ctrl, then the right Alt.
+            (WM_KEYDOWN, VK_CONTROL as usize),
+            (WM_KEYDOWN, VK_MENU as usize),
+            // Polish: AltGr+A, AltGr+L, AltGr+Z.
+            (WM_KEYDOWN, 0x41),
+            (WM_CHAR, ch('ą')),
+            (WM_KEYUP, 0x41),
+            (WM_KEYDOWN, 0x4C),
+            (WM_CHAR, ch('ł')),
+            (WM_KEYUP, 0x4C),
+            (WM_KEYDOWN, 0x5A),
+            (WM_CHAR, ch('ż')),
+            (WM_KEYUP, 0x5A),
+            (WM_KEYUP, VK_MENU as usize),
+            (WM_KEYUP, VK_CONTROL as usize),
+            // A plain key after it arrives by itself.
+            (WM_KEYDOWN, 0x42),
+            (WM_CHAR, ch('b')),
+            (WM_KEYUP, 0x42),
+            // Ctrl alone: a shortcut's control character is not kept.
+            (WM_KEYDOWN, VK_CONTROL as usize),
+            (WM_KEYDOWN, 0x53),
+            (WM_CHAR, 0x13),
+            (WM_KEYUP, 0x53),
+            (WM_KEYUP, VK_CONTROL as usize),
+        ]);
+        assert_eq!(lost, "ąłż");
     }
 
     #[test]

@@ -642,10 +642,12 @@ mod tests {
         };
         assert_eq!(kind, Some(ExtrudeKind::BackParallel));
         assert!((depth - Vec2::new(8.0, 4.0)).hypot() < 1e-9);
-        // The body is drawn: two faces and the far face behind the object.
+        // The body is drawn: two faces, one object each; the far face
+        // lies hidden behind the filled square and them (#1281).
         let s = app.doc().find_shape(id).cloned().expect("square");
         let ev = tracedraw_core::live::evaluate(&s);
-        assert_eq!(ev.below.iter().filter(|s| s.fill != Fill::None).count(), 3);
+        assert_eq!(ev.below.iter().filter(|s| s.fill != Fill::None).count(), 2);
+        assert_eq!(ev.below.len(), 2);
     }
 
     #[test]

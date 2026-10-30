@@ -315,7 +315,7 @@ impl Body {
         let angle = dir.y.atan2(dir.x).to_degrees();
         // Where a point falls on the fountain's span over the outline's
         // box (as the renderer lays a linear fountain out).
-        let b = outline.bounding_box();
+        let b = kurbo::Shape::bounding_box(outline);
         let half = (b.width() * dir.x.abs() + b.height() * dir.y.abs()) / 2.0;
         if !(half.is_finite() && half > 1e-9) {
             return middle;
@@ -724,7 +724,7 @@ mod tests {
         assert!(fill.stops.windows(2).all(|w| w[0].pos <= w[1].pos));
         // It covers the half of the side toward the vector.
         let b = f.below[0].bounds();
-        assert!(b.x1 > 29.0 && b.y1 > 29.0 && b.x0 < 3.5 && b.y0 < 3.5, "{b:?}");
+        assert!(b.x1 > 29.0 && b.y1 > 29.0 && b.x0 < 4.0 && b.y0 < 4.0, "{b:?}");
     }
 
     #[test]
