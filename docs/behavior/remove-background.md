@@ -52,7 +52,7 @@ on (from any row or "+"):
 |---|---|
 | plain | sets the row the eyedropper was taken for, or adds a row after "+"; the eyedropper goes off |
 | Shift+click | adds the colour under the pointer as a new row (skipped when listed already); the eyedropper stays on |
-| Alt+click | removes the row whose colour is nearest (CIE76) to the one under the pointer; an Automatic row counts with its nearest learnt colour; the eyedropper stays on |
+| Alt+click | removes the row whose colour is nearest (CIE76) to the one under the pointer; an Automatic row counts with its nearest learnt colour, and on a tie the picked row goes; the eyedropper stays on |
 
 The colour is taken from the picture before the change (a removed pixel
 can be picked too). The pan button turns the eyedropper off.

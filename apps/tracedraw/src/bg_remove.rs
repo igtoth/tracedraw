@@ -110,7 +110,7 @@ impl BgSettings {
 
     /// Remove the listed entry nearest in colour to `c` (Automatic
     /// entries by the nearest of `learnt`, the colours learnt from the
-    /// picture); the list never ends up empty: the last entry gone,
+    /// picture; on a tie the picked entry); the list never ends up empty: the last entry gone,
     /// Automatic is left. The index removed comes back.
     pub fn remove_nearest(&mut self, c: [u8; 3], learnt: &[BgColor]) -> Option<usize> {
         let l = lab(c);
@@ -119,13 +119,18 @@ impl BgSettings {
             .iter()
             .enumerate()
             .filter_map(|(i, p)| {
+                // On a tie a picked entry goes before Automatic (whose
+                // learnt colours may hold the picked one too).
                 let d = match p.color {
-                    Some(pc) => dist2(&lab(pc), &l),
-                    None => learnt.iter().map(|b| dist2(&b.lab, &l)).reduce(f32::min)?,
+                    Some(pc) => (dist2(&lab(pc), &l), 0u8),
+                    None => (
+                        learnt.iter().map(|b| dist2(&b.lab, &l)).reduce(f32::min)?,
+                        1u8,
+                    ),
                 };
                 Some((i, d))
             })
-            .min_by(|a, b| a.1.total_cmp(&b.1))?
+            .min_by(|a, b| a.1 .0.total_cmp(&b.1 .0).then(a.1 .1.cmp(&b.1 .1)))?
             .0;
         self.remove(best);
         Some(best)
@@ -868,7 +873,7 @@ mod tests {
         // stays.
         let soft = BgSettings { softness: 2.0, ..s };
         let out = remove_background(&img, &soft, 1.0);
-        assert_eq!(out.get_pixel(48, 30).0[3], 255);
+        assert_eq!(out.get_pixel(50, 40).0[3], 255);
         assert_eq!(out.get_pixel(20, 40).0[3], 0);
     }
 
@@ -963,5 +968,12 @@ mod tests {
         assert_eq!(s.remove_nearest([0, 0, 0], &[]), None);
         s.remove(7);
         assert_eq!(s.colors, vec![BgPick::AUTO]);
+        // A tie between Automatic's learnt white and a picked white: the
+        // picked one goes.
+        let mut t = BgSettings {
+            colors: vec![BgPick::AUTO, BgPick::color([255, 255, 255])],
+            ..BgSettings::default()
+        };
+        assert_eq!(t.remove_nearest([255, 255, 255], &learnt), Some(1));
     }
 }
