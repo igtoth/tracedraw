@@ -31,16 +31,24 @@ parallel, or Small back when they have a vanishing point.
   at that face (back types) or against it (front types). Open subpaths
   show both sides.
 - Faces between corners (where the outline turns by more than 20
-  degrees) make one surface: its faces are filled and edged with a
-  hairline of their own colour, and the surface is outlined once with
-  the object's outline (at most 0.1 mm wide), so a curved side is
-  smooth, not a row of slats.
+  degrees) make one surface, drawn as one object: the outline of its
+  faces filled with their colour (a curved side, whose faces the light
+  shades differently, with a linear fountain across it through their
+  colours, at most a dozen stops) and outlined with the object's
+  outline (at most 0.1 mm wide), or with a hairline of its own colour
+  when the object has none. A square's body is its two sides, a
+  circle's its one curved side: each side breaks apart and takes a
+  colour or a fill as one part, not as a row of slats (#1281).
 - Surfaces are drawn farthest first: along the offset for parallel
   bodies, by distance from the vanishing point for the others (nearer
   is farther for Small back and Big front, the other way for Big back
   and Small front).
 - A back body draws its copy first (the far face, in the darkest
-  colour), then the surfaces, then the object; a front body draws the
+  colour), then the surfaces, then the object. Where the object does
+  not cover the far face, a side does, so the far face is left out when
+  the object is closed and opaque (a solid or opaque fountain fill, full
+  opacity, no transparency or lens); it shows through an object without
+  a fill and with open outlines (#1281); a front body draws the
   object, the surfaces, then the copy looking like the object (its fill
   and outline).
 

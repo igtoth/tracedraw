@@ -818,7 +818,10 @@ mod tests {
                 .collect()
         };
         let mut a = red(&one.faces(&square()).below);
-        let mut b = red(&two.faces(&square()).below);
+        // The plain body leaves out its hidden far face (#1281); the lit
+        // one draws it first.
+        let lit = two.faces(&square()).below;
+        let mut b = red(lit.get(1..).unwrap_or_default());
         a.sort_unstable();
         b.sort_unstable();
         assert_eq!(a.len(), b.len());

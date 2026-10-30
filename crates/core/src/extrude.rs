@@ -269,6 +269,81 @@ impl Body {
         Some((self.depth_key(a.midpoint(b2)), s))
     }
 
+    /// The fill of a surface made of `faces` (edge index, depth, face) of
+    /// the outline `pts`: the faces' one colour, or a fountain across the
+    /// surface through their colours where the light changes along a
+    /// curved side; a shade keeps the middle face's fountain.
+    fn surface_fill(
+        &self,
+        faces: &[(usize, f64, Shape)],
+        pts: &[Point],
+        outline: &BezPath,
+        all_round: bool,
+        light: Vec2,
+    ) -> Fill {
+        let middle = faces
+            .get(faces.len() / 2)
+            .map(|(_, _, s)| s.fill.clone())
+            .unwrap_or(Fill::None);
+        if matches!(self.coloring, Coloring::Shade(..)) {
+            return middle;
+        }
+        let colors: Vec<(Point, Color)> = faces
+            .iter()
+            .filter_map(|(i, _, s)| {
+                let a = *pts.get(*i)?;
+                let b = *pts.get((*i + 1) % pts.len().max(1))?;
+                match s.fill {
+                    Fill::Solid(c) => Some((a.midpoint(b), c)),
+                    _ => None,
+                }
+            })
+            .collect();
+        let (Some(first), Some(last)) = (colors.first(), colors.last()) else {
+            return middle;
+        };
+        if colors.iter().all(|(_, c)| c.to_rgb8() == first.1.to_rgb8()) {
+            return Fill::Solid(first.1);
+        }
+        // Across the surface: from the first face to the last, or along
+        // the light all round.
+        let along = if all_round { light } else { last.0 - first.0 };
+        if along.hypot() < 1e-9 {
+            return middle;
+        }
+        let dir = along.normalize();
+        let angle = dir.y.atan2(dir.x).to_degrees();
+        // Where a point falls on the fountain's span over the outline's
+        // box (as the renderer lays a linear fountain out).
+        let b = kurbo::Shape::bounding_box(outline);
+        let half = (b.width() * dir.x.abs() + b.height() * dir.y.abs()) / 2.0;
+        if !(half.is_finite() && half > 1e-9) {
+            return middle;
+        }
+        let at = |p: Point| (((p - b.center()).dot(dir) + half) / (2.0 * half)).clamp(0.0, 1.0);
+        // At most a dozen stops, evenly through the faces.
+        let step = (colors.len() / 12).max(1);
+        let mut stops: Vec<crate::style::Stop> = colors
+            .iter()
+            .step_by(step)
+            .chain(std::iter::once(last))
+            .map(|(p, c)| crate::style::Stop::new(at(*p), *c))
+            .collect();
+        stops.sort_by(|a, b| {
+            a.pos
+                .partial_cmp(&b.pos)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        stops.dedup_by(|a, b| (a.pos - b.pos).abs() < 1e-6);
+        if stops.len() < 2 {
+            return Fill::Solid(first.1);
+        }
+        let mut f =
+            crate::style::Fountain::two(crate::style::FountainKind::Linear, first.1, last.1, angle);
+        f.stops = stops;
+        Fill::Fountain(f)
+    }
+
     /// The body of `shape` (its outline in its parent's space).
     pub fn faces(&self, shape: &Shape) -> Faces {
         let mut out = Faces::default();
@@ -357,7 +432,7 @@ impl Body {
         // corners make a surface, outlined as one (a curved side is not
         // drawn as a row of slats).
         let corner = 20f64.to_radians().cos();
-        let mut surfaces: Vec<(f64, Vec<Shape>, BezPath)> = Vec::new();
+        let mut surfaces: Vec<(f64, Shape)> = Vec::new();
         for ((pts, is_closed), hole) in subs.iter().zip(holes) {
             let closed = *is_closed;
             // The right of travel is outside a counterclockwise outline.
@@ -459,28 +534,32 @@ impl Body {
                     }
                     outline.close_path();
                 }
-                let mut faces: Vec<(f64, Shape)> =
-                    run.iter().filter_map(|&i| shown[i].clone()).collect();
-                let key = faces.iter().map(|(k, _)| *k).sum::<f64>() / faces.len().max(1) as f64;
-                faces.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
-                surfaces.push((key, faces.into_iter().map(|(_, s)| s).collect(), outline));
-            }
-        }
-        surfaces.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
-        let mut faces: Vec<Shape> = Vec::new();
-        for (_, shapes, outline) in surfaces {
-            faces.extend(shapes);
-            if let Some(st) = &outline_stroke {
-                let mut o = template();
-                o.kind = ShapeKind::Path {
+                // One object for the surface (#1281): its outline filled
+                // with the faces' colours, so a side is one part to paint
+                // or colour, not a row of slats.
+                let faces: Vec<(usize, f64, Shape)> = run
+                    .iter()
+                    .filter_map(|&i| shown[i].clone().map(|(k, s)| (i, k, s)))
+                    .collect();
+                let Some((_, _, middle)) = faces.get(faces.len() / 2) else {
+                    continue;
+                };
+                let key = faces.iter().map(|(_, k, _)| *k).sum::<f64>() / faces.len() as f64;
+                let mut surface = middle.clone();
+                surface.fill = self.surface_fill(&faces, pts, &outline, all_round, light);
+                surface.stroke = match &outline_stroke {
+                    Some(st) => Some(st.clone()),
+                    None => surface.fill.preview_color().map(crate::Stroke::hairline),
+                };
+                surface.kind = ShapeKind::Path {
                     path: outline,
                     closed: true,
                 };
-                o.fill = Fill::None;
-                o.stroke = Some(st.clone());
-                faces.push(o);
+                surfaces.push((key, surface));
             }
         }
+        surfaces.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+        let faces: Vec<Shape> = surfaces.into_iter().map(|(_, s)| s).collect();
         // The copy: the far face, or the near face looking like the object.
         let mut copy_path = BezPath::new();
         for (pts, is_closed) in &subs {
@@ -509,17 +588,39 @@ impl Body {
             out.above.extend(faces);
             out.above.push(near);
         } else {
-            let mut far = template();
-            far.kind = ShapeKind::Path {
-                path: copy_path,
-                closed: any_closed,
+            // The far face lies behind the object and the sides: where the
+            // object does not cover it, a side does. It is drawn only when
+            // it can show, through an object without a fill or an open
+            // outline, so a filled object's body is just its sides (#1281).
+            let opaque_fill = match &shape.fill {
+                Fill::Solid(_) => true,
+                Fill::Fountain(f) => f.stops.iter().all(|s| s.opacity >= 1.0),
+                _ => false,
             };
-            far.fill = if any_closed {
-                Fill::Solid(to)
-            } else {
-                Fill::None
-            };
-            out.below.push(far);
+            let hidden = any_closed
+                && subs.iter().all(|(_, c)| *c)
+                && opaque_fill
+                && shape.opacity >= 1.0
+                && shape.opacity_mask.is_none()
+                && !shape.effects.iter().any(|e| {
+                    matches!(
+                        e,
+                        crate::live::Effect::Transparency { .. } | crate::live::Effect::Lens(_)
+                    )
+                });
+            if !hidden {
+                let mut far = template();
+                far.kind = ShapeKind::Path {
+                    path: copy_path,
+                    closed: any_closed,
+                };
+                far.fill = if any_closed {
+                    Fill::Solid(to)
+                } else {
+                    Fill::None
+                };
+                out.below.push(far);
+            }
             out.below.extend(faces);
         }
         out
@@ -568,26 +669,64 @@ mod tests {
         let s = square(Fill::Solid(Color::rgb8(200, 0, 0)));
         let f = body(ExtrudeKind::BackParallel).faces(&s);
         assert!(f.above.is_empty());
-        // The far face first, at (10, 10); then the top and right faces
-        // only (the others face away).
-        let far = f.below[0].bounds();
-        assert!(
-            (far.x0 - 10.0).abs() < 1e-6 && (far.y0 - 10.0).abs() < 1e-6,
-            "{far:?}"
-        );
-        // Each side a face and its outline (the object has an outline).
-        assert_eq!(f.below.len(), 5, "far face and two sides");
-        assert_eq!(filled(&f.below[1..]).len(), 2);
+        // The top and right faces only (the others face away), each one
+        // object with its outline; the far face is hidden behind them.
+        assert_eq!(f.below.len(), 2, "two sides");
+        assert_eq!(filled(&f.below).len(), 2);
+        assert!(f.below.iter().all(|s| s.stroke.is_some()));
         // Lit from the top left: the top face is lighter than the right.
         let shade = |s: &Shape| match s.fill {
             Fill::Solid(c) => c.to_rgb8()[0],
             _ => 0,
         };
-        let (top, right): (Vec<&Shape>, Vec<&Shape>) = filled(&f.below[1..])
+        let (top, right): (Vec<&Shape>, Vec<&Shape>) = filled(&f.below)
             .into_iter()
             .partition(|s| s.bounds().y1 > 25.0 && s.bounds().height() < 15.0);
         assert_eq!((top.len(), right.len()), (1, 1));
         assert!(shade(top[0]) > shade(right[0]));
+        // Without a fill the far face shows through: first, at (10, 10).
+        let hollow = square(Fill::None);
+        let f = body(ExtrudeKind::BackParallel).faces(&hollow);
+        let far = f.below[0].bounds();
+        assert!(
+            (far.x0 - 10.0).abs() < 1e-6 && (far.y0 - 10.0).abs() < 1e-6,
+            "{far:?}"
+        );
+        assert_eq!(f.below.len(), 3);
+    }
+
+    /// #1281: a square's body is its two sides, a circle's its one
+    /// curved side: parts to paint whole, not slats.
+    #[test]
+    fn a_body_is_one_object_per_side() {
+        let s = square(Fill::Solid(Color::rgb8(200, 0, 0)));
+        for kind in [
+            ExtrudeKind::BackParallel,
+            ExtrudeKind::SmallBack,
+            ExtrudeKind::BigBack,
+        ] {
+            let f = body(kind).faces(&s);
+            assert_eq!(f.below.len(), 2, "{kind:?}");
+        }
+        let mut c = s.clone();
+        c.kind = ShapeKind::Ellipse {
+            rect: Rect::new(0.0, 0.0, 20.0, 20.0),
+            arc: None,
+        };
+        let f = body(ExtrudeKind::BackParallel).faces(&c);
+        assert_eq!(f.below.len(), 1, "one curved side");
+        // Its colours follow the light round the side.
+        let Fill::Fountain(fill) = &f.below[0].fill else {
+            panic!("a fountain across the side: {:?}", f.below[0].fill);
+        };
+        assert!(fill.stops.len() >= 3, "{}", fill.stops.len());
+        assert!(fill.stops.windows(2).all(|w| w[0].pos <= w[1].pos));
+        // It covers the half of the side toward the vector.
+        let b = f.below[0].bounds();
+        assert!(
+            b.x1 > 29.0 && b.y1 > 29.0 && b.x0 < 4.0 && b.y0 < 4.0,
+            "{b:?}"
+        );
     }
 
     #[test]
@@ -601,15 +740,17 @@ mod tests {
         let near = f.above.last().expect("near face");
         assert_eq!(near.fill, s.fill);
         assert!((near.bounds().x0 - 10.0).abs() < 1e-6);
-        // Small back: the far face a quarter of the way to (60, 60).
-        let f = body(ExtrudeKind::SmallBack).faces(&s);
+        // Small back: the far face a quarter of the way to (60, 60)
+        // (shown through an object without a fill).
+        let hollow = square(Fill::None);
+        let f = body(ExtrudeKind::SmallBack).faces(&hollow);
         let far = f.below[0].bounds();
         assert!(
             (far.x0 - 15.0).abs() < 1e-6 && (far.width() - 15.0).abs() < 1e-6,
             "{far:?}"
         );
         // Big back: a quarter farther from it, bigger.
-        let f = body(ExtrudeKind::BigBack).faces(&s);
+        let f = body(ExtrudeKind::BigBack).faces(&hollow);
         let far = f.below[0].bounds();
         assert!((far.width() - 25.0).abs() < 1e-6, "{far:?}");
         // Shade: fountains from the first colour to the second.
@@ -617,7 +758,8 @@ mod tests {
         b.coloring = Coloring::Shade(Color::WHITE, Color::BLACK);
         b.light_intensity = 0.0;
         let f = b.faces(&s);
-        assert!(matches!(f.below[1].fill, Fill::Fountain(_)));
+        assert!(matches!(f.below[0].fill, Fill::Fountain(_)));
+        let f = b.faces(&hollow);
         assert_eq!(f.below[0].fill, Fill::Solid(Color::BLACK));
     }
 
@@ -629,22 +771,25 @@ mod tests {
         let mut s = square(Fill::Solid(Color::BLACK));
         s.kind = ShapeKind::Path { path, closed: true };
         let f = body(ExtrudeKind::BackParallel).faces(&s);
-        // Two faces of the outer square, two of the hole (its bottom and
-        // left walls), and the far face with both subpaths.
+        // Two faces of the outer square and two of the hole (its bottom
+        // and left walls); the far face hidden.
+        assert_eq!(filled(&f.below).len(), 4);
+        let walls: Vec<_> = filled(&f.below)
+            .into_iter()
+            .filter(|s| s.bounds().x0 >= 9.9 && s.bounds().x1 <= 30.1 && s.bounds().y1 <= 30.1)
+            .collect();
+        assert_eq!(walls.len(), 2);
+        // Without a fill: the far face with both subpaths comes first.
+        s.fill = Fill::None;
+        let f = body(ExtrudeKind::BackParallel).faces(&s);
         assert_eq!(filled(&f.below).len(), 5);
-        let far = &f.below[0];
-        let moves = far
+        let moves = f.below[0]
             .local_path()
             .elements()
             .iter()
             .filter(|e| matches!(e, PathEl::MoveTo(_)))
             .count();
         assert_eq!(moves, 2);
-        let walls: Vec<_> = filled(&f.below[1..])
-            .into_iter()
-            .filter(|s| s.bounds().x0 >= 9.9 && s.bounds().x1 <= 30.1 && s.bounds().y1 <= 30.1)
-            .collect();
-        assert_eq!(walls.len(), 2);
     }
 
     #[test]
@@ -655,35 +800,33 @@ mod tests {
             arc: None,
         };
         let f = body(ExtrudeKind::BackParallel).faces(&s);
-        let faces = filled(&f.below[1..]).len();
-        let outlines = f.below[1..].iter().filter(|s| s.fill == Fill::None).count();
-        assert!(faces > 10, "{faces}");
-        assert_eq!(outlines, 1);
+        assert_eq!(f.below.len(), 1);
+        let side = &f.below[0];
+        assert_ne!(side.fill, Fill::None);
+        assert_eq!(
+            side.stroke.as_ref().map(|x| x.color),
+            s.stroke.as_ref().map(|x| x.color),
+            "outlined like the object"
+        );
         // An ellipse has no closing element but is closed: only the half
         // toward the vector shows.
-        let half = filled(&f.below[1..])
-            .iter()
-            .all(|face| face.bounds().center().x + face.bounds().center().y > 20.0);
-        assert!(half);
+        let b = side.bounds();
+        assert!(b.center().x + b.center().y > 20.0, "{b:?}");
         // Not even where the outline starts and ends (an ellipse's first
         // point), turned any way.
         for t in [0.3, 1.7, 3.0] {
             let mut r = s.clone();
             r.transform = Affine::rotate(t);
             let f = body(ExtrudeKind::BackParallel).faces(&r);
-            let outlines = f.below[1..].iter().filter(|s| s.fill == Fill::None).count();
-            assert_eq!(outlines, 1, "{t}");
+            assert_eq!(f.below.len(), 1, "{t}");
         }
-        // Faces carry a hairline of their own colour, not the object's.
-        let face = filled(&f.below[1..])[0];
-        let (Fill::Solid(c), Some(st)) = (&face.fill, &face.stroke) else {
-            panic!("a solid face with an edge");
-        };
-        assert_eq!(st.color, *c);
-        // No outline on the object: no outlines on the body either.
+        // No outline on the object: a hairline of the side's own colour
+        // closes its seams.
         s.stroke = None;
         let f = body(ExtrudeKind::BackParallel).faces(&s);
-        assert!(f.below[1..].iter().all(|s| s.fill != Fill::None));
+        let side = &f.below[0];
+        let st = side.stroke.as_ref().expect("a hairline");
+        assert_eq!(Some(st.color), side.fill.preview_color());
     }
 
     #[test]

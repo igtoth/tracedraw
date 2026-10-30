@@ -3508,10 +3508,16 @@ mod tests {
             solid: None,
             space: Default::default(),
         });
+        // The two faces that show (toward the vector), each one outlined
+        // object; the far face is hidden behind the filled object and
+        // them (#1281).
         let ev = evaluate(&s);
-        // The far face and the two faces that show (toward the vector),
-        // each outlined.
-        assert_eq!(ev.below.len(), 5);
+        assert_eq!(ev.below.len(), 2);
+        assert!(ev.below.iter().all(|f| f.stroke.is_some()));
+        // Without a fill it shows through, first.
+        s.fill = Fill::None;
+        let ev = evaluate(&s);
+        assert_eq!(ev.below.len(), 3);
         let back = ev.below[0].bounds();
         assert!((back.x0 - 10.0).abs() < 0.5);
     }
