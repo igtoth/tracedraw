@@ -13640,3 +13640,82 @@ fn a_pen_that_only_sends_moving_touches_sets_the_width() {
     assert!(!ctx.input(|i| i.has_touch_screen()));
     assert!(!ctx.input(|i| i.any_touches()));
 }
+
+/// Repeat after a turn or a resize with the mouse turns or resizes the
+/// selection of the time about its own centre or anchor: the object it
+/// is used on does not move away (#1289).
+#[test]
+fn repeat_turns_and_resizes_in_place() {
+    let (ctx, mut app, id) = setup();
+    // A second, smaller rectangle well away from the first.
+    let other = app
+        .new_shape(ShapeKind::Rect {
+            rect: Rect::new(120.0, 150.0, 140.0, 190.0),
+            radius: 0.0,
+            corners: None,
+        })
+        .expect("rect");
+    app.select(vec![id]);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    // Turn the first by dragging a corner in rotate mode (Ctrl: steps).
+    app.rotate_mode = true;
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let c = app.rotation_center().expect("centre");
+    let ne = handle(&app, Handle::NE);
+    let centre = app.view.to_screen(c);
+    let r = ne - centre;
+    let (sin, cos) = (-30f32.to_radians()).sin_cos();
+    let turned = centre + egui::vec2(r.x * cos - r.y * sin, r.x * sin + r.y * cos);
+    drag(&ctx, &mut app, ne, turned, Modifiers::CTRL, Vec::new());
+    let once = bounds(&app, id);
+    assert!(once.width() > 51.0, "turned: {once:?}");
+    // Repeat on the same object: a second turn about its centre.
+    app.repeat_last();
+    let twice = bounds(&app, id);
+    assert!(
+        (twice.center() - once.center()).hypot() < 0.05,
+        "stays: {twice:?} {once:?}"
+    );
+    assert!(!close(twice.width(), once.width()), "turned again");
+    // Repeat on the other object: turned about its own centre.
+    app.select(vec![other]);
+    let before = bounds(&app, other);
+    app.repeat_last();
+    let after = bounds(&app, other);
+    assert!(after.width() > before.width() + 1.0, "turned: {after:?}");
+    assert!(
+        (after.center() - before.center()).hypot() < 0.05,
+        "stays: {after:?} {before:?}"
+    );
+    // A resize from the right side handle: Repeat on the other object
+    // makes it as much wider from its own left side.
+    app.rotate_mode = false;
+    app.select(vec![id]);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let b0 = bounds(&app, id);
+    let e = handle(&app, Handle::E);
+    let w = handle(&app, Handle::W);
+    drag(
+        &ctx,
+        &mut app,
+        e,
+        e + egui::vec2((e.x - w.x) * 0.5, 0.0),
+        Modifiers::NONE,
+        Vec::new(),
+    );
+    let b1 = bounds(&app, id);
+    let kx = b1.width() / b0.width();
+    assert!(kx > 1.2, "wider: {b1:?} {b0:?}");
+    app.select(vec![other]);
+    let before = bounds(&app, other);
+    app.repeat_last();
+    let after = bounds(&app, other);
+    assert!(
+        (after.width() / before.width() - kx).abs() < 0.01,
+        "{after:?} {before:?} {kx}"
+    );
+    assert!(
+        close(after.x0, before.x0) && close(after.y0, before.y0) && close(after.y1, before.y1),
+        "the anchor side stays: {after:?} {before:?}"
+    );
+}

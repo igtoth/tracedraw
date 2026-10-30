@@ -10,7 +10,9 @@ any position. Zooming and panning never change the drawing.
 - The arrows beside Undo and Redo on the standard toolbar list the steps.
   Choose a step to undo or redo every change up to it.
 - [[menu.edit.repeat]] applies the last command again, for example to the
-  next object you select.
+  next object you select. A move, resize or rotation is repeated about
+  the selected object's own centre, side or corner, so the object turns or
+  grows where it is instead of moving away.
 
 ### The Undo panel {#undo-docker}
 

@@ -11,7 +11,9 @@ zoom e de qualquer posição. Zoom e deslocamento nunca alteram o desenho.
   os passos. Escolha um passo para desfazer ou refazer todas as alterações até
   ele.
 - [[menu.edit.repeat]] aplica o último comando de novo, por exemplo ao próximo
-  objeto que você selecionar.
+  objeto que você selecionar. Um deslocamento, redimensionamento ou rotação é
+  repetido em torno do centro, lado ou canto do próprio objeto selecionado, que
+  gira ou cresce onde está em vez de sair do lugar.
 
 ### O painel Desfazer {#undo-docker}
 

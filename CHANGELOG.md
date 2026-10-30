@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Edit > Repeat (Ctrl+R) after a rotation, resize or skew repeats it about the same place of the selection it is used on (its centre, or the side or corner the handle kept), so the object no longer moves to another position; a move still moves as far again (#1289).
+
 - Help: pages brought up to date with releases 0.19 to 0.27 (opening and saving, fonts, text, printing, export, drawing tools, objects, colours, effects, pages, options, menus and shortcuts), and new pages for Package, Missing Fonts, Convert Colors, finding by properties, PDF printers' marks, booklets, Fit Objects to Path, the Before and After preview, graphics tablets and tablets with the Android app; Brazilian Portuguese follows, other languages where the pages changed most. Docs only.
 - Browser version: its notice now opens with the warning that a browser is slower, marked in red and underlined, then says it is the same program compiled to WebAssembly, and last points to the desktop app, in every language.
 
