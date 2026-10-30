@@ -2871,7 +2871,14 @@ fn bitmap_boxes_start_at_the_origin_and_their_transform_places_them() {
         assert_eq!([i(0), i(4), i(8), i(12)], want_box, "{v}");
         let count_at = if v == 8 { 64 } else { 72 };
         let n = i(count_at) as usize;
-        assert!(n > 5, "{v}: {n} points");
+        // From version 12 the frame is a clip container and the picture
+        // inside it keeps its whole rectangle as its outline (#1222);
+        // before, the frame is the picture's crop outline.
+        if v >= 12 {
+            assert_eq!(n, 5, "{v}: {n} points");
+        } else {
+            assert!(n > 5, "{v}: {n} points");
+        }
         for k in 0..n {
             let (x, y) = (i(count_at + 4 + k * 8), i(count_at + 8 + k * 8));
             assert!(

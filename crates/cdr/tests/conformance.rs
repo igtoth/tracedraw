@@ -1648,8 +1648,19 @@ mod structure {
     fn required_chunks(tree: &Tree, main: &[u8], v: u16) {
         let mut objects = 0usize;
         let mut texts = 0usize;
-        tree.root.walk(&mut |c, _| {
+        // The depth of the `LIST clpt` being walked: the clip container
+        // groups in it and the objects they hold carry no static id
+        // (`usdn`), as the files have them (#1222).
+        let mut clpt: Option<usize> = None;
+        tree.root.walk(&mut |c, depth| {
+            if clpt.is_some_and(|d| depth <= d) {
+                clpt = None;
+            }
             let Some(kind) = list_type(c) else { return };
+            if kind == *b"clpt" {
+                clpt = Some(depth);
+            }
+            let id: &[&[u8; 4]] = if clpt.is_some() { &[] } else { &[b"usdn"] };
             let need = |names: &[&[u8; 4]]| {
                 for n in names {
                     assert!(
@@ -1674,12 +1685,16 @@ mod structure {
                 }
                 b"page" => need(&[b"flgs", b"bbox", b"gobj"]),
                 b"layr" => need(&[b"flgs", b"lgob"]),
-                b"grp " => need(&[b"flgs", b"bbox", b"obbx", b"usdn", b"lgob"]),
+                b"grp " => {
+                    need(&[b"flgs", b"bbox", b"obbx", b"lgob"]);
+                    need(id);
+                }
                 b"lgob" => need(&[b"loda"]),
                 b"trfl" => need(&[b"trfd"]),
                 b"obj " => {
                     objects += 1;
-                    need(&[b"flgs", b"bbox", b"obbx", b"usdn", b"lgob"]);
+                    need(&[b"flgs", b"bbox", b"obbx", b"lgob"]);
+                    need(id);
                     let lgob = c.find(b"lgob").expect("lgob");
                     assert!(
                         has(lgob, b"loda") && has(lgob, b"ftil") && has(lgob, b"trfl"),

@@ -434,7 +434,12 @@ impl<'a> Checker<'a> {
                 let h = i32_at(d, 4)? as f64 * MM_PER_UNIT;
                 let b = Box::of([(0.0, 0.0), (w, h)])?;
                 let whole = i32_at(d, 8)? == i32_at(d, 12)?;
-                Some((whole.then_some(b), b))
+                // The corners of a whole ellipse's box stand for its
+                // nodes only while the box is not turned or slanted: a
+                // turned ellipse (the frame of a clip container, #1222)
+                // reaches less far than its box's corners.
+                let turned = matrix[1].abs() > 1e-9 || matrix[2].abs() > 1e-9;
+                Some(((whole && !turned).then_some(b), b))
             }),
             crate::parse::OBJ_BITMAP => {
                 through = &identity;
