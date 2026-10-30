@@ -1563,7 +1563,12 @@ impl App {
             // Ctrl takes the object inside a group, unless the press is on
             // what is selected already (Ctrl then keeps the move straight);
             // an object chosen inside a group moves alone (#849).
-            let hit = self.press_target(p, mods.ctrl);
+            // Alt starts a selection by touching anywhere, also over an
+            // object that is not selected (a background under the objects
+            // to pick), as a press beside it would (#1341, #1350).
+            let hit = self
+                .press_target(p, mods.ctrl)
+                .filter(|id| !mods.alt || self.selection.contains(id));
             match hit {
                 Some(id) => {
                     if mods.shift {

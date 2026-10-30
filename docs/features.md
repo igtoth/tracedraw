@@ -18,7 +18,7 @@ Counts: works 189, partial 7 (`.cdr` content coverage; CMX import; print preview
 | Drag a palette colour onto an object (inside: fill, on the outline: outline colour, No Color removes) or onto the document palette (see `behavior/color-palettes.md`) | works |
 | Pointer shapes by what is under it: resize arrows on handles, move arrows on the selection, turning and slant arrows in rotate mode; the Shape tool's arrow marks nodes, control points and segments; drawing tools show their icon by the cross hair, the Eraser and brushes their nib (see `behavior/toolbox.md`) | works |
 | Right-button drag of objects: blue outline preview, then Move Here, Copy Here, Copy Fill Here, Copy Outline Here, Copy All Properties, Place Inside, Cancel (see `behavior/pick-tool.md`) | works |
-| Freehand Pick (lasso, Alt for touching, Ctrl for a rectangle, the Pick tool's handles) | works |
+| Freehand Pick (lasso, Alt for touching, also started over an unselected object, Ctrl for a rectangle, the Pick tool's handles; Alt+drag with the Pick tool starts its touching frame over objects too, #1341, #1350) | works |
 | Selection groups 0 to 9: Ctrl+number stores the selection, the number selects it again (twice: and zooms to it), Alt+number adds to it; saved with the drawing (see `behavior/pick-tool.md`) | works |
 | Free Transform (rotation, angle reflection, scale, skew modes, Apply to Duplicate) | works |
 | Zoom tool, zoom levels, zoom to page/fit/selected, marquee zoom, Shift+F4 | works |

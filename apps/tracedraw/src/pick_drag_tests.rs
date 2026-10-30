@@ -1013,6 +1013,146 @@ fn alt_click_digs_to_the_object_beneath() {
     assert!(!app.rotate_mode);
 }
 
+/// Alt+drag selects by touching also when it starts over an object that
+/// is not selected, such as a background under the objects (it moved
+/// that object instead), with the Pick and the Freehand Pick tools
+/// (#1341, #1350). Alt+drag on the selection still moves it.
+#[test]
+fn alt_drag_selects_also_when_it_starts_over_an_object() {
+    for tool in [Tool::Pick, Tool::FreeformPick] {
+        let (ctx, mut app, id) = setup();
+        let bg = app
+            .new_shape(ShapeKind::Rect {
+                rect: Rect::new(-20.0, -20.0, 200.0, 150.0),
+                radius: 0.0,
+                corners: None,
+            })
+            .expect("background");
+        app.select(vec![bg]);
+        app.apply_fill(tracedraw_core::Fill::Solid(tracedraw_core::Color::rgb8(
+            220, 220, 220,
+        )));
+        app.order(3);
+        app.set_tool(tool);
+        app.select(Vec::new());
+        let bg_before = bounds(&app, bg);
+        // A frame to (30, 20), or a loop through it for the lasso.
+        let pts: Vec<Point> = if tool == Tool::Pick {
+            vec![
+                Point::new(0.0, 0.0),
+                Point::new(15.0, 10.0),
+                Point::new(30.0, 20.0),
+            ]
+        } else {
+            vec![
+                Point::new(0.0, 0.0),
+                Point::new(30.0, 0.0),
+                Point::new(30.0, 20.0),
+                Point::new(0.0, 20.0),
+                Point::new(0.0, 1.0),
+            ]
+        };
+        let alt = Modifiers::ALT;
+        let s = app.view.to_screen(pts[0]);
+        frame(&ctx, &mut app, vec![Event::PointerMoved(s)], alt);
+        frame(
+            &ctx,
+            &mut app,
+            vec![button(s, true, PointerButton::Primary, alt)],
+            alt,
+        );
+        for p in &pts[1..] {
+            let q = app.view.to_screen(*p);
+            frame(&ctx, &mut app, vec![Event::PointerMoved(q)], alt);
+        }
+        let e = app.view.to_screen(*pts.last().expect("point"));
+        frame(
+            &ctx,
+            &mut app,
+            vec![button(e, false, PointerButton::Primary, alt)],
+            alt,
+        );
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+        assert_eq!(bounds(&app, bg), bg_before, "{tool:?}: nothing moved");
+        assert!(app.selection.contains(&id), "{tool:?}: {:?}", app.selection);
+        // Alt+drag on the selection moves it.
+        app.select(vec![id]);
+        let from = app.view.to_screen(Point::new(35.0, 25.0));
+        drag(
+            &ctx,
+            &mut app,
+            from,
+            from + egui::vec2(60.0, 0.0),
+            alt,
+            Vec::new(),
+        );
+        assert!(bounds(&app, id).x0 > 11.0, "{tool:?}: moved");
+    }
+}
+
+/// With the Shape tool Alt+drag draws a freehand marquee whatever the
+/// bar's selection mode, and Alt+Shift adds the nodes it takes to the
+/// chosen ones (#1341).
+#[test]
+fn alt_drag_with_the_shape_tool_is_a_freehand_node_marquee() {
+    let (ctx, mut app, id) = setup();
+    app.convert_to_curves();
+    app.set_tool(Tool::Shape);
+    app.node_lasso = false;
+    for _ in 0..3 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    let loop_through = |ctx: &egui::Context, app: &mut App, pts: &[Point], m: Modifiers| {
+        let screen = lasso_path(app, pts);
+        let s = screen[0];
+        frame(ctx, app, vec![Event::PointerMoved(s)], m);
+        frame(
+            ctx,
+            app,
+            vec![button(s, true, PointerButton::Primary, m)],
+            m,
+        );
+        for q in &screen[1..] {
+            frame(ctx, app, vec![Event::PointerMoved(*q)], m);
+            assert!(
+                !matches!(app.drag, Drag::NodeMarquee { .. }),
+                "not the rectangle"
+            );
+        }
+        let e = *screen.last().expect("point");
+        frame(
+            ctx,
+            app,
+            vec![button(e, false, PointerButton::Primary, m)],
+            m,
+        );
+        frame(ctx, app, Vec::new(), Modifiers::NONE);
+    };
+    // Round the two left corners (x = 10).
+    let left = [
+        Point::new(5.0, 5.0),
+        Point::new(15.0, 5.0),
+        Point::new(15.0, 45.0),
+        Point::new(5.0, 45.0),
+        Point::new(5.0, 6.0),
+    ];
+    loop_through(&ctx, &mut app, &left, Modifiers::ALT);
+    let mut got = app.node_selection.clone();
+    got.sort();
+    assert_eq!(got.len(), 2, "{got:?}");
+    assert!(got.iter().all(|(s, _)| *s == id));
+    // Alt+Shift round the lower right corner (60, 10): added.
+    let corner = [
+        Point::new(55.0, 5.0),
+        Point::new(65.0, 5.0),
+        Point::new(65.0, 15.0),
+        Point::new(55.0, 15.0),
+        Point::new(55.0, 6.0),
+    ];
+    loop_through(&ctx, &mut app, &corner, Modifiers::ALT | Modifiers::SHIFT);
+    assert_eq!(app.node_selection.len(), 3, "{:?}", app.node_selection);
+}
+
 #[test]
 fn alt_marquees_take_what_they_touch() {
     let (ctx, mut app, [_a, _b, c], group) = grouped();

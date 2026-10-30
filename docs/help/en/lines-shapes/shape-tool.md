@@ -28,7 +28,8 @@ over a control handle, a wave over a segment.
 - <kbd>Shift</kbd>+click selects every node from the last selected one to the
   one you click.
 - Drag a marquee around nodes. The property bar's selection mode chooses a
-  rectangular or a freehand marquee.
+  rectangular or a freehand marquee; <kbd>Alt</kbd>+drag always draws a
+  freehand one, and <kbd>Alt+Shift</kbd>+drag adds its nodes to those selected.
 - <kbd>Tab</kbd> and <kbd>Shift+Tab</kbd> select the next or previous node;
   <kbd>Home</kbd> and <kbd>End</kbd> the first or last.
 - <kbd>Ctrl+A</kbd>, the select all nodes button, or a double-click on the

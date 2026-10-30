@@ -497,6 +497,13 @@ impl App {
             }
         }
         sel.extend(self.spline_points_where(|q| in_polygon(poly, q)));
+        // Alt+Shift: added to the nodes chosen already (#1341).
+        if std::mem::take(&mut self.node_lasso_keeps) {
+            let mut kept = std::mem::take(&mut self.node_selection);
+            kept.retain(|k| !sel.contains(k));
+            kept.extend(sel);
+            sel = kept;
+        }
         self.node_selection = sel;
         self.rect_corners_selected =
             crate::kind_nodes::corners_where(&self.shape_tool_shapes(), |q| in_polygon(poly, q));
