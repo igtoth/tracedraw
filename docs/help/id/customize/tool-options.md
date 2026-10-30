@@ -1,5 +1,7 @@
 # Opsi alat
 
+> *Terjemahan mesin: halaman ini mungkin tertinggal dari versi bahasa Inggris.*
+
 [[menu.tools > menu.tools.options > menu.tools.options_tools]] mengatur
 perilaku alat dan objek baru yang digambarnya. Sebagian besar nilai ini juga
 ada di bilah properti masing-masing alat.
@@ -32,6 +34,11 @@ ada di bilah properti masing-masing alat.
 - [[options.join_within]]: seberapa dekat ke simpul ujung sebuah garis harus
   dimulai untuk melanjutkan kurva (awalnya 5 piksel layar). Lihat
   [Melanjutkan kurva](../lines-shapes/lines.md#continue).
+
+- [[options.pen_preview]] dan [[options.pen_auto_add_delete]] (keduanya aktif)
+  untuk alat [[tool.pen]]; lihat [Pena](../lines-shapes/lines.md#pen).
+- [[options.pen_tablet]]: [[options.pen_pressure]] (aktif); lihat
+  [Menggambar dengan tablet grafis](../lines-shapes/pen-pressure.md).
 
 ## Persegi Panjang {#rectangle}
 

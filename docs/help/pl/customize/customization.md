@@ -1,5 +1,7 @@
 # Opcje dostosowywania
 
+> *Tłumaczenie maszynowe: ta strona może być mniej aktualna niż wersja angielska.*
+
 [[menu.tools > menu.tools.options > menu.tools.options_customization]] ustawia
 wygląd interfejsu, własne skróty klawiaturowe, widoczne paski i działanie palety
 kolorów.
@@ -40,6 +42,14 @@ przez inne polecenie, strona informuje, które polecenie go utraciło. Menu
 pokazują Twój skrót. **x** obok skrótu usuwa go, a przywrócenie ustawień
 domyślnych usuwa je wszystkie. Klawisze narzędzi to litera lub <kbd>Shift</kbd>
 i litera. Zobacz [Skróty klawiaturowe](../reference/keyboard-shortcuts.md).
+
+Polecenie może mieć kilka skrótów: nowy klawisz dołącza do tych, które już ma
+(wbudowany klawisz nadal działa obok), a każdy klawisz ma własny przycisk
+usuwania. Skróty przyjmują też przyciski pasków uruchamiające polecenie menu
+(Nowy, Otwórz, Zapisz, Cofnij, Powiększ i inne), te same klawisze co ich
+polecenie menu, a także wiersze, które menu pokazują tylko czasami. Lista
+**Przyciski pasków narzędzi** zawiera wszystkie przyciski pasków Standardowy i
+Powiększenie: przeciągnij stamtąd z powrotem na pasek usunięty przycisk.
 
 ## Paski poleceń {#command-bars}
 

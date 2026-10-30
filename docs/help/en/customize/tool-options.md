@@ -31,6 +31,11 @@ property bar of each tool.
   continue the curve (5 screen pixels at first). See
   [Continuing a curve](../lines-shapes/lines.md#continue).
 
+- [[options.pen_preview]] and [[options.pen_auto_add_delete]] (both on) for
+  the [[tool.pen]] tool; see [Pen](../lines-shapes/lines.md#pen).
+- [[options.pen_tablet]]: [[options.pen_pressure]] (on); see
+  [Drawing with a graphics tablet](../lines-shapes/pen-pressure.md).
+
 ## Rectangle {#rectangle}
 
 ![The Rectangle tool options](../../img/customize-tool-options-rectangle.png)

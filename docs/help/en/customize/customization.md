@@ -40,6 +40,14 @@ shortcut. The **x** beside a shortcut removes it, and resetting to the
 defaults removes them all. Tool keys are a letter or <kbd>Shift</kbd> and a
 letter. See [Keyboard shortcuts](../reference/keyboard-shortcuts.md).
 
+A command can have several shortcuts: a new key joins the ones it has (a
+built-in key keeps working beside it), and each key has its own delete
+button. The buttons of the bars that run a menu command (New, Open, Save,
+Undo, Zoom In and others) take shortcuts too, the same keys as their menu
+command, and so do rows the menus show only at times (such as Finish Editing
+Contents). A **Toolbar buttons** list holds every button of the Standard and
+Zoom toolbars: drag a button you removed from a bar back onto it from there.
+
 ## Command Bars {#command-bars}
 
 ![The Command Bars page of the customization options](../../img/customize-customization-command-bars.png)

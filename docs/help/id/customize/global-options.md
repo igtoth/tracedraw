@@ -1,5 +1,7 @@
 # Opsi global
 
+> *Terjemahan mesin: halaman ini mungkin tertinggal dari versi bahasa Inggris.*
+
 [[menu.tools > menu.tools.options > menu.tools.options_global]] berisi
 pengaturan yang berlaku untuk seluruh program: bahasa, bawaan pencetakan dan
 ekspor, penjiplakan, pesan, dan lokasi penyimpanan berkas.
@@ -60,6 +62,11 @@ menyimpan pilihan dari pencetakan terakhir. Di bawah
 [[options.warn_missing_fonts]], dan [[options.warn_shelf_remove]] (semuanya
 aktif). Setiap pesan juga memiliki kotak centang untuk menghentikannya;
 centang opsinya di sini untuk melihatnya lagi.
+
+[[options.ask_missing_fonts]] (aktif) menampilkan kotak dialog Font yang
+Hilang saat gambar dibuka dengan font yang tidak terpasang; lihat
+[Font yang hilang](../text/missing-fonts.md). Opsi ini terpisah dari pesan
+biasa di atas.
 
 ## Lokasi Berkas {#file-locations}
 

@@ -59,6 +59,11 @@ of the last print. Under [[options.print_checks]],
 [[options.warn_missing_fonts]] and [[options.warn_shelf_remove]] (all on). Each
 message also has a box that stops it; tick the option here to see it again.
 
+[[options.ask_missing_fonts]] (on) shows the Missing Fonts dialog box when a
+drawing opens with fonts that are not installed; see
+[Missing fonts](../text/missing-fonts.md). It is separate from the plain
+message above.
+
 ## File Locations {#file-locations}
 
 ![The File Locations page of the global options](../../img/customize-global-options-file-locations.png)

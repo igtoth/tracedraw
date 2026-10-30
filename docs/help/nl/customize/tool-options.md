@@ -1,5 +1,7 @@
 # Gereedschapsopties
 
+> *Machinevertaling: deze pagina kan achterlopen op de Engelse versie.*
+
 [[menu.tools > menu.tools.options > menu.tools.options_tools]] stelt in hoe
 gereedschappen zich gedragen en welke nieuwe objecten ze tekenen. De meeste van
 deze waarden staan ook op de eigenschappenbalk van elk gereedschap.
@@ -31,6 +33,11 @@ deze waarden staan ook op de eigenschappenbalk van elk gereedschap.
 - [[options.join_within]]: hoe dicht bij een eindknooppunt een lijn moet
   beginnen om de curve voort te zetten (in het begin 5 schermpixels). Zie
   [Een curve voortzetten](../lines-shapes/lines.md#continue).
+
+- [[options.pen_preview]] en [[options.pen_auto_add_delete]] (beide aan) voor
+  het gereedschap [[tool.pen]]; zie [Pen](../lines-shapes/lines.md#pen).
+- [[options.pen_tablet]]: [[options.pen_pressure]] (aan); zie
+  [Tekenen met een tekentablet](../lines-shapes/pen-pressure.md).
 
 ## Rechthoek {#rectangle}
 

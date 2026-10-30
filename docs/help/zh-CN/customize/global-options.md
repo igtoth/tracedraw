@@ -1,5 +1,7 @@
 # 全局选项
 
+> *机器翻译：本页可能落后于英文版。*
+
 [[menu.tools > menu.tools.options > menu.tools.options_global]] 包含适用于整个程序的设置：语言、打印和导出的默认值、描摹、消息以及文件的存放位置。
 
 ## 常规 {#general}
@@ -36,6 +38,8 @@
 ![全局选项的警告页面](../../img/customize-global-options-warnings.png)
 
 [[options.warnings_show]] [[options.warn_unread_objects]]、[[options.warn_missing_fonts]] 和 [[options.warn_shelf_remove]]（均打开）。每条消息还有一个用于停止显示它的复选框；在此处勾选该选项可再次看到它。
+
+[[options.ask_missing_fonts]]（默认开启）会在打开使用了未安装字体的绘图时显示“缺失字体”对话框；参见[缺失字体](../text/missing-fonts.md)。它独立于上面的普通消息。
 
 ## 文件位置 {#file-locations}
 

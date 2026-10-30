@@ -1,5 +1,7 @@
 # 工具选项
 
+> *机器翻译：本页可能落后于英文版。*
+
 [[menu.tools > menu.tools.options > menu.tools.options_tools]] 设置工具的行为及其绘制的新对象。这些值大多也位于各工具的属性栏上。
 
 ## 选择 {#pick}
@@ -23,6 +25,9 @@
 
 - [[options.freehand_smoothing]]：0 到 100（起初为 50）。
 - [[options.join_within]]：线条的起点离端节点多近才会延续该曲线（起初为 5 个屏幕像素）。请参阅 [延续曲线](../lines-shapes/lines.md#continue)。
+
+- [[options.pen_preview]] 和 [[options.pen_auto_add_delete]]（均默认开启），用于 [[tool.pen]] 工具；参见[钢笔](../lines-shapes/lines.md#pen)。
+- [[options.pen_tablet]]：[[options.pen_pressure]]（默认开启）；参见[使用数位板绘图](../lines-shapes/pen-pressure.md)。
 
 ## 矩形 {#rectangle}
 

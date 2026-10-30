@@ -1,5 +1,7 @@
 # Opsi kustomisasi
 
+> *Terjemahan mesin: halaman ini mungkin tertinggal dari versi bahasa Inggris.*
+
 [[menu.tools > menu.tools.options > menu.tools.options_customization]] mengatur
 tampilan antarmuka, pintasan keyboard Anda sendiri, bilah mana yang tampil, dan
 perilaku palet warna.
@@ -42,6 +44,14 @@ kehilangannya. Menu menampilkan pintasan Anda. Tanda **x** di samping pintasan
 menghapusnya, dan mengatur ulang ke bawaan menghapus semuanya. Tombol alat
 berupa satu huruf atau <kbd>Shift</kbd> dan satu huruf. Lihat
 [Pintasan keyboard](../reference/keyboard-shortcuts.md).
+
+Sebuah perintah dapat memiliki beberapa pintasan: tombol baru bergabung dengan
+yang sudah ada (tombol bawaan tetap berfungsi di sampingnya), dan setiap tombol
+punya tombol hapus sendiri. Tombol bilah yang menjalankan perintah menu (Baru,
+Buka, Simpan, Batalkan, Perbesar, dan lainnya) juga menerima pintasan, sama
+dengan perintah menunya, begitu pula baris yang hanya kadang ditampilkan menu.
+Daftar **Tombol bilah alat** memuat semua tombol bilah Standar dan Zoom: seret
+dari sana kembali ke bilah tombol yang telah Anda hapus.
 
 ## Bilah Perintah {#command-bars}
 

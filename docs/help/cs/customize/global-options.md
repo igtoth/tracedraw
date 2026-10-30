@@ -1,5 +1,7 @@
 # Globální možnosti
 
+> *Strojový překlad: tato stránka může zaostávat za anglickou verzí.*
+
 [[menu.tools > menu.tools.options > menu.tools.options_global]] obsahuje
 nastavení platná pro celý program: jazyk, výchozí hodnoty tisku a exportu,
 vektorizaci, zprávy a umístění souborů.
@@ -58,6 +60,11 @@ posledního tisku. V části [[options.print_checks]]
 [[options.warn_missing_fonts]] a [[options.warn_shelf_remove]] (vše zapnuto).
 Každá zpráva má také políčko, které ji vypne; zaškrtnutím volby zde ji
 uvidíte znovu.
+
+[[options.ask_missing_fonts]] (zapnuto) zobrazí dialog Chybějící písma, když
+se otevře výkres s písmy, která nejsou nainstalována; viz
+[Chybějící písma](../text/missing-fonts.md). Je to samostatná volba, nezávislá
+na prosté zprávě výše.
 
 ## Umístění souborů {#file-locations}
 

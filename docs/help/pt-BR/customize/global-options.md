@@ -1,5 +1,7 @@
 # Opções globais
 
+> *Tradução automática: esta página pode estar atrasada em relação à versão em inglês.*
+
 [[menu.tools > menu.tools.options > menu.tools.options_global]] reúne as
 configurações que valem para o programa inteiro: idioma, padrões de impressão e
 exportação, vetorização, mensagens e onde os arquivos ficam.
@@ -60,6 +62,11 @@ guarda as escolhas da última impressão. Em [[options.print_checks]],
 [[options.warn_missing_fonts]] e [[options.warn_shelf_remove]] (todos ligados).
 Cada mensagem também tem uma caixa que a desativa; marque a opção aqui para
 voltar a vê-la.
+
+[[options.ask_missing_fonts]] (ligado) mostra a caixa de diálogo Fontes
+ausentes quando um desenho abre com fontes que não estão instaladas; veja
+[Fontes ausentes](../text/missing-fonts.md). É separado da mensagem simples
+acima.
 
 ## Locais de arquivos {#file-locations}
 

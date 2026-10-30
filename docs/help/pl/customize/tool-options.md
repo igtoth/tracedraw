@@ -1,5 +1,7 @@
 # Opcje narzędzi
 
+> *Tłumaczenie maszynowe: ta strona może być mniej aktualna niż wersja angielska.*
+
 [[menu.tools > menu.tools.options > menu.tools.options_tools]] określa działanie
 narzędzi i to, jakie nowe obiekty rysują. Większość tych wartości znajduje się
 również na pasku właściwości każdego narzędzia.
@@ -31,6 +33,11 @@ również na pasku właściwości każdego narzędzia.
 - [[options.join_within]]: jak blisko węzła końcowego musi zaczynać się linia,
   aby kontynuować krzywą (domyślnie 5 pikseli ekranu). Zobacz
   [Kontynuowanie krzywej](../lines-shapes/lines.md#continue).
+
+- [[options.pen_preview]] i [[options.pen_auto_add_delete]] (obie włączone)
+  dla narzędzia [[tool.pen]]; zobacz [Pióro](../lines-shapes/lines.md#pen).
+- [[options.pen_tablet]]: [[options.pen_pressure]] (włączone); zobacz
+  [Rysowanie na tablecie graficznym](../lines-shapes/pen-pressure.md).
 
 ## Prostokąt {#rectangle}
 

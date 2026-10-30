@@ -1,5 +1,7 @@
 # Algemene opties
 
+> *Machinevertaling: deze pagina kan achterlopen op de Engelse versie.*
+
 [[menu.tools > menu.tools.options > menu.tools.options_global]] bevat de
 instellingen die voor het hele programma gelden: taal, standaardinstellingen
 voor afdrukken en exporteren, overtrekken, meldingen en waar bestanden worden
@@ -63,6 +65,11 @@ en [[dialog.delete_original]] (uit). Zie
 [[options.warn_missing_fonts]] en [[options.warn_shelf_remove]] (alle aan).
 Elke melding heeft ook een vakje waarmee u haar uitschakelt; vink de optie hier
 aan om haar weer te zien.
+
+[[options.ask_missing_fonts]] (aan) toont het dialoogvenster Ontbrekende
+lettertypen wanneer een tekening opent met lettertypen die niet geïnstalleerd
+zijn; zie [Ontbrekende lettertypen](../text/missing-fonts.md). Het staat los
+van de gewone melding hierboven.
 
 ## Bestandslocaties {#file-locations}
 

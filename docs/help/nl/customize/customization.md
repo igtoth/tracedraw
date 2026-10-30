@@ -1,5 +1,7 @@
 # Aanpassingsopties
 
+> *Machinevertaling: deze pagina kan achterlopen op de Engelse versie.*
+
 [[menu.tools > menu.tools.options > menu.tools.options_customization]] stelt
 het uiterlijk van de interface in, uw eigen sneltoetsen, welke balken zichtbaar
 zijn en hoe het kleurenpalet zich gedraagt.
@@ -43,6 +45,15 @@ tonen uw sneltoets. De **x** naast een sneltoets verwijdert hem, en herstellen
 naar de standaardwaarden verwijdert ze allemaal. Gereedschapstoetsen zijn een
 letter of <kbd>Shift</kbd> en een letter. Zie
 [Sneltoetsen](../reference/keyboard-shortcuts.md).
+
+Een opdracht kan meerdere sneltoetsen hebben: een nieuwe toets komt bij de
+toetsen die er al zijn (een ingebouwde toets blijft ernaast werken), en elke
+toets heeft een eigen verwijderknop. Knoppen van de balken die een menuopdracht
+uitvoeren (Nieuw, Openen, Opslaan, Ongedaan maken, Inzoomen en andere) krijgen
+ook sneltoetsen, dezelfde als hun menuopdracht, net als regels die de menu's
+alleen soms tonen. Een lijst **Werkbalkknoppen** bevat alle knoppen van de
+werkbalken Standaard en Zoom: sleep van daaruit een verwijderde knop terug naar
+de balk.
 
 ## Opdrachtbalken {#command-bars}
 

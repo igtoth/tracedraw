@@ -1,5 +1,7 @@
 # Opcje globalne
 
+> *Tłumaczenie maszynowe: ta strona może być mniej aktualna niż wersja angielska.*
+
 [[menu.tools > menu.tools.options > menu.tools.options_global]] zawiera
 ustawienia dotyczące całego programu: język, ustawienia domyślne drukowania
 i eksportu, wektoryzację, komunikaty oraz miejsca przechowywania plików.
@@ -60,6 +62,11 @@ i [[dialog.delete_original]] (wyłączone). Zobacz
 [[options.warn_missing_fonts]] i [[options.warn_shelf_remove]] (wszystkie
 włączone). Każdy komunikat ma też pole, które go wyłącza; zaznacz tutaj opcję,
 aby znów go widzieć.
+
+[[options.ask_missing_fonts]] (włączone) pokazuje okno Brakujące czcionki,
+gdy otwiera się rysunek z czcionkami, które nie są zainstalowane; zobacz
+[Brakujące czcionki](../text/missing-fonts.md). Jest to opcja niezależna od
+zwykłego komunikatu powyżej.
 
 ## Lokalizacje plików {#file-locations}
 

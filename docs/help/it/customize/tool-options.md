@@ -1,5 +1,7 @@
 # Opzioni degli strumenti
 
+> *Traduzione automatica: questa pagina può essere meno aggiornata della versione inglese.*
+
 [[menu.tools > menu.tools.options > menu.tools.options_tools]] imposta come si
 comportano gli strumenti e quali nuovi oggetti disegnano. La maggior parte di
 questi valori si trova anche nella barra delle proprietà di ciascuno
@@ -32,6 +34,11 @@ strumento.
 - [[options.join_within]]: quanto vicino a un nodo finale deve iniziare una
   linea per continuare la curva (5 pixel dello schermo in partenza). Vedi
   [Continuare una curva](../lines-shapes/lines.md#continue).
+
+- [[options.pen_preview]] e [[options.pen_auto_add_delete]] (entrambe attive)
+  per lo strumento [[tool.pen]]; vedere [Penna](../lines-shapes/lines.md#pen).
+- [[options.pen_tablet]]: [[options.pen_pressure]] (attiva); vedere
+  [Disegnare con una tavoletta grafica](../lines-shapes/pen-pressure.md).
 
 ## Rettangolo {#rectangle}
 

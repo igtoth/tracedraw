@@ -1,5 +1,7 @@
 # Opzioni di personalizzazione
 
+> *Traduzione automatica: questa pagina può essere meno aggiornata della versione inglese.*
+
 [[menu.tools > menu.tools.options > menu.tools.options_customization]]
 imposta l'aspetto dell'interfaccia, le tue scorciatoie da tastiera, quali
 barre sono visibili e come si comporta la tavolozza dei colori.
@@ -43,6 +45,15 @@ menu mostrano la tua scorciatoia. La **x** accanto a una scorciatoia la
 rimuove, e il ripristino dei valori predefiniti le rimuove tutte. I tasti
 degli strumenti sono una lettera o <kbd>Shift</kbd> e una lettera. Vedi
 [Scorciatoie da tastiera](../reference/keyboard-shortcuts.md).
+
+Un comando può avere più scorciatoie: un nuovo tasto si aggiunge a quelli che
+ha (un tasto predefinito continua a funzionare accanto), e ogni tasto ha il suo
+pulsante di eliminazione. Anche i pulsanti delle barre che eseguono un comando
+di menu (Nuovo, Apri, Salva, Annulla, Zoom avanti e altri) accettano
+scorciatoie, gli stessi tasti del comando di menu, così come le righe che i
+menu mostrano solo a volte. Un elenco **Pulsanti delle barre degli strumenti**
+contiene tutti i pulsanti delle barre Standard e Zoom: trascinate da lì nella
+barra un pulsante che avete tolto.
 
 ## Barre dei comandi {#command-bars}
 

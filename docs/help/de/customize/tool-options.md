@@ -1,5 +1,7 @@
 # Werkzeugoptionen
 
+> *Maschinelle Übersetzung: Diese Seite kann hinter der englischen Fassung zurückliegen.*
+
 [[menu.tools > menu.tools.options > menu.tools.options_tools]] legt fest, wie
 sich Werkzeuge verhalten und welche neuen Objekte sie zeichnen. Die meisten
 dieser Werte finden Sie auch in der Eigenschaftsleiste des jeweiligen
@@ -32,6 +34,11 @@ Werkzeugs.
 - [[options.join_within]]: wie nah an einem Endknoten eine Linie beginnen muss,
   um die Kurve fortzusetzen (anfangs 5 Bildschirmpixel). Siehe
   [Eine Kurve fortsetzen](../lines-shapes/lines.md#continue).
+
+- [[options.pen_preview]] und [[options.pen_auto_add_delete]] (beide an) für
+  das Werkzeug [[tool.pen]]; siehe [Stift](../lines-shapes/lines.md#pen).
+- [[options.pen_tablet]]: [[options.pen_pressure]] (an); siehe
+  [Mit einem Grafiktablett zeichnen](../lines-shapes/pen-pressure.md).
 
 ## Rechteck {#rectangle}
 

@@ -1,5 +1,7 @@
 # Genel seçenekler
 
+> *Makine çevirisi: bu sayfa İngilizce sürümün gerisinde kalabilir.*
+
 [[menu.tools > menu.tools.options > menu.tools.options_global]] programın
 tamamına uygulanan ayarları barındırır: dil, yazdırma ve dışa aktarma
 varsayılanları, izleme, iletiler ve dosyaların nerede tutulduğu.
@@ -61,6 +63,11 @@ varsayılanları, izleme, iletiler ve dosyaların nerede tutulduğu.
 [[options.warn_missing_fonts]] ve [[options.warn_shelf_remove]] (hepsi
 açık). Her iletide onu durduran bir kutu da vardır; yeniden görmek için
 seçeneği burada işaretleyin.
+
+[[options.ask_missing_fonts]] (açık), yüklü olmayan yazı tipleri kullanan
+bir çizim açıldığında Eksik Yazı Tipleri iletişim kutusunu gösterir; bkz.
+[Eksik yazı tipleri](../text/missing-fonts.md). Yukarıdaki basit iletiden
+ayrıdır.
 
 ## Dosya Konumları {#file-locations}
 

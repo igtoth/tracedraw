@@ -1,5 +1,7 @@
 # Özelleştirme seçenekleri
 
+> *Makine çevirisi: bu sayfa İngilizce sürümün gerisinde kalabilir.*
+
 [[menu.tools > menu.tools.options > menu.tools.options_customization]]
 arayüzün görünümünü, kendi klavye kısayollarınızı, hangi çubukların
 görüneceğini ve renk paletinin nasıl davranacağını ayarlar.
@@ -43,6 +45,14 @@ söyler. Menüler sizin kısayolunuzu gösterir. Bir kısayolun yanındaki **x**
 onu kaldırır; varsayılanlara sıfırlamak hepsini kaldırır. Araç tuşları bir
 harf veya <kbd>Shift</kbd> ile bir harftir. Bkz.
 [Klavye kısayolları](../reference/keyboard-shortcuts.md).
+
+Bir komutun birden çok kısayolu olabilir: yeni bir tuş mevcut olanlara eklenir
+(yerleşik tuş yanında çalışmaya devam eder) ve her tuşun kendi silme düğmesi
+vardır. Bir menü komutunu çalıştıran çubuk düğmeleri (Yeni, Aç, Kaydet, Geri
+Al, Yakınlaştır ve diğerleri) de menü komutlarıyla aynı kısayolları alır;
+menülerin yalnızca bazen gösterdiği satırlar da öyle. **Araç çubuğu
+düğmeleri** listesi Standart ve Yakınlaştırma çubuklarının tüm düğmelerini
+içerir: çubuktan kaldırdığınız bir düğmeyi oradan geri sürükleyin.
 
 ## Komut Çubukları {#command-bars}
 

@@ -1,5 +1,7 @@
 # Options globales
 
+> *Traduction automatique : cette page peut être en retard sur la version anglaise.*
+
 [[menu.tools > menu.tools.options > menu.tools.options_global]] contient les
 réglages qui s'appliquent à tout le programme : la langue, les valeurs par
 défaut d'impression et d'exportation, la vectorisation, les messages et
@@ -65,6 +67,11 @@ Sous [[options.print_checks]], [[options.print_preflight]] (actif). Voir
 [[options.warn_missing_fonts]] et [[options.warn_shelf_remove]] (tous
 actifs). Chaque message a aussi une case qui le désactive ; cochez l'option
 ici pour le revoir.
+
+[[options.ask_missing_fonts]] (activée) affiche la boîte de dialogue Polices
+manquantes quand un dessin s'ouvre avec des polices non installées ; voir
+[Polices manquantes](../text/missing-fonts.md). Elle est distincte du simple
+message ci-dessus.
 
 ## Emplacements des fichiers {#file-locations}
 

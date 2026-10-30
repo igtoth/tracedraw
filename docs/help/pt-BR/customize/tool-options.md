@@ -1,5 +1,7 @@
 # Opções das ferramentas
 
+> *Tradução automática: esta página pode estar atrasada em relação à versão em inglês.*
+
 [[menu.tools > menu.tools.options > menu.tools.options_tools]] define como as
 ferramentas se comportam e o que os objetos novos desenhados por elas recebem. A
 maioria desses valores também está na barra de propriedades de cada ferramenta.
@@ -31,6 +33,11 @@ maioria desses valores também está na barra de propriedades de cada ferramenta
 - [[options.join_within]]: quão perto de um nó final uma linha deve começar
   para continuar a curva (5 pixels de tela de início). Veja
   [Continuar uma curva](../lines-shapes/lines.md#continue).
+
+- [[options.pen_preview]] e [[options.pen_auto_add_delete]] (ambos ligados)
+  para a ferramenta [[tool.pen]]; veja [Caneta](../lines-shapes/lines.md#pen).
+- [[options.pen_tablet]]: [[options.pen_pressure]] (ligado); veja
+  [Desenhar com uma mesa digitalizadora](../lines-shapes/pen-pressure.md).
 
 ## Retângulo {#rectangle}
 

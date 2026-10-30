@@ -1,5 +1,7 @@
 # Opções de personalização
 
+> *Tradução automática: esta página pode estar atrasada em relação à versão em inglês.*
+
 [[menu.tools > menu.tools.options > menu.tools.options_customization]] define a
 aparência da interface, seus próprios atalhos de teclado, quais barras
 aparecem e como a paleta de cores se comporta.
@@ -40,6 +42,15 @@ comando usa, a página diz qual comando a perdeu. Os menus mostram o seu atalho.
 O **x** ao lado de um atalho o remove, e voltar aos padrões remove todos. As
 teclas de ferramenta são uma letra ou <kbd>Shift</kbd> e uma letra. Veja
 [Atalhos de teclado](../reference/keyboard-shortcuts.md).
+
+Um comando pode ter vários atalhos: uma tecla nova se junta às que ele já tem
+(uma tecla padrão continua funcionando ao lado dela), e cada tecla tem o próprio
+botão de excluir. Os botões das barras que executam um comando de menu (Novo,
+Abrir, Salvar, Desfazer, Aproximar e outros) também aceitam atalhos, as mesmas
+teclas do comando de menu, assim como linhas que os menus mostram só às vezes
+(como Concluir edição do conteúdo). Uma lista **Botões das barras de
+ferramentas** tem todos os botões das barras Padrão e Zoom: arraste dali de
+volta para a barra um botão que você tirou.
 
 ## Barras de comando {#command-bars}
 

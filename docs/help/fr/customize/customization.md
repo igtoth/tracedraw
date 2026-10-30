@@ -1,5 +1,7 @@
 # Options de personnalisation
 
+> *Traduction automatique : cette page peut être en retard sur la version anglaise.*
+
 [[menu.tools > menu.tools.options > menu.tools.options_customization]] règle
 l'apparence de l'interface, vos propres raccourcis clavier, les barres
 affichées et le comportement de la palette de couleurs.
@@ -44,6 +46,15 @@ perdue. Les menus affichent votre raccourci. Le **x** à côté d'un raccourci
 le supprime, et la réinitialisation aux valeurs par défaut les supprime
 tous. Les touches des outils sont une lettre, ou <kbd>Shift</kbd> et une
 lettre. Voir [Raccourcis clavier](../reference/keyboard-shortcuts.md).
+
+Une commande peut avoir plusieurs raccourcis : une nouvelle touche s'ajoute à
+celles qu'elle a (une touche intégrée continue de marcher à côté), et chaque
+touche a son propre bouton de suppression. Les boutons des barres qui lancent
+une commande de menu (Nouveau, Ouvrir, Enregistrer, Annuler, Zoom avant et
+d'autres) prennent aussi des raccourcis, les mêmes touches que leur commande de
+menu, tout comme les lignes que les menus n'affichent que par moments. Une
+liste **Boutons des barres d'outils** contient tous les boutons des barres
+Standard et Zoom : faites glisser de là, vers sa barre, un bouton retiré.
 
 ## Barres de commandes {#command-bars}
 

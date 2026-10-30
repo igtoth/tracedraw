@@ -1,5 +1,7 @@
 # Možnosti přizpůsobení
 
+> *Strojový překlad: tato stránka může zaostávat za anglickou verzí.*
+
 [[menu.tools > menu.tools.options > menu.tools.options_customization]]
 nastavuje vzhled rozhraní, vaše vlastní klávesové zkratky, zobrazené lišty a
 chování barevné palety.
@@ -40,6 +42,14 @@ používá jiný příkaz, stránka řekne, který příkaz ji ztratil. Nabídky
 vaši zkratku. **x** vedle zkratky ji odebere a obnovení výchozích hodnot
 odebere všechny. Klávesy nástrojů jsou písmeno nebo <kbd>Shift</kbd> a
 písmeno. Viz [Klávesové zkratky](../reference/keyboard-shortcuts.md).
+
+Příkaz může mít více zkratek: nová klávesa se přidá k těm, které už má
+(vestavěná klávesa funguje dál vedle ní), a každá klávesa má vlastní tlačítko
+pro odstranění. Zkratky přijímají i tlačítka panelů, která spouštějí příkaz
+nabídky (Nový, Otevřít, Uložit, Zpět, Přiblížit a další), se stejnými
+klávesami jako příkaz nabídky, a také řádky, které nabídky ukazují jen někdy.
+Seznam **Tlačítka panelů nástrojů** obsahuje všechna tlačítka panelů Standardní
+a Lupa: tlačítko odebrané z panelu odtud přetáhněte zpět.
 
 ## Příkazové lišty {#command-bars}
 
