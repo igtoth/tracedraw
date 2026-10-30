@@ -20,9 +20,11 @@ jobs:
             mkdir -p "attachments/$issue"
             name="$(basename "$url")"
             id="$(basename "$(dirname "$url")")"
-            curl -sSfL --retry 3 -o "attachments/$issue/${id}-${name}" "$url" || echo "FAILED $issue $url" >> attachments/failed.txt
+            out="attachments/$issue/${id}-${name}"
+            [ -e "$out" ] && continue
+            curl -sSfL --retry 3 --max-filesize 95000000 -o "$out" "$url" || { rm -f "$out"; echo "FAILED $issue $url" >> attachments/failed.txt; }
           done < attachments/urls.txt
-          ls -laR attachments
+          du -sh attachments
       - name: Commit them to this branch
         run: |
           git config user.name "github-actions[bot]"
