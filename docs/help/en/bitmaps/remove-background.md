@@ -18,27 +18,50 @@ the same command.
 
 ## Options {#options}
 
-- **[[dialog.bg_colors]]** TraceDraw learns the background's colors from the
-  edges of the picture (up to four, so a gradient or a two-tone backdrop
-  works). To choose them yourself, click the eyedropper and click the
-  background in a preview; each click adds a color. Click a color swatch to
-  take it out, and **[[dialog.bg_colors_auto_button]]** to go back to the
-  learnt colors.
+- **[[dialog.bg_colors]]** The colors to remove, one row each. At first
+  there is one row, **[[dialog.bg_colors_auto_button]]**: TraceDraw learns
+  the background's colors from the edges of the picture (up to four, so a
+  gradient or a two-tone backdrop works). Each row has:
+  - its swatch;
+  - an eyedropper: click it, then click a color in a preview or on the
+    drawing, and the row takes that color. On the first row,
+    **[[dialog.bg_colors_auto_button]]** goes back to the learnt colors;
+  - its own tolerance, a whole number from 0 to 100. It shows the
+    **[[dialog.tolerance]]** below until you change it;
+  - **[[dialog.bg_row_remove]]** (x), which takes the row out. The last row
+    always stays.
+
+  **[[dialog.bg_add_color]]** (+) adds a row: click it, then click the
+  color in the Before preview or on the drawing. A pixel counts as
+  background when it is close enough to any color of the list, each color
+  with its own tolerance.
+- **Shortcuts with the eyedropper on** Shift+click in a preview adds the
+  color under the pointer as a new row and keeps the eyedropper on, so you
+  can pick several colors in a row. Alt+click takes out the row whose color
+  is nearest to the one under the pointer. A color picked in a preview is
+  taken from the picture before the change, so a part already removed can
+  still be picked.
 - **[[dialog.tolerance]]** How far a color may be from the background's and
-  still count as background (0 to 100). Raise it when some backdrop stays;
+  still count as background (0 to 100, whole numbers). It is the tolerance
+  of every row that has none of its own. Raise it when some backdrop stays;
   lower it when parts of the subject go.
 - **[[dialog.edge_softness]]** Feathers the edge of the subject, in pixels.
   0 keeps a hard edge.
 - **[[dialog.bg_contiguous]]** (on at first) Only the background connected to
   the edges of the picture goes, so a white shirt on a white backdrop keeps
-  its inside. Turn it off to remove every pixel near a background color, for
-  example the holes of a letter or a ring.
+  its inside. A color picked in a preview also starts the removal from the
+  point where you clicked, so a hole inside the subject can go with one
+  pick. Turn it off to remove every pixel near a listed color, for example
+  all the holes of a letter or a ring.
 - **[[dialog.bg_despeckle]]** (on at first) Small loose spots left in the
   background go too.
 - **[[dialog.bg_clean_edges]]** (on at first) Takes the old background's color
   out of the half-transparent pixels of the edge, so no light or dark halo
   shows when the subject goes on another background.
-- **[[dialog.reset]]** puts every option back.
+- **[[dialog.reset]]** puts every option back, with one [[dialog.bg_colors_auto_button]] row.
+
+[[dialog.ok]] remembers the options and the list of colors until you close
+TraceDraw, so the next Remove Background starts with them.
 
 ## Tips {#tips}
 
