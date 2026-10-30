@@ -9,6 +9,13 @@ blurred.
 1. Choose the [[tool.drop_shadow]] tool from the Effects flyout.
 2. Drag from an object to where the shadow should fall.
 
+Clip frames and groups take shadows too: a frame casts the shadow of what it
+shows (its fill and the contents within it), and a group the shadow of each of
+its objects. A click on a shadow with the [[tool.pick]] tool selects its
+object; with the [[tool.drop_shadow]] tool it shows the shadow's handles, and
+a drag on the shadow moves it. Shadows show in exported and printed PDF
+files, with their color, opacity and feathering.
+
 ## Settings {#settings}
 
 On the property bar:

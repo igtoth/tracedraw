@@ -13,10 +13,15 @@ back.
 
 1. Select one or more objects.
 2. Choose a group in the [[menu.effects]] menu and an effect.
-3. Effects without settings apply at once. The others open a dialog box with
-   **before** and **after** previews of the first selected object: set the
-   values and click [[dialog.ok]]. **Reset** puts every setting back to its
-   default.
+3. Effects without settings apply at once. The others open a dialog box you
+   can size, with the first selected object before and after in the
+   [Before and After preview](../bitmaps/before-after-preview.md) and the
+   settings on the right. The effect also shows on the drawing and follows
+   every value as it changes (untick **Preview** to switch that off); the
+   work is done in the background, so the window keeps answering on large
+   pictures. Click [[dialog.ok]] to keep what the drawing shows as one undo
+   step; **Cancel** or <kbd>Esc</kbd> put the drawing back exactly as it was.
+   **Reset** puts every setting back to its default.
 
 ![A bitmap effect dialog box](../../img/effects-bitmap-effects.png)
 

@@ -33,4 +33,9 @@ The property bar shows and changes the selected distortion:
 - for twister, **clockwise** or **counterclockwise**, the number of whole
   **rotations** and the extra **degrees**.
 
+A value changed on the property bar shows on the selected object at once,
+also when it has no distortion yet. The zipper draws one more line than its
+frequency, and its amplitude, frequency and angle have handles on the page to
+drag. The twister spirals smoothly to the ends of a shape.
+
 [[menu.object > menu.object.clear_effect]] removes the distortion.

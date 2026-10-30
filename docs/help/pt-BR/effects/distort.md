@@ -1,5 +1,7 @@
 # Distorção
 
+> *Tradução automática: esta página pode estar atrasada em relação à versão em inglês.*
+
 A ferramenta [[tool.distort]] entorta o contorno de um objeto de três jeitos:
 **empurrar e puxar** (pontas ou pétalas), **zíper** (dentes em zigue-zague) e
 **torção** (um redemoinho). É um efeito vivo: você pode mudar, mover ou remover
@@ -33,5 +35,10 @@ A barra de propriedades mostra e muda a distorção selecionada:
   centro);
 - para torção, **horário** ou **anti-horário**, o número de **rotações**
   inteiras e os **graus** extras.
+
+Um valor mudado na barra de propriedades aparece no objeto selecionado na
+hora, mesmo quando ele ainda não tem distorção. O zíper desenha uma linha a
+mais que a frequência, e a amplitude, a frequência e o ângulo dele têm alças na
+página para arrastar. O redemoinho gira suavemente até as pontas da forma.
 
 [[menu.object > menu.object.clear_effect]] remove a distorção.

@@ -44,6 +44,23 @@ applies at once.
 
 The tool's property bar has the steps, rotation and the two accelerations.
 
+### Controls on the canvas {#canvas-controls}
+
+Pick a blend with the [[tool.blend]] tool (click its start or end object, or a
+step) to show its controls: a square on the start object, a crossed square on
+the end object, the line between them and two sliders on it, the object
+acceleration above and the color acceleration below.
+
+- Drag a slider toward the start or the end to crowd the steps or the colors
+  there. The blend follows live, each drag is one undo step, and the property
+  bar follows.
+- Drag an end square to move its object, so the blend changes direction. Drop
+  it on another object to make that object the new start or end, with the
+  blend's settings.
+
+The object acceleration moves the steps toward one end also when the blend
+follows no path. A bitmap effect on the start object keeps the blend drawn.
+
 ## Blending along a path {#path}
 
 1. Select the blend.

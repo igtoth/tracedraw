@@ -1,5 +1,7 @@
 # Sombras projetadas
 
+> *Tradução automática: esta página pode estar atrasada em relação à versão em inglês.*
+
 Uma sombra projetada é uma sombra suave embaixo de um objeto, como se ele
 flutuasse sobre a página. É uma cópia da silhueta do objeto na cor da sombra,
 deslocada e desfocada.
@@ -8,6 +10,13 @@ deslocada e desfocada.
 
 1. Escolha a ferramenta [[tool.drop_shadow]] no submenu Efeitos.
 2. Arraste a partir de um objeto até onde a sombra deve cair.
+
+Molduras de recorte e grupos também recebem sombras: uma moldura projeta a
+sombra do que mostra (o preenchimento e o conteúdo dentro dela), e um grupo a
+sombra de cada objeto. Um clique numa sombra com a ferramenta [[tool.pick]]
+seleciona o objeto dela; com a ferramenta [[tool.drop_shadow]] mostra as alças
+da sombra, e arrastar a sombra a move. As sombras aparecem em PDFs exportados
+e impressos, com a cor, a opacidade e o esfumado.
 
 ## Configurações {#settings}
 

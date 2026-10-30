@@ -1,5 +1,7 @@
 # Envelopes
 
+> *Tradução automática: esta página pode estar atrasada em relação à versão em inglês.*
+
 Um envelope é uma moldura de nós em volta de um objeto; o objeto é curvado para
 preencher a moldura e acompanha quando você move os nós. Use-o para arquear
 texto, inflar uma forma ou encaixar uma arte em uma bandeira ou um círculo. O
@@ -53,4 +55,6 @@ do mesmo jeito.
 - **Copiar propriedades do envelope**: clique em outro objeto para copiar o
   envelope dele (como
   [[menu.object > menu.object.copy_effect > menu.object.copy_envelope_from]]).
+  Clique em um objeto sem envelope, como um círculo, uma estrela ou uma curva
+  desenhada, para encaixar o texto ou os objetos selecionados na forma dele.
 - **Limpar envelope** remove o último envelope.

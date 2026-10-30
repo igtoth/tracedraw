@@ -1,5 +1,7 @@
 # Hinterlegte Schatten
 
+> *Maschinelle Übersetzung: Diese Seite kann hinter der englischen Fassung zurückliegen.*
+
 Ein hinterlegter Schatten ist ein weicher Schatten unter einem Objekt, als ob es
 über der Seite schweben würde. Er ist eine Kopie der Silhouette des Objekts in
 der Schattenfarbe, versetzt und weichgezeichnet.
@@ -8,6 +10,14 @@ der Schattenfarbe, versetzt und weichgezeichnet.
 
 1. Wählen Sie das Werkzeug [[tool.drop_shadow]] aus dem Flyout für Effekte.
 2. Ziehen Sie von einem Objekt dorthin, wo der Schatten fallen soll.
+
+Auch Clip-Rahmen und Gruppen erhalten Schatten: Ein Rahmen wirft den Schatten
+dessen, was er zeigt (seine Füllung und den Inhalt darin), eine Gruppe den
+Schatten jedes ihrer Objekte. Ein Klick auf einen Schatten mit dem Werkzeug
+[[tool.pick]] wählt sein Objekt aus; mit dem Werkzeug [[tool.drop_shadow]]
+zeigt er die Griffe des Schattens, und Ziehen am Schatten verschiebt ihn.
+Schatten erscheinen in exportierten und gedruckten PDF-Dateien, mit Farbe,
+Deckkraft und weicher Kante.
 
 ## Einstellungen {#settings}
 

@@ -49,4 +49,6 @@ it. In the unconstrained mode the property bar also has **Add node** and
   over the envelope it has.
 - **Copy envelope properties**: click another object to copy its envelope (as
   [[menu.object > menu.object.copy_effect > menu.object.copy_envelope_from]]).
+  Click an object without an envelope, such as a circle, a star or a curve
+  you drew, to fit the selected text or objects into its shape.
 - **Clear envelope** removes the last envelope.
