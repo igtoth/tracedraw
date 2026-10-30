@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Step and Repeat: the horizontal and vertical distances, the number of copies and the modes stay as typed. They went back to the defaults (6.35 mm across, 0 down, one copy) whenever the selection changed, so after every Apply (its copies are selected) and every click on another object a distance set to 0 showed 6.35 mm again and the next copies took it (#1198). With nothing selected the fields are greyed and keep their values.
 - Help: pages brought up to date with releases 0.19 to 0.27 (opening and saving, fonts, text, printing, export, drawing tools, objects, colours, effects, pages, options, menus and shortcuts), and new pages for Package, Missing Fonts, Convert Colors, finding by properties, PDF printers' marks, booklets, Fit Objects to Path, the Before and After preview, graphics tablets and tablets with the Android app; Brazilian Portuguese follows, other languages where the pages changed most. Docs only.
 - Browser version: its notice now opens with the warning that a browser is slower, marked in red and underlined, then says it is the same program compiled to WebAssembly, and last points to the desktop app, in every language.
 

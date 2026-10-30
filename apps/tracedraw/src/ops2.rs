@@ -51,10 +51,6 @@ pub struct StepRepeat {
     /// 0 = offset, 1 = spacing between copies (uses object size).
     pub mode_x: u8,
     pub mode_y: u8,
-    /// The objects these values were set for, in id order. Another
-    /// selection, the copies an Apply made among them, starts again from
-    /// the defaults (#1032).
-    pub for_selection: Vec<ShapeId>,
 }
 
 impl Default for StepRepeat {
@@ -65,7 +61,6 @@ impl Default for StepRepeat {
             dy: 0.0,
             mode_x: 0,
             mode_y: 0,
-            for_selection: Vec::new(),
         }
     }
 }
@@ -3147,24 +3142,13 @@ impl App {
     // ----- step and repeat ---------------------------------------------------------------
 
     /// The Step and Repeat values belong to the objects they were set
-    /// for: when the selection is other objects (a new object picked, or
-    /// the copies the last Apply made), the copies, distances and modes go
-    /// back to their defaults, so a count or a distance typed for one
-    /// object is never used again on the next one (#1032).
-    pub fn step_repeat_follow_selection(&mut self) {
-        let mut sel = self.selection.clone();
-        sel.sort();
-        sel.dedup();
-        if self.step_repeat.for_selection != sel {
-            self.step_repeat = StepRepeat {
-                for_selection: sel,
-                ..StepRepeat::default()
-            };
-        }
-    }
-
+    /// The values typed in the Step and Repeat docker stay as typed, for
+    /// this selection, the copies an Apply makes and any object picked
+    /// next, until they are changed again (#1198; until 0.27.0 they went
+    /// back to the defaults at every change of the selection, so a
+    /// distance typed came back as 6.35 mm after each Apply or click,
+    /// #1032).
     pub fn step_and_repeat_apply(&mut self) {
-        self.step_repeat_follow_selection();
         let shapes = self.selected_shapes();
         if shapes.is_empty() {
             return;
@@ -3636,11 +3620,11 @@ mod tests {
         }
     }
 
-    /// Step and Repeat values set for one object are not used on the next
-    /// one: a new selection, or the copies an Apply made, starts again
-    /// from the defaults, so the next Apply makes one copy (#1032).
+    /// The Step and Repeat values stay as typed: after an Apply (its copies
+    /// are selected) and for another object picked next, the same count
+    /// and distances are used until changed (#1198).
     #[test]
-    fn step_and_repeat_starts_fresh_for_each_object() {
+    fn step_and_repeat_values_stay_as_typed() {
         let mut app = App::headless();
         let rect = |x: f64| ShapeKind::Rect {
             rect: kurbo::Rect::new(x, 0.0, x + 10.0, 10.0),
@@ -3657,38 +3641,34 @@ mod tests {
         };
         let before = count(&app);
         app.select(vec![a]);
-        app.step_repeat_follow_selection();
         app.step_repeat.copies = 3;
-        app.step_repeat.dx = 20.0;
-        app.step_repeat.mode_x = 1;
+        app.step_repeat.dx = 0.0;
+        app.step_repeat.dy = 20.0;
         app.step_and_repeat_apply();
         assert_eq!(count(&app), before + 3);
         assert_eq!(app.selection.len(), 3);
-        // The copies are selected: the values went back to the defaults.
-        app.step_repeat_follow_selection();
+        // The copies are selected: the values are still the typed ones.
         assert_eq!(
             app.step_repeat,
             StepRepeat {
-                for_selection: {
-                    let mut s = app.selection.clone();
-                    s.sort();
-                    s
-                },
+                copies: 3,
+                dx: 0.0,
+                dy: 20.0,
                 ..StepRepeat::default()
             }
         );
-        // A new object picked gets one copy at the default offset.
+        // Another object picked: the same values again.
         app.select(vec![b]);
         app.step_and_repeat_apply();
-        assert_eq!(count(&app), before + 4);
+        assert_eq!(count(&app), before + 6);
         let copy = app
             .doc()
             .find_shape(app.selection[0])
             .expect("copy")
             .bounds();
         let orig = app.doc().find_shape(b).expect("b").bounds();
-        assert!((copy.x0 - orig.x0 - StepRepeat::default().dx).abs() < 1e-9);
-        assert!((copy.y0 - orig.y0).abs() < 1e-9);
+        assert!((copy.x0 - orig.x0).abs() < 1e-9);
+        assert!((copy.y0 - orig.y0 - 20.0).abs() < 1e-9);
     }
 
     /// New Symbol is one step to undo: the symbol goes with its instance.

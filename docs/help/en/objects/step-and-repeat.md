@@ -25,11 +25,11 @@ column of lines, a grid of tiles. Open it with
 The copies are added to the active layer and selected. Distances are in the
 drawing units.
 
-The values are for the objects selected when they were typed. Selecting
-other objects, or the copies an Apply just made, puts the number of copies,
-the distances and the modes back to their defaults, so the next Apply never
-reuses a count meant for another object. With nothing selected the fields
-wait at their defaults.
+The values stay as you typed them: after an Apply (the copies it made are
+selected) and for the next objects you select, the panel keeps the same
+number of copies, distances and modes until you change them. With nothing
+selected the fields wait, keeping their values. A new session starts from
+one copy, 6.35 mm across and 0 down.
 
 To copy with a rotation or a scale at each step, use the [[dialog.copies]]
 field of the [[docker.transformations]] panel; see

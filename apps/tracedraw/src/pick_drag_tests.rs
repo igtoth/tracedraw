@@ -13640,3 +13640,60 @@ fn a_pen_that_only_sends_moving_touches_sets_the_width() {
     assert!(!ctx.input(|i| i.has_touch_screen()));
     assert!(!ctx.input(|i| i.any_touches()));
 }
+
+/// A Step and Repeat copy made at the docker: the horizontal field
+/// typed into (its whole value selected on focus), then Apply clicked.
+/// Returns the bounds of the copy selected after Apply.
+fn step_and_repeat_typed_then_applied(
+    ctx: &egui::Context,
+    app: &mut App,
+    typed: &str,
+    enter_first: bool,
+) -> Rect {
+    let field = trace_text_at(ctx, app, "6.35 mm").expect("the horizontal field");
+    click_at(ctx, app, field, Modifiers::NONE);
+    frame(ctx, app, vec![Event::Text(typed.into())], Modifiers::NONE);
+    if enter_first {
+        frame(ctx, app, vec![key(egui::Key::Enter, Modifiers::NONE)], Modifiers::NONE);
+    }
+    let apply = trace_text_at(ctx, app, &crate::i18n::tr("docker.apply")).expect("Apply");
+    frame(ctx, app, vec![Event::PointerMoved(apply)], Modifiers::NONE);
+    frame(
+        ctx,
+        app,
+        vec![button(apply, true, PointerButton::Primary, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    frame(
+        ctx,
+        app,
+        vec![button(apply, false, PointerButton::Primary, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    frame(ctx, app, Vec::new(), Modifiers::NONE);
+    let copy = *app.selection.first().expect("the copy is selected");
+    bounds(app, copy)
+}
+
+/// The distance typed in the Step and Repeat docker just before Apply is
+/// the one the copies take (#1198): a 0 typed over the default and Apply
+/// clicked at once (the field is still being edited when the click
+/// comes), or after Enter.
+#[test]
+fn step_and_repeat_takes_the_distance_typed_before_apply() {
+    for enter_first in [false, true] {
+        let (ctx, mut app, id) = setup();
+        app.open_docker(crate::app::DockerTab::StepAndRepeat);
+        for _ in 0..3 {
+            frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+        }
+        let before = bounds(&app, id);
+        let copy = step_and_repeat_typed_then_applied(&ctx, &mut app, "0", enter_first);
+        assert_eq!(shape_count(&app), 2, "enter first: {enter_first}");
+        assert!(
+            close(copy.x0, before.x0) && close(copy.y0, before.y0),
+            "enter first: {enter_first}: the copy at {copy:?}, the original at {before:?}"
+        );
+        assert!(close(app.step_repeat.dx, 0.0), "{:?}", app.step_repeat);
+    }
+}

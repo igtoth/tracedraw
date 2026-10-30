@@ -70,10 +70,9 @@ pub fn show(app: &mut App, ui: &mut Ui, tab: DockerTab) {
 }
 
 fn step_and_repeat(app: &mut App, ui: &mut Ui) {
-    app.step_repeat_follow_selection();
     let u = app.units;
     let has = !app.selection.is_empty();
-    // With nothing selected the values stay at their defaults (#1032).
+    // With nothing selected the fields wait, keeping their values (#1198).
     ui.add_enabled_ui(has, |ui| {
         step_and_repeat_fields(&mut app.step_repeat, u, ui)
     });
