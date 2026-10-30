@@ -1,5 +1,7 @@
 # Novidades
 
+> *Tradução automática: esta página pode estar atrasada em relação à versão em inglês.*
+
 Cada versão do TraceDraw traz recursos e correções. Esta página explica como
 saber o que mudou e lista os destaques das versões mais recentes.
 
@@ -18,6 +20,31 @@ saber o que mudou e lista os destaques das versões mais recentes.
 
 ## Destaques das versões recentes {#highlights}
 
+- **Tablets e Android.** A versão para navegador se instala como app num
+  tablet ou computador, e um app para Android roda em tablets, celulares e
+  Chromebooks. Veja [Tablets e o app para Android](../get-started/tablets-and-android.md).
+- **Pressão da caneta.** A pressão de uma mesa digitalizadora define a
+  largura das linhas de Mão livre e das pinceladas. Veja
+  [Desenhar com uma mesa digitalizadora](../lines-shapes/pen-pressure.md).
+- **Pacotes e fontes ausentes.** Um pacote reúne um desenho, as imagens e as
+  fontes em uma pasta, e uma caixa de diálogo escolhe as fontes que
+  substituem as que faltam. Veja [Empacotar um desenho](../file-formats/package.md)
+  e [Fontes ausentes](../text/missing-fonts.md).
+- **Converter cores.** Todas as cores de uma seleção ou de um desenho,
+  bitmaps inclusive, podem ir para CMYK ou RGB em um passo. Veja
+  [Converter cores](../color/convert-colors.md).
+- **Impressão.** Livretos podem ser grampeados ou colados na lombada, e
+  arquivos PDF podem levar marcas de impressão. Veja
+  [Imprimir livretos](../printing/booklet.md) e
+  [Marcas de impressão em arquivos PDF](../file-formats/pdf-prepress-marks.md).
+- **Localizar por propriedades e encaixar objetos num caminho.** Localize
+  objetos por preenchimento, contorno, largura, fonte ou tipo e substitua-os;
+  coloque objetos e cópias ao longo de um caminho. Veja
+  [Localizar por propriedades](../objects/find-by-properties.md) e
+  [Encaixar objetos num caminho](../objects/fit-objects-to-path.md).
+- **Prévia de antes e depois.** Toda caixa de diálogo que muda uma imagem é
+  uma janela redimensionável, com uma prévia comum que você aproxima e move.
+  Veja [A prévia de antes e depois](../bitmaps/before-after-preview.md).
 - **Ajuda no seu idioma.** Todo botão **?** e a tecla <kbd>F1</kbd> abrem a
   página desta Ajuda sobre a caixa de diálogo, o painel ou a ferramenta à sua
   frente, no idioma em que o TraceDraw está configurado.
