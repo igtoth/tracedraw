@@ -347,6 +347,11 @@ pub fn warnings_page(app: &mut App, ui: &mut Ui) {
             "options.warn_missing_fonts",
             "options.warn_missing_fonts_tip",
         ));
+    ui.checkbox(&mut w.ask_missing_fonts, tr("options.ask_missing_fonts"))
+        .rich_tip(crate::ui::tips::pair(
+            "options.ask_missing_fonts",
+            "options.ask_missing_fonts_tip",
+        ));
     ui.checkbox(&mut w.shelf_remove, tr("options.warn_shelf_remove"))
         .rich_tip(crate::ui::tips::pair(
             "options.warn_shelf_remove",

@@ -561,8 +561,14 @@ impl TracePrefs {
 pub struct WarningPrefs {
     /// When objects of an opened file could not be read.
     pub unread_objects: bool,
-    /// When an opened drawing uses fonts that are not installed.
+    /// When an opened drawing uses fonts that are not installed: the
+    /// plain note naming them.
     pub missing_fonts: bool,
+    /// The Missing Fonts dialog (#936) after such a drawing opens, which
+    /// asks which installed font draws each missing one. A choice of its
+    /// own, so "Do not show this message again" ticked on the plain note
+    /// before the dialog existed does not silence the dialog (#1243).
+    pub ask_missing_fonts: bool,
     /// Before an item is taken off the Shelf.
     pub shelf_remove: bool,
 }
@@ -572,6 +578,7 @@ impl Default for WarningPrefs {
         WarningPrefs {
             unread_objects: true,
             missing_fonts: true,
+            ask_missing_fonts: true,
             shelf_remove: true,
         }
     }

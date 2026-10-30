@@ -1,8 +1,17 @@
 # Missing fonts
 
 When a drawing opens with text in font families that are not installed
-(and Options > Global > Warnings, Missing fonts, is on), the windowed
-application shows the Missing Fonts dialog (#936). Automated opens never
+(and Options > Global > Warnings, "Ask which installed font draws each
+missing one", is on), the windowed application shows the Missing Fonts
+dialog (#936). That choice is the dialog's own (`WarningPrefs::
+ask_missing_fonts`), apart from the plain note's "When an opened drawing
+uses fonts that are not installed": a "Do not show this message again"
+ticked on the note before the dialog existed does not silence the dialog
+(#1243, where the note's choice, off, left the dialog unseen and only the
+status line named the fonts). With the dialog off, the status line's
+"Missing fonts substituted" opens Options > Global > Warnings when
+clicked, so the dialog can be turned on again from where its absence is
+noticed; the plain note shows when its own choice is on. Automated opens never
 ask: the headless application used by tests, scripts and the MCP server
 (`App::headless`, `App::ask_missing_fonts` false) keeps the plain note
 after opening, and the command line tool has no dialogs.
@@ -24,7 +33,8 @@ after opening, and the command line tool has no dialogs.
   family, in groups, clip frames, tables and symbols, takes the font
   chosen (`Command::ReplaceFontFamily`, one undo step, "Replace Font").
   The drawing has unsaved changes afterwards.
-- Do not show this message again turns the warning off.
+- Do not show this message again turns the dialog off (its own choice
+  in Options > Global > Warnings; the plain note keeps its choice).
 - OK applies the choices; Cancel, Esc or the close button changes
   nothing and the automatic stand-ins stay. The status line then names
   the fonts still missing and what draws them, or says they were
@@ -46,6 +56,11 @@ after opening, and the command line tool has no dialogs.
 - `tracedraw_text`: a chosen stand-in draws the family and clears back to
   the automatic one (`tests::a_chosen_stand_in_draws_a_missing_family`).
 - `tracedraw_core`: `command::tests::a_font_family_is_replaced_throughout_the_drawing`.
+- Given the plain note turned off (the choice of before the dialog), the
+  dialog still asks; its box turns off the dialog alone; with both off
+  the status line leads to the Warnings page; with the note on and the
+  dialog off the note shows
+  (`ui::missing_fonts::tests::the_dialog_asks_although_the_plain_note_was_turned_off`).
 
 Not done: choices kept between sessions (a table of saved substitutions
 in the options).

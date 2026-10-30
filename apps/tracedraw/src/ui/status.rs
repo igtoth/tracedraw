@@ -430,7 +430,10 @@ pub fn status_bar(app: &mut App, ui: &mut Ui) {
         && drag.is_none()
         && app.settings.status_info == StatusInfo::ToolHints
         && !app.status.is_empty()
-        && app.status_opens_options.as_deref() == Some(app.status.as_str());
+        && app
+            .status_opens_options
+            .as_ref()
+            .is_some_and(|(s, _)| *s == app.status);
     // Left field and object information.
     let (left, info) = if !doc {
         (tr("status.tool_hints"), tr("status.object_information"))
@@ -487,9 +490,13 @@ pub fn status_bar(app: &mut App, ui: &mut Ui) {
             None => resp,
         };
         if resp.clicked() {
-            app.status_opens_options = None;
+            let page = app
+                .status_opens_options
+                .take()
+                .map(|(_, page)| page)
+                .unwrap_or_default();
             app.status.clear();
-            app.open_general_options();
+            app.open_options_page(page);
         }
     } else if let Some(t) = &left_full {
         let r = Rect::from_min_max(

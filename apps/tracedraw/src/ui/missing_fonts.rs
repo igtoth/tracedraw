@@ -105,7 +105,8 @@ impl App {
             }
         }
         if st.dont_show {
-            self.settings.warnings.missing_fonts = false;
+            // The dialog's own choice: the plain note stays as it is.
+            self.settings.warnings.ask_missing_fonts = false;
             self.settings.save();
         }
         self.check_missing_fonts();
@@ -185,7 +186,7 @@ pub fn dialog(app: &mut App, ctx: &Context, st: &mut MissingFontsState, close: &
         app.apply_font_choices(st);
     } else if *close && st.dont_show {
         // Closed without OK: the choices are dropped, the box is kept.
-        app.settings.warnings.missing_fonts = false;
+        app.settings.warnings.ask_missing_fonts = false;
         app.settings.save();
     }
     if help {
@@ -345,5 +346,48 @@ mod tests {
         assert_eq!(app.missing_fonts, vec!["Nowhere Grotesk 936".to_string()]);
         assert!(app.status.contains(&other), "{}", app.status);
         tracedraw_text::fonts().set_substitute("Nowhere Grotesk 936", None);
+    }
+
+    /// The dialog has a choice of its own in Options > Global > Warnings:
+    /// "Do not show this message again" ticked on the plain note before
+    /// the dialog existed left the dialog unseen, the status line alone
+    /// naming the fonts (#1243). Without the dialog, that line opens the
+    /// Warnings page.
+    #[test]
+    fn the_dialog_asks_although_the_plain_note_was_turned_off() {
+        let (mut app, family) = drawing();
+        if family.is_empty() {
+            return;
+        }
+        app.ask_missing_fonts = true;
+        app.settings.warnings.missing_fonts = false;
+        app.show_open_notes("old.cdr".into(), 0);
+        assert!(matches!(app.dialog, Dialog::MissingFonts(_)), "asked");
+        assert!(app.status_opens_options.is_none());
+        // The dialog's box turns the dialog off, not the note.
+        let Dialog::MissingFonts(st) = &mut app.dialog else {
+            panic!("asked");
+        };
+        st.dont_show = true;
+        let st = st.clone();
+        app.apply_font_choices(&st);
+        assert!(!app.settings.warnings.ask_missing_fonts);
+        assert!(!app.settings.warnings.missing_fonts);
+        // Both off: nothing but the status line, which leads to the page.
+        app.dialog = Dialog::None;
+        app.show_open_notes("old.cdr".into(), 0);
+        assert!(matches!(app.dialog, Dialog::None));
+        assert_eq!(
+            app.status_opens_options,
+            Some((
+                app.status.clone(),
+                crate::ui::dialogs::OptionsPage::Warnings
+            ))
+        );
+        // The note on and the dialog off: the note, as before the dialog.
+        app.settings.warnings.missing_fonts = true;
+        app.show_open_notes("old.cdr".into(), 0);
+        assert!(matches!(&app.dialog, Dialog::OpenNotes(n) if n.fonts.len() == 1));
+        app.settings.warnings = Default::default();
     }
 }

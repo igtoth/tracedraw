@@ -171,7 +171,8 @@ pub(crate) fn note_software_renderer(app: &mut App, name: &str) {
         app.status = crate::i18n::trf("status.software_renderer", &[("name", name)]);
     } else {
         app.status = crate::i18n::trf("status.software_renderer_off", &[("name", name)]);
-        app.status_opens_options = Some(app.status.clone());
+        app.status_opens_options =
+            Some((app.status.clone(), crate::ui::dialogs::OptionsPage::General));
     }
 }
 

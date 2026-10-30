@@ -922,9 +922,11 @@ pub struct App {
     /// `.tdraw` files (faces whose licence allows it).
     pub tdraw_embed_fonts: bool,
     pub status: String,
-    /// The status message that opens Options > General when clicked, while
-    /// it is the one shown: the hint that hardware acceleration is off.
-    pub status_opens_options: Option<String>,
+    /// The status message that opens the Options dialog at a page when
+    /// clicked, while it is the one shown: the hint that hardware
+    /// acceleration is off (General), the note of missing fonts when the
+    /// Missing Fonts dialog is turned off (Warnings, #1243).
+    pub status_opens_options: Option<(String, crate::ui::dialogs::OptionsPage)>,
     pub fit_pending: bool,
     /// Set the view of Options > Display > View when a drawing opens
     /// with the next fit (a drawing just opened or made, #1134).
@@ -2645,9 +2647,10 @@ impl App {
         }
     }
 
-    /// The Options dialog at its General page (hardware acceleration).
-    pub fn open_general_options(&mut self) {
-        self.options_page = crate::ui::dialogs::OptionsPage::General;
+    /// The Options dialog at `page` (General for the hardware
+    /// acceleration note, Warnings for the missing fonts one).
+    pub fn open_options_page(&mut self, page: crate::ui::dialogs::OptionsPage) {
+        self.options_page = page;
         self.dialog = crate::ui::dialogs::Dialog::Options;
     }
 
@@ -6657,8 +6660,11 @@ impl App {
         }
         let w = &self.settings.warnings;
         // The windowed application asks which font draws each missing
-        // one (#936); the note about unread objects follows.
-        if self.ask_missing_fonts && w.missing_fonts && !self.missing_fonts.is_empty() {
+        // one (#936), as long as Options > Global > Warnings asks for the
+        // dialog itself (its own choice, not the plain note's: a "Do not
+        // show again" ticked on the note before the dialog existed left
+        // the dialog unseen, #1243); the note about unread objects follows.
+        if self.ask_missing_fonts && w.ask_missing_fonts && !self.missing_fonts.is_empty() {
             self.dialog = crate::ui::dialogs::Dialog::MissingFonts(
                 crate::ui::missing_fonts::MissingFontsState::new(
                     name,
@@ -6667,6 +6673,16 @@ impl App {
                 ),
             );
             return;
+        }
+        // Without the dialog, the status line's note of the fonts (set
+        // when they were checked) opens the Warnings page when clicked,
+        // so the dialog can be turned on again from where its absence is
+        // noticed.
+        if self.ask_missing_fonts && !self.missing_fonts.is_empty() {
+            self.status_opens_options = Some((
+                self.status.clone(),
+                crate::ui::dialogs::OptionsPage::Warnings,
+            ));
         }
         let notes = crate::ui::dialogs::OpenNotes {
             name,

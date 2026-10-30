@@ -149,6 +149,11 @@ Show a message (`warnings`, all on):
   button that opens a new issue for the file.
 - When an opened drawing uses fonts that are not installed: the message
   names them (the text shows in a similar font and keeps its font name).
+- Ask which installed font draws each missing one: the Missing Fonts
+  dialog (`behavior/missing-fonts.md`) instead of that message. A choice
+  of its own, so the message's "Do not show this message again" ticked
+  before the dialog existed does not silence the dialog (#1243). With it
+  off, the status line's note of the fonts opens this page when clicked.
 - Before an item is removed from the Shelf: Remove or Cancel.
 
 Both parts after opening share one message. Each message has "Do not show
