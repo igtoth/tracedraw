@@ -286,35 +286,42 @@ fn edge_images(img: &image::RgbaImage, bpx: u32, mirror: bool) -> Vec<image::Rgb
     }
 }
 
-/// Rasterise the current page (white background) at a resolution that
-/// keeps the longest side at or under about 4000 pixels, cut to `area`
-/// (page millimetres, y up) when it is not the whole page.
+/// Rasterise `area` of the current page (page millimetres, y up) on
+/// white, at a resolution that keeps its longest side at or under about
+/// 4000 pixels. The area is drawn as it is, also where it reaches past
+/// the page: a selection larger than the page (a big imported photo)
+/// mirrors its own edges, not what the page shows of it (#1283).
 fn render_page(app: &App, area: Rect) -> Option<(image::RgbaImage, f64)> {
-    let size = app.page_size();
-    let longest = size.width.max(size.height).max(1.0);
-    let dpi = (4000.0 * 25.4 / longest).clamp(10.0, 150.0);
-    let pm = tracedraw_render::render_page_image(app.doc(), app.page, dpi)?;
-    let (w, h) = (pm.width(), pm.height());
-    // The background is opaque white, so premultiplied data is plain RGBA.
-    let img = image::RgbaImage::from_raw(w, h, pm.data().to_vec())?;
-    let page = Rect::new(0.0, 0.0, size.width, size.height);
-    if area == page {
-        return Some((img, dpi));
-    }
-    let a = area.intersect(page);
-    let px = |mm: f64| (mm * dpi / 25.4).round().max(0.0) as u32;
-    let (x, y) = (px(a.x0).min(w), px(size.height - a.y1).min(h));
-    let (cw, ch) = (
-        px(a.width()).min(w - x).max(1),
-        px(a.height()).min(h - y).max(1),
-    );
-    if x >= w || y >= h {
+    let longest = area.width().max(area.height());
+    if !(longest.is_finite() && longest > 0.0) {
         return None;
     }
-    Some((
-        image::imageops::crop_imm(&img, x, y, cw, ch).to_image(),
-        dpi,
-    ))
+    let dpi = (4000.0 * 25.4 / longest).clamp(10.0, 150.0);
+    let zoom = dpi / 25.4;
+    let w = (area.width() * zoom).ceil().max(1.0) as u32;
+    let h = (area.height() * zoom).ceil().max(1.0) as u32;
+    let objects = tracedraw_render::render_page(
+        app.doc(),
+        app.page,
+        &tracedraw_render::RenderOptions {
+            width: w,
+            height: h,
+            view: tracedraw_render::ViewTransform {
+                zoom,
+                origin_x: -area.x0 * zoom,
+                origin_y: area.y1 * zoom,
+            },
+            ..Default::default()
+        },
+    )?;
+    let mut img = image::RgbaImage::from_pixel(w, h, image::Rgba([255, 255, 255, 255]));
+    // Premultiplied colours over white.
+    for (px, src) in img.pixels_mut().zip(objects.pixels()) {
+        let a = src.alpha() as u32;
+        let over = |c: u8| (c as u32 + (255 - a) * 255 / 255).min(255) as u8;
+        *px = image::Rgba([over(src.red()), over(src.green()), over(src.blue()), 255]);
+    }
+    Some((img, dpi))
 }
 
 /// What the border goes around, in page millimetres: the page, or the

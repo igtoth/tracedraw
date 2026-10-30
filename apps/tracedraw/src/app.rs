@@ -1019,6 +1019,9 @@ pub struct App {
     /// The Distort tool's values (its bar) and its drag under way.
     pub distort: crate::distort_tool::DistortSettings,
     pub distort_drag: Option<crate::distort_tool::DistortDrag>,
+    /// How long each object's Twister handle was last dragged (page mm):
+    /// the handle is free, it ends where it was let go (#1263).
+    pub twister_handles: std::collections::HashMap<ShapeId, f64>,
     pub brush_radius: f64,
     /// Eraser nib: thickness in mm and shape.
     pub eraser_width: f64,
@@ -1988,6 +1991,11 @@ pub enum Repeatable {
     /// Copies of the selection transformed by the affine (a drag ended
     /// with a right click), made again from the selection of the time.
     Copy(Affine),
+    /// A move, turn, resize or slant of objects whose box was `before`:
+    /// repeated about the same place of the box of the selection of the
+    /// time (its centre, a side, a corner), so a turn or a resize does not
+    /// also move what it is repeated on (#1289).
+    Transform { transform: Affine, before: Rect },
 }
 
 /// Where a docker lies: the default column (the right side of the
@@ -2246,6 +2254,7 @@ impl App {
             extrude_measure_object: false,
             distort: Default::default(),
             distort_drag: None,
+            twister_handles: std::collections::HashMap::new(),
             brush_radius: 10.0,
             eraser_width: 6.35,
             eraser_square: false,
@@ -3817,6 +3826,17 @@ impl App {
                 self.copy_selection_by(t);
                 return;
             }
+            Some(Repeatable::Transform { transform, before }) => {
+                let Some(now) = self.selection_bounds() else {
+                    return;
+                };
+                let shapes = self.selection.clone();
+                self.run(Command::TransformShapes {
+                    shapes,
+                    transform: repeated_transform(transform, before, now),
+                });
+                return;
+            }
             None => return,
         };
         let shapes = self.selection.clone();
@@ -4204,6 +4224,18 @@ impl App {
     }
 
     pub fn run(&mut self, cmd: Command) {
+        // The box a move, turn or resize starts from, for its Repeat.
+        let before = match &cmd {
+            Command::TransformShapes { shapes, .. } if *shapes == self.selection => {
+                self.selection_bounds()
+            }
+            Command::TransformShapes { shapes, .. } => shapes
+                .iter()
+                .filter_map(|id| self.doc().find_shape(*id))
+                .map(|s| self.visual_bounds(s))
+                .reduce(|a, b| a.union(b)),
+            _ => None,
+        };
         self.break_clone_links_for(&cmd);
         let keep = self.edited_lines_kept(std::slice::from_ref(&cmd));
         if let Err(e) = self.engine.run(&cmd) {
@@ -4217,7 +4249,12 @@ impl App {
         }
         self.sync_effect_clones_for(&cmd);
         self.sync_object_clones();
-        if matches!(
+        if let (Command::TransformShapes { transform, .. }, Some(before)) = (&cmd, before) {
+            self.note_repeatable(Repeatable::Transform {
+                transform: *transform,
+                before,
+            });
+        } else if matches!(
             cmd,
             Command::TransformShapes { .. }
                 | Command::SetFill { .. }
@@ -9022,4 +9059,58 @@ mod tests {
         assert!(!s.update_check_asked);
         assert!(s.check_updates);
     }
+}
+
+/// `t`, done to objects whose box was `before`, redone about the same
+/// place of the box `now`: a turn about the old box's centre turns about
+/// the new box's centre, a resize from a side or a corner resizes from the
+/// same side or corner, a move moves as far (#1289). The place is the
+/// point `t` leaves where it is: the only one for a turn or a resize both
+/// ways, else the box's centre, side or corner it keeps. Without one (a
+/// resize and a move at once) `t` is used as it is.
+pub(crate) fn repeated_transform(t: Affine, before: Rect, now: Rect) -> Affine {
+    let [a, b, c, d, e, f] = t.as_coeffs();
+    let size = before.width().max(before.height()).max(1e-9);
+    let eps = 1e-9 * size.max(1.0);
+    let linear_is_identity =
+        (a - 1.0).abs() < 1e-12 && b.abs() < 1e-12 && c.abs() < 1e-12 && (d - 1.0).abs() < 1e-12;
+    if linear_is_identity {
+        return t;
+    }
+    // (I - L) p = (e, f).
+    let (m00, m01, m10, m11) = (1.0 - a, -c, -b, 1.0 - d);
+    let det = m00 * m11 - m01 * m10;
+    let fixed = if det.abs() > 1e-9 {
+        Some(Point::new((e * m11 - m01 * f) / det, (m00 * f - m10 * e) / det))
+    } else {
+        // The centre, a side's middle or a corner it keeps in place.
+        let (x0, y0, x1, y1) = (before.x0, before.y0, before.x1, before.y1);
+        let (xm, ym) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
+        [
+            (xm, ym),
+            (x0, ym),
+            (x1, ym),
+            (xm, y0),
+            (xm, y1),
+            (x0, y0),
+            (x1, y0),
+            (x0, y1),
+            (x1, y1),
+        ]
+        .into_iter()
+        .map(|(x, y)| Point::new(x, y))
+        .find(|p| (t * *p - *p).hypot() <= eps.max(1e-6 * size))
+    };
+    let Some(p0) = fixed.filter(|p| p.x.is_finite() && p.y.is_finite()) else {
+        return t;
+    };
+    let rel = |v: f64, lo: f64, len: f64| if len.abs() > 1e-12 { (v - lo) / len } else { 0.5 };
+    let u = rel(p0.x, before.x0, before.width());
+    let v = rel(p0.y, before.y0, before.height());
+    let p = Point::new(now.x0 + u * now.width(), now.y0 + v * now.height());
+    if !(p.x.is_finite() && p.y.is_finite()) {
+        return t;
+    }
+    let linear = Affine::new([a, b, c, d, 0.0, 0.0]);
+    Affine::translate(p.to_vec2()) * linear * Affine::translate(-p.to_vec2())
 }
