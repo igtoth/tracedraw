@@ -1,5 +1,7 @@
 # Atalhos de teclado
 
+> *Tradução automática: esta página pode estar atrasada em relação à versão em inglês.*
+
 Estes são os atalhos que vêm com o TraceDraw. Os menus mostram o atalho de cada
 comando ao lado dele, e você pode acrescentar os seus; veja
 [Opções de personalização](../customize/customization.md#commands). No macOS,
@@ -31,7 +33,7 @@ comando ao lado dele, e você pode acrescentar os seus; veja
 
 | Teclas | Ação |
 |---|---|
-| <kbd>F2</kbd>, <kbd>Shift+F2</kbd>, <kbd>F3</kbd> | ferramenta Zoom, zoom na seleção, afastar |
+| <kbd>F2</kbd>, <kbd>Shift+F2</kbd>, <kbd>F3</kbd> | ferramenta Zoom para um zoom (depois a ferramenta anterior volta; <kbd>Z</kbd> a mantém), zoom na seleção, afastar |
 | <kbd>F4</kbd>, <kbd>Shift+F4</kbd> | zoom para caber, zoom na página |
 | <kbd>Ctrl++</kbd>, <kbd>Ctrl+-</kbd> | aproximar e afastar um passo |
 | <kbd>Alt+Shift+R</kbd> | ligar e desligar as réguas |
@@ -80,6 +82,9 @@ painéis.
 | <kbd>Ctrl+B</kbd>, <kbd>Ctrl+I</kbd>, <kbd>Ctrl+U</kbd> | negrito, itálico, sublinhado (durante a edição) |
 | <kbd>Ctrl+8</kbd>, <kbd>Ctrl+2</kbd> | texto maior e menor |
 | <kbd>Ctrl+F12</kbd> | verificação ortográfica |
+| <kbd>Shift+F3</kbd> | mudar maiúsculas e minúsculas |
+| <kbd>Ctrl+L</kbd>, <kbd>Ctrl+E</kbd>, <kbd>Ctrl+R</kbd> | alinhar à esquerda, ao centro, à direita (durante a edição) |
+| <kbd>Ctrl+J</kbd>, <kbd>Ctrl+H</kbd>, <kbd>Ctrl+N</kbd> | justificado, justificado forçado, sem alinhamento (durante a edição) |
 
 ## Ferramentas {#tools}
 

@@ -35,6 +35,7 @@ only the Welcome Screen is open. The menus can show your own shortcuts; see
 | [[menu.file.send_to_documents]] | [Printing](../printing/print.md#other) |
 | [[menu.file.send_to_mail]] | [Printing](../printing/print.md#other) |
 | [[menu.file.publish_to_pdf]] | [Publishing to PDF](../file-formats/publish-pdf.md) |
+| [[menu.file.package]] | [Packaging a drawing](../file-formats/package.md) |
 | [[menu.file.print_merge]] | [Print merge](../printing/print-merge.md) |
 | [[menu.file.print_merge_create]] | [Print merge](../printing/print-merge.md) |
 | [[menu.file.print_merge_edit]] | [Print merge](../printing/print-merge.md) |
@@ -197,7 +198,7 @@ only the Welcome Screen is open. The menus can show your own shortcuts; see
 | [[menu.object.distribute_spacing_v]] | [Aligning](../objects/align-distribute.md) |
 | [[menu.object.distribute_bottom]] | [Aligning](../objects/align-distribute.md) |
 | [[menu.object.align_distribute_docker]] | [Aligning](../objects/align-distribute.md) |
-| [[menu.object.fit_objects_to_path]] | [Text on a path](../text/adding-text.md#text-on-path) |
+| [[menu.object.fit_objects_to_path]] | [Fitting objects to a path](../objects/fit-objects-to-path.md) |
 | [[menu.object.order]] | [Objects and layers](../objects/objects-and-layers.md) |
 | [[menu.object.to_front_of_page]] | [Objects and layers](../objects/objects-and-layers.md) |
 | [[menu.object.to_back_of_page]] | [Objects and layers](../objects/objects-and-layers.md) |
@@ -376,6 +377,7 @@ only the Welcome Screen is open. The menus can show your own shortcuts; see
 | [[menu.tools.options]] | [Options](../customize/index.md) |
 | [[menu.tools.save_settings_as_default]] | [Options](../customize/index.md) |
 | [[menu.tools.color_management]] | [Color management](../color/color-management.md) |
+| [[menu.tools.convert_colors]] | [Converting colors to CMYK or RGB](../color/convert-colors.md) |
 | [[menu.tools.scripts]] | [Scripts](../customize/scripts.md) |
 | [[menu.tools.scripts_docker]] | [Scripts](../customize/scripts.md) |
 | [[menu.tools.scripts_run]] | [Scripts](../customize/scripts.md) |

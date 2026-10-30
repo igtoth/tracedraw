@@ -31,7 +31,7 @@ shortcut beside it, and you can add your own; see
 
 | Keys | Action |
 |---|---|
-| <kbd>F2</kbd>, <kbd>Shift+F2</kbd>, <kbd>F3</kbd> | Zoom tool, zoom to the selection, zoom out |
+| <kbd>F2</kbd>, <kbd>Shift+F2</kbd>, <kbd>F3</kbd> | Zoom tool for one zoom (then the tool before comes back; <kbd>Z</kbd> keeps it), zoom to the selection, zoom out |
 | <kbd>F4</kbd>, <kbd>Shift+F4</kbd> | zoom to fit, zoom to the page |
 | <kbd>Ctrl++</kbd>, <kbd>Ctrl+-</kbd> | zoom in and out one step |
 | <kbd>Alt+Shift+R</kbd> | rulers on and off |
@@ -79,6 +79,9 @@ Pressing a panel's shortcut when its panel is in front hides the panels.
 | <kbd>Ctrl+B</kbd>, <kbd>Ctrl+I</kbd>, <kbd>Ctrl+U</kbd> | bold, italic, underline (while editing) |
 | <kbd>Ctrl+8</kbd>, <kbd>Ctrl+2</kbd> | larger and smaller text |
 | <kbd>Ctrl+F12</kbd> | spell check |
+| <kbd>Shift+F3</kbd> | change case |
+| <kbd>Ctrl+L</kbd>, <kbd>Ctrl+E</kbd>, <kbd>Ctrl+R</kbd> | align left, center, right (while editing) |
+| <kbd>Ctrl+J</kbd>, <kbd>Ctrl+H</kbd>, <kbd>Ctrl+N</kbd> | full justify, force justify, no alignment (while editing) |
 
 ## Tools {#tools}
 

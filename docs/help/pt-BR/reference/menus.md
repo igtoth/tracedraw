@@ -36,6 +36,7 @@ próprios atalhos; veja
 | [[menu.file.send_to_documents]] | [Imprimir um desenho](../printing/print.md#other) |
 | [[menu.file.send_to_mail]] | [Imprimir um desenho](../printing/print.md#other) |
 | [[menu.file.publish_to_pdf]] | [Publicar em PDF](../file-formats/publish-pdf.md) |
+| [[menu.file.package]] | [Empacotar um desenho](../file-formats/package.md) |
 | [[menu.file.print_merge]] | [Mesclagem de impressão](../printing/print-merge.md) |
 | [[menu.file.print_merge_create]] | [Mesclagem de impressão](../printing/print-merge.md) |
 | [[menu.file.print_merge_edit]] | [Mesclagem de impressão](../printing/print-merge.md) |
@@ -198,7 +199,7 @@ próprios atalhos; veja
 | [[menu.object.distribute_spacing_v]] | [Alinhar e distribuir objetos](../objects/align-distribute.md) |
 | [[menu.object.distribute_bottom]] | [Alinhar e distribuir objetos](../objects/align-distribute.md) |
 | [[menu.object.align_distribute_docker]] | [Alinhar e distribuir objetos](../objects/align-distribute.md) |
-| [[menu.object.fit_objects_to_path]] | [Adicionar e editar texto](../text/adding-text.md#text-on-path) |
+| [[menu.object.fit_objects_to_path]] | [Encaixar objetos num caminho](../objects/fit-objects-to-path.md) |
 | [[menu.object.order]] | [Organizar objetos e camadas](../objects/objects-and-layers.md) |
 | [[menu.object.to_front_of_page]] | [Organizar objetos e camadas](../objects/objects-and-layers.md) |
 | [[menu.object.to_back_of_page]] | [Organizar objetos e camadas](../objects/objects-and-layers.md) |
@@ -377,6 +378,7 @@ próprios atalhos; veja
 | [[menu.tools.options]] | [Personalizar e automatizar](../customize/index.md) |
 | [[menu.tools.save_settings_as_default]] | [Personalizar e automatizar](../customize/index.md) |
 | [[menu.tools.color_management]] | [Gerenciamento de cores](../color/color-management.md) |
+| [[menu.tools.convert_colors]] | [Converter cores para CMYK ou RGB](../color/convert-colors.md) |
 | [[menu.tools.scripts]] | [Scripts e automação](../customize/scripts.md) |
 | [[menu.tools.scripts_docker]] | [Scripts e automação](../customize/scripts.md) |
 | [[menu.tools.scripts_run]] | [Scripts e automação](../customize/scripts.md) |

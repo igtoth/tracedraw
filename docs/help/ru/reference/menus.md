@@ -35,6 +35,7 @@
 | [[menu.file.send_to_documents]] | [Printing a drawing](../printing/print.md#other) |
 | [[menu.file.send_to_mail]] | [Printing a drawing](../printing/print.md#other) |
 | [[menu.file.publish_to_pdf]] | [Publishing to PDF](../file-formats/publish-pdf.md) |
+| [[menu.file.package]] | [Packaging a drawing](../file-formats/package.md) |
 | [[menu.file.print_merge]] | [Print merge](../printing/print-merge.md) |
 | [[menu.file.print_merge_create]] | [Print merge](../printing/print-merge.md) |
 | [[menu.file.print_merge_edit]] | [Print merge](../printing/print-merge.md) |
@@ -197,7 +198,7 @@
 | [[menu.object.distribute_spacing_v]] | [Aligning and distributing objects](../objects/align-distribute.md) |
 | [[menu.object.distribute_bottom]] | [Aligning and distributing objects](../objects/align-distribute.md) |
 | [[menu.object.align_distribute_docker]] | [Aligning and distributing objects](../objects/align-distribute.md) |
-| [[menu.object.fit_objects_to_path]] | [Adding and editing text](../text/adding-text.md#text-on-path) |
+| [[menu.object.fit_objects_to_path]] | [Fitting objects to a path](../objects/fit-objects-to-path.md) |
 | [[menu.object.order]] | [Organizing objects and layers](../objects/objects-and-layers.md) |
 | [[menu.object.to_front_of_page]] | [Organizing objects and layers](../objects/objects-and-layers.md) |
 | [[menu.object.to_back_of_page]] | [Organizing objects and layers](../objects/objects-and-layers.md) |
@@ -376,6 +377,7 @@
 | [[menu.tools.options]] | [Настройка и автоматизация](../customize/index.md) |
 | [[menu.tools.save_settings_as_default]] | [Настройка и автоматизация](../customize/index.md) |
 | [[menu.tools.color_management]] | [Color management](../color/color-management.md) |
+| [[menu.tools.convert_colors]] | [Converting colors to CMYK or RGB](../color/convert-colors.md) |
 | [[menu.tools.scripts]] | [Scripts and automation](../customize/scripts.md) |
 | [[menu.tools.scripts_docker]] | [Scripts and automation](../customize/scripts.md) |
 | [[menu.tools.scripts_run]] | [Scripts and automation](../customize/scripts.md) |
