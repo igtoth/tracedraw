@@ -23,10 +23,8 @@ name, or what it is when it has none ("Rectangle", "Curve with 8 nodes").
   padlock of [[docker.guides]] locks all the guidelines of the page.
 - Hidden objects show their name and thumbnail dimmed.
 - To make the thumbnails larger or smaller, drag the slider between the
-  small and the large square at the bottom of the panel, or turn the mouse
-  wheel over it or over the list. When the list is longer than the panel,
-  the wheel scrolls it; turn the wheel over a thumbnail, or hold
-  <kbd>Ctrl</kbd> and turn it anywhere over the list, to change the size.
+  small and the large square at the bottom of the panel, turn the mouse
+  wheel over it, or hold <kbd>Ctrl</kbd> and turn the wheel over the list.
   The size is remembered. A thumbnail is drawn again only when its object
   changes, so long lists stay quick.
 

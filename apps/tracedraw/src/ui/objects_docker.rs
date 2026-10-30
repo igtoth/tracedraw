@@ -439,67 +439,19 @@ fn square(rect: Rect, x: f32, size: f32) -> Rect {
 /// The docker: the tree above the bar with its buttons.
 pub fn objects_docker(app: &mut App, ui: &mut Ui) {
     let content_h = (ui.available_height() - BAR_H - 4.0).max(40.0);
-    // The plain wheel sizes the thumbnails when the list has nothing to
-    // scroll, or over a thumbnail; it scrolls a longer list elsewhere.
-    // Read from the frame before: the list's box, whether it overflows and
-    // where the thumbnails were drawn.
-    let last = ui.data(|d| d.get_temp::<WheelArea>(wheel_area_id()));
-    let wheel_sizes = match (last, ui.ctx().pointer_hover_pos()) {
-        (Some(a), Some(p)) => {
-            a.list.contains(p) && (!a.overflows || a.thumbs.iter().any(|r| r.contains(p)))
-        }
-        _ => false,
-    };
-    ui.data_mut(|d| d.insert_temp(thumb_rects_id(), Vec::<Rect>::new()));
-    let source = if wheel_sizes {
-        egui::scroll_area::ScrollSource {
-            mouse_wheel: false,
-            ..egui::scroll_area::ScrollSource::ALL
-        }
-    } else {
-        egui::scroll_area::ScrollSource::ALL
-    };
     let out = egui::ScrollArea::vertical()
         .max_height(content_h)
         .auto_shrink([false, false])
-        .scroll_source(source)
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             objects(app, ui);
         });
-    // The wheel (see above) or Ctrl+wheel anywhere over the list makes the
-    // thumbnails larger or smaller.
+    // Ctrl+wheel over the list makes the thumbnails larger or smaller.
     if ui.rect_contains_pointer(out.inner_rect) {
-        let notch = wheel_notches(ui, !wheel_sizes);
+        let notch = wheel_notches(ui, true);
         zoom_thumbs(app, notch);
     }
-    let thumbs = ui
-        .data(|d| d.get_temp::<Vec<Rect>>(thumb_rects_id()))
-        .unwrap_or_default();
-    let area = WheelArea {
-        list: out.inner_rect,
-        overflows: out.content_size.y > out.inner_rect.height() + 0.5,
-        thumbs,
-    };
-    ui.data_mut(|d| d.insert_temp(wheel_area_id(), area));
     bottom_bar(app, ui);
-}
-
-/// The list's box, whether its rows overflow it, and the thumbnails drawn
-/// in it, kept from one frame to the next for the wheel.
-#[derive(Clone)]
-struct WheelArea {
-    list: Rect,
-    overflows: bool,
-    thumbs: Vec<Rect>,
-}
-
-fn wheel_area_id() -> egui::Id {
-    egui::Id::new("objects_wheel_area")
-}
-
-fn thumb_rects_id() -> egui::Id {
-    egui::Id::new("objects_thumb_rects")
 }
 
 /// Wheel notches this frame (up is positive), only those with Ctrl (or
@@ -979,13 +931,6 @@ fn object_row(
 /// picture is drawn (a few per frame), the swatch of its fill and outline
 /// stands in.
 fn paint_thumb(app: &App, ui: &Ui, r: Rect, s: &Shape, act: &mut Actions) {
-    if ui.clip_rect().intersects(r) {
-        let clip = ui.clip_rect().intersect(r);
-        ui.data_mut(|d| {
-            d.get_temp_mut_or_default::<Vec<Rect>>(thumb_rects_id())
-                .push(clip)
-        });
-    }
     let p = ui.painter();
     p.rect_filled(r, 2.0, Color32::WHITE);
     p.rect_stroke(
@@ -1473,20 +1418,19 @@ mod tests {
         };
         frame(&ctx, &mut app, 400.0, Vec::new());
         let before = eye(&ctx).expect("row drawn");
-        // A list with nothing to scroll: the plain wheel anywhere over it,
-        // the name included, sizes the thumbnails.
+        // A plain wheel over the list scrolls; it leaves the size.
         frame(
             &ctx,
             &mut app,
             400.0,
             wheel(Pos2::new(200.0, 60.0), 1.0, egui::Modifiers::NONE),
         );
-        assert_eq!(app.settings.object_thumb_size, DEFAULT_SIZE + STEP);
+        assert_eq!(app.settings.object_thumb_size, DEFAULT_SIZE);
         frame(
             &ctx,
             &mut app,
             400.0,
-            wheel(Pos2::new(200.0, 60.0), 1.0, egui::Modifiers::CTRL),
+            wheel(Pos2::new(200.0, 60.0), 2.0, egui::Modifiers::CTRL),
         );
         assert_eq!(app.settings.object_thumb_size, DEFAULT_SIZE + 2.0 * STEP);
         // (Responses are read a frame late.)
@@ -1513,64 +1457,6 @@ mod tests {
             );
         }
         assert_eq!(app.settings.object_thumb_size, MAX_SIZE);
-    }
-
-    /// A list longer than the docker: the plain wheel over a name
-    /// scrolls and leaves the size; over a thumbnail it sizes the
-    /// thumbnails and does not scroll; Ctrl+wheel sizes them anywhere.
-    #[test]
-    fn the_wheel_over_a_thumbnail_sizes_them_in_a_long_list() {
-        use crate::object_thumbs::{DEFAULT_SIZE, STEP};
-        let ctx = crate::theme::ui_context();
-        let mut app = App::headless();
-        for _ in 0..40 {
-            app.new_shape(rect_kind()).expect("shape");
-        }
-        app.selection.clear();
-        frame(&ctx, &mut app, 400.0, Vec::new());
-        frame(&ctx, &mut app, 400.0, Vec::new());
-        let area = ctx
-            .data(|d| d.get_temp::<WheelArea>(wheel_area_id()))
-            .expect("list drawn");
-        assert!(area.overflows);
-        let thumb = *area.thumbs.get(1).expect("thumbnails drawn");
-        let offset = |ctx: &egui::Context| {
-            ctx.data(|d| d.get_temp::<WheelArea>(wheel_area_id()))
-                .and_then(|a| a.thumbs.get(1).map(|r| r.center().y))
-        };
-        let before = offset(&ctx).expect("thumbnail");
-        // Over a name, to the right of the thumbnails: the list scrolls.
-        let name = Pos2::new(thumb.right() + 40.0, thumb.center().y);
-        frame(
-            &ctx,
-            &mut app,
-            400.0,
-            wheel(name, -2.0, egui::Modifiers::NONE),
-        );
-        frame(&ctx, &mut app, 400.0, Vec::new());
-        assert_eq!(app.settings.object_thumb_size, DEFAULT_SIZE);
-        let scrolled = offset(&ctx).expect("thumbnail");
-        assert!(scrolled < before, "{before} {scrolled}");
-        // Over a thumbnail: the size changes, the list stays put.
-        let area = ctx
-            .data(|d| d.get_temp::<WheelArea>(wheel_area_id()))
-            .expect("list drawn");
-        let thumb = *area.thumbs.get(1).expect("thumbnail");
-        frame(
-            &ctx,
-            &mut app,
-            400.0,
-            wheel(thumb.center(), 1.0, egui::Modifiers::NONE),
-        );
-        assert_eq!(app.settings.object_thumb_size, DEFAULT_SIZE + STEP);
-        // Ctrl+wheel over a name sizes them too.
-        frame(
-            &ctx,
-            &mut app,
-            400.0,
-            wheel(name, 1.0, egui::Modifiers::CTRL),
-        );
-        assert_eq!(app.settings.object_thumb_size, DEFAULT_SIZE + 2.0 * STEP);
     }
 
     /// A drawing of thousands of objects: only the rows in sight get

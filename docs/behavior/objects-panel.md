@@ -68,12 +68,9 @@ and Delete at the right.
 - The size goes from 16 to 96 points in steps of 4, 20 at first, and is
   kept in the preferences (`object_thumb_size`). It changes with the
   slider in the bottom bar (between a small and a large tile, shown when
-  the docker is wide enough), the wheel over that slider, the plain
-  wheel over the list, or Ctrl+wheel (Cmd+wheel on a Mac) anywhere over
-  the list; each notch is one step. The plain wheel sizes the thumbnails
-  anywhere over the list while it has nothing to scroll; once the rows
-  are taller than the docker it scrolls them, and sizes the thumbnails
-  only over a thumbnail (the list then stays put).
+  the docker is wide enough), the wheel over that slider, or
+  Ctrl+wheel (Cmd+wheel on a Mac) anywhere over the list; each notch is
+  one step.
 - Thumbnails are drawn at the screen's pixel density and cached per
   drawing and object. A cached thumbnail is checked only when the
   drawing changed (its revision moved on), and drawn again only when the
@@ -106,7 +103,6 @@ and Delete at the right.
 - `ui::objects_docker::tests::the_list_scrolls_to_an_object_selected_on_the_page`
 - `ui::objects_docker::tests::rows_show_thumbnails_drawn_once_per_change`
 - `ui::objects_docker::tests::ctrl_wheel_and_the_bar_change_the_thumbnail_size`
-- `ui::objects_docker::tests::the_wheel_over_a_thumbnail_sizes_them_in_a_long_list`
 - `ui::objects_docker::tests::a_long_list_draws_only_the_rows_in_sight` (and the
   ignored benchmark `objects_docker_frame_times`)
 - `object_thumbs::tests::a_thumbnail_shows_the_object_in_its_colours`
