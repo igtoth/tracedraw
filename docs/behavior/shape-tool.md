@@ -216,11 +216,11 @@ round their corners with their own handles either way.
 | Action | Behaviour |
 |---|---|
 | Drag a rectangle corner node | every corner grows or shrinks by the same amount, in the current corner style; a square corner has one node, a cut one a node at each end |
-| Ctrl+drag a corner node | that corner only |
+| Ctrl+drag a corner node | that corner only; Ctrl counts as it is held during the drag, also pressed after the button (#1325) |
 | Click a corner node; Shift+click or Ctrl+click; marquee or freehand marquee over corner nodes | chooses that corner alone; adds the corner to the chosen ones or takes it out; chooses the corners with a node inside (on every selected rectangle). Chosen corners' nodes are filled (#671) |
 | Drag a chosen corner node | the chosen corners only, all by the same amount, so two or three corners round together and the others keep theirs (#671) |
-| Drag an ellipse node | pie when the pointer is inside the ellipse, arc outside; a whole ellipse's node starts at the top and the way it turns picks which end it becomes |
-| Drag a polygon node | its mirrored nodes follow: a vertex moves every vertex in or out (the points between them stay, and keep their turn); a point between two vertices moves all of those: in or out sharpens the star, around the centre turns them (a twisted star; within 1 degree of straight it stays untwisted; Ctrl keeps the turn they have) |
+| Drag an ellipse node | pie when the pointer is inside the ellipse, arc outside; a whole ellipse's node starts at the top and the way it turns picks which end it becomes; with Ctrl held (at the press or later) the angle goes in steps of the constrain angle (15 degrees at first; a whole ellipse's node counts its turn from the top) (#1340) |
+| Drag a polygon node | its mirrored nodes follow: a vertex moves every vertex in or out (the points between them stay, and keep their turn); a point between two vertices moves all of those: in or out sharpens the star, around the centre turns them (a twisted star; within 1 degree of straight it stays untwisted; Ctrl keeps the turn they have, held at the press or later; it was read at the press for rectangle corners only, so it did nothing on a star, #1331) |
 
 Rectangles, ellipses and polygons show these nodes and the property bar
 shows their controls (corners, pie and arc, points) while the Shape tool
@@ -314,6 +314,7 @@ Reduce Nodes, Curve smoothness.
   (#639)
 - `kind_nodes::tests::chosen_corners_round_together` (#671)
 - `kind_nodes::tests::single_corner_needs_ctrl_and_chosen_corners_go_together`
+- `pick_drag_tests::ctrl_held_after_the_press_constrains_ellipse_and_star_nodes`
 - `pick_drag_tests::chosen_rectangle_corners_round_together` (marquee,
   Shift+click, drag; #671)
 - `kind_nodes::tests::rounded_corners_grow_by_the_same_amount`

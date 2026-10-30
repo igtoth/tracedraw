@@ -193,6 +193,28 @@ pub fn drag(
     chosen: [bool; 4],
     turn: &mut f64,
 ) -> Option<ShapeKind> {
+    drag_constrained(start, node, p, single, chosen, turn, 15.0)
+}
+
+/// [`drag`] with Ctrl (`single`) held: one rectangle corner, a polygon's
+/// points keeping their turn, and an ellipse's pie or arc angle in steps
+/// of `step` degrees (the constrain angle, #1340).
+pub fn drag_constrained(
+    start: &Shape,
+    node: KindNode,
+    p: Point,
+    single: bool,
+    chosen: [bool; 4],
+    turn: &mut f64,
+    step: f64,
+) -> Option<ShapeKind> {
+    let snap = |deg: f64| {
+        if single && step.is_finite() && step > 0.01 {
+            (deg / step).round() * step
+        } else {
+            deg
+        }
+    };
     let inv = start.transform.inverse();
     let lp = inv * p;
     match (&start.kind, node) {
@@ -249,18 +271,20 @@ pub fn drag(
                     // The node starts at the top; the side it turns to
                     // decides which end it becomes.
                     *turn += wrap(angle - (90.0 + *turn));
-                    if turn.abs() < 0.5 {
+                    // With Ctrl the node goes in steps from the top.
+                    let t = snap(*turn);
+                    if t.abs() < 0.5 {
                         return Some(start.kind.clone());
                     }
-                    if *turn < 0.0 {
+                    if t < 0.0 {
                         EllipseArc {
                             start_deg: 90.0,
-                            end_deg: 90.0 + *turn,
+                            end_deg: 90.0 + t,
                             pie,
                         }
                     } else {
                         EllipseArc {
-                            start_deg: 90.0 + *turn,
+                            start_deg: 90.0 + t,
                             end_deg: 90.0,
                             pie,
                         }
@@ -269,9 +293,9 @@ pub fn drag(
                 Some(a) => {
                     let mut a = *a;
                     if node == KindNode::EllipseStart {
-                        a.start_deg = angle;
+                        a.start_deg = snap(angle);
                     } else {
-                        a.end_deg = angle;
+                        a.end_deg = snap(angle);
                     }
                     a.pie = pie;
                     a

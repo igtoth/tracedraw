@@ -14992,3 +14992,100 @@ fn smart_fill_lists_offer_specify_then_default_then_none() {
     click_at(&ctx, &mut app, listed[0].1.center(), Modifiers::NONE);
     assert_eq!(app.area_fill_mode, 1);
 }
+
+/// The Shape tool reads Ctrl while a node is dragged, not only at the
+/// press, and on every kind of node: Ctrl held only after the press snaps
+/// an ellipse's arc to the constrain angle (#1340, #1325) and keeps a
+/// star's points from turning (#1331).
+#[test]
+fn ctrl_held_after_the_press_constrains_ellipse_and_star_nodes() {
+    let (ctx, mut app, _) = setup();
+    app.select(Vec::new());
+    let ell = app
+        .new_shape(ShapeKind::Ellipse {
+            rect: Rect::new(100.0, 100.0, 140.0, 140.0),
+            arc: None,
+        })
+        .expect("ellipse");
+    app.select(vec![ell]);
+    app.set_tool(Tool::Shape);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    // A press on the node at the top with no key, then Ctrl while moving
+    // to 37 degrees outside the ellipse.
+    let drag_ctrl_later = |app: &mut App, from: Point, to: Point| {
+        let (a, b) = (app.view.to_screen(from), app.view.to_screen(to));
+        frame(&ctx, app, vec![Event::PointerMoved(a)], Modifiers::NONE);
+        frame(
+            &ctx,
+            app,
+            vec![button(a, true, PointerButton::Primary, Modifiers::NONE)],
+            Modifiers::NONE,
+        );
+        for i in 1..=4 {
+            let p = a + (b - a) * (i as f32 / 4.0);
+            frame(&ctx, app, vec![Event::PointerMoved(p)], Modifiers::CTRL);
+        }
+        frame(
+            &ctx,
+            app,
+            vec![button(b, false, PointerButton::Primary, Modifiers::CTRL)],
+            Modifiers::CTRL,
+        );
+        frame(&ctx, app, Vec::new(), Modifiers::NONE);
+    };
+    let at = 37f64.to_radians();
+    drag_ctrl_later(
+        &mut app,
+        Point::new(120.0, 140.0),
+        Point::new(120.0 + 26.0 * at.cos(), 120.0 + 26.0 * at.sin()),
+    );
+    let Some(ShapeKind::Ellipse { arc: Some(arc), .. }) =
+        app.doc().find_shape(ell).map(|s| s.kind.clone())
+    else {
+        panic!("no arc");
+    };
+    let step = app.settings.constrain_angle;
+    for deg in [arc.start_deg, arc.end_deg] {
+        let k = deg / step;
+        assert!((k - k.round()).abs() < 1e-6, "{arc:?}");
+    }
+    assert!((arc.end_deg - 30.0).abs() < 1e-6, "{arc:?}");
+    // A star's point between two vertices, Ctrl after the press: in or
+    // out only, no turn.
+    let star = app
+        .new_shape(ShapeKind::Polygon {
+            rect: Rect::new(150.0, 100.0, 190.0, 140.0),
+            points: 5,
+            sharpness: 0.5,
+            complex: None,
+            twist: 0.0,
+        })
+        .expect("star");
+    app.select(vec![star]);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let node = app
+        .doc()
+        .find_shape(star)
+        .cloned()
+        .and_then(|s| {
+            crate::kind_nodes::nodes(&s)
+                .into_iter()
+                .find(|(n, _)| {
+                    matches!(n, crate::kind_nodes::KindNode::Polygon { outer: false, .. })
+                })
+                .map(|(_, q)| s.transform * q)
+        })
+        .expect("an inner node");
+    let c = Point::new(170.0, 120.0);
+    let v = node - c;
+    let turned = Point::new(c.x + v.x * 0.9 - v.y * 0.4, c.y + v.y * 0.9 + v.x * 0.4);
+    drag_ctrl_later(&mut app, node, turned);
+    assert!(
+        matches!(
+            app.doc().find_shape(star).map(|s| &s.kind),
+            Some(ShapeKind::Polygon { twist, .. }) if twist.abs() < 1e-9
+        ),
+        "{:?}",
+        app.doc().find_shape(star).map(|s| &s.kind)
+    );
+}
