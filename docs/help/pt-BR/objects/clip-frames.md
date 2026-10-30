@@ -1,5 +1,7 @@
 # Colocar objetos dentro de uma moldura
 
+> *Tradução automática: esta página pode estar atrasada em relação à versão em inglês.*
+
 Uma **moldura de recorte** é um objeto fechado que contém outros objetos e
 mostra só as partes deles que ficam dentro dela, como uma imagem vista por uma
 janela. A moldura mantém o próprio preenchimento e contorno; os objetos de
@@ -28,8 +30,15 @@ moldura com o botão direito do mouse e escolher colocá-los dentro; veja
   girar a moldura leva o conteúdo junto. Desativado, a moldura se move sozinha
   e o conteúdo fica onde está na página.
 
-Clicar duas vezes em uma moldura com a ferramenta [[tool.pick]] também entra
-nela; veja [Modo de foco](focus-mode.md).
+Clicar duas vezes em uma moldura com a ferramenta [[tool.pick]], ou
+<kbd>Ctrl</kbd>+clique nela, também entra nela, com o objeto sob o ponteiro
+selecionado; veja [Modo de foco](focus-mode.md).
+
+Enquanto você edita o conteúdo, os objetos esmaecidos fora da moldura não
+podem ser escolhidos (por clique, quadro de seleção, Selecionar tudo ou
+<kbd>Tab</kbd>). Desfazer para no início da edição: desfazer além dele sai da
+edição com a moldura como estava; refazer entra de novo, e desfazer Concluir
+volta para dentro dela.
 
 ## Máscaras de opacidade {#opacity-mask}
 

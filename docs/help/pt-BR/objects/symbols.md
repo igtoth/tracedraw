@@ -1,5 +1,7 @@
 # Símbolos
 
+> *Tradução automática: esta página pode estar atrasada em relação à versão em inglês.*
+
 Um **símbolo** é um objeto que você define uma vez e coloca muitas vezes. Cada
 cópia, chamada **instância**, é um vínculo com a definição: edite a definição e
 todas as instâncias mudam. Os símbolos deixam os arquivos pequenos e as partes
@@ -24,6 +26,10 @@ Clique em [[docker.insert]] ao lado de um símbolo para colocar uma nova
 instância, ou escolha
 [[menu.object > menu.object.symbol > menu.object.symbol_insert]]. As instâncias
 podem ser movidas, escalonadas e giradas como qualquer objeto.
+
+Uma instância copiada em um desenho e colada em outro leva o símbolo junto (e
+os símbolos que ela mostra), então aparece com os mesmos objetos lá. Colar de
+novo reaproveita o símbolo já trazido.
 
 ## Transformar instâncias em objetos de novo {#revert}
 

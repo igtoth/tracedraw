@@ -1,5 +1,7 @@
 # Organizar objetos e camadas
 
+> *Tradução automática: esta página pode estar atrasada em relação à versão em inglês.*
+
 O painel [[docker.objects]] mostra como a página atual está organizada: as
 camadas, os objetos de cada camada, os grupos e as camadas mestras que aparecem
 em todas as páginas. Use-o para selecionar, nomear, ocultar, bloquear e ordenar
@@ -94,6 +96,12 @@ ou atrás do qual eles devem ir) e [[menu.object.reverse_order]].
   [[menu.object.unlock_object]] e [[menu.object.unlock_all]] os liberam.
 - [[menu.object > menu.object.hide > menu.object.hide_object]] oculta os objetos
   selecionados; [[menu.object.show_all]] os mostra de novo.
+- No painel [[docker.objects]], a linha de cada objeto tem o próprio olho e
+  cadeado, para ocultar ou mostrar e bloquear ou desbloquear o objeto pela
+  lista, mesmo um objeto bloqueado.
+
+Selecionar um objeto na página rola a lista até a linha dele, então um objeto
+lá embaixo numa lista longa aparece.
 
 Para tirar objetos do caminho enquanto trabalha em outros, veja também o
 [Modo de foco](focus-mode.md).

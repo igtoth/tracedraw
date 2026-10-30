@@ -23,6 +23,10 @@ instances. Click [[docker.insert]] beside a symbol to place a new instance, or
 choose [[menu.object > menu.object.symbol > menu.object.symbol_insert]].
 Instances can be moved, scaled and turned like any object.
 
+An instance copied in one drawing and pasted in another brings its symbol
+along (and the symbols it shows), so it shows the same objects there.
+Pasting again reuses the symbol already brought.
+
 ## Turning instances back into objects {#revert}
 
 Select instances and click [[docker.revert_to_objects]], or choose

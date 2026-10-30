@@ -1,5 +1,7 @@
 # Symbole
 
+> *Maschinelle Übersetzung: Diese Seite kann hinter der englischen Fassung zurückliegen.*
+
 Ein **Symbol** ist ein Objekt, das Sie einmal definieren und viele Male
 platzieren. Jede Kopie, **Instanz** genannt, ist eine Verknüpfung mit der
 Definition: Bearbeiten Sie die Definition, ändert sich jede Instanz. Symbole
@@ -24,6 +26,11 @@ seiner Instanzen. Klicken Sie neben einem Symbol auf [[docker.insert]], um eine
 neue Instanz zu platzieren, oder wählen Sie
 [[menu.object > menu.object.symbol > menu.object.symbol_insert]]. Instanzen
 lassen sich wie jedes Objekt verschieben, skalieren und drehen.
+
+Eine Instanz, die in einer Zeichnung kopiert und in einer anderen eingefügt
+wird, bringt ihr Symbol mit (und die Symbole, die sie zeigt), sodass sie dort
+dieselben Objekte zeigt. Erneutes Einfügen verwendet das bereits mitgebrachte
+Symbol.
 
 ## Instanzen wieder in Objekte umwandeln {#revert}
 

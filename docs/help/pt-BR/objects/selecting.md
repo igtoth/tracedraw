@@ -1,5 +1,7 @@
 # Selecionar objetos
 
+> *Tradução automática: esta página pode estar atrasada em relação à versão em inglês.*
+
 Antes de alterar um objeto, você o seleciona. A ferramenta [[tool.pick]]
 (<kbd>Space</kbd> volta para ela a partir da maioria das ferramentas)
 seleciona, move e redimensiona objetos; a ferramenta [[tool.freehand_pick]] faz
@@ -19,7 +21,9 @@ o mesmo, mas seleciona com um laço à mão livre.
   entram. Mantenha <kbd>Ctrl</kbd> para manter a moldura quadrada.
 - <kbd>Ctrl</kbd>+clique seleciona um objeto dentro de um grupo, um nível mais
   para dentro a cada clique. As alças ficam redondas, e as alterações valem só
-  para ele.
+  para ele; arraste-o de qualquer ponto para movê-lo sozinho.
+  <kbd>Ctrl</kbd>+clique em uma moldura de recorte começa a editar o conteúdo
+  dela (veja [Molduras de recorte](clip-frames.md#edit-contents)).
 - <kbd>Alt</kbd>+clique seleciona o objeto que está embaixo do selecionado,
   para alcançar objetos cobertos.
 - <kbd>Tab</kbd> e <kbd>Shift+Tab</kbd> selecionam o próximo ou o anterior.
@@ -30,6 +34,21 @@ o mesmo, mas seleciona com um laço à mão livre.
 
 Os objetos selecionados mostram oito alças quadradas em volta e uma pequena
 cruz no meio. A barra de status diz o que está selecionado e em qual camada.
+
+O ponteiro mostra as setas de mover só sobre o que está selecionado. Sobre
+qualquer outro objeto ele continua a seta simples, porque pressionar ali
+escolhe esse objeto primeiro; arrastar um objeto não selecionado ainda o
+escolhe e move. Um clique com o botão direito enquanto você arrasta um quadro
+de seleção é ignorado: o quadro continua e seleciona quando você solta o botão
+esquerdo.
+
+Ferramentas de desenho e de modelagem cujo clique não tem função própria (as
+ferramentas de retângulo, elipse, polígono e outras formas, a Faca, os
+conectores, Mistura e outras) também selecionam: clique em um objeto para
+selecioná-lo, <kbd>Shift</kbd>+clique para acrescentá-lo ou tirá-lo,
+<kbd>Ctrl</kbd>+clique para entrar em grupos, e clique no vazio para não
+selecionar nada. Arrastar continua desenhando. As ferramentas de linha e a
+ferramenta Texto mantêm os cliques delas.
 
 ### Mover, redimensionar e girar {#transform-with-pick}
 
@@ -45,7 +64,11 @@ cruz no meio. A barra de status diz o que está selecionado e em qual camada.
   arraste uma seta curva de canto para girar, uma seta lateral para inclinar.
   Mantenha <kbd>Ctrl</kbd> para passos de 15 graus. Arraste o anel do meio para
   girar em torno de outro ponto; clique duas vezes nele para devolvê-lo ao
-  meio.
+  meio. Nesse modo de rotação, um nó da seleção (ou o meio de um segmento)
+  arrastado gira a seleção em torno do anel; solte perto da borda de outro
+  objeto e o nó cai exatamente nela, então um arco girado em torno de uma
+  ponta pode ser deitado sobre uma linha. A alça de rotação ainda se encaixa
+  nos nós, pontos médios e centros de outros objetos para mirar o giro.
 - Durante o arraste, pressione <kbd>Space</kbd> ou clique com o botão direito
   para deixar uma cópia onde os objetos estavam; <kbd>Esc</kbd> cancela o
   arraste.

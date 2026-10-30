@@ -89,6 +89,12 @@ in front of or behind) and [[menu.object.reverse_order]].
   [[menu.object.unlock_object]] and [[menu.object.unlock_all]] release them.
 - [[menu.object > menu.object.hide > menu.object.hide_object]] hides the
   selected objects; [[menu.object.show_all]] shows them again.
+- In the [[docker.objects]] panel every object's row has its own eye and
+  padlock, to hide or show and lock or unlock it from the list, a locked
+  object too.
+
+Selecting an object on the page scrolls the list to its row, so an object far
+down a long list comes into view.
 
 To keep objects out of the way while you work on others, see also
 [Focus mode](focus-mode.md).

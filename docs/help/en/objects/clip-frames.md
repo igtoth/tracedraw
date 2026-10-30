@@ -27,8 +27,14 @@ with the right mouse button and choose to place them inside; see
   the frame takes the contents along. Turned off, the frame moves alone and
   the contents stay where they are on the page.
 
-Double-clicking a frame with the [[tool.pick]] tool also enters it; see
+Double-clicking a frame with the [[tool.pick]] tool, or <kbd>Ctrl</kbd>+click
+on it, also enters it, with the object under the pointer selected; see
 [Focus mode](focus-mode.md).
+
+While you edit the contents, the dimmed objects outside the frame cannot be
+picked (by a click, a marquee, Select All or <kbd>Tab</kbd>). Undo stops at
+the start of the edit: undoing past it leaves the edit with the frame as it
+was; redo enters it again, and undoing Finish goes back into it.
 
 ## Opacity masks {#opacity-mask}
 
