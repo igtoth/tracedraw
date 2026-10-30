@@ -347,7 +347,10 @@ mod tests {
         assert!(!egui::Popup::is_any_open(&ctx), "the menu closed");
         let before = color;
         click(&ctx, &mut color, area.min + vec2(area.width() * 0.3, 60.0));
-        assert!(crate::ui::color_picker::picker_open(&ctx, picker), "still open");
+        assert!(
+            crate::ui::color_picker::picker_open(&ctx, picker),
+            "still open"
+        );
         assert_ne!(color, before, "the viewer set the colour");
         // A click elsewhere closes it.
         click(&ctx, &mut color, egui::pos2(1100.0, 850.0));

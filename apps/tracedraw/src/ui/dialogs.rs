@@ -6818,10 +6818,18 @@ pub(crate) mod tests {
             t.cells
                 .iter()
                 .find(|cell| cell.row == 0 && cell.col == c)
-                .map(|cell| cell.text.iter().map(|s| s.text.as_str()).collect::<String>())
+                .map(|cell| {
+                    cell.text
+                        .iter()
+                        .map(|s| s.text.as_str())
+                        .collect::<String>()
+                })
                 .unwrap_or_default()
         };
-        assert_eq!((text(0), text(1), text(2)), ("ABHISHEK".into(), "RAKESH".into(), "RAMESH".into()));
+        assert_eq!(
+            (text(0), text(1), text(2)),
+            ("ABHISHEK".into(), "RAKESH".into(), "RAMESH".into())
+        );
     }
 
     #[test]

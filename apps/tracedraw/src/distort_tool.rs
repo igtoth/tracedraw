@@ -1026,7 +1026,10 @@ mod tests {
         app.distort_drag = None;
         let h = app.distortion_handles()[0].clone();
         assert!((h.end - at(5.0, 90.0)).hypot() < 1e-6, "{h:?}");
-        let Some(Distort::Twister { angle_deg: again, .. }) = effect(&app, id) else {
+        let Some(Distort::Twister {
+            angle_deg: again, ..
+        }) = effect(&app, id)
+        else {
             panic!("a twister");
         };
         assert!((again - angle_deg).abs() <= 1.0, "{again}");

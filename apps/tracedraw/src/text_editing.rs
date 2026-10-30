@@ -247,7 +247,9 @@ impl App {
         // reference program (Space alone types a space), before any space
         // the key would type (#478).
         if ctx.input(|i| {
-            (i.modifiers.command || i.modifiers.ctrl) && !altgr(&i.modifiers) && i.key_pressed(Key::Space)
+            (i.modifiers.command || i.modifiers.ctrl)
+                && !altgr(&i.modifiers)
+                && i.key_pressed(Key::Space)
         }) {
             self.finish_text();
             self.set_tool(crate::tools::Tool::Pick);

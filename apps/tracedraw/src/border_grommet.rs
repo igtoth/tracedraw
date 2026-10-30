@@ -727,9 +727,9 @@ mod tests {
                 l.shapes
                     .iter()
                     .filter_map(|s| match &s.kind {
-                        ShapeKind::Bitmap { png, .. } => image::load_from_memory(png)
-                            .ok()
-                            .map(|i| i.to_rgba8()),
+                        ShapeKind::Bitmap { png, .. } => {
+                            image::load_from_memory(png).ok().map(|i| i.to_rgba8())
+                        }
                         _ => None,
                     })
                     .collect()

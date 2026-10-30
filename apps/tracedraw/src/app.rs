@@ -9081,7 +9081,10 @@ pub(crate) fn repeated_transform(t: Affine, before: Rect, now: Rect) -> Affine {
     let (m00, m01, m10, m11) = (1.0 - a, -c, -b, 1.0 - d);
     let det = m00 * m11 - m01 * m10;
     let fixed = if det.abs() > 1e-9 {
-        Some(Point::new((e * m11 - m01 * f) / det, (m00 * f - m10 * e) / det))
+        Some(Point::new(
+            (e * m11 - m01 * f) / det,
+            (m00 * f - m10 * e) / det,
+        ))
     } else {
         // The centre, a side's middle or a corner it keeps in place.
         let (x0, y0, x1, y1) = (before.x0, before.y0, before.x1, before.y1);
@@ -9104,7 +9107,13 @@ pub(crate) fn repeated_transform(t: Affine, before: Rect, now: Rect) -> Affine {
     let Some(p0) = fixed.filter(|p| p.x.is_finite() && p.y.is_finite()) else {
         return t;
     };
-    let rel = |v: f64, lo: f64, len: f64| if len.abs() > 1e-12 { (v - lo) / len } else { 0.5 };
+    let rel = |v: f64, lo: f64, len: f64| {
+        if len.abs() > 1e-12 {
+            (v - lo) / len
+        } else {
+            0.5
+        }
+    };
     let u = rel(p0.x, before.x0, before.width());
     let v = rel(p0.y, before.y0, before.height());
     let p = Point::new(now.x0 + u * now.width(), now.y0 + v * now.height());

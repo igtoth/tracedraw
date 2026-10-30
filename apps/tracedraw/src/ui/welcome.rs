@@ -493,7 +493,7 @@ mod tests {
             ..Default::default()
         };
         let mut out = ctx.run_ui(input, |ui| {
-            egui::CentralPanel::default().show_inside(ui, |ui| welcome_screen(app, ui));
+            egui::CentralPanel::default().show(ui, |ui| welcome_screen(app, ui));
         });
         out.textures_delta.clear();
     }

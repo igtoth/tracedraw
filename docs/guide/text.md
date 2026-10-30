@@ -151,7 +151,9 @@ and columns (4) on the property bar, and drag.
 - The **Table** menu inserts rows and columns, selects cells, rows,
   columns or the table, deletes, distributes rows and columns evenly,
   merges cells (`Ctrl+M`), unmerges and splits.
-- **Convert Text to Table** turns lines into rows and tabs into cells;
+- **Convert Text to Table** turns paragraphs into rows and cuts them
+  into cells at the separator you choose (commas, tabs, your own, or a
+  cell per paragraph);
   **Convert Table to Text** does the reverse.
 - The property bar sets the cell fill and the border.
 

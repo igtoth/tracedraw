@@ -784,12 +784,14 @@ impl App {
 
     /// The text of the first selected text object, all its spans.
     pub fn selected_text_for_table(&self) -> Option<String> {
-        self.selected_shapes().into_iter().find_map(|s| match &s.kind {
-            ShapeKind::Text { spans, .. } => {
-                Some(spans.iter().map(|x| x.text.as_str()).collect())
-            }
-            _ => None,
-        })
+        self.selected_shapes()
+            .into_iter()
+            .find_map(|s| match &s.kind {
+                ShapeKind::Text { spans, .. } => {
+                    Some(spans.iter().map(|x| x.text.as_str()).collect())
+                }
+                _ => None,
+            })
     }
 
     /// Table > Convert Text to Table: each paragraph a row, its cells cut
@@ -1065,10 +1067,7 @@ mod tests {
         let mut app = App::headless();
         text_shape(&mut app, "ABHISHEK, RAKESH, RAMESH");
         app.convert_text_to_table();
-        assert_eq!(
-            converted(&app),
-            vec![vec!["ABHISHEK", "RAKESH", "RAMESH"]]
-        );
+        assert_eq!(converted(&app), vec![vec!["ABHISHEK", "RAKESH", "RAMESH"]]);
         // A separator of the user's own; each paragraph a row.
         let mut app = App::headless();
         text_shape(&mut app, "a;b;c\nd;e");

@@ -163,7 +163,6 @@ fn altgr_frame(ctx: &egui::Context, app: &mut App, event: Event, msgs: &[(u32, u
             Pos2::ZERO,
             egui::vec2(1600.0, 1000.0),
         )),
-        modifiers: altgr,
         events: vec![Event::ModifiersChanged(altgr), event],
         ..Default::default()
     };

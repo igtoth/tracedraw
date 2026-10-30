@@ -7,6 +7,11 @@ rulers:
   of the window. Tabs are `#D8D8D8` with 1 px gaps of the strip colour
   `#EAEAEA`; the active tab is `#CEE3FF`; labels are 13 px black.
 - The Welcome Screen tab comes first (a filled dark house and its title).
+- The page under the Welcome Screen's own tabs (Get Started, Workspace,
+  What's New, Learn, Templates) scrolls with the wheel and a scroll bar
+  when it is taller than the window, each tab keeping its own place; the
+  tab row stays put, so recent documents below the window are reached
+  (#1288, `ui::welcome::tests::the_recent_documents_scroll_into_view`).
   With no drawing open it is the only tab, and the menu bar shows only
   File, Tools, Window and Help; File commands that need a drawing are
   disabled. While it is shown (with drawings open too) the toolbox and the

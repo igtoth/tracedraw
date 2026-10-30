@@ -329,17 +329,17 @@ impl Body {
             .chain(std::iter::once(last))
             .map(|(p, c)| crate::style::Stop::new(at(*p), *c))
             .collect();
-        stops.sort_by(|a, b| a.pos.partial_cmp(&b.pos).unwrap_or(std::cmp::Ordering::Equal));
+        stops.sort_by(|a, b| {
+            a.pos
+                .partial_cmp(&b.pos)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         stops.dedup_by(|a, b| (a.pos - b.pos).abs() < 1e-6);
         if stops.len() < 2 {
             return Fill::Solid(first.1);
         }
-        let mut f = crate::style::Fountain::two(
-            crate::style::FountainKind::Linear,
-            first.1,
-            last.1,
-            angle,
-        );
+        let mut f =
+            crate::style::Fountain::two(crate::style::FountainKind::Linear, first.1, last.1, angle);
         f.stops = stops;
         Fill::Fountain(f)
     }
@@ -549,10 +549,7 @@ impl Body {
                 surface.fill = self.surface_fill(&faces, pts, &outline, all_round, light);
                 surface.stroke = match &outline_stroke {
                     Some(st) => Some(st.clone()),
-                    None => surface
-                        .fill
-                        .preview_color()
-                        .map(crate::Stroke::hairline),
+                    None => surface.fill.preview_color().map(crate::Stroke::hairline),
                 };
                 surface.kind = ShapeKind::Path {
                     path: outline,
@@ -605,10 +602,12 @@ impl Body {
                 && opaque_fill
                 && shape.opacity >= 1.0
                 && shape.opacity_mask.is_none()
-                && !shape
-                    .effects
-                    .iter()
-                    .any(|e| matches!(e, crate::live::Effect::Transparency { .. } | crate::live::Effect::Lens(_)));
+                && !shape.effects.iter().any(|e| {
+                    matches!(
+                        e,
+                        crate::live::Effect::Transparency { .. } | crate::live::Effect::Lens(_)
+                    )
+                });
             if !hidden {
                 let mut far = template();
                 far.kind = ShapeKind::Path {
@@ -724,7 +723,10 @@ mod tests {
         assert!(fill.stops.windows(2).all(|w| w[0].pos <= w[1].pos));
         // It covers the half of the side toward the vector.
         let b = f.below[0].bounds();
-        assert!(b.x1 > 29.0 && b.y1 > 29.0 && b.x0 < 4.0 && b.y0 < 4.0, "{b:?}");
+        assert!(
+            b.x1 > 29.0 && b.y1 > 29.0 && b.x0 < 4.0 && b.y0 < 4.0,
+            "{b:?}"
+        );
     }
 
     #[test]
