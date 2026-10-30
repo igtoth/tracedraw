@@ -93,10 +93,10 @@ dat door meerdere overlappende objecten wordt gevormd, door van dat gebied een
 nieuw object te maken. De objecten eromheen blijven zoals ze zijn.
 
 1. Kies het gereedschap [[tool.area_fill]].
-2. Kies de vulling en omtrek op de eigenschappenbalk: **Standaard gebruiken**
-   (de vulling en omtrek van nieuwe objecten; een kleur als dat geen vulling
-   is, zodat het gebied zichtbaar wordt), **Opgeven** (de kleur, en voor de
-   omtrek de breedte, ernaast) of **Geen**.
+2. Kies de vulling en omtrek op de eigenschappenbalk: **Opgeven** (de kleur,
+   en voor de omtrek de breedte, ernaast), **Standaard gebruiken** (de vulling
+   en omtrek van nieuwe objecten; een kleur als dat geen vulling is, zodat het
+   gebied zichtbaar wordt) of **Geen**.
 3. Klik binnen het gebied.
 
 Het nieuwe object komt bovenaan de actieve laag en wordt geselecteerd. Een klik

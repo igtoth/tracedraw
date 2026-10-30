@@ -87,9 +87,9 @@ bile olsa, herhangi bir kapalı alanı o alandan yeni bir nesne oluşturarak
 doldurur. Çevresindeki nesneler olduğu gibi kalır.
 
 1. [[tool.area_fill]] aracını seçin.
-2. Özellik çubuğunda dolguyu ve anahattı seçin: **Varsayılanı kullan** (yeni
-   nesnelerin dolgusu ve anahattı; bu dolgu yoksa alan görünsün diye bir
-   renk), **Belirt** (yanındaki renk ve anahat için kalınlık) veya **Yok**.
+2. Özellik çubuğunda dolguyu ve anahattı seçin: **Belirt** (yanındaki renk
+   ve anahat için kalınlık), **Varsayılanı kullan** (yeni nesnelerin dolgusu ve
+   anahattı; bu dolgu yoksa alan görünsün diye bir renk) veya **Yok**.
 3. Alanın içine tıklayın.
 
 Yeni nesne etkin katmanın en üstüne gider ve seçilir. Bir anahattın üzerine

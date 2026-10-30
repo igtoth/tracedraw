@@ -96,10 +96,10 @@ formata da più oggetti sovrapposti, creando un nuovo oggetto di quell'area.
 Gli oggetti intorno restano come sono.
 
 1. Scegli lo strumento [[tool.area_fill]].
-2. Scegli riempimento e contorno nella barra delle proprietà: **Usa
-   predefinito** (il riempimento e il contorno dei nuovi oggetti; un colore
-   quando quello è nessun riempimento, così l'area si vede), **Specifica** (il
-   colore e, per il contorno, lo spessore, accanto) o **Nessuno**.
+2. Scegli riempimento e contorno nella barra delle proprietà: **Specifica**
+   (il colore e, per il contorno, lo spessore, accanto), **Usa predefinito**
+   (il riempimento e il contorno dei nuovi oggetti; un colore quando quello è
+   nessun riempimento, così l'area si vede) o **Nessuno**.
 3. Fai clic all'interno dell'area.
 
 Il nuovo oggetto va in cima al livello attivo e viene selezionato. Un clic su

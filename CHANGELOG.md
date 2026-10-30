@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Area Fill: the Fill and Outline lists on the property bar now show Specify first, then Use default, then None. The choice kept in the preferences is unchanged.
+
 ## 0.28.0 (2026-10-30)
 
 - Variable fonts with many axes (Roboto Flex) draw their text: the font was listed and its axis sliders showed, but every letter came out empty because the glyph reader refused glyphs with more than 32 variation tuples (#870).

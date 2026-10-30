@@ -90,10 +90,10 @@ dari beberapa objek yang saling tumpang tindih, dengan membuat objek baru dari
 area itu. Objek di sekitarnya tetap seperti semula.
 
 1. Pilih alat [[tool.area_fill]].
-2. Pilih isian dan garis luar di bilah properti: **Gunakan bawaan** (isian dan
-   garis luar objek baru; sebuah warna bila bawaannya tanpa isian, agar area
-   terlihat), **Tentukan** (warnanya, dan untuk garis luar juga lebarnya, di
-   sampingnya), atau **Tidak ada**.
+2. Pilih isian dan garis luar di bilah properti: **Tentukan** (warnanya, dan
+   untuk garis luar juga lebarnya, di sampingnya), **Gunakan bawaan** (isian
+   dan garis luar objek baru; sebuah warna bila bawaannya tanpa isian, agar
+   area terlihat), atau **Tidak ada**.
 3. Klik di dalam area.
 
 Objek baru diletakkan di atas lapisan aktif dan dipilih. Klik pada garis luar,

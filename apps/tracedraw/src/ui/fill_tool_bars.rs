@@ -209,12 +209,17 @@ pub fn mesh_bar(app: &mut App, ui: &mut Ui) {
     );
 }
 
-/// What Smart Fill gives the fill or the outline of the objects it makes.
+/// What Smart Fill gives the fill or the outline of the objects it makes,
+/// by the value kept for it (0 the default, 1 a colour of its own, 2 none).
 pub const SMART_CHOICES: [&str; 3] = [
     "toolbar.smart_default",
     "toolbar.smart_specify",
     "toolbar.smart_none",
 ];
+
+/// The order the Fill and Outline lists show their choices in: Specify,
+/// Use default, None (values as in [`SMART_CHOICES`]).
+pub const SMART_ORDER: [u8; 3] = [1, 0, 2];
 
 /// The Smart Fill tool's bar.
 pub fn smart_fill_bar(app: &mut App, ui: &mut Ui) {
@@ -225,8 +230,8 @@ pub fn smart_fill_bar(app: &mut App, ui: &mut Ui) {
         .selected_text(tr(SMART_CHOICES[mode as usize]))
         .width(110.0)
         .show_ui(ui, |ui| {
-            for (i, key) in SMART_CHOICES.iter().enumerate() {
-                ui.selectable_value(&mut mode, i as u8, tr(key));
+            for v in SMART_ORDER {
+                ui.selectable_value(&mut mode, v, tr(SMART_CHOICES[v as usize]));
             }
         })
         .response
@@ -250,8 +255,8 @@ pub fn smart_fill_bar(app: &mut App, ui: &mut Ui) {
         .selected_text(tr(SMART_CHOICES[omode as usize]))
         .width(110.0)
         .show_ui(ui, |ui| {
-            for (i, key) in SMART_CHOICES.iter().enumerate() {
-                ui.selectable_value(&mut omode, i as u8, tr(key));
+            for v in SMART_ORDER {
+                ui.selectable_value(&mut omode, v, tr(SMART_CHOICES[v as usize]));
             }
         })
         .response

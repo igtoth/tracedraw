@@ -96,10 +96,10 @@ formada por varios objetos superpuestos, creando un objeto nuevo con esa
 área. Los objetos que la rodean quedan como están.
 
 1. Elija la herramienta [[tool.area_fill]].
-2. Elija el relleno y el contorno en la barra de propiedades: **Usar
-   predeterminado** (el relleno y el contorno de los objetos nuevos; un color
-   cuando es sin relleno, para que el área se vea), **Especificar** (el color
-   y, para el contorno, el grosor, al lado) o **Ninguno**.
+2. Elija el relleno y el contorno en la barra de propiedades: **Especificar**
+   (el color y, para el contorno, el grosor, al lado), **Usar predeterminado**
+   (el relleno y el contorno de los objetos nuevos; un color cuando es sin
+   relleno, para que el área se vea) o **Ninguno**.
 3. Haga clic dentro del área.
 
 El nuevo objeto se coloca encima de la capa activa y queda seleccionado. Un

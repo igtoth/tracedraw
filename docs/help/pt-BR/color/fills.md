@@ -115,10 +115,10 @@ formada por vários objetos sobrepostos, criando um novo objeto com essa área. 
 objetos em volta ficam como estão.
 
 1. Escolha a ferramenta [[tool.area_fill]].
-2. Escolha o preenchimento e o contorno na barra de propriedades: **Usar
+2. Escolha o preenchimento e o contorno na barra de propriedades:
+   **Especificar** (a cor, e para o contorno a largura, ao lado), **Usar
    padrão** (o preenchimento e o contorno dos novos objetos; uma cor quando o
-   padrão é sem preenchimento, para a área aparecer), **Especificar** (a cor, e
-   para o contorno a largura, ao lado) ou **Nenhum**.
+   padrão é sem preenchimento, para a área aparecer) ou **Nenhum**.
 3. Clique dentro da área.
 
 O novo objeto vai para o topo da camada ativa e fica selecionado. Um clique em

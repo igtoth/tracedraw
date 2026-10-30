@@ -100,10 +100,10 @@ zone. Les objets qui l'entourent restent tels quels.
 
 1. Choisissez l'outil [[tool.area_fill]].
 2. Choisissez la surface et le contour dans la barre de propriétés :
+   **Spécifier** (la couleur, et pour le contour l'épaisseur, à côté),
    **Utiliser la valeur par défaut** (la surface et le contour des nouveaux
    objets ; une couleur quand ce serait aucune surface, afin que la zone soit
-   visible), **Spécifier** (la couleur, et pour le contour l'épaisseur, à
-   côté) ou **Aucun**.
+   visible) ou **Aucun**.
 3. Cliquez à l'intérieur de la zone.
 
 Le nouvel objet est placé au-dessus du calque actif et sélectionné. Un clic

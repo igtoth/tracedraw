@@ -108,9 +108,9 @@ overlapping objects, by making a new object of that area. The objects around
 it stay as they are.
 
 1. Choose the [[tool.area_fill]] tool.
-2. Choose the fill and outline on the property bar: **Use default** (the fill
-   and outline of new objects; a color when that is no fill, so the area
-   shows), **Specify** (the color, and for the outline the width, beside it)
+2. Choose the fill and outline on the property bar: **Specify** (the color,
+   and for the outline the width, beside it), **Use default** (the fill and
+   outline of new objects; a color when that is no fill, so the area shows)
    or **None**.
 3. Click inside the area.
 

@@ -89,10 +89,10 @@ przez kilka nakładających się obiektów, tworząc nowy obiekt w kształcie te
 obszaru. Otaczające go obiekty pozostają bez zmian.
 
 1. Wybierz narzędzie [[tool.area_fill]].
-2. Wybierz wypełnienie i kontur na pasku właściwości: **Użyj domyślnego**
-   (wypełnienie i kontur nowych obiektów; kolor, gdy jest to brak wypełnienia,
-   aby obszar był widoczny), **Określ** (kolor, a dla konturu również szerokość,
-   obok) lub **Brak**.
+2. Wybierz wypełnienie i kontur na pasku właściwości: **Określ** (kolor, a
+   dla konturu również szerokość, obok), **Użyj domyślnego** (wypełnienie i
+   kontur nowych obiektów; kolor, gdy jest to brak wypełnienia, aby obszar był
+   widoczny) lub **Brak**.
 3. Kliknij wewnątrz obszaru.
 
 Nowy obiekt trafia na wierzch aktywnej warstwy i zostaje zaznaczony. Kliknięcie

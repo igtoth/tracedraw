@@ -8,9 +8,14 @@ enclose it stay as they are.
 
 | Control | Choices | Default |
 |---|---|---|
-| Fill | Use default (the default fill for new objects; a colour when that is none, so the area shows), Specify (the colour beside it), None | Use default; the colour is yellow (C0 M0 Y100 K0) |
-| Outline | Use default (the default outline for new objects), Specify (the width and colour beside it), None | Use default; 0.2 mm black |
+| Fill | Specify (the colour beside it), Use default (the default fill for new objects; a colour when that is none, so the area shows), None | Use default; the colour is yellow (C0 M0 Y100 K0) |
+| Outline | Specify (the width and colour beside it), Use default (the default outline for new objects), None | Use default; 0.2 mm black |
 
+The lists show their choices in that order: Specify first, then Use
+default, then None (`fill_tool_bars::SMART_ORDER`; the values kept in
+the preferences stay 0 for Use default, 1 for Specify, 2 for None, so
+older preferences keep their choice;
+`pick_drag_tests::smart_fill_lists_offer_specify_then_default_then_none`).
 The colour buttons open the colour palette's swatches and, under Other,
 a swatch that opens the colour picker beside the button for any other
 colour (see `contour.md`, #1262). The choices are kept in the preferences

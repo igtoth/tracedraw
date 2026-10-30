@@ -83,9 +83,9 @@ kterou tvoří několik překrývajících se objektů, tím, že z této oblast
 vytvoří nový objekt. Okolní objekty zůstanou, jak jsou.
 
 1. Zvolte nástroj [[tool.area_fill]].
-2. Na liště vlastností zvolte výplň a obrys: **Použít výchozí** (výplň a
-   obrys nových objektů; je-li to žádná výplň, použije se barva, aby byla
-   oblast vidět), **Určit** (barva a u obrysu vedle ní šířka) nebo **Žádná**.
+2. Na liště vlastností zvolte výplň a obrys: **Určit** (barva a u obrysu
+   vedle ní šířka), **Použít výchozí** (výplň a obrys nových objektů; je-li to
+   žádná výplň, použije se barva, aby byla oblast vidět) nebo **Žádná**.
 3. Klikněte dovnitř oblasti.
 
 Nový objekt se umístí navrch aktivní vrstvy a je vybraný. Kliknutí na obrys
