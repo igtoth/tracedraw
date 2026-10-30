@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Colour palette: every click on a colour applies it to the selection. A click whose pointer slipped a few pixels on the swatch was taken for a drag and did nothing, and after a hold that opened the shades the next click on any colour was lost (#1336).
+
 ## 0.28.0 (2026-10-30)
 
 - Variable fonts with many axes (Roboto Flex) draw their text: the font was listed and its axis sliders showed, but every letter came out empty because the glyph reader refused glyphs with more than 32 variation tuples (#870).

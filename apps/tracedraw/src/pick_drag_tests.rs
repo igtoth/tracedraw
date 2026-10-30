@@ -805,6 +805,107 @@ fn every_palette_shown_gets_a_strip() {
     assert_eq!(app.extra_palettes[0].index, gray);
 }
 
+/// Where the default palette's swatch of `name` is drawn.
+fn swatch_of(ctx: &egui::Context, app: &mut App, name: &str) -> Pos2 {
+    let c = app
+        .palette
+        .iter()
+        .find(|(n, _)| n == name)
+        .map(|(_, c)| *c)
+        .expect("colour");
+    let want = crate::canvas::to_color32(c);
+    frame_shapes(ctx, app, Vec::new())
+        .into_iter()
+        .filter_map(|s| match s {
+            egui::Shape::Rect(r)
+                if r.fill == want && r.rect.width() > 8.0 && r.rect.width() < 30.0 =>
+            {
+                Some(r.rect.center())
+            }
+            _ => None,
+        })
+        .last()
+        .unwrap_or_else(|| panic!("no swatch of {name}"))
+}
+
+/// The selected object's fill is the default palette's `name`.
+fn filled_with(app: &App, id: ShapeId, name: &str) -> bool {
+    let want = app
+        .palette
+        .iter()
+        .find(|(n, _)| n == name)
+        .map(|(_, c)| *c)
+        .expect("colour");
+    app.doc().find_shape(id).map(|s| s.fill.clone()) == Some(tracedraw_core::Fill::Solid(want))
+}
+
+/// Every click on a palette colour applies it (#1336): one whose
+/// pointer slipped a few pixels on the swatch before the release (egui
+/// takes that for a drag, which dropped the colour nowhere), and the
+/// click after a hold that opened the shades and was let go past a
+/// click's time (its mark stayed and took that click).
+#[test]
+fn every_click_on_a_palette_colour_applies_it() {
+    let (ctx, mut app, id) = setup();
+    for _ in 0..3 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    let none = Modifiers::NONE;
+    // A slipped click.
+    let blue = swatch_of(&ctx, &mut app, "Blue");
+    let slip = blue + egui::vec2(0.0, 7.0);
+    frame(&ctx, &mut app, vec![Event::PointerMoved(blue)], none);
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(blue, true, PointerButton::Primary, none)],
+        none,
+    );
+    frame(&ctx, &mut app, vec![Event::PointerMoved(slip)], none);
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(slip, false, PointerButton::Primary, none)],
+        none,
+    );
+    for _ in 0..20 {
+        frame(&ctx, &mut app, Vec::new(), none);
+    }
+    assert!(filled_with(&app, id, "Blue"), "the slipped click");
+    // A hold of more than a second opens the shades; the release over
+    // them is no click; a shade picked closes them.
+    let red = swatch_of(&ctx, &mut app, "Red");
+    frame(&ctx, &mut app, vec![Event::PointerMoved(red)], none);
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(red, true, PointerButton::Primary, none)],
+        none,
+    );
+    for _ in 0..70 {
+        frame(&ctx, &mut app, Vec::new(), none);
+    }
+    assert!(app.palette_shades.is_some(), "the shades opened");
+    let above = red - egui::vec2(0.0, 40.0);
+    frame(&ctx, &mut app, vec![Event::PointerMoved(above)], none);
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(above, false, PointerButton::Primary, none)],
+        none,
+    );
+    for _ in 0..20 {
+        frame(&ctx, &mut app, Vec::new(), none);
+    }
+    app.palette_shades = None;
+    for _ in 0..3 {
+        frame(&ctx, &mut app, Vec::new(), none);
+    }
+    let yellow = swatch_of(&ctx, &mut app, "Yellow");
+    click_at(&ctx, &mut app, yellow, none);
+    assert!(filled_with(&app, id, "Yellow"), "the click after a hold");
+}
+
 fn click_at(ctx: &egui::Context, app: &mut App, at: Pos2, mods: Modifiers) {
     frame(ctx, app, vec![Event::PointerMoved(at)], mods);
     frame(
