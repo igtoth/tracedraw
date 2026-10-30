@@ -5785,6 +5785,7 @@ docker.expand_row = "Bentangkan atau ciutkan"
 docker.expand_row_desc = "Tampilkan atau sembunyikan isinya."
 docker.layer_row_desc = "Klik untuk menjadikannya lapisan aktif. Klik dua kali untuk mengganti nama; klik kanan untuk lainnya."
 docker.object_row_desc = "Klik untuk memilihnya. Klik dua kali untuk mengganti nama."
+docker.thumb_size = "Ukuran gambar mini (roda di sini, atau Ctrl+roda di atas daftar)" # mt
 docker.guides_row_desc = "Garis panduan halaman. Tidak pernah dicetak."
 docker.grid_row_desc = "Kisi dokumen. Tidak pernah dicetak dan tidak dapat diedit."
 docker.section_desc = "Klik untuk membuka atau menutup bagian ini."

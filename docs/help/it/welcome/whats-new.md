@@ -19,6 +19,10 @@ come scoprire cosa è cambiato ed elenca i punti salienti delle ultime versioni.
 
 ## Punti salienti delle ultime versioni {#highlights}
 
+- **Miniature degli oggetti.** Il pannello [[docker.objects]] mostra ogni
+  oggetto disegnato in piccolo accanto al nome; Ctrl+rotella sulla lista o il
+  cursore in basso imposta la dimensione. Vedere
+  [Organizzare oggetti e livelli](../objects/objects-and-layers.md#objects-docker).
 - **La Guida nella vostra lingua.** Ogni pulsante **?** e <kbd>F1</kbd> aprono
   la pagina di questa Guida sulla finestra di dialogo, il pannello o lo
   strumento che avete davanti, nella lingua impostata in TraceDraw.

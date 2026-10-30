@@ -5785,6 +5785,7 @@ docker.expand_row = "Aus- oder einklappen"
 docker.expand_row_desc = "Zeigt oder verbirgt den Inhalt."
 docker.layer_row_desc = "Klicken macht sie zur aktiven Ebene. Doppelklick benennt sie um; Rechtsklick zeigt mehr."
 docker.object_row_desc = "Klicken wählt es aus. Doppelklick benennt es um."
+docker.thumb_size = "Größe der Miniaturen (Mausrad hier oder Strg+Mausrad über der Liste)" # mt
 docker.guides_row_desc = "Die Hilfslinien der Seite. Sie werden nie gedruckt."
 docker.grid_row_desc = "Das Dokumentraster. Es wird nie gedruckt und lässt sich nicht bearbeiten."
 docker.section_desc = "Klicken öffnet oder schließt diesen Abschnitt."

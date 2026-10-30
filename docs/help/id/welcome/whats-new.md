@@ -18,6 +18,9 @@ cara mengetahui apa yang berubah dan mencantumkan sorotan versi-versi terbaru.
 
 ## Sorotan versi terbaru {#highlights}
 
+- **Gambar mini objek.** Panel [[docker.objects]] menampilkan setiap objek
+  digambar kecil di samping namanya; Ctrl+roda di atas daftar atau penggeser
+  di bawah mengatur ukurannya. Lihat [Mengatur objek dan lapisan](../objects/objects-and-layers.md#objects-docker).
 - **Bantuan dalam bahasa Anda.** Setiap tombol **?** dan <kbd>F1</kbd> membuka
   halaman Bantuan ini tentang kotak dialog, panel, atau alat di depan Anda,
   dalam bahasa yang diatur di TraceDraw.

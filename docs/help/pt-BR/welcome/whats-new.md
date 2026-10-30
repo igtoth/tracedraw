@@ -18,6 +18,10 @@ saber o que mudou e lista os destaques das versões mais recentes.
 
 ## Destaques das versões recentes {#highlights}
 
+- **Miniaturas dos objetos.** O painel [[docker.objects]] mostra cada objeto
+  desenhado em tamanho pequeno ao lado do nome; Ctrl+roda sobre a lista ou o
+  controle deslizante na parte de baixo define o tamanho. Veja
+  [Organizar objetos e camadas](../objects/objects-and-layers.md#objects-docker).
 - **Ajuda no seu idioma.** Todo botão **?** e a tecla <kbd>F1</kbd> abrem a
   página desta Ajuda sobre a caixa de diálogo, o painel ou a ferramenta à sua
   frente, no idioma em que o TraceDraw está configurado.

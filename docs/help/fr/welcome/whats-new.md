@@ -20,6 +20,10 @@ dernières versions.
 
 ## Points forts des dernières versions {#highlights}
 
+- **Vignettes des objets.** Le panneau [[docker.objects]] montre chaque
+  objet dessiné en petit à côté de son nom ; Ctrl+molette sur la liste ou le
+  curseur en bas règle la taille. Voir
+  [Organiser les objets et les calques](../objects/objects-and-layers.md#objects-docker).
 - **L'Aide dans votre langue.** Chaque bouton **?** et <kbd>F1</kbd> ouvrent
   la page de cette Aide sur la boîte de dialogue, le panneau ou l'outil devant
   vous, dans la langue choisie dans TraceDraw.

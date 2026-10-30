@@ -5785,6 +5785,7 @@ docker.expand_row = "Uit- of samenvouwen"
 docker.expand_row_desc = "Toont of verbergt wat erin zit."
 docker.layer_row_desc = "Klik om er de actieve laag van te maken. Dubbelklik om de naam te wijzigen; rechtsklik voor meer."
 docker.object_row_desc = "Klik om het te selecteren. Dubbelklik om de naam te wijzigen."
+docker.thumb_size = "Grootte van de miniaturen (het wiel hier, of Ctrl+wiel boven de lijst)" # mt
 docker.guides_row_desc = "De hulplijnen van de pagina. Ze worden nooit afgedrukt."
 docker.grid_row_desc = "Het documentraster. Het wordt nooit afgedrukt en kan niet worden bewerkt."
 docker.section_desc = "Klik om deze sectie te openen of te sluiten."

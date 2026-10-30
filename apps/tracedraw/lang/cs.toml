@@ -5785,6 +5785,7 @@ docker.expand_row = "Rozbalit nebo sbalit"
 docker.expand_row_desc = "Zobrazí nebo skryje obsah."
 docker.layer_row_desc = "Kliknutím ji nastavíte jako aktivní vrstvu. Poklepáním ji přejmenujete; pravým tlačítkem zobrazíte další."
 docker.object_row_desc = "Kliknutím jej vyberete. Poklepáním jej přejmenujete."
+docker.thumb_size = "Velikost náhledů (kolečko zde nebo Ctrl+kolečko nad seznamem)" # mt
 docker.guides_row_desc = "Vodítka stránky. Nikdy se netisknou."
 docker.grid_row_desc = "Mřížka dokumentu. Nikdy se netiskne a nelze ji upravit."
 docker.section_desc = "Kliknutím tuto část otevřete nebo zavřete."

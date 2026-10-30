@@ -19,6 +19,9 @@ listeler.
 
 ## Son sürümlerin öne çıkanları {#highlights}
 
+- **Nesne küçük resimleri.** [[docker.objects]] paneli her nesneyi adının
+  yanında küçük olarak çizer; listenin üzerinde Ctrl+tekerlek veya alttaki
+  kaydırıcı boyutu ayarlar. Bkz. [Nesneleri ve katmanları düzenleme](../objects/objects-and-layers.md#objects-docker).
 - **Kendi dilinizde Yardım.** Her **?** düğmesi ve <kbd>F1</kbd>, önünüzdeki
   iletişim kutusu, panel veya araç hakkındaki Yardım sayfasını TraceDraw'ın
   ayarlı olduğu dilde açar.

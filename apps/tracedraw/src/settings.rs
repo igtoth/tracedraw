@@ -412,6 +412,9 @@ pub struct Settings {
     pub hyphens_when_typing: bool,
     #[serde(default = "default_true")]
     pub hyphens_when_pasting: bool,
+    /// The Objects docker's thumbnail size, interface points (16 to 96).
+    #[serde(default = "default_object_thumb")]
+    pub object_thumb_size: f32,
     /// The font lists' sample size, in points.
     #[serde(default = "default_font_sample")]
     pub font_sample_px: f32,
@@ -930,6 +933,10 @@ impl Default for BackupPrefs {
             auto_dir: None,
         }
     }
+}
+
+fn default_object_thumb() -> f32 {
+    crate::object_thumbs::DEFAULT_SIZE
 }
 
 fn default_font_sample() -> f32 {
@@ -1482,6 +1489,7 @@ impl Default for Settings {
             custom_hyphens: Vec::new(),
             hyphens_when_typing: true,
             hyphens_when_pasting: true,
+            object_thumb_size: default_object_thumb(),
             font_sample_px: default_font_sample(),
             workspace_parts: crate::workspace_file::WorkspaceParts::default(),
             printing: Default::default(),

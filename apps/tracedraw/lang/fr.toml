@@ -5785,6 +5785,7 @@ docker.expand_row = "Développer ou réduire"
 docker.expand_row_desc = "Affiche ou masque ce qu'il contient."
 docker.layer_row_desc = "Cliquez pour en faire le calque actif. Double-cliquez pour le renommer ; clic droit pour plus."
 docker.object_row_desc = "Cliquez pour le sélectionner. Double-cliquez pour le renommer."
+docker.thumb_size = "Taille des vignettes (la molette ici, ou Ctrl+molette sur la liste)" # mt
 docker.guides_row_desc = "Les repères de la page. Ils ne s'impriment jamais."
 docker.grid_row_desc = "La grille du document. Elle ne s'imprime jamais et ne peut pas être modifiée."
 docker.section_desc = "Cliquez pour ouvrir ou fermer cette section."

@@ -5,8 +5,10 @@
 //! unlock), the layer icon and the name, in bold on a blue row for the
 //! active layer, the one new objects go to; clicking a layer makes it
 //! active. Under each open layer come its objects, topmost first, each
-//! with a swatch of its fill and outline and its name (or what it is when
-//! it has no name). Groups open to show their objects. Clicking an object
+//! with a thumbnail (the object itself drawn small, see
+//! `object_thumbs.rs`) and its name (or what it is when it has no name).
+//! The thumbnail size is set by the control in the bottom bar, the wheel
+//! over it, or Ctrl+wheel over the list. Groups open to show their objects. Clicking an object
 //! selects it (Shift adds it) and makes its layer active; double-clicking
 //! a name renames the layer or object; a layer's context menu moves,
 //! renames or deletes it. The bar at the bottom adds a layer or a master
@@ -60,6 +62,12 @@ struct Actions {
     lock_guides: Option<bool>,
     /// Not an action: the object whose row is scrolled into view.
     scroll_to: Option<ShapeId>,
+    /// Not an action: the thumbnail cache, taken from the app while the
+    /// tree is drawn, the thumbnail size (points) and the drawing's
+    /// (instance, revision).
+    thumbs: crate::object_thumbs::ObjectThumbs,
+    thumb_size: f32,
+    drawing: (u64, u64),
 }
 
 /// Where a layer sits: its index in its list (0 at the bottom), how many
@@ -376,8 +384,13 @@ fn paint_bin(p: &Painter, r: Rect, on: bool) {
 
 /// A full-width row; returns its rectangle and its response.
 fn row(ui: &mut Ui, look: Look) -> (Rect, egui::Response) {
+    row_of(ui, look, ROW_H)
+}
+
+/// A full-width row `height` high.
+fn row_of(ui: &mut Ui, look: Look, height: f32) -> (Rect, egui::Response) {
     let (rect, resp) =
-        ui.allocate_exact_size(Vec2::new(ui.available_width(), ROW_H), Sense::click());
+        ui.allocate_exact_size(Vec2::new(ui.available_width(), height), Sense::click());
     let p = ui.painter();
     match look {
         Look::Object { selected: true } => {
@@ -425,14 +438,56 @@ fn square(rect: Rect, x: f32, size: f32) -> Rect {
 /// The docker: the tree above the bar with its buttons.
 pub fn objects_docker(app: &mut App, ui: &mut Ui) {
     let content_h = (ui.available_height() - BAR_H - 4.0).max(40.0);
-    egui::ScrollArea::vertical()
+    let out = egui::ScrollArea::vertical()
         .max_height(content_h)
         .auto_shrink([false, false])
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             objects(app, ui);
         });
+    // Ctrl+wheel over the list makes the thumbnails larger or smaller.
+    if ui.rect_contains_pointer(out.inner_rect) {
+        let notch = wheel_notches(ui, true);
+        zoom_thumbs(app, notch);
+    }
     bottom_bar(app, ui);
+}
+
+/// Wheel notches this frame (up is positive), only those with Ctrl (or
+/// Cmd) held when `ctrl`, else all of them.
+fn wheel_notches(ui: &Ui, ctrl: bool) -> f32 {
+    ui.input(|i| {
+        i.events
+            .iter()
+            .map(|e| match e {
+                egui::Event::MouseWheel {
+                    unit,
+                    delta,
+                    modifiers,
+                    ..
+                } if !ctrl || modifiers.command || modifiers.ctrl => {
+                    let d = delta.y + delta.x;
+                    match unit {
+                        egui::MouseWheelUnit::Line => d,
+                        egui::MouseWheelUnit::Point => d / 50.0,
+                        egui::MouseWheelUnit::Page => d * 10.0,
+                    }
+                }
+                _ => 0.0,
+            })
+            .sum()
+    })
+}
+
+/// The thumbnails `notch` wheel notches larger (smaller when negative).
+fn zoom_thumbs(app: &mut App, notch: f32) {
+    if notch.abs() < 0.5 {
+        return;
+    }
+    let steps = notch.round().clamp(-4.0, 4.0);
+    app.settings.object_thumb_size = crate::object_thumbs::clamp_size(
+        app.settings.object_thumb_size + steps * crate::object_thumbs::STEP,
+    );
 }
 
 /// The object whose row the list scrolls to this frame: the first
@@ -451,8 +506,14 @@ fn scroll_target(app: &App, ui: &Ui) -> Option<ShapeId> {
 
 /// The tree: the page and its layers, then the Master Page.
 pub fn objects(app: &mut App, ui: &mut Ui) {
-    let mut act = Actions::default();
-    act.scroll_to = scroll_target(app, ui);
+    let mut act = Actions {
+        scroll_to: scroll_target(app, ui),
+        thumbs: std::mem::take(&mut app.object_thumbs),
+        thumb_size: crate::object_thumbs::clamp_size(app.settings.object_thumb_size),
+        drawing: (app.engine.instance(), app.engine.revision()),
+        ..Default::default()
+    };
+    act.thumbs.begin_frame();
     {
         let doc = app.doc();
         let Ok(page) = doc.page(app.page) else { return };
@@ -508,6 +569,13 @@ pub fn objects(app: &mut App, ui: &mut Ui) {
             grid_row(app, ui, &mut act);
         }
     }
+    let mut thumbs = std::mem::take(&mut act.thumbs);
+    thumbs.trim(crate::object_thumbs::MAX_BYTES);
+    if thumbs.waiting {
+        // New pictures wait for the next frames.
+        ui.ctx().request_repaint();
+    }
+    app.object_thumbs = thumbs;
     apply(app, ui, act);
 }
 
@@ -745,17 +813,41 @@ fn grid_row(app: &App, ui: &mut Ui, act: &mut Actions) {
 /// open group.
 fn object_rows(app: &App, ui: &mut Ui, s: &Shape, depth: usize, act: &mut Actions) {
     let selected = app.selection.contains(&s.id);
-    let (rect, resp) = row(ui, Look::Object { selected });
+    let height = (act.thumb_size + 6.0).max(ROW_H);
+    let (rect, resp) = row_of(ui, Look::Object { selected }, height);
     if act.scroll_to == Some(s.id) {
         ui.scroll_to_rect(rect, None);
     }
-    let mut x = rect.left() + 3.0 + depth as f32 * INDENT;
     let children: Option<&Vec<Shape>> = match &s.kind {
         ShapeKind::Group { children } => Some(children),
         _ => None,
     };
     let expanded = app.objects_open_groups.contains(&s.id);
-    if children.is_some() {
+    // Rows scrolled out of sight are only laid out: nothing is drawn or
+    // asked of them, so a long list costs little.
+    if ui.is_rect_visible(rect) {
+        object_row(app, ui, s, (rect, resp), depth, expanded, act);
+    }
+    if let (Some(children), true) = (children, expanded) {
+        for c in children.iter().rev() {
+            object_rows(app, ui, c, depth + 1, act);
+        }
+    }
+}
+
+/// The contents of the row of `s`: the group arrow, the thumbnail, the
+/// name, the eye and the padlock.
+fn object_row(
+    app: &App,
+    ui: &mut Ui,
+    s: &Shape,
+    (rect, resp): (Rect, egui::Response),
+    depth: usize,
+    expanded: bool,
+    act: &mut Actions,
+) {
+    let mut x = rect.left() + 3.0 + depth as f32 * INDENT;
+    if matches!(s.kind, ShapeKind::Group { .. }) {
         let (ar, a) = hot(
             ui,
             rect,
@@ -770,12 +862,15 @@ fn object_rows(app: &App, ui: &mut Ui, s: &Shape, depth: usize, act: &mut Action
         }
     }
     x += 16.0;
-    paint_swatch(
+    let size = act.thumb_size;
+    paint_thumb(
+        app,
         ui,
-        Rect::from_min_size(Pos2::new(x, rect.center().y - 6.0), Vec2::splat(12.0)),
+        Rect::from_min_size(Pos2::new(x, rect.center().y - size / 2.0), Vec2::splat(size)),
         s,
+        act,
     );
-    x += 19.0;
+    x += size + 7.0;
     let label = object_label(s);
     let resp = resp.rich_tip_with(|| format!("{label}\n{}", tr("docker.object_row_desc")));
     let color = if s.visible {
@@ -817,9 +912,49 @@ fn object_rows(app: &App, ui: &mut Ui, s: &Shape, depth: usize, act: &mut Action
     } else if resp.clicked() {
         act.select = Some(s.id);
     }
-    if let (Some(children), true) = (children, expanded) {
-        for c in children.iter().rev() {
-            object_rows(app, ui, c, depth + 1, act);
+}
+
+/// The thumbnail of `s` in the square `r`: the object drawn small on a
+/// white tile, centred; dimmed when the object is hidden. Until its
+/// picture is drawn (a few per frame), the swatch of its fill and outline
+/// stands in.
+fn paint_thumb(app: &App, ui: &Ui, r: Rect, s: &Shape, act: &mut Actions) {
+    let p = ui.painter();
+    p.rect_filled(r, 2.0, Color32::WHITE);
+    p.rect_stroke(
+        r,
+        2.0,
+        Stroke::new(1.0, Tokens::border()),
+        egui::epaint::StrokeKind::Inside,
+    );
+    let ppp = ui.ctx().pixels_per_point().max(0.5);
+    let inner = r.shrink(2.0);
+    let px = (inner.width() * ppp).round().max(4.0) as u32;
+    match act
+        .thumbs
+        .get(ui.ctx(), app.doc(), act.drawing, s, px)
+    {
+        crate::object_thumbs::Thumb::Picture(id, [w, h]) => {
+            let size = Vec2::new(w as f32, h as f32) / ppp;
+            // An older picture of another size still fits the tile.
+            let fit = (inner.width() / size.x.max(size.y).max(1.0)).min(1.0);
+            let at = Rect::from_center_size(inner.center(), size * fit);
+            let tint = if s.visible {
+                Color32::WHITE
+            } else {
+                Color32::from_white_alpha(90)
+            };
+            p.image(
+                id,
+                at,
+                Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)),
+                tint,
+            );
+        }
+        crate::object_thumbs::Thumb::Empty => {}
+        crate::object_thumbs::Thumb::Pending => {
+            let side = (inner.width() * 0.6).max(8.0);
+            paint_swatch(ui, Rect::from_center_size(inner.center(), Vec2::splat(side)), s);
         }
     }
 }
@@ -897,6 +1032,54 @@ fn bottom_bar(app: &mut App, ui: &mut Ui) {
     }
     if can_delete && delete.clicked() {
         delete_current(app);
+    }
+    // The thumbnail size between the buttons, when there is room.
+    let zoom = Rect::from_min_max(
+        Pos2::new(master_r.right() + 10.0, bar.min.y + 2.0),
+        Pos2::new(delete_r.left() - 10.0, bar.max.y),
+    );
+    if zoom.width() >= 70.0 {
+        thumb_size_control(app, ui, zoom);
+    }
+}
+
+/// The thumbnail size control in `r`: a small tile, a slider and a large
+/// tile; the wheel over it changes the size too.
+fn thumb_size_control(app: &mut App, ui: &mut Ui, r: Rect) {
+    use crate::object_thumbs::{clamp_size, MAX_SIZE, MIN_SIZE, STEP};
+    let small = Rect::from_center_size(Pos2::new(r.min.x + 4.0, r.center().y), Vec2::splat(7.0));
+    let large = Rect::from_center_size(Pos2::new(r.max.x - 7.0, r.center().y), Vec2::splat(13.0));
+    for t in [small, large] {
+        ui.painter().rect_stroke(
+            t,
+            1.0,
+            Stroke::new(1.0, Tokens::icon()),
+            egui::epaint::StrokeKind::Inside,
+        );
+    }
+    let groove = Rect::from_min_max(
+        Pos2::new(small.right() + 6.0, r.min.y),
+        Pos2::new(large.left() - 6.0, r.max.y),
+    );
+    let mut size = clamp_size(app.settings.object_thumb_size);
+    ui.scope_builder(
+        egui::UiBuilder::new()
+            .max_rect(groove)
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+        |ui| {
+            ui.spacing_mut().slider_width = groove.width();
+            ui.add(
+                crate::ui::Slider::new(&mut size, MIN_SIZE..=MAX_SIZE)
+                    .step_by(f64::from(STEP))
+                    .show_value(false),
+            )
+            .rich_tip(tr("docker.thumb_size"));
+        },
+    );
+    app.settings.object_thumb_size = clamp_size(size);
+    if ui.rect_contains_pointer(r) {
+        let notch = wheel_notches(ui, false);
+        zoom_thumbs(app, notch);
     }
 }
 
@@ -1146,6 +1329,170 @@ mod tests {
     /// Selecting an object on the page scrolls the list to its row when
     /// it is out of view, as when it lies far down a long list (#1044).
     /// A selection that stays the same leaves the scroll alone.
+    /// One frame of the docker, `size` wide and high, with `events`.
+    fn frame(ctx: &egui::Context, app: &mut App, size: f32, events: Vec<egui::Event>) {
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(size, size),
+            )),
+            events,
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(input, |ui| objects_docker(app, ui));
+        out.textures_delta.clear();
+    }
+
+    fn wheel(at: Pos2, notches: f32, modifiers: egui::Modifiers) -> Vec<egui::Event> {
+        vec![
+            egui::Event::PointerMoved(at),
+            egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Line,
+                delta: Vec2::new(0.0, notches),
+                phase: egui::TouchPhase::Move,
+                modifiers,
+            },
+        ]
+    }
+
+    /// Each object row shows a thumbnail of the object, drawn once and
+    /// drawn again only when that object changes (#896).
+    #[test]
+    fn rows_show_thumbnails_drawn_once_per_change() {
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        let ids: Vec<ShapeId> = (0..3)
+            .map(|_| app.new_shape(rect_kind()).expect("shape"))
+            .collect();
+        app.selection.clear();
+        for _ in 0..3 {
+            frame(&ctx, &mut app, 400.0, Vec::new());
+        }
+        assert_eq!(app.object_thumbs.renders, 3);
+        assert_eq!(app.object_thumbs.len(), 3);
+        assert!(app.object_thumbs.bytes() > 0);
+        // A change to one object draws that one again, the others stay.
+        app.run(Command::SetFill {
+            shapes: vec![ids[1]],
+            fill: tracedraw_core::Fill::Solid(tracedraw_core::Color::rgb8(0, 200, 0)),
+        });
+        for _ in 0..3 {
+            frame(&ctx, &mut app, 400.0, Vec::new());
+        }
+        assert_eq!(app.object_thumbs.renders, 4);
+        // Selecting (no change to the drawing) draws nothing.
+        app.select(vec![ids[0]]);
+        frame(&ctx, &mut app, 400.0, Vec::new());
+        assert_eq!(app.object_thumbs.renders, 4);
+    }
+
+    /// Ctrl+wheel over the list and the wheel over the bar's slider
+    /// change the thumbnail size by one step a notch; the rows grow.
+    #[test]
+    fn ctrl_wheel_and_the_bar_change_the_thumbnail_size() {
+        use crate::object_thumbs::{DEFAULT_SIZE, MAX_SIZE, STEP};
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        let id = app.new_shape(rect_kind()).expect("shape");
+        app.selection.clear();
+        assert_eq!(app.settings.object_thumb_size, DEFAULT_SIZE);
+        let eye = |ctx: &egui::Context| {
+            ctx.read_response(egui::Id::new(("objects_object", id.raw())).with("eye"))
+                .map(|r| r.rect)
+        };
+        frame(&ctx, &mut app, 400.0, Vec::new());
+        let before = eye(&ctx).expect("row drawn");
+        // A plain wheel over the list scrolls; it leaves the size.
+        frame(&ctx, &mut app, 400.0, wheel(Pos2::new(200.0, 60.0), 1.0, egui::Modifiers::NONE));
+        assert_eq!(app.settings.object_thumb_size, DEFAULT_SIZE);
+        frame(&ctx, &mut app, 400.0, wheel(Pos2::new(200.0, 60.0), 2.0, egui::Modifiers::CTRL));
+        assert_eq!(app.settings.object_thumb_size, DEFAULT_SIZE + 2.0 * STEP);
+        // (Responses are read a frame late.)
+        frame(&ctx, &mut app, 400.0, Vec::new());
+        frame(&ctx, &mut app, 400.0, Vec::new());
+        // The row is taller; the thumbnail is drawn again at the new size.
+        let after = eye(&ctx).expect("row drawn");
+        assert!(after.center().y > before.center().y, "{before:?} {after:?}");
+        // The wheel over the slider in the bottom bar, down a notch.
+        frame(&ctx, &mut app, 400.0, wheel(Pos2::new(200.0, 385.0), -1.0, egui::Modifiers::NONE));
+        assert_eq!(app.settings.object_thumb_size, DEFAULT_SIZE + STEP);
+        // Never past the largest size.
+        for _ in 0..10 {
+            frame(&ctx, &mut app, 400.0, wheel(Pos2::new(200.0, 60.0), 4.0, egui::Modifiers::CTRL));
+        }
+        assert_eq!(app.settings.object_thumb_size, MAX_SIZE);
+    }
+
+    /// A drawing of thousands of objects: only the rows in sight get
+    /// thumbnails, a frame with nothing changed draws none, and the cache
+    /// stays small.
+    #[test]
+    fn a_long_list_draws_only_the_rows_in_sight() {
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        for i in 0..3000 {
+            let x = f64::from(i % 50) * 4.0;
+            let y = f64::from(i / 50) * 4.0;
+            app.new_shape(ShapeKind::Rect {
+                rect: tracedraw_core::Rect::new(x, y, x + 3.0, y + 3.0),
+                radius: 0.0,
+                corners: None,
+            });
+        }
+        app.selection.clear();
+        for _ in 0..6 {
+            frame(&ctx, &mut app, 400.0, Vec::new());
+        }
+        let drawn = app.object_thumbs.renders;
+        assert!((5..40).contains(&drawn), "{drawn}");
+        frame(&ctx, &mut app, 400.0, Vec::new());
+        assert_eq!(app.object_thumbs.renders, drawn);
+        assert!(app.object_thumbs.bytes() < 2 * 1024 * 1024);
+    }
+
+    /// Frame times of the docker over 3000 objects (`cargo test --release
+    /// -p tracedraw -- --ignored objects_docker_frame_times --nocapture`):
+    /// the first frames (thumbnails drawn), a steady frame, and frames
+    /// scrolling the list.
+    #[test]
+    #[ignore]
+    fn objects_docker_frame_times() {
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        for i in 0..3000 {
+            let x = f64::from(i % 50) * 4.0;
+            let y = f64::from(i / 50) * 4.0;
+            app.new_shape(ShapeKind::Ellipse {
+                rect: tracedraw_core::Rect::new(x, y, x + 3.0, y + 3.0),
+                arc: None,
+            });
+        }
+        app.selection.clear();
+        let time = |app: &mut App, events: Vec<egui::Event>| {
+            let t = web_time::Instant::now();
+            frame(&ctx, app, 600.0, events);
+            t.elapsed().as_secs_f64() * 1000.0
+        };
+        let first = time(&mut app, Vec::new());
+        let mut fill = 0.0;
+        for _ in 0..10 {
+            fill += time(&mut app, Vec::new());
+        }
+        let steady: f64 = (0..20).map(|_| time(&mut app, Vec::new())).sum::<f64>() / 20.0;
+        let scroll: f64 = (0..40)
+            .map(|_| time(&mut app, wheel(Pos2::new(300.0, 200.0), -3.0, egui::Modifiers::NONE)))
+            .sum::<f64>()
+            / 40.0;
+        println!(
+            "objects docker, 3000 objects: first {first:.1} ms, next 10 {fill:.1} ms, \
+             steady {steady:.2} ms, scrolling {scroll:.2} ms; {} thumbnails drawn, \
+             {} kept, {} KB",
+            app.object_thumbs.renders,
+            app.object_thumbs.len(),
+            app.object_thumbs.bytes() / 1024
+        );
+    }
+
     #[test]
     fn the_list_scrolls_to_an_object_selected_on_the_page() {
         let ctx = crate::theme::ui_context();

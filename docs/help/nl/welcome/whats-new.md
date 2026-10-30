@@ -20,6 +20,10 @@ versies.
 
 ## Hoogtepunten van recente versies {#highlights}
 
+- **Miniaturen van objecten.** Het paneel [[docker.objects]] toont elk
+  object klein getekend naast de naam; Ctrl+wiel boven de lijst of de
+  schuifregelaar onderaan stelt de grootte in. Zie
+  [Objecten en lagen ordenen](../objects/objects-and-layers.md#objects-docker).
 - **Help in uw taal.** Elke knop **?** en <kbd>F1</kbd> openen de pagina van
   deze Help over het dialoogvenster, paneel of gereedschap voor u, in de taal
   waarop TraceDraw is ingesteld.

@@ -18,6 +18,9 @@ sprawdzić, co się zmieniło, i wymienia najważniejsze nowości ostatnich wers
 
 ## Najważniejsze nowości ostatnich wersji {#highlights}
 
+- **Miniatury obiektów.** Panel [[docker.objects]] pokazuje każdy obiekt
+  narysowany w małym rozmiarze obok nazwy; Ctrl+kółko nad listą lub suwak na
+  dole ustawia rozmiar. Zobacz [Porządkowanie obiektów i warstw](../objects/objects-and-layers.md#objects-docker).
 - **Pomoc w Twoim języku.** Każdy przycisk **?** i <kbd>F1</kbd> otwierają
   stronę tej Pomocy o oknie dialogowym, panelu lub narzędziu przed Tobą, w
   języku ustawionym w TraceDraw.

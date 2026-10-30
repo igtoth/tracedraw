@@ -12,8 +12,8 @@ and layers. Objects higher in the list are drawn in front.
 The panel lists the page with its layers, topmost first, then the
 [[docker.master_page]] with the master layers, the guidelines
 ([[docker.guides]]) and the [[menu.view.document_grid]]. Each object shows a
-swatch of its fill framed in its outline color, and its name, or what it is
-when it has none ("Rectangle", "Curve with 8 nodes").
+thumbnail, the object itself drawn small with its fill and outline, and its
+name, or what it is when it has none ("Rectangle", "Curve with 8 nodes").
 
 - Click an object to select it; <kbd>Shift</kbd>+click adds it to the
   selection. Its layer becomes the active layer.
@@ -21,7 +21,12 @@ when it has none ("Rectangle", "Curve with 8 nodes").
 - Each layer has three buttons: [[docker.show_hide]], [[docker.print_layer]]
   and [[docker.lock_layer]]. A hidden or locked layer cannot be edited. The
   padlock of [[docker.guides]] locks all the guidelines of the page.
-- Hidden objects show their name dimmed.
+- Hidden objects show their name and thumbnail dimmed.
+- To make the thumbnails larger or smaller, drag the slider between the
+  small and the large square at the bottom of the panel, turn the mouse
+  wheel over it, or hold <kbd>Ctrl</kbd> and turn the wheel over the list.
+  The size is remembered. A thumbnail is drawn again only when its object
+  changes, so long lists stay quick.
 
 ## Layers {#layers}
 

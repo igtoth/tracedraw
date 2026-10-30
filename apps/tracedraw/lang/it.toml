@@ -5785,6 +5785,7 @@ docker.expand_row = "Espandi o comprimi"
 docker.expand_row_desc = "Mostra o nasconde il contenuto."
 docker.layer_row_desc = "Fare clic per renderlo il livello attivo. Doppio clic per rinominarlo; clic destro per altro."
 docker.object_row_desc = "Fare clic per selezionarlo. Doppio clic per rinominarlo."
+docker.thumb_size = "Dimensione delle miniature (la rotella qui, o Ctrl+rotella sulla lista)" # mt
 docker.guides_row_desc = "Le linee guida della pagina. Non vengono mai stampate."
 docker.grid_row_desc = "La griglia del documento. Non viene mai stampata e non si può modificare."
 docker.section_desc = "Fare clic per aprire o chiudere questa sezione."

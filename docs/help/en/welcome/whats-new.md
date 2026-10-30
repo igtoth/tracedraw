@@ -17,6 +17,9 @@ find out what changed and lists the highlights of the latest versions.
 
 ## Highlights of recent versions {#highlights}
 
+- **Object thumbnails.** The [[docker.objects]] panel shows each object
+  drawn small beside its name; Ctrl+wheel over the list or the slider at its
+  bottom sets the size. See [Organizing objects and layers](../objects/objects-and-layers.md#objects-docker).
 - **Help in your language.** Every **?** button and <kbd>F1</kbd> open the
   page of this Help about the dialog box, panel or tool in front of you, in
   the language TraceDraw is set to.

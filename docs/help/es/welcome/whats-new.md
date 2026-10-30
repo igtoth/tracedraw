@@ -19,6 +19,10 @@ cómo saber qué ha cambiado y enumera lo más destacado de las últimas version
 
 ## Lo más destacado de las últimas versiones {#highlights}
 
+- **Miniaturas de los objetos.** El panel [[docker.objects]] muestra cada
+  objeto dibujado en pequeño junto a su nombre; Ctrl+rueda sobre la lista o el
+  control deslizante de abajo fija el tamaño. Vea
+  [Organizar objetos y capas](../objects/objects-and-layers.md#objects-docker).
 - **Ayuda en su idioma.** Cada botón **?** y <kbd>F1</kbd> abren la página de
   esta Ayuda sobre el cuadro de diálogo, panel o herramienta que tiene
   delante, en el idioma configurado en TraceDraw.

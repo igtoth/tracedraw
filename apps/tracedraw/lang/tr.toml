@@ -5785,6 +5785,7 @@ docker.expand_row = "Genişlet veya daralt"
 docker.expand_row_desc = "İçindekileri gösterir veya gizler."
 docker.layer_row_desc = "Etkin katman yapmak için tıklayın. Yeniden adlandırmak için çift tıklayın; daha fazlası için sağ tıklayın."
 docker.object_row_desc = "Seçmek için tıklayın. Yeniden adlandırmak için çift tıklayın."
+docker.thumb_size = "Küçük resim boyutu (burada tekerlek veya listenin üzerinde Ctrl+tekerlek)" # mt
 docker.guides_row_desc = "Sayfanın kılavuz çizgileri. Asla yazdırılmazlar."
 docker.grid_row_desc = "Belge ızgarası. Asla yazdırılmaz ve düzenlenemez."
 docker.section_desc = "Bu bölümü açmak veya kapatmak için tıklayın."

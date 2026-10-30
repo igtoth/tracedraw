@@ -5785,6 +5785,7 @@ docker.expand_row = "展開または折りたたみ"
 docker.expand_row_desc = "中身を表示または非表示にします。"
 docker.layer_row_desc = "クリックでアクティブレイヤーにします。ダブルクリックで名前変更、右クリックでその他の操作。"
 docker.object_row_desc = "クリックで選択、ダブルクリックで名前を変更します。"
+docker.thumb_size = "サムネールのサイズ（ここでホイール、またはリスト上で Ctrl+ホイール）" # mt
 docker.guides_row_desc = "ページのガイドライン。印刷されることはありません。"
 docker.grid_row_desc = "ドキュメントのグリッド。印刷されず、編集もできません。"
 docker.section_desc = "クリックでこのセクションを開閉します。"

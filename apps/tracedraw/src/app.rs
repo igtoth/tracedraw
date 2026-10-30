@@ -1350,6 +1350,8 @@ pub struct App {
     /// closed.
     pub objects_page_closed: bool,
     pub objects_master_closed: bool,
+    /// Objects docker: the cached thumbnails of the objects.
+    pub object_thumbs: crate::object_thumbs::ObjectThumbs,
     /// When `autosave_settings` last wrote the preferences, and the
     /// preferences as last saved or looked at (JSON), to save them only
     /// when they changed.
@@ -2421,6 +2423,7 @@ impl App {
             settings_looked: None,
             settings_pending: false,
             objects_page_closed: false,
+            object_thumbs: Default::default(),
             objects_master_closed: false,
             picked_layer: None,
             navigator_tex: None,

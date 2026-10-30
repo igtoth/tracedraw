@@ -20,6 +20,10 @@ der letzten Versionen.
 
 ## Highlights der letzten Versionen {#highlights}
 
+- **Objektminiaturen.** Das Andockfenster [[docker.objects]] zeigt jedes
+  Objekt verkleinert neben seinem Namen; Strg+Mausrad über der Liste oder der
+  Schieberegler unten stellt die Größe ein. Siehe
+  [Objekte und Ebenen ordnen](../objects/objects-and-layers.md#objects-docker).
 - **Hilfe in Ihrer Sprache.** Jede Schaltfläche **?** und <kbd>F1</kbd> öffnen
   die Seite dieser Hilfe zu dem Dialogfeld, Andockfenster oder Werkzeug vor
   Ihnen, in der Sprache, auf die TraceDraw eingestellt ist.

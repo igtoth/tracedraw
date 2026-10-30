@@ -16,6 +16,9 @@ TraceDraw 的每个版本都会增加功能和修复。本页介绍如何了解�
 
 ## 最近版本的亮点 {#highlights}
 
+- **对象缩略图。** [[docker.objects]] 面板在每个对象的名称旁显示其缩小的
+  图形；在列表上按 Ctrl 滚动滚轮或拖动底部的滑块可调整大小。参见
+  [组织对象和图层](../objects/objects-and-layers.md#objects-docker)。
 - **使用你的语言的帮助。** 每个 **?** 按钮和 <kbd>F1</kbd> 都会以 TraceDraw
   设置的语言打开本帮助中关于眼前对话框、面板或工具的页面。
 - **文档属性。** [[menu.file > menu.file.document_properties]] 保存绘图的

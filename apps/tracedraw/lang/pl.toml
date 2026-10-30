@@ -5785,6 +5785,7 @@ docker.expand_row = "Rozwiń lub zwiń"
 docker.expand_row_desc = "Pokazuje lub ukrywa zawartość."
 docker.layer_row_desc = "Kliknij, aby była aktywną warstwą. Kliknij dwukrotnie, aby zmienić nazwę; prawy przycisk, aby zobaczyć więcej."
 docker.object_row_desc = "Kliknij, aby zaznaczyć. Kliknij dwukrotnie, aby zmienić nazwę."
+docker.thumb_size = "Rozmiar miniatur (kółko tutaj lub Ctrl+kółko nad listą)" # mt
 docker.guides_row_desc = "Prowadnice strony. Nigdy nie są drukowane."
 docker.grid_row_desc = "Siatka dokumentu. Nigdy nie jest drukowana i nie można jej edytować."
 docker.section_desc = "Kliknij, aby otworzyć lub zamknąć tę sekcję."

@@ -3,7 +3,8 @@
 The Objects tab of the docker shows the current page as a tree: the page
 with its layers, topmost first, then the Master Page with the master
 layers, the guides and the document grid. A bar at the bottom holds New
-Layer and New Master Layer at the left and Delete at the right.
+Layer and New Master Layer at the left, the thumbnail size in the middle
+and Delete at the right.
 
 | Row | Contents |
 |---|---|
@@ -13,12 +14,44 @@ Layer and New Master Layer at the left and Delete at the right.
 | Master layer for odd or even pages | as a layer, followed by "Odd pages" or "Even pages" in small grey; dimmed on the pages it does not show on |
 | Guides | eye (show or hide the guidelines), a pale printer (guidelines never print), padlock (locks or unlocks all of the page's guidelines; shut when they all are) |
 | Document Grid | eye (show or hide the grid), a pale printer and a pale shut padlock (the grid never prints and cannot be edited) |
-| Object, two steps in | swatch of its fill (a red diagonal for none) framed in its outline colour, then its name, or what it is when it has none ("Rectangle", "Curve with 8 nodes", "Paragraph Text: ...") |
+| Object, two steps in | thumbnail: the object itself drawn small (its shape, fill, outline and effects) on a white tile, then its name, or what it is when it has none ("Rectangle", "Curve with 8 nodes", "Paragraph Text: ...") |
 | Group | as an object, with an arrow that opens it to its objects, one step further in (16 px) |
 
-- Rows are 22 px high. The selected objects show in `#CCE8FF` with a
-  `#99D1FF` frame; the row under the pointer in `#E5F3FF`. Hidden
-  objects show their name dimmed.
+- Layer and node rows are 22 px high; an object row is the thumbnail
+  size plus 6 px, 22 px at least. The selected objects show in `#CCE8FF`
+  with a `#99D1FF` frame; the row under the pointer in `#E5F3FF`. Hidden
+  objects show their name and their thumbnail dimmed.
+
+## Thumbnails
+
+- Each object row starts with a thumbnail: the object drawn alone by the
+  same renderer as the page, fitted into a square tile with a small
+  margin and kept in its proportions (a long thin object gets a strip,
+  at least an eighth of the tile thick). A group shows all of its
+  objects, a symbol instance its symbol, a hidden object what it would
+  draw. An object that draws nothing (an empty group) shows the empty
+  tile.
+- The size goes from 16 to 96 points in steps of 4, 20 at first, and is
+  kept in the preferences (`object_thumb_size`). It changes with the
+  slider in the bottom bar (between a small and a large tile, shown when
+  the docker is wide enough), the wheel over that slider, or
+  Ctrl+wheel (Cmd+wheel on a Mac) anywhere over the list; each notch is
+  one step.
+- Thumbnails are drawn at the screen's pixel density and cached per
+  drawing and object. A cached thumbnail is checked only when the
+  drawing changed (its revision moved on), and drawn again only when the
+  object itself changed (compared with the copy it was drawn from), a
+  symbol it shows changed, or the size changed. Rows scrolled out of
+  sight draw nothing and ask for no thumbnail.
+- New thumbnails are drawn for up to 6 ms per frame (at least one); the
+  rest wait for the next frames, showing their old picture or, the first
+  time, the swatch of their fill (a red diagonal for none) framed in
+  their outline colour.
+- The cache keeps at most 24 MB of pixels; past that the thumbnails shown
+  longest ago are dropped (never one shown in the current frame) and
+  drawn again if their rows come back into view. With 3,000 objects the
+  docker keeps to a few dozen thumbnails, those on screen and the ones
+  scrolled past.
 - The active layer is where new objects go (drawn, pasted, duplicated,
   imported). Click a layer to make it active (the selection is cleared).
   Click an object to select it and make its layer active; Shift+click
@@ -63,4 +96,12 @@ Layer and New Master Layer at the left and Delete at the right.
 - `ui::objects_docker::tests::delete_takes_the_selection_else_the_active_layer`
 - `ui::objects_docker::tests::clicking_an_object_in_the_docker_makes_its_layer_active`
 - `ui::objects_docker::tests::the_list_scrolls_to_an_object_selected_on_the_page`
+- `ui::objects_docker::tests::rows_show_thumbnails_drawn_once_per_change`
+- `ui::objects_docker::tests::ctrl_wheel_and_the_bar_change_the_thumbnail_size`
+- `ui::objects_docker::tests::a_long_list_draws_only_the_rows_in_sight` (and the
+  ignored benchmark `objects_docker_frame_times`)
+- `object_thumbs::tests::a_thumbnail_shows_the_object_in_its_colours`
+- `object_thumbs::tests::pictures_are_drawn_again_only_when_the_object_changes`
+- `object_thumbs::tests::the_least_recently_shown_pictures_go_first`
+- `object_thumbs::tests::sizes_are_clamped`
 - `command::tests::master_layers_reorder_and_delete_down_to_none` (core)

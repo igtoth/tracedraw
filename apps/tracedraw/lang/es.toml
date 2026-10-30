@@ -5785,6 +5785,7 @@ docker.expand_row = "Expandir o contraer"
 docker.expand_row_desc = "Muestra u oculta lo que contiene."
 docker.layer_row_desc = "Haga clic para hacerla la capa activa. Doble clic para cambiarle el nombre; clic derecho para más."
 docker.object_row_desc = "Haga clic para seleccionarlo. Doble clic para cambiarle el nombre."
+docker.thumb_size = "Tamaño de las miniaturas (la rueda aquí, o Ctrl+rueda sobre la lista)" # mt
 docker.guides_row_desc = "Las líneas guía de la página. Nunca se imprimen."
 docker.grid_row_desc = "La cuadrícula del documento. Nunca se imprime y no se puede editar."
 docker.section_desc = "Haga clic para abrir o cerrar esta sección."
