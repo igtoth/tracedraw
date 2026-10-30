@@ -55,6 +55,10 @@ no Windows) digitam no texto e nos campos, e códigos <kbd>Alt</kbd> digitados
 no teclado numérico dão o caractere uma vez só.
 Letras digitadas com <kbd>AltGr</kbd> (polonês ą ę ł, alemão @ € { }) entram
 no texto e nos campos, inclusive no Windows.
+No Android o teclado da tela digita todas as escritas que seus métodos de
+entrada compõem (chinês, japonês, coreano, tâmil). Fontes antigas que põem as
+letras de uma escrita nos lugares das latinas (algumas fontes tâmeis) digitam
+como seus teclados esperam: a Autocorreção não muda as letras digitadas nelas.
 
 Tudo o que você digita em uma sessão de edição é um passo de desfazer.
 

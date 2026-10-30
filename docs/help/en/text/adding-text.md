@@ -52,6 +52,10 @@ fields, and <kbd>Alt</kbd> codes typed on the keypad give their character
 once.
 Letters typed with <kbd>AltGr</kbd> (Polish ą ę ł, German @ € { }) type into
 text and fields, also on Windows.
+On Android the on-screen keyboard types every script its input methods
+compose (Chinese, Japanese, Korean, Tamil). Older fonts that set the letters
+of a script at the places of Latin ones (some Tamil fonts) type as their
+keyboards expect: Autocorrect does not change the letters typed in them.
 
 All your typing in one editing session is one undo step.
 

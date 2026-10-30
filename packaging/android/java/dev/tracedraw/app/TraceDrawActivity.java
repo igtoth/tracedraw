@@ -2,7 +2,8 @@
 // NativeActivity, which loads libtracedraw.so and hands it the window and
 // the input, plus the few things the editor can only do from Java: the
 // system document picker (Storage Access Framework), reading and writing
-// the documents it returns, and the system clipboard. The Rust side calls
+// the documents it returns, the system clipboard, and an invisible view
+// the on-screen keyboard types into (TextInputView). The Rust side calls
 // the public methods through JNI from its own thread; a picked document
 // comes back through the native method nativeDocumentResult. Built by
 // scripts/android/build.sh with javac and d8 into classes.dex.
@@ -16,8 +17,11 @@ import android.content.Context;
 import android.content.Intent;
 import android.database.Cursor;
 import android.net.Uri;
+import android.os.Bundle;
 import android.provider.OpenableColumns;
 import android.util.Log;
+import android.view.ViewGroup;
+import android.view.inputmethod.InputMethodManager;
 
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
@@ -44,6 +48,77 @@ public class TraceDrawActivity extends NativeActivity {
      * Implemented in Rust (android.rs).
      */
     private native void nativeDocumentResult(int request, String uris, String names, String mimes);
+
+    /**
+     * What the on-screen keyboard's input method did in TextInputView: the
+     * text it composes (empty: the composition ends), the text it commits,
+     * and the characters it deletes before and after the caret.
+     * Implemented in Rust (android.rs).
+     */
+    private native void nativeImeCompose(String text);
+    private native void nativeImeCommit(String text);
+    private native void nativeImeDelete(int before, int after);
+
+    /** The view the on-screen keyboard types into. */
+    private TextInputView textInput;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        textInput = new TextInputView(this);
+        addContentView(textInput, new ViewGroup.LayoutParams(1, 1));
+    }
+
+    // ----- the on-screen keyboard ---------------------------------------------
+
+    /**
+     * Show the on-screen keyboard, typing into the editor (`on`: a text or
+     * a field takes typed text), or hide it.
+     */
+    public void showTextInput(final boolean on) {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+                if (imm == null || textInput == null) {
+                    return;
+                }
+                if (on) {
+                    textInput.requestFocus();
+                    imm.restartInput(textInput);
+                    imm.showSoftInput(textInput, 0);
+                } else {
+                    // A composition left open ends with the editing.
+                    imm.restartInput(textInput);
+                    imm.hideSoftInputFromWindow(textInput.getWindowToken(), 0);
+                }
+            }
+        });
+    }
+
+    void imeCompose(String text) {
+        try {
+            nativeImeCompose(text);
+        } catch (UnsatisfiedLinkError e) {
+            Log.w(TAG, "keyboard: " + e);
+        }
+    }
+
+    void imeCommit(String text) {
+        try {
+            nativeImeCommit(text);
+        } catch (UnsatisfiedLinkError e) {
+            Log.w(TAG, "keyboard: " + e);
+        }
+    }
+
+    void imeDelete(int before, int after) {
+        try {
+            nativeImeDelete(before, after);
+        } catch (UnsatisfiedLinkError e) {
+            Log.w(TAG, "keyboard: " + e);
+        }
+    }
 
     // ----- the document picker -----------------------------------------------
 

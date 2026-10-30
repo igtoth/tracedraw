@@ -309,6 +309,33 @@ system's CJK fonts), for each character
 (`text_effect_tests::an_input_method_composes_then_commits_cjk_text`,
 `text_effect_tests::the_canvas_asks_for_the_input_method_while_text_is_typed`).
 
+The candidate window opens beside the caret: the area given to the
+system is the caret's, not the whole canvas, whose corner it opened at.
+Input methods on Windows that post their characters (Tamil and other
+Indian scripts, #1151) and change a letter by deleting it with
+Backspace and sending its new form keep their order when the keys come
+faster than the frames: each run of kept characters goes before the
+editing key (Backspace, Delete, Enter, arrows, Home, End) that followed
+it, where it went after all of the frame's keys and a Backspace deleted
+the letter before (#1271,
+`system_chars::tests::kept_characters_keep_their_place_among_editing_keys`).
+On Android the on-screen keyboard types into an invisible view of the
+activity whose compositions and commits arrive as the same input
+method events (#1309, see `android.md`).
+
+**Older fonts with a script at the places of Latin letters** (Tamil
+fonts such as the one in #1358): the characters of code page 1252's
+places 0x80 to 0x9F, including the five the page leaves empty (0x81,
+0x8D, 0x8F, 0x90, 0x9D), type from Alt codes and keyboard programs, show
+in the Glyphs docker, and are drawn whichever of their two names the
+font maps (U+201A or U+0082, `tracedraw_text::tests::code_page_1252_places_go_by_either_name`).
+A letter the shaper's character map lacks while another map of the font
+has it (a symbol map beside a Unicode one) draws the font's glyph,
+never the empty notdef
+(`tracedraw_text::tests::letters_one_character_map_lacks_draw_from_the_other`),
+and Autocorrect leaves the letters typed in such fonts as typed (see
+`writing-tools.md`).
+
 **AltGr** (#1271): on Windows the right Alt key, which types the extra
 letters of many layouts (Polish ą ć ę ł ń ś ź ż, Czech, Croatian,
 Hungarian and Turkish letters, German @ € { } [ ] \ ~), reaches the

@@ -724,7 +724,22 @@ impl App {
         spans_insert(&mut spans, a, s);
         let mut caret = a + s.chars().count();
         let mut web_link = None;
-        if self.settings.autocorrect.enabled {
+        // Letters typed in a font with another script at the places of
+        // Latin ones (older Tamil fonts) are that script's: capitals and
+        // quotes would change them into other letters (#1358).
+        let legacy_font = {
+            let mut seen = 0usize;
+            spans
+                .iter()
+                .find(|sp| {
+                    seen += sp.char_count();
+                    caret.saturating_sub(1) < seen
+                })
+                .is_some_and(|sp| {
+                    tracedraw_text::fonts().latin_places_hold_another_script(&sp.font_family)
+                })
+        };
+        if self.settings.autocorrect.enabled && !legacy_font {
             let typed: String = spans_text(&spans).chars().take(caret).collect();
             if self.settings.autocorrect.auto_hyperlinks {
                 web_link = crate::autocorrect::typed_web_address(&typed);
@@ -1296,7 +1311,9 @@ mod tests {
         assert_eq!(alt_code_char("0128"), Some('€'));
         assert_eq!(alt_code_char("8364"), Some('€'));
         assert_eq!(alt_code_char("65"), Some('A'));
-        assert_eq!(alt_code_char("0129"), None, "no character there");
+        // A place the page leaves empty: the control character of that
+        // number, which older fonts with a script at Latin places draw.
+        assert_eq!(alt_code_char("0129"), Some('\u{81}'));
         assert_eq!(alt_code_char("7"), None, "a control character");
         assert_eq!(alt_code_char(""), None);
     }
@@ -1417,6 +1434,28 @@ mod tests {
                 .all(|(f, s, _)| f == "Times New Roman" && (*s - 14.0).abs() < 1e-9),
             "{after:?}"
         );
+    }
+
+    /// Letters typed in a font with another script at the places of
+    /// Latin ones (a symbol font, older Tamil fonts) are not changed by
+    /// Autocorrect: a capital or a curly quote would be another letter
+    /// there (#1358). Other fonts are corrected as before.
+    #[test]
+    fn autocorrect_leaves_fonts_with_a_script_at_latin_places_alone() {
+        for (font, kept) in [("Symbol", true), ("Selawik", false)] {
+            let mut app = App::headless();
+            app.text_font = font.into();
+            app.start_text(Point::new(0.0, 0.0), None);
+            for c in "kd'f kd ".chars() {
+                app.text_insert(&c.to_string());
+            }
+            assert_eq!(
+                app.edit_text() == "kd'f kd ",
+                kept,
+                "{font}: {}",
+                app.edit_text()
+            );
+        }
     }
 
     /// Options > Text > Autocorrect > Automatically create hyperlinks: a

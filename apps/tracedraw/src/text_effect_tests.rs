@@ -314,6 +314,14 @@ fn the_canvas_asks_for_the_input_method_while_text_is_typed() {
         .ime
         .expect("the input method is allowed");
     assert!(ime.cursor_rect.contains(egui::pos2(100.0, 100.0)));
+    // The area the system places its candidate window beside is the
+    // caret, not the whole canvas.
+    assert!(ime.rect.contains(egui::pos2(100.0, 100.0)));
+    assert!(
+        ime.rect.width() < 5.0 && ime.rect.height() < 25.0,
+        "{:?}",
+        ime.rect
+    );
 }
 
 /// Bounds of `ids` together, as they are drawn on the page.
