@@ -3629,6 +3629,7 @@ impl App {
             }
         }
         // Tool shortcuts: user overrides from Options, then the defaults.
+        let pointer_busy = !matches!(self.drag, Drag::None) || input.pointer.any_down();
         for group in crate::tools::GROUPS {
             for t in group.tools {
                 // Every key the tool has (#822).
@@ -3653,6 +3654,18 @@ impl App {
                             && mods.is_none()
                             && matches!(k, Key::W | Key::K);
                         if pressed(k, mods) && !drop_key {
+                            // The Pick tool's key (Space) on the Pick tool
+                            // goes back to the tool used before it. Not
+                            // during a drag, where Space drops a copy.
+                            if *t == Tool::Pick && pointer_busy {
+                                continue;
+                            }
+                            if *t == Tool::Pick && self.tool == Tool::Pick {
+                                if self.previous_tool != Tool::Pick {
+                                    self.set_tool(self.previous_tool);
+                                }
+                                return;
+                            }
                             self.set_tool(*t);
                         }
                     }

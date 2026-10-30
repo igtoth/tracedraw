@@ -12,7 +12,7 @@ Counts: works 189, partial 7 (`.cdr` content coverage; CMX import; print preview
 
 | Capability | Status |
 |---|---|
-| Pick: click, shift-click, marquee, Alt-marquee (touch), Alt-click dig, Ctrl-click inside groups (round handles; move, colour and delete one object of a group; the chosen object drags alone from anywhere on it, #849), Tab cycling; Ctrl-click on a clip frame edits its contents (#982) | works (see `behavior/pick-tool.md`) |
+| Pick: click, shift-click, marquee, Alt-marquee (touch), Alt-click dig, Ctrl-click inside groups (round handles; move, colour and delete one object of a group; the chosen object drags alone from anywhere on it, #849), Tab cycling; Ctrl-click on a clip frame edits its contents (#982); Space picks the Pick tool and, pressed again, goes back to the tool before | works (see `behavior/pick-tool.md`) |
 | Second click rotate/skew handles: rotate about a movable centre of rotation, skew with the side handles, Ctrl steps, Shift about the centre line | works (see `behavior/pick-tool.md`) |
 | Handle modifiers: Shift scales from the centre, Ctrl in 100 % steps (mirror at the same size), Alt frees a corner; Ctrl keeps a move straight; right click during a drag leaves the original; Space drops a copy; Esc cancels | works |
 | Drag a palette colour onto an object (inside: fill, on the outline: outline colour, No Color removes) or onto the document palette (see `behavior/color-palettes.md`) | works |

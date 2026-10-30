@@ -90,7 +90,7 @@ painéis.
 
 | Tecla | Ferramenta |
 |---|---|
-| <kbd>Space</kbd> | Seleção (a partir da maioria das ferramentas) |
+| <kbd>Space</kbd> | Seleção (a partir da maioria das ferramentas); na ferramenta Seleção, volta à ferramenta usada antes |
 | <kbd>F10</kbd> | Forma |
 | <kbd>F5</kbd>, <kbd>F6</kbd>, <kbd>F7</kbd> | Mão livre, Retângulo, Elipse |
 | <kbd>Z</kbd>, <kbd>H</kbd> | Zoom, Deslocamento |

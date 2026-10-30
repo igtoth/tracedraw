@@ -5633,6 +5633,77 @@ fn ctrl_keeps_the_closing_handle_to_the_constrain_angle() {
     assert!((angle - 195.0).abs() < 0.5, "{angle} {closing:?}");
 }
 
+/// Space switches to the Pick tool and, pressed again, back to the tool
+/// used before; not during a drag, where it drops a copy, and Shift+Space
+/// does nothing to the tool.
+#[test]
+fn space_toggles_between_the_tool_and_the_pick_tool() {
+    let (ctx, mut app, id) = setup();
+    let space = |ctx: &egui::Context, app: &mut App, mods: Modifiers| {
+        frame(ctx, app, vec![key(egui::Key::Space, mods)], mods);
+        frame(ctx, app, Vec::new(), Modifiers::NONE);
+    };
+    app.set_tool(Tool::Rectangle);
+    space(&ctx, &mut app, Modifiers::NONE);
+    assert_eq!(app.tool, Tool::Pick);
+    space(&ctx, &mut app, Modifiers::NONE);
+    assert_eq!(app.tool, Tool::Rectangle, "Space again goes back");
+    space(&ctx, &mut app, Modifiers::NONE);
+    assert_eq!(app.tool, Tool::Pick);
+    // Shift+Space leaves the tool as it is.
+    space(&ctx, &mut app, Modifiers::SHIFT);
+    assert_eq!(app.tool, Tool::Pick);
+    // During a move Space drops a copy and the Pick tool stays.
+    let count = shape_count(&app);
+    let c = app.view.to_screen(bounds(&app, id).center());
+    drag(
+        &ctx,
+        &mut app,
+        c,
+        c + egui::vec2(60.0, 0.0),
+        Modifiers::NONE,
+        vec![key(egui::Key::Space, Modifiers::NONE)],
+    );
+    assert_eq!(shape_count(&app), count + 1, "a copy was dropped");
+    assert_eq!(app.tool, Tool::Pick, "no switch during the drag");
+    // A Bezier curve being drawn is finished by Space, which then picks.
+    app.set_tool(Tool::Bezier);
+    for p in [Point::new(100.0, 100.0), Point::new(140.0, 120.0)] {
+        click_page(&ctx, &mut app, p);
+    }
+    let before = shape_count(&app);
+    space(&ctx, &mut app, Modifiers::NONE);
+    assert_eq!(app.tool, Tool::Pick);
+    assert_eq!(shape_count(&app), before + 1, "the curve is kept");
+    space(&ctx, &mut app, Modifiers::NONE);
+    assert_eq!(app.tool, Tool::Bezier);
+    // The Rectangle tool chosen with a click on its toolbox button (which
+    // then has the keyboard focus): Space still picks and comes back.
+    app.set_tool(Tool::Pick);
+    let toolbox = ctx
+        .read_response(egui::Id::new((
+            "bar_background",
+            crate::ui::bars::Bar::Toolbox as u8,
+        )))
+        .map(|r| r.rect)
+        .expect("the toolbox");
+    let mut y = toolbox.top() + 4.0;
+    while app.tool != Tool::Rectangle && y < toolbox.bottom() {
+        click_at(
+            &ctx,
+            &mut app,
+            egui::pos2(toolbox.center().x, y),
+            Modifiers::NONE,
+        );
+        y += 8.0;
+    }
+    assert_eq!(app.tool, Tool::Rectangle, "the toolbox button");
+    space(&ctx, &mut app, Modifiers::NONE);
+    assert_eq!(app.tool, Tool::Pick, "Space from a focused toolbox button");
+    space(&ctx, &mut app, Modifiers::NONE);
+    assert_eq!(app.tool, Tool::Rectangle);
+}
+
 /// While a text is edited, Space types a space and Ctrl+Space leaves the
 /// text for the Pick tool, the text kept as typed (autocorrect starting
 /// the sentence with a capital) (#478).

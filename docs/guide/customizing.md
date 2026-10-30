@@ -118,6 +118,7 @@ in [the shortcut notes](../behavior/shortcuts.md); a few to know:
 | `Ctrl+G`, `Ctrl+U` | Group, Ungroup |
 | `Ctrl+Q` | Convert to curves |
 | `Ctrl+Space` | the Pick tool, from any tool |
+| `Space` | the Pick tool; on the Pick tool, back to the tool before it |
 | `F4`, `Shift+F4` | Zoom to fit, zoom to page |
 | `Alt+Q` | Snapping off and on |
 | `Alt+Enter` | Properties panel |

@@ -1,7 +1,8 @@
 # Selecting objects
 
 Before you change an object, you select it. The [[tool.pick]] tool
-(<kbd>Space</kbd> switches to it from most tools) selects, moves and resizes
+(<kbd>Space</kbd> switches to it from most tools, and <kbd>Space</kbd> again
+takes you back to the tool you were using) selects, moves and resizes
 objects; the [[tool.freehand_pick]] tool does the same but selects with a
 freehand loop.
 

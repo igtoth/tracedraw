@@ -5,8 +5,9 @@ objects, move, scale, turn and slant them, and line them up precisely.
 
 ## The Pick tool
 
-The Pick tool is the first button of the toolbox. Press `Ctrl+Space` to
-get it from any tool.
+The Pick tool is the first button of the toolbox. Press `Space` to get it
+from most tools and `Space` again to go back to the tool you were using;
+`Ctrl+Space` gets it from any tool, even while text is edited.
 
 To select objects:
 

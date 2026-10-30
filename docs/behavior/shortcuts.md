@@ -17,6 +17,7 @@ Customization > Commands lists them and takes shortcuts of your own
 | Ctrl+D, Ctrl+Shift+D | Duplicate, Step and Repeat panel |
 | + (Pick tool, with a selection) | Duplicate in place |
 | Ctrl+Space | the Pick tool, from any tool |
+| Space | the Pick tool (not while a text or table cell is edited, where it types a space, nor during a drag, where it drops a copy); on the Pick tool, back to the tool used before it (`App::previous_tool`); Shift+Space and other combinations leave the tool alone |
 | Ctrl+0 to Ctrl+9, 0 to 9, Alt+0 to Alt+9 | store, select (twice: zoom to) and add to selection groups |
 | Ctrl+A, Delete or Backspace | Select all, Delete |
 | Ctrl+F, Ctrl+J, Ctrl+W | Find and Replace panel, Options, Refresh window |

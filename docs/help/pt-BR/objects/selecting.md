@@ -3,8 +3,8 @@
 > *Tradução automática: esta página pode estar atrasada em relação à versão em inglês.*
 
 Antes de alterar um objeto, você o seleciona. A ferramenta [[tool.pick]]
-(<kbd>Space</kbd> volta para ela a partir da maioria das ferramentas)
-seleciona, move e redimensiona objetos; a ferramenta [[tool.freehand_pick]] faz
+(<kbd>Space</kbd> volta para ela a partir da maioria das ferramentas, e
+<kbd>Space</kbd> de novo devolve a ferramenta que você usava) seleciona, move e redimensiona objetos; a ferramenta [[tool.freehand_pick]] faz
 o mesmo, mas seleciona com um laço à mão livre.
 
 ## A ferramenta Seleção {#pick}

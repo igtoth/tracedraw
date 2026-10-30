@@ -87,7 +87,7 @@ Pressing a panel's shortcut when its panel is in front hides the panels.
 
 | Key | Tool |
 |---|---|
-| <kbd>Space</kbd> | Pick (from most tools) |
+| <kbd>Space</kbd> | Pick (from most tools); on the Pick tool, back to the tool used before |
 | <kbd>F10</kbd> | Shape |
 | <kbd>F5</kbd>, <kbd>F6</kbd>, <kbd>F7</kbd> | Freehand, Rectangle, Ellipse |
 | <kbd>Z</kbd>, <kbd>H</kbd> | Zoom, Pan |
