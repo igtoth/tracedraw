@@ -65,6 +65,10 @@ pub struct FontSystem {
     /// (the Missing Fonts dialog, this session only, #936): tried before
     /// [`substitutes`].
     chosen: RwLock<HashMap<String, String>>,
+    /// The folders the user added to the font libraries (the Font
+    /// Manager): a font file under one of them counts as in that folder,
+    /// not in the subfolder it lies in (#867). See [`FontSystem::folder_of`].
+    roots: RwLock<Vec<std::path::PathBuf>>,
 }
 
 /// Register this engine as the core's text outliner (call once at startup).
@@ -1390,6 +1394,68 @@ impl TextLayout {
 #[cfg_attr(not(target_os = "android"), allow(dead_code))]
 const ANDROID_FONT_DIRS: [&str; 3] = ["/system/fonts", "/product/fonts", "/vendor/fonts"];
 
+/// The folders the operating system keeps its fonts in (and the user's
+/// own font folders), the way the font database looks for them: a font
+/// under one of them counts as in it for the font list's filter (#867).
+#[cfg_attr(target_arch = "wasm32", allow(unused_mut))]
+pub fn system_font_roots() -> Vec<std::path::PathBuf> {
+    let mut out: Vec<std::path::PathBuf> = Vec::new();
+    #[cfg(windows)]
+    {
+        if let Ok(dir) = std::env::var("WINDIR") {
+            out.push(std::path::PathBuf::from(dir).join("Fonts"));
+        } else {
+            out.push("C:\\Windows\\Fonts".into());
+        }
+        if let Ok(local) = std::env::var("LOCALAPPDATA") {
+            out.push(
+                std::path::PathBuf::from(local)
+                    .join("Microsoft")
+                    .join("Windows")
+                    .join("Fonts"),
+            );
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        out.push("/Library/Fonts".into());
+        out.push("/System/Library/Fonts".into());
+        out.push("/Network/Library/Fonts".into());
+        if let Ok(home) = std::env::var("HOME") {
+            out.push(std::path::PathBuf::from(home).join("Library").join("Fonts"));
+        }
+    }
+    #[cfg(target_os = "android")]
+    for dir in ANDROID_FONT_DIRS {
+        out.push(dir.into());
+    }
+    #[cfg(all(unix, not(target_os = "macos"), not(target_os = "android")))]
+    {
+        out.push("/usr/share/fonts".into());
+        out.push("/usr/local/share/fonts".into());
+        if let Ok(home) = std::env::var("HOME") {
+            let home = std::path::PathBuf::from(home);
+            out.push(home.join(".fonts"));
+            out.push(home.join(".local").join("share").join("fonts"));
+        }
+    }
+    out
+}
+
+/// The folder `file` counts as in: the deepest of `roots` it lies
+/// under, else the folder it is in (#867).
+fn folder_under(
+    file: &std::path::Path,
+    roots: &[std::path::PathBuf],
+) -> Option<std::path::PathBuf> {
+    let parent = file.parent()?;
+    let best = roots
+        .iter()
+        .filter(|r| parent.starts_with(r))
+        .max_by_key(|r| r.components().count());
+    Some(best.map_or_else(|| parent.to_path_buf(), Clone::clone))
+}
+
 impl FontSystem {
     fn load() -> Self {
         let mut db = fontdb::Database::new();
@@ -1451,6 +1517,7 @@ impl FontSystem {
             generation: AtomicU64::new(0),
             legacy: RwLock::new(legacy),
             chosen: RwLock::new(HashMap::new()),
+            roots: RwLock::new(Vec::new()),
         }
     }
 
@@ -2049,7 +2116,7 @@ impl FontSystem {
             }
             ids
         };
-        self.info_of(family, ids)
+        self.info_of(family, ids, &self.folder_roots())
     }
 
     /// [`FontSystem::family_info`] of each of `families`, reading the
@@ -2072,6 +2139,7 @@ impl FontSystem {
                 }
             }
         }
+        let roots = self.folder_roots();
         families
             .iter()
             .map(|family| {
@@ -2080,13 +2148,21 @@ impl FontSystem {
                     let legacy = self.legacy.read().unwrap_or_else(|e| e.into_inner());
                     ids = legacy.get(family).cloned().unwrap_or_default();
                 }
-                self.info_of(family, ids)
+                self.info_of(family, ids, &roots)
             })
             .collect()
     }
 
     /// What a font list shows about `family`, whose faces are `ids`.
-    fn info_of(&self, family: &str, ids: Vec<fontdb::ID>) -> Option<FamilyInfo> {
+    /// `roots` are [`FontSystem::folder_roots`], for the filter's folders.
+    fn info_of(
+        &self,
+        family: &str,
+        ids: Vec<fontdb::ID>,
+        roots: &[std::path::PathBuf],
+    ) -> Option<FamilyInfo> {
+        #[cfg(target_arch = "wasm32")]
+        let _ = roots;
         if ids.is_empty() {
             let offered = self
                 .offered
@@ -2152,8 +2228,8 @@ impl FontSystem {
             feature_tags.extend(facts.tags);
             #[cfg(not(target_arch = "wasm32"))]
             if let fontdb::Source::File(p) | fontdb::Source::SharedFile(p, _) = &info.source {
-                if let Some(dir) = p.parent() {
-                    folders.push(dir.to_path_buf());
+                if let Some(dir) = folder_under(p, roots) {
+                    folders.push(dir);
                 }
             }
             if class == traits::FontClass::Unknown {
@@ -2217,21 +2293,55 @@ impl FontSystem {
     }
 
     /// The folders the installed font files are in, sorted, each once
-    /// (a font list's filter offers them, #867).
+    /// (a font list's filter offers them, #867): the font libraries'
+    /// folders and the system's, not every subfolder (see
+    /// [`FontSystem::folder_of`]).
     pub fn font_folders(&self) -> Vec<std::path::PathBuf> {
+        #[cfg(not(target_arch = "wasm32"))]
+        let roots = self.folder_roots();
         let db = self.db();
         let mut out: Vec<std::path::PathBuf> = db
             .faces()
             .filter_map(|face| match &face.source {
                 #[cfg(not(target_arch = "wasm32"))]
                 fontdb::Source::File(p) | fontdb::Source::SharedFile(p, _) => {
-                    p.parent().map(std::path::Path::to_path_buf)
+                    folder_under(p, &roots)
                 }
                 _ => None,
             })
             .collect();
         out.sort();
         out.dedup();
+        out
+    }
+
+    /// The folders added to the font libraries (the Font Manager's
+    /// folders): fonts under them count as in them (#867). A change
+    /// moves the [`FontSystem::generation`] on, so cached font lists and
+    /// their filter folders are read again.
+    pub fn set_font_roots(&self, roots: &[std::path::PathBuf]) {
+        if let Ok(mut r) = self.roots.write() {
+            if r.as_slice() != roots {
+                *r = roots.to_vec();
+                self.generation.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+    }
+
+    /// The folder a font file counts as in, for the filter: the deepest
+    /// of the library folders ([`FontSystem::set_font_roots`]) and the
+    /// system's font folders it lies under, else the folder it is in.
+    /// A folder chosen in the Font Manager is listed once, whatever
+    /// subfolders its fonts are in (#867).
+    pub fn folder_of(&self, file: &std::path::Path) -> Option<std::path::PathBuf> {
+        folder_under(file, &self.folder_roots())
+    }
+
+    /// The library folders and the system's font folders, for
+    /// [`folder_under`]: gathered once per listing, not once per face.
+    fn folder_roots(&self) -> Vec<std::path::PathBuf> {
+        let mut out = self.roots.read().map(|r| r.clone()).unwrap_or_default();
+        out.extend(system_font_roots());
         out
     }
 
@@ -7400,5 +7510,49 @@ mod many_tuples {
             width(&narrow),
             width(&plain)
         );
+    }
+}
+
+#[cfg(test)]
+mod font_folders {
+    use super::*;
+
+    /// The filter's folders are the font libraries' folders and the
+    /// system's, not the subfolder each file is in (#867).
+    #[test]
+    fn fonts_count_as_in_their_library_folder() {
+        const QUICKSAND: &[u8] = include_bytes!("../testdata/Quicksand-VF.ttf");
+        let dir = std::env::temp_dir().join(format!("tracedraw-folders-{}", std::process::id()));
+        let root = dir.join("My Fonts");
+        let deep = root.join("google").join("quicksand");
+        std::fs::create_dir_all(&deep).expect("dirs");
+        let file = deep.join("Quicksand-VF.ttf");
+        std::fs::write(&file, QUICKSAND).expect("font");
+        let mut db = fontdb::Database::new();
+        db.load_font_file(&file).expect("load");
+        let f = FontSystem::from_db(db);
+        // No library folder set: the file's own folder.
+        assert_eq!(f.font_folders(), vec![deep.clone()]);
+        assert_eq!(
+            f.family_info("Quicksand").expect("info").folders,
+            vec![deep.clone()]
+        );
+        // The library folder it lies under, once, whatever the subfolder.
+        let g = f.generation();
+        f.set_font_roots(&[root.clone()]);
+        assert!(f.generation() > g, "cached lists read again");
+        let g = f.generation();
+        f.set_font_roots(&[root.clone()]);
+        assert_eq!(f.generation(), g, "the same folders change nothing");
+        assert_eq!(f.font_folders(), vec![root.clone()]);
+        assert_eq!(
+            f.family_info("Quicksand").expect("info").folders,
+            vec![root.clone()]
+        );
+        // The deepest root wins; a root elsewhere does not count.
+        f.set_font_roots(&[dir.clone(), root.join("google"), dir.join("Other")]);
+        assert_eq!(f.folder_of(&file), Some(root.join("google")));
+        assert!(!system_font_roots().is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

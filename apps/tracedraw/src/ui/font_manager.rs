@@ -83,6 +83,8 @@ pub fn install_saved(prefs: &FontManagerPrefs) -> Vec<String> {
 }
 
 fn install_saved_in(fonts: &tracedraw_text::FontSystem, prefs: &FontManagerPrefs) -> Vec<String> {
+    // The font list's filter lists these folders, not their subfolders (#867).
+    fonts.set_font_roots(&prefs.folders);
     let mut paths = prefs.installed.clone();
     paths.extend(folder_files(prefs));
     if paths.is_empty() {
@@ -697,6 +699,7 @@ fn run(app: &mut App, st: &mut FontManagerState, a: Action) {
                 if !prefs.folders.contains(&dir) {
                     prefs.folders.push(dir.clone());
                 }
+                fonts.set_font_roots(&prefs.folders);
                 // Its fonts are usable at once, without Install (#866).
                 let files = catalog::font_files(&dir);
                 let added = fonts.install_paths(&files);
@@ -771,6 +774,7 @@ fn run(app: &mut App, st: &mut FontManagerState, a: Action) {
         }
         Action::RemoveFolder(dir) => {
             prefs.folders.retain(|f| f != &dir);
+            fonts.set_font_roots(&prefs.folders);
             if remove_folder_fonts(fonts, prefs, &dir) > 0 {
                 app.font_families = fonts.available_families();
             }

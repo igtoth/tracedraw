@@ -130,8 +130,13 @@ Text and Glyphs dockers and Options (default font):
   - Embedding rights: Installable, Editable, Preview and print,
     Restricted, Bitmap only, from OS/2 `fsType`; a family counts by its
     most restrictive face.
-  - Folders: the folders the installed font files are in (the folder's
-    name, its path as the tip).
+  - Folders: the folders the fonts are in, as the Font Manager has them:
+    each folder added to the libraries, and the operating system's font
+    folders, once each, whatever subfolder a file lies in (the folder's
+    name, its path as the tip; `FontSystem::folder_of`, the deepest
+    library or system folder a file lies under, else its own folder;
+    `font_folders::fonts_count_as_in_their_library_folder`). Until
+    0.27.0 every subfolder was listed on its own (#867).
 
   In each section a family needs one of the choices ticked; of the
   OpenType features it needs every one ticked; it needs what every

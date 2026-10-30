@@ -48,7 +48,9 @@ The font lists of the property bar, the [[docker.text]] panel, the
     swashes, alternates and stylistic sets, each on its own.
   - **Embedding rights**: installable, editable, preview and print,
     restricted, bitmap only.
-  - **Folders**: the folders the installed fonts are in.
+  - **Folders**: the folders the fonts are in, as the Font Manager lists
+    them: each folder you added to the libraries and the system's font
+    folders, not their subfolders.
 
   Within a section a family needs one of the ticked choices (every ticked
   one for the OpenType features), and it needs what every section asks. The

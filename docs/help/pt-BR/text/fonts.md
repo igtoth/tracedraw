@@ -52,7 +52,9 @@ painel [[docker.glyphs]] e das opções funcionam do mesmo jeito:
     floreios, alternativas e conjuntos estilísticos, cada um por si.
   - **Direitos de incorporação**: instalável, editável, visualizar e
     imprimir, restrita, só bitmap.
-  - **Pastas**: as pastas onde estão as fontes instaladas.
+  - **Pastas**: as pastas onde estão as fontes, como o Gerenciador de
+    Fontes as lista: cada pasta que você acrescentou às bibliotecas e as
+    pastas de fontes do sistema, não as subpastas delas.
 
   Dentro de uma seção, uma família precisa de uma das opções marcadas (de
   todas as marcadas, nos recursos OpenType), e precisa atender a todas as
