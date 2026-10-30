@@ -774,7 +774,9 @@ impl App {
     }
 
     /// Table > Convert Text to Table with the separator found in the
-    /// selected text (tabs, then commas, else a row per paragraph).
+    /// selected text (tabs, then commas, else a row per paragraph), as
+    /// the dialog opens.
+    #[cfg(test)]
     pub fn convert_text_to_table(&mut self) {
         let Some(text) = self.selected_text_for_table() else {
             return;

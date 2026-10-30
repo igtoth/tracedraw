@@ -343,6 +343,7 @@ pub fn open_picker(ctx: &egui::Context, id: Id, c: Color) {
 }
 
 /// Picker `id` is open.
+#[cfg(test)]
 pub fn picker_open(ctx: &egui::Context, id: Id) -> bool {
     ctx.data(|d| d.get_temp::<Open>(id).is_some())
 }
