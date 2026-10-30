@@ -17,7 +17,9 @@ restituisce l'originale.
 3. Gli effetti senza impostazioni si applicano subito. Gli altri aprono una
    finestra di dialogo con le anteprime **prima** e **dopo** del primo
    oggetto selezionato: imposta i valori e fai clic su [[dialog.ok]].
-   **Reimposta** riporta ogni impostazione al valore predefinito.
+   Le impostazioni stanno in un pannello a destra; sotto di esso
+   **Reimposta** riporta ogni impostazione al valore predefinito e le due
+   frecce annullano e ripetono le modifiche fatte nella finestra di dialogo.
 
 ![Una finestra di dialogo di effetto bitmap](../../img/effects-bitmap-effects.png)
 

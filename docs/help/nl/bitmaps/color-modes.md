@@ -5,7 +5,10 @@
 [[menu.bitmaps > menu.bitmaps.mode]] zet de geselecteerde bitmaps om naar een
 andere kleurmodus. Elke geselecteerde bitmap verandert in één
 ongedaan-makenstap en de transparantie blijft behouden. De modi met
-instellingen openen een dialoogvenster met een voorbeeld vooraf en achteraf.
+instellingen openen een dialoogvenster met een voorbeeld vooraf en achteraf;
+de instellingen staan in een paneel rechts en daaronder zet
+[[dialog.reset]] ze terug, terwijl de twee pijlen de wijzigingen in het
+dialoogvenster ongedaan maken en opnieuw uitvoeren.
 
 | Modus | Resultaat |
 |---|---|

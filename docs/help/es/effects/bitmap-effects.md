@@ -16,7 +16,9 @@ ocultar, reordenar o quitar cualquiera de ellos más tarde, y al quitar el
 3. Los efectos sin ajustes se aplican de inmediato. Los demás abren un cuadro
    de diálogo con vistas previas de **antes** y **después** del primer objeto
    seleccionado: ajuste los valores y haga clic en [[dialog.ok]].
-   **Restablecer** devuelve todos los ajustes a su valor predeterminado.
+   Los ajustes están en un panel a la derecha; debajo de él, **Restablecer**
+   devuelve todos los ajustes a su valor predeterminado y las dos flechas
+   deshacen y rehacen los cambios hechos en el cuadro de diálogo.
 
 ![Un cuadro de diálogo de efecto de mapa de bits](../../img/effects-bitmap-effects.png)
 

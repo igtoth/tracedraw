@@ -603,7 +603,22 @@ pub fn remove_background_dialog(
                 let img = p.as_ref().map(|p| &*p.img);
                 bg_pick_click(st, c.to_rgb8(), None, modifiers, img);
             }
-            bg_remove_settings(right, st);
+            before_after::panel(right, "bg_remove_settings", before_after::STEPS_H, |ui| {
+                bg_remove_settings(ui, st)
+            });
+            // A colour picked on the preview is a step like a slider's.
+            let steps = before_after::steps_for(
+                right,
+                egui::Id::new("bg_remove_steps"),
+                &mut st.settings,
+                Default::default(),
+                &crate::ui::tips::keyed("dialog.reset"),
+            );
+            if steps.reset {
+                st.picking = false;
+                st.adding = false;
+                st.row = 0;
+            }
         });
         if super::dialogs::ok_cancel(ui, close) {
             let settings = st.settings.clone();
@@ -818,53 +833,41 @@ fn bg_color_list(ui: &mut Ui, st: &mut BgRemoveState) {
     );
 }
 
-/// The Remove Background settings.
+/// The Remove Background settings: the colours to remove, the
+/// Tolerance and Edge softness sliders, then the three boxes.
 fn bg_remove_settings(ui: &mut Ui, st: &mut BgRemoveState) {
-    ui.label(tr("dialog.bg_colors"));
-    bg_color_list(ui, st);
-    ui.add_space(4.0);
-    egui::Grid::new("bg_remove_grid")
-        .num_columns(2)
-        .show(ui, |ui| {
-            ui.label(tr("dialog.tolerance"));
-            let tol =
-                crate::ui::tips::tip_over(ui, crate::ui::tips::keyed("dialog.tolerance"), |ui| {
-                    // Whole numbers, the box and the thumb alike.
-                    ui.add(
-                        crate::ui::Slider::new(&mut st.settings.tolerance, 0.0..=100.0).integer(),
-                    )
-                });
-            before_after::mark(ui, "bg_tolerance", tol.rect);
-            ui.end_row();
-            ui.label(tr("dialog.edge_softness"));
-            crate::ui::tips::tip_over(ui, crate::ui::tips::keyed("dialog.edge_softness"), |ui| {
-                ui.add(crate::ui::Slider::new(&mut st.settings.softness, 0.0..=20.0).suffix(" px"))
-            });
-            ui.end_row();
-        });
-    ui.checkbox(&mut st.settings.contiguous, tr("dialog.bg_contiguous"))
-        .rich_tip(crate::ui::tips::pair(
-            "dialog.bg_contiguous",
-            "dialog.bg_contiguous_tip",
-        ));
-    ui.checkbox(&mut st.settings.despeckle, tr("dialog.bg_despeckle"))
-        .rich_tip(crate::ui::tips::pair(
-            "dialog.bg_despeckle",
-            "dialog.bg_despeckle_tip",
-        ));
-    ui.checkbox(&mut st.settings.clean_edges, tr("dialog.bg_clean_edges"))
-        .rich_tip(crate::ui::tips::pair(
-            "dialog.bg_clean_edges",
-            "dialog.bg_clean_edges_tip",
-        ));
-    if ui
-        .button(tr("dialog.reset"))
-        .rich_tip(crate::ui::tips::keyed("dialog.reset"))
-        .clicked()
     {
-        st.settings = Default::default();
-        st.picking = false;
-        st.adding = false;
-        st.row = 0;
+        ui.label(tr("dialog.bg_colors"));
+        bg_color_list(ui, st);
+        before_after::rule(ui);
+        // Whole numbers, the box and the thumb alike.
+        panel_slider(
+            ui,
+            "tolerance",
+            "dialog.tolerance",
+            crate::ui::Slider::new(&mut st.settings.tolerance, 0.0..=100.0).integer(),
+        );
+        panel_slider(
+            ui,
+            "edge_softness",
+            "dialog.edge_softness",
+            crate::ui::Slider::new(&mut st.settings.softness, 0.0..=20.0).suffix(" px"),
+        );
+        before_after::rule(ui);
+        ui.checkbox(&mut st.settings.contiguous, tr("dialog.bg_contiguous"))
+            .rich_tip(crate::ui::tips::pair(
+                "dialog.bg_contiguous",
+                "dialog.bg_contiguous_tip",
+            ));
+        ui.checkbox(&mut st.settings.despeckle, tr("dialog.bg_despeckle"))
+            .rich_tip(crate::ui::tips::pair(
+                "dialog.bg_despeckle",
+                "dialog.bg_despeckle_tip",
+            ));
+        ui.checkbox(&mut st.settings.clean_edges, tr("dialog.bg_clean_edges"))
+            .rich_tip(crate::ui::tips::pair(
+                "dialog.bg_clean_edges",
+                "dialog.bg_clean_edges_tip",
+            ));
     }
 }

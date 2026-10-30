@@ -58,7 +58,9 @@ the same command.
 - **[[dialog.bg_clean_edges]]** (on at first) Takes the old background's color
   out of the half-transparent pixels of the edge, so no light or dark halo
   shows when the subject goes on another background.
-- **[[dialog.reset]]** puts every option back, with one [[dialog.bg_colors_auto_button]] row.
+- **[[dialog.reset]]**, under the settings, puts every option back, with one
+  [[dialog.bg_colors_auto_button]] row; the two arrows beside it undo and
+  redo the changes made in the dialog box.
 
 [[dialog.ok]] remembers the options and the list of colors until you close
 TraceDraw, so the next Remove Background starts with them.

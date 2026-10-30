@@ -21,7 +21,9 @@ back.
    work is done in the background, so the window keeps answering on large
    pictures. Click [[dialog.ok]] to keep what the drawing shows as one undo
    step; **Cancel** or <kbd>Esc</kbd> put the drawing back exactly as it was.
-   **Reset** puts every setting back to its default.
+   The settings sit in a panel at the right; under it **Reset** puts every
+   setting back to its default, and the two arrows undo and redo the changes
+   made in the dialog box.
 
 ![A bitmap effect dialog box](../../img/effects-bitmap-effects.png)
 

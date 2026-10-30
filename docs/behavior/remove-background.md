@@ -21,7 +21,11 @@ checkerboard where transparent), and at the right:
 | Remove specks | on/off | on | loose kept spots under 1/2000 of the picture (at least 12 px) go |
 | Clean edge colors | on/off | on | half-transparent edge pixels lose the backdrop's colour |
 
-Reset puts every setting back. OK changes every selected bitmap in one undo
+The settings sit in the shared settings panel with the Reset, undo and
+redo row under it (`before-after-preview.md`): Reset puts every setting
+back, the arrows step through the settings states (a slider's drag is
+one step on release, a colour picked, added or removed, a row's
+tolerance, a box, Reset). OK changes every selected bitmap in one undo
 step (`apply_to_bitmaps`) and keeps the settings, the colour list too, for
 the rest of the session (`App::last_bg_remove`): the dialog opens with them
 next time (`bitmap_dialogs::open_remove_background`). The points where

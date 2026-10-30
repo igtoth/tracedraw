@@ -59,8 +59,9 @@ bitmap selecionado tem o mesmo comando.
 - **[[dialog.bg_clean_edges]]** (ligado no início) Tira a cor do fundo antigo
   dos pixels semitransparentes da borda, para não aparecer halo claro ou
   escuro quando o assunto vai para outro fundo.
-- **[[dialog.reset]]** volta todas as opções ao início, com uma só linha
-  **[[dialog.bg_colors_auto_button]]**.
+- **[[dialog.reset]]**, abaixo das configurações, volta todas as opções ao
+  início, com uma só linha **[[dialog.bg_colors_auto_button]]**; as duas
+  setas ao lado desfazem e refazem as mudanças feitas na caixa de diálogo.
 
 [[dialog.ok]] guarda as opções e a lista de cores até você fechar o
 TraceDraw, e o próximo Remover fundo começa com elas.

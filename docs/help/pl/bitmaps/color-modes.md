@@ -5,7 +5,9 @@
 [[menu.bitmaps > menu.bitmaps.mode]] przekształca zaznaczone bitmapy do innego
 trybu kolorów. Każda zaznaczona bitmapa zmienia się w jednym kroku cofania,
 a przezroczystość zostaje zachowana. Tryby z ustawieniami otwierają okno
-dialogowe z podglądem przed zmianą i po niej.
+dialogowe z podglądem przed zmianą i po niej; ustawienia znajdują się w
+panelu po prawej, a pod nim [[dialog.reset]] je przywraca, podczas gdy dwie
+strzałki cofają i ponawiają zmiany wykonane w oknie dialogowym.
 
 | Tryb | Wynik |
 |---|---|

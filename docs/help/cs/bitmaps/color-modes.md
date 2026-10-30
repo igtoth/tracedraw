@@ -5,7 +5,9 @@
 [[menu.bitmaps > menu.bitmaps.mode]] převede vybrané bitmapy do jiného
 barevného režimu. Každá vybraná bitmapa se změní v jednom kroku zpět a
 průhlednost se zachová. Režimy s nastavením otevřou dialogové okno s náhledy
-před a po.
+před a po; nastavení sedí v panelu vpravo a pod ním [[dialog.reset]] je
+vrátí, zatímco dvě šipky vracejí a opakují změny provedené v dialogovém
+okně.
 
 | Režim | Výsledek |
 |---|---|

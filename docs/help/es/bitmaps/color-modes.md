@@ -5,7 +5,10 @@
 [[menu.bitmaps > menu.bitmaps.mode]] convierte los mapas de bits seleccionados
 a otro modo de color. Todos los mapas de bits seleccionados cambian en un solo
 paso de deshacer, y se conserva la transparencia. Los modos con ajustes abren
-un cuadro de diálogo con vistas previas de antes y después.
+un cuadro de diálogo con vistas previas de antes y después; los ajustes
+están en un panel a la derecha y, debajo de él, [[dialog.reset]] los
+restablece, mientras que las dos flechas deshacen y rehacen los cambios
+hechos en el cuadro de diálogo.
 
 | Modo | Resultado |
 |---|---|

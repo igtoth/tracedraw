@@ -26,17 +26,79 @@ dialog box.
 
 ![The Trace Bitmap dialog box](../../img/bitmaps-tracing.png)
 
-The dialog box shows the bitmap **before** and its trace **after**, updated as
-you change the settings:
+The dialog box is a window you can resize and maximize. The preview fills
+its left side, the settings sit in a panel at the right, and the trace is
+made again whenever you change a setting: there is nothing to press to see
+the result. Under the preview a line counts the **curves**, **nodes** and
+**colors** of the trace. Click [[dialog.ok]] to place the shapes over the
+bitmap, darkest first, or [[dialog.cancel]] to leave the bitmap as it is.
 
-- the preset buttons at the top;
-- **Detail** (0 to 100): more detail keeps smaller areas;
-- **Smoothing** (0 to 100, 25 at first): smoother curves, fewer nodes;
-- **Corner smoothness** (0 to 100): rounder corners;
-- **Black and white**, or the number of **Colors** (1 to 256);
-- **Remove background** (on at first): leaves out the background color;
-- **Delete original image** (off at first);
-- **Preview** counts the curves of the full trace.
+## The preview {#preview}
 
-Click [[dialog.ok]] to trace. The shapes are placed over the bitmap, darkest
-first.
+The [[dialog.trace_preview_label]] list chooses what the preview shows:
+
+- [[dialog.trace_view_before_after]]: the bitmap above and its trace below,
+  or [[dialog.view_side_by_side]]; [[dialog.before]] shows the bitmap alone.
+- [[dialog.trace_view_large]]: the trace alone, as large as the preview.
+- [[dialog.trace_view_wireframe]]: the curves of the trace drawn as thin
+  lines over the bitmap. An [[dialog.trace_overlay]] slider appears beside
+  the list: it sets how strongly the bitmap shows under the lines, from 0
+  (the lines alone) to 100 (the bitmap as it is), 80 at first.
+
+The buttons after the list zoom to fit, zoom out, zoom in and pan. The
+wheel zooms around the pointer and a drag moves the picture; both panes
+move together. Transparent parts show a checkerboard.
+
+## Settings {#settings}
+
+The [[dialog.trace_tab_settings]] tab holds:
+
+- [[dialog.trace_type]] Outline or Centerline, and [[dialog.trace_image_type]]
+  the preset. Choosing one sets the sliders below to the values that suit
+  that kind of picture.
+- [[dialog.detail]] (0 to 100): more detail keeps smaller areas and finer
+  lines; less detail smooths specks and grain away.
+- [[dialog.smoothing]] (0 to 100, 25 at first): smoother curves with fewer
+  nodes.
+- [[dialog.corner_smoothness]] (0 to 100): rounder corners.
+- [[dialog.trace_remove]]: what to leave out of the trace. **Background
+  color** removes the background where it reaches the edge of the picture,
+  **Entire color from image** removes every area of that color, **None**
+  traces everything. [[dialog.trace_remove_auto]] finds the background
+  color along the picture's edge; [[dialog.trace_remove_specify]] uses the
+  color of the swatch, which you can change, or pick from the preview with
+  the eyedropper beside it.
+- [[dialog.trace_objects]]: [[dialog.trace_merge_adjacent]] (on at first)
+  makes one curve of every area of a color; off, each separate patch is a
+  curve of its own. [[dialog.trace_remove_overlap]] keeps every shape to
+  its own pixels; off, shapes reach a little under the ones above them, so
+  no gaps show between neighbors. [[dialog.trace_group_by_color]] puts the
+  curves of each color in a group of their own; it is available when the
+  areas of a color are not merged already.
+- [[dialog.delete_original]]: the bitmap goes when the trace is placed.
+
+Settings that do not apply to the current trace type are grayed out: a
+centerline trace reads only the detail and the smoothing.
+
+## Colors {#colors}
+
+The [[dialog.trace_tab_colors]] tab sets the [[dialog.color_mode]] (RGB,
+grayscale, or black and white) and the [[dialog.trace_number_of_colors]]
+(2 to 256), and lists the colors of the trace with the number of curves of
+each. Tick two or more colors and click [[dialog.trace_merge_colors]] to
+join them into the first one; click a color's swatch to draw its curves in
+another color. Changing a setting that traces the picture again forgets
+these edits, which belonged to the previous trace.
+
+## Reset, undo and redo {#steps}
+
+Under the settings panel, [[dialog.reset]] puts the preset's settings back,
+and the two arrows step backward and forward through every change made in
+the dialog box: each slider release, list choice, check box, color edit and
+Reset is one step. A change made after undoing drops the steps that were
+undone.
+
+[[dialog.trace_options]] opens the [[options.bitmap_tracing]] page of the
+global options, where you choose the quick trace preset and the choices
+every trace starts with, and then returns to the dialog box. The
+[[dialog.help_button]] button opens this page.

@@ -10,8 +10,13 @@ there.
 
 These dialog boxes are windows you size: drag an edge or a corner, or click
 the maximize button in the title bar. The preview fills the left of the
-window and grows with it; the dialog box's own settings sit in a column on
-the right, with [[dialog.ok]] and [[dialog.cancel]] under them.
+window and grows with it; the dialog box's own settings sit in a white
+panel on the right, each label above its slider and the sliders as wide as
+the panel, with [[dialog.ok]] and [[dialog.cancel]] under them. Under the
+panel, [[dialog.reset]] puts the settings back and the two arrows beside
+it undo and redo the changes made in the dialog box: each slider release,
+list choice, check box and Reset is one step. A change made after undoing
+drops the steps that were undone.
 
 The preview follows every change of the settings by itself. While you drag a
 slider it shows a quick, smaller version at once, and the full view when you
@@ -28,9 +33,13 @@ preview shows:
 - [[dialog.view_side_by_side]]: the picture on the left and the result on
   the right.
 - [[dialog.before]]: only the picture as it is.
-- [[dialog.after]]: only the result.
+- [[dialog.after]]: only the result. Trace Bitmap calls this view
+  [[dialog.trace_view_large]]: the trace alone, as large as the preview.
 - [[dialog.trace_view_wireframe]] (Trace Bitmap only): the curves of the
-  trace drawn over the picture, to see how closely they follow it.
+  trace drawn as thin lines over the picture, to see how closely they
+  follow it. An [[dialog.trace_overlay]] slider appears beside the list: it
+  sets how strongly the picture shows under the lines, from 0 (the lines
+  alone) to 100 (the picture as it is), 80 at first.
 - [[dialog.view_split]] ([[fx.image_adjustments]] only): one picture, the
   original on the left of a dashed line and the result on its right. Drag
   the line to move it. [[fx.image_adjustments]] starts on [[dialog.after]].

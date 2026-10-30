@@ -5,7 +5,9 @@
 [[menu.bitmaps > menu.bitmaps.mode]] seçili bitmapleri başka bir renk moduna
 dönüştürür. Seçili her bitmap tek bir geri alma adımında değişir ve saydamlık
 korunur. Ayarları olan modlar, önce ve sonra önizlemeleri içeren bir iletişim
-kutusu açar.
+kutusu açar; ayarlar sağdaki bir panelde durur ve altındaki
+[[dialog.reset]] onları geri getirirken iki ok iletişim kutusunda yapılan
+değişiklikleri geri alır ve yineler.
 
 | Mod | Sonuç |
 |---|---|

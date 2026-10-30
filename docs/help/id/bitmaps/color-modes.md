@@ -5,7 +5,9 @@
 [[menu.bitmaps > menu.bitmaps.mode]] mengonversi bitmap yang dipilih ke mode
 warna lain. Setiap bitmap yang dipilih berubah dalam satu langkah urungkan, dan
 transparansi tetap dipertahankan. Mode yang memiliki pengaturan membuka kotak
-dialog dengan pratinjau sebelum dan sesudah.
+dialog dengan pratinjau sebelum dan sesudah; pengaturannya berada di panel di
+sebelah kanan, dan di bawahnya [[dialog.reset]] mengembalikannya, sedangkan
+dua panah mengurungkan dan mengulangi perubahan yang dibuat di kotak dialog.
 
 | Mode | Hasil |
 |---|---|

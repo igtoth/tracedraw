@@ -15,8 +15,10 @@ menghapus efek terakhir mengembalikan gambar aslinya.
 2. Pilih kelompok di menu [[menu.effects]] lalu sebuah efek.
 3. Efek tanpa pengaturan langsung diterapkan. Efek lainnya membuka kotak
    dialog dengan pratinjau **sebelum** dan **sesudah** dari objek pertama yang
-   dipilih: atur nilainya lalu klik [[dialog.ok]]. **Atur ulang**
-   mengembalikan setiap pengaturan ke bawaannya.
+   dipilih: atur nilainya lalu klik [[dialog.ok]]. Pengaturannya berada
+   di panel di sebelah kanan; di bawahnya **Atur ulang** mengembalikan setiap
+   pengaturan ke bawaannya, dan dua panah mengurungkan dan mengulangi
+   perubahan yang dibuat di kotak dialog.
 
 ![Kotak dialog efek bitmap](../../img/effects-bitmap-effects.png)
 

@@ -5,7 +5,9 @@
 [[menu.bitmaps > menu.bitmaps.mode]] converte os bitmaps selecionados para outro
 modo de cor. Todos os bitmaps selecionados mudam em um passo de desfazer, e a
 transparência é mantida. Os modos com configurações abrem uma caixa de diálogo
-com prévias de antes e depois.
+com prévias de antes e depois; as configurações ficam em um painel à direita
+e, abaixo dele, [[dialog.reset]] as devolve, enquanto as duas setas desfazem e
+refazem as mudanças feitas na caixa de diálogo.
 
 | Modo | Resultado |
 |---|---|

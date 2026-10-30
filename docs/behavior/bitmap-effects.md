@@ -84,7 +84,13 @@ later, and removing the last one gives the original back.
   drawing.
 - Settings: sliders for numbers, a dial and a number for directions
   (degrees counter-clockwise from the right), lists, check boxes and
-  colour buttons. Reset puts every setting back to its default.
+  colour buttons, in the shared settings panel at the right (each
+  slider under its label, stretched to the panel's width;
+  `before-after-preview.md`). Under it the Reset, undo and redo row:
+  Reset puts every setting back to its default, the arrows step
+  through the settings states made in the dialog (a slider's drag is
+  one step on release, a list, a box, a colour, Reset), and the history
+  starts afresh when the dialog opens.
 - Editing an effect from the FX section previews from what the effects
   before it made, and the after view also runs the visible effects after
   it; OK changes that effect in place ("Edit Effect").

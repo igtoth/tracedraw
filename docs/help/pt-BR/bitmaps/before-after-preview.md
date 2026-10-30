@@ -12,8 +12,13 @@ modo de cor (Preto e branco, Duotom, Paleta), todo efeito de bitmap e
 Essas caixas de diálogo são janelas redimensionáveis: arraste uma borda ou um
 canto, ou clique no botão de maximizar na barra de título. A prévia ocupa a
 esquerda da janela e cresce com ela; as configurações da própria caixa de
-diálogo ficam numa coluna à direita, com [[dialog.ok]] e [[dialog.cancel]]
-embaixo.
+diálogo ficam num painel branco à direita, cada rótulo acima do seu controle
+deslizante e os controles tão largos quanto o painel, com [[dialog.ok]] e
+[[dialog.cancel]] embaixo. Abaixo do painel, [[dialog.reset]] devolve as
+configurações e as duas setas ao lado desfazem e refazem as mudanças feitas
+na caixa de diálogo: cada soltar de controle deslizante, escolha em lista,
+caixa de seleção e Redefinir é um passo. Uma mudança feita depois de desfazer
+descarta os passos desfeitos.
 
 A prévia acompanha sozinha cada mudança das configurações. Enquanto você
 arrasta um controle deslizante, ela mostra na hora uma versão rápida e menor,
@@ -30,9 +35,13 @@ mostra:
   resultado embaixo.
 - [[dialog.view_side_by_side]]: a imagem à esquerda e o resultado à direita.
 - [[dialog.before]]: só a imagem como está.
-- [[dialog.after]]: só o resultado.
+- [[dialog.after]]: só o resultado. Traçar bitmap chama essa vista de
+  [[dialog.trace_view_large]]: só o traçado, do tamanho da prévia.
 - [[dialog.trace_view_wireframe]] (só em Traçar bitmap): as curvas do traçado
-  desenhadas sobre a imagem, para ver quanto elas a seguem.
+  desenhadas como linhas finas sobre a imagem, para ver quanto elas a seguem.
+  Um controle deslizante [[dialog.trace_overlay]] aparece ao lado da lista:
+  ele define quanto a imagem aparece sob as linhas, de 0 (só as linhas) a 100
+  (a imagem como está), 80 no início.
 - [[dialog.view_split]] (só em [[fx.image_adjustments]]): uma imagem, o
   original à esquerda de uma linha tracejada e o resultado à direita. Arraste
   a linha para movê-la. [[fx.image_adjustments]] começa em [[dialog.after]].

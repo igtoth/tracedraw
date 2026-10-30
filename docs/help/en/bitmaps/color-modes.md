@@ -5,7 +5,9 @@ color mode. Every selected bitmap changes in one undo step, and transparency is
 kept. The modes with settings open a dialog box you can size, with the
 picture before and after the change in the
 [Before and After preview](before-after-preview.md) on the left and the
-settings on the right.
+settings in a panel on the right; under the panel [[dialog.reset]] puts
+them back while the two arrows undo and redo the changes made in the
+dialog box.
 
 | Mode | Result |
 |---|---|

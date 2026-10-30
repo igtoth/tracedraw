@@ -12775,6 +12775,15 @@ fn merge_adjacent_and_group_by_color_change_the_result() {
     }));
     let merged = trace_wait(&ctx, &mut app);
     assert_eq!(merged.stats.curves, 1, "one curve for the colour");
+    // With Merge adjacent on, Group by color is greyed: a click does
+    // nothing.
+    click_at(
+        &ctx,
+        &mut app,
+        trace_rect(&ctx, "group_by_color").center(),
+        Modifiers::NONE,
+    );
+    assert!(!trace_state(&app).settings.group_by_color, "greyed");
     click_at(
         &ctx,
         &mut app,
@@ -13698,6 +13707,59 @@ fn the_remove_background_eyedropper_picks_on_the_shared_preview() {
         assert!(!st.picking);
         assert_eq!(st.settings.colors.len(), 1);
     }
+    // The settings sit in the shared panel with the Reset, undo and
+    // redo row: the pick was a step, undone and redone; Reset forgets
+    // the colour and the tolerance slider's click.
+    let bg = |app: &App| match &app.dialog {
+        crate::ui::dialogs::Dialog::RemoveBackground(st) => st.settings.clone(),
+        other => panic!("{other:?}"),
+    };
+    for name in [
+        "settings_panel",
+        "reset",
+        "undo",
+        "redo",
+        "tolerance",
+        "edge_softness",
+    ] {
+        assert!(
+            crate::ui::before_after::rects(&ctx).0.contains_key(name),
+            "no {name}"
+        );
+    }
+    let press = |ctx: &egui::Context, app: &mut App, name: &str| {
+        click_at(ctx, app, preview_rect(ctx, name).center(), Modifiers::NONE);
+        frame(ctx, app, Vec::new(), Modifiers::NONE);
+    };
+    press(&ctx, &mut app, "undo");
+    assert_eq!(
+        bg(&app).colors,
+        vec![crate::bg_remove::BgPick::AUTO],
+        "the pick undone"
+    );
+    press(&ctx, &mut app, "redo");
+    assert_eq!(bg(&app).colors.len(), 1);
+    assert_eq!(bg(&app).colors[0].color, Some([200, 30, 30]), "redone");
+    let rail = preview_rect(&ctx, "tolerance");
+    click_at(
+        &ctx,
+        &mut app,
+        egui::pos2(rail.left() + rail.width() * 0.6, rail.bottom() - 10.0),
+        Modifiers::NONE,
+    );
+    let defaults = crate::bg_remove::BgSettings::default();
+    assert!(
+        bg(&app).tolerance > defaults.tolerance + 20.0,
+        "{}",
+        bg(&app).tolerance
+    );
+    press(&ctx, &mut app, "reset");
+    assert_eq!(bg(&app), defaults, "Reset");
+    press(&ctx, &mut app, "undo");
+    assert!(
+        bg(&app).tolerance > defaults.tolerance + 20.0,
+        "the Reset undone"
+    );
 }
 
 fn bg_state(app: &App) -> crate::ui::bitmap_dialogs::BgRemoveState {
@@ -13951,8 +14013,8 @@ fn frame_times_of_the_remove_background_dialog() {
         frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
     }
     eprintln!("idle frame: {:?}", t.elapsed() / 30);
-    let rail = preview_rect(&ctx, "bg_tolerance");
-    let from = egui::pos2(rail.left() + rail.width() * 0.1, rail.center().y);
+    let rail = preview_rect(&ctx, "tolerance");
+    let from = egui::pos2(rail.left() + rail.width() * 0.1, rail.bottom() - 10.0);
     frame(
         &ctx,
         &mut app,
@@ -14042,6 +14104,296 @@ fn the_split_views_divider_drags() {
         assert!(st.lab.view.centre.is_some());
         assert!((st.lab.view.split - split.split).abs() < 1e-6);
     }
+}
+
+/// Open the shared preview's Preview list and click its item `key`.
+fn choose_preview(ctx: &egui::Context, app: &mut App, key: &str) {
+    let list = preview_rect(ctx, "trace_view");
+    click_at(ctx, app, list.center(), Modifiers::NONE);
+    let label = crate::i18n::tr(key);
+    // The list's item (not the list's own text): under the list.
+    let item = texts_drawn(ctx, app, Vec::new())
+        .into_iter()
+        .filter(|(t, r)| *t == label && r.top() > list.bottom() && r.left() >= list.left())
+        .min_by(|a, b| a.1.top().total_cmp(&b.1.top()))
+        .map(|(_, r)| r.center())
+        .unwrap_or_else(|| panic!("the item {key}"));
+    click_at(ctx, app, item, Modifiers::NONE);
+}
+
+/// The Trace dialog's Preview list: Large Preview shows the trace alone
+/// in the whole area; Wireframe Overlay shows the Overlay slider in the
+/// preview bar (80 at first), a click on it sets how strongly the picture
+/// shows under the curves, and the slider goes with the other views; an
+/// idle dialog in the overlay view asks for no frame.
+#[test]
+fn the_trace_preview_list_offers_large_preview_and_the_wireframe_overlay() {
+    use crate::ui::before_after::View;
+    let (ctx, mut app, _) = trace_setup(black_white_image(160, |x, y| x > 40 && y > 40));
+    trace_wait(&ctx, &mut app);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let stacked = preview_rect(&ctx, "view_pane");
+    let has_overlay = |ctx: &egui::Context| {
+        crate::ui::before_after::rects(ctx)
+            .0
+            .contains_key("overlay")
+    };
+    assert!(
+        !has_overlay(&ctx),
+        "no Overlay slider with Before and After"
+    );
+    choose_preview(&ctx, &mut app, "dialog.trace_view_large");
+    assert_eq!(trace_state(&app).view.view, View::Large);
+    let large = preview_rect(&ctx, "view_pane");
+    assert!(
+        large.height() > stacked.height() * 1.5,
+        "the trace alone takes the area: {large:?} vs {stacked:?}"
+    );
+    assert!(!has_overlay(&ctx), "no Overlay slider with Large Preview");
+    choose_preview(&ctx, &mut app, "dialog.trace_view_wireframe");
+    assert_eq!(trace_state(&app).view.view, View::Overlay);
+    assert!(has_overlay(&ctx), "the Overlay slider is in the bar");
+    assert_eq!(
+        trace_state(&app).view.overlay,
+        crate::ui::before_after::OVERLAY_DEFAULT
+    );
+    assert_eq!(crate::ui::before_after::OVERLAY_DEFAULT, 80.0);
+    let rail = preview_rect(&ctx, "overlay");
+    click_at(
+        &ctx,
+        &mut app,
+        egui::pos2(rail.left() + rail.width() * 0.1, rail.center().y),
+        Modifiers::NONE,
+    );
+    let low = trace_state(&app).view.overlay;
+    assert!((1.0..30.0).contains(&low), "overlay {low}");
+    click_at(
+        &ctx,
+        &mut app,
+        egui::pos2(rail.left() + rail.width() * 0.95, rail.center().y),
+        Modifiers::NONE,
+    );
+    let high = trace_state(&app).view.overlay;
+    assert!(high > 85.0, "overlay {high}");
+    // The Overlay value is no setting of the trace: nothing is traced
+    // again, and the idle dialog asks for no frame.
+    let started = app.trace_live.started;
+    for _ in 0..5 {
+        idle_frame_asks_for_another(&ctx, &mut app);
+    }
+    for i in 0..10 {
+        assert!(
+            !idle_frame_asks_for_another(&ctx, &mut app),
+            "idle frame {i} in the overlay view asked for another ({:?})",
+            ctx.repaint_causes()
+        );
+    }
+    assert_eq!(app.trace_live.started, started);
+    choose_preview(&ctx, &mut app, "dialog.trace_view_before_after");
+    assert_eq!(trace_state(&app).view.view, View::Stacked);
+    assert!(!has_overlay(&ctx));
+}
+
+/// The Black and White settings in the app's dialog.
+fn bw_settings_of(app: &App) -> crate::bitmap_modes::BwSettings {
+    match &app.dialog {
+        crate::ui::dialogs::Dialog::BitmapBw(s) => *s,
+        other => panic!("{other:?}"),
+    }
+}
+
+/// The settings panel's Reset, undo and redo row in the dialogs whose
+/// state is their settings alone (Black and White here): a click on a
+/// slider is a step, a drag one step on release, Reset a step of its
+/// own; the arrows step back and forward, and the idle dialog asks for
+/// no frame.
+#[test]
+fn the_settings_panel_steps_undo_and_redo_in_the_mode_dialogs() {
+    let img = image::RgbaImage::from_fn(200, 120, |x, y| {
+        let v = ((x + y) * 255 / 320) as u8;
+        image::Rgba([v, v, v, 255])
+    });
+    let (ctx, mut app, _) = trace_setup(img);
+    app.dialog = crate::ui::dialogs::Dialog::BitmapBw(Default::default());
+    for _ in 0..3 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    let defaults = crate::bitmap_modes::BwSettings::default();
+    assert_eq!(bw_settings_of(&app), defaults);
+    for name in ["settings_panel", "reset", "undo", "redo", "bw_slider"] {
+        assert!(
+            crate::ui::before_after::rects(&ctx).0.contains_key(name),
+            "no {name}"
+        );
+    }
+    // Nothing to undo yet: the arrow does nothing.
+    click_at(
+        &ctx,
+        &mut app,
+        preview_rect(&ctx, "undo").center(),
+        Modifiers::NONE,
+    );
+    assert_eq!(bw_settings_of(&app), defaults);
+    // A click on the Angle slider (the halftone screen's) is a step.
+    let rail = preview_rect(&ctx, "bw_slider");
+    click_at(
+        &ctx,
+        &mut app,
+        egui::pos2(rail.left() + rail.width() * 0.7, rail.center().y),
+        Modifiers::NONE,
+    );
+    let clicked = bw_settings_of(&app);
+    assert!(clicked.angle > 60.0, "angle {}", clicked.angle);
+    // A drag is one step, taken on release.
+    let rail = preview_rect(&ctx, "bw_slider");
+    drag(
+        &ctx,
+        &mut app,
+        egui::pos2(rail.left() + rail.width() * 0.7, rail.center().y),
+        egui::pos2(rail.left() + rail.width() * 0.2, rail.center().y),
+        Modifiers::NONE,
+        Vec::new(),
+    );
+    let dragged = bw_settings_of(&app);
+    assert!(
+        dragged.angle < clicked.angle - 30.0,
+        "angle {}",
+        dragged.angle
+    );
+    click_at(
+        &ctx,
+        &mut app,
+        preview_rect(&ctx, "reset").center(),
+        Modifiers::NONE,
+    );
+    assert_eq!(bw_settings_of(&app), defaults, "Reset");
+    let undo = |ctx: &egui::Context, app: &mut App| {
+        click_at(
+            ctx,
+            app,
+            preview_rect(ctx, "undo").center(),
+            Modifiers::NONE,
+        );
+        frame(ctx, app, Vec::new(), Modifiers::NONE);
+    };
+    undo(&ctx, &mut app);
+    assert_eq!(bw_settings_of(&app), dragged, "the Reset undone");
+    undo(&ctx, &mut app);
+    assert_eq!(bw_settings_of(&app), clicked, "the drag undone in one step");
+    undo(&ctx, &mut app);
+    assert_eq!(bw_settings_of(&app), defaults, "the click undone");
+    undo(&ctx, &mut app);
+    assert_eq!(bw_settings_of(&app), defaults, "nothing more to undo");
+    click_at(
+        &ctx,
+        &mut app,
+        preview_rect(&ctx, "redo").center(),
+        Modifiers::NONE,
+    );
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    assert_eq!(bw_settings_of(&app), clicked, "redone");
+    // A change after an undo drops the steps undone.
+    let rail = preview_rect(&ctx, "bw_slider");
+    click_at(
+        &ctx,
+        &mut app,
+        egui::pos2(rail.left() + rail.width() * 0.5, rail.center().y),
+        Modifiers::NONE,
+    );
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let again = bw_settings_of(&app);
+    click_at(
+        &ctx,
+        &mut app,
+        preview_rect(&ctx, "redo").center(),
+        Modifiers::NONE,
+    );
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    assert_eq!(bw_settings_of(&app), again, "no step to redo");
+    // Idle, the dialog asks for no frame.
+    for _ in 0..5 {
+        idle_frame_asks_for_another(&ctx, &mut app);
+    }
+    for i in 0..10 {
+        assert!(
+            !idle_frame_asks_for_another(&ctx, &mut app),
+            "idle frame {i} asked for another ({:?})",
+            ctx.repaint_causes()
+        );
+    }
+    // Opened again, the history starts afresh.
+    app.dialog = crate::ui::dialogs::Dialog::None;
+    for _ in 0..3 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    app.dialog = crate::ui::dialogs::Dialog::BitmapBw(again);
+    for _ in 0..3 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    undo(&ctx, &mut app);
+    assert_eq!(bw_settings_of(&app), again, "a fresh history");
+}
+
+/// The effect dialogs draw their settings in the panel with the Reset,
+/// undo and redo row: a click on a slider is undone and redone.
+#[test]
+fn the_effect_dialog_steps_undo_and_redo_its_settings() {
+    let img = image::RgbaImage::from_fn(120, 80, |x, _| image::Rgba([(x * 2) as u8, 90, 160, 255]));
+    let (ctx, mut app, _) = trace_setup(img);
+    app.dialog = crate::ui::dialogs::Dialog::Effect(crate::ui::effect_dialog::EffectState::new(
+        "gaussian_blur",
+    ));
+    for _ in 0..3 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    let params = |app: &App| match &app.dialog {
+        crate::ui::dialogs::Dialog::Effect(st) => st.effect.params.clone(),
+        other => panic!("{other:?}"),
+    };
+    assert!(params(&app).is_empty());
+    for name in ["settings_panel", "reset", "undo", "redo", "radius"] {
+        assert!(
+            crate::ui::before_after::rects(&ctx).0.contains_key(name),
+            "no {name}"
+        );
+    }
+    // The slider lies at the bottom of the setting's block, left of the
+    // number box.
+    let block = preview_rect(&ctx, "radius");
+    click_at(
+        &ctx,
+        &mut app,
+        egui::pos2(block.left() + block.width() * 0.5, block.bottom() - 10.0),
+        Modifiers::NONE,
+    );
+    let set = params(&app);
+    assert!(set.contains_key("radius"), "{set:?}");
+    click_at(
+        &ctx,
+        &mut app,
+        preview_rect(&ctx, "undo").center(),
+        Modifiers::NONE,
+    );
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    assert!(params(&app).is_empty(), "undone");
+    click_at(
+        &ctx,
+        &mut app,
+        preview_rect(&ctx, "redo").center(),
+        Modifiers::NONE,
+    );
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    assert_eq!(params(&app), set, "redone");
+    click_at(
+        &ctx,
+        &mut app,
+        preview_rect(&ctx, "reset").center(),
+        Modifiers::NONE,
+    );
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    assert!(params(&app).is_empty(), "Reset");
+    app.dialog = crate::ui::dialogs::Dialog::None;
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
 }
 
 /// A primary drag from `from` to `to` with a graphics tablet's pen: the

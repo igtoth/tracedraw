@@ -22,8 +22,9 @@ reordenar ou remover qualquer um depois, e remover o último devolve o original.
    feito em segundo plano, então a janela continua respondendo com imagens
    grandes. Clique em [[dialog.ok]] para guardar o que o desenho mostra em um
    passo de desfazer; **Cancelar** ou <kbd>Esc</kbd> devolvem o desenho
-   exatamente como estava. **Redefinir** devolve todas as configurações ao
-   padrão.
+   exatamente como estava. As configurações ficam em um painel à direita;
+   abaixo dele, **Redefinir** devolve todas as configurações ao padrão e as
+   duas setas desfazem e refazem as mudanças feitas na caixa de diálogo.
 
 ![Uma caixa de diálogo de efeito de bitmap](../../img/effects-bitmap-effects.png)
 

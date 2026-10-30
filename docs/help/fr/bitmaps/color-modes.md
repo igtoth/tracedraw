@@ -6,7 +6,9 @@
 sélectionnées dans un autre mode de couleur. Chaque image sélectionnée change
 en une seule étape d'annulation, et la transparence est conservée. Les modes
 qui ont des réglages ouvrent une boîte de dialogue avec des aperçus avant et
-après.
+après ; les réglages sont dans un panneau à droite et, dessous,
+[[dialog.reset]] les remet, tandis que les deux flèches annulent et
+rétablissent les modifications faites dans la boîte de dialogue.
 
 | Mode | Résultat |
 |---|---|

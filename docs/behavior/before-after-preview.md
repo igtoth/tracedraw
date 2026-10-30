@@ -14,7 +14,7 @@ dialog's own settings sit in a column 340 points wide at the right
 
 | Control | Default | Meaning |
 |---|---|---|
-| Preview list | Before and After (Image Adjustments: After) | Before and After (the picture above, the result below), Before and After side by side, Before, After; Trace Bitmap adds Wireframe overlay (the trace's curves over the picture), Image Adjustments adds Before and After split (one picture, the original left of a dashed divider that drags, the result right) |
+| Preview list | Before and After (Image Adjustments: After) | Before and After (the picture above, the result below), Before and After side by side, Before, After; Trace Bitmap has Large Preview in place of After (the trace alone, the whole area) and adds Wireframe Overlay (the trace's curves over the picture, which shows through at the Overlay slider's strength: a slider in the bar, 0 to 100, 80 at first, shown in that view only), Image Adjustments adds Before and After split (one picture, the original left of a dashed divider that drags, the result right) |
 | Zoom to fit | pressed | the whole picture in a pane |
 | Zoom out, Zoom in | | the zoom divided or multiplied by 1.25, between a tenth of the fit and 64 points per preview pixel |
 | Pan | pressed | a drag on a pane pans; while a dialog's eyedropper picks on the preview the button is released, and clicking it ends the picking |
@@ -27,6 +27,33 @@ stays where it is), and the labels Before and After sit in the panes'
 corners. Transparent parts show a checkerboard (one 2 x 2 texture
 repeated, a single rectangle a frame). Under the panes a dialog may
 have a status line (Trace Bitmap's curves, nodes and colours).
+
+## Settings panel
+
+The dialog's settings sit in one panel at the right
+(`before_after::panel`): a framed panel in the field colour (white in
+the light theme), its contents scrolling when they do not fit, each
+slider under its own label and stretched to the panel's width with the
+value box at the right, a thin rule between groups of settings
+(`before_after::rule`). Under the panel a row holds Reset and the undo
+and redo arrows (`before_after::steps_row`, 34 points):
+
+- Reset puts the dialog's defaults back (Trace Bitmap: the image type's
+  settings) as a step of its own.
+- The arrows step back and forward through every settings state the
+  dialog passed through: a click, a list choice, a check box, Reset
+  and a slider's drag (one step, taken when the pointer is released)
+  are a step each; a change after an undo drops the steps undone, the
+  arrows themselves never do. The arrows are greyed with nothing to
+  step to.
+- Trace Bitmap and Image Adjustments keep histories of their own
+  (`trace_dialog.rs`, `lab_dialog.rs`: a step keeps the Colors tab's
+  merges and edits, or a snapshot). Black and White, Duotone, Paletted
+  and the effect dialogs, whose state is their settings alone, use
+  `before_after::steps_for`: the history is kept between frames under
+  the dialog's id and starts afresh when the dialog opens.
+- Remove Background keeps its own Reset (its options are not a single
+  settings value).
 
 ## Cost
 
@@ -70,6 +97,17 @@ have a status line (Trace Bitmap's curves, nodes and colours).
   texture and ask for no frame (nothing is worked out per frame).
 - `pick_drag_tests::the_remove_background_eyedropper_picks_on_the_shared_preview`:
   the eyedropper's click on a pane adds the colour under it, and the
-  pan button ends the picking.
+  pan button ends the picking; the pick is a step the arrows undo and
+  redo, and Reset (a step too) puts the defaults back.
+- `pick_drag_tests::the_settings_panel_steps_undo_and_redo_in_the_mode_dialogs`:
+  Black and White draws the panel and the Reset, undo and redo row; a
+  slider's click is a step, a drag one step on release, Reset one; the
+  arrows step back and forward, a change after an undo drops the steps
+  undone, the idle dialog asks for no frame, and a dialog opened again
+  starts a fresh history.
+- `pick_drag_tests::the_effect_dialog_steps_undo_and_redo_its_settings`:
+  an effect dialog's slider click is undone, redone and Reset.
+- `pick_drag_tests::the_trace_preview_list_offers_large_preview_and_the_wireframe_overlay`
+  (`bitmap-tracing.md`): Large Preview and the Overlay slider.
 - `pick_drag_tests::the_split_views_divider_drags`: the divider drags
   where the button went down on it; a drag elsewhere pans.

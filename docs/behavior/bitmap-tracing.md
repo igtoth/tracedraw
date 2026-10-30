@@ -23,7 +23,8 @@
 | Colors tab: Number of colors | per preset | 2..256 |
 | Colors tab: list | the trace's colours with their curve counts | tick two or more and Merge selected colors; the swatch of a row changes the colour its curves are drawn in |
 | Reset, undo, redo | | Reset: the image type's settings; the arrows step through every settings state of the dialog, Reset included |
-| Preview | Before and After | the shared preview (`before-after-preview.md`): Before and After (the picture above, the trace below), Before and After side by side, Before, After, Wireframe overlay (the curves as blue lines over the picture); zoom to fit, zoom out, zoom in, pan, the wheel zooms, a drag pans |
+| Preview | Before and After | the shared preview (`before-after-preview.md`): Before and After (the picture above, the trace below), Before and After side by side, Before, Large Preview (the trace alone in the whole area), Wireframe Overlay (the curves as blue lines over the picture); zoom to fit, zoom out, zoom in, pan, the wheel zooms, a drag pans |
+| Overlay | 80 | with Wireframe Overlay only, a slider in the preview bar: how strongly the picture shows under the curves, 0 (the curves alone) to 100 (the picture as it is); a tint on the picture's rectangle, nothing traced or worked out again |
 | Options... | | Options > Global > Bitmap Tracing, then back to the dialog |
 
 ## Commands
@@ -40,8 +41,9 @@ A window the user sizes (1040 x 700 points at first, never under 780 x
 540; a maximize button in the title bar fills the main window, pressing
 it again restores the size). Left, the shared Before and After preview
 of the first selected bitmap (`before-after-preview.md`): a Preview
-list (Before and After, Before and After side by side, Before, After,
-Wireframe overlay), zoom to fit, zoom out and zoom in buttons, a pan
+list (Before and After, Before and After side by side, Before, Large
+Preview, Wireframe Overlay, with the Overlay slider beside the list in
+the overlay view), zoom to fit, zoom out and zoom in buttons, a pan
 button, and a spinner while a trace is being made; under the preview
 the status line `Curves: N, Nodes: N, Colors: N` (the whole picture's
 trace; with a dots sign after it while only the quick look is in).
@@ -51,9 +53,15 @@ pane, with the same zoom and place; the wheel zooms about the pointer
 on a checkerboard (one 2 x 2 texture repeated, a single rectangle a
 frame). The preview copy is at most 1024 pixels on its longer side.
 Right, the
-Settings and Colors tabs over a Reset button with undo and redo arrows;
-bottom, the help button, Options..., OK and Cancel. Enter is OK, Esc and
-the close button cancel.
+Settings and Colors tabs over the shared settings panel (the field
+colour, framed, each slider under its label and stretched to the
+panel's width, a rule between groups; `before-after-preview.md`) and
+the Reset button with the undo and redo arrows under it; bottom, the
+help button, Options..., OK and Cancel. Enter is OK, Esc and the close
+button cancel. Controls that do not apply are greyed, not hidden: a
+centreline trace greys Corner smoothness, Remove and the Objects boxes;
+Group by color is greyed while Merge adjacent is on (every colour is
+one curve already, so no groups are made).
 
 ### Live preview
 
@@ -230,7 +238,14 @@ width equal to the mean local thickness.
   make black the background, so the white is traced instead.
 - `pick_drag_tests::merge_adjacent_and_group_by_color_change_the_result`:
   two black squares are one curve, two with Merge adjacent off, and OK
-  with Group by color places a group holding one group of the two.
+  with Group by color places a group holding one group of the two; with
+  Merge adjacent on again, Group by color is greyed (a click does
+  nothing).
+- `pick_drag_tests::the_trace_preview_list_offers_large_preview_and_the_wireframe_overlay`:
+  Large Preview shows the trace alone in the whole area; Wireframe
+  Overlay shows the Overlay slider (80 at first), clicks on it set the
+  value, the slider goes with the other views, and the idle dialog in
+  the overlay view asks for no frame and traces nothing again.
 - `pick_drag_tests::reset_and_the_arrows_undo_the_settings`.
 - `pick_drag_tests::the_arrows_keep_merged_colours_and_the_steps_to_redo`:
   two colours merged, then a new detail forgets the merge; undo brings

@@ -5,7 +5,10 @@
 [[menu.bitmaps > menu.bitmaps.mode]] converte le bitmap selezionate in un'altra
 modalità colore. Ogni bitmap selezionata cambia in un unico passaggio di
 annullamento e la trasparenza viene mantenuta. Le modalità con impostazioni
-aprono una finestra di dialogo con le anteprime prima e dopo.
+aprono una finestra di dialogo con le anteprime prima e dopo; le
+impostazioni stanno in un pannello a destra e, sotto di esso,
+[[dialog.reset]] le ripristina, mentre le due frecce annullano e ripetono
+le modifiche fatte nella finestra di dialogo.
 
 | Modalità | Risultato |
 |---|---|

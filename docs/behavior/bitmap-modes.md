@@ -5,7 +5,12 @@ changes in one undo step. The dialogs are windows the user sizes that
 show the first selected bitmap before and after in the shared preview
 (`before-after-preview.md`: the Preview list, zoom and pan, the copy as
 large as the panes show; the copy's pixel sizes follow its scale), the
-settings at the right. Alpha is kept in every mode.
+settings in the shared settings panel at the right (each slider under
+its label, stretched to the panel's width) with the Reset, undo and
+redo row under it: Reset puts the defaults back, the arrows step through
+the settings states made in the dialog (a slider's drag is one step on
+release), the history starts afresh when the dialog opens. Alpha is
+kept in every mode.
 
 | Item | Result |
 |---|---|
