@@ -907,6 +907,7 @@ docker.hints = "Подсказки"
 docker.horizontal_settings = "Параметры по горизонтали"
 docker.hyperlink = "Гиперссылка"
 docker.hyphenate = "Расставлять переносы"
+docker.in_front = "Впереди" # mt
 docker.insert = "Вставить"
 docker.inside = "Внутрь"
 docker.instances_n = "Экземпляров: {n}"

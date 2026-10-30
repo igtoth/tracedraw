@@ -907,6 +907,7 @@ docker.hints = "Petunjuk"
 docker.horizontal_settings = "Pengaturan horizontal"
 docker.hyperlink = "Pranala"
 docker.hyphenate = "Penggal kata"
+docker.in_front = "Di depan" # mt
 docker.insert = "Sisipkan"
 docker.inside = "Dalam"
 docker.instances_n = "{n} instans"

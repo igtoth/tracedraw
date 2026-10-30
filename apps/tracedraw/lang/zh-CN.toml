@@ -907,6 +907,7 @@ docker.hints = "提示"
 docker.horizontal_settings = "水平设置"
 docker.hyperlink = "超链接"
 docker.hyphenate = "断字"
+docker.in_front = "在前面" # mt
 docker.insert = "插入"
 docker.inside = "向内"
 docker.instances_n = "{n} 个实例"

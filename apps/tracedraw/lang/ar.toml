@@ -907,6 +907,7 @@ docker.hints = "تلميحات"
 docker.horizontal_settings = "الإعدادات الأفقية"
 docker.hyperlink = "ارتباط تشعبي"
 docker.hyphenate = "وصل بالواصلة"
+docker.in_front = "في المقدمة" # mt
 docker.insert = "إدراج"
 docker.inside = "داخلي"
 docker.instances_n = "{n} مثيل (مثيلات)"

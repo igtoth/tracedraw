@@ -123,6 +123,8 @@ pub struct ShadowPicture {
 /// (version 16 and later).
 pub fn document_to_cdr_version_with(doc: &Document, version: u16, previews: &Previews) -> Vec<u8> {
     let v = Ver(version.clamp(OLDEST_VERSION, NEWEST_VERSION));
+    let on_pages = master_objects_on_pages(doc);
+    let doc = on_pages.as_ref().unwrap_or(doc);
     let mut w = Writer::new(v, &doc.symbols, &doc.title);
     w.shadow_pictures = previews.shadows.iter().map(|p| (p.shape, p)).collect();
     w.faces = &previews.fonts;
@@ -178,6 +180,73 @@ pub fn document_to_cdr_version_with(doc: &Document, version: u16, previews: &Pre
     #[cfg(test)]
     crate::check::assert_clean(&out, v.0);
     out
+}
+
+/// The drawing with the objects of its master layers on the pages, or
+/// `None` when no master layer holds any. No `.cdr` file seen has objects
+/// on a layer of the master page (717 files of versions 7 to 27), so the
+/// record a reader would take for one is not known; each page a master
+/// layer shows on gets a layer of that name with copies of its objects
+/// instead, behind the page's own layers or in front of them as it is
+/// drawn there (#1132), so every page looks as it did. The first page
+/// keeps the objects' ids, later pages' copies get new ones.
+fn master_objects_on_pages(doc: &Document) -> Option<Document> {
+    use tracedraw_core::id::IdSource;
+    fn reid(s: &Shape, ids: &mut IdSource) -> Shape {
+        let mut c = s.clone();
+        c.id = ids.shape();
+        match &mut c.kind {
+            ShapeKind::Group { children } => {
+                *children = children.iter().map(|k| reid(k, ids)).collect();
+            }
+            ShapeKind::ClipFrame { frame, contents } => {
+                **frame = reid(frame, ids);
+                *contents = contents.iter().map(|k| reid(k, ids)).collect();
+            }
+            _ => {}
+        }
+        c
+    }
+    if doc.master.iter().all(|l| l.shapes.is_empty()) {
+        return None;
+    }
+    let mut out = doc.clone();
+    let mut ids = out.ids().clone();
+    let mut seen: Vec<tracedraw_core::LayerId> = Vec::new();
+    for (i, page) in doc.pages.iter().enumerate() {
+        let Ok(drawn) = doc.layers_drawn_for_page(page.id) else {
+            continue;
+        };
+        let mut layers = Vec::with_capacity(drawn.len());
+        for l in drawn {
+            let master = doc.master.iter().any(|m| m.id == l.id);
+            if !master {
+                layers.push(l.into_owned());
+                continue;
+            }
+            if l.shapes.is_empty() {
+                continue;
+            }
+            let first = !seen.contains(&l.id);
+            if first {
+                seen.push(l.id);
+            }
+            let mut copy = l.into_owned();
+            copy.id = ids.layer();
+            copy.in_front = false;
+            copy.scope = tracedraw_core::MasterScope::All;
+            if !first {
+                copy.shapes = copy.shapes.iter().map(|s| reid(s, &mut ids)).collect();
+            }
+            layers.push(copy);
+        }
+        if let Some(p) = out.pages.get_mut(i) {
+            p.layers = layers;
+        }
+    }
+    out.master.clear();
+    out.set_ids(ids);
+    Some(out)
 }
 
 /// Coordinate units per millimetre.

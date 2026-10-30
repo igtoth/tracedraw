@@ -907,6 +907,7 @@ docker.hints = "Rady"
 docker.horizontal_settings = "Vodorovné nastavení"
 docker.hyperlink = "Hypertextový odkaz"
 docker.hyphenate = "Dělení slov"
+docker.in_front = "Vpředu" # mt
 docker.insert = "Vložit"
 docker.inside = "Dovnitř"
 docker.instances_n = "Počet instancí: {n}"

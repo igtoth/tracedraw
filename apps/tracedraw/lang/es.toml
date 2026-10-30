@@ -907,6 +907,7 @@ docker.hints = "Sugerencias"
 docker.horizontal_settings = "Configuración horizontal"
 docker.hyperlink = "Hipervínculo"
 docker.hyphenate = "Separar sílabas"
+docker.in_front = "Delante" # mt
 docker.insert = "Insertar"
 docker.inside = "Interior"
 docker.instances_n = "{n} instancia(s)"

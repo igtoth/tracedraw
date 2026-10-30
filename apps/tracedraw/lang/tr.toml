@@ -907,6 +907,7 @@ docker.hints = "İpuçları"
 docker.horizontal_settings = "Yatay ayarlar"
 docker.hyperlink = "Köprü"
 docker.hyphenate = "Hecele"
+docker.in_front = "Önde" # mt
 docker.insert = "Ekle"
 docker.inside = "İçeri"
 docker.instances_n = "{n} örnek"

@@ -907,6 +907,7 @@ docker.hints = "হিন্ট"
 docker.horizontal_settings = "অনুভূমিক সেটিংস"
 docker.hyperlink = "হাইপারলিংক"
 docker.hyphenate = "হাইফেনেট"
+docker.in_front = "সামনে" # mt
 docker.insert = "যোগ করুন"
 docker.inside = "ভিতরে"
 docker.instances_n = "{n} ইনস্ট্যান্স"
