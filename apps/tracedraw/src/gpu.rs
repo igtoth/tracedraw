@@ -490,6 +490,7 @@ pub fn adapters() -> &'static [String] {
 
 /// The one graphics API the Android app draws its window with: OpenGL
 /// ES (`android.rs`, `wgpu_options` says why it is never two).
+#[cfg(any(target_os = "android", test))]
 pub const ANDROID_BACKENDS: eframe::wgpu::Backends = eframe::wgpu::Backends::GL;
 
 /// The order adapters are preferred in: separate cards, built-in ones,
