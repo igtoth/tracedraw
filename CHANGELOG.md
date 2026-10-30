@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Opening .cdr: Chinese, Japanese and Korean font names in the style strings of version 17 and later files that a system in that language wrote (GBK, Big5, Shift JIS or Wansung bytes rather than UTF-8) read as written and find their installed fonts, instead of showing garbled letters and a missing-font notice (#898).
 - Help: pages brought up to date with releases 0.19 to 0.27 (opening and saving, fonts, text, printing, export, drawing tools, objects, colours, effects, pages, options, menus and shortcuts), and new pages for Package, Missing Fonts, Convert Colors, finding by properties, PDF printers' marks, booklets, Fit Objects to Path, the Before and After preview, graphics tablets and tablets with the Android app; Brazilian Portuguese follows, other languages where the pages changed most. Docs only.
 - Browser version: its notice now opens with the warning that a browser is slower, marked in red and underlined, then says it is the same program compiled to WebAssembly, and last points to the desktop app, in every language.
 

@@ -729,7 +729,7 @@ impl<'a> Checker<'a> {
         };
         let d = self.data(t);
         let mut warnings = Vec::new();
-        let parsed = text::read_txsm(d, self.v, &mut |w| warnings.push(w));
+        let parsed = text::read_txsm(d, self.v, 0, &mut |w| warnings.push(w));
         for w in warnings {
             self.note(place, format!("txsm: {w}"));
         }

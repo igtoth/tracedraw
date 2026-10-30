@@ -2940,7 +2940,7 @@ fn unmarked_utf8_letters_of_older_saves_read_back() {
     old.extend_from_slice(utf8);
     old.extend_from_slice(&d[at + units.len()..]);
     let mut warnings = Vec::new();
-    let txsm = crate::text::read_txsm(&old, v, &mut |w| warnings.push(w)).expect("read");
+    let txsm = crate::text::read_txsm(&old, v, 0, &mut |w| warnings.push(w)).expect("read");
     let text: String = txsm
         .paragraphs
         .iter()

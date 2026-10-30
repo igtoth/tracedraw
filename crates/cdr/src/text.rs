@@ -866,7 +866,12 @@ impl PathSettings {
 
 /// `txsm`: two layouts, versions 7 to version 15 and version 16+. Versions before 7 are
 /// not described and yield `None`.
-pub(crate) fn read_txsm(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Option<Txsm> {
+pub(crate) fn read_txsm(
+    d: &[u8],
+    v: u16,
+    charset: u8,
+    warn: &mut dyn FnMut(String),
+) -> Option<Txsm> {
     if v == 6 {
         return read_txsm_6(d);
     }
@@ -874,7 +879,7 @@ pub(crate) fn read_txsm(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Optio
         return read_txsm_5(d, v, warn);
     }
     if v >= 16 {
-        read_txsm_16(d, v, warn)
+        read_txsm_16(d, v, charset, warn)
     } else if v == 8 {
         // Version 8 has two layouts (800 and the bidirectional 801) that
         // the major version cannot tell apart: frames of 32 or 34 bytes.
@@ -1335,7 +1340,7 @@ fn split_byte_runs(text: &[u8], styles: &[(usize, RunStyle)]) -> Vec<TextRun> {
         .collect()
 }
 
-fn read_style_string(r: &mut Reader, d: &[u8], v: u16) -> Option<String> {
+fn read_style_string(r: &mut Reader, d: &[u8], v: u16, charset: u8) -> Option<String> {
     let len = r.u32()? as usize;
     let bytes = if v < 17 { len.saturating_mul(2) } else { len };
     let s = d.get(r.pos..r.pos.checked_add(bytes)?)?;
@@ -1343,23 +1348,27 @@ fn read_style_string(r: &mut Reader, d: &[u8], v: u16) -> Option<String> {
     Some(if v < 17 {
         decode_utf16le(s)
     } else {
-        decode_style_bytes(s)
+        decode_style_bytes(s, charset)
     })
 }
 
 /// A style string of version 17 on, held as bytes: UTF-8, as the object
 /// style strings and the strings TraceDraw writes are, so a font named
 /// in Chinese ("方正黑体_GBK") reads as named (#898); bytes that are not
-/// UTF-8 read as Windows-1252, stopping at the first NUL either way.
-pub(crate) fn decode_style_bytes(b: &[u8]) -> String {
+/// UTF-8 read in the code page of the file's fonts (`charset`, the
+/// character set most `font` records name: a file written on a Chinese
+/// system holds the name in GBK, 134), else as Windows-1252, stopping at
+/// the first NUL either way.
+pub(crate) fn decode_style_bytes(b: &[u8], charset: u8) -> String {
     let b = &b[..b.iter().position(|c| *c == 0).unwrap_or(b.len())];
     match std::str::from_utf8(b) {
         Ok(s) => s.to_string(),
+        Err(_) if charset != 2 && is_non_latin_charset(charset) => decode_charset(b, charset),
         Err(_) => decode_cp1252(b),
     }
 }
 
-fn read_txsm_16(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Option<Txsm> {
+fn read_txsm_16(d: &[u8], v: u16, charset: u8, warn: &mut dyn FnMut(String)) -> Option<Txsm> {
     let mut r = Reader::new(d, false);
     // Not zero: the frame layout of the records below (artistic text has
     // it too in version 21, with all bits set).
@@ -1409,10 +1418,10 @@ fn read_txsm_16(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Option<Txsm> 
         }
         let mut base = RunStyle::default();
         if layout < 1700 && !frame {
-            let s = read_style_string(&mut r, d, v)?;
+            let s = read_style_string(&mut r, d, v, charset)?;
             base = parse_style_string(&s);
         }
-        let default = parse_style_string(&read_style_string(&mut r, d, v)?).over(&base);
+        let default = parse_style_string(&read_style_string(&mut r, d, v, charset)?).over(&base);
         let nr = r.u32()? as usize;
         if nr > MAX_RUNS || nr > r.remaining() / 6 {
             return finish(out, warn, "style record count");
@@ -1431,7 +1440,7 @@ fn read_txsm_16(d: &[u8], v: u16, warn: &mut dyn FnMut(String)) -> Option<Txsm> 
                 r.skip(len.saturating_mul(2));
             }
             let style = if st2 != 0 || st3 & 0x04 != 0 {
-                parse_style_string(&read_style_string(&mut r, d, v)?)
+                parse_style_string(&read_style_string(&mut r, d, v, charset)?)
             } else {
                 RunStyle::default()
             };
@@ -2209,20 +2218,45 @@ mod tests {
     use super::*;
 
     /// Style strings of version 17 on are UTF-8: a font named in Chinese
-    /// keeps its name; bytes that are not UTF-8 still read as
-    /// Windows-1252 (#898).
+    /// keeps its name; bytes that are not UTF-8 read in the code page of
+    /// the file's fonts (GBK on a Chinese system), else as Windows-1252
+    /// (#898).
     #[test]
-    fn byte_style_strings_read_as_utf8() {
+    fn byte_style_strings_read_as_utf8_or_the_fonts_code_page() {
         let json = r#"{"character":{"latin":{"font":"方正黑体_GBK","size":"128819"}}}"#;
-        let s = parse_style_string(&decode_style_bytes(json.as_bytes()));
+        let s = parse_style_string(&decode_style_bytes(json.as_bytes(), 0));
         assert_eq!(s.family.as_deref(), Some("方正黑体_GBK"));
-        assert_eq!(decode_style_bytes(b"Caf\xe9\0x"), "Caf\u{e9}");
-        assert_eq!(decode_style_bytes(b"ab\0cd"), "ab");
+        assert_eq!(decode_style_bytes(b"Caf\xe9\0x", 0), "Caf\u{e9}");
+        assert_eq!(decode_style_bytes(b"ab\0cd", 0), "ab");
         // The record as read from a text chunk: length, then the bytes.
         let mut d = (json.len() as u32).to_le_bytes().to_vec();
         d.extend_from_slice(json.as_bytes());
         let mut r = Reader::new(&d, false);
-        let read = read_style_string(&mut r, &d, 19).expect("string");
+        let read = read_style_string(&mut r, &d, 19, 0).expect("string");
+        assert!(read.contains("方正黑体_GBK"), "{read}");
+        // The same string in GBK, as a file written on a Chinese system
+        // holds it: read in the fonts' code page (134), garbled in
+        // Windows-1252 without it.
+        let gbk = encoding_rs::GBK.encode(json).0.into_owned();
+        assert!(std::str::from_utf8(&gbk).is_err());
+        let s = parse_style_string(&decode_style_bytes(&gbk, 134));
+        assert_eq!(s.family.as_deref(), Some("方正黑体_GBK"));
+        assert_ne!(
+            parse_style_string(&decode_style_bytes(&gbk, 0)).family.as_deref(),
+            Some("方正黑体_GBK")
+        );
+        // Big5 and Shift JIS the same way; a Latin or symbol set falls
+        // back to Windows-1252.
+        let big5 = encoding_rs::BIG5.encode("{\"character\":{\"latin\":{\"font\":\"華康黑體\"}}}").0.into_owned();
+        assert_eq!(
+            parse_style_string(&decode_style_bytes(&big5, 136)).family.as_deref(),
+            Some("華康黑體")
+        );
+        assert_eq!(decode_style_bytes(b"Caf\xe9", 2), "Caf\u{e9}");
+        let mut d = (gbk.len() as u32).to_le_bytes().to_vec();
+        d.extend_from_slice(&gbk);
+        let mut r = Reader::new(&d, false);
+        let read = read_style_string(&mut r, &d, 19, 134).expect("string");
         assert!(read.contains("方正黑体_GBK"), "{read}");
     }
 
@@ -2252,7 +2286,7 @@ mod tests {
         for c in [b'H', b'i'] {
             v5.extend_from_slice(&[0x10, 0x01, 0, 0, c, 0, 9, 0]);
         }
-        let t = read_txsm(&v5, 5, &mut |_| {}).expect("text");
+        let t = read_txsm(&v5, 5, 0, &mut |_| {}).expect("text");
         assert_eq!(texts(&t), ["Hi"]);
         let size = t.paragraphs[0].runs[0].style.size_pt.unwrap();
         assert!((size - 36.0).abs() < 1e-9);
@@ -2267,16 +2301,16 @@ mod tests {
             v6.extend_from_slice(&(c as u32).to_le_bytes());
             v6.extend_from_slice(&0x1000_0000u32.to_le_bytes());
         }
-        let t = read_txsm(&v6, 6, &mut |_| {}).expect("text");
+        let t = read_txsm(&v6, 6, 0, &mut |_| {}).expect("text");
         assert_eq!(texts(&t), ["A", "B"]);
         let size = t.paragraphs[0].runs[0].style.size_pt.unwrap();
         assert!((size - 100_000.0 * 72.0 / 254000.0).abs() < 1e-9);
         // Cut anywhere: nothing panics.
         for cut in 0..v6.len() {
-            let _ = read_txsm(&v6[..cut], 6, &mut |_| {});
+            let _ = read_txsm(&v6[..cut], 6, 0, &mut |_| {});
         }
         for cut in 0..v5.len() {
-            let _ = read_txsm(&v5[..cut], 5, &mut |_| {});
+            let _ = read_txsm(&v5[..cut], 5, 0, &mut |_| {});
         }
     }
 
@@ -2620,7 +2654,7 @@ mod tests {
         let index = [0, 0, 0, 0, 2, 2, 2, 1, 1, 1];
         for block in [false, true] {
             let mut warnings = Vec::new();
-            let t = read_txsm(&txsm15("MASS 941kg", &index, block), 15, &mut |w| {
+            let t = read_txsm(&txsm15("MASS 941kg", &index, block), 15, 0, &mut |w| {
                 warnings.push(w)
             })
             .expect("txsm");
@@ -2642,7 +2676,7 @@ mod tests {
             );
         }
         // With every record naming style 0 the lengths still cut the runs.
-        let t = read_txsm(&txsm15("MASS 941kg", &[0; 10], false), 15, &mut |_| {}).expect("txsm");
+        let t = read_txsm(&txsm15("MASS 941kg", &[0; 10], false), 15, 0, &mut |_| {}).expect("txsm");
         assert_eq!(t.paragraphs[0].runs[0].text.len(), 10);
     }
 
@@ -2702,7 +2736,7 @@ mod tests {
         for bytes in [32, 34] {
             let mut notes = Vec::new();
             let t =
-                read_txsm(&txsm8_frames(b"Lorem", bytes), 8, &mut |w| notes.push(w)).expect("txsm");
+                read_txsm(&txsm8_frames(b"Lorem", bytes), 8, 0, &mut |w| notes.push(w)).expect("txsm");
             assert!(notes.is_empty(), "{bytes}: {notes:?}");
             assert_eq!(t.paragraphs[0].runs[0].text, "Lorem", "{bytes}");
         }
@@ -2710,7 +2744,7 @@ mod tests {
 
     #[test]
     fn version_8_letters_take_the_style_their_records_number() {
-        let t = read_txsm(&txsm8(b"x\xc4y", &[0, 1, 0]), 8, &mut |w| panic!("{w}")).expect("txsm");
+        let t = read_txsm(&txsm8(b"x\xc4y", &[0, 1, 0]), 8, 0, &mut |w| panic!("{w}")).expect("txsm");
         let runs: Vec<(&str, Option<u16>)> = t.paragraphs[0]
             .runs
             .iter()
@@ -2718,7 +2752,7 @@ mod tests {
             .collect();
         assert_eq!(runs, [("x", None), ("\u{c4}", Some(7)), ("y", None)]);
         // Records that all name style 0 leave the lengths to cut the runs.
-        let t = read_txsm(&txsm8(b"x\xc4y", &[0, 0, 0]), 8, &mut |_| {}).expect("txsm");
+        let t = read_txsm(&txsm8(b"x\xc4y", &[0, 0, 0]), 8, 0, &mut |_| {}).expect("txsm");
         assert_eq!(t.paragraphs[0].runs[0].text, "x\u{c4}y");
     }
 }

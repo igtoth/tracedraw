@@ -1932,7 +1932,7 @@ impl<'a> Ctx<'a> {
         };
         let td = self.data(tc);
         let mut warnings = Vec::new();
-        let parsed = text::read_txsm(td, self.v, &mut |w| warnings.push(w));
+        let parsed = text::read_txsm(td, self.v, self.name_charset, &mut |w| warnings.push(w));
         for w in warnings {
             self.report.warn(w);
         }
@@ -2310,7 +2310,8 @@ impl<'a> Ctx<'a> {
         Some(if self.v < 17 {
             text::decode_utf16le(s)
         } else {
-            String::from_utf8_lossy(s).into_owned()
+            // UTF-8, else the code page of the file's fonts (#898).
+            text::decode_style_bytes(s, self.name_charset)
         })
     }
 
@@ -9062,7 +9063,7 @@ pub(crate) mod tests {
     fn version_14_ring_text_cut_short_never_panics() {
         let t = txsm14_ring(&[('a', 0, 10, 10), ('b', 90_000_000, 20, 20)]);
         for cut in 0..t.len() {
-            let _ = text::read_txsm(&t[..cut], 14, &mut |_| {});
+            let _ = text::read_txsm(&t[..cut], 14, 0, &mut |_| {});
         }
     }
 
@@ -9720,7 +9721,7 @@ pub(crate) mod tests {
         let wide = txsm7(12, false, &styles, "Next");
         let mut warn = |_: String| {};
         let read = |d: &[u8], warn: &mut dyn FnMut(String)| {
-            text::read_txsm(d, 12, warn).map(|t| {
+            text::read_txsm(d, 12, 0, warn).map(|t| {
                 t.paragraphs[0]
                     .runs
                     .iter()
@@ -9974,7 +9975,7 @@ pub(crate) mod tests {
         d.extend_from_slice(&bytes);
         d.push(0);
         let mut warnings = Vec::new();
-        let t = text::read_txsm(&d, 12, &mut |w| warnings.push(w)).expect("txsm");
+        let t = text::read_txsm(&d, 12, 0, &mut |w| warnings.push(w)).expect("txsm");
         let got: String = t.paragraphs[0]
             .runs
             .iter()
@@ -9990,7 +9991,7 @@ pub(crate) mod tests {
         d.extend_from_slice(&u32s(&[5]));
         d.extend_from_slice(&[b'a', 0xe7, b'a', 0xed, b'!']);
         d.push(0);
-        let t = text::read_txsm(&d, 12, &mut |_| {}).expect("txsm");
+        let t = text::read_txsm(&d, 12, 0, &mut |_| {}).expect("txsm");
         let got: String = t.paragraphs[0]
             .runs
             .iter()
