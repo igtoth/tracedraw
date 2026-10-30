@@ -22,6 +22,8 @@ i wartości. Przycisk menu palety na lewym końcu otwiera menu palety.
 Paletę można przenieść na inną krawędź okna lub uczynić pływającą: przeciągnij
 ją za kropkowany uchwyt.
 
+Z każdej strony może leżeć przy krawędzi okna albo obok rysunku, między rysunkiem a panelami lub przybornikiem po tej stronie. Podczas przeciągania niebieski pas pokazuje, gdzie trafi; kliknij uchwyt prawym przyciskiem, aby wybrać miejsce z listy.
+
 ## Paleta dokumentu {#document-palette}
 
 Każdy kolor zastosowany do obiektu trafia do palety dokumentu, która jest

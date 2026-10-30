@@ -7068,3 +7068,7 @@ hintobj.several.1 = "Przeciągnij je, aby przesunąć razem; przeciągnij uchwyt
 hintobj.several.2 = "Grupuj (Ctrl+G) trzyma je razem; Połącz (Ctrl+L) zmienia je w jedną krzywą; Wyrównaj i rozmieść ustawia je w szeregu." # mt
 hintobj.several.bar = "Położenie i rozmiar zaznaczenia, Grupuj, Połącz, Spawaj, Przytnij, Część wspólna i inne polecenia kształtowania." # mt
 status.flow_text_from = "Kliknij ramkę akapitu (na dowolnej stronie), której tekst ma wpływać do tej, albo kliknij lub przeciągnij tam, gdzie ma być nowa ramka; Esc anuluje" # mt
+bars.palette_top_edge = "Zadokuj u góry, na całą szerokość okna" # mt
+bars.palette_bottom_edge = "Zadokuj na dole, na całą szerokość okna" # mt
+bars.palette_left_beside = "Zadokuj po lewej, obok rysunku" # mt
+bars.palette_right_beside = "Zadokuj po prawej, obok rysunku" # mt

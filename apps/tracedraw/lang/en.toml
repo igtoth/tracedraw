@@ -7068,3 +7068,7 @@ hintobj.several.1 = "Drag them to move them together; drag a handle to scale the
 hintobj.several.2 = "Group (Ctrl+G) keeps them together; Combine (Ctrl+L) makes them one curve; Align and Distribute lines them up."
 hintobj.several.bar = "Position and size of the selection, Group, Combine, Weld, Trim, Intersect and the other shaping commands."
 status.flow_text_from = "Click the paragraph frame (on any page) whose text flows into this one, or click or drag where a new frame goes; Esc cancels"
+bars.palette_top_edge = "Dock at Top, Across the Window"
+bars.palette_bottom_edge = "Dock at Bottom, Across the Window"
+bars.palette_left_beside = "Dock at Left, Beside the Drawing"
+bars.palette_right_beside = "Dock at Right, Beside the Drawing"

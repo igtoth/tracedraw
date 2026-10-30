@@ -22,6 +22,8 @@ waarden ervan te zien. De paletmenuknop helemaal links opent het paletmenu.
 Het palet kan naar een andere rand van het venster worden verplaatst of zwevend
 worden gemaakt: sleep het aan de gestippelde greep.
 
+Aan elke kant kan het aan de rand van het venster liggen of naast de tekening, tussen de tekening en de panelen of de gereedschapskist aan die kant. Tijdens het slepen toont een blauwe band waar het komt; klik met rechts op de greep om een plaats uit een lijst te kiezen.
+
 ## Het documentpalet {#document-palette}
 
 Elke kleur die u op een object toepast, komt in het documentpalet, dat met de

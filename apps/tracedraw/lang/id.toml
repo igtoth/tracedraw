@@ -7068,3 +7068,7 @@ hintobj.several.1 = "Seret untuk memindahkannya bersama; seret pegangan untuk me
 hintobj.several.2 = "Kelompokkan (Ctrl+G) menyatukannya; Kombinasikan (Ctrl+L) menjadikannya satu kurva; Ratakan dan Distribusikan menjajarkannya." # mt
 hintobj.several.bar = "Posisi dan ukuran pilihan, Kelompokkan, Kombinasikan, Las, Pangkas, Iris dan perintah pembentukan lainnya." # mt
 status.flow_text_from = "Klik bingkai paragraf (di halaman mana pun) yang teksnya mengalir ke bingkai ini, atau klik atau seret di tempat bingkai baru; Esc membatalkan" # mt
+bars.palette_top_edge = "Tambatkan di atas, selebar jendela" # mt
+bars.palette_bottom_edge = "Tambatkan di bawah, selebar jendela" # mt
+bars.palette_left_beside = "Tambatkan di kiri, di samping gambar" # mt
+bars.palette_right_beside = "Tambatkan di kanan, di samping gambar" # mt

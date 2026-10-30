@@ -256,6 +256,13 @@ pub struct BarLayout {
     /// the right edge by default (see [`BarLayout::migrate`]).
     #[serde(default)]
     pub version: u32,
+    /// Whether the docked palette lies beside the drawing (between it and
+    /// the docker column or toolbox on that side) rather than at the
+    /// window's edge. None: its first place for the side, beside the
+    /// drawing at the top and the bottom, at the edge at the left and the
+    /// right (as before the choice existed).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub palette_beside: Option<bool>,
 }
 
 /// The current layout version.
@@ -281,6 +288,7 @@ impl Default for BarLayout {
             rows: Default::default(),
             locked: false,
             version: LAYOUT_VERSION,
+            palette_beside: None,
         }
     }
 }
@@ -297,6 +305,20 @@ impl BarLayout {
             self.palette = Dock::Bottom;
         }
         self.version = self.version.max(LAYOUT_VERSION);
+    }
+
+    /// Whether the docked palette lies beside the drawing (see
+    /// [`BarLayout::palette_beside`]).
+    pub fn palette_beside(&self) -> bool {
+        self.palette_beside
+            .unwrap_or(self.dock(Bar::Palette).horizontal())
+    }
+
+    /// The palette's place: its dock and, docked, whether beside the
+    /// drawing (false when floating).
+    pub fn palette_place(&self) -> (Dock, bool) {
+        let dock = self.dock(Bar::Palette);
+        (dock, dock != Dock::Floating && self.palette_beside())
     }
 
     pub fn dock(&self, bar: Bar) -> Dock {
@@ -699,9 +721,20 @@ fn menu_body(app: &mut App, ui: &mut Ui, bar: Bar) {
     ui.set_min_width(200.0);
     let current = app.settings.bars.dock(bar);
     let free = !app.settings.bars.locked;
-    for d in bar.docks() {
-        if radio_if(ui, d.key(), "", current == *d, free) {
-            move_bar(app, bar, *d, None);
+    if bar == Bar::Palette {
+        // Every place: each side at the window's edge or beside the
+        // drawing, and floating.
+        let now = app.settings.bars.palette_place();
+        for (place, key) in PALETTE_PLACES {
+            if radio_if(ui, key, "", now == place, free) {
+                move_palette(app, place.0, place.1, None);
+            }
+        }
+    } else {
+        for d in bar.docks() {
+            if radio_if(ui, d.key(), "", current == *d, free) {
+                move_bar(app, bar, *d, None);
+            }
         }
     }
     sep(ui);
@@ -778,6 +811,34 @@ pub fn reset(app: &mut App) {
     crate::ui::bar_items::reset(app);
 }
 
+/// Where the window drawing keeps the room the bars and dockers leave
+/// (the drawing and its tabs) for the palette's drop bands.
+pub const DRAWING_ROOM: &str = "bars_drawing_room";
+
+/// The palette's places in its menu, with their names: each side beside
+/// the drawing and at the window's edge (the plain names keep the places
+/// they had before the choice existed), then floating.
+pub const PALETTE_PLACES: [((Dock, bool), &str); 9] = [
+    ((Dock::Top, true), "bars.top"),
+    ((Dock::Top, false), "bars.palette_top_edge"),
+    ((Dock::Bottom, true), "bars.bottom"),
+    ((Dock::Bottom, false), "bars.palette_bottom_edge"),
+    ((Dock::Left, false), "bars.left"),
+    ((Dock::Left, true), "bars.palette_left_beside"),
+    ((Dock::Right, false), "bars.right"),
+    ((Dock::Right, true), "bars.palette_right_beside"),
+    ((Dock::Floating, false), "bars.floating"),
+];
+
+/// Put the palette at `dock`, beside the drawing or at the window's edge
+/// (floating at `at` when given). The place is kept in the preferences.
+pub fn move_palette(app: &mut App, dock: Dock, beside: bool, at: Option<Pos2>) {
+    move_bar(app, Bar::Palette, dock, at);
+    if dock != Dock::Floating && app.settings.bars.dock(Bar::Palette) == dock {
+        app.settings.bars.palette_beside = Some(beside);
+    }
+}
+
 /// Put `bar` at `dock` (floating at `at` when given). A toolbar coming to
 /// the top or the bottom from elsewhere takes a row of its own at the
 /// window's edge.
@@ -843,12 +904,108 @@ pub fn drag_overlay(app: &mut App, ctx: &egui::Context, menu_h: f32) {
         }
         return;
     }
+    if drag.bar == Bar::Palette {
+        // The palette also docks beside the drawing: between it and the
+        // docker column, the toolbox or the toolbars on that side.
+        let drawing = ctx
+            .data(|d| d.get_temp::<Rect>(egui::Id::new(DRAWING_ROOM)))
+            .unwrap_or(Rect::NOTHING);
+        let (dock, beside) = palette_target(screen, menu_h, drawing, p);
+        let zone = if beside {
+            beside_zone(app, dock, drawing)
+        } else {
+            drop_zone(app, drag, dock, screen, menu_h, p)
+        };
+        painter.rect(zone, 2.0, fill, edge, egui::StrokeKind::Inside);
+        if !down {
+            app.bar_drag = None;
+            move_palette(app, dock, beside, Some(p - drag.grab));
+        }
+        return;
+    }
     let dock = target_dock(drag.bar, screen, menu_h, p);
     let zone = drop_zone(app, drag, dock, screen, menu_h, p);
     painter.rect(zone, 2.0, fill, edge, egui::StrokeKind::Inside);
     if !down {
         app.bar_drag = None;
         move_bar(app, drag.bar, dock, Some(p - drag.grab));
+    }
+}
+
+/// Where the palette goes when dropped with the pointer at `p`: the
+/// nearest of the window's edges and the edges of `drawing` (the room the
+/// bars and dockers leave) within [`EDGE_ZONE`], with whether that is
+/// beside the drawing; else floating. Where an edge of the drawing lies
+/// on the window's edge, the window's edge wins.
+pub fn palette_target(screen: Rect, menu_h: f32, drawing: Rect, p: Pos2) -> (Dock, bool) {
+    let top = screen.top() + menu_h;
+    let along_y = p.y >= drawing.top() - EDGE_ZONE && p.y <= drawing.bottom() + EDGE_ZONE;
+    let along_x = p.x >= drawing.left() - EDGE_ZONE && p.x <= drawing.right() + EDGE_ZONE;
+    let mut spots = vec![
+        (Dock::Left, false, p.x - screen.left()),
+        (Dock::Right, false, screen.right() - p.x),
+        (Dock::Top, false, p.y - top),
+        (Dock::Bottom, false, screen.bottom() - p.y),
+    ];
+    if drawing.is_positive() {
+        let beside = [
+            (
+                Dock::Left,
+                drawing.left(),
+                screen.left(),
+                along_y,
+                (p.x - drawing.left()).abs(),
+            ),
+            (
+                Dock::Right,
+                drawing.right(),
+                screen.right(),
+                along_y,
+                (drawing.right() - p.x).abs(),
+            ),
+            (
+                Dock::Top,
+                drawing.top(),
+                top,
+                along_x,
+                (p.y - drawing.top()).abs(),
+            ),
+            (
+                Dock::Bottom,
+                drawing.bottom(),
+                screen.bottom(),
+                along_x,
+                (drawing.bottom() - p.y).abs(),
+            ),
+        ];
+        for (dock, at, window_edge, along, dist) in beside {
+            if along && (at - window_edge).abs() > 1.0 {
+                spots.push((dock, true, dist));
+            }
+        }
+    }
+    spots.sort_by(|a, b| a.2.total_cmp(&b.2).then(a.1.cmp(&b.1)));
+    match spots.first() {
+        Some(&(dock, beside, dist)) if dist <= EDGE_ZONE => (dock, beside),
+        _ => (Dock::Floating, false),
+    }
+}
+
+/// The band the palette would take beside the drawing at `dock`.
+fn beside_zone(app: &App, dock: Dock, drawing: Rect) -> Rect {
+    let thick = crate::ui::palette::thickness(app, crate::ui::palette::Row::Main);
+    match dock {
+        Dock::Left => {
+            Rect::from_min_max(drawing.min, pos2(drawing.left() + thick, drawing.bottom()))
+        }
+        Dock::Right => {
+            Rect::from_min_max(pos2(drawing.right() - thick, drawing.top()), drawing.max)
+        }
+        Dock::Top => Rect::from_min_max(drawing.min, pos2(drawing.right(), drawing.top() + thick)),
+        Dock::Bottom => {
+            Rect::from_min_max(pos2(drawing.left(), drawing.bottom() - thick), drawing.max)
+        }
+        Dock::Floating => drawing,
     }
 }
 
@@ -1189,6 +1346,123 @@ mod tests {
 
     fn screen() -> Rect {
         Rect::from_min_size(Pos2::ZERO, vec2(1600.0, 1000.0))
+    }
+
+    #[test]
+    fn the_palette_docks_beside_the_drawing_or_at_the_window_edge() {
+        let s = screen();
+        let drawing = Rect::from_min_max(pos2(60.0, 120.0), pos2(1200.0, 900.0));
+        let at = |x: f32, y: f32| palette_target(s, 24.0, drawing, pos2(x, y));
+        assert_eq!(at(1190.0, 500.0), (Dock::Right, true));
+        assert_eq!(at(1230.0, 500.0), (Dock::Right, true));
+        assert_eq!(at(1590.0, 500.0), (Dock::Right, false));
+        assert_eq!(at(75.0, 500.0), (Dock::Left, true));
+        assert_eq!(at(10.0, 500.0), (Dock::Left, false));
+        assert_eq!(at(600.0, 890.0), (Dock::Bottom, true));
+        assert_eq!(at(600.0, 995.0), (Dock::Bottom, false));
+        assert_eq!(at(600.0, 125.0), (Dock::Top, true));
+        assert_eq!(at(600.0, 30.0), (Dock::Top, false));
+        assert_eq!(at(600.0, 500.0), (Dock::Floating, false));
+        // An edge of the drawing on the window's edge is the window's.
+        let wide = Rect::from_min_max(pos2(0.0, 120.0), pos2(1600.0, 900.0));
+        assert_eq!(
+            palette_target(s, 24.0, wide, pos2(1590.0, 500.0)),
+            (Dock::Right, false)
+        );
+        // The place is kept in the preferences; older preferences have
+        // none and keep the places they had.
+        let mut l = BarLayout::default();
+        assert_eq!(l.palette_place(), (Dock::Bottom, true));
+        l.set_dock(Bar::Palette, Dock::Right);
+        assert_eq!(l.palette_place(), (Dock::Right, false));
+        l.palette_beside = Some(true);
+        let back: BarLayout =
+            serde_json::from_str(&serde_json::to_string(&l).expect("json")).expect("layout");
+        assert_eq!(back.palette_place(), (Dock::Right, true));
+        let old: BarLayout = serde_json::from_str(r#"{"palette":"bottom"}"#).expect("old");
+        assert_eq!(old.palette_place(), (Dock::Bottom, true));
+    }
+
+    /// The palette dragged near the drawing's right edge shows a band there
+    /// and, dropped, lies between the drawing and the docker column; at the
+    /// window's right edge it lies outside the dockers, as before.
+    #[test]
+    fn the_palette_dropped_beside_the_drawing_lies_between_it_and_the_dockers() {
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        app.show_welcome = false;
+        app.show_dockers = true;
+        let run = |app: &mut App, events: Vec<egui::Event>| -> Vec<egui::Shape> {
+            let input = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1600.0, 1000.0))),
+                events,
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| crate::ui::root(app, ui));
+            out.textures_delta.clear();
+            out.shapes.into_iter().map(|c| c.shape).collect()
+        };
+        for _ in 0..3 {
+            run(&mut app, Vec::new());
+        }
+        let canvas = app.canvas_rect;
+        assert!(canvas.is_positive());
+        let palette_x = || {
+            ctx.data(|d| d.get_temp::<Rect>(egui::Id::new(("palette_expand_rect", 0u8))))
+                .expect("the palette")
+                .center()
+                .x
+        };
+        app.bar_drag = Some(BarDrag {
+            bar: Bar::Palette,
+            grab: vec2(5.0, 5.0),
+            last: None,
+        });
+        let at = pos2(canvas.right() - 10.0, canvas.center().y);
+        let press = egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let shapes = run(&mut app, vec![egui::Event::PointerMoved(at), press]);
+        let blue = Color32::from_rgb(0x1E, 0x78, 0xD7);
+        let band = shapes.iter().find_map(|s| match s {
+            egui::Shape::Rect(r) if r.stroke.color == blue => Some(r.rect),
+            _ => None,
+        });
+        let band = band.expect("the drop band");
+        assert!(
+            band.right() < 1500.0 && (band.right() - at.x).abs() < 40.0,
+            "the band lies beside the drawing: {band:?} {at:?}"
+        );
+        run(
+            &mut app,
+            vec![egui::Event::PointerButton {
+                pos: at,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: egui::Modifiers::NONE,
+            }],
+        );
+        assert!(app.bar_drag.is_none());
+        assert_eq!(app.settings.bars.palette_place(), (Dock::Right, true));
+        for _ in 0..3 {
+            run(&mut app, Vec::new());
+        }
+        let beside = palette_x();
+        assert!(
+            beside > app.canvas_rect.right() && beside < 1600.0 - 300.0,
+            "between the drawing and the dockers: {beside} {:?}",
+            app.canvas_rect
+        );
+        // From the menu, at the window's right edge: outside the dockers.
+        move_palette(&mut app, Dock::Right, false, None);
+        for _ in 0..3 {
+            run(&mut app, Vec::new());
+        }
+        assert!(palette_x() > 1550.0, "at the edge: {}", palette_x());
+        assert_eq!(app.settings.bars.palette_place(), (Dock::Right, false));
     }
 
     #[test]

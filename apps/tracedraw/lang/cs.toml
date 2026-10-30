@@ -7068,3 +7068,7 @@ hintobj.several.1 = "Tažením je posunete společně; tažením úchytu jim spo
 hintobj.several.2 = "Seskupit (Ctrl+G) je drží pohromadě; Sloučit (Ctrl+L) z nich udělá jednu křivku; Zarovnání a rozmístění je seřadí." # mt
 hintobj.several.bar = "Poloha a velikost výběru, Seskupit, Sloučit, Svařit, Oříznout, Průnik a další příkazy tvarování." # mt
 status.flow_text_from = "Klepněte na odstavcový rámeček (na libovolné stránce), jehož text do tohoto přeteče, nebo klepněte či táhněte tam, kam patří nový rámeček; Esc ruší" # mt
+bars.palette_top_edge = "Ukotvit nahoře, přes celé okno" # mt
+bars.palette_bottom_edge = "Ukotvit dole, přes celé okno" # mt
+bars.palette_left_beside = "Ukotvit vlevo, vedle kresby" # mt
+bars.palette_right_beside = "Ukotvit vpravo, vedle kresby" # mt

@@ -7068,3 +7068,7 @@ hintobj.several.1 = "Ziehen Sie sie, um sie gemeinsam zu verschieben; ziehen Sie
 hintobj.several.2 = "Gruppieren (Strg+G) hält sie zusammen; Kombinieren (Strg+L) macht eine Kurve daraus; Ausrichten und verteilen reiht sie auf." # mt
 hintobj.several.bar = "Position und Größe der Auswahl, Gruppieren, Kombinieren, Verschmelzen, Zuschneiden, Schnittmenge und die anderen Formbefehle." # mt
 status.flow_text_from = "Klicken Sie auf den Mengentextrahmen (auf einer beliebigen Seite), dessen Text in diesen fließt, oder klicken oder ziehen Sie dort, wo ein neuer Rahmen hinkommt; Esc bricht ab" # mt
+bars.palette_top_edge = "Oben andocken, über das ganze Fenster" # mt
+bars.palette_bottom_edge = "Unten andocken, über das ganze Fenster" # mt
+bars.palette_left_beside = "Links andocken, neben der Zeichnung" # mt
+bars.palette_right_beside = "Rechts andocken, neben der Zeichnung" # mt

@@ -7068,3 +7068,7 @@ hintobj.several.1 = "Arrástrelos para moverlos juntos; arrastre un tirador para
 hintobj.several.2 = "Agrupar (Ctrl+G) los mantiene juntos; Combinar (Ctrl+L) los vuelve una curva; Alinear y distribuir los ordena." # mt
 hintobj.several.bar = "Posición y tamaño de la selección, Agrupar, Combinar, Soldar, Recortar, Intersecar y los demás comandos de modelado." # mt
 status.flow_text_from = "Haga clic en el marco de párrafo (en cualquier página) cuyo texto fluye a este, o haga clic o arrastre donde va un marco nuevo; Esc cancela" # mt
+bars.palette_top_edge = "Acoplar arriba, a lo ancho de la ventana" # mt
+bars.palette_bottom_edge = "Acoplar abajo, a lo ancho de la ventana" # mt
+bars.palette_left_beside = "Acoplar a la izquierda, junto al dibujo" # mt
+bars.palette_right_beside = "Acoplar a la derecha, junto al dibujo" # mt

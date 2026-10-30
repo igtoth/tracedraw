@@ -7068,3 +7068,7 @@ hintobj.several.1 = "ドラッグするとまとめて移動し、ハンドル�
 hintobj.several.2 = "グループ化 (Ctrl+G) でまとめ、結合 (Ctrl+L) で1本の曲線にし、整列と配置で並べます。" # mt
 hintobj.several.bar = "選択範囲の位置とサイズ、グループ化、結合、溶接、トリミング、交差などのシェイプ操作のコマンド。" # mt
 status.flow_text_from = "このフレームに流し込む段落フレーム (どのページでも可) をクリックするか、新しいフレームを置く場所をクリックまたはドラッグします。Esc で取り消します" # mt
+bars.palette_top_edge = "上にドッキング (ウィンドウ全幅)" # mt
+bars.palette_bottom_edge = "下にドッキング (ウィンドウ全幅)" # mt
+bars.palette_left_beside = "左にドッキング (図面の横)" # mt
+bars.palette_right_beside = "右にドッキング (図面の横)" # mt

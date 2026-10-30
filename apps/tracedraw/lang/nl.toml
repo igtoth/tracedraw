@@ -7068,3 +7068,7 @@ hintobj.several.1 = "Sleep ze om ze samen te verplaatsen; sleep een greep om ze 
 hintobj.several.2 = "Groeperen (Ctrl+G) houdt ze bij elkaar; Combineren (Ctrl+L) maakt er één curve van; Uitlijnen en verdelen zet ze op een rij." # mt
 hintobj.several.bar = "Positie en grootte van de selectie, Groeperen, Combineren, Samenvoegen, Bijsnijden, Snijpunt en de andere vormopdrachten." # mt
 status.flow_text_from = "Klik op het alineakader (op elke pagina) waarvan de tekst in dit kader doorloopt, of klik of sleep waar een nieuw kader komt; Esc annuleert" # mt
+bars.palette_top_edge = "Bovenaan andocken, over het hele venster" # mt
+bars.palette_bottom_edge = "Onderaan andocken, over het hele venster" # mt
+bars.palette_left_beside = "Links andocken, naast de tekening" # mt
+bars.palette_right_beside = "Rechts andocken, naast de tekening" # mt

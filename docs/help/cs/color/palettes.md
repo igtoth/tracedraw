@@ -22,6 +22,8 @@ hodnoty. Tlačítko nabídky palety na levém konci otevře nabídku palety.
 Paletu lze přesunout k jinému okraji okna nebo ji nechat plovoucí: táhněte ji
 za tečkovaný úchyt.
 
+Na každé straně může ležet u okraje okna nebo vedle kresby, mezi kresbou a panely nebo panelem nástrojů na té straně. Při tažení ukazuje modrý pruh, kam se umístí; klepnutím pravým tlačítkem na úchyt vyberete místo ze seznamu.
+
 ## Paleta dokumentu {#document-palette}
 
 Každá barva, kterou použijete na objekt, se přidá do palety dokumentu, která

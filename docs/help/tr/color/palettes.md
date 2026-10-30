@@ -23,6 +23,8 @@ tutun. Sol uçtaki palet menüsü düğmesi palet menüsünü açar.
 Palet pencerenin başka bir kenarına taşınabilir veya kayan hâle
 getirilebilir: onu noktalı tutamacından sürükleyin.
 
+Her kenarda pencerenin kenarına ya da çizimin yanına, çizim ile o taraftaki paneller veya araç kutusu arasına yerleşebilir. Sürüklerken mavi bir şerit nereye gideceğini gösterir; bir listeden yer seçmek için tutamacına sağ tıklayın.
+
 ## Belge paleti {#document-palette}
 
 Bir nesneye uyguladığınız her renk, çizimle birlikte kaydedilen belge
