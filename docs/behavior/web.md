@@ -170,6 +170,18 @@ page: use the browser's reload button
 Ctrl+N, Ctrl+T and Ctrl+W stay with the browser because no page can take
 them; use the File menu for New and Close.
 
+AltGr types its characters (`€ @ [ ] { } \`, the Polish, Czech and
+other letters of many keyboard layouts) in text and in every field.
+Browsers on Windows report AltGr as Ctrl and Alt held together, with the
+`AltGraph` modifier state set: such a key is not kept from the browser,
+so its character reaches the text, and the editor sees neither Ctrl nor
+Alt held for it, so it is no Ctrl shortcut (AltGr+A does not select all,
+AltGr+E does not export), as in the desktop app, where the windowing
+layer does the same (#1408;
+`web_page::tests::characters_typed_with_altgr_are_left_to_the_browser`).
+On Linux and macOS AltGr (Option) never sets Ctrl, and Android keyboards
+report it as the right Alt.
+
 ## Building
 
 ```sh

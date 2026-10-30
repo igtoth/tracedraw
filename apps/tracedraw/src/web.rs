@@ -273,24 +273,23 @@ pub fn register_fonts() {
 /// letter (export, import, group, duplicate, repeat...) and the function
 /// keys would otherwise open browser features (Ctrl+R and F5 reload the
 /// page). Copy, cut, paste (egui needs those events) and the developer
-/// tools stay with the browser (`web_page::browser_keeps_key`).
+/// tools stay with the browser (`web_page::browser_keeps_key`), and so do
+/// the characters typed with AltGr, which Windows browsers report with
+/// Ctrl held (`web_page::typed_with_altgr`, #1408).
 fn guard_shortcuts() {
     use wasm_bindgen::closure::Closure;
     let Some(window) = web_sys::window() else {
         return;
     };
     let guard = Closure::<dyn FnMut(web_sys::KeyboardEvent)>::new(|e: web_sys::KeyboardEvent| {
-        let key = e.key();
-        let function_key =
-            key.len() >= 2 && key.starts_with('F') && key[1..].chars().all(|c| c.is_ascii_digit());
-        if function_key {
-            e.prevent_default();
-            return;
-        }
-        if !(e.ctrl_key() || e.meta_key()) {
-            return;
-        }
-        if !crate::web_page::browser_keeps_key(&key, e.shift_key()) {
+        if crate::web_page::guard_keeps_from_browser(
+            &e.key(),
+            e.ctrl_key(),
+            e.meta_key(),
+            e.shift_key(),
+            e.alt_key(),
+            e.get_modifier_state("AltGraph"),
+        ) {
             e.prevent_default();
         }
     });

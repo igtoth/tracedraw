@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Browser version on Windows: AltGr types its characters (€, @, [ ], { }, \ and the letters of Polish, Czech, German and other keyboards) in text and in fields. Windows browsers report AltGr as Ctrl and Alt held together, so the page kept these keys from the browser as Ctrl shortcuts and nothing was typed, and AltGr+A selected all or AltGr+E exported instead (#1408).
+
 - Browser version: closing or reloading the tab, going back or leaving the page with unsaved drawings asks first with the browser's own question, and auto-backup and session recovery now work in the browser too. Backups are kept in the browser's storage for the site (a folder of their own per tab), written every few minutes, when the question shows and when the page is hidden, and the next visit offers what a closed, reloaded or crashed tab left. Before, the page closed at once and the work was lost (#1395).
 - Auto-backup: when the system quits TraceDraw without asking about unsaved drawings (the Quit of the macOS menu, logging out) or the Android app goes to the background, the drawings are backed up at once and the next start offers them; before, a quit removed the backups and the Android app wrote none until its next auto-backup minute. An idle window now keeps its session marker fresh, so a second window never offers its drawings (#1395).
 
