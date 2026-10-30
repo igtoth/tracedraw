@@ -144,8 +144,10 @@ CI (`build.yml`, job `android`) builds both on every push with the NDK
 the GitHub runner has, for `arm64-v8a` and `x86_64`, installs platform
 36 when the runner lacks it,
 passes the four signing secrets to the script (absent: the debug key)
-and keeps the `android-apk` and `android-aab` artifacts; nothing is
-attached to the releases, uploading to Play is the owner's step
+and keeps the `android-apk` and `android-aab` artifacts; the APKs are
+attached to the nightly and to every version's release with the
+installers (debug-signed: a build from another run installs only after
+the one on the tablet is removed), uploading to Play is the owner's step
 (`docs/android-play.md`).
 
 Checks: `android_package::tests::the_manifest_and_the_build_agree` (the
