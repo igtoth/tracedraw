@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Colour buttons of the property bars (Contour, Extrude and Smart Fill): Other in the colour list opens the colour picker beside the button at the first click and closes the list; the picker stays open while its Model list, eyedropper and sliders are used. It sat inside the list, so the first click closed both and choosing a model closed everything (#1262).
+
 ## 0.26.0 (2026-10-30)
 
 - Trace Bitmap: the preview rests once the trace of the settings on show is in. In the browser, where a large picture's whole trace waits for OK, the preview waited for that trace and traced the picture again every frame: the spinner beside the pan button never stopped, the preview flickered and the window lagged. The quick look is now the request's last result there, the counts show it without the dots sign, and an idle dialog asks for no frames; a trace whose thread died is not started again until a setting changes.
