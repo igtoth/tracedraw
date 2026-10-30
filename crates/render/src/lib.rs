@@ -649,6 +649,38 @@ impl Renderer<'_> {
             }
         }
         if let ShapeKind::Group { children } = &shape.kind {
+            // A group's uniform transparency covers what it holds as one
+            // picture: the members are drawn on a layer of their own, so
+            // where they overlap they do not show through each other.
+            let opacity = shape.opacity.clamp(0.0, 1.0) as f32;
+            if opacity < 1.0 && !self.flags.wireframe {
+                if opacity <= 0.0 {
+                    return;
+                }
+                let (w, h) = (self.pixmap.width(), self.pixmap.height());
+                if let Some(mut layer) = Pixmap::new(w, h) {
+                    {
+                        let mut sub = self.sub(&mut layer);
+                        for c in children {
+                            let t = sub.child_transform(c, transform);
+                            sub.draw_shape(c, t);
+                        }
+                    }
+                    let paint = tiny_skia::PixmapPaint {
+                        opacity,
+                        ..Default::default()
+                    };
+                    self.pixmap.draw_pixmap(
+                        0,
+                        0,
+                        layer.as_ref(),
+                        &paint,
+                        Transform::identity(),
+                        None,
+                    );
+                }
+                return;
+            }
             for c in children {
                 let t = self.child_transform(c, transform);
                 self.draw_shape(c, t);
@@ -4896,6 +4928,88 @@ mod tests {
         let p = img.pixel(10, 10).unwrap();
         assert_eq!(p.red(), 255);
         assert!((120..=136).contains(&p.green()), "green was {}", p.green());
+    }
+
+    /// Two overlapping squares in a group on a 20 mm page: the left one
+    /// red, the right one blue, overlapping in the middle.
+    fn group_of_two_squares(opacity: f64) -> (Document, tracedraw_core::PageId) {
+        let mut doc = Document::new("t", tracedraw_core::geometry::Size::new(20.0, 20.0));
+        let layer = doc.pages[0].layers[0].id;
+        let square = |doc: &mut Document, x0: f64, x1: f64, color: Color| {
+            let id = doc.ids_mut().shape();
+            let mut s = Shape::new(
+                id,
+                ShapeKind::Rect {
+                    rect: Rect::new(x0, 0.0, x1, 20.0),
+                    radius: 0.0,
+                    corners: None,
+                },
+            );
+            s.fill = Fill::Solid(color);
+            s.stroke = None;
+            s
+        };
+        let red = square(&mut doc, 0.0, 14.0, Color::rgb8(255, 0, 0));
+        let blue = square(&mut doc, 6.0, 20.0, Color::rgb8(0, 0, 255));
+        let gid = doc.ids_mut().shape();
+        let mut group = Shape::new(
+            gid,
+            ShapeKind::Group {
+                children: vec![red, blue],
+            },
+        );
+        group.stroke = None;
+        group.opacity = opacity;
+        doc.layer_mut(layer).unwrap().shapes.push(group);
+        let page = doc.pages[0].id;
+        (doc, page)
+    }
+
+    #[test]
+    fn a_group_with_uniform_transparency_is_drawn_see_through() {
+        let (doc, page) = group_of_two_squares(0.5);
+        let img = render_page_image(&doc, page, 25.4).unwrap();
+        // Red alone: half red over white is pink.
+        let red = img.pixel(3, 10).unwrap();
+        assert_eq!(red.red(), 255);
+        assert!(
+            (120..=136).contains(&red.green()),
+            "green was {}",
+            red.green()
+        );
+        // Where the squares overlap the blue one hides the red one inside
+        // the group, so the overlap is no darker than blue alone: the
+        // members do not show through each other.
+        let overlap = img.pixel(10, 10).unwrap();
+        let blue = img.pixel(17, 10).unwrap();
+        assert_eq!(
+            (overlap.red(), overlap.green(), overlap.blue()),
+            (blue.red(), blue.green(), blue.blue())
+        );
+        assert!((120..=136).contains(&blue.red()), "red was {}", blue.red());
+    }
+
+    #[test]
+    fn a_fully_see_through_group_draws_nothing() {
+        let (doc, page) = group_of_two_squares(0.0);
+        let img = render_page_image(&doc, page, 25.4).unwrap();
+        for x in [3, 10, 17] {
+            let p = img.pixel(x, 10).unwrap();
+            assert_eq!((p.red(), p.green(), p.blue()), (255, 255, 255), "x {x}");
+        }
+    }
+
+    #[test]
+    fn an_opaque_group_is_drawn_as_before() {
+        let (doc, page) = group_of_two_squares(1.0);
+        let img = render_page_image(&doc, page, 25.4).unwrap();
+        let red = img.pixel(3, 10).unwrap();
+        assert_eq!((red.red(), red.green(), red.blue()), (255, 0, 0));
+        let overlap = img.pixel(10, 10).unwrap();
+        assert_eq!(
+            (overlap.red(), overlap.green(), overlap.blue()),
+            (0, 0, 255)
+        );
     }
 
     #[test]

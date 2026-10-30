@@ -172,7 +172,12 @@ fn write_unlinked(
     }
     let transform = parent * shape.transform;
     if let ShapeKind::Group { children } = &shape.kind {
-        let _ = writeln!(out, "{pad}<g id=\"{}\">", shape.id.raw());
+        let opacity = if shape.opacity < 1.0 {
+            format!(" opacity=\"{}\"", fmt(shape.opacity.max(0.0)))
+        } else {
+            String::new()
+        };
+        let _ = writeln!(out, "{pad}<g id=\"{}\"{opacity}>", shape.id.raw());
         for c in children {
             write_shape(c, symbols, transform, out, defs, next_grad, indent + 1);
         }
@@ -772,6 +777,37 @@ mod tests {
         assert!(svg.contains(&format!("mask=\"url(#mask{id})\"")));
         assert!(svg.contains("feColorMatrix"), "inverted");
         assert!(!svg.contains("clip-path"));
+    }
+
+    #[test]
+    fn a_groups_uniform_transparency_is_the_groups_opacity() {
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        let child = Shape::new(
+            doc.ids_mut().shape(),
+            ShapeKind::Rect {
+                rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        let mut group = Shape::new(
+            doc.ids_mut().shape(),
+            ShapeKind::Group {
+                children: vec![child],
+            },
+        );
+        let id = group.id.raw();
+        group.opacity = 0.4;
+        doc.layer_mut(layer).unwrap().shapes.push(group);
+        let svg = page_to_svg(&doc, 0);
+        assert!(
+            svg.contains(&format!("<g id=\"{id}\" opacity=\"0.4\">")),
+            "{svg}"
+        );
+        // The member itself stays opaque: the group's opacity is not
+        // applied twice.
+        assert!(!svg.contains("opacity=\"0.16\""), "{svg}");
     }
 
     #[test]

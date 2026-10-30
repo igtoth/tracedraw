@@ -847,7 +847,14 @@ impl PageWriter<'_> {
         }
         if let ShapeKind::Group { children } = &shape.kind {
             for c in children {
-                self.shape(c, transform);
+                // The group's uniform transparency goes on each member.
+                if shape.opacity < 1.0 && self.pdf.allow_alpha {
+                    let mut c = c.clone();
+                    c.absorb_opacity(shape.opacity);
+                    self.shape(&c, transform);
+                } else {
+                    self.shape(c, transform);
+                }
             }
             return;
         }

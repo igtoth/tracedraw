@@ -1227,6 +1227,44 @@ fn transparency_uniform_and_graded() {
     });
 }
 
+/// A group's uniform transparency is written on each object it holds, so
+/// the file shows the group as drawn.
+#[test]
+fn group_transparency_goes_on_its_objects() {
+    let doc = drawing(200.0, 100.0, |ids| {
+        let mut half = rect(ids, Rect::new(10.0, 10.0, 50.0, 50.0), 0.0);
+        half.opacity = 0.5;
+        let plain = rect(ids, Rect::new(60.0, 10.0, 100.0, 50.0), 0.0);
+        let mut g = group(ids, vec![half, plain]);
+        g.opacity = 0.4;
+        vec![g]
+    });
+    every_version(&doc, |r| {
+        r.count(1);
+        let ShapeKind::Group { children } = &r.shape(0).kind else {
+            panic!("version {}: {}", r.v, kind_name(&r.shape(0).kind));
+        };
+        assert_eq!(children.len(), 2, "version {}", r.v);
+        let (want_half, want_plain) = if keeps_opacity(r.v) {
+            (0.2, 0.4)
+        } else {
+            (1.0, 1.0)
+        };
+        assert!(
+            near(children[0].opacity, want_half, 0.002),
+            "version {}: opacity {}",
+            r.v,
+            children[0].opacity
+        );
+        assert!(
+            near(children[1].opacity, want_plain, 0.002),
+            "version {}: opacity {}",
+            r.v,
+            children[1].opacity
+        );
+    });
+}
+
 #[test]
 fn blends_contours_envelopes_and_extrusions() {
     let doc = drawing(300.0, 150.0, |ids| {

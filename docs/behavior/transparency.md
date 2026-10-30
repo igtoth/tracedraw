@@ -30,6 +30,15 @@ selected object has transparency), and None in the type list take the
 opacity back to 100 % and remove the mask, one "Clear Transparency" undo
 step (`App::clear_transparency`, #1338,
 `eyedropper::tests::clear_transparency_removes_masks_and_opacity`).
+Uniform transparency on a group covers the group as one picture: its
+members are drawn on a layer of their own and the layer is laid over the
+page with the group's opacity, so members that overlap do not show
+through each other (`tests::a_group_with_uniform_transparency_is_drawn_see_through`).
+SVG export gives the group's `<g>` an `opacity`. PDF export and saving
+`.cdr` write no opacity of a group, so it is multiplied into each member
+(where members overlap the result is a little darker than the screen).
+Ungroup does the same, so the objects look as the group did
+(#1386).
 
 Uniform transparency with Normal is the object's opacity. With any
 other merge mode it is kept as a mask of one grey (its lightness the
