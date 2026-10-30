@@ -20,7 +20,7 @@ Counts: works 189, partial 7 (`.cdr` content coverage; CMX import; print preview
 | Right-button drag of objects: blue outline preview, then Move Here, Copy Here, Copy Fill Here, Copy Outline Here, Copy All Properties, Place Inside, Cancel (see `behavior/pick-tool.md`) | works |
 | Freehand Pick (lasso, Alt for touching, Ctrl for a rectangle, the Pick tool's handles) | works |
 | Selection groups 0 to 9: Ctrl+number stores the selection, the number selects it again (twice: and zooms to it), Alt+number adds to it; saved with the drawing (see `behavior/pick-tool.md`) | works |
-| Free Transform (rotation, angle reflection, scale, skew modes, Apply to Duplicate) | works |
+| Free Transform (rotation, angle reflection, scale, skew modes, Apply to Duplicate; one drag is one undo step, a skew never mirrors) | works |
 | Zoom tool, zoom levels, zoom to page/fit/selected, marquee zoom, Shift+F4 | works |
 | Pan, mouse wheel, Ctrl and Shift wheel | works |
 | Rulers with numbers from the origin without sign, the unit name, an origin button and pointer markers; draggable origin, double-click for ruler settings, guidelines from rulers, Guidelines panel; all 13 units | works |

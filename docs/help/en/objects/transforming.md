@@ -78,7 +78,8 @@ Hold <kbd>Alt</kbd> to scale, <kbd>Ctrl</kbd> to skew or <kbd>Shift</kbd> to
 reflect for one drag, whatever the mode. With **Apply to duplicate** on, the
 press makes a copy and the drag transforms the copy, leaving the original as
 it was. The property bar also has the position, size, scale, angle and mirror
-fields.
+fields. One drag is one step: <kbd>Ctrl+Z</kbd> puts the selection back as it
+was before the drag (and takes the copy away).
 
 ## Undoing transformations {#clear}
 

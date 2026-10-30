@@ -80,7 +80,9 @@ propriedades:
 Mantenha <kbd>Alt</kbd> pressionado para escalonar, <kbd>Ctrl</kbd> para
 inclinar ou <kbd>Shift</kbd> para refletir em um arraste, qualquer que seja o
 modo. Com **Aplicar à duplicata** ativado, o clique faz uma cópia e o arraste
-transforma a cópia, deixando o original como estava. A barra de propriedades
+transforma a cópia, deixando o original como estava. Um arraste é um único
+passo: <kbd>Ctrl+Z</kbd> devolve a seleção ao que era antes do arraste (e
+remove a cópia). A barra de propriedades
 também tem os campos de posição, tamanho, escala, ângulo e espelho.
 
 ## Desfazer transformações {#clear}

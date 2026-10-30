@@ -1569,6 +1569,10 @@ pub struct App {
     pub free_transform_mode: FreeTransformMode,
     pub free_transform_duplicate: bool,
     pub free_transform_reflected: bool,
+    /// The undo group a Free Transform drag runs in (from
+    /// `Engine::begin_group`): the drag's steps, and the copy Apply to
+    /// Duplicate makes, are one undo step (#1342).
+    pub free_transform_group: Option<Option<u64>>,
     pub roughen_amount: f64,
     /// The shaping brushes' settings (see `ui::brush_bars`), 1 to 100 where
     /// a percentage: Smooth's rate, Smear's and Smudge's pressure, Twirl's
@@ -2568,6 +2572,7 @@ impl App {
             free_transform_mode: FreeTransformMode::Rotation,
             free_transform_duplicate: false,
             free_transform_reflected: false,
+            free_transform_group: None,
             roughen_amount: 2.0,
             brush: Default::default(),
             brush_stepped: false,
@@ -4347,6 +4352,7 @@ impl App {
     pub fn set_tool(&mut self, tool: Tool) {
         if self.tool != tool {
             self.zoom_one_shot = false;
+            self.end_free_transform_group();
             self.finish_curve();
             self.finish_text();
             self.table_edit = None;

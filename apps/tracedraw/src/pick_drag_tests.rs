@@ -333,6 +333,109 @@ fn space_while_moving_drops_a_copy() {
     assert_eq!(app.tool, Tool::Pick);
 }
 
+/// A Free Transform drag is one undo step: Undo puts the object back as
+/// it was before the drag, not one pointer step back; with Apply to
+/// Duplicate it takes the copy away too (#1342).
+#[test]
+fn a_free_transform_drag_is_one_undo_step() {
+    let (ctx, mut app, id) = setup();
+    let before = app
+        .doc()
+        .find_shape(id)
+        .map(|s| s.transform)
+        .expect("shape");
+    let count = shape_count(&app);
+    app.set_tool(Tool::FreeTransform);
+    let from = app.view.to_screen(Point::new(35.0, 25.0));
+    for mods in [Modifiers::NONE, Modifiers::CTRL, Modifiers::ALT] {
+        drag(
+            &ctx,
+            &mut app,
+            from,
+            from + egui::vec2(120.0, 60.0),
+            mods,
+            Vec::new(),
+        );
+        let after = app
+            .doc()
+            .find_shape(id)
+            .map(|s| s.transform)
+            .expect("shape");
+        assert_ne!(after, before, "{mods:?}: transformed");
+        assert_eq!(app.engine.undo_label(), Some("Free Transform"));
+        app.undo();
+        let undone = app
+            .doc()
+            .find_shape(id)
+            .map(|s| s.transform)
+            .expect("shape");
+        let d: f64 = undone
+            .as_coeffs()
+            .iter()
+            .zip(before.as_coeffs())
+            .map(|(a, b)| (a - b).abs())
+            .sum();
+        assert!(d < 1e-9, "{mods:?}: {undone:?} is not {before:?}");
+    }
+    // Apply to Duplicate: one Undo takes the turned copy away.
+    app.free_transform_duplicate = true;
+    drag(
+        &ctx,
+        &mut app,
+        from,
+        from + egui::vec2(120.0, 60.0),
+        Modifiers::NONE,
+        Vec::new(),
+    );
+    assert_eq!(shape_count(&app), count + 1);
+    app.undo();
+    assert_eq!(shape_count(&app), count);
+    assert_eq!(app.doc().find_shape(id).map(|s| s.transform), Some(before));
+}
+
+/// Free Skew (Ctrl with Free Transform) never mirrors, however far one
+/// pointer step goes on both axes: a text skewed by a quick diagonal
+/// stroke stays readable (#1342).
+#[test]
+fn free_skew_never_mirrors_text() {
+    let (ctx, mut app, _) = setup();
+    app.start_text(Point::new(20.0, 100.0), None);
+    app.text_insert("Skew");
+    app.finish_text();
+    let t = app.selection[0];
+    app.set_tool(Tool::FreeTransform);
+    for _ in 0..3 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    let from = app
+        .view
+        .to_screen(app.doc().find_shape(t).expect("text").bounds().center());
+    let mods = Modifiers::CTRL;
+    frame(&ctx, &mut app, vec![Event::PointerMoved(from)], mods);
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(from, true, PointerButton::Primary, mods)],
+        mods,
+    );
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::PointerMoved(from + egui::vec2(10.0, 0.0))],
+        mods,
+    );
+    let far = from + egui::vec2(500.0, -500.0);
+    frame(&ctx, &mut app, vec![Event::PointerMoved(far)], mods);
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(far, false, PointerButton::Primary, mods)],
+        mods,
+    );
+    let m = app.doc().find_shape(t).map(|s| s.transform).expect("text");
+    assert!(m.determinant() > 0.0, "mirrored: {m:?}");
+}
+
 #[test]
 fn shift_scales_from_the_centre_and_ctrl_mirrors() {
     let (ctx, mut app, id) = setup();
