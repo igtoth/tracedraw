@@ -315,10 +315,10 @@ pub(crate) fn object_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {
     sep(ui);
     sub(ui, "menu.object.order", |ui| {
         if ci(ui, close, "menu.object.to_front_of_page", "Ctrl+Home", true) {
-            app.order(0);
+            app.order_page(true);
         }
         if ci(ui, close, "menu.object.to_back_of_page", "Ctrl+End", true) {
-            app.order(3);
+            app.order_page(false);
         }
         if ci(ui, close, "menu.object.forward_one", "Ctrl+PgUp", true) {
             app.order(1);

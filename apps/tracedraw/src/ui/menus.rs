@@ -2700,10 +2700,10 @@ fn object_menu(app: &mut App, ui: &mut Ui) {
     }
     sub(ui, "menu.object.order", |ui| {
         if item(ui, "menu.object.to_front_of_page", "Ctrl+Home", has) {
-            app.order(0);
+            app.order_page(true);
         }
         if item(ui, "menu.object.to_back_of_page", "Ctrl+End", has) {
-            app.order(3);
+            app.order_page(false);
         }
         if item(ui, "menu.object.to_front_of_layer", "Shift+PgUp", has) {
             app.order(0);

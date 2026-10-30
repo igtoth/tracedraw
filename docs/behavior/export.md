@@ -12,7 +12,11 @@ Office presets start with their own (see `options.md`).
   checkerboard when the format keeps transparency and Transparent
   background is on, else on white.
 - On the right: Format, then the format's own settings, then Selected
-  only and All pages, then the estimated file size.
+  only and All pages, then the estimated file size. All pages starts on
+  for PDF, PostScript and PRN, which hold every page in one file, and
+  off for the other formats; a format exported before comes back with
+  the choice it was exported with (#1161,
+  `prefs::tests::pdf_exports_every_page_by_default`).
 
 | Format | Settings |
 |---|---|

@@ -52,6 +52,8 @@ Guidelines are lines across the drawing window that objects can snap to.
   [[menu.layout > menu.layout.document_options]], General). The
   Transformations panel moves, rotates and scales selected guidelines as it
   does objects.
+- Guidelines are saved with the drawing in `.tdraw` files. `.cdr` files do
+  not keep them: saving one says so on the status bar.
 
 ## The Guidelines panel {#guidelines-docker}
 

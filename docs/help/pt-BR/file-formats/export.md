@@ -49,7 +49,9 @@ delas (px, mm, cm ou pol); o outro lado segue as proporções da página.
   botão com a escala (como "200 %") aparece quando ela não é 100 % e a volta.
 
 Arquivos PNG, JPEG e BMP guardam a resolução, então abrem no tamanho escolhido.
-Arquivos PostScript e PRN guardam todas as páginas exportadas.
+Arquivos PostScript e PRN guardam todas as páginas exportadas. Para PDF,
+PostScript e PRN, a opção de exportar todas as páginas começa marcada;
+desmarque-a para exportar só a página atual.
 
 ## Predefinições {#presets}
 

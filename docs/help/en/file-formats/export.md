@@ -14,7 +14,8 @@ preview on the left and the settings on the right.
    back the settings you used for it last.
 3. Set the format's options (below).
 4. Tick **Selected only** to export only the selection, or **All pages** to
-   export every page.
+   export every page. For PDF and PostScript, All pages starts ticked;
+   untick it to export the current page alone.
 5. Click [[dialog.ok]] and choose where to save. In the browser, the file is
    downloaded.
 

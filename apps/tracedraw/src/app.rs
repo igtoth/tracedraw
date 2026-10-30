@@ -5220,6 +5220,46 @@ impl App {
 
     /// Order: 0 = to front, 1 = forward one, 2 = back one, 3 = to back.
     pub fn order(&mut self, op: u8) {
+        let cmds = self.order_commands(op);
+        self.run_order(cmds);
+    }
+
+    /// To Front of Page (`front`) or To Back of Page: the selected objects
+    /// to the front or back of their layers, and a master layer holding
+    /// one of them in front of the page's own layers or behind them, so a
+    /// master object can come over the page's objects (#1132).
+    pub fn order_page(&mut self, front: bool) {
+        let doc = self.doc();
+        let mut cmds = Vec::new();
+        for id in &self.selection {
+            let Ok((layer, _)) = doc.locate(*id) else {
+                continue;
+            };
+            let master = doc.master.iter().find(|l| l.id == layer);
+            let moves = master.is_some_and(|l| l.in_front != front);
+            let set = Command::SetLayerInFront {
+                layer,
+                in_front: front,
+            };
+            if moves && !cmds.contains(&set) {
+                cmds.push(set);
+            }
+        }
+        cmds.extend(self.order_commands(if front { 0 } else { 3 }));
+        self.run_order(cmds);
+    }
+
+    fn run_order(&mut self, cmds: Vec<Command>) {
+        if !cmds.is_empty() {
+            if let Err(e) = self.engine.run_batch("Order", &cmds) {
+                self.status = e.to_string();
+            }
+        }
+    }
+
+    /// The moves of [`Self::order`]: 0 to the front of the layer, 1 one
+    /// forward, 2 one back, else to the back.
+    fn order_commands(&self, op: u8) -> Vec<Command> {
         let doc = self.doc();
         let mut cmds = Vec::new();
         for id in &self.selection {
@@ -5240,11 +5280,7 @@ impl App {
                 }
             }
         }
-        if !cmds.is_empty() {
-            if let Err(e) = self.engine.run_batch("Order", &cmds) {
-                self.status = e.to_string();
-            }
-        }
+        cmds
     }
 
     pub fn apply_fill(&mut self, fill: Fill) {
@@ -6315,7 +6351,17 @@ impl App {
         };
         self.backup_before_save(&path);
         let result = bytes.and_then(|b| crate::files::write(&path, b).map_err(|e| e.to_string()));
+        let ok = result.is_ok();
         self.saved_to(path, result);
+        // Guidelines are not written to `.cdr` files (#1161): say so, so
+        // they are not lost without a word.
+        if ok && self.engine.document().pages.iter().any(|p| !p.guides.is_empty()) {
+            self.status = format!(
+                "{} {}",
+                self.status,
+                crate::i18n::tr("status.cdr_guides_not_saved")
+            );
+        }
     }
 
     /// After writing the drawing to `path`: its state, the status line and
@@ -6761,8 +6807,9 @@ impl App {
                     })
                     .flatten()
             });
-        if let Some(p) = saved {
-            p.recall(st);
+        match saved {
+            Some(p) => p.recall(st),
+            None => st.all_pages = crate::ui::dialogs::ExportState::pages_by_default(format),
         }
     }
 
@@ -8981,6 +9028,86 @@ mod tests {
             .map(|d| d.flatten().collect())
             .unwrap_or_default();
         assert!(left.is_empty(), "{left:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// To Front of Page on an object of a master layer brings that layer
+    /// in front of the page's own objects, one undo step; To Back of Page
+    /// sends it behind again (#1132).
+    #[test]
+    fn to_front_of_page_brings_a_master_object_over_the_page() {
+        let mut app = App::headless();
+        let page_obj = rect_shape(&mut app, Rect::new(0.0, 0.0, 100.0, 100.0), true);
+        app.run(Command::AddMasterLayer {
+            name: "Master Layer 1".into(),
+            scope: tracedraw_core::MasterScope::All,
+        });
+        let master = app.doc().master[0].id;
+        app.picked_layer = Some(master);
+        let master_obj = rect_shape(&mut app, Rect::new(20.0, 20.0, 60.0, 60.0), true);
+        assert_eq!(app.doc().locate(master_obj).map(|l| l.0).ok(), Some(master));
+        let top = |app: &App| {
+            app.doc()
+                .layers_for_page(app.page)
+                .unwrap()
+                .last()
+                .and_then(|l| l.shapes.last())
+                .map(|s| s.id)
+        };
+        assert_eq!(top(&app), Some(page_obj), "behind the page at first");
+        app.select(vec![master_obj]);
+        app.order_page(true);
+        assert!(app.doc().master[0].in_front);
+        assert_eq!(top(&app), Some(master_obj));
+        let _ = app.undo();
+        assert!(!app.doc().master[0].in_front, "one undo step");
+        app.order_page(true);
+        app.order_page(false);
+        assert!(!app.doc().master[0].in_front);
+        assert_eq!(top(&app), Some(page_obj));
+        // Objects of the page's own layers leave the master layers alone.
+        app.order_page(true);
+        app.select(vec![page_obj]);
+        app.order_page(false);
+        assert!(app.doc().master[0].in_front);
+    }
+
+    #[test]
+    fn guidelines_come_back_after_saving_and_reopening() {
+        use tracedraw_core::document::{Guide, GuideLine};
+        let dir = std::env::temp_dir().join(format!("tracedraw-guides-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut app = App::headless();
+        app.add_guide(Guide::from(GuideLine::Horizontal { y: 40.0 }));
+        app.add_guide(Guide::from(GuideLine::Vertical { x: 25.0 }));
+        let path = dir.join("guides.tdraw");
+        app.save_to(path.clone());
+        let mut back = App::headless();
+        back.open_path(path);
+        let lines: Vec<GuideLine> = back.page_guides().iter().map(|g| g.line).collect();
+        assert_eq!(
+            lines,
+            [
+                GuideLine::Horizontal { y: 40.0 },
+                GuideLine::Vertical { x: 25.0 }
+            ]
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn saving_guidelines_to_cdr_says_they_are_not_kept() {
+        use tracedraw_core::document::{Guide, GuideLine};
+        let dir = std::env::temp_dir().join(format!("tracedraw-cdr-guides-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut app = App::headless();
+        app.save_to(dir.join("plain.cdr"));
+        assert!(!app.status.contains(&crate::i18n::tr("status.cdr_guides_not_saved")));
+        app.add_guide(Guide::from(GuideLine::Horizontal { y: 40.0 }));
+        app.save_to(dir.join("guides.cdr"));
+        assert!(app.status.contains(&crate::i18n::tr("status.cdr_guides_not_saved")));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

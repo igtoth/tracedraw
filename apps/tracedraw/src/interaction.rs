@@ -3366,10 +3366,14 @@ impl App {
         }
         // Order: Ctrl+Home/End to the front/back of the page, Shift+PgUp/PgDn
         // within the layer, Ctrl+PgUp/PgDn one step.
-        if pressed(Key::Home, cmd) || pressed(Key::PageUp, Modifiers::SHIFT) {
+        if pressed(Key::Home, cmd) {
+            self.order_page(true);
+        } else if pressed(Key::PageUp, Modifiers::SHIFT) {
             self.order(0);
         }
-        if pressed(Key::End, cmd) || pressed(Key::PageDown, Modifiers::SHIFT) {
+        if pressed(Key::End, cmd) {
+            self.order_page(false);
+        } else if pressed(Key::PageDown, Modifiers::SHIFT) {
             self.order(3);
         }
         if pressed(Key::PageUp, cmd) {

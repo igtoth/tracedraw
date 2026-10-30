@@ -114,7 +114,11 @@ stand for a distance in the world (`drawing_scale.rs`):
   colour or the document's default guideline colour (blue). Selected
   guidelines are red.
 - Each guideline has a colour, a style (solid, dashed, dotted, dash dot)
-  and a lock, saved with the drawing.
+  and a lock, saved with the drawing in `.tdraw` files (every page's
+  guidelines). The `.cdr` writer leaves the guides layers empty (the
+  guideline record of versions 14 and later is not known), so saving a
+  drawing with guidelines to `.cdr` adds "Guidelines are not saved in
+  .cdr files" to the status line (#1161).
 - Pick tool: a click selects a guideline (Shift adds or removes); a press
   and drag moves it, snapping to the grid, the page and objects; dropping
   it outside the drawing window deletes it. The move is one undo step.

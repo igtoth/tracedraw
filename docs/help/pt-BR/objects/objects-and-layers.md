@@ -58,6 +58,13 @@ para escolher [[options.scope_all]], [[options.scope_odd]] ou
 [[options.scope_even]]. Você pode selecionar e editar objetos mestres a partir
 de qualquer página em que eles apareçam.
 
+Para pôr uma camada mestra sobre os objetos da própria página, marque
+[[docker.master_in_front]] no menu dela, ou selecione um dos objetos dela e
+escolha [[menu.object > menu.object.order > menu.object.to_front_of_page]]
+(<kbd>Ctrl</kbd>+<kbd>Home</kbd>); [[menu.object.to_back_of_page]]
+(<kbd>Ctrl</kbd>+<kbd>End</kbd>) põe a camada de novo por baixo dos objetos da
+página.
+
 ## Renomear objetos e camadas {#rename}
 
 Clique duas vezes em uma camada ou objeto no painel, ou escolha

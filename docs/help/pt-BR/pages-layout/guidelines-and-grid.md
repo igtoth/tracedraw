@@ -55,6 +55,8 @@ objetos se encaixam.
   [[menu.layout > menu.layout.document_options]], Geral). O painel
   Transformações move, gira e redimensiona linhas-guia selecionadas como faz
   com objetos.
+- As linhas-guia são salvas com o desenho em arquivos `.tdraw`. Arquivos
+  `.cdr` não as guardam: ao salvar um, a barra de status avisa.
 
 ## O painel Linhas-guia {#guidelines-docker}
 

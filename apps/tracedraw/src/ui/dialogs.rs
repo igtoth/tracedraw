@@ -166,6 +166,16 @@ impl ExportState {
         (self.dpi * self.scale_or_one()).clamp(MIN_EXPORT_DPI, 2400.0)
     }
 
+    /// The formats one file holds every page in (PDF, PostScript, PRN):
+    /// they export the whole document unless their last export, or the
+    /// person, chose the current page alone (#1161).
+    pub fn pages_by_default(format: usize) -> bool {
+        matches!(
+            EXPORT_FORMATS.get(format).map(|f| f.1),
+            Some("pdf" | "ps" | "prn")
+        )
+    }
+
     pub fn web() -> Self {
         ExportState {
             format: 2,

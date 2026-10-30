@@ -3224,6 +3224,10 @@ pub struct Layer {
     /// For master layers: which pages show this layer.
     #[serde(default)]
     pub scope: MasterScope,
+    /// For master layers: drawn in front of the page's own layers
+    /// instead of behind them (#1132).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub in_front: bool,
 }
 
 /// Which pages a master layer appears on.
@@ -3643,6 +3647,7 @@ impl Layer {
             locked: false,
             shapes: Vec::new(),
             scope: MasterScope::All,
+            in_front: false,
         }
     }
 }
@@ -4419,17 +4424,20 @@ impl Document {
         out.into_iter().collect()
     }
 
-    /// Layers drawn for a page, bottom to top: applicable master layers,
-    /// then the page's own layers, as they are stored (what clicks and
-    /// selections take objects from).
+    /// Layers drawn for a page, bottom to top: applicable master layers
+    /// behind the page, the page's own layers as they are stored, then
+    /// applicable master layers in front of the page (#1132); what clicks
+    /// and selections take objects from.
     pub fn layers_for_page(&self, page: PageId) -> Result<Vec<&Layer>> {
         let idx = self.page_index(page)?;
-        let mut out: Vec<&Layer> = self
-            .master
-            .iter()
-            .filter(|l| l.scope.applies(idx))
-            .collect();
+        let masters = |front: bool| {
+            self.master
+                .iter()
+                .filter(move |l| l.scope.applies(idx) && l.in_front == front)
+        };
+        let mut out: Vec<&Layer> = masters(false).collect();
         out.extend(self.pages[idx].layers.iter());
+        out.extend(masters(true));
         Ok(out)
     }
 

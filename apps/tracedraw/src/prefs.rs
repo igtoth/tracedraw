@@ -453,12 +453,20 @@ impl FormatPrefs {
     /// fall back to the usual ones.
     pub fn state(&self) -> ExportState {
         let d = ExportState::default();
+        let format = if self.export_format < EXPORT_FORMATS.len() {
+            self.export_format
+        } else {
+            d.format
+        };
+        // A remembered export of this format keeps its page choice.
+        let all_pages = self
+            .export_by_format
+            .iter()
+            .find(|p| self.remember_last && p.format == format)
+            .map_or(ExportState::pages_by_default(format), |p| p.all_pages);
         ExportState {
-            format: if self.export_format < EXPORT_FORMATS.len() {
-                self.export_format
-            } else {
-                d.format
-            },
+            format,
+            all_pages,
             dpi: if self.export_dpi.is_finite() {
                 self.export_dpi
                     .clamp(crate::ui::dialogs::MIN_EXPORT_DPI, 2400.0)
@@ -837,6 +845,35 @@ mod tests {
             ..ExportState::default()
         });
         assert_eq!((g.state().format, g.state().pdf_standard), (1, 3));
+    }
+
+    /// PDF and PostScript export every page unless that format was last
+    /// exported with the current page alone; other formats start with the
+    /// current page (#1161).
+    #[test]
+    fn pdf_exports_every_page_by_default() {
+        use crate::ui::dialogs::EXPORT_FORMATS;
+        let at = |ext: &str| EXPORT_FORMATS.iter().position(|f| f.1 == ext).expect(ext);
+        let (pdf, png) = (at("pdf"), at("png"));
+        assert!(ExportState::pages_by_default(pdf));
+        assert!(ExportState::pages_by_default(at("ps")));
+        assert!(!ExportState::pages_by_default(png));
+        let mut app = crate::app::App::headless();
+        app.settings.formats.remember_last = false;
+        app.settings.formats.export_format = pdf;
+        assert!(app.settings.formats.state().all_pages);
+        let mut st = app.settings.formats.state();
+        st.remember = true;
+        app.recall_export_format(&mut st, png);
+        assert!(!st.all_pages);
+        app.recall_export_format(&mut st, pdf);
+        assert!(st.all_pages);
+        // The current page alone, once chosen, is what PDF comes back with.
+        st.all_pages = false;
+        app.keep_export_choices(&st);
+        app.recall_export_format(&mut st, png);
+        app.recall_export_format(&mut st, pdf);
+        assert!(!st.all_pages);
     }
 
     /// Choosing a format in the Export dialog brings back how that format

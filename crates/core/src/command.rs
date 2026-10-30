@@ -50,6 +50,12 @@ pub enum Command {
         layer: LayerId,
         scope: MasterScope,
     },
+    /// A master layer in front of the pages' own layers, or behind them
+    /// (#1132).
+    SetLayerInFront {
+        layer: LayerId,
+        in_front: bool,
+    },
     SetLayerPrintable {
         layer: LayerId,
         printable: bool,
@@ -426,6 +432,7 @@ impl Command {
             Command::AddLayer { .. } => "New Layer",
             Command::AddMasterLayer { .. } => "New Master Layer",
             Command::SetLayerScope { .. } => "Master Layer Scope",
+            Command::SetLayerInFront { .. } => "Master Layer Order",
             Command::SetLayerPrintable { .. } => "Layer Printable",
             Command::SetPageBackground { .. } => "Page Background",
             Command::SetMetadata { .. } => "Document Properties",
@@ -550,6 +557,13 @@ impl Command {
             }
             Command::SetLayerScope { layer, scope } => {
                 doc.layer_mut(*layer)?.scope = *scope;
+            }
+            Command::SetLayerInFront { layer, in_front } => {
+                let (_, master) = layer_list_mut(doc, *layer)?;
+                if !master {
+                    return Err(Error::LayerNotFound(*layer));
+                }
+                doc.layer_mut(*layer)?.in_front = *in_front;
             }
             Command::SetLayerPrintable { layer, printable } => {
                 doc.layer_mut(*layer)?.printable = *printable;
@@ -2687,6 +2701,48 @@ mod tests {
         .apply(&mut doc)
         .unwrap_err();
         assert!(matches!(err, Error::ShapeNotFound(_)));
+    }
+
+    #[test]
+    fn a_master_layer_in_front_is_drawn_over_the_page_layers() {
+        let mut doc = Document::default();
+        for name in ["Back", "Front"] {
+            Command::AddMasterLayer {
+                name: name.into(),
+                scope: MasterScope::All,
+            }
+            .apply(&mut doc)
+            .unwrap();
+        }
+        let page = doc.pages[0].id;
+        let own = doc.pages[0].layers[0].id;
+        let front = doc.master[1].id;
+        let order = |doc: &Document| -> Vec<String> {
+            doc.layers_for_page(page)
+                .unwrap()
+                .iter()
+                .map(|l| l.name.clone())
+                .collect()
+        };
+        let page_layer = doc.pages[0].layers[0].name.clone();
+        assert_eq!(order(&doc), ["Back", "Front", page_layer.as_str()]);
+        Command::SetLayerInFront {
+            layer: front,
+            in_front: true,
+        }
+        .apply(&mut doc)
+        .unwrap();
+        assert_eq!(order(&doc), ["Back", page_layer.as_str(), "Front"]);
+        // Kept in the file; older files have it behind.
+        let back = Document::from_json(&doc.to_json().unwrap()).unwrap();
+        assert!(back.master[1].in_front && !back.master[0].in_front);
+        // Only master layers go in front.
+        assert!(Command::SetLayerInFront {
+            layer: own,
+            in_front: true,
+        }
+        .apply(&mut doc)
+        .is_err());
     }
 
     #[test]

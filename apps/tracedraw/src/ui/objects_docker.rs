@@ -43,6 +43,7 @@ struct Actions {
     printable: Option<(LayerId, bool)>,
     locked: Option<(LayerId, bool)>,
     scope: Option<(LayerId, MasterScope)>,
+    in_front: Option<(LayerId, bool)>,
     pick: Option<LayerId>,
     select: Option<ShapeId>,
     /// An object's eye or padlock was clicked (#832).
@@ -762,6 +763,14 @@ fn layer_rows(
                     }
                 }
             });
+            let mut front = layer.in_front;
+            if ui
+                .checkbox(&mut front, tr("docker.master_in_front"))
+                .clicked()
+            {
+                act.in_front = Some((layer.id, front));
+                ui.close();
+            }
         }
         if ui
             .add_enabled(
@@ -1242,6 +1251,9 @@ fn apply(app: &mut App, ui: &Ui, act: Actions) {
     }
     if let Some((layer, scope)) = act.scope {
         app.run(Command::SetLayerScope { layer, scope });
+    }
+    if let Some((layer, in_front)) = act.in_front {
+        app.run(Command::SetLayerInFront { layer, in_front });
     }
     if let Some(layer) = act.collapse {
         if !app.objects_collapsed.remove(&layer) {
