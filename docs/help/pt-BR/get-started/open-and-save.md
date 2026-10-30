@@ -1,5 +1,7 @@
 # Abrir e salvar desenhos
 
+> *Tradução automática: esta página pode estar atrasada em relação à versão em inglês.*
+
 O TraceDraw salva os desenhos no próprio formato, `.tdraw`, que guarda tudo, e
 também pode salvar arquivos `.cdr`. Ele abre muitos outros formatos; veja
 [Formatos de arquivo compatíveis](../file-formats/supported-formats.md).
@@ -19,18 +21,32 @@ direita, ou clique nele com o botão direito e escolha
 [[menu.file > menu.file.import]] (<kbd>Ctrl+I</kbd>) acrescenta o conteúdo de
 um arquivo ao desenho aberto; veja [Importar arquivos](../file-formats/import.md).
 
+Você também pode arrastar arquivos do gerenciador de arquivos para o
+TraceDraw. Um desenho (como um arquivo `.tdraw` ou `.cdr`) solto sobre a barra
+de título, os menus, as barras de ferramentas ou as guias de documentos abre em
+uma guia própria; solto sobre a janela de desenho, é importado no desenho
+aberto. A moldura e o rótulo mostrados durante o arraste dizem o que vai
+acontecer. Onde o sistema não informa onde está o ponteiro (Linux, macOS),
+desenhos abrem em uma guia e imagens são importadas.
+
+Como um desenho aparece primeiro (a página inteira, seus objetos, a largura da
+página, o tamanho real, ou a página, a posição e o zoom que tinha ao ser salvo)
+é definido em [[options.open_view]], na página [[options.display]] de
+[[menu.tools > menu.tools.options > menu.tools.options_app]].
+
 ### Avisos depois de abrir {#open-notes}
 
 Quando alguns objetos de um arquivo aberto não puderam ser lidos, ou o desenho
-usa fontes que não estão instaladas no seu computador, uma mensagem avisa
+usa fontes que não estão instaladas no seu computador, o TraceDraw avisa
 depois que o arquivo abre:
 
-- Para objetos que não puderam ser lidos, ela informa quantos são. Um botão
-  **Relatar** abre um novo problema para o arquivo no rastreador do projeto,
-  para que seja corrigido.
-- Para fontes ausentes, ela informa os nomes. O texto aparece em uma fonte
-  parecida e mantém o nome da fonte, então volta a ser como era em um
-  computador que tenha a fonte.
+- Para objetos que não puderam ser lidos, uma mensagem informa quantos são. Um
+  botão **Relatar** abre um novo problema para o arquivo no rastreador do
+  projeto, para que seja corrigido.
+- Para fontes ausentes, a caixa de diálogo [[missing_fonts.title]] lista cada
+  uma com a fonte instalada que a desenha e deixa você escolher outra para esta
+  sessão ou substituí-la no desenho. Veja
+  [Fontes ausentes](../text/missing-fonts.md).
 
 Marque **Não mostrar esta mensagem novamente** para não ver mais esses avisos.
 Você pode reativá-los na página [[options.warnings]] de
@@ -56,8 +72,7 @@ Para salvar um desenho com um nome novo:
    [[dialog.place_home]], [[dialog.place_desktop]],
    [[dialog.place_documents]], [[dialog.place_downloads]] e
    [[dialog.place_pictures]], e para as unidades. [[dialog.up_folder]] vai para
-   a pasta acima; você também pode digitar uma pasta na barra de caminho e
-   pressionar <kbd>Enter</kbd>. [[dialog.new_folder]] cria uma pasta e a abre.
+   a pasta acima; você também pode digitar uma pasta na barra de caminho.
    Clique duas vezes em uma pasta da lista para abri-la; clique em um arquivo
    para usar o nome dele.
 2. Digite o [[dialog.file_name]]. A extensão do tipo escolhido é acrescentada.
@@ -65,13 +80,24 @@ Para salvar um desenho com um nome novo:
    [[file.cdr_files]].
 4. Escolha a [[dialog.cdr_version]]. Para arquivos TraceDraw, é a versão do
    formato, da mais nova para a mais antiga. Para arquivos `.cdr`, é a versão do
-   arquivo, de 27 até 14; um programa mais antigo só abre uma versão tão antiga
+   arquivo, de 27 até 7; um programa mais antigo só abre uma versão tão antiga
    quanto ele ou mais. A versão escolhida fica com o desenho, então Salvar a
    grava de novo sem perguntar.
-5. Para arquivos `.cdr` a partir da versão 16,
-   [[dialog.embed_color_profile_none]] guarda o perfil CMYK do desenho no
-   arquivo, e [[dialog.embed_fonts]] guarda as fontes que o texto usa quando a
-   licença permite. As duas escolhas são lembradas para a próxima vez.
+5. Escolha o que vai no arquivo junto com o desenho:
+   - Para arquivos `.cdr` a partir da versão 16,
+     [[dialog.embed_color_profile_none]] guarda o perfil CMYK do desenho no
+     arquivo.
+   - [[dialog.embed_fonts]] (desligado de início) guarda as fontes que o texto
+     usa, quando a licença permite, em arquivos TraceDraw e em arquivos `.cdr`
+     a partir da versão 16. A caixa mostra quanto as fontes acrescentam ao
+     arquivo. Marque-a para desenhos que vão para um computador que talvez não
+     tenha as fontes.
+   - Para arquivos TraceDraw no computador, [[dialog.save_package]] salva o
+     desenho em uma pasta com o nome dele, com as imagens vinculadas, os
+     arquivos de fonte e um relatório, e [[package.pdf]] acrescenta um PDF.
+     Veja [Empacotar um desenho](../file-formats/package.md).
+
+   Essas escolhas são lembradas para a próxima vez.
 6. Se quiser, preencha [[dialog.title]], [[dialog.subject]] e uma
    [[dialog.rating]] (clique de novo na última estrela acesa para tirá-la). São
    as propriedades do desenho, também mostradas em
@@ -80,7 +106,15 @@ Para salvar um desenho com um nome novo:
    existir, o TraceDraw pergunta se deve [[dialog.replace]].
 
 A caixa de diálogo começa na pasta do desenho, senão na última pasta em que
-você salvou, senão na sua pasta de documentos.
+você salvou, senão na sua pasta de documentos. Um desenho aberto de um arquivo
+`.cdr` ou de outro formato começa na pasta desse arquivo, com o nome dele, então
+salvar no mesmo formato o substitui.
+
+Na lista de arquivos, [[dialog.new_folder]] cria uma pasta e já deixa você
+digitar o nome; <kbd>F2</kbd> ou um clique com o botão direito renomeia uma
+pasta ou arquivo; digitar letras pula para os itens que começam com elas, e
+<kbd>Enter</kbd> abre a pasta escolhida. Uma pasta digitada na barra de caminho
+é usada sem precisar pressionar <kbd>Enter</kbd>.
 
 > **Observação:** Na versão para navegador, todo salvamento é um download: a
 > caixa de diálogo guarda o nome, o tipo, a versão e as propriedades, e o
@@ -92,9 +126,11 @@ modelo (veja [Modelos](../templates-styles/templates.md)),
 [Exportar](../file-formats/export.md)), [[menu.file.publish_to_pdf]] grava um
 PDF (veja [Publicar em PDF](../file-formats/publish-pdf.md)),
 [[menu.file.send_to]] salva um PDF na área de trabalho ou na pasta de
-documentos ou o anexa a um e-mail, e [[menu.file.github]] guarda desenhos em um
-repositório do GitHub (veja [GitHub](github.md)). [[menu.file.revert]] volta à
-versão salva por último.
+documentos ou o anexa a um e-mail, [[menu.file.package]] reúne o desenho, suas
+imagens e suas fontes em uma pasta (veja
+[Empacotar um desenho](../file-formats/package.md)), e [[menu.file.github]]
+guarda desenhos em um repositório do GitHub (veja [GitHub](github.md)).
+[[menu.file.revert]] volta à versão salva por último.
 
 ## Fechar desenhos {#closing}
 
