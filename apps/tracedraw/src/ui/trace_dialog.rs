@@ -11,7 +11,7 @@ use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
 use crate::trace::{ColorMode, Preset, Remove, Settings};
 use crate::trace_preview::Request;
-use crate::ui::before_after::{self, icon_button, mark, Pictures, View, ViewState};
+use crate::ui::before_after::{self, mark, Pictures, View, ViewState};
 use crate::ui::bitmap_preview::{copy_of, selected_bitmap, settings_key, Source};
 use crate::ui::tips::RichTip;
 use egui::{Context, Pos2, Rect, Sense, Stroke, Ui, Vec2};
@@ -121,13 +121,15 @@ impl TraceState {
     }
 }
 
-/// The views the Trace dialog offers: the shared ones and the wireframe
-/// over the picture.
+/// The views the Trace dialog offers: Before and After (stacked, and side
+/// by side), Before, Large Preview (the trace alone, taking the whole
+/// preview) and Wireframe Overlay (the curves over the picture, which
+/// shows through at the Overlay slider's strength).
 pub const VIEWS: [View; 5] = [
     View::Stacked,
     View::SideBySide,
     View::Before,
-    View::After,
+    View::Large,
     View::Overlay,
 ];
 
@@ -396,60 +398,30 @@ fn settings_column(app: &mut App, ui: &mut Ui, st: &mut TraceState) {
             Vec2::new(80.0, 26.0),
         ),
     );
-    let body_h = (ui.available_height() - 40.0).max(100.0);
-    egui::Frame::new()
-        .fill(Tokens::field())
-        .stroke(Stroke::new(1.0, Tokens::border()))
-        .inner_margin(egui::Margin::same(10))
-        .show(ui, |ui| {
-            ui.set_min_size(Vec2::new(RIGHT_W - 22.0, body_h));
-            ui.set_max_height(body_h);
-            egui::ScrollArea::vertical()
-                .id_salt("trace_settings_scroll")
-                .max_height(body_h - 20.0)
-                .show(ui, |ui| {
-                    ui.set_width(RIGHT_W - 42.0);
-                    if st.tab == 0 {
-                        settings_tab(app, ui, st);
-                    } else {
-                        colors_tab(app, ui, st);
-                    }
-                });
-        });
-    ui.horizontal(|ui| {
-        let r = ui
-            .add_sized([80.0, 26.0], egui::Button::new(tr("dialog.reset")))
-            .rich_tip(crate::ui::tips::pair(
-                "dialog.reset",
-                "dialog.trace_reset_desc",
-            ));
-        mark(ui, "reset", r.rect);
-        if r.clicked() {
-            st.reset(&app.settings.tracing);
-        }
-        let undo = icon_button(
-            ui,
-            &crate::ui::tips::pair("menu.edit.undo", "dialog.trace_undo_desc"),
-            false,
-            st.can_undo(),
-            |p, r, c| crate::ui::icons::draw_action(p, r, crate::ui::icons::Action::Undo, c),
-        );
-        mark(ui, "undo", undo.rect);
-        if undo.clicked() {
-            st.undo();
-        }
-        let redo = icon_button(
-            ui,
-            &crate::ui::tips::pair("menu.edit.redo", "dialog.trace_redo_desc"),
-            false,
-            st.can_redo(),
-            |p, r, c| crate::ui::icons::draw_action(p, r, crate::ui::icons::Action::Redo, c),
-        );
-        mark(ui, "redo", redo.rect);
-        if redo.clicked() {
-            st.redo();
+    before_after::panel(ui, "trace_settings_scroll", before_after::STEPS_H, |ui| {
+        if st.tab == 0 {
+            settings_tab(app, ui, st);
+        } else {
+            colors_tab(app, ui, st);
         }
     });
+    // The history is the dialog's own (a step keeps the Colors tab's
+    // merges and edits, see `trace_dialog`): the shared row only draws.
+    let steps = before_after::steps_row(
+        ui,
+        st.can_undo(),
+        st.can_redo(),
+        &crate::ui::tips::pair("dialog.reset", "dialog.trace_reset_desc"),
+    );
+    if steps.reset {
+        st.reset(&app.settings.tracing);
+    }
+    if steps.undo {
+        st.undo();
+    }
+    if steps.redo {
+        st.redo();
+    }
 }
 
 fn preset_name(p: Preset) -> String {
@@ -505,7 +477,7 @@ fn settings_tab(app: &mut App, ui: &mut Ui, st: &mut TraceState) {
             );
             ui.end_row();
         });
-    ui.add_space(6.0);
+    before_after::rule(ui);
     slider(ui, "detail", "dialog.detail", &mut st.settings.detail);
     slider(
         ui,
@@ -513,14 +485,19 @@ fn settings_tab(app: &mut App, ui: &mut Ui, st: &mut TraceState) {
         "dialog.smoothing",
         &mut st.settings.smoothing,
     );
-    slider(
-        ui,
-        "corner",
-        "dialog.corner_smoothness",
-        &mut st.settings.corner_smoothness,
-    );
-    if !st.settings.centerline {
-        ui.separator();
+    // A centreline trace reads the detail and the smoothing only: the
+    // other controls are shown greyed, as they do not apply.
+    let outline = !st.settings.centerline;
+    ui.add_enabled_ui(outline, |ui| {
+        slider(
+            ui,
+            "corner",
+            "dialog.corner_smoothness",
+            &mut st.settings.corner_smoothness,
+        );
+    });
+    before_after::rule(ui);
+    ui.add_enabled_ui(outline, |ui| {
         ui.horizontal(|ui| {
             ui.label(tr("dialog.trace_remove"));
             crate::ui::tips::tip_over(ui, crate::ui::tips::keyed("dialog.trace_remove"), |ui| {
@@ -587,8 +564,10 @@ fn settings_tab(app: &mut App, ui: &mut Ui, st: &mut TraceState) {
                 });
             }
         }
-        ui.separator();
-        ui.label(tr("dialog.trace_objects"));
+    });
+    before_after::rule(ui);
+    ui.label(tr("dialog.trace_objects"));
+    ui.add_enabled_ui(outline, |ui| {
         let r = ui
             .checkbox(
                 &mut st.settings.merge_adjacent,
@@ -603,6 +582,10 @@ fn settings_tab(app: &mut App, ui: &mut Ui, st: &mut TraceState) {
             )
             .rich_tip(crate::ui::tips::keyed("dialog.trace_remove_overlap"));
         mark(ui, "remove_overlap", r.rect);
+    });
+    // With every region of a colour one curve, a group per colour would
+    // hold one curve: the box is greyed and the grouping left out.
+    ui.add_enabled_ui(outline && !st.settings.merge_adjacent, |ui| {
         let r = ui
             .checkbox(
                 &mut st.settings.group_by_color,
@@ -610,8 +593,8 @@ fn settings_tab(app: &mut App, ui: &mut Ui, st: &mut TraceState) {
             )
             .rich_tip(crate::ui::tips::keyed("dialog.trace_group_by_color"));
         mark(ui, "group_by_color", r.rect);
-    }
-    ui.separator();
+    });
+    before_after::rule(ui);
     ui.label(tr("dialog.trace_image"));
     let r = ui
         .checkbox(

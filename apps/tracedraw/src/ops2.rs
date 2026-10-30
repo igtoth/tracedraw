@@ -2011,8 +2011,10 @@ impl App {
                 continue;
             }
             // Group by color: the curves of each colour in a group of their
-            // own, in the order the colours stack.
-            if settings.group_by_color {
+            // own, in the order the colours stack. With Merge adjacent
+            // every colour is one curve already: the box is greyed in the
+            // dialog and no groups are made.
+            if settings.group_by_color && !settings.merge_adjacent {
                 let mut by_color: Vec<(Color, Vec<Shape>)> = Vec::new();
                 for s in children.drain(..) {
                     let c = match (&s.fill, &s.stroke) {

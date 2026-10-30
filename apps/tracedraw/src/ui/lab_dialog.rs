@@ -11,7 +11,7 @@ use crate::i18n::{tr, trf};
 use crate::theme::Tokens;
 use crate::ui::before_after::{self, View, ViewState, BOTTOM_H, RIGHT_W};
 use crate::ui::bitmap_preview::{copy_of, settings_key, Source};
-use crate::ui::effect_dialog::{param_widget, EffectState};
+use crate::ui::effect_dialog::{param_stacked, EffectState};
 use crate::ui::tips::RichTip;
 use egui::{epaint, Color32, Context, Painter, Pos2, Rect, Sense, Stroke, Ui, Vec2};
 use image::RgbaImage;
@@ -475,27 +475,24 @@ pub fn lab_dialog(app: &mut App, ctx: &Context, st: &mut EffectState, close: &mu
                 }
             });
             right.add_space(6.0);
-            right.spacing_mut().slider_width = 170.0;
-            // One grid, so every slider lines up; a rule between groups.
-            egui::Grid::new("lab_sliders")
-                .num_columns(2)
-                .spacing([8.0, 6.0])
-                .show(right, |ui| {
-                    for (g, group) in SLIDERS.iter().enumerate() {
-                        if g > 0 {
-                            ui.separator();
-                            ui.separator();
-                            ui.end_row();
-                        }
-                        for name in group.iter() {
-                            if let Some(p) = spec.params.iter().find(|p| p.name == *name) {
-                                param_widget(ui, p, &mut st.effect.params, None);
-                                ui.end_row();
-                            }
+            // The settings panel: each slider stretched to its width with
+            // the label above; a rule between groups. The histogram under
+            // the panel.
+            let hist_h = 96.0 + 40.0;
+            before_after::panel(right, "lab_sliders", hist_h, |ui| {
+                for (g, group) in SLIDERS.iter().enumerate() {
+                    if g > 0 {
+                        before_after::rule(ui);
+                    }
+                    for name in group.iter() {
+                        if let Some(p) = spec.params.iter().find(|p| p.name == *name) {
+                            param_stacked(ui, p, &mut st.effect.params, None);
+                            ui.add_space(2.0);
                         }
                     }
-                });
-            right.separator();
+                }
+            });
+            right.add_space(4.0);
             right.label(tr("dialog.lab_histogram"));
             let hist = histogram(&preview.after);
             draw_histogram(right, &hist, Vec2::new(RIGHT_W - 20.0, 96.0));

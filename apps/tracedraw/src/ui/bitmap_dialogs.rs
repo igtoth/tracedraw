@@ -102,7 +102,16 @@ pub fn bw_dialog(app: &mut App, ctx: &Context, s: &mut BwSettings, close: &mut b
                 &mut false,
                 |img, scale| black_and_white(img, &settings, dpi * scale),
             );
-            bw_settings(right, s);
+            before_after::panel(right, "bw_settings", before_after::STEPS_H, |ui| {
+                bw_settings(ui, s)
+            });
+            before_after::steps_for(
+                right,
+                egui::Id::new("bw_steps"),
+                s,
+                BwSettings::default(),
+                &crate::ui::tips::keyed("dialog.reset"),
+            );
         });
         if super::dialogs::ok_cancel(ui, close) {
             let settings = *s;
@@ -113,68 +122,81 @@ pub fn bw_dialog(app: &mut App, ctx: &Context, s: &mut BwSettings, close: &mut b
     });
 }
 
+/// A slider of the settings panel: its label above it, stretched to the
+/// panel's width, the value box at the right; `name` is its place for
+/// the tests.
+fn panel_slider<N: egui::emath::Numeric>(
+    ui: &mut Ui,
+    name: &'static str,
+    key: &str,
+    slider: crate::ui::Slider<'_, N>,
+) -> egui::Response {
+    let r = crate::ui::tips::tip_over(ui, crate::ui::tips::keyed(key), |ui| {
+        ui.add(slider.label(tr(key)))
+    });
+    before_after::mark(ui, name, r.rect);
+    ui.add_space(2.0);
+    r
+}
+
 /// The Black and White settings: the method and what it needs.
 fn bw_settings(ui: &mut Ui, s: &mut BwSettings) {
-    {
-        egui::Grid::new("bw_grid").num_columns(2).show(ui, |ui| {
-            ui.label(tr("dialog.conversion_method"));
-            combo(
+    ui.horizontal(|ui| {
+        ui.label(tr("dialog.conversion_method"));
+        combo(
+            ui,
+            "bw_method",
+            &mut s.method,
+            &BwMethod::ALL,
+            BwMethod::key,
+            "dialog.conversion_method",
+        );
+    });
+    before_after::rule(ui);
+    match s.method {
+        BwMethod::LineArt => {
+            panel_slider(
                 ui,
-                "bw_method",
-                &mut s.method,
-                &BwMethod::ALL,
-                BwMethod::key,
-                "dialog.conversion_method",
+                "bw_slider",
+                "dialog.threshold",
+                crate::ui::Slider::new(&mut s.threshold, 0..=255),
             );
-            ui.end_row();
-            match s.method {
-                BwMethod::LineArt => {
-                    ui.label(tr("dialog.threshold"));
-                    crate::ui::tips::tip_over(
-                        ui,
-                        crate::ui::tips::keyed("dialog.threshold"),
-                        |ui| ui.add(crate::ui::Slider::new(&mut s.threshold, 0..=255)),
-                    );
-                    ui.end_row();
-                }
-                BwMethod::Halftone => {
-                    ui.label(tr("dialog.screen_type"));
-                    egui::ComboBox::from_id_salt("bw_screen")
-                        .selected_text(tr(screen_key(s.screen)))
-                        .show_ui(ui, |ui| {
-                            for sc in [Screen::Round, Screen::Line, Screen::Square] {
-                                ui.selectable_value(&mut s.screen, sc, tr(screen_key(sc)));
-                            }
-                        })
-                        .response
-                        .rich_tip(crate::ui::tips::keyed("dialog.screen_type"));
-                    ui.end_row();
-                    ui.label(tr("dialog.angle"));
-                    crate::ui::tips::tip_over(ui, crate::ui::tips::keyed("dialog.angle"), |ui| {
-                        ui.add(
-                            crate::ui::Slider::new(&mut s.angle, -180.0..=180.0).suffix(" \u{b0}"),
-                        )
-                    });
-                    ui.end_row();
-                    ui.label(tr("dialog.lines_per_inch"));
-                    crate::ui::tips::tip_over(
-                        ui,
-                        crate::ui::tips::keyed("dialog.lines_per_inch"),
-                        |ui| ui.add(crate::ui::Slider::new(&mut s.lpi, 1.0..=300.0)),
-                    );
-                    ui.end_row();
-                }
-                _ => {
-                    ui.label(tr("dialog.intensity"));
-                    crate::ui::tips::tip_over(
-                        ui,
-                        crate::ui::tips::keyed("dialog.intensity"),
-                        |ui| ui.add(crate::ui::Slider::new(&mut s.intensity, 0.0..=100.0)),
-                    );
-                    ui.end_row();
-                }
-            }
-        });
+        }
+        BwMethod::Halftone => {
+            ui.horizontal(|ui| {
+                ui.label(tr("dialog.screen_type"));
+                egui::ComboBox::from_id_salt("bw_screen")
+                    .selected_text(tr(screen_key(s.screen)))
+                    .show_ui(ui, |ui| {
+                        for sc in [Screen::Round, Screen::Line, Screen::Square] {
+                            ui.selectable_value(&mut s.screen, sc, tr(screen_key(sc)));
+                        }
+                    })
+                    .response
+                    .rich_tip(crate::ui::tips::keyed("dialog.screen_type"));
+            });
+            ui.add_space(4.0);
+            panel_slider(
+                ui,
+                "bw_slider",
+                "dialog.angle",
+                crate::ui::Slider::new(&mut s.angle, -180.0..=180.0).suffix(" \u{b0}"),
+            );
+            panel_slider(
+                ui,
+                "bw_lpi",
+                "dialog.lines_per_inch",
+                crate::ui::Slider::new(&mut s.lpi, 1.0..=300.0),
+            );
+        }
+        _ => {
+            panel_slider(
+                ui,
+                "bw_slider",
+                "dialog.intensity",
+                crate::ui::Slider::new(&mut s.intensity, 0.0..=100.0),
+            );
+        }
     }
 }
 
@@ -215,7 +237,16 @@ pub fn duotone_dialog(app: &mut App, ctx: &Context, st: &mut DuotoneState, close
                 &mut false,
                 |img, _| duotone(img, &settings),
             );
-            duotone_settings(right, app, st);
+            before_after::panel(right, "duotone_settings", before_after::STEPS_H, |ui| {
+                duotone_settings(ui, app, st)
+            });
+            before_after::steps_for(
+                right,
+                egui::Id::new("duotone_steps"),
+                &mut st.settings,
+                DuotoneSettings::default(),
+                &crate::ui::tips::keyed("dialog.reset"),
+            );
         });
         if super::dialogs::ok_cancel(ui, close) {
             let settings = st.settings.clone();
@@ -227,124 +258,119 @@ pub fn duotone_dialog(app: &mut App, ctx: &Context, st: &mut DuotoneState, close
 /// The Duotone settings: the type, the inks and their curves, Load and
 /// Save.
 fn duotone_settings(ui: &mut Ui, app: &mut App, st: &mut DuotoneState) {
-    egui::ScrollArea::vertical()
-        .id_salt("duotone_settings")
-        .show(ui, |ui| {
-            ui.vertical(|ui| {
-                ui.horizontal(|ui| {
-                    ui.label(tr("dialog.type"));
-                    combo(
-                        ui,
-                        "duo_type",
-                        &mut st.settings.kind,
-                        &DuotoneType::ALL,
-                        DuotoneType::key,
-                        "dialog.duotone_type",
-                    );
-                });
-                let n = st.settings.kind.inks();
-                st.ink = st.ink.min(n - 1);
-                for i in 0..n {
-                    ui.horizontal(|ui| {
-                        let mut rgb = st.settings.inks[i].rgb;
-                        if ui
-                            .color_edit_button_srgb(&mut rgb)
-                            .rich_tip(crate::ui::tips::keyed("dialog.ink_color"))
-                            .changed()
-                        {
-                            st.settings.inks[i].rgb = rgb;
-                        }
-                        let name = crate::i18n::trf("dialog.ink_n", &[("n", &(i + 1).to_string())]);
-                        if ui
-                            .selectable_label(st.ink == i, name)
-                            .rich_tip_with(|| {
-                                let name = crate::i18n::trf(
-                                    "dialog.ink_n",
-                                    &[("n", &(i + 1).to_string())],
-                                );
-                                format!("{name}\n{}", tr("dialog.ink_pick_desc"))
-                            })
-                            .clicked()
-                        {
-                            st.ink = i;
-                        }
-                    });
-                }
-                ui.checkbox(&mut st.show_all, tr("dialog.show_all"))
-                    .rich_tip(crate::ui::tips::pair(
-                        "dialog.show_all",
-                        "dialog.duotone_show_all_desc",
-                    ));
-                ui.horizontal(|ui| {
-                    if ui
-                        .button(tr("dialog.load"))
-                        .rich_tip(crate::ui::tips::pair(
-                            "dialog.load",
-                            "dialog.duotone_load_desc",
-                        ))
-                        .clicked()
-                    {
-                        crate::files::Dialog::new()
-                            .add_filter(tr("dialog.duotone_inks"), &["json"])
-                            .pick_into("duotone_inks");
-                    }
-                    if ui
-                        .button(tr("dialog.save"))
-                        .rich_tip(crate::ui::tips::pair(
-                            "dialog.save",
-                            "dialog.duotone_save_desc",
-                        ))
-                        .clicked()
-                    {
-                        if let Some(path) = crate::files::Dialog::new()
-                            .add_filter(tr("dialog.duotone_inks"), &["json"])
-                            .set_file_name("inks.json")
-                            .save_path()
-                        {
-                            if let Ok(json) = serde_json::to_string_pretty(&st.settings) {
-                                if let Err(e) = crate::files::write(&path, json) {
-                                    app.status = e.to_string();
-                                }
-                            }
-                        }
-                    }
-                });
-            });
-            ui.vertical(|ui| {
-                let inks = st.settings.inks.clone();
-                let n = st.settings.kind.inks();
-                let others: Vec<(&crate::bitmap_modes::ToneCurve, Color32)> = if st.show_all {
-                    inks.iter()
-                        .take(n)
-                        .enumerate()
-                        .filter(|(i, _)| *i != st.ink)
-                        .map(|(_, ink)| (&ink.curve, rgb32(ink.rgb).gamma_multiply(0.6)))
-                        .collect()
-                } else {
-                    Vec::new()
-                };
-                let ink = &mut st.settings.inks[st.ink];
-                let col = if ink.rgb == [255, 255, 255] {
-                    Color32::GRAY
-                } else {
-                    rgb32(ink.rgb)
-                };
-                crate::ui::curve_edit::curve_editor(
-                    ui,
-                    egui::Id::new("duotone_curve"),
-                    &mut ink.curve,
-                    200.0,
-                    col,
-                    &others,
-                    None,
-                );
-                ui.label(
-                    egui::RichText::new(tr("dialog.duotone_curve_hint"))
-                        .size(11.0)
-                        .color(crate::theme::Tokens::text_dim()),
-                );
-            });
+    ui.vertical(|ui| {
+        ui.horizontal(|ui| {
+            ui.label(tr("dialog.type"));
+            combo(
+                ui,
+                "duo_type",
+                &mut st.settings.kind,
+                &DuotoneType::ALL,
+                DuotoneType::key,
+                "dialog.duotone_type",
+            );
         });
+        let n = st.settings.kind.inks();
+        st.ink = st.ink.min(n - 1);
+        for i in 0..n {
+            ui.horizontal(|ui| {
+                let mut rgb = st.settings.inks[i].rgb;
+                if ui
+                    .color_edit_button_srgb(&mut rgb)
+                    .rich_tip(crate::ui::tips::keyed("dialog.ink_color"))
+                    .changed()
+                {
+                    st.settings.inks[i].rgb = rgb;
+                }
+                let name = crate::i18n::trf("dialog.ink_n", &[("n", &(i + 1).to_string())]);
+                if ui
+                    .selectable_label(st.ink == i, name)
+                    .rich_tip_with(|| {
+                        let name = crate::i18n::trf("dialog.ink_n", &[("n", &(i + 1).to_string())]);
+                        format!("{name}\n{}", tr("dialog.ink_pick_desc"))
+                    })
+                    .clicked()
+                {
+                    st.ink = i;
+                }
+            });
+        }
+        ui.checkbox(&mut st.show_all, tr("dialog.show_all"))
+            .rich_tip(crate::ui::tips::pair(
+                "dialog.show_all",
+                "dialog.duotone_show_all_desc",
+            ));
+        before_after::rule(ui);
+        ui.horizontal(|ui| {
+            if ui
+                .button(tr("dialog.load"))
+                .rich_tip(crate::ui::tips::pair(
+                    "dialog.load",
+                    "dialog.duotone_load_desc",
+                ))
+                .clicked()
+            {
+                crate::files::Dialog::new()
+                    .add_filter(tr("dialog.duotone_inks"), &["json"])
+                    .pick_into("duotone_inks");
+            }
+            if ui
+                .button(tr("dialog.save"))
+                .rich_tip(crate::ui::tips::pair(
+                    "dialog.save",
+                    "dialog.duotone_save_desc",
+                ))
+                .clicked()
+            {
+                if let Some(path) = crate::files::Dialog::new()
+                    .add_filter(tr("dialog.duotone_inks"), &["json"])
+                    .set_file_name("inks.json")
+                    .save_path()
+                {
+                    if let Ok(json) = serde_json::to_string_pretty(&st.settings) {
+                        if let Err(e) = crate::files::write(&path, json) {
+                            app.status = e.to_string();
+                        }
+                    }
+                }
+            }
+        });
+    });
+    before_after::rule(ui);
+    ui.vertical(|ui| {
+        let inks = st.settings.inks.clone();
+        let n = st.settings.kind.inks();
+        let others: Vec<(&crate::bitmap_modes::ToneCurve, Color32)> = if st.show_all {
+            inks.iter()
+                .take(n)
+                .enumerate()
+                .filter(|(i, _)| *i != st.ink)
+                .map(|(_, ink)| (&ink.curve, rgb32(ink.rgb).gamma_multiply(0.6)))
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let ink = &mut st.settings.inks[st.ink];
+        let col = if ink.rgb == [255, 255, 255] {
+            Color32::GRAY
+        } else {
+            rgb32(ink.rgb)
+        };
+        crate::ui::curve_edit::curve_editor(
+            ui,
+            egui::Id::new("duotone_curve"),
+            &mut ink.curve,
+            200.0,
+            col,
+            &others,
+            None,
+        );
+        ui.label(
+            egui::RichText::new(tr("dialog.duotone_curve_hint"))
+                .size(11.0)
+                .color(crate::theme::Tokens::text_dim()),
+        );
+    });
 }
 
 /// Paletted (8-bit): palette type and colour count, dithering and its
@@ -365,7 +391,16 @@ pub fn paletted_dialog(app: &mut App, ctx: &Context, s: &mut PalettedSettings, c
                 |img, _| paletted(img, &settings),
             )
             .map(|p| p.img);
-            paletted_settings(right, s, thumb.as_deref());
+            before_after::panel(right, "paletted_settings", before_after::STEPS_H, |ui| {
+                paletted_settings(ui, s, thumb.as_deref())
+            });
+            before_after::steps_for(
+                right,
+                egui::Id::new("paletted_steps"),
+                s,
+                PalettedSettings::default(),
+                &crate::ui::tips::keyed("dialog.reset"),
+            );
         });
         if super::dialogs::ok_cancel(ui, close) {
             let settings = s.clone();
@@ -377,7 +412,7 @@ pub fn paletted_dialog(app: &mut App, ctx: &Context, s: &mut PalettedSettings, c
 /// The Paletted settings and the processed palette of the copy `thumb`.
 fn paletted_settings(ui: &mut Ui, s: &mut PalettedSettings, thumb: Option<&RgbaImage>) {
     {
-        egui::Grid::new("pal_grid").num_columns(2).show(ui, |ui| {
+        ui.horizontal(|ui| {
             ui.label(tr("dialog.palette"));
             combo(
                 ui,
@@ -387,14 +422,18 @@ fn paletted_settings(ui: &mut Ui, s: &mut PalettedSettings, thumb: Option<&RgbaI
                 PaletteType::key,
                 "dialog.palette",
             );
-            ui.end_row();
-            if s.palette.counts() {
-                ui.label(tr("dialog.colors"));
-                crate::ui::tips::tip_over(ui, crate::ui::tips::keyed("dialog.colors"), |ui| {
-                    ui.add(crate::ui::Slider::new(&mut s.colors, 2..=256))
-                });
-                ui.end_row();
-            }
+        });
+        if s.palette.counts() {
+            ui.add_space(4.0);
+            panel_slider(
+                ui,
+                "pal_colors",
+                "dialog.colors",
+                crate::ui::Slider::new(&mut s.colors, 2..=256),
+            );
+        }
+        before_after::rule(ui);
+        ui.horizontal(|ui| {
             ui.label(tr("dialog.dithering"));
             combo(
                 ui,
@@ -404,17 +443,17 @@ fn paletted_settings(ui: &mut Ui, s: &mut PalettedSettings, thumb: Option<&RgbaI
                 Dither::key,
                 "dialog.dithering",
             );
-            ui.end_row();
-            if s.dither != Dither::None {
-                ui.label(tr("dialog.dither_intensity"));
-                crate::ui::tips::tip_over(
-                    ui,
-                    crate::ui::tips::keyed("dialog.dither_intensity"),
-                    |ui| ui.add(crate::ui::Slider::new(&mut s.intensity, 0.0..=100.0)),
-                );
-                ui.end_row();
-            }
         });
+        if s.dither != Dither::None {
+            ui.add_space(4.0);
+            panel_slider(
+                ui,
+                "pal_intensity",
+                "dialog.dither_intensity",
+                crate::ui::Slider::new(&mut s.intensity, 0.0..=100.0),
+            );
+        }
+        before_after::rule(ui);
         // The processed palette, worked out again when the settings change.
         if let Some(t) = thumb {
             let key = settings_key(&*s);

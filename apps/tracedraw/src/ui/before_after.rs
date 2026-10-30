@@ -29,9 +29,13 @@ pub enum View {
     SideBySide,
     Before,
     After,
+    /// The result alone, taking the whole preview (Trace Bitmap's name
+    /// for it).
+    Large,
     /// One picture: the original left of a divider, the result right.
     Split,
-    /// The dialog's overlay (the trace's curves) over the picture.
+    /// The dialog's overlay (the trace's curves) over the picture, which
+    /// shows through at [`ViewState::overlay`] percent.
     Overlay,
 }
 
@@ -45,11 +49,15 @@ impl View {
             View::SideBySide => "dialog.view_side_by_side",
             View::Before => "dialog.before",
             View::After => "dialog.after",
+            View::Large => "dialog.trace_view_large",
             View::Split => "dialog.view_split",
             View::Overlay => "dialog.trace_view_wireframe",
         }
     }
 }
+
+/// How much of the picture shows under the wireframe at first, percent.
+pub const OVERLAY_DEFAULT: f32 = 80.0;
 
 /// How the preview is looked at; part of each dialog's state.
 #[derive(Debug, Clone, PartialEq)]
@@ -64,6 +72,8 @@ pub struct ViewState {
     pub turns: u8,
     /// The split view's divider, 0 (left) to 1 (right).
     pub split: f32,
+    /// How strongly the picture shows under the wireframe, 0 to 100.
+    pub overlay: f32,
 }
 
 impl Default for ViewState {
@@ -74,6 +84,7 @@ impl Default for ViewState {
             centre: None,
             turns: 0,
             split: 0.5,
+            overlay: OVERLAY_DEFAULT,
         }
     }
 }
@@ -251,6 +262,28 @@ pub fn toolbar(
                 mark(ui, "trace_view", resp.rect);
             },
         );
+        if st.view == View::Overlay {
+            // How much the picture shows under the wireframe.
+            ui.add_space(8.0);
+            ui.label(tr("dialog.trace_overlay"));
+            let r = crate::ui::tips::tip_over(
+                ui,
+                crate::ui::tips::keyed("dialog.trace_overlay"),
+                |ui| {
+                    ui.add(
+                        crate::ui::Slider::new(&mut st.overlay, 0.0..=100.0)
+                            .integer()
+                            .width(150.0),
+                    )
+                },
+            );
+            // The groove alone (the number box sits at its right).
+            mark(
+                ui,
+                "overlay",
+                Rect::from_min_size(r.rect.left_top(), Vec2::new(150.0, r.rect.height())),
+            );
+        }
         ui.add_space(8.0);
         let r = icon_button(
             ui,
@@ -340,14 +373,15 @@ pub fn unturn(d: Vec2, turns: u8) -> Vec2 {
     }
 }
 
-/// Draw the texture into `r` turned by quarter turns clockwise.
-fn paint_turned(painter: &Painter, tex: TextureId, r: Rect, turns: u8) {
+/// Draw the texture into `r` turned by quarter turns clockwise, through
+/// `tint` (white draws it as it is; a translucent white fades it).
+fn paint_turned(painter: &Painter, tex: TextureId, r: Rect, turns: u8, tint: Color32) {
     if turns.is_multiple_of(4) {
         painter.image(
             tex,
             r,
             Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)),
-            Color32::WHITE,
+            tint,
         );
         return;
     }
@@ -369,7 +403,7 @@ fn paint_turned(painter: &Painter, tex: TextureId, r: Rect, turns: u8) {
         mesh.vertices.push(epaint::Vertex {
             pos: *c,
             uv: base[(i + 4 - k) % 4],
-            color: Color32::WHITE,
+            color: tint,
         });
     }
     mesh.indices = vec![0, 1, 2, 0, 2, 3];
@@ -442,9 +476,16 @@ pub fn view(
             (panes[1], pics.after, None, after_l.as_str()),
         ],
         View::Before => vec![(panes[0], pics.before, None, "")],
-        View::After => vec![(panes[0], pics.after, None, "")],
+        View::After | View::Large => vec![(panes[0], pics.after, None, "")],
         View::Split => vec![(panes[0], pics.before, None, "")],
         View::Overlay => vec![(panes[0], pics.before, pics.overlay, "")],
+    };
+    // Under the wireframe the picture shows at the Overlay slider's
+    // strength: a tint on the one textured rectangle, nothing worked out.
+    let tint = if st.view == View::Overlay {
+        Color32::from_white_alpha((st.overlay.clamp(0.0, 100.0) * 2.55).round() as u8)
+    } else {
+        Color32::WHITE
     };
     for (i, (pane, tex, over, label)) in pane_pics.iter().enumerate() {
         let p = ui.painter_at(*pane);
@@ -457,10 +498,10 @@ pub fn view(
             let left = Rect::from_min_max(pane.min, Pos2::new(x, pane.bottom()));
             let right = Rect::from_min_max(Pos2::new(x, pane.top()), pane.max);
             if let Some(t) = pics.before {
-                paint_turned(&ui.painter_at(left), t, r, st.turns);
+                paint_turned(&ui.painter_at(left), t, r, st.turns, Color32::WHITE);
             }
             if let Some(t) = pics.after {
-                paint_turned(&ui.painter_at(right), t, r, st.turns);
+                paint_turned(&ui.painter_at(right), t, r, st.turns, Color32::WHITE);
             }
             let mut y = pane.top();
             while y < pane.bottom() {
@@ -479,10 +520,10 @@ pub fn view(
             }
         } else {
             if let Some(t) = tex {
-                paint_turned(&p, *t, r, st.turns);
+                paint_turned(&p, *t, r, st.turns, tint);
             }
             if let Some(t) = over {
-                paint_turned(&p, *t, r, st.turns);
+                paint_turned(&p, *t, r, st.turns, Color32::WHITE);
             }
         }
         if !label.is_empty() {
@@ -857,6 +898,204 @@ pub const MIN_SIZE: Vec2 = Vec2::new(720.0, 480.0);
 pub const RIGHT_W: f32 = 340.0;
 /// The row of buttons' height.
 pub const BOTTOM_H: f32 = 46.0;
+/// The height of the Reset, undo and redo row under the settings panel.
+pub const STEPS_H: f32 = 34.0;
+
+/// The settings panel every dialog with the shared preview draws at the
+/// right: a framed panel in the field colour (white in the light theme),
+/// `below` points of room left under it for the dialog's own rows, its
+/// contents scrolling when they do not fit. Sliders inside stretch to
+/// its width with their label above and the value box at the right
+/// (`crate::ui::Slider` in a column does that by itself).
+pub fn panel(ui: &mut Ui, id: &str, below: f32, body: impl FnOnce(&mut Ui)) {
+    let body_h = (ui.available_height() - below).max(100.0);
+    let w = ui.available_width();
+    // The frame's margin, both sides.
+    let m = 20.0;
+    egui::Frame::new()
+        .fill(Tokens::field())
+        .stroke(Stroke::new(1.0, Tokens::border()))
+        .inner_margin(egui::Margin::same(10))
+        .show(ui, |ui| {
+            ui.set_min_size(Vec2::new(w - m, body_h - m));
+            ui.set_max_height(body_h - m);
+            egui::ScrollArea::vertical()
+                .id_salt(id)
+                .max_height(body_h - m)
+                .show(ui, |ui| {
+                    ui.set_width(w - m - 16.0);
+                    body(ui);
+                });
+        });
+    mark(
+        ui,
+        "settings_panel",
+        Rect::from_min_size(
+            ui.min_rect().left_bottom() - Vec2::new(0.0, body_h),
+            Vec2::new(w, body_h),
+        ),
+    );
+}
+
+/// A thin line between groups of settings in the panel.
+pub fn rule(ui: &mut Ui) {
+    ui.add_space(4.0);
+    ui.separator();
+    ui.add_space(4.0);
+}
+
+/// What the Reset, undo and redo row was asked for.
+#[derive(Default, Clone, Copy)]
+pub struct Steps {
+    pub reset: bool,
+    pub undo: bool,
+    pub redo: bool,
+}
+
+/// Reset with the undo and redo arrows under the settings panel; `reset`
+/// is the tip of Reset (its title and what it puts back).
+pub fn steps_row(ui: &mut Ui, can_undo: bool, can_redo: bool, reset: &str) -> Steps {
+    let mut out = Steps::default();
+    ui.add_space(4.0);
+    ui.horizontal(|ui| {
+        let r = ui
+            .add_sized([80.0, BAR_H], egui::Button::new(tr("dialog.reset")))
+            .rich_tip(reset);
+        mark(ui, "reset", r.rect);
+        out.reset = r.clicked();
+        let undo = icon_button(
+            ui,
+            &crate::ui::tips::pair("menu.edit.undo", "dialog.trace_undo_desc"),
+            false,
+            can_undo,
+            |p, r, c| crate::ui::icons::draw_action(p, r, crate::ui::icons::Action::Undo, c),
+        );
+        mark(ui, "undo", undo.rect);
+        out.undo = undo.clicked();
+        let redo = icon_button(
+            ui,
+            &crate::ui::tips::pair("menu.edit.redo", "dialog.trace_redo_desc"),
+            false,
+            can_redo,
+            |p, r, c| crate::ui::icons::draw_action(p, r, crate::ui::icons::Action::Redo, c),
+        );
+        mark(ui, "redo", redo.rect);
+        out.redo = redo.clicked();
+    });
+    out
+}
+
+/// The settings states a dialog passed through, for its undo and redo
+/// arrows: each change (a slider's drag once released, a click, a list,
+/// Reset) is one step; a step after an undo drops the steps undone.
+#[derive(Debug, Clone, PartialEq)]
+pub struct History<T> {
+    steps: Vec<T>,
+    pos: usize,
+}
+
+impl<T: Clone + PartialEq> History<T> {
+    /// A history starting at `first`.
+    pub fn new(first: T) -> Self {
+        History {
+            steps: vec![first],
+            pos: 0,
+        }
+    }
+
+    /// Remember `now` as a new step when it differs from the step in use
+    /// and `settled` (the pointer is up: a slider is not mid-drag).
+    pub fn record(&mut self, now: &T, settled: bool) {
+        if settled && self.steps.get(self.pos) != Some(now) {
+            self.steps.truncate(self.pos + 1);
+            self.steps.push(now.clone());
+            self.pos = self.steps.len() - 1;
+        }
+    }
+
+    pub fn can_undo(&self) -> bool {
+        self.pos > 0
+    }
+
+    pub fn can_redo(&self) -> bool {
+        self.pos + 1 < self.steps.len()
+    }
+
+    /// One step back; the settings to show.
+    pub fn undo(&mut self) -> Option<T> {
+        if !self.can_undo() {
+            return None;
+        }
+        self.pos -= 1;
+        self.steps.get(self.pos).cloned()
+    }
+
+    pub fn redo(&mut self) -> Option<T> {
+        if !self.can_redo() {
+            return None;
+        }
+        self.pos += 1;
+        self.steps.get(self.pos).cloned()
+    }
+}
+
+/// The history of the dialog `id` whose state is its settings alone,
+/// kept between frames; a dialog that was not drawn last frame has just
+/// opened and starts afresh at `first`.
+pub fn history<T: Clone + PartialEq + Send + Sync + 'static>(
+    ctx: &Context,
+    id: egui::Id,
+    first: T,
+) -> History<T> {
+    let frame = ctx.cumulative_frame_nr();
+    ctx.data(|d| d.get_temp::<(u64, History<T>)>(id.with("history")))
+        .filter(|(last, _)| frame <= last + 1)
+        .map(|(_, h)| h)
+        .unwrap_or_else(|| History::new(first))
+}
+
+pub fn keep_history<T: Clone + PartialEq + Send + Sync + 'static>(
+    ctx: &Context,
+    id: egui::Id,
+    h: History<T>,
+) {
+    let frame = ctx.cumulative_frame_nr();
+    ctx.data_mut(|d| d.insert_temp(id.with("history"), (frame, h)));
+}
+
+/// The settings `value` of a dialog whose state is its settings alone,
+/// with the Reset, undo and redo row under the panel: the history is
+/// kept between frames under `id`, a change (once the pointer is up) is
+/// one step, Reset puts `default` (a step too), the arrows step through
+/// the history.
+pub fn steps_for<T: Clone + PartialEq + Send + Sync + 'static>(
+    ui: &mut Ui,
+    id: egui::Id,
+    value: &mut T,
+    default: T,
+    reset: &str,
+) -> Steps {
+    let ctx = ui.ctx().clone();
+    let settled = !ctx.input(|i| i.pointer.any_down());
+    let mut h = history(&ctx, id, value.clone());
+    h.record(value, settled);
+    let steps = steps_row(ui, h.can_undo(), h.can_redo(), reset);
+    if steps.reset {
+        *value = default;
+    }
+    if steps.undo {
+        if let Some(v) = h.undo() {
+            *value = v;
+        }
+    }
+    if steps.redo {
+        if let Some(v) = h.redo() {
+            *value = v;
+        }
+    }
+    keep_history(&ctx, id, h);
+    steps
+}
 
 #[cfg(test)]
 mod tests {
