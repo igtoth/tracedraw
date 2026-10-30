@@ -14,8 +14,10 @@ open it again with [[menu.help > menu.help.hints]] or from
   fills, text, AI and getting help. Each topic is a link.
 - A **topic** page explains the topic and lists the tools that serve it, each
   with its icon, its name and what it does. Click a tool to see its page.
-- A **tool** page tells you how to use the tool, one instruction per line
-  with the keys in bold, and links to the topic that lists the tool.
+- A **tool** page walks through the tool in numbered steps, each with a
+  picture of the object, its handles or nodes, the drag and the tool's
+  pointer, with the keys in bold, and links to the topic that lists the
+  tool.
 
 Every page ends with [[hint.learn_more]], a link to the page of this Help
 that explains the tool or topic in full.

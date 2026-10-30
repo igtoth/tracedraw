@@ -54,6 +54,13 @@ The first time TraceDraw starts, it asks whether to check for updates: [[updates
 > **Note:** The browser version is always the latest one. There,
 > [[menu.help > menu.help.updates]] opens the releases page.
 
+The copy installed from the Microsoft Store and the Android app are updated by
+their store: they never check GitHub, [[menu.help > menu.help.updates]] opens
+their store page, and the options have no update check. Every other
+installation downloads the file made for its processor and for how it was
+installed (installer, portable zip, AppImage, `.deb`, archive or disk
+image).
+
 ## The Welcome Screen {#welcome-screen}
 
 The Welcome Screen is the first tab when TraceDraw starts. From it you can
