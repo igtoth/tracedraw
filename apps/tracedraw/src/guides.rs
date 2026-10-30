@@ -363,6 +363,9 @@ impl App {
                 g.locked = locked;
             }
         }
+        if locked && self.guide_rotate.is_some_and(|i| indices.contains(&i)) {
+            self.guide_rotate = None;
+        }
         if changed {
             self.set_guides(
                 guides,
@@ -423,7 +426,7 @@ impl App {
 
     /// Pick tool click (press and release without moving) on a guideline:
     /// selects it; a click on the only selected guideline toggles its
-    /// rotation handles.
+    /// rotation handles, unless it is locked (#1385).
     pub fn click_guide(&mut self, p: Point, extend: bool) -> bool {
         let Some(index) = self.guide_at(p) else {
             return false;
@@ -441,11 +444,13 @@ impl App {
             return true;
         }
         if self.selected_guides == [index] {
+            let locked = self.page_guides().get(index).is_some_and(|g| g.locked);
             self.guide_rotate = match self.guide_rotate {
+                _ if locked => None,
                 Some(i) if i == index => None,
                 _ => Some(index),
             };
-            if let Some(g) = self.page_guides().get(index) {
+            if let Some(g) = self.page_guides().get(index).filter(|g| !g.locked) {
                 // The pivot is where the guideline was clicked.
                 let (o, d) = g.line.point_and_direction();
                 let t = (p - o).dot(d);
@@ -669,10 +674,15 @@ impl App {
     }
 
     /// Screen positions of the rotation handles of the guideline in rotate
-    /// mode: the pivot and one handle each side along the line.
+    /// mode: the pivot and one handle each side along the line. A locked
+    /// guideline has none, even if it was locked while showing them.
     pub fn guide_rotate_handles(&self) -> Option<(usize, Point, [Point; 2])> {
         let index = self.guide_rotate?;
-        let g = self.page_guides().get(index).copied()?;
+        let g = self
+            .page_guides()
+            .get(index)
+            .copied()
+            .filter(|g| !g.locked)?;
         let line = match &self.drag {
             Drag::RotateGuide {
                 index: i, guide, ..
@@ -894,6 +904,33 @@ mod tests {
                 angle: 45.0
             }
         );
+    }
+
+    #[test]
+    fn locked_guide_shows_no_rotation_handles() {
+        let mut app = app();
+        app.add_guide(Guide::horizontal(50.0));
+        let p = Point::new(30.0, 50.0);
+        // Locked before the clicks: the second click does not rotate.
+        app.set_guides_locked(&[0], true);
+        assert!(app.click_guide(p, false));
+        assert!(app.click_guide(p, false));
+        assert_eq!(app.selected_guides, vec![0]);
+        assert_eq!(app.guide_rotate, None);
+        assert!(app.guide_rotate_handles().is_none());
+        assert!(!app.guide_rotate_handle_at(p));
+        // Locked while the handles are showing: they go away.
+        app.set_guides_locked(&[0], false);
+        assert!(app.click_guide(p, false));
+        assert_eq!(app.guide_rotate, Some(0));
+        app.set_guides_locked(&[0], true);
+        assert_eq!(app.guide_rotate, None);
+        assert!(app.guide_rotate_handles().is_none());
+        // Unlocked again: rotation works as before.
+        app.set_guides_locked(&[0], false);
+        assert!(app.click_guide(p, false));
+        assert_eq!(app.guide_rotate, Some(0));
+        assert!(app.guide_rotate_handles().is_some());
     }
 
     #[test]

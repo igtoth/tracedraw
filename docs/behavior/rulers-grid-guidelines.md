@@ -153,7 +153,9 @@ stand for a distance in the world (`drawing_scale.rs`):
   pivot where it was clicked and two curved arrows 70 px along it.
   Dragging an arrow turns the guideline about the pivot in whole degrees;
   0 and 180 make it horizontal, 90 and 270 vertical.
-- Locked guidelines can be selected but not moved or deleted.
+- Locked guidelines can be selected but not moved, rotated or deleted: a
+  click on a locked guideline never shows its rotation handles, and
+  locking one that shows them hides them (#1385).
 - The pointer over a guideline (where no object is) shows the arrows
   across it: up and down for a horizontal one, sideways for a vertical
   one, the move arrows for a slanted one, the plain arrow for a locked
@@ -222,6 +224,7 @@ properties for new objects (see `object-styles.md`), for new drawings.
 - `guides::tests::dragging_a_guide_is_one_undo_step_and_leaves_other_guides_alone`
 - `guides::tests::dropping_a_guide_outside_the_window_deletes_it`
 - `guides::tests::locked_guides_select_but_do_not_move_or_delete`
+- `guides::tests::locked_guide_shows_no_rotation_handles`
 - `pick_drag_tests::arrow_keys_nudge_the_selected_guidelines`
 - `guides::tests::second_click_rotates_a_guide_about_the_clicked_point`
 - `ui::layout_options::tests::*` (form origin, presets)
