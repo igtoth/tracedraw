@@ -6402,7 +6402,14 @@ impl App {
         self.saved_to(path, result);
         // Guidelines are not written to `.cdr` files (#1161): say so, so
         // they are not lost without a word.
-        if ok && self.engine.document().pages.iter().any(|p| !p.guides.is_empty()) {
+        if ok
+            && self
+                .engine
+                .document()
+                .pages
+                .iter()
+                .any(|p| !p.guides.is_empty())
+        {
             self.status = format!(
                 "{} {}",
                 self.status,
@@ -9151,10 +9158,14 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let mut app = App::headless();
         app.save_to(dir.join("plain.cdr"));
-        assert!(!app.status.contains(&crate::i18n::tr("status.cdr_guides_not_saved")));
+        assert!(!app
+            .status
+            .contains(&crate::i18n::tr("status.cdr_guides_not_saved")));
         app.add_guide(Guide::from(GuideLine::Horizontal { y: 40.0 }));
         app.save_to(dir.join("guides.cdr"));
-        assert!(app.status.contains(&crate::i18n::tr("status.cdr_guides_not_saved")));
+        assert!(app
+            .status
+            .contains(&crate::i18n::tr("status.cdr_guides_not_saved")));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

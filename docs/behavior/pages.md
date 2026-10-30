@@ -69,6 +69,12 @@ free on every side (`App::fit_page_to_drawing_with_margin`; a margin
 that is not a number counts as none). Checked by
 `ops2::fit_page_tests::the_page_fits_the_selection_or_the_drawing` and
 `ui::propbar::tests::the_page_bar_draws_with_its_fit_page_button`.
+Autofit Page follows the page bar's All Pages and Current Page buttons,
+as the page size fields do: with All Pages on, every page is fitted to
+its own drawing with the margin, in one undo step, and a page with
+nothing on it keeps its size; the button is pale only when no page has
+anything on it (#1393, `App::autofit_pages`,
+`ops2::fit_page_tests::autofit_with_all_pages_fits_every_page`).
 While the popup is open the page itself shows at the size Autofit Page
 would give it, around the drawing, following the margin as it is typed;
 nothing else is drawn, and closing the popup without OK puts it back
