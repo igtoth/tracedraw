@@ -111,7 +111,18 @@ cell does nothing and says so on the status bar.
   alignment and outer borders.
   (`table_bar::tests::the_count_dialog_inserts_and_splits`,
   `tracedraw_core::table::tests::split_a_cell_into_three_rows_and_columns`)
-- Convert Text to Table: lines become rows, tabs separate cells.
+- Convert Text to Table (a dialog, #1276): paragraphs become rows; the
+  cells are cut at commas, tabs, a user-defined separator (an empty one
+  keeps each paragraph whole) or not at all (Paragraphs: one column, a
+  row each). The dialog opens on tabs when the text has one, else on
+  commas when it has one, else on Paragraphs, and shows the rows and
+  columns the table will have. Cells are trimmed of spaces; closing
+  empty paragraphs make no rows. The table takes the text's top left
+  corner, its first style and at least its width (columns at least
+  20 mm and as wide as their widest text on one line with the cell
+  margins, rows 1.6 lines of the text's size).
+  (`table::tests::text_becomes_a_table_by_its_separator`,
+  `ui::dialogs::tests::convert_text_to_table_takes_the_chosen_separator`)
   Convert Table to Text: cells joined by tabs, rows by newlines.
 - Every change is one `SetShapeKind` command after `Table::refit`, so the
   table rectangle always equals the sum of its rows and columns.

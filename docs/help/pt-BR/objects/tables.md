@@ -58,8 +58,14 @@ O menu [[menu.table]] age sobre a célula ativa e as células selecionadas:
 
 ## Converter texto e tabelas {#convert}
 
-- [[menu.table.convert_text_to_table]]: cada linha do texto selecionado vira
-  uma linha da tabela, e as tabulações separam as células.
+- [[menu.table.convert_text_to_table]]: cada parágrafo do texto selecionado
+  vira uma linha da tabela. A caixa de diálogo pergunta o que separa as
+  células: vírgulas, tabulações, nada (cada parágrafo é uma célula, em uma
+  coluna) ou caracteres seus em Definido pelo usuário, e informa quantas
+  linhas e colunas a tabela terá. Ela começa com tabulações quando o texto
+  tem alguma, senão com vírgulas. Os espaços em volta do texto de cada
+  célula ficam de fora, então "Ana, Bia, Caio" com vírgulas dá três
+  células.
 - [[menu.table.convert_table_to_text]]: as células são unidas por tabulações e
   as linhas por quebras de linha.
 

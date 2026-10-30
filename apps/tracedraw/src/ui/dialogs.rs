@@ -953,6 +953,8 @@ pub enum Dialog {
     },
     /// Table > Insert > Rows / Columns, Split into Rows / Columns: how many.
     TableCount(crate::ui::table_bar::TableCountState),
+    /// Table > Convert Text to Table: the column separator (#1276).
+    TextToTable(crate::table::TextToTable),
     CreateTable {
         rows: u32,
         cols: u32,
@@ -2053,6 +2055,55 @@ pub fn show(app: &mut App, ctx: &Context) {
                     }
                 }
             });
+        }
+        Dialog::TextToTable(st) => {
+            use crate::table::TextSeparator;
+            let text = app.selected_text_for_table().unwrap_or_default();
+            let mut help = false;
+            let mut ok = false;
+            window(ctx, tr("dialog.text_to_table")).show(ctx, |ui| {
+                ui.label(tr("dialog.text_to_table_separator"));
+                for (sep, key) in [
+                    (TextSeparator::Commas, "dialog.text_to_table_commas"),
+                    (TextSeparator::Tabs, "dialog.text_to_table_tabs"),
+                    (TextSeparator::Paragraphs, "dialog.text_to_table_paragraphs"),
+                ] {
+                    ui.radio_value(&mut st.separator, sep, tr(key))
+                        .rich_tip(crate::ui::tips::keyed(key));
+                }
+                ui.horizontal(|ui| {
+                    ui.radio_value(
+                        &mut st.separator,
+                        TextSeparator::Custom,
+                        tr("dialog.text_to_table_custom"),
+                    )
+                    .rich_tip(crate::ui::tips::keyed("dialog.text_to_table_custom"));
+                    let field = ui
+                        .add(egui::TextEdit::singleline(&mut st.custom).desired_width(60.0))
+                        .rich_tip(crate::ui::tips::keyed("dialog.text_to_table_custom"));
+                    // Typing a separator of one's own chooses it.
+                    if field.changed() {
+                        st.separator = TextSeparator::Custom;
+                    }
+                });
+                ui.separator();
+                ui.label(tr("dialog.text_to_table_rows"));
+                let (rows, cols) = st.shape_of(&text);
+                ui.label(trf(
+                    "dialog.text_to_table_shape",
+                    &[("rows", &rows.to_string()), ("cols", &cols.to_string())],
+                ));
+                let (o, h) = help_ok_cancel(ui, &mut close);
+                ok = o;
+                help = h;
+            });
+            if ok {
+                let st = st.clone();
+                app.convert_text_to_table_with(&st);
+            }
+            if help {
+                app.open_dialog_help();
+            }
         }
         Dialog::CreateTable {
             rows,
@@ -6501,6 +6552,7 @@ pub(crate) mod tests {
                 width: 75.0,
                 height: 100.0,
             },
+            Dialog::TextToTable(crate::table::TextToTable::detect("a, b")),
             Dialog::TableCount(crate::ui::table_bar::TableCountState {
                 kind: crate::ui::table_bar::TableCountKind::InsertRows,
                 count: 2,
@@ -6732,6 +6784,53 @@ pub(crate) mod tests {
             "{r:?}"
         );
         assert_eq!(app.table_size, (80.0, 50.0));
+    }
+
+    /// #1276: the dialog's separator of the user's own cuts the text.
+    #[test]
+    fn convert_text_to_table_takes_the_chosen_separator() {
+        let mut app = App::headless();
+        let id = app
+            .new_shape(ShapeKind::Text {
+                spans: vec![tracedraw_core::TextSpan::new(
+                    "ABHISHEK, RAKESH, RAMESH",
+                    "Arial",
+                    24.0,
+                )],
+                origin: tracedraw_core::geometry::Point::new(20.0, 100.0),
+                frame: None,
+                align: tracedraw_core::TextAlign::Left,
+                para: Default::default(),
+                on_path: None,
+            })
+            .expect("a text");
+        app.select(vec![id]);
+        app.dialog = Dialog::TextToTable(crate::table::TextToTable {
+            separator: crate::table::TextSeparator::Custom,
+            custom: ",".into(),
+        });
+        let ctx = crate::theme::ui_context();
+        frame(&ctx, &mut app, false);
+        frame(&ctx, &mut app, true);
+        assert!(matches!(app.dialog, Dialog::None));
+        let (_, t) = app.selected_table().expect("a table");
+        assert_eq!((t.rows(), t.cols()), (1, 3));
+        let text = |c: u32| {
+            t.cells
+                .iter()
+                .find(|cell| cell.row == 0 && cell.col == c)
+                .map(|cell| {
+                    cell.text
+                        .iter()
+                        .map(|s| s.text.as_str())
+                        .collect::<String>()
+                })
+                .unwrap_or_default()
+        };
+        assert_eq!(
+            (text(0), text(1), text(2)),
+            ("ABHISHEK".into(), "RAKESH".into(), "RAMESH".into())
+        );
     }
 
     #[test]

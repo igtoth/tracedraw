@@ -27,6 +27,75 @@ pub enum TableOp {
     Unmerge,
 }
 
+/// What separates the columns of Table > Convert Text to Table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextSeparator {
+    Commas,
+    Tabs,
+    /// Every paragraph a row of one cell.
+    Paragraphs,
+    /// The text in [`TextToTable::custom`].
+    Custom,
+}
+
+/// The Convert Text to Table dialog: the separator and the user's own.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TextToTable {
+    pub separator: TextSeparator,
+    pub custom: String,
+}
+
+impl TextToTable {
+    /// The separator a text most likely uses: tabs, then commas, else
+    /// one cell per paragraph.
+    pub fn detect(text: &str) -> TextToTable {
+        let separator = if text.contains('\t') {
+            TextSeparator::Tabs
+        } else if text.contains(',') {
+            TextSeparator::Commas
+        } else {
+            TextSeparator::Paragraphs
+        };
+        TextToTable {
+            separator,
+            custom: String::new(),
+        }
+    }
+
+    /// The cells of `text`: a row per paragraph, cut at the separator,
+    /// each cell without the spaces around it. A row is never empty.
+    pub fn split(&self, text: &str) -> Vec<Vec<String>> {
+        let text = text.replace("\r\n", "\n").replace('\r', "\n");
+        let cut = |line: &str| -> Vec<String> {
+            let parts: Vec<&str> = match self.separator {
+                TextSeparator::Commas => line.split(',').collect(),
+                TextSeparator::Tabs => line.split('\t').collect(),
+                TextSeparator::Paragraphs => vec![line],
+                TextSeparator::Custom if self.custom.is_empty() => vec![line],
+                TextSeparator::Custom => line.split(self.custom.as_str()).collect(),
+            };
+            parts.iter().map(|p| p.trim().to_string()).collect()
+        };
+        let mut rows: Vec<Vec<String>> = text.split('\n').map(cut).collect();
+        // Empty paragraphs at the end (a closing newline) make no rows.
+        while rows.len() > 1 && rows.last().is_some_and(|r| r.iter().all(|c| c.is_empty())) {
+            rows.pop();
+        }
+        if rows.is_empty() {
+            vec![vec![String::new()]]
+        } else {
+            rows
+        }
+    }
+
+    /// Rows and columns the table of `text` has.
+    pub fn shape_of(&self, text: &str) -> (usize, usize) {
+        let rows = self.split(text);
+        let cols = rows.iter().map(|r| r.len()).max().unwrap_or(1).max(1);
+        (rows.len().max(1), cols)
+    }
+}
+
 /// Cell editing state: which table and which cells are selected, plus the
 /// caret inside the active cell's text.
 #[derive(Debug, Clone, PartialEq)]
@@ -704,8 +773,33 @@ impl App {
         self.set_table(id, t);
     }
 
-    /// Table > Convert Text to Table: tabs separate columns, newlines rows.
+    /// Table > Convert Text to Table with the separator found in the
+    /// selected text (tabs, then commas, else a row per paragraph), as
+    /// the dialog opens.
+    #[cfg(test)]
     pub fn convert_text_to_table(&mut self) {
+        let Some(text) = self.selected_text_for_table() else {
+            return;
+        };
+        self.convert_text_to_table_with(&TextToTable::detect(&text));
+    }
+
+    /// The text of the first selected text object, all its spans.
+    pub fn selected_text_for_table(&self) -> Option<String> {
+        self.selected_shapes()
+            .into_iter()
+            .find_map(|s| match &s.kind {
+                ShapeKind::Text { spans, .. } => {
+                    Some(spans.iter().map(|x| x.text.as_str()).collect())
+                }
+                _ => None,
+            })
+    }
+
+    /// Table > Convert Text to Table: each paragraph a row, its cells cut
+    /// at the separator `st` names (#1276). The table takes the text's
+    /// place, its top left corner, style and at least its width.
+    pub fn convert_text_to_table_with(&mut self, st: &TextToTable) {
         let Some(s) = self
             .selected_shapes()
             .into_iter()
@@ -721,14 +815,18 @@ impl App {
             .first()
             .cloned()
             .unwrap_or_else(|| TextSpan::new("", "Arial", 12.0));
-        let rows: Vec<Vec<&str>> = text.lines().map(|l| l.split('\t').collect()).collect();
+        let rows = st.split(&text);
         let nrows = rows.len().max(1) as u32;
         let ncols = rows.iter().map(|r| r.len()).max().unwrap_or(1).max(1) as u32;
         let b = s.bounds();
+        // Rows tall enough for a line of the text with some room; columns
+        // sharing the text's width, at least 20 mm each.
+        let line = (style.size_pt * 25.4 / 72.0 * 1.6).max(6.0);
+        let col = (b.width() / ncols as f64).max(20.0);
         let rect = Rect::new(
             b.x0,
-            b.y1 - nrows as f64 * 10.0,
-            b.x0 + ncols as f64 * 40.0,
+            b.y1 - nrows as f64 * line,
+            b.x0 + ncols as f64 * col,
             b.y1,
         );
         let mut t = Table::new(
@@ -741,18 +839,22 @@ impl App {
         );
         for (r, row) in rows.iter().enumerate() {
             for (c, txt) in row.iter().enumerate() {
+                if txt.is_empty() {
+                    continue;
+                }
                 if let Some(cell) = t
                     .cells
                     .iter_mut()
                     .find(|cell| cell.row == r as u32 && cell.col == c as u32)
                 {
                     cell.text = vec![TextSpan {
-                        text: txt.to_string(),
+                        text: txt.clone(),
                         ..style.clone()
                     }];
                 }
             }
         }
+        fit_columns_to_text(&mut t);
         let id = s.id;
         self.run(Command::SetShapeKind {
             shape: id,
@@ -836,6 +938,36 @@ fn grow_row_to_fit(t: &mut Table, r: u32, c: u32) {
             *h += needed - have;
         }
     }
+}
+
+/// Widen each column to hold its widest text on one line (cell margins
+/// and a little room included), so no word of a converted text is cut;
+/// columns stay as wide as they were when the text is narrower.
+fn fit_columns_to_text(t: &mut Table) {
+    let para = tracedraw_core::ParagraphStyle::default();
+    let mut widths = t.col_widths.clone();
+    for cell in &t.cells {
+        if cell.text.is_empty() || cell.col_span != 1 {
+            continue;
+        }
+        let layout =
+            tracedraw_text::fonts().layout(&tracedraw_core::document::text_outline::TextRequest {
+                spans: &cell.text,
+                frame: None,
+                align: cell.align,
+                para: &para,
+                on_path: None,
+            });
+        let margins = t.cell_rect(cell).width() - t.cell_inner(cell).width();
+        let needed = layout.bounds.width() + margins + 2.0;
+        if let Some(w) = widths.get_mut(cell.col as usize) {
+            if needed.is_finite() && needed > *w {
+                *w = needed;
+            }
+        }
+    }
+    t.col_widths = widths;
+    t.refit();
 }
 
 fn cell_text(t: &Table, r: u32, c: u32) -> String {
@@ -935,5 +1067,98 @@ mod tests {
         assert!((r.x0 - 10.0).abs() < 1e-9 && (r.x1 - 40.0).abs() < 1e-9);
         assert!((r.y0 - 30.0).abs() < 1e-9 && (r.y1 - 40.0).abs() < 1e-9);
         assert_eq!(t.rect, Rect::new(10.0, 10.0, 130.0, 40.0));
+    }
+
+    /// The selected text's table: its cells' texts row by row.
+    fn converted(app: &App) -> Vec<Vec<String>> {
+        let (_, t) = app.selected_table().expect("a table");
+        (0..t.rows())
+            .map(|r| (0..t.cols()).map(|c| cell_text(&t, r, c)).collect())
+            .collect()
+    }
+
+    fn text_shape(app: &mut App, text: &str) -> ShapeId {
+        let id = app
+            .new_shape(ShapeKind::Text {
+                spans: vec![TextSpan::new(text, "Arial", 24.0)],
+                origin: Point::new(20.0, 100.0),
+                frame: None,
+                align: tracedraw_core::TextAlign::Left,
+                para: Default::default(),
+                on_path: None,
+            })
+            .expect("a text");
+        app.select(vec![id]);
+        id
+    }
+
+    /// #1276: three names separated by commas become three cells, with
+    /// the separator found in the text or chosen (commas, tabs,
+    /// paragraphs or one of the user's own).
+    #[test]
+    fn text_becomes_a_table_by_its_separator() {
+        let mut app = App::headless();
+        text_shape(&mut app, "ABHISHEK, RAKESH, RAMESH");
+        app.convert_text_to_table();
+        assert_eq!(converted(&app), vec![vec!["ABHISHEK", "RAKESH", "RAMESH"]]);
+        // Each name fits its cell on one line.
+        if !tracedraw_text::fonts().families().is_empty() {
+            let (_, t) = app.selected_table().expect("a table");
+            for cell in &t.cells {
+                let layout = tracedraw_text::fonts().layout(
+                    &tracedraw_core::document::text_outline::TextRequest {
+                        spans: &cell.text,
+                        frame: None,
+                        align: cell.align,
+                        para: &Default::default(),
+                        on_path: None,
+                    },
+                );
+                assert!(
+                    layout.bounds.width() <= t.cell_inner(cell).width() + 1e-6,
+                    "{:?} in {:?}",
+                    layout.bounds,
+                    t.cell_inner(cell)
+                );
+            }
+        }
+        // A separator of the user's own; each paragraph a row.
+        let mut app = App::headless();
+        text_shape(&mut app, "a;b;c\nd;e");
+        let st = TextToTable {
+            separator: TextSeparator::Custom,
+            custom: ";".into(),
+        };
+        assert_eq!(st.shape_of("a;b;c\nd;e"), (2, 3));
+        app.convert_text_to_table_with(&st);
+        assert_eq!(
+            converted(&app),
+            vec![vec!["a", "b", "c"], vec!["d", "e", ""]]
+        );
+        // Tabs, and paragraphs (one column, a row each).
+        assert_eq!(
+            TextToTable::detect("x\ty, z").separator,
+            TextSeparator::Tabs
+        );
+        assert_eq!(
+            TextToTable::detect("x\ny").separator,
+            TextSeparator::Paragraphs
+        );
+        let mut app = App::headless();
+        text_shape(&mut app, "one, two\nthree");
+        app.convert_text_to_table_with(&TextToTable {
+            separator: TextSeparator::Paragraphs,
+            custom: String::new(),
+        });
+        assert_eq!(converted(&app), vec![vec!["one, two"], vec!["three"]]);
+        // An empty separator of the user's own keeps each row whole.
+        assert_eq!(
+            TextToTable {
+                separator: TextSeparator::Custom,
+                custom: String::new(),
+            }
+            .shape_of("a,b"),
+            (1, 1)
+        );
     }
 }

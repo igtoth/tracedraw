@@ -3297,7 +3297,9 @@ fn table_menu(app: &mut App, ui: &mut Ui) {
             .iter()
             .any(|s| matches!(s.kind, ShapeKind::Text { .. })),
     ) {
-        app.convert_text_to_table();
+        if let Some(text) = app.selected_text_for_table() {
+            app.dialog = Dialog::TextToTable(crate::table::TextToTable::detect(&text));
+        }
     }
     if item(ui, "menu.table.convert_table_to_text", "", in_table) {
         app.convert_table_to_text();

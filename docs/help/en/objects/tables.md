@@ -56,8 +56,14 @@ The [[menu.table]] menu acts on the active cell and the selected cells:
 
 ## Converting text and tables {#convert}
 
-- [[menu.table.convert_text_to_table]]: each line of the selected text
-  becomes a row, and tabs separate the cells.
+- [[menu.table.convert_text_to_table]]: each paragraph of the selected
+  text becomes a row. The dialog box asks what separates the cells:
+  commas, tabs, nothing (each paragraph is one cell, in one column) or
+  characters of your own under User defined, and tells how many rows
+  and columns the table will have. It starts with tabs when the text
+  has any, else commas when it has any. The spaces around each cell's
+  text are left out, so "Anna, Ben, Carl" with commas makes three
+  cells.
 - [[menu.table.convert_table_to_text]]: the cells are joined by tabs and the
   rows by line breaks.
 

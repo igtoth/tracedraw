@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Table > Convert Text to Table opens a dialog that asks what separates the cells: commas, tabs, paragraphs (a cell each, in one column) or a separator of your own, and tells how many rows and columns the table will have; every paragraph is a row, the spaces around each cell's text are left out and the columns are as wide as their text. Three names separated by commas now make three cells; before, only tabs separated cells (#1276).
+
 - Help: pages brought up to date with releases 0.19 to 0.27 (opening and saving, fonts, text, printing, export, drawing tools, objects, colours, effects, pages, options, menus and shortcuts), and new pages for Package, Missing Fonts, Convert Colors, finding by properties, PDF printers' marks, booklets, Fit Objects to Path, the Before and After preview, graphics tablets and tablets with the Android app; Brazilian Portuguese follows, other languages where the pages changed most. Docs only.
 - Browser version: its notice now opens with the warning that a browser is slower, marked in red and underlined, then says it is the same program compiled to WebAssembly, and last points to the desktop app, in every language.
 
