@@ -11,7 +11,7 @@
 | [[docker.hints]] |  | [→](../get-started/hints.md) |
 | [[docker.transformations]] | <kbd>Alt+F7</kbd> | [→](../objects/transforming.md#transformations-docker) |
 | [[docker.undo]] |  | [→](../get-started/undo-and-views.md#undo-docker) |
-| [[docker.align_distribute]] | <kbd>Ctrl+Shift+A</kbd> | [→](../objects/align-distribute.md) |
+| [[docker.align_distribute]] |  | [→](../objects/align-distribute.md) |
 | [[docker.shaping]] |  | [→](../lines-shapes/shaping.md) |
 | [[docker.step_and_repeat]] | <kbd>Ctrl+Shift+D</kbd> | [→](../objects/step-and-repeat.md) |
 | [[docker.text]] | <kbd>Ctrl+T</kbd> | [→](../text/adding-text.md#text-docker) |

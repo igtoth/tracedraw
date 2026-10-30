@@ -6610,6 +6610,94 @@ fn font_sizes_show_and_type_in_the_text_units() {
     );
 }
 
+/// Ctrl+Shift+A opens Copy Properties From: its boxes say what to copy,
+/// OK waits for a click on the object to copy from, and only the ticked
+/// properties come across (#1345: the shortcut did nothing).
+#[test]
+fn ctrl_shift_a_copies_the_ticked_properties_from_the_object_clicked() {
+    use crate::ops2::CopyProperties;
+    use crate::ui::dialogs::Dialog;
+    use tracedraw_core::{Color, Fill, Stroke};
+    let (ctx, mut app, id) = setup();
+    let src = app
+        .new_shape(ShapeKind::Rect {
+            rect: Rect::new(100.0, 10.0, 150.0, 40.0),
+            radius: 0.0,
+            corners: None,
+        })
+        .expect("source");
+    let blue = Fill::Solid(Color::rgb8(0, 0, 255));
+    let pen = Stroke {
+        color: Color::rgb8(0, 160, 0),
+        width: 2.0,
+        ..Stroke::default()
+    };
+    app.run(tracedraw_core::Command::SetFill {
+        shapes: vec![src],
+        fill: blue.clone(),
+    });
+    app.run(tracedraw_core::Command::SetStroke {
+        shapes: vec![src],
+        stroke: Some(pen.clone()),
+    });
+    let own = Stroke {
+        color: Color::rgb8(250, 0, 0),
+        width: 0.5,
+        ..Stroke::default()
+    };
+    app.run(tracedraw_core::Command::SetStroke {
+        shapes: vec![id],
+        stroke: Some(own.clone()),
+    });
+    app.select(vec![id]);
+    let none = Modifiers::NONE;
+    let cs = Modifiers::COMMAND | Modifiers::SHIFT;
+    frame(&ctx, &mut app, vec![key(egui::Key::A, cs)], cs);
+    frame(&ctx, &mut app, Vec::new(), none);
+    assert!(
+        matches!(app.dialog, Dialog::CopyProperties(_)),
+        "Ctrl+Shift+A opens the dialog"
+    );
+    // Untick Fill and Outline color, then OK.
+    if let Dialog::CopyProperties(c) = &mut app.dialog {
+        *c = CopyProperties {
+            fill: false,
+            outline_color: false,
+            ..CopyProperties::default()
+        };
+    }
+    let texts = texts_drawn(&ctx, &mut app, Vec::new());
+    let ok = text_at(&texts, &crate::i18n::tr("dialog.ok")).expect("OK");
+    click_at(&ctx, &mut app, ok, none);
+    assert!(matches!(app.dialog, Dialog::None));
+    assert!(app.pending_copy_properties, "waiting for the click");
+    let on_src = app.view.to_screen(Point::new(125.0, 25.0));
+    click_at(&ctx, &mut app, on_src, none);
+    assert!(!app.pending_copy_properties);
+    let s = app.doc().find_shape(id).expect("target").clone();
+    assert_ne!(s.fill, blue, "the fill was not ticked");
+    let got = s.stroke.expect("an outline");
+    assert!((got.width - 2.0).abs() < 1e-9, "the pen: {got:?}");
+    assert_eq!(got.color, own.color, "its own colour");
+    // The boxes are kept; the colour alone next time.
+    assert!(!app.copy_properties_choice.fill);
+    app.copy_properties_choice = CopyProperties {
+        outline_color: true,
+        outline_pen: false,
+        fill: false,
+        text: false,
+    };
+    app.copy_properties_from(src);
+    let got = app
+        .doc()
+        .find_shape(id)
+        .and_then(|s| s.stroke.clone())
+        .expect("outline");
+    assert_eq!(got.color, pen.color);
+    // Align and Distribute keeps its menu and button, no longer the key.
+    assert_eq!(crate::app::DockerTab::AlignDistribute.shortcut(), "");
+}
+
 /// Print Merge's Place Inside Frame with nothing selected waits for a
 /// click on the shape, the pointer the Place Inside arrow; the click
 /// takes the shape under it, Esc cancels (#577).

@@ -61,7 +61,7 @@ comando ao lado dele, e você pode acrescentar os seus; veja
 | Teclas | Painel |
 |---|---|
 | <kbd>Alt+Enter</kbd> | Propriedades |
-| <kbd>Ctrl+Shift+A</kbd> | Alinhar e distribuir |
+| <kbd>Ctrl+Shift+A</kbd> | Copiar propriedades de |
 | <kbd>Alt+F7</kbd>, <kbd>Alt+F8</kbd>, <kbd>Alt+F9</kbd>, <kbd>Alt+F10</kbd> | Transformações: posição, girar, escala e espelhar, tamanho |
 | <kbd>Ctrl+T</kbd>, <kbd>Ctrl+F11</kbd> | Texto, Glifos |
 | <kbd>F11</kbd>, <kbd>Shift+F11</kbd> | preenchimento (Propriedades), Cor |

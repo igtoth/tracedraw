@@ -1349,6 +1349,8 @@ pub struct App {
     /// The property bar keeps width and height proportional.
     pub scale_locked: bool,
     pub pending_copy_properties: bool,
+    /// What Copy Properties From copies (its dialog's boxes, kept).
+    pub copy_properties_choice: crate::ops2::CopyProperties,
     /// Autofit Page's popup open: the margin shown and the frame it was
     /// drawn in, for the outline of the page it would make (#594).
     pub autofit_preview: Option<(f64, u64)>,
@@ -1997,7 +1999,6 @@ impl DockerTab {
     pub fn shortcut(self) -> &'static str {
         match self {
             DockerTab::Properties => "Alt+Enter",
-            DockerTab::AlignDistribute => "Ctrl+Shift+A",
             DockerTab::Text => "Ctrl+T",
             DockerTab::Glyphs => "Ctrl+F11",
             DockerTab::Color => "Shift+F11",
@@ -2452,6 +2453,7 @@ impl App {
             object_origin: (1, 1),
             scale_locked: false,
             pending_copy_properties: false,
+            copy_properties_choice: Default::default(),
             pending_shaping: None,
             pending_merge_frame: false,
             autofit_preview: None,

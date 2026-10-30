@@ -29,5 +29,7 @@ following it: change the source and the clones change too, until you edit a
 clone's own effect.
 
 [[menu.edit > menu.edit.clone]] makes a clone of a whole object, and
-[[menu.edit.copy_properties_from]] copies the fill, outline or text
-properties of another object.
+[[menu.edit.copy_properties_from]] (<kbd>Ctrl+Shift+A</kbd>) copies the fill,
+outline or text properties of another object: tick what to copy (outline pen,
+outline color, fill, text properties), click **OK**, then click the object to
+copy from.

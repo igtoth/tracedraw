@@ -3260,6 +3260,11 @@ impl App {
         if pressed(Key::L, cmd) {
             self.combine();
         }
+        // Copy Properties From: its dialog, then a click on the object
+        // to copy from (#1345).
+        if pressed(Key::A, cmd | Modifiers::SHIFT) {
+            self.open_copy_properties();
+        }
         if pressed(Key::J, cmd) {
             self.dialog = crate::ui::dialogs::Dialog::Options;
         }

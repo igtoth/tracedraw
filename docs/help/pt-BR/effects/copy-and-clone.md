@@ -29,5 +29,7 @@ acompanhando: mude a origem e os clones mudam também, até você editar o efeit
 próprio de um clone.
 
 [[menu.edit > menu.edit.clone]] faz um clone de um objeto inteiro, e
-[[menu.edit.copy_properties_from]] copia o preenchimento, o contorno ou as
-propriedades de texto de outro objeto.
+[[menu.edit.copy_properties_from]] (<kbd>Ctrl+Shift+A</kbd>) copia o
+preenchimento, o contorno ou as propriedades de texto de outro objeto: marque o
+que copiar (caneta de contorno, cor do contorno, preenchimento, propriedades do
+texto), clique em **OK** e depois no objeto de onde copiar.

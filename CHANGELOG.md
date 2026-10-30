@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Ctrl+Shift+A opens Copy Properties From: a dialog to tick what to copy (outline pen, outline colour, fill, text properties), then a click on the object to copy from; the shortcut did nothing in the browser. The Align and Distribute panel keeps its menu entry and button and no longer has Ctrl+Shift+A (#1345).
+
 ## 0.28.0 (2026-10-30)
 
 - Variable fonts with many axes (Roboto Flex) draw their text: the font was listed and its axis sliders showed, but every letter came out empty because the glyph reader refused glyphs with more than 32 variation tuples (#870).

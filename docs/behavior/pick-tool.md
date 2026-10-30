@@ -206,7 +206,7 @@ the bar ends with the arranging buttons: Group (Ctrl+G), Ungroup
 shaping operations Weld, Trim, Intersect, Simplify, Front Minus Back,
 Back Minus Front and Boundary (they act as in Object > Shaping, see
 `shaping.md`; Boundary works on one object too), and a button that opens the Align and
-Distribute panel (Ctrl+Shift+A). Their pictures show a square behind a
+Distribute panel. Their pictures show a square behind a
 circle: the result filled, an object that stays outlined, one that goes
 away dashed.
 

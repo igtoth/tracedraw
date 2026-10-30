@@ -920,6 +920,8 @@ pub enum Dialog {
     ConfirmClose,
     /// A font or size picked with no text selected: make it the default
     /// of new text? (as the reference program asks)
+    /// Edit > Copy Properties From (Ctrl+Shift+A): what to copy.
+    CopyProperties(crate::ops2::CopyProperties),
     TextDefaults {
         font: Option<String>,
         style: Option<(bool, bool)>,
@@ -2257,6 +2259,18 @@ pub fn show(app: &mut App, ctx: &Context) {
             });
         }
         Dialog::Barcode(st) => crate::ui::barcode_wizard::dialog(app, ctx, st, &mut close),
+        Dialog::CopyProperties(c) => {
+            window(ctx, tr("dialog.copy_properties")).show(ctx, |ui| {
+                ui.checkbox(&mut c.outline_pen, tr("dialog.copy_outline_pen"));
+                ui.checkbox(&mut c.outline_color, tr("dialog.copy_outline_color"));
+                ui.checkbox(&mut c.fill, tr("dialog.copy_fill"));
+                ui.checkbox(&mut c.text, tr("dialog.copy_text_properties"));
+                ui.add_space(6.0);
+                if ok_cancel(ui, &mut close) {
+                    app.start_copy_properties(*c);
+                }
+            });
+        }
         Dialog::ConvertToBitmap(o) => {
             window(ctx, tr("dialog.convert_to_bitmap")).show(ctx, |ui| {
                 convert_fields(app, ui, o);
