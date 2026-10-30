@@ -34,7 +34,21 @@ not change keep their formatting.
 | <kbd>Home</kbd>, <kbd>End</kbd>, with <kbd>Ctrl</kbd> | start or end of the line, or of the text |
 | <kbd>Ctrl+A</kbd> | select all |
 | <kbd>Ctrl+B</kbd>, <kbd>Ctrl+I</kbd>, <kbd>Ctrl+U</kbd> | bold, italic, underline |
+| <kbd>Ctrl+L</kbd>, <kbd>Ctrl+E</kbd>, <kbd>Ctrl+R</kbd> | align left, center, right |
+| <kbd>Ctrl+J</kbd>, <kbd>Ctrl+H</kbd>, <kbd>Ctrl+N</kbd> | full justify, force justify, no alignment |
+| <kbd>Shift+F3</kbd> | change case (see [Writing tools](writing-tools.md#change-case)) |
 | Double-click | select a word |
+
+A new alignment keeps artistic text in place at the reference point of the X
+and Y fields of the property bar; in a frame it applies to the paragraphs at
+the caret.
+
+Text in right-to-left scripts (Arabic, Hebrew) is laid out right to left,
+also when it is mixed with left-to-right words, and selections shade every
+selected letter. Keyboards and input methods that send characters (such as
+those for Tamil and other Indian scripts on Windows) type into text and
+fields, and <kbd>Alt</kbd> codes typed on the keypad give their character
+once.
 
 All your typing in one editing session is one undo step.
 
@@ -44,7 +58,8 @@ With the [[tool.text]] tool, or with text selected, the property bar has the
 font list, the size (type it or pick from the list), bold, italic, underline,
 the alignment (left, center, right, full justify), bullets and drop cap for
 paragraph text, [[menu.text.text_docker]] (<kbd>Ctrl+T</kbd>) and
-[[menu.text.edit_text]]. While editing, they act on the selected characters;
+[[menu.text.edit_text]]. The button beside the font size opens the sliders of
+a variable font's axes (see [Variable fonts](fonts.md#variable-fonts)). While editing, they act on the selected characters;
 otherwise on the whole selected texts. Your choice also becomes the default
 for the next text.
 
@@ -57,6 +72,12 @@ that shows them. See [Fonts and glyphs](fonts.md).
 The [[docker.text]] panel (<kbd>Ctrl+T</kbd>) has every text setting, in three
 sections you can open and close: **Character**, **Paragraph** and **Frame**.
 The three buttons at the top show the panel from that section on.
+
+Full justification spreads Chinese and Japanese lines to the edge of the frame
+by adding room between the characters, and paragraph text in those scripts
+breaks lines by their rules: punctuation such as ，。、 and closing brackets
+never start a line, and opening brackets never end one. Letters given another
+color keep the font's kerning with their neighbours.
 
 ![The Text panel](../../img/text-adding-text-text-docker.png)
 
@@ -113,12 +134,29 @@ offsets.
 2. Choose [[menu.text > menu.text.fit_text_to_path]].
 
 Or click the outline of a path with the [[tool.text]] tool and type. Text on a
-closed shape stands on its outside, centered on its top. With text on a path
-selected, the property bar sets the orientation of the letters (rotated,
-vertical or horizontal skew, or upright), the vertical placement (on the
-baseline, ascender, descender or center), the placement along the path, the
-distance and offset, and mirroring. Drag the text to slide it along the path.
-[[menu.text.straighten_text]] takes it off the path.
+closed shape stands on its outside, centered on its top; clicked on the bottom
+of an ellipse, it starts there.
+
+With text on a path selected (also with the [[tool.pick]] tool), the property
+bar shows the path's fields first, then the usual text fields:
+
+- The orientation of the letters: rotated, vertical skew, horizontal skew or
+  upright.
+- The vertical placement: on the baseline, the ascender, the descender, or
+  centred on the path.
+- The placement along the path: at its start, centre or end, and on a closed
+  path also **Top centre** (centred on the highest point, outside and
+  upright) and **Bottom centre** (centred on the lowest point, inside and
+  reading left to right, as the bottom line of a stamp).
+- The distance from the path and the offset along it. A new distance keeps
+  the text centred where it was, so a line at the bottom of a circle stays
+  centred as it moves in or out.
+- The two mirror buttons, which put the text on the other side of the path
+  or turn it round, and [[menu.text.straighten_text]], which takes it off the
+  path.
+
+Drag the text to slide it along the path, or across the path to move it away
+from it.
 
 ## Other text commands {#commands}
 

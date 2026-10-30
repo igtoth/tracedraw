@@ -18,12 +18,70 @@ The [[docker.fonts]] panel lists the font families.
 - Click a family to give it to the selected text, or to make it the font of
   new text.
 
+## Font lists and the filter {#font-list}
+
+The font lists of the property bar, the [[docker.text]] panel, the
+[[docker.glyphs]] panel and the options work the same way:
+
+- Type to jump to a family. The last five families you picked are at the top
+  ("used last"), and every family's name is drawn in its own font.
+- The mouse wheel over the closed list picks the next or previous family for
+  the text being edited or selected.
+- A font that came with the drawing and is not installed says "Embedded" at
+  the end of its row and after its name in the font box: its text is drawn
+  with the copy that came with the drawing.
+- The **Filter** button at the top of the open list shows the filter's
+  choices beside the list. Each click filters at once and leaves the list
+  open; the button counts the choices made, such as "Filter (2)", and
+  **Clear filter** at the top of the choices removes them. The choices, in
+  sections that fold:
+  - **Fonts shown**: all fonts, installed fonts, the fonts in this drawing,
+    or in the browser version the fonts to download.
+  - **Style**: serif, sans serif, script, decorative, monospaced, symbol.
+  - **Weight**: light, regular, bold.
+  - **Width**: condensed, normal, expanded.
+  - **Technology**: TrueType, OpenType, variable.
+  - **Scripts**: Latin, Greek, Cyrillic, Hebrew, Arabic, Devanagari, Bengali,
+    Thai, Korean, Japanese, Chinese and symbols.
+  - **OpenType features**: ligatures, kerning, small capitals, the kinds of
+    figures, fractions, superscripts and subscripts, ordinals, slashed zero,
+    swashes, alternates and stylistic sets, each on its own.
+  - **Embedding rights**: installable, editable, preview and print,
+    restricted, bitmap only.
+  - **Folders**: the folders the installed fonts are in.
+
+  Within a section a family needs one of the ticked choices (every ticked
+  one for the OpenType features), and it needs what every section asks. The
+  values are read from the font files themselves; with thousands of fonts
+  the list fills in over a moment the first time.
+
+## Variable fonts {#variable-fonts}
+
+A variable font holds a range of weights, widths and other designs in one
+file. To set them on text:
+
+1. Select the text, or the letters, in a variable font.
+2. Click the button beside the font size on the property bar (or in the first
+   section of the [[docker.text]] panel). It is greyed out, with a tip saying
+   why, when the font is not variable. The Character section of the
+   [[docker.text]] panel shows the same sliders.
+3. Drag the slider of an axis: Weight, Width, Slant, Italic, Optical size, or
+   the font's own axes by the names it gives them, each over the font's
+   range. The text follows the slider while you drag, so you can judge it on
+   the page.
+
+Letting go of the slider, or typing a value, keeps it as one undo step.
+**Default axes** takes the values off. The values are saved in `.tdraw`
+files and drawn in exports and PDF files; a weight set this way replaces
+the bold TraceDraw would otherwise draw.
+
 ## Missing fonts {#missing}
 
-When a drawing uses fonts that are not installed, a message names them after
-it opens (see [Notes after opening](../get-started/open-and-save.md#open-notes)).
-Install the fonts and the text shows in them again. Drawings saved as `.tdraw`,
-and `.cdr` files with embedded fonts, can carry their fonts along.
+When a drawing uses fonts that are not installed, the
+[[missing_fonts.title]] dialog box asks which installed font draws each one,
+for this session or for good. See [Missing fonts](missing-fonts.md). Install
+the fonts and the text shows in them again. Drawings saved as `.tdraw`, and
+`.cdr` files with embedded fonts, can carry their fonts along.
 
 ## The Font Sampler {#font-sampler}
 
@@ -86,8 +144,11 @@ organizes your fonts.
 
 To use the Font Manager:
 
-- **Add folder** scans a folder for font files (TTF, OTF, TTC, OTC); its fonts
-  show as not installed. **Add font** installs one file at once.
+- **Add folder** scans a folder for font files (TTF, OTF, TTC, OTC, three
+  levels down). Its fonts can be used in drawings at once and at every start
+  while the folder is in the libraries, without installing them one by one;
+  removing the folder takes them out again (fonts installed on their own
+  stay). **Add font** installs one file at once.
 - **Install** makes the picked fonts available in TraceDraw, now and at every
   start. **Uninstall** removes them; the system's own fonts are protected.
 - **Add to collection** and **Remove from collection** organize fonts; drag

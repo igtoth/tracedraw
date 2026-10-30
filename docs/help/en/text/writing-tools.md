@@ -120,7 +120,8 @@ such as product names. Those words break only there when hyphenation is on.
 
 ## Change case {#change-case}
 
-[[menu.text > menu.text.change_case]] changes the selected text to
+[[menu.text > menu.text.change_case]] (<kbd>Shift+F3</kbd>) changes the
+selected text to
 [[menu.text.case_sentence]], [[menu.text.case_lower]],
 [[menu.text.case_upper]], [[menu.text.case_title]] or
 [[menu.text.case_toggle]].

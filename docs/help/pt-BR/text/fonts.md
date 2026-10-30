@@ -1,5 +1,7 @@
 # Fontes e glifos
 
+> *Tradução automática: esta página pode estar atrasada em relação à versão em inglês.*
+
 O TraceDraw usa as fontes instaladas no seu computador, as fontes que você
 acrescenta no Gerenciador de fontes e as fontes que vêm com um desenho. Esta
 página explica os painéis e a caixa de diálogo para trabalhar com fontes e
@@ -19,12 +21,70 @@ O painel [[docker.fonts]] lista as famílias de fontes.
 - Clique em uma família para dá-la ao texto selecionado, ou para torná-la a
   fonte do novo texto.
 
+## Listas de fontes e o filtro {#font-list}
+
+As listas de fontes da barra de propriedades, do painel [[docker.text]], do
+painel [[docker.glyphs]] e das opções funcionam do mesmo jeito:
+
+- Digite para pular para uma família. As cinco últimas famílias escolhidas
+  ficam no topo ("usadas por último"), e o nome de cada família aparece na
+  própria fonte.
+- A roda do mouse sobre a lista fechada escolhe a família seguinte ou a
+  anterior para o texto em edição ou selecionado.
+- Uma fonte que veio com o desenho e não está instalada mostra "Incorporada"
+  no fim da linha e depois do nome na caixa de fonte: o texto é desenhado com
+  a cópia que veio com o desenho.
+- O botão **Filtro** no topo da lista aberta mostra as opções do filtro ao
+  lado da lista. Cada clique filtra na hora e deixa a lista aberta; o botão
+  conta as escolhas feitas, como "Filtro (2)", e **Limpar filtro** no topo
+  das opções as remove. As opções, em seções que se recolhem:
+  - **Fontes mostradas**: todas, as instaladas, as deste desenho ou, na
+    versão para navegador, as fontes para baixar.
+  - **Estilo**: serifada, sem serifa, manuscrita, decorativa, monoespaçada,
+    símbolos.
+  - **Peso**: leve, regular, negrito.
+  - **Largura**: condensada, normal, expandida.
+  - **Tecnologia**: TrueType, OpenType, variável.
+  - **Escritas**: latina, grega, cirílica, hebraica, árabe, devanágari,
+    bengali, tailandesa, coreana, japonesa, chinesa e símbolos.
+  - **Recursos OpenType**: ligaduras, kerning, versaletes, os tipos de
+    algarismos, frações, sobrescritos e subscritos, ordinais, zero cortado,
+    floreios, alternativas e conjuntos estilísticos, cada um por si.
+  - **Direitos de incorporação**: instalável, editável, visualizar e
+    imprimir, restrita, só bitmap.
+  - **Pastas**: as pastas onde estão as fontes instaladas.
+
+  Dentro de uma seção, uma família precisa de uma das opções marcadas (de
+  todas as marcadas, nos recursos OpenType), e precisa atender a todas as
+  seções. Os valores são lidos dos próprios arquivos de fonte; com milhares de
+  fontes, a lista se completa em alguns instantes na primeira vez.
+
+## Fontes variáveis {#variable-fonts}
+
+Uma fonte variável guarda uma faixa de pesos, larguras e outros desenhos em
+um só arquivo. Para defini-los no texto:
+
+1. Selecione o texto, ou as letras, em uma fonte variável.
+2. Clique no botão ao lado do tamanho da fonte na barra de propriedades (ou na
+   primeira seção do painel [[docker.text]]). Ele fica cinza, com uma dica
+   dizendo por quê, quando a fonte não é variável. A seção Caractere do painel
+   [[docker.text]] mostra os mesmos controles deslizantes.
+3. Arraste o controle de um eixo: Peso, Largura, Inclinação, Itálico, Tamanho
+   óptico, ou os eixos próprios da fonte com os nomes que ela dá, cada um na
+   faixa da fonte. O texto acompanha o controle enquanto você arrasta, para
+   você avaliar na página.
+
+Soltar o controle, ou digitar um valor, guarda o valor em um passo de
+desfazer. **Eixos padrão** remove os valores. Eles são salvos em arquivos
+`.tdraw` e desenhados em exportações e PDFs; um peso definido assim substitui
+o negrito que o TraceDraw desenharia.
+
 ## Fontes ausentes {#missing}
 
-Quando um desenho usa fontes que não estão instaladas, uma mensagem informa os
-nomes depois que ele abre (veja
-[Avisos depois de abrir](../get-started/open-and-save.md#open-notes)). Instale
-as fontes e o texto volta a aparecer nelas. Desenhos salvos como `.tdraw`, e
+Quando um desenho usa fontes que não estão instaladas, a caixa de diálogo
+[[missing_fonts.title]] pergunta qual fonte instalada desenha cada uma, para
+esta sessão ou de vez. Veja [Fontes ausentes](missing-fonts.md). Instale as
+fontes e o texto volta a aparecer nelas. Desenhos salvos como `.tdraw`, e
 arquivos `.cdr` com fontes incorporadas, podem levar as fontes junto.
 
 ## O Amostrador de fontes {#font-sampler}
@@ -91,9 +151,12 @@ janela que organiza suas fontes.
 
 Para usar o Gerenciador de fontes:
 
-- **Acrescentar pasta** procura arquivos de fonte (TTF, OTF, TTC, OTC) em uma
-  pasta; as fontes aparecem como não instaladas. **Acrescentar fonte** instala
-  um arquivo de uma vez.
+- **Acrescentar pasta** procura arquivos de fonte (TTF, OTF, TTC, OTC, até
+  três níveis abaixo) em uma pasta. As fontes dela podem ser usadas nos
+  desenhos na hora e a cada início enquanto a pasta estiver nas bibliotecas,
+  sem instalar uma a uma; remover a pasta as tira de novo (fontes instaladas
+  por conta própria ficam). **Acrescentar fonte** instala um arquivo de uma
+  vez.
 - **Instalar** torna as fontes escolhidas disponíveis no TraceDraw, agora e a
   cada início. **Desinstalar** as remove; as fontes do próprio sistema são
   protegidas.

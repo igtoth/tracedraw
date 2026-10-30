@@ -1,5 +1,7 @@
 # Ferramentas de escrita
 
+> *Tradução automática: esta página pode estar atrasada em relação à versão em inglês.*
+
 O TraceDraw verifica ortografia e gramática, encontra sinônimos, corrige
 enquanto você digita e conserta textos que chegaram com caracteres errados. Os
 comandos ficam em [[menu.text > menu.text.writing_tools]] e no menu
@@ -123,7 +125,8 @@ hifenização está ativada.
 
 ## Mudar maiúsculas e minúsculas {#change-case}
 
-[[menu.text > menu.text.change_case]] muda o texto selecionado para
+[[menu.text > menu.text.change_case]] (<kbd>Shift+F3</kbd>) muda o texto
+selecionado para
 [[menu.text.case_sentence]], [[menu.text.case_lower]],
 [[menu.text.case_upper]], [[menu.text.case_title]] ou
 [[menu.text.case_toggle]].
