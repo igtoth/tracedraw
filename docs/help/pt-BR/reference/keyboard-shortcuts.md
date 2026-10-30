@@ -105,3 +105,6 @@ dela; para a ferramenta [[tool.shape]], veja
 <kbd>Enter</kbd> pressiona [[dialog.ok]] e <kbd>Esc</kbd> fecha uma caixa de
 diálogo sem aplicá-la. Enquanto uma caixa de diálogo está aberta, os atalhos
 acima não são usados, exceto <kbd>F1</kbd>.
+<kbd>Tab</kbd> vai para a primeira caixa em que se pode digitar e segue pelos
+controles da caixa de diálogo; <kbd>Shift</kbd>+<kbd>Tab</kbd> volta. As teclas
+ficam na caixa de diálogo.

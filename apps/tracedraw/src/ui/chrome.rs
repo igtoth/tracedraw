@@ -210,6 +210,99 @@ pub fn window(title: impl Into<String>) -> Window {
     }
 }
 
+/// Frames after a Tab press in which a dialog takes the focus back
+/// (egui hands it on over a frame or two).
+const TAB_FRAMES: u8 = 3;
+
+/// Tab and Shift+Tab stay in the dialog drawn on `layer` (#1258).
+///
+/// egui moves the focus with Tab in the order the widgets were drawn,
+/// so from nothing focused (a dialog just opened) or from a dialog's
+/// last control it went to the menu bar, drawn first, and the File menu
+/// took the keys. For a few frames after Tab the focus is put back in
+/// the dialog whenever it is nowhere or in the main window: on its
+/// first input box for Tab (its first control when it has no box), on
+/// its last for Shift+Tab. Focus inside the dialog, or in a list or
+/// another window over it, is left to egui. Nothing runs between Tab
+/// presses.
+pub(crate) fn keep_tab_in(ctx: &Context, layer: egui::LayerId) {
+    let pending_id = layer.id.with("tab_pending");
+    let pressed = ctx.input(|i| {
+        // The raw events: a key handler may have taken the Tab already.
+        i.raw.events.iter().rev().find_map(|e| match e {
+            egui::Event::Key {
+                key: egui::Key::Tab,
+                pressed: true,
+                modifiers,
+                ..
+            } if !modifiers.any() => Some(false),
+            egui::Event::Key {
+                key: egui::Key::Tab,
+                pressed: true,
+                modifiers,
+                ..
+            } if modifiers.shift_only() => Some(true),
+            _ => None,
+        })
+    });
+    let mut pending: Option<(u8, bool)> = ctx.data(|d| d.get_temp(pending_id));
+    if let Some(back) = pressed {
+        pending = Some((TAB_FRAMES, back));
+    }
+    let Some((frames, back)) = pending else {
+        return;
+    };
+    let focused = ctx.memory(|m| m.focused());
+    let (mine, focus_layer) = ctx.viewport(|v| {
+        let mine: Vec<egui::Id> = v
+            .this_pass
+            .widgets
+            .get_layer(layer)
+            .filter(|w| w.enabled && w.sense.is_focusable())
+            .map(|w| w.id)
+            .collect();
+        // The layer of the focused widget, drawn this frame or the last.
+        let focus_layer = focused.and_then(|f| {
+            [&v.this_pass.widgets, &v.prev_pass.widgets]
+                .into_iter()
+                .find_map(|ws| ws.get(f).map(|w| w.layer_id))
+        });
+        (mine, focus_layer)
+    });
+    let outside = match (focused, focus_layer) {
+        (None, _) => true,
+        // The main window's panels: the menu bar, the toolbox, the canvas.
+        (Some(_), Some(l)) => l.order < egui::Order::Foreground,
+        (Some(_), None) => false,
+    };
+    if outside {
+        let inputs: Vec<egui::Id> = mine
+            .iter()
+            .copied()
+            .filter(|id| egui::TextEdit::load_state(ctx, *id).is_some())
+            .collect();
+        let target = if back {
+            inputs.last().or(mine.last())
+        } else {
+            inputs.first().or(mine.first())
+        };
+        if let Some(id) = target {
+            ctx.memory_mut(|m| m.request_focus(*id));
+        }
+    }
+    let left = frames.saturating_sub(1);
+    ctx.data_mut(|d| {
+        if left == 0 {
+            d.remove::<(u8, bool)>(pending_id);
+        } else {
+            d.insert_temp(pending_id, (left, back));
+        }
+    });
+    if left > 0 {
+        ctx.request_repaint();
+    }
+}
+
 /// Whether the resizable dialog `id` fills the main window.
 pub fn maximized(ctx: &Context, id: egui::Id) -> bool {
     ctx.data(|d| d.get_temp::<bool>(id.with("chrome_maximized")))
@@ -295,6 +388,7 @@ impl Window {
                 closed = true;
             }
         });
+        keep_tab_in(ctx, egui::LayerId::new(egui::Order::Foreground, self.id));
         if closed {
             request_close(ctx);
         }
@@ -385,6 +479,7 @@ impl Window {
         if toggle_max {
             set_maximized(ctx, self.id, !max);
         }
+        keep_tab_in(ctx, egui::LayerId::new(egui::Order::Foreground, self.id));
         if closed {
             request_close(ctx);
         }

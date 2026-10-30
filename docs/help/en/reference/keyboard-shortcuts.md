@@ -103,3 +103,6 @@ while you use it, explained on its page; for the [[tool.shape]] tool, see
 <kbd>Enter</kbd> presses [[dialog.ok]] and <kbd>Esc</kbd> closes a dialog box
 without applying it. While a dialog box is open, the shortcuts above are not
 used, except <kbd>F1</kbd>.
+<kbd>Tab</kbd> goes to the first box you can type in, and on through the
+dialog box's controls; <kbd>Shift</kbd>+<kbd>Tab</kbd> goes back. The keys stay
+in the dialog box.

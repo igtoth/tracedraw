@@ -14446,3 +14446,60 @@ fn repeat_turns_and_resizes_in_place() {
         "the anchor side stays: {after:?} {before:?}"
     );
 }
+
+/// #1258: Tab in a dialog puts the focus on its first input box, not on
+/// the File menu; tabbing on, the focus stays in the dialog and comes
+/// round to that box again; Shift+Tab from it goes to the last box.
+#[test]
+fn tab_in_a_dialog_focuses_its_first_input_box() {
+    let (ctx, mut app, _) = setup();
+    app.dialog = crate::ui::dialogs::Dialog::CreateTable {
+        rows: 3,
+        cols: 4,
+        width: 80.0,
+        height: 50.0,
+    };
+    for _ in 0..3 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    let tab = |ctx: &egui::Context, app: &mut App, mods: Modifiers| {
+        frame(ctx, app, vec![key(egui::Key::Tab, mods)], mods);
+        for _ in 0..4 {
+            frame(ctx, app, Vec::new(), Modifiers::NONE);
+        }
+    };
+    // The focused widget and the order of the layer it is drawn on.
+    let focus = |ctx: &egui::Context| {
+        let f = ctx.memory(|m| m.focused())?;
+        let order = ctx.viewport(|v| v.prev_pass.widgets.get(f).map(|w| w.layer_id.order))?;
+        Some((f, order))
+    };
+    let is_box = |ctx: &egui::Context, id: egui::Id| egui::TextEdit::load_state(ctx, id).is_some();
+    tab(&ctx, &mut app, Modifiers::NONE);
+    let (first, order) = focus(&ctx).expect("a focused widget");
+    assert_eq!(
+        order,
+        egui::Order::Foreground,
+        "in the dialog, not the menu bar"
+    );
+    assert!(is_box(&ctx, first), "an input box");
+    let mut round = false;
+    for _ in 0..20 {
+        tab(&ctx, &mut app, Modifiers::NONE);
+        let (f, order) = focus(&ctx).expect("a focused widget");
+        assert_eq!(
+            order,
+            egui::Order::Foreground,
+            "the focus stays in the dialog"
+        );
+        if f == first {
+            round = true;
+            break;
+        }
+    }
+    assert!(round, "Tab comes round to the first box");
+    tab(&ctx, &mut app, Modifiers::SHIFT);
+    let (last, order) = focus(&ctx).expect("a focused widget");
+    assert_eq!(order, egui::Order::Foreground);
+    assert!(is_box(&ctx, last) && last != first, "the last box");
+}
