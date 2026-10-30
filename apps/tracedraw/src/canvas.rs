@@ -1142,7 +1142,8 @@ fn draw_shadow_handles(app: &App, painter: &Painter) {
     }
     let [r, g, bl] = sh.color.to_rgb8();
     for (c, fill) in [(a, Color32::WHITE), (z, Color32::from_rgb(r, g, bl))] {
-        let rect = ERect::from_center_size(c, egui::vec2(9.0, 9.0));
+        let side = crate::shadow_tool::HANDLE_SIDE_PX;
+        let rect = ERect::from_center_size(c, egui::vec2(side, side));
         painter.rect_filled(rect, 0.0, fill);
         painter.rect_stroke(
             rect,

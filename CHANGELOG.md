@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Drop Shadow: a change on the property bar (Flat or an edge, offset, opacity, color...) applies at once to the selected objects, also to an object with no shadow yet, so a flat shadow can be given directly; it only set the default for new shadows before. The shadow handles are larger and can be grabbed from a little outside them. Native ellipses, polygons and stars are checked to cast and pick their shadow by their own outline, the same as after Convert to Curves. Shared code: desktop (Linux, Windows, macOS), web and Android (#1323).
+
 - Extrude: each side of the body is one object, filled with the side's colours (a curved side with a fountain that follows the light) and outlined once, so a square's body is its two sides and a circle's its one curved side, to colour, paint with Smart Fill or break apart as whole parts; the far face, hidden behind a filled object and its sides, is no longer drawn. Before, a curved side was a row of dozens of slats (#1281).
 - Dialog boxes: Tab goes to the first box you can type in and on through the dialog's controls, and Shift+Tab back, without leaving the dialog. Tab with nothing focused (a dialog just opened) or from a dialog's last control went to the menu bar, so the File menu took the next keys (#1258).
 - Linked paragraph text frames: a picked frame now has a tab over its top edge too; click it, then click another frame to make that frame's text flow into this one, or click (or drag) on empty space for a new frame that the text starts in. A drag from the bottom tab onto a frame or onto empty space links as a click there does, and while a link waits for its target a dashed line runs from the tab to the pointer.

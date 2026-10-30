@@ -3315,10 +3315,7 @@ fn shadow_bar(app: &mut App, ui: &mut Ui, shapes: &[tracedraw_core::Shape]) {
         changed = true;
     }
     if changed {
-        app.shadow_default = sh;
-        if first.is_some() {
-            app.set_shadow(Some(sh), true);
-        }
+        app.shadow_bar_changed(sh, first.is_some());
     }
     vsep(ui);
     if ui

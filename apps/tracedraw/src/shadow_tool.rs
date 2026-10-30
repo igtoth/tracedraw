@@ -24,7 +24,11 @@ pub enum ShadowHandle {
 }
 
 /// How far from a handle a press still takes it, screen pixels.
-const HANDLE_PX: f64 = 6.0;
+/// How near (screen pixels) a press takes a shadow handle: more than the
+/// drawn square, so it is easy to grab at any zoom (#1323).
+pub const HANDLE_PX: f64 = 11.0;
+/// The side of a drawn shadow handle, in screen pixels.
+pub const HANDLE_SIDE_PX: f32 = 12.0;
 
 /// The resolution Break Drop Shadow Apart makes the bitmap at.
 pub const BREAK_APART_DPI: f64 = 150.0;
@@ -179,6 +183,19 @@ impl App {
         }
         self.shadow_default = sh;
         self.set_shadow(Some(sh), true);
+    }
+
+    /// A field of the Drop Shadow property bar changed to `sh`: it becomes
+    /// the default for new shadows and goes to the selection, also when
+    /// the selection has no shadow yet (`had_shadow` false), so Flat, an
+    /// edge or an offset chosen there applies at once instead of only
+    /// after Apply (#1323). Typing in a field again merges into the same
+    /// undo step.
+    pub fn shadow_bar_changed(&mut self, sh: Shadow, had_shadow: bool) {
+        self.shadow_default = sh;
+        if !self.selection.is_empty() {
+            self.set_shadow(Some(sh), had_shadow);
+        }
     }
 
     /// A colour dropped on the end handle: the shadow takes it (one step).
@@ -486,6 +503,98 @@ mod tests {
         app.set_shadow(Some(Shadow { opacity: 0.0, ..sh }), false);
         let s = app.doc().find_shape(top).expect("top").clone();
         assert!(!shadow_covers(&s, far));
+    }
+
+    /// Native ellipses and stars cast and pick their shadow by their
+    /// outline, as their curves do: a press in the box's corner beside
+    /// the shadowed outline is not on the shadow (#1323).
+    #[test]
+    fn native_shapes_pick_their_shadow_by_the_outline() {
+        let (mut app, _) = app_with_rect();
+        let kinds = [
+            ShapeKind::Ellipse {
+                rect: Rect::new(100.0, 100.0, 140.0, 140.0),
+                arc: None,
+            },
+            ShapeKind::Polygon {
+                rect: Rect::new(100.0, 100.0, 140.0, 140.0),
+                points: 5,
+                sharpness: 0.5,
+                complex: None,
+                twist: 0.0,
+            },
+        ];
+        for kind in kinds {
+            let id = app.new_shape(kind.clone()).expect("shape");
+            app.select(vec![id]);
+            app.apply_fill(Fill::Solid(Color::rgb8(0, 0, 255)));
+            app.set_shadow(
+                Some(Shadow {
+                    offset: Vec2::new(50.0, 0.0),
+                    blur: 0.0,
+                    ..Shadow::default()
+                }),
+                false,
+            );
+            let s = app.doc().find_shape(id).expect("shape").clone();
+            let mut curves = s.clone();
+            curves.kind = ShapeKind::Path {
+                path: s.local_path(),
+                closed: true,
+            };
+            // The middle of the shadow, and the corner of its box.
+            for (p, on) in [
+                (Point::new(170.0, 120.0), true),
+                (Point::new(151.0, 139.0), false),
+            ] {
+                assert_eq!(shadow_covers(&s, p), on, "{kind:?} {p:?}");
+                assert_eq!(shadow_covers(&curves, p), on, "{kind:?} curves {p:?}");
+            }
+        }
+    }
+
+    /// The property bar applies at once: with an object that has no
+    /// shadow selected, choosing Flat (or any field) gives it the shadow
+    /// (#1323).
+    #[test]
+    fn the_property_bar_applies_a_shadow_directly() {
+        let (mut app, id) = app_with_rect();
+        assert!(shadow(&app, id).is_none());
+        let flat = Shadow {
+            perspective: None,
+            offset: Vec2::new(3.0, -3.0),
+            ..Shadow::default()
+        };
+        app.shadow_bar_changed(flat, false);
+        assert_eq!(shadow(&app, id), Some(flat));
+        assert_eq!(app.shadow_default, flat);
+        // Changed again: one more step merged into the same one.
+        let steps = app.engine.history_labels().0.len();
+        let flat2 = Shadow {
+            opacity: 0.3,
+            ..flat
+        };
+        app.shadow_bar_changed(flat2, true);
+        assert_eq!(shadow(&app, id), Some(flat2));
+        assert_eq!(app.engine.history_labels().0.len(), steps);
+        // Nothing selected: only the default changes.
+        app.select(Vec::new());
+        let other = Shadow {
+            opacity: 0.9,
+            ..flat
+        };
+        app.shadow_bar_changed(other, false);
+        assert_eq!(app.shadow_default, other);
+        assert_eq!(shadow(&app, id), Some(flat2));
+        // The handles are taken from further than they are drawn.
+        app.select(vec![id]);
+        let (_, sh, b) = app.selected_shadow().expect("shadow");
+        let end = shadow_handles(&sh, b)[0].1;
+        let off = (HANDLE_SIDE_PX as f64 / 2.0 + 3.0) / f64::from(app.view.zoom);
+        assert_eq!(
+            app.shadow_handle_at(end + Vec2::new(off, 0.0)),
+            Some(ShadowHandle::End)
+        );
     }
 
     #[test]

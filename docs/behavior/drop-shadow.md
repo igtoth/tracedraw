@@ -90,6 +90,25 @@ a bar on the line at the opacity (start = 0 %, end = 100 %).
 - A palette colour dropped on the end square becomes the shadow colour
   (one undo step).
 
+The squares are 12 pixels wide and a press within 11 pixels of one
+takes it, whatever the zoom (#1323).
+
+## Property bar applies at once
+
+A change on the Drop Shadow property bar (Flat or an edge, the offset,
+opacity, feathering, colour and the rest) goes to the selected objects
+at once, also to objects that have no shadow yet, which then get one;
+further changes merge into the same "Drop Shadow" undo step. With
+nothing selected it sets the shadow new objects get. Before, a change
+with no shadow there only set that default, so a flat shadow could not
+be given directly (#1323,
+`shadow_tool::tests::the_property_bar_applies_a_shadow_directly`).
+
+Native ellipses, polygons and stars cast and pick their shadow by their
+own outline, the same as after Convert to Curves, on every platform
+(`shadow_tool::tests::native_shapes_pick_their_shadow_by_the_outline`,
+`tracedraw_render` `tests::native_shapes_cast_the_shadow_of_their_outline`).
+
 ## Picking a shadow
 
 A shadow is picked with its object, where it lies above what is beneath

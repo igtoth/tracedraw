@@ -25,6 +25,11 @@ On the property bar:
 - its **feathering**, how soft its edge is (15% at first);
 - its **color** (black at first).
 
+A change there applies at once to the selected objects, also to an object
+that has no shadow yet: choose Flat, or an edge, to give it that kind of
+shadow directly. Shadow handles can be grabbed from a little outside the
+squares.
+
 [[menu.object > menu.object.clear_effect]] removes the shadow. To copy the
 shadow of another object, use
 [[menu.object > menu.object.copy_effect > menu.object.copy_shadow_from]].

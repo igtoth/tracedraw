@@ -28,6 +28,11 @@ Na barra de propriedades:
 - o **esmaecimento**, quão suave é a borda (15% de início);
 - a **cor** (preto de início).
 
+Uma mudança ali vale na hora para os objetos selecionados, também para um
+objeto que ainda não tem sombra: escolha Plana, ou uma borda, para dar a ele
+esse tipo de sombra diretamente. As alças da sombra podem ser pegas um pouco
+fora dos quadrados.
+
 [[menu.object > menu.object.clear_effect]] remove a sombra. Para copiar a sombra
 de outro objeto, use
 [[menu.object > menu.object.copy_effect > menu.object.copy_shadow_from]].

@@ -5187,6 +5187,76 @@ mod tests {
         assert!(white(&img, 15, 15));
     }
 
+    /// A native ellipse or star casts the same shadow, flat or in
+    /// perspective, as the same outline converted to curves: its own
+    /// outline, not its box (#1323).
+    #[test]
+    fn native_shapes_cast_the_shadow_of_their_outline() {
+        use tracedraw_core::shadow::{Perspective, ShadowEdge};
+        let flat = tracedraw_core::Shadow {
+            offset: tracedraw_core::geometry::Vec2::new(6.0, -6.0),
+            opacity: 1.0,
+            blur: 0.0,
+            color: Color::BLACK,
+            ..Default::default()
+        };
+        let persp = tracedraw_core::Shadow {
+            perspective: Some(Perspective::new(ShadowEdge::Bottom)),
+            ..flat
+        };
+        let kinds = [
+            ShapeKind::Ellipse {
+                rect: Rect::new(8.0, 12.0, 28.0, 32.0),
+                arc: None,
+            },
+            ShapeKind::Polygon {
+                rect: Rect::new(8.0, 12.0, 28.0, 32.0),
+                points: 5,
+                sharpness: 0.5,
+                complex: None,
+                twist: 0.0,
+            },
+        ];
+        for kind in kinds {
+            for sh in [flat, persp] {
+                let scene = |curves: bool| {
+                    let mut doc =
+                        Document::new("t", tracedraw_core::geometry::Size::new(40.0, 40.0));
+                    let layer = doc.pages[0].layers[0].id;
+                    let mut s = Shape::new(doc.ids_mut().shape(), kind.clone());
+                    s.transform = Affine::rotate_about(0.3, Point::new(18.0, 22.0));
+                    if curves {
+                        s.kind = ShapeKind::Path {
+                            path: s.local_path(),
+                            closed: true,
+                        };
+                    }
+                    s.fill = Fill::Solid(Color::rgb8(0, 0, 255));
+                    s.stroke = None;
+                    s.shadow = Some(sh);
+                    doc.layer_mut(layer).unwrap().shapes.push(s);
+                    let page = doc.pages[0].id;
+                    render_page_image(&doc, page, 25.4).unwrap()
+                };
+                let (native, curves) = (scene(false), scene(true));
+                let differ = native
+                    .pixels()
+                    .iter()
+                    .zip(curves.pixels())
+                    .filter(|(a, b)| {
+                        (i32::from(a.red()) - i32::from(b.red())).abs() > 8
+                            || (i32::from(a.blue()) - i32::from(b.blue())).abs() > 8
+                    })
+                    .count();
+                assert!(
+                    differ < 4,
+                    "{kind:?} {:?}: {differ} pixels differ",
+                    sh.perspective
+                );
+            }
+        }
+    }
+
     /// A 40 x 40 mm page with a red square under a blue square that has
     /// `shadow`; rendered at 1 px per mm.
     fn shadow_scene(shadow: tracedraw_core::Shadow) -> Pixmap {
