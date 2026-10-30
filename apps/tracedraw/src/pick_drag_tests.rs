@@ -13381,7 +13381,12 @@ fn remove_background_adds_and_removes_colours() {
         ..Modifiers::NONE
     };
     // "+", then a click on green: a second entry.
-    click_at(&ctx, &mut app, preview_rect(&ctx, "bg_add").center(), Modifiers::NONE);
+    click_at(
+        &ctx,
+        &mut app,
+        preview_rect(&ctx, "bg_add").center(),
+        Modifiers::NONE,
+    );
     let st = bg_state(&app);
     assert!(st.picking && st.adding);
     click_at(&ctx, &mut app, at(0.5), Modifiers::NONE);
@@ -13393,7 +13398,12 @@ fn remove_background_adds_and_removes_colours() {
     assert!(!st.picking, "a plain click puts the eyedropper down");
     // The eyedropper of the first row, then Shift+click on red: added,
     // and the eyedropper stays on.
-    click_at(&ctx, &mut app, preview_rect(&ctx, "bg_pick_0").center(), Modifiers::NONE);
+    click_at(
+        &ctx,
+        &mut app,
+        preview_rect(&ctx, "bg_pick_0").center(),
+        Modifiers::NONE,
+    );
     assert!(bg_state(&app).picking);
     click_at(&ctx, &mut app, at(0.9), shift);
     let st = bg_state(&app);
@@ -13416,7 +13426,12 @@ fn remove_background_adds_and_removes_colours() {
     for _ in 0..2 {
         frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
     }
-    click_at(&ctx, &mut app, preview_rect(&ctx, "bg_drop_1").center(), Modifiers::NONE);
+    click_at(
+        &ctx,
+        &mut app,
+        preview_rect(&ctx, "bg_drop_1").center(),
+        Modifiers::NONE,
+    );
     let st = bg_state(&app);
     assert_eq!(st.settings.colors.len(), 1);
     // The row's own tolerance: the wheel over its field steps it from
@@ -13447,7 +13462,12 @@ fn remove_background_adds_and_removes_colours() {
     assert_eq!(t, t.round());
     assert_ne!(t, st.settings.tolerance);
     // Add green again, then OK: one undo step, white and green gone.
-    click_at(&ctx, &mut app, preview_rect(&ctx, "bg_add").center(), Modifiers::NONE);
+    click_at(
+        &ctx,
+        &mut app,
+        preview_rect(&ctx, "bg_add").center(),
+        Modifiers::NONE,
+    );
     click_at(&ctx, &mut app, at(0.5), Modifiers::NONE);
     assert_eq!(bg_state(&app).settings.colors.len(), 2);
     let before = app.engine.undo_label();
@@ -13490,9 +13510,17 @@ fn remove_background_picks_a_colour_on_the_drawing() {
     use tracedraw_core::Color;
     let (ctx, mut app) = bg_three_setup();
     assert!(!crate::ui::color_picker::picking(&ctx));
-    click_at(&ctx, &mut app, preview_rect(&ctx, "bg_add").center(), Modifiers::NONE);
+    click_at(
+        &ctx,
+        &mut app,
+        preview_rect(&ctx, "bg_add").center(),
+        Modifiers::NONE,
+    );
     frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
-    assert!(crate::ui::color_picker::picking(&ctx), "the drawing listens");
+    assert!(
+        crate::ui::color_picker::picking(&ctx),
+        "the drawing listens"
+    );
     // What the canvas does on a click while a pick waits.
     crate::ui::color_picker::finish_pick(&ctx, Some(Color::rgb8(40, 180, 60)));
     frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
@@ -13504,7 +13532,12 @@ fn remove_background_picks_a_colour_on_the_drawing() {
     frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
     assert!(!crate::ui::color_picker::picking(&ctx), "no request left");
     // Shift held: added, and the eyedropper stays on.
-    click_at(&ctx, &mut app, preview_rect(&ctx, "bg_add").center(), Modifiers::NONE);
+    click_at(
+        &ctx,
+        &mut app,
+        preview_rect(&ctx, "bg_add").center(),
+        Modifiers::NONE,
+    );
     frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
     let shift = Modifiers {
         shift: true,
@@ -13555,7 +13588,12 @@ fn frame_times_of_the_remove_background_dialog() {
     eprintln!("idle frame: {:?}", t.elapsed() / 30);
     let rail = preview_rect(&ctx, "bg_tolerance");
     let from = egui::pos2(rail.left() + rail.width() * 0.1, rail.center().y);
-    frame(&ctx, &mut app, vec![Event::PointerMoved(from)], Modifiers::NONE);
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::PointerMoved(from)],
+        Modifiers::NONE,
+    );
     frame(
         &ctx,
         &mut app,
@@ -13568,7 +13606,12 @@ fn frame_times_of_the_remove_background_dialog() {
     for i in 1..=steps {
         let p = from + egui::vec2(rail.width() * 0.4 * i as f32 / steps as f32, 0.0);
         let f = std::time::Instant::now();
-        frame(&ctx, &mut app, vec![Event::PointerMoved(p)], Modifiers::NONE);
+        frame(
+            &ctx,
+            &mut app,
+            vec![Event::PointerMoved(p)],
+            Modifiers::NONE,
+        );
         worst = worst.max(f.elapsed());
     }
     eprintln!(

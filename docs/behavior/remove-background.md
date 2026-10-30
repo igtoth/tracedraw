@@ -57,6 +57,14 @@ on (from any row or "+"):
 The colour is taken from the picture before the change (a removed pixel
 can be picked too). The pan button turns the eyedropper off.
 
+While the eyedropper is on, a click on the drawing picks too: the dialog
+renews the shared picker request (`color_picker::pick_for`, the request
+the colour pickers' eyedroppers use), so the modal layer lets the click
+through to the canvas, which samples the colour there and hands it back;
+Shift and Alt work as on a pane. A colour picked on the drawing has no
+seed point (the click may be off the bitmap). With the eyedropper off no
+request is left waiting.
+
 The preview is the shared live preview (`before-after-preview.md`): the
 result is cached under a hash of the settings and the copy, made again only
 when they change; while a slider is dragged it is worked on a small copy,
@@ -134,6 +142,9 @@ and the shown size follows when the pointer is released.
   removes the nearest, x removes a row, the wheel sets a row's own whole
   tolerance, OK is one undo step and the list comes back next time.
 - `pick_drag_tests::the_remove_background_eyedropper_picks_on_the_shared_preview`
+- `pick_drag_tests::remove_background_picks_a_colour_on_the_drawing`: a
+  click on the drawing adds a row after "+", Shift keeps the eyedropper,
+  and no picker request outlives it.
 - `pick_drag_tests::frame_times_of_the_remove_background_dialog`
   (ignored, `--release`): idle frames and a Tolerance drag with three
   colours listed on a 2000 x 2000 bitmap.

@@ -678,7 +678,10 @@ fn bg_color_list(ui: &mut Ui, st: &mut BgRemoveState) {
                 before_after::mark(ui, m, pick.rect);
             }
             if pick
-                .rich_tip(crate::ui::tips::pair("dialog.bg_pick", "dialog.bg_pick_tip"))
+                .rich_tip(crate::ui::tips::pair(
+                    "dialog.bg_pick",
+                    "dialog.bg_pick_tip",
+                ))
                 .clicked()
             {
                 st.picking = !picking_here;
@@ -769,7 +772,11 @@ fn bg_color_list(ui: &mut Ui, st: &mut BgRemoveState) {
         }
         ui.label(tr("dialog.bg_add_color"));
     });
-    ui.label(egui::RichText::new(tr("dialog.bg_colors_hint")).weak().small());
+    ui.label(
+        egui::RichText::new(tr("dialog.bg_colors_hint"))
+            .weak()
+            .small(),
+    );
 }
 
 /// The Remove Background settings.
@@ -781,18 +788,18 @@ fn bg_remove_settings(ui: &mut Ui, st: &mut BgRemoveState) {
         .num_columns(2)
         .show(ui, |ui| {
             ui.label(tr("dialog.tolerance"));
-            let tol = crate::ui::tips::tip_over(ui, crate::ui::tips::keyed("dialog.tolerance"), |ui| {
-                // Whole numbers, the box and the thumb alike.
-                ui.add(crate::ui::Slider::new(&mut st.settings.tolerance, 0.0..=100.0).integer())
-            });
+            let tol =
+                crate::ui::tips::tip_over(ui, crate::ui::tips::keyed("dialog.tolerance"), |ui| {
+                    // Whole numbers, the box and the thumb alike.
+                    ui.add(
+                        crate::ui::Slider::new(&mut st.settings.tolerance, 0.0..=100.0).integer(),
+                    )
+                });
             before_after::mark(ui, "bg_tolerance", tol.rect);
             ui.end_row();
             ui.label(tr("dialog.edge_softness"));
             crate::ui::tips::tip_over(ui, crate::ui::tips::keyed("dialog.edge_softness"), |ui| {
-                ui.add(
-                    crate::ui::Slider::new(&mut st.settings.softness, 0.0..=20.0)
-                        .suffix(" px"),
-                )
+                ui.add(crate::ui::Slider::new(&mut st.settings.softness, 0.0..=20.0).suffix(" px"))
             });
             ui.end_row();
         });

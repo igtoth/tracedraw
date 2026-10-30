@@ -866,10 +866,7 @@ mod tests {
         assert_eq!(out.get_pixel(50, 40).0[3], 255);
         // Feathered, the union's edge softens and the subject's middle
         // stays.
-        let soft = BgSettings {
-            softness: 2.0,
-            ..s
-        };
+        let soft = BgSettings { softness: 2.0, ..s };
         let out = remove_background(&img, &soft, 1.0);
         assert_eq!(out.get_pixel(48, 30).0[3], 255);
         assert_eq!(out.get_pixel(20, 40).0[3], 0);
@@ -953,7 +950,13 @@ mod tests {
         assert_eq!(s.remove_nearest([10, 10, 190], &learnt), Some(2));
         // Near white: Automatic (its learnt white) goes; green is first.
         assert_eq!(s.remove_nearest([250, 250, 250], &learnt), Some(0));
-        assert_eq!(s.colors, vec![BgPick { seed: Some([0.1, 0.2]), ..BgPick::color([0, 200, 0]) }]);
+        assert_eq!(
+            s.colors,
+            vec![BgPick {
+                seed: Some([0.1, 0.2]),
+                ..BgPick::color([0, 200, 0])
+            }]
+        );
         assert_eq!(s.remove_nearest([0, 0, 0], &learnt), Some(0));
         assert_eq!(s.colors, vec![BgPick::AUTO]);
         // Automatic with nothing learnt cannot be the nearest.
