@@ -2907,9 +2907,14 @@ fn mark_nodes(coords: &mut [u8]) {
         .get(0..4)
         .and_then(|b| b.try_into().ok())
         .map_or(0, u32::from_le_bytes) as usize;
-    let Some(types) = coords.get_mut(4 + 8 * n..4 + 9 * n) else {
-        return;
-    };
+    if let Some(types) = coords.get_mut(4 + 8 * n..4 + 9 * n) {
+        mark_node_types(types);
+    }
+}
+
+/// The node marks of [`mark_nodes`] set on a curve's node bytes alone
+/// (`check` compares a written outline with them).
+pub(crate) fn mark_node_types(types: &mut [u8]) {
     let mut start = 0;
     for k in 0..=types.len() {
         let ends = k == types.len() || (k > start && types[k] & 0xc0 == 0);
@@ -2995,6 +3000,21 @@ fn graded_transparency_json(g: (&tracedraw_core::Fountain, u8)) -> Option<String
     ))
 }
 
+/// The `outline` of an object's style string when it has no outline, as
+/// the program's own files of version 27 hold it on pictures and shapes
+/// without one (the members in their order, width 0, no `type`).
+pub(crate) const NO_OUTLINE_JSON: &str = concat!(
+    r#"{"angle":"0","aspect":"100","behindFill":"0","#,
+    r#""color":"CMYK,USER,0,0,0,100,100,00000000-0000-0000-0000-000000000000","#,
+    r#""dashAdjust":"0","dashDotSpec":"0","dotLength":"0","endCaps":"0","joinType":"0","#,
+    r#""justification":"0","leftArrow":"|0","leftArrowAttributes":"0|0|0|0|0|0|0","#,
+    r#""matrix":"1,0,0,0,1,0","miterLimit":"5","overlapArrow":"0","overprint":"0","#,
+    r#""projectMatrix":"1,0,0,0,1,0","rightArrow":"|0","#,
+    r#""rightArrowAttributes":"0|0|0|0|0|0|0","scaleWithObject":"0","#,
+    r#""screenSpec":"0,0,45000000,60,0","shareArrow":"0","variableAttributes":"0|0","#,
+    r#""width":"0"}"#
+);
+
 /// The style string of an object (versions 16+): its fill, outline and
 /// transparency.
 fn object_style_json(
@@ -3021,7 +3041,12 @@ fn object_style_json(
             colour_spec(s.color),
             Stroke::miter_angle_from_ratio(s.miter_ratio())
         ),
-        None => r#"{"type":"1","width":"0"}"#.to_string(),
+        // As the files of versions 16 to 27 hold an object without an
+        // outline: every member with width 0 and no `type`. TraceDraw
+        // wrote `{"type":"1","width":"0"}`, a type no file holds; the
+        // program that reads them closed when such a picture, or a group
+        // of such curves, was clicked (#1226).
+        None => NO_OUTLINE_JSON.to_string(),
     };
     let transparency = if let Some(g) = graded.and_then(graded_transparency_json) {
         g

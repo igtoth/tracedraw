@@ -26,6 +26,8 @@ full, row-by-row status.
 - Windows: a tool picked with its shortcut over a still mouse shows its pointer at once, and the pointer never vanishes. Picking the Pen tool kept the arrow, and leaving the Pen tool (or any tool with a drawn pointer) left no pointer at all, until the mouse moved: Windows hides and shows the pointer only at the next mouse move. A drawn pointer now swaps the system pointer for a fully transparent pointer image, which Windows applies at once, instead of hiding it (#1124).
 
 - Properties docker, Transparency: the amount is a full-width slider with its label above, like the Fill section's angle and edge pad, and a fountain transparency's angle is the same angle slider. The property bar keeps its compact controls.
+- Saving .cdr: a second difference between TraceDraw's pictures and those of the program that reads `.cdr` files, besides the node marks of 0.29.0, that can make that program close when a picture is clicked (#1226, #1381, #1268, #1222): every object without an outline (pictures, and shapes and text drawn without one) named in its style string an outline type that no file of that program holds; it now holds the outline that program's own files give such objects (every setting, width 0, no type). `tracedraw-cli check` reports the old outline type, and checks a picture's outline node by node for the node marks instead of its first node alone.
+
 - Options > Tools: each page in the list shows its tool's icon. The Zoom/Pan page has a Zoom tool section and a Calibrate Zoom... button that opens the ruler calibration (Display page).
 
 ## 0.29.0 (2026-10-30)

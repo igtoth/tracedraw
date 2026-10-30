@@ -198,6 +198,42 @@ pub(crate) fn loda_args(d: &[u8]) -> Option<(u32, Args<'_>)> {
 
 /// The matrix of a `trfd` record: (a, b, c, d, e, f) with
 /// x' = a x + c y + e and y' = b x + d y + f, e and f in millimetres.
+/// The `type` of an `outline` in an object's style string (argument 201:
+/// u32 1, the length, the JSON) when it is not 0. The program's own files
+/// of versions 16 to 27 give an outline `type` 0 or none (no outline);
+/// TraceDraw wrote 1 for no outline, and that program closed when such a
+/// picture, or a group of such curves, was clicked (#1226).
+fn odd_outline_type(body: &[u8]) -> Option<String> {
+    let text = style_text(body.get(8..)?);
+    let mut rest = text.as_str();
+    while let Some(at) = rest.find(r#""outline":{"#) {
+        rest = &rest[at + 11..];
+        let outline = &rest[..rest.find('}').unwrap_or(rest.len())];
+        if let Some(t) = outline.find(r#""type":""#) {
+            let value = &outline[t + 8..];
+            let value = &value[..value.find('"').unwrap_or(value.len())];
+            if value != "0" {
+                return Some(value.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// A style string's text: UTF-16LE in version 16 files (its second byte
+/// zero), UTF-8 after.
+pub(crate) fn style_text(b: &[u8]) -> String {
+    if b.len() >= 2 && b.len() % 2 == 0 && b[1] == 0 {
+        let units: Vec<u16> = b
+            .chunks_exact(2)
+            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+            .collect();
+        String::from_utf16_lossy(&units)
+    } else {
+        String::from_utf8_lossy(b).into_owned()
+    }
+}
+
 fn trfd_matrix(d: &[u8], v: u16) -> Option<[f64; 6]> {
     let offsets = u32_at(d, 8)? as usize;
     let mut at = u32_at(d, offsets)? as usize;
@@ -467,6 +503,14 @@ impl<'a> Checker<'a> {
                     _ => {}
                 },
                 crate::parse::ARG_COORDS => coords = Some(body),
+                crate::parse::ARG_STYLE_STRING => {
+                    if let Some(t) = odd_outline_type(body) {
+                        self.note(
+                            place,
+                            format!("style string outline has type {t}, which no file holds"),
+                        );
+                    }
+                }
                 crate::parse::ARG_CLIP_CONTENTS => match u32_at(body, 0) {
                     Some(n) if !self.clip_groups.contains(&n) => {
                         self.note(
@@ -602,17 +646,25 @@ impl<'a> Checker<'a> {
         } else if self.v >= 14 && u32_at(d, types_at + n) != Some(0) {
             self.note(place, "bitmap record does not end with 4 zero bytes");
         }
-        // The outline's first node carries the marks of a curve's (bit 2,
-        // and bit 3 when the outline closes), as every bitmap of the
+        // The outline's nodes carry the marks of a curve's (bit 2 on each
+        // node but the control points and the closing one, bit 3 also on
+        // the start of a closed outline), as every bitmap of the
         // program's files has them; a bitmap without them closed that
         // program when it was clicked (#1226).
-        if let (Some(&first), Some(&last)) = (d.get(types_at), d.get(types_at + n - 1)) {
-            let want = if last & 0x08 != 0 { 0x0c } else { 0x04 };
-            if first & want != want {
+        if let Some(types) = d.get(types_at..types_at + n) {
+            // The bytes without the marks: bit 2 off everywhere, bit 3
+            // off the moves (on a closing node it closes the outline).
+            let mut want: Vec<u8> = types
+                .iter()
+                .map(|t| if t & 0xc0 == 0 { t & !0x0c } else { t & !0x04 })
+                .collect();
+            crate::write::mark_node_types(&mut want);
+            if let Some(k) = (0..n).find(|&k| types[k] & 0x0c != want[k] & 0x0c) {
                 self.note(
                     place,
                     format!(
-                        "bitmap crop outline's first node byte {first:#04x} lacks the node marks"
+                        "bitmap crop outline's node {k} byte is {:#04x}, {:#04x} with the node marks of a curve",
+                        types[k], want[k]
                     ),
                 );
             }
@@ -1338,10 +1390,65 @@ mod tests {
             check_bytes(&file(&[bitmap(types)]))
                 .expect("checks")
                 .iter()
-                .any(|f| f.what.contains("lacks the node marks"))
+                .any(|f| f.what.contains("node marks of a curve"))
         };
         assert!(lacks([0x00, 0x40, 0x40, 0x40, 0x48]));
         assert!(!lacks([0x0c, 0x44, 0x44, 0x44, 0x48]));
+        // Every node is looked at, not the first alone: a marked start
+        // with unmarked nodes after it, or a start without the closing
+        // mark, is reported too.
+        assert!(lacks([0x0c, 0x40, 0x40, 0x40, 0x48]));
+        assert!(lacks([0x0c, 0x44, 0x44, 0x40, 0x48]));
+        assert!(lacks([0x04, 0x44, 0x44, 0x44, 0x48]));
+    }
+
+    /// A picture whose style string gives its outline `type` 1 with width
+    /// 0, as TraceDraw wrote every object without an outline, is reported
+    /// (the program's files hold no such type, and it closed when such a
+    /// picture was clicked, #1226); the program's own forms, without
+    /// `type` or with `type` 0, and a text's character outline, are not.
+    #[test]
+    fn style_strings_hold_no_outline_type_but_0() {
+        let with_style = |json: &str| {
+            let mut b = bitmap([0x0c, 0x44, 0x44, 0x44, 0x48]);
+            let mut arg = u32s(&[1, json.len() as u32]);
+            arg.extend_from_slice(json.as_bytes());
+            b.args.push((crate::parse::ARG_STYLE_STRING, arg));
+            check_bytes(&file(&[b]))
+                .expect("checks")
+                .iter()
+                .filter(|f| f.what.contains("style string outline has type"))
+                .count()
+        };
+        assert_eq!(
+            with_style(
+                r#"{"fill":{"type":"0"},"outline":{"type":"1","width":"0"},"transparency":{}}"#
+            ),
+            1
+        );
+        assert_eq!(
+            with_style(
+                r#"{"fill":{"type":"0"},"outline":{"width":"0","type":"2"},"transparency":{}}"#
+            ),
+            1
+        );
+        assert_eq!(
+            with_style(&format!(
+                r#"{{"fill":{{"type":"0"}},"outline":{},"transparency":{{}}}}"#,
+                crate::write::NO_OUTLINE_JSON
+            )),
+            0
+        );
+        assert_eq!(
+            with_style(
+                r#"{"outline":{"color":"CMYK,USER,0,0,0,100,100,0","type":"0","width":"1764"}}"#
+            ),
+            0
+        );
+        assert_eq!(
+            with_style(r#"{"character":{"outline":{"width":"0"}},"outline":{"width":"0"}}"#),
+            0
+        );
     }
 
     #[test]

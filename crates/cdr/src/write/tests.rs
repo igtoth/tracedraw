@@ -2783,6 +2783,88 @@ fn bitmap_objects_carry_their_pixel_size() {
     }
 }
 
+/// A picture and a rectangle without an outline get the outline the
+/// program's own files of version 27 give their pictures and shapes
+/// without one, every member with width 0 and no `type`, in their style
+/// strings (versions 16 to 27). TraceDraw wrote `{"type":"1","width":"0"}`
+/// on every object without an outline, a type no file holds; that
+/// program closed when such a picture, or a group of such curves, was
+/// clicked (#1226). An outlined rectangle keeps its width and colour.
+#[test]
+fn objects_without_an_outline_write_the_files_outline_of_width_0() {
+    let png = {
+        let mut pm = tiny_skia::Pixmap::new(3, 2).expect("pixmap");
+        pm.fill(tiny_skia::Color::from_rgba8(10, 20, 30, 255));
+        pm.encode_png().expect("png")
+    };
+    let mut ids = tracedraw_core::id::IdSource::default();
+    let mut bm = Shape::new(
+        ids.shape(),
+        ShapeKind::Bitmap {
+            rect: Rect::new(0.0, 0.0, 30.0, 20.0),
+            width_px: 3,
+            height_px: 2,
+            png: png.into(),
+            fx: None,
+        },
+    );
+    bm.fill = Fill::None;
+    bm.stroke = None;
+    let rect = |stroke: Option<Stroke>, ids: &mut tracedraw_core::id::IdSource| {
+        let mut r = Shape::new(
+            ids.shape(),
+            ShapeKind::Rect {
+                rect: Rect::new(40.0, 10.0, 60.0, 30.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        r.fill = Fill::Solid(Color::rgb8(0, 0, 255));
+        r.stroke = stroke;
+        r
+    };
+    let bare = rect(None, &mut ids);
+    let outlined = rect(Some(Stroke::new(Color::BLACK, 0.5)), &mut ids);
+    let doc = doc_with(vec![bm, bare, outlined]);
+    let no_outline = format!(r#""outline":{}"#, super::NO_OUTLINE_JSON);
+    for v in versions().into_iter().filter(|v| *v >= 16) {
+        let bytes = document_to_cdr_version(&doc, v);
+        let (_, tree, riff) = chunk_ids(&bytes);
+        let mut styles = Vec::new();
+        tree.root.walk(&mut |c, _| {
+            if c.is(b"loda") {
+                let d = tree.data(&riff, c);
+                let kind = d.get(16..20).map(|k| k.to_vec());
+                if kind == Some(5u32.to_le_bytes().to_vec())
+                    || kind == Some(3u32.to_le_bytes().to_vec())
+                    || kind == Some(1u32.to_le_bytes().to_vec())
+                {
+                    if let Some((_, b)) = loda_args(d).into_iter().find(|(t, _)| *t == 201) {
+                        styles.push(crate::check::style_text(&b[8..]));
+                    }
+                }
+            }
+        });
+        assert_eq!(styles.len(), 3, "{v}: {styles:?}");
+        // The picture and the bare rectangle (written in either order).
+        let bare: Vec<&String> = styles.iter().filter(|s| s.contains(&no_outline)).collect();
+        assert_eq!(bare.len(), 2, "{v}: {styles:?}");
+        assert!(
+            styles.iter().any(|s| s.contains(r#"{"width":"5000","#)),
+            "{v}: {styles:?}"
+        );
+        for s in &styles {
+            assert!(!s.contains(r#""type":"1","width""#), "{v}: {s}");
+        }
+        assert!(
+            crate::check::check_bytes(&bytes)
+                .expect("checks")
+                .is_empty(),
+            "{v}"
+        );
+    }
+}
+
 /// The coordinates argument of the first bitmap object of `bytes`.
 fn bitmap_coords(bytes: &[u8]) -> Vec<u8> {
     let (_, tree, riff) = chunk_ids(bytes);
