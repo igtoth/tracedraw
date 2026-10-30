@@ -220,7 +220,10 @@ impl Live {
                     }
                 }
             }
-            if ended {
+            // The last result in ends the job at once, without waiting for
+            // its thread to let go of the channel, so the preview rests as
+            // soon as the trace on show is whole.
+            if ended || (job.finished && !stale) {
                 // A trace that ended with no last result and was not
                 // stopped died on the way: asking again every frame
                 // would only repeat that.
