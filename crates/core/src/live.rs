@@ -1164,9 +1164,31 @@ pub struct ContourParams {
     pub accel_colors: f64,
 }
 
+/// Where the middle step of a blend with acceleration `a` (-1 to 1)
+/// lands, as a share of the way from the start: `0.5 - 0.45 a`, so at
+/// +1 it is 5 % from the start and at -1 5 % from the end, the same
+/// distance either way (#1261: the exponent `1 + a` put it 25 % from
+/// the start at +1 and 3 % from the end at -1, so the slider went all
+/// the way on one side only).
+pub fn blend_middle(a: f64) -> f64 {
+    let a = if a.is_finite() {
+        a.clamp(-1.0, 1.0)
+    } else {
+        0.0
+    };
+    0.5 - 0.45 * a
+}
+
+/// The exponent a blend's steps take for acceleration `a`: step `t` is
+/// placed at `t ^ blend_exponent(a)`, the middle step at
+/// [`blend_middle`]`(a)`.
+pub fn blend_exponent(a: f64) -> f64 {
+    blend_middle(a).ln() / 0.5f64.ln()
+}
+
 /// `t` (0 to 1) bent by an acceleration `a` (-1 to 1): `t ^ 4^a`, so a
 /// positive acceleration packs the steps toward the start and a negative
-/// one toward the end.
+/// one toward the end (contours).
 pub fn accelerate(t: f64, a: f64) -> f64 {
     let a = if a.is_finite() {
         a.clamp(-1.0, 1.0)
@@ -1319,8 +1341,8 @@ fn blend(
         } else {
             (i + 1) as f64 / (n + 1) as f64
         };
-        let to = t.powf((1.0 + accel_objects).max(0.05));
-        let tc = t.powf((1.0 + accel_colors).max(0.05));
+        let to = t.powf(blend_exponent(accel_objects));
+        let tc = t.powf(blend_exponent(accel_colors));
         let mut s = start.clone();
         s.effects.clear();
         s.shadow = None;
@@ -2581,6 +2603,52 @@ mod tests {
         assert!(accelerate(0.5, 1.0) < 0.1 && accelerate(0.5, -1.0) > 0.8);
     }
 
+    /// A blend's acceleration moves its middle step as far toward the
+    /// start at +1 as toward the end at -1 (#1261).
+    #[test]
+    fn blend_acceleration_goes_as_far_either_way() {
+        assert!((blend_exponent(0.0) - 1.0).abs() < 1e-12);
+        let at = |a: f64| 0.5f64.powf(blend_exponent(a));
+        assert!((at(1.0) - 0.05).abs() < 1e-9);
+        assert!((at(-1.0) - 0.95).abs() < 1e-9);
+        assert!((at(0.5) + at(-0.5) - 1.0).abs() < 1e-9);
+        assert!((blend_exponent(f64::NAN) - 1.0).abs() < 1e-12);
+        assert!((at(7.0) - 0.05).abs() < 1e-9, "held to the range");
+        // Two squares 100 mm apart blended with one step: the step's
+        // centre lands where the middle step should, either way.
+        let square = |id: u64, x: f64| {
+            let mut s = Shape::new(
+                crate::ShapeId(id),
+                ShapeKind::Rect {
+                    rect: Rect::new(x, 0.0, x + 10.0, 10.0),
+                    radius: 0.0,
+                    corners: None,
+                },
+            );
+            s.fill = Fill::Solid(Color::BLACK);
+            s
+        };
+        let steps_at = |accel: f64| -> f64 {
+            let start = square(1, 0.0);
+            let end = square(2, 100.0);
+            let steps = blend(
+                &start,
+                &end,
+                1,
+                (accel, 0.0),
+                0.0,
+                None,
+                false,
+                &BlendOptions::default(),
+            );
+            assert_eq!(steps.len(), 1);
+            steps[0].bounds().center().x
+        };
+        assert!((steps_at(0.0) - 55.0).abs() < 1e-6, "{}", steps_at(0.0));
+        assert!((steps_at(1.0) - 10.0).abs() < 1e-6, "{}", steps_at(1.0));
+        assert!((steps_at(-1.0) - 100.0).abs() < 1e-6, "{}", steps_at(-1.0));
+    }
+
     #[test]
     fn visual_bounds_follow_the_live_effects() {
         let mut s = rect_shape();
@@ -3334,7 +3402,9 @@ mod tests {
         let plain = blend(BlendOptions::default(), None, 90.0);
         let turned = blend(looped, None, 90.0);
         let (p0, t0) = (plain[0].bounds().center(), turned[0].bounds().center());
-        assert!((p0.y - t0.y).abs() > 3.0, "{p0:?} {t0:?}");
+        // (At acceleration 0.5 the first step turns by a sixth of the
+        // way, so its centre moves about 3 mm.)
+        assert!((p0.y - t0.y).abs() > 2.0, "{p0:?} {t0:?}");
         // Sizing: toward a bigger end object, acceleration 0.5 keeps the
         // steps smaller than the even blend makes them.
         let mut big = b.clone();

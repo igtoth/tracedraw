@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Blend: the object and colour accelerations go as far one way as the other. At -100 % the steps bunched right at the end object, at +100 % they only went a quarter of the way toward the start, and the slider on the canvas went to the end but stopped short of the start; now the middle step lands 5 % from either object at the full setting, the same distance both ways (#1261).
 - Help: pages brought up to date with releases 0.19 to 0.27 (opening and saving, fonts, text, printing, export, drawing tools, objects, colours, effects, pages, options, menus and shortcuts), and new pages for Package, Missing Fonts, Convert Colors, finding by properties, PDF printers' marks, booklets, Fit Objects to Path, the Before and After preview, graphics tablets and tablets with the Android app; Brazilian Portuguese follows, other languages where the pages changed most. Docs only.
 - Browser version: its notice now opens with the warning that a browser is slower, marked in red and underlined, then says it is the same program compiled to WebAssembly, and last points to the desktop app, in every language.
 

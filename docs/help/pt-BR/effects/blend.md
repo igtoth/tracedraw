@@ -57,7 +57,9 @@ deslizantes nela, a aceleração dos objetos em cima e a das cores embaixo.
 
 - Arraste um controle para o início ou o fim para juntar ali os passos ou as
   cores. A mistura acompanha ao vivo, cada arraste é um passo de desfazer, e
-  a barra de propriedades acompanha.
+  a barra de propriedades acompanha. O controle vai tão longe para um lado
+  quanto para o outro: em 100 % o passo do meio fica junto ao objeto inicial,
+  em -100 % junto ao objeto final.
 - Arraste um quadrado da ponta para mover o objeto dele, e a mistura muda de
   direção. Solte-o sobre outro objeto para torná-lo o novo início ou fim, com
   as configurações da mistura.

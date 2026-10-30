@@ -53,7 +53,8 @@ acceleration above and the color acceleration below.
 
 - Drag a slider toward the start or the end to crowd the steps or the colors
   there. The blend follows live, each drag is one undo step, and the property
-  bar follows.
+  bar follows. A slider goes as far one way as the other: at 100 % the middle
+  step sits right by the start object, at -100 % right by the end object.
 - Drag an end square to move its object, so the blend changes direction. Drop
   it on another object to make that object the new start or end, with the
   blend's settings.

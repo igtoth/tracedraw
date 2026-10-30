@@ -52,8 +52,12 @@ lets go. The selected blend shows a white square on the start object's
 centre, a crossed one on the end object's, the line between them, and
 two sliders on that line: the object acceleration (triangle above the
 line) and the colour acceleration (triangle below). Each sits where the
-middle step lands, `0.5 ^ (1 + acc)` of the way from the start, so at
-0 both are halfway. Dragging a slider along the line sets its
+middle step lands, `0.5 - 0.45 acc` of the way from the start, so at
+0 both are halfway, at +1 (100 %) 5 % from the start and at -1 5 % from
+the end: the slider goes as far one way as the other (#1261; the
+exponent `1 + acc` used before put the middle step 25 % from the start
+at +1 and 3 % from the end at -1, so the steps bunched fully at the end
+but only part of the way toward the start). Dragging a slider along the line sets its
 acceleration to the one that puts the middle step there (two decimals,
 -1..1): toward the start bunches the steps (or the colours) near the
 start, toward the end near the end. With Link acceleration both
@@ -98,7 +102,10 @@ only inside the effect; such a blend draws its end with the steps.
 
 ## Formulas
 
-For step `k` of `n` (`t = (k) / (n + 1)` with acceleration `t' = t ^ (1 + 2*acc)`):
+For step `k` of `n` (`t = k / (n + 1)` with acceleration `t' = t ^ e`,
+`e = ln(0.5 - 0.45 acc) / ln(0.5)`, so the middle step lands at
+`0.5 - 0.45 acc` of the way, `tracedraw_core::live::blend_exponent`,
+`live::tests::blend_acceleration_goes_as_far_either_way`):
 - Geometry: the end outline is wound the way the start outline is and
   started where it best fits the start outline's first node (the two
   outlines compared as 120 points each, about their own centres and at
