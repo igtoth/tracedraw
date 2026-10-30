@@ -33,9 +33,14 @@ marks on its edge.
   it was on the area; master layers are not moved. With Selection, the
   page takes the selection's box plus the border, and the objects move
   so the box sits inside the border.
-- Mirror and Stretch are built from a render of the area at the
-  document's rendering resolution, placed as bitmaps behind the content
-  so the original objects stay editable.
+- Mirror and Stretch are built from a render of the area itself (at up
+  to about 4000 pixels on its longest side, 10 to 150 dpi), placed as
+  bitmaps behind the content so the original objects stay editable. The
+  area is drawn whole even where it reaches past the page: a selection
+  larger than the page (a big imported photo) mirrors its own edges. It
+  used to be cut from a render of the page, so the first run on such a
+  selection mirrored strips from inside it, and only a second run,
+  once the page had grown around it, came out right (#1283).
 
 ## Grommets
 

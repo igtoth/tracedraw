@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Tools > Border and Grommet with Source: Selection mirrors (or stretches) the selection's own edges on the first run, also when the selection reaches past the page, as a large imported photo does; the strips were cut from what the page showed of it, so they came from inside the picture and only a second run was right (#1283).
+
 ## 0.27.0 (2026-10-30)
 
 - Browser version: the page can be installed as an app on an Android tablet, an iPad or a desktop (the browser's "Install app" or "Add to Home Screen"): it opens full screen with the TraceDraw icon, in any orientation, keeps clear of a notch or rounded corners, and starts without a network connection once it has been opened, at the version last used; a new deploy is taken at the next start after its pages are closed, never a stale module against a new script. It is the same WebAssembly build served from the same address, not a native Android program (#893).
