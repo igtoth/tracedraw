@@ -1,5 +1,7 @@
 # Mesclagem de impressão
 
+> *Tradução automática: esta página pode estar atrasada em relação à versão em inglês.*
+
 A mesclagem de impressão preenche um desenho com dados, para fazer muitas
 versões dele: crachás, ingressos numerados, certificados, etiquetas com códigos
 QR. Cada registro dos seus dados vira uma cópia da página, preenchida.
@@ -47,6 +49,13 @@ fonte de dados que você criou ou carregou:
   coluna da foto, selecione a forma e clique em **[[merge.place_inside]]**. A
   foto de cada cartão vai para dentro dessa forma, conforme o alinhamento e a
   escala.
+- Marque **[[merge.all_pages]]** (desligado de início) antes de
+  **[[merge.insert_field]]** para pôr um campo de texto, imagem ou código QR no
+  mesmo lugar em todas as páginas do desenho. **[[merge.create_document]]**
+  então preenche as próprias páginas do desenho, um registro em cada, em vez
+  de criar um desenho novo. Mova ou redimensione o campo na página dele e as
+  cópias nas outras páginas o acompanham ao mesclar; uma cópia que você moveu
+  à mão na própria página fica onde você a pôs.
 - Selecione um campo e clique em **[[merge.update_field]]** para mudar a coluna
   ou o alinhamento e a escala.
 - **[[merge.create_document]]** cria as páginas mescladas em um desenho novo: a
@@ -62,7 +71,16 @@ número do registro.
 
 - **Texto**: substitui `<Field>` em todos os textos da página.
 - **Número**: um contador que você não digita: um início, um passo e um número
-  de dígitos (início 7, passo 3, dígitos 3 dá 007, 010, 013).
+  de dígitos (início 7, passo 3, dígitos 3 dá 007, 010, 013). O
+  [[merge.format]] é [[merge.format_digits]] (o padrão), [[merge.format_upper]]
+  ou [[merge.format_lower]] (1 é A, 26 é Z, depois AA), ou
+  [[merge.format_custom]], que põe um texto seu antes e depois do número, para
+  ingressos e números de série ("Ingresso T-" antes, 4 dígitos e início 98 dão
+  Ingresso T-0098, Ingresso T-0099 e assim por diante). Ao acrescentar uma
+  coluna Número, desmarque [[merge.increment]] para dar o mesmo número a todos
+  os registros, ou informe um valor final para criar de uma vez os registros
+  do início ao fim (15 a 25 com três dígitos cria onze registros, de 015 a
+  025), sem arquivo de dados nenhum.
 - **Imagem**: a célula tem o caminho de uma imagem. Um texto que contém apenas
   `<Field>` vira a imagem, do maior tamanho que caiba na caixa dele. Ponha esse
   texto dentro de uma moldura com [[menu.object.clip_frame_place_inside]] (uma moldura de

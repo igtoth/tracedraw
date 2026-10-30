@@ -1,17 +1,35 @@
 # Imprimir um desenho
 
+> *Tradução automática: esta página pode estar atrasada em relação à versão em inglês.*
+
 Escolha [[menu.file > menu.file.print]] (<kbd>Ctrl+P</kbd>). O TraceDraw monta
-um PDF das folhas e o abre no visualizador do seu sistema, onde você escolhe a
-impressora e imprime. Na versão para navegador, o PDF é baixado.
+as folhas e as envia à impressora que você escolher, ou abre um PDF delas no
+visualizador do seu sistema, onde você escolhe a impressora e imprime. Na
+versão para navegador, o PDF é baixado.
+
+Imprimir em uma impressora acontece em segundo plano: a janela continua
+funcionando, a barra de status diz "Imprimindo em ..." e depois como foi a
+impressão.
+
+As guias são Geral, Cor, Composta, Layout, Pré-impressão, PostScript e
+Problemas. Abaixo delas, **Prévia de impressão** abre a prévia com essas
+configurações, e **Aplicar** as guarda para a próxima vez.
 
 ![A caixa de diálogo Imprimir](../../img/printing-print.png)
 
 ## Geral {#general}
 
-- **Destino**: a impressora, um arquivo PDF ou um arquivo PostScript.
+- **Destino**: uma das impressoras do sistema, o visualizador de PDF do
+  sistema (que então escolhe a impressora), um arquivo PDF ou um arquivo
+  PostScript. O botão de engrenagem ao lado de uma impressora abre as
+  configurações dela, e o estado, o local e o comentário da impressora
+  aparecem abaixo. A caixa de diálogo começa na impressora usada por último.
 - **Orientação**: igual ao layout, retrato ou paisagem.
+- **Folha**: o tamanho da própria página, os tamanhos de papel padrão, ou um
+  tamanho personalizado que você pode salvar com um nome.
 - **Intervalo de impressão**: o documento inteiro, a página atual, uma lista de
-  páginas (como `1-3, 5, 8-`) ou os objetos selecionados. Os objetos
+  páginas (como `1-3, 5, 8-`) ou os objetos selecionados; e todas, as ímpares
+  ou as pares do documento ou da lista, para imprimir frente e verso à mão. Os objetos
   selecionados saem sozinhos (nada mais da página, das camadas mestras ou do
   fundo), numa página do tamanho da área que ocupam: com a folha no tamanho
   da página o papel é essa área, numa folha fixa eles ficam centralizados no
@@ -25,7 +43,8 @@ impressora e imprime. Na versão para navegador, o PDF é baixado.
 
 - **Composta** imprime todas as cores em cada folha; **Separações** imprime uma
   página cinza por tinta (ciano, magenta, amarelo, preto, depois cada tinta
-  especial).
+  especial). Na prévia de impressão você pode desmarcar tintas em **Imprimir
+  separações**; só as tintas marcadas são impressas.
 - **Converter cores especiais em CMYK** imprime as tintas especiais como a
   mistura CMYK delas.
 
@@ -41,7 +60,9 @@ impressora e imprime. Na versão para navegador, o PDF é baixado.
   **Ajustar à página** também reduz objetos maiores que a página (ou a
   seleção, quando só ela é impressa) para que saiam inteiros nela.
 - **Limite de sangria**: até onde além da página os objetos são impressos
-  (4 mm de início).
+  (4 mm de início, ou a sangria do próprio desenho).
+- **Margens do papel** (esquerda, direita, superior, inferior, 0 de início)
+  deixam as bordas do papel livres: as páginas e as marcas vão no que sobra.
 - A imposição: várias páginas em uma folha, ou um livreto, cujas páginas são
   emparelhadas para dobrar, com o tamanho da folha e o espaço entre páginas.
   Um esboço mostra o resultado. Para o verso de cartões frente e verso, marque
@@ -56,7 +77,8 @@ impressora e imprime. Na versão para navegador, o PDF é baixado.
 ## Livretos {#booklet}
 
 Escolha **Livreto** como imposição para imprimir duas páginas em cada lado
-de uma folha, prontas para dobrar. O número de páginas é arredondado para
+de uma folha, prontas para dobrar. [Imprimir livretos](booklet.md) explica
+passo a passo. O número de páginas é arredondado para
 um múltiplo de quatro com páginas em branco no fim, e o resumo sob o esboço
 diz quantas páginas, páginas em branco e folhas de papel são necessárias.
 Para imprimir só algumas páginas, liste-as antes em **Páginas**.
@@ -94,10 +116,25 @@ encontra; veja [Verificação prévia](preflight.md).
 
 [[menu.file > menu.file.print_preview]], ou **Prévia de impressão** na caixa de
 diálogo Imprimir, mostra as folhas exatamente como serão impressas, com a
-imposição e as marcas. A barra no topo tem **Imprimir**, **Fechar**, a folha
-mostrada com anterior e próxima (<kbd>PgUp</kbd>, <kbd>PgDn</kbd>), a chapa a
-mostrar ao imprimir separações, e o zoom. As opções à esquerda mudam as folhas
-na hora.
+imposição e as marcas.
+
+- A barra no topo tem **Imprimir**, a folha mostrada com anterior e próxima
+  (<kbd>PgUp</kbd>, <kbd>PgDn</kbd>), o zoom com **Ajustar**, a impressora com
+  o botão de configurações e o estado, o número de cópias com **Agrupar**, e
+  **Fechar** (<kbd>Esc</kbd>). Numa janela estreita a barra ocupa duas linhas.
+- As opções à esquerda ficam duas por linha: as páginas (todas, a atual, uma
+  lista, a seleção, ímpares ou pares), ajustar à página ou a escala, depois as
+  opções de pré-impressão (separações, sangria, marcas, informações da página,
+  espelhar, inverter, transformar e posição da arte), depois o layout com o
+  esboço. Cada mudança refaz as folhas na hora. Arraste a borda do painel
+  para alargá-lo.
+- Com **Imprimir separações** ligado, uma caixa para cada tinta aparece
+  abaixo. Todas marcadas mostram a folha; uma só mostra a chapa dela em cinza;
+  algumas mostram as cores que essas tintas imprimem juntas.
+- Arraste as linhas azuis tracejadas na folha para definir as margens do
+  papel, e arraste a folha para mover a arte na página (**Posição da arte**
+  mostra o deslocamento, com **Redefinir**). **Transformar** mostra alças para
+  esticar a arte.
 
 ## Outras formas de imprimir {#other}
 
