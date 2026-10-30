@@ -9945,10 +9945,10 @@ fn rich_outline_page(app: &mut App, texts: usize) -> ShapeId {
 /// While a node is dragged with the Shape tool, the page keeps the
 /// picture it had before the drag (the outline is not made again every
 /// frame; the thin line of the curve being edited follows the pointer),
-/// and the picture with the moved node comes on release, or once the
-/// pointer rests (#1259, #509).
+/// and the picture with the moved node comes once, on release, not
+/// while the pointer pauses (#1259, #509).
 #[test]
-fn a_node_drag_keeps_the_pages_picture_until_release_or_rest() {
+fn a_node_drag_keeps_the_pages_picture_until_release() {
     let (ctx, mut app, _) = setup();
     let curve = rich_outline_page(&mut app, 4);
     for _ in 0..3 {
@@ -9993,15 +9993,15 @@ fn a_node_drag_keeps_the_pages_picture_until_release_or_rest() {
         "the node moved in the drawing"
     );
     assert_eq!(renders(&app), before, "no render while the pointer moves");
-    // The pointer rests: the page shows the moved node with its outline.
-    std::thread::sleep(crate::app::NODE_DRAG_REST + std::time::Duration::from_millis(20));
-    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
-    assert_eq!(
-        renders(&app),
-        before + 1,
-        "one render once the pointer rests"
-    );
-    // Moving again: that picture stays while the pointer moves.
+    assert_eq!(app.node_drag_revision(), Some(revision));
+    // The pointer pauses with the button held: the page still shows
+    // the drawing as it was before the drag.
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    for _ in 0..3 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    assert_eq!(renders(&app), before, "no render while the pointer pauses");
+    // Moving again: the same picture stays.
     for i in 11..=20 {
         let to = from + egui::vec2(2.0 * i as f32, 3.0 * i as f32);
         frame(
@@ -10011,11 +10011,7 @@ fn a_node_drag_keeps_the_pages_picture_until_release_or_rest() {
             Modifiers::NONE,
         );
     }
-    assert_eq!(
-        renders(&app),
-        before + 1,
-        "no render while the pointer moves again"
-    );
+    assert_eq!(renders(&app), before, "no render while the pointer moves again");
     let end = from + egui::vec2(40.0, 60.0);
     frame(
         &ctx,
@@ -10028,7 +10024,7 @@ fn a_node_drag_keeps_the_pages_picture_until_release_or_rest() {
     // The page's render runs on a thread once it is slow: the next
     // render waits for it.
     for _ in 0..100 {
-        if renders(&app) > before + 1 {
+        if renders(&app) > before {
             break;
         }
         std::thread::sleep(std::time::Duration::from_millis(20));
@@ -10036,8 +10032,8 @@ fn a_node_drag_keeps_the_pages_picture_until_release_or_rest() {
     }
     assert_eq!(
         renders(&app),
-        before + 2,
-        "the release renders the moved node"
+        before + 1,
+        "the release renders the moved node, once"
     );
     let moved = app
         .selected_node_points()
@@ -10065,15 +10061,16 @@ fn a_handle_drag_keeps_the_pages_picture_until_release() {
     assert_eq!(app.node_selection, vec![(curve, 100)]);
     frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
     let from = app.view.to_screen(Point::new(110.4, 28.0));
+    frame(&ctx, &mut app, vec![Event::PointerMoved(from)], Modifiers::NONE);
     frame(
         &ctx,
         &mut app,
         vec![button(from, true, PointerButton::Primary, Modifiers::NONE)],
         Modifiers::NONE,
     );
-    assert!(matches!(app.drag, Drag::Handle { .. }), "{:?}", app.drag);
     let before = renders(&app);
     let revision = app.engine.revision();
+    // The drag starts with the first move after the press.
     for i in 1..=10 {
         let to = from + egui::vec2(3.0 * i as f32, -2.0 * i as f32);
         frame(
@@ -10083,6 +10080,7 @@ fn a_handle_drag_keeps_the_pages_picture_until_release() {
             Modifiers::NONE,
         );
     }
+    assert!(matches!(app.drag, Drag::Handle { .. }), "{:?}", app.drag);
     assert_ne!(app.engine.revision(), revision, "the handle moved");
     assert_eq!(renders(&app), before, "no render while the handle moves");
     let end = from + egui::vec2(30.0, -20.0);

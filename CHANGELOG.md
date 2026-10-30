@@ -6,7 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
-- Shape tool: while a node is dragged (a segment bent, the chosen nodes stretched or turned), the page keeps the picture it had before the drag and the curve follows the pointer as the thin line the tool draws over it; the outline with its width nodes, brush, arrowheads and effects is made again once the pointer rests for a moment and on release, not every frame (#1259, #509). On a page with much text the outline was made again at every pointer move and the drag lagged.
+- Shape tool: while a node is dragged (a segment bent, the chosen nodes stretched or turned), the page keeps the picture it had before the drag and the curve follows the pointer as the thin line the tool draws over it; the outline with its width nodes, brush, arrowheads and effects is made again once, on release, not every frame (#1259, #509). On a page with much text the outline was made again at every pointer move and the drag lagged.
 
 ## 0.27.0 (2026-10-30)
 

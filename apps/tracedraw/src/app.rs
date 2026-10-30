@@ -815,57 +815,30 @@ struct AutoBackupJob {
 }
 
 /// What the page shows while nodes are dragged (see
-/// [`App::node_drag_shown`]): the drawing's revision before the drag
-/// and when the pointer last moved.
+/// [`App::node_drag_shown`]): the drawing's revision before the drag.
 #[derive(Debug, Clone, Copy)]
 pub struct NodeDragShown {
     pub revision: u64,
-    /// Where the pointer was at the last step, and when it got there (a
-    /// held button steps every frame; only a moved pointer counts).
-    pub at: Point,
-    pub moved: web_time::Instant,
 }
-
-/// How long the pointer rests in a node drag before the page shows the
-/// curve with its full outline (#1259).
-pub const NODE_DRAG_REST: std::time::Duration = std::time::Duration::from_millis(250);
 
 impl App {
     /// A step of a node, handle, segment or node transform drag is about
     /// to change the drawing: the page keeps showing the drawing as it
-    /// was before the drag until the pointer rests (#1259).
+    /// was before the drag until the button is released (#1259).
     /// `begun`: a step of this drag was recorded before (its first step
-    /// takes the revision to show); `p` is the pointer on the page.
-    pub(crate) fn note_node_drag_step(&mut self, begun: bool, p: Point) {
-        let now = web_time::Instant::now();
-        let revision = self.engine.revision();
-        match &mut self.node_drag_shown {
-            Some(shown) if begun => {
-                if shown.at != p {
-                    // Rested, the page showed the drawing as it is now:
-                    // that picture stays while the pointer moves on.
-                    if now.duration_since(shown.moved) >= NODE_DRAG_REST {
-                        shown.revision = revision;
-                    }
-                    shown.at = p;
-                    shown.moved = now;
-                }
-            }
-            _ => {
-                self.node_drag_shown = Some(NodeDragShown {
-                    revision,
-                    at: p,
-                    moved: now,
-                });
-            }
+    /// takes the revision to show).
+    pub(crate) fn note_node_drag_step(&mut self, begun: bool) {
+        if begun && self.node_drag_shown.is_some() {
+            return;
         }
+        self.node_drag_shown = Some(NodeDragShown {
+            revision: self.engine.revision(),
+        });
     }
 
     /// The revision of the drawing the page shows: during a node drag
-    /// the one before the drag, until the pointer rests for
-    /// [`NODE_DRAG_REST`]; `None` when no such drag is under way, or
-    /// it rested. Also how long until it rests, for the frame to come.
-    pub fn node_drag_revision(&self) -> (Option<u64>, Option<std::time::Duration>) {
+    /// the one before the drag; `None` when no such drag is under way.
+    pub fn node_drag_revision(&self) -> Option<u64> {
         let dragging = matches!(
             self.drag,
             Drag::NodeMove { begun: true, .. }
@@ -873,15 +846,7 @@ impl App {
                 | Drag::NodeTransform { begun: true, .. }
                 | Drag::Handle { .. }
         );
-        let Some(shown) = self.node_drag_shown.filter(|_| dragging) else {
-            return (None, None);
-        };
-        let since = shown.moved.elapsed();
-        if since >= NODE_DRAG_REST {
-            (None, None)
-        } else {
-            (Some(shown.revision), Some(NODE_DRAG_REST - since))
-        }
+        self.node_drag_shown.filter(|_| dragging).map(|s| s.revision)
     }
 }
 
@@ -1145,7 +1110,7 @@ pub struct App {
     /// what the page shows, the edited curve following the pointer as
     /// the thin line the Shape tool draws over it, so the outline (its
     /// width nodes, brush, arrowheads, effects) is not made again every
-    /// frame; it is made once the pointer rests or the drag ends.
+    /// frame; it is made once when the drag ends.
     pub node_drag_shown: Option<NodeDragShown>,
     /// The visual bounds of objects with live effects, for the document
     /// revision they were measured at (see [`App::visual_bounds`]).

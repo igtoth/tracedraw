@@ -79,7 +79,7 @@ impl App {
         constrain_axis(&mut along, horizontal);
         let own = self.still_near(&still, grab + along);
         d = self.snapped_node_move(grab, d, horizontal, &exclude, &own);
-        self.note_node_drag_step(begun, p);
+        self.note_node_drag_step(begun);
         self.move_start_nodes(&start, d, grab, begun);
         self.drag = Drag::NodeMove {
             start,
@@ -654,7 +654,7 @@ impl App {
                         p,
                         mods.shift,
                     );
-                    self.note_node_drag_step(begun, p);
+                    self.note_node_drag_step(begun);
                     self.transform_start_nodes(&start, a, begun);
                     self.drag = Drag::NodeTransform {
                         handle,
@@ -696,7 +696,7 @@ impl App {
                         let lp = t.inverse() * q;
                         let ty = self.node_type_of(shape, index);
                         let np = nodes::move_handle(&path, index, which, lp, ty);
-                        self.note_node_drag_step(self.node_drag_shown.is_some(), p);
+                        self.note_node_drag_step(self.node_drag_shown.is_some());
                         self.set_path(shape, np, closed, "Edit Handle");
                     }
                 }
@@ -728,7 +728,7 @@ impl App {
                                 shape,
                                 kind: ShapeKind::Path { path: bent, closed },
                             };
-                            self.note_node_drag_step(begun, p);
+                            self.note_node_drag_step(begun);
                             let _ = if begun {
                                 self.engine.amend(&cmd)
                             } else {
