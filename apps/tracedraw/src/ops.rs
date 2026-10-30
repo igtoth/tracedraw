@@ -578,9 +578,14 @@ impl App {
             let (head, _) = tracedraw_core::document::split_spans_at(spans, *b);
             let (_, piece) = tracedraw_core::document::split_spans_at(&head, *a);
             let (x, baseline, _, _) = layout.caret(*a)?;
+            // Where the piece starts in the text's own space: the written
+            // line's place turned into a column for vertical text, so its
+            // pieces go down the column (and its lines to the left)
+            // instead of side by side (#1303).
+            let at = layout.line_frame() * tracedraw_core::geometry::Point::new(x, baseline);
             let kind = ShapeKind::Text {
                 spans: piece,
-                origin: tracedraw_core::geometry::Point::new(origin.x + x, origin.y + baseline),
+                origin: tracedraw_core::geometry::Point::new(origin.x + at.x, origin.y + at.y),
                 frame: None,
                 align: tracedraw_core::document::TextAlign::Left,
                 para: para.clone(),

@@ -54,7 +54,9 @@ that kind of object. Each tool adds its own settings, explained on the page
 of the tool.
 
 In number fields you can type a sum such as `10+5`, or a value in another
-unit such as `1 in`, which is converted to the drawing units.
+unit such as `1 in`, which is converted to the drawing units. Drag left or
+right on a field's arrows, or on its label, to slide the value down or up
+(<kbd>Shift</kbd> for bigger steps, <kbd>Ctrl</kbd> for finer ones).
 
 ## The toolbox and flyouts {#toolbox}
 

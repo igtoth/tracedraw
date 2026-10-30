@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Number fields: dragging left or right on a field's arrows, or on its label, slides the value down or up, a step every few pixels (Shift for bigger steps, Ctrl for finer ones) (#1303).
+
 - Extrude: each side of the body is one object, filled with the side's colours (a curved side with a fountain that follows the light) and outlined once, so a square's body is its two sides and a circle's its one curved side, to colour, paint with Smart Fill or break apart as whole parts; the far face, hidden behind a filled object and its sides, is no longer drawn. Before, a curved side was a row of dozens of slats (#1281).
 - Dialog boxes: Tab goes to the first box you can type in and on through the dialog's controls, and Shift+Tab back, without leaving the dialog. Tab with nothing focused (a dialog just opened) or from a dialog's last control went to the menu bar, so the File menu took the next keys (#1258).
 - Linked paragraph text frames: a picked frame now has a tab over its top edge too; click it, then click another frame to make that frame's text flow into this one, or click (or drag) on empty space for a new frame that the text starts in. A drag from the bottom tab onto a frame or onto empty space links as a click there does, and while a link waits for its target a dashed line runs from the tab to the pointer.
@@ -15,6 +17,7 @@ full, row-by-row status.
 - Browser version on an iPhone or iPad: Open and Import offer every file, so `.cdr`, `.cmx` and `.tdraw` files can be picked. The system greyed out the files whose type it does not know as soon as the page listed the extensions it takes, so only files such as SVG and EPS could be chosen (#1311).
 - Font list filter: the Folders section lists the folders the Font Manager has, each folder added to the libraries and the system's font folders, once each, whatever subfolder a font file lies in; every subfolder was listed on its own (#867).
 - Trace Bitmap dialog laid out anew: the Preview list offers Before and After (stacked or side by side), Before, Large Preview (the trace alone, as large as the preview area) and Wireframe Overlay, which shows an Overlay slider beside the list for how strongly the bitmap shows under the curves (80 at first). The settings sit in a white panel at the right, each label above its slider and the sliders stretched to the panel's width, with Reset, undo and redo under the panel; controls that do not apply are greyed instead of hidden (a centerline trace's corner smoothness, Remove and Objects; Group by color while Merge adjacent is on). The other dialogs with a Before and After preview (Remove Background, Black and White, Duotone, Paletted, every bitmap effect, Image Adjustments) take the same panel, and all of them get Reset with undo and redo of their settings (a slider's drag is one step). The Help pages on tracing describe the new layout in every language.
+- Break Apart (Ctrl+K) on vertical text: its pieces stay in their columns, one word or letter under the other and the columns right to left. They came out side by side in a row, as if the text had turned horizontal (#1303).
 
 ## 0.28.0 (2026-10-30)
 

@@ -136,6 +136,11 @@ arrows at its right (11 px): a click on one steps the value by a unit
 (or the step the field was given), as does the mouse wheel over the
 field; Shift steps ten times as much, Ctrl a tenth; a whole-number field
 stays whole and the range holds (`ui::field::tests::arrows_and_the_wheel_step_the_value`).
+A drag on the arrows, or on the field's label ("X:", shown with a
+left-right cursor), slides the value: one step every 4 pixels, right or
+up higher, left or down lower, with the same Shift and Ctrl steps,
+within the range (#1303,
+`ui::field::tests::dragging_the_arrows_or_the_label_slides_the_value`).
 The wheel steps once a notch; parts of a notch from a touchpad or a fine
 wheel add up to one step. The wheel over a field (or the outline width
 box, the font list, the page tabs) belongs to it: the bar or panel

@@ -64,6 +64,9 @@ ferramenta.
 
 Nos campos numéricos você pode digitar uma conta como `10+5`, ou um valor em
 outra unidade como `1 in`, que é convertido para as unidades de desenho.
+Arraste para a esquerda ou para a direita sobre as setas de um campo, ou sobre
+o rótulo dele, para diminuir ou aumentar o valor (<kbd>Shift</kbd> para passos
+maiores, <kbd>Ctrl</kbd> para menores).
 
 ## A caixa de ferramentas e os submenus {#toolbox}
 

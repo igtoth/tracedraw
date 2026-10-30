@@ -310,8 +310,11 @@ letters (a text without spaces, like CJK text, breaks into its
 characters). Each piece keeps the text's look (font, size, styles, fill,
 outline, transformation) and sits where its letters were; the first
 piece keeps the object, the others go just above it, all selected, in one
-"Break Apart" undo step. A single letter, paragraph text and text on a
-path stay as they are
+"Break Apart" undo step. Vertical text stays vertical: its words and
+letters go down their column and its columns stay side by side, right
+to left, as they were (#1303,
+`text_effect_tests::break_apart_keeps_vertical_text_in_its_columns`).
+A single letter, paragraph text and text on a path stay as they are
 (`text_effect_tests::break_apart_splits_text_into_lines_words_then_letters`).
 Text with an envelope, perspective or distortion breaks instead into
 one curve per letter (an accent stays with its letter, underlines and

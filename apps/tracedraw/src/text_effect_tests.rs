@@ -171,6 +171,53 @@ fn break_apart_splits_text_into_lines_words_then_letters() {
     assert_eq!(texts(&app).len(), 1);
 }
 
+/// Vertical text broken apart stays vertical, its pieces down its
+/// column and its lines (columns) to the left, as they were (#1303).
+#[test]
+fn break_apart_keeps_vertical_text_in_its_columns() {
+    let mut app = App::headless();
+    let pieces = |app: &App| -> Vec<(String, Point, bool)> {
+        app.selection
+            .iter()
+            .filter_map(|id| app.doc().find_shape(*id))
+            .filter_map(|s| match &s.kind {
+                ShapeKind::Text {
+                    spans,
+                    origin,
+                    para,
+                    ..
+                } => Some((spans_text(spans), *origin, para.vertical)),
+                _ => None,
+            })
+            .collect()
+    };
+    let id = text(&mut app, Point::new(100.0, 200.0), "one two\nthree");
+    app.select(vec![id]);
+    app.set_vertical_text(true);
+    app.break_apart();
+    let got = pieces(&app);
+    assert_eq!(
+        got.iter().map(|t| t.0.as_str()).collect::<Vec<_>>(),
+        ["one two", "three"]
+    );
+    assert!(got.iter().all(|t| t.2), "the pieces stay vertical: {got:?}");
+    // The second line is the next column, to the left, starting as high.
+    assert!(got[1].1.x < got[0].1.x - 1.0, "{got:?}");
+    assert!((got[1].1.y - got[0].1.y).abs() < 1e-6, "{got:?}");
+    // One column: its words one under the other, not side by side.
+    let first = app.selection[0];
+    app.select(vec![first]);
+    app.break_apart();
+    let got = pieces(&app);
+    assert_eq!(
+        got.iter().map(|t| t.0.as_str()).collect::<Vec<_>>(),
+        ["one", "two"]
+    );
+    assert!(got.iter().all(|t| t.2), "{got:?}");
+    assert!(got[1].1.y < got[0].1.y - 1.0, "{got:?}");
+    assert!((got[1].1.x - got[0].1.x).abs() < 1e-6, "{got:?}");
+}
+
 #[test]
 fn text_pieces_follow_lines_words_and_characters() {
     use crate::ops::text_pieces;

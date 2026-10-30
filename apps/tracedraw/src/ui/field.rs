@@ -5,7 +5,9 @@
 //! takes a value in another unit (`1 in` in a millimetre field). The
 //! arrows and the mouse wheel over the box step the value (one unit, or
 //! the step the field was given; Ctrl a tenth or the fine step given,
-//! Shift ten times).
+//! Shift ten times). Dragging left or right on the arrows, or on the
+//! field's label, slides the value: a step every few pixels, down and
+//! left lower, up and right higher, with the same keys (#1303).
 //!
 //! `Response::changed()` is the one sign that the value was applied, typed
 //! or stepped: a step leaves the focus where it was, so a caller waiting
@@ -49,6 +51,9 @@ pub const SPIN_W: f32 = 11.0;
 
 /// The width of a field added without a size (see [`NumField::width`]).
 pub const DEFAULT_WIDTH: f32 = 64.0;
+
+/// The pixels of a drag on a field's arrows or label for one step.
+pub const DRAG_PX_PER_STEP: f32 = 4.0;
 
 impl<'a, N: Numeric> NumField<'a, N> {
     pub fn new(value: &'a mut N) -> Self {
@@ -215,11 +220,17 @@ impl<N: Numeric> NumField<'_, N> {
         // While typing, the text lives in memory until it is applied.
         let stored = ui.data(|d| d.get_temp::<String>(id));
         let mut buf = stored.clone().unwrap_or_else(|| shown.clone());
+        // A drag on the label slides the value (#1303).
+        let mut label_resp = None;
         if !self.prefix.is_empty() {
-            let label = ui.label(&self.prefix);
+            let label = ui.add(egui::Label::new(&self.prefix).sense(egui::Sense::drag()));
             if let Some(s) = &mut slot {
                 *s -= label.rect.width() + ui.spacing().item_spacing.x;
             }
+            if label.hovered() || label.dragged() {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
+            }
+            label_resp = Some(label);
         }
         // The spin arrows take their width at the right of the box.
         let width = (slot.unwrap_or(self.width) - SPIN_W).max(16.0);
@@ -233,8 +244,10 @@ impl<N: Numeric> NumField<'_, N> {
                 .desired_width(width),
         );
         // The arrows: up over down, each half the box's height.
-        let (spin, spin_resp) =
-            ui.allocate_exact_size(egui::vec2(SPIN_W, resp.rect.height()), egui::Sense::click());
+        let (spin, spin_resp) = ui.allocate_exact_size(
+            egui::vec2(SPIN_W, resp.rect.height()),
+            egui::Sense::click_and_drag(),
+        );
         ui.spacing_mut().item_spacing = spacing;
         // The direction of a step and the modifiers held for it.
         let mut stepped: Option<(f64, egui::Modifiers)> = None;
@@ -284,10 +297,35 @@ impl<N: Numeric> NumField<'_, N> {
                 }
             }
         }
+        // A drag left or right (or down and up) on the arrows or the
+        // label: a step every few pixels, the part left over kept for the
+        // next frame (#1303).
+        let drag_id = id.with("drag");
+        let drags = [Some(&spin_resp), label_resp.as_ref()];
+        let dragging = drags.iter().flatten().any(|r| r.dragged());
+        if dragging {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
+            let d = drags
+                .iter()
+                .flatten()
+                .fold(egui::Vec2::ZERO, |a, r| a + r.drag_delta());
+            let acc = ui.data(|m| m.get_temp::<f32>(drag_id)).unwrap_or(0.0) + d.x - d.y;
+            let steps = (acc / DRAG_PX_PER_STEP).trunc();
+            ui.data_mut(|m| m.insert_temp(drag_id, acc - steps * DRAG_PX_PER_STEP));
+            if steps != 0.0 {
+                stepped = Some((f64::from(steps), ui.input(|i| i.modifiers)));
+            }
+        } else {
+            ui.data_mut(|m| m.remove::<f32>(drag_id));
+        }
         // The wheel over the box or the arrows, a step a notch; the bar or
         // panel around the field does not scroll with it (#783).
         let wheel_here = self.wheel_on_hover || resp.has_focus();
-        if wheel_here && (ui.rect_contains_pointer(resp.rect) || ui.rect_contains_pointer(spin)) {
+        if stepped.is_some() {
+            // Dragged this frame: the wheel waits.
+        } else if wheel_here
+            && (ui.rect_contains_pointer(resp.rect) || ui.rect_contains_pointer(spin))
+        {
             if let Some(steps) = wheel_steps(ui, id.with("wheel")) {
                 let mods = ui.input(|i| {
                     i.raw
@@ -976,6 +1014,79 @@ mod tests {
         assert_eq!(n, 2);
         wheel(&mut v, &mut n, b.center(), true, egui::Modifiers::NONE);
         assert_eq!(n, 3);
+    }
+
+    /// A drag right on a field's arrows or its label slides the value up,
+    /// a step every few pixels; left slides it down, within the range
+    /// (#1303).
+    #[test]
+    fn dragging_the_arrows_or_the_label_slides_the_value() {
+        let ctx = crate::theme::ui_context();
+        let mut v = 10.0f64;
+        let origin = egui::pos2(100.0, 100.0);
+        let run = |v: &mut f64, events: Vec<egui::Event>| -> egui::Rect {
+            let mut rect = egui::Rect::NOTHING;
+            let mut out = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(600.0, 400.0),
+                    )),
+                    events,
+                    ..Default::default()
+                },
+                |ui| {
+                    egui::Area::new(egui::Id::new("fields"))
+                        .fixed_pos(origin)
+                        .show(ui.ctx(), |ui| {
+                            rect = ui.add(NumField::new(v).range(0.0..=20.0).prefix("W:")).rect;
+                        });
+                },
+            );
+            out.textures_delta.clear();
+            rect
+        };
+        run(&mut v, Vec::new());
+        let b = run(&mut v, Vec::new());
+        let drag = |v: &mut f64, from: egui::Pos2, dx: f32| {
+            run(v, vec![egui::Event::PointerMoved(from)]);
+            run(
+                v,
+                vec![egui::Event::PointerButton {
+                    pos: from,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: egui::Modifiers::NONE,
+                }],
+            );
+            for i in 1..=4 {
+                let p = from + egui::vec2(dx * i as f32 / 4.0, 0.0);
+                run(v, vec![egui::Event::PointerMoved(p)]);
+            }
+            let to = from + egui::vec2(dx, 0.0);
+            run(
+                v,
+                vec![egui::Event::PointerButton {
+                    pos: to,
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: egui::Modifiers::NONE,
+                }],
+            );
+            run(v, Vec::new());
+        };
+        // On the arrows, 20 pixels right: up by about five steps (the
+        // drag starts past egui's few pixels of slack).
+        let spin = egui::pos2(b.right() + SPIN_W / 2.0, b.center().y);
+        drag(&mut v, spin, 20.0);
+        assert!(v > 11.0 && v <= 15.0, "{v}");
+        let after = v;
+        // On the label, 40 pixels left: down, and not below the range.
+        let label = egui::pos2(b.left() - 14.0, b.center().y);
+        drag(&mut v, label, -40.0);
+        assert!(v < after - 1.0, "{v}");
+        drag(&mut v, label, -400.0);
+        assert_eq!(v, 0.0, "clamped to the range");
     }
 
     #[test]
