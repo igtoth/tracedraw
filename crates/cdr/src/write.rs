@@ -84,6 +84,13 @@ pub struct Previews {
     pub fonts: Vec<FontFace>,
     /// Embed the faces whose licence allows it.
     pub embed_fonts: bool,
+    /// The drop shadows of the drawing's objects as pictures, rendered
+    /// by the caller. Each is written as a bitmap object beneath its
+    /// object, which any reader shows; for a visible object whose shadow
+    /// has no picture here the writer draws one from the object's outline
+    /// at [`SHADOW_DPI`] ([`crate::shadow_image`]), so a drawing written
+    /// without previews keeps its shadows too.
+    pub shadows: Vec<ShadowPicture>,
 }
 
 /// A PNG file and its size in pixels.
@@ -94,11 +101,27 @@ pub struct Png {
     pub height: u32,
 }
 
+/// Dots per inch of the shadow pictures the writer draws itself when the
+/// caller passed none (the resolution `tracedraw_io::SHADOW_PICTURE_DPI`
+/// gives the app's and the command line's): enough for a printed page,
+/// small enough for a file.
+pub const SHADOW_DPI: f64 = 150.0;
+
+/// The picture of one object's drop shadow (see [`Previews::shadows`]):
+/// the shadow alone, with transparency, over the page rectangle `rect`.
+#[derive(Debug, Clone)]
+pub struct ShadowPicture {
+    pub shape: tracedraw_core::ShapeId,
+    pub rect: Rect,
+    pub png: Png,
+}
+
 /// [`document_to_cdr_version`] with the pictures stored beside the drawing
 /// (version 16 and later).
 pub fn document_to_cdr_version_with(doc: &Document, version: u16, previews: &Previews) -> Vec<u8> {
     let v = Ver(version.clamp(OLDEST_VERSION, NEWEST_VERSION));
     let mut w = Writer::new(v, &doc.symbols, &doc.title);
+    w.shadow_pictures = previews.shadows.iter().map(|p| (p.shape, p)).collect();
     w.faces = &previews.fonts;
     w.embed_fonts = previews.embed_fonts;
     let mut tree = w.document(doc);
@@ -127,17 +150,23 @@ pub fn document_to_cdr_version_with(doc: &Document, version: u16, previews: &Pre
     if !v.zip() {
         tree.push(chunk(b"sumi", sumi(v, doc)));
     }
-    // Blends drawn as groups open live again in TraceDraw from the
-    // package's own member (#986); a RIFF file has no place for it.
-    let own = crate::kept_blends::encode(&w.blends, &w.static_ids);
-    let own = own.as_deref();
+    // Blends drawn as groups (#986) and objects drawn with their effects
+    // and shadows (#1031) open live again in TraceDraw from the package's
+    // own members; a RIFF file has no place for them.
+    let mut own: Vec<(&str, Vec<u8>)> = Vec::new();
+    if let Some(b) = crate::kept_blends::encode(&w.blends, &w.static_ids) {
+        own.push((crate::kept_blends::MEMBER, b));
+    }
+    if let Some(b) = crate::kept_effects::encode(&w.effects) {
+        own.push((crate::kept_effects::MEMBER, b));
+    }
     let out = if v.redirects() {
         let (root, files) = pack_redirected(v, &tree);
-        zip_v16(v, doc, &root, &files, previews, &font_ids, own)
+        zip_v16(v, doc, &root, &files, previews, &font_ids, &own)
     } else {
         let riff = riff_file(v.form(), &tree);
         if v.zip() {
-            zip_v14(v, doc, &riff, previews, own)
+            zip_v14(v, doc, &riff, previews, &own)
         } else {
             riff
         }
@@ -922,13 +951,14 @@ fn summary_xml(v: Ver, doc: &Document) -> String {
 /// Versions 14 and 15: the RIFF stream stored, its pictures as BMP files,
 /// a summary, the names and an empty link list, as files of these versions
 /// hold them.
-/// `own`: the package's member of TraceDraw's own (see [`crate::kept_blends`]).
+/// `own`: the package's members of TraceDraw's own (see
+/// [`crate::kept_blends`] and [`crate::kept_effects`]).
 fn zip_v14(
     v: Ver,
     doc: &Document,
     riff: &[u8],
     previews: &Previews,
-    own: Option<&[u8]>,
+    own: &[(&str, Vec<u8>)],
 ) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
     let stored =
@@ -967,9 +997,8 @@ fn zip_v14(
     for (name, text) in members {
         ok &= zip.start_file(name, deflated).is_ok() && zip.write_all(text.as_bytes()).is_ok();
     }
-    if let Some(b) = own {
-        ok &= zip.start_file(crate::kept_blends::MEMBER, deflated).is_ok()
-            && zip.write_all(b).is_ok();
+    for (name, b) in own {
+        ok &= zip.start_file(*name, deflated).is_ok() && zip.write_all(b).is_ok();
     }
     match zip.finish() {
         Ok(c) if ok => c.into_inner(),
@@ -1168,7 +1197,7 @@ fn zip_v16(
     files: &DataFiles,
     previews: &Previews,
     font_ids: &[(u16, String)],
-    own: Option<&[u8]>,
+    own: &[(&str, Vec<u8>)],
 ) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
     let deflated = zip::write::SimpleFileOptions::default()
@@ -1221,9 +1250,8 @@ fn zip_v16(
     for (name, text) in members {
         ok &= zip.start_file(name, deflated).is_ok() && zip.write_all(text.as_bytes()).is_ok();
     }
-    if let Some(b) = own {
-        ok &= zip.start_file(crate::kept_blends::MEMBER, deflated).is_ok()
-            && zip.write_all(b).is_ok();
+    for (name, b) in own {
+        ok &= zip.start_file(*name, deflated).is_ok() && zip.write_all(b).is_ok();
     }
     match zip.finish() {
         Ok(c) if ok => c.into_inner(),
@@ -2798,6 +2826,20 @@ fn mark_nodes(coords: &mut [u8]) {
     }
 }
 
+/// The page box of `s` as a reader finds what it is written as: for
+/// paragraph text, which goes out as one artistic text a line, the box of
+/// those lines (the frame's box is not in the file); else its own.
+fn drawn_bounds(s: &Shape) -> Rect {
+    tracedraw_core::document::paragraph_lines(&s.kind)
+        .and_then(|kinds| {
+            kinds
+                .into_iter()
+                .map(|kind| Shape { kind, ..s.clone() }.bounds())
+                .reduce(|a, b| a.union(b))
+        })
+        .unwrap_or_else(|| s.bounds())
+}
+
 /// A box as `bbox` stores it: top left, then bottom right (file units,
 /// y up).
 fn box_bytes(r: Rect) -> Vec<u8> {
@@ -3089,6 +3131,12 @@ struct Writer<'a> {
     /// the package's own member names them (#986).
     static_ids: HashMap<tracedraw_core::ShapeId, u32>,
     blends: Vec<crate::kept_blends::Written>,
+    /// The objects written as what their effects and shadows draw, for
+    /// the package's own member (#1031), and the pictures of the
+    /// objects' drop shadows the caller rendered (see
+    /// [`Previews::shadows`]).
+    effects: Vec<crate::kept_effects::Written>,
+    shadow_pictures: HashMap<tracedraw_core::ShapeId, &'a ShadowPicture>,
     /// The faces the text uses, with their font files (see
     /// [`Previews::fonts`]), and what [`fonts::split_family`] said for
     /// each family named with a weight.
@@ -3213,6 +3261,8 @@ impl<'a> Writer<'a> {
             bitmaps: Vec::new(),
             next_usdn: 1,
             static_ids: HashMap::new(),
+            effects: Vec::new(),
+            shadow_pictures: HashMap::new(),
             blends: Vec::new(),
             next_object: 1,
             graded: std::collections::HashMap::new(),
@@ -3677,25 +3727,39 @@ impl<'a> Writer<'a> {
 
     /// Objects of a layer or group, front to back as files store them.
     fn objects(&mut self, shapes: &[Shape], centre: Point, depth: usize) -> Placed {
+        self.objects_with_ids(shapes, centre, depth).0
+    }
+
+    /// [`Writer::objects`] with the static id each shape was written
+    /// with, in the shapes' order (none for a shape written as nothing or
+    /// as several lists).
+    fn objects_with_ids(
+        &mut self,
+        shapes: &[Shape],
+        centre: Point,
+        depth: usize,
+    ) -> (Placed, Vec<Option<u32>>) {
         let mut nodes = Vec::new();
         let mut bounds: Option<Rect> = None;
+        let mut ids = vec![None; shapes.len()];
         if depth > 60 {
-            return Placed { nodes, bounds };
+            return (Placed { nodes, bounds }, ids);
         }
-        for s in shapes.iter().rev() {
+        for (i, s) in shapes.iter().enumerate().rev() {
             let before = self.next_usdn;
             let p = self.object(s, centre, depth);
             // One list for the shape: the last static id given is its
             // own (a group's head follows its children).
             if p.nodes.len() == 1 && self.next_usdn > before {
                 self.static_ids.insert(s.id, self.next_usdn - 1);
+                ids[i] = Some(self.next_usdn - 1);
             }
             if let Some(b) = p.bounds {
                 bounds = Some(bounds.map_or(b, |c| c.union(b)));
             }
             nodes.extend(p.nodes);
         }
-        Placed { nodes, bounds }
+        (Placed { nodes, bounds }, ids)
     }
 
     /// The common head of an object or group list: flags, boxes and the
@@ -3997,6 +4061,81 @@ impl<'a> Writer<'a> {
         }
     }
 
+    /// The picture of the drop shadow of `s` (in page space), when it is
+    /// visible and casts one: the caller's (see [`Previews::shadows`]), or
+    /// one drawn here from the object's outline. A hidden object, kept
+    /// from version 21, casts none.
+    fn shadow_picture(&self, s: &Shape) -> Option<ShadowPicture> {
+        let sh = s.shadow.as_ref()?;
+        if !s.visible || sh.opacity.is_nan() || sh.opacity <= 0.0 {
+            return None;
+        }
+        if let Some(p) = self.shadow_pictures.get(&s.id) {
+            return Some((*p).clone());
+        }
+        let (rect, pm) = crate::shadow_image::shadow_image(s, SHADOW_DPI)?;
+        if !(rect.width() > 0.0 && rect.height() > 0.0) {
+            return None;
+        }
+        let data = pm.encode_png().ok()?;
+        Some(ShadowPicture {
+            shape: s.id,
+            rect,
+            png: Png {
+                data,
+                width: pm.width(),
+                height: pm.height(),
+            },
+        })
+    }
+
+    /// `s` written as the objects `all` (bottom to top, the object itself
+    /// at `main_at`), with the picture of its drop shadow as a bitmap
+    /// object beneath them. From version 14 the package's own member
+    /// names them, so `s` opens live again in TraceDraw (#1031).
+    fn drawn_as(
+        &mut self,
+        s: &Shape,
+        mut all: Vec<Shape>,
+        mut main_at: usize,
+        shadow: Option<ShadowPicture>,
+        centre: Point,
+        depth: usize,
+    ) -> Placed {
+        if let Some(p) = shadow {
+            let mut picture = Shape::new(
+                // No object of the drawing: the shape's static id stays
+                // the object's own.
+                tracedraw_core::ShapeId(u64::MAX),
+                ShapeKind::Bitmap {
+                    rect: p.rect,
+                    width_px: p.png.width,
+                    height_px: p.png.height,
+                    png: p.png.data.into(),
+                    fx: None,
+                },
+            );
+            picture.stroke = None;
+            all.insert(0, picture);
+            main_at += 1;
+        }
+        let (placed, ids) = self.objects_with_ids(&all, centre, depth + 1);
+        if self.v.zip() {
+            if let (Some(objects), Some(main)) = (
+                ids.into_iter().collect::<Option<Vec<u32>>>(),
+                all.get(main_at),
+            ) {
+                self.effects.push(crate::kept_effects::Written {
+                    objects,
+                    main: main_at,
+                    bounds: drawn_bounds(main),
+                    source: s.clone(),
+                });
+            }
+        }
+        placed
+    }
+
     fn object(&mut self, s: &Shape, centre: Point, depth: usize) -> Placed {
         let none = || Placed {
             nodes: Vec::new(),
@@ -4015,25 +4154,17 @@ impl<'a> Writer<'a> {
         if !s.visible && !keeps_hidden {
             return none();
         }
-        // Paragraph text goes out as a group of artistic texts, one a line
-        // placed where its frame put it (frames are not written yet), so it
-        // keeps its look.
-        if let Some(kinds) = tracedraw_core::document::paragraph_lines(&s.kind) {
-            let children: Vec<Shape> = kinds
-                .into_iter()
-                .map(|kind| Shape { kind, ..s.clone() })
-                .collect();
-            let group = match children.len() {
-                0 => return none(),
-                1 => children.into_iter().next().unwrap_or_else(|| s.clone()),
-                _ => Shape {
-                    kind: ShapeKind::Group { children },
-                    transform: Affine::IDENTITY,
-                    effects: Vec::new(),
-                    ..s.clone()
-                },
-            };
-            return self.object(&group, centre, depth);
+        // An object with live effects goes out as what they draw, and its
+        // drop shadow as a picture of it beneath it (the caller's, or one
+        // drawn here). From version 14 the package's own member keeps the
+        // object itself, so it opens live again in TraceDraw (#1031). This
+        // comes before paragraph text is split into lines, so the shadow
+        // goes out once. A hidden object casts no picture.
+        if s.effects.is_empty() && s.shadow.is_some() {
+            let shadow = self.shadow_picture(s);
+            let mut plain = s.clone();
+            plain.shadow = None;
+            return self.drawn_as(s, vec![plain], 0, shadow, centre, depth);
         }
         if !s.effects.is_empty() {
             let ev = tracedraw_core::live::evaluate(s);
@@ -4060,10 +4191,12 @@ impl<'a> Writer<'a> {
                     }
                 }
             }
+            let main_at = all.len();
             all.push(main);
             all.extend(ev.above.iter().cloned());
             for x in all.iter_mut() {
                 x.effects.clear();
+                x.shadow = None;
             }
             // A blend goes out as one plain group of what it draws: its
             // start object and its steps as curves (and its end when the
@@ -4076,6 +4209,14 @@ impl<'a> Writer<'a> {
                 .iter()
                 .any(|e| matches!(e, tracedraw_core::live::Effect::Blend { .. }));
             if blends && all.len() > 1 {
+                // The blend's group has no place for the shadow's picture
+                // (#986 restores the group alone): the blend goes out
+                // without its shadow, as `docs/cdr-format.md` says.
+                if s.visible && s.shadow.is_some_and(|sh| sh.opacity > 0.0) {
+                    log::warn!(
+                        "a blended object's drop shadow is not written to .cdr (the blend is kept)"
+                    );
+                }
                 let start = ev.below.len();
                 let before = self.next_usdn;
                 let placed = self.group(&all, s.name.as_deref(), centre, depth + 1);
@@ -4096,7 +4237,30 @@ impl<'a> Writer<'a> {
                 }
                 return placed;
             }
-            return self.objects(&all, centre, depth + 1);
+            let shadow = self.shadow_picture(s);
+            return self.drawn_as(s, all, main_at, shadow, centre, depth);
+        }
+        // Paragraph text goes out as a group of artistic texts, one a line
+        // placed where its frame put it (frames are not written yet), so it
+        // keeps its look. Its effects and shadow were taken above, so the
+        // lines carry neither (a shadow written once per line and once for
+        // the text was the result before).
+        if let Some(kinds) = tracedraw_core::document::paragraph_lines(&s.kind) {
+            let children: Vec<Shape> = kinds
+                .into_iter()
+                .map(|kind| Shape { kind, ..s.clone() })
+                .collect();
+            let group = match children.len() {
+                0 => return none(),
+                1 => children.into_iter().next().unwrap_or_else(|| s.clone()),
+                _ => Shape {
+                    kind: ShapeKind::Group { children },
+                    transform: Affine::IDENTITY,
+                    effects: Vec::new(),
+                    ..s.clone()
+                },
+            };
+            return self.object(&group, centre, depth);
         }
         let v = self.v;
         match &s.kind {
@@ -4152,6 +4316,8 @@ impl<'a> Writer<'a> {
                 }
                 if f.stroke.is_some() {
                     f.fill = Fill::None;
+                    // The shadow went out under the fill.
+                    f.shadow = None;
                     kids.push(f);
                 }
                 return self.group(&kids, s.name.as_deref(), centre, depth);

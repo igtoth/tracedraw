@@ -4327,7 +4327,7 @@ fn a_kept_blend_that_no_longer_matches_opens_as_drawn() {
     let externals = crate::container::external_streams(&bytes, &container);
     let root = crate::riff::parse_with_externals(&riff, externals, 27).expect("tree");
     let open = |kept: &[crate::kept_blends::KeptBlend]| {
-        crate::parse::parse_document_kept(&root, &riff, container.version, None, kept).0
+        crate::parse::parse_document_kept(&root, &riff, container.version, None, kept, &[]).0
     };
     let live = open(&kept);
     assert!(matches!(
@@ -4888,5 +4888,338 @@ fn configuration_records_before_12_carry_the_paper_code_and_orientation() {
             assert_eq!(u32_at(&a5, 36), 31750, "{v}");
             assert_eq!(u32_at(&a4, 36), 0, "{v}");
         }
+    }
+}
+
+// ---- objects with live effects and drop shadows (#1031) ---------------
+
+/// A rectangle of 40 by 30 at (20, 20), red, with `effects`.
+fn effect_rect(effects: Vec<tracedraw_core::live::Effect>) -> Document {
+    let mut doc = doc_with(Vec::new());
+    let mut ids = doc.ids().clone();
+    let mut r = Shape::new(
+        ids.shape(),
+        ShapeKind::Rect {
+            rect: Rect::new(20.0, 20.0, 60.0, 50.0),
+            radius: 0.0,
+            corners: None,
+        },
+    );
+    r.fill = Fill::Solid(Color::rgb8(255, 0, 0));
+    r.stroke = None;
+    r.effects = effects;
+    doc.pages[0].layers[0].shapes = vec![r];
+    doc.set_ids(ids);
+    doc
+}
+
+/// A distorted rectangle saved and opened again is the rectangle with
+/// its distortion, adjustable again (#1031): from version 14 (a package)
+/// the member of TraceDraw's own puts the object back; other readers,
+/// and RIFF files, show the curve it was drawn as.
+#[test]
+fn a_distorted_rectangle_opens_live_again() {
+    let twister =
+        tracedraw_core::live::Effect::Distort(tracedraw_core::effects::Distort::Twister {
+            angle_deg: 90.0,
+            center: None,
+        });
+    let doc = effect_rect(vec![twister.clone()]);
+    let drawn = tracedraw_core::live::evaluate(&doc.pages[0].layers[0].shapes[0])
+        .main
+        .bounds();
+    for v in versions() {
+        let bytes = document_to_cdr_version(&doc, v);
+        let (back, rep) = crate::open_bytes(&bytes, "back").expect("reads back");
+        assert_eq!(rep.skipped_objects, 0, "{v}: {:?}", rep.warnings);
+        let read = &back.pages[0].layers[0].shapes;
+        assert_eq!(read.len(), 1, "{v}: {read:?}");
+        if v < 14 {
+            assert!(
+                matches!(read[0].kind, ShapeKind::Path { .. }),
+                "{v}: {:?}",
+                read[0].kind
+            );
+            assert!(read[0].effects.is_empty(), "{v}");
+            assert!(
+                near(read[0].bounds(), drawn, 0.05),
+                "{v}: {:?}",
+                read[0].bounds()
+            );
+            continue;
+        }
+        let ShapeKind::Rect { rect, .. } = &read[0].kind else {
+            panic!("{v}: {:?}", read[0].kind);
+        };
+        assert_eq!(*rect, Rect::new(20.0, 20.0, 60.0, 50.0), "{v}");
+        assert_eq!(read[0].effects, vec![twister.clone()], "{v}");
+        assert_eq!(read[0].fill, Fill::Solid(Color::rgb8(255, 0, 0)), "{v}");
+        let again = tracedraw_core::live::evaluate(&read[0]).main.bounds();
+        assert!(near(again, drawn, 0.05), "{v}: {again:?} {drawn:?}");
+        // Other programs see the curve the distortion drew.
+        let plain = open_as_drawn(&bytes);
+        let shown = &plain.pages[0].layers[0].shapes;
+        assert_eq!(shown.len(), 1, "{v}");
+        assert!(matches!(shown[0].kind, ShapeKind::Path { .. }), "{v}");
+        // Saved and opened once more, it is still the rectangle.
+        let (twice, _) =
+            crate::open_bytes(&document_to_cdr_version(&back, v), "twice").expect("reads back");
+        let read2 = &twice.pages[0].layers[0].shapes;
+        assert_eq!(read2.len(), 1, "{v}");
+        assert!(matches!(read2[0].kind, ShapeKind::Rect { .. }), "{v}");
+        assert_eq!(read2[0].effects, vec![twister.clone()], "{v}");
+    }
+}
+
+/// A contour goes out as its steps and the object, loose; from version
+/// 14 it comes back as the one object with its contour (#1031).
+#[test]
+fn a_contour_opens_live_again() {
+    let contour = tracedraw_core::live::Effect::Contour {
+        steps: 3,
+        offset: 2.0,
+        outside: true,
+        to_center: false,
+        fill_to: Color::rgb8(0, 0, 255),
+        outline_to: None,
+        color_blend: 0,
+        corners: None,
+        accel_objects: 0.0,
+        accel_colors: 0.0,
+    };
+    let doc = effect_rect(vec![contour.clone()]);
+    for v in [13u16, 14, 16, 21, 27] {
+        let bytes = document_to_cdr_version(&doc, v);
+        let (back, rep) = crate::open_bytes(&bytes, "back").expect("reads back");
+        assert_eq!(rep.skipped_objects, 0, "{v}: {:?}", rep.warnings);
+        let read = &back.pages[0].layers[0].shapes;
+        let shown = open_as_drawn(&bytes).pages[0].layers[0].shapes.len();
+        assert_eq!(shown, 4, "{v}: three steps and the rectangle");
+        if v < 14 {
+            assert_eq!(read.len(), 4, "{v}");
+            continue;
+        }
+        assert_eq!(read.len(), 1, "{v}: {read:?}");
+        assert!(matches!(read[0].kind, ShapeKind::Rect { .. }), "{v}");
+        assert_eq!(read[0].effects, vec![contour.clone()], "{v}");
+    }
+}
+
+/// A drop shadow goes out as the picture the caller rendered of it, a
+/// bitmap beneath the object, so any reader shows it; from version 14 the
+/// object comes back with its shadow and no bitmap (#1031). Without a
+/// picture from the caller (a writer call without previews) the writer
+/// draws one from the object's outline.
+#[test]
+fn a_drop_shadow_goes_out_as_its_picture_and_comes_back() {
+    let shadow = tracedraw_core::Shadow {
+        offset: tracedraw_core::geometry::Vec2::new(3.0, -3.0),
+        opacity: 0.6,
+        blur: 1.0,
+        color: Color::BLACK,
+        ..Default::default()
+    };
+    let mut doc = effect_rect(Vec::new());
+    doc.pages[0].layers[0].shapes[0].shadow = Some(shadow);
+    let id = doc.pages[0].layers[0].shapes[0].id;
+    // A grey, half transparent picture over the shadow's area.
+    let mut pm = tiny_skia::Pixmap::new(60, 50).expect("pixmap");
+    pm.fill(tiny_skia::Color::from_rgba8(0, 0, 0, 128));
+    let picture = ShadowPicture {
+        shape: id,
+        rect: Rect::new(21.0, 15.0, 65.0, 49.0),
+        png: Png {
+            data: pm.encode_png().expect("png"),
+            width: 60,
+            height: 50,
+        },
+    };
+    let with = Previews {
+        shadows: vec![picture],
+        ..Default::default()
+    };
+    let without = Previews::default();
+    for v in [8u16, 13, 14, 16, 21, 27] {
+        let bytes = document_to_cdr_version_with(&doc, v, &with);
+        let shown = open_as_drawn(&bytes);
+        let shapes = &shown.pages[0].layers[0].shapes;
+        assert_eq!(shapes.len(), 2, "{v}: the picture and the rectangle");
+        let ShapeKind::Bitmap {
+            width_px,
+            height_px,
+            ..
+        } = &shapes[0].kind
+        else {
+            panic!("{v}: {:?}", shapes[0].kind);
+        };
+        // Where the picture lies on the page (its own box and transform
+        // together, however a version lays the record out).
+        let rect = shapes[0].bounds();
+        assert!(
+            near(rect, Rect::new(21.0, 15.0, 65.0, 49.0), 0.05),
+            "{v}: {rect:?}"
+        );
+        assert_eq!((*width_px, *height_px), (60, 50), "{v}");
+        assert!(
+            shapes[0].shadow.is_none() && shapes[1].shadow.is_none(),
+            "{v}"
+        );
+        let (back, rep) = crate::open_bytes(&bytes, "back").expect("reads back");
+        assert_eq!(rep.skipped_objects, 0, "{v}: {:?}", rep.warnings);
+        let read = &back.pages[0].layers[0].shapes;
+        if v < 14 {
+            assert_eq!(read.len(), 2, "{v}");
+            continue;
+        }
+        assert_eq!(read.len(), 1, "{v}: {read:?}");
+        assert!(matches!(read[0].kind, ShapeKind::Rect { .. }), "{v}");
+        assert_eq!(read[0].shadow, Some(shadow), "{v}");
+        // No picture passed: the writer draws one where the shadow falls
+        // (the rectangle moved 3 mm right and down, feathered by 1 mm).
+        let bytes = document_to_cdr_version_with(&doc, v, &without);
+        let shown = open_as_drawn(&bytes);
+        let shapes = &shown.pages[0].layers[0].shapes;
+        assert_eq!(shapes.len(), 2, "{v}: the drawn picture and the rectangle");
+        assert!(
+            matches!(shapes[0].kind, ShapeKind::Bitmap { .. }),
+            "{v}: {:?}",
+            shapes[0].kind
+        );
+        let rect = shapes[0].bounds();
+        let under = Rect::new(23.0, 17.0, 63.0, 47.0);
+        assert!(
+            rect.x0 <= under.x0
+                && rect.y0 <= under.y0
+                && rect.x1 >= under.x1
+                && rect.y1 >= under.y1,
+            "{v}: {rect:?}"
+        );
+        assert!(rect.x0 > 15.0 && rect.y1 < 55.0, "{v}: {rect:?}");
+        let (back, _) = crate::open_bytes(&bytes, "back").expect("reads back");
+        let read = &back.pages[0].layers[0].shapes;
+        assert_eq!(read.len(), 1, "{v}");
+        assert_eq!(read[0].shadow, Some(shadow), "{v}");
+    }
+}
+
+/// A distorted object inside a group comes back inside the group, and
+/// an object whose drawn curve another program moved, or whose member
+/// does not read, stays as drawn, never fails (#1031).
+#[test]
+fn a_kept_effect_in_a_group_comes_back_and_a_moved_one_stays_drawn() {
+    let push = tracedraw_core::live::Effect::Distort(tracedraw_core::effects::Distort::PushPull {
+        amount: 50.0,
+        center: None,
+    });
+    let inner = effect_rect(vec![push.clone()]);
+    let mut doc = doc_with(Vec::new());
+    let mut ids = doc.ids().clone();
+    let mut other = Shape::new(
+        ids.shape(),
+        ShapeKind::Ellipse {
+            rect: Rect::new(100.0, 10.0, 140.0, 40.0),
+            arc: None,
+        },
+    );
+    other.fill = Fill::Solid(Color::rgb8(0, 200, 0));
+    let mut group = Shape::new(
+        ids.shape(),
+        ShapeKind::Group {
+            children: vec![inner.pages[0].layers[0].shapes[0].clone(), other],
+        },
+    );
+    group.transform = Affine::translate((5.0, 5.0));
+    doc.pages[0].layers[0].shapes = vec![group];
+    doc.set_ids(ids);
+    let bytes = document_to_cdr_version(&doc, 27);
+    let (back, _) = crate::open_bytes(&bytes, "back").expect("reads back");
+    let read = &back.pages[0].layers[0].shapes;
+    assert_eq!(read.len(), 1);
+    let ShapeKind::Group { children } = &read[0].kind else {
+        panic!("{:?}", read[0].kind);
+    };
+    assert_eq!(children.len(), 2);
+    assert!(
+        matches!(children[0].kind, ShapeKind::Rect { .. }),
+        "{:?}",
+        children[0].kind
+    );
+    assert_eq!(children[0].effects, vec![push]);
+    // The group's move went into the rectangle when it was written.
+    assert!(near(
+        children[0].bounds(),
+        Rect::new(25.0, 25.0, 65.0, 55.0),
+        0.05
+    ));
+    assert!(children[0].id != children[1].id && children[0].id != read[0].id);
+
+    // The member names the drawn curve's box; a curve moved elsewhere
+    // (another program edited the file) no longer matches it.
+    let mut w = Writer::new(Ver(27), &doc.symbols, &doc.title);
+    let _ = w.document(&doc);
+    assert_eq!(w.effects.len(), 1);
+    let member = crate::kept_effects::encode(&w.effects).expect("member");
+    let mut kept = crate::kept_effects::decode(&member);
+    assert_eq!(kept.len(), 1);
+    assert_eq!(kept[0].objects.len(), 1);
+    let container = crate::container::detect(&bytes).expect("container");
+    let riff = crate::container::riff_stream(&bytes, &container).expect("riff");
+    let externals = crate::container::external_streams(&bytes, &container);
+    let root = crate::riff::parse_with_externals(&riff, externals, 27).expect("tree");
+    let open = |kept: &[crate::kept_effects::KeptEffect]| {
+        crate::parse::parse_document_kept(&root, &riff, container.version, None, &[], kept).0
+    };
+    let kind_of = |d: &Document| match &d.pages[0].layers[0].shapes[0].kind {
+        ShapeKind::Group { children } => children[0].kind.clone(),
+        k => k.clone(),
+    };
+    assert!(matches!(kind_of(&open(&kept)), ShapeKind::Rect { .. }));
+    kept[0].bounds[0] += 10.0;
+    kept[0].bounds[2] += 10.0;
+    assert!(matches!(kind_of(&open(&kept)), ShapeKind::Path { .. }));
+    assert!(crate::kept_effects::decode(b"{\"format\": 2, \"effects\": []}").is_empty());
+    assert!(crate::kept_effects::decode(b"not json").is_empty());
+}
+
+/// The bitmap objects among `shapes`, in groups and clip frames too.
+fn count_bitmaps(shapes: &[Shape]) -> usize {
+    shapes
+        .iter()
+        .map(|s| match &s.kind {
+            ShapeKind::Bitmap { .. } => 1,
+            ShapeKind::Group { children } => count_bitmaps(children),
+            ShapeKind::ClipFrame { frame, contents } => {
+                count_bitmaps(std::slice::from_ref(frame)) + count_bitmaps(contents)
+            }
+            _ => 0,
+        })
+        .sum()
+}
+
+/// A hidden object (kept from version 21) casts no shadow picture, and
+/// from version 14 still comes back with its shadow (#1031).
+#[test]
+fn a_hidden_object_casts_no_shadow_picture() {
+    let shadow = tracedraw_core::Shadow {
+        offset: tracedraw_core::geometry::Vec2::new(3.0, -3.0),
+        opacity: 0.6,
+        blur: 0.0,
+        color: Color::BLACK,
+        ..Default::default()
+    };
+    let mut doc = effect_rect(Vec::new());
+    let s = &mut doc.pages[0].layers[0].shapes[0];
+    s.shadow = Some(shadow);
+    s.visible = false;
+    for v in [21u16, 27] {
+        let bytes = document_to_cdr_version(&doc, v);
+        let shown = open_as_drawn(&bytes);
+        let shapes = &shown.pages[0].layers[0].shapes;
+        assert_eq!(count_bitmaps(shapes), 0, "{v}: {shapes:?}");
+        let (back, _) = crate::open_bytes(&bytes, "back").expect("reads back");
+        let read = &back.pages[0].layers[0].shapes;
+        assert_eq!(read.len(), 1, "{v}");
+        assert!(!read[0].visible, "{v}");
+        assert_eq!(read[0].shadow, Some(shadow), "{v}");
     }
 }

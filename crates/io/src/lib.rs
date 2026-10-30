@@ -190,6 +190,78 @@ pub fn page_pictures(doc: &Document, max_side: u32) -> Vec<(Vec<u8>, u32, u32)> 
     out
 }
 
+/// The resolution of the drop shadow pictures [`shadow_pictures`] makes
+/// for files: enough for a printed page, small enough for a file.
+pub const SHADOW_PICTURE_DPI: f64 = 150.0;
+
+/// The drop shadows of the drawing's visible objects as pictures at
+/// `dpi`, for file formats that keep no shadows (`.cdr` writes each as a
+/// bitmap beneath its object): every object with a shadow, on any page,
+/// in any group or clip frame, as `(shape, page rectangle, png, width,
+/// height)`, the picture holding the shadow alone with its transparency.
+pub fn shadow_pictures(
+    doc: &Document,
+    dpi: f64,
+) -> Vec<(
+    tracedraw_core::ShapeId,
+    tracedraw_core::Rect,
+    Vec<u8>,
+    u32,
+    u32,
+)> {
+    use tracedraw_core::{Affine, Shape, ShapeKind};
+    fn walk(
+        shapes: &[Shape],
+        parent: Affine,
+        dpi: f64,
+        out: &mut Vec<(
+            tracedraw_core::ShapeId,
+            tracedraw_core::Rect,
+            Vec<u8>,
+            u32,
+            u32,
+        )>,
+    ) {
+        for s in shapes {
+            if !s.visible {
+                continue;
+            }
+            if s.shadow.is_some_and(|sh| sh.opacity > 0.0) {
+                let mut on_page = s.clone();
+                on_page.absorb(parent);
+                if let Some((rect, pm)) = tracedraw_render::render_shadow_image(&on_page, dpi) {
+                    let (w, h) = (pm.width(), pm.height());
+                    let mut rgba = Vec::with_capacity((w * h * 4) as usize);
+                    for p in pm.pixels() {
+                        let c = p.demultiply();
+                        rgba.extend_from_slice(&[c.red(), c.green(), c.blue(), c.alpha()]);
+                    }
+                    let png = svg::encode_png(w, h, &rgba);
+                    if !png.is_empty() {
+                        out.push((s.id, rect, png, w, h));
+                    }
+                }
+            }
+            let inner = parent * s.transform;
+            match &s.kind {
+                ShapeKind::Group { children } => walk(children, inner, dpi, out),
+                ShapeKind::ClipFrame { frame, contents } => {
+                    walk(std::slice::from_ref(frame), inner, dpi, out);
+                    walk(contents, inner, dpi, out);
+                }
+                _ => {}
+            }
+        }
+    }
+    let mut out = Vec::new();
+    for page in &doc.pages {
+        for layer in &page.layers {
+            walk(&layer.shapes, Affine::IDENTITY, dpi, &mut out);
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -447,5 +519,86 @@ mod tests {
         assert!(st.end_arrow.is_custom());
         assert_eq!(st.end_arrow.name(), "My head");
         assert_eq!(st.start_arrow, tracedraw_core::Arrowhead::Circle);
+    }
+}
+
+#[cfg(test)]
+mod shadow_picture_tests {
+    use super::*;
+    use tracedraw_core::{
+        document::{Shape, ShapeKind},
+        geometry::{Affine, Rect, Size, Vec2},
+        style::Fill,
+        Color, Shadow,
+    };
+
+    /// Every object with a shadow gets a picture over the shadow's area,
+    /// also inside a moved group (its place on the page), and objects
+    /// without one get none (#1031).
+    #[test]
+    fn shadow_pictures_cover_each_shadow_on_the_page() {
+        let mut doc = Document::new("s", Size::new(200.0, 100.0));
+        let mut ids = doc.ids().clone();
+        let shadow = Shadow {
+            offset: Vec2::new(4.0, -4.0),
+            opacity: 0.7,
+            blur: 0.0,
+            color: Color::BLACK,
+            ..Default::default()
+        };
+        let mut a = Shape::new(
+            ids.shape(),
+            ShapeKind::Rect {
+                rect: Rect::new(10.0, 10.0, 30.0, 20.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        a.fill = Fill::Solid(Color::rgb8(255, 0, 0));
+        a.shadow = Some(shadow);
+        let mut b = Shape::new(
+            ids.shape(),
+            ShapeKind::Rect {
+                rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        b.fill = Fill::Solid(Color::rgb8(0, 0, 255));
+        b.shadow = Some(shadow);
+        let plain = Shape::new(
+            ids.shape(),
+            ShapeKind::Ellipse {
+                rect: Rect::new(50.0, 50.0, 60.0, 60.0),
+                arc: None,
+            },
+        );
+        let (a_id, b_id) = (a.id, b.id);
+        let mut group = Shape::new(
+            ids.shape(),
+            ShapeKind::Group {
+                children: vec![b, plain],
+            },
+        );
+        group.transform = Affine::translate((100.0, 50.0));
+        doc.pages[0].layers[0].shapes = vec![a, group];
+        doc.set_ids(ids);
+        let pictures = shadow_pictures(&doc, 150.0);
+        assert_eq!(pictures.len(), 2, "{pictures:?}");
+        let of = |id| pictures.iter().find(|p| p.0 == id).expect("picture");
+        let (_, rect, png, w, h) = of(a_id);
+        // The shadow of `a` lies 4 mm right of and below it.
+        assert!(
+            rect.x0 >= 10.0 && rect.x1 >= 34.0 - 0.01 && rect.y0 <= 6.0 + 0.01,
+            "{rect:?}"
+        );
+        assert!(*w > 0 && *h > 0 && png.starts_with(&[0x89, b'P', b'N', b'G']));
+        let (_, rect, ..) = of(b_id);
+        // `b` sits at (100, 50) on the page.
+        assert!(
+            rect.x0 >= 100.0 && rect.x1 >= 114.0 - 0.01 && rect.y0 <= 46.0 + 0.01,
+            "{rect:?}"
+        );
+        assert!(shadow_pictures(&doc, 0.0).is_empty());
     }
 }

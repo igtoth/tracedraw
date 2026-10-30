@@ -551,20 +551,23 @@ pub fn parse_document_with(
     version: Version,
     cmyk_profile: Option<&[u8]>,
 ) -> (Document, ParseReport) {
-    parse_document_kept(tree, main, version, cmyk_profile, &[])
+    parse_document_kept(tree, main, version, cmyk_profile, &[], &[])
 }
 
 /// [`parse_document_with`] that turns the groups `kept` names back into
-/// live blends (see [`crate::kept_blends`]).
+/// live blends (see [`crate::kept_blends`]) and the objects
+/// `kept_effects` names back into objects with their effects and shadows
+/// (see [`crate::kept_effects`]).
 pub(crate) fn parse_document_kept(
     tree: &Tree,
     main: &[u8],
     version: Version,
     cmyk_profile: Option<&[u8]>,
     kept: &[crate::kept_blends::KeptBlend],
+    kept_effects: &[crate::kept_effects::KeptEffect],
 ) -> (Document, ParseReport) {
     let mut ctx = Ctx::new(main, tree, version.0);
-    if !kept.is_empty() {
+    if !kept.is_empty() || !kept_effects.is_empty() {
         ctx.static_ids = Some(HashMap::new());
     }
     ctx.report.version = Some(version);
@@ -777,6 +780,16 @@ pub(crate) fn parse_document_kept(
     }
 
     if let Some(ids) = ctx.static_ids.take() {
+        // Objects first: a blend's end may be one, and the blend then
+        // takes its copy from the object put back.
+        let n = crate::kept_effects::restore(&mut doc, kept_effects, &ids);
+        if n < kept_effects.len() {
+            log::warn!(
+                "{} of the file's {} objects with effects open as drawn: they changed",
+                kept_effects.len() - n,
+                kept_effects.len()
+            );
+        }
         let n = crate::kept_blends::restore(&mut doc, kept, &ids);
         if n < kept.len() {
             log::warn!(

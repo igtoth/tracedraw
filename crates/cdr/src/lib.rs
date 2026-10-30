@@ -27,7 +27,9 @@ pub mod check;
 pub mod cmx;
 pub mod container;
 mod kept_blends;
+mod kept_effects;
 pub mod parse;
+mod shadow_image;
 pub mod spot;
 mod text;
 pub mod wl;
@@ -102,12 +104,23 @@ pub fn open_bytes_keeping(
     )
     .map(|b| kept_blends::decode(&b))
     .unwrap_or_default();
+    // Objects TraceDraw saved as what their effects and shadows draw open
+    // live again too (#1031).
+    let kept_effects = container::own_member(
+        bytes,
+        &container,
+        kept_effects::MEMBER,
+        kept_effects::MAX_MEMBER,
+    )
+    .map(|b| kept_effects::decode(&b))
+    .unwrap_or_default();
     let mut doc_report = parse::parse_document_kept(
         &root,
         &riff,
         container.version,
         cmyk_profile.as_ref().map(|p| p.data.as_slice()),
         &kept,
+        &kept_effects,
     );
     doc_report.0.title = title.to_string();
     doc_report.0.palette = container::document_palette(bytes, &container)

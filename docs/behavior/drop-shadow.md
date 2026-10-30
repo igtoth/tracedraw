@@ -22,6 +22,18 @@ Shadows in files saved before merge modes existed keep the Normal merge
 they were drawn with; they load as flat shadows feathered in the middle
 with linear edges, as before.
 
+Saved as `.cdr`, a shadow goes out as a picture of it (150 dpi, with its
+transparency; the merge mode is not in the picture) beneath the object,
+which any program shows; from version 14 TraceDraw opens the object with
+its shadow again (#1031, `behavior/files.md`). The app and the command
+line pass the renderer's picture; where none is passed (a call of the
+writer without pictures, `document_to_cdr_version`, or a shadow the
+renderer gave no picture for) the writer draws it from the object's
+outline, moved, feathered and shaded as below. A hidden object casts no
+picture (its shadow still comes back with it), a paragraph text casts one
+for the whole text, and the shadow of an object with a blend is not
+written (the blend goes out alone, with a warning in the log).
+
 ## Drawing a shadow
 
 - A drag from the middle of an object makes a flat shadow: its

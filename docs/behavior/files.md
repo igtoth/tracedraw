@@ -115,6 +115,19 @@ version decides who can open a file:
 
 What each version's file holds is in `docs/cdr-format.md`, Writing.
 
+Live effects and drop shadows are saved as what they draw (a distorted
+rectangle as its curve, a contour as its steps, a shadow as a picture
+of it beneath the object), which any program shows. From version 14
+the file also carries the objects themselves, so opened again in
+TraceDraw a distortion, contour, envelope, perspective, extrusion,
+bevel, block shadow, symmetry or drop shadow is live again (#1031), as
+blends are (#986); an object another program moved or changed in
+between opens as it was drawn. The objects themselves are kept whole in
+`tracedraw/effects.json` (each object as TraceDraw stores it, its
+pictures and the end objects of its blends included), so the member grows
+with them; a member that inflates past 64 MB is not read, and its
+objects open as drawn.
+
 ## Checks
 
 - Given a folder with a subfolder, a `.cdr` and a `.txt` file, the

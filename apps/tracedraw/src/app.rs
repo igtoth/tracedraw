@@ -7825,7 +7825,29 @@ pub(crate) fn cdr_previews(doc: &tracedraw_core::Document) -> tracedraw_cdr::wri
         pages,
         fonts: cdr_font_faces(doc),
         embed_fonts: false,
+        shadows: cdr_shadow_pictures(doc),
     }
+}
+
+/// The drop shadows of the drawing's objects as the pictures the `.cdr`
+/// writer draws beneath them (#1031).
+pub(crate) fn cdr_shadow_pictures(
+    doc: &tracedraw_core::Document,
+) -> Vec<tracedraw_cdr::write::ShadowPicture> {
+    tracedraw_io::shadow_pictures(doc, tracedraw_io::SHADOW_PICTURE_DPI)
+        .into_iter()
+        .map(
+            |(shape, rect, data, width, height)| tracedraw_cdr::write::ShadowPicture {
+                shape,
+                rect,
+                png: tracedraw_cdr::write::Png {
+                    data,
+                    width,
+                    height,
+                },
+            },
+        )
+        .collect()
 }
 
 /// The faces the drawing's text uses, with their font files where
