@@ -673,4 +673,66 @@ mod tests {
         // Nothing to do: neither a border nor grommets.
         assert!(!BorderGrommetState::default().does_something());
     }
+
+    /// #1283: a selection reaching past the page gets its mirrored edges
+    /// from itself, not from what the page shows of it (the first run on
+    /// a big imported photo used to take the strips from inside it).
+    #[test]
+    fn a_selection_past_the_page_mirrors_its_own_edges() {
+        let mut app = App::headless();
+        let page = app.page_size();
+        let solid = |app: &mut App, r: Rect, c: Color| {
+            let id = app
+                .new_shape(ShapeKind::Rect {
+                    rect: r,
+                    radius: 0.0,
+                    corners: None,
+                })
+                .expect("a rectangle");
+            app.select(vec![id]);
+            app.apply_fill(Fill::Solid(c));
+            id
+        };
+        // Green, wider than the page; red over the part on the page.
+        let wide = Rect::new(-60.0, 50.0, page.width + 60.0, 150.0);
+        let green = solid(&mut app, wide, Color::rgb8(0, 200, 0));
+        solid(
+            &mut app,
+            Rect::new(-20.0, 40.0, page.width + 20.0, 160.0),
+            Color::rgb8(220, 0, 0),
+        );
+        // Only the green one selected; the red one lies over its middle.
+        app.select(vec![green]);
+        let st = BorderGrommetState {
+            source: Source::Selection,
+            add_border: true,
+            border: BorderKind::Mirror,
+            width_mm: 10.0,
+            ..Default::default()
+        };
+        apply(&mut app, &st);
+        let strips: Vec<image::RgbaImage> = app
+            .doc()
+            .page(app.page)
+            .ok()
+            .and_then(|p| p.layers.last())
+            .map(|l| {
+                l.shapes
+                    .iter()
+                    .filter_map(|s| match &s.kind {
+                        ShapeKind::Bitmap { png, .. } => image::load_from_memory(png)
+                            .ok()
+                            .map(|i| i.to_rgba8()),
+                        _ => None,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        assert_eq!(strips.len(), 8);
+        // The left and right strips (in the order of `border_rects`).
+        for strip in &strips[2..4] {
+            let p = strip.get_pixel(strip.width() / 2, strip.height() / 2);
+            assert!(p[1] > 150 && p[0] < 60, "green edge, got {p:?}");
+        }
+    }
 }

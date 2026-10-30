@@ -81,6 +81,7 @@ pub fn dialog_topic(d: &Dialog, options: OptionsPage) -> &'static str {
         Dialog::PrintMerge(_) => "printing/print-merge",
         Dialog::CreatePattern { .. } => "color/patterns#create-pattern",
         Dialog::CreateTable { .. } => "objects/tables#create-table",
+        Dialog::TextToTable(_) => "objects/tables#convert",
         Dialog::PasteSpecial(_) => "objects/paste-special",
         Dialog::Barcode(_) => "objects/barcodes",
         Dialog::ConvertToBitmap(_) => "bitmaps/convert-to-bitmap",
