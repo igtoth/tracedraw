@@ -17,15 +17,18 @@
 //! expanded effects), groups, artistic text with one font, size and style
 //! per run, bitmaps (24-bit), solid and fountain fills, outlines (width,
 //! caps, joins, dashes, nib, "scale with object", "behind fill") and
-//! uniform transparency. A clip frame holding one bitmap becomes that
-//! bitmap with the frame as its crop path; other clip frames a group of
-//! the frame outline and the contents. Rectangles of versions 15 and later
+//! uniform transparency. From version 12 a clip frame is a clip
+//! container: the frame object names, in argument 8005, a group of the
+//! document's `LIST clpt` that holds the contents (#1222). Before 12 a
+//! clip frame holding one bitmap becomes that bitmap with the frame as
+//! its crop path, other clip frames a group of the frame outline and
+//! the contents. Rectangles of versions 15 and later
 //! are written as the curve they draw (their corner records are not
 //! understood well enough to write).
 
 use crate::parse::{
-    ARG_COORDS, ARG_FILL, ARG_NAME, ARG_OPACITY, ARG_OUTLINE, ARG_STYLE, ARG_STYLE_STRING,
-    OBJ_ARTISTIC_TEXT, OBJ_BITMAP, OBJ_CURVE, OBJ_ELLIPSE, OBJ_RECT,
+    ARG_CLIP_CONTENTS, ARG_COORDS, ARG_FILL, ARG_NAME, ARG_OPACITY, ARG_OUTLINE, ARG_STYLE,
+    ARG_STYLE_STRING, OBJ_ARTISTIC_TEXT, OBJ_BITMAP, OBJ_CURVE, OBJ_ELLIPSE, OBJ_RECT,
 };
 use std::collections::HashMap;
 use std::io::Write as _;
@@ -215,6 +218,16 @@ const ARG_TEXT_LINK: u32 = 16015;
 const ARG_HIDDEN: u32 = 16016;
 /// On guides layers of version 17 and later: 2.
 const ARG_GUIDES_MODE: u32 = 16001;
+/// On the group of `LIST clpt` holding a clip container's contents: 2
+/// (files of versions 25 and 27).
+const ARG_CLIP_GROUP: u32 = 3500;
+/// On a clip container (version 27): a 16-byte id of its own, and 0.
+const ARG_CLIP_GUID: u32 = 40001;
+const ARG_CLIP_ZERO: u32 = 40200;
+/// The flags of a `clpt` group ([0, 8, 0x80, 0x10]) and byte 2 of a clip
+/// container's flags (0x10), as a version 27 file holds them.
+const CLIP_GROUP_FLAGS: [u8; 4] = [0, 8, 0x80, 0x10];
+const CLIP_CONTAINER_FLAG: u8 = 0x10;
 /// The flags of a drawing's own layer (byte 3: a layer; byte 0 the kind,
 /// byte 2 set on a master layer).
 const PLAIN_LAYER_FLAGS: [u8; 4] = [0, 0, 0, 0x98];
@@ -322,6 +335,12 @@ impl Ver {
     }
     /// Names and text in UTF-16 (8-bit before version 12).
     fn unicode(self) -> bool {
+        self.0 >= 12
+    }
+    /// Clip frames go out as clip containers (argument 8005 naming a
+    /// group of `LIST clpt`): the layout read from a version 12 file and
+    /// written as files of versions 25 and 27 hold it.
+    fn clip_containers(self) -> bool {
         self.0 >= 12
     }
     /// Objects carry their style as a string (argument 201).
@@ -3137,6 +3156,14 @@ struct Writer<'a> {
     /// [`Previews::shadows`]).
     effects: Vec<crate::kept_effects::Written>,
     shadow_pictures: HashMap<tracedraw_core::ShapeId, &'a ShadowPicture>,
+    /// Clip containers (#1222): the groups of the document's `LIST clpt`
+    /// holding the contents of the clip frames written; the number the
+    /// container being written names (taken by [`Self::place`]); how
+    /// deep inside clip contents the writer is (objects there carry no
+    /// `usdn` and no argument 12000, as the files have them).
+    clip_groups: Vec<Node>,
+    clip_container: Option<u32>,
+    clip_depth: usize,
     /// The faces the text uses, with their font files (see
     /// [`Previews::fonts`]), and what [`fonts::split_family`] said for
     /// each family named with a weight.
@@ -3264,6 +3291,9 @@ impl<'a> Writer<'a> {
             effects: Vec::new(),
             shadow_pictures: HashMap::new(),
             blends: Vec::new(),
+            clip_groups: Vec::new(),
+            clip_container: None,
+            clip_depth: 0,
             next_object: 1,
             graded: std::collections::HashMap::new(),
             next_fill: 1,
@@ -3507,6 +3537,11 @@ impl<'a> Writer<'a> {
         } else {
             // Before version 16 the style table is the body of a list.
             docl.push(Node::RawList(*b"stlt", styles));
+        }
+        // The contents of the clip containers, after the style table as
+        // a version 27 file has them.
+        if !self.clip_groups.is_empty() {
+            docl.push(list(b"clpt", std::mem::take(&mut self.clip_groups)));
         }
         if !v.zip() {
             // RIFF files (before version 14) end the document tables
@@ -3766,14 +3801,82 @@ impl<'a> Writer<'a> {
     /// static id.
     fn head(&mut self, flags: [u8; 4], page_box: Rect, outline: f64, centre: Point) -> Vec<Node> {
         let b = page_box - centre.to_vec2();
-        let usdn = self.next_usdn;
-        self.next_usdn += 1;
-        vec![
+        let mut head = vec![
             chunk(b"flgs", flags.to_vec()),
             chunk(b"bbox", box_bytes(b)),
             chunk(b"obbx", obbx_bytes(b, outline)),
-            chunk(b"usdn", usdn.to_le_bytes().to_vec()),
-        ]
+        ];
+        // The objects inside a clip container's group carry no static id
+        // (files of versions 25 and 27).
+        if self.clip_depth == 0 {
+            let usdn = self.next_usdn;
+            self.next_usdn += 1;
+            head.push(chunk(b"usdn", usdn.to_le_bytes().to_vec()));
+        }
+        head
+    }
+
+    /// A clip frame as a clip container (version 12 on, #1222): the
+    /// contents go, on the page like any other objects, into a group of
+    /// the document's `LIST clpt` numbered by its `spnd`; the frame is
+    /// written as an object of its own look naming that number in
+    /// argument 8005. A reader draws the group inside the frame. Without
+    /// contents that reach the file, the frame alone.
+    fn clip_container(
+        &mut self,
+        s: &Shape,
+        frame: &Shape,
+        contents: &[Shape],
+        centre: Point,
+        depth: usize,
+    ) -> Placed {
+        let kids: Vec<Shape> = contents
+            .iter()
+            .map(|c| {
+                let mut c = c.clone();
+                c.absorb(s.transform);
+                c
+            })
+            .collect();
+        self.clip_depth += 1;
+        let inner = self.objects(&kids, centre, depth + 1);
+        self.clip_depth -= 1;
+        let mut f = frame.clone();
+        f.absorb(s.transform);
+        // The frame's effects would make it several objects; the first
+        // would take the container's arguments.
+        f.effects.clear();
+        if f.name.is_none() {
+            f.name = s.name.clone();
+        }
+        let Some(b) = inner.bounds else {
+            return self.object(&f, centre, depth);
+        };
+        let number = self.next_spnd;
+        self.next_spnd += 1;
+        let b = b - centre.to_vec2();
+        let mut body = vec![
+            chunk(b"spnd", number.to_le_bytes().to_vec()),
+            chunk(b"flgs", CLIP_GROUP_FLAGS.to_vec()),
+            chunk(b"bbox", box_bytes(b)),
+            chunk(b"obbx", obbx_bytes(b, 0.0)),
+            list(
+                b"lgob",
+                vec![chunk(
+                    b"loda",
+                    loda(0, vec![(ARG_CLIP_GROUP, 2u32.to_le_bytes().to_vec())]),
+                )],
+            ),
+        ];
+        body.extend(inner.nodes);
+        self.clip_groups.push(list(b"grp ", body));
+        self.clip_container = Some(number);
+        let placed = self.object(&f, centre, depth);
+        if self.clip_container.take().is_some() {
+            // The frame became no object: the group would name nothing.
+            self.clip_groups.pop();
+        }
+        placed
     }
 
     /// A group list of `children`, named `name` (argument 1000 of its
@@ -4000,8 +4103,22 @@ impl<'a> Writer<'a> {
         }
         // A zero 12000 in every version and, in 7 to 12, the zero
         // rotation angle (12030), as every object of the files of those
-        // versions has them.
-        args.push((ARG_PROPS, vec![0; 4]));
+        // versions has them; not inside a clip container's group, whose
+        // objects have neither (version 27).
+        if self.clip_depth == 0 {
+            args.push((ARG_PROPS, vec![0; 4]));
+        }
+        // A clip container names the group of its contents, with an id of
+        // its own and a zero, as a version 27 file has it.
+        let container = self.clip_container.take();
+        if let Some(n) = container {
+            args.push((
+                ARG_CLIP_CONTENTS,
+                [n, 1, 0, 1].iter().flat_map(|x| x.to_le_bytes()).collect(),
+            ));
+            args.push((ARG_CLIP_GUID, self.guid().to_vec()));
+            args.push((ARG_CLIP_ZERO, vec![0; 4]));
+        }
         if v.rotation_arg() {
             args.push((ARG_ROTATION, vec![0; 4]));
         }
@@ -4031,6 +4148,9 @@ impl<'a> Writer<'a> {
         // keep it.
         let mut body = Vec::new();
         let mut flags = [0, 2, 0, 8];
+        if container.is_some() {
+            flags[2] = CLIP_CONTAINER_FLAG;
+        }
         if text.is_some() {
             body.push(chunk(b"spnd", self.next_spnd.to_le_bytes().to_vec()));
             self.next_spnd += 1;
@@ -4286,6 +4406,9 @@ impl<'a> Writer<'a> {
                     .collect();
                 return self.group(&kids, s.name.as_deref(), centre, depth);
             }
+            ShapeKind::ClipFrame { frame, contents } if v.clip_containers() => {
+                return self.clip_container(s, frame, contents, centre, depth);
+            }
             ShapeKind::ClipFrame { frame, contents }
                 if contents.len() == 1
                     && matches!(contents[0].kind, ShapeKind::Bitmap { .. })
@@ -4299,8 +4422,9 @@ impl<'a> Writer<'a> {
                 return self.bitmap_object(&b, centre, Some(&clip));
             }
             ShapeKind::ClipFrame { frame, contents } => {
-                // Not yet written as a clip container: the frame's fill
-                // under the contents and its outline over them, unclipped.
+                // Before version 12 (no clip container seen): the frame's
+                // fill under the contents and its outline over them,
+                // unclipped.
                 let mut f = (**frame).clone();
                 f.absorb(s.transform);
                 let mut kids = Vec::new();

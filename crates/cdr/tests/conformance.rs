@@ -870,9 +870,27 @@ fn clip_frames() {
         );
         let cb = (first.transform * contents[0].page_path()).bounding_box();
         same_box(r.v, cb, Rect::new(10.0, 10.0, 70.0, 40.0), EPS);
-        // Not a clip container yet: the frame's fill under, the contents,
-        // the frame's outline over.
+        // From version 12 a clip container (#1222): the frame with its
+        // fill and outline, the contents inside it. Before, the frame's
+        // fill under, the contents, the frame's outline over.
         let second = r.shape(1);
+        if r.v >= 12 {
+            let ShapeKind::ClipFrame { frame, contents } = &second.kind else {
+                panic!("version {}: {}", r.v, kind_name(&second.kind));
+            };
+            solid(r.v, frame, Color::rgb8(220, 40, 40), "frame fill");
+            assert!(frame.stroke.is_some(), "version {}", r.v);
+            assert_eq!(contents.len(), 2, "version {}", r.v);
+            let fb = (second.transform * frame.page_path()).bounding_box();
+            same_box(r.v, fb, Rect::new(110.0, 15.0, 150.0, 55.0), EPS);
+            let cb = contents
+                .iter()
+                .map(|c| (second.transform * c.page_path()).bounding_box())
+                .reduce(|a, b| a.union(b))
+                .unwrap_or_default();
+            same_box(r.v, cb, Rect::new(100.0, 10.0, 160.0, 60.0), EPS);
+            return;
+        }
         let ShapeKind::Group { children } = &second.kind else {
             panic!("version {}: {}", r.v, kind_name(&second.kind));
         };

@@ -128,9 +128,10 @@ pub(crate) const ARG_STYLE_STRING: u32 = 201;
 pub(crate) const ARG_NAME: u32 = 1000;
 pub(crate) const ARG_OPACITY: u32 = 8000;
 const ARG_POLYGON: u32 = 11000;
-/// The contents of a clip container (version 12): the `spnd` number of a
-/// group in the document's `LIST clpt`, then three u32 (1, 0, 1 seen).
-const ARG_CLIP_CONTENTS: u32 = 8005;
+/// The contents of a clip container (versions 12, 25 and 27 seen): the
+/// `spnd` number of a group in the document's `LIST clpt`, then three
+/// u32 (1, 0, 1).
+pub(crate) const ARG_CLIP_CONTENTS: u32 = 8005;
 const ARG_PAGE_SIZE: u32 = 19130;
 /// Master page `loda` argument holding the document's page background.
 const ARG_PAGE_BACKGROUND: u32 = 17000;

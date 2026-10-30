@@ -146,6 +146,12 @@ in place and lock work as for any clip frame. One undo step each.
 - Given a `.cdr` bitmap with a crop outline smaller than the image, then
   the reader produces a clip frame of the bitmap inside the crop path
   (confirmed with the 2019 banner file).
+- Given a clip frame saved as `.cdr` version 12 or later, then the file
+  holds a clip container (the frame object naming a group of the
+  document's clip contents list, as files of that format hold one) and
+  the frame comes back with its look and its contents (#1222;
+  `write::tests::clip_frames_go_out_as_clip_containers_from_version_12`,
+  see `docs/cdr-format.md`, Writing).
 - `render::tests::opacity_masks_show_the_contents_by_the_frame_brightness`,
   `svg::tests::opacity_masks_are_svg_masks`,
   `pdf::tests::opacity_masks_go_in_as_transparent_pictures`,

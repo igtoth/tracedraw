@@ -2332,6 +2332,17 @@ fn a_clip_frame_keeps_its_fill_under_and_outline_over_the_contents() {
         let bytes = document_to_cdr_version(&doc, v);
         let (back, rep) = crate::open_bytes(&bytes, "back").expect("reads back");
         let l = &back.pages[0].layers[0];
+        if v >= 12 {
+            // A clip container: the frame with its look, the contents
+            // inside it (the next test).
+            let ShapeKind::ClipFrame { frame, contents } = &l.shapes[0].kind else {
+                panic!("{v}: {:?} {:?}", l.shapes[0].kind, rep.warnings);
+            };
+            assert_eq!(frame.fill, Fill::Solid(Color::rgb8(0, 120, 0)), "{v}");
+            assert!(frame.stroke.is_some(), "{v}");
+            assert_eq!(contents.len(), 1, "{v}");
+            continue;
+        }
         let ShapeKind::Group { children } = &l.shapes[0].kind else {
             panic!("{v}: {:?} {:?}", l.shapes[0].kind, rep.warnings);
         };
@@ -2342,6 +2353,167 @@ fn a_clip_frame_keeps_its_fill_under_and_outline_over_the_contents() {
         // Bottom to top: the frame's fill, the contents, its outline.
         assert_eq!(looks, [(true, false), (true, false), (false, true)], "{v}");
         assert_eq!(children[0].fill, Fill::Solid(Color::rgb8(0, 120, 0)), "{v}");
+    }
+}
+
+/// From version 12 a clip frame goes out as a clip container (#1222): the
+/// frame object names, in argument 8005, a group of the document's `LIST
+/// clpt` holding the contents, laid out as a version 27 file saved by the
+/// program that reads them holds its own (the group's flags, its loda of
+/// argument 3500, no `usdn` inside; the container's id arguments and
+/// flag). Read back, the frame keeps its look and the contents their
+/// places; the file passes the checker. A picture inside a frame was
+/// written as a bitmap with a crop path and other frames as a plain group,
+/// which that program showed without the picture and the frame.
+#[test]
+fn clip_frames_go_out_as_clip_containers_from_version_12() {
+    let mut doc = doc_with(Vec::new());
+    let mut ids = doc.ids().clone();
+    let png = {
+        let mut pm = tiny_skia::Pixmap::new(4, 4).expect("pixmap");
+        pm.fill(tiny_skia::Color::from_rgba8(200, 30, 30, 255));
+        pm.encode_png().expect("png")
+    };
+    let mut bm = Shape::new(
+        ids.shape(),
+        ShapeKind::Bitmap {
+            rect: Rect::new(0.0, 0.0, 60.0, 60.0),
+            width_px: 4,
+            height_px: 4,
+            png: png.into(),
+            fx: None,
+        },
+    );
+    bm.fill = Fill::None;
+    bm.stroke = None;
+    bm.transform = Affine::translate((30.0, 20.0));
+    let mut dot = Shape::new(
+        ids.shape(),
+        ShapeKind::Rect {
+            rect: Rect::new(50.0, 40.0, 70.0, 50.0),
+            radius: 0.0,
+            corners: None,
+        },
+    );
+    dot.fill = Fill::Solid(Color::rgb8(0, 0, 255));
+    dot.stroke = None;
+    let mut frame = Shape::new(
+        ids.shape(),
+        ShapeKind::Ellipse {
+            rect: Rect::new(40.0, 30.0, 100.0, 80.0),
+            arc: None,
+        },
+    );
+    frame.fill = Fill::Solid(Color::rgb8(255, 240, 0));
+    frame.stroke = Some(Stroke::new(Color::BLACK, 1.0));
+    let mut pc = Shape::new(
+        ids.shape(),
+        ShapeKind::ClipFrame {
+            frame: Box::new(frame),
+            contents: vec![bm, dot],
+        },
+    );
+    pc.name = Some("photo".into());
+    pc.transform = Affine::translate((5.0, 0.0));
+    doc.pages[0].layers[0].shapes = vec![pc];
+    doc.set_ids(ids);
+    for v in versions() {
+        let bytes = document_to_cdr_version(&doc, v);
+        let (back, rep) = crate::open_bytes(&bytes, "back").expect("reads back");
+        let l = &back.pages[0].layers[0];
+        assert_eq!(l.shapes.len(), 1, "{v}: {:?}", rep.warnings);
+        if v < 12 {
+            assert!(
+                matches!(l.shapes[0].kind, ShapeKind::Group { .. }),
+                "{v}: {:?}",
+                l.shapes[0].kind
+            );
+            continue;
+        }
+        let ShapeKind::ClipFrame { frame, contents } = &l.shapes[0].kind else {
+            panic!("{v}: {:?} {:?}", l.shapes[0].kind, rep.warnings);
+        };
+        assert_eq!(frame.fill, Fill::Solid(Color::rgb8(255, 240, 0)), "{v}");
+        assert!(
+            frame
+                .stroke
+                .as_ref()
+                .is_some_and(|s| (s.width - 1.0).abs() < 0.01),
+            "{v}"
+        );
+        let fb = (l.shapes[0].transform * frame.page_path()).bounding_box();
+        assert!(
+            (fb.x0 - 45.0).abs() < 0.05 && (fb.y1 - 80.0).abs() < 0.05,
+            "{v}: {fb:?}"
+        );
+        assert_eq!(contents.len(), 2, "{v}: {:?}", rep.warnings);
+        assert!(
+            matches!(contents[0].kind, ShapeKind::Bitmap { .. }),
+            "{v}: {:?}",
+            contents[0].kind
+        );
+        let cb = (l.shapes[0].transform * contents[0].page_path()).bounding_box();
+        assert!(
+            (cb.x0 - 35.0).abs() < 0.05 && (cb.x1 - 95.0).abs() < 0.05,
+            "{v}: {cb:?}"
+        );
+        assert_eq!(contents[1].fill, Fill::Solid(Color::rgb8(0, 0, 255)), "{v}");
+        assert_eq!(l.shapes[0].name.as_deref(), Some("photo"), "{v}");
+        // The records as the version 27 file has them.
+        let (_, tree, riff) = chunk_ids(&bytes);
+        let mut clip_groups = Vec::new();
+        let mut containers = Vec::new();
+        tree.root.walk(&mut |c, _| {
+            if c.is(b"clpt") {
+                for g in c.children.iter().filter(|g| g.is(b"grp ")) {
+                    let spnd = g
+                        .find(b"spnd")
+                        .and_then(|s| tree.data(&riff, s).get(..4).map(|b| b.to_vec()));
+                    let (flags, args) = layer_args(&tree, &riff, g);
+                    let objects = g.children.iter().filter(|o| o.is(b"obj ")).count();
+                    let usdns = g
+                        .children
+                        .iter()
+                        .filter(|o| o.is(b"obj ") && o.find(b"usdn").is_some())
+                        .count();
+                    clip_groups.push((spnd, flags, args, objects, usdns));
+                }
+            } else if c.is(b"obj ") {
+                let (flags, args) = layer_args(&tree, &riff, c);
+                if let Some((_, body)) = args.iter().find(|(t, _)| *t == 8005) {
+                    containers.push((body.clone(), flags, args.clone()));
+                }
+            }
+        });
+        assert_eq!(clip_groups.len(), 1, "{v}");
+        let (spnd, flags, gargs, objects, usdns) = &clip_groups[0];
+        assert_eq!(*flags, [0, 8, 0x80, 0x10], "{v}");
+        assert_eq!(
+            gargs
+                .iter()
+                .map(|(t, b)| (*t, b.clone()))
+                .collect::<Vec<_>>(),
+            vec![(3500, vec![2, 0, 0, 0])],
+            "{v}"
+        );
+        assert_eq!((*objects, *usdns), (2, 0), "{v}: no usdn inside the group");
+        assert_eq!(containers.len(), 1, "{v}");
+        let (body, cflags, cargs) = &containers[0];
+        assert_eq!(
+            body.get(..4).map(|b| b.to_vec()),
+            *spnd,
+            "{v}: names the group"
+        );
+        assert_eq!(&body[4..], &[1u8, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0], "{v}");
+        assert_eq!(cflags[2], 0x10, "{v}");
+        assert!(
+            cargs.iter().any(|(t, b)| *t == 40001 && b.len() == 16),
+            "{v}"
+        );
+        assert!(
+            cargs.iter().any(|(t, b)| *t == 40200 && *b == [0; 4]),
+            "{v}"
+        );
     }
 }
 

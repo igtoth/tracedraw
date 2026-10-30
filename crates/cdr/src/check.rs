@@ -16,7 +16,9 @@
 //! - text: every text object has a `txsm` record with at least one
 //!   paragraph, and every paragraph and run holds at least one letter;
 //! - references: every fill id, outline id and style id an object or a
-//!   text paragraph names exists in the tables.
+//!   text paragraph names exists in the tables, and a clip container's
+//!   argument 8005 names a group of the document's `LIST clpt` (whose
+//!   objects carry no `usdn`, as files have them).
 //!
 //! Files of other programs may show findings on purpose (the `obbx` of a
 //! turned object, a text the reader cannot decode); the checker is tuned
@@ -69,6 +71,8 @@ pub fn check_bytes(bytes: &[u8]) -> Result<Vec<Finding>> {
         usdn: HashMap::new(),
         spnd: HashMap::new(),
         objects: 0,
+        clip_groups: HashSet::new(),
+        in_clip: HashSet::new(),
     };
     c.tables();
     c.objects();
@@ -89,6 +93,10 @@ struct Checker<'a> {
     usdn: HashMap<u32, String>,
     spnd: HashMap<u32, String>,
     objects: usize,
+    /// The `spnd` numbers of the groups of `LIST clpt` (clip contents).
+    clip_groups: HashSet<u32>,
+    /// The lists inside `LIST clpt`, whose objects carry no `usdn`.
+    in_clip: HashSet<*const Chunk>,
 }
 
 fn u32_at(d: &[u8], at: usize) -> Option<u32> {
@@ -297,11 +305,26 @@ impl<'a> Checker<'a> {
     /// Every object and group list of every page.
     fn objects(&mut self) {
         let mut lists = Vec::new();
+        let mut clips = Vec::new();
         self.tree.root.walk(&mut |c, _| {
             if c.is(b"obj ") || c.is(b"grp ") {
                 lists.push(c);
+            } else if c.is(b"clpt") {
+                clips.push(c);
             }
         });
+        for clip in clips {
+            for g in clip.children.iter().filter(|g| g.is(b"grp ")) {
+                if let Some(n) = g.find(b"spnd").and_then(|s| u32_at(self.data(s), 0)) {
+                    self.clip_groups.insert(n);
+                }
+            }
+            clip.walk(&mut |c, _| {
+                if c.is(b"obj ") || c.is(b"grp ") {
+                    self.in_clip.insert(c as *const Chunk);
+                }
+            });
+        }
         for c in lists {
             self.objects += 1;
             let n = self.objects;
@@ -321,7 +344,7 @@ impl<'a> Checker<'a> {
             if let Some(other) = self.usdn.insert(u, place.to_string()) {
                 self.note(place, format!("usdn {u} is also {other}'s"));
             }
-        } else {
+        } else if !self.in_clip.contains(&(c as *const Chunk)) {
             self.note(place, "no usdn chunk");
         }
         if let Some(s) = c.find(b"spnd").and_then(|u| u32_at(self.data(u), 0)) {
@@ -373,6 +396,16 @@ impl<'a> Checker<'a> {
                     _ => {}
                 },
                 crate::parse::ARG_COORDS => coords = Some(body),
+                crate::parse::ARG_CLIP_CONTENTS => match u32_at(body, 0) {
+                    Some(n) if !self.clip_groups.contains(&n) => {
+                        self.note(
+                            place,
+                            format!("clip container names group {n}, not in LIST clpt"),
+                        );
+                    }
+                    Some(_) => {}
+                    None => self.note(place, "clip contents argument shorter than a number"),
+                },
                 _ => {}
             }
         }
