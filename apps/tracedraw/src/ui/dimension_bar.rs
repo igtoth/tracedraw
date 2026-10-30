@@ -24,7 +24,7 @@ fn dim(ui: &mut Ui, text: String) {
 }
 
 /// What a precision looks like: 1.23 with that many decimals.
-fn precision_sample(p: u8) -> String {
+pub(crate) fn precision_sample(p: u8) -> String {
     let p = p.min(6) as usize;
     format!("{:.p$}", 1.234_567)
 }
