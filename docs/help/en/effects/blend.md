@@ -76,3 +76,12 @@ ends of the curve.
 turns the steps into objects of their own, grouped.
 [[menu.object > menu.object.break_blend_apart]] (<kbd>Ctrl+K</kbd>, also on the
 right-click menu) does the same.
+
+## Saving as `.cdr` {#cdr}
+
+A blend saved as `.cdr` (version 9 or later) stays a blend: the file
+holds the two objects and the blend record between them, so the program
+that opens the file shows the steps and lets you change the blend. The
+steps, spacing and the two objects go into the file; acceleration,
+rotation, a path and the colour direction come back in TraceDraw
+(version 14 or later), other programs start from their defaults.

@@ -1,14 +1,23 @@
 //! Blends that open live again (#986).
 //!
-//! The writer draws a blend as one plain group of its start object and its
-//! steps as curves (#946), which any reader shows as it looked. A file of
-//! version 14 or later (a ZIP package) also carries a member of its own,
-//! [`MEMBER`], that names each such group by its static id (`usdn`) and
-//! holds the blend's settings. The reader turns those groups back into
-//! their start object with its blend to the end object, so a blend saved
-//! by TraceDraw comes back as a blend, not as loose steps. Other readers
-//! leave the member alone; a file without it, or one whose groups no
-//! longer match it, opens as before.
+//! The writer writes a blend live from version 9 (#1192): its two end
+//! objects with an empty linked group between them that holds the step
+//! count, as files of the program that reads them do, so that program
+//! shows the blend with its steps and lets it be edited; versions 7 and 8
+//! get one plain group of the start object and its steps as curves
+//! (#946), which any reader shows as it looked. A file of version 14 or
+//! later (a ZIP package) also carries a member of its own, [`MEMBER`],
+//! that names the start object (`count` 0; or, for a drawn group, the
+//! group) by its static id (`usdn`) and holds the blend's settings, which
+//! the linked group has no place for (accelerations, rotation, a path,
+//! the colour direction). The reader gives the blend the reader made
+//! from the linked group those settings (and its direction: the group
+//! names the upper object as the start, the member says which object
+//! is), or turns a drawn group back into its start object with its blend
+//! to the end object, so a blend saved by TraceDraw comes back as the
+//! blend it was. Other readers leave the member alone; a file without
+//! it, or one whose objects no longer match it, opens as the reader
+//! made it.
 
 use std::collections::HashMap;
 
@@ -28,10 +37,12 @@ const FORMAT: u32 = 1;
 /// One blend as the file holds it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct KeptBlend {
-    /// The static id (`usdn`) of the group the blend is drawn as.
+    /// The static id (`usdn`) of the group the blend is drawn as, or of
+    /// the start object of a blend written live (`count` 0).
     pub group: u32,
     /// How many objects that group holds, and which of them (bottom to
-    /// top) is the start object.
+    /// top) is the start object; 0 for a blend written live, whose start
+    /// object `group` names.
     pub count: usize,
     pub start: usize,
     /// The static id of the end object, when it is an object of the
@@ -124,8 +135,13 @@ pub(crate) fn decode(bytes: &[u8]) -> Vec<KeptBlend> {
 /// Turn the groups `kept` names back into blends: each group, found by
 /// the shape its static id was read as (`ids`), gives way to its start
 /// object (which takes the group's id) with the blend to its end object.
-/// A group that does not hold what the member says (another program
-/// changed the drawing) stays as it is. Returns how many blends came back.
+/// A blend written live (`count` 0) names its start object: the blend
+/// the reader made from the file's linked group, on that object or on
+/// the end object (the group names the upper object as its start),
+/// gives way to the kept one between the same two objects. A group or a
+/// pair that does not hold what the member says (another program
+/// changed the drawing) stays as it is. Returns how many blends came
+/// back.
 pub(crate) fn restore(
     doc: &mut Document,
     kept: &[KeptBlend],
@@ -145,6 +161,30 @@ pub(crate) fn restore(
             },
             None => None,
         };
+        if k.count == 0 {
+            // Written live: the file's blend lies between the two objects
+            // one way or the other.
+            let Some(end) = end else {
+                continue;
+            };
+            let read_from = |s: &Shape, other: ShapeId| {
+                s.effects
+                    .iter()
+                    .position(|e| matches!(e, Effect::Blend { end_id: Some(e), .. } if *e == other))
+            };
+            let on_start = find(doc, group).and_then(|s| read_from(s, end));
+            let on_end = find(doc, end).and_then(|s| read_from(s, group));
+            let (holder, at) = match (on_start, on_end) {
+                (Some(at), _) => (group, at),
+                (None, Some(at)) => (end, at),
+                (None, None) => continue,
+            };
+            if let Some(s) = find_mut(doc, holder) {
+                s.effects.remove(at);
+            }
+            restored.push((group, k.blend.clone(), Some(end)));
+            continue;
+        }
         let Some(slot) = find_mut(doc, group) else {
             continue;
         };

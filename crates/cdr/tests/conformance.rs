@@ -65,9 +65,12 @@ fn keeps_group_names(v: u16) -> bool {
     v >= 14
 }
 
-/// A blend opens live again from the package member of versions 14+.
+/// A blend goes out live from version 9 (its two ends with a linked group
+/// between them, #1192), so it reads back as a blend, on the upper object
+/// before 14 and on its start object from 14 (the package member);
+/// versions 7 and 8 hold the drawn group.
 fn keeps_live_blends(v: u16) -> bool {
-    v >= 14
+    v >= 9
 }
 
 /// Pages list only their own layers from version 14; before it every page
@@ -1292,28 +1295,52 @@ fn blends_contours_envelopes_and_extrusions() {
     every_version(&doc, |r| {
         let shapes = r.shapes();
         // The blend: one group of the start, the steps and the end (five
-        // objects) in older versions; from 14 the start object with its
-        // live blend again.
-        let blend = &shapes[0];
+        // objects) in versions 7 and 8; from 9 a live blend between the
+        // start and the end, which is an object of its own in the file
+        // (one object more). A RIFF file (9 to 13) puts the blend on the
+        // upper object, the end; from 14 the package member gives it
+        // back to the start (#1192).
+        let mut shapes: Vec<Shape> = shapes.to_vec();
         if keeps_live_blends(r.v) {
-            let [Effect::Blend { steps, end, .. }] = blend.effects.as_slice() else {
-                panic!("version {}: {:?}", r.v, blend.effects);
+            let (holder, other) = if r.v >= 14 { (0, 1) } else { (1, 0) };
+            let [Effect::Blend {
+                steps, end, end_id, ..
+            }] = shapes[holder].effects.as_slice()
+            else {
+                let kinds: Vec<String> = shapes
+                    .iter()
+                    .map(|s| format!("{} ({} effects)", kind_name(&s.kind), s.effects.len()))
+                    .collect();
+                panic!("version {}: {kinds:?}", r.v);
             };
             assert_eq!(*steps, 3, "version {}", r.v);
+            assert_eq!(*end_id, Some(shapes[other].id), "version {}", r.v);
+            assert!(shapes[other].effects.is_empty(), "version {}", r.v);
+            let (rect, ellipse) = (&shapes[0], &shapes[1]);
             assert!(
-                matches!(end.kind, ShapeKind::Ellipse { .. }),
-                "version {}: end {}",
+                matches!(ellipse.kind, ShapeKind::Ellipse { .. }),
+                "version {}: {}",
                 r.v,
-                kind_name(&end.kind)
+                kind_name(&ellipse.kind)
             );
-            same_box(r.v, blend.bounds(), Rect::new(10.0, 10.0, 30.0, 30.0), EPS);
+            same_box(r.v, rect.bounds(), Rect::new(10.0, 10.0, 30.0, 30.0), EPS);
+            same_box(
+                r.v,
+                ellipse.bounds(),
+                Rect::new(80.0, 10.0, 100.0, 30.0),
+                EPS,
+            );
+            same_box(r.v, end.bounds(), shapes[other].bounds(), EPS);
+            shapes.remove(1);
         } else {
+            let blend = &shapes[0];
             let ShapeKind::Group { children } = &blend.kind else {
                 panic!("version {}: {}", r.v, kind_name(&blend.kind));
             };
             assert_eq!(children.len(), 5, "version {}", r.v);
             same_box(r.v, blend.bounds(), Rect::new(10.0, 10.0, 100.0, 30.0), EPS);
         }
+        let shapes = &shapes[..];
         // The contour: its two steps as objects of their own beneath the
         // rectangle, the outer one 6 mm out.
         let kinds: Vec<String> = shapes

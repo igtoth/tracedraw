@@ -4019,15 +4019,16 @@ fn near(a: Rect, b: Rect, tol: f64) -> bool {
         && (a.y1 - b.y1).abs() < tol
 }
 
-/// A blend of two texts goes out as one plain group of the start text
+/// A blend of two texts goes out, in versions 7 and 8 (which have no
+/// live blend the reader knows), as one plain group of the start text
 /// and its steps as curves, beside the end text, and other readers see
-/// it so in every version (#946), the steps where the blend drew them.
+/// it so (#946), the steps where the blend drew them.
 #[test]
 fn a_blend_of_two_texts_is_written_as_a_group_of_text_and_curves() {
     let doc = text_blend(5, false);
     let drawn = step_boxes(&doc.pages[0].layers[0].shapes[0]);
     assert_eq!(drawn.len(), 5);
-    for v in versions() {
+    for v in versions().into_iter().filter(|v| *v < 9) {
         let back = open_as_drawn(&document_to_cdr_version(&doc, v));
         let read = &back.pages[0].layers[0].shapes;
         assert_eq!(read.len(), 2, "{v}: {read:?}");
@@ -4069,6 +4070,224 @@ fn a_blend_of_two_texts_is_written_as_a_group_of_text_and_curves() {
             panic!("{v}: {:?}", read[1].kind);
         };
         assert_eq!(spans[0].text, "XYZ", "{v}");
+    }
+}
+
+/// From version 9 a blend goes out live (#1192), as files of the program
+/// that reads them hold one: the two end texts as objects of their own,
+/// the upper one first, with an empty `LIST lnkg` between them whose
+/// `loda` is of object type 7 and holds the link argument (12020 with
+/// u32 2 before version 23, 12040 with u32 1 from it) and the step
+/// argument (3000, 88 bytes: the step count, the spacing of one inch, or
+/// 10 mm from 23, and the centres of the two ends). A reader without
+/// TraceDraw's member draws the steps between the two and gives the
+/// upper object the blend to the lower one; the written file passes the
+/// checker.
+#[test]
+fn a_blend_goes_out_live_from_version_9() {
+    for end_below in [false, true] {
+        let doc = text_blend(7, end_below);
+        let (si, ei) = if end_below { (1, 0) } else { (0, 1) };
+        let shapes = &doc.pages[0].layers[0].shapes;
+        let centre_of = |s: &Shape| s.bounds().center();
+        let (start_c, end_c) = (centre_of(&shapes[si]), centre_of(&shapes[ei]));
+        for v in versions().into_iter().filter(|v| *v >= 9) {
+            let bytes = document_to_cdr_version(&doc, v);
+            let (_, tree, riff) = chunk_ids(&bytes);
+            // The records: one linked group between the two texts.
+            let mut groups = Vec::new();
+            let mut orders: Vec<Vec<String>> = Vec::new();
+            tree.root.walk(&mut |c, _| {
+                if c.is(b"lnkg") {
+                    groups.push(c);
+                }
+                if c.children.iter().any(|k| k.is(b"lnkg")) {
+                    // Lists by their type (`obj `, `lnkg`), chunks by id.
+                    orders.push(
+                        c.children
+                            .iter()
+                            .map(|k| match k.list_type {
+                                Some(t) => String::from_utf8_lossy(&t).into_owned(),
+                                None => k.id_str(),
+                            })
+                            .collect(),
+                    );
+                }
+            });
+            assert_eq!(groups.len(), 1, "{v} {end_below}: {orders:?}");
+            let g = groups[0];
+            let kids: Vec<String> = g.children.iter().map(|k| k.id_str()).collect();
+            assert_eq!(kids[..5], ["spnd", "flgs", "bbox", "obbx", "usdn"], "{v}");
+            assert!(
+                g.children.len() == 6 && g.children[5].is(b"lgob"),
+                "{v}: {kids:?}"
+            );
+            let flags = tree.data(&riff, g.find(b"flgs").expect("flgs"));
+            assert_eq!(flags, [1, 0, 0, 0x18], "{v}");
+            let loda = g.find(b"lgob").and_then(|l| l.find(b"loda")).expect("loda");
+            let (kind, args) = crate::check::loda_args(tree.data(&riff, loda)).expect("args");
+            assert_eq!(kind, 7, "{v}");
+            let types: Vec<u32> = args.iter().map(|(t, _)| *t).collect();
+            let (link, link_body): (u32, Vec<u8>) = if v >= 23 {
+                (
+                    12040,
+                    [1u32, 0, 0, 0]
+                        .iter()
+                        .flat_map(|x| x.to_le_bytes())
+                        .collect(),
+                )
+            } else {
+                (
+                    12020,
+                    [2u32, 0, 0].iter().flat_map(|x| x.to_le_bytes()).collect(),
+                )
+            };
+            assert_eq!(types, [link, 3000], "{v}");
+            assert_eq!(args[0].1, link_body.as_slice(), "{v}");
+            let b = args[1].1;
+            assert_eq!(b.len(), 88, "{v}");
+            assert_eq!(u16::from_le_bytes([b[0], b[1]]), 7, "{v}: the step count");
+            let spacing = i32::from_le_bytes(b[4..8].try_into().expect("i32"));
+            assert_eq!(spacing, if v >= 23 { 100_000 } else { 254_000 }, "{v}");
+            // The centres of the two ends, the lower (later) one first,
+            // from the centre of the 200 x 100 page (`doc_with`), in the
+            // writer's units.
+            let centre = |at: usize| {
+                let x = i32::from_le_bytes(b[at..at + 4].try_into().expect("i32")) as f64;
+                let y = i32::from_le_bytes(b[at + 4..at + 8].try_into().expect("i32")) as f64;
+                (x * 25.4 / 254_000.0 + 100.0, y * 25.4 / 254_000.0 + 50.0)
+            };
+            let (lower, upper) = if end_below {
+                (end_c, start_c)
+            } else {
+                (start_c, end_c)
+            };
+            for (got, want) in [(centre(28), lower), (centre(36), upper)] {
+                assert!(
+                    (got.0 - want.x).abs() < 0.05 && (got.1 - want.y).abs() < 0.05,
+                    "{v} {end_below}: centre {got:?}, not {want:?}"
+                );
+            }
+            assert_eq!(
+                u32::from_le_bytes(b[44..48].try_into().expect("u32")),
+                0x780,
+                "{v}"
+            );
+            // The list: text, group, text.
+            let order = orders
+                .iter()
+                .find(|o| o.iter().any(|k| k == "lnkg"))
+                .expect("list");
+            let at = order.iter().position(|k| k == "lnkg").expect("lnkg");
+            assert!(at >= 1 && at + 1 < order.len(), "{v}: {order:?}");
+            assert_eq!(
+                (&order[at - 1][..], &order[at + 1][..]),
+                ("obj ", "obj "),
+                "{v}: {order:?}"
+            );
+            // Read without the member: two texts, the upper one with the
+            // blend to the lower.
+            let back = open_as_drawn(&bytes);
+            let read = &back.pages[0].layers[0].shapes;
+            assert_eq!(read.len(), 2, "{v}: {read:?}");
+            let text_of = |s: &Shape| match &s.kind {
+                ShapeKind::Text { spans, .. } => spans[0].text.clone(),
+                other => panic!("{v}: {other:?}"),
+            };
+            assert_eq!(
+                (text_of(&read[si]), text_of(&read[ei])),
+                ("ABC".into(), "XYZ".into()),
+                "{v}"
+            );
+            let (holder, other) = if end_below { (si, ei) } else { (ei, si) };
+            assert!(
+                read[other].effects.is_empty(),
+                "{v} {end_below}: {:?}",
+                read[other].effects
+            );
+            let [tracedraw_core::live::Effect::Blend { steps, end_id, .. }] =
+                read[holder].effects.as_slice()
+            else {
+                panic!("{v} {end_below}: {:?}", read[holder].effects);
+            };
+            assert_eq!((*steps, *end_id), (7, Some(read[other].id)), "{v}");
+            assert_eq!(step_boxes(&read[holder]).len(), 7, "{v}");
+        }
+    }
+}
+
+/// A blend whose end lives in the effect alone (no end object of the
+/// drawing) goes out live too: the end copy becomes an object of its own
+/// in the file, and the blend reads back between the two (#1192).
+#[test]
+fn a_blend_whose_end_is_its_own_goes_out_live_with_the_end_as_an_object() {
+    let mut doc = doc_with(Vec::new());
+    let mut ids = doc.ids().clone();
+    let mut start = Shape::new(
+        ids.shape(),
+        ShapeKind::Rect {
+            rect: Rect::new(10.0, 10.0, 30.0, 30.0),
+            radius: 0.0,
+            corners: None,
+        },
+    );
+    start.fill = Fill::Solid(Color::rgb8(255, 0, 0));
+    let mut end = Shape::new(
+        ids.shape(),
+        ShapeKind::Ellipse {
+            rect: Rect::new(80.0, 10.0, 100.0, 30.0),
+            arc: None,
+        },
+    );
+    end.fill = Fill::Solid(Color::rgb8(0, 0, 255));
+    start.effects.push(tracedraw_core::live::Effect::Blend {
+        end: Box::new(end),
+        steps: 3,
+        accel_objects: 0.0,
+        accel_colors: 0.0,
+        rotation: 0.0,
+        path: None,
+        rotate_on_path: false,
+        end_id: None,
+        options: Default::default(),
+    });
+    doc.pages[0].layers[0].shapes = vec![start];
+    doc.set_ids(ids);
+    for v in versions() {
+        let (back, rep) =
+            crate::open_bytes(&document_to_cdr_version(&doc, v), "back").expect("reads back");
+        let read = &back.pages[0].layers[0].shapes;
+        if v < 9 {
+            assert_eq!(read.len(), 1, "{v}: {:?}", rep.warnings);
+            assert!(matches!(read[0].kind, ShapeKind::Group { .. }), "{v}");
+            continue;
+        }
+        assert_eq!(read.len(), 2, "{v}: {:?}", rep.warnings);
+        let holder = read
+            .iter()
+            .position(|s| !s.effects.is_empty())
+            .unwrap_or_else(|| panic!("{v}: no blend read"));
+        let [tracedraw_core::live::Effect::Blend { steps, end_id, .. }] =
+            read[holder].effects.as_slice()
+        else {
+            panic!("{v}: {:?}", read[holder].effects);
+        };
+        assert_eq!(*steps, 3, "{v}");
+        assert_eq!(*end_id, Some(read[1 - holder].id), "{v}");
+        if v >= 14 {
+            // The member names the start: the rectangle (a curve before
+            // version 15) keeps the blend.
+            assert!(
+                near(
+                    read[holder].bounds(),
+                    Rect::new(10.0, 10.0, 30.0, 30.0),
+                    0.05
+                ),
+                "{v}: {:?}",
+                read[holder].bounds()
+            );
+        }
+        assert_eq!(step_boxes(&read[holder]).len(), 3, "{v}");
     }
 }
 
@@ -4541,7 +4760,9 @@ fn a_face_with_typographic_names_is_written_under_its_family() {
 /// A blend of two texts saved and opened again in TraceDraw is a blend
 /// again (#986): from version 14 (a package) the start text comes back
 /// with its blend to the end text, settings and all, its steps where
-/// they were; RIFF files keep the drawn group.
+/// they were. Versions 9 to 13 (RIFF files, no member) read the blend
+/// the file holds: on the upper text, with the file's settings (#1192);
+/// versions 7 and 8 keep the drawn group.
 #[test]
 fn a_text_blend_opens_live_again() {
     for end_below in [false, true] {
@@ -4570,8 +4791,18 @@ fn a_text_blend_opens_live_again_with(end_below: bool) {
         assert_eq!(rep.skipped_objects, 0, "{v}: {:?}", rep.warnings);
         let read = &back.pages[0].layers[0].shapes;
         assert_eq!(read.len(), 2, "{v}: {read:?}");
-        if v < 14 {
+        if v < 9 {
             assert!(matches!(read[si].kind, ShapeKind::Group { .. }), "{v}");
+            continue;
+        }
+        if v < 14 {
+            let holder = if end_below { si } else { ei };
+            let [tracedraw_core::live::Effect::Blend { steps, end_id, .. }] =
+                read[holder].effects.as_slice()
+            else {
+                panic!("{v} {end_below}: {:?}", read[holder].effects);
+            };
+            assert_eq!((*steps, *end_id), (20, Some(read[1 - holder].id)), "{v}");
             continue;
         }
         let ShapeKind::Text { spans, .. } = &read[si].kind else {
@@ -4614,8 +4845,10 @@ fn a_text_blend_opens_live_again_with(end_below: bool) {
     }
 }
 
-/// A blend whose drawn group another program changed (a step deleted),
-/// or a member that does not read, opens as drawn, never fails (#986).
+/// A blend whose objects another program changed (its start object
+/// gone, its end another object), or a member that does not read, opens
+/// as the reader made it from the file (the blend on the upper text,
+/// with the file's settings), never fails (#986, #1192).
 #[test]
 fn a_kept_blend_that_no_longer_matches_opens_as_drawn() {
     let doc = text_blend(4, false);
@@ -4624,7 +4857,9 @@ fn a_kept_blend_that_no_longer_matches_opens_as_drawn() {
     let member = crate::kept_blends::encode(&w.blends, &w.static_ids).expect("member");
     let mut kept = crate::kept_blends::decode(&member);
     assert_eq!(kept.len(), 1);
-    assert_eq!(kept[0].count, 5);
+    // Written live: the member names the start text, no group.
+    assert_eq!(kept[0].count, 0);
+    assert!(kept[0].end.is_some());
     // The member is small: the end object is read back, not copied.
     assert!(member.len() < 4096, "{}", member.len());
     let bytes = document_to_cdr_version(&doc, 27);
@@ -4635,24 +4870,32 @@ fn a_kept_blend_that_no_longer_matches_opens_as_drawn() {
     let open = |kept: &[crate::kept_blends::KeptBlend]| {
         crate::parse::parse_document_kept(&root, &riff, container.version, None, kept, &[]).0
     };
+    let accel = |d: &Document, i: usize| match d.pages[0].layers[0].shapes[i].effects.first() {
+        Some(tracedraw_core::live::Effect::Blend { accel_objects, .. }) => Some(*accel_objects),
+        _ => None,
+    };
+    // The start text (below) holds the blend with its settings.
     let live = open(&kept);
     assert!(matches!(
         live.pages[0].layers[0].shapes[0].kind,
         ShapeKind::Text { .. }
     ));
-    kept[0].count = 4;
-    let drawn = open(&kept);
-    assert!(matches!(
-        drawn.pages[0].layers[0].shapes[0].kind,
-        ShapeKind::Group { .. }
-    ));
-    kept[0].count = 5;
+    assert_eq!((accel(&live, 0), accel(&live, 1)), (Some(0.25), None));
+    // A start the file no longer has: the file's blend stays as read,
+    // on the upper text with even acceleration.
     kept[0].group = 9999;
     let drawn = open(&kept);
-    assert!(matches!(
-        drawn.pages[0].layers[0].shapes[0].kind,
-        ShapeKind::Group { .. }
-    ));
+    assert_eq!((accel(&drawn, 0), accel(&drawn, 1)), (None, Some(0.0)));
+    // An end that is another object: the same.
+    kept = crate::kept_blends::decode(&member);
+    kept[0].end = Some(9999);
+    let drawn = open(&kept);
+    assert_eq!((accel(&drawn, 0), accel(&drawn, 1)), (None, Some(0.0)));
+    // A member of a drawn group that is not a group: left alone.
+    kept = crate::kept_blends::decode(&member);
+    kept[0].count = 5;
+    let drawn = open(&kept);
+    assert_eq!((accel(&drawn, 0), accel(&drawn, 1)), (None, Some(0.0)));
     for junk in [&b""[..], b"{", b"{\"format\":2,\"blends\":[]}", b"[1,2]"] {
         assert!(crate::kept_blends::decode(junk).is_empty());
     }

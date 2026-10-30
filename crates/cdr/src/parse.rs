@@ -263,7 +263,7 @@ const OBJ_GUIDE: u32 = 0x16;
 const ARG_GUIDE_LINE: u32 = 16000;
 /// The step count of a blend's linked group (its `lgob` `loda`, object
 /// type 7): the first u32 of this argument.
-const ARG_BLEND_STEPS: u32 = 3000;
+pub(crate) const ARG_BLEND_STEPS: u32 = 3000;
 
 /// Little-endian cursor over a chunk payload. `v16` selects the 16-bit
 /// layouts of versions before 6 for integers, coordinates and angles.

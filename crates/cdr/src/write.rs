@@ -236,6 +236,20 @@ const LAYER_PLAIN: u32 = 0;
 const LAYER_GRID: u32 = 0x0b;
 const LAYER_GUIDES: u32 = 0x0c;
 const LAYER_DESKTOP: u32 = 0x11;
+/// The record of a live blend (`LIST lnkg` of object type 7 between its
+/// two ends, #1192): argument 3000 holds the step count, the spacing,
+/// the centres of the two ends and the acceleration (88 bytes); the
+/// argument beside it is 12020 (u32 2 and 8 bytes) in files of versions
+/// 9 and 13 and 12040 (u32 1 and 12 bytes) in a version 25 file.
+const ARG_BLEND: u32 = 3000;
+const ARG_BLEND_LINK: u32 = 12020;
+const ARG_BLEND_LINK_SINCE_23: u32 = 12040;
+/// Bytes 44 to 48 of the blend argument: 0x780 in every blend of the
+/// three files whose acceleration is even (0x480 where it is set).
+const BLEND_FLAGS: u32 = 0x780;
+/// The flags of a blend's linked group ([1, 0, 0, 0x18] in the version
+/// 9 and 25 files; version 13 has byte 1 = 8).
+const BLEND_GROUP_FLAGS: [u8; 4] = [1, 0, 0, 0x18];
 /// The first text style; text paragraphs refer to the one of their
 /// alignment (`style_for`).
 const STYLE_ID: u32 = 1;
@@ -342,6 +356,43 @@ impl Ver {
     /// written as files of versions 25 and 27 hold it.
     fn clip_containers(self) -> bool {
         self.0 >= 12
+    }
+    /// Blends go out live: an empty `LIST lnkg` of object type 7 between
+    /// the two end objects, as files of versions 9, 13 and 25 hold them
+    /// (#1192). Versions 7 and 8 keep the group of the start object and
+    /// its steps.
+    fn live_blends(self) -> bool {
+        self.0 >= 9
+    }
+    /// The argument beside the blend's step argument: 12020 with u32 2
+    /// in the version 9 and 13 files, 12040 with u32 1 in the version 25
+    /// file; which version changed it is not known (from 23, where the
+    /// records are those of the 2021 to 2026 releases, here).
+    fn blend_link_arg(self) -> (u32, Vec<u8>) {
+        if self.0 >= 23 {
+            (
+                ARG_BLEND_LINK_SINCE_23,
+                [1u32, 0, 0, 0]
+                    .iter()
+                    .flat_map(|x| x.to_le_bytes())
+                    .collect(),
+            )
+        } else {
+            (
+                ARG_BLEND_LINK,
+                [2u32, 0, 0].iter().flat_map(|x| x.to_le_bytes()).collect(),
+            )
+        }
+    }
+    /// The default spacing of a blend along a path (coordinate units):
+    /// 254000 (one inch) in the version 9 and 13 files, 100000 (10 mm)
+    /// in the version 25 file.
+    fn blend_spacing(self) -> i32 {
+        if self.0 >= 23 {
+            100_000
+        } else {
+            254_000
+        }
     }
     /// Objects carry their style as a string (argument 201).
     fn style_strings(self) -> bool {
@@ -3794,7 +3845,41 @@ impl<'a> Writer<'a> {
         if depth > 60 {
             return (Placed { nodes, bounds }, ids);
         }
+        let pairs = self.blend_pairs(shapes);
+        let mut written = vec![false; shapes.len()];
         for (i, s) in shapes.iter().enumerate().rev() {
+            if written[i] {
+                continue;
+            }
+            // A live blend: its two ends go out together, the upper one
+            // first, where the upper one stood (#1192).
+            if let Some((start, end)) = pairs[i] {
+                written[start] = true;
+                let s = &shapes[start];
+                let p = match end {
+                    Some(end) => {
+                        written[end] = true;
+                        self.live_blend(s, &shapes[end], end > start, centre, depth)
+                    }
+                    None => {
+                        // The end lives in the effect alone: it lies over
+                        // the start unless the steps are drawn below.
+                        let Some(tracedraw_core::live::Effect::Blend { end, options, .. }) =
+                            s.effects.first()
+                        else {
+                            continue;
+                        };
+                        let mut end = (**end).clone();
+                        end.effects.clear();
+                        self.live_blend(s, &end, !options.steps_below, centre, depth)
+                    }
+                };
+                if let Some(b) = p.bounds {
+                    bounds = Some(bounds.map_or(b, |c| c.union(b)));
+                }
+                nodes.extend(p.nodes);
+                continue;
+            }
             let before = self.next_usdn;
             let p = self.object(s, centre, depth);
             // One list for the shape: the last static id given is its
@@ -3891,6 +3976,160 @@ impl<'a> Writer<'a> {
             self.clip_groups.pop();
         }
         placed
+    }
+
+    /// The blends of a list that go out live (#1192): for each shape
+    /// whose only effect is a blend, and which is visible, the index of
+    /// the start (itself) and of its end: a visible sibling without
+    /// effects of its own, or `None` when the end lives in the effect
+    /// alone. Both entries of a pair hold it, so the pair is written when
+    /// the loop (front to back) reaches the upper one. A blend whose end
+    /// is elsewhere (another layer, inside a group, an object with
+    /// effects) or already taken keeps going out as a drawn group.
+    fn blend_pairs(&self, shapes: &[Shape]) -> Vec<Option<(usize, Option<usize>)>> {
+        let mut pairs = vec![None; shapes.len()];
+        if !self.v.live_blends() {
+            return pairs;
+        }
+        for (i, s) in shapes.iter().enumerate() {
+            let [tracedraw_core::live::Effect::Blend { end_id, .. }] = s.effects.as_slice() else {
+                continue;
+            };
+            if !s.visible || pairs[i].is_some() {
+                continue;
+            }
+            match end_id {
+                Some(e) => {
+                    let Some(j) = shapes.iter().position(|t| t.id == *e) else {
+                        continue;
+                    };
+                    if j == i
+                        || pairs[j].is_some()
+                        || !shapes[j].effects.is_empty()
+                        || !shapes[j].visible
+                    {
+                        continue;
+                    }
+                    pairs[i] = Some((i, Some(j)));
+                    pairs[j] = Some((i, Some(j)));
+                }
+                None => pairs[i] = Some((i, None)),
+            }
+        }
+        pairs
+    }
+
+    /// A blend as the files hold it (#1192): the two end objects as
+    /// objects of their own with an empty `LIST lnkg` between them whose
+    /// `loda` is of object type 7 and holds the step count, the spacing
+    /// and the centres of the two ends (argument 3000). A reader draws
+    /// the steps between the two and keeps the blend live, so its steps
+    /// and acceleration can be changed there. The upper object goes
+    /// first, as files store objects; `end_upper` says which. The
+    /// acceleration, rotation, path and colour direction are not written
+    /// (their place in the record is not known; even steps result); a
+    /// version 14+ package names the start object in its own member so
+    /// TraceDraw opens the blend with all its settings.
+    fn live_blend(
+        &mut self,
+        s: &Shape,
+        end: &Shape,
+        end_upper: bool,
+        centre: Point,
+        depth: usize,
+    ) -> Placed {
+        let Some(tracedraw_core::live::Effect::Blend { steps, options, .. }) = s.effects.first()
+        else {
+            return self.object(s, centre, depth);
+        };
+        let blend = s.effects[0].clone();
+        if s.shadow.is_some_and(|sh| sh.opacity > 0.0) {
+            log::warn!("a blended object's drop shadow is not written to .cdr (the blend is kept)");
+        }
+        let mut start = s.clone();
+        start.effects.clear();
+        start.shadow = None;
+        let mut end = end.clone();
+        end.shadow = None;
+        // Where the steps lie: between the two ends, as the blend draws
+        // them (the end copy of an effect that holds its end is not a
+        // step).
+        let ev = tracedraw_core::live::evaluate(s);
+        let steps_box = ev
+            .below
+            .iter()
+            .chain(&ev.above)
+            .filter(|x| x.id != end.id)
+            .map(|x| x.bounds())
+            .reduce(|a, b| a.union(b))
+            .unwrap_or_else(|| start.bounds().union(end.bounds()));
+        let (first, second) = if end_upper {
+            (&end, &start)
+        } else {
+            (&start, &end)
+        };
+        let mut nodes = Vec::new();
+        let mut bounds: Option<Rect> = None;
+        let static_id = |w: &mut Self, shape: &Shape, p: &Placed, before: u32| {
+            if p.nodes.len() == 1 && w.next_usdn > before {
+                w.static_ids.insert(shape.id, w.next_usdn - 1);
+            }
+        };
+        let before = self.next_usdn;
+        let p1 = self.object(first, centre, depth);
+        static_id(self, first, &p1, before);
+        if p1.nodes.is_empty() {
+            // Nothing written for the upper end: the other goes alone.
+            return self.object(second, centre, depth);
+        }
+        let mut arg = Buf::default();
+        let count = (*steps).clamp(1, tracedraw_core::live::MAX_BLEND_STEPS) as u16;
+        let spacing = options
+            .spacing
+            .filter(|d| d.is_finite() && *d > 0.0)
+            .map_or(self.v.blend_spacing(), units);
+        arg.u16(count).u16(0).i32(spacing).zeros(20);
+        // The centres of the two ends' boxes, the lower (later) one first.
+        for x in [second, first] {
+            let c = x.bounds().center() - centre.to_vec2();
+            arg.i32(units(c.x)).i32(units(c.y));
+        }
+        arg.u32(BLEND_FLAGS).zeros(8).f64(0.0).f64(0.0).zeros(16);
+        let number = self.next_spnd;
+        self.next_spnd += 1;
+        let mut body = vec![chunk(b"spnd", number.to_le_bytes().to_vec())];
+        body.extend(self.head(BLEND_GROUP_FLAGS, steps_box, 0.0, centre));
+        let link = self.v.blend_link_arg();
+        body.push(list(
+            b"lgob",
+            vec![chunk(b"loda", loda(7, vec![link, (ARG_BLEND, arg.done())]))],
+        ));
+        let before = self.next_usdn;
+        let p2 = self.object(second, centre, depth);
+        static_id(self, second, &p2, before);
+        if p2.nodes.is_empty() {
+            return p1;
+        }
+        for p in [&p1, &p2] {
+            if let Some(b) = p.bounds {
+                bounds = Some(bounds.map_or(b, |c| c.union(b)));
+            }
+        }
+        // The package names the start object, so the blend opens in
+        // TraceDraw with the settings the record has no place for (#986).
+        if let Some(&start_id) = self.static_ids.get(&start.id) {
+            self.blends.push(crate::kept_blends::Written {
+                group: start_id,
+                count: 0,
+                start: 0,
+                end: self.static_ids.contains_key(&end.id).then_some(end.id),
+                blend,
+            });
+        }
+        nodes.extend(p1.nodes);
+        nodes.push(list(b"lnkg", body));
+        nodes.extend(p2.nodes);
+        Placed { nodes, bounds }
     }
 
     /// A group list of `children`, named `name` (argument 1000 of its

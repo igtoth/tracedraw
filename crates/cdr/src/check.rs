@@ -18,7 +18,10 @@
 //! - references: every fill id, outline id and style id an object or a
 //!   text paragraph names exists in the tables, and a clip container's
 //!   argument 8005 names a group of the document's `LIST clpt` (whose
-//!   objects carry no `usdn`, as files have them).
+//!   objects carry no `usdn`, as files have them);
+//! - blends: a blend's linked group (`LIST lnkg` of object type 7 with a
+//!   step argument) stands between two objects of its list, its ends,
+//!   has a `usdn` of its own and a step count of 1 to 999 (#1192).
 //!
 //! Files of other programs may show findings on purpose (the `obbx` of a
 //! turned object, a text the reader cannot decode); the checker is tuned
@@ -76,6 +79,7 @@ pub fn check_bytes(bytes: &[u8]) -> Result<Vec<Finding>> {
     };
     c.tables();
     c.objects();
+    c.linked_groups();
     Ok(c.findings)
 }
 
@@ -169,10 +173,10 @@ impl std::fmt::Display for Box {
 }
 
 /// A `loda` record's arguments: (type, body).
-type Args<'a> = Vec<(u32, &'a [u8])>;
+pub(crate) type Args<'a> = Vec<(u32, &'a [u8])>;
 
 /// A `loda` record's object kind and arguments.
-fn loda_args(d: &[u8]) -> Option<(u32, Args<'_>)> {
+pub(crate) fn loda_args(d: &[u8]) -> Option<(u32, Args<'_>)> {
     let count = u32_at(d, 4)? as usize;
     let offsets = u32_at(d, 8)? as usize;
     let types = u32_at(d, 12)? as usize;
@@ -334,6 +338,71 @@ impl<'a> Checker<'a> {
                 format!("obj {n}")
             };
             self.object(c, &place);
+        }
+    }
+
+    /// Every blend's linked group of every page (#1192): an empty `LIST
+    /// lnkg` whose `loda` is of object type 7 with a step argument. A
+    /// reader takes the objects just before and after it in the list as
+    /// its ends, so both must be there; the step count is 1 to 999 (what
+    /// the program saves; another value reads as another layout); its
+    /// `usdn` counts among the objects'.
+    fn linked_groups(&mut self) {
+        fn collect<'a>(c: &'a Chunk, out: &mut Vec<(&'a Chunk, usize)>) {
+            for (i, k) in c.children.iter().enumerate() {
+                if k.is(b"lnkg") {
+                    out.push((c, i));
+                }
+                collect(k, out);
+            }
+        }
+        let mut found = Vec::new();
+        collect(&self.tree.root, &mut found);
+        let mut n = 0;
+        for (parent, i) in found {
+            let c = &parent.children[i];
+            let Some(loda) = c.find(b"lgob").and_then(|l| l.find(b"loda")) else {
+                continue;
+            };
+            let Some((kind, args)) = loda_args(self.data(loda)) else {
+                continue;
+            };
+            if kind != 7 {
+                continue;
+            }
+            let Some((_, body)) = args
+                .iter()
+                .find(|(ty, _)| *ty == crate::parse::ARG_BLEND_STEPS)
+            else {
+                continue;
+            };
+            n += 1;
+            let place = format!("lnkg {n}");
+            match c.find(b"usdn").and_then(|u| u32_at(self.data(u), 0)) {
+                Some(u) => {
+                    if let Some(other) = self.usdn.insert(u, place.clone()) {
+                        self.note(&place, format!("usdn {u} is also {other}'s"));
+                    }
+                }
+                None => self.note(&place, "no usdn chunk"),
+            }
+            let is_object = |k: &Chunk| k.is(b"obj ") || k.is(b"grp ");
+            let before = i
+                .checked_sub(1)
+                .and_then(|j| parent.children.get(j))
+                .is_some_and(is_object);
+            let after = parent.children.get(i + 1).is_some_and(is_object);
+            if !(before && after) {
+                self.note(
+                    &place,
+                    "a blend's linked group without an object before and after it (its ends)",
+                );
+            }
+            match body.get(0..2).map(|b| u16::from_le_bytes([b[0], b[1]])) {
+                Some(1..=999) => {}
+                Some(x) => self.note(&place, format!("blend step count {x}, not 1 to 999")),
+                None => self.note(&place, "blend argument shorter than a step count"),
+            }
         }
     }
 
@@ -923,6 +992,12 @@ mod tests {
         for o in objects {
             page.extend(obj(o));
         }
+        file_of_page(page)
+    }
+
+    /// A file whose only layer holds `page` (object lists and linked
+    /// groups).
+    fn file_of_page(page: Vec<u8>) -> Vec<u8> {
         let body = [
             chunk(b"vrsn", &u16s(&[1300])),
             chunk(b"mcfg", &mcfg(V, 2_540_000, 2_540_000)),
@@ -997,6 +1072,68 @@ mod tests {
     #[test]
     fn a_sound_file_has_no_findings() {
         assert_eq!(findings(&[square(), text()]), Vec::<String>::new());
+    }
+
+    /// A blend's linked group as the writer lays it out from version 9
+    /// (#1192): `usdn` 9, a `loda` of type 7 with the link argument and
+    /// the step argument holding `count`.
+    fn blend_group(count: u16) -> Vec<u8> {
+        let mut arg = u16s(&[count, 0]);
+        arg.extend_from_slice(&i32s(&[254_000]));
+        arg.resize(88, 0);
+        let mut body = chunk(b"spnd", &u32s(&[1]));
+        body.extend(chunk(b"flgs", &[1, 0, 0, 0x18]));
+        body.extend(chunk(b"bbox", &box_bytes(5.0, 5.0, 40.0, 40.0)));
+        body.extend(chunk(b"obbx", &box_bytes(5.0, 5.0, 40.0, 40.0)));
+        body.extend(chunk(b"usdn", &u32s(&[9])));
+        body.extend(list(
+            b"lgob",
+            &chunk(b"loda", &loda(7, &[(12020, u32s(&[2, 0, 0])), (3000, arg)])),
+        ));
+        list(b"lnkg", &body)
+    }
+
+    /// A blend's linked group stands between its two ends, with a `usdn`
+    /// of its own and a step count the program can save (#1192).
+    #[test]
+    fn a_blend_group_stands_between_its_ends() {
+        let mut second = square();
+        second.usdn = 2;
+        second.at = (30.0, 30.0);
+        second.bbox = box_bytes(30.0, 30.0, 40.0, 40.0);
+        second.obbx = [second.bbox.clone(), box_bytes(29.5, 29.5, 40.5, 40.5)].concat();
+        let strings = |bytes: Vec<u8>| -> Vec<String> {
+            check_bytes(&bytes)
+                .expect("checked")
+                .iter()
+                .map(ToString::to_string)
+                .collect()
+        };
+        let sound = [obj(&square()), blend_group(20), obj(&second)].concat();
+        assert_eq!(strings(file_of_page(sound)), Vec::<String>::new());
+        let last = [obj(&square()), obj(&second), blend_group(20)].concat();
+        let f = strings(file_of_page(last));
+        assert!(
+            f.iter()
+                .any(|f| f
+                    .contains("lnkg 1: a blend's linked group without an object before and after")),
+            "{f:?}"
+        );
+        let none = [obj(&square()), blend_group(0), obj(&second)].concat();
+        let f = strings(file_of_page(none));
+        assert!(
+            f.iter()
+                .any(|f| f.contains("blend step count 0, not 1 to 999")),
+            "{f:?}"
+        );
+        let mut taken = square();
+        taken.usdn = 9;
+        let shared = [obj(&taken), blend_group(1), obj(&second)].concat();
+        let f = strings(file_of_page(shared));
+        assert!(
+            f.iter().any(|f| f.contains("usdn 9 is also obj 1's")),
+            "{f:?}"
+        );
     }
 
     #[test]
