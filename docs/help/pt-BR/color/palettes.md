@@ -1,5 +1,7 @@
 # Paletas de cores
 
+> *Tradução automática: esta página pode estar atrasada em relação à versão em inglês.*
+
 A paleta de cores embaixo da janela é o jeito mais rápido de colorir objetos.
 Abaixo dela, a **paleta do documento** reúne as cores que o desenho usa. Você
 pode abrir mais paletas, criar as suas e editá-las.
@@ -20,7 +22,12 @@ cores de uma vez. Passe o ponteiro sobre uma cor para ver o nome e os valores. O
 botão de menu da paleta, na ponta esquerda, abre o menu da paleta.
 
 A paleta pode ir para outra borda da janela, ou flutuar: arraste-a pela alça
-pontilhada.
+pontilhada. Com duas ou três linhas, a janela que mostra todas as cores abre
+sem cobrir nenhuma delas.
+
+Cada paleta marcada em [[menu.window > menu.window.color_palettes]] ou no
+Gerenciador de paletas aparece numa faixa própria ao lado da paleta padrão,
+com **Fechar paleta** no menu dela.
 
 ## A paleta do documento {#document-palette}
 
@@ -29,7 +36,10 @@ desenho. O conta-gotas dela acrescenta a cor sob o ponteiro, e o menu tem
 **Atualizar automaticamente** (para parar de acrescentar cores sozinha),
 **Acrescentar da seleção**, **Acrescentar do documento**, **Excluir cor** e
 **Redefinir paleta** (mantém só as cores que o desenho ainda usa). Você também
-pode arrastar cores ou objetos até ela. Para mostrá-la ou ocultá-la, veja
+pode arrastar cores ou objetos até ela. A cor usada por último tem uma
+moldura branca: uma cor pega com o conta-gotas que a paleta já tem recebe a
+moldura, para você ver onde está, e aplicar uma cor da paleta move a moldura
+para ela. Para mostrá-la ou ocultá-la, veja
 [Opções de personalização](../customize/customization.md#color-palette).
 
 ## O painel Paletas {#palettes-docker}

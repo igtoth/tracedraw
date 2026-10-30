@@ -20,7 +20,12 @@ shows every color at once. Hover a color to see its name and values. The
 palette menu button at the left end opens the palette menu.
 
 The palette can be moved to another edge of the window, or made to float:
-drag it by its dotted grip.
+drag it by its dotted grip. With two or three rows, the window showing every
+color opens clear of all the rows.
+
+Every palette ticked in [[menu.window > menu.window.color_palettes]] or in the
+Palette Manager shows in a strip of its own next to the default palette, with
+**Close Palette** in its menu.
 
 ## The document palette {#document-palette}
 
@@ -29,7 +34,10 @@ with the drawing. Its eyedropper adds the color under the pointer, and its
 menu has **Automatically update** (to stop adding colors by themselves),
 **Add from selection**, **Add from document**, **Delete color** and **Reset
 palette** (keeps only the colors the drawing still uses). You can also drag
-colors or objects onto it. To show or hide it, see
+colors or objects onto it. The color used last has a white frame: a color
+taken with the eyedropper that the palette already has gets the frame, so you
+see where it is, and applying a color of the palette moves the frame to it.
+To show or hide it, see
 [Customization options](../customize/customization.md#color-palette).
 
 ## The Palettes panel {#palettes-docker}

@@ -1,5 +1,7 @@
 # Preenchimentos
 
+> *Tradução automática: esta página pode estar atrasada em relação à versão em inglês.*
+
 Um preenchimento pinta o interior de um objeto fechado. O TraceDraw tem seis
 tipos de preenchimento: [[docker.fill_none]], [[docker.fill_uniform]] (uma cor
 lisa), [[docker.fill_fountain]] (cores que se misturam),
@@ -69,7 +71,9 @@ seleção (ou dos objetos novos, sem nada selecionado).
   [[edit_fill.midpoint]] do nó escolhido ficam sob a faixa, com
   [[edit_fill.reverse]]. [[edit_fill.transform]] tem a rotação, o centro (para
   gradientes radiais, cônicos e quadrados), a margem da borda, o espelho e a
-  inversão.
+  inversão. A prévia tem as proporções do objeto e mostra os nós de início, de
+  fim e de inclinação: arraste-os para mover, girar e esticar o gradiente como
+  na tela (<kbd>Ctrl</kbd> gira em passos de 15 graus).
 - **OK** muda só o que você mudou em todos os objetos selecionados, com
   [[edit_fill.overprint]].
 - Enquanto a caixa de diálogo está aberta, a seleção mostra o preenchimento conforme você o altera; **Cancelar** ou <kbd>Esc</kbd> devolve o preenchimento anterior.
@@ -131,8 +135,8 @@ sombreamentos realistas.
 2. Clique em um objeto. Ele recebe uma malha na cor do preenchimento.
 3. Clique em um nó para selecioná-lo e depois em uma cor da paleta para
    colori-lo. Arraste nós para curvar o fluxo das cores.
-4. Clique duas vezes dentro da malha para acrescentar uma linha ou coluna pelo
-   nó mais próximo; selecione um nó e pressione <kbd>Delete</kbd> para remover
+4. Clique duas vezes dentro da malha para acrescentar um nó exatamente ali,
+   numa nova linha e coluna por esse ponto; selecione um nó e pressione <kbd>Delete</kbd> para remover
    a linha e a coluna dele.
 
 A barra de propriedades também tem **Cor suave**, que mistura as cores com mais
