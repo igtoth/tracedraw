@@ -1,5 +1,7 @@
 # La version pour navigateur
 
+> *Traduction automatique : cette page peut être en retard sur la version anglaise.*
+
 Vous pouvez [utiliser TraceDraw dans un navigateur web](https://igtoth.github.io/tracedraw/)
 sans rien installer. C'est le même programme que la version de bureau,
 compilé pour le navigateur : les menus, les outils et les fichiers sont donc
@@ -43,3 +45,8 @@ ouvre la page de téléchargement de la version de bureau.
 - **Mises à jour.** La version pour navigateur est toujours la plus récente ;
   il n'y a rien à installer. La sauvegarde automatique et la récupération de
   session sont des fonctions de la version de bureau.
+  Installée comme application, elle garde la version utilisée en dernier et
+  prend la nouvelle au démarrage suivant, une fois toutes ses fenêtres
+  fermées ; voir [Tablettes et l'application Android](tablets-and-android.md).
+- **Pression du stylet.** Un stylet fonctionne comme une souris, mais le
+  navigateur ne transmet pas sa pression : les traits ont une largeur égale.

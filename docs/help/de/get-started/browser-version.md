@@ -1,5 +1,7 @@
 # Die Browserversion
 
+> *Maschinelle Übersetzung: Diese Seite kann hinter der englischen Fassung zurückliegen.*
+
 Sie können [TraceDraw in einem Webbrowser verwenden](https://igtoth.github.io/tracedraw/),
 ohne etwas zu installieren. Es ist dasselbe Programm wie die Desktopversion,
 für den Browser erstellt, sodass Menüs, Werkzeuge und Dateien dieselben sind.
@@ -41,3 +43,8 @@ dasselbe Programm wie die Desktopversion ist und was sich unterscheidet.
 - **Aktualisierungen.** Die Browserversion ist immer die neueste; es gibt
   nichts zu installieren. Automatische Sicherung und Sitzungswiederherstellung
   sind Funktionen der Desktopversion.
+  Als App installiert, behält sie die zuletzt verwendete Version und übernimmt
+  eine neue beim nächsten Start, nachdem alle ihre Fenster geschlossen waren;
+  siehe [Tablets und die Android-App](tablets-and-android.md).
+- **Stiftdruck.** Ein Stift arbeitet wie eine Maus, aber der Browser gibt
+  seinen Druck nicht weiter, daher haben Striche eine gleichmäßige Breite.

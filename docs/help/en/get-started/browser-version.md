@@ -30,11 +30,16 @@ desktop version.
   <kbd>Ctrl+W</kbd> always stay with the browser, so use the [[menu.file]]
   menu to create and close drawings.
 - **Screens.** It suits a desktop browser with a mouse and keyboard. On a
-  tablet, use the Touch workspace (see
+  tablet, install it as an app and use the Touch workspace (see
+  [Tablets and the Android app](tablets-and-android.md) and
   [Workspaces](../customize/workspaces.md)); a phone screen is too small for
   editing.
 - **Macros.** Macro projects load and run in the desktop version only. In
   the browser, every macro command shows a message saying so, with a button to
   the desktop downloads.
-- **Updates.** The browser version is always the latest; there is nothing to
-  install. Auto-backup and session recovery are desktop features.
+- **Updates.** The page is always the latest version; there is nothing to
+  install. Installed as an app, it keeps the version you last used and
+  takes a new one the next time it starts after all its windows were
+  closed. Auto-backup and session recovery are desktop features.
+- **Pen pressure.** A pen works as a mouse, but the browser does not pass
+  its pressure on, so strokes have an even width.

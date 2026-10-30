@@ -12,10 +12,12 @@ get-started/index
   get-started/undo-and-views
   get-started/hints
   get-started/browser-version
+  get-started/tablets-and-android
   get-started/github
 lines-shapes/index
   lines-shapes/lines
   lines-shapes/artistic-media
+  lines-shapes/pen-pressure
   lines-shapes/shape-recognition
   lines-shapes/rectangles-and-ellipses
   lines-shapes/polygons-stars-spirals

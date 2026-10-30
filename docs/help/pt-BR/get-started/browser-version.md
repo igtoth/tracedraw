@@ -1,5 +1,7 @@
 # A versão para navegador
 
+> *Tradução automática: esta página pode estar atrasada em relação à versão em inglês.*
+
 Você pode [usar o TraceDraw no navegador](https://igtoth.github.io/tracedraw/)
 sem instalar nada. É o mesmo programa da versão para computador, compilado para
 o navegador, então os menus, as ferramentas e os arquivos são os mesmos.
@@ -39,3 +41,8 @@ computador.
 - **Atualizações.** A versão para navegador é sempre a mais recente; não há
   nada para instalar. Backup automático e recuperação de sessão são recursos
   do computador.
+  Instalada como app, ela mantém a versão usada por último e pega uma nova na
+  próxima vez que abrir depois de todas as suas janelas terem sido fechadas;
+  veja [Tablets e o app para Android](tablets-and-android.md).
+- **Pressão da caneta.** Uma caneta funciona como mouse, mas o navegador não
+  repassa a pressão, então os traços têm largura uniforme.
