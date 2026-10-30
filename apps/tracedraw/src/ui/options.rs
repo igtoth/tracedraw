@@ -56,7 +56,7 @@ pub enum OptionsPage {
     GraphPaper,
     Table,
     Eraser,
-    SmartDrawing,
+    ShapeRecognition,
     Dimension,
     Connector,
     MeshFill,
@@ -133,7 +133,7 @@ impl OptionsSet {
                 Eraser,
                 ZoomPan,
                 Curves,
-                SmartDrawing,
+                ShapeRecognition,
                 Rectangle,
                 Ellipse,
                 Polygon,
@@ -196,7 +196,7 @@ impl OptionsPage {
             GraphPaper => Tool::GraphPaper,
             Table => Tool::Table,
             Eraser => Tool::Eraser,
-            SmartDrawing => Tool::ShapeRecognition,
+            ShapeRecognition => Tool::ShapeRecognition,
             Dimension => Tool::ParallelDimension,
             Connector => Tool::Connector,
             MeshFill => Tool::MeshFill,
@@ -238,7 +238,7 @@ impl OptionsPage {
             GraphPaper => "tool.graph_paper",
             Table => "tool.table",
             Eraser => "tool.eraser",
-            SmartDrawing => "options.smart_drawing",
+            ShapeRecognition => "tool.shape_recognition",
             Dimension => "options.dimension_tool",
             Connector => "options.connector_tool",
             MeshFill => "tool.mesh_fill",
@@ -301,6 +301,11 @@ pub struct OptionsSnapshot {
     table_cols: u32,
     eraser_width: f64,
     eraser_square: bool,
+    recognize: crate::recognize::RecognizeSettings,
+    dimension_style: crate::dimensions::DimensionStyle,
+    connector_radius: f64,
+    mesh_rows: u32,
+    mesh_cols: u32,
     text_font: String,
     text_size_pt: f64,
     text_default_font: String,
@@ -350,6 +355,11 @@ impl OptionsSnapshot {
             table_cols: app.table_cols,
             eraser_width: app.eraser_width,
             eraser_square: app.eraser_square,
+            recognize: app.recognize,
+            dimension_style: app.dimension_style.clone(),
+            connector_radius: app.connector_radius,
+            mesh_rows: app.mesh_rows,
+            mesh_cols: app.mesh_cols,
             text_font: app.text_font.clone(),
             text_size_pt: app.text_size_pt,
             text_default_font: app.text_default_font.clone(),
@@ -408,6 +418,11 @@ impl OptionsSnapshot {
         app.table_cols = self.table_cols;
         app.eraser_width = self.eraser_width;
         app.eraser_square = self.eraser_square;
+        app.recognize = self.recognize;
+        app.dimension_style = self.dimension_style;
+        app.connector_radius = self.connector_radius;
+        app.mesh_rows = self.mesh_rows;
+        app.mesh_cols = self.mesh_cols;
         app.text_font = self.text_font;
         app.text_size_pt = self.text_size_pt;
         app.text_default_font = self.text_default_font;
@@ -671,7 +686,7 @@ fn draw_page(app: &mut App, ui: &mut Ui) {
         GraphPaper => graph_paper_page(app, ui),
         Table => table_page(app, ui),
         Eraser => eraser_page(app, ui),
-        SmartDrawing => smart_drawing_page(app, ui),
+        ShapeRecognition => shape_recognition_page(app, ui),
         Dimension => dimension_page(app, ui),
         Connector => connector_page(app, ui),
         MeshFill => mesh_fill_page(app, ui),
@@ -3713,8 +3728,8 @@ fn graph_paper_page(app: &mut App, ui: &mut Ui) {
 }
 
 /// Shape Recognition's levels, as on its property bar.
-fn smart_drawing_page(app: &mut App, ui: &mut Ui) {
-    grid("smart_drawing").show(ui, |ui| {
+fn shape_recognition_page(app: &mut App, ui: &mut Ui) {
+    grid("shape_recognition").show(ui, |ui| {
         row_label(ui, &tr("recognize.recognition"));
         crate::ui::drawing_bars::level(
             ui,
@@ -4726,6 +4741,38 @@ mod tests {
         snap.restore(&mut app);
         assert_eq!(app.settings.undo_levels, 150);
         assert!(!app.doc().metadata.fill_open_curves);
+    }
+
+    /// The Smart Drawing, Dimension, Connector and Mesh Fill pages edit
+    /// the defaults new objects take; Cancel puts those back too.
+    #[test]
+    fn cancel_puts_the_new_tool_pages_back() {
+        let mut app = App::headless();
+        let snap = OptionsSnapshot::take(&app);
+        let before = (
+            app.recognize,
+            app.dimension_style.clone(),
+            app.connector_radius,
+            app.mesh_rows,
+            app.mesh_cols,
+        );
+        app.recognize.recognition = 5;
+        app.dimension_style.precision = 4;
+        app.dimension_style.suffix = " ok".into();
+        app.connector_radius = 9.0;
+        app.mesh_rows = 7;
+        app.mesh_cols = 8;
+        snap.restore(&mut app);
+        assert_eq!(
+            (
+                app.recognize,
+                app.dimension_style.clone(),
+                app.connector_radius,
+                app.mesh_rows,
+                app.mesh_cols,
+            ),
+            before
+        );
     }
 
     #[test]

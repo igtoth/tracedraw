@@ -17,6 +17,13 @@ maioria desses valores também está na barra de propriedades de cada ferramenta
   seleciona os objetos que ela só toca; <kbd>Alt</kbd> então seleciona só os
   que estão inteiramente dentro.
 
+## Borracha {#eraser}
+
+![As opções da ferramenta Borracha](../../img/customize-tool-options-eraser.png)
+
+[[options.eraser_width]] (6,35 mm de início), e [[options.eraser_round]] ou
+[[options.eraser_square]].
+
 ## Zoom e deslocamento {#zoom-pan}
 
 ![As opções de zoom e deslocamento](../../img/customize-tool-options-zoom-pan.png)
@@ -25,9 +32,9 @@ maioria desses valores também está na barra de propriedades de cada ferramenta
   [[options.context_menu]].
 - [[options.wheel_action]]: [[options.wheel_zoom]] ou [[options.wheel_scroll]].
 
-## Curvas {#curves}
+## Mão livre/Bézier {#curves}
 
-![As opções das ferramentas de curva](../../img/customize-tool-options-curves.png)
+![As opções das ferramentas Mão livre/Bézier](../../img/customize-tool-options-curves.png)
 
 - [[options.freehand_smoothing]]: 0 a 100 (50 de início).
 - [[options.join_within]]: quão perto de um nó final uma linha deve começar
@@ -38,6 +45,13 @@ maioria desses valores também está na barra de propriedades de cada ferramenta
   para a ferramenta [[tool.pen]]; veja [Caneta](../lines-shapes/lines.md#pen).
 - [[options.pen_tablet]]: [[options.pen_pressure]] (ligado); veja
   [Desenhar com uma mesa digitalizadora](../lines-shapes/pen-pressure.md).
+
+## Reconhecimento de formas {#shape-recognition}
+
+![As opções da ferramenta Reconhecimento de formas](../../img/customize-tool-options-shape-recognition.png)
+
+[[recognize.recognition]] e [[recognize.smoothing]] da ferramenta Reconhecimento
+de formas, de desligado a máximo, como na barra de propriedades.
 
 ## Retângulo {#rectangle}
 
@@ -61,6 +75,12 @@ canto e [[toolbar.corners_together]]. [[options.scale_corners]]:
 
 [[options.number_of_points]] e [[options.sharpness]].
 
+## Papel quadriculado {#graph-paper}
+
+![As opções da ferramenta Papel quadriculado](../../img/customize-tool-options-graph-paper.png)
+
+[[options.rows]] e [[options.columns]] da grade.
+
 ## Espiral {#spiral}
 
 ![As opções da ferramenta Espiral](../../img/customize-tool-options-spiral.png)
@@ -68,21 +88,30 @@ canto e [[toolbar.corners_together]]. [[options.scale_corners]]:
 [[options.revolutions]], e [[options.symmetrical_spiral]] ou
 [[options.logarithmic_spiral]].
 
-## Papel quadriculado {#graph-paper}
-
-![As opções da ferramenta Papel quadriculado](../../img/customize-tool-options-graph-paper.png)
-
-[[options.rows]] e [[options.columns]] da grade.
-
 ## Tabela {#table}
 
 ![As opções da ferramenta Tabela](../../img/customize-tool-options-table.png)
 
 [[options.rows]] e [[options.columns]] das tabelas novas.
 
-## Borracha {#eraser}
+## Cota {#dimension}
 
-![As opções da ferramenta Borracha](../../img/customize-tool-options-eraser.png)
+![As opções da ferramenta Cota](../../img/customize-tool-options-dimension.png)
 
-[[options.eraser_width]] (6,35 mm de início), e [[options.eraser_round]] ou
-[[options.eraser_square]].
+Como o rótulo das cotas novas aparece: [[dimension.precision]],
+[[dimension.units]], [[dimension.show_units]], [[dimension.prefix]] e
+[[dimension.suffix]]. As cotas já desenhadas mantêm o rótulo; selecione uma
+e use a barra de propriedades para mudá-lo.
+
+## Conector {#connector}
+
+![As opções da ferramenta Conector](../../img/customize-tool-options-connector.png)
+
+[[connector.radius]] dos conectores arredondados novos (3 mm de início).
+
+## Preenchimento de malha {#mesh-fill}
+
+![As opções da ferramenta Preenchimento de malha](../../img/customize-tool-options-mesh-fill.png)
+
+[[options.columns]] e [[options.rows]] da grade com que um preenchimento de
+malha novo começa (2 por 2 de início).

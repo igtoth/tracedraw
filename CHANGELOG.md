@@ -7,7 +7,8 @@ full, row-by-row status.
 ## Unreleased
 
 - Properties docker, Transparency: the amount is a full-width slider with its label above, like the Fill section's angle and edge pad, and a fountain transparency's angle is the same angle slider. The property bar keeps its compact controls.
-- Options > Tools: each page in the list shows its tool's icon, as in CorelDRAW's Tool Options. The Zoom/Pan page has a Zoom tool section and a Calibrate Zoom... button that opens the ruler calibration (Display page).
+- Options > Tools: the pages come in a new order (Pick, Eraser, Zoom/Pan, Freehand/Bézier, Shape Recognition, Rectangle, Ellipse, Polygon, Graph Paper, Spiral, Table, Dimension, Connector, Mesh Fill); Curve tools is now Freehand/Bézier, and new Shape Recognition (recognition and smoothing levels), Dimension (precision, units, prefix and suffix of new dimensions), Connector (corner radius) and Mesh Fill (columns and rows) pages edit the same defaults as the property bars, kept across restarts and put back by Cancel.
+- Options > Tools: each page in the list shows its tool's icon. The Zoom/Pan page has a Zoom tool section and a Calibrate Zoom... button that opens the ruler calibration (Display page).
 
 ## 0.29.0 (2026-10-30)
 

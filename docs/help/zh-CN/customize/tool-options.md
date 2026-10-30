@@ -12,6 +12,12 @@
 - [[options.treat_all_filled]]（打开）：在未填充对象内部单击即可选中它。
 - [[options.marquee_touching]]（关闭）：选取框也选择它仅仅接触到的对象；此时按住 <kbd>Alt</kbd> 只选择完全位于其中的对象。
 
+## 橡皮擦 {#eraser}
+
+![橡皮擦工具选项](../../img/customize-tool-options-eraser.png)
+
+[[options.eraser_width]]（起初为 6.35 mm），以及 [[options.eraser_round]] 或 [[options.eraser_square]]。
+
 ## 缩放和平移 {#zoom-pan}
 
 ![缩放和平移选项](../../img/customize-tool-options-zoom-pan.png)
@@ -19,15 +25,22 @@
 - [[options.zoom_right_button]]：[[options.zoom_out]]（起初选用）或 [[options.context_menu]]。
 - [[options.wheel_action]]：[[options.wheel_zoom]] 或 [[options.wheel_scroll]]。
 
-## 曲线 {#curves}
+## 手绘/贝塞尔 {#curves}
 
-![曲线工具选项](../../img/customize-tool-options-curves.png)
+![手绘/贝塞尔工具选项](../../img/customize-tool-options-curves.png)
 
 - [[options.freehand_smoothing]]：0 到 100（起初为 50）。
 - [[options.join_within]]：线条的起点离端节点多近才会延续该曲线（起初为 5 个屏幕像素）。请参阅 [延续曲线](../lines-shapes/lines.md#continue)。
 
 - [[options.pen_preview]] 和 [[options.pen_auto_add_delete]]（均默认开启），用于 [[tool.pen]] 工具；参见[钢笔](../lines-shapes/lines.md#pen)。
 - [[options.pen_tablet]]：[[options.pen_pressure]]（默认开启）；参见[使用数位板绘图](../lines-shapes/pen-pressure.md)。
+
+## 形状识别 {#shape-recognition}
+
+![形状识别工具选项](../../img/customize-tool-options-shape-recognition.png)
+
+形状识别工具的 [[recognize.recognition]] 和 [[recognize.smoothing]]，从关闭到最高，
+与其属性栏相同。
 
 ## 矩形 {#rectangle}
 
@@ -47,17 +60,17 @@
 
 [[options.number_of_points]] 和 [[options.sharpness]]。
 
-## 螺纹 {#spiral}
-
-![螺纹工具选项](../../img/customize-tool-options-spiral.png)
-
-[[options.revolutions]]，以及 [[options.symmetrical_spiral]] 或 [[options.logarithmic_spiral]]。
-
 ## 图纸 {#graph-paper}
 
 ![图纸工具选项](../../img/customize-tool-options-graph-paper.png)
 
 网格的 [[options.rows]] 和 [[options.columns]]。
+
+## 螺纹 {#spiral}
+
+![螺纹工具选项](../../img/customize-tool-options-spiral.png)
+
+[[options.revolutions]]，以及 [[options.symmetrical_spiral]] 或 [[options.logarithmic_spiral]]。
 
 ## 表格 {#table}
 
@@ -65,8 +78,22 @@
 
 新表格的 [[options.rows]] 和 [[options.columns]]。
 
-## 橡皮擦 {#eraser}
+## 尺度 {#dimension}
 
-![橡皮擦工具选项](../../img/customize-tool-options-eraser.png)
+![尺度工具选项](../../img/customize-tool-options-dimension.png)
 
-[[options.eraser_width]]（起初为 6.35 mm），以及 [[options.eraser_round]] 或 [[options.eraser_square]]。
+新尺度标签的显示方式：[[dimension.precision]]、[[dimension.units]]、
+[[dimension.show_units]]、[[dimension.prefix]] 和 [[dimension.suffix]]。
+已绘制的尺度保留其标签；选择一个尺度并在属性栏中更改。
+
+## 连接器 {#connector}
+
+![连接器工具选项](../../img/customize-tool-options-connector.png)
+
+新圆角连接器的 [[connector.radius]]（初始为 3 毫米）。
+
+## 网状填充 {#mesh-fill}
+
+![网状填充工具选项](../../img/customize-tool-options-mesh-fill.png)
+
+新网状填充起始网格的 [[options.columns]] 和 [[options.rows]]（初始为 2 × 2）。

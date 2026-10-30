@@ -17,6 +17,13 @@
   объекты, которых она только касается; тогда <kbd>Alt</kbd> выделяет только
   объекты, целиком находящиеся внутри.
 
+## Ластик {#eraser}
+
+![Параметры инструмента «Ластик»](../../img/customize-tool-options-eraser.png)
+
+[[options.eraser_width]] (по умолчанию 6,35 мм), а также
+[[options.eraser_round]] или [[options.eraser_square]].
+
 ## Масштаб и панорамирование {#zoom-pan}
 
 ![Параметры масштаба и панорамирования](../../img/customize-tool-options-zoom-pan.png)
@@ -26,9 +33,9 @@
 - [[options.wheel_action]]: [[options.wheel_zoom]] или
   [[options.wheel_scroll]].
 
-## Кривые {#curves}
+## Свободная рука/Безье {#curves}
 
-![Параметры инструментов кривых](../../img/customize-tool-options-curves.png)
+![Параметры инструментов «Свободная рука/Безье»](../../img/customize-tool-options-curves.png)
 
 - [[options.freehand_smoothing]]: от 0 до 100 (по умолчанию 50).
 - [[options.join_within]]: насколько близко к конечному узлу должна начаться
@@ -39,6 +46,14 @@
   для инструмента [[tool.pen]]; см. [Перо](../lines-shapes/lines.md#pen).
 - [[options.pen_tablet]]: [[options.pen_pressure]] (включено); см.
   [Рисование на графическом планшете](../lines-shapes/pen-pressure.md).
+
+## Распознавание фигур {#shape-recognition}
+
+![Параметры инструмента «Распознавание фигур»](../../img/customize-tool-options-shape-recognition.png)
+
+[[recognize.recognition]] и [[recognize.smoothing]] инструмента
+«Распознавание фигур», от выключено до максимума, как на его панели
+свойств.
 
 ## Прямоугольник {#rectangle}
 
@@ -62,6 +77,12 @@
 
 [[options.number_of_points]] и [[options.sharpness]].
 
+## Миллиметровка {#graph-paper}
+
+![Параметры инструмента «Миллиметровка»](../../img/customize-tool-options-graph-paper.png)
+
+[[options.rows]] и [[options.columns]] сетки.
+
 ## Спираль {#spiral}
 
 ![Параметры инструмента «Спираль»](../../img/customize-tool-options-spiral.png)
@@ -69,21 +90,30 @@
 [[options.revolutions]], а также [[options.symmetrical_spiral]] или
 [[options.logarithmic_spiral]].
 
-## Миллиметровка {#graph-paper}
-
-![Параметры инструмента «Миллиметровка»](../../img/customize-tool-options-graph-paper.png)
-
-[[options.rows]] и [[options.columns]] сетки.
-
 ## Таблица {#table}
 
 ![Параметры инструмента «Таблица»](../../img/customize-tool-options-table.png)
 
 [[options.rows]] и [[options.columns]] новых таблиц.
 
-## Ластик {#eraser}
+## Размер {#dimension}
 
-![Параметры инструмента «Ластик»](../../img/customize-tool-options-eraser.png)
+![Параметры инструмента «Размер»](../../img/customize-tool-options-dimension.png)
 
-[[options.eraser_width]] (по умолчанию 6,35 мм), а также
-[[options.eraser_round]] или [[options.eraser_square]].
+Как выглядит подпись новых размеров: [[dimension.precision]],
+[[dimension.units]], [[dimension.show_units]], [[dimension.prefix]] и
+[[dimension.suffix]]. Уже нарисованные размеры сохраняют свою подпись;
+выделите размер и измените её на панели свойств.
+
+## Соединительная линия {#connector}
+
+![Параметры инструмента «Соединительная линия»](../../img/customize-tool-options-connector.png)
+
+[[connector.radius]] новых скруглённых соединительных линий (сначала 3 мм).
+
+## Заливка сетки {#mesh-fill}
+
+![Параметры инструмента «Заливка сетки»](../../img/customize-tool-options-mesh-fill.png)
+
+[[options.columns]] и [[options.rows]] сетки, с которой начинается новая
+заливка сетки (сначала 2 на 2).
