@@ -15,6 +15,8 @@ pub struct ShownFrame {
     pub id: tracedraw_core::ShapeId,
     /// The frame flows into another (its tab shows a link).
     pub linked: bool,
+    /// Another frame flows into this one (its top tab shows a link).
+    pub receives: bool,
     /// Page-space corners, the frame's lower left first.
     pub corners: [Point; 4],
     /// The text is selected or being edited.
@@ -225,6 +227,7 @@ impl App {
             out.push(ShownFrame {
                 id: s.id,
                 linked: self.next_frame(s.id).is_some(),
+                receives: self.prev_frame(s.id).is_some(),
                 corners: c,
                 chosen,
                 editing: editing == Some(s.id),

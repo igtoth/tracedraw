@@ -7064,3 +7064,4 @@ hintobj.several.title = "多个对象" # mt
 hintobj.several.1 = "拖动可一起移动它们；拖动控制点可一起缩放它们。" # mt
 hintobj.several.2 = "组合 (Ctrl+G) 使它们保持在一起；合并 (Ctrl+L) 使它们成为一条曲线；对齐与分布可将它们排列整齐。" # mt
 hintobj.several.bar = "选择范围的位置和大小，组合、合并、焊接、修剪、相交及其他造形命令。" # mt
+status.flow_text_from = "单击其文本流入此框的段落文本框（可在任意页面），或在新框的位置单击或拖动；按 Esc 取消" # mt

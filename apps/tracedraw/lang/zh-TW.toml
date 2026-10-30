@@ -7064,3 +7064,4 @@ hintobj.several.title = "多個物件" # mt
 hintobj.several.1 = "拖曳可一起移動它們；拖曳控制點可一起縮放它們。" # mt
 hintobj.several.2 = "組成群組 (Ctrl+G) 使它們保持在一起；結合 (Ctrl+L) 使它們成為一條曲線；對齊與分佈可將它們排列整齊。" # mt
 hintobj.several.bar = "選取範圍的位置和大小，組成群組、結合、焊接、修剪、交集及其他造形指令。" # mt
+status.flow_text_from = "按一下其文字流入此框的段落文字框（可在任何頁面），或在新框的位置按一下或拖曳；按 Esc 取消" # mt

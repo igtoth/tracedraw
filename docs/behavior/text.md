@@ -389,7 +389,21 @@ on its own line, which is why the lines are joined first.
   space a new frame the size of the first one takes the text, its top
   left corner at the click; a drag makes the new frame the dragged
   rectangle. Esc or a right click cancels
-  (`the_flow_tab_links_to_a_new_frame_on_another_page`).
+  (`the_flow_tab_links_to_a_new_frame_on_another_page`). A drag that
+  starts on the tab does the same where it is let go (a release over a
+  frame links to it, over empty space makes the new frame there).
+- The top tab: a picked paragraph frame also has a tab over its top
+  edge's middle, above the selection's top handle (two links when
+  another frame flows into it, empty otherwise). A click (or a drag) on
+  the empty top tab of a frame no other frame flows into waits for the
+  next click, with its own hint on the status bar: on another paragraph
+  frame (one that flows on into no frame yet), that frame flows into
+  this one; on empty space (or a dragged rectangle) a new frame the size
+  of this one is made and flows into it, so the text starts in the new
+  frame.
+- While a link waits for its second click, a dashed blue line runs from
+  the middle of the tab it came from to the pointer
+  (`pick_drag_tests::text_frame_tabs_link_frames_by_drag_and_by_click`).
 - A copy of a frame (Duplicate, a right click during a move, Paste,
   stamping) is a frame of its own, in no chain: typing in it does not
   flow into the original's next frame. Frames of a chain copied together

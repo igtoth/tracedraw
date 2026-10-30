@@ -118,6 +118,10 @@ pub fn draw_canvas(app: &App, painter: &Painter, rect: ERect) {
     crate::comments::draw_comments(app, painter);
     crate::perspective_draw::draw_grid(app, painter, rect);
     draw_frame_links(app, painter);
+    if app.pending_text_link.is_some() {
+        let pointer = painter.ctx().pointer_hover_pos();
+        draw_pending_text_link(app, painter, pointer);
+    }
     draw_drop_frame(app, painter);
     draw_symmetry_lines(app, painter, rect);
     draw_anchors(app, painter);
@@ -1694,6 +1698,45 @@ pub fn flow_tab_rect(a: Pos2, b: Pos2) -> ERect {
     ERect::from_min_size(mid + egui::vec2(-6.0, top), egui::vec2(12.0, 9.0))
 }
 
+/// The top tab of a frame whose top edge runs from `a` to `b` on screen:
+/// over its middle, above the top handle of the selection, as the flow
+/// tab hangs under the bottom edge. A click on it says which frame's text
+/// flows into this one.
+pub fn flow_in_tab_rect(a: Pos2, b: Pos2) -> ERect {
+    let mid = a + (b - a) * 0.5;
+    let gap = crate::interaction::HANDLE_OFFSET + crate::interaction::HANDLE_SIZE / 2.0 + 2.0;
+    ERect::from_min_size(mid + egui::vec2(-6.0, -gap - 9.0), egui::vec2(12.0, 9.0))
+}
+
+/// Two small chain links in the middle of a tab: the frame flows on (or,
+/// on a top tab, text flows into it).
+fn tab_links(painter: &Painter, tab: ERect, ink: Color32) {
+    let c = tab.center();
+    for dx in [-2.0, 2.0] {
+        painter.rect_stroke(
+            ERect::from_center_size(c + egui::vec2(dx, 0.0), egui::vec2(4.0, 3.0)),
+            1.0,
+            EStroke::new(1.0, ink),
+            epaint::StrokeKind::Inside,
+        );
+    }
+}
+
+/// While a link waits for its second click: a dashed line from the tab it
+/// came from to the pointer.
+fn draw_pending_text_link(app: &App, painter: &Painter, pointer: Option<Pos2>) {
+    let (Some(from), Some(to)) = (app.text_link_origin(), pointer) else {
+        return;
+    };
+    painter.extend(egui::Shape::dashed_line(
+        &[from, to],
+        EStroke::new(1.0, Tokens::SELECTION),
+        5.0,
+        3.0,
+    ));
+    painter.circle_filled(from, 2.5, Tokens::SELECTION);
+}
+
 /// Paragraph text frames: dashed lines in the colour `text_frame_color`
 /// gives.
 fn draw_text_frames(app: &App, painter: &Painter, preview: Option<Affine>) {
@@ -1735,14 +1778,23 @@ fn draw_text_frames(app: &App, painter: &Painter, preview: Option<Affine>) {
                     EStroke::NONE,
                 ));
             } else if f.linked {
-                for dx in [-2.0, 2.0] {
-                    painter.rect_stroke(
-                        ERect::from_center_size(c + egui::vec2(dx, 0.0), egui::vec2(4.0, 3.0)),
-                        1.0,
-                        EStroke::new(1.0, ink),
-                        epaint::StrokeKind::Inside,
-                    );
-                }
+                tab_links(painter, tab, ink);
+            }
+        }
+        // The top tab over the top edge's middle on a picked frame: two
+        // links when another frame flows into it, else empty; a click on
+        // an empty one says which frame flows in.
+        if f.chosen {
+            let tab = flow_in_tab_rect(pts[3], pts[2]);
+            painter.rect(
+                tab,
+                0.0,
+                Color32::WHITE,
+                EStroke::new(1.0, color),
+                epaint::StrokeKind::Inside,
+            );
+            if f.receives {
+                tab_links(painter, tab, color);
             }
         }
     }

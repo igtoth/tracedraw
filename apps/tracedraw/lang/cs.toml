@@ -7064,3 +7064,4 @@ hintobj.several.title = "Několik objektů" # mt
 hintobj.several.1 = "Tažením je posunete společně; tažením úchytu jim společně změníte velikost." # mt
 hintobj.several.2 = "Seskupit (Ctrl+G) je drží pohromadě; Sloučit (Ctrl+L) z nich udělá jednu křivku; Zarovnání a rozmístění je seřadí." # mt
 hintobj.several.bar = "Poloha a velikost výběru, Seskupit, Sloučit, Svařit, Oříznout, Průnik a další příkazy tvarování." # mt
+status.flow_text_from = "Klepněte na odstavcový rámeček (na libovolné stránce), jehož text do tohoto přeteče, nebo klepněte či táhněte tam, kam patří nový rámeček; Esc ruší" # mt

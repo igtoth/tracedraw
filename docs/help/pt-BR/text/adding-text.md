@@ -122,7 +122,14 @@ cabe não é desenhado, impresso nem exportado. Para fazê-lo caber:
   [[menu.text.frame_link]]. [[menu.text.frame_unlink]] desfaz a ligação.
   Ou clique na pequena aba sob a borda de baixo do quadro e depois clique
   em outro quadro (nesta página ou em outra) ou clique ou arraste num lugar
-  vazio para um quadro novo: o texto continua nele.
+  vazio para um quadro novo: o texto continua nele. Também dá para
+  arrastar a partir da aba e soltar sobre outro quadro ou num lugar vazio.
+- um quadro selecionado também tem uma pequena aba sobre a borda de cima:
+  clique nela e depois clique no quadro cujo texto deve fluir para este, ou
+  clique num lugar vazio para um quadro novo, onde o texto começa. A aba de
+  cima mostra dois elos quando entra texto, e a de baixo quando o texto
+  continua; enquanto você escolhe, uma linha tracejada vai da aba até o
+  ponteiro.
 
 [[menu.text > menu.text.show_text_frames]] mostra ou oculta as molduras.
 

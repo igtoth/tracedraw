@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Linked paragraph text frames: a picked frame now has a tab over its top edge too; click it, then click another frame to make that frame's text flow into this one, or click (or drag) on empty space for a new frame that the text starts in. A drag from the bottom tab onto a frame or onto empty space links as a click there does, and while a link waits for its target a dashed line runs from the tab to the pointer.
+
 ## 0.28.0 (2026-10-30)
 
 - Variable fonts with many axes (Roboto Flex) draw their text: the font was listed and its axis sliders showed, but every letter came out empty because the glyph reader refused glyphs with more than 32 variation tuples (#870).

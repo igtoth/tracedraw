@@ -8343,6 +8343,91 @@ fn the_hints_panel_shows_the_page_of_the_picked_object() {
     assert_eq!(app.hints.current(), HintPage::Tool(Tool::Rectangle));
 }
 
+/// The tabs of paragraph text frames, with the pointer: a drag from a
+/// frame's bottom tab onto another frame flows its text on into it; a
+/// click on a picked frame's top tab and then a click on another frame
+/// makes that frame flow into it, and a click on empty space draws a new
+/// frame there that the text starts in.
+#[test]
+fn text_frame_tabs_link_frames_by_drag_and_by_click() {
+    tracedraw_text::install();
+    let (ctx, mut app, _) = setup();
+    let long = "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty";
+    let frame_at = |app: &mut App, text: &str, x: f64, y: f64, w: f64, h: f64| {
+        app.new_shape(ShapeKind::Text {
+            spans: vec![tracedraw_core::TextSpan::new(text, "DejaVu Sans", 12.0)],
+            origin: Point::new(x, y),
+            frame: Some(tracedraw_core::Size::new(w, h)),
+            align: tracedraw_core::TextAlign::Left,
+            para: Default::default(),
+            on_path: None,
+        })
+        .expect("frame")
+    };
+    let a = frame_at(&mut app, long, 20.0, 250.0, 30.0, 8.0);
+    let b = frame_at(&mut app, "", 20.0, 150.0, 60.0, 40.0);
+    let c = frame_at(&mut app, "c", 110.0, 150.0, 60.0, 40.0);
+    let d = frame_at(&mut app, long, 110.0, 250.0, 30.0, 8.0);
+    let e = frame_at(&mut app, "e", 20.0, 60.0, 60.0, 40.0);
+    let corners = |app: &App, id: ShapeId| {
+        app.doc()
+            .find_shape(id)
+            .and_then(|s| s.text_frame_corners())
+            .expect("a frame")
+            .map(|p| app.view.to_screen(p))
+    };
+    let middle = |app: &App, id: ShapeId| app.view.to_screen(bounds(app, id).center());
+    // A drag from the overflowing frame's tab onto the empty frame.
+    app.select(vec![a]);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let k = corners(&app, a);
+    let tab = crate::canvas::flow_tab_rect(k[0], k[1]);
+    let to = middle(&app, b);
+    drag(
+        &ctx,
+        &mut app,
+        tab.center(),
+        to,
+        Modifiers::NONE,
+        Vec::new(),
+    );
+    assert_eq!(app.next_frame(a), Some(b), "{}", app.status);
+    assert!(app.pending_text_link.is_none());
+    // The top tab of a picked frame, then a click on another frame: that
+    // frame's text flows into it.
+    app.select(vec![c]);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let k = corners(&app, c);
+    let top = crate::canvas::flow_in_tab_rect(k[3], k[2]);
+    assert!(
+        top.bottom() < k[3].y.min(k[2].y),
+        "the tab is over the frame"
+    );
+    click_at(&ctx, &mut app, top.center(), Modifiers::NONE);
+    assert_eq!(app.pending_text_link, Some(c));
+    assert!(app.text_link_incoming);
+    let at = middle(&app, d);
+    click_at(&ctx, &mut app, at, Modifiers::NONE);
+    assert_eq!(app.next_frame(d), Some(c), "{}", app.status);
+    assert_eq!(app.prev_frame(c), Some(d));
+    // A frame that already takes text in has no top tab to click.
+    app.select(vec![c]);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    assert_eq!(app.flow_in_tab_at(top.center()), None);
+    // The top tab, then empty space: a new frame there, flowing into it.
+    app.select(vec![e]);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let k = corners(&app, e);
+    let top = crate::canvas::flow_in_tab_rect(k[3], k[2]);
+    click_at(&ctx, &mut app, top.center(), Modifiers::NONE);
+    let before = shape_count(&app);
+    click_page(&ctx, &mut app, Point::new(150.0, 60.0));
+    assert_eq!(shape_count(&app), before + 1, "a new frame");
+    let new = app.prev_frame(e).expect("the new frame flows into it");
+    assert_eq!(app.chain_head(e), new);
+    assert!(app.pending_text_link.is_none() && !app.text_link_incoming);
+}
+
 /// The Welcome Screen tab closes to its house while a drawing is open;
 /// the house shows the Welcome Screen again with its whole tab (#677).
 #[test]

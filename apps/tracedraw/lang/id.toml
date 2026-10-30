@@ -7064,3 +7064,4 @@ hintobj.several.title = "Beberapa objek" # mt
 hintobj.several.1 = "Seret untuk memindahkannya bersama; seret pegangan untuk menskalakannya bersama." # mt
 hintobj.several.2 = "Kelompokkan (Ctrl+G) menyatukannya; Kombinasikan (Ctrl+L) menjadikannya satu kurva; Ratakan dan Distribusikan menjajarkannya." # mt
 hintobj.several.bar = "Posisi dan ukuran pilihan, Kelompokkan, Kombinasikan, Las, Pangkas, Iris dan perintah pembentukan lainnya." # mt
+status.flow_text_from = "Klik bingkai paragraf (di halaman mana pun) yang teksnya mengalir ke bingkai ini, atau klik atau seret di tempat bingkai baru; Esc membatalkan" # mt

@@ -7064,3 +7064,4 @@ hintobj.several.title = "Mehrere Objekte" # mt
 hintobj.several.1 = "Ziehen Sie sie, um sie gemeinsam zu verschieben; ziehen Sie einen Griff, um sie gemeinsam zu skalieren." # mt
 hintobj.several.2 = "Gruppieren (Strg+G) hält sie zusammen; Kombinieren (Strg+L) macht eine Kurve daraus; Ausrichten und verteilen reiht sie auf." # mt
 hintobj.several.bar = "Position und Größe der Auswahl, Gruppieren, Kombinieren, Verschmelzen, Zuschneiden, Schnittmenge und die anderen Formbefehle." # mt
+status.flow_text_from = "Klicken Sie auf den Mengentextrahmen (auf einer beliebigen Seite), dessen Text in diesen fließt, oder klicken oder ziehen Sie dort, wo ein neuer Rahmen hinkommt; Esc bricht ab" # mt

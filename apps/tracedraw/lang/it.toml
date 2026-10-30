@@ -7064,3 +7064,4 @@ hintobj.several.title = "Più oggetti" # mt
 hintobj.several.1 = "Trascinali per spostarli insieme; trascina una maniglia per scalarli insieme." # mt
 hintobj.several.2 = "Raggruppa (Ctrl+G) li tiene insieme; Combina (Ctrl+L) li rende una curva; Allinea e distribuisci li mette in fila." # mt
 hintobj.several.bar = "Posizione e dimensione della selezione, Raggruppa, Combina, Salda, Rifila, Interseca e gli altri comandi di modellazione." # mt
+status.flow_text_from = "Fai clic sulla cornice di paragrafo (in qualsiasi pagina) il cui testo scorre in questa, oppure fai clic o trascina dove va una nuova cornice; Esc annulla" # mt

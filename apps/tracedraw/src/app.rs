@@ -1225,6 +1225,12 @@ pub struct App {
     pub pdf_text_chosen: bool,
     /// Where a drag for the new frame of a flow began.
     pub text_link_drag: Option<Point>,
+    /// The pending link came from a frame's top tab: the frame clicked
+    /// next flows into `pending_text_link` (not out of it).
+    pub text_link_incoming: bool,
+    /// The press that started the pending link is still held on its tab:
+    /// releasing it says where the text flows (a drag from the tab).
+    pub text_link_from_tab: bool,
     /// Clip frame being edited in place: (frame id, the page's other
     /// objects when editing began; see `clip_edit_contents`).
     pub clip_frame_edit: Option<(ShapeId, std::collections::HashSet<ShapeId>)>,
@@ -2386,6 +2392,8 @@ impl App {
             dialog_return: None,
             pdf_text_chosen: false,
             text_link_drag: None,
+            text_link_incoming: false,
+            text_link_from_tab: false,
             clip_frame_edit: None,
             clip_edit_marks: Vec::new(),
             symmetry_edit: None,

@@ -7064,3 +7064,4 @@ hintobj.several.title = "Birkaç nesne" # mt
 hintobj.several.1 = "Birlikte taşımak için sürükleyin; birlikte ölçeklemek için bir tutamacı sürükleyin." # mt
 hintobj.several.2 = "Grupla (Ctrl+G) onları bir arada tutar; Birleştir (Ctrl+L) onları tek eğri yapar; Hizala ve Dağıt onları sıralar." # mt
 hintobj.several.bar = "Seçimin konumu ve boyutu, Grupla, Birleştir, Kaynak, Kırp, Kesişim ve diğer şekillendirme komutları." # mt
+status.flow_text_from = "Metni bu çerçeveye akacak paragraf çerçevesine tıklayın (herhangi bir sayfada) ya da yeni çerçevenin gideceği yere tıklayın veya sürükleyin; Esc iptal eder" # mt

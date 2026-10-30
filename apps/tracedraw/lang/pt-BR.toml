@@ -7064,3 +7064,4 @@ hintobj.several.title = "Vários objetos" # mt
 hintobj.several.1 = "Arraste-os para movê-los juntos; arraste uma alça para redimensioná-los juntos." # mt
 hintobj.several.2 = "Agrupar (Ctrl+G) os mantém juntos; Combinar (Ctrl+L) os torna uma curva; Alinhar e distribuir os enfileira." # mt
 hintobj.several.bar = "Posição e tamanho da seleção, Agrupar, Combinar, Soldar, Aparar, Interseção e os outros comandos de modelagem." # mt
+status.flow_text_from = "Clique no quadro de parágrafo (em qualquer página) cujo texto flui para este, ou clique ou arraste onde vai um quadro novo; Esc cancela" # mt

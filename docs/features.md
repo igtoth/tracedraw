@@ -106,7 +106,7 @@ Counts: works 189, partial 7 (`.cdr` content coverage; CMX import; print preview
 | Text on path (offset, distance with tick snapping, mirrors that keep the letters in place; on a closed path centred where it was clicked), straighten text | works (see `behavior/text.md`) |
 | Fit text to frame; wrap paragraph text around objects above it on the page (contour or square; left, right, both sides, above and below; text wrap offset); baselines on the page's baseline grid (see `behavior/text-wrap.md`) | works |
 | Insert Placeholder Text: filler that fills each selected paragraph frame (see `behavior/text.md`) | works |
-| Linked paragraph text frames (link, unlink, live re-flow) | works |
+| Linked paragraph text frames (link, unlink, live re-flow; the bottom tab flows the text on into a frame or a new one by a click or a drag, the top tab takes text in from another frame, a dashed line while choosing) | works |
 | Change case, insert formatting codes, show non-printing characters, Encode, Make Text Web Compatible | works |
 | Text statistics, Find and Replace, Glyphs panel, font filter and sample | works |
 | Writing Tools dialog with Spell Checker (Hunspell dictionaries of any language, with affixes and compounds, from TraceDraw's dictionaries folder, a folder of the user's or the system; each can be switched off; hyphenation dictionaries (`hyph_*.dic`) from the same folders for any language), Grammar (rule based, a/an and missing end marks included) and Thesaurus tabs (built-in or MyThes file); Autocorrect (sentences, two capitals, days, web addresses to hyperlinks, quotes by language or chosen, straight after numbers, replacement table) on the Autocorrect tab of Options > Text, beside the Display, Paragraph Text, Fonts and Spelling tabs | works |

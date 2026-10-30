@@ -114,7 +114,13 @@ drawn, printed or exported. To make it fit:
   [[menu.text.frame_link]]. [[menu.text.frame_unlink]] breaks the link.
   Or click the small tab under the frame's bottom edge, then click another
   frame (on this page or another one) or click or drag on an empty spot
-  for a new frame: the text flows on into it.
+  for a new frame: the text flows on into it. You can also drag from the
+  tab and let go over another frame or an empty spot.
+- a picked frame also has a small tab over its top edge: click it, then
+  click the frame whose text should flow into this one, or click an empty
+  spot for a new frame that the text starts in. The top tab shows two
+  links when text flows in, and the bottom tab when the text flows on;
+  while you choose, a dashed line runs from the tab to the pointer.
 
 [[menu.text > menu.text.show_text_frames]] shows or hides the frames.
 

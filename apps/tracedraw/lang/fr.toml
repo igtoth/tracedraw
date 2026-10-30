@@ -7064,3 +7064,4 @@ hintobj.several.title = "Plusieurs objets" # mt
 hintobj.several.1 = "Faites-les glisser pour les déplacer ensemble ; faites glisser une poignée pour les redimensionner ensemble." # mt
 hintobj.several.2 = "Grouper (Ctrl+G) les garde ensemble ; Associer (Ctrl+L) en fait une seule courbe ; Aligner et distribuer les range." # mt
 hintobj.several.bar = "Position et taille de la sélection, Grouper, Associer, Souder, Découper, Intersection et les autres commandes de mise en forme." # mt
+status.flow_text_from = "Cliquez sur le cadre de texte (sur n'importe quelle page) dont le texte s'écoule dans celui-ci, ou cliquez ou faites glisser là où va un nouveau cadre ; Échap annule" # mt

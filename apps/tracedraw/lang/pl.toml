@@ -7064,3 +7064,4 @@ hintobj.several.title = "Kilka obiektów" # mt
 hintobj.several.1 = "Przeciągnij je, aby przesunąć razem; przeciągnij uchwyt, aby skalować je razem." # mt
 hintobj.several.2 = "Grupuj (Ctrl+G) trzyma je razem; Połącz (Ctrl+L) zmienia je w jedną krzywą; Wyrównaj i rozmieść ustawia je w szeregu." # mt
 hintobj.several.bar = "Położenie i rozmiar zaznaczenia, Grupuj, Połącz, Spawaj, Przytnij, Część wspólna i inne polecenia kształtowania." # mt
+status.flow_text_from = "Kliknij ramkę akapitu (na dowolnej stronie), której tekst ma wpływać do tej, albo kliknij lub przeciągnij tam, gdzie ma być nowa ramka; Esc anuluje" # mt

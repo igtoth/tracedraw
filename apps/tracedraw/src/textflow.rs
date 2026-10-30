@@ -127,7 +127,8 @@ impl App {
         self.frame_data(next).map(|_| next)
     }
 
-    fn prev_frame(&self, id: ShapeId) -> Option<ShapeId> {
+    /// Previous frame in the chain, if any and still present.
+    pub fn prev_frame(&self, id: ShapeId) -> Option<ShapeId> {
         let prev = data_id(&self.frame_data(id)?, PREV)?;
         self.frame_data(prev).map(|_| prev)
     }
@@ -223,11 +224,63 @@ impl App {
             .map(|f| f.id)
     }
 
+    /// The frame whose top tab is under the screen point `at` (Pick
+    /// tool): a picked frame that no other frame flows into yet.
+    pub fn flow_in_tab_at(&self, at: egui::Pos2) -> Option<ShapeId> {
+        self.shown_text_frames(None)
+            .into_iter()
+            .filter(|f| f.chosen && !f.receives)
+            .find(|f| {
+                let a = self.view.to_screen(f.corners[3]);
+                let b = self.view.to_screen(f.corners[2]);
+                crate::canvas::flow_in_tab_rect(a, b)
+                    .expand(2.0)
+                    .contains(at)
+            })
+            .map(|f| f.id)
+    }
+
     /// A click on a frame's flow tab: the next click says where its text
     /// flows on (#371).
     pub fn start_text_link(&mut self, from: ShapeId) {
         self.pending_text_link = Some(from);
+        self.text_link_incoming = false;
         self.status = tr("status.flow_text_where");
+    }
+
+    /// A click on a frame's top tab: the next click says which frame's
+    /// text flows into it (a new frame on empty space).
+    pub fn start_text_link_in(&mut self, to: ShapeId) {
+        self.pending_text_link = Some(to);
+        self.text_link_incoming = true;
+        self.status = tr("status.flow_text_from");
+    }
+
+    /// Let go of a pending link (Esc, a right click).
+    pub fn cancel_text_link(&mut self) {
+        self.pending_text_link = None;
+        self.text_link_drag = None;
+        self.text_link_incoming = false;
+        self.text_link_from_tab = false;
+    }
+
+    /// The screen point the pending link's line starts from: the middle of
+    /// the tab it came from.
+    pub fn text_link_origin(&self) -> Option<egui::Pos2> {
+        let id = self.pending_text_link?;
+        let s = self.doc().find_shape(id)?;
+        let c = s.text_frame_corners()?;
+        let (a, b) = if self.text_link_incoming {
+            (c[3], c[2])
+        } else {
+            (c[0], c[1])
+        };
+        let (a, b) = (self.view.to_screen(a), self.view.to_screen(b));
+        Some(if self.text_link_incoming {
+            crate::canvas::flow_in_tab_rect(a, b).center()
+        } else {
+            crate::canvas::flow_tab_rect(a, b).center()
+        })
     }
 
     /// The click after a flow tab, at page point `p` (a drag: the frame
@@ -235,14 +288,23 @@ impl App {
     /// into it; elsewhere a new frame takes it, the size of the first one
     /// with its top left corner at `p`, or the dragged rectangle.
     pub fn finish_text_link(&mut self, p: Point, rect: Option<tracedraw_core::geometry::Rect>) {
+        let incoming = std::mem::take(&mut self.text_link_incoming);
+        self.text_link_from_tab = false;
         let Some(from) = self.pending_text_link.take() else {
             return;
         };
         if rect.is_none() {
-            if let Some(to) = self.hit_test(p).filter(|id| self.frame_data(*id).is_some()) {
-                if to != from {
-                    self.link_frames(from, to);
-                    self.select(vec![to]);
+            if let Some(other) = self.hit_test(p).filter(|id| self.frame_data(*id).is_some()) {
+                if other != from {
+                    // From a top tab the frame clicked flows into the
+                    // frame of the tab.
+                    let (a, b) = if incoming {
+                        (other, from)
+                    } else {
+                        (from, other)
+                    };
+                    self.link_frames(a, b);
+                    self.select(vec![other]);
                     return;
                 }
             }
@@ -285,7 +347,12 @@ impl App {
         let Some(to) = self.new_shape(kind) else {
             return;
         };
-        self.link_frames(from, to);
+        if incoming {
+            // The new frame comes first: the text starts in it.
+            self.link_frames(to, from);
+        } else {
+            self.link_frames(from, to);
+        }
         self.select(vec![to]);
     }
 

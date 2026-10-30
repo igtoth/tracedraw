@@ -1169,6 +1169,18 @@ impl App {
         }
 
         if self.pending_text_link.is_some() {
+            // A drag that began on the tab: the release says where the
+            // text flows, as a click there would.
+            if self.text_link_from_tab {
+                if response.drag_stopped_by(PointerButton::Primary) {
+                    let now = self.pointer_page.unwrap_or(p);
+                    self.finish_text_link(now, None);
+                } else if !response.ctx.input(|i| i.pointer.primary_down()) {
+                    // Let go without a drag: the next click says.
+                    self.text_link_from_tab = false;
+                }
+                return;
+            }
             if response.drag_started_by(PointerButton::Primary) {
                 self.text_link_drag = Some(p);
             } else if response.drag_stopped_by(PointerButton::Primary) {
@@ -1180,8 +1192,7 @@ impl App {
                 self.finish_text_link(p, None);
             }
             if response.secondary_clicked() {
-                self.pending_text_link = None;
-                self.text_link_drag = None;
+                self.cancel_text_link();
             }
             return;
         }
@@ -1455,12 +1466,19 @@ impl App {
             || response.drag_started_by(PointerButton::Primary)
         {
             // A handle comes first: the tab never takes a drag of one.
-            if let Some(id) = self
-                .flow_tab_at(screen)
-                .filter(|_| self.handle_at(screen).is_none())
-            {
-                self.start_text_link(id);
-                return;
+            // A drag from the tab ends where the text flows.
+            let from_tab = response.drag_started_by(PointerButton::Primary);
+            if self.handle_at(screen).is_none() {
+                if let Some(id) = self.flow_tab_at(screen) {
+                    self.start_text_link(id);
+                    self.text_link_from_tab = from_tab;
+                    return;
+                }
+                if let Some(id) = self.flow_in_tab_at(screen) {
+                    self.start_text_link_in(id);
+                    self.text_link_from_tab = from_tab;
+                    return;
+                }
             }
         }
         // Resting over the selection (not over a handle or the centre of
@@ -3038,8 +3056,7 @@ impl App {
             return;
         }
         if self.pending_text_link.is_some() && ctx.input(|i| i.key_pressed(Key::Escape)) {
-            self.pending_text_link = None;
-            self.text_link_drag = None;
+            self.cancel_text_link();
             return;
         }
         if self.transforming() && ctx.input(|i| i.key_pressed(Key::Escape)) {
