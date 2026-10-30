@@ -1,0 +1,14 @@
+[2026-10-27T15:58:07Z INFO  tracedraw::startup_log] TraceDraw 0.19.8 on windows x86_64
+[2026-10-27T15:58:07Z INFO  tracedraw::startup_log] Intel64 Family 6 Model 37 Stepping 5, GenuineIntel, 4 threads, Windows 10.0 build 19045
+[2026-10-27T15:58:07Z INFO  tracedraw] opening the window with Gl (Options asks for Hardware)
+[2026-10-27T15:58:07Z INFO  eframe] Both the glow and wgpu renderers are available. Using glow.
+[2026-10-27T15:58:07Z WARN  eframe::native::glow_integration::first_context] Failed to create context using context attributes ContextAttributes { release_behavior: Flush, debug: false, robustness: NotRobust, profile: None, api: None, priority: None, shared_context: None, raw_window_handle: Some(Win32(Win32WindowHandle { hwnd: 1247322, hinstance: Some(140695365877760) })) } due to error: [ffffffffc0072095] OS Error -1073274731 (FormatMessageW() returned error 317) (os error -1073274731)
+[2026-10-27T15:58:07Z WARN  eframe::native::glow_integration::first_context] Failed to create context using context attributes ContextAttributes { release_behavior: Flush, debug: false, robustness: NotRobust, profile: None, api: Some(Gles(None)), priority: None, shared_context: None, raw_window_handle: Some(Win32(Win32WindowHandle { hwnd: 1247322, hinstance: Some(140695365877760) })) } due to error: extension to create ES context with wgl is not present
+[2026-10-27T15:58:07Z INFO  eframe::native::fixed_function_painter] OpenGL 2.1 (Intel, Intel(R) HD Graphics): drawing with the fixed-function pipeline, textures up to 8192 px (the driver says 8192), 100 extensions
+[2026-10-27T15:58:07Z INFO  tracedraw::gpu] OpenGL: Intel, Intel(R) HD Graphics, version 2.1.0 - Build 8.15.10.2900, GLSL 1.20  - Intel Build 8.15.10.2900
+[2026-10-27T15:58:07Z INFO  tracedraw::gpu] the window opened with Gl: OpenGL
+[2026-10-27T15:58:07Z INFO  eframe::native::fixed_function_painter] the first frame drawn with the fixed-function pipeline: 3 meshes, 1460 vertices
+[2026-10-27T15:58:09Z INFO  tracedraw_text] loaded 2645 font faces, 1332 families
+[2026-10-27T15:58:09Z INFO  tracedraw::theme] UI fallback fonts: fallback-Noto Sans Arabic, fallback-Nirmala UI, fallback-Microsoft YaHei, fallback-Microsoft JhengHei, fallback-Yu Gothic UI
+[2026-10-27T15:58:09Z INFO  tracedraw::frame_stats] first frame 1.88 s after the start: window 1600 x 950 px, 1 px per point, monitor 1920 x 1080 points
+[2026-10-27T15:58:09Z INFO  tracedraw] the window (1600 x 950 px) read back drawn
