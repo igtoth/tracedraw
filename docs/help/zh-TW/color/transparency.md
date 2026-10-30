@@ -15,4 +15,6 @@
 - 套用至 [[transparency.target_fill]]、[[transparency.target_outline]] 或 [[transparency.target_all]]。
 - **凍結**：保留目前透出的內容，即使下方的物件移動也不改變。
 
+要移除透明度，請按一下屬性列末端的 [[toolbar.clear_transparency]]（或將類型選為 [[transparency.none]]）。
+
 若要複製另一個物件的透明度，請使用 [[menu.object > menu.object.copy_effect > menu.object.copy_transparency_from]]。關於由物件亮度定義的透明區域，請參閱[不透明度遮罩](../objects/clip-frames.md#opacity-mask)。

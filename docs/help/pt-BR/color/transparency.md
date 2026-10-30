@@ -33,6 +33,9 @@ seguir um padrão ou uma textura.
 - **Congelar**: mantém o que aparece através como está agora, mesmo que os
   objetos embaixo se movam.
 
+Para removê-la, clique em [[toolbar.clear_transparency]] no fim da barra de
+propriedades (ou escolha [[transparency.none]] como tipo).
+
 Para copiar a transparência de outro objeto, use
 [[menu.object > menu.object.copy_effect > menu.object.copy_transparency_from]].
 Para áreas transparentes definidas pelo brilho de um objeto, veja

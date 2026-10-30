@@ -30,6 +30,8 @@ jak gradient lub odpowiadać wzorowi albo teksturze.
 - **Zamroź**: zachowuje to, co prześwituje, w obecnym stanie, nawet jeśli
   obiekty pod spodem się przesuną.
 
+Aby ją usunąć, kliknij [[toolbar.clear_transparency]] na końcu paska właściwości (albo wybierz [[transparency.none]] jako rodzaj).
+
 Aby skopiować przezroczystość innego obiektu, użyj
 [[menu.object > menu.object.copy_effect > menu.object.copy_transparency_from]].
 Obszary prześwitujące określone przez jasność obiektu opisano w sekcji

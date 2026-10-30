@@ -31,6 +31,8 @@ seguire un motivo o una texture.
 - **Congela**: mantiene ciò che traspare così com'è ora, anche se gli oggetti
   sottostanti si spostano.
 
+Per toglierla, fate clic su [[toolbar.clear_transparency]] alla fine della barra delle proprietà (oppure scegliete [[transparency.none]] come tipo).
+
 Per copiare la trasparenza di un altro oggetto, usa
 [[menu.object > menu.object.copy_effect > menu.object.copy_transparency_from]].
 Per le aree trasparenti definite dalla luminosità di un oggetto, vedi

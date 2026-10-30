@@ -31,6 +31,8 @@ suivre un motif ou une texture.
 - **Figer** : garde ce qui transparaît tel qu'il est maintenant, même si les
   objets situés en dessous se déplacent.
 
+Pour la retirer, cliquez sur [[toolbar.clear_transparency]] au bout de la barre de propriétés (ou choisissez [[transparency.none]] comme type).
+
 Pour copier la transparence d'un autre objet, utilisez
 [[menu.object > menu.object.copy_effect > menu.object.copy_transparency_from]].
 Pour des zones transparentes définies par la luminosité d'un objet, voir

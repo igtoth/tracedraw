@@ -168,6 +168,10 @@ pub struct AttrGroups {
     pub outline: bool,
     pub fill: bool,
     pub text: bool,
+    /// The transparency (uniform, or a fountain, pattern or texture
+    /// mask, with its merge mode), also without the other effects
+    /// (#1338).
+    pub transparency: bool,
     pub size: bool,
     pub rotation: bool,
     pub position: bool,
@@ -180,6 +184,7 @@ impl Default for AttrGroups {
             outline: true,
             fill: true,
             text: true,
+            transparency: true,
             size: false,
             rotation: false,
             position: false,
@@ -400,6 +405,29 @@ impl App {
                 cmds.push(Command::SetShapeKind { shape: id, kind });
             }
         }
+        if g.transparency && !g.effects {
+            // The sampled transparency in place of the object's own; its
+            // other effects stay.
+            let mut effects: Vec<Effect> = s
+                .effects
+                .iter()
+                .filter(|e| !matches!(e, Effect::Transparency { .. }))
+                .cloned()
+                .collect();
+            effects.extend(
+                a.effects
+                    .iter()
+                    .filter(|e| matches!(e, Effect::Transparency { .. }))
+                    .cloned(),
+            );
+            if effects != s.effects {
+                cmds.push(Command::SetEffects { shape: id, effects });
+            }
+            cmds.push(Command::SetOpacity {
+                shapes: shapes.clone(),
+                opacity: a.opacity,
+            });
+        }
         if g.effects {
             cmds.push(Command::SetOpacity {
                 shapes: shapes.clone(),
@@ -597,11 +625,15 @@ mod tests {
         app.select(Vec::new());
         app.eyedropper_click(Point::new(5.0, 5.0), true, false);
         assert!(app.eyedropper_attrs.is_some());
-        // Defaults: fill and outline, no transformations, no effects.
+        // Defaults: fill, outline and transparency, no transformations,
+        // no effects.
         app.eyedropper_click(Point::new(45.0, 5.0), true, false);
         let sb = app.doc().find_shape(b).expect("b");
         assert_eq!(sb.fill, Fill::Solid(Color::rgb8(0, 0, 250)));
-        assert!((sb.opacity - 1.0).abs() < 1e-9);
+        assert!(
+            (sb.opacity - 0.5).abs() < 1e-9,
+            "the transparency comes too"
+        );
         assert!((sb.bounds().width() - 10.0).abs() < 1e-9);
         // Tick size and effects: b takes a's size about its own centre.
         app.eyedropper_groups.size = true;
@@ -616,6 +648,85 @@ mod tests {
         app.eyedropper_click(Point::new(45.0, 5.0), true, true);
         let s = app.eyedropper_attrs.as_ref().expect("sample");
         assert!((s.height - 20.0).abs() < 1e-6);
+    }
+
+    /// The attributes eyedropper copies transparency by default, a
+    /// fountain mask with its merge mode too, in place of the target's
+    /// own and keeping its other effects; unticked, the target keeps its
+    /// own (#1338: only the colour came across).
+    #[test]
+    fn attributes_eyedropper_copies_transparency() {
+        use tracedraw_core::live::MergeMode;
+        let mut app = App::headless();
+        let a = rect(&mut app, Rect::new(0.0, 0.0, 10.0, 10.0));
+        let b = rect(&mut app, Rect::new(40.0, 0.0, 50.0, 10.0));
+        let c = rect(&mut app, Rect::new(80.0, 0.0, 90.0, 10.0));
+        let mask = Effect::Transparency {
+            mask: Fill::Fountain(Default::default()),
+            merge: MergeMode::Multiply,
+            target: 2,
+        };
+        app.run(Command::SetEffects {
+            shape: a,
+            effects: vec![mask.clone()],
+        });
+        let warp = Effect::Perspective {
+            corners: [
+                Point::new(40.0, 0.0),
+                Point::new(50.0, 0.0),
+                Point::new(50.0, 10.0),
+                Point::new(40.0, 10.0),
+            ],
+        };
+        app.run(Command::SetEffects {
+            shape: b,
+            effects: vec![warp.clone()],
+        });
+        app.select(Vec::new());
+        app.eyedropper_click(Point::new(5.0, 5.0), true, false);
+        app.eyedropper_click(Point::new(45.0, 5.0), true, false);
+        let sb = app.doc().find_shape(b).expect("b");
+        assert_eq!(sb.effects, vec![warp, mask.clone()]);
+        // Unticked: c keeps having none.
+        app.eyedropper_groups.transparency = false;
+        app.eyedropper_click(Point::new(85.0, 5.0), true, false);
+        let sc = app.doc().find_shape(c).expect("c");
+        assert!(sc.effects.is_empty(), "{:?}", sc.effects);
+        // A sample without transparency clears the target's.
+        app.eyedropper_groups.transparency = true;
+        app.eyedropper_click(Point::new(85.0, 5.0), true, true);
+        app.eyedropper_click(Point::new(5.0, 5.0), true, false);
+        assert!(app.doc().find_shape(a).expect("a").effects.is_empty());
+    }
+
+    /// Clear Transparency takes a fountain transparency and a uniform one
+    /// away in one step, and is greyed with nothing to clear (#1338).
+    #[test]
+    fn clear_transparency_removes_masks_and_opacity() {
+        use tracedraw_core::live::MergeMode;
+        let mut app = App::headless();
+        let a = rect(&mut app, Rect::new(0.0, 0.0, 10.0, 10.0));
+        let b = rect(&mut app, Rect::new(40.0, 0.0, 50.0, 10.0));
+        app.run(Command::SetEffects {
+            shape: a,
+            effects: vec![Effect::Transparency {
+                mask: Fill::Fountain(Default::default()),
+                merge: MergeMode::Normal,
+                target: 2,
+            }],
+        });
+        app.run(Command::SetOpacity {
+            shapes: vec![b],
+            opacity: 0.4,
+        });
+        app.select(vec![a, b]);
+        assert!(app.can_clear_transparency());
+        let steps = app.engine.history_labels().0.len();
+        app.clear_transparency();
+        assert!(app.doc().find_shape(a).expect("a").effects.is_empty());
+        assert!((app.doc().find_shape(b).expect("b").opacity - 1.0).abs() < 1e-9);
+        assert_eq!(app.engine.history_labels().0.len(), steps + 1);
+        assert!(!app.can_clear_transparency());
     }
 
     /// Pictures give their pixels: placed alone, in a group, inside a clip

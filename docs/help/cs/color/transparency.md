@@ -28,6 +28,8 @@ měnit se napříč objektem jako přechod, nebo sledovat vzorek či texturu.
 - **Zmrazit**: zachová to, co prosvítá, v současné podobě, i když se objekty
   pod ním posunou.
 
+Chcete-li ji odstranit, klikněte na [[toolbar.clear_transparency]] na konci panelu vlastností (nebo jako druh zvolte [[transparency.none]]).
+
 Chcete-li zkopírovat průhlednost jiného objektu, použijte
 [[menu.object > menu.object.copy_effect > menu.object.copy_transparency_from]].
 O průhledných oblastech určených jasem objektu viz

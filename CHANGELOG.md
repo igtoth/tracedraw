@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Attributes eyedropper: copies transparency (uniform, or a gradient, pattern or texture mask with its merge mode), on by default in the Properties menu; it copied the colour only. The Transparency tool's bar and the Properties docker have a Clear Transparency button (#1338).
+
 ## 0.28.0 (2026-10-30)
 
 - Variable fonts with many axes (Roboto Flex) draw their text: the font was listed and its axis sliders showed, but every letter came out empty because the glyph reader refused glyphs with more than 32 variation tuples (#870).

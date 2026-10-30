@@ -31,6 +31,8 @@ un patrón o una textura.
 - **Congelar**: mantiene lo que se ve a través tal como está ahora, aunque se
   muevan los objetos de debajo.
 
+Para quitarla, haga clic en [[toolbar.clear_transparency]] al final de la barra de propiedades (o elija [[transparency.none]] como tipo).
+
 Para copiar la transparencia de otro objeto, use
 [[menu.object > menu.object.copy_effect > menu.object.copy_transparency_from]].
 Para zonas transparentes definidas por el brillo de un objeto, vea

@@ -920,30 +920,51 @@ impl App {
         self.set_tool(crate::tools::Tool::Shape);
     }
 
-    /// Remove any transparency from the selection.
+    /// Some selected object has transparency: uniform (an opacity under
+    /// 100 %) or a fountain, pattern or texture mask.
+    pub fn can_clear_transparency(&self) -> bool {
+        self.selected_shapes().iter().any(|s| {
+            s.opacity < 1.0
+                || s.effects
+                    .iter()
+                    .any(|e| matches!(e, Effect::Transparency { .. }))
+        })
+    }
+
+    /// Remove any transparency from the selection (the Transparency
+    /// tool's Clear Transparency, its kind list's None), one undo step;
+    /// objects without transparency are left as they are.
     pub fn clear_transparency(&mut self) {
-        let shapes = self.selection.clone();
         let mut cmds = Vec::new();
-        for id in &shapes {
-            let Some(s) = self.doc().find_shape(*id).cloned() else {
-                continue;
-            };
-            let effects: Vec<Effect> = s
-                .effects
+        for s in self.selected_shapes() {
+            if s.effects
                 .iter()
-                .filter(|e| !matches!(e, Effect::Transparency { .. }))
-                .cloned()
-                .collect();
-            cmds.push(Command::SetEffects {
-                shape: *id,
-                effects,
-            });
+                .any(|e| matches!(e, Effect::Transparency { .. }))
+            {
+                let effects: Vec<Effect> = s
+                    .effects
+                    .iter()
+                    .filter(|e| !matches!(e, Effect::Transparency { .. }))
+                    .cloned()
+                    .collect();
+                cmds.push(Command::SetEffects {
+                    shape: s.id,
+                    effects,
+                });
+            }
+            if s.opacity < 1.0 {
+                cmds.push(Command::SetOpacity {
+                    shapes: vec![s.id],
+                    opacity: 1.0,
+                });
+            }
         }
-        cmds.push(Command::SetOpacity {
-            shapes,
-            opacity: 1.0,
-        });
-        let _ = self.engine.run_batch("Clear Transparency", &cmds);
+        if cmds.is_empty() {
+            return;
+        }
+        if let Err(e) = self.engine.run_batch("Clear Transparency", &cmds) {
+            self.status = e.to_string();
+        }
     }
 
     /// Object > Clip to Frame > Edit Contents: take the contents out so they can

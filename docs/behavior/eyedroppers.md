@@ -81,7 +81,8 @@ ms on the test machine).
 ## Attributes Eyedropper
 
 - Property bar: Select Object Attributes, Apply Object Attributes, the
-  Properties menu (Outline, Fill, Text; all on by default), the
+  Properties menu (Outline, Fill, Text, Transparency; all on by
+  default), the
   Transformations menu (Size, Rotation, Position; off by default) and
   Effects (off by default).
 - Select mode, click: reads fill, outline, the first text span's font
@@ -93,6 +94,11 @@ ms on the test machine).
   - Fill and Outline: `SetFill`, `SetStroke`.
   - Text: when both objects are text, every span of the target takes
     the sampled font; the text itself is kept.
+  - Transparency: the opacity and the transparency mask (fountain,
+    pattern or texture, with its merge mode and what it applies to) in
+    place of the target's own; its other live effects stay; a sample
+    without transparency clears the target's (#1338,
+    `eyedropper::tests::attributes_eyedropper_copies_transparency`).
   - Effects: opacity, drop shadow and the live effect list.
   - Size, Rotation, Position, in that order about the target's bounds
     centre: rotate by the angle difference, scale the bounds to the
@@ -105,9 +111,9 @@ ms on the test machine).
   clicks the red one then inside the empty one, then the empty one has
   a solid red fill; a Shift+click afterwards gives it a red outline.
 - Given a 10 x 20 mm blue rectangle at 50 % opacity and a 10 x 10 mm
-  empty one, with default groups the second gets the blue fill and keeps
-  its size and opacity; with Size and Effects ticked it becomes 10 x 20
-  mm about its own centre at 50 %.
+  empty one, with default groups the second gets the blue fill and the
+  50 % opacity and keeps its size; with Size and Effects ticked it
+  becomes 10 x 20 mm about its own centre.
 - `eyedropper::tests::eyedroppers_read_from_locked_objects_but_never_write_to_them`
 - `eyedropper::tests::pictures_give_their_pixels_wherever_they_are` (alone,
   grouped, inside a clip frame, kept as JPEG)

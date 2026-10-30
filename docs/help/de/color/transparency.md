@@ -30,6 +30,8 @@ einer Textur folgen.
 - **Fixieren**: behält das Durchscheinende so, wie es jetzt ist, auch wenn sich
   die Objekte darunter bewegen.
 
+Zum Entfernen klicken Sie am Ende der Eigenschaftsleiste auf [[toolbar.clear_transparency]] (oder wählen Sie [[transparency.none]] als Art).
+
 Um die Transparenz eines anderen Objekts zu kopieren, verwenden Sie
 [[menu.object > menu.object.copy_effect > menu.object.copy_transparency_from]].
 Für durchsichtige Bereiche, die durch die Helligkeit eines Objekts bestimmt

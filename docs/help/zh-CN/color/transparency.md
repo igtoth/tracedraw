@@ -15,4 +15,6 @@
 - 应用于 [[transparency.target_fill]]、[[transparency.target_outline]] 还是 [[transparency.target_all]]。
 - **冻结**：将透出的内容固定为当前状态，即使下方对象移动也不变。
 
+要去掉透明度，请点击属性栏末尾的 [[toolbar.clear_transparency]]（或将类型选为 [[transparency.none]]）。
+
 要复制另一个对象的透明度，请使用 [[menu.object > menu.object.copy_effect > menu.object.copy_transparency_from]]。关于由对象亮度定义的透明区域，请参阅 [不透明度蒙版](../objects/clip-frames.md#opacity-mask)。

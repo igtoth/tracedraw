@@ -24,6 +24,13 @@ double click on the line adds a node and on a node removes it. Edits are
 one undo step "Transparency" per drag; the fill is left alone
 (`fill_tool::tests::the_transparency_mask_has_nodes_and_a_midpoint`).
 
+Clear Transparency, a button at the end of the Transparency tool's bar
+and of the Properties docker's transparency part (greyed while no
+selected object has transparency), and None in the type list take the
+opacity back to 100 % and remove the mask, one "Clear Transparency" undo
+step (`App::clear_transparency`, #1338,
+`eyedropper::tests::clear_transparency_removes_masks_and_opacity`).
+
 Uniform transparency with Normal is the object's opacity. With any
 other merge mode it is kept as a mask of one grey (its lightness the
 opacity, `mixed::uniform_mask`), drawn the same way, so Multiply and the

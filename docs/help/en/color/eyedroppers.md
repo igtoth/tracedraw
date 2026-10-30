@@ -35,8 +35,9 @@ from one object to others.
 
 1. Choose the [[tool.attributes_eyedropper]] tool.
 2. On the property bar, choose what to copy:
-   - **Properties**: outline, fill and text (the font, size and style; the
-     text itself is kept). All on at first.
+   - **Properties**: outline, fill, text (the font, size and style; the
+     text itself is kept) and transparency (uniform, or a gradient, pattern
+     or texture with its merge mode). All on at first.
    - **Transformations**: size, rotation and position. Off at first.
    - **Effects**: transparency, drop shadow and live effects. Off at first.
 3. Click the object to copy from.
