@@ -2068,6 +2068,17 @@ fn part_row(ui: &mut Ui, stacked: bool, f: impl FnOnce(&mut Ui)) {
     }
 }
 
+/// Like `part_row`, but the docker stacks the controls in a column, so a
+/// slider takes the panel's width with its label above, as the Fill
+/// section's angle and edge pad do.
+fn part_column(ui: &mut Ui, stacked: bool, f: impl FnOnce(&mut Ui)) {
+    if stacked {
+        ui.vertical(f);
+    } else {
+        f(ui);
+    }
+}
+
 fn transparency_controls(app: &mut App, ui: &mut Ui, stacked: bool) {
     use crate::mixed::{transparency_mixed, TransparencyField as F};
     let kinds = [
@@ -2160,14 +2171,17 @@ fn transparency_controls(app: &mut App, ui: &mut Ui, stacked: bool) {
             target_list(ui, &mut set, &mut field);
         }
     });
-    part_row(ui, stacked, |ui| {
+    part_column(ui, stacked, |ui| {
         let kind_mixed = mixed.contains(&F::Kind);
         if set.kind == 0 && !kind_mixed {
             let amount_mixed = mixed.contains(&F::Amount);
             let mut amount = set.amount;
-            let slider = crate::ui::Slider::new(&mut amount, 0.0..=100.0)
+            let mut slider = crate::ui::Slider::new(&mut amount, 0.0..=100.0)
                 .suffix(" %")
                 .mixed(amount_mixed);
+            if stacked {
+                slider = slider.text(tr("docker.transparency_lc"));
+            }
             if ui
                 .add_enabled(has_selection, slider)
                 .rich_tip(crate::ui::tips::keyed("toolbar.transparency_amount"))
@@ -2179,13 +2193,23 @@ fn transparency_controls(app: &mut App, ui: &mut Ui, stacked: bool) {
         } else if set.kind == 1 && !kind_mixed {
             if let Fill::Fountain(f) = &mut set.mask {
                 let mut angle = f.angle;
-                if ui
-                    .add(
+                let angle_mixed = mixed.contains(&F::MaskAngle);
+                let resp = if stacked {
+                    ui.add(
+                        crate::ui::Slider::new(&mut angle, -180.0..=180.0)
+                            .text(tr("docker.angle_lc"))
+                            .suffix("°")
+                            .mixed(angle_mixed),
+                    )
+                } else {
+                    ui.add(
                         crate::ui::field::NumField::new(&mut angle)
                             .suffix("°")
                             .speed(1.0)
-                            .mixed(mixed.contains(&F::MaskAngle)),
+                            .mixed(angle_mixed),
                     )
+                };
+                if resp
                     .rich_tip(crate::ui::tips::pair(
                         "toolbar.angle",
                         "toolbar.fill_angle_desc",

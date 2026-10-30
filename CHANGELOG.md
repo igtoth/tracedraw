@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Properties docker, Transparency: the amount is a full-width slider with its label above, like the Fill section's angle and edge pad, and a fountain transparency's angle is the same angle slider. The property bar keeps its compact controls.
 ## 0.29.0 (2026-10-30)
 
 - Drop Shadow: a change on the property bar (Flat or an edge, offset, opacity, color...) applies at once to the selected objects, also to an object with no shadow yet, so a flat shadow can be given directly; it only set the default for new shadows before. The shadow handles are larger and can be grabbed from a little outside them. Native ellipses, polygons and stars are checked to cast and pick their shadow by their own outline, the same as after Convert to Curves. Shared code: desktop (Linux, Windows, macOS), web and Android (#1323).
