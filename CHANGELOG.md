@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Android app (phase 1 of a native port): the editor built as a shared library for 64-bit ARM tablets and phones, loaded by the system's NativeActivity, drawn with wgpu, with touch and stylus input, packaged as a debug-signed APK by `scripts/android/build.sh` and by CI. A fresh install starts in the Touch workspace. Not available yet: file dialogs (Open and Import do nothing; Save, Export and Publish to PDF write to the app's documents folder under the name given), the system clipboard, printing and external programs; see `docs/behavior/android.md` for the build steps, what works and the phases to come. The desktop and browser builds are unchanged; the app crate is now a library plus a thin program (#893).
+
 ## 0.26.0 (2026-10-30)
 
 - Trace Bitmap: the preview rests once the trace of the settings on show is in. In the browser, where a large picture's whole trace waits for OK, the preview waited for that trace and traced the picture again every frame: the spinner beside the pan button never stopped, the preview flickered and the window lagged. The quick look is now the request's last result there, the counts show it without the dots sign, and an idle dialog asks for no frames; a trace whose thread died is not started again until a setting changes.

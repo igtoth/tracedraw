@@ -403,6 +403,34 @@ jobs:
         with:
           path: site
 
+  # The Android app (docs/behavior/android.md): the editor as a shared
+  # library for 64-bit ARM in a debug-signed APK, built with the NDK and
+  # build tools the runner has. Kept with the run, not attached to the
+  # releases (its name does not match tracedraw-*).
+  android:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@1.97.0
+        with:
+          targets: aarch64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: android
+      - name: Build
+        run: |
+          # The newest NDK the runner has, the SDK's build tools and platform.
+          export ANDROID_NDK_HOME="${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}"
+          echo "NDK $ANDROID_NDK_HOME, SDK $ANDROID_HOME"
+          scripts/android/build.sh
+          ls -la dist-android/*.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: dist-android/*.apk
+          if-no-files-found: error
+
   # GitHub Pages must be set to "GitHub Actions" (Settings > Pages); the
   # job tries to enable it and does not fail the build when it cannot.
   pages:

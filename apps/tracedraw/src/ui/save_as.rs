@@ -105,6 +105,7 @@ impl SaveAsState {
             .map(Path::to_path_buf)
             .filter(|d| files::is_dir(d))
             .or_else(|| app.settings.last_dir.clone().filter(|d| files::is_dir(d)))
+            .or_else(files::save_dir)
             .or_else(|| {
                 files::places()
                     .into_iter()
@@ -572,7 +573,9 @@ pub fn size_text(bytes: u64) -> String {
 pub fn dialog(app: &mut App, ctx: &Context, st: &mut SaveAsState, close: &mut bool) {
     window(ctx, tr("dialog.save_drawing")).show(ctx, |ui| {
         ui.set_width(WIDTH);
-        if !files::WEB {
+        // No folders in a browser (a download) or on Android (the app's
+        // documents folder, named under the note).
+        if !files::WEB && !files::ANDROID {
             folder_bar(ui, st);
             ui.add_space(4.0);
             // The shortcuts and the list keep a fixed height (a vertical
@@ -594,6 +597,9 @@ pub fn dialog(app: &mut App, ctx: &Context, st: &mut SaveAsState, close: &mut bo
         }
         if files::WEB {
             ui.label(RichText::new(tr("dialog.download_hint")).color(Tokens::text_dim()));
+        }
+        if files::ANDROID {
+            ui.label(RichText::new(st.dir.display().to_string()).color(Tokens::text_dim()));
         }
         ui.add_space(6.0);
         if let Some(path) = st.replace.clone() {
