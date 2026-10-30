@@ -16,7 +16,9 @@ notch or rounded screen corners.
   the browser's menu and **Install app** or **Add to Home screen**. Chrome
   may also offer it in a bar under the address bar.
 - **iPad** (Safari): open the page, tap **Share**, then **Add to Home
-  Screen**.
+  Screen**. On an iPad or iPhone the Open and Import dialogs list every
+  file, since the system would grey out `.cdr` files otherwise; pick a
+  drawing TraceDraw opens.
 - **Desktop** (Chrome, Edge): click the install icon at the right end of the
   address bar, or choose **Install TraceDraw** in the browser's menu.
 

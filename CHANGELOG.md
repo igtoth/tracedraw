@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Browser version on an iPhone or iPad: Open and Import offer every file, so `.cdr`, `.cmx` and `.tdraw` files can be picked. The system greyed out the files whose type it does not know as soon as the page listed the extensions it takes, so only files such as SVG and EPS could be chosen (#1311).
+
 ## 0.28.0 (2026-10-30)
 
 - Variable fonts with many axes (Roboto Flex) draw their text: the font was listed and its axis sliders showed, but every letter came out empty because the glyph reader refused glyphs with more than 32 variation tuples (#870).

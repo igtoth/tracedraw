@@ -103,6 +103,30 @@ fn mime_for(name: &str) -> &'static str {
     }
 }
 
+/// Whether the page runs on an iPhone or iPad (see
+/// [`crate::files::apple_touch_browser`]), from the navigator's user
+/// agent, platform and touch points.
+pub fn apple_touch_browser() -> bool {
+    let Some(window) = web_sys::window() else {
+        return false;
+    };
+    let get = |o: &wasm_bindgen::JsValue, key: &str| {
+        js_sys::Reflect::get(o, &wasm_bindgen::JsValue::from_str(key)).ok()
+    };
+    let Some(navigator) = get(&window.into(), "navigator") else {
+        return false;
+    };
+    let text = |key: &str| {
+        get(&navigator, key)
+            .and_then(|v| v.as_string())
+            .unwrap_or_default()
+    };
+    let touch = get(&navigator, "maxTouchPoints")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0);
+    crate::files::apple_touch_browser(&text("userAgent"), &text("platform"), touch as u32)
+}
+
 /// A value from the browser's local storage.
 pub fn storage_get(key: &str) -> Option<String> {
     web_sys::window()?

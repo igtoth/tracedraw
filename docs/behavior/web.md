@@ -79,6 +79,17 @@ the same WebAssembly build, run by the system's browser engine.
   "Install app" or "Add to Home screen". Chrome may also show an install
   bar under the address bar.
 - iPad (Safari): open the page, tap Share, then "Add to Home Screen".
+
+On an iPhone or iPad the file picker of Open, Import and the other
+dialogs that pick a file lists no extensions: Safari and the other
+browsers there grey out every file whose extension the system does not
+know (`.cdr`, `.cmx`, `.tdraw`) once the page's file input names the
+extensions it accepts, so a drawing could not be chosen (#1311). The
+page is taken for one when the user agent or platform names an iPhone,
+iPad or iPod, or when it calls itself a Mac with touch points (iPadOS);
+`files::apple_touch_browser` decides, tested by
+`files::tests::apple_touch_browsers_are_told_apart`. A file of a type
+TraceDraw does not open then gets the usual message.
 - Desktop (Chrome, Edge): the install icon at the right end of the
   address bar, or the menu's "Install TraceDraw".
 

@@ -754,6 +754,21 @@ pub fn take_picked(key: &str) -> Option<PathBuf> {
     PICKED.with(|p| p.borrow_mut().remove(key))
 }
 
+/// Whether a browser with this user agent, platform and number of touch
+/// points runs on an iPhone, iPad or iPod, where the file picker greys
+/// out the files whose extension the system does not know (`.cdr`,
+/// `.tdraw`, `.cmx` ...) once the page names the extensions it takes
+/// (#1311). iPadOS browsers call themselves a Mac ("MacIntel",
+/// "Macintosh") with a touch screen; Macs have no touch points.
+#[cfg(any(target_arch = "wasm32", test))]
+pub fn apple_touch_browser(user_agent: &str, platform: &str, touch_points: u32) -> bool {
+    let named = ["iPhone", "iPad", "iPod"]
+        .iter()
+        .any(|d| user_agent.contains(d) || platform.starts_with(d));
+    let mac = platform == "MacIntel" || user_agent.contains("Macintosh");
+    named || (mac && touch_points > 1)
+}
+
 /// A file dialog description, the same in both builds.
 #[derive(Debug, Clone, Default)]
 pub struct Dialog {
@@ -928,9 +943,15 @@ impl Dialog {
     #[cfg(target_arch = "wasm32")]
     fn web_pick(self, then: Job) {
         let mut d = rfd::AsyncFileDialog::new();
-        for (name, exts) in &self.filters {
-            let exts: Vec<&str> = exts.iter().map(|e| e.as_str()).collect();
-            d = d.add_filter(name, &exts);
+        // On an iPhone or iPad the picker greys out every file whose
+        // extension the system does not know, `.cdr` among them, as soon
+        // as the page names the extensions it takes: there it offers
+        // every file instead (#1311).
+        if !crate::web::apple_touch_browser() {
+            for (name, exts) in &self.filters {
+                let exts: Vec<&str> = exts.iter().map(|e| e.as_str()).collect();
+                d = d.add_filter(name, &exts);
+            }
         }
         wasm_bindgen_futures::spawn_local(async move {
             let Some(handle) = d.pick_file().await else {
@@ -960,6 +981,24 @@ fn download(_name: &str, _bytes: &[u8]) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// iPhones and iPads (also iPadOS, which calls itself a Mac with a
+    /// touch screen) get a picker without extension filters; Macs,
+    /// Windows, Linux and Android keep them (#1311).
+    #[test]
+    fn apple_touch_browsers_are_told_apart() {
+        let ipad_os = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15";
+        assert!(apple_touch_browser(ipad_os, "MacIntel", 5));
+        assert!(!apple_touch_browser(ipad_os, "MacIntel", 0), "a Mac");
+        let iphone = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15";
+        assert!(apple_touch_browser(iphone, "iPhone", 5));
+        let old_ipad = "Mozilla/5.0 (iPad; CPU OS 12_0 like Mac OS X) AppleWebKit/605.1.15";
+        assert!(apple_touch_browser(old_ipad, "iPad", 5));
+        let android = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/130.0 Mobile Safari/537.36";
+        assert!(!apple_touch_browser(android, "Linux armv8l", 5));
+        let windows = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0 Safari/537.36";
+        assert!(!apple_touch_browser(windows, "Win32", 10));
+    }
 
     #[test]
     fn picked_paths_are_taken_once() {
