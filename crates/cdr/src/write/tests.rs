@@ -2332,7 +2332,7 @@ fn a_clip_frame_keeps_its_fill_under_and_outline_over_the_contents() {
         let bytes = document_to_cdr_version(&doc, v);
         let (back, rep) = crate::open_bytes(&bytes, "back").expect("reads back");
         let l = &back.pages[0].layers[0];
-        if v >= 12 {
+        if v >= 11 {
             // A clip container: the frame with its look, the contents
             // inside it (the next test).
             let ShapeKind::ClipFrame { frame, contents } = &l.shapes[0].kind else {
@@ -2356,7 +2356,7 @@ fn a_clip_frame_keeps_its_fill_under_and_outline_over_the_contents() {
     }
 }
 
-/// From version 12 a clip frame goes out as a clip container (#1222): the
+/// From version 11 a clip frame goes out as a clip container (#1222): the
 /// frame object names, in argument 8005, a group of the document's `LIST
 /// clpt` holding the contents, laid out as a version 27 file saved by the
 /// program that reads them holds its own (the group's flags, its loda of
@@ -2366,7 +2366,7 @@ fn a_clip_frame_keeps_its_fill_under_and_outline_over_the_contents() {
 /// written as a bitmap with a crop path and other frames as a plain group,
 /// which that program showed without the picture and the frame.
 #[test]
-fn clip_frames_go_out_as_clip_containers_from_version_12() {
+fn clip_frames_go_out_as_clip_containers_from_version_11() {
     let mut doc = doc_with(Vec::new());
     let mut ids = doc.ids().clone();
     let png = {
@@ -2422,7 +2422,7 @@ fn clip_frames_go_out_as_clip_containers_from_version_12() {
         let (back, rep) = crate::open_bytes(&bytes, "back").expect("reads back");
         let l = &back.pages[0].layers[0];
         assert_eq!(l.shapes.len(), 1, "{v}: {:?}", rep.warnings);
-        if v < 12 {
+        if v < 11 {
             assert!(
                 matches!(l.shapes[0].kind, ShapeKind::Group { .. }),
                 "{v}: {:?}",
@@ -2493,9 +2493,16 @@ fn clip_frames_go_out_as_clip_containers_from_version_12() {
                 .iter()
                 .map(|(t, b)| (*t, b.clone()))
                 .collect::<Vec<_>>(),
-            vec![(3500, vec![2, 0, 0, 0])],
-            "{v}"
+            if v <= 12 {
+                // With the zero rotation of every object of 7 to 12, as
+                // the clip groups of the version 11 file of #896.
+                vec![(12030, vec![0; 4]), (3500, vec![2, 0, 0, 0])]
+            } else {
+                vec![(3500, vec![2, 0, 0, 0])]
+            },
+            "{v}: the group's number plus one"
         );
+        assert_eq!(spnd.as_deref(), Some(&[1u8, 0, 0, 0][..]), "{v}");
         assert_eq!((*objects, *usdns), (2, 0), "{v}: no usdn inside the group");
         assert_eq!(containers.len(), 1, "{v}");
         let (body, cflags, cargs) = &containers[0];
@@ -2506,14 +2513,138 @@ fn clip_frames_go_out_as_clip_containers_from_version_12() {
         );
         assert_eq!(&body[4..], &[1u8, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0], "{v}");
         assert_eq!(cflags[2], 0x10, "{v}");
-        assert!(
+        // The container's id and zero from 12 (the version 11 file's
+        // containers have neither).
+        assert_eq!(
             cargs.iter().any(|(t, b)| *t == 40001 && b.len() == 16),
+            v >= 12,
             "{v}"
         );
-        assert!(
+        assert_eq!(
             cargs.iter().any(|(t, b)| *t == 40200 && *b == [0; 4]),
+            v >= 12,
             "{v}"
         );
+    }
+}
+
+/// Every clip group of the files of versions 11, 14, 25, 26 and 27 holds
+/// its own number (`spnd`) plus one in argument 3500, a number no other
+/// object takes (#1226). TraceDraw wrote 2 for every group, which is
+/// right only for a group numbered 1: here two texts and two frames take
+/// numbers, so at least one group has another. Each container names its own group, each group's
+/// 3500 is its number plus one, no `spnd` repeats or takes one of those,
+/// and the checker passes the file (`check::tests::clip_groups_hold_their_number_plus_one`
+/// reports a group written the old way).
+#[test]
+fn clip_groups_hold_their_number_plus_one_after_text_and_other_clips() {
+    let mut doc = doc_with(Vec::new());
+    let mut ids = doc.ids().clone();
+    let mut shapes = vec![
+        text_shape(
+            &mut ids,
+            vec![TextSpan::new("first", "Arial", 12.0)],
+            TextAlign::Left,
+        ),
+        text_shape(
+            &mut ids,
+            vec![TextSpan::new("second", "Arial", 12.0)],
+            TextAlign::Left,
+        ),
+    ];
+    for k in 0..2 {
+        let dx = 80.0 * k as f64;
+        let mut dot = Shape::new(
+            ids.shape(),
+            ShapeKind::Rect {
+                rect: Rect::new(10.0 + dx, 10.0, 40.0 + dx, 30.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        dot.fill = Fill::Solid(Color::rgb8(0, 0, 255));
+        dot.stroke = None;
+        let mut frame = Shape::new(
+            ids.shape(),
+            ShapeKind::Ellipse {
+                rect: Rect::new(20.0 + dx, 5.0, 60.0 + dx, 35.0),
+                arc: None,
+            },
+        );
+        frame.fill = Fill::Solid(Color::rgb8(255, 240, 0));
+        frame.stroke = Some(Stroke::new(Color::BLACK, 0.5));
+        shapes.push(Shape::new(
+            ids.shape(),
+            ShapeKind::ClipFrame {
+                frame: Box::new(frame),
+                contents: vec![dot],
+            },
+        ));
+    }
+    doc.pages[0].layers[0].shapes = shapes;
+    doc.set_ids(ids);
+    for v in versions().into_iter().filter(|v| *v >= 11) {
+        let bytes = document_to_cdr_version(&doc, v);
+        let (_, tree, riff) = chunk_ids(&bytes);
+        let u32_of = |b: &[u8]| {
+            b.get(..4)
+                .and_then(|b| b.try_into().ok())
+                .map(u32::from_le_bytes)
+        };
+        let mut groups = Vec::new();
+        let mut named = Vec::new();
+        let mut spnds = Vec::new();
+        tree.root.walk(&mut |c, _| {
+            if let Some(n) = c
+                .find(b"spnd")
+                .and_then(|s| u32_of(tree.data(&riff, s)))
+                .filter(|_| c.is(b"obj ") || c.is(b"grp "))
+            {
+                spnds.push(n);
+            }
+            if c.is(b"clpt") {
+                for g in c.children.iter().filter(|g| g.is(b"grp ")) {
+                    let n = g.find(b"spnd").and_then(|s| u32_of(tree.data(&riff, s)));
+                    let (_, args) = layer_args(&tree, &riff, g);
+                    let link = args
+                        .iter()
+                        .find(|(t, _)| *t == 3500)
+                        .and_then(|(_, b)| u32_of(b));
+                    groups.push((n, link));
+                }
+            } else if c.is(b"obj ") {
+                let (_, args) = layer_args(&tree, &riff, c);
+                if let Some((_, b)) = args.iter().find(|(t, _)| *t == 8005) {
+                    named.push(u32_of(b));
+                }
+            }
+        });
+        assert_eq!(groups.len(), 2, "{v}");
+        // Texts or the other clip take the numbers before at least one
+        // group (the order objects go out in differs between versions).
+        assert!(
+            groups.iter().any(|(n, _)| n.is_some_and(|n| n > 2)),
+            "{v}: {groups:?}"
+        );
+        for (n, link) in &groups {
+            let n = n.unwrap_or_else(|| panic!("{v}: group without a number"));
+            assert_eq!(*link, Some(n + 1), "{v}: group {n}");
+            assert!(named.contains(&Some(n)), "{v}: no container names {n}");
+            assert!(!spnds.contains(&(n + 1)), "{v}: {} taken", n + 1);
+        }
+        let mut sorted = spnds.clone();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(sorted.len(), spnds.len(), "{v}: {spnds:?}");
+        let findings = crate::check::check_bytes(&bytes).expect("checks");
+        assert!(findings.is_empty(), "{v}: {findings:?}");
+        let (back, rep) = crate::open_bytes(&bytes, "back").expect("reads back");
+        let clips = back.pages[0].layers[0]
+            .shapes
+            .iter()
+            .filter(|s| matches!(s.kind, ShapeKind::ClipFrame { .. }))
+            .count();
+        assert_eq!(clips, 2, "{v}: {:?}", rep.warnings);
     }
 }
 
@@ -2961,10 +3092,10 @@ fn bitmap_boxes_start_at_the_origin_and_their_transform_places_them() {
         assert_eq!([i(0), i(4), i(8), i(12)], want_box, "{v}");
         let count_at = if v == 8 { 64 } else { 72 };
         let n = i(count_at) as usize;
-        // From version 12 the frame is a clip container and the picture
-        // inside it keeps its whole rectangle as its outline (#1222);
-        // before, the frame is the picture's crop outline.
-        if v >= 12 {
+        // From version 11 the frame is a clip container and the picture
+        // inside it keeps its whole rectangle as its outline (#1222,
+        // #1226); before, the frame is the picture's crop outline.
+        if v >= 11 {
             assert_eq!(n, 5, "{v}: {n} points");
         } else {
             assert!(n > 5, "{v}: {n} points");

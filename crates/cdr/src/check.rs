@@ -357,8 +357,27 @@ impl<'a> Checker<'a> {
         });
         for clip in clips {
             for g in clip.children.iter().filter(|g| g.is(b"grp ")) {
-                if let Some(n) = g.find(b"spnd").and_then(|s| u32_at(self.data(s), 0)) {
-                    self.clip_groups.insert(n);
+                let Some(n) = g.find(b"spnd").and_then(|s| u32_at(self.data(s), 0)) else {
+                    continue;
+                };
+                self.clip_groups.insert(n);
+                // Argument 3500 holds the group's number plus one in every
+                // clip group of the files of versions 11, 14, 25, 26 and 27.
+                let link = g
+                    .find(b"lgob")
+                    .and_then(|l| l.find(b"loda"))
+                    .and_then(|l| loda_args(self.data(l)))
+                    .and_then(|(_, args)| {
+                        args.iter()
+                            .find(|(ty, _)| *ty == crate::write::ARG_CLIP_GROUP)
+                            .and_then(|(_, body)| u32_at(body, 0))
+                    });
+                if link != n.checked_add(1) {
+                    let found = link.map_or("none".to_string(), |l| l.to_string());
+                    self.note(
+                        &format!("clpt group {n}"),
+                        format!("clip group argument 3500 is {found}, not its number plus one"),
+                    );
                 }
             }
             clip.walk(&mut |c, _| {
@@ -1449,6 +1468,53 @@ mod tests {
             with_style(r#"{"character":{"outline":{"width":"0"}},"outline":{"width":"0"}}"#),
             0
         );
+    }
+
+    /// A clip group whose argument 3500 is not its `spnd` number plus one
+    /// is reported, as TraceDraw wrote 2 for every group (right for group
+    /// 1 alone); every clip group of the files holds its number plus one
+    /// (#1226).
+    #[test]
+    fn clip_groups_hold_their_number_plus_one() {
+        let group = |n: u32, link: u32| {
+            list(
+                b"grp ",
+                &[
+                    chunk(b"spnd", &u32s(&[n])),
+                    chunk(b"flgs", &[0, 8, 0x80, 0x10]),
+                    list(
+                        b"lgob",
+                        &chunk(
+                            b"loda",
+                            &loda(0, &[(crate::write::ARG_CLIP_GROUP, u32s(&[link]))]),
+                        ),
+                    ),
+                ]
+                .concat(),
+            )
+        };
+        let reported = |groups: &[(u32, u32)]| {
+            let clpt: Vec<u8> = groups.iter().flat_map(|&(n, l)| group(n, l)).collect();
+            let body = [
+                chunk(b"vrsn", &u16s(&[1300])),
+                chunk(b"mcfg", &mcfg(V, 2_540_000, 2_540_000)),
+                chunk(b"fild", &solid_fild_v13(1, (255, 0, 0))),
+                chunk(b"outl", &outl(7, 1.0)),
+                stlt(),
+                list(b"clpt", &clpt),
+                list(b"page", &list(b"layr", &obj(&square()))),
+            ]
+            .concat();
+            check_bytes(&riff(b"CDRD", &body))
+                .expect("checks")
+                .iter()
+                .filter(|f| f.what.contains("argument 3500"))
+                .count()
+        };
+        assert_eq!(reported(&[(1, 2)]), 0);
+        assert_eq!(reported(&[(1, 2), (3, 4), (26, 27)]), 0);
+        // The old writer's 2 on groups 3 and 5.
+        assert_eq!(reported(&[(1, 2), (3, 2), (5, 2)]), 2);
     }
 
     #[test]

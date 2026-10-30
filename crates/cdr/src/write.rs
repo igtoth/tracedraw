@@ -17,9 +17,9 @@
 //! expanded effects), groups, artistic text with one font, size and style
 //! per run, bitmaps (24-bit), solid and fountain fills, outlines (width,
 //! caps, joins, dashes, nib, "scale with object", "behind fill") and
-//! uniform transparency. From version 12 a clip frame is a clip
+//! uniform transparency. From version 11 a clip frame is a clip
 //! container: the frame object names, in argument 8005, a group of the
-//! document's `LIST clpt` that holds the contents (#1222). Before 12 a
+//! document's `LIST clpt` that holds the contents (#1222). Before 11 a
 //! clip frame holding one bitmap becomes that bitmap with the frame as
 //! its crop path, other clip frames a group of the frame outline and
 //! the contents. Rectangles of versions 15 and later
@@ -218,9 +218,10 @@ const ARG_TEXT_LINK: u32 = 16015;
 const ARG_HIDDEN: u32 = 16016;
 /// On guides layers of version 17 and later: 2.
 const ARG_GUIDES_MODE: u32 = 16001;
-/// On the group of `LIST clpt` holding a clip container's contents: 2
-/// (files of versions 25 and 27).
-const ARG_CLIP_GROUP: u32 = 3500;
+/// On the group of `LIST clpt` holding a clip container's contents: the
+/// group's number (its `spnd`) plus one, in every clip group of the files
+/// of versions 11, 14, 25, 26 and 27 (2 for the group numbered 1).
+pub(crate) const ARG_CLIP_GROUP: u32 = 3500;
 /// On a clip container (version 27): a 16-byte id of its own, and 0.
 const ARG_CLIP_GUID: u32 = 40001;
 const ARG_CLIP_ZERO: u32 = 40200;
@@ -353,8 +354,16 @@ impl Ver {
     }
     /// Clip frames go out as clip containers (argument 8005 naming a
     /// group of `LIST clpt`): the layout read from a version 12 file and
-    /// written as files of versions 25 and 27 hold it.
+    /// written as files of versions 25 and 27 hold it. A version 11 file
+    /// (#896) holds its clip frames the same way (2026-10-30, #1226);
+    /// before 11 none was seen.
     fn clip_containers(self) -> bool {
+        self.0 >= 11
+    }
+    /// The container's own id (40001) and zero (40200), as files of
+    /// versions 25 to 27 have them; the containers of the version 11 file
+    /// have neither.
+    fn clip_container_ids(self) -> bool {
         self.0 >= 12
     }
     /// Blends go out live: an empty `LIST lnkg` of object type 7 between
@@ -4036,21 +4045,26 @@ impl<'a> Writer<'a> {
         let Some(b) = inner.bounds else {
             return self.object(&f, centre, depth);
         };
+        // The group takes the next number and its argument 3500 the one
+        // after it, which no other object takes: every clip group of the
+        // files of versions 11, 14, 25, 26 and 27 holds its number plus
+        // one there. (Written 2 for every group before: a second clip, or
+        // text written before the first, broke that.)
         let number = self.next_spnd;
-        self.next_spnd += 1;
+        self.next_spnd += 2;
+        let mut group_args = vec![(ARG_CLIP_GROUP, (number + 1).to_le_bytes().to_vec())];
+        // The zero rotation every object of versions 7 to 12 carries; the
+        // clip groups of the version 11 file have it too.
+        if self.v.rotation_arg() {
+            group_args.push((ARG_ROTATION, vec![0; 4]));
+        }
         let b = b - centre.to_vec2();
         let mut body = vec![
             chunk(b"spnd", number.to_le_bytes().to_vec()),
             chunk(b"flgs", CLIP_GROUP_FLAGS.to_vec()),
             chunk(b"bbox", box_bytes(b)),
             chunk(b"obbx", obbx_bytes(b, 0.0)),
-            list(
-                b"lgob",
-                vec![chunk(
-                    b"loda",
-                    loda(0, vec![(ARG_CLIP_GROUP, 2u32.to_le_bytes().to_vec())]),
-                )],
-            ),
+            list(b"lgob", vec![chunk(b"loda", loda(0, group_args))]),
         ];
         body.extend(inner.nodes);
         self.clip_groups.push(list(b"grp ", body));
@@ -4462,8 +4476,10 @@ impl<'a> Writer<'a> {
                 ARG_CLIP_CONTENTS,
                 [n, 1, 0, 1].iter().flat_map(|x| x.to_le_bytes()).collect(),
             ));
-            args.push((ARG_CLIP_GUID, self.guid().to_vec()));
-            args.push((ARG_CLIP_ZERO, vec![0; 4]));
+            if v.clip_container_ids() {
+                args.push((ARG_CLIP_GUID, self.guid().to_vec()));
+                args.push((ARG_CLIP_ZERO, vec![0; 4]));
+            }
         }
         if v.rotation_arg() {
             args.push((ARG_ROTATION, vec![0; 4]));
