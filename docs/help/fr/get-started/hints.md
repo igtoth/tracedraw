@@ -18,6 +18,11 @@ depuis [[menu.window > menu.window.dockers]].
   outil pour voir sa page.
 - Une page d'**outil** explique comment utiliser l'outil, une instruction par
   ligne avec les touches en gras, et renvoie au sujet qui liste l'outil.
+- Une page **objet** apparaît quand vous sélectionnez quelque chose : elle
+  nomme ce que vous avez choisi (une courbe, un rectangle, du texte, un
+  bitmap, un groupe, un cadre de découpe, un dégradé de formes, une cote,
+  etc., ou plusieurs objets), dit ce que vous pouvez en faire, liste les
+  outils qui s'y appliquent et indique ce que la barre de propriétés propose.
 
 Chaque page se termine par [[hint.learn_more]], un lien vers la page de cette
 Aide qui explique entièrement l'outil ou le sujet.
@@ -27,3 +32,8 @@ Aide qui explique entièrement l'outil ou le sujet.
 Quand vous choisissez un autre outil, le panneau affiche la page de cet
 outil. La barre en bas du panneau contient [[hint.home]] à gauche, et
 [[hint.back]] et suivant à droite, comme un navigateur web.
+
+Sélectionner un objet affiche sa page ; un clic dans un endroit vide, pour
+ne plus rien sélectionner, ramène la page de l'outil utilisé. Pendant que vous
+dessinez avec un outil de dessin, l'objet tout juste dessiné laisse la page de
+l'outil affichée ; cliquez sur l'objet pour voir sa page.

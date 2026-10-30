@@ -51,6 +51,3 @@ benennen, lesen Sie unter
 
 Eine gesuchte Füllfarbe wird überall ersetzt, wo sie vorkommt, auch in
 Verläufen. Gesperrte Objekte bleiben unverändert.
-
-Jede Option, wie Farben verglichen werden und was jede Ersetzung bewirkt,
-beschreibt [Nach Eigenschaften suchen und ersetzen](find-by-properties.md).

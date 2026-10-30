@@ -73,6 +73,3 @@ colors.
 
 Without loaded profiles, TraceDraw converts colors with its own model of
 process inks on coated paper.
-
-To turn every color of the selection or the drawing into CMYK or RGB through
-these profiles, see [Converting colors to CMYK or RGB](convert-colors.md).

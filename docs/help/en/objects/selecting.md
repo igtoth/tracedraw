@@ -17,10 +17,7 @@ freehand loop.
   turn over the objects the frame takes: those selected are deselected and
   the others added. Hold <kbd>Ctrl</kbd> to keep the frame square.
 - <kbd>Ctrl</kbd>+click selects an object inside a group, one level further
-  in at each click. Its handles are round, and changes act on it alone; drag
-  it from anywhere on it to move it alone. <kbd>Ctrl</kbd>+click on a clip
-  frame starts editing its contents instead (see
-  [Clip frames](clip-frames.md#edit-contents)).
+  in at each click. Its handles are round, and changes act on it alone.
 - <kbd>Alt</kbd>+click selects the object beneath the selected one, to reach
   objects that are covered.
 - <kbd>Tab</kbd> and <kbd>Shift+Tab</kbd> select the next or previous object.
@@ -30,19 +27,6 @@ freehand loop.
 
 The selected objects show eight square handles around them and a small cross
 in the middle. The status bar says what is selected and on which layer.
-
-The pointer shows the move arrows only over what is selected. Over any other
-object it keeps the plain arrow, since a press there picks that object first;
-dragging an unselected object still picks and moves it. A right click while
-you drag a selection frame is ignored: the frame goes on and selects when you
-let go of the left button.
-
-Drawing and shaping tools whose click has no job of its own (the rectangle,
-ellipse, polygon and other shape tools, the Knife, the connectors, Blend and
-others) select too: click an object to select it, <kbd>Shift</kbd>+click to
-add or take it away, <kbd>Ctrl</kbd>+click to reach into groups, and click
-empty space to select nothing. A drag still draws. The line tools and the
-Text tool keep their clicks.
 
 ### Moving, resizing and turning {#transform-with-pick}
 
@@ -56,12 +40,7 @@ Text tool keep their clicks.
 - Click a selected object again to show the rotation handles: drag a curved
   corner arrow to rotate, a side arrow to skew. Hold <kbd>Ctrl</kbd> for steps
   of 15 degrees. Drag the ring in the middle to turn about another point;
-  double-click it to put it back in the middle. In this rotate mode, a node of
-  the selection (or the middle of a segment) dragged turns the selection
-  about the ring; let go near another object's edge and the node lands
-  exactly on it, so an arc turned about one end can be laid onto a line. The
-  rotate handle still snaps to other objects' nodes, midpoints and centres to
-  aim the turn at one.
+  double-click it to put it back in the middle.
 - While dragging, press <kbd>Space</kbd> or click the right button to leave
   a copy where the objects were; <kbd>Esc</kbd> cancels the drag.
 - The arrow keys nudge the selection by the nudge distance (2.54 mm at

@@ -6,7 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
-- Help: pages brought up to date with releases 0.19 to 0.27 (opening and saving, fonts, text, printing, export, drawing tools, objects, colours, effects, pages, options, menus and shortcuts), and new pages for Package, Missing Fonts, Convert Colors, finding by properties, PDF printers' marks, booklets, Fit Objects to Path, the Before and After preview, graphics tablets and tablets with the Android app; Brazilian Portuguese follows, other languages where the pages changed most. Docs only.
+- Hints panel: selecting an object now shows a page for what was picked (a curve, rectangle, ellipse, polygon or star, artistic or paragraph text, bitmap, group, clip frame, blend, dimension, connector, callout, table, symbol, an object with an effect, or several objects): what you can do with it, the tools that work on it and what the property bar offers. Letting go of the selection goes back to the tool's page. Before, the page changed only when a tool was chosen.
 - Browser version: its notice now opens with the warning that a browser is slower, marked in red and underlined, then says it is the same program compiled to WebAssembly, and last points to the desktop app, in every language.
 
 ## 0.27.0 (2026-10-30)

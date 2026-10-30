@@ -1,7 +1,5 @@
 # Misturas
 
-> *Tradução automática: esta página pode estar atrasada em relação à versão em inglês.*
-
 Uma mistura desenha uma série de passos intermediários entre dois objetos,
 mudando forma, tamanho e cor de um para o outro. Use-a para sombreamentos
 suaves, padrões repetidos ou uma forma que se transforma em outra.
@@ -47,24 +45,6 @@ painel vale na hora.
 
 A barra de propriedades da ferramenta tem os passos, a rotação e as duas
 acelerações.
-
-### Controles na tela {#canvas-controls}
-
-Escolha uma mistura com a ferramenta [[tool.blend]] (clique no objeto inicial
-ou final, ou em um passo) para mostrar os controles: um quadrado no objeto
-inicial, um quadrado cruzado no final, a linha entre eles e dois controles
-deslizantes nela, a aceleração dos objetos em cima e a das cores embaixo.
-
-- Arraste um controle para o início ou o fim para juntar ali os passos ou as
-  cores. A mistura acompanha ao vivo, cada arraste é um passo de desfazer, e
-  a barra de propriedades acompanha.
-- Arraste um quadrado da ponta para mover o objeto dele, e a mistura muda de
-  direção. Solte-o sobre outro objeto para torná-lo o novo início ou fim, com
-  as configurações da mistura.
-
-A aceleração dos objetos move os passos para uma ponta também quando a mistura
-não segue um caminho. Um efeito de bitmap no objeto inicial mantém a mistura
-desenhada.
 
 ## Misturar ao longo de um caminho {#path}
 

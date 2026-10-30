@@ -1,7 +1,5 @@
 # Sobre o TraceDraw e atualizações
 
-> *Tradução automática: esta página pode estar atrasada em relação à versão em inglês.*
-
 O TraceDraw é livre e de código aberto. Esta página explica como ver qual
 versão você tem, como obter uma mais nova e onde pedir ajuda.
 
@@ -54,13 +52,6 @@ Na primeira vez que o TraceDraw inicia, ele pergunta se deve procurar atualizaç
 
 > **Observação:** A versão para navegador é sempre a mais recente. Nela,
 > [[menu.help > menu.help.updates]] abre a página de versões.
-
-A cópia instalada pela Microsoft Store e o app para Android são atualizados
-pela loja: nunca consultam o GitHub, [[menu.help > menu.help.updates]] abre a
-página deles na loja, e as opções não têm verificação de atualizações. Toda
-outra instalação baixa o arquivo feito para o seu processador e para o modo
-como foi instalada (instalador, zip portátil, AppImage, `.deb`, arquivo
-compactado ou imagem de disco).
 
 ## A Tela de boas-vindas {#welcome-screen}
 

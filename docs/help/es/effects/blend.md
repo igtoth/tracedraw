@@ -1,7 +1,5 @@
 # Mezclas
 
-> *Traducción automática: esta página puede ir por detrás de la versión en inglés.*
-
 Una mezcla dibuja una serie de pasos intermedios entre dos objetos, cambiando
 la forma, el tamaño y el color de uno a otro. Úsela para sombreados suaves,
 patrones repetidos o una forma que se transforma en otra.
@@ -48,24 +46,6 @@ panel se aplica de inmediato.
 
 La barra de propiedades de la herramienta tiene los pasos, la rotación y las
 dos aceleraciones.
-
-### Controles en el lienzo {#canvas-controls}
-
-Elija una mezcla con la herramienta [[tool.blend]] (haga clic en su objeto
-inicial o final, o en un paso) para ver sus controles: un cuadrado en el objeto
-inicial, un cuadrado tachado en el final, la línea entre ambos y dos
-deslizadores sobre ella, la aceleración de objetos arriba y la de color abajo.
-
-- Arrastre un deslizador hacia el inicio o el final para agrupar allí los
-  pasos o los colores. La mezcla sigue en vivo, cada arrastre es un paso de
-  deshacer y la barra de propiedades se actualiza.
-- Arrastre un cuadrado de un extremo para mover su objeto, y la mezcla cambia
-  de dirección. Suéltelo sobre otro objeto para que este sea el nuevo inicio
-  o final, con los ajustes de la mezcla.
-
-La aceleración de objetos mueve los pasos hacia un extremo también cuando la
-mezcla no sigue un trayecto. Un efecto de mapa de bits en el objeto inicial
-mantiene la mezcla dibujada.
 
 ## Mezclar a lo largo de un trayecto {#path}
 

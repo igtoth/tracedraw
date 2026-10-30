@@ -1,7 +1,5 @@
 # Fusioni
 
-> *Traduzione automatica: questa pagina può essere meno aggiornata della versione inglese.*
-
 Una fusione disegna una serie di passaggi intermedi tra due oggetti, cambiando
 forma, dimensione e colore dall'uno all'altro. Usala per ombreggiature
 morbide, motivi ripetuti o una forma che si trasforma in un'altra.
@@ -48,25 +46,6 @@ pannello si applica subito.
 
 La barra delle proprietà dello strumento contiene i passaggi, la rotazione e
 le due accelerazioni.
-
-### Controlli sulla tela {#canvas-controls}
-
-Scegliete una fusione con lo strumento [[tool.blend]] (fate clic sull'oggetto
-iniziale o finale, o su un passo) per vederne i controlli: un quadrato
-sull'oggetto iniziale, un quadrato barrato su quello finale, la linea tra loro
-e due cursori su di essa, l'accelerazione degli oggetti sopra e quella dei
-colori sotto.
-
-- Trascinate un cursore verso l'inizio o la fine per addensare lì i passi o i
-  colori. La fusione segue dal vivo, ogni trascinamento è un passo di
-  annullamento e la barra delle proprietà si aggiorna.
-- Trascinate un quadrato di estremità per spostarne l'oggetto, e la fusione
-  cambia direzione. Rilasciatelo su un altro oggetto per farne il nuovo
-  inizio o la nuova fine, con le impostazioni della fusione.
-
-L'accelerazione degli oggetti sposta i passi verso un'estremità anche quando
-la fusione non segue un tracciato. Un effetto bitmap sull'oggetto iniziale
-mantiene la fusione disegnata.
 
 ## Fondere lungo un tracciato {#path}
 

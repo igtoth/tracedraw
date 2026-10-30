@@ -18,6 +18,11 @@ verwenden, während Sie es verwenden. Es ist anfangs geöffnet, neben
 - Eine **Werkzeugseite** erklärt die Verwendung des Werkzeugs, eine Anweisung
   pro Zeile mit den Tasten in Fettschrift, und verweist auf das Thema, das das
   Werkzeug auflistet.
+- Eine **Objektseite** erscheint, wenn Sie etwas auswählen: Sie nennt, was
+  Sie ausgewählt haben (eine Kurve, ein Rechteck, Text, eine Bitmap, eine
+  Gruppe, einen Beschneidungsrahmen, eine Überblendung, eine Maßlinie usw.
+  oder mehrere Objekte), sagt, was Sie damit tun können, listet die passenden
+  Werkzeuge auf und zeigt, was die Eigenschaftsleiste dafür bietet.
 
 Jede Seite endet mit [[hint.learn_more]], einem Link zu der Seite dieser Hilfe,
 die das Werkzeug oder Thema ausführlich erklärt.
@@ -27,3 +32,9 @@ die das Werkzeug oder Thema ausführlich erklärt.
 Wenn Sie ein anderes Werkzeug wählen, zeigt das Andockfenster die Seite dieses
 Werkzeugs. Die Leiste unten im Andockfenster hat links [[hint.home]] und rechts
 [[hint.back]] und Vorwärts, wie ein Webbrowser.
+
+Wenn Sie ein Objekt auswählen, zeigt das Andockfenster dessen Seite; ein
+Klick auf eine leere Stelle, sodass nichts mehr ausgewählt ist, bringt die
+Seite des aktiven Werkzeugs zurück. Beim Zeichnen mit einem Zeichenwerkzeug
+bleibt die Werkzeugseite sichtbar; klicken Sie auf das Objekt, um seine Seite
+zu sehen.

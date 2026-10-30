@@ -8234,6 +8234,44 @@ fn frame_times_with_many_fonts() {
     }
 }
 
+/// The Hints panel follows what is picked: a click on the rectangle with
+/// the Pick tool shows the rectangle's page, Convert to Curves turns it
+/// into the curve's page, a click on empty space goes back to the Pick
+/// tool's page, and a newly chosen tool still shows its own page. A
+/// rectangle just drawn with the Rectangle tool leaves its steps in view.
+#[test]
+fn the_hints_panel_shows_the_page_of_the_picked_object() {
+    use crate::ui::hints::{HintPage, ObjectKind};
+    let (ctx, mut app, id) = setup();
+    app.docker_tab = crate::app::DockerTab::Hints;
+    app.show_dockers = true;
+    app.select(Vec::new());
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    assert!(!matches!(app.hints.current(), HintPage::Object(_)));
+    click_page(&ctx, &mut app, Point::new(35.0, 25.0));
+    assert_eq!(app.selection, vec![id]);
+    assert_eq!(app.hints.current(), HintPage::Object(ObjectKind::Rectangle));
+    app.convert_to_curves();
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    assert_eq!(app.hints.current(), HintPage::Object(ObjectKind::Curve));
+    click_page(&ctx, &mut app, Point::new(150.0, 200.0));
+    assert!(app.selection.is_empty());
+    assert_eq!(app.hints.current(), HintPage::Tool(Tool::Pick));
+    // Back goes to the object's page, as in a browser.
+    app.hints.back();
+    assert_eq!(app.hints.current(), HintPage::Object(ObjectKind::Curve));
+    // A rectangle drawn with the Rectangle tool: its steps stay.
+    app.set_tool(Tool::Rectangle);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    assert_eq!(app.hints.current(), HintPage::Tool(Tool::Rectangle));
+    let from = app.view.to_screen(Point::new(100.0, 100.0));
+    let to = app.view.to_screen(Point::new(140.0, 130.0));
+    drag(&ctx, &mut app, from, to, Modifiers::NONE, Vec::new());
+    assert_eq!(app.selection.len(), 1, "the new rectangle is selected");
+    assert_eq!(app.hints.current(), HintPage::Tool(Tool::Rectangle));
+}
+
 /// The Welcome Screen tab closes to its house while a drawing is open;
 /// the house shows the Welcome Screen again with its whole tab (#677).
 #[test]
