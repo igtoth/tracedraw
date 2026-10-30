@@ -116,8 +116,12 @@ Nunca há mais de 1000 objetos ao todo.
   [[docker.fit_to_path_order_selected]] (o padrão),
   [[docker.fit_to_path_order_reversed]], [[docker.fit_to_path_order_ltr]],
   [[docker.fit_to_path_order_rtl]], [[docker.fit_to_path_order_largest]],
-  [[docker.fit_to_path_order_smallest]] ou
-  [[docker.fit_to_path_order_alternate]].
+  [[docker.fit_to_path_order_smallest]],
+  [[docker.fit_to_path_order_alternate]], [[docker.fit_to_path_order_ttb]],
+  [[docker.fit_to_path_order_btt]], [[docker.fit_to_path_order_tall]],
+  [[docker.fit_to_path_order_short]], [[docker.fit_to_path_order_wide]],
+  [[docker.fit_to_path_order_narrow]] ou [[docker.fit_to_path_order_random]]
+  (embaralhados sempre do mesmo modo para os mesmos objetos).
 - [[docker.fit_to_path_reverse]] (desligado): começa pela outra ponta do
   caminho.
 

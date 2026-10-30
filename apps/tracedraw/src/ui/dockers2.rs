@@ -3218,6 +3218,13 @@ fn fit_to_path(app: &mut App, ui: &mut Ui) {
         (FitOrder::LargestFirst, "docker.fit_to_path_order_largest"),
         (FitOrder::SmallestFirst, "docker.fit_to_path_order_smallest"),
         (FitOrder::Alternate, "docker.fit_to_path_order_alternate"),
+        (FitOrder::TopToBottom, "docker.fit_to_path_order_ttb"),
+        (FitOrder::BottomToTop, "docker.fit_to_path_order_btt"),
+        (FitOrder::TallToShort, "docker.fit_to_path_order_tall"),
+        (FitOrder::ShortToTall, "docker.fit_to_path_order_short"),
+        (FitOrder::WideToNarrow, "docker.fit_to_path_order_wide"),
+        (FitOrder::NarrowToWide, "docker.fit_to_path_order_narrow"),
+        (FitOrder::Random, "docker.fit_to_path_order_random"),
     ];
     let cur = orders
         .iter()

@@ -112,8 +112,12 @@ There are never more than 1000 objects in all.
   [[docker.fit_to_path_order_selected]] (the default),
   [[docker.fit_to_path_order_reversed]], [[docker.fit_to_path_order_ltr]],
   [[docker.fit_to_path_order_rtl]], [[docker.fit_to_path_order_largest]],
-  [[docker.fit_to_path_order_smallest]] or
-  [[docker.fit_to_path_order_alternate]].
+  [[docker.fit_to_path_order_smallest]],
+  [[docker.fit_to_path_order_alternate]], [[docker.fit_to_path_order_ttb]],
+  [[docker.fit_to_path_order_btt]], [[docker.fit_to_path_order_tall]],
+  [[docker.fit_to_path_order_short]], [[docker.fit_to_path_order_wide]],
+  [[docker.fit_to_path_order_narrow]] or [[docker.fit_to_path_order_random]]
+  (shuffled the same way each time for the same objects).
 - [[docker.fit_to_path_reverse]] (off): starts from the other end of the
   path.
 

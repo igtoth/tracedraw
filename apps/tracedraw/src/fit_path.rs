@@ -68,6 +68,20 @@ pub enum FitOrder {
     SmallestFirst,
     /// Largest, smallest, next largest, next smallest and so on.
     Alternate,
+    /// By their centres, from the top down.
+    TopToBottom,
+    /// By their centres, from the bottom up.
+    BottomToTop,
+    /// By height, the tallest first.
+    TallToShort,
+    /// By height, the shortest first.
+    ShortToTall,
+    /// By width, the widest first.
+    WideToNarrow,
+    /// By width, the narrowest first.
+    NarrowToWide,
+    /// Shuffled, the same way each time for the same objects.
+    Random,
 }
 
 /// Copies made along the path.
@@ -423,6 +437,9 @@ fn ordered(objects: &[Shape], order: FitOrder) -> Vec<&Shape> {
     let mut v: Vec<&Shape> = objects.iter().collect();
     let area = |s: &Shape| s.bounds().area();
     let x = |s: &Shape| s.bounds().center().x;
+    let y = |s: &Shape| s.bounds().center().y;
+    let w = |s: &Shape| s.bounds().width();
+    let h = |s: &Shape| s.bounds().height();
     match order {
         FitOrder::AsSelected => {}
         FitOrder::Reversed => v.reverse(),
@@ -430,6 +447,23 @@ fn ordered(objects: &[Shape], order: FitOrder) -> Vec<&Shape> {
         FitOrder::RightToLeft => v.sort_by(|a, b| x(b).total_cmp(&x(a))),
         FitOrder::LargestFirst => v.sort_by(|a, b| area(b).total_cmp(&area(a))),
         FitOrder::SmallestFirst => v.sort_by(|a, b| area(a).total_cmp(&area(b))),
+        // The page's y axis points up: the top has the largest y.
+        FitOrder::TopToBottom => v.sort_by(|a, b| y(b).total_cmp(&y(a))),
+        FitOrder::BottomToTop => v.sort_by(|a, b| y(a).total_cmp(&y(b))),
+        FitOrder::TallToShort => v.sort_by(|a, b| h(b).total_cmp(&h(a))),
+        FitOrder::ShortToTall => v.sort_by(|a, b| h(a).total_cmp(&h(b))),
+        FitOrder::WideToNarrow => v.sort_by(|a, b| w(b).total_cmp(&w(a))),
+        FitOrder::NarrowToWide => v.sort_by(|a, b| w(a).total_cmp(&w(b))),
+        FitOrder::Random => {
+            // A shuffle that is the same for the same selection, so the
+            // preview and Apply agree: each object keyed by its id.
+            v.sort_by_key(|s| {
+                let mut z = s.id.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
+                z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+                z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+                z ^ (z >> 31)
+            });
+        }
         FitOrder::Alternate => {
             v.sort_by(|a, b| area(b).total_cmp(&area(a)));
             let mut out = Vec::with_capacity(v.len());
@@ -1108,6 +1142,84 @@ mod tests {
         )
         .x
         .is_finite());
+    }
+
+    /// The orders by place, height, width and a shuffle (#1256): each
+    /// sorts the objects by the measure named, the shuffle the same way
+    /// each time.
+    #[test]
+    fn orders_by_place_size_and_chance() {
+        // id 1: wide and low at the top; 2: tall and narrow at the bottom;
+        // 3: small in the middle.
+        let shapes = vec![
+            rect(1, 0.0, 90.0, 30.0, 4.0),
+            rect(2, 50.0, 0.0, 4.0, 40.0),
+            rect(3, 20.0, 50.0, 8.0, 8.0),
+            line(9, &[(0.0, -100.0), (300.0, -100.0)], false),
+        ];
+        let order_of = |order: FitOrder| -> Vec<u64> {
+            let set = FitPathSettings {
+                order,
+                ..FitPathSettings::default()
+            };
+            let plan = fit_to_path_plan(&shapes, &set);
+            // Places along the path run left to right.
+            let mut at: Vec<(f64, u64)> = centres(&shapes, &plan)
+                .into_iter()
+                .map(|(id, c, _)| (c.x, id))
+                .collect();
+            at.sort_by(|a, b| a.0.total_cmp(&b.0));
+            at.into_iter().map(|(_, id)| id).collect()
+        };
+        assert_eq!(order_of(FitOrder::TopToBottom), vec![1, 3, 2]);
+        assert_eq!(order_of(FitOrder::BottomToTop), vec![2, 3, 1]);
+        assert_eq!(order_of(FitOrder::TallToShort), vec![2, 3, 1]);
+        assert_eq!(order_of(FitOrder::ShortToTall), vec![1, 3, 2]);
+        assert_eq!(order_of(FitOrder::WideToNarrow), vec![1, 3, 2]);
+        assert_eq!(order_of(FitOrder::NarrowToWide), vec![2, 3, 1]);
+        let shuffled = order_of(FitOrder::Random);
+        let mut sorted = shuffled.clone();
+        sorted.sort();
+        assert_eq!(sorted, vec![1, 2, 3]);
+        assert_eq!(order_of(FitOrder::Random), shuffled, "the same each time");
+    }
+
+    /// A box reference at its centre is the centre of rotation when none
+    /// was moved: nine circles go round a circle centred on it either way
+    /// (#1256: with Bounding box they sat off the path).
+    #[test]
+    fn the_box_centre_matches_the_centre_of_rotation() {
+        let circle = |id: u64, cx: f64, cy: f64, r: f64| {
+            Shape::new(
+                ShapeId(id),
+                ShapeKind::Ellipse {
+                    rect: Rect::new(cx - r, cy - r, cx + r, cy + r),
+                    arc: None,
+                },
+            )
+        };
+        let shapes = vec![circle(1, 20.0, 170.0, 5.0), circle(9, 100.0, 100.0, 60.0)];
+        let base = FitPathSettings {
+            copies: FitCopies::Count,
+            count: 9,
+            ..FitPathSettings::default()
+        };
+        let boxed = FitPathSettings {
+            reference: FitReference::BoundingBox,
+            origin: 4,
+            ..base
+        };
+        let a = fit_to_path_plan(&shapes, &base);
+        let b = fit_to_path_plan(&shapes, &boxed);
+        assert_eq!(a.len(), 9);
+        assert_eq!(a.len(), b.len());
+        for (pa, pb) in a.iter().zip(&b) {
+            let ca = pa.transform * Point::new(20.0, 170.0);
+            let cb = pb.transform * Point::new(20.0, 170.0);
+            assert!((ca - cb).hypot() < 1e-6, "{ca:?} vs {cb:?}");
+            let r = (ca - Point::new(100.0, 100.0)).hypot();
+            assert!((r - 60.0).abs() < 0.05, "centre {ca:?} is {r} from the path's");
+        }
     }
 
     /// Ignore initial rotation takes the turn an object has off it; Modify

@@ -34,7 +34,7 @@ object the path is.
 | Ignore initial rotation | take the turn the objects have off them first | off |
 | Modify rotation: Style | None, Uniform, Progressive, Jitter, Progressive jitter | None |
 | Start angle, Spin angle, Revolutions, Range (±), Clockwise | degrees, degrees, a number, degrees, a switch; each enabled only for the styles that use it (below) | 0, 360, 1, 15, off |
-| Order | As selected, Reversed, Left to right, Right to left, Largest first, Smallest first, Large and small in turn | As selected |
+| Order | As selected, Reversed, Left to right, Right to left, Largest first, Smallest first, Large and small in turn, Top to bottom, Bottom to top, Tall to short, Short to tall, Wide to narrow, Narrow to wide, Random | As selected |
 | Reverse direction | start from the path's last node | off |
 
 ## Formulas
@@ -51,7 +51,13 @@ is not used.
 **Order.** The objects are sorted first: Left to right and Right to left
 by the x of their centres, Largest and Smallest first by the area of
 their bounds; Large and small in turn takes the largest, the smallest,
-the next largest, the next smallest and so on.
+the next largest, the next smallest and so on; Top to bottom and Bottom
+to top by the y of their centres, Tall to short and Short to tall by
+the height of their bounds, Wide to narrow and Narrow to wide by the
+width; Random shuffles them by a number worked out from each object's
+id (SplitMix64), so the preview and Apply agree and the same objects
+shuffle the same way each time (#1256,
+`fit_path::tests::orders_by_place_size_and_chance`).
 
 **Count.** `n` objects are selected. Each object once places `n`. A
 number `N` places `max(N, n)`: the selected objects, then copies of them
