@@ -304,6 +304,29 @@ pub fn finish_pick(ctx: &egui::Context, c: Option<Color>) {
     });
 }
 
+/// For a tool that is not a picker (Remove Background's eyedropper):
+/// keep the request of `id` alive while `on`, drop it when not, and give
+/// back the colour a click on the drawing picked for it, once.
+pub fn pick_for(ctx: &egui::Context, id: Id, on: bool) -> Option<Color> {
+    let now = ctx.cumulative_frame_nr();
+    ctx.data_mut(|d| {
+        let picked = match d.get_temp::<(Id, Color)>(pick_result_id()) {
+            Some((asked, c)) if asked == id => {
+                d.remove::<(Id, Color)>(pick_result_id());
+                Some(c)
+            }
+            _ => None,
+        };
+        let ours = matches!(d.get_temp::<PickRequest>(pick_request_id()), Some(r) if r.id == id);
+        if on && picked.is_none() {
+            d.insert_temp(pick_request_id(), PickRequest { id, frame: now });
+        } else if ours {
+            d.remove::<PickRequest>(pick_request_id());
+        }
+        picked
+    })
+}
+
 /// The colour picked from the drawing for the picker `id`, once.
 fn take_pick(ui: &Ui, id: Id) -> Option<Color> {
     ui.data_mut(|d| match d.get_temp::<(Id, Color)>(pick_result_id()) {

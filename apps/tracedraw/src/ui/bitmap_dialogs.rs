@@ -475,13 +475,14 @@ pub fn open_remove_background(app: &mut App) {
 /// nearest to it (both keep the eyedropper on), a plain click sets the
 /// entry the eyedropper was taken for (or adds one after "+") and puts
 /// the eyedropper down. `at` is the point as fractions of the picture,
-/// where the fill starts too; `img` is the copy, for Automatic's colours.
+/// where the fill starts too (none for a colour picked on the drawing);
+/// `img` is the copy, for Automatic's colours.
 pub fn bg_pick_click(
     st: &mut BgRemoveState,
     c: [u8; 3],
-    at: [f32; 2],
+    at: Option<[f32; 2]>,
     modifiers: egui::Modifiers,
-    img: &RgbaImage,
+    img: Option<&RgbaImage>,
 ) {
     use crate::bg_remove::BgPick;
     let s = &mut st.settings;
@@ -489,17 +490,18 @@ pub fn bg_pick_click(
         s.colors.push(BgPick::AUTO);
     }
     if modifiers.alt {
-        let learnt = if s.colors.iter().any(|p| p.color.is_none()) {
-            crate::bg_remove::learn_background(img)
-        } else {
-            Vec::new()
+        let learnt = match img {
+            Some(img) if s.colors.iter().any(|p| p.color.is_none()) => {
+                crate::bg_remove::learn_background(img)
+            }
+            _ => Vec::new(),
         };
         s.remove_nearest(c, &learnt);
         st.row = st.row.min(s.colors.len() - 1);
         return;
     }
     if modifiers.shift || st.adding {
-        s.add_color(c, Some(at));
+        s.add_color(c, at);
         if !modifiers.shift {
             st.adding = false;
             st.picking = false;
@@ -511,7 +513,7 @@ pub fn bg_pick_click(
     s.colors[row] = BgPick {
         color: Some(c),
         tolerance,
-        seed: Some(at),
+        seed: at,
     };
     st.picking = false;
 }
@@ -539,7 +541,7 @@ pub fn remove_background_dialog(
             );
             // A click on a picture takes the colour under it from the
             // picture as it was, so a removed pixel can be picked too.
-            if let (true, Some(p)) = (st.picking, p) {
+            if let (true, Some(p)) = (st.picking, &p) {
                 if let Some((x, y)) = p.picked {
                     let (w, h) = p.img.dimensions();
                     let (x, y) = (x.min(w.saturating_sub(1)), y.min(h.saturating_sub(1)));
@@ -549,8 +551,18 @@ pub fn remove_background_dialog(
                         (y as f32 + 0.5) / h.max(1) as f32,
                     ];
                     let modifiers = left.input(|i| i.modifiers);
-                    bg_pick_click(st, [c[0], c[1], c[2]], at, modifiers, &p.img);
+                    bg_pick_click(st, [c[0], c[1], c[2]], Some(at), modifiers, Some(&p.img));
                 }
+            }
+            // With the eyedropper on, a click on the drawing picks there
+            // too (no seed point: it may be outside the bitmap).
+            let on = st.picking;
+            if let Some(c) =
+                crate::ui::color_picker::pick_for(ctx, egui::Id::new("bg_remove_pick"), on)
+            {
+                let modifiers = ctx.input(|i| i.modifiers);
+                let img = p.as_ref().map(|p| &*p.img);
+                bg_pick_click(st, c.to_rgb8(), None, modifiers, img);
             }
             bg_remove_settings(right, st);
         });

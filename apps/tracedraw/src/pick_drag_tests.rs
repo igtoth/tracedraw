@@ -13481,6 +13481,44 @@ fn remove_background_adds_and_removes_colours() {
     assert!(st.settings.colors.iter().all(|p| p.seed.is_none()));
 }
 
+/// Remove Background's eyedropper picks on the drawing too: while it is
+/// on, the canvas's click (the shared picker request) gives the dialog
+/// the colour; after "+" it adds a row with no seed point, Shift keeps
+/// the eyedropper on, and with it off no request is left waiting.
+#[test]
+fn remove_background_picks_a_colour_on_the_drawing() {
+    use tracedraw_core::Color;
+    let (ctx, mut app) = bg_three_setup();
+    assert!(!crate::ui::color_picker::picking(&ctx));
+    click_at(&ctx, &mut app, preview_rect(&ctx, "bg_add").center(), Modifiers::NONE);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    assert!(crate::ui::color_picker::picking(&ctx), "the drawing listens");
+    // What the canvas does on a click while a pick waits.
+    crate::ui::color_picker::finish_pick(&ctx, Some(Color::rgb8(40, 180, 60)));
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let st = bg_state(&app);
+    assert_eq!(st.settings.colors.len(), 2);
+    assert_eq!(st.settings.colors[1].color, Some([40, 180, 60]));
+    assert_eq!(st.settings.colors[1].seed, None);
+    assert!(!st.picking);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    assert!(!crate::ui::color_picker::picking(&ctx), "no request left");
+    // Shift held: added, and the eyedropper stays on.
+    click_at(&ctx, &mut app, preview_rect(&ctx, "bg_add").center(), Modifiers::NONE);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let shift = Modifiers {
+        shift: true,
+        ..Modifiers::NONE
+    };
+    crate::ui::color_picker::finish_pick(&ctx, Some(Color::rgb8(200, 30, 30)));
+    frame(&ctx, &mut app, Vec::new(), shift);
+    frame(&ctx, &mut app, Vec::new(), shift);
+    let st = bg_state(&app);
+    assert_eq!(st.settings.colors.len(), 3);
+    assert!(st.picking);
+    assert!(crate::ui::color_picker::picking(&ctx));
+}
+
 /// Frame times with Remove Background open and three colours listed:
 /// idle frames, and the Tolerance slider dragged. Run with
 /// `cargo test --release -p tracedraw -- --ignored frame_times_of_the_remove_background_dialog --nocapture`.
