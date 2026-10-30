@@ -602,13 +602,15 @@ fn bg_icon_button(
     resp
 }
 
-/// One colour's swatch: the colour, or for Automatic the colours the
-/// border gives as stripes (light and dark when there is no bitmap).
+/// One colour's swatch: the colour, or for Automatic a square half
+/// light, half dark.
 fn bg_swatch(ui: &mut Ui, color: Option<[u8; 3]>) -> egui::Response {
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(18.0, 18.0), egui::Sense::hover());
     let p = ui.painter();
     match color {
-        Some(c) => p.rect_filled(rect, 2.0, rgb32(c)),
+        Some(c) => {
+            p.rect_filled(rect, 2.0, rgb32(c));
+        }
         None => {
             // Automatic: a diagonal half light, half dark.
             p.rect_filled(rect, 2.0, Color32::WHITE);
