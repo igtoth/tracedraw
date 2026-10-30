@@ -1,0 +1,51 @@
+# Downloads the videos listed in videos/ids.txt (YouTube ids), their
+# subtitles and one frame every few seconds into this branch, so tools that
+# can only reach the repository can read them. Runs only on pushes to the
+# video-inbox branch.
+name: Fetch videos
+on:
+  push:
+    branches: [video-inbox]
+    paths: [videos/ids.txt]
+permissions:
+  contents: write
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tools
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null
+          python3 -m pip install -q --upgrade yt-dlp
+      - name: Download, subtitles, frames
+        run: |
+          while read -r id; do
+            [ -z "$id" ] && continue
+            d="videos/$id"
+            [ -f "$d/done" ] && continue
+            mkdir -p "$d/frames"
+            yt-dlp --no-progress -f "bv*[height<=720]+ba/b[height<=720]/b" \
+              --merge-output-format mp4 -o "/tmp/$id.%(ext)s" \
+              --write-info-json --write-subs --write-auto-subs --sub-langs "all,-live_chat" \
+              --convert-subs srt "https://www.youtube.com/watch?v=$id" > "$d/yt-dlp.log" 2>&1 || echo "DOWNLOAD FAILED" >> "$d/yt-dlp.log"
+            cp /tmp/$id*.srt "$d/" 2>/dev/null || true
+            if [ -f "/tmp/$id.info.json" ]; then
+              python3 -c "import json,sys; j=json.load(open('/tmp/$id.info.json')); print(json.dumps({k:j.get(k) for k in ['title','uploader','duration','language','description','upload_date','chapters']}, ensure_ascii=False, indent=1))" > "$d/info.json"
+            fi
+            v=$(ls /tmp/$id.mp4 2>/dev/null | head -1)
+            if [ -n "$v" ]; then
+              # One frame every 3 seconds, named by its second.
+              ffmpeg -loglevel error -i "$v" -vf "fps=1/3,scale=1280:-2" -q:v 4 "$d/frames/f%05d.jpg"
+              n=0; for f in "$d"/frames/f*.jpg; do n=$((n+1)); s=$(( (n-1)*3 )); mv "$f" "$d/frames/t$(printf %05d $s).jpg"; done
+              touch "$d/done"
+            fi
+            ls -la "$d" | head; ls "$d/frames" | wc -l
+          done < videos/ids.txt
+      - name: Commit them to this branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add videos
+          git commit -m "Videos fetched by CI" || exit 0
+          git push
