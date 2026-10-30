@@ -33,6 +33,13 @@ affichés pendant le glissement indiquent ce qui va se passer. Là où le
 système n'indique pas où se trouve le pointeur (Linux, macOS), les dessins
 s'ouvrent dans un onglet et les images sont importées.
 
+Un dessin ouvert depuis le système pendant que TraceDraw tourne (un double
+clic dans le gestionnaire de fichiers ou le Finder, Ouvrir avec, ou Partager
+sous Android) s'ouvre dans un onglet de la fenêtre déjà ouverte, qui passe
+au premier plan. La version navigateur installée comme application fait de
+même pour les fichiers `.tdraw`, `.cdr`, `.svg` et `.pdf` dans les
+navigateurs qui laissent les applications installées ouvrir des fichiers.
+
 La façon dont un dessin s'affiche d'abord (la page entière, ses objets, la
 largeur de la page, la taille réelle, ou la page, la position et le zoom
 qu'il avait à l'enregistrement) se règle avec [[options.open_view]], dans la

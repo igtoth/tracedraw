@@ -283,6 +283,58 @@ fn try_hand_over(dir: &Path, files: &[PathBuf]) -> Option<bool> {
         .map(|r| r.ok)
 }
 
+/// Files the system asked the running window to open (macOS sends them
+/// as an event, not on the command line, #646): into the window's inbox,
+/// and the window woken to open them (when it exists; the first frame
+/// reads the inbox anyway). They are kept too, for a start with another
+/// renderer (see [`with_files_opened_by_system`]).
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub fn deliver_opened(
+    inbox: &Sender<Vec<PathBuf>>,
+    wake: Option<&egui::Context>,
+    files: Vec<PathBuf>,
+) {
+    if files.is_empty() {
+        return;
+    }
+    if let Ok(mut kept) = OPENED_BY_SYSTEM.lock() {
+        kept.extend(files.iter().cloned());
+    }
+    let _ = inbox.send(files);
+    if let Some(ctx) = wake {
+        ctx.request_repaint();
+    }
+}
+
+/// The files the system asked this start to open (macOS), which a start
+/// with another renderer must open in its stead: they never were on the
+/// command line.
+static OPENED_BY_SYSTEM: std::sync::Mutex<Vec<PathBuf>> = std::sync::Mutex::new(Vec::new());
+
+/// `args` with the files the system asked this start to open after them,
+/// for a start that takes this one's place (`gpu::restart_with`, the
+/// renderer watch): a window that failed to open, or came back black,
+/// had them in its inbox only.
+pub fn with_files_opened_by_system(args: &[String]) -> Vec<String> {
+    let files = OPENED_BY_SYSTEM
+        .lock()
+        .map(|f| f.clone())
+        .unwrap_or_default();
+    with_files(args, &files)
+}
+
+/// `args` with `files` after them, each once.
+fn with_files(args: &[String], files: &[PathBuf]) -> Vec<String> {
+    let mut out = args.to_vec();
+    for f in files {
+        let f = f.to_string_lossy().into_owned();
+        if !out.contains(&f) {
+            out.push(f);
+        }
+    }
+    out
+}
+
 /// Open the files later starts handed over, each in a tab of its own (or
 /// the tab of a drawing open from it, see `App::open_path`), and bring the
 /// window up. Waits while a question or a dialog is up, or the drawings are
@@ -483,6 +535,31 @@ mod tests {
         }
         drop(firsts);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Files macOS asks the window to open (#646) go to its inbox, and a
+    /// start that takes the place (another renderer) gets them on its
+    /// command line, each once, after the arguments it had.
+    #[test]
+    fn files_the_system_opens_reach_the_inbox_and_a_restart() {
+        let (tx, rx) = channel();
+        deliver_opened(&tx, None, Vec::new());
+        assert!(rx.try_recv().is_err());
+        let files = vec![PathBuf::from("/Users/a/b c.cdr"), PathBuf::from("/x.tdraw")];
+        deliver_opened(&tx, None, files.clone());
+        assert_eq!(rx.try_recv().ok(), Some(files.clone()));
+        let args: Vec<String> = vec!["--no-splash".into(), "/x.tdraw".into()];
+        assert_eq!(
+            with_files(&args, &files),
+            ["--no-splash", "/x.tdraw", "/Users/a/b c.cdr"]
+        );
+        let again = with_files_opened_by_system(&args);
+        assert!(again.iter().any(|a| a == "/Users/a/b c.cdr"));
+        assert_eq!(again.iter().filter(|a| *a == "/x.tdraw").count(), 1);
+        assert_eq!(
+            file_args(&again),
+            [PathBuf::from("/x.tdraw"), PathBuf::from("/Users/a/b c.cdr")]
+        );
     }
 
     /// A handed-over file opens in a tab of its own once no dialog is up.

@@ -6,7 +6,9 @@
 // share sheet and "open with" (files served by SharedFiles), and an
 // invisible view the on-screen keyboard types into (TextInputView). The Rust side calls
 // the public methods through JNI from its own thread; a picked document
-// comes back through the native method nativeDocumentResult. Built by
+// comes back through the native method nativeDocumentResult, and so does a
+// document another app (a file manager, a mail, Share) asks TraceDraw to
+// open, under the request code OPENED_ELSEWHERE. Built by
 // scripts/android/build.sh with javac and d8 into classes.dex.
 package dev.tracedraw.app;
 
@@ -28,6 +30,7 @@ import android.print.PrintDocumentAdapter;
 import android.print.PrintDocumentInfo;
 import android.os.Process;
 import android.print.PrintManager;
+import android.os.Parcelable;
 import android.provider.OpenableColumns;
 import android.util.Log;
 import android.view.ViewGroup;
@@ -85,11 +88,36 @@ public class TraceDrawActivity extends NativeActivity {
     /** How long the end of the activity waits for the backup. */
     private static final long BACKUP_WAIT_MS = 10000;
 
+    // ----- documents other apps open with TraceDraw ---------------------------
+
+    /**
+     * The request code of documents another app asked TraceDraw to open
+     * (VIEW, EDIT, SEND): the editor opens each in a tab of its own
+     * (documents::OPENED_ELSEWHERE in android.rs).
+     */
+    private static final int OPENED_ELSEWHERE = 0;
+
+    /** An intent that came before the editor could take documents. */
+    private Intent pendingOpen;
+
+    /** Set once the editor's native methods are registered. */
+    private boolean editorReady;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         textInput = new TextInputView(this);
         addContentView(textInput, new ViewGroup.LayoutParams(1, 1));
+        // The intent that started the app; not again when the system
+        // recreates the activity (its documents are open already) or when
+        // the app is brought back from the recent apps, which hands the
+        // first intent over once more.
+        Intent start = getIntent();
+        boolean fromRecents = start != null
+                && (start.getFlags() & Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0;
+        if (savedInstanceState == null && !fromRecents) {
+            pendingOpen = start;
+        }
     }
 
     /**
@@ -179,6 +207,77 @@ public class TraceDrawActivity extends NativeActivity {
         }
     }
 
+    // ----- the intents of documents other apps open ---------------------------
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        // The app runs (launchMode singleTask): the documents open in tabs
+        // of the running editor.
+        if (editorReady) {
+            deliverOpened(intent);
+        } else {
+            pendingOpen = intent;
+        }
+    }
+
+    /**
+     * Called by the editor once it can take documents: the documents of
+     * the intent that started the app, if any, are handed over now.
+     */
+    public void readyForDocuments() {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                editorReady = true;
+                Intent intent = pendingOpen;
+                pendingOpen = null;
+                if (intent != null) {
+                    deliverOpened(intent);
+                }
+            }
+        });
+    }
+
+    /** The documents of an intent that asks to open, edit or share files. */
+    private void deliverOpened(Intent intent) {
+        String action = intent.getAction();
+        if (action == null) {
+            return;
+        }
+        ArrayList<Uri> uris = new ArrayList<Uri>();
+        try {
+            if (Intent.ACTION_VIEW.equals(action) || Intent.ACTION_EDIT.equals(action)) {
+                if (intent.getData() != null) {
+                    uris.add(intent.getData());
+                }
+            } else if (Intent.ACTION_SEND.equals(action)) {
+                Parcelable stream = intent.getParcelableExtra(Intent.EXTRA_STREAM);
+                if (stream instanceof Uri) {
+                    uris.add((Uri) stream);
+                }
+            } else if (Intent.ACTION_SEND_MULTIPLE.equals(action)) {
+                ArrayList<Parcelable> streams = intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM);
+                if (streams != null) {
+                    for (Parcelable p : streams) {
+                        if (p instanceof Uri && !uris.contains(p)) {
+                            uris.add((Uri) p);
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "cannot read the documents of " + action, e);
+        }
+        if (uris.isEmpty()) {
+            return;
+        }
+        // Rights granted with a VIEW or SEND last as long as the activity:
+        // nothing to keep past it.
+        sendDocuments(OPENED_ELSEWHERE, uris, 0);
+    }
+
     // ----- the document picker -----------------------------------------------
 
     /**
@@ -254,6 +353,14 @@ public class TraceDrawActivity extends NativeActivity {
         // after the process restarts, so the recent list reopens it.
         int flags = data.getFlags()
             & (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+        sendDocuments(requestCode, uris, flags);
+    }
+
+    /**
+     * Hand `uris` to the editor under `requestCode`, with their names and
+     * types, keeping the persistable permissions `flags` names.
+     */
+    private void sendDocuments(int requestCode, ArrayList<Uri> uris, int flags) {
         StringBuilder u = new StringBuilder();
         StringBuilder n = new StringBuilder();
         StringBuilder m = new StringBuilder();

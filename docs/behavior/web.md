@@ -138,6 +138,16 @@ open gets the usual message.
 - Desktop (Chrome, Edge): the install icon at the right end of the
   address bar, or the menu's "Install TraceDraw".
 
+The installed app is offered by the system for `.tdraw`, `.cdr`, `.svg`
+and `.pdf` files (the manifest's `file_handlers`, where the browser
+supports them: Chrome and Edge on the desktop): a file opened with it goes
+to the TraceDraw window already open (`launch_handler` `focus-existing`)
+and opens in a tab of its own (#646). The page reads the files from the
+launch queue into `window.tracedrawLaunched` and sends a
+`tracedraw-launched` event; the editor takes them between frames
+(`web::take_launched_files`), only after such an event, and waits while a
+dialog is up.
+
 Once opened, choose Window > Workspace > Touch for the larger interface
 (`workspaces.md`). The installed app stays at the version it was last
 opened with and starts without a network connection (the font folder's

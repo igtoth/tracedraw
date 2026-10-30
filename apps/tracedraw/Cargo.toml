@@ -107,6 +107,11 @@ winit = { version = "0.30", default-features = false }
 [target.'cfg(target_os = "linux")'.dependencies]
 winit = { version = "0.30", default-features = false, features = ["x11"] }
 
+# Files opened from Finder arrive as an event of the windowing layer
+# (#646). The same winit eframe uses.
+[target.'cfg(target_os = "macos")'.dependencies]
+winit = { version = "0.30", default-features = false }
+
 # The browser build: WebGL canvas, file pickers and downloads through the
 # DOM, randomness and time from JavaScript.
 [target.'cfg(target_arch = "wasm32")'.dependencies]

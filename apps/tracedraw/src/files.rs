@@ -691,6 +691,9 @@ mod android_pickers {
 
     thread_local! {
         static WAITING: RefCell<HashMap<i32, Waiting>> = RefCell::new(HashMap::new());
+        /// Documents other apps opened with TraceDraw, waiting for no
+        /// dialog or question to be up (#646).
+        static OPENED: RefCell<Vec<PathBuf>> = const { RefCell::new(Vec::new()) };
     }
 
     fn wait(request: i32, waiting: Waiting) {
@@ -753,6 +756,13 @@ mod android_pickers {
     /// waited for; a cancelled picker runs nothing.
     pub fn run_answers(app: &mut App) {
         for answer in documents::take_answers() {
+            // Documents another app opened with TraceDraw: each in a tab
+            // of its own, as a file manager's do on the desktop (#646).
+            if answer.request == documents::OPENED_ELSEWHERE {
+                let paths = paths(&answer);
+                OPENED.with(|o| o.borrow_mut().extend(paths));
+                continue;
+            }
             let Some(waiting) = WAITING.with(|w| w.borrow_mut().remove(&answer.request)) else {
                 continue;
             };
@@ -775,6 +785,14 @@ mod android_pickers {
                         });
                     }
                 }
+            }
+        }
+        // Like the files later starts hand over on the desktop, they wait
+        // while a dialog or a question is up or the drawings are closing
+        // (instance::open_handed_over).
+        if !app.closing_all && matches!(app.dialog, crate::ui::dialogs::Dialog::None) {
+            for path in OPENED.with(|o| std::mem::take(&mut *o.borrow_mut())) {
+                app.open_path(path);
             }
         }
     }

@@ -40,6 +40,67 @@ pub fn request_repaint() {
     });
 }
 
+/// Set when the page may hold files the system opened with the installed
+/// app (`index.html` queues them in `window.tracedrawLaunched`): at start,
+/// and on each `tracedraw-launched` event. The frame loop looks at the
+/// queue only then.
+static LAUNCHED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+/// Wake the editor when the page queues launched files (#646).
+fn watch_launched_files() {
+    use wasm_bindgen::closure::Closure;
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let watch = Closure::<dyn FnMut(web_sys::Event)>::new(|_e: web_sys::Event| {
+        LAUNCHED.store(true, std::sync::atomic::Ordering::Relaxed);
+        request_repaint();
+    });
+    let _ = window
+        .add_event_listener_with_callback("tracedraw-launched", watch.as_ref().unchecked_ref());
+    watch.forget();
+}
+
+/// The files the system opened with the installed app since the last call
+/// (its file manager's Open with, #646), kept under `/upload/<name>` like
+/// a picked file, so that they open in tabs of their own.
+pub fn take_launched_files() -> Vec<std::path::PathBuf> {
+    if !LAUNCHED.swap(false, std::sync::atomic::Ordering::Relaxed) {
+        return Vec::new();
+    }
+    let Some(window) = web_sys::window() else {
+        return Vec::new();
+    };
+    let Ok(queue) = js_sys::Reflect::get(&window, &"tracedrawLaunched".into()) else {
+        return Vec::new();
+    };
+    let Ok(queue) = queue.dyn_into::<js_sys::Array>() else {
+        return Vec::new();
+    };
+    let mut paths = Vec::new();
+    for item in queue.iter() {
+        let name = js_sys::Reflect::get(&item, &"name".into())
+            .ok()
+            .and_then(|n| n.as_string())
+            .unwrap_or_default();
+        let Some(bytes) = js_sys::Reflect::get(&item, &"bytes".into())
+            .ok()
+            .and_then(|b| b.dyn_into::<js_sys::Uint8Array>().ok())
+        else {
+            continue;
+        };
+        let name = std::path::Path::new(&name)
+            .file_name()
+            .map(|n| n.to_os_string())
+            .unwrap_or_else(|| "document".into());
+        let path = std::path::PathBuf::from("/upload").join(name);
+        crate::files::store(&path, bytes.to_vec());
+        paths.push(path);
+    }
+    queue.set_length(0);
+    paths
+}
+
 /// Run `f` every `ms` milliseconds for as long as the page is open.
 pub fn every(ms: i32, f: impl FnMut() + 'static) {
     use wasm_bindgen::closure::Closure;
@@ -644,6 +705,7 @@ pub fn start() {
     guard_shortcuts();
     watch_chorded_right_press();
     watch_pasted_files();
+    watch_launched_files();
     register_fonts();
     tracedraw_text::install();
     tracedraw_io::emf::install();

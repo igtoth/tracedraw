@@ -267,6 +267,11 @@ pub mod documents {
         pub picked: Vec<Picked>,
     }
 
+    /// The request code of documents another app asked TraceDraw to open
+    /// (a file manager's Open with, Share; `TraceDrawActivity.OPENED_ELSEWHERE`):
+    /// each opens in a tab of its own (#646). Picker requests start at 1000.
+    pub const OPENED_ELSEWHERE: i32 = 0;
+
     /// Answers that arrived from the Java side, taken by the frame loop.
     static ANSWERS: Mutex<Vec<Answer>> = Mutex::new(Vec::new());
 
@@ -344,7 +349,19 @@ pub mod documents {
         });
         if done.is_none() {
             log::error!("the document picker will not answer: native methods not registered");
+            return;
         }
+        // The documents of the intent that started the app (another app
+        // opened one with TraceDraw) can come now.
+        let _ = with_activity("documents opened elsewhere", |env, activity| {
+            env.call_method(
+                activity,
+                jni_str!("readyForDocuments"),
+                jni_sig!("()V"),
+                &[],
+            )?
+            .v()
+        });
     }
 
     /// Show the picker for a document (several when `multiple`); the

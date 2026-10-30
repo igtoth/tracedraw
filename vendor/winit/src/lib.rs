@@ -213,6 +213,9 @@ pub mod monitor;
 // TraceDraw: a pen's pressure on X11 and macOS (vendor/README.md).
 #[allow(dead_code)]
 mod pen_pressure;
+// TraceDraw: files the system asks to open on macOS (vendor/README.md).
+#[cfg(macos_platform)]
+pub(crate) mod opened_files;
 mod platform_impl;
 mod utils;
 pub mod window;

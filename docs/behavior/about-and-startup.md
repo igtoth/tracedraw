@@ -111,12 +111,47 @@ and `--reset-settings` starts open windows of their own.
   raise itself: it asks for attention instead.
 - A start with the next renderer after a failed one (see below) takes the
   place over. Portable copies and `TRACEDRAW_CONFIG_DIR` each have their
-  own window. The browser build has none of this.
+  own window.
+- macOS does not put a file opened from Finder (double click, Open With,
+  a file dropped on the Dock icon) on the command line: it sends the
+  running program an "open documents" event, at launch and later. The
+  windowing layer's application delegate takes it
+  (`application:openURLs:`, in the patched winit copy, see
+  `vendor/README.md`) and hands the paths to the handler TraceDraw sets
+  before the window opens (`winit::platform::macos::set_open_files_handler`);
+  they join the files handed over above and open in tabs of the window.
+  Files that come before the handler is set wait for it. They are kept
+  too: a start with the next renderer (see below) gets them on its
+  command line (`instance::with_files_opened_by_system`), since the
+  window that failed had them only in its inbox. The
+  `CFBundleDocumentTypes` of `packaging/macos/Info.plist` offer TraceDraw
+  for `.tdraw` and `.cdr`. Not yet tried on a Mac.
+- Android: the app is offered for opening, editing and sharing drawings,
+  pictures, SVG and PDF from other apps (a file manager's Open with, a
+  mail's attachment, Share; the intent filters of
+  `packaging/android/AndroidManifest.xml`). The activity runs once
+  (`singleTask`): a document opened while the app runs comes through
+  `onNewIntent`, the one that started the app waits until the editor is
+  ready (`readyForDocuments`; not again when the app comes back from the
+  recent apps, which hands the first intent over once more), and each
+  opens in a tab of its own (request code `OPENED_ELSEWHERE`, `files.rs`),
+  waiting, like the files handed over on the desktop, while a dialog or a
+  question is up. The intent filters take pictures as `image/*`, which
+  also covers the types file managers give `.cdr` files.
+- Browser: the installed app (see `web.md`) is offered for `.tdraw`,
+  `.cdr`, `.svg` and `.pdf` by the system (`file_handlers` of
+  `web/manifest.webmanifest`, in browsers that support them); with
+  `launch_handler` `focus-existing` the files go to the window already
+  open, where each opens in a tab of its own (`index.html` reads them
+  from the launch queue, `web::take_launched_files`).
 - Checks: `instance::tests::a_second_start_hands_its_files_to_the_first`,
   `a_crash_leaves_nothing_in_the_way`, `strangers_are_refused`,
   `starts_at_the_same_time_make_one_window`,
   `a_handed_over_file_opens_in_a_tab_once_no_question_is_up`,
-  `the_linux_launcher_starts_once_for_several_files`; checked by hand on
+  `the_linux_launcher_starts_once_for_several_files`,
+  `winit_opened_files::tests::files_before_the_handler_wait_for_it_and_later_ones_go_straight_to_it`,
+  `android_package::tests::documents_opened_from_other_apps_reach_the_editor`,
+  `instance::tests::files_the_system_opens_reach_the_inbox_and_a_restart`; checked by hand on
   X11 with two starts (the second ended in 12 ms, its file in a new tab of
   the first window).
 
