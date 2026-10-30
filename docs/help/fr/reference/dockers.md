@@ -56,7 +56,9 @@ l'explique.
 - Cliquez sur un onglet pour mettre son panneau au premier plan ; cliquez sur
   l'onglet du premier plan pour replier les panneaux.
 - Le bouton de fermeture de la barre de titre d'un panneau le retire des
-  onglets ; le bouton de réduction replie la zone des panneaux.
+  onglets ; le bouton de réduction replie la zone des panneaux ;
+  ses flèches pointent vers le côté de la fenêtre où elle se replie (à gauche
+  pour les panneaux ancrés à gauche).
 - Les panneaux laissés ouverts reviennent au prochain démarrage de TraceDraw.
 - Les raccourcis des panneaux basculent : appuyer sur l'un quand son panneau
   est au premier plan masque les panneaux.

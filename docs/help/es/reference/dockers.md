@@ -55,7 +55,9 @@ izquierda). Esta página enumera cada panel y la página que lo explica.
 - Haga clic en una pestaña para traer su panel al frente; haga clic en la
   pestaña del frente para plegar los paneles.
 - El botón de cerrar de la barra de título de un panel lo quita de las
-  pestañas; el botón de contraer pliega el área de paneles.
+  pestañas; el botón de contraer pliega el área de paneles;
+  sus flechas apuntan al lado de la ventana hacia el que se pliega (a la
+  izquierda para los paneles acoplados a la izquierda).
 - Los paneles que deja abiertos vuelven la próxima vez que se inicia
   TraceDraw.
 - Los atajos de los paneles alternan: pulsar uno cuando su panel está al

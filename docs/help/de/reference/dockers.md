@@ -56,7 +56,9 @@ listet jedes Andockfenster und die Seite auf, die es erklärt.
 - Klicken Sie auf eine Registerkarte, um ihr Andockfenster nach vorn zu
   holen; ein Klick auf die vordere Registerkarte klappt die Andockfenster ein.
 - Die Schaltfläche Schließen in der Titelleiste eines Andockfensters nimmt es
-  aus den Registerkarten; die Schaltfläche Einklappen klappt den Bereich ein.
+  aus den Registerkarten; die Schaltfläche Einklappen klappt den Bereich ein;
+  ihre Pfeile zeigen zur Fensterseite, an die er sich faltet (links bei
+  Andockfenstern am linken Rand).
 - Andockfenster, die Sie offen lassen, kommen beim nächsten Start von
   TraceDraw wieder.
 - Die Tastenkürzel der Andockfenster schalten um: Drücken Sie eines, während

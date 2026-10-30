@@ -55,7 +55,8 @@ the page that explains it.
 - Click a tab to bring its panel to the front; click the tab in front to fold
   the panels away.
 - The close button in a panel's title bar takes it out of the tabs; the
-  collapse button folds the panel area.
+  collapse button folds the panel area; its arrows point to the side of the
+  window the panels fold toward (left for panels docked at the left).
 - The panels you leave open come back the next time TraceDraw starts.
 - Panel shortcuts toggle: pressing one when its panel is in front hides the
   panels.

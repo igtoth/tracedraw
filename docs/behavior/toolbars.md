@@ -26,7 +26,10 @@ To Fit (with their pictures) and no other zoom commands.
 ## Panels
 
 The open panel has a 27 px `#EAEAEA` title bar (its name at 12 px, then
-collapse and close in grey at the right) over a white page. The tab
+collapse and close in grey at the right; the collapse button's two
+triangles point to the window edge the column folds toward, right for a
+column at the right and left for one at the left, mirrored in a
+right-to-left language) over a white page. The tab
 column to its right is 27 px wide: `#EAEAEA` under the title bar and
 below the tabs, a `#B2B2B2` line along the panel, grey `#D8D8D8` tabs
 with an icon and the name running downwards, the open panel's tab

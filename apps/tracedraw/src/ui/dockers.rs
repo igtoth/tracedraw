@@ -249,6 +249,20 @@ fn place_menu(app: &mut App, ui: &mut Ui, tab: DockerTab) {
     }
 }
 
+/// The collapse button's two triangles in `r`: pointing right for a
+/// column at the window's right edge, left for one at the left edge.
+pub(crate) fn fold_arrows(r: egui::Rect, at_left: bool) -> [[egui::Pos2; 3]; 2] {
+    let dir = if at_left { -1.0 } else { 1.0 };
+    [-3.5f32, 3.0].map(|dx| {
+        let c = r.center() + egui::vec2(dx * dir, 0.0);
+        [
+            c + egui::vec2(-2.5 * dir, -4.5),
+            c + egui::vec2(2.5 * dir, 0.0),
+            c + egui::vec2(-2.5 * dir, 4.5),
+        ]
+    })
+}
+
 /// A column's tab strip lies at the window's left edge: the other
 /// column's (the default column's in a right-to-left language).
 fn strip_at_left(place: DockerPlace) -> bool {
@@ -576,7 +590,8 @@ fn docker_title(app: &mut App, ui: &mut Ui, tab: DockerTab, place: DockerPlace) 
     if place == DockerPlace::Floating {
         return;
     }
-    // Collapse: two small triangles.
+    // Collapse: two small triangles pointing at the window edge the
+    // column folds toward (left for a column at the left).
     let fold = egui::Rect::from_center_size(
         egui::pos2(bar.right() - 36.0, bar.center().y),
         egui::vec2(20.0, 20.0),
@@ -589,14 +604,9 @@ fn docker_title(app: &mut App, ui: &mut Ui, tab: DockerTab, place: DockerPlace) 
         )
         .rich_tip(tr("docker.collapse"));
     let col = if resp.hovered() { Tokens::text() } else { grey };
-    for dx in [-3.5f32, 3.0] {
-        let c = fold.center() + egui::vec2(dx, 0.0);
+    for points in fold_arrows(fold, strip_at_left(place)) {
         ui.painter().add(egui::epaint::PathShape::convex_polygon(
-            vec![
-                c + egui::vec2(-2.5, -4.5),
-                c + egui::vec2(2.5, 0.0),
-                c + egui::vec2(-2.5, 4.5),
-            ],
+            points.to_vec(),
             col,
             egui::Stroke::NONE,
         ));
@@ -2868,6 +2878,65 @@ mod tests {
             ),
         );
         assert_eq!(app.docker_tab, last, "{:?}", app.open_dockers);
+    }
+
+    /// The collapse button of a docker column points at the window edge
+    /// the column folds toward: right for the right column, left for a
+    /// column docked at the left (it pointed right on both sides). Read
+    /// from the shapes the window paints.
+    #[test]
+    fn the_collapse_arrows_point_to_the_side_of_their_column() {
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        app.show_welcome = false;
+        app.move_docker(DockerTab::Objects, DockerPlace::Left, None);
+        app.set_docker_column(DockerPlace::Left, true, Some(DockerTab::Objects));
+        app.set_docker_column(DockerPlace::Right, true, Some(DockerTab::Hints));
+        let mut shapes = Vec::new();
+        for _ in 0..3 {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1400.0, 900.0),
+                )),
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| crate::ui::root(&mut app, ui));
+            out.textures_delta.clear();
+            shapes = out.shapes;
+        }
+        assert_eq!(
+            app.docker_place(DockerTab::Objects),
+            Some(DockerPlace::Left)
+        );
+        // Which way the triangles drawn in a button's rectangle point:
+        // the tip is the corner off the line of the other two.
+        let pointing = |place: DockerPlace| -> Vec<f32> {
+            let r = ctx
+                .read_response(egui::Id::new(("docker_fold", place as u8)))
+                .map(|r| r.rect)
+                .expect("the collapse button");
+            let mut dirs = Vec::new();
+            for clipped in &shapes {
+                if let egui::Shape::Path(p) = &clipped.shape {
+                    if p.points.len() == 3 && p.points.iter().all(|q| r.contains(*q)) {
+                        let [a, b, c] = [p.points[0], p.points[1], p.points[2]];
+                        let base = (a.x + c.x) / 2.0;
+                        dirs.push((b.x - base).signum());
+                    }
+                }
+            }
+            dirs
+        };
+        assert_eq!(pointing(DockerPlace::Right), vec![1.0, 1.0]);
+        assert_eq!(pointing(DockerPlace::Left), vec![-1.0, -1.0]);
+        // In pictures: the left column's button is mirrored.
+        let r = egui::Rect::from_center_size(egui::pos2(50.0, 50.0), egui::vec2(20.0, 20.0));
+        let right = fold_arrows(r, false);
+        let left = fold_arrows(r, true);
+        for (a, b) in right.iter().flatten().zip(left.iter().flatten()) {
+            assert!((a.x - 50.0 + (b.x - 50.0)).abs() < 1e-4 && a.y == b.y);
+        }
     }
 
     /// A docker dragged by its tab (or its title) and dropped near the
