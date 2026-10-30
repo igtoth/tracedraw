@@ -364,6 +364,39 @@ pub fn color_button(ui: &mut Ui, c: &mut Color) -> bool {
         Stroke::new(1.0, Tokens::control_border()),
         egui::StrokeKind::Inside,
     );
+    picker_popup(ui, id, swatch, c, resp.clicked())
+}
+
+/// Open picker `id` for `c` (it shows where [`picker_beside`] draws it).
+pub fn open_picker(ctx: &egui::Context, id: Id, c: Color) {
+    ctx.data_mut(|d| {
+        d.insert_temp(
+            id,
+            Open {
+                hue: viewer_point(c).0,
+                size: FIRST_SIZE,
+                offset: Vec2::ZERO,
+            },
+        )
+    });
+}
+
+/// Picker `id` is open.
+#[cfg(test)]
+pub fn picker_open(ctx: &egui::Context, id: Id) -> bool {
+    ctx.data(|d| d.get_temp::<Open>(id).is_some())
+}
+
+/// The popup of picker `id` beside `anchor` while it is open (opened by
+/// [`open_picker`], from a control that is not its swatch: the Other
+/// colour of a palette menu, which closes when the picker opens, #1262).
+/// True when the colour changed.
+pub fn picker_beside(ui: &mut Ui, id: Id, anchor: Rect, c: &mut Color) -> bool {
+    picker_popup(ui, id, anchor, c, false)
+}
+
+/// The popup of picker `id` beside `swatch`; `clicked` opens or closes it.
+fn picker_popup(ui: &mut Ui, id: Id, swatch: Rect, c: &mut Color, clicked: bool) -> bool {
     let mut open = ui.data(|d| d.get_temp::<Open>(id));
     // A colour its eyedropper asked for, picked from the drawing.
     let mut changed = false;
@@ -372,7 +405,7 @@ pub fn color_button(ui: &mut Ui, c: &mut Color) -> bool {
         changed = true;
     }
     let was_picking = picking(ui.ctx());
-    if resp.clicked() {
+    if clicked {
         open = match open {
             Some(_) => None,
             None => Some(Open {

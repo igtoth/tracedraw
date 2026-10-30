@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Contour, Extrude and Smart Fill bars: Other in a colour button's list opens the colour picker at the first click, beside the button, and the list closes. The picker sat inside the list, so the first click on Other closed both and nothing opened, and on the next try its Model list took the list and the picker away with it, so neither the model nor the eyedropper could be used (#1262).
+
 - Browser version: its notice now opens with the warning that a browser is slower, marked in red and underlined, then says it is the same program compiled to WebAssembly, and last points to the desktop app, in every language.
 
 ## 0.27.0 (2026-10-30)

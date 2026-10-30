@@ -16,6 +16,17 @@ Contour panel share the controls in `ui/contour_bar.rs`.
 | Last step's fill and outline colours | white, black | |
 | Object acceleration, colour acceleration | 0 % | -100 to 100 % |
 
+The two colour buttons of the bar open the colour palette's swatches
+and, under Other, the colour's swatch: a click on it closes the list
+and opens the colour picker beside the button (viewer, Model list,
+eyedropper, sliders), which stays open while it is used and closes on a
+click elsewhere or Esc. The picker used to sit inside the list, so the
+first click closed both and the Model list took the list away with it
+(#1262, `ui::fill_tool_bars::color_pick`, shared by the colour buttons
+of the Extrude and Smart Fill bars;
+`ui::fill_tool_bars::tests::other_opens_a_picker_that_stays` and
+`the_first_click_on_other_opens_a_picker_that_works`).
+
 Ctrl+F9 opens the Contour panel.
 
 ## Formulas

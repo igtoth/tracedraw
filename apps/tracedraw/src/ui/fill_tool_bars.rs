@@ -111,14 +111,41 @@ pub fn color_pick(
                 });
             }
             ui.separator();
+            // Other: the colour picker opens beside the bar's button and
+            // the menu closes. A picker inside the menu closed with it at
+            // its first click and took the menu away when its own lists
+            // were used (#1262).
             ui.horizontal(|ui| {
                 ui.label(tr("toolbar.other_colour"));
-                if crate::ui::color_picker::color_button(ui, color) {
-                    changed = true;
+                let (r, _) = ui.allocate_exact_size(vec2(40.0, 18.0), Sense::hover());
+                let other = ui
+                    .interact(r, other_colour_id(id_salt), Sense::click())
+                    .rich_tip(crate::ui::tips::keyed("color_picker.button"));
+                ui.painter().rect_filled(r.shrink(1.0), 2.0, rgb32(*color));
+                ui.painter().rect_stroke(
+                    r,
+                    2.0,
+                    Stroke::new(1.0, Tokens::control_border()),
+                    egui::StrokeKind::Inside,
+                );
+                if other.clicked() {
+                    crate::ui::color_picker::open_picker(ui.ctx(), picker_id(id_salt), *color);
+                    ui.close();
                 }
             });
         });
+    changed |= crate::ui::color_picker::picker_beside(ui, picker_id(id_salt), rect, color);
     changed
+}
+
+/// The Other colour swatch in the menu of [`color_pick`] `id_salt`.
+pub fn other_colour_id(id_salt: &str) -> egui::Id {
+    egui::Id::new(("color_pick_other", id_salt))
+}
+
+/// The colour picker [`color_pick`] `id_salt` opens from its menu.
+pub fn picker_id(id_salt: &str) -> egui::Id {
+    egui::Id::new(("color_pick_picker", id_salt))
 }
 
 /// The Mesh Fill tool's bar.
@@ -261,6 +288,115 @@ pub fn smart_fill_bar(app: &mut App, ui: &mut Ui) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// One frame of a colour button at (100, 100), with `events`.
+    fn pick_frame(ctx: &egui::Context, color: &mut Color, events: Vec<egui::Event>) {
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(egui::Pos2::ZERO, vec2(1200.0, 900.0))),
+            events,
+            ..Default::default()
+        };
+        let palette = vec![
+            ("Red".to_string(), Color::rgb8(255, 0, 0)),
+            ("Blue".to_string(), Color::rgb8(0, 0, 255)),
+        ];
+        let mut out = ctx.run_ui(input, |ui| {
+            egui::Area::new(egui::Id::new("bar"))
+                .fixed_pos(egui::pos2(100.0, 100.0))
+                .show(ui.ctx(), |ui| {
+                    color_pick(ui, &palette, "t", color, "tip", true);
+                });
+        });
+        out.textures_delta.clear();
+    }
+
+    fn click(ctx: &egui::Context, color: &mut Color, at: egui::Pos2) {
+        let b = |pressed| egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        pick_frame(ctx, color, vec![egui::Event::PointerMoved(at)]);
+        pick_frame(ctx, color, vec![b(true)]);
+        pick_frame(ctx, color, vec![b(false)]);
+        pick_frame(ctx, color, Vec::new());
+    }
+
+    /// #1262: Other in a colour button's menu opens the picker at the
+    /// first click, and the picker stays while it is used.
+    #[test]
+    fn other_opens_a_picker_that_stays() {
+        let ctx = crate::theme::ui_context();
+        let mut color = Color::rgb8(255, 0, 0);
+        pick_frame(&ctx, &mut color, Vec::new());
+        // Open the menu, then click Other.
+        click(&ctx, &mut color, egui::pos2(110.0, 111.0));
+        let other = ctx
+            .read_response(other_colour_id("t"))
+            .expect("the menu shows Other")
+            .rect;
+        click(&ctx, &mut color, other.center());
+        let picker = picker_id("t");
+        assert!(crate::ui::color_picker::picker_open(&ctx, picker));
+        let area = ctx
+            .memory(|m| m.area_rect(picker.with("area")))
+            .expect("the picker is drawn");
+        // The menu is gone; a click in the picker keeps it and changes
+        // the colour.
+        assert!(!egui::Popup::is_any_open(&ctx), "the menu closed");
+        let before = color;
+        click(&ctx, &mut color, area.min + vec2(area.width() * 0.3, 60.0));
+        assert!(
+            crate::ui::color_picker::picker_open(&ctx, picker),
+            "still open"
+        );
+        assert_ne!(color, before, "the viewer set the colour");
+        // A click elsewhere closes it.
+        click(&ctx, &mut color, egui::pos2(1100.0, 850.0));
+        assert!(!crate::ui::color_picker::picker_open(&ctx, picker));
+    }
+
+    /// The colour picker on show: a foreground area other than the menu,
+    /// tall enough to hold the viewer.
+    fn shown_picker(ctx: &egui::Context) -> Option<Rect> {
+        let menu = egui::Id::new(("color_pick", "t"));
+        ctx.memory(|m| {
+            m.areas()
+                .visible_layer_ids()
+                .into_iter()
+                .filter(|l| l.order == egui::Order::Foreground && l.id != menu)
+                .filter_map(|l| m.area_rect(l.id))
+                .find(|r| r.height() > 150.0)
+        })
+    }
+
+    /// #1262, found by what is on screen alone: the first click on Other
+    /// opens a picker, and a click in its viewer sets the colour and
+    /// keeps it open.
+    #[test]
+    fn the_first_click_on_other_opens_a_picker_that_works() {
+        let ctx = crate::theme::ui_context();
+        let mut color = Color::rgb8(255, 0, 0);
+        pick_frame(&ctx, &mut color, Vec::new());
+        click(&ctx, &mut color, egui::pos2(110.0, 111.0));
+        let menu = ctx
+            .memory(|m| m.area_rect(egui::Id::new(("color_pick", "t"))))
+            .expect("the menu is open");
+        click(&ctx, &mut color, menu.left_bottom() + OTHER_FROM_MENU);
+        let picker = shown_picker(&ctx).expect("the picker opened at the first click");
+        let before = color;
+        click(
+            &ctx,
+            &mut color,
+            picker.min + vec2(picker.width() * 0.3, 60.0),
+        );
+        assert_ne!(color, before, "the viewer set the colour");
+        assert!(shown_picker(&ctx).is_some(), "the picker stays open");
+    }
+
+    /// Where the Other swatch sits from the bottom left of the menu.
+    const OTHER_FROM_MENU: egui::Vec2 = egui::vec2(64.7, -18.0);
 
     /// Smart Fill makes the object its bar says: the default fill and
     /// outline, its own colour and outline, or neither.
