@@ -147,7 +147,7 @@ pub fn param_stacked(
         }
         ParamKind::Angle { default } => {
             let mut v = values.get(spec.name).copied().unwrap_or(default);
-            let mut draw = |ui: &mut Ui| {
+            let draw = |ui: &mut Ui| {
                 ui.label(tr(&key));
                 crate::ui::tips::tip_over(ui, tip(), |ui| {
                     ui.horizontal(|ui| {
@@ -173,7 +173,7 @@ pub fn param_stacked(
                 .map(|v| v.max(0.0) as usize)
                 .unwrap_or(default)
                 .min(options.len().saturating_sub(1));
-            let mut draw = |ui: &mut Ui| {
+            let draw = |ui: &mut Ui| {
                 ui.label(tr(&key));
                 egui::ComboBox::from_id_salt(("fx_choice", spec.name))
                     .selected_text(tr(&format!("fxo.{}", options[cur])))
