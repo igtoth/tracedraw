@@ -9904,6 +9904,253 @@ fn the_edit_fill_eyedropper_picks_a_colour_from_the_drawing() {
     assert!(matches!(app.dialog, Dialog::EditFill(_)));
 }
 
+/// A curve with an outline that takes work (width nodes, arrowheads),
+/// beside many texts, for the node drag tests (#1259).
+fn rich_outline_page(app: &mut App, texts: usize) -> ShapeId {
+    use tracedraw_core::geometry::BezPath;
+    use tracedraw_core::{Arrowhead, Command, Stroke, WidthNode};
+    for i in 0..texts {
+        let at = Point::new(15.0 + (i % 8) as f64 * 24.0, 60.0 + (i / 8) as f64 * 8.0);
+        app.start_text(at, None);
+        app.text_insert("lorem ipsum");
+        app.finish_text();
+    }
+    let mut p = BezPath::new();
+    p.move_to((10.0, 20.0));
+    for i in 1..200 {
+        let x = 10.0 + i as f64;
+        p.curve_to((x - 0.6, 20.0 + 8.0), (x - 0.3, 20.0 - 8.0), (x, 20.0));
+    }
+    let curve = app
+        .new_shape(ShapeKind::Path {
+            path: p,
+            closed: false,
+        })
+        .expect("curve");
+    let mut stroke = Stroke::new(tracedraw_core::Color::BLACK, 0.5);
+    stroke.widths = (0..12)
+        .map(|i| WidthNode::symmetric(i as f64 / 11.0, 0.3 + (i % 3) as f64 * 1.5))
+        .collect();
+    stroke.start_arrow = Arrowhead::Arrow;
+    stroke.end_arrow = Arrowhead::Arrow;
+    app.run(Command::SetStroke {
+        shapes: vec![curve],
+        stroke: Some(stroke),
+    });
+    app.select(vec![curve]);
+    app.set_tool(Tool::Shape);
+    curve
+}
+
+/// While a node is dragged with the Shape tool, the page keeps the
+/// picture it had before the drag (the outline is not made again every
+/// frame; the thin line of the curve being edited follows the pointer),
+/// and the picture with the moved node comes on release, or once the
+/// pointer rests (#1259, #509).
+#[test]
+fn a_node_drag_keeps_the_pages_picture_until_release_or_rest() {
+    let (ctx, mut app, _) = setup();
+    let curve = rich_outline_page(&mut app, 4);
+    for _ in 0..3 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    let renders = |app: &App| app.raster.borrow().render_count();
+    // The node at (110, 20): the 100th.
+    let from = app.view.to_screen(Point::new(110.0, 20.0));
+    click_at(&ctx, &mut app, from, Modifiers::NONE);
+    assert_eq!(
+        app.node_selection,
+        vec![(curve, 100)],
+        "{:?}",
+        app.node_selection
+    );
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(from, true, PointerButton::Primary, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    let before = renders(&app);
+    let revision = app.engine.revision();
+    for i in 1..=10 {
+        let to = from + egui::vec2(2.0 * i as f32, 3.0 * i as f32);
+        frame(
+            &ctx,
+            &mut app,
+            vec![Event::PointerMoved(to)],
+            Modifiers::NONE,
+        );
+    }
+    assert!(
+        matches!(app.drag, Drag::NodeMove { begun: true, .. }),
+        "{:?}",
+        app.drag
+    );
+    assert_ne!(
+        app.engine.revision(),
+        revision,
+        "the node moved in the drawing"
+    );
+    assert_eq!(renders(&app), before, "no render while the pointer moves");
+    // The pointer rests: the page shows the moved node with its outline.
+    std::thread::sleep(crate::app::NODE_DRAG_REST + std::time::Duration::from_millis(20));
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    assert_eq!(
+        renders(&app),
+        before + 1,
+        "one render once the pointer rests"
+    );
+    // Moving again: that picture stays while the pointer moves.
+    for i in 11..=20 {
+        let to = from + egui::vec2(2.0 * i as f32, 3.0 * i as f32);
+        frame(
+            &ctx,
+            &mut app,
+            vec![Event::PointerMoved(to)],
+            Modifiers::NONE,
+        );
+    }
+    assert_eq!(
+        renders(&app),
+        before + 1,
+        "no render while the pointer moves again"
+    );
+    let end = from + egui::vec2(40.0, 60.0);
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(end, false, PointerButton::Primary, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    assert!(matches!(app.drag, Drag::None), "{:?}", app.drag);
+    assert!(app.node_drag_shown.is_none());
+    // The page's render runs on a thread once it is slow: the next
+    // render waits for it.
+    for _ in 0..100 {
+        if renders(&app) > before + 1 {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    assert_eq!(
+        renders(&app),
+        before + 2,
+        "the release renders the moved node"
+    );
+    let moved = app
+        .selected_node_points()
+        .first()
+        .map(|(_, _, p)| *p)
+        .expect("the node");
+    let want = app.view.to_page(end);
+    assert!((moved - want).hypot() < 1.0, "{moved:?} vs {want:?}");
+}
+
+/// A control handle dragged with the Shape tool keeps the page's picture
+/// the same way a node drag does (#1259): no render while the pointer
+/// moves, one on release.
+#[test]
+fn a_handle_drag_keeps_the_pages_picture_until_release() {
+    let (ctx, mut app, _) = setup();
+    let curve = rich_outline_page(&mut app, 2);
+    for _ in 0..3 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    let renders = |app: &App| app.raster.borrow().render_count();
+    // The node at (110, 20): its outgoing handle is at (110.4, 28).
+    let node = app.view.to_screen(Point::new(110.0, 20.0));
+    click_at(&ctx, &mut app, node, Modifiers::NONE);
+    assert_eq!(app.node_selection, vec![(curve, 100)]);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    let from = app.view.to_screen(Point::new(110.4, 28.0));
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(from, true, PointerButton::Primary, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    assert!(matches!(app.drag, Drag::Handle { .. }), "{:?}", app.drag);
+    let before = renders(&app);
+    let revision = app.engine.revision();
+    for i in 1..=10 {
+        let to = from + egui::vec2(3.0 * i as f32, -2.0 * i as f32);
+        frame(
+            &ctx,
+            &mut app,
+            vec![Event::PointerMoved(to)],
+            Modifiers::NONE,
+        );
+    }
+    assert_ne!(app.engine.revision(), revision, "the handle moved");
+    assert_eq!(renders(&app), before, "no render while the handle moves");
+    let end = from + egui::vec2(30.0, -20.0);
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(end, false, PointerButton::Primary, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    assert!(app.node_drag_shown.is_none());
+    for _ in 0..100 {
+        if renders(&app) > before {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    assert_eq!(renders(&app), before + 1, "the release renders the curve");
+}
+
+/// Frame times of a node drag on a curve with a variable-width,
+/// arrowheaded outline beside 300 texts (#1259): the page's picture is
+/// kept while the pointer moves, so a frame costs about what the Shape
+/// tool's own drawing does. Run with `cargo test --release -p tracedraw
+/// -- --ignored frame_times_of_a_node_drag_with_a_rich_outline --nocapture`.
+#[test]
+#[ignore]
+fn frame_times_of_a_node_drag_with_a_rich_outline() {
+    let (ctx, mut app, _) = setup();
+    rich_outline_page(&mut app, 300);
+    for _ in 0..3 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    let from = app.view.to_screen(Point::new(110.0, 20.0));
+    click_at(&ctx, &mut app, from, Modifiers::NONE);
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(from, true, PointerButton::Primary, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    let n = 200;
+    let renders = app.raster.borrow().render_count();
+    let mut total = 0.0;
+    for i in 0..n {
+        let to = from + egui::vec2((i % 40) as f32 * 2.0, (i / 40) as f32 * 3.0 + 1.0);
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                Pos2::ZERO,
+                egui::vec2(1600.0, 1000.0),
+            )),
+            events: vec![Event::PointerMoved(to)],
+            time: Some(i as f64 * 0.016),
+            ..Default::default()
+        };
+        let t = std::time::Instant::now();
+        let mut out = ctx.run_ui(input, |ui| crate::ui::root(&mut app, ui));
+        total += t.elapsed().as_secs_f64();
+        out.textures_delta.clear();
+    }
+    assert!(matches!(app.drag, Drag::NodeMove { .. }), "{:?}", app.drag);
+    eprintln!(
+        "node drag with a rich outline beside 300 texts: ui {:.3} ms a frame, {} renders in {n} frames",
+        total * 1000.0 / n as f64,
+        app.raster.borrow().render_count() - renders
+    );
+}
+
 /// Frame times of a node drag with the Shape tool on a curve of 3000
 /// nodes, the node snapping to the rest of its own curve (#673): the
 /// still part is found once a drag and only its pieces near the pointer

@@ -2613,6 +2613,8 @@ impl App {
 
     pub fn end_drag(&mut self) {
         let drag = std::mem::replace(&mut self.drag, Drag::None);
+        // The page shows the drawing as it is now (#1259).
+        self.node_drag_shown = None;
         if !matches!(drag, Drag::Move { .. }) {
             self.drop_frame = None;
         }

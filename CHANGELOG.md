@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Shape tool: while a node is dragged (a segment bent, the chosen nodes stretched or turned), the page keeps the picture it had before the drag and the curve follows the pointer as the thin line the tool draws over it; the outline with its width nodes, brush, arrowheads and effects is made again once the pointer rests for a moment and on release, not every frame (#1259, #509). On a page with much text the outline was made again at every pointer move and the drag lagged.
+
 ## 0.27.0 (2026-10-30)
 
 - Browser version: the page can be installed as an app on an Android tablet, an iPad or a desktop (the browser's "Install app" or "Add to Home Screen"): it opens full screen with the TraceDraw icon, in any orientation, keeps clear of a notch or rounded corners, and starts without a network connection once it has been opened, at the version last used; a new deploy is taken at the next start after its pages are closed, never a stale module against a new script. It is the same WebAssembly build served from the same address, not a native Android program (#893).

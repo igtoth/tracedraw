@@ -41,6 +41,11 @@ over a control handle, a wave over a segment.
 - Drag a segment to bend it: the point you grab follows the pointer while the
   nodes at its ends stay. A straight segment becomes curved.
 - Drag a control handle to change the bend.
+- While you drag a node, a segment or a handle, the page keeps the picture it
+  had before the drag and the curve follows the pointer as the thin line the
+  tool draws over it. The outline, with its width nodes, brush, arrowheads
+  and effects, is drawn again when the pointer rests for a moment and when
+  you release the button.
 - The arrow keys nudge the selected nodes (<kbd>Shift</kbd> for a larger
   step, <kbd>Ctrl</kbd> for a smaller one).
 - Double-click a segment to add a node there, a node to delete it. Click a
