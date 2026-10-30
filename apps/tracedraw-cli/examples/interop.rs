@@ -15,7 +15,10 @@
 //! a group of two shapes, an open polyline, and artistic text (plain with
 //! accents, runs in bold and italic with a colour of their own, right
 //! aligned and centred). Everything is drawn here from scratch in Arial,
-//! which falls back to the system's sans serif when missing.
+//! which falls back to the system's sans serif when missing. Three parts
+//! of it are written too, to tell a record kind apart when a file fails:
+//! `interop-empty.tdraw` (the page alone), `interop-shapes.tdraw` (the
+//! shapes without the texts) and `interop-text.tdraw` (the texts alone).
 
 use std::path::Path;
 use tracedraw_core::{
@@ -187,10 +190,24 @@ fn main() {
         16.0,
         TextAlign::Center,
     ));
-    doc.pages[0].layers[0].shapes = shapes;
-    let path = dir.join("interop.tdraw");
-    match tracedraw_io::save_native(&doc, &path) {
-        Ok(()) => println!("wrote {}", path.display()),
-        Err(e) => eprintln!("{}: {e}", path.display()),
+    // The whole drawing, and three parts of it that tell a record kind
+    // apart when a file of one version fails: no objects, the shapes
+    // alone and the texts alone.
+    let is_text = |s: &Shape| matches!(s.kind, ShapeKind::Text { .. });
+    let texts: Vec<Shape> = shapes.iter().filter(|s| is_text(s)).cloned().collect();
+    let others: Vec<Shape> = shapes.iter().filter(|s| !is_text(s)).cloned().collect();
+    for (name, part) in [
+        ("interop.tdraw", shapes),
+        ("interop-empty.tdraw", Vec::new()),
+        ("interop-shapes.tdraw", others),
+        ("interop-text.tdraw", texts),
+    ] {
+        let mut d = doc.clone();
+        d.pages[0].layers[0].shapes = part;
+        let path = dir.join(name);
+        match tracedraw_io::save_native(&d, &path) {
+            Ok(()) => println!("wrote {}", path.display()),
+            Err(e) => eprintln!("{}: {e}", path.display()),
+        }
     }
 }

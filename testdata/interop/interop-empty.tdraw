@@ -1,0 +1,167 @@
+{
+  "title": "interop",
+  "pages": [
+    {
+      "id": 1,
+      "name": "Page 1",
+      "size": {
+        "width": 210.0,
+        "height": 148.0
+      },
+      "layers": [
+        {
+          "id": 2,
+          "name": "Layer 1",
+          "visible": true,
+          "printable": true,
+          "locked": false,
+          "shapes": [],
+          "scope": "all"
+        }
+      ],
+      "guides": [],
+      "background": null
+    }
+  ],
+  "ids": {
+    "next": 15
+  },
+  "master": [],
+  "object_styles": [],
+  "defaults": {
+    "graphic": {
+      "fill": {
+        "fill": "none"
+      },
+      "stroke": {
+        "color": {
+          "model": "cmyk",
+          "c": 0.0,
+          "m": 0.0,
+          "y": 0.0,
+          "k": 1.0
+        },
+        "width": 0.2,
+        "cap": "butt",
+        "join": "miter",
+        "dash": [],
+        "scale_with_object": false,
+        "behind_fill": false,
+        "start_arrow": "none",
+        "end_arrow": "none",
+        "stretch": 1.0,
+        "nib_angle": 0.0,
+        "miter_limit": 45.0
+      }
+    },
+    "artistic_text": {
+      "fill": {
+        "fill": "solid",
+        "model": "cmyk",
+        "c": 0.0,
+        "m": 0.0,
+        "y": 0.0,
+        "k": 1.0
+      },
+      "stroke": null
+    },
+    "paragraph_text": {
+      "fill": {
+        "fill": "solid",
+        "model": "cmyk",
+        "c": 0.0,
+        "m": 0.0,
+        "y": 0.0,
+        "k": 1.0
+      },
+      "stroke": null
+    },
+    "paragraph": {
+      "leading_pct": 100.0,
+      "leading_unit": "percent_char_height",
+      "char_spacing_pct": 0.0,
+      "word_spacing_pct": 100.0,
+      "space_before": 0.0,
+      "space_after": 0.0,
+      "first_line_indent": 0.0,
+      "left_indent": 0.0,
+      "right_indent": 0.0,
+      "columns": 1,
+      "gutter": 5.0,
+      "bullets": false,
+      "bullet_char": "•",
+      "bullet_indent": 5.0,
+      "drop_cap_lines": 0,
+      "tabs": [],
+      "hyphenate": false,
+      "fit_to_frame": false,
+      "baseline_grid_mm": 0.0,
+      "vertical_align": "top"
+    }
+  },
+  "color_styles": [],
+  "symbols": [],
+  "metadata": {
+    "language": "",
+    "author": "",
+    "subject": "",
+    "keywords": "",
+    "copyright": "",
+    "notes": "",
+    "rating": 0,
+    "resolution_dpi": 300.0,
+    "bleed": 0.0,
+    "rgb_profile": "",
+    "cmyk_profile": "",
+    "gray_profile": "",
+    "rendering_intent": "",
+    "primary_color_mode": "Cmyk",
+    "grid": {
+      "spacing_x": 10.0,
+      "spacing_y": 10.0,
+      "display": "lines",
+      "baseline_spacing": 4.938888888888888,
+      "baseline_start": 12.7,
+      "baseline_color": {
+        "model": "rgb",
+        "r": 0.56078434,
+        "g": 0.78039217,
+        "b": 0.9411765
+      },
+      "pixel_color": {
+        "model": "rgb",
+        "r": 0.8509804,
+        "g": 0.8509804,
+        "b": 0.8509804
+      },
+      "pixel_opacity": 1.0
+    },
+    "rulers": {
+      "origin_x": 0.0,
+      "origin_y": 0.0,
+      "tick_divisions": 10,
+      "scale_page": 1.0,
+      "scale_world": 1.0,
+      "scale_page_units": "",
+      "scale_world_units": ""
+    },
+    "guides": {
+      "color": {
+        "model": "rgb",
+        "r": 0.0,
+        "g": 0.0,
+        "b": 1.0
+      },
+      "preset_color": {
+        "model": "rgb",
+        "r": 0.0,
+        "g": 0.6,
+        "b": 1.0
+      }
+    },
+    "fill_open_curves": false,
+    "no_auto_inflate": false
+  },
+  "palette": [],
+  "format_version": 0
+}
