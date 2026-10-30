@@ -26,8 +26,9 @@ A barra de propriedades mostra a cor amostrada.
 
 Enquanto você move o ponteiro para pegar uma cor, uma pequena caixa ao lado
 mostra a cor embaixo dele: uma amostra, o nome da cor quando é uma cor da
-paleta ou uma tinta especial, seus valores no modo de cor do desenho (CMYK ou
-RGB) e seu valor hexadecimal. O conta-gotas de um seletor de cores mostra a
+paleta ou uma tinta especial, seus valores (CMYK ou RGB: no modelo da própria
+cor, então uma cor convertida com Converter cores mostra o modelo para o qual
+foi; outras cores no modo de cor do desenho) e seu valor hexadecimal. O conta-gotas de um seletor de cores mostra a
 mesma caixa.
 
 ## Conta-gotas de atributos {#attributes-eyedropper}

@@ -36,8 +36,9 @@ pub struct ColorDockerState {
     pub hue: f32,
     /// The palette the palette view shows (index into `App::palettes`).
     pub palette: usize,
-    /// The selection the new color was last taken from.
-    synced: Option<Vec<ShapeId>>,
+    /// The selection the new color was last taken from, with the fill it
+    /// had then (a fill changed, as by Convert Colors, is taken again).
+    synced: Option<(Vec<ShapeId>, Option<Color>)>,
     /// Spot colours: the tint they are applied at (percent; the inks'
     /// Fill and Outline, a spot swatch of the palette view) and the name
     /// a new ink gets.
@@ -70,13 +71,28 @@ fn selected_fill(app: &App) -> Option<Color> {
     })
 }
 
-/// Take the new color from the selection when the selection changed.
+/// Take the new color from the selection when the selection changed, or
+/// when its fill went to another colour model (Tools > Convert Colors). A
+/// CMYK or RGB fill brings the sliders to its own model, so a fill
+/// converted to RGB shows RGB values, not the CMYK ones of the model the
+/// sliders were in (#1254). A fill changed within its model (a colour
+/// applied, an undo) leaves the new colour as it is.
 fn follow_selection(app: &mut App) {
-    if app.color_docker.synced.as_deref() == Some(app.selection.as_slice()) {
+    let fill = selected_fill(app);
+    let same = app.color_docker.synced.as_ref().is_some_and(|(sel, f)| {
+        sel.as_slice() == app.selection.as_slice()
+            && f.map(|c| c.model_name()) == fill.map(|c| c.model_name())
+    });
+    app.color_docker.synced = Some((app.selection.clone(), fill));
+    if same {
         return;
     }
-    app.color_docker.synced = Some(app.selection.clone());
-    if let Some(c) = selected_fill(app) {
+    if let Some(c) = fill {
+        if matches!(c, Color::Cmyk { .. } | Color::Rgb { .. }) {
+            if let Some(m) = MODELS.iter().position(|m| *m == c.model_name()) {
+                app.color_model = m;
+            }
+        }
         set_color(app, c);
     }
 }
@@ -1594,6 +1610,47 @@ pub(crate) mod tests {
         app.mixer_color = Color::rgb8(0, 0, 255);
         follow_selection(&mut app);
         assert_eq!(app.mixer_color.to_hex(), "#0000ff");
+    }
+
+    /// A fill converted to another model under the same selection
+    /// (Convert Colors to RGB) is taken again, and the sliders go to its
+    /// model (#1254); a fill changed within its model is not.
+    #[test]
+    fn the_new_color_follows_a_converted_fill_into_its_model() {
+        let mut app = App::headless();
+        let id = app
+            .new_shape(ShapeKind::Rect {
+                rect: tracedraw_core::Rect::new(0.0, 0.0, 10.0, 10.0),
+                radius: 0.0,
+                corners: None,
+            })
+            .expect("shape");
+        app.run(Command::SetFill {
+            shapes: vec![id],
+            fill: Fill::Solid(Color::cmyk_pct(0.0, 100.0, 100.0, 0.0)),
+        });
+        app.select(vec![id]);
+        follow_selection(&mut app);
+        assert_eq!(MODELS[app.color_model], "CMYK");
+        assert_eq!(app.mixer_color.model_name(), "CMYK");
+        assert!(
+            app.convert_colors(&crate::ui::convert_colors::ConvertColorsState {
+                to: tracedraw_core::color_convert::ColorTarget::Rgb,
+                whole: false,
+                spots: false,
+            })
+        );
+        follow_selection(&mut app);
+        assert_eq!(MODELS[app.color_model], "RGB");
+        assert_eq!(app.mixer_color.model_name(), "RGB");
+        // Another RGB colour given to it: the new colour stays.
+        let mixed = app.mixer_color;
+        app.run(Command::SetFill {
+            shapes: vec![id],
+            fill: Fill::Solid(Color::rgb8(0, 0, 255)),
+        });
+        follow_selection(&mut app);
+        assert_eq!(app.mixer_color, mixed);
     }
 
     #[test]

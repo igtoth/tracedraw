@@ -96,13 +96,19 @@ browser build has no way to it at all.
 
 ## Following the selection
 
-When the selection changes, the new colour becomes the first selected
-object's solid fill, in the model of the sliders. Changes by hand stay
-until the selection changes again.
+When the selection changes, or the first selected object's solid fill
+goes to another colour model (Tools > Convert Colors), the new colour
+becomes that fill. A CMYK or RGB fill brings the sliders to its own
+model, so a fill converted to RGB shows its RGB values (#1254); another
+model's fill shows in the model of the sliders. A fill changed within
+its model (a colour applied, an undo) leaves the new colour alone.
+Changes by hand stay until the selection changes or its fill is
+converted.
 
 ## Checks
 
 - `ui::color_docker::tests::the_new_color_follows_the_selection`
+- `ui::color_docker::tests::the_new_color_follows_a_converted_fill_into_its_model`
 - `ui::color_docker::tests::hue_sliders_count_degrees`
 - `ui::color_docker::tests::the_docker_draws_every_view_and_model`
 - `pick_drag_tests::the_color_panel_menu_swaps_fill_and_outline`

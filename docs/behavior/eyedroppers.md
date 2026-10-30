@@ -46,10 +46,13 @@ beside the pointer shows the colour a click would take
 - its name, in bold, when it has one: a spot colour's ink, else the first
   colour of the default palette or the palettes shown that is exactly
   equal (`ui::palette::name_of`);
-- its values in the drawing's primary colour mode (Document Options;
-  CMYK: C, M, Y, K in %, RGB: R, G, B 0 to 255), one per line, converted
-  when the colour is in another model; spot colours show their tint and
-  Registration its name;
+- its values in its own model when it is a CMYK or RGB colour (CMYK:
+  C, M, Y, K in %, RGB: R, G, B 0 to 255), so a colour converted with
+  Tools > Convert Colors reads in the model it went to, a picture in
+  CMYK mode giving its pixels in CMYK (#1254); a colour
+  of another model (HSB, Lab, grey...) in the drawing's primary colour
+  mode (Document Options); one per line; spot colours show their tint
+  and Registration its name;
 - its hex value, upper case (`#E02020`).
 
 The colour is the one the click would take: for the tool what

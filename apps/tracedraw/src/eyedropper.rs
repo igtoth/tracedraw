@@ -66,8 +66,10 @@ pub struct Reading {
     pub lines: Vec<String>,
 }
 
-/// The readout for `c` in a drawing of `mode`: its values in that model
-/// (CMYK or RGB, a spot ink as its tint) and its hex value.
+/// The readout for `c` in a drawing of `mode`: a CMYK or RGB colour's
+/// values in its own model (so a colour converted to RGB reads as RGB,
+/// #1254), another model's in the drawing's (CMYK or RGB), a spot ink as
+/// its tint; then its hex value.
 pub fn reading_of(
     c: Color,
     name: String,
@@ -76,6 +78,7 @@ pub fn reading_of(
     use tracedraw_core::document::PrimaryColorMode;
     let shown = match (c, mode) {
         (Color::Spot { .. }, _) | (Color::Registration, _) => c,
+        (Color::Cmyk { .. }, _) | (Color::Rgb { .. }, _) => c,
         (_, PrimaryColorMode::Cmyk) => c.convert_to("CMYK"),
         (_, PrimaryColorMode::Rgb) => c.convert_to("RGB"),
     };
@@ -297,7 +300,15 @@ impl App {
                     if let (Some(r), Some(g), Some(b)) =
                         (r.checked_div(cnt), g.checked_div(cnt), b.checked_div(cnt))
                     {
-                        return Some(Color::rgb8(r as u8, g as u8, b as u8));
+                        // A bitmap in CMYK mode gives its colour in CMYK,
+                        // so a picture converted with Convert Colors reads
+                        // in the model it went to (#1254).
+                        let c = Color::rgb8(r as u8, g as u8, b as u8);
+                        return Some(if s.cmyk_bitmap {
+                            c.convert_to("CMYK")
+                        } else {
+                            c
+                        });
                     }
                 }
             }
@@ -698,6 +709,30 @@ mod tests {
             .expect("a colour")
             .to_rgb8();
         assert!(c[0] < 20 && c[1] > 180 && c[2] < 20, "{c:?}");
+        // Converted to CMYK: the picture gives CMYK colours, and the
+        // readout shows C, M, Y, K; back to RGB, RGB again (#1254).
+        app.select(vec![id]);
+        let to = |target| crate::ui::convert_colors::ConvertColorsState {
+            to: target,
+            whole: false,
+            spots: false,
+        };
+        assert!(app.convert_colors(&to(tracedraw_core::color_convert::ColorTarget::Cmyk)));
+        let c = app.sample_color_at(left, false).expect("a colour");
+        assert_eq!(c.model_name(), "CMYK", "{c:?}");
+        let r = app
+            .hover_reading(left, false, false)
+            .cloned()
+            .expect("read");
+        assert!(r.lines[0].starts_with("C:"), "{:?}", r.lines);
+        assert!(app.convert_colors(&to(tracedraw_core::color_convert::ColorTarget::Rgb)));
+        let c = app.sample_color_at(left, false).expect("a colour");
+        assert_eq!(c.model_name(), "RGB", "{c:?}");
+        let r = app
+            .hover_reading(left, false, false)
+            .cloned()
+            .expect("read");
+        assert!(r.lines[0].starts_with("R:"), "{:?}", r.lines);
     }
 
     /// The readout names a palette colour and gives its values in the
@@ -728,12 +763,18 @@ mod tests {
         assert!(r.lines[0].starts_with("C:"), "{:?}", r.lines);
         assert_eq!(r.lines.len(), 5, "C, M, Y, K, hex: {:?}", r.lines);
         assert_eq!(r.lines[4], c.to_hex().to_uppercase());
-        // In an RGB drawing the values are RGB.
-        let rgb = reading_of(c, String::new(), PrimaryColorMode::Rgb);
+        // A CMYK or RGB colour reads in its own model whatever the
+        // drawing's (#1254); another model's in the drawing's.
+        let cmyk = reading_of(c, String::new(), PrimaryColorMode::Rgb);
+        assert!(cmyk.lines[0].starts_with("C:"), "{:?}", cmyk.lines);
+        let hsb = Color::rgb8(200, 30, 30).convert_to("HSB");
+        let rgb = reading_of(hsb, String::new(), PrimaryColorMode::Rgb);
         assert!(rgb.lines[0].starts_with("R:"), "{:?}", rgb.lines);
+        let in_cmyk = reading_of(hsb, String::new(), PrimaryColorMode::Cmyk);
+        assert!(in_cmyk.lines[0].starts_with("C:"), "{:?}", in_cmyk.lines);
         // A colour of no palette has no name.
         let odd = reading_of(Color::rgb8(1, 2, 3), String::new(), PrimaryColorMode::Cmyk);
-        assert!(odd.lines[0].starts_with("C:"));
+        assert!(odd.lines[0].starts_with("R:"), "{:?}", odd.lines);
         assert_eq!(odd.lines.last().map(String::as_str), Some("#010203"));
         // Nothing worked out again while nothing changes.
         let n = app.eyedropper_hover.computed;
