@@ -1,5 +1,7 @@
 # Recortar, cortar e apagar
 
+> *Tradução automática: esta página pode estar atrasada em relação à versão em inglês.*
+
 Quatro ferramentas do submenu Recortar tiram partes de objetos:
 [[tool.crop]], [[tool.knife]], [[tool.segment_delete]] e [[tool.eraser]]. Cada
 alteração é um passo de desfazer.
@@ -61,6 +63,11 @@ pedaços de linha que sobram depois de um cruzamento.
   ele tocar, em todos os objetos de uma vez. Cada parte sai inteira, até os
   cruzamentos nas pontas, mesmo onde passa do retângulo; uma forma fechada que
   nada cruza sai inteira.
+- Escolha **Mão livre** na barra de propriedades e arraste um traço por cima
+  dos contornos: cada parte que o traço cruzar é excluída, até os cruzamentos
+  com outras linhas, em um passo. Mantenha <kbd>Alt</kbd> pressionado ao
+  começar a arrastar para usar o outro modo (traço ou retângulo) só naquele
+  arraste.
 
 Retângulos, elipses e polígonos viram curvas; uma forma fechada que perde uma
 parte se abre, e um objeto sem nada sobrando é excluído.

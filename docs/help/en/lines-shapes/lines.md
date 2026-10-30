@@ -25,6 +25,9 @@ To draw a straight line with this tool, click where the line starts and
 click again where it ends. Hold <kbd>Ctrl</kbd> to keep the line to steps of
 15 degrees. <kbd>Esc</kbd> drops the first click.
 
+With a graphics tablet, the pen's pressure sets the width of the line along
+it; see [Drawing with a graphics tablet](pen-pressure.md).
+
 ## 2-Point Line {#two-point-line}
 
 The [[tool.two_point_line]] tool draws one straight segment: press where it
@@ -47,12 +50,43 @@ Hold <kbd>Ctrl</kbd> to place the next node in steps of 15 degrees from the
 last one, or to turn a handle in such steps. Every node snaps to what
 snapping is set to; see [Snapping](../pages-layout/snapping.md).
 
+While you drag a handle, hold <kbd>C</kbd> to make the node a cusp (only the
+outgoing handle follows), or <kbd>Alt</kbd> to move the node itself. Click
+the last node again to make it a cusp. A handle pulled out of the drawing
+window (over a panel or a toolbar) ends where you let go.
+
+While you draw, <kbd>Ctrl+Z</kbd> takes back the last node or handle, one at a
+time, and <kbd>Ctrl+Shift+Z</kbd> puts them back. A finished curve keeps these
+steps: undoing goes back to drawing it, with the tool chosen again and a line
+going on from the last node left, so you can undo node by node and draw on at
+once.
+
+What you are drawing shows over any color: the segments placed so far lie on
+a white line, and the handles are dashed in blue and white.
+
 ## Pen {#pen}
 
 The [[tool.pen]] tool places nodes the same way as the [[tool.bezier]]
 tool: click for a corner node, drag for a smooth node, double-click or
 <kbd>Enter</kbd> to finish, click the first node to close. While the button
 is down, the handle follows the pointer, so you see the curve take shape.
+Its pointer is a pen nib whose tip is where the node goes.
+
+Two options sit on its property bar (and on the [[options.curve_tools]] page
+of the tool options):
+
+- [[options.pen_preview]] (on at first): a solid blue line on a white one
+  runs from the last node to the pointer, so you see the next segment before
+  you click.
+- [[options.pen_auto_add_delete]] (on at first): with a curve selected and
+  no curve being drawn, a click on a segment adds a node and a click on a
+  node deletes it. While you draw a curve, every click places the next node,
+  also on a segment or a node of a curve, so drawing never changes other
+  curves by accident.
+
+With no curve being drawn, the Pen and Bezier tools also edit the selected
+curve: drag a node that is not an end node to move it, as with the Shape
+tool.
 
 ## B-Spline {#b-spline}
 
@@ -94,6 +128,12 @@ line becomes part of the curve:
 - when it ends on the curve's other end, the curve closes;
 - when it ends on an end of another part of the same curve, the two parts
   join.
+
+The [[tool.bezier]] and [[tool.pen]] tools also go on from an open curve that
+is not selected: press on one of its end nodes to select it and draw on. The
+next segment leaves smoothly, along the mirror of the curve's last handle;
+drag from the end node to pull a new handle instead, or click the end node a
+second time to make it a cusp, so the next segment leaves it straight.
 
 The pointer shows a node with a line going on from it when you are over an
 end node, and a ring when a click would close the curve. The curve keeps its

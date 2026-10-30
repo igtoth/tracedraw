@@ -1,5 +1,7 @@
 # Desenhar linhas e curvas
 
+> *Tradução automática: esta página pode estar atrasada em relação à versão em inglês.*
+
 No TraceDraw, uma linha é uma **curva**: um caminho feito de **segmentos** que
 se unem em **nós**. Os segmentos podem ser retos ou curvos. Uma curva pode ser
 aberta, com duas pontas, ou fechada, quando o fim encontra o início, e então
@@ -27,6 +29,9 @@ clique de novo onde ela termina. Mantenha <kbd>Ctrl</kbd> pressionado para
 limitar a linha a passos de 15 graus. <kbd>Esc</kbd> descarta o primeiro
 clique.
 
+Com uma mesa digitalizadora, a pressão da caneta define a largura da linha ao
+longo dela; veja [Desenhar com uma mesa digitalizadora](pen-pressure.md).
+
 ## Linha de 2 pontos {#two-point-line}
 
 A ferramenta [[tool.two_point_line]] desenha um segmento reto: pressione onde
@@ -50,13 +55,45 @@ graus a partir do último, ou para girar uma alça nesses passos. Cada nó se
 encaixa no que o encaixe estiver configurado; veja
 [Encaixe](../pages-layout/snapping.md).
 
+Enquanto arrasta uma alça, mantenha <kbd>C</kbd> pressionado para tornar o nó
+uma cúspide (só a alça de saída acompanha), ou <kbd>Alt</kbd> para mover o
+próprio nó. Clique de novo no último nó para torná-lo uma cúspide. Uma alça
+puxada para fora da janela de desenho (sobre um painel ou uma barra de
+ferramentas) termina onde você soltar.
+
+Enquanto você desenha, <kbd>Ctrl+Z</kbd> desfaz o último nó ou alça, um de cada
+vez, e <kbd>Ctrl+Shift+Z</kbd> os refaz. Uma curva terminada guarda esses
+passos: desfazer volta a desenhá-la, com a ferramenta escolhida de novo e uma
+linha saindo do último nó que restou, então você pode desfazer nó por nó e
+continuar desenhando na hora.
+
+O que você está desenhando aparece sobre qualquer cor: os segmentos já
+colocados ficam sobre uma linha branca, e as alças são tracejadas em azul e
+branco.
+
 ## Caneta {#pen}
 
 A ferramenta [[tool.pen]] coloca nós como a ferramenta [[tool.bezier]]: clique
 para um nó de canto, arraste para um nó suave, clique duas vezes ou
 <kbd>Enter</kbd> para terminar, clique no primeiro nó para fechar. Enquanto o
 botão está pressionado, a alça segue o ponteiro, para você ver a curva tomar
-forma.
+forma. O ponteiro é uma pena cuja ponta marca onde o nó vai.
+
+Duas opções ficam na barra de propriedades dela (e na página
+[[options.curve_tools]] das opções de ferramentas):
+
+- [[options.pen_preview]] (ligado de início): uma linha azul sólida sobre uma
+  branca vai do último nó até o ponteiro, para você ver o próximo segmento
+  antes de clicar.
+- [[options.pen_auto_add_delete]] (ligado de início): com uma curva
+  selecionada e nenhuma curva sendo desenhada, um clique em um segmento
+  acrescenta um nó e um clique em um nó o exclui. Enquanto você desenha uma
+  curva, cada clique coloca o próximo nó, também sobre um segmento ou um nó de
+  uma curva, então desenhar nunca muda outras curvas por acidente.
+
+Sem curva sendo desenhada, as ferramentas Caneta e Bézier também editam a
+curva selecionada: arraste um nó que não seja de ponta para movê-lo, como com
+a ferramenta Forma.
 
 ## B-Spline {#b-spline}
 
@@ -97,6 +134,13 @@ das pontas. A nova linha passa a fazer parte da curva:
 - quando termina na outra ponta da curva, a curva se fecha;
 - quando termina na ponta de outra parte da mesma curva, as duas partes se
   unem.
+
+As ferramentas [[tool.bezier]] e [[tool.pen]] também continuam uma curva
+aberta que não está selecionada: pressione em um dos nós das pontas para
+selecioná-la e continuar. O próximo segmento sai suave, no espelho da última
+alça da curva; arraste a partir do nó da ponta para puxar uma alça nova, ou
+clique uma segunda vez nele para torná-lo uma cúspide, e o próximo segmento
+sai reto.
 
 O ponteiro mostra um nó com uma linha saindo dele quando você está sobre um nó
 de ponta, e um anel quando um clique fecharia a curva. A curva mantém a

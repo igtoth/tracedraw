@@ -1,5 +1,7 @@
 # Combinar formas: soldar, aparar e interseção
 
+> *Tradução automática: esta página pode estar atrasada em relação à versão em inglês.*
+
 A modelagem cria formas novas a partir de objetos sobrepostos: une-os em um,
 corta um com outro ou mantém só onde se sobrepõem. Os comandos ficam em
 [[menu.object > menu.object.shaping]], na barra de propriedades quando dois ou
@@ -31,6 +33,29 @@ não se sobrepõem), nada muda e a barra de status avisa.
 Pelo menu e pela barra de propriedades, [[menu.object.weld]] remove os
 originais, [[menu.object.trim]] mantém as origens, [[menu.object.intersect]]
 mantém todos e [[menu.object.boundary]] mantém todos.
+
+### Linhas abertas e imagens {#open-lines}
+
+- **Uma linha aberta corta uma forma.** [[menu.object.trim]] com uma linha,
+  polilinha ou curva aberta como origem cruzando um alvo fechado corta o alvo
+  ao longo dela em pedaços separados, cada um com o preenchimento e o contorno
+  do alvo. Várias linhas fazem mais pedaços; uma linha que termina dentro da
+  forma não corta nada, e a barra de status avisa.
+  [[menu.object.front_minus_back]] e [[menu.object.back_minus_front]] dividem
+  ao longo de linhas abertas do mesmo jeito.
+- **Uma linha aberta como alvo** de [[menu.object.weld]], [[menu.object.trim]]
+  ou [[menu.object.intersect]] é cortada pelos objetos fechados e continua
+  aberta: Aparar guarda as partes de fora, Interseção a parte de dentro, e
+  Soldar acrescenta as partes de fora à forma soldada.
+- Uma linha aberta usada como origem de Soldar ou Interseção sobre um objeto
+  fechado não participa; para cortar uma forma ao longo de uma linha, use
+  Aparar ou a ferramenta Faca (veja
+  [Cortar e apagar](cut-and-erase.md#knife)).
+- **Uma imagem como alvo** de Aparar, Interseção ou Soldar é recortada no
+  resultado: a moldura dela toma a nova forma e a imagem aparece dentro.
+
+Áreas preenchidas lado a lado, e os resultados de Soldar, Aparar e Interseção,
+se encontram exatamente onde os contornos se cruzam, sem fresta entre eles.
 
 ## O painel Modelagem {#shaping-docker}
 

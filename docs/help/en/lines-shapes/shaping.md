@@ -32,6 +32,27 @@ From the menu and the property bar, [[menu.object.weld]] removes the
 originals, [[menu.object.trim]] keeps the sources, [[menu.object.intersect]]
 keeps all of them, and [[menu.object.boundary]] keeps them all.
 
+### Open lines and pictures {#open-lines}
+
+- **An open line cuts a shape.** [[menu.object.trim]] with an open line,
+  polyline or curve as a source crossing a closed target cuts the target
+  along it into separate pieces, each keeping the target's fill and outline.
+  Several lines make more pieces; a line that ends inside the shape cuts
+  nothing, and the status bar says so. [[menu.object.front_minus_back]] and
+  [[menu.object.back_minus_front]] split along open lines the same way.
+- **An open line as the target** of [[menu.object.weld]],
+  [[menu.object.trim]] or [[menu.object.intersect]] is cut by the closed
+  objects and stays open: Trim keeps the parts outside them, Intersect the
+  part inside, and Weld adds the parts outside to the welded shape.
+- An open line used as a source of Weld or Intersect on a closed object takes
+  no part; to cut a shape along a line, use Trim or the Knife tool (see
+  [Cutting and erasing](cut-and-erase.md#knife)).
+- **A picture as the target** of Trim, Intersect or Weld is cropped to the
+  result: its frame takes the new shape and the picture shows inside it.
+
+Areas filled side by side, and the results of Weld, Trim and Intersect, meet
+exactly where outlines cross, with no hairline gap between them.
+
 ## The Shaping panel {#shaping-docker}
 
 Open the [[docker.shaping]] panel from

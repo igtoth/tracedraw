@@ -37,16 +37,20 @@ over a control handle, a wave over a segment.
 ## Moving nodes and bending segments {#editing}
 
 - Drag a node to move the selected nodes. Hold <kbd>Ctrl</kbd> to move only
-  horizontally or vertically. Nodes snap like drawing points.
+  horizontally or vertically. Nodes snap like drawing points, also to the
+  other nodes and segments of their own curve.
 - Drag a segment to bend it: the point you grab follows the pointer while the
-  nodes at its ends stay. A straight segment becomes curved.
+  nodes at its ends stay. A straight segment becomes curved. Cusp nodes at
+  its ends stay cusp, and their other handles stay where they are.
 - Drag a control handle to change the bend.
 - The arrow keys nudge the selected nodes (<kbd>Shift</kbd> for a larger
   step, <kbd>Ctrl</kbd> for a smaller one).
 - Double-click a segment to add a node there, a node to delete it. Click a
   segment to mark a spot, then press <kbd>+</kbd> to add a node there.
 - <kbd>Delete</kbd> or <kbd>-</kbd> deletes the selected nodes; <kbd>+</kbd>
-  adds a node in the middle of each segment that ends at them.
+  adds a node in the middle of each segment that ends at them. Neighbouring
+  nodes deleted together leave one curve fitted to the old outline, so the
+  shape keeps its general form.
 - With nodes selected, <kbd>C</kbd> switches them between cusp and smooth,
   <kbd>S</kbd> between smooth and symmetrical, and <kbd>Y</kbd> makes them
   symmetrical.
@@ -55,6 +59,28 @@ over a control handle, a wave over a segment.
   duplicates them.
 
 Right-click a node or segment for a menu of the commands below.
+
+With several objects selected, the object picked last shows its outline in
+the node color (blue) and the others in the secondary node color (red), also
+while a node is dragged, so you can tell them apart. End nodes of two
+different objects are not joined, by **Join nodes** or by dropping one on the
+other: combine the objects first ([[menu.object > menu.object.combine]],
+<kbd>Ctrl+L</kbd>), then join their ends.
+
+## Rounding corners of curves {#corner-rings}
+
+Rings inside the corners of a curve let you round a corner by dragging. They
+are off at first, so they do not get in the way of editing nodes; turn on
+[[options.corner_widgets]] on the [[options.nodes_and_handles]] page of
+[[menu.tools > menu.tools.options > menu.tools.options_app]] to use them.
+
+- Drag the ring of a corner between two straight sides to round it. A
+  rounded corner keeps its ring: drag it again to change the radius, further
+  in or back to a sharp corner. This also works on corners rounded in saved
+  drawings and with the [[docker.corners]] panel.
+- On a stretched curve the corners come out round on the page, not oval.
+  Rectangles round their corners by their own nodes, whatever this option
+  says.
 
 ## The property bar {#property-bar}
 
