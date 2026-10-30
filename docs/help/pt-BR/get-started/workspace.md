@@ -1,5 +1,7 @@
 # O espaço de trabalho
 
+> *Tradução automática: esta página pode estar atrasada em relação à versão em inglês.*
+
 A janela do TraceDraw contém seus desenhos e tudo o que é preciso para
 trabalhar neles. Esta página dá nome às suas partes, para que as outras páginas
 desta Ajuda façam sentido.
@@ -87,8 +89,11 @@ Os painéis guardam configurações que ficam abertas enquanto você trabalha,
 como [[docker.properties]], [[docker.objects]] e [[docker.hints]], que vêm
 abertos. Os painéis abertos são guias à direita; clique em uma guia para trazer
 o painel para a frente, ou na guia da frente para recolher os painéis. Abra
-outros em [[menu.window > menu.window.dockers]] ou pelos atalhos; o **+**
-abaixo das guias acrescenta um. Cada painel tem botões de recolher e fechar na
+outros em [[menu.window > menu.window.dockers]] ou pelos atalhos; o botão de
+três pontos abaixo das guias lista todos os painéis, cada um com a imagem,
+para mostrar ou ocultar. Quando há mais painéis abertos do que cabem na coluna
+de guias, a coluna desliza: use as setas no topo e no pé dela ou a roda do
+mouse sobre ela. Cada painel tem botões de recolher e fechar na
 barra de título. A página [Painéis](../reference/dockers.md) lista todos os
 painéis.
 
@@ -134,6 +139,23 @@ barras ou restaurar suas posições. Para mostrar ou ocultar uma barra, use
 [[menu.window > menu.window.toolbars]]. Você também pode salvar toda a
 disposição como um espaço de trabalho; veja
 [Espaços de trabalho](../customize/workspaces.md).
+
+A barra de ferramentas padrão, a barra de propriedades, as barras Texto, Zoom
+e Transformar e o controle de tempo podem dividir uma linha quando encaixados
+no alto ou embaixo: arraste a alça de uma barra até a linha de outra para
+pô-la ao lado dela, ou até a divisa entre duas linhas para lhe dar uma linha
+própria. As linhas ficam guardadas nas suas preferências. Um clique com o
+botão direito em qualquer parte de uma barra encaixada abre o menu dela.
+Menus mais altos que a janela rolam com a roda do mouse.
+
+Todo controle deslizante das barras, painéis e caixas de diálogo funciona do
+mesmo jeito: o rótulo acima, um sulco com marcas, e o valor numa caixa à
+direita em que você pode digitar ou avançar com as setas. Clicar no sulco
+leva o cursor até ali sem tomar o teclado, então os atalhos da tela continuam
+funcionando; depois que <kbd>Tab</kbd> lhe dá o foco, as setas o avançam
+(<kbd>Page Up</kbd> e <kbd>Page Down</kbd> de dez em dez, <kbd>Home</kbd> e
+<kbd>End</kbd> até as pontas). Todo controle mostra um título e uma descrição
+quando você passa o ponteiro.
 
 ## Trabalhar com vários desenhos {#several-drawings}
 
