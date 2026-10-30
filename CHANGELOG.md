@@ -40,6 +40,7 @@ full, row-by-row status.
 - Saving .cdr: a second difference between TraceDraw's pictures and those of the program that reads `.cdr` files, besides the node marks of 0.29.0, that can make that program close when a picture is clicked (#1226, #1381, #1268, #1222): every object without an outline (pictures, and shapes and text drawn without one) named in its style string an outline type that no file of that program holds; it now holds the outline that program's own files give such objects (every setting, width 0, no type). `tracedraw-cli check` reports the old outline type, and checks a picture's outline node by node for the node marks instead of its first node alone.
 
 - Options > Tools: each page in the list shows its tool's icon. The Zoom/Pan page has a Zoom tool section and a Calibrate Zoom... button that opens the ruler calibration (Display page).
+- Text being edited: Edit > Cut, Copy, Paste and Delete, the toolbar's buttons and the right-click menu act on the selected characters, as Ctrl+C, Ctrl+X and Ctrl+V do. Edit > Copy used to copy the whole object as SVG, and a Ctrl+V in the text then typed that SVG code into it. Copied characters keep their font, size, colours and outline when pasted into a text or with the Pick tool, where they all took one colour before; other programs get their plain text (#1377, #1378).
 
 ## 0.29.0 (2026-10-30)
 

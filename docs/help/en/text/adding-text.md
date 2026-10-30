@@ -28,6 +28,7 @@ not change keep their formatting.
 | Keys | What they do |
 |---|---|
 | Typing, <kbd>Ctrl+V</kbd> | insert at the caret, replacing the selection |
+| <kbd>Ctrl+C</kbd>, <kbd>Ctrl+X</kbd>, <kbd>Ctrl+V</kbd> | copy, cut and paste the selected characters; the [[menu.edit]] menu, the toolbar and the right-click menu do the same while you edit. Pasted here, they keep their font, size and colors; other programs get their plain text |
 | <kbd>Backspace</kbd>, <kbd>Delete</kbd> | delete the selection, else the character before or after |
 | <kbd>Enter</kbd>, <kbd>Shift+Enter</kbd> | new paragraph, new line |
 | Arrow keys, with <kbd>Ctrl</kbd> | move by a character or a word; <kbd>Shift</kbd> selects |

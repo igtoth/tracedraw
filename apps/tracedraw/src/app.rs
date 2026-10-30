@@ -926,6 +926,9 @@ pub struct App {
     /// Korean and other input methods), shown underlined until it is
     /// committed.
     pub ime_preedit: String,
+    /// Characters copied while editing a text, with their formatting, for
+    /// a paste into a text (#1378).
+    pub text_clip: Option<crate::text_editing::TextClip>,
     /// The last trace made (its preset and settings), for Repeat Last
     /// Trace and Open Last Trace Settings (#452).
     pub last_trace: Option<(crate::trace::Preset, crate::trace::Settings)>,
@@ -2293,6 +2296,7 @@ impl App {
             curve: None,
             text_edit: None,
             ime_preedit: String::new(),
+            text_clip: None,
             last_trace: None,
             trace_live: Default::default(),
             alt_code: String::new(),
@@ -5043,6 +5047,11 @@ impl App {
     }
 
     pub fn cut(&mut self) {
+        // While a text is being edited: its selected characters (#1377).
+        if self.editing_text() {
+            self.text_cut();
+            return;
+        }
         // Guidelines selected and no objects: they go (#376).
         if self.selection.is_empty() && self.copy_selected_guides() {
             self.delete_selected_guides();

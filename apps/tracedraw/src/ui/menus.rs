@@ -2109,10 +2109,17 @@ fn edit_menu(app: &mut App, ui: &mut Ui) {
     sep(ui);
     // Guidelines selected (no objects) are cut and copied too.
     let guides_picked = !app.selected_guides.is_empty();
-    if item(ui, "menu.edit.cut", "Ctrl+X", has || guides_picked) {
+    // While a text is being edited they act on its selected characters
+    // (#1377).
+    let can_copy = if app.editing_text() {
+        app.text_selection_active()
+    } else {
+        has || guides_picked
+    };
+    if item(ui, "menu.edit.cut", "Ctrl+X", can_copy) {
         app.cut();
     }
-    if item(ui, "menu.edit.copy", "Ctrl+C", has || guides_picked) {
+    if item(ui, "menu.edit.copy", "Ctrl+C", can_copy) {
         app.copy_with_system();
     }
     if item(ui, "menu.edit.copy_properties_from", "Ctrl+Shift+A", has) {
@@ -2134,7 +2141,17 @@ fn edit_menu(app: &mut App, ui: &mut Ui) {
         app.dialog = Dialog::PasteSpecial(Default::default());
     }
     sep(ui);
-    if item(ui, "menu.edit.delete", "Delete", has) {
+    if app.editing_text() {
+        // The selected characters, as the Delete key does.
+        if item(
+            ui,
+            "menu.edit.delete",
+            "Delete",
+            app.text_selection_active(),
+        ) {
+            app.text_delete_forward();
+        }
+    } else if item(ui, "menu.edit.delete", "Delete", has) {
         app.delete_selection();
     }
     sep(ui);

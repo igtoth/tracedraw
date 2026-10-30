@@ -8,8 +8,8 @@ use crate::app::App;
 use tracedraw_core::document::text_outline::{merge_stretch, TextRequest};
 use tracedraw_core::geometry::{Affine, Point, Rect};
 use tracedraw_core::{
-    spans_apply, spans_char_count, spans_delete, spans_insert, spans_text, Color, Command, Fill,
-    ShapeId, ShapeKind, Stroke, TextSpan,
+    merge_equal_spans, spans_apply, spans_char_count, spans_delete, spans_insert, spans_text,
+    split_spans_at, Color, Command, Fill, ShapeId, ShapeKind, Stroke, TextSpan,
 };
 use tracedraw_text::TextLayout;
 
@@ -49,6 +49,111 @@ impl TextEdit {
     pub fn has_selection(&self) -> bool {
         self.caret != self.anchor
     }
+}
+
+/// Characters copied while editing a text: their spans, so that a paste
+/// into a text keeps their font, size and colours (#1378), and the plain
+/// text put on the system clipboard for other applications.
+#[derive(Debug, Clone, Default)]
+pub struct TextClip {
+    /// The text as put on the system clipboard, line ends as `\n`.
+    pub plain: String,
+    pub spans: Vec<TextSpan>,
+    /// The fill and outline of the text copied from, which characters
+    /// without their own show.
+    pub fill: Fill,
+    pub stroke: Option<Stroke>,
+}
+
+/// Text from a clipboard with its line ends as `\n`.
+pub(crate) fn unify_line_ends(t: &str) -> String {
+    t.replace("\r\n", "\n").replace('\r', "\n")
+}
+
+/// Spans as plain text for other applications: line breaks inside a
+/// paragraph end lines too, with the system's line end.
+fn plain_text_of(spans: &[TextSpan]) -> String {
+    let nl = if cfg!(windows) { "\r\n" } else { "\n" };
+    spans_text(spans).replace(['\n', '\u{2028}'], nl)
+}
+
+/// `spans` of a text filled with `fill` and outlined with `stroke` as they
+/// look in a text filled with `to_fill` and outlined with `to_stroke`:
+/// characters that show the object's colours get them as their own where
+/// the two differ.
+fn spans_looking_the_same(
+    spans: &[TextSpan],
+    fill: &Fill,
+    stroke: &Option<Stroke>,
+    to_fill: &Fill,
+    to_stroke: &Option<Stroke>,
+) -> Vec<TextSpan> {
+    spans
+        .iter()
+        .filter(|sp| !sp.text.is_empty())
+        .map(|sp| {
+            let mut sp = sp.clone();
+            if sp.fill.is_none() && fill != to_fill {
+                sp.fill = Some(fill.clone());
+            }
+            if sp.outline.is_none() && stroke != to_stroke {
+                sp.outline = Some(stroke.clone().unwrap_or(Stroke {
+                    width: 0.0,
+                    ..Stroke::default()
+                }));
+            }
+            sp
+        })
+        .collect()
+}
+
+/// `spans` with `ins` put in at character `at`.
+fn spans_insert_spans(spans: &[TextSpan], at: usize, ins: &[TextSpan]) -> Vec<TextSpan> {
+    let (head, tail) = split_spans_at(spans, at);
+    let mut out = head;
+    out.extend(ins.iter().filter(|sp| !sp.text.is_empty()).cloned());
+    out.extend(tail);
+    if out.is_empty() {
+        out.extend(spans.first().cloned());
+    }
+    merge_equal_spans(out)
+}
+
+/// The text objects among `shapes` (and in their groups), each as spans
+/// looking as they do in a text filled with `to_fill` and outlined with
+/// `to_stroke`, one paragraph each.
+fn text_of_objects(
+    shapes: &[tracedraw_core::Shape],
+    to_fill: &Fill,
+    to_stroke: &Option<Stroke>,
+) -> Vec<TextSpan> {
+    let mut out: Vec<TextSpan> = Vec::new();
+    fn walk(s: &tracedraw_core::Shape, to: (&Fill, &Option<Stroke>), out: &mut Vec<TextSpan>) {
+        match &s.kind {
+            ShapeKind::Text { spans, .. } => {
+                let spans = spans_looking_the_same(spans, &s.fill, &s.stroke, to.0, to.1);
+                if spans.is_empty() {
+                    return;
+                }
+                if let Some(last) = out.last() {
+                    let mut nl = last.clone();
+                    nl.text = "\n".into();
+                    out.push(nl);
+                }
+                out.extend(spans);
+            }
+            ShapeKind::Group { children, .. } => {
+                for c in children {
+                    walk(c, to, out);
+                }
+            }
+            _ => {}
+        }
+    }
+    for s in shapes {
+        walk(s, (to_fill, to_stroke), &mut out);
+    }
+    out
 }
 
 /// Caret and selection move requests from the keyboard.
@@ -295,20 +400,14 @@ impl App {
                     self.text_insert(t);
                 }
                 Event::Paste(_) | Event::Copy | Event::Cut if altgr_held => {}
-                Event::Paste(t) => self.text_insert(t),
+                // The selected characters, with their formatting for a
+                // paste here and as plain text for other applications
+                // (#1377, #1378).
+                Event::Paste(t) => self.text_paste(Some(t.clone())),
                 Event::Copy => {
-                    let sel = self.text_selected();
-                    if !sel.is_empty() {
-                        ctx.copy_text(sel);
-                    }
+                    self.text_copy();
                 }
-                Event::Cut => {
-                    let sel = self.text_selected();
-                    if !sel.is_empty() {
-                        ctx.copy_text(sel);
-                        self.text_delete_backward();
-                    }
-                }
+                Event::Cut => self.text_cut(),
                 Event::Key {
                     key,
                     physical_key,
@@ -412,6 +511,176 @@ impl App {
                 }
                 _ => {}
             }
+        }
+    }
+
+    /// A text is being edited: Cut, Copy and Paste act on its characters.
+    pub fn editing_text(&self) -> bool {
+        self.edit_spans().is_some()
+    }
+
+    /// Copy the selected characters: with their formatting for a paste
+    /// into a text here, as plain text on the system clipboard for other
+    /// applications (#1377, #1378). False (nothing copied) without a
+    /// selection.
+    pub fn text_copy(&mut self) -> bool {
+        let (Some(te), Some(spans)) = (self.text_edit.clone(), self.edit_spans()) else {
+            return false;
+        };
+        if !te.has_selection() {
+            return false;
+        }
+        let (a, b) = te.selection();
+        let (_, rest) = split_spans_at(&spans, a);
+        let (picked, _) = split_spans_at(&rest, b - a);
+        let Some((fill, stroke)) = self
+            .doc()
+            .find_shape(te.shape)
+            .map(|s| (s.fill.clone(), s.stroke.clone()))
+        else {
+            return false;
+        };
+        let plain = plain_text_of(&picked);
+        // One clipboard: the characters replace the objects copied
+        // before, also where the system clipboard cannot be read back.
+        self.clipboard = None;
+        self.text_clip = Some(TextClip {
+            plain: unify_line_ends(&plain),
+            spans: picked,
+            fill,
+            stroke,
+        });
+        crate::clipboard::write_text(&plain);
+        true
+    }
+
+    /// Cut the selected characters (see [`App::text_copy`]), one undo
+    /// step.
+    pub fn text_cut(&mut self) {
+        if !self.text_copy() {
+            return;
+        }
+        let (Some(te), Some(mut spans)) = (self.text_edit.clone(), self.edit_spans()) else {
+            return;
+        };
+        let (a, b) = te.selection();
+        spans_delete(&mut spans, a, b);
+        self.set_edit_spans_as(spans, "Cut", false);
+        self.set_caret(a, false);
+    }
+
+    /// Paste into the text at the caret, over the selection. `event_text`
+    /// is the text of the paste event, when there was one (a browser
+    /// gives the clipboard only that way); otherwise the system
+    /// clipboard is read where the system allows it. On Android the
+    /// windowing layer's paste event holds its own copy, not the
+    /// system's, so the system clipboard is read first.
+    pub fn text_paste(&mut self, event_text: Option<String>) {
+        let event_text = event_text.filter(|t| !t.is_empty());
+        let text = if cfg!(target_os = "android") {
+            crate::clipboard::system_text().or(event_text)
+        } else {
+            event_text.or_else(crate::clipboard::system_text)
+        };
+        self.text_paste_text(text);
+    }
+
+    /// [`App::text_paste`] with the clipboard holding `text` (`None`: no
+    /// text, or none the system lets be read). The characters copied
+    /// here keep their formatting while the clipboard holds them; objects
+    /// copied here give their text, never their SVG markup (#1377).
+    pub fn text_paste_text(&mut self, text: Option<String>) {
+        let Some(shape) = self
+            .text_edit
+            .as_ref()
+            .and_then(|te| self.doc().find_shape(te.shape))
+            .cloned()
+        else {
+            return;
+        };
+        let (to_fill, to_stroke) = (&shape.fill, &shape.stroke);
+        let from_clip = |clip: &TextClip| {
+            spans_looking_the_same(&clip.spans, &clip.fill, &clip.stroke, to_fill, to_stroke)
+        };
+        let ins: Vec<TextSpan> = match text.map(|t| unify_line_ends(&t)) {
+            None => match &self.text_clip {
+                Some(clip) => from_clip(clip),
+                None => return,
+            },
+            Some(t) => match &self.text_clip {
+                Some(clip) if clip.plain == t => from_clip(clip),
+                _ if crate::clipboard::ClipboardContent {
+                    text: Some(t.clone()),
+                    ..Default::default()
+                }
+                .is_svg() =>
+                {
+                    match self.objects_text_of_svg(&t, to_fill, to_stroke) {
+                        Some(spans) => spans,
+                        None => return self.text_insert_plain(&t),
+                    }
+                }
+                _ => return self.text_insert_plain(&t),
+            },
+        };
+        if ins.is_empty() {
+            return;
+        }
+        let (Some(te), Some(mut spans)) = (self.text_edit.clone(), self.edit_spans()) else {
+            return;
+        };
+        let (a, b) = te.selection();
+        spans_delete(&mut spans, a, b);
+        let spans = spans_insert_spans(&spans, a, &ins);
+        self.set_edit_spans_as(spans, "Paste", false);
+        self.set_caret(a + spans_char_count(&ins), false);
+        if let Some(te) = self.text_edit.as_mut() {
+            te.goal_x = None;
+        }
+    }
+
+    /// The text of the objects an SVG document on the clipboard holds:
+    /// those copied here while the clipboard still holds their copy,
+    /// else the text objects read from it. `None` when it cannot be
+    /// read as SVG (it is then pasted as it is).
+    fn objects_text_of_svg(
+        &self,
+        svg: &str,
+        to_fill: &Fill,
+        to_stroke: &Option<Stroke>,
+    ) -> Option<Vec<TextSpan>> {
+        let ours = self.clipboard.as_ref().filter(|cb| {
+            cb.system.still_holds(
+                crate::clipboard::change_count(),
+                &Some(svg.to_string()),
+                &[],
+                || None,
+            )
+        });
+        if let Some(cb) = ours {
+            return Some(text_of_objects(&cb.shapes, to_fill, to_stroke));
+        }
+        let mut ids = tracedraw_core::id::IdSource::default();
+        let doc = tracedraw_io::svg_import::parse(svg, &mut ids).ok()?;
+        Some(text_of_objects(&doc.shapes, to_fill, to_stroke))
+    }
+
+    /// Paste plain text at the caret, over the selection, in the style
+    /// of the character before it, as one undo step.
+    fn text_insert_plain(&mut self, s: &str) {
+        let (Some(te), Some(mut spans)) = (self.text_edit.clone(), self.edit_spans()) else {
+            return;
+        };
+        if s.is_empty() {
+            return;
+        }
+        let (a, b) = te.selection();
+        spans_delete(&mut spans, a, b);
+        spans_insert(&mut spans, a, s);
+        self.set_edit_spans_as(spans, "Paste", false);
+        self.set_caret(a + s.chars().count(), false);
+        if let Some(te) = self.text_edit.as_mut() {
+            te.goal_x = None;
         }
     }
 
@@ -827,6 +1096,7 @@ impl App {
     }
 
     /// The selected text (empty without a selection).
+    #[cfg(test)]
     pub fn text_selected(&self) -> String {
         let Some(te) = self.text_edit.as_ref() else {
             return String::new();
@@ -1553,5 +1823,243 @@ mod tests {
         app.text_select_all();
         let (_, _, quads) = app.text_caret_geometry().unwrap();
         assert_eq!(quads.len(), 2);
+    }
+
+    /// The fill each character of the edited text shows (`None`: the
+    /// object's).
+    fn char_fills(app: &App) -> Vec<(char, Option<Fill>)> {
+        let ShapeKind::Text { spans, .. } = edited_shape(app).kind else {
+            panic!("text");
+        };
+        spans
+            .iter()
+            .flat_map(|sp| sp.text.chars().map(|c| (c, sp.fill.clone())))
+            .collect()
+    }
+
+    /// "abcdef" with "cd" red and "bcde" selected.
+    fn text_with_red_cd_and_bcde_selected() -> App {
+        let mut app = text_with_cd_selected();
+        assert!(app.text_apply_fill(Fill::Solid(Color::rgb8(255, 0, 0))));
+        app.text_move(CaretMove::LineStart, false);
+        app.text_move(CaretMove::Right, false);
+        for _ in 0..4 {
+            app.text_move(CaretMove::Right, true);
+        }
+        assert_eq!(app.text_selected(), "bcde");
+        app
+    }
+
+    /// Characters of several colours copied while editing and pasted
+    /// into the text keep their colours (#1378), whether the paste comes
+    /// from the shortcut, the Edit menu or the context menu; the system
+    /// clipboard gets their plain text.
+    #[test]
+    fn copied_characters_keep_their_colours_when_pasted() {
+        let red = Some(Fill::Solid(Color::rgb8(255, 0, 0)));
+        let mut app = text_with_red_cd_and_bcde_selected();
+        // Edit > Copy while editing copies the characters, not the
+        // object (#1377).
+        app.copy_with_system();
+        assert!(app.clipboard.is_none(), "no object copied");
+        assert_eq!(
+            app.text_clip.as_ref().map(|c| c.plain.as_str()),
+            Some("bcde")
+        );
+        app.text_move(CaretMove::TextEnd, false);
+        // Ctrl+V: the paste event holds the system clipboard's text.
+        app.paste_with_event_text(Some("bcde".into()));
+        assert_eq!(app.edit_text(), "abcdefbcde");
+        let fills = char_fills(&app);
+        let pasted: Vec<_> = fills.iter().skip(6).cloned().collect();
+        assert_eq!(
+            pasted,
+            vec![
+                ('b', None),
+                ('c', red.clone()),
+                ('d', red.clone()),
+                ('e', None)
+            ]
+        );
+        assert_eq!(app.text_edit.as_ref().map(|t| t.caret), Some(10));
+        assert_eq!(app.engine.undo_label(), Some("Paste"));
+        // The browser's Edit > Paste has no text to read: the characters
+        // copied here.
+        app.text_paste_text(None);
+        assert_eq!(app.edit_text(), "abcdefbcdebcde");
+        assert_eq!(char_fills(&app).get(12).cloned(), Some(('d', red)));
+    }
+
+    /// Text copied in another application is pasted as it is, in the
+    /// style at the caret, with its line ends made the text's.
+    #[test]
+    fn text_from_elsewhere_is_pasted_plain() {
+        let mut app = text_with_red_cd_and_bcde_selected();
+        assert!(app.text_copy());
+        app.text_move(CaretMove::TextEnd, false);
+        app.paste_with_event_text(Some("x\r\ny".into()));
+        assert_eq!(app.edit_text(), "abcdefx\ny");
+        assert!(char_fills(&app).iter().skip(6).all(|(_, f)| f.is_none()));
+    }
+
+    /// Cut takes the selected characters out as one step and keeps them
+    /// for a paste with their colours; the menu's Cut does the same.
+    #[test]
+    fn cut_characters_go_and_come_back_with_their_colours() {
+        let mut app = text_with_red_cd_and_bcde_selected();
+        app.cut();
+        assert!(app.clipboard.is_none(), "no object cut");
+        assert_eq!(app.edit_text(), "af");
+        assert_eq!(app.engine.undo_label(), Some("Cut"));
+        assert_eq!(app.text_edit.as_ref().map(|t| t.caret), Some(1));
+        app.paste_with_event_text(Some("bcde".into()));
+        assert_eq!(app.edit_text(), "abcdef");
+        assert_eq!(
+            char_fills(&app).get(2).cloned(),
+            Some(('c', Some(Fill::Solid(Color::rgb8(255, 0, 0)))))
+        );
+    }
+
+    /// Objects copied with Edit > Copy go on the system clipboard as SVG:
+    /// pasted into a text being edited they give their text with its
+    /// formatting, never the SVG markup (#1377). The same markup from
+    /// elsewhere has its text outlined: nothing is typed.
+    #[test]
+    fn copied_objects_paste_their_text_not_their_markup() {
+        let mut app = App::headless();
+        app.settings.autocorrect.enabled = false;
+        let mut red = TextSpan::new("lo", "Arial", 24.0);
+        red.fill = Some(Fill::Solid(Color::rgb8(255, 0, 0)));
+        let id = app
+            .new_shape(ShapeKind::Text {
+                spans: vec![TextSpan::new("Hel", "Arial", 24.0), red.clone()],
+                origin: Point::new(10.0, 10.0),
+                frame: None,
+                align: Default::default(),
+                para: Default::default(),
+                on_path: None,
+            })
+            .expect("text");
+        app.select(vec![id]);
+        let svg = app.selection_svg().expect("svg");
+        // What Edit > Copy does, the system clipboard holding the SVG.
+        app.copy();
+        app.mark_system_clipboard(Some(&svg));
+        app.start_text(Point::new(0.0, 80.0), None);
+        app.text_insert("x");
+        app.paste_with_event_text(Some(svg.clone()));
+        assert_eq!(app.edit_text(), "xHello");
+        assert_eq!(char_fills(&app).get(4).cloned(), Some(('l', red.fill)));
+        // The same markup once something else was copied here.
+        app.clipboard = None;
+        app.text_paste_text(Some(svg));
+        assert_eq!(app.edit_text(), "xHello");
+        // Text that only looks like markup is text.
+        app.text_paste_text(Some("<b>".into()));
+        assert_eq!(app.edit_text(), "xHello<b>");
+    }
+
+    /// Ctrl+C and Ctrl+V as the windowing layer gives them while editing:
+    /// copy and paste events.
+    #[test]
+    fn copy_and_paste_events_keep_the_colours() {
+        let mut app = text_with_red_cd_and_bcde_selected();
+        let ctx = crate::theme::ui_context();
+        let send = |app: &mut App, events: Vec<egui::Event>| {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(800.0, 600.0),
+                )),
+                events,
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| app.text_keyboard(ui.ctx()));
+            out.textures_delta.clear();
+        };
+        send(&mut app, vec![egui::Event::Copy]);
+        app.text_move(CaretMove::LineStart, false);
+        send(&mut app, vec![egui::Event::Paste("bcde".into())]);
+        assert_eq!(app.edit_text(), "bcdeabcdef");
+        assert_eq!(
+            char_fills(&app).get(1).cloned(),
+            Some(('c', Some(Fill::Solid(Color::rgb8(255, 0, 0)))))
+        );
+    }
+
+    /// Characters copied while editing and pasted with the Pick tool
+    /// make a text of them with their colours (#1378); they replace the
+    /// objects copied before, also where the clipboard cannot be read
+    /// back (a browser's menu Paste).
+    #[test]
+    fn copied_characters_pasted_outside_a_text_keep_their_colours() {
+        let red = Some(Fill::Solid(Color::rgb8(255, 0, 0)));
+        let mut app = text_with_red_cd_and_bcde_selected();
+        let first = edited_shape(&app);
+        app.select(vec![first.id]);
+        app.copy();
+        assert!(app.clipboard.is_some());
+        app.text_copy();
+        assert!(app.clipboard.is_none(), "the characters are the last copy");
+        app.finish_text();
+        let spans_of_selection = |app: &App| -> (String, Vec<Option<Fill>>, Fill) {
+            let s = app.selected_shapes().first().cloned().expect("pasted");
+            let ShapeKind::Text { spans, .. } = &s.kind else {
+                panic!("not a text");
+            };
+            (
+                spans_text(spans),
+                spans.iter().map(|sp| sp.fill.clone()).collect(),
+                s.fill.clone(),
+            )
+        };
+        app.paste_from(crate::clipboard::ClipboardContent {
+            text: Some("bcde".into()),
+            ..Default::default()
+        });
+        let (text, fills, fill) = spans_of_selection(&app);
+        assert_eq!(text, "bcde");
+        assert!(fills.contains(&red), "{fills:?}");
+        assert_eq!(fill, first.fill);
+        // Nothing to read: the characters copied here.
+        app.paste_from(Default::default());
+        let (text, fills, _) = spans_of_selection(&app);
+        assert_eq!(text, "bcde");
+        assert!(fills.contains(&red), "{fills:?}");
+        // Other text on the clipboard: as it is.
+        app.paste_from(crate::clipboard::ClipboardContent {
+            text: Some("other".into()),
+            ..Default::default()
+        });
+        let (text, fills, _) = spans_of_selection(&app);
+        assert_eq!(text, "other");
+        assert!(!fills.contains(&red), "{fills:?}");
+    }
+
+    /// Characters copied from one text into another keep the colour they
+    /// showed, also where it was their text's own.
+    #[test]
+    fn characters_keep_their_look_in_another_text() {
+        let mut app = text_with_red_cd_and_bcde_selected();
+        let green = Fill::Solid(Color::rgb8(0, 160, 0));
+        let first = edited_shape(&app);
+        assert!(app.text_copy());
+        app.finish_text();
+        app.start_text(Point::new(0.0, 80.0), None);
+        app.text_insert("z");
+        let id = app.text_edit.as_ref().map(|t| t.shape).expect("editing");
+        app.run(Command::SetFill {
+            shapes: vec![id],
+            fill: green.clone(),
+        });
+        app.text_paste_text(Some("bcde".into()));
+        assert_eq!(app.edit_text(), "zbcde");
+        let fills = char_fills(&app);
+        assert_eq!(fills.get(0).cloned(), Some(('z', None)));
+        assert_eq!(fills.get(1).cloned(), Some(('b', Some(first.fill.clone()))));
+        assert_eq!(
+            fills.get(2).cloned(),
+            Some(('c', Some(Fill::Solid(Color::rgb8(255, 0, 0)))))
+        );
     }
 }
