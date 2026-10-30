@@ -189,12 +189,21 @@ pub fn no_window(reason: &str) {
         .map(|d| log_path(&d).display().to_string())
         .unwrap_or_default();
     let text = crate::i18n::trf("dialog.no_window", &[("reason", reason), ("log", &log)]);
+    message(text);
+}
+
+/// An error box, with the system's dialogs; Android has none, so the
+/// system log gets it (`adb logcat -s tracedraw`).
+fn message(text: String) {
+    #[cfg(not(target_os = "android"))]
     let _ = rfd::MessageDialog::new()
         .set_level(rfd::MessageLevel::Error)
         .set_title("TraceDraw")
         .set_description(text)
         .set_buttons(rfd::MessageButtons::Ok)
         .show();
+    #[cfg(target_os = "android")]
+    log::error!("{text}");
 }
 
 /// Tell the user, who would otherwise see nothing (no console on
@@ -212,12 +221,7 @@ fn show(report: &str, saved: Option<&Path>) {
             p.display()
         ));
     }
-    let _ = rfd::MessageDialog::new()
-        .set_level(rfd::MessageLevel::Error)
-        .set_title("TraceDraw")
-        .set_description(text)
-        .set_buttons(rfd::MessageButtons::Ok)
-        .show();
+    message(text);
 }
 
 #[cfg(test)]

@@ -6,7 +6,7 @@ checked screenshot behind it.
 "partial" names what is missing. "baked" means the result is applied once
 instead of staying live and editable. The goal is every row at "works".
 
-Counts: works 189, partial 6 (`.cdr` content coverage; CMX import; print preview; print merge; colour styles; Find and Replace), missing 1 (system windows), not applicable 4, icons close but not pixel-identical.
+Counts: works 189, partial 7 (`.cdr` content coverage; CMX import; print preview; print merge; colour styles; Find and Replace; the Android app), missing 1 (system windows), not applicable 4, icons close but not pixel-identical.
 
 ## 1. Selection and navigation
 
@@ -114,6 +114,7 @@ Counts: works 189, partial 6 (`.cdr` content coverage; CMX import; print preview
 | Missing Fonts dialog after opening a drawing with fonts that are not installed: each missing family with its automatic stand-in, another installed font chosen per family, for this session only or replaced in the drawing (one undo step); never shown for automated opens (#936) | works (see `behavior/missing-fonts.md`) |
 | Letters a font lacks drawn with a font that has them (Chinese, Japanese, Korean, Arabic, Hebrew, Thai, Indic and symbols included); variable fonts drawn at their weight and slant, their axes (weight, width, slant, optical size, the font's own) set from a button beside the font size (property bar, Text docker) and saved with the text; fonts found by their legacy family names too ("Arial Narrow", "Arial Black") | works (see `behavior/text.md`) |
 | Browser build: about a hundred free font families in a font folder, fetched the first time text needs one | works (see `behavior/web.md`, `web/FONTS.md`) |
+| Android app: the editor as a shared library in an APK for 64-bit ARM tablets and phones, touch and stylus input, the Touch workspace on a first start; saves to the app's documents folder | partial (phase 1: builds, no file picker, system clipboard, printing or external programs yet; see `behavior/android.md`) |
 | Fonts carried by a drawing (embedded in an opened `.cdr`, saved in `.tdraw`; Save As's Embed fonts, off by default, adds the installed fonts the text uses to `.tdraw` and `.cdr` files where the licence allows it): used for its text when not installed and the licence allows it | works (see `behavior/text.md` and `behavior/files.md`) |
 | Fonts carried by a drawing (embedded in an opened `.cdr`, saved in `.tdraw`; Save As's Embed fonts, on by default, adds the installed fonts the text uses to `.tdraw` and `.cdr` files where the licence allows it): used for its text when not installed and the licence allows it, marked "Embedded" in the font lists and the font box | works (see `behavior/text.md` and `behavior/files.md`) |
 | Convert text to table and table to text | works |

@@ -12,6 +12,12 @@ description = "TraceDraw: an open-source vector illustration editor"
 name = "tracedraw"
 path = "src/main.rs"
 
+# The whole app is the library (the program is a thin `main`; on Android
+# the system loads the library itself, see src/android.rs). Its doc
+# comments hold prose and paths, not examples to run.
+[lib]
+doctest = false
+
 [build-dependencies]
 winresource = "0.1"
 
@@ -37,7 +43,6 @@ csv = "1"
 i_overlay = "9"
 eframe.workspace = true
 egui.workspace = true
-rfd.workspace = true
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp", "gif", "webp", "tiff"] }
 log.workspace = true
 env_logger.workspace = true
@@ -46,17 +51,36 @@ web-time = "1"
 # Local dates and times (Time Tracker), with the system time zone.
 jiff = "0.2"
 
+# The file dialogs: the system's natively, the browser's in the browser.
+# Android has no file picker yet (src/android.rs, docs/behavior/android.md).
+[target.'cfg(not(target_os = "android"))'.dependencies]
+rfd.workspace = true
+
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 # The window drawn with wgpu (Direct3D 12, Vulkan or Metal): the graphics
 # card chosen in Options, or its software adapter (#445, #439).
 eframe = { workspace = true, features = ["wgpu"] }
 pollster = "0.4"
-arboard = { version = "3", default-features = false, features = ["wayland-data-control"] }
 # AI Drawing: HTTPS requests to the AI service the user sets up.
 ureq = { version = "3", features = ["platform-verifier"] }
 # Lossy WebP export (libwebp, BSD licence): the pure-Rust encoder writes
 # lossless files only (#592).
 webp = { version = "0.3", default-features = false }
+
+# The system clipboard (text, images, copied files): the desktop builds;
+# a browser hands over clipboard contents in paste events only and
+# Android keeps the clipboard inside the app for now.
+[target.'cfg(not(any(target_arch = "wasm32", target_os = "android")))'.dependencies]
+arboard = { version = "3", default-features = false, features = ["wayland-data-control"] }
+
+# The Android app (docs/behavior/android.md): the system loads the library
+# into its NativeActivity, eframe drives egui through winit's Android
+# backend and draws with wgpu. Exact versions: the glue must match the
+# one winit was built with.
+[target.'cfg(target_os = "android")'.dependencies]
+eframe = { workspace = true, features = ["wgpu", "android-native-activity"] }
+android-activity = { version = "=0.6.1", features = ["native-activity"] }
+android_logger = "=0.15.1"
 
 # Where the pointer is while files are dragged over the window: the
 # system drag sends no pointer moves (#1142).

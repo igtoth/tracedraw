@@ -35,6 +35,37 @@ thread_local! {
 /// True in the browser build: no file system, downloads instead of saves.
 pub const WEB: bool = cfg!(target_arch = "wasm32");
 
+/// True in the Android app: no file picker yet, saves go to the app's
+/// documents folder (`android.rs`, docs/behavior/android.md).
+pub const ANDROID: bool = cfg!(target_os = "android");
+
+/// The folder the Save Drawing dialog starts in when the platform fixes
+/// it: the Android app's documents folder; `None` elsewhere (the last
+/// folder used, Documents or home).
+pub fn save_dir() -> Option<PathBuf> {
+    #[cfg(target_os = "android")]
+    {
+        let dir = android_documents_dir();
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            log::warn!("cannot create {}: {e}", dir.display());
+        }
+        return Some(dir);
+    }
+    #[allow(unreachable_code)]
+    None
+}
+
+/// Where the Android app saves drawings and exports: its own folder under
+/// the shared storage (`Android/data/<package>/files`, which file managers
+/// show), set by `android_main`; the settings folder when it is missing.
+#[cfg(target_os = "android")]
+fn android_documents_dir() -> PathBuf {
+    std::env::var_os("TRACEDRAW_DOCUMENTS_DIR")
+        .map(PathBuf::from)
+        .or_else(crate::settings::config_dir)
+        .unwrap_or_else(|| PathBuf::from("/sdcard/Download"))
+}
+
 /// The path naming the same file however it was reached (links, `.`
 /// and `..`); the absolute path when that fails (the file is gone);
 /// `path` as it is in a browser.
@@ -196,13 +227,14 @@ pub fn remove(path: impl AsRef<Path>) -> std::io::Result<()> {
     std::fs::remove_file(path)
 }
 
-/// Choose a folder (desktop only; `None` when cancelled or in a browser).
+/// Choose a folder (desktop only; `None` when cancelled, in a browser or
+/// on Android, which has no folder picker yet).
 pub fn pick_folder() -> Option<PathBuf> {
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
     {
         rfd::FileDialog::new().pick_folder()
     }
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(any(target_arch = "wasm32", target_os = "android"))]
     {
         None
     }
@@ -511,7 +543,7 @@ impl Dialog {
     /// Pick a file and run `then` with its path: at once natively, on a
     /// later frame in a browser.
     pub fn pick_file(self, app: &mut App, then: impl FnOnce(&mut App, PathBuf) + 'static) {
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
         if let Some(path) = self.native_pick() {
             then(app, path);
         }
@@ -520,12 +552,18 @@ impl Dialog {
             let _ = app;
             self.web_pick(Box::new(then));
         }
+        // No file picker on Android yet: nothing is picked.
+        #[cfg(target_os = "android")]
+        {
+            let _ = (app, then);
+            log::warn!("file dialogs are not available in the Android app yet");
+        }
     }
 
     /// Pick one or more files and run `then` with their paths (one file in
     /// a browser).
     pub fn pick_files(self, app: &mut App, then: impl FnOnce(&mut App, Vec<PathBuf>) + 'static) {
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
         {
             let mut d = rfd::FileDialog::new();
             for (name, exts) in &self.filters {
@@ -536,14 +574,19 @@ impl Dialog {
                 then(app, paths);
             }
         }
-        #[cfg(target_arch = "wasm32")]
+        #[cfg(any(target_arch = "wasm32", target_os = "android"))]
         self.pick_file(app, move |app, p| then(app, vec![p]));
     }
 
     /// Pick a file and keep its path for [`take_picked`]`(key)`.
     pub fn pick_into(self, key: &str) {
         let key = key.to_string();
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(target_os = "android")]
+        {
+            let _ = key;
+            log::warn!("file dialogs are not available in the Android app yet");
+        }
+        #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
         if let Some(path) = self.native_pick() {
             PICKED.with(|p| {
                 p.borrow_mut().insert(key, path);
@@ -576,7 +619,18 @@ impl Dialog {
             let name = self.file_name.unwrap_or_else(|| "download".into());
             return Some(PathBuf::from("/download").join(name));
         }
-        #[cfg(not(target_arch = "wasm32"))]
+        // No save dialog on Android yet: the file goes to the app's
+        // documents folder under the name the dialog would offer.
+        #[cfg(target_os = "android")]
+        {
+            let name = self.file_name.unwrap_or_else(|| "drawing".into());
+            let dir = android_documents_dir();
+            if let Err(e) = std::fs::create_dir_all(&dir) {
+                log::warn!("cannot create {}: {e}", dir.display());
+            }
+            return Some(dir.join(name));
+        }
+        #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
         {
             let mut d = rfd::FileDialog::new();
             for (name, exts) in &self.filters {
@@ -592,7 +646,7 @@ impl Dialog {
         None
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
     fn native_pick(&self) -> Option<PathBuf> {
         let mut d = rfd::FileDialog::new();
         for (name, exts) in &self.filters {
