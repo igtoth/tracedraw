@@ -93,6 +93,20 @@ impl Turns {
         }
         Some(Turn(self))
     }
+
+    /// How long until a refused page should ask again, or `None` when a
+    /// job holds the turn (its end repaints the window). A turn that is
+    /// only kept for the current page has no job to wake the window, so
+    /// whoever was refused must ask for a repaint of its own (#1384).
+    fn retry_after(&self) -> Option<std::time::Duration> {
+        let st = self.state();
+        if st.busy {
+            return None;
+        }
+        Some(st.kept_until.map_or(std::time::Duration::ZERO, |t| {
+            t.saturating_duration_since(web_time::Instant::now())
+        }))
+    }
 }
 
 /// A job's turn, given back when it is dropped.
@@ -520,11 +534,11 @@ impl Raster {
             // picture shows meanwhile, and the job holding the turn
             // repaints when it ends. A page beside the current one
             // yields to it.
-            let Some(turn) = self
-                .turns
-                .unwrap_or_else(program_turns)
-                .take(!self.follows_zoom)
-            else {
+            let turns = self.turns.unwrap_or_else(program_turns);
+            let Some(turn) = turns.take(!self.follows_zoom) else {
+                if let Some(wait) = turns.retry_after() {
+                    ctx.request_repaint_after(wait);
+                }
                 return self.shown_meanwhile(view, screen);
             };
             let doc = self
@@ -756,6 +770,74 @@ mod tests {
         assert!(current.job.is_some(), "the current page got a turn");
     }
     use tracedraw_core::geometry::Size;
+
+    /// A page beside the current one that is refused its turn only because
+    /// the turn is kept for the current page, with no job running to wake
+    /// the window when it ends: a repaint is asked for when the turn is
+    /// free again, or the page keeps its old, blurry picture until the next
+    /// pointer move or key press (#1384).
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn a_page_refused_a_kept_turn_asks_for_a_repaint() {
+        static TURNS: Turns = Turns::new();
+        let ctx = Context::default();
+        let doc = Document::new("t", Size::new(100.0, 50.0));
+        let page = doc.pages[0].id;
+        let rect = Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(320.0, 200.0));
+        let view = View::default();
+        let mut other = Raster {
+            turns: Some(&TURNS),
+            follows_zoom: true,
+            ..Default::default()
+        };
+        // One frame at egui time `time`; how long egui may wait before the
+        // next one.
+        let draw = |r: &mut Raster, revision: u64, time: f64| {
+            let input = egui::RawInput {
+                time: Some(time),
+                ..Default::default()
+            };
+            let mut full = ctx.run_ui(input, |ui| {
+                r.texture(
+                    ui.ctx(),
+                    &doc,
+                    page,
+                    &view,
+                    rect,
+                    None,
+                    revision,
+                    false,
+                    false,
+                    false,
+                    false,
+                    None,
+                    None,
+                );
+            });
+            full.textures_delta.clear();
+            full.viewport_output
+                .get(&egui::ViewportId::ROOT)
+                .map_or(std::time::Duration::MAX, |v| v.repaint_delay)
+        };
+        draw(&mut other, 0, 0.0);
+        assert!(other.has_picture());
+        // The frame after a texture is loaded repaints once on its own;
+        // measure from the next one.
+        draw(&mut other, 0, 0.5);
+        // A job holds the turn and the current page asks for it meanwhile;
+        // when the job ends the turn is kept for the current page.
+        let job = TURNS.take(false).expect("free");
+        assert!(TURNS.take(true).is_none());
+        drop(job);
+        // The drawing changed: the page wants a new render and is refused.
+        let delay = draw(&mut other, 1, 1.0);
+        assert!(other.job.is_none(), "the turn is kept for the current page");
+        assert_eq!(other.render_count(), 1);
+        assert!(
+            delay <= KEEP_FOR_CURRENT,
+            "no repaint asked for: waits {delay:?}"
+        );
+    }
 
     #[test]
     fn proofed_pixels_follow_the_grid_of_proofed_colours() {

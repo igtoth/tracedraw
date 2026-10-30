@@ -39,6 +39,13 @@ off too and is lit while it is on (#1019).
 - One frame spends at most 10 ms rendering the current page and the
   others; pages left over show their last picture and render in the next
   frames. One render runs every frame, so every page gets its turn.
+- Renders on a thread run one at a time in the whole program, the page
+  being edited first: when it had to wait, the turn stays kept for it
+  for 1 s after the running render ends. A page refused its turn for
+  that reason schedules a repaint for the moment the turn is free again,
+  so it is rendered sharp at the current zoom without any pointer move or
+  key press (#1384,
+  `raster::tests::a_page_refused_a_kept_turn_asks_for_a_repaint`).
 
 ## Formula
 
