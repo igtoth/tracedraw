@@ -133,6 +133,14 @@ For step `k` of `n` (`t = k / (n + 1)` with acceleration `t' = t ^ e`,
   length.
 - Transform: interpolated as translation + rotation + scale (not matrix
   entries), so blends rotate the short way unless "rotation" adds turns.
+  When both ends have the same outline (a copy turned, scaled or moved)
+  and no nodes are mapped, each step is that outline under the
+  transformation part way: its centre on the straight line between the
+  two centres, turned by an even share of the turn (the shorter way),
+  scale and slant in between, so no step shrinks or turns more than the
+  next (#1260,
+  `live::tests::a_blend_to_a_turned_copy_turns_its_steps_evenly`). Two
+  different outlines are mixed point by point as above.
 - Colour: mixed directly (each colour's values from start to end).
 - Along a path: step `k` is placed at arc length `t' * L` on the path,
   oriented to the tangent when "rotate all objects" is on.

@@ -1320,6 +1320,14 @@ fn blend(
         ]
     });
     let paths = crate::effects::blend_from_nodes(&a, &b, n, 120, nodes);
+    // The same outline at both ends, only turned, scaled or moved (a copy
+    // rotated): the steps take the transformation part way, so each turns
+    // by an even share and keeps its shape. Mixed point by point, as two
+    // different outlines are, the steps shrank toward the middle and
+    // turned unevenly, the first and last most of all (#1260).
+    let local = start.local_path();
+    let turned =
+        (nodes.is_none() && local == end.local_path()).then(|| local.bounding_box().center());
     let fa = start.fill.preview_color();
     let fb = end.fill.preview_color();
     let ca = start.stroke.as_ref().map(|s| s.color);
@@ -1347,7 +1355,10 @@ fn blend(
         s.effects.clear();
         s.shadow = None;
         s.transform = Affine::IDENTITY;
-        let mut geo = p;
+        let mut geo = match turned {
+            Some(pivot) => lerp_transform(start.transform, end.transform, pivot, t) * local.clone(),
+            None => p,
+        };
         let center = geo.bounding_box().center();
         let mut extra = Affine::IDENTITY;
         if options.accel_sizing {
@@ -1416,6 +1427,48 @@ fn blend(
         out.push(s);
     }
     out
+}
+
+/// The transformation `t` of the way from `a` to `b` (0 to 1): the point
+/// `pivot` (before either) on the straight line between where each puts
+/// it, and the turn, scale and slant in between, the turn the shorter way
+/// round. Mixing the matrices' entries instead shrinks a turned copy.
+fn lerp_transform(a: Affine, b: Affine, pivot: Point, t: f64) -> Affine {
+    // The linear part as a turn by `angle` after an upper triangular
+    // [[sx, k], [0, sy]] (a negative sy for a mirror).
+    let parts = |m: Affine| {
+        let [a, b, c, d, _, _] = m.as_coeffs();
+        let angle = b.atan2(a);
+        let sx = a.hypot(b);
+        let (sin, cos) = angle.sin_cos();
+        (angle, sx, cos * c + sin * d, -sin * c + cos * d)
+    };
+    let (aa, asx, ak, asy) = parts(a);
+    let (ba, bsx, bk, bsy) = parts(b);
+    let tau = std::f64::consts::TAU;
+    let mut turn = (ba - aa).rem_euclid(tau);
+    if turn > std::f64::consts::PI {
+        turn -= tau;
+    }
+    let lerp = |x: f64, y: f64| x + (y - x) * t;
+    let angle = aa + turn * t;
+    let (sx, k, sy) = (lerp(asx, bsx), lerp(ak, bk), lerp(asy, bsy));
+    let (sin, cos) = angle.sin_cos();
+    let linear = Affine::new([
+        cos * sx,
+        sin * sx,
+        cos * k - sin * sy,
+        sin * k + cos * sy,
+        0.0,
+        0.0,
+    ]);
+    let at = (a * pivot).lerp(b * pivot, t);
+    let m = Affine::translate(at.to_vec2()) * linear * Affine::translate(-pivot.to_vec2());
+    if m.as_coeffs().iter().all(|v| v.is_finite()) {
+        m
+    } else {
+        a
+    }
 }
 
 /// How a blend's colours go from the start colour to the end colour.
@@ -3350,6 +3403,68 @@ mod tests {
         // Still in order between the two objects.
         assert!(to_start.windows(2).all(|w| w[0] < w[1]) && to_start[0] > x0);
         assert!(to_end.windows(2).all(|w| w[0] < w[1]) && to_end[2] < x0 + 100.0);
+    }
+
+    /// A blend to a turned copy of the object: each step turned by an
+    /// even share of the way and the same size, none squashed (#1260).
+    #[test]
+    fn a_blend_to_a_turned_copy_turns_its_steps_evenly() {
+        use crate::geometry::Shape as _;
+        let mut a = rect_shape();
+        a.kind = ShapeKind::Rect {
+            rect: Rect::new(0.0, 0.0, 40.0, 10.0),
+            radius: 0.0,
+            corners: None,
+        };
+        let mut b = a.clone();
+        b.id = crate::ShapeId(2);
+        // Turned a quarter about its centre and moved 100 mm right.
+        b.transform = Affine::translate((100.0, 0.0))
+            * Affine::rotate_about(std::f64::consts::FRAC_PI_2, Point::new(20.0, 5.0));
+        let mut s = a.clone();
+        s.effects.push(Effect::Blend {
+            end: Box::new(b.clone()),
+            steps: 3,
+            accel_objects: 0.0,
+            accel_colors: 0.0,
+            rotation: 0.0,
+            path: None,
+            rotate_on_path: false,
+            end_id: Some(b.id),
+            options: BlendOptions::default(),
+        });
+        let steps = evaluate(&s).above;
+        assert_eq!(steps.len(), 3);
+        for (i, st) in steps.iter().enumerate() {
+            let path = st.page_path();
+            // The same area as the object: none shrinks.
+            assert!(
+                (path.area().abs() - 400.0).abs() < 1e-6,
+                "{i}: {}",
+                path.area()
+            );
+            // Its first edge turned by a quarter of the quarter turn per step.
+            let pts: Vec<Point> = path
+                .elements()
+                .iter()
+                .filter_map(|e| match e {
+                    PathEl::MoveTo(p) | PathEl::LineTo(p) => Some(*p),
+                    _ => None,
+                })
+                .collect();
+            let d = pts[1] - pts[0];
+            let want = 22.5 * (i + 1) as f64;
+            // (Whichever edge comes first: the turn counts within a quarter.)
+            let off = (d.y.atan2(d.x).to_degrees() - want).rem_euclid(90.0);
+            assert!(off.min(90.0 - off) < 1e-6, "{i}: {d:?}");
+            // Its centre evenly along the line between the two.
+            let c = path.bounding_box().center();
+            let x = 20.0 + 100.0 * (i + 1) as f64 / 4.0;
+            assert!(
+                (c.x - x).abs() < 1e-6 && (c.y - 5.0).abs() < 1e-6,
+                "{i}: {c:?}"
+            );
+        }
     }
 
     #[test]
