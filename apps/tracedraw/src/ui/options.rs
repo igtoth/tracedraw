@@ -165,6 +165,25 @@ impl OptionsSet {
 }
 
 impl OptionsPage {
+    /// The tool a Tools page is about, whose icon the page list shows.
+    pub fn tool(self) -> Option<crate::tools::Tool> {
+        use crate::tools::Tool;
+        use OptionsPage::*;
+        Some(match self {
+            Pick => Tool::Pick,
+            ZoomPan => Tool::Zoom,
+            Curves => Tool::Freehand,
+            Rectangle => Tool::Rectangle,
+            Ellipse => Tool::Ellipse,
+            Polygon => Tool::Polygon,
+            Spiral => Tool::Spiral,
+            GraphPaper => Tool::GraphPaper,
+            Table => Tool::Table,
+            Eraser => Tool::Eraser,
+            _ => return None,
+        })
+    }
+
     pub fn set(self) -> OptionsSet {
         OptionsSet::ALL
             .into_iter()
@@ -571,8 +590,22 @@ fn page_list(app: &mut App, ui: &mut Ui, rect: egui::Rect, set: OptionsSet) {
             ui.painter()
                 .rect_filled(row, 0.0, crate::theme::Tokens::hovered_row());
         }
+        let mut text_x = 5.0;
+        if let Some(t) = p.tool() {
+            let icon = egui::Rect::from_center_size(
+                row.left_center() + egui::vec2(13.0, 0.0),
+                egui::vec2(16.0, 16.0),
+            );
+            crate::ui::icons::draw(
+                ui.painter(),
+                icon,
+                t,
+                crate::ui::icons::tool_color(t, Tokens::text()),
+            );
+            text_x = 27.0;
+        }
         ui.painter().text(
-            row.left_center() + egui::vec2(5.0, 0.0),
+            row.left_center() + egui::vec2(text_x, 0.0),
             egui::Align2::LEFT_CENTER,
             tr(p.key()),
             egui::FontId::proportional(13.0),
@@ -3357,6 +3390,7 @@ fn pick_page(app: &mut App, ui: &mut Ui) {
 }
 
 fn zoom_pan_page(app: &mut App, ui: &mut Ui) {
+    chrome::section(ui, &tr("options.zoom_tool"));
     ui.label(tr("options.zoom_right_button"));
     ui.indent("zr", |ui| {
         ui.radio_value(
@@ -3400,6 +3434,23 @@ fn zoom_pan_page(app: &mut App, ui: &mut Ui) {
             "options.wheel_scroll_tip",
         ));
     });
+    ui.separator();
+    // The ruler calibration lives on the Display page; this opens it there.
+    if ui
+        .button(tr("options.calibrate_zoom"))
+        .rich_tip(crate::ui::tips::pair(
+            "options.calibrate_zoom",
+            "options.calibrate_zoom_tip",
+        ))
+        .clicked()
+    {
+        app.options_page = OptionsPage::Display;
+    }
+    ui.label(
+        egui::RichText::new(tr("options.calibrate_zoom_desc"))
+            .color(Tokens::text_dim())
+            .size(12.0),
+    );
 }
 
 fn rectangle_page(app: &mut App, ui: &mut Ui) {
