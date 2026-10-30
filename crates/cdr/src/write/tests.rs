@@ -2783,53 +2783,6 @@ fn bitmap_objects_carry_their_pixel_size() {
     }
 }
 
-/// `tracedraw-cli check` reports a bitmap whose outline nodes lack the
-/// marks, as TraceDraw wrote them before (0x00, 0x40, 0x40, 0x40, 0x48),
-/// and passes the marked one now written (#1226).
-#[test]
-fn check_reports_bitmap_outlines_without_node_marks() {
-    let png = {
-        let mut pm = tiny_skia::Pixmap::new(3, 2).expect("pixmap");
-        pm.fill(tiny_skia::Color::from_rgba8(10, 20, 30, 255));
-        pm.encode_png().expect("png")
-    };
-    let mut ids = tracedraw_core::id::IdSource::default();
-    let mut bm = Shape::new(
-        ids.shape(),
-        ShapeKind::Bitmap {
-            rect: Rect::new(0.0, 0.0, 30.0, 20.0),
-            width_px: 3,
-            height_px: 2,
-            png: png.into(),
-            fx: None,
-        },
-    );
-    bm.fill = Fill::None;
-    bm.stroke = None;
-    let marked = [0x0c, 0x44, 0x44, 0x44, 0x48];
-    let flagged = |bytes: &[u8]| {
-        crate::check::check_bytes(bytes)
-            .expect("checks")
-            .iter()
-            .any(|f| f.what.contains("lacks the node marks"))
-    };
-    // The versions whose records are stored as they are (not packed), so
-    // their bytes can be edited in place.
-    let doc = doc_with(vec![bm]);
-    let mut edited = 0;
-    for v in versions() {
-        let mut bytes = document_to_cdr_version(&doc, v);
-        assert!(!flagged(&bytes), "{v}");
-        let Some(at) = bytes.windows(5).position(|w| w == marked) else {
-            continue;
-        };
-        bytes[at..at + 5].copy_from_slice(&[0x00, 0x40, 0x40, 0x40, 0x48]);
-        assert!(flagged(&bytes), "{v}");
-        edited += 1;
-    }
-    assert!(edited > 0, "no version to edit in place");
-}
-
 /// The coordinates argument of the first bitmap object of `bytes`.
 fn bitmap_coords(bytes: &[u8]) -> Vec<u8> {
     let (_, tree, riff) = chunk_ids(bytes);

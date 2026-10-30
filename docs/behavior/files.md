@@ -184,6 +184,6 @@ objects open as drawn.
   (0x0c, 0x44, 0x44, 0x44, 0x48), as the files of the program that reads
   `.cdr` files have them; unmarked, a click on the picture closed that
   program (#1226; `write::tests::bitmap_objects_carry_their_pixel_size`,
-  `write::tests::check_reports_bitmap_outlines_without_node_marks`).
+  `check::tests::bitmap_outlines_need_node_marks`).
 - Checked on screen: the dialog with its shortcuts, list, type list,
   version and stars; Save as CDR wrote the file in the folder shown.
