@@ -188,15 +188,27 @@ can be undone.
    edge do not chain two colours into one. The steps of a gradient and
    distinct colours however close (a 246 grey on white) lie further apart
    than their spread and stay; photos are left as they are.
-2. Edges (#611, off at detail 95 and up, where the specks stay too): a
-   pixel is flat when its 8 neighbours share its colour. A pixel that is
-   not, with no flat pixel of its own colour within 3 px, looks at the
-   flat colours within 3 px: when its colour lies between the two nearest
-   of them (within `max(12, 0.08 * distance)` of the RGB segment joining
-   them) it takes the one it is nearer along that segment, so the edge
-   runs where the art's anti-aliasing puts it; beside one flat colour
-   only, it takes it when within 48. Lines of their own colour (text, a
-   hairline on a fill) keep it.
+2. Edges (#611, #1250, off at detail 95 and up, where the specks stay
+   too): a pixel is flat when its 8 neighbours share its colour, and a
+   colour is a colour of its own when at least half its pixels are flat;
+   the others only line the edges (the fringes of a blurred or
+   compressed edge, a video frame, a scaled screenshot). A pixel that is
+   not flat, or is of such a fringe colour, with no flat pixel of its own
+   colour (of its own) within 4 px, looks at the flat pixels of colours
+   of their own within 4 px: when its colour lies between the two
+   nearest of them (within `max(12, 0.08 * distance)` of the RGB segment
+   joining them) it takes the one it is nearer along that segment, so
+   the edge runs where the art's anti-aliasing puts it; beside one flat
+   colour only, it takes it when within 48. Lines of their own colour
+   (text, a hairline on a fill) keep it.
+   Fringe bands (#1250): a 4-connected patch at most 5 px thick (twice
+   its area over its edge count), of a colour between the two colours
+   it touches most (at least 64 apart, the second on a tenth of its
+   edges or more), both solid where they touch it (at least half their
+   pixels there flat or beside a flat pixel of their colour), is the
+   soft edge of the two: each of its pixels takes the one its own colour
+   is nearer along the segment joining them. The pieces of a thin letter
+   in two shades stay, the other shade being no solid area.
    Specks: every 4-connected patch of one colour smaller than
    `round(((100 - detail) / 10)^2)` pixels (none at detail 100, 4 at 80,
    16 at 60, 42 at 35) takes the colour of a neighbour, so stray dots and
@@ -207,6 +219,12 @@ can be undone.
    else the one most of its neighbours have. Patches joined into others
    are looked at again (up to 4 passes), so a letter split into several
    dark shades stays a letter. Transparent pixels are left alone.
+   Bumps and notches (#1250, off at detail 95 and up): twice over, a
+   pixel at least 5 of whose 8 neighbours have one other colour takes
+   it, when its own neighbours are the three on one side of it (a bump
+   of a pixel on a straight edge, or a notch in one). Corners, the
+   pixels of a line one pixel wide (their own on two sides) and its end
+   stay.
 3. For each colour, the boundary rings of its mask along the pixel
    edges, looked for in the box of its pixels only. A region's mask also
    takes the pixels of the regions stacked above it (lighter ones, not
@@ -228,13 +246,21 @@ can be undone.
      times with weights 1, 2, 1;
    - each stretch between corners (a ring without corners in quarters
      meeting smoothly) fitted with as few cubic Beziers as keep every
-     point within `0.2 + (100 - detail) / 100` px: least squares on
+     point within `0.2 + (100 - detail) / 100 * 2` px (1 px at the
+     Clipart detail of 60, 0.6 before: the smoothed points lie on a
+     smooth curve already, and the tighter fit only added nodes): least
+     squares on
      chord-length parameters with Newton steps, split at the worst point
      (P. J. Schneider, "An Algorithm for Automatically Fitting Digitized
      Curves", Graphics Gems, 1990). Ends take the direction over 4
      points.
 5. Stack regions dark to light; leave out the background (see Remove
-   above) when requested.
+   above) when requested. The background found (no colour specified) is
+   the commonest colour on the picture's edge; when no colour touches
+   the edge (art on a transparent background) there is none and nothing
+   is removed (#1250: the commonest of none was the last colour of the
+   palette, and Remove entire color took it out of the art, such as the
+   yellow of a bee's head, leaving its fringe as an outline).
 
 Centreline mode: Zhang-Suen thinning, then the skeleton is traced into
 polylines, smoothed (Catmull-Rom) and output as curves with a stroke
@@ -317,6 +343,15 @@ width equal to the mean local thickness.
   anti-aliased, with noise of up to 6 and blue bled a pixel sideways,
   Clipart preset: at most 3 regions and 8 subpaths (20 regions before),
   and the bar is still drawn dark.
+- `trace::tests::blurred_edges_go_to_the_colours_either_side` (#1250):
+  black and yellow meeting along a wavy edge blurred over 4 px, with
+  noise, Clipart preset with nothing removed: two regions of one ring
+  each and at most 40 nodes.
+- `trace::tests::art_on_a_transparent_background_keeps_every_colour`
+  (#1250): a yellow disc with a black band on a transparent background
+  keeps both colours, the head drawn yellow, whatever Remove says.
+- `trace::tests::fringes_go_to_the_two_sides_and_strokes_stay`,
+  `trace::tests::smoothing_takes_bumps_and_notches_off_edges_and_keeps_lines`.
 - `trace::tests::edge_pixels_go_to_the_flat_colours_beside_them`,
   `trace::tests::close_colours_and_colour_counts_are_kept` (a 246 grey
   logo on white at the Logo preset and with two colours, a grey ramp at
