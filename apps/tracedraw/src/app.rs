@@ -1059,6 +1059,9 @@ pub struct App {
     /// The Distort tool's values (its bar) and its drag under way.
     pub distort: crate::distort_tool::DistortSettings,
     pub distort_drag: Option<crate::distort_tool::DistortDrag>,
+    /// How long each object's Twister handle was last dragged (page mm):
+    /// the handle is free, it ends where it was let go (#1263).
+    pub twister_handles: std::collections::HashMap<ShapeId, f64>,
     pub brush_radius: f64,
     /// Eraser nib: thickness in mm and shape.
     pub eraser_width: f64,
@@ -2309,6 +2312,7 @@ impl App {
             extrude_measure_object: false,
             distort: Default::default(),
             distort_drag: None,
+            twister_handles: std::collections::HashMap::new(),
             brush_radius: 10.0,
             eraser_width: 6.35,
             eraser_square: false,

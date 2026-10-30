@@ -484,7 +484,14 @@ impl App {
                         } else {
                             0.0
                         };
-                        (center + Vec2::new(a.cos(), a.sin()) * reach, None)
+                        // A free handle: as long as it was dragged (#1263).
+                        let len = self
+                            .twister_handles
+                            .get(id)
+                            .copied()
+                            .filter(|l| l.is_finite() && *l > 0.0)
+                            .unwrap_or(reach);
+                        (center + Vec2::new(a.cos(), a.sin()) * len, None)
                     }
                 };
                 Some(DistortHandles {
@@ -593,6 +600,16 @@ impl App {
         dd.last_angle = Some(a);
     }
 
+    /// The Twister's handle reaches the pointer: it is free, as long as
+    /// the drag makes it, and stays so when let go (#1263).
+    fn stretch_twister_handle(&mut self, dd: &DistortDrag, p: Point) {
+        let len = (p - dd.start).hypot();
+        let tol = 2.0 / self.view.zoom.max(1e-6) as f64;
+        if len.is_finite() && len > tol {
+            self.twister_handles.insert(dd.id, len);
+        }
+    }
+
     /// The Twister angle (degrees) of a turn, within the bar's range.
     fn turn_degrees(turned: f64) -> f64 {
         let most = MAX_TURNS as f64 * 360.0 + 359.0;
@@ -646,6 +663,7 @@ impl App {
                     }
                     (DistortMode::Twister, _) => {
                         self.turn_toward(&mut dd, p);
+                        self.stretch_twister_handle(&dd, p);
                         sett.take(&Distort::Twister {
                             angle_deg: Self::turn_degrees(dd.turned),
                             center: None,
@@ -671,6 +689,7 @@ impl App {
             }
             DistortMode::Twister => {
                 self.turn_toward(&mut dd, p);
+                self.stretch_twister_handle(&dd, p);
                 self.distort.take(&Distort::Twister {
                     angle_deg: Self::turn_degrees(dd.turned),
                     center: None,
@@ -968,6 +987,52 @@ mod tests {
         };
         assert!((angle_deg - 480.0).abs() <= 1.0, "{angle_deg}");
         assert_eq!((app.distort.turns, app.distort.clockwise), (1, false));
+    }
+
+    /// #1263: the Twister's handle is free: it reaches as far as it is
+    /// dragged, stays there when let go and is taken there again; its
+    /// length changes nothing but the handle.
+    #[test]
+    fn the_twister_handle_is_as_long_as_it_is_dragged() {
+        let mut app = App::headless();
+        app.tool = Tool::Distort;
+        let id = square(&mut app);
+        app.select(vec![id]);
+        app.distort.mode = DistortMode::Twister;
+        let c = Point::new(10.0, 10.0);
+        let at = |len: f64, deg: f64| {
+            c + tracedraw_core::geometry::Vec2::new(deg.to_radians().cos(), deg.to_radians().sin())
+                * len
+        };
+        // A drag from the middle, out to 40 mm, turned a quarter.
+        assert!(app.begin_distort(c));
+        let mut deg = 0.0;
+        while deg <= 90.0 {
+            app.drag_distort(at(40.0, deg));
+            deg += 10.0;
+        }
+        app.distort_drag = None;
+        let h = app.distortion_handles()[0].clone();
+        assert!((h.end - at(40.0, 90.0)).hypot() < 1e-6, "{h:?}");
+        let Some(Distort::Twister { angle_deg, .. }) = effect(&app, id) else {
+            panic!("a twister");
+        };
+        assert!((angle_deg - 90.0).abs() <= 1.0, "{angle_deg}");
+        // Taken at its far end and drawn in to 5 mm: the angle stays.
+        assert!(app.begin_distort(h.end));
+        assert_eq!(app.distort_drag.as_ref().map(|d| d.grab), Some(Grab::End));
+        app.drag_distort(at(20.0, 90.0));
+        app.drag_distort(at(5.0, 90.0));
+        app.distort_drag = None;
+        let h = app.distortion_handles()[0].clone();
+        assert!((h.end - at(5.0, 90.0)).hypot() < 1e-6, "{h:?}");
+        let Some(Distort::Twister {
+            angle_deg: again, ..
+        }) = effect(&app, id)
+        else {
+            panic!("a twister");
+        };
+        assert!((again - angle_deg).abs() <= 1.0, "{again}");
     }
 
     #[test]

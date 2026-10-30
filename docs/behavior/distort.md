@@ -18,8 +18,11 @@ curve stays open.
   `c + (q - c) * (1 - s)`, with `s = amount / 100`. Positive amounts
   push the nodes out and bow the segments in (spikes with hollow
   sides); negative amounts pull the nodes in and bow the segments out
-  (petals). Straight segments become curves with their control points
-  at a third and two thirds; quadratic ones are raised to cubic.
+  (petals). Straight segments become curves whose control points start
+  on their nodes, so they move along the nodes' own lines from the
+  centre: a side bows from its middle, pushed corners become spikes and
+  pulled corners curl, with the side's lobe reaching past them (#1264);
+  quadratic segments are raised to cubic.
 - Zipper, `amplitude` (mm, 0 to 100) and `frequency` (0 to 100): each
   segment is cut into `frequency + 1` equal steps of its parameter, so
   it carries `frequency + 1` lines (#1122); the points move off the
@@ -69,8 +72,12 @@ curve stays open.
   negative; dragging it sets the amount from its distance) and at four
   times the amplitude for the Zipper (the drag's own measure; dragging
   it sets the amplitude from its distance), or a circle for the Twister
-  `r` from the centre in the direction of the angle (dragging it round
-  turns the angle, whole turns counted); the slider sits
+  in the direction of the angle (dragging it round turns the angle,
+  whole turns counted). The Twister's handle is free: it reaches the
+  pointer during a drag (on the object or on the handle), as far out or
+  as near as it goes, and stays that long when let go, `r` until it has
+  been dragged; its length changes only the handle, not the turn
+  (#1263, `App::twister_handles`); the slider sits
   `frequency / 100` of the way from the centre to the Zipper's end and
   dragging it along the line sets the frequency. A handle drag edits the
   object's distortion in place (its centre kept) as one undo step.
