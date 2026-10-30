@@ -1,5 +1,7 @@
 # Cambiare la modalità colore delle bitmap
 
+> *Traduzione automatica: questa pagina può essere meno aggiornata della versione inglese.*
+
 [[menu.bitmaps > menu.bitmaps.mode]] converte le bitmap selezionate in un'altra
 modalità colore. Ogni bitmap selezionata cambia in un unico passaggio di
 annullamento e la trasparenza viene mantenuta. Le modalità con impostazioni
@@ -11,9 +13,11 @@ aprono una finestra di dialogo con le anteprime prima e dopo.
 | [[menu.bitmaps.mode_grayscale]] | sfumature di grigio |
 | [[menu.bitmaps.mode_duotone]] | da uno a quattro inchiostri (vedi sotto) |
 | [[menu.bitmaps.mode_paletted]] | al massimo 256 colori (vedi sotto) |
-| [[menu.bitmaps.mode_rgb]] | i pixel così come sono |
+| [[menu.bitmaps.mode_rgb]] | la modalità della bitmap diventa RGB; i pixel restano come sono |
 | [[menu.bitmaps.mode_lab]] | colore Lab |
-| [[menu.bitmaps.mode_cmyk]] | i pixel così come sono; la gestione del colore li converte in uscita |
+| [[menu.bitmaps.mode_cmyk]] | la modalità della bitmap diventa CMYK e i suoi pixel mostrano i colori che gli inchiostri possono stampare, calcolati con i profili di gestione del colore |
+
+Il menu spunta [[menu.bitmaps.mode_rgb]] o [[menu.bitmaps.mode_cmyk]] quando tutte le bitmap selezionate sono in quella modalità, e la barra di stato indica la modalità di una bitmap selezionata, per esempio «Bitmap 600 x 400 px (CMYK)». Un'immagine CMYK di un file `.cdr` si apre in modalità CMYK, e i file `.tdraw` conservano la modalità. [[menu.tools > menu.tools.convert_colors]] imposta allo stesso modo la modalità di ogni bitmap che converte (vedere [Convertire i colori](../color/convert-colors.md)).
 
 ## Bianco e nero {#black-and-white}
 

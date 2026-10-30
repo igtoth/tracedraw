@@ -2,7 +2,11 @@
 
 [[menu.file > menu.file.publish_to_pdf]] (também na barra de ferramentas padrão)
 grava um arquivo PDF com controle total do que vai dentro: quais páginas, qual
-padrão PDF, informações do documento, marcadores e proteção por senha.
+padrão PDF, como as imagens são comprimidas, informações do documento,
+marcadores, marcas de impressão e proteção por senha. As guias são
+[[publish.tab_general]], [[publish.tab_color]], [[publish.tab_document]],
+[[publish.tab_objects]], [[publish.tab_prepress]], [[publish.tab_security]] e
+a guia de problemas.
 
 ![A caixa de diálogo Configurações de PDF](../../img/file-formats-publish-pdf.png)
 
@@ -12,11 +16,16 @@ padrão PDF, informações do documento, marcadores e proteção por senha.
 - **Intervalo de exportação**: o documento atual (todas as páginas), todos os
   documentos abertos, a página atual, uma lista de páginas (como `1-3, 5`) ou a
   seleção.
-- **Tamanho da página** para uma seleção: a página do documento, ou uma página
-  do tamanho dos objetos selecionados.
-- **Predefinição de PDF**: Distribuição de documentos, Web, Pré-impressão
-  (PDF/X-4), PDF/X-1a, PDF/X-3 ou uma sua; **+** salva as configurações atuais
-  como predefinição e **-** exclui uma.
+- **Tamanho da página** para uma seleção: [[publish.size_document]] (a página,
+  só com os objetos selecionados) ou [[publish.size_selection]] (uma página do
+  tamanho dos objetos selecionados, o padrão).
+- **Predefinição de PDF**: [[publish.preset_distribution]],
+  [[publish.preset_web]], [[publish.preset_prepress]], [[publish.preset_x1a]],
+  [[publish.preset_x3]] ou uma sua; **+** salva as configurações atuais como
+  predefinição com o nome que você digitar (o mesmo nome a substitui) e **-**
+  exclui a escolhida. Uma predefinição define a compatibilidade, a condição de
+  saída, a resolução de achatamento, os marcadores, a sangria, as marcas de
+  impressão e as opções de bitmaps.
 - **Compatibilidade**: PDF 1.4, PDF/X-1a:2003, PDF/X-3:2003 ou PDF/X-4.
   Arquivos PDF/X são feitos para gráficas.
 
@@ -31,11 +40,47 @@ desenho vai para o arquivo. Um PDF comum mantém as cores como estão.
 das propriedades do desenho; **um marcador para cada página** (ligado de
 início) e **mostrar os marcadores quando o arquivo abre**.
 
-## Objetos e pré-impressão {#objects}
+## Objetos {#objects}
 
-- **Achatar a transparência em** uma resolução (300 dpi), para PDF/X-1a e X-3,
-  que não permitem transparência.
-- **Sangria** (0 a 50 mm) em volta de cada página.
+- [[publish.flatten_resolution]] uma resolução (300 dpi), para PDF/X-1a e X-3,
+  que não permitem transparência. Os outros padrões mantêm a transparência
+  viva, por isso o campo fica cinza para eles.
+
+### Bitmaps {#bitmaps}
+
+O grupo [[publish.bitmaps]] define como as imagens entram no arquivo. As
+escolhas ficam guardadas para a próxima vez e nas predefinições.
+
+- [[publish.downsample_color]] (desligado, 300 dpi): uma imagem colorida com
+  mais pixels do que essa resolução, do jeito que está colocada na página, é
+  reduzida para ela.
+- [[publish.downsample_gray]] (desligado, 300 dpi): o mesmo para imagens só
+  de cinzas. Imagens cinza sempre entram com um canal, o que as deixa
+  pequenas.
+- [[publish.downsample_mono]] (desligado, 1200 dpi): o mesmo para imagens só
+  de pixels pretos e brancos.
+- [[publish.compression]]: [[publish.compression_zip]] (o padrão) mantém cada
+  pixel; [[publish.compression_jpeg]] faz arquivos menores com alguma perda,
+  na [[publish.jpeg_quality]] que você definir (1 a 100, 85 de início).
+  Imagens em preto e branco, máscaras de transparência e arquivos PDF/X-1a
+  sempre usam ZIP.
+- [[publish.compress_content]] (ligado) comprime o texto e o desenho das
+  páginas.
+
+Uma imagem totalmente fora da página e da sangria não pode aparecer, então
+fica fora do arquivo.
+
+A predefinição [[publish.preset_web]] reduz imagens coloridas e cinza para
+150 dpi e as de preto e branco para 300 dpi, com JPEG em qualidade 75.
+
+## Pré-impressão {#prepress}
+
+- [[dialog.bleed]] (0 a 50 mm, a sangria do desenho de início) em volta de
+  cada página: a caixa de corte é a página, a caixa de mídia a página e a
+  sangria.
+- [[publish.marks]]: [[dialog.crop_marks]], [[dialog.registration_marks]],
+  [[print.color_bars]] e [[publish.file_info]] em volta de cada página. Veja
+  [Marcas de impressão em arquivos PDF](pdf-prepress-marks.md).
 
 ## Texto e fontes {#text}
 

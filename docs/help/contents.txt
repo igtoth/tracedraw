@@ -31,6 +31,7 @@ objects/index
   objects/selecting
   objects/transforming
   objects/align-distribute
+  objects/fit-objects-to-path
   objects/step-and-repeat
   objects/objects-and-layers
   objects/properties-docker
@@ -43,6 +44,7 @@ objects/index
   objects/paste-special
   objects/shelf
   objects/find-replace
+  objects/find-by-properties
   objects/comments
   objects/tables
   objects/barcodes
@@ -56,6 +58,7 @@ color/index
   color/transparency
   color/spot-colors
   color/color-management
+  color/convert-colors
 effects/index
   effects/effects-docker
   effects/blend
@@ -76,6 +79,7 @@ text/index
   text/adding-text
   text/paragraphs
   text/fonts
+  text/missing-fonts
   text/writing-tools
 templates-styles/index
   templates-styles/templates
@@ -91,11 +95,13 @@ bitmaps/index
   bitmaps/convert-to-bitmap
   bitmaps/color-modes
   bitmaps/resample-and-straighten
+  bitmaps/before-after-preview
   bitmaps/tracing
   bitmaps/bitmap-mask
   bitmaps/remove-background
 printing/index
   printing/print
+  printing/booklet
   printing/print-merge
   printing/preflight
   printing/border-and-grommet
@@ -107,6 +113,8 @@ file-formats/index
   file-formats/import
   file-formats/export
   file-formats/publish-pdf
+  file-formats/pdf-prepress-marks
+  file-formats/package
 customize/index
   customize/options-app
   customize/customization

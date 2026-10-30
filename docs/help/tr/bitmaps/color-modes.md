@@ -1,5 +1,7 @@
 # Bitmaplerin renk modunu değiştirme
 
+> *Makine çevirisi: bu sayfa İngilizce sürümün gerisinde kalabilir.*
+
 [[menu.bitmaps > menu.bitmaps.mode]] seçili bitmapleri başka bir renk moduna
 dönüştürür. Seçili her bitmap tek bir geri alma adımında değişir ve saydamlık
 korunur. Ayarları olan modlar, önce ve sonra önizlemeleri içeren bir iletişim
@@ -11,9 +13,11 @@ kutusu açar.
 | [[menu.bitmaps.mode_grayscale]] | gri tonları |
 | [[menu.bitmaps.mode_duotone]] | bir ile dört arası mürekkep (aşağıya bakın) |
 | [[menu.bitmaps.mode_paletted]] | en çok 256 renk (aşağıya bakın) |
-| [[menu.bitmaps.mode_rgb]] | pikseller olduğu gibi |
+| [[menu.bitmaps.mode_rgb]] | bitmap'in modu RGB olur; pikseller olduğu gibi kalır |
 | [[menu.bitmaps.mode_lab]] | Lab rengi |
-| [[menu.bitmaps.mode_cmyk]] | pikseller olduğu gibi; renk yönetimi çıktıda dönüştürür |
+| [[menu.bitmaps.mode_cmyk]] | bitmap'in modu CMYK olur ve pikselleri, renk yönetimi profilleriyle hesaplanan, mürekkeplerin basabileceği renkleri gösterir |
+
+Seçili bitmap'lerin hepsi o moddayken menü [[menu.bitmaps.mode_rgb]] veya [[menu.bitmaps.mode_cmyk]] seçeneğini işaretler ve durum çubuğu seçili bitmap'in modunu "Bitmap 600 x 400 px (CMYK)" gibi gösterir. Bir `.cdr` dosyasındaki CMYK resim CMYK modunda açılır ve `.tdraw` dosyaları modu korur. [[menu.tools > menu.tools.convert_colors]] dönüştürdüğü her bitmap'in modunu aynı şekilde ayarlar (bkz. [Renkleri dönüştürme](../color/convert-colors.md)).
 
 ## Siyah ve beyaz {#black-and-white}
 

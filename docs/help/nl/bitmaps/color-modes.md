@@ -1,5 +1,7 @@
 # De kleurmodus van bitmaps wijzigen
 
+> *Machinevertaling: deze pagina kan achterlopen op de Engelse versie.*
+
 [[menu.bitmaps > menu.bitmaps.mode]] zet de geselecteerde bitmaps om naar een
 andere kleurmodus. Elke geselecteerde bitmap verandert in één
 ongedaan-makenstap en de transparantie blijft behouden. De modi met
@@ -11,9 +13,11 @@ instellingen openen een dialoogvenster met een voorbeeld vooraf en achteraf.
 | [[menu.bitmaps.mode_grayscale]] | grijstinten |
 | [[menu.bitmaps.mode_duotone]] | één tot vier inkten (zie hieronder) |
 | [[menu.bitmaps.mode_paletted]] | maximaal 256 kleuren (zie hieronder) |
-| [[menu.bitmaps.mode_rgb]] | de pixels zoals ze zijn |
+| [[menu.bitmaps.mode_rgb]] | de modus van de bitmap wordt RGB; de pixels blijven zoals ze zijn |
 | [[menu.bitmaps.mode_lab]] | Lab-kleur |
-| [[menu.bitmaps.mode_cmyk]] | de pixels zoals ze zijn; kleurbeheer zet ze om bij de uitvoer |
+| [[menu.bitmaps.mode_cmyk]] | de modus van de bitmap wordt CMYK en de pixels tonen de kleuren die de inkten kunnen drukken, berekend met de kleurbeheerprofielen |
+
+Het menu vinkt [[menu.bitmaps.mode_rgb]] of [[menu.bitmaps.mode_cmyk]] aan wanneer alle geselecteerde bitmaps in die modus staan, en de statusbalk noemt de modus van een geselecteerde bitmap, zoals "Bitmap 600 x 400 px (CMYK)". Een CMYK-afbeelding uit een `.cdr`-bestand opent in de CMYK-modus, en `.tdraw`-bestanden bewaren de modus. [[menu.tools > menu.tools.convert_colors]] zet de modus van elke bitmap die het omzet op dezelfde manier (zie [Kleuren omzetten](../color/convert-colors.md)).
 
 ## Zwart-wit {#black-and-white}
 

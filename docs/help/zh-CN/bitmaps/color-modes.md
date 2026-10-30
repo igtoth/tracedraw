@@ -1,5 +1,7 @@
 # 更改位图的颜色模式
 
+> *机器翻译：本页可能落后于英文版。*
+
 [[menu.bitmaps > menu.bitmaps.mode]] 将所选位图转换为另一种颜色模式。所有所选位图的更改为一个撤消步骤，并保留透明度。带有设置的模式会打开一个对话框，显示转换前后的预览。
 
 | 模式 | 结果 |
@@ -8,9 +10,11 @@
 | [[menu.bitmaps.mode_grayscale]] | 灰色阴影 |
 | [[menu.bitmaps.mode_duotone]] | 一到四种油墨（见下文） |
 | [[menu.bitmaps.mode_paletted]] | 最多 256 种颜色（见下文） |
-| [[menu.bitmaps.mode_rgb]] | 像素保持原样 |
+| [[menu.bitmaps.mode_rgb]] | 位图的模式变为 RGB；像素保持原样 |
 | [[menu.bitmaps.mode_lab]] | Lab 颜色 |
-| [[menu.bitmaps.mode_cmyk]] | 像素保持原样；输出时由颜色管理进行转换 |
+| [[menu.bitmaps.mode_cmyk]] | 位图的模式变为 CMYK，其像素显示油墨能够印出的颜色，由颜色管理配置文件计算 |
+
+所有选中的位图都处于某一模式时，菜单会勾选 [[menu.bitmaps.mode_rgb]] 或 [[menu.bitmaps.mode_cmyk]]，状态栏会显示所选位图的模式，例如“Bitmap 600 x 400 px (CMYK)”。`.cdr` 文件中的 CMYK 图片以 CMYK 模式打开，`.tdraw` 文件会保留该模式。[[menu.tools > menu.tools.convert_colors]] 也会以同样方式设置所转换的每个位图的模式（参见[转换颜色](../color/convert-colors.md)）。
 
 ## 黑白 {#black-and-white}
 

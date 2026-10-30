@@ -46,3 +46,6 @@ search covers the current page. To name objects, see
 
 A fill colour looked for is replaced wherever it is used, in gradients
 too. Locked objects are left as they are.
+
+For every option, how colors are compared and what each replacement does,
+see [Finding and replacing by properties](find-by-properties.md).

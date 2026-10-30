@@ -1,5 +1,7 @@
 # Mengubah mode warna bitmap
 
+> *Terjemahan mesin: halaman ini mungkin tertinggal dari versi bahasa Inggris.*
+
 [[menu.bitmaps > menu.bitmaps.mode]] mengonversi bitmap yang dipilih ke mode
 warna lain. Setiap bitmap yang dipilih berubah dalam satu langkah urungkan, dan
 transparansi tetap dipertahankan. Mode yang memiliki pengaturan membuka kotak
@@ -11,9 +13,11 @@ dialog dengan pratinjau sebelum dan sesudah.
 | [[menu.bitmaps.mode_grayscale]] | gradasi abu-abu |
 | [[menu.bitmaps.mode_duotone]] | satu sampai empat tinta (lihat di bawah) |
 | [[menu.bitmaps.mode_paletted]] | paling banyak 256 warna (lihat di bawah) |
-| [[menu.bitmaps.mode_rgb]] | piksel apa adanya |
+| [[menu.bitmaps.mode_rgb]] | mode bitmap menjadi RGB; piksel tetap apa adanya |
 | [[menu.bitmaps.mode_lab]] | warna Lab |
-| [[menu.bitmaps.mode_cmyk]] | piksel apa adanya; manajemen warna mengonversinya saat keluaran |
+| [[menu.bitmaps.mode_cmyk]] | mode bitmap menjadi CMYK dan pikselnya menampilkan warna yang dapat dicetak tinta, dihitung dengan profil manajemen warna |
+
+Menu mencentang [[menu.bitmaps.mode_rgb]] atau [[menu.bitmaps.mode_cmyk]] bila semua bitmap terpilih berada dalam mode itu, dan bilah status menyebut mode bitmap terpilih, seperti "Bitmap 600 x 400 px (CMYK)". Gambar CMYK dari berkas `.cdr` terbuka dalam mode CMYK, dan berkas `.tdraw` menyimpan modenya. [[menu.tools > menu.tools.convert_colors]] mengatur mode setiap bitmap yang dikonversinya dengan cara yang sama (lihat [Mengonversi warna](../color/convert-colors.md)).
 
 ## Hitam dan putih {#black-and-white}
 

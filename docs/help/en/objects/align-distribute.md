@@ -57,73 +57,7 @@ To place copies at even distances in one step, see
 ## Fit objects to a path {#fit-to-path}
 
 The [[docker.fit_to_path]] panel places objects along a line, a curve or the
-outline of a shape. Open it with
-[[menu.object > menu.object.fit_objects_to_path]].
-
-1. Select the objects to place, then the path last (Shift+click).
-2. Under [[docker.fit_to_path_spacing]], choose
-   [[docker.fit_to_path_even]] to spread the objects over the path, or
-   [[docker.fit_to_path_distance]] and type the [[docker.fit_to_path_distance_value]]
-   from one object to the next. [[docker.fit_to_path_measure]] measures it
-   between the [[docker.fit_to_path_centres]] of neighbouring objects, or
-   between their [[docker.fit_to_path_edges]], so that objects of different
-   sizes get the same gap.
-3. [[docker.fit_to_path_offset]] moves the first object along the path from
-   its start; [[docker.fit_to_path_end_offset]] keeps the objects away from
-   the end of an open path. With a fixed distance,
-   [[docker.fit_to_path_align]] puts the row at the
-   [[docker.fit_to_path_align_start]], in the
-   [[docker.fit_to_path_align_middle]] or at the
-   [[docker.fit_to_path_align_end]].
-4. Under [[docker.fit_to_path_copies]], [[docker.fit_to_path_copies_count]]
-   fills the path with that many objects: the ones you selected, then
-   copies of them in turn. With a fixed distance,
-   [[docker.fit_to_path_copies_fill]] makes as many copies as fit.
-5. Under [[docker.fit_to_path_place]], put the objects
-   [[docker.fit_to_path_on]], [[docker.fit_to_path_above]] or
-   [[docker.fit_to_path_below]], with a [[docker.fit_to_path_side]].
-6. Under [[docker.fit_to_path_rotation]], choose
-   [[docker.fit_to_path_rotate]] to turn each object with the direction of
-   the path, or [[docker.fit_to_path_fixed]] to turn them all alike; the
-   [[docker.fit_to_path_angle]] is added in either case.
-7. [[docker.fit_to_path_order]] sets which object goes first: as selected,
-   reversed, from left to right or right to left, by size, or large and
-   small in turn. [[docker.fit_to_path_reverse]] starts from the other end
-   of the path.
-8. Once you change a value, the outlines on the canvas show where the
-   objects and copies will go. Click [[docker.apply]]. Copies go into
-   the layer of the object they copy, and the objects placed are selected.
-
-More choices on the panel:
-
-- [[docker.fit_to_path_keep_originals]] leaves the selected objects where
-  they are and places copies; [[docker.fit_to_path_group]] puts what was
-  placed into one group.
-- [[docker.fit_to_path_contiguous]] walks every part of a path made of
-  several pieces, one after another; when it is off only the first piece
-  is used.
-- [[docker.fit_to_path_reference]] chooses the point of each object that
-  goes on the path: its [[docker.fit_to_path_ref_pivot]] (moved with the
-  Pick tool, if you moved it), or a point of its
-  [[docker.fit_to_path_ref_box]] or [[docker.fit_to_path_ref_outline]],
-  picked in the [[docker.fit_to_path_origin]] grid. The bottom middle point
-  makes the objects stand on the path.
-- [[docker.fit_to_path_ignore_rotation]] straightens objects that were
-  turned before they are placed.
-- Under [[docker.fit_to_path_modify_rotation]], a
-  [[docker.fit_to_path_spin]] adds a turn to every object:
-  [[docker.fit_to_path_spin_uniform]] turns them all by the
-  [[docker.fit_to_path_start_angle]], [[docker.fit_to_path_spin_progressive]]
-  turns each a little more than the one before (the
-  [[docker.fit_to_path_spin_angle]] times the
-  [[docker.fit_to_path_revolutions]] over the whole row),
-  [[docker.fit_to_path_spin_jitter]] turns each by a different amount up to
-  the [[docker.fit_to_path_range]], and
-  [[docker.fit_to_path_spin_progressive_jitter]] does both. Tick
-  [[docker.fit_to_path_clockwise]] to turn the other way. Only the fields
-  the style uses can be changed.
-
-The panel starts from its default values, with no outlines, each time you
-select other objects (or work in another drawing); the values you enter
-stay while the same objects are selected. On a closed shape the objects go all the way round without the first and
-last meeting. Fitting is one undo step.
+outline of a shape, with copies, spacing, placement and rotation of your
+choice. Select the objects, then the path last (Shift+click), and choose
+[[menu.object > menu.object.fit_objects_to_path]]. See
+[Fitting objects to a path](fit-objects-to-path.md) for every setting.

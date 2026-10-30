@@ -1,5 +1,7 @@
 # 變更點陣圖的色彩模式
 
+> *機器翻譯：本頁可能落後於英文版。*
+
 [[menu.bitmaps > menu.bitmaps.mode]] 會將選取的點陣圖轉換為其他色彩模式。所有選取的點陣圖會在一個復原步驟中變更，並保留透明度。有設定的模式會開啟一個對話方塊，其中有轉換前和轉換後的預覽。
 
 | 模式 | 結果 |
@@ -8,9 +10,11 @@
 | [[menu.bitmaps.mode_grayscale]] | 灰色色階 |
 | [[menu.bitmaps.mode_duotone]] | 一到四種油墨（請參閱下文） |
 | [[menu.bitmaps.mode_paletted]] | 最多 256 種色彩（請參閱下文） |
-| [[menu.bitmaps.mode_rgb]] | 像素保持原樣 |
+| [[menu.bitmaps.mode_rgb]] | 點陣圖的模式變為 RGB；像素保持原樣 |
 | [[menu.bitmaps.mode_lab]] | Lab 色彩 |
-| [[menu.bitmaps.mode_cmyk]] | 像素保持原樣；色彩管理會在輸出時轉換 |
+| [[menu.bitmaps.mode_cmyk]] | 點陣圖的模式變為 CMYK，其像素顯示油墨能夠印出的色彩，由色彩管理設定檔計算 |
+
+所有選取的點陣圖都處於某一模式時，選單會勾選 [[menu.bitmaps.mode_rgb]] 或 [[menu.bitmaps.mode_cmyk]]，狀態列會顯示所選點陣圖的模式，例如「Bitmap 600 x 400 px (CMYK)」。`.cdr` 檔案中的 CMYK 圖片以 CMYK 模式開啟，`.tdraw` 檔案會保留該模式。[[menu.tools > menu.tools.convert_colors]] 也會以同樣方式設定所轉換的每個點陣圖的模式（請參閱[轉換色彩](../color/convert-colors.md)）。
 
 ## 黑白 {#black-and-white}
 

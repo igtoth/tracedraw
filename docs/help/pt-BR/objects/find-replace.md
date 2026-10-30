@@ -48,3 +48,6 @@ busca cobre a página atual. Para dar nome a objetos, veja
 
 Uma cor de preenchimento procurada é substituída onde for usada, em
 gradientes também. Objetos bloqueados ficam como estão.
+
+Para cada opção, como as cores são comparadas e o que cada substituição faz,
+veja [Localizar e substituir por propriedades](find-by-properties.md).

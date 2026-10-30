@@ -1,5 +1,7 @@
 # Zmiana trybu kolorów bitmap
 
+> *Tłumaczenie maszynowe: ta strona może być mniej aktualna niż wersja angielska.*
+
 [[menu.bitmaps > menu.bitmaps.mode]] przekształca zaznaczone bitmapy do innego
 trybu kolorów. Każda zaznaczona bitmapa zmienia się w jednym kroku cofania,
 a przezroczystość zostaje zachowana. Tryby z ustawieniami otwierają okno
@@ -11,9 +13,11 @@ dialogowe z podglądem przed zmianą i po niej.
 | [[menu.bitmaps.mode_grayscale]] | odcienie szarości |
 | [[menu.bitmaps.mode_duotone]] | od jednej do czterech farb (patrz niżej) |
 | [[menu.bitmaps.mode_paletted]] | najwyżej 256 kolorów (patrz niżej) |
-| [[menu.bitmaps.mode_rgb]] | piksele bez zmian |
+| [[menu.bitmaps.mode_rgb]] | tryb bitmapy zmienia się na RGB; piksele zostają bez zmian |
 | [[menu.bitmaps.mode_lab]] | kolory Lab |
-| [[menu.bitmaps.mode_cmyk]] | piksele bez zmian; zarządzanie kolorami przekształca je przy wyjściu |
+| [[menu.bitmaps.mode_cmyk]] | tryb bitmapy zmienia się na CMYK, a jej piksele pokazują kolory, które farby mogą wydrukować, obliczone na podstawie profili zarządzania kolorami |
+
+Menu zaznacza [[menu.bitmaps.mode_rgb]] lub [[menu.bitmaps.mode_cmyk]], gdy wszystkie zaznaczone bitmapy są w tym trybie, a pasek stanu podaje tryb zaznaczonej bitmapy, na przykład „Bitmap 600 x 400 px (CMYK)”. Obraz CMYK z pliku `.cdr` otwiera się w trybie CMYK, a pliki `.tdraw` zachowują tryb. [[menu.tools > menu.tools.convert_colors]] ustawia tak samo tryb każdej konwertowanej bitmapy (zobacz [Konwersja kolorów](../color/convert-colors.md)).
 
 ## Czerń i biel {#black-and-white}
 

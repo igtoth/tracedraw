@@ -1,5 +1,7 @@
 # Změna barevného režimu bitmap
 
+> *Strojový překlad: tato stránka může zaostávat za anglickou verzí.*
+
 [[menu.bitmaps > menu.bitmaps.mode]] převede vybrané bitmapy do jiného
 barevného režimu. Každá vybraná bitmapa se změní v jednom kroku zpět a
 průhlednost se zachová. Režimy s nastavením otevřou dialogové okno s náhledy
@@ -11,9 +13,11 @@ před a po.
 | [[menu.bitmaps.mode_grayscale]] | odstíny šedi |
 | [[menu.bitmaps.mode_duotone]] | jedna až čtyři barvy (viz níže) |
 | [[menu.bitmaps.mode_paletted]] | nejvýše 256 barev (viz níže) |
-| [[menu.bitmaps.mode_rgb]] | pixely beze změny |
+| [[menu.bitmaps.mode_rgb]] | bitmapa přejde do režimu RGB; pixely zůstanou beze změny |
 | [[menu.bitmaps.mode_lab]] | barvy Lab |
-| [[menu.bitmaps.mode_cmyk]] | pixely beze změny; převod při výstupu zajistí správa barev |
+| [[menu.bitmaps.mode_cmyk]] | bitmapa přejde do režimu CMYK a její pixely ukážou barvy, které inkousty dokážou vytisknout, spočítané podle profilů správy barev |
+
+Nabídka zaškrtne [[menu.bitmaps.mode_rgb]] nebo [[menu.bitmaps.mode_cmyk]], když jsou v tomto režimu všechny vybrané bitmapy, a stavový řádek uvádí režim vybrané bitmapy, například „Bitmap 600 x 400 px (CMYK)“. Obrázek CMYK ze souboru `.cdr` se otevře v režimu CMYK a soubory `.tdraw` režim uchovají. [[menu.tools > menu.tools.convert_colors]] nastaví režim každé převáděné bitmapy stejně (viz [Převod barev](../color/convert-colors.md)).
 
 ## Černobílý {#black-and-white}
 
