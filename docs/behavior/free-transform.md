@@ -32,7 +32,10 @@
     change, so the result is always one reflection across the current
     line.
   - Free Scale: scale uniformly about the press point by the ratio of
-    the pointer distances to it, step by step.
+    the pointer distances to it, step by step. The first move away from
+    the press point only sets the distance to scale from (there is none
+    at the press point itself; dividing by almost nothing blew the object
+    up on the first move).
   - Free Skew: horizontal pointer motion skews along x, vertical along
     y, by `distance in mm / 50` per step, about the press point. The
     step is a shear along x followed by a shear along y, so it keeps the
@@ -46,8 +49,12 @@
   untouched.
 - Every step is one `TransformShapes` command, all of them in one undo
   group (`Engine::begin_group` at the press, `end_group` at the
-  release): one Undo puts the selection back as it was before the drag,
-  and with Apply to Duplicate it also takes the copy away (#1342).
+  release, or wherever the drag ends: a release off the canvas, a tool
+  change): one Undo puts the selection back as it was before the drag,
+  and with Apply to Duplicate it also takes the copy away (#1342). Each
+  step joins the group's step at once (`Engine::join_group`), so a long
+  drag keeps one copy of the drawing for its Undo, not one a pointer
+  move.
 
 ## Checks
 
@@ -61,4 +68,6 @@
 - Given any drag, one Undo restores the object exactly; given a Ctrl
   drag in one large diagonal step on a text, the text is not mirrored
   (`pick_drag_tests::a_free_transform_drag_is_one_undo_step`,
-  `pick_drag_tests::free_skew_never_mirrors_text`).
+  `pick_drag_tests::a_free_transform_drag_released_off_the_canvas_is_one_undo_step`,
+  `pick_drag_tests::free_skew_never_mirrors_text`,
+  `engine::tests::joining_a_group_keeps_one_step_while_it_runs`).

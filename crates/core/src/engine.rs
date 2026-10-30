@@ -306,6 +306,15 @@ impl Engine {
     /// `label`, with the newest one's id; then drop steps past the limits.
     pub fn end_group(&mut self, mark: Option<u64>, label: &'static str) {
         self.groups = self.groups.saturating_sub(1);
+        self.join_group(mark, label);
+        self.trim_history();
+    }
+
+    /// Join the steps recorded since `mark` into one, named `label`, and
+    /// leave the group open: a long action (a drag of many steps) keeps
+    /// one snapshot from before it instead of one a step. Ended as usual
+    /// with [`end_group`](Self::end_group).
+    pub fn join_group(&mut self, mark: Option<u64>, label: &'static str) {
         let first = match mark {
             None => Some(0),
             Some(id) => self.undo.iter().position(|e| e.id == id).map(|i| i + 1),
@@ -318,7 +327,6 @@ impl Engine {
                 e.id = last;
             }
         }
-        self.trim_history();
     }
 
     /// Mint a fresh shape id. Ids never rewind on undo.
@@ -1176,6 +1184,44 @@ mod tests {
         assert_eq!(e.document().pages[0].layers[0].shapes.len(), before);
         let moved = e.document().find_shape(first).map(|s| s.transform);
         assert_eq!(moved, Some(crate::Affine::IDENTITY), "the move went too");
+    }
+
+    /// Joining a group's steps as they come keeps one step (one snapshot)
+    /// however many steps the action runs, and Undo still goes back to
+    /// before the group (#1342).
+    #[test]
+    fn joining_a_group_keeps_one_step_while_it_runs() {
+        use crate::document::{Shape, ShapeKind};
+        use crate::geometry::Rect;
+        let mut e = Engine::default();
+        let layer = e.document().pages[0].layers[0].id;
+        let id = e.new_shape_id();
+        let shape = Shape::new(
+            id,
+            ShapeKind::Rect {
+                rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        e.run(&Command::AddShape { layer, shape }).unwrap();
+        let steps = e.undo.len();
+        let mark = e.begin_group();
+        for _ in 0..50 {
+            e.run(&Command::TransformShapes {
+                shapes: vec![id],
+                transform: crate::Affine::rotate(0.1),
+            })
+            .unwrap();
+            e.join_group(mark, "Free Transform");
+            assert_eq!(e.undo.len(), steps + 1);
+        }
+        e.end_group(mark, "Free Transform");
+        assert_eq!(e.undo.len(), steps + 1);
+        assert_eq!(e.undo_label(), Some("Free Transform"));
+        e.undo().unwrap();
+        let back = e.document().find_shape(id).map(|s| s.transform);
+        assert_eq!(back, Some(crate::Affine::IDENTITY));
     }
 
     /// A drag that undoes and records a step per pointer move, and steps

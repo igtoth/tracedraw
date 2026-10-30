@@ -346,8 +346,11 @@ fn a_free_transform_drag_is_one_undo_step() {
         .map(|s| s.transform)
         .expect("shape");
     let count = shape_count(&app);
+    let size = app.doc().find_shape(id).expect("shape").bounds().size();
     app.set_tool(Tool::FreeTransform);
     let from = app.view.to_screen(Point::new(35.0, 25.0));
+    let steps = |app: &App| app.engine.history_labels().0.len();
+    let n = steps(&app);
     for mods in [Modifiers::NONE, Modifiers::CTRL, Modifiers::ALT] {
         drag(
             &ctx,
@@ -364,6 +367,14 @@ fn a_free_transform_drag_is_one_undo_step() {
             .expect("shape");
         assert_ne!(after, before, "{mods:?}: transformed");
         assert_eq!(app.engine.undo_label(), Some("Free Transform"));
+        assert_eq!(steps(&app), n + 1, "{mods:?}: one step, not one a move");
+        // Free Scale grows by the ratio of the distances from the press
+        // point, not from the press point itself (no distance there).
+        let grown = app.doc().find_shape(id).expect("shape").bounds().size();
+        assert!(
+            grown.width < size.width * 50.0,
+            "{mods:?}: {grown:?} from {size:?}"
+        );
         app.undo();
         let undone = app
             .doc()
@@ -392,6 +403,40 @@ fn a_free_transform_drag_is_one_undo_step() {
     app.undo();
     assert_eq!(shape_count(&app), count);
     assert_eq!(app.doc().find_shape(id).map(|s| s.transform), Some(before));
+}
+
+/// A Free Transform drag whose release lands off the canvas (over a
+/// docker) ends there with nothing more applied: one Undo still puts the
+/// object back (#1342).
+#[test]
+fn a_free_transform_drag_released_off_the_canvas_is_one_undo_step() {
+    let (ctx, mut app, id) = setup();
+    let before = app.doc().find_shape(id).map(|s| s.transform);
+    app.set_tool(Tool::FreeTransform);
+    let steps = |app: &App| app.engine.history_labels().0.len();
+    let n = steps(&app);
+    let from = app.view.to_screen(Point::new(35.0, 25.0));
+    let none = Modifiers::NONE;
+    frame(&ctx, &mut app, vec![Event::PointerMoved(from)], none);
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(from, true, PointerButton::Primary, none)],
+        none,
+    );
+    for i in 1..=4 {
+        let p = from + egui::vec2(30.0 * i as f32, 15.0 * i as f32);
+        frame(&ctx, &mut app, vec![Event::PointerMoved(p)], none);
+    }
+    let turned = app.doc().find_shape(id).map(|s| s.transform);
+    assert_ne!(turned, before);
+    // The release reaches no tool, only the end of the drag.
+    app.end_drag();
+    assert_eq!(app.doc().find_shape(id).map(|s| s.transform), turned);
+    assert_eq!(steps(&app), n + 1);
+    assert_eq!(app.engine.undo_label(), Some("Free Transform"));
+    app.undo();
+    assert_eq!(app.doc().find_shape(id).map(|s| s.transform), before);
 }
 
 /// Free Skew (Ctrl with Free Transform) never mirrors, however far one
