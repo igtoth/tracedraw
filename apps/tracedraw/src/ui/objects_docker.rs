@@ -866,7 +866,10 @@ fn object_row(
     paint_thumb(
         app,
         ui,
-        Rect::from_min_size(Pos2::new(x, rect.center().y - size / 2.0), Vec2::splat(size)),
+        Rect::from_min_size(
+            Pos2::new(x, rect.center().y - size / 2.0),
+            Vec2::splat(size),
+        ),
         s,
         act,
     );
@@ -930,10 +933,7 @@ fn paint_thumb(app: &App, ui: &Ui, r: Rect, s: &Shape, act: &mut Actions) {
     let ppp = ui.ctx().pixels_per_point().max(0.5);
     let inner = r.shrink(2.0);
     let px = (inner.width() * ppp).round().max(4.0) as u32;
-    match act
-        .thumbs
-        .get(ui.ctx(), app.doc(), act.drawing, s, px)
-    {
+    match act.thumbs.get(ui.ctx(), app.doc(), act.drawing, s, px) {
         crate::object_thumbs::Thumb::Picture(id, [w, h]) => {
             let size = Vec2::new(w as f32, h as f32) / ppp;
             // An older picture of another size still fits the tile.
@@ -954,7 +954,11 @@ fn paint_thumb(app: &App, ui: &Ui, r: Rect, s: &Shape, act: &mut Actions) {
         crate::object_thumbs::Thumb::Empty => {}
         crate::object_thumbs::Thumb::Pending => {
             let side = (inner.width() * 0.6).max(8.0);
-            paint_swatch(ui, Rect::from_center_size(inner.center(), Vec2::splat(side)), s);
+            paint_swatch(
+                ui,
+                Rect::from_center_size(inner.center(), Vec2::splat(side)),
+                s,
+            );
         }
     }
 }
@@ -1403,9 +1407,19 @@ mod tests {
         frame(&ctx, &mut app, 400.0, Vec::new());
         let before = eye(&ctx).expect("row drawn");
         // A plain wheel over the list scrolls; it leaves the size.
-        frame(&ctx, &mut app, 400.0, wheel(Pos2::new(200.0, 60.0), 1.0, egui::Modifiers::NONE));
+        frame(
+            &ctx,
+            &mut app,
+            400.0,
+            wheel(Pos2::new(200.0, 60.0), 1.0, egui::Modifiers::NONE),
+        );
         assert_eq!(app.settings.object_thumb_size, DEFAULT_SIZE);
-        frame(&ctx, &mut app, 400.0, wheel(Pos2::new(200.0, 60.0), 2.0, egui::Modifiers::CTRL));
+        frame(
+            &ctx,
+            &mut app,
+            400.0,
+            wheel(Pos2::new(200.0, 60.0), 2.0, egui::Modifiers::CTRL),
+        );
         assert_eq!(app.settings.object_thumb_size, DEFAULT_SIZE + 2.0 * STEP);
         // (Responses are read a frame late.)
         frame(&ctx, &mut app, 400.0, Vec::new());
@@ -1414,11 +1428,21 @@ mod tests {
         let after = eye(&ctx).expect("row drawn");
         assert!(after.center().y > before.center().y, "{before:?} {after:?}");
         // The wheel over the slider in the bottom bar, down a notch.
-        frame(&ctx, &mut app, 400.0, wheel(Pos2::new(200.0, 385.0), -1.0, egui::Modifiers::NONE));
+        frame(
+            &ctx,
+            &mut app,
+            400.0,
+            wheel(Pos2::new(200.0, 385.0), -1.0, egui::Modifiers::NONE),
+        );
         assert_eq!(app.settings.object_thumb_size, DEFAULT_SIZE + STEP);
         // Never past the largest size.
         for _ in 0..10 {
-            frame(&ctx, &mut app, 400.0, wheel(Pos2::new(200.0, 60.0), 4.0, egui::Modifiers::CTRL));
+            frame(
+                &ctx,
+                &mut app,
+                400.0,
+                wheel(Pos2::new(200.0, 60.0), 4.0, egui::Modifiers::CTRL),
+            );
         }
         assert_eq!(app.settings.object_thumb_size, MAX_SIZE);
     }
@@ -1480,7 +1504,12 @@ mod tests {
         }
         let steady: f64 = (0..20).map(|_| time(&mut app, Vec::new())).sum::<f64>() / 20.0;
         let scroll: f64 = (0..40)
-            .map(|_| time(&mut app, wheel(Pos2::new(300.0, 200.0), -3.0, egui::Modifiers::NONE)))
+            .map(|_| {
+                time(
+                    &mut app,
+                    wheel(Pos2::new(300.0, 200.0), -3.0, egui::Modifiers::NONE),
+                )
+            })
             .sum::<f64>()
             / 40.0;
         println!(

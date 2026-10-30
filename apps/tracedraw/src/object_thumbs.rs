@@ -129,8 +129,7 @@ impl ObjectThumbs {
         if let Some(e) = self.entries.get_mut(&key) {
             e.used = frame;
             let current = e.px == px
-                && (e.revision == revision
-                    || (e.shape == *shape && symbols_same(&e.symbols, doc)));
+                && (e.revision == revision || (e.shape == *shape && symbols_same(&e.symbols, doc)));
             if current {
                 e.revision = revision;
                 return shown(e);
@@ -138,11 +137,7 @@ impl ObjectThumbs {
         }
         if self.over_budget() {
             self.waiting = true;
-            return self
-                .entries
-                .get(&key)
-                .map(shown)
-                .unwrap_or(Thumb::Pending);
+            return self.entries.get(&key).map(shown).unwrap_or(Thumb::Pending);
         }
         if self.drawn_now == 0 {
             self.started = Some(web_time::Instant::now());
@@ -252,10 +247,16 @@ pub fn render(doc: &Document, shape: &Shape, px: u32) -> Option<(Vec<u8>, u32, u
     let b = shape.visual_bounds();
     let px = f64::from(px.clamp(4, 1024));
     let stroke = shape.stroke.as_ref().map(|s| s.width).unwrap_or(0.0);
-    let stroke = if stroke.is_finite() { stroke.max(0.0) } else { 0.0 };
+    let stroke = if stroke.is_finite() {
+        stroke.max(0.0)
+    } else {
+        0.0
+    };
     // A margin so that outlines on the edge show whole, and a smallest
     // side so that a line still shows.
-    let pad = (b.width().max(b.height()) * 0.03).max(stroke * 0.5).max(0.05);
+    let pad = (b.width().max(b.height()) * 0.03)
+        .max(stroke * 0.5)
+        .max(0.05);
     let mut b = b.inflate(pad, pad);
     let longest = b.width().max(b.height());
     if !(longest.is_finite() && longest > 0.0) {
@@ -362,8 +363,14 @@ mod tests {
         let a = square(10.0, Color::rgb8(255, 0, 0));
         let b = square(60.0, Color::rgb8(0, 0, 255));
         thumbs.begin_frame();
-        assert!(matches!(thumbs.get(&ctx, &doc, (1, 1), &a, 32), Thumb::Picture(..)));
-        assert!(matches!(thumbs.get(&ctx, &doc, (1, 1), &b, 32), Thumb::Picture(..)));
+        assert!(matches!(
+            thumbs.get(&ctx, &doc, (1, 1), &a, 32),
+            Thumb::Picture(..)
+        ));
+        assert!(matches!(
+            thumbs.get(&ctx, &doc, (1, 1), &b, 32),
+            Thumb::Picture(..)
+        ));
         assert_eq!(thumbs.renders, 2);
         // The same revision: nothing is looked at or drawn.
         thumbs.begin_frame();
