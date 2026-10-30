@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Saving `.cdr` (version 16 and later) with Embed fonts: a text of two or more colours in one line kept its font only in the program that opened it when the whole text was one colour; with a second colour that program asked for the embedded font and drew the text in one colour (#1297). Each run that carries a colour of its own now names its font in its style the way the paragraph's style does (character set, technology, script and version included) and its fill with the same members, as files saved by that program hold their runs.
 - Browser version: its notice now opens with the warning that a browser is slower, marked in red and underlined, then says it is the same program compiled to WebAssembly, and last points to the desktop app, in every language.
 
 ## 0.27.0 (2026-10-30)

@@ -2979,31 +2979,57 @@ fn run_style_json(sp: &TextSpan, fill: Option<&Fill>) -> String {
     format!("{{{}}}", character_json(sp, fill))
 }
 
-/// The `character` member of a style string.
+/// The `character` member of a run's style string: its fill and its
+/// font for the three scripts, each with every member the paragraph's
+/// default style gives a font ([`font_json`]). A run named its font with
+/// six members only (no character set, technology or script), and a
+/// text of two colours, whose runs carry their own styles, then lost
+/// its embedded font in the program that opened it, which asked for
+/// the font and drew the whole text in one colour; the runs of a file
+/// that program saved name their fonts as the paragraph style does
+/// (#1297).
 fn character_json(sp: &TextSpan, fill: Option<&Fill>) -> String {
-    let weight = weight_member(sp);
-    let size = (sp.size_pt * 254000.0 / 72.0).round() as i64;
-    let family = sp.font_family.replace('\\', "\\\\").replace('"', "\\\"");
-    let font = format!(
-        r#"{{"font":"{family}","size":"{size}","weight":"{weight}","italic":"{}","underline":"{}","strikeout":"{}"}}"#,
-        u8::from(sp.italic),
-        u8::from(sp.underline),
-        u8::from(sp.strikethrough)
-    );
     let fill = match fill.and_then(fill_colour) {
-        Some(c) => format!(
-            r#""fill":{{"type":"1","primaryColor":"{}"}},"#,
-            colour_spec(c)
-        ),
+        Some(c) => format!("{},", fill_json(&colour_spec(c))),
         None => String::new(),
     };
-    format!(r#""character":{{{fill}"latin":{font},"RTL":{font},"farEast":{font}}}"#)
+    format!(
+        r#""character":{{{fill}"latin":{},"RTL":{},"farEast":{}}}"#,
+        font_json(Some(sp), 0),
+        font_json(Some(sp), 178),
+        font_json(Some(sp), 128)
+    )
 }
 
-/// A text paragraph's whole default style, as files of versions 16 and
-/// later write it: the first run's font, size, weight and colour, the
-/// alignment, and every other member with the values files hold when it
-/// is not set.
+/// The `fill` member of a character style: a solid colour with the
+/// members files give it.
+fn fill_json(colour: &str) -> String {
+    format!(
+        r#""fill":{{"type":"1","overprint":"0","secondaryColor":"CMYK,USER,0,0,0,0,100,00000000-0000-0000-0000-000000000000","primaryColor":"{colour}","screenSpec":"0,0,45000000,60,0"}}"#
+    )
+}
+
+/// The font of one script in a character style (`latin`, `RTL` with
+/// character set 178, `farEast` with 128): `sp`'s family, size in
+/// coordinate units, weight code, slant and lines, with the members
+/// files hold when nothing sets them; 24 pt Arial without a span.
+fn font_json(sp: Option<&TextSpan>, charset: u32) -> String {
+    let (family, size, weight, italic, underline, strike) = match sp {
+        Some(sp) => (
+            sp.font_family.replace('\\', "\\\\").replace('"', "\\\""),
+            (sp.size_pt * 254000.0 / 72.0).round() as i64,
+            weight_member(sp),
+            u8::from(sp.italic),
+            u8::from(sp.underline),
+            u8::from(sp.strikethrough),
+        ),
+        None => ("Arial".to_string(), 254000 * 24 / 72, 64, 0, 0, 0),
+    };
+    format!(
+        r#"{{"overline":"0","effect":"0","version":"","italic":"{italic}","weight":"{weight}","underline":"{underline}","charset":"{charset}","technology":"4","size":"{size}","font":"{family}","script":"0","strikeout":"{strike}"}}"#
+    )
+}
+
 /// A paragraph's line spacing as a factor of the character height (the
 /// unit of a style string's `interLineSpacing`), the character height of
 /// `size_pt` text taken as 1.15 times the size as the reader takes it.
@@ -3021,6 +3047,10 @@ fn line_spacing_factor(f: &tracedraw_core::ParagraphFormat, size_pt: f64) -> f64
     }
 }
 
+/// A text paragraph's whole default style, as files of versions 16 and
+/// later write it: the first run's font, size, weight and colour, the
+/// alignment, and every other member with the values files hold when it
+/// is not set.
 fn full_text_style(
     sp: Option<&TextSpan>,
     fill: Option<&Fill>,
@@ -3032,36 +3062,20 @@ fn full_text_style(
         .and_then(fill_colour)
         .map(colour_spec)
         .unwrap_or_else(|| black.to_string());
-    let (family, size, weight, italic, underline, strike) = match sp {
-        Some(sp) => (
-            sp.font_family.replace('\\', "\\\\").replace('"', "\\\""),
-            (sp.size_pt * 254000.0 / 72.0).round() as i64,
-            weight_member(sp),
-            u8::from(sp.italic),
-            u8::from(sp.underline),
-            u8::from(sp.strikethrough),
-        ),
-        None => ("Arial".to_string(), 254000 * 24 / 72, 64, 0, 0, 0),
-    };
-    let font = |charset: u32| {
-        format!(
-            r#"{{"overline":"0","effect":"0","version":"","italic":"{italic}","weight":"{weight}","underline":"{underline}","charset":"{charset}","technology":"4","size":"{size}","font":"{family}","script":"0","strikeout":"{strike}"}}"#
-        )
-    };
     let screen = "0,0,45000000,60,0";
     format!(
         concat!(
-            r#"{{"character":{{"fill":{{"type":"1","overprint":"0","secondaryColor":"CMYK,USER,0,0,0,0,100,00000000-0000-0000-0000-000000000000","primaryColor":"{colour}","screenSpec":"{screen}"}},"#,
+            r#"{{"character":{{{fill},"#,
             r#""angle":"0","outline":{{"overprint":"0","angle":"0","aspect":"100","dashDotSpec":"0","behindFill":"0","miterLimit":"5","justification":"0","dashAdjust":"0","rightArrow":"|0","screenSpec":"{screen}","overlapArrow":"0","shareArrow":"0","dotLength":"0","scaleWithObject":"0","matrix":"1,0,0,0,1,0","color":"{black}","leftArrow":"|0","projectMatrix":"1,0,0,0,1,0","leftArrowAttributes":"0|0|0|0|0|0|0","endCaps":"0","rightArrowAttributes":"0|0|0|0|0|0|0","joinType":"0","width":"0"}},"#,
             r#""RTL":{rtl},"latin":{latin},"h_shift":"0","v_shift":"0","farEast":{far}}},"frame":{{}},"#,
             r#""paragraph":{{"interCharSpacing":"0","thickOverlineAbsolute":"0","thickAbsolute":"0","dblStrikeout2Thickness":"45455","dblStrikeout2Distance":"287878","dblOverline1Absolute":"0","maxInterCharSpacing":"2000000","dblUnderline1Distance":"-90909","dblOverline2Absolute":"0","dblStrikeout1Distance":"378788","dblStrikeout1Absolute":"0","thickThickness":"90909","dblUnderline2Distance":"-181819","dblUnderline2Thickness":"45455","interLineSpacing":"{leading}","dblOverline1Thickness":"45455","afterParaSpacing":"0","thickOverlineThickness":"90909","spacingMethod":"0","dblStrikeout2Absolute":"0","thickStrikeoutAbsolute":"0","thinThickness":"45455","interLangSpacing":"0","interWordSpacing":"1000000","maxInterWordSpacing":"3000000","thinAbsolute":"0","dblUnderline1Absolute":"0","dblUnderline2Absolute":"0","dblUnderline1Thickness":"45455","thinOverlineAbsolute":"0","thinOverlineThickness":"45455","thinDistance":"-90909","beforeParaSpacing":"1000000","dblOverline2Distance":"890910","thinOverlineDistance":"845455","dblOverline2Thickness":"45455","thinStrikeoutAbsolute":"0","dblOverline1Distance":"800000","thinStrikeoutDistance":"333333","minInterWordSpacing":"600000","thinStrikeoutThickness":"45455","thickDistance":"-90909","thickOverlineDistance":"868182","thickStrikeoutDistance":"356060","thickStrikeoutThickness":"90909","dblStrikeout1Thickness":"45455","justify":"{justify}"}}}}"#
         ),
-        colour = colour,
+        fill = fill_json(&colour),
         screen = screen,
         black = black,
-        rtl = font(178),
-        latin = font(0),
-        far = font(128),
+        rtl = font_json(sp, 178),
+        latin = font_json(sp, 0),
+        far = font_json(sp, 128),
         justify = justify_code(align),
         leading = (leading * 1_000_000.0).round() as i64,
     )

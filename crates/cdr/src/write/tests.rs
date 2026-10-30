@@ -4108,6 +4108,84 @@ fn single_run_colours_round_trip() {
     }
 }
 
+/// A text of two colours in one line (two runs, each with a colour of
+/// its own) names its font in each run's style the way the paragraph's
+/// default style does, every member included (character set, technology,
+/// script, version), and the run's fill with its overprint and screen
+/// members: the file of the program that reads them has them so, and
+/// written with six members only the runs lost their embedded font there
+/// and the text its second colour (#1297). The colours read back.
+#[test]
+fn runs_of_their_own_colour_name_their_font_as_the_paragraph_does() {
+    const REGULAR: &[u8] =
+        include_bytes!("../../../../apps/tracedraw/assets/fonts/Selawik-Regular.ttf");
+    let mut doc = doc_with(Vec::new());
+    let mut ids = doc.ids().clone();
+    let red = Fill::Solid(Color::rgb8(255, 0, 0));
+    let blue = Fill::Solid(Color::rgb8(0, 0, 255));
+    let mut a = TextSpan::new("Red", "Selawik", 24.0);
+    a.fill = Some(red.clone());
+    let mut b = TextSpan::new("Blue", "Selawik", 24.0);
+    b.fill = Some(blue.clone());
+    doc.pages[0].layers[0].shapes = vec![text_shape(&mut ids, vec![a, b], TextAlign::Left)];
+    doc.set_ids(ids);
+    let previews = Previews {
+        fonts: vec![FontFace {
+            family: "Selawik".into(),
+            bold: false,
+            italic: false,
+            data: Some(std::sync::Arc::new(REGULAR.to_vec())),
+        }],
+        embed_fonts: true,
+        ..Default::default()
+    };
+    let font = |charset: u32| {
+        format!(
+            r#"{{"overline":"0","effect":"0","version":"","italic":"0","weight":"64","underline":"0","charset":"{charset}","technology":"4","size":"84667","font":"Selawik","script":"0","strikeout":"0"}}"#
+        )
+    };
+    let run = |colour: &str| {
+        format!(
+            r#"{{"character":{{"fill":{{"type":"1","overprint":"0","secondaryColor":"CMYK,USER,0,0,0,0,100,00000000-0000-0000-0000-000000000000","primaryColor":"{colour}","screenSpec":"0,0,45000000,60,0"}},"latin":{},"RTL":{},"farEast":{}}}}}"#,
+            font(0),
+            font(178),
+            font(128)
+        )
+    };
+    let red_spec = colour_spec(Color::rgb8(255, 0, 0));
+    let blue_spec = colour_spec(Color::rgb8(0, 0, 255));
+    for v in 16..=NEWEST_VERSION {
+        let bytes = document_to_cdr_version_with(&doc, v, &previews);
+        let (_, tree, riff) = chunk_ids(&bytes);
+        let mut recs = Vec::new();
+        tree.root.walk(&mut |c, _| {
+            if c.is(b"txsm") {
+                recs.push(tree.data(&riff, c).to_vec());
+            }
+        });
+        assert_eq!(recs.len(), 1, "{v}");
+        // The style strings are UTF-16 in version 16 and UTF-8 from 17;
+        // without the zero bytes both read as the ASCII they hold.
+        let ascii: Vec<u8> = recs[0].iter().copied().filter(|b| *b != 0).collect();
+        let text = String::from_utf8_lossy(&ascii);
+        for want in [run(&red_spec), run(&blue_spec)] {
+            assert!(text.contains(&want), "{v}: no run style {want}\n{text}");
+        }
+        // Not the short form of before.
+        assert!(!text.contains(r#""latin":{"font":"#), "{v}");
+        let (back, rep) = crate::open_bytes(&bytes, "back").expect("reads back");
+        let read = &back.pages[0].layers[0].shapes;
+        assert_eq!(read.len(), 1, "{v}: {:?}", rep.warnings);
+        let ShapeKind::Text { spans, .. } = &read[0].kind else {
+            panic!("{v}: {:?}", read[0].kind);
+        };
+        let fills: Vec<Fill> = spans.iter().filter_map(|sp| sp.fill.clone()).collect();
+        assert_eq!(fills, vec![red.clone(), blue.clone()], "{v}: {spans:?}");
+        assert!(spans.iter().all(|sp| sp.font_family == "Selawik"), "{v}");
+        assert_eq!(back.fonts.len(), 1, "{v}: the font is embedded");
+    }
+}
+
 /// `font` with its name table replaced by one of `names` (name ID and
 /// text, Windows English records), appended at the end of the file.
 fn with_names(font: &[u8], names: &[(u16, &str)]) -> Vec<u8> {
