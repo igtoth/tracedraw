@@ -32,20 +32,28 @@ the version on the right).
 
 - The bundled interface font is installed at once. The system font list
   is read on a worker thread that starts with the program, before the
-  window and the graphics driver are set up, so the two run side by side;
-  whoever needs the list first (the editor's font lists, text in a
-  drawing) waits for that same read. The system fonts for Chinese,
+  window and the graphics driver are set up, so the two run side by side.
+  The editor cannot be built without the list (its font lists, text in a
+  drawing), so the splash stays up, drawn and answering, until the list
+  is in; the window's thread never waits for the read. With thousands of
+  fonts or a slow disk the read can take minutes, and the editor used to
+  wait for it on the window's thread: the window stayed blank (or was not
+  shown at all) for that long and then showed the splash broken for a
+  moment (#1388). Without the splash screen the window is drawn plain
+  until the list is in, then the editor appears in it. The log says
+  `system fonts read in N ms`. The system fonts for Chinese,
   Japanese, Arabic, Hindi and Bengali are read on a second worker thread.
   When the interface language is one of those, its texts appear once
   those fonts are in and the splash waits for them; in every other
   language the editor starts without waiting and takes the fonts in when
   they arrive (a name in those scripts, in the recent drawings, shows as
   boxes for a moment). The name and version always show.
-- Status: "Loading fonts..." while a language that needs a system font
-  waits for it, else "Opening <file>..." for a file named on the command
+- Status: "Loading fonts..." while the system font list is read, or while
+  a language that needs a system font waits for it, else "Opening <file>..." for a file named on the command
   line, or "Preparing the workspace...".
-- The bar is full as soon as nothing is waited for; while the fonts of
-  the language load it eases towards 80 % over 1.6 s. Nothing holds the
+- The bar is full as soon as nothing is waited for; while fonts load it
+  eases towards 80 % over 1.6 s, then creeps on towards 97 % (two thirds
+  of the way in 30 s) so that it never stands still. Nothing holds the
   splash back: it stays up for as long as the start takes (it used to
   stay at least 1.6 s), one frame with the last status after the fonts it
   waits for are in, and goes with the editor built.
@@ -361,6 +369,9 @@ screen, and after 6 requests; each request is logged (#787,
 - `splash::tests::a_splash_frame_draws_and_then_starts_the_editor`
 - `splash::tests::the_editor_does_not_wait_for_system_fonts_the_language_does_not_need`
 - `splash::tests::a_language_that_needs_a_system_font_waits_for_it`
+- `splash::tests::the_editor_waits_for_the_font_list_with_the_splash_drawn`
+- `splash::tests::the_font_list_is_read_in_the_background`
+- `start_tests::the_editor_starts_once_the_fonts_are_in`
 
 ## Recent drawings on the Welcome Screen
 
@@ -375,6 +386,15 @@ forgets them.
   other drawings stay in their order, the drawing's thumbnail is
   deleted, and the file itself is left alone (#1152).
   `pick_drag_tests::a_recent_document_comes_off_the_list_by_itself`
+- Whether a drawing's file is still there is asked of the disk on a
+  worker thread, once and then again at most every 2 s while the list
+  shows; the list draws with the last answer, a file not looked at yet
+  counting as there. The list asked the disk about every drawing every
+  frame on the window's thread, so a drawing on a network share that did
+  not answer, or a drive waking up, held the window, at start-up too
+  (#1388). `file_presence::tests::a_disk_that_hangs_never_holds_the_window`,
+  `file_presence::tests::the_answer_comes_from_the_disk`,
+  `file_presence::tests::an_old_answer_is_asked_again`
 
 - The thumbnail is made when a drawing is opened or saved: the first
   page rendered with a white background, 160 pixels on its long side,

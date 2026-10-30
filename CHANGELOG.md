@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Start-up: the splash screen shows at once and says "Loading fonts..." while the list of system fonts is read, its bar moving, and the editor opens when the list is in. The editor waited for that list on the window's own thread, so on a computer with many fonts or a slow disk the window stayed blank, or did not show at all, for as long as the read took (minutes on some Linux systems), and then the splash flashed up broken before the Welcome Screen (#1388). Without the splash screen the window shows at once, plain, until the editor is ready. The log now says how long the fonts took (`system fonts read in N ms`). The Welcome Screen also asks the disk whether each recent drawing is still there on a worker thread: it asked about every one every frame on the window's thread, so a drawing on a network share that did not answer held the window.
+
 - Windows: a tool picked with its shortcut over a still mouse shows its pointer at once, and the pointer never vanishes. Picking the Pen tool kept the arrow, and leaving the Pen tool (or any tool with a drawn pointer) left no pointer at all, until the mouse moved: Windows hides and shows the pointer only at the next mouse move. A drawn pointer now swaps the system pointer for a fully transparent pointer image, which Windows applies at once, instead of hiding it (#1124).
 
 - Properties docker, Transparency: the amount is a full-width slider with its label above, like the Fill section's angle and edge pad, and a fountain transparency's angle is the same angle slider. The property bar keeps its compact controls.
