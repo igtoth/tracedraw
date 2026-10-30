@@ -76,8 +76,17 @@ unfilled objects are picked inside too; marquee selects touched objects,
 off by default: a marquee or freehand selection takes what it touches and
 Alt only what lies wholly inside), Eraser (thickness, round or square
 nib), Zoom/Pan (Zoom tool section: right mouse button of the Zoom tool:
-zoom out or context menu; mouse wheel action; Calibrate Zoom... opens the ruler
-calibration on the Display page), Freehand/Bézier (Freehand
+zoom out or context menu; Zoom relative to 1:1, on: zoom 100 % is the
+real size at the calibrated screen resolution, off: 96 pixels per inch
+whatever the calibration (`settings.zoom_relative_1to1`); Center mouse
+when zooming with the mouse wheel, off: a wheel notch first brings the
+spot under the pointer to the middle of the canvas and moves the pointer
+there (not in the browser, which cannot move it), then zooms about the
+middle, plain wheel or Ctrl+wheel as the mouse wheel action says
+(`settings.wheel_zoom_centers`); mouse wheel action; Calibrate Zoom... opens the ruler
+calibration on the Display page; Pan tool section: right mouse button of
+the Pan tool, zoom out or context menu (at first,
+`settings.pan_right_click_out`)), Freehand/Bézier (Freehand
 smoothing, 0 to 100, 50 by default; Join and close within, 1 to 50
 screen pixels, 5 by default; Graphics tablet: pen pressure sets the
 width of Freehand and Brush Strokes drags, on; see `curve-tools.md` and

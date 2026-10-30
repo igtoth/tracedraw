@@ -1196,10 +1196,11 @@ impl App {
             return;
         }
 
-        // With the Zoom tool a right click zooms out by default.
+        // With the Zoom tool a right click zooms out by default; with the
+        // Pan tool when Options > Tools > Zoom/Pan says so.
         if response.secondary_clicked()
-            && self.tool == Tool::Zoom
-            && self.settings.zoom_right_click_out
+            && ((self.tool == Tool::Zoom && self.settings.zoom_right_click_out)
+                || (self.tool == Tool::Pan && self.settings.pan_right_click_out))
         {
             self.view.zoom_at(screen, 0.5);
             self.end_zoom_one_shot();

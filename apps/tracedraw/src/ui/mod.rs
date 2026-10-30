@@ -791,6 +791,29 @@ pub(crate) fn drawing_window(app: &mut App, ui: &mut Ui, full: egui::Rect) {
         };
         if let Some(h) = response.hover_pos() {
             let zoom_factor = 1.15f32.powf(notches);
+            // Options > Tools > Zoom/Pan > Center mouse when zooming with
+            // the mouse wheel: a notch brings the point under the pointer
+            // to the middle of the view, and the pointer with it, and the
+            // zoom (its whole glide) goes about the middle.
+            let wheel_zooms = if app.settings.wheel_zooms {
+                !mods.alt && !mods.ctrl
+            } else {
+                mods.ctrl
+            };
+            let anchor = if app.settings.wheel_zoom_centers && zoom_delta == 1.0 && wheel_zooms
+            {
+                let center = canvas_rect.center();
+                if notches != 0.0 && h != center {
+                    app.view.pan(center - h);
+                    if !crate::files::WEB {
+                        ui.ctx()
+                            .send_viewport_cmd(egui::ViewportCommand::CursorPosition(center));
+                    }
+                }
+                center
+            } else {
+                h
+            };
             if zoom_delta != 1.0 {
                 app.view.zoom_at(h, zoom_delta);
             } else if app.settings.wheel_zooms {
@@ -810,10 +833,10 @@ pub(crate) fn drawing_window(app: &mut App, ui: &mut Ui, full: egui::Rect) {
                         ui.ctx().content_rect().height(),
                         cfg!(target_arch = "wasm32"),
                     );
-                    app.view.zoom_at(h, 1.15f32.powf(scroll.y / per_notch));
+                    app.view.zoom_at(anchor, 1.15f32.powf(scroll.y / per_notch));
                 }
             } else if mods.ctrl && notches != 0.0 {
-                app.view.zoom_at(h, zoom_factor);
+                app.view.zoom_at(anchor, zoom_factor);
             } else if scroll != egui::Vec2::ZERO {
                 app.view.pan(if mods.shift {
                     egui::vec2(scroll.y, scroll.x)

@@ -31,6 +31,11 @@ również na pasku właściwości każdego narzędzia.
 - [[options.zoom_right_button]]: [[options.zoom_out]] (domyślnie) lub
   [[options.context_menu]].
 - [[options.wheel_action]]: [[options.wheel_zoom]] lub [[options.wheel_scroll]].
+- [[options.zoom_relative_1to1]] (włączone): powiększenie 100% to rzeczywisty rozmiar
+  przy skalibrowanej rozdzielczości ekranu; wyłączone to 96 pikseli na cal.
+- [[options.wheel_center_mouse]] (wyłączone): powiększenie kółkiem przenosi punkt pod
+  wskaźnikiem na środek widoku, razem ze wskaźnikiem.
+- [[options.pan_right_button]] [[options.zoom_out]] lub [[options.context_menu]] (na początku).
 
 ## Odręczne/Bézier {#curves}
 

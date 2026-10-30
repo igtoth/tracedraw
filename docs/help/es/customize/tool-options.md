@@ -31,6 +31,11 @@ valores también están en la barra de propiedades de cada herramienta.
 - [[options.zoom_right_button]]: [[options.zoom_out]] (opción predeterminada)
   o el [[options.context_menu]].
 - [[options.wheel_action]]: [[options.wheel_zoom]] o [[options.wheel_scroll]].
+- [[options.zoom_relative_1to1]] (activado): el zoom 100% es el tamaño real con la
+  resolución de pantalla calibrada; desactivado, son 96 píxeles por pulgada.
+- [[options.wheel_center_mouse]] (desactivado): un zoom con la rueda lleva el punto bajo
+  el puntero al centro de la vista, y el puntero con él.
+- [[options.pan_right_button]] [[options.zoom_out]] o el [[options.context_menu]] (al principio).
 
 ## Mano alzada/Bézier {#curves}
 

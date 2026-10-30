@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Options > Tools > Zoom/Pan: Zoom relative to 1:1 (on: zoom 100% follows the ruler calibration; off: 96 pixels per inch), Center mouse when zooming with the mouse wheel (the spot under the pointer comes to the middle of the view, the pointer with it), and a Pan tool section whose right mouse button opens the context menu or zooms out.
 - Properties docker, Transparency: the amount is a full-width slider with its label above, like the Fill section's angle and edge pad, and a fountain transparency's angle is the same angle slider. The property bar keeps its compact controls.
 - Options > Tools: the pages come in a new order (Pick, Eraser, Zoom/Pan, Freehand/Bézier, Shape Recognition, Rectangle, Ellipse, Polygon, Graph Paper, Spiral, Table, Dimension, Connector, Mesh Fill); Curve tools is now Freehand/Bézier, and new Shape Recognition (recognition and smoothing levels), Dimension (precision, units, prefix and suffix of new dimensions), Connector (corner radius) and Mesh Fill (columns and rows) pages edit the same defaults as the property bars, kept across restarts and put back by Cancel.
 - Options > Tools: each page in the list shows its tool's icon. The Zoom/Pan page has a Zoom tool section and a Calibrate Zoom... button that opens the ruler calibration (Display page).

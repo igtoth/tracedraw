@@ -32,6 +32,11 @@
   [[options.context_menu]].
 - [[options.wheel_action]]: [[options.wheel_zoom]] или
   [[options.wheel_scroll]].
+- [[options.zoom_relative_1to1]] (включено): масштаб 100% равен реальному размеру при
+  откалиброванном разрешении экрана; выключено: 96 пикселей на дюйм.
+- [[options.wheel_center_mouse]] (выключено): масштабирование колесом переносит точку
+  под указателем в центр вида вместе с указателем.
+- [[options.pan_right_button]] [[options.zoom_out]] или [[options.context_menu]] (сначала).
 
 ## Свободная рука/Безье {#curves}
 
