@@ -215,6 +215,64 @@ fn take_chorded_right_press() -> bool {
     CHORDED_RIGHT.with(|c| c.replace(false))
 }
 
+thread_local! {
+    /// The left button let go while the right one is still held, reported
+    /// by the windowing layer outside egui's events (see
+    /// [`note_chorded_left_release`]).
+    static CHORDED_LEFT_UP: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Whether a mouse button event is the left button going up while the
+/// right one is still held: `button` and `buttons` as the browser's mouse
+/// events give them (button 0 is the left one, bit 2 of `buttons` the
+/// right one held, bit 1 the left one).
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+pub fn is_chorded_left_release(button: i16, buttons: u16) -> bool {
+    button == 0 && buttons & 1 == 0 && buttons & 2 != 0
+}
+
+/// Note the left button let go while the right one is held. A browser
+/// sends the pointer's release only when its last button goes up, so the
+/// left release of a right click made during a drag never reached egui:
+/// it took the left button for held, and the moved object stayed on the
+/// pointer until Esc (#1334). The browser build listens for the mouse
+/// event itself (`web.rs`); [`release_chorded_left`] gives egui the
+/// release.
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+pub fn note_chorded_left_release() {
+    CHORDED_LEFT_UP.with(|c| c.set(true));
+}
+
+/// The raw input hook's part: a noted left release (see
+/// [`note_chorded_left_release`]) becomes egui's release of the primary
+/// button, at the latest pointer position, while egui still has it held.
+pub fn release_chorded_left(ctx: &egui::Context, raw: &mut egui::RawInput) {
+    if !CHORDED_LEFT_UP.with(|c| c.replace(false)) {
+        return;
+    }
+    if !ctx.input(|i| i.pointer.primary_down()) {
+        return;
+    }
+    let pos = raw
+        .events
+        .iter()
+        .rev()
+        .find_map(|e| match e {
+            egui::Event::PointerMoved(p) => Some(*p),
+            _ => None,
+        })
+        .or_else(|| ctx.pointer_latest_pos());
+    let Some(pos) = pos else {
+        return;
+    };
+    raw.events.push(egui::Event::PointerButton {
+        pos,
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: ctx.input(|i| i.modifiers),
+    });
+}
+
 impl App {
     pub fn hit_test(&self, p: Point) -> Option<ShapeId> {
         self.hit_test_where(p, |_| false)

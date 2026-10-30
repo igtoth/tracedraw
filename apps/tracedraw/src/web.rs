@@ -298,6 +298,21 @@ fn watch_chorded_right_press() {
         true,
     );
     watch.forget();
+    // The left button let go while the right one is held: the browser
+    // sends no pointer release until the last button goes up, so egui
+    // would keep the left button held (#1334).
+    let up = Closure::<dyn FnMut(web_sys::MouseEvent)>::new(|e: web_sys::MouseEvent| {
+        if crate::interaction::is_chorded_left_release(e.button(), e.buttons()) {
+            crate::interaction::note_chorded_left_release();
+            request_repaint();
+        }
+    });
+    let _ = window.add_event_listener_with_callback_and_bool(
+        "mouseup",
+        up.as_ref().unchecked_ref(),
+        true,
+    );
+    up.forget();
 }
 
 /// Start the editor on the page's `<canvas id="tracedraw">`.

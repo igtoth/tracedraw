@@ -25,8 +25,9 @@ fn frame(ctx: &egui::Context, app: &mut App, events: Vec<Event>, modifiers: Modi
         events: all,
         ..Default::default()
     };
-    // As the window's raw input hook does (main.rs).
+    // As the window's raw input hook does (lib.rs).
     crate::pen::filter_raw_input(ctx, &mut input);
+    crate::interaction::release_chorded_left(ctx, &mut input);
     let mut out = ctx.run_ui(input, |ui| crate::ui::root(app, ui));
     out.textures_delta.clear();
 }
@@ -4777,6 +4778,111 @@ fn the_shape_tool_takes_the_nearest_node_of_a_scaled_curve() {
     // A segment is found on the page too: the middle of the last one.
     let (_, seg, _) = app.segment_at(page(4.0, 2.5)).expect("segment");
     assert_eq!(seg, 3);
+}
+
+/// A browser sends the pointer's release only when its last button goes
+/// up: with a right click made during a move and the left button let go
+/// first, egui never heard of the left release and the object stayed on
+/// the pointer until Esc (#1334). The browser build notes the mouse
+/// event and the raw input hook gives egui the release: the move ends
+/// there with its copy, and the pointer moving on moves nothing.
+#[test]
+fn a_left_release_while_the_right_button_is_held_ends_the_drag() {
+    assert!(crate::interaction::is_chorded_left_release(0, 2));
+    assert!(
+        !crate::interaction::is_chorded_left_release(0, 0),
+        "no right button held"
+    );
+    assert!(
+        !crate::interaction::is_chorded_left_release(2, 1),
+        "the right button"
+    );
+    let (ctx, mut app, id) = setup();
+    let none = Modifiers::NONE;
+    let from = app.view.to_screen(Point::new(35.0, 25.0));
+    let to = from + egui::vec2(150.0, 0.0);
+    frame(&ctx, &mut app, vec![Event::PointerMoved(from)], none);
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(from, true, PointerButton::Primary, none)],
+        none,
+    );
+    let mid = from + (to - from) * 0.5;
+    frame(&ctx, &mut app, vec![Event::PointerMoved(mid)], none);
+    // The right press, as the browser build notes it.
+    crate::interaction::note_chorded_right_press();
+    frame(&ctx, &mut app, vec![Event::PointerMoved(to)], none);
+    assert!(app.drag_copy);
+    // The left button goes up first: only the mouse event tells.
+    crate::interaction::note_chorded_left_release();
+    frame(&ctx, &mut app, Vec::new(), none);
+    assert!(matches!(app.drag, Drag::None), "the drag ended");
+    assert_eq!(shape_count(&app), 2, "the copy was made");
+    assert!(close(bounds(&app, id).x0, 10.0), "the original stays");
+    // Then the right button: the pointer's release in the browser.
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(to, false, PointerButton::Secondary, none)],
+        none,
+    );
+    let copy = app.selection.clone();
+    let before: Vec<Rect> = copy.iter().map(|c| bounds(&app, *c)).collect();
+    for i in 1..=5 {
+        frame(
+            &ctx,
+            &mut app,
+            vec![Event::PointerMoved(to + egui::vec2(0.0, 20.0 * i as f32))],
+            none,
+        );
+    }
+    let after: Vec<Rect> = copy.iter().map(|c| bounds(&app, *c)).collect();
+    assert_eq!(before, after, "nothing follows the pointer");
+    assert!(matches!(app.drag, Drag::None));
+    // Noted with no button held, it adds nothing.
+    crate::interaction::note_chorded_left_release();
+    frame(&ctx, &mut app, Vec::new(), none);
+    assert_eq!(shape_count(&app), 2);
+}
+
+/// Space while a handle is dragged drops a copy also in a frame with no
+/// pointer movement, as a browser sends the key on its own (#1334).
+#[test]
+fn space_alone_in_a_frame_drops_a_copy_while_scaling() {
+    let (ctx, mut app, id) = setup();
+    let none = Modifiers::NONE;
+    let e = handle(&app, Handle::E);
+    frame(&ctx, &mut app, vec![Event::PointerMoved(e)], none);
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(e, true, PointerButton::Primary, none)],
+        none,
+    );
+    for i in 1..=3 {
+        frame(
+            &ctx,
+            &mut app,
+            vec![Event::PointerMoved(e + egui::vec2(20.0 * i as f32, 0.0))],
+            none,
+        );
+    }
+    frame(&ctx, &mut app, vec![key(egui::Key::Space, none)], none);
+    assert_eq!(shape_count(&app), 2, "a copy at the size of the moment");
+    let end = e + egui::vec2(120.0, 0.0);
+    frame(&ctx, &mut app, vec![Event::PointerMoved(end)], none);
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(end, false, PointerButton::Primary, none)],
+        none,
+    );
+    frame(&ctx, &mut app, Vec::new(), none);
+    assert_eq!(shape_count(&app), 2);
+    assert!(matches!(app.drag, Drag::None));
+    assert_eq!(app.tool, Tool::Pick, "Space kept the tool");
+    assert!(bounds(&app, id).width() > 60.0);
 }
 
 /// A browser gives a right button pressed while the left one is held as

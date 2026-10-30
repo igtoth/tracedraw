@@ -130,8 +130,16 @@ leaves the original and gives the change to a copy, as on the desktop
 (`pick-tool.md`). A browser reports a button pressed while another is
 held as a pointer move, so the editor listens for the browser's own
 mouse event (`web.rs`, `interaction::note_chorded_right_press`) and
-takes it on the next frame; a second press takes the copy back. The
-browser's context menu does not open on the canvas.
+takes it on the next frame; a second press takes the copy back. A
+browser also sends the pointer's release only when its last button
+goes up: the left button let go while the right one is still held
+comes as a mouse event only, which the editor notes
+(`interaction::note_chorded_left_release`) and the raw input hook turns
+into egui's release of the left button
+(`interaction::release_chorded_left`), so the transform ends there with
+its copy instead of keeping the object on the pointer until Esc (#1334,
+`pick_drag_tests::a_left_release_while_the_right_button_is_held_ends_the_drag`).
+The browser's context menu does not open on the canvas.
 
 ## Keyboard
 
