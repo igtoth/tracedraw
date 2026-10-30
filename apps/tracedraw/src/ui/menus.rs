@@ -2989,7 +2989,7 @@ fn bitmaps_menu(app: &mut App, ui: &mut Ui) {
     }
     // On this computer, no AI service needed.
     if item(ui, "menu.bitmaps.remove_background_local", "", has_bitmap) {
-        app.dialog = Dialog::RemoveBackground(Default::default());
+        crate::ui::bitmap_dialogs::open_remove_background(app);
     }
     // AI: greyed until the AI service makes pictures (Tools > Options >
     // AI > Service); the tip says why.

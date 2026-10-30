@@ -185,7 +185,7 @@ pub(crate) fn object_menu(app: &mut App, ui: &mut Ui, close: &mut bool) {
             "",
             app.selected_bitmap().is_some(),
         ) {
-            app.dialog = crate::ui::dialogs::Dialog::RemoveBackground(Default::default());
+            crate::ui::bitmap_dialogs::open_remove_background(app);
         }
         if ci_tip(
             ui,

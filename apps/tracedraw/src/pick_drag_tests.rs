@@ -13316,7 +13316,9 @@ fn the_remove_background_eyedropper_picks_on_the_shared_preview() {
         crate::ui::dialogs::Dialog::RemoveBackground(st) => st.clone(),
         other => panic!("{other:?}"),
     };
-    assert_eq!(st.settings.colors, vec![[200, 30, 30]]);
+    // A plain click sets the first entry (Automatic at first).
+    assert_eq!(st.settings.colors.len(), 1);
+    assert_eq!(st.settings.colors[0].color, Some([200, 30, 30]));
     assert!(!st.picking, "picking ends with the pick");
     // Picking again, the pan button ends it without a pick.
     if let crate::ui::dialogs::Dialog::RemoveBackground(st) = &mut app.dialog {
@@ -13332,6 +13334,218 @@ fn the_remove_background_eyedropper_picks_on_the_shared_preview() {
         assert!(!st.picking);
         assert_eq!(st.settings.colors.len(), 1);
     }
+}
+
+fn bg_state(app: &App) -> crate::ui::bitmap_dialogs::BgRemoveState {
+    match &app.dialog {
+        crate::ui::dialogs::Dialog::RemoveBackground(st) => st.clone(),
+        other => panic!("{other:?}"),
+    }
+}
+
+/// A white, green and red picture in thirds with Remove Background open.
+fn bg_three_setup() -> (egui::Context, App) {
+    let img = image::RgbaImage::from_fn(300, 100, |x, _| {
+        if x < 100 {
+            image::Rgba([250, 250, 250, 255])
+        } else if x < 200 {
+            image::Rgba([40, 180, 60, 255])
+        } else {
+            image::Rgba([200, 30, 30, 255])
+        }
+    });
+    let (ctx, mut app, _) = trace_setup(img);
+    crate::ui::bitmap_dialogs::open_remove_background(&mut app);
+    for _ in 0..3 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    (ctx, app)
+}
+
+/// The colour list: "+" then a click on the preview adds a colour,
+/// Shift+click adds another and keeps the eyedropper, Alt+click takes
+/// out the nearest, the x button takes out a row, and a row's own
+/// tolerance is set with the wheel over its field. OK is one undo step
+/// and the list comes back the next time the dialog opens.
+#[test]
+fn remove_background_adds_and_removes_colours() {
+    let (ctx, mut app) = bg_three_setup();
+    let image = preview_rect(&ctx, "view_image");
+    let at = |fx: f32| egui::pos2(image.left() + image.width() * fx, image.center().y);
+    let shift = Modifiers {
+        shift: true,
+        ..Modifiers::NONE
+    };
+    let alt = Modifiers {
+        alt: true,
+        ..Modifiers::NONE
+    };
+    // "+", then a click on green: a second entry.
+    click_at(&ctx, &mut app, preview_rect(&ctx, "bg_add").center(), Modifiers::NONE);
+    let st = bg_state(&app);
+    assert!(st.picking && st.adding);
+    click_at(&ctx, &mut app, at(0.5), Modifiers::NONE);
+    let st = bg_state(&app);
+    assert_eq!(st.settings.colors.len(), 2);
+    assert_eq!(st.settings.colors[0].color, None, "Automatic stays first");
+    assert_eq!(st.settings.colors[1].color, Some([40, 180, 60]));
+    assert!(st.settings.colors[1].seed.is_some());
+    assert!(!st.picking, "a plain click puts the eyedropper down");
+    // The eyedropper of the first row, then Shift+click on red: added,
+    // and the eyedropper stays on.
+    click_at(&ctx, &mut app, preview_rect(&ctx, "bg_pick_0").center(), Modifiers::NONE);
+    assert!(bg_state(&app).picking);
+    click_at(&ctx, &mut app, at(0.9), shift);
+    let st = bg_state(&app);
+    assert_eq!(st.settings.colors.len(), 3);
+    assert_eq!(st.settings.colors[2].color, Some([200, 30, 30]));
+    assert!(st.picking);
+    // Alt+click near green: the green entry goes.
+    click_at(&ctx, &mut app, at(0.45), alt);
+    let st = bg_state(&app);
+    let colors: Vec<_> = st.settings.colors.iter().map(|p| p.color).collect();
+    assert_eq!(colors, vec![None, Some([200, 30, 30])]);
+    assert!(st.picking);
+    // A plain click on white with the first row's eyedropper sets the
+    // first row.
+    click_at(&ctx, &mut app, at(0.1), Modifiers::NONE);
+    let st = bg_state(&app);
+    assert_eq!(st.settings.colors[0].color, Some([250, 250, 250]));
+    assert!(!st.picking);
+    // The x of the second row takes red out.
+    for _ in 0..2 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    click_at(&ctx, &mut app, preview_rect(&ctx, "bg_drop_1").center(), Modifiers::NONE);
+    let st = bg_state(&app);
+    assert_eq!(st.settings.colors.len(), 1);
+    // The row's own tolerance: the wheel over its field steps it from
+    // the dialog's tolerance, in whole numbers.
+    for _ in 0..2 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    let field = preview_rect(&ctx, "bg_tol_0");
+    frame(
+        &ctx,
+        &mut app,
+        vec![
+            Event::PointerMoved(field.center()),
+            Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Line,
+                delta: egui::vec2(0.0, 1.0),
+                phase: egui::TouchPhase::Move,
+                modifiers: Modifiers::NONE,
+            },
+        ],
+        Modifiers::NONE,
+    );
+    for _ in 0..2 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    let st = bg_state(&app);
+    let t = st.settings.colors[0].tolerance.expect("its own tolerance");
+    assert_eq!(t, t.round());
+    assert_ne!(t, st.settings.tolerance);
+    // Add green again, then OK: one undo step, white and green gone.
+    click_at(&ctx, &mut app, preview_rect(&ctx, "bg_add").center(), Modifiers::NONE);
+    click_at(&ctx, &mut app, at(0.5), Modifiers::NONE);
+    assert_eq!(bg_state(&app).settings.colors.len(), 2);
+    let before = app.engine.undo_label();
+    frame(
+        &ctx,
+        &mut app,
+        vec![key(egui::Key::Enter, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    assert!(matches!(app.dialog, crate::ui::dialogs::Dialog::None));
+    assert_eq!(app.engine.undo_label(), Some("Remove Background"));
+    let png = app
+        .selected_bitmap()
+        .and_then(|s| match &s.kind {
+            tracedraw_core::document::ShapeKind::Bitmap { png, .. } => Some(png.clone()),
+            _ => None,
+        })
+        .expect("bitmap");
+    let out = crate::bitmap_fx::decode(&png).expect("decodes");
+    assert_eq!(out.get_pixel(20, 50).0[3], 0);
+    assert_eq!(out.get_pixel(150, 50).0[3], 0);
+    assert_eq!(out.get_pixel(280, 50).0[3], 255);
+    app.engine.undo().expect("undo");
+    assert_eq!(app.engine.undo_label(), before);
+    // The list is remembered for the session (without the points).
+    crate::ui::bitmap_dialogs::open_remove_background(&mut app);
+    let st = bg_state(&app);
+    let colors: Vec<_> = st.settings.colors.iter().map(|p| p.color).collect();
+    assert_eq!(colors, vec![Some([250, 250, 250]), Some([40, 180, 60])]);
+    assert!(st.settings.colors.iter().all(|p| p.seed.is_none()));
+}
+
+/// Frame times with Remove Background open and three colours listed:
+/// idle frames, and the Tolerance slider dragged. Run with
+/// `cargo test --release -p tracedraw -- --ignored frame_times_of_the_remove_background_dialog --nocapture`.
+#[test]
+#[ignore]
+fn frame_times_of_the_remove_background_dialog() {
+    let n = 2000u32;
+    let img = image::RgbaImage::from_fn(n, n, |x, y| {
+        let c = n as f32 / 2.0;
+        let d = ((x as f32 - c).powi(2) + (y as f32 - c).powi(2)).sqrt();
+        if d < c * 0.4 {
+            image::Rgba([200, 30, 30, 255])
+        } else if x < n / 3 {
+            image::Rgba([40, 180, 60, 255])
+        } else {
+            image::Rgba([250, 250, 250, 255])
+        }
+    });
+    let (ctx, mut app, _) = trace_setup(img);
+    let mut st = crate::ui::bitmap_dialogs::BgRemoveState::default();
+    st.settings.add_color([40, 180, 60], None);
+    st.settings.add_color([20, 20, 200], None);
+    app.dialog = crate::ui::dialogs::Dialog::RemoveBackground(st);
+    let t = std::time::Instant::now();
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    eprintln!("first frame (preview made): {:?}", t.elapsed());
+    for _ in 0..3 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    let t = std::time::Instant::now();
+    for _ in 0..30 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    eprintln!("idle frame: {:?}", t.elapsed() / 30);
+    let rail = preview_rect(&ctx, "bg_tolerance");
+    let from = egui::pos2(rail.left() + rail.width() * 0.1, rail.center().y);
+    frame(&ctx, &mut app, vec![Event::PointerMoved(from)], Modifiers::NONE);
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(from, true, PointerButton::Primary, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    let steps = 30;
+    let mut worst = std::time::Duration::ZERO;
+    let t = std::time::Instant::now();
+    for i in 1..=steps {
+        let p = from + egui::vec2(rail.width() * 0.4 * i as f32 / steps as f32, 0.0);
+        let f = std::time::Instant::now();
+        frame(&ctx, &mut app, vec![Event::PointerMoved(p)], Modifiers::NONE);
+        worst = worst.max(f.elapsed());
+    }
+    eprintln!(
+        "tolerance drag: {:?} per frame, worst {worst:?}",
+        t.elapsed() / steps
+    );
+    let t = std::time::Instant::now();
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(from, false, PointerButton::Primary, Modifiers::NONE)],
+        Modifiers::NONE,
+    );
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    eprintln!("release (full-size preview again): {:?}", t.elapsed());
 }
 
 /// The split view's divider drags where the button went down on it,

@@ -1865,7 +1865,7 @@ fn bitmap_properties(app: &mut App, ui: &mut Ui) {
         .rich_tip(tr("dialog.bg_contiguous_tip"))
         .clicked()
     {
-        app.dialog = crate::ui::dialogs::Dialog::RemoveBackground(Default::default());
+        crate::ui::bitmap_dialogs::open_remove_background(app);
     }
     // AI: greyed until the AI service makes pictures.
     let ready = app.ai_image_ready() && app.ai_source_bitmap().is_some();

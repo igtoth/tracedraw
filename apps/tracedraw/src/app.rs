@@ -1310,6 +1310,9 @@ pub struct App {
     /// The choices of the last File > Export of this session, which the
     /// next one starts with (#617).
     pub last_export: Option<crate::ui::dialogs::ExportState>,
+    /// The settings of this session's last Remove Background (its list
+    /// of colours too), which the next one starts with.
+    pub last_bg_remove: Option<crate::bg_remove::BgSettings>,
     /// The choices of this session's last export of each format (#617).
     pub export_by_format: Vec<crate::prefs::ExportPreset>,
     /// Print Merge's Place Inside Frame waiting for a click on the shape
@@ -2400,6 +2403,7 @@ impl App {
             pending_merge_frame: false,
             autofit_preview: None,
             last_export: None,
+            last_bg_remove: None,
             export_by_format: Vec::new(),
             pending_copy_effect: None,
             pending_copy_envelope: false,

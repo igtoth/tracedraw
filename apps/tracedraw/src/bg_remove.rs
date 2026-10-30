@@ -1,16 +1,20 @@
 //! Bitmaps > Remove Background: makes the background of a picture
 //! transparent on this computer, without an AI service.
 //!
-//! 1. The background colours are learnt from the picture's border (a
-//!    small k-means in Lab, so a gradient or a two-tone backdrop gives
-//!    several colours) or taken from the colours the user picked.
+//! 1. The background colours are a list: each entry is Automatic (the
+//!    colours learnt from the picture's border, a small k-means in Lab,
+//!    so a gradient or a two-tone backdrop gives several colours) or a
+//!    colour the user picked, with its own tolerance.
 //! 2. Every pixel gets its colour distance (CIE76 Delta E) to the
-//!    nearest background colour.
+//!    background colour it is closest to within that colour's
+//!    tolerance; it is background when it is within the tolerance of any
+//!    listed colour.
 //! 3. With Contiguous on, the background is what a flood fill from the
-//!    border reaches through pixels within the tolerance; it may cross a
-//!    few edge pixels (the anti-aliased rim) but never the subject, so
-//!    background-coloured parts inside the subject stay. Off, every pixel
-//!    near a background colour goes.
+//!    border (and from the points where colours were picked) reaches
+//!    through such pixels; it may cross a few edge pixels (the
+//!    anti-aliased rim) but never the subject, so background-coloured
+//!    parts inside the subject stay. Off, every pixel near a background
+//!    colour goes.
 //! 4. Opacity ramps over a band past the tolerance (soft, anti-aliased
 //!    edges), small loose specks are removed, and Edge softness feathers
 //!    the edge.
@@ -27,7 +31,8 @@ use std::collections::VecDeque;
 #[derive(Debug, Clone, PartialEq)]
 pub struct BgSettings {
     /// How far (Delta E) a colour may be from the background's and still
-    /// be background.
+    /// be background: the tolerance of every listed colour that has none
+    /// of its own.
     pub tolerance: f32,
     /// The feather of the edge, in pixels of the picture.
     pub softness: f32,
@@ -37,9 +42,107 @@ pub struct BgSettings {
     pub despeckle: bool,
     /// The backdrop's colour is taken out of half-transparent edge pixels.
     pub clean_edges: bool,
-    /// The background colours the user picked; empty: learnt from the
-    /// border.
-    pub colors: Vec<[u8; 3]>,
+    /// The colours to remove; empty is one Automatic entry.
+    pub colors: Vec<BgPick>,
+}
+
+/// One colour to remove: Automatic (learnt from the border) or picked,
+/// with its own tolerance or the dialog's.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BgPick {
+    /// The picked colour; None: Automatic.
+    pub color: Option<[u8; 3]>,
+    /// Its tolerance (Delta E); None: the dialog's Tolerance.
+    pub tolerance: Option<f32>,
+    /// Where it was picked, as fractions of the picture's width and
+    /// height: with Contiguous on the fill starts there too, so a colour
+    /// picked inside the subject (a hole) goes.
+    pub seed: Option<[f32; 2]>,
+}
+
+impl BgPick {
+    /// The entry that learns the background from the border.
+    pub const AUTO: BgPick = BgPick {
+        color: None,
+        tolerance: None,
+        seed: None,
+    };
+
+    /// A picked colour with the dialog's tolerance and no seed.
+    pub fn color(c: [u8; 3]) -> Self {
+        BgPick {
+            color: Some(c),
+            ..BgPick::AUTO
+        }
+    }
+
+    /// This entry's tolerance, `global` when it has none of its own.
+    pub fn tolerance_or(&self, global: f32) -> f32 {
+        self.tolerance.unwrap_or(global).max(0.0)
+    }
+}
+
+impl BgSettings {
+    /// The colours to remove, never empty: an empty list is Automatic.
+    pub fn entries(&self) -> Vec<BgPick> {
+        if self.colors.is_empty() {
+            vec![BgPick::AUTO]
+        } else {
+            self.colors.clone()
+        }
+    }
+
+    /// Add a picked colour (with the seed where it was picked) unless
+    /// the list has it already; true when added.
+    pub fn add_color(&mut self, c: [u8; 3], seed: Option<[f32; 2]>) -> bool {
+        if self.colors.is_empty() {
+            self.colors.push(BgPick::AUTO);
+        }
+        if self.colors.iter().any(|p| p.color == Some(c)) {
+            return false;
+        }
+        self.colors.push(BgPick {
+            seed,
+            ..BgPick::color(c)
+        });
+        true
+    }
+
+    /// Remove the listed entry nearest in colour to `c` (Automatic
+    /// entries by the nearest of `learnt`, the colours learnt from the
+    /// picture); the list never ends up empty: the last entry gone,
+    /// Automatic is left. The index removed comes back.
+    pub fn remove_nearest(&mut self, c: [u8; 3], learnt: &[BgColor]) -> Option<usize> {
+        let l = lab(c);
+        let entries = self.entries();
+        let best = entries
+            .iter()
+            .enumerate()
+            .filter_map(|(i, p)| {
+                let d = match p.color {
+                    Some(pc) => dist2(&lab(pc), &l),
+                    None => learnt.iter().map(|b| dist2(&b.lab, &l)).reduce(f32::min)?,
+                };
+                Some((i, d))
+            })
+            .min_by(|a, b| a.1.total_cmp(&b.1))?
+            .0;
+        self.remove(best);
+        Some(best)
+    }
+
+    /// Remove entry `i`; the last one gone, Automatic is left.
+    pub fn remove(&mut self, i: usize) {
+        if self.colors.is_empty() {
+            self.colors.push(BgPick::AUTO);
+        }
+        if i < self.colors.len() {
+            self.colors.remove(i);
+        }
+        if self.colors.is_empty() {
+            self.colors.push(BgPick::AUTO);
+        }
+    }
 }
 
 impl Default for BgSettings {
@@ -50,7 +153,7 @@ impl Default for BgSettings {
             contiguous: true,
             despeckle: true,
             clean_edges: true,
-            colors: Vec::new(),
+            colors: vec![BgPick::AUTO],
         }
     }
 }
@@ -202,57 +305,93 @@ fn smoothstep(e0: f32, e1: f32, x: f32) -> f32 {
 /// its look.
 pub fn remove_background(img: &RgbaImage, s: &BgSettings, scale: f32) -> RgbaImage {
     let (w, h) = img.dimensions();
-    let bg: Vec<BgColor> = if s.colors.is_empty() {
-        learn_background(img)
-    } else {
-        s.colors.iter().map(|c| BgColor::of(*c)).collect()
-    };
-    if bg.is_empty() || w == 0 || h == 0 {
+    if w == 0 || h == 0 {
+        return img.clone();
+    }
+    // Every background colour with its tolerance: an Automatic entry
+    // brings the colours learnt from the border, a picked one its own.
+    let entries = s.entries();
+    let mut bg: Vec<BgColor> = Vec::new();
+    let mut tols: Vec<f32> = Vec::new();
+    let mut learnt: Option<Vec<BgColor>> = None;
+    for p in &entries {
+        let t = p.tolerance_or(s.tolerance);
+        match p.color {
+            Some(c) => {
+                bg.push(BgColor::of(c));
+                tols.push(t);
+            }
+            None => {
+                for b in learnt.get_or_insert_with(|| learn_background(img)).iter() {
+                    bg.push(*b);
+                    tols.push(t);
+                }
+            }
+        }
+    }
+    if bg.is_empty() {
         return img.clone();
     }
     let (wu, hu) = (w as usize, h as usize);
     let n = wu * hu;
-    let centres: Vec<Lab> = bg.iter().map(|b| b.lab).collect();
-    // Each pixel in Lab, its distance to the nearest background colour,
-    // and which one.
+    // Each pixel in Lab, its distance to the background colour it is
+    // closest to within that colour's tolerance, which one, and that
+    // colour's tolerance: a pixel is background when it is within the
+    // tolerance of any listed colour.
     let mut labs = vec![[0.0f32; 3]; n];
     let mut dist = vec![0.0f32; n];
-    let mut which = vec![0u8; n];
+    let mut which = vec![0u16; n];
+    let mut tolp = vec![tols[0]; n];
     for (i, p) in img.pixels().enumerate() {
         if p.0[3] == 0 {
             continue;
         }
         let l = lab([p.0[0], p.0[1], p.0[2]]);
-        let (k, d2) = nearest(&centres, &l);
+        let (k, d) = if bg.len() == 1 {
+            (0, dist2(&bg[0].lab, &l).sqrt())
+        } else {
+            // The colour it is deepest inside (least distance past, or
+            // most within, that colour's tolerance).
+            let mut best = (0, f32::MAX, f32::MAX);
+            for (k, (b, t)) in bg.iter().zip(&tols).enumerate() {
+                let d = dist2(&b.lab, &l).sqrt();
+                if d - t < best.2 {
+                    best = (k, d, d - t);
+                }
+            }
+            (best.0, best.1)
+        };
         labs[i] = l;
-        dist[i] = d2.sqrt();
-        which[i] = k as u8;
+        dist[i] = d;
+        which[i] = k as u16;
+        tolp[i] = tols[k];
     }
-    let tol = s.tolerance.max(0.0);
     // The ramp past the tolerance where edge pixels are partly opaque.
-    let band = (tol * 0.6).max(4.0);
-    let ramp = |d: f32| smoothstep(tol, tol + band, d);
+    let band = |tol: f32| (tol * 0.6).max(4.0);
+    let ramp = |d: f32, tol: f32| smoothstep(tol, tol + band(tol), d);
     // Opacity of the subject, 1 where it stays.
     let mut keep = vec![1.0f32; n];
     if s.contiguous {
-        // Flood fill from the border: through background pixels freely,
-        // and at most `rim` pixels into the ramp, so the fill takes the
-        // anti-aliased rim and stops at the subject. It also walks on
-        // from a background pixel to a neighbour of nearly the same
-        // colour (a step under `step`), while that neighbour is within
-        // `reach` of a background colour: so a backdrop that drifts
-        // (texture, a gradient the border did not show, a soft shadow)
-        // goes whole, while the subject's edge, a sharp step, stops it.
+        // Flood fill from the border (and the points where colours were
+        // picked): through background pixels freely, and at most `rim`
+        // pixels into the ramp, so the fill takes the anti-aliased rim
+        // and stops at the subject. It also walks on from a background
+        // pixel to a neighbour of nearly the same colour (a step under
+        // `step`), while that neighbour is within `reach` of a
+        // background colour: so a backdrop that drifts (texture, a
+        // gradient the border did not show, a soft shadow) goes whole,
+        // while the subject's edge, a sharp step, stops it.
         let rim = 2 + s.softness.max(0.0).ceil() as u8;
-        let step2 = (tol / 3.0).max(3.0).powi(2);
-        let reach = (tol * 3.0).max(tol + band);
+        let step2 = |tol: f32| (tol / 3.0).max(3.0).powi(2);
+        let reach = |tol: f32| (tol * 3.0).max(tol + band(tol));
         let mut depth = vec![u8::MAX; n];
         // Reached by such steps: background, whatever its distance.
         let mut drifted = vec![false; n];
         let mut queue = VecDeque::new();
         let seed = |i: usize, depth: &mut Vec<u8>, queue: &mut VecDeque<usize>| {
-            if depth[i] == u8::MAX && dist[i] < tol + band {
-                depth[i] = if dist[i] <= tol { 0 } else { 1 };
+            let t = tolp[i];
+            if depth[i] == u8::MAX && dist[i] < t + band(t) {
+                depth[i] = if dist[i] <= t { 0 } else { 1 };
                 if depth[i] <= rim {
                     queue.push_back(i);
                 }
@@ -266,28 +405,44 @@ pub fn remove_background(img: &RgbaImage, s: &BgSettings, scale: f32) -> RgbaIma
             seed(y * wu, &mut depth, &mut queue);
             seed(y * wu + wu - 1, &mut depth, &mut queue);
         }
+        // A picked point and the pixels around it (the point was taken
+        // on a copy of another size).
+        for at in entries.iter().filter_map(|p| p.seed) {
+            if !(at[0].is_finite() && at[1].is_finite()) {
+                continue;
+            }
+            let cx = ((at[0] * w as f32) as i64).clamp(0, wu as i64 - 1);
+            let cy = ((at[1] * h as f32) as i64).clamp(0, hu as i64 - 1);
+            for y in (cy - 1).max(0)..=(cy + 1).min(hu as i64 - 1) {
+                for x in (cx - 1).max(0)..=(cx + 1).min(wu as i64 - 1) {
+                    seed(y as usize * wu + x as usize, &mut depth, &mut queue);
+                }
+            }
+        }
         while let Some(i) = queue.pop_front() {
             let (x, y) = (i % wu, i / wu);
             let here = depth[i];
+            let step_i = step2(tolp[i]);
             let mut visit = |j: usize| {
                 if depth[j] != u8::MAX {
                     return;
                 }
-                let near = dist[j] < tol + band;
+                let t = tolp[j];
+                let near = dist[j] < t + band(t);
                 // A step from solid background only, never from the rim.
                 let drift = here == 0
-                    && dist[j] < reach
+                    && dist[j] < reach(t)
                     && img.get_pixel((j % wu) as u32, (j / wu) as u32).0[3] > 0
-                    && dist2(&labs[i], &labs[j]) <= step2;
+                    && dist2(&labs[i], &labs[j]) <= step_i;
                 if !near && !drift {
                     return;
                 }
-                let d = if dist[j] <= tol || drift { 0 } else { here + 1 };
+                let d = if dist[j] <= t || drift { 0 } else { here + 1 };
                 if d > rim {
                     return;
                 }
                 depth[j] = d;
-                drifted[j] = drift && dist[j] > tol;
+                drifted[j] = drift && dist[j] > t;
                 queue.push_back(j);
             };
             if x > 0 {
@@ -307,12 +462,12 @@ pub fn remove_background(img: &RgbaImage, s: &BgSettings, scale: f32) -> RgbaIma
             if drifted[i] {
                 keep[i] = 0.0;
             } else if depth[i] != u8::MAX {
-                keep[i] = ramp(dist[i]);
+                keep[i] = ramp(dist[i], tolp[i]);
             }
         }
     } else {
         for i in 0..n {
-            keep[i] = ramp(dist[i]);
+            keep[i] = ramp(dist[i], tolp[i]);
         }
     }
     if s.despeckle {
@@ -531,7 +686,7 @@ mod tests {
         let img = picture();
         // A picked colour far from the backdrop: nothing goes.
         let s = BgSettings {
-            colors: vec![[0, 0, 255]],
+            colors: vec![BgPick::color([0, 0, 255])],
             ..BgSettings::default()
         };
         let out = remove_background(&img, &s, 1.0);
@@ -630,5 +785,180 @@ mod tests {
             ..BgSettings::default()
         };
         assert_eq!(remove_background(&img, &s, 1.0).get_pixel(60, 68).0[3], 255);
+    }
+
+    /// A white backdrop with a red disc; a green patch on the backdrop
+    /// (touching it, not the border) and a blue hole inside the disc.
+    fn three_colours() -> RgbaImage {
+        RgbaImage::from_fn(100, 80, |x, y| {
+            let (dx, dy) = (x as f32 - 60.0, y as f32 - 40.0);
+            let r = (dx * dx + dy * dy).sqrt();
+            if r < 5.0 {
+                Rgba([30, 60, 220, 255])
+            } else if r < 20.0 {
+                Rgba([200, 30, 30, 255])
+            } else if (10..30).contains(&x) && (20..60).contains(&y) {
+                Rgba([40, 180, 60, 255])
+            } else {
+                Rgba([250, 250, 250, 255])
+            }
+        })
+    }
+
+    fn sharp(colors: Vec<BgPick>) -> BgSettings {
+        BgSettings {
+            softness: 0.0,
+            colors,
+            ..BgSettings::default()
+        }
+    }
+
+    /// With Contiguous, the fill goes through pixels matching any listed
+    /// colour: Automatic alone stops at the green patch, Automatic and
+    /// green take both, and the subject stays.
+    #[test]
+    fn the_fill_goes_through_every_listed_colour() {
+        let img = three_colours();
+        let auto = remove_background(&img, &sharp(vec![BgPick::AUTO]), 1.0);
+        assert_eq!(auto.get_pixel(2, 2).0[3], 0);
+        assert_eq!(auto.get_pixel(20, 40).0[3], 255, "green stays");
+        let both = sharp(vec![BgPick::AUTO, BgPick::color([40, 180, 60])]);
+        let out = remove_background(&img, &both, 1.0);
+        assert_eq!(out.get_pixel(2, 2).0[3], 0);
+        assert_eq!(out.get_pixel(20, 40).0[3], 0, "green goes too");
+        assert_eq!(out.get_pixel(50, 40).0, [200, 30, 30, 255]);
+        // The blue hole is not reached from the border.
+        assert_eq!(out.get_pixel(60, 40).0[3], 255);
+        // Two picked colours, no Automatic: the same.
+        let picked = sharp(vec![
+            BgPick::color([250, 250, 250]),
+            BgPick::color([40, 180, 60]),
+        ]);
+        let out2 = remove_background(&img, &picked, 1.0);
+        assert_eq!(out2.get_pixel(20, 40).0[3], 0);
+        assert_eq!(out2.get_pixel(2, 2).0[3], 0);
+        assert_eq!(out2.get_pixel(50, 40).0[3], 255);
+    }
+
+    /// A third colour picked inside the subject goes from the point it
+    /// was picked at (Contiguous), everywhere without Contiguous; Remove
+    /// specks, Edge softness and Clean edge colors leave the subject.
+    #[test]
+    fn a_colour_picked_inside_goes_from_its_seed() {
+        let img = three_colours();
+        let mut s = sharp(vec![BgPick::AUTO, BgPick::color([40, 180, 60])]);
+        s.colors.push(BgPick::color([30, 60, 220]));
+        let unseeded = remove_background(&img, &s, 1.0);
+        assert_eq!(unseeded.get_pixel(60, 40).0[3], 255, "not reached");
+        s.colors[2].seed = Some([0.6, 0.5]);
+        let out = remove_background(&img, &s, 1.0);
+        assert_eq!(out.get_pixel(60, 40).0[3], 0, "reached from its seed");
+        assert_eq!(out.get_pixel(20, 40).0[3], 0);
+        assert_eq!(out.get_pixel(50, 40).0, [200, 30, 30, 255]);
+        // Without Contiguous (and no seed), the blue goes everywhere.
+        s.colors[2].seed = None;
+        let everywhere = BgSettings {
+            contiguous: false,
+            ..s.clone()
+        };
+        let out = remove_background(&img, &everywhere, 1.0);
+        assert_eq!(out.get_pixel(60, 40).0[3], 0);
+        assert_eq!(out.get_pixel(50, 40).0[3], 255);
+        // Feathered, the union's edge softens and the subject's middle
+        // stays.
+        let soft = BgSettings {
+            softness: 2.0,
+            ..s
+        };
+        let out = remove_background(&img, &soft, 1.0);
+        assert_eq!(out.get_pixel(48, 30).0[3], 255);
+        assert_eq!(out.get_pixel(20, 40).0[3], 0);
+    }
+
+    /// Each colour has its own tolerance; one left unset follows the
+    /// dialog's.
+    #[test]
+    fn each_colour_has_its_own_tolerance() {
+        // A grey backdrop and a darker grey patch 10 Delta E or so away.
+        let img = RgbaImage::from_fn(60, 40, |x, y| {
+            if (20..40).contains(&x) && (10..30).contains(&y) {
+                Rgba([200, 30, 30, 255])
+            } else if x < 10 {
+                Rgba([150, 150, 150, 255])
+            } else {
+                Rgba([180, 180, 180, 255])
+            }
+        });
+        let tight = BgPick {
+            tolerance: Some(1.0),
+            ..BgPick::color([170, 170, 170])
+        };
+        let s = BgSettings {
+            tolerance: 30.0,
+            softness: 0.0,
+            despeckle: false,
+            colors: vec![tight],
+            ..BgSettings::default()
+        };
+        // Its own tolerance of 1: neither grey goes.
+        let out = remove_background(&img, &s, 1.0);
+        assert_eq!(out.get_pixel(5, 5).0[3], 255);
+        assert_eq!(out.get_pixel(50, 5).0[3], 255);
+        // Following the dialog's 30: both go, the subject stays.
+        let loose = BgSettings {
+            colors: vec![BgPick::color([170, 170, 170])],
+            ..s.clone()
+        };
+        let out = remove_background(&img, &loose, 1.0);
+        assert_eq!(out.get_pixel(5, 5).0[3], 0);
+        assert_eq!(out.get_pixel(50, 5).0[3], 0);
+        assert_eq!(out.get_pixel(30, 20).0[3], 255);
+        // Two colours, each tight: each takes its own grey.
+        let two = BgSettings {
+            colors: vec![
+                BgPick {
+                    tolerance: Some(2.0),
+                    ..BgPick::color([150, 150, 150])
+                },
+                BgPick {
+                    tolerance: Some(2.0),
+                    ..BgPick::color([180, 180, 180])
+                },
+            ],
+            ..s
+        };
+        let out = remove_background(&img, &two, 1.0);
+        assert_eq!(out.get_pixel(5, 5).0[3], 0);
+        assert_eq!(out.get_pixel(50, 5).0[3], 0);
+        assert_eq!(out.get_pixel(30, 20).0[3], 255);
+    }
+
+    /// The list: adding skips a colour listed already, removing the
+    /// nearest takes the closest entry and never leaves the list empty.
+    #[test]
+    fn the_colour_list_adds_and_removes() {
+        let mut s = BgSettings {
+            colors: Vec::new(),
+            ..BgSettings::default()
+        };
+        assert_eq!(s.entries(), vec![BgPick::AUTO]);
+        assert!(s.add_color([0, 200, 0], Some([0.1, 0.2])));
+        assert!(!s.add_color([0, 200, 0], None));
+        assert!(s.add_color([0, 0, 200], None));
+        assert_eq!(s.colors.len(), 3);
+        assert_eq!(s.colors[0], BgPick::AUTO);
+        assert_eq!(s.colors[1].seed, Some([0.1, 0.2]));
+        let learnt = [BgColor::of([255, 255, 255])];
+        // Near blue: the blue entry goes.
+        assert_eq!(s.remove_nearest([10, 10, 190], &learnt), Some(2));
+        // Near white: Automatic (its learnt white) goes; green is first.
+        assert_eq!(s.remove_nearest([250, 250, 250], &learnt), Some(0));
+        assert_eq!(s.colors, vec![BgPick { seed: Some([0.1, 0.2]), ..BgPick::color([0, 200, 0]) }]);
+        assert_eq!(s.remove_nearest([0, 0, 0], &learnt), Some(0));
+        assert_eq!(s.colors, vec![BgPick::AUTO]);
+        // Automatic with nothing learnt cannot be the nearest.
+        assert_eq!(s.remove_nearest([0, 0, 0], &[]), None);
+        s.remove(7);
+        assert_eq!(s.colors, vec![BgPick::AUTO]);
     }
 }
