@@ -243,24 +243,63 @@ fn pick_result_id() -> Id {
     Id::new("color_pick_result")
 }
 
+/// A pick request: the picker that asked and the frame its eyedropper
+/// button was last drawn in (#1246).
+#[derive(Clone, Copy, Debug)]
+struct PickRequest {
+    id: Id,
+    frame: u64,
+}
+
 /// A picker's eyedropper is waiting for a click on the drawing.
+///
+/// A request outlives its picker when the picker closes while it
+/// waits (the Edit Fill or Outline Pen dialog closed with OK, a
+/// popup's picker closed by a click beside it): the crosshair pointer
+/// and the colour readout then followed the pointer everywhere and
+/// the next click on the drawing went nowhere (#1246). So a request
+/// counts only while its eyedropper button is being drawn (the button
+/// renews it every frame); a request not renewed since the frame
+/// before is dropped here.
 pub fn picking(ctx: &egui::Context) -> bool {
-    ctx.data(|d| d.get_temp::<Id>(pick_request_id()).is_some())
+    let now = ctx.cumulative_frame_nr();
+    ctx.data_mut(|d| match d.get_temp::<PickRequest>(pick_request_id()) {
+        Some(r) if now.saturating_sub(r.frame) <= 1 => true,
+        Some(_) => {
+            d.remove::<PickRequest>(pick_request_id());
+            false
+        }
+        None => false,
+    })
 }
 
 /// Picker `id` waits for a click on the drawing to give it a colour.
 pub fn start_pick(ctx: &egui::Context, id: Id) {
-    ctx.data_mut(|d| d.insert_temp(pick_request_id(), id));
+    let frame = ctx.cumulative_frame_nr();
+    ctx.data_mut(|d| d.insert_temp(pick_request_id(), PickRequest { id, frame }));
+}
+
+/// Is picker `id` the one waiting? Drawn, its button renews the request
+/// so it lives on (see [`picking`]).
+fn waiting(ui: &Ui, id: Id) -> bool {
+    let now = ui.ctx().cumulative_frame_nr();
+    ui.data_mut(|d| match d.get_temp::<PickRequest>(pick_request_id()) {
+        Some(r) if r.id == id => {
+            d.insert_temp(pick_request_id(), PickRequest { id, frame: now });
+            true
+        }
+        _ => false,
+    })
 }
 
 /// The click on the drawing gave `c` (none: the pick was cancelled); the
 /// picker that asked takes it when it is next drawn.
 pub fn finish_pick(ctx: &egui::Context, c: Option<Color>) {
     ctx.data_mut(|d| {
-        let asked = d.get_temp::<Id>(pick_request_id());
-        d.remove::<Id>(pick_request_id());
-        if let (Some(id), Some(c)) = (asked, c) {
-            d.insert_temp(pick_result_id(), (id, c));
+        let asked = d.get_temp::<PickRequest>(pick_request_id());
+        d.remove::<PickRequest>(pick_request_id());
+        if let (Some(r), Some(c)) = (asked, c) {
+            d.insert_temp(pick_result_id(), (r.id, c));
         }
     });
 }
@@ -285,7 +324,7 @@ pub fn eyedropper(ui: &mut Ui, id: Id, c: &mut Color) -> bool {
         *c = p;
         changed = true;
     }
-    let waiting = ui.data(|d| d.get_temp::<Id>(pick_request_id())) == Some(id);
+    let waiting = waiting(ui, id);
     let (r, resp) = ui.allocate_exact_size(Vec2::splat(22.0), Sense::click());
     if waiting {
         ui.painter().rect_filled(r, 2.0, Tokens::tool_active());
@@ -303,7 +342,7 @@ pub fn eyedropper(ui: &mut Ui, id: Id, c: &mut Color) -> bool {
         .clicked()
     {
         if waiting {
-            ui.data_mut(|d| d.remove::<Id>(pick_request_id()));
+            finish_pick(ui.ctx(), None);
         } else {
             start_pick(ui.ctx(), id);
         }

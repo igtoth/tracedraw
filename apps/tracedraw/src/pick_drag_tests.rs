@@ -11488,9 +11488,10 @@ fn readout_texts(ctx: &egui::Context, app: &mut App, events: Vec<Event>) -> Vec<
     };
     let mut out = ctx.run_ui(input, |ui| crate::ui::root(app, ui));
     out.textures_delta.clear();
-    // The readout's texts: its hex value and the lines of values ("C: 0",
-    // one pair a line), which nothing else on the screen shows; and the
-    // name, which the caller looks for next to them.
+    // The readout's texts: its hex value (upper case, unlike a dialog's)
+    // and the lines of values ("C: 0", one pair a line), which nothing
+    // else on the screen shows; and the name, which the caller looks for
+    // next to them.
     let mut all = Vec::new();
     for s in &out.shapes {
         if let egui::Shape::Text(t) = &s.shape {
@@ -11498,7 +11499,11 @@ fn readout_texts(ctx: &egui::Context, app: &mut App, events: Vec<Event>) -> Vec<
         }
     }
     let readout = all.iter().any(|t| {
-        t.len() == 7 && t.starts_with('#') && t[1..].chars().all(|c| c.is_ascii_hexdigit())
+        t.len() == 7
+            && t.starts_with('#')
+            && t[1..]
+                .chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_lowercase())
     });
     if readout {
         all
@@ -11553,10 +11558,15 @@ fn the_colour_eyedropper_reads_out_the_colour_under_the_pointer() {
         vec![Event::PointerMoved(over + egui::vec2(2.0, 0.0))],
     );
     assert!(texts.is_empty(), "{texts:?}");
-    // A picker's eyedropper, with the Pick tool.
+    // A picker's eyedropper (Edit Fill's, drawn every frame), with the
+    // Pick tool.
     app.eyedropper_reset();
     app.set_tool(Tool::Pick);
-    crate::ui::color_picker::start_pick(&ctx, egui::Id::new("some picker"));
+    app.open_edit_fill();
+    readout_texts(&ctx, &mut app, Vec::new());
+    crate::ui::color_picker::start_pick(&ctx, egui::Id::new("edit_fill_pick"));
+    // Off the objects, beside the dialog (which takes the pointer).
+    let off = app.view.to_screen(Point::new(5.0, 5.0));
     let texts = readout_texts(&ctx, &mut app, vec![Event::PointerMoved(off)]);
     assert!(texts.contains(&"#FFFFFF".to_string()), "{texts:?}");
     let texts = readout_texts(&ctx, &mut app, vec![Event::PointerMoved(over)]);
@@ -11568,6 +11578,51 @@ fn the_colour_eyedropper_reads_out_the_colour_under_the_pointer() {
         vec![Event::PointerMoved(over + egui::vec2(2.0, 0.0))],
     );
     assert!(texts.is_empty(), "{texts:?}");
+}
+
+/// A picker's eyedropper that waits when its picker closes (Edit Fill
+/// closed with its colour chosen another way) stops waiting at once:
+/// no crosshair, no readout beside the pointer, and the next click on
+/// the drawing goes to the tool (#1246).
+#[test]
+fn a_closed_pickers_eyedropper_stops_waiting() {
+    use crate::ui::dialogs::Dialog;
+    let (ctx, mut app, id) = setup();
+    app.select(vec![id]);
+    app.apply_fill(tracedraw_core::Fill::Solid(tracedraw_core::Color::rgb8(
+        200, 30, 30,
+    )));
+    app.set_tool(Tool::Pick);
+    let over = app.view.to_screen(Point::new(35.0, 25.0));
+    app.open_edit_fill();
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    crate::ui::color_picker::start_pick(&ctx, egui::Id::new("edit_fill_pick"));
+    // Drawn, the dialog's eyedropper keeps the request alive.
+    for _ in 0..5 {
+        let texts = readout_texts(&ctx, &mut app, vec![Event::PointerMoved(over)]);
+        assert!(crate::ui::color_picker::picking(&ctx));
+        assert!(texts.contains(&"#C81E1E".to_string()), "{texts:?}");
+    }
+    // The dialog closes with the request waiting.
+    assert!(matches!(app.dialog, Dialog::EditFill(_)));
+    app.dialog = Dialog::None;
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    assert!(
+        !crate::ui::color_picker::picking(&ctx),
+        "the request died with its picker"
+    );
+    let texts = readout_texts(
+        &ctx,
+        &mut app,
+        vec![Event::PointerMoved(over + egui::vec2(2.0, 0.0))],
+    );
+    assert!(texts.is_empty(), "{texts:?}");
+    // The next click on the drawing is the tool's: an empty spot clears
+    // the selection.
+    let off = app.view.to_screen(Point::new(150.0, 200.0));
+    click_at(&ctx, &mut app, off, Modifiers::NONE);
+    assert!(app.selection.is_empty(), "{:?}", app.selection);
 }
 
 /// Frame times of the eyedropper readout (#990): hovering a heavy page

@@ -58,6 +58,15 @@ fill, else the outline, else white over empty paper. Off every object
 the tool shows no box (a click there takes nothing). Apply mode, a held
 button and the other tools show none.
 
+A picker's request lives only while its eyedropper button is being
+drawn (the button renews it every frame, `color_picker::picking` drops
+one not renewed since the frame before): a picker closed while its
+eyedropper waits (Edit Fill or Outline Pen closed with OK, a popup
+picker closed by a click beside it) takes the request with it, so the
+crosshair pointer, the readout and the click that would have gone to
+the picker end with the picker (#1246: the readout followed the pointer
+everywhere until the next click on the drawing).
+
 The box sits 18 points right of and 20 below the pointer, on the
 other side where the window ends, on the tooltip layer. Lag: the reading
 is worked out again only when the pointer moves (to 1/1000 mm), the zoom,
@@ -108,3 +117,6 @@ ms on the test machine).
 - `pick_drag_tests::the_colour_eyedropper_reads_out_the_colour_under_the_pointer`:
   the box drawn in the window over an object, not off the objects nor in
   Apply mode; a picker's eyedropper shows it too.
+- `pick_drag_tests::a_closed_pickers_eyedropper_stops_waiting`: Edit Fill
+  closed while its eyedropper waits: no readout, no crosshair, the next
+  click on the drawing is the tool's (#1246).

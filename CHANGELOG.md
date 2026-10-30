@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Colour eyedropper readout: a colour picker closed while its eyedropper button waited for a click on the drawing (Edit Fill or Outline Pen closed with OK, the Properties picker closed by a click beside it) left the crosshair pointer and the colour box following the pointer everywhere, and the next click on the drawing went to the closed picker instead of the tool (#1246). The request now lives only while its picker is open: the box and the pointer go with the picker.
+
 ## 0.26.0 (2026-10-30)
 
 - Trace Bitmap: the preview rests once the trace of the settings on show is in. In the browser, where a large picture's whole trace waits for OK, the preview waited for that trace and traced the picture again every frame: the spinner beside the pan button never stopped, the preview flickered and the window lagged. The quick look is now the request's last result there, the counts show it without the dots sign, and an idle dialog asks for no frames; a trace whose thread died is not started again until a setting changes.
