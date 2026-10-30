@@ -768,6 +768,9 @@ impl eframe::App for Shell {
         app.autosave_settings(Some(ui.ctx()));
         // Bitmaps edited outside follow their files.
         app.watch_linked_bitmaps(Some(ui.ctx()), web_time::Instant::now());
+        // A pointer left hidden shows as a blank image on Windows, where
+        // hiding it waits for the mouse to move (#1124).
+        ui::cursors::finish_frame(ui.ctx());
         #[cfg(not(target_arch = "wasm32"))]
         frame_stats::end(ui.ctx(), began);
     }

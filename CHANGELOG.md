@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Windows: a tool picked with its shortcut over a still mouse shows its pointer at once, and the pointer never vanishes. Picking the Pen tool kept the arrow, and leaving the Pen tool (or any tool with a drawn pointer) left no pointer at all, until the mouse moved: Windows hides and shows the pointer only at the next mouse move. A drawn pointer now swaps the system pointer for a fully transparent pointer image, which Windows applies at once, instead of hiding it (#1124).
+
 - Properties docker, Transparency: the amount is a full-width slider with its label above, like the Fill section's angle and edge pad, and a fountain transparency's angle is the same angle slider. The property bar keeps its compact controls.
 - Options > Tools: each page in the list shows its tool's icon, as in CorelDRAW's Tool Options. The Zoom/Pan page has a Zoom tool section and a Calibrate Zoom... button that opens the ruler calibration (Display page).
 

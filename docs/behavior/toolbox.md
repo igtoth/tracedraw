@@ -75,6 +75,15 @@ halo, with the system pointer hidden, so they show on a page of any
 colour: the system's invert what is under them, and on Windows they can
 show white on a white page (#655,
 `cursors::tests::the_cross_hair_and_the_i_beam_are_drawn_black_on_white`).
+On Windows the system pointer is not hidden but swapped for a fully
+transparent pointer image: Windows hides and shows the pointer only at
+the next mouse move, so a tool picked with its shortcut over a still
+mouse kept the old pointer, or none at all after a tool with a drawn
+pointer, until the mouse moved, while a new pointer image shows at once.
+Whatever the frame last asked for decides, so a system pointer asked for
+after a drawn one in the same frame (a text box's I-beam) is never
+replaced by the blank image (#1124,
+`cursors::tests::a_drawn_pointer_hides_the_system_one_with_a_blank_image_on_windows`).
 The cross hair's lines cross on the middle of the pixel under the hot
 spot; the icons, nibs and drawn pointers are painted beside it, above
 the drawing. A tool's icon sits 4 points below and right of the cross
