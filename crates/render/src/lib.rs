@@ -649,35 +649,19 @@ impl Renderer<'_> {
             }
         }
         if let ShapeKind::Group { children } = &shape.kind {
-            // A group's uniform transparency covers what it holds as one
-            // picture: the members are drawn on a layer of their own, so
-            // where they overlap they do not show through each other.
-            let opacity = shape.opacity.clamp(0.0, 1.0) as f32;
-            if opacity < 1.0 && !self.flags.wireframe {
-                if opacity <= 0.0 {
+            // A group's uniform transparency goes on each member, as if
+            // set on each: members that overlap show through each other,
+            // as files keep it (on the objects of a group) and as Ungroup
+            // leaves it (#1386).
+            if shape.opacity < 1.0 && !self.flags.wireframe {
+                if shape.opacity <= 0.0 {
                     return;
                 }
-                let (w, h) = (self.pixmap.width(), self.pixmap.height());
-                if let Some(mut layer) = Pixmap::new(w, h) {
-                    {
-                        let mut sub = self.sub(&mut layer);
-                        for c in children {
-                            let t = sub.child_transform(c, transform);
-                            sub.draw_shape(c, t);
-                        }
-                    }
-                    let paint = tiny_skia::PixmapPaint {
-                        opacity,
-                        ..Default::default()
-                    };
-                    self.pixmap.draw_pixmap(
-                        0,
-                        0,
-                        layer.as_ref(),
-                        &paint,
-                        Transform::identity(),
-                        None,
-                    );
+                for c in children {
+                    let mut c = c.clone();
+                    c.absorb_opacity(shape.opacity);
+                    let t = self.child_transform(&c, transform);
+                    self.draw_shape(&c, t);
                 }
                 return;
             }
@@ -4965,6 +4949,10 @@ mod tests {
         (doc, page)
     }
 
+    /// A group's uniform transparency is drawn on each member, exactly as
+    /// the same transparency set on each member of an opaque group: the
+    /// screenshot of #1386, "first grouped, then transparency" looking as
+    /// "first transparency, then grouped".
     #[test]
     fn a_group_with_uniform_transparency_is_drawn_see_through() {
         let (doc, page) = group_of_two_squares(0.5);
@@ -4977,16 +4965,54 @@ mod tests {
             "green was {}",
             red.green()
         );
-        // Where the squares overlap the blue one hides the red one inside
-        // the group, so the overlap is no darker than blue alone: the
-        // members do not show through each other.
+        // Where they overlap the red one shows through the blue one: the
+        // overlap is darker than the blue one alone (less green).
         let overlap = img.pixel(10, 10).unwrap();
         let blue = img.pixel(17, 10).unwrap();
-        assert_eq!(
-            (overlap.red(), overlap.green(), overlap.blue()),
-            (blue.red(), blue.green(), blue.blue())
+        assert!(overlap.green() + 30 < blue.green(), "{overlap:?} {blue:?}");
+        // The same as each member set half transparent.
+        let (mut each, _) = group_of_two_squares(1.0);
+        let layer = each.pages[0].layers[0].id;
+        if let Some(ShapeKind::Group { children }) = each
+            .layer_mut(layer)
+            .ok()
+            .and_then(|l| l.shapes.first_mut())
+            .map(|g| &mut g.kind)
+        {
+            for c in children {
+                c.opacity = 0.5;
+            }
+        }
+        let want = render_page_image(&each, page, 25.4).unwrap();
+        assert_eq!(img.data(), want.data());
+    }
+
+    /// Nested groups multiply their transparencies, and a member's own.
+    #[test]
+    fn nested_group_transparencies_multiply() {
+        let (mut doc, page) = group_of_two_squares(0.5);
+        let layer = doc.pages[0].layers[0].id;
+        let gid = doc.ids_mut().shape();
+        let l = doc.layer_mut(layer).unwrap();
+        let outer = l.shapes.remove(0);
+        let mut wrap = Shape::new(
+            gid,
+            ShapeKind::Group {
+                children: vec![outer],
+            },
         );
-        assert!((120..=136).contains(&blue.red()), "red was {}", blue.red());
+        wrap.stroke = None;
+        wrap.opacity = 0.5;
+        l.shapes.push(wrap);
+        let img = render_page_image(&doc, page, 25.4).unwrap();
+        // Red alone at a quarter: 255 - 255 / 4 green and blue.
+        let red = img.pixel(3, 10).unwrap();
+        assert_eq!(red.red(), 255);
+        assert!(
+            (184..=200).contains(&red.green()),
+            "green was {}",
+            red.green()
+        );
     }
 
     #[test]

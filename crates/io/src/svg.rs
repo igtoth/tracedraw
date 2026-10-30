@@ -172,14 +172,18 @@ fn write_unlinked(
     }
     let transform = parent * shape.transform;
     if let ShapeKind::Group { children } = &shape.kind {
-        let opacity = if shape.opacity < 1.0 {
-            format!(" opacity=\"{}\"", fmt(shape.opacity.max(0.0)))
-        } else {
-            String::new()
-        };
-        let _ = writeln!(out, "{pad}<g id=\"{}\"{opacity}>", shape.id.raw());
+        let _ = writeln!(out, "{pad}<g id=\"{}\">", shape.id.raw());
         for c in children {
-            write_shape(c, symbols, transform, out, defs, next_grad, indent + 1);
+            // A group's uniform transparency goes on each member, as the
+            // canvas draws it: members that overlap show through each
+            // other (#1386).
+            if shape.opacity < 1.0 {
+                let mut c = c.clone();
+                c.absorb_opacity(shape.opacity);
+                write_shape(&c, symbols, transform, out, defs, next_grad, indent + 1);
+            } else {
+                write_shape(c, symbols, transform, out, defs, next_grad, indent + 1);
+            }
         }
         let _ = writeln!(out, "{pad}</g>");
         return;
@@ -382,9 +386,27 @@ fn write_unlinked(
     } else {
         " fill-rule=\"evenodd\""
     };
+    // Uniform transparency: on the path, or on a group around it when
+    // the outline, its marks or its arrowheads are paths of their own.
+    let heads: Vec<_> = shape
+        .stroke
+        .as_ref()
+        .map(|s| tracedraw_core::arrowhead_paths(&shape.page_path(), s))
+        .unwrap_or_default();
+    let painterly = drawn.as_ref().is_some_and(|(s, _)| s.painterly.is_some());
+    let see_through = shape.opacity < 1.0;
+    let wrapped = see_through && (calligraphic.is_some() || painterly || !heads.is_empty());
+    let opacity = if see_through && !wrapped {
+        format!(" opacity=\"{}\"", fmt(shape.opacity.max(0.0)))
+    } else {
+        String::new()
+    };
+    if wrapped {
+        let _ = writeln!(out, "{pad}<g opacity=\"{}\">", fmt(shape.opacity.max(0.0)));
+    }
     let _ = writeln!(
         out,
-        "{pad}<path id=\"{}\"{name} d=\"{d}\" {fill_attr}{rule} {stroke_attr}/>",
+        "{pad}<path id=\"{}\"{name} d=\"{d}\" {fill_attr}{rule} {stroke_attr}{opacity}/>",
         shape.id.raw()
     );
     if let Some((band, paint)) = calligraphic {
@@ -415,7 +437,7 @@ fn write_unlinked(
     // colour. They are built in page space, where the curve direction is
     // unmirrored, and then taken through the parent transform and the flip.
     if let Some(s) = &shape.stroke {
-        for head in tracedraw_core::arrowhead_paths(&shape.page_path(), s) {
+        for head in heads {
             let _ = writeln!(
                 out,
                 "{pad}<path d=\"{}\" fill=\"{}\" stroke=\"none\"/>",
@@ -423,6 +445,9 @@ fn write_unlinked(
                 s.color.to_hex()
             );
         }
+    }
+    if wrapped {
+        let _ = writeln!(out, "{pad}</g>");
     }
 }
 
@@ -779,8 +804,33 @@ mod tests {
         assert!(!svg.contains("clip-path"));
     }
 
+    /// An object's uniform transparency is written: SVG export left it
+    /// out, so a see-through object came out opaque (#1386).
     #[test]
-    fn a_groups_uniform_transparency_is_the_groups_opacity() {
+    fn an_objects_uniform_transparency_is_written() {
+        let mut doc = Document::default();
+        let layer = doc.pages[0].layers[0].id;
+        let mut s = Shape::new(
+            doc.ids_mut().shape(),
+            ShapeKind::Rect {
+                rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        s.opacity = 0.25;
+        let id = s.id.raw();
+        doc.layer_mut(layer).unwrap().shapes.push(s);
+        let svg = page_to_svg(&doc, 0);
+        let path = svg
+            .lines()
+            .find(|l| l.contains(&format!("<path id=\"{id}\"")))
+            .unwrap_or_else(|| panic!("{svg}"));
+        assert!(path.contains("opacity=\"0.25\""), "{svg}");
+    }
+
+    #[test]
+    fn a_groups_uniform_transparency_goes_on_each_member() {
         let mut doc = Document::default();
         let layer = doc.pages[0].layers[0].id;
         let child = Shape::new(
@@ -791,23 +841,24 @@ mod tests {
                 corners: None,
             },
         );
+        let mut half = child.clone();
+        half.id = doc.ids_mut().shape();
+        half.opacity = 0.5;
         let mut group = Shape::new(
             doc.ids_mut().shape(),
             ShapeKind::Group {
-                children: vec![child],
+                children: vec![child, half],
             },
         );
         let id = group.id.raw();
         group.opacity = 0.4;
         doc.layer_mut(layer).unwrap().shapes.push(group);
         let svg = page_to_svg(&doc, 0);
-        assert!(
-            svg.contains(&format!("<g id=\"{id}\" opacity=\"0.4\">")),
-            "{svg}"
-        );
-        // The member itself stays opaque: the group's opacity is not
-        // applied twice.
-        assert!(!svg.contains("opacity=\"0.16\""), "{svg}");
+        // The group's <g> has none: the members carry it, so they show
+        // through each other as on the canvas.
+        assert!(svg.contains(&format!("<g id=\"{id}\">")), "{svg}");
+        assert!(svg.contains("opacity=\"0.4\""), "{svg}");
+        assert!(svg.contains("opacity=\"0.2\""), "{svg}");
     }
 
     #[test]
