@@ -10,7 +10,7 @@
 //! milliseconds of new pictures are drawn per frame (the rest wait for the
 //! next frames, showing the old picture or the swatch meanwhile), and the
 //! least recently shown pictures are dropped once they hold more than
-//! [`MAX_BYTES`] of pixels, so a drawing of thousands of objects neither
+//! [`MAX_BYTES`] of pixels (or number more than [`MAX_ENTRIES`]), so a drawing of thousands of objects neither
 //! lags nor fills the memory.
 
 use std::collections::HashMap;
@@ -26,6 +26,9 @@ pub const DEFAULT_SIZE: f32 = 20.0;
 pub const STEP: f32 = 4.0;
 /// Pixels kept in textures before the least recently shown are dropped.
 pub const MAX_BYTES: usize = 24 * 1024 * 1024;
+/// Pictures kept at most, whatever their size (each keeps a copy of its
+/// object to compare with).
+pub const MAX_ENTRIES: usize = 4000;
 /// Time for drawing new pictures in one frame, milliseconds; one picture
 /// is always drawn when one is waiting.
 const BUDGET_MS: f64 = 6.0;
@@ -175,16 +178,18 @@ impl ObjectThumbs {
     }
 
     /// Drop the least recently shown pictures while they hold more than
-    /// `max_bytes`; the pictures shown this frame stay.
+    /// `max_bytes` or number more than [`MAX_ENTRIES`]; the pictures shown
+    /// this frame stay.
     pub fn trim(&mut self, max_bytes: usize) {
-        if self.bytes <= max_bytes {
+        let over = |t: &Self| t.bytes > max_bytes || t.entries.len() > MAX_ENTRIES;
+        if !over(self) {
             return;
         }
         let mut order: Vec<((u64, ShapeId), u64)> =
             self.entries.iter().map(|(k, e)| (*k, e.used)).collect();
         order.sort_by_key(|(_, used)| *used);
         for (key, used) in order {
-            if self.bytes <= max_bytes || used == self.frame {
+            if !over(self) || used == self.frame {
                 break;
             }
             if let Some(e) = self.entries.remove(&key) {
