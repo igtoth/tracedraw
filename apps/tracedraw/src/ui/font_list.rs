@@ -727,9 +727,17 @@ pub fn text_font_list(app: &mut App, ui: &mut Ui, id_salt: &str, width: f32) -> 
                 return false;
             }
             app.text_font = p.family;
+            // A font picked goes to every selected text, also when it is
+            // the one the bar showed (the others may have another).
+            if let Some(t) = app.text_shown.as_mut() {
+                t.font = None;
+            }
             if let Some((bold, italic)) = p.style {
                 app.text_bold = bold;
                 app.text_italic = italic;
+                if let Some(t) = app.text_shown.as_mut() {
+                    (t.bold, t.italic) = (None, None);
+                }
             }
             true
         }

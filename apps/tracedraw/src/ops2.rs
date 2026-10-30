@@ -2877,8 +2877,27 @@ impl App {
             });
             return;
         }
-        let cmds: Vec<Command> = self
-            .selected_shapes()
+        let selected = self.selected_shapes();
+        // The fields the bar shows were read from one text object (the
+        // first selected); only those changed since go to every selected
+        // text, so a new font keeps each text's own size, weight and slant
+        // (#1304). Without such a reading, every field applies.
+        let shown = self.text_shown.clone().filter(|t| {
+            selected
+                .iter()
+                .find(|s| matches!(s.kind, ShapeKind::Text { .. }))
+                .is_some_and(|s| s.id == t.shape)
+        });
+        let changed = |f: &dyn Fn(&crate::app::TextShown) -> bool| shown.as_ref().is_none_or(f);
+        let set_font = changed(&|t| t.font.as_ref() != Some(&self.text_font));
+        let set_size = changed(&|t| {
+            t.size_pt
+                .is_none_or(|v| (v - self.text_size_pt).abs() > 0.005)
+        });
+        let set_bold = changed(&|t| t.bold != Some(self.text_bold));
+        let set_italic = changed(&|t| t.italic != Some(self.text_italic));
+        let set_underline = changed(&|t| t.underline != Some(self.text_underline));
+        let cmds: Vec<Command> = selected
             .iter()
             .filter_map(|s| match &s.kind {
                 ShapeKind::Text {
@@ -2895,13 +2914,21 @@ impl App {
                     // shows unchanged leaves each character's as it was.
                     let scale = self.text_scale(s.id);
                     for sp in spans.iter_mut() {
-                        sp.font_family = self.text_font.clone();
-                        if (sp.size_pt * scale - self.text_size_pt).abs() > 0.005 {
+                        if set_font {
+                            sp.font_family = self.text_font.clone();
+                        }
+                        if set_size && (sp.size_pt * scale - self.text_size_pt).abs() > 0.005 {
                             sp.size_pt = self.text_size_pt / scale;
                         }
-                        sp.bold = self.text_bold;
-                        sp.italic = self.text_italic;
-                        sp.underline = self.text_underline;
+                        if set_bold {
+                            sp.bold = self.text_bold;
+                        }
+                        if set_italic {
+                            sp.italic = self.text_italic;
+                        }
+                        if set_underline {
+                            sp.underline = self.text_underline;
+                        }
                     }
                     Some(Command::SetShapeKind {
                         shape: s.id,

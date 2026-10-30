@@ -2376,6 +2376,11 @@ pub(crate) fn text_size_list(app: &mut App, ui: &mut Ui) -> bool {
             return false;
         }
         app.text_size_pt = s;
+        // A size picked from the list goes to every selected text, also
+        // when it is the one the bar showed.
+        if let Some(t) = app.text_shown.as_mut() {
+            t.size_pt = None;
+        }
         return true;
     }
     // The field reports a change once a value is applied (Enter, leaving

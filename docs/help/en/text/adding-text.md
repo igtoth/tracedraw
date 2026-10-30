@@ -60,8 +60,9 @@ the alignment (left, center, right, full justify), bullets and drop cap for
 paragraph text, [[menu.text.text_docker]] (<kbd>Ctrl+T</kbd>) and
 [[menu.text.edit_text]]. The button beside the font size opens the sliders of
 a variable font's axes (see [Variable fonts](fonts.md#variable-fonts)). While editing, they act on the selected characters;
-otherwise on the whole selected texts. Your choice also becomes the default
-for the next text.
+otherwise on the whole selected texts, and only the setting you change: a new
+font for several texts keeps each one's size, bold and italic. Your choice
+also becomes the default for the next text.
 
 The font list shows each family in its own font, with the ones you used last
 at the top. Type to narrow the list. A family with several styles has an arrow

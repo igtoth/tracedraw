@@ -65,8 +65,9 @@ justificado), marcadores e capitular para texto de parágrafo,
 botão ao lado do tamanho da fonte abre os controles dos eixos de uma fonte
 variável (veja [Fontes variáveis](fonts.md#variable-fonts)).
 Durante a edição, elas agem sobre os caracteres selecionados; senão, sobre os
-textos selecionados inteiros. Sua escolha também passa a ser o padrão do
-próximo texto.
+textos selecionados inteiros, e só a opção que você muda: uma fonte nova para
+vários textos mantém o tamanho, o negrito e o itálico de cada um. Sua escolha
+também passa a ser o padrão do próximo texto.
 
 A lista de fontes mostra cada família na própria fonte, com as usadas por
 último no alto. Digite para filtrar a lista. Uma família com vários estilos tem

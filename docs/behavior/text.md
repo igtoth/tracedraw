@@ -31,9 +31,14 @@ button with the alignment's picture dropping Left, Center, Right and
 Full justify), Bullets and Drop Cap (for paragraph text; they open their
 dialogs), Text Properties (the Text docker, Ctrl+T) and Edit Text
 (Ctrl+Shift+T). Each change applies to the
-selected text objects at once (every span takes the font, size and
-style) as one "Text Style" undo step, and becomes the default for the
-next text. The size is the size as seen: a text scaled with the Pick
+selected text objects at once as one "Text Style" undo step, and
+becomes the default for the next text. Only what was changed goes to
+them: the fields show the first selected text, and a field left as it
+showed leaves each text's own value, so a new font for texts of 9 and
+11 pt keeps both sizes, their weights and slants (#1304,
+`text_editing::tests::a_font_for_several_texts_keeps_each_ones_size`);
+a font or a size picked from its list goes to all of them even when it
+is the one shown. The size is the size as seen: a text scaled with the Pick
 tool shows its font size times its vertical scale (24 pt doubled reads
 48 pt), and a size typed for it is the size it then shows (the
 characters keep it before the text's scale); a field left as it was

@@ -1056,6 +1056,81 @@ mod tests {
         assert!((app.text_size_pt - 36.0).abs() < 1e-9);
     }
 
+    /// A new font for several text objects of different sizes, weights
+    /// and fonts changes only their font: each keeps its own size and
+    /// weight (#1304). A size picked from the list goes to all of them.
+    #[test]
+    fn a_font_for_several_texts_keeps_each_ones_size() {
+        let mut app = App::headless();
+        app.settings.autocorrect.enabled = false;
+        let mut ids = Vec::new();
+        for (x, size, bold, font) in [(10.0, 11.0, false, "Calibri"), (60.0, 9.0, true, "Arial")] {
+            app.text_size_pt = size;
+            app.text_bold = bold;
+            app.text_font = font.into();
+            app.start_text(Point::new(x, 10.0), None);
+            app.text_insert("Text");
+            app.finish_text();
+            ids.push(*app.selection.first().expect("text selected"));
+        }
+        let looks = |app: &App| -> Vec<(String, f64, bool)> {
+            ids.iter()
+                .flat_map(|id| match app.doc().find_shape(*id).map(|s| &s.kind) {
+                    Some(ShapeKind::Text { spans, .. }) => spans
+                        .iter()
+                        .map(|s| (s.font_family.clone(), s.size_pt, s.bold))
+                        .collect::<Vec<_>>(),
+                    other => panic!("not a text: {other:?}"),
+                })
+                .collect()
+        };
+        app.select(ids.clone());
+        // The bar reads the first text (Calibri, 11 pt), as the property
+        // bar does every frame, then a font is picked.
+        app.sync_text_defaults_from(ids[0]);
+        app.text_font = "Times New Roman".into();
+        app.apply_text_style();
+        let after = looks(&app);
+        assert!(
+            after.iter().all(|(f, _, _)| f == "Times New Roman"),
+            "{after:?}"
+        );
+        assert!(
+            after
+                .iter()
+                .any(|(_, s, b)| (*s - 11.0).abs() < 1e-9 && !*b),
+            "{after:?}"
+        );
+        assert!(
+            after.iter().any(|(_, s, b)| (*s - 9.0).abs() < 1e-9 && *b),
+            "{after:?}"
+        );
+        // The font the bar shows (the first text's) picked again from the
+        // list goes to all, also to the one with another font.
+        app.select(vec![ids[1]]);
+        app.sync_text_defaults_from(ids[1]);
+        app.text_font = "Arial".into();
+        app.apply_text_style();
+        app.select(ids.clone());
+        app.sync_text_defaults_from(ids[0]);
+        if let Some(t) = app.text_shown.as_mut() {
+            t.font = None;
+        }
+        app.apply_text_style();
+        assert!(looks(&app).iter().all(|(f, _, _)| f == "Times New Roman"));
+        // A size changed: every text takes it, the font stays.
+        app.sync_text_defaults_from(ids[0]);
+        app.text_size_pt = 14.0;
+        app.apply_text_style();
+        let after = looks(&app);
+        assert!(
+            after
+                .iter()
+                .all(|(f, s, _)| f == "Times New Roman" && (*s - 14.0).abs() < 1e-9),
+            "{after:?}"
+        );
+    }
+
     /// Options > Text > Autocorrect > Automatically create hyperlinks: a
     /// web address typed and finished with a space links the text,
     /// keeping a link it already has; off, nothing is linked.

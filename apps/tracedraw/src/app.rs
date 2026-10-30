@@ -852,6 +852,20 @@ impl App {
     }
 }
 
+/// The text fields of the property bar as read from a text object (see
+/// [`App::text_shown`]). A field set to `None` was picked again by hand
+/// (the font list, the size list), so it goes to every selected text even
+/// when it equals what was shown.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TextShown {
+    pub shape: ShapeId,
+    pub font: Option<String>,
+    pub size_pt: Option<f64>,
+    pub bold: Option<bool>,
+    pub italic: Option<bool>,
+    pub underline: Option<bool>,
+}
+
 pub struct App {
     pub engine: Engine,
     pub page: PageId,
@@ -1073,6 +1087,10 @@ pub struct App {
     pub text_bold: bool,
     pub text_italic: bool,
     pub text_underline: bool,
+    /// What the text fields above showed when they were last read from a
+    /// text object: with several text objects selected, only the fields
+    /// changed since then go to all of them (#1304).
+    pub text_shown: Option<TextShown>,
     pub text_align: tracedraw_core::TextAlign,
     pub eyedropper_color: Option<Color>,
     pub eyedropper_attrs: Option<crate::eyedropper::SampledAttrs>,
@@ -2326,6 +2344,7 @@ impl App {
             text_bold: false,
             text_italic: false,
             text_underline: false,
+            text_shown: None,
             text_align: tracedraw_core::TextAlign::Left,
             eyedropper_color: None,
             eyedropper_attrs: None,
@@ -4894,6 +4913,14 @@ impl App {
                 self.text_bold = sp.bold;
                 self.text_italic = sp.italic;
                 self.text_underline = sp.underline;
+                self.text_shown = Some(TextShown {
+                    shape: id,
+                    font: Some(self.text_font.clone()),
+                    size_pt: Some(self.text_size_pt),
+                    bold: Some(sp.bold),
+                    italic: Some(sp.italic),
+                    underline: Some(sp.underline),
+                });
             }
             // The alignment of the paragraph at the caret.
             let index = self.paragraph_range(id).map_or(0, |(a, _)| {
