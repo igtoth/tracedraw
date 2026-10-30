@@ -27,6 +27,8 @@ full, row-by-row status.
 
 - Properties docker, Transparency: the amount is a full-width slider with its label above, like the Fill section's angle and edge pad, and a fountain transparency's angle is the same angle slider. The property bar keeps its compact controls.
 - Options > Tools: each page in the list shows its tool's icon, as in CorelDRAW's Tool Options. The Zoom/Pan page has a Zoom tool section and a Calibrate Zoom... button that opens the ruler calibration (Display page).
+- Colour palette: a right click whose pointer slipped a few pixels on a colour sets the outline; it applied the fill. Only a drag with the left button carries a colour away to drop it (#1336).
+
 - Free Transform: a drag let go off the canvas (over a docker) is still one undo step, so one Ctrl+Z puts the object back; it left an extra step that did nothing. Free Scale (Alt) no longer blows the object up on the first move of a drag, and a long drag no longer keeps a copy of the drawing for every pointer move until the button is up (#1342).
 
 - Uniform transparency on a group: it was stored but never drawn, so a grouped object stayed opaque and a `.cdr` saved from it lost the transparency. It now goes on each object of the group, as if set on each one (where they overlap they show through each other, as when the transparency is set before grouping), on the canvas, in pictures, SVG, PDF and saved `.cdr`, and Ungroup keeps it on each object. SVG export also keeps the uniform transparency of a single object, which it dropped (#1386).

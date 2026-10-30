@@ -626,7 +626,7 @@ fn swatch(
 
     // Dragging the colour: inside an object it fills it, on its outline
     // it colours the outline, on the document palette it joins it.
-    if resp.drag_started() && app.palette_shades.is_none() {
+    if resp.drag_started_by(egui::PointerButton::Primary) && app.palette_shades.is_none() {
         app.palette_drag = Some(entry.map(|(_, c)| *c));
     }
     if app.palette_drag.is_some() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
@@ -640,14 +640,16 @@ fn swatch(
     // A press that slipped a few pixels but was let go on the swatch it
     // began on is a click, not a drag: egui counts any move past its
     // click distance as a drag, and the colour went nowhere (#1336).
-    let slipped_click = resp.drag_stopped()
-        && ui
-            .ctx()
-            .pointer_latest_pos()
-            .is_some_and(|pos| cell.contains(pos));
+    // The same for the right button, which sets the outline.
+    let on_cell = ui
+        .ctx()
+        .pointer_latest_pos()
+        .is_some_and(|pos| cell.contains(pos));
+    let slipped_click = resp.drag_stopped_by(egui::PointerButton::Primary) && on_cell;
+    let slipped_right = resp.drag_stopped_by(egui::PointerButton::Secondary) && on_cell;
     if resp.drag_stopped() {
         let dragged = app.palette_drag.take();
-        if !slipped_click {
+        if !slipped_click && !slipped_right {
             if let (Some(color), Some(pos)) = (dragged, ui.ctx().pointer_latest_pos()) {
                 app.drop_color(color, pos);
             }
@@ -729,7 +731,7 @@ fn swatch(
             .data_mut(|d| d.remove_temp::<bool>(menu_id))
             .unwrap_or(false);
         // Not a right click that makes a copy during a drag on the canvas.
-        if resp.secondary_clicked() && !hold_open && !app.transforming() {
+        if (resp.secondary_clicked() || slipped_right) && !hold_open && !app.transforming() {
             app.apply_outline_color(entry.map(|(_, c)| *c));
         }
         egui::Popup::menu(&resp)

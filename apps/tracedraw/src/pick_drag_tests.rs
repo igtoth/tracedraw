@@ -1021,6 +1021,37 @@ fn every_click_on_a_palette_colour_applies_it() {
         frame(&ctx, &mut app, Vec::new(), none);
     }
     assert!(filled_with(&app, id, "Blue"), "the slipped click");
+    // A slipped right click sets the outline, and leaves the fill.
+    let green = swatch_of(&ctx, &mut app, "Green");
+    let slip = green + egui::vec2(0.0, 7.0);
+    frame(&ctx, &mut app, vec![Event::PointerMoved(green)], none);
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(green, true, PointerButton::Secondary, none)],
+        none,
+    );
+    frame(&ctx, &mut app, vec![Event::PointerMoved(slip)], none);
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(slip, false, PointerButton::Secondary, none)],
+        none,
+    );
+    for _ in 0..20 {
+        frame(&ctx, &mut app, Vec::new(), none);
+    }
+    assert!(filled_with(&app, id, "Blue"), "the fill stays");
+    let want = app
+        .palette
+        .iter()
+        .find(|(n, _)| n == "Green")
+        .map(|(_, c)| *c);
+    let outline = app
+        .doc()
+        .find_shape(id)
+        .and_then(|s| s.stroke.as_ref().map(|k| k.color));
+    assert_eq!(outline, want, "the slipped right click");
     // A hold of more than a second opens the shades; the release over
     // them is no click; a shade picked closes them.
     let red = swatch_of(&ctx, &mut app, "Red");
