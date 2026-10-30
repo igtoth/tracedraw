@@ -15,6 +15,11 @@ rulers:
   drawing to use this docker." instead of showing the hidden drawing's
   selection; Hints still shows (#482,
   `ui::palette::tests::the_palette_rests_on_the_welcome_screen`).
+- The page under the Welcome Screen's own tabs (Get Started, Workspace,
+  What's New, Learn, Templates) scrolls with the wheel and a scroll bar
+  when it is taller than the window, each tab keeping its own place; the
+  tab row stays put, so recent documents below the window are reached
+  (#1288, `ui::welcome::tests::the_recent_documents_scroll_into_view`).
 - The Welcome Screen tab has a close button on hover (a middle click
   also closes it): the tab shrinks to its house alone (a 26 px square,
   the title as its tip) and the active drawing shows. With no drawing

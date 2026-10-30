@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Welcome Screen: the page under its tabs scrolls with the mouse wheel and a scroll bar when it is taller than the window, so recent documents below the visible area can be reached and opened; the row of tabs stays in place and each tab keeps its own place (#1288).
+
 - Help: pages brought up to date with releases 0.19 to 0.27 (opening and saving, fonts, text, printing, export, drawing tools, objects, colours, effects, pages, options, menus and shortcuts), and new pages for Package, Missing Fonts, Convert Colors, finding by properties, PDF printers' marks, booklets, Fit Objects to Path, the Before and After preview, graphics tablets and tablets with the Android app; Brazilian Portuguese follows, other languages where the pages changed most. Docs only.
 - Browser version: its notice now opens with the warning that a browser is slower, marked in red and underlined, then says it is the same program compiled to WebAssembly, and last points to the desktop app, in every language.
 

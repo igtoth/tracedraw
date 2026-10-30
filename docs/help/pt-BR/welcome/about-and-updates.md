@@ -67,7 +67,10 @@ compactado ou imagem de disco).
 A Tela de boas-vindas é a primeira guia quando o TraceDraw inicia. Nela você
 pode criar um desenho, abrir um dos desenhos usados por último (cada um com uma
 miniatura; [[menu.file.clear_recent]] esquece a lista), começar a partir de um
-modelo, ler as notícias e encontrar material de aprendizado. Escolha
+modelo, ler as notícias e encontrar material de aprendizado. Quando uma página
+é mais alta que a janela (uma lista longa de desenhos recentes), ela rola com a
+roda do mouse ou com a barra de rolagem; a fileira de guias no alto fica no
+lugar. Escolha
 [[menu.help > menu.help.welcome_screen]] para trazê-la de volta.
 [[menu.help > menu.help.video_tutorials]], [[menu.help.quick_start_guide]] e
 [[menu.help.user_guide]] abrem a página de aprendizado, e

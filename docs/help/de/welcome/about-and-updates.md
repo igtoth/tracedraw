@@ -64,6 +64,9 @@ Der Begrüßungsbildschirm ist die erste Registerkarte, wenn TraceDraw startet.
 Von dort legen Sie eine Zeichnung an, öffnen eine der zuletzt verwendeten
 Zeichnungen (jede mit einer Miniatur; [[menu.file.clear_recent]] vergisst sie),
 beginnen mit einer Vorlage, lesen die Neuigkeiten und finden Lernmaterial.
+Ist eine Seite höher als das Fenster (eine lange Liste zuletzt verwendeter
+Zeichnungen), rollt sie mit dem Mausrad oder ihrer Bildlaufleiste; die Reihe
+der Registerkarten oben bleibt stehen.
 Wählen Sie [[menu.help > menu.help.welcome_screen]], um ihn zurückzuholen.
 [[menu.help > menu.help.video_tutorials]], [[menu.help.quick_start_guide]] und
 [[menu.help.user_guide]] öffnen seine Lernseite, [[menu.help.whats_new]] seine

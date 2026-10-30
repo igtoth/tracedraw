@@ -39,14 +39,23 @@ pub fn welcome_screen(app: &mut App, ui: &mut Ui) {
         }
     });
     ui.separator();
-    ui.add_space(12.0);
-    match app.welcome_tab {
-        WelcomeTab::GetStarted => get_started(app, ui),
-        WelcomeTab::Workspace => workspace(app, ui),
-        WelcomeTab::News => news(ui),
-        WelcomeTab::Learn => learn(ui),
-        WelcomeTab::Templates => templates(app, ui),
-    }
+    // The page under the tab row scrolls: a long list of recent documents
+    // (or a small window) is reached with the wheel and a scroll bar
+    // (#1288). The tab row stays in place; each tab keeps its own place.
+    egui::ScrollArea::vertical()
+        .id_salt(("welcome_page", format!("{:?}", app.welcome_tab)))
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            ui.add_space(12.0);
+            match app.welcome_tab {
+                WelcomeTab::GetStarted => get_started(app, ui),
+                WelcomeTab::Workspace => workspace(app, ui),
+                WelcomeTab::News => news(ui),
+                WelcomeTab::Learn => learn(ui),
+                WelcomeTab::Templates => templates(app, ui),
+            }
+            ui.add_space(12.0);
+        });
 }
 
 fn big_button(ui: &mut Ui, icon: icons::Action, title: String, subtitle: String) -> bool {
@@ -469,4 +478,75 @@ fn templates(app: &mut App, ui: &mut Ui) {
             }
         });
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// One frame of the Welcome Screen in a window 1200 x 600.
+    fn run(ctx: &egui::Context, app: &mut App, events: Vec<egui::Event>) {
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1200.0, 600.0),
+            )),
+            events,
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(input, |ui| {
+            egui::CentralPanel::default().show(ui, |ui| welcome_screen(app, ui));
+        });
+        out.textures_delta.clear();
+    }
+
+    /// #1288: recent documents below the window are reached with the
+    /// wheel.
+    #[test]
+    fn the_recent_documents_scroll_into_view() {
+        if crate::files::WEB {
+            return;
+        }
+        let mut app = App::headless();
+        app.show_welcome = true;
+        app.welcome_tab = WelcomeTab::GetStarted;
+        let paths: Vec<std::path::PathBuf> = (0..30)
+            .map(|i| std::path::PathBuf::from(format!("/no/such/folder/drawing-{i}.tdraw")))
+            .collect();
+        app.settings.recent_files = paths.clone();
+        let ctx = crate::theme::ui_context();
+        run(&ctx, &mut app, Vec::new());
+        run(&ctx, &mut app, Vec::new());
+        let last = paths.last().expect("a path");
+        let bottom = |ctx: &egui::Context| {
+            ctx.read_response(recent_row_id(last))
+                .expect("the last row is laid out")
+                .rect
+                .bottom()
+        };
+        let before = bottom(&ctx);
+        assert!(before > 600.0, "{before}");
+        run(
+            &ctx,
+            &mut app,
+            vec![egui::Event::PointerMoved(egui::pos2(600.0, 300.0))],
+        );
+        for _ in 0..40 {
+            run(
+                &ctx,
+                &mut app,
+                vec![egui::Event::MouseWheel {
+                    unit: egui::MouseWheelUnit::Line,
+                    delta: egui::vec2(0.0, -10.0),
+                    phase: egui::TouchPhase::Move,
+                    modifiers: egui::Modifiers::NONE,
+                }],
+            );
+        }
+        for _ in 0..30 {
+            run(&ctx, &mut app, Vec::new());
+        }
+        let after = bottom(&ctx);
+        assert!(after <= 600.0, "the last row ends at {after}");
+    }
 }
