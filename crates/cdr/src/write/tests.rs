@@ -2772,7 +2772,62 @@ fn bitmap_objects_carry_their_pixel_size() {
         if v >= 14 {
             assert_eq!(&b[types_at + 5..], &[0, 0, 0, 0], "{v}");
         }
+        // The node bytes carry the marks curves carry, as every bitmap of
+        // the files of the program that reads them has them; without them
+        // a click on the bitmap closed that program (#1226).
+        assert_eq!(
+            &b[types_at..types_at + 5],
+            &[0x0c, 0x44, 0x44, 0x44, 0x48],
+            "{v}"
+        );
     }
+}
+
+/// `tracedraw-cli check` reports a bitmap whose outline nodes lack the
+/// marks, as TraceDraw wrote them before (0x00, 0x40, 0x40, 0x40, 0x48),
+/// and passes the marked one now written (#1226).
+#[test]
+fn check_reports_bitmap_outlines_without_node_marks() {
+    let png = {
+        let mut pm = tiny_skia::Pixmap::new(3, 2).expect("pixmap");
+        pm.fill(tiny_skia::Color::from_rgba8(10, 20, 30, 255));
+        pm.encode_png().expect("png")
+    };
+    let mut ids = tracedraw_core::id::IdSource::default();
+    let mut bm = Shape::new(
+        ids.shape(),
+        ShapeKind::Bitmap {
+            rect: Rect::new(0.0, 0.0, 30.0, 20.0),
+            width_px: 3,
+            height_px: 2,
+            png: png.into(),
+            fx: None,
+        },
+    );
+    bm.fill = Fill::None;
+    bm.stroke = None;
+    let marked = [0x0c, 0x44, 0x44, 0x44, 0x48];
+    let flagged = |bytes: &[u8]| {
+        crate::check::check_bytes(bytes)
+            .expect("checks")
+            .iter()
+            .any(|f| f.what.contains("lacks the node marks"))
+    };
+    // The versions whose records are stored as they are (not packed), so
+    // their bytes can be edited in place.
+    let doc = doc_with(vec![bm]);
+    let mut edited = 0;
+    for v in versions() {
+        let mut bytes = document_to_cdr_version(&doc, v);
+        assert!(!flagged(&bytes), "{v}");
+        let Some(at) = bytes.windows(5).position(|w| w == marked) else {
+            continue;
+        };
+        bytes[at..at + 5].copy_from_slice(&[0x00, 0x40, 0x40, 0x40, 0x48]);
+        assert!(flagged(&bytes), "{v}");
+        edited += 1;
+    }
+    assert!(edited > 0, "no version to edit in place");
 }
 
 /// The coordinates argument of the first bitmap object of `bytes`.
@@ -2879,6 +2934,13 @@ fn bitmap_boxes_start_at_the_origin_and_their_transform_places_them() {
         } else {
             assert!(n > 5, "{v}: {n} points");
         }
+        // The outline's first node is marked as a curve's is (#1226).
+        let first_type = b[count_at + 4 + n * 8];
+        assert_eq!(
+            first_type & 0x0c,
+            0x0c,
+            "{v}: first node byte {first_type:#x}"
+        );
         for k in 0..n {
             let (x, y) = (i(count_at + 4 + k * 8), i(count_at + 8 + k * 8));
             assert!(

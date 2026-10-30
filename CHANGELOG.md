@@ -11,6 +11,7 @@ full, row-by-row status.
 - Linked paragraph text frames: a picked frame now has a tab over its top edge too; click it, then click another frame to make that frame's text flow into this one, or click (or drag) on empty space for a new frame that the text starts in. A drag from the bottom tab onto a frame or onto empty space links as a click there does, and while a link waits for its target a dashed line runs from the tab to the pointer.
 - Area Fill: the Fill and Outline lists on the property bar now show Specify first, then Use default, then None. The choice kept in the preferences is unchanged.
 - Objects docker: the mouse wheel over the list makes the thumbnails larger or smaller, as the slider in the bottom bar does. While the list has nothing to scroll this works anywhere over it; a longer list still scrolls with the wheel, and the wheel over a thumbnail, or Ctrl+wheel anywhere, changes the size.
+- Saving .cdr: clicking a picture in the saved file no longer makes the program that reads `.cdr` files close at once. The outline of every bitmap object was written without the node marks curves carry, which that program's own files always have; `tracedraw-cli check` now reports such outlines (#1226).
 
 ## 0.28.0 (2026-10-30)
 

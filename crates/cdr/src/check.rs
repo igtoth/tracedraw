@@ -600,6 +600,21 @@ impl<'a> Checker<'a> {
         } else if self.v >= 14 && u32_at(d, types_at + n) != Some(0) {
             self.note(place, "bitmap record does not end with 4 zero bytes");
         }
+        // The outline's first node carries the marks of a curve's (bit 2,
+        // and bit 3 when the outline closes), as every bitmap of the
+        // program's files has them; a bitmap without them closed that
+        // program when it was clicked (#1226).
+        if let (Some(&first), Some(&last)) = (d.get(types_at), d.get(types_at + n - 1)) {
+            let want = if last & 0x08 != 0 { 0x0c } else { 0x04 };
+            if first & want != want {
+                self.note(
+                    place,
+                    format!(
+                        "bitmap crop outline's first node byte {first:#04x} lacks the node marks"
+                    ),
+                );
+            }
+        }
         // Nodes inside the box, control points (type bits 7-6 set) around.
         let point = |k: usize| {
             Some(apply(
