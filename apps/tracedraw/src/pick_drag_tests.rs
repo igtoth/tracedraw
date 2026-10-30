@@ -3995,6 +3995,81 @@ fn dropping_on_a_clip_frame_with_w_or_k_puts_the_objects_in() {
     assert_eq!(app.tool, Tool::Pick);
 }
 
+/// Editing a clip frame's contents ends with a Ctrl+click off the
+/// contents, on bare canvas or on a faded object outside; a plain click
+/// there keeps editing (#1337: only the bar's Finish left it).
+/// Alt held while objects are dropped on a frame puts them in, as W does.
+#[test]
+fn a_ctrl_click_off_the_contents_finishes_editing_a_clip_frame_and_alt_drops_inside() {
+    let (ctx, mut app, first) = setup();
+    app.select(vec![first]);
+    app.delete_selection();
+    let (rect, text) = text_and_frame(&mut app, true, false);
+    app.place_inside(vec![text], rect);
+    let clip = app.doc().top_level_of(text).expect("clip frame");
+    let inside = app.view.to_screen(text_middle(&app, text));
+    let none = Modifiers::NONE;
+    let enter = |ctx: &egui::Context, app: &mut App| {
+        app.select(Vec::new());
+        click_at(ctx, app, inside, Modifiers::CTRL);
+        assert_eq!(app.clip_frame_edit.as_ref().map(|e| e.0), Some(clip));
+    };
+    // Ctrl+click on bare canvas: finished, the contents back inside.
+    enter(&ctx, &mut app);
+    let outside = app.view.to_screen(Point::new(180.0, 150.0));
+    click_at(&ctx, &mut app, outside, Modifiers::CTRL);
+    assert!(app.clip_frame_edit.is_none(), "Ctrl+click outside");
+    assert_eq!(app.doc().top_level_of(text), Some(clip));
+    assert_eq!(app.selection, vec![clip]);
+    // A plain click off the contents, inside the frame's box or out of
+    // it: still editing; then Ctrl+click inside the box, off the text.
+    enter(&ctx, &mut app);
+    let in_box = app.view.to_screen(Point::new(140.0, 15.0));
+    click_at(&ctx, &mut app, in_box, none);
+    assert!(
+        app.clip_frame_edit.is_some(),
+        "a plain click inside the box"
+    );
+    click_at(&ctx, &mut app, outside, none);
+    assert!(app.clip_frame_edit.is_some(), "a plain click outside");
+    click_at(&ctx, &mut app, in_box, Modifiers::CTRL);
+    assert!(app.clip_frame_edit.is_none(), "Ctrl+click off the contents");
+    assert_eq!(app.doc().top_level_of(text), Some(clip));
+    // Alt held during a move onto the frame: into it.
+    app.settings.clip_frame.auto_center = crate::settings::AutoCenter::Never;
+    let sq = app
+        .new_shape(ShapeKind::Rect {
+            rect: Rect::new(200.0, 20.0, 220.0, 40.0),
+            radius: 0.0,
+            corners: None,
+        })
+        .expect("square");
+    app.select(vec![sq]);
+    let from = app.view.to_screen(Point::new(210.0, 30.0));
+    let to = app.view.to_screen(Point::new(60.0, 45.0));
+    frame(&ctx, &mut app, vec![Event::PointerMoved(from)], none);
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(from, true, PointerButton::Primary, none)],
+        none,
+    );
+    let alt = Modifiers::ALT;
+    for i in 1..=4 {
+        let p = from + (to - from) * (i as f32 / 4.0);
+        frame(&ctx, &mut app, vec![Event::PointerMoved(p)], alt);
+    }
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(to, false, PointerButton::Primary, alt)],
+        alt,
+    );
+    frame(&ctx, &mut app, Vec::new(), none);
+    assert_eq!(app.doc().top_level_of(sq), Some(clip), "Alt put it in");
+    assert_eq!(app.selection, vec![clip]);
+}
+
 /// Ctrl+click on a clip frame edits its contents (#982): the contents
 /// come out of the frame, the one under the pointer selected, and only
 /// they can be picked; Finish puts them back. Off the contents the click

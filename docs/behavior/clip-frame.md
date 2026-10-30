@@ -42,7 +42,10 @@ frame is edited node by node, and the clip frame stays one
   rest of the page fades to a quarter of its strength while the frame
   and the contents are drawn in full (`App::render_focus`, the
   renderer's focus option with several objects, `CLIP_EDIT_VISIBILITY`).
-  Finish Editing Contents (the bar's Finish) puts them back. The
+  Finish Editing Contents (the bar's Finish) puts them back; so does a
+  Ctrl+click off the contents, on bare canvas or on a faded object (a
+  plain click there only empties the selection; #1337,
+  `pick_drag_tests::a_ctrl_click_off_the_contents_finishes_editing_a_clip_frame_and_alt_drops_inside`). The
   contents are every object on the page that was not there besides the
   frame when editing began (`App::clip_edit_contents`): a group inside
   ungrouped stays in as its members, drawn in full, and objects drawn or
@@ -84,7 +87,7 @@ contents are edited the bar shows Finish, as the symmetry bar does
 While the selection is moved over a clip frame that is not part of it,
 the frame shows filled in the selection colour and a note under the
 pointer says what the release does: drop here, outside the frame
-(nothing held); hold W to add the objects to the frame (Place Inside
+(nothing held); hold W or Alt to add the objects to the frame (Place Inside
 Frame, the objects where they were dropped); hold K to replace the
 frame's contents with them (the old contents are deleted; one "Place
 Inside Frame" undo step, `App::replace_clip_contents`). W and K pick

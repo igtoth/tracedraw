@@ -1648,6 +1648,12 @@ impl App {
                     return;
                 }
             }
+            // Editing a clip frame's contents: a Ctrl+click off them
+            // finishes (#1337).
+            if mods.ctrl && !mods.shift && self.ctrl_click_finishes_clip_edit(p) {
+                self.finish_clip_frame_edit();
+                return;
+            }
             // Ctrl+click on a clip frame: editing its contents (#982).
             if mods.ctrl && !mods.shift && self.ctrl_click_edits_clip_frame(p) {
                 return;
@@ -1745,7 +1751,9 @@ impl App {
     /// frame does (they are not tool shortcuts then).
     fn note_drop_keys(&mut self, ctx: &egui::Context) {
         if matches!(self.drag, Drag::Move { .. }) {
-            self.drop_keys = ctx.input(|i| (i.key_down(Key::W), i.key_down(Key::K)));
+            // Alt adds to the frame as W does (#1337).
+            self.drop_keys =
+                ctx.input(|i| (i.key_down(Key::W) || i.modifiers.alt, i.key_down(Key::K)));
         }
     }
 

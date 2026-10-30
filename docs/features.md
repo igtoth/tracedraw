@@ -154,7 +154,7 @@ Counts: works 189, partial 7 (`.cdr` content coverage; CMX import; print preview
 | Block shadow (depth, direction, colour, gap on the property bar) | works |
 | Transparency: uniform, gradient, pattern, texture; merge modes; fill/outline/all | works |
 | Lens (12 types, frozen, rate, palette rotation), Bitmap Effects lens: any bitmap effects run over what lies beneath (Lens panel, Effect Picker > Apply as a lens) | works (see `behavior/lens.md`) |
-| clip frame (place inside, extract, empty frame, text frame, edit in place with only the contents to pick and undo kept to the edit, lock contents, opacity mask and inverted mask) | works (see `behavior/clip-frame.md`) |
+| clip frame (place inside, extract, empty frame, text frame, edit in place with only the contents to pick and undo kept to the edit, left by Ctrl+click off the contents (#1337), drop with W or Alt to place inside, lock contents, opacity mask and inverted mask) | works (see `behavior/clip-frame.md`) |
 | Symbols (Object > Symbol menu, create, insert, revert, Symbols panel, Ctrl+F3) | works |
 | Copy effect (drop shadow, transparency, envelope, perspective, distortion, extrude, contour, blend settings, lens, bevel, block shadow; pinned points carried by the box), Clone effect (shadow and transparency follow the source until edited), Clear effect, Clear transformations, Symmetry (live, 1 to 12 mirror lines) | works (see `behavior/copy-effect.md`) |
 | Rollover | not applicable: web-page interactivity with no HTML export target |

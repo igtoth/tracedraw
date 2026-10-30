@@ -1047,6 +1047,15 @@ impl App {
         }
     }
 
+    /// A Ctrl+click at `p` while a clip frame's contents are edited
+    /// leaves the edit when it is off the contents (#1337: there was no
+    /// way out but the bar's Finish). A plain click there only empties
+    /// the selection, the objects outside staying out of reach (#851).
+    pub fn ctrl_click_finishes_clip_edit(&self, p: Point) -> bool {
+        // Only the contents can be hit while editing.
+        self.clip_frame_edit.is_some() && self.hit_test(p).is_none()
+    }
+
     /// Object > Clip to Frame > Finish Editing Contents: place the (surviving) contents
     /// back inside the frame.
     pub fn finish_clip_frame_edit(&mut self) {

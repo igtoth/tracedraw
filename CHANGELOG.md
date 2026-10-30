@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Clip frames: editing the contents ends with a Ctrl+click off them, besides the bar's Finish; Alt held while objects are dropped on a frame puts them inside, as W does (#1337).
+
 ## 0.28.0 (2026-10-30)
 
 - Variable fonts with many axes (Roboto Flex) draw their text: the font was listed and its axis sliders showed, but every letter came out empty because the glyph reader refused glyphs with more than 32 variation tuples (#870).
