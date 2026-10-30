@@ -56,8 +56,41 @@ the next ones you make.
 - **Prefix** and **Suffix**: text before and after the number.
 - **Text**: above the line (at first), in the line, or below the line.
 - **Label size**: 1 to 500 points (10 at first).
+- **Font** of the label (the font of new text at first) and the **label
+  color** (black).
+- **Line color** (black) and **line width** (a hairline at first, up to
+  50 mm), for the lines and arrowheads.
+- **Arrowheads**: arrow (at first), open arrow, dot, tick or none.
+- **Round ends**: round caps and joins on the lines (off).
+- The **Options** menu: the **extension line gap** between the measured
+  points and the extension lines (0), how far the extension lines run
+  **past the line** (2 mm), **horizontal text** for linear dimensions (off),
+  **join lines at corners** (off), which makes the extension lines and the
+  dimension line (or an angle's arc) one line that turns a corner instead of
+  running past it, and a **corner radius** (0 to 100 mm) that rounds those
+  corners. The menu stays open while you type in it.
 
-The label always reads left to right and stays upright.
+The label always reads left to right and stays upright. Double-click it with
+the [[tool.pick]] tool to edit it in place: text that still holds the
+measured value keeps it live (the text before and after it become the prefix
+and suffix); text without it shows as typed until you delete it.
+
+## Dimensions that follow objects {#follow}
+
+A dimension whose ends you placed on an object holds to it: on its nodes
+(its corners, say), or on its edges (the sides of a rectangle, not only its
+corners). When you move, resize, turn or reshape the object, the dimension
+goes along, each end keeping its place on its node or along its edge, and
+the value changes with it. Moving the dimension by itself lets it go, as does
+deleting the object or the node it held to.
+
+When you move, scale or turn a dimension, it is measured and drawn again: a
+dimension scaled by 2 reads twice the length, and its label stays upright.
+
+[[menu.object.break_apart]] (<kbd>Ctrl+K</kbd>) frees the lines, arrowheads
+and label as objects of their own, and
+[[menu.object.convert_to_curves]] (<kbd>Ctrl+Q</kbd>) makes the dimension a
+group of plain curves. Either way it is no longer a dimension.
 
 ## Callout {#callout}
 

@@ -97,3 +97,5 @@ of curves, which the rectangle settings cannot do. Open it from
 A corner is a node where two segments meet at an angle; smooth nodes are not
 corners. With the [[tool.shape]] tool and some nodes selected, only those
 corners are cut. A corner whose sides are too short for the cut is skipped.
+On a stretched object a fillet or scallop still comes out round, with the
+radius measured on the page.

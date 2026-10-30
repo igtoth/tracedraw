@@ -1,5 +1,7 @@
 # Definir contornos
 
+> *Tradução automática: esta página pode estar atrasada em relação à versão em inglês.*
+
 O contorno é a linha desenhada ao longo da borda de um objeto. Você define a
 cor, a largura, o estilo, os cantos, as pontas e as setas na seção
 [[docker.outline]] do painel [[docker.properties]].
@@ -11,9 +13,13 @@ cor, a largura, o estilo, os cantos, as pontas e as setas na seção
   sua unidade, estilo, limite de esquadria, tracejados, cantos, terminações,
   posição, pontas de seta, caligrafia, [[docker.behind_fill]],
   [[docker.scale_with_object]], os nós de largura do contorno variável e
-  [[outline_pen.overprint]]. **OK** muda só o que você mudou, em todos os
-  objetos selecionados; sem nada selecionado, define o contorno dos objetos
-  novos.
+  [[outline_pen.overprint]]. Os objetos selecionados mostram cada mudança ao
+  vivo enquanto a caixa de diálogo está aberta. **OK** guarda só o que você
+  mudou, em todos os objetos selecionados, em um passo de desfazer;
+  **Cancelar** ou <kbd>Esc</kbd> devolve os contornos. Sem nada selecionado,
+  define o contorno dos objetos novos. A lista de larguras oferece as mesmas
+  larguras redondas da barra de propriedades, na unidade do contorno (0,1,
+  0,2, 0,25 mm e assim por diante).
 
 ![A caixa de diálogo Caneta de contorno](../../img/lines-shapes-outlines-outline-pen.png)
 
@@ -32,7 +38,9 @@ cor, a largura, o estilo, os cantos, as pontas e as setas na seção
 - [[docker.caps]], as pontas das linhas abertas: [[docker.cap_butt]] (de
   início), [[docker.cap_round]] ou [[docker.cap_square]].
 - [[docker.corners]]: [[docker.join_miter]] (de início),
-  [[docker.join_round]] ou [[docker.join_bevel]].
+  [[docker.join_round]] ou [[docker.join_bevel]]. O [[docker.miter_limit]] (45
+  graus para contornos novos) chanfra cantos mais agudos que ele, então um
+  contorno grosso em texto ou em curvas estreitas não cria pontas compridas.
 - [[docker.dash]]: [[docker.dash_solid]], [[docker.dash_dashed]],
   [[docker.dash_dotted]] ou [[docker.dash_dash_dot]]. Os tracejados crescem com
   a largura.
@@ -42,7 +50,10 @@ cor, a largura, o estilo, os cantos, as pontas e as setas na seção
   [[menu.object > menu.object.create > menu.object.create_arrowhead]].
 - O [[docker.nib_stretch]] (0,1 a 1) e o [[docker.nib_angle_lc]] fazem um
   contorno caligráfico: mais fino de um lado da ponta que do outro, como uma
-  caneta chata.
+  caneta chata. No painel [[docker.properties]] eles ficam com o
+  [[docker.miter_limit]] sob o título [[docker.outline_advanced]], depois das
+  configurações comuns, fechado de início a não ser que um deles esteja
+  definido.
 - [[docker.behind_fill]] desenha o contorno por baixo do preenchimento, então
   só a metade externa aparece.
 - [[docker.scale_with_object]]: a largura cresce e diminui quando você

@@ -7,8 +7,10 @@ object with marks of chalk, ink, watercolor and other media.
 ## Brush Strokes {#brush-strokes}
 
 The [[tool.brush_strokes]] tool (<kbd>I</kbd>) draws strokes in one of five
-modes. The stroke is a filled object: it takes the current fill color (black
-when there is none) and no outline, and you edit it like any curve.
+modes. A Preset, Brush, Calligraphic or Expression stroke stays the path you
+drew, an open curve of a few nodes, with the brush as its live outline: edit
+its nodes with the Shape tool afterwards and the brush follows. The Sprayer
+makes objects instead.
 
 To draw a brush stroke:
 
@@ -18,7 +20,12 @@ To draw a brush stroke:
 3. Drag on the page.
 
 To turn existing curves into strokes, select them and click
-[[docker.apply_to_curve]] in the [[docker.brush_strokes]] panel.
+[[docker.apply_to_curve]] in the [[docker.brush_strokes]] panel; the curve
+stays a curve with the brush as its outline.
+
+With a graphics tablet, the pen's pressure sets the width of Preset, Brush
+and Expression strokes; see
+[Drawing with a graphics tablet](pen-pressure.md).
 
 ![The Brush Strokes panel](../../img/lines-shapes-artistic-media-brush-strokes.png)
 
@@ -31,8 +38,8 @@ To turn existing curves into strokes, select them and click
   first), taper start, taper end, bulge, wave or flat. The width is the
   widest point.
 - **Brush**: a preset profile with a rough, dry-brush edge.
-- **Expression**: the width follows your speed as if it were pen pressure:
-  slow strokes are wide. The pressure setting scales the effect.
+- **Expression**: the width follows the pen's pressure, or with a mouse your
+  speed: slow strokes are wide. The pressure setting scales the effect.
 - **Sprayer**: shapes (circles, squares, stars, hearts or leaves) placed
   along the line every spacing (8 mm at first), each between 70% and 100%
   of the width.
@@ -42,7 +49,8 @@ To turn existing curves into strokes, select them and click
 - **Width**: 3 mm at first.
 - **Angle**: the nib's angle, for Calligraphic.
 - **Smoothing**: 0 to 100 (25 at first). Higher values smooth out wobbles.
-- **Pressure**: for Expression (0.5 at first).
+- **Pressure**: how much the width follows the pen pressure (0.5 at first),
+  for Preset, Brush and Expression.
 - **Spacing**: for Sprayer.
 
 ## Painterly Brush {#painterly-brush}

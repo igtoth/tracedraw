@@ -1,5 +1,7 @@
 # Suavizar, borrar e tornar áspero o contorno
 
+> *Tradução automática: esta página pode estar atrasada em relação à versão em inglês.*
+
 Os pincéis de modelagem do submenu Forma remodelam o contorno de um objeto
 onde você arrasta sobre ele, como uma ferramenta de escultor: [[tool.smooth]],
 [[tool.smear]], [[tool.twirl]], [[tool.attract_repel]], [[tool.smudge]] e
@@ -7,8 +9,10 @@ onde você arrasta sobre ele, como uma ferramenta de escultor: [[tool.smooth]],
 
 ## Usar um pincel de modelagem {#using}
 
-1. Selecione uma curva. Outros objetos são convertidos em curvas antes; sem
-   nada selecionado, é usado o objeto sob o ponteiro.
+1. Selecione as curvas a mudar. Outros objetos são convertidos em curvas
+   antes. Os pincéis mudam só os objetos selecionados: sem nada selecionado,
+   arrastar não faz nada, e a barra de status pede para selecionar um objeto
+   antes.
 2. Escolha a ferramenta e defina o **tamanho da ponta** (o raio do pincel, 10
    mm de início) e as outras configurações na barra de propriedades.
 3. Arraste sobre o contorno.

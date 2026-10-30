@@ -1,5 +1,7 @@
 # Desenhar retângulos e elipses
 
+> *Tradução automática: esta página pode estar atrasada em relação à versão em inglês.*
+
 Retângulos e elipses continuam sendo retângulos e elipses depois de
 desenhados: você pode mudar os cantos, transformar uma elipse em fatia ou arco
 e ainda redimensioná-los livremente. Para editá-los nó por nó, converta-os em
@@ -97,4 +99,5 @@ curvas, o que as configurações do retângulo não fazem. Abra-o em
 Um canto é um nó onde dois segmentos se encontram em ângulo; nós suaves não
 são cantos. Com a ferramenta [[tool.shape]] e alguns nós selecionados, só esses
 cantos são cortados. Um canto cujos lados são curtos demais para o corte é
-ignorado.
+ignorado. Num objeto esticado, um arredondamento ou recorte continua redondo,
+com o raio medido na página.

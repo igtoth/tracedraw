@@ -10,9 +10,13 @@ section of the [[docker.properties]] panel.
   [[outline_pen.title]] dialog box with every outline setting: color, width
   and its unit, style, miter limit, dashes, corners, line caps, position,
   arrowheads, calligraphy, [[docker.behind_fill]], [[docker.scale_with_object]],
-  the variable outline's width nodes and [[outline_pen.overprint]]. **OK**
-  changes only what you changed, on every selected object; with nothing
-  selected it sets the outline of new objects.
+  the variable outline's width nodes and [[outline_pen.overprint]]. The
+  selected objects show each change live while the dialog box is open.
+  **OK** keeps only what you changed, on every selected object, as one undo
+  step; **Cancel** or <kbd>Esc</kbd> puts the outlines back. With nothing
+  selected it sets the outline of new objects. The width list offers the same
+  round widths as the property bar, in the outline unit (0.1, 0.2, 0.25 mm and
+  so on).
 
 ![The Outline Pen dialog box](../../img/lines-shapes-outlines-outline-pen.png)
 
@@ -30,7 +34,9 @@ section of the [[docker.properties]] panel.
 - [[docker.caps]], the ends of open lines: [[docker.cap_butt]] (at first),
   [[docker.cap_round]] or [[docker.cap_square]].
 - [[docker.corners]]: [[docker.join_miter]] (at first), [[docker.join_round]]
-  or [[docker.join_bevel]].
+  or [[docker.join_bevel]]. The [[docker.miter_limit]] (45 degrees for new
+  outlines) bevels corners sharper than it, so a thick outline on text or
+  narrow turns does not grow long spikes.
 - [[docker.dash]]: [[docker.dash_solid]], [[docker.dash_dashed]],
   [[docker.dash_dotted]] or [[docker.dash_dash_dot]]. The dashes grow with the
   width.
@@ -39,6 +45,9 @@ section of the [[docker.properties]] panel.
   it and choose [[menu.object > menu.object.create > menu.object.create_arrowhead]].
 - The [[docker.nib_stretch]] (0.1 to 1) and [[docker.nib_angle_lc]] make a
   calligraphic outline: thinner across the nib than along it, like a flat pen.
+  In the [[docker.properties]] panel they sit with the
+  [[docker.miter_limit]] under the [[docker.outline_advanced]] header after
+  the common settings, closed at first unless one of them is set.
 - [[docker.behind_fill]] draws the outline under the fill, so only its outer
   half shows.
 - [[docker.scale_with_object]]: the width grows and shrinks when you resize

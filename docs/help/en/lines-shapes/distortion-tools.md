@@ -7,8 +7,9 @@ where you drag over it, like a sculptor's tool: [[tool.smooth]],
 
 ## Using a shaping brush {#using}
 
-1. Select a curve. Other objects are converted to curves first; with nothing
-   selected, the object under the pointer is used.
+1. Select the curves to change. Other objects are converted to curves first.
+   The brushes change only the selected objects: with nothing selected a drag
+   does nothing, and the status bar says to select an object first.
 2. Choose the tool and set its **Nib size** (the radius of the brush, 10 mm
    at first) and its other settings on the property bar.
 3. Drag over the outline.
