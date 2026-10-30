@@ -126,3 +126,5 @@
 870 https://github.com/user-attachments/files/34112009/Roboto_Flex.zip
 1297 https://github.com/user-attachments/files/34160978/Raj.100.zip
 1268 https://github.com/user-attachments/files/34161137/Only.Bitmap.CorelDraw.Open.Problem.zip
+1226 https://github.com/user-attachments/files/34168482/Test.zip
+1297 https://github.com/user-attachments/files/34165778/Font.Color.Problem.zip
