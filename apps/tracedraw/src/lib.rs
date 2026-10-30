@@ -859,11 +859,46 @@ impl eframe::App for Shell {
         frame_stats::end(ui.ctx(), began);
     }
 
-    /// Keep the toolbox, dockers and other preferences for the next session.
+    /// Back up the drawings with unsaved changes at once (#1395). eframe
+    /// calls this when the Android app goes to the background (its window
+    /// goes, and the system may end the process there without another
+    /// word), when the program closes, and in a browser when the page
+    /// loses the focus, is hidden or is about to be left: a page about to
+    /// be left backs up while the browser asks, a hidden one (another
+    /// tab, a minimized window, a phone's home screen, a tab being
+    /// closed) because it may be discarded with no other event, and a
+    /// page left for good ends its session as a closing program does.
+    fn save(&mut self, _storage: &mut dyn eframe::Storage) {
+        let Some(app) = self.app.as_mut() else {
+            return;
+        };
+        #[cfg(target_arch = "wasm32")]
+        {
+            if web::backups::left() {
+                app.leave_session();
+                return;
+            }
+            // Both asked: the flag is cleared either way.
+            let unloading = web::backups::take_unloading();
+            if !(unloading || web::backups::page_hidden()) {
+                return;
+            }
+        }
+        app.backup_now();
+    }
+
+    /// No saves on a timer: `save` is for the moments above only, and
+    /// the auto-backup keeps its own minutes.
+    fn auto_save_interval(&self) -> std::time::Duration {
+        std::time::Duration::MAX
+    }
+
+    /// Keep the toolbox, dockers and other preferences for the next
+    /// session; drawings left unsaved stay backed up for it.
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         if let Some(app) = self.app.as_mut() {
             app.save_settings();
-            app.end_session();
+            app.leave_session();
         }
     }
 }

@@ -159,7 +159,7 @@ arrête.
 
 ## Sauvegarde automatique et récupération {#recovery}
 
-Sur le bureau, TraceDraw conserve des sauvegardes de vos dessins ouverts
+TraceDraw conserve des sauvegardes de vos dessins ouverts
 tant que la sauvegarde automatique est active (la page [[options.save]] de
 [[menu.tools > menu.tools.options > menu.tools.options_app]] règle la
 fréquence et l'emplacement ; toutes les 20 minutes au départ). Fermer
@@ -171,3 +171,9 @@ courant, il propose les sauvegardes au démarrage suivant :
 (Enregistrer demande alors où l'enregistrer), et [[dialog.discard]] laisse
 les sauvegardes dans leur dossier. Deux fenêtres TraceDraw ouvertes en même
 temps ne se proposent jamais les dessins l'une de l'autre.
+
+Dans la version pour navigateur, les sauvegardes sont gardées dans le
+stockage du navigateur pour le site, un dossier par onglet. Fermer ou
+recharger un onglet avec des dessins non enregistrés demande d'abord
+confirmation, et la visite suivante propose ce que l'onglet a laissé ;
+[[dialog.discard]] supprime ces sauvegardes.

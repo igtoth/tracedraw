@@ -343,6 +343,7 @@ fn watch_chorded_right_press() {
 /// Start the editor on the page's `<canvas id="tracedraw">`.
 pub fn start() {
     eframe::WebLogger::init(log::LevelFilter::Info).ok();
+    backups::install();
     guard_shortcuts();
     watch_chorded_right_press();
     register_fonts();
@@ -400,4 +401,361 @@ pub fn start() {
 
 fn escape_html(text: &str) -> String {
     crate::web_page::escape_html(text)
+}
+
+/// Unsaved work in the browser (#1395): leaving the page with unsaved
+/// drawings asks first, and auto-backups with the session markers of the
+/// crash recovery (`recovery.rs`) are kept in the page's storage, so the
+/// next visit offers what a closed, reloaded or killed tab left.
+///
+/// - The markers are small: they go to local storage, which is written at
+///   once, so the page can still mark its session gone while it unloads.
+/// - The backups can be large: they go to an IndexedDB database
+///   (`tracedraw`, store `backups`), keyed by their path
+///   (`/backup/<session id>/AutoBackup_of_<name>.tdraw`). The database is
+///   read once when the page opens; the session's recovery waits for it
+///   ([`ready`]). Backups no marker names any more are deleted then.
+pub mod backups {
+    use std::cell::{Cell, RefCell};
+    use std::collections::HashMap;
+    use std::path::{Path, PathBuf};
+    use wasm_bindgen::closure::Closure;
+    use wasm_bindgen::{JsCast, JsValue};
+    use wasm_bindgen_futures::JsFuture;
+
+    const DATABASE_NAME: &str = "tracedraw";
+    const STORE: &str = "backups";
+    /// Local storage keys of the markers: this, then the marker's path.
+    const MARKER_KEY: &str = "tracedraw.recovery:";
+    /// How often a session checks in from its timer, in milliseconds:
+    /// a hidden tab draws no frames, and browsers run its timers at
+    /// least once a minute, well within `recovery::STALE_SECS`.
+    const KEEP_ALIVE_MS: i32 = 30_000;
+
+    thread_local! {
+        static READY: Cell<bool> = const { Cell::new(false) };
+        static DATABASE: RefCell<Option<web_sys::IdbDatabase>> = const { RefCell::new(None) };
+        /// The backups read when the page opened, by path.
+        static LOADED: RefCell<HashMap<PathBuf, Vec<u8>>> = RefCell::new(HashMap::new());
+        /// This session's marker, once it has one.
+        static MARKER: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
+        /// Drawings with unsaved changes are open.
+        static UNSAVED: Cell<bool> = const { Cell::new(false) };
+        /// The page is about to be left (`beforeunload`): back up now,
+        /// while the browser asks.
+        static UNLOADING: Cell<bool> = const { Cell::new(false) };
+        /// The page was left for good (`pagehide`, not into the
+        /// back-forward cache).
+        static LEFT: Cell<bool> = const { Cell::new(false) };
+    }
+
+    /// True once the database has been read (or could not be opened):
+    /// the session's recovery can look for what earlier ones left.
+    pub fn ready() -> bool {
+        READY.with(Cell::get)
+    }
+
+    /// Tell the page whether drawings with unsaved changes are open
+    /// (every frame), so leaving it asks first.
+    pub fn set_unsaved(unsaved: bool) {
+        UNSAVED.with(|u| u.set(unsaved));
+    }
+
+    /// This session's marker: its timer keeps it checked in and leaving
+    /// the page marks it gone.
+    pub fn watch_session(marker: PathBuf) {
+        MARKER.with(|m| *m.borrow_mut() = Some(marker));
+    }
+
+    /// True while the page is not shown (another tab, a minimized window,
+    /// a phone's home screen, a tab being closed).
+    pub fn page_hidden() -> bool {
+        web_sys::window()
+            .and_then(|w| w.document())
+            .is_some_and(|d| d.hidden())
+    }
+
+    /// True once after the page was about to be left (`beforeunload`).
+    pub fn take_unloading() -> bool {
+        UNLOADING.with(|u| u.replace(false))
+    }
+
+    /// True once the page was left for good (`pagehide`): the session
+    /// ends there.
+    pub fn left() -> bool {
+        LEFT.with(Cell::get)
+    }
+
+    fn is_marker(path: &Path) -> bool {
+        path.parent() == Some(Path::new(crate::files::WEB_BACKUP_DIR))
+            && path.extension().is_some_and(|e| e == "json")
+    }
+
+    fn marker_key(path: &Path) -> String {
+        format!("{MARKER_KEY}{}", path.display())
+    }
+
+    fn local() -> Option<web_sys::Storage> {
+        web_sys::window()?.local_storage().ok()?
+    }
+
+    /// The paths of the markers in local storage.
+    fn markers() -> Vec<PathBuf> {
+        let Some(storage) = local() else {
+            return Vec::new();
+        };
+        let n = storage.length().unwrap_or(0);
+        (0..n)
+            .filter_map(|i| storage.key(i).ok().flatten())
+            .filter_map(|k| k.strip_prefix(MARKER_KEY).map(PathBuf::from))
+            .filter(|p| is_marker(p))
+            .collect()
+    }
+
+    pub fn read(path: &Path) -> Option<Vec<u8>> {
+        if is_marker(path) {
+            return local()?
+                .get_item(&marker_key(path))
+                .ok()?
+                .map(String::into_bytes);
+        }
+        LOADED.with(|l| l.borrow().get(path).cloned())
+    }
+
+    pub fn exists(path: &Path) -> bool {
+        if is_marker(path) {
+            return read(path).is_some();
+        }
+        LOADED.with(|l| l.borrow().contains_key(path))
+    }
+
+    /// The markers (directly in the folder) or the backups read when the
+    /// page opened (in a session's folder).
+    pub fn list(dir: &Path) -> Vec<PathBuf> {
+        if dir == Path::new(crate::files::WEB_BACKUP_DIR) {
+            return markers();
+        }
+        LOADED.with(|l| {
+            l.borrow()
+                .keys()
+                .filter(|p| p.parent() == Some(dir))
+                .cloned()
+                .collect()
+        })
+    }
+
+    pub fn write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+        let error = |e: JsValue| std::io::Error::other(format!("{e:?}"));
+        if is_marker(path) {
+            let text = std::str::from_utf8(bytes)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+            let storage = local().ok_or_else(|| std::io::Error::other("no local storage"))?;
+            return storage.set_item(&marker_key(path), text).map_err(error);
+        }
+        let key = JsValue::from_str(&path.display().to_string());
+        let value = js_sys::Uint8Array::from(bytes);
+        with_store(&path.display().to_string(), |store| {
+            store.put_with_key(&value, &key).map(|_| ())
+        })
+        .map_err(error)
+    }
+
+    pub fn remove(path: &Path) {
+        if is_marker(path) {
+            if let Some(storage) = local() {
+                let _ = storage.remove_item(&marker_key(path));
+            }
+            return;
+        }
+        LOADED.with(|l| l.borrow_mut().remove(path));
+        let key = JsValue::from_str(&path.display().to_string());
+        if let Err(e) = with_store(&path.display().to_string(), |store| {
+            store.delete(&key).map(|_| ())
+        }) {
+            log::warn!("removing the backup {}: {e:?}", path.display());
+        }
+    }
+
+    /// Forget the backups read when the page opened except `keep` (the
+    /// ones offered to recover): the others belong to tabs still open.
+    pub fn release_except(keep: &[PathBuf]) {
+        LOADED.with(|l| l.borrow_mut().retain(|p, _| keep.contains(p)));
+    }
+
+    /// Run `f` on the store in a read-write transaction, committed at
+    /// once (so it is not lost when the page closes right after); a
+    /// failure that only shows later is logged.
+    fn with_store(
+        what: &str,
+        f: impl FnOnce(&web_sys::IdbObjectStore) -> Result<(), JsValue>,
+    ) -> Result<(), JsValue> {
+        DATABASE.with(|d| {
+            let d = d.borrow();
+            let db = d
+                .as_ref()
+                .ok_or_else(|| JsValue::from_str("the backup database is not open"))?;
+            let tx =
+                db.transaction_with_str_and_mode(STORE, web_sys::IdbTransactionMode::Readwrite)?;
+            let what = what.to_string();
+            let failed = Closure::once_into_js(move |_: web_sys::Event| {
+                log::warn!("the browser did not store {what} (storage full?)");
+            });
+            tx.set_onabort(Some(failed.unchecked_ref()));
+            f(&tx.object_store(STORE)?)?;
+            // Marked deprecated in web-sys's bindings only; a browser
+            // without it (Safari before 15) commits when the task ends.
+            #[allow(deprecated)]
+            let _ = tx.commit();
+            Ok(())
+        })
+    }
+
+    /// A promise settled by a request's success (with its result) or
+    /// error.
+    fn settled(request: &web_sys::IdbRequest) -> js_sys::Promise {
+        let request = request.clone();
+        js_sys::Promise::new(&mut |resolve, reject| {
+            let done = request.clone();
+            let ok = Closure::once_into_js(move |_: web_sys::Event| {
+                let _ = resolve.call1(&JsValue::NULL, &done.result().unwrap_or_default());
+            });
+            let failed = Closure::once_into_js(move |_: web_sys::Event| {
+                let _ = reject.call0(&JsValue::NULL);
+            });
+            request.set_onsuccess(Some(ok.unchecked_ref()));
+            request.set_onerror(Some(failed.unchecked_ref()));
+        })
+    }
+
+    async fn open() -> Result<web_sys::IdbDatabase, JsValue> {
+        let factory = web_sys::window()
+            .ok_or_else(|| JsValue::from_str("no window"))?
+            .indexed_db()?
+            .ok_or_else(|| JsValue::from_str("no IndexedDB"))?;
+        let request = factory.open_with_u32(DATABASE_NAME, 1)?;
+        let made = request.clone();
+        let upgrade = Closure::once_into_js(move |_: web_sys::Event| {
+            if let Ok(db) = made
+                .result()
+                .and_then(|r| r.dyn_into::<web_sys::IdbDatabase>())
+            {
+                let _ = db.create_object_store(STORE);
+            }
+        });
+        request.set_onupgradeneeded(Some(upgrade.unchecked_ref()));
+        JsFuture::from(settled(&request)).await?.dyn_into()
+    }
+
+    /// Every backup in the database, by path.
+    async fn read_all(db: &web_sys::IdbDatabase) -> Result<Vec<(PathBuf, Vec<u8>)>, JsValue> {
+        let tx = db.transaction_with_str(STORE)?;
+        let store = tx.object_store(STORE)?;
+        // Both asked before waiting: the transaction ends once nothing
+        // is pending. Both come in key order.
+        let keys = settled(&store.get_all_keys()?);
+        let values = settled(&store.get_all()?);
+        let keys: js_sys::Array = JsFuture::from(keys).await?.dyn_into()?;
+        let values: js_sys::Array = JsFuture::from(values).await?.dyn_into()?;
+        Ok(keys
+            .iter()
+            .zip(values.iter())
+            .filter_map(|(k, v)| {
+                let bytes = v.dyn_into::<js_sys::Uint8Array>().ok()?.to_vec();
+                Some((PathBuf::from(k.as_string()?), bytes))
+            })
+            .collect())
+    }
+
+    /// The session a backup belongs to: the folder it is in.
+    fn session_of(path: &Path) -> Option<String> {
+        let rest = path.strip_prefix(crate::files::WEB_BACKUP_DIR).ok()?;
+        let first = rest.components().next()?;
+        Some(first.as_os_str().to_string_lossy().to_string())
+    }
+
+    /// Read the database, dropping the backups of sessions without a
+    /// marker, then let the recovery look.
+    fn load() {
+        wasm_bindgen_futures::spawn_local(async {
+            match open().await {
+                Ok(db) => {
+                    let all = read_all(&db).await.unwrap_or_else(|e| {
+                        log::warn!("reading the backups: {e:?}");
+                        Vec::new()
+                    });
+                    DATABASE.with(|d| *d.borrow_mut() = Some(db));
+                    let sessions: Vec<String> = markers()
+                        .iter()
+                        .filter_map(|m| m.file_name()?.to_str())
+                        .filter_map(crate::recovery::marker_id)
+                        .map(str::to_string)
+                        .collect();
+                    for (path, bytes) in all {
+                        if session_of(&path).is_some_and(|s| sessions.contains(&s)) {
+                            LOADED.with(|l| l.borrow_mut().insert(path, bytes));
+                        } else {
+                            remove(&path);
+                        }
+                    }
+                }
+                Err(e) => log::warn!("no auto-backup in this browser: {e:?}"),
+            }
+            READY.with(|r| r.set(true));
+            super::request_repaint();
+        });
+    }
+
+    /// Read the database and listen for the page being left.
+    pub fn install() {
+        use wasm_bindgen::JsCast as _;
+        load();
+        let Some(window) = web_sys::window() else {
+            return;
+        };
+        // Unsaved drawings: the browser asks before closing or reloading
+        // the tab, going back or following a link away (Ctrl+W, the
+        // close button and Back cannot be kept from it).
+        let ask = Closure::<dyn FnMut(web_sys::BeforeUnloadEvent)>::new(
+            |e: web_sys::BeforeUnloadEvent| {
+                // eframe's own listener, which comes after this one,
+                // calls `Shell::save`: it backs up at once.
+                UNLOADING.with(|u| u.set(true));
+                if UNSAVED.with(Cell::get) {
+                    e.prevent_default();
+                    // Older browsers ask only when this is set.
+                    e.set_return_value("unsaved");
+                }
+            },
+        );
+        let _ =
+            window.add_event_listener_with_callback("beforeunload", ask.as_ref().unchecked_ref());
+        ask.forget();
+        // Leaving for good (not into the back-forward cache): the next
+        // visit offers what was left at once. The page hides after this
+        // (or before it, as browsers differ); `Shell::save` then ends the
+        // session as `App::leave_session` does.
+        let gone = Closure::<dyn FnMut(web_sys::PageTransitionEvent)>::new(
+            |e: web_sys::PageTransitionEvent| {
+                if !e.persisted() {
+                    LEFT.with(|l| l.set(true));
+                    if let Some(marker) = MARKER.with(|m| m.borrow().clone()) {
+                        crate::recovery::mark_gone(&marker);
+                    }
+                }
+            },
+        );
+        let _ = window.add_event_listener_with_callback("pagehide", gone.as_ref().unchecked_ref());
+        gone.forget();
+        // Checking in while no frame is drawn (a hidden tab, an idle one).
+        let alive = Closure::<dyn FnMut()>::new(|| {
+            if let Some(marker) = MARKER.with(|m| m.borrow().clone()) {
+                crate::recovery::keep_alive(&marker, crate::recovery::now_secs());
+            }
+        });
+        let _ = window.set_interval_with_callback_and_timeout_and_arguments_0(
+            alive.as_ref().unchecked_ref(),
+            KEEP_ALIVE_MS,
+        );
+        alive.forget();
+    }
 }

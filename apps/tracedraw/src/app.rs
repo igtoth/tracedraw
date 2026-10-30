@@ -808,10 +808,24 @@ pub const UNDO_MEMORY: usize = 1 << 30;
 pub const UNDO_MEMORY: usize = 256 << 20;
 
 /// Auto-backups being written on a thread: the folder, and each file's
-/// name with how its write went.
+/// name and the drawing's state it holds with how its write went.
 struct AutoBackupJob {
     dir: PathBuf,
-    thread: std::thread::JoinHandle<Vec<(String, Result<(), String>)>>,
+    thread: std::thread::JoinHandle<Vec<BackupWritten>>,
+}
+
+/// An auto-backup's file name, the state of the drawing it holds (its
+/// engine's instance and revision) and how its write went.
+type BackupWritten = (String, (u64, u64), Result<(), String>);
+
+/// Write one auto-backup (`files::write_creating_with`: a `.part` file
+/// renamed when complete; the page's storage in a browser).
+fn write_backup(path: &std::path::Path, doc: &tracedraw_core::Document) -> Result<(), String> {
+    crate::files::write_creating_with(path, |w| {
+        doc.write_json_version(w, tracedraw_core::document::TDRAW_FORMAT_VERSION)
+            .map_err(std::io::Error::other)
+    })
+    .map_err(|e| e.to_string())
 }
 
 /// What the page shows while nodes are dragged (see
@@ -1352,13 +1366,21 @@ pub struct App {
     pub last_auto_backup: Option<web_time::Instant>,
     /// The auto-backup being written on a thread of its own.
     auto_backup_job: Option<AutoBackupJob>,
+    /// The drawing state (engine instance and revision) each auto-backup
+    /// written holds, by file name: an unchanged drawing is not written
+    /// again.
+    backed_up: std::collections::HashMap<String, (u64, u64)>,
     /// Linked bitmaps' files as last seen (`watch_linked_bitmaps`): the
     /// modification time of each, and when they were last looked at.
     pub linked_mtimes: std::collections::HashMap<ShapeId, std::time::SystemTime>,
     pub linked_checked: Option<web_time::Instant>,
     /// Session recovery: this session's marker in the auto-backup folder
-    /// (made on the first frame, desktop only).
+    /// (made on the first frame; in a browser once its storage is read).
     pub session: Option<crate::recovery::Session>,
+    /// What a session that ended without closing left, waiting for the
+    /// dialog open at the start (the browser's first notes, a tip) to
+    /// close before it is offered.
+    pub recovery_offer: Vec<crate::recovery::Found>,
     /// Help > Highlight What's New: the menus mark what is new.
     pub highlight_whats_new: bool,
     /// Help > Updates and the daily check at start.
@@ -2477,9 +2499,11 @@ impl App {
             pending_command: None,
             last_auto_backup: None,
             auto_backup_job: None,
+            backed_up: Default::default(),
             linked_mtimes: Default::default(),
             linked_checked: None,
             session: None,
+            recovery_offer: Vec::new(),
             highlight_whats_new: false,
             updates: Default::default(),
             installer: Default::default(),
@@ -2795,7 +2819,8 @@ impl App {
     }
 
     /// Where auto-backups go unless Options > Save names a folder: a
-    /// `TraceDraw` folder in the temporary folder (none in a browser).
+    /// `TraceDraw` folder in the temporary folder (none in a browser,
+    /// which keeps them in the page's storage, see `auto_backup_dir`).
     pub fn auto_backup_dir_default() -> Option<PathBuf> {
         if crate::files::WEB {
             return None;
@@ -6465,10 +6490,13 @@ impl App {
 
     /// Options > Save > Auto-backup: every few minutes, save each open
     /// drawing with unsaved changes as `AutoBackup_of_<name>.tdraw` in the
-    /// auto-backup folder. Called every frame; returns true when it saved.
+    /// auto-backup folder (one not changed since its last backup is not
+    /// written again). Called every frame; returns true when it saved.
     pub fn auto_backup_tick(&mut self, now: web_time::Instant) -> bool {
         let b = self.settings.backup.clone();
-        if !b.auto || crate::files::WEB {
+        // In a browser a backup belongs to the session that wrote it: none
+        // before the session has its marker.
+        if !b.auto || (crate::files::WEB && self.session.is_none()) {
             return false;
         }
         if self.auto_backup_job.is_some() {
@@ -6480,26 +6508,27 @@ impl App {
             return false;
         }
         self.last_auto_backup = Some(now);
-        let Some(dir) = b.auto_dir.clone().or_else(App::auto_backup_dir_default) else {
+        let Some(dir) = self.auto_backup_dir() else {
             return false;
         };
+        // A browser has no threads: written on the spot.
+        if crate::files::WEB {
+            return self.write_backups_now(&dir);
+        }
         // Copies of the drawings (pictures are shared, not copied) go to
         // a thread that writes them as they are made, so the window does
         // not stop while a large drawing is written.
-        let mut jobs: Vec<(String, tracedraw_core::Document)> = Vec::new();
         let fonts = tracedraw_text::fonts();
-        if self.has_document() && self.engine.is_dirty() {
-            let doc = fonts.with_carried_fonts(self.doc()).into_owned();
-            jobs.push((self.backup_name(None), doc));
-        }
-        for (i, slot) in self.docs.iter().enumerate() {
-            if i != self.active_doc && slot.engine.is_dirty() {
+        let jobs: Vec<(String, (u64, u64), tracedraw_core::Document)> = self
+            .backups_due(false)
+            .into_iter()
+            .map(|(slot, name, state)| {
                 let doc = fonts
-                    .with_carried_fonts(slot.engine.document())
+                    .with_carried_fonts(self.slot_document(slot))
                     .into_owned();
-                jobs.push((self.backup_name(Some(i)), doc));
-            }
-        }
+                (name, state, doc)
+            })
+            .collect();
         if jobs.is_empty() {
             return false;
         }
@@ -6508,15 +6537,9 @@ impl App {
             .name("auto-backup".into())
             .spawn(move || {
                 jobs.into_iter()
-                    .map(|(name, doc)| {
-                        let written = crate::files::write_creating_with(to.join(&name), |w| {
-                            doc.write_json_version(
-                                w,
-                                tracedraw_core::document::TDRAW_FORMAT_VERSION,
-                            )
-                            .map_err(std::io::Error::other)
-                        });
-                        (name, written.map_err(|e| e.to_string()))
+                    .map(|(name, state, doc)| {
+                        let written = write_backup(&to.join(&name), &doc);
+                        (name, state, written)
                     })
                     .collect()
             });
@@ -6525,6 +6548,139 @@ impl App {
             Err(e) => log::warn!("auto-backup not started: {e}"),
         }
         false
+    }
+
+    /// The auto-backup folder: Options > Save's or the default one; in a
+    /// browser, the page's storage (`files::WEB_BACKUP_DIR`).
+    fn auto_backup_dir(&self) -> Option<PathBuf> {
+        if crate::files::WEB {
+            return Some(PathBuf::from(crate::files::WEB_BACKUP_DIR));
+        }
+        self.settings
+            .backup
+            .auto_dir
+            .clone()
+            .or_else(App::auto_backup_dir_default)
+    }
+
+    /// The open drawing in `slot` (`None`: the active one).
+    fn slot_document(&self, slot: Option<usize>) -> &tracedraw_core::Document {
+        match slot.and_then(|i| self.docs.get(i)) {
+            Some(d) => d.engine.document(),
+            None => self.doc(),
+        }
+    }
+
+    /// True while a drawing has unsaved changes.
+    pub fn has_unsaved(&self) -> bool {
+        (self.has_document() && self.engine.is_dirty())
+            || self
+                .docs
+                .iter()
+                .enumerate()
+                .any(|(i, d)| i != self.active_doc && d.engine.is_dirty())
+    }
+
+    /// The drawings with unsaved changes (`None`: the active one) with
+    /// their backup's file name and their state; with `all` false only
+    /// those whose last backup holds another state (or that have none).
+    fn backups_due(&self, all: bool) -> Vec<(Option<usize>, String, (u64, u64))> {
+        let mut out = Vec::new();
+        if self.has_document() && self.engine.is_dirty() {
+            let state = (self.engine.instance(), self.engine.revision());
+            out.push((None, self.backup_file(None), state));
+        }
+        for (i, slot) in self.docs.iter().enumerate() {
+            if i != self.active_doc && slot.engine.is_dirty() {
+                let state = (slot.engine.instance(), slot.engine.revision());
+                out.push((Some(i), self.backup_file(Some(i)), state));
+            }
+        }
+        if !all {
+            out.retain(|(_, name, state)| self.backed_up.get(name) != Some(state));
+        }
+        out
+    }
+
+    /// The file name of a drawing's auto-backup in the folder: in a
+    /// browser inside the session's own folder, so two tabs never write
+    /// over each other's.
+    fn backup_file(&self, slot: Option<usize>) -> String {
+        let name = self.backup_name(slot);
+        match self.session.as_ref().filter(|_| crate::files::WEB) {
+            Some(s) => format!("{}/{name}", s.id()),
+            None => name,
+        }
+    }
+
+    /// Write the due auto-backups at once, on this thread. True when one
+    /// was saved.
+    fn write_backups_now(&mut self, dir: &std::path::Path) -> bool {
+        let fonts = tracedraw_text::fonts();
+        let written: Vec<BackupWritten> = self
+            .backups_due(false)
+            .into_iter()
+            .map(|(slot, name, state)| {
+                let doc = fonts.with_carried_fonts(self.slot_document(slot));
+                let result = write_backup(&dir.join(&name), &doc);
+                (name, state, result)
+            })
+            .collect();
+        self.record_backups(dir, written)
+    }
+
+    /// Note the auto-backups written into `dir` in this session's records.
+    /// True when one was saved.
+    fn record_backups(&mut self, dir: &std::path::Path, written: Vec<BackupWritten>) -> bool {
+        let mut saved = false;
+        for (name, state, result) in written {
+            match result {
+                Ok(()) => {
+                    saved = true;
+                    self.backed_up.insert(name.clone(), state);
+                    if let Some(s) = self.session.as_mut().filter(|s| s.dir() == dir) {
+                        s.wrote(&name, crate::recovery::now_secs());
+                    }
+                }
+                Err(e) => log::warn!("auto-backup {name} failed: {e}"),
+            }
+        }
+        saved
+    }
+
+    /// Back up at once, without waiting for the auto-backup's minutes:
+    /// the browser page is being hidden (it may be closed or discarded
+    /// without another word), the Android app goes to the background (the
+    /// system may end it there), or the program quits without having
+    /// asked about unsaved drawings. Backups of drawings saved or closed
+    /// since are deleted. True when one was written (#1395).
+    pub fn backup_now(&mut self) -> bool {
+        if !self.settings.backup.auto {
+            return false;
+        }
+        let Some(dir) = self.session.as_ref().map(|s| s.dir().to_path_buf()) else {
+            return false;
+        };
+        self.finish_auto_backup(true);
+        let saved = self.write_backups_now(&dir);
+        let keep: Vec<String> = self
+            .backups_due(true)
+            .into_iter()
+            .map(|(_, name, _)| name)
+            .collect();
+        if let Some(s) = self.session.as_mut() {
+            let gone: Vec<String> = s
+                .backups()
+                .iter()
+                .filter(|b| !keep.contains(b))
+                .cloned()
+                .collect();
+            for name in gone {
+                s.forget(&name, crate::recovery::now_secs());
+                self.backed_up.remove(&name);
+            }
+        }
+        saved
     }
 
     /// The auto-backup being written, when it is done (or at once with
@@ -6546,27 +6702,21 @@ impl App {
             log::warn!("auto-backup stopped");
             return false;
         };
-        let mut saved = false;
-        for (name, result) in results {
-            match result {
-                Ok(()) => {
-                    saved = true;
-                    if let Some(s) = self.session.as_mut().filter(|s| s.dir() == job.dir) {
-                        s.wrote(&name, crate::recovery::now_secs());
-                    }
-                }
-                Err(e) => log::warn!("auto-backup {name} failed: {e}"),
-            }
-        }
-        saved
+        self.record_backups(&job.dir, results)
     }
 
     /// Session recovery, called every frame with the time in seconds: on
     /// the first call, start this session's marker and offer what a
     /// session that ended without closing left; then check in now and
-    /// then. Nothing happens in a browser or with auto-backup off.
+    /// then. Nothing happens with auto-backup off; in a browser, nothing
+    /// until the page's storage has been read.
     pub fn session_tick(&mut self, now: u64) {
-        if crate::files::WEB || !self.settings.backup.auto {
+        if !self.settings.backup.auto {
+            return;
+        }
+        // A page left for good starts no new session in its last frames.
+        #[cfg(target_arch = "wasm32")]
+        if !crate::web::backups::ready() || crate::web::backups::left() {
             return;
         }
         // Tests leave the real auto-backup folder alone unless they name one.
@@ -6574,24 +6724,34 @@ impl App {
             return;
         }
         if self.session.is_none() {
-            let Some(dir) = self
-                .settings
-                .backup
-                .auto_dir
-                .clone()
-                .or_else(App::auto_backup_dir_default)
-            else {
+            let Some(dir) = self.auto_backup_dir() else {
                 return;
             };
             let id = crate::recovery::new_id();
-            let found = crate::recovery::find(&dir, now, Some(&id));
+            let found = crate::recovery::find(&dir, Self::recovery_seen_at(now), Some(&id));
             let (offer, empty): (Vec<_>, Vec<_>) =
                 found.into_iter().partition(|f| !f.backups.is_empty());
             crate::recovery::dismiss(&empty, false);
-            if !offer.is_empty() && matches!(self.dialog, crate::ui::dialogs::Dialog::None) {
-                self.dialog = crate::ui::dialogs::Dialog::Recover(offer);
-            }
-            self.session = Some(crate::recovery::Session::new(dir, id));
+            // The backups of tabs still open are not kept in memory.
+            #[cfg(target_arch = "wasm32")]
+            crate::web::backups::release_except(
+                &offer
+                    .iter()
+                    .flat_map(|f| f.backups.iter().cloned())
+                    .collect::<Vec<_>>(),
+            );
+            self.recovery_offer = offer;
+            let session = crate::recovery::Session::new(dir, id);
+            #[cfg(target_arch = "wasm32")]
+            crate::web::backups::watch_session(session.marker());
+            self.session = Some(session);
+        }
+        // Offered once no other dialog is open, never dropped for one.
+        if !self.recovery_offer.is_empty()
+            && matches!(self.dialog, crate::ui::dialogs::Dialog::None)
+        {
+            self.dialog =
+                crate::ui::dialogs::Dialog::Recover(std::mem::take(&mut self.recovery_offer));
         }
         if let Some(s) = self.session.as_mut() {
             s.heartbeat(now);
@@ -6712,6 +6872,34 @@ impl App {
         self.settings.check_updates = always;
         self.settings.update_check_asked = true;
         self.settings.save();
+    }
+
+    /// The time the markers of other sessions are judged at. The Android
+    /// app runs as one process: a marker found when it starts belongs to a
+    /// session that is gone (the system ended it in the background),
+    /// however recently it checked in.
+    fn recovery_seen_at(now: u64) -> u64 {
+        if crate::files::ANDROID {
+            u64::MAX
+        } else {
+            now
+        }
+    }
+
+    /// The program closes: a clean exit when no drawing is left unsaved
+    /// (they were asked about). Otherwise the system quit it without
+    /// asking (the menu's Quit on macOS, a log-out) or the renderer check
+    /// closed the window: the drawings are backed up and kept, and the
+    /// next start offers them at once (#1395).
+    pub fn leave_session(&mut self) {
+        if !self.has_unsaved() {
+            self.end_session();
+            return;
+        }
+        self.backup_now();
+        if let Some(mut s) = self.session.take() {
+            s.leave();
+        }
     }
 
     /// A clean exit: this session's marker and auto-backups go.
@@ -9029,6 +9217,136 @@ mod tests {
         assert_eq!(mask(&app), None);
         app.undo();
         assert!(mask(&app).is_some_and(|m| m.invert));
+    }
+
+    /// The files left in an auto-backup folder.
+    fn files_in(dir: &std::path::Path) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(dir)
+            .map(|d| {
+                d.flatten()
+                    .map(|e| e.file_name().to_string_lossy().to_string())
+                    .collect()
+            })
+            .unwrap_or_default();
+        names.sort();
+        names
+    }
+
+    /// The program quit without asking about an unsaved drawing (the
+    /// menu's Quit on macOS reaches `on_exit` straight away): the drawing
+    /// is backed up then and kept, and the very next start offers it,
+    /// without waiting for the marker to grow old (#1395).
+    #[test]
+    fn a_program_quit_without_asking_keeps_its_unsaved_drawings_for_the_next_start() {
+        let dir =
+            std::env::temp_dir().join(format!("tracedraw-leave-{}", crate::recovery::new_id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let start = crate::recovery::now_secs();
+        let mut first = App::headless();
+        first.settings.backup.auto_dir = Some(dir.clone());
+        first.session_tick(start);
+        rect_shape(&mut first, Rect::new(0.0, 0.0, 10.0, 10.0), true);
+        // No auto-backup was due yet.
+        first.leave_session();
+        assert!(first.session.is_none());
+        assert_eq!(files_in(&dir).len(), 2, "{:?}", files_in(&dir));
+        let mut next = App::headless();
+        next.settings.backup.auto_dir = Some(dir.clone());
+        next.session_tick(start + 5);
+        let crate::ui::dialogs::Dialog::Recover(found) = next.dialog.clone() else {
+            panic!("{:?}", next.dialog);
+        };
+        next.dialog = crate::ui::dialogs::Dialog::None;
+        next.recover(&found);
+        let shapes: usize = next.doc().pages[0]
+            .layers
+            .iter()
+            .map(|l| l.shapes.len())
+            .sum();
+        assert_eq!(shapes, 1);
+        next.end_session();
+        assert!(files_in(&dir).is_empty(), "{:?}", files_in(&dir));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A dialog open at the start (the browser version's first notes, a
+    /// tip) does not drop the offer: it waits until that dialog closes
+    /// (#1395).
+    #[test]
+    fn the_recovery_offer_waits_for_a_dialog_open_at_the_start() {
+        let dir =
+            std::env::temp_dir().join(format!("tracedraw-wait-{}", crate::recovery::new_id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let start = crate::recovery::now_secs();
+        let mut first = App::headless();
+        first.settings.backup.auto_dir = Some(dir.clone());
+        first.session_tick(start);
+        rect_shape(&mut first, Rect::new(0.0, 0.0, 10.0, 10.0), true);
+        first.leave_session();
+        let mut next = App::headless();
+        next.settings.backup.auto_dir = Some(dir.clone());
+        next.dialog = crate::ui::dialogs::Dialog::Options;
+        next.session_tick(start + 5);
+        assert!(matches!(next.dialog, crate::ui::dialogs::Dialog::Options));
+        next.session_tick(start + 6);
+        assert!(matches!(next.dialog, crate::ui::dialogs::Dialog::Options));
+        next.dialog = crate::ui::dialogs::Dialog::None;
+        next.session_tick(start + 7);
+        let crate::ui::dialogs::Dialog::Recover(found) = next.dialog.clone() else {
+            panic!("{:?}", next.dialog);
+        };
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].backups.len(), 1);
+        next.dialog = crate::ui::dialogs::Dialog::None;
+        next.end_session();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Closing with every drawing saved (or answered "No") is a clean
+    /// exit: nothing is left to offer.
+    #[test]
+    fn a_clean_exit_leaves_no_backup_behind() {
+        let dir =
+            std::env::temp_dir().join(format!("tracedraw-clean-{}", crate::recovery::new_id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut app = App::headless();
+        app.settings.backup.auto_dir = Some(dir.clone());
+        app.session_tick(crate::recovery::now_secs());
+        rect_shape(&mut app, Rect::new(0.0, 0.0, 10.0, 10.0), true);
+        assert!(app.backup_now());
+        app.engine.mark_saved();
+        assert!(!app.has_unsaved());
+        app.leave_session();
+        assert!(files_in(&dir).is_empty(), "{:?}", files_in(&dir));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Backing up at once (a browser page hidden, the Android app sent to
+    /// the background) writes a drawing only when it changed since its
+    /// last backup, and deletes the backup of a drawing saved since.
+    #[test]
+    fn backing_up_at_once_writes_changed_drawings_and_drops_saved_ones() {
+        let dir = std::env::temp_dir().join(format!("tracedraw-now-{}", crate::recovery::new_id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut app = App::headless();
+        app.settings.backup.auto_dir = Some(dir.clone());
+        // Nothing before the session has its marker.
+        assert!(!app.backup_now());
+        app.session_tick(crate::recovery::now_secs());
+        assert!(!app.backup_now(), "nothing unsaved");
+        rect_shape(&mut app, Rect::new(0.0, 0.0, 10.0, 10.0), true);
+        assert!(app.backup_now());
+        assert!(!app.backup_now(), "unchanged since");
+        let backup = dir.join(&app.session.as_ref().expect("session").backups()[0]);
+        assert!(backup.is_file());
+        rect_shape(&mut app, Rect::new(0.0, 0.0, 20.0, 10.0), true);
+        assert!(app.backup_now());
+        app.engine.mark_saved();
+        assert!(!app.backup_now());
+        assert!(!backup.exists());
+        assert!(app.session.as_ref().expect("session").backups().is_empty());
+        app.end_session();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

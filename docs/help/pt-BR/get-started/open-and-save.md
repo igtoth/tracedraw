@@ -153,7 +153,7 @@ um; Cancelar interrompe.
 
 ## Backup automático e recuperação {#recovery}
 
-No computador, o TraceDraw guarda cópias de segurança dos desenhos abertos
+O TraceDraw guarda cópias de segurança dos desenhos abertos
 enquanto o backup automático estiver ativado (a página [[options.save]] de
 [[menu.tools > menu.tools.options > menu.tools.options_app]] define a
 frequência e o local; a cada 20 minutos de início). Fechar o TraceDraw
@@ -163,4 +163,12 @@ Se o TraceDraw terminou sem fechar, por exemplo depois de uma queda de energia,
 ele oferece as cópias na próxima vez que iniciar: [[dialog.recover]] abre cada
 uma como um desenho não salvo (Salvar então pergunta onde salvá-lo), e
 [[dialog.discard]] deixa as cópias na pasta. Duas janelas do TraceDraw abertas
-ao mesmo tempo nunca oferecem os desenhos uma da outra.
+ao mesmo tempo nunca oferecem os desenhos uma da outra. Quando o sistema fecha
+o TraceDraw sem perguntar sobre desenhos não salvos (o Encerrar do menu do
+macOS, sair da sessão) ou manda o app para Android para o segundo plano, as
+cópias são gravadas na hora, e o próximo início as oferece.
+
+Na versão para navegador as cópias ficam no armazenamento do navegador para o
+site, numa pasta própria de cada aba. Fechar ou recarregar uma aba com
+desenhos não salvos pergunta antes, e a próxima visita oferece o que a aba
+deixou; [[dialog.discard]] apaga essas cópias.

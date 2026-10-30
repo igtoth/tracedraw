@@ -1750,15 +1750,18 @@ fn save_page(app: &mut App, ui: &mut Ui) {
             ));
             ui.label(tr("options.minutes"));
         });
-        ui.add_enabled_ui(b.auto, |ui| {
-            path_field(
-                ui,
-                &mut b.auto_dir,
-                crate::app::App::auto_backup_dir_default()
-                    .map(|p| p.display().to_string())
-                    .unwrap_or_default(),
-            );
-        });
+        // A browser keeps them in the page's storage: no folder.
+        if !crate::files::WEB {
+            ui.add_enabled_ui(b.auto, |ui| {
+                path_field(
+                    ui,
+                    &mut b.auto_dir,
+                    crate::app::App::auto_backup_dir_default()
+                        .map(|p| p.display().to_string())
+                        .unwrap_or_default(),
+                );
+            });
+        }
     });
 }
 
