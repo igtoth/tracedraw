@@ -1863,6 +1863,13 @@ pub struct Shape {
     /// holds in the stack; they are kept but not drawn.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub parked_effects: Vec<ParkedEffect>,
+    /// A bitmap whose colour mode is CMYK (a print picture: read from a
+    /// `.cdr` CMYK image, or converted by Convert Colors or Bitmaps >
+    /// Mode, #1254). Its pixels stay RGB for the screen; the mode is what
+    /// Convert Colors switches and the status line shows. Other kinds of
+    /// object never set it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub cmyk_bitmap: bool,
     /// Further fills, painted over `fill` in order (see [`Shape::layers`]).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub extra_fills: Vec<Fill>,
@@ -2171,6 +2178,7 @@ impl Shape {
             uid: None,
             opacity_mask: None,
             parked_effects: Vec::new(),
+            cmyk_bitmap: false,
             extra_fills: Vec::new(),
             extra_strokes: Vec::new(),
             raster_fx: None,

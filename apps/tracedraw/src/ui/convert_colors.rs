@@ -1,7 +1,10 @@
 //! Tools > Convert Colors (#972): every colour of the selected objects or
 //! of the whole drawing to CMYK or to RGB, through the colour management
 //! profiles, in one undo step (`Command::ConvertColors`). Spot colours
-//! stay unless asked. See docs/behavior/colour-management.md.
+//! stay unless asked. Bitmaps take the colour mode too (#1254): to CMYK
+//! their pixels are taken through the profiles and back, so the picture
+//! shows as it prints; to RGB the mode alone changes. See
+//! docs/behavior/colour-management.md.
 
 use crate::app::App;
 use crate::i18n::{tr, trf};
@@ -59,16 +62,60 @@ impl App {
             self.status = trf("convert_colors.none", &[("model", &model)]);
             return false;
         }
-        self.run(Command::ConvertColors {
-            shapes,
+        // The bitmaps turning CMYK show their pixels as they print, in the
+        // same step as the mode (#1254).
+        let mut cmds = vec![Command::ConvertColors {
+            shapes: shapes.clone(),
             to: st.to,
             spots: st.spots,
-        });
+        }];
+        if st.to == ColorTarget::Cmyk {
+            cmds.extend(self.cmyk_pixel_commands(&shapes));
+        }
+        if let Err(e) = self.engine.run_batch("Convert Colors", &cmds) {
+            self.status = e.to_string();
+            return false;
+        }
         self.status = trf(
             "convert_colors.done",
             &[("n", &n.to_string()), ("model", &model)],
         );
         true
+    }
+
+    /// The commands that take the pixels of the bitmaps of `shapes` (the
+    /// whole drawing when empty) whose mode becomes CMYK through the
+    /// profiles and back (`bitmap_fx::through_cmyk`).
+    fn cmyk_pixel_commands(&self, shapes: &[tracedraw_core::ShapeId]) -> Vec<Command> {
+        let doc = self.doc();
+        tracedraw_core::color_convert::bitmaps_changing_mode(doc, shapes, ColorTarget::Cmyk)
+            .into_iter()
+            .filter_map(|id| {
+                let s = doc.find_shape(id)?;
+                let tracedraw_core::ShapeKind::Bitmap {
+                    rect,
+                    width_px,
+                    height_px,
+                    png,
+                    fx,
+                } = &s.kind
+                else {
+                    return None;
+                };
+                let img = crate::bitmap_fx::decode(png)?;
+                let png = crate::bitmap_fx::encode(&crate::bitmap_fx::through_cmyk(&img))?;
+                Some(Command::SetShapeKind {
+                    shape: id,
+                    kind: tracedraw_core::ShapeKind::Bitmap {
+                        rect: *rect,
+                        width_px: *width_px,
+                        height_px: *height_px,
+                        png: png.into(),
+                        fx: fx.clone(),
+                    },
+                })
+            })
+            .collect()
     }
 }
 
@@ -203,5 +250,68 @@ mod tests {
         assert!(!app.convert_colors(&ConvertColorsState { whole: false, ..st }));
         app.undo();
         assert_eq!(fill_of(&app, a).model_name(), "CMYK");
+    }
+
+    /// A bitmap converts too (#1254): to CMYK it takes that colour mode
+    /// and its pixels show as they print, in the one step; to RGB the
+    /// mode alone changes and the pixels stay. The status counts it.
+    #[test]
+    fn bitmaps_take_the_colour_mode_and_their_pixels_follow() {
+        let mut app = App::headless();
+        app.show_welcome = false;
+        let png = {
+            let mut pm = tiny_skia::Pixmap::new(2, 1).expect("pixmap");
+            // A pure green no press can make, and white.
+            pm.pixels_mut()[0] = tiny_skia::ColorU8::from_rgba(0, 255, 0, 255).premultiply();
+            pm.pixels_mut()[1] = tiny_skia::ColorU8::from_rgba(255, 255, 255, 200).premultiply();
+            pm.encode_png().expect("png")
+        };
+        let id = app
+            .new_shape(ShapeKind::Bitmap {
+                rect: tracedraw_core::geometry::Rect::new(0.0, 0.0, 20.0, 10.0),
+                width_px: 2,
+                height_px: 1,
+                png: png.clone().into(),
+                fx: None,
+            })
+            .expect("bitmap");
+        let shape = |app: &App| app.doc().find_shape(id).cloned().expect("bitmap");
+        let pixels = |app: &App| match &shape(app).kind {
+            ShapeKind::Bitmap { png, .. } => crate::bitmap_fx::decode(png)
+                .expect("png")
+                .pixels()
+                .map(|p| p.0)
+                .collect::<Vec<_>>(),
+            _ => panic!("bitmap"),
+        };
+        assert!(!shape(&app).cmyk_bitmap);
+        app.select(vec![id]);
+        let before = app.engine.history_labels().0.len();
+        let st = ConvertColorsState {
+            to: ColorTarget::Cmyk,
+            whole: false,
+            spots: false,
+        };
+        assert!(app.convert_colors(&st));
+        assert!(shape(&app).cmyk_bitmap);
+        assert!(app.status.starts_with('1'), "{}", app.status);
+        assert_eq!(app.engine.history_labels().0.len(), before + 1, "one step");
+        let px = pixels(&app);
+        assert_ne!(&px[0][..3], &[0, 255, 0], "the green is what the inks make");
+        assert_eq!(px[1], [255, 255, 255, 200], "white and alpha stay");
+        // Again: nothing to change.
+        assert!(!app.convert_colors(&st));
+        // Back to RGB: the mode alone.
+        assert!(app.convert_colors(&ConvertColorsState {
+            to: ColorTarget::Rgb,
+            ..st
+        }));
+        assert!(!shape(&app).cmyk_bitmap);
+        assert_eq!(pixels(&app), px);
+        // Undo twice: the original picture.
+        app.undo();
+        app.undo();
+        assert!(!shape(&app).cmyk_bitmap);
+        assert_eq!(&pixels(&app)[0][..3], &[0, 255, 0]);
     }
 }

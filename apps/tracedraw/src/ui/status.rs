@@ -100,6 +100,21 @@ pub fn object_info(app: &App) -> String {
             }
             let mut kind = match &s.kind {
                 ShapeKind::Path { .. } => tr("kind.curve"),
+                // A bitmap with its colour mode (#1254).
+                k @ ShapeKind::Bitmap { .. } => trf(
+                    "status.bitmap_mode",
+                    &[
+                        ("k", &kind_name(k)),
+                        (
+                            "mode",
+                            &tr(if s.cmyk_bitmap {
+                                "convert_colors.cmyk"
+                            } else {
+                                "convert_colors.rgb"
+                            }),
+                        ),
+                    ],
+                ),
                 k => kind_name(k),
             };
             if app.is_effect_clone(s.id) {
@@ -875,6 +890,30 @@ mod tests {
         app.tool = Tool::Pick;
         app.select(vec![a, b]);
         assert_eq!(object_info(&app), "2 Objects Selected on Layer 1");
+        // A bitmap names its colour mode (#1254).
+        let png = {
+            let mut pm = tiny_skia::Pixmap::new(1, 1).expect("pixmap");
+            pm.fill(tiny_skia::Color::WHITE);
+            pm.encode_png().expect("png")
+        };
+        let c = app
+            .new_shape(ShapeKind::Bitmap {
+                rect: PRect::new(0.0, 0.0, 10.0, 10.0),
+                width_px: 1,
+                height_px: 1,
+                png: png.into(),
+                fx: None,
+            })
+            .expect("bitmap");
+        app.select(vec![c]);
+        assert_eq!(object_info(&app), "Bitmap 1 x 1 px (RGB) on Layer 1");
+        app.run(tracedraw_core::Command::ConvertColors {
+            shapes: vec![c],
+            to: tracedraw_core::color_convert::ColorTarget::Cmyk,
+            spots: false,
+        });
+        assert_eq!(object_info(&app), "Bitmap 1 x 1 px (CMYK) on Layer 1");
+        app.select(vec![a, b]);
         assert!(tool_hint(&app).contains("twice"));
     }
 

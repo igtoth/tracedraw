@@ -367,6 +367,9 @@ struct BitmapDef {
     width_px: u32,
     height_px: u32,
     png: tracedraw_core::SharedBytes,
+    /// A CMYK image (colour model 3, 32 bits): the object keeps that
+    /// colour mode (`Shape::cmyk_bitmap`, #1254).
+    cmyk: bool,
 }
 
 // One entry of a `loda` argument table (type, payload start and end) and
@@ -430,6 +433,8 @@ struct Ctx<'a> {
     arrows: HashMap<u32, Arrowhead>,
     /// Crop outline of the bitmap object being read (local coordinates).
     pending_crop: Option<BezPath>,
+    /// The bitmap object being read shows a CMYK image.
+    pending_cmyk: bool,
     /// Groups of `LIST clpt` by their `spnd` number: the contents of clip
     /// containers.
     clip_groups: HashMap<u32, &'a Chunk>,
@@ -514,6 +519,7 @@ impl<'a> Ctx<'a> {
             styles: HashMap::new(),
             arrows: HashMap::new(),
             pending_crop: None,
+            pending_cmyk: false,
             clip_groups: HashMap::new(),
             pending_clip: None,
             guides: Vec::new(),
@@ -3449,6 +3455,9 @@ impl<'a> Ctx<'a> {
                         if std::mem::take(&mut self.pending_renumber) {
                             renumber(&mut shape, ids);
                         }
+                        if std::mem::take(&mut self.pending_cmyk) {
+                            shape.cmyk_bitmap = true;
+                        }
                         if let Some(crop) = self.pending_crop.take() {
                             shape = crop_to_clip_frame(shape, crop, ids);
                         }
@@ -3975,6 +3984,7 @@ impl<'a> Ctx<'a> {
                         .warn(format!("bitmap object refers to unknown image {image_id}"));
                     return None;
                 };
+                self.pending_cmyk = bm.cmyk;
                 Some(ShapeKind::Bitmap {
                     rect,
                     width_px: bm.width_px,
@@ -4027,6 +4037,7 @@ impl<'a> Ctx<'a> {
                     self.pending_crop = None;
                     return None;
                 };
+                self.pending_cmyk = bm.cmyk;
                 Some(ShapeKind::Bitmap {
                     rect,
                     width_px: bm.width_px,
@@ -4215,6 +4226,7 @@ fn decode_bitmap(
             width_px: width,
             height_px: height,
             png: png.into(),
+            cmyk,
         },
     )))
 }
@@ -7194,6 +7206,8 @@ pub(crate) mod tests {
         .concat();
         let (doc, rep) = parse(&riff(b"CDRD", &body), 13);
         assert_eq!(rep.shapes, 1, "{:?}", rep.warnings);
+        // The object keeps the CMYK colour mode (#1254).
+        assert!(first_shape(&doc).cmyk_bitmap);
         let ShapeKind::Bitmap { png, .. } = &first_shape(&doc).kind else {
             panic!("a bitmap");
         };

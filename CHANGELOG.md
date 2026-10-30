@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Convert Colors and Bitmaps > Mode: bitmaps now take the colour mode too. Tools > Convert Colors to CMYK gives every selected (or every) bitmap the CMYK mode and shows its pixels as the inks print them, through the colour management profiles, in the same undo step; to RGB the mode alone changes and the pixels stay. Bitmaps > Mode > RGB Color and CMYK Color do the same for the selected bitmaps and tick the mode they are in, and the status line names it ("Bitmap 600 x 400 px (CMYK)"). A `.cdr` CMYK picture opens in the CMYK mode and `.tdraw` files keep it. Before, a bitmap was left out of the conversion ("Every color is RGB already") and the mode items changed nothing (#1254). Saving `.cdr` still writes RGB pixels for every picture.
 ## 0.26.0 (2026-10-30)
 
 - Trace Bitmap: the preview rests once the trace of the settings on show is in. In the browser, where a large picture's whole trace waits for OK, the preview waited for that trace and traced the picture again every frame: the spinner beside the pan button never stopped, the preview flickered and the window lagged. The quick look is now the request's last result there, the counts show it without the dots sign, and an idle dialog asks for no frames; a trace whose thread died is not started again until a setting changes.

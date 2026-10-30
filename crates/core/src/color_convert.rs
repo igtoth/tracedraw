@@ -5,8 +5,11 @@
 //! the colour model asked for, through `Color::convert_to`, so the colour
 //! engine's profiles (the drawing's colour management) do the conversion.
 //! Registration colour never changes; spot colours stay unless asked, and
-//! then become process colours of the model. Bitmaps' pixels are not
-//! changed. See docs/behavior/colour-management.md.
+//! then become process colours of the model. A bitmap takes the colour
+//! mode asked for (`Shape::cmyk_bitmap`, #1254); its pixels, which stay
+//! RGB for the screen, are taken through the CMYK profile and back by
+//! the application when the mode becomes CMYK, so the picture shows as
+//! it prints. See docs/behavior/colour-management.md.
 
 use crate::document::ShapeKind;
 use crate::{Color, Document, Shape, ShapeId};
@@ -95,14 +98,24 @@ fn convert_value<T: Serialize + DeserializeOwned>(x: &mut T, f: &dyn Fn(Color) -
     }
 }
 
-/// Every colour of `s` and of the objects inside it changed by `f`; the
-/// number changed. Groups' and clip frames' contents are converted one by
-/// one, and a bitmap's pixels are left out of the serialised form.
-pub fn convert_shape(s: &mut Shape, f: &dyn Fn(Color) -> Color) -> usize {
+/// Every colour of `s` and of the objects inside it changed by `f`, and a
+/// bitmap's colour mode set to `to`; the number changed (a bitmap whose
+/// mode changes counts one). Groups' and clip frames' contents are
+/// converted one by one, and a bitmap's pixels are left out of the
+/// serialised form.
+pub fn convert_shape(s: &mut Shape, f: &dyn Fn(Color) -> Color, to: ColorTarget) -> usize {
     let heavy = matches!(
         s.kind,
         ShapeKind::Group { .. } | ShapeKind::ClipFrame { .. } | ShapeKind::Bitmap { .. }
     );
+    let mut n = 0;
+    if matches!(s.kind, ShapeKind::Bitmap { .. }) {
+        let cmyk = to == ColorTarget::Cmyk;
+        if s.cmyk_bitmap != cmyk {
+            s.cmyk_bitmap = cmyk;
+            n += 1;
+        }
+    }
     let saved = heavy.then(|| {
         std::mem::replace(
             &mut s.kind,
@@ -111,20 +124,20 @@ pub fn convert_shape(s: &mut Shape, f: &dyn Fn(Color) -> Color) -> usize {
             },
         )
     });
-    let mut n = convert_value(s, f);
+    n += convert_value(s, f);
     if let Some(mut kind) = saved {
         match &mut kind {
             ShapeKind::Group { children } => {
                 n += children
                     .iter_mut()
-                    .map(|c| convert_shape(c, f))
+                    .map(|c| convert_shape(c, f, to))
                     .sum::<usize>();
             }
             ShapeKind::ClipFrame { frame, contents } => {
-                n += convert_shape(frame, f);
+                n += convert_shape(frame, f, to);
                 n += contents
                     .iter_mut()
-                    .map(|c| convert_shape(c, f))
+                    .map(|c| convert_shape(c, f, to))
                     .sum::<usize>();
             }
             _ => {}
@@ -132,6 +145,43 @@ pub fn convert_shape(s: &mut Shape, f: &dyn Fn(Color) -> Color) -> usize {
         s.kind = kind;
     }
     n
+}
+
+/// The bitmaps among `shapes` (any depth; the whole drawing when empty)
+/// whose colour mode `to` changes: their ids, for the application to
+/// take their pixels through the profiles (to CMYK) in the same step.
+pub fn bitmaps_changing_mode(doc: &Document, shapes: &[ShapeId], to: ColorTarget) -> Vec<ShapeId> {
+    fn walk(s: &Shape, to: ColorTarget, out: &mut Vec<ShapeId>) {
+        match &s.kind {
+            ShapeKind::Bitmap { .. } => {
+                if s.cmyk_bitmap != (to == ColorTarget::Cmyk) {
+                    out.push(s.id);
+                }
+            }
+            ShapeKind::Group { children } => children.iter().for_each(|c| walk(c, to, out)),
+            ShapeKind::ClipFrame { frame, contents } => {
+                walk(frame, to, out);
+                contents.iter().for_each(|c| walk(c, to, out));
+            }
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    if shapes.is_empty() {
+        for l in doc.all_layers() {
+            l.shapes.iter().for_each(|s| walk(s, to, &mut out));
+        }
+        for sym in &doc.symbols {
+            walk(&sym.shape, to, &mut out);
+        }
+    } else {
+        for id in shapes {
+            if let Some(s) = doc.find_shape(*id) {
+                walk(s, to, &mut out);
+            }
+        }
+    }
+    out
 }
 
 /// Convert the colours of `shapes` (any depth) to `to`, or, with `shapes`
@@ -148,7 +198,7 @@ pub fn convert_document(
     if shapes.is_empty() {
         for l in doc.all_layers_mut() {
             for s in l.shapes.iter_mut() {
-                n += convert_shape(s, &f);
+                n += convert_shape(s, &f, to);
             }
         }
         for p in doc.pages.iter_mut() {
@@ -157,13 +207,13 @@ pub fn convert_document(
             }
         }
         for sym in doc.symbols.iter_mut() {
-            n += convert_shape(&mut sym.shape, &f);
+            n += convert_shape(&mut sym.shape, &f, to);
         }
         return n;
     }
     for id in shapes {
         if let Some(s) = doc.find_shape_mut(*id) {
-            n += convert_shape(s, &f);
+            n += convert_shape(s, &f, to);
         }
     }
     n
@@ -282,10 +332,66 @@ mod tests {
             ..Default::default()
         });
         let before = serde_json::to_string(&s).unwrap_or_default();
-        let n = convert_shape(&mut s, &|c| converted(c, ColorTarget::Cmyk, false));
+        let n = convert_shape(
+            &mut s,
+            &|c| converted(c, ColorTarget::Cmyk, false),
+            ColorTarget::Cmyk,
+        );
         assert!(n >= 2, "the fill and the shadow's colour: {n}");
         let after = serde_json::to_string(&s).unwrap_or_default();
         assert_ne!(before, after);
         assert!(!after.contains("\"model\":\"rgb\""), "{after}");
+    }
+
+    /// A bitmap takes the colour mode asked for and counts as one change;
+    /// a mode it has already changes nothing (#1254). Inside a group too,
+    /// and the drawing's bitmaps whose mode changes are listed for their
+    /// pixels.
+    #[test]
+    fn bitmaps_take_the_colour_mode() {
+        let mut doc = Document::new("t", Size::new(100.0, 100.0));
+        let mut bm = Shape::new(
+            ShapeId(1),
+            ShapeKind::Bitmap {
+                rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+                width_px: 1,
+                height_px: 1,
+                png: Vec::new().into(),
+                fx: None,
+            },
+        );
+        bm.fill = Fill::None;
+        bm.stroke = None;
+        let mut g = Shape::new(ShapeId(2), ShapeKind::Group { children: vec![bm] });
+        g.fill = Fill::None;
+        g.stroke = None;
+        doc.pages[0].layers[0].shapes = vec![g];
+        assert_eq!(
+            bitmaps_changing_mode(&doc, &[], ColorTarget::Cmyk),
+            vec![ShapeId(1)]
+        );
+        assert_eq!(
+            bitmaps_changing_mode(&doc, &[ShapeId(2)], ColorTarget::Rgb),
+            Vec::new()
+        );
+        assert_eq!(
+            convert_document(&mut doc, &[ShapeId(2)], ColorTarget::Cmyk, false),
+            1
+        );
+        let inside = |doc: &Document| match &doc.pages[0].layers[0].shapes[0].kind {
+            ShapeKind::Group { children } => children[0].cmyk_bitmap,
+            _ => panic!("group"),
+        };
+        assert!(inside(&doc));
+        assert_eq!(convert_document(&mut doc, &[], ColorTarget::Cmyk, false), 0);
+        assert_eq!(
+            bitmaps_changing_mode(&doc, &[], ColorTarget::Rgb),
+            vec![ShapeId(1)]
+        );
+        assert_eq!(convert_document(&mut doc, &[], ColorTarget::Rgb, false), 1);
+        assert!(!inside(&doc));
+        // The mode survives the saved form.
+        let json = serde_json::to_string(&doc.pages[0].layers[0].shapes[0]).unwrap_or_default();
+        assert!(!json.contains("cmyk_bitmap"), "off is the default: {json}");
     }
 }

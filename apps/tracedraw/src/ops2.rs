@@ -1638,6 +1638,29 @@ impl App {
     }
 
     pub fn set_bitmap_mode(&mut self, mode: crate::bitmap_fx::ColorMode) {
+        // RGB and CMYK are the bitmap's colour mode: the same conversion
+        // as Tools > Convert Colors on the selected bitmaps (#1254).
+        let to = match mode {
+            crate::bitmap_fx::ColorMode::Rgb => {
+                Some(tracedraw_core::color_convert::ColorTarget::Rgb)
+            }
+            crate::bitmap_fx::ColorMode::Cmyk => {
+                Some(tracedraw_core::color_convert::ColorTarget::Cmyk)
+            }
+            crate::bitmap_fx::ColorMode::Grayscale => None,
+        };
+        if let Some(to) = to {
+            let shapes: Vec<ShapeId> = self.bitmap_shapes().into_iter().map(|b| b.0).collect();
+            if shapes.is_empty() {
+                return;
+            }
+            self.convert_colors(&crate::ui::convert_colors::ConvertColorsState {
+                to,
+                whole: false,
+                spots: false,
+            });
+            return;
+        }
         for (id, rect, _, _, png) in self.bitmap_shapes() {
             let Some(img) = crate::bitmap_fx::decode(&png) else {
                 continue;

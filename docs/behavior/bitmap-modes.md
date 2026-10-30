@@ -13,9 +13,9 @@ settings at the right. Alpha is kept in every mode.
 | Grayscale (8-bit) | luminance `0.299 R + 0.587 G + 0.114 B` |
 | Duotone (8-bit)... | dialog below |
 | Paletted (8-bit)... | dialog below |
-| RGB Color (24-bit) | pixels unchanged |
+| RGB Color (24-bit) | the bitmap's colour mode becomes RGB (`Shape::cmyk_bitmap` off); pixels unchanged. Ticked while every selected bitmap is RGB |
 | Lab Color (24-bit) | each pixel through CIE Lab (D65) and back, unchanged within one level |
-| CMYK Color (32-bit) | pixels unchanged (the document's colour management converts on output) |
+| CMYK Color (32-bit) | the colour mode becomes CMYK and the pixels show as the inks print them (through the colour management profiles and back), as Tools > Convert Colors does (#1254, `colour-management.md`). Ticked while every selected bitmap is CMYK |
 
 ## Black and White (1-bit)
 

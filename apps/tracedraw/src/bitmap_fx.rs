@@ -29,6 +29,67 @@ pub fn convert_mode(img: &RgbaImage, mode: ColorMode) -> RgbaImage {
     }
 }
 
+/// Grid points per channel of the table [`through_cmyk`] samples.
+const CMYK_GRID: usize = 17;
+
+/// `img` as it prints: every pixel taken to CMYK and back to the screen
+/// through the colour engine (the drawing's profiles, or the press model
+/// without them), so a picture converted to CMYK shows the colours the
+/// inks can make (#1254). Alpha is kept. The engine is sampled on a grid
+/// of `CMYK_GRID` points per channel and the pixels read from it by
+/// trilinear interpolation, so a large photo takes a few milliseconds.
+pub fn through_cmyk(img: &RgbaImage) -> RgbaImage {
+    let n = CMYK_GRID;
+    let step = 255.0 / (n - 1) as f32;
+    let mut grid: Vec<[f32; 3]> = Vec::with_capacity(n * n * n);
+    for r in 0..n {
+        for g in 0..n {
+            for b in 0..n {
+                let c = tracedraw_core::Color::rgb8(
+                    (r as f32 * step).round() as u8,
+                    (g as f32 * step).round() as u8,
+                    (b as f32 * step).round() as u8,
+                );
+                let back = c.convert_to("CMYK").convert_to("RGB").to_rgb8();
+                grid.push([back[0] as f32, back[1] as f32, back[2] as f32]);
+            }
+        }
+    }
+    let at = |r: usize, g: usize, b: usize| grid[(r * n + g) * n + b];
+    let mut out = img.clone();
+    for p in out.pixels_mut() {
+        let pos = |v: u8| {
+            let x = v as f32 / step;
+            let i = (x.floor() as usize).min(n - 2);
+            (i, x - i as f32)
+        };
+        let (ri, rf) = pos(p[0]);
+        let (gi, gf) = pos(p[1]);
+        let (bi, bf) = pos(p[2]);
+        let mut acc = [0.0f32; 3];
+        for (dr, wr) in [(0, 1.0 - rf), (1, rf)] {
+            for (dg, wg) in [(0, 1.0 - gf), (1, gf)] {
+                for (db, wb) in [(0, 1.0 - bf), (1, bf)] {
+                    let w = wr * wg * wb;
+                    if w > 0.0 {
+                        let v = at(ri + dr, gi + dg, bi + db);
+                        acc[0] += w * v[0];
+                        acc[1] += w * v[1];
+                        acc[2] += w * v[2];
+                    }
+                }
+            }
+        }
+        *p = Rgba([
+            acc[0].round().clamp(0.0, 255.0) as u8,
+            acc[1].round().clamp(0.0, 255.0) as u8,
+            acc[2].round().clamp(0.0, 255.0) as u8,
+            p[3],
+        ]);
+    }
+    out
+}
+
 /// Decode PNG bytes into an RGBA image.
 pub fn decode(png: &[u8]) -> Option<RgbaImage> {
     image::load_from_memory_with_format(png, image::ImageFormat::Png)
