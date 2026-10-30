@@ -52,6 +52,8 @@ a direita, e as seleções sombreiam cada letra selecionada. Teclados e métodos
 de entrada que enviam caracteres (como os de tâmil e outras escritas indianas
 no Windows) digitam no texto e nos campos, e códigos <kbd>Alt</kbd> digitados
 no teclado numérico dão o caractere uma vez só.
+Letras digitadas com <kbd>AltGr</kbd> (polonês ą ę ł, alemão @ € { }) entram
+no texto e nos campos, inclusive no Windows.
 
 Tudo o que você digita em uma sessão de edição é um passo de desfazer.
 

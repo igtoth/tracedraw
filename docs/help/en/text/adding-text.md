@@ -49,6 +49,8 @@ selected letter. Keyboards and input methods that send characters (such as
 those for Tamil and other Indian scripts on Windows) type into text and
 fields, and <kbd>Alt</kbd> codes typed on the keypad give their character
 once.
+Letters typed with <kbd>AltGr</kbd> (Polish ą ę ł, German @ € { }) type into
+text and fields, also on Windows.
 
 All your typing in one editing session is one undo step.
 
