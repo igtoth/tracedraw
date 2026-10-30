@@ -521,6 +521,19 @@ fn locale_bytes() -> Vec<u8> {
 /// The locale text records are written with.
 const TEXT_LOCALE: &str = "ENU";
 
+/// The two fields after the letter count of a version 16+ run record
+/// for a run with the paragraph's own style: no member of its (empty)
+/// style applies, and the flags mark a locale (0x04).
+const PLAIN_RUN: (u16, u16) = (0, 0x04);
+
+/// The same fields for a run with a style of its own (another colour,
+/// font or size than its paragraph): every member of its style applies
+/// (0x3fff) and the flags mark a locale and the style (0x04 | 0x10), as
+/// the files of the program that reads them hold such runs. Written as
+/// a plain run, the style was ignored there and every run of a line
+/// took the paragraph's colour (#1297, #1347).
+const STYLED_RUN: (u16, u16) = (0x3fff, 0x14);
+
 fn style_string(v: Ver, s: &str) -> Vec<u8> {
     let mut b = Buf::default();
     if v.byte_strings() {
@@ -5142,11 +5155,11 @@ impl<'a> Writer<'a> {
                 .zeros(1)
                 .u8(0)
                 .bytes(&style_string(v, &default));
-            // One record per run; a letter's override index selects it.
-            // One record per run: its letter count (the last one counts the
-            // paragraph end too), no URL, a locale, then its style: empty
-            // when the run has the paragraph's own. Records of no letters
-            // make the program that opens the file hang.
+            // One record per run; a letter's override index selects it:
+            // its letter count (the last one counts the paragraph end
+            // too), which of the style's members apply, flags, a locale,
+            // then its style. Records of no letters make the program that
+            // opens the file hang.
             t.u32(runs.len().max(1) as u32);
             let single = runs.len() <= 1;
             for (k, sp) in runs.iter().enumerate() {
@@ -5154,21 +5167,24 @@ impl<'a> Writer<'a> {
                 if k + 1 == runs.len() {
                     n += 1;
                 }
-                let json = if single {
-                    r#"{"character":{}}"#.to_string()
+                let (json, (members, flags)) = if single {
+                    (r#"{"character":{}}"#.to_string(), PLAIN_RUN)
                 } else {
-                    run_style_json(sp, sp.fill.as_ref().or(Some(fill)))
+                    (
+                        run_style_json(sp, sp.fill.as_ref().or(Some(fill))),
+                        STYLED_RUN,
+                    )
                 };
                 t.u16(n.min(usize::from(u16::MAX)) as u16)
-                    .u16(0)
-                    .u16(4)
+                    .u16(members)
+                    .u16(flags)
                     .bytes(&locale_bytes())
                     .bytes(&style_string(v, &json));
             }
             if runs.is_empty() {
                 t.u16(1)
-                    .u16(0)
-                    .u16(4)
+                    .u16(PLAIN_RUN.0)
+                    .u16(PLAIN_RUN.1)
                     .bytes(&locale_bytes())
                     .bytes(&style_string(v, r#"{"character":{}}"#));
             }

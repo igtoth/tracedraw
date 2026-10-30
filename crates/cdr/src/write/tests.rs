@@ -4633,6 +4633,79 @@ fn runs_of_their_own_colour_name_their_font_as_the_paragraph_does() {
     }
 }
 
+/// The run records of a text of several colours in one line mark their
+/// styles as applying (members 0x3fff, flags 0x14: a locale and a style),
+/// as the files of the program that reads them hold such runs; written
+/// with 0 and 0x04, the marks of a run with its paragraph's style, the
+/// style was ignored there and the whole line took one colour (#1297,
+/// #1347). A text of one run keeps the plain marks.
+#[test]
+fn runs_of_their_own_style_are_marked_as_applying() {
+    let mut doc = doc_with(Vec::new());
+    let mut ids = doc.ids().clone();
+    let mut spans = Vec::new();
+    for (text, c) in [("R", (255, 0, 0)), ("G", (0, 160, 0)), ("B", (0, 0, 255))] {
+        let mut sp = TextSpan::new(text, "Arial", 24.0);
+        sp.fill = Some(Fill::Solid(Color::rgb8(c.0, c.1, c.2)));
+        spans.push(sp);
+    }
+    let one = TextSpan::new("One", "Arial", 24.0);
+    doc.pages[0].layers[0].shapes = vec![
+        text_shape(&mut ids, spans, TextAlign::Left),
+        text_shape(&mut ids, vec![one], TextAlign::Left),
+    ];
+    doc.set_ids(ids);
+    // The two fields, then the locale "ENU" (count 3, UTF-16).
+    let marked = |members: u16, flags: u16| {
+        let mut m = Vec::new();
+        m.extend_from_slice(&members.to_le_bytes());
+        m.extend_from_slice(&flags.to_le_bytes());
+        m.extend_from_slice(&[3, 0, 0, 0, b'E', 0, b'N', 0, b'U', 0]);
+        m
+    };
+    let count =
+        |hay: &[u8], needle: &[u8]| hay.windows(needle.len()).filter(|w| *w == needle).count();
+    for v in 16..=NEWEST_VERSION {
+        let bytes = document_to_cdr_version(&doc, v);
+        let (_, tree, riff) = chunk_ids(&bytes);
+        let mut recs = Vec::new();
+        tree.root.walk(&mut |c, _| {
+            if c.is(b"txsm") {
+                recs.push(tree.data(&riff, c).to_vec());
+            }
+        });
+        assert_eq!(recs.len(), 2, "{v}");
+        let (several, single) = if count(&recs[0], &marked(0x3fff, 0x14)) > 0 {
+            (&recs[0], &recs[1])
+        } else {
+            (&recs[1], &recs[0])
+        };
+        assert_eq!(count(several, &marked(0x3fff, 0x14)), 3, "{v}");
+        assert_eq!(count(several, &marked(0, 4)), 0, "{v}");
+        assert_eq!(count(single, &marked(0, 4)), 1, "{v}");
+        assert_eq!(count(single, &marked(0x3fff, 0x14)), 0, "{v}");
+        crate::check::assert_clean(&bytes, v);
+        let (back, rep) = crate::open_bytes(&bytes, "back").expect("reads back");
+        let texts: Vec<Vec<Option<Fill>>> = back.pages[0].layers[0]
+            .shapes
+            .iter()
+            .filter_map(|s| match &s.kind {
+                ShapeKind::Text { spans, .. } => {
+                    Some(spans.iter().map(|sp| sp.fill.clone()).collect())
+                }
+                _ => None,
+            })
+            .collect();
+        assert!(
+            texts
+                .iter()
+                .any(|f| f.len() == 3 && f.iter().all(Option::is_some)),
+            "{v}: {texts:?} {:?}",
+            rep.warnings
+        );
+    }
+}
+
 /// `font` with its name table replaced by one of `names` (name ID and
 /// text, Windows English records), appended at the end of the file.
 fn with_names(font: &[u8], names: &[(u16, &str)]) -> Vec<u8> {

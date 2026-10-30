@@ -180,5 +180,10 @@ objects open as drawn.
   and 23 (`mcp::tests::export_and_save_write_files`).
 - Every version from 7 to 22 reads back with its pages, layers, objects,
   text runs and alignment (`write::tests` in `crates/cdr`).
+- A line of three colours saved as `.cdr` 16 to 27 marks its three runs
+  as having styles of their own (0x3fff, 0x14), and a text of one run
+  keeps the plain marks (0, 0x04), so the program that reads `.cdr`
+  files keeps the colours (#1297;
+  `write::tests::runs_of_their_own_style_are_marked_as_applying`).
 - Checked on screen: the dialog with its shortcuts, list, type list,
   version and stars; Save as CDR wrote the file in the folder shown.

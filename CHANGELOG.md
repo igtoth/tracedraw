@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Saving .cdr: text with several colours in one line keeps them in the program that reads `.cdr` files. Each run of another colour was written with a style of its own but marked as a run that takes the paragraph's style, so that program left the style out and drew the whole line in one colour, embedded fonts or not; such runs are now marked as their files mark them (#1297, #1347, #1238).
+
 ## 0.28.0 (2026-10-30)
 
 - Variable fonts with many axes (Roboto Flex) draw their text: the font was listed and its axis sliders showed, but every letter came out empty because the glyph reader refused glyphs with more than 32 variation tuples (#870).
