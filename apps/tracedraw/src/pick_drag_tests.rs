@@ -12089,7 +12089,8 @@ fn the_page_bar_turns_the_multipage_view_on_and_off() {
             )),
             ..Default::default()
         };
-        let out = ctx.run_ui(input, |ui| crate::ui::root(app, ui));
+        let mut out = ctx.run_ui(input, |ui| crate::ui::root(app, ui));
+        out.textures_delta.clear();
         let on = crate::theme::Tokens::tool_active();
         out.shapes.iter().any(|s| match &s.shape {
             egui::Shape::Rect(b) => b.fill == on && r.contains(b.rect.center()),
