@@ -534,6 +534,19 @@ const PLAIN_RUN: (u16, u16) = (0, 0x04);
 /// took the paragraph's colour (#1297, #1347).
 const STYLED_RUN: (u16, u16) = (0x3fff, 0x14);
 
+/// The most style records of their own a version 16+ paragraph can
+/// hold besides its plain one: a letter names its record in the 7 high
+/// bits of a byte. Letters of further styles take the paragraph's.
+const MAX_RUN_STYLES: usize = 127;
+
+/// The style records of a version 16+ paragraph: (letters, style) of
+/// each, record 0 the plain one (no style of its own), and the record
+/// each run's letters name.
+struct RunLooks {
+    records: Vec<(usize, Option<String>)>,
+    record_of_run: Vec<u8>,
+}
+
 fn style_string(v: Ver, s: &str) -> Vec<u8> {
     let mut b = Buf::default();
     if v.byte_strings() {
@@ -3056,10 +3069,37 @@ fn weight_member(sp: &TextSpan) -> u32 {
     1 << (2 * (span_weight(sp) / 100 - 1))
 }
 
-/// The style string of a run (versions 16+): its font, size, weight,
-/// slant, lines and colour.
+/// The style string of a run with a look of its own (versions 16+):
+/// its colour and its font, size, weight, slant and lines for the three
+/// scripts, with the members the paragraph's default style holds besides
+/// them (angle, outline, shifts), as every such run of the files of the
+/// program that reads them is complete (#1379).
 fn run_style_json(sp: &TextSpan, fill: Option<&Fill>) -> String {
-    format!("{{{}}}", character_json(sp, fill))
+    // A fill other than a colour is left to the paragraph's.
+    let fill = match fill.and_then(fill_colour) {
+        Some(c) => format!("{},", fill_json(&colour_spec(c))),
+        None => String::new(),
+    };
+    format!(
+        r#"{{"character":{{{}"angle":"0","outline":{},"RTL":{},"latin":{},"h_shift":"0","v_shift":"0","farEast":{}}}}}"#,
+        fill,
+        character_outline_json(),
+        font_json(Some(sp), 178),
+        font_json(Some(sp), 0),
+        font_json(Some(sp), 128)
+    )
+}
+
+/// CMYK black, the colour of text and outlines that set none.
+const BLACK_SPEC: &str = "CMYK,USER,0,0,0,100,100,00000000-0000-0000-0000-000000000000";
+
+/// The `outline` member of a character style: none (width 0), with the
+/// members files give it.
+fn character_outline_json() -> String {
+    let screen = "0,0,45000000,60,0";
+    format!(
+        r#"{{"overprint":"0","angle":"0","aspect":"100","dashDotSpec":"0","behindFill":"0","miterLimit":"5","justification":"0","dashAdjust":"0","rightArrow":"|0","screenSpec":"{screen}","overlapArrow":"0","shareArrow":"0","dotLength":"0","scaleWithObject":"0","matrix":"1,0,0,0,1,0","color":"{BLACK_SPEC}","leftArrow":"|0","projectMatrix":"1,0,0,0,1,0","leftArrowAttributes":"0|0|0|0|0|0|0","endCaps":"0","rightArrowAttributes":"0|0|0|0|0|0|0","joinType":"0","width":"0"}}"#
+    )
 }
 
 /// The `character` member of a run's style string: its fill and its
@@ -3140,22 +3180,19 @@ fn full_text_style(
     align: TextAlign,
     leading: f64,
 ) -> String {
-    let black = "CMYK,USER,0,0,0,100,100,00000000-0000-0000-0000-000000000000";
     let colour = fill
         .and_then(fill_colour)
         .map(colour_spec)
-        .unwrap_or_else(|| black.to_string());
-    let screen = "0,0,45000000,60,0";
+        .unwrap_or_else(|| BLACK_SPEC.to_string());
     format!(
         concat!(
             r#"{{"character":{{{fill},"#,
-            r#""angle":"0","outline":{{"overprint":"0","angle":"0","aspect":"100","dashDotSpec":"0","behindFill":"0","miterLimit":"5","justification":"0","dashAdjust":"0","rightArrow":"|0","screenSpec":"{screen}","overlapArrow":"0","shareArrow":"0","dotLength":"0","scaleWithObject":"0","matrix":"1,0,0,0,1,0","color":"{black}","leftArrow":"|0","projectMatrix":"1,0,0,0,1,0","leftArrowAttributes":"0|0|0|0|0|0|0","endCaps":"0","rightArrowAttributes":"0|0|0|0|0|0|0","joinType":"0","width":"0"}},"#,
+            r#""angle":"0","outline":{outline},"#,
             r#""RTL":{rtl},"latin":{latin},"h_shift":"0","v_shift":"0","farEast":{far}}},"frame":{{}},"#,
             r#""paragraph":{{"interCharSpacing":"0","thickOverlineAbsolute":"0","thickAbsolute":"0","dblStrikeout2Thickness":"45455","dblStrikeout2Distance":"287878","dblOverline1Absolute":"0","maxInterCharSpacing":"2000000","dblUnderline1Distance":"-90909","dblOverline2Absolute":"0","dblStrikeout1Distance":"378788","dblStrikeout1Absolute":"0","thickThickness":"90909","dblUnderline2Distance":"-181819","dblUnderline2Thickness":"45455","interLineSpacing":"{leading}","dblOverline1Thickness":"45455","afterParaSpacing":"0","thickOverlineThickness":"90909","spacingMethod":"0","dblStrikeout2Absolute":"0","thickStrikeoutAbsolute":"0","thinThickness":"45455","interLangSpacing":"0","interWordSpacing":"1000000","maxInterWordSpacing":"3000000","thinAbsolute":"0","dblUnderline1Absolute":"0","dblUnderline2Absolute":"0","dblUnderline1Thickness":"45455","thinOverlineAbsolute":"0","thinOverlineThickness":"45455","thinDistance":"-90909","beforeParaSpacing":"1000000","dblOverline2Distance":"890910","thinOverlineDistance":"845455","dblOverline2Thickness":"45455","thinStrikeoutAbsolute":"0","dblOverline1Distance":"800000","thinStrikeoutDistance":"333333","minInterWordSpacing":"600000","thinStrikeoutThickness":"45455","thickDistance":"-90909","thickOverlineDistance":"868182","thickStrikeoutDistance":"356060","thickStrikeoutThickness":"90909","dblStrikeout1Thickness":"45455","justify":"{justify}"}}}}"#
         ),
         fill = fill_json(&colour),
-        screen = screen,
-        black = black,
+        outline = character_outline_json(),
         rtl = font_json(sp, 178),
         latin = font_json(sp, 0),
         far = font_json(sp, 128),
@@ -4877,6 +4914,44 @@ impl<'a> Writer<'a> {
         out
     }
 
+    /// The style records of a version 16+ paragraph of `runs`, whose
+    /// default style is `first`'s (see [`RunLooks`]): runs whose style
+    /// string is `first`'s take the plain record 0, every other look a
+    /// record of its own (up to [`MAX_RUN_STYLES`]), in the order the
+    /// looks first appear. `fill` is the object's, for runs without one.
+    fn run_looks(runs: &[TextSpan], first: Option<&TextSpan>, fill: &Fill) -> RunLooks {
+        let json = |sp: &TextSpan| run_style_json(sp, sp.fill.as_ref().or(Some(fill)));
+        let base = first.map(json);
+        // Record 0 counts the paragraph's end.
+        let mut records: Vec<(usize, Option<String>)> = vec![(1, None)];
+        let mut record_of_run = Vec::with_capacity(runs.len());
+        for sp in runs {
+            let letters = sp.text.chars().count();
+            let own = json(sp);
+            let k = if letters == 0 || Some(&own) == base.as_ref() {
+                0
+            } else if let Some(k) = records
+                .iter()
+                .position(|(_, s)| s.as_deref() == Some(own.as_str()))
+            {
+                k
+            } else if records.len() <= MAX_RUN_STYLES {
+                records.push((0, Some(own)));
+                records.len() - 1
+            } else {
+                0
+            };
+            if let Some(r) = records.get_mut(k) {
+                r.0 += letters;
+            }
+            record_of_run.push(k as u8);
+        }
+        RunLooks {
+            records,
+            record_of_run,
+        }
+    }
+
     /// `txsm` of versions 7 to 15: one frame, a paragraph per line, one
     /// style per run (font, encoding, style flags, size and, when it
     /// differs from the object's, the fill), the text in UTF-16 from
@@ -4991,18 +5066,21 @@ impl<'a> Writer<'a> {
             for (ri, sp) in runs.iter().enumerate() {
                 let look = format_of(self, sp);
                 let same = |r: &(i32, u32, usize)| (r.0, r.1) == (look.size, look.fill);
+                // The last run counts the paragraph's end too, as files
+                // count it.
+                let end = usize::from(!by_look && ri == last_run);
                 let index = match records.iter().position(same).filter(|_| by_look) {
                     Some(i) => i,
+                    // A letter names its record in 7 bits: the runs past
+                    // the 128th record take the first one's look.
+                    None if records.len() > MAX_RUN_STYLES => 0,
                     None => {
-                        // The last run counts the paragraph's end too, as
-                        // files count it.
-                        let end = usize::from(!by_look && ri == last_run);
-                        records.push((look.size, look.fill, end));
+                        records.push((look.size, look.fill, 0));
                         records.len() - 1
                     }
                 };
                 if let Some(r) = records.get_mut(index) {
-                    r.2 += sp.text.chars().count();
+                    r.2 += sp.text.chars().count() + end;
                 }
                 record_of_run.push(index);
             }
@@ -5163,44 +5241,38 @@ impl<'a> Writer<'a> {
                 .zeros(1)
                 .u8(0)
                 .bytes(&style_string(v, &default));
-            // One record per run; a letter's override index selects it:
-            // its letter count (the last one counts the paragraph end
-            // too), which of the style's members apply, flags, a locale,
-            // then its style. Records of no letters make the program that
-            // opens the file hang.
-            t.u32(runs.len().max(1) as u32);
-            let single = runs.len() <= 1;
-            for (k, sp) in runs.iter().enumerate() {
-                let mut n = sp.text.chars().count();
-                if k + 1 == runs.len() {
-                    n += 1;
-                }
-                let (json, (members, flags)) = if single {
-                    (r#"{"character":{}}"#.to_string(), PLAIN_RUN)
+            // The records, a table of the paragraph's looks as the files
+            // of the program that reads them hold it: first the plain
+            // record, for the letters in the paragraph's own style, with
+            // an empty style and counting the paragraph's end too, then
+            // one record per other look (colour, font, size), each with
+            // its complete style marked as applying, counting the letters
+            // that wear it. Every letter names its record. A record is
+            // its letter count, which of the style's members apply,
+            // flags, a locale, then its style. Records of no letters make
+            // the program that opens the file hang.
+            let looks = Self::run_looks(runs, first, fill);
+            t.u32(looks.records.len() as u32);
+            for (n, json) in &looks.records {
+                let (members, flags) = if json.is_some() {
+                    STYLED_RUN
                 } else {
-                    (
-                        run_style_json(sp, sp.fill.as_ref().or(Some(fill))),
-                        STYLED_RUN,
-                    )
+                    PLAIN_RUN
                 };
-                t.u16(n.min(usize::from(u16::MAX)) as u16)
+                t.u16((*n).min(usize::from(u16::MAX)) as u16)
                     .u16(members)
                     .u16(flags)
                     .bytes(&locale_bytes())
-                    .bytes(&style_string(v, &json));
-            }
-            if runs.is_empty() {
-                t.u16(1)
-                    .u16(PLAIN_RUN.0)
-                    .u16(PLAIN_RUN.1)
-                    .bytes(&locale_bytes())
-                    .bytes(&style_string(v, r#"{"character":{}}"#));
+                    .bytes(&style_string(
+                        v,
+                        json.as_deref().unwrap_or(r#"{"character":{}}"#),
+                    ));
             }
             let mut text = String::new();
             let mut index = Vec::new();
-            for (k, sp) in runs.iter().enumerate() {
+            for (sp, k) in runs.iter().zip(&looks.record_of_run) {
                 text.push_str(&sp.text);
-                index.extend(std::iter::repeat_n(k as u8, sp.text.chars().count()));
+                index.extend(std::iter::repeat_n(*k, sp.text.chars().count()));
             }
             t.u32(index.len() as u32);
             // The letters are one byte each from version 16 (files saved

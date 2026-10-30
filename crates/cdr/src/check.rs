@@ -15,6 +15,8 @@
 //!   in their tables;
 //! - text: every text object has a `txsm` record with at least one
 //!   paragraph, and every paragraph and run holds at least one letter;
+//!   a version 16+ run record with a style of its own marks it as
+//!   applying (#1297);
 //! - references: every fill id, outline id and style id an object or a
 //!   text paragraph names exists in the tables, and a clip container's
 //!   argument 8005 names a group of the document's `LIST clpt` (whose
@@ -861,6 +863,15 @@ impl<'a> Checker<'a> {
         };
         if parsed.paragraphs.is_empty() {
             self.note(place, "text record without paragraphs");
+        }
+        if parsed.inert_styles > 0 {
+            self.note(
+                place,
+                format!(
+                    "{} run style(s) marked as applying no member: the letters take the paragraph's look",
+                    parsed.inert_styles
+                ),
+            );
         }
         for (i, p) in parsed.paragraphs.iter().enumerate() {
             if p.style_id != 0 && !self.styles.contains(&p.style_id) {
