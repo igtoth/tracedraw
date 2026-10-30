@@ -37,7 +37,7 @@ tracedraw-vba-project = { path = "crates/vba-project" }
 kurbo = { version = "0.13", features = ["serde"] }
 tiny-skia = "0.12"
 fontdb = "0.24"
-ttf-parser = "0.25"
+ttf-parser = { version = "0.25", features = ["gvar-alloc"] }
 rustybuzz = "0.20"
 unicode-general-category = "1.1"
 serde = { version = "1", features = ["derive"] }

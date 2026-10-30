@@ -7363,3 +7363,37 @@ mod tests {
         assert!((gap(&layout, 2) - gap(&plain, 2)).abs() < 1e-6);
     }
 }
+
+#[cfg(test)]
+mod many_tuples {
+    use super::*;
+
+    /// A subset of Roboto Flex (13 axes, 68 variation tuples on its
+    /// "H"): the letters draw, at the default and at axis values set
+    /// on the text (#870). The glyph reader refused any glyph with more
+    /// than 32 variation tuples, so the font listed but drew nothing.
+    #[test]
+    fn a_variable_font_with_many_tuples_per_glyph_draws() {
+        const ROBOTO_FLEX: &[u8] = include_bytes!("../testdata/RobotoFlex-subset.ttf");
+        let mut db = fontdb::Database::new();
+        db.load_font_data(ROBOTO_FLEX.to_vec());
+        let f = FontSystem::from_db(db);
+        assert!(f.has_family("Roboto Flex"));
+        let axes = f.variation_axes("Roboto Flex", false, false);
+        assert_eq!(axes.len(), 13, "{axes:?}");
+        assert!(axes.iter().any(|a| a.tag == "wght"));
+        let draw = |wdth: Option<f64>| {
+            let mut s = TextSpan::new("Hello", "Roboto Flex", 100.0);
+            s.set_variation("wdth", wdth);
+            f.outline(&[s])
+        };
+        let plain = draw(None);
+        assert!(!plain.path.elements().is_empty(), "the letters draw");
+        let width = |l: &TextLayout| l.lines[0].edges.last().copied().unwrap_or(0.0);
+        assert!(width(&plain) > 0.0);
+        // The width axis at its narrowest makes the word narrower.
+        let narrow = draw(Some(25.0));
+        assert!(!narrow.path.elements().is_empty());
+        assert!(width(&narrow) < width(&plain), "{} vs {}", width(&narrow), width(&plain));
+    }
+}

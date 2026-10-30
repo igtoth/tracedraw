@@ -761,6 +761,14 @@ italic when the face is upright; only what no axis gives is made
 synthetically (bold by drawing the letters twice, italic by slanting
 them).
 
+Fonts of many axes (Roboto Flex: 13 axes and up to 70 variation
+tuples on a glyph) draw like any other: the glyph reader is built with
+room for any number of tuples (`ttf-parser`'s `gvar-alloc` feature;
+without it a glyph of more than 32 tuples drew nothing, so the family
+listed but its text stayed empty, #870;
+`many_tuples::a_variable_font_with_many_tuples_per_glyph_draws` on a
+subset of that font in `crates/text/testdata/`).
+
 The axes can also be set on the text (#870): a button beside the font
 size, on the property bar (and the Text toolbar) and in the Text
 docker's first section, opens the sliders in a small window under it;
