@@ -13482,6 +13482,7 @@ fn remove_background_adds_and_removes_colours() {
     assert_eq!(app.engine.undo_label(), Some("Remove Background"));
     let png = app
         .selected_bitmap()
+        .and_then(|id| app.doc().find_shape(id))
         .and_then(|s| match &s.kind {
             tracedraw_core::document::ShapeKind::Bitmap { png, .. } => Some(png.clone()),
             _ => None,
