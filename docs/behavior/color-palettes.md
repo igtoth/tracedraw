@@ -120,10 +120,23 @@ Open Palette... (files of `.tdpal`, `.xml`, `.gpl`, `.ase`, `.aco` and
 the document palette of a `.cdr` file, its CMYK, RGB, grey, Lab and the
 other colour models with their names, spot colours skipped, and a file
 with no colour that can be read says so in the status bar, #882,
-`palette::tests::xml_palettes_open_with_names_and_values`), Palette Editor..., Palette Manager, the Document
+`palette::tests::xml_palettes_open_with_names_and_values`; the palette
+opened gets a strip of its own next to the default palette, which stays
+first, and the same file opened again replaces the copy already open
+instead of adding another, #1343), Palette Editor..., Palette Manager, the Document
 Palette switch, and Rows > 1 Row, 2 Rows, 3 Rows (a radio choice, kept
 in the preferences, the same setting as in Options). A right click on a row outside the swatches opens the
 same menu.
+
+## Palette Manager lock
+
+Each palette that is not built in has a Lock button in the Palette
+Manager (Unlock while locked, shown pressed). A locked palette opens in
+the Palette Editor as a built-in one does: its name, colours and values
+cannot be changed, Add, Remove and Save are gone, and a line says to
+unlock it in the Palette Manager. Opening its file again keeps its
+colours. Locks last for the session (#1343,
+`palette::tests::opening_a_palette_adds_one_and_a_locked_one_keeps_its_colours`).
 
 ## Options > Customization > Color Palette
 

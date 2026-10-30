@@ -50,8 +50,11 @@ colors in each. Open it with
 
 - Tick a palette to show it under the drawing window.
 - [[docker.edit]] opens it in the palette editor.
+- [[docker.palette_lock]] locks a palette you opened or made, so the palette
+  editor cannot change it; [[docker.palette_unlock]] allows editing again.
 - [[menu.window.palette_open]] opens a palette file (`.tdpal`, `.gpl`,
-  `.ase` or `.aco`).
+  `.ase` or `.aco`) and shows it in a row of its own next to the default
+  palette. Opening the same file again does not add a second copy.
 - [[menu.window.palette_from_document]] and
   [[menu.window.palette_from_selection]] make a palette of the colors used in
   the drawing or in the selection.

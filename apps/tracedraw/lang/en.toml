@@ -7068,3 +7068,7 @@ hintobj.several.1 = "Drag them to move them together; drag a handle to scale the
 hintobj.several.2 = "Group (Ctrl+G) keeps them together; Combine (Ctrl+L) makes them one curve; Align and Distribute lines them up."
 hintobj.several.bar = "Position and size of the selection, Group, Combine, Weld, Trim, Intersect and the other shaping commands."
 status.flow_text_from = "Click the paragraph frame (on any page) whose text flows into this one, or click or drag where a new frame goes; Esc cancels"
+docker.palette_lock = "Lock"
+docker.palette_unlock = "Unlock"
+docker.palette_lock_desc = "A locked palette cannot be changed in the Palette Editor until it is unlocked."
+dialog.locked_palette_hint = "This palette is locked; unlock it in the Palette Manager to edit it."

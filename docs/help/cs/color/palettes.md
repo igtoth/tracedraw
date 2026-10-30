@@ -42,6 +42,7 @@ Otevřete jej příkazem
 
 - Zaškrtnutím paletu zobrazíte pod oknem kresby.
 - [[docker.edit]] ji otevře v editoru palet.
+- [[docker.palette_lock]] zamkne paletu, kterou jste otevřeli nebo vytvořili, aby ji editor palet nemohl změnit; [[docker.palette_unlock]] úpravy znovu povolí.
 - [[menu.window.palette_open]] otevře soubor palety (`.tdpal`, `.gpl`,
   `.ase` nebo `.aco`).
 - [[menu.window.palette_from_document]] a

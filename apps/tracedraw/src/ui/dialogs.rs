@@ -6286,11 +6286,15 @@ fn palette_editor_dialog(
                 st.palette = app.palettes.len() - 1;
             }
         });
+        // A locked palette shows as a built-in one does: nothing changes
+        // it until it is unlocked in the Palette Manager (#1343).
+        let locked = app.palette_locked(st.palette);
         let Some(pal) = app.palettes.get_mut(st.palette) else {
             *close = true;
             return;
         };
-        if !pal.builtin {
+        let read_only = pal.builtin || locked;
+        if !read_only {
             ui.horizontal(|ui| {
                 ui.label(tr("dialog.name"));
                 ui.text_edit_singleline(&mut pal.name)
@@ -6336,7 +6340,10 @@ fn palette_editor_dialog(
         if let Some(i) = st.selected {
             if let Some((name, c)) = pal.colors.get_mut(i) {
                 ui.horizontal(|ui| {
-                    ui.text_edit_singleline(name)
+                    // A built-in or locked palette's names stay as they are.
+                    let mut shown = name.clone();
+                    let name = if read_only { &mut shown } else { name };
+                    ui.add_enabled(!read_only, egui::TextEdit::singleline(name))
                         .rich_tip(crate::ui::tips::pair(
                             "dialog.color_name",
                             "dialog.color_name_desc",
@@ -6347,14 +6354,14 @@ fn palette_editor_dialog(
                         crate::ui::tips::pair("dialog.color_value", "dialog.color_value_desc"),
                         |ui| crate::ui::color_picker::color_button(ui, &mut edited),
                     );
-                    if changed && !pal.builtin {
+                    if changed && !read_only {
                         *c = edited;
                     }
                     ui.label(crate::app::color_description(*c));
                 });
             }
         }
-        if !pal.builtin {
+        if !read_only {
             ui.horizontal(|ui| {
                 if ui
                     .button(tr("dialog.add_color"))
@@ -6400,9 +6407,13 @@ fn palette_editor_dialog(
             });
         } else {
             ui.label(
-                egui::RichText::new(tr("dialog.builtin_palette_hint"))
-                    .color(Tokens::text_dim())
-                    .size(11.0),
+                egui::RichText::new(tr(if pal.builtin {
+                    "dialog.builtin_palette_hint"
+                } else {
+                    "dialog.locked_palette_hint"
+                }))
+                .color(Tokens::text_dim())
+                .size(11.0),
             );
         }
         if ui

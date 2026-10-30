@@ -7068,3 +7068,7 @@ hintobj.several.1 = "Seret untuk memindahkannya bersama; seret pegangan untuk me
 hintobj.several.2 = "Kelompokkan (Ctrl+G) menyatukannya; Kombinasikan (Ctrl+L) menjadikannya satu kurva; Ratakan dan Distribusikan menjajarkannya." # mt
 hintobj.several.bar = "Posisi dan ukuran pilihan, Kelompokkan, Kombinasikan, Las, Pangkas, Iris dan perintah pembentukan lainnya." # mt
 status.flow_text_from = "Klik bingkai paragraf (di halaman mana pun) yang teksnya mengalir ke bingkai ini, atau klik atau seret di tempat bingkai baru; Esc membatalkan" # mt
+docker.palette_lock = "Kunci" # mt
+docker.palette_unlock = "Buka kunci" # mt
+docker.palette_lock_desc = "Palet yang dikunci tidak dapat diubah di Editor Palet sampai kuncinya dibuka." # mt
+dialog.locked_palette_hint = "Palet ini dikunci; buka kuncinya di Pengelola Palet untuk mengeditnya." # mt

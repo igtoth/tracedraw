@@ -29,6 +29,7 @@
 
 - パレットにチェックを付けると、描画ウィンドウの下に表示されます。
 - [[docker.edit]] は、パレットをパレットエディターで開きます。
+- [[docker.palette_lock]] は、開いたり作成したりしたパレットをロックし、パレットエディターで変更できないようにします。[[docker.palette_unlock]] で再び編集できます。
 - [[menu.window.palette_open]] は、パレットファイル (`.tdpal`、`.gpl`、`.ase`、`.aco`) を開きます。
 - [[menu.window.palette_from_document]] と [[menu.window.palette_from_selection]] は、図面または選択範囲で使っている色からパレットを作ります。
 - 下部にはドキュメントパレットの色が表示されます。クリックすると選択範囲を塗りつぶし、右クリックするとアウトラインに色を付けます。

@@ -43,6 +43,7 @@ elk. Open het met
 
 - Vink een palet aan om het onder het tekenvenster te tonen.
 - [[docker.edit]] opent het in de paleteditor.
+- [[docker.palette_lock]] vergrendelt een palet dat u hebt geopend of gemaakt, zodat de paleteditor het niet kan wijzigen; [[docker.palette_unlock]] staat bewerken weer toe.
 - [[menu.window.palette_open]] opent een paletbestand (`.tdpal`, `.gpl`,
   `.ase` of `.aco`).
 - [[menu.window.palette_from_document]] en

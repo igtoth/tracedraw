@@ -821,6 +821,42 @@ mod tests {
         assert_ne!(spot_ink_id("Gold 871"), spot_ink_id("Gold 872"));
     }
 
+    /// Opening a palette file adds that one palette in a strip of its
+    /// own, the default palette staying first; the same file again adds
+    /// nothing more. A locked palette keeps its colours (#1343).
+    #[test]
+    fn opening_a_palette_adds_one_and_a_locked_one_keeps_its_colours() {
+        let mut app = crate::app::App::headless();
+        let before = app.palettes.len();
+        let main = app.palette.clone();
+        let file = |c: Color| Palette {
+            name: "Mine".into(),
+            key: "",
+            colors: vec![("One".into(), c)],
+            builtin: false,
+            path: Some(std::path::PathBuf::from("/palettes/mine.xml")),
+        };
+        app.add_palette(file(Color::rgb8(255, 0, 0)));
+        assert_eq!(app.palettes.len(), before + 1);
+        assert_eq!(app.visible_palettes, vec![0, before]);
+        assert_eq!(app.palette, main, "the default palette stays first");
+        assert_eq!(app.extra_palettes.len(), 1);
+        // The same file again: still one, with its colours read anew.
+        app.add_palette(file(Color::rgb8(0, 255, 0)));
+        assert_eq!(app.palettes.len(), before + 1);
+        assert_eq!(app.visible_palettes, vec![0, before]);
+        assert_eq!(app.palettes[before].colors[0].1, Color::rgb8(0, 255, 0));
+        // Locked, the palette keeps its colours; unlocked, it takes them.
+        app.toggle_palette_lock(before);
+        assert!(app.palette_locked(before));
+        app.add_palette(file(Color::rgb8(0, 0, 255)));
+        assert_eq!(app.palettes[before].colors[0].1, Color::rgb8(0, 255, 0));
+        app.toggle_palette_lock(before);
+        assert!(!app.palette_locked(before));
+        app.add_palette(file(Color::rgb8(0, 0, 255)));
+        assert_eq!(app.palettes[before].colors[0].1, Color::rgb8(0, 0, 255));
+    }
+
     #[test]
     fn a_colour_book_spot_colour_brings_its_ink_along() {
         use tracedraw_core::{Fill, ShapeKind};

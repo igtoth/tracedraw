@@ -44,6 +44,7 @@ ile açın.
 
 - Çizim penceresinin altında göstermek için bir paleti işaretleyin.
 - [[docker.edit]] onu palet düzenleyicide açar.
+- [[docker.palette_lock]] açtığınız veya oluşturduğunuz bir paleti kilitler, böylece palet düzenleyici onu değiştiremez; [[docker.palette_unlock]] yeniden düzenlemeye izin verir.
 - [[menu.window.palette_open]] bir palet dosyası (`.tdpal`, `.gpl`, `.ase`
   veya `.aco`) açar.
 - [[menu.window.palette_from_document]] ve

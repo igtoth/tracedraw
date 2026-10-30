@@ -29,6 +29,7 @@
 
 - 勾選調色盤即可將其顯示在繪圖視窗下方。
 - [[docker.edit]] 會在調色盤編輯器中開啟它。
+- [[docker.palette_lock]] 會鎖定您開啟或建立的調色盤，使調色盤編輯器無法變更它；[[docker.palette_unlock]] 允許再次編輯。
 - [[menu.window.palette_open]] 會開啟調色盤檔案（`.tdpal`、`.gpl`、`.ase` 或 `.aco`）。
 - [[menu.window.palette_from_document]] 和 [[menu.window.palette_from_selection]] 會以繪圖或選取範圍中使用的色彩建立調色盤。
 - 文件調色盤的色彩顯示在底部；按一下可填滿選取範圍，以右鍵按一下可為外框上色。

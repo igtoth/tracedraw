@@ -1141,6 +1141,8 @@ fn palettes(app: &mut App, ui: &mut Ui) {
         let name = app.palettes[i].display_name();
         let count = app.palettes[i].colors.len();
         let on = app.visible_palettes.contains(&i);
+        let locked = app.palette_locked(i);
+        let builtin = app.palettes[i].builtin;
         ui.horizontal(|ui| {
             let mut v = on;
             if ui
@@ -1164,6 +1166,22 @@ fn palettes(app: &mut App, ui: &mut Ui) {
                         ..Default::default()
                     },
                 );
+            }
+            // The padlock: a locked palette is not changed by the Palette
+            // Editor (built-in palettes never are) (#1343).
+            if !builtin {
+                let key = if locked {
+                    "docker.palette_unlock"
+                } else {
+                    "docker.palette_lock"
+                };
+                if ui
+                    .add(egui::Button::selectable(locked, tr(key)).small())
+                    .rich_tip(crate::ui::tips::pair(key, "docker.palette_lock_desc"))
+                    .clicked()
+                {
+                    app.toggle_palette_lock(i);
+                }
             }
         });
     }

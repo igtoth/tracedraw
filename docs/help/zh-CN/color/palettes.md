@@ -29,6 +29,7 @@
 
 - 勾选一个调色板即可在绘图窗口下方显示它。
 - [[docker.edit]] 在调色板编辑器中打开它。
+- [[docker.palette_lock]] 锁定您打开或创建的调色板，使调色板编辑器无法更改它；[[docker.palette_unlock]] 允许再次编辑。
 - [[menu.window.palette_open]] 打开调色板文件（`.tdpal`、`.gpl`、`.ase` 或 `.aco`）。
 - [[menu.window.palette_from_document]] 和 [[menu.window.palette_from_selection]] 用绘图或所选对象中使用的颜色创建调色板。
 - 文档调色板的颜色显示在底部；单击其中一种可填充所选对象，右键单击可为轮廓着色。

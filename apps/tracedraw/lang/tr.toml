@@ -7068,3 +7068,7 @@ hintobj.several.1 = "Birlikte taşımak için sürükleyin; birlikte ölçekleme
 hintobj.several.2 = "Grupla (Ctrl+G) onları bir arada tutar; Birleştir (Ctrl+L) onları tek eğri yapar; Hizala ve Dağıt onları sıralar." # mt
 hintobj.several.bar = "Seçimin konumu ve boyutu, Grupla, Birleştir, Kaynak, Kırp, Kesişim ve diğer şekillendirme komutları." # mt
 status.flow_text_from = "Metni bu çerçeveye akacak paragraf çerçevesine tıklayın (herhangi bir sayfada) ya da yeni çerçevenin gideceği yere tıklayın veya sürükleyin; Esc iptal eder" # mt
+docker.palette_lock = "Kilitle" # mt
+docker.palette_unlock = "Kilidi aç" # mt
+docker.palette_lock_desc = "Kilitli bir palet, kilidi açılana kadar Palet Düzenleyicisi'nde değiştirilemez." # mt
+dialog.locked_palette_hint = "Bu palet kilitli; düzenlemek için Palet Yöneticisi'nde kilidini açın." # mt

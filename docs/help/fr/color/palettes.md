@@ -46,6 +46,7 @@ couleurs de chacune. Ouvrez-le avec
 
 - Cochez une palette pour l'afficher sous la fenêtre de dessin.
 - [[docker.edit]] l'ouvre dans l'éditeur de palette.
+- [[docker.palette_lock]] verrouille une palette que vous avez ouverte ou créée, pour que l'éditeur de palette ne puisse pas la modifier ; [[docker.palette_unlock]] permet de la modifier à nouveau.
 - [[menu.window.palette_open]] ouvre un fichier de palette (`.tdpal`,
   `.gpl`, `.ase` ou `.aco`).
 - [[menu.window.palette_from_document]] et

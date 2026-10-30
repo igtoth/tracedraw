@@ -1440,6 +1440,9 @@ pub struct App {
     pub workspace: Workspace,
     pub palettes: Vec<crate::palette::Palette>,
     pub visible_palettes: Vec<usize>,
+    /// The palettes locked in the Palette Manager (indices into
+    /// `palettes`): the Palette Editor does not change them (#1343).
+    pub locked_palettes: Vec<usize>,
     pub show_standard_toolbar: bool,
     pub show_property_bar: bool,
     pub show_toolbox: bool,
@@ -2502,6 +2505,7 @@ impl App {
             workspace: Workspace::Default,
             palettes: crate::palette::builtin_palettes(),
             visible_palettes: vec![0],
+            locked_palettes: Vec::new(),
             show_standard_toolbar: true,
             show_property_bar: true,
             show_toolbox: true,

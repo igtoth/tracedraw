@@ -3029,15 +3029,56 @@ impl App {
             )
             .pick_file(self, |app, path| {
                 match crate::palette::load_palette(&path) {
-                    Ok(p) => {
-                        app.palettes.push(p);
-                        let i = app.palettes.len() - 1;
-                        app.visible_palettes.insert(0, i);
-                        app.rebuild_palette();
-                    }
+                    Ok(p) => app.add_palette(p),
                     Err(e) => app.status = format!("{}: {e}", path.display()),
                 }
             });
+    }
+
+    /// A palette opened from a file: it joins the list and gets a strip
+    /// of its own next to the default palette, which stays where it is.
+    /// The same file opened again takes the place of the copy already
+    /// open (its colours read anew) rather than adding a second one. The
+    /// opened palette went first, so the default palette moved to a
+    /// strip of its own and two palettes seemed to come at once (#1343).
+    pub fn add_palette(&mut self, p: crate::palette::Palette) {
+        let open = p.path.as_ref().and_then(|path| {
+            self.palettes
+                .iter()
+                .position(|q| q.path.as_ref() == Some(path))
+        });
+        let i = match open {
+            Some(i) => {
+                // A locked palette keeps its colours.
+                if !self.palette_locked(i) {
+                    self.palettes[i] = p;
+                }
+                i
+            }
+            None => {
+                self.palettes.push(p);
+                self.palettes.len() - 1
+            }
+        };
+        if !self.visible_palettes.contains(&i) {
+            self.visible_palettes.push(i);
+        }
+        self.rebuild_palette();
+    }
+
+    /// Palette `i` is locked: the Palette Editor shows it without changing
+    /// it.
+    pub fn palette_locked(&self, i: usize) -> bool {
+        self.locked_palettes.contains(&i)
+    }
+
+    /// The Palette Manager's padlock: lock palette `i` or unlock it.
+    pub fn toggle_palette_lock(&mut self, i: usize) {
+        if let Some(pos) = self.locked_palettes.iter().position(|k| *k == i) {
+            self.locked_palettes.remove(pos);
+        } else if i < self.palettes.len() {
+            self.locked_palettes.push(i);
+        }
     }
 
     fn colors_of(shapes: &[Shape], out: &mut Vec<Color>) {

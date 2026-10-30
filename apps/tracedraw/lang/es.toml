@@ -7068,3 +7068,7 @@ hintobj.several.1 = "Arrástrelos para moverlos juntos; arrastre un tirador para
 hintobj.several.2 = "Agrupar (Ctrl+G) los mantiene juntos; Combinar (Ctrl+L) los vuelve una curva; Alinear y distribuir los ordena." # mt
 hintobj.several.bar = "Posición y tamaño de la selección, Agrupar, Combinar, Soldar, Recortar, Intersecar y los demás comandos de modelado." # mt
 status.flow_text_from = "Haga clic en el marco de párrafo (en cualquier página) cuyo texto fluye a este, o haga clic o arrastre donde va un marco nuevo; Esc cancela" # mt
+docker.palette_lock = "Bloquear" # mt
+docker.palette_unlock = "Desbloquear" # mt
+docker.palette_lock_desc = "Una paleta bloqueada no se puede cambiar en el Editor de paletas hasta desbloquearla." # mt
+dialog.locked_palette_hint = "Esta paleta está bloqueada; desbloquéela en el Administrador de paletas para editarla." # mt

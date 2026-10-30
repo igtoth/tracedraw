@@ -7068,3 +7068,7 @@ hintobj.several.1 = "Ziehen Sie sie, um sie gemeinsam zu verschieben; ziehen Sie
 hintobj.several.2 = "Gruppieren (Strg+G) hält sie zusammen; Kombinieren (Strg+L) macht eine Kurve daraus; Ausrichten und verteilen reiht sie auf." # mt
 hintobj.several.bar = "Position und Größe der Auswahl, Gruppieren, Kombinieren, Verschmelzen, Zuschneiden, Schnittmenge und die anderen Formbefehle." # mt
 status.flow_text_from = "Klicken Sie auf den Mengentextrahmen (auf einer beliebigen Seite), dessen Text in diesen fließt, oder klicken oder ziehen Sie dort, wo ein neuer Rahmen hinkommt; Esc bricht ab" # mt
+docker.palette_lock = "Sperren" # mt
+docker.palette_unlock = "Entsperren" # mt
+docker.palette_lock_desc = "Eine gesperrte Palette kann im Paletteneditor erst nach dem Entsperren geändert werden." # mt
+dialog.locked_palette_hint = "Diese Palette ist gesperrt; entsperren Sie sie in der Palettenverwaltung, um sie zu bearbeiten." # mt

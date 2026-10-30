@@ -45,6 +45,7 @@ colori di ciascuna. Aprilo con
 
 - Spunta una tavolozza per mostrarla sotto la finestra di disegno.
 - [[docker.edit]] la apre nell'editor delle tavolozze.
+- [[docker.palette_lock]] blocca una tavolozza che hai aperto o creato, così l'editor delle tavolozze non può modificarla; [[docker.palette_unlock]] consente di nuovo di modificarla.
 - [[menu.window.palette_open]] apre un file di tavolozza (`.tdpal`, `.gpl`,
   `.ase` o `.aco`).
 - [[menu.window.palette_from_document]] e

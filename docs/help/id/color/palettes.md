@@ -44,6 +44,7 @@ warna di masing-masing. Buka dengan
 
 - Centang palet untuk menampilkannya di bawah jendela gambar.
 - [[docker.edit]] membukanya di penyunting palet.
+- [[docker.palette_lock]] mengunci palet yang Anda buka atau buat, sehingga penyunting palet tidak dapat mengubahnya; [[docker.palette_unlock]] mengizinkan penyuntingan lagi.
 - [[menu.window.palette_open]] membuka berkas palet (`.tdpal`, `.gpl`,
   `.ase`, atau `.aco`).
 - [[menu.window.palette_from_document]] dan
