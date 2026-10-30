@@ -24,6 +24,8 @@ gauche ouvre le menu de la palette.
 La palette peut être déplacée vers un autre bord de la fenêtre, ou rendue
 flottante : faites-la glisser par sa poignée en pointillés.
 
+De chaque côté, elle peut se placer au bord de la fenêtre ou contre le dessin, entre le dessin et les panneaux ou la boîte à outils de ce côté. Pendant que vous la faites glisser, une bande bleue montre où elle ira ; un clic droit sur sa poignée propose la liste des places.
+
 ## La palette du document {#document-palette}
 
 Chaque couleur que vous appliquez à un objet rejoint la palette du document,

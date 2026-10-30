@@ -204,8 +204,8 @@ Y; turned off, it moves the reference point to X and Y. Detail:
 
 ## Align and distribute
 
-To line objects up, open **Align and Distribute** (`Ctrl+Shift+A`, or
-**Object > Align and Distribute**).
+To line objects up, open **Align and Distribute**
+(**Object > Align and Distribute**).
 
 - Six **Align** buttons line up left edges, centres or right edges, and
   top edges, centres or bottom edges.

@@ -24,6 +24,8 @@ all'estremità sinistra apre il menu della tavolozza.
 La tavolozza può essere spostata su un altro bordo della finestra o resa
 mobile: trascinala dalla sua maniglia tratteggiata.
 
+Su ogni lato può stare al bordo della finestra o accanto al disegno, tra il disegno e i pannelli o la casella degli strumenti di quel lato. Mentre la trascini, una fascia blu mostra dove andrà; fai clic destro sulla maniglia per scegliere un posto da un elenco.
+
 ## La tavolozza del documento {#document-palette}
 
 Ogni colore che applichi a un oggetto entra nella tavolozza del documento,

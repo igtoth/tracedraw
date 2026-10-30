@@ -12,6 +12,8 @@
   held at the end, every object the lasso touches (the same rules as the
   Pick tool's Alt marquee). The lasso is closed from its last point to
   its first and tested even-odd; fewer than three points select nothing.
+- With Alt held at the press the lasso starts also over an object that
+  is not selected, as with the Pick tool's frame (#1350).
 - With Ctrl held, the lasso is a rectangle from where the drag began to
   the pointer.
 - Check: `pick_drag_tests::the_freehand_pick_lassoes_and_has_the_pick_tools_handles`.
@@ -32,14 +34,20 @@
   - Free Scale: scale uniformly about the press point by the ratio of
     the pointer distances to it, step by step.
   - Free Skew: horizontal pointer motion skews along x, vertical along
-    y, by `distance in mm / 50` per step, about the press point.
+    y, by `distance in mm / 50` per step, about the press point. The
+    step is a shear along x followed by a shear along y, so it keeps the
+    area and never mirrors (one skew by both amounts turned the object
+    over once their product passed 1, as a quick diagonal stroke did to
+    text, #1342).
 - Modifier keys override the mode for one drag: Alt scales, Ctrl skews,
   Shift reflects.
 - Apply to Duplicate: the press duplicates the selection in place (no
   duplicate offset) and the drag transforms the copy; the original is
   untouched.
-- Every step is one `TransformShapes` command; the drag is undone as a
-  sequence.
+- Every step is one `TransformShapes` command, all of them in one undo
+  group (`Engine::begin_group` at the press, `end_group` at the
+  release): one Undo puts the selection back as it was before the drag,
+  and with Apply to Duplicate it also takes the copy away (#1342).
 
 ## Checks
 
@@ -50,3 +58,7 @@
 - Given any mode, the press point stays fixed under the step.
 - Given Apply to Duplicate, after the drag the document has one more
   object and the original bounds are unchanged.
+- Given any drag, one Undo restores the object exactly; given a Ctrl
+  drag in one large diagonal step on a text, the text is not mirrored
+  (`pick_drag_tests::a_free_transform_drag_is_one_undo_step`,
+  `pick_drag_tests::free_skew_never_mirrors_text`).

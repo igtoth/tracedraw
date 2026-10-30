@@ -18,8 +18,8 @@ orientação, e evita o entalhe ou os cantos arredondados da tela.
   o menu do navegador e **Instalar app** ou **Adicionar à tela inicial**. O
   Chrome também pode oferecer isso numa barra abaixo da barra de endereço.
 - **iPad** (Safari): abra a página, toque em **Compartilhar** e depois em
-  **Adicionar à Tela de Início**. No iPad e no iPhone, as caixas Abrir e
-  Importar mostram todos os arquivos, porque o sistema deixaria os
+  **Adicionar à Tela de Início**. No iPad e no iPhone, como num tablet Android, as caixas
+  Abrir e Importar mostram todos os arquivos, porque o sistema deixaria os
   arquivos `.cdr` cinza; escolha um desenho que o TraceDraw abre.
 - **Computador** (Chrome, Edge): clique no ícone de instalar na ponta direita
   da barra de endereço, ou escolha **Instalar TraceDraw** no menu do

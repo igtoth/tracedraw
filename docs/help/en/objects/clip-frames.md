@@ -13,14 +13,16 @@ taken out again. The commands are in [[menu.object > menu.object.clip_frame]].
 
 The objects keep their position. You can also drag the objects onto the frame
 with the right mouse button and choose to place them inside; see
-[Dragging with the right button](selecting.md#right-drag).
+[Dragging with the right button](selecting.md#right-drag), or drag them onto
+the frame with the [[tool.pick]] tool holding <kbd>W</kbd> or <kbd>Alt</kbd>
+before you release.
 
 ## Editing what is inside {#edit-contents}
 
 - [[menu.object.clip_frame_edit]] enters the frame: only the objects inside
   can be edited, the rest of the page is dimmed and the frame shows as an
-  outline. [[menu.object.clip_frame_finish]], or the button on the property
-  bar, leaves it.
+  outline. [[menu.object.clip_frame_finish]], the button on the property
+  bar, or <kbd>Ctrl</kbd>+click off the objects inside leaves it.
 - [[menu.object.clip_frame_extract]] makes the objects inside ordinary
   objects again; the frame stays, empty.
 - [[menu.object.clip_frame_lock]] (on at first): moving, scaling or rotating

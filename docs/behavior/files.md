@@ -185,5 +185,10 @@ objects open as drawn.
   keeps the plain marks (0, 0x04), so the program that reads `.cdr`
   files keeps the colours (#1297;
   `write::tests::runs_of_their_own_style_are_marked_as_applying`).
+- A picture saved as `.cdr` has its outline nodes marked as a curve's
+  (0x0c, 0x44, 0x44, 0x44, 0x48), as the files of the program that reads
+  `.cdr` files have them; unmarked, a click on the picture closed that
+  program (#1226; `write::tests::bitmap_objects_carry_their_pixel_size`,
+  `check::tests::bitmap_outlines_need_node_marks`).
 - Checked on screen: the dialog with its shortcuts, list, type list,
   version and stars; Save as CDR wrote the file in the folder shown.

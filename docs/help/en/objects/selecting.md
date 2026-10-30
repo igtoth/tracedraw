@@ -14,7 +14,8 @@ freehand loop.
 - <kbd>Shift</kbd>+click adds an object to the selection or takes it out.
 - **Drag** around objects, starting on an empty spot: the objects wholly
   inside the dashed frame are selected. Hold <kbd>Alt</kbd> as you finish the
-  drag to select every object the frame touches. Hold <kbd>Shift</kbd> to
+  drag to select every object the frame touches; held from the start, the
+  frame can start over an object (a background) too. Hold <kbd>Shift</kbd> to
   turn over the objects the frame takes: those selected are deselected and
   the others added. Hold <kbd>Ctrl</kbd> to keep the frame square.
 - <kbd>Ctrl</kbd>+click selects an object inside a group, one level further

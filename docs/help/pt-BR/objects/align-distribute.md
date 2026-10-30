@@ -1,8 +1,7 @@
 # Alinhar e distribuir objetos
 
 Alinhar coloca objetos em fila pelas bordas ou pelos centros; distribuir os
-espaça por igual. Use o painel [[docker.align_distribute]]
-(<kbd>Ctrl+Shift+A</kbd>), os comandos de
+espaça por igual. Use o painel [[docker.align_distribute]], os comandos de
 [[menu.object > menu.object.align_distribute]] ou as teclas abaixo.
 
 ![O painel Alinhar e distribuir](../../img/objects-align-distribute.png)

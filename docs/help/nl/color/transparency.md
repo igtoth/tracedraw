@@ -31,6 +31,8 @@ volgen.
 - **Bevriezen**: houdt wat doorschijnt zoals het nu is, ook als de objecten
   eronder verplaatst worden.
 
+Klik om ze te verwijderen op [[toolbar.clear_transparency]] aan het eind van de eigenschappenbalk (of kies [[transparency.none]] als soort).
+
 Om de transparantie van een ander object te kopiëren, gebruikt u
 [[menu.object > menu.object.copy_effect > menu.object.copy_transparency_from]].
 Voor doorzichtige gebieden die door de helderheid van een object worden

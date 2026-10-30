@@ -103,10 +103,11 @@ fn mime_for(name: &str) -> &'static str {
     }
 }
 
-/// Whether the page runs on an iPhone or iPad (see
-/// [`crate::files::apple_touch_browser`]), from the navigator's user
+/// Whether the page runs on an iPhone, iPad or Android device, whose
+/// file picker filters by file type (see
+/// [`crate::files::picker_filters_by_type`]), from the navigator's user
 /// agent, platform and touch points.
-pub fn apple_touch_browser() -> bool {
+pub fn picker_filters_by_type() -> bool {
     let Some(window) = web_sys::window() else {
         return false;
     };
@@ -124,7 +125,7 @@ pub fn apple_touch_browser() -> bool {
     let touch = get(&navigator, "maxTouchPoints")
         .and_then(|v| v.as_f64())
         .unwrap_or(0.0);
-    crate::files::apple_touch_browser(&text("userAgent"), &text("platform"), touch as u32)
+    crate::files::picker_filters_by_type(&text("userAgent"), &text("platform"), touch as u32)
 }
 
 /// A value from the browser's local storage.
@@ -322,6 +323,21 @@ fn watch_chorded_right_press() {
         true,
     );
     watch.forget();
+    // The left button let go while the right one is held: the browser
+    // sends no pointer release until the last button goes up, so egui
+    // would keep the left button held (#1334).
+    let up = Closure::<dyn FnMut(web_sys::MouseEvent)>::new(|e: web_sys::MouseEvent| {
+        if crate::interaction::is_chorded_left_release(e.button(), e.buttons()) {
+            crate::interaction::note_chorded_left_release();
+            request_repaint();
+        }
+    });
+    let _ = window.add_event_listener_with_callback_and_bool(
+        "mouseup",
+        up.as_ref().unchecked_ref(),
+        true,
+    );
+    up.forget();
 }
 
 /// Start the editor on the page's `<canvas id="tracedraw">`.

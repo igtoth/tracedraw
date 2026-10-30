@@ -238,6 +238,11 @@ impl App {
 
     fn free_transform_input(&mut self, response: &Response, p: Point, mods: Modifiers) {
         use crate::app::FreeTransformMode as M;
+        // A drag that ended without its release reaching here (Esc, a
+        // tool change) closes its undo group.
+        if !matches!(self.drag, Drag::Rotate { .. }) {
+            self.end_free_transform_group();
+        }
         if response.drag_started_by(PointerButton::Primary) {
             if let Some(id) = self.hit_test(p) {
                 if !self.selection.contains(&id) {
@@ -245,6 +250,9 @@ impl App {
                 }
             }
             if !self.selection.is_empty() {
+                // The whole drag is one undo step (#1342).
+                self.end_free_transform_group();
+                self.free_transform_group = Some(self.engine.begin_group());
                 if self.free_transform_duplicate {
                     // Transform a copy, leave the original where it is.
                     let offset = self.duplicate_offset;
@@ -285,11 +293,27 @@ impl App {
                 }
             }
         }
+        if response.drag_stopped_by(PointerButton::Primary)
+            && matches!(self.drag, Drag::Rotate { .. })
+        {
+            // Every step was applied as the pointer moved; the release
+            // has nothing more to do than close the undo group.
+            self.drag = Drag::None;
+            self.end_free_transform_group();
+        }
         if response.clicked_by(PointerButton::Primary) {
             match self.hit_test(p) {
                 Some(id) => self.select(vec![id]),
                 None => self.select(Vec::new()),
             }
+        }
+    }
+
+    /// Close the undo group of a Free Transform drag, if one is open: its
+    /// steps become one "Free Transform" step.
+    pub fn end_free_transform_group(&mut self) {
+        if let Some(mark) = self.free_transform_group.take() {
+            self.engine.end_group(mark, "Free Transform");
         }
     }
 
@@ -652,9 +676,13 @@ pub fn free_transform_step(
             about(Affine::scale(d1 / d0))
         }
         M::Skew => {
-            // Horizontal motion skews along x, vertical along y.
+            // Horizontal motion skews along x, vertical along y. One shear
+            // after the other, so the step keeps the area and never turns
+            // the object over: a single skew by both amounts mirrors it
+            // once their product passes 1, as a quick diagonal stroke did
+            // to text (#1342).
             let d = p - last;
-            about(Affine::skew(d.x / 50.0, d.y / 50.0))
+            about(Affine::skew(d.x / 50.0, 0.0) * Affine::skew(0.0, d.y / 50.0))
         }
         M::Reflection => {
             // Mirror across the line from the press point through the

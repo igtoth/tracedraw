@@ -29,7 +29,9 @@ ponto sobre uma alça de controle, uma onda sobre um segmento.
 - <kbd>Shift</kbd>+clique seleciona todos os nós desde o último selecionado até
   o que você clicar.
 - Arraste uma área em volta dos nós. O modo de seleção da barra de
-  propriedades escolhe uma área retangular ou à mão livre.
+  propriedades escolhe uma área retangular ou à mão livre; <kbd>Alt</kbd>+arraste
+  sempre desenha uma à mão livre, e <kbd>Alt+Shift</kbd>+arraste soma os nós dela
+  aos selecionados.
 - <kbd>Tab</kbd> e <kbd>Shift+Tab</kbd> selecionam o próximo ou o anterior;
   <kbd>Home</kbd> e <kbd>End</kbd> o primeiro ou o último.
 - <kbd>Ctrl+A</kbd>, o botão de selecionar todos os nós ou um clique duplo no

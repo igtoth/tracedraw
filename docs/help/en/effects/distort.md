@@ -11,9 +11,12 @@ at any time, and the object keeps its own outline.
 2. Choose the kind on the property bar.
 3. Drag on the object. The distortion is centered where you start.
    - **Push and pull**: drag right to push the nodes out (spiky shapes with
-     hollow sides), left to pull them in (rounded petals).
+     hollow sides), left to pull them in (rounded petals). A straight side
+     bends from its middle, so a square pulled in gets four round lobes.
    - **Zipper**: the further you drag, the taller the teeth.
-   - **Twister**: drag around the starting point; full turns count.
+   - **Twister**: drag around the starting point; full turns count. The
+     handle follows the pointer as far out or as near as you drag it and
+     stays that long; its length does not change the twist.
 
 The center of a selected distortion shows as a diamond: drag it to move the
 center. Dragging again replaces the distortion; an object has at most one.

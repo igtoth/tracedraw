@@ -2772,6 +2772,14 @@ fn bitmap_objects_carry_their_pixel_size() {
         if v >= 14 {
             assert_eq!(&b[types_at + 5..], &[0, 0, 0, 0], "{v}");
         }
+        // The node bytes carry the marks curves carry, as every bitmap of
+        // the files of the program that reads them has them; without them
+        // a click on the bitmap closed that program (#1226).
+        assert_eq!(
+            &b[types_at..types_at + 5],
+            &[0x0c, 0x44, 0x44, 0x44, 0x48],
+            "{v}"
+        );
     }
 }
 
@@ -2879,6 +2887,13 @@ fn bitmap_boxes_start_at_the_origin_and_their_transform_places_them() {
         } else {
             assert!(n > 5, "{v}: {n} points");
         }
+        // The outline's first node is marked as a curve's is (#1226).
+        let first_type = b[count_at + 4 + n * 8];
+        assert_eq!(
+            first_type & 0x0c,
+            0x0c,
+            "{v}: first node byte {first_type:#x}"
+        );
         for k in 0..n {
             let (x, y) = (i(count_at + 4 + k * 8), i(count_at + 8 + k * 8));
             assert!(

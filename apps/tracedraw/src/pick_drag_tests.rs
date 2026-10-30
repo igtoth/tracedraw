@@ -25,8 +25,9 @@ fn frame(ctx: &egui::Context, app: &mut App, events: Vec<Event>, modifiers: Modi
         events: all,
         ..Default::default()
     };
-    // As the window's raw input hook does (main.rs).
+    // As the window's raw input hook does (lib.rs).
     crate::pen::filter_raw_input(ctx, &mut input);
+    crate::interaction::release_chorded_left(ctx, &mut input);
     let mut out = ctx.run_ui(input, |ui| crate::ui::root(app, ui));
     out.textures_delta.clear();
 }
@@ -331,6 +332,109 @@ fn space_while_moving_drops_a_copy() {
         "{copy:?} {moved:?}"
     );
     assert_eq!(app.tool, Tool::Pick);
+}
+
+/// A Free Transform drag is one undo step: Undo puts the object back as
+/// it was before the drag, not one pointer step back; with Apply to
+/// Duplicate it takes the copy away too (#1342).
+#[test]
+fn a_free_transform_drag_is_one_undo_step() {
+    let (ctx, mut app, id) = setup();
+    let before = app
+        .doc()
+        .find_shape(id)
+        .map(|s| s.transform)
+        .expect("shape");
+    let count = shape_count(&app);
+    app.set_tool(Tool::FreeTransform);
+    let from = app.view.to_screen(Point::new(35.0, 25.0));
+    for mods in [Modifiers::NONE, Modifiers::CTRL, Modifiers::ALT] {
+        drag(
+            &ctx,
+            &mut app,
+            from,
+            from + egui::vec2(120.0, 60.0),
+            mods,
+            Vec::new(),
+        );
+        let after = app
+            .doc()
+            .find_shape(id)
+            .map(|s| s.transform)
+            .expect("shape");
+        assert_ne!(after, before, "{mods:?}: transformed");
+        assert_eq!(app.engine.undo_label(), Some("Free Transform"));
+        app.undo();
+        let undone = app
+            .doc()
+            .find_shape(id)
+            .map(|s| s.transform)
+            .expect("shape");
+        let d: f64 = undone
+            .as_coeffs()
+            .iter()
+            .zip(before.as_coeffs())
+            .map(|(a, b)| (a - b).abs())
+            .sum();
+        assert!(d < 1e-9, "{mods:?}: {undone:?} is not {before:?}");
+    }
+    // Apply to Duplicate: one Undo takes the turned copy away.
+    app.free_transform_duplicate = true;
+    drag(
+        &ctx,
+        &mut app,
+        from,
+        from + egui::vec2(120.0, 60.0),
+        Modifiers::NONE,
+        Vec::new(),
+    );
+    assert_eq!(shape_count(&app), count + 1);
+    app.undo();
+    assert_eq!(shape_count(&app), count);
+    assert_eq!(app.doc().find_shape(id).map(|s| s.transform), Some(before));
+}
+
+/// Free Skew (Ctrl with Free Transform) never mirrors, however far one
+/// pointer step goes on both axes: a text skewed by a quick diagonal
+/// stroke stays readable (#1342).
+#[test]
+fn free_skew_never_mirrors_text() {
+    let (ctx, mut app, _) = setup();
+    app.start_text(Point::new(20.0, 100.0), None);
+    app.text_insert("Skew");
+    app.finish_text();
+    let t = app.selection[0];
+    app.set_tool(Tool::FreeTransform);
+    for _ in 0..3 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    let from = app
+        .view
+        .to_screen(app.doc().find_shape(t).expect("text").bounds().center());
+    let mods = Modifiers::CTRL;
+    frame(&ctx, &mut app, vec![Event::PointerMoved(from)], mods);
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(from, true, PointerButton::Primary, mods)],
+        mods,
+    );
+    frame(
+        &ctx,
+        &mut app,
+        vec![Event::PointerMoved(from + egui::vec2(10.0, 0.0))],
+        mods,
+    );
+    let far = from + egui::vec2(500.0, -500.0);
+    frame(&ctx, &mut app, vec![Event::PointerMoved(far)], mods);
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(far, false, PointerButton::Primary, mods)],
+        mods,
+    );
+    let m = app.doc().find_shape(t).map(|s| s.transform).expect("text");
+    assert!(m.determinant() > 0.0, "mirrored: {m:?}");
 }
 
 #[test]
@@ -805,6 +909,107 @@ fn every_palette_shown_gets_a_strip() {
     assert_eq!(app.extra_palettes[0].index, gray);
 }
 
+/// Where the default palette's swatch of `name` is drawn.
+fn swatch_of(ctx: &egui::Context, app: &mut App, name: &str) -> Pos2 {
+    let c = app
+        .palette
+        .iter()
+        .find(|(n, _)| n == name)
+        .map(|(_, c)| *c)
+        .expect("colour");
+    let want = crate::canvas::to_color32(c);
+    frame_shapes(ctx, app, Vec::new())
+        .into_iter()
+        .filter_map(|s| match s {
+            egui::Shape::Rect(r)
+                if r.fill == want && r.rect.width() > 8.0 && r.rect.width() < 30.0 =>
+            {
+                Some(r.rect.center())
+            }
+            _ => None,
+        })
+        .last()
+        .unwrap_or_else(|| panic!("no swatch of {name}"))
+}
+
+/// The selected object's fill is the default palette's `name`.
+fn filled_with(app: &App, id: ShapeId, name: &str) -> bool {
+    let want = app
+        .palette
+        .iter()
+        .find(|(n, _)| n == name)
+        .map(|(_, c)| *c)
+        .expect("colour");
+    app.doc().find_shape(id).map(|s| s.fill.clone()) == Some(tracedraw_core::Fill::Solid(want))
+}
+
+/// Every click on a palette colour applies it (#1336): one whose
+/// pointer slipped a few pixels on the swatch before the release (egui
+/// takes that for a drag, which dropped the colour nowhere), and the
+/// click after a hold that opened the shades and was let go past a
+/// click's time (its mark stayed and took that click).
+#[test]
+fn every_click_on_a_palette_colour_applies_it() {
+    let (ctx, mut app, id) = setup();
+    for _ in 0..3 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    let none = Modifiers::NONE;
+    // A slipped click.
+    let blue = swatch_of(&ctx, &mut app, "Blue");
+    let slip = blue + egui::vec2(0.0, 7.0);
+    frame(&ctx, &mut app, vec![Event::PointerMoved(blue)], none);
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(blue, true, PointerButton::Primary, none)],
+        none,
+    );
+    frame(&ctx, &mut app, vec![Event::PointerMoved(slip)], none);
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(slip, false, PointerButton::Primary, none)],
+        none,
+    );
+    for _ in 0..20 {
+        frame(&ctx, &mut app, Vec::new(), none);
+    }
+    assert!(filled_with(&app, id, "Blue"), "the slipped click");
+    // A hold of more than a second opens the shades; the release over
+    // them is no click; a shade picked closes them.
+    let red = swatch_of(&ctx, &mut app, "Red");
+    frame(&ctx, &mut app, vec![Event::PointerMoved(red)], none);
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(red, true, PointerButton::Primary, none)],
+        none,
+    );
+    for _ in 0..70 {
+        frame(&ctx, &mut app, Vec::new(), none);
+    }
+    assert!(app.palette_shades.is_some(), "the shades opened");
+    let above = red - egui::vec2(0.0, 40.0);
+    frame(&ctx, &mut app, vec![Event::PointerMoved(above)], none);
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(above, false, PointerButton::Primary, none)],
+        none,
+    );
+    for _ in 0..20 {
+        frame(&ctx, &mut app, Vec::new(), none);
+    }
+    app.palette_shades = None;
+    for _ in 0..3 {
+        frame(&ctx, &mut app, Vec::new(), none);
+    }
+    let yellow = swatch_of(&ctx, &mut app, "Yellow");
+    click_at(&ctx, &mut app, yellow, none);
+    assert!(filled_with(&app, id, "Yellow"), "the click after a hold");
+}
+
 fn click_at(ctx: &egui::Context, app: &mut App, at: Pos2, mods: Modifiers) {
     frame(ctx, app, vec![Event::PointerMoved(at)], mods);
     frame(
@@ -1011,6 +1216,146 @@ fn alt_click_digs_to_the_object_beneath() {
     click_at(&ctx, &mut app, both, Modifiers::ALT);
     assert_eq!(app.selection, vec![top]);
     assert!(!app.rotate_mode);
+}
+
+/// Alt+drag selects by touching also when it starts over an object that
+/// is not selected, such as a background under the objects (it moved
+/// that object instead), with the Pick and the Freehand Pick tools
+/// (#1341, #1350). Alt+drag on the selection still moves it.
+#[test]
+fn alt_drag_selects_also_when_it_starts_over_an_object() {
+    for tool in [Tool::Pick, Tool::FreeformPick] {
+        let (ctx, mut app, id) = setup();
+        let bg = app
+            .new_shape(ShapeKind::Rect {
+                rect: Rect::new(-20.0, -20.0, 200.0, 150.0),
+                radius: 0.0,
+                corners: None,
+            })
+            .expect("background");
+        app.select(vec![bg]);
+        app.apply_fill(tracedraw_core::Fill::Solid(tracedraw_core::Color::rgb8(
+            220, 220, 220,
+        )));
+        app.order(3);
+        app.set_tool(tool);
+        app.select(Vec::new());
+        let bg_before = bounds(&app, bg);
+        // A frame to (30, 20), or a loop through it for the lasso.
+        let pts: Vec<Point> = if tool == Tool::Pick {
+            vec![
+                Point::new(0.0, 0.0),
+                Point::new(15.0, 10.0),
+                Point::new(30.0, 20.0),
+            ]
+        } else {
+            vec![
+                Point::new(0.0, 0.0),
+                Point::new(30.0, 0.0),
+                Point::new(30.0, 20.0),
+                Point::new(0.0, 20.0),
+                Point::new(0.0, 1.0),
+            ]
+        };
+        let alt = Modifiers::ALT;
+        let s = app.view.to_screen(pts[0]);
+        frame(&ctx, &mut app, vec![Event::PointerMoved(s)], alt);
+        frame(
+            &ctx,
+            &mut app,
+            vec![button(s, true, PointerButton::Primary, alt)],
+            alt,
+        );
+        for p in &pts[1..] {
+            let q = app.view.to_screen(*p);
+            frame(&ctx, &mut app, vec![Event::PointerMoved(q)], alt);
+        }
+        let e = app.view.to_screen(*pts.last().expect("point"));
+        frame(
+            &ctx,
+            &mut app,
+            vec![button(e, false, PointerButton::Primary, alt)],
+            alt,
+        );
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+        assert_eq!(bounds(&app, bg), bg_before, "{tool:?}: nothing moved");
+        assert!(app.selection.contains(&id), "{tool:?}: {:?}", app.selection);
+        // Alt+drag on the selection moves it.
+        app.select(vec![id]);
+        let from = app.view.to_screen(Point::new(35.0, 25.0));
+        drag(
+            &ctx,
+            &mut app,
+            from,
+            from + egui::vec2(60.0, 0.0),
+            alt,
+            Vec::new(),
+        );
+        assert!(bounds(&app, id).x0 > 11.0, "{tool:?}: moved");
+    }
+}
+
+/// With the Shape tool Alt+drag draws a freehand marquee whatever the
+/// bar's selection mode, and Alt+Shift adds the nodes it takes to the
+/// chosen ones (#1341).
+#[test]
+fn alt_drag_with_the_shape_tool_is_a_freehand_node_marquee() {
+    let (ctx, mut app, id) = setup();
+    app.convert_to_curves();
+    app.set_tool(Tool::Shape);
+    app.node_lasso = false;
+    for _ in 0..3 {
+        frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    }
+    let loop_through = |ctx: &egui::Context, app: &mut App, pts: &[Point], m: Modifiers| {
+        let screen = lasso_path(app, pts);
+        let s = screen[0];
+        frame(ctx, app, vec![Event::PointerMoved(s)], m);
+        frame(
+            ctx,
+            app,
+            vec![button(s, true, PointerButton::Primary, m)],
+            m,
+        );
+        for q in &screen[1..] {
+            frame(ctx, app, vec![Event::PointerMoved(*q)], m);
+            assert!(
+                !matches!(app.drag, Drag::NodeMarquee { .. }),
+                "not the rectangle"
+            );
+        }
+        let e = *screen.last().expect("point");
+        frame(
+            ctx,
+            app,
+            vec![button(e, false, PointerButton::Primary, m)],
+            m,
+        );
+        frame(ctx, app, Vec::new(), Modifiers::NONE);
+    };
+    // Round the two left corners (x = 10).
+    let left = [
+        Point::new(5.0, 5.0),
+        Point::new(15.0, 5.0),
+        Point::new(15.0, 45.0),
+        Point::new(5.0, 45.0),
+        Point::new(5.0, 6.0),
+    ];
+    loop_through(&ctx, &mut app, &left, Modifiers::ALT);
+    let mut got = app.node_selection.clone();
+    got.sort();
+    assert_eq!(got.len(), 2, "{got:?}");
+    assert!(got.iter().all(|(s, _)| *s == id));
+    // Alt+Shift round the lower right corner (60, 10): added.
+    let corner = [
+        Point::new(55.0, 5.0),
+        Point::new(65.0, 5.0),
+        Point::new(65.0, 15.0),
+        Point::new(55.0, 15.0),
+        Point::new(55.0, 6.0),
+    ];
+    loop_through(&ctx, &mut app, &corner, Modifiers::ALT | Modifiers::SHIFT);
+    assert_eq!(app.node_selection.len(), 3, "{:?}", app.node_selection);
 }
 
 #[test]
@@ -3995,6 +4340,81 @@ fn dropping_on_a_clip_frame_with_w_or_k_puts_the_objects_in() {
     assert_eq!(app.tool, Tool::Pick);
 }
 
+/// Editing a clip frame's contents ends with a Ctrl+click off the
+/// contents, on bare canvas or on a faded object outside; a plain click
+/// there keeps editing (#1337: only the bar's Finish left it).
+/// Alt held while objects are dropped on a frame puts them in, as W does.
+#[test]
+fn a_ctrl_click_off_the_contents_finishes_editing_a_clip_frame_and_alt_drops_inside() {
+    let (ctx, mut app, first) = setup();
+    app.select(vec![first]);
+    app.delete_selection();
+    let (rect, text) = text_and_frame(&mut app, true, false);
+    app.place_inside(vec![text], rect);
+    let clip = app.doc().top_level_of(text).expect("clip frame");
+    let inside = app.view.to_screen(text_middle(&app, text));
+    let none = Modifiers::NONE;
+    let enter = |ctx: &egui::Context, app: &mut App| {
+        app.select(Vec::new());
+        click_at(ctx, app, inside, Modifiers::CTRL);
+        assert_eq!(app.clip_frame_edit.as_ref().map(|e| e.0), Some(clip));
+    };
+    // Ctrl+click on bare canvas: finished, the contents back inside.
+    enter(&ctx, &mut app);
+    let outside = app.view.to_screen(Point::new(180.0, 150.0));
+    click_at(&ctx, &mut app, outside, Modifiers::CTRL);
+    assert!(app.clip_frame_edit.is_none(), "Ctrl+click outside");
+    assert_eq!(app.doc().top_level_of(text), Some(clip));
+    assert_eq!(app.selection, vec![clip]);
+    // A plain click off the contents, inside the frame's box or out of
+    // it: still editing; then Ctrl+click inside the box, off the text.
+    enter(&ctx, &mut app);
+    let in_box = app.view.to_screen(Point::new(140.0, 15.0));
+    click_at(&ctx, &mut app, in_box, none);
+    assert!(
+        app.clip_frame_edit.is_some(),
+        "a plain click inside the box"
+    );
+    click_at(&ctx, &mut app, outside, none);
+    assert!(app.clip_frame_edit.is_some(), "a plain click outside");
+    click_at(&ctx, &mut app, in_box, Modifiers::CTRL);
+    assert!(app.clip_frame_edit.is_none(), "Ctrl+click off the contents");
+    assert_eq!(app.doc().top_level_of(text), Some(clip));
+    // Alt held during a move onto the frame: into it.
+    app.settings.clip_frame.auto_center = crate::settings::AutoCenter::Never;
+    let sq = app
+        .new_shape(ShapeKind::Rect {
+            rect: Rect::new(200.0, 20.0, 220.0, 40.0),
+            radius: 0.0,
+            corners: None,
+        })
+        .expect("square");
+    app.select(vec![sq]);
+    let from = app.view.to_screen(Point::new(210.0, 30.0));
+    let to = app.view.to_screen(Point::new(60.0, 45.0));
+    frame(&ctx, &mut app, vec![Event::PointerMoved(from)], none);
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(from, true, PointerButton::Primary, none)],
+        none,
+    );
+    let alt = Modifiers::ALT;
+    for i in 1..=4 {
+        let p = from + (to - from) * (i as f32 / 4.0);
+        frame(&ctx, &mut app, vec![Event::PointerMoved(p)], alt);
+    }
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(to, false, PointerButton::Primary, alt)],
+        alt,
+    );
+    frame(&ctx, &mut app, Vec::new(), none);
+    assert_eq!(app.doc().top_level_of(sq), Some(clip), "Alt put it in");
+    assert_eq!(app.selection, vec![clip]);
+}
+
 /// Ctrl+click on a clip frame edits its contents (#982): the contents
 /// come out of the frame, the one under the pointer selected, and only
 /// they can be picked; Finish puts them back. Off the contents the click
@@ -4777,6 +5197,111 @@ fn the_shape_tool_takes_the_nearest_node_of_a_scaled_curve() {
     // A segment is found on the page too: the middle of the last one.
     let (_, seg, _) = app.segment_at(page(4.0, 2.5)).expect("segment");
     assert_eq!(seg, 3);
+}
+
+/// A browser sends the pointer's release only when its last button goes
+/// up: with a right click made during a move and the left button let go
+/// first, egui never heard of the left release and the object stayed on
+/// the pointer until Esc (#1334). The browser build notes the mouse
+/// event and the raw input hook gives egui the release: the move ends
+/// there with its copy, and the pointer moving on moves nothing.
+#[test]
+fn a_left_release_while_the_right_button_is_held_ends_the_drag() {
+    assert!(crate::interaction::is_chorded_left_release(0, 2));
+    assert!(
+        !crate::interaction::is_chorded_left_release(0, 0),
+        "no right button held"
+    );
+    assert!(
+        !crate::interaction::is_chorded_left_release(2, 1),
+        "the right button"
+    );
+    let (ctx, mut app, id) = setup();
+    let none = Modifiers::NONE;
+    let from = app.view.to_screen(Point::new(35.0, 25.0));
+    let to = from + egui::vec2(150.0, 0.0);
+    frame(&ctx, &mut app, vec![Event::PointerMoved(from)], none);
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(from, true, PointerButton::Primary, none)],
+        none,
+    );
+    let mid = from + (to - from) * 0.5;
+    frame(&ctx, &mut app, vec![Event::PointerMoved(mid)], none);
+    // The right press, as the browser build notes it.
+    crate::interaction::note_chorded_right_press();
+    frame(&ctx, &mut app, vec![Event::PointerMoved(to)], none);
+    assert!(app.drag_copy);
+    // The left button goes up first: only the mouse event tells.
+    crate::interaction::note_chorded_left_release();
+    frame(&ctx, &mut app, Vec::new(), none);
+    assert!(matches!(app.drag, Drag::None), "the drag ended");
+    assert_eq!(shape_count(&app), 2, "the copy was made");
+    assert!(close(bounds(&app, id).x0, 10.0), "the original stays");
+    // Then the right button: the pointer's release in the browser.
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(to, false, PointerButton::Secondary, none)],
+        none,
+    );
+    let copy = app.selection.clone();
+    let before: Vec<Rect> = copy.iter().map(|c| bounds(&app, *c)).collect();
+    for i in 1..=5 {
+        frame(
+            &ctx,
+            &mut app,
+            vec![Event::PointerMoved(to + egui::vec2(0.0, 20.0 * i as f32))],
+            none,
+        );
+    }
+    let after: Vec<Rect> = copy.iter().map(|c| bounds(&app, *c)).collect();
+    assert_eq!(before, after, "nothing follows the pointer");
+    assert!(matches!(app.drag, Drag::None));
+    // Noted with no button held, it adds nothing.
+    crate::interaction::note_chorded_left_release();
+    frame(&ctx, &mut app, Vec::new(), none);
+    assert_eq!(shape_count(&app), 2);
+}
+
+/// Space while a handle is dragged drops a copy also in a frame with no
+/// pointer movement, as a browser sends the key on its own (#1334).
+#[test]
+fn space_alone_in_a_frame_drops_a_copy_while_scaling() {
+    let (ctx, mut app, id) = setup();
+    let none = Modifiers::NONE;
+    let e = handle(&app, Handle::E);
+    frame(&ctx, &mut app, vec![Event::PointerMoved(e)], none);
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(e, true, PointerButton::Primary, none)],
+        none,
+    );
+    for i in 1..=3 {
+        frame(
+            &ctx,
+            &mut app,
+            vec![Event::PointerMoved(e + egui::vec2(20.0 * i as f32, 0.0))],
+            none,
+        );
+    }
+    frame(&ctx, &mut app, vec![key(egui::Key::Space, none)], none);
+    assert_eq!(shape_count(&app), 2, "a copy at the size of the moment");
+    let end = e + egui::vec2(120.0, 0.0);
+    frame(&ctx, &mut app, vec![Event::PointerMoved(end)], none);
+    frame(
+        &ctx,
+        &mut app,
+        vec![button(end, false, PointerButton::Primary, none)],
+        none,
+    );
+    frame(&ctx, &mut app, Vec::new(), none);
+    assert_eq!(shape_count(&app), 2);
+    assert!(matches!(app.drag, Drag::None));
+    assert_eq!(app.tool, Tool::Pick, "Space kept the tool");
+    assert!(bounds(&app, id).width() > 60.0);
 }
 
 /// A browser gives a right button pressed while the left one is held as
@@ -6608,6 +7133,94 @@ fn font_sizes_show_and_type_in_the_text_units() {
         (after - Units::Centimeters.to_pt(1.0)).abs() < 0.01,
         "{after}"
     );
+}
+
+/// Ctrl+Shift+A opens Copy Properties From: its boxes say what to copy,
+/// OK waits for a click on the object to copy from, and only the ticked
+/// properties come across (#1345: the shortcut did nothing).
+#[test]
+fn ctrl_shift_a_copies_the_ticked_properties_from_the_object_clicked() {
+    use crate::ops2::CopyProperties;
+    use crate::ui::dialogs::Dialog;
+    use tracedraw_core::{Color, Fill, Stroke};
+    let (ctx, mut app, id) = setup();
+    let src = app
+        .new_shape(ShapeKind::Rect {
+            rect: Rect::new(100.0, 10.0, 150.0, 40.0),
+            radius: 0.0,
+            corners: None,
+        })
+        .expect("source");
+    let blue = Fill::Solid(Color::rgb8(0, 0, 255));
+    let pen = Stroke {
+        color: Color::rgb8(0, 160, 0),
+        width: 2.0,
+        ..Stroke::default()
+    };
+    app.run(tracedraw_core::Command::SetFill {
+        shapes: vec![src],
+        fill: blue.clone(),
+    });
+    app.run(tracedraw_core::Command::SetStroke {
+        shapes: vec![src],
+        stroke: Some(pen.clone()),
+    });
+    let own = Stroke {
+        color: Color::rgb8(250, 0, 0),
+        width: 0.5,
+        ..Stroke::default()
+    };
+    app.run(tracedraw_core::Command::SetStroke {
+        shapes: vec![id],
+        stroke: Some(own.clone()),
+    });
+    app.select(vec![id]);
+    let none = Modifiers::NONE;
+    let cs = Modifiers::COMMAND | Modifiers::SHIFT;
+    frame(&ctx, &mut app, vec![key(egui::Key::A, cs)], cs);
+    frame(&ctx, &mut app, Vec::new(), none);
+    assert!(
+        matches!(app.dialog, Dialog::CopyProperties(_)),
+        "Ctrl+Shift+A opens the dialog"
+    );
+    // Untick Fill and Outline color, then OK.
+    if let Dialog::CopyProperties(c) = &mut app.dialog {
+        *c = CopyProperties {
+            fill: false,
+            outline_color: false,
+            ..CopyProperties::default()
+        };
+    }
+    let texts = texts_drawn(&ctx, &mut app, Vec::new());
+    let ok = text_at(&texts, &crate::i18n::tr("dialog.ok")).expect("OK");
+    click_at(&ctx, &mut app, ok, none);
+    assert!(matches!(app.dialog, Dialog::None));
+    assert!(app.pending_copy_properties, "waiting for the click");
+    let on_src = app.view.to_screen(Point::new(125.0, 25.0));
+    click_at(&ctx, &mut app, on_src, none);
+    assert!(!app.pending_copy_properties);
+    let s = app.doc().find_shape(id).expect("target").clone();
+    assert_ne!(s.fill, blue, "the fill was not ticked");
+    let got = s.stroke.expect("an outline");
+    assert!((got.width - 2.0).abs() < 1e-9, "the pen: {got:?}");
+    assert_eq!(got.color, own.color, "its own colour");
+    // The boxes are kept; the colour alone next time.
+    assert!(!app.copy_properties_choice.fill);
+    app.copy_properties_choice = CopyProperties {
+        outline_color: true,
+        outline_pen: false,
+        fill: false,
+        text: false,
+    };
+    app.copy_properties_from(src);
+    let got = app
+        .doc()
+        .find_shape(id)
+        .and_then(|s| s.stroke.clone())
+        .expect("outline");
+    assert_eq!(got.color, pen.color);
+    // Align and Distribute keeps its menu and button, no longer the key.
+    assert_eq!(crate::app::DockerTab::AlignDistribute.shortcut(), "");
 }
 
 /// Print Merge's Place Inside Frame with nothing selected waits for a

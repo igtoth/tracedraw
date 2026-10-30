@@ -37,8 +37,10 @@ de um objeto para outros.
 
 1. Escolha a ferramenta [[tool.attributes_eyedropper]].
 2. Na barra de propriedades, escolha o que copiar:
-   - **Propriedades**: contorno, preenchimento e texto (a fonte, o tamanho e o
-     estilo; o texto em si é mantido). Todas ativadas de início.
+   - **Propriedades**: contorno, preenchimento, texto (a fonte, o tamanho e o
+     estilo; o texto em si é mantido) e transparência (uniforme, ou um
+     gradiente, padrão ou textura com o seu modo de mesclagem). Todas
+     ativadas de início.
    - **Transformações**: tamanho, rotação e posição. Desativadas de início.
    - **Efeitos**: transparência, sombra e efeitos vivos. Desativados de início.
 3. Clique no objeto de onde copiar.

@@ -304,6 +304,21 @@ system's CJK fonts), for each character
 (`text_effect_tests::an_input_method_composes_then_commits_cjk_text`,
 `text_effect_tests::the_canvas_asks_for_the_input_method_while_text_is_typed`).
 
+**AltGr** (#1271): on Windows the right Alt key, which types the extra
+letters of many layouts (Polish ą ć ę ł ń ś ź ż, Czech, Croatian,
+Hungarian and Turkish letters, German @ € { } [ ] \ ~), reaches the
+program as Ctrl and Alt held together. While text is edited a key
+pressed with both is a character, never a Ctrl shortcut (AltGr+A
+selected all and the letter replaced the text, AltGr+E, L or N aligned
+it, AltGr+8 or 2 resized it), never the digit of an Alt code, and the
+copy, cut and paste the windowing layer makes of AltGr+C, X and V do
+nothing. The windowing layer drops the character of every key pressed
+with Ctrl; the message hook that keeps the characters input methods
+send (#1151) keeps those typed while Ctrl and Alt are held too, and the
+next frame types them, in artistic text, paragraph text and fields
+(`input_method_tests::letters_typed_with_altgr_type_into_text`,
+`system_chars::tests::characters_typed_with_altgr_are_kept`).
+
 **Break Apart** (Ctrl+K) on artistic text makes separate text objects of
 its lines when it has more than one line, else of its words, else of its
 letters (a text without spaces, like CJK text, breaks into its

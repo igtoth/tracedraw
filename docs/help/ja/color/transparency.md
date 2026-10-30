@@ -15,4 +15,6 @@
 - [[transparency.target_fill]]、[[transparency.target_outline]]、[[transparency.target_all]] のどれに適用するか。
 - **固定**: 下のオブジェクトが動いても、透けて見えるものを今の状態のまま保ちます。
 
+透明度を取り除くには、プロパティバーの最後にある [[toolbar.clear_transparency]] をクリックします（または種類で [[transparency.none]] を選びます）。
+
 別のオブジェクトの透明度をコピーするには、[[menu.object > menu.object.copy_effect > menu.object.copy_transparency_from]] を使います。オブジェクトの明るさで透けて見える領域を決めるには、[不透明マスク](../objects/clip-frames.md#opacity-mask) を参照してください。

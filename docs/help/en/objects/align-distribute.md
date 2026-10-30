@@ -1,8 +1,7 @@
 # Aligning and distributing objects
 
 Aligning lines objects up by their edges or centers; distributing spaces them
-evenly. Use the [[docker.align_distribute]] panel
-(<kbd>Ctrl+Shift+A</kbd>), the commands of
+evenly. Use the [[docker.align_distribute]] panel, the commands of
 [[menu.object > menu.object.align_distribute]], or the keys below.
 
 ![The Align and Distribute panel](../../img/objects-align-distribute.png)

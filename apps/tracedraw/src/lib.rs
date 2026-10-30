@@ -655,6 +655,7 @@ impl eframe::App for Shell {
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
         system_chars::take_into(raw_input);
         pen::filter_raw_input(ctx, raw_input);
+        interaction::release_chorded_left(ctx, raw_input);
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {

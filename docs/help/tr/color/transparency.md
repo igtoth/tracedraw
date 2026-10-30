@@ -29,6 +29,8 @@ deseni ya da dokuyu izleyebilir.
 - **Dondur**: alttaki nesneler taşınsa bile içinden görüneni şu anki hâliyle
   tutar.
 
+Kaldırmak için özellik çubuğunun sonundaki [[toolbar.clear_transparency]] düğmesine tıklayın (ya da tür olarak [[transparency.none]] seçin).
+
 Başka bir nesnenin saydamlığını kopyalamak için
 [[menu.object > menu.object.copy_effect > menu.object.copy_transparency_from]]
 komutunu kullanın. Bir nesnenin parlaklığıyla tanımlanan saydam alanlar için

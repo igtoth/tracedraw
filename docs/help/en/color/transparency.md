@@ -31,6 +31,9 @@ pattern or texture.
 - **Freeze**: keeps what shows through as it is now, even if the objects
   below move.
 
+To remove it, click [[toolbar.clear_transparency]] at the end of the property
+bar (or choose [[transparency.none]] as the kind).
+
 To copy the transparency of another object, use
 [[menu.object > menu.object.copy_effect > menu.object.copy_transparency_from]].
 For see-through areas defined by an object's brightness, see

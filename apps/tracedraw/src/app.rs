@@ -1059,6 +1059,9 @@ pub struct App {
     /// The Distort tool's values (its bar) and its drag under way.
     pub distort: crate::distort_tool::DistortSettings,
     pub distort_drag: Option<crate::distort_tool::DistortDrag>,
+    /// How long each object's Twister handle was last dragged (page mm):
+    /// the handle is free, it ends where it was let go (#1263).
+    pub twister_handles: std::collections::HashMap<ShapeId, f64>,
     pub brush_radius: f64,
     /// Eraser nib: thickness in mm and shape.
     pub eraser_width: f64,
@@ -1355,6 +1358,8 @@ pub struct App {
     /// The property bar keeps width and height proportional.
     pub scale_locked: bool,
     pub pending_copy_properties: bool,
+    /// What Copy Properties From copies (its dialog's boxes, kept).
+    pub copy_properties_choice: crate::ops2::CopyProperties,
     /// Autofit Page's popup open: the margin shown and the frame it was
     /// drawn in, for the outline of the page it would make (#594).
     pub autofit_preview: Option<(f64, u64)>,
@@ -1575,6 +1580,10 @@ pub struct App {
     pub free_transform_mode: FreeTransformMode,
     pub free_transform_duplicate: bool,
     pub free_transform_reflected: bool,
+    /// The undo group a Free Transform drag runs in (from
+    /// `Engine::begin_group`): the drag's steps, and the copy Apply to
+    /// Duplicate makes, are one undo step (#1342).
+    pub free_transform_group: Option<Option<u64>>,
     pub roughen_amount: f64,
     /// The shaping brushes' settings (see `ui::brush_bars`), 1 to 100 where
     /// a percentage: Smooth's rate, Smear's and Smudge's pressure, Twirl's
@@ -1657,6 +1666,9 @@ pub struct App {
     pub reflect_nodes: (bool, bool),
     /// Shape tool: the freehand marquee for nodes (else rectangular).
     pub node_lasso: bool,
+    /// The Shape tool's freehand marquee started with Alt+Shift adds to
+    /// the nodes chosen already (#1341).
+    pub node_lasso_keeps: bool,
     /// Shape tool: the last run of nodes Shift+click selected.
     pub node_run: Option<crate::node_edit::NodeRun>,
     /// The Coordinates docker's fields, the "Set ... interactively" pick
@@ -2003,7 +2015,6 @@ impl DockerTab {
     pub fn shortcut(self) -> &'static str {
         match self {
             DockerTab::Properties => "Alt+Enter",
-            DockerTab::AlignDistribute => "Ctrl+Shift+A",
             DockerTab::Text => "Ctrl+T",
             DockerTab::Glyphs => "Ctrl+F11",
             DockerTab::Color => "Shift+F11",
@@ -2315,6 +2326,7 @@ impl App {
             extrude_measure_object: false,
             distort: Default::default(),
             distort_drag: None,
+            twister_handles: std::collections::HashMap::new(),
             brush_radius: 10.0,
             eraser_width: 6.35,
             eraser_square: false,
@@ -2460,6 +2472,7 @@ impl App {
             object_origin: (1, 1),
             scale_locked: false,
             pending_copy_properties: false,
+            copy_properties_choice: Default::default(),
             pending_shaping: None,
             pending_merge_frame: false,
             autofit_preview: None,
@@ -2576,6 +2589,7 @@ impl App {
             free_transform_mode: FreeTransformMode::Rotation,
             free_transform_duplicate: false,
             free_transform_reflected: false,
+            free_transform_group: None,
             roughen_amount: 2.0,
             brush: Default::default(),
             brush_stepped: false,
@@ -2612,6 +2626,7 @@ impl App {
             node_transform: Default::default(),
             reflect_nodes: (false, false),
             node_lasso: false,
+            node_lasso_keeps: false,
             node_run: None,
             coords: Default::default(),
             vector_mosaic: Default::default(),
@@ -4355,6 +4370,7 @@ impl App {
     pub fn set_tool(&mut self, tool: Tool) {
         if self.tool != tool {
             self.zoom_one_shot = false;
+            self.end_free_transform_group();
             self.finish_curve();
             self.finish_text();
             self.table_edit = None;

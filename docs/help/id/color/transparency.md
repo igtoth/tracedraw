@@ -31,6 +31,8 @@ gradien, atau mengikuti pola atau tekstur.
 - **Bekukan**: mempertahankan apa yang terlihat menembus seperti saat ini,
   meskipun objek di bawahnya berpindah.
 
+Untuk menghapusnya, klik [[toolbar.clear_transparency]] di ujung bilah properti (atau pilih [[transparency.none]] sebagai jenisnya).
+
 Untuk menyalin transparansi objek lain, gunakan
 [[menu.object > menu.object.copy_effect > menu.object.copy_transparency_from]].
 Untuk area tembus pandang yang ditentukan oleh kecerahan objek, lihat

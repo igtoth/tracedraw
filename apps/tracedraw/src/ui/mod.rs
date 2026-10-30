@@ -411,15 +411,20 @@ fn root_frame(app: &mut App, ui: &mut Ui) {
     }
     bars::docked_rows(app, ui, Dock::Bottom);
 
-    // The default palette as a column on a side lies outermost (outside
-    // the dockers); as a row (at the bottom by default) it comes after the
-    // dockers (below). The document palette is a row under the drawing
-    // window (over it when the palette is docked at the top).
+    // The default palette at the window's edge lies outermost (a row
+    // inside the toolbars, a column outside the toolbox and the dockers);
+    // beside the drawing it comes after the dockers, between them and the
+    // drawing (at the bottom by default). The document palette is a row
+    // under the drawing window (over it when the palette is docked at
+    // the top).
     let palette_frame = Frame::new().fill(Tokens::panel());
-    let palette_dock = bars_layout.dock(Bar::Palette);
+    let (palette_dock, palette_beside) = bars_layout.palette_place();
     let show_palette = app.settings.palette.show_palette;
     let show_doc_palette = show_palette && app.settings.palette.show_document;
-    if matches!(palette_dock, Dock::Left | Dock::Right) {
+    if show_palette && !palette_beside && palette_dock.horizontal() {
+        palette_rows(app, ui, palette_dock == Dock::Top, palette_frame);
+    }
+    if !palette_beside && matches!(palette_dock, Dock::Left | Dock::Right) {
         let panel = |id: &'static str| {
             if palette_dock == Dock::Left {
                 Panel::left(id)
@@ -517,6 +522,10 @@ fn root_frame(app: &mut App, ui: &mut Ui) {
         }
     }
 
+    if show_palette && palette_beside && matches!(palette_dock, Dock::Left | Dock::Right) {
+        palette_columns(app, ui, palette_dock == Dock::Left, palette_frame);
+    }
+
     if app.show_toolbox && bars_layout.dock(Bar::Toolbox).horizontal() {
         let dock = bars_layout.dock(Bar::Toolbox);
         let panel = if dock == Dock::Top {
@@ -549,25 +558,8 @@ fn root_frame(app: &mut App, ui: &mut Ui) {
                 .frame(palette_frame)
                 .show(ui, |ui| palette::document_palette_row(app, ui));
         }
-        if show_palette && matches!(palette_dock, Dock::Bottom | Dock::Top) {
-            side(
-                panel("palette"),
-                palette::thickness(app, palette::Row::Main),
-            )
-            .frame(palette_frame)
-            .show(ui, |ui| palette::palette_row(app, ui));
-            // A row for each further palette shown, next to it (#1164).
-            for which in palette::extra_rows(app) {
-                let id = egui::Id::new(("palette_extra", which));
-                let panel = if palette_dock == Dock::Top {
-                    Panel::top(id)
-                } else {
-                    Panel::bottom(id)
-                };
-                side(panel, palette::thickness(app, which))
-                    .frame(palette_frame)
-                    .show(ui, |ui| palette::extra_palette_row(app, ui, which));
-            }
+        if show_palette && palette_beside && palette_dock.horizontal() {
+            palette_rows(app, ui, palette_dock == Dock::Top, palette_frame);
         }
     }
     // The AI prompt bar, over the palette rows, while a service is set up.
@@ -586,6 +578,8 @@ fn root_frame(app: &mut App, ui: &mut Ui) {
     // Floating bars over the window, and a bar being moved; the floating
     // dockers and a docker being moved likewise.
     bars::floating_bars(app, &ctx);
+    let room = ui.available_rect_before_wrap();
+    ctx.data_mut(|d| d.insert_temp(egui::Id::new(bars::DRAWING_ROOM), room));
     bars::drag_overlay(app, &ctx, 24.0);
     bar_items::drop_overlay(app, &ctx);
     dockers::floating_dockers(app, &ctx);
@@ -646,6 +640,58 @@ fn root_frame(app: &mut App, ui: &mut Ui) {
     app.sync_object_clones();
     if app.engine.revision() != before {
         ctx.request_repaint();
+    }
+}
+
+/// The default palette and each further palette shown as rows, at the top
+/// or the bottom of the room left (#1164).
+fn palette_rows(app: &mut App, ui: &mut Ui, top: bool, frame: Frame) {
+    let panel = |id: egui::Id| {
+        if top {
+            Panel::top(id)
+        } else {
+            Panel::bottom(id)
+        }
+    };
+    panel(egui::Id::new("palette"))
+        .exact_size(palette::thickness(app, palette::Row::Main))
+        .resizable(false)
+        .show_separator_line(false)
+        .frame(frame)
+        .show(ui, |ui| palette::palette_row(app, ui));
+    for which in palette::extra_rows(app) {
+        panel(egui::Id::new(("palette_extra", which)))
+            .exact_size(palette::thickness(app, which))
+            .resizable(false)
+            .show_separator_line(false)
+            .frame(frame)
+            .show(ui, |ui| palette::extra_palette_row(app, ui, which));
+    }
+}
+
+/// The default palette and each further palette shown as columns, at the
+/// left or the right of the room left (#1164).
+fn palette_columns(app: &mut App, ui: &mut Ui, left: bool, frame: Frame) {
+    let panel = |id: egui::Id| {
+        if left {
+            Panel::left(id)
+        } else {
+            Panel::right(id)
+        }
+    };
+    panel(egui::Id::new("palette"))
+        .exact_size(palette::thickness(app, palette::Row::Main))
+        .resizable(false)
+        .show_separator_line(false)
+        .frame(frame)
+        .show(ui, |ui| palette::palette_column(app, ui));
+    for which in palette::extra_rows(app) {
+        panel(egui::Id::new(("palette_extra", which)))
+            .exact_size(palette::thickness(app, which))
+            .resizable(false)
+            .show_separator_line(false)
+            .frame(frame)
+            .show(ui, |ui| palette::extra_palette_column(app, ui, which));
     }
 }
 

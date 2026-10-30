@@ -80,16 +80,21 @@ the same WebAssembly build, run by the system's browser engine.
   bar under the address bar.
 - iPad (Safari): open the page, tap Share, then "Add to Home Screen".
 
-On an iPhone or iPad the file picker of Open, Import and the other
-dialogs that pick a file lists no extensions: Safari and the other
-browsers there grey out every file whose extension the system does not
-know (`.cdr`, `.cmx`, `.tdraw`) once the page's file input names the
-extensions it accepts, so a drawing could not be chosen (#1311). The
-page is taken for one when the user agent or platform names an iPhone,
-iPad or iPod, or when it calls itself a Mac with touch points (iPadOS);
-`files::apple_touch_browser` decides, tested by
-`files::tests::apple_touch_browsers_are_told_apart`. A file of a type
-TraceDraw does not open then gets the usual message.
+On an iPhone, iPad or Android device the file picker of Open, Import
+and the other dialogs that pick a file lists no extensions: those
+systems' pickers filter by the system's file types, and once the page's
+file input names the extensions it accepts they can grey out every file
+whose extension has no type there (`.cdr`, `.cmx`, `.tdraw`), so a
+drawing could not be chosen (#1311, seen on an iPad; Android browsers
+map the extensions to types the same way, so they get the same picker).
+The page is taken for one when the user agent or platform names an
+iPhone, iPad, iPod or Android, or when it calls itself a Mac with touch
+points (iPadOS); `files::picker_filters_by_type` decides, tested by
+`files::tests::mobile_browsers_pick_without_extension_filters`. Desktop
+browsers (Windows, macOS, Linux, touch laptops included) match the
+extensions themselves and keep the filters; the Android app's own picker
+already asks for every file (`*/*`). A file of a type TraceDraw does not
+open gets the usual message.
 - Desktop (Chrome, Edge): the install icon at the right end of the
   address bar, or the menu's "Install TraceDraw".
 
@@ -141,8 +146,16 @@ leaves the original and gives the change to a copy, as on the desktop
 (`pick-tool.md`). A browser reports a button pressed while another is
 held as a pointer move, so the editor listens for the browser's own
 mouse event (`web.rs`, `interaction::note_chorded_right_press`) and
-takes it on the next frame; a second press takes the copy back. The
-browser's context menu does not open on the canvas.
+takes it on the next frame; a second press takes the copy back. A
+browser also sends the pointer's release only when its last button
+goes up: the left button let go while the right one is still held
+comes as a mouse event only, which the editor notes
+(`interaction::note_chorded_left_release`) and the raw input hook turns
+into egui's release of the left button
+(`interaction::release_chorded_left`), so the transform ends there with
+its copy instead of keeping the object on the pointer until Esc (#1334,
+`pick_drag_tests::a_left_release_while_the_right_button_is_held_ends_the_drag`).
+The browser's context menu does not open on the canvas.
 
 ## Keyboard
 

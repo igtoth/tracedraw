@@ -59,7 +59,7 @@ shortcut beside it, and you can add your own; see
 | Keys | Panel |
 |---|---|
 | <kbd>Alt+Enter</kbd> | Properties |
-| <kbd>Ctrl+Shift+A</kbd> | Align and Distribute |
+| <kbd>Ctrl+Shift+A</kbd> | Copy Properties From |
 | <kbd>Alt+F7</kbd>, <kbd>Alt+F8</kbd>, <kbd>Alt+F9</kbd>, <kbd>Alt+F10</kbd> | Transformations: position, rotate, scale and mirror, size |
 | <kbd>Ctrl+T</kbd>, <kbd>Ctrl+F11</kbd> | Text, Glyphs |
 | <kbd>F11</kbd>, <kbd>Shift+F11</kbd> | fill (Properties), Color |

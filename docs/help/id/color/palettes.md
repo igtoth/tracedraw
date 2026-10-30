@@ -23,6 +23,8 @@ nilainya. Tombol menu palet di ujung kiri membuka menu palet.
 Palet dapat dipindahkan ke tepi jendela yang lain, atau dibuat mengambang:
 seret dengan pegangan bertitiknya.
 
+Di setiap sisi palet bisa berada di tepi jendela atau di samping gambar, di antara gambar dan panel atau kotak alat di sisi itu. Saat Anda menyeretnya, pita biru menunjukkan tempatnya nanti; klik kanan pegangannya untuk memilih tempat dari daftar.
+
 ## Palet dokumen {#document-palette}
 
 Setiap warna yang Anda terapkan ke objek masuk ke palet dokumen, yang disimpan

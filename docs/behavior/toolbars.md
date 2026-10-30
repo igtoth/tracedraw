@@ -218,7 +218,7 @@ bar move (`ui/bars.rs`).
 | Bar | Places | First place |
 |---|---|---|
 | Toolbox | top, bottom, left, right, floating | left |
-| Colour palette | top, bottom, left, right, floating | bottom (on a side: the outermost column, beyond the dockers) |
+| Colour palette | top, bottom, left, right (each beside the drawing or at the window's edge), floating | bottom, beside the drawing (on a side at first: the outermost column, beyond the dockers) |
 | Standard toolbar | top, bottom, floating | top, first row |
 | Property bar | top, bottom, floating | top, second row |
 | Text, Zoom, Transform toolbars, time tracker | top, bottom, floating | top, a row each under the property bar (hidden at first) |
@@ -270,6 +270,24 @@ bar move (`ui/bars.rs`).
   it (Window > Toolbars shows it again). The floating toolbox is a grid
   two buttons wide whose flyouts open to its right; the floating palette
   is one row 460 px wide.
+- The palette docks at each side in two places: at the window's edge
+  (a row across the whole window inside the toolbars, or a column
+  outside the toolbox and the docker column) or beside the drawing (a
+  row or a column between the drawing and the docker column, the toolbox
+  or the toolbars on that side). While it is dragged, the band shows
+  either place: within 56 px of the window's edge the band along that
+  edge, within 56 px of the drawing's edge a band along the drawing
+  (the nearer one wins; where the drawing reaches the window's edge it
+  is the window's). Its menu lists all nine places: Dock at Top and Dock
+  at Bottom beside the drawing, with "Across the Window" for the edge;
+  Dock at Left and Dock at Right at the window's edge, with "Beside the
+  Drawing" for the inner place; and Floating. The place is kept in the
+  preferences (`bars.palette_beside`; preferences without it keep the
+  places they had: beside the drawing at the top and the bottom, at the
+  edge at the left and the right). Further palettes shown (#1164) go
+  with it
+  (`ui::bars::tests::the_palette_docks_beside_the_drawing_or_at_the_window_edge`,
+  `ui::bars::tests::the_palette_dropped_beside_the_drawing_lies_between_it_and_the_dockers`).
 - The palette on a side is a column: the swatches run downwards and the
   arrows sit at its ends; the expanded palette opens beside the column
   (below a palette along the top). Wherever the palette is, the document

@@ -91,6 +91,7 @@ pub fn dialog_topic(d: &Dialog, options: OptionsPage) -> &'static str {
         Dialog::Trace(_) => "bitmaps/tracing",
         Dialog::Effect(_) => "effects/bitmap-effects",
         Dialog::TextDefaults { .. } => "text/fonts",
+        Dialog::CopyProperties(_) => "effects/copy-and-clone#clone",
         Dialog::EditText { .. } => "text/adding-text#edit",
         Dialog::TextTabs => "text/paragraphs#tabs",
         Dialog::TextColumns => "text/paragraphs#columns",

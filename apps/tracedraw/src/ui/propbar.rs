@@ -3150,7 +3150,7 @@ pub fn arrange_part(app: &mut App, ui: &mut Ui) -> bool {
     if pic_button(
         ui,
         Pic::AlignDistribute,
-        &tip("menu.object.align_distribute_docker", "Ctrl+Shift+A"),
+        &tip("menu.object.align_distribute_docker", ""),
         true,
         false,
     )

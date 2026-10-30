@@ -566,6 +566,14 @@ impl App {
                 };
                 return;
             }
+            // Alt: a freehand marquee whatever the bar's selection mode,
+            // also over a curve; Shift keeps the nodes chosen already
+            // (#1341).
+            if mods.alt {
+                self.node_lasso_keeps = mods.shift;
+                self.drag = Drag::NodeLasso { points: vec![p] };
+                return;
+            }
             // A segment of a selected curve bends.
             if let Some((shape, index, t)) = self.segment_at(p) {
                 if let Some((path, closed, _)) = self.path_of(shape) {
@@ -587,6 +595,7 @@ impl App {
                     self.select(vec![id]);
                 }
             }
+            self.node_lasso_keeps = false;
             self.drag = if self.node_lasso {
                 Drag::NodeLasso { points: vec![p] }
             } else {

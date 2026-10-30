@@ -246,12 +246,19 @@ impl App {
         // Ctrl+Space leaves the text for the Pick tool, as in the
         // reference program (Space alone types a space), before any space
         // the key would type (#478).
-        if ctx.input(|i| (i.modifiers.command || i.modifiers.ctrl) && i.key_pressed(Key::Space)) {
+        if ctx.input(|i| {
+            (i.modifiers.command || i.modifiers.ctrl)
+                && !altgr(&i.modifiers)
+                && i.key_pressed(Key::Space)
+        }) {
             self.finish_text();
             self.set_tool(crate::tools::Tool::Pick);
             return;
         }
         let events = ctx.input(|i| i.events.clone());
+        // AltGr held: the windowing layer turns its letters into copy,
+        // cut and paste (Polish ć, ź), but they are characters (#1271).
+        let altgr_held = ctx.input(|i| altgr(&i.modifiers));
         // Alt let go after digits: the character they number (0 first: code
         // page 1252, as the Glyphs docker shows; else the Unicode number).
         if !self.alt_code.is_empty() && !ctx.input(|i| i.modifiers.alt) {
@@ -287,6 +294,7 @@ impl App {
                     self.alt_composed = None;
                     self.text_insert(t);
                 }
+                Event::Paste(_) | Event::Copy | Event::Cut if altgr_held => {}
                 Event::Paste(t) => self.text_insert(t),
                 Event::Copy => {
                     let sel = self.text_selected();
@@ -310,12 +318,16 @@ impl App {
                 } => {
                     self.alt_composed = None;
                     let shift = modifiers.shift;
-                    let ctrl = modifiers.command;
+                    // AltGr types characters (Polish ą ę ł ś ż, German
+                    // @ € { }): its keys are neither Ctrl shortcuts (they
+                    // selected all, aligned or resized the text instead)
+                    // nor the digits of an Alt code (#1271).
+                    let ctrl = modifiers.command && !altgr(modifiers);
                     // Alt and digits: a character by its number, typed when
                     // Alt is let go. On Windows too: the windowing layer
                     // drops the character the system makes of them (#469).
                     // The physical key reads the keypad with Num Lock off.
-                    if modifiers.alt && !ctrl {
+                    if modifiers.alt && !modifiers.command && !modifiers.ctrl {
                         if let Some(d) = physical_key.and_then(digit_of).or_else(|| digit_of(*key))
                         {
                             self.alt_code.push(d);
@@ -983,6 +995,12 @@ fn digit_of(key: egui::Key) -> Option<char> {
         Num9 => '9',
         _ => return None,
     })
+}
+
+/// AltGr held: Windows reports the key as Ctrl and Alt together. Keys
+/// pressed with it type characters (#1271).
+pub(crate) fn altgr(m: &egui::Modifiers) -> bool {
+    m.ctrl && m.alt
 }
 
 /// The character an Alt code names: with a leading zero a code page 1252

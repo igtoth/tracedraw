@@ -29,6 +29,8 @@ Cada paleta marcada em [[menu.window > menu.window.color_palettes]] ou no
 Gerenciador de paletas aparece numa faixa própria ao lado da paleta padrão,
 com **Fechar paleta** no menu dela.
 
+Em cada lado, ela pode ficar na borda da janela ou ao lado do desenho, entre o desenho e os painéis ou a caixa de ferramentas daquele lado. Enquanto você a arrasta, uma faixa azul mostra onde ela vai ficar; clique com o botão direito na alça para escolher um lugar em uma lista.
+
 ## A paleta do documento {#document-palette}
 
 Toda cor aplicada a um objeto entra na paleta do documento, que é salva com o

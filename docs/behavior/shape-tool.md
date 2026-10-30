@@ -92,7 +92,7 @@ Properties.
 | Ctrl+click node | adds it to the node selection, or takes it out |
 | Shift+click node | selects the run of nodes from the last selected one to it, along the subpath (the shorter way round on a closed one); Shift+clicking the run's end again selects the other way round; on another subpath it adds the node |
 | Tab, Shift+Tab | the next or previous node of the curve, wrapping round |
-| Marquee | Rectangular (default) or Freehand, picked in the property bar's Selection mode list; a freehand marquee selects the nodes inside the loop drawn (even-odd) |
+| Marquee | Rectangular (default) or Freehand, picked in the property bar's Selection mode list; a freehand marquee selects the nodes inside the loop drawn (even-odd); Alt+drag draws a freehand marquee whatever the mode, also starting over a curve, and Alt+Shift adds its nodes to the chosen ones (#1341, `pick_drag_tests::alt_drag_with_the_shape_tool_is_a_freehand_node_marquee`) |
 | Ctrl+A, Select all nodes button | every node of the selected curves |
 
 ## Moving and editing

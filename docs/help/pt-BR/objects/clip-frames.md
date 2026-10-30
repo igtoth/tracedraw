@@ -16,14 +16,16 @@ dentro ficam inteiros e podem ser retirados de novo. Os comandos ficam em
 
 Os objetos mantêm a posição. Você também pode arrastar os objetos até a
 moldura com o botão direito do mouse e escolher colocá-los dentro; veja
-[Arrastar com o botão direito](selecting.md#right-drag).
+[Arrastar com o botão direito](selecting.md#right-drag), ou arrastá-los até a
+moldura com a ferramenta [[tool.pick]] segurando <kbd>W</kbd> ou <kbd>Alt</kbd>
+antes de soltar.
 
 ## Editar o que está dentro {#edit-contents}
 
 - [[menu.object.clip_frame_edit]] entra na moldura: só os objetos de dentro
   podem ser editados, o resto da página fica esmaecido e a moldura aparece como
-  contorno. [[menu.object.clip_frame_finish]], ou o botão na barra de
-  propriedades, sai dela.
+  contorno. [[menu.object.clip_frame_finish]], o botão na barra de
+  propriedades, ou <kbd>Ctrl</kbd>+clique fora dos objetos de dentro sai dela.
 - [[menu.object.clip_frame_extract]] torna os objetos de dentro objetos comuns
   de novo; a moldura fica, vazia.
 - [[menu.object.clip_frame_lock]] (ativado de início): mover, escalonar ou

@@ -637,9 +637,20 @@ fn swatch(
             drag_chip(app, ui.ctx(), color, pos);
         }
     }
+    // A press that slipped a few pixels but was let go on the swatch it
+    // began on is a click, not a drag: egui counts any move past its
+    // click distance as a drag, and the colour went nowhere (#1336).
+    let slipped_click = resp.drag_stopped()
+        && ui
+            .ctx()
+            .pointer_latest_pos()
+            .is_some_and(|pos| cell.contains(pos));
     if resp.drag_stopped() {
-        if let (Some(color), Some(pos)) = (app.palette_drag.take(), ui.ctx().pointer_latest_pos()) {
-            app.drop_color(color, pos);
+        let dragged = app.palette_drag.take();
+        if !slipped_click {
+            if let (Some(color), Some(pos)) = (dragged, ui.ctx().pointer_latest_pos()) {
+                app.drop_color(color, pos);
+            }
         }
     }
 
@@ -673,8 +684,14 @@ fn swatch(
         ui.ctx().data_mut(|d| d.remove::<bool>(shades_fired_id()));
         return;
     }
+    // Only that release: once the button is up (the hold ended over the
+    // shades, or held past a click's time), the mark goes, or it took the
+    // next click on any swatch and the colour was not applied (#1336).
+    if fired && ui.input(|i| !i.pointer.any_down() && !i.pointer.any_released()) {
+        ui.ctx().data_mut(|d| d.remove::<bool>(shades_fired_id()));
+    }
 
-    if resp.clicked() {
+    if resp.clicked() || slipped_click {
         if which == Row::Document {
             app.doc_palette_current = color_index;
         }

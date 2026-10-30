@@ -9,7 +9,7 @@ use tracedraw_core::{
     document::{Shape, ShapeKind},
     geometry::{Affine, BezPath, Point, Rect, Shape as _, Size},
     live::Effect,
-    Color, Command, Fill, ShapeId, TextSpan,
+    Color, Command, Fill, ShapeId, Stroke, TextSpan,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -95,6 +95,34 @@ impl AlignTo {
             "grid" => AlignTo::Grid,
             _ => AlignTo::ActiveObject,
         }
+    }
+}
+
+/// What Copy Properties From copies, ticked in its dialog (all at
+/// first).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CopyProperties {
+    pub outline_pen: bool,
+    pub outline_color: bool,
+    pub fill: bool,
+    pub text: bool,
+}
+
+impl Default for CopyProperties {
+    fn default() -> Self {
+        CopyProperties {
+            outline_pen: true,
+            outline_color: true,
+            fill: true,
+            text: true,
+        }
+    }
+}
+
+impl CopyProperties {
+    /// Something is ticked.
+    pub fn any(self) -> bool {
+        self.outline_pen || self.outline_color || self.fill || self.text
     }
 }
 
@@ -920,30 +948,51 @@ impl App {
         self.set_tool(crate::tools::Tool::Shape);
     }
 
-    /// Remove any transparency from the selection.
+    /// Some selected object has transparency: uniform (an opacity under
+    /// 100 %) or a fountain, pattern or texture mask.
+    pub fn can_clear_transparency(&self) -> bool {
+        self.selected_shapes().iter().any(|s| {
+            s.opacity < 1.0
+                || s.effects
+                    .iter()
+                    .any(|e| matches!(e, Effect::Transparency { .. }))
+        })
+    }
+
+    /// Remove any transparency from the selection (the Transparency
+    /// tool's Clear Transparency, its kind list's None), one undo step;
+    /// objects without transparency are left as they are.
     pub fn clear_transparency(&mut self) {
-        let shapes = self.selection.clone();
         let mut cmds = Vec::new();
-        for id in &shapes {
-            let Some(s) = self.doc().find_shape(*id).cloned() else {
-                continue;
-            };
-            let effects: Vec<Effect> = s
-                .effects
+        for s in self.selected_shapes() {
+            if s.effects
                 .iter()
-                .filter(|e| !matches!(e, Effect::Transparency { .. }))
-                .cloned()
-                .collect();
-            cmds.push(Command::SetEffects {
-                shape: *id,
-                effects,
-            });
+                .any(|e| matches!(e, Effect::Transparency { .. }))
+            {
+                let effects: Vec<Effect> = s
+                    .effects
+                    .iter()
+                    .filter(|e| !matches!(e, Effect::Transparency { .. }))
+                    .cloned()
+                    .collect();
+                cmds.push(Command::SetEffects {
+                    shape: s.id,
+                    effects,
+                });
+            }
+            if s.opacity < 1.0 {
+                cmds.push(Command::SetOpacity {
+                    shapes: vec![s.id],
+                    opacity: 1.0,
+                });
+            }
         }
-        cmds.push(Command::SetOpacity {
-            shapes,
-            opacity: 1.0,
-        });
-        let _ = self.engine.run_batch("Clear Transparency", &cmds);
+        if cmds.is_empty() {
+            return;
+        }
+        if let Err(e) = self.engine.run_batch("Clear Transparency", &cmds) {
+            self.status = e.to_string();
+        }
     }
 
     /// Object > Clip to Frame > Edit Contents: take the contents out so they can
@@ -1045,6 +1094,15 @@ impl App {
             Some((frame, outside)) => id == *frame || outside.contains(&id),
             None => false,
         }
+    }
+
+    /// A Ctrl+click at `p` while a clip frame's contents are edited
+    /// leaves the edit when it is off the contents (#1337: there was no
+    /// way out but the bar's Finish). A plain click there only empties
+    /// the selection, the objects outside staying out of reach (#851).
+    pub fn ctrl_click_finishes_clip_edit(&self, p: Point) -> bool {
+        // Only the contents can be hit while editing.
+        self.clip_frame_edit.is_some() && self.hit_test(p).is_none()
     }
 
     /// Object > Clip to Frame > Finish Editing Contents: place the (surviving) contents
@@ -1327,30 +1385,103 @@ impl App {
         self.status = tr("status.pattern_created");
     }
 
-    /// Edit > Copy Properties From: fill and outline of `source` to the selection.
+    /// Edit > Copy Properties From (Ctrl+Shift+A): the dialog that asks
+    /// what to copy; its OK waits for a click on the object to copy from
+    /// (#1345).
+    pub fn open_copy_properties(&mut self) {
+        if self.selection.is_empty() {
+            return;
+        }
+        self.dialog = crate::ui::dialogs::Dialog::CopyProperties(self.copy_properties_choice);
+    }
+
+    /// The dialog's OK: remember the boxes and wait for the click.
+    pub fn start_copy_properties(&mut self, choice: CopyProperties) {
+        self.copy_properties_choice = choice;
+        if choice.any() {
+            self.pending_copy_properties = true;
+            self.status = tr("status.click_source_object");
+        }
+    }
+
+    /// Copy Properties From: the properties ticked in its dialog
+    /// (outline pen, outline colour, fill, text) from `source` to the
+    /// other selected objects, one undo step.
     pub fn copy_properties_from(&mut self, source: ShapeId) {
         let Some(src) = self.doc().find_shape(source).cloned() else {
             return;
         };
-        let shapes: Vec<ShapeId> = self
-            .selection
-            .iter()
-            .copied()
-            .filter(|s| *s != source)
+        let c = self.copy_properties_choice;
+        let targets: Vec<Shape> = self
+            .selected_shapes()
+            .into_iter()
+            .filter(|s| s.id != source)
             .collect();
-        if shapes.is_empty() {
+        if targets.is_empty() {
             return;
         }
-        let cmds = vec![
-            Command::SetFill {
-                shapes: shapes.clone(),
+        let mut cmds = Vec::new();
+        if c.fill {
+            cmds.push(Command::SetFill {
+                shapes: targets.iter().map(|s| s.id).collect(),
                 fill: src.fill.clone(),
-            },
-            Command::SetStroke {
-                shapes,
-                stroke: src.stroke.clone(),
-            },
-        ];
+            });
+        }
+        for t in &targets {
+            let stroke = match (c.outline_pen, c.outline_color) {
+                (false, false) => continue,
+                (true, true) => src.stroke.clone(),
+                // The pen (width, style, ends, corners) with the target's
+                // own colour.
+                (true, false) => match (&src.stroke, &t.stroke) {
+                    (Some(s), Some(own)) => Some(Stroke {
+                        color: own.color,
+                        fill: own.fill.clone(),
+                        ..s.clone()
+                    }),
+                    (s, _) => s.clone(),
+                },
+                // The colour on the target's own pen.
+                (false, true) => match (&src.stroke, &t.stroke) {
+                    (Some(s), Some(own)) => Some(Stroke {
+                        color: s.color,
+                        fill: s.fill.clone(),
+                        ..own.clone()
+                    }),
+                    (Some(s), None) => Some(s.clone()),
+                    (None, own) => own.clone(),
+                },
+            };
+            if stroke != t.stroke {
+                cmds.push(Command::SetStroke {
+                    shapes: vec![t.id],
+                    stroke,
+                });
+            }
+        }
+        if c.text {
+            if let ShapeKind::Text { spans: from, .. } = &src.kind {
+                if let Some(f) = from.first() {
+                    for t in &targets {
+                        let mut kind = t.kind.clone();
+                        if let ShapeKind::Text { spans, .. } = &mut kind {
+                            for sp in spans.iter_mut() {
+                                sp.font_family = f.font_family.clone();
+                                sp.size_pt = f.size_pt;
+                                sp.bold = f.bold;
+                                sp.italic = f.italic;
+                            }
+                            if kind != t.kind {
+                                cmds.push(Command::SetShapeKind { shape: t.id, kind });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if cmds.is_empty() {
+            return;
+        }
         if let Err(e) = self.engine.run_batch("Copy Properties", &cmds) {
             self.status = e.to_string();
         }

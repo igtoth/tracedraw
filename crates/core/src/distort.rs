@@ -7,8 +7,10 @@
 //!   a negative one) and the control points of the segments the other way
 //!   by the same share, so the segments bow against the nodes: pushed
 //!   nodes give spikes with hollow sides, pulled nodes give petals.
-//!   Straight segments become curves with their control points at a third
-//!   and two thirds.
+//!   Straight segments become curves whose control points start on their
+//!   nodes, so a side bows from its middle and each control point moves
+//!   along the line from the centre through its node: pushed corners
+//!   become spikes, pulled corners curl.
 //! - Zipper puts `frequency` teeth on every segment: the segment is cut
 //!   into `2 * frequency` equal steps of its parameter, the inner points
 //!   alternate `amplitude` to one side of the segment and to the other,
@@ -284,7 +286,15 @@ fn push_pull(path: &BezPath, c: Point, s: f64) -> BezPath {
     for sub in subpaths(path) {
         out.move_to(node(sub.start));
         for seg in &sub.segs {
-            let (_, a, b, p) = as_cubic(seg);
+            // A straight side's control points start on its nodes, so
+            // they go the other way along the nodes' own lines from the
+            // centre: the side bows from its middle and the corners turn
+            // into spikes or curls (#1264). Control points at a third and
+            // two thirds made the bend start at the corners.
+            let (_, a, b, p) = match *seg {
+                PathSeg::Line(l) => (l.p0, l.p0, l.p1, l.p1),
+                _ => as_cubic(seg),
+            };
             out.curve_to(handle(a), handle(b), node(p));
         }
         if sub.closed {
@@ -634,6 +644,52 @@ mod tests {
             },
         );
         assert_eq!((subpath_count(&t), closes(&t)), (2, 2));
+    }
+
+    /// #1264: a straight side bends from its middle. Its control points
+    /// lie on the lines from the centre through its nodes, so pulled in,
+    /// a side's lobe reaches past its corners (they curl) and pushed out,
+    /// the corners are spikes along those lines.
+    #[test]
+    fn straight_sides_bow_from_their_middle() {
+        let sq = square(-10.0, -10.0, 20.0);
+        for amount in [-45.0, 30.0] {
+            let out = distort(
+                &sq,
+                Distort::PushPull {
+                    amount,
+                    center: None,
+                },
+            );
+            for seg in out.segments() {
+                let PathSeg::Cubic(c) = seg else {
+                    panic!("sides become curves");
+                };
+                for (node, handle) in [(c.p0, c.p1), (c.p3, c.p2)] {
+                    let cross = node.x * handle.y - node.y * handle.x;
+                    assert!(cross.abs() < 1e-9, "{node:?} {handle:?} at {amount}");
+                }
+            }
+        }
+        // Pulled 45 %: corners at 5.5, each side's lobe 12.25 out and
+        // wider than the corners it runs between.
+        let pulled = distort(
+            &sq,
+            Distort::PushPull {
+                amount: -45.0,
+                center: None,
+            },
+        );
+        let b = pulled.bounding_box();
+        assert!((b.x1 - 12.25).abs() < 0.05, "{b:?}");
+        let top = pulled
+            .segments()
+            .find(|s| s.eval(0.5).y > 10.0)
+            .expect("the top side");
+        let left_most = (0..=100)
+            .map(|i| top.eval(i as f64 / 100.0).x)
+            .fold(f64::INFINITY, f64::min);
+        assert!(left_most < -5.5 - 0.5, "{left_most}");
     }
 
     fn zip(random: bool, smooth: bool, local: bool) -> Distort {

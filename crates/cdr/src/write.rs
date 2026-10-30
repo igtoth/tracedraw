@@ -4292,7 +4292,15 @@ impl<'a> Writer<'a> {
             Some(p) => curve_coords(&(shift.inverse() * p.clone())),
             None => curve_coords(&outline),
         };
-        c.bytes(&path_bytes.unwrap_or_else(|| 0u32.to_le_bytes().to_vec()));
+        let mut path_bytes = path_bytes.unwrap_or_else(|| 0u32.to_le_bytes().to_vec());
+        // The outline's nodes carry the marks a curve's do (0x0c, 0x44,
+        // 0x44, 0x44, 0x48 for the box), as every bitmap of the files the
+        // program that reads them wrote has them, versions 14 to 27.
+        // Without them (0x00, 0x40, ...) the bitmap showed and opened,
+        // but a click on it made that program close at once, also after
+        // it had saved the file again (#1226).
+        mark_nodes(&mut path_bytes);
+        c.bytes(&path_bytes);
         // Files of versions 14, 18, 19 and 27 end the record with 4 zero bytes
         // after the node types (none seen in older files).
         if v.0 >= 14 {

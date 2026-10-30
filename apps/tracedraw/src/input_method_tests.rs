@@ -139,3 +139,84 @@ fn an_input_method_types_tamil_by_text_or_by_composition() {
         }
     }
 }
+
+/// A frame as Windows delivers a key pressed with AltGr: the windowing
+/// layer sends the key (or copy, cut, paste) with Ctrl and Alt held and
+/// drops its character, which the message hook kept from `msgs`.
+fn altgr_frame(ctx: &egui::Context, app: &mut App, event: Event, msgs: &[(u32, usize)]) {
+    use crate::system_chars::*;
+    let mut tracker = CharTracker::default();
+    tracker.message(WM_KEYDOWN, VK_CONTROL as usize);
+    tracker.message(WM_KEYDOWN, VK_MENU as usize);
+    for (m, w) in msgs {
+        tracker.message(*m, *w);
+    }
+    crate::system_chars::hand_over(&mut tracker);
+    let altgr = egui::Modifiers {
+        alt: true,
+        ctrl: true,
+        command: true,
+        ..Default::default()
+    };
+    let mut input = egui::RawInput {
+        screen_rect: Some(egui::Rect::from_min_size(
+            Pos2::ZERO,
+            egui::vec2(1600.0, 1000.0),
+        )),
+        events: vec![Event::ModifiersChanged(altgr), event],
+        ..Default::default()
+    };
+    crate::system_chars::take_into(&mut input);
+    let mut out = ctx.run_ui(input, |ui| crate::ui::root(app, ui));
+    out.textures_delta.clear();
+}
+
+/// How the edited text is aligned (its own and its paragraphs').
+fn alignment(app: &App) -> String {
+    let id = app.text_edit.as_ref().expect("editing").shape;
+    match app.doc().find_shape(id).map(|s| &s.kind) {
+        Some(tracedraw_core::ShapeKind::Text { align, para, .. }) => format!("{align:?} {para:?}"),
+        _ => String::new(),
+    }
+}
+
+/// #1271: letters typed with AltGr (Polish ą ć ę ł ź ż here) type into
+/// artistic and paragraph text; they used to select all, copy, align,
+/// cut, or vanish.
+#[test]
+fn letters_typed_with_altgr_type_into_text() {
+    use crate::system_chars::{WM_CHAR, WM_KEYDOWN, WM_KEYUP};
+    let key = |k: egui::Key| Event::Key {
+        key: k,
+        physical_key: Some(k),
+        pressed: true,
+        repeat: false,
+        modifiers: egui::Modifiers {
+            alt: true,
+            ctrl: true,
+            command: true,
+            ..Default::default()
+        },
+    };
+    let typed = |vk: usize, c: char| vec![(WM_KEYDOWN, vk), (WM_CHAR, c as usize), (WM_KEYUP, vk)];
+    for paragraph in [false, true] {
+        let (ctx, mut app) = setup();
+        start(&ctx, &mut app, paragraph);
+        frame(&ctx, &mut app, vec![Event::Text("Za".into())]);
+        let align = alignment(&app);
+        altgr_frame(&ctx, &mut app, key(egui::Key::A), &typed(0x41, 'ą'));
+        assert_eq!(app.edit_text(), "Zaą", "paragraph {paragraph}");
+        altgr_frame(&ctx, &mut app, Event::Copy, &typed(0x43, 'ć'));
+        altgr_frame(&ctx, &mut app, key(egui::Key::E), &typed(0x45, 'ę'));
+        altgr_frame(&ctx, &mut app, key(egui::Key::L), &typed(0x4C, 'ł'));
+        altgr_frame(&ctx, &mut app, Event::Cut, &typed(0x58, 'ź'));
+        altgr_frame(&ctx, &mut app, key(egui::Key::Z), &typed(0x5A, 'ż'));
+        assert_eq!(app.edit_text(), "Zaąćęłźż", "paragraph {paragraph}");
+        assert_eq!(alignment(&app), align, "not aligned");
+        // AltGr with a digit types its character, not an Alt code
+        // (German AltGr+7 is a brace).
+        altgr_frame(&ctx, &mut app, key(egui::Key::Num7), &typed(0x37, '{'));
+        frame(&ctx, &mut app, Vec::new());
+        assert_eq!(app.edit_text(), "Zaąćęłźż{", "paragraph {paragraph}");
+    }
+}

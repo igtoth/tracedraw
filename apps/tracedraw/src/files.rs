@@ -754,19 +754,21 @@ pub fn take_picked(key: &str) -> Option<PathBuf> {
     PICKED.with(|p| p.borrow_mut().remove(key))
 }
 
-/// Whether a browser with this user agent, platform and number of touch
-/// points runs on an iPhone, iPad or iPod, where the file picker greys
-/// out the files whose extension the system does not know (`.cdr`,
-/// `.tdraw`, `.cmx` ...) once the page names the extensions it takes
-/// (#1311). iPadOS browsers call themselves a Mac ("MacIntel",
-/// "Macintosh") with a touch screen; Macs have no touch points.
+/// Whether the file picker of a browser with this user agent, platform
+/// and number of touch points filters by the system's file types rather
+/// than by extension: on an iPhone, iPad or iPod and on Android, where
+/// files whose extension the system has no type for (`.cdr`, `.cmx`,
+/// `.tdraw` ...) can be greyed out once the page names the extensions it
+/// takes (#1311). iPadOS browsers call themselves a Mac ("MacIntel",
+/// "Macintosh") with a touch screen; Macs have no touch points. Desktop
+/// browsers match the extensions themselves and keep the filters.
 #[cfg(any(target_arch = "wasm32", test))]
-pub fn apple_touch_browser(user_agent: &str, platform: &str, touch_points: u32) -> bool {
+pub fn picker_filters_by_type(user_agent: &str, platform: &str, touch_points: u32) -> bool {
     let named = ["iPhone", "iPad", "iPod"]
         .iter()
         .any(|d| user_agent.contains(d) || platform.starts_with(d));
     let mac = platform == "MacIntel" || user_agent.contains("Macintosh");
-    named || (mac && touch_points > 1)
+    named || (mac && touch_points > 1) || user_agent.contains("Android")
 }
 
 /// A file dialog description, the same in both builds.
@@ -943,11 +945,11 @@ impl Dialog {
     #[cfg(target_arch = "wasm32")]
     fn web_pick(self, then: Job) {
         let mut d = rfd::AsyncFileDialog::new();
-        // On an iPhone or iPad the picker greys out every file whose
-        // extension the system does not know, `.cdr` among them, as soon
-        // as the page names the extensions it takes: there it offers
-        // every file instead (#1311).
-        if !crate::web::apple_touch_browser() {
+        // On an iPhone, iPad or Android device the picker can grey out
+        // every file whose extension the system does not know, `.cdr`
+        // among them, as soon as the page names the extensions it takes:
+        // there it offers every file instead (#1311).
+        if !crate::web::picker_filters_by_type() {
             for (name, exts) in &self.filters {
                 let exts: Vec<&str> = exts.iter().map(|e| e.as_str()).collect();
                 d = d.add_filter(name, &exts);
@@ -983,21 +985,29 @@ mod tests {
     use super::*;
 
     /// iPhones and iPads (also iPadOS, which calls itself a Mac with a
-    /// touch screen) get a picker without extension filters; Macs,
-    /// Windows, Linux and Android keep them (#1311).
+    /// touch screen) and Android browsers get a picker without extension
+    /// filters; Macs, Windows and Linux keep them (#1311).
     #[test]
-    fn apple_touch_browsers_are_told_apart() {
+    fn mobile_browsers_pick_without_extension_filters() {
         let ipad_os = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15";
-        assert!(apple_touch_browser(ipad_os, "MacIntel", 5));
-        assert!(!apple_touch_browser(ipad_os, "MacIntel", 0), "a Mac");
+        assert!(picker_filters_by_type(ipad_os, "MacIntel", 5));
+        assert!(!picker_filters_by_type(ipad_os, "MacIntel", 0), "a Mac");
         let iphone = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15";
-        assert!(apple_touch_browser(iphone, "iPhone", 5));
+        assert!(picker_filters_by_type(iphone, "iPhone", 5));
         let old_ipad = "Mozilla/5.0 (iPad; CPU OS 12_0 like Mac OS X) AppleWebKit/605.1.15";
-        assert!(apple_touch_browser(old_ipad, "iPad", 5));
+        assert!(picker_filters_by_type(old_ipad, "iPad", 5));
         let android = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/130.0 Mobile Safari/537.36";
-        assert!(!apple_touch_browser(android, "Linux armv8l", 5));
+        assert!(picker_filters_by_type(android, "Linux armv8l", 5));
+        let firefox_android =
+            "Mozilla/5.0 (Android 14; Mobile; rv:131.0) Gecko/131.0 Firefox/131.0";
+        assert!(picker_filters_by_type(firefox_android, "Linux aarch64", 5));
         let windows = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0 Safari/537.36";
-        assert!(!apple_touch_browser(windows, "Win32", 10));
+        assert!(
+            !picker_filters_by_type(windows, "Win32", 10),
+            "a touch laptop"
+        );
+        let linux = "Mozilla/5.0 (X11; Linux x86_64; rv:131.0) Gecko/20100101 Firefox/131.0";
+        assert!(!picker_filters_by_type(linux, "Linux x86_64", 0));
     }
 
     #[test]

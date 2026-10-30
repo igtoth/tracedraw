@@ -600,6 +600,21 @@ impl<'a> Checker<'a> {
         } else if self.v >= 14 && u32_at(d, types_at + n) != Some(0) {
             self.note(place, "bitmap record does not end with 4 zero bytes");
         }
+        // The outline's first node carries the marks of a curve's (bit 2,
+        // and bit 3 when the outline closes), as every bitmap of the
+        // program's files has them; a bitmap without them closed that
+        // program when it was clicked (#1226).
+        if let (Some(&first), Some(&last)) = (d.get(types_at), d.get(types_at + n - 1)) {
+            let want = if last & 0x08 != 0 { 0x0c } else { 0x04 };
+            if first & want != want {
+                self.note(
+                    place,
+                    format!(
+                        "bitmap crop outline's first node byte {first:#04x} lacks the node marks"
+                    ),
+                );
+            }
+        }
         // Nodes inside the box, control points (type bits 7-6 set) around.
         let point = |k: usize| {
             Some(apply(
@@ -1260,6 +1275,62 @@ mod tests {
                 .any(|f| f.contains("style 6 is not in the style table")),
             "{f:?}"
         );
+    }
+
+    /// A bitmap object whose crop outline's node bytes are `types`, as
+    /// version 13 files hold it: the box from the origin twice, 2 and 24
+    /// bits, the pixel size, image number 1, image id 1, 0, 0, -1, eight
+    /// zero bytes, then the outline.
+    fn bitmap(types: [u8; 5]) -> Obj {
+        let mut c = box_bytes(0.0, 0.0, 10.0, 10.0);
+        c.extend(box_bytes(0.0, 0.0, 10.0, 10.0));
+        c.extend(u16s(&[2, 24]));
+        c.extend(u32s(&[4, 4, 1, 1, 0, 0, u32::MAX, 0, 0]));
+        let corners = [
+            (0.0, 10.0),
+            (10.0, 10.0),
+            (10.0, 0.0),
+            (0.0, 0.0),
+            (0.0, 10.0),
+        ];
+        let pts: Vec<(f64, f64, u8)> = corners
+            .iter()
+            .zip(types)
+            .map(|(&(x, y), t)| (x, y, t))
+            .collect();
+        c.extend(curve(&pts));
+        let b = box_bytes(5.0, 5.0, 15.0, 15.0);
+        let mut obbx = b.clone();
+        obbx.extend(box_bytes(5.0, 5.0, 15.0, 15.0));
+        Obj {
+            kind: crate::parse::OBJ_BITMAP,
+            args: vec![
+                (ARG_COORDS, c),
+                (ARG_FILL, u32s(&[0])),
+                (ARG_OUTLINE, u32s(&[0])),
+                (ARG_STYLE, u32s(&[77])),
+            ],
+            bbox: b,
+            obbx,
+            usdn: 1,
+            at: (5.0, 5.0),
+            txsm: None,
+        }
+    }
+
+    /// A bitmap outline whose nodes lack the marks curves carry (as
+    /// TraceDraw wrote them before, 0x00, 0x40, 0x40, 0x40, 0x48) is
+    /// reported; the marked one the writer now writes is not (#1226).
+    #[test]
+    fn bitmap_outlines_need_node_marks() {
+        let lacks = |types: [u8; 5]| {
+            check_bytes(&file(&[bitmap(types)]))
+                .expect("checks")
+                .iter()
+                .any(|f| f.what.contains("lacks the node marks"))
+        };
+        assert!(lacks([0x00, 0x40, 0x40, 0x40, 0x48]));
+        assert!(!lacks([0x0c, 0x44, 0x44, 0x44, 0x48]));
     }
 
     #[test]
