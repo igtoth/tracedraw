@@ -852,6 +852,7 @@ impl App {
                 }
             }
         }
+        fit_columns_to_text(&mut t);
         let id = s.id;
         self.run(Command::SetShapeKind {
             shape: id,
@@ -935,6 +936,36 @@ fn grow_row_to_fit(t: &mut Table, r: u32, c: u32) {
             *h += needed - have;
         }
     }
+}
+
+/// Widen each column to hold its widest text on one line (cell margins
+/// and a little room included), so no word of a converted text is cut;
+/// columns stay as wide as they were when the text is narrower.
+fn fit_columns_to_text(t: &mut Table) {
+    let para = tracedraw_core::ParagraphStyle::default();
+    let mut widths = t.col_widths.clone();
+    for cell in &t.cells {
+        if cell.text.is_empty() || cell.col_span != 1 {
+            continue;
+        }
+        let layout =
+            tracedraw_text::fonts().layout(&tracedraw_core::document::text_outline::TextRequest {
+                spans: &cell.text,
+                frame: None,
+                align: cell.align,
+                para: &para,
+                on_path: None,
+            });
+        let margins = t.cell_rect(cell).width() - t.cell_inner(cell).width();
+        let needed = layout.bounds.width() + margins + 2.0;
+        if let Some(w) = widths.get_mut(cell.col as usize) {
+            if needed.is_finite() && needed > *w {
+                *w = needed;
+            }
+        }
+    }
+    t.col_widths = widths;
+    t.refit();
 }
 
 fn cell_text(t: &Table, r: u32, c: u32) -> String {
@@ -1068,6 +1099,27 @@ mod tests {
         text_shape(&mut app, "ABHISHEK, RAKESH, RAMESH");
         app.convert_text_to_table();
         assert_eq!(converted(&app), vec![vec!["ABHISHEK", "RAKESH", "RAMESH"]]);
+        // Each name fits its cell on one line.
+        if !tracedraw_text::fonts().families().is_empty() {
+            let (_, t) = app.selected_table().expect("a table");
+            for cell in &t.cells {
+                let layout = tracedraw_text::fonts().layout(
+                    &tracedraw_core::document::text_outline::TextRequest {
+                        spans: &cell.text,
+                        frame: None,
+                        align: cell.align,
+                        para: &Default::default(),
+                        on_path: None,
+                    },
+                );
+                assert!(
+                    layout.bounds.width() <= t.cell_inner(cell).width() + 1e-6,
+                    "{:?} in {:?}",
+                    layout.bounds,
+                    t.cell_inner(cell)
+                );
+            }
+        }
         // A separator of the user's own; each paragraph a row.
         let mut app = App::headless();
         text_shape(&mut app, "a;b;c\nd;e");

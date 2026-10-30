@@ -119,7 +119,8 @@ cell does nothing and says so on the status bar.
   columns the table will have. Cells are trimmed of spaces; closing
   empty paragraphs make no rows. The table takes the text's top left
   corner, its first style and at least its width (columns at least
-  20 mm, rows 1.6 lines of the text's size).
+  20 mm and as wide as their widest text on one line with the cell
+  margins, rows 1.6 lines of the text's size).
   (`table::tests::text_becomes_a_table_by_its_separator`,
   `ui::dialogs::tests::convert_text_to_table_takes_the_chosen_separator`)
   Convert Table to Text: cells joined by tabs, rows by newlines.
