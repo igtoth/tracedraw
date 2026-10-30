@@ -26,10 +26,8 @@ com 8 nós").
   cadeado de [[docker.guides]] bloqueia todas as linhas-guia da página.
 - Objetos ocultos mostram o nome e a miniatura esmaecidos.
 - Para aumentar ou diminuir as miniaturas, arraste o controle deslizante entre
-  o quadrado pequeno e o grande na parte de baixo do painel, ou gire a roda
-  do mouse sobre ele ou sobre a lista. Quando a lista é maior que o painel,
-  a roda a rola; gire a roda sobre uma miniatura, ou segure <kbd>Ctrl</kbd> e
-  gire em qualquer ponto da lista, para mudar o tamanho. O
+  o quadrado pequeno e o grande na parte de baixo do painel, gire a roda do
+  mouse sobre ele ou segure <kbd>Ctrl</kbd> e gire a roda sobre a lista. O
   tamanho é lembrado. Uma miniatura só é desenhada de novo quando o objeto
   muda, então listas longas continuam rápidas.
 
