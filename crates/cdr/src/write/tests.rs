@@ -1121,11 +1121,11 @@ fn the_style_table_numbers_its_entries_once_and_styles_name_them() {
         for (pos, thick) in DECORATION_LINES {
             assert_eq!((u(), u() as i32, u() as i32), (0, pos, thick), "{v}");
         }
-        // No tabs, bullets, indents, hyphenation or drop caps; set11 from 8.
+        // No tabs, bullets, indents, hyphenation or drop caps; set11 from 9.
         for _ in 0..5 {
             assert_eq!(u(), 0, "{v}");
         }
-        if v >= 8 {
+        if v >= 9 {
             assert_eq!(u(), 1, "{v}");
             ids.push(u());
             assert_eq!((u(), u()), (0, 0));
@@ -1162,7 +1162,7 @@ fn the_style_table_numbers_its_entries_once_and_styles_name_them() {
             }
             at.set(at.get() + len * if v >= 12 { 2 } else { 1 });
             let refs = if style < 5 {
-                6 + usize::from(v >= 8)
+                6 + usize::from(v >= 9)
             } else {
                 2
             };
@@ -3713,6 +3713,99 @@ fn a_version_8_style_table_with_set11_is_read() {
     let eight = crate::text::read_stlt(&d, 8, &mut |w| notes.push(w));
     assert!(notes.is_empty(), "{notes:?}");
     assert_eq!(eight.len(), nine.len());
+}
+
+/// Version 8 files carry the style table of the public notes' usual
+/// variant (800), without the set11 table and the styles' references to
+/// it: written with them, as the program that reads these files saves
+/// both version 8 variants, the file crashed that program's 2010 release
+/// while the same drawing's version 7 and 9 files opened (#1139). The
+/// version 8 table is the version 7 one; version 9 adds set11; and the
+/// whole version 8 file reads back with its texts' styles.
+#[test]
+fn version_8_style_tables_have_no_set11() {
+    let uses = StyleUses {
+        text_fill: 1,
+        graphic_fill: 2,
+        outline: 3,
+        font: 1,
+        formats: Vec::new(),
+    };
+    let seven = stlt(Ver(7), uses.clone());
+    let eight = stlt(Ver(8), uses.clone());
+    let nine = stlt(Ver(9), uses);
+    assert_eq!(eight, seven);
+    // Version 9: the set11 table (count, id, 0, 0) and one reference in
+    // each of the four text styles.
+    assert_eq!(nine.len(), eight.len() + 16 + 4 * 4);
+    let mut notes = Vec::new();
+    let read = crate::text::read_stlt(&eight, 8, &mut |w| notes.push(w));
+    assert!(notes.is_empty(), "{notes:?}");
+    assert_eq!(read.len(), 5);
+
+    // A drawing with text, written as version 8: its style table holds
+    // no set11 and every text keeps its size and colour.
+    let mut doc = doc_with(Vec::new());
+    let mut ids = doc.ids().clone();
+    let mut red = TextSpan::new("red", "Arial", 18.0);
+    red.fill = Some(Fill::Solid(Color::rgb8(204, 0, 0)));
+    let shapes = vec![text_shape(
+        &mut ids,
+        vec![TextSpan::new("Plain ", "Arial", 18.0), red],
+        TextAlign::Left,
+    )];
+    doc.pages[0].layers[0].shapes = shapes;
+    doc.set_ids(ids);
+    let bytes = document_to_cdr_version(&doc, 8);
+    let (_, tree, riff) = chunk_ids(&bytes);
+    let mut table = None;
+    tree.root.walk(&mut |ch, _| {
+        if ch.is(b"stlt") && table.is_none() {
+            table = Some(tree.data(&riff, ch).to_vec());
+        }
+    });
+    let table = table.expect("style table");
+    let mut notes = Vec::new();
+    let styles = crate::text::read_stlt(&table, 8, &mut |w| notes.push(w));
+    assert!(notes.is_empty(), "{notes:?}");
+    assert_eq!(styles.len(), 6, "five default styles and the text's");
+    // The table is the version 7 one with the same styles.
+    let seven = document_to_cdr_version(&doc, 7);
+    let (_, tree7, riff7) = chunk_ids(&seven);
+    let mut table7 = None;
+    tree7.root.walk(&mut |ch, _| {
+        if ch.is(b"stlt") && table7.is_none() {
+            table7 = Some(tree7.data(&riff7, ch).to_vec());
+        }
+    });
+    assert_eq!(Some(table.clone()), table7);
+    let back = open_as_drawn(&bytes);
+    let spans: Vec<TextSpan> = back
+        .pages
+        .iter()
+        .flat_map(|p| &p.layers)
+        .flat_map(|l| &l.shapes)
+        .filter_map(|s| match &s.kind {
+            ShapeKind::Text { spans, .. } => Some(spans.clone()),
+            _ => None,
+        })
+        .flatten()
+        .collect();
+    assert_eq!(
+        spans.iter().map(|s| s.text.as_str()).collect::<String>(),
+        "Plain red"
+    );
+    assert!(
+        spans.iter().all(|s| (s.size_pt - 18.0).abs() < 0.05),
+        "{spans:?}"
+    );
+    assert!(
+        spans.iter().any(|s| s.text == "red"
+            && s.fill
+                .as_ref()
+                .is_some_and(|f| *f != Fill::Solid(Color::BLACK))),
+        "{spans:?}"
+    );
 }
 
 /// A face named by its family and weight ("Titillium Web SemiBold") is

@@ -406,6 +406,17 @@ impl Ver {
     fn native_rects(self) -> bool {
         self.0 < 15
     }
+    /// The style table's set11 table, and each text style's reference to
+    /// it: from version 9, as the public format notes give it to the
+    /// bidirectional version 8 (801) and later. The program that reads
+    /// these files saves its version 8 (800) files with the 801 table,
+    /// but TraceDraw's version 8 file written so crashed its 2010 release
+    /// on opening while the same drawing's version 7 and 9 files opened,
+    /// and that file differed from the version 9 one only in the
+    /// configuration record and the rectangles' radii (#1139).
+    fn set11(self) -> bool {
+        self.0 >= 9
+    }
 }
 
 // ---- bytes -------------------------------------------------------------
@@ -2553,13 +2564,12 @@ fn stlt(v: Ver, uses: StyleUses) -> Vec<u8> {
     for (position, thickness) in DECORATION_LINES {
         t.u32(0).i32(position).i32(thickness);
     }
-    // Tabs, bullets, indents, hyphenation, drop caps: none; set11 from 8
-    // (both version 8 variants saved by the program that reads them hold
-    // it, its version 7 saves do not).
+    // Tabs, bullets, indents, hyphenation, drop caps: none; set11 from 9
+    // (see `Ver::set11`).
     for _ in 0..5 {
         t.u32(0);
     }
-    if n >= 8 {
+    if v.set11() {
         t.u32(1).u32(set11).u32(0).u32(0);
     }
     // The records: sections (1: fill and outline; 2: also the character
@@ -2583,7 +2593,7 @@ fn stlt(v: Ver, uses: StyleUses) -> Vec<u8> {
         name(&mut t, label);
         t.u32(text_fill).u32(outline);
         t.u32(font).u32(*align).u32(interval).u32(set5);
-        if n >= 8 {
+        if v.set11() {
             t.u32(set11);
         }
     }
@@ -2600,7 +2610,7 @@ fn stlt(v: Ver, uses: StyleUses) -> Vec<u8> {
         t.u32(*fill).u32(outline);
         let align = aligns.get(f.align).copied().unwrap_or(aligns[0]);
         t.u32(*font).u32(align).u32(interval).u32(set5);
-        if n >= 8 {
+        if v.set11() {
             t.u32(set11);
         }
     }
