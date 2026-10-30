@@ -12,7 +12,8 @@ zooming in.
   [[menu.view.snap_document_grid]] (<kbd>Ctrl+Y</kbd>),
   [[menu.view.snap_baseline_grid]], [[menu.view.snap_guidelines]],
   [[menu.view.snap_objects]] (<kbd>Alt+Z</kbd>) and [[menu.view.snap_page]] on
-  and off. At first objects, guidelines and the page are on.
+  and off. At first objects, guidelines and the page are on. The baseline grid
+  works on its own too: with only it on, nodes and objects snap to its lines.
 - [[menu.view.snap_off]] (<kbd>Alt+Q</kbd>) turns all snapping off and on
   again.
 

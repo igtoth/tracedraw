@@ -1,13 +1,16 @@
 # Mehrseitenansicht
 
+> *Maschinelle Übersetzung: Diese Seite kann hinter der englischen Fassung zurückliegen.*
+
 [[menu.view > menu.view.multipage]] legt alle Seiten der Zeichnung gleichzeitig
 auf dem Desktop aus, sodass Sie Seiten vergleichen und nebeneinander
 bearbeiten können.
 
 ## Die Anordnung {#layout}
 
-Die Seiten liegen in Seitenreihenfolge in einem Raster: zwei Spalten für bis zu
-vier Seiten, drei für bis zu neun und so weiter. Unter jeder Seite stehen ihre
+Die Seiten liegen in Seitenreihenfolge in einem Raster aus vier Spalten; eine
+neue Seite kommt an den nächsten Platz, und die Seiten davor bleiben, wo sie
+waren. Unter jeder Seite stehen ihre
 Nummer und ihr Name; die der aktuellen Seite in der normalen Textfarbe, die
 anderen abgeblendet.
 

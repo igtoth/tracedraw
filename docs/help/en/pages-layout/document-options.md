@@ -28,7 +28,11 @@ grid, ruler and guideline settings for new drawings.
   [[options.label_presets]] for sheets of labels, which set the page to the
   sheet size and add guidelines around each label.
 - [[options.size]], [[dialog.width]] and [[dialog.height]], and
-  [[options.portrait]] or [[options.landscape]].
+  [[options.portrait]] or [[options.landscape]]. The save button next to
+  [[options.size]] keeps a custom size under a name you type, and the delete
+  button forgets the saved size shown. Saved sizes appear in every page size
+  list: the property bar, the Page Size dialog box, these options and the new
+  document dialog box.
 - [[options.apply_current_only]]: change the current page only.
 - [[options.show_page_border]], and [[options.add_page_frame]], which adds a
   rectangle the size of the page.

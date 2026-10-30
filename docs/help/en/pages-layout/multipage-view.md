@@ -5,8 +5,8 @@ desktop at once, so you can compare pages and edit them side by side.
 
 ## The layout {#layout}
 
-The pages sit in a grid, in page order: two columns for up to four pages,
-three for up to nine, and so on. Each page shows its number and name below
+The pages sit in a grid of four columns, in page order, so a page you add goes
+at the next place and the pages before it stay where they were. Each page shows its number and name below
 it; the current page's are in the normal text color, the others dimmed.
 
 ## Working in multipage view {#working}

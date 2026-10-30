@@ -1,12 +1,14 @@
 # Vista de várias páginas
 
+> *Tradução automática: esta página pode estar atrasada em relação à versão em inglês.*
+
 [[menu.view > menu.view.multipage]] mostra todas as páginas do desenho de uma vez
 na área de trabalho, para você compará-las e editá-las lado a lado.
 
 ## A disposição {#layout}
 
-As páginas ficam em uma grade, na ordem: duas colunas para até quatro páginas,
-três para até nove, e assim por diante. Cada página mostra o número e o nome
+As páginas ficam em uma grade de quatro colunas, na ordem, então uma página
+acrescentada vai para o próximo lugar e as anteriores ficam onde estavam. Cada página mostra o número e o nome
 embaixo; os da página atual ficam na cor normal do texto, os outros
 esmaecidos.
 

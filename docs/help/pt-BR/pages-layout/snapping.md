@@ -1,5 +1,7 @@
 # Encaixe
 
+> *Tradução automática: esta página pode estar atrasada em relação à versão em inglês.*
+
 O encaixe puxa o ponteiro, e os objetos que você move, para pontos exatos: nós,
 o meio de segmentos, o centro de formas, linhas-guia, a grade ou a página. Assim
 fica fácil unir linhas e alinhar objetos sem dar zoom.
@@ -11,7 +13,9 @@ fica fácil unir linhas e alinhar objetos sem dar zoom.
   [[menu.view.snap_document_grid]] (<kbd>Ctrl+Y</kbd>),
   [[menu.view.snap_baseline_grid]], [[menu.view.snap_guidelines]],
   [[menu.view.snap_objects]] (<kbd>Alt+Z</kbd>) e [[menu.view.snap_page]]. De
-  início, objetos, linhas-guia e a página estão ativados.
+  início, objetos, linhas-guia e a página estão ativados. A grade de linha de
+  base também funciona sozinha: só com ela ativada, nós e objetos se encaixam
+  nas linhas dela.
 - [[menu.view.snap_off]] (<kbd>Alt+Q</kbd>) desativa todo o encaixe e o
   reativa.
 

@@ -1,5 +1,7 @@
 # Opções do documento
 
+> *Tradução automática: esta página pode estar atrasada em relação à versão em inglês.*
+
 [[menu.layout > menu.layout.document_options]] abre as configurações do desenho
 ativo: tamanho da página, layout, fundo, sangramento, réguas, grade e
 linhas-guia. Clicar duas vezes em uma régua ou na borda da página também a abre.
@@ -28,7 +30,12 @@ guarda as configurações de grade, réguas e linhas-guia para novos desenhos.
   [[options.label_presets]] para folhas de etiquetas, que definem a página com
   o tamanho da folha e acrescentam linhas-guia em volta de cada etiqueta.
 - [[options.size]], [[dialog.width]] e [[dialog.height]], e
-  [[options.portrait]] ou [[options.landscape]].
+  [[options.portrait]] ou [[options.landscape]]. O botão de salvar ao lado de
+  [[options.size]] guarda um tamanho personalizado com um nome que você
+  digitar, e o botão de excluir esquece o tamanho salvo mostrado. Tamanhos
+  salvos aparecem em todas as listas de tamanho de página: a barra de
+  propriedades, a caixa de diálogo Tamanho da página, estas opções e a caixa
+  de diálogo de novo documento.
 - [[options.apply_current_only]]: muda só a página atual.
 - [[options.show_page_border]], e [[options.add_page_frame]], que acrescenta um
   retângulo do tamanho da página.
