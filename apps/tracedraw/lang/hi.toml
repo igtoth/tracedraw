@@ -5505,7 +5505,6 @@ menu.bitmaps.remove_background_local = "पृष्ठभूमि हटाए
 dialog.remove_background_title = "पृष्ठभूमि हटाएँ"
 dialog.bg_colors = "पृष्ठभूमि:"
 dialog.bg_colors_auto = "चित्र के किनारों से पहचानी गई"
-dialog.bg_color_remove_tip = "यह रंग हटाने के लिए क्लिक करें"
 dialog.bg_pick_tip = "पृष्ठभूमि रंग चुनें: पूर्वावलोकन में उस पर क्लिक करें"
 dialog.bg_colors_auto_button = "स्वचालित"
 dialog.bg_colors_auto_tip = "चुने गए रंग भूलें और चित्र के किनारों से पृष्ठभूमि पहचानें"
