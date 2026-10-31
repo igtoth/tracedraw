@@ -2098,6 +2098,14 @@ impl<'a> Ctx<'a> {
                 );
             }
         }
+        // A frame of several columns (its record's settings, version 16+).
+        if kind_code == OBJ_PARAGRAPH_TEXT {
+            let columns = parsed.frame_style.as_deref().and_then(text::frame_columns);
+            if let (Some((n, gap)), ShapeKind::Text { para, .. }) = (columns, &mut kind) {
+                para.columns = n;
+                para.gutter = gap * 25.4 / 254000.0;
+            }
+        }
         Some(kind)
     }
 

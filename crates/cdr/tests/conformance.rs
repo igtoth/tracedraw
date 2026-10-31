@@ -733,6 +733,35 @@ fn paragraph_text_keeps_its_words_and_place() {
     let frame_box = doc.pages[0].layers[0].shapes[0].bounds();
     every_version(&doc, |r| {
         r.count(1);
+        // Paragraph text with its frame (#1226), except in version 8,
+        // whose frames go out as one text per line.
+        if r.v != 8 {
+            let t = r.shape(0);
+            let ShapeKind::Text {
+                spans,
+                frame: Some(f),
+                ..
+            } = &t.kind
+            else {
+                panic!("version {}: {:?}", r.v, t.kind);
+            };
+            let text: String = spans.iter().map(|s| s.text.as_str()).collect();
+            assert_eq!(text, words, "version {}", r.v);
+            assert!(
+                near(f.width, 60.0, 0.01) && near(f.height, 60.0, 0.01),
+                "version {}: {f:?}",
+                r.v
+            );
+            // The frame lies where it did.
+            let corners = t.text_frame_corners().expect("a frame");
+            let b = corners
+                .iter()
+                .fold(Rect::from_points(corners[0], corners[0]), |r, p| {
+                    r.union_pt(*p)
+                });
+            same_box(r.v, b, Rect::new(20.0, 90.0, 80.0, 150.0), 0.01);
+            return;
+        }
         // One text per line, grouped when there are several.
         let mut texts: Vec<&Shape> = Vec::new();
         fn collect<'a>(s: &'a Shape, out: &mut Vec<&'a Shape>) {

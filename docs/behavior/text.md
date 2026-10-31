@@ -492,12 +492,17 @@ on its own line, which is why the lines are joined first.
   own. `.tdraw` files write `paragraph` only on characters whose
   paragraph has its own formatting; files without it give every
   paragraph the object's formatting.
-- `.cdr`: artistic text is written with each paragraph's alignment
-  and, from version 16, its line spacing. Paragraph text goes out as one
-  artistic text a line, each placed where its paragraph's spacing and
-  indents put it, so the look is kept but the spacing values are not
-  (the frame records of paragraph text are not known well enough to
-  write; see `docs/cdr-format.md`). Reading, paragraphs whose alignment,
+- `.cdr`: text is written with each paragraph's alignment and, from
+  version 16, its line spacing. Paragraph text goes out as paragraph
+  text, its frame and the text flowing in it (and from version 16 its
+  columns), so it opens as paragraph text in the other program and in
+  TraceDraw (#1226). A frame the files cannot hold as TraceDraw draws
+  it (scaled or slanted by its transform, vertical text, fit to frame,
+  placed from the middle or bottom, linked frames, several columns
+  before version 16, any frame in version 8) goes out as one artistic
+  text a line, each placed where its paragraph's spacing and indents
+  put it, so the look is kept (see `docs/cdr-format.md`). Reading,
+  paragraphs whose alignment,
   line spacing, space before and after (version 16+ style strings) or
   indents differ from one another keep their own; text whose paragraphs
   agree keeps one object-level format as before.
