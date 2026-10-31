@@ -4730,6 +4730,16 @@ fn print_dialog(app: &mut App, ctx: &Context, st: &mut PrintState, close: &mut b
     });
 }
 
+/// The name of the destination that leaves the printer to the system:
+/// the PDF viewer, or on Android the system's print service (#1398).
+pub fn print_service_key() -> &'static str {
+    if crate::files::ANDROID {
+        "print.dest_android"
+    } else {
+        "print.dest_viewer"
+    }
+}
+
 /// The destination list (the system's printers in name order, then the
 /// PDF viewer and the file destinations), `width` wide, and the button
 /// of the chosen printer's own settings; the printer whose Properties
@@ -4737,7 +4747,7 @@ fn print_dialog(app: &mut App, ctx: &Context, st: &mut PrintState, close: &mut b
 /// show it (#614, #792).
 pub fn destination_row(ui: &mut Ui, st: &mut PrintState, width: f32) -> Option<String> {
     let mut properties = None;
-    let dests = ["print.dest_viewer", "print.dest_pdf", "print.dest_ps"];
+    let dests = [print_service_key(), "print.dest_pdf", "print.dest_ps"];
     let on_printer = st.destination == 0 && st.printer.is_some();
     let selected = match (&st.printer, st.destination) {
         (Some(p), 0) => p.clone(),

@@ -726,7 +726,7 @@ fn viewer_print_path(dir: &Path, name: &str, count: u32) -> std::path::PathBuf {
     nth(n)
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
 fn print_through_viewer(name: &str, pdf: Vec<u8>) -> Result<String, String> {
     let dir = std::env::temp_dir().join("tracedraw-print");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -738,6 +738,23 @@ fn print_through_viewer(name: &str, pdf: Vec<u8>) -> Result<String, String> {
         "status.print_sent",
         &[("path", &path.display().to_string())],
     ))
+}
+
+/// On Android the print PDF goes to the system's print service, whose
+/// dialog picks the printer, the copies and the paper (#1398). The file
+/// stays in the app's temporary folder: the service reads it later.
+#[cfg(target_os = "android")]
+fn print_through_viewer(name: &str, pdf: Vec<u8>) -> Result<String, String> {
+    let dir = std::env::temp_dir().join("tracedraw-print");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = dir.join(shared_file_name(name));
+    std::fs::write(&path, pdf).map_err(|e| e.to_string())?;
+    let job = name.trim_end_matches(".pdf");
+    if crate::android::outside::print_pdf(&path, job) {
+        Ok(trf("status.print_sent_android", &[("name", job)]))
+    } else {
+        Err(tr("status.print_service_failed"))
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -1344,6 +1361,66 @@ fn separations_doc_without(doc: &Document, off: &[usize]) -> Document {
     sep
 }
 
+/// A file name that stays one name inside a folder: no folder
+/// separators, no leading dots, never empty.
+pub fn shared_file_name(name: &str) -> String {
+    let clean: String = name
+        .chars()
+        .map(|c| {
+            if matches!(c, '/' | '\\' | '\0') {
+                '_'
+            } else {
+                c
+            }
+        })
+        .collect();
+    let clean = clean.trim().trim_start_matches('.').to_string();
+    if clean.is_empty() {
+        "document".into()
+    } else {
+        clean
+    }
+}
+
+/// Whether `target` is an address with a scheme (`https:`, `mailto:`,
+/// `market:`) rather than a file path.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub fn is_address(target: &str) -> bool {
+    target.split_once(':').is_some_and(|(scheme, _)| {
+        scheme.len() > 1
+            && scheme.starts_with(|c: char| c.is_ascii_alphabetic())
+            && scheme
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+    })
+}
+
+/// Open a file or a web address in the app the system has for it. On
+/// Android (#1398) an address opens in its app, a file of the app (or a
+/// document the picker returned) in the app picked for its type; a
+/// folder cannot be shown there.
+#[cfg(target_os = "android")]
+pub fn open_with_system(path: &Path) -> Result<(), String> {
+    let target = path.to_string_lossy();
+    let opened = if is_address(&target) {
+        crate::android::outside::view(&target, "")
+    } else {
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        let mime = crate::files::mime_for_extension(ext);
+        match crate::files::document_uri(path) {
+            Some(uri) => crate::android::outside::view(&uri, mime),
+            None if path.is_dir() => return Err(tr("status.no_folders_on_android")),
+            None => crate::android::outside::view(&target, mime),
+        }
+    };
+    if opened {
+        Ok(())
+    } else {
+        Err(tr("status.could_not_open_viewer"))
+    }
+}
+
+#[cfg(not(target_os = "android"))]
 pub fn open_with_system(path: &Path) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     let r = std::process::Command::new("cmd")
@@ -1420,6 +1497,10 @@ impl App {
     /// File > Send To: write the document as PDF into `target` and report
     /// where it went.
     pub fn send_to(&mut self, target: SendTarget) {
+        if crate::files::ANDROID {
+            self.send_to_android(target);
+            return;
+        }
         if crate::files::WEB {
             // No folders in a browser: every target is a PDF download.
             let name = self.send_to_file_name();
@@ -1452,6 +1533,54 @@ impl App {
     }
 }
 
+impl App {
+    /// Send To on Android (#1398): Documents saves the PDF where the
+    /// system's picker says, Mail Recipient hands it to a mail app through
+    /// the share sheet; there is no desktop folder ([`SendTarget::why_not`]).
+    fn send_to_android(&mut self, target: SendTarget) {
+        if let Some(why) = target.why_not() {
+            self.status = tr(why);
+            return;
+        }
+        let name = self.send_to_file_name();
+        let pdf = tracedraw_io::pdf::document_to_pdf(self.engine.document());
+        if target == SendTarget::Documents {
+            crate::files::Dialog::new()
+                .add_filter("PDF", &["pdf"])
+                .set_file_name(name)
+                .save_file(self, move |app, path| {
+                    app.status = match crate::files::write(&path, pdf) {
+                        Ok(()) => trf("status.sent_to", &[("path", &path.display().to_string())]),
+                        Err(e) => trf("status.export_failed", &[("e", &e.to_string())]),
+                    };
+                });
+            return;
+        }
+        let dir = std::env::temp_dir().join("tracedraw-send");
+        let path = dir.join(shared_file_name(&name));
+        self.status = match std::fs::create_dir_all(&dir).and_then(|()| std::fs::write(&path, pdf))
+        {
+            Err(e) => trf("status.export_failed", &[("e", &e.to_string())]),
+            Ok(()) if share_pdf(&path, name.trim_end_matches(".pdf")) => {
+                trf("status.shared", &[("name", &name)])
+            }
+            Ok(()) => tr("status.share_failed"),
+        };
+    }
+}
+
+/// Hand the PDF at `path` to a mail app through the share sheet (Android);
+/// false where there is none.
+fn share_pdf(path: &Path, subject: &str) -> bool {
+    #[cfg(target_os = "android")]
+    return crate::android::outside::share(path, "application/pdf", subject, true);
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = (path, subject);
+        false
+    }
+}
+
 /// Destinations of File > Send To.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SendTarget {
@@ -1461,6 +1590,12 @@ pub enum SendTarget {
 }
 
 impl SendTarget {
+    /// Why this destination cannot be used here, as an i18n key for the
+    /// greyed menu row's tip: Android has no desktop folder.
+    pub fn why_not(self) -> Option<&'static str> {
+        why_not_send_to(self, crate::files::ANDROID)
+    }
+
     /// The folder the PDF is written to; the mail recipient gets it from
     /// the system's temporary folder.
     pub fn dir(self) -> Option<std::path::PathBuf> {
@@ -1474,6 +1609,11 @@ impl SendTarget {
             }
         }
     }
+}
+
+/// [`SendTarget::why_not`] on Android (`android`) or elsewhere.
+pub fn why_not_send_to(target: SendTarget, android: bool) -> Option<&'static str> {
+    (android && target == SendTarget::Desktop).then_some("menu.file.send_to_desktop_android")
 }
 
 /// `$XDG_*_DIR`, then `~/<name>` (created when missing), then the home
@@ -1907,6 +2047,67 @@ pub fn replace_properties(app: &mut App, st: &mut FindReplaceState) -> usize {
 
 #[cfg(test)]
 mod tests {
+    use super::{is_address, shared_file_name, why_not_send_to, SendTarget};
+
+    /// Android (#1398): Send To has no desktop folder there (the row is
+    /// greyed with the reason), while Documents and Mail stay; every
+    /// destination works elsewhere. The file handed to another app keeps
+    /// one name inside its folder, and addresses are told from paths.
+    #[test]
+    fn android_sends_and_opens_through_the_system() {
+        assert_eq!(
+            why_not_send_to(SendTarget::Desktop, true),
+            Some("menu.file.send_to_desktop_android")
+        );
+        assert_eq!(why_not_send_to(SendTarget::Documents, true), None);
+        assert_eq!(why_not_send_to(SendTarget::Mail, true), None);
+        for t in [SendTarget::Desktop, SendTarget::Documents, SendTarget::Mail] {
+            assert_eq!(why_not_send_to(t, false), None);
+            // Not on Android here.
+            assert_eq!(t.why_not(), None);
+        }
+        assert!(crate::i18n::has_english(
+            "menu.file.send_to_desktop_android"
+        ));
+        assert_eq!(shared_file_name("Poster.pdf"), "Poster.pdf");
+        assert_eq!(shared_file_name("a/b\\c.pdf"), "a_b_c.pdf");
+        assert_eq!(shared_file_name("../x.pdf"), "_x.pdf");
+        assert_eq!(shared_file_name(" .. "), "document");
+        for a in [
+            "https://tracedraw.dev/help",
+            "mailto:someone@example.com",
+            "market://details?id=dev.tracedraw.app",
+            "content://com.android.providers/document/1",
+        ] {
+            assert!(is_address(a), "{a}");
+        }
+        for p in [
+            "/data/user/0/dev.tracedraw.app/files/tmp/a.pdf",
+            "C:\\Users\\a.pdf",
+            "notes.txt",
+            "",
+        ] {
+            assert!(!is_address(p), "{p}");
+        }
+        // The Print dialog names the destination after the system's
+        // service: the PDF viewer here, the print service on Android.
+        assert_eq!(crate::ui::dialogs::print_service_key(), "print.dest_viewer");
+        for key in [
+            "print.dest_android",
+            "status.print_sent_android",
+            "status.print_service_failed",
+            "status.shared",
+            "status.share_failed",
+            "status.bitmap_sent_to_app",
+            "status.no_app_edits_pictures",
+            "status.no_folders_on_android",
+            "options.bitmap_editor_android",
+            "options.open_folder_android",
+        ] {
+            assert!(crate::i18n::has_english(key), "{key}");
+        }
+    }
+
     /// Each print to the viewer gets a name of its own, so the viewer
     /// opens it in a new page while the last one is still shown; older
     /// ones are cleared away (#809).

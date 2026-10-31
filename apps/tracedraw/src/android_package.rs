@@ -284,6 +284,90 @@ mod tests {
         assert!(!short.is_empty() && short.chars().count() <= 80);
     }
 
+    const SHARED_FILES: &str =
+        include_str!("../../../packaging/android/java/dev/tracedraw/app/SharedFiles.java");
+
+    /// Print, Send To, Edit Bitmap and opening files or pages (#1398) go
+    /// through the system: each Java method the bridge calls exists with
+    /// the bridge's signature; the print PDF goes to the print service, a
+    /// file to the share sheet (mail apps only for a mail) or to an
+    /// editing app with the right to write it back, served by the app's
+    /// own provider, which the manifest declares unexported with grants
+    /// and which serves the app's own folders only.
+    #[test]
+    fn print_share_and_open_with_go_through_the_system() {
+        for (java, name, sig) in [
+            (
+                "public boolean printFile(final String path, final String job)",
+                "printFile",
+                "(Ljava/lang/String;Ljava/lang/String;)Z",
+            ),
+            (
+                "public boolean shareFile(final String path, final String mime, final String subject, final boolean mail)",
+                "shareFile",
+                "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Z)Z",
+            ),
+            (
+                "public boolean editFile(final String path, final String mime)",
+                "editFile",
+                "(Ljava/lang/String;Ljava/lang/String;)Z",
+            ),
+            (
+                "public boolean viewTarget(final String target, final String mime)",
+                "viewTarget",
+                "(Ljava/lang/String;Ljava/lang/String;)Z",
+            ),
+        ] {
+            assert!(ACTIVITY.contains(java), "the activity lacks {java:?}");
+            assert!(
+                BRIDGE.contains(&format!("jni_str!(\"{name}\")")),
+                "the bridge does not call {name}"
+            );
+            assert!(
+                BRIDGE.contains(&format!("jni_sig!(\"{sig}\")")),
+                "the bridge does not use the signature {sig:?}"
+            );
+        }
+        for needed in [
+            "PrintManager",
+            "Context.PRINT_SERVICE",
+            "extends PrintDocumentAdapter",
+            "onWriteFinished(new PageRange[] {PageRange.ALL_PAGES})",
+            "Intent.ACTION_SEND",
+            "Intent.EXTRA_STREAM",
+            "Intent.createChooser",
+            "Uri.parse(\"mailto:\")",
+            "Intent.ACTION_EDIT",
+            "Intent.FLAG_GRANT_WRITE_URI_PERMISSION",
+            "Intent.ACTION_VIEW",
+            "ActivityNotFoundException",
+        ] {
+            assert!(ACTIVITY.contains(needed), "the activity lacks {needed:?}");
+        }
+        assert!(SHARED_FILES.contains("public class SharedFiles extends ContentProvider"));
+        assert!(
+            SHARED_FILES.contains("static final String AUTHORITY = \"dev.tracedraw.app.files\";")
+        );
+        assert!(SHARED_FILES.contains("getFilesDir()") && SHARED_FILES.contains("getCacheDir()"));
+        // Paths never lead out of the served folders.
+        assert!(SHARED_FILES.contains("getCanonicalFile()"));
+        assert!(SHARED_FILES.contains("ParcelFileDescriptor.parseMode(mode)"));
+        let provider = MANIFEST
+            .split("<provider")
+            .nth(1)
+            .and_then(|p| p.split("/>").next())
+            .expect("the manifest declares the provider");
+        for needed in [
+            "android:name=\"dev.tracedraw.app.SharedFiles\"",
+            "android:authorities=\"dev.tracedraw.app.files\"",
+            "android:exported=\"false\"",
+            "android:grantUriPermissions=\"true\"",
+        ] {
+            assert!(provider.contains(needed), "the provider lacks {needed:?}");
+        }
+        assert!(!SHARED_FILES.contains('\u{2014}'));
+    }
+
     /// The on-screen keyboard (#1309): the bridge shows it with the
     /// activity's method, registers the native methods the activity
     /// declares with their signatures, and the view the keyboard types

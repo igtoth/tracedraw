@@ -2017,7 +2017,10 @@ fn file_menu(app: &mut App, ui: &mut Ui) {
             ("menu.file.send_to_documents", SendTarget::Documents),
             ("menu.file.send_to_mail", SendTarget::Mail),
         ] {
-            if item(ui, key, "", doc) {
+            // Greyed with the reason where the platform has no such place
+            // (Android has no desktop folder, #1398).
+            let why = t.why_not().map(tr);
+            if item_tip(ui, key, "", doc && why.is_none(), why.as_deref()) {
                 app.send_to(t);
             }
         }

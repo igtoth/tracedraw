@@ -3,15 +3,18 @@
 File > Print (Ctrl+P) builds a print-ready PDF of the sheets and sends
 it to the printer chosen in the dialog, or opens it in the system
 viewer, where the printer is chosen (in the browser the PDF is
-downloaded). `export::print` builds it; the sheets come from
-`imposition.rs`.
+downloaded; on Android it goes to the system's print service, whose
+dialog chooses the printer, the copies and the paper, #1398).
+`export::print` builds it; the sheets come from `imposition.rs`.
 
 ## Printers
 
 The Printer list holds the system's printers in name order (ignoring
 case; the default stays where its name puts it), then "System printer
 (through the PDF viewer)", "PDF file" and "PostScript file". The list
-is read off the interface's thread when the dialog opens, so a print
+is read off the interface's thread when the dialog opens (on Android
+there is no list: the print service lists the printers, and the entry
+reads "System printer (through the Android print service)"), so a print
 server that is slow to answer never holds the window: until it comes,
 the list read last shows (or "Looking for printers..." the first
 time, when Print waits for the list if a printer is the destination),

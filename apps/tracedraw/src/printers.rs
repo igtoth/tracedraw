@@ -5,7 +5,9 @@
 //! and printed to through PowerShell (the sheets drawn by TraceDraw and
 //! handed to the printer as pictures, so no PDF program is needed). In
 //! the browser the list is empty and the print goes through the PDF
-//! viewer, as before. See docs/behavior/printing.md.
+//! viewer, as before; on Android it is empty too and the print goes to
+//! the system's print service, which lists the printers itself. See
+//! docs/behavior/printing.md.
 
 use std::path::Path;
 
@@ -177,7 +179,7 @@ pub fn parse_windows_list(output: &str) -> Vec<Printer> {
 /// The printers the system has, in name order; empty where none is set
 /// up or there is no CUPS. It can take seconds (a print server that does
 /// not answer): the Print dialog calls it off the interface's thread.
-#[cfg(not(any(target_arch = "wasm32", target_os = "windows")))]
+#[cfg(not(any(target_arch = "wasm32", target_os = "windows", target_os = "android")))]
 pub fn system_printers() -> Vec<Printer> {
     let out = std::process::Command::new("lpstat")
         .args(["-l", "-p", "-d"])
@@ -220,7 +222,9 @@ fn powershell() -> std::process::Command {
     c
 }
 
-#[cfg(target_arch = "wasm32")]
+/// None in a browser, and none on Android, whose print service lists and
+/// picks the printers in its own dialog (#1398).
+#[cfg(any(target_arch = "wasm32", target_os = "android"))]
 pub fn system_printers() -> Vec<Printer> {
     Vec::new()
 }
