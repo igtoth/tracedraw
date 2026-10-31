@@ -47,6 +47,17 @@ pub fn open_url(url: &str) {
     }
 }
 
+/// Whether the browser runs on Windows (see
+/// [`crate::web_page::windows_platform`]).
+pub fn on_windows() -> bool {
+    web_sys::window().is_some_and(|w| {
+        crate::web_page::windows_platform(
+            &navigator_text(&w, "platform"),
+            &navigator_text(&w, "userAgent"),
+        )
+    })
+}
+
 /// The page title.
 pub fn set_title(title: &str) {
     if let Some(d) = web_sys::window().and_then(|w| w.document()) {

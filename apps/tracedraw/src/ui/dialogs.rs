@@ -1064,6 +1064,77 @@ pub enum Dialog {
     MissingFonts(crate::ui::missing_fonts::MissingFontsState),
 }
 
+/// What a button of a browser-version message about the desktop app does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DesktopChoice {
+    Close,
+    /// The release downloads on GitHub.
+    Downloads,
+    /// TraceDraw in the Microsoft Store, offered on Windows only.
+    Store,
+}
+
+/// The buttons of a browser-version message about the desktop app, with
+/// their labels: OK, the downloads and, when the browser runs on Windows,
+/// the Microsoft Store.
+fn desktop_choices(windows: bool) -> Vec<(String, DesktopChoice)> {
+    let mut choices = vec![
+        (tr("dialog.ok"), DesktopChoice::Close),
+        (tr("web.notice_download"), DesktopChoice::Downloads),
+    ];
+    if windows {
+        choices.push((tr("web.notice_store"), DesktopChoice::Store));
+    }
+    choices
+}
+
+/// Whether the browser version runs on Windows; never in the desktop app.
+fn browser_on_windows() -> bool {
+    #[cfg(target_arch = "wasm32")]
+    {
+        crate::web::on_windows()
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        false
+    }
+}
+
+/// The text of a browser-version message about the desktop app: on
+/// Windows a last paragraph says the Microsoft Store version may trail
+/// the latest download while the Store certifies each version.
+fn desktop_message_text(text: &str, windows: bool) -> String {
+    if windows {
+        format!("{text}\n\n{}", tr("web.notice_store_note"))
+    } else {
+        text.to_string()
+    }
+}
+
+/// A browser-version message about the desktop app: OK closes it, the
+/// other buttons open the downloads or, on Windows, the Microsoft Store.
+/// Its close button and Esc only close it.
+fn desktop_app_message(app: &mut App, ctx: &egui::Context, text: &str, close: &mut bool) {
+    let windows = browser_on_windows();
+    let choices = desktop_choices(windows);
+    let labels: Vec<&str> = choices.iter().map(|(l, _)| l.as_str()).collect();
+    let Some(i) = crate::ui::chrome::message_box_closing_with(
+        ctx,
+        crate::ui::chrome::MessageIcon::Info,
+        &desktop_message_text(text, windows),
+        &labels,
+        0,
+    ) else {
+        return;
+    };
+    match choices.get(i).map(|(_, c)| *c) {
+        Some(DesktopChoice::Downloads) => app.open_url(crate::updates::RELEASES_PAGE),
+        Some(DesktopChoice::Store) => app.open_url(crate::updates::MICROSOFT_STORE_PAGE),
+        Some(DesktopChoice::Close) | None => {}
+    }
+    *close = true;
+}
+
 /// Convert to Bitmap: Resolution (a list and a value), Color mode,
 /// Dithered (256 colours or fewer), Always overprint black,
 /// Anti-aliasing, Transparent background and the uncompressed size.
@@ -2693,19 +2764,7 @@ pub fn show(app: &mut App, ctx: &Context) {
         Dialog::About => crate::ui::about::about_dialog(app, ctx, &mut close),
         Dialog::WebNotice => {
             let text = format!("{}\n\n{}", tr("web.notice_title"), tr("web.notice_text"));
-            match crate::ui::chrome::message_box(
-                ctx,
-                crate::ui::chrome::MessageIcon::Info,
-                &text,
-                &[&tr("dialog.ok"), &tr("web.notice_download")],
-            ) {
-                Some(1) => {
-                    app.open_url(crate::updates::RELEASES_PAGE);
-                    close = true;
-                }
-                Some(_) => close = true,
-                None => {}
-            }
+            desktop_app_message(app, ctx, &text, &mut close);
         }
         Dialog::StorageRefused(r) => {
             let text = crate::storage_full::message(*r);
@@ -2726,19 +2785,7 @@ pub fn show(app: &mut App, ctx: &Context) {
                 tr("macros.desktop_only"),
                 tr("macros.desktop_only_text")
             );
-            match crate::ui::chrome::message_box(
-                ctx,
-                crate::ui::chrome::MessageIcon::Info,
-                &text,
-                &[&tr("dialog.ok"), &tr("web.notice_download")],
-            ) {
-                Some(1) => {
-                    app.open_url(crate::updates::RELEASES_PAGE);
-                    close = true;
-                }
-                Some(_) => close = true,
-                None => {}
-            }
+            desktop_app_message(app, ctx, &text, &mut close);
         }
     }
     // A dialog's close button closes it like Esc.
@@ -7232,5 +7279,80 @@ mod booklet_fields_tests {
         let o = crate::export::print_layout(&app, &st, app.doc());
         assert_eq!(o.booklet.binding, crate::imposition::Binding::PerfectBound);
         assert_eq!(o.layout, crate::imposition::Layout::Booklet);
+    }
+}
+
+#[cfg(test)]
+mod desktop_message_tests {
+    use super::*;
+
+    /// OK and the downloads everywhere; the Microsoft Store button only
+    /// on Windows, last, named in every language.
+    #[test]
+    fn the_store_button_is_offered_on_windows_only() {
+        let kinds = |w| {
+            desktop_choices(w)
+                .into_iter()
+                .map(|(_, c)| c)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            kinds(false),
+            [DesktopChoice::Close, DesktopChoice::Downloads]
+        );
+        assert_eq!(
+            kinds(true),
+            [
+                DesktopChoice::Close,
+                DesktopChoice::Downloads,
+                DesktopChoice::Store
+            ]
+        );
+        for (code, _) in crate::i18n::LANGUAGES {
+            crate::i18n::with_thread_language(code, || {
+                let choices = desktop_choices(true);
+                let store = &choices[2].0;
+                assert!(store.contains("Microsoft Store"), "{code}: {store}");
+                assert_ne!(store, &choices[1].0, "{code}");
+            });
+        }
+    }
+
+    /// On Windows the message ends with a paragraph saying the Store
+    /// version may trail the latest download; elsewhere it is unchanged.
+    #[test]
+    fn the_store_note_is_added_on_windows_only() {
+        for (code, _) in crate::i18n::LANGUAGES {
+            crate::i18n::with_thread_language(code, || {
+                let text = tr("web.notice_text");
+                assert_eq!(desktop_message_text(&text, false), text, "{code}");
+                let with = desktop_message_text(&text, true);
+                let note = tr("web.notice_store_note");
+                assert!(note.contains("Microsoft Store"), "{code}: {note}");
+                assert!(!note.contains("**"), "{code}: {note}");
+                assert_eq!(with, format!("{text}\n\n{note}"), "{code}");
+            });
+        }
+    }
+
+    /// The close button of the message only closes it: it answers OK,
+    /// never a button that opens a page.
+    #[test]
+    fn closing_the_message_answers_ok() {
+        let ctx = crate::theme::ui_context();
+        let labels = ["OK", "Downloads", "Store"];
+        let mut picked = None;
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            crate::ui::chrome::request_close(ui.ctx());
+            picked = crate::ui::chrome::message_box_closing_with(
+                ui.ctx(),
+                crate::ui::chrome::MessageIcon::Info,
+                "text",
+                &labels,
+                0,
+            );
+        });
+        out.textures_delta.clear();
+        assert_eq!(picked, Some(0));
     }
 }

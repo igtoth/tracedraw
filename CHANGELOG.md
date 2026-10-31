@@ -10,6 +10,7 @@ full, row-by-row status.
 - Tracing: a new Optimized preset, which Quick Trace now uses, chooses the detail for each picture: it traces samples of the picture's finest parts at several details, compares each trace with the picture and keeps the one that draws it best for the nodes it takes (16 curves and 5.8 % drawn wrong on the skull, in under a second on the desktop). The Trace dialog has a Best optimization button that runs the same search on the picture in the dialog and puts the detail found in the Detail slider, as a step undo takes back.
 - Trace dialog: OK and Cancel sit in the bottom right corner; they followed Options... at the left.
 - Trace dialog in the browser: the preview traces the art without its transparent margins, at up to 360 pixels, so a drawing in a wide picture shows its detail instead of blobs, and a note in red says the preview is reduced, that OK traces the whole picture and that the desktop app shows it exactly.
+- Browser version: on Windows, the message shown at start (and the one at a macro command) has a third button, Get it from the Microsoft Store, and says that the Store version may be one or more releases behind the latest download while the Store certifies each version. The close button of these messages now only closes them; it opened the downloads page.
 
 ## 0.31.0 (2026-10-31)
 

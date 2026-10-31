@@ -20,9 +20,14 @@
 
 <p align="center">
   <a href="https://github.com/igtoth/tracedraw/releases"><b>Download</b></a> &middot;
+  <a href="https://apps.microsoft.com/detail/9P50L12VHF33">Microsoft Store</a>* &middot;
   <a href="https://igtoth.github.io/tracedraw/">Open it in the browser</a> &middot;
   <a href="docs/features.md">Feature status</a> &middot;
   <a href="CONTRIBUTING.md">Contribute</a>
+</p>
+
+<p align="center">
+  <sub>* The <a href="https://apps.microsoft.com/detail/9P50L12VHF33">Microsoft Store</a> version is signed and updates itself, but each version must pass the Store's certification first (hours to days), so it is often one or more releases behind the <a href="https://github.com/igtoth/tracedraw/releases/latest">latest download</a>.</sub>
 </p>
 
 <p align="center">
@@ -427,9 +432,21 @@ Each version gets a release with installers for every platform: take the
 also refreshes the **Nightly build** pre-release. `<version>` in the file
 names is the version number.
 
+On Windows, TraceDraw is also in the
+[Microsoft Store](https://apps.microsoft.com/detail/9P50L12VHF33): signed by the Store, no SmartScreen
+warning, and updated by Windows on its own. Each version has to pass the
+Store's certification first, which takes from a few hours to a few days,
+so the Store version is usually one or more releases behind the
+[latest release](https://github.com/igtoth/tracedraw/releases/latest) here.
+For the newest fixes, take the installer below.
+
+<p>
+  <a href="https://apps.microsoft.com/detail/9P50L12VHF33"><img src="https://get.microsoft.com/images/en-us%20dark.svg" alt="Get it from Microsoft" width="200"></a>
+</p>
+
 | Platform | Files |
 |---|---|
-| Windows (x64) | `tracedraw-<version>-windows-x86_64-setup.exe` (installer), `tracedraw-<version>-windows-x86_64-portable.zip` (keeps its settings in the `tracedraw-settings` folder beside the program; not signed yet: if SmartScreen warns, More info > Run anyway) |
+| Windows (x64) | [Microsoft Store](https://apps.microsoft.com/detail/9P50L12VHF33) (signed, may lag behind the latest release), `tracedraw-<version>-windows-x86_64-setup.exe` (installer), `tracedraw-<version>-windows-x86_64-portable.zip` (keeps its settings in the `tracedraw-settings` folder beside the program; not signed yet: if SmartScreen warns, More info > Run anyway) |
 | macOS (Apple silicon, Intel) | `tracedraw-<version>-macos-arm64.dmg`, `tracedraw-<version>-macos-x86_64.dmg` (unsigned for now: right-click, Open) |
 | Linux (x86_64, arm64) | `.deb` (`_amd64` or `_arm64`), `tracedraw-<version>-linux-amd64.AppImage` or `-linux-arm64.AppImage`, `tracedraw-<version>-linux-x86_64.tar.gz` or `-linux-arm64.tar.gz` |
 | Web | no download: [open it in the browser](https://igtoth.github.io/tracedraw/), nothing to install |
@@ -445,7 +462,7 @@ are in [`packaging/`](packaging/); the browser build is described in
 Windows releases are built from this repository by GitHub Actions
 ([`build.yml`](.github/workflows/build.yml)) and nowhere else. The
 downloads are not code-signed yet: if SmartScreen warns, More info > Run
-anyway. The Microsoft Store version, once published, is signed by the
+anyway. The [Microsoft Store](https://apps.microsoft.com/detail/9P50L12VHF33) version is signed by the
 Store. When a certificate is set up, a signing request is made only for a
 version tag, and only after an approver accepts it; how the build signs
 is described in [`docs/code-signing.md`](docs/code-signing.md).

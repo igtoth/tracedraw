@@ -11,7 +11,10 @@ built for the browser, so the menus, tools and files are the same.
 Each time the page opens, a message explains that the browser version is the
 same program as the desktop one, and what differs. [[dialog.ok]] (or
 <kbd>Enter</kbd>) closes it; a second button opens the downloads of the
-desktop version.
+desktop version. On Windows a third button opens TraceDraw in the Microsoft
+Store, and the message adds that the Store version may be one or more
+releases behind the latest download, because the Store certifies each
+version first.
 
 ## What differs from the desktop {#differences}
 

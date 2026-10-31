@@ -87,8 +87,16 @@ this is the same Rust program as the desktop app compiled to
 WebAssembly, that a browser is slower (large drawings, heavy effects,
 big files), has only the bundled fonts and opens and saves files by
 upload and download, and that the desktop app runs natively at full
-speed. OK closes it (Enter too); Download the desktop app opens the
-latest release (`app::tests::the_browser_notice_shows_at_every_visit`).
+speed. OK closes it (Enter too, and its close button); Download the
+desktop app opens the latest release
+(`app::tests::the_browser_notice_shows_at_every_visit`). When the
+browser runs on Windows (the navigator's platform or user agent,
+`web_page::windows_platform`), a third button, Get it from the Microsoft
+Store, opens TraceDraw's Store page, and a last paragraph says that the
+Store version may be one or more releases behind the latest download
+because the Store certifies each version first. The macro message
+offers the same buttons
+(`ui::dialogs::desktop_message_tests`).
 Nothing is added to the menu bar, and the Welcome Screen's Get Started
 page leaves out the recent documents a browser cannot keep.
 

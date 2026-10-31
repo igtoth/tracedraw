@@ -13,7 +13,9 @@ o navegador, então os menus, as ferramentas e os arquivos são os mesmos.
 Cada vez que a página abre, uma mensagem explica que a versão para navegador é
 o mesmo programa da versão para computador e o que muda. [[dialog.ok]] (ou
 <kbd>Enter</kbd>) a fecha; um segundo botão abre os downloads da versão para
-computador.
+computador. No Windows, um terceiro botão abre o TraceDraw na Microsoft Store,
+e a mensagem avisa que a versão da Store pode estar uma ou mais versões atrás
+do download mais recente, porque a Store certifica cada versão antes.
 
 ## O que muda em relação ao computador {#differences}
 

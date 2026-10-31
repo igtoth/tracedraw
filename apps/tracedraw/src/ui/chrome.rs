@@ -787,7 +787,27 @@ pub fn message_box(
     text: &str,
     buttons: &[&str],
 ) -> Option<usize> {
-    message_box_with(ctx, icon, text, buttons, None)
+    message_box_with(
+        ctx,
+        icon,
+        text,
+        buttons,
+        None,
+        buttons.len().saturating_sub(1),
+    )
+}
+
+/// A [`message_box`] whose close button (and Esc) answers with the button
+/// at `on_close` rather than the last one: for a message whose last
+/// button opens a page, so closing it never does.
+pub fn message_box_closing_with(
+    ctx: &Context,
+    icon: MessageIcon,
+    text: &str,
+    buttons: &[&str],
+    on_close: usize,
+) -> Option<usize> {
+    message_box_with(ctx, icon, text, buttons, None, on_close)
 }
 
 /// A [`message_box`] with a check box under the message ("Do not show
@@ -800,7 +820,14 @@ pub fn message_box_check(
     check: &str,
     checked: &mut bool,
 ) -> Option<usize> {
-    message_box_with(ctx, icon, text, buttons, Some((check, checked)))
+    message_box_with(
+        ctx,
+        icon,
+        text,
+        buttons,
+        Some((check, checked)),
+        buttons.len().saturating_sub(1),
+    )
 }
 
 fn message_box_with(
@@ -809,6 +836,7 @@ fn message_box_with(
     text: &str,
     buttons: &[&str],
     check: Option<(&str, &mut bool)>,
+    on_close: usize,
 ) -> Option<usize> {
     let mut picked = None;
     let before = take_close_request(ctx);
@@ -846,7 +874,7 @@ fn message_box_with(
         picked = button_row(ui, buttons, true);
     });
     if before || take_close_request(ctx) {
-        picked = Some(buttons.len().saturating_sub(1));
+        picked = Some(on_close);
     }
     picked
 }
