@@ -15,6 +15,10 @@
 # (logcat.txt), the app's own lines (tracedraw.txt) and the crash log
 # (crash.txt), also when the check fails; on GitHub Actions a failure
 # also leaves its key log lines as annotations on the job.
+#
+# The app also sends one HTTPS request at its start (to
+# TRACEDRAW_HTTPS_URL, https://api.github.com/zen by default; empty: no
+# request) and logs the answer: its certificate check must pass (#1396).
 set -eu
 cd "$(dirname "$0")/../.."
 
@@ -215,7 +219,13 @@ case "$component" in
     "$pkg"/*) ;;
     *) fail "no launcher activity for $pkg (got: $component)" ;;
 esac
-sh_dev am start -W -n "$component"
+start_extras=""
+https_url="${TRACEDRAW_HTTPS_URL-https://api.github.com/zen}"
+if [ -n "$https_url" ]; then
+    start_extras="$start_extras --es tracedraw.https_check $https_url"
+fi
+# shellcheck disable=SC2086
+sh_dev am start -W -n "$component" $start_extras
 
 # Up and staying up. Right after booting, the system may switch resource
 # overlays and so relaunch the activity once (watch_app).
@@ -242,6 +252,30 @@ if [ -n "$overlay" ]; then
     echo "$pkg came back from two relaunches and runs as pid $pid"
 else
     note "no display cutout overlay to switch, the relaunch is not checked: $(sh_dev cmd overlay list android 2>&1 | head -n 12 | tr '\n' ' ')"
+fi
+
+# The HTTPS request of the start: answered, or at least not refused by
+# the certificate check (an emulator without a network cannot answer).
+https_check() {
+    t=0
+    while :; do
+        line=$(adb logcat -d -v threadtime 2>/dev/null | grep -F "HTTPS check: $https_url" | tail -n 1)
+        [ -n "$line" ] && break
+        [ "$t" -lt 60 ] || fail "the app never logged its HTTPS request to $https_url"
+        sleep 2
+        t=$((t + 2))
+    done
+    msg=$(echo "$line" | sed 's/.*HTTPS check: //')
+    store=$(adb logcat -d -v threadtime 2>/dev/null | grep -F "HTTPS: " | tail -n 1 | sed 's/.*HTTPS: //')
+    note "HTTPS: $msg ($store)"
+    case "$msg" in
+        *" answered "*) ;;
+        *[Cc]ertificate* | *UnknownIssuer* | *[Tt]ls* | *TLS*) fail "HTTPS: the certificate check failed: $msg" ;;
+        *) note "HTTPS: no answer, but not for the certificate: $msg" ;;
+    esac
+}
+if [ -n "$https_url" ]; then
+    https_check
 fi
 
 # In front, not behind an error or "isn't responding" dialog.

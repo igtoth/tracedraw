@@ -75,6 +75,10 @@ fn android_main(app: AndroidApp) {
     ending::register_natives();
     documents::register_natives();
     keyboard::register_natives();
+    // The emulator check's HTTPS request (net.rs, #1396).
+    if let Some(url) = launch_extra("tracedraw.https_check") {
+        std::thread::spawn(move || https_check(&url));
+    }
     tracedraw_text::install();
     tracedraw_io::emf::install();
     // A fresh install starts in the Touch workspace (larger bars and
@@ -109,6 +113,26 @@ fn android_main(app: AndroidApp) {
     );
     if let Err(e) = result {
         log::error!("TraceDraw could not open its window: {e}");
+    }
+}
+
+/// The emulator check's HTTPS request (scripts/android/emulator_check.sh
+/// starts the app with `--es tracedraw.https_check <url>`): one GET of
+/// `url` the way the online features send theirs, its outcome logged.
+fn https_check(url: &str) {
+    let req = crate::net::HttpRequest {
+        method: "GET",
+        url: url.to_string(),
+        headers: vec![(
+            "User-Agent".into(),
+            concat!("TraceDraw/", env!("CARGO_PKG_VERSION")).into(),
+        )],
+        body: String::new(),
+        bytes: Vec::new(),
+    };
+    match crate::net::send(&req, 64 * 1024) {
+        Ok(resp) => log::info!("HTTPS check: {url} answered {}", resp.status),
+        Err(e) => log::warn!("HTTPS check: {url} failed: {e}"),
     }
 }
 
@@ -182,6 +206,39 @@ fn string_of(env: &jni::Env, s: &jni::objects::JString) -> Option<String> {
     s.mutf8_chars(env)
         .ok()
         .map(|chars| chars.to_str().into_owned())
+}
+
+/// A text the activity was started with (`am start --es name value`):
+/// the emulator check (scripts/android/emulator_check.sh) asks for its
+/// checks this way. `None` when the start gave none.
+pub fn launch_extra(name: &str) -> Option<String> {
+    use jni::objects::JString;
+    use jni::{jni_sig, jni_str, JValue};
+    with_activity("read the start's extras", |env, activity| {
+        let intent = env
+            .call_method(
+                activity,
+                jni_str!("getIntent"),
+                jni_sig!("()Landroid/content/Intent;"),
+                &[],
+            )?
+            .l()?;
+        if intent.is_null() {
+            return Ok(None);
+        }
+        let key = env.new_string(name)?;
+        let value = env
+            .call_method(
+                &intent,
+                jni_str!("getStringExtra"),
+                jni_sig!("(Ljava/lang/String;)Ljava/lang/String;"),
+                &[JValue::Object(&key)],
+            )?
+            .l()?;
+        let value: JString = env.cast_local::<JString>(value)?;
+        Ok(string_of(env, &value))
+    })
+    .flatten()
 }
 
 /// Files through the system's document picker and content URIs.

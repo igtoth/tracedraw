@@ -40,7 +40,7 @@ the owner does to publish it and what to test on a tablet first.
 | Fonts | installed system fonts | the system's fonts (`/system/fonts`, `/product/fonts` and `/vendor/fonts`: Roboto, Noto and the rest; the font database looks in no folder on Android by itself, so `tracedraw_text` names these). Font Manager > Add Font copies the picked font into `fonts` in the app's private folder and installs it from there, at once and at every start (#1400); Add Folder is greyed |
 | Keyboard | the physical keyboard | a physical or Bluetooth keyboard works. The on-screen keyboard shows while a text, a table cell or a field takes typed text and types into an invisible view of the activity (`TextInputView`): a `NativeActivity` offers input methods no text field, so before #1309 only the key presses of Latin letters arrived and Chinese, Japanese, Korean, Tamil and other composed scripts never did. What the input method composes, commits and deletes reaches the editor as an input method's events (`soft_keyboard.rs`), its Backspace, Enter and arrow presses as keys. Not checked on a device yet |
 | Updates | a check of GitHub's releases, asked about at the first start | none: Google Play updates the app (its policy refuses apps that download code of their own), so there is no first-start question and no daily check; Help > Updates opens the app's Play page (`updates::store_install`) |
-| AI Drawing | HTTPS requests | the requests compile; the certificate check needs the Java side Android gives apps with code, so they are expected to fail until a later phase |
+| AI Drawing, AI Generate, GitHub, dictionary downloads | HTTPS requests, certificates checked by the system's verifier | the same requests, certificates checked against the system's own store, the files Android's TLS reads (`/apex/com.android.conscrypt/cacerts` on Android 14 and later, else `/system/etc/security/cacerts`), read once at the first request, with the Mozilla roots bundled in the app when neither can be read (`net::tls_config`). The system's verifier the desktop uses needs a Java part the app does not carry, so every request failed its certificate check before (#1396). The emulator check sends one request at the start and wants it answered (see "The emulator check") |
 | Temporary files (auto-backups, crash recovery) | the system's temporary folder | `tmp` in the app's private folder (`TMPDIR` set by `android_main`: the system's default, `/data/local/tmp`, is closed to apps) |
 | Help | the user Help in the browser | the same pages open in the browser |
 | Errors | a message box and the log file | the system log only: `adb logcat -s tracedraw` |
@@ -229,6 +229,15 @@ GitHub Actions, it also writes the crash lines, the app's last log
 lines, the activity's events, the focus and, for a process still there,
 its main thread's Java stack as annotations on the job, which can be
 read without downloading the artifacts.
+
+The app is started with `--es tracedraw.https_check
+https://api.github.com/zen` (`TRACEDRAW_HTTPS_URL` changes the address;
+empty sends none): it sends one GET the way the online features send
+theirs and logs `HTTPS check: <url> answered <status>` or the error.
+The check notes the answer and the certificate store read (`HTTPS: <n>
+trusted certificates from <folder>`) and fails when the request was
+refused for its certificate; an emulator without a network only gets a
+notice (#1396).
 
 The x86_64 library runs natively there. The ARM64 library cannot be
 checked this way: the emulator's ARM translation (Android 11 and 14
