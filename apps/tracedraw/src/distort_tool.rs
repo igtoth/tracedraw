@@ -1,7 +1,8 @@
 //! The Distort tool: Push and Pull, Zipper and Twister as a live effect
 //! (`Effect::Distort`, formulas in `tracedraw_core::distort`).
 //!
-//! A drag on an object distorts it about the point the drag started on:
+//! A drag on an object, or anywhere with one object selected, distorts
+//! it about the point the drag started on (off the object too, #1442):
 //! Push and Pull by how far the pointer went right (pushed) or left
 //! (pulled), a full half width of the object being 100; Zipper with teeth
 //! a quarter of the drag's length high; Twister by the angle the pointer
@@ -11,8 +12,9 @@
 //! Push and Pull amount or the Zipper amplitude; a circle whose angle
 //! about the centre is the Twister angle, whole turns counted while it
 //! is dragged round) and, for the Zipper, a slider on the line for the
-//! frequency (#1122). Each drag is one undo step and replaces the
-//! object's distortion.
+//! frequency (#1122). Each drag is one undo step; a drag off the
+//! handles adds a new distortion over the ones the object has, the
+//! handles and the bar edit the newest (#1442).
 //!
 //! The property bar shows the selected object's distortion (or the
 //! tool's settings) and edits the selected distortions live.
@@ -218,6 +220,11 @@ pub struct DistortDrag {
     /// about the start.
     pub turned: f64,
     pub last_angle: Option<f64>,
+    /// A drag that makes a new distortion: the object's effects before it
+    /// (the new one goes over them, #1442) and whether the drag has
+    /// changed the drawing yet (one undo step for the whole drag).
+    pub base: Option<Vec<Effect>>,
+    pub begun: bool,
 }
 
 /// The handles of a selected distortion, page space.
@@ -248,34 +255,31 @@ pub fn distortable(kind: &ShapeKind) -> bool {
     !matches!(kind, ShapeKind::Bitmap { .. } | ShapeKind::Group { .. })
 }
 
-/// The distortion among `effects`, if any.
+/// The newest distortion among `effects` (the last; a new drag adds one
+/// over those before it), if any.
 pub fn distortion_of(effects: &[Effect]) -> Option<Distort> {
-    effects.iter().find_map(|e| match e {
+    effects.iter().rev().find_map(|e| match e {
         Effect::Distort(d) => Some(*d),
         _ => None,
     })
 }
 
-/// `effects` with the distortion replaced in place by `d` (added at the
-/// end when there is none; removed with `None`).
+/// `effects` with the newest distortion replaced in place by `d` (added
+/// at the end when there is none; removed with `None`, the ones before it
+/// staying, so Clear Distortion takes them off one at a time).
 pub fn with_distortion(effects: &[Effect], d: Option<Distort>) -> Vec<Effect> {
-    let mut out = Vec::with_capacity(effects.len() + 1);
-    let mut placed = false;
-    for e in effects {
-        if matches!(e, Effect::Distort(_)) {
-            if !placed {
-                if let Some(d) = d {
-                    out.push(Effect::Distort(d));
-                }
-                placed = true;
+    let mut out: Vec<Effect> = effects.to_vec();
+    match out.iter().rposition(|e| matches!(e, Effect::Distort(_))) {
+        Some(i) => match d {
+            Some(d) => out[i] = Effect::Distort(d),
+            None => {
+                out.remove(i);
             }
-        } else {
-            out.push(e.clone());
-        }
-    }
-    if !placed {
-        if let Some(d) = d {
-            out.push(Effect::Distort(d));
+        },
+        None => {
+            if let Some(d) = d {
+                out.push(Effect::Distort(d));
+            }
         }
     }
     out
@@ -414,11 +418,17 @@ impl App {
     /// outlines.
     pub fn bake_distortion(&mut self) {
         let mut cmds = Vec::new();
-        for (id, d, effects) in self.distorted_selection() {
+        for (id, _, effects) in self.distorted_selection() {
             let Some(s) = self.doc().find_shape(id) else {
                 continue;
             };
-            let path = tracedraw_core::distort::distort(&s.local_path(), d);
+            // Every distortion, oldest first, as they are drawn.
+            let mut path = s.local_path();
+            for e in &effects {
+                if let Effect::Distort(d) = e {
+                    path = tracedraw_core::distort::distort(&path, *d);
+                }
+            }
             let closed = path
                 .elements()
                 .iter()
@@ -429,7 +439,11 @@ impl App {
             });
             cmds.push(Command::SetEffects {
                 shape: id,
-                effects: with_distortion(&effects, None),
+                effects: effects
+                    .iter()
+                    .filter(|e| !matches!(e, Effect::Distort(_)))
+                    .cloned()
+                    .collect(),
             });
         }
         if cmds.is_empty() {
@@ -548,11 +562,19 @@ impl App {
                 grab,
                 turned,
                 last_angle,
+                base: None,
+                begun: false,
             });
             return true;
         }
-        let Some(id) = self.hit_test_inside(at) else {
-            return false;
+        // On an object, that object; anywhere else, the one selected: the
+        // distortion's centre can be anywhere, off the object too (#1442).
+        let id = match self.hit_test_inside(at) {
+            Some(id) => id,
+            None => match self.selection.as_slice() {
+                [one] => *one,
+                _ => return false,
+            },
         };
         let Some(s) = self.doc().shape_on_page(id) else {
             return false;
@@ -574,6 +596,8 @@ impl App {
             grab: Grab::Object,
             turned: 0.0,
             last_angle: None,
+            base: Some(s.effects.clone()),
+            begun: false,
         });
         true
     }
@@ -697,8 +721,24 @@ impl App {
             }
         }
         let effect = self.distort.effect(mode, Some(dd.center));
-        self.distort_drag = Some(dd.clone());
-        self.push_effect(Effect::Distort(effect), true);
+        // A new distortion over the ones the object has (#1442): each drag
+        // adds one, as the handles of the newest edit it.
+        let mut effects = dd.base.clone().unwrap_or_else(|| s.effects.clone());
+        effects.push(Effect::Distort(effect));
+        let cmd = Command::SetEffects {
+            shape: dd.id,
+            effects,
+        };
+        let r = if dd.begun {
+            self.engine.amend(&cmd)
+        } else {
+            self.engine.run_with_label(&cmd, "Distortion")
+        };
+        if let Err(e) = r {
+            self.status = e.to_string();
+        }
+        dd.begun = true;
+        self.distort_drag = Some(dd);
     }
 
     /// The Distort tool's clicks and drags.
@@ -790,8 +830,93 @@ mod tests {
         assert!((angle_deg - 450.0).abs() <= 12.0, "{angle_deg}");
         assert_eq!(center, Some(Point::new(5.0, 5.0)));
         assert_eq!((app.distort.turns, app.distort.clockwise), (1, false));
-        // Nothing under the pointer: no drag.
+        // Nothing under the pointer and nothing selected: no drag.
+        app.select(Vec::new());
         assert!(!app.begin_distort(Point::new(500.0, 500.0)));
+    }
+
+    /// #1442: a drag can start anywhere, off the selected object too (the
+    /// centre where it starts), and a new drag on a distorted object adds
+    /// a distortion over the one it has instead of replacing it. Clear
+    /// Distortion takes the newest off first; Convert to Curves makes all
+    /// of them the outline.
+    #[test]
+    fn drags_start_anywhere_and_add_distortions() {
+        let mut app = App::headless();
+        app.tool = Tool::Distort;
+        let id = square(&mut app);
+        app.select(vec![id]);
+        // Off the object, to its left: centred there.
+        assert!(app.begin_distort(Point::new(-30.0, 10.0)));
+        app.drag_distort(Point::new(-25.0, 10.0));
+        app.distort_drag = None;
+        assert_eq!(
+            effect(&app, id),
+            Some(Distort::PushPull {
+                amount: 50.0,
+                center: Some(Point::new(-30.0, 10.0)),
+            })
+        );
+        let count = |app: &App| {
+            app.doc()
+                .find_shape(id)
+                .map(|s| {
+                    s.effects
+                        .iter()
+                        .filter(|e| matches!(e, Effect::Distort(_)))
+                        .count()
+                })
+                .unwrap_or(0)
+        };
+        assert_eq!(count(&app), 1);
+        let once = app.doc().find_shape(id).expect("square").visual_bounds();
+        // A second drag, on the object, away from the handles: one more
+        // distortion, drawn over the first.
+        let before = steps(&app);
+        app.distort.mode = DistortMode::Zipper;
+        assert!(app.begin_distort(Point::new(10.0, 18.0)));
+        app.drag_distort(Point::new(10.0, 22.0));
+        app.drag_distort(Point::new(10.0, 26.0));
+        app.distort_drag = None;
+        assert_eq!(steps(&app), before + 1, "one undo step for the drag");
+        assert_eq!(count(&app), 2);
+        let Some(Distort::Zipper { center, .. }) = effect(&app, id) else {
+            panic!("the newest is the zipper: {:?}", effect(&app, id));
+        };
+        assert_eq!(center, Some(Point::new(10.0, 18.0)));
+        // Its handles are the newest's.
+        let h = app.distortion_handles();
+        assert_eq!(h.len(), 1);
+        assert_eq!(h[0].mode, DistortMode::Zipper);
+        // Undo takes the second drag back whole.
+        app.undo();
+        assert_eq!(count(&app), 1);
+        app.redo();
+        assert_eq!(count(&app), 2);
+        // Clear Distortion: the newest first.
+        app.clear_distortion();
+        assert_eq!(count(&app), 1);
+        assert!(matches!(effect(&app, id), Some(Distort::PushPull { .. })));
+        let b = app.doc().find_shape(id).expect("square").visual_bounds();
+        assert!((b.width() - once.width()).abs() < 1e-6);
+        app.undo();
+        // Convert to Curves: both, in order, become the outline.
+        let drawn = {
+            let s = app.doc().find_shape(id).expect("square");
+            tracedraw_core::live::evaluate(s).main.page_path()
+        };
+        app.bake_distortion();
+        let s = app.doc().find_shape(id).expect("square");
+        assert_eq!(count(&app), 0);
+        let baked = s.page_path();
+        let (a, b) = (
+            tracedraw_core::geometry::Shape::bounding_box(&drawn),
+            tracedraw_core::geometry::Shape::bounding_box(&baked),
+        );
+        assert!(
+            (a.x0 - b.x0).abs() < 1e-6 && (a.y1 - b.y1).abs() < 1e-6,
+            "{a:?} {b:?}"
+        );
     }
 
     #[test]
