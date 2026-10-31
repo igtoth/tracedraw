@@ -7151,7 +7151,6 @@ docker.palette_lock = "Zamknout" # mt
 docker.palette_unlock = "Odemknout" # mt
 docker.palette_lock_desc = "Zamčenou paletu nelze v editoru palet měnit, dokud ji neodemknete." # mt
 dialog.locked_palette_hint = "Tato paleta je zamčená; chcete-li ji upravit, odemkněte ji ve správci palet." # mt
-status.cdr_guides_not_saved = "Vodítka se do souborů .cdr neukládají; chcete-li je zachovat, uložte jako .tdraw." # mt
 transparency.vector_pattern = "Vektorový vzor" # mt
 transparency.bitmap_pattern = "Bitmapový vzor" # mt
 transparency.two_color_pattern = "Dvoubarevný vzor" # mt

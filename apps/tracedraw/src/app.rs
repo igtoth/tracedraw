@@ -6774,24 +6774,7 @@ impl App {
         };
         self.backup_before_save(&path);
         let result = bytes.and_then(|b| crate::files::write(&path, b).map_err(|e| e.to_string()));
-        let ok = result.is_ok();
         self.saved_to(path, result);
-        // Guidelines are not written to `.cdr` files (#1161): say so, so
-        // they are not lost without a word.
-        if ok
-            && self
-                .engine
-                .document()
-                .pages
-                .iter()
-                .any(|p| !p.guides.is_empty())
-        {
-            self.status = format!(
-                "{} {}",
-                self.status,
-                crate::i18n::tr("status.cdr_guides_not_saved")
-            );
-        }
     }
 
     /// After writing the drawing to `path`: its state, the status line and
@@ -10014,22 +9997,30 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// Guidelines saved to `.cdr` come back (#1161): those of every page
+    /// from the master page's guides layer, the others from their page.
     #[test]
-    fn saving_guidelines_to_cdr_says_they_are_not_kept() {
+    fn guidelines_come_back_from_cdr_files() {
         use tracedraw_core::document::{Guide, GuideLine};
         let dir = std::env::temp_dir().join(format!("tracedraw-cdr-guides-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let mut app = App::headless();
-        app.save_to(dir.join("plain.cdr"));
-        assert!(!app
-            .status
-            .contains(&crate::i18n::tr("status.cdr_guides_not_saved")));
         app.add_guide(Guide::from(GuideLine::Horizontal { y: 40.0 }));
-        app.save_to(dir.join("guides.cdr"));
-        assert!(app
-            .status
-            .contains(&crate::i18n::tr("status.cdr_guides_not_saved")));
+        app.add_guide(Guide::from(GuideLine::Vertical { x: 25.0 }));
+        let path = dir.join("guides.cdr");
+        app.save_to(path.clone());
+        assert!(path.is_file(), "{}", app.status);
+        let mut back = App::headless();
+        back.open_path(path);
+        let lines: Vec<GuideLine> = back.page_guides().iter().map(|g| g.line).collect();
+        assert_eq!(
+            lines,
+            [
+                GuideLine::Horizontal { y: 40.0 },
+                GuideLine::Vertical { x: 25.0 }
+            ]
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -7151,7 +7151,6 @@ docker.palette_lock = "Заблокировать" # mt
 docker.palette_unlock = "Разблокировать" # mt
 docker.palette_lock_desc = "Заблокированную палитру нельзя изменить в редакторе палитр, пока она не разблокирована." # mt
 dialog.locked_palette_hint = "Эта палитра заблокирована; разблокируйте её в диспетчере палитр, чтобы изменить." # mt
-status.cdr_guides_not_saved = "Направляющие не сохраняются в файлах .cdr; сохраните в .tdraw, чтобы их сохранить." # mt
 transparency.vector_pattern = "Векторный узор" # mt
 transparency.bitmap_pattern = "Растровый узор" # mt
 transparency.two_color_pattern = "Двухцветный узор" # mt

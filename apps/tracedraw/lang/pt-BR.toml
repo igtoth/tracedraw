@@ -7151,7 +7151,6 @@ docker.palette_lock = "Bloquear" # mt
 docker.palette_unlock = "Desbloquear" # mt
 docker.palette_lock_desc = "Uma paleta bloqueada não pode ser alterada no Editor de paletas até ser desbloqueada." # mt
 dialog.locked_palette_hint = "Esta paleta está bloqueada; desbloqueie-a no Gerenciador de paletas para editá-la." # mt
-status.cdr_guides_not_saved = "As linhas-guia não são salvas em arquivos .cdr; salve como .tdraw para mantê-las." # mt
 transparency.vector_pattern = "Padrão vetorial" # mt
 transparency.bitmap_pattern = "Padrão de bitmap" # mt
 transparency.two_color_pattern = "Padrão de duas cores" # mt

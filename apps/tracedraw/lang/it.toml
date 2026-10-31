@@ -7151,7 +7151,6 @@ docker.palette_lock = "Blocca" # mt
 docker.palette_unlock = "Sblocca" # mt
 docker.palette_lock_desc = "Una tavolozza bloccata non può essere modificata nell'editor delle tavolozze finché non viene sbloccata." # mt
 dialog.locked_palette_hint = "Questa tavolozza è bloccata; sbloccala nel gestore delle tavolozze per modificarla." # mt
-status.cdr_guides_not_saved = "Le linee guida non vengono salvate nei file .cdr; salva come .tdraw per conservarle." # mt
 transparency.vector_pattern = "Motivo vettoriale" # mt
 transparency.bitmap_pattern = "Motivo bitmap" # mt
 transparency.two_color_pattern = "Motivo bicolore" # mt

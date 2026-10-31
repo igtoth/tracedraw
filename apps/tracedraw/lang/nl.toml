@@ -7151,7 +7151,6 @@ docker.palette_lock = "Vergrendelen" # mt
 docker.palette_unlock = "Ontgrendelen" # mt
 docker.palette_lock_desc = "Een vergrendeld palet kan pas in de paleteditor worden gewijzigd als het is ontgrendeld." # mt
 dialog.locked_palette_hint = "Dit palet is vergrendeld; ontgrendel het in Paletbeheer om het te bewerken." # mt
-status.cdr_guides_not_saved = "Hulplijnen worden niet opgeslagen in .cdr-bestanden; sla op als .tdraw om ze te behouden." # mt
 transparency.vector_pattern = "Vectorpatroon" # mt
 transparency.bitmap_pattern = "Bitmappatroon" # mt
 transparency.two_color_pattern = "Tweekleurig patroon" # mt

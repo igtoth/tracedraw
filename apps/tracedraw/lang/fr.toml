@@ -7151,7 +7151,6 @@ docker.palette_lock = "Verrouiller" # mt
 docker.palette_unlock = "Déverrouiller" # mt
 docker.palette_lock_desc = "Une palette verrouillée ne peut pas être modifiée dans l'éditeur de palettes tant qu'elle n'est pas déverrouillée." # mt
 dialog.locked_palette_hint = "Cette palette est verrouillée ; déverrouillez-la dans le gestionnaire de palettes pour la modifier." # mt
-status.cdr_guides_not_saved = "Les repères ne sont pas enregistrés dans les fichiers .cdr ; enregistrez en .tdraw pour les conserver." # mt
 transparency.vector_pattern = "Motif vectoriel" # mt
 transparency.bitmap_pattern = "Motif bitmap" # mt
 transparency.two_color_pattern = "Motif bicolore" # mt

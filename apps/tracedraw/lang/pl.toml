@@ -7151,7 +7151,6 @@ docker.palette_lock = "Zablokuj" # mt
 docker.palette_unlock = "Odblokuj" # mt
 docker.palette_lock_desc = "Zablokowanej palety nie można zmieniać w edytorze palet, dopóki nie zostanie odblokowana." # mt
 dialog.locked_palette_hint = "Ta paleta jest zablokowana; odblokuj ją w menedżerze palet, aby ją edytować." # mt
-status.cdr_guides_not_saved = "Prowadnice nie są zapisywane w plikach .cdr; zapisz jako .tdraw, aby je zachować." # mt
 transparency.vector_pattern = "Wzór wektorowy" # mt
 transparency.bitmap_pattern = "Wzór bitmapowy" # mt
 transparency.two_color_pattern = "Wzór dwukolorowy" # mt

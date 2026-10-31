@@ -7151,7 +7151,6 @@ docker.palette_lock = "قفل" # mt
 docker.palette_unlock = "إلغاء القفل" # mt
 docker.palette_lock_desc = "لا يمكن تغيير لوحة مقفلة في محرر اللوحات حتى يُلغى قفلها." # mt
 dialog.locked_palette_hint = "هذه اللوحة مقفلة؛ ألغِ قفلها في مدير اللوحات لتحريرها." # mt
-status.cdr_guides_not_saved = "لا تُحفظ خطوط الإرشاد في ملفات .cdr؛ احفظ بصيغة .tdraw للاحتفاظ بها." # mt
 transparency.vector_pattern = "نمط متجهي" # mt
 transparency.bitmap_pattern = "نمط نقطي" # mt
 transparency.two_color_pattern = "نمط بلونين" # mt

@@ -6867,3 +6867,161 @@ fn paragraph_text_the_files_cannot_hold_goes_out_as_lines() {
     assert!(Writer::new(Ver(21), &[], "t").writes_frame(&plain));
     assert!(!Writer::new(Ver(8), &[], "t").writes_frame(&plain));
 }
+
+/// Two pages with guidelines: two that both pages have (written once, on
+/// the master page) and one of each page's own.
+fn guides_doc() -> Document {
+    use tracedraw_core::document::{Guide, GuideLine};
+    let mut doc = doc_with(Vec::new());
+    let mut ids = doc.ids().clone();
+    let shared = [
+        Guide::from(GuideLine::Horizontal { y: 40.0 }),
+        Guide::from(GuideLine::Vertical { x: 25.0 }),
+    ];
+    doc.pages[0].guides = shared.to_vec();
+    doc.pages[0]
+        .guides
+        .push(Guide::from(GuideLine::Horizontal { y: 70.5 }));
+    let mut second = Page {
+        id: ids.page(),
+        name: "Two".into(),
+        size: Size::new(200.0, 100.0),
+        layers: vec![Layer::new(ids.layer(), "Ink")],
+        guides: shared.to_vec(),
+        background: None,
+    };
+    second.guides.push(Guide::from(GuideLine::Angled {
+        x: 50.0,
+        y: 60.0,
+        angle: 30.0,
+    }));
+    doc.pages.push(second);
+    doc.set_ids(ids);
+    doc
+}
+
+/// Guidelines go out to `.cdr` and come back on their pages in every
+/// version (#1161; they were not written: the guides layers went out
+/// empty).
+#[test]
+fn guidelines_round_trip_on_their_pages() {
+    use tracedraw_core::document::GuideLine;
+    let doc = guides_doc();
+    let near = |a: &GuideLine, b: &GuideLine| match (a, b) {
+        (GuideLine::Horizontal { y: p }, GuideLine::Horizontal { y: q }) => (p - q).abs() < 1e-3,
+        (GuideLine::Vertical { x: p }, GuideLine::Vertical { x: q }) => (p - q).abs() < 1e-3,
+        (
+            GuideLine::Angled { x, y, angle },
+            GuideLine::Angled {
+                x: x2,
+                y: y2,
+                angle: a2,
+            },
+        ) => (x - x2).abs() < 1e-3 && (y - y2).abs() < 1e-3 && (angle - a2).abs() < 1e-3,
+        _ => false,
+    };
+    for v in versions() {
+        let bytes = document_to_cdr_version(&doc, v);
+        let findings = crate::check::check_bytes(&bytes).expect("checks");
+        assert!(findings.is_empty(), "{v}: {findings:?}");
+        let (back, rep) = crate::open_bytes(&bytes, "back").expect("reads back");
+        assert_eq!(back.pages.len(), 2, "{v}: {:?}", rep.warnings);
+        assert_eq!(rep.skipped_objects, 0, "{v}: {:?}", rep.warnings);
+        for (page, want) in back.pages.iter().zip(&doc.pages) {
+            assert_eq!(
+                page.guides.len(),
+                want.guides.len(),
+                "{v}: {:?}",
+                page.guides
+            );
+            for g in &want.guides {
+                assert!(
+                    page.guides.iter().any(|h| near(&h.line, &g.line)),
+                    "{v}: {:?} not in {:?}",
+                    g.line,
+                    page.guides
+                );
+            }
+            // Guidelines are no objects of the drawing.
+            assert!(page.layers.iter().all(|l| l.shapes.is_empty()), "{v}");
+        }
+    }
+}
+
+/// The guideline records as the files of versions 11, 15 and 25 to 27
+/// hold them: the angle and the line's two ends 900 inches out from the
+/// page's centre, the second again; the arguments of each version; the
+/// shared ones on the master page's guides layer.
+#[test]
+fn guideline_records_are_laid_out_as_the_files_have_them() {
+    let doc = guides_doc();
+    for v in versions() {
+        let bytes = document_to_cdr_version(&doc, v);
+        let (_, tree, riff) = chunk_ids(&bytes);
+        let mut records: Vec<(bool, Args)> = Vec::new();
+        let mut master = None;
+        tree.root.walk(&mut |c, _| {
+            if c.is(b"flgs") {
+                let d = tree.data(&riff, c);
+                if d.len() == 4 && d[3] == 0x90 {
+                    master = Some(d[2] == 1);
+                }
+            }
+            if c.is(b"loda") {
+                let d = tree.data(&riff, c);
+                if tracedraw_cdr_format::loda::table(d, v).map(|t| t.kind) == Some(OBJ_GUIDE) {
+                    records.push((master.unwrap_or(false), loda_args(d)));
+                }
+            }
+        });
+        assert_eq!(records.len(), 4, "{v}");
+        assert_eq!(records.iter().filter(|(m, _)| *m).count(), 2, "{v}");
+        let (_, horizontal) = &records[0];
+        let line = &horizontal
+            .iter()
+            .find(|(ty, _)| *ty == ARG_GUIDE_LINE)
+            .expect("16000")
+            .1;
+        assert_eq!(line.len(), 40, "{v}");
+        let i = |at: usize| i32::from_le_bytes(line[at..at + 4].try_into().expect("4"));
+        // y = 40 on a page 100 mm high: 10 mm under its centre.
+        assert_eq!(
+            (i(12), i(16), i(20), i(24), i(28), i(32), i(36)),
+            (
+                0,
+                -228_600_000,
+                -100_000,
+                228_600_000,
+                -100_000,
+                228_600_000,
+                -100_000
+            ),
+            "{v}"
+        );
+        let (_, vertical) = &records[1];
+        let line = &vertical
+            .iter()
+            .find(|(ty, _)| *ty == ARG_GUIDE_LINE)
+            .expect("16000")
+            .1;
+        let i = |at: usize| i32::from_le_bytes(line[at..at + 4].try_into().expect("4"));
+        assert_eq!(
+            (i(12), i(16), i(20), i(24), i(28)),
+            (90_000_000, -750_000, -228_600_000, -750_000, 228_600_000),
+            "{v}"
+        );
+        let has = |ty: u32| horizontal.iter().any(|(t, _)| *t == ty);
+        assert_eq!(has(ARG_GUIDE_KIND), v >= 25, "{v}");
+        assert_eq!(has(ARG_HIDDEN), v <= 12, "{v}");
+        assert!(!has(ARG_TEXT_LINK), "{v}");
+        if (7..=15).contains(&v) {
+            let flags = &horizontal
+                .iter()
+                .find(|(t, _)| *t == ARG_DRAW_FLAGS)
+                .expect("19170")
+                .1;
+            let mark = u32::from_le_bytes(flags[4..8].try_into().expect("4"));
+            assert_eq!(mark, if v >= 13 { 5000 } else { 999 }, "{v}");
+        }
+    }
+}

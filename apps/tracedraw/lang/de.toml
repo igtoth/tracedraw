@@ -7151,7 +7151,6 @@ docker.palette_lock = "Sperren" # mt
 docker.palette_unlock = "Entsperren" # mt
 docker.palette_lock_desc = "Eine gesperrte Palette kann im Paletteneditor erst nach dem Entsperren geändert werden." # mt
 dialog.locked_palette_hint = "Diese Palette ist gesperrt; entsperren Sie sie in der Palettenverwaltung, um sie zu bearbeiten." # mt
-status.cdr_guides_not_saved = "Hilfslinien werden in .cdr-Dateien nicht gespeichert; als .tdraw speichern, um sie zu behalten." # mt
 transparency.vector_pattern = "Vektormuster" # mt
 transparency.bitmap_pattern = "Bitmapmuster" # mt
 transparency.two_color_pattern = "Zweifarbiges Muster" # mt
