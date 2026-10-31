@@ -6490,6 +6490,52 @@ fn alt_codes_type_their_character_once_and_not_the_digits() {
     assert_eq!(text(&app), "\u{c1}\u{a9}");
 }
 
+/// Text > Convert keeps the letters where they are, for a text moved,
+/// scaled and turned by its transform as an opened `.cdr` file's texts
+/// are, both ways: the frame was placed from the text's box on the page,
+/// taken as its own space, and the text jumped away (#1238).
+#[test]
+fn converting_text_keeps_its_letters_in_place() {
+    use tracedraw_core::document::text_glyph_layout;
+    tracedraw_text::install();
+    let (_ctx, mut app, _rect) = setup();
+    app.select(Vec::new());
+    app.start_text(Point::new(80.0, 80.0), None);
+    app.text_insert("Hello world");
+    app.finish_text();
+    let id = app.selection[0];
+    app.transform_selection(
+        Affine::translate((-35.0, 120.0)) * Affine::rotate(0.2) * Affine::scale(1.5),
+    );
+    let first_letter = |app: &App| {
+        let s = app.doc().find_shape(id).expect("text").clone();
+        let l = text_glyph_layout(&s.kind).expect("a text engine");
+        s.transform * (l.glyphs[0].transform * Point::ZERO)
+    };
+    let kind = |app: &App| match &app.doc().find_shape(id).expect("text").kind {
+        ShapeKind::Text { frame, .. } => frame.is_some(),
+        other => panic!("{other:?}"),
+    };
+    let before = first_letter(&app);
+    let box_before = bounds(&app, id);
+    app.toggle_text_kind();
+    assert!(kind(&app), "a paragraph frame");
+    let framed = first_letter(&app);
+    assert!(
+        (framed - before).hypot() < 0.01,
+        "{framed:?} for {before:?}"
+    );
+    let b = bounds(&app, id);
+    assert!(
+        b.x0 <= box_before.x0 + 0.01 && b.x1 >= box_before.x1 - 0.01,
+        "the frame holds the text: {b:?} {box_before:?}"
+    );
+    app.toggle_text_kind();
+    assert!(!kind(&app), "artistic again");
+    let back = first_letter(&app);
+    assert!((back - before).hypot() < 0.01, "{back:?} for {before:?}");
+}
+
 /// Artistic text converted to a paragraph frame (Text > Convert) grows
 /// down with its bottom handle: the flow tab sat under that handle and
 /// took the press, so the next click linked the text to another object

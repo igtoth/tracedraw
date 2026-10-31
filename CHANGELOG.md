@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Text > Convert: artistic text turned into paragraph text, or back, keeps its letters where they were. A text with a position, size or turn of its own (every text of an opened `.cdr` file) jumped away, because its new frame was placed from its box on the page as if that were its own space (#1238).
+
 - Saving as `.cdr`: paragraph text is saved as paragraph text, its frame and the text flowing in it, as the other program's own files hold it (versions 7 and 9 to 27), and opens again as paragraph text in TraceDraw. It went out as one artistic text per line, so the frame was lost in the other program and when TraceDraw opened the file again. Frames those files cannot hold as TraceDraw draws them (scaled or slanted, vertical text, fit to frame, placed from the middle or bottom, linked frames, several columns before version 16, version 8) still go out as lines. Columns are kept from version 16 (#1226).
 
 ## 0.32.0 (2026-10-31)
