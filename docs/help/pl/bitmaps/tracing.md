@@ -8,7 +8,9 @@ zdjęcie.
 
 Zaznacz bitmapę i wybierz [[menu.bitmaps > menu.bitmaps.quick_trace]].
 Używa ona ustawienia wstępnego wybranego na stronie
-[[options.bitmap_tracing]] opcji globalnych (początkowo Clipart).
+[[options.bitmap_tracing]] opcji globalnych (początkowo
+[[menu.bitmaps.trace_optimized]], który dobiera szczegółowość do każdego
+obrazu: jak najwierniej przy jak najmniejszej liczbie węzłów).
 
 [[menu.bitmaps.repeat_last_trace]] wektoryzuje zaznaczoną bitmapę ponownie tak jak ostatnio, bez okna dialogowego, a [[menu.bitmaps.last_trace_settings]] otwiera okno dialogowe z tamtymi ustawieniami. Menu kontekstowe bitmapy też ma te polecenia, razem z [[menu.bitmaps.centerline_trace]] i [[menu.bitmaps.outline_trace]].
 
@@ -21,7 +23,8 @@ jedno, aby otworzyć okno dialogowe.
 - **Wektoryzacja konturowa** wypełnia obszary koloru kształtami:
   [[menu.bitmaps.trace_line_art]], [[menu.bitmaps.trace_logo]],
   [[menu.bitmaps.trace_detailed_logo]], [[menu.bitmaps.trace_clipart]],
-  [[menu.bitmaps.trace_low_quality]] i [[menu.bitmaps.trace_high_quality]].
+  [[menu.bitmaps.trace_low_quality]], [[menu.bitmaps.trace_high_quality]] i
+  [[menu.bitmaps.trace_optimized]].
 - **Wektoryzacja linii środkowej** podąża za liniami otwartymi krzywymi:
   [[menu.bitmaps.trace_technical]] i [[menu.bitmaps.trace_line_drawing]].
 
@@ -33,7 +36,7 @@ nowa przy każdej zmianie ustawienia: nie trzeba niczego naciskać, aby go
 zobaczyć. Pod podglądem wiersz liczy **krzywe**, **węzły** i **kolory**
 wyniku. Kliknij [[dialog.ok]], aby umieścić kształty nad bitmapą,
 najciemniejsze najpierw, lub [[dialog.cancel]], aby zostawić bitmapę bez
-zmian.
+zmian; oba przyciski leżą w prawym dolnym rogu okna dialogowego.
 
 ## Podgląd {#preview}
 
@@ -53,6 +56,11 @@ przesuwają. Kółko myszy powiększa wokół wskaźnika, a przeciąganie przesu
 obraz; oba pola poruszają się razem. Przezroczyste części pokazują
 szachownicę.
 
+W przeglądarce podgląd dużego obrazu powstaje z jego mniejszej kopii, o czym
+mówi czerwona uwaga pod podglądem: drobne szczegóły mogą tam wyglądać
+zgrubnie, ale [[dialog.ok]] wektoryzuje cały obraz. Wersja na komputer pokazuje podgląd
+dokładnie.
+
 ## Ustawienia {#settings}
 
 Karta [[dialog.trace_tab_settings]] zawiera:
@@ -61,7 +69,9 @@ Karta [[dialog.trace_tab_settings]] zawiera:
   [[dialog.trace_image_type]] ustawienie wstępne. Wybór ustawia suwaki
   poniżej na wartości odpowiednie dla tego rodzaju obrazu.
 - [[dialog.detail]] (0 do 100): więcej szczegółów zachowuje mniejsze
-  obszary i cieńsze linie; mniej szczegółów wygładza plamki i ziarno.
+  obszary i cieńsze linie; mniej szczegółów wygładza plamki i ziarno. Przy
+  [[menu.bitmaps.trace_optimized]] szczegółowość jest dobierana do każdego
+  obrazu, a suwak jest wyszarzony.
 - [[dialog.smoothing]] (0 do 100, początkowo 25): gładsze krzywe z mniejszą
   liczbą węzłów.
 - [[dialog.corner_smoothness]] (0 do 100): bardziej zaokrąglone narożniki.
@@ -83,6 +93,12 @@ Karta [[dialog.trace_tab_settings]] zawiera:
 
 Ustawienia, które nie dotyczą bieżącego typu wektoryzacji, są wyszarzone:
 wektoryzacja linii środkowej czyta tylko szczegóły i wygładzanie.
+
+[[dialog.trace_optimize]], w lewym dolnym rogu okna dialogowego, próbuje na
+obrazie kilku poziomów szczegółowości, porównuje każdy wynik z obrazem i
+wpisuje do suwaka [[dialog.detail]] szczegółowość, która rysuje go
+najwierniej przy najmniejszej liczbie węzłów. To krok, który można cofnąć.
+Jeśli zmienisz ustawienia, zanim się zakończy, jego wynik zostaje pominięty.
 
 ## Kolory {#colors}
 

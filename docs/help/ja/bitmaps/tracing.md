@@ -4,7 +4,7 @@
 
 ## クイックトレース {#quick-trace}
 
-ビットマップを選択し、[[menu.bitmaps > menu.bitmaps.quick_trace]] を選びます。グローバルオプションの [[options.bitmap_tracing]] ページで選んだプリセット (最初はクリップアート) を使います。
+ビットマップを選択し、[[menu.bitmaps > menu.bitmaps.quick_trace]] を選びます。グローバルオプションの [[options.bitmap_tracing]] ページで選んだプリセット (最初は [[menu.bitmaps.trace_optimized]]。画像ごとに詳細を選び、最も少ないノードでできるだけ忠実に描きます) を使います。
 
 [[menu.bitmaps.repeat_last_trace]] は選択したビットマップをダイアログを開かずに前回と同じ設定でトレースし、[[menu.bitmaps.last_trace_settings]] は前回の設定でダイアログボックスを開きます。ビットマップの右クリックメニューにも、[[menu.bitmaps.centerline_trace]] と [[menu.bitmaps.outline_trace]] とともにこれらのコマンドがあります。
 
@@ -12,12 +12,12 @@
 
 [[menu.bitmaps > menu.bitmaps.outline_trace]] と [[menu.bitmaps.centerline_trace]] にはプリセットが一覧されています。一つを選ぶとトレースのダイアログボックスが開きます。
 
-- **アウトライントレース** は、色の領域を図形で塗りつぶします: [[menu.bitmaps.trace_line_art]]、[[menu.bitmaps.trace_logo]]、[[menu.bitmaps.trace_detailed_logo]]、[[menu.bitmaps.trace_clipart]]、[[menu.bitmaps.trace_low_quality]]、[[menu.bitmaps.trace_high_quality]]。
+- **アウトライントレース** は、色の領域を図形で塗りつぶします: [[menu.bitmaps.trace_line_art]]、[[menu.bitmaps.trace_logo]]、[[menu.bitmaps.trace_detailed_logo]]、[[menu.bitmaps.trace_clipart]]、[[menu.bitmaps.trace_low_quality]]、[[menu.bitmaps.trace_high_quality]]、[[menu.bitmaps.trace_optimized]]。
 - **センターライントレース** は、線を開いたカーブでなぞります: [[menu.bitmaps.trace_technical]] と [[menu.bitmaps.trace_line_drawing]]。
 
 ![ビットマップのトレースダイアログボックス](../../img/bitmaps-tracing.png)
 
-このダイアログボックスは、サイズを変更したり最大化したりできるウィンドウです。プレビューが左側を占め、設定は右側のパネルにあり、設定を変えるたびにトレースが作り直されます: 結果を見るために押すものはありません。プレビューの下の行には、トレースの **カーブ**、**ノード**、**色** の数が表示されます。[[dialog.ok]] をクリックすると図形がビットマップの上に暗いものから順に置かれ、[[dialog.cancel]] をクリックするとビットマップはそのままになります。
+このダイアログボックスは、サイズを変更したり最大化したりできるウィンドウです。プレビューが左側を占め、設定は右側のパネルにあり、設定を変えるたびにトレースが作り直されます: 結果を見るために押すものはありません。プレビューの下の行には、トレースの **カーブ**、**ノード**、**色** の数が表示されます。[[dialog.ok]] をクリックすると図形がビットマップの上に暗いものから順に置かれ、[[dialog.cancel]] をクリックするとビットマップはそのままになります。どちらのボタンもダイアログボックスの右下にあります。
 
 ## プレビュー {#preview}
 
@@ -29,12 +29,14 @@
 
 リストの後ろのボタンは、全体表示、縮小、拡大、パンです。ホイールはポインターを中心に拡大縮小し、ドラッグで画像が動きます。2 つのペインは一緒に動きます。透明な部分は市松模様で表示されます。
 
+ブラウザー版では、大きな画像は縮小したコピーからプレビューされ、プレビューの下に赤い文字でそのことが表示されます: 細かな部分は粗く見えることがありますが、[[dialog.ok]] は画像全体をトレースします。デスクトップ版では、プレビューは正確に表示されます。
+
 ## 設定 {#settings}
 
 [[dialog.trace_tab_settings]] タブには次があります:
 
 - [[dialog.trace_type]] のアウトラインまたはセンターライン、および [[dialog.trace_image_type]] のプリセット。プリセットを選ぶと、下のスライダーがその種類の画像に合う値になります。
-- [[dialog.detail]] (0 から 100): 詳細を上げると、より小さな領域と細い線まで残します。下げると、しみや粒子が滑らかになります。
+- [[dialog.detail]] (0 から 100): 詳細を上げると、より小さな領域と細い線まで残します。下げると、しみや粒子が滑らかになります。[[menu.bitmaps.trace_optimized]] では、詳細は画像ごとに選ばれ、スライダーは灰色で表示されます。
 - [[dialog.smoothing]] (0 から 100、最初は 25): ノードが少なく、より滑らかなカーブになります。
 - [[dialog.corner_smoothness]] (0 から 100): 角が丸くなります。
 - [[dialog.trace_remove]]: トレースから除くもの。**背景色** は画像の縁に達している背景を取り除き、**画像から色全体** はその色の領域をすべて取り除き、**なし** はすべてをトレースします。[[dialog.trace_remove_auto]] は画像の縁に沿って背景色を見つけます。[[dialog.trace_remove_specify]] はスウォッチの色を使います。この色は変更したり、横のスポイトでプレビューから取ったりできます。
@@ -42,6 +44,8 @@
 - [[dialog.delete_original]]: トレースを置くときにビットマップを削除します。
 
 現在のトレースの種類に関係のない設定は灰色で表示されます: センターライントレースは、詳細とスムージングだけを読みます。
+
+ダイアログボックスの左下にある [[dialog.trace_optimize]] は、画像でいくつかの詳細を試し、それぞれのトレースを画像と比べて、最も少ないノードで最も忠実に描ける詳細を [[dialog.detail]] スライダーに設定します。これは元に戻せる 1 ステップです。完了する前に設定を変更すると、その結果は使われません。
 
 ## 色 {#colors}
 
