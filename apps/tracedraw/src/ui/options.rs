@@ -2671,12 +2671,19 @@ fn appearance_page(app: &mut App, ui: &mut Ui) {
     }
     ui.label(egui::RichText::new(tr("options.ui_scale_hint")).color(Tokens::text_dim()));
     let sys = crate::system_prefs::get();
-    ui.checkbox(
-        &mut app.settings.follow_text_size,
+    // Greyed with the reason where the system's text size cannot be read
+    // (#1412): macOS has none for programs of this kind.
+    let label = if sys.text_scale_known {
         crate::i18n::trf(
             "options.follow_text_size",
             &[("n", &format!("{:.0}", sys.text_scale * 100.0))],
-        ),
+        )
+    } else {
+        tr("options.follow_text_size_title")
+    };
+    ui.add_enabled(
+        sys.text_scale_known,
+        egui::Checkbox::new(&mut app.settings.follow_text_size, label),
     )
     .rich_tip_with(|| {
         format!(
@@ -2684,7 +2691,11 @@ fn appearance_page(app: &mut App, ui: &mut Ui) {
             tr("options.follow_text_size_title"),
             tr("options.follow_text_size_tip")
         )
-    });
+    })
+    .rich_disabled_tip(crate::ui::tips::pair(
+        "options.follow_text_size_title",
+        text_size_unread_key(),
+    ));
     crate::ui::chrome::section(ui, &tr("options.color_section"));
     grid("appearance_color").show(ui, |ui| {
         row_label(ui, &tr("options.theme"));
@@ -2705,17 +2716,24 @@ fn appearance_page(app: &mut App, ui: &mut Ui) {
         ui.end_row();
         row_label(ui, "");
         let on = sys.high_contrast.is_some();
-        ui.checkbox(
-            &mut app.settings.follow_high_contrast,
-            tr(if on {
-                "options.follow_high_contrast_on"
-            } else {
-                "options.follow_high_contrast"
-            }),
+        ui.add_enabled(
+            sys.contrast_known,
+            egui::Checkbox::new(
+                &mut app.settings.follow_high_contrast,
+                tr(if on {
+                    "options.follow_high_contrast_on"
+                } else {
+                    "options.follow_high_contrast"
+                }),
+            ),
         )
         .rich_tip(crate::ui::tips::pair(
             "options.follow_high_contrast_title",
             "options.follow_high_contrast_tip",
+        ))
+        .rich_disabled_tip(crate::ui::tips::pair(
+            "options.follow_high_contrast_title",
+            "options.follow_high_contrast_unread",
         ));
         ui.end_row();
         row_label(ui, &tr("options.desktop_color"));
@@ -4275,6 +4293,16 @@ fn global_general_page(app: &mut App, ui: &mut Ui) {
             snapshot.restore(app);
         }
         app.dialog = crate::ui::dialogs::Dialog::ConfirmResetSettings;
+    }
+}
+
+/// Why the system's text size is not followed here (#1412): macOS has
+/// none for programs of this kind; elsewhere it could not be read.
+pub fn text_size_unread_key() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "options.follow_text_size_macos"
+    } else {
+        "options.follow_text_size_unread"
     }
 }
 

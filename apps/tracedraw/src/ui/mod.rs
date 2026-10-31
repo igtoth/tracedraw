@@ -141,7 +141,9 @@ pub(crate) fn apply_ui_scale(ctx: &egui::Context, size: f32) {
 pub(crate) fn apply_theme(ctx: &egui::Context, id: &str) {
     let wanted = crate::theme::Theme::from_id(id);
     let pinned = ctx.options(|o| o.theme_preference) == egui::ThemePreference::Light;
-    if wanted != crate::theme::theme() || !pinned {
+    // The system's high contrast colours changed (#1412).
+    let recolored = wanted == crate::theme::Theme::HighContrast && crate::theme::contrast_changed();
+    if wanted != crate::theme::theme() || !pinned || recolored {
         crate::theme::set_theme(wanted);
         ctx.set_theme(egui::ThemePreference::Light);
         ctx.set_visuals_of(egui::Theme::Dark, crate::theme::visuals());
