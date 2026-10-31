@@ -5030,6 +5030,7 @@ docker.leading_point_size = "% del tamaño en pt"
 docker.frame_background = "Color de fondo del marco"
 glyphs.recent = "Glifos recientes:"
 glyphs.recent_hint = "Muestra los glifos usados más recientemente"
+glyphs.size = "Tamaño de los glifos" # mt
 glyphs.none = "Esta fuente no dibuja glifos en este intervalo."
 glyphs.search_hint = "Buscar: un carácter o U+20AC" # mt
 glyphs.entire_font = "Fuente completa"

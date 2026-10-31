@@ -5030,6 +5030,7 @@ docker.leading_point_size = "% velikosti v pt"
 docker.frame_background = "Barva pozadí rámečku"
 glyphs.recent = "Nedávné glyfy:"
 glyphs.recent_hint = "Zobrazuje naposledy použité glyfy"
+glyphs.size = "Velikost glyfů" # mt
 glyphs.none = "Toto písmo v tomto rozsahu nemá žádné glyfy."
 glyphs.search_hint = "Hledat: znak nebo U+20AC" # mt
 glyphs.entire_font = "Celé písmo"

@@ -5030,6 +5030,7 @@ docker.leading_point_size = "% من حجم الخط"
 docker.frame_background = "لون خلفية الإطار"
 glyphs.recent = "الحروف الأخيرة:"
 glyphs.recent_hint = "يعرض الحروف المستخدمة مؤخرًا"
+glyphs.size = "حجم الحروف" # mt
 glyphs.none = "هذا الخط لا يرسم أي حرف في هذا النطاق."
 glyphs.search_hint = "بحث: حرف أو U+20AC" # mt
 glyphs.entire_font = "الخط كله"

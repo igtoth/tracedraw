@@ -5030,6 +5030,7 @@ docker.leading_point_size = "% der Schriftgröße"
 docker.frame_background = "Hintergrundfarbe des Rahmens"
 glyphs.recent = "Zuletzt verwendete Glyphen:"
 glyphs.recent_hint = "Zeigt die zuletzt verwendeten Glyphen"
+glyphs.size = "Glyphengröße" # mt
 glyphs.none = "Diese Schrift hat in diesem Bereich keine Glyphen."
 glyphs.search_hint = "Suchen: ein Zeichen oder U+20AC" # mt
 glyphs.entire_font = "Gesamte Schrift"

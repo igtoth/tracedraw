@@ -5030,6 +5030,7 @@ docker.leading_point_size = "% de la taille en pt"
 docker.frame_background = "Couleur d’arrière-plan du cadre"
 glyphs.recent = "Glyphes récents :"
 glyphs.recent_hint = "Affiche les glyphes utilisés le plus récemment"
+glyphs.size = "Taille des glyphes" # mt
 glyphs.none = "Cette police ne dessine aucun glyphe dans cette plage."
 glyphs.search_hint = "Rechercher : un caractère ou U+20AC" # mt
 glyphs.entire_font = "Police entière"

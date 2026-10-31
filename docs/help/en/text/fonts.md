@@ -120,6 +120,10 @@ Hover a character to see its name and code. A small arrow under a character
 means the font has alternates for it (such as swashes or small capitals);
 click it to see them. The glyphs you used last are at the top of the panel.
 
+Under the grid, drag the slider to make the characters larger or smaller,
+and click [[menu.edit.copy]] to put the character you clicked last on the
+clipboard, to paste it in another program.
+
 Type in the search field above the grid to find characters: type the
 characters themselves (such as `é`), or a Unicode code point such as `U+20AC`,
 `0x20ac` or `20AC`. The line above the grid shows the code point, the character

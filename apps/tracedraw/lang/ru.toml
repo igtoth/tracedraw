@@ -5030,6 +5030,7 @@ docker.leading_point_size = "% от кегля"
 docker.frame_background = "Цвет фона рамки"
 glyphs.recent = "Недавние глифы:"
 glyphs.recent_hint = "Показывает недавно использованные глифы"
+glyphs.size = "Размер глифов" # mt
 glyphs.none = "В этом шрифте нет глифов в этом диапазоне."
 glyphs.search_hint = "Поиск: символ или U+20AC" # mt
 glyphs.entire_font = "Весь шрифт"

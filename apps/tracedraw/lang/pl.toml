@@ -5030,6 +5030,7 @@ docker.leading_point_size = "% rozmiaru w pt"
 docker.frame_background = "Kolor tła ramki"
 glyphs.recent = "Ostatnie glify:"
 glyphs.recent_hint = "Pokazuje ostatnio używane glify"
+glyphs.size = "Rozmiar glifów" # mt
 glyphs.none = "Ta czcionka nie ma glifów w tym zakresie."
 glyphs.search_hint = "Szukaj: znak lub U+20AC" # mt
 glyphs.entire_font = "Cała czcionka"

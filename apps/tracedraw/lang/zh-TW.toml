@@ -5030,6 +5030,7 @@ docker.leading_point_size = "點數大小的 %"
 docker.frame_background = "框架背景色彩"
 glyphs.recent = "最近使用的字符:"
 glyphs.recent_hint = "顯示最近使用的字符"
+glyphs.size = "字符大小" # mt
 glyphs.none = "此字型在此範圍內沒有字符。"
 glyphs.search_hint = "搜尋：字元或 U+20AC" # mt
 glyphs.entire_font = "整個字型"

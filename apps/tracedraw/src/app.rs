@@ -1548,6 +1548,10 @@ pub struct App {
     pub glyph_range: usize,
     /// The Glyphs docker's search: characters or a code point (#375).
     pub glyph_search: String,
+    /// The Glyphs docker's cell size (its zoom slider) and the glyph
+    /// last clicked in its grid, which Copy puts on the clipboard (#1320).
+    pub glyph_size: f32,
+    pub glyph_picked: Option<char>,
     pub table_edit: Option<crate::table::TableEdit>,
     /// The Table tool's drag and bar choices.
     pub table_ui: crate::table_tool::TableUi,
@@ -2682,6 +2686,8 @@ impl App {
             glyph_font: String::new(),
             glyph_range: 0,
             glyph_search: String::new(),
+            glyph_size: crate::ui::glyphs_docker::CELL,
+            glyph_picked: None,
             table_edit: None,
             table_ui: Default::default(),
             missing_fonts: Vec::new(),

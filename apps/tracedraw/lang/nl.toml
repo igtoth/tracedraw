@@ -5030,6 +5030,7 @@ docker.leading_point_size = "% van puntgrootte"
 docker.frame_background = "Achtergrondkleur van het kader"
 glyphs.recent = "Recente tekens:"
 glyphs.recent_hint = "Toont de laatst gebruikte tekens"
+glyphs.size = "Glyphgrootte" # mt
 glyphs.none = "Dit lettertype heeft geen tekens in dit bereik."
 glyphs.search_hint = "Zoeken: een teken of U+20AC" # mt
 glyphs.entire_font = "Hele lettertype"

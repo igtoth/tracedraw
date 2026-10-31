@@ -5030,6 +5030,7 @@ docker.leading_point_size = "पॉइंट आकार का %"
 docker.frame_background = "फ़्रेम पृष्ठभूमि रंग"
 glyphs.recent = "हाल के ग्लिफ़:"
 glyphs.recent_hint = "हाल में उपयोग किए ग्लिफ़ दिखाता है"
+glyphs.size = "ग्लिफ़ का आकार" # mt
 glyphs.none = "इस फ़ॉन्ट में इस श्रेणी का कोई ग्लिफ़ नहीं है।"
 glyphs.search_hint = "खोजें: कोई वर्ण या U+20AC" # mt
 glyphs.entire_font = "पूरा फ़ॉन्ट"

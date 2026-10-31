@@ -61,6 +61,22 @@ pub const ALTERNATE_FEATURES: [&str; 9] = [
 /// How many glyphs the Recent glyphs box keeps.
 const RECENT: usize = 24;
 
+/// A recent glyph's cell, and how many rows of them the Recent glyphs box
+/// is tall: the box keeps that height, empty or full, and scrolls when the
+/// glyphs take more rows (#1320).
+const RECENT_CELL: f32 = 34.0;
+const RECENT_ROWS: f32 = 2.0;
+
+/// The grid's cell, at the zoom slider's start, and the slider's range.
+pub const CELL: f32 = 44.0;
+pub const CELL_RANGE: std::ops::RangeInclusive<f32> = 28.0..=96.0;
+
+/// The inside height of the Recent glyphs box.
+pub fn recent_box_height() -> f32 {
+    // A cell is its glyph and the strip of its alternates' arrow.
+    RECENT_ROWS * (RECENT_CELL + 6.0) + (RECENT_ROWS - 1.0)
+}
+
 /// The glyphs of `chars` in range `range`.
 pub fn in_range(chars: &[char], range: usize) -> Vec<char> {
     let spans = RANGES.get(range).map_or(RANGES[0].1, |r| r.1);
@@ -225,6 +241,13 @@ pub fn insert_glyph(app: &mut App, font: &str, ch: char, feature: Option<&str>) 
     recent.truncate(RECENT);
 }
 
+/// Put `ch` on the system clipboard as text.
+fn copy_glyph(ch: char) {
+    if !crate::clipboard::write_text(&ch.to_string()) {
+        log::warn!("the glyph could not go on the clipboard");
+    }
+}
+
 /// A glyph cell: the glyph large, and a small arrow under it when it has
 /// alternates. Returns (clicked, arrow response).
 fn cell(
@@ -234,9 +257,19 @@ fn cell(
     family: &str,
     size: f32,
     has_alternates: bool,
+    picked: bool,
 ) -> (egui::Response, Option<egui::Response>) {
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(size, size + 6.0), Sense::click());
-    if resp.hovered() {
+    if picked {
+        ui.painter()
+            .rect_filled(rect, 2.0, Tokens::selected_row().gamma_multiply(0.35));
+        ui.painter().rect_stroke(
+            rect,
+            2.0,
+            egui::Stroke::new(1.0, Tokens::selected_row_line()),
+            egui::StrokeKind::Inside,
+        );
+    } else if resp.hovered() {
         ui.painter().rect_filled(rect, 2.0, Tokens::tool_hover());
     }
     let ppp = ui.ctx().pixels_per_point();
@@ -295,35 +328,54 @@ pub fn glyphs(app: &mut App, ui: &mut Ui) {
     ui.label(tr("glyphs.recent"));
     // The theme's field colour (white in the light themes, dark in the
     // dark ones), so the cells, tinted with the text colour, stay readable
-    // (#660).
+    // (#660). The box is two rows of glyphs tall, empty too, so the font,
+    // the ranges and the grid show under it at once (#1320).
+    let box_h = recent_box_height();
     egui::Frame::new()
         .fill(Tokens::field())
         .stroke(egui::Stroke::new(1.0, Tokens::control_border()))
         .inner_margin(egui::Margin::same(4))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
-            ui.set_min_height(80.0);
             if app.settings.recent_glyphs.is_empty() {
-                ui.centered_and_justified(|ui| {
-                    ui.label(
+                let (rect, _) =
+                    ui.allocate_exact_size(Vec2::new(ui.available_width(), box_h), Sense::hover());
+                ui.put(
+                    rect,
+                    egui::Label::new(
                         egui::RichText::new(tr("glyphs.recent_hint"))
                             .italics()
                             .color(Tokens::text_dim()),
-                    );
-                });
+                    ),
+                );
             } else {
-                ui.horizontal_wrapped(|ui| {
-                    ui.spacing_mut().item_spacing = Vec2::splat(1.0);
-                    for (font, c) in app.settings.recent_glyphs.clone() {
-                        let Some(ch) = c.chars().next() else {
-                            continue;
-                        };
-                        let (r, _) = cell(ui, &mut app.font_previews, ch, &font, 34.0, false);
-                        if r.clicked() {
-                            insert = Some((font.clone(), ch, None));
-                        }
-                    }
-                });
+                egui::ScrollArea::vertical()
+                    .id_salt("glyphs_recent")
+                    .min_scrolled_height(box_h)
+                    .max_height(box_h)
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        ui.horizontal_wrapped(|ui| {
+                            ui.spacing_mut().item_spacing = Vec2::splat(1.0);
+                            for (font, c) in app.settings.recent_glyphs.clone() {
+                                let Some(ch) = c.chars().next() else {
+                                    continue;
+                                };
+                                let (r, _) = cell(
+                                    ui,
+                                    &mut app.font_previews,
+                                    ch,
+                                    &font,
+                                    RECENT_CELL,
+                                    false,
+                                    false,
+                                );
+                                if r.clicked() {
+                                    insert = Some((font.clone(), ch, None));
+                                }
+                            }
+                        });
+                    });
             }
         });
     ui.add_space(4.0);
@@ -367,10 +419,19 @@ pub fn glyphs(app: &mut App, ui: &mut Ui) {
     if chars.is_empty() {
         ui.label(egui::RichText::new(tr("glyphs.none")).color(Tokens::text_dim()));
     }
-    let size = 44.0;
+    // The grid takes the panel's height down to the zoom slider and the
+    // Copy button under it.
+    let size = app.glyph_size.clamp(*CELL_RANGE.start(), *CELL_RANGE.end());
     let per_row = ((ui.available_width() / (size + 1.0)).floor() as usize).max(1);
     let rows = chars.len().div_ceil(per_row);
+    let sp = ui.spacing().clone();
+    let bottom = 2.0 * sp.interact_size.y.max(20.0) + 3.0 * sp.item_spacing.y + 8.0;
+    let grid_h = (ui.available_height() - bottom).max(size + 7.0);
+    let picked = app.glyph_picked;
     egui::ScrollArea::vertical()
+        .id_salt("glyphs_grid")
+        .max_height(grid_h)
+        .min_scrolled_height(grid_h)
         .auto_shrink([false, false])
         .show_rows(ui, size + 7.0, rows, |ui, range| {
             for row in range {
@@ -385,12 +446,14 @@ pub fn glyphs(app: &mut App, ui: &mut Ui) {
                             &family,
                             size,
                             !alts.is_empty(),
+                            picked == Some(ch),
                         );
                         if r.hovered() {
                             hovered = Some(ch);
                         }
                         if r.clicked() {
                             insert = Some((family.clone(), ch, None));
+                            app.glyph_picked = Some(ch);
                         }
                         if let Some(a) = arrow {
                             egui::Popup::menu(&a)
@@ -414,6 +477,40 @@ pub fn glyphs(app: &mut App, ui: &mut Ui) {
                 });
             }
         });
+    // Under the grid: its zoom (a small and a large A at the slider's
+    // ends) and Copy, which puts the glyph last clicked on the clipboard
+    // as text.
+    ui.add_space(4.0);
+    ui.horizontal(|ui| {
+        let a = |ui: &mut Ui, size: f32| {
+            ui.label(
+                egui::RichText::new("A")
+                    .size(size)
+                    .color(Tokens::text_dim()),
+            )
+            .rich_tip(tr("glyphs.size"))
+        };
+        a(ui, 10.0);
+        let w = (ui.available_width() - 24.0).max(40.0);
+        ui.add(
+            crate::ui::Slider::new(&mut app.glyph_size, CELL_RANGE)
+                .show_value(false)
+                .ticks(false)
+                .width(w),
+        )
+        .rich_tip(tr("glyphs.size"));
+        a(ui, 17.0);
+    });
+    let copy = ui.add_enabled(
+        app.glyph_picked.is_some(),
+        egui::Button::new(tr("menu.edit.copy"))
+            .min_size(Vec2::new(ui.available_width(), sp.interact_size.y)),
+    );
+    if copy.clicked() {
+        if let Some(ch) = app.glyph_picked {
+            copy_glyph(ch);
+        }
+    }
     if let Some(h) = hovered {
         ui.data_mut(|d| d.insert_temp(info_id, h));
     }
@@ -535,6 +632,83 @@ mod tests {
             .expect("the recent box");
         assert_eq!(fill, Tokens::field());
         assert_eq!(ink, Tokens::text());
+    }
+
+    /// One frame of the docker in a panel 300 x 900; the shapes drawn.
+    fn draw(app: &mut App, events: Vec<egui::Event>) -> Vec<egui::epaint::ClippedShape> {
+        let ctx = crate::theme::ui_context();
+        let mut shapes = Vec::new();
+        for i in 0..2 {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(300.0, 900.0),
+                )),
+                events: if i == 1 { events.clone() } else { Vec::new() },
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| glyphs(app, ui));
+            out.textures_delta.clear();
+            shapes = out.shapes;
+        }
+        shapes
+    }
+
+    /// The Recent glyphs box: the topmost framed box in the field colour.
+    fn recent_box(shapes: &[egui::epaint::ClippedShape]) -> egui::Rect {
+        shapes
+            .iter()
+            .filter_map(|c| match &c.shape {
+                egui::Shape::Rect(r) if r.stroke.width > 0.0 && r.fill == Tokens::field() => {
+                    Some(r.rect)
+                }
+                _ => None,
+            })
+            .min_by(|a, b| a.top().total_cmp(&b.top()))
+            .expect("the recent box")
+    }
+
+    /// #1320: with no glyph used yet the Recent glyphs box is two rows of
+    /// glyphs tall, not the whole panel, so the font list and the grid
+    /// show under it at once; full, it keeps that height.
+    #[test]
+    fn the_recent_box_is_two_rows_tall_empty_or_full() {
+        let mut app = App::headless();
+        app.settings.recent_glyphs.clear();
+        let empty = recent_box(&draw(&mut app, Vec::new()));
+        // The rows, the 4-point margins and the 1-point frame.
+        let want = recent_box_height() + 10.0;
+        assert!((empty.height() - want).abs() < 1.0, "{empty:?}");
+        assert!(empty.bottom() < 150.0, "{empty:?}");
+        app.settings.recent_glyphs = (0..RECENT as u32)
+            .map(|i| {
+                (
+                    "Arial".to_string(),
+                    char::from_u32(0x41 + i).unwrap_or('A').to_string(),
+                )
+            })
+            .collect();
+        let full = recent_box(&draw(&mut app, Vec::new()));
+        assert!((full.height() - want).abs() < 1.0, "{full:?}");
+    }
+
+    /// #1320: the grid fills the panel down to the zoom slider and the
+    /// Copy button, which copies the glyph last clicked and waits for one.
+    #[test]
+    fn the_grid_ends_above_the_zoom_and_copy() {
+        let mut app = App::headless();
+        app.settings.recent_glyphs.clear();
+        let shapes = draw(&mut app, Vec::new());
+        let copy = tr("menu.edit.copy");
+        let copy_at = shapes
+            .iter()
+            .find_map(|c| match &c.shape {
+                egui::Shape::Text(t) if t.galley.text() == copy => Some(t.pos.y),
+                _ => None,
+            })
+            .expect("the Copy button");
+        assert!(copy_at > 820.0 && copy_at < 900.0, "{copy_at}");
+        assert_eq!(app.glyph_picked, None);
     }
 
     #[test]

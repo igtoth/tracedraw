@@ -5030,6 +5030,7 @@ docker.leading_point_size = "Punto boyutunun %'si"
 docker.frame_background = "Çerçeve arka plan rengi"
 glyphs.recent = "Son glifler:"
 glyphs.recent_hint = "En son kullanılan glifleri gösterir"
+glyphs.size = "Glif boyutu" # mt
 glyphs.none = "Bu yazı tipinin bu aralıkta glifi yok."
 glyphs.search_hint = "Ara: bir karakter veya U+20AC" # mt
 glyphs.entire_font = "Tüm yazı tipi"

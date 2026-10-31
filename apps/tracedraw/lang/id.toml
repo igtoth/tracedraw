@@ -5030,6 +5030,7 @@ docker.leading_point_size = "% ukuran poin"
 docker.frame_background = "Warna latar bingkai"
 glyphs.recent = "Glif terbaru:"
 glyphs.recent_hint = "Menampilkan glif yang terakhir dipakai"
+glyphs.size = "Ukuran glif" # mt
 glyphs.none = "Font ini tidak memiliki glif di rentang ini."
 glyphs.search_hint = "Cari: karakter atau U+20AC" # mt
 glyphs.entire_font = "Seluruh font"

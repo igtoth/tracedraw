@@ -569,6 +569,9 @@ Window > Panels > Glyphs. From the top:
 - Recent glyphs: the glyphs inserted last, newest first (up to 24, kept
   in the preferences as font and glyph); empty, it says "Shows the most
   recently used glyphs". A click inserts one again in its own font. The
+  box is two rows of glyphs tall, empty or full (it scrolls past two
+  rows), so the font list, the ranges and the grid show under it at once
+  (#1320). The
   box takes the theme's field colour (white in the light themes, dark in
   the dark ones), so the glyphs, drawn in the theme's text colour, stay
   readable (#660).
@@ -610,7 +613,12 @@ Window > Panels > Glyphs. From the top:
   features whose shaping gives another glyph); it lists them.
 - A click inserts the glyph at the caret of the text being edited, in
   the docker's font (an alternate with its OpenType feature on), else as
-  a new artistic text at the page centre.
+  a new artistic text at the page centre. The glyph clicked last stays
+  framed in the grid.
+- Under the grid, which takes the panel's height down to them (#1320): a
+  zoom slider between a small and a large A (the cells from 28 to 96
+  points, 44 at start), and Copy, which puts the glyph clicked last on
+  the clipboard as text (dimmed until a glyph was clicked).
 
 ## Character offsets, angle and spacing
 

@@ -5030,6 +5030,7 @@ docker.leading_point_size = "ポイントサイズの %"
 docker.frame_background = "フレームの背景色"
 glyphs.recent = "最近使用したグリフ:"
 glyphs.recent_hint = "最近使用したグリフを表示します"
+glyphs.size = "グリフのサイズ" # mt
 glyphs.none = "このフォントにはこの範囲のグリフがありません。"
 glyphs.search_hint = "検索: 文字または U+20AC" # mt
 glyphs.entire_font = "フォント全体"
