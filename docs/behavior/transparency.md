@@ -14,6 +14,9 @@ mask, then composited with the merge mode. A shaped gradient follows
 the object's outline (`tests::shaped_transparency_follows_the_object`).
 A gradient mask turns, mirrors and skews with its object as a gradient
 fill does (see `gradient-fill.md`, #775).
+Moving nodes or cropping keeps a gradient mask where it lies on the
+page, cut by the new outline, not squeezed into its new box (see
+`gradient-fill.md`, #1491).
 
 The Transparency tool shows a gradient mask's nodes as Interactive Fill
 shows a fill's (`fill_tool.rs`, #448): start, end and skew handle, the

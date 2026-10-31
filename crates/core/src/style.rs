@@ -374,6 +374,49 @@ impl Fountain {
         }
     }
 
+    /// Keep the fill where it lies on the page while its object's outline
+    /// changes (nodes moved, an area cropped off) and its page box goes
+    /// from `before` to `after`: the fill is cut, not squeezed into the
+    /// new box (#1491). Its nodes are then placed freely; a shaped fill
+    /// follows the outline by itself.
+    pub fn keep_in_place(&mut self, before: Rect, after: Rect) {
+        if self.kind == FountainKind::Shaped {
+            return;
+        }
+        let flat = |b: Rect| {
+            !(b.width() > 1e-9
+                && b.height() > 1e-9
+                && b.x0.is_finite()
+                && b.y0.is_finite()
+                && b.x1.is_finite()
+                && b.y1.is_finite())
+        };
+        if flat(before) || flat(after) {
+            return;
+        }
+        let near = |a: f64, b: f64| (a - b).abs() <= 1e-9 * (1.0 + a.abs().max(b.abs()));
+        if near(before.x0, after.x0)
+            && near(before.y0, after.y0)
+            && near(before.x1, after.x1)
+            && near(before.y1, after.y1)
+        {
+            return;
+        }
+        let h = self.handles.unwrap_or_else(|| self.default_handles(before));
+        let moved = |p: Point| Self::page_to_rel(after, Self::rel_to_page(before, p));
+        let h = FountainHandles {
+            start: moved(h.start),
+            end: moved(h.end),
+            skew: moved(h.skew),
+        };
+        if [h.start, h.end, h.skew]
+            .iter()
+            .all(|p| p.x.is_finite() && p.y.is_finite())
+        {
+            self.set_handles(after, h);
+        }
+    }
+
     pub fn first_color(&self) -> Color {
         self.stops.first().map(|s| s.color).unwrap_or(Color::BLACK)
     }
@@ -1409,6 +1452,14 @@ impl Fill {
     pub fn carry(&mut self, t: Affine, before: Rect, after: Rect) {
         if let Fill::Fountain(f) = self {
             f.carry(t, before, after);
+        }
+    }
+
+    /// Keep a fountain fill in its place on the page while its object's
+    /// outline changes (see [`Fountain::keep_in_place`]).
+    pub fn keep_in_place(&mut self, before: Rect, after: Rect) {
+        if let Fill::Fountain(f) = self {
+            f.keep_in_place(before, after);
         }
     }
 
