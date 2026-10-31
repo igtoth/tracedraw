@@ -481,11 +481,11 @@ fn power_clip_contents_and_parent() {
         "ActiveDocument.Unit = cdrMillimeter;
          const frame = ActiveLayer.CreateRectangle2(0, 0, 50, 50); frame.Name = 'frame';
          const inside = ActiveLayer.CreateEllipse2(25, 25, 40); inside.Name = 'inside';
-         inside.AddToPowerClip(frame);
+         inside.AddToClipFrame(frame);
          const f = ActivePage.Shapes.Item('frame');
-         f.PowerClip.EnterEditMode(); f.PowerClip.LeaveEditMode();
-         print(f.PowerClip.Shapes.Count, f.PowerClip.Shapes.Item(1).Name, f.PowerClip.Shapes.Item(1).PowerClipParent.Name);
-         print(ActivePage.Shapes.Count, ActiveLayer.CreateRectangle2(0, 0, 1, 1).PowerClip === null);",
+         f.ClipFrame.EnterEditMode(); f.ClipFrame.LeaveEditMode();
+         print(f.ClipFrame.Shapes.Count, f.ClipFrame.Shapes.Item(1).Name, f.ClipFrame.Shapes.Item(1).ClipFrameParent.Name);
+         print(ActivePage.Shapes.Count, ActiveLayer.CreateRectangle2(0, 0, 1, 1).ClipFrame === null);",
     );
     assert_eq!(out[0], "1 inside frame");
     assert_eq!(out[1], "1 true");

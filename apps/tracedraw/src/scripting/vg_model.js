@@ -548,7 +548,7 @@ class Shape extends __Geo {
     const p = this._info().parent;
     return p && __call('vg_info', { id: p }).kind === 'group' ? new Shape(p) : null;
   }
-  get PowerClip() {
+  get ClipFrame() {
     const info = this._info();
     if (info.kind !== 'clipframe') return null;
     const id = this.id;
@@ -558,7 +558,7 @@ class Shape extends __Geo {
       // contents through Shapes either way.
       EnterEditMode() { }, LeaveEditMode() { } };
   }
-  get PowerClipParent() {
+  get ClipFrameParent() {
     const p = this._info().parent;
     if (!p) return null;
     const pi = __call('vg_info', { id: p });
@@ -1649,8 +1649,8 @@ Shape.prototype.OrderIsInFrontOf = function (Shape) {
   const a = __call('vg_zorder', { id: this.id }).rank, b = __call('vg_zorder', { id: __ids(Shape)[0] }).rank;
   return a > b;
 };
-Shape.prototype.AddToPowerClip = function (Shape) { __call('vg_place_inside', { ids: [this.id], frame: __ids(Shape)[0] }); };
-ShapeRange.prototype.AddToPowerClip = function (Shape) { __call('vg_place_inside', { ids: this._ids(), frame: __ids(Shape)[0] }); };
+Shape.prototype.AddToClipFrame = function (Shape) { __call('vg_place_inside', { ids: [this.id], frame: __ids(Shape)[0] }); };
+ShapeRange.prototype.AddToClipFrame = function (Shape) { __call('vg_place_inside', { ids: this._ids(), frame: __ids(Shape)[0] }); };
 for (const cls of [Shapes, ShapeRange]) {
   cls.prototype.FindAnyOfType = function (...Types) {
     const list = cls === Shapes ? this._list : this._ids();

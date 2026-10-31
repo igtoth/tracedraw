@@ -7,6 +7,19 @@ full, row-by-row status.
 ## Unreleased
 
 - Options > Tools > Zoom/Pan: Zoom relative to 1:1 (on: zoom 100% follows the ruler calibration; off: 96 pixels per inch), Center mouse when zooming with the mouse wheel (the spot under the pointer comes to the middle of the view, the pointer with it), and a Pan tool section whose right mouse button opens the context menu or zooms out.
+- Tracing (Quick Trace, Outline Trace and the Trace dialog) of flat art from a compressed image, a screenshot or a video frame: each colour comes out as one clean region with smooth curves and few nodes. Noise split one colour into several shades that each became regions of their own, the soft and anti-aliased pixels along each edge were handed out unevenly, and one-pixel bumps were fitted node by node, so edges came out jagged, notched and speckled, with slivers of in-between colours along them and hundreds of tiny pieces in the wireframe. On the cartoon bee of the reports the Clipart preset now gives 342 nodes in 36 subpaths where it gave 5874 in 786, and 664 nodes where it gave 8403 on the other one, with its small letters still readable. Art on a transparent background also keeps all its colours: with nothing on the picture's edge to take for the background, Remove entire color took out the last colour of the palette, which could be the yellow of the bee's head and stripes, leaving them white with only their fringe as outlines (#611, #1250).
+
+- Tracing (Quick Trace and Outline Trace) of flat art saved as a compressed image or a screenshot: each colour comes out as one region with smooth edges. Noise split one colour into several shades that each became regions of their own, the anti-aliased edge pixels were handed out unevenly, so edges came out notched and stepped with pale flecks along them, and small letters lost their thin strokes. On a cartoon bee the Clipart preset now gives 109 curves where it gave 1353. Photos trace as before (#611).
+
+- Browser version on Windows: AltGr types its characters (€, @, [ ], { }, \ and the letters of Polish, Czech, German and other keyboards) in text and in fields. Windows browsers report AltGr as Ctrl and Alt held together, so the page kept these keys from the browser as Ctrl shortcuts and nothing was typed, and AltGr+A selected all or AltGr+E exported instead (#1408).
+
+- Browser version: closing or reloading the tab, going back or leaving the page with unsaved drawings asks first with the browser's own question, and auto-backup and session recovery now work in the browser too. Backups are kept in the browser's storage for the site (a folder of their own per tab), written every few minutes, when the question shows and when the page is hidden, and the next visit offers what a closed, reloaded or crashed tab left. Before, the page closed at once and the work was lost (#1395).
+- Auto-backup: when the system quits TraceDraw without asking about unsaved drawings (the Quit of the macOS menu, logging out) or the Android app goes to the background, the drawings are backed up at once and the next start offers them; before, a quit removed the backups and the Android app wrote none until its next auto-backup minute. An idle window now keeps its session marker fresh, so a second window never offers its drawings (#1395).
+
+- Start-up: the splash screen shows at once and says "Loading fonts..." while the list of system fonts is read, its bar moving, and the editor opens when the list is in. The editor waited for that list on the window's own thread, so on a computer with many fonts or a slow disk the window stayed blank, or did not show at all, for as long as the read took (minutes on some Linux systems), and then the splash flashed up broken before the Welcome Screen (#1388). Without the splash screen the window shows at once, plain, until the editor is ready. The log now says how long the fonts took (`system fonts read in N ms`). The Welcome Screen also asks the disk whether each recent drawing is still there on a worker thread: it asked about every one every frame on the window's thread, so a drawing on a network share that did not answer held the window.
+
+- Windows: a tool picked with its shortcut over a still mouse shows its pointer at once, and the pointer never vanishes. Picking the Pen tool kept the arrow, and leaving the Pen tool (or any tool with a drawn pointer) left no pointer at all, until the mouse moved: Windows hides and shows the pointer only at the next mouse move. A drawn pointer now swaps the system pointer for a fully transparent pointer image, which Windows applies at once, instead of hiding it (#1124).
+
 - Properties docker, Transparency: the amount is a full-width slider with its label above, like the Fill section's angle and edge pad, and a fountain transparency's angle is the same angle slider. The property bar keeps its compact controls.
 - Options > Tools: the pages come in a new order (Pick, Eraser, Zoom/Pan, Freehand/Bézier, Shape Recognition, Rectangle, Ellipse, Polygon, Graph Paper, Spiral, Table, Dimension, Connector, Mesh Fill); Curve tools is now Freehand/Bézier, and new Shape Recognition (recognition and smoothing levels), Dimension (precision, units, prefix and suffix of new dimensions), Connector (corner radius) and Mesh Fill (columns and rows) pages edit the same defaults as the property bars, kept across restarts and put back by Cancel.
 - Options > Tools: each page in the list shows its tool's icon. The Zoom/Pan page has a Zoom tool section and a Calibrate Zoom... button that opens the ruler calibration (Display page).
@@ -340,7 +353,7 @@ full, row-by-row status.
 - Shape tool: a node being dragged snaps to the other nodes and segments of its own curve too, not only to other objects (#673).
 - PDF/X: with no CMYK profile set in Colour Management (or `TRACEDRAW_ICC` for `tracedraw-cli convert`), the output intent now embeds the CMYK profile the drawing carries, the profile its CMYK values are in, and an empty output condition takes that profile's name. It used to say "CGATS TR 001" with no profile, the name of another press (#643).
 - PDF and SVG export: an outline set to scale with its object is written as wide as the drawing window draws it, its width times the object's scale. It was written at its own width, so a 10 mm outline on an object scaled to a quarter came out 10 mm wide instead of 2.5 mm, in .cdr files and in drawings scaled here alike.
-- Opening .cdr files: objects of type 0x26 that keep a list of points (seen in version 22 files as the frames of PowerClips) are read as the closed outline through those points. They were read as a two-point connector line, whose points then fell far off the page, so the pictures clipped to such a frame did not show at all.
+- Opening .cdr files: objects of type 0x26 that keep a list of points (seen in version 22 files as the frames of clip frames) are read as the closed outline through those points. They were read as a two-point connector line, whose points then fell far off the page, so the pictures clipped to such a frame did not show at all.
 - Paragraph text in Chinese and Japanese breaks lines between characters by the line-start and line-end rules: punctuation such as ，。、；：？！ and closing brackets and quotes no longer start a line, and opening brackets and quotes no longer end one; the character before goes to the next line with it (#847).
 
 ## 0.19.3 (2026-10-26)
@@ -607,7 +620,7 @@ full, row-by-row status.
 
 - Shaping: Back Minus Front, Front Minus Back and Trim on a group cut each of its objects, each keeping its own fill and outline; the result had no fill or outline and showed only in Wireframe. Weld and Intersect with a group take its first filled object's attributes (#539).
 
-- PowerClip (Clip to Frame) Edit Contents: a group inside can be ungrouped and its members stay in the frame, drawn in full and back inside on Finish; objects drawn or pasted while editing go in too. The members faded as if outside and Finish emptied the frame (#537).
+- Clip frame (Place Inside Frame) Edit Contents: a group inside can be ungrouped and its members stay in the frame, drawn in full and back inside on Finish; objects drawn or pasted while editing go in too. The members faded as if outside and Finish emptied the frame (#537).
 
 - Print: Fit to page shrinks objects that run off the page (or the selection printed) to fit inside it, centred; they were cut at the page's edge. Print Preview's Close button sits at the right end of its bar (#534).
 
@@ -1380,7 +1393,7 @@ full, row-by-row status.
   object's only outline (it was drawn over the fill, so thick white
   outlines thinned or hid letters).
 
-- CorelDRAW templates (`.cdt`, `.cdrt`) open as untitled drawings and can
+- Templates (`.cdt`, `.cdrt`) open as untitled drawings and can
   be imported.
 - Save As says that programs from 2021 on open `.cdr` version 15 and newer
   only.

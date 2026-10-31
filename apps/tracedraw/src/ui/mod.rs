@@ -300,6 +300,9 @@ fn root_frame(app: &mut App, ui: &mut Ui) {
     };
     set_window_title(&ctx, format!("TraceDraw - {doc_name}"));
 
+    // Leaving the page with unsaved drawings: the browser asks first.
+    #[cfg(target_arch = "wasm32")]
+    crate::web::backups::set_unsaved(app.has_unsaved());
     // Closing the window with unsaved drawings asks about each first.
     #[cfg(not(target_arch = "wasm32"))]
     {
@@ -333,8 +336,14 @@ fn root_frame(app: &mut App, ui: &mut Ui) {
         ctx.all_styles_mut(|s| s.interaction.tooltip_delay = delay);
     }
     // Session recovery: this session's marker, and what one that ended
-    // without closing left.
+    // without closing left. An idle window still checks in, with a frame
+    // a minute, so another window never takes it for gone.
     app.session_tick(crate::recovery::now_secs());
+    if app.session.is_some() {
+        ctx.request_repaint_after(std::time::Duration::from_secs(
+            crate::recovery::HEARTBEAT_SECS,
+        ));
+    }
     if app.debug_tick() {
         ctx.request_repaint_after(std::time::Duration::from_millis(50));
     }

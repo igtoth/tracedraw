@@ -67,6 +67,8 @@ TraceDraw 以自己的格式 `.tdraw` 儲存繪圖，這種格式會保留所有
 
 ## 自動備份與復原 {#recovery}
 
-在桌面版中，當自動備份開啟時，TraceDraw 會為您開啟的繪圖保留備份（[[menu.tools > menu.tools.options > menu.tools.options_app]] 的 [[options.save]] 頁面可設定頻率和位置；預設為每 20 分鐘一次）。正常關閉 TraceDraw 時會移除這些備份。
+當自動備份開啟時，TraceDraw 會為您開啟的繪圖保留備份（[[menu.tools > menu.tools.options > menu.tools.options_app]] 的 [[options.save]] 頁面可設定頻率和位置；預設為每 20 分鐘一次）。正常關閉 TraceDraw 時會移除這些備份。
 
 如果 TraceDraw 未正常關閉就結束了，例如停電後，下次啟動時它會提供這些備份：[[dialog.recover]] 會將每個備份以未儲存的繪圖開啟（之後「儲存」會詢問要存到哪裡），[[dialog.discard]] 則會將備份留在其資料夾中。同時執行的兩個 TraceDraw 視窗永遠不會提供彼此的繪圖。
+
+在瀏覽器版本中，備份保存在瀏覽器為此網站提供的儲存空間，每個分頁各有自己的資料夾。關閉或重新載入有未儲存繪圖的分頁時會先詢問，下次開啟時會提供該分頁留下的繪圖；[[dialog.discard]] 會刪除這些備份。

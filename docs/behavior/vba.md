@@ -175,7 +175,7 @@ Shared with ranges and the selection:
   new curve).
 - **Groups and frames:** `Ungroup`, `UngroupEx`, `UngroupAll`,
   `UngroupAllEx`, `Shapes` (a group's), `Layer`, `Page`, `ParentGroup`,
-  `PowerClip` (`Shapes` inside a clip frame), `PowerClipParent`.
+  `ClipFrame` (`Shapes` inside a clip frame), `ClipFrameParent`.
 - **Views of the object:**
   - `Curve`: `Nodes`, `SubPaths`, `Segments`, `Closed`, `Length`.
     Nodes have `PositionX`, `PositionY`, `SetPosition`, `Move`, `Type`
@@ -283,7 +283,7 @@ other libraries):
 | Text, Story, Words, Range, Size, Bold, Italic, Font, LineSpacing, Overflow, IsArtisticText | 100, 12, 3, 5, 9, 9, 9, 3, 8, 4, 3 | W (`LanguageID`: E) |
 | Bitmap, ResolutionX, ResolutionY, Mode, ConvertTo, Resample, ExternallyLinked, Resolution | 51, 12, 12, 7, 14, 5, 3, 4 | W |
 | ConvertToBitmapEx, ConvertToCurves | 6, 4 | W |
-| PowerClip, PowerClipParent | 44, 8 | W |
+| ClipFrame, ClipFrameParent | 44, 8 | W |
 | EnterEditMode, LeaveEditMode | 3, 3 | N |
 | Effects, DropShadow, Separate, Clear | 14, 6, 7, 14 | W (a separated shadow loses its blur) |
 | MergeMode | 6 | W for normal; others E |
@@ -315,7 +315,7 @@ declare variables (`cdrShapeType`, `cdrColorType`, `cdrImageType`,
 
 The remaining rarer members follow the same rules:
 
-- Works: `MoveToLayer`, `OrderIsInFrontOf`, `AddToPowerClip`,
+- Works: `MoveToLayer`, `OrderIsInFrontOf`, `AddToClipFrame`,
   `FindAnyOfType`, `SelectShapesAtPoint`, `ImportEx`, `DrawingOriginX`
   and `DrawingOriginY` (0: the origin is the page corner).
 - Raise a named error: `GetUserClick`, `GetUserArea`, `DesktopLayer`,

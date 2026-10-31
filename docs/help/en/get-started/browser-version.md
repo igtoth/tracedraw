@@ -40,6 +40,13 @@ desktop version.
 - **Updates.** The page is always the latest version; there is nothing to
   install. Installed as an app, it keeps the version you last used and
   takes a new one the next time it starts after all its windows were
-  closed. Auto-backup and session recovery are desktop features.
+  closed.
+- **Unsaved drawings.** Closing or reloading the tab, or leaving the
+  page, with unsaved changes asks first with the browser's own question.
+  Auto-backups are kept in the browser's storage for the site, and the next
+  visit offers what a closed, reloaded or crashed tab left, as the desktop
+  version does after a crash (see
+  [Auto-backup and recovery](open-and-save.md#recovery)). Clearing the
+  site's data removes them.
 - **Pen pressure.** A pen works as a mouse, but the browser does not pass
   its pressure on, so strokes have an even width.
