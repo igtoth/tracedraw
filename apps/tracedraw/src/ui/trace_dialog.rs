@@ -204,7 +204,16 @@ pub fn trace_dialog(app: &mut App, ctx: &Context, st: &mut TraceState, close: &m
     let mut ok = false;
     let mut help = false;
     let mut options = false;
+    let mut best = false;
     let dragging = ctx.input(|i| i.pointer.any_down());
+    // Best optimization's settings, once found: the detail it chose, as
+    // a step of its own the arrows undo.
+    if let Some(found) = app.trace_live.optimized() {
+        st.settings.detail = found.detail;
+        st.settings.optimize = false;
+    }
+    let optimizing = app.trace_live.optimizing();
+    let can_optimize = !st.settings.centerline && selected_bitmap(app).is_some();
     super::dialogs::window(ctx, tr("dialog.trace"))
         .resizable(DEFAULT_SIZE, MIN_SIZE)
         .show(ctx, |ui| {
@@ -222,7 +231,23 @@ pub fn trace_dialog(app: &mut App, ctx: &Context, st: &mut TraceState, close: &m
                     .rich_tip(crate::ui::tips::keyed("dialog.trace_options"));
                 mark(ui, "options", r.rect);
                 options = r.clicked();
-                ok = super::dialogs::ok_cancel(ui, close);
+                let label = if optimizing {
+                    tr("dialog.trace_optimizing")
+                } else {
+                    tr("dialog.trace_optimize")
+                };
+                let r = ui
+                    .add_enabled(
+                        can_optimize && !optimizing,
+                        egui::Button::new(label).min_size(Vec2::new(140.0, 27.0)),
+                    )
+                    .rich_tip(crate::ui::tips::keyed("dialog.trace_optimize"));
+                mark(ui, "optimize", r.rect);
+                best = r.clicked();
+                if optimizing {
+                    ui.spinner();
+                }
+                ok = super::dialogs::ok_cancel_at_right(ui, close);
             });
         });
     // Settings the user changes (not a slider mid-drag) are steps the
@@ -236,6 +261,7 @@ pub fn trace_dialog(app: &mut App, ctx: &Context, st: &mut TraceState, close: &m
             a.colors,
             a.mode,
             a.centerline,
+            a.optimize,
         ) != (
             b.detail,
             b.smoothing,
@@ -243,6 +269,7 @@ pub fn trace_dialog(app: &mut App, ctx: &Context, st: &mut TraceState, close: &m
             b.colors,
             b.mode,
             b.centerline,
+            b.optimize,
         )
     };
     let arrowed = st.cursor != cursor;
@@ -255,6 +282,13 @@ pub fn trace_dialog(app: &mut App, ctx: &Context, st: &mut TraceState, close: &m
     // keeps the steps to redo.
     if !dragging && !arrowed {
         st.commit();
+    }
+    if best && can_optimize {
+        if let Some((shape, _, png)) = selected_bitmap(app) {
+            if let Some(image) = app.trace_live.image(shape, &png) {
+                app.trace_live.optimize(ctx, image, st.settings.clone());
+            }
+        }
     }
     if help {
         app.open_dialog_help();
@@ -367,6 +401,14 @@ fn preview_column(app: &mut App, ui: &mut Ui, st: &mut TraceState, dragging: boo
                 format!("{text} \u{2026}")
             };
             ui.label(text);
+            // Where the quick look is all the preview shows (the browser,
+            // a large picture), say so: the trace placed on OK is the
+            // whole picture's, finer than the preview.
+            if s.done && s.stage == crate::trace_preview::Stage::Quick {
+                let red = ui.visuals().error_fg_color;
+                ui.label(egui::RichText::new(tr("dialog.trace_reduced_preview")).color(red))
+                    .rich_tip(crate::ui::tips::keyed("dialog.trace_reduced_preview"));
+            }
         }
         None => {
             ui.label(tr("dialog.trace_tracing"));
@@ -478,7 +520,18 @@ fn settings_tab(app: &mut App, ui: &mut Ui, st: &mut TraceState) {
             ui.end_row();
         });
     before_after::rule(ui);
-    slider(ui, "detail", "dialog.detail", &mut st.settings.detail);
+    // The Optimized image type chooses the detail for each picture: the
+    // slider is greyed (Best optimization puts the detail it finds in).
+    ui.add_enabled_ui(!st.settings.optimize, |ui| {
+        slider(ui, "detail", "dialog.detail", &mut st.settings.detail);
+    });
+    if st.settings.optimize && !st.settings.centerline {
+        ui.label(
+            egui::RichText::new(tr("dialog.trace_detail_chosen"))
+                .color(Tokens::text_dim())
+                .size(11.0),
+        );
+    }
     slider(
         ui,
         "smoothing",

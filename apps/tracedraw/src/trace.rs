@@ -21,11 +21,14 @@ pub enum Preset {
     Clipart,
     LowQualityImage,
     HighQualityImage,
+    /// Outline, with the detail chosen for each picture: the one that
+    /// draws it most faithfully in the fewest nodes (see [`optimize`]).
+    Optimized,
 }
 
 impl Preset {
     /// Every preset, centreline ones first.
-    pub const ALL: [Preset; 8] = [
+    pub const ALL: [Preset; 9] = [
         Preset::Technical,
         Preset::LineDrawing,
         Preset::LineArt,
@@ -34,6 +37,7 @@ impl Preset {
         Preset::Clipart,
         Preset::LowQualityImage,
         Preset::HighQualityImage,
+        Preset::Optimized,
     ];
 
     pub fn is_centerline(self) -> bool {
@@ -49,6 +53,7 @@ impl Preset {
             Preset::Clipart => "menu.bitmaps.trace_clipart",
             Preset::LowQualityImage => "menu.bitmaps.trace_low_quality",
             Preset::HighQualityImage => "menu.bitmaps.trace_high_quality",
+            Preset::Optimized => "menu.bitmaps.trace_optimized",
         }
     }
     /// The presets of one trace type, in the order the dialog lists them.
@@ -69,6 +74,9 @@ impl Preset {
             Preset::Clipart => (60.0, 25.0, 32, false),
             Preset::LowQualityImage => (35.0, 40.0, 48, false),
             Preset::HighQualityImage => (80.0, 15.0, 96, false),
+            // The most colours the picture may keep: shades of one
+            // colour join, so a flat picture keeps only its own.
+            Preset::Optimized => (70.0, 25.0, 32, false),
         };
         Settings {
             detail,
@@ -86,6 +94,7 @@ impl Preset {
             remove_overlap: false,
             group_by_color: false,
             centerline: self.is_centerline(),
+            optimize: self == Preset::Optimized,
             delete_original: false,
             merged: Vec::new(),
             recolored: Vec::new(),
@@ -162,6 +171,9 @@ pub struct Settings {
     /// The result holds a group per colour.
     pub group_by_color: bool,
     pub centerline: bool,
+    /// The detail is chosen for each picture traced (the Optimized
+    /// preset, [`optimize`]); `detail` is where the search starts.
+    pub optimize: bool,
     pub delete_original: bool,
     /// Colours of the trace joined into one, the first of each group
     /// (the Colors tab's Merge).
@@ -211,6 +223,7 @@ impl Settings {
             t.merge_adjacent = false;
             t.remove_overlap = false;
             t.merged.clear();
+            t.optimize = false;
         }
         t
     }
@@ -302,7 +315,220 @@ pub fn trace_unless(img: &RgbaImage, s: &Settings, cancel: Option<&Cancel>) -> O
     if s.centerline {
         return centerline(img, s, cancel);
     }
+    if s.optimize {
+        let best = optimize(img, s, cancel)?;
+        return outline(img, &best, cancel);
+    }
     outline(img, s, cancel)
+}
+
+// ----- the best settings for a picture -----------------------------------------
+
+/// The details [`optimize`] tries, coarse to fine. Above 85 the cleaning
+/// of edges and specks stops and the curves multiply.
+const OPTIMIZE_DETAILS: [f64; 5] = [50.0, 60.0, 70.0, 80.0, 85.0];
+
+/// The side of the samples [`optimize`] traces, pixels, and how many.
+const SAMPLE_SIDE: u32 = 200;
+const SAMPLES: usize = 4;
+
+/// What a node costs against a pixel drawn wrong, in [`optimize`]'s
+/// score: the share of pixels drawn wrong (percent) plus this much per
+/// node for each pixel of the samples' sides.
+const NODE_COST: f64 = 0.3;
+
+/// The settings `s` with the detail that draws `img` best: each
+/// detail of [`OPTIMIZE_DETAILS`] traces samples of the picture at its
+/// own size (the [`SAMPLES`] squares of its art with the most edges, or
+/// the whole art when small, side by side), the trace is drawn back and
+/// compared with them ([`wrong_share`]), and the detail with the lowest
+/// score wins: the share drawn wrong plus [`NODE_COST`] per node per
+/// pixel of the samples' sides, so a finer detail is chosen while it
+/// draws the picture better for the nodes it adds, and no further. The
+/// result traces as it is (`optimize` off). `None` once `cancel` is set.
+pub fn optimize(img: &RgbaImage, s: &Settings, cancel: Option<&Cancel>) -> Option<Settings> {
+    let mut base = s.clone();
+    base.optimize = false;
+    if s.centerline {
+        return Some(base);
+    }
+    let samples = samples_of(img);
+    if samples.is_empty() {
+        return Some(base);
+    }
+    let sides: f64 = samples
+        .iter()
+        .map(|p| (p.width() + p.height()) as f64)
+        .sum();
+    // The samples side by side, a transparent pixel apart, traced at once.
+    let sheet = sheet_of(&samples);
+    // The samples hold the art only: its background, transparent around
+    // them, is no colour of theirs to take out (the colour along a
+    // sample's edge is the art's).
+    let mut sample_settings = base.clone();
+    sample_settings.remove = Remove::None;
+    sample_settings.background = None;
+    let score = |detail: f64| -> Option<f64> {
+        let mut t = sample_settings.clone();
+        t.detail = detail;
+        let (w, h) = sheet.dimensions();
+        let traced = outline(&sheet, &t, cancel)?;
+        let drawn = render_traced(&traced, w, h, 1.0);
+        let wrong = wrong_share(&sheet, &drawn, cancel)?;
+        Some(wrong + NODE_COST * stats(&traced).nodes as f64 / sides.max(1.0))
+    };
+    // Each detail on a thread of its own where there are threads.
+    #[cfg(not(target_arch = "wasm32"))]
+    let scores: Vec<Option<f64>> = std::thread::scope(|scope| {
+        let runs: Vec<_> = OPTIMIZE_DETAILS
+            .iter()
+            .map(|d| scope.spawn(move || score(*d)))
+            .collect();
+        runs.into_iter().map(|r| r.join().ok().flatten()).collect()
+    });
+    #[cfg(target_arch = "wasm32")]
+    let scores: Vec<Option<f64>> = OPTIMIZE_DETAILS.iter().map(|d| score(*d)).collect();
+    if cancelled(cancel) {
+        return None;
+    }
+    let best = OPTIMIZE_DETAILS
+        .iter()
+        .zip(&scores)
+        .filter_map(|(d, s)| s.map(|s| (*d, s)))
+        .min_by(|a, b| a.1.total_cmp(&b.1));
+    if let Some((detail, _)) = best {
+        base.detail = detail;
+    }
+    Some(base)
+}
+
+/// `samples` in a row, a transparent pixel between each two.
+fn sheet_of(samples: &[RgbaImage]) -> RgbaImage {
+    let w: u32 = samples.iter().map(|p| p.width() + 1).sum();
+    let h = samples.iter().map(|p| p.height()).max().unwrap_or(0);
+    let mut sheet = RgbaImage::new(w.max(1), h.max(1));
+    let mut x = 0;
+    for p in samples {
+        image::imageops::replace(&mut sheet, p, x as i64, 0);
+        x += p.width() + 1;
+    }
+    sheet
+}
+
+/// The parts of `img` [`optimize`] traces: its opaque pixels' box when it
+/// is no more than two samples across, else the [`SAMPLES`] squares of
+/// [`SAMPLE_SIDE`] in that box with the most edges (neighbouring pixels
+/// more than 60 apart), the art's finest parts, where the detail shows.
+fn samples_of(img: &RgbaImage) -> Vec<RgbaImage> {
+    let (w, h) = img.dimensions();
+    let (mut x0, mut y0, mut x1, mut y1) = (w, h, 0, 0);
+    for (x, y, p) in img.enumerate_pixels() {
+        if p[3] >= 128 {
+            (x0, y0, x1, y1) = (x0.min(x), y0.min(y), x1.max(x), y1.max(y));
+        }
+    }
+    if x0 > x1 || x1 - x0 < 8 || y1 - y0 < 8 {
+        return Vec::new();
+    }
+    let (bw, bh) = (x1 - x0 + 1, y1 - y0 + 1);
+    if bw <= 2 * SAMPLE_SIDE && bh <= 2 * SAMPLE_SIDE {
+        return vec![image::imageops::crop_imm(img, x0, y0, bw, bh).to_image()];
+    }
+    let raw = img.as_raw();
+    let px = |x: u32, y: u32| {
+        let i = (y * w + x) as usize * 4;
+        [
+            raw[i] as i32,
+            raw[i + 1] as i32,
+            raw[i + 2] as i32,
+            raw[i + 3] as i32,
+        ]
+    };
+    let differs = |a: [i32; 4], b: [i32; 4]| {
+        (a[3] >= 128) != (b[3] >= 128) || (0..3).map(|k| (a[k] - b[k]).pow(2)).sum::<i32>() > 3600
+    };
+    // Squares on a grid over the box, scored by their edges.
+    let side = SAMPLE_SIDE.min(bw).min(bh);
+    let mut scored: Vec<(u64, u32, u32)> = Vec::new();
+    let mut ty = y0;
+    while ty + side <= y1 + 1 {
+        let mut tx = x0;
+        while tx + side <= x1 + 1 {
+            let mut edges = 0u64;
+            for y in (ty..ty + side - 1).step_by(2) {
+                for x in tx..tx + side - 1 {
+                    let p = px(x, y);
+                    if differs(p, px(x + 1, y)) || differs(p, px(x, y + 1)) {
+                        edges += 1;
+                    }
+                }
+            }
+            scored.push((edges, tx, ty));
+            tx += side;
+        }
+        ty += side;
+    }
+    scored.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)).then(a.2.cmp(&b.2)));
+    scored
+        .iter()
+        .take(SAMPLES)
+        .map(|(_, x, y)| image::imageops::crop_imm(img, *x, *y, side, side).to_image())
+        .collect()
+}
+
+/// How far (RGB distance, both over white) a pixel's colour must be from
+/// every pixel of the other picture within a pixel of it to be drawn
+/// wrong.
+const WRONG_DISTANCE: f64 = 60.0;
+
+/// The share (percent) of the pixels of `a` and `b` (the same size; the
+/// pixels opaque in either) drawn wrong: whose colour in one picture is
+/// further than [`WRONG_DISTANCE`] from every pixel of the other within a
+/// pixel. An edge drawn a pixel off is not wrong; a lost dot or line, a
+/// region in another colour, a gap or a blob are.
+pub fn wrong_share(a: &RgbaImage, b: &RgbaImage, cancel: Option<&Cancel>) -> Option<f64> {
+    let (w, h) = a.dimensions();
+    if b.dimensions() != (w, h) || w == 0 || h == 0 {
+        return Some(100.0);
+    }
+    let over = |p: &Rgba<u8>| -> [f32; 3] {
+        let k = p[3] as f32 / 255.0;
+        std::array::from_fn(|c| p[c] as f32 * k + 255.0 * (1.0 - k))
+    };
+    let pa: Vec<[f32; 3]> = a.pixels().map(over).collect();
+    let pb: Vec<[f32; 3]> = b.pixels().map(over).collect();
+    let (w, h) = (w as usize, h as usize);
+    let limit = (WRONG_DISTANCE * WRONG_DISTANCE) as f32;
+    let far = |img: &[[f32; 3]], x: usize, y: usize, c: [f32; 3]| {
+        (y.saturating_sub(1)..=(y + 1).min(h - 1)).all(|v| {
+            (x.saturating_sub(1)..=(x + 1).min(w - 1)).all(|u| {
+                let q = img[v * w + u];
+                (0..3).map(|k| (q[k] - c[k]).powi(2)).sum::<f32>() > limit
+            })
+        })
+    };
+    let (ra, rb) = (a.as_raw(), b.as_raw());
+    let (mut seen, mut wrong) = (0usize, 0usize);
+    for y in 0..h {
+        if y % 32 == 0 && cancelled(cancel) {
+            return None;
+        }
+        for x in 0..w {
+            let i = y * w + x;
+            if ra[i * 4 + 3] < 8 && rb[i * 4 + 3] < 8 {
+                continue;
+            }
+            seen += 1;
+            if far(&pb, x, y, pa[i]) || far(&pa, x, y, pb[i]) {
+                wrong += 1;
+            }
+        }
+    }
+    Some(if seen == 0 {
+        0.0
+    } else {
+        wrong as f64 * 100.0 / seen as f64
+    })
 }
 
 /// The palette index nearest `c` (none for an empty palette).
@@ -462,7 +688,13 @@ fn outline(img: &RgbaImage, s: &Settings, cancel: Option<&Cancel>) -> Option<Vec
     let palette: Vec<[u8; 3]> = if black_white {
         vec![[0, 0, 0], [255, 255, 255]]
     } else {
-        median_cut(&src, s.colors.clamp(2, 256) as usize, cancel)?
+        // At the highest detail every colour counts, the edges' too.
+        let n = s.colors.clamp(2, 256) as usize;
+        if speck_area(s.detail) <= 1 {
+            median_cut(&src, n, cancel)?
+        } else {
+            art_palette(&src, n, cancel)?
+        }
     };
     let mut labels = vec![0usize; w * h];
     for (x, y, p) in src.enumerate_pixels() {
@@ -496,6 +728,20 @@ fn outline(img: &RgbaImage, s: &Settings, cancel: Option<&Cancel>) -> Option<Vec
     // One flat colour split in two by its noise, when the art has fewer
     // colours than asked for, is one colour again (#611).
     let palette = merge_split_colors(&mut labels, palette, &colors);
+    // Shades no eye tells apart (the three blacks and seven whites the
+    // colour reduction makes of a black and white drawing's noise) are
+    // one colour, in any picture: each would be a curve of its own.
+    // Rounds until nothing joins: shades joined change which others are
+    // side by side.
+    let mut palette = palette;
+    for _ in 0..4 {
+        let before = labels.clone();
+        palette = merge_near_colors(&mut labels, w, h, palette, &colors, near_reach(s.detail));
+        if labels == before || cancelled(cancel) {
+            break;
+        }
+    }
+    snap_to_commonest(&labels, &colors, &mut palette);
     if speck_area(s.detail) > 1 {
         settle_edges(&mut labels, w, h, &palette, &colors, cancel);
         dissolve_fringes(&mut labels, w, h, &palette, &colors, cancel)?;
@@ -503,7 +749,15 @@ fn outline(img: &RgbaImage, s: &Settings, cancel: Option<&Cancel>) -> Option<Vec
     // Specks: patches of one colour smaller than the detail allows take
     // the colour around them, so stray dots and the fringes of soft edges
     // do not become curves of their own (#611).
-    despeckle(&mut labels, w, h, speck_area(s.detail), &palette, cancel);
+    despeckle(
+        &mut labels,
+        w,
+        h,
+        speck_area(s.detail),
+        dot_area(s.detail),
+        &palette,
+        cancel,
+    );
     if cancelled(cancel) {
         return None;
     }
@@ -626,6 +880,20 @@ fn outline(img: &RgbaImage, s: &Settings, cancel: Option<&Cancel>) -> Option<Vec
         } else {
             own
         };
+        // Stacked: the holes of the region holding only regions drawn
+        // above it are part of it, so its curve is the outline alone and
+        // the edges inside are drawn once, by the regions on top.
+        let mask = if s.remove_overlap {
+            mask
+        } else {
+            let above = |i: usize| {
+                let l = label_at(i);
+                l != usize::MAX
+                    && Some(l) != background
+                    && rank.get(l).is_some_and(|r| *r > rank[ci])
+            };
+            fill_holes(&mask, cw, ch, above)
+        };
         // One curve for the colour (every region combined), or one per
         // separate patch of it.
         let pieces: Vec<((usize, usize), usize, usize, Vec<bool>)> = if s.merge_adjacent {
@@ -696,6 +964,54 @@ fn rings_path(
         path.extend(fit_ring(&ring, s));
     }
     Some(path)
+}
+
+/// `mask` (`w` x `h`) with every hole filled whose pixels are all `fill`:
+/// a hole is a 4-connected patch of unset pixels not reaching the box's
+/// edge. Filling a region's holes that hold only regions drawn over it
+/// changes nothing that shows, and leaves one ring where the holes made
+/// one each.
+fn fill_holes(mask: &[bool], w: usize, h: usize, fill: impl Fn(usize) -> bool) -> Vec<bool> {
+    let mut out = mask.to_vec();
+    if mask.len() != w * h || w < 3 || h < 3 {
+        return out;
+    }
+    let mut seen = vec![false; w * h];
+    let mut stack: Vec<usize> = Vec::new();
+    let mut patch: Vec<usize> = Vec::new();
+    for start in 0..w * h {
+        if seen[start] || mask[start] {
+            continue;
+        }
+        seen[start] = true;
+        stack.push(start);
+        patch.clear();
+        let (mut edge, mut all) = (false, true);
+        while let Some(i) = stack.pop() {
+            patch.push(i);
+            let (x, y) = (i % w, i / w);
+            edge |= x == 0 || y == 0 || x + 1 == w || y + 1 == h;
+            all &= fill(i);
+            let near = [
+                (x > 0).then(|| i - 1),
+                (x + 1 < w).then(|| i + 1),
+                (y > 0).then(|| i - w),
+                (y + 1 < h).then(|| i + w),
+            ];
+            for j in near.into_iter().flatten() {
+                if !mask[j] && !seen[j] {
+                    seen[j] = true;
+                    stack.push(j);
+                }
+            }
+        }
+        if all && !edge {
+            for &i in &patch {
+                out[i] = true;
+            }
+        }
+    }
+    out
 }
 
 /// How far, in pixels, a region reaches under its neighbours drawn above
@@ -1130,6 +1446,154 @@ fn merge_split_colors(
     palette
 }
 
+/// How near (RGB distance) two colours of the palette must be to be one
+/// colour: none from detail 95 up, 30 at the Clipart detail of 60, 44 at
+/// 35.
+fn near_reach(detail: f64) -> f64 {
+    if detail >= 95.0 {
+        0.0
+    } else {
+        10.0 + (100.0 - detail.clamp(0.0, 100.0)) * 0.5
+    }
+}
+
+/// How many pixel edges two shades must share, per pixel of the smaller,
+/// to be one colour's noise.
+const INTERLEAVED: f64 = 0.6;
+
+/// Whether each of the `n` labels is a solid colour: at least half its
+/// pixels flat (their eight neighbours of the label too), as the
+/// colours of the art are and the shades of its edges and noise are not.
+fn solid_colors(labels: &[usize], w: usize, h: usize, n: usize) -> Vec<bool> {
+    let mut count = vec![(0u32, 0u32); n];
+    if labels.len() == w * h {
+        for (l, f) in labels.iter().zip(flat_pixels(labels, w, h)) {
+            if let Some(c) = count.get_mut(*l) {
+                c.0 += 1;
+                c.1 += f as u32;
+            }
+        }
+    }
+    count
+        .iter()
+        .map(|(all, f)| *all > 0 && 2 * f >= *all)
+        .collect()
+}
+
+/// Join the palette colours nearer each other than `reach` (RGB
+/// distance) of which one at least is no solid colour, nearest pairs
+/// first; two groups join only while the means
+/// of their pixels stay within `reach`, so a run of steps (a gradient,
+/// the in-between colours of an edge) does not chain far apart colours
+/// into one. The labels of a joined colour take the group's, which keeps
+/// the colour of its solid member.
+fn merge_near_colors(
+    labels: &mut [usize],
+    w: usize,
+    h: usize,
+    palette: Vec<[u8; 3]>,
+    colors: &[[u8; 3]],
+    reach: f64,
+) -> Vec<[u8; 3]> {
+    let n = palette.len();
+    if labels.len() != colors.len() || n < 2 || reach <= 0.0 {
+        return palette;
+    }
+    let mut total = vec![(0f64, [0f64; 3]); n];
+    for (l, c) in labels.iter().zip(colors) {
+        if let Some(t) = total.get_mut(*l) {
+            t.0 += 1.0;
+            for (sum, v) in t.1.iter_mut().zip(c) {
+                *sum += *v as f64;
+            }
+        }
+    }
+    let solid = solid_colors(labels, w, h, n);
+    // How many pixel edges each two labels share.
+    let mut shared = vec![0u32; n * n];
+    for y in 0..h {
+        for x in 0..w {
+            let a = labels[y * w + x];
+            for b in [
+                (x + 1 < w).then(|| labels[y * w + x + 1]),
+                (y + 1 < h).then(|| labels[(y + 1) * w + x]),
+            ]
+            .into_iter()
+            .flatten()
+            {
+                if a != b && a < n && b < n {
+                    shared[a * n + b] += 1;
+                    shared[b * n + a] += 1;
+                }
+            }
+        }
+    }
+    let mut pairs: Vec<(f64, usize, usize)> = Vec::new();
+    for a in 0..n {
+        for b in a + 1..n {
+            let d = (distance2(palette[a], palette[b]) as f64).sqrt();
+            // A shade that lines the edges of a solid colour joins it,
+            // and so do shades scattered through each other (a flat
+            // colour's noise split in several, their pixels side by side
+            // all over: more shared edges than the smaller has pixels).
+            // Two solid colours, however close, are both meant (a 246
+            // grey logo on white), and the steps of a gradient, bands
+            // side by side, stay apart.
+            let fewer = total[a].0.min(total[b].0);
+            let mixed = fewer > 0.0 && shared[a * n + b] as f64 >= INTERLEAVED * fewer;
+            if d < reach && (solid[a] != solid[b] || mixed) && fewer > 0.0 {
+                pairs.push((d, a, b));
+            }
+        }
+    }
+    if pairs.is_empty() {
+        return palette;
+    }
+    pairs.sort_by(|p, q| p.0.total_cmp(&q.0));
+    let mut root: Vec<usize> = (0..n).collect();
+    fn find(root: &mut [usize], mut i: usize) -> usize {
+        while root[i] != i {
+            root[i] = root[root[i]];
+            i = root[i];
+        }
+        i
+    }
+    let mean = |t: &(f64, [f64; 3])| -> [f64; 3] { std::array::from_fn(|d| t.1[d] / t.0) };
+    let mut has_solid = solid;
+    for (_, a, b) in pairs {
+        let (ra, rb) = (find(&mut root, a), find(&mut root, b));
+        if ra == rb {
+            continue;
+        }
+        let (ma, mb) = (mean(&total[ra]), mean(&total[rb]));
+        let d2: f64 = (0..3).map(|d| (ma[d] - mb[d]).powi(2)).sum();
+        // A group holds one solid colour at most, and stays its colour.
+        if d2 >= reach * reach || (has_solid[ra] && has_solid[rb]) {
+            continue;
+        }
+        let (keep, gone) = if has_solid[ra] || (!has_solid[rb] && total[ra].0 >= total[rb].0) {
+            (ra, rb)
+        } else {
+            (rb, ra)
+        };
+        has_solid[keep] |= has_solid[gone];
+        root[gone] = keep;
+        let t = total[gone];
+        total[keep].0 += t.0;
+        for d in 0..3 {
+            total[keep].1[d] += t.1[d];
+        }
+    }
+    // Each group keeps the colour of its solid member (the root): a mean
+    // drew a black joined with its dark brown fringe brown.
+    for l in labels.iter_mut() {
+        if *l < n {
+            *l = find(&mut root, *l);
+        }
+    }
+    palette
+}
+
 /// How near (RGB distance) an edge pixel's colour must be to the one
 /// flat colour beside it to join it.
 const EDGE_JOIN: u32 = 48;
@@ -1322,6 +1786,18 @@ fn speck_area(detail: f64) -> usize {
     (k * k).round().max(1.0) as usize
 }
 
+/// The smallest dot of the art kept however small the detail asks
+/// patches to be: a quarter of [`speck_area`], at least 2 pixels (4 at
+/// the Clipart detail of 60), so the dots of a halftone and the ends of
+/// fine hatching stay.
+fn dot_area(detail: f64) -> usize {
+    (speck_area(detail) / 4).max(2)
+}
+
+/// How far (RGB distance) a small patch's colour must be from every
+/// colour around it to be a dot of the art rather than noise.
+const DOT_CONTRAST: u32 = 64;
+
 /// Give every 4-connected patch of one label smaller than `min_area`
 /// pixels the label of the neighbours outside it whose colour is
 /// nearest its own, when one is within `SPLIT_REACH`, else the label most
@@ -1335,6 +1811,7 @@ fn despeckle(
     w: usize,
     h: usize,
     min_area: usize,
+    keep_area: usize,
     palette: &[[u8; 3]],
     cancel: Option<&Cancel>,
 ) {
@@ -1342,7 +1819,8 @@ fn despeckle(
         return;
     }
     for _ in 0..4 {
-        if !despeckle_pass(labels, w, h, min_area, palette, cancel) || cancelled(cancel) {
+        if !despeckle_pass(labels, w, h, min_area, keep_area, palette, cancel) || cancelled(cancel)
+        {
             break;
         }
     }
@@ -1354,6 +1832,7 @@ fn despeckle_pass(
     w: usize,
     h: usize,
     min_area: usize,
+    keep_area: usize,
     palette: &[[u8; 3]],
     cancel: Option<&Cancel>,
 ) -> bool {
@@ -1429,6 +1908,35 @@ fn despeckle_pass(
                     })
                     .map(|k| (k, k))
             };
+            // A dot of the art (a halftone dot, the end of a hatch line):
+            // no neighbour near its colour, standing out from every one of
+            // them, big enough to be drawn and two pixels across both
+            // ways, keeps its colour. Noise
+            // differs little from what is around it and went to the
+            // nearest colour above; the soft edge of two colours lies
+            // between them and went to one of them.
+            let stands_out = || {
+                let own = own?;
+                // Two pixels across at least, both ways: a column of one
+                // (a colour bled sideways by compression) is no dot.
+                let (mut x0, mut y0, mut x1, mut y1) = (w, h, 0, 0);
+                for &i in &patch {
+                    let (x, y) = (i % w, i / w);
+                    (x0, y0, x1, y1) = (x0.min(x), y0.min(y), x1.max(x), y1.max(y));
+                }
+                (patch.len() >= keep_area
+                    && x1 > x0
+                    && y1 > y0
+                    && counts.keys().all(|k| {
+                        palette
+                            .get(*k)
+                            .is_some_and(|p| distance2(own, *p) >= DOT_CONTRAST * DOT_CONTRAST)
+                    }))
+                .then_some(())
+            };
+            if near.is_none() && side().is_none() && stands_out().is_some() {
+                continue;
+            }
             if let Some((&to, _)) = near.or_else(side).or_else(most) {
                 for &i in &patch {
                     labels[i] = to;
@@ -1753,11 +2261,113 @@ fn nearest(palette: &[[u8; 3]], c: [u8; 3]) -> usize {
 /// Median cut colour quantisation to `n` colours, giving up (`None`)
 /// once `cancel` is set.
 pub fn median_cut(img: &RgbaImage, n: usize, cancel: Option<&Cancel>) -> Option<Vec<[u8; 3]>> {
-    let mut pixels: Vec<[u8; 3]> = img
+    let pixels: Vec<[u8; 3]> = img
         .pixels()
         .filter(|p| p[3] >= 128)
         .map(|p| [p[0], p[1], p[2]])
         .collect();
+    median_cut_of(pixels, n, cancel)
+}
+
+/// How near (RGB distance) a pixel's eight neighbours must be to it for
+/// it to lie inside a flat colour of the art.
+const FLAT_NOISE: u32 = 24;
+
+/// The share of the opaque pixels that must lie inside flat colours for
+/// the palette to be taken from them alone.
+const FLAT_SHARE: f64 = 0.3;
+
+/// The palette of `img` in `n` colours. In art drawn in flat colours (at
+/// least `FLAT_SHARE` of its pixels inside one), from the pixels inside
+/// the flat colours only: the in-between colours of anti-aliased and
+/// compressed edges, a pixel or two wide but many, took palette places
+/// of their own and left too few for the art's real colours, which came
+/// out split or mixed. Photos take every pixel.
+pub fn art_palette(img: &RgbaImage, n: usize, cancel: Option<&Cancel>) -> Option<Vec<[u8; 3]>> {
+    let (w, h) = (img.width() as usize, img.height() as usize);
+    let raw = img.as_raw();
+    let at = |i: usize| [raw[i * 4], raw[i * 4 + 1], raw[i * 4 + 2]];
+    let opaque = |i: usize| raw[i * 4 + 3] >= 128;
+    let mut flat: Vec<[u8; 3]> = Vec::new();
+    let mut all = 0usize;
+    for y in 0..h {
+        if y % 64 == 0 && cancelled(cancel) {
+            return None;
+        }
+        for x in 0..w {
+            let i = y * w + x;
+            if !opaque(i) {
+                continue;
+            }
+            all += 1;
+            if x == 0 || y == 0 || x + 1 == w || y + 1 == h {
+                continue;
+            }
+            let c = at(i);
+            let inside = (y - 1..=y + 1).all(|v| {
+                (x - 1..=x + 1).all(|u| {
+                    let j = v * w + u;
+                    opaque(j) && distance2(at(j), c) <= FLAT_NOISE * FLAT_NOISE
+                })
+            });
+            if inside {
+                flat.push(c);
+            }
+        }
+    }
+    let every = median_cut(img, n, cancel)?;
+    if all == 0 || (flat.len() as f64) < FLAT_SHARE * all as f64 {
+        return Some(every);
+    }
+    // Colours of the art too thin to be flat anywhere (a hairline of a
+    // colour of its own) come from the palette of every pixel: those far
+    // from every flat colour and not the blend of the two nearest them,
+    // as an anti-aliased edge's pixels are.
+    let mut palette = median_cut_of(flat, n, cancel)?;
+    let base = palette.clone();
+    for c in every {
+        if palette.len() >= n + n / 4 {
+            break;
+        }
+        if unexplained(c, &base) {
+            palette.push(c);
+        }
+    }
+    Some(palette)
+}
+
+/// How far (RGB distance) a colour must be from every colour of a
+/// palette for the palette not to stand for it.
+const UNEXPLAINED: u32 = 56;
+
+/// Whether `c` is far from every colour of `palette` and not between
+/// the two nearest it.
+fn unexplained(c: [u8; 3], palette: &[[u8; 3]]) -> bool {
+    let mut best = [(u32::MAX, 0usize); 2];
+    for (i, p) in palette.iter().enumerate() {
+        let d = distance2(c, *p);
+        if d < best[0].0 {
+            best[1] = best[0];
+            best[0] = (d, i);
+        } else if d < best[1].0 {
+            best[1] = (d, i);
+        }
+    }
+    if best[0].0 <= UNEXPLAINED * UNEXPLAINED {
+        return false;
+    }
+    match (palette.get(best[0].1), palette.get(best[1].1)) {
+        (Some(a), Some(b)) if best[1].0 != u32::MAX => !between(c, *a, *b),
+        _ => true,
+    }
+}
+
+/// [`median_cut`] of a list of colours.
+fn median_cut_of(
+    mut pixels: Vec<[u8; 3]>,
+    n: usize,
+    cancel: Option<&Cancel>,
+) -> Option<Vec<[u8; 3]>> {
     if pixels.is_empty() {
         return Some(vec![[0, 0, 0]]);
     }
@@ -1821,6 +2431,33 @@ pub fn median_cut(img: &RgbaImage, n: usize, cancel: Option<&Cancel>) -> Option<
         })
         .collect();
     refine(&pixels, start, cancel)
+}
+
+/// How near (RGB distance) the commonest exact colour of a palette
+/// colour's pixels must be to take its place.
+const SNAP_REACH: u32 = 16;
+
+/// Each colour of the palette moved onto the commonest exact colour of
+/// its pixels, when that is near: the mean of a flat colour's noisy
+/// pixels, and of colours joined into one, was a shade off the colour the
+/// art was drawn in (a black traced as #0B0703), and a trace should keep
+/// the art's own colours. Every other pixel is counted, which
+/// finds the commonest colour of any region worth a curve.
+fn snap_to_commonest(labels: &[usize], colors: &[[u8; 3]], palette: &mut [[u8; 3]]) {
+    use std::collections::HashMap;
+    let mut counts: Vec<HashMap<[u8; 3], u32>> = vec![HashMap::new(); palette.len()];
+    for (l, c) in labels.iter().zip(colors).step_by(2) {
+        if let Some(m) = counts.get_mut(*l) {
+            *m.entry(*c).or_default() += 1;
+        }
+    }
+    for (p, m) in palette.iter_mut().zip(&counts) {
+        if let Some((best, _)) = m.iter().max_by_key(|(k, n)| (**n, **k)) {
+            if distance2(*best, *p) <= SNAP_REACH * SNAP_REACH {
+                *p = *best;
+            }
+        }
+    }
 }
 
 /// A few rounds of k-means from the median cut's colours: each colour
@@ -2130,9 +2767,8 @@ fn thin_unless(mask: &mut [bool], w: usize, h: usize, cancel: Option<&Cancel>) -
 
 /// Draw traced shapes (pixel space, y down) into a transparent image of
 /// `w` x `h`: closed shapes filled with their colour, centrelines stroked
-/// `stroke_px` wide (the tests draw traces back this way; the dialog's
-/// preview is [`render_traced_scaled`]).
-#[cfg_attr(not(test), allow(dead_code))]
+/// `stroke_px` wide ([`optimize`] and the tests draw traces back this
+/// way; the dialog's preview is [`render_traced_scaled`]).
 pub fn render_traced(traced: &[Traced], w: u32, h: u32, stroke_px: f64) -> RgbaImage {
     paint_traced(traced, w, h, 1.0, Paint::Filled(stroke_px))
 }
@@ -2622,6 +3258,32 @@ mod tests {
         assert!(n > 24, "{n} colours of 96");
     }
 
+    /// A hairline two pixels wide in a colour of its own, crossing a
+    /// white page beside a black block, keeps its colour at the Clipart
+    /// preset: no pixel of it is flat, but it is no edge of two colours.
+    #[test]
+    fn hairlines_of_their_own_colour_keep_it() {
+        let img: RgbaImage = ImageBuffer::from_fn(120, 80, |x, y| {
+            if (10..50).contains(&x) && (10..70).contains(&y) {
+                Rgba([0, 0, 0, 255])
+            } else if (60..110).contains(&x) && (39..41).contains(&y) {
+                Rgba([220, 30, 40, 255])
+            } else {
+                Rgba([255, 255, 255, 255])
+            }
+        });
+        let t = trace(&img, &Preset::Clipart.settings());
+        let out = render_traced(&t, 120, 80, 1.0);
+        for x in 66..104 {
+            let p = out.get_pixel(x, 40);
+            assert!(
+                p[3] == 255 && p[0] > 150 && p[1] < 100,
+                "the red line at {x}: {p:?} of {:?}",
+                color_counts(&t)
+            );
+        }
+    }
+
     /// At the highest detail an orange line of one pixel between red and
     /// yellow stays, as the specks do.
     #[test]
@@ -2722,7 +3384,7 @@ mod tests {
                     .count()
             })
             .sum();
-        assert!(t.len() <= 3, "{} regions", t.len());
+        assert!(t.len() <= 3, "{} regions: {:?}", t.len(), color_counts(&t));
         assert!(subpaths <= 8, "{subpaths} subpaths");
         let out = render_traced(&t, N, N, 1.0);
         // The bar is still there, dark.
@@ -2787,6 +3449,7 @@ mod tests {
             w,
             h,
             3,
+            2,
             &[[0, 0, 0], [90, 90, 90], [255, 255, 255]],
             None,
         );
@@ -3011,7 +3674,7 @@ mod tests {
         let (w, h) = (6, 5);
         let mut labels = vec![0usize; w * h];
         labels[2 * w + 2] = 1;
-        despeckle(&mut labels, w, h, 3, &[[0; 3], [9; 3]], Some(&raised));
+        despeckle(&mut labels, w, h, 3, 2, &[[0; 3], [9; 3]], Some(&raised));
         assert_eq!(labels[2 * w + 2], 1, "stopped before any change");
         let mask: Vec<bool> = (0..w * h).map(|i| i % w > 1).collect();
         let s = Preset::Logo.settings();
@@ -3237,5 +3900,203 @@ mod tests {
         let colors: Vec<[u8; 3]> = labels.iter().map(|l| palette[*l]).collect();
         dissolve_fringes(&mut labels, w, h, &palette, &colors, None).unwrap();
         assert_eq!(labels.iter().filter(|l| **l == 2).count(), 2 * w);
+    }
+
+    /// A deterministic noise of up to `amp` either way, per call.
+    fn noise_source(amp: i32) -> impl FnMut() -> i32 {
+        let mut seed = 12345u32;
+        move || {
+            seed = seed.wrapping_mul(1103515245).wrapping_add(12345);
+            ((seed >> 16) % (2 * amp as u32 + 1)) as i32 - amp
+        }
+    }
+
+    /// A sunflower's heart as halftone art: a black ring round a teal disc
+    /// printed with small yellow-green dots, on a transparent background,
+    /// with a little noise.
+    fn halftone_image() -> (RgbaImage, Vec<(u32, u32)>) {
+        let mut noise = noise_source(4);
+        let (n, c) = (220u32, 110.0f32);
+        let mut dots = Vec::new();
+        let img = ImageBuffer::from_fn(n, n, |x, y| {
+            let d = ((x as f32 - c).powi(2) + (y as f32 - c).powi(2)).sqrt();
+            let base: [i32; 3] = if d >= 100.0 {
+                return Rgba([0, 0, 0, 0]);
+            } else if d >= 90.0 {
+                [0, 0, 0]
+            } else if x % 6 < 3 && y % 6 < 3 && d < 84.0 {
+                [150, 170, 90]
+            } else {
+                [35, 60, 62]
+            };
+            let mut v = |k: usize| (base[k] + noise()).clamp(0, 255) as u8;
+            Rgba([v(0), v(1), v(2), 255])
+        });
+        for y in (1..n).step_by(6) {
+            for x in (1..n).step_by(6) {
+                let d = ((x as f32 - c).powi(2) + (y as f32 - c).powi(2)).sqrt();
+                if d < 80.0 {
+                    dots.push((x, y));
+                }
+            }
+        }
+        (img, dots)
+    }
+
+    /// The dots of a halftone are art, not noise: at the Clipart preset
+    /// they stay (every dot of three pixels standing out from its teal);
+    /// before, every patch under 16 pixels went to the colour around it
+    /// and the heart came out plain teal. The black ring, under all the
+    /// rest, is one outline with its hole filled by the regions drawn
+    /// over it, and the whole is drawn back nearly exactly.
+    #[test]
+    fn halftone_dots_stay_and_the_regions_below_are_whole() {
+        use tracedraw_core::geometry::PathEl;
+        let (img, dots) = halftone_image();
+        let t = trace(&img, &Preset::Clipart.settings());
+        let out = render_traced(&t, img.width(), img.height(), 1.0);
+        let kept = dots
+            .iter()
+            .filter(|(x, y)| {
+                let p = out.get_pixel(*x, *y);
+                distance2([p[0], p[1], p[2]], [150, 170, 90])
+                    < distance2([p[0], p[1], p[2]], [35, 60, 62])
+            })
+            .count();
+        assert!(kept * 10 >= dots.len() * 9, "{kept} of {} dots", dots.len());
+        assert!(t.len() <= 4, "{:?}", color_counts(&t));
+        let black = t
+            .iter()
+            .find(|t| t.color.to_rgb8().iter().all(|c| *c < 16))
+            .expect("the black ring");
+        let rings = black
+            .path
+            .elements()
+            .iter()
+            .filter(|e| matches!(e, PathEl::MoveTo(_)))
+            .count();
+        assert_eq!(rings, 1, "the ring's hole is filled");
+        let wrong = wrong_share(&img, &out, None).unwrap();
+        assert!(wrong < 3.0, "{wrong}% drawn wrong");
+    }
+
+    /// Shades the colour reduction makes of one colour's noise and edges
+    /// join that colour, which keeps its exact value: a black square with
+    /// a dark brown fringe and grey-flecked white traces as #000000 and
+    /// white, two colours, where each shade was a curve of its own and the
+    /// black came out a brown mean.
+    #[test]
+    fn shades_join_their_colour_which_keeps_its_value() {
+        let mut noise = noise_source(6);
+        let img: RgbaImage = ImageBuffer::from_fn(120, 120, |x, y| {
+            let inside = (30..90).contains(&x) && (30..90).contains(&y);
+            let fringe = (28..92).contains(&x) && (28..92).contains(&y) && !inside;
+            if inside {
+                Rgba([0, 0, 0, 255])
+            } else if fringe {
+                Rgba([24, 16, 6, 255])
+            } else {
+                let v = (250 + noise().abs().min(5)) as u8;
+                Rgba([v, v, v, 255])
+            }
+        });
+        let mut s = Preset::Clipart.settings();
+        s.remove = Remove::None;
+        let t = trace(&img, &s);
+        let colors: Vec<[u8; 3]> = color_counts(&t).into_iter().map(|(c, _)| c).collect();
+        assert!(colors.contains(&[0, 0, 0]), "{colors:?}");
+        assert!(colors.len() <= 2, "{colors:?}");
+    }
+
+    /// A small logo, anti-aliased: a red disc with a white bar and a blue
+    /// triangle on white.
+    fn logo_image() -> RgbaImage {
+        let at = |x: f32, y: f32| -> [f32; 3] {
+            let d = ((x - 150.0).powi(2) + (y - 150.0).powi(2)).sqrt();
+            let tri = y > 40.0 && y < 125.0 && (x - 150.0).abs() < (y - 40.0) * 0.6;
+            if tri {
+                [20.0, 40.0, 120.0]
+            } else if (70.0..230.0).contains(&x) && (130.0..190.0).contains(&y) {
+                [255.0, 255.0, 255.0]
+            } else if d < 120.0 {
+                [220.0, 30.0, 40.0]
+            } else {
+                [255.0, 255.0, 255.0]
+            }
+        };
+        ImageBuffer::from_fn(300, 300, |x, y| {
+            let mut c = [0.0f32; 3];
+            for sy in 0..4 {
+                for sx in 0..4 {
+                    let s = at(
+                        x as f32 + (sx as f32 + 0.5) / 4.0,
+                        y as f32 + (sy as f32 + 0.5) / 4.0,
+                    );
+                    for k in 0..3 {
+                        c[k] += s[k] / 16.0;
+                    }
+                }
+            }
+            Rgba([c[0] as u8, c[1] as u8, c[2] as u8, 255])
+        })
+    }
+
+    /// The Optimized preset picks a detail of its own for the picture and
+    /// traces it as it is in few curves and nodes; the settings it finds
+    /// trace as they are.
+    #[test]
+    fn the_optimized_preset_draws_the_picture_as_it_is_in_few_nodes() {
+        let img = logo_image();
+        let s = Preset::Optimized.settings();
+        assert!(s.optimize && !s.centerline);
+        let found = optimize(&img, &s, None).expect("settings");
+        assert!(!found.optimize);
+        assert!(OPTIMIZE_DETAILS.contains(&found.detail), "{}", found.detail);
+        let t = trace(&img, &s);
+        let st = stats(&t);
+        let out = render_traced(&t, 300, 300, 1.0);
+        let wrong = wrong_share(&img, &out, None).unwrap();
+        assert!(wrong < 1.5, "{wrong}% drawn wrong");
+        assert!(st.curves <= 4, "{:?}", color_counts(&t));
+        assert!(st.nodes < 200, "{} nodes", st.nodes);
+        // A cancelled search gives nothing.
+        let raised = Cancel::new(true);
+        assert!(optimize(&img, &s, Some(&raised)).is_none());
+    }
+
+    /// A picture drawn a pixel off along its edges is not drawn wrong; a
+    /// lost dot is.
+    #[test]
+    fn wrong_share_forgives_edges_a_pixel_off_and_counts_lost_dots() {
+        let disc = circle_image();
+        assert_eq!(wrong_share(&disc, &disc, None), Some(0.0));
+        let moved = ImageBuffer::from_fn(100, 100, |x, y| *disc.get_pixel(x.saturating_sub(1), y));
+        assert_eq!(wrong_share(&disc, &moved, None), Some(0.0));
+        let mut dotted = disc.clone();
+        for y in 80..84 {
+            for x in 80..84 {
+                dotted.put_pixel(x, y, Rgba([0, 0, 0, 255]));
+            }
+        }
+        assert!(wrong_share(&disc, &dotted, None).unwrap() > 0.0);
+    }
+
+    /// Holes holding only what may be filled are filled; a hole with one
+    /// pixel that may not stays, and so does what reaches the box's edge.
+    #[test]
+    fn holes_of_regions_drawn_above_are_filled() {
+        let (w, h) = (7, 7);
+        let ring: Vec<bool> = (0..w * h)
+            .map(|i| {
+                let (x, y) = (i % w, i / w);
+                (1..6).contains(&x)
+                    && (1..6).contains(&y)
+                    && !((2..5).contains(&x) && (2..5).contains(&y))
+            })
+            .collect();
+        let filled = fill_holes(&ring, w, h, |_| true);
+        assert!(filled[3 * w + 3] && !filled[0], "the hole, not the outside");
+        let kept = fill_holes(&ring, w, h, |i| i != 3 * w + 3);
+        assert!(!kept[3 * w + 3] && !kept[2 * w + 2]);
     }
 }

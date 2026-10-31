@@ -1310,10 +1310,31 @@ pub(crate) fn window(_ctx: &Context, title: String) -> crate::ui::chrome::Window
 /// Enter presses OK (unless a multi-line field has the focus); Esc is
 /// handled by the keyboard handler, which closes any dialog.
 pub(crate) fn ok_cancel(ui: &mut Ui, close: &mut bool) -> bool {
+    ok_cancel_placed(ui, close, None)
+}
+
+/// [`ok_cancel`] at the right end of a row of other buttons (a dialog
+/// the user sizes, with "?" and more at the left): the row's room left
+/// over goes before OK, so OK and Cancel sit in the bottom right corner
+/// whatever the dialog's width.
+pub(crate) fn ok_cancel_at_right(ui: &mut Ui, close: &mut bool) -> bool {
+    // The row adds 10 points before the buttons, and the spacing of the
+    // row they are in before and after that.
+    let gaps = 10.0 + 2.0 * ui.spacing().item_spacing.x;
+    let left = (ui.available_width() - crate::ui::chrome::row_width(2) - gaps).max(0.0);
+    ok_cancel_placed(ui, close, Some(left))
+}
+
+fn ok_cancel_placed(ui: &mut Ui, close: &mut bool, left: Option<f32>) -> bool {
     let mut ok = false;
     let ok_label = tr("dialog.ok");
     let cancel_label = tr("dialog.cancel");
-    match crate::ui::chrome::button_row(ui, &[&ok_label, &cancel_label], false) {
+    let labels = [ok_label.as_str(), cancel_label.as_str()];
+    let picked = match left {
+        Some(left) => crate::ui::chrome::button_row_after(ui, &labels, false, left),
+        None => crate::ui::chrome::button_row(ui, &labels, false),
+    };
+    match picked {
         Some(0) => {
             ok = true;
             *close = true;
