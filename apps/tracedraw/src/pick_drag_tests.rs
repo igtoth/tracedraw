@@ -15935,3 +15935,35 @@ fn zoom_100_follows_the_calibration_only_when_relative_to_1_to_1() {
     app.set_zoom_percent(100.0);
     assert!((app.view.zoom * 2.0 - calibrated).abs() < 1e-3);
 }
+
+/// #1197: Step and Repeat outlines its copies on the canvas only while the
+/// panel is worked in: a click in it shows them, a click on the canvas
+/// hides them, and closing the panel hides them; nothing is added to the
+/// drawing before Apply.
+#[test]
+fn step_and_repeat_previews_its_copies_while_the_panel_is_worked_in() {
+    let (ctx, mut app, id) = setup();
+    app.show_dockers = true;
+    app.open_docker(crate::app::DockerTab::StepAndRepeat);
+    app.docker_tab = crate::app::DockerTab::StepAndRepeat;
+    app.step_repeat.copies = 4;
+    let rev = app.engine.revision();
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    assert!(!app.step_preview_shown, "not before the panel is used");
+    app.step_repeat_working = true;
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    assert!(app.step_preview_shown);
+    assert_eq!(app.step_preview.as_ref().map(|p| p.copies), Some(4));
+    assert_eq!(app.engine.revision(), rev, "the preview adds nothing");
+    // A click on the canvas (on the rectangle, which stays selected)
+    // ends the work in the panel.
+    click_page(&ctx, &mut app, Point::new(35.0, 25.0));
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    assert_eq!(app.selection, vec![id]);
+    assert!(!app.step_preview_shown);
+    // Closed, the panel shows nothing even when it was worked in last.
+    app.step_repeat_working = true;
+    app.show_dockers = false;
+    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    assert!(!app.step_preview_shown);
+}

@@ -2611,7 +2611,7 @@ pub fn draw_docker_preview(app: &App, painter: &Painter) {
 }
 
 /// A polyline drawn in dashes of `on` px with `off` px gaps.
-fn dashed_polyline(painter: &Painter, pts: &[Pos2], stroke: EStroke, on: f32, off: f32) {
+pub(crate) fn dashed_polyline(painter: &Painter, pts: &[Pos2], stroke: EStroke, on: f32, off: f32) {
     let period = on + off;
     let mut walked = 0.0f32;
     for w in pts.windows(2) {

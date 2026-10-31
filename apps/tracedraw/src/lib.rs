@@ -156,6 +156,7 @@ mod spell;
 mod splash;
 #[cfg(not(target_arch = "wasm32"))]
 mod startup_log;
+mod step_repeat;
 mod straighten;
 mod styles;
 mod symbol_paste;

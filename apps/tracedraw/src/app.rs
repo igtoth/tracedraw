@@ -1525,6 +1525,12 @@ pub struct App {
     pub mcp_link: Option<crate::mcp_link::Link>,
     pub find_state: crate::ui::dialogs::FindReplaceState,
     pub step_repeat: crate::ops2::StepRepeat,
+    /// Step and Repeat's preview of the copies (#1197): the cached
+    /// outlines, whether the panel asked for it this frame, and whether
+    /// the last click was in the panel.
+    pub step_preview: Option<crate::step_repeat::StepPreview>,
+    pub step_preview_shown: bool,
+    pub step_repeat_working: bool,
     pub align_to: crate::ops2::AlignTo,
     /// Align and Distribute use the boxes with half the outline width.
     pub align_use_outline: bool,
@@ -2675,6 +2681,9 @@ impl App {
             mcp_link: None,
             find_state: Default::default(),
             step_repeat: Default::default(),
+            step_preview: None,
+            step_preview_shown: false,
+            step_repeat_working: false,
             align_to: Default::default(),
             align_use_outline: false,
             distribute_to: Default::default(),

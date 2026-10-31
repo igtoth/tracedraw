@@ -262,6 +262,7 @@ fn root_frame(app: &mut App, ui: &mut Ui) {
     // Dockers set their canvas previews again each frame they are shown;
     // the document palette says where it is when it is drawn.
     app.docker_preview.clear();
+    app.step_preview_shown = false;
     app.doc_palette_rect = None;
     app.docker_preview_point = None;
     let ctx = ui.ctx().clone();
@@ -936,6 +937,7 @@ pub(crate) fn drawing_window(app: &mut App, ui: &mut Ui, full: egui::Rect) {
     extrude_bar::draw_handles(app, &painter);
     crop_bar::draw_area(app, &painter, canvas_rect);
     canvas::draw_docker_preview(app, &painter);
+    crate::step_repeat::draw_preview(app, &painter);
     canvas::draw_live_guides(app, &painter, canvas_rect);
     canvas::draw_snap_mark(app, &painter);
     app.draw_right_drag(&painter);

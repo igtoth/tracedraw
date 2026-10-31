@@ -72,10 +72,19 @@ pub fn show(app: &mut App, ui: &mut Ui, tab: DockerTab) {
 fn step_and_repeat(app: &mut App, ui: &mut Ui) {
     let u = app.units;
     let has = !app.selection.is_empty();
+    // The panel is worked in while the pointer is on it, one of its fields
+    // has the keys, or the last click (or tap) was in it; a click
+    // anywhere else ends that (#1197).
+    let over = ui.rect_contains_pointer(ui.max_rect());
+    if ui.input(|i| i.pointer.any_pressed()) {
+        app.step_repeat_working = over;
+    }
     // With nothing selected the fields wait, keeping their values (#1198).
-    ui.add_enabled_ui(has, |ui| {
-        step_and_repeat_fields(&mut app.step_repeat, u, ui)
-    });
+    let focused = ui
+        .add_enabled_ui(has, |ui| {
+            step_and_repeat_fields(&mut app.step_repeat, u, ui)
+        })
+        .inner;
     if ui
         .add_enabled(has, egui::Button::new(tr("docker.apply")))
         .rich_tip(crate::ui::tips::pair(
@@ -86,13 +95,25 @@ fn step_and_repeat(app: &mut App, ui: &mut Ui) {
     {
         app.step_and_repeat_apply();
     }
+    // The copies Apply would make, outlined on the canvas (#1197).
+    if has && (over || focused || app.step_repeat_working) {
+        app.step_preview_shown = app.step_and_repeat_preview().is_some();
+    }
 }
 
-fn step_and_repeat_fields(sr: &mut crate::ops2::StepRepeat, u: crate::app::Units, ui: &mut Ui) {
+/// The panel's fields; true when one of them has the keyboard focus.
+fn step_and_repeat_fields(
+    sr: &mut crate::ops2::StepRepeat,
+    u: crate::app::Units,
+    ui: &mut Ui,
+) -> bool {
+    let mut focused = false;
     ui.horizontal(|ui| {
         ui.label(tr("docker.copies"));
-        ui.add(crate::ui::field::NumField::new(&mut sr.copies).range(1..=999))
-            .rich_tip(crate::ui::tips::keyed("docker.sr_copies"));
+        focused |= ui
+            .add(crate::ui::field::NumField::new(&mut sr.copies).range(1..=999))
+            .rich_tip(crate::ui::tips::keyed("docker.sr_copies"))
+            .has_focus();
     });
     ui.strong(tr("docker.horizontal_settings"));
     ui.horizontal(|ui| {
@@ -108,15 +129,15 @@ fn step_and_repeat_fields(sr: &mut crate::ops2::StepRepeat, u: crate::app::Units
             ));
     });
     let mut dx = u.world_from_mm(sr.dx);
-    if ui
+    let r = ui
         .add(
             crate::ui::field::NumField::new(&mut dx)
                 .speed(0.5)
                 .suffix(format!(" {}", u.short())),
         )
-        .rich_tip(crate::ui::tips::keyed("docker.sr_dx"))
-        .changed()
-    {
+        .rich_tip(crate::ui::tips::keyed("docker.sr_dx"));
+    focused |= r.has_focus();
+    if r.changed() {
         sr.dx = u.world_to_mm(dx);
     }
     ui.strong(tr("docker.vertical_settings"));
@@ -133,17 +154,18 @@ fn step_and_repeat_fields(sr: &mut crate::ops2::StepRepeat, u: crate::app::Units
             ));
     });
     let mut dy = u.world_from_mm(sr.dy);
-    if ui
+    let r = ui
         .add(
             crate::ui::field::NumField::new(&mut dy)
                 .speed(0.5)
                 .suffix(format!(" {}", u.short())),
         )
-        .rich_tip(crate::ui::tips::keyed("docker.sr_dy"))
-        .changed()
-    {
+        .rich_tip(crate::ui::tips::keyed("docker.sr_dy"));
+    focused |= r.has_focus();
+    if r.changed() {
         sr.dy = u.world_to_mm(dy);
     }
+    focused
 }
 
 /// A colour style of `c`, named after its place in the list (New color

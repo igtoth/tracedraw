@@ -22,6 +22,14 @@ column of lines, a grid of tiles. Open it with
 4. Do the same under [[docker.vertical_settings]].
 5. Click [[docker.apply]].
 
+While you work in the panel (the pointer is on it, you are typing in one of
+its fields, or your last click was in it) the copies [[docker.apply]] would
+make are outlined on the page, dashed in blue, and follow each value as you
+change it. Nothing is added until you click [[docker.apply]], and one
+[[menu.edit.undo]] takes all the copies away again. A click elsewhere, or
+closing or hiding the panel, takes the outlines away. Very many copies of a
+detailed object are outlined as their boxes.
+
 The copies are added to the active layer and selected. Distances are in the
 drawing units.
 
