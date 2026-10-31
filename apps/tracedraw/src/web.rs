@@ -275,30 +275,68 @@ pub fn register_fonts() {
 /// page). Copy, cut, paste (egui needs those events) and the developer
 /// tools stay with the browser (`web_page::browser_keeps_key`), and so do
 /// the characters typed with AltGr, which Windows browsers report with
-/// Ctrl held (`web_page::typed_with_altgr`, #1408).
+/// Ctrl held (`web_page::typed_with_altgr`, #1408). Alt tapped alone and
+/// Alt shortcuts are kept from the browser too, which would give the
+/// keyboard focus to its menu (`web_page::AltGuard`, #1407).
 fn guard_shortcuts() {
     use wasm_bindgen::closure::Closure;
     let Some(window) = web_sys::window() else {
         return;
     };
-    let guard = Closure::<dyn FnMut(web_sys::KeyboardEvent)>::new(|e: web_sys::KeyboardEvent| {
-        if crate::web_page::guard_keeps_from_browser(
-            &e.key(),
-            e.ctrl_key(),
-            e.meta_key(),
-            e.shift_key(),
-            e.alt_key(),
-            e.get_modifier_state("AltGraph"),
-        ) {
-            e.prevent_default();
-        }
-    });
+    let apple = crate::web_page::apple_platform(
+        &navigator_text(&window, "platform"),
+        &navigator_text(&window, "userAgent"),
+    );
+    let alt = std::rc::Rc::new(std::cell::Cell::new(crate::web_page::AltGuard::default()));
+    let alt_down = alt.clone();
+    let guard =
+        Closure::<dyn FnMut(web_sys::KeyboardEvent)>::new(move |e: web_sys::KeyboardEvent| {
+            let key = e.key();
+            let alt_graph = e.get_modifier_state("AltGraph");
+            let mut a = alt_down.get();
+            let alt_kept = a.key_down(
+                &key,
+                &e.code(),
+                e.ctrl_key(),
+                e.meta_key(),
+                e.alt_key(),
+                alt_graph,
+                apple,
+            );
+            alt_down.set(a);
+            if alt_kept
+                || crate::web_page::guard_keeps_from_browser(
+                    &key,
+                    e.ctrl_key(),
+                    e.meta_key(),
+                    e.shift_key(),
+                    e.alt_key(),
+                    alt_graph,
+                )
+            {
+                e.prevent_default();
+            }
+        });
     let _ = window.add_event_listener_with_callback_and_bool(
         "keydown",
         guard.as_ref().unchecked_ref(),
         true,
     );
     guard.forget();
+    let up = Closure::<dyn FnMut(web_sys::KeyboardEvent)>::new(move |e: web_sys::KeyboardEvent| {
+        let mut a = alt.get();
+        let kept = a.key_up(&e.key(), apple);
+        alt.set(a);
+        if kept {
+            e.prevent_default();
+        }
+    });
+    let _ = window.add_event_listener_with_callback_and_bool(
+        "keyup",
+        up.as_ref().unchecked_ref(),
+        true,
+    );
+    up.forget();
 }
 
 /// A right button pressed while the left one is held: the browser gives
@@ -337,6 +375,16 @@ fn watch_chorded_right_press() {
         true,
     );
     up.forget();
+}
+
+/// A text property of the browser's navigator ("" when missing).
+fn navigator_text(window: &web_sys::Window, key: &str) -> String {
+    let window: &wasm_bindgen::JsValue = window.as_ref();
+    js_sys::Reflect::get(window, &wasm_bindgen::JsValue::from_str("navigator"))
+        .and_then(|n| js_sys::Reflect::get(&n, &wasm_bindgen::JsValue::from_str(key)))
+        .ok()
+        .and_then(|v| v.as_string())
+        .unwrap_or_default()
 }
 
 /// Start the editor on the page's `<canvas id="tracedraw">`.

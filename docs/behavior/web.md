@@ -182,6 +182,19 @@ layer does the same (#1408;
 On Linux and macOS AltGr (Option) never sets Ctrl, and Android keyboards
 report it as the right Alt.
 
+Alt pressed and let go alone does not give the keyboard focus to the
+browser's menu (browsers on Windows and Linux do so otherwise, and the
+editor then gets no keys until the canvas is clicked again), and Alt with
+a letter, a digit or a named key (Alt+F, Alt+Shift+K, Alt+Enter,
+Alt+Left) goes to the editor instead of opening a browser menu or going
+back a page. Alt+drag and Alt+click keep working. Left to the browser and
+the system: AltGr and its characters, the number pad with Alt (Alt+0169
+types ©), dead keys, Alt+Tab, and Option on macOS and iPadOS, which types
+characters there (#1407;
+`web_page::tests::a_lone_alt_never_reaches_the_browser_menu`). The
+desktop apps need none of this: their windows have no system menu bar to
+focus.
+
 ## Building
 
 ```sh

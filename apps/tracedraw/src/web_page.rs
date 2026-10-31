@@ -45,6 +45,100 @@ pub fn guard_keeps_from_browser(
     !browser_keeps_key(key, shift)
 }
 
+/// The Alt key as the page's key guard follows it (#1407). Browsers on
+/// Windows and Linux give the keyboard focus to their own menu when Alt
+/// is pressed and let go alone, and run their own Alt shortcuts (Alt+F
+/// opens a browser menu, Alt+Left goes back a page); from then on the
+/// editor gets no keys until the canvas is clicked again. The guard keeps
+/// both from the browser, while:
+/// - AltGr (key `AltGraph`, or the `AltGraph` modifier state) is never
+///   touched, so its characters are typed (#1408, #1456);
+/// - an Alt tap after another key (Alt+0169 on the number pad types ©
+///   when Alt is let go) is left alone, and so are the number pad keys;
+/// - on Apple systems Option types characters and browsers have no Alt
+///   menu, so nothing is kept there.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct AltGuard {
+    /// Alt went down and no other key followed yet.
+    alone: bool,
+}
+
+impl AltGuard {
+    /// A key pressed: whether the browser must not act on it.
+    #[allow(clippy::too_many_arguments)]
+    pub fn key_down(
+        &mut self,
+        key: &str,
+        code: &str,
+        ctrl: bool,
+        meta: bool,
+        alt: bool,
+        alt_graph: bool,
+        apple: bool,
+    ) -> bool {
+        if key == "Alt" {
+            // Held Alt repeats its key down: still alone.
+            self.alone = !(ctrl || meta || alt_graph);
+            return self.alone && !apple;
+        }
+        self.alone = false;
+        if apple || !alt || ctrl || meta || alt_graph {
+            return false;
+        }
+        alt_shortcut_key(key, code)
+    }
+
+    /// A key let go: whether the browser must not act on it (Alt let go
+    /// alone would focus the browser's menu).
+    pub fn key_up(&mut self, key: &str, apple: bool) -> bool {
+        let alone = std::mem::take(&mut self.alone);
+        key == "Alt" && alone && !apple
+    }
+}
+
+/// Whether Alt with this key is a shortcut, not a typed character: a
+/// letter or digit Alt did not change, or a named key (Enter, arrows,
+/// Home, Delete). Number pad keys stay with the system (Alt codes), and
+/// so do dead keys, Tab (window switching) and the other modifiers.
+fn alt_shortcut_key(key: &str, code: &str) -> bool {
+    if code.starts_with("Numpad") {
+        return false;
+    }
+    let mut chars = key.chars();
+    match (chars.next(), chars.next()) {
+        (Some(c), None) => c.is_ascii_alphanumeric(),
+        (Some(_), Some(_)) => !matches!(
+            key,
+            "Dead"
+                | "Unidentified"
+                | "Process"
+                | "Tab"
+                | "Shift"
+                | "Control"
+                | "Meta"
+                | "AltGraph"
+                | "CapsLock"
+                | "NumLock"
+                | "ScrollLock"
+                | "OS"
+                | "Compose"
+        ),
+        _ => false,
+    }
+}
+
+/// Whether the browser runs on an Apple system (macOS, iPadOS, iOS),
+/// from the navigator's platform and user agent: Option types characters
+/// there and browsers have no Alt menu.
+pub fn apple_platform(platform: &str, user_agent: &str) -> bool {
+    let apple = |s: &str| {
+        ["Mac", "iPhone", "iPad", "iPod"]
+            .iter()
+            .any(|name| s.contains(name))
+    };
+    apple(platform) || (platform.is_empty() && apple(user_agent))
+}
+
 pub fn escape_html(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for c in text.chars() {
@@ -126,6 +220,102 @@ mod tests {
         assert!(!guard_keeps_from_browser(
             "a", false, false, false, false, false
         ));
+    }
+
+    /// #1407: Alt tapped alone is kept from the browser, which would give
+    /// the keyboard focus to its menu; so are Alt shortcuts (Alt+F,
+    /// Alt+Shift+K, Alt+Enter, Alt+Left), while AltGr, Alt codes on the
+    /// number pad and Option on Apple systems are left alone.
+    #[test]
+    fn a_lone_alt_never_reaches_the_browser_menu() {
+        let mut g = AltGuard::default();
+        // Alt down (it repeats while held) and up alone.
+        assert!(g.key_down("Alt", "AltLeft", false, false, true, false, false));
+        assert!(g.key_down("Alt", "AltLeft", false, false, true, false, false));
+        assert!(g.key_up("Alt", false));
+        // Any other key let go is not kept.
+        assert!(!g.key_up("a", false));
+
+        // Alt+F (the editor's File menu, a browser menu otherwise),
+        // Alt+Shift+K, Alt+Enter, Alt+Left, Alt+3: kept; Alt let go after
+        // a shortcut is no tap.
+        let mut g = AltGuard::default();
+        g.key_down("Alt", "AltLeft", false, false, true, false, false);
+        for (k, c) in [
+            ("f", "KeyF"),
+            ("K", "KeyK"),
+            ("Enter", "Enter"),
+            ("ArrowLeft", "ArrowLeft"),
+            ("3", "Digit3"),
+        ] {
+            assert!(g.key_down(k, c, false, false, true, false, false), "{k}");
+        }
+        assert!(!g.key_up("Alt", false));
+
+        // Alt+0169 on the number pad types © when Alt is let go: neither
+        // the digits nor the Alt release are touched.
+        let mut g = AltGuard::default();
+        g.key_down("Alt", "AltLeft", false, false, true, false, false);
+        for d in ["0", "1", "6", "9"] {
+            let code = format!("Numpad{d}");
+            assert!(!g.key_down(d, &code, false, false, true, false, false));
+        }
+        assert!(!g.key_up("Alt", false));
+
+        // AltGr on Windows: Control, then AltGraph with Ctrl and Alt held;
+        // its characters and its release are left to the browser (#1408).
+        let mut g = AltGuard::default();
+        assert!(!g.key_down("Control", "ControlLeft", true, false, false, false, false));
+        assert!(!g.key_down("AltGraph", "AltRight", true, false, true, true, false));
+        assert!(!g.key_down("€", "KeyE", true, false, true, true, false));
+        assert!(!g.key_up("AltGraph", false));
+        // AltGr as Linux reports it: the AltGraph state without Alt.
+        let mut g = AltGuard::default();
+        assert!(!g.key_down("AltGraph", "AltRight", false, false, false, true, false));
+        assert!(!g.key_down("@", "KeyQ", false, false, false, true, false));
+        assert!(!g.key_up("AltGraph", false));
+        // Ctrl+Alt with Alt pressed last is no tap.
+        let mut g = AltGuard::default();
+        assert!(!g.key_down("Alt", "AltLeft", true, false, true, false, false));
+        assert!(!g.key_up("Alt", false));
+
+        // Characters typed with Alt (an Android keyboard's Alt layer),
+        // dead keys and window switching are left alone.
+        let mut g = AltGuard::default();
+        for (k, c) in [
+            ("ą", "KeyA"),
+            ("@", "KeyQ"),
+            ("Dead", "KeyE"),
+            ("Tab", "Tab"),
+        ] {
+            assert!(!g.key_down(k, c, false, false, true, false, false), "{k}");
+        }
+
+        // Option on Apple systems types characters: nothing is kept.
+        let mut g = AltGuard::default();
+        assert!(!g.key_down("Alt", "AltLeft", false, false, true, false, true));
+        assert!(!g.key_up("Alt", true));
+        assert!(!g.key_down("f", "KeyF", false, false, true, false, true));
+
+        assert!(apple_platform("MacIntel", ""));
+        assert!(apple_platform("iPad", ""));
+        assert!(apple_platform(
+            "",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0)"
+        ));
+        assert!(!apple_platform("Win32", "Mozilla/5.0 (Windows NT 10.0)"));
+        assert!(!apple_platform(
+            "Linux x86_64",
+            "Mozilla/5.0 (X11; Linux x86_64)"
+        ));
+    }
+
+    /// The page's key guard also listens to key releases (#1407).
+    #[test]
+    fn the_key_guard_watches_alt_releases() {
+        let web = include_str!("web.rs");
+        assert!(web.contains("\"keyup\""));
+        assert!(web.contains("AltGuard"));
     }
 
     #[test]
