@@ -1247,9 +1247,55 @@ impl App {
                 return;
             }
         }
-        // Add a node in the middle of the segment ending at each selected node.
-        self.for_each_selected_node("Add Nodes", |p, i| nodes::add_node(p, i, 0.5));
-        self.node_selection.clear();
+        // Add a node in the middle of the segment ending at each selected
+        // node. The nodes stay chosen with the new ones, so the next press
+        // halves every one of those segments again (#1326).
+        let mut by_shape: std::collections::BTreeMap<ShapeId, Vec<usize>> = Default::default();
+        for (id, i) in self.node_selection.clone() {
+            by_shape.entry(id).or_default().push(i);
+        }
+        let mut cmds = Vec::new();
+        let mut chosen = Vec::new();
+        for (id, mut idxs) in by_shape {
+            let Some((mut path, closed, _)) = self.path_of(id) else {
+                chosen.extend(idxs.into_iter().map(|i| (id, i)));
+                continue;
+            };
+            path = nodes::normalize(&path);
+            idxs.sort_unstable();
+            idxs.dedup();
+            // The segments ending at the nodes (the closing one for the
+            // start of a closed curve), the last first: a node added moves
+            // those after it on.
+            let mut segments: Vec<usize> = idxs
+                .iter()
+                .filter_map(|i| nodes::segment_into(&path, *i))
+                .collect();
+            segments.sort_unstable_by(|a, b| b.cmp(a));
+            segments.dedup();
+            let mut picked = idxs;
+            for k in segments {
+                let before = path.elements().len();
+                path = nodes::add_node(&path, k, 0.5);
+                if path.elements().len() == before + 1 {
+                    for p in picked.iter_mut().filter(|p| **p >= k) {
+                        *p += 1;
+                    }
+                    // The new node takes the segment's place.
+                    picked.push(k);
+                }
+            }
+            picked.sort_unstable();
+            chosen.extend(picked.into_iter().map(|i| (id, i)));
+            cmds.push(Command::SetShapeKind {
+                shape: id,
+                kind: ShapeKind::Path { path, closed },
+            });
+        }
+        if !cmds.is_empty() {
+            let _ = self.engine.run_batch("Add Nodes", &cmds);
+        }
+        self.node_selection = chosen;
     }
 
     /// Make the chosen nodes `ty`: their handles are aligned (and of equal

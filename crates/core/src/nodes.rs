@@ -56,6 +56,30 @@ fn closing_twins(els: &[PathEl]) -> Vec<(usize, usize)> {
     out
 }
 
+/// The element whose segment ends at node `index`: the node's own, or for
+/// the start of a closed subpath its closing segment (the last segment
+/// back on the start, else the closing line). `None` for the start of an
+/// open subpath, which no segment reaches, and for an index that is no
+/// node.
+pub fn segment_into(path: &BezPath, index: usize) -> Option<usize> {
+    let els = path.elements();
+    match els.get(index)? {
+        PathEl::MoveTo(_) => {
+            if let Some(last) = twin_of(els, index) {
+                return Some(last);
+            }
+            els.iter()
+                .enumerate()
+                .skip(index + 1)
+                .take_while(|(_, e)| !matches!(e, PathEl::MoveTo(_)))
+                .find(|(_, e)| matches!(e, PathEl::ClosePath))
+                .map(|(j, _)| j)
+        }
+        PathEl::ClosePath => None,
+        _ => Some(index),
+    }
+}
+
 /// The closing twin of the node at `index`: the last segment for a start,
 /// or the start for that last segment.
 fn twin_of(els: &[PathEl], index: usize) -> Option<usize> {
@@ -3108,5 +3132,25 @@ mod segment_tests {
         assert!(matches!(t.elements()[1], PathEl::CurveTo(..)));
         assert!(matches!(t.elements()[3], PathEl::ClosePath));
         assert_eq!(t.elements().len(), p.elements().len());
+    }
+
+    /// The segment ending at each node: its own, the closing one for the
+    /// start of a closed curve, none for the start of an open one (#1326).
+    #[test]
+    fn the_segment_into_a_node() {
+        let mut open = BezPath::new();
+        open.move_to((0.0, 0.0));
+        open.line_to((10.0, 0.0));
+        open.line_to((10.0, 10.0));
+        assert_eq!(segment_into(&open, 0), None);
+        assert_eq!(segment_into(&open, 2), Some(2));
+        assert_eq!(segment_into(&open, 7), None);
+        let mut closed = open.clone();
+        closed.close_path();
+        assert_eq!(segment_into(&closed, 0), Some(3), "the closing line");
+        let mut twin = open.clone();
+        twin.line_to((0.0, 0.0));
+        twin.close_path();
+        assert_eq!(segment_into(&twin, 0), Some(3), "the last segment");
     }
 }

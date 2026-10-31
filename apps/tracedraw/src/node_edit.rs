@@ -48,6 +48,15 @@ pub struct StartCurve {
     pub indices: Vec<usize>,
 }
 
+/// What the Curve smoothness slider's last change left: the drawing's
+/// revision and the objects and nodes chosen (#1326).
+#[derive(Debug, Clone, PartialEq)]
+pub struct SmoothingMark {
+    pub revision: u64,
+    pub selection: Vec<ShapeId>,
+    pub nodes: Vec<(ShapeId, usize)>,
+}
+
 /// Is `p` inside the polygon `poly` (even-odd)?
 pub fn in_polygon(poly: &[Point], p: Point) -> bool {
     let mut inside = false;
@@ -675,6 +684,43 @@ impl App {
         }
     }
 
+    /// The Curve smoothness slider set to `amount` (0 to 100), dragged,
+    /// typed or stepped with the wheel or the arrows: the curves as they
+    /// were at its first change lose nodes for that amount, all its
+    /// changes one undo step. The slider keeps the value, so a typed value
+    /// or a step goes on from it rather than from 0 (#1326).
+    pub fn set_curve_smoothness(&mut self, amount: f64) {
+        self.forget_smoothing_if_stale();
+        let first = self.smoothing.is_none();
+        if first {
+            self.smoothing = Some(self.smoothing_curves());
+        }
+        self.curve_smoothness = amount;
+        let start = self.smoothing.clone().unwrap_or_default();
+        self.smooth_curves(&start, amount, !first);
+        self.smoothing_mark = Some(SmoothingMark {
+            revision: self.engine.revision(),
+            selection: self.selection.clone(),
+            nodes: self.node_selection.clone(),
+        });
+    }
+
+    /// The slider starts again at 0, from the curves as they are, once
+    /// anything else happened since its last change: an undo, a node
+    /// moved or added, other objects or nodes chosen (#1326).
+    pub fn forget_smoothing_if_stale(&mut self) {
+        let fresh = self.smoothing_mark.as_ref().is_some_and(|m| {
+            m.revision == self.engine.revision()
+                && m.selection == self.selection
+                && m.nodes == self.node_selection
+        });
+        if !fresh {
+            self.smoothing = None;
+            self.smoothing_mark = None;
+            self.curve_smoothness = 0.0;
+        }
+    }
+
     /// The curves the smoothness slider works on: the curves with
     /// selected nodes, else every selected curve (all its nodes).
     pub fn smoothing_curves(&self) -> Vec<StartCurve> {
@@ -884,5 +930,111 @@ mod tests {
         app.extend_curve_to_close();
         let s = app.doc().find_shape(id).cloned().unwrap();
         assert!(matches!(s.kind, ShapeKind::Path { closed: true, .. }));
+    }
+
+    /// A wavy open curve of many nodes, selected in the Shape tool.
+    fn app_with_wave() -> (App, ShapeId) {
+        let mut app = App::headless();
+        let mut p = BezPath::new();
+        p.move_to((0.0, 0.0));
+        for i in 1..=60 {
+            let x = i as f64;
+            p.line_to((x, (x * 0.7).sin() * 3.0 + (x * 0.13).sin() * 6.0));
+        }
+        let id = app
+            .new_shape(ShapeKind::Path {
+                path: p,
+                closed: false,
+            })
+            .expect("wave");
+        app.select(vec![id]);
+        app.tool = crate::tools::Tool::Shape;
+        (app, id)
+    }
+
+    fn node_count(app: &App, id: ShapeId) -> usize {
+        let s = app.doc().find_shape(id).cloned().expect("curve");
+        nodes::nodes(&s.local_path()).len()
+    }
+
+    /// The Curve smoothness slider keeps a typed value or a wheel step:
+    /// the next one works from the curve as it was at the first change,
+    /// not from 0 on the reduced curve, all of it one undo step; anything
+    /// else done since starts it again at 0 (#1326).
+    #[test]
+    fn the_smoothness_slider_keeps_its_value_between_changes() {
+        let (mut app, id) = app_with_wave();
+        let start = app.doc().find_shape(id).cloned().expect("curve");
+        let original = start.local_path();
+        let before = app.engine.history_labels().0.len();
+        // Typed 40, then the frames after it.
+        app.set_curve_smoothness(40.0);
+        app.forget_smoothing_if_stale();
+        app.forget_smoothing_if_stale();
+        assert_eq!(app.curve_smoothness, 40.0, "kept");
+        let at_40 = node_count(&app, id);
+        assert!(at_40 < nodes::nodes(&original).len());
+        // A wheel step to 41: from the first curve, as 41 from the start.
+        app.set_curve_smoothness(41.0);
+        app.forget_smoothing_if_stale();
+        assert_eq!(app.curve_smoothness, 41.0);
+        let b = original.bounding_box();
+        let size = b.width().max(b.height());
+        let tol = |v: f64| (v / 100.0).powi(2) * size * 0.1;
+        let expect = nodes::reduce_nodes(&original, tol(41.0));
+        let now = app.doc().find_shape(id).cloned().expect("curve");
+        assert_eq!(now.local_path(), expect);
+        // Back down to 0: every node again.
+        app.set_curve_smoothness(0.0);
+        assert_eq!(node_count(&app, id), nodes::nodes(&original).len());
+        app.set_curve_smoothness(40.0);
+        assert_eq!(node_count(&app, id), at_40);
+        // One undo step for all of it.
+        assert_eq!(app.engine.history_labels().0.len(), before + 1);
+        // Undone: the slider is at 0 again, over the curve undone to.
+        app.undo();
+        app.forget_smoothing_if_stale();
+        assert_eq!(app.curve_smoothness, 0.0);
+        assert_eq!(node_count(&app, id), nodes::nodes(&original).len());
+        // Other nodes chosen: 0 again.
+        app.set_curve_smoothness(30.0);
+        app.node_selection = vec![(id, 3)];
+        app.forget_smoothing_if_stale();
+        assert_eq!(app.curve_smoothness, 0.0);
+    }
+
+    /// Add Nodes keeps the nodes chosen, with the new ones, so each press
+    /// doubles the segments again; on a closed curve the closing segment
+    /// gets its node too (#1326).
+    #[test]
+    fn add_nodes_again_keeps_doubling() {
+        let (mut app, id) = app_with_square();
+        assert_eq!(node_count(&app, id), 4);
+        app.select_all_nodes();
+        app.add_node_midpoints();
+        assert_eq!(node_count(&app, id), 8);
+        assert_eq!(app.node_selection.len(), 8, "{:?}", app.node_selection);
+        app.add_node_midpoints();
+        assert_eq!(node_count(&app, id), 16);
+        assert_eq!(app.node_selection.len(), 16);
+        // Every chosen one is a node of the curve.
+        let s = app.doc().find_shape(id).cloned().expect("curve");
+        let all: Vec<usize> = nodes::nodes(&s.local_path())
+            .iter()
+            .map(|n| n.index)
+            .collect();
+        assert!(app.node_selection.iter().all(|(_, i)| all.contains(i)));
+        // The square's corners stay where they were.
+        let b = s.local_path().bounding_box();
+        assert!((b.width() - 10.0).abs() < 1e-9 && (b.height() - 10.0).abs() < 1e-9);
+        // An open curve: two nodes, one segment, then three nodes.
+        let (mut app, id) = app_with_wave();
+        app.node_selection = vec![(id, 0), (id, 1)];
+        app.add_node_midpoints();
+        assert_eq!(node_count(&app, id), 62);
+        assert_eq!(app.node_selection, vec![(id, 0), (id, 1), (id, 2)]);
+        app.add_node_midpoints();
+        assert_eq!(node_count(&app, id), 64);
+        assert_eq!(app.node_selection.len(), 5);
     }
 }

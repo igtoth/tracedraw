@@ -1756,6 +1756,10 @@ pub struct App {
     /// Shape tool: the Curve smoothness slider and the curves it started from.
     pub curve_smoothness: f64,
     pub smoothing: Option<Vec<crate::node_edit::StartCurve>>,
+    /// What was chosen and the drawing's revision right after the slider's
+    /// last change: while they hold, the slider keeps its value and works
+    /// on the same start curves (#1326).
+    pub smoothing_mark: Option<crate::node_edit::SmoothingMark>,
     /// Last clicked effect/mesh node (palette clicks colour a mesh node).
     pub selected_effect_node: Option<(ShapeId, usize)>,
     /// Open drawings, one tab each (see `documents.rs`); the active one's
@@ -2798,6 +2802,7 @@ impl App {
             coord_drag: None,
             curve_smoothness: 0.0,
             smoothing: None,
+            smoothing_mark: None,
             selected_effect_node: None,
             docs: Vec::new(),
             active_doc: 0,
