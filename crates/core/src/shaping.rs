@@ -67,8 +67,29 @@ fn from_shapes(shapes: Vec<Vec<Vec<[f64; 2]>>>) -> BezPath {
     path
 }
 
-/// Combine `subject` and `clip` (both in the same coordinate space).
+/// How the overlapping contours of an input fill.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FillRule {
+    /// A place inside an odd number of contours is filled (how curves
+    /// fill): overlapping contours make holes.
+    #[default]
+    EvenOdd,
+    /// A place the contours wind round is filled (how text fills):
+    /// overlapping contours turning the same way stay filled.
+    NonZero,
+}
+
+/// Combine `subject` and `clip` (both in the same coordinate space), each
+/// read with the even-odd rule.
 pub fn overlay(subject: &BezPath, clip: &BezPath, op: Op) -> BezPath {
+    overlay_with(subject, clip, op, FillRule::EvenOdd)
+}
+
+/// Combine `subject` and `clip` like [`overlay`], each read with `fill`:
+/// with [`FillRule::NonZero`] outlines meant for the nonzero rule (text,
+/// glyphs drawn as overlapping strokes, traced logos) need no clean-up
+/// first. The result covers the same area under the even-odd rule.
+pub fn overlay_with(subject: &BezPath, clip: &BezPath, op: Op, fill: FillRule) -> BezPath {
     let subj = contours(subject);
     let clp = contours(clip);
     let rule = match op {
@@ -77,7 +98,11 @@ pub fn overlay(subject: &BezPath, clip: &BezPath, op: Op) -> BezPath {
         Op::Trim => OverlayRule::Difference,
         Op::Exclude => OverlayRule::Xor,
     };
-    let result = subj.overlay(&clp, rule, IFill::EvenOdd);
+    let fill = match fill {
+        FillRule::EvenOdd => IFill::EvenOdd,
+        FillRule::NonZero => IFill::NonZero,
+    };
+    let result = subj.overlay(&clp, rule, fill);
     recover_curves(&from_shapes(result), &[subject, clip])
 }
 
@@ -3104,6 +3129,49 @@ mod tests {
                 _ => false,
             })
             .count()
+    }
+
+    /// Two squares overlapping in one path, both turning the same way, as
+    /// the strokes of a glyph: even-odd leaves their overlap out, nonzero
+    /// keeps it; `overlay` stays even-odd.
+    #[test]
+    fn overlay_reads_its_inputs_with_the_fill_rule_given() {
+        use kurbo::Shape as _;
+        let rect =
+            |x0: f64, y0: f64, x1: f64, y1: f64| kurbo::Rect::new(x0, y0, x1, y1).to_path(0.01);
+        // 20 x 10 and 10 x 20 crossing in a 10 x 10 square.
+        let mut cross = rect(0.0, 5.0, 20.0, 15.0);
+        cross.extend(rect(5.0, 0.0, 15.0, 20.0));
+        let far = rect(100.0, 100.0, 101.0, 101.0);
+        let middle = rect(5.0, 5.0, 15.0, 15.0);
+        let area = |p: &BezPath| p.area().abs();
+        // Weld with a far square: the cross itself, plus 1.
+        let even = overlay_with(&cross, &far, Op::Weld, FillRule::EvenOdd);
+        let nonzero = overlay_with(&cross, &far, Op::Weld, FillRule::NonZero);
+        assert!(
+            (area(&even) - (400.0 - 200.0 + 1.0)).abs() < 1e-6,
+            "{}",
+            area(&even)
+        );
+        assert!(
+            (area(&nonzero) - (300.0 + 1.0)).abs() < 1e-6,
+            "{}",
+            area(&nonzero)
+        );
+        assert_eq!(overlay(&cross, &far, Op::Weld), even);
+        // Intersect with the middle square: nothing, or all of it.
+        let even = overlay_with(&cross, &middle, Op::Intersect, FillRule::EvenOdd);
+        let nonzero = overlay_with(&cross, &middle, Op::Intersect, FillRule::NonZero);
+        assert!(area(&even) < 1e-6, "{even:?}");
+        assert!((area(&nonzero) - 100.0).abs() < 1e-6, "{nonzero:?}");
+        // A hole turning the other way stays a hole under both rules.
+        let mut ring = rect(0.0, 0.0, 30.0, 30.0);
+        let hole = rect(10.0, 10.0, 20.0, 20.0);
+        ring.extend(crate::nodes::reverse(&hole).elements().iter().copied());
+        for fill in [FillRule::EvenOdd, FillRule::NonZero] {
+            let w = overlay_with(&ring, &far, Op::Weld, fill);
+            assert!((area(&w) - (900.0 - 100.0 + 1.0)).abs() < 1e-6, "{fill:?}");
+        }
     }
 
     /// Welding two circles keeps their arcs: the result is a few curve

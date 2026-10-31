@@ -107,6 +107,19 @@ attributes, none, and showed only in Wireframe (#539,
 - The button under them, named after the operation, applies it; it is
   pale until enough objects are selected, and a line says how many.
 
+## Fill rule
+
+`shaping::overlay` reads both inputs with the even-odd rule, how curves
+fill: contours of one object that overlap make holes there.
+`shaping::overlay_with` takes the rule (`FillRule::EvenOdd` or
+`FillRule::NonZero`) for outlines meant for the nonzero rule, how text
+fills (glyphs drawn as overlapping strokes, traced logos), so they need no
+clean-up first; a contour turning the other way is a hole under both
+rules. The result covers the same area under the even-odd rule
+(`shaping::tests::overlay_reads_its_inputs_with_the_fill_rule_given`).
+`shaping::nonzero_as_even_odd` turns one such outline into an even-odd one
+on its own.
+
 ## Checks
 
 - `ui::shaping_docker::tests::what_the_operations_leave_of_the_originals`
