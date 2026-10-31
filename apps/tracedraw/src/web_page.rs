@@ -161,9 +161,32 @@ pub fn escape_html(text: &str) -> String {
     out
 }
 
+/// A CSS length in pixels as `getComputedStyle` gives it ("16px",
+/// "20.5px"); `None` for anything else or a size that is not positive.
+pub fn css_px(value: &str) -> Option<f32> {
+    value
+        .trim()
+        .strip_suffix("px")?
+        .trim()
+        .parse::<f32>()
+        .ok()
+        .filter(|v| v.is_finite() && *v > 0.0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The page's default font size (the browser's font size setting,
+    /// #1412) is read from its computed style.
+    #[test]
+    fn the_browser_font_size_is_read_in_pixels() {
+        assert_eq!(css_px("16px"), Some(16.0));
+        assert_eq!(css_px(" 20.5px "), Some(20.5));
+        assert_eq!(css_px("1em"), None);
+        assert_eq!(css_px("0px"), None);
+        assert_eq!(css_px(""), None);
+    }
 
     const PAGE: &str = include_str!("../../../web/index.html");
     const MANIFEST: &str = include_str!("../../../web/manifest.webmanifest");

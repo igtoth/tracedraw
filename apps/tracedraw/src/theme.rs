@@ -113,60 +113,85 @@ pub fn link_color() -> Color32 {
     }
 }
 
-static CONTRAST: std::sync::OnceLock<Palette> = std::sync::OnceLock::new();
+/// The high contrast palettes made so far, by the colours they were made
+/// from: the system's colours can change while the editor runs (#1412),
+/// and each set is made once (there are few).
+static CONTRAST: std::sync::Mutex<Vec<(crate::system_prefs::ContrastColors, &'static Palette)>> =
+    std::sync::Mutex::new(Vec::new());
 
 /// The high contrast theme's palette, made from [`contrast_colors`].
 fn contrast_palette() -> &'static Palette {
-    CONTRAST.get_or_init(|| {
-        let c = contrast_colors();
-        let col = |v: [u8; 3]| Color32::from_rgb(v[0], v[1], v[2]);
-        let (win, text, hi, face, btn_text, gray, hot) = (
-            col(c.window),
-            col(c.window_text),
-            col(c.highlight),
-            col(c.button_face),
-            col(c.button_text),
-            col(c.gray_text),
-            col(c.hot_light),
-        );
-        Palette {
-            panel: face,
-            menu_bar: face,
-            panel_dark: win,
-            border: text,
-            icon_off: gray,
-            text: btn_text,
-            text_dim: gray,
-            page_shadow: gray,
-            page_border: text,
-            ruler_bg: face,
-            tool_active: hi,
-            tool_hover: hi.gamma_multiply(0.6),
-            icon: btn_text,
-            button: face,
-            control_border: text,
-            slider_rail: gray,
-            field: win,
-            menu: win,
-            menu_gutter: win,
-            menu_hover: hi,
-            menu_hover_line: hi,
-            menu_text_off: gray,
-            title_bar: hi,
-            window_border: hi,
-            selected_row: hi,
-            hovered_row: hi.gamma_multiply(0.5),
-            selected_row_line: hot,
-            control_fill: win,
-            tab_strip: face,
-            tab: face,
-            tab_active: win,
-            ruler_tick: text,
-            ruler_label: text,
-            ruler_marker: hot,
-            desktop: win,
-        }
-    })
+    let c = contrast_colors();
+    let mut made = CONTRAST.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((_, p)) = made.iter().find(|(k, _)| *k == c) {
+        return p;
+    }
+    let p: &'static Palette = Box::leak(Box::new(contrast_palette_of(c)));
+    made.push((c, p));
+    p
+}
+
+/// The colours of the high contrast palette seen last, so that the
+/// interface's look is set again when the system's change.
+static CONTRAST_SEEN: std::sync::Mutex<Option<crate::system_prefs::ContrastColors>> =
+    std::sync::Mutex::new(None);
+
+/// Whether the high contrast colours changed since the last call.
+pub fn contrast_changed() -> bool {
+    let c = contrast_colors();
+    let mut seen = CONTRAST_SEEN.lock().unwrap_or_else(|e| e.into_inner());
+    seen.replace(c).is_some_and(|before| before != c)
+}
+
+/// The high contrast palette of the colours `c`.
+fn contrast_palette_of(c: crate::system_prefs::ContrastColors) -> Palette {
+    let col = |v: [u8; 3]| Color32::from_rgb(v[0], v[1], v[2]);
+    let (win, text, hi, face, btn_text, gray, hot) = (
+        col(c.window),
+        col(c.window_text),
+        col(c.highlight),
+        col(c.button_face),
+        col(c.button_text),
+        col(c.gray_text),
+        col(c.hot_light),
+    );
+    Palette {
+        panel: face,
+        menu_bar: face,
+        panel_dark: win,
+        border: text,
+        icon_off: gray,
+        text: btn_text,
+        text_dim: gray,
+        page_shadow: gray,
+        page_border: text,
+        ruler_bg: face,
+        tool_active: hi,
+        tool_hover: hi.gamma_multiply(0.6),
+        icon: btn_text,
+        button: face,
+        control_border: text,
+        slider_rail: gray,
+        field: win,
+        menu: win,
+        menu_gutter: win,
+        menu_hover: hi,
+        menu_hover_line: hi,
+        menu_text_off: gray,
+        title_bar: hi,
+        window_border: hi,
+        selected_row: hi,
+        hovered_row: hi.gamma_multiply(0.5),
+        selected_row_line: hot,
+        control_fill: win,
+        tab_strip: face,
+        tab: face,
+        tab_active: win,
+        ruler_tick: text,
+        ruler_label: text,
+        ruler_marker: hot,
+        desktop: win,
+    }
 }
 
 /// The status bar's light / dark button: a light theme goes to Dark, a

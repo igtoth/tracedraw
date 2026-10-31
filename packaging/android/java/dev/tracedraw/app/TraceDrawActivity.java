@@ -659,6 +659,39 @@ public class TraceDrawActivity extends NativeActivity {
         return done != null && done.booleanValue();
     }
 
+    // ----- accessibility settings (#1412) -------------------------------------
+
+    /**
+     * The system's settings the interface follows, as "font-scale contrast
+     * dark": the font scale (Settings > Display > Font size), 1 when the
+     * contrast is raised (Android 14's contrast setting at medium or high,
+     * or high contrast text) else 0, and 1 when the system shows dark
+     * windows else 0. Read by the editor every few seconds; a font scale
+     * change reaches the activity without restarting it (configChanges).
+     */
+    public String getAccessibility() {
+        android.content.res.Configuration config = getResources().getConfiguration();
+        int night = config.uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK;
+        boolean dark = night == android.content.res.Configuration.UI_MODE_NIGHT_YES;
+        boolean contrast = false;
+        if (android.os.Build.VERSION.SDK_INT >= 34) {
+            try {
+                android.app.UiModeManager modes =
+                    (android.app.UiModeManager) getSystemService(Context.UI_MODE_SERVICE);
+                contrast = modes != null && modes.getContrast() >= 0.5f;
+            } catch (Exception e) {
+                // No contrast setting to read.
+            }
+        }
+        try {
+            contrast = contrast
+                || android.provider.Settings.Secure.getInt(getContentResolver(), "high_text_contrast_enabled", 0) == 1;
+        } catch (Exception e) {
+            // The setting is closed to apps on this system.
+        }
+        return config.fontScale + " " + (contrast ? "1" : "0") + " " + (dark ? "1" : "0");
+    }
+
     /**
      * Run `task` on the UI thread and wait for its result (two seconds at
      * most); `fallback` when it fails or takes longer. The caller is the

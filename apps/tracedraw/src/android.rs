@@ -748,3 +748,29 @@ pub mod ending {
         }
     }
 }
+
+/// The system's accessibility settings the interface follows (#1412):
+/// the font scale and the contrast setting, through the activity.
+pub mod accessibility {
+    use super::*;
+    use jni::objects::JString;
+    use jni::{jni_sig, jni_str};
+
+    /// The activity's answer, "font-scale contrast dark" (such as
+    /// "1.3 1 0"), which `system_prefs::parse_android` reads.
+    pub fn read() -> Option<String> {
+        with_activity("accessibility settings", |env, activity| {
+            let result = env
+                .call_method(
+                    activity,
+                    jni_str!("getAccessibility"),
+                    jni_sig!("()Ljava/lang/String;"),
+                    &[],
+                )?
+                .l()?;
+            let s: JString = env.cast_local::<JString>(result)?;
+            Ok(string_of(env, &s))
+        })
+        .flatten()
+    }
+}

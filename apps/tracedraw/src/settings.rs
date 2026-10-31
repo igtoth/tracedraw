@@ -1916,6 +1916,8 @@ mod tests {
         let big = SystemPrefs {
             text_scale: 1.5,
             high_contrast: Some(ContrastColors::BLACK),
+            text_scale_known: true,
+            contrast_known: true,
         };
         assert!((effective_ui_size_with(&s, big) - 1.5).abs() < 1e-6);
         assert_eq!(effective_theme_with(&s, big), "high_contrast");

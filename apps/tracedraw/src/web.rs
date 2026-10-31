@@ -40,6 +40,54 @@ pub fn request_repaint() {
     });
 }
 
+/// Run `f` every `ms` milliseconds for as long as the page is open.
+pub fn every(ms: i32, f: impl FnMut() + 'static) {
+    use wasm_bindgen::closure::Closure;
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let tick = Closure::<dyn FnMut()>::new(f);
+    let _ = window
+        .set_interval_with_callback_and_timeout_and_arguments_0(tick.as_ref().unchecked_ref(), ms);
+    tick.forget();
+}
+
+/// The browser's accessibility settings the interface follows (#1412).
+pub struct Accessibility {
+    /// The page's default font size in CSS pixels (16 unless the
+    /// browser's font size setting changed it).
+    pub font_px: Option<f32>,
+    /// `prefers-contrast: more` or `forced-colors: active`.
+    pub contrast: bool,
+    /// `prefers-color-scheme: dark`.
+    pub dark: bool,
+}
+
+/// Read [`Accessibility`] from the page.
+pub fn accessibility() -> Accessibility {
+    let window = web_sys::window();
+    let matches = |query: &str| {
+        window
+            .as_ref()
+            .and_then(|w| w.match_media(query).ok().flatten())
+            .is_some_and(|m| m.matches())
+    };
+    let font_px = window.as_ref().and_then(|w| {
+        let root = w.document()?.document_element()?;
+        let size = w
+            .get_computed_style(&root)
+            .ok()??
+            .get_property_value("font-size")
+            .ok()?;
+        crate::web_page::css_px(&size)
+    });
+    Accessibility {
+        font_px,
+        contrast: matches("(prefers-contrast: more)") || matches("(forced-colors: active)"),
+        dark: matches("(prefers-color-scheme: dark)"),
+    }
+}
+
 /// Open a link in a new browser tab.
 pub fn open_url(url: &str) {
     if let Some(w) = web_sys::window() {

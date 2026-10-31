@@ -318,24 +318,44 @@ High Contrast theme keeps one icon colour.
 
 ## Desktop accessibility settings
 
-Read once at start-up (`system_prefs.rs`, with the `reg` tool on
-Windows; elsewhere nothing is read and the defaults apply):
+The system's text size and contrast setting, followed on every platform
+(#1412, `system_prefs.rs`). A background thread reads them at start
+(the first frame waits for that reading 0.3 s at most) and again every
+3 s; in the browser a page timer does. A frame only takes the last
+reading, and a change asks for a frame, so the interface follows the
+system within seconds and no frame waits for the system:
 
-- Text size (Windows Settings > Accessibility > Text size, the
-  `TextScaleFactor` value, 100 to 225 %): with "Grow with the desktop
-  text size" (Appearance, on by default) the interface size is
-  multiplied by it, up to 400 %. The option shows the size read.
-- High contrast (the `Flags` value of the HighContrast key, bit 1):
-  with "Use high contrast while the desktop has a high contrast theme
-  on" (on by default) the High Contrast theme is used whatever theme is
-  picked. Its colours are the desktop's (`Control Panel\Colors`:
-  Window, WindowText, Hilight, HilightText, ButtonFace, ButtonText,
-  GrayText, HotTrackingColor): panels in the button face colour, fields
-  and menus in the window colour, text in the button text colour,
-  disabled text in the grey text colour, hovered and picked rows in the
-  highlight colour with the highlight text colour on them, links and
-  focus frames in the hot-track colour. Picked by hand, or when a colour
-  cannot be read, the classic black theme's colours are used.
+| Platform | Text size | High contrast |
+|---|---|---|
+| Windows | Settings > Accessibility > Text size (`TextScaleFactor`, 100 to 225 %, read with `reg`) | the high contrast themes (`Flags` of the HighContrast key, bit 1), with their colours |
+| macOS | none: macOS has no system text size for programs of this kind, so the option is greyed and its tip says to use Interface size | Accessibility > Display > Increase contrast, asked of AppKit (`NSWorkspace.accessibilityDisplayShouldIncreaseContrast`) through `osascript`, with the dark or light appearance choosing the colours |
+| Linux, GNOME and its relatives | `gsettings get org.gnome.desktop.interface text-scaling-factor` | the desktop portal's `org.freedesktop.appearance contrast` (read through `gdbus`, 1 s at most), else `org.gnome.desktop.a11y.interface high-contrast` or a `HighContrast` theme |
+| Linux, KDE | `forceFontDPI` of `kcmfonts` over 96, else the general font's size in `kdeglobals` over 10 points | the portal's contrast, else a high contrast colour scheme in `kdeglobals` |
+| Android | Settings > Display > Font size (the configuration's font scale; a change reaches the running app) | Android 14's contrast setting at medium or high, or high contrast text |
+| Browser | the page's default font size (the browser's font size setting) over 16 px | `prefers-contrast: more` or `forced-colors: active` |
+
+- Text size: with "Grow with the desktop text size" (Appearance, on by
+  default) the interface size is multiplied by it (1 to 2.25, smaller
+  sizes count as 1), up to 400 %. The option shows the size read; where
+  none can be read it is greyed and its tip says why.
+- High contrast: with "Use high contrast while the desktop has a high
+  contrast theme on" (on by default) the High Contrast theme is used
+  whatever theme is picked; greyed with the reason where the setting
+  cannot be read. On Windows its colours are the desktop's
+  (`Control Panel\Colors`: Window, WindowText, Hilight, HilightText,
+  ButtonFace, ButtonText, GrayText, HotTrackingColor): panels in the
+  button face colour, fields and menus in the window colour, text in the
+  button text colour, disabled text in the grey text colour, hovered and
+  picked rows in the highlight colour with the highlight text colour on
+  them, links and focus frames in the hot-track colour. Elsewhere,
+  where the system names no colours, a system with dark windows gets
+  the classic black theme's colours and one with light windows the white
+  theme's (black text on white, a purple highlight, dark blue links).
+  Picked by hand, or when a colour cannot be read, the classic black
+  theme's colours are used. When the colours change while the editor
+  runs, the interface takes them at once.
+- Tests read nothing from the system running them
+  (`system_prefs::tests`: the recorded outputs of each platform).
 
 ## Where the preferences are kept
 

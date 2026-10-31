@@ -487,6 +487,8 @@ impl Shell {
     /// the desktop as soon as the system font list is in (see
     /// `deferred`).
     fn new(cc: &eframe::CreationContext<'_>, open: Option<std::path::PathBuf>) -> Self {
+        // The system's text size and contrast, followed from now on (#1412).
+        system_prefs::watch(&cc.egui_ctx);
         #[cfg(target_arch = "wasm32")]
         theme::install_fonts(&cc.egui_ctx);
         #[cfg(not(target_arch = "wasm32"))]

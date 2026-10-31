@@ -368,6 +368,33 @@ mod tests {
         assert!(!SHARED_FILES.contains('\u{2014}'));
     }
 
+    /// The system's font scale and contrast (#1412): the activity answers
+    /// them as the bridge reads them, a font scale change reaches the
+    /// running activity, and the settings reader parses the answer.
+    #[test]
+    fn the_font_scale_and_contrast_reach_the_editor() {
+        assert!(ACTIVITY.contains("public String getAccessibility()"));
+        assert!(BRIDGE.contains("jni_str!(\"getAccessibility\")"));
+        assert!(BRIDGE.contains("jni_sig!(\"()Ljava/lang/String;\")"));
+        for needed in [
+            "config.fontScale",
+            "UI_MODE_NIGHT_YES",
+            "getContrast()",
+            "high_text_contrast_enabled",
+        ] {
+            assert!(ACTIVITY.contains(needed), "the activity lacks {needed:?}");
+        }
+        let changes = MANIFEST
+            .split("android:configChanges=\"")
+            .nth(1)
+            .and_then(|r| r.split('"').next())
+            .expect("configChanges");
+        assert!(changes.split('|').any(|c| c == "fontScale"), "{changes}");
+        let prefs = include_str!("system_prefs.rs");
+        assert!(prefs.contains("crate::android::accessibility::read()"));
+        assert!(prefs.contains("parse_android(&a)"));
+    }
+
     /// The on-screen keyboard (#1309): the bridge shows it with the
     /// activity's method, registers the native methods the activity
     /// declares with their signatures, and the view the keyboard types
