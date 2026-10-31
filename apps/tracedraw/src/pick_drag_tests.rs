@@ -6248,6 +6248,39 @@ fn ctrl_keeps_the_closing_handle_to_the_constrain_angle() {
     assert!((angle - 195.0).abs() < 0.5, "{angle} {closing:?}");
 }
 
+/// Space toggles between the Crop or Knife tool and the Pick tool too,
+/// with a crop area waiting on the page as well (#1333).
+#[test]
+fn space_toggles_from_the_crop_and_knife_tools() {
+    let (ctx, mut app, _) = setup();
+    let space = |ctx: &egui::Context, app: &mut App| {
+        frame(
+            ctx,
+            app,
+            vec![key(egui::Key::Space, Modifiers::NONE)],
+            Modifiers::NONE,
+        );
+        frame(ctx, app, Vec::new(), Modifiers::NONE);
+    };
+    for tool in [Tool::Crop, Tool::Knife] {
+        app.set_tool(tool);
+        space(&ctx, &mut app);
+        assert_eq!(app.tool, Tool::Pick, "{tool:?}");
+        space(&ctx, &mut app);
+        assert_eq!(app.tool, tool, "back to {tool:?}");
+        app.set_tool(Tool::Pick);
+    }
+    app.set_tool(Tool::Crop);
+    let a = app.view.to_screen(Point::new(20.0, 20.0));
+    let b = app.view.to_screen(Point::new(80.0, 70.0));
+    drag(&ctx, &mut app, a, b, Modifiers::NONE, Vec::new());
+    assert!(app.crop_area.is_some(), "a crop area waits");
+    space(&ctx, &mut app);
+    assert_eq!(app.tool, Tool::Pick, "Space with a crop area");
+    space(&ctx, &mut app);
+    assert_eq!(app.tool, Tool::Crop);
+}
+
 /// Space switches to the Pick tool and, pressed again, back to the tool
 /// used before; not during a drag, where it drops a copy, and Shift+Space
 /// does nothing to the tool.

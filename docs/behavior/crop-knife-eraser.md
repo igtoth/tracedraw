@@ -36,8 +36,23 @@
   both ends across the objects. Freehand: drag a line of any shape; the
   cut follows it as drawn.
 - The objects cut are the selection, or with nothing selected every
-  visible object on the page's unlocked layers; bitmaps, groups and text
-  are not cut (`knife.rs`).
+  visible object on the page's unlocked layers; groups and text are not
+  cut (`knife.rs`).
+- A bitmap, or a cropped one (a clip frame holding one bitmap, as Crop
+  Bitmap and the Shape tool make and as `.cdr` crop paths are read), is
+  cut the way a picture is cropped (#1333, `picture_pieces`): each piece
+  is the whole picture, its pixels untouched, behind an outline of its
+  own (a clip frame whose frame has no fill or outline), so the Shape
+  tool edits each piece's outline as it edits a cropped picture's. With
+  Split the outlines are the two sides of the cut, run on far past the
+  picture, so they meet exactly along it and the pieces show the
+  picture with no seam; with Gap they are the picture's outline less the
+  band, the gap's width apart. Keep as one object leaves one picture
+  behind an outline of several parts. The pieces keep the object's
+  place, turn, transparency and effects; a cut beside the picture
+  leaves it as it is. One undo step with the other objects cut
+  (`knife::tests::a_cut_crops_a_bitmap_into_pieces`,
+  `knife::tests::a_turned_or_cropped_picture_is_cut_where_it_is_drawn`).
 - Closed objects lose a band along the cut: Split (first choice) takes a
   hair (0.01 mm), so the pieces meet; Gap takes the width beside it.
   Each separate piece becomes an object of its own (Keep as one object:
@@ -48,6 +63,9 @@
   object's place. The pieces are selected; one undo step.
 - The bar: Two-point line, Freehand; Split, Gap and its width; Keep as
   one object; kept in the preferences (`tools.knife`).
+- Space switches to the Pick tool and back from the Knife and the Crop
+  tool as from any tool, a crop area waiting or not
+  (`pick_drag_tests::space_toggles_from_the_crop_and_knife_tools`).
 
 ## Segment delete
 

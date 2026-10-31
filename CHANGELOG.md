@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Knife: bitmaps are cut too. A cut across a picture (or a cropped one) splits it into pieces that each show the whole picture, its pixels untouched, behind an outline of their own along the cut, as a cropped picture is kept, so the Shape tool edits each outline; with Split the outlines meet exactly and the picture shows no seam, with Gap they are that far apart, and Keep as one object leaves one picture with an outline of several parts. A turned picture is cut where it is drawn and the pieces keep its turn and effects. The Knife cut only vector objects. One undo step (#1333).
+
 - File > Export: an export range for every format: the current page, all pages, or a list of pages such as 1-3, 5. PDF, AI, PostScript, PRN and HTML write one file with the pages chosen, so Export makes a multi-page PDF of any pages; SVG, EPS, DXF, EMF, WMF, PLT, PSD and the bitmap formats write one file per page, named with the page number (name-1.png, name-3.png). SVG and the other formats of one page wrote only the first page even with All pages ticked, and PDF had no page choice at all. Export to PDF also has Export all text as curves, for a file that needs no fonts; Publish to PDF stays as it was (#1382).
 
 - Printing on Windows: the sheets go to the printer at its own resolution (the one set in its preferences, between 300 and 1200 dpi), so fine lines and small text print as sharp as on macOS and Linux. Every Windows print was a 300 dpi picture of each sheet. Each sheet now goes in strips with its blank parts left out, so a sheet never needs one huge picture in memory and empty paper adds nothing to the job; General > Print as bitmap still sends its own resolution (#1404).
