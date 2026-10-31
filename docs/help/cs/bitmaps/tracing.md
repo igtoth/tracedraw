@@ -8,7 +8,8 @@ skicu, fotografii.
 
 Vyberte bitmapu a zvolte [[menu.bitmaps > menu.bitmaps.quick_trace]]. Použije
 se předvolba zvolená na stránce [[options.bitmap_tracing]] v globálních
-možnostech (výchozí Clipart).
+možnostech (výchozí [[menu.bitmaps.trace_optimized]], která volí detail pro
+každý obrázek: co nejvěrněji s co nejmenším počtem uzlů).
 
 [[menu.bitmaps.repeat_last_trace]] obtáhne vybranou bitmapu znovu jako poslední obtažení, bez dialogového okna, a [[menu.bitmaps.last_trace_settings]] otevře dialogové okno s nastavením posledního obtažení. Tyto příkazy má i místní nabídka bitmapy, spolu s [[menu.bitmaps.centerline_trace]] a [[menu.bitmaps.outline_trace]].
 
@@ -21,7 +22,8 @@ otevřete dialogové okno vektorizace.
 - **Vektorizace obrysu** vyplní barevné oblasti tvary:
   [[menu.bitmaps.trace_line_art]], [[menu.bitmaps.trace_logo]],
   [[menu.bitmaps.trace_detailed_logo]], [[menu.bitmaps.trace_clipart]],
-  [[menu.bitmaps.trace_low_quality]] a [[menu.bitmaps.trace_high_quality]].
+  [[menu.bitmaps.trace_low_quality]], [[menu.bitmaps.trace_high_quality]] a
+  [[menu.bitmaps.trace_optimized]].
 - **Vektorizace středové čáry** sleduje čáry otevřenými křivkami:
   [[menu.bitmaps.trace_technical]] a [[menu.bitmaps.trace_line_drawing]].
 
@@ -32,7 +34,8 @@ vyplňuje jeho levou část, nastavení sedí v panelu vpravo a vektorizace se
 provede znovu, kdykoli změníte nastavení: pro zobrazení výsledku není třeba
 nic stisknout. Pod náhledem řádek počítá **křivky**, **uzly** a **barvy**
 vektorizace. Kliknutím na [[dialog.ok]] umístíte tvary přes bitmapu,
-nejtmavší jako první; [[dialog.cancel]] ponechá bitmapu, jak je.
+nejtmavší jako první; [[dialog.cancel]] ponechá bitmapu, jak je. Obě
+tlačítka sedí vpravo dole v dialogovém okně.
 
 ## Náhled {#preview}
 
@@ -51,6 +54,11 @@ Tlačítka za seznamem přizpůsobí zobrazení, oddálí, přiblíží a posouv
 Kolečko zvětšuje kolem ukazatele a tažením obrázek posunete; obě části se
 pohybují společně. Průhledná místa ukazují šachovnici.
 
+V prohlížeči se náhled velkého obrázku počítá z menší kopie a červená
+poznámka pod náhledem na to upozorní: jemné detaily tam mohou vypadat hrubě,
+ale [[dialog.ok]] vektorizuje celý obrázek. Desktopová aplikace ukazuje
+náhled přesně.
+
 ## Nastavení {#settings}
 
 Karta [[dialog.trace_tab_settings]] obsahuje:
@@ -59,7 +67,9 @@ Karta [[dialog.trace_tab_settings]] obsahuje:
   předvolbu. Výběr předvolby nastaví posuvníky níže na hodnoty vhodné pro
   daný druh obrázku.
 - [[dialog.detail]] (0 až 100): více detailů zachová menší oblasti a jemnější
-  čáry; méně detailů vyhladí skvrnky a zrno.
+  čáry; méně detailů vyhladí skvrnky a zrno. S předvolbou
+  [[menu.bitmaps.trace_optimized]] se detail volí pro každý obrázek a
+  posuvník je zašedlý.
 - [[dialog.smoothing]] (0 až 100, výchozí 25): hladší křivky s méně uzly.
 - [[dialog.corner_smoothness]] (0 až 100): kulatější rohy.
 - [[dialog.trace_remove]]: co z vektorizace vynechat. **Barva pozadí**
@@ -79,6 +89,12 @@ Karta [[dialog.trace_tab_settings]] obsahuje:
 
 Nastavení, která se na aktuální typ vektorizace nevztahují, jsou zašedlá:
 vektorizace středovou čarou čte jen detail a vyhlazení.
+
+[[dialog.trace_optimize]] vlevo dole v dialogovém okně vyzkouší na obrázku
+několik úrovní detailu, porovná každou vektorizaci s obrázkem a do posuvníku
+[[dialog.detail]] vloží detail, který obrázek kreslí nejvěrněji s nejmenším
+počtem uzlů. Je to krok, který lze vrátit zpět. Pokud změníte nastavení
+dříve, než optimalizace skončí, její výsledek se nepoužije.
 
 ## Barvy {#colors}
 

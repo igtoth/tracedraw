@@ -9,7 +9,8 @@ Logo, eine Skizze, ein Foto.
 Wählen Sie eine Bitmap aus und wählen Sie
 [[menu.bitmaps > menu.bitmaps.quick_trace]]. Es verwendet die Vorgabe, die auf
 der Seite [[options.bitmap_tracing]] der globalen Optionen gewählt ist
-(anfangs Clipart).
+(anfangs [[menu.bitmaps.trace_optimized]], das das Detail für jedes Bild
+wählt: so getreu wie möglich mit den wenigsten Knoten).
 
 [[menu.bitmaps.repeat_last_trace]] vektorisiert die ausgewählte Bitmap erneut wie die letzte Vektorisierung, ohne Dialogfeld, und [[menu.bitmaps.last_trace_settings]] öffnet das Dialogfeld mit deren Einstellungen. Auch das Kontextmenü einer Bitmap enthält diese Befehle, zusammen mit [[menu.bitmaps.centerline_trace]] und [[menu.bitmaps.outline_trace]].
 
@@ -22,7 +23,8 @@ Dialogfeld zum Nachzeichnen zu öffnen.
 - **Umrissnachzeichnung** füllt Farbflächen mit Formen:
   [[menu.bitmaps.trace_line_art]], [[menu.bitmaps.trace_logo]],
   [[menu.bitmaps.trace_detailed_logo]], [[menu.bitmaps.trace_clipart]],
-  [[menu.bitmaps.trace_low_quality]] und [[menu.bitmaps.trace_high_quality]].
+  [[menu.bitmaps.trace_low_quality]], [[menu.bitmaps.trace_high_quality]] und
+  [[menu.bitmaps.trace_optimized]].
 - **Mittellinien-Nachzeichnung** folgt Linien mit offenen Kurven:
   [[menu.bitmaps.trace_technical]] und [[menu.bitmaps.trace_line_drawing]].
 
@@ -35,7 +37,8 @@ Einstellung neu erstellt: Sie müssen nichts drücken, um das Ergebnis zu
 sehen. Unter der Vorschau zählt eine Zeile die **Kurven**, **Knoten** und
 **Farben** der Nachzeichnung. Klicken Sie auf [[dialog.ok]], um die Formen
 über der Bitmap zu platzieren, die dunkelsten zuerst, oder auf
-[[dialog.cancel]], um die Bitmap zu lassen, wie sie ist.
+[[dialog.cancel]], um die Bitmap zu lassen, wie sie ist; beide liegen
+unten rechts im Dialogfeld.
 
 ## Die Vorschau {#preview}
 
@@ -57,6 +60,11 @@ vergrößern und schwenken. Das Mausrad zoomt um den Zeiger, ein Ziehen
 verschiebt das Bild; beide Felder bewegen sich gemeinsam. Transparente
 Teile zeigen ein Schachbrett.
 
+Im Browser wird ein großes Bild anhand einer kleineren Kopie in der
+Vorschau gezeigt, und ein roter Hinweis unter der Vorschau weist darauf hin:
+Feine Details können dort grob aussehen, aber [[dialog.ok]] zeichnet das
+ganze Bild nach. Die Desktop-App zeigt die Vorschau genau.
+
 ## Einstellungen {#settings}
 
 Die Registerkarte [[dialog.trace_tab_settings]] enthält:
@@ -65,7 +73,9 @@ Die Registerkarte [[dialog.trace_tab_settings]] enthält:
   [[dialog.trace_image_type]] die Vorgabe. Die Wahl setzt die Regler
   darunter auf die Werte, die zu dieser Art von Bild passen.
 - [[dialog.detail]] (0 bis 100): mehr Detail behält kleinere Flächen und
-  feinere Linien; weniger Detail glättet Flecken und Körnung weg.
+  feinere Linien; weniger Detail glättet Flecken und Körnung weg. Mit
+  [[menu.bitmaps.trace_optimized]] wird das Detail für jedes Bild gewählt,
+  und der Regler ist ausgegraut.
 - [[dialog.smoothing]] (0 bis 100, anfangs 25): glattere Kurven mit weniger
   Knoten.
 - [[dialog.corner_smoothness]] (0 bis 100): rundere Ecken.
@@ -89,6 +99,13 @@ Die Registerkarte [[dialog.trace_tab_settings]] enthält:
 
 Einstellungen, die für den aktuellen Nachzeichnungstyp nicht gelten, sind
 ausgegraut: eine Mittellinien-Nachzeichnung liest nur Detail und Glättung.
+
+[[dialog.trace_optimize]] unten links im Dialogfeld probiert mehrere
+Detailstufen an dem Bild aus, vergleicht jede Nachzeichnung mit ihm und
+setzt die Detailstufe, die es mit den wenigsten Knoten am getreuesten
+zeichnet, in den Regler [[dialog.detail]]. Es ist ein Schritt, den Sie
+rückgängig machen können. Wenn Sie die Einstellungen ändern, bevor es
+fertig ist, bleibt sein Ergebnis unberücksichtigt.
 
 ## Farben {#colors}
 
