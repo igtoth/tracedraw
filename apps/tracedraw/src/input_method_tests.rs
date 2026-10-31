@@ -61,9 +61,19 @@ fn posted_messages(text: &str) -> Vec<(u32, usize)> {
     msgs
 }
 
+/// The characters the message hook keeps go through one global store
+/// (`system_chars`), so the tests that fill and empty it take turns:
+/// run side by side, one test's characters landed in the other's text.
+static HOOK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn hook_turn() -> std::sync::MutexGuard<'static, ()> {
+    HOOK.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 /// A frame whose input carries what the message hook kept, as the
 /// window's raw input hook adds it.
 fn frame_after_messages(ctx: &egui::Context, app: &mut App, msgs: &[(u32, usize)]) {
+    let _turn = hook_turn();
     let mut tracker = crate::system_chars::CharTracker::default();
     for (m, w) in msgs {
         tracker.message(*m, *w);
@@ -145,6 +155,7 @@ fn an_input_method_types_tamil_by_text_or_by_composition() {
 /// drops its character, which the message hook kept from `msgs`.
 fn altgr_frame(ctx: &egui::Context, app: &mut App, event: Event, msgs: &[(u32, usize)]) {
     use crate::system_chars::*;
+    let _turn = hook_turn();
     let mut tracker = CharTracker::default();
     tracker.message(WM_KEYDOWN, VK_CONTROL as usize);
     tracker.message(WM_KEYDOWN, VK_MENU as usize);
