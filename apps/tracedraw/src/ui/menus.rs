@@ -2966,6 +2966,9 @@ pub(crate) fn effect_docker_open(app: &App, tab: DockerTab) -> bool {
     match app.docker_place(tab) {
         Some(crate::app::DockerPlace::Right) => app.show_dockers,
         Some(crate::app::DockerPlace::Left) => app.show_left_dockers,
+        Some(p @ (crate::app::DockerPlace::RightInner | crate::app::DockerPlace::LeftInner)) => {
+            app.docker_column(p).2
+        }
         Some(crate::app::DockerPlace::Floating) => true,
         // Brought to the front and joining the default column.
         None => app.show_dockers && app.docker_tab == tab,

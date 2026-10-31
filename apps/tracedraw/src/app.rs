@@ -1613,6 +1613,11 @@ pub struct App {
     pub left_dockers: Vec<DockerTab>,
     pub left_tab: DockerTab,
     pub show_left_dockers: bool,
+    /// The second column on the default column's side, between it and the
+    /// drawing, and the second column on the other side: each exists only
+    /// while it holds a docker (see [`DockerPlace::RightInner`]).
+    pub inner_dockers: DockerColumn,
+    pub left_inner_dockers: DockerColumn,
     /// Dockers floating over the window, each in a window of its own.
     pub floating_dockers: Vec<FloatingDocker>,
     /// A docker being moved by its tab or its title (see ui/dockers.rs).
@@ -2118,12 +2123,86 @@ pub enum Repeatable {
 
 /// Where a docker lies: the default column (the right side of the
 /// window; the left in a right-to-left language), the column at the
-/// other side, or a window of its own over the drawing.
+/// other side, the second column on either side (between the column at
+/// the window's edge and the drawing), or a window of its own over the
+/// drawing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DockerPlace {
     Right,
     Left,
     Floating,
+    /// The second column on the default column's side: its own tab strip
+    /// and docker, between the default column and the drawing. The
+    /// palette can lie between the two columns.
+    RightInner,
+    /// The second column on the other side.
+    LeftInner,
+}
+
+impl DockerPlace {
+    /// The column at the window's edge on this place's side (floating
+    /// stays floating).
+    pub fn edge(self) -> DockerPlace {
+        match self {
+            DockerPlace::RightInner => DockerPlace::Right,
+            DockerPlace::LeftInner => DockerPlace::Left,
+            p => p,
+        }
+    }
+
+    /// The second column on this place's side, nearer the drawing
+    /// (floating stays floating).
+    pub fn inner(self) -> DockerPlace {
+        match self {
+            DockerPlace::Right | DockerPlace::RightInner => DockerPlace::RightInner,
+            DockerPlace::Left | DockerPlace::LeftInner => DockerPlace::LeftInner,
+            DockerPlace::Floating => DockerPlace::Floating,
+        }
+    }
+
+    /// One of the second columns.
+    pub fn is_inner(self) -> bool {
+        matches!(self, DockerPlace::RightInner | DockerPlace::LeftInner)
+    }
+}
+
+/// A second docker column on a side: its dockers in order, the one in
+/// front and whether the column is open.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DockerColumn {
+    pub tabs: Vec<DockerTab>,
+    pub front: DockerTab,
+    pub shown: bool,
+}
+
+impl Default for DockerColumn {
+    fn default() -> Self {
+        DockerColumn {
+            tabs: Vec::new(),
+            front: DockerTab::Hints,
+            shown: false,
+        }
+    }
+}
+
+impl DockerColumn {
+    /// Take `tab` out, the tab next to it coming to the front (the column
+    /// closes when none is left).
+    fn take(&mut self, tab: DockerTab) {
+        let Some(i) = self.tabs.iter().position(|t| *t == tab) else {
+            return;
+        };
+        self.tabs.remove(i);
+        if self.front == tab {
+            match self.tabs.get(i.min(self.tabs.len().saturating_sub(1))) {
+                Some(t) => self.front = *t,
+                None => self.shown = false,
+            }
+        }
+        if self.tabs.is_empty() {
+            self.shown = false;
+        }
+    }
 }
 
 /// A docker in a window of its own: its tab, where the window is and how
@@ -2633,6 +2712,8 @@ impl App {
             left_dockers: Vec::new(),
             left_tab: DockerTab::Hints,
             show_left_dockers: false,
+            inner_dockers: DockerColumn::default(),
+            left_inner_dockers: DockerColumn::default(),
             floating_dockers: Vec::new(),
             docker_drag: None,
             docker_last: (DockerTab::Hints, true),
@@ -3437,12 +3518,26 @@ impl App {
     /// and the floating ones (see [`crate::settings::DockerSetup`]).
     pub fn docker_setup(&self) -> crate::settings::DockerSetup {
         let keys = |tabs: &[DockerTab]| tabs.iter().map(|t| t.key().to_string()).collect();
+        // A second column that holds nothing writes nothing.
+        let front_key = |c: &DockerColumn| {
+            if c.tabs.is_empty() {
+                String::new()
+            } else {
+                c.front.key().to_string()
+            }
+        };
         crate::settings::DockerSetup {
             open: keys(&self.open_dockers),
             front: self.docker_tab.key().to_string(),
             left: keys(&self.left_dockers),
             left_front: self.left_tab.key().to_string(),
             left_shown: self.show_left_dockers,
+            inner: keys(&self.inner_dockers.tabs),
+            inner_front: front_key(&self.inner_dockers),
+            inner_shown: self.inner_dockers.shown,
+            left_inner: keys(&self.left_inner_dockers.tabs),
+            left_inner_front: front_key(&self.left_inner_dockers),
+            left_inner_shown: self.left_inner_dockers.shown,
             floating: self
                 .floating_dockers
                 .iter()
@@ -3480,6 +3575,24 @@ impl App {
         };
         self.open_dockers = take(&setup.open);
         self.left_dockers = take(&setup.left);
+        let mut column = |keys: &[String], front: &str, shown: bool| {
+            let tabs = take(keys);
+            let front = by_key(front)
+                .filter(|t| tabs.contains(t))
+                .or(tabs.first().copied())
+                .unwrap_or(DockerTab::Hints);
+            DockerColumn {
+                shown: shown && !tabs.is_empty(),
+                tabs,
+                front,
+            }
+        };
+        self.inner_dockers = column(&setup.inner, &setup.inner_front, setup.inner_shown);
+        self.left_inner_dockers = column(
+            &setup.left_inner,
+            &setup.left_inner_front,
+            setup.left_inner_shown,
+        );
         self.floating_dockers = setup
             .floating
             .iter()
@@ -3526,7 +3639,36 @@ impl App {
             }
             self.show_left_dockers = setup.left_shown;
         }
+        self.settle_columns();
         self.docker_last = (self.docker_tab, self.show_dockers);
+    }
+
+    /// A side's second column never stands alone: when the column at the
+    /// window's edge has no docker left, the second column's dockers
+    /// become its own (in front and open as they were).
+    fn settle_columns(&mut self) {
+        if self.open_dockers.is_empty() && !self.inner_dockers.tabs.is_empty() {
+            let c = std::mem::take(&mut self.inner_dockers);
+            self.open_dockers = c.tabs;
+            self.docker_tab = c.front;
+            self.show_dockers = c.shown;
+            self.docker_last = (self.docker_tab, self.show_dockers);
+        }
+        if self.left_dockers.is_empty() && !self.left_inner_dockers.tabs.is_empty() {
+            let c = std::mem::take(&mut self.left_inner_dockers);
+            self.left_dockers = c.tabs;
+            self.left_tab = c.front;
+            self.show_left_dockers = c.shown;
+        }
+    }
+
+    /// The second column at `place` (one of the inner places).
+    fn inner_column_mut(&mut self, place: DockerPlace) -> Option<&mut DockerColumn> {
+        match place {
+            DockerPlace::RightInner => Some(&mut self.inner_dockers),
+            DockerPlace::LeftInner => Some(&mut self.left_inner_dockers),
+            _ => None,
+        }
     }
 
     /// Where `tab` lies, if it is open anywhere.
@@ -3535,6 +3677,10 @@ impl App {
             Some(DockerPlace::Right)
         } else if self.left_dockers.contains(&tab) {
             Some(DockerPlace::Left)
+        } else if self.inner_dockers.tabs.contains(&tab) {
+            Some(DockerPlace::RightInner)
+        } else if self.left_inner_dockers.tabs.contains(&tab) {
+            Some(DockerPlace::LeftInner)
         } else if self.floating_dockers.iter().any(|f| f.tab == tab) {
             Some(DockerPlace::Floating)
         } else {
@@ -3553,6 +3699,12 @@ impl App {
         match self.docker_place(tab) {
             Some(DockerPlace::Right) => self.show_dockers && self.docker_tab == tab,
             Some(DockerPlace::Left) => self.show_left_dockers && self.left_tab == tab,
+            Some(DockerPlace::RightInner) => {
+                self.inner_dockers.shown && self.inner_dockers.front == tab
+            }
+            Some(DockerPlace::LeftInner) => {
+                self.left_inner_dockers.shown && self.left_inner_dockers.front == tab
+            }
             Some(DockerPlace::Floating) => true,
             None => false,
         }
@@ -3562,6 +3714,14 @@ impl App {
     pub fn docker_column(&self, place: DockerPlace) -> (&[DockerTab], DockerTab, bool) {
         match place {
             DockerPlace::Left => (&self.left_dockers, self.left_tab, self.show_left_dockers),
+            DockerPlace::RightInner => {
+                let c = &self.inner_dockers;
+                (&c.tabs, c.front, c.shown)
+            }
+            DockerPlace::LeftInner => {
+                let c = &self.left_inner_dockers;
+                (&c.tabs, c.front, c.shown)
+            }
             _ => (&self.open_dockers, self.docker_tab, self.show_dockers),
         }
     }
@@ -3573,6 +3733,14 @@ impl App {
                 self.show_left_dockers = shown;
                 if let Some(t) = front {
                     self.left_tab = t;
+                }
+            }
+            DockerPlace::RightInner | DockerPlace::LeftInner => {
+                if let Some(c) = self.inner_column_mut(place) {
+                    c.shown = shown;
+                    if let Some(t) = front {
+                        c.front = t;
+                    }
                 }
             }
             _ => {
@@ -3592,6 +3760,9 @@ impl App {
             Some(DockerPlace::Left) => {
                 self.left_tab = tab;
                 self.show_left_dockers = true;
+            }
+            Some(p @ (DockerPlace::RightInner | DockerPlace::LeftInner)) => {
+                self.set_docker_column(p, true, Some(tab));
             }
             Some(DockerPlace::Floating) => {}
             Some(DockerPlace::Right) | None => {
@@ -3627,6 +3798,13 @@ impl App {
                 self.left_tab = tab;
                 self.show_left_dockers = true;
             }
+            DockerPlace::RightInner | DockerPlace::LeftInner => {
+                if let Some(c) = self.inner_column_mut(place) {
+                    c.tabs.push(tab);
+                    c.front = tab;
+                    c.shown = true;
+                }
+            }
             DockerPlace::Floating => {
                 let (pos, size) =
                     was.unwrap_or((Pos2::new(200.0, 100.0), FloatingDocker::DEFAULT_SIZE));
@@ -3639,6 +3817,7 @@ impl App {
                 });
             }
         }
+        self.settle_columns();
     }
 
     /// Take `tab` out of wherever it is, the column it leaves showing the
@@ -3677,7 +3856,10 @@ impl App {
                 self.show_left_dockers = false;
             }
         }
+        self.inner_dockers.take(tab);
+        self.left_inner_dockers.take(tab);
         self.floating_dockers.retain(|f| f.tab != tab);
+        self.settle_columns();
     }
 
     /// Close a docker wherever it is: its tab leaves its column and the
@@ -3696,9 +3878,10 @@ impl App {
         if self.show_dockers && !self.open_dockers.contains(&self.docker_tab) {
             let tab = self.docker_tab;
             match self.docker_place(tab) {
-                Some(DockerPlace::Left) => {
-                    self.left_tab = tab;
-                    self.show_left_dockers = true;
+                Some(
+                    p @ (DockerPlace::Left | DockerPlace::RightInner | DockerPlace::LeftInner),
+                ) => {
+                    self.set_docker_column(p, true, Some(tab));
                     (self.docker_tab, self.show_dockers) = self.docker_last;
                 }
                 Some(DockerPlace::Floating) => {
@@ -4410,7 +4593,9 @@ impl App {
     pub fn toggle_docker(&mut self, tab: DockerTab) {
         if self.docker_shown(tab) {
             match self.docker_place(tab) {
-                Some(DockerPlace::Left) => self.show_left_dockers = false,
+                Some(
+                    p @ (DockerPlace::Left | DockerPlace::RightInner | DockerPlace::LeftInner),
+                ) => self.set_docker_column(p, false, None),
                 Some(DockerPlace::Floating) => self.close_docker(tab),
                 _ => self.set_docker_column(DockerPlace::Right, false, None),
             }
@@ -8606,6 +8791,89 @@ mod tests {
         app.move_docker(DockerTab::Hints, DockerPlace::Right, None);
         assert!(app.left_dockers.is_empty() && !app.show_left_dockers);
         assert_eq!(app.docker_tab, DockerTab::Hints);
+    }
+
+    /// A side holds a second column, between its column at the window's
+    /// edge and the drawing: dockers move into it and out, it never
+    /// stands alone (its dockers join the edge column when that one
+    /// empties), and it comes back from the preferences.
+    #[test]
+    fn a_side_holds_a_second_docker_column() {
+        let mut app = App::headless();
+        assert_eq!(app.open_dockers, DockerTab::default_strip());
+        app.move_docker(DockerTab::Properties, DockerPlace::RightInner, None);
+        assert_eq!(
+            app.docker_place(DockerTab::Properties),
+            Some(DockerPlace::RightInner)
+        );
+        assert_eq!(app.inner_dockers.tabs, [DockerTab::Properties]);
+        assert!(app.docker_shown(DockerTab::Properties));
+        assert_eq!(app.open_dockers, [DockerTab::Hints, DockerTab::Objects]);
+        assert_eq!(
+            app.docker_column(DockerPlace::RightInner),
+            (&[DockerTab::Properties][..], DockerTab::Properties, true)
+        );
+        // Its own collapse, toggle and front, apart from the edge column.
+        app.toggle_docker(DockerTab::Properties);
+        assert!(!app.inner_dockers.shown && app.show_dockers);
+        app.toggle_docker(DockerTab::Properties);
+        assert!(app.inner_dockers.shown);
+        app.show_dockers = true;
+        app.docker_tab = DockerTab::Properties;
+        app.reconcile_dockers();
+        assert!(app.inner_dockers.shown && app.inner_dockers.front == DockerTab::Properties);
+        assert!(app.open_dockers.contains(&app.docker_tab));
+        assert!(crate::ui::menus::effect_docker_open(
+            &app,
+            DockerTab::Properties
+        ));
+        // The other side has one too.
+        app.move_docker(DockerTab::Hints, DockerPlace::Left, None);
+        app.move_docker(DockerTab::Objects, DockerPlace::LeftInner, None);
+        // The edge column emptied: the second column's dockers take its
+        // place.
+        assert_eq!(app.open_dockers, [DockerTab::Properties]);
+        assert!(app.inner_dockers.tabs.is_empty());
+        assert_eq!(app.left_dockers, [DockerTab::Hints]);
+        assert_eq!(app.left_inner_dockers.tabs, [DockerTab::Objects]);
+        app.move_docker(DockerTab::Hints, DockerPlace::Right, None);
+        assert_eq!(app.left_dockers, [DockerTab::Objects]);
+        assert!(app.show_left_dockers && app.left_tab == DockerTab::Objects);
+        assert!(app.left_inner_dockers.tabs.is_empty());
+        // Kept in the preferences and back at the next start.
+        app.move_docker(DockerTab::Properties, DockerPlace::RightInner, None);
+        app.move_docker(DockerTab::ColorStyles, DockerPlace::Right, None);
+        assert_eq!(app.inner_dockers.tabs, [DockerTab::Properties]);
+        app.sync_settings();
+        let json = serde_json::to_string(&app.settings).expect("json");
+        let saved: crate::settings::Settings = serde_json::from_str(&json).expect("settings");
+        let mut next = App::headless();
+        next.apply_settings(saved);
+        assert_eq!(next.inner_dockers.tabs, [DockerTab::Properties]);
+        assert!(next.inner_dockers.shown);
+        assert_eq!(
+            next.open_dockers,
+            [DockerTab::Hints, DockerTab::ColorStyles]
+        );
+        assert_eq!(next.left_dockers, [DockerTab::Objects]);
+        let plain = serde_json::to_string(&App::headless().docker_setup()).expect("json");
+        assert!(!plain.contains("inner"), "{plain}");
+        // Preferences from before have no second column; a second column
+        // left alone in the preferences joins the edge column.
+        let old: crate::settings::DockerSetup =
+            serde_json::from_str(r#"{"open":["docker.hints"],"front":"docker.hints"}"#)
+                .expect("old");
+        let mut third = App::headless();
+        third.set_docker_setup(&old);
+        assert!(third.inner_dockers.tabs.is_empty());
+        third.set_docker_setup(&crate::settings::DockerSetup {
+            inner: vec!["docker.objects".into()],
+            inner_front: "docker.objects".into(),
+            inner_shown: true,
+            ..Default::default()
+        });
+        assert_eq!(third.open_dockers, [DockerTab::Objects]);
+        assert!(third.show_dockers && third.inner_dockers.tabs.is_empty());
     }
 
     /// Many selected objects (Select All) are gathered in one pass and

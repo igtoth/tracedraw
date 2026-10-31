@@ -27,7 +27,7 @@ Every palette ticked in [[menu.window > menu.window.color_palettes]] or in the
 Palette Manager shows in a strip of its own next to the default palette, with
 **Close Palette** in its menu.
 
-Along each side it can lie at the window's edge or beside the drawing, between the drawing and the panels or the toolbox on that side. While you drag it, a blue band shows where it will go; right-click its grip to pick a place from a list.
+Along each side it can lie at the window's edge or beside the drawing, between the drawing and the panels or the toolbox on that side. When a side has two columns of panels (drag a panel's tab just inside its column, over the drawing, to make a second one), the palette can also lie between the two columns. While you drag it, a blue band shows where it will go; right-click its grip to pick a place from a list.
 
 ## The document palette {#document-palette}
 
