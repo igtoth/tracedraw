@@ -85,6 +85,11 @@ attributes, none, and showed only in Wireframe (#539,
   the Bezier segments of the objects, with new nodes only where their
   outlines cross; two circles welded give a handful of curve segments,
   not hundreds of tiny lines.
+- A vertex where two outlines cross is moved onto the exact crossing of
+  the curves. Where they cross at a shallow angle, several vertices of
+  the flattening lie near the crossing and all land on it; they become
+  one node (vertices closer than 1e-7 mm are one), so the result has no
+  lines of no length there (`shaping::tests::shallow_crossings_give_one_node_each`).
 - An edge that does not follow an object's outline (a chord across an
   arc, as where a cut runs straight across a curve) stays a straight
   line: a stretch is taken from the source only when the edges lie
