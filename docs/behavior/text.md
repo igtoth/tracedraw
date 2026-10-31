@@ -755,6 +755,13 @@ the browser the family is fetched when no font of the whole name is
 offered. A face a font lists under the whole name (family or legacy
 name, in any case: "Archivo Black", "Quicksand Light") draws as that
 face, at 400 or 700 for bold, as before.
+Bold text in a face listed only under a legacy name with a lighter
+weight ("Khand Light", a static face of the typographic family "Khand")
+is drawn by that family's bold face (Khand Bold, a face of 600 or more
+heavier than the light one) when it is installed, as the program that
+reads `.cdr` files draws it, and is saved to `.cdr` as that family at
+700 ("Khand" bold); without such a face the light face draws it
+thickened, as before (#1455).
 
 A .cdr run set in a face between or beyond regular and bold (thin,
 extra light, light, medium, semibold, extra bold, black) opens as that
@@ -1002,6 +1009,8 @@ stand-in next to each missing family: "Arial (Liberation Sans)".
   `tests::family_names_ending_in_a_weight_split`,
   `tests::a_family_named_with_its_weight_draws_with_the_nearest_face`,
   `tests::a_weight_in_the_family_name_reaches_every_way_of_drawing`,
+  `tests::bold_text_in_a_light_static_face_takes_the_family_bold`,
+  the .cdr writer's `write::tests::bold_text_in_a_light_face_is_written_as_the_family_bold`,
   the .cdr writer's `write::tests::faces_named_with_their_weight_round_trip`,
   `tests::a_drawing_brings_every_face_of_a_family`, the .cdr reader's
   `parse::tests::semibold_runs_keep_their_face` and

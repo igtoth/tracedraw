@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Saving .cdr with Embed fonts: each embedded font is described as the face its file holds (its own weight and slant in the font table, the embedding and the font header), not as the style the text asks for, and the kind of font (TrueType, signed TrueType, PostScript outlines) and its version are named as the program that reads .cdr files names them. Text set bold italic in Khand Light went out as a "bold italic" Khand Light that was really the upright light font, and that program drew it light and upright; regular Khand text drawn with the bold Khand file was listed as a regular face, and that program reported Khand missing although it was installed. Bold text in a light static face such as Khand Light is now drawn and saved with the family's bold face (Khand Bold) when it is installed, and underlined faces carry the underline in their font records, as that program's own files have them (#1455, #1484).
+
 - Weld, Trim, Intersect and the other shaping operations give one node where two outlines cross at a shallow angle, instead of a node followed by one or two lines of no length.
 
 - Linux (X11): a picture copied in a screenshot tool pastes on the first Ctrl+V. The paste gave the program 10 ms for each part of a large picture and asked for PNG only, so it often came out empty and took two or three tries; it now reads the clipboard's list of types, asks for the best picture type offered (PNG, BMP, TIFF, WebP, GIF, JPEG), gives each part 2 s and tries again briefly when nothing came. One clipboard connection is kept for the session (#1488).

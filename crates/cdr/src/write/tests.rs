@@ -3888,7 +3888,7 @@ fn faces_of_families_the_drawing_does_not_name_get_new_numbers() {
         face("arial", true),
         face("Other", true),
     ];
-    let members = fonts::members(&faces, true, &[(4, "Arial".into())]);
+    let members = fonts::members(&faces, true, &[(4, "Arial".into())], &[]);
     assert_eq!(members.len(), 1, "nothing to embed");
     let table = &members[0].1;
     let mut numbers = Vec::new();
@@ -4056,7 +4056,7 @@ fn faces_named_with_their_weight_round_trip() {
             semi_italic,
         ])
         .expect("renamed");
-    let json = character_json(&file[0], None);
+    let json = character_json(&file[0], None, &Default::default());
     assert!(
         json.contains(r#""font":"Titillium Web""#) && json.contains(r#""weight":"1024""#),
         "{json}"
@@ -4145,13 +4145,13 @@ fn variable_font_weight_axis_round_trips() {
     assert_eq!(weight_code(&at(None, false, false)), 64);
     assert_eq!(weight_code(&at(None, true, true)), 0x2000);
     assert_eq!(style_flags(&at(Some(500.0), false, false)), 256);
-    let json = character_json(&at(Some(600.0), false, true), None);
+    let json = character_json(&at(Some(600.0), false, true), None, &Default::default());
     assert!(
         json.contains(r#""weight":"1024""#) && json.contains(r#""italic":"1""#),
         "{json}"
     );
     // Set on bold text, the axis is what draws it.
-    let json = character_json(&at(Some(400.0), true, false), None);
+    let json = character_json(&at(Some(400.0), true, false), None, &Default::default());
     assert!(json.contains(r#""weight":"64""#), "{json}");
 
     let spans = [
@@ -4680,6 +4680,8 @@ fn the_font_table_lists_weight_named_faces_under_their_family() {
     const FONT: &[u8] =
         include_bytes!("../../../../apps/tracedraw/assets/fonts/Selawik-Regular.ttf");
     let named = renamed_font(FONT, "X Light");
+    // The SemiBold face's own file, of weight 600: listed as it is.
+    let semi = with_weight(FONT, 600);
     let face = |family: &str, data: &[u8]| FontFace {
         family: family.into(),
         bold: false,
@@ -4687,7 +4689,7 @@ fn the_font_table_lists_weight_named_faces_under_their_family() {
         data: Some(std::sync::Arc::new(data.to_vec())),
     };
     let faces = vec![
-        face("Selawik SemiBold", FONT),
+        face("Selawik SemiBold", &semi),
         face("Selawik", FONT),
         face("X Light", &named),
     ];
@@ -4907,9 +4909,18 @@ fn runs_of_their_own_colour_name_their_font_as_the_paragraph_does() {
         embed_fonts: true,
         ..Default::default()
     };
+    // The font's version string and the kind of its outlines (2:
+    // TrueType, not signed), as files name the face drawing a run.
+    let version = ttf_parser::Face::parse(REGULAR, 0)
+        .expect("font")
+        .names()
+        .into_iter()
+        .filter(|n| n.name_id == 5)
+        .find_map(|n| n.to_string())
+        .expect("version");
     let font = |charset: u32| {
         format!(
-            r#"{{"overline":"0","effect":"0","version":"","italic":"0","weight":"64","underline":"0","charset":"{charset}","technology":"4","size":"84667","font":"Selawik","script":"0","strikeout":"0"}}"#
+            r#"{{"overline":"0","effect":"0","version":"{version}","italic":"0","weight":"64","underline":"0","charset":"{charset}","technology":"2","size":"84667","font":"Selawik","script":"0","strikeout":"0"}}"#
         )
     };
     // The red run has the paragraph's look (its record is the plain
@@ -5504,16 +5515,19 @@ fn with_names(font: &[u8], names: &[(u16, &str)]) -> Vec<u8> {
 fn a_face_with_typographic_names_is_written_under_its_family() {
     const FONT: &[u8] =
         include_bytes!("../../../../apps/tracedraw/assets/fonts/Selawik-Regular.ttf");
-    let khand = with_names(
-        FONT,
-        &[
-            (1, "Khand SemiBold"),
-            (2, "Regular"),
-            (4, "Khand SemiBold"),
-            (6, "Khand-SemiBold"),
-            (16, "Khand"),
-            (17, "SemiBold"),
-        ],
+    let khand = with_weight(
+        &with_names(
+            FONT,
+            &[
+                (1, "Khand SemiBold"),
+                (2, "Regular"),
+                (4, "Khand SemiBold"),
+                (6, "Khand-SemiBold"),
+                (16, "Khand"),
+                (17, "SemiBold"),
+            ],
+        ),
+        600,
     );
     let faces = vec![FontFace {
         family: "Khand SemiBold".into(),
@@ -7023,5 +7037,345 @@ fn guideline_records_are_laid_out_as_the_files_have_them() {
             let mark = u32::from_le_bytes(flags[4..8].try_into().expect("4"));
             assert_eq!(mark, if v >= 13 { 5000 } else { 999 }, "{v}");
         }
+    }
+}
+
+/// `font` with the OS/2 weight class `weight`.
+fn with_weight(font: &[u8], weight: u16) -> Vec<u8> {
+    let mut f = font.to_vec();
+    let be32 = |b: &[u8], at: usize| u32::from_be_bytes(b[at..at + 4].try_into().expect("u32"));
+    let n = u16::from_be_bytes([f[4], f[5]]) as usize;
+    let dir = (0..n)
+        .map(|i| 12 + 16 * i)
+        .find(|&r| &f[r..r + 4] == b"OS/2")
+        .expect("OS/2");
+    let at = be32(&f, dir + 8) as usize;
+    f[at + 4..at + 6].copy_from_slice(&weight.to_be_bytes());
+    f
+}
+
+/// `font` with a table `tag` holding `data` added, the tables laid out
+/// again (checksums are not kept; fonts are read without them).
+fn with_extra_table(font: &[u8], tag: &[u8; 4], data: &[u8]) -> Vec<u8> {
+    let be32 = |b: &[u8], at: usize| u32::from_be_bytes(b[at..at + 4].try_into().expect("u32"));
+    let n = u16::from_be_bytes([font[4], font[5]]) as usize;
+    let mut tables: Vec<([u8; 4], Vec<u8>)> = (0..n)
+        .map(|i| {
+            let r = 12 + 16 * i;
+            let (off, len) = (be32(font, r + 8) as usize, be32(font, r + 12) as usize);
+            (
+                font[r..r + 4].try_into().expect("tag"),
+                font[off..off + len].to_vec(),
+            )
+        })
+        .collect();
+    tables.push((*tag, data.to_vec()));
+    tables.sort_by_key(|t| t.0);
+    let mut out = font[..4].to_vec();
+    out.extend_from_slice(&(tables.len() as u16).to_be_bytes());
+    out.extend_from_slice(&font[6..12]);
+    let start = 12 + 16 * tables.len();
+    let mut body = Vec::new();
+    for (t, d) in &tables {
+        out.extend_from_slice(t);
+        out.extend_from_slice(&0u32.to_be_bytes());
+        out.extend_from_slice(&((start + body.len()) as u32).to_be_bytes());
+        out.extend_from_slice(&(d.len() as u32).to_be_bytes());
+        body.extend_from_slice(d);
+        while body.len() % 4 != 0 {
+            body.push(0);
+        }
+    }
+    out.extend_from_slice(&body);
+    out
+}
+
+/// What a package says about its fonts: the font table's entries
+/// (number, flags, family, kind, style), the embedding members and the
+/// drawing's `font` records (id, flags, embedded, PostScript name), and
+/// the text of its style strings (zero bytes dropped).
+struct PackageFonts {
+    entries: Vec<(u16, u32, String, u32, String)>,
+    members: Vec<Vec<u8>>,
+    records: Vec<(u16, u32, bool, String)>,
+    styles: String,
+}
+
+fn package_fonts(bytes: &[u8]) -> PackageFonts {
+    let u32_at = |b: &[u8], at: usize| u32::from_le_bytes(b[at..at + 4].try_into().expect("u32"));
+    let utf16_at = |b: &[u8], at: usize| -> (String, usize) {
+        let n = u32_at(b, at) as usize;
+        let units: Vec<u16> = b[at + 4..at + 4 + 2 * n]
+            .chunks(2)
+            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+            .take_while(|u| *u != 0)
+            .collect();
+        (String::from_utf16_lossy(&units), at + 4 + 2 * n)
+    };
+    let mut z = zip::ZipArchive::new(std::io::Cursor::new(bytes)).expect("zip");
+    let read = |z: &mut zip::ZipArchive<std::io::Cursor<&[u8]>>, name: &str| {
+        let mut out = Vec::new();
+        std::io::Read::read_to_end(&mut z.by_name(name).expect("member"), &mut out).expect("read");
+        out
+    };
+    let table = read(&mut z, "font/fontTable.dat");
+    let mut entries = Vec::new();
+    let mut at = 12;
+    for _ in 0..u32_at(&table, 8) {
+        let e = at + 8;
+        let number = u16::from_le_bytes([table[e], table[e + 1]]);
+        let flags = u32_at(&table, e + 4);
+        let (family, p) = utf16_at(&table, e + 18);
+        let (_, p) = utf16_at(&table, p + 1);
+        let kind = u32_at(&table, p + 4);
+        let (_, p) = utf16_at(&table, p + 8);
+        let (_, p) = utf16_at(&table, p);
+        let (style, _) = utf16_at(&table, p);
+        entries.push((number, flags, family, kind, style));
+        at = e + u32_at(&table, at + 4) as usize;
+    }
+    let mut members = Vec::new();
+    while let Ok(mut f) = z.by_name(&format!("embed/embedding{}", members.len())) {
+        let mut m = Vec::new();
+        std::io::Read::read_to_end(&mut f, &mut m).expect("read");
+        drop(f);
+        members.push(m);
+    }
+    let (_, tree, riff) = chunk_ids(bytes);
+    let mut records = Vec::new();
+    let mut styles = Vec::new();
+    tree.root.walk(&mut |c, _| {
+        let d = tree.data(&riff, c);
+        if c.id_str() == "font" {
+            let ps: Vec<u16> = d[164..]
+                .chunks(2)
+                .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                .take_while(|u| *u != 0)
+                .collect();
+            records.push((
+                u16::from_le_bytes([d[0], d[1]]),
+                u32_at(d, 4),
+                u32_at(d, 156) == 1,
+                String::from_utf16_lossy(&ps),
+            ));
+        } else if c.is(b"txsm") {
+            styles.extend(d.iter().copied().filter(|b| *b != 0));
+        }
+    });
+    PackageFonts {
+        entries,
+        members,
+        records,
+        styles: String::from_utf8_lossy(&styles).into_owned(),
+    }
+}
+
+/// A face is listed and embedded as the face its font file holds, not as
+/// the style the text asks for: regular "Khand" text drawn by the only
+/// "Khand" file found, the bold one, is listed as "Khand" Bold at 0x1000
+/// (TraceDraw listed it at 0x40, regular, with the PostScript name and
+/// style of the bold face, and the program that reads the file reported
+/// Khand missing although it was installed, #1484), its face block and
+/// EOT header say bold and upright, the records describe both the face
+/// the text asks for and the face listed, and the kind is the outlines'
+/// as files give it: 2 for TrueType outlines, 4 when the font is signed
+/// (a `DSIG` table), in the table, the member and the style strings'
+/// `technology`, beside the font's version string.
+#[test]
+fn a_face_is_listed_as_the_face_its_font_file_holds() {
+    const BOLD: &[u8] = include_bytes!("../../../../apps/tracedraw/assets/fonts/Selawik-Bold.ttf");
+    let khand_bold = with_weight(
+        &with_names(
+            BOLD,
+            &[
+                (1, "Khand"),
+                (2, "Bold"),
+                (4, "Khand Bold"),
+                (5, "Version 1.102;PS 1.0"),
+                (6, "Khand-Bold"),
+            ],
+        ),
+        700,
+    );
+    let signed = with_extra_table(&khand_bold, b"DSIG", &[0, 0, 0, 1, 0, 0, 0, 0]);
+    let mut ids = tracedraw_core::id::IdSource::default();
+    let doc = doc_with(vec![text_shape(
+        &mut ids,
+        vec![TextSpan::new("abhishek", "Khand", 12.0)],
+        TextAlign::Left,
+    )]);
+    let u32_at = |b: &[u8], at: usize| u32::from_le_bytes(b[at..at + 4].try_into().expect("u32"));
+    for (font, kind) in [(&khand_bold, 2u32), (&signed, 4)] {
+        let previews = Previews {
+            fonts: vec![FontFace {
+                family: "Khand".into(),
+                bold: false,
+                italic: false,
+                data: Some(std::sync::Arc::new(font.clone())),
+            }],
+            embed_fonts: true,
+            ..Default::default()
+        };
+        let bytes = document_to_cdr_version_with(&doc, NEWEST_VERSION, &previews);
+        let p = package_fonts(&bytes);
+        assert_eq!(p.entries.len(), 1, "{:?}", p.entries);
+        let (number, flags, family, k, style) = p.entries[0].clone();
+        assert_eq!(
+            (flags, family.as_str(), k, style.as_str()),
+            (0x1000, "Khand", kind, "Bold")
+        );
+        assert_eq!(p.members.len(), 1);
+        let m = &p.members[0];
+        assert_eq!(u32::from(m[8]), kind, "the member's kind");
+        assert_eq!(u32_at(m, 2163), 0x1000, "the face block's flags");
+        let eot = &m[2705..];
+        assert_eq!(eot[27], 0, "upright");
+        assert_eq!(u32_at(eot, 28), 700, "the font's weight");
+        // The text's face (regular) and the listed one (bold), both of
+        // the embedded font.
+        for want in [0x40, 0x1000] {
+            assert!(
+                p.records
+                    .iter()
+                    .any(|r| *r == (number, want, true, "Khand-Bold".to_string())),
+                "{want:#x}: {:?}",
+                p.records
+            );
+        }
+        assert!(
+            p.styles.contains(r#""version":"Version 1.102;PS 1.0","#),
+            "{}",
+            p.styles
+        );
+        assert!(p.styles.contains(&format!(r#""technology":"{kind}","#)));
+        if kind != 4 {
+            assert!(!p.styles.contains(r#""technology":"4","#));
+        }
+        let (back, _) = crate::open_bytes(&bytes, "back").expect("reads back");
+        let ShapeKind::Text { spans, .. } = &back.pages[0].layers[0].shapes[0].kind else {
+            panic!("not text");
+        };
+        assert_eq!(
+            (spans[0].font_family.as_str(), spans[0].bold),
+            ("Khand", false)
+        );
+    }
+}
+
+/// Bold text in a light static face ("Khand Light", name ID 1, of the
+/// typographic family "Khand") drawn by the family's bold face is
+/// written as that family at 700: written "Khand Light" at 4096 with
+/// the light font embedded as bold italic, the program that reads the
+/// file drew it light and upright (#1455). Bold italic underlined text
+/// of "Khand Light" and of "Khand", both drawn by the bold face, gives
+/// one font table entry ("Khand" Bold, with the underline bit as files
+/// set it for underlined text) and one embedded font; the records keep
+/// the face the text asks for (bold italic) beside it; the text reads
+/// back bold, italic and underlined.
+#[test]
+fn bold_text_in_a_light_face_is_written_as_the_family_bold() {
+    const REGULAR: &[u8] =
+        include_bytes!("../../../../apps/tracedraw/assets/fonts/Selawik-Regular.ttf");
+    const BOLD: &[u8] = include_bytes!("../../../../apps/tracedraw/assets/fonts/Selawik-Bold.ttf");
+    let light = with_weight(
+        &with_names(
+            REGULAR,
+            &[
+                (1, "Khand Light"),
+                (2, "Regular"),
+                (4, "Khand Light"),
+                (6, "Khand-Light"),
+                (16, "Khand"),
+                (17, "Light"),
+            ],
+        ),
+        300,
+    );
+    let bold = std::sync::Arc::new(with_weight(
+        &with_names(
+            BOLD,
+            &[
+                (1, "Khand"),
+                (2, "Bold"),
+                (4, "Khand Bold"),
+                (6, "Khand-Bold"),
+            ],
+        ),
+        700,
+    ));
+    let face = |family: &str, data: &std::sync::Arc<Vec<u8>>| FontFace {
+        family: family.into(),
+        bold: true,
+        italic: true,
+        data: Some(data.clone()),
+    };
+    let faces = vec![face("Khand Light", &bold), face("Khand", &bold)];
+    assert_eq!(
+        fonts::split_family("Khand Light", true, &faces),
+        Some(("Khand".into(), 700))
+    );
+    // Drawn by the light face thickened (no bold face found): kept whole.
+    let light_only = vec![face("Khand Light", &std::sync::Arc::new(light))];
+    assert_eq!(fonts::split_family("Khand Light", true, &light_only), None);
+
+    let span = |family: &str| {
+        let mut sp = TextSpan::new("abhishek", family, 12.0);
+        sp.bold = true;
+        sp.italic = true;
+        sp.underline = true;
+        sp
+    };
+    let mut ids = tracedraw_core::id::IdSource::default();
+    let doc = doc_with(vec![
+        text_shape(&mut ids, vec![span("Khand Light")], TextAlign::Left),
+        text_shape(&mut ids, vec![span("Khand")], TextAlign::Left),
+    ]);
+    let previews = Previews {
+        fonts: faces,
+        embed_fonts: true,
+        ..Default::default()
+    };
+    let bytes = document_to_cdr_version_with(&doc, NEWEST_VERSION, &previews);
+    let p = package_fonts(&bytes);
+    assert!(!p.styles.contains("Khand Light"), "{}", p.styles);
+    assert!(p
+        .styles
+        .contains(r#""italic":"1","weight":"4096","underline":"1""#));
+    assert_eq!(p.entries.len(), 1, "{:?}", p.entries);
+    let (number, flags, family, _, style) = p.entries[0].clone();
+    assert_eq!(
+        (flags, family.as_str(), style.as_str()),
+        (0x1000 | fonts::UNDERLINE_FLAG, "Khand", "Bold")
+    );
+    assert_eq!(p.members.len(), 1);
+    let m = &p.members[0];
+    assert_eq!(
+        u32::from_le_bytes(m[2163..2167].try_into().expect("u32")),
+        0x1000,
+        "no lines in the face block"
+    );
+    assert_eq!(m[2705 + 27], 0, "the bold face is upright");
+    for want in [
+        0x2000 | fonts::UNDERLINE_FLAG,
+        0x1000 | fonts::UNDERLINE_FLAG,
+    ] {
+        assert!(
+            p.records
+                .iter()
+                .any(|r| r.0 == number && r.1 == want && r.2),
+            "{want:#x}: {:?}",
+            p.records
+        );
+    }
+    let (back, _) = crate::open_bytes(&bytes, "back").expect("reads back");
+    for s in &back.pages[0].layers[0].shapes {
+        let ShapeKind::Text { spans, .. } = &s.kind else {
+            panic!("not text");
+        };
+        let sp = &spans[0];
+        assert_eq!(
+            (sp.font_family.as_str(), sp.bold, sp.italic, sp.underline),
+            ("Khand", true, true, true)
+        );
     }
 }
