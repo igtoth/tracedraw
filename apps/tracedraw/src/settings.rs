@@ -497,8 +497,10 @@ fn default_path_tick() -> f64 {
 
 /// The dockers as they were left: the default column's dockers, in
 /// order, and the one in front (by their name keys, "docker.hints" ...);
-/// the other column's, its front and whether it was open; and the
-/// floating ones with their windows.
+/// the other column's, its front and whether it was open; the second
+/// column on each side (between the column at the window's edge and the
+/// drawing), its front and whether it was open; and the floating ones
+/// with their windows.
 #[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct DockerSetup {
@@ -507,6 +509,20 @@ pub struct DockerSetup {
     pub left: Vec<String>,
     pub left_front: String,
     pub left_shown: bool,
+    /// The second column on the default column's side.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub inner: Vec<String>,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub inner_front: String,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub inner_shown: bool,
+    /// The second column on the other side.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub left_inner: Vec<String>,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub left_inner_front: String,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub left_inner_shown: bool,
     pub floating: Vec<FloatingSetup>,
 }
 

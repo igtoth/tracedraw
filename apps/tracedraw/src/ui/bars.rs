@@ -263,6 +263,26 @@ pub struct BarLayout {
     /// right (as before the choice existed).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub palette_beside: Option<bool>,
+    /// The palette docked at the left or the right lies between the two
+    /// docker columns of that side (see [`PaletteSpot::Between`]).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub palette_between: bool,
+}
+
+/// Where the docked palette lies on its side, from the window's edge
+/// inwards.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum PaletteSpot {
+    /// At the window's edge (and always while floating).
+    Edge,
+    /// At the left or the right, between the side's two docker columns
+    /// (the column at the window's edge and the second one, nearer the
+    /// drawing). While the side has one column it lies after that column,
+    /// beside the drawing, and goes back between them once there are two.
+    Between,
+    /// Beside the drawing, between it and the dockers, the toolbox or the
+    /// toolbars on that side.
+    Beside,
 }
 
 /// The current layout version.
@@ -289,6 +309,7 @@ impl Default for BarLayout {
             locked: false,
             version: LAYOUT_VERSION,
             palette_beside: None,
+            palette_between: false,
         }
     }
 }
@@ -314,11 +335,17 @@ impl BarLayout {
             .unwrap_or(self.dock(Bar::Palette).horizontal())
     }
 
-    /// The palette's place: its dock and, docked, whether beside the
-    /// drawing (false when floating).
-    pub fn palette_place(&self) -> (Dock, bool) {
+    /// The palette's place: its dock and, docked, where on that side
+    /// ([`PaletteSpot::Edge`] when floating).
+    pub fn palette_place(&self) -> (Dock, PaletteSpot) {
         let dock = self.dock(Bar::Palette);
-        (dock, dock != Dock::Floating && self.palette_beside())
+        let spot = match dock {
+            Dock::Floating => PaletteSpot::Edge,
+            Dock::Left | Dock::Right if self.palette_between => PaletteSpot::Between,
+            _ if self.palette_beside() => PaletteSpot::Beside,
+            _ => PaletteSpot::Edge,
+        };
+        (dock, spot)
     }
 
     pub fn dock(&self, bar: Bar) -> Dock {
@@ -723,10 +750,12 @@ fn menu_body(app: &mut App, ui: &mut Ui, bar: Bar) {
     let free = !app.settings.bars.locked;
     if bar == Bar::Palette {
         // Every place: each side at the window's edge or beside the
-        // drawing, and floating.
+        // drawing, at the left and the right between the two docker
+        // columns (while the side has two), and floating.
         let now = app.settings.bars.palette_place();
         for (place, key) in PALETTE_PLACES {
-            if radio_if(ui, key, "", now == place, free) {
+            let open = place.1 != PaletteSpot::Between || two_columns(app, place.0);
+            if radio_if(ui, key, "", now == place, free && open) {
                 move_palette(app, place.0, place.1, None);
             }
         }
@@ -817,26 +846,87 @@ pub const DRAWING_ROOM: &str = "bars_drawing_room";
 
 /// The palette's places in its menu, with their names: each side beside
 /// the drawing and at the window's edge (the plain names keep the places
-/// they had before the choice existed), then floating.
-pub const PALETTE_PLACES: [((Dock, bool), &str); 9] = [
-    ((Dock::Top, true), "bars.top"),
-    ((Dock::Top, false), "bars.palette_top_edge"),
-    ((Dock::Bottom, true), "bars.bottom"),
-    ((Dock::Bottom, false), "bars.palette_bottom_edge"),
-    ((Dock::Left, false), "bars.left"),
-    ((Dock::Left, true), "bars.palette_left_beside"),
-    ((Dock::Right, false), "bars.right"),
-    ((Dock::Right, true), "bars.palette_right_beside"),
-    ((Dock::Floating, false), "bars.floating"),
+/// they had before the choice existed), the left and the right between
+/// their two docker columns, then floating.
+pub const PALETTE_PLACES: [((Dock, PaletteSpot), &str); 11] = [
+    ((Dock::Top, PaletteSpot::Beside), "bars.top"),
+    ((Dock::Top, PaletteSpot::Edge), "bars.palette_top_edge"),
+    ((Dock::Bottom, PaletteSpot::Beside), "bars.bottom"),
+    (
+        (Dock::Bottom, PaletteSpot::Edge),
+        "bars.palette_bottom_edge",
+    ),
+    ((Dock::Left, PaletteSpot::Edge), "bars.left"),
+    (
+        (Dock::Left, PaletteSpot::Between),
+        "bars.palette_left_between",
+    ),
+    (
+        (Dock::Left, PaletteSpot::Beside),
+        "bars.palette_left_beside",
+    ),
+    ((Dock::Right, PaletteSpot::Edge), "bars.right"),
+    (
+        (Dock::Right, PaletteSpot::Between),
+        "bars.palette_right_between",
+    ),
+    (
+        (Dock::Right, PaletteSpot::Beside),
+        "bars.palette_right_beside",
+    ),
+    ((Dock::Floating, PaletteSpot::Edge), "bars.floating"),
 ];
 
-/// Put the palette at `dock`, beside the drawing or at the window's edge
-/// (floating at `at` when given). The place is kept in the preferences.
-pub fn move_palette(app: &mut App, dock: Dock, beside: bool, at: Option<Pos2>) {
+/// Put the palette at `dock`, at `spot` on that side (floating at `at`
+/// when given). The place is kept in the preferences.
+pub fn move_palette(app: &mut App, dock: Dock, spot: PaletteSpot, at: Option<Pos2>) {
     move_bar(app, Bar::Palette, dock, at);
     if dock != Dock::Floating && app.settings.bars.dock(Bar::Palette) == dock {
-        app.settings.bars.palette_beside = Some(beside);
+        let between = spot == PaletteSpot::Between && matches!(dock, Dock::Left | Dock::Right);
+        app.settings.bars.palette_beside = Some(spot == PaletteSpot::Beside);
+        app.settings.bars.palette_between = between;
     }
+}
+
+/// The window's side `side` (left or right) holds two docker columns,
+/// for the palette to lie between.
+pub fn two_columns(app: &App, side: Dock) -> bool {
+    use crate::app::DockerPlace;
+    [DockerPlace::Right, DockerPlace::Left]
+        .into_iter()
+        .any(|p| {
+            let at_left = crate::ui::dockers::strip_at_left(p);
+            let here = matches!((side, at_left), (Dock::Left, true) | (Dock::Right, false));
+            here && !app.docker_column(p).0.is_empty() && !app.docker_column(p.inner()).0.is_empty()
+        })
+}
+
+/// The gaps between the two docker columns of each side that has two, as
+/// the last layout left them (see [`crate::ui::dockers::DOCKER_COLUMNS`]):
+/// the side and the rect between the columns, from the top to the bottom
+/// they share; no wider than the line where they meet while the palette
+/// is elsewhere.
+pub fn column_gaps(columns: &[(crate::app::DockerPlace, Rect)]) -> Vec<(Dock, Rect)> {
+    let mut out = Vec::new();
+    for (inner, ir) in columns.iter().filter(|(p, _)| p.is_inner()) {
+        let Some((_, er)) = columns.iter().find(|(p, _)| *p == inner.edge()) else {
+            continue;
+        };
+        let top = ir.top().max(er.top());
+        let bottom = ir.bottom().min(er.bottom());
+        let (side, gap) = if crate::ui::dockers::strip_at_left(*inner) {
+            (Dock::Left, (er.right(), ir.left()))
+        } else {
+            (Dock::Right, (ir.right(), er.left()))
+        };
+        if bottom > top && gap.1 >= gap.0 {
+            out.push((
+                side,
+                Rect::from_min_max(pos2(gap.0, top), pos2(gap.1, bottom)),
+            ));
+        }
+    }
+    out
 }
 
 /// Put `bar` at `dock` (floating at `at` when given). A toolbar coming to
@@ -907,19 +997,25 @@ pub fn drag_overlay(app: &mut App, ctx: &egui::Context, menu_h: f32) {
     if drag.bar == Bar::Palette {
         // The palette also docks beside the drawing: between it and the
         // docker column, the toolbox or the toolbars on that side.
+        // Between a side's two docker columns too.
         let drawing = ctx
             .data(|d| d.get_temp::<Rect>(egui::Id::new(DRAWING_ROOM)))
             .unwrap_or(Rect::NOTHING);
-        let (dock, beside) = palette_target(screen, menu_h, drawing, p);
-        let zone = if beside {
-            beside_zone(app, dock, drawing)
-        } else {
-            drop_zone(app, drag, dock, screen, menu_h, p)
+        let gaps = column_gaps(&crate::ui::dockers::column_rects(ctx));
+        let (dock, spot) = palette_target(screen, menu_h, drawing, &gaps, p);
+        let zone = match spot {
+            PaletteSpot::Beside => beside_zone(app, dock, drawing),
+            PaletteSpot::Between => gaps
+                .iter()
+                .find(|(d, _)| *d == dock)
+                .map(|(_, gap)| between_zone(app, *gap))
+                .unwrap_or(drawing),
+            PaletteSpot::Edge => drop_zone(app, drag, dock, screen, menu_h, p),
         };
         painter.rect(zone, 2.0, fill, edge, egui::StrokeKind::Inside);
         if !down {
             app.bar_drag = None;
-            move_palette(app, dock, beside, Some(p - drag.grab));
+            move_palette(app, dock, spot, Some(p - drag.grab));
         }
         return;
     }
@@ -933,20 +1029,33 @@ pub fn drag_overlay(app: &mut App, ctx: &egui::Context, menu_h: f32) {
 }
 
 /// Where the palette goes when dropped with the pointer at `p`: the
-/// nearest of the window's edges and the edges of `drawing` (the room the
-/// bars and dockers leave) within [`EDGE_ZONE`], with whether that is
-/// beside the drawing; else floating. Where an edge of the drawing lies
-/// on the window's edge, the window's edge wins.
-pub fn palette_target(screen: Rect, menu_h: f32, drawing: Rect, p: Pos2) -> (Dock, bool) {
+/// nearest of the window's edges, the edges of `drawing` (the room the
+/// bars and dockers leave) and the gaps between two docker columns
+/// (`gaps`, see [`column_gaps`]) within [`EDGE_ZONE`], with the spot on
+/// that side; else floating. Where an edge of the drawing lies on the
+/// window's edge, the window's edge wins.
+pub fn palette_target(
+    screen: Rect,
+    menu_h: f32,
+    drawing: Rect,
+    gaps: &[(Dock, Rect)],
+    p: Pos2,
+) -> (Dock, PaletteSpot) {
     let top = screen.top() + menu_h;
     let along_y = p.y >= drawing.top() - EDGE_ZONE && p.y <= drawing.bottom() + EDGE_ZONE;
     let along_x = p.x >= drawing.left() - EDGE_ZONE && p.x <= drawing.right() + EDGE_ZONE;
     let mut spots = vec![
-        (Dock::Left, false, p.x - screen.left()),
-        (Dock::Right, false, screen.right() - p.x),
-        (Dock::Top, false, p.y - top),
-        (Dock::Bottom, false, screen.bottom() - p.y),
+        (Dock::Left, PaletteSpot::Edge, p.x - screen.left()),
+        (Dock::Right, PaletteSpot::Edge, screen.right() - p.x),
+        (Dock::Top, PaletteSpot::Edge, p.y - top),
+        (Dock::Bottom, PaletteSpot::Edge, screen.bottom() - p.y),
     ];
+    for (side, gap) in gaps {
+        if p.y >= gap.top() && p.y <= gap.bottom() {
+            let dist = (gap.left() - p.x).max(p.x - gap.right()).max(0.0);
+            spots.push((*side, PaletteSpot::Between, dist));
+        }
+    }
     if drawing.is_positive() {
         let beside = [
             (
@@ -980,14 +1089,26 @@ pub fn palette_target(screen: Rect, menu_h: f32, drawing: Rect, p: Pos2) -> (Doc
         ];
         for (dock, at, window_edge, along, dist) in beside {
             if along && (at - window_edge).abs() > 1.0 {
-                spots.push((dock, true, dist));
+                spots.push((dock, PaletteSpot::Beside, dist));
             }
         }
     }
     spots.sort_by(|a, b| a.2.total_cmp(&b.2).then(a.1.cmp(&b.1)));
     match spots.first() {
-        Some(&(dock, beside, dist)) if dist <= EDGE_ZONE => (dock, beside),
-        _ => (Dock::Floating, false),
+        Some(&(dock, spot, dist)) if dist <= EDGE_ZONE => (dock, spot),
+        _ => (Dock::Floating, PaletteSpot::Edge),
+    }
+}
+
+/// The band the palette would take in `gap`, between two docker columns:
+/// the gap itself while the palette lies there, else a band of its width
+/// across the line where the columns meet.
+fn between_zone(app: &App, gap: Rect) -> Rect {
+    let thick = crate::ui::palette::thickness(app, crate::ui::palette::Row::Main);
+    if gap.width() >= thick - 0.5 {
+        gap
+    } else {
+        Rect::from_center_size(gap.center(), vec2(thick, gap.height()))
     }
 }
 
@@ -1352,35 +1473,118 @@ mod tests {
     fn the_palette_docks_beside_the_drawing_or_at_the_window_edge() {
         let s = screen();
         let drawing = Rect::from_min_max(pos2(60.0, 120.0), pos2(1200.0, 900.0));
-        let at = |x: f32, y: f32| palette_target(s, 24.0, drawing, pos2(x, y));
-        assert_eq!(at(1190.0, 500.0), (Dock::Right, true));
-        assert_eq!(at(1230.0, 500.0), (Dock::Right, true));
-        assert_eq!(at(1590.0, 500.0), (Dock::Right, false));
-        assert_eq!(at(75.0, 500.0), (Dock::Left, true));
-        assert_eq!(at(10.0, 500.0), (Dock::Left, false));
-        assert_eq!(at(600.0, 890.0), (Dock::Bottom, true));
-        assert_eq!(at(600.0, 995.0), (Dock::Bottom, false));
-        assert_eq!(at(600.0, 125.0), (Dock::Top, true));
-        assert_eq!(at(600.0, 30.0), (Dock::Top, false));
-        assert_eq!(at(600.0, 500.0), (Dock::Floating, false));
+        let at = |x: f32, y: f32| palette_target(s, 24.0, drawing, &[], pos2(x, y));
+        use PaletteSpot::{Beside, Edge};
+        assert_eq!(at(1190.0, 500.0), (Dock::Right, Beside));
+        assert_eq!(at(1230.0, 500.0), (Dock::Right, Beside));
+        assert_eq!(at(1590.0, 500.0), (Dock::Right, Edge));
+        assert_eq!(at(75.0, 500.0), (Dock::Left, Beside));
+        assert_eq!(at(10.0, 500.0), (Dock::Left, Edge));
+        assert_eq!(at(600.0, 890.0), (Dock::Bottom, Beside));
+        assert_eq!(at(600.0, 995.0), (Dock::Bottom, Edge));
+        assert_eq!(at(600.0, 125.0), (Dock::Top, Beside));
+        assert_eq!(at(600.0, 30.0), (Dock::Top, Edge));
+        assert_eq!(at(600.0, 500.0), (Dock::Floating, Edge));
         // An edge of the drawing on the window's edge is the window's.
         let wide = Rect::from_min_max(pos2(0.0, 120.0), pos2(1600.0, 900.0));
         assert_eq!(
-            palette_target(s, 24.0, wide, pos2(1590.0, 500.0)),
-            (Dock::Right, false)
+            palette_target(s, 24.0, wide, &[], pos2(1590.0, 500.0)),
+            (Dock::Right, Edge)
         );
         // The place is kept in the preferences; older preferences have
         // none and keep the places they had.
         let mut l = BarLayout::default();
-        assert_eq!(l.palette_place(), (Dock::Bottom, true));
+        assert_eq!(l.palette_place(), (Dock::Bottom, Beside));
         l.set_dock(Bar::Palette, Dock::Right);
-        assert_eq!(l.palette_place(), (Dock::Right, false));
+        assert_eq!(l.palette_place(), (Dock::Right, Edge));
         l.palette_beside = Some(true);
         let back: BarLayout =
             serde_json::from_str(&serde_json::to_string(&l).expect("json")).expect("layout");
-        assert_eq!(back.palette_place(), (Dock::Right, true));
+        assert_eq!(back.palette_place(), (Dock::Right, Beside));
         let old: BarLayout = serde_json::from_str(r#"{"palette":"bottom"}"#).expect("old");
-        assert_eq!(old.palette_place(), (Dock::Bottom, true));
+        assert_eq!(old.palette_place(), (Dock::Bottom, Beside));
+    }
+
+    /// Between two docker columns of a side: the gap where they meet is a
+    /// drop target as near as the drawing's edge; the place is kept in
+    /// the preferences and comes back; at the top or the bottom, or with
+    /// preferences from before, it is no place.
+    #[test]
+    fn the_palette_docks_between_two_docker_columns() {
+        use crate::app::DockerPlace;
+        use PaletteSpot::{Beside, Between, Edge};
+        let s = screen();
+        let drawing = Rect::from_min_max(pos2(60.0, 120.0), pos2(800.0, 900.0));
+        // drawing | second column 800..1167 | first column 1200..1600.
+        let columns = [
+            (
+                DockerPlace::Right,
+                Rect::from_min_max(pos2(1200.0, 100.0), pos2(1600.0, 960.0)),
+            ),
+            (
+                DockerPlace::RightInner,
+                Rect::from_min_max(pos2(800.0, 100.0), pos2(1167.0, 960.0)),
+            ),
+        ];
+        let gaps = column_gaps(&columns);
+        assert_eq!(
+            gaps,
+            vec![(
+                Dock::Right,
+                Rect::from_min_max(pos2(1167.0, 100.0), pos2(1200.0, 960.0))
+            )]
+        );
+        let at = |x: f32, y: f32| palette_target(s, 24.0, drawing, &gaps, pos2(x, y));
+        assert_eq!(at(1180.0, 500.0), (Dock::Right, Between));
+        assert_eq!(at(1140.0, 500.0), (Dock::Right, Between));
+        assert_eq!(at(1230.0, 500.0), (Dock::Right, Between));
+        assert_eq!(at(805.0, 500.0), (Dock::Right, Beside));
+        assert_eq!(at(1595.0, 500.0), (Dock::Right, Edge));
+        assert_eq!(at(1000.0, 500.0), (Dock::Floating, Edge));
+        // No gap while a side has one column.
+        assert!(column_gaps(&columns[..1]).is_empty());
+        assert_eq!(
+            palette_target(s, 24.0, drawing, &[], pos2(1180.0, 500.0)),
+            (Dock::Floating, Edge)
+        );
+        // The band: across the line while the palette is elsewhere, the
+        // gap itself while it lies there.
+        let app = App::headless();
+        let thick = crate::ui::palette::thickness(&app, crate::ui::palette::Row::Main);
+        let line = Rect::from_min_max(pos2(1200.0, 100.0), pos2(1200.0, 960.0));
+        let band = between_zone(&app, line);
+        assert!((band.width() - thick).abs() < 0.01 && band.center().x == 1200.0);
+        assert_eq!(between_zone(&app, gaps[0].1), gaps[0].1);
+        // Kept in the preferences, and back at the next start.
+        let mut l = BarLayout::default();
+        l.set_dock(Bar::Palette, Dock::Right);
+        l.palette_between = true;
+        assert_eq!(l.palette_place(), (Dock::Right, Between));
+        let json = serde_json::to_string(&l).expect("json");
+        assert!(json.contains("\"palette_between\":true"), "{json}");
+        let back: BarLayout = serde_json::from_str(&json).expect("layout");
+        assert_eq!(back.palette_place(), (Dock::Right, Between));
+        // Written only when on; preferences from before have it off.
+        let off = serde_json::to_string(&BarLayout::default()).expect("json");
+        assert!(!off.contains("palette_between"), "{off}");
+        let old: BarLayout =
+            serde_json::from_str(r#"{"palette":"right","palette_beside":true}"#).expect("old");
+        assert_eq!(old.palette_place(), (Dock::Right, Beside));
+        // Along the top it means nothing.
+        l.set_dock(Bar::Palette, Dock::Top);
+        assert_eq!(l.palette_place().1, Beside);
+        // Through the menu's place.
+        let mut app = App::headless();
+        move_palette(&mut app, Dock::Left, Between, None);
+        assert_eq!(app.settings.bars.palette_place(), (Dock::Left, Between));
+        move_palette(&mut app, Dock::Left, Beside, None);
+        assert_eq!(app.settings.bars.palette_place(), (Dock::Left, Beside));
+        assert!(!app.settings.bars.palette_between);
+        // Every place of the menu is a different one, each named.
+        for (i, (place, key)) in PALETTE_PLACES.iter().enumerate() {
+            assert!(PALETTE_PLACES[i + 1..].iter().all(|(p, _)| p != place));
+            assert_ne!(crate::i18n::tr(key), *key);
+        }
     }
 
     /// The palette dragged near the drawing's right edge shows a band there
@@ -1446,7 +1650,10 @@ mod tests {
             }],
         );
         assert!(app.bar_drag.is_none());
-        assert_eq!(app.settings.bars.palette_place(), (Dock::Right, true));
+        assert_eq!(
+            app.settings.bars.palette_place(),
+            (Dock::Right, PaletteSpot::Beside)
+        );
         for _ in 0..3 {
             run(&mut app, Vec::new());
         }
@@ -1457,12 +1664,167 @@ mod tests {
             app.canvas_rect
         );
         // From the menu, at the window's right edge: outside the dockers.
-        move_palette(&mut app, Dock::Right, false, None);
+        move_palette(&mut app, Dock::Right, PaletteSpot::Edge, None);
         for _ in 0..3 {
             run(&mut app, Vec::new());
         }
         assert!(palette_x() > 1550.0, "at the edge: {}", palette_x());
-        assert_eq!(app.settings.bars.palette_place(), (Dock::Right, false));
+        assert_eq!(
+            app.settings.bars.palette_place(),
+            (Dock::Right, PaletteSpot::Edge)
+        );
+    }
+
+    /// The screenshot's layout: drawing | Properties | palette | the
+    /// other panels. A panel dragged just inside its column makes a
+    /// second column there; the palette dragged to where the two meet
+    /// shows its band there and, dropped, lies between them as a column,
+    /// the panels keeping their tab strips; the next start puts it all
+    /// back.
+    #[test]
+    fn the_palette_dropped_between_two_docker_columns_lies_between_them() {
+        use crate::app::{DockerDrag, DockerPlace, DockerTab};
+        let ctx = crate::theme::ui_context();
+        let mut app = App::headless();
+        app.show_welcome = false;
+        app.show_dockers = true;
+        let run = |ctx: &egui::Context, app: &mut App, events: Vec<egui::Event>| {
+            let input = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1600.0, 1000.0))),
+                events,
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| crate::ui::root(app, ui));
+            out.textures_delta.clear();
+            out.shapes.into_iter().map(|c| c.shape).collect::<Vec<_>>()
+        };
+        let press = |at: Pos2, pressed: bool| egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let blue = Color32::from_rgb(0x1E, 0x78, 0xD7);
+        let band = |shapes: &[egui::Shape]| {
+            shapes.iter().find_map(|s| match s {
+                egui::Shape::Rect(r) if r.stroke.color == blue => Some(r.rect),
+                _ => None,
+            })
+        };
+        let column = |ctx: &egui::Context, place: DockerPlace| {
+            crate::ui::dockers::column_rects(ctx)
+                .into_iter()
+                .find(|(p, _)| *p == place)
+                .map(|(_, r)| r)
+        };
+        for _ in 0..3 {
+            run(&ctx, &mut app, Vec::new());
+        }
+        let edge = column(&ctx, DockerPlace::Right).expect("the default column");
+        assert!(column(&ctx, DockerPlace::RightInner).is_none());
+        // Properties dragged just inside the default column: a second
+        // column, between it and the drawing.
+        app.docker_drag = Some(DockerDrag {
+            tab: DockerTab::Properties,
+            grab: vec2(10.0, 10.0),
+            last: None,
+        });
+        let at = pos2(edge.left() - 20.0, edge.center().y);
+        let shapes = run(
+            &ctx,
+            &mut app,
+            vec![egui::Event::PointerMoved(at), press(at, true)],
+        );
+        let b = band(&shapes).expect("the docker's band");
+        assert!((b.right() - edge.left()).abs() < 1.0, "{b:?} {edge:?}");
+        run(&ctx, &mut app, vec![press(at, false)]);
+        assert_eq!(
+            app.docker_place(DockerTab::Properties),
+            Some(DockerPlace::RightInner)
+        );
+        for _ in 0..3 {
+            run(&ctx, &mut app, Vec::new());
+        }
+        let edge = column(&ctx, DockerPlace::Right).expect("the edge column");
+        let inner = column(&ctx, DockerPlace::RightInner).expect("the second column");
+        assert!(inner.right() <= edge.left() + 0.5, "{inner:?} {edge:?}");
+        assert!(two_columns(&app, Dock::Right) && !two_columns(&app, Dock::Left));
+        // The palette dragged to where they meet.
+        app.bar_drag = Some(BarDrag {
+            bar: Bar::Palette,
+            grab: vec2(5.0, 5.0),
+            last: None,
+        });
+        let at = pos2(edge.left() - 4.0, edge.center().y);
+        let shapes = run(
+            &ctx,
+            &mut app,
+            vec![egui::Event::PointerMoved(at), press(at, true)],
+        );
+        let b = band(&shapes).expect("the palette's band");
+        assert!(
+            (b.center().x - edge.left()).abs() < 1.0 && b.width() < 60.0,
+            "the band lies between the columns: {b:?}"
+        );
+        run(&ctx, &mut app, vec![press(at, false)]);
+        assert!(app.bar_drag.is_none());
+        assert_eq!(
+            app.settings.bars.palette_place(),
+            (Dock::Right, PaletteSpot::Between)
+        );
+        let palette = |ctx: &egui::Context| {
+            ctx.data(|d| d.get_temp::<Rect>(egui::Id::new(("palette_expand_rect", 0u8))))
+                .expect("the palette")
+        };
+        let check = |ctx: &egui::Context, app: &App| {
+            let edge = column(ctx, DockerPlace::Right).expect("the edge column");
+            let inner = column(ctx, DockerPlace::RightInner).expect("the second column");
+            let pal = palette(ctx);
+            assert!(
+                pal.center().x > inner.right() - 0.5 && pal.center().x < edge.left() + 0.5,
+                "the palette lies between the columns: {pal:?} {inner:?} {edge:?}"
+            );
+            // A column of the palette's width between them, its end
+            // buttons low down the column.
+            let thick = crate::ui::palette::thickness(app, crate::ui::palette::Row::Main);
+            let gap = edge.left() - inner.right();
+            assert!((gap - thick).abs() < 1.0, "{gap} {thick}");
+            assert!(pal.center().y > edge.center().y, "{pal:?}");
+            assert!(app.canvas_rect.right() <= inner.left() + 0.5);
+            // Each column keeps its tab strip and its docker.
+            assert!(
+                inner.width() > 300.0 && edge.width() > 300.0,
+                "{inner:?} {edge:?}"
+            );
+        };
+        for _ in 0..3 {
+            run(&ctx, &mut app, Vec::new());
+        }
+        check(&ctx, &app);
+        // The next start.
+        app.sync_settings();
+        let json = serde_json::to_string(&app.settings).expect("json");
+        let saved: crate::settings::Settings = serde_json::from_str(&json).expect("settings");
+        let ctx = crate::theme::ui_context();
+        let mut next = App::headless();
+        next.apply_settings(saved);
+        next.show_welcome = false;
+        assert_eq!(
+            next.settings.bars.palette_place(),
+            (Dock::Right, PaletteSpot::Between)
+        );
+        for _ in 0..3 {
+            run(&ctx, &mut next, Vec::new());
+        }
+        check(&ctx, &next);
+        // With one column left on the side it lies beside the drawing.
+        next.move_docker(DockerTab::Properties, DockerPlace::Right, None);
+        for _ in 0..3 {
+            run(&ctx, &mut next, Vec::new());
+        }
+        let edge = column(&ctx, DockerPlace::Right).expect("the edge column");
+        let pal = palette(&ctx);
+        assert!(pal.right() <= edge.left() + 0.5 && pal.left() >= next.canvas_rect.right() - 0.5);
     }
 
     #[test]

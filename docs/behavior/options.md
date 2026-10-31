@@ -62,24 +62,38 @@ mouse button; see `color-palettes.md`).
 
 ## Tools
 
-The page list shows each tool's toolbox icon beside its name.
+The page list shows each tool's toolbox icon beside its name, in this
+order: Pick, Eraser, Zoom/Pan, Freehand/Bézier, Shape Recognition,
+Rectangle, Ellipse, Polygon, Graph Paper, Spiral, Table, Dimension,
+Connector, Mesh Fill (`OptionsSet::pages`). Each page has the label column
+and controls of the other options pages; every value is the same one the
+tool's property bar edits, so a change on either shows on the other, is
+kept with the tool settings across restarts (`settings.tools`) and is put
+back by Cancel.
 
 Pick (cross hair cursor; treat all objects as filled, on by default:
 unfilled objects are picked inside too; marquee selects touched objects,
 off by default: a marquee or freehand selection takes what it touches and
-Alt only what lies wholly inside), Zoom/Pan (Zoom tool section: right mouse button of the Zoom tool:
+Alt only what lies wholly inside), Eraser (thickness, round or square
+nib), Zoom/Pan (Zoom tool section: right mouse button of the Zoom tool:
 zoom out or context menu; mouse wheel action; Calibrate Zoom... opens the ruler
-calibration on the Display page), Curve tools (Freehand
+calibration on the Display page), Freehand/Bézier (Freehand
 smoothing, 0 to 100, 50 by default; Join and close within, 1 to 50
 screen pixels, 5 by default; Graphics tablet: pen pressure sets the
 width of Freehand and Brush Strokes drags, on; see `curve-tools.md` and
-`pen-pressure.md`), Rectangle (Rectangle
+`pen-pressure.md`), Shape Recognition (recognition and smoothing levels,
+off to highest, as on the tool's property bar), Rectangle (Rectangle
 corners: style, the four sizes, Edit corners together; Scale corners:
 Relative corner scaling, off by default so that new rectangles keep
 their corner size when resized; see `shape-tools.md`),
 Ellipse (ellipse, pie or arc and its angles), Polygon (points, sharpness),
-Spiral (revolutions, symmetrical or logarithmic), Graph Paper and Table
-(rows, columns), Eraser (thickness, round or square nib).
+Graph Paper (rows, columns), Spiral (revolutions, symmetrical or
+logarithmic), Table (rows, columns), Dimension (the label of new
+dimensions: precision, units, show units, prefix, suffix; dimensions
+already drawn keep theirs, unlike the property bar, which also changes
+the selected dimensions; see `dimensions.md`), Connector (corner radius
+of new rounded connectors, 0 to 1000 mm, 3 mm by default), Mesh Fill
+(columns and rows of a new mesh, 1 to 50, 2 by 2 by default).
 
 ## Global and Workspaces
 

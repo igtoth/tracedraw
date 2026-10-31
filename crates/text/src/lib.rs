@@ -865,24 +865,105 @@ fn symbol_encoded(family: &str) -> bool {
     matches!(key.as_str(), "symbol" | "symbolmt")
 }
 
-/// The glyph `face` draws for `c`: through its Unicode character map, or
-/// for a font made for the symbol encoding (a Windows symbol map only)
-/// the glyph of the code 0x20 to 0xFF typed, found at U+F020 to U+F0FF as
-/// the system finds it (#469).
+/// The Unicode blocks of scripts that older fonts set at the places of
+/// Latin letters (see [`FontSystem::latin_places_hold_another_script`]):
+/// the scripts of India and Sri Lanka, of South-East Asia, Tibetan,
+/// Arabic, Hebrew, Armenian, Georgian, Ethiopic, Greek and Cyrillic.
+pub const SCRIPT_BLOCKS: [(char, char); 22] = [
+    ('\u{0900}', '\u{097F}'),
+    ('\u{0980}', '\u{09FF}'),
+    ('\u{0A00}', '\u{0A7F}'),
+    ('\u{0A80}', '\u{0AFF}'),
+    ('\u{0B00}', '\u{0B7F}'),
+    ('\u{0B80}', '\u{0BFF}'),
+    ('\u{0C00}', '\u{0C7F}'),
+    ('\u{0C80}', '\u{0CFF}'),
+    ('\u{0D00}', '\u{0D7F}'),
+    ('\u{0D80}', '\u{0DFF}'),
+    ('\u{0E00}', '\u{0E7F}'),
+    ('\u{0E80}', '\u{0EFF}'),
+    ('\u{0F00}', '\u{0FFF}'),
+    ('\u{1000}', '\u{109F}'),
+    ('\u{1780}', '\u{17FF}'),
+    ('\u{0600}', '\u{06FF}'),
+    ('\u{0590}', '\u{05FF}'),
+    ('\u{0530}', '\u{058F}'),
+    ('\u{10A0}', '\u{10FF}'),
+    ('\u{1200}', '\u{137F}'),
+    ('\u{0370}', '\u{03FF}'),
+    ('\u{0400}', '\u{04FF}'),
+];
+
+/// The characters of Windows code page 1252 at 0x80 to 0x9F; the five
+/// places the page leaves empty read as the control characters of the
+/// same number, as the system's conversion of the page reads them (its
+/// published best-fit table).
+pub const CP1252_HIGH: [char; 32] = [
+    '\u{20AC}', '\u{0081}', '\u{201A}', '\u{0192}', '\u{201E}', '\u{2026}', '\u{2020}', '\u{2021}',
+    '\u{02C6}', '\u{2030}', '\u{0160}', '\u{2039}', '\u{0152}', '\u{008D}', '\u{017D}', '\u{008F}',
+    '\u{0090}', '\u{2018}', '\u{2019}', '\u{201C}', '\u{201D}', '\u{2022}', '\u{2013}', '\u{2014}',
+    '\u{02DC}', '\u{2122}', '\u{0161}', '\u{203A}', '\u{0153}', '\u{009D}', '\u{017E}', '\u{0178}',
+];
+
+/// The other name of a character code page 1252 has at 0x80 to 0x9F:
+/// the control character of that number for the character the page has
+/// there ("‚" and U+0082), and back. Fonts that set the letters of a
+/// script at the page's places (older Tamil fonts) map one or the
+/// other, and text typed for them may hold either (#1358).
+pub fn cp1252_twin(c: char) -> Option<char> {
+    let cp = c as u32;
+    // Most letters are none of these: a quick look first (text is laid
+    // out at every frame while it is edited).
+    if !matches!(cp, 0x80..=0x9F | 0x152..=0x192 | 0x2C6 | 0x2DC | 0x2013..=0x2122) {
+        return None;
+    }
+    if (0x80..=0x9F).contains(&cp) {
+        return CP1252_HIGH
+            .get(cp as usize - 0x80)
+            .copied()
+            .filter(|t| *t != c);
+    }
+    CP1252_HIGH
+        .iter()
+        .position(|t| *t == c)
+        .and_then(|i| char::from_u32(0x80 + i as u32))
+}
+
+/// `text` with the characters `face` lacks under one name of code page
+/// 1252's places 0x80 to 0x9F but has under the other written with that
+/// other ([`cp1252_twin`]), one for one; `None` when nothing changes.
+fn cp1252_remapped(face: &ttf_parser::Face, text: &str) -> Option<String> {
+    let twin_drawn = |c: char| {
+        cp1252_twin(c).filter(|t| face.glyph_index(c).is_none() && face.glyph_index(*t).is_some())
+    };
+    if !text.chars().any(|c| twin_drawn(c).is_some()) {
+        return None;
+    }
+    Some(text.chars().map(|c| twin_drawn(c).unwrap_or(c)).collect())
+}
+
+/// The glyph `face` draws for `c`: through its Unicode character map
+/// (under the other name of a character of code page 1252's places 0x80
+/// to 0x9F when it has that one, [`cp1252_twin`]), or for a font made for
+/// the symbol encoding (a Windows symbol map only) the glyph of the code
+/// 0x20 to 0xFF typed, found at U+F020 to U+F0FF as the system finds it
+/// (#469).
 pub(crate) fn face_glyph(face: &ttf_parser::Face, c: char) -> Option<ttf_parser::GlyphId> {
-    face.glyph_index(c).or_else(|| {
-        let cp = c as u32;
-        if !(0x20..=0xFF).contains(&cp) {
-            return None;
-        }
-        face.tables()
-            .cmap?
-            .subtables
-            .into_iter()
-            .filter(|s| s.platform_id == ttf_parser::PlatformId::Windows && s.encoding_id == 0)
-            .find_map(|s| s.glyph_index(0xF000 + cp).or_else(|| s.glyph_index(cp)))
-            .filter(|g| g.0 != 0)
-    })
+    face.glyph_index(c)
+        .or_else(|| cp1252_twin(c).and_then(|t| face.glyph_index(t)))
+        .or_else(|| {
+            let cp = c as u32;
+            if !(0x20..=0xFF).contains(&cp) {
+                return None;
+            }
+            face.tables()
+                .cmap?
+                .subtables
+                .into_iter()
+                .filter(|s| s.platform_id == ttf_parser::PlatformId::Windows && s.encoding_id == 0)
+                .find_map(|s| s.glyph_index(0xF000 + cp).or_else(|| s.glyph_index(cp)))
+                .filter(|g| g.0 != 0)
+        })
 }
 
 /// A letter of a symbol-encoded family as the character it draws; others
@@ -2057,6 +2138,43 @@ impl FontSystem {
         None
     }
 
+    /// Whether `family` sets the letters of another script at the places
+    /// of Latin ones, as fonts made before Unicode had the script do
+    /// (older Tamil fonts among them): it has a symbol character map, or
+    /// it says it draws a script of [`SCRIPT_BLOCKS`] and maps none of
+    /// that script's characters. Its letters are typed with the Latin
+    /// keys of their places, so nothing may change the letters typed
+    /// (Autocorrect's capitals and quotes, #1358).
+    pub fn latin_places_hold_another_script(&self, family: &str) -> bool {
+        if symbol_encoded(family) {
+            return true;
+        }
+        let Some(id) = self.face_for(family, false, false) else {
+            return false;
+        };
+        let Some((data, index)) = self.face_data(id) else {
+            return false;
+        };
+        let Ok(face) = ttf_parser::Face::parse(&data, index) else {
+            return false;
+        };
+        let symbol_map = face.tables().cmap.is_some_and(|c| {
+            c.subtables
+                .into_iter()
+                .any(|s| s.platform_id == ttf_parser::PlatformId::Windows && s.encoding_id == 0)
+        });
+        if symbol_map {
+            return true;
+        }
+        let Some(os2) = face.tables().os2 else {
+            return false;
+        };
+        let ranges = os2.unicode_ranges();
+        SCRIPT_BLOCKS.iter().any(|(first, last)| {
+            ranges.contains_char(*first) && !(*first..=*last).any(|c| face.glyph_index(c).is_some())
+        })
+    }
+
     /// The characters `family`'s regular face draws, in code point order
     /// (empty when the family is unknown). For the Glyphs docker.
     pub fn char_coverage(&self, family: &str) -> Vec<char> {
@@ -2087,7 +2205,10 @@ impl FontSystem {
                         _ => return,
                     };
                     if let Some(c) = char::from_u32(typed) {
-                        if !c.is_control() && sub.glyph_index(cp).is_some_and(|g| g.0 != 0) {
+                        // 0x80 to 0x9F: letters in fonts that set a
+                        // script at the places of code page 1252 (#1358).
+                        let drawn = !c.is_control() || ('\u{80}'..='\u{9f}').contains(&c);
+                        if drawn && sub.glyph_index(cp).is_some_and(|g| g.0 != 0) {
                             out.push(c);
                         }
                     }
@@ -2774,6 +2895,18 @@ impl FontSystem {
         } else {
             text
         };
+        // A font with a script at the places of code page 1252 draws the
+        // characters of 0x80 to 0x9F under the name it maps them by.
+        let twins: Option<String> = text
+            .chars()
+            .any(|c| cp1252_twin(c).is_some())
+            .then(|| {
+                let (data, index) = self.face_data(id)?;
+                let face = ttf_parser::Face::parse(&data, index).ok()?;
+                cp1252_remapped(&face, text)
+            })
+            .flatten();
+        let text = twins.as_deref().unwrap_or(text);
         // The runs of each direction, in text order, each with its level
         // (#628); text with no right-to-left letter is one run whose
         // direction harfbuzz takes from its script.
@@ -3113,7 +3246,19 @@ impl FontSystem {
             })
         };
         for (info, pos) in infos.iter().zip(positions) {
-            let gid = ttf_parser::GlyphId(info.glyph_id as u16);
+            // A letter the shaper's character map lacks while another map
+            // of the font has it (a symbol map beside a Unicode one, the
+            // places of code page 1252 under their other name, as older
+            // fonts with a script at the places of Latin letters have):
+            // the glyph the font has for it, never the empty notdef
+            // (#1358). The run went to this face because it has the
+            // letter ([`FontSystem::coverage_runs`]).
+            let stand_in = (info.glyph_id == 0)
+                .then(|| text.get(info.cluster as usize..)?.chars().next())
+                .flatten()
+                .and_then(|c| face_glyph(&face, c))
+                .filter(|g| g.0 != 0);
+            let gid = stand_in.unwrap_or(ttf_parser::GlyphId(info.glyph_id as u16));
             let mut sink = OutlineSink {
                 path: BezPath::new(),
                 scale,
@@ -3175,7 +3320,10 @@ impl FontSystem {
                 .and_then(|k| chars.get(k))
                 .map(|(_, c)| *c)
                 .unwrap_or(' ');
-            let mut adv = pos.x_advance as f64 * scale;
+            let mut adv = match stand_in {
+                Some(g) => face.glyph_hor_advance(g).unwrap_or(0) as f64 * scale,
+                None => pos.x_advance as f64 * scale,
+            };
             if ch == ' ' {
                 adv *= word_scale;
             }
@@ -6320,6 +6468,43 @@ mod tests {
     /// The bundled interface font (SIL Open Font License).
     const SELAWIK: &[u8] =
         include_bytes!("../../../apps/tracedraw/assets/fonts/Selawik-Regular.ttf");
+
+    /// The characters of code page 1252's places 0x80 to 0x9F go by
+    /// either name: a font that maps one draws text holding the other,
+    /// one for one (#1358).
+    #[test]
+    fn code_page_1252_places_go_by_either_name() {
+        assert_eq!(cp1252_twin('\u{82}'), Some('\u{201A}'));
+        assert_eq!(cp1252_twin('\u{201A}'), Some('\u{82}'));
+        assert_eq!(cp1252_twin('\u{2122}'), Some('\u{99}'));
+        // The places the page leaves empty have one name only.
+        assert_eq!(cp1252_twin('\u{81}'), None);
+        assert_eq!(cp1252_twin('A'), None);
+        assert_eq!(cp1252_twin('\u{0B95}'), None);
+        let face = ttf_parser::Face::parse(SELAWIK, 0).expect("font");
+        let quote = face
+            .glyph_index('\u{201A}')
+            .expect("the font has the quote");
+        assert!(face.glyph_index('\u{82}').is_none());
+        assert_eq!(face_glyph(&face, '\u{82}'), Some(quote));
+        assert_eq!(
+            cp1252_remapped(&face, "a\u{82}b").as_deref(),
+            Some("a\u{201A}b")
+        );
+        assert_eq!(cp1252_remapped(&face, "a\u{201A}b"), None);
+        // Laid out, the code draws the quote, not a stand-in's box.
+        let fonts = system_with(&[SELAWIK]);
+        let family = fonts.families().first().cloned().expect("family");
+        let drawn = |text: &str| {
+            fonts
+                .outline(&[TextSpan::new(text, &family, 24.0)])
+                .path
+                .elements()
+                .len()
+        };
+        assert_eq!(drawn("\u{82}"), drawn("\u{201A}"));
+        assert!(drawn("\u{82}") > 0);
+    }
     /// A variable font (weight 300 to 700, 300 by default) with letters
     /// Selawik lacks ("Ĉ") and without one it has (U+0336).
     const QUICKSAND: &[u8] = include_bytes!("../testdata/Quicksand-VF.ttf");
@@ -6336,8 +6521,6 @@ mod tests {
     /// (platform, encoding, language, name id, bytes), the tables laid
     /// out again; checksums are not kept (fonts are read without them).
     fn with_names(font: &[u8], records: &[(u16, u16, u16, u16, Vec<u8>)]) -> Vec<u8> {
-        let be16 = |d: &[u8], at: usize| u16::from_be_bytes([d[at], d[at + 1]]);
-        let be32 = |d: &[u8], at: usize| u32::from_be_bytes(d[at..at + 4].try_into().expect("4"));
         let mut name = Vec::new();
         name.extend_from_slice(&0u16.to_be_bytes());
         name.extend_from_slice(&(records.len() as u16).to_be_bytes());
@@ -6350,6 +6533,14 @@ mod tests {
             strings.extend_from_slice(bytes);
         }
         name.extend_from_slice(&strings);
+        with_table(font, b"name", &name)
+    }
+
+    /// `font` with its table `which` replaced by `table`, the tables laid
+    /// out again; checksums are not kept (fonts are read without them).
+    fn with_table(font: &[u8], which: &[u8; 4], table: &[u8]) -> Vec<u8> {
+        let be16 = |d: &[u8], at: usize| u16::from_be_bytes([d[at], d[at + 1]]);
+        let be32 = |d: &[u8], at: usize| u32::from_be_bytes(d[at..at + 4].try_into().expect("4"));
         let n = usize::from(be16(font, 4));
         let mut tables: Vec<([u8; 4], Vec<u8>)> = (0..n)
             .map(|i| {
@@ -6357,8 +6548,8 @@ mod tests {
                 let tag: [u8; 4] = font[at..at + 4].try_into().expect("tag");
                 let off = be32(font, at + 8) as usize;
                 let len = be32(font, at + 12) as usize;
-                let data = if &tag == b"name" {
-                    name.clone()
+                let data = if &tag == which {
+                    table.to_vec()
                 } else {
                     font[off..off + len].to_vec()
                 };
@@ -6764,6 +6955,127 @@ mod tests {
             (a.x0 - b.x0).abs() < 1e-6 && (a.x1 - b.x1).abs() < 1e-6,
             "{a:?} {b:?}"
         );
+    }
+
+    /// A font with a symbol character map beside its Unicode one, the
+    /// symbol map lacking letters the Unicode one has (as older fonts
+    /// with a script at the places of Latin letters can be made): the
+    /// shaper reads the symbol map only, yet every letter the font lists
+    /// draws its own glyph, never the empty notdef (#1358).
+    #[test]
+    fn letters_one_character_map_lacks_draw_from_the_other() {
+        let be16 = |d: &[u8], at: usize| u16::from_be_bytes([d[at], d[at + 1]]);
+        let be32 = |d: &[u8], at: usize| u32::from_be_bytes(d[at..at + 4].try_into().expect("4"));
+        let face = ttf_parser::Face::parse(SELAWIK, 0).expect("font");
+        let a = face.glyph_index('A').expect("A").0;
+        // Selawik's Unicode map, as it is.
+        let n = usize::from(be16(SELAWIK, 4));
+        let (off, len) = (0..n)
+            .map(|i| 12 + 16 * i)
+            .find(|at| &SELAWIK[*at..*at + 4] == b"cmap")
+            .map(|at| {
+                (
+                    be32(SELAWIK, at + 8) as usize,
+                    be32(SELAWIK, at + 12) as usize,
+                )
+            })
+            .expect("cmap");
+        let cmap = &SELAWIK[off..off + len];
+        let unicode_at = (0..usize::from(be16(cmap, 2)))
+            .map(|i| 4 + 8 * i)
+            .find(|at| be16(cmap, *at) == 3 && be16(cmap, at + 2) == 1)
+            .map(|at| be32(cmap, at + 4) as usize)
+            .expect("Windows Unicode map");
+        let unicode = &cmap[unicode_at..unicode_at + usize::from(be16(cmap, unicode_at + 2))];
+        // A symbol map with "A" alone, at U+F041.
+        let mut symbol = Vec::new();
+        let delta = a.wrapping_sub(0xF041);
+        for v in [
+            4u16, 32, 0, 4, 4, 1, 0, // header: two segments
+            0xF041, 0xFFFF, 0, // end codes, pad
+            0xF041, 0xFFFF, // start codes
+            delta, 1, // deltas
+            0, 0, // range offsets
+        ] {
+            symbol.extend_from_slice(&v.to_be_bytes());
+        }
+        let mut table = Vec::new();
+        for v in [0u16, 2, 3, 0] {
+            table.extend_from_slice(&v.to_be_bytes());
+        }
+        table.extend_from_slice(&20u32.to_be_bytes());
+        for v in [3u16, 1] {
+            table.extend_from_slice(&v.to_be_bytes());
+        }
+        table.extend_from_slice(&(20 + symbol.len() as u32).to_be_bytes());
+        table.extend_from_slice(&symbol);
+        table.extend_from_slice(unicode);
+        let font = with_table(SELAWIK, b"cmap", &table);
+        let fonts = system_with(&[&font]);
+        let family = fonts.families().first().cloned().expect("family");
+        assert!(fonts.char_coverage(&family).contains(&'B'));
+        let got = fonts.outline(&[TextSpan::new("AB", &family, 100.0)]);
+        let want = system_with(&[SELAWIK]).outline(&[TextSpan::new("AB", "Selawik", 100.0)]);
+        assert_eq!(got.glyphs, 2);
+        assert_eq!(got.path.elements().len(), want.path.elements().len());
+        let (g, w) = (got.path.bounding_box(), want.path.bounding_box());
+        assert!(
+            (g.x0 - w.x0).abs() < 1e-6 && (g.x1 - w.x1).abs() < 1e-6,
+            "{g:?} {w:?}"
+        );
+        // "B" alone, as wide as the font has it.
+        let one = |f: &FontSystem, family: &str| {
+            f.outline(&[TextSpan::new("B", family, 100.0)]).lines[0]
+                .edges
+                .clone()
+        };
+        assert_eq!(
+            one(&fonts, &family),
+            one(&system_with(&[SELAWIK]), "Selawik")
+        );
+    }
+
+    /// Fonts with another script at the places of Latin letters: a
+    /// symbol character map, or a script claimed and none of its
+    /// characters mapped (#1358). A font that maps the script it claims,
+    /// or claims none, is not one.
+    #[test]
+    fn fonts_with_a_script_at_latin_places_are_told_apart() {
+        const TEST_SYMBOL: &[u8] = include_bytes!("../testdata/TestSymbol.ttf");
+        let be32 = |d: &[u8], at: usize| u32::from_be_bytes(d[at..at + 4].try_into().expect("4"));
+        // Selawik claiming Tamil (bit 20 of the first Unicode range).
+        let n = usize::from(u16::from_be_bytes([SELAWIK[4], SELAWIK[5]]));
+        let (off, len) = (0..n)
+            .map(|i| 12 + 16 * i)
+            .find(|at| &SELAWIK[*at..*at + 4] == b"OS/2")
+            .map(|at| {
+                (
+                    be32(SELAWIK, at + 8) as usize,
+                    be32(SELAWIK, at + 12) as usize,
+                )
+            })
+            .expect("OS/2");
+        let mut os2 = SELAWIK[off..off + len].to_vec();
+        let range = be32(&os2, 42) | 1 << 20;
+        os2[42..46].copy_from_slice(&range.to_be_bytes());
+        let claims_tamil = with_table(SELAWIK, b"OS/2", &os2);
+        let tamil_font = include_bytes!("../testdata/NotoSansTamil-VF.ttf");
+        for (font, legacy) in [
+            (TEST_SYMBOL, true),
+            (SELAWIK, false),
+            (&claims_tamil[..], true),
+            (&tamil_font[..], false),
+        ] {
+            let f = system_with(&[font]);
+            let family = f.families().first().cloned().expect("family");
+            assert_eq!(
+                f.latin_places_hold_another_script(&family),
+                legacy,
+                "{family}"
+            );
+        }
+        assert!(system_with(&[]).latin_places_hold_another_script("Symbol"));
+        assert!(!system_with(&[]).latin_places_hold_another_script("Unknown"));
     }
 
     /// Letters in another colour keep the font's kerning with their

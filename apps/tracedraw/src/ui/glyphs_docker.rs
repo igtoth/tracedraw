@@ -110,47 +110,15 @@ pub fn search(chars: &[char], query: &str) -> Vec<char> {
         .collect()
 }
 
-/// The characters of Windows code page 1252 at 0x80 to 0x9F (the rest
-/// of the page is Latin-1); `None` where the page has none.
-const CP1252_HIGH: [Option<char>; 32] = [
-    Some('\u{20AC}'),
-    None,
-    Some('\u{201A}'),
-    Some('\u{0192}'),
-    Some('\u{201E}'),
-    Some('\u{2026}'),
-    Some('\u{2020}'),
-    Some('\u{2021}'),
-    Some('\u{02C6}'),
-    Some('\u{2030}'),
-    Some('\u{0160}'),
-    Some('\u{2039}'),
-    Some('\u{0152}'),
-    None,
-    Some('\u{017D}'),
-    None,
-    None,
-    Some('\u{2018}'),
-    Some('\u{2019}'),
-    Some('\u{201C}'),
-    Some('\u{201D}'),
-    Some('\u{2022}'),
-    Some('\u{2013}'),
-    Some('\u{2014}'),
-    Some('\u{02DC}'),
-    Some('\u{2122}'),
-    Some('\u{0161}'),
-    Some('\u{203A}'),
-    Some('\u{0153}'),
-    None,
-    Some('\u{017E}'),
-    Some('\u{0178}'),
-];
-
 /// The character code page 1252 has at `b`.
 pub fn from_cp1252(b: u8) -> Option<char> {
     match b {
-        0x80..=0x9F => CP1252_HIGH[(b - 0x80) as usize],
+        // The five places the page leaves empty are read as the control
+        // characters of the same number, as fonts with a script at the
+        // page's places map them (#1358).
+        0x80..=0x9F => tracedraw_text::CP1252_HIGH
+            .get((b - 0x80) as usize)
+            .copied(),
         _ => Some(b as char),
     }
 }
@@ -162,9 +130,9 @@ pub fn keystroke(ch: char) -> Option<String> {
     let b = if cp < 0x80 || (0xA0..=0xFF).contains(&cp) {
         Some(cp as u8)
     } else {
-        CP1252_HIGH
+        tracedraw_text::CP1252_HIGH
             .iter()
-            .position(|c| *c == Some(ch))
+            .position(|c| *c == ch)
             .map(|i| 0x80 + i as u8)
     }?;
     (b >= 0x20).then(|| format!("Alt+{:04}", b))
@@ -480,6 +448,10 @@ mod tests {
         assert_eq!(from_cp1252(0x80), Some('€'));
         assert_eq!(from_cp1252(169), Some('©'));
         assert!(describe('©').contains("Alt+0169"));
+        // The places the page leaves empty (#1358).
+        assert_eq!(from_cp1252(0x81), Some('\u{81}'));
+        assert_eq!(from_cp1252(0x9D), Some('\u{9D}'));
+        assert_eq!(keystroke('\u{8D}').as_deref(), Some("Alt+0141"));
     }
 
     #[test]

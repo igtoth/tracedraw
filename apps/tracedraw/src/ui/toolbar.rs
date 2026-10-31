@@ -455,17 +455,29 @@ pub(crate) fn draw_item(app: &mut App, ui: &mut Ui, bar: &str, id: &str) {
             }
         }
         "cut" => {
+            // While a text is being edited: its selected characters.
+            let has = if app.editing_text() {
+                app.text_selection_active()
+            } else {
+                has
+            };
             if std_button(ui, icons::Action::Cut, &tip("toolbar.cut"), has, false).clicked() {
                 app.cut();
             }
         }
         "copy" => {
+            let has = if app.editing_text() {
+                app.text_selection_active()
+            } else {
+                has
+            };
             if std_button(ui, icons::Action::Copy, &tip("toolbar.copy"), has, false).clicked() {
                 app.copy_with_system();
             }
         }
         "paste" => {
-            let can_paste = doc && app.clipboard.is_some();
+            let can_paste =
+                doc && (app.clipboard.is_some() || app.text_clip.is_some() || app.editing_text());
             if std_button(
                 ui,
                 icons::Action::Paste,

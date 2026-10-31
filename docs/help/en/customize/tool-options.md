@@ -14,6 +14,13 @@ property bar of each tool.
 - [[options.marquee_touching]] (off): a marquee also selects the objects it
   only touches; <kbd>Alt</kbd> then selects only those wholly inside.
 
+## Eraser {#eraser}
+
+![The Eraser tool options](../../img/customize-tool-options-eraser.png)
+
+[[options.eraser_width]] (6.35 mm at first), and [[options.eraser_round]] or
+[[options.eraser_square]].
+
 ## Zoom and Pan {#zoom-pan}
 
 ![The Zoom and Pan options](../../img/customize-tool-options-zoom-pan.png)
@@ -22,9 +29,9 @@ property bar of each tool.
   [[options.context_menu]].
 - [[options.wheel_action]]: [[options.wheel_zoom]] or [[options.wheel_scroll]].
 
-## Curves {#curves}
+## Freehand/Bézier {#curves}
 
-![The curve tool options](../../img/customize-tool-options-curves.png)
+![The Freehand/Bézier tool options](../../img/customize-tool-options-curves.png)
 
 - [[options.freehand_smoothing]]: 0 to 100 (50 at first).
 - [[options.join_within]]: how close to an end node a line must start to
@@ -35,6 +42,13 @@ property bar of each tool.
   the [[tool.pen]] tool; see [Pen](../lines-shapes/lines.md#pen).
 - [[options.pen_tablet]]: [[options.pen_pressure]] (on); see
   [Drawing with a graphics tablet](../lines-shapes/pen-pressure.md).
+
+## Shape Recognition {#shape-recognition}
+
+![The Shape Recognition tool options](../../img/customize-tool-options-shape-recognition.png)
+
+[[recognize.recognition]] and [[recognize.smoothing]] of the Shape
+Recognition tool, from off to highest, as on its property bar.
 
 ## Rectangle {#rectangle}
 
@@ -58,6 +72,12 @@ and [[toolbar.corners_together]]. [[options.scale_corners]]:
 
 [[options.number_of_points]] and [[options.sharpness]].
 
+## Graph Paper {#graph-paper}
+
+![The Graph Paper tool options](../../img/customize-tool-options-graph-paper.png)
+
+[[options.rows]] and [[options.columns]] of the grid.
+
 ## Spiral {#spiral}
 
 ![The Spiral tool options](../../img/customize-tool-options-spiral.png)
@@ -65,21 +85,30 @@ and [[toolbar.corners_together]]. [[options.scale_corners]]:
 [[options.revolutions]], and [[options.symmetrical_spiral]] or
 [[options.logarithmic_spiral]].
 
-## Graph Paper {#graph-paper}
-
-![The Graph Paper tool options](../../img/customize-tool-options-graph-paper.png)
-
-[[options.rows]] and [[options.columns]] of the grid.
-
 ## Table {#table}
 
 ![The Table tool options](../../img/customize-tool-options-table.png)
 
 [[options.rows]] and [[options.columns]] of new tables.
 
-## Eraser {#eraser}
+## Dimension {#dimension}
 
-![The Eraser tool options](../../img/customize-tool-options-eraser.png)
+![The Dimension tool options](../../img/customize-tool-options-dimension.png)
 
-[[options.eraser_width]] (6.35 mm at first), and [[options.eraser_round]] or
-[[options.eraser_square]].
+How the label of new dimensions reads: [[dimension.precision]],
+[[dimension.units]], [[dimension.show_units]], [[dimension.prefix]] and
+[[dimension.suffix]]. Dimensions already drawn keep their label; select one
+and use the property bar to change it.
+
+## Connector {#connector}
+
+![The Connector tool options](../../img/customize-tool-options-connector.png)
+
+[[connector.radius]] of new rounded connectors (3 mm at first).
+
+## Mesh Fill {#mesh-fill}
+
+![The Mesh Fill tool options](../../img/customize-tool-options-mesh-fill.png)
+
+[[options.columns]] and [[options.rows]] of the grid a new mesh fill starts
+with (2 by 2 at first).

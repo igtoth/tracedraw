@@ -56,6 +56,10 @@ pub enum OptionsPage {
     GraphPaper,
     Table,
     Eraser,
+    ShapeRecognition,
+    Dimension,
+    Connector,
+    MeshFill,
     // Tools > Options > Global.
     GlobalGeneral,
     Printing,
@@ -125,8 +129,20 @@ impl OptionsSet {
             ],
             OptionsSet::Customization => &[Appearance, CommandBars, Commands, ColorPalette],
             OptionsSet::Tools => &[
-                Pick, ZoomPan, Curves, Rectangle, Ellipse, Polygon, Spiral, GraphPaper, Table,
+                Pick,
                 Eraser,
+                ZoomPan,
+                Curves,
+                ShapeRecognition,
+                Rectangle,
+                Ellipse,
+                Polygon,
+                GraphPaper,
+                Spiral,
+                Table,
+                Dimension,
+                Connector,
+                MeshFill,
             ],
             OptionsSet::Global => &[
                 GlobalGeneral,
@@ -180,6 +196,10 @@ impl OptionsPage {
             GraphPaper => Tool::GraphPaper,
             Table => Tool::Table,
             Eraser => Tool::Eraser,
+            ShapeRecognition => Tool::ShapeRecognition,
+            Dimension => Tool::ParallelDimension,
+            Connector => Tool::Connector,
+            MeshFill => Tool::MeshFill,
             _ => return None,
         })
     }
@@ -218,6 +238,10 @@ impl OptionsPage {
             GraphPaper => "tool.graph_paper",
             Table => "tool.table",
             Eraser => "tool.eraser",
+            ShapeRecognition => "tool.shape_recognition",
+            Dimension => "options.dimension_tool",
+            Connector => "options.connector_tool",
+            MeshFill => "tool.mesh_fill",
             FileLocations => "options.file_locations",
             Printing => "options.printing",
             FileFormats => "options.file_formats",
@@ -277,6 +301,11 @@ pub struct OptionsSnapshot {
     table_cols: u32,
     eraser_width: f64,
     eraser_square: bool,
+    recognize: crate::recognize::RecognizeSettings,
+    dimension_style: crate::dimensions::DimensionStyle,
+    connector_radius: f64,
+    mesh_rows: u32,
+    mesh_cols: u32,
     text_font: String,
     text_size_pt: f64,
     text_default_font: String,
@@ -326,6 +355,11 @@ impl OptionsSnapshot {
             table_cols: app.table_cols,
             eraser_width: app.eraser_width,
             eraser_square: app.eraser_square,
+            recognize: app.recognize,
+            dimension_style: app.dimension_style.clone(),
+            connector_radius: app.connector_radius,
+            mesh_rows: app.mesh_rows,
+            mesh_cols: app.mesh_cols,
             text_font: app.text_font.clone(),
             text_size_pt: app.text_size_pt,
             text_default_font: app.text_default_font.clone(),
@@ -384,6 +418,11 @@ impl OptionsSnapshot {
         app.table_cols = self.table_cols;
         app.eraser_width = self.eraser_width;
         app.eraser_square = self.eraser_square;
+        app.recognize = self.recognize;
+        app.dimension_style = self.dimension_style;
+        app.connector_radius = self.connector_radius;
+        app.mesh_rows = self.mesh_rows;
+        app.mesh_cols = self.mesh_cols;
         app.text_font = self.text_font;
         app.text_size_pt = self.text_size_pt;
         app.text_default_font = self.text_default_font;
@@ -647,6 +686,10 @@ fn draw_page(app: &mut App, ui: &mut Ui) {
         GraphPaper => graph_paper_page(app, ui),
         Table => table_page(app, ui),
         Eraser => eraser_page(app, ui),
+        ShapeRecognition => shape_recognition_page(app, ui),
+        Dimension => dimension_page(app, ui),
+        Connector => connector_page(app, ui),
+        MeshFill => mesh_fill_page(app, ui),
         Curves => curves_page(app, ui),
         GlobalGeneral => global_general_page(app, ui),
         Printing => crate::ui::options_global::printing_page(app, ui),
@@ -3687,6 +3730,132 @@ fn graph_paper_page(app: &mut App, ui: &mut Ui) {
     });
 }
 
+/// Shape Recognition's levels, as on its property bar.
+fn shape_recognition_page(app: &mut App, ui: &mut Ui) {
+    grid("shape_recognition").show(ui, |ui| {
+        row_label(ui, &tr("recognize.recognition"));
+        crate::ui::drawing_bars::level(
+            ui,
+            "options_recognize_level",
+            "recognize.recognition_tip",
+            &mut app.recognize.recognition,
+        );
+        ui.end_row();
+        row_label(ui, &tr("recognize.smoothing"));
+        crate::ui::drawing_bars::level(
+            ui,
+            "options_recognize_smoothing",
+            "recognize.smoothing_tip",
+            &mut app.recognize.smoothing,
+        );
+        ui.end_row();
+    });
+}
+
+/// The label new dimensions take: precision, units, prefix and suffix,
+/// as on the dimension tools' property bar.
+fn dimension_page(app: &mut App, ui: &mut Ui) {
+    let mut style = app.dimension_style.clone();
+    grid("dimension").show(ui, |ui| {
+        row_label(ui, &tr("dimension.precision"));
+        let mut precision = style.precision.min(6);
+        egui::ComboBox::from_id_salt("options_dimension_precision")
+            .selected_text(crate::ui::dimension_bar::precision_sample(precision))
+            .width(120.0)
+            .show_ui(ui, |ui| {
+                for p in 0..=6u8 {
+                    ui.selectable_value(
+                        &mut precision,
+                        p,
+                        crate::ui::dimension_bar::precision_sample(p),
+                    );
+                }
+            })
+            .response
+            .rich_tip(crate::ui::tips::keyed("dimension.precision"));
+        style.precision = precision;
+        ui.end_row();
+        row_label(ui, &tr("dimension.units"));
+        let choices = crate::dimensions::units_choices();
+        let shown = choices
+            .iter()
+            .find(|(id, _)| *id == style.units)
+            .map(|(_, l)| l.clone())
+            .unwrap_or_default();
+        egui::ComboBox::from_id_salt("options_dimension_units")
+            .selected_text(shown)
+            .width(120.0)
+            .show_ui(ui, |ui| {
+                for (id, label) in &choices {
+                    ui.selectable_value(&mut style.units, id.clone(), label);
+                }
+            })
+            .response
+            .rich_tip(crate::ui::tips::keyed("dimension.units"));
+        ui.end_row();
+        ui.label("");
+        ui.checkbox(&mut style.show_units, tr("dimension.show_units"))
+            .rich_tip(crate::ui::tips::keyed("dimension.show_units"));
+        ui.end_row();
+        row_label(ui, &tr("dimension.prefix"));
+        ui.add(egui::TextEdit::singleline(&mut style.prefix).desired_width(190.0))
+            .rich_tip(crate::ui::tips::keyed("dimension.prefix"));
+        ui.end_row();
+        row_label(ui, &tr("dimension.suffix"));
+        ui.add(egui::TextEdit::singleline(&mut style.suffix).desired_width(190.0))
+            .rich_tip(crate::ui::tips::keyed("dimension.suffix"));
+        ui.end_row();
+    });
+    if style != app.dimension_style {
+        app.dimension_style = style;
+    }
+}
+
+/// The corner radius new rounded connectors take.
+fn connector_page(app: &mut App, ui: &mut Ui) {
+    grid("connector").show(ui, |ui| {
+        row_label(ui, &tr("connector.radius"));
+        let mut r = app.connector_radius;
+        if ui
+            .add(
+                crate::ui::field::NumField::new(&mut r)
+                    .speed(0.1)
+                    .range(0.0..=1000.0)
+                    .suffix(" mm"),
+            )
+            .rich_tip(crate::ui::tips::keyed("connector.radius"))
+            .changed()
+        {
+            app.connector_radius = r.clamp(0.0, 1000.0);
+        }
+        ui.end_row();
+    });
+}
+
+/// The grid new mesh fills take.
+fn mesh_fill_page(app: &mut App, ui: &mut Ui) {
+    grid("mesh_fill").show(ui, |ui| {
+        row_label(ui, &tr("options.columns"));
+        crate::ui::tips::tip_over(
+            ui,
+            crate::ui::tips::pair("options.columns", "options.columns_tip"),
+            |ui| {
+                ui.add(crate::ui::field::NumField::new(&mut app.mesh_cols).range(1..=50));
+            },
+        );
+        ui.end_row();
+        row_label(ui, &tr("options.rows"));
+        crate::ui::tips::tip_over(
+            ui,
+            crate::ui::tips::pair("options.rows", "options.rows_tip"),
+            |ui| {
+                ui.add(crate::ui::field::NumField::new(&mut app.mesh_rows).range(1..=50));
+            },
+        );
+        ui.end_row();
+    });
+}
+
 fn table_page(app: &mut App, ui: &mut Ui) {
     grid("table").show(ui, |ui| {
         row_label(ui, &tr("options.rows"));
@@ -4575,6 +4744,38 @@ mod tests {
         snap.restore(&mut app);
         assert_eq!(app.settings.undo_levels, 150);
         assert!(!app.doc().metadata.fill_open_curves);
+    }
+
+    /// The Smart Drawing, Dimension, Connector and Mesh Fill pages edit
+    /// the defaults new objects take; Cancel puts those back too.
+    #[test]
+    fn cancel_puts_the_new_tool_pages_back() {
+        let mut app = App::headless();
+        let snap = OptionsSnapshot::take(&app);
+        let before = (
+            app.recognize,
+            app.dimension_style.clone(),
+            app.connector_radius,
+            app.mesh_rows,
+            app.mesh_cols,
+        );
+        app.recognize.recognition = 5;
+        app.dimension_style.precision = 4;
+        app.dimension_style.suffix = " ok".into();
+        app.connector_radius = 9.0;
+        app.mesh_rows = 7;
+        app.mesh_cols = 8;
+        snap.restore(&mut app);
+        assert_eq!(
+            (
+                app.recognize,
+                app.dimension_style.clone(),
+                app.connector_radius,
+                app.mesh_rows,
+                app.mesh_cols,
+            ),
+            before
+        );
     }
 
     #[test]

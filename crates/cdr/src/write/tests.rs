@@ -6592,3 +6592,65 @@ fn a_hidden_object_casts_no_shadow_picture() {
         assert_eq!(read[0].shadow, Some(shadow), "{v}");
     }
 }
+
+/// Objects on master layers are on every page they show on, behind or in
+/// front of the page's own objects as drawn (#1132): no file seen has
+/// objects on the master page, so each page gets a layer of copies.
+#[test]
+fn master_layer_objects_are_written_on_every_page_in_their_order() {
+    let square = |ids: &mut tracedraw_core::id::IdSource, x: f64| {
+        let mut s = Shape::new(
+            ids.shape(),
+            ShapeKind::Rect {
+                rect: Rect::new(x, 10.0, x + 10.0, 20.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        s.fill = Fill::Solid(Color::BLACK);
+        s
+    };
+    let mut doc = doc_with(Vec::new());
+    let mut ids = doc.ids().clone();
+    doc.pages[0].layers[0].shapes = vec![square(&mut ids, 0.0)];
+    let mut second = Page {
+        id: ids.page(),
+        name: "Two".into(),
+        size: Size::new(200.0, 100.0),
+        layers: vec![Layer::new(ids.layer(), "Ink")],
+        guides: Vec::new(),
+        background: None,
+    };
+    second.layers[0].shapes = vec![square(&mut ids, 20.0)];
+    doc.pages.push(second);
+    let mut under = Layer::master(ids.layer(), "Under", tracedraw_core::MasterScope::All);
+    under.shapes = vec![square(&mut ids, 40.0)];
+    let mut over = Layer::master(ids.layer(), "Over", tracedraw_core::MasterScope::All);
+    over.shapes = vec![square(&mut ids, 60.0)];
+    over.in_front = true;
+    doc.master = vec![under, over];
+    doc.set_ids(ids);
+    for v in versions() {
+        let bytes = document_to_cdr_version(&doc, v);
+        let (back, rep) = crate::open_bytes(&bytes, "back").expect("reads back");
+        assert_eq!(back.pages.len(), 2, "{v}: {:?}", rep.warnings);
+        let mut all = Vec::new();
+        for (i, p) in back.pages.iter().enumerate() {
+            // Bottom to top, the layers holding objects.
+            let names: Vec<&str> = p
+                .layers
+                .iter()
+                .filter(|l| !l.shapes.is_empty())
+                .map(|l| l.name.as_str())
+                .collect();
+            assert_eq!(names, ["Under", "Ink", "Over"], "{v}: page {}", i + 1);
+            for l in &p.layers {
+                all.extend(l.shapes.iter().map(|s| s.bounds().x0.round() as i64));
+            }
+        }
+        all.sort();
+        assert_eq!(all, [0, 20, 40, 40, 60, 60], "{v}");
+    }
+    // The drawing itself is left alone.
+    assert_eq!(doc.master.len(), 2);
+}
