@@ -125,6 +125,10 @@ embaixo de um caractere indica que a fonte tem alternativas para ele (como
 floreios ou versaletes); clique nela para vê-las. Os glifos usados por último
 ficam no alto do painel.
 
+Embaixo da grade, arraste o controle deslizante para aumentar ou diminuir os
+caracteres, e clique em [[menu.edit.copy]] para pôr o último caractere clicado
+na área de transferência e colá-lo em outro programa.
+
 Digite no campo de pesquisa acima da grade para encontrar caracteres: digite os
 próprios caracteres (como `é`) ou um código Unicode como `U+20AC`, `0x20ac` ou
 `20AC`. A linha acima da grade mostra o código, o caractere e o intervalo do
