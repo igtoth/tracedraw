@@ -52,6 +52,7 @@ mod defaults;
 mod describe;
 #[cfg(test)]
 mod devanagari_join_tests;
+mod dictionary_download;
 mod dimensions;
 mod distort_tool;
 mod doc_stats;
@@ -152,6 +153,8 @@ mod snap;
 mod snap_points;
 mod soft_keyboard;
 mod spell;
+#[cfg(windows)]
+mod spell_windows;
 #[cfg(not(target_arch = "wasm32"))]
 mod splash;
 #[cfg(not(target_arch = "wasm32"))]
@@ -792,6 +795,11 @@ impl eframe::App for Shell {
         if self.fonts.poll(ui.ctx()) {
             ui.ctx()
                 .request_repaint_after(std::time::Duration::from_millis(50));
+        }
+        // Spelling dictionaries being downloaded (#1405).
+        dictionary_download::fetch_kept(&app.settings.spelling.downloaded_dictionaries);
+        for finished in dictionary_download::poll() {
+            app.status = dictionary_download::status(&finished);
         }
         // Fonts text asked for (browser build), and fonts that arrived.
         #[cfg(target_arch = "wasm32")]

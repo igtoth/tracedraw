@@ -1953,6 +1953,13 @@ fn paragraph_text_tab(app: &mut App, ui: &mut Ui) {
     let sp = &mut app.settings.spelling;
     let key = sp.dictionary_folder.clone();
     let mut found: Option<Found> = ui.data(|d| d.get_temp(cache));
+    // Dictionaries downloaded or added since: read the list again.
+    let generation_id = ui.id().with("hyphenation_generation");
+    let generation = crate::spell::generation();
+    if ui.data(|d| d.get_temp::<u64>(generation_id)) != Some(generation) {
+        ui.data_mut(|d| d.insert_temp(generation_id, generation));
+        found = None;
+    }
     if found.as_ref().is_none_or(|(k, _)| *k != key) {
         found = Some((key.clone(), crate::spell::find_hyphenation(key.as_deref())));
     }
@@ -2030,6 +2037,95 @@ fn fonts_tab(app: &mut App, ui: &mut Ui) {
     });
 }
 
+/// Options > Text > Spelling: download a dictionary of the collection, or
+/// add dictionary files (#1405).
+fn dictionary_download_row(app: &mut App, ui: &mut Ui) {
+    use crate::dictionary_download as dl;
+    let chosen_id = ui.id().with("dictionary_download_code");
+    let mut code: String = ui
+        .data(|d| d.get_temp(chosen_id))
+        .unwrap_or_else(|| default_dictionary_code(&crate::i18n::language()));
+    ui.horizontal(|ui| {
+        ui.label(tr("options.download_dictionary"));
+        let shown = dl::entry(&code)
+            .map(|e| e.name.to_string())
+            .unwrap_or_else(|| code.clone());
+        egui::ComboBox::from_id_salt("dictionary_download")
+            .selected_text(shown)
+            .width(200.0)
+            .show_ui(ui, |ui| {
+                for e in dl::CATALOG {
+                    ui.selectable_value(&mut code, e.code.to_string(), e.name)
+                        .on_hover_text(e.license);
+                }
+            })
+            .response
+            .rich_tip(crate::ui::tips::pair(
+                "options.download_dictionary",
+                "options.download_dictionary_tip",
+            ));
+        let busy = dl::downloading(&code);
+        let label = if busy {
+            tr("options.downloading")
+        } else {
+            tr("options.download")
+        };
+        let licence = dl::entry(&code).map(|e| e.license).unwrap_or("");
+        if ui
+            .add_enabled(!busy, egui::Button::new(label))
+            .rich_tip(format!(
+                "{}\n{}",
+                crate::ui::tips::pair(
+                    "options.download_dictionary",
+                    "options.download_dictionary_tip"
+                ),
+                crate::i18n::trf("options.dictionary_licence", &[("l", licence)])
+            ))
+            .clicked()
+        {
+            dl::start(&code, false);
+            let kept = &mut app.settings.spelling.downloaded_dictionaries;
+            if !kept.contains(&code) {
+                kept.push(code.clone());
+            }
+        }
+        if ui
+            .button(tr("options.add_dictionary_files"))
+            .rich_tip(crate::ui::tips::pair(
+                "options.add_dictionary_files",
+                "options.add_dictionary_files_tip",
+            ))
+            .clicked()
+        {
+            crate::files::Dialog::new()
+                .add_filter("Hunspell", &["dic", "aff"])
+                .pick_files(app, |app, paths| {
+                    let n = dl::add_files(&paths);
+                    app.status =
+                        crate::i18n::trf("status.dictionaries_added", &[("n", &n.to_string())]);
+                });
+        }
+    });
+    ui.data_mut(|d| d.insert_temp(chosen_id, code));
+}
+
+/// The dictionary offered first: the interface language's when the
+/// collection has it (`pt-BR` is its `pt`), else English.
+fn default_dictionary_code(language: &str) -> String {
+    let lang = language.replace('_', "-");
+    let base = lang.split('-').next().unwrap_or("");
+    let code = match lang.as_str() {
+        "pt-BR" => "pt",
+        "pt-PT" => "pt-PT",
+        "en-GB" => "en-GB",
+        _ => base,
+    };
+    match crate::dictionary_download::entry(code) {
+        Some(e) => e.code.to_string(),
+        None => "en".to_string(),
+    }
+}
+
 fn spelling_tab(app: &mut App, ui: &mut Ui) {
     let p = &mut app.settings.spelling;
     ui.checkbox(&mut p.ignore_digits, tr("writing.ignore_digits"))
@@ -2059,6 +2155,13 @@ fn spelling_tab(app: &mut App, ui: &mut Ui) {
     let cache = ui.id().with("dictionaries_found");
     let key = p.dictionary_folder.clone();
     let mut found: Option<Found> = ui.data(|d| d.get_temp(cache));
+    // Dictionaries downloaded or added since: read the list again.
+    let generation_id = ui.id().with("dictionaries_generation");
+    let generation = crate::spell::generation();
+    if ui.data(|d| d.get_temp::<u64>(generation_id)) != Some(generation) {
+        ui.data_mut(|d| d.insert_temp(generation_id, generation));
+        found = None;
+    }
     if found.as_ref().is_none_or(|(k, _)| *k != key) {
         found = Some((key.clone(), crate::spell::find_dictionaries(key.as_deref())));
     }
@@ -2073,7 +2176,30 @@ fn spelling_tab(app: &mut App, ui: &mut Ui) {
                 .max_height(120.0)
                 .auto_shrink([false, true])
                 .show(ui, |ui| {
-                    if list.is_empty() {
+                    // The spell checker of Windows, switched off like a
+                    // dictionary (#1405).
+                    let system = crate::spell::system_languages();
+                    if !system.is_empty() {
+                        let name = crate::spell::SYSTEM_CHECKER;
+                        let mut on = !p.disabled_dictionaries.iter().any(|n| n == name);
+                        if ui
+                            .checkbox(
+                                &mut on,
+                                format!(
+                                    "{}  ({})",
+                                    tr("options.windows_spell_checker"),
+                                    system.join(", ")
+                                ),
+                            )
+                            .changed()
+                        {
+                            p.disabled_dictionaries.retain(|n| n != name);
+                            if !on {
+                                p.disabled_dictionaries.push(name.to_string());
+                            }
+                        }
+                    }
+                    if list.is_empty() && system.is_empty() {
                         ui.label(
                             egui::RichText::new(tr("options.no_dictionaries"))
                                 .color(Tokens::text_dim()),
@@ -2101,6 +2227,11 @@ fn spelling_tab(app: &mut App, ui: &mut Ui) {
         });
     let own = crate::spell::own_folder();
     grid("dictionary_folders").show(ui, |ui| {
+        // A browser has no folders: its dictionaries are downloaded or
+        // added below.
+        if crate::files::WEB {
+            return;
+        }
         row_label(ui, &tr("options.dictionaries_folder"));
         crate::ui::tips::tip_over(
             ui,
@@ -2160,6 +2291,7 @@ fn spelling_tab(app: &mut App, ui: &mut Ui) {
 
         ui.end_row();
     });
+    dictionary_download_row(app, ui);
     if ui
         .button(tr("options.refresh_dictionaries"))
         .rich_tip(crate::ui::tips::pair(

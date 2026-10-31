@@ -20,17 +20,50 @@ TraceDraw's `dictionaries` folder under the configuration folder and in
 the folder named under Options > Text > Spelling > Also read
 dictionaries from (each with the folders inside it, three deep, so a
 dictionary package unpacked there or another program's dictionary folder
-works), then in the system's folders (`/usr/share/hunspell`,
-`/usr/share/myspell`, `/Library/Spelling` ...); a name found twice is
-used once, the user's folders first. `hyph_*` and `th_*` files
+works), then in the system's folders (`spell::system_folders`, #1405):
+on Linux `/usr/share/hunspell`, `/usr/share/myspell`,
+`/usr/local/share/hunspell` and `~/.local/share/hunspell`; on macOS
+`/Library/Spelling` and `~/Library/Spelling`; on Windows
+`%LOCALAPPDATA%\Microsoft\Spelling` and `%APPDATA%\Microsoft\Spelling`
+(two deep: Hunspell dictionaries added for the system's spell checker,
+one folder per language, and its lists of added words, UTF-16 with a byte
+order mark) and `%APPDATA%\hunspell`; and everywhere the dictionary
+extensions of office suites installed in the usual places
+(`<Program Files>\<suite>\share\extensions\dict-*`,
+`/usr/lib/<suite>/share/extensions`, `/opt/<suite>/share/extensions`,
+`/Applications/<suite>.app/Contents/Resources/extensions`). A name found
+twice is used once, the user's folders first. `hyph_*` and `th_*` files
 (hyphenation patterns, thesauri) are left out; a `.dic` with no `.aff`
 is a plain word list. The Spelling tab lists them by name, each with a
 check box (on; the names switched off are kept in the preferences),
 Open Folder (creates and opens TraceDraw's folder) and Read Again
-(reads the folders and the dictionaries again). A word is right when any
-dictionary in use, a system word list (`/usr/share/dict/*`), the
-built-in core words or the user's own words know it; a hyphenated word
-when each part is. The affix file is read for `SET` (UTF-8, ISO 8859,
+(reads the folders and the dictionaries again).
+
+More dictionaries on every platform (#1405):
+
+- Download dictionary: a list of 42 languages of the wooorm/dictionaries
+  collection on GitHub (Hunspell dictionaries in UTF-8, each with its
+  own free licence, shown in the button's tip and listed in
+  `ATTRIBUTION.md`; the interface language's is chosen first) and
+  Download, which fetches the affix file, the word file and the licence
+  (`dictionary_download.rs`). On the desktop and on Android they go to
+  TraceDraw's dictionaries folder as `<code>.aff`, `<code>.dic` and
+  `<code>.license.txt` (`en_GB`, `pt`); a browser has no folder, so it
+  holds them in memory and fetches them again at each visit (the
+  settings remember them, `downloaded_dictionaries`; the browser's cache
+  answers). The status bar says when one is installed or why it failed.
+- Add Files: `.dic` and `.aff` files picked with the system's (or the
+  browser's, or Android's) file picker are copied to TraceDraw's
+  folder, or held in memory for the visit in a browser.
+- Windows: its own spell checker (the Spell Checking API,
+  `spell_windows.rs`) checks the languages installed in Windows; it is
+  listed as "Windows spell checker (en-US, ...)" with a check box. A word
+  no dictionary knows is asked of it, and its suggestions come first.
+- The browser hides the dictionaries folder and "Also read dictionaries from" (it has no folders).
+
+A word is right when any dictionary in use, the spell checker of Windows,
+a system word list (`/usr/share/dict/*`), the built-in core words or the
+user's own words know it; a hyphenated word when each part is. The affix file is read for `SET` (UTF-8, ISO 8859,
 Windows code pages, KOI8-R), `FLAG` (characters, `long`, `num`), `AF`
 aliases, `PFX` and `SFX` rules (strip, add, condition, cross product,
 continuation classes: two suffixes, a suffix and a prefix),
@@ -45,7 +78,10 @@ split into two words, then edits found in the word lists; eight at most.
 Checks: `hunspell::tests` (and `real_dictionaries`, ignored, over
 dictionaries in `HUNSPELL_TEST_DIR`: English, Brazilian Portuguese and
 German words, affixed and compound), and
-`spell::tests::dictionaries_in_a_folder_are_found_and_used`.
+`spell::tests::dictionaries_in_a_folder_are_found_and_used`,
+`spell::tests::system_folders_per_platform`,
+`dictionary_download::tests::the_catalog_names_its_files_and_licences` and
+`an_installed_dictionary_is_used`.
 
 Left: Replace with, the
 Replacements list (suggestions; a click puts one in Replace with, a

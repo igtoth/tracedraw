@@ -3,9 +3,12 @@
 //! [`crate::hunspell`]) found in the system's folders, in TraceDraw's own
 //! `dictionaries` folder and in a folder the user names (Options > Text >
 //! Spelling, which also switches each one off); plain word lists
-//! (`/usr/share/dict/*`, a `.dic` with no `.aff`); a built-in core list of
+//! (`/usr/share/dict/*`, a `.dic` with no `.aff`); dictionaries held in
+//! memory (downloaded or added in a browser, [`add_in_memory`]); the
+//! spell checker of Windows (`spell_windows.rs`); a built-in core list of
 //! very common English and Portuguese words; and the user's own additions
 //! (`<config>/dictionary.txt`). A word is right when any of them knows it.
+//! See `docs/behavior/writing-tools.md`.
 
 use crate::app::App;
 use crate::hunspell::Hunspell;
@@ -38,7 +41,72 @@ struct Loaded {
     plain: HashSet<String>,
     hunspell: Vec<Hunspell>,
     size: usize,
+    /// The spell checker of Windows is used (not switched off).
+    system: bool,
 }
+
+/// The folder under which dictionaries held in memory are named.
+const MEMORY_ROOT: &str = "/memory-dictionaries";
+
+/// Dictionary files held in memory, by file name (`pt_BR.dic`,
+/// `pt_BR.aff`): in a browser, which has no folder to keep them in, the
+/// ones downloaded or added during the visit (#1405).
+fn memory() -> &'static RwLock<std::collections::BTreeMap<String, Vec<u8>>> {
+    static FILES: OnceLock<RwLock<std::collections::BTreeMap<String, Vec<u8>>>> = OnceLock::new();
+    FILES.get_or_init(|| RwLock::new(Default::default()))
+}
+
+/// Hold a dictionary file (`name.dic` or `name.aff`) in memory and read
+/// the dictionaries again on the next check.
+pub fn add_in_memory(file_name: &str, bytes: Vec<u8>) {
+    memory()
+        .write()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert(file_name.to_string(), bytes);
+    reload();
+}
+
+/// A dictionary file's bytes: from memory or from disk.
+fn read_file(path: &Path) -> Option<Vec<u8>> {
+    if let Ok(rest) = path.strip_prefix(MEMORY_ROOT) {
+        let name = rest.to_str()?;
+        return memory()
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(name)
+            .cloned();
+    }
+    std::fs::read(path).ok()
+}
+
+/// The dictionaries held in memory, as [`find_dictionaries`] lists them.
+fn memory_dictionaries(kind: Kind, out: &mut Vec<DictionaryFile>) {
+    let files = memory().read().unwrap_or_else(|e| e.into_inner());
+    for name in files.keys() {
+        let Some(stem) = name.strip_suffix(".dic") else {
+            continue;
+        };
+        let lower = stem.to_lowercase();
+        let wanted = match kind {
+            Kind::Spelling => !lower.starts_with("hyph_") && !lower.starts_with("th_"),
+            Kind::Hyphenation => lower.starts_with("hyph_"),
+        };
+        if !wanted || out.iter().any(|d| d.name == stem) {
+            continue;
+        }
+        let aff = format!("{stem}.aff");
+        out.push(DictionaryFile {
+            name: stem.to_string(),
+            dic: Path::new(MEMORY_ROOT).join(name),
+            aff: (kind == Kind::Spelling && files.contains_key(&aff))
+                .then(|| Path::new(MEMORY_ROOT).join(aff)),
+        });
+    }
+}
+
+/// The name under which the spell checker of Windows is listed and
+/// switched off.
+pub const SYSTEM_CHECKER: &str = "Windows";
 
 type State = RwLock<(SpellConfig, Option<Arc<Loaded>>)>;
 
@@ -73,6 +141,15 @@ pub fn configure(cfg: SpellConfig) {
 pub fn reload() {
     let mut st = state().write().unwrap_or_else(|e| e.into_inner());
     st.1 = None;
+    GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
+static GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// A number that changes each time dictionaries were added or the folders
+/// are to be read again, so a list of them knows to look again.
+pub fn generation() -> u64 {
+    GENERATION.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 fn loaded() -> Arc<Loaded> {
@@ -107,10 +184,10 @@ fn load(cfg: &SpellConfig) -> Loaded {
         if cfg.disabled.contains(&d.name) {
             continue;
         }
-        let Ok(dic) = std::fs::read(&d.dic) else {
+        let Some(dic) = read_file(&d.dic) else {
             continue;
         };
-        let h = match d.aff.as_ref().and_then(|a| std::fs::read(a).ok()) {
+        let h = match d.aff.as_ref().and_then(|a| read_file(a)) {
             Some(aff) => Hunspell::from_bytes(&aff, &dic),
             None => Hunspell::from_word_list(&dic),
         };
@@ -118,11 +195,20 @@ fn load(cfg: &SpellConfig) -> Loaded {
             hunspell.push(h);
         }
     }
-    let size = plain.len() + hunspell.iter().map(Hunspell::len).sum::<usize>();
+    let system = cfg!(windows) && !cfg.disabled.iter().any(|d| d == SYSTEM_CHECKER);
+    let size = plain.len()
+        + hunspell.iter().map(Hunspell::len).sum::<usize>()
+        + if system && !system_languages().is_empty() {
+            // Its own dictionaries: tens of thousands of words.
+            100_000
+        } else {
+            0
+        };
     Loaded {
         plain,
         hunspell,
         size,
+        system,
     }
 }
 
@@ -149,7 +235,7 @@ pub fn own_folder() -> Option<PathBuf> {
 /// The folders searched, the user's first: TraceDraw's own folder and the
 /// one named in the options (each with the folders inside it, three deep,
 /// so a dictionary package unpacked there or another program's dictionary
-/// folder works), then the system's.
+/// folder works), then the system's ([`system_folders`]).
 fn folders(extra: Option<&Path>) -> Vec<(PathBuf, usize)> {
     let mut v: Vec<(PathBuf, usize)> = Vec::new();
     if let Some(own) = own_folder() {
@@ -158,15 +244,93 @@ fn folders(extra: Option<&Path>) -> Vec<(PathBuf, usize)> {
     if let Some(e) = extra {
         v.push((e.to_path_buf(), 3));
     }
-    for dir in [
-        "/usr/share/hunspell",
-        "/usr/share/myspell",
-        "/usr/share/myspell/dicts",
-        "/Library/Spelling",
-        "/usr/local/share/hunspell",
-    ] {
-        v.push((PathBuf::from(dir), 0));
+    let env = |k: &str| std::env::var_os(k).map(PathBuf::from);
+    v.extend(system_folders(
+        cfg!(windows),
+        cfg!(target_os = "macos"),
+        &env,
+        &|dir| {
+            std::fs::read_dir(dir)
+                .map(|rd| rd.flatten().map(|e| e.path()).collect())
+                .unwrap_or_default()
+        },
+    ));
+    v
+}
+
+/// The system's dictionary folders, with how deep to look in each (#1405):
+/// - Linux and other Unix systems: the shared Hunspell folders;
+/// - macOS: the system's and the user's `Library/Spelling`;
+/// - Windows: the user's spelling folders (`%LOCALAPPDATA%` and
+///   `%APPDATA%` `\Microsoft\Spelling\<language>`, where Hunspell
+///   dictionaries for the system's spell checker and the words added to
+///   it are kept) and `%APPDATA%\hunspell`;
+/// - everywhere: the dictionary extensions of office suites installed in
+///   the usual places (`<program>/share/extensions/dict-*`, inside an
+///   application bundle on macOS), which hold Hunspell dictionaries for
+///   many languages.
+///
+/// `env` reads an environment variable and `list` a folder's entries.
+fn system_folders(
+    windows: bool,
+    macos: bool,
+    env: &dyn Fn(&str) -> Option<PathBuf>,
+    list: &dyn Fn(&Path) -> Vec<PathBuf>,
+) -> Vec<(PathBuf, usize)> {
+    let mut v: Vec<(PathBuf, usize)> = Vec::new();
+    // Programs installed side by side under `parent`: their dictionary
+    // extensions.
+    let suites = |parent: &Path, inner: &str, v: &mut Vec<(PathBuf, usize)>| {
+        for program in list(parent) {
+            let ext = program.join(inner);
+            if !list(&ext).is_empty() {
+                v.push((ext, 2));
+            }
+        }
+    };
+    if windows {
+        for (var, sub) in [
+            ("LOCALAPPDATA", "Microsoft\\Spelling"),
+            ("APPDATA", "Microsoft\\Spelling"),
+            ("APPDATA", "hunspell"),
+        ] {
+            if let Some(base) = env(var) {
+                v.push((base.join(sub), 2));
+            }
+        }
+        for var in ["ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"] {
+            if let Some(base) = env(var) {
+                suites(&base, "share\\extensions", &mut v);
+            }
+        }
+    } else {
+        for dir in [
+            "/usr/share/hunspell",
+            "/usr/share/myspell",
+            "/usr/share/myspell/dicts",
+            "/usr/local/share/hunspell",
+            "/Library/Spelling",
+        ] {
+            v.push((PathBuf::from(dir), 0));
+        }
+        if let Some(home) = env("HOME") {
+            v.push((home.join("Library/Spelling"), 0));
+            v.push((home.join(".local/share/hunspell"), 0));
+        }
+        if macos {
+            suites(
+                Path::new("/Applications"),
+                "Contents/Resources/extensions",
+                &mut v,
+            );
+        } else {
+            for parent in ["/usr/lib", "/usr/lib64", "/opt", "/usr/local/lib"] {
+                suites(Path::new(parent), "share/extensions", &mut v);
+            }
+        }
     }
+    let mut seen = HashSet::new();
+    v.retain(|(p, _)| seen.insert(p.clone()));
     v
 }
 
@@ -231,7 +395,20 @@ pub fn find_dictionaries(extra: Option<&Path>) -> Vec<DictionaryFile> {
     for (dir, depth) in folders(extra) {
         scan(&dir, depth, &mut out);
     }
+    memory_dictionaries(Kind::Spelling, &mut out);
     out
+}
+
+/// The languages the spell checker of Windows checks (none elsewhere).
+pub fn system_languages() -> Vec<String> {
+    #[cfg(windows)]
+    {
+        crate::spell_windows::languages()
+    }
+    #[cfg(not(windows))]
+    {
+        Vec::new()
+    }
 }
 
 /// The hyphenation pattern files found (`hyph_pt_BR`), each name once.
@@ -240,13 +417,14 @@ pub fn find_hyphenation(extra: Option<&Path>) -> Vec<DictionaryFile> {
     for (dir, depth) in folders(extra) {
         scan_for(&dir, depth, Kind::Hyphenation, &mut out);
     }
+    memory_dictionaries(Kind::Hyphenation, &mut out);
     out
 }
 
 /// The patterns of a hyphenation file: its first line names the
 /// character set the rest is written in.
 pub fn read_hyphenation(path: &Path) -> Option<tracedraw_text::hyphen::PatternSet> {
-    let bytes = std::fs::read(path).ok()?;
+    let bytes = read_file(path)?;
     let first = bytes.split(|b| *b == b'\n').next().unwrap_or(&[]);
     let enc = crate::hunspell::encoding_for(&String::from_utf8_lossy(first));
     let (text, _, _) = enc.decode(&bytes);
@@ -318,7 +496,10 @@ pub fn is_known(word: &str) -> bool {
     let user = user_words().read().unwrap_or_else(|e| e.into_inner());
     let known = |p: &str| {
         let lower = p.to_lowercase();
-        l.plain.contains(&lower) || user.contains(&lower) || l.hunspell.iter().any(|h| h.check(p))
+        l.plain.contains(&lower)
+            || user.contains(&lower)
+            || l.hunspell.iter().any(|h| h.check(p))
+            || (l.system && system_knows(p))
     };
     if known(word) {
         return true;
@@ -329,6 +510,19 @@ pub fn is_known(word: &str) -> bool {
             .split('-')
             .filter(|p| !p.is_empty())
             .all(|p| p.chars().count() < 2 || known(p))
+}
+
+/// Whether the spell checker of Windows knows `word` (never elsewhere).
+fn system_knows(word: &str) -> bool {
+    #[cfg(windows)]
+    {
+        crate::spell_windows::is_known(word)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = word;
+        false
+    }
 }
 
 /// Words in a text that the dictionary does not know.
@@ -371,6 +565,10 @@ pub fn suggest(word: &str) -> Vec<String> {
     const MAX: usize = 8;
     let l = loaded();
     let mut out: Vec<String> = Vec::new();
+    #[cfg(windows)]
+    if l.system {
+        out.extend(crate::spell_windows::suggest(word).into_iter().take(MAX));
+    }
     for h in &l.hunspell {
         for s in h.suggest(word, MAX) {
             if !out.contains(&s) && out.len() < MAX {
@@ -594,6 +792,74 @@ mod tests {
                 assert!(got.contains(w), "{name}: {word} {got:?} lacks {w}");
             }
         }
+    }
+
+    /// #1405: the system folders of each platform, with office suites'
+    /// dictionary extensions where one is installed.
+    #[test]
+    fn system_folders_per_platform() {
+        let env = |k: &str| match k {
+            "LOCALAPPDATA" => Some(PathBuf::from("L")),
+            "APPDATA" => Some(PathBuf::from("R")),
+            "ProgramFiles" => Some(PathBuf::from("P")),
+            "HOME" => Some(PathBuf::from("/home/u")),
+            _ => None,
+        };
+        // Program folders: one office suite with its extensions.
+        let list = |dir: &Path| -> Vec<PathBuf> {
+            let d = dir.to_string_lossy().replace('\\', "/");
+            match d.as_str() {
+                "P" => vec![
+                    PathBuf::from("P").join("Suite"),
+                    PathBuf::from("P").join("Other"),
+                ],
+                "P/Suite/share/extensions" => vec![PathBuf::from("dict-en")],
+                "/opt" => vec![PathBuf::from("/opt/suite")],
+                "/opt/suite/share/extensions" => vec![PathBuf::from("dict-pt-BR")],
+                "/Applications" => vec![PathBuf::from("/Applications/Suite.app")],
+                "/Applications/Suite.app/Contents/Resources/extensions" => {
+                    vec![PathBuf::from("dict-de")]
+                }
+                _ => Vec::new(),
+            }
+        };
+        let norm = |v: Vec<(PathBuf, usize)>| -> Vec<(String, usize)> {
+            v.into_iter()
+                .map(|(p, d)| (p.to_string_lossy().replace('\\', "/"), d))
+                .collect()
+        };
+        let win = norm(system_folders(true, false, &env, &list));
+        assert_eq!(
+            win,
+            vec![
+                ("L/Microsoft/Spelling".to_string(), 2),
+                ("R/Microsoft/Spelling".to_string(), 2),
+                ("R/hunspell".to_string(), 2),
+                ("P/Suite/share/extensions".to_string(), 2),
+            ]
+        );
+        let linux = norm(system_folders(false, false, &env, &list));
+        assert!(linux.contains(&("/usr/share/hunspell".to_string(), 0)));
+        assert!(linux.contains(&("/home/u/.local/share/hunspell".to_string(), 0)));
+        assert!(linux.contains(&("/opt/suite/share/extensions".to_string(), 2)));
+        assert!(!linux.iter().any(|(p, _)| p.starts_with("/Applications")));
+        let mac = norm(system_folders(false, true, &env, &list));
+        assert!(mac.contains(&("/home/u/Library/Spelling".to_string(), 0)));
+        assert!(mac.contains(&(
+            "/Applications/Suite.app/Contents/Resources/extensions".to_string(),
+            2
+        )));
+    }
+
+    /// Windows' lists of added words are UTF-16 with a byte order mark.
+    #[test]
+    fn utf16_word_lists_are_read() {
+        let mut bytes = vec![0xff, 0xfe];
+        for u in "zorblatt\r\n".encode_utf16() {
+            bytes.extend(u.to_le_bytes());
+        }
+        let h = crate::hunspell::Hunspell::from_word_list(&bytes);
+        assert!(h.check("zorblatt"));
     }
 
     #[test]

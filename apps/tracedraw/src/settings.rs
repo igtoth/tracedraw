@@ -1404,6 +1404,10 @@ pub struct SpellingPrefs {
     pub dictionary_folder: Option<PathBuf>,
     /// The dictionaries switched off, by name (`pt_BR`).
     pub disabled_dictionaries: Vec<String>,
+    /// The dictionaries downloaded (Options > Text > Spelling), by their
+    /// code in the collection (`pt`, `en-GB`): a browser fetches them
+    /// again at each visit, as it has no folder to keep them in (#1405).
+    pub downloaded_dictionaries: Vec<String>,
     /// Options > Text > Paragraph Text: the hyphenation pattern file used
     /// (`hyph_pt_BR`, found where the dictionaries are), empty for the
     /// built-in patterns.
