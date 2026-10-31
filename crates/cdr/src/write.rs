@@ -17,9 +17,9 @@
 //! expanded effects), groups, artistic text with one font, size and style
 //! per run, bitmaps (24-bit), solid and fountain fills, outlines (width,
 //! caps, joins, dashes, nib, "scale with object", "behind fill") and
-//! uniform transparency. From version 12 a clip frame is a clip
+//! uniform transparency. From version 11 a clip frame is a clip
 //! container: the frame object names, in argument 8005, a group of the
-//! document's `LIST clpt` that holds the contents (#1222). Before 12 a
+//! document's `LIST clpt` that holds the contents (#1222). Before 11 a
 //! clip frame holding one bitmap becomes that bitmap with the frame as
 //! its crop path, other clip frames a group of the frame outline and
 //! the contents. Rectangles of versions 15 and later
@@ -123,6 +123,8 @@ pub struct ShadowPicture {
 /// (version 16 and later).
 pub fn document_to_cdr_version_with(doc: &Document, version: u16, previews: &Previews) -> Vec<u8> {
     let v = Ver(version.clamp(OLDEST_VERSION, NEWEST_VERSION));
+    let on_pages = master_objects_on_pages(doc);
+    let doc = on_pages.as_ref().unwrap_or(doc);
     let mut w = Writer::new(v, &doc.symbols, &doc.title);
     w.shadow_pictures = previews.shadows.iter().map(|p| (p.shape, p)).collect();
     w.faces = &previews.fonts;
@@ -180,6 +182,73 @@ pub fn document_to_cdr_version_with(doc: &Document, version: u16, previews: &Pre
     out
 }
 
+/// The drawing with the objects of its master layers on the pages, or
+/// `None` when no master layer holds any. No `.cdr` file seen has objects
+/// on a layer of the master page (717 files of versions 7 to 27), so the
+/// record a reader would take for one is not known; each page a master
+/// layer shows on gets a layer of that name with copies of its objects
+/// instead, behind the page's own layers or in front of them as it is
+/// drawn there (#1132), so every page looks as it did. The first page
+/// keeps the objects' ids, later pages' copies get new ones.
+fn master_objects_on_pages(doc: &Document) -> Option<Document> {
+    use tracedraw_core::id::IdSource;
+    fn reid(s: &Shape, ids: &mut IdSource) -> Shape {
+        let mut c = s.clone();
+        c.id = ids.shape();
+        match &mut c.kind {
+            ShapeKind::Group { children } => {
+                *children = children.iter().map(|k| reid(k, ids)).collect();
+            }
+            ShapeKind::ClipFrame { frame, contents } => {
+                **frame = reid(frame, ids);
+                *contents = contents.iter().map(|k| reid(k, ids)).collect();
+            }
+            _ => {}
+        }
+        c
+    }
+    if doc.master.iter().all(|l| l.shapes.is_empty()) {
+        return None;
+    }
+    let mut out = doc.clone();
+    let mut ids = out.ids().clone();
+    let mut seen: Vec<tracedraw_core::LayerId> = Vec::new();
+    for (i, page) in doc.pages.iter().enumerate() {
+        let Ok(drawn) = doc.layers_drawn_for_page(page.id) else {
+            continue;
+        };
+        let mut layers = Vec::with_capacity(drawn.len());
+        for l in drawn {
+            let master = doc.master.iter().any(|m| m.id == l.id);
+            if !master {
+                layers.push(l.into_owned());
+                continue;
+            }
+            if l.shapes.is_empty() {
+                continue;
+            }
+            let first = !seen.contains(&l.id);
+            if first {
+                seen.push(l.id);
+            }
+            let mut copy = l.into_owned();
+            copy.id = ids.layer();
+            copy.in_front = false;
+            copy.scope = tracedraw_core::MasterScope::All;
+            if !first {
+                copy.shapes = copy.shapes.iter().map(|s| reid(s, &mut ids)).collect();
+            }
+            layers.push(copy);
+        }
+        if let Some(p) = out.pages.get_mut(i) {
+            p.layers = layers;
+        }
+    }
+    out.master.clear();
+    out.set_ids(ids);
+    Some(out)
+}
+
 /// Coordinate units per millimetre.
 const UNITS_PER_MM: f64 = 254000.0 / 25.4;
 /// The "since version" tag records of version 13 and later start with.
@@ -218,9 +287,10 @@ const ARG_TEXT_LINK: u32 = 16015;
 const ARG_HIDDEN: u32 = 16016;
 /// On guides layers of version 17 and later: 2.
 const ARG_GUIDES_MODE: u32 = 16001;
-/// On the group of `LIST clpt` holding a clip container's contents: 2
-/// (files of versions 25 and 27).
-const ARG_CLIP_GROUP: u32 = 3500;
+/// On the group of `LIST clpt` holding a clip container's contents: the
+/// group's number (its `spnd`) plus one, in every clip group of the files
+/// of versions 11, 14, 25, 26 and 27 (2 for the group numbered 1).
+pub(crate) const ARG_CLIP_GROUP: u32 = 3500;
 /// On a clip container (version 27): a 16-byte id of its own, and 0.
 const ARG_CLIP_GUID: u32 = 40001;
 const ARG_CLIP_ZERO: u32 = 40200;
@@ -353,8 +423,16 @@ impl Ver {
     }
     /// Clip frames go out as clip containers (argument 8005 naming a
     /// group of `LIST clpt`): the layout read from a version 12 file and
-    /// written as files of versions 25 and 27 hold it.
+    /// written as files of versions 25 and 27 hold it. A version 11 file
+    /// (#896) holds its clip frames the same way (2026-10-30, #1226);
+    /// before 11 none was seen.
     fn clip_containers(self) -> bool {
+        self.0 >= 11
+    }
+    /// The container's own id (40001) and zero (40200), as files of
+    /// versions 25 to 27 have them; the containers of the version 11 file
+    /// have neither.
+    fn clip_container_ids(self) -> bool {
         self.0 >= 12
     }
     /// Blends go out live: an empty `LIST lnkg` of object type 7 between
@@ -405,6 +483,17 @@ impl Ver {
     /// Rectangles keep their own record (from 15 on their layout changes).
     fn native_rects(self) -> bool {
         self.0 < 15
+    }
+    /// The style table's set11 table, and each text style's reference to
+    /// it: from version 9, as the public format notes give it to the
+    /// bidirectional version 8 (801) and later. The program that reads
+    /// these files saves its version 8 (800) files with the 801 table,
+    /// but TraceDraw's version 8 file written so crashed its 2010 release
+    /// on opening while the same drawing's version 7 and 9 files opened,
+    /// and that file differed from the version 9 one only in the
+    /// configuration record and the rectangles' radii (#1139).
+    fn set11(self) -> bool {
+        self.0 >= 9
     }
 }
 
@@ -533,6 +622,19 @@ const PLAIN_RUN: (u16, u16) = (0, 0x04);
 /// a plain run, the style was ignored there and every run of a line
 /// took the paragraph's colour (#1297, #1347).
 const STYLED_RUN: (u16, u16) = (0x3fff, 0x14);
+
+/// The most style records of their own a version 16+ paragraph can
+/// hold besides its plain one: a letter names its record in the 7 high
+/// bits of a byte. Letters of further styles take the paragraph's.
+const MAX_RUN_STYLES: usize = 127;
+
+/// The style records of a version 16+ paragraph: (letters, style) of
+/// each, record 0 the plain one (no style of its own), and the record
+/// each run's letters name.
+struct RunLooks {
+    records: Vec<(usize, Option<String>)>,
+    record_of_run: Vec<u8>,
+}
 
 fn style_string(v: Ver, s: &str) -> Vec<u8> {
     let mut b = Buf::default();
@@ -2540,13 +2642,12 @@ fn stlt(v: Ver, uses: StyleUses) -> Vec<u8> {
     for (position, thickness) in DECORATION_LINES {
         t.u32(0).i32(position).i32(thickness);
     }
-    // Tabs, bullets, indents, hyphenation, drop caps: none; set11 from 8
-    // (both version 8 variants saved by the program that reads them hold
-    // it, its version 7 saves do not).
+    // Tabs, bullets, indents, hyphenation, drop caps: none; set11 from 9
+    // (see `Ver::set11`).
     for _ in 0..5 {
         t.u32(0);
     }
-    if n >= 8 {
+    if v.set11() {
         t.u32(1).u32(set11).u32(0).u32(0);
     }
     // The records: sections (1: fill and outline; 2: also the character
@@ -2570,7 +2671,7 @@ fn stlt(v: Ver, uses: StyleUses) -> Vec<u8> {
         name(&mut t, label);
         t.u32(text_fill).u32(outline);
         t.u32(font).u32(*align).u32(interval).u32(set5);
-        if n >= 8 {
+        if v.set11() {
             t.u32(set11);
         }
     }
@@ -2587,7 +2688,7 @@ fn stlt(v: Ver, uses: StyleUses) -> Vec<u8> {
         t.u32(*fill).u32(outline);
         let align = aligns.get(f.align).copied().unwrap_or(aligns[0]);
         t.u32(*font).u32(align).u32(interval).u32(set5);
-        if n >= 8 {
+        if v.set11() {
             t.u32(set11);
         }
     }
@@ -2884,9 +2985,14 @@ fn mark_nodes(coords: &mut [u8]) {
         .get(0..4)
         .and_then(|b| b.try_into().ok())
         .map_or(0, u32::from_le_bytes) as usize;
-    let Some(types) = coords.get_mut(4 + 8 * n..4 + 9 * n) else {
-        return;
-    };
+    if let Some(types) = coords.get_mut(4 + 8 * n..4 + 9 * n) {
+        mark_node_types(types);
+    }
+}
+
+/// The node marks of [`mark_nodes`] set on a curve's node bytes alone
+/// (`check` compares a written outline with them).
+pub(crate) fn mark_node_types(types: &mut [u8]) {
     let mut start = 0;
     for k in 0..=types.len() {
         let ends = k == types.len() || (k > start && types[k] & 0xc0 == 0);
@@ -2972,6 +3078,21 @@ fn graded_transparency_json(g: (&tracedraw_core::Fountain, u8)) -> Option<String
     ))
 }
 
+/// The `outline` of an object's style string when it has no outline, as
+/// the program's own files of version 27 hold it on pictures and shapes
+/// without one (the members in their order, width 0, no `type`).
+pub(crate) const NO_OUTLINE_JSON: &str = concat!(
+    r#"{"angle":"0","aspect":"100","behindFill":"0","#,
+    r#""color":"CMYK,USER,0,0,0,100,100,00000000-0000-0000-0000-000000000000","#,
+    r#""dashAdjust":"0","dashDotSpec":"0","dotLength":"0","endCaps":"0","joinType":"0","#,
+    r#""justification":"0","leftArrow":"|0","leftArrowAttributes":"0|0|0|0|0|0|0","#,
+    r#""matrix":"1,0,0,0,1,0","miterLimit":"5","overlapArrow":"0","overprint":"0","#,
+    r#""projectMatrix":"1,0,0,0,1,0","rightArrow":"|0","#,
+    r#""rightArrowAttributes":"0|0|0|0|0|0|0","scaleWithObject":"0","#,
+    r#""screenSpec":"0,0,45000000,60,0","shareArrow":"0","variableAttributes":"0|0","#,
+    r#""width":"0"}"#
+);
+
 /// The style string of an object (versions 16+): its fill, outline and
 /// transparency.
 fn object_style_json(
@@ -2998,7 +3119,12 @@ fn object_style_json(
             colour_spec(s.color),
             Stroke::miter_angle_from_ratio(s.miter_ratio())
         ),
-        None => r#"{"type":"1","width":"0"}"#.to_string(),
+        // As the files of versions 16 to 27 hold an object without an
+        // outline: every member with width 0 and no `type`. TraceDraw
+        // wrote `{"type":"1","width":"0"}`, a type no file holds; the
+        // program that reads them closed when such a picture, or a group
+        // of such curves, was clicked (#1226).
+        None => NO_OUTLINE_JSON.to_string(),
     };
     let transparency = if let Some(g) = graded.and_then(graded_transparency_json) {
         g
@@ -3056,10 +3182,37 @@ fn weight_member(sp: &TextSpan) -> u32 {
     1 << (2 * (span_weight(sp) / 100 - 1))
 }
 
-/// The style string of a run (versions 16+): its font, size, weight,
-/// slant, lines and colour.
+/// The style string of a run with a look of its own (versions 16+):
+/// its colour and its font, size, weight, slant and lines for the three
+/// scripts, with the members the paragraph's default style holds besides
+/// them (angle, outline, shifts), as every such run of the files of the
+/// program that reads them is complete (#1379).
 fn run_style_json(sp: &TextSpan, fill: Option<&Fill>) -> String {
-    format!("{{{}}}", character_json(sp, fill))
+    // A fill other than a colour is left to the paragraph's.
+    let fill = match fill.and_then(fill_colour) {
+        Some(c) => format!("{},", fill_json(&colour_spec(c))),
+        None => String::new(),
+    };
+    format!(
+        r#"{{"character":{{{}"angle":"0","outline":{},"RTL":{},"latin":{},"h_shift":"0","v_shift":"0","farEast":{}}}}}"#,
+        fill,
+        character_outline_json(),
+        font_json(Some(sp), 178),
+        font_json(Some(sp), 0),
+        font_json(Some(sp), 128)
+    )
+}
+
+/// CMYK black, the colour of text and outlines that set none.
+const BLACK_SPEC: &str = "CMYK,USER,0,0,0,100,100,00000000-0000-0000-0000-000000000000";
+
+/// The `outline` member of a character style: none (width 0), with the
+/// members files give it.
+fn character_outline_json() -> String {
+    let screen = "0,0,45000000,60,0";
+    format!(
+        r#"{{"overprint":"0","angle":"0","aspect":"100","dashDotSpec":"0","behindFill":"0","miterLimit":"5","justification":"0","dashAdjust":"0","rightArrow":"|0","screenSpec":"{screen}","overlapArrow":"0","shareArrow":"0","dotLength":"0","scaleWithObject":"0","matrix":"1,0,0,0,1,0","color":"{BLACK_SPEC}","leftArrow":"|0","projectMatrix":"1,0,0,0,1,0","leftArrowAttributes":"0|0|0|0|0|0|0","endCaps":"0","rightArrowAttributes":"0|0|0|0|0|0|0","joinType":"0","width":"0"}}"#
+    )
 }
 
 /// The `character` member of a run's style string: its fill and its
@@ -3140,22 +3293,19 @@ fn full_text_style(
     align: TextAlign,
     leading: f64,
 ) -> String {
-    let black = "CMYK,USER,0,0,0,100,100,00000000-0000-0000-0000-000000000000";
     let colour = fill
         .and_then(fill_colour)
         .map(colour_spec)
-        .unwrap_or_else(|| black.to_string());
-    let screen = "0,0,45000000,60,0";
+        .unwrap_or_else(|| BLACK_SPEC.to_string());
     format!(
         concat!(
             r#"{{"character":{{{fill},"#,
-            r#""angle":"0","outline":{{"overprint":"0","angle":"0","aspect":"100","dashDotSpec":"0","behindFill":"0","miterLimit":"5","justification":"0","dashAdjust":"0","rightArrow":"|0","screenSpec":"{screen}","overlapArrow":"0","shareArrow":"0","dotLength":"0","scaleWithObject":"0","matrix":"1,0,0,0,1,0","color":"{black}","leftArrow":"|0","projectMatrix":"1,0,0,0,1,0","leftArrowAttributes":"0|0|0|0|0|0|0","endCaps":"0","rightArrowAttributes":"0|0|0|0|0|0|0","joinType":"0","width":"0"}},"#,
+            r#""angle":"0","outline":{outline},"#,
             r#""RTL":{rtl},"latin":{latin},"h_shift":"0","v_shift":"0","farEast":{far}}},"frame":{{}},"#,
             r#""paragraph":{{"interCharSpacing":"0","thickOverlineAbsolute":"0","thickAbsolute":"0","dblStrikeout2Thickness":"45455","dblStrikeout2Distance":"287878","dblOverline1Absolute":"0","maxInterCharSpacing":"2000000","dblUnderline1Distance":"-90909","dblOverline2Absolute":"0","dblStrikeout1Distance":"378788","dblStrikeout1Absolute":"0","thickThickness":"90909","dblUnderline2Distance":"-181819","dblUnderline2Thickness":"45455","interLineSpacing":"{leading}","dblOverline1Thickness":"45455","afterParaSpacing":"0","thickOverlineThickness":"90909","spacingMethod":"0","dblStrikeout2Absolute":"0","thickStrikeoutAbsolute":"0","thinThickness":"45455","interLangSpacing":"0","interWordSpacing":"1000000","maxInterWordSpacing":"3000000","thinAbsolute":"0","dblUnderline1Absolute":"0","dblUnderline2Absolute":"0","dblUnderline1Thickness":"45455","thinOverlineAbsolute":"0","thinOverlineThickness":"45455","thinDistance":"-90909","beforeParaSpacing":"1000000","dblOverline2Distance":"890910","thinOverlineDistance":"845455","dblOverline2Thickness":"45455","thinStrikeoutAbsolute":"0","dblOverline1Distance":"800000","thinStrikeoutDistance":"333333","minInterWordSpacing":"600000","thinStrikeoutThickness":"45455","thickDistance":"-90909","thickOverlineDistance":"868182","thickStrikeoutDistance":"356060","thickStrikeoutThickness":"90909","dblStrikeout1Thickness":"45455","justify":"{justify}"}}}}"#
         ),
         fill = fill_json(&colour),
-        screen = screen,
-        black = black,
+        outline = character_outline_json(),
         rtl = font_json(sp, 178),
         latin = font_json(sp, 0),
         far = font_json(sp, 128),
@@ -3964,21 +4114,26 @@ impl<'a> Writer<'a> {
         let Some(b) = inner.bounds else {
             return self.object(&f, centre, depth);
         };
+        // The group takes the next number and its argument 3500 the one
+        // after it, which no other object takes: every clip group of the
+        // files of versions 11, 14, 25, 26 and 27 holds its number plus
+        // one there. (Written 2 for every group before: a second clip, or
+        // text written before the first, broke that.)
         let number = self.next_spnd;
-        self.next_spnd += 1;
+        self.next_spnd += 2;
+        let mut group_args = vec![(ARG_CLIP_GROUP, (number + 1).to_le_bytes().to_vec())];
+        // The zero rotation every object of versions 7 to 12 carries; the
+        // clip groups of the version 11 file have it too.
+        if self.v.rotation_arg() {
+            group_args.push((ARG_ROTATION, vec![0; 4]));
+        }
         let b = b - centre.to_vec2();
         let mut body = vec![
             chunk(b"spnd", number.to_le_bytes().to_vec()),
             chunk(b"flgs", CLIP_GROUP_FLAGS.to_vec()),
             chunk(b"bbox", box_bytes(b)),
             chunk(b"obbx", obbx_bytes(b, 0.0)),
-            list(
-                b"lgob",
-                vec![chunk(
-                    b"loda",
-                    loda(0, vec![(ARG_CLIP_GROUP, 2u32.to_le_bytes().to_vec())]),
-                )],
-            ),
+            list(b"lgob", vec![chunk(b"loda", loda(0, group_args))]),
         ];
         body.extend(inner.nodes);
         self.clip_groups.push(list(b"grp ", body));
@@ -4390,8 +4545,10 @@ impl<'a> Writer<'a> {
                 ARG_CLIP_CONTENTS,
                 [n, 1, 0, 1].iter().flat_map(|x| x.to_le_bytes()).collect(),
             ));
-            args.push((ARG_CLIP_GUID, self.guid().to_vec()));
-            args.push((ARG_CLIP_ZERO, vec![0; 4]));
+            if v.clip_container_ids() {
+                args.push((ARG_CLIP_GUID, self.guid().to_vec()));
+                args.push((ARG_CLIP_ZERO, vec![0; 4]));
+            }
         }
         if v.rotation_arg() {
             args.push((ARG_ROTATION, vec![0; 4]));
@@ -4651,6 +4808,8 @@ impl<'a> Writer<'a> {
                     kind: ShapeKind::Group { children },
                     transform: Affine::IDENTITY,
                     effects: Vec::new(),
+                    // The lines carry the text's transparency.
+                    opacity: 1.0,
                     ..s.clone()
                 },
             };
@@ -4664,6 +4823,9 @@ impl<'a> Writer<'a> {
                     .map(|c| {
                         let mut c = c.clone();
                         c.absorb(s.transform);
+                        // A group's transparency is written on each object
+                        // it holds.
+                        c.absorb_opacity(s.opacity);
                         c
                     })
                     .collect();
@@ -4877,6 +5039,44 @@ impl<'a> Writer<'a> {
         out
     }
 
+    /// The style records of a version 16+ paragraph of `runs`, whose
+    /// default style is `first`'s (see [`RunLooks`]): runs whose style
+    /// string is `first`'s take the plain record 0, every other look a
+    /// record of its own (up to [`MAX_RUN_STYLES`]), in the order the
+    /// looks first appear. `fill` is the object's, for runs without one.
+    fn run_looks(runs: &[TextSpan], first: Option<&TextSpan>, fill: &Fill) -> RunLooks {
+        let json = |sp: &TextSpan| run_style_json(sp, sp.fill.as_ref().or(Some(fill)));
+        let base = first.map(json);
+        // Record 0 counts the paragraph's end.
+        let mut records: Vec<(usize, Option<String>)> = vec![(1, None)];
+        let mut record_of_run = Vec::with_capacity(runs.len());
+        for sp in runs {
+            let letters = sp.text.chars().count();
+            let own = json(sp);
+            let k = if letters == 0 || Some(&own) == base.as_ref() {
+                0
+            } else if let Some(k) = records
+                .iter()
+                .position(|(_, s)| s.as_deref() == Some(own.as_str()))
+            {
+                k
+            } else if records.len() <= MAX_RUN_STYLES {
+                records.push((0, Some(own)));
+                records.len() - 1
+            } else {
+                0
+            };
+            if let Some(r) = records.get_mut(k) {
+                r.0 += letters;
+            }
+            record_of_run.push(k as u8);
+        }
+        RunLooks {
+            records,
+            record_of_run,
+        }
+    }
+
     /// `txsm` of versions 7 to 15: one frame, a paragraph per line, one
     /// style per run (font, encoding, style flags, size and, when it
     /// differs from the object's, the fill), the text in UTF-16 from
@@ -4991,18 +5191,21 @@ impl<'a> Writer<'a> {
             for (ri, sp) in runs.iter().enumerate() {
                 let look = format_of(self, sp);
                 let same = |r: &(i32, u32, usize)| (r.0, r.1) == (look.size, look.fill);
+                // The last run counts the paragraph's end too, as files
+                // count it.
+                let end = usize::from(!by_look && ri == last_run);
                 let index = match records.iter().position(same).filter(|_| by_look) {
                     Some(i) => i,
+                    // A letter names its record in 7 bits: the runs past
+                    // the 128th record take the first one's look.
+                    None if records.len() > MAX_RUN_STYLES => 0,
                     None => {
-                        // The last run counts the paragraph's end too, as
-                        // files count it.
-                        let end = usize::from(!by_look && ri == last_run);
-                        records.push((look.size, look.fill, end));
+                        records.push((look.size, look.fill, 0));
                         records.len() - 1
                     }
                 };
                 if let Some(r) = records.get_mut(index) {
-                    r.2 += sp.text.chars().count();
+                    r.2 += sp.text.chars().count() + end;
                 }
                 record_of_run.push(index);
             }
@@ -5163,44 +5366,38 @@ impl<'a> Writer<'a> {
                 .zeros(1)
                 .u8(0)
                 .bytes(&style_string(v, &default));
-            // One record per run; a letter's override index selects it:
-            // its letter count (the last one counts the paragraph end
-            // too), which of the style's members apply, flags, a locale,
-            // then its style. Records of no letters make the program that
-            // opens the file hang.
-            t.u32(runs.len().max(1) as u32);
-            let single = runs.len() <= 1;
-            for (k, sp) in runs.iter().enumerate() {
-                let mut n = sp.text.chars().count();
-                if k + 1 == runs.len() {
-                    n += 1;
-                }
-                let (json, (members, flags)) = if single {
-                    (r#"{"character":{}}"#.to_string(), PLAIN_RUN)
+            // The records, a table of the paragraph's looks as the files
+            // of the program that reads them hold it: first the plain
+            // record, for the letters in the paragraph's own style, with
+            // an empty style and counting the paragraph's end too, then
+            // one record per other look (colour, font, size), each with
+            // its complete style marked as applying, counting the letters
+            // that wear it. Every letter names its record. A record is
+            // its letter count, which of the style's members apply,
+            // flags, a locale, then its style. Records of no letters make
+            // the program that opens the file hang.
+            let looks = Self::run_looks(runs, first, fill);
+            t.u32(looks.records.len() as u32);
+            for (n, json) in &looks.records {
+                let (members, flags) = if json.is_some() {
+                    STYLED_RUN
                 } else {
-                    (
-                        run_style_json(sp, sp.fill.as_ref().or(Some(fill))),
-                        STYLED_RUN,
-                    )
+                    PLAIN_RUN
                 };
-                t.u16(n.min(usize::from(u16::MAX)) as u16)
+                t.u16((*n).min(usize::from(u16::MAX)) as u16)
                     .u16(members)
                     .u16(flags)
                     .bytes(&locale_bytes())
-                    .bytes(&style_string(v, &json));
-            }
-            if runs.is_empty() {
-                t.u16(1)
-                    .u16(PLAIN_RUN.0)
-                    .u16(PLAIN_RUN.1)
-                    .bytes(&locale_bytes())
-                    .bytes(&style_string(v, r#"{"character":{}}"#));
+                    .bytes(&style_string(
+                        v,
+                        json.as_deref().unwrap_or(r#"{"character":{}}"#),
+                    ));
             }
             let mut text = String::new();
             let mut index = Vec::new();
-            for (k, sp) in runs.iter().enumerate() {
+            for (sp, k) in runs.iter().zip(&looks.record_of_run) {
                 text.push_str(&sp.text);
-                index.extend(std::iter::repeat_n(k as u8, sp.text.chars().count()));
+                index.extend(std::iter::repeat_n(*k, sp.text.chars().count()));
             }
             t.u32(index.len() as u32);
             // The letters are one byte each from version 16 (files saved

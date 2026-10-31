@@ -150,6 +150,7 @@ mod shelf;
 mod shortcuts;
 mod snap;
 mod snap_points;
+mod soft_keyboard;
 mod spell;
 #[cfg(not(target_arch = "wasm32"))]
 mod splash;
@@ -728,12 +729,15 @@ const RENDERER_CHECK: &str = "renderer-check";
 
 impl eframe::App for Shell {
     /// Characters the windowing layer lost (input methods on Windows,
-    /// #1151) join the frame's input as typed text. A graphics tablet's
+    /// #1151) and what Android's on-screen keyboard typed (#1309) join the
+    /// frame's input. A graphics tablet's
     /// pressure is read from the touch events, and the pen's touches that
     /// only move are taken out, so egui never takes the pen for a touch
     /// screen (#850, see `pen.rs`).
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
         system_chars::take_into(raw_input);
+        // What Android's on-screen keyboard typed (#1309).
+        soft_keyboard::take_into(raw_input);
         pen::filter_raw_input(ctx, raw_input);
         interaction::release_chorded_left(ctx, raw_input);
     }

@@ -873,11 +873,11 @@ fn clip_frames() {
         );
         let cb = (first.transform * contents[0].page_path()).bounding_box();
         same_box(r.v, cb, Rect::new(10.0, 10.0, 70.0, 40.0), EPS);
-        // From version 12 a clip container (#1222): the frame with its
-        // fill and outline, the contents inside it. Before, the frame's
-        // fill under, the contents, the frame's outline over.
+        // From version 11 a clip container (#1222, #1226): the frame with
+        // its fill and outline, the contents inside it. Before, the
+        // frame's fill under, the contents, the frame's outline over.
         let second = r.shape(1);
-        if r.v >= 12 {
+        if r.v >= 11 {
             let ShapeKind::ClipFrame { frame, contents } = &second.kind else {
                 panic!("version {}: {}", r.v, kind_name(&second.kind));
             };
@@ -1224,6 +1224,44 @@ fn transparency_uniform_and_graded() {
                 graded.opacity
             );
         }
+    });
+}
+
+/// A group's uniform transparency is written on each object it holds, so
+/// the file shows the group as drawn.
+#[test]
+fn group_transparency_goes_on_its_objects() {
+    let doc = drawing(200.0, 100.0, |ids| {
+        let mut half = rect(ids, Rect::new(10.0, 10.0, 50.0, 50.0), 0.0);
+        half.opacity = 0.5;
+        let plain = rect(ids, Rect::new(60.0, 10.0, 100.0, 50.0), 0.0);
+        let mut g = group(ids, vec![half, plain]);
+        g.opacity = 0.4;
+        vec![g]
+    });
+    every_version(&doc, |r| {
+        r.count(1);
+        let ShapeKind::Group { children } = &r.shape(0).kind else {
+            panic!("version {}: {}", r.v, kind_name(&r.shape(0).kind));
+        };
+        assert_eq!(children.len(), 2, "version {}", r.v);
+        let (want_half, want_plain) = if keeps_opacity(r.v) {
+            (0.2, 0.4)
+        } else {
+            (1.0, 1.0)
+        };
+        assert!(
+            near(children[0].opacity, want_half, 0.002),
+            "version {}: opacity {}",
+            r.v,
+            children[0].opacity
+        );
+        assert!(
+            near(children[1].opacity, want_plain, 0.002),
+            "version {}: opacity {}",
+            r.v,
+            children[1].opacity
+        );
     });
 }
 

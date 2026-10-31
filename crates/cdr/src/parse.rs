@@ -264,6 +264,11 @@ const ARG_GUIDE_LINE: u32 = 16000;
 /// The step count of a blend's linked group (its `lgob` `loda`, object
 /// type 7): the first u32 of this argument.
 pub(crate) const ARG_BLEND_STEPS: u32 = 3000;
+/// Object type of a contour's linked group (`LIST lnkg`).
+const OBJ_CONTOUR_GROUP: u32 = 15;
+/// Length of the contour record (argument 3000 of a contour's linked
+/// group) in the one layout seen, version 9.
+const CONTOUR_RECORD_LEN: usize = 44;
 
 /// Little-endian cursor over a chunk payload. `v16` selects the 16-bit
 /// layouts of versions before 6 for integers, coordinates and angles.
@@ -3036,6 +3041,30 @@ impl<'a> Ctx<'a> {
         })
     }
 
+    /// The offset (mm) of a contour's linked group (`LIST lnkg` whose own
+    /// `lgob` holds a `loda` of object type 15): the u32 at the start of
+    /// its argument of type 3000, in the units of the coordinates. The
+    /// argument is 44 bytes in the one file seen (version 9, #597): the
+    /// offset, the step count (u16), a u16 of flags whose bits are not
+    /// known yet (0x2f there) and three colours. `None` for other linked
+    /// groups and other layouts, whose steps then stay plain objects.
+    fn contour_record(&mut self, group: &Chunk) -> Option<f64> {
+        let lgob = group.children.iter().find(|k| k.is(b"lgob"))?;
+        let loda = lgob.children.iter().find(|k| k.is(b"loda"))?;
+        let d = self.data(loda);
+        let l = self.read_loda(d)?;
+        if l.kind != OBJ_CONTOUR_GROUP {
+            return None;
+        }
+        let arg = l.args.iter().find(|a| a.ty == ARG_BLEND_STEPS)?;
+        if arg.end.checked_sub(arg.off)? != CONTOUR_RECORD_LEN {
+            return None;
+        }
+        let raw = self.reader_at(d, arg.off).u32()?;
+        let offset = raw as f64 * UNIT_MM;
+        (offset > 1e-4 && offset.is_finite()).then_some(offset)
+    }
+
     /// Remember that the object list `c` was read as `shape`, by its
     /// static id (`usdn`), when the package names blends (#986).
     fn note_static_id(&mut self, c: &Chunk, shape: tracedraw_core::ShapeId) {
@@ -3449,6 +3478,9 @@ impl<'a> Ctx<'a> {
         // the objects read, and their step count (see `blend_steps`).
         let first = out.len();
         let mut blends: Vec<(usize, u32)> = Vec::new();
+        // Contours found in this list: where their steps start and end
+        // among the objects read, and their offset (see `contour_record`).
+        let mut contours: Vec<(usize, usize, f64)> = Vec::new();
         for c in &list.children {
             if c.is(b"obj ") {
                 let id = ids.shape();
@@ -3539,6 +3571,10 @@ impl<'a> Ctx<'a> {
                         let steps = self.budget_blend_steps(steps);
                         blends.push((before, steps));
                     }
+                } else if let Some(offset) = self.contour_record(c) {
+                    // A contour keeps its steps as objects of its linked
+                    // group, which stands just before its object (#1031).
+                    contours.push((before, out.len(), offset));
                 }
             } else if c.list_type.is_some() {
                 // Other lists (`lgob`, `spnd`, ...) are not objects, but
@@ -3590,6 +3626,27 @@ impl<'a> Ctx<'a> {
                         ..Default::default()
                     },
                 });
+        }
+        self.make_contours_live(out, &contours);
+    }
+
+    /// Make each contour of `contours` live: the object right after its
+    /// steps gets the contour, and the steps the file keeps go (the
+    /// effect draws them). Taken from the last so the places of the
+    /// earlier ones stay right.
+    fn make_contours_live(&mut self, out: &mut Vec<Shape>, contours: &[(usize, usize, f64)]) {
+        for &(start, end, offset) in contours.iter().rev() {
+            let Some(effect) = out
+                .get(end)
+                .zip(out.get(start..end))
+                .and_then(|(object, steps)| contour_effect(object, steps, offset))
+            else {
+                self.report
+                    .warn("a contour whose object or steps were not found; kept as drawn");
+                continue;
+            };
+            out[end].effects.push(effect);
+            out.drain(start..end);
         }
     }
 
@@ -4748,6 +4805,95 @@ fn fit_text(t: &mut Shape, curve: &Shape, fitted: &OnPathText) -> bool {
         on_path: Some(tp),
     };
     true
+}
+
+/// The live contour of `object` whose steps the file keeps as `steps`
+/// (#1031), `offset` mm apart. The side comes from where the steps lie:
+/// all within the object's box, inside; all around it, outside. The
+/// end colours are those of the step farthest from the object (the
+/// program that wrote the file draws the last step in them; in the
+/// version 9 file of #597 the steps run evenly in RGB from the object's
+/// colours to them, as the effect draws them). `None` when the steps
+/// are on neither side, or are not plain curves, or the object is a
+/// group or a text.
+fn contour_effect(
+    object: &Shape,
+    steps: &[Shape],
+    offset: f64,
+) -> Option<tracedraw_core::live::Effect> {
+    if steps.is_empty()
+        || matches!(
+            object.kind,
+            ShapeKind::Group { .. } | ShapeKind::ClipFrame { .. } | ShapeKind::Text { .. }
+        )
+        || !steps
+            .iter()
+            .all(|s| matches!(s.kind, ShapeKind::Path { closed: true, .. }))
+    {
+        return None;
+    }
+    let own = object.bounds();
+    let boxes: Vec<Rect> = steps.iter().map(|s| s.bounds()).collect();
+    let all = boxes.iter().copied().reduce(|a, b| a.union(b))?;
+    let finite = |r: Rect| [r.x0, r.y0, r.x1, r.y1].iter().all(|v| v.is_finite());
+    if !finite(own) || !finite(all) {
+        return None;
+    }
+    let tol = (offset * 0.5).max(0.01);
+    let within = |inner: Rect, outer: Rect| {
+        inner.x0 >= outer.x0 - tol
+            && inner.y0 >= outer.y0 - tol
+            && inner.x1 <= outer.x1 + tol
+            && inner.y1 <= outer.y1 + tol
+    };
+    let area = |r: &Rect| r.width() * r.height();
+    let (outside, farthest) = if within(all, own) {
+        let i = (0..boxes.len()).min_by(|a, b| area(&boxes[*a]).total_cmp(&area(&boxes[*b])))?;
+        (false, i)
+    } else if boxes.iter().all(|b| within(own, *b)) {
+        let i = (0..boxes.len()).max_by(|a, b| area(&boxes[*a]).total_cmp(&area(&boxes[*b])))?;
+        (true, i)
+    } else {
+        return None;
+    };
+    let last = steps.get(farthest)?;
+    let fill_to = last
+        .fill
+        .preview_color()
+        .or_else(|| object.fill.preview_color())
+        .unwrap_or(Color::BLACK);
+    let outline_to = last.stroke.as_ref().map(|s| s.color);
+    // The corners: an object of straight sides whose steps have straight
+    // sides only has mitred steps (the pentagon of #597); steps with
+    // curves around such an object are round. An object with curves
+    // tells nothing, and keeps the round corners of older contours.
+    let straight = |p: &BezPath| {
+        use tracedraw_core::geometry::PathEl;
+        p.elements()
+            .iter()
+            .all(|e| matches!(e, PathEl::MoveTo(_) | PathEl::LineTo(_) | PathEl::ClosePath))
+    };
+    let corners = if straight(&object.local_path()) {
+        if steps.iter().all(|s| straight(&s.local_path())) {
+            Some(tracedraw_core::shaping::Join::Miter)
+        } else {
+            Some(tracedraw_core::shaping::Join::Round)
+        }
+    } else {
+        None
+    };
+    Some(tracedraw_core::live::Effect::Contour {
+        steps: u32::try_from(steps.len()).ok()?,
+        offset,
+        outside,
+        to_center: false,
+        fill_to,
+        outline_to,
+        color_blend: 0,
+        corners,
+        accel_objects: 0.0,
+        accel_colors: 0.0,
+    })
 }
 
 /// Where a blend's steps start on an end object, in its own coordinates:
@@ -7890,6 +8036,146 @@ pub(crate) mod tests {
             .shapes
             .iter()
             .all(|s| s.effects.is_empty()));
+    }
+
+    /// A contour as the version 9 file of #597 stores it: a linked group
+    /// whose `loda` of object type 15 holds the offset (u32, 2.54 mm),
+    /// the step count, flags and three colours in a 44-byte argument of
+    /// type 3000, with the steps as curves, followed by the object. The
+    /// object gets a live inside contour of that many steps at that
+    /// offset, to the colour of its innermost step, with mitred corners
+    /// (its steps have straight sides), and the steps go; steps around
+    /// the object make an outside one. Another layout keeps the steps as
+    /// drawn (#1031).
+    #[test]
+    fn a_contour_group_becomes_a_live_contour_of_the_object_after_it() {
+        let v = 9u16;
+        let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
+        let fild = |id: u32, rgb: (u8, u8, u8)| {
+            let mut f = u32s(&[id]);
+            f.extend_from_slice(&u16s(&[1, 0]));
+            f.extend_from_slice(&[0, 0]);
+            f.extend_from_slice(&color_bgr(rgb.0, rgb.1, rgb.2));
+            chunk(b"fild", &f)
+        };
+        // A square from `a` to `b` (file units) on both axes, filled with
+        // fill `fill`.
+        let square = |a: i32, b: i32, fill: u32| {
+            let mut c = u32s(&[5]);
+            c.extend_from_slice(&i32s(&[a, a, b, a, b, b, a, b, a, a]));
+            c.extend_from_slice(&[0x08, 0x40, 0x40, 0x40, 0x48]);
+            list(
+                b"obj ",
+                &[
+                    chunk(
+                        b"loda",
+                        &loda(OBJ_CURVE, &[(ARG_COORDS, c), (ARG_FILL, u32s(&[fill]))]),
+                    ),
+                    chunk(b"trfd", &trfd(v, identity)),
+                ]
+                .concat(),
+            )
+        };
+        let step = 25_400; // 2.54 mm
+        let record = |len: usize| {
+            let mut a = u32s(&[step as u32]);
+            a.extend_from_slice(&u16s(&[3, 0x2f]));
+            for _ in 0..3 {
+                a.extend_from_slice(&color_bgr(0, 0, 0));
+            }
+            a.resize(len, 0);
+            a
+        };
+        let read = |steps: Vec<Vec<u8>>, len: usize| {
+            let group = list(
+                b"lnkg",
+                &[
+                    list(
+                        b"lgob",
+                        &chunk(
+                            b"loda",
+                            &loda(
+                                15,
+                                &[(19120, i32s(&[0, 0, 0, 0])), (ARG_BLEND_STEPS, record(len))],
+                            ),
+                        ),
+                    ),
+                    steps.concat(),
+                ]
+                .concat(),
+            );
+            let body = [
+                chunk(b"mcfg", &mcfg(v, 2_540_000, 2_540_000)),
+                fild(1, (255, 255, 0)),
+                fild(2, (170, 170, 0)),
+                fild(3, (85, 85, 0)),
+                fild(4, (0, 0, 0)),
+                list(
+                    b"page",
+                    &list(b"layr", &[group, square(0, 400_000, 1)].concat()),
+                ),
+            ]
+            .concat();
+            parse(&riff(b"CDRD", &body), v)
+        };
+        // Inside: the steps front to back, innermost (black) first.
+        let inside: Vec<Vec<u8>> = (1..=3)
+            .rev()
+            .map(|k| square(k * step, 400_000 - k * step, k as u32 + 1))
+            .collect();
+        let (doc, rep) = read(inside.clone(), 44);
+        let shapes = &doc.pages[0].layers[0].shapes;
+        assert_eq!(shapes.len(), 1, "steps replaced: {:?}", rep.warnings);
+        match shapes[0].effects.as_slice() {
+            [tracedraw_core::live::Effect::Contour {
+                steps,
+                offset,
+                outside,
+                to_center,
+                fill_to,
+                color_blend,
+                corners,
+                ..
+            }] => {
+                assert_eq!(*steps, 3);
+                // Straight steps of a straight object: mitred corners.
+                assert_eq!(*corners, Some(tracedraw_core::shaping::Join::Miter));
+                assert!((offset - 2.54).abs() < 1e-9, "{offset}");
+                assert!(!outside && !to_center);
+                assert_eq!(*fill_to, Color::rgb8(0, 0, 0));
+                assert_eq!(*color_blend, 0);
+            }
+            other => panic!("{other:?}"),
+        }
+        // The effect draws the steps where the file had them.
+        let ev = tracedraw_core::live::evaluate(&shapes[0]);
+        assert_eq!(ev.above.len(), 3);
+        let inner = ev.above.last().expect("step").bounds();
+        let own = shapes[0].bounds();
+        assert!(
+            (inner.x0 - own.x0 - 7.62).abs() < 0.01 && (own.x1 - inner.x1 - 7.62).abs() < 0.01,
+            "{inner:?} in {own:?}"
+        );
+        // Outside: the steps around the object.
+        let outside: Vec<Vec<u8>> = (1..=3)
+            .map(|k| square(-k * step, 400_000 + k * step, k as u32 + 1))
+            .collect();
+        let (doc, _) = read(outside, 44);
+        let shapes = &doc.pages[0].layers[0].shapes;
+        assert_eq!(shapes.len(), 1);
+        assert!(matches!(
+            shapes[0].effects.as_slice(),
+            [tracedraw_core::live::Effect::Contour {
+                outside: true,
+                steps: 3,
+                ..
+            }]
+        ));
+        // A record of another length: the steps stay as drawn.
+        let (doc, _) = read(inside, 48);
+        let shapes = &doc.pages[0].layers[0].shapes;
+        assert_eq!(shapes.len(), 4);
+        assert!(shapes.iter().all(|s| s.effects.is_empty()));
     }
 
     /// A blend starts a rectangle at its corner at the origin, along its

@@ -829,6 +829,9 @@ pub(crate) struct Txsm {
     /// How the first frame fitted to a path sits on it (version 16+).
     pub path_settings: Option<PathSettings>,
     pub paragraphs: Vec<TextParagraph>,
+    /// Version 16+ run records holding a style of their own while marked
+    /// as applying none of its members (see `read_txsm_16`).
+    pub inert_styles: usize,
 }
 
 /// How a text fitted to a path sits on it: the 40 bytes after the
@@ -927,6 +930,7 @@ fn early_paragraphs(chars: &[u8], size_pt: Option<f64>) -> Txsm {
         on_path: false,
         path_settings: None,
         paragraphs,
+        inert_styles: 0,
     }
 }
 
@@ -1063,6 +1067,7 @@ fn read_txsm_7_frames(
         on_path: any_on_path,
         path_settings: None,
         paragraphs: Vec::new(),
+        inert_styles: 0,
     };
     for _ in 0..np {
         let style_id = r.u32()?;
@@ -1408,6 +1413,7 @@ fn read_txsm_16(d: &[u8], v: u16, charset: u8, warn: &mut dyn FnMut(String)) -> 
         on_path: any_on_path,
         path_settings,
         paragraphs: Vec::new(),
+        inert_styles: 0,
     };
     for _ in 0..np {
         let style_id = r.u32()?;
@@ -1439,11 +1445,19 @@ fn read_txsm_16(d: &[u8], v: u16, charset: u8, warn: &mut dyn FnMut(String)) -> 
                 let len = r.u32()? as usize;
                 r.skip(len.saturating_mul(2));
             }
-            let style = if st2 != 0 || st3 & 0x04 != 0 {
-                parse_style_string(&read_style_string(&mut r, d, v, charset)?)
-            } else {
-                RunStyle::default()
-            };
+            // Every record ends with a style string, also one marked
+            // with neither members nor a locale (0, 0): the files of
+            // versions 16 to 27 that hold such records (the saves of
+            // #1139 and #1297 of a text the program that wrote them had
+            // made one record of) carry `{"character":{}}` there.
+            let text = read_style_string(&mut r, d, v, charset)?;
+            let style = parse_style_string(&text);
+            // A style marked with no member applying is ignored by the
+            // program that wrote the samples (TraceDraw wrote its runs so
+            // until 0.28, #1297); it is read all the same.
+            if st2 == 0 && style != RunStyle::default() {
+                out.inert_styles += 1;
+            }
             records.push(style);
         }
         let nc = r.u32()? as usize;

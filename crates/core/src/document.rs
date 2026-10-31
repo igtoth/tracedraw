@@ -2504,6 +2504,13 @@ impl Shape {
         Some(ShapeKind::rect_with_corners(rect, c))
     }
 
+    /// Lay a parent's uniform transparency over the shape's own, as when a
+    /// group is ungrouped or flattened for a file: `parent` is the group's
+    /// opacity, 1 being opaque.
+    pub fn absorb_opacity(&mut self, parent: f64) {
+        self.opacity = (self.opacity * parent).clamp(0.0, 1.0);
+    }
+
     /// Put `parent` in front of the shape's own transform (ungrouping,
     /// flattening a group for a file) and keep its look. Fixed corners
     /// measure against the rectangle's own transform: a `parent` that

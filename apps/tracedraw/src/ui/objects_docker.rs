@@ -667,11 +667,20 @@ fn layer_rows(
         font,
         color,
     );
+    // A master layer's pages and, when it is drawn over the page's own
+    // layers, "In front" (it is listed under them all the same, #1132).
+    let mut notes = Vec::new();
     if at.master && layer.scope != MasterScope::All {
+        notes.push(tr(scope_key(layer.scope)));
+    }
+    if at.master && layer.in_front {
+        notes.push(tr("docker.in_front"));
+    }
+    if !notes.is_empty() {
         ui.painter().text(
             Pos2::new(name.right() + 6.0, rect.center().y),
             egui::Align2::LEFT_CENTER,
-            tr(scope_key(layer.scope)),
+            notes.join(", "),
             egui::FontId::proportional(11.0),
             Tokens::text_dim(),
         );

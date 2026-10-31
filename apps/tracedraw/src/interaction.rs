@@ -2818,6 +2818,12 @@ impl App {
             }
             Drag::AlongPath { start, current } => self.finish_along_path(start, current),
             Drag::Pivot => {}
+            // A Free Transform drag applied its steps as the pointer
+            // moved (a release off the canvas ends it here): nothing is
+            // left to apply, its undo step is closed (#1342).
+            Drag::Rotate { .. } if self.tool == Tool::FreeTransform => {
+                self.end_free_transform_group();
+            }
             Drag::Scale { .. } | Drag::Rotate { .. } | Drag::Skew { .. } => {
                 if let Some(t) = self.preview_transform_of(&drag) {
                     self.finish_transform(t);

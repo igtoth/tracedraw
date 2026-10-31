@@ -33,7 +33,7 @@ the owner does to publish it and what to test on a tablet first.
 | Clipboard | text, images and files through the system clipboard | text through the system's clipboard service: Copy puts the selection's SVG text there (other apps paste it as text, the editor as objects), Paste reads text copied elsewhere (artistic text, or objects when it is SVG). Pictures and files copied elsewhere are not read yet; copies inside the editor work as before |
 | Settings | `settings.json` in the configuration folder | `settings.json` in the app's private folder (`TRACEDRAW_CONFIG_DIR` set by `android_main`) |
 | Fonts | installed system fonts | the system's fonts (`/system/fonts`, `/product/fonts` and `/vendor/fonts`: Roboto, Noto and the rest; the font database looks in no folder on Android by itself, so `tracedraw_text` names these) |
-| Keyboard | the physical keyboard | a physical or Bluetooth keyboard works; the on-screen keyboard is raised by the system when a text field has the focus (winit's IME), not checked on a device yet |
+| Keyboard | the physical keyboard | a physical or Bluetooth keyboard works. The on-screen keyboard shows while a text, a table cell or a field takes typed text and types into an invisible view of the activity (`TextInputView`): a `NativeActivity` offers input methods no text field, so before #1309 only the key presses of Latin letters arrived and Chinese, Japanese, Korean, Tamil and other composed scripts never did. What the input method composes, commits and deletes reaches the editor as an input method's events (`soft_keyboard.rs`), its Backspace, Enter and arrow presses as keys. Not checked on a device yet |
 | Updates | a check of GitHub's releases, asked about at the first start | none: Google Play updates the app (its policy refuses apps that download code of their own), so there is no first-start question and no daily check; Help > Updates opens the app's Play page (`updates::store_install`) |
 | AI Drawing | HTTPS requests | the requests compile; the certificate check needs the Java side Android gives apps with code, so they are expected to fail until a later phase |
 | Temporary files (auto-backups, crash recovery) | the system's temporary folder | `tmp` in the app's private folder (`TMPDIR` set by `android_main`: the system's default, `/data/local/tmp`, is closed to apps) |
@@ -221,11 +221,17 @@ the first start (Google Play updates the app).
 - `android.rs` also holds the JNI bridge: `with_activity` attaches the
   thread (`JavaVM::singleton`, which `android-activity` set up) and
   borrows the activity; `documents` (open, create, read, write, the
-  answer queue, `register_natives`) and `clipboard` (text, set_text).
+  answer queue, `register_natives`), `clipboard` (text, set_text) and
+  `keyboard` (the native methods of the keyboard's view, and a plugin
+  that shows or hides the on-screen keyboard after each frame that asks
+  for an input method or no longer does, `showTextInput`).
   Every JNI failure is logged and comes back as `None`, never a panic.
 - `packaging/android/java/dev/tracedraw/app/TraceDrawActivity.java`: the
   activity, with the picker intents, `onActivityResult`, the content
-  resolver reads and writes and the clipboard, all on the right threads.
+  resolver reads and writes, the clipboard and the on-screen keyboard,
+  all on the right threads. `TextInputView.java`: the one-pixel view the
+  keyboard types into, whose input connection keeps no text and hands
+  over what the input method composes, commits and deletes.
 - `Cargo.toml`: a `[lib]` (doc tests off) beside the `[[bin]]`; `rfd`
   (file dialogs) on every target but Android; `arboard` (system
   clipboard) on the desktop targets only; `eframe` with

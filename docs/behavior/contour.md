@@ -29,6 +29,11 @@ of the Extrude and Smart Fill bars;
 
 Ctrl+F9 opens the Contour panel.
 
+A contour in a `.cdr` file saved by another program (version 9 seen,
+#1031) opens live: the object gets this effect with the file's offset,
+step count, side and end colours, and the steps the file stores go
+(`docs/cdr-format.md`, the Contour row).
+
 ## Formulas
 
 - With `n` steps, step `i` (1 to `n`) is the object's outline offset by
