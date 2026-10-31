@@ -22,6 +22,15 @@ mit [[menu.edit > menu.edit.step_and_repeat]] (<kbd>Ctrl+Shift+D</kbd>).
 4. Gehen Sie unter [[docker.vertical_settings]] genauso vor.
 5. Klicken Sie auf [[docker.apply]].
 
+Während Sie im Andockfenster arbeiten (der Zeiger ist darauf, Sie tippen in
+eines seiner Felder oder Ihr letzter Klick war darin), werden die Kopien, die
+[[docker.apply]] anlegen würde, auf der Seite blau gestrichelt umrandet und
+folgen jedem geänderten Wert. Nichts wird hinzugefügt, bis Sie auf
+[[docker.apply]] klicken, und ein [[menu.edit.undo]] entfernt alle Kopien
+wieder. Ein Klick an anderer Stelle oder das Schließen oder Ausblenden des
+Andockfensters entfernt die Umrisse. Sehr viele Kopien eines detaillierten
+Objekts werden als ihre Rahmen umrandet.
+
 Die Kopien werden der aktiven Ebene hinzugefügt. Abstände werden in den
 Einheiten der Zeichnung angegeben.
 

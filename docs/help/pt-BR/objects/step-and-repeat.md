@@ -22,6 +22,14 @@ coluna de linhas, uma grade de peças. Abra-o com
 4. Faça o mesmo em [[docker.vertical_settings]].
 5. Clique em [[docker.apply]].
 
+Enquanto você trabalha no painel (o ponteiro está sobre ele, você está
+digitando num dos campos ou seu último clique foi nele), as cópias que
+[[docker.apply]] faria aparecem contornadas na página, tracejadas em azul, e
+acompanham cada valor que você muda. Nada é adicionado até você clicar em
+[[docker.apply]], e um [[menu.edit.undo]] tira todas as cópias de novo. Um
+clique fora, ou fechar ou esconder o painel, tira os contornos. Muitas cópias
+de um objeto detalhado são contornadas pelas suas caixas.
+
 As cópias vão para a camada ativa. As distâncias ficam nas unidades de desenho.
 
 Para copiar com uma rotação ou uma escala a cada passo, use o campo
