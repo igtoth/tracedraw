@@ -1850,6 +1850,10 @@ fn bitmap_properties(app: &mut App, ui: &mut Ui) {
                 "menu.bitmaps.trace_high_quality",
                 crate::trace::Preset::HighQualityImage,
             ),
+            (
+                "menu.bitmaps.trace_optimized",
+                crate::trace::Preset::Optimized,
+            ),
         ] {
             if ui.button(tr(key)).clicked() {
                 app.dialog = Dialog::Trace(TraceState::new(preset, &app.settings.tracing));

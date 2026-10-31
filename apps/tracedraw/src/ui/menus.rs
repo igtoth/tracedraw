@@ -364,7 +364,7 @@ pub const CENTERLINE_TRACES: [(&str, crate::trace::Preset); 2] = [
 ];
 
 /// Outline Trace's presets.
-pub const OUTLINE_TRACES: [(&str, crate::trace::Preset); 6] = [
+pub const OUTLINE_TRACES: [(&str, crate::trace::Preset); 7] = [
     ("menu.bitmaps.trace_line_art", crate::trace::Preset::LineArt),
     ("menu.bitmaps.trace_logo", crate::trace::Preset::Logo),
     (
@@ -379,6 +379,10 @@ pub const OUTLINE_TRACES: [(&str, crate::trace::Preset); 6] = [
     (
         "menu.bitmaps.trace_high_quality",
         crate::trace::Preset::HighQualityImage,
+    ),
+    (
+        "menu.bitmaps.trace_optimized",
+        crate::trace::Preset::Optimized,
     ),
 ];
 

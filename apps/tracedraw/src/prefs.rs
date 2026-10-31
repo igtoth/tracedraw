@@ -538,9 +538,11 @@ pub struct TracePrefs {
 
 impl Default for TracePrefs {
     fn default() -> Self {
-        let s = crate::trace::Preset::Clipart.settings();
+        // Quick Trace draws the picture as it is in the fewest nodes it
+        // can.
+        let s = crate::trace::Preset::Optimized.settings();
         TracePrefs {
-            quick_preset: crate::trace::Preset::Clipart,
+            quick_preset: crate::trace::Preset::Optimized,
             remove_background: s.removes_background(),
             delete_original: s.delete_original,
         }

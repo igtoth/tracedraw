@@ -2,9 +2,10 @@
 
 | Mode | Use | Defaults |
 |---|---|---|
-| Quick trace | one click | the preset of Options > Global > Bitmap Tracing (Clipart by default) |
+| Quick trace | one click | the preset of Options > Global > Bitmap Tracing (Optimized by default; Clipart before) |
 | Centreline: technical illustration, line drawing | strokes | |
 | Outline: line art, logo, detailed logo, clipart, low/high quality image | filled regions | smoothing 25, detail per preset, colours per preset |
+| Outline: optimized | filled regions, the detail chosen for each picture (see Best settings below) | smoothing 25, at most 32 colours, the detail found by the search (70 shown, greyed) |
 
 | Control | Default | Range |
 |---|---|---|
@@ -26,6 +27,7 @@
 | Preview | Before and After | the shared preview (`before-after-preview.md`): Before and After (the picture above, the trace below), Before and After side by side, Before, Large Preview (the trace alone in the whole area), Wireframe Overlay (the curves as blue lines over the picture); zoom to fit, zoom out, zoom in, pan, the wheel zooms, a drag pans |
 | Overlay | 80 | with Wireframe Overlay only, a slider in the preview bar: how strongly the picture shows under the curves, 0 (the curves alone) to 100 (the picture as it is); a tint on the picture's rectangle, nothing traced or worked out again |
 | Options... | | Options > Global > Bitmap Tracing, then back to the dialog |
+| Best optimization | | a button of the bottom row: looks for the detail that traces the picture best (see Best settings below), off the interface thread ("Optimizing..." and a spinner while it runs, greyed for a centreline trace), and puts it in the Detail slider as a step the arrows undo |
 
 ## Commands
 
@@ -57,8 +59,11 @@ Settings and Colors tabs over the shared settings panel (the field
 colour, framed, each slider under its label and stretched to the
 panel's width, a rule between groups; `before-after-preview.md`) and
 the Reset button with the undo and redo arrows under it; bottom, the
-help button, Options..., OK and Cancel. Enter is OK, Esc and the close
-button cancel. Controls that do not apply are greyed, not hidden: a
+help button, Options... and Best optimization at the left, OK and Cancel
+in the bottom right corner (the row's room left over goes before OK, so
+they stay in the corner whatever the width). Enter is OK, Esc and the
+close button cancel. With the Optimized image type the Detail slider is
+greyed with "Chosen for each picture." under it. Controls that do not apply are greyed, not hidden: a
 centreline trace greys Corner smoothness, Remove and the Objects boxes;
 Group by color is greyed while Merge adjacent is on (every colour is
 one curve already, so no groups are made).
@@ -98,12 +103,20 @@ pane, the wireframe and the counts take the result when it comes in.
   channel and the worker asks for a repaint); the picture is decoded
   once per bitmap, and the Colors tab's list of colours is worked out
   once with each result, not every frame.
+- The quick look traces the art alone: the box of the picture's opaque
+  pixels, its transparent margins cut off, shrunk to at most 240 pixels
+  (360 where it is the preview's last result), and the curves are moved
+  back to where the art lies. A drawing with wide transparent margins
+  kept only a fraction of the copy before, and its preview came out in
+  blobs.
 - In the browser (no threads) the quick look is made in the frame; the
   whole picture is traced on OK when it is larger than 400 000 pixels.
   The quick look is then the request's last result: the preview rests
   on it (nothing is traced again while the settings stand, the spinner
   stops, an idle dialog asks for no frames) and the counts show it
-  without the dots sign. Every result says whether it is the last of
+  without the dots sign. A note in the error colour beside the counts
+  says the preview is reduced, that OK traces the whole picture and that
+  the desktop app shows it exactly. Every result says whether it is the last of
   its request (`Shown::done`), so a result that will be followed by
   another never counts as the end.
 - A trace whose thread ended without a result is not started again:
@@ -178,7 +191,14 @@ can be undone.
    flat colours split them into many shades whose patches left holes
    showing the page inside the art.
    Blur a little when detail < 50, then quantise the colours with median
-   cut to the number of colours (black and white: by brightness).
+   cut to the number of colours (black and white: by brightness). Below
+   the highest detail, in art drawn in flat colours (at least 30 % of the
+   opaque pixels lie inside one: their 8 neighbours within 24 of them),
+   the palette is cut from those pixels only, so the in-between colours
+   of anti-aliased and compressed edges take no places of their own; the
+   colours of the palette of every pixel that lie further than 56 from
+   all of those and not between the two nearest (a hairline of a colour
+   of its own) are added, up to a quarter more.
    Split colours (#611): in flat art (the 8 commonest colours cover 85 %
    of the pixels) two colours of the palette nearer each other than 40
    (RGB distance) and than the sum of their spreads (the root mean
@@ -188,6 +208,18 @@ can be undone.
    edge do not chain two colours into one. The steps of a gradient and
    distinct colours however close (a 246 grey on white) lie further apart
    than their spread and stay; photos are left as they are.
+   Near shades: below detail 95, two palette colours nearer than
+   `10 + (100 - detail) / 2` (30 at the Clipart detail) join, nearest
+   first and while the means of their groups stay that near, when one is
+   solid (at least half its pixels flat) and the other not (the fringe
+   of a black), or when their pixels are scattered through each other
+   (they share at least 0.6 pixel edges per pixel of the smaller: a flat
+   colour's noise split in shades). Two solid colours, however close (a
+   246 grey logo on white), and the bands of a gradient stay. A group
+   keeps its solid member's colour; rounds repeat until nothing joins.
+   Then each palette colour moves onto the commonest exact colour of its
+   pixels when that is within 16, so a black traces as #000000 and the
+   art keeps its own colours.
 2. Edges (#611, #1250, off at detail 95 and up, where the specks stay
    too): a pixel is flat when its 8 neighbours share its colour, and a
    colour is a colour of its own when at least half its pixels are flat;
@@ -216,9 +248,13 @@ can be undone.
    whose colour is nearest its own when one is within 40; else, when its
    colour lies between two neighbours at least 64 apart (the anti-aliased
    part of a thin dark stroke on a light fill), the one it is nearer;
-   else the one most of its neighbours have. Patches joined into others
-   are looked at again (up to 4 passes), so a letter split into several
-   dark shades stays a letter. Transparent pixels are left alone.
+   else, when its colour is at least 64 from every neighbour's, it has
+   at least a quarter of the speck size (2 pixels at least) and spans
+   two pixels both ways, it is a dot of the art (a halftone dot, the end
+   of a hatch line) and stays; else the one most of its neighbours have.
+   Patches joined into others are looked at again (up to 4 passes), so a
+   letter split into several dark shades stays a letter. Transparent
+   pixels are left alone.
    Bumps and notches (#1250, off at detail 95 and up): twice over, a
    pixel at least 5 of whose 8 neighbours have one other colour takes
    it, when its own neighbours are the three on one side of it (a bump
@@ -231,7 +267,12 @@ can be undone.
    the background) within 2 px of its own, so it reaches a little under
    its neighbours: their curves are fitted each on its own, but no page
    shows between them (#611). A region with no lighter region drawn over
-   it is not grown.
+   it is not grown. Unless Remove object overlap is on, every hole of
+   the mask (4-connected) that holds only regions stacked above it is
+   filled: the region is drawn whole under them, so its curve is its
+   outline alone and the edges inside are drawn once, by the regions on
+   top (a black outline drawing becomes one silhouette under its
+   colours).
 4. Smoothing 0: each ring as straight lines along the pixel edges
    (Douglas-Peucker, tolerance `0.3 + (100 - detail) / 100 * 2.5` px).
    Otherwise each ring is fitted (#611):
@@ -261,6 +302,25 @@ can be undone.
    is removed (#1250: the commonest of none was the last colour of the
    palette, and Remove entire color took it out of the art, such as the
    yellow of a bee's head, leaving its fringe as an outline).
+
+## Best settings (Optimized, Best optimization)
+
+The detail that draws a picture best: each detail of 50, 60, 70, 80 and
+85 traces samples of the picture at its own size, its art alone (the
+box of its opaque pixels) when no more than 400 pixels across, else the
+four squares of 200 pixels in it with the most edges (neighbouring
+pixels more than 60 apart), side by side a transparent pixel apart,
+with nothing removed (the samples hold the art only). Each trace is
+drawn back and compared with the samples: a pixel is drawn wrong when
+its colour in one is further than 60 from every pixel of the other
+within a pixel (an edge a pixel off is not wrong; a lost dot or line, a
+region in another colour, a gap are). The detail with the lowest score
+wins: the share drawn wrong (percent) plus 0.3 per node per pixel of
+the samples' sides, so a finer detail is chosen while it draws the
+picture better for the nodes it adds, and no further. Above 85 the
+cleaning of edges and specks stops and the nodes multiply. On the
+desktop the details are traced at once, a thread each; in the browser
+one after the other.
 
 Centreline mode: Zhang-Suen thinning, then the skeleton is traced into
 polylines, smoothed (Catmull-Rom) and output as curves with a stroke
@@ -314,6 +374,26 @@ width equal to the mean local thickness.
   and the preview rests on it (`a_deferred_request_rests_on_its_quick_look`);
   a trace that died is not started again
   (`a_trace_that_died_is_not_started_again`).
+- `pick_drag_tests::trace_ok_is_at_the_right_and_best_optimization_sets_the_detail`:
+  OK and Cancel lie under the settings column, right of Best
+  optimization; a click on it finds a detail of the search's list, off
+  the interface thread, as a step the arrows undo.
+- `pick_drag_tests::the_optimized_image_type_greys_the_detail`.
+- `trace_preview::tests::the_quick_look_traces_the_art_without_its_margins`.
+- `trace::tests::halftone_dots_stay_and_the_regions_below_are_whole`: a
+  halftone heart (3 pixel yellow-green dots on teal in a black ring, on
+  a transparent background, with noise), Clipart preset: at least 9 in
+  10 dots drawn, at most 4 regions, the black ring one ring, under 3 %
+  of the pixels drawn wrong.
+- `trace::tests::shades_join_their_colour_which_keeps_its_value`: a
+  black square with a dark brown fringe on noisy white is #000000 and
+  one white.
+- `trace::tests::hairlines_of_their_own_colour_keep_it`.
+- `trace::tests::the_optimized_preset_draws_the_picture_as_it_is_in_few_nodes`:
+  an anti-aliased three colour logo: at most 4 curves, under 200 nodes,
+  under 1.5 % drawn wrong; a cancelled search gives nothing.
+- `trace::tests::wrong_share_forgives_edges_a_pixel_off_and_counts_lost_dots`,
+  `trace::tests::holes_of_regions_drawn_above_are_filled`.
 - `trace::tests::removing_the_background_or_the_entire_colour_or_nothing`,
   `trace::tests::merge_adjacent_off_makes_a_curve_per_patch`,
   `trace::tests::remove_overlap_keeps_regions_to_their_pixels`,
