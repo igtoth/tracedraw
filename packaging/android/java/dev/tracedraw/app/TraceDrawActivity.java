@@ -160,9 +160,11 @@ public class TraceDrawActivity extends NativeActivity {
 
     /**
      * Show the on-screen keyboard, typing into the editor (`on`: a text or
-     * a field takes typed text), or hide it.
+     * a field takes typed text), or hide it. `again`: it was shown and the
+     * user tapped into the text or field once more, so it comes back if
+     * the system's key hid it, still connected to what it was composing.
      */
-    public void showTextInput(final boolean on) {
+    public void showTextInput(final boolean on, final boolean again) {
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
@@ -171,16 +173,61 @@ public class TraceDrawActivity extends NativeActivity {
                     return;
                 }
                 if (on) {
-                    textInput.requestFocus();
-                    imm.restartInput(textInput);
-                    imm.showSoftInput(textInput, 0);
+                    if (!again || !textInput.isFocused()) {
+                        boolean focused = textInput.requestFocus();
+                        imm.restartInput(textInput);
+                        if (!focused) {
+                            Log.w(TAG, "keyboard: the text view did not take the focus");
+                        }
+                    }
+                    showKeyboard(imm, 0);
                 } else {
+                    keyboardWanted = false;
                     // A composition left open ends with the editing.
                     imm.restartInput(textInput);
                     imm.hideSoftInputFromWindow(textInput.getWindowToken(), 0);
                 }
             }
         });
+    }
+
+    /** Whether the editor wants the keyboard (shown or being shown). */
+    private boolean keyboardWanted;
+
+    /** How many times the keyboard is asked again when the system ignores the request. */
+    private static final int SHOW_TRIES = 5;
+
+    /**
+     * Ask for the keyboard on the text view. The system ignores the
+     * request while the view is not yet the one the input method serves
+     * (its focus reaches the input method a moment later, more so right
+     * after a tap): then the request is made again shortly after.
+     */
+    private void showKeyboard(final InputMethodManager imm, final int tried) {
+        keyboardWanted = true;
+        boolean shown = imm.showSoftInput(textInput, 0);
+        if (shown) {
+            Log.i(TAG, "keyboard: shown" + (tried > 0 ? " after " + tried + " retries" : ""));
+            return;
+        }
+        if (tried + 1 >= SHOW_TRIES) {
+            Log.w(TAG, "keyboard: the system did not show it (focus " + textInput.isFocused()
+                    + ", window focus " + textInput.hasWindowFocus() + ")");
+            return;
+        }
+        textInput.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                if (!keyboardWanted) {
+                    return;
+                }
+                if (!textInput.isFocused()) {
+                    textInput.requestFocus();
+                    imm.restartInput(textInput);
+                }
+                showKeyboard(imm, tried + 1);
+            }
+        }, 100);
     }
 
     void imeCompose(String text) {

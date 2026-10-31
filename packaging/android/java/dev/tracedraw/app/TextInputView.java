@@ -11,6 +11,7 @@
 package dev.tracedraw.app;
 
 import android.text.InputType;
+import android.util.Log;
 import android.view.View;
 import android.view.inputmethod.BaseInputConnection;
 import android.view.inputmethod.EditorInfo;
@@ -41,6 +42,7 @@ final class TextInputView extends View {
                 | EditorInfo.IME_ACTION_NONE;
         out.initialSelStart = 0;
         out.initialSelEnd = 0;
+        Log.i("tracedraw", "keyboard: the input method connects to the editor");
         return new Connection();
     }
 

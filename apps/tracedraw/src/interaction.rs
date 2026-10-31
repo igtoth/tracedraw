@@ -1136,6 +1136,15 @@ impl App {
                 None
             }
         });
+        // A finger's tap: the windowing layer lets the pointer go with the
+        // finger (the release comes with PointerGone), so the frame of the
+        // click has no hover position and no tool saw the tap: the Text
+        // tool placed no text and the keyboard never came (#1496, #1489).
+        // Where the click happened stands in.
+        let hover = hover.or_else(|| {
+            let clicked = response.ctx.input(|i| i.pointer.any_click());
+            response.interact_pointer_pos().filter(|_| clicked)
+        });
         let pointer = hover.map(|h| self.view.to_page(h));
         self.pointer_page = pointer;
         // A colour picker's eyedropper waits for a click: the colour there
