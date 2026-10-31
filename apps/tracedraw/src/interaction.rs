@@ -445,6 +445,13 @@ impl App {
                     self.shape_hit(&part, p, tol)
                 });
         }
+        // A dimension is picked on its lines, arrowheads and label only,
+        // never in the empty part of its box: an object under it (the
+        // circle a diameter is measured across) is picked there (#1493).
+        // "Treat all objects as filled" leaves its lines as lines.
+        if crate::dimensions::is_dimension(s) {
+            return self.dimension_hit(s, p, tol);
+        }
         if matches!(
             s.kind,
             ShapeKind::Text { .. }
@@ -464,6 +471,25 @@ impl App {
             return true;
         }
         crate::canvas::distance_to_path(&path, p) <= tol * 1.5
+    }
+
+    /// A part of dimension `s` (in page space) is under `p`: its label
+    /// anywhere in its box, its arrowheads inside, its lines near them.
+    fn dimension_hit(&self, s: &tracedraw_core::Shape, p: Point, tol: f64) -> bool {
+        let ShapeKind::Group { children } = &s.kind else {
+            return false;
+        };
+        children.iter().filter(|c| c.visible).any(|c| {
+            let mut c = c.clone();
+            c.transform_by(s.transform);
+            if matches!(c.kind, ShapeKind::Text { .. }) {
+                return self.visual_bounds(&c).inflate(tol, tol).contains(p);
+            }
+            let path = c.page_path();
+            let closed = !matches!(c.kind, ShapeKind::Path { closed: false, .. });
+            (closed && !matches!(c.fill, Fill::None) && path.contains(p))
+                || crate::canvas::distance_to_path(&path, p) <= tol * 1.5
+        })
     }
 
     /// The children of a group (`g` in page space) that are under `p`, top

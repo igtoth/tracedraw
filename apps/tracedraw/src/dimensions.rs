@@ -1559,6 +1559,48 @@ mod tests {
         }
     }
 
+    /// A diameter dimension drawn across a circle: a click on the circle
+    /// in the empty part of the dimension's box picks the circle; only
+    /// the dimension's lines, arrowheads and label pick the dimension,
+    /// with "Treat all objects as filled" on or off (#1493).
+    #[test]
+    fn a_dimension_over_a_circle_is_picked_only_on_its_parts() {
+        let mut app = App::headless();
+        app.view.zoom = 4.0;
+        let circle = app
+            .new_shape_styled(
+                ShapeKind::Ellipse {
+                    rect: Rect::new(30.0, 30.0, 70.0, 70.0),
+                    arc: None,
+                },
+                |s| s.fill = Fill::Solid(Color::rgb8(200, 0, 0)),
+            )
+            .expect("circle");
+        // Across the middle, its line drawn inside the circle.
+        app.create_dimension(
+            Point::new(30.0, 50.0),
+            Point::new(70.0, 50.0),
+            Point::new(50.0, 40.0),
+        );
+        let dim = app.selection[0];
+        let g = app.doc().find_shape(dim).cloned().expect("dimension");
+        let label = app.doc().find_shape(label_id(&app, dim)).cloned();
+        let label_box = label.map(|l| app.visual_bounds(&l)).expect("label");
+        let p = Point::new(40.0, 47.0);
+        assert!(app.visual_bounds(&g).contains(p), "inside its box");
+        assert!(!label_box.contains(p), "away from the label");
+        assert_eq!(app.hit_test(p), Some(circle));
+        assert_eq!(app.pick_at(p), Some(circle));
+        // Its line, an extension line and its label pick it.
+        assert_eq!(app.hit_test(Point::new(40.0, 40.0)), Some(dim));
+        assert_eq!(app.hit_test(Point::new(30.0, 45.0)), Some(dim));
+        assert_eq!(app.hit_test(label_box.center()), Some(dim));
+        assert_eq!(app.hit_test(Point::new(31.0, 40.0)), Some(dim), "arrowhead");
+        app.settings.treat_all_filled = false;
+        assert_eq!(app.hit_test(p), Some(circle));
+        assert_eq!(app.hit_test(Point::new(40.0, 40.0)), Some(dim));
+    }
+
     /// A dimension drawn between two nodes of an object holds to them:
     /// resizing or moving the object takes the dimension along and its
     /// value follows; a dimension moved by itself lets go; one whose
