@@ -27,6 +27,10 @@
 </p>
 
 <p align="center">
+  <sub>The <a href="https://apps.microsoft.com/detail/9P50L12VHF33">Microsoft Store</a> version is signed and updates itself, but each version must pass the Store's certification first (hours to days), so it is often one or more releases behind the <a href="https://github.com/igtoth/tracedraw/releases/latest">latest download</a>.</sub>
+</p>
+
+<p align="center">
   <sub>Alpha: expect bugs. A <code>.cdr</code> file that does not open right? <a href="https://github.com/igtoth/tracedraw/issues/new?template=cdr_file.yml">Send it in an issue</a>: sample files are what improves the reader most.</sub>
 </p>
 
