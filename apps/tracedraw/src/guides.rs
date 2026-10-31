@@ -474,22 +474,45 @@ impl App {
         let mut guides = self.page_guides();
         let n = guides.len();
         let d = self.duplicate_offset;
-        let copies: Vec<Guide> = self
+        let mid = self.page_rect().center();
+        // The copies of the last Duplicate still selected: each new copy
+        // takes the step from its original to it (the offset, or the
+        // move and turn done to the copy since), as objects do (#1494).
+        let last = self.last_guide_duplicate.take();
+        let picked: Vec<(GuideLine, Guide)> = self
             .selected_guides
             .iter()
-            .filter_map(|i| guides.get(*i))
-            .map(|g| Guide {
-                locked: false,
-                ..g.with_line(moved_line(g.line, d))
+            .filter_map(|i| guides.get(*i).map(|g| (*i, *g)))
+            .map(|(i, g)| {
+                let from = last
+                    .as_ref()
+                    .and_then(|l| l.pairs.iter().find(|(_, c)| *c == i))
+                    .map(|(o, _)| *o);
+                let line = match from {
+                    Some(o) => transformed_line(g.line, guide_step(o, g.line, mid), mid),
+                    None => moved_line(g.line, d),
+                };
+                (
+                    g.line,
+                    Guide {
+                        locked: false,
+                        ..g.with_line(line)
+                    },
+                )
             })
             .collect();
-        if copies.is_empty() {
+        if picked.is_empty() {
             return false;
         }
-        let k = copies.len();
-        guides.extend(copies);
+        let k = picked.len();
+        let originals: Vec<GuideLine> = picked.iter().map(|(o, _)| *o).collect();
+        guides.extend(picked.into_iter().map(|(_, c)| c));
         self.set_guides(guides, "Duplicate Guidelines");
         self.selected_guides = (n..n + k).collect();
+        self.last_guide_duplicate = Some(GuideDuplicate {
+            page: self.page,
+            pairs: originals.into_iter().zip(n..n + k).collect(),
+        });
         true
     }
 
@@ -741,6 +764,41 @@ impl App {
             .any(|h| (*h - p).hypot() <= tol)
             .then_some((index, pivot))
     }
+}
+
+/// The last Duplicate of guidelines: on which page, and each original's
+/// line with the index of its copy (#1494).
+#[derive(Debug, Clone, PartialEq)]
+pub struct GuideDuplicate {
+    pub page: tracedraw_core::PageId,
+    pub pairs: Vec<(GuideLine, usize)>,
+}
+
+/// The move or turn that takes guideline `from` to `to`, what a smart
+/// Duplicate repeats (#1494): a turn about the point where the two
+/// lines cross (the pivot it was turned about), or, for lines that run
+/// the same way, the move square to them. `mid` places the foot of that
+/// move on the lines.
+pub fn guide_step(from: GuideLine, to: GuideLine, mid: Point) -> Affine {
+    let (p, u) = from.point_and_direction();
+    let (q, v) = to.point_and_direction();
+    // The turn from one to the other, lines having no direction: within
+    // a quarter turn either way.
+    let turn = (to.angle() - from.angle() + 90.0).rem_euclid(180.0) - 90.0;
+    let cross = u.x * v.y - u.y * v.x;
+    if turn.abs() < 1e-9 || cross.abs() < 1e-12 {
+        let foot = |o: Point, d: Vec2| o + d * (mid - o).dot(d);
+        return Affine::translate(foot(q, v) - foot(p, u));
+    }
+    // p + u t = q + v s: t from the cross product with v.
+    let t = ((q - p).x * v.y - (q - p).y * v.x) / cross;
+    let x = p + u * t;
+    if !(x.x.is_finite() && x.y.is_finite()) {
+        return Affine::IDENTITY;
+    }
+    Affine::translate(x.to_vec2())
+        * Affine::rotate(turn.to_radians())
+        * Affine::translate(-x.to_vec2())
 }
 
 /// A guideline line moved by `d`: a horizontal one only up and down, a
@@ -1193,5 +1251,68 @@ mod tests {
             .all(|g| !matches!(g.line, GuideLine::Vertical { .. })));
         app.undo();
         assert_eq!(app.page_guides().len(), 6);
+    }
+
+    /// Duplicate a guideline (none of an offset at first: on top of it),
+    /// move the copy and each next Duplicate moves a new copy as far
+    /// again; turn a copy about a point and each next one turns about it
+    /// as much again. Deselected, Duplicate takes the offset again (#1494).
+    #[test]
+    fn duplicating_guidelines_repeats_their_move_and_turn() {
+        let mut app = app();
+        assert_eq!(app.duplicate_offset, Vec2::ZERO);
+        app.set_guides(vec![Guide::horizontal(50.0)], "Add");
+        app.selected_guides = vec![0];
+        app.duplicate();
+        assert_eq!(app.page_guides()[1].line, GuideLine::Horizontal { y: 50.0 });
+        assert_eq!(app.selected_guides, vec![1]);
+        // Moved 10 mm: each next copy 10 mm further.
+        app.transform_selected_guides(Affine::translate((0.0, 10.0)), 0, "Move");
+        app.forget_duplicate_unless_selected();
+        app.duplicate();
+        app.forget_duplicate_unless_selected();
+        app.duplicate();
+        let ys: Vec<GuideLine> = app.page_guides().iter().map(|g| g.line).collect();
+        assert_eq!(
+            ys,
+            vec![
+                GuideLine::Horizontal { y: 50.0 },
+                GuideLine::Horizontal { y: 60.0 },
+                GuideLine::Horizontal { y: 70.0 },
+                GuideLine::Horizontal { y: 80.0 },
+            ]
+        );
+        // Deselected: the offset (none) again, also with the copy picked.
+        app.deselect_guides();
+        app.forget_duplicate_unless_selected();
+        app.selected_guides = vec![3];
+        app.duplicate();
+        assert_eq!(app.page_guides()[4].line, GuideLine::Horizontal { y: 80.0 });
+        // A copy turned 30 degrees about (20, 80): each next copy turns
+        // about the same point.
+        let pivot = Point::new(20.0, 80.0);
+        let turn = Affine::translate(pivot.to_vec2())
+            * Affine::rotate(30f64.to_radians())
+            * Affine::translate(-pivot.to_vec2());
+        app.transform_selected_guides(turn, 0, "Rotate");
+        app.forget_duplicate_unless_selected();
+        app.duplicate();
+        let last = app.page_guides().last().map(|g| g.line).expect("copy");
+        let GuideLine::Angled { x, y, angle } = last else {
+            panic!("{last:?}");
+        };
+        assert!((angle - 60.0).abs() < 1e-6, "{angle}");
+        // Through the pivot.
+        let off =
+            (y - pivot.y) * 60f64.to_radians().cos() - (x - pivot.x) * 60f64.to_radians().sin();
+        assert!(off.abs() < 1e-6, "{last:?}");
+        // Another one: a vertical guideline (90 degrees).
+        app.forget_duplicate_unless_selected();
+        app.duplicate();
+        let last = app.page_guides().last().map(|g| g.line).expect("copy");
+        assert!(
+            matches!(last, GuideLine::Vertical { x } if (x - 20.0).abs() < 1e-6),
+            "{last:?}"
+        );
     }
 }

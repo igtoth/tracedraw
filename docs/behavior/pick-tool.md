@@ -123,15 +123,24 @@ edges, guidelines, the grid and the page (Ctrl turns in steps instead).
 ## Duplicate
 
 Edit > Duplicate (Ctrl+D) copies the selection at the duplicate offset
-(Options > Document > General, 6.35 mm right and up at first) and
-selects the copies. While the copies stay the selection, the next
+(Options > Document > General; none at first, so the copy lies on the
+original ready to be moved, scaled or turned; preferences that kept
+the old default of 6.35 mm get none once, #1494) and selects the
+copies. While the copies stay the selection, the next
 Duplicate repeats the step from each original to its copy: the offset
 if they were left alone, or the move, scale, turn or skew done to them
 since (smart duplicate, as in the reference program): duplicate a box,
 move the copy 20 mm, and each next Duplicate is 20 mm further; scale the
-copy by 10 % and each next one is 10 % larger. With anything else
-selected it is the offset again (#559,
-`app::tests::duplicate_repeats_what_was_done_to_the_copy`).
+copy by 10 % and each next one is 10 % larger; turn it 9 degrees and
+scale it and each next one turns and grows as much again. Deselecting
+the copies (a click elsewhere, Esc, another object picked) ends it: the
+next Duplicate is the offset again, also when the copies are picked
+again. Guidelines duplicate the same way: a copy of selected guidelines
+moved or turned (about the point where it crosses its original) is
+moved or turned as much again by each next Duplicate (#559, #1494,
+`app::tests::duplicate_repeats_what_was_done_to_the_copy`,
+`app::tests::smart_duplicate_repeats_a_turn_and_scale_until_deselected`,
+`guides::tests::duplicating_guidelines_repeats_their_move_and_turn`).
 
 ## Snap marks over the selection
 

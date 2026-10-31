@@ -17,8 +17,10 @@ grid, ruler and guideline settings for new drawings.
   fill as if they were closed.
 - [[options.auto_inflate_bitmaps]] (on at first): bitmaps grow to make room
   for effects that spread past their edges.
-- [[options.duplicate_offset]]: how far [[menu.edit.duplicate]] places the
-  copy.
+- [[options.duplicate_offset]] (none at first): how far
+  [[menu.edit.duplicate]] places the copy. Move, scale or turn the copy
+  while it stays selected, and each next [[menu.edit.duplicate]] does the
+  same again.
 
 ## Page size {#page-size}
 

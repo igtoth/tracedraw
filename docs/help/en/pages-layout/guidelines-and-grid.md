@@ -49,7 +49,9 @@ Guidelines are lines across the drawing window that objects can snap to.
 - With guidelines selected (and no objects), [[menu.edit.copy]] and
   [[menu.edit.paste]] make copies in the same place, and
   [[menu.edit.duplicate]] makes copies moved by the duplicate offset (set in
-  [[menu.layout > menu.layout.document_options]], General). The
+  [[menu.layout > menu.layout.document_options]], General; none at first).
+  Move or turn the copies while they stay selected, and each next
+  [[menu.edit.duplicate]] moves or turns a new copy as much again. The
   Transformations panel moves, rotates and scales selected guidelines as it
   does objects.
 - Guidelines are saved with the drawing in `.tdraw` files. `.cdr` files do

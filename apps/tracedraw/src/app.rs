@@ -1022,8 +1022,11 @@ pub struct App {
     /// The last Duplicate: each original and its copy. While the copies
     /// are the selection, the next Duplicate repeats what was done to
     /// them since (moved, scaled, turned), as the reference program's
-    /// smart duplicate does (#559).
+    /// smart duplicate does (#559). Deselecting them ends it (#1494).
     pub last_duplicate: Vec<(ShapeId, ShapeId)>,
+    /// The last Duplicate of guidelines, which the next one repeats in
+    /// the same way while the copies are the selection (#1494).
+    pub last_guide_duplicate: Option<crate::guides::GuideDuplicate>,
     // Defaults for new objects (no fill, black hairline).
     pub polygon_points: u32,
     pub star_sharpness: f64,
@@ -2424,8 +2427,11 @@ impl App {
             toolbox_last: crate::tools::GROUPS.iter().map(|g| g.tools[0]).collect(),
             toolbox_caption_w: 0.0,
             clipboard: None,
-            duplicate_offset: Vec2::new(6.35, 6.35),
+            // Duplicate leaves the copy in place, ready to be moved,
+            // scaled or turned; the next one repeats that (#1494).
+            duplicate_offset: Vec2::ZERO,
             last_duplicate: Vec::new(),
+            last_guide_duplicate: None,
             polygon_points: 5,
             star_sharpness: 0.5,
             star_complex: false,
@@ -5353,7 +5359,35 @@ impl App {
         }
     }
 
+    /// The repeat of the last Duplicate ends once its copies are no
+    /// longer exactly the selection (a click elsewhere, Esc, another
+    /// object picked): the next Duplicate places the copy by the
+    /// duplicate offset again, as in the reference program (#1494).
+    /// Checked after every frame.
+    pub fn forget_duplicate_unless_selected(&mut self) {
+        let copies_selected = self.last_duplicate.len() == self.selection.len()
+            && self
+                .last_duplicate
+                .iter()
+                .all(|(_, c)| self.selection.contains(c));
+        if !copies_selected {
+            self.last_duplicate.clear();
+        }
+        let guides_selected = self.last_guide_duplicate.as_ref().is_some_and(|d| {
+            self.selection.is_empty()
+                && d.page == self.page
+                && d.pairs.len() == self.selected_guides.len()
+                && d.pairs
+                    .iter()
+                    .all(|(_, c)| self.selected_guides.contains(c))
+        });
+        if !guides_selected {
+            self.last_guide_duplicate = None;
+        }
+    }
+
     pub fn duplicate(&mut self) {
+        self.forget_duplicate_unless_selected();
         // Guidelines selected and no objects: the guidelines (#376).
         if self.selection.is_empty() && self.duplicate_selected_guides() {
             return;
@@ -8722,6 +8756,65 @@ mod tests {
         app.duplicate();
         let g = app.selection[0];
         assert!((x0(&app, g) - app.duplicate_offset.x).abs() < 1e-9);
+    }
+
+    /// The reporter's steps (#1494): Duplicate leaves the copy on the
+    /// original; the copy turned 9 degrees and scaled 10 % about its
+    /// centre, each next Duplicate turns and scales a new copy as much
+    /// again about the same centre. A move typed afterwards joins the
+    /// step. Deselecting ends it: the next Duplicate, with the copy
+    /// picked again, is in place.
+    #[test]
+    fn smart_duplicate_repeats_a_turn_and_scale_until_deselected() {
+        let mut app = App::headless();
+        let a = app
+            .new_shape(ShapeKind::Rect {
+                rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+                radius: 0.0,
+                corners: None,
+            })
+            .expect("rect");
+        app.select(vec![a]);
+        let t = |app: &App, id: ShapeId| app.doc().find_shape(id).expect("shape").transform;
+        let near = |x: Affine, y: Affine| {
+            x.as_coeffs()
+                .iter()
+                .zip(y.as_coeffs())
+                .all(|(p, q)| (p - q).abs() < 1e-9)
+        };
+        app.duplicate();
+        let b = app.selection[0];
+        assert_ne!(a, b);
+        assert!(near(t(&app, b), Affine::IDENTITY), "in place");
+        let c = Vec2::new(5.0, 5.0);
+        let step = Affine::translate(c)
+            * Affine::rotate(9f64.to_radians())
+            * Affine::scale(1.1)
+            * Affine::translate(-c);
+        app.transform_selection(step);
+        app.forget_duplicate_unless_selected();
+        app.duplicate();
+        let d = app.selection[0];
+        assert!(near(t(&app, d), step * step), "{:?}", t(&app, d));
+        app.forget_duplicate_unless_selected();
+        app.duplicate();
+        let e = app.selection[0];
+        assert!(near(t(&app, e), step * step * step));
+        // Several changes in a row are one step: turned, then moved.
+        app.transform_selection(Affine::translate((4.0, 0.0)));
+        app.forget_duplicate_unless_selected();
+        app.duplicate();
+        let f = app.selection[0];
+        let moved = Affine::translate((4.0, 0.0)) * step * step * step;
+        assert!(near(t(&app, f), moved * (step * step).inverse() * moved));
+        // Deselected, then the copy picked again: in place.
+        app.select(Vec::new());
+        app.forget_duplicate_unless_selected();
+        app.select(vec![f]);
+        app.forget_duplicate_unless_selected();
+        app.duplicate();
+        let g = app.selection[0];
+        assert!(near(t(&app, g), t(&app, f)));
     }
 
     #[test]
