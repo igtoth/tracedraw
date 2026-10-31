@@ -2663,10 +2663,10 @@ fn undo_docker(app: &mut App, ui: &mut Ui) {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
-    fn draw(ctx: &egui::Context, app: &mut App) {
+    pub(crate) fn draw(ctx: &egui::Context, app: &mut App) {
         let input = egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(
                 egui::Pos2::ZERO,
@@ -3172,7 +3172,7 @@ mod tests {
     }
 
     /// Every text the frame painted.
-    fn painted_texts(ctx: &egui::Context, app: &mut App) -> Vec<String> {
+    pub(crate) fn painted_texts(ctx: &egui::Context, app: &mut App) -> Vec<String> {
         fn walk(s: &egui::Shape, out: &mut Vec<String>) {
             match s {
                 egui::Shape::Text(t) => out.push(t.galley.text().to_string()),
@@ -3662,6 +3662,19 @@ mod tests {
                         let (need, w) = overflow(&ctx, &mut app);
                         assert!(need <= 0.5, "{lang}, fill {k}, transparency {kind}: {need}");
                         assert!((w - empty).abs() < 1.0, "{lang}, fill {k}: {w}");
+                    }
+                    // Every type of the type buttons, vector and bitmap
+                    // patterns too (#1439).
+                    for ty in crate::ui::transparency_docker::TransparencyType::ALL {
+                        let Some(mask) = ty.default_mask() else {
+                            continue;
+                        };
+                        app.transparency_default.mask = mask;
+                        let t = app.transparency_default.clone();
+                        app.patch_transparency(&t, &[crate::mixed::TransparencyField::Mask]);
+                        let (need, w) = overflow(&ctx, &mut app);
+                        assert!(need <= 0.5, "{lang}, fill {k}, {ty:?}: {need}");
+                        assert!((w - empty).abs() < 1.0, "{lang}, fill {k}, {ty:?}: {w}");
                     }
                 }
             });

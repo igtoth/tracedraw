@@ -2056,7 +2056,48 @@ pub fn transparency_part(app: &mut App, ui: &mut Ui) {
 /// docker's width: the kind and what it applies to, then the amount (or
 /// the fountain's angle and kind), then the merge mode.
 pub fn transparency_section(app: &mut App, ui: &mut Ui) {
-    ui.vertical(|ui| transparency_controls(app, ui, true));
+    ui.vertical(|ui| crate::ui::transparency_docker::section(app, ui));
+}
+
+/// What the Transparency part shows: the settings of the first selected
+/// object (the defaults with nothing selected), its kind as
+/// [`crate::mixed::ShapeTransparency::kind`] (`None` when the selection's
+/// kinds differ), the settings that differ across the selection, and
+/// whether anything is selected. A change sends only the changed setting
+/// to each object.
+pub(crate) fn transparency_state(
+    app: &App,
+) -> (
+    crate::effects_ui::TransparencySettings,
+    Option<usize>,
+    Vec<crate::mixed::TransparencyField>,
+    bool,
+) {
+    use crate::mixed::{transparency_mixed, TransparencyField as F};
+    let ts = app.selection_transparency();
+    let mixed = transparency_mixed(&ts);
+    let has_selection = !ts.is_empty();
+    let (set, current) = match ts.first() {
+        Some(t) => {
+            let mut set = app.transparency_default.clone();
+            if t.kind >= 1 {
+                set.kind = (t.kind - 1) as u8;
+            }
+            if t.kind == 1 {
+                set.amount = t.amount.round();
+            }
+            if let Some(m) = &t.mask {
+                set.mask = m.clone();
+            }
+            if t.kind >= 1 {
+                set.merge = t.merge;
+                set.target = t.target;
+            }
+            (set, (!mixed.contains(&F::Kind)).then_some(t.kind))
+        }
+        None => (app.transparency_default.clone(), Some(0)),
+    };
+    (set, current, mixed, has_selection)
 }
 
 /// `f` in a row of its own when `stacked`, else straight in `ui`.
@@ -2080,7 +2121,7 @@ fn part_column(ui: &mut Ui, stacked: bool, f: impl FnOnce(&mut Ui)) {
 }
 
 fn transparency_controls(app: &mut App, ui: &mut Ui, stacked: bool) {
-    use crate::mixed::{transparency_mixed, TransparencyField as F};
+    use crate::mixed::TransparencyField as F;
     let kinds = [
         tr("transparency.none"),
         tr("transparency.uniform"),
@@ -2088,32 +2129,7 @@ fn transparency_controls(app: &mut App, ui: &mut Ui, stacked: bool) {
         tr("transparency.pattern"),
         tr("transparency.texture"),
     ];
-    // Reflect the first selected object in the bar; settings that differ
-    // across the selection show as mixed, and a change sends only that
-    // setting to each object.
-    let ts = app.selection_transparency();
-    let mixed = transparency_mixed(&ts);
-    let has_selection = !ts.is_empty();
-    let (mut set, current) = match ts.first() {
-        Some(t) => {
-            let mut set = app.transparency_default.clone();
-            if t.kind >= 1 {
-                set.kind = (t.kind - 1) as u8;
-            }
-            if t.kind == 1 {
-                set.amount = t.amount.round();
-            }
-            if let Some(m) = &t.mask {
-                set.mask = m.clone();
-            }
-            if t.kind >= 1 {
-                set.merge = t.merge;
-                set.target = t.target;
-            }
-            (set, (!mixed.contains(&F::Kind)).then_some(t.kind))
-        }
-        None => (app.transparency_default.clone(), Some(0)),
-    };
+    let (mut set, current, mixed, has_selection) = transparency_state(app);
     let mut field = None;
     let targets = [
         tr("transparency.target_fill"),

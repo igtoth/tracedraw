@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Properties docker, Transparency: the merge mode is a full-width list at the top, then a row of type buttons (No transparency, Uniform, Gradient, Vector pattern, Bitmap pattern, Two-colour pattern, Texture) with the chosen type's title, and a transparency picker: a swatch with a drop-down grid of ready-made transparencies (uniform levels, gradients, pattern tiles, textures) and Edit Transparency, which switches to the Transparency tool. A gradient has type buttons, its stops on a bar (click to pick, drag to move) with the picked stop's opacity and position and add and remove; a two-colour pattern or texture has foreground and background transparency with a swap button. What it applies to is three buttons, Fill, Outline and All, under "Transparency target". Vector and bitmap pattern transparency can now be chosen. Shared code: desktop, web and Android (#1439, #1203).
 - Properties docker, Transparency: the amount is a full-width slider with its label above, like the Fill section's angle and edge pad, and a fountain transparency's angle is the same angle slider. The property bar keeps its compact controls.
 - Options > Tools: each page in the list shows its tool's icon, as in CorelDRAW's Tool Options. The Zoom/Pan page has a Zoom tool section and a Calibrate Zoom... button that opens the ruler calibration (Display page).
 
