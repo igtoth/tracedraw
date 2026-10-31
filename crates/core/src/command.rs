@@ -814,7 +814,24 @@ impl Command {
                 }
             }
             Command::SetShapeKind { shape, kind } => {
+                let parent = doc.parent_transform(*shape).unwrap_or(Affine::IDENTITY);
                 let s = any_mut(doc, *shape)?;
+                // A new outline of the same object (nodes moved, an area
+                // cropped off): its gradient fill and transparency stay
+                // where they lie on the page (#1491). Text, groups,
+                // tables and symbols place their paint their own way.
+                let outline = |k: &ShapeKind| {
+                    !matches!(
+                        k,
+                        ShapeKind::Text { .. }
+                            | ShapeKind::Group { .. }
+                            | ShapeKind::Table(_)
+                            | ShapeKind::SymbolInstance { .. }
+                    )
+                };
+                let keep = outline(&s.kind) && outline(kind);
+                let before =
+                    keep.then(|| crate::geometry::Shape::bounding_box(&(parent * s.page_path())));
                 // Chosen node types follow node indices: a curve that
                 // gains or loses nodes drops them.
                 if !s.node_types.is_empty() && node_count(&s.kind) != node_count(kind) {
@@ -823,17 +840,26 @@ impl Command {
                 // A B-spline given any other outline is an ordinary curve.
                 s.spline = None;
                 s.kind = kind.clone();
+                if let Some(before) = before {
+                    let after = crate::geometry::Shape::bounding_box(&(parent * s.page_path()));
+                    s.keep_paint_in_place(before, after);
+                }
             }
             Command::SetSpline { shape, points } => {
                 if points.len() < 2 || points.iter().any(|p| !p.is_finite()) {
                     return Err(Error::BadSpline);
                 }
+                let parent = doc.parent_transform(*shape).unwrap_or(Affine::IDENTITY);
                 let s = any_mut(doc, *shape)?;
                 let closed = matches!(s.kind, ShapeKind::Path { closed: true, .. });
+                let before = crate::geometry::Shape::bounding_box(&(parent * s.page_path()));
                 s.kind = ShapeKind::Path {
                     path: crate::geometry::bspline_path(points, closed),
                     closed,
                 };
+                // Its gradients stay in place, as for any new outline.
+                let after = crate::geometry::Shape::bounding_box(&(parent * s.page_path()));
+                s.keep_paint_in_place(before, after);
                 s.node_types.clear();
                 s.spline = Some(points.clone());
             }
@@ -1998,6 +2024,67 @@ mod tests {
         assert!(doc.find_shape(cid).unwrap().opacity_mask.is_none());
     }
     use crate::geometry::Rect;
+
+    /// #1491: nodes moved so the object loses its left half: its gradient
+    /// fill and transparency stay where they were on the page (cut), not
+    /// squeezed into the new box; undo puts the outline back.
+    #[test]
+    fn a_new_outline_keeps_gradients_in_place() {
+        use crate::geometry::Point;
+        use crate::style::{Fountain, FountainKind};
+        let mut eng = crate::Engine::new(Document::new("t", Size::new(200.0, 200.0)));
+        let layer = eng.document().pages[0].layers[0].id;
+        let id = eng.new_shape_id();
+        let mut s = Shape::new(
+            id,
+            ShapeKind::Rect {
+                rect: Rect::new(0.0, 0.0, 100.0, 50.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        let ramp = Fill::Fountain(Fountain::two(
+            FountainKind::Linear,
+            Color::BLACK,
+            Color::WHITE,
+            0.0,
+        ));
+        s.fill = ramp.clone();
+        s.effects.push(crate::live::Effect::Transparency {
+            mask: ramp,
+            merge: Default::default(),
+            target: 2,
+        });
+        eng.run(&Command::AddShape { layer, shape: s }).unwrap();
+        let mut path = BezPath::new();
+        path.move_to((50.0, 0.0));
+        path.line_to((100.0, 0.0));
+        path.line_to((100.0, 50.0));
+        path.line_to((50.0, 50.0));
+        path.close_path();
+        eng.run(&Command::SetShapeKind {
+            shape: id,
+            kind: ShapeKind::Path { path, closed: true },
+        })
+        .unwrap();
+        let s = eng.document().find_shape(id).unwrap().clone();
+        let b = crate::geometry::Shape::bounding_box(&s.page_path());
+        assert!((b.x0 - 50.0).abs() < 1e-9);
+        // Three quarters of the way along the ramp at x = 75, as before.
+        let at = |f: &Fill| match f {
+            Fill::Fountain(f) => f.param_at(b, Point::new(75.0, 25.0)).unwrap(),
+            other => panic!("{other:?}"),
+        };
+        assert!((at(&s.fill) - 0.75).abs() < 1e-9, "{}", at(&s.fill));
+        let Some(crate::live::Effect::Transparency { mask, .. }) = s.effects.first() else {
+            panic!("a transparency");
+        };
+        assert!((at(mask) - 0.75).abs() < 1e-9, "{}", at(mask));
+        eng.undo().unwrap();
+        let s = eng.document().find_shape(id).unwrap();
+        assert!(matches!(s.kind, ShapeKind::Rect { .. }));
+        assert!(matches!(&s.fill, Fill::Fountain(f) if f.handles.is_none()));
+    }
 
     fn rect(doc: &mut Document, x: f64) -> Shape {
         let id = doc.ids_mut().shape();

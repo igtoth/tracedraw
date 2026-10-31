@@ -3069,6 +3069,23 @@ impl Shape {
         }
     }
 
+    /// Keep the object's fountain fill and gradient transparency where
+    /// they lie on the page while its outline changes and its page box
+    /// goes from `before` to `after` (#1491): moving nodes or cropping cuts
+    /// them instead of squeezing them into the new box.
+    pub fn keep_paint_in_place(&mut self, before: Rect, after: Rect) {
+        self.fill.keep_in_place(before, after);
+        for e in self
+            .effects
+            .iter_mut()
+            .chain(self.parked_effects.iter_mut().map(|p| &mut p.effect))
+        {
+            if let crate::live::Effect::Transparency { mask, .. } = e {
+                mask.keep_in_place(before, after);
+            }
+        }
+    }
+
     /// The places the object's live effects hold, those switched off too,
     /// moved by `t` (see [`crate::live::carry_effects`]).
     pub fn carry_effects(&mut self, t: Affine) {

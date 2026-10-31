@@ -400,6 +400,51 @@ mod tests {
         id
     }
 
+    /// #1491: cropping an object with a gradient transparency keeps the
+    /// part of the transparency over what is left, as cropping a picture
+    /// does: the ramp is cut, not started again across the new box.
+    #[test]
+    fn crop_cuts_the_gradient_transparency() {
+        use tracedraw_core::live::Effect;
+        use tracedraw_core::style::{Fountain, FountainKind};
+        let mut app = App::headless();
+        let id = rect_shape(&mut app, Rect::new(0.0, 0.0, 100.0, 50.0));
+        let ramp = Fill::Fountain(Fountain::two(
+            FountainKind::Linear,
+            Color::BLACK,
+            Color::WHITE,
+            0.0,
+        ));
+        app.run(Command::SetEffects {
+            shape: id,
+            effects: vec![Effect::Transparency {
+                mask: ramp,
+                merge: Default::default(),
+                target: 2,
+            }],
+        });
+        app.select(vec![id]);
+        app.crop_to(Rect::new(60.0, 10.0, 90.0, 40.0));
+        let s = app.doc().find_shape(id).cloned().expect("cropped");
+        let b = s.bounds();
+        assert!(
+            (b.x0 - 60.0).abs() < 1e-6 && (b.x1 - 90.0).abs() < 1e-6,
+            "{b:?}"
+        );
+        let Some(Effect::Transparency {
+            mask: Fill::Fountain(f),
+            ..
+        }) = s.effects.first()
+        else {
+            panic!("a gradient transparency");
+        };
+        // Where the ramp was 0.6 and 0.9 of the way, it still is.
+        for x in [60.0, 75.0, 90.0] {
+            let t = f.param_at(b, Point::new(x, 25.0)).expect("placed");
+            assert!((t - x / 100.0).abs() < 1e-9, "{x}: {t}");
+        }
+    }
+
     #[test]
     fn the_area_waits_and_moves_until_it_is_applied() {
         let mut app = App::headless();
