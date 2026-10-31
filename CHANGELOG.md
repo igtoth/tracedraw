@@ -1391,7 +1391,7 @@ full, row-by-row status.
   object's only outline (it was drawn over the fill, so thick white
   outlines thinned or hid letters).
 
-- CorelDRAW templates (`.cdt`, `.cdrt`) open as untitled drawings and can
+- Templates (`.cdt`, `.cdrt`) open as untitled drawings and can
   be imported.
 - Save As says that programs from 2021 on open `.cdr` version 15 and newer
   only.
