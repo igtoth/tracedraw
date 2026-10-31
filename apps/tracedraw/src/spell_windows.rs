@@ -195,7 +195,10 @@ fn open() -> Option<Checkers> {
                 &mut checker,
             );
             if hr == S_OK && !checker.is_null() {
-                languages.push((tag, Com(checker)));
+                let checker = Com(checker);
+                // The checker's own name for its language.
+                let tag = language_tag(&checker).unwrap_or(tag);
+                languages.push((tag, checker));
             }
         }
         log::info!(
@@ -233,6 +236,18 @@ fn checks(checker: &Com, word: &[u16]) -> bool {
         drop(Com(first));
     }
     hr != S_OK
+}
+
+/// The language a checker checks (`get_LanguageTag`).
+fn language_tag(checker: &Com) -> Option<String> {
+    let mut p: PWSTR = std::ptr::null_mut();
+    // SAFETY: `checker` is an `ISpellChecker`; the tag is allocated for us.
+    let hr = unsafe { (checker.vtbl::<CheckerVtbl>().get_language_tag)(checker.0, &mut p) };
+    if hr != S_OK {
+        return None;
+    }
+    // SAFETY: as returned by `get_LanguageTag`.
+    unsafe { take_string(p) }
 }
 
 /// The languages the spell checker of Windows checks here.
@@ -280,4 +295,57 @@ pub fn suggest(word: &str) -> Vec<String> {
         out
     })
     .unwrap_or_default()
+}
+
+/// Run on Windows by the build workflow (`scripts/windows/spell-check`):
+/// the method tables above match the system's, as a wrong one would
+/// crash the app rather than fail a check (#1405).
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_spell_checker_of_windows_answers() {
+        let langs = languages();
+        println!("::notice::Windows spell checker languages: {langs:?}");
+        assert!(
+            langs.iter().any(|l| l.eq_ignore_ascii_case("en-US")),
+            "no en-US checker: {langs:?}"
+        );
+        // The en-US checker itself: its tag, a right and a wrong word.
+        let direct = with(|c| {
+            let (tag, checker) = c
+                .languages
+                .iter()
+                .find(|(t, _)| t.eq_ignore_ascii_case("en-US"))
+                .expect("en-US");
+            (
+                language_tag(checker),
+                tag.clone(),
+                checks(checker, &wide("beautiful")),
+                checks(checker, &wide("recieve")),
+                checks(checker, &wide("qzxvbnmq")),
+            )
+        })
+        .expect("a factory");
+        println!("::notice::en-US checker (tag, listed, beautiful, recieve, qzxvbnmq): {direct:?}");
+        assert_eq!(
+            direct.0.as_deref().map(str::to_ascii_lowercase),
+            Some("en-us".into())
+        );
+        assert!(direct.2, "beautiful is a word");
+        assert!(!direct.3 && !direct.4, "misspellings pass");
+        // Through the functions spell.rs calls, cached and not.
+        assert!(is_known("beautiful") && is_known("beautiful"));
+        assert!(!is_known("recieve") && !is_known("recieve"));
+        let s = suggest("recieve");
+        println!("::notice::suggestions for recieve: {s:?}");
+        assert!(s.iter().any(|w| w == "receive"), "{s:?}");
+        assert!(suggest("").len() < 500);
+        // Another thread makes checkers of its own.
+        let other = std::thread::spawn(|| (is_known("beautiful"), is_known("qzxvbnmq")))
+            .join()
+            .expect("thread");
+        assert_eq!(other, (true, false));
+    }
 }

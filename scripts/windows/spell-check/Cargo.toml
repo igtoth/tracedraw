@@ -1,0 +1,20 @@
+# Runs the tests of the spell checker of Windows (apps/tracedraw/src/
+# spell_windows.rs, #1405) on a Windows runner, without building the whole
+# app for tests: `cargo test -- --nocapture` here (the build workflow does).
+[package]
+name = "spell-windows-check"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+log = "0.4"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.52", features = ["Win32_Foundation", "Win32_System_Com"] }
+
+# Not a member of the repository's workspace.
+[workspace]
