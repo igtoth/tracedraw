@@ -17,9 +17,9 @@
 //! expanded effects), groups, artistic text with one font, size and style
 //! per run, bitmaps (24-bit), solid and fountain fills, outlines (width,
 //! caps, joins, dashes, nib, "scale with object", "behind fill") and
-//! uniform transparency. From version 12 a clip frame is a clip
+//! uniform transparency. From version 11 a clip frame is a clip
 //! container: the frame object names, in argument 8005, a group of the
-//! document's `LIST clpt` that holds the contents (#1222). Before 12 a
+//! document's `LIST clpt` that holds the contents (#1222). Before 11 a
 //! clip frame holding one bitmap becomes that bitmap with the frame as
 //! its crop path, other clip frames a group of the frame outline and
 //! the contents. Rectangles of versions 15 and later
@@ -218,9 +218,10 @@ const ARG_TEXT_LINK: u32 = 16015;
 const ARG_HIDDEN: u32 = 16016;
 /// On guides layers of version 17 and later: 2.
 const ARG_GUIDES_MODE: u32 = 16001;
-/// On the group of `LIST clpt` holding a clip container's contents: 2
-/// (files of versions 25 and 27).
-const ARG_CLIP_GROUP: u32 = 3500;
+/// On the group of `LIST clpt` holding a clip container's contents: the
+/// group's number (its `spnd`) plus one, in every clip group of the files
+/// of versions 11, 14, 25, 26 and 27 (2 for the group numbered 1).
+pub(crate) const ARG_CLIP_GROUP: u32 = 3500;
 /// On a clip container (version 27): a 16-byte id of its own, and 0.
 const ARG_CLIP_GUID: u32 = 40001;
 const ARG_CLIP_ZERO: u32 = 40200;
@@ -353,8 +354,16 @@ impl Ver {
     }
     /// Clip frames go out as clip containers (argument 8005 naming a
     /// group of `LIST clpt`): the layout read from a version 12 file and
-    /// written as files of versions 25 and 27 hold it.
+    /// written as files of versions 25 and 27 hold it. A version 11 file
+    /// (#896) holds its clip frames the same way (2026-10-30, #1226);
+    /// before 11 none was seen.
     fn clip_containers(self) -> bool {
+        self.0 >= 11
+    }
+    /// The container's own id (40001) and zero (40200), as files of
+    /// versions 25 to 27 have them; the containers of the version 11 file
+    /// have neither.
+    fn clip_container_ids(self) -> bool {
         self.0 >= 12
     }
     /// Blends go out live: an empty `LIST lnkg` of object type 7 between
@@ -405,6 +414,17 @@ impl Ver {
     /// Rectangles keep their own record (from 15 on their layout changes).
     fn native_rects(self) -> bool {
         self.0 < 15
+    }
+    /// The style table's set11 table, and each text style's reference to
+    /// it: from version 9, as the public format notes give it to the
+    /// bidirectional version 8 (801) and later. The program that reads
+    /// these files saves its version 8 (800) files with the 801 table,
+    /// but TraceDraw's version 8 file written so crashed its 2010 release
+    /// on opening while the same drawing's version 7 and 9 files opened,
+    /// and that file differed from the version 9 one only in the
+    /// configuration record and the rectangles' radii (#1139).
+    fn set11(self) -> bool {
+        self.0 >= 9
     }
 }
 
@@ -2553,13 +2573,12 @@ fn stlt(v: Ver, uses: StyleUses) -> Vec<u8> {
     for (position, thickness) in DECORATION_LINES {
         t.u32(0).i32(position).i32(thickness);
     }
-    // Tabs, bullets, indents, hyphenation, drop caps: none; set11 from 8
-    // (both version 8 variants saved by the program that reads them hold
-    // it, its version 7 saves do not).
+    // Tabs, bullets, indents, hyphenation, drop caps: none; set11 from 9
+    // (see `Ver::set11`).
     for _ in 0..5 {
         t.u32(0);
     }
-    if n >= 8 {
+    if v.set11() {
         t.u32(1).u32(set11).u32(0).u32(0);
     }
     // The records: sections (1: fill and outline; 2: also the character
@@ -2583,7 +2602,7 @@ fn stlt(v: Ver, uses: StyleUses) -> Vec<u8> {
         name(&mut t, label);
         t.u32(text_fill).u32(outline);
         t.u32(font).u32(*align).u32(interval).u32(set5);
-        if n >= 8 {
+        if v.set11() {
             t.u32(set11);
         }
     }
@@ -2600,7 +2619,7 @@ fn stlt(v: Ver, uses: StyleUses) -> Vec<u8> {
         t.u32(*fill).u32(outline);
         let align = aligns.get(f.align).copied().unwrap_or(aligns[0]);
         t.u32(*font).u32(align).u32(interval).u32(set5);
-        if n >= 8 {
+        if v.set11() {
             t.u32(set11);
         }
     }
@@ -2897,9 +2916,14 @@ fn mark_nodes(coords: &mut [u8]) {
         .get(0..4)
         .and_then(|b| b.try_into().ok())
         .map_or(0, u32::from_le_bytes) as usize;
-    let Some(types) = coords.get_mut(4 + 8 * n..4 + 9 * n) else {
-        return;
-    };
+    if let Some(types) = coords.get_mut(4 + 8 * n..4 + 9 * n) {
+        mark_node_types(types);
+    }
+}
+
+/// The node marks of [`mark_nodes`] set on a curve's node bytes alone
+/// (`check` compares a written outline with them).
+pub(crate) fn mark_node_types(types: &mut [u8]) {
     let mut start = 0;
     for k in 0..=types.len() {
         let ends = k == types.len() || (k > start && types[k] & 0xc0 == 0);
@@ -2985,6 +3009,21 @@ fn graded_transparency_json(g: (&tracedraw_core::Fountain, u8)) -> Option<String
     ))
 }
 
+/// The `outline` of an object's style string when it has no outline, as
+/// the program's own files of version 27 hold it on pictures and shapes
+/// without one (the members in their order, width 0, no `type`).
+pub(crate) const NO_OUTLINE_JSON: &str = concat!(
+    r#"{"angle":"0","aspect":"100","behindFill":"0","#,
+    r#""color":"CMYK,USER,0,0,0,100,100,00000000-0000-0000-0000-000000000000","#,
+    r#""dashAdjust":"0","dashDotSpec":"0","dotLength":"0","endCaps":"0","joinType":"0","#,
+    r#""justification":"0","leftArrow":"|0","leftArrowAttributes":"0|0|0|0|0|0|0","#,
+    r#""matrix":"1,0,0,0,1,0","miterLimit":"5","overlapArrow":"0","overprint":"0","#,
+    r#""projectMatrix":"1,0,0,0,1,0","rightArrow":"|0","#,
+    r#""rightArrowAttributes":"0|0|0|0|0|0|0","scaleWithObject":"0","#,
+    r#""screenSpec":"0,0,45000000,60,0","shareArrow":"0","variableAttributes":"0|0","#,
+    r#""width":"0"}"#
+);
+
 /// The style string of an object (versions 16+): its fill, outline and
 /// transparency.
 fn object_style_json(
@@ -3011,7 +3050,12 @@ fn object_style_json(
             colour_spec(s.color),
             Stroke::miter_angle_from_ratio(s.miter_ratio())
         ),
-        None => r#"{"type":"1","width":"0"}"#.to_string(),
+        // As the files of versions 16 to 27 hold an object without an
+        // outline: every member with width 0 and no `type`. TraceDraw
+        // wrote `{"type":"1","width":"0"}`, a type no file holds; the
+        // program that reads them closed when such a picture, or a group
+        // of such curves, was clicked (#1226).
+        None => NO_OUTLINE_JSON.to_string(),
     };
     let transparency = if let Some(g) = graded.and_then(graded_transparency_json) {
         g
@@ -4001,21 +4045,26 @@ impl<'a> Writer<'a> {
         let Some(b) = inner.bounds else {
             return self.object(&f, centre, depth);
         };
+        // The group takes the next number and its argument 3500 the one
+        // after it, which no other object takes: every clip group of the
+        // files of versions 11, 14, 25, 26 and 27 holds its number plus
+        // one there. (Written 2 for every group before: a second clip, or
+        // text written before the first, broke that.)
         let number = self.next_spnd;
-        self.next_spnd += 1;
+        self.next_spnd += 2;
+        let mut group_args = vec![(ARG_CLIP_GROUP, (number + 1).to_le_bytes().to_vec())];
+        // The zero rotation every object of versions 7 to 12 carries; the
+        // clip groups of the version 11 file have it too.
+        if self.v.rotation_arg() {
+            group_args.push((ARG_ROTATION, vec![0; 4]));
+        }
         let b = b - centre.to_vec2();
         let mut body = vec![
             chunk(b"spnd", number.to_le_bytes().to_vec()),
             chunk(b"flgs", CLIP_GROUP_FLAGS.to_vec()),
             chunk(b"bbox", box_bytes(b)),
             chunk(b"obbx", obbx_bytes(b, 0.0)),
-            list(
-                b"lgob",
-                vec![chunk(
-                    b"loda",
-                    loda(0, vec![(ARG_CLIP_GROUP, 2u32.to_le_bytes().to_vec())]),
-                )],
-            ),
+            list(b"lgob", vec![chunk(b"loda", loda(0, group_args))]),
         ];
         body.extend(inner.nodes);
         self.clip_groups.push(list(b"grp ", body));
@@ -4427,8 +4476,10 @@ impl<'a> Writer<'a> {
                 ARG_CLIP_CONTENTS,
                 [n, 1, 0, 1].iter().flat_map(|x| x.to_le_bytes()).collect(),
             ));
-            args.push((ARG_CLIP_GUID, self.guid().to_vec()));
-            args.push((ARG_CLIP_ZERO, vec![0; 4]));
+            if v.clip_container_ids() {
+                args.push((ARG_CLIP_GUID, self.guid().to_vec()));
+                args.push((ARG_CLIP_ZERO, vec![0; 4]));
+            }
         }
         if v.rotation_arg() {
             args.push((ARG_ROTATION, vec![0; 4]));

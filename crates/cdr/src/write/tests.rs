@@ -1121,11 +1121,11 @@ fn the_style_table_numbers_its_entries_once_and_styles_name_them() {
         for (pos, thick) in DECORATION_LINES {
             assert_eq!((u(), u() as i32, u() as i32), (0, pos, thick), "{v}");
         }
-        // No tabs, bullets, indents, hyphenation or drop caps; set11 from 8.
+        // No tabs, bullets, indents, hyphenation or drop caps; set11 from 9.
         for _ in 0..5 {
             assert_eq!(u(), 0, "{v}");
         }
-        if v >= 8 {
+        if v >= 9 {
             assert_eq!(u(), 1, "{v}");
             ids.push(u());
             assert_eq!((u(), u()), (0, 0));
@@ -1162,7 +1162,7 @@ fn the_style_table_numbers_its_entries_once_and_styles_name_them() {
             }
             at.set(at.get() + len * if v >= 12 { 2 } else { 1 });
             let refs = if style < 5 {
-                6 + usize::from(v >= 8)
+                6 + usize::from(v >= 9)
             } else {
                 2
             };
@@ -2332,7 +2332,7 @@ fn a_clip_frame_keeps_its_fill_under_and_outline_over_the_contents() {
         let bytes = document_to_cdr_version(&doc, v);
         let (back, rep) = crate::open_bytes(&bytes, "back").expect("reads back");
         let l = &back.pages[0].layers[0];
-        if v >= 12 {
+        if v >= 11 {
             // A clip container: the frame with its look, the contents
             // inside it (the next test).
             let ShapeKind::ClipFrame { frame, contents } = &l.shapes[0].kind else {
@@ -2356,7 +2356,7 @@ fn a_clip_frame_keeps_its_fill_under_and_outline_over_the_contents() {
     }
 }
 
-/// From version 12 a clip frame goes out as a clip container (#1222): the
+/// From version 11 a clip frame goes out as a clip container (#1222): the
 /// frame object names, in argument 8005, a group of the document's `LIST
 /// clpt` holding the contents, laid out as a version 27 file saved by the
 /// program that reads them holds its own (the group's flags, its loda of
@@ -2366,7 +2366,7 @@ fn a_clip_frame_keeps_its_fill_under_and_outline_over_the_contents() {
 /// written as a bitmap with a crop path and other frames as a plain group,
 /// which that program showed without the picture and the frame.
 #[test]
-fn clip_frames_go_out_as_clip_containers_from_version_12() {
+fn clip_frames_go_out_as_clip_containers_from_version_11() {
     let mut doc = doc_with(Vec::new());
     let mut ids = doc.ids().clone();
     let png = {
@@ -2422,7 +2422,7 @@ fn clip_frames_go_out_as_clip_containers_from_version_12() {
         let (back, rep) = crate::open_bytes(&bytes, "back").expect("reads back");
         let l = &back.pages[0].layers[0];
         assert_eq!(l.shapes.len(), 1, "{v}: {:?}", rep.warnings);
-        if v < 12 {
+        if v < 11 {
             assert!(
                 matches!(l.shapes[0].kind, ShapeKind::Group { .. }),
                 "{v}: {:?}",
@@ -2493,9 +2493,16 @@ fn clip_frames_go_out_as_clip_containers_from_version_12() {
                 .iter()
                 .map(|(t, b)| (*t, b.clone()))
                 .collect::<Vec<_>>(),
-            vec![(3500, vec![2, 0, 0, 0])],
-            "{v}"
+            if v <= 12 {
+                // With the zero rotation of every object of 7 to 12, as
+                // the clip groups of the version 11 file of #896.
+                vec![(12030, vec![0; 4]), (3500, vec![2, 0, 0, 0])]
+            } else {
+                vec![(3500, vec![2, 0, 0, 0])]
+            },
+            "{v}: the group's number plus one"
         );
+        assert_eq!(spnd.as_deref(), Some(&[1u8, 0, 0, 0][..]), "{v}");
         assert_eq!((*objects, *usdns), (2, 0), "{v}: no usdn inside the group");
         assert_eq!(containers.len(), 1, "{v}");
         let (body, cflags, cargs) = &containers[0];
@@ -2506,14 +2513,138 @@ fn clip_frames_go_out_as_clip_containers_from_version_12() {
         );
         assert_eq!(&body[4..], &[1u8, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0], "{v}");
         assert_eq!(cflags[2], 0x10, "{v}");
-        assert!(
+        // The container's id and zero from 12 (the version 11 file's
+        // containers have neither).
+        assert_eq!(
             cargs.iter().any(|(t, b)| *t == 40001 && b.len() == 16),
+            v >= 12,
             "{v}"
         );
-        assert!(
+        assert_eq!(
             cargs.iter().any(|(t, b)| *t == 40200 && *b == [0; 4]),
+            v >= 12,
             "{v}"
         );
+    }
+}
+
+/// Every clip group of the files of versions 11, 14, 25, 26 and 27 holds
+/// its own number (`spnd`) plus one in argument 3500, a number no other
+/// object takes (#1226). TraceDraw wrote 2 for every group, which is
+/// right only for a group numbered 1: here two texts and two frames take
+/// numbers, so at least one group has another. Each container names its own group, each group's
+/// 3500 is its number plus one, no `spnd` repeats or takes one of those,
+/// and the checker passes the file (`check::tests::clip_groups_hold_their_number_plus_one`
+/// reports a group written the old way).
+#[test]
+fn clip_groups_hold_their_number_plus_one_after_text_and_other_clips() {
+    let mut doc = doc_with(Vec::new());
+    let mut ids = doc.ids().clone();
+    let mut shapes = vec![
+        text_shape(
+            &mut ids,
+            vec![TextSpan::new("first", "Arial", 12.0)],
+            TextAlign::Left,
+        ),
+        text_shape(
+            &mut ids,
+            vec![TextSpan::new("second", "Arial", 12.0)],
+            TextAlign::Left,
+        ),
+    ];
+    for k in 0..2 {
+        let dx = 80.0 * k as f64;
+        let mut dot = Shape::new(
+            ids.shape(),
+            ShapeKind::Rect {
+                rect: Rect::new(10.0 + dx, 10.0, 40.0 + dx, 30.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        dot.fill = Fill::Solid(Color::rgb8(0, 0, 255));
+        dot.stroke = None;
+        let mut frame = Shape::new(
+            ids.shape(),
+            ShapeKind::Ellipse {
+                rect: Rect::new(20.0 + dx, 5.0, 60.0 + dx, 35.0),
+                arc: None,
+            },
+        );
+        frame.fill = Fill::Solid(Color::rgb8(255, 240, 0));
+        frame.stroke = Some(Stroke::new(Color::BLACK, 0.5));
+        shapes.push(Shape::new(
+            ids.shape(),
+            ShapeKind::ClipFrame {
+                frame: Box::new(frame),
+                contents: vec![dot],
+            },
+        ));
+    }
+    doc.pages[0].layers[0].shapes = shapes;
+    doc.set_ids(ids);
+    for v in versions().into_iter().filter(|v| *v >= 11) {
+        let bytes = document_to_cdr_version(&doc, v);
+        let (_, tree, riff) = chunk_ids(&bytes);
+        let u32_of = |b: &[u8]| {
+            b.get(..4)
+                .and_then(|b| b.try_into().ok())
+                .map(u32::from_le_bytes)
+        };
+        let mut groups = Vec::new();
+        let mut named = Vec::new();
+        let mut spnds = Vec::new();
+        tree.root.walk(&mut |c, _| {
+            if let Some(n) = c
+                .find(b"spnd")
+                .and_then(|s| u32_of(tree.data(&riff, s)))
+                .filter(|_| c.is(b"obj ") || c.is(b"grp "))
+            {
+                spnds.push(n);
+            }
+            if c.is(b"clpt") {
+                for g in c.children.iter().filter(|g| g.is(b"grp ")) {
+                    let n = g.find(b"spnd").and_then(|s| u32_of(tree.data(&riff, s)));
+                    let (_, args) = layer_args(&tree, &riff, g);
+                    let link = args
+                        .iter()
+                        .find(|(t, _)| *t == 3500)
+                        .and_then(|(_, b)| u32_of(b));
+                    groups.push((n, link));
+                }
+            } else if c.is(b"obj ") {
+                let (_, args) = layer_args(&tree, &riff, c);
+                if let Some((_, b)) = args.iter().find(|(t, _)| *t == 8005) {
+                    named.push(u32_of(b));
+                }
+            }
+        });
+        assert_eq!(groups.len(), 2, "{v}");
+        // Texts or the other clip take the numbers before at least one
+        // group (the order objects go out in differs between versions).
+        assert!(
+            groups.iter().any(|(n, _)| n.is_some_and(|n| n > 2)),
+            "{v}: {groups:?}"
+        );
+        for (n, link) in &groups {
+            let n = n.unwrap_or_else(|| panic!("{v}: group without a number"));
+            assert_eq!(*link, Some(n + 1), "{v}: group {n}");
+            assert!(named.contains(&Some(n)), "{v}: no container names {n}");
+            assert!(!spnds.contains(&(n + 1)), "{v}: {} taken", n + 1);
+        }
+        let mut sorted = spnds.clone();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(sorted.len(), spnds.len(), "{v}: {spnds:?}");
+        let findings = crate::check::check_bytes(&bytes).expect("checks");
+        assert!(findings.is_empty(), "{v}: {findings:?}");
+        let (back, rep) = crate::open_bytes(&bytes, "back").expect("reads back");
+        let clips = back.pages[0].layers[0]
+            .shapes
+            .iter()
+            .filter(|s| matches!(s.kind, ShapeKind::ClipFrame { .. }))
+            .count();
+        assert_eq!(clips, 2, "{v}: {:?}", rep.warnings);
     }
 }
 
@@ -2783,6 +2914,88 @@ fn bitmap_objects_carry_their_pixel_size() {
     }
 }
 
+/// A picture and a rectangle without an outline get the outline the
+/// program's own files of version 27 give their pictures and shapes
+/// without one, every member with width 0 and no `type`, in their style
+/// strings (versions 16 to 27). TraceDraw wrote `{"type":"1","width":"0"}`
+/// on every object without an outline, a type no file holds; that
+/// program closed when such a picture, or a group of such curves, was
+/// clicked (#1226). An outlined rectangle keeps its width and colour.
+#[test]
+fn objects_without_an_outline_write_the_files_outline_of_width_0() {
+    let png = {
+        let mut pm = tiny_skia::Pixmap::new(3, 2).expect("pixmap");
+        pm.fill(tiny_skia::Color::from_rgba8(10, 20, 30, 255));
+        pm.encode_png().expect("png")
+    };
+    let mut ids = tracedraw_core::id::IdSource::default();
+    let mut bm = Shape::new(
+        ids.shape(),
+        ShapeKind::Bitmap {
+            rect: Rect::new(0.0, 0.0, 30.0, 20.0),
+            width_px: 3,
+            height_px: 2,
+            png: png.into(),
+            fx: None,
+        },
+    );
+    bm.fill = Fill::None;
+    bm.stroke = None;
+    let rect = |stroke: Option<Stroke>, ids: &mut tracedraw_core::id::IdSource| {
+        let mut r = Shape::new(
+            ids.shape(),
+            ShapeKind::Rect {
+                rect: Rect::new(40.0, 10.0, 60.0, 30.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        r.fill = Fill::Solid(Color::rgb8(0, 0, 255));
+        r.stroke = stroke;
+        r
+    };
+    let bare = rect(None, &mut ids);
+    let outlined = rect(Some(Stroke::new(Color::BLACK, 0.5)), &mut ids);
+    let doc = doc_with(vec![bm, bare, outlined]);
+    let no_outline = format!(r#""outline":{}"#, super::NO_OUTLINE_JSON);
+    for v in versions().into_iter().filter(|v| *v >= 16) {
+        let bytes = document_to_cdr_version(&doc, v);
+        let (_, tree, riff) = chunk_ids(&bytes);
+        let mut styles = Vec::new();
+        tree.root.walk(&mut |c, _| {
+            if c.is(b"loda") {
+                let d = tree.data(&riff, c);
+                let kind = d.get(16..20).map(|k| k.to_vec());
+                if kind == Some(5u32.to_le_bytes().to_vec())
+                    || kind == Some(3u32.to_le_bytes().to_vec())
+                    || kind == Some(1u32.to_le_bytes().to_vec())
+                {
+                    if let Some((_, b)) = loda_args(d).into_iter().find(|(t, _)| *t == 201) {
+                        styles.push(crate::check::style_text(&b[8..]));
+                    }
+                }
+            }
+        });
+        assert_eq!(styles.len(), 3, "{v}: {styles:?}");
+        // The picture and the bare rectangle (written in either order).
+        let bare: Vec<&String> = styles.iter().filter(|s| s.contains(&no_outline)).collect();
+        assert_eq!(bare.len(), 2, "{v}: {styles:?}");
+        assert!(
+            styles.iter().any(|s| s.contains(r#"{"width":"5000","#)),
+            "{v}: {styles:?}"
+        );
+        for s in &styles {
+            assert!(!s.contains(r#""type":"1","width""#), "{v}: {s}");
+        }
+        assert!(
+            crate::check::check_bytes(&bytes)
+                .expect("checks")
+                .is_empty(),
+            "{v}"
+        );
+    }
+}
+
 /// The coordinates argument of the first bitmap object of `bytes`.
 fn bitmap_coords(bytes: &[u8]) -> Vec<u8> {
     let (_, tree, riff) = chunk_ids(bytes);
@@ -2879,10 +3092,10 @@ fn bitmap_boxes_start_at_the_origin_and_their_transform_places_them() {
         assert_eq!([i(0), i(4), i(8), i(12)], want_box, "{v}");
         let count_at = if v == 8 { 64 } else { 72 };
         let n = i(count_at) as usize;
-        // From version 12 the frame is a clip container and the picture
-        // inside it keeps its whole rectangle as its outline (#1222);
-        // before, the frame is the picture's crop outline.
-        if v >= 12 {
+        // From version 11 the frame is a clip container and the picture
+        // inside it keeps its whole rectangle as its outline (#1222,
+        // #1226); before, the frame is the picture's crop outline.
+        if v >= 11 {
             assert_eq!(n, 5, "{v}: {n} points");
         } else {
             assert!(n > 5, "{v}: {n} points");
@@ -3713,6 +3926,99 @@ fn a_version_8_style_table_with_set11_is_read() {
     let eight = crate::text::read_stlt(&d, 8, &mut |w| notes.push(w));
     assert!(notes.is_empty(), "{notes:?}");
     assert_eq!(eight.len(), nine.len());
+}
+
+/// Version 8 files carry the style table of the public notes' usual
+/// variant (800), without the set11 table and the styles' references to
+/// it: written with them, as the program that reads these files saves
+/// both version 8 variants, the file crashed that program's 2010 release
+/// while the same drawing's version 7 and 9 files opened (#1139). The
+/// version 8 table is the version 7 one; version 9 adds set11; and the
+/// whole version 8 file reads back with its texts' styles.
+#[test]
+fn version_8_style_tables_have_no_set11() {
+    let uses = StyleUses {
+        text_fill: 1,
+        graphic_fill: 2,
+        outline: 3,
+        font: 1,
+        formats: Vec::new(),
+    };
+    let seven = stlt(Ver(7), uses.clone());
+    let eight = stlt(Ver(8), uses.clone());
+    let nine = stlt(Ver(9), uses);
+    assert_eq!(eight, seven);
+    // Version 9: the set11 table (count, id, 0, 0) and one reference in
+    // each of the four text styles.
+    assert_eq!(nine.len(), eight.len() + 16 + 4 * 4);
+    let mut notes = Vec::new();
+    let read = crate::text::read_stlt(&eight, 8, &mut |w| notes.push(w));
+    assert!(notes.is_empty(), "{notes:?}");
+    assert_eq!(read.len(), 5);
+
+    // A drawing with text, written as version 8: its style table holds
+    // no set11 and every text keeps its size and colour.
+    let mut doc = doc_with(Vec::new());
+    let mut ids = doc.ids().clone();
+    let mut red = TextSpan::new("red", "Arial", 18.0);
+    red.fill = Some(Fill::Solid(Color::rgb8(204, 0, 0)));
+    let shapes = vec![text_shape(
+        &mut ids,
+        vec![TextSpan::new("Plain ", "Arial", 18.0), red],
+        TextAlign::Left,
+    )];
+    doc.pages[0].layers[0].shapes = shapes;
+    doc.set_ids(ids);
+    let bytes = document_to_cdr_version(&doc, 8);
+    let (_, tree, riff) = chunk_ids(&bytes);
+    let mut table = None;
+    tree.root.walk(&mut |ch, _| {
+        if ch.is(b"stlt") && table.is_none() {
+            table = Some(tree.data(&riff, ch).to_vec());
+        }
+    });
+    let table = table.expect("style table");
+    let mut notes = Vec::new();
+    let styles = crate::text::read_stlt(&table, 8, &mut |w| notes.push(w));
+    assert!(notes.is_empty(), "{notes:?}");
+    assert_eq!(styles.len(), 6, "five default styles and the text's");
+    // The table is the version 7 one with the same styles.
+    let seven = document_to_cdr_version(&doc, 7);
+    let (_, tree7, riff7) = chunk_ids(&seven);
+    let mut table7 = None;
+    tree7.root.walk(&mut |ch, _| {
+        if ch.is(b"stlt") && table7.is_none() {
+            table7 = Some(tree7.data(&riff7, ch).to_vec());
+        }
+    });
+    assert_eq!(Some(table.clone()), table7);
+    let back = open_as_drawn(&bytes);
+    let spans: Vec<TextSpan> = back
+        .pages
+        .iter()
+        .flat_map(|p| &p.layers)
+        .flat_map(|l| &l.shapes)
+        .filter_map(|s| match &s.kind {
+            ShapeKind::Text { spans, .. } => Some(spans.clone()),
+            _ => None,
+        })
+        .flatten()
+        .collect();
+    assert_eq!(
+        spans.iter().map(|s| s.text.as_str()).collect::<String>(),
+        "Plain red"
+    );
+    assert!(
+        spans.iter().all(|s| (s.size_pt - 18.0).abs() < 0.05),
+        "{spans:?}"
+    );
+    assert!(
+        spans.iter().any(|s| s.text == "red"
+            && s.fill
+                .as_ref()
+                .is_some_and(|f| *f != Fill::Solid(Color::BLACK))),
+        "{spans:?}"
+    );
 }
 
 /// A face named by its family and weight ("Titillium Web SemiBold") is

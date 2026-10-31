@@ -873,11 +873,11 @@ fn clip_frames() {
         );
         let cb = (first.transform * contents[0].page_path()).bounding_box();
         same_box(r.v, cb, Rect::new(10.0, 10.0, 70.0, 40.0), EPS);
-        // From version 12 a clip container (#1222): the frame with its
-        // fill and outline, the contents inside it. Before, the frame's
-        // fill under, the contents, the frame's outline over.
+        // From version 11 a clip container (#1222, #1226): the frame with
+        // its fill and outline, the contents inside it. Before, the
+        // frame's fill under, the contents, the frame's outline over.
         let second = r.shape(1);
-        if r.v >= 12 {
+        if r.v >= 11 {
             let ShapeKind::ClipFrame { frame, contents } = &second.kind else {
                 panic!("version {}: {}", r.v, kind_name(&second.kind));
             };

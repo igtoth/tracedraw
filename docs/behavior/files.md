@@ -201,5 +201,11 @@ objects open as drawn.
   `.cdr` files have them; unmarked, a click on the picture closed that
   program (#1226; `write::tests::bitmap_objects_carry_their_pixel_size`,
   `check::tests::bitmap_outlines_need_node_marks`).
+- A picture or shape without an outline saved as `.cdr` 16 to 27 holds,
+  in its style string, the outline the program's own files give such
+  objects (every member, width 0, no type); the outline type 1 TraceDraw
+  wrote is in no file of that program, and the checker reports it (#1226;
+  `write::tests::objects_without_an_outline_write_the_files_outline_of_width_0`,
+  `check::tests::style_strings_hold_no_outline_type_but_0`).
 - Checked on screen: the dialog with its shortcuts, list, type list,
   version and stars; Save as CDR wrote the file in the folder shown.
