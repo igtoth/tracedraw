@@ -7151,7 +7151,6 @@ docker.palette_lock = "ロック" # mt
 docker.palette_unlock = "ロック解除" # mt
 docker.palette_lock_desc = "ロックしたパレットは、ロックを解除するまでパレット エディターで変更できません。" # mt
 dialog.locked_palette_hint = "このパレットはロックされています。編集するにはパレット マネージャーでロックを解除してください。" # mt
-status.cdr_guides_not_saved = "ガイドラインは .cdr ファイルには保存されません。残すには .tdraw で保存してください。" # mt
 transparency.vector_pattern = "ベクターパターン" # mt
 transparency.bitmap_pattern = "ビットマップパターン" # mt
 transparency.two_color_pattern = "2色パターン" # mt

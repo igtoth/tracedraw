@@ -7151,7 +7151,6 @@ docker.palette_lock = "锁定" # mt
 docker.palette_unlock = "解锁" # mt
 docker.palette_lock_desc = "锁定的调色板在解锁前无法在调色板编辑器中更改。" # mt
 dialog.locked_palette_hint = "此调色板已锁定；请在调色板管理器中解锁后再编辑。" # mt
-status.cdr_guides_not_saved = "辅助线不会保存在 .cdr 文件中；请另存为 .tdraw 以保留它们。" # mt
 transparency.vector_pattern = "矢量图样" # mt
 transparency.bitmap_pattern = "位图图样" # mt
 transparency.two_color_pattern = "双色图样" # mt

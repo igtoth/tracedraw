@@ -7151,7 +7151,6 @@ docker.palette_lock = "लॉक करें" # mt
 docker.palette_unlock = "अनलॉक करें" # mt
 docker.palette_lock_desc = "लॉक की गई पैलेट को अनलॉक किए बिना पैलेट संपादक में बदला नहीं जा सकता।" # mt
 dialog.locked_palette_hint = "यह पैलेट लॉक है; इसे संपादित करने के लिए पैलेट प्रबंधक में अनलॉक करें।" # mt
-status.cdr_guides_not_saved = "गाइडलाइन .cdr फ़ाइलों में सहेजी नहीं जातीं; उन्हें रखने के लिए .tdraw के रूप में सहेजें।" # mt
 transparency.vector_pattern = "वेक्टर पैटर्न" # mt
 transparency.bitmap_pattern = "बिटमैप पैटर्न" # mt
 transparency.two_color_pattern = "दो-रंग पैटर्न" # mt

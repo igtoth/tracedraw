@@ -7151,7 +7151,6 @@ docker.palette_lock = "Kilitle" # mt
 docker.palette_unlock = "Kilidi aç" # mt
 docker.palette_lock_desc = "Kilitli bir palet, kilidi açılana kadar Palet Düzenleyicisi'nde değiştirilemez." # mt
 dialog.locked_palette_hint = "Bu palet kilitli; düzenlemek için Palet Yöneticisi'nde kilidini açın." # mt
-status.cdr_guides_not_saved = "Kılavuz çizgileri .cdr dosyalarına kaydedilmez; korumak için .tdraw olarak kaydedin." # mt
 transparency.vector_pattern = "Vektör desen" # mt
 transparency.bitmap_pattern = "Bitmap desen" # mt
 transparency.two_color_pattern = "İki renkli desen" # mt

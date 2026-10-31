@@ -258,9 +258,9 @@ const NEWER_RECORD_TAG: u32 = 2400;
 /// The width of the space character in ems, for character spacing.
 const SPACE_EM: f64 = 0.25;
 /// A guideline (seen in version 12 files on the guides layer).
-const OBJ_GUIDE: u32 = 0x16;
+pub(crate) const OBJ_GUIDE: u32 = 0x16;
 /// Argument of a guideline: its line (see [`Ctx::read_guide`]).
-const ARG_GUIDE_LINE: u32 = 16000;
+pub(crate) const ARG_GUIDE_LINE: u32 = 16000;
 /// The step count of a blend's linked group (its `lgob` `loda`, object
 /// type 7): the first u32 of this argument.
 pub(crate) const ARG_BLEND_STEPS: u32 = 3000;

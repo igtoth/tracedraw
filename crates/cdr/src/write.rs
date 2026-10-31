@@ -27,9 +27,9 @@
 //! understood well enough to write).
 
 use crate::parse::{
-    ARG_CLIP_CONTENTS, ARG_COORDS, ARG_FILL, ARG_NAME, ARG_OPACITY, ARG_OUTLINE, ARG_STYLE,
-    ARG_STYLE_STRING, OBJ_ARTISTIC_TEXT, OBJ_BITMAP, OBJ_CURVE, OBJ_ELLIPSE, OBJ_PARAGRAPH_TEXT,
-    OBJ_RECT,
+    ARG_CLIP_CONTENTS, ARG_COORDS, ARG_FILL, ARG_GUIDE_LINE, ARG_NAME, ARG_OPACITY, ARG_OUTLINE,
+    ARG_STYLE, ARG_STYLE_STRING, OBJ_ARTISTIC_TEXT, OBJ_BITMAP, OBJ_CURVE, OBJ_ELLIPSE, OBJ_GUIDE,
+    OBJ_PARAGRAPH_TEXT, OBJ_RECT,
 };
 use std::collections::HashMap;
 use std::io::Write as _;
@@ -288,6 +288,8 @@ const ARG_TEXT_LINK: u32 = 16015;
 const ARG_HIDDEN: u32 = 16016;
 /// On guides layers of version 17 and later: 2.
 const ARG_GUIDES_MODE: u32 = 16001;
+/// On guidelines of versions 25 to 27: 2.
+const ARG_GUIDE_KIND: u32 = 40160;
 /// On the group of `LIST clpt` holding a clip container's contents: the
 /// group's number (its `spnd`) plus one, in every clip group of the files
 /// of versions 11, 14, 25, 26 and 27 (2 for the group numbered 1).
@@ -3394,6 +3396,35 @@ fn frame_json(f: Size, para: &tracedraw_core::ParagraphStyle) -> String {
     )
 }
 
+/// The guidelines every page of `doc` has, when its pages are all of one
+/// size (a master guideline lies as far from each page's centre): they go
+/// on the master page's guides layer once, as the files of versions 11,
+/// 15 and 25 to 27 keep their guidelines (#1161).
+fn master_guides(doc: &Document) -> Vec<tracedraw_core::document::GuideLine> {
+    let Some(first) = doc.pages.first() else {
+        return Vec::new();
+    };
+    let same_size = doc.pages.iter().all(|p| {
+        (p.size.width - first.size.width).abs() < 1e-6
+            && (p.size.height - first.size.height).abs() < 1e-6
+    });
+    if !same_size {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    for g in &first.guides {
+        if !out.contains(&g.line)
+            && doc
+                .pages
+                .iter()
+                .all(|p| p.guides.iter().any(|h| h.line == g.line))
+        {
+            out.push(g.line);
+        }
+    }
+    out
+}
+
 // ---- the writer ----------------------------------------------------------
 
 struct Writer<'a> {
@@ -3465,6 +3496,9 @@ struct Writer<'a> {
     /// The document's page size (`mcfg`): the first page's. A page of
     /// another size carries its own from version 16.
     doc_size: tracedraw_core::geometry::Size,
+    /// The guidelines every page has, written once on the master page's
+    /// guides layer (#1161); the others go on their page.
+    master_guides: Vec<tracedraw_core::document::GuideLine>,
 }
 
 /// One of the drawing's layers as files before version 14 list them: by
@@ -3595,6 +3629,7 @@ impl<'a> Writer<'a> {
             run_faces: Vec::new(),
             layer_slots: Vec::new(),
             doc_size: tracedraw_core::geometry::Size::new(210.0, 297.0),
+            master_guides: Vec::new(),
         }
     }
 
@@ -3709,6 +3744,16 @@ impl<'a> Writer<'a> {
             .map(|p| p.size)
             .unwrap_or(tracedraw_core::geometry::Size::new(210.0, 297.0));
         self.doc_size = first;
+        self.master_guides = master_guides(doc);
+        // The master page's guidelines, written now as they fill the
+        // tables too.
+        let centre = Point::new(first.width / 2.0, first.height / 2.0);
+        let master_guides: Vec<Node> = self
+            .master_guides
+            .clone()
+            .iter()
+            .map(|g| self.guide(g, centre))
+            .collect();
         // Pages first: they fill the tables.
         self.layer_slots = layer_slots(doc);
         let mut pages = Vec::new();
@@ -3836,7 +3881,7 @@ impl<'a> Writer<'a> {
             Some(Fill::Solid(c)) => Some(*c),
             _ => None,
         };
-        out.push(self.master_page(background));
+        out.push(self.master_page(background, master_guides));
         out.extend(pages);
         out
     }
@@ -3896,9 +3941,120 @@ impl<'a> Writer<'a> {
     /// A layer of the master page (`page` false), or a page's entry for it:
     /// the same flags and GUID, and from version 14 no name.
     fn master_layer(&mut self, which: MasterLayer, page: bool) -> Node {
+        self.master_layer_with(which, page, Vec::new())
+    }
+
+    /// [`Self::master_layer`] holding `objects`.
+    fn master_layer_with(&mut self, which: MasterLayer, page: bool, objects: Vec<Node>) -> Node {
         let guid = self.master_guids[which as usize];
         let name = (!page || !self.v.zip()).then(|| which.name());
-        self.layer_entry(which.flags(), which.kind(), name, guid, Vec::new())
+        self.layer_entry(which.flags(), which.kind(), name, guid, objects)
+    }
+
+    /// A guideline as files of versions 11, 15 and 25 to 27 hold one: an
+    /// object of type 0x16 whose argument 16000 holds 12 bytes (zeros
+    /// from 25, leftovers before), the angle (millionths of a degree: 0
+    /// horizontal, 90 000 000 vertical) and three points from the page's
+    /// centre: the line's two ends 22 860 mm out (900 inches) and the
+    /// second again; coordinates 12 zero bytes, no fill, a blue outline,
+    /// and from 25 argument 40160 = 2; in 11 (and assumed 7 to 12)
+    /// argument 16016 = 1; in 9 to 15 argument 19170 with 999 (11) or
+    /// 5000 (15) where objects have 1. An angled guideline (not seen)
+    /// is written alike through its point at its angle (#1161).
+    fn guide(&mut self, line: &tracedraw_core::document::GuideLine, centre: Point) -> Node {
+        use tracedraw_core::document::GuideLine;
+        let v = self.v;
+        const REACH: f64 = 22860.0;
+        let (point, angle) = match *line {
+            GuideLine::Horizontal { y } => (Point::new(centre.x, y), 0.0),
+            GuideLine::Vertical { x } => (Point::new(x, centre.y), 90.0),
+            GuideLine::Angled { x, y, angle } => (Point::new(x, y), angle.rem_euclid(180.0)),
+        };
+        let angle = if angle.is_finite() { angle } else { 0.0 };
+        let p = point - centre.to_vec2();
+        // Horizontal and vertical lines run through the centre's x or y,
+        // as the files hold them; others through their own point.
+        let dir = match *line {
+            GuideLine::Horizontal { .. } => tracedraw_core::Vec2::new(1.0, 0.0),
+            GuideLine::Vertical { .. } => tracedraw_core::Vec2::new(0.0, 1.0),
+            GuideLine::Angled { .. } => {
+                let r = angle.to_radians();
+                tracedraw_core::Vec2::new(r.cos(), r.sin())
+            }
+        };
+        let (a, b) = (p - dir * REACH, p + dir * REACH);
+        let mut rec = Buf::default();
+        rec.zeros(12)
+            .i32((angle * 1_000_000.0).round() as i32)
+            .i32(units(a.x))
+            .i32(units(a.y))
+            .i32(units(b.x))
+            .i32(units(b.y))
+            .i32(units(b.x))
+            .i32(units(b.y));
+        let colour = Color::rgb8(0, 0, 255);
+        let stroke = Stroke::new(colour, 1.0 / UNITS_PER_MM);
+        let fill_id = self.fill_id(&Fill::None);
+        let outline_id = self.outline_id(Some(&stroke));
+        let id = self.next_object;
+        self.next_object += 1;
+        let mut args: Vec<(u32, Vec<u8>)> = vec![
+            (ARG_COORDS, vec![0; 12]),
+            (ARG_FILL, fill_id.to_le_bytes().to_vec()),
+            (ARG_OUTLINE, outline_id.to_le_bytes().to_vec()),
+            (ARG_ID, id.to_le_bytes().to_vec()),
+        ];
+        if v.style_strings() {
+            let json = format!(
+                r#"{{"fill":{{}},"outline":{{"color":"{}","type":"0","width":"1"}}}}"#,
+                colour_spec(colour)
+            );
+            let mut a = Buf::default();
+            a.u32(1).bytes(&style_string(v, &json));
+            args.push((ARG_STYLE_STRING, a.done()));
+        } else {
+            args.push((ARG_STYLE, GRAPHIC_STYLE_ID.to_le_bytes().to_vec()));
+        }
+        args.push((ARG_PROPS, vec![0; 4]));
+        if v.rotation_arg() {
+            args.push((ARG_ROTATION, vec![0; 4]));
+        }
+        args.push((ARG_GUIDE_LINE, rec.done()));
+        if v.0 <= 12 {
+            args.push((ARG_HIDDEN, 1u32.to_le_bytes().to_vec()));
+        }
+        if v.draw_flags() {
+            let mark: u32 = if v.0 >= 13 { 5000 } else { 999 };
+            args.push((
+                ARG_DRAW_FLAGS,
+                [1u32, mark, 0]
+                    .iter()
+                    .flat_map(|x| x.to_le_bytes())
+                    .collect(),
+            ));
+        }
+        if v.0 >= 25 {
+            args.push((ARG_GUIDE_KIND, 2u32.to_le_bytes().to_vec()));
+        }
+        // Its box: the line, 2 units across.
+        let t = 2.0 / UNITS_PER_MM;
+        let (pa, pb) = (a + centre.to_vec2(), b + centre.to_vec2());
+        let page_box = Rect::new(
+            pa.x.min(pb.x) - if dir.x.abs() < 1e-9 { t } else { 0.0 },
+            pa.y.min(pb.y) - if dir.y.abs() < 1e-9 { t } else { 0.0 },
+            pa.x.max(pb.x) + if dir.x.abs() < 1e-9 { t } else { 0.0 },
+            pa.y.max(pb.y) + if dir.y.abs() < 1e-9 { t } else { 0.0 },
+        );
+        let mut body = self.head([0, 2, 0, 8], page_box, 0.0, centre);
+        body.push(list(
+            b"lgob",
+            vec![
+                chunk(b"loda", loda(OBJ_GUIDE, args)),
+                chunk(b"ftil", ftil()),
+                list(b"trfl", vec![chunk(b"trfd", trfd(v, Affine::IDENTITY))]),
+            ],
+        ));
+        list(b"obj ", body)
     }
 
     /// The master page: guides, desktop and grid layers, no objects; from
@@ -3913,7 +4069,7 @@ impl<'a> Writer<'a> {
     /// each layer and a page's entry of the same rank carrying its
     /// objects. From 14 pages list their own layers by GUID and the master
     /// keeps only its three.
-    fn master_page(&mut self, background: Option<Color>) -> Node {
+    fn master_page(&mut self, background: Option<Color>, guides: Vec<Node>) -> Node {
         let v = self.v;
         let mut children = vec![chunk(
             b"flgs",
@@ -3928,7 +4084,7 @@ impl<'a> Writer<'a> {
             children.push(chunk(b"bbox", vec![0; 16]));
         }
         let mut layers = vec![
-            self.master_layer(MasterLayer::Guides, false),
+            self.master_layer_with(MasterLayer::Guides, false, guides),
             self.master_layer(MasterLayer::Desktop, false),
         ];
         if !v.zip() {
@@ -3972,12 +4128,28 @@ impl<'a> Writer<'a> {
         let own_size = own_size && v.redirects();
         let size = if own_size { page.size } else { self.doc_size };
         let centre = Point::new(size.width / 2.0, size.height / 2.0);
+        // The page's own guidelines (those not on the master page): from
+        // version 14 on its own guides layer (assumed: the files seen keep
+        // theirs on the master page), before on its entry for the
+        // master's guides layer, as version 12 files hold them.
+        let own: Vec<tracedraw_core::document::GuideLine> = page
+            .guides
+            .iter()
+            .map(|g| g.line)
+            .filter(|l| !self.master_guides.contains(l))
+            .collect();
+        let own: Vec<Node> = own.iter().map(|l| self.guide(l, centre)).collect();
+        let (entry, own) = if v.zip() {
+            (Vec::new(), own)
+        } else {
+            (own, Vec::new())
+        };
         let mut layers = vec![
-            self.master_layer(MasterLayer::Guides, true),
+            self.master_layer_with(MasterLayer::Guides, true, entry),
             self.master_layer(MasterLayer::Desktop, true),
         ];
         if v.zip() {
-            layers.push(self.layer([0x0a, 0, 0, 0x98], LAYER_GUIDES, "Guides", Vec::new()));
+            layers.push(self.layer([0x0a, 0, 0, 0x98], LAYER_GUIDES, "Guides", own));
         }
         let mut content: Option<Rect> = None;
         if v.zip() {

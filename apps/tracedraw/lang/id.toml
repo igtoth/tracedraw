@@ -7151,7 +7151,6 @@ docker.palette_lock = "Kunci" # mt
 docker.palette_unlock = "Buka kunci" # mt
 docker.palette_lock_desc = "Palet yang dikunci tidak dapat diubah di Editor Palet sampai kuncinya dibuka." # mt
 dialog.locked_palette_hint = "Palet ini dikunci; buka kuncinya di Pengelola Palet untuk mengeditnya." # mt
-status.cdr_guides_not_saved = "Garis panduan tidak disimpan dalam berkas .cdr; simpan sebagai .tdraw untuk mempertahankannya." # mt
 transparency.vector_pattern = "Pola vektor" # mt
 transparency.bitmap_pattern = "Pola bitmap" # mt
 transparency.two_color_pattern = "Pola dua warna" # mt
