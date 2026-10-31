@@ -45,11 +45,19 @@ pub struct ExportState {
     pub remember: bool,
     pub format: usize,
     pub dpi: f64,
+    /// More than the current page: every page, or with `page_list` the
+    /// pages listed in `pages` (#1382).
     pub all_pages: bool,
+    /// With `all_pages`: only the pages of `pages`, a list such as
+    /// "1-3, 5" (#1382).
+    pub page_list: bool,
+    pub pages: String,
     pub selection_only: bool,
     pub transparent: bool,
     pub quality: u8,
     pub web: bool,
+    /// PDF: every text as curves, so the file needs no fonts (#1382).
+    pub text_as_curves: bool,
     /// PDF only: 0 plain, 1 X-1a, 2 X-3, 3 X-4.
     pub pdf_standard: usize,
     pub bleed_mm: f64,
@@ -81,10 +89,13 @@ impl Default for ExportState {
             format: 0,
             dpi: 300.0,
             all_pages: false,
+            page_list: false,
+            pages: String::new(),
             selection_only: false,
             transparent: true,
             quality: 90,
             web: false,
+            text_as_curves: false,
             pdf_standard: 0,
             bleed_mm: 0.0,
             output_condition: "FOGRA39".into(),
@@ -164,6 +175,31 @@ impl ExportState {
     /// times the scale.
     pub fn render_dpi(&self) -> f64 {
         (self.dpi * self.scale_or_one()).clamp(MIN_EXPORT_DPI, 2400.0)
+    }
+
+    /// The indexes of the pages to export among `count` pages, the
+    /// current one being `current`: that page alone, every page, or the
+    /// pages listed, in the order listed (every page when the list names
+    /// none of them, as Print does). The selection is exported from the
+    /// current page (#1382).
+    pub fn page_indexes(&self, count: usize, current: usize) -> Vec<usize> {
+        let current = vec![current.min(count.saturating_sub(1))];
+        if self.selection_only || !self.all_pages {
+            return current;
+        }
+        if self.page_list {
+            let picked = parse_page_list(&self.pages, count);
+            if !picked.is_empty() {
+                return picked;
+            }
+        }
+        (0..count).collect()
+    }
+
+    /// The export format `ext` writes one file holding every page; the
+    /// others write one file per page (#1382).
+    pub fn one_file_for_all_pages(ext: &str) -> bool {
+        matches!(ext, "pdf" | "ai" | "ps" | "prn" | "html")
     }
 
     /// The formats one file holds every page in (PDF, PostScript, PRN):
@@ -3471,6 +3507,9 @@ fn export_preview_key(app: &App, st: &ExportState) -> u64 {
     st.transparent.hash(&mut h);
     st.selection_only.hash(&mut h);
     st.all_pages.hash(&mut h);
+    st.page_list.hash(&mut h);
+    st.pages.hash(&mut h);
+    st.text_as_curves.hash(&mut h);
     st.quality.hash(&mut h);
     st.dpi.to_bits().hash(&mut h);
     st.scale_or_one().to_bits().hash(&mut h);
@@ -3957,6 +3996,11 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
                     );
                 }
                 if !scripted && st.format == 1 {
+                    ui.checkbox(&mut st.text_as_curves, tr("publish.text_as_curves"))
+                        .rich_tip(crate::ui::tips::pair(
+                            "publish.text_as_curves",
+                            "dialog.export_text_as_curves_desc",
+                        ));
                     ui.horizontal(|ui| {
                         ui.label(tr("dialog.pdf_standard"));
                         egui::ComboBox::from_id_salt("pdf_standard")
@@ -3997,12 +4041,8 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
                         "dialog.selected_only",
                         "dialog.export_selected_desc",
                     ));
-                if !st.selection_only && st.format != 1 && st.format != 11 {
-                    ui.checkbox(&mut st.all_pages, tr("dialog.all_pages"))
-                        .rich_tip(crate::ui::tips::pair(
-                            "dialog.all_pages",
-                            "dialog.export_all_pages_desc",
-                        ));
+                if !st.selection_only {
+                    export_range_fields(app, ui, st);
                 }
                 if !st.web {
                     ui.checkbox(
@@ -4073,6 +4113,59 @@ fn export_dialog(app: &mut App, ctx: &Context, st: &mut ExportState, close: &mut
             app.keep_export_choices(st);
         }
     });
+}
+
+/// Export: the pages to export (the current page, every page or a list
+/// of them) and what that writes: one numbered file per page, or one file
+/// holding them all for the formats that keep pages (#1382).
+fn export_range_fields(app: &App, ui: &mut Ui, st: &mut ExportState) {
+    use crate::ui::tips::pair;
+    let count = app.doc().pages.len();
+    let mut range = match (st.all_pages, st.page_list) {
+        (false, _) => 0,
+        (true, false) => 1,
+        (true, true) => 2,
+    };
+    ui.horizontal_wrapped(|ui| {
+        ui.label(tr("dialog.export_range"));
+        ui.radio_value(&mut range, 0, tr("print.range_page"))
+            .rich_tip(pair("print.range_page", "dialog.export_current_page_desc"));
+        ui.radio_value(&mut range, 1, tr("dialog.all_pages"))
+            .rich_tip(pair("dialog.all_pages", "dialog.export_every_page_desc"));
+    });
+    ui.horizontal(|ui| {
+        ui.radio_value(&mut range, 2, tr("print.range_pages"))
+            .rich_tip(pair("print.range_pages", "dialog.export_page_list_desc"));
+        let field = ui.add_enabled(
+            range == 2,
+            egui::TextEdit::singleline(&mut st.pages)
+                .hint_text(format!("1-{count}"))
+                .desired_width(110.0),
+        );
+        field
+            .rich_tip(pair("print.range_pages", "dialog.export_page_list_desc"))
+            .rich_disabled_tip(pair("print.range_pages", "dialog.export_page_list_desc"));
+    });
+    st.all_pages = range != 0;
+    st.page_list = range == 2;
+    let current = app
+        .doc()
+        .pages
+        .iter()
+        .position(|p| p.id == app.page)
+        .unwrap_or(0);
+    let n = st.page_indexes(count, current).len();
+    if n > 1 && st.script.is_none() {
+        let ext = EXPORT_FORMATS[st.format.min(EXPORT_FORMATS.len() - 1)].1;
+        let key = if ExportState::one_file_for_all_pages(ext) {
+            "dialog.export_pages_in_one_file"
+        } else {
+            "dialog.export_file_per_page"
+        };
+        ui.label(
+            egui::RichText::new(trf(key, &[("count", &n.to_string())])).color(Tokens::text_dim()),
+        );
+    }
 }
 
 /// The pages Delete Page deletes, as indices (0 = the first): `from`

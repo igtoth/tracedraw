@@ -31,23 +31,92 @@ pub(crate) fn export_document(app: &App, st: &ExportState) -> (Document, Rect) {
             }
         }
         (tmp, bounds)
-    } else if st.all_pages {
-        (doc.clone(), app.page_rect())
     } else {
+        // The pages chosen, in the order chosen (#1382).
         let mut tmp = doc.clone();
-        tmp.pages.retain(|p| p.id == app.page);
+        let mut all: Vec<_> = std::mem::take(&mut tmp.pages)
+            .into_iter()
+            .map(Some)
+            .collect();
+        tmp.pages = export_page_indexes(app, st)
+            .into_iter()
+            .filter_map(|i| all.get_mut(i).and_then(Option::take))
+            .collect();
         (tmp, app.page_rect())
     }
+}
+
+/// The indexes of the pages `st` exports from the drawing (#1382).
+pub(crate) fn export_page_indexes(app: &App, st: &ExportState) -> Vec<usize> {
+    let doc = app.engine.document();
+    let current = doc.pages.iter().position(|p| p.id == app.page).unwrap_or(0);
+    st.page_indexes(doc.pages.len(), current)
+}
+
+/// Where page `number` of a export to `path` that writes one file per
+/// page goes: "name-3.png" for page 3 (#1382).
+pub fn numbered_path(path: &Path, number: usize, ext: &str) -> std::path::PathBuf {
+    let stem = path
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let ext = path
+        .extension()
+        .map_or(ext.to_string(), |e| e.to_string_lossy().to_string());
+    path.with_file_name(format!("{stem}-{number}.{ext}"))
 }
 
 pub fn export(app: &mut App, path: &Path, st: &ExportState) -> Result<String, String> {
     let (_, ext) = EXPORT_FORMATS[st.format];
     let (doc, _) = export_document(app, st);
-    match ext {
-        "svg" => {
-            let svg = tracedraw_io::svg::page_to_svg(&doc, 0);
-            crate::files::write(path, svg).map_err(|e| e.to_string())?;
-        }
+    if ExportState::one_file_for_all_pages(ext) {
+        let bytes = document_file(app, &doc, ext, st)?;
+        crate::files::write(path, bytes).map_err(|e| e.to_string())?;
+        return Ok(trf(
+            "status.exported",
+            &[("path", &path.display().to_string())],
+        ));
+    }
+    // The other formats hold one page: one file per page, numbered by
+    // the page it shows when there are several (#1382).
+    let numbers: Vec<usize> = export_page_indexes(app, st)
+        .into_iter()
+        .map(|i| i + 1)
+        .collect();
+    let many = doc.pages.len() > 1;
+    let mut written = Vec::with_capacity(doc.pages.len());
+    for k in 0..doc.pages.len() {
+        let bytes = page_file(&doc, k, ext, st)?;
+        let target = if many {
+            numbered_path(path, numbers.get(k).copied().unwrap_or(k + 1), ext)
+        } else {
+            path.to_path_buf()
+        };
+        crate::files::write(&target, bytes).map_err(|e| e.to_string())?;
+        written.push(target);
+    }
+    Ok(match (written.first(), written.last()) {
+        (Some(first), Some(last)) if many => trf(
+            "status.exported_pages",
+            &[
+                ("count", &written.len().to_string()),
+                ("first", &first.display().to_string()),
+                ("last", &last.display().to_string()),
+            ],
+        ),
+        _ => trf("status.exported", &[("path", &path.display().to_string())]),
+    })
+}
+
+/// The file of a format that holds every page (PDF, AI, PostScript, PRN,
+/// HTML) for the pages of `doc`.
+fn document_file(
+    app: &App,
+    doc: &Document,
+    ext: &str,
+    st: &ExportState,
+) -> Result<Vec<u8>, String> {
+    Ok(match ext {
         "pdf" | "ai" => {
             use tracedraw_io::pdf::{PdfOptions, PdfStandard};
             let standard = match (ext, st.pdf_standard) {
@@ -68,96 +137,65 @@ pub fn export(app: &mut App, path: &Path, st: &ExportState) -> Result<String, St
                 }),
                 keywords: (!st.tags.trim().is_empty()).then(|| st.tags.trim().to_string()),
                 flatten_dpi: st.dpi.max(72.0),
+                text: tracedraw_io::pdf::PdfText {
+                    as_curves: ext == "pdf" && st.text_as_curves,
+                    ..Default::default()
+                },
                 ..Default::default()
             };
-            let pdf = tracedraw_io::pdf::document_to_pdf_with(&doc, &opts);
-            crate::files::write(path, pdf).map_err(|e| e.to_string())?;
+            tracedraw_io::pdf::document_to_pdf_with(doc, &opts)
         }
-        "eps" => {
-            let eps = tracedraw_io::eps::page_to_eps(&doc, 0);
-            crate::files::write(path, eps).map_err(|e| e.to_string())?;
-        }
-        "ps" | "prn" => {
-            // Every exported page; a print file is the same PostScript.
-            let ps = tracedraw_io::eps::document_to_ps(&doc);
-            crate::files::write(path, ps).map_err(|e| e.to_string())?;
-        }
-        "dxf" => {
-            let dxf = tracedraw_io::dxf::page_to_dxf(&doc, 0);
-            crate::files::write(path, dxf).map_err(|e| e.to_string())?;
-        }
-        "emf" => {
-            let emf = tracedraw_io::emf::page_to_emf(&doc, 0);
-            crate::files::write(path, emf).map_err(|e| e.to_string())?;
-        }
-        "wmf" => {
-            let wmf = tracedraw_io::emf::page_to_wmf(&doc, 0);
-            crate::files::write(path, wmf).map_err(|e| e.to_string())?;
-        }
-        "plt" => {
-            let plt = tracedraw_io::plt::page_to_plt(&doc, 0);
-            crate::files::write(path, plt).map_err(|e| e.to_string())?;
-        }
-        "psd" => {
-            let psd =
-                tracedraw_io::psd::page_to_psd(&doc, 0, st.render_dpi()).ok_or("render failed")?;
-            crate::files::write(path, psd).map_err(|e| e.to_string())?;
-        }
-        "html" => {
-            let html = tracedraw_io::html::document_to_html(&doc);
-            crate::files::write(path, html).map_err(|e| e.to_string())?;
-        }
+        // Every exported page; a print file is the same PostScript.
+        "ps" | "prn" => tracedraw_io::eps::document_to_ps(doc).into_bytes(),
+        "html" => tracedraw_io::html::document_to_html(doc).into_bytes(),
+        other => return Err(format!("{other}: not a format of several pages")),
+    })
+}
+
+/// The file of page `k` of `doc` in a format that holds one page.
+fn page_file(doc: &Document, k: usize, ext: &str, st: &ExportState) -> Result<Vec<u8>, String> {
+    Ok(match ext {
+        "svg" => tracedraw_io::svg::page_to_svg(doc, k).into_bytes(),
+        "eps" => tracedraw_io::eps::page_to_eps(doc, k).into_bytes(),
+        "dxf" => tracedraw_io::dxf::page_to_dxf(doc, k).into_bytes(),
+        "emf" => tracedraw_io::emf::page_to_emf(doc, k),
+        "wmf" => tracedraw_io::emf::page_to_wmf(doc, k),
+        "plt" => tracedraw_io::plt::page_to_plt(doc, k).into_bytes(),
+        "psd" => tracedraw_io::psd::page_to_psd(doc, k, st.render_dpi()).ok_or("render failed")?,
         _ => {
-            // Raster: every page when all_pages, numbered files.
-            let pages: Vec<_> = doc.pages.iter().map(|p| p.id).collect();
-            for (i, pid) in pages.iter().enumerate() {
-                let mut pm = tracedraw_render::render_page_image(&doc, *pid, st.render_dpi())
-                    .ok_or("render failed")?;
-                if st.transparent && matches!(ext, "png" | "webp" | "gif") {
-                    // Re-render on a transparent background.
-                    let p = doc.page(*pid).map_err(|e| e.to_string())?;
-                    let zoom = st.render_dpi() / 25.4;
-                    let w = (p.size.width * zoom).ceil() as u32;
-                    let h = (p.size.height * zoom).ceil() as u32;
-                    pm = tracedraw_render::render_page(
-                        &doc,
-                        *pid,
-                        &tracedraw_render::RenderOptions {
-                            width: w,
-                            height: h,
-                            view: tracedraw_render::ViewTransform {
-                                zoom,
-                                origin_x: 0.0,
-                                origin_y: h as f64,
-                            },
-                            preview: None,
-                            wireframe: false,
-                            ..tracedraw_render::RenderOptions::default()
+            let pid = doc.pages.get(k).ok_or("no page")?.id;
+            let mut pm = tracedraw_render::render_page_image(doc, pid, st.render_dpi())
+                .ok_or("render failed")?;
+            if st.transparent && matches!(ext, "png" | "webp" | "gif") {
+                // Re-render on a transparent background.
+                let p = doc.page(pid).map_err(|e| e.to_string())?;
+                let zoom = st.render_dpi() / 25.4;
+                let w = (p.size.width * zoom).ceil() as u32;
+                let h = (p.size.height * zoom).ceil() as u32;
+                pm = tracedraw_render::render_page(
+                    doc,
+                    pid,
+                    &tracedraw_render::RenderOptions {
+                        width: w,
+                        height: h,
+                        view: tracedraw_render::ViewTransform {
+                            zoom,
+                            origin_x: 0.0,
+                            origin_y: h as f64,
                         },
-                    )
-                    .ok_or("render failed")?;
-                }
-                let target = if pages.len() > 1 {
-                    let stem = path
-                        .file_stem()
-                        .map(|s| s.to_string_lossy().to_string())
-                        .unwrap_or_default();
-                    path.with_file_name(format!("{stem}-{}.{ext}", i + 1))
-                } else {
-                    path.to_path_buf()
-                };
-                let bytes = encode_raster_with(&pm, ext, st.quality, st.webp_lossless)?;
-                // The file says its resolution, so it opens at the size
-                // chosen in the dialog (#617).
-                let bytes = record_dpi(bytes, ext, st.dpi);
-                crate::files::write(&target, bytes).map_err(|e| e.to_string())?;
+                        preview: None,
+                        wireframe: false,
+                        ..tracedraw_render::RenderOptions::default()
+                    },
+                )
+                .ok_or("render failed")?;
             }
+            let bytes = encode_raster_with(&pm, ext, st.quality, st.webp_lossless)?;
+            // The file says its resolution, so it opens at the size
+            // chosen in the dialog (#617).
+            record_dpi(bytes, ext, st.dpi)
         }
-    }
-    Ok(trf(
-        "status.exported",
-        &[("path", &path.display().to_string())],
-    ))
+    })
 }
 
 /// The output intent's profile for a PDF/X file: the CMYK profile picked
@@ -302,9 +340,11 @@ pub fn preview(app: &App, st: &ExportState, max_px: u32) -> Option<tiny_skia::Pi
 pub fn estimated_size(app: &App, st: &ExportState, preview: &tiny_skia::Pixmap) -> Option<usize> {
     let (_, ext) = EXPORT_FORMATS[st.format.min(EXPORT_FORMATS.len() - 1)];
     let (doc, bounds) = export_document(app, st);
+    // One file per page: the first page's size times the pages (#1382).
+    let pages = doc.pages.len().max(1);
     match ext {
-        "svg" => Some(tracedraw_io::svg::page_to_svg(&doc, 0).len()),
-        "eps" => Some(tracedraw_io::eps::page_to_eps(&doc, 0).len()),
+        "svg" => Some(tracedraw_io::svg::page_to_svg(&doc, 0).len() * pages),
+        "eps" => Some(tracedraw_io::eps::page_to_eps(&doc, 0).len() * pages),
         "ps" | "prn" => Some(tracedraw_io::eps::document_to_ps(&doc).len()),
         "pdf" | "ai" => Some(tracedraw_io::pdf::document_to_pdf(&doc).len()),
         "png" | "jpg" | "bmp" | "tif" | "webp" | "gif" | "psd" => {
@@ -315,12 +355,7 @@ pub fn estimated_size(app: &App, st: &ExportState, preview: &tiny_skia::Pixmap) 
             let dpi = st.render_dpi();
             let full = (bounds.width() / 25.4 * dpi) * (bounds.height() / 25.4 * dpi);
             let shown = (preview.width() as f64 * preview.height() as f64).max(1.0);
-            let pages = if st.all_pages && !st.selection_only {
-                doc.pages.len().max(1) as f64
-            } else {
-                1.0
-            };
-            Some((bytes * full / shown * pages) as usize)
+            Some((bytes * full / shown * pages as f64) as usize)
         }
         _ => None,
     }
@@ -2084,6 +2119,182 @@ mod tests {
             "{}",
             &text[..text.len().min(400)]
         );
+    }
+
+    /// File > Export of the current page, every page or a list of pages:
+    /// one numbered file per page for the formats of one page, one file
+    /// with every page chosen for PDF, its text as curves when asked
+    /// (#1382).
+    #[test]
+    fn export_writes_the_pages_chosen() {
+        let mut app = App::headless();
+        // Three pages, each with a rectangle of its own width.
+        for k in 0..3 {
+            if k > 0 {
+                app.add_page();
+            }
+            app.new_shape(ShapeKind::Rect {
+                rect: Rect::new(10.0, 10.0, 20.0 + 10.0 * k as f64, 30.0),
+                radius: 0.0,
+                corners: None,
+            });
+        }
+        let ids: Vec<_> = app.doc().pages.iter().map(|p| p.id).collect();
+        app.page = ids[1];
+        let dir = std::env::temp_dir().join(format!("tracedraw-1382-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let files = |dir: &Path| {
+            let mut names: Vec<String> = std::fs::read_dir(dir)
+                .unwrap()
+                .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
+                .collect();
+            names.sort();
+            names
+        };
+        let png = |range: (bool, bool, &str)| ExportState {
+            format: 2,
+            dpi: 25.4,
+            all_pages: range.0,
+            page_list: range.1,
+            pages: range.2.into(),
+            transparent: false,
+            ..ExportState::default()
+        };
+        // The current page: one file under the name given.
+        let one = dir.join("one");
+        std::fs::create_dir_all(&one).unwrap();
+        export(&mut app, &one.join("a.png"), &png((false, false, ""))).expect("current");
+        assert_eq!(files(&one), ["a.png"]);
+        let img = image::open(one.join("a.png")).unwrap();
+        assert_eq!(img.width(), 210, "page 2, 25.4 dpi: one pixel per mm");
+        // Every page: numbered files.
+        let all = dir.join("all");
+        std::fs::create_dir_all(&all).unwrap();
+        let msg = export(&mut app, &all.join("a.png"), &png((true, false, ""))).expect("all");
+        assert_eq!(files(&all), ["a-1.png", "a-2.png", "a-3.png"]);
+        assert!(msg.contains('3'), "{msg}");
+        // A list: the pages listed, numbered by their page.
+        let list = dir.join("list");
+        std::fs::create_dir_all(&list).unwrap();
+        export(&mut app, &list.join("a.png"), &png((true, true, "3, 1"))).expect("list");
+        assert_eq!(files(&list), ["a-1.png", "a-3.png"]);
+        // Page 3's rectangle is 40 mm wide, page 1's 20 mm: each file
+        // shows its own page.
+        let dark = |p: &Path| {
+            let img = image::open(p).unwrap().to_rgb8();
+            let y = img.height() - 20;
+            let inked: Vec<u32> = (0..img.width())
+                .filter(|x| img.get_pixel(*x, y).0 != [255, 255, 255])
+                .collect();
+            inked.last().unwrap_or(&0) - inked.first().unwrap_or(&0)
+        };
+        assert!(dark(&list.join("a-3.png")) > dark(&list.join("a-1.png")) + 10);
+        // SVG too writes one file per page.
+        let svg = dir.join("svg");
+        std::fs::create_dir_all(&svg).unwrap();
+        let st = ExportState {
+            format: 0,
+            ..png((true, true, "2-3"))
+        };
+        export(&mut app, &svg.join("b.svg"), &st).expect("svg");
+        assert_eq!(files(&svg), ["b-2.svg", "b-3.svg"]);
+        // PDF: one file holding the pages chosen.
+        let pdf = dir.join("pdf");
+        std::fs::create_dir_all(&pdf).unwrap();
+        let st = ExportState {
+            format: 1,
+            ..png((true, true, "1, 3"))
+        };
+        export(&mut app, &pdf.join("c.pdf"), &st).expect("pdf");
+        assert_eq!(files(&pdf), ["c.pdf"]);
+        let text = String::from_utf8_lossy(&std::fs::read(pdf.join("c.pdf")).unwrap()).to_string();
+        assert!(text.contains("/Count 2"), "two pages");
+        let st = ExportState {
+            format: 1,
+            ..png((true, false, ""))
+        };
+        export(&mut app, &pdf.join("c.pdf"), &st).expect("pdf");
+        let text = String::from_utf8_lossy(&std::fs::read(pdf.join("c.pdf")).unwrap()).to_string();
+        assert!(text.contains("/Count 3"), "every page");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The pages an export takes: the current one, every page, or the
+    /// list in its order (every page when it names none); the selection
+    /// comes from the current page (#1382).
+    #[test]
+    fn export_page_choices_pick_pages() {
+        let mut st = ExportState::default();
+        assert_eq!(st.page_indexes(4, 2), vec![2]);
+        st.all_pages = true;
+        assert_eq!(st.page_indexes(4, 2), vec![0, 1, 2, 3]);
+        st.page_list = true;
+        st.pages = "4, 1-2".into();
+        assert_eq!(st.page_indexes(4, 2), vec![3, 0, 1]);
+        st.pages = "9".into();
+        assert_eq!(st.page_indexes(4, 2), vec![0, 1, 2, 3]);
+        st.selection_only = true;
+        assert_eq!(st.page_indexes(4, 2), vec![2]);
+        assert!(ExportState::one_file_for_all_pages("pdf"));
+        assert!(!ExportState::one_file_for_all_pages("svg"));
+        assert!(!ExportState::one_file_for_all_pages("png"));
+        assert_eq!(
+            numbered_path(Path::new("/x/name.jpeg"), 3, "jpg"),
+            Path::new("/x/name-3.jpeg")
+        );
+        assert_eq!(
+            numbered_path(Path::new("/x/name"), 2, "png"),
+            Path::new("/x/name-2.png")
+        );
+    }
+
+    /// Export to PDF with text as curves holds no font (#1382).
+    #[test]
+    fn export_pdf_text_as_curves_holds_no_font() {
+        tracedraw_text::install();
+        let fonts = tracedraw_text::fonts();
+        let Some(family) = ["DejaVu Sans", "Liberation Sans", "Noto Sans"]
+            .into_iter()
+            .find(|f| fonts.has_family(f))
+        else {
+            return;
+        };
+        let mut app = App::headless();
+        app.new_shape(ShapeKind::Text {
+            spans: vec![TextSpan::new("Searchable words", family, 24.0)],
+            origin: tracedraw_core::Point::new(20.0, 50.0),
+            frame: None,
+            align: Default::default(),
+            para: Default::default(),
+            on_path: None,
+        });
+        let dir = std::env::temp_dir().join(format!("tracedraw-1382c-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("t.pdf");
+        let mut st = ExportState {
+            format: 1,
+            ..ExportState::default()
+        };
+        export(&mut app, &path, &st).expect("pdf");
+        let live = std::fs::read(&path).unwrap();
+        st.text_as_curves = true;
+        export(&mut app, &path, &st).expect("pdf");
+        let curves = std::fs::read(&path).unwrap();
+        let words = |bytes: &[u8]| {
+            lopdf::Document::load_mem(bytes)
+                .ok()
+                .and_then(|d| d.extract_text(&[1]).ok())
+                .unwrap_or_default()
+        };
+        assert!(String::from_utf8_lossy(&live).contains("/FontDescriptor"));
+        assert!(words(&live).contains("Searchable"), "live text");
+        assert!(
+            !String::from_utf8_lossy(&curves).contains("/Font"),
+            "no font"
+        );
+        assert!(!words(&curves).contains("Searchable"), "curves");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
