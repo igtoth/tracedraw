@@ -129,6 +129,7 @@ pub fn document_to_cdr_version_with(doc: &Document, version: u16, previews: &Pre
     let mut w = Writer::new(v, &doc.symbols, &doc.title);
     w.shadow_pictures = previews.shadows.iter().map(|p| (p.shape, p)).collect();
     w.faces = &previews.fonts;
+    w.tech = fonts::face_tech(&previews.fonts);
     w.embed_fonts = previews.embed_fonts;
     let mut tree = w.document(doc);
     let font_ids = w.fonts.clone();
@@ -168,7 +169,15 @@ pub fn document_to_cdr_version_with(doc: &Document, version: u16, previews: &Pre
     }
     let out = if v.redirects() {
         let (root, files) = pack_redirected(v, &tree);
-        zip_v16(v, doc, &root, &files, previews, &font_ids, &own)
+        zip_v16(
+            v,
+            doc,
+            &root,
+            &files,
+            previews,
+            (&font_ids, &w.run_faces),
+            &own,
+        )
     } else {
         let riff = riff_file(v.form(), &tree);
         if v.zip() {
@@ -1378,13 +1387,17 @@ fn cmyk_profile_member(name: &str) -> String {
 /// colour its objects use.
 const COLOR_XML: &str = "<Color><ColorContext><ColorModel>Cmyk</ColorModel><RenderingIntent>RelativeColorimetric</RenderingIntent></ColorContext><HasRgbObjects>true</HasRgbObjects><HasCmykObjects>true</HasCmykObjects><HasGrayscaleObjects>false</HasGrayscaleObjects></Color>\r\n";
 
+/// The drawing's font ids by family and the (font id, style flags) of
+/// its text runs, for the package's font members.
+type FontUses<'a> = (&'a [(u16, String)], &'a [(u16, u32)]);
+
 fn zip_v16(
     v: Ver,
     doc: &Document,
     root: &[u8],
     files: &DataFiles,
     previews: &Previews,
-    font_ids: &[(u16, String)],
+    (font_ids, font_uses): FontUses,
     own: &[(&str, Vec<u8>)],
 ) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
@@ -1400,7 +1413,7 @@ fn zip_v16(
             .is_ok()
             && zip.write_all(data).is_ok();
     }
-    for (name, data) in fonts::members(&previews.fonts, previews.embed_fonts, font_ids) {
+    for (name, data) in fonts::members(&previews.fonts, previews.embed_fonts, font_ids, font_uses) {
         ok &= zip.start_file(name, deflated).is_ok() && zip.write_all(&data).is_ok();
     }
     ok &= zip.start_file("content/dataFileList.dat", deflated).is_ok()
@@ -3190,7 +3203,7 @@ fn weight_member(sp: &TextSpan) -> u32 {
 /// scripts, with the members the paragraph's default style holds besides
 /// them (angle, outline, shifts), as every such run of the files of the
 /// program that reads them is complete (#1379).
-fn run_style_json(sp: &TextSpan, fill: Option<&Fill>) -> String {
+fn run_style_json(sp: &TextSpan, fill: Option<&Fill>, tech: &fonts::FaceTech) -> String {
     // A fill other than a colour is left to the paragraph's.
     let fill = match fill.and_then(fill_colour) {
         Some(c) => format!("{},", fill_json(&colour_spec(c))),
@@ -3200,9 +3213,9 @@ fn run_style_json(sp: &TextSpan, fill: Option<&Fill>) -> String {
         r#"{{"character":{{{}"angle":"0","outline":{},"RTL":{},"latin":{},"h_shift":"0","v_shift":"0","farEast":{}}}}}"#,
         fill,
         character_outline_json(),
-        font_json(Some(sp), 178),
-        font_json(Some(sp), 0),
-        font_json(Some(sp), 128)
+        font_json(Some(sp), 178, tech),
+        font_json(Some(sp), 0, tech),
+        font_json(Some(sp), 128, tech)
     )
 }
 
@@ -3227,16 +3240,16 @@ fn character_outline_json() -> String {
 /// the font and drew the whole text in one colour; the runs of a file
 /// that program saved name their fonts as the paragraph style does
 /// (#1297).
-fn character_json(sp: &TextSpan, fill: Option<&Fill>) -> String {
+fn character_json(sp: &TextSpan, fill: Option<&Fill>, tech: &fonts::FaceTech) -> String {
     let fill = match fill.and_then(fill_colour) {
         Some(c) => format!("{},", fill_json(&colour_spec(c))),
         None => String::new(),
     };
     format!(
         r#""character":{{{fill}"latin":{},"RTL":{},"farEast":{}}}"#,
-        font_json(Some(sp), 0),
-        font_json(Some(sp), 178),
-        font_json(Some(sp), 128)
+        font_json(Some(sp), 0, tech),
+        font_json(Some(sp), 178, tech),
+        font_json(Some(sp), 128, tech)
     )
 }
 
@@ -3251,8 +3264,16 @@ fn fill_json(colour: &str) -> String {
 /// The font of one script in a character style (`latin`, `RTL` with
 /// character set 178, `farEast` with 128): `sp`'s family, size in
 /// coordinate units, weight code, slant and lines, with the members
-/// files hold when nothing sets them; 24 pt Arial without a span.
-fn font_json(sp: Option<&TextSpan>, charset: u32) -> String {
+/// files hold when nothing sets them; 24 pt Arial without a span. The
+/// `technology` and `version` are those of the font drawing the run
+/// (`tech`), as files give them for every face they find (#1484); 4 and
+/// an empty version for a face without its font file.
+fn font_json(sp: Option<&TextSpan>, charset: u32, tech: &fonts::FaceTech) -> String {
+    let (technology, version) = sp
+        .and_then(|sp| tech.get(&(sp.font_family.clone(), sp.bold, sp.italic)))
+        .map_or((4, String::new()), |(k, v)| {
+            (*k, v.replace('\\', "\\\\").replace('"', "\\\""))
+        });
     let (family, size, weight, italic, underline, strike) = match sp {
         Some(sp) => (
             sp.font_family.replace('\\', "\\\\").replace('"', "\\\""),
@@ -3265,7 +3286,7 @@ fn font_json(sp: Option<&TextSpan>, charset: u32) -> String {
         None => ("Arial".to_string(), 254000 * 24 / 72, 64, 0, 0, 0),
     };
     format!(
-        r#"{{"overline":"0","effect":"0","version":"","italic":"{italic}","weight":"{weight}","underline":"{underline}","charset":"{charset}","technology":"4","size":"{size}","font":"{family}","script":"0","strikeout":"{strike}"}}"#
+        r#"{{"overline":"0","effect":"0","version":"{version}","italic":"{italic}","weight":"{weight}","underline":"{underline}","charset":"{charset}","technology":"{technology}","size":"{size}","font":"{family}","script":"0","strikeout":"{strike}"}}"#
     )
 }
 
@@ -3295,6 +3316,7 @@ fn full_text_style(
     fill: Option<&Fill>,
     align: TextAlign,
     leading: f64,
+    tech: &fonts::FaceTech,
 ) -> String {
     let colour = fill
         .and_then(fill_colour)
@@ -3309,9 +3331,9 @@ fn full_text_style(
         ),
         fill = fill_json(&colour),
         outline = character_outline_json(),
-        rtl = font_json(sp, 178),
-        latin = font_json(sp, 0),
-        far = font_json(sp, 128),
+        rtl = font_json(sp, 178, tech),
+        latin = font_json(sp, 0, tech),
+        far = font_json(sp, 128, tech),
         justify = justify_code(align),
         leading = (leading * 1_000_000.0).round() as i64,
     )
@@ -3485,7 +3507,10 @@ struct Writer<'a> {
     /// Embed the faces whose licence allows it (see
     /// [`Previews::embed_fonts`]).
     embed_fonts: bool,
-    split_families: HashMap<String, Option<(String, u16)>>,
+    split_families: HashMap<(String, bool), Option<(String, u16)>>,
+    /// The technology and version of the faces the runs name (see
+    /// [`fonts::FaceTech`]).
+    tech: fonts::FaceTech,
     /// The faces the runs of version 16+ text use (font id, face bits of
     /// the style flags), for the font table as [`Writer::text_formats`]
     /// gives them before.
@@ -3626,6 +3651,7 @@ impl<'a> Writer<'a> {
             faces: &[],
             embed_fonts: false,
             split_families: HashMap::new(),
+            tech: fonts::FaceTech::new(),
             run_faces: Vec::new(),
             layer_slots: Vec::new(),
             doc_size: tracedraw_core::geometry::Size::new(210.0, 297.0),
@@ -3641,15 +3667,15 @@ impl<'a> Writer<'a> {
     fn file_spans(&mut self, spans: &[TextSpan]) -> Option<Vec<TextSpan>> {
         let mut out: Option<Vec<TextSpan>> = None;
         for (i, sp) in spans.iter().enumerate() {
-            if sp.bold || sp.variation("wght").is_some() {
+            if sp.variation("wght").is_some() {
                 continue;
             }
-            let split = match self.split_families.get(&sp.font_family) {
+            let key = (sp.font_family.clone(), sp.bold);
+            let split = match self.split_families.get(&key) {
                 Some(s) => s.clone(),
                 None => {
-                    let s = fonts::split_family(&sp.font_family, false, self.faces);
-                    self.split_families
-                        .insert(sp.font_family.clone(), s.clone());
+                    let s = fonts::split_family(&sp.font_family, sp.bold, self.faces);
+                    self.split_families.insert(key, s.clone());
                     s
                 }
             };
@@ -3658,7 +3684,12 @@ impl<'a> Writer<'a> {
             };
             if let Some(file_sp) = out.get_or_insert_with(|| spans.to_vec()).get_mut(i) {
                 file_sp.font_family = family;
-                file_sp.set_variation("wght", Some(f64::from(weight)));
+                // Bold text drawn by the family's bold face stays bold
+                // (written at 700); another weight is carried on the
+                // weight axis the style codes are taken from.
+                if !sp.bold {
+                    file_sp.set_variation("wght", Some(f64::from(weight)));
+                }
             }
         }
         out
@@ -3807,15 +3838,15 @@ impl<'a> Writer<'a> {
             // What the package's font table says about each embedded
             // face, for the records of version 16 and later (faces not
             // embedded keep their plain records).
-            let records = if v.redirects() && self.embed_fonts {
-                fonts::records(self.faces, self.embed_fonts, &self.fonts)
+            let records = if v.redirects() {
+                fonts::records(self.faces, self.embed_fonts, &self.fonts, &self.run_faces)
             } else {
                 Vec::new()
             };
             let record_of = |id: u16, flags: u32| {
                 records
                     .iter()
-                    .find(|r| r.embedded && r.number == id && r.flags == flags)
+                    .find(|r| r.embedded && r.describes(id, flags))
             };
             let mut fonts = Vec::new();
             for (id, f) in &self.fonts {
@@ -3823,10 +3854,20 @@ impl<'a> Writer<'a> {
                     b"font",
                     font_record(v, *id, f, 0x40, record_of(*id, 0x40)),
                 ));
+                // The faces the text asks for, and the faces the font
+                // table lists for them (a bold face drawing bold italic
+                // text), each of which has its record in files (#1455).
                 let mut faces: Vec<u32> = format_faces
                     .iter()
-                    .filter(|(fid, flags)| fid == id && *flags != 0x40)
+                    .filter(|(fid, _)| fid == id)
                     .map(|(_, flags)| *flags)
+                    .chain(
+                        records
+                            .iter()
+                            .filter(|r| r.number == *id)
+                            .flat_map(|r| r.flags.iter().copied()),
+                    )
+                    .filter(|flags| *flags != 0x40)
                     .collect();
                 faces.sort_unstable();
                 faces.dedup();
@@ -5227,7 +5268,11 @@ impl<'a> Writer<'a> {
                         r#"{},"frame":{{}},"paragraph":{{"justify":"{}"}}"#,
                         spans
                             .first()
-                            .map(|sp| character_json(sp, Some(sp.fill.as_ref().unwrap_or(&s.fill))))
+                            .map(|sp| character_json(
+                                sp,
+                                Some(sp.fill.as_ref().unwrap_or(&s.fill)),
+                                &self.tech
+                            ))
                             .unwrap_or_else(|| r#""character":{}"#.to_string()),
                         justify_code(*align)
                     );
@@ -5250,7 +5295,13 @@ impl<'a> Writer<'a> {
                     r#"{},"frame":{{"equalWidthColumns":"1","rtlColumns":"0","columns":"{},0"}},"paragraph":{{"justify":"{}"}}"#,
                     spans
                         .first()
-                        .map(|sp| character_json(sp, Some(sp.fill.as_ref().unwrap_or(&s.fill))))
+                        .map(|sp| {
+                            character_json(
+                                sp,
+                                Some(sp.fill.as_ref().unwrap_or(&s.fill)),
+                                &self.tech,
+                            )
+                        })
                         .unwrap_or_else(|| r#""character":{}"#.to_string()),
                     units(if width.is_finite() { width } else { 0.0 }).max(0),
                     justify_code(*align)
@@ -5374,8 +5425,13 @@ impl<'a> Writer<'a> {
     /// string is `first`'s take the plain record 0, every other look a
     /// record of its own (up to [`MAX_RUN_STYLES`]), in the order the
     /// looks first appear. `fill` is the object's, for runs without one.
-    fn run_looks(runs: &[TextSpan], first: Option<&TextSpan>, fill: &Fill) -> RunLooks {
-        let json = |sp: &TextSpan| run_style_json(sp, sp.fill.as_ref().or(Some(fill)));
+    fn run_looks(
+        runs: &[TextSpan],
+        first: Option<&TextSpan>,
+        fill: &Fill,
+        tech: &fonts::FaceTech,
+    ) -> RunLooks {
+        let json = |sp: &TextSpan| run_style_json(sp, sp.fill.as_ref().or(Some(fill)), tech);
         let base = first.map(json);
         // Record 0 counts the paragraph's end.
         let mut records: Vec<(usize, Option<String>)> = vec![(1, None)];
@@ -5701,7 +5757,9 @@ impl<'a> Writer<'a> {
             let align = format.map_or(align, |f| f.align);
             for sp in runs {
                 let id = self.font_id(&sp.font_family);
-                let face = (id, style_flags(sp) & 0x3_ffff);
+                // The face bits and the single underline bit, which files
+                // set in the records of underlined faces (#1455).
+                let face = (id, style_flags(sp) & (0x3_ffff | fonts::UNDERLINE_FLAG));
                 if !self.run_faces.contains(&face) {
                     self.run_faces.push(face);
                 }
@@ -5716,7 +5774,7 @@ impl<'a> Writer<'a> {
             // The colour is the first run's own when it has one: a
             // paragraph of one run keeps its colour only here (#1057).
             let first_fill = first.and_then(|sp| sp.fill.as_ref()).unwrap_or(fill);
-            let default = full_text_style(first, Some(first_fill), align, leading);
+            let default = full_text_style(first, Some(first_fill), align, leading, &self.tech);
             t.u32(style_for(align)).zeros(1);
             if frame.is_none() {
                 t.u8(0);
@@ -5732,7 +5790,7 @@ impl<'a> Writer<'a> {
             // its letter count, which of the style's members apply,
             // flags, a locale, then its style. Records of no letters make
             // the program that opens the file hang.
-            let looks = Self::run_looks(runs, first, fill);
+            let looks = Self::run_looks(runs, first, fill, &self.tech);
             t.u32(looks.records.len() as u32);
             for (n, json) in &looks.records {
                 let (members, flags) = if json.is_some() {

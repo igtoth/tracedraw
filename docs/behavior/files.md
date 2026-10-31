@@ -192,6 +192,24 @@ objects open as drawn.
   the paragraph's style does and the font table is the one a text of one
   colour gets (`two_colours_name_the_embedded_font_as_one_colour_does`).
   `tracedraw-cli check` reports a run style marked as applying no member.
+- With Embed fonts on, each embedded font is listed and embedded as the
+  face its file holds: the font table entry, the embedding's face block
+  and its font header carry the font's own weight and slant (a bold
+  file drawing regular text is listed bold, an upright light file
+  drawing bold italic text light and upright), one entry per face file
+  however many styles of the text it draws; the text's own style keeps a
+  font record beside it. The kind of the font (2 TrueType, 4 signed
+  TrueType, 5 PostScript outlines) and its version string go into the
+  table, the embedding and every font style that names it, and the
+  records and entries of underlined faces carry the underline bit, as
+  the files the program that reads `.cdr` files saves have them (#1455,
+  #1484; `write::tests::a_face_is_listed_as_the_face_its_font_file_holds`,
+  `write::tests::bold_text_in_a_light_face_is_written_as_the_family_bold`).
+- A version 16+ `.cdr` that the program reading `.cdr` files saved again
+  from a TraceDraw file, with embedded fonts, opens with its texts: its
+  run records marked as applying nothing still carry a style string,
+  which TraceDraw 0.29.0 did not read, skipping every text (#1467, read
+  since 0.30.0; `write::tests::a_run_record_of_no_marks_is_read_with_its_style_string`).
 - A line of more than 128 colours saved as `.cdr` in any version keeps
   the colours of its first 128 and gives the letters of the others the
   line's first colour: a letter names its record in 7 bits

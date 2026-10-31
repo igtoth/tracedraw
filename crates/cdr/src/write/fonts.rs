@@ -18,7 +18,14 @@ pub struct FontFace {
 
 /// What the font table and an embedding header say about a face.
 struct FaceInfo {
+    /// The style flags of the face the font file holds (its own weight
+    /// and slant), as files list an embedded face (#1455, #1484); the
+    /// text's when the file does not tell (no file, a variable font).
     flags: u32,
+    /// The style flags the text asks for.
+    requested: u32,
+    /// `flags` come from the font file.
+    own: bool,
     panose: [u8; 10],
     kind: u32,
     postscript: String,
@@ -78,27 +85,42 @@ fn typographic_family(f: &ttf_parser::Face) -> String {
 /// family is named with its weight ("Titillium Web SemiBold", as text
 /// set in a semibold face reads): the family without the weight's name
 /// and that weight ("Titillium Web" at 600), the way files name such a
-/// face (#892). `None` keeps the name: bold text, a name with no weight
-/// in it, or a font whose own family (its typographic family, else its
-/// name ID 1) is the whole name. A font that names the whole name only
-/// in ID 1 and the family in ID 16 ("Khand SemiBold" and "Khand") is
-/// split: a file naming the whole name at the regular weight asked for
-/// a font that is missing where the face is only embedded (#1055).
+/// face (#892). `None` keeps the name: a name with no weight in it, or a
+/// font whose own family (its typographic family, else its name ID 1) is
+/// the whole name. A font that names the whole name only in ID 1 and the
+/// family in ID 16 ("Khand SemiBold" and "Khand") is split: a file naming
+/// the whole name at the regular weight asked for a font that is missing
+/// where the face is only embedded (#1055).
+///
+/// Bold text is split when the family's own bold face draws it (a face
+/// of 600 or more whose typographic family is the name without the
+/// weight): bold "Khand Light" is drawn by "Khand" Bold and written as
+/// "Khand" at 700. Written whole, the program that reads the files has
+/// no bold face of "Khand Light" and drew it light (#1455). Bold text
+/// drawn by the light face thickened keeps its name.
 pub(crate) fn split_family(family: &str, bold: bool, faces: &[FontFace]) -> Option<(String, u16)> {
-    if bold {
-        return None;
-    }
     let (head, weight) = crate::parse::family_weight(family)?;
-    let named_so = faces
-        .iter()
-        .filter(|f| f.family == family)
-        .filter_map(|f| f.data.as_deref())
-        .filter_map(|d| ttf_parser::Face::parse(d, 0).ok())
-        .any(|f| {
-            typographic_family(&f)
+    let files = || {
+        faces
+            .iter()
+            .filter(|f| f.family == family)
+            .filter_map(|f| f.data.as_deref().map(|d| (f, d)))
+            .filter_map(|(f, d)| ttf_parser::Face::parse(d, 0).ok().map(|p| (f, p)))
+    };
+    if bold {
+        let drawn_bold = files().filter(|(f, _)| f.bold).any(|(_, p)| {
+            typographic_family(&p)
                 .trim()
-                .eq_ignore_ascii_case(family.trim())
+                .eq_ignore_ascii_case(head.trim())
+                && file_face(&p).is_some_and(|(w, _)| w >= 600)
         });
+        return drawn_bold.then(|| (head.to_string(), weight.max(700)));
+    }
+    let named_so = files().any(|(_, f)| {
+        typographic_family(&f)
+            .trim()
+            .eq_ignore_ascii_case(family.trim())
+    });
     (!named_so).then(|| (head.to_string(), weight))
 }
 
@@ -109,6 +131,82 @@ fn weight_flags(weight: u16, italic: bool) -> u32 {
     1 << (2 * step + u32::from(italic))
 }
 
+/// The single underline bit of the style flags. Files set it in the font
+/// records and font table entries of faces their text underlines
+/// ("Khand" bold at 0x41000 in a file of #1455 whose runs are all
+/// underlined), never in an embedding's face block.
+pub(crate) const UNDERLINE_FLAG: u32 = 0x4_0000;
+
+/// The weight (to the nearest 100) and slant of the face a font file
+/// holds, from its OS/2 table (`usWeightClass`, `fsSelection` bit 0);
+/// `None` without the table or the weight, and for a variable font,
+/// whose face is the instance the text sets.
+fn file_face(f: &ttf_parser::Face) -> Option<(u16, bool)> {
+    let raw = f.raw_face();
+    if raw.table(ttf_parser::Tag::from_bytes(b"fvar")).is_some() {
+        return None;
+    }
+    let os2 = raw.table(ttf_parser::Tag::from_bytes(b"OS/2"))?;
+    let weight = be16(os2, 4);
+    if weight == 0 {
+        return None;
+    }
+    let weight = (weight.saturating_add(50) / 100 * 100).clamp(100, 900);
+    Some((weight, be16(os2, 62) & 1 != 0))
+}
+
+/// The kind of a face's outlines as files name it in the font table, the
+/// embedding header and the `technology` member of style strings: 5 for
+/// PostScript outlines (`CFF `, `CFF2`), 4 for TrueType outlines in a
+/// signed font (with a `DSIG` table), 2 for other TrueType outlines.
+/// The 16 embedded faces of the files of the program that writes them
+/// follow this (the five with a `DSIG` table at 4: Bookman Old Style,
+/// Arial Bold 7.00 ...; Arial 7.06, Khand Bold and nine more at 2), and
+/// their style strings give the same number; TraceDraw wrote 4 for every
+/// TrueType face (#1484).
+fn outline_kind(f: &ttf_parser::Face) -> u32 {
+    let raw = f.raw_face();
+    let has = |tag: &[u8; 4]| raw.table(ttf_parser::Tag::from_bytes(tag)).is_some();
+    if has(b"CFF ") || has(b"CFF2") {
+        5
+    } else if has(b"DSIG") {
+        4
+    } else {
+        2
+    }
+}
+
+/// What the style strings of version 16+ text say about the face that
+/// draws a run: the `technology` (the kind of its outlines, see
+/// [`outline_kind`]) and the `version` (the font's version string), by
+/// the family as the run names it in the file, bold and italic. Files
+/// fill both for every face they find; TraceDraw wrote 4 and an empty
+/// version whatever the font (#1484).
+pub(crate) type FaceTech = std::collections::HashMap<(String, bool, bool), (u32, String)>;
+
+/// [`FaceTech`] of `faces`, each under its family and, when it is written
+/// as the family without its weight ([`split_family`]), under that too.
+pub(crate) fn face_tech(faces: &[FontFace]) -> FaceTech {
+    let mut out = FaceTech::new();
+    for face in faces {
+        let Some(f) = face
+            .data
+            .as_deref()
+            .and_then(|d| ttf_parser::Face::parse(d, 0).ok())
+        else {
+            continue;
+        };
+        let tech = (outline_kind(&f), english_name(&f, 5));
+        if let Some((head, _)) = split_family(&face.family, face.bold, faces) {
+            out.entry((head, face.bold, face.italic))
+                .or_insert_with(|| tech.clone());
+        }
+        out.entry((face.family.clone(), face.bold, face.italic))
+            .or_insert(tech);
+    }
+    out
+}
+
 fn info(face: &FontFace) -> FaceInfo {
     let style_name = match (face.bold, face.italic) {
         (false, false) => "Regular",
@@ -116,8 +214,11 @@ fn info(face: &FontFace) -> FaceInfo {
         (false, true) => "Italic",
         (true, true) => "Bold Italic",
     };
+    let requested = face_flags(face.bold, face.italic);
     let mut out = FaceInfo {
-        flags: face_flags(face.bold, face.italic),
+        flags: requested,
+        requested,
+        own: false,
         panose: [0; 10],
         kind: 4,
         postscript: face.family.replace(' ', ""),
@@ -146,9 +247,17 @@ fn info(face: &FontFace) -> FaceInfo {
     let fs_type = be16(os2, 8);
     // Restricted licence (2) or bitmaps only (0x200): not embedded.
     out.embeddable = !os2.is_empty() && fs_type & 0x000f != 0x0002 && fs_type & 0x0200 == 0;
-    // 5 for PostScript outlines, 4 for TrueType ones, as files have them.
-    if raw.table(ttf_parser::Tag::from_bytes(b"CFF ")).is_some() {
-        out.kind = 5;
+    out.kind = outline_kind(&f);
+    // The face the file holds, not the style the text asks for: a font
+    // table entry, face block and EOT header claiming bold italic for an
+    // upright light face had the program that reads the file take the
+    // face for the bold italic one and draw the text light and upright
+    // (#1455); a regular entry for a bold face asked for a font that is
+    // missing (#1484).
+    let own = file_face(&f);
+    if let Some((w, it)) = own {
+        out.flags = weight_flags(w, it);
+        out.own = true;
     }
     let ps = name(6);
     if !ps.is_empty() {
@@ -169,8 +278,11 @@ fn info(face: &FontFace) -> FaceInfo {
     }
     out.eot = Some(EotNames {
         panose: out.panose,
-        italic: face.italic,
-        weight: u32::from(be16(os2, 4)).max(if face.bold { 700 } else { 400 }),
+        italic: own.map_or(face.italic, |(_, it)| it),
+        weight: match own {
+            Some(_) => u32::from(be16(os2, 4)),
+            None => u32::from(be16(os2, 4)).max(if face.bold { 700 } else { 400 }),
+        },
         fs_type,
         // Left zero for an OS/2 table of version 0, as files have it.
         unicode_ranges: if be16(os2, 0) >= 1 {
@@ -287,38 +399,78 @@ fn font_numbers(families: &[String], ids: &[(u16, String)]) -> Vec<u16> {
 }
 
 /// What the drawing's `font` records (version 16 and later) say about a
-/// face, as the font table does: its font number and style flags, the
-/// PANOSE bytes and PostScript name of its font, the kind, and whether
-/// the package embeds it. Files mark an embedded face in its `font`
-/// record too; a face marked there as not embedded asked for the font to
-/// be installed even with its embedding in the package (#1009).
+/// face, as the font table does: its font number, the style flags of
+/// the records that describe it, the PANOSE bytes and PostScript name of
+/// its font, the kind, and whether the package embeds it. Files mark an
+/// embedded face in its `font` record too; a face marked there as not
+/// embedded asked for the font to be installed even with its embedding
+/// in the package (#1009).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FaceRecord {
     pub number: u16,
-    pub flags: u32,
+    /// The flags of the face the font file holds, once plain and once
+    /// with [`UNDERLINE_FLAG`] as the text uses it: the records the font
+    /// table entry of the face pairs with.
+    pub flags: Vec<u32>,
+    /// The flags the text asks for that this face draws (bold italic
+    /// text drawn by a bold face), without lines: their records say the
+    /// same about the face.
+    pub requested: Vec<u32>,
     pub panose: [u8; 10],
     pub kind: u32,
     pub postscript: String,
     pub embedded: bool,
 }
 
-/// A face in the order the package lists it: its index in `faces`, what
-/// the table says about it, the family it is listed under, its font
-/// number and whether its file is embedded (once per file).
+impl FaceRecord {
+    /// The record of font `number` with style `flags` describes this face.
+    pub fn describes(&self, number: u16, flags: u32) -> bool {
+        self.number == number
+            && (self.flags.contains(&flags) || self.requested.contains(&(flags & !UNDERLINE_FLAG)))
+    }
+}
+
+/// A face as the package lists it: its index in `faces` (the first face
+/// it stands for), what the table says about it, the family it is
+/// listed under, its font number, whether its file is embedded (once
+/// per file), the flags the text asks for that it draws, and the
+/// flags its font table entry carries (its own, with the underline bit
+/// when the text using it is all underlined).
 struct Planned {
     face: usize,
     info: FaceInfo,
     family: String,
     number: u16,
     embedded: bool,
+    requested: Vec<u32>,
+    table_flags: u32,
+    record_flags: Vec<u32>,
+}
+
+/// The same font file (or both without one).
+fn same_file(a: Option<&Arc<Vec<u8>>>, b: Option<&Arc<Vec<u8>>>) -> bool {
+    match (a, b) {
+        (Some(a), Some(b)) => Arc::ptr_eq(a, b) || a.as_slice() == b.as_slice(),
+        (None, None) => true,
+        _ => false,
+    }
 }
 
 /// The faces as the package lists them, in ascending font numbers
 /// (faces of one family in the order given), with the file of each face
 /// that may be embedded marked once: a face drawn with another face's
 /// file (italic text in a family without an italic face) is listed, and
-/// its file embedded once.
-fn plan(faces: &[FontFace], embed: bool, ids: &[(u16, String)]) -> Vec<Planned> {
+/// its file embedded once. Faces the text asks for that one face of a
+/// file draws (bold and bold italic "Khand", both drawn by the bold face)
+/// are one entry, as files list each face once (#1455). `uses` are the
+/// (font id, style flags) of the text's runs, telling which faces the
+/// text underlines.
+fn plan(
+    faces: &[FontFace],
+    embed: bool,
+    ids: &[(u16, String)],
+    uses: &[(u16, u32)],
+) -> Vec<Planned> {
     // A face of a family named with its weight is listed under the
     // family, with the flags of its weight, as the text names it.
     let splits: Vec<Option<(String, u16)>> = faces
@@ -337,12 +489,25 @@ fn plan(faces: &[FontFace], embed: bool, ids: &[(u16, String)]) -> Vec<Planned> 
     let mut order: Vec<usize> = (0..faces.len()).collect();
     order.sort_by_key(|&i| numbers[i]);
     let mut embedded_files: Vec<&Arc<Vec<u8>>> = Vec::new();
-    let mut out = Vec::with_capacity(faces.len());
+    let mut out: Vec<Planned> = Vec::with_capacity(faces.len());
     for (i, family) in order.into_iter().map(|i| (i, families[i].clone())) {
         let face = &faces[i];
         let mut inf = info(face);
         if let Some((_, w)) = &splits[i] {
-            inf.flags = weight_flags(*w, face.italic);
+            inf.requested = weight_flags(*w, face.italic);
+            if !inf.own {
+                inf.flags = inf.requested;
+            }
+        }
+        if let Some(p) = out.iter_mut().find(|p| {
+            p.number == numbers[i]
+                && p.info.flags == inf.flags
+                && same_file(faces[p.face].data.as_ref(), face.data.as_ref())
+        }) {
+            if !p.requested.contains(&inf.requested) {
+                p.requested.push(inf.requested);
+            }
+            continue;
         }
         let new_file = face.data.as_ref().filter(|d| {
             !embedded_files
@@ -355,23 +520,48 @@ fn plan(faces: &[FontFace], embed: bool, ids: &[(u16, String)]) -> Vec<Planned> 
         }
         out.push(Planned {
             face: i,
+            requested: vec![inf.requested],
+            table_flags: inf.flags,
+            record_flags: vec![inf.flags],
             info: inf,
             family,
             number: numbers[i],
             embedded,
         });
     }
+    // The underline bit: in the entry when every run drawn by the face is
+    // underlined, in a record for each way the runs are.
+    for p in &mut out {
+        let lines: Vec<bool> = uses
+            .iter()
+            .filter(|(id, f)| *id == p.number && p.requested.contains(&(f & !UNDERLINE_FLAG)))
+            .map(|(_, f)| f & UNDERLINE_FLAG != 0)
+            .collect();
+        if !lines.is_empty() && lines.iter().all(|u| *u) {
+            p.table_flags |= UNDERLINE_FLAG;
+            p.record_flags = vec![p.table_flags];
+        } else if lines.iter().any(|u| *u) {
+            p.record_flags.push(p.info.flags | UNDERLINE_FLAG);
+        }
+    }
     out
 }
 
 /// What the `font` records of the drawing say about each face (see
-/// [`FaceRecord`]), with `embed` and `ids` as [`members`] takes them.
-pub fn records(faces: &[FontFace], embed: bool, ids: &[(u16, String)]) -> Vec<FaceRecord> {
-    plan(faces, embed, ids)
+/// [`FaceRecord`]), with `embed`, `ids` and `uses` as [`members`] takes
+/// them.
+pub fn records(
+    faces: &[FontFace],
+    embed: bool,
+    ids: &[(u16, String)],
+    uses: &[(u16, u32)],
+) -> Vec<FaceRecord> {
+    plan(faces, embed, ids, uses)
         .into_iter()
         .map(|p| FaceRecord {
             number: p.number,
-            flags: p.info.flags,
+            flags: p.record_flags,
+            requested: p.requested,
             panose: p.info.panose,
             kind: p.info.kind,
             postscript: p.info.postscript,
@@ -382,22 +572,28 @@ pub fn records(faces: &[FontFace], embed: bool, ids: &[(u16, String)]) -> Vec<Fa
 
 /// The fonts members of a package: the font table, and an embedding per
 /// face that may be embedded when `embed` is set. `ids` are the drawing's
-/// font ids by family. Entries and embeddings follow the font numbers
-/// (faces of one family in the order given), as files order their
-/// embeddings.
-pub fn members(faces: &[FontFace], embed: bool, ids: &[(u16, String)]) -> Vec<(String, Vec<u8>)> {
+/// font ids by family, `uses` the (font id, style flags) of the text's
+/// runs. Entries and embeddings follow the font numbers (faces of one
+/// family in the order given), as files order their embeddings.
+pub fn members(
+    faces: &[FontFace],
+    embed: bool,
+    ids: &[(u16, String)],
+    uses: &[(u16, u32)],
+) -> Vec<(String, Vec<u8>)> {
     if faces.is_empty() {
         return Vec::new();
     }
+    let planned = plan(faces, embed, ids, uses);
     let mut table = Buf::default();
-    table.u32(0).u32(0).u32(faces.len() as u32);
+    table.u32(0).u32(0).u32(planned.len() as u32);
     let mut embeddings = Vec::new();
-    for p in plan(faces, embed, ids) {
+    for p in planned {
         let (face, inf) = (&faces[p.face], &p.info);
         let mut e = Buf::default();
         // The face's font number (its family's font id), then the
         // character set (Western).
-        e.u16(p.number).u16(0).u32(inf.flags);
+        e.u16(p.number).u16(0).u32(p.table_flags);
         for b in inf.panose {
             e.u8(b);
         }

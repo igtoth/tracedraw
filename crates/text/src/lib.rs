@@ -2662,10 +2662,16 @@ impl FontSystem {
             stretch: fontdb::Stretch::Normal,
             style,
         };
-        if let Some(id) = db
-            .query(&exact)
-            .or_else(|| self.legacy_face(db, family, weight, style))
-        {
+        if let Some(id) = db.query(&exact) {
+            return Some((id, plain));
+        }
+        if let Some(id) = self.legacy_face(db, family, weight, style) {
+            let id = if bold {
+                self.bold_face_of_family(db, family, id, style)
+                    .unwrap_or(id)
+            } else {
+                id
+            };
             return Some((id, plain));
         }
         let target = target_weight(family, bold);
@@ -2683,6 +2689,42 @@ impl FontSystem {
         db.query(&q)
             .or_else(|| self.legacy_face(db, base, weight, style))
             .map(|id| (id, target))
+    }
+
+    /// Bold text in a face listed only under a name with a lighter weight
+    /// ("Khand Light", a static face whose typographic family is "Khand"):
+    /// the bold face of that family (Khand Bold), when it has one heavier
+    /// than `light` and of 600 or more, instead of the light face
+    /// thickened. The program that reads `.cdr` files draws such text
+    /// with the family's bold face; drawn light and written so, the text
+    /// lost its bold there (#1455).
+    fn bold_face_of_family(
+        &self,
+        db: &fontdb::Database,
+        family: &str,
+        light: fontdb::ID,
+        style: fontdb::Style,
+    ) -> Option<fontdb::ID> {
+        let (base, _) = split_weight(family)?;
+        let face = db.face(light)?;
+        let of_base = |f: &fontdb::FaceInfo| {
+            f.families
+                .iter()
+                .any(|(n, _)| n.trim().eq_ignore_ascii_case(base.trim()))
+        };
+        if !of_base(face) {
+            return None;
+        }
+        let q = fontdb::Query {
+            families: &[fontdb::Family::Name(base)],
+            weight: fontdb::Weight(target_weight(family, true)),
+            stretch: fontdb::Stretch::Normal,
+            style,
+        };
+        let id = db.query(&q)?;
+        let bold = db.face(id)?;
+        (id != light && of_base(bold) && bold.weight.0 >= 600 && bold.weight.0 > face.weight.0)
+            .then_some(id)
     }
 
     /// The installed family that draws text set in `family` when that is
@@ -6626,6 +6668,75 @@ mod tests {
             f.face_for("FZHei-B01", false, false)
         );
         assert!(f.family_info("方正黑体_GBK").is_some());
+    }
+
+    /// `font` named `names` (name id, text; Windows English records)
+    /// with the OS/2 weight class `weight`.
+    fn named_face(font: &[u8], names: &[(u16, &str)], weight: u16) -> Vec<u8> {
+        let utf16 = |s: &str| -> Vec<u8> { s.encode_utf16().flat_map(u16::to_be_bytes).collect() };
+        let records: Vec<(u16, u16, u16, u16, Vec<u8>)> = names
+            .iter()
+            .map(|(id, s)| (3, 1, 0x409, *id, utf16(s)))
+            .collect();
+        let named = with_names(font, &records);
+        let face = ttf_parser::RawFace::parse(&named, 0).expect("font");
+        let mut os2 = face
+            .table(ttf_parser::Tag::from_bytes(b"OS/2"))
+            .expect("OS/2")
+            .to_vec();
+        os2[4..6].copy_from_slice(&weight.to_be_bytes());
+        with_table(&named, b"OS/2", &os2)
+    }
+
+    /// Bold text in a static face listed only under its weight's name
+    /// ("Khand Light": name ID 1, the family "Khand" in ID 16) is drawn by
+    /// the family's bold face, as the program that reads `.cdr` files
+    /// draws it, not by the light face thickened (#1455); text that is
+    /// not bold keeps the light face, and without a bold face the light
+    /// one draws bold text as before.
+    #[test]
+    fn bold_text_in_a_light_static_face_takes_the_family_bold() {
+        const SELAWIK_BOLD: &[u8] =
+            include_bytes!("../../../apps/tracedraw/assets/fonts/Selawik-Bold.ttf");
+        let light = named_face(
+            SELAWIK,
+            &[
+                (1, "Khand Light"),
+                (2, "Regular"),
+                (4, "Khand Light"),
+                (6, "Khand-Light"),
+                (16, "Khand"),
+                (17, "Light"),
+            ],
+            300,
+        );
+        let bold = named_face(
+            SELAWIK_BOLD,
+            &[
+                (1, "Khand"),
+                (2, "Bold"),
+                (4, "Khand Bold"),
+                (6, "Khand-Bold"),
+            ],
+            700,
+        );
+        let f = system_with(&[&light, &bold]);
+        let file = |family: &str, b: bool, i: bool| f.face_file(family, b, i).map(|d| d.to_vec());
+        assert_eq!(file("Khand Light", false, false), Some(light.clone()));
+        assert_eq!(file("Khand Light", true, false), Some(bold.clone()));
+        assert_eq!(file("Khand Light", true, true), Some(bold.clone()));
+        assert_eq!(file("Khand", true, false), Some(bold.clone()));
+        assert_eq!(
+            f.face_and_weight("Khand Light", true, false)
+                .map(|(_, w)| w),
+            Some(700)
+        );
+        // Only the light face: it draws the bold text.
+        let g = system_with(&[&light]);
+        assert_eq!(
+            g.face_file("Khand Light", true, false).map(|d| d.to_vec()),
+            Some(light)
+        );
     }
 
     #[test]
