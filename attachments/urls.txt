@@ -510,3 +510,8 @@
 1494 https://github.com/user-attachments/assets/26e1a524-4c02-47f9-92a4-853f004604f5
 1495 https://github.com/user-attachments/assets/68cf0ac7-0916-45cc-93e4-511112da6dd7
 1498 https://github.com/user-attachments/assets/52750a41-4fdd-4367-bf3a-4e16d8f05c2e
+1257 https://github.com/user-attachments/assets/7483ccef-ac71-42f4-a40a-34109108c4ac
+1257 https://github.com/user-attachments/assets/912902f6-57b2-4dcd-9eee-2df83404efc4
+1257 https://github.com/user-attachments/assets/97c8f45b-8e18-4218-aa37-d92c8314d7cc
+1257 https://github.com/user-attachments/assets/3f867072-44cf-4e26-b53e-202a0293f207
+1257 https://github.com/user-attachments/files/34218927/Shading_C_Draw_X3.cdr.zip
