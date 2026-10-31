@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Weld, Trim, Intersect and the other shaping operations give one node where two outlines cross at a shallow angle, instead of a node followed by one or two lines of no length.
 - Browser version: on Windows, the message shown at start (and the one at a macro command) has a third button, Get it from the Microsoft Store, and says that the Store version may be one or more releases behind the latest download while the Store certifies each version. The close button of these messages now only closes them; it opened the downloads page.
 
 ## 0.31.0 (2026-10-31)

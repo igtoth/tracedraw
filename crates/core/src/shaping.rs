@@ -13,6 +13,9 @@ use kurbo::{ParamCurve as _, ParamCurveArclen as _};
 
 const TOL: f64 = 0.02;
 
+/// Vertices of a result closer than this (mm) are one node.
+const SAME_POINT: f64 = 1e-7;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Op {
     Weld,
@@ -703,6 +706,29 @@ fn recover_curves(result: &BezPath, sources: &[&BezPath]) -> BezPath {
                 places[k] = v;
             }
         }
+        // Where outlines cross at a shallow angle, several vertices of the
+        // flattening lie near the crossing and all land on it: keep one, or
+        // the contour gets lines of no length there (repeated nodes).
+        let mut k = 1;
+        while k < pts.len() {
+            if (pts[k] - pts[k - 1]).hypot() < SAME_POINT {
+                pts.remove(k);
+                let gone = places.remove(k);
+                if places[k - 1].len() < gone.len() {
+                    places[k - 1] = gone;
+                }
+            } else {
+                k += 1;
+            }
+        }
+        while pts.len() > 1 && (pts[pts.len() - 1] - pts[0]).hypot() < SAME_POINT {
+            pts.pop();
+            places.pop();
+        }
+        if pts.len() < 3 {
+            continue;
+        }
+        let n = pts.len();
         // The contour starts where a run would end anyway (a crossing, a
         // vertex on no source, or a source's own node), so a stretch of
         // one source is not cut in two at an arbitrary vertex.
@@ -3137,6 +3163,58 @@ mod tests {
         assert!(count(&i, true) <= 7, "{} {i:?}", count(&i, true));
         // The last piece ends at the start: no node is repeated.
         assert_eq!(nodes(&i).len(), count(&i, true) + 1, "{i:?}");
+    }
+
+    /// The first index of two consecutive end points at the same place
+    /// within a subpath (a segment of no length), if any.
+    fn repeated_node(p: &BezPath) -> Option<usize> {
+        let els = p.elements();
+        (1..els.len()).find(|&i| {
+            !matches!(els[i], PathEl::MoveTo(_))
+                && match (els[i - 1].end_point(), els[i].end_point()) {
+                    (Some(a), Some(b)) => (a - b).hypot() < 1e-6,
+                    _ => false,
+                }
+        })
+    }
+
+    /// Circles crossing at a shallow angle: the flattening has several
+    /// vertices near each crossing, and they become one node, not a node
+    /// followed by lines of no length.
+    #[test]
+    fn shallow_crossings_give_one_node_each() {
+        let ellipse = |cx: f64, cy: f64, r: f64| {
+            crate::geometry::ellipse_path(crate::geometry::Rect::new(
+                cx - r,
+                cy - r,
+                cx + r,
+                cy + r,
+            ))
+        };
+        // Crossing at (75, +-6.6892).
+        let r = (2.0f64.powi(2) + 6.6892f64.powi(2)).sqrt();
+        for (a, b) in [
+            (ellipse(73.0, 0.0, r), ellipse(77.0, 0.0, r)),
+            (ellipse(50.0, 50.0, 5.0), ellipse(53.75, 57.0, 5.0)),
+            (ellipse(50.0, 50.0, 5.0), ellipse(56.25, 50.3, 5.0)),
+        ] {
+            for op in [Op::Weld, Op::Intersect, Op::Trim, Op::Exclude] {
+                for (s, c) in [(&a, &b), (&b, &a)] {
+                    let out = overlay(s, c, op);
+                    assert!(!out.elements().is_empty(), "{op:?}");
+                    assert_eq!(repeated_node(&out), None, "{op:?} {out:?}");
+                    assert_eq!(count(&out, false), 0, "{op:?}: no lines {out:?}");
+                }
+            }
+        }
+        let w = overlay(&ellipse(73.0, 0.0, r), &ellipse(77.0, 0.0, r), Op::Weld);
+        // The circles' nodes outside the lens and the two crossings.
+        assert_eq!(count(&w, true), 8, "{w:?}");
+        let crossings = nodes(&w)
+            .into_iter()
+            .filter(|q| (q.x - 75.0).abs() < 1e-6)
+            .count();
+        assert_eq!(crossings, 2, "{w:?}");
     }
 
     /// A square and a circle: the result has the square's straight sides
