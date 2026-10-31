@@ -18,6 +18,9 @@ refuse to load modules from `file://`).
 | Print | PDF opened in the system viewer | PDF downloaded; print it from the browser's viewer |
 | Send To | PDF written to Desktop, Documents or a mail folder | PDF downloaded |
 | Edit Bitmap (external editor) | system image editor | not available (a browser cannot hand files to programs) |
+| File > Package | a folder with the drawing, its pictures, fonts and a report (`package.md`) | greyed, its tip says it needs the desktop version: a package is a folder of files (#1416) |
+| Scripts docker | JavaScript and VBA snippets, Debug with breakpoints | JavaScript only: the VBA tab and Debug are greyed, their tips say why (macros and the debugger run on a thread of their own, #1416) |
+| Export WebP | lossy at the Quality, or Lossless | lossless only (no lossy WebP encoder in the browser build): the Lossless box is ticked and greyed, its tip says why; Quality still rounds the colours to make the file smaller (#592) |
 | Settings | `settings.json` in the configuration folder, saved as they change | browser local storage (key `tracedraw.settings`), saved as they change: they stay in that browser on that computer, until its site data is cleared (see Storage below) |
 | Shelf | `shelf.json` in the configuration folder | the page's IndexedDB database `tracedraw-kept` (see Storage below) |
 | Auto-backup and session recovery | backups and session markers in the auto-backup folder (`recovery.md`) | backups in the page's IndexedDB database and markers in its local storage; leaving the page with unsaved drawings asks first (`recovery.md`, "In the browser") |
@@ -85,9 +88,10 @@ its bar turns red and the reason shows under it, with the links.
 Once the editor is up, each time the page opens, a message says that
 this is the same Rust program as the desktop app compiled to
 WebAssembly, that a browser is slower (large drawings, heavy effects,
-big files), has only the bundled fonts and opens and saves files by
-upload and download, and that the desktop app runs natively at full
-speed. OK closes it (Enter too, and its close button); Download the
+big files) and opens and saves files by upload and download, that fonts
+beyond the bundled ones are downloaded the first time text uses them and
+a font added in Font Manager is kept in that browser (#1417), and that
+the desktop app runs natively at full speed. OK closes it (Enter too, and its close button); Download the
 desktop app opens the latest release
 (`app::tests::the_browser_notice_shows_at_every_visit`). When the
 browser runs on Windows (the navigator's platform or user agent,

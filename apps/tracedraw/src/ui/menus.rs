@@ -2032,8 +2032,16 @@ fn file_menu(app: &mut App, ui: &mut Ui) {
     if item(ui, "menu.file.publish_to_pdf", "", doc) {
         app.publish_pdf();
     }
-    // Folders are a desktop thing (#852).
-    if item(ui, "menu.file.package", "", doc && !crate::files::WEB) {
+    // Folders are a desktop thing (#852); greyed with the reason in the
+    // browser (#1416).
+    let why = crate::package::why_not_package(crate::files::WEB).map(tr);
+    if item_tip(
+        ui,
+        "menu.file.package",
+        "",
+        doc && why.is_none(),
+        why.as_deref(),
+    ) {
         app.package_dialog();
     }
     sep(ui);

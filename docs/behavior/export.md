@@ -113,7 +113,9 @@ WebP at that quality (libwebp, in the desktop builds), far smaller: a
 picture of 450 KB lossless comes to about 50 KB at quality 10. On, it is
 lossless, and below 100 the colours are first rounded to fewer levels
 (near-lossless, #544). The browser build has no lossy encoder and always
-writes the lossless way (#592, `export::tests::webp_quality_shrinks_the_file`).
+writes the lossless way (#592, `export::tests::webp_quality_shrinks_the_file`):
+there the Lossless box is shown ticked and greyed, and its tip says why
+(`export::tests::webp_lossless_is_fixed_on_without_a_lossy_encoder`).
 
 ## Starting choices
 

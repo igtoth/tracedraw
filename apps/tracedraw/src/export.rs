@@ -413,6 +413,18 @@ fn webp_lossy(_img: &image::RgbaImage, _quality: u8) -> Option<Vec<u8>> {
     None
 }
 
+/// Whether this build has a lossy WebP encoder (libwebp is a C library,
+/// left out of the browser build).
+pub const LOSSY_WEBP: bool = !cfg!(target_arch = "wasm32");
+
+/// Why the export's Lossless checkbox for WebP is fixed on (`lossy`:
+/// [`LOSSY_WEBP`]), as an i18n key for its tip, or `None` where it can be
+/// unticked (#592: the browser writes lossless WebP only, so the box is
+/// shown ticked and greyed instead of being ignored).
+pub fn why_webp_lossless_only(lossy: bool) -> Option<&'static str> {
+    (!lossy).then_some("dialog.webp_lossless_web")
+}
+
 /// Encode a rendered page in the bitmap format `ext`; WebP lossless
 /// (`lossless`, colours rounded below quality 100) or lossy at the
 /// quality (#592).
@@ -2048,6 +2060,18 @@ pub fn replace_properties(app: &mut App, st: &mut FindReplaceState) -> usize {
 #[cfg(test)]
 mod tests {
     use super::{is_address, shared_file_name, why_not_send_to, SendTarget};
+
+    /// #592: where no lossy WebP encoder is built in (the browser) the
+    /// Lossless checkbox is fixed on with a translated reason; the desktop
+    /// builds have the encoder and let it be unticked.
+    #[test]
+    fn webp_lossless_is_fixed_on_without_a_lossy_encoder() {
+        assert!(super::LOSSY_WEBP, "the desktop builds encode lossy WebP");
+        assert_eq!(super::why_webp_lossless_only(true), None);
+        let key = super::why_webp_lossless_only(false).expect("fixed on");
+        let text = crate::i18n::tr(key);
+        assert_ne!(text, key, "the reason is translated");
+    }
 
     /// Android (#1398): Send To has no desktop folder there (the row is
     /// greyed with the reason), while Documents and Mail stay; every

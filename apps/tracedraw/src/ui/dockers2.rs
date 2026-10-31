@@ -858,7 +858,9 @@ fn scripts(app: &mut App, ui: &mut Ui) {
             .rich_tip_with(|| format!("JavaScript\n{}", tr("docker.js_desc")));
         let vba_r = ui
             .add_enabled(!crate::files::WEB, egui::Button::selectable(vba, "VBA"))
-            .rich_tip(tr("docker.vba_hint"));
+            .rich_tip(tr("docker.vba_hint"))
+            // Greyed in the browser with the reason (#1416).
+            .rich_disabled_tip(tr("macros.desktop_only"));
         if (js_r.clicked() && vba) || (vba_r.clicked() && !vba) {
             std::mem::swap(&mut app.script_source, &mut app.macros.other_source);
             app.macros.scripts_vba = !vba;
@@ -895,11 +897,19 @@ fn scripts(app: &mut App, ui: &mut Ui) {
         {
             app.stop_macro();
         }
-        if !crate::files::WEB
-            && !vba
+        // In the browser the button stays, greyed with the reason (#1416).
+        if !vba
             && ui
-                .add_enabled(!debugging, egui::Button::new(tr("docker.debug")))
+                .add_enabled(
+                    !debugging && !crate::files::WEB,
+                    egui::Button::new(tr("docker.debug")),
+                )
                 .rich_tip(tr("docker.debug_hint"))
+                .rich_disabled_tip(if crate::files::WEB {
+                    tr("docker.debug_web")
+                } else {
+                    tr("docker.debug_hint")
+                })
                 .clicked()
         {
             app.start_script_debug();

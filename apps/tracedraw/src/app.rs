@@ -10148,6 +10148,17 @@ mod tests {
         assert!(matches!(next.dialog, crate::ui::dialogs::Dialog::WebNotice));
     }
 
+    /// #1417: the browser notice no longer says that only the bundled
+    /// fonts are there: other fonts are fetched when text needs them and
+    /// fonts added in Font Manager are kept (#1400).
+    #[test]
+    fn the_browser_notice_tells_what_fonts_there_are() {
+        let text = crate::i18n::tr("web.notice_text");
+        assert!(!text.contains("only the bundled"), "{text}");
+        assert!(text.contains("Font Manager"), "{text}");
+        assert!(text.contains("downloaded the first time"), "{text}");
+    }
+
     /// Save As .cdr with Embed fonts, opened on a machine without the
     /// fonts (#1009): every font file that draws the text goes into the
     /// file, also for text whose face is not one of exactly that name,

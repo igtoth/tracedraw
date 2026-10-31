@@ -1,7 +1,7 @@
 # Script debugger
 
 Desktop only (the browser build has no worker threads; there the Scripts
-panel has no Debug button).
+panel's Debug button is greyed and its tip says so, #1416).
 
 - The Scripts panel's editor has a margin with the line numbers. A click
   in the margin sets a breakpoint on that line (a red dot) or clears it.

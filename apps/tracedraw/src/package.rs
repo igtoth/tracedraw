@@ -549,6 +549,13 @@ pub fn status_in(r: &Report, place: &str) -> String {
     msg
 }
 
+/// Why File > Package cannot run here (`web`: the browser build), as an
+/// i18n key for the greyed menu row's tip (#1416), or `None` where it can.
+/// A package is a folder of files, which a browser page cannot write.
+pub fn why_not_package(web: bool) -> Option<&'static str> {
+    web.then_some("package.desktop_only")
+}
+
 impl App {
     /// The folder relative links are read from: the drawing file's.
     pub fn link_base(&self) -> Option<PathBuf> {
@@ -686,6 +693,17 @@ impl App {
 
 #[cfg(test)]
 mod tests {
+    /// #1416: in the browser File > Package is greyed with a reason, which
+    /// is a real string in every language; elsewhere it is not greyed.
+    #[test]
+    fn package_says_why_it_is_greyed_in_the_browser() {
+        assert_eq!(super::why_not_package(false), None);
+        let key = super::why_not_package(true).expect("greyed in the browser");
+        let text = crate::i18n::tr(key);
+        assert_ne!(text, key, "the reason is translated");
+        assert!(text.contains("desktop"), "{text}");
+    }
+
     use super::*;
     use tracedraw_core::geometry::{Point, Rect};
 
