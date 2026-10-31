@@ -19,6 +19,14 @@
 # The app also sends one HTTPS request at its start (to
 # TRACEDRAW_HTTPS_URL, https://api.github.com/zen by default; empty: no
 # request) and logs the answer: its certificate check must pass (#1396).
+#
+# With TRACEDRAW_TEST_IME set to the test keyboard's APK
+# (scripts/android/build_test_ime.sh), the check also types (#1489,
+# #1496): the app starts with the Text tool on (soft_keyboard::check), a
+# tap on the canvas must start a text and bring up the keyboard, and
+# what the keyboard composes and commits (Chinese, then Latin letters)
+# and letters sent as key presses must reach the text, which the app
+# writes to its log.
 set -eu
 cd "$(dirname "$0")/../.."
 
@@ -213,13 +221,45 @@ adb logcat -c || true
 # Room for the whole run in the log buffer (the default drops the start).
 adb logcat -b all -G 16M >/dev/null 2>&1 || adb logcat -G 16M >/dev/null 2>&1 || true
 
+# The test keyboard, the system's input method from now on, and the
+# app started for the typing check.
+ime_apk="${TRACEDRAW_TEST_IME:-}"
+ime=dev.tracedraw.testime/.TestIme
+# The system's input method now (its id, as Settings keeps it).
+ime_now() {
+    sh_dev settings get secure default_input_method
+}
+# Make the test keyboard the system's input method, and wait until the
+# system says it is: right after the install the input method service
+# may not list it yet, and "ime enable" and "ime set" then only print an
+# error (exit status 0), which left the emulator's own keyboard in
+# place. False when it is not the system's input method after 30 s.
+use_test_ime() {
+    t=0
+    while :; do
+        if sh_dev ime list -a -s | grep -qxF "$ime"; then
+            sh_dev ime enable "$ime" >/dev/null
+            sh_dev ime set "$ime" >/dev/null
+            [ "$(ime_now)" = "$ime" ] && return 0
+        fi
+        [ "$t" -lt 30 ] || return 1
+        sleep 1
+        t=$((t + 1))
+    done
+}
+start_extras=""
+if [ -n "$ime_apk" ]; then
+    adb install -r "$ime_apk"
+    use_test_ime || fail "the test keyboard $ime is not the system's input method (it is $(ime_now); installed: $(sh_dev ime list -a -s | tr '\n' ' '))"
+    start_extras="--es tracedraw.check typing"
+fi
+
 # The launcher activity, as the home screen starts it.
 component=$(sh_dev cmd package resolve-activity --brief "$pkg" | tail -n 1)
 case "$component" in
     "$pkg"/*) ;;
     *) fail "no launcher activity for $pkg (got: $component)" ;;
 esac
-start_extras=""
 https_url="${TRACEDRAW_HTTPS_URL-https://api.github.com/zen}"
 if [ -n "$https_url" ]; then
     start_extras="$start_extras --es tracedraw.https_check $https_url"
@@ -276,6 +316,87 @@ https_check() {
 }
 if [ -n "$https_url" ]; then
     https_check
+fi
+
+# The typing check: a tap with the Text tool starts a text and brings up
+# the keyboard, and what it types reaches the text (#1489, #1496).
+# Wait up to $3 seconds for the process $1 to log $2.
+wait_said() {
+    t=0
+    while ! said "$1" "$2"; do
+        [ "$t" -lt "$3" ] || return 1
+        sleep 1
+        t=$((t + 1))
+    done
+}
+# How many lines the test keyboard logged with $1.
+ime_count() {
+    adb logcat -d -s tracedraw-ime:I 2>/dev/null | grep -cF "$1" || true
+}
+# What the check found, for the notice at its end.
+typing_notes=""
+typing_note() {
+    echo "emulator_check: typing: $*"
+    typing_notes="$typing_notes$(echo "$*" | sed 's/%/%25/g')%0A"
+}
+typing_report() {
+    if [ -n "${GITHUB_ACTIONS:-}" ]; then
+        echo "::notice title=typing check (API $(sh_dev getprop ro.build.version.sdk))::$typing_notes"
+    fi
+}
+typing_fail() {
+    typing_note "FAILED: $*"
+    typing_note "the system's input method: $(ime_now)"
+    typing_note "input method: $(sh_dev dumpsys input_method | grep -E 'mServedView|mCurFocusedWindow |mInputShown|mCurClient|mIsInputViewShown|mCurMethodId|mShowRequested' | sed 's/^ *//' | head -n 12 | tr '\n' ';')"
+    typing_note "keyboard log: $(adb logcat -d -s tracedraw-ime:I 2>/dev/null | tail -n 8 | cut -c 32-200 | tr '\n' ';')"
+    typing_note "app log: $(adb logcat -d -v threadtime 2>/dev/null | awk -v p="$pid" '$3 == p && /keyboard|typing check/' | tail -n 12 | cut -c 32-220 | tr '\n' ';')"
+    typing_report
+    fail "typing: $*"
+}
+# Have the test keyboard type: "compose" or "commit" and the code points
+# (hexadecimal, separated by commas), then wait for the app to log $3.
+ime_type() {
+    sh_dev am broadcast -a dev.tracedraw.testime.TYPE --es "$1" "$2" >/dev/null
+    wait_said "$pid" "$3" 10 || typing_fail "after the keyboard's $1 of $2 the text never read: $3"
+    typing_note "$1 $2: $3"
+}
+typing_check() {
+    wait_said "$pid" "typing check: ready" 30 || typing_fail "the app never readied the Text tool"
+    # Still the test keyboard (the system may have gone back to its own
+    # since the start).
+    was=$(ime_now)
+    if [ "$was" != "$ime" ]; then
+        use_test_ime || typing_fail "the test keyboard is not the system's input method (it is $(ime_now))"
+        typing_note "the system's input method was $was again; the test keyboard is set once more"
+    fi
+    sleep 2
+    size=$(sh_dev wm size | sed -n 's/.*: *\([0-9]*\)x\([0-9]*\).*/\1 \2/p' | tail -n 1)
+    w=${size% *}
+    h=${size#* }
+    shown_before=$(ime_count "keyboard shown for $pkg")
+    sh_dev input tap $((w / 2)) $((h / 2))
+    wait_said "$pid" 'typing check: text "", composing ""' 10 \
+        || typing_fail "a tap with the Text tool at $((w / 2)),$((h / 2)) of ${w}x$h started no text"
+    typing_note "a tap with the Text tool started a text"
+    t=0
+    while [ "$(ime_count "keyboard shown for $pkg")" -le "$shown_before" ]; do
+        [ "$t" -lt 10 ] || typing_fail "the tap that started a text did not bring up the keyboard"
+        sleep 1
+        t=$((t + 1))
+    done
+    typing_note "the keyboard came up: $(adb logcat -d -s tracedraw-ime:I 2>/dev/null | grep -F "keyboard shown for $pkg" | tail -n 1 | cut -c 32-200)"
+    ime_type compose 6e,69 'typing check: text "", composing "ni"'
+    ime_type commit 4f60,597d 'typing check: text "你好", composing ""'
+    ime_type commit 61,62,63 'typing check: text "你好abc", composing ""'
+    sh_dev input text xyz
+    wait_said "$pid" 'typing check: text "你好abcxyz"' 10 \
+        || typing_fail "the key presses x, y, z never reached the text"
+    typing_note "key presses x y z: the text reads 你好abcxyz"
+    typing_report
+}
+if [ -n "$ime_apk" ]; then
+    typing_check
+    echo "emulator_check: typing through the keyboard and key presses reached the text"
 fi
 
 # In front, not behind an error or "isn't responding" dialog.

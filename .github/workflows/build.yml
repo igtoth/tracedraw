@@ -463,10 +463,17 @@ jobs:
           fi
           scripts/android/build.sh
           ls -la dist-android/*.apk dist-android/*.aab
+          # The emulator check's keyboard, kept apart from the app.
+          scripts/android/build_test_ime.sh dist-android/test/tracedraw-test-ime.apk
       - uses: actions/upload-artifact@v4
         with:
           name: android-apk
           path: dist-android/*.apk
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-test-ime
+          path: dist-android/test/tracedraw-test-ime.apk
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
@@ -482,8 +489,11 @@ jobs:
   # emulator at full speed; the x86_64 library is the same code as the
   # ARM64 one (the emulator's ARM translation stops the ARM64 library in
   # the activity glue's first JNI calls, which the x86_64 one passes, so
-  # it cannot stand in for an ARM device). The screenshot and the logs
-  # are kept as the android-emulator-api* artifacts.
+  # it cannot stand in for an ARM device). With the test keyboard built
+  # by the android job (scripts/android/test-ime, never shipped) it also
+  # taps with the Text tool and types through the keyboard and as key
+  # presses (#1489, #1496). The screenshot and the logs are kept as the
+  # android-emulator-api* artifacts.
   android-emulator:
     needs: android
     runs-on: ubuntu-latest
@@ -498,6 +508,10 @@ jobs:
         with:
           name: android-apk
           path: apk
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-test-ime
+          path: test-ime
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -512,7 +526,7 @@ jobs:
           arch: x86_64
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
-          script: scripts/android/emulator_check.sh "$(ls apk/*-x86_64-debug.apk | head -n 1)" dist-android/emulator-check
+          script: TRACEDRAW_TEST_IME=test-ime/tracedraw-test-ime.apk scripts/android/emulator_check.sh "$(ls apk/*-x86_64-debug.apk | head -n 1)" dist-android/emulator-check
       - uses: actions/upload-artifact@v4
         if: always()
         with:

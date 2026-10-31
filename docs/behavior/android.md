@@ -38,7 +38,7 @@ the owner does to publish it and what to test on a tablet first.
 | Text size and contrast (#1412) | the desktop's text size and high contrast | the system's font scale (Settings > Display > Font size, which reaches the running app: `fontScale` is among the configuration changes the activity handles) and Android 14's contrast setting or high contrast text, read through the activity's `getAccessibility` every 3 s (`behavior/options.md`) |
 | Settings | `settings.json` in the configuration folder | `settings.json` in the app's private folder (`TRACEDRAW_CONFIG_DIR` set by `android_main`) |
 | Fonts | installed system fonts | the system's fonts (`/system/fonts`, `/product/fonts` and `/vendor/fonts`: Roboto, Noto and the rest; the font database looks in no folder on Android by itself, so `tracedraw_text` names these). Font Manager > Add Font copies the picked font into `fonts` in the app's private folder and installs it from there, at once and at every start (#1400); Add Folder is greyed |
-| Keyboard | the physical keyboard | a physical or Bluetooth keyboard works. The on-screen keyboard shows while a text, a table cell or a field takes typed text and types into an invisible view of the activity (`TextInputView`): a `NativeActivity` offers input methods no text field, so before #1309 only the key presses of Latin letters arrived and Chinese, Japanese, Korean, Tamil and other composed scripts never did. What the input method composes, commits and deletes reaches the editor as an input method's events (`soft_keyboard.rs`), its Backspace, Enter and arrow presses as keys. Not checked on a device yet |
+| Keyboard | the physical keyboard | a physical or Bluetooth keyboard works. The on-screen keyboard shows while a text, a table cell or a field takes typed text and types into an invisible view of the activity (`TextInputView`): a `NativeActivity` offers input methods no text field, so before #1309 only the key presses of Latin letters arrived and Chinese, Japanese, Korean, Tamil and other composed scripts never did. What the input method composes, commits and deletes reaches the editor as an input method's events (`soft_keyboard.rs`), its Backspace, Enter and arrow presses as keys. A tap with the Text tool starts a text there and brings the keyboard up; a tap into the text or field once more brings it back after the system's key hid it; it hides only once three frames in a row take no text, so a lone frame without the caret does not hide it and end what the input method composes; when the system ignores the request (the view's focus reaches the input method a moment later), it is made again up to five times, 100 ms apart. The emulator check types through a test keyboard and as key presses (see "The emulator check"); not checked on a device |
 | Updates | a check of GitHub's releases, asked about at the first start | none: Google Play updates the app (its policy refuses apps that download code of their own), so there is no first-start question and no daily check; Help > Updates opens the app's Play page (`updates::store_install`) |
 | AI Drawing, AI Generate, GitHub, dictionary downloads | HTTPS requests, certificates checked by the system's verifier | the same requests, certificates checked against the system's own store, the files Android's TLS reads (`/apex/com.android.conscrypt/cacerts` on Android 14 and later, else `/system/etc/security/cacerts`), read once at the first request, with the Mozilla roots bundled in the app when neither can be read (`net::tls_config`). The system's verifier the desktop uses needs a Java part the app does not carry, so every request failed its certificate check before (#1396). The emulator check sends one request at the start and wants it answered (see "The emulator check") |
 | Temporary files (auto-backups, crash recovery) | the system's temporary folder | `tmp` in the app's private folder (`TMPDIR` set by `android_main`: the system's default, `/data/local/tmp`, is closed to apps) |
@@ -238,6 +238,19 @@ The check notes the answer and the certificate store read (`HTTPS: <n>
 trusted certificates from <folder>`) and fails when the request was
 refused for its certificate; an emulator without a network only gets a
 notice (#1396).
+
+With the test keyboard (`scripts/android/test-ime`, an input method
+built by `scripts/android/build_test_ime.sh`, installed and made the
+system's keyboard by the check, never shipped), the check also types
+(#1489, #1496): the app is started with `--es tracedraw.check typing`,
+opens a drawing with the Text tool on (`soft_keyboard::check`) and logs
+what the text being edited reads after each change; the check taps the
+middle of the screen and wants a text started and the keyboard shown for
+the app, then has the keyboard compose "ni" and commit 你好 and "abc"
+through the system's input method service, and types "xyz" as key
+presses (`adb shell input text`), each of which must reach the text. The
+outcome, with the input method service's state and the keyboard's log
+when a step fails, is a notice on the job.
 
 The x86_64 library runs natively there. The ARM64 library cannot be
 checked this way: the emulator's ARM translation (Android 11 and 14

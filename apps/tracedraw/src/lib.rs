@@ -856,6 +856,9 @@ impl eframe::App for Shell {
                 .request_repaint_after(std::time::Duration::from_millis(100));
         }
         ui::root(app, ui);
+        // The emulator check's typing test (Android, soft_keyboard.rs).
+        #[cfg(target_os = "android")]
+        soft_keyboard::check::frame(app);
         // Dimensions moved or scaled this frame show their new values.
         app.bake_dimensions();
         // Bitmap effects on vector objects follow what changed them.

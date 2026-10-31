@@ -79,6 +79,10 @@ fn android_main(app: AndroidApp) {
     if let Some(url) = launch_extra("tracedraw.https_check") {
         std::thread::spawn(move || https_check(&url));
     }
+    // The emulator check's typing test (soft_keyboard::check).
+    if launch_extra("tracedraw.check").as_deref() == Some("typing") {
+        crate::soft_keyboard::check::start();
+    }
     tracedraw_text::install();
     tracedraw_io::emf::install();
     // A fresh install starts in the Touch workspace (larger bars and
@@ -599,14 +603,13 @@ pub mod outside {
 /// through the native methods below (see `soft_keyboard.rs`).
 pub mod keyboard {
     use super::*;
-    use crate::soft_keyboard::{push, Typed};
+    use crate::soft_keyboard::{push, Ask, Follower, Typed};
     use jni::objects::{JObject, JString};
     use jni::sys::jint;
     use jni::{jni_sig, jni_str, EnvUnowned, JValue};
-    use std::sync::atomic::AtomicBool;
 
-    /// Whether the keyboard was last asked to show.
-    static SHOWN: AtomicBool = AtomicBool::new(false);
+    /// What the keyboard was asked last (`soft_keyboard::Follower`).
+    static FOLLOWER: Mutex<Option<Follower>> = Mutex::new(None);
 
     /// Shows and hides the keyboard after each frame.
     pub struct Follow;
@@ -616,30 +619,57 @@ pub mod keyboard {
             "soft keyboard"
         }
 
-        fn output_hook(&mut self, _ctx: &egui::Context, output: &mut egui::FullOutput) {
-            follow(crate::soft_keyboard::wanted(output));
+        fn output_hook(&mut self, ctx: &egui::Context, output: &mut egui::FullOutput) {
+            let tapped = ctx.input(|i| i.pointer.any_pressed());
+            if follow(crate::soft_keyboard::wanted(output), tapped) {
+                // The frames that let the keyboard hide.
+                ctx.request_repaint();
+            }
         }
     }
 
-    /// Show the keyboard when a frame takes typed text (`want`) and it is
-    /// not shown, hide it when the frame no longer does.
-    fn follow(want: bool) {
-        if SHOWN.swap(want, Ordering::AcqRel) == want {
-            return;
-        }
+    /// Show the keyboard when a frame takes typed text (`want`), again
+    /// when a tap (`tapped`) lands while it does, and hide it once frames
+    /// no longer do. Whether a hide is waiting for more frames.
+    fn follow(want: bool, tapped: bool) -> bool {
+        let Ok(mut guard) = FOLLOWER.lock() else {
+            return false;
+        };
+        let follower = guard.get_or_insert_with(Follower::default);
+        let Some(ask) = follower.step(want, tapped) else {
+            return follower.hiding();
+        };
+        let (show, again) = match ask {
+            Ask::Show => (true, false),
+            Ask::ShowAgain => (true, true),
+            Ask::Hide => (false, false),
+        };
+        log::info!(
+            "the on-screen keyboard: {}",
+            match ask {
+                Ask::Show => "show",
+                Ask::ShowAgain => "show again",
+                Ask::Hide => "hide",
+            }
+        );
         let done = with_activity("show the keyboard", |env, activity| {
             env.call_method(
                 activity,
                 jni_str!("showTextInput"),
-                jni_sig!("(Z)V"),
-                &[JValue::Bool(want as jni::sys::jboolean)],
+                jni_sig!("(ZZ)V"),
+                &[
+                    JValue::Bool(show as jni::sys::jboolean),
+                    JValue::Bool(again as jni::sys::jboolean),
+                ],
             )?
             .v()
         });
         if done.is_none() {
             // Asked again after the next frame.
-            SHOWN.store(!want, Ordering::Release);
+            follower.failed(ask);
+            return true;
         }
+        false
     }
 
     /// Queue what the keyboard did and wake the frame loop.

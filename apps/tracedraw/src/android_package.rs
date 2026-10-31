@@ -401,9 +401,11 @@ mod tests {
     /// into hands over what it composes, commits and deletes.
     #[test]
     fn the_keyboard_view_and_the_bridge_agree() {
-        assert!(ACTIVITY.contains("public void showTextInput(final boolean on)"));
+        assert!(
+            ACTIVITY.contains("public void showTextInput(final boolean on, final boolean again)")
+        );
         assert!(BRIDGE.contains("jni_str!(\"showTextInput\")"));
-        assert!(BRIDGE.contains("jni_sig!(\"(Z)V\")"));
+        assert!(BRIDGE.contains("jni_sig!(\"(ZZ)V\")"));
         for (java, name, sig) in [
             (
                 "private native void nativeImeCompose(String text);",

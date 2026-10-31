@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A keyboard for the emulator check only (scripts/android/emulator_check.sh,
+     built by scripts/android/build_test_ime.sh): an input method that types
+     what adb broadcasts to it through the system's input method service, as
+     an on-screen keyboard does. It is never shipped with the app. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="dev.tracedraw.testime">
+
+    <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="34" />
+
+    <application android:label="TraceDraw test keyboard" android:hasCode="true">
+        <service
+            android:name="dev.tracedraw.testime.TestIme"
+            android:label="TraceDraw test keyboard"
+            android:permission="android.permission.BIND_INPUT_METHOD"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.view.InputMethod" />
+            </intent-filter>
+            <meta-data android:name="android.view.im" android:resource="@xml/method" />
+        </service>
+    </application>
+</manifest>
