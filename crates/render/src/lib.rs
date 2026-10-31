@@ -300,7 +300,6 @@ fn snap_upright(m: [f64; 6], w: u32, h: u32) -> Option<([f64; 6], Option<tiny_sk
 
 /// What on the page reaches past its own pixels: a lens (it samples what
 /// lies around it) and the widest drop shadow blur, mm.
-#[cfg(not(target_arch = "wasm32"))]
 fn page_reach(doc: &Document, page: PageId) -> (bool, f64) {
     fn walk(s: &Shape, lens: &mut bool, blur: &mut f64) {
         if let Some(sh) = &s.shadow {
