@@ -3454,6 +3454,7 @@ status.hyphenation_missing = "Nie znaleziono wzorców dzielenia {name}; używane
 status.icc_failed = "Nie udało się odczytać profilu: {e}"
 status.icc_loaded = "Wczytano profil: {name}"
 status.import_failed = "Import nie powiódł się: {e}"
+status.clipboard_refused = "Przeglądarka nie pozwoliła odczytać schowka: Ctrl+V wkleja to, co skopiowały inne aplikacje" # mt
 status.in_group = "{k} w grupie"
 status.insert_page_after = "Wstaw stronę po"
 status.insert_page_before = "Wstaw stronę przed"

@@ -591,14 +591,7 @@ fn page_menu(app: &mut App, ui: &mut Ui, p: tracedraw_core::Point, close: &mut b
         "Ctrl+V",
         app.clipboard.is_some() || app.text_clip.is_some(),
     ) {
-        app.paste_any();
-        if let Some(b) = app.selection_bounds() {
-            let shapes = app.selection.clone();
-            app.run(Command::TransformShapes {
-                shapes,
-                transform: tracedraw_core::Affine::translate(p - b.center()),
-            });
-        }
+        app.paste_any_at(Some(p));
     }
     if ci(ui, close, "menu.edit.select_all_objects", "Ctrl+A", true) {
         app.select_all();

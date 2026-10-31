@@ -3454,6 +3454,7 @@ status.hyphenation_missing = "找不到斷字模式 {name}；使用內建模式�
 status.icc_failed = "無法讀取描述檔：{e}"
 status.icc_loaded = "已載入描述檔：{name}"
 status.import_failed = "匯入失敗：{e}"
+status.clipboard_refused = "瀏覽器不允許讀取剪貼簿：按 Ctrl+V 貼上其他應用程式複製的內容" # mt
 status.in_group = "群組中的{k}"
 status.insert_page_after = "在後面插入頁面"
 status.insert_page_before = "在前面插入頁面"

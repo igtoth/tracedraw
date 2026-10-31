@@ -3454,6 +3454,7 @@ status.hyphenation_missing = "Шаблоны переносов {name} не на
 status.icc_failed = "Не удалось прочитать профиль: {e}"
 status.icc_loaded = "Профиль загружен: {name}"
 status.import_failed = "Не удалось импортировать: {e}"
+status.clipboard_refused = "Браузер не разрешил прочитать буфер обмена: Ctrl+V вставляет то, что скопировали другие приложения" # mt
 status.in_group = "{k} в группе"
 status.insert_page_after = "Вставить страницу после"
 status.insert_page_before = "Вставить страницу до"

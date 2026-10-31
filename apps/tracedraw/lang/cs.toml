@@ -3454,6 +3454,7 @@ status.hyphenation_missing = "Vzory dělení {name} nenalezeny; použijí se ves
 status.icc_failed = "Profil nelze přečíst: {e}"
 status.icc_loaded = "Profil načten: {name}"
 status.import_failed = "Import se nezdařil: {e}"
+status.clipboard_refused = "Prohlížeč nepovolil čtení schránky: Ctrl+V vloží, co zkopírovaly jiné aplikace" # mt
 status.in_group = "{k} ve skupině"
 status.insert_page_after = "Vložit stránku za"
 status.insert_page_before = "Vložit stránku před"

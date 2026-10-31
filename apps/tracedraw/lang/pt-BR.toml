@@ -3454,6 +3454,7 @@ status.hyphenation_missing = "Padrões de hifenização {name} não encontrados;
 status.icc_failed = "Não foi possível ler o perfil: {e}"
 status.icc_loaded = "Perfil carregado: {name}"
 status.import_failed = "Falha ao importar: {e}"
+status.clipboard_refused = "O navegador não permitiu ler a área de transferência: Ctrl+V cola o que outros aplicativos copiaram" # mt
 status.in_group = "{k} em um grupo"
 status.insert_page_after = "Inserir página depois"
 status.insert_page_before = "Inserir página antes"

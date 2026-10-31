@@ -3454,6 +3454,7 @@ status.hyphenation_missing = "Silbentrennmuster {name} nicht gefunden; die integ
 status.icc_failed = "Profil konnte nicht gelesen werden: {e}"
 status.icc_loaded = "Profil geladen: {name}"
 status.import_failed = "Import fehlgeschlagen: {e}"
+status.clipboard_refused = "Der Browser hat das Lesen der Zwischenablage nicht erlaubt: Strg+V fügt ein, was andere Anwendungen kopiert haben" # mt
 status.in_group = "{k} in einer Gruppe"
 status.insert_page_after = "Seite danach einfügen"
 status.insert_page_before = "Seite davor einfügen"

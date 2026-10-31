@@ -30,7 +30,7 @@ the owner does to publish it and what to test on a tablet first.
 | Recent files, Welcome screen thumbnails | paths | the same list: a picked document is named `/content/<its URI, escaped>/<its display name>` (`files::document_path`), so the name shows and the URI reopens it; the system keeps the permission (`takePersistableUriPermission`) |
 | Pick a folder (export folders, font folders) | system folder dialog | not available (nothing is picked) |
 | Print, Send To, Edit Bitmap | system programs | not available (no printing service, no external programs) |
-| Clipboard | text, images and files through the system clipboard | text through the system's clipboard service: Copy puts the selection's SVG text there (other apps paste it as text, the editor as objects), Paste reads text copied elsewhere (artistic text, or objects when it is SVG). Pictures and files copied elsewhere are not read yet; copies inside the editor work as before |
+| Clipboard | text, images and files through the system clipboard | text, pictures and files through the system's clipboard service: Copy puts the selection's SVG text there (other apps paste it as text, the editor as objects), Paste reads text copied elsewhere (artistic text, or objects when it is SVG), a picture copied elsewhere as a bitmap and documents copied elsewhere as imports (#1403); copies inside the editor work as before |
 | Settings | `settings.json` in the configuration folder | `settings.json` in the app's private folder (`TRACEDRAW_CONFIG_DIR` set by `android_main`) |
 | Fonts | installed system fonts | the system's fonts (`/system/fonts`, `/product/fonts` and `/vendor/fonts`: Roboto, Noto and the rest; the font database looks in no folder on Android by itself, so `tracedraw_text` names these) |
 | Keyboard | the physical keyboard | a physical or Bluetooth keyboard works. The on-screen keyboard shows while a text, a table cell or a field takes typed text and types into an invisible view of the activity (`TextInputView`): a `NativeActivity` offers input methods no text field, so before #1309 only the key presses of Latin letters arrived and Chinese, Japanese, Korean, Tamil and other composed scripts never did. What the input method composes, commits and deletes reaches the editor as an input method's events (`soft_keyboard.rs`), its Backspace, Enter and arrow presses as keys. Not checked on a device yet |
@@ -85,11 +85,15 @@ documents (Import of many) come as newline-separated lists.
 
 ## The system clipboard
 
-`android::clipboard::text` and `set_text` call the activity's
-`getClipboardText` and `setClipboardText`, which run on the UI thread
+`android::clipboard::text`, `documents` and `set_text` call the
+activity's `getClipboardText`, `getClipboardDocuments` and
+`setClipboardText`, which run on the UI thread
 (`ClipboardManager` wants it) and wait up to two seconds. Android 10 and
 later hand the clipboard's content only to the app in front, which the
-editor is when it pastes.
+editor is when it pastes. `getClipboardText` skips the clip's documents
+(their URI is no text); `getClipboardDocuments` lists them as "URI, type,
+name" lines, and `clipboard.rs` makes one picture alone the clipboard's
+picture and the rest files named like the document picker's (#1403).
 
 ## Building the APK and the bundle
 
@@ -221,7 +225,7 @@ the first start (Google Play updates the app).
 - `android.rs` also holds the JNI bridge: `with_activity` attaches the
   thread (`JavaVM::singleton`, which `android-activity` set up) and
   borrows the activity; `documents` (open, create, read, write, the
-  answer queue, `register_natives`), `clipboard` (text, set_text) and
+  answer queue, `register_natives`), `clipboard` (text, documents, set_text) and
   `keyboard` (the native methods of the keyboard's view, and a plugin
   that shows or hides the on-screen keyboard after each frame that asks
   for an input method or no longer does, `showTextInput`).
@@ -243,7 +247,7 @@ the first start (Google Play updates the app).
   `read`, `write`, `write_with`, `exists`, `canonical` and `Dialog`
   (`android_pickers`); `Dialog::save_file`'s closure is `'static` on
   every platform now, as the answer may come on a later frame.
-  `clipboard.rs`: the system clipboard's text on Android;
+  `clipboard.rs`: the system clipboard's text, pictures and documents on Android;
   `ui/save_as.rs`: Save and Save As hand the name and type to the
   picker; `ui/publish_pdf.rs`: OK opens the picker; `startup_log.rs`:
   error boxes go to the log on Android.
@@ -254,9 +258,8 @@ the first start (Google Play updates the app).
    pickers through the system picker; sharing a PDF or image to another
    app (`ACTION_SEND`); opening a `.cdr` or `.tdraw` from a file manager
    (`ACTION_VIEW`).
-2. Pictures and files from the system clipboard.
-3. Pen pressure and tilt (#850), palm rejection, a long press as the
+2. Pen pressure and tilt (#850), palm rejection, a long press as the
    right click.
-4. Printing through the Android print service; the Help inside the app.
+3. Printing through the Android print service; the Help inside the app.
 5. A 32-bit ARM library for older devices; the store listing's
    screenshots from a device.

@@ -801,6 +801,8 @@ impl eframe::App for Shell {
         app.sync_document_colors();
         // File dialogs that finished in the background (browser build).
         files::run_finished(app);
+        // Pictures, files and text a browser handed over for a paste.
+        app.take_handed_pastes();
         // Files a later start handed over (one try_recv when none came).
         #[cfg(not(target_arch = "wasm32"))]
         if let Some(rx) = &self.handed_over {

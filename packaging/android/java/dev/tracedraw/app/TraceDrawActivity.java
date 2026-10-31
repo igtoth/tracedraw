@@ -334,8 +334,66 @@ public class TraceDrawActivity extends NativeActivity {
                 if (clip == null || clip.getItemCount() == 0) {
                     return null;
                 }
-                CharSequence text = clip.getItemAt(0).coerceToText(TraceDrawActivity.this);
-                return text == null || text.length() == 0 ? null : text.toString();
+                // A document (a picture copied in a gallery or a browser)
+                // is no text: its URI would paste as one (#1403).
+                for (int i = 0; i < clip.getItemCount(); i++) {
+                    ClipData.Item item = clip.getItemAt(i);
+                    if (item.getUri() != null && item.getText() == null) {
+                        continue;
+                    }
+                    CharSequence text = item.coerceToText(TraceDrawActivity.this);
+                    if (text != null && text.length() > 0) {
+                        return text.toString();
+                    }
+                }
+                return null;
+            }
+        }, null);
+    }
+
+    /**
+     * The documents on the clipboard (pictures and files other apps
+     * copied), one per line as "uri TAB mime TAB name"; null when there is
+     * none. Reading the clip grants this app the right to read them.
+     */
+    public String getClipboardDocuments() {
+        return onUiThread(new Callable<String>() {
+            @Override
+            public String call() {
+                ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                if (clipboard == null || !clipboard.hasPrimaryClip()) {
+                    return null;
+                }
+                ClipData clip = clipboard.getPrimaryClip();
+                if (clip == null) {
+                    return null;
+                }
+                StringBuilder out = new StringBuilder();
+                for (int i = 0; i < clip.getItemCount(); i++) {
+                    Uri uri = clip.getItemAt(i).getUri();
+                    if (uri == null) {
+                        continue;
+                    }
+                    String mime = null;
+                    try {
+                        mime = getContentResolver().getType(uri);
+                    } catch (Exception e) {
+                        // Unknown type: the editor goes by the name.
+                    }
+                    if (mime == null && clip.getDescription() != null
+                        && clip.getDescription().getMimeTypeCount() > 0) {
+                        mime = clip.getDescription().getMimeType(0);
+                    }
+                    if (out.length() > 0) {
+                        out.append('\n');
+                    }
+                    out.append(uri.toString().replace('\t', ' ').replace('\n', ' '));
+                    out.append('\t');
+                    out.append(mime == null ? "" : mime.replace('\t', ' ').replace('\n', ' '));
+                    out.append('\t');
+                    out.append(displayName(uri).replace('\t', ' ').replace('\n', ' '));
+                }
+                return out.length() == 0 ? null : out.toString();
             }
         }, null);
     }

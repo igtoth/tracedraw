@@ -136,14 +136,68 @@ fn read_system_text_and_files() -> ClipboardContent {
     ClipboardContent::default()
 }
 
-/// The system clipboard's text on Android, through the activity's
-/// clipboard service (files and pictures are not read there yet).
+/// The system clipboard's text and files on Android, through the
+/// activity's clipboard service: documents other applications copied
+/// (content URIs) are named like the ones the document picker returns,
+/// so pasting imports them; a lone picture is the clipboard's picture
+/// ([`read_system_image`]), placed as a bitmap (#1403).
 #[cfg(target_os = "android")]
 fn read_system_text_and_files() -> ClipboardContent {
+    let (files, _) = split_documents(crate::android::clipboard::documents());
     ClipboardContent {
         text: crate::android::clipboard::text(),
-        ..Default::default()
+        image: None,
+        files,
     }
+}
+
+/// A document on the clipboard (Android): its content URI, MIME type and
+/// shown name.
+#[cfg(any(target_os = "android", test))]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClipDocument {
+    pub uri: String,
+    pub mime: String,
+    pub name: String,
+}
+
+/// The documents `getClipboardDocuments` lists (Android): one per line,
+/// "uri TAB mime TAB name".
+#[cfg(any(target_os = "android", test))]
+pub fn parse_clip_documents(lines: &str) -> Vec<ClipDocument> {
+    lines
+        .lines()
+        .filter_map(|line| {
+            let mut parts = line.split('\t');
+            let uri = parts.next()?.trim();
+            if uri.is_empty() {
+                return None;
+            }
+            Some(ClipDocument {
+                uri: uri.to_string(),
+                mime: parts.next().unwrap_or("").trim().to_string(),
+                name: parts.next().unwrap_or("").trim().to_string(),
+            })
+        })
+        .collect()
+}
+
+/// The clipboard's documents as files to import, or the URI of its
+/// picture when it holds one picture alone (copied from a gallery, a
+/// browser or a chat: placed as a bitmap like a picture copied on the
+/// desktop). Several documents are all imported.
+#[cfg(any(target_os = "android", test))]
+fn split_documents(docs: Vec<ClipDocument>) -> (Vec<std::path::PathBuf>, Option<String>) {
+    if let [doc] = docs.as_slice() {
+        if doc.mime.starts_with("image/") {
+            return (Vec::new(), Some(doc.uri.clone()));
+        }
+    }
+    let files = docs
+        .iter()
+        .map(|d| crate::files::document_path(&d.uri, &d.name))
+        .collect();
+    (files, None)
 }
 
 /// The system clipboard's text, read where the system lets an
@@ -158,22 +212,41 @@ fn read_system_image() -> Option<image::RgbaImage> {
     read_image()
 }
 
-#[cfg(any(target_arch = "wasm32", target_os = "android"))]
+#[cfg(target_arch = "wasm32")]
 fn read_system_image() -> Option<image::RgbaImage> {
     None
 }
 
+/// The picture another application copied (Android): one image document
+/// alone on the clipboard, decoded.
+#[cfg(target_os = "android")]
+fn read_system_image() -> Option<image::RgbaImage> {
+    let (_, uri) = split_documents(crate::android::clipboard::documents());
+    let bytes = crate::android::documents::read(&uri?).ok()?;
+    match image::load_from_memory(&bytes) {
+        Ok(img) => Some(img.into_rgba8()),
+        Err(e) => {
+            log::warn!("the copied picture cannot be read: {e}");
+            None
+        }
+    }
+}
+
 /// The system clipboard as seen by the browser build: empty, because
-/// browsers only hand clipboard contents to paste events.
+/// browsers hand clipboard contents only to paste events and, in the
+/// background, to a clipboard read ([`Handed`]).
 #[cfg(target_arch = "wasm32")]
 pub fn read_system() -> ClipboardContent {
     ClipboardContent::default()
 }
 
-/// The system clipboard on Android: its text (`android.rs`).
+/// The system clipboard on Android: its text, documents and picture
+/// (`android.rs`).
 #[cfg(target_os = "android")]
 pub fn read_system() -> ClipboardContent {
-    read_system_text_and_files()
+    let mut content = read_system_text_and_files();
+    content.image = read_system_image();
+    content
 }
 
 /// Read text, files and image from the system clipboard; failures yield
@@ -244,6 +317,80 @@ pub fn write_text(text: &str) -> bool {
 pub fn write_text(text: &str) -> bool {
     crate::web::copy_text(text);
     true
+}
+
+/// A file a browser handed over for a paste: a picture or a file copied
+/// in another application (#1403).
+#[derive(Debug, Clone, Default)]
+pub struct PastedFile {
+    pub name: String,
+    pub mime: String,
+    pub bytes: Vec<u8>,
+}
+
+/// What a browser handed over for one paste, read in the background: the
+/// files of a paste event (Ctrl+V), or what the clipboard API read for
+/// Edit > Paste (#1403).
+#[derive(Debug, Clone, Default)]
+pub struct Handed {
+    pub text: Option<String>,
+    pub files: Vec<PastedFile>,
+    /// From Edit > Paste (a clipboard read), not from a paste event: its
+    /// text may be the copy made here, which then pastes as objects.
+    pub from_menu: bool,
+    /// The browser did not let the clipboard be read (Edit > Paste).
+    pub refused: bool,
+    /// Where the pasted objects go (the page's context menu), page space.
+    pub at: Option<Point>,
+}
+
+thread_local! {
+    /// Pastes handed over since the last frame.
+    static HANDED: std::cell::RefCell<Vec<Handed>> = const { std::cell::RefCell::new(Vec::new()) };
+    /// Pastes being read in the background.
+    static AWAITED: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
+/// A paste is being read in the background: the paste shortcut of this
+/// frame must not paste the copy here as well (`App::paste_with_event_text`).
+#[cfg_attr(not(any(target_arch = "wasm32", test)), allow(dead_code))]
+pub fn expect_handed() {
+    AWAITED.with(|a| a.set(a.get() + 1));
+}
+
+/// A paste read in the background is ready for the next frame. Only the
+/// files of a paste event were awaited ([`expect_handed`]): Edit > Paste
+/// never holds the paste shortcut back, as the browser may wait for the
+/// user to allow the clipboard to be read.
+#[cfg_attr(not(any(target_arch = "wasm32", test)), allow(dead_code))]
+pub fn hand_over(handed: Handed) {
+    if !handed.from_menu {
+        AWAITED.with(|a| a.set(a.get().saturating_sub(1)));
+    }
+    HANDED.with(|h| h.borrow_mut().push(handed));
+}
+
+/// Whether a paste is still being read in the background.
+pub fn handed_awaited() -> bool {
+    AWAITED.with(|a| a.get() > 0)
+}
+
+/// The image file among `files` when it is the only file and decodes: a
+/// picture copied in another application, placed as a bitmap.
+fn lone_picture(files: &[PastedFile]) -> Option<image::RgbaImage> {
+    let [file] = files else {
+        return None;
+    };
+    if !file.mime.starts_with("image/") {
+        return None;
+    }
+    match image::load_from_memory(&file.bytes) {
+        Ok(img) => Some(img.into_rgba8()),
+        Err(e) => {
+            log::warn!("the pasted picture cannot be read: {e}");
+            None
+        }
+    }
 }
 
 impl App {
@@ -400,7 +547,107 @@ impl App {
     /// Edit > Paste: what was copied last, here or in another
     /// application.
     pub fn paste_any(&mut self) {
+        self.paste_any_at(None);
+    }
+
+    /// Edit > Paste with the pasted objects centred on `at` (the page's
+    /// context menu), when given. In a browser the clipboard is read in
+    /// the background (its API asks the user the first time) and the
+    /// paste happens on a later frame ([`App::take_handed_pastes`]);
+    /// where it cannot be read, the copy here is pasted (#1403).
+    pub fn paste_any_at(&mut self, at: Option<Point>) {
+        #[cfg(target_arch = "wasm32")]
+        if crate::web::read_clipboard(Handed {
+            from_menu: true,
+            at,
+            ..Default::default()
+        }) {
+            return;
+        }
+        let before = self.selection.clone();
         self.paste_with_event_text(None);
+        self.move_pasted_to(&before, at);
+    }
+
+    /// Centre what a paste selected on `at`, when given and the paste
+    /// selected something new.
+    fn move_pasted_to(&mut self, before: &[ShapeId], at: Option<Point>) {
+        let Some(at) = at else {
+            return;
+        };
+        if self.selection.is_empty() || self.selection == before {
+            return;
+        }
+        if let Some(b) = self.selection_bounds() {
+            let shapes = self.selection.clone();
+            self.run(Command::TransformShapes {
+                shapes,
+                transform: tracedraw_core::Affine::translate(at - b.center()),
+            });
+        }
+    }
+
+    /// The pastes a browser handed over since the last frame (#1403):
+    /// pictures and files of a paste event, and what Edit > Paste read
+    /// from the clipboard. Called once per frame.
+    pub fn take_handed_pastes(&mut self) {
+        let handed: Vec<Handed> = HANDED.with(|h| std::mem::take(&mut *h.borrow_mut()));
+        for h in handed {
+            self.paste_handed(h);
+        }
+    }
+
+    /// Paste what a browser handed over: a picture alone as a bitmap,
+    /// other files imported, text as for a paste here.
+    pub fn paste_handed(&mut self, h: Handed) {
+        let before = self.selection.clone();
+        if self.editing_text() {
+            // Into the text at the caret; pictures do not go into text.
+            if h.from_menu {
+                self.text_paste_text(h.text.filter(|t| !t.is_empty()));
+            }
+            return;
+        }
+        if h.refused {
+            self.status = tr("status.clipboard_refused");
+        }
+        let image = lone_picture(&h.files);
+        let mut stored = Vec::new();
+        if image.is_none() {
+            for (i, f) in h.files.iter().enumerate() {
+                let name = if f.name.trim().is_empty() {
+                    format!("pasted-{i}")
+                } else {
+                    f.name.replace(['/', '\\'], "_")
+                };
+                let path = std::path::PathBuf::from("/upload/pasted").join(name);
+                crate::files::store(&path, f.bytes.clone());
+                stored.push(path);
+            }
+        }
+        let text = h.text.filter(|t| !t.is_empty());
+        if h.from_menu {
+            // The clipboard may still hold the copy made here.
+            self.paste_with(
+                None,
+                || ClipboardContent {
+                    text,
+                    image: None,
+                    files: stored.clone(),
+                },
+                || image,
+            );
+        } else {
+            self.paste_from_unmarked(ClipboardContent {
+                text,
+                image,
+                files: stored.clone(),
+            });
+        }
+        for path in &stored {
+            crate::files::forget(path);
+        }
+        self.move_pasted_to(&before, h.at);
     }
 
     /// Ctrl+V, with the text of the paste event when there was one (a
@@ -410,6 +657,11 @@ impl App {
         // (#1377).
         if self.editing_text() {
             self.text_paste(text);
+            return;
+        }
+        // Pictures or files of the paste event are being read (browser):
+        // they are pasted when they arrive, not the copy here (#1403).
+        if handed_awaited() {
             return;
         }
         if crate::files::WEB {
@@ -812,6 +1064,206 @@ mod tests {
             app.selected_shapes().first().map(|s| &s.kind),
             Some(ShapeKind::Text { .. })
         ));
+    }
+
+    fn png_file(name: &str) -> PastedFile {
+        let mut bytes = Vec::new();
+        image::RgbaImage::from_pixel(5, 4, image::Rgba([200, 30, 30, 255]))
+            .write_to(
+                &mut std::io::Cursor::new(&mut bytes),
+                image::ImageFormat::Png,
+            )
+            .expect("png");
+        PastedFile {
+            name: name.into(),
+            mime: "image/png".into(),
+            bytes,
+        }
+    }
+
+    fn is_rect(app: &App) -> bool {
+        matches!(
+            app.selected_shapes().first().map(|s| &s.kind),
+            Some(ShapeKind::Rect { .. })
+        )
+    }
+
+    /// #1403: a picture copied in another application comes with the
+    /// browser's paste event as a file, read in the background; the
+    /// paste shortcut's frame pastes nothing meanwhile (not the copy
+    /// here), and the picture is placed as a bitmap when it arrives.
+    #[test]
+    fn a_picture_pasted_in_a_browser_is_placed_as_a_bitmap() {
+        let mut app = copied(&svg_text());
+        expect_handed();
+        app.paste_with_event_text(None);
+        assert_eq!(shape_count(&app), 1, "the copy here waits");
+        hand_over(Handed {
+            files: vec![png_file("image.png")],
+            ..Default::default()
+        });
+        assert!(!handed_awaited());
+        app.take_handed_pastes();
+        assert_eq!(shape_count(&app), 2);
+        assert!(is_bitmap(&app), "the picture, not the rectangle");
+        // Taken once.
+        app.take_handed_pastes();
+        assert_eq!(shape_count(&app), 2);
+        // A file that is no picture it can read pastes nothing.
+        hand_over(Handed {
+            files: vec![PastedFile {
+                name: "broken.png".into(),
+                mime: "image/png".into(),
+                bytes: vec![1, 2, 3],
+            }],
+            ..Default::default()
+        });
+        app.take_handed_pastes();
+        assert_eq!(shape_count(&app), 2);
+        // The next paste is no longer held back.
+        app.paste_with_event_text(None);
+        assert_eq!(shape_count(&app), 3);
+    }
+
+    /// #1403: Edit > Paste in a browser reads the clipboard with its API:
+    /// the copy made here while the clipboard still holds it, text and
+    /// pictures copied elsewhere otherwise, and the copy here (with a
+    /// word in the status bar) when the browser refuses.
+    #[test]
+    fn edit_paste_in_a_browser_takes_what_the_clipboard_api_read() {
+        let mut app = copied(&svg_text());
+        let menu = |text: Option<&str>, files: Vec<PastedFile>| Handed {
+            text: text.map(String::from),
+            files,
+            from_menu: true,
+            ..Default::default()
+        };
+        app.paste_handed(menu(svg_text().text.as_deref(), Vec::new()));
+        assert_eq!(shape_count(&app), 2);
+        assert!(is_rect(&app), "the copy here, as objects");
+        app.paste_handed(menu(Some("Hello"), Vec::new()));
+        assert!(matches!(
+            app.selected_shapes().first().map(|s| &s.kind),
+            Some(ShapeKind::Text { .. })
+        ));
+        app.paste_handed(menu(None, vec![png_file("clipboard.png")]));
+        assert!(is_bitmap(&app));
+        let n = shape_count(&app);
+        app.paste_handed(Handed {
+            refused: true,
+            from_menu: true,
+            ..Default::default()
+        });
+        assert_eq!(shape_count(&app), n + 1);
+        assert!(is_rect(&app), "refused: the copy here");
+        assert_eq!(app.status, tr("status.clipboard_refused"));
+    }
+
+    /// Edit > Paste waits for the browser (which may ask the user first)
+    /// without holding back the paste shortcut; a paste event's files do.
+    #[test]
+    fn only_a_paste_events_files_hold_back_the_shortcut() {
+        expect_handed();
+        hand_over(Handed {
+            from_menu: true,
+            ..Default::default()
+        });
+        assert!(handed_awaited(), "the paste event's files still come");
+        hand_over(Handed::default());
+        assert!(!handed_awaited());
+        HANDED.with(|h| h.borrow_mut().clear());
+    }
+
+    /// The page's context menu pastes where it was opened, and moves
+    /// nothing when nothing was pasted (#1403: the browser pastes on a
+    /// later frame, with the place kept for then).
+    #[test]
+    fn a_paste_from_the_context_menu_lands_where_it_was_opened() {
+        let mut app = copied(&svg_text());
+        let at = Point::new(150.0, 120.0);
+        app.paste_handed(Handed {
+            files: vec![png_file("image.png")],
+            at: Some(at),
+            ..Default::default()
+        });
+        let b = app.selection_bounds().expect("pasted");
+        assert!((b.center().x - at.x).abs() < 1e-6 && (b.center().y - at.y).abs() < 1e-6);
+        // Nothing pasted (nothing copied anywhere): the selected
+        // objects stay where they are.
+        let mut app = copied(&svg_text());
+        app.clipboard = None;
+        let before = app.selection_bounds().expect("selected");
+        app.paste_handed(Handed {
+            at: Some(Point::new(0.0, 0.0)),
+            ..Default::default()
+        });
+        assert_eq!(app.selection_bounds(), Some(before));
+    }
+
+    /// While a text is being edited, a picture pasted from elsewhere
+    /// does not go into it, and Edit > Paste's text does.
+    #[test]
+    fn a_picture_pasted_while_editing_text_is_left_out() {
+        let mut app = App::headless();
+        let id = app
+            .new_shape(ShapeKind::Text {
+                spans: vec![TextSpan::new("ab", "Sans", 24.0)],
+                origin: Point::new(20.0, 20.0),
+                frame: None,
+                align: tracedraw_core::TextAlign::Left,
+                para: Default::default(),
+                on_path: None,
+            })
+            .expect("text");
+        app.select(vec![id]);
+        app.begin_text_edit(id);
+        assert!(app.editing_text());
+        app.paste_handed(Handed {
+            files: vec![png_file("image.png")],
+            ..Default::default()
+        });
+        assert_eq!(shape_count(&app), 1);
+        app.paste_handed(Handed {
+            text: Some("cd".into()),
+            from_menu: true,
+            ..Default::default()
+        });
+        let text: String = match &app.doc().find_shape(id).expect("text").kind {
+            ShapeKind::Text { spans, .. } => spans.iter().map(|s| s.text.as_str()).collect(),
+            _ => String::new(),
+        };
+        assert!(text.contains("cd"), "{text}");
+    }
+
+    /// #1403 (Android): the clipboard's documents as the activity lists
+    /// them; one picture alone is the clipboard's picture, anything else
+    /// is imported as files.
+    #[test]
+    fn android_clipboard_documents_become_a_picture_or_files() {
+        let docs = parse_clip_documents(
+            "content://media/external/images/1\timage/jpeg\tIMG_1.jpg\n\ncontent://x/doc\t\tplan.svg",
+        );
+        assert_eq!(docs.len(), 2);
+        assert_eq!(docs[0].mime, "image/jpeg");
+        assert_eq!(docs[1].name, "plan.svg");
+        let (files, picture) = split_documents(docs[..1].to_vec());
+        assert!(files.is_empty());
+        assert_eq!(
+            picture.as_deref(),
+            Some("content://media/external/images/1")
+        );
+        let (files, picture) = split_documents(docs.clone());
+        assert!(picture.is_none());
+        assert_eq!(files.len(), 2);
+        assert_eq!(
+            crate::files::document_uri(&files[1]).as_deref(),
+            Some("content://x/doc")
+        );
+        assert_eq!(
+            files[1].file_name().and_then(|n| n.to_str()),
+            Some("plan.svg")
+        );
+        assert!(parse_clip_documents("").is_empty());
     }
 
     #[test]

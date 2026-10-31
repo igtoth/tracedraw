@@ -103,6 +103,129 @@ fn mime_for(name: &str) -> &'static str {
     }
 }
 
+/// Pictures and files copied in other applications (#1403): the paste
+/// event offers them as files, which egui leaves aside (it takes only the
+/// text). They are read in the background and pasted on a later frame
+/// (`App::take_handed_pastes`); the paste shortcut's own frame knows one
+/// is coming and does not paste the copy here instead.
+fn watch_pasted_files() {
+    use wasm_bindgen::closure::Closure;
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let paste = Closure::<dyn FnMut(web_sys::ClipboardEvent)>::new(|e: web_sys::ClipboardEvent| {
+        let Some(data) = e.clipboard_data() else {
+            return;
+        };
+        let Some(list) = data.files() else {
+            return;
+        };
+        let files: Vec<web_sys::File> = (0..list.length()).filter_map(|i| list.get(i)).collect();
+        if files.is_empty() {
+            return;
+        }
+        let text = data.get_data("text/plain").ok().filter(|t| !t.is_empty());
+        crate::clipboard::expect_handed();
+        wasm_bindgen_futures::spawn_local(async move {
+            let mut handed = crate::clipboard::Handed {
+                text,
+                ..Default::default()
+            };
+            for file in files {
+                match blob_bytes(&file).await {
+                    Some(bytes) => handed.files.push(crate::clipboard::PastedFile {
+                        name: file.name(),
+                        mime: file.type_(),
+                        bytes,
+                    }),
+                    None => log::warn!("the pasted file {} cannot be read", file.name()),
+                }
+            }
+            crate::clipboard::hand_over(handed);
+            request_repaint();
+        });
+    });
+    let _ = window.add_event_listener_with_callback_and_bool(
+        "paste",
+        paste.as_ref().unchecked_ref(),
+        true,
+    );
+    paste.forget();
+}
+
+/// The bytes of a blob (a pasted file, a clipboard item).
+async fn blob_bytes(blob: &web_sys::Blob) -> Option<Vec<u8>> {
+    let buffer = wasm_bindgen_futures::JsFuture::from(blob.array_buffer())
+        .await
+        .ok()?;
+    Some(js_sys::Uint8Array::new(&buffer).to_vec())
+}
+
+/// Edit > Paste (#1403): read the clipboard with the browser's clipboard
+/// API (it asks the user the first time) and hand what it holds over as
+/// `handed`: its picture and its text. False when the page has no such
+/// API (an insecure page, an old browser): the caller pastes the copy
+/// made here.
+pub fn read_clipboard(handed: crate::clipboard::Handed) -> bool {
+    let Some(window) = web_sys::window() else {
+        return false;
+    };
+    let navigator = window.navigator();
+    let has_read = js_sys::Reflect::get(&navigator, &wasm_bindgen::JsValue::from_str("clipboard"))
+        .ok()
+        .filter(|c| !c.is_undefined() && !c.is_null())
+        .and_then(|c| js_sys::Reflect::get(&c, &wasm_bindgen::JsValue::from_str("read")).ok())
+        .is_some_and(|f| f.is_function());
+    if !has_read {
+        return false;
+    }
+    let clipboard = navigator.clipboard();
+    wasm_bindgen_futures::spawn_local(async move {
+        let mut handed = handed;
+        match wasm_bindgen_futures::JsFuture::from(clipboard.read()).await {
+            Ok(items) => {
+                let items: js_sys::Array = items.unchecked_into();
+                for item in items.iter() {
+                    let item: web_sys::ClipboardItem = item.unchecked_into();
+                    let types: Vec<String> =
+                        item.types().iter().filter_map(|t| t.as_string()).collect();
+                    if let Some(mime) = types.iter().find(|t| t.starts_with("image/")) {
+                        if let Some(bytes) = clipboard_item_bytes(&item, mime).await {
+                            let ext = mime.trim_start_matches("image/").replace("svg+xml", "svg");
+                            handed.files.push(crate::clipboard::PastedFile {
+                                name: format!("clipboard.{ext}"),
+                                mime: mime.clone(),
+                                bytes,
+                            });
+                        }
+                    }
+                    if handed.text.is_none() && types.iter().any(|t| t == "text/plain") {
+                        handed.text = clipboard_item_bytes(&item, "text/plain")
+                            .await
+                            .and_then(|b| String::from_utf8(b).ok())
+                            .map(|t| t.replace("\r\n", "\n"));
+                    }
+                }
+            }
+            Err(e) => {
+                log::info!("the browser did not let the clipboard be read: {e:?}");
+                handed.refused = true;
+            }
+        }
+        crate::clipboard::hand_over(handed);
+        request_repaint();
+    });
+    true
+}
+
+/// The bytes of one type of a clipboard item.
+async fn clipboard_item_bytes(item: &web_sys::ClipboardItem, mime: &str) -> Option<Vec<u8>> {
+    let blob = wasm_bindgen_futures::JsFuture::from(item.get_type(mime))
+        .await
+        .ok()?;
+    blob_bytes(blob.unchecked_ref()).await
+}
+
 /// Whether the page runs on an iPhone, iPad or Android device, whose
 /// file picker filters by file type (see
 /// [`crate::files::picker_filters_by_type`]), from the navigator's user
@@ -393,6 +516,7 @@ pub fn start() {
     backups::install();
     guard_shortcuts();
     watch_chorded_right_press();
+    watch_pasted_files();
     register_fonts();
     tracedraw_text::install();
     tracedraw_io::emf::install();

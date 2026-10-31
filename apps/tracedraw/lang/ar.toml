@@ -3454,6 +3454,7 @@ status.hyphenation_missing = "لم يُعثر على أنماط الوصل {name
 status.icc_failed = "تعذّر قراءة ملف التعريف: {e}"
 status.icc_loaded = "تم تحميل ملف التعريف: {name}"
 status.import_failed = "فشل الاستيراد: {e}"
+status.clipboard_refused = "لم يسمح المتصفح بقراءة الحافظة: يلصق Ctrl+V ما نسخته التطبيقات الأخرى" # mt
 status.in_group = "{k} داخل مجموعة"
 status.insert_page_after = "إدراج صفحة بعد"
 status.insert_page_before = "إدراج صفحة قبل"

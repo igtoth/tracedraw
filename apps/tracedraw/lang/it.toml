@@ -3454,6 +3454,7 @@ status.hyphenation_missing = "Schemi di sillabazione {name} non trovati; si usan
 status.icc_failed = "Impossibile leggere il profilo: {e}"
 status.icc_loaded = "Profilo caricato: {name}"
 status.import_failed = "Importazione non riuscita: {e}"
+status.clipboard_refused = "Il browser non ha consentito di leggere gli appunti: Ctrl+V incolla ciò che altre applicazioni hanno copiato" # mt
 status.in_group = "{k} in un gruppo"
 status.insert_page_after = "Inserisci pagina dopo"
 status.insert_page_before = "Inserisci pagina prima"

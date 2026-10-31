@@ -3454,6 +3454,7 @@ status.hyphenation_missing = "Afbreekpatronen {name} niet gevonden; de ingebouwd
 status.icc_failed = "Kan het profiel niet lezen: {e}"
 status.icc_loaded = "Profiel geladen: {name}"
 status.import_failed = "Importeren mislukt: {e}"
+status.clipboard_refused = "De browser stond het lezen van het klembord niet toe: Ctrl+V plakt wat andere toepassingen hebben gekopieerd" # mt
 status.in_group = "{k} in een groep"
 status.insert_page_after = "Pagina invoegen na"
 status.insert_page_before = "Pagina invoegen voor"

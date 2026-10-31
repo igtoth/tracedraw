@@ -3454,6 +3454,7 @@ status.hyphenation_missing = "Pola pemenggalan {name} tidak ditemukan; pola bawa
 status.icc_failed = "Tidak dapat membaca profil: {e}"
 status.icc_loaded = "Profil dimuat: {name}"
 status.import_failed = "Gagal mengimpor: {e}"
+status.clipboard_refused = "Browser tidak mengizinkan papan klip dibaca: Ctrl+V menempelkan apa yang disalin aplikasi lain" # mt
 status.in_group = "{k} dalam grup"
 status.insert_page_after = "Sisipkan halaman setelah"
 status.insert_page_before = "Sisipkan halaman sebelum"

@@ -3454,6 +3454,7 @@ status.hyphenation_missing = "未找到断字模式 {name}；使用内置模式�
 status.icc_failed = "无法读取配置文件：{e}"
 status.icc_loaded = "已加载配置文件：{name}"
 status.import_failed = "导入失败：{e}"
+status.clipboard_refused = "浏览器不允许读取剪贴板：按 Ctrl+V 粘贴其他应用程序复制的内容" # mt
 status.in_group = "组中的{k}"
 status.insert_page_after = "在后面插入页面"
 status.insert_page_before = "在前面插入页面"

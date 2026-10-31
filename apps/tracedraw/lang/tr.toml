@@ -3454,6 +3454,7 @@ status.hyphenation_missing = "{name} heceleme desenleri bulunamadı; yerleşik o
 status.icc_failed = "Profil okunamadı: {e}"
 status.icc_loaded = "Profil yüklendi: {name}"
 status.import_failed = "İçe aktarma başarısız oldu: {e}"
+status.clipboard_refused = "Tarayıcı panonun okunmasına izin vermedi: Ctrl+V başka uygulamaların kopyaladığını yapıştırır" # mt
 status.in_group = "Grup içinde: {k}"
 status.insert_page_after = "Sonrasına sayfa ekle"
 status.insert_page_before = "Öncesine sayfa ekle"

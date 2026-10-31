@@ -3454,6 +3454,7 @@ status.hyphenation_missing = "হাইফেনেশন প্যাটার�
 status.icc_failed = "প্রোফাইল পড়া যায়নি: {e}"
 status.icc_loaded = "প্রোফাইল লোড হয়েছে: {name}"
 status.import_failed = "ইমপোর্ট ব্যর্থ: {e}"
+status.clipboard_refused = "ব্রাউজার ক্লিপবোর্ড পড়তে দেয়নি: অন্য অ্যাপ্লিকেশনে কপি করা জিনিস Ctrl+V দিয়ে পেস্ট করুন" # mt
 status.in_group = "গ্রুপের ভেতরে {k}"
 status.insert_page_after = "পরে পৃষ্ঠা যোগ"
 status.insert_page_before = "আগে পৃষ্ঠা যোগ"

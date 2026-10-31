@@ -3454,6 +3454,7 @@ status.hyphenation_missing = "Hyphenation patterns {name} not found; the built-i
 status.icc_failed = "Could not read the profile: {e}"
 status.icc_loaded = "Profile loaded: {name}"
 status.import_failed = "Import failed: {e}"
+status.clipboard_refused = "The browser did not let the clipboard be read: Ctrl+V pastes what other applications copied"
 status.in_group = "{k} in a group"
 status.insert_page_after = "Insert page after"
 status.insert_page_before = "Insert page before"

@@ -3454,6 +3454,7 @@ status.hyphenation_missing = "ハイフネーションパターン {name} が見
 status.icc_failed = "プロファイルを読み込めませんでした: {e}"
 status.icc_loaded = "プロファイルを読み込みました: {name}"
 status.import_failed = "インポートに失敗しました: {e}"
+status.clipboard_refused = "ブラウザーがクリップボードの読み取りを許可しませんでした。他のアプリでコピーしたものは Ctrl+V で貼り付けます" # mt
 status.in_group = "グループ内の{k}"
 status.insert_page_after = "後にページを挿入"
 status.insert_page_before = "前にページを挿入"

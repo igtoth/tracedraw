@@ -3454,6 +3454,7 @@ status.hyphenation_missing = "Motifs de césure {name} introuvables ; les motifs
 status.icc_failed = "Impossible de lire le profil : {e}"
 status.icc_loaded = "Profil chargé : {name}"
 status.import_failed = "Échec de l'importation : {e}"
+status.clipboard_refused = "Le navigateur n'a pas permis de lire le presse-papiers : Ctrl+V colle ce que d'autres applications ont copié" # mt
 status.in_group = "{k} dans un groupe"
 status.insert_page_after = "Insérer une page après"
 status.insert_page_before = "Insérer une page avant"

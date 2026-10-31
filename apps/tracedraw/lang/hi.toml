@@ -3454,6 +3454,7 @@ status.hyphenation_missing = "हाइफ़नेशन पैटर्न {na
 status.icc_failed = "प्रोफ़ाइल पढ़ी नहीं जा सकी: {e}"
 status.icc_loaded = "प्रोफ़ाइल लोड हुई: {name}"
 status.import_failed = "आयात विफल: {e}"
+status.clipboard_refused = "ब्राउज़र ने क्लिपबोर्ड पढ़ने नहीं दिया: अन्य ऐप्लिकेशन में कॉपी की गई चीज़ Ctrl+V से चिपकाएँ" # mt
 status.in_group = "समूह में {k}"
 status.insert_page_after = "बाद में पृष्ठ डालें"
 status.insert_page_before = "पहले पृष्ठ डालें"

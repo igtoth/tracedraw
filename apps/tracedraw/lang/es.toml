@@ -3454,6 +3454,7 @@ status.hyphenation_missing = "No se encontraron los patrones de división {name}
 status.icc_failed = "No se pudo leer el perfil: {e}"
 status.icc_loaded = "Perfil cargado: {name}"
 status.import_failed = "Error al importar: {e}"
+status.clipboard_refused = "El navegador no permitió leer el portapapeles: Ctrl+V pega lo que copiaron otras aplicaciones" # mt
 status.in_group = "{k} en un grupo"
 status.insert_page_after = "Insertar página después"
 status.insert_page_before = "Insertar página antes"

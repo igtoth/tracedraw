@@ -406,6 +406,26 @@ pub mod clipboard {
         .filter(|t| !t.is_empty())
     }
 
+    /// The documents on the clipboard: pictures and files other apps
+    /// copied, as content URIs (#1403).
+    pub fn documents() -> Vec<crate::clipboard::ClipDocument> {
+        let lines = with_activity("read clipboard documents", |env, activity| {
+            let result = env
+                .call_method(
+                    activity,
+                    jni_str!("getClipboardDocuments"),
+                    jni_sig!("()Ljava/lang/String;"),
+                    &[],
+                )?
+                .l()?;
+            let s: JString = env.cast_local::<JString>(result)?;
+            Ok(string_of(env, &s))
+        })
+        .flatten()
+        .unwrap_or_default();
+        crate::clipboard::parse_clip_documents(&lines)
+    }
+
     /// Put `text` on the clipboard; whether it went there.
     pub fn set_text(text: &str) -> bool {
         with_activity("write clipboard", |env, activity| {

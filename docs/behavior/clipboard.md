@@ -33,6 +33,35 @@ is neither. Ctrl+C with nothing selected changes nothing.
   4. other text: artistic text in the middle of the page.
 
 Ctrl+Shift+V pastes the objects copied here in the middle of the view.
+Paste on the page's context menu centres what it pastes where the menu
+was opened.
+
+### In a browser and on Android (#1403)
+
+A browser hands the clipboard only to a paste event and to its
+clipboard API, never to a plain read:
+
+- Ctrl+V: the paste event's text goes the way above; its files (a
+  picture copied in an image program or a web page, files copied in a
+  file manager) are read in the background and pasted a frame later.
+  The shortcut's own frame then pastes nothing, so the copy made here
+  does not come as well. One picture alone is placed as a bitmap; other
+  files are imported like File > Import. While a text is edited, a
+  picture is not put into it.
+- Edit > Paste (and the context menu's Paste) reads the clipboard with
+  the browser's clipboard API (`navigator.clipboard.read()`): the first
+  time the browser asks for permission (Firefox shows a Paste button).
+  Its picture and text are pasted as for Ctrl+V; text that is still the
+  copy made here pastes the objects copied here. When the browser
+  refuses or has no such API, the copy made here is pasted and the
+  status bar says that Ctrl+V pastes what other programs copied.
+
+On Android the activity reads the system clipboard (`ClipboardManager`):
+its text, and the documents other apps copied (content URIs, which
+reading the clip grants the editor the right to read). One picture alone
+(copied in a gallery, a browser or a chat) is the clipboard's picture,
+placed as a bitmap; other documents are imported like files from the
+document picker. A document's URI is never pasted as text.
 
 Symbol instances pasted into another drawing (or inside pasted groups and
 clip frames) bring their symbols along: a symbol the drawing holds
