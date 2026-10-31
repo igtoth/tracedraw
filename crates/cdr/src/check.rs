@@ -223,7 +223,7 @@ fn odd_outline_type(body: &[u8]) -> Option<String> {
 /// A style string's text: UTF-16LE in version 16 files (its second byte
 /// zero), UTF-8 after.
 pub(crate) fn style_text(b: &[u8]) -> String {
-    if b.len() >= 2 && b.len() % 2 == 0 && b[1] == 0 {
+    if b.len() >= 2 && b.len().is_multiple_of(2) && b[1] == 0 {
         let units: Vec<u16> = b
             .chunks_exact(2)
             .map(|c| u16::from_le_bytes([c[0], c[1]]))
