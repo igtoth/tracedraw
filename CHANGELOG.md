@@ -6,6 +6,7 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Reduce Nodes and the Curve smoothness slider keep the curve within the tolerance all along it: a node only goes when the whole changed stretch stays close to the original, so a wobbly or traced curve is no longer flattened to a single node, and a smooth curve comes down to the fewest nodes (an ellipse of 12 nodes to 4). The start of a closed curve can go too, and long traced curves reduce much faster.
 - Browser version: on Windows, the message shown at start (and the one at a macro command) has a third button, Get it from the Microsoft Store, and says that the Store version may be one or more releases behind the latest download while the Store certifies each version. The close button of these messages now only closes them; it opened the downloads page.
 
 ## 0.31.0 (2026-10-31)

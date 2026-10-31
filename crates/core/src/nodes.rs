@@ -1060,96 +1060,493 @@ pub fn break_at(path: &BezPath, index: usize) -> BezPath {
 }
 
 /// Reverse the direction of the whole path.
-/// Reduce nodes: drop every node whose removal moves the curve by less
-/// than `tolerance` (sampled at the removed node's position). Subpath
-/// starts and ends are kept.
+/// Reduce nodes: drop nodes as long as the curve stays within `tolerance`
+/// of its original shape everywhere, not only where the dropped node was.
+/// The node whose removal moves the curve least goes first. The ends of an
+/// open subpath stay; the start of a closed one can go like any other
+/// node (the subpath then starts at the node before it).
 pub fn reduce_nodes(path: &BezPath, tolerance: f64) -> BezPath {
-    use kurbo::{ParamCurveNearest, PathSeg};
-    let mut cur = normalize(path);
-    loop {
-        let ns = nodes(&cur);
-        let mut removed = false;
-        // Walk from the end so indices stay valid.
-        for n in ns.iter().rev() {
-            if n.is_start {
-                continue;
-            }
-            let next_is_end = match cur.elements().get(n.index + 1) {
-                None | Some(PathEl::MoveTo(_)) => true,
-                Some(PathEl::ClosePath) => false,
-                _ => false,
-            };
-            if next_is_end {
-                continue;
-            }
-            let candidate = delete_node(&cur, n.index);
-            if candidate.elements().len() == cur.elements().len() {
-                continue;
-            }
-            // Distance from the dropped node to the new curve.
-            let d = candidate
-                .segments()
-                .map(|seg: PathSeg| seg.nearest(n.pos, 1e-3).distance_sq.sqrt())
-                .fold(f64::INFINITY, f64::min);
-            if d <= tolerance {
-                cur = candidate;
-                removed = true;
-                break;
-            }
-        }
-        if !removed {
-            break;
-        }
-    }
-    cur
+    reduce_where(path, tolerance, |_| true)
 }
 
-/// Reduce nodes among `chosen` only (element indices): like
-/// `reduce_nodes`, but other nodes stay. Indices are tracked as nodes go.
+/// Reduce nodes among `chosen` only (element indices of the normalized
+/// path, as `nodes` gives them): like `reduce_nodes`, but other nodes stay.
 pub fn reduce_chosen_nodes(path: &BezPath, chosen: &[usize], tolerance: f64) -> BezPath {
-    use kurbo::{ParamCurveNearest, PathSeg};
-    let mut cur = normalize(path);
-    let mut chosen: Vec<usize> = chosen.to_vec();
-    loop {
-        let ns = nodes(&cur);
-        let mut removed = false;
-        for n in ns.iter().rev() {
-            if n.is_start || !chosen.contains(&n.index) {
-                continue;
-            }
-            let next_is_end = matches!(
-                cur.elements().get(n.index + 1),
-                None | Some(PathEl::MoveTo(_))
-            );
-            if next_is_end {
-                continue;
-            }
-            let candidate = delete_node(&cur, n.index);
-            if candidate.elements().len() == cur.elements().len() {
-                continue;
-            }
-            let d = candidate
-                .segments()
-                .map(|seg: PathSeg| seg.nearest(n.pos, 1e-3).distance_sq.sqrt())
-                .fold(f64::INFINITY, f64::min);
-            if d <= tolerance {
-                cur = candidate;
-                // Elements after the removed one shift down by one.
-                chosen.retain(|i| *i != n.index);
-                for i in chosen.iter_mut() {
-                    if *i > n.index {
-                        *i -= 1;
-                    }
-                }
-                removed = true;
-                break;
+    reduce_where(path, tolerance, |i| chosen.contains(&i))
+}
+
+/// One segment of a subpath being reduced: where it starts, the element
+/// drawing it, and the original outline it stands for, flattened (its
+/// start and end included).
+struct Span {
+    start: Point,
+    el: PathEl,
+    orig: Vec<Point>,
+}
+
+impl Span {
+    fn end(&self) -> Point {
+        end_point(&self.el).unwrap_or(self.start)
+    }
+}
+
+/// How far a reduced segment strays from the original outline: the
+/// farthest original point from the segment, and the farthest point of
+/// the segment from the original outline (so it cannot bulge out between
+/// the original points either).
+fn span_deviation(span: &Span) -> f64 {
+    deviation(span.start, span.el, &span.orig)
+}
+
+fn deviation(start: Point, el: PathEl, orig: &[Point]) -> f64 {
+    use kurbo::{Line, ParamCurve, ParamCurveNearest, PathSeg};
+    let seg = match el {
+        PathEl::LineTo(p) => PathSeg::Line(Line::new(start, p)),
+        el => match element_cubic(start, el) {
+            Some(c) => PathSeg::Cubic(c),
+            None => return f64::INFINITY,
+        },
+    };
+    let mut worst = 0.0f64;
+    for q in orig {
+        worst = worst.max(seg.nearest(*q, 1e-6).distance_sq.sqrt());
+    }
+    if orig.len() < 2 {
+        return worst;
+    }
+    for i in 1..32 {
+        let q = seg.eval(i as f64 / 32.0);
+        let d = orig
+            .windows(2)
+            .map(|w| Line::new(w[0], w[1]).nearest(q, 1e-9).distance_sq)
+            .fold(f64::INFINITY, f64::min);
+        worst = worst.max(d.sqrt());
+    }
+    worst
+}
+
+/// The deviation of a merged span, after improving its handle lengths
+/// (along its tangents) when the least-squares fit strays more than
+/// `tolerance`: a pattern search on the two lengths for the smallest
+/// deviation, stopping once it is within the tolerance. The fit's
+/// parameters come from chord lengths, which suit long, unevenly curved
+/// spans poorly.
+fn refine_span(span: &mut Span, tolerance: f64) -> f64 {
+    let mut best = span_deviation(span);
+    // Far off: the span needs a node in between, not other handles.
+    if best > 4.0 * tolerance {
+        return best;
+    }
+    let PathEl::CurveTo(h1, h2, p3) = span.el else {
+        return best;
+    };
+    let p0 = span.start;
+    let (Some(t1), Some(t2)) = (unit(h1 - p0), unit(h2 - p3)) else {
+        return best;
+    };
+    let el = |a: [f64; 2]| PathEl::CurveTo(p0 + t1 * a[0], p3 + t2 * a[1], p3);
+    let mut a = [(h1 - p0).hypot(), (h2 - p3).hypot()];
+    let mut step = (p3 - p0).hypot().max(a[0]).max(a[1]) / 4.0;
+    let min_step = (tolerance / 100.0).max(1e-6);
+    let mut evals = 0;
+    while best > tolerance && step > min_step && evals < 400 {
+        let mut improved = false;
+        for (i, dir) in [(0, 1.0), (0, -1.0), (1, 1.0), (1, -1.0)] {
+            let mut c = a;
+            c[i] = (c[i] + dir * step).max(0.0);
+            let d = deviation(p0, el(c), &span.orig);
+            evals += 1;
+            if d < best {
+                best = d;
+                a = c;
+                improved = true;
             }
         }
-        if !removed {
-            break;
+        if !improved {
+            step /= 2.0;
         }
     }
-    cur
+    span.el = el(a);
+    best
+}
+
+/// The one span that replaces the consecutive spans `run`: a line when
+/// they are all lines, otherwise a cubic keeping the outer tangents,
+/// fitted to their original outline.
+fn merge_run(run: &[&Span]) -> Option<Span> {
+    let (first, last) = (run.first()?, run.last()?);
+    let mut orig = first.orig.clone();
+    for s in &run[1..] {
+        orig.extend(s.orig.iter().skip(1).copied());
+    }
+    let a = first.start;
+    let c = last.end();
+    let el = if run.iter().all(|s| matches!(s.el, PathEl::LineTo(_))) {
+        PathEl::LineTo(c)
+    } else {
+        let ca = element_cubic(first.start, first.el)?;
+        let cb = element_cubic(last.start, last.el)?;
+        let t1 = unit(ca.p1 - ca.p0)
+            .or_else(|| unit(ca.p2 - ca.p0))
+            .or_else(|| unit(ca.p3 - ca.p0))
+            .or_else(|| unit(c - a))
+            .unwrap_or(Vec2::new(1.0, 0.0));
+        let t2 = unit(cb.p2 - cb.p3)
+            .or_else(|| unit(cb.p1 - cb.p3))
+            .or_else(|| unit(cb.p0 - cb.p3))
+            .or_else(|| unit(a - c))
+            .unwrap_or(Vec2::new(-1.0, 0.0));
+        let (h1, h2) = fit_cubic(a, c, t1, t2, &orig);
+        PathEl::CurveTo(h1, h2, c)
+    };
+    Some(Span { start: a, el, orig })
+}
+
+/// The points of segment `el` from `start`, flattened to within `flat`.
+fn flatten_element(start: Point, el: PathEl, flat: f64) -> Vec<Point> {
+    let mut out = vec![start];
+    if let PathEl::CurveTo(..) = el {
+        kurbo::flatten([PathEl::MoveTo(start), el], flat, |e| {
+            if let PathEl::LineTo(p) = e {
+                out.push(p);
+            }
+        });
+    }
+    if let Some(end) = end_point(&el) {
+        if out.last().is_none_or(|l| (*l - end).hypot() > 1e-12) {
+            out.push(end);
+        }
+    }
+    out
+}
+
+/// Drop removable nodes of one subpath's spans while the curve stays
+/// within `tolerance`. `ids[k]` is the node at the end of span `k` (for a
+/// closed subpath the last one is its start). True when a node went.
+///
+/// First top-down: the stretch between two nodes that stay becomes one
+/// segment, and when that strays too far, it is split at the original node
+/// farthest from it, again and again; this spreads the nodes that stay
+/// evenly. Then bottom-up: whichever single node can go with the least
+/// change goes, while one can.
+fn reduce_spans(
+    spans: &mut Vec<Span>,
+    ids: &mut Vec<usize>,
+    closed: bool,
+    tolerance: f64,
+    removable: &impl Fn(usize) -> bool,
+) -> bool {
+    let n = spans.len();
+    // A closed subpath keeps two segments, an open one its two ends.
+    let min = if closed { 2 } else { 1 };
+    if n <= min {
+        return false;
+    }
+    let pos = |k: usize| spans[k].end();
+    let mut keep: Vec<bool> = (0..n).map(|k| !removable(ids[k])).collect();
+    if !closed {
+        keep[n - 1] = true;
+    } else {
+        // Two nodes far apart to start from.
+        let fixed: Vec<usize> = (0..n).filter(|k| keep[*k]).collect();
+        let from = fixed.first().copied().unwrap_or(n - 1);
+        keep[from] = true;
+        if fixed.len() < 2 {
+            let far = (0..n)
+                .filter(|k| *k != from)
+                .max_by(|a, b| {
+                    let da = (pos(*a) - pos(from)).hypot();
+                    let db = (pos(*b) - pos(from)).hypot();
+                    da.total_cmp(&db)
+                })
+                .unwrap_or(from);
+            keep[far] = true;
+        }
+    }
+    // The runs of spans between the nodes that stay, split until each fits.
+    let kept: Vec<usize> = (0..n).filter(|k| keep[*k]).collect();
+    let mut stack: Vec<Vec<usize>> = Vec::new();
+    for (m, &end) in kept.iter().enumerate() {
+        let begin = if m == 0 {
+            if closed {
+                (kept.last().copied().unwrap_or(end) + 1) % n
+            } else {
+                0
+            }
+        } else {
+            kept[m - 1] + 1
+        };
+        let mut run = Vec::new();
+        let mut k = begin;
+        loop {
+            run.push(k);
+            if k == end || run.len() > n {
+                break;
+            }
+            k = (k + 1) % n;
+        }
+        stack.push(run);
+    }
+    while let Some(run) = stack.pop() {
+        if run.len() < 2 {
+            continue;
+        }
+        let parts: Vec<&Span> = run.iter().map(|k| &spans[*k]).collect();
+        let fits =
+            merge_run(&parts).is_some_and(|mut m| refine_span(&mut m, tolerance) <= tolerance);
+        if fits {
+            continue;
+        }
+        // Split at the inner node farthest from the one-segment fit, or at
+        // the one in the middle of the stretch, whichever leaves the two
+        // halves closer to the original.
+        let inner = &run[..run.len() - 1];
+        let farthest = merge_run(&parts).and_then(|m| {
+            inner.iter().copied().max_by(|a, b| {
+                let da = deviation(m.start, m.el, &[pos(*a)]);
+                let db = deviation(m.start, m.el, &[pos(*b)]);
+                da.total_cmp(&db)
+            })
+        });
+        let lengths: Vec<f64> = run
+            .iter()
+            .map(|k| {
+                spans[*k]
+                    .orig
+                    .windows(2)
+                    .map(|w| (w[1] - w[0]).hypot())
+                    .sum()
+            })
+            .collect();
+        let total: f64 = lengths.iter().sum();
+        let mut acc = 0.0;
+        let middle = inner
+            .iter()
+            .zip(&lengths)
+            .map(|(k, l)| {
+                acc += l;
+                (*k, (acc - total / 2.0).abs())
+            })
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(k, _)| k);
+        let halves_off = |at: usize| -> f64 {
+            let i = run.iter().position(|k| *k == at).unwrap_or(0);
+            let off = |r: &[usize]| -> f64 {
+                if r.len() < 2 {
+                    return 0.0;
+                }
+                let p: Vec<&Span> = r.iter().map(|k| &spans[*k]).collect();
+                merge_run(&p).map_or(f64::INFINITY, |mut m| refine_span(&mut m, tolerance))
+            };
+            off(&run[..=i]).max(off(&run[i + 1..]))
+        };
+        let split = match (farthest, middle) {
+            (Some(f), Some(m)) if f != m => {
+                if halves_off(m) <= halves_off(f) {
+                    m
+                } else {
+                    f
+                }
+            }
+            (Some(f), _) => f,
+            (None, Some(m)) => m,
+            (None, None) => inner[inner.len() / 2],
+        };
+        keep[split] = true;
+        let at = run.iter().position(|k| *k == split).unwrap_or(0);
+        stack.push(run[..=at].to_vec());
+        stack.push(run[at + 1..].to_vec());
+    }
+    let mut any = keep.iter().any(|k| !k);
+    if any {
+        // Rebuild: one span per run, in order, a closed subpath starting
+        // after its last node that stays.
+        let kept: Vec<usize> = (0..n).filter(|k| keep[*k]).collect();
+        let mut new_spans = Vec::with_capacity(kept.len());
+        let mut new_ids = Vec::with_capacity(kept.len());
+        for (m, &end) in kept.iter().enumerate() {
+            let begin = if m == 0 {
+                if closed {
+                    (kept.last().copied().unwrap_or(end) + 1) % n
+                } else {
+                    0
+                }
+            } else {
+                kept[m - 1] + 1
+            };
+            let mut run: Vec<&Span> = Vec::new();
+            let mut k = begin;
+            loop {
+                run.push(&spans[k]);
+                if k == end || run.len() > n {
+                    break;
+                }
+                k = (k + 1) % n;
+            }
+            let merged = if run.len() == 1 {
+                None
+            } else {
+                merge_run(&run).map(|mut m| {
+                    refine_span(&mut m, tolerance);
+                    m
+                })
+            };
+            let span = match merged {
+                Some(m) => m,
+                None => Span {
+                    start: run[0].start,
+                    el: run[0].el,
+                    orig: run[0].orig.clone(),
+                },
+            };
+            new_spans.push(span);
+            new_ids.push(ids[end]);
+        }
+        *spans = new_spans;
+        *ids = new_ids;
+    }
+    any |= reduce_one_by_one(spans, ids, closed, tolerance, removable);
+    any
+}
+
+/// Drop single nodes, the one whose removal changes the curve least
+/// first, while one can go within `tolerance`.
+fn reduce_one_by_one(
+    spans: &mut Vec<Span>,
+    ids: &mut Vec<usize>,
+    closed: bool,
+    tolerance: f64,
+    removable: &impl Fn(usize) -> bool,
+) -> bool {
+    let min = if closed { 2 } else { 1 };
+    let candidate = |spans: &Vec<Span>, ids: &Vec<usize>, k: usize| -> Option<(f64, Span)> {
+        let n = spans.len();
+        if n <= min || (!closed && k + 1 >= n) || !removable(ids[k]) {
+            return None;
+        }
+        let mut m = merge_run(&[&spans[k], &spans[(k + 1) % n]])?;
+        let d = refine_span(&mut m, tolerance);
+        (d <= tolerance).then_some((d, m))
+    };
+    let mut costs: Vec<Option<(f64, Span)>> =
+        (0..spans.len()).map(|k| candidate(spans, ids, k)).collect();
+    let mut any = false;
+    loop {
+        let best = costs
+            .iter()
+            .enumerate()
+            .filter_map(|(k, c)| c.as_ref().map(|(d, _)| (k, *d)))
+            .min_by(|a, b| a.1.total_cmp(&b.1));
+        let Some((k, _)) = best else {
+            break;
+        };
+        let Some((_, merged)) = costs[k].take() else {
+            break;
+        };
+        // The span after node k becomes the merged one; span k and node k go.
+        let n = spans.len();
+        let next = (k + 1) % n;
+        spans[next] = merged;
+        spans.remove(k);
+        ids.remove(k);
+        costs.remove(k);
+        any = true;
+        let n = spans.len();
+        if n == 0 {
+            break;
+        }
+        // Only the nodes at either end of the merged span change.
+        let merged_at = if next > k { next - 1 } else { next };
+        let before = (merged_at + n - 1) % n;
+        for j in [before, merged_at] {
+            if j < n {
+                costs[j] = candidate(spans, ids, j);
+            }
+        }
+    }
+    any
+}
+
+fn reduce_where(path: &BezPath, tolerance: f64, removable: impl Fn(usize) -> bool) -> BezPath {
+    let norm = normalize(path);
+    let finite = norm.elements().iter().all(|e| match *e {
+        PathEl::MoveTo(p) | PathEl::LineTo(p) => p.is_finite(),
+        PathEl::QuadTo(c, p) => c.is_finite() && p.is_finite(),
+        PathEl::CurveTo(c1, c2, p) => c1.is_finite() && c2.is_finite() && p.is_finite(),
+        PathEl::ClosePath => true,
+    });
+    if !(tolerance > 0.0 && tolerance.is_finite() && finite) {
+        return norm;
+    }
+    // The original outline is kept to a tenth of the tolerance.
+    let flat = (tolerance / 10.0).max(1e-6);
+    let els = norm.elements();
+    let mut out = BezPath::new();
+    let mut changed = false;
+    let mut i = 0;
+    while i < els.len() {
+        let PathEl::MoveTo(p0) = els[i] else {
+            out.push(els[i]);
+            i += 1;
+            continue;
+        };
+        let start_index = i;
+        let mut spans: Vec<Span> = Vec::new();
+        let mut ids: Vec<usize> = Vec::new();
+        let mut last = p0;
+        let mut j = i + 1;
+        while let Some(el @ (PathEl::LineTo(_) | PathEl::CurveTo(..))) = els.get(j).copied() {
+            spans.push(Span {
+                start: last,
+                el,
+                orig: flatten_element(last, el, flat),
+            });
+            ids.push(j);
+            last = end_point(&el).unwrap_or(last);
+            j += 1;
+        }
+        let closed = matches!(els.get(j), Some(PathEl::ClosePath));
+        // A closing line drawn by the ClosePath itself.
+        let implicit = closed && !spans.is_empty() && (last - p0).hypot() >= 1e-9;
+        if implicit {
+            spans.push(Span {
+                start: last,
+                el: PathEl::LineTo(p0),
+                orig: vec![last, p0],
+            });
+            ids.push(j);
+        }
+        if closed {
+            // The last segment ends on the start: that node is the start.
+            if let Some(e) = ids.last_mut() {
+                *e = start_index;
+            }
+        }
+        changed |= reduce_spans(&mut spans, &mut ids, closed, tolerance, &removable);
+        out.move_to(spans.first().map_or(p0, |s| s.start));
+        let count = spans.len();
+        for (k, s) in spans.iter().enumerate() {
+            let closing_line = implicit
+                && k + 1 == count
+                && matches!(s.el, PathEl::LineTo(_))
+                && spans
+                    .first()
+                    .is_some_and(|f| (s.end() - f.start).hypot() < 1e-9);
+            if !closing_line {
+                out.push(s.el);
+            }
+        }
+        if closed {
+            out.close_path();
+            j += 1;
+        }
+        i = j;
+    }
+    if changed {
+        out
+    } else {
+        norm
+    }
 }
 
 /// Align the given nodes on a common x and/or y (their average).
@@ -2242,6 +2639,138 @@ mod reduce_tests {
         let a = align_nodes(&p, &[1, 2], true, false);
         let ns = nodes(&a);
         assert!((ns[1].pos.y - ns[2].pos.y).abs() < 1e-9);
+    }
+
+    /// An ellipse of `n` arc cubics, one node every 360/n degrees from
+    /// `from` (radians).
+    fn ellipse(n: usize, from: f64, rx: f64, ry: f64) -> BezPath {
+        let th = std::f64::consts::TAU / n as f64;
+        let k = 4.0 / 3.0 * (th / 4.0).tan();
+        let pt = |a: f64| Point::new(rx + rx * a.cos(), ry + ry * a.sin());
+        let tan = |a: f64| Vec2::new(-rx * a.sin(), ry * a.cos());
+        let mut p = BezPath::new();
+        p.move_to(pt(from));
+        for i in 0..n {
+            let a0 = from + th * i as f64;
+            let a1 = from + th * (i + 1) as f64;
+            p.curve_to(pt(a0) + tan(a0) * k, pt(a1) - tan(a1) * k, pt(a1));
+        }
+        p.close_path();
+        p
+    }
+
+    /// The farthest `b` gets from `a`, and `a` from `b`, sampled finely.
+    fn distance(a: &BezPath, b: &BezPath) -> f64 {
+        use kurbo::{ParamCurve, ParamCurveNearest};
+        let one_way = |x: &BezPath, y: &BezPath| {
+            let mut worst = 0.0f64;
+            for seg in x.segments() {
+                for i in 0..=64 {
+                    let q = seg.eval(i as f64 / 64.0);
+                    let d = y
+                        .segments()
+                        .map(|s| s.nearest(q, 1e-9).distance_sq)
+                        .fold(f64::INFINITY, f64::min);
+                    worst = worst.max(d.sqrt());
+                }
+            }
+            worst
+        };
+        one_way(a, b).max(one_way(b, a))
+    }
+
+    /// A 1000 x 500 mm ellipse of 12 nodes is within 0.12 mm of one of
+    /// 4: at 0.5 mm it comes down to 4 nodes, and at no tolerance does
+    /// the curve move farther than the tolerance.
+    #[test]
+    fn reduce_keeps_the_curve_within_the_tolerance_everywhere() {
+        let twelve = ellipse(12, 0.0, 500.0, 250.0);
+        assert!(distance(&twelve, &ellipse(4, 0.0, 500.0, 250.0)) < 0.12);
+        let r = reduce_nodes(&twelve, 0.5);
+        assert_eq!(nodes(&r).len(), 4, "{r:?}");
+        for tol in [0.05, 0.5, 1.0, 2.0, 10.0, 50.0] {
+            let r = reduce_nodes(&twelve, tol);
+            let d = distance(&twelve, &r);
+            assert!(
+                d <= tol * 1.1,
+                "{tol} mm: moved {d} mm, {} nodes",
+                nodes(&r).len()
+            );
+        }
+        // Tiny tolerance: nothing goes, and the path is the same.
+        assert_eq!(reduce_nodes(&twelve, 1e-6), normalize(&twelve));
+    }
+
+    /// A wobbly, traced-looking closed curve of 200 nodes keeps its shape:
+    /// it is not reduced to a single node.
+    #[test]
+    fn reduce_keeps_the_shape_of_a_wobbly_curve() {
+        let n = 200;
+        let pt = |i: usize| {
+            let a = std::f64::consts::TAU * i as f64 / n as f64;
+            let r = 100.0 + 3.0 * (7.0 * a).sin() + 0.05 * ((i * 7919) % 13) as f64;
+            Point::new(r * a.cos(), r * a.sin())
+        };
+        let mut p = BezPath::new();
+        p.move_to(pt(0));
+        for i in 1..=n {
+            let (a, b) = (pt(i - 1), pt(i % n));
+            p.curve_to(a.lerp(b, 1.0 / 3.0), a.lerp(b, 2.0 / 3.0), b);
+        }
+        p.close_path();
+        let r = reduce_nodes(&p, 0.5);
+        let left = nodes(&r).len();
+        assert!((8..60).contains(&left), "{left} nodes");
+        assert!(distance(&p, &r) <= 0.55, "{}", distance(&p, &r));
+    }
+
+    /// The start of a closed curve goes like any other node.
+    #[test]
+    fn reduce_can_drop_the_start_of_a_closed_curve() {
+        // Started 30 degrees past a quadrant, on a node that can go.
+        let p = ellipse(12, std::f64::consts::TAU / 12.0, 500.0, 250.0);
+        let r = reduce_nodes(&p, 0.5);
+        assert_eq!(nodes(&r).len(), 4, "{r:?}");
+        assert!(distance(&p, &r) <= 0.55);
+        assert!(matches!(r.elements().last(), Some(PathEl::ClosePath)));
+        // Chosen nodes only: the start among them goes, the rest stay.
+        let r = reduce_chosen_nodes(&p, &[0], 0.5);
+        assert_eq!(nodes(&r).len(), 11, "{r:?}");
+        let r = reduce_chosen_nodes(&p, &[3], 0.5);
+        assert_eq!(nodes(&r).len(), 11, "{r:?}");
+    }
+
+    /// Open curves keep their ends; corners stay; a polygon closed by its
+    /// ClosePath keeps that closing line.
+    #[test]
+    fn reduce_keeps_ends_corners_and_the_closing_line() {
+        let mut open = BezPath::new();
+        open.move_to((0.0, 0.0));
+        open.line_to((5.0, 0.0));
+        open.line_to((10.0, 0.0));
+        let r = reduce_nodes(&open, 0.1);
+        assert_eq!(nodes(&r).len(), 2, "{r:?}");
+        assert_eq!(r.elements()[0], PathEl::MoveTo(Point::new(0.0, 0.0)));
+        let mut square = BezPath::new();
+        square.move_to((0.0, 0.0));
+        square.line_to((10.0, 0.0));
+        square.line_to((20.0, 0.0));
+        square.line_to((20.0, 20.0));
+        square.line_to((0.0, 20.0));
+        square.close_path();
+        let r = reduce_nodes(&square, 0.1);
+        assert_eq!(nodes(&r).len(), 4, "{r:?}");
+        // Still closed by its ClosePath, without an extra line to the start.
+        assert_eq!(r.elements().len(), 5, "{r:?}");
+        assert!(distance(&square, &r) < 1e-9);
+        // Bad input is left alone.
+        assert_eq!(reduce_nodes(&square, f64::NAN), normalize(&square));
+        let mut bad = square.clone();
+        bad.line_to((f64::NAN, 0.0));
+        assert_eq!(
+            reduce_nodes(&bad, 1.0).elements().len(),
+            bad.elements().len()
+        );
     }
 }
 
