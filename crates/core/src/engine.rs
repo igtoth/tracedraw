@@ -269,6 +269,23 @@ impl Engine {
         self.revision == self.step_revision && !self.undo.is_empty()
     }
 
+    /// Take back the step `id` as if it had never been recorded, with no
+    /// redo of it (a text started and left with no characters). Only the
+    /// step just recorded, with nothing done since, can go: otherwise
+    /// nothing changes and `false` is returned.
+    pub fn withdraw_step(&mut self, id: u64) -> bool {
+        if !self.at_recorded_step() || self.last_step_id() != Some(id) {
+            return false;
+        }
+        let Some(e) = self.undo.pop() else {
+            return false;
+        };
+        let _ = self.swap_in(e.other);
+        self.undone_bytes = None;
+        self.step_revision = u64::MAX;
+        true
+    }
+
     /// [`Engine::amend`] for several commands: they join the step just
     /// recorded, or make a step of their own named `label` when anything
     /// else happened since. A failing command leaves the drawing as it was.
@@ -724,6 +741,42 @@ mod tests {
         let (_, c) = add(&mut eng);
         assert!(c != a && c != b);
         assert!(!eng.step_in_effect(b));
+    }
+
+    /// A step withdrawn leaves no trace: the drawing is as before it and
+    /// neither Undo nor Redo knows it. Only the last step, with nothing
+    /// done since, can be withdrawn (#1481).
+    #[test]
+    fn a_withdrawn_step_leaves_no_undo_or_redo() {
+        let mut eng = Engine::default();
+        let layer = eng.document().pages[0].layers[0].id;
+        let add = |eng: &mut Engine| {
+            let id = eng.new_shape_id();
+            let shape = Shape::new(
+                id,
+                ShapeKind::Rect {
+                    rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+                    radius: 0.0,
+                    corners: None,
+                },
+            );
+            eng.run(&Command::AddShape { layer, shape }).unwrap();
+            (id, eng.last_step_id().expect("a step"))
+        };
+        let (first, a) = add(&mut eng);
+        let (second, b) = add(&mut eng);
+        assert!(!eng.withdraw_step(a), "not the last step");
+        assert!(eng.withdraw_step(b));
+        assert!(eng.document().find_shape(second).is_none());
+        assert!(eng.document().find_shape(first).is_some());
+        assert_eq!(eng.history_labels().0.len(), 1);
+        assert!(eng.redo().is_err(), "nothing to redo");
+        // Something done since the step: it stays.
+        let (_, c) = add(&mut eng);
+        eng.undo().unwrap();
+        eng.redo().unwrap();
+        assert!(!eng.withdraw_step(c));
+        assert!(eng.step_in_effect(c));
     }
 
     #[test]

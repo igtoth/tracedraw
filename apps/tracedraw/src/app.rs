@@ -5118,6 +5118,7 @@ impl App {
         };
         let mut para = tracedraw_core::ParagraphStyle::default();
         para.hyphenate = self.text_hyphenation;
+        let before = self.engine.last_step_id();
         if let Some(id) = self.new_shape(ShapeKind::Text {
             spans: vec![span],
             origin: at,
@@ -5126,7 +5127,15 @@ impl App {
             para,
             on_path: None,
         }) {
-            self.text_edit = Some(TextEdit::at_end(id, 0));
+            let created = self
+                .doc()
+                .find_shape(id)
+                .and(self.engine.last_step_id())
+                .map(|step| crate::text_editing::NewText { before, step });
+            self.text_edit = Some(TextEdit {
+                created,
+                ..TextEdit::at_end(id, 0)
+            });
             self.select(vec![id]);
         }
     }
@@ -5200,11 +5209,37 @@ impl App {
     pub fn finish_text(&mut self) {
         self.ime_preedit.clear();
         let empty = self.edit_text().trim().is_empty();
+        // A text started here and given no characters goes with the step
+        // that created it (and the styles given to it since), as if it had
+        // never been started: no Undo brings an empty text back (#1481).
+        let new_text = if empty {
+            self.join_new_text_steps()
+        } else {
+            None
+        };
         if let Some(te) = self.text_edit.take() {
             if empty {
-                let _ = self.engine.run(&Command::DeleteShapes {
-                    shapes: vec![te.shape],
-                });
+                let withdrawn = new_text.is_some_and(|step| self.engine.withdraw_step(step));
+                if !withdrawn {
+                    // A text object emptied by this session's last edit
+                    // goes in that step, so its Undo gives the characters
+                    // back rather than an empty text. (A dimension's label
+                    // is read back in steps of its own, #644.)
+                    let depth = self.engine.history_labels().0.len();
+                    let top_level = self
+                        .page_layers()
+                        .iter()
+                        .any(|l| l.shapes.iter().any(|s| s.id == te.shape));
+                    let own = top_level && te.step == Some(depth) && self.engine.at_recorded_step();
+                    let cmd = Command::DeleteShapes {
+                        shapes: vec![te.shape],
+                    };
+                    let _ = if own {
+                        self.engine.amend(&cmd)
+                    } else {
+                        self.engine.run(&cmd)
+                    };
+                }
                 self.selection.retain(|s| *s != te.shape);
             } else if self.settings.hyphens_when_typing && !self.settings.custom_hyphens.is_empty()
             {

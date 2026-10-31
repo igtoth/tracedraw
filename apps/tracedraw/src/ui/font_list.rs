@@ -2323,6 +2323,7 @@ mod live_tests {
         let (font, size) = text_of(&app, id);
         app.undo();
         app.redo();
+        app.select(vec![id]);
         let history = app.engine.history_labels();
         let pick = FontPick {
             family: "Preview Family".into(),

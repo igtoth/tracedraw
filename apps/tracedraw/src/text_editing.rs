@@ -28,6 +28,21 @@ pub struct TextEdit {
     /// step: typing on folds into that step only while it is still the
     /// last one (never into a step of another text, #373).
     pub step: Option<usize>,
+    /// The undo steps around this text's creation, when it was started
+    /// here (a click with the Text tool): what is done to it before its
+    /// first characters and those characters join the step that created
+    /// it, so one Undo takes the whole new text back; a text left with
+    /// no characters goes with that step (#1481).
+    pub created: Option<NewText>,
+}
+
+/// The step that created a text started here, and the step before it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NewText {
+    /// The last step before the text was created (`None`: none).
+    pub before: Option<u64>,
+    /// The step that created it (after a join: the joined step).
+    pub step: u64,
 }
 
 impl TextEdit {
@@ -38,6 +53,7 @@ impl TextEdit {
             anchor: len,
             goal_x: None,
             step: None,
+            created: None,
         }
     }
 
@@ -273,6 +289,47 @@ impl App {
         }
     }
 
+    /// The text being edited was started here and the step that created
+    /// it is still the last one, with nothing done since: typing goes on
+    /// in that step (#1481).
+    pub(crate) fn fresh_text_step(&self) -> bool {
+        self.text_edit
+            .as_ref()
+            .and_then(|te| te.created)
+            .is_some_and(|c| {
+                self.engine.at_recorded_step() && self.engine.last_step_id() == Some(c.step)
+            })
+    }
+
+    /// Join the steps recorded since the text being edited was created
+    /// into its creation step, while that step is still in effect: the
+    /// styles given to a new text before its first characters, and those
+    /// characters, are part of making it (#1481). Returns the joined
+    /// step's id; `None` (and nothing joined) when the text was not
+    /// started here or its creation is no longer in the history.
+    pub(crate) fn join_new_text_steps(&mut self) -> Option<u64> {
+        let nt = self.text_edit.as_ref()?.created?;
+        if !self.engine.step_in_effect(nt.step) {
+            if let Some(te) = self.text_edit.as_mut() {
+                te.created = None;
+            }
+            return None;
+        }
+        let last = self.engine.last_step_id()?;
+        if last != nt.step {
+            self.engine.join_group(nt.before, "Create Object");
+            // Joined, the creation step takes the newest step's id; still
+            // there under its own, the join did not happen.
+            if self.engine.step_in_effect(nt.step) || self.engine.last_step_id() != Some(last) {
+                return None;
+            }
+        }
+        if let Some(c) = self.text_edit.as_mut().and_then(|te| te.created.as_mut()) {
+            c.step = last;
+        }
+        Some(last)
+    }
+
     /// Replace the spans of the text being edited. Keystrokes collapse
     /// into one undo step per text object.
     pub fn set_edit_spans(&mut self, spans: Vec<TextSpan>) {
@@ -289,6 +346,8 @@ impl App {
         let Some(s) = self.doc().find_shape(te.shape).cloned() else {
             return;
         };
+        let was_empty = matches!(&s.kind, ShapeKind::Text { spans, .. }
+            if spans_char_count(spans) == 0);
         let ShapeKind::Text {
             origin,
             frame,
@@ -317,13 +376,21 @@ impl App {
         // Typing goes on in the step this session made, while that step
         // is still the last one; otherwise (the first keystroke, another
         // text edited since, any other change) it is a step of its own.
+        // A text just started takes its first characters into the step
+        // that created it, and the typing after them while nothing else
+        // happened: one Undo takes the whole new text back, never leaving
+        // an empty one behind (#1481).
         let depth = self.engine.history_labels().0.len();
-        let own_step = te.step == Some(depth) && self.engine.undo_label() == Some(label);
+        let own_step = te.step == Some(depth)
+            && (self.engine.undo_label() == Some(label) || self.fresh_text_step());
         let _ = if merge && own_step {
             self.engine.amend(&cmd)
         } else {
             self.engine.run_with_label(&cmd, label)
         };
+        if was_empty {
+            self.join_new_text_steps();
+        }
         let depth = self.engine.history_labels().0.len();
         if let Some(t) = self.text_edit.as_mut() {
             t.step = Some(depth);
@@ -1303,6 +1370,117 @@ pub fn alt_code_char(code: &str) -> Option<char> {
 mod tests {
     use super::*;
 
+    fn texts(app: &App) -> Vec<String> {
+        app.page_layers()
+            .iter()
+            .flat_map(|l| &l.shapes)
+            .filter_map(|s| match &s.kind {
+                ShapeKind::Text { spans, .. } => Some(spans_text(spans)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// A text typed after a click with the Text tool is one step: Undo
+    /// takes the whole text back, never leaving an empty text object
+    /// behind, and Redo brings it back whole (#1481).
+    #[test]
+    fn undoing_a_new_text_leaves_no_empty_text() {
+        let mut app = App::headless();
+        app.settings.autocorrect.enabled = false;
+        app.start_text(Point::new(10.0, 10.0), None);
+        for c in ["H", "e", "l", "l", "o"] {
+            app.text_insert(c);
+        }
+        app.finish_text();
+        assert_eq!(texts(&app), vec!["Hello".to_string()]);
+        assert_eq!(app.engine.history_labels().0, vec!["Create Object"]);
+        app.undo();
+        assert!(texts(&app).is_empty(), "{:?}", texts(&app));
+        app.redo();
+        assert_eq!(texts(&app), vec!["Hello".to_string()]);
+        // Undone while still being typed: the text goes too.
+        app.undo();
+        app.start_text(Point::new(10.0, 30.0), None);
+        app.text_insert("Hi");
+        app.undo();
+        assert!(texts(&app).is_empty(), "{:?}", texts(&app));
+        assert!(app.text_edit.is_none());
+    }
+
+    /// A size or font picked for a new text before its first character
+    /// is part of making it: one Undo takes text and style back (#1481).
+    #[test]
+    fn a_style_given_before_typing_joins_the_new_text() {
+        let mut app = App::headless();
+        app.settings.autocorrect.enabled = false;
+        app.start_text(Point::new(10.0, 10.0), None);
+        app.text_size_pt = 72.0;
+        app.apply_text_style();
+        app.text_insert("Big");
+        app.text_insert("ger");
+        let id = *app.selection.first().expect("text selected");
+        app.finish_text();
+        assert_eq!(texts(&app), vec!["Bigger".to_string()]);
+        assert_eq!(app.engine.history_labels().0, vec!["Create Object"]);
+        app.undo();
+        assert!(texts(&app).is_empty(), "{:?}", texts(&app));
+        // Typing in it later is a step of its own.
+        app.redo();
+        app.begin_text_edit(id);
+        app.text_insert("!");
+        app.finish_text();
+        assert_eq!(
+            app.engine.history_labels().0,
+            vec!["Create Object", "Edit Text"]
+        );
+        app.undo();
+        assert_eq!(texts(&app), vec!["Bigger".to_string()]);
+    }
+
+    /// A text started and left with no characters leaves nothing: no
+    /// object, no undo step, nothing for Undo or Redo to bring back,
+    /// even with a style picked for it (#1481).
+    #[test]
+    fn a_new_text_left_empty_leaves_no_step() {
+        let mut app = App::headless();
+        app.settings.autocorrect.enabled = false;
+        app.start_text(Point::new(10.0, 10.0), None);
+        app.text_size_pt = 48.0;
+        app.apply_text_style();
+        app.text_insert("x");
+        app.text_delete_backward();
+        app.finish_text();
+        assert!(texts(&app).is_empty());
+        assert!(app.engine.history_labels().0.is_empty());
+        app.start_text(Point::new(10.0, 10.0), None);
+        app.finish_text();
+        assert!(texts(&app).is_empty());
+        assert!(app.engine.history_labels().0.is_empty());
+        app.redo();
+        app.undo();
+        assert!(texts(&app).is_empty());
+    }
+
+    /// A text emptied by deleting its characters goes; Undo gives it
+    /// back with its characters, not as an empty object (#1481).
+    #[test]
+    fn a_text_emptied_comes_back_with_its_characters() {
+        let mut app = App::headless();
+        app.settings.autocorrect.enabled = false;
+        app.start_text(Point::new(10.0, 10.0), None);
+        app.text_insert("Hi");
+        app.finish_text();
+        let id = *app.selection.first().expect("text selected");
+        app.begin_text_edit(id);
+        app.text_delete_backward();
+        app.text_delete_backward();
+        app.finish_text();
+        assert!(texts(&app).is_empty());
+        app.undo();
+        assert_eq!(texts(&app), vec!["Hi".to_string()]);
+    }
+
     /// Alt codes as the Glyphs docker shows them: a leading zero reads
     /// code page 1252, else the Unicode number (#447).
     #[test]
@@ -1526,9 +1704,10 @@ mod tests {
         // Typing at the caret inserts in the middle.
         app.text_insert("X");
         assert_eq!(app.edit_text(), "ello Xther");
-        // One undo step undoes the whole typing session.
+        // One undo step undoes the whole typing session; a new text's
+        // typing is part of making it (#1481).
         app.finish_text();
-        assert_eq!(app.engine.undo_label(), Some("Edit Text"));
+        assert_eq!(app.engine.undo_label(), Some("Create Object"));
     }
 
     /// Editing a second text keeps the edit of the first: each text's
@@ -1695,11 +1874,12 @@ mod tests {
         app.apply_outline_color(None);
         let spans = app.edit_spans().expect("spans");
         assert!(spans[1].outline.as_ref().is_some_and(|o| o.width <= 0.0));
-        // Each colour is one undo step; undoing them leaves the typing.
+        // Each colour is one undo step; undoing them leaves the typing,
+        // part of making the text (#1481).
         for _ in 0..3 {
             let _ = app.engine.undo();
         }
-        assert_eq!(app.engine.undo_label(), Some("Edit Text"));
+        assert_eq!(app.engine.undo_label(), Some("Create Object"));
         let spans = app.edit_spans().expect("spans");
         assert!(spans
             .iter()
