@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Android: online features work (AI Drawing, AI Generate, GitHub, dictionary downloads). Every HTTPS request failed its certificate check, because the system verifier the desktop builds use needs a Java part the app does not carry; the app now checks certificates against Android's own certificate store, with bundled roots when it cannot be read. The CI emulator check sends a request and wants it answered (#1396).
+
 - Reduce Nodes and the Curve smoothness slider keep the curve within the tolerance all along it: a node only goes when the whole changed stretch stays close to the original, so a wobbly or traced curve is no longer flattened to a single node, and a smooth curve comes down to the fewest nodes (an ellipse of 12 nodes to 4). The start of a closed curve can go too, and long traced curves reduce much faster.
 
 - Text > Convert: artistic text turned into paragraph text, or back, keeps its letters where they were. A text with a position, size or turn of its own (every text of an opened `.cdr` file) jumped away, because its new frame was placed from its box on the page as if that were its own space (#1238).
