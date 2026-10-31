@@ -596,7 +596,7 @@ fn default_desktop() -> [u8; 3] {
 }
 
 /// How many one-time upgrades `Settings::upgrade` knows.
-const UPGRADES: u32 = 4;
+const UPGRADES: u32 = 5;
 
 fn default_outline_units() -> String {
     "pt".into()
@@ -1450,7 +1450,9 @@ impl Default for Settings {
             nudge_mm: 2.54,
             super_nudge_mm: default_super_nudge(),
             micro_nudge_mm: default_micro_nudge(),
-            duplicate_offset_mm: [6.35, 6.35],
+            // In place: the next Duplicate repeats what is done to the
+            // copy (#1494).
+            duplicate_offset_mm: [0.0, 0.0],
             default_dpi: 300.0,
             snap: SnapPrefs::default(),
             shortcuts: Vec::new(),
@@ -1636,7 +1638,8 @@ impl Settings {
     /// 1. objects are treated as filled (a click inside an unfilled one
     ///    selects it), which older versions saved switched off;
     /// 2. new rectangles keep their corners; 3. the alignment and dynamic
-    ///    guides start off; 4. the last export's settings are remembered.
+    ///    guides start off; 4. the last export's settings are remembered;
+    /// 5. Duplicate's old default offset (6.35 mm) becomes none.
     pub fn upgrade(mut self) -> Settings {
         self.autocorrect.upgrade();
         if self.upgrades < 1 {
@@ -1663,6 +1666,12 @@ impl Settings {
         // not be found (#691). On once; switched off afterwards it stays.
         if self.upgrades < 4 {
             self.formats.remember_last = true;
+        }
+        // Duplicate placed its copy 6.35 mm off by default; the copy now
+        // stays in place to be moved, scaled or turned, and the next
+        // Duplicate repeats that (#1494). An offset of one's own stays.
+        if self.upgrades < 5 && self.duplicate_offset_mm == [6.35, 6.35] {
+            self.duplicate_offset_mm = [0.0, 0.0];
         }
         self.upgrades = self.upgrades.max(UPGRADES);
         self.migrate_ai();
@@ -1959,6 +1968,28 @@ mod tests {
         assert!(!again.upgrade().treat_all_filled);
         // New preferences start up to date.
         assert_eq!(Settings::default().upgrades, UPGRADES);
+    }
+
+    /// Duplicate's old default offset becomes none, once; an offset of
+    /// one's own stays, and none set again later stays (#1494).
+    #[test]
+    fn the_old_default_duplicate_offset_becomes_none_once() {
+        let old: Settings =
+            serde_json::from_str(r#"{"upgrades": 4, "duplicate_offset_mm": [6.35, 6.35]}"#)
+                .expect("old preferences");
+        let s = old.upgrade();
+        assert_eq!(s.duplicate_offset_mm, [0.0, 0.0]);
+        assert_eq!(s.upgrades, UPGRADES);
+        let own: Settings =
+            serde_json::from_str(r#"{"upgrades": 4, "duplicate_offset_mm": [5.0, 2.0]}"#)
+                .expect("old preferences");
+        assert_eq!(own.upgrade().duplicate_offset_mm, [5.0, 2.0]);
+        let mut s = Settings::default();
+        assert_eq!(s.duplicate_offset_mm, [0.0, 0.0]);
+        s.duplicate_offset_mm = [6.35, 6.35];
+        let saved = serde_json::to_string(&s).expect("saved");
+        let again: Settings = serde_json::from_str(&saved).expect("read back");
+        assert_eq!(again.upgrade().duplicate_offset_mm, [6.35, 6.35]);
     }
 
     /// Preferences saved before the last export's settings were kept

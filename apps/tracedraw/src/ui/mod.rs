@@ -250,6 +250,9 @@ fn set_window_title(ctx: &egui::Context, title: String) {
 
 pub fn root(app: &mut App, ui: &mut Ui) {
     root_frame(app, ui);
+    // The copies of the last Duplicate deselected: the next one takes the
+    // offset again (#1494).
+    app.forget_duplicate_unless_selected();
     // A fill or an outline dragged in a colour picker ends with the
     // button (after this frame's last change).
     if !ui.ctx().input(|i| i.pointer.any_down()) {
