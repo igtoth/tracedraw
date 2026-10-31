@@ -325,7 +325,9 @@ impl App {
     /// answer the requests that arrived). True when requests were
     /// answered, so the window draws again.
     pub fn sync_mcp_link(&mut self, ctx: &egui::Context) -> bool {
-        let wanted = self.settings.mcp_window;
+        // Not on Android, where Options hides the switch (#1415): a
+        // setting carried over from elsewhere listens for no one.
+        let wanted = self.settings.mcp_window && crate::ui::options::DesktopOnly::Agents.shown();
         match (&self.mcp_link, wanted) {
             (None, true) => {
                 let ctx = ctx.clone();
