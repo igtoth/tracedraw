@@ -85,10 +85,13 @@ Tab [[dialog.trace_tab_settings]] berisi:
 - [[dialog.trace_objects]]: [[dialog.trace_merge_adjacent]] (awalnya aktif)
   membuat satu kurva dari setiap area sewarna; jika nonaktif, setiap bidang
   terpisah menjadi kurva sendiri. [[dialog.trace_remove_overlap]] menjaga
-  setiap bentuk pada pikselnya sendiri; jika nonaktif, bentuk-bentuk sedikit
-  masuk ke bawah bentuk di atasnya, sehingga tidak ada celah di antara
-  tetangga. [[dialog.trace_group_by_color]] menaruh kurva-kurva setiap warna
-  dalam grup sendiri; tersedia bila area sewarna belum digabungkan.
+  setiap bentuk pada pikselnya sendiri, termasuk lubangnya; jika nonaktif,
+  bentuk digambar utuh di bawah bentuk di dalamnya (kepala di bawah
+  matanya). Bagaimanapun, bentuk bertetangga berbagi satu kurva di sepanjang
+  batasnya, sehingga tidak ada celah dan tampilan Rangka Kawat menunjukkan
+  setiap batas sekali. [[dialog.trace_group_by_color]] menaruh kurva-kurva
+  setiap warna dalam grup sendiri; tersedia bila area sewarna belum
+  digabungkan.
 - [[dialog.delete_original]]: bitmap hilang saat jiplakan diletakkan.
 
 Pengaturan yang tidak berlaku untuk jenis jiplakan saat ini ditampilkan

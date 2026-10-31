@@ -84,13 +84,14 @@ La scheda [[dialog.trace_tab_settings]] contiene:
   colore del campione, che potete cambiare o prelevare dall'anteprima con
   il contagocce accanto.
 - [[dialog.trace_objects]]: [[dialog.trace_merge_adjacent]] (attivo
-  all'inizio) fa una sola curva di ogni area di un colore; disattivato,
-  ogni chiazza separata è una curva a sé. [[dialog.trace_remove_overlap]]
-  tiene ogni forma sui propri pixel; disattivato, le forme si estendono un
-  poco sotto quelle sopra, così tra vicine non si vedono fessure.
-  [[dialog.trace_group_by_color]] mette le curve di ogni colore in un
-  gruppo a sé; è disponibile quando le aree di un colore non sono già
-  unite.
+  all'inizio) fa una sola curva di ogni area di un colore; disattivato, ogni
+  chiazza separata è una curva a sé. [[dialog.trace_remove_overlap]] tiene
+  ogni forma sui propri pixel, buchi compresi; disattivato, una forma è
+  disegnata intera sotto le forme al suo interno (una testa sotto i suoi
+  occhi). In entrambi i casi le vicine condividono una curva lungo il bordo,
+  così non si vedono fessure e il fil di ferro mostra ogni bordo una volta.
+  [[dialog.trace_group_by_color]] mette le curve di ogni colore in un gruppo
+  a sé; è disponibile quando le aree di un colore non sono già unite.
 - [[dialog.delete_original]]: la bitmap sparisce quando il risultato viene
   collocato.
 

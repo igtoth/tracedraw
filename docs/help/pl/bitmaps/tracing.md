@@ -84,9 +84,11 @@ Karta [[dialog.trace_tab_settings]] zawiera:
 - [[dialog.trace_objects]]: [[dialog.trace_merge_adjacent]] (początkowo
   włączone) robi jedną krzywą z każdego obszaru koloru; wyłączone, każda
   osobna plama jest własną krzywą. [[dialog.trace_remove_overlap]] trzyma
-  każdy kształt na jego własnych pikselach; wyłączone, kształty sięgają
-  nieco pod te nad nimi, aby między sąsiadami nie było szczelin.
-  [[dialog.trace_group_by_color]] umieszcza krzywe każdego koloru w
+  każdy kształt na jego własnych pikselach, razem z otworami; wyłączone,
+  kształt jest rysowany w całości pod kształtami w jego wnętrzu (głowa pod
+  oczami). Tak czy inaczej sąsiedzi dzielą jedną krzywą wzdłuż swojej
+  granicy, więc nie ma szczelin, a widok Szkielet pokazuje każdą granicę
+  raz. [[dialog.trace_group_by_color]] umieszcza krzywe każdego koloru w
   osobnej grupie; jest dostępne, gdy obszary koloru nie są już scalone.
 - [[dialog.delete_original]]: bitmapa znika, gdy wynik zostaje
   umieszczony.

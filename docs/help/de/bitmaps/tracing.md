@@ -89,11 +89,13 @@ Die Registerkarte [[dialog.trace_tab_settings]] enthält:
 - [[dialog.trace_objects]]: [[dialog.trace_merge_adjacent]] (anfangs ein)
   macht aus jeder Fläche einer Farbe eine Kurve; aus, wird jeder getrennte
   Fleck zu einer eigenen Kurve. [[dialog.trace_remove_overlap]] hält jede
-  Form auf ihren eigenen Pixeln; aus, reichen Formen ein wenig unter die
-  darüberliegenden, damit zwischen Nachbarn keine Lücken erscheinen.
-  [[dialog.trace_group_by_color]] legt die Kurven jeder Farbe in eine
-  eigene Gruppe; es ist verfügbar, wenn die Flächen einer Farbe nicht
-  bereits zusammengeführt sind.
+  Form auf ihren eigenen Pixeln, samt Löchern; aus, wird eine Form ganz
+  unter den Formen in ihr gezeichnet (ein Kopf unter seinen Augen). So oder
+  so teilen Nachbarn an ihrer Grenze eine Kurve, sodass keine Lücken
+  erscheinen und die Ansicht Gitternetz jede Grenze einmal zeigt.
+  [[dialog.trace_group_by_color]] legt die Kurven jeder Farbe in eine eigene
+  Gruppe; es ist verfügbar, wenn die Flächen einer Farbe nicht bereits
+  zusammengeführt sind.
 - [[dialog.delete_original]]: die Bitmap verschwindet, wenn die
   Nachzeichnung platziert wird.
 
