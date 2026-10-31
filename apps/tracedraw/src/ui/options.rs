@@ -4557,15 +4557,33 @@ fn layout_page(app: &mut App, ui: &mut Ui) {
     }
     ui.separator();
     ui.strong(tr("options.master_layers"));
-    let masters: Vec<(tracedraw_core::LayerId, String, tracedraw_core::MasterScope)> = app
+    type MasterRow = (
+        tracedraw_core::LayerId,
+        String,
+        tracedraw_core::MasterScope,
+        bool,
+    );
+    let masters: Vec<MasterRow> = app
         .doc()
         .master
         .iter()
-        .map(|l| (l.id, l.name.clone(), l.scope))
+        .map(|l| (l.id, l.name.clone(), l.scope, l.in_front))
         .collect();
-    for (id, name, scope) in masters {
+    for (id, name, scope, front) in masters {
         ui.horizontal(|ui| {
             ui.label(&name);
+            // Drawn over the page's own layers or behind them (#1132).
+            let mut on = front;
+            if ui
+                .checkbox(&mut on, tr("docker.in_front"))
+                .rich_tip(tr("docker.master_in_front"))
+                .clicked()
+            {
+                app.run(Command::SetLayerInFront {
+                    layer: id,
+                    in_front: on,
+                });
+            }
             for (s, k) in [
                 (tracedraw_core::MasterScope::All, "options.scope_all"),
                 (tracedraw_core::MasterScope::Odd, "options.scope_odd"),
@@ -4599,6 +4617,9 @@ fn layout_page(app: &mut App, ui: &mut Ui) {
             }
         }
     });
+    // Which kinds of master layer are drawn in front of the page's
+    // layers, now and when made (#1132, #1477).
+    crate::ui::objects_docker::master_front_choices(app, ui);
 }
 
 fn background_page(app: &mut App, ui: &mut Ui) {

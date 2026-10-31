@@ -429,6 +429,14 @@ pub struct Settings {
     /// The Objects docker's thumbnail size, interface points (16 to 96).
     #[serde(default = "default_object_thumb")]
     pub object_thumb_size: f32,
+    /// New master layers showing on all, odd or even pages are drawn in
+    /// front of the page's own layers (#1132, #1477).
+    #[serde(default)]
+    pub master_in_front: [bool; 3],
+    /// The Objects docker lists every page, not only the current one
+    /// (#1477).
+    #[serde(default = "default_true")]
+    pub objects_all_pages: bool,
     /// The font lists' sample size, in points.
     #[serde(default = "default_font_sample")]
     pub font_sample_px: f32,
@@ -1538,6 +1546,8 @@ impl Default for Settings {
             hyphens_when_typing: true,
             hyphens_when_pasting: true,
             object_thumb_size: default_object_thumb(),
+            master_in_front: [false; 3],
+            objects_all_pages: true,
             font_sample_px: default_font_sample(),
             workspace_parts: crate::workspace_file::WorkspaceParts::default(),
             printing: Default::default(),
