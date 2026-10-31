@@ -560,42 +560,69 @@ fn unit_named(name: &str) -> Option<f64> {
 }
 
 /// The value typed in `text`: numbers joined by `+ - * /` (with the usual
-/// precedence and brackets), a comma or a point as the decimal mark,
-/// then optionally a unit name, converted to the field's unit when the
-/// field measures distances (`unit_mm`). Other trailing marks (`%`, `°`,
-/// an unknown unit) are ignored.
+/// precedence and brackets), a comma or a point as the decimal mark. A
+/// number (or a bracket) may carry a unit name, which converts it to the
+/// field's unit when the field measures distances (`unit_mm`); a number
+/// without one is in the field's unit, so "60.352 mm / 2", "24 mm + 1 in"
+/// and "(16mm*2)+4in+2pt" work out as in the reference program (#1495).
+/// Percent and degree marks and unknown unit names are read past.
 pub fn parse(text: &str, unit_mm: Option<f64>) -> Option<f64> {
-    let t = text.trim();
+    // A percent or degree mark after a number says what it is, as the
+    // field does: read past it ("50 % * 2").
+    let marks: String = text
+        .chars()
+        .map(|c| if c == '%' || c == '\u{00B0}' { ' ' } else { c })
+        .collect();
+    let t = marks.trim();
     // Split off what follows the expression.
     let end = t
         .char_indices()
-        .find(|(_, c)| !(c.is_ascii_digit() || "+-*/.,() eE".contains(*c)))
+        .find(|(_, c)| !(c.is_ascii_alphanumeric() || "+-*/.,() \"".contains(*c)))
         .map(|(i, _)| i)
         .unwrap_or(t.len());
-    let (expr, tail) = t.split_at(end);
-    // A trailing "e" would be read as an exponent; keep it with the unit.
-    let expr = expr.trim();
-    let v = Expr::new(expr).parse()?;
-    if !v.is_finite() {
-        return None;
-    }
-    match (unit_mm, unit_named(tail)) {
-        (Some(field), Some(typed)) if field > 0.0 => Some(v * typed / field),
-        _ => Some(v),
-    }
+    let (expr, _) = t.split_at(end);
+    let v = Expr::new(expr.trim(), unit_mm).parse()?;
+    v.is_finite().then_some(v)
 }
 
 /// A small recursive-descent reader for sums and products.
 struct Expr<'a> {
     s: &'a [u8],
     i: usize,
+    /// Millimetres per unit of the field, when it measures distances.
+    unit_mm: Option<f64>,
 }
 
 impl<'a> Expr<'a> {
-    fn new(s: &'a str) -> Self {
+    fn new(s: &'a str, unit_mm: Option<f64>) -> Self {
         Expr {
             s: s.as_bytes(),
             i: 0,
+            unit_mm,
+        }
+    }
+
+    /// `v` with the unit name typed after it, if any, read and taken into
+    /// the field's unit. An unknown name is read and left alone.
+    fn unit(&mut self, v: f64) -> f64 {
+        let save = self.i;
+        self.ws();
+        let start = self.i;
+        while self
+            .s
+            .get(self.i)
+            .is_some_and(|c| c.is_ascii_alphabetic() || *c == b'"')
+        {
+            self.i += 1;
+        }
+        if self.i == start {
+            self.i = save;
+            return v;
+        }
+        let name = std::str::from_utf8(&self.s[start..self.i]).unwrap_or("");
+        match (self.unit_mm, unit_named(name)) {
+            (Some(field), Some(typed)) if field > 0.0 => v * typed / field,
+            _ => v,
         }
     }
 
@@ -669,12 +696,16 @@ impl<'a> Expr<'a> {
             b'(' => {
                 self.i += 1;
                 let v = self.sum()?;
-                (self.peek()? == b')').then(|| {
-                    self.i += 1;
-                    v
-                })
+                if self.peek()? != b')' {
+                    return None;
+                }
+                self.i += 1;
+                Some(self.unit(v))
             }
-            _ => self.number(),
+            _ => {
+                let v = self.number()?;
+                Some(self.unit(v))
+            }
         }
     }
 
@@ -1105,8 +1136,38 @@ mod tests {
         assert_eq!(parse("2\"", Some(1.0)), Some(50.8));
         assert_eq!(parse("1 cm", Some(1.0)), Some(10.0));
         assert_eq!(parse("25.4 mm", Some(25.4)), Some(1.0));
+        // Sums and products with units: each number in its own unit, a
+        // bare one in the field's (#1495).
+        let close = |a: Option<f64>, b: f64| a.is_some_and(|a| (a - b).abs() < 1e-9);
+        assert!(close(parse("60.352 mm / 2", Some(1.0)), 30.176));
+        assert!(close(parse("60,352 mm / 2", Some(1.0)), 30.176));
+        assert!(close(parse("24 mm + 2", Some(1.0)), 26.0));
+        assert!(close(parse("24 mm + 1 in", Some(1.0)), 49.4));
+        assert!(close(
+            parse("24 mm + 10 pt", Some(1.0)),
+            24.0 + 10.0 * 25.4 / 72.0
+        ));
+        assert!(close(
+            parse("24mm+20pt", Some(1.0)),
+            24.0 + 20.0 * 25.4 / 72.0
+        ));
+        assert!(close(parse("24*2", Some(1.0)), 48.0));
+        assert!(close(parse("24/2", Some(1.0)), 12.0));
+        assert!(close(
+            parse("(16mm*2)+4in+2pt", Some(1.0)),
+            32.0 + 101.6 + 2.0 * 25.4 / 72.0
+        ));
+        // In a field in inches: a bare number is inches.
+        assert!(close(parse("1 + 25.4 mm", Some(25.4)), 2.0));
+        assert!(close(parse("(10 + 15.4) mm", Some(25.4)), 1.0));
+        assert!(close(parse("2\" / 2", Some(1.0)), 25.4));
+        // A field without a unit reads the numbers as they are.
+        assert!(close(parse("50 % * 2", None), 100.0));
+        assert!(close(parse("12 px + 3 px", None), 15.0));
         // Nonsense keeps the old value.
         assert_eq!(parse("abc", None), None);
+        assert_eq!(parse("mm", Some(1.0)), None);
+        assert_eq!(parse("24 mm +", Some(1.0)), None);
         assert_eq!(parse("", None), None);
         assert_eq!(parse("1/0", None), None);
         assert_eq!(parse("1+", None), None);
