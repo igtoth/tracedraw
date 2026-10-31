@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+- Linux (X11): a picture copied in a screenshot tool pastes on the first Ctrl+V. The paste gave the program 10 ms for each part of a large picture and asked for PNG only, so it often came out empty and took two or three tries; it now reads the clipboard's list of types, asks for the best picture type offered (PNG, BMP, TIFF, WebP, GIF, JPEG), gives each part 2 s and tries again briefly when nothing came. One clipboard connection is kept for the session (#1488).
+
 - Saving as `.cdr`: guidelines are saved and come back when the file is opened again. The guidelines every page has go once on the master page's guides layer, as the other program's files keep theirs, and each page's others on that page. They were not written at all (the status line said so); their colour, style and lock are still not written (#1161).
 
 - Android: online features work (AI Drawing, AI Generate, GitHub, dictionary downloads). Every HTTPS request failed its certificate check, because the system verifier the desktop builds use needs a Java part the app does not carry; the app now checks certificates against Android's own certificate store, with bundled roots when it cannot be read. The CI emulator check sends a request and wants it answered (#1396).
