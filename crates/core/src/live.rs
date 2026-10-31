@@ -3623,16 +3623,17 @@ mod tests {
             solid: None,
             space: Default::default(),
         });
-        // The two faces that show (toward the vector), each one outlined
-        // object; the far face is hidden behind the filled object and
-        // them (#1281).
-        let ev = evaluate(&s);
-        assert_eq!(ev.below.len(), 2);
-        assert!(ev.below.iter().all(|f| f.stroke.is_some()));
-        // Without a fill it shows through, first.
-        s.fill = Fill::None;
+        // The far face, hidden behind the filled object, and the two
+        // faces that show (toward the vector), each one outlined object
+        // (#1281).
         let ev = evaluate(&s);
         assert_eq!(ev.below.len(), 3);
+        assert!(ev.below.iter().all(|f| f.stroke.is_some()));
+        // Without a fill it shows through, first, in a wire frame of all
+        // four sides.
+        s.fill = Fill::None;
+        let ev = evaluate(&s);
+        assert_eq!(ev.below.len(), 5);
         let back = ev.below[0].bounds();
         assert!((back.x0 - 10.0).abs() < 0.5);
     }

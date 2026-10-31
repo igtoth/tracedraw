@@ -580,6 +580,59 @@ mod tests {
         id
     }
 
+    /// #1281: Area Fill in a side of a front body takes the whole side:
+    /// the object behind it is hidden and its outline cuts nothing. An
+    /// object without a fill shows its wire frame, and every line counts.
+    #[test]
+    fn area_fill_takes_what_shows_of_a_side() {
+        let mut app = App::headless();
+        let id = square(&mut app);
+        let set = |app: &mut App| {
+            app.run(Command::SetEffects {
+                shape: id,
+                effects: vec![Effect::Extrude {
+                    depth: Vec2::new(-10.0, -10.0),
+                    vanishing: None,
+                    amount: 0.0,
+                    shade_from: None,
+                    shade_to: None,
+                    light_angle: 135.0,
+                    light_intensity: 50.0,
+                    bevel: 0.0,
+                    kind: Some(ExtrudeKind::FrontParallel),
+                    on_object: false,
+                    solid: None,
+                    space: Default::default(),
+                }],
+            });
+        };
+        set(&mut app);
+        let area_at = |app: &mut App, p: Point| -> f64 {
+            app.select(Vec::new());
+            app.area_fill_at(p);
+            let sel = app.selection.clone();
+            assert_eq!(sel.len(), 1, "an area at {p:?}");
+            let s = app.doc().find_shape(sel[0]).cloned().expect("area");
+            assert_eq!(s.name.as_deref(), Some("Area Fill"));
+            let a = tracedraw_core::geometry::Shape::area(&s.page_path()).abs();
+            app.run(Command::DeleteShapes { shapes: sel });
+            a
+        };
+        // The side over the edge x = 20 runs from it to the near face's
+        // edge x = 10: a parallelogram of 10 by 20, over the corner of the
+        // object behind.
+        let a = area_at(&mut app, Point::new(17.0, 8.0));
+        assert!((a - 200.0).abs() < 0.5, "{a}");
+        // Without a fill the square behind shows through and its top
+        // edge cuts the side: what is left below it, 150.
+        app.run(Command::SetFill {
+            shapes: vec![id],
+            fill: Fill::None,
+        });
+        let a = area_at(&mut app, Point::new(17.0, 8.0));
+        assert!((a - 150.0).abs() < 0.5, "{a}");
+    }
+
     fn extrusion(app: &App, id: ShapeId) -> Option<Effect> {
         app.doc()
             .find_shape(id)?
@@ -642,12 +695,12 @@ mod tests {
         };
         assert_eq!(kind, Some(ExtrudeKind::BackParallel));
         assert!((depth - Vec2::new(8.0, 4.0)).hypot() < 1e-9);
-        // The body is drawn: two faces, one object each; the far face
-        // lies hidden behind the filled square and them (#1281).
+        // The body is drawn: the far face, hidden behind the filled
+        // square, and two faces, one object each (#1281).
         let s = app.doc().find_shape(id).cloned().expect("square");
         let ev = tracedraw_core::live::evaluate(&s);
-        assert_eq!(ev.below.iter().filter(|s| s.fill != Fill::None).count(), 2);
-        assert_eq!(ev.below.len(), 2);
+        assert_eq!(ev.below.iter().filter(|s| s.fill != Fill::None).count(), 3);
+        assert_eq!(ev.below.len(), 3);
     }
 
     #[test]

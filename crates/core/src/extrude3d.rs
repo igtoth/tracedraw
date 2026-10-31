@@ -817,9 +817,8 @@ mod tests {
                 })
                 .collect()
         };
-        let mut a = red(&one.faces(&square()).below);
-        // The plain body leaves out its hidden far face (#1281); the lit
-        // one draws it first.
+        // Both bodies draw their far face first.
+        let mut a = red(one.faces(&square()).below.get(1..).unwrap_or_default());
         let lit = two.faces(&square()).below;
         let mut b = red(lit.get(1..).unwrap_or_default());
         a.sort_unstable();

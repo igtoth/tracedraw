@@ -895,6 +895,93 @@ fn gap_bridges(lines: &[Vec<[f64; 2]>], open: &[bool]) -> Vec<Vec<[f64; 2]>> {
 /// ([`recover_curves`]), so the area meets them exactly and has nodes
 /// only where they cross.
 pub fn enclosed_area(paths: &[BezPath], p: Point) -> Enclosed {
+    enclosed_area_within(paths, paths, p)
+}
+
+/// [`enclosed_area`] among what shows of a drawing: `parts` bottom to
+/// top, each outline with whether its fill hides what lies beneath it.
+/// An outline (or the part of it) under an opaque fill is no wall, so an
+/// area is cut only by the lines that show; outlines under an object
+/// without a fill all count (#1281).
+pub fn enclosed_visible_area(parts: &[(BezPath, bool)], p: Point) -> Enclosed {
+    let walls = visible_walls(parts);
+    let sources: Vec<BezPath> = parts.iter().map(|(path, _)| path.clone()).collect();
+    enclosed_area_within(&walls, &sources, p)
+}
+
+/// The outlines of `parts` (bottom to top, each with whether its fill
+/// hides what lies beneath) as far as they show: each opaque fill cuts
+/// away the lines below it inside its area, its own outline stays.
+pub fn visible_walls(parts: &[(BezPath, bool)]) -> Vec<BezPath> {
+    use i_overlay::float::clip::FloatClip as _;
+    use i_overlay::string::clip::ClipRule;
+    let bbox = |pts: &[[f64; 2]]| {
+        pts.iter()
+            .map(|q| kurbo::Rect::from_points((q[0], q[1]), (q[0], q[1])))
+            .reduce(|a, b| a.union(b))
+    };
+    let mut walls: Vec<(Vec<[f64; 2]>, kurbo::Rect)> = Vec::new();
+    for (path, covers) in parts {
+        if *covers {
+            let area: Vec<Vec<[f64; 2]>> = contours(path)
+                .into_iter()
+                .filter(|c| c.iter().all(|q| q[0].is_finite() && q[1].is_finite()))
+                .collect();
+            if let Some(ab) = area
+                .iter()
+                .filter_map(|c| bbox(c))
+                .reduce(|a, b| a.union(b))
+            {
+                // Only the lines that reach into the fill's box are cut.
+                let mut kept = Vec::with_capacity(walls.len());
+                for (line, lb) in walls.drain(..) {
+                    if !lb.overlaps(ab) {
+                        kept.push((line, lb));
+                        continue;
+                    }
+                    let rule = ClipRule {
+                        invert: true,
+                        boundary_included: true,
+                    };
+                    for piece in line.clip_by(&area, IFill::EvenOdd, rule) {
+                        if piece.len() >= 2 {
+                            if let Some(b) = bbox(&piece) {
+                                kept.push((piece, b));
+                            }
+                        }
+                    }
+                }
+                walls = kept;
+            }
+        }
+        for (pts, _) in polylines(path, TOL) {
+            let line: Vec<[f64; 2]> = pts.iter().map(|q| [q.x, q.y]).collect();
+            if line.iter().all(|q| q[0].is_finite() && q[1].is_finite()) {
+                if let Some(b) = bbox(&line) {
+                    walls.push((line, b));
+                }
+            }
+        }
+    }
+    walls
+        .into_iter()
+        .map(|(line, _)| {
+            let mut path = BezPath::new();
+            for (i, q) in line.iter().enumerate() {
+                if i == 0 {
+                    path.move_to((q[0], q[1]));
+                } else {
+                    path.line_to((q[0], q[1]));
+                }
+            }
+            path
+        })
+        .collect()
+}
+
+/// [`enclosed_area`] with the walls `paths` and the curves the area's
+/// sides are fitted back onto taken from `sources`.
+fn enclosed_area_within(paths: &[BezPath], sources: &[BezPath], p: Point) -> Enclosed {
     use i_overlay::float::slice::FloatSlice as _;
     use kurbo::Shape as _;
     let mut lines: Vec<Vec<[f64; 2]>> = Vec::new();
@@ -943,7 +1030,7 @@ pub fn enclosed_area(paths: &[BezPath], p: Point) -> Enclosed {
         if open {
             return Enclosed::Open;
         }
-        let sources: Vec<&BezPath> = paths.iter().collect();
+        let sources: Vec<&BezPath> = sources.iter().collect();
         return Enclosed::Area(recover_curves(&area, &sources));
     }
     Enclosed::OnOutline
@@ -2450,6 +2537,46 @@ mod tests {
             panic!("ring not closed");
         };
         assert!((a.bounding_box().width() - 10.0).abs() < 1e-3);
+    }
+
+    /// #1281: the outline of a filled object hidden under another filled
+    /// object is no wall; under an empty one it still is.
+    #[test]
+    fn enclosed_visible_area_ignores_hidden_outlines() {
+        use super::{enclosed_visible_area, Enclosed};
+        use kurbo::Shape as _;
+        let back = kurbo::Rect::new(0.0, 0.0, 20.0, 20.0).to_path(0.01);
+        let front = kurbo::Rect::new(10.0, 10.0, 40.0, 40.0).to_path(0.01);
+        // Inside the front square, over the corner of the one behind: the
+        // whole front square.
+        let Enclosed::Area(a) = enclosed_visible_area(
+            &[(back.clone(), true), (front.clone(), true)],
+            Point::new(15.0, 15.0),
+        ) else {
+            panic!("an area");
+        };
+        let b = a.bounding_box();
+        assert!(
+            (b.x0 - 10.0).abs() < 1e-3 && (b.x1 - 40.0).abs() < 1e-3,
+            "{b:?}"
+        );
+        assert!((a.area().abs() - 900.0).abs() < 0.5, "{}", a.area());
+        // What shows of the back square: an L, its corner cut away.
+        let Enclosed::Area(a) = enclosed_visible_area(
+            &[(back.clone(), true), (front.clone(), true)],
+            Point::new(5.0, 5.0),
+        ) else {
+            panic!("an area");
+        };
+        assert!((a.area().abs() - 300.0).abs() < 0.5, "{}", a.area());
+        // The front square without a fill: the back square's corner shows
+        // through and cuts the area.
+        let Enclosed::Area(a) =
+            enclosed_visible_area(&[(back, true), (front, false)], Point::new(15.0, 15.0))
+        else {
+            panic!("an area");
+        };
+        assert!((a.area().abs() - 100.0).abs() < 0.5, "{}", a.area());
     }
 
     #[test]
