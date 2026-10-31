@@ -428,134 +428,153 @@ impl Body {
             })
             .collect();
         let outline_stroke = template().stroke;
+        // Outline only: an object without a fill whose body takes its
+        // colour is drawn as a wire frame, every side and the copy as
+        // outlines with no fill, the sides turned away included, so the
+        // edges behind show as they do through an empty object (#1281).
+        let wire = matches!(self.coloring, Coloring::Object) && shape.fill == Fill::None;
         // One face for each flattened edge that shows; the faces between
         // corners make a surface, outlined as one (a curved side is not
         // drawn as a row of slats).
         let corner = 20f64.to_radians().cos();
         let mut surfaces: Vec<(f64, Shape)> = Vec::new();
-        for ((pts, is_closed), hole) in subs.iter().zip(holes) {
-            let closed = *is_closed;
-            // The right of travel is outside a counterclockwise outline.
-            let out_right = (area2(pts) >= 0.0) != hole;
-            let n = pts.len();
-            let edges = if closed { n } else { n - 1 };
-            let shown: Vec<Option<(f64, Shape)>> = (0..edges)
-                .map(|i| {
-                    self.face(
-                        pts[i],
-                        pts[(i + 1) % n],
-                        out_right,
-                        closed,
-                        sign,
-                        (from, to, k, light),
-                        &template,
-                    )
-                })
-                .collect();
-            let dir = |i: usize| (pts[(i + 1) % n] - pts[i]).normalize();
-            let starts = |i: usize| -> bool {
-                if shown[i].is_none() {
-                    return false;
+        // The sides turned away first (wire frames only), then the ones
+        // that show.
+        let passes: &[f64] = if wire { &[-1.0, 1.0] } else { &[1.0] };
+        for &pass in passes {
+            let sign = sign * pass;
+            for ((pts, is_closed), hole) in subs.iter().zip(holes.iter().copied()) {
+                let closed = *is_closed;
+                // An open subpath already shows both its sides.
+                if pass < 0.0 && !closed {
+                    continue;
                 }
-                let prev = match (i, closed) {
-                    (0, true) => Some(edges - 1),
-                    (0, false) => None,
-                    _ => Some(i - 1),
-                };
-                match prev {
-                    None => true,
-                    Some(p) => shown[p].is_none() || dir(p).dot(dir(i)) < corner,
-                }
-            };
-            let runs: Vec<Vec<usize>> = match (0..edges).find(|&i| starts(i)) {
-                // A smooth closed outline that shows all round.
-                None if edges > 0 && shown.iter().all(|f| f.is_some()) => {
-                    vec![(0..edges).collect()]
-                }
-                None => Vec::new(),
-                Some(f) => {
-                    let order: Vec<usize> = if closed {
-                        (0..edges).map(|k| (f + k) % edges).collect()
-                    } else {
-                        (f..edges).collect()
+                // The right of travel is outside a counterclockwise outline.
+                let out_right = (area2(pts) >= 0.0) != hole;
+                let n = pts.len();
+                let edges = if closed { n } else { n - 1 };
+                let shown: Vec<Option<(f64, Shape)>> = (0..edges)
+                    .map(|i| {
+                        self.face(
+                            pts[i],
+                            pts[(i + 1) % n],
+                            out_right,
+                            closed,
+                            sign,
+                            (from, to, k, light),
+                            &template,
+                        )
+                    })
+                    .collect();
+                let dir = |i: usize| (pts[(i + 1) % n] - pts[i]).normalize();
+                let starts = |i: usize| -> bool {
+                    if shown[i].is_none() {
+                        return false;
+                    }
+                    let prev = match (i, closed) {
+                        (0, true) => Some(edges - 1),
+                        (0, false) => None,
+                        _ => Some(i - 1),
                     };
-                    let mut runs: Vec<Vec<usize>> = Vec::new();
-                    let mut cur: Vec<usize> = Vec::new();
-                    for i in order {
-                        if (shown[i].is_none() || starts(i)) && !cur.is_empty() {
-                            runs.push(std::mem::take(&mut cur));
-                        }
-                        if shown[i].is_some() {
-                            cur.push(i);
-                        }
+                    match prev {
+                        None => true,
+                        Some(p) => shown[p].is_none() || dir(p).dot(dir(i)) < corner,
                     }
-                    if !cur.is_empty() {
-                        runs.push(cur);
-                    }
-                    runs
-                }
-            };
-            for run in runs {
-                let all_round = closed && run.len() == edges;
-                let front: Vec<Point> = if all_round {
-                    pts.clone()
-                } else {
-                    let mut v: Vec<Point> = run.iter().map(|&i| pts[i]).collect();
-                    if let Some(&last) = run.last() {
-                        v.push(pts[(last + 1) % n]);
-                    }
-                    v
                 };
-                let mut outline = BezPath::new();
-                if all_round {
-                    for loop_pts in [
-                        front.clone(),
-                        front.iter().map(|p| self.copy_of(*p)).collect::<Vec<_>>(),
-                    ] {
-                        for (j, p) in loop_pts.iter().enumerate() {
+                let runs: Vec<Vec<usize>> = match (0..edges).find(|&i| starts(i)) {
+                    // A smooth closed outline that shows all round.
+                    None if edges > 0 && shown.iter().all(|f| f.is_some()) => {
+                        vec![(0..edges).collect()]
+                    }
+                    None => Vec::new(),
+                    Some(f) => {
+                        let order: Vec<usize> = if closed {
+                            (0..edges).map(|k| (f + k) % edges).collect()
+                        } else {
+                            (f..edges).collect()
+                        };
+                        let mut runs: Vec<Vec<usize>> = Vec::new();
+                        let mut cur: Vec<usize> = Vec::new();
+                        for i in order {
+                            if (shown[i].is_none() || starts(i)) && !cur.is_empty() {
+                                runs.push(std::mem::take(&mut cur));
+                            }
+                            if shown[i].is_some() {
+                                cur.push(i);
+                            }
+                        }
+                        if !cur.is_empty() {
+                            runs.push(cur);
+                        }
+                        runs
+                    }
+                };
+                for run in runs {
+                    let all_round = closed && run.len() == edges;
+                    let front: Vec<Point> = if all_round {
+                        pts.clone()
+                    } else {
+                        let mut v: Vec<Point> = run.iter().map(|&i| pts[i]).collect();
+                        if let Some(&last) = run.last() {
+                            v.push(pts[(last + 1) % n]);
+                        }
+                        v
+                    };
+                    let mut outline = BezPath::new();
+                    if all_round {
+                        for loop_pts in [
+                            front.clone(),
+                            front.iter().map(|p| self.copy_of(*p)).collect::<Vec<_>>(),
+                        ] {
+                            for (j, p) in loop_pts.iter().enumerate() {
+                                if j == 0 {
+                                    outline.move_to(*p);
+                                } else {
+                                    outline.line_to(*p);
+                                }
+                            }
+                            outline.close_path();
+                        }
+                    } else {
+                        for (j, p) in front.iter().enumerate() {
                             if j == 0 {
                                 outline.move_to(*p);
                             } else {
                                 outline.line_to(*p);
                             }
                         }
+                        for p in front.iter().rev() {
+                            outline.line_to(self.copy_of(*p));
+                        }
                         outline.close_path();
                     }
-                } else {
-                    for (j, p) in front.iter().enumerate() {
-                        if j == 0 {
-                            outline.move_to(*p);
-                        } else {
-                            outline.line_to(*p);
-                        }
-                    }
-                    for p in front.iter().rev() {
-                        outline.line_to(self.copy_of(*p));
-                    }
-                    outline.close_path();
+                    // One object for the surface (#1281): its outline filled
+                    // with the faces' colours, so a side is one part to paint
+                    // or colour, not a row of slats.
+                    let faces: Vec<(usize, f64, Shape)> = run
+                        .iter()
+                        .filter_map(|&i| shown[i].clone().map(|(k, s)| (i, k, s)))
+                        .collect();
+                    let Some((_, _, middle)) = faces.get(faces.len() / 2) else {
+                        continue;
+                    };
+                    let key = faces.iter().map(|(_, k, _)| *k).sum::<f64>() / faces.len() as f64;
+                    let mut surface = middle.clone();
+                    surface.fill = if wire {
+                        Fill::None
+                    } else {
+                        self.surface_fill(&faces, pts, &outline, all_round, light)
+                    };
+                    surface.stroke = match &outline_stroke {
+                        Some(st) => Some(st.clone()),
+                        None => surface.fill.preview_color().map(crate::Stroke::hairline),
+                    };
+                    surface.kind = ShapeKind::Path {
+                        path: outline,
+                        closed: true,
+                    };
+                    surfaces.push((key, surface));
                 }
-                // One object for the surface (#1281): its outline filled
-                // with the faces' colours, so a side is one part to paint
-                // or colour, not a row of slats.
-                let faces: Vec<(usize, f64, Shape)> = run
-                    .iter()
-                    .filter_map(|&i| shown[i].clone().map(|(k, s)| (i, k, s)))
-                    .collect();
-                let Some((_, _, middle)) = faces.get(faces.len() / 2) else {
-                    continue;
-                };
-                let key = faces.iter().map(|(_, k, _)| *k).sum::<f64>() / faces.len() as f64;
-                let mut surface = middle.clone();
-                surface.fill = self.surface_fill(&faces, pts, &outline, all_round, light);
-                surface.stroke = match &outline_stroke {
-                    Some(st) => Some(st.clone()),
-                    None => surface.fill.preview_color().map(crate::Stroke::hairline),
-                };
-                surface.kind = ShapeKind::Path {
-                    path: outline,
-                    closed: true,
-                };
-                surfaces.push((key, surface));
             }
         }
         surfaces.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
@@ -588,39 +607,21 @@ impl Body {
             out.above.extend(faces);
             out.above.push(near);
         } else {
-            // The far face lies behind the object and the sides: where the
-            // object does not cover it, a side does. It is drawn only when
-            // it can show, through an object without a fill or an open
-            // outline, so a filled object's body is just its sides (#1281).
-            let opaque_fill = match &shape.fill {
-                Fill::Solid(_) => true,
-                Fill::Fountain(f) => f.stops.iter().all(|s| s.opacity >= 1.0),
-                _ => false,
+            // The far face lies behind the object and the sides: hidden
+            // behind a filled object, it shows through an empty one or an
+            // open outline and is a part of its own when the body breaks
+            // apart (#1281).
+            let mut far = template();
+            far.kind = ShapeKind::Path {
+                path: copy_path,
+                closed: any_closed,
             };
-            let hidden = any_closed
-                && subs.iter().all(|(_, c)| *c)
-                && opaque_fill
-                && shape.opacity >= 1.0
-                && shape.opacity_mask.is_none()
-                && !shape.effects.iter().any(|e| {
-                    matches!(
-                        e,
-                        crate::live::Effect::Transparency { .. } | crate::live::Effect::Lens(_)
-                    )
-                });
-            if !hidden {
-                let mut far = template();
-                far.kind = ShapeKind::Path {
-                    path: copy_path,
-                    closed: any_closed,
-                };
-                far.fill = if any_closed {
-                    Fill::Solid(to)
-                } else {
-                    Fill::None
-                };
-                out.below.push(far);
-            }
+            far.fill = if any_closed && !wire {
+                Fill::Solid(to)
+            } else {
+                Fill::None
+            };
+            out.below.push(far);
             out.below.extend(faces);
         }
         out
@@ -669,30 +670,43 @@ mod tests {
         let s = square(Fill::Solid(Color::rgb8(200, 0, 0)));
         let f = body(ExtrudeKind::BackParallel).faces(&s);
         assert!(f.above.is_empty());
-        // The top and right faces only (the others face away), each one
-        // object with its outline; the far face is hidden behind them.
-        assert_eq!(f.below.len(), 2, "two sides");
-        assert_eq!(filled(&f.below).len(), 2);
+        // The far face first, hidden behind the object and the sides,
+        // then the top and right faces only (the others face away), each
+        // one object with its outline.
+        assert_eq!(f.below.len(), 3, "the far face and two sides");
+        assert_eq!(filled(&f.below).len(), 3);
         assert!(f.below.iter().all(|s| s.stroke.is_some()));
+        let far = f.below[0].bounds();
+        assert!((far.x0 - 10.0).abs() < 1e-6 && (far.width() - 20.0).abs() < 1e-6);
         // Lit from the top left: the top face is lighter than the right.
         let shade = |s: &Shape| match s.fill {
             Fill::Solid(c) => c.to_rgb8()[0],
             _ => 0,
         };
-        let (top, right): (Vec<&Shape>, Vec<&Shape>) = filled(&f.below)
+        let (top, right): (Vec<&Shape>, Vec<&Shape>) = filled(&f.below[1..])
             .into_iter()
             .partition(|s| s.bounds().y1 > 25.0 && s.bounds().height() < 15.0);
         assert_eq!((top.len(), right.len()), (1, 1));
         assert!(shade(top[0]) > shade(right[0]));
         // Without a fill the far face shows through: first, at (10, 10).
-        let hollow = square(Fill::None);
+        // The body is a wire frame: the far face and all four sides as
+        // outlines, the two turned away included (#1281).
+        let mut hollow = square(Fill::None);
+        hollow.stroke = Some(crate::Stroke::hairline(Color::BLACK));
         let f = body(ExtrudeKind::BackParallel).faces(&hollow);
         let far = f.below[0].bounds();
         assert!(
             (far.x0 - 10.0).abs() < 1e-6 && (far.y0 - 10.0).abs() < 1e-6,
             "{far:?}"
         );
-        assert_eq!(f.below.len(), 3);
+        assert_eq!(f.below.len(), 5);
+        assert!(filled(&f.below).is_empty());
+        assert!(f.below.iter().all(|s| s.stroke.is_some()));
+        // A body of one colour keeps its filled sides and far face.
+        let mut solid = body(ExtrudeKind::BackParallel);
+        solid.coloring = Coloring::Solid(Color::rgb8(0, 0, 200));
+        let f = solid.faces(&hollow);
+        assert_eq!(filled(&f.below).len(), 3);
     }
 
     /// #1281: a square's body is its two sides, a circle's its one
@@ -706,7 +720,8 @@ mod tests {
             ExtrudeKind::BigBack,
         ] {
             let f = body(kind).faces(&s);
-            assert_eq!(f.below.len(), 2, "{kind:?}");
+            // The far face and the two sides.
+            assert_eq!(f.below.len(), 3, "{kind:?}");
         }
         let mut c = s.clone();
         c.kind = ShapeKind::Ellipse {
@@ -714,15 +729,15 @@ mod tests {
             arc: None,
         };
         let f = body(ExtrudeKind::BackParallel).faces(&c);
-        assert_eq!(f.below.len(), 1, "one curved side");
+        assert_eq!(f.below.len(), 2, "the far face and one curved side");
         // Its colours follow the light round the side.
-        let Fill::Fountain(fill) = &f.below[0].fill else {
-            panic!("a fountain across the side: {:?}", f.below[0].fill);
+        let Fill::Fountain(fill) = &f.below[1].fill else {
+            panic!("a fountain across the side: {:?}", f.below[1].fill);
         };
         assert!(fill.stops.len() >= 3, "{}", fill.stops.len());
         assert!(fill.stops.windows(2).all(|w| w[0].pos <= w[1].pos));
         // It covers the half of the side toward the vector.
-        let b = f.below[0].bounds();
+        let b = f.below[1].bounds();
         assert!(
             b.x1 > 29.0 && b.y1 > 29.0 && b.x0 < 4.0 && b.y0 < 4.0,
             "{b:?}"
@@ -758,7 +773,7 @@ mod tests {
         b.coloring = Coloring::Shade(Color::WHITE, Color::BLACK);
         b.light_intensity = 0.0;
         let f = b.faces(&s);
-        assert!(matches!(f.below[0].fill, Fill::Fountain(_)));
+        assert!(matches!(f.below[1].fill, Fill::Fountain(_)));
         let f = b.faces(&hollow);
         assert_eq!(f.below[0].fill, Fill::Solid(Color::BLACK));
     }
@@ -771,18 +786,20 @@ mod tests {
         let mut s = square(Fill::Solid(Color::BLACK));
         s.kind = ShapeKind::Path { path, closed: true };
         let f = body(ExtrudeKind::BackParallel).faces(&s);
-        // Two faces of the outer square and two of the hole (its bottom
-        // and left walls); the far face hidden.
-        assert_eq!(filled(&f.below).len(), 4);
+        // The far face, two faces of the outer square and two of the
+        // hole (its bottom and left walls).
+        assert_eq!(filled(&f.below).len(), 5);
         let walls: Vec<_> = filled(&f.below)
             .into_iter()
             .filter(|s| s.bounds().x0 >= 9.9 && s.bounds().x1 <= 30.1 && s.bounds().y1 <= 30.1)
             .collect();
         assert_eq!(walls.len(), 2);
-        // Without a fill: the far face with both subpaths comes first.
+        // Without a fill: a wire frame, the far face with both subpaths
+        // first, then all eight walls.
         s.fill = Fill::None;
         let f = body(ExtrudeKind::BackParallel).faces(&s);
-        assert_eq!(filled(&f.below).len(), 5);
+        assert_eq!(f.below.len(), 9);
+        assert!(filled(&f.below).is_empty());
         let moves = f.below[0]
             .local_path()
             .elements()
@@ -800,8 +817,8 @@ mod tests {
             arc: None,
         };
         let f = body(ExtrudeKind::BackParallel).faces(&s);
-        assert_eq!(f.below.len(), 1);
-        let side = &f.below[0];
+        assert_eq!(f.below.len(), 2);
+        let side = &f.below[1];
         assert_ne!(side.fill, Fill::None);
         assert_eq!(
             side.stroke.as_ref().map(|x| x.color),
@@ -818,13 +835,13 @@ mod tests {
             let mut r = s.clone();
             r.transform = Affine::rotate(t);
             let f = body(ExtrudeKind::BackParallel).faces(&r);
-            assert_eq!(f.below.len(), 1, "{t}");
+            assert_eq!(f.below.len(), 2, "{t}");
         }
         // No outline on the object: a hairline of the side's own colour
         // closes its seams.
         s.stroke = None;
         let f = body(ExtrudeKind::BackParallel).faces(&s);
-        let side = &f.below[0];
+        let side = &f.below[1];
         let st = side.stroke.as_ref().expect("a hairline");
         assert_eq!(Some(st.color), side.fill.preview_color());
     }

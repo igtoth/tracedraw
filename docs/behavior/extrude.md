@@ -44,13 +44,20 @@ parallel, or Small back when they have a vanishing point.
   is farther for Small back and Big front, the other way for Big back
   and Small front).
 - A back body draws its copy first (the far face, in the darkest
-  colour), then the surfaces, then the object. Where the object does
-  not cover the far face, a side does, so the far face is left out when
-  the object is closed and opaque (a solid or opaque fountain fill, full
-  opacity, no transparency or lens); it shows through an object without
-  a fill and with open outlines (#1281); a front body draws the
-  object, the surfaces, then the copy looking like the object (its fill
-  and outline).
+  colour), then the surfaces, then the object: behind a filled object
+  the far face is hidden, through an object without a fill or with open
+  outlines it shows, and it is a part of its own when the body breaks
+  apart (#1281). A front body draws the object, the surfaces, then the
+  copy looking like the object (its fill and outline).
+- Outline only: an object without a fill whose body takes the object's
+  colour is drawn as a wire frame. Every side, the ones turned away
+  included, and the copy are outlines with no fill, so a box shows all
+  twelve edges and a cylinder its two ends and the two lines along its
+  side (#1281). A Solid or Shade body keeps its filled faces.
+- Area Fill takes the lines that show: an outline under an opaque fill
+  (the object behind a front body, the far face behind a back body) does
+  not cut the area, so a click in a side fills the whole side; through
+  an object without a fill every line counts.
 
 ## Colour and light
 
