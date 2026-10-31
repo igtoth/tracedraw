@@ -808,6 +808,9 @@ impl eframe::App for Shell {
         web::sync_ui_fonts(ui.ctx());
         #[cfg(target_arch = "wasm32")]
         web::fetch_requested_fonts();
+        // Fonts the browser kept from earlier visits (#1400).
+        #[cfg(target_arch = "wasm32")]
+        ui::font_manager::take_stored_fonts(app);
         app.sync_fonts();
         // What the browser could not keep (#1414).
         app.tell_storage_refusals();
