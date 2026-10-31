@@ -6,6 +6,8 @@ full, row-by-row status.
 
 ## Unreleased
 
+## 0.33.0 (2026-10-31)
+
 - Saving .cdr with Embed fonts: each embedded font is described as the face its file holds (its own weight and slant in the font table, the embedding and the font header), not as the style the text asks for, and the kind of font (TrueType, signed TrueType, PostScript outlines) and its version are named as the program that reads .cdr files names them. Text set bold italic in Khand Light went out as a "bold italic" Khand Light that was really the upright light font, and that program drew it light and upright; regular Khand text drawn with the bold Khand file was listed as a regular face, and that program reported Khand missing although it was installed. Bold text in a light static face such as Khand Light is now drawn and saved with the family's bold face (Khand Bold) when it is installed, and underlined faces carry the underline in their font records, as that program's own files have them (#1455, #1484).
 
 - Weld, Trim, Intersect and the other shaping operations give one node where two outlines cross at a shallow angle, instead of a node followed by one or two lines of no length.
