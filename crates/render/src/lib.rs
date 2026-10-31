@@ -4,6 +4,7 @@
 //! must match this one.
 
 #![allow(clippy::field_reassign_with_default)]
+mod huge;
 mod image_cache;
 
 use tiny_skia::{
@@ -3046,7 +3047,12 @@ pub fn sk_color_alpha(c: Color, opacity: f32) -> SkColor {
     SkColor::from_rgba8(r, g, b, (opacity.clamp(0.0, 1.0) * 255.0).round() as u8)
 }
 
+/// A screen-space path for tiny-skia. Paths with a coordinate that is not
+/// finite give `None`; paths reaching far past any pixmap are cut to
+/// [`huge::LIMIT`] first, as the rasteriser's fixed-point bounds overflow
+/// on them (a degenerate transform drew a shape billions of pixels wide).
 pub fn to_sk_path(path: &BezPath) -> Option<SkPath> {
+    let path = huge::fit(path)?;
     let mut pb = PathBuilder::new();
     for el in path.elements() {
         match el {
@@ -5575,6 +5581,56 @@ mod band_tests {
             assert!(dark(100.0, y), "{y} mm");
         }
         assert!(!dark(100.0, 66.0) && !dark(100.0, 24.0));
+    }
+
+    /// A shape scaled about its centre by a degenerate Free Transform
+    /// step reaches billions of pixels past the view. The rasteriser's
+    /// fixed-point bounds overflowed on it and a strip's thread panicked;
+    /// now the shape is cut to the view's surroundings and fills it.
+    #[test]
+    fn a_shape_billions_of_pixels_wide_fills_the_view_without_a_panic() {
+        let mut doc = Document::new("t", tracedraw_core::geometry::Size::new(200.0, 120.0));
+        let page = doc.pages[0].id;
+        let layer = doc.pages[0].layers[0].id;
+        let mut s = Shape::new(
+            tracedraw_core::ShapeId(1),
+            ShapeKind::Rect {
+                rect: Rect::new(10.0, 10.0, 60.0, 40.0),
+                radius: 0.0,
+                corners: None,
+            },
+        );
+        s.fill = tracedraw_core::Fill::Solid(tracedraw_core::Color::BLACK);
+        s.stroke = Some(tracedraw_core::Stroke::new(
+            tracedraw_core::Color::BLACK,
+            0.5,
+        ));
+        let c = tracedraw_core::geometry::Vec2::new(35.0, 25.0);
+        // The scale and view of a drag that panicked: 6.7e9 x 4e9 px.
+        s.transform = Affine::translate(c) * Affine::scale(6.1021e7) * Affine::translate(-c);
+        if let Ok(l) = doc.layer_mut(layer) {
+            l.shapes.push(s);
+        }
+        // 2.2 px per mm: 1169 x 900 px, drawn in strips; with and without
+        // anti-aliasing (two scan converters).
+        for anti_alias in [true, false] {
+            let opts = RenderOptions {
+                width: 1169,
+                height: 900,
+                view: ViewTransform {
+                    zoom: 2.198653221130371,
+                    origin_x: 353.39141845703125,
+                    origin_y: 693.0,
+                },
+                anti_alias,
+                ..RenderOptions::default()
+            };
+            let px = render_page(&doc, page, &opts).expect("render");
+            for (x, y) in [(0, 0), (500, 300), (1168, 899), (10, 890)] {
+                let p = px.pixel(x, y).expect("pixel");
+                assert!(p.alpha() == 255 && p.red() == 0, "({x}, {y}) {p:?}");
+            }
+        }
     }
 
     /// Clip frames and groups moved by their own transform (the pages a

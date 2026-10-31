@@ -670,9 +670,17 @@ pub fn free_transform_step(
         |t: Affine| Affine::translate(center.to_vec2()) * t * Affine::translate(-center.to_vec2());
     match mode {
         M::Scale => {
-            // Scale about the press point by the ratio of distances.
-            let d0 = (last - center).hypot().max(1e-6);
-            let d1 = (p - center).hypot().max(1e-6);
+            // Scale about the press point by the ratio of distances. The
+            // first step starts at the press point itself and only sets
+            // the distance later steps compare with: dividing by it scaled
+            // the object some ten million times, past what can be drawn.
+            // Passing through the press point would collapse the object,
+            // so that step is skipped too.
+            let d0 = (last - center).hypot();
+            let d1 = (p - center).hypot();
+            if d0 < 1e-6 || d1 < 1e-6 {
+                return Affine::IDENTITY;
+            }
             about(Affine::scale(d1 / d0))
         }
         M::Skew => {
@@ -713,6 +721,34 @@ mod free_transform_tests {
 
     fn close(a: Point, b: Point) -> bool {
         (a - b).hypot() < 1e-6
+    }
+
+    /// The first Scale step leaves the press point: it has no distance to
+    /// compare with yet and scaled by the new distance over 1e-6, a shape
+    /// billions of pixels wide that the rasteriser panicked on. Later
+    /// steps scale by the ratio of distances.
+    #[test]
+    fn scale_starts_at_the_press_point_without_a_jump() {
+        let c = Point::new(35.0, 25.0);
+        let first = free_transform_step(M::Scale, c, c, Point::new(45.0, 30.0), true);
+        assert_eq!(first, tracedraw_core::geometry::Affine::IDENTITY);
+        let back = free_transform_step(M::Scale, c, Point::new(45.0, 25.0), c, true);
+        assert_eq!(back, tracedraw_core::geometry::Affine::IDENTITY);
+        let next = free_transform_step(
+            M::Scale,
+            c,
+            Point::new(45.0, 25.0),
+            Point::new(55.0, 25.0),
+            true,
+        );
+        // Twice as far from the press point: twice the size about it.
+        assert!(close(next * Point::new(40.0, 25.0), Point::new(45.0, 25.0)));
+        assert!(close(next * c, c));
+        for k in 0..20 {
+            let p = Point::new(35.0 + k as f64 * 3.0, 25.0 + k as f64);
+            let t = free_transform_step(M::Scale, c, c, p, true);
+            assert!(t.as_coeffs().iter().all(|v| v.is_finite() && v.abs() < 1e3));
+        }
     }
 
     #[test]
