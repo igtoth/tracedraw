@@ -110,8 +110,28 @@ impl Drop for Turn {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), not(test)))]
 static RENDER_TURNS: Turns = Turns::new();
+
+/// The program's turns, which every page of its window shares. Under
+/// test each test thread has turns of its own: the tests run at the same
+/// time, each with a window of its own, and one test's job would hold
+/// back another's page, whose picture then came at a moment the test
+/// could not foresee (a render starting in the middle of a drag).
+#[cfg(not(target_arch = "wasm32"))]
+fn program_turns() -> &'static Turns {
+    #[cfg(test)]
+    {
+        thread_local! {
+            static TURNS: &'static Turns = Box::leak(Box::new(Turns::new()));
+        }
+        TURNS.with(|t| *t)
+    }
+    #[cfg(not(test))]
+    {
+        &RENDER_TURNS
+    }
+}
 
 #[derive(Default)]
 pub struct Raster {
@@ -345,6 +365,17 @@ impl Raster {
         self.renders
     }
 
+    /// True while a picture is on its way: a render running on its
+    /// thread, or a moved view waiting to rest before it is rendered.
+    #[cfg(test)]
+    pub fn drawing(&self) -> bool {
+        #[cfg(not(target_arch = "wasm32"))]
+        if self.job.is_some() {
+            return true;
+        }
+        self.settle.is_some()
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn texture(
         &mut self,
@@ -489,7 +520,11 @@ impl Raster {
             // picture shows meanwhile, and the job holding the turn
             // repaints when it ends. A page beside the current one
             // yields to it.
-            let Some(turn) = self.turns.unwrap_or(&RENDER_TURNS).take(!self.follows_zoom) else {
+            let Some(turn) = self
+                .turns
+                .unwrap_or_else(program_turns)
+                .take(!self.follows_zoom)
+            else {
                 return self.shown_meanwhile(view, screen);
             };
             let doc = self
@@ -616,6 +651,34 @@ mod tests {
         drop(current);
         // Nobody waits: whoever asks.
         assert!(TURNS.take(false).is_some());
+    }
+
+    /// Tests running at the same time do not share the program's turns:
+    /// a job of another test holding its turn leaves this test's pages
+    /// free to start theirs, while the pages of one test (one window)
+    /// still take turns.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn a_test_has_render_turns_of_its_own() {
+        let (held_tx, held_rx) = std::sync::mpsc::channel();
+        let (done_tx, done_rx) = std::sync::mpsc::channel::<()>();
+        let other = std::thread::spawn(move || {
+            let turn = program_turns().take(true).expect("free");
+            held_tx.send(()).expect("sent");
+            let _ = done_rx.recv();
+            drop(turn);
+        });
+        held_rx.recv().expect("held");
+        let mine = program_turns()
+            .take(true)
+            .expect("not held by the other test");
+        assert!(
+            program_turns().take(false).is_none(),
+            "one job at a time in this test"
+        );
+        drop(mine);
+        done_tx.send(()).expect("sent");
+        other.join().expect("joined");
     }
 
     /// Two slow pages drawn every frame, the other page asked first and

@@ -842,8 +842,7 @@ pub(crate) fn drawing_window(app: &mut App, ui: &mut Ui, full: egui::Rect) {
             } else {
                 mods.ctrl
             };
-            let anchor = if app.settings.wheel_zoom_centers && zoom_delta == 1.0 && wheel_zooms
-            {
+            let anchor = if app.settings.wheel_zoom_centers && zoom_delta == 1.0 && wheel_zooms {
                 let center = canvas_rect.center();
                 if notches != 0.0 && h != center {
                     app.view.pan(center - h);

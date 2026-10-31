@@ -32,6 +32,20 @@ fn frame(ctx: &egui::Context, app: &mut App, events: Vec<Event>, modifiers: Modi
     out.textures_delta.clear();
 }
 
+/// Frames until the page's picture is the one for what it shows now: no
+/// render left running on its thread and no moved view waiting to rest,
+/// so a test counting renders sees only those its own steps cause.
+fn until_the_page_is_drawn(ctx: &egui::Context, app: &mut App) {
+    for _ in 0..500 {
+        frame(ctx, app, Vec::new(), Modifiers::NONE);
+        if !app.raster.borrow().drawing() {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    panic!("the page's picture never came");
+}
+
 fn button(pos: Pos2, pressed: bool, button: PointerButton, modifiers: Modifiers) -> Event {
     Event::PointerButton {
         pos,
@@ -10847,7 +10861,9 @@ fn a_node_drag_keeps_the_pages_picture_until_release() {
         "{:?}",
         app.node_selection
     );
-    frame(&ctx, &mut app, Vec::new(), Modifiers::NONE);
+    // The page's picture made before the press, so that the renders
+    // counted are those of the drag.
+    until_the_page_is_drawn(&ctx, &mut app);
     frame(
         &ctx,
         &mut app,
@@ -10954,6 +10970,7 @@ fn a_handle_drag_keeps_the_pages_picture_until_release() {
         vec![Event::PointerMoved(from)],
         Modifiers::NONE,
     );
+    until_the_page_is_drawn(&ctx, &mut app);
     frame(
         &ctx,
         &mut app,
@@ -15831,7 +15848,12 @@ fn the_pan_tools_right_click_opens_the_menu_or_zooms_out() {
         app.settings.pan_right_click_out = zooms_out;
         let at = app.canvas_rect.center() + egui::vec2(200.0, 150.0);
         let zoom = app.view.zoom;
-        frame(&ctx, &mut app, vec![Event::PointerMoved(at)], Modifiers::NONE);
+        frame(
+            &ctx,
+            &mut app,
+            vec![Event::PointerMoved(at)],
+            Modifiers::NONE,
+        );
         frame(
             &ctx,
             &mut app,
